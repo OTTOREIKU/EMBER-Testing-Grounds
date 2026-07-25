@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#17181c" />
+  <title>EMBER Reference</title>
+</head>
+<body class="ref-body">
+  <header id="ref-head">
+    <div class="ref-title">
+      <span id="ref-logo">EMBER <em>Reference</em></span>
+      <a id="ref-back" href="index.html" title="Back to the tabletop">Tabletop ↗</a>
+    </div>
+    <input type="search" id="ref-search" placeholder="Search keywords, parts, units, pilots…" autocomplete="off" />
+    <nav id="ref-tabs">
+      <button data-tab="keywords" class="active">Keywords</button>
+      <button data-tab="parts">Parts</button>
+      <button data-tab="units">Units</button>
+      <button data-tab="pilots">Pilots</button>
+      <button data-tab="tactics">Tactics</button>
+      <button data-tab="missions">Missions</button>
+      <button data-tab="rules">Rules</button>
+    </nav>
+  </header>
+  <main id="ref-body">
+    <p class="ref-loading">Loading…</p>
+  </main>
+  <div id="ref-detail" hidden>
+    <div class="ref-detail-inner">
+      <div class="ref-detail-tools">
+        <button id="ref-detail-back" title="Back" hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M19 12H5" /><path d="m12 19-7-7 7-7" />
+          </svg>
+        </button>
+        <button id="ref-detail-close" title="Close">✕</button>
+      </div>
+      <div id="ref-detail-content"></div>
+    </div>
+  </div>
+  <script type="module" src="/src/reference.ts"></script>
+</body>
+</html>

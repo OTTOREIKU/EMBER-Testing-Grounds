@@ -1,0 +1,198 @@
+{
+ "_comment": "Round phases, Action Timings and Stances, written up from the verified rules digests so the reference sheet can explain the turn without the rulebook to hand. Stances and Timings are different systems and are often confused: a Stance is how a Mech is postured (it changes dice), a Timing is the dial you set in the Planning Phase (it decides when you act and which Action Type you may use).",
+ "phases": [
+  {
+   "id": "command",
+   "name": "Command Phase",
+   "order": 1,
+   "ref": "Rulebook 3.2",
+   "who": "Mechs generate Commands, Drones receive them",
+   "can": [
+    "Each of your Mechs generates 1 Command Token.",
+    "Starting with the First Player, alternate spending 1 token to Command one Drone.",
+    "A commanded Drone acts immediately: it either moves, or performs one command action."
+   ],
+   "cannot": [
+    "You cannot save Command Tokens. Every one still unspent is removed when the phase ends.",
+    "Mechs do not act in this phase."
+   ]
+  },
+  {
+   "id": "planning",
+   "name": "Planning Phase",
+   "order": 2,
+   "ref": "Rulebook 3.3",
+   "who": "Mechs only",
+   "can": [
+    "Set the Timing Dial on each of your Mechs to one of the six Action Timings.",
+    "Keep your choices secret. Place each dial portrait face-up so the selection stays hidden.",
+    "The dial sector also carries that Pilot's Initiative Value for that Timing, which breaks ties later."
+   ],
+   "cannot": [
+    "Nothing moves or attacks in this phase.",
+    "You cannot change a dial once the phase ends, so commit carefully."
+   ]
+  },
+  {
+   "id": "action",
+   "name": "Action Phase",
+   "order": 3,
+   "ref": "Rulebook 3.4",
+   "who": "Mechs only",
+   "can": [
+    "Reveal all Timing Dials, then resolve Mechs in Timing order: Swift, Melee, Projectile, Firing, Movement, Tactical.",
+    "Each Action Opportunity gives 1 Maneuver Tick followed by 2 Action Ticks.",
+    "Spend ticks on actions: a Short action costs 1 Action Tick, Medium costs 2, and Long costs the Maneuver Tick plus both Action Ticks.",
+    "Choose a Stance at the start of the opportunity, before deciding whether to Maneuver."
+   ],
+   "cannot": [
+    "You cannot act out of Timing order. A later Timing always resolves after an earlier one, however low the Initiative.",
+    "A Mech in Shutdown Stance cannot Maneuver or take any action except Reboot."
+   ]
+  },
+  {
+   "id": "automatic",
+   "name": "Automatic Phase",
+   "order": 4,
+   "ref": "Rulebook 3.5",
+   "who": "Drones only",
+   "can": [
+    "Every Drone that was not Commanded this round now acts automatically.",
+    "Players alternate choosing which drone resolves next, starting with the First Player."
+   ],
+   "cannot": [
+    "You do not choose their targets. Automatic Actions are forced onto the nearest enemy, so positioning is the only control you have.",
+    "Drones that already acted on a Command this round do not act again."
+   ]
+  },
+  {
+   "id": "delay",
+   "name": "Delay Phase",
+   "order": 5,
+   "ref": "Rulebook 3.6",
+   "who": "Projectiles and Deployables only",
+   "can": [
+    "Projectiles and Deployables carry out their delayed actions, which usually means Detonation.",
+    "Resolve them alternately, starting with the First Player.",
+    "In this app, select the projectile and use Detonate."
+   ],
+   "cannot": [
+    "A projectile is destroyed once it detonates.",
+    "A projectile whose delayed action needs a target, with none in range, is destroyed instead."
+   ]
+  },
+  {
+   "id": "end",
+   "name": "End Phase",
+   "order": 6,
+   "ref": "Rulebook 3.7",
+   "who": "Everything, for bookkeeping",
+   "can": [
+    "Remove any Mech left with 2 or fewer Parts.",
+    "Remove Red tokens, then flip Yellow tokens to Red.",
+    "Remove all remaining Command Tokens.",
+    "Score Main and Secondary Tasks and add up Victory Points.",
+    "Pass the First Player token to the other side, then start the next round."
+   ],
+   "cannot": [
+    "No unit acts in this phase."
+   ]
+  }
+ ],
+ "timings": [
+  {
+   "id": "swift",
+   "name": "Swift",
+   "order": 1,
+   "text": "The first Timing to resolve. A Mech set to Swift acts before everything else, which is how you win a race to an objective or strike before a slower enemy can answer."
+  },
+  {
+   "id": "melee",
+   "name": "Melee",
+   "order": 2,
+   "text": "Resolves second. Set this to use Melee actions, which is also how you create a Melee Lock on an adjacent enemy."
+  },
+  {
+   "id": "projectile",
+   "name": "Projectile",
+   "order": 3,
+   "text": "Resolves third. Set this to launch Projectiles. What you launch this round does not resolve now, it waits for the Delay Phase."
+  },
+  {
+   "id": "firing",
+   "name": "Firing",
+   "order": 4,
+   "text": "Resolves fourth. Set this for ranged attacks, which are the bulk of most squads' damage."
+  },
+  {
+   "id": "movement",
+   "name": "Movement",
+   "order": 5,
+   "text": "Resolves fifth. Set this for Movement actions such as Sprint, when repositioning matters more than shooting."
+  },
+  {
+   "id": "tactical",
+   "name": "Tactical",
+   "order": 6,
+   "text": "Resolves last. Set this for Tactical actions such as repairs, scans and electronic warfare. Acting last means you already know what everyone else did."
+  }
+ ],
+ "timingNotes": {
+  "ref": "Rulebook 3.3 and 3.4",
+  "lines": [
+   "Every Action on a Part has an Action Type, and each Action Type belongs to one of these six Timings.",
+   "In the Planning Phase each Mech secretly picks one Timing. In the Action Phase, that is the Action Type it can perform.",
+   "The order above never changes. Swift always resolves before Melee, Melee before Projectile, and so on.",
+   "If two Mechs picked the same Timing, the Pilot with the LOWEST Initiative Value at that Timing acts first. That number is printed under the Timing icon on the dial and differs per pilot.",
+   "If Timing and Initiative are both tied, the First Player's Mech goes first, then the sides alternate.",
+   "Timings are not Stances. A Timing says when you act and what you may do; a Stance says how you are posturing and changes your dice."
+  ]
+ },
+ "stances": [
+  {
+   "id": "offensive",
+   "name": "Offensive Stance",
+   "short": "OFF",
+   "ref": "Rulebook 4.1",
+   "effect": "Hollow icons on your Yellow and Red attack dice count as their solid versions, so a hollow Light Hit becomes a Light Hit and a hollow Heavy Hit becomes a Heavy Hit.",
+   "good": "you intend to deal damage this round.",
+   "cost": "It does nothing for your defence."
+  },
+  {
+   "id": "defensive",
+   "name": "Defensive Stance",
+   "short": "DEF",
+   "ref": "Rulebook 4.1",
+   "effect": "Hollow icons on your White defence dice count as solid, so a face showing 2 hollow Defense counts as 2 Defense.",
+   "good": "you expect to be shot at, especially by lighter Yellow-dice weapons.",
+   "cost": "Your own attacks get no upgrade while you hold it."
+  },
+  {
+   "id": "mobility",
+   "name": "Mobility Stance",
+   "short": "MOB",
+   "ref": "Rulebook 4.1",
+   "effect": "When attacked you add Blue dice equal to your Dodge Value to the Defense Roll, and your Maneuver movement range is doubled.",
+   "good": "you need to cross open ground, or want to be hard to hit and have a high Dodge Value. A Dodge cancels any icon, including a Heavy Hit.",
+   "cost": "No dice upgrades for attacking or for White defence dice."
+  },
+  {
+   "id": "shutdown",
+   "name": "Shutdown Stance",
+   "short": "OFF-LINE",
+   "ref": "Rulebook 4.1 and 4.1.1",
+   "effect": "A total loss of control. No hollow icons ever upgrade, the attacker always chooses which Part your damage hits, Parry cannot be used to defend, and Passive effects do not activate.",
+   "good": "never by choice. A Mech enters Shutdown automatically when its Link Value reaches 0.",
+   "cost": "The only thing it can do is Reboot, which changes it to Defensive, Mobility or Offensive Stance and restores 1 Link Value. After Rebooting it has only 1 Action Tick left this opportunity, and that action must match its selected Timing."
+  }
+ ],
+ "stanceNotes": {
+  "ref": "Rulebook 4.1",
+  "lines": [
+   "A Mech may freely choose its Stance every time it gets an Action Opportunity, before deciding whether to Maneuver.",
+   "Drones, Projectiles and Deployables have a fixed Stance printed on their card and can never change it.",
+   "Some actions force a Stance change on the target. Suppression, for example, puts the target Mech into Defensive Stance. The change happens first, then the attack is rolled.",
+   "If a Mech's Link Value falls to 0 its Stance immediately becomes Shutdown."
+  ]
+ }
+}

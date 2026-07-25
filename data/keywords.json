@@ -1,0 +1,857 @@
+[
+ {
+  "key": "不可阻挡",
+  "zh": {
+   "name": "不可阻挡",
+   "value": "本动作在禁足状态下也可以移动。"
+  },
+  "en": {
+   "name": "Unstoppable:",
+   "value": "Movement Actions with this Keyword can still be performed when Immobilized."
+  },
+  "jp": {
+   "name": "阻止不能",
+   "value": "このアクションは「禁足」状態であっても実行できる"
+  }
+ },
+ {
+  "key": "穿甲X",
+  "zh": {
+   "name": "穿甲X",
+   "value": "遭受本攻击时受击方减少X枚白骰。"
+  },
+  "en": {
+   "name": "Armor Piercing X",
+   "value": "Target removes X dice before rolling."
+  },
+  "jp": {
+   "name": "装甲貫通X",
+   "value": "対象は判定ロール前にX 白ダイスを除去する。"
+  }
+ },
+ {
+  "key": "低特征",
+  "zh": {
+   "name": "低特征",
+   "value": "拥有低特征的单位遭受射击时，受击骰结果中的 眼睛 可视为 闪避 。"
+  },
+  "en": {
+   "name": "Low Profile",
+   "value": "When this unit is the target of a Firing Action, may exchange (Eye} for (Dodge} in defense roll."
+  },
+  "jp": {
+   "name": "低姿勢",
+   "value": "このユニットが射撃されたとき、防御ロール出目の【目】を【回避】に変えられる。"
+  }
+ },
+ {
+  "key": "电战节点X",
+  "zh": {
+   "name": "电战节点X",
+   "value": "范围内友军在进行电子对抗投骰时，可以使用本机的电子值+X。"
+  },
+  "en": {
+   "name": "Warfare Node X",
+   "value": "Allies within the range may use the Electronic value of this Mech + X when making Electronic Counter-rolls."
+  },
+  "jp": {
+   "name": "電子戦ノードX",
+   "value": "範囲内の味方は、電子攻撃対抗判定ロールする際に、代わりにこの機甲のECM+Xで判定してもよい。"
+  }
+ },
+ {
+  "key": "电子攻击",
+  "zh": {
+   "name": "电子攻击",
+   "value": "本动作是一个电子攻击（EA）动作，当有效果限制或强化\"电子攻击\"时，本动作受其影响；若无进一步描述，本动作以敌方单位为目标，需要进行电子对抗投骰，如果成功则起效。"
+  },
+  "en": {
+   "name": "Electronic attack",
+   "value": "This Action is an Electronic Attack (EA) . When there is an effect that modifies \"Electronic Attacks\", this Action will be affected by it;If not further described, this Action targets an Enemy Unit, requires an Electronic counter-roll, and takes effect if successful."
+  },
+  "jp": {
+   "name": "電子攻撃",
+   "value": "このアクションは「電子攻撃（EA）」として扱い、電子攻撃に関する強化または制限効果を受ける。特別な記載がない限り、敵ユニットを対象とし、電子戦対抗ロールを行う。成功した場合、電子攻撃の効果を発動する。"
+  }
+ },
+ {
+  "key": "电子支援",
+  "zh": {
+   "name": "电子支援",
+   "value": "本动作是一个电子支援（ES）动作，当有效果限制或强化\"电子支援\"时，本动作受其影响；若无进一步描述，本动作以敌方/友军单位为目标，需要进行电子对抗投骰，如果成功则起效。"
+  },
+  "en": {
+   "name": "Electronic support",
+   "value": "This Action is Electronic Support (ES). When there is an effect that modifies \"Electronic support\", this Action will be affected by it;If not further described, this Action targets Friendly Units and does not require Electronic counter-rolls. It takes effect automatically."
+  },
+  "jp": {
+   "name": "電子サポート",
+   "value": "このアクションは「電子サポート（ES）」として扱い、電子サポートに関する強化または制限効果を受ける。特別な記載がない限り、味方ユニットを対象とし、電子戦対抗ロールを行わずに自動で効果を発動する。"
+  }
+ },
+ {
+  "key": "多目标X",
+  "zh": {
+   "name": "多目标X",
+   "value": "本动作可以同时选择X个目标。如果使用多目标效果，则攻击时如下操作：计算本动作的总投骰数，增加攻击骰的效果在此时发动；将总投骰数任意分配给每一个目标，对这些目标依次执行一次攻击流程。攻击中，按照分配的投骰数投攻击骰。如果本动作由机甲发动，对每一个单独的攻击流程都可以专注；如果攻击造成特效，则每一次单独的攻击流程都单独对其目标造成特效。"
+  },
+  "en": {
+   "name": "Multi-Target X",
+   "value": "This Action can select X targets at the same time.If selecting multiple targets, do the following when Attacking:Determine the total number of Dice rolled for this Attack, any effects increasing the number of Attack Dice are applied at this time;"
+  },
+  "jp": {
+   "name": "マルチターゲットX",
+   "value": "このアクションは最大X体の対象を同時に選択できる。マルチターゲットを選択した場合、攻撃時の処理は以下のように行う。"
+  }
+ },
+ {
+  "key": "粉碎",
+  "zh": {
+   "name": "粉碎",
+   "value": "每个【闪电】扣除对方1点链接值，并造成1点伤害."
+  },
+  "en": {
+   "name": "Wrecking",
+   "value": "Each {≤ Lightning} in the Attack Roll reduces target Link by 1 and causes damage."
+  },
+  "jp": {
+   "name": "粉砕",
+   "value": "攻撃判定ロールの各【稲妻】は、対象のリンク値を1減らし、1ダメージを追加する。"
+  }
+ },
+ {
+  "key": "负载",
+  "zh": {
+   "name": "负载",
+   "value": "一个部件被无人机携带。无人机并不会获得这个部件的能力与属性。"
+  },
+  "en": {
+   "name": "Load",
+   "value": "A Part equipped by a Drone. The Drone does not gain the Actions or attributes of the Part."
+  },
+  "jp": {
+   "name": "搭載",
+   "value": "このパーツはドローンに搭載されている。ただし、ドローンはこのパーツの能力や属性を得ることはない。"
+  }
+ },
+ {
+  "key": "高亮目标",
+  "zh": {
+   "name": "高亮目标",
+   "value": "当敌方单位执行射击动作时，如果可选目标包含高亮目标单位，则必须以这个单位为目标，不能射击其他目标。"
+  },
+  "en": {
+   "name": "Highlight",
+   "value": "If a Unit performs an Attack Action that is able to target an Enemy Unit that has Highlight, it must target that Unit and cannot target other Units with the Attack."
+  },
+  "jp": {
+   "name": "ハイライトターゲット",
+   "value": "敵ユニットが攻撃を行う際、選択可能な対象に「ハイライトターゲット」としてのユニットが含まれる場合、必ずこのユニットを対象としなければならない。他のターゲットを選択できない。"
+  }
+ },
+ {
+  "key": "光环",
+  "zh": {
+   "name": "光环",
+   "value": "本动作是一个光环动作，当有效果限制或强化\"光环\"时，本动作受其影响；若无进一步描述，本动作对范围内所有单位起效，如果指向友军，则包括本单位。"
+  },
+  "en": {
+   "name": "Aura",
+   "value": "This Action is an Aura.Unless otherwise stated, this Action affects all Units within Range, including the Unit performing the Action if the Action affects Ally Units. When there is an effect that modifies \"Auras\", this Action will be affected by it."
+  },
+  "jp": {
+   "name": "オーラ",
+   "value": "このアクションは「オーラ」アクションであり、「オーラ」に関する強化または制限効果を受ける。特別な記載がない限り、このアクションは範囲内のすべてのユニットに影響を与える。味方ユニットを対象とする場合、本ユニットも含まれる。"
+  }
+ },
+ {
+  "key": "毁伤",
+  "zh": {
+   "name": "毁伤",
+   "value": "溢出伤害可结算至结构值。"
+  },
+  "en": {
+   "name": "Mutilation",
+   "value": "Surplus Damage may be resolved against the Structure of the target Part."
+  },
+  "jp": {
+   "name": "切断",
+   "value": "余剰ダメージは攻撃対象パーツの構造値に作用する。"
+  }
+ },
+ {
+  "key": "击退X",
+  "zh": {
+   "name": "击退X",
+   "value": "本动作结束后，将目标沿攻击方向，强制移动X格。"
+  },
+  "en": {
+   "name": "Knockback X",
+   "value": "After this action ends, the target is forced to move X grids along the attack direction."
+  },
+  "jp": {
+   "name": "击退X",
+   "value": "本动作结束后，将目标沿攻击方向，强制移动X格。"
+  }
+ },
+ {
+  "key": "缴械",
+  "zh": {
+   "name": "缴械",
+   "value": "将命中部件改为弃置状态。"
+  },
+  "en": {
+   "name": "Disarm",
+   "value": "Change target Part to Discard State."
+  },
+  "jp": {
+   "name": "武器解除",
+   "value": "命中したパーツを破廃棄状態に変更する。"
+  }
+ },
+ {
+  "key": "近战射击",
+  "zh": {
+   "name": "近战射击",
+   "value": "在近战锁定中仍可执行本动作。"
+  },
+  "en": {
+   "name": "Melee Firing",
+   "value": "This action can still be performed during Melee Lock."
+  },
+  "jp": {
+   "name": "近接射撃",
+   "value": "近接ロック状態になってもこのアクションを実行できる。"
+  }
+ },
+ {
+  "key": "静默",
+  "zh": {
+   "name": "静默",
+   "value": "执行本动作时不会解除光学迷彩与低特征。"
+  },
+  "en": {
+   "name": "Silence",
+   "value": "Optical Camouflage and Low Profile will not be removed when performing this Action."
+  },
+  "jp": {
+   "name": "サイレンス",
+   "value": "このアクションを行うとき、低姿勢トークンまたは光学迷彩は解除されない。"
+  }
+ },
+ {
+  "key": "狙击",
+  "zh": {
+   "name": "狙击",
+   "value": "攻击者可指定受击部件。"
+  },
+  "en": {
+   "name": "Snipe",
+   "value": "The Attacker may designate the part of Defender to resolve Damage."
+  },
+  "jp": {
+   "name": "狙撃",
+   "value": "攻撃対象のパーツを指定して攻撃できる。"
+  }
+ },
+ {
+  "key": "激光武器",
+  "zh": {
+   "name": "激光武器",
+   "value": "命中使目标获得脆弱标记。"
+  },
+  "en": {
+   "name": "Laser Weapon",
+   "value": "On hit, target gains 1 Fragile Token."
+  },
+  "jp": {
+   "name": "レーザーウェポン:",
+   "value": "命中した場合、攻撃対象に脆弱トークンを与える。"
+  }
+ },
+ {
+  "key": "KC装甲",
+  "zh": {
+   "name": "KC装甲",
+   "value": "当本机受击时，可消耗本部件的充能标记，将受击骰结果中的 闪电 视为 防御。"
+  },
+  "en": {
+   "name": "KC Armor",
+   "value": "When this Unit is Attacked, it may consume a Charge Token to exchange {lightning} in the Defense Roll for {Defense}."
+  },
+  "jp": {
+   "name": "KCアーマー:",
+   "value": "このユニットが攻撃されたとき、チャージトークン1つを使用できる。その場合、防御ロール出目の【稲妻】を【防御】に変えられる。"
+  }
+ },
+ {
+  "key": "空中移动",
+  "zh": {
+   "name": "空中移动",
+   "value": "本动作的移动视为飞行移动。"
+  },
+  "en": {
+   "name": "Airborne Movement",
+   "value": "This Action is considered as Flying."
+  },
+  "jp": {
+   "name": "空中移動",
+   "value": "このアクションの移動は飛行移動として扱われる。"
+  }
+ },
+ {
+  "key": "拦截X",
+  "zh": {
+   "name": "拦截X",
+   "value": "本部件携带X枚拦截标记。*敌方高空单位移动的起点或终点在本动作范围内时，以本动作进行拦截。"
+  },
+  "en": {
+   "name": "Intercept X",
+   "value": "This Part carries X Interception Tokens."
+  },
+  "jp": {
+   "name": "迎撃X",
+   "value": "本パーツはX枚の「迎撃」トークンを持つ。"
+  }
+ },
+ {
+  "key": "离子武器",
+  "zh": {
+   "name": "离子武器",
+   "value": "命中拥有脆弱标记的目标时， 闪电 可视为 重击 。"
+  },
+  "en": {
+   "name": "lon Weapon",
+   "value": "When hitting a target with a Fragile Token, may exchange {Lightning} for {Heavy Hit}."
+  },
+  "jp": {
+   "name": "イオンウェポン",
+   "value": "脆弱トークンが付与されている対象に命中した場合、攻撃ロール出目の【稲妻】を【重撃】に変えられる。"
+  }
+ },
+ {
+  "key": "灵活时机",
+  "zh": {
+   "name": "灵活时机",
+   "value": "本动作可在相邻时机作为起手动作，如一个拥有本关键词的移动动作，可以在射击/移动/战术时机作为起手动作。"
+  },
+  "en": {
+   "name": "Flexible Timing",
+   "value": "This Action can be used in adjacent timings as a Starting Action. For example, a Movement Action with this Keyword can be used as Starting Action in Firing/Movement/Tactical Timing."
+  },
+  "jp": {
+   "name": "フレキシブルタイミング",
+   "value": "このアクションは、隣接するタイミングでもリードアクションとして使用できる。例として、フレキシブル移動アクションは、発射/移動/戦術タイミングでもリードアクションとして使用できる。"
+  }
+ },
+ {
+  "key": "频闪武器",
+  "zh": {
+   "name": "频闪武器",
+   "value": "可将 闪电 视为 重击 。"
+  },
+  "en": {
+   "name": "Pulse Weapon",
+   "value": "May exchange {Lightning} for {Heavy Hit}."
+  },
+  "jp": {
+   "name": "频闪武器",
+   "value": "【稲妻】を【重撃】と見なす。"
+  }
+ },
+ {
+  "key": "齐射X",
+  "zh": {
+   "name": "齐射X",
+   "value": "发射或布撒最多X枚抛射物，并消耗同等数量的弹药标记。"
+  },
+  "en": {
+   "name": "Volley X",
+   "value": "Fire or deploy up to X Projectiles and consume an equal amount of Ammo Tokens."
+  },
+  "jp": {
+   "name": "斉射X",
+   "value": "Xまでアモトークンを使い、その数の投射物を発射または散布する。"
+  }
+ },
+ {
+  "key": "全向射击",
+  "zh": {
+   "name": "全向射击",
+   "value": "本动作没有射界限制。"
+  },
+  "en": {
+   "name": "•Omni-direction Firing",
+   "value": "This action has no limit of fire direction."
+  },
+  "jp": {
+   "name": "全方向射撃",
+   "value": "このアクションの射撃方向は制限されない。"
+  }
+ },
+ {
+  "key": "曲射",
+  "zh": {
+   "name": "曲射",
+   "value": "本动作不需要对落点或目标有视线。"
+  },
+  "en": {
+   "name": "Fire in arc",
+   "value": "This action does not require visual to the landing point or the target."
+  },
+  "jp": {
+   "name": "曲射",
+   "value": "このアクションは、着弾地点もしくは対象まで射線を通さなくても実行できる。"
+  }
+ },
+ {
+  "key": "顺劈",
+  "zh": {
+   "name": "顺劈",
+   "value": "溢出伤害可结算至目标的另1个随机部件或动作范围内的另一个目标"
+  },
+  "en": {
+   "name": "Cleaving",
+   "value": "Surplus Damage may be resolved against another random Part or Unit in Range."
+  },
+  "jp": {
+   "name": "クリーヴ",
+   "value": "余剰ダメージは別のランダムなパーツに対して解決する。"
+  }
+ },
+ {
+  "key": "投掷",
+  "zh": {
+   "name": "投掷",
+   "value": "执行本动作时必须指定一个空手。"
+  },
+  "en": {
+   "name": "Throw",
+   "value": "A Freehand must be designated when performing this action."
+  },
+  "jp": {
+   "name": "投擲",
+   "value": "このアクションを実行する際、必ず１つのフリーハンドを指定する必要がある。"
+  }
+ },
+ {
+  "key": "推动X",
+  "zh": {
+   "name": "推动X",
+   "value": "将目标沿任意直线方向，强制移动X格。被推动方如果是机甲，-1链接值。"
+  },
+  "en": {
+   "name": "Knock Back X",
+   "value": "After this action ends, the target is forced to move X grids along the attack direction. If the Target is a Mech, its Link Value is reduced by 1."
+  },
+  "jp": {
+   "name": "プッシュX",
+   "value": "対象を任意の直線方向にXグリッド強制移動させる。対象が機甲である場合、リンク値-1される。"
+  }
+ },
+ {
+  "key": "拖拽",
+  "zh": {
+   "name": "拖拽",
+   "value": "将目标强制移动至本机相邻格，并设置其朝向。(拖拽视为飞行移动。)"
+  },
+  "en": {
+   "name": "Drag",
+   "value": "Force the target to an adjacent grid of this Mech, and set the facing of the target."
+  },
+  "jp": {
+   "name": "引寄せ",
+   "value": "攻撃対象を隣接グリッドまで移動させ、任意な方向へ向かせる。"
+  }
+ },
+ {
+  "key": "霰射",
+  "zh": {
+   "name": "霰射",
+   "value": "如果目标为机甲，溢出伤害结算至目标另1个随机部件。"
+  },
+  "en": {
+   "name": "Scatter-shot",
+   "value": "If target is a Mech, Surplus Damage may be resolved against another random Part."
+  },
+  "jp": {
+   "name": "散弾ショット",
+   "value": "攻撃対象は機甲の場合、余剰ダメージは攻撃対象パーツ以外ランダムなパーツ1つに作用する。"
+  }
+ },
+ {
+  "key": "压制",
+  "zh": {
+   "name": "压制",
+   "value": "被本动作宣布为目标的机甲会立刻切换为防御姿态（处于宕机姿态的单位不受此影响）。"
+  },
+  "en": {
+   "name": "Suppression",
+   "value": "If Target is a Mech, it immediately switches to Defensive Stance unless in Shutdown Stance."
+  },
+  "jp": {
+   "name": "制圧",
+   "value": "攻撃対象になった機甲は直ちに防御態勢になる。但しダウン態勢の機甲はこの効果を受けない。"
+  }
+ },
+ {
+  "key": "异形X",
+  "zh": {
+   "name": "异形X",
+   "value": "执行本动作时，需要消耗X点链接值。"
+  },
+  "en": {
+   "name": "异形X",
+   "value": "执行本动作时，需要消耗X点链接值。"
+  },
+  "jp": {
+   "name": "異形X",
+   "value": "このアクションを実行する際、X 点のリンク値を消費する必要がある。"
+  }
+ },
+ {
+  "key": "隐秘X",
+  "zh": {
+   "name": "隐秘X",
+   "value": "光学迷彩解除时，本机在X格范围内现身。"
+  },
+  "en": {
+   "name": "Stealth X",
+   "value": "When the Optical Camouflage is revealed, the Mech may appear within X Grids."
+  },
+  "jp": {
+   "name": "ステルスX:",
+   "value": "光学迷彩が解除されたとき、このメックはグリッドXの範囲内に顕現する。。"
+  }
+ },
+ {
+  "key": "震撼",
+  "zh": {
+   "name": "震撼",
+   "value": "闪电 扣除对方1点链接值。(注：效果可叠加)"
+  },
+  "en": {
+   "name": "Concussion",
+   "value": "Each {Lightning} in the attack roll reduces target by 1."
+  },
+  "jp": {
+   "name": "衝撃",
+   "value": "攻撃ロール出目の【稲妻】1つにつき、攻撃対象のリンク値を1減らす。"
+  }
+ },
+ {
+  "key": "指令生成X",
+  "zh": {
+   "name": "指令生成X",
+   "value": "指令阶段开始时，本机自动生成X枚指令标记。"
+  },
+  "en": {
+   "name": "Command Generation X",
+   "value": "At the beginning of each Command Phase, this Unit automatically generates X Command Tokens rather than 1.。"
+  },
+  "jp": {
+   "name": "コマンド生成X",
+   "value": "このユニットはコマンドフェイズ中にX個のコマンドトークンを生成します。"
+  }
+ },
+ {
+  "key": "指令协调X",
+  "zh": {
+   "name": "指令协调X",
+   "value": "本动作执行结束后，可以立即向X台己方无人机发送1枚指令标记。"
+  },
+  "en": {
+   "name": "Coordinate Command X",
+   "value": "After performing this Action, this Mech may issue 1 Command Token to X Ally Drones."
+  },
+  "jp": {
+   "name": "コマンド連携X",
+   "value": "このアクションの終了後、即座にX個の味方ドローンに1枚ずつコメントトークンを発行する。"
+  }
+ },
+ {
+  "key": "指定X",
+  "zh": {
+   "name": "指定X",
+   "value": "在任何削减骰子数量的宣布之后，可以设定X枚骰子的结果。"
+  },
+  "en": {
+   "name": "Designate X",
+   "value": "After any announcement of the number of dice, set the result of X dice."
+  },
+  "jp": {
+   "name": "指定X",
+   "value": "使用するダイスの数を宣言してから、ダイスX個の結果を指定しる。"
+  }
+ },
+ {
+  "key": "直射",
+  "zh": {
+   "name": "直射",
+   "value": "本动作需要对落点或目标有视线。"
+  },
+  "en": {
+   "name": "Direct Fire",
+   "value": "This action requires visual to the landing point or the Target."
+  },
+  "jp": {
+   "name": "直射",
+   "value": "このアクションは、着弾地点もしくは対象まで射線を通さないと実行できない。"
+  }
+ },
+ {
+  "key": "中继器",
+  "zh": {
+   "name": "中继器",
+   "value": "范围内友军单位在进行电子攻击或电子支援时，可以本机作为出发点。"
+  },
+  "en": {
+   "name": "Repeater",
+   "value": "When Friendly Units within range conduct Electronic Attack or Electronic Support, this Mech may be used as the starting point."
+  },
+  "jp": {
+   "name": "中継",
+   "value": "範囲内の味方ユニットが電子攻撃または電子サポートを行う場合、このユニットを発信地として使える。"
+  }
+ },
+ {
+  "key": "自动盾牌",
+  "zh": {
+   "name": "自动盾牌",
+   "value": "相邻的己方单位在遭受射击时，如果视线穿过本单位，则攻击变为以本机为目标。"
+  },
+  "en": {
+   "name": "Automatic Shield",
+   "value": "When Adjacent Ally Units are the target of Firing Actions and Line of Sight also passes through this Unit, the target of the Attack will be this Unit."
+  },
+  "jp": {
+   "name": "自動シールド",
+   "value": "隣接する味方ユニットが射撃攻撃を受ける際、その視線が現在機を通過する場合、攻撃対象は現在機に変更される。"
+  }
+ },
+ {
+  "key": "静止",
+  "zh": {
+   "name": "静止",
+   "value": "在本次行动机会中，如果本单位执行本动作前没有发生位移，也没有改变朝向，则可以获得本条特殊规则的效果。"
+  },
+  "en": {
+   "name": "Stationary",
+   "value": "If the Unit has not performed any Movement during its Action Opportunity before performing this Action, the conditional effects may be applied."
+  },
+  "jp": {
+   "name": "静止",
+   "value": "このアクションを実行する直前の行動機会において、移動または向き変更を行っていない場合、本キーワードの効果を得る。"
+  }
+ },
+ {
+  "key": "双手",
+  "zh": {
+   "name": "双手",
+   "value": "在执行本动作时，如果选择另一个带有空手词条的部件协助，则可以获得本条特殊规则的效果。"
+  },
+  "en": {
+   "name": "Two-Handed",
+   "value": "When performing this Action, if another Part with the hand / is designated to support this Action, the condi-tional effects may be applied"
+  },
+  "jp": {
+   "name": "両手",
+   "value": "このアクションを実行する際、もう一つの「フリーハンド」のキーワードを持つパーツを協力させることで、本キーワードの効果を得る。"
+  }
+ },
+ {
+  "key": "X姿态",
+  "zh": {
+   "name": "X姿态",
+   "value": "在执行本动作时，如果本单位处于X姿态（对应某一特定姿态），则可以获得本条特殊规则的效果。* 本条目通常写为【攻击姿态】或【防御姿态】或【机动姿态】。"
+  },
+  "en": {
+   "name": "X Stance",
+   "value": "If the Unit performing this Action is in X Stance (where X is a specific Stance), the conditional effects may be applied."
+  },
+  "jp": {
+   "name": "X態勢",
+   "value": "このアクションを実行する際、ユニットがX姿勢（特定の姿勢）である場合、本キーワードの効果を得る。"
+  }
+ },
+ {
+  "key": "直线移动",
+  "zh": {
+   "name": "直线移动",
+   "value": "在执行本动作的移动时，如果移动的路径是一条直线（全程沿地图的横向或纵向移动），则可以获得本条特殊规则的效果。"
+  },
+  "en": {
+   "name": "Moving in Straight Line",
+   "value": "When performing this Action, if the entire Movement Path is in a single direction (entirely horizontally or vertically along Game Board), the conditional effects may be applied."
+  },
+  "jp": {
+   "name": "直線移動",
+   "value": "このアクションを実行する際、移動経路が完全に横方向または縦方向の直線である場合、本キーワードの効果を得る。"
+  }
+ },
+ {
+  "key": "充能",
+  "zh": {
+   "name": "充能",
+   "value": "在执行本动作时，如果部件拥有一个正面朝上的的充能标记，则可以消耗充能标记（翻转至背面），获得本条特殊规则的效果。"
+  },
+  "en": {
+   "name": "Charged",
+   "value": "When performing this Action, if the Part has a face-up Charge Token, it can consume the Charge Token (flip it to be face-down) to apply the conditional effects."
+  },
+  "jp": {
+   "name": "チャージ",
+   "value": "このアクションを実行する際、パーツに表向きの「チャージ」トークンがある場合、そのトークンを消費（裏向きにする）して、本キーワードの効果を得る。"
+  }
+ },
+ {
+  "key": "修补",
+  "zh": {
+   "name": "修补",
+   "value": "修补标记代表对一个被摧毁的部件进行了紧急修复。持有修补标记的部件可以如同正常部件一样被使用。但是当这个部件受到攻击时，不投受击骰，直接被摧毁，并且此次攻击继续命中核心。"
+  },
+  "en": {
+   "name": "Repaired",
+   "value": "A Repaired Token represents emergency repairs of a Destroyed Part.After a Destroyed Part receives a Repaired Token it may be used as normal, however when it is the target of an Attack, no Defense Roll is made and it is Destroyed immediately."
+  },
+  "jp": {
+   "name": "修復",
+   "value": "・「修復」トークンは、破壊されたパーツに対する緊急修復を示す。\n・「修復」トークンを持つパーツは、通常のパーツとして使用可能。ただし、このパーツが攻撃を受けた場合、防御型ダイスを振らずに即座に破壊され、攻撃は引き続きコアへ命中する。"
+  }
+ },
+ {
+  "key": "火控干扰",
+  "zh": {
+   "name": "火控干扰",
+   "value": "携带火控干扰标记的单位不能执行射击动作，也不能进行拦截。有电子值的抛射物在获得火控干扰标记时直接被摧毁。"
+  },
+  "en": {
+   "name": "Fire Control Interference",
+   "value": "Units bearing a Fire Control Interference Token cannot perform Firing Actions or Interception.Projectiles with an Electronic Values are destroyed immediately if they obtain a Fire Control Interference Token."
+  },
+  "jp": {
+   "name": "FCSジャミング",
+   "value": "・「FCSジャミング」トークンを持つユニットは「射撃」タイプのアクションや迎撃を実行できない。\n・電子値を持つ投射物は、このトークンを得た瞬間に即座に破壊される。"
+  }
+ },
+ {
+  "key": "脆弱",
+  "zh": {
+   "name": "脆弱",
+   "value": "单位受击时-1白骰，该效果可以叠加。但投掷的白骰数量不会减少到小于1。"
+  },
+  "en": {
+   "name": "Fragile",
+   "value": "Units bearing a Fragile Token have -1 Dice in their Defense Roll, and the effects from multiple Fragile tokens can be stacked."
+  },
+  "jp": {
+   "name": "脆弱",
+   "value": "ユニットが攻撃を受けた時、■白ダイスを1個減少する。この効果は累積する。"
+  }
+ },
+ {
+  "key": "禁足",
+  "zh": {
+   "name": "禁足",
+   "value": "携带禁足标记的单位不能执行移动动作/调整移动（包括调整方向）。受击时不能投蓝骰。"
+  },
+  "en": {
+   "name": "Immobilized",
+   "value": "Units bearing an Immobilized Token are Immobilized and cannot perform Movement Actions or Maneuver (including changing facing).No Blue Dice can be rolled in the Defense Roll of a Unit bearing an Immobilized Token."
+  },
+  "jp": {
+   "name": "禁足",
+   "value": "「禁足」トークンを持つユニットは、「移動」タイプのアクションや調整移動（向きの変更を含む）を実行できない。また、攻撃を受けた時、青ダイスを振ることができない。"
+  }
+ },
+ {
+  "key": "冲锋X",
+  "zh": {
+   "name": "冲锋X",
+   "value": "执行此动作前，可以额外移动X格。机甲下肢被摧毁时不生效。"
+  },
+  "en": {
+   "name": "Shock Attack X",
+   "value": "Before performing this Actioin, may move X grids. Mechs require a chasis to perform this Action."
+  },
+  "jp": {
+   "name": "突撃X",
+   "value": "このアクションを実行する前に、追加でXグリッド移動できる。機甲はシャーシが必要。"
+  }
+ },
+ {
+  "key": "空手",
+  "zh": {
+   "name": "空手",
+   "value": ""
+  },
+  "en": {
+   "name": "Freehand",
+   "value": ""
+  },
+  "jp": {
+   "name": "フリーハンド",
+   "value": ""
+  }
+ },
+ {
+  "key": "遥控武器",
+  "zh": {
+   "name": "遥控武器",
+   "value": "指令阶段，友军可以向本机发送指令，使本机执行此动作。本部件每回合只能接收1次指令"
+  },
+  "en": {
+   "name": "RWS",
+   "value": "During the Command Stage, allies may send Commands to this mech to perform this action. This part can only receive one Commandn per turn."
+  },
+  "jp": {
+   "name": "RWS",
+   "value": "指令フェイズ中、味方は本機に指令を送ることで、本機にこのアクションを実行させることができます。このパーツは1ラウンドに1回のみ指令を受け取ることができます。"
+  }
+ },
+ {
+  "key": "追击标记",
+  "zh": {
+   "name": "追击标记",
+   "value": "追击标记（双面红色）：攻击方攻击此单位时优先命中此部件。"
+  },
+  "en": {
+   "name": "Target Tracer",
+   "value": "Whena Drone performs Automatic Actions, it designate a Unit bearinga Target Tracer Token as the target even if it is not the closest Enemy Unit.Whena Drone performs any Attack/Electronic Attack target-inga Unit bearinga Target Tracer Token, it is treated as being in the Offensive Stance."
+  },
+  "jp": {
+   "name": "追撃トークン",
+   "value": "このユニットが攻撃されるとこのパーツが命中パーツとして指定される。"
+  }
+ },
+ {
+  "key": "致密装甲",
+  "zh": {
+   "name": "致密装甲",
+   "value": "{防御}可抵消{重击}。"
+  },
+  "en": {
+   "name": "Dense Armor",
+   "value": "{Defense} may offset {Heavy Hit}."
+  },
+  "jp": {
+   "name": "高密度アーマー",
+   "value": "{防御｝は｛重撃｝を相殺できる。"
+  }
+ },
+ {
+  "key": "额外的标识",
+  "zh": {
+   "name": "额外的标识",
+   "value": "额外的标识可以被抵消/移除或兑换，如同是一枚投出此结果的骰子，但不能被任何一方重投。"
+  },
+  "en": {
+   "name": "Additional Icons",
+   "value": "Additional icons can be offset, removed, or exchanged as if they were dice showing that result, but they cannot be rerolled by either player."
+  },
+  "jp": {
+   "name": "追加のシンボル",
+   "value": "加のシンボルは、該当する出目が出た1個のダイスとして扱い、打ち消す／取り除く／交換することができる。ただし、それをリロールできない。"
+  }
+ }
+]

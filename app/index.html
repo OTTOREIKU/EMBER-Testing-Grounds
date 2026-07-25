@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EMBER Testing Grounds</title>
+</head>
+<body>
+  <div id="app">
+    <header id="toolbar">
+      <span id="logo">EMBER <em>Testing Grounds</em></span>
+      <label>Map
+        <select id="map-select">
+          <option value="">Empty board</option>
+        </select>
+      </label>
+      <button id="btn-import-squad" title="Import a squad built on the community builder site (.json export or squad .png image)">Import squad</button>
+      <button id="btn-scenarios" title="Load a demo scenario: squads, terrain, objectives">Scenarios</button>
+      <a id="btn-reference" href="reference.html" target="_blank" rel="noopener"
+         title="Glossary and card lookup. Opens a phone-friendly companion page.">Reference ↗</a>
+      <button id="btn-inventory" title="Set which boxes you own; card lists can filter to your collection">Inventory</button>
+      <button id="btn-mapedit" title="Build a custom map from the official terrain pieces">Map editor</button>
+      <button id="btn-export" title="Download the board state as a JSON file">Save board</button>
+      <button id="btn-import" title="Load a saved board state">Load board</button>
+      <button id="btn-clear" title="Remove all units">Clear</button>
+      <input type="file" id="import-file" accept=".json" hidden />
+      <input type="file" id="import-squad-file" accept=".json,.png" hidden />
+      <span id="hint">Drag move · Q/E rotate · M move-range · A arcs · Del remove · hover = range/LOS</span>
+    </header>
+    <main>
+      <aside id="left-panel">
+        <div id="left-tabs"><button class="active">Dice</button></div>
+        <div id="dice-tray"></div>
+        <div id="inspect-box"><p class="inspect-idle">Hover a phase, a unit on the map, or a squad entry for details.</p></div>
+      </aside>
+      <div id="board-col">
+        <div id="round-tracker"></div>
+        <div id="editor-bar" hidden></div>
+        <div id="board-wrap"></div>
+      </div>
+      <aside id="sidebar">
+        <div id="side-tabs">
+          <button data-tab="squad" class="active">Squads</button>
+          <button data-tab="add">Add</button>
+          <button data-tab="details">Details</button>
+          <button data-tab="combat" id="tab-btn-combat">Combat</button>
+        </div>
+        <section id="tab-squad" class="side-tab active"><div id="squad-body"></div></section>
+        <section id="tab-add" class="side-tab">
+          <div id="add-tabs">
+            <button data-tab="drones" class="active">Drones</button>
+            <button data-tab="mech">Mech</button>
+            <button data-tab="projectiles">Projectiles</button>
+            <button data-tab="tactics">Tactics</button>
+          </div>
+          <div id="add-body"></div>
+        </section>
+        <section id="tab-details" class="side-tab"><div id="details-body"></div></section>
+        <section id="tab-combat" class="side-tab">
+          <div id="combat-body"></div>
+          <div id="unit-log"></div>
+        </section>
+      </aside>
+    </main>
+  </div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

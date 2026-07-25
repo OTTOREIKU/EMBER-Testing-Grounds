@@ -1,0 +1,91 @@
+{
+  "_source": "Official rulebook v1.0 §2.3 (book p.13-14); verified against page scans",
+  "_notes": [
+    "Each die face is a list of icons; a double-icon face (e.g. Light Hit x2) is two separately-offsettable icons.",
+    "hollow icons have no effect by default; certain Stances upgrade them to solid (OFF: attack dice hollows, DEF: white-die hollows).",
+    "lightning/eye have no effect in generic attack/defense resolution; specific Actions may consume them.",
+    "Reroll rule: each player may reroll dice once per roll event (standing/off-table dice are re-rolled free).",
+    "packQuantities is photo-derived from the product image (p.13) and unverified."
+  ],
+  "packQuantities": { "white": 12, "blue": 10, "yellow": 10, "red": 6, "black": 2 },
+  "dice": {
+    "red": {
+      "sides": 8,
+      "color": "#d33a3a",
+      "role": "Attack rolls - Heavy Hits (powerful, slower attacks)",
+      "faces": [
+        [{ "type": "heavyHit" }],
+        [{ "type": "heavyHit" }],
+        [{ "type": "heavyHit" }],
+        [{ "type": "heavyHit" }],
+        [{ "type": "heavyHit", "hollow": true }],
+        [{ "type": "heavyHit", "hollow": true }],
+        [{ "type": "lightning" }],
+        [{ "type": "eye" }]
+      ]
+    },
+    "yellow": {
+      "sides": 8,
+      "color": "#e6a817",
+      "role": "Attack rolls and Electronic Counter-rolls - Light Hits (fast, sustained attacks)",
+      "faces": [
+        [{ "type": "lightHit" }, { "type": "lightHit" }],
+        [{ "type": "lightHit" }, { "type": "lightHit" }],
+        [{ "type": "lightHit" }],
+        [{ "type": "lightHit" }],
+        [{ "type": "lightHit", "hollow": true }],
+        [{ "type": "lightning" }],
+        [{ "type": "eye" }],
+        []
+      ]
+    },
+    "white": {
+      "sides": 8,
+      "color": "#f2f2f2",
+      "role": "Defense and Parry rolls - Defense icons (offset Light Hits only)",
+      "faces": [
+        [{ "type": "defense" }],
+        [{ "type": "defense", "hollow": true }, { "type": "defense", "hollow": true }],
+        [{ "type": "defense", "hollow": true }, { "type": "defense", "hollow": true }],
+        [{ "type": "dodge" }],
+        [{ "type": "lightning" }],
+        [{ "type": "lightning" }],
+        [{ "type": "eye" }],
+        []
+      ]
+    },
+    "blue": {
+      "sides": 8,
+      "color": "#3a7bd3",
+      "role": "Mobility rolls - Dodge icons (offset any damage icon)",
+      "faces": [
+        [{ "type": "dodge" }],
+        [{ "type": "dodge" }],
+        [{ "type": "eye" }],
+        [{ "type": "eye" }],
+        [{ "type": "lightning" }],
+        [],
+        [],
+        []
+      ]
+    },
+    "black": {
+      "sides": 6,
+      "color": "#222222",
+      "role": "Part determination (hit location)",
+      "faces": [
+        [{ "type": "part", "part": "torso" }],
+        [{ "type": "part", "part": "chassis" }],
+        [{ "type": "part", "part": "leftArm" }],
+        [{ "type": "part", "part": "rightArm" }],
+        [{ "type": "part", "part": "backpack" }],
+        [{ "type": "part", "part": "any" }]
+      ]
+    }
+  },
+  "offsetRules": {
+    "dodge": "1 Dodge icon offsets any 1 icon (Light Hit or Heavy Hit); a Dodge-offset icon does NOT count as a Hit (no on-hit riders).",
+    "defense": "1 Defense icon offsets only 1 Light Hit; a Defense-offset icon still counts as a Hit (on-hit riders trigger).",
+    "penetration": "Any un-offset damage icon causes Penetration (part state Intact -> Damaged -> Destroyed)."
+  }
+}

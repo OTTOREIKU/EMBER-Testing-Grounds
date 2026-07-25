@@ -1,0 +1,106 @@
+{
+ "_comment": "Rulebook mechanics that Action NAMES reference but which are not glossary keywords (so they have no entry in keywords.json). Matched case-insensitively against an action's name/description so the app can explain them. Text is condensed from the verified digests in ../rules.",
+ "mechanics": [
+  {
+   "id": "scanning",
+   "name": "Scanning",
+   "ref": "Rulebook 4.12.4",
+   "match": [
+    "scan",
+    "扫描"
+   ],
+   "text": "Reveals enemy units in Optical Camouflage and strips Low Profile Tokens. Designate an enemy that is in Optical Camouflage or bearing a Low Profile Token, then make an Electronic Counter-roll as the Initiator. On success: camouflaged targets are Revealed (they then make Manifestation Movement), and Low Profile Tokens are removed. Only token-based Low Profile can be scanned away — aura-based Low Profile cannot. Every Mech has |Scan| as a Common Action, and attacking a camouflaged unit forces a Scan first."
+  },
+  {
+   "id": "electronic_counter_roll",
+   "name": "Electronic Counter-roll",
+   "ref": "Rulebook 4.11.2",
+   "match": [
+    "counter-roll",
+    "electronic",
+    "detect",
+    "侦测",
+    "电子"
+   ],
+   "text": "Both sides roll Yellow Dice equal to their Electronic Value (a Mech's is the sum of all its Parts). The Initiator wins with more Lightning; if Lightning ties, more Light Hit; if both tie, the Initiator still wins. The Initiator must win for the action's effect to apply. Electronic Value 0 cannot initiate; a dash ('-') cannot be targeted. Strength +X adds X dice to the Initiator. Focus (1 Link) can reroll these dice."
+  },
+  {
+   "id": "reboot",
+   "name": "Reboot",
+   "ref": "Rulebook 4.1.1",
+   "match": [
+    "reboot",
+    "重启"
+   ],
+   "text": "The only action a Shutdown mech may take. It restores 1 Link and lets you change stance, but leaves the mech with just 1 Action Tick of the chosen Timing."
+  },
+  {
+   "id": "parry",
+   "name": "Parry",
+   "ref": "Rulebook 4.6.3",
+   "match": [
+    "parry",
+    "格挡"
+   ],
+   "text": "A melee-only defence. The defender designates a Part with a Parry Value as the target Part and adds that many White dice to the Defense Roll. Not available while in Shutdown or against a Back Attack. If a Black Die still decides the Part, the Parry dice only apply when it matches."
+  },
+  {
+   "id": "focus",
+   "name": "Focus",
+   "ref": "Rulebook 4.10",
+   "match": [
+    "focus",
+    "专注"
+   ],
+   "text": "Spend 1 Link to reroll dice on any roll, including the Black part-locator die. You may not voluntarily spend down to 0 Link (you need the cost plus one), but damage-driven loss can reach 0 — which immediately forces Shutdown stance."
+  },
+  {
+   "id": "crush",
+   "name": "Crush",
+   "ref": "Rulebook 4.3.6",
+   "match": [
+    "crush",
+    "碾压"
+   ],
+   "text": "Only Large (3x3) units can Crush, and only units smaller than themselves. Moving into an occupied grid forces a Crush: the victim takes Forced Movement of 1 grid, or swaps places if it cannot move, or is destroyed outright if it cannot be moved at all. The mover then enters the grid and its Movement Action ends immediately. Crushing also destroys destructible terrain."
+  },
+  {
+   "id": "detonation",
+   "name": "Detonation",
+   "ref": "Rulebook 4.7.5",
+   "match": [
+    "detonat",
+    "引爆"
+   ],
+   "text": "A projectile resolving its payload. Detonation destroys the projectile itself. Explosion damage hits everything in the affected grid(s) with no line-of-sight or facing requirement and no protection dice; only the defender may Focus."
+  },
+  {
+   "id": "victory_points",
+   "name": "Victory Points and winning",
+   "ref": "Rulebook 5.2.4",
+   "match": [],
+   "text": "Track Victory Points with VP tokens as they are earned. At the end of the game the side with more VP wins. If VP are equal, the winner is the side with more Mech Parts and Drones still on the board."
+  },
+  {
+   "id": "main_task_cards",
+   "name": "Main Task Cards",
+   "ref": "Rulebook 5.2.3",
+   "match": [],
+   "text": "The Main Task sets the encounter objective and also prints both deployment zones. During setup draw 3 Main Task Cards, each side discards 1, and the remaining card is the mission. A card shows the Tactical Areas in play, both deployment zones (for example Black 3x5 and White 3x5 strips on opposite edges), the task text, the VP values, and which Task Item Tokens are used. All 10 from the core box are listed in the Missions tab."
+  },
+  {
+   "id": "secondary_task_cards",
+   "name": "Secondary Task Cards",
+   "ref": "Rulebook 5.2.3",
+   "match": [],
+   "text": "Each player also picks 1 Secondary Task during setup, starting with the First Player, and scores it privately alongside the Main Task. The core box has 8. Only two are pictured in the rulebook. DECAPITATION: your opponent names one of their own mechs as the Leader, and destroying it is worth 5 VP. ANNIHILATION: 2 VP for each enemy mech destroyed and 1 VP for each drone destroyed. The other six are not documented anywhere we can reach, so read them from your physical cards."
+  },
+  {
+   "id": "tactics_cards",
+   "name": "Tactics Cards",
+   "ref": "Rulebook component list",
+   "match": [],
+   "text": "Six Tactics Cards come in the core box, each costing 30 points: Additional Command, Battlefield Recovery, Hit and Run, System Repair, Tactical Disposition and Remote Restart. Their rules text is not in the card data, so open the Tactics tab and tap a card to read the scan itself."
+  }
+ ]
+}

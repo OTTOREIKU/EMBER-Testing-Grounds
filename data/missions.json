@@ -1,0 +1,168 @@
+{
+ "_comment": "Main Task (Main Mission) cards, transcribed and translated from the Korean card scans documented on namu.wiki. The rulebook component list says the core box holds 10 Main Task Cards, and these are those 10. Card text is our English rendering of the printed Korean; the printed card always wins. Zone names (Alpha..India) are the board's tactical zones.",
+ "_source": "https://en.namu.wiki/w/EMBER:%20Obsidian%20Protocol/%EB%A9%94%EC%9D%B8%20%EB%AF%B8%EC%85%98%20%EC%B9%B4%EB%93%9C",
+ "_confirms": "Four of these (Fragment Recovery, Flank Attack, Frontal Breakthrough, Signal Reception) also appear as thumbnails in the rulebook and match our rules digest exactly.",
+ "families": [
+  {
+   "id": "blackbox",
+   "name": "Black Box",
+   "nameKo": "블랙박스",
+   "text": "Black boxes are artefacts of an ancient civilisation recovered from the ruins, and both factions want them. A black box on the board is shown with a mission marker, counts as a 1x1 grid, may overlap a unit, and blocks neither movement nor line of sight.\n\nA unit picks one up by passing through or standing in its grid, and the unit must have the Freehand keyword to carry it. Show a carried black box by putting the mission marker on that unit or part card; while it is carried, that part's discard state does not apply.\n\nIf any part of a carrying unit is hit by an attack, the black box drops onto the board. The attacker chooses where it lands, and it must be in contact with the carrier's chassis.",
+   "faq": [
+    { "q": "Can one unit hold more than one black box?", "a": "Yes. Discard states are tracked per part." },
+    { "q": "Is picking up a black box compulsory?", "a": "No, it is optional." },
+    { "q": "If a black box is dropped, can a unit in contact with it pick it up?", "a": "Yes." }
+   ]
+  },
+  {
+   "id": "control",
+   "name": "Control Zones",
+   "nameKo": "통제구역",
+   "text": "A control zone is an area that can be occupied. Normally one tactical zone is designated as one control zone, covering all the grids of that tactical area.\n\nNo marker is placed at the start. When a player takes a zone, place the mission marker with that player's colour face up; when the other player takes it, flip the marker over.\n\nAt the end of a round you occupy a control zone if you have a mech that is not in Shutdown stance, or one drone, inside the zone, and there are no enemy units in the zone. A control zone scores for its controller from the round it is occupied.",
+   "faq": [
+    { "q": "Do projectiles and deployables count for occupying a control zone?", "a": "No. Only mechs and drones count, and Low Value Units are excluded." },
+    { "q": "Does having more units in the zone help?", "a": "No, the number of units does not matter." }
+   ]
+  },
+  {
+   "id": "terminal",
+   "name": "Terminals",
+   "nameKo": "단말기",
+   "text": "A terminal is an object you access to score. Terminals are placed in a tactical area, and the area you can access them from is all the grids of that tactical area. A mission marker shows the terminal's position, and in missions where only one side may connect, the marker's colour shows who is connected.\n\nThere are two ways in. Direct access: at the round end phase, if you have a mech that is not in Shutdown stance, or one drone, within the terminal's range, and there are no enemy units within its range, you access it successfully. Remote access: every mech has the Remote Access action (a Tactical Action). Perform the action, then run an electronic warfare roll against the terminal, which has an Electronic value of 3; on success you access it.\n\nEach terminal can only be accessed once per round.",
+   "faq": [
+    { "q": "For direct access, does the unit have to be in the terminal's own grid, as with remote access?", "a": "No. Unlike remote access, direct access works from any grid of the tactical area the terminal sits in." },
+    { "q": "Is remote access an Electronic Attack?", "a": "No. It is electronic warfare (ECM), but it is neither an Electronic Attack nor Electronic Support, so the UN's Relay and the RDL's KeyHole do not affect it." }
+   ]
+  },
+  {
+   "id": "vip",
+   "name": "VIP",
+   "nameKo": "VIP",
+   "text": "A VIP mission turns one mech on each side into a target. The card names which mech qualifies and what destroying it is worth.",
+   "faq": []
+  }
+ ],
+ "cards": [
+  {
+   "id": "blackbox-fragment-recovery",
+   "family": "blackbox",
+   "name": "Black Box: Fragment Recovery",
+   "nameKo": "블랙박스 - 파편 복구",
+   "setup": "Place 1 black box in each of the Bravo, Charlie, Delta, Echo, Golf, Foxtrot and Hotel tactical zones.",
+   "scoring": "At the end of Round 5, each player scores 2 VP for every black box they hold.",
+   "vp": 2,
+   "zones": ["Bravo", "Charlie", "Delta", "Echo", "Golf", "Foxtrot", "Hotel"],
+   "deployment": "Black 3x5 and White 3x5, in opposite corners",
+   "inRulebook": true
+  },
+  {
+   "id": "blackbox-key-facilities",
+   "family": "blackbox",
+   "name": "Black Box: Key Facilities",
+   "nameKo": "블랙박스 - 중요 시설",
+   "setup": "Place 1 black box in each of the Bravo, Delta, Echo, Foxtrot and Hotel tactical zones.",
+   "scoring": "At the end of Round 5, each player scores 4 VP for every black box they hold.",
+   "vp": 4,
+   "zones": ["Bravo", "Delta", "Echo", "Foxtrot", "Hotel"],
+   "deployment": "Black 2x12 and White 2x12, along opposite edges",
+   "inRulebook": false
+  },
+  {
+   "id": "blackbox-asset-preservation",
+   "family": "blackbox",
+   "name": "Black Box: Asset Preservation",
+   "nameKo": "블랙박스 - 자산 보존",
+   "setup": "Place 1 black box in each of the Alpha, Charlie, Golf and India tactical zones.",
+   "scoring": "At the end of Round 5, each player scores 4 VP for every black box they hold that is in the Echo zone. Boxes have to be carried to the centre to count.",
+   "vp": 4,
+   "zones": ["Alpha", "Charlie", "Golf", "India"],
+   "scoringZone": "Echo",
+   "deployment": "Black 2x12 and White 2x12, along opposite edges",
+   "inRulebook": false
+  },
+  {
+   "id": "control-flank-attack",
+   "family": "control",
+   "name": "Control Zones: Flank Attack",
+   "nameKo": "통제구역 - 측면 공격",
+   "setup": "The Alpha, Bravo, Charlie, Golf, Hotel and India tactical zones become control zones. All start uncontrolled.",
+   "scoring": "From Round 2 onward, score 1 VP for each control zone you hold.",
+   "vp": 1,
+   "zones": ["Alpha", "Bravo", "Charlie", "Golf", "Hotel", "India"],
+   "deployment": "Black 3x5 and White 3x5, in opposite corners",
+   "inRulebook": true
+  },
+  {
+   "id": "control-frontal-breakthrough",
+   "family": "control",
+   "name": "Control Zones: Frontal Breakthrough",
+   "nameKo": "통제구역 - 정면 돌파",
+   "setup": "The Bravo, Echo and Hotel tactical zones become control zones. All start uncontrolled.",
+   "scoring": "From Round 2 onward, score 2 VP for each control zone you hold.",
+   "vp": 2,
+   "zones": ["Bravo", "Echo", "Hotel"],
+   "deployment": "Black 3x5 and White 3x5, in opposite corners",
+   "inRulebook": true
+  },
+  {
+   "id": "control-long-range-operation",
+   "family": "control",
+   "name": "Control Zones: Long-Range Operation",
+   "nameKo": "통제구역 - 장거리 운행",
+   "setup": "The Alpha, Echo and India tactical zones become control zones. All start uncontrolled. Alpha and India sit in the two deployment corners, so each side begins next to one of them.",
+   "scoring": "From Round 2 onward, score 2 VP for each control zone you hold.",
+   "vp": 2,
+   "zones": ["Alpha", "Echo", "India"],
+   "deployment": "Black 3x5 and White 3x5, in opposite corners",
+   "inRulebook": false
+  },
+  {
+   "id": "terminal-data-extraction",
+   "family": "terminal",
+   "name": "Terminals: Data Extraction",
+   "nameKo": "단말기 - 데이터 탈취",
+   "setup": "Place 1 terminal in each of the Bravo, Charlie, Golf and Hotel tactical zones.",
+   "scoring": "Score 2 VP for each terminal you access.",
+   "vp": 2,
+   "zones": ["Bravo", "Charlie", "Golf", "Hotel"],
+   "deployment": "Black 3x5 and White 3x5, in opposite corners",
+   "inRulebook": false
+  },
+  {
+   "id": "terminal-signal-reception",
+   "family": "terminal",
+   "name": "Terminals: Signal Reception",
+   "nameKo": "단말기 - 신호 수신",
+   "setup": "Place 1 terminal in each of the Bravo, Echo and Hotel tactical zones.",
+   "scoring": "Score 2 VP for each terminal you access.",
+   "vp": 2,
+   "zones": ["Bravo", "Echo", "Hotel"],
+   "deployment": "Black 2x12 and White 2x12, along opposite edges",
+   "inRulebook": true
+  },
+  {
+   "id": "terminal-geological-survey",
+   "family": "terminal",
+   "name": "Terminals: Geological Survey",
+   "nameKo": "단말기 - 지질 탐사",
+   "setup": "Place 1 terminal in each of the Bravo, Delta, Foxtrot and Hotel tactical zones.",
+   "scoring": "Score 2 VP for each terminal you access.",
+   "vp": 2,
+   "zones": ["Bravo", "Delta", "Foxtrot", "Hotel"],
+   "deployment": "Black 3x5 and White 3x5, in opposite corners",
+   "inRulebook": false
+  },
+  {
+   "id": "vip-commander-assassination",
+   "family": "vip",
+   "name": "VIP: Commander Assassination",
+   "nameKo": "VIP - 지휘관 암살",
+   "setup": "In the mission preparation step each player designates one of their own mechs as the Commander.",
+   "scoring": "Destroying a Commander scores the attacking side 10 VP and ends the game immediately. If neither Commander has been destroyed by the end of Round 5, score 3 VP for each part of the enemy Commander you destroyed.",
+   "vp": 10,
+   "zones": [],
+   "deployment": "Black 2x12 and White 2x12, along opposite edges",
+   "inRulebook": false
+  }
+ ]
+}

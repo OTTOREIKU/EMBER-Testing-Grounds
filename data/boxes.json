@@ -1,0 +1,342 @@
+[
+ {
+  "key": "UNSALE",
+  "id": 0,
+  "faction": [
+   "PD"
+  ],
+  "name": {
+   "zh": "未售卖内容",
+   "en": "Unsale Content",
+   "jp": "未販売コンテンツ"
+  },
+  "hasImage": false
+ },
+ {
+  "key": "RDL_CORE",
+  "id": 1,
+  "faction": [
+   "RDL"
+  ],
+  "name": {
+   "zh": "核心",
+   "en": "Core",
+   "jp": "コア"
+  },
+  "hasImage": true
+ },
+ {
+  "key": "RDL_CAVALRY",
+  "id": 2,
+  "faction": [
+   "RDL"
+  ],
+  "name": {
+   "zh": "铁骑",
+   "en": "Cavalry",
+   "jp": "カブリ"
+  },
+  "hasImage": true
+ },
+ {
+  "key": "RDL_HEAVY_METAL",
+  "id": 3,
+  "faction": [
+   "RDL"
+  ],
+  "name": {
+   "zh": "重金属",
+   "en": "Heavy Metal",
+   "jp": "ヘビーメタル"
+  },
+  "hasImage": true
+ },
+ {
+  "key": "UN_CORE",
+  "id": 4,
+  "faction": [
+   "UN"
+  ],
+  "name": {
+   "zh": "核心",
+   "en": "Core",
+   "jp": "コア"
+  },
+  "hasImage": true
+ },
+ {
+  "key": "UN_SCALPEL",
+  "id": 5,
+  "faction": [
+   "UN"
+  ],
+  "name": {
+   "zh": "手术刀",
+   "en": "Scalpel",
+   "jp": "スカルペル"
+  },
+  "hasImage": true
+ },
+ {
+  "key": "UN_DOORBREAKER",
+  "id": 6,
+  "faction": [
+   "UN"
+  ],
+  "name": {
+   "zh": "破门锤",
+   "en": "Doorbreaker",
+   "jp": "ドアブレイカー"
+  },
+  "hasImage": true
+ },
+ {
+  "key": "GOF_CORE",
+  "id": 7,
+  "faction": [
+   "GOF"
+  ],
+  "name": {
+   "zh": "核心",
+   "en": "Core",
+   "jp": "GOFコア"
+  },
+  "hasImage": false
+ },
+ {
+  "key": "GOF_JUSTICE",
+  "id": 8,
+  "faction": [
+   "GOF"
+  ],
+  "name": {
+   "zh": "正义",
+   "en": "Justice",
+   "jp": "ジャスティス"
+  },
+  "hasImage": false
+ },
+ {
+  "key": "GOF_HUNTERS",
+  "id": 9,
+  "faction": [
+   "GOF"
+  ],
+  "name": {
+   "zh": "猎人",
+   "en": "Hunter",
+   "jp": "ハンターズ"
+  },
+  "hasImage": false
+ },
+ {
+  "key": "LAB_RDL_GENJI_AND_MALLARD",
+  "id": 10,
+  "faction": [
+   "RDL"
+  ],
+  "name": {
+   "zh": "野鸭蚰蜒",
+   "en": "Genji and Mallard",
+   "jp": "ゲンジとマラード"
+  },
+  "hasImage": true
+ },
+ {
+  "key": "LAB_WHITE_DWARF",
+  "id": 11,
+  "faction": [
+   "COLLABORATION"
+  ],
+  "name": {
+   "zh": "白矮星",
+   "en": "White Dwarf",
+   "jp": "ホワイトドワーフ"
+  },
+  "hasImage": true
+ },
+ {
+  "key": "LAB_TRIAL_UN_OCTOPUS",
+  "id": 12,
+  "faction": [
+   "UN"
+  ],
+  "name": {
+   "zh": "LAB 试作章鱼",
+   "en": "Trial Octopus",
+   "jp": "トライアル UN オクトパス"
+  },
+  "hasImage": true
+ },
+ {
+  "key": "LAB_PD_REAPER_TYPE_1",
+  "id": 13,
+  "faction": [
+   "PD"
+  ],
+  "name": {
+   "zh": "收割者轻型",
+   "en": "Reaper Type 1",
+   "jp": "リーパー タイプ1"
+  },
+  "hasImage": true
+ },
+ {
+  "key": "LAB_PD_REAPER_TYPE_2",
+  "id": 14,
+  "faction": [
+   "PD"
+  ],
+  "name": {
+   "zh": "收割者重型",
+   "en": "Reaper Type 2",
+   "jp": "リーパー タイプ2"
+  },
+  "hasImage": true
+ },
+ {
+  "key": "LAB_PD_REAPER_TYPE_E",
+  "id": 15,
+  "faction": [
+   "PD"
+  ],
+  "name": {
+   "zh": "收割者工兵型",
+   "en": "Reaper Type E",
+   "jp": "リーパー タイプE"
+  },
+  "hasImage": true
+ },
+ {
+  "key": "SINGLE_RDL_DUNE",
+  "id": 16,
+  "faction": [
+   "RDL"
+  ],
+  "name": {
+   "zh": "单机包-沙丘",
+   "en": "Single Pack Dune",
+   "jp": "シングル デューン"
+  },
+  "hasImage": true
+ },
+ {
+  "key": "SINGLE_UN_TAURUS",
+  "id": 17,
+  "faction": [
+   "UN"
+  ],
+  "name": {
+   "zh": "单机包-金牛",
+   "en": "Single Pack Taurus",
+   "jp": "シングル タウラス"
+  },
+  "hasImage": true
+ },
+ {
+  "key": "COMBAT_RAID",
+  "id": 18,
+  "faction": [
+   "RDL",
+   "UN"
+  ],
+  "name": {
+   "zh": "对战包-突袭",
+   "en": "Combat Pack Raid",
+   "jp": "コンバットレイド"
+  },
+  "hasImage": true
+ },
+ {
+  "key": "GAME_PACK",
+  "id": 19,
+  "faction": [
+   "RDL",
+   "UN"
+  ],
+  "name": {
+   "zh": "游戏包",
+   "en": "Game Pack",
+   "jp": "ゲームパック"
+  },
+  "hasImage": true
+ },
+ {
+  "key": "LAB_PD_CRISIS1",
+  "id": 20,
+  "faction": [
+   "PD"
+  ],
+  "name": {
+   "zh": "危机 I",
+   "en": "Crisis I",
+   "jp": "クライシス I"
+  },
+  "hasImage": false
+ },
+ {
+  "key": "LAB_PD_CRISIS2",
+  "id": 24,
+  "faction": [
+   "PD"
+  ],
+  "name": {
+   "zh": "危机 II",
+   "en": "Crisis II",
+   "jp": "クライシス II"
+  },
+  "hasImage": true
+ },
+ {
+  "key": "LAB_PD_Vigilant_Bombing_Support",
+  "id": 21,
+  "faction": [
+   "PD"
+  ],
+  "name": {
+   "zh": "\"警惕\" 轰炸&支援型",
+   "en": "\"Vigilant\" Bombing & Support type",
+   "jp": "ヴィジラント」爆撃&支援型"
+  },
+  "hasImage": true
+ },
+ {
+  "key": "LAB_PD_Vigilant_Autocannon_MG",
+  "id": 22,
+  "faction": [
+   "PD"
+  ],
+  "name": {
+   "zh": "\"警惕\" 机炮&机枪型",
+   "en": "\"Vigilant\" Autocannon & MG type",
+   "jp": "ヴィジラント」オートキャノン&機関銃型"
+  },
+  "hasImage": true
+ },
+ {
+  "key": "LAB_GOF_CENTAUR",
+  "id": 23,
+  "faction": [
+   "GOF"
+  ],
+  "name": {
+   "zh": "半人马SK",
+   "en": "Centaur SK",
+   "jp": "セントール"
+  },
+  "hasImage": true
+ },
+ {
+  "key": "LAB_RDL_OASIS_AND_ESCARPMENT",
+  "id": 25,
+  "faction": [
+   "RDL"
+  ],
+  "name": {
+   "zh": "绿洲&断崖",
+   "en": "Oasis & Escarpment",
+   "jp": "オアシス&断崖"
+  },
+  "hasImage": true
+ }
+]

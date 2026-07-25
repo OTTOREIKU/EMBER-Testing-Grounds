@@ -1,0 +1,2231 @@
+[
+ {
+  "id": "rdl-core-box-demo",
+  "name": "RDL Core Box Demo",
+  "subtitle": "Mire Core Training Scenario | Built for one RDL Core box",
+  "source": "Ember_Obsidian_Protocol_RDL_Core_Box_Demo_draft_cleaned.pdf",
+  "rounds": 3,
+  "description": "A 3-round beginner teaching game built from a single RDL Core box: 366 vs 366 points, two Mire-core M.A.P.s and one Hyena missile drone per side. Red plays a long-range fire-support style while Blue plays a tougher bulwark/missile style. It teaches timing dials, stances, movement, Command Phase drones, MC-3 Razor missiles, delayed projectiles, objectives, and terrain lanes.",
+  "sides": {
+   "red": {
+    "name": "RDL Red Team - Fire Support / Control",
+    "units": [
+     {
+      "kind": "mech",
+      "name": "Red Fire Support M.A.P.",
+      "grid": "A5",
+      "facing": "E",
+      "torso": "012",
+      "chasis": "021",
+      "leftHand": "032",
+      "rightHand": "030",
+      "backpack": "002",
+      "pilot": "FPA-01"
+     },
+     {
+      "kind": "mech",
+      "name": "Red Support Skirmisher M.A.P.",
+      "grid": "A8",
+      "facing": "E",
+      "torso": "012",
+      "chasis": "020",
+      "leftHand": "023",
+      "rightHand": "025",
+      "backpack": "003",
+      "pilot": "FPA-14"
+     },
+     {
+      "kind": "drone",
+      "name": "Red Hyena Missile Drone",
+      "cardId": "079",
+      "grid": "B6",
+      "facing": "E"
+     }
+    ]
+   },
+   "blue": {
+    "name": "RDL Blue Team - Bulwark / Missile Pressure",
+    "units": [
+     {
+      "kind": "mech",
+      "name": "Blue Bulwark Heavy M.A.P.",
+      "grid": "L5",
+      "facing": "W",
+      "torso": "012",
+      "chasis": "021",
+      "leftHand": "034",
+      "rightHand": "030",
+      "backpack": "001",
+      "pilot": "FPA-04"
+     },
+     {
+      "kind": "mech",
+      "name": "Blue Missile / Brawler M.A.P.",
+      "grid": "L8",
+      "facing": "W",
+      "torso": "012",
+      "chasis": "020",
+      "leftHand": "023",
+      "rightHand": "025",
+      "backpack": "004",
+      "pilot": "FPA-10"
+     },
+     {
+      "kind": "drone",
+      "name": "Blue Hyena Missile Drone",
+      "cardId": "079",
+      "grid": "K7",
+      "facing": "W"
+     }
+    ]
+   }
+  },
+  "terrain": [
+   {
+    "type": "building",
+    "grid": "F6"
+   },
+   {
+    "type": "building",
+    "grid": "G7"
+   },
+   {
+    "type": "high_wall",
+    "grid": "E5",
+    "orientation": "vertical"
+   },
+   {
+    "type": "high_wall",
+    "grid": "H5",
+    "orientation": "vertical"
+   },
+   {
+    "type": "high_wall",
+    "grid": "E8",
+    "orientation": "vertical"
+   },
+   {
+    "type": "high_wall",
+    "grid": "H8",
+    "orientation": "vertical"
+   },
+   {
+    "type": "low_wall",
+    "grid": "D6",
+    "orientation": "horizontal"
+   },
+   {
+    "type": "low_wall",
+    "grid": "I6",
+    "orientation": "horizontal"
+   },
+   {
+    "type": "low_wall",
+    "grid": "D7",
+    "orientation": "horizontal"
+   },
+   {
+    "type": "low_wall",
+    "grid": "I7",
+    "orientation": "horizontal"
+   },
+   {
+    "type": "container2",
+    "grid": "C4",
+    "orientation": "horizontal"
+   },
+   {
+    "type": "container2",
+    "grid": "J4",
+    "orientation": "horizontal"
+   },
+   {
+    "type": "container2",
+    "grid": "C9",
+    "orientation": "horizontal"
+   },
+   {
+    "type": "container2",
+    "grid": "J9",
+    "orientation": "horizontal"
+   },
+   {
+    "type": "container1",
+    "grid": "D3"
+   },
+   {
+    "type": "container1",
+    "grid": "I10"
+   }
+  ],
+  "markers": [
+   {
+    "kind": "relay",
+    "grid": "F4"
+   },
+   {
+    "kind": "relay",
+    "grid": "G4"
+   },
+   {
+    "kind": "relay",
+    "grid": "F9"
+   },
+   {
+    "kind": "relay",
+    "grid": "G9"
+   },
+   {
+    "kind": "relay",
+    "grid": "E7"
+   },
+   {
+    "kind": "relay",
+    "grid": "H7"
+   },
+   {
+    "kind": "control",
+    "grid": "F7"
+   },
+   {
+    "kind": "control",
+    "grid": "G6"
+   }
+  ],
+  "scoring": [
+   {
+    "points": "+1",
+    "name": "Centre presence",
+    "note": "At End Phase if you have at least one M.A.P. on or adjacent to F7 or G6."
+   },
+   {
+    "points": "+1",
+    "name": "Relay pressure",
+    "note": "At End Phase if you have at least one M.A.P. on or adjacent to any relay marker."
+   },
+   {
+    "points": "+1",
+    "name": "Projectile lesson",
+    "note": "First time one of your projectiles damages an enemy. A drone missile can also score Drone lesson if it qualifies."
+   },
+   {
+    "points": "+1",
+    "name": "Drone lesson",
+    "note": "First time your drone damages an enemy with a missile. Can be scored at the same time as Projectile lesson."
+   },
+   {
+    "points": "+1 once",
+    "name": "Part destruction",
+    "note": "First time you destroy an enemy M.A.P. part during the game."
+   },
+   {
+    "points": "+1",
+    "name": "Drone kill",
+    "note": "If you destroy the enemy Hyena Missile drone."
+   }
+  ],
+  "simplifications": [
+   "Ignore full smoke complexity",
+   "Ignore Intercept / anti-missile rules (AMS-190 has Intercept 3 but is not used in the first run)",
+   "Ignore Optical Camouflage and Low Profile",
+   "Ignore advanced electronic warfare",
+   "Ignore full mission/tactics cards",
+   "Ignore surplus damage edge cases",
+   "Each drone may launch at most 2 missiles total during the 3-round demo",
+   "The Blue Missile / Brawler M.A.P. may launch at most 2 missiles total during the demo",
+   "Resolve one missile at a time and announce the target before rolling"
+  ],
+  "notes": [
+   "Round 1 scripted: everyone picks Movement (Blue Missile/Brawler may pick Projectile); mechs advance to the D/E and I/H columns using centre terrain as cover; drones may launch or reposition; missiles resolve in Delay Phase.",
+   "Round 2 semi-scripted: Red Fire Support = Firing, Blue Bulwark = Firing (DEF stance if exposed), missile units = Projectile or Movement; Round 3 is free play, then swap sides and replay.",
+   "Part targeting shortcut: roll a D6 - 1 Torso, 2 Chassis, 3 Left Arm, 4 Right Arm, 5 Backpack, 6 attacker chooses.",
+   "Wall and container orientations are not printed in the booklet; vertical tall walls / horizontal short walls and containers were inferred from map symmetry.",
+   "R-20 Railgun is listed as Left Arm and AC-150 HMG as Right Arm in the booklet, matching cards 032 and 030."
+  ],
+  "unmatched": []
+ },
+ {
+  "id": "un-core-box-demo",
+  "name": "UN Core Box Demo",
+  "subtitle": "Deep Blue Security Training Scenario | Built for one UN Core box",
+  "source": "Ember_Obsidian_Protocol_UN_Core_Box_Demo_draft.pdf",
+  "rounds": 3,
+  "description": "A 3-round beginner-plus teaching game built from a single UN Core box: 459 vs 459 points, two M.A.P.s and one drone per side. Red teaches laser fire, Fragile Tokens, grenades, and objective pressure; Blue teaches ion/KC durability, RKG70 missiles, Low Profile preview, and an anti-missile CIWS preview. Simple Intercept is reserved for a second playthrough.",
+  "sides": {
+   "red": {
+    "name": "UN Red Team - Fireline / Grenadier",
+    "pointsNote": "Booklet total 459 (Fireline 213 + Grenadier 213 + drone 33). Placed cards sum to 417 because the R7 Automatic Rifle (42 pts, card 104) could not be slotted - it is a right-hand card and the right hand already holds the R33 Sniper Rifle.",
+    "units": [
+     {
+      "kind": "mech",
+      "name": "Red Fireline M.A.P.",
+      "grid": "A5",
+      "facing": "E",
+      "torso": "092",
+      "chasis": "099",
+      "leftHand": null,
+      "rightHand": "106",
+      "backpack": "083",
+      "pilot": "LPA-19"
+     },
+     {
+      "kind": "mech",
+      "name": "Red Grenadier M.A.P.",
+      "grid": "A8",
+      "facing": "E",
+      "torso": "091",
+      "chasis": "101",
+      "leftHand": "107",
+      "rightHand": "113",
+      "backpack": "086",
+      "pilot": "LPA-20"
+     },
+     {
+      "kind": "drone",
+      "name": "Red Tarantula Firepower Drone",
+      "cardId": "163",
+      "grid": "B6",
+      "facing": "E"
+     }
+    ]
+   },
+   "blue": {
+    "name": "UN Blue Team - Bison / Missile Scout",
+    "units": [
+     {
+      "kind": "mech",
+      "name": "Blue Assault M.A.P.",
+      "grid": "L5",
+      "facing": "W",
+      "torso": "098",
+      "chasis": "099",
+      "leftHand": "142",
+      "rightHand": "140",
+      "backpack": "083",
+      "pilot": "LPA-31"
+     },
+     {
+      "kind": "mech",
+      "name": "Blue Missile Scout M.A.P.",
+      "grid": "L8",
+      "facing": "W",
+      "torso": "094",
+      "chasis": "099",
+      "leftHand": "129",
+      "rightHand": "113",
+      "backpack": "086",
+      "pilot": "LPA-27"
+     },
+     {
+      "kind": "drone",
+      "name": "Blue Porcupine CIWS Drone",
+      "cardId": "160",
+      "grid": "K7",
+      "facing": "W"
+     }
+    ]
+   }
+  },
+  "terrain": [
+   {
+    "type": "building",
+    "grid": "F6"
+   },
+   {
+    "type": "building",
+    "grid": "G7"
+   },
+   {
+    "type": "high_wall",
+    "grid": "E5",
+    "orientation": "vertical"
+   },
+   {
+    "type": "high_wall",
+    "grid": "H5",
+    "orientation": "vertical"
+   },
+   {
+    "type": "high_wall",
+    "grid": "E8",
+    "orientation": "vertical"
+   },
+   {
+    "type": "high_wall",
+    "grid": "H8",
+    "orientation": "vertical"
+   },
+   {
+    "type": "low_wall",
+    "grid": "D6",
+    "orientation": "horizontal"
+   },
+   {
+    "type": "low_wall",
+    "grid": "I6",
+    "orientation": "horizontal"
+   },
+   {
+    "type": "low_wall",
+    "grid": "D7",
+    "orientation": "horizontal"
+   },
+   {
+    "type": "low_wall",
+    "grid": "I7",
+    "orientation": "horizontal"
+   },
+   {
+    "type": "container2",
+    "grid": "C4",
+    "orientation": "horizontal"
+   },
+   {
+    "type": "container2",
+    "grid": "J4",
+    "orientation": "horizontal"
+   },
+   {
+    "type": "container2",
+    "grid": "C9",
+    "orientation": "horizontal"
+   },
+   {
+    "type": "container2",
+    "grid": "J9",
+    "orientation": "horizontal"
+   },
+   {
+    "type": "container1",
+    "grid": "D3"
+   },
+   {
+    "type": "container1",
+    "grid": "I10"
+   }
+  ],
+  "markers": [
+   {
+    "kind": "relay",
+    "grid": "F4"
+   },
+   {
+    "kind": "relay",
+    "grid": "G4"
+   },
+   {
+    "kind": "relay",
+    "grid": "F9"
+   },
+   {
+    "kind": "relay",
+    "grid": "G9"
+   },
+   {
+    "kind": "relay",
+    "grid": "E7"
+   },
+   {
+    "kind": "relay",
+    "grid": "H7"
+   },
+   {
+    "kind": "control",
+    "grid": "F7"
+   },
+   {
+    "kind": "control",
+    "grid": "G6"
+   }
+  ],
+  "scoring": [
+   {
+    "points": "+1",
+    "name": "Centre presence",
+    "note": "At End Phase if you have at least one M.A.P. on or adjacent to F7 or G6."
+   },
+   {
+    "points": "+1",
+    "name": "Relay pressure",
+    "note": "At End Phase if you have at least one M.A.P. on or adjacent to any relay marker."
+   },
+   {
+    "points": "+1",
+    "name": "Projectile lesson",
+    "note": "First time one of your projectiles damages an enemy. Grenades and RKG70 missiles both count."
+   },
+   {
+    "points": "+1",
+    "name": "Fragile lesson",
+    "note": "First time one of your Laser Weapon attacks gives an enemy a Fragile Token."
+   },
+   {
+    "points": "+1",
+    "name": "Drone lesson",
+    "note": "First time your drone damages an enemy or meaningfully protects a unit using Simple Intercept (second run)."
+   },
+   {
+    "points": "+1 once",
+    "name": "Part destruction",
+    "note": "First time you destroy an enemy M.A.P. part during the game."
+   },
+   {
+    "points": "+1",
+    "name": "Drone kill",
+    "note": "If you destroy the enemy drone."
+   }
+  ],
+  "simplifications": [
+   "Ignore full Intercept (use Simple Intercept for the Porcupine only in a second run)",
+   "Ignore full Low Profile / Optical Camouflage complexity (Viper Low Profile is preview-only)",
+   "Ignore advanced electronic warfare",
+   "Ignore full mission/tactics cards",
+   "Ignore smoke complexity",
+   "Ignore surplus damage edge cases"
+  ],
+  "notes": [
+   "Round 1 scripted: all mechs pick Movement (Blue Missile Scout may pick Projectile if a legal RKG70 launch exists); advance toward D/E and I/H columns; drones fire in Automatic Phase only with legal targets. Round 2: Red Fireline = Firing, others Projectile/Movement/Firing per role; Round 3 free play, then swap sides.",
+   "Simple Intercept (second run only): once per round the Porcupine may roll its automatic attack against one enemy missile that would detonate within Range 3, before detonation.",
+   "Booklet lists both R33 Sniper Rifle and R7 Automatic Rifle on the Red Fireline; both cards are right-hand parts, so the R33 was placed and the R7 is recorded in unmatched.",
+   "Pilot mapping: 'Charger-31' = card LPA-31 'Charger1' (6 pts) and 'Rifleman-27' = card LPA-27 'Rifleman1' (9 pts); points match the booklet.",
+   "Wall/container orientations inferred from map symmetry (not printed in the booklet)."
+  ],
+  "unmatched": [
+   "R7 Automatic Rifle (card 104 is right-hand only; the right hand already holds R33 Sniper Rifle and no left-hand variant exists)"
+  ]
+ },
+ {
+  "id": "asymmetric-duel",
+  "name": "Asymmetric Duel Demo",
+  "subtitle": "Twin Mire Hunters vs UN Elite | RDL two-M.A.P. team vs UN elite M.A.P. + drone",
+  "source": "Ember_Obsidian_Protocol_Asymmetric_Duel_Demo_draft.pdf",
+  "rounds": 3,
+  "description": "A 3-round asymmetric teaching game: two lighter RDL M.A.P.s (351 pts) against one elite UN M.A.P. plus a Porcupine CIWS drone (351 pts). RDL wins by splitting, scoring relays, and surviving; UN wins by holding the centre and threatening decisive damage. Teaches activation economy, elite unit pressure, missiles, Simple Intercept, repair, and objective play.",
+  "sides": {
+   "red": {
+    "name": "RDL Team - Twin Mire Hunters",
+    "units": [
+     {
+      "kind": "mech",
+      "name": "RDL Repair Skirmisher M.A.P.",
+      "grid": "A5",
+      "facing": "E",
+      "torso": "012",
+      "chasis": "020",
+      "leftHand": "023",
+      "rightHand": "025",
+      "backpack": "001",
+      "pilot": "FPA-01"
+     },
+     {
+      "kind": "mech",
+      "name": "RDL Missile Gunner M.A.P.",
+      "grid": "A8",
+      "facing": "E",
+      "torso": "012",
+      "chasis": "021",
+      "leftHand": "023",
+      "rightHand": "030",
+      "backpack": "004",
+      "pilot": "FPA-02"
+     }
+    ]
+   },
+   "blue": {
+    "name": "UN Team - Elite Duelist + Drone",
+    "units": [
+     {
+      "kind": "mech",
+      "name": "UN Elite M.A.P.",
+      "grid": "L6",
+      "facing": "W",
+      "torso": "091",
+      "chasis": "101",
+      "leftHand": "540",
+      "rightHand": "145",
+      "backpack": "081",
+      "pilot": "LPA-19"
+     },
+     {
+      "kind": "drone",
+      "name": "UN Porcupine CIWS Drone",
+      "cardId": "160",
+      "grid": "K7",
+      "facing": "W"
+     }
+    ]
+   }
+  },
+  "terrain": [
+   {
+    "type": "building",
+    "grid": "F6"
+   },
+   {
+    "type": "building",
+    "grid": "G7"
+   },
+   {
+    "type": "high_wall",
+    "grid": "E5",
+    "orientation": "vertical"
+   },
+   {
+    "type": "high_wall",
+    "grid": "H5",
+    "orientation": "vertical"
+   },
+   {
+    "type": "high_wall",
+    "grid": "E8",
+    "orientation": "vertical"
+   },
+   {
+    "type": "high_wall",
+    "grid": "H8",
+    "orientation": "vertical"
+   },
+   {
+    "type": "low_wall",
+    "grid": "D6",
+    "orientation": "horizontal"
+   },
+   {
+    "type": "low_wall",
+    "grid": "I6",
+    "orientation": "horizontal"
+   },
+   {
+    "type": "low_wall",
+    "grid": "D7",
+    "orientation": "horizontal"
+   },
+   {
+    "type": "low_wall",
+    "grid": "I7",
+    "orientation": "horizontal"
+   }
+  ],
+  "markers": [
+   {
+    "kind": "relay",
+    "grid": "F4"
+   },
+   {
+    "kind": "relay",
+    "grid": "G4"
+   },
+   {
+    "kind": "relay",
+    "grid": "F9"
+   },
+   {
+    "kind": "relay",
+    "grid": "G9"
+   },
+   {
+    "kind": "relay",
+    "grid": "E7"
+   },
+   {
+    "kind": "relay",
+    "grid": "H7"
+   },
+   {
+    "kind": "control",
+    "grid": "F7"
+   },
+   {
+    "kind": "control",
+    "grid": "G6"
+   }
+  ],
+  "scoring": [
+   {
+    "points": "+1 each End Phase",
+    "name": "Centre presence",
+    "note": "At least one friendly M.A.P. on or adjacent to F7 or G6. Drones do not score this."
+   },
+   {
+    "points": "+1 each End Phase",
+    "name": "Relay pressure",
+    "note": "At least one friendly M.A.P. on or adjacent to any relay marker."
+   },
+   {
+    "points": "+1 each End Phase",
+    "name": "RDL pincer",
+    "note": "RDL only: both RDL M.A.P.s alive and each on or adjacent to a different relay marker."
+   },
+   {
+    "points": "+1 each End Phase",
+    "name": "UN hold the line",
+    "note": "UN only: UN Elite on or adjacent to F7/G6 and no RDL M.A.P. adjacent to the UN Elite."
+   },
+   {
+    "points": "+1 once per player",
+    "name": "Projectile lesson",
+    "note": "First time one of your projectiles damages an enemy."
+   },
+   {
+    "points": "+1 once for UN",
+    "name": "Intercept lesson",
+    "note": "First time Simple Intercept destroys or cancels an enemy missile."
+   },
+   {
+    "points": "+1 once per player",
+    "name": "Part destruction",
+    "note": "First time you destroy an enemy M.A.P. part; no repeats in the 3-round game."
+   },
+   {
+    "points": "+1 for RDL",
+    "name": "Drone kill",
+    "note": "If RDL destroys the UN Porcupine CIWS drone."
+   },
+   {
+    "points": "+1 for RDL at game end",
+    "name": "Both hunters survive",
+    "note": "Both RDL M.A.P.s still on the board at the end of Round 3."
+   },
+   {
+    "points": "+1 for UN at game end",
+    "name": "Elite survives",
+    "note": "UN Elite still on the board and not in Shutdown at the end of Round 3."
+   }
+  ],
+  "simplifications": [
+   "Ignore full official Intercept path checking (use the Simple Intercept teaching version: once per round, Porcupine may attempt to cancel one missile detonating within Range 3)",
+   "Ignore full smoke complexity",
+   "Ignore Optical Camouflage and Low Profile",
+   "Ignore full mission/tactics cards",
+   "Ignore surplus damage edge cases",
+   "RDL Missile Gunner may use the ML-34 missile action at most 2 times during the game"
+  ],
+  "notes": [
+   "Sides mapped: RDL (west deployment) = red, UN (east deployment) = blue.",
+   "Round 1 scripted: RDL splits toward D5/E4 and D8/E8 to threaten relays; UN Elite moves toward I6/H6 without overcommitting; Porcupine covers the centre from around J7/K7. Rounds 2-3: RDL scores/screens/launches, UN holds centre and punishes isolated targets.",
+   "Terrain: booklet lists buildings and walls only (no containers on this map); wall orientations inferred from map symmetry."
+  ],
+  "unmatched": []
+ },
+ {
+  "id": "advanced-stealth-duel",
+  "name": "Advanced Stealth Duel Demo",
+  "subtitle": "Signal Ghost Protocol | RDL Counter-Stealth Net vs UN Stealth Ace",
+  "source": "Ember_Obsidian_Protocol_Advanced_Stealth_Duel_Demo_revised.pdf",
+  "rounds": 4,
+  "description": "A 4-round advanced teaching game: an RDL counter-stealth net (449 pts, two M.A.P.s plus a Hyena drone) hunts a single UN stealth ace with a drone support package (406 pts). RDL is intentionally about 10% up on points to offset the UN advanced mechanic package. Teaches Low Profile, Optical Camouflage, Stealth 2 / Manifestation Movement, Silence, Scan, Fragile Tokens, smoke, and drone support.",
+  "sides": {
+   "red": {
+    "name": "RDL Team - Counter-Stealth Hunter Net",
+    "pointsNote": "Booklet total 449. Placed cards sum to 440: the Fire Hunter's 'Type 55 Shield + PC-9 Shotgun + Smoke Grenade (R)' (51 pts, card 048) is right-hand only and the right hand holds the R-35 Heavy Railgun, so the left-hand 'Type 55 Shield + PC-9 Shotgun (L)' (card 053, 42 pts, no smoke grenade) was substituted.",
+    "units": [
+     {
+      "kind": "mech",
+      "name": "RDL Sensor / Support M.A.P.",
+      "grid": "A5",
+      "facing": "E",
+      "torso": "504",
+      "chasis": "507",
+      "leftHand": "064",
+      "rightHand": "058",
+      "backpack": "502",
+      "pilot": "FPA-06"
+     },
+     {
+      "kind": "mech",
+      "name": "RDL Fire Hunter M.A.P.",
+      "grid": "A8",
+      "facing": "E",
+      "torso": "019",
+      "chasis": "506",
+      "leftHand": "053",
+      "rightHand": "043",
+      "pilot": "FPA-01",
+      "pointsNote": "Booklet lists Type 55 Shield + PC-9 Shotgun + Smoke Grenade (R) at 51 pts (card 048, right-hand only); substituted left-hand variant card 053 (42 pts) so the R-35 Heavy Railgun keeps the right-hand slot. The smoke grenade lesson is lost by this substitution - proxy it if desired."
+     },
+     {
+      "kind": "drone",
+      "name": "RDL Hyena Missile Drone",
+      "cardId": "079",
+      "grid": "B7",
+      "facing": "E"
+     }
+    ]
+   },
+   "blue": {
+    "name": "UN Team - Ghost Pattern Ace",
+    "pointsNote": "Booklet total 406. Placed cards sum to 358 because the R9B Tactical Rifle (48 pts, card 127) is right-hand only and the right hand holds the R6SD SMG.",
+    "units": [
+     {
+      "kind": "mech",
+      "name": "UN Elite Stealth M.A.P. (Octopus Ace)",
+      "grid": "L6",
+      "facing": "W",
+      "torso": "096",
+      "chasis": "100",
+      "leftHand": null,
+      "rightHand": "124",
+      "backpack": "090",
+      "pilot": "LPA-21"
+     },
+     {
+      "kind": "drone",
+      "name": "UN Porcupine CIWS Drone",
+      "cardId": "160",
+      "grid": "K4",
+      "facing": "W"
+     },
+     {
+      "kind": "drone",
+      "name": "UN Raven Scout Drone",
+      "cardId": "164",
+      "grid": "K7",
+      "facing": "W"
+     },
+     {
+      "kind": "drone",
+      "name": "UN Raven Interference Drone",
+      "cardId": "166",
+      "grid": "K9",
+      "facing": "W"
+     }
+    ]
+   }
+  },
+  "terrain": [
+   {
+    "type": "building",
+    "grid": "F6"
+   },
+   {
+    "type": "building",
+    "grid": "G7"
+   },
+   {
+    "type": "high_wall",
+    "grid": "E5",
+    "orientation": "vertical"
+   },
+   {
+    "type": "high_wall",
+    "grid": "H5",
+    "orientation": "vertical"
+   },
+   {
+    "type": "high_wall",
+    "grid": "E8",
+    "orientation": "vertical"
+   },
+   {
+    "type": "high_wall",
+    "grid": "H8",
+    "orientation": "vertical"
+   },
+   {
+    "type": "low_wall",
+    "grid": "D6",
+    "orientation": "horizontal"
+   },
+   {
+    "type": "low_wall",
+    "grid": "I6",
+    "orientation": "horizontal"
+   },
+   {
+    "type": "low_wall",
+    "grid": "D7",
+    "orientation": "horizontal"
+   },
+   {
+    "type": "low_wall",
+    "grid": "I7",
+    "orientation": "horizontal"
+   }
+  ],
+  "markers": [
+   {
+    "kind": "relay",
+    "grid": "F4"
+   },
+   {
+    "kind": "relay",
+    "grid": "G4"
+   },
+   {
+    "kind": "relay",
+    "grid": "F9"
+   },
+   {
+    "kind": "relay",
+    "grid": "G9"
+   },
+   {
+    "kind": "relay",
+    "grid": "E7"
+   },
+   {
+    "kind": "relay",
+    "grid": "H7"
+   },
+   {
+    "kind": "control",
+    "grid": "F7"
+   },
+   {
+    "kind": "control",
+    "grid": "G6"
+   }
+  ],
+  "scoring": [
+   {
+    "points": "+1",
+    "name": "Centre pressure",
+    "note": "At End Phase with a M.A.P. on or adjacent to F7 or G6. Max 1 per player per round."
+   },
+   {
+    "points": "+1",
+    "name": "Relay pressure",
+    "note": "At End Phase with a M.A.P. on or adjacent to any relay marker. Max 1 per player per round."
+   },
+   {
+    "points": "+1",
+    "name": "Ghost approach",
+    "note": "UN only, once per round: UN Ace ends within 2 grids of a relay/control space while in Optical Camouflage or bearing Low Profile."
+   },
+   {
+    "points": "+1",
+    "name": "Net tightens",
+    "note": "RDL only, once per round: UN Ace ends within Range 2 of an RDL beacon, trap marker, Hyena drone, or within Scan range of the RDL Sensor M.A.P."
+   },
+   {
+    "points": "+1",
+    "name": "Counter-scan lesson",
+    "note": "RDL only, once per game: first successful reveal of Optical Camouflage or removal of a Low Profile Token with Scan."
+   },
+   {
+    "points": "+1",
+    "name": "Trap lesson",
+    "note": "RDL only, once per game: UN Ace avoids, triggers, or is forced to Manifest away from the RDL trap marker."
+   },
+   {
+    "points": "+1",
+    "name": "Stealth lesson",
+    "note": "UN only, once per game: Octopus activates Optical Camouflage and later uses Manifestation Movement."
+   },
+   {
+    "points": "+1",
+    "name": "Silent action lesson",
+    "note": "UN only, once per game: UN Ace performs a Silence action and remains hidden or Low Profile."
+   },
+   {
+    "points": "+1",
+    "name": "Fragile lesson",
+    "note": "UN only, once per game: a Laser Weapon gives an enemy a Fragile Token."
+   },
+   {
+    "points": "+1",
+    "name": "Sensor net lesson",
+    "note": "RDL only, once per game: MD-1 Dragonfly, MES Beacon, Hyena threat, trap marker, or Scan forces the UN player to change target, route, or reveal."
+   },
+   {
+    "points": "+1",
+    "name": "Part destruction",
+    "note": "First part destroyed by each player each round; no multiple part points in the same round."
+   },
+   {
+    "points": "+1",
+    "name": "Drone kill",
+    "note": "Destroy an enemy drone. Max 1 drone kill point per player per game."
+   }
+  ],
+  "simplifications": [
+   "Do not use full mission/tactics cards, full campaign tasks, or full tournament terrain packs",
+   "Do not use every edge case of Intercept; Simple Intercept for the Porcupine is optional after the Optical Camouflage lesson",
+   "Use teaching versions of Low Profile, Optical Camouflage, Stealth 2, Silence, and Scan as printed in the booklet"
+  ],
+  "notes": [
+   "Sides mapped: RDL = red, UN = blue.",
+   "RDL places one trap marker during play (suggested near E7/F7); it is a scenario teaching marker for area denial, not a fixed setup marker.",
+   "Round 1 scripted: UN Ace advances toward J6/H6 under Ambush (Low Profile) or Optical Camouflage; RDL Sensor moves toward C5/D5 and may launch MD-1 near D6/E6; RDL Hunter moves toward C8/D8 and can smoke a lane. Round 2: RDL scans and closes the net, Hunter takes the railgun shot only on revealed targets. Rounds 3-4 free play.",
+   "UN Ace may start with Low Profile only (instead of Optical Camouflage) for a gentler first run.",
+   "Terrain: booklet lists buildings and walls only (no containers); wall orientations inferred from map symmetry."
+  ],
+  "unmatched": [
+   "R9B Tactical Rifle (card 127 is right-hand only; right hand holds R6SD SMG - no left-hand variant exists)"
+  ]
+ },
+ {
+  "id": "signal-relay-war",
+  "name": "Signal Relay War Demo",
+  "subtitle": "Electronic Warfare and Command Network Scenario | RDL Signal Net vs UN Drone Interference Cell",
+  "source": "Ember_Obsidian_Protocol_Signal_Relay_War_Demo_draft.pdf",
+  "rounds": 4,
+  "description": "A 4-round intermediate teaching game about the information war: RDL (455 pts, two M.A.P.s plus a Hyena drone) builds a signal net of relays, Terminals, and Uplinks, while UN (454 pts, one elite command M.A.P. plus four drones) jams and disrupts it. Victory comes from relay control, Terminal access, electronic counter-rolls, command efficiency, and drone play rather than raw damage.",
+  "sides": {
+   "red": {
+    "name": "RDL Team - Signal Net Task Group",
+    "pointsNote": "Booklet total 455. Placed cards sum to 431: the Relay Marksman's AC-32 Automatic Rifle (24 pts, card 025) is right-hand only and the right hand holds the R-35 Heavy Railgun.",
+    "units": [
+     {
+      "kind": "mech",
+      "name": "RDL Signal Controller M.A.P.",
+      "grid": "A5",
+      "facing": "E",
+      "torso": "504",
+      "chasis": "507",
+      "leftHand": "064",
+      "rightHand": "058",
+      "backpack": "502",
+      "pilot": "FPA-06"
+     },
+     {
+      "kind": "mech",
+      "name": "RDL Relay Marksman M.A.P.",
+      "grid": "A8",
+      "facing": "E",
+      "torso": "019",
+      "chasis": "506",
+      "leftHand": null,
+      "rightHand": "043",
+      "backpack": "002",
+      "pilot": "FPA-01"
+     },
+     {
+      "kind": "drone",
+      "name": "RDL Hyena Missile Drone",
+      "cardId": "079",
+      "grid": "B7",
+      "facing": "E"
+     }
+    ]
+   },
+   "blue": {
+    "name": "UN Team - Drone Interference Cell",
+    "pointsNote": "Booklet total 454. Placed cards sum to 355: the R6SD SMG (60 pts, card 124, right-hand only; slot taken by R9B Tactical Rifle) and the EBS/X40 Armor Energy Charger (39 pts, card 081; backpack slot taken by OCSP Overloading Pack) could not be slotted.",
+    "units": [
+     {
+      "kind": "mech",
+      "name": "UN Network Breaker M.A.P.",
+      "grid": "L6",
+      "facing": "W",
+      "torso": "091",
+      "chasis": "101",
+      "leftHand": null,
+      "rightHand": "127",
+      "backpack": "090",
+      "pilot": "LPA-19"
+     },
+     {
+      "kind": "drone",
+      "name": "UN Porcupine CIWS Drone",
+      "cardId": "160",
+      "grid": "K4",
+      "facing": "W"
+     },
+     {
+      "kind": "drone",
+      "name": "UN Raven Scout Drone",
+      "cardId": "164",
+      "grid": "K7",
+      "facing": "W"
+     },
+     {
+      "kind": "drone",
+      "name": "UN Raven Interference Drone 1",
+      "cardId": "166",
+      "grid": "K9",
+      "facing": "W"
+     },
+     {
+      "kind": "drone",
+      "name": "UN Raven Interference Drone 2",
+      "cardId": "166",
+      "grid": "J10",
+      "facing": "W"
+     }
+    ]
+   }
+  },
+  "terrain": [
+   {
+    "type": "building",
+    "grid": "F6"
+   },
+   {
+    "type": "building",
+    "grid": "G7"
+   },
+   {
+    "type": "high_wall",
+    "grid": "E5",
+    "orientation": "vertical"
+   },
+   {
+    "type": "high_wall",
+    "grid": "H5",
+    "orientation": "vertical"
+   },
+   {
+    "type": "high_wall",
+    "grid": "E8",
+    "orientation": "vertical"
+   },
+   {
+    "type": "high_wall",
+    "grid": "H8",
+    "orientation": "vertical"
+   },
+   {
+    "type": "low_wall",
+    "grid": "D6",
+    "orientation": "horizontal"
+   },
+   {
+    "type": "low_wall",
+    "grid": "I6",
+    "orientation": "horizontal"
+   },
+   {
+    "type": "low_wall",
+    "grid": "D7",
+    "orientation": "horizontal"
+   },
+   {
+    "type": "low_wall",
+    "grid": "I7",
+    "orientation": "horizontal"
+   }
+  ],
+  "markers": [
+   {
+    "kind": "terminal",
+    "grid": "E6"
+   },
+   {
+    "kind": "terminal",
+    "grid": "H6"
+   },
+   {
+    "kind": "terminal",
+    "grid": "E8"
+   },
+   {
+    "kind": "terminal",
+    "grid": "H8"
+   },
+   {
+    "kind": "relay",
+    "grid": "F4"
+   },
+   {
+    "kind": "relay",
+    "grid": "G4"
+   },
+   {
+    "kind": "relay",
+    "grid": "F9"
+   },
+   {
+    "kind": "relay",
+    "grid": "G9"
+   },
+   {
+    "kind": "relay",
+    "grid": "E7"
+   },
+   {
+    "kind": "relay",
+    "grid": "H7"
+   },
+   {
+    "kind": "control",
+    "grid": "F7"
+   },
+   {
+    "kind": "control",
+    "grid": "G6"
+   }
+  ],
+  "scoring": [
+   {
+    "points": "+1",
+    "name": "Relay control",
+    "note": "At End Phase with a M.A.P. on or adjacent to any relay marker. Max 1 per player per round."
+   },
+   {
+    "points": "+1",
+    "name": "Terminal access",
+    "note": "At End Phase with a M.A.P. adjacent to a Terminal you controlled this round. Max 1 per player per round."
+   },
+   {
+    "points": "+1",
+    "name": "Uplink lesson",
+    "note": "First time you control a Terminal and spend its Uplink benefit. Once per player per game."
+   },
+   {
+    "points": "+1",
+    "name": "Successful electronic action",
+    "note": "First time you win an Electronic Counter Roll with Scan, Interference, or another electronic action. Once per player per game."
+   },
+   {
+    "points": "+1",
+    "name": "Repeater lesson",
+    "note": "First time you resolve an electronic action measured from a Relay/Terminal/drone instead of the acting M.A.P. Once per player per game."
+   },
+   {
+    "points": "+1",
+    "name": "Command efficiency",
+    "note": "First time you issue or benefit from a command using Coordinate Command, Uplink, or a relay benefit. Once per player per game."
+   },
+   {
+    "points": "+1",
+    "name": "Jammed target",
+    "note": "First time you apply Fire Control Interference or the demo Jammed Token to an enemy M.A.P. Once per player per game."
+   },
+   {
+    "points": "+1",
+    "name": "Drone network",
+    "note": "First time one of your drones meaningfully scores, jams, scans, screens, or forces a route change. Once per player per game."
+   },
+   {
+    "points": "+1",
+    "name": "Part destruction",
+    "note": "First part destroyed by each player each round; no multiple part points in the same round."
+   },
+   {
+    "points": "+1",
+    "name": "Drone kill",
+    "note": "Destroy an enemy drone. Max 1 drone kill point per player per game."
+   }
+  ],
+  "simplifications": [
+   "Do not use full stealth, full Intercept, full mission/tactics cards, campaign tasks, or every drone edge case",
+   "Jammed Token teaching version: next Firing attack loses 1 yellow die or the Stationary bonus, then remove the token",
+   "Uplink/Access Terminal/Terminal-as-Repeater are scenario teaching rules, not universal common actions",
+   "Use only one electronic teaching moment per phase"
+  ],
+  "notes": [
+   "Sides mapped: RDL = red, UN = blue.",
+   "Terminal scenario rule: a M.A.P. adjacent to a Terminal may use Tactical-S Access Terminal; on success place an Uplink marker there until End Phase. Spend Uplink for one of: +2 Range on one electronic action, one extra drone command, or measuring one electronic action from the Terminal.",
+   "Round 1 scripted: RDL Signal aims at Terminal E6 via C5/D5, Marksman holds a lane via C8/D8; UN Breaker contests Terminal H6 via J6/I6 while Raven drones screen. Round 2: first real electronic rolls and Jammed Tokens. Rounds 3-4 free play ('network collapse').",
+   "Terrain is not itemised in this booklet ('same 12x12 standard as the earlier demo booklets, centre remains blocked'); buildings and walls copied from the series-standard map - treat as an inferred layout.",
+   "Wall orientations inferred from map symmetry."
+  ],
+  "unmatched": [
+   "AC-32 Automatic Rifle (card 025 is right-hand only; the Relay Marksman's right hand holds R-35 Heavy Railgun)",
+   "R6SD SMG (card 124 is right-hand only; the Network Breaker's right hand holds R9B Tactical Rifle)",
+   "EBS/X40 Armor Energy Charger (card 081; the Network Breaker's backpack slot already holds the OCSP Overloading Pack - booklet lists two backpacks)"
+  ]
+ },
+ {
+  "id": "missile-umbrella",
+  "name": "Missile Umbrella Demo",
+  "subtitle": "Full Intercept and Projectile Defence | RDL Saturation Battery vs UN Escort Umbrella",
+  "source": "Ember_Obsidian_Protocol_Missile_Umbrella_Demo_draft.pdf",
+  "rounds": 4,
+  "description": "A 4-round intermediate/advanced scenario where full Intercept is the main lesson. An RDL missile saturation battery (462 pts) tries to overwhelm a UN escort umbrella (458 pts) that must move a VIP command M.A.P. across the board under missile fire. Teaches launch/path/impact grid thinking, Interception Tokens, saturation fire, Fire in arc, and escort decisions.",
+  "sides": {
+   "red": {
+    "name": "RDL Team - Saturation Battery",
+    "pointsNote": "Booklet total 462 includes a 58-pt 'Scenario missile reserve' teaching line. Placed cards sum to 371: the reserve is not a card, and the Missile Artillery's ECS-2 External Cooler (33 pts, card 002) could not be slotted because the booklet lists two backpacks (ML-34 kept, as the unit is the missile platform).",
+    "units": [
+     {
+      "kind": "mech",
+      "name": "RDL Missile Artillery M.A.P.",
+      "grid": "A5",
+      "facing": "E",
+      "torso": "019",
+      "chasis": "021",
+      "leftHand": "032",
+      "backpack": "004",
+      "pilot": "FPA-01",
+      "pointsNote": "R-20 Shoulder-Mounted Railgun side not stated in the booklet; left-hand card 032 chosen (right hand left free)."
+     },
+     {
+      "kind": "mech",
+      "name": "RDL Forward Spotter M.A.P.",
+      "grid": "A8",
+      "facing": "E",
+      "torso": "012",
+      "chasis": "020",
+      "leftHand": "023",
+      "rightHand": "025",
+      "backpack": "003",
+      "pilot": "FPA-14"
+     },
+     {
+      "kind": "drone",
+      "name": "RDL Hyena Missile Drone",
+      "cardId": "079",
+      "grid": "B6",
+      "facing": "E"
+     }
+    ]
+   },
+   "blue": {
+    "name": "UN Team - Escort Umbrella",
+    "pointsNote": "Booklet total 458 includes a -148 'Scenario escort discount'. Placed cards sum to 474: the discount is not a card, the Escort's TM17 Wolfhound Guard Core and LM108 Agile Chassis are not in the card database, and its R6SD SMG (card 124, right-hand only) clashes with the M15BO Katana.",
+    "units": [
+     {
+      "kind": "mech",
+      "name": "UN VIP Command M.A.P.",
+      "grid": "L6",
+      "facing": "W",
+      "torso": "091",
+      "chasis": "101",
+      "leftHand": "540",
+      "rightHand": "127",
+      "backpack": "081",
+      "pilot": "LPA-19"
+     },
+     {
+      "kind": "mech",
+      "name": "UN Escort M.A.P.",
+      "grid": "L8",
+      "facing": "W",
+      "torso": null,
+      "chasis": null,
+      "leftHand": null,
+      "rightHand": "145"
+     },
+     {
+      "kind": "drone",
+      "name": "UN Porcupine CIWS Drone 1",
+      "cardId": "160",
+      "grid": "K5",
+      "facing": "W"
+     },
+     {
+      "kind": "drone",
+      "name": "UN Porcupine CIWS Drone 2",
+      "cardId": "160",
+      "grid": "K7",
+      "facing": "W"
+     },
+     {
+      "kind": "drone",
+      "name": "UN Raven Scout Drone",
+      "cardId": "164",
+      "grid": "K9",
+      "facing": "W"
+     }
+    ]
+   }
+  },
+  "terrain": [
+   {
+    "type": "building",
+    "grid": "F6"
+   },
+   {
+    "type": "building",
+    "grid": "G7"
+   },
+   {
+    "type": "high_wall",
+    "grid": "E5",
+    "orientation": "vertical"
+   },
+   {
+    "type": "high_wall",
+    "grid": "H5",
+    "orientation": "vertical"
+   },
+   {
+    "type": "high_wall",
+    "grid": "E8",
+    "orientation": "vertical"
+   },
+   {
+    "type": "high_wall",
+    "grid": "H8",
+    "orientation": "vertical"
+   },
+   {
+    "type": "low_wall",
+    "grid": "D6",
+    "orientation": "horizontal"
+   },
+   {
+    "type": "low_wall",
+    "grid": "I6",
+    "orientation": "horizontal"
+   },
+   {
+    "type": "low_wall",
+    "grid": "D7",
+    "orientation": "horizontal"
+   },
+   {
+    "type": "low_wall",
+    "grid": "I7",
+    "orientation": "horizontal"
+   }
+  ],
+  "markers": [
+   {
+    "kind": "escortzone",
+    "grid": "J6"
+   },
+   {
+    "kind": "escortzone",
+    "grid": "J7"
+   },
+   {
+    "kind": "extraction",
+    "grid": "A6"
+   },
+   {
+    "kind": "extraction",
+    "grid": "A7"
+   },
+   {
+    "kind": "relay",
+    "grid": "F4"
+   },
+   {
+    "kind": "relay",
+    "grid": "G4"
+   },
+   {
+    "kind": "relay",
+    "grid": "F9"
+   },
+   {
+    "kind": "relay",
+    "grid": "G9"
+   },
+   {
+    "kind": "control",
+    "grid": "F7"
+   },
+   {
+    "kind": "control",
+    "grid": "G6"
+   }
+  ],
+  "scoring": [
+   {
+    "points": "+1",
+    "name": "Escort progress",
+    "note": "UN, at End Phase, if the VIP is closer to the extraction edge than at the start of the round. Max 1 per round."
+   },
+   {
+    "points": "+3",
+    "name": "Extraction",
+    "note": "UN, if the VIP reaches or ends adjacent to A6/A7 by the end of Round 4."
+   },
+   {
+    "points": "+1",
+    "name": "Umbrella holds",
+    "note": "UN, first time each round an Intercept destroys or cancels a missile before it damages a target."
+   },
+   {
+    "points": "+1",
+    "name": "Token discipline",
+    "note": "UN, once per game, if a Porcupine still has an Interception Token after a round where RDL launched at least two missiles."
+   },
+   {
+    "points": "+1",
+    "name": "Saturation pressure",
+    "note": "RDL, first time each round it launches or resolves at least two missiles threatening the VIP, escort, or their path."
+   },
+   {
+    "points": "+1",
+    "name": "Missile damage",
+    "note": "RDL, each round, first time a missile damages the VIP, Escort M.A.P., or an intercept drone."
+   },
+   {
+    "points": "+2",
+    "name": "Break the umbrella",
+    "note": "RDL, once per game, if it destroys a Porcupine or forces both Porcupines to spend all Interception Tokens before Delay Phase ends."
+   },
+   {
+    "points": "+1",
+    "name": "Projectile lesson",
+    "note": "Each player, once per game, first time they correctly explain launch grid, path grid, or impact grid before resolving a missile/Intercept."
+   },
+   {
+    "points": "+1",
+    "name": "Part destruction",
+    "note": "First part destroyed by each player each round; no multiple part points per round."
+   },
+   {
+    "points": "+1",
+    "name": "Drone kill",
+    "note": "Destroy an enemy drone. Max 1 drone kill point per player per game."
+   }
+  ],
+  "simplifications": [
+   "Do not use full stealth, full electronic warfare, full campaign tasks, advanced smoke layering, deployable edge cases, or optional tactics cards",
+   "First run: only Porcupine Intercept is used against missiles; ignore unusual Intercept interactions",
+   "Teaching cap: RDL may resolve no more than three missile/projectile threats in a single round (remove on replay)"
+  ],
+  "notes": [
+   "Sides mapped: RDL = red (attacker, west), UN = blue (escort, east). The VIP escorts right-to-left toward extraction at A6/A7.",
+   "Escort zone markers J6/J7 are reminders only and do not block movement.",
+   "Non-card list lines kept as notes: RDL 'Scenario missile reserve - Extra MC-3 Razor teaching reserve' (58 pts) and UN 'Scenario escort discount' (-148 pts). For strict matched play, rebuild the lists from official cards.",
+   "Round 1 scripted: RDL artillery creates a launch window around C5/D5, spotter screens via C8/D8; UN VIP advances J6/I6 inside the umbrella, escort holds J8/I8; place one or two missile threats and resolve slowly in Delay Phase. Round 2: saturation vs token economy. Rounds 3-4 free play.",
+   "Terrain is not itemised ('the centre remains terrain-heavy'); buildings and walls copied from the series-standard map - treat as an inferred layout. Wall orientations inferred from symmetry.",
+   "Optional replays: simple mode (one Porcupine), true umbrella (exact ammo, no caps), mirror defence (RDL AMS-190 intercepts), smoke lanes, convoy variant."
+  ],
+  "unmatched": [
+   "TM17 \"Wolfhound\" Guard Core (no card found in database)",
+   "LM108 Agile Chassis (no card found in database)",
+   "R6SD SMG (card 124 is right-hand only; the Escort's right hand holds M15BO Katana)",
+   "ECS-2 External Cooler (card 002; Missile Artillery backpack slot holds ML-34 Quad Missile Rack - booklet lists two backpacks)"
+  ]
+ },
+ {
+  "id": "power-spike",
+  "name": "Power Spike",
+  "subtitle": "Ammo and Charge Timing Demo Scenario",
+  "source": "Ember_Obsidian_Protocol_Power_Spike_Demo_draft.pdf",
+  "rounds": 4,
+  "description": "A 4-round intermediate/advanced scenario about resource timing: charging, conserving ammo, holding Link, and committing to one decisive turn. RDL fields a two-M.A.P. capacitor strike pair (411 pts) against a UN burst assault ace with drone support (412 pts) on a map of Reactor Relays, Ammo Caches, and Core Nodes. Players score for preparing, threatening, baiting, and committing at the right time, not just for damage.",
+  "sides": {
+   "red": {
+    "name": "RDL Team - Capacitor Strike Pair",
+    "pointsNote": "Booklet total 411 includes a 27-pt 'Resource training kit' scenario value. Placed cards sum to 354: the kit is not a card, and the Missile Brawler's SH-15 Field Repair System (30 pts, card 001) could not be slotted because the booklet lists two backpacks (ML-34 kept).",
+    "units": [
+     {
+      "kind": "mech",
+      "name": "RDL Railgun Gunner",
+      "grid": "A5",
+      "facing": "E",
+      "torso": "012",
+      "chasis": "021",
+      "leftHand": "032",
+      "rightHand": "030",
+      "backpack": "002",
+      "pilot": "FPA-01",
+      "pointsNote": "R-20 Railgun side not stated; left-hand card 032 chosen since AC-150 HMG is right-hand."
+     },
+     {
+      "kind": "mech",
+      "name": "RDL Missile Brawler",
+      "grid": "A8",
+      "facing": "E",
+      "torso": "012",
+      "chasis": "020",
+      "leftHand": "023",
+      "backpack": "004",
+      "pilot": "FPA-14"
+     },
+     {
+      "kind": "drone",
+      "name": "RDL Hyena Missile Drone",
+      "cardId": "079",
+      "grid": "B6",
+      "facing": "E"
+     }
+    ]
+   },
+   "blue": {
+    "name": "UN Team - Burst Assault Team",
+    "pointsNote": "Booklet total 412 includes a 28-pt 'Resource training kit' and a generic 33-pt 'Raven / training support package' with no exact card. Placed cards sum to 351.",
+    "units": [
+     {
+      "kind": "mech",
+      "name": "UN Burst Striker",
+      "grid": "L5",
+      "facing": "W",
+      "torso": "091",
+      "chasis": "101",
+      "leftHand": "540",
+      "rightHand": "145",
+      "backpack": "081",
+      "pilot": "LPA-19"
+     },
+     {
+      "kind": "drone",
+      "name": "UN Raven / Training Support Drone",
+      "cardId": "166",
+      "grid": "L8",
+      "facing": "W"
+     },
+     {
+      "kind": "drone",
+      "name": "UN Porcupine CIWS Drone",
+      "cardId": "160",
+      "grid": "K7",
+      "facing": "W"
+     }
+    ]
+   }
+  },
+  "terrain": [],
+  "markers": [
+   {
+    "kind": "relay",
+    "grid": "F5"
+   },
+   {
+    "kind": "relay",
+    "grid": "G5"
+   },
+   {
+    "kind": "relay",
+    "grid": "F8"
+   },
+   {
+    "kind": "relay",
+    "grid": "G8"
+   },
+   {
+    "kind": "ammocache",
+    "grid": "C6"
+   },
+   {
+    "kind": "ammocache",
+    "grid": "J7"
+   },
+   {
+    "kind": "corenode",
+    "grid": "F6"
+   },
+   {
+    "kind": "corenode",
+    "grid": "G7"
+   }
+  ],
+  "scoring": [
+   {
+    "points": "+1 each End Phase",
+    "name": "Reactor control",
+    "note": "At least one M.A.P. on or adjacent to any Reactor Relay."
+   },
+   {
+    "points": "+1 once per round",
+    "name": "Spike setup",
+    "note": "End the round with a charged/prepared attack, restored Ammo, or a unit positioned to threaten a Reactor Relay next round."
+   },
+   {
+    "points": "+2 once per game",
+    "name": "Power Spike",
+    "note": "A prepared/charged/limited-use attack damages an enemy M.A.P. after being set up in an earlier phase or round."
+   },
+   {
+    "points": "+1 once per game",
+    "name": "Baited defence",
+    "note": "Your threat forces the opponent to choose Defensive/Mobility stance, spend Link defensively, or move away from a scoring lane."
+   },
+   {
+    "points": "+1 once per game",
+    "name": "Ammo discipline",
+    "note": "You choose not to spend a limited-use attack when legal, then later use or score from that saved resource."
+   },
+   {
+    "points": "+1 once per game",
+    "name": "Part destruction",
+    "note": "First destroyed enemy M.A.P. part only."
+   },
+   {
+    "points": "Opponent +1 once per game",
+    "name": "Overheat mistake",
+    "note": "You spend a key limited resource into a bad shot with no meaningful positional or scoring effect (learning prompt)."
+   }
+  ],
+  "simplifications": [
+   "Ignore full stealth, full electronic warfare, full mission/tactics cards, full Intercept, and complex surplus damage edge cases",
+   "Teaching shortcut for Charge and Ammo: place/remove Charge markers and track Ammo simply; exact card text wins where a part has precise wording",
+   "Ammo Cache: once per game per side, a M.A.P. adjacent to its side's cache may restore 1 Ammo to one limited-use weapon or convert the cache into +1 Link"
+  ],
+  "notes": [
+   "Sides mapped: RDL = red, UN = blue.",
+   "Marker kinds follow the booklet's terminology: 'relay' = Reactor Relays (F5, G5, F8, G8), 'ammocache' = Ammo Caches (C6, J7), 'corenode' = Core Nodes (F6, G7 - central score/bait spaces).",
+   "The booklet lists no terrain items for this map ('standard 12x12 Reactor Relay Map'); F6/G7 are Core Node markers here rather than the usual buildings, so terrain was left empty.",
+   "Board setup lists 'UN Duelist / Support Drone L8 / K7': the generic Raven training package was placed at L8 and the Porcupine at K7 (assignment guessed; reset checklist says 'UN support L8/K7').",
+   "Round 1 scripted: load and position (RDL gunner to C5, brawler to C8, UN striker to J5, support to J8/K7). Round 2: threaten the spike. Rounds 3-4: commit, bait, or conserve.",
+   "Non-card list lines kept as notes: RDL and UN 'Resource training kit - Ammo Cache / Charge Relay scenario value' (27 / 28 pts).",
+   "Support drone substitution: the booklet lists a generic \"Raven / training support package\" at 33 pts with no matching card, and allows an equivalent UN support drone. Card 166 ADK60S \"Raven\" Interference Type (36 pts) is used here, 3 pts above the booklet line."
+  ],
+  "unmatched": [
+   "SH-15 Field Repair System (card 001; Missile Brawler backpack slot holds ML-34 Quad Missile Rack - booklet lists two backpacks)"
+  ]
+ },
+ {
+  "id": "breach-the-gate",
+  "name": "Breach the Gate Demo",
+  "subtitle": "Melee Lock, Forced Movement, Facing, and Choke-Point Control | RDL Breach Team vs UN Gate Guard",
+  "source": "Ember_Obsidian_Protocol_Breach_the_Gate_Demo_draft.pdf",
+  "rounds": 4,
+  "description": "A 4-round intermediate/advanced close-quarters scenario: an RDL breach pair (423 pts) must force a path through a fortified centre gate held by a UN gate guard (424 pts). It teaches Melee Lock, facing, forced movement (Push, Knock Back, Drag), screening/body-blocking, and scoring by moving through defended space rather than destroying parts.",
+  "sides": {
+   "red": {
+    "name": "RDL Team - Breach Pair",
+    "pointsNote": "Booklet total 423 includes a 48-pt 'Scenario breach kit' (gate markers / breach aid). Placed cards sum to 375.",
+    "units": [
+     {
+      "kind": "mech",
+      "name": "RDL Shield Breacher",
+      "grid": "A6",
+      "facing": "E",
+      "torso": "012",
+      "chasis": "021",
+      "leftHand": "023",
+      "rightHand": "030",
+      "backpack": "001",
+      "pilot": "FPA-01"
+     },
+     {
+      "kind": "mech",
+      "name": "RDL Cutter / Hook M.A.P.",
+      "grid": "A8",
+      "facing": "E",
+      "torso": "012",
+      "chasis": "020",
+      "leftHand": "023",
+      "rightHand": "025",
+      "backpack": "004",
+      "pilot": "FPA-10"
+     },
+     {
+      "kind": "drone",
+      "name": "RDL Hyena Missile Drone",
+      "cardId": "079",
+      "grid": "B7",
+      "facing": "E"
+     }
+    ]
+   },
+   "blue": {
+    "name": "UN Team - Gate Guard",
+    "pointsNote": "Booklet total 424 includes a -38 'Narrow defensive deployment penalty'. Placed cards sum to 423: the Anchor's second shield (S100 Shield, 39 pts, card 142) is left-hand only and the left hand holds the S9 Meteor Shield + IGX106 Ion Shotgun.",
+    "units": [
+     {
+      "kind": "mech",
+      "name": "UN Anchor M.A.P.",
+      "grid": "L6",
+      "facing": "W",
+      "torso": "098",
+      "chasis": "101",
+      "leftHand": "540",
+      "rightHand": null,
+      "backpack": "083",
+      "pilot": "LPA-31"
+     },
+     {
+      "kind": "mech",
+      "name": "UN Duelist M.A.P.",
+      "grid": "L8",
+      "facing": "W",
+      "torso": "091",
+      "chasis": "099",
+      "leftHand": "111",
+      "rightHand": "145",
+      "pilot": "LPA-19",
+      "pointsNote": "RH21 Pistol + M3 Vibroblade side not stated; left-hand card 111 chosen since the M15BO Katana is right-hand. Card score 42 matches the booklet."
+     }
+    ]
+   }
+  },
+  "terrain": [],
+  "markers": [
+   {
+    "kind": "gate",
+    "grid": "F7"
+   },
+   {
+    "kind": "gate",
+    "grid": "G7"
+   },
+   {
+    "kind": "breach",
+    "grid": "H7"
+   },
+   {
+    "kind": "breach",
+    "grid": "H8"
+   },
+   {
+    "kind": "holdzone",
+    "grid": "J6"
+   },
+   {
+    "kind": "holdzone",
+    "grid": "J7"
+   },
+   {
+    "kind": "holdzone",
+    "grid": "J8"
+   }
+  ],
+  "scoring": [
+   {
+    "points": "RDL +1 each End Phase",
+    "name": "Breach presence",
+    "note": "RDL has at least one M.A.P. on H7/H8 or farther right."
+   },
+   {
+    "points": "RDL +2 once per game",
+    "name": "Breakthrough",
+    "note": "An RDL M.A.P. ends an End Phase in J6/J7/J8 or farther right."
+   },
+   {
+    "points": "RDL +1 once per game",
+    "name": "Gate cleared",
+    "note": "RDL forces a UN M.A.P. out of H7/H8/I7/I8 using movement, melee, or forced movement."
+   },
+   {
+    "points": "+1 once per game",
+    "name": "Forced movement lesson",
+    "note": "Either player: you Push, Knock Back, Drag, or otherwise force an enemy into a worse grid or facing."
+   },
+   {
+    "points": "+1 once per game",
+    "name": "Melee lock lesson",
+    "note": "Either player: an enemy pays extra movement, changes plan, or stays put because of Melee Lock."
+   },
+   {
+    "points": "UN +1 each End Phase",
+    "name": "Hold the gate",
+    "note": "No RDL M.A.P. on H7/H8 or farther right, and a UN M.A.P. within 1 grid of the gate."
+   },
+   {
+    "points": "UN +1 once per game",
+    "name": "Throw-back",
+    "note": "UN forces an RDL M.A.P. back across the gate line after it crossed."
+   },
+   {
+    "points": "+1 once per game",
+    "name": "Part destruction",
+    "note": "First destroyed enemy M.A.P. part only."
+   }
+  ],
+  "simplifications": [
+   "Ignore full stealth, full electronic warfare, full mission/tactics cards, complex surplus damage edge cases, and full Intercept",
+   "Use the simplified forced-movement teaching rules: announce source/target, state direction, check blockers, move the legal distance (stop early if blocked), then apply facing/scoring",
+   "ML-34 capped at 2 launches in this demo",
+   "Only pause on Melee Lock when a unit actually tries to leave engagement"
+  ],
+  "notes": [
+   "Sides mapped: RDL = red (attacker, west), UN = blue (defender, east).",
+   "Marker kinds follow the booklet's terminology: 'gate' = main breach obstacle/line (F7, G7), 'breach' = RDL scoring spaces (H7, H8), 'holdzone' = UN hold zone (J6, J7, J8).",
+   "The booklet lists no conventional terrain rows; the centre choke is formed by the gate markers themselves. Optional replay: destructible gate with 2 structure markers.",
+   "The 48-pt 'Scenario breach kit' (RDL) and -38 defender adjustment (UN) are scenario balance lines, not cards.",
+   "Round 1 scripted: RDL advances to D6/D8, UN mirrors to I6/I8; no combat expected. Round 2: contact and forced movement at the gate. Rounds 3-4: breach or throw back. Optional 5-round assault variant.",
+   "Reset checklist calls the Shield Breacher 'RDL Bulwark' - same unit, starting grid A6."
+  ],
+  "unmatched": [
+   "S100 Shield (card 142 is left-hand only; the UN Anchor's left hand holds S9 Meteor Shield + IGX106 Ion Shotgun - booklet lists two left-hand shields)"
+  ]
+ },
+ {
+  "id": "hold-until-extraction",
+  "name": "Hold Until Extraction",
+  "subtitle": "Damage Control Demo Scenario",
+  "source": "Ember_Obsidian_Protocol_Hold_Until_Extraction_Demo_draft.pdf",
+  "rounds": 4,
+  "description": "A 4-round intermediate damage-control scenario: an RDL team (372 pts) escorts a pre-damaged data-carrier M.A.P. toward an eastern extraction zone while a UN pursuit team (381 pts) tries to disable its key parts before it escapes. Teaches part targeting, damaged/destroyed parts, Repaired Tokens, Stabilize System, Link restoration, and survival decisions.",
+  "sides": {
+   "red": {
+    "name": "RDL Extraction Team",
+    "units": [
+     {
+      "kind": "mech",
+      "name": "Damaged Data Carrier M.A.P.",
+      "grid": "B6",
+      "facing": "E",
+      "torso": "012",
+      "chasis": "021",
+      "leftHand": "034",
+      "rightHand": "033",
+      "backpack": "001",
+      "pilot": "FPA-04",
+      "pointsNote": "R-20 Shoulder-Mounted Railgun side not stated; right-hand card 033 chosen because the Type 77 Bulwark is left-hand. Starts with damaged Chassis, Link 1 lower than normal, and the Data Core scenario marker attached."
+     },
+     {
+      "kind": "mech",
+      "name": "Repair Escort M.A.P.",
+      "grid": "B8",
+      "facing": "E",
+      "torso": "012",
+      "chasis": "020",
+      "leftHand": "023",
+      "rightHand": "025",
+      "backpack": "003",
+      "pilot": "FPA-01"
+     },
+     {
+      "kind": "drone",
+      "name": "RDL Hyena Missile Drone",
+      "cardId": "079",
+      "grid": "C7",
+      "facing": "E"
+     }
+    ]
+   },
+   "blue": {
+    "name": "UN Pursuit Team",
+    "pointsNote": "Booklet total 381. Placed cards sum to 351: the 30-pt 'Raven-style support drone / approved UN support drone' is a generic placeholder with no exact card (unit placed at J9 with cardId null).",
+    "units": [
+     {
+      "kind": "mech",
+      "name": "UN Hunter M.A.P.",
+      "grid": "J4",
+      "facing": "W",
+      "torso": "091",
+      "chasis": "101",
+      "leftHand": "540",
+      "rightHand": "145",
+      "backpack": "081",
+      "pilot": "LPA-19"
+     },
+     {
+      "kind": "drone",
+      "name": "UN Raven-style Support Drone",
+      "cardId": "161",
+      "grid": "J9",
+      "facing": "W"
+     },
+     {
+      "kind": "drone",
+      "name": "UN Porcupine CIWS Drone",
+      "cardId": "160",
+      "grid": "I7",
+      "facing": "W"
+     }
+    ]
+   }
+  },
+  "terrain": [],
+  "markers": [
+   {
+    "kind": "extraction",
+    "grid": "K5"
+   },
+   {
+    "kind": "extraction",
+    "grid": "K6"
+   },
+   {
+    "kind": "extraction",
+    "grid": "K7"
+   },
+   {
+    "kind": "extraction",
+    "grid": "K8"
+   },
+   {
+    "kind": "relay",
+    "grid": "F6"
+   },
+   {
+    "kind": "relay",
+    "grid": "G7"
+   },
+   {
+    "kind": "datacache",
+    "grid": "F7"
+   },
+   {
+    "kind": "datacache",
+    "grid": "G6"
+   }
+  ],
+  "scoring": [
+   {
+    "points": "RDL +4",
+    "name": "Successful extraction",
+    "note": "At End Phase, the damaged carrier is in K5-K8 and not destroyed."
+   },
+   {
+    "points": "RDL +1 per round",
+    "name": "Carrier survives",
+    "note": "Score at End Phase if the carrier is not destroyed."
+   },
+   {
+    "points": "RDL +1 once per game",
+    "name": "Field repair lesson",
+    "note": "First time SH-15 or another repair effect removes damage or places a Repaired Token."
+   },
+   {
+    "points": "RDL +1 once per game",
+    "name": "Stabilise lesson",
+    "note": "First time a unit uses Stabilize System to remove an appropriate token and restore Link."
+   },
+   {
+    "points": "UN +2 once per game",
+    "name": "Disable mobility",
+    "note": "Carrier Chassis destroyed or carrier prevented from moving by part/token state."
+   },
+   {
+    "points": "UN +1 each (max +2)",
+    "name": "Disable mission systems",
+    "note": "First time each carrier Arm or Backpack is destroyed."
+   },
+   {
+    "points": "UN +1 per round",
+    "name": "Hunter pressure",
+    "note": "Score if the carrier suffers damage during that round."
+   },
+   {
+    "points": "Either +1",
+    "name": "Drone kill",
+    "note": "Destroy the enemy drone/support drone."
+   }
+  ],
+  "simplifications": [
+   "Ignore full stealth, full electronic warfare, full mission/tactics cards, and advanced campaign rules unless players request them",
+   "Part targeting shortcut while learning: roll a D6 - 1 Torso, 2 Chassis, 3 Left Arm, 4 Right Arm, 5 Backpack, 6 attacker chooses"
+  ],
+  "notes": [
+   "Sides mapped: RDL = red (escort side), UN = blue (pursuit side). Note the deployment is unusual: RDL starts at B6/B8 and extracts eastward into K5-K8, so both forces are on the same half at the start.",
+   "Starting damage setup: Carrier Chassis is Damaged at game start, Carrier Link starts 1 lower than normal, and the Data Core scenario marker is attached to the carrier.",
+   "Marker kinds follow the booklet's terminology: 'extraction' = Extraction Zone K5-K8, 'relay' = Repair Relays (F6, G7), 'datacache' = optional Data Cache scoring/pressure spaces (F7, G6).",
+   "The booklet describes a centre 'blocked by wreckage and walls' but lists no terrain grids, so terrain was left empty - dress the centre freely.",
+   "UN board setup allows 'the listed Raven-style support drone or another approved UN support drone of similar value' (30 pts) at J9.",
+   "Round 1 scripted: carrier moves toward D6/F6 with cover; escort screens; UN Hunter takes the upper lane, support covers the lower lane. Rounds 3-4: extraction race. Optional replays: full part targeting, persistent critical damage, extraction timer, emergency tow.",
+   "Support drone substitution: the booklet lists a \"Raven-style support drone / approved UN support drone\" at 30 pts and explicitly permits another approved UN support drone of similar value. Card 161 ADK15/MAS \"Porcupine\" Microwave Type is used here, matching 30 pts exactly; the booklet setup row itself reads \"UN Porcupine / Raven Drone\"."
+  ],
+  "unmatched": []
+ },
+ {
+  "id": "full-game-setup-guide",
+  "name": "Full Game Setup Guide - Core vs Core",
+  "subtitle": "Core Box vs Core Box Standard 1v1 | RDL vs UN",
+  "source": "Ember_Obsidian_Protocol_Full_Game_Setup_Guide_Core_vs_Core_fixed.pdf",
+  "rounds": 5,
+  "description": "Not a scripted scenario but a full setup guide for a first unscripted standard game: force-building by role, part-slot and pilot advice, a faction cheat sheet, a 450-point / 5-round recommended format, the generic 'Relay Control' mission, and a neutral board layout. It includes a sample core-box vs core-box force pair (RDL 449 pts vs UN 447 pts) which is loaded here as the playable content.",
+  "sides": {
+   "red": {
+    "name": "RDL 449 pts - Lane Control Pair",
+    "units": [
+     {
+      "kind": "mech",
+      "name": "Fire Support M.A.P.",
+      "grid": "A5",
+      "facing": "E",
+      "torso": "015",
+      "chasis": "021",
+      "leftHand": "032",
+      "rightHand": "030",
+      "backpack": "002",
+      "pilot": "FPA-01"
+     },
+     {
+      "kind": "mech",
+      "name": "Objective / Missile M.A.P.",
+      "grid": "A8",
+      "facing": "E",
+      "torso": "012",
+      "chasis": "020",
+      "leftHand": "023",
+      "rightHand": "025",
+      "backpack": "004",
+      "pilot": "FPA-06"
+     },
+     {
+      "kind": "drone",
+      "name": "Hyena Missile Drone",
+      "cardId": "079",
+      "grid": "B6",
+      "facing": "E"
+     },
+     {
+      "kind": "drone",
+      "name": "Hyena Radar Drone",
+      "cardId": "080",
+      "grid": "B7",
+      "facing": "E"
+     }
+    ]
+   },
+   "blue": {
+    "name": "UN 447 pts - Precision Assault Pair",
+    "units": [
+     {
+      "kind": "mech",
+      "name": "Precision M.A.P.",
+      "grid": "L5",
+      "facing": "W",
+      "torso": "092",
+      "chasis": "101",
+      "leftHand": "107",
+      "rightHand": "106",
+      "backpack": "083",
+      "pilot": "LPA-27"
+     },
+     {
+      "kind": "mech",
+      "name": "Assault / Objective M.A.P.",
+      "grid": "L8",
+      "facing": "W",
+      "torso": "091",
+      "chasis": "099",
+      "leftHand": "103",
+      "rightHand": "104",
+      "backpack": "081",
+      "pilot": "LPA-31"
+     },
+     {
+      "kind": "drone",
+      "name": "Tarantula Carrier Drone",
+      "cardId": "162",
+      "grid": "K7",
+      "facing": "W"
+     }
+    ]
+   }
+  },
+  "terrain": [
+   {
+    "type": "building",
+    "grid": "F6"
+   },
+   {
+    "type": "building",
+    "grid": "G7"
+   },
+   {
+    "type": "high_wall",
+    "grid": "E5",
+    "orientation": "vertical"
+   },
+   {
+    "type": "high_wall",
+    "grid": "H5",
+    "orientation": "vertical"
+   },
+   {
+    "type": "high_wall",
+    "grid": "E8",
+    "orientation": "vertical"
+   },
+   {
+    "type": "high_wall",
+    "grid": "H8",
+    "orientation": "vertical"
+   },
+   {
+    "type": "low_wall",
+    "grid": "D6",
+    "orientation": "horizontal"
+   },
+   {
+    "type": "low_wall",
+    "grid": "I6",
+    "orientation": "horizontal"
+   },
+   {
+    "type": "low_wall",
+    "grid": "D7",
+    "orientation": "horizontal"
+   },
+   {
+    "type": "low_wall",
+    "grid": "I7",
+    "orientation": "horizontal"
+   },
+   {
+    "type": "container2",
+    "grid": "C4",
+    "orientation": "horizontal"
+   },
+   {
+    "type": "container2",
+    "grid": "J4",
+    "orientation": "horizontal"
+   },
+   {
+    "type": "container2",
+    "grid": "C9",
+    "orientation": "horizontal"
+   },
+   {
+    "type": "container2",
+    "grid": "J9",
+    "orientation": "horizontal"
+   },
+   {
+    "type": "container1",
+    "grid": "D3"
+   },
+   {
+    "type": "container1",
+    "grid": "I10"
+   }
+  ],
+  "markers": [
+   {
+    "kind": "relay",
+    "grid": "F4"
+   },
+   {
+    "kind": "relay",
+    "grid": "G4"
+   },
+   {
+    "kind": "relay",
+    "grid": "F9"
+   },
+   {
+    "kind": "relay",
+    "grid": "G9"
+   },
+   {
+    "kind": "relay",
+    "grid": "E7"
+   },
+   {
+    "kind": "relay",
+    "grid": "H7"
+   },
+   {
+    "kind": "control",
+    "grid": "F7"
+   },
+   {
+    "kind": "control",
+    "grid": "G6"
+   }
+  ],
+  "scoring": [
+   {
+    "points": "+1",
+    "name": "Centre control",
+    "note": "At End Phase, at least one M.A.P. on or adjacent to F7 or G6."
+   },
+   {
+    "points": "+1",
+    "name": "Relay pressure",
+    "note": "At End Phase, at least one M.A.P. on or adjacent to any relay marker."
+   },
+   {
+    "points": "+1",
+    "name": "Wide relay control",
+    "note": "At End Phase, you control a relay on both the upper half and lower half of the board."
+   },
+   {
+    "points": "+1 once per game",
+    "name": "First part destroyed",
+    "note": "First time you destroy an enemy M.A.P. part."
+   },
+   {
+    "points": "+1 once per game",
+    "name": "Drone neutralised",
+    "note": "Destroy or remove an enemy drone."
+   },
+   {
+    "points": "+1",
+    "name": "Endurance",
+    "note": "At the end of Round 5, if both of your M.A.P.s are still on the board."
+   }
+  ],
+  "simplifications": [
+   "Recommended first standard game: 450 points, 5 rounds, two M.A.P.s plus 0-2 drones/support pieces per side",
+   "Use standard attacks, movement, stances, Link, drones, projectiles, terrain protection; add stealth/EW/Intercept only if both players know them",
+   "Beginner control wording: a M.A.P. controls a space if it is on or adjacent to it and no enemy M.A.P. is also on or adjacent to it; drones contest only if both players agree"
+  ],
+  "notes": [
+   "This booklet is primarily a force-building and setup walkthrough (roles, part slots, pilots, faction cheat sheets, a complexity ladder, and a blank worksheet); the units loaded here are its 'sample core-box vs core-box force pair'.",
+   "The guide gives deployment zones (RDL columns A-B, UN columns K-L) but no exact starting grids; unit grids A5/A8/B6/B7 and L5/L8/K7 were assigned following the convention used by every other booklet in the series - treat them as suggestions.",
+   "Round flow: Command, Planning, Action, Automatic, Delay, End Phase each round; mission is the generic 'Relay Control'.",
+   "Pilot mapping: 'Rifleman-27' = card LPA-27 'Rifleman1' (9 pts), 'Charger-31' = card LPA-31 'Charger1' (6 pts); points match the guide.",
+   "Wall/container orientations inferred from map symmetry (not printed in the guide).",
+   "All sample-list arm sides are printed explicitly - R-20 (L), AC-150 (R), Shield+Cleaver (L), AC-32 (R), S100+Grenade Pod (L), R33 (R), S9 Meteor+M5 Pile Bunker (L), R7 (R) - and all match card slots."
+  ],
+  "unmatched": []
+ }
+]

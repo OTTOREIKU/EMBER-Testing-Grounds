@@ -1,0 +1,21 @@
+node_modules/
+dist/
+.vite/
+*.local
+.DS_Store
+Thumbs.db
+
+# Internal working documents. These are our notes, not part of the released tool, and the
+# public repo gets its own README instead. Delete a line to start publishing that file.
+app/DEVLOG.internal.md
+PROJECT_PLAN.md
+research/
+
+# Full chapter-by-chapter digests of the printed rulebook. The app never loads these at
+# runtime; they were working notes used to build data/ and the reference page. Publishing a
+# near-complete restatement of a commercial rulebook is a bigger ask than publishing the tool,
+# so they stay local. Delete this line if you decide otherwise.
+rules/
+
+# Stray artboard export picked up with the part art. Nothing references it.
+assets/mech_parts/画板 1.webp

@@ -1,0 +1,43 @@
+{
+ "_comment": "Rules text for the six Tactics Cards, transcribed from the English card scans in assets/cards/en/. The community card database carries their names and point cost but no text, so this fills the gap. Merged at load time as a synthetic action on each card, which is why every tactic shows up with the Tactic action icon.",
+ "_note": "Card 274 prints as 'Additional Instructions'; the card database calls it 'Additional Command'. The printed name is used. Card 278 prints 'Tactical Disposition'; the database misspells it 'Dispostion'.",
+ "_cost": "Every Tactics Card shows a 1 in a circle next to its number, and all six cost 30 points.",
+ "tactics": {
+  "274": {
+   "name": "Additional Instructions",
+   "faction": "GOF",
+   "timing": "Command Phase",
+   "text": "Use during the Command Phase, select 1 Ally Drone and have it perform 1 additional Command Action."
+  },
+  "275": {
+   "name": "Battlefield Recovery",
+   "faction": "GOF",
+   "timing": "End Phase",
+   "text": "Use during the End Phase, select 1 Ally Mech that is not in Shutdown Stance and restore 1 Link Value."
+  },
+  "276": {
+   "name": "Hit and Run",
+   "faction": "UN",
+   "timing": "When an Action Opportunity ends",
+   "text": "Use when the Action Opportunity of an Ally Mech ends, perform Maneuver with that Mech."
+  },
+  "277": {
+   "name": "System Repair",
+   "faction": "RDL",
+   "timing": "During an Action Opportunity",
+   "text": "Use during the Action Opportunity of an Ally Mech, select 1 Ally Unit and remove 1 Square Token or 1 Hexagon Token from that Unit."
+  },
+  "278": {
+   "name": "Tactical Disposition",
+   "faction": "UN",
+   "timing": "During an Action Opportunity",
+   "text": "Use during the Action Opportunity of an Ally Mech, select 1 Ally Mech that is not in Shutdown Stance and change its Stance."
+  },
+  "279": {
+   "name": "Remote Restart",
+   "faction": "RDL",
+   "timing": "End Phase",
+   "text": "Use during the End Phase, select 1 Ally Mech that is in Shutdown Stance, change its Stance and restore 1 Link Value."
+  }
+ }
+}

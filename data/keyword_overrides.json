@@ -1,0 +1,163 @@
+{
+ "_comment": "Glossary fixes applied on top of the generated keywords.json (which comes from the community builder bundle). Sourced from the verified rulebook digests in ../rules. Keep this file when re-running tools/extract_cards.js — it is merged at load time by the app.",
+ "_source": "rules/05_advanced_combat.md §4.17, rules/06_missions_and_appendix.md §6.2",
+ "_corrections": "推动X was labelled 'Knock Back X' in the bundle, which collides with 击退X 'Knockback X'; the rulebook names it Push X (it alone reduces Link). 离子武器 was OCR'd as 'lon Weapon' (capital I read as lowercase L).",
+ "overrides": {
+  "空手": {
+   "en": {
+    "name": "Freehand",
+    "value": "Tag: this limb has an open hand and can be designated to support another Part's Action. Enables [Two-Handed] conditional effects, is required by the Throw keyword, and is needed to pick up a Black Box (which then occupies the hand). Parts with the Handheld tag usually gain Freehand in their Discard state."
+   }
+  },
+  "双手": {
+   "en": {
+    "name": "Two-Handed",
+    "value": "Conditional: when performing this Action, if another Part with the Freehand tag is designated to support it, the [Two-Handed] effects listed on the card apply."
+   }
+  },
+  "导弹组X": {
+   "en": {
+    "name": "Missile Group X",
+    "value": "Each Missile Group contains X Units. They must move together and attack the same target, but Interception and Explosion damage resolve separately for each Unit. Example: an RKG70 model is a group of 3; one successful interception in flight removes 1 Unit, so 2 models arrive and cause 2 Detonations."
+   }
+  },
+  "抛射物": {
+   "en": {
+    "name": "Projectile",
+    "value": "Archetype tag on the card banner — this Unit is a Projectile (launched, then resolves in the Delay Phase). Not a special rule; see Ch. 4.7 and the card's own actions."
+   }
+  },
+  "设置物": {
+   "en": {
+    "name": "Deployable",
+    "value": "Archetype tag on the card banner — this Unit is a Deployable placed on the ground (mines, walls, beacons). Not a special rule; see Ch. 4.7 and the card's own actions."
+   }
+  },
+  "导弹": {
+   "en": {
+    "name": "Missile",
+    "value": "Projectile subtype tag on the card banner. Not a special rule — the card's actions carry its behaviour."
+   }
+  },
+  "火箭": {
+   "en": {
+    "name": "Rocket",
+    "value": "Projectile subtype tag on the card banner. Not a special rule — the card's actions carry its behaviour."
+   }
+  },
+  "巡航": {
+   "en": {
+    "name": "Cruise",
+    "value": "Projectile subtype tag on the card banner. Not a special rule — the card's actions carry its behaviour."
+   }
+  },
+  "榴弹": {
+   "en": {
+    "name": "Grenade",
+    "value": "Projectile subtype tag on the card banner. Not a special rule — the card's actions carry its behaviour."
+   }
+  },
+  "智能榴弹": {
+   "en": {
+    "name": "Smart Grenade",
+    "value": "Projectile subtype tag on the card banner. Not a special rule — the card's actions carry its behaviour."
+   }
+  },
+  "烟幕弹": {
+   "en": {
+    "name": "Smoke Grenade",
+    "value": "Projectile subtype tag on the card banner. On Detonation these place Smoke Screens — see Ch. 4.16 and the card's actions."
+   }
+  },
+  "地雷": {
+   "en": {
+    "name": "Mine",
+    "value": "Deployable subtype tag on the card banner. Mines typically carry a Trigger action that detonates when a Ground Unit enters their grid."
+   }
+  },
+  "自行地雷": {
+   "en": {
+    "name": "Self-propelled Mine",
+    "value": "Deployable subtype tag on the card banner — a mine able to move. See the card's own actions."
+   }
+  },
+  "墙": {
+   "en": {
+    "name": "Wall",
+    "value": "Deployable subtype tag on the card banner — a placed barrier. See the card for its height and whether it blocks line of sight."
+   }
+  },
+  "信标": {
+   "en": {
+    "name": "Beacon",
+    "value": "Deployable subtype tag on the card banner — a placed marker providing support effects. See the card's own actions."
+   }
+  },
+  "机动掩体": {
+   "en": {
+    "name": "Mobile Cover",
+    "value": "Deployable subtype tag on the card banner — deployable cover that can reposition. See the card's own actions."
+   }
+  },
+  "电子对抗": {
+   "en": {
+    "name": "Electronic Countermeasures",
+    "value": "Deployable subtype tag on the card banner — electronic-warfare support. See the card's own actions and Ch. 4.11."
+   }
+  },
+  "牵引X": {
+   "en": {
+    "name": "Traction X",
+    "value": "Keyword printed on some cards; the English glossary text for it is not present in the extracted data. Check the physical card or rulebook Ch. 6.2 for the exact wording."
+   }
+  },
+  "离子武器": {
+   "en": {
+    "name": "Ion Weapon",
+    "value": "When hitting a target with a Fragile Token, may exchange {Lightning} for {Heavy Hit}."
+   }
+  },
+  "推动X": {
+   "en": {
+    "name": "Push X",
+    "value": "After this action ends, the target is forced to move X grids along the attack direction. If the target is a Mech, its Link is reduced by 1. (Same forced-movement rules as Knockback X: straight line, stops early if blocked by Units or Terrain.)"
+   }
+  },
+  "异形X": {
+   "en": {
+    "name": "Irregular X",
+    "value": "When performing this Action, consume X Link. (Unofficial English name — this keyword has no English entry in the community data and does not appear in the rulebook's keyword glossary; the rules text here is translated from the Chinese.)"
+   }
+  },
+  "电子攻击": {
+   "en": {
+    "name": "Electronic Attack",
+    "value": "This Action is an Electronic Attack (EA) . When there is an effect that modifies \"Electronic Attacks\", this Action will be affected by it;If not further described, this Action targets an Enemy Unit, requires an Electronic counter-roll, and takes effect if successful."
+   }
+  },
+  "电子支援": {
+   "en": {
+    "name": "Electronic Support",
+    "value": "This Action is Electronic Support (ES). When there is an effect that modifies \"Electronic support\", this Action will be affected by it;If not further described, this Action targets Friendly Units and does not require Electronic counter-rolls. It takes effect automatically."
+   }
+  },
+  "齐射X": {
+   "en": {
+    "name": "Volley X",
+    "value": "Fire or deploy up to X Projectiles with this one Action, consuming an equal number of Ammo Tokens. You may repeat the declare-and-place steps until X projectiles have been launched, and Interception is then checked once at the end of the Action rather than per projectile."
+   }
+  },
+  "拦截X": {
+   "en": {
+    "name": "Intercept X",
+    "value": "This Action may be used for Interception, and starts the game with X Interception Tokens face-up on its Card. Interception triggers when an enemy Aerial Unit moves or is launched and either the starting or ending grid of that movement is within this Action's Range. Each attempt consumes 1 token and attacks like a Firing Action, except that the target must be the unit that triggered it, the target need not be in the Forward Arc, and line of sight always exists so neither Terrain nor Unit Protection can be claimed. If the target survives, you must keep attempting Interceptions until it is destroyed or the tokens run out."
+   }
+  },
+  "追击标记": {
+   "en": {
+    "name": "Target Tracer",
+    "value": "When a Drone performs Automatic Actions, it may designate a Unit bearing a Target Tracer Token as the target even if it is not the closest Enemy Unit. When a Drone performs any Attack / Electronic Attack targeting a Unit bearing a Target Tracer Token, it is treated as being in the Offensive Stance."
+   }
+  }
+ }
+}
