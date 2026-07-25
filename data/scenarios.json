@@ -1067,12 +1067,12 @@
    },
    {
     "type": "high_wall",
-    "grid": "E8",
+    "grid": "E9",
     "orientation": "vertical"
    },
    {
     "type": "high_wall",
-    "grid": "H8",
+    "grid": "H9",
     "orientation": "vertical"
    },
    {
@@ -1209,7 +1209,8 @@
    "Terminal scenario rule: a M.A.P. adjacent to a Terminal may use Tactical-S Access Terminal; on success place an Uplink marker there until End Phase. Spend Uplink for one of: +2 Range on one electronic action, one extra drone command, or measuring one electronic action from the Terminal.",
    "Round 1 scripted: RDL Signal aims at Terminal E6 via C5/D5, Marksman holds a lane via C8/D8; UN Breaker contests Terminal H6 via J6/I6 while Raven drones screen. Round 2: first real electronic rolls and Jammed Tokens. Rounds 3-4 free play ('network collapse').",
    "Terrain is not itemised in this booklet ('same 12x12 standard as the earlier demo booklets, centre remains blocked'); buildings and walls copied from the series-standard map - treat as an inferred layout.",
-   "Wall orientations inferred from map symmetry."
+   "Wall orientations inferred from map symmetry.",
+   "Terrain fix: the inferred tall walls originally copied to E8 and H8 sat on this booklet's own printed Terminal markers. They are moved to E9 and H9, the only free grids left in those columns, which keeps the blocked centre the booklet describes without burying an objective."
   ],
   "unmatched": [
    "AC-32 Automatic Rifle (card 025 is right-hand only; the Relay Marksman's right hand holds R-35 Heavy Railgun)",
@@ -1554,7 +1555,48 @@
     ]
    }
   },
-  "terrain": [],
+  "terrain": [
+   {
+    "type": "high_wall",
+    "grid": "E5",
+    "orientation": "vertical"
+   },
+   {
+    "type": "high_wall",
+    "grid": "H5",
+    "orientation": "vertical"
+   },
+   {
+    "type": "high_wall",
+    "grid": "E8",
+    "orientation": "vertical"
+   },
+   {
+    "type": "high_wall",
+    "grid": "H8",
+    "orientation": "vertical"
+   },
+   {
+    "type": "low_wall",
+    "grid": "D6",
+    "orientation": "horizontal"
+   },
+   {
+    "type": "low_wall",
+    "grid": "I6",
+    "orientation": "horizontal"
+   },
+   {
+    "type": "low_wall",
+    "grid": "D7",
+    "orientation": "horizontal"
+   },
+   {
+    "type": "low_wall",
+    "grid": "I7",
+    "orientation": "horizontal"
+   }
+  ],
   "markers": [
    {
     "kind": "relay",
@@ -1638,7 +1680,8 @@
    "Board setup lists 'UN Duelist / Support Drone L8 / K7': the generic Raven training package was placed at L8 and the Porcupine at K7 (assignment guessed; reset checklist says 'UN support L8/K7').",
    "Round 1 scripted: load and position (RDL gunner to C5, brawler to C8, UN striker to J5, support to J8/K7). Round 2: threaten the spike. Rounds 3-4: commit, bait, or conserve.",
    "Non-card list lines kept as notes: RDL and UN 'Resource training kit - Ammo Cache / Charge Relay scenario value' (27 / 28 pts).",
-   "Support drone substitution: the booklet lists a generic \"Raven / training support package\" at 33 pts with no matching card, and allows an equivalent UN support drone. Card 166 ADK60S \"Raven\" Interference Type (36 pts) is used here, 3 pts above the booklet line."
+   "Support drone substitution: the booklet lists a generic \"Raven / training support package\" at 33 pts with no matching card, and allows an equivalent UN support drone. Card 166 ADK60S \"Raven\" Interference Type (36 pts) is used here, 3 pts above the booklet line.",
+   "Terrain is ours, not the booklet's. Power Spike prints no terrain rows, but it lists terrain protection among the rules in use and tells players to use stance and terrain before charging in, so the board should not be bare. The series-standard wall ring is used: tall walls at E5/H5/E8/H8 and short walls at D6/I6/D7/I7. The buildings that normally sit at F6 and G7 are deliberately left out, because this scenario prints its Core Nodes on those two grids."
   ],
   "unmatched": [
    "SH-15 Field Repair System (card 001; Missile Brawler backpack slot holds ML-34 Quad Missile Rack - booklet lists two backpacks)"
@@ -1904,7 +1947,68 @@
     ]
    }
   },
-  "terrain": [],
+  "terrain": [
+   {
+    "type": "high_wall",
+    "grid": "E5",
+    "orientation": "vertical"
+   },
+   {
+    "type": "high_wall",
+    "grid": "H5",
+    "orientation": "vertical"
+   },
+   {
+    "type": "high_wall",
+    "grid": "E8",
+    "orientation": "vertical"
+   },
+   {
+    "type": "high_wall",
+    "grid": "H8",
+    "orientation": "vertical"
+   },
+   {
+    "type": "low_wall",
+    "grid": "D6",
+    "orientation": "horizontal"
+   },
+   {
+    "type": "low_wall",
+    "grid": "D7",
+    "orientation": "horizontal"
+   },
+   {
+    "type": "low_wall",
+    "grid": "I6",
+    "orientation": "horizontal"
+   },
+   {
+    "type": "low_wall",
+    "grid": "I8",
+    "orientation": "horizontal"
+   },
+   {
+    "type": "container2",
+    "grid": "F5",
+    "orientation": "horizontal"
+   },
+   {
+    "type": "container2",
+    "grid": "G5",
+    "orientation": "horizontal"
+   },
+   {
+    "type": "container2",
+    "grid": "F8",
+    "orientation": "horizontal"
+   },
+   {
+    "type": "container2",
+    "grid": "G8",
+    "orientation": "horizontal"
+   }
+  ],
   "markers": [
    {
     "kind": "extraction",
@@ -1992,7 +2096,8 @@
    "The booklet describes a centre 'blocked by wreckage and walls' but lists no terrain grids, so terrain was left empty - dress the centre freely.",
    "UN board setup allows 'the listed Raven-style support drone or another approved UN support drone of similar value' (30 pts) at J9.",
    "Round 1 scripted: carrier moves toward D6/F6 with cover; escort screens; UN Hunter takes the upper lane, support covers the lower lane. Rounds 3-4: extraction race. Optional replays: full part targeting, persistent critical damage, extraction timer, emergency tow.",
-   "Support drone substitution: the booklet lists a \"Raven-style support drone / approved UN support drone\" at 30 pts and explicitly permits another approved UN support drone of similar value. Card 161 ADK15/MAS \"Porcupine\" Microwave Type is used here, matching 30 pts exactly; the booklet setup row itself reads \"UN Porcupine / Raven Drone\"."
+   "Support drone substitution: the booklet lists a \"Raven-style support drone / approved UN support drone\" at 30 pts and explicitly permits another approved UN support drone of similar value. Card 161 ADK15/MAS \"Porcupine\" Microwave Type is used here, matching 30 pts exactly; the booklet setup row itself reads \"UN Porcupine / Raven Drone\".",
+   "Terrain is ours, not the booklet's. The setup text says the centre is blocked by wreckage and walls and that this forces the carrier to choose a route, but no grids are printed. Walls use the series-standard ring (tall at E5/H5/E8/H8, short at D6/D7/I6) and the wreckage is four destructible large containers at F5/G5/F8/G8, ringing the centre objectives without covering them. Two departures from the standard ring were forced by this booklet's own unusual deployment: the short wall normally at I7 would sit on the UN Porcupine's starting grid, so it moves to I8, and the standard containers at J4 and J9 are dropped because the UN Hunter and support drone start there."
   ],
   "unmatched": []
  },

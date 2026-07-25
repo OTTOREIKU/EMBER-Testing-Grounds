@@ -20,11 +20,11 @@ specific non-card lines or slot conflicts named below.
 | UN Core Box Demo | exact | exact | exact | 3 | exact |
 | Asymmetric Duel | exact | exact | exact | as printed | exact |
 | Advanced Stealth Duel | exact | as printed (no containers) | exact | as printed | exact |
-| Signal Relay War | exact | inferred (see 3) | exact | as printed | exact |
-| Missile Umbrella | exact | inferred (see 3) | exact | as printed | exact |
-| Power Spike | exact | none printed | exact | as printed | exact |
+| Signal Relay War | exact | inferred (see 4), corrected in 6 | exact | as printed | exact |
+| Missile Umbrella | exact | inferred (see 4) | exact | as printed | exact |
+| Power Spike | exact | none printed, filled in (see 6) | exact | as printed | exact |
 | Breach the Gate | exact | gate printed, type inferred (see 5) | as printed | exact |
-| Hold Until Extraction | exact | none printed (prose only) | exact | as printed | exact |
+| Hold Until Extraction | exact | none printed, filled in (see 6) | exact | as printed | exact |
 | Full Game Setup Guide | zones only (see 4) | exact | exact | as printed | exact |
 
 ## Why the point totals do not always add up
@@ -80,6 +80,30 @@ objective markers only, which left the choke point blocking nothing. They are no
 two 3-inch walls. The booklet never states whether the gate is a wall or a building, nor its
 orientation, so both are inferred and recorded in the scenario's own notes.
 
+**6. Terrain we placed ourselves.** Two booklets describe terrain in prose but print no grids, and
+leaving their boards bare made them play wrong rather than play faithfully. Terrain is now placed
+for both, drawn only from the official pieces the map editor offers and kept off every printed
+objective and starting grid. It is ours, not the authors', and is flagged as such in each
+scenario's notes so nobody mistakes it for the booklet.
+
+- **Power Spike** lists terrain protection among the rules in use and tells players to "use stance
+  and terrain before charging in", so it gets the series-standard wall ring: tall walls at
+  E5/H5/E8/H8, short walls at D6/I6/D7/I7. The buildings that usually sit at F6 and G7 are left
+  out, because this scenario prints its Core Nodes on exactly those grids.
+- **Hold Until Extraction** says the centre is "blocked by wreckage and walls" and that this forces
+  the carrier to choose a route. Walls follow the standard ring; the wreckage is four destructible
+  large containers at F5/G5/F8/G8, ringing the centre objectives without covering them. Its unusual
+  deployment, where both forces start on the same half, forced two departures: the short wall
+  normally at I7 would sit on the UN Porcupine's starting grid so it moves to I8, and the standard
+  containers at J4 and J9 are dropped because the UN Hunter and support drone start there.
+
+The same pass caught a mistake in terrain that had been inferred earlier. **Signal Relay War** had
+tall walls copied to E8 and H8, which are two of its own printed Terminal markers, so an inferred
+piece was sitting on a real objective. They move to E9 and H9, the only free grids left in those
+columns. Every scenario has since been checked programmatically: no terrain piece shares a grid
+with a marker or a starting position, the sole exception being Breach the Gate's gate, where the
+overlap is the point.
+
 ## Hold Until Extraction now starts damaged
 
 Its section 5, "Starting Damage Setup", is the premise of the scenario: the RDL Data Carrier
@@ -95,9 +119,13 @@ prop rather than a game piece the board models.
 Worth knowing before you load them expecting variety. Seven booklets prescribe the same centre:
 buildings at F6/G7, tall walls at E5/H5/E8/H8, short walls at D6/I6/D7/I7. The Core Box demos and
 the Full Game Setup Guide add containers at C4/J4/C9/J9 and D3/I10; Asymmetric Duel and Advanced
-Stealth Duel print the same centre without containers. Power Spike and Hold Until Extraction print
-no terrain at all, and Breach the Gate prints only its gate. So the boards genuinely do look alike
+Stealth Duel print the same centre without containers. So the boards genuinely do look alike
 between scenarios: that is the series standard the authors chose, not missing data.
+
+The three that differ now differ for a reason. Breach the Gate has only its gate, because a choke
+point is the whole scenario. Power Spike keeps the wall ring but loses the centre buildings, since
+its Core Nodes occupy those grids. Hold Until Extraction swaps the far-side containers for centre
+wreckage, since its objectives and both deployments sit where the standard pieces would go.
 
 ## Two support drones were left open on purpose
 
