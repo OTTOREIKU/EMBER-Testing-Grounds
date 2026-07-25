@@ -10,6 +10,7 @@ Thumbs.db
 app/DEVLOG.internal.md
 PROJECT_PLAN.md
 research/
+.claude/
 
 # Full chapter-by-chapter digests of the printed rulebook. The app never loads these at
 # runtime; they were working notes used to build data/ and the reference page. Publishing a
