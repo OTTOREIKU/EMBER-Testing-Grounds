@@ -85,5 +85,5 @@ board. That is fixed.
    round counts and scoring tables.
 
 Scenario names, deployments, objectives and teaching structure are Luna Lilly Games' work,
-reproduced here with credit and without changes beyond the points listed above. See
-[ATTRIBUTION.md](ATTRIBUTION.md).
+reproduced here with credit and without changes beyond the points listed above. The booklets
+reached me via **u/Soavon**, who shared them on Reddit. See [ATTRIBUTION.md](ATTRIBUTION.md).

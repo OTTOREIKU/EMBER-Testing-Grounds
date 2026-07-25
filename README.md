@@ -7,7 +7,8 @@ by reading, so I built the thing I wanted: a board I could push mechs around on,
 close enough to hand that I could stop flipping through the PDF every thirty seconds. It runs
 entirely in your browser, needs no install and no account, and keeps everything in local storage.
 
-**[Open the tabletop](./index.html)** · **[Open the reference](./reference.html)**
+**[Open the tabletop](https://ottoreiku.github.io/EMBER-Testing-Grounds/)** ·
+**[Open the reference](https://ottoreiku.github.io/EMBER-Testing-Grounds/reference.html)**
 
 ## What you can do with it
 
@@ -46,7 +47,8 @@ have translated it, always labelled as unofficial with the original kept alongsi
 
 ## The reference page works on its own
 
-[reference.html](./reference.html) is a separate page built for a phone. Bookmark it and you have
+The [reference page](https://ottoreiku.github.io/EMBER-Testing-Grounds/reference.html) is a
+separate page built for a phone. Bookmark it and you have
 the full glossary, every part, unit, pilot and tactics card, and a searchable rules section in your
 pocket, without loading the tabletop first. I use it at the table more than I expected to.
 
@@ -72,9 +74,10 @@ Everything saves to your browser. Nothing is uploaded anywhere and there is no s
 
 The game, its artwork and its rules belong to **Beijing Queti Technology Co., Ltd.** The card
 database and art came from **watermelon02's** community army builder, and the ten demo scenarios
-are **Luna Lilly Games'** work. This is an unofficial fan tool, made for learning and not for
-profit. Full details in [ATTRIBUTION.md](ATTRIBUTION.md), and the scenario conversions are audited
-line by line in [SCENARIO_AUDIT.md](SCENARIO_AUDIT.md).
+are **Luna Lilly Games'** work, which I found thanks to **u/Soavon** sharing them on Reddit. This
+is an unofficial fan tool, made for learning and not for profit. Full details in
+[ATTRIBUTION.md](ATTRIBUTION.md), and the scenario conversions are audited line by line in
+[SCENARIO_AUDIT.md](SCENARIO_AUDIT.md).
 
 If you play EMBER and something here is wrong, please tell me. I would rather fix it than have
 someone learn a rule incorrectly from my tool.

@@ -35,6 +35,10 @@ treat it as unofficial and let the physical card win.
 The ten preset scenarios are converted from fan demo booklets by **Luna Lilly Games** (Ryan).
 Scenario names, deployments and objectives are theirs.
 
+I found the booklets through **u/Soavon**, who shared them with the EMBER community on Reddit.
+Thanks for putting them where people could actually find them; this tool would have shipped
+without any scenarios otherwise.
+
 ## What is original here
 
 Only the application itself: the board, rules helpers, dice engine, squad tracker, attack and
