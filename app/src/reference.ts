@@ -23,9 +23,46 @@ const STAT_FIELDS: [keyof Card, string][] = [
   ['move', 'Move'],
 ];
 
+interface Facet {
+  id: string;
+  label: string;
+  match: (c: Card) => boolean;
+}
+
+const PART_FACETS: Facet[] = [
+  { id: 'torso', label: 'Torso', match: (c) => c.type === 'torso' },
+  { id: 'chasis', label: 'Chassis', match: (c) => c.type === 'chasis' },
+  { id: 'leftHand', label: 'Left arm', match: (c) => c.type === 'leftHand' },
+  { id: 'rightHand', label: 'Right arm', match: (c) => c.type === 'rightHand' },
+  { id: 'backpack', label: 'Backpack', match: (c) => c.type === 'backpack' },
+];
+
+const UNIT_FACETS: Facet[] = [
+  { id: 'drone', label: 'Drones', match: (c) => c.category === 'drone' },
+  { id: 'projectile', label: 'Projectiles', match: (c) => c.category === 'projectile' },
+  { id: 'small', label: 'Small', match: (c) => c.type === 'small' },
+  { id: 'medium', label: 'Medium', match: (c) => c.type === 'medium' },
+  { id: 'large', label: 'Large', match: (c) => c.type === 'large' },
+];
+
+const PILOT_FACETS: Facet[] = [
+  { id: 'RDL', label: 'RDL', match: (c) => c.faction === 'RDL' },
+  { id: 'UN', label: 'UN', match: (c) => c.faction === 'UN' },
+  { id: 'GOF', label: 'GOF', match: (c) => c.faction === 'GOF' },
+  { id: 'PD', label: 'PD', match: (c) => c.faction === 'PD' },
+];
+
+function facetsFor(t: Tab): Facet[] {
+  if (t === 'parts') return PART_FACETS;
+  if (t === 'units') return UNIT_FACETS;
+  if (t === 'pilots') return PILOT_FACETS;
+  return [];
+}
+
 let data: GameData;
 let tab: Tab = 'keywords';
 let query = '';
+const facetChoice: Partial<Record<Tab, string>> = {};
 
 const body = () => document.getElementById('ref-body')!;
 const esc = (s: string) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!);
@@ -381,19 +418,44 @@ function render(): void {
           ? (c: Card) => c.category === 'tactics_or_upgrade'
           : (c: Card) => c.category === 'pilot';
 
-  const list = data.cards
-    .filter(want)
-    .filter((c) => {
-      if (!q) return true;
-      const kw = (c.keywords ?? []).map((k) => k.en || k.inline || k.key).join(' ');
-      const acts = (c.actions ?? []).map((a) => `${a.name.en ?? ''} ${a.description?.en ?? ''}`).join(' ');
-      return norm(`${cardName(c)} ${c.id} ${c.type ?? ''} ${kw} ${acts}`).includes(q);
-    })
-    .sort((a, b) => cardName(a).localeCompare(cardName(b)));
+  const pool = data.cards.filter(want).filter((c) => {
+    if (!q) return true;
+    const kw = (c.keywords ?? []).map((k) => k.en || k.inline || k.key).join(' ');
+    const acts = (c.actions ?? []).map((a) => `${a.name.en ?? ''} ${a.description?.en ?? ''}`).join(' ');
+    return norm(`${cardName(c)} ${c.id} ${c.type ?? ''} ${kw} ${acts}`).includes(q);
+  });
 
-  el.innerHTML = list.length
-    ? `<p class="ref-count">${list.length} card${list.length === 1 ? '' : 's'}</p>${list.map(cardRow).join('')}`
-    : '<p class="ref-count">No matches</p>';
+  const facets = facetsFor(tab);
+  const chosen = facetChoice[tab];
+  const active = facets.find((f) => f.id === chosen);
+  const list = pool.filter((c) => !active || active.match(c)).sort((a, b) => cardName(a).localeCompare(cardName(b)));
+
+  const chips = facets.length
+    ? `<div class="ref-facets">
+        <button class="ref-facet${active ? '' : ' active'}" data-facet="">All <span class="fc-n">${pool.length}</span></button>
+        ${facets
+          .map((f) => {
+            const n = pool.filter(f.match).length;
+            return `<button class="ref-facet${active?.id === f.id ? ' active' : ''}${n ? '' : ' empty'}" data-facet="${f.id}"${n ? '' : ' disabled'}>${esc(f.label)} <span class="fc-n">${n}</span></button>`;
+          })
+          .join('')}
+      </div>`
+    : '';
+
+  el.innerHTML =
+    chips +
+    (list.length
+      ? `<p class="ref-count">${list.length} card${list.length === 1 ? '' : 's'}</p>${list.map(cardRow).join('')}`
+      : '<p class="ref-count">No matches</p>');
+
+  el.querySelectorAll<HTMLButtonElement>('.ref-facet').forEach((b) =>
+    b.addEventListener('click', () => {
+      const id = b.dataset.facet ?? '';
+      facetChoice[tab] = id || undefined;
+      render();
+      body().scrollTop = 0;
+    }),
+  );
   fillPortraits(el, true);
 }
 

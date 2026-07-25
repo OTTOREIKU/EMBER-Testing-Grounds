@@ -18,9 +18,9 @@ in-app when the scenario loads.
 | Signal Relay War | exact | inferred (see 3) | exact | as printed | exact |
 | Missile Umbrella | exact | inferred (see 3) | exact | as printed | exact |
 | Power Spike | exact | none printed | exact | as printed | exact |
-| Breach the Gate | exact | none printed (gate markers form the choke) | as printed | exact |
-| Hold Until Extraction | exact | exact | exact | as printed | exact |
-| Full Game Setup Guide | zones only (see 4) | inferred | exact | as printed | exact |
+| Breach the Gate | exact | gate printed, type inferred (see 5) | as printed | exact |
+| Hold Until Extraction | exact | none printed (prose only) | exact | as printed | exact |
+| Full Game Setup Guide | zones only (see 4) | exact | exact | as printed | exact |
 
 ## Why the point totals do not always add up
 
@@ -51,13 +51,31 @@ M.A.P. calls for **TM17 "Wolfhound" Guard Core** (42) and **LM108 Agile Chassis*
 appears in the card data the app is built from, so that mech is placed with only the parts that do
 exist. This is the one gap that is not a booklet quirk and not fixable on our side.
 
-**4. Terrain and deployment that the booklets do not print.** Signal Relay War, Missile Umbrella
-and the Full Game Setup Guide describe the centre as terrain-heavy or "the same 12x12 standard as
-the earlier booklets" without itemising grids, so the series-standard layout from the Core Box
-demos was reused. The Full Game Setup Guide gives deployment *zones* (RDL columns A–B, UN columns
-K–L) rather than grids, so A5/A8/B6/B7 and L5/L8/K7 follow the convention every other booklet in
-the series uses. Wall and container **orientations** are never printed anywhere, and were inferred
-from map symmetry. All of these are marked as inferred rather than presented as printed.
+**4. Terrain and deployment that the booklets do not print.** Signal Relay War and Missile Umbrella
+describe the centre as terrain-heavy or blocked without itemising grids, so the series-standard
+layout from the Core Box demos was reused. Hold Until Extraction likewise describes a centre
+"blocked by wreckage and walls" in prose but prints no terrain rows, so none are placed. The Full
+Game Setup Guide gives deployment *zones* (RDL columns A–B, UN columns K–L) rather than grids, so
+A5/A8/B6/B7 and L5/L8/K7 follow the convention every other booklet in the series uses; its terrain,
+however, **is** itemised in its section 10 and is reproduced exactly. Wall and container
+**orientations** are never printed anywhere, and were inferred from map symmetry. All of these are
+marked as inferred rather than presented as printed.
+
+**5. Breach the Gate's gate is terrain, not just a marker.** Its setup table prints one terrain row,
+"Gate — F7, G7 — Main breach obstacle/line", and the booklet opens by describing "choke-point
+terrain: buildings and walls create a narrow fight". Those two grids were previously placed as
+objective markers only, which left the choke point blocking nothing. They are now also placed as
+two 3-inch walls. The booklet never states whether the gate is a wall or a building, nor its
+orientation, so both are inferred and recorded in the scenario's own notes.
+
+## The ten scenarios share two centre layouts, by design
+
+Worth knowing before you load them expecting variety. Seven booklets prescribe the same centre:
+buildings at F6/G7, tall walls at E5/H5/E8/H8, short walls at D6/I6/D7/I7. The Core Box demos and
+the Full Game Setup Guide add containers at C4/J4/C9/J9 and D3/I10; Asymmetric Duel and Advanced
+Stealth Duel print the same centre without containers. Power Spike and Hold Until Extraction print
+no terrain at all, and Breach the Gate prints only its gate. So the boards genuinely do look alike
+between scenarios: that is the series standard the authors chose, not missing data.
 
 ## Two support drones were left open on purpose
 

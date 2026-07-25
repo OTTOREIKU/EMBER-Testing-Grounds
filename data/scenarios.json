@@ -1720,7 +1720,18 @@
     ]
    }
   },
-  "terrain": [],
+  "terrain": [
+   {
+    "type": "high_wall",
+    "grid": "F7",
+    "orientation": "vertical"
+   },
+   {
+    "type": "high_wall",
+    "grid": "G7",
+    "orientation": "vertical"
+   }
+  ],
   "markers": [
    {
     "kind": "gate",
@@ -1802,7 +1813,7 @@
   "notes": [
    "Sides mapped: RDL = red (attacker, west), UN = blue (defender, east).",
    "Marker kinds follow the booklet's terminology: 'gate' = main breach obstacle/line (F7, G7), 'breach' = RDL scoring spaces (H7, H8), 'holdzone' = UN hold zone (J6, J7, J8).",
-   "The booklet lists no conventional terrain rows; the centre choke is formed by the gate markers themselves. Optional replay: destructible gate with 2 structure markers.",
+   "The booklet's only terrain row is the Gate at F7 and G7, printed as the 'main breach obstacle/line'. It is placed here as two 3-inch walls so it actually blocks line of sight and movement, since a choke point that blocks nothing does not teach the lesson. The wall type and their vertical orientation are inferred; the booklet prints neither. Optional replay: destructible gate with 2 structure markers.",
    "The 48-pt 'Scenario breach kit' (RDL) and -38 defender adjustment (UN) are scenario balance lines, not cards.",
    "Round 1 scripted: RDL advances to D6/D8, UN mirrors to I6/I8; no combat expected. Round 2: contact and forced movement at the gate. Rounds 3-4: breach or throw back. Optional 5-round assault variant.",
    "Reset checklist calls the Shield Breacher 'RDL Bulwark' - same unit, starting grid A6."

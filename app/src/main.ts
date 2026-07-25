@@ -890,6 +890,83 @@ async function init() {
     if (editor.active) exitEditor();
     else enterEditor();
   });
+
+  function openMapManager(): void {
+    document.getElementById('map-dialog')?.remove();
+    const names = Object.keys(loadCustomMaps()).sort();
+    const dlg = document.createElement('div');
+    dlg.id = 'map-dialog';
+    const rows = names
+      .map((n) => {
+        const pieces = loadCustomMaps()[n]?.length ?? 0;
+        const scn = n.startsWith('[scn] ');
+        const inUse = state.map === `custom:${n}`;
+        return `<div class="map-row">
+          <div class="map-info">
+            <b>${scn ? n.slice(6) : n}</b>
+            <span class="dim">${scn ? 'from a scenario' : 'saved by you'} · ${pieces} piece${pieces === 1 ? '' : 's'}${inUse ? ' · in use now' : ''}</span>
+          </div>
+          <button class="map-del" data-name="${n.replace(/"/g, '&quot;')}">Delete</button>
+        </div>`;
+      })
+      .join('');
+    const scnCount = names.filter((n) => n.startsWith('[scn] ')).length;
+    dlg.innerHTML = `<div class="scn-panel">
+      <div class="inv-head"><b>Saved maps</b><button id="map-close">✕</button></div>
+      ${
+        names.length
+          ? `<p class="dim">Loading a scenario saves its board here so you can come back to it. Deleting one only removes it from this list; the scenario itself still loads fine.</p>
+             <div class="scn-list">${rows}</div>
+             ${scnCount > 1 ? `<div class="map-bulk"><button id="map-del-scn">Delete all ${scnCount} scenario maps</button></div>` : ''}`
+          : '<p class="dim">No saved maps yet. Build one in the map editor, or load a scenario.</p>'
+      }
+    </div>`;
+    dlg.addEventListener('click', (ev) => {
+      if (ev.target === dlg) dlg.remove();
+    });
+    dlg.querySelector('#map-close')!.addEventListener('click', () => dlg.remove());
+
+    const dropMaps = (victims: string[]): void => {
+      for (const n of victims) {
+        deleteCustomMap(n);
+        if (state.map === `custom:${n}`) state.map = '';
+      }
+      save();
+      populateMapSelect();
+      renderAll();
+      dlg.remove();
+      openMapManager();
+    };
+
+    dlg.querySelectorAll<HTMLButtonElement>('.map-del').forEach((b) =>
+      b.addEventListener('click', async () => {
+        const name = b.dataset.name!;
+        const inUse = state.map === `custom:${name}`;
+        const ok = await confirmDialog({
+          title: `Delete "${name.startsWith('[scn] ') ? name.slice(6) : name}"?`,
+          body: inUse
+            ? 'This map is on the board right now, so the board will go back to an empty grid. Units and markers stay where they are.'
+            : 'The saved map is removed from this browser. Units on the board are left alone.',
+          confirmLabel: 'Delete map',
+          danger: true,
+        });
+        if (ok) dropMaps([name]);
+      }),
+    );
+    dlg.querySelector('#map-del-scn')?.addEventListener('click', async () => {
+      const victims = names.filter((n) => n.startsWith('[scn] '));
+      const ok = await confirmDialog({
+        title: `Delete all ${victims.length} scenario maps?`,
+        body: 'These are the boards saved automatically when you loaded a scenario. Loading that scenario again recreates its map, so nothing is lost for good.',
+        confirmLabel: 'Delete them',
+        danger: true,
+      });
+      if (ok) dropMaps(victims);
+    });
+    document.body.appendChild(dlg);
+  }
+
+  document.getElementById('btn-mapmanage')!.addEventListener('click', openMapManager);
   document.getElementById('btn-inventory')!.addEventListener('click', () => inventory.openDialog());
 
   // ---------- scenarios ----------
