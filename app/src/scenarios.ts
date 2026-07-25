@@ -1,7 +1,7 @@
 import type { GameData } from './data';
 import { dataUrl } from './data';
 import { saveCustomMap } from './mapeditor';
-import type { Facing, GameState, Marker, MechLoadout, Side, TerrainPiece, Token } from './types';
+import type { Facing, GameState, Marker, MechLoadout, PartSlot, PartState, Side, TerrainPiece, Token } from './types';
 import { makeDroneToken, makeMechToken } from './units';
 
 export interface ScenarioUnit {
@@ -16,6 +16,9 @@ export interface ScenarioUnit {
   backpack?: string | null;
   pilot?: string | null;
   cardId?: string | null;
+  startDamage?: Partial<Record<PartSlot | 'main', PartState>>;
+  startLinkDelta?: number;
+  startStatuses?: string[];
 }
 
 export interface ScenarioTerrain {
@@ -93,6 +96,30 @@ function terrainPieces(list: ScenarioTerrain[]): TerrainPiece[] {
   return out;
 }
 
+function startingState(
+  tok: Omit<Token, 'col' | 'row' | 'facing'>,
+  u: ScenarioUnit,
+  warnings: string[],
+): Partial<Token> {
+  const out: Partial<Token> = {};
+  if (u.startDamage) {
+    const partStates = { ...tok.partStates };
+    for (const [slot, st] of Object.entries(u.startDamage) as [PartSlot | 'main', PartState][]) {
+      if (!(slot in partStates)) {
+        warnings.push(`${u.name}: cannot start with a damaged ${slot}, that slot is empty`);
+        continue;
+      }
+      partStates[slot] = st;
+    }
+    out.partStates = partStates;
+  }
+  if (u.startLinkDelta) {
+    out.link = Math.max(0, (tok.link ?? 0) + u.startLinkDelta);
+  }
+  if (u.startStatuses?.length) out.statuses = [...u.startStatuses];
+  return out;
+}
+
 export interface LoadResult {
   tokens: Token[];
   markers: Marker[];
@@ -122,7 +149,7 @@ export function instantiateScenario(scn: Scenario, state: GameState, data: GameD
           pilot: u.pilot ?? undefined,
         };
         const tok = makeMechToken(state, data, loadout, side, u.name);
-        tokens.push({ ...tok, col: g.c * 3, row: g.r * 3, facing });
+        tokens.push({ ...tok, col: g.c * 3, row: g.r * 3, facing, ...startingState(tok, u, warnings) });
       } else {
         const card = u.cardId ? data.byId.get(u.cardId) : undefined;
         if (!card) {

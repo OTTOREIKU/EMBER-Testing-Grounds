@@ -6,8 +6,13 @@ PDFs and compared field by field: team lists and points, deployment grids and fa
 objective markers, round counts and scoring rows.
 
 **Result: the ten scenarios faithfully reproduce the booklets.** Every place the app differs
-from a booklet is one of the four causes below, each recorded per scenario in the JSON and shown
+from a booklet is one of the causes below, each recorded per scenario in the JSON and shown
 in-app when the scenario loads.
+
+Every printed team total was reconciled arithmetically against the cards the app actually places,
+and all twenty side totals now account for themselves exactly. Hold Until Extraction and
+Asymmetric Duel match their printed totals with nothing left over; the rest differ only by
+specific non-card lines or slot conflicts named below.
 
 | Scenario | Deployment | Terrain | Markers | Rounds | Scoring |
 |---|---|---|---|---|---|
@@ -45,6 +50,13 @@ Each case is recorded and the second part is left off:
 | Missile Umbrella | UN Escort | M15BO Katana **and** R6SD SMG | both right-hand only |
 | Breach the Gate | UN Anchor | S9 Meteor Shield + IGX106 **and** S100 Shield | both left-hand only |
 | Power Spike | RDL Missile Brawler | ML-34 Quad Missile Rack **and** SH-15 Field Repair System | both backpacks |
+| Advanced Stealth Duel | RDL Fire Hunter | Type 55 Shield + PC-9 + Smoke Grenade (R) **and** R-35 Heavy Railgun | both right-hand only; resolved by substitution, see below |
+
+The Fire Hunter is the one case not resolved by leaving a part off. Its shield/shotgun/smoke piece
+is card 048 at 51 points and is right-hand only, which collides with the R-35 Heavy Railgun. The
+left-hand variant, card 053 at 42 points, was substituted so the railgun keeps the right hand,
+which accounts for that side landing 9 points under the printed 449. The smoke grenade lesson is
+lost by the substitution, so proxy it if you want that part of the teaching.
 
 **3. Two parts are missing from the community card database.** Missile Umbrella's UN Escort
 M.A.P. calls for **TM17 "Wolfhound" Guard Core** (42) and **LM108 Agile Chassis** (30). Neither
@@ -67,6 +79,16 @@ terrain: buildings and walls create a narrow fight". Those two grids were previo
 objective markers only, which left the choke point blocking nothing. They are now also placed as
 two 3-inch walls. The booklet never states whether the gate is a wall or a building, nor its
 orientation, so both are inferred and recorded in the scenario's own notes.
+
+## Hold Until Extraction now starts damaged
+
+Its section 5, "Starting Damage Setup", is the premise of the scenario: the RDL Data Carrier
+begins with a **Damaged Chassis** and **Link 1 lower than normal**, because the whole game is a
+wounded unit trying to cross the board. That was described in the scenario notes but never
+actually applied, so the "Damaged Data Carrier" used to arrive in perfect condition. Scenarios can
+now carry starting damage, and it is set for the carrier: its chassis loads Damaged and its Link
+loads at 3 instead of the pilot's 4. The Data Core marker remains a note, since it is a scenario
+prop rather than a game piece the board models.
 
 ## The ten scenarios share two centre layouts, by design
 

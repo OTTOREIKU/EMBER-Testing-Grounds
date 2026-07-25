@@ -1844,6 +1844,10 @@
       "rightHand": "033",
       "backpack": "001",
       "pilot": "FPA-04",
+      "startDamage": {
+       "chasis": "damaged"
+      },
+      "startLinkDelta": -1,
       "pointsNote": "R-20 Shoulder-Mounted Railgun side not stated; right-hand card 033 chosen because the Type 77 Bulwark is left-hand. Starts with damaged Chassis, Link 1 lower than normal, and the Data Core scenario marker attached."
      },
      {
