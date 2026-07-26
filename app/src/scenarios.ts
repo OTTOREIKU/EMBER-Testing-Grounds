@@ -125,6 +125,7 @@ export interface LoadResult {
   markers: Marker[];
   mapKey: string;
   warnings: string[];
+  sideNames: Partial<Record<Side, string>>;
 }
 
 export function instantiateScenario(scn: Scenario, state: GameState, data: GameData): LoadResult {
@@ -172,5 +173,11 @@ export function instantiateScenario(scn: Scenario, state: GameState, data: GameD
   const mapName = `[scn] ${scn.name}`;
   saveCustomMap(mapName, terrainPieces(scn.terrain ?? []));
 
-  return { tokens, markers, mapKey: `custom:${mapName}`, warnings };
+  const sideNames: Partial<Record<Side, string>> = {};
+  for (const side of ['blue', 'red'] as Side[]) {
+    const n = scn.sides[side]?.name;
+    if (n) sideNames[side] = n;
+  }
+
+  return { tokens, markers, mapKey: `custom:${mapName}`, warnings, sideNames };
 }

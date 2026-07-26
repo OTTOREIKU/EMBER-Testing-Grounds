@@ -1,6 +1,6 @@
 import type { Card, MechLoadout } from './types';
 import { cardName, type GameData } from './data';
-import { alertDialog } from './dialog';
+import { alertDialog, confirmDialog } from './dialog';
 
 export interface RosterCallbacks {
   onAddUnit(card: Card, side: 'blue' | 'red'): void;
@@ -142,6 +142,35 @@ export class Roster {
     this.body.appendChild(total);
   }
 
+  private mechFactions(): { factions: string[]; unknown: number } {
+    const seen = new Set<string>();
+    let unknown = 0;
+    for (const key of ['torso', 'chasis', 'leftHand', 'rightHand', 'backpack', 'pilot'] as const) {
+      const id = this.mech[key];
+      if (!id) continue;
+      const card = this.data.byId.get(id);
+      if (!card) continue;
+      const f = this.data.factionOf(card);
+      if (f) seen.add(f);
+      else unknown++;
+    }
+    return { factions: [...seen], unknown };
+  }
+
+  private paintFaction(el: HTMLElement): void {
+    const { factions, unknown } = this.mechFactions();
+    el.classList.toggle('bad', factions.length > 1);
+    if (!factions.length) {
+      el.textContent = unknown ? 'Faction unknown for the parts picked so far.' : '';
+      return;
+    }
+    if (factions.length === 1) {
+      el.textContent = `${factions[0]} mech${unknown ? `, plus ${unknown} part${unknown === 1 ? '' : 's'} of unknown faction` : ''}`;
+      return;
+    }
+    el.textContent = `Illegal: this mixes ${factions.join(' and ')}. A mech may only use parts from one faction.`;
+  }
+
   private renderMechBuilder(): void {
     const wrap = document.createElement('div');
     wrap.className = 'mech-builder';
@@ -169,6 +198,7 @@ export class Roster {
         const card = sel.value ? this.data.byId.get(sel.value) : undefined;
         if (card) this.cb.onPreview(card, { focus: false });
         pts.textContent = this.pointsText();
+        this.paintFaction(fac);
       });
       label.appendChild(sel);
       wrap.appendChild(label);
@@ -178,6 +208,11 @@ export class Roster {
     pts.textContent = this.pointsText();
     wrap.appendChild(pts);
 
+    const fac = document.createElement('p');
+    fac.className = 'mech-faction';
+    wrap.appendChild(fac);
+    this.paintFaction(fac);
+
     const btns = document.createElement('div');
     btns.className = 'mech-add-btns';
     for (const side of ['blue', 'red'] as const) {
@@ -185,19 +220,32 @@ export class Roster {
       b.className = `add ${side}`;
       b.textContent = `Add mech (${side === 'blue' ? 'UN' : 'RDL'})`;
       b.addEventListener('click', () => {
-        const missing = [
-          this.mech.torso ? '' : 'a Torso',
-          this.mech.chasis ? '' : 'a Chassis',
-          this.mech.leftHand || this.mech.rightHand ? '' : 'at least one Arm',
-        ].filter(Boolean);
-        if (missing.length) {
-          void alertDialog({
-            title: 'That mech is not legal yet',
-            body: `A mech needs a Torso, a Chassis and at least one Arm (rulebook 2.2.2). Still to pick: ${missing.join(', ')}.`,
-          });
-          return;
-        }
-        this.cb.onAddMech({ ...this.mech }, side);
+        void (async () => {
+          const missing = [
+            this.mech.torso ? '' : 'a Torso',
+            this.mech.chasis ? '' : 'a Chassis',
+            this.mech.leftHand || this.mech.rightHand ? '' : 'at least one Arm',
+          ].filter(Boolean);
+          if (missing.length) {
+            await alertDialog({
+              title: 'That mech is not legal yet',
+              body: `A mech needs a Torso, a Chassis and at least one Arm (rulebook 2.2.2). Still to pick: ${missing.join(', ')}.`,
+            });
+            return;
+          }
+          const { factions } = this.mechFactions();
+          if (factions.length > 1) {
+            const ok = await confirmDialog({
+              title: 'That mech mixes factions',
+              body: `It uses ${factions.join(' and ')} parts. Rulebook 5.1 says a Mech can only be composed of Parts from a single faction, so this build is not legal.`,
+              confirmLabel: 'Add it anyway',
+              cancelLabel: 'Let me fix it',
+              danger: true,
+            });
+            if (!ok) return;
+          }
+          this.cb.onAddMech({ ...this.mech }, side);
+        })();
       });
       btns.appendChild(b);
     }

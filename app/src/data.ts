@@ -10,6 +10,43 @@ export interface BoxDef {
   hasImage?: boolean;
 }
 
+// ---------- faction resolution ----------
+
+export const BASE_FACTIONS = ['RDL', 'UN', 'GOF'] as const;
+
+export const FACTION_LABEL: Record<string, string> = {
+  RDL: 'RDL',
+  UN: 'UN',
+  GOF: 'GoF',
+  PD: 'PD',
+  COLLABORATION: 'Collab',
+};
+
+function buildFactionIndex(cards: Card[], boxes: BoxDef[]): Map<string, string | null> {
+  const boxFaction = new Map(boxes.map((b) => [b.key, b.faction ?? []]));
+  const out = new Map<string, string | null>();
+  for (const c of cards) {
+    if (c.faction) {
+      out.set(c.id, c.faction.toUpperCase());
+      continue;
+    }
+    const keys = (c.containedIn ?? []).map((e) => e.box).filter(Boolean) as string[];
+    const single = new Set<string>();
+    const any = new Set<string>();
+    for (const k of keys) {
+      const f = boxFaction.get(k);
+      if (!f || !f.length) continue;
+      f.forEach((x) => any.add(x));
+      if (f.length === 1) single.add(f[0]);
+    }
+    // A card printed in a mixed box such as the Combat Pack is not multi-faction; prefer the
+    // boxes that name a single faction and only fall back when none of them do.
+    const resolved = single.size ? single : any;
+    out.set(c.id, resolved.size === 1 ? [...resolved][0] : null);
+  }
+  return out;
+}
+
 const BASE = import.meta.env.BASE_URL;
 
 export function assetUrl(path: string): string {
@@ -106,6 +143,7 @@ export interface GameData {
   byId: Map<string, Card>;
   terrain: TerrainData;
   boxes: BoxDef[];
+  factionOf(card: Card): string | null;
   keywords: KeywordDef[];
   keyword(nameOrKey: string): KeywordDef | undefined;
   mechanics: MechanicDef[];
@@ -242,11 +280,15 @@ export async function loadData(): Promise<GameData> {
   const translations = xlate.translations ?? {};
   const actionTranslation = (actionId: string) => translations[actionId];
 
+  const factionIndex = buildFactionIndex(cards, boxes);
+  const factionOf = (card: Card): string | null => factionIndex.get(card.id) ?? null;
+
   return {
     cards,
     byId,
     terrain,
     boxes,
+    factionOf,
     keywords,
     keyword,
     mechanics,
