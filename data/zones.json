@@ -1,0 +1,44 @@
+{
+ "_comment": "Tactical Zones and deployment zones for the printed 12x12 board, read off the Main Task card diagrams in assets/missions/ by overlaying a computed 12x12 grid on the card art. Grids use the board's own reference: columns A to L, rows 1 to 12.",
+ "_validation": "Every zone was read from at least two different mission cards, and the finished layout is exactly 180 degrees rotationally symmetric (Alpha maps to India, Golf to Charlie, Delta to Foxtrot, Bravo to Hotel, Echo to itself). Both deployment layouts are symmetric the same way. That symmetry was not assumed while reading; it came out of the measurements and is what confirms them.",
+ "_shapes": "Zone shapes are not uniform. The four corner zones are two large grids set diagonally, Delta and Foxtrot are two side by side, and Bravo, Echo and Hotel are 2x2 blocks. This matches the rulebook calling them L-shaped or multi-grid areas with Echo a full area in the centre.",
+ "zones": [
+  { "id": "alpha", "name": "Alpha", "cells": ["B2", "C3"] },
+  { "id": "bravo", "name": "Bravo", "cells": ["B6", "C6", "B7", "C7"] },
+  { "id": "charlie", "name": "Charlie", "cells": ["C10", "B11"] },
+  { "id": "delta", "name": "Delta", "cells": ["F4", "G4"] },
+  { "id": "echo", "name": "Echo", "cells": ["F6", "G6", "F7", "G7"] },
+  { "id": "foxtrot", "name": "Foxtrot", "cells": ["F9", "G9"] },
+  { "id": "golf", "name": "Golf", "cells": ["K2", "J3"] },
+  { "id": "hotel", "name": "Hotel", "cells": ["J6", "K6", "J7", "K7"] },
+  { "id": "india", "name": "India", "cells": ["J10", "K11"] }
+ ],
+ "deployments": [
+  {
+   "id": "corners",
+   "name": "3x5 corner blocks",
+   "note": "Black takes the top-left corner, White the bottom-right. Printed on the card as 3x5, meaning 3 rows deep by 5 columns wide.",
+   "black": { "from": "A1", "to": "E3" },
+   "white": { "from": "H10", "to": "L12" }
+  },
+  {
+   "id": "strips",
+   "name": "2x12 edge strips",
+   "note": "Black takes the full width of the top two rows, White the bottom two. Printed on the card as 2x12.",
+   "black": { "from": "A1", "to": "L2" },
+   "white": { "from": "A11", "to": "L12" }
+  }
+ ],
+ "missionDeployment": {
+  "blackbox-fragment-recovery": "corners",
+  "blackbox-key-facilities": "strips",
+  "blackbox-asset-preservation": "strips",
+  "control-flank-attack": "corners",
+  "control-frontal-breakthrough": "corners",
+  "control-long-range-operation": "corners",
+  "terminal-data-extraction": "corners",
+  "terminal-signal-reception": "strips",
+  "terminal-geological-survey": "corners",
+  "vip-commander-assassination": "strips"
+ }
+}

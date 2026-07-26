@@ -1,18 +1,20 @@
 import './styles.css';
-import { Board, CELLS, footprint, snapPlacement } from './board';
+import { Board, CELLS, footprint, snapPlacement, type BoardDeployment, type BoardZone } from './board';
 import { AttackHelper } from './combat';
 import { alertDialog, choiceDialog, confirmDialog, promptDialog } from './dialog';
 import { DiceTray } from './dice';
 import { importSquadFile } from './importer';
 import { Inventory } from './inventory';
 import { isInspectPinned, showInspect, unpinInspect } from './inspector';
-import { dataUrl, loadData, SIDE_LABEL } from './data';
+import { dataUrl, loadData, missionImageUrl, parseGridRef, SIDE_LABEL } from './data';
 import { deleteCustomMap, loadCustomMaps, makePiece, PALETTE, pieceCells, saveCustomMap, type PaletteItem } from './mapeditor';
 import { Panel } from './panel';
 import { Roster } from './roster';
 import { inArc, losBetween, rangeBetween, reachableGrids } from './rules';
 import { instantiateScenario, loadScenarios, type Scenario } from './scenarios';
 import { SquadTracker } from './squads';
+import { warmAllImagesWhenIdle } from './images';
+import { watchForUpdates } from './updates';
 import { installTooltip, preloadCards } from './tooltip';
 import { RoundTracker } from './tracker';
 import type { DiceData, Facing, GameState, MechLoadout, Side, TerrainPiece, Token } from './types';
@@ -46,6 +48,8 @@ async function init() {
 
   installTooltip();
   preloadCards(data.cards.map((c) => c.id));
+  warmAllImagesWhenIdle();
+  watchForUpdates();
   const inventory = new Inventory(data.boxes, () => roster.render());
 
   const tray = new DiceTray(dice, document.getElementById('dice-tray')!);
@@ -299,7 +303,7 @@ async function init() {
     cardBadge: (card) => {
       if (!inventory.hasAny()) return '';
       const n = inventory.ownedCount(card);
-      return n > 0 ? ` ×${n}` : ' (not owned)';
+      return n > 0 ? ` ×${n}` : '';
     },
     onPreview: (card, opts) => {
       panel.showCard(card);
@@ -800,6 +804,7 @@ async function init() {
   function renderAll(): void {
     board.renderTerrain(currentTerrain(), editor.active);
     board.renderMarkers(state.markers ?? []);
+    renderZoneOverlay();
     onChanged();
     board.refit();
   }
@@ -909,7 +914,8 @@ async function init() {
       .join('');
     const scnCount = names.filter((n) => n.startsWith('[scn] ')).length;
     dlg.innerHTML = `<div class="scn-panel">
-      <div class="inv-head"><b>Saved maps</b><button id="map-close">✕</button></div>
+      <button id="map-close" class="dlg-close" title="Close">✕</button>
+      <div class="inv-head"><b>Saved maps</b></div>
       ${
         names.length
           ? `<p class="dim">Loading a scenario saves its board here so you can come back to it. Deleting one only removes it from this list; the scenario itself still loads fine.</p>
@@ -964,6 +970,161 @@ async function init() {
   }
 
   document.getElementById('btn-mapmanage')!.addEventListener('click', openMapManager);
+
+  // ---------- mission overlay ----------
+
+  function activeMission(): (typeof data.missions.cards)[number] | undefined {
+    return state.mission ? data.missions.cards.find((m) => m.id === state.mission) : undefined;
+  }
+
+  function overlayZones(): BoardZone[] {
+    if (!state.showZones) return [];
+    const mission = activeMission();
+    const want = mission?.zones?.map((z) => z.toLowerCase());
+    return data.zoneData.zones
+      .filter((z) => !want || want.includes(z.id))
+      .map((z) => ({
+        name: z.name,
+        cells: z.cells.map(parseGridRef).filter(Boolean) as { col: number; row: number }[],
+      }))
+      .filter((z) => z.cells.length);
+  }
+
+  function overlayDeployment(): BoardDeployment | null {
+    if (!state.showZones) return null;
+    const id = state.deployLayout ?? (state.mission ? data.zoneData.missionDeployment[state.mission] : null);
+    const def = id ? data.zoneData.deployments.find((d) => d.id === id) : undefined;
+    if (!def) return null;
+    const box = (from: string, to: string) => {
+      const a = parseGridRef(from);
+      const b = parseGridRef(to);
+      if (!a || !b) return undefined;
+      return { col: Math.min(a.col, b.col), row: Math.min(a.row, b.row), cols: Math.abs(b.col - a.col) + 1, rows: Math.abs(b.row - a.row) + 1 };
+    };
+    return { black: box(def.black.from, def.black.to), white: box(def.white.from, def.white.to) };
+  }
+
+  function renderZoneOverlay(): void {
+    board.renderZones(overlayZones(), overlayDeployment());
+    const btn = document.getElementById('btn-zones')!;
+    btn.setAttribute('aria-pressed', state.showZones ? 'true' : 'false');
+    btn.classList.toggle('on', !!state.showZones);
+    const m = activeMission();
+    btn.textContent = state.showZones ? (m ? m.name.split(':')[0] : 'Zones') : 'Zones';
+  }
+
+  document.getElementById('btn-zones')!.addEventListener('click', () => {
+    state.showZones = !state.showZones;
+    if (state.showZones && !state.mission && !state.deployLayout) state.deployLayout = 'strips';
+    save();
+    renderZoneOverlay();
+  });
+
+  document.getElementById('btn-missions')!.addEventListener('click', () => {
+    document.getElementById('mis-dialog')?.remove();
+    const dlg = document.createElement('div');
+    dlg.id = 'mis-dialog';
+    const rows = data.missions.cards
+      .map((m, i) => {
+        const dep = data.zoneData.deployments.find((d) => d.id === data.zoneData.missionDeployment[m.id]);
+        return `<div class="scn-row${state.mission === m.id ? ' current' : ''}">
+          <div class="scn-info"><b>${m.name}</b><br><span class="dim">${(m.zones ?? []).join(', ') || 'no tactical zones'} · ${dep?.name ?? 'deployment not known'}</span></div>
+          <button data-i="${i}" class="scn-load">${state.mission === m.id ? 'Reload' : 'Overlay'}</button>
+        </div>`;
+      })
+      .join('');
+    dlg.innerHTML = `<div class="scn-panel">
+      <button id="mis-close" class="dlg-close" title="Close">✕</button>
+      <div class="inv-head"><b>Main Task overlays</b></div>
+      <p class="dim">This draws the mission's tactical zones and both deployment zones over whatever map you have loaded. It does not place terrain, because the Main Task cards do not specify any; use a Battlefield Card layout or build your own.</p>
+      <div class="mis-actions">
+        <button id="mis-plain-strips">Deployment only: 2x12 strips</button>
+        <button id="mis-plain-corners">Deployment only: 3x5 corners</button>
+        <button id="mis-clear">Clear overlay</button>
+      </div>
+      <div class="scn-list">${rows}</div>
+    </div>`;
+    dlg.addEventListener('click', (ev) => {
+      if (ev.target === dlg) dlg.remove();
+    });
+    dlg.querySelector('#mis-close')!.addEventListener('click', () => dlg.remove());
+    dlg.querySelectorAll<HTMLButtonElement>('.scn-load').forEach((b) =>
+      b.addEventListener('click', () => {
+        const m = data.missions.cards[Number(b.dataset.i)];
+        state.mission = m.id;
+        state.deployLayout = null;
+        state.showZones = true;
+        save();
+        renderZoneOverlay();
+        document.getElementById('details-body')!.replaceChildren(missionBriefing(m));
+        showSideTab('details');
+        dlg.remove();
+      }),
+    );
+    const plain = (id: string) => {
+      state.mission = null;
+      state.deployLayout = id;
+      state.showZones = true;
+      save();
+      renderZoneOverlay();
+      dlg.remove();
+    };
+    dlg.querySelector('#mis-plain-strips')!.addEventListener('click', () => plain('strips'));
+    dlg.querySelector('#mis-plain-corners')!.addEventListener('click', () => plain('corners'));
+    dlg.querySelector('#mis-clear')!.addEventListener('click', () => {
+      state.mission = null;
+      state.deployLayout = null;
+      state.showZones = false;
+      save();
+      renderZoneOverlay();
+      dlg.remove();
+    });
+    document.body.appendChild(dlg);
+  });
+
+  function showMissionCard(m: (typeof data.missions.cards)[number]): void {
+    document.querySelector('.mis-lightbox')?.remove();
+    const box = document.createElement('div');
+    box.className = 'mis-lightbox';
+    box.innerHTML = `<div class="mis-lightbox-inner">
+        <button class="dlg-close" title="Close">✕</button>
+        <img src="${missionImageUrl(m.id)}" alt="${m.name} card">
+        <p>${m.name}${m.nameKo ? ` · ${m.nameKo}` : ''}</p>
+      </div>`;
+    const close = () => {
+      box.remove();
+      document.removeEventListener('keydown', onKey, true);
+    };
+    const onKey = (ev: KeyboardEvent) => {
+      if (ev.key !== 'Escape') return;
+      ev.stopPropagation();
+      close();
+    };
+    box.addEventListener('click', (ev) => {
+      if (ev.target === box || (ev.target as HTMLElement).closest('.dlg-close')) close();
+    });
+    document.addEventListener('keydown', onKey, true);
+    document.body.appendChild(box);
+  }
+
+  function missionBriefing(m: (typeof data.missions.cards)[number]): HTMLElement {
+    const dep = data.zoneData.deployments.find((d) => d.id === data.zoneData.missionDeployment[m.id]);
+    const div = document.createElement('div');
+    div.className = 'scn-brief';
+    div.innerHTML = `<h3>${m.name}</h3>
+      ${m.nameKo ? `<p class="dim">${m.nameKo}</p>` : ''}
+      <button class="mis-card-thumb" title="Tap for the full card">
+        <img src="${missionImageUrl(m.id)}" alt="${m.name} card" loading="lazy">
+        <span>Tap to enlarge</span>
+      </button>
+      <p><b>Setup.</b> ${m.setup}</p>
+      <p><b>Scoring.</b> ${m.scoring}</p>
+      ${dep ? `<p><b>Deployment.</b> ${dep.name}. ${dep.note ?? ''}</p>` : ''}
+      ${(m.zones ?? []).length ? `<h4>Tactical zones</h4><ul>${(m.zones ?? []).map((z) => `<li>${z}</li>`).join('')}</ul>` : ''}
+      <p class="dim">The overlay shows these zones on the board. Terrain is not part of a Main Task card, so place it from a Battlefield Card or your own map.</p>`;
+    div.querySelector('.mis-card-thumb')!.addEventListener('click', () => showMissionCard(m));
+    return div;
+  }
   document.getElementById('btn-inventory')!.addEventListener('click', () => inventory.openDialog());
 
   // ---------- scenarios ----------
@@ -992,7 +1153,8 @@ async function init() {
     const dlg = document.createElement('div');
     dlg.id = 'scn-dialog';
     dlg.innerHTML = `<div class="scn-panel">
-      <div class="inv-head"><b>Scenarios</b><button id="scn-close">✕</button></div>
+      <button id="scn-close" class="dlg-close" title="Close">✕</button>
+      <div class="inv-head"><b>Scenarios</b></div>
       ${scenarios.length ? '' : '<p class="dim">No scenarios found (data/scenarios.json missing).</p>'}
       <div class="scn-list">${scenarios
         .map(

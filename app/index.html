@@ -15,15 +15,16 @@
         </select>
       </label>
       <button id="btn-mapmanage" title="Delete saved and scenario maps you no longer want in the list">Manage maps</button>
-      <button id="btn-import-squad" title="Import a squad built on the community builder site (.json export or squad .png image)">Import squad</button>
+      <button id="btn-missions" title="Overlay a Main Task's tactical zones and deployment zones on the board">Missions</button>
       <button id="btn-scenarios" title="Load a demo scenario: squads, terrain, objectives">Scenarios</button>
-      <a id="btn-reference" href="reference.html" target="_blank" rel="noopener"
-         title="Glossary and card lookup. Opens a phone-friendly companion page.">Reference ↗</a>
       <button id="btn-inventory" title="Set which boxes you own; card lists can filter to your collection">Inventory</button>
+      <button id="btn-import-squad" title="Import a squad built on the community builder site (.json export or squad .png image)">Import squad</button>
       <button id="btn-mapedit" title="Build a custom map from the official terrain pieces">Map editor</button>
       <button id="btn-export" title="Download the board state as a JSON file">Save board</button>
       <button id="btn-import" title="Load a saved board state">Load board</button>
       <button id="btn-clear" title="Remove all units">Clear</button>
+      <a id="btn-reference" href="reference.html" target="_blank" rel="noopener"
+         title="Glossary and card lookup. Opens a phone-friendly companion page.">Reference ↗</a>
       <input type="file" id="import-file" accept=".json" hidden />
       <input type="file" id="import-squad-file" accept=".json,.png" hidden />
       <span id="hint">Drag move · Q/E rotate · M move-range · A arcs · Del remove · hover = range/LOS</span>
@@ -37,7 +38,11 @@
       <div id="board-col">
         <div id="round-tracker"></div>
         <div id="editor-bar" hidden></div>
-        <div id="board-wrap"></div>
+        <div id="board-wrap">
+          <div class="zone-ctrl">
+            <button id="btn-zones" title="Show or hide the tactical zone and deployment overlay" aria-pressed="false">Zones</button>
+          </div>
+        </div>
       </div>
       <aside id="sidebar">
         <div id="side-tabs">

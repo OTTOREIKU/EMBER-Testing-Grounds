@@ -261,6 +261,9 @@ export function migrateState(raw: unknown, data: GameData): GameState | null {
     scale: (s as { scale?: GameState['scale'] }).scale ?? 'standard',
     roundLimit: (s as { roundLimit?: number }).roundLimit ?? 5,
     sideNames: (s as { sideNames?: GameState['sideNames'] }).sideNames ?? {},
+    mission: (s as { mission?: string | null }).mission ?? null,
+    showZones: (s as { showZones?: boolean }).showZones ?? false,
+    deployLayout: (s as { deployLayout?: string | null }).deployLayout ?? null,
   };
   for (const rawTok of s.tokens) {
     const t = rawTok as Partial<Token>;

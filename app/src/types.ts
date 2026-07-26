@@ -215,6 +215,9 @@ export interface GameState {
   scale?: BattleScale;
   roundLimit?: number;
   sideNames?: Partial<Record<Side, string>>;
+  mission?: string | null;
+  showZones?: boolean;
+  deployLayout?: string | null;
 }
 
 // --- builder-site squad import ---

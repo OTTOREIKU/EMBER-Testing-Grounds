@@ -142,6 +142,38 @@ export interface SecondaryTask {
   inRulebook?: boolean;
 }
 
+export interface ZoneDef {
+  id: string;
+  name: string;
+  cells: string[];
+}
+
+export interface DeploymentDef {
+  id: string;
+  name: string;
+  note?: string;
+  black: { from: string; to: string };
+  white: { from: string; to: string };
+}
+
+export interface ZoneData {
+  zones: ZoneDef[];
+  deployments: DeploymentDef[];
+  missionDeployment: Record<string, string>;
+}
+
+const NO_ZONES: ZoneData = { zones: [], deployments: [], missionDeployment: {} };
+
+// Board reference like "B7": column letter A..L, then row 1..12.
+export function parseGridRef(ref: string): { col: number; row: number } | null {
+  const m = /^([A-La-l])(\d{1,2})$/.exec(ref.trim());
+  if (!m) return null;
+  const col = m[1].toUpperCase().charCodeAt(0) - 65;
+  const row = Number(m[2]) - 1;
+  if (col < 0 || col > 11 || row < 0 || row > 11) return null;
+  return { col, row };
+}
+
 export interface PlayData {
   phases: PhaseDef[];
   timings: TimingDef[];
@@ -163,6 +195,7 @@ export interface GameData {
   actionTranslation(actionId: string): { english: string | null; confidence: string; note?: string } | undefined;
   missions: MissionData;
   secondary: SecondaryTask[];
+  zoneData: ZoneData;
   play: PlayData;
 }
 
@@ -209,7 +242,7 @@ function applyTactics(cards: Card[], table: Record<string, TacticEntry>): void {
 }
 
 export async function loadData(): Promise<GameData> {
-  const [cards, terrain, boxes, rawKeywords, patch, mech, xlate, names, missions, tactics, play, secondary] = await Promise.all([
+  const [cards, terrain, boxes, rawKeywords, patch, mech, xlate, names, missions, tactics, play, secondary, zoneData] = await Promise.all([
     fetch(dataUrl('cards.json')).then((r) => r.json() as Promise<Card[]>),
     fetch(dataUrl('terrain_layouts.json')).then((r) => r.json() as Promise<TerrainData>),
     fetch(dataUrl('boxes.json')).then((r) => r.json() as Promise<BoxDef[]>),
@@ -238,6 +271,9 @@ export async function loadData(): Promise<GameData> {
     fetch(dataUrl('secondary.json'))
       .then((r) => (r.ok ? (r.json() as Promise<{ cards?: SecondaryTask[] }>) : { cards: [] }))
       .catch(() => ({ cards: [] as SecondaryTask[] })),
+    fetch(dataUrl('zones.json'))
+      .then((r) => (r.ok ? (r.json() as Promise<ZoneData>) : NO_ZONES))
+      .catch(() => NO_ZONES),
   ]);
 
   cleanCardText(cards);
@@ -312,6 +348,11 @@ export async function loadData(): Promise<GameData> {
     actionTranslation,
     missions: { families: missions.families ?? [], cards: missions.cards ?? [] },
     secondary: secondary.cards ?? [],
+    zoneData: {
+      zones: zoneData.zones ?? [],
+      deployments: zoneData.deployments ?? [],
+      missionDeployment: zoneData.missionDeployment ?? {},
+    },
     play: {
       phases: play.phases ?? [],
       timings: play.timings ?? [],

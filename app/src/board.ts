@@ -19,6 +19,16 @@ const TERRAIN_FILL: Record<TerrainPiece['type'], string> = {
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
+export interface BoardZone {
+  name: string;
+  cells: { col: number; row: number }[];
+}
+
+export interface BoardDeployment {
+  black?: { col: number; row: number; cols: number; rows: number };
+  white?: { col: number; row: number; cols: number; rows: number };
+}
+
 export interface BoardCallbacks {
   onSelect(uid: number | null): void;
   onInspect?(info: InspectInfo | null): void;
@@ -38,6 +48,7 @@ function el<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, 
 
 export class Board {
   svg: SVGSVGElement;
+  private gZones!: SVGGElement;
   private gTerrain: SVGGElement;
   private gTokens: SVGGElement;
   private gOverlay: SVGGElement;
@@ -73,6 +84,8 @@ export class Board {
       id: 'board',
     });
     this.svg.appendChild(this.buildGrid());
+    this.gZones = el('g', { class: 'zones', 'pointer-events': 'none' });
+    this.svg.appendChild(this.gZones);
     this.gTerrain = el('g');
     this.gMarkers = el('g', { class: 'markers' });
     this.gHighlight = el('g', { class: 'highlight', 'pointer-events': 'none' });
@@ -263,6 +276,56 @@ export class Board {
         });
       }
       this.gTerrain.appendChild(g);
+    }
+  }
+
+  renderZones(zones: BoardZone[], deploy: BoardDeployment | null): void {
+    this.gZones.replaceChildren();
+    const LG = 3 * CELL;
+
+    if (deploy) {
+      for (const side of ['black', 'white'] as const) {
+        const r = deploy[side];
+        if (!r) continue;
+        const g = el('g', { class: `dz dz-${side}` });
+        g.appendChild(
+          el('rect', {
+            x: r.col * LG,
+            y: r.row * LG,
+            width: r.cols * LG,
+            height: r.rows * LG,
+            rx: 4,
+          }),
+        );
+        const label = el('text', {
+          x: r.col * LG + (r.cols * LG) / 2,
+          y: r.row * LG + (r.rows * LG) / 2 + 6,
+          'text-anchor': 'middle',
+          class: 'dz-label',
+        });
+        label.textContent = `${side === 'black' ? 'BLACK' : 'WHITE'} ${r.rows}x${r.cols}`;
+        g.appendChild(label);
+        this.gZones.appendChild(g);
+      }
+    }
+
+    for (const z of zones) {
+      const g = el('g', { class: 'tz' });
+      for (const c of z.cells) {
+        g.appendChild(el('rect', { x: c.col * LG, y: c.row * LG, width: LG, height: LG, rx: 3 }));
+      }
+      const first = z.cells[0];
+      if (first) {
+        const label = el('text', {
+          x: first.col * LG + LG / 2,
+          y: first.row * LG + LG / 2 + 5,
+          'text-anchor': 'middle',
+          class: 'tz-label',
+        });
+        label.textContent = z.name;
+        g.appendChild(label);
+      }
+      this.gZones.appendChild(g);
     }
   }
 
