@@ -2,8 +2,7 @@
 
 A browser tabletop for learning **EMBER Obsidian Protocol**.
 
-I bought into this game well before my boxes were due to arrive, and I learn by doing rather than
-by reading, so I built the thing I wanted: a board I could push mechs around on, with the rules
+I learn by doing rather than by reading, so I built a board I could push mechs around on, with the rules
 close enough to hand that I could stop flipping through the PDF every thirty seconds. It runs
 entirely in your browser, needs no install and no account, and keeps everything in local storage.
 
@@ -12,14 +11,14 @@ entirely in your browser, needs no install and no account, and keeps everything 
 
 ## What you can do with it
 
-**Play a whole game on a proper board.** A 12x12 grid of large grids, each split into 3x3 small
+**Play a whole game on a proper board.** A 12x12 of large grids, each split into 3x3 small
 grids, exactly like the real thing. Drag units around, rotate them to set facing, and drop in
 terrain from the official pieces. Ten of the community demo scenarios are built in, so you can
 load a full setup with squads, terrain and objectives in one click.
 
 **Build squads, or import the ones you already made.** There is a mech builder for picking a
 torso, chassis, arms, backpack and pilot, and it totals the points as you go. If you use the
-community army builder, you can import its .json export or even the squad .png it produces and
+community squad builder, you can import its .json export or even the squad .png it produces and
 your list lands on the board.
 
 **Let the app do the fiddly rules bits.** Press M to see exactly how far a unit can move, A to see
@@ -50,12 +49,12 @@ have translated it, always labelled as unofficial with the original kept alongsi
 The [reference page](https://ottoreiku.github.io/EMBER-Testing-Grounds/reference.html) is a
 separate page built for a phone. Bookmark it and you have
 the full glossary, every part, unit, pilot and tactics card, and a searchable rules section in your
-pocket, without loading the tabletop first. I use it at the table more than I expected to.
+pocket, without loading the tabletop first.
 
 ## Things to know
 
-It is **rules-assisted, not rules-enforced**. It will show you the legal moves and do the maths,
-but it will not stop you doing something silly, which is deliberate: you are learning, and
+It is **rules-assisted, not rules-enforced**. It will show you the legal moves and do the math,
+but it will not stop you doing something illegal, which is deliberate: you are learning, and
 sometimes you want to try the illegal thing to see why it is illegal. The printed card always wins
 over anything shown here.
 
