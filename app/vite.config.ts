@@ -5,6 +5,25 @@ import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
+// Stamped into the bundle and written to version.json. The running page polls that file and offers
+// a reload when the two stop matching, which is how a visitor finds out a new deploy exists.
+const BUILD_ID = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
+
+// Every image under ../assets, as paths relative to the assets root. The preloader fetches this
+// so "warm everything" cannot silently miss a folder someone adds later.
+function assetManifest(dir: string): string[] {
+  const out: string[] = [];
+  const walk = (d: string, prefix: string) => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const rel = prefix ? `${prefix}/${e.name}` : e.name;
+      if (e.isDirectory()) walk(path.join(d, e.name), rel);
+      else if (/\.(webp|png|jpe?g|svg|avif)$/i.test(e.name)) out.push(rel);
+    }
+  };
+  walk(dir, '');
+  return out.sort();
+}
+
 // Serve ../data and ../assets (which live outside the app root) at /data and /assets.
 function staticDirs(map: Record<string, string>): Plugin {
   const mime: Record<string, string> = {
@@ -20,6 +39,11 @@ function staticDirs(map: Record<string, string>): Plugin {
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
         const url = decodeURIComponent((req.url ?? '').split('?')[0]);
+        if (url === '/assets/manifest.json' && map['/assets/']) {
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ images: assetManifest(map['/assets/']) }));
+          return;
+        }
         for (const [prefix, dir] of Object.entries(map)) {
           if (url.startsWith(prefix)) {
             const file = path.join(dir, url.slice(prefix.length));
@@ -54,6 +78,17 @@ function copyDataAndAssets(map: Record<string, string>): Plugin {
         fs.rmSync(dest, { recursive: true, force: true });
         fs.cpSync(dir, dest, { recursive: true });
       }
+      fs.writeFileSync(
+            path.resolve(here, outDir, 'version.json'),
+            JSON.stringify({ build: BUILD_ID }),
+          );
+      const assetsOut = path.resolve(here, outDir, 'assets');
+      if (fs.existsSync(assetsOut)) {
+        fs.writeFileSync(
+          path.resolve(assetsOut, 'manifest.json'),
+          JSON.stringify({ images: assetManifest(assetsOut) }),
+        );
+      }
       // GitHub Pages runs Jekyll unless told not to, which skips files starting with _
       fs.writeFileSync(path.resolve(here, outDir, '.nojekyll'), '');
     },
@@ -63,6 +98,7 @@ function copyDataAndAssets(map: Record<string, string>): Plugin {
 export default defineConfig({
   // relative base so the build works from a user site, a project subpath or a local file
   base: './',
+  define: { __BUILD_ID__: JSON.stringify(BUILD_ID) },
   plugins: [
     staticDirs({
       '/data/': path.resolve(here, '../data'),
