@@ -597,6 +597,15 @@ export class AttackHelper {
             this.note(`Link has reached 0, so ${c.defender.label} SHUTS DOWN.`, [c.defender]);
           }
           if (slot === 'torso') this.note(`⚠ Torso destroyed, so the unit is destroyed. Remove it from the board.`, [c.defender]);
+          else {
+            const left = Object.entries(c.defender.partStates).filter(([, s]) => s !== 'destroyed').length;
+            if (left <= 2) {
+              this.note(
+                `⚠ Integrity Loss: ${c.defender.label} has ${left} Part${left === 1 ? '' : 's'} left. It acts as normal for the rest of this round, then is removed in the End Phase.`,
+                [c.attacker, c.defender],
+              );
+            }
+          }
         }
         this.onChanged();
         const surplus = penetrating - 1;

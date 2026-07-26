@@ -26,7 +26,8 @@
    "can": [
     "Set the Timing Dial on each of your Mechs to one of the six Action Timings.",
     "Keep your choices secret. Place each dial portrait face-up so the selection stays hidden.",
-    "The dial sector also carries that Pilot's Initiative Value for that Timing, which breaks ties later."
+    "The dial sector also carries that Pilot's Initiative Value for that Timing, which breaks ties later.",
+    "If two Mechs pick the same Timing, the one whose Pilot has the LOWER Initiative Value at that Timing acts first. Lower goes first, which catches most people out. On a tie the First Player's Mech goes, then you alternate."
    ],
    "cannot": [
     "Nothing moves or attacks in this phase.",
@@ -47,7 +48,9 @@
    ],
    "cannot": [
     "You cannot act out of Timing order. A later Timing always resolves after an earlier one, however low the Initiative.",
-    "A Mech in Shutdown Stance cannot Maneuver or take any action except Reboot."
+    "A Mech in Shutdown Stance cannot Maneuver or take any action except Reboot.",
+    "You must spend Ticks in order, Maneuver Tick first and Action Ticks after. You cannot Maneuver once you have taken an action, which is why a Long Action has to be the only thing you do that opportunity.",
+    "Extra Ticks from a Part cannot be combined with your normal Ticks. Spend the Maneuver and Action Ticks first, then any Extra Tick on its own."
    ]
   },
   {

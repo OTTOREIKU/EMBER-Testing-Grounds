@@ -82,6 +82,7 @@ export function losBetween(
   terrain: TerrainPiece[],
   tokens: Token[],
 ): 'clear' | 'obstructed' | 'blocked' {
+  if (a.aerial || b.aerial) return 'clear';
   const losCells = new Set<string>();
   const obstructCells = new Set<string>();
   for (const p of terrain) {
@@ -136,7 +137,7 @@ export function rangeBetween(a: Token, b: Token): { range: number; adjacent: boo
   const gb = largeGridOf(b);
   const dc = Math.abs(ga.c - gb.c);
   const dr = Math.abs(ga.r - gb.r);
-  return { range: dc + dr, adjacent: !(dc === 0 && dr === 0) && dc <= 1 && dr <= 1, sameGrid: dc === 0 && dr === 0 };
+  return { range: dc + dr, adjacent: dc <= 1 && dr <= 1, sameGrid: dc === 0 && dr === 0 };
 }
 
 export function inArc(a: Token, b: Token, arc: 'forward' | 'rear'): boolean {

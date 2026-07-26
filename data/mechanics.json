@@ -22,7 +22,7 @@
     "侦测",
     "电子"
    ],
-   "text": "Both sides roll Yellow Dice equal to their Electronic Value (a Mech's is the sum of all its Parts). The Initiator wins with more Lightning; if Lightning ties, more Light Hit; if both tie, the Initiator still wins. The Initiator must win for the action's effect to apply. Electronic Value 0 cannot initiate; a dash ('-') cannot be targeted. Strength +X adds X dice to the Initiator. Focus (1 Link) can reroll these dice."
+   "text": "Both sides roll Yellow Dice equal to their Electronic Value (a Mech's is the sum of all its Parts). The Initiator wins with more Lightning; if Lightning ties, more Light Hit; if both tie, the Initiator still wins. The Initiator must win for the action's effect to apply. Electronic Value 0 cannot initiate; a dash ('-') cannot be targeted. Strength +X adds X dice to the Initiator. Focus (1 Link) can reroll these dice. Electronic Warfare actions ignore Terrain and Line of Sight completely, so only Range matters. In Offensive Stance hollow faces count as valid results on these rolls too."
   },
   {
    "id": "reboot",
