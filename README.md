@@ -11,7 +11,7 @@ entirely in your browser, needs no install and no account, and keeps everything 
 
 ## What you can do with it
 
-**Play a whole game on a proper board.** A 12x12 of large grids, each split into 3x3 small
+**Play a whole game on a proper board.** A 12x12 board of large grids, each split into 3x3 small
 grids, exactly like the real thing. Drag units around, rotate them to set facing, and drop in
 terrain from the official pieces. Ten of the community demo scenarios are built in, so you can
 load a full setup with squads, terrain and objectives in one click.
@@ -72,7 +72,7 @@ Everything saves to your browser. Nothing is uploaded anywhere and there is no s
 ## Credits
 
 The game, its artwork and its rules belong to **Beijing Queti Technology Co., Ltd.** The card
-database and art came from **watermelon02's** community army builder, and the ten demo scenarios
+database and art came from **watermelon02's** community squad builder, and the ten demo scenarios
 are **Luna Lilly Games'** work, which I found thanks to **u/Soavon** sharing them on Reddit. This
 is an unofficial fan tool, made for learning and not for profit. Full details in
 [ATTRIBUTION.md](ATTRIBUTION.md), and the scenario conversions are audited line by line in
