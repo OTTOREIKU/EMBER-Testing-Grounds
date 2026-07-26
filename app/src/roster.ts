@@ -104,8 +104,9 @@ export class Roster {
 
     const note = document.createElement('p');
     note.className = 'tac-note';
-    note.textContent =
-      'Tactics Cards are held in hand rather than placed on the board, so there is nothing to deploy. Each costs 30 points against your squad total. Tap one to read it.';
+    note.innerHTML =
+      'Tactics Cards are held in hand rather than placed on the board, so there is nothing to deploy. Each costs 30 points against your squad total. Tap one to read it.' +
+      '<br><b>You may only play 1 Tactics Card per round</b>, so there is little point taking more than you have rounds to spend them.';
     this.body.appendChild(note);
 
     if (!cards.length) {
@@ -137,7 +138,7 @@ export class Roster {
 
     const total = document.createElement('p');
     total.className = 'points';
-    total.textContent = `All ${cards.length} Tactics Cards: ${cards.reduce((n, c) => n + (c.score ?? 0), 0)} points if you took every one`;
+    total.textContent = `Taking all ${cards.length} would cost ${cards.reduce((n, c) => n + (c.score ?? 0), 0)} points, and a 4-round game only lets you play 4 of them`;
     this.body.appendChild(total);
   }
 

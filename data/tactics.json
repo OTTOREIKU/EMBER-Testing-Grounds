@@ -1,7 +1,7 @@
 {
  "_comment": "Rules text for the six Tactics Cards, transcribed from the English card scans in assets/cards/en/. The community card database carries their names and point cost but no text, so this fills the gap. Merged at load time as a synthetic action on each card, which is why every tactic shows up with the Tactic action icon.",
  "_note": "Card 274 prints as 'Additional Instructions'; the card database calls it 'Additional Command'. The printed name is used. Card 278 prints 'Tactical Disposition'; the database misspells it 'Dispostion'.",
- "_cost": "Every Tactics Card shows a 1 in a circle next to its number, and all six cost 30 points.",
+ "_cost": "All six cost 30 points, taken from the community card database; the printed card leaves the points area blank because values are maintained online through the QR code. The circled 1 beside the card number is not a points value and not a copy limit: it is identical on every Tactics Card, as is the 88 in the corner, which is the rulebook page where Tactics Cards are explained. It reads as the per-round play limit from 5.4.2.",
  "tactics": {
   "274": {
    "name": "Additional Instructions",
@@ -39,5 +39,6 @@
    "timing": "End Phase",
    "text": "Use during the End Phase, select 1 Ally Mech that is in Shutdown Stance, change its Stance and restore 1 Link Value."
   }
- }
+ },
+ "_limit": "Each player may only use 1 Tactics Card per round (Rulebook 5.4.2). There is no printed cap on how many you may include in a squad."
 }
