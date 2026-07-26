@@ -6,7 +6,7 @@ import { DiceTray } from './dice';
 import { importSquadFile } from './importer';
 import { Inventory } from './inventory';
 import { isInspectPinned, showInspect, unpinInspect } from './inspector';
-import { dataUrl, loadData } from './data';
+import { dataUrl, loadData, SIDE_LABEL } from './data';
 import { deleteCustomMap, loadCustomMaps, makePiece, PALETTE, pieceCells, saveCustomMap, type PaletteItem } from './mapeditor';
 import { Panel } from './panel';
 import { Roster } from './roster';
@@ -16,8 +16,8 @@ import { SquadTracker } from './squads';
 import { installTooltip, preloadCards } from './tooltip';
 import { RoundTracker } from './tracker';
 import type { DiceData, Facing, GameState, MechLoadout, Side, TerrainPiece, Token } from './types';
-import { STATUSES } from './types';
-import { makeDroneToken, makeMechToken, migrateState, tokenCards } from './units';
+import { SCALES, STATUSES } from './types';
+import { factionProblems, makeDroneToken, makeMechToken, migrateState, tokenCards } from './units';
 
 const SAVE_KEY = 'ember-testing-grounds-v1';
 
@@ -69,10 +69,7 @@ async function init() {
     },
   );
 
-  const roundTracker = new RoundTracker(document.getElementById('round-tracker')!, () => {
-    save();
-    roundTracker.update(state);
-  });
+  const roundTracker = new RoundTracker(document.getElementById('round-tracker')!, () => onChanged());
 
   const panel = new Panel(data, {
     onRollDice(pool) {
@@ -1024,6 +1021,7 @@ async function init() {
         const result = instantiateScenario(scn, state, data);
         state.tokens = result.tokens;
         state.markers = result.markers;
+        state.sideNames = result.sideNames;
         state.map = result.mapKey;
         state.removedTerrain = [];
         state.round = { n: 1, phase: 0, firstPlayer: 'blue' };
@@ -1060,6 +1058,7 @@ async function init() {
     if (!ok) return;
     state.tokens = [];
     state.markers = [];
+    state.sideNames = {};
     selectToken(null);
     renderAll();
   });
@@ -1136,6 +1135,30 @@ async function init() {
           body: 'These card ids are not in the local database, so those entries were left out of the squad:',
           list: squad.unknownIds,
           closeLabel: 'Continue',
+        });
+      }
+      const problems = factionProblems(data, state.tokens.filter((t) => t.side === side));
+      if (problems.length) {
+        void alertDialog({
+          title: 'That squad breaks the faction rule',
+          body: `${SIDE_LABEL[side]} was imported, but rulebook 5.1 says a squad may only contain units from a single faction, and a mech may only use parts from one faction.`,
+          list: problems.map((p) => p.detail),
+          closeLabel: 'Got it',
+        });
+      }
+      const sc = SCALES.find((x) => x.id === (state.scale ?? 'standard'))!;
+      const sidePts = state.tokens
+        .filter((t) => t.side === side)
+        .reduce((sum, t) => sum + tokenCards(data, t).reduce((n, { card }) => n + (card.score ?? 0), 0), 0);
+      if (!sc.openEnded && sidePts > sc.points) {
+        void alertDialog({
+          title: 'That squad is over the points limit',
+          body: `${SIDE_LABEL[side]} now totals ${sidePts} points, which is ${sidePts - sc.points} over the ${sc.name} limit of ${sc.points}.`,
+          list: [
+            'The squad was still imported, so you can play it if you both agree.',
+            'To play it legally, remove units or switch the battle scale in the round bar above the board.',
+          ],
+          closeLabel: 'Got it',
         });
       }
       showSideTab('squad');

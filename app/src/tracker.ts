@@ -1,6 +1,6 @@
 import { SIDE_LABEL } from './data';
 import { inspectOnHover, pinInspect, type InspectInfo } from './inspector';
-import type { GameState, Side } from './types';
+import { SCALES, type BattleScale, type GameState, type Side } from './types';
 
 export const PHASES = ['Command', 'Planning', 'Action', 'Automatic', 'Delay', 'End'] as const;
 
@@ -103,12 +103,31 @@ export class RoundTracker {
     this.onChanged();
   }
 
+  private scaleInfo(id: BattleScale): InspectInfo {
+    const sc = SCALES.find((x) => x.id === id)!;
+    return {
+      title: `${sc.name} battle`,
+      sub: `Squad limit ${sc.points}${sc.openEnded ? ' points or more' : ' points'}`,
+      lines: [
+        sc.note,
+        'Every Part, Pilot and Drone in a squad costs points, and the total is what this caps. Projectiles and Deployables are Low Value Units worth 0 and do not count.',
+        'Tactics Cards count against this total too, at 30 points each.',
+        'The Squads tab shows each side against this limit and warns you when a side goes over.',
+      ],
+    };
+  }
+
   private render(): void {
     const s = this.state;
     if (!s) return;
     const phaseName = PHASES[s.round.phase];
+    const scale = s.scale ?? 'standard';
+    const limit = s.roundLimit ?? 5;
     this.root.innerHTML = `
-      <span class="rt-round" title="Standard game = 5 rounds">R${s.round.n}<small>/5</small></span>
+      <span class="rt-round${s.round.n > limit ? ' over' : ''}">R${s.round.n}<small>/${limit}</small></span>
+      <select id="rt-scale" class="rt-scale">
+        ${SCALES.map((sc) => `<option value="${sc.id}"${sc.id === scale ? ' selected' : ''}>${sc.name} ${sc.points}${sc.openEnded ? '+' : ''}p</option>`).join('')}
+      </select>
       <span class="rt-phases">
         ${PHASES.map((p, i) => `<button class="rt-phase${i === s.round.phase ? ' active' : ''}" data-i="${i}">${p}</button>`).join('')}
       </span>
@@ -126,6 +145,23 @@ export class RoundTracker {
     const next = this.root.querySelector<HTMLButtonElement>('#rt-next')!;
     next.addEventListener('click', () => this.advance());
     inspectOnHover(next, phaseInfo(phaseName));
+
+    const scaleSel = this.root.querySelector<HTMLSelectElement>('#rt-scale')!;
+    inspectOnHover(scaleSel, this.scaleInfo(scale));
+    scaleSel.addEventListener('change', () => {
+      s.scale = scaleSel.value as BattleScale;
+      this.onChanged();
+    });
+    const roundEl = this.root.querySelector<HTMLElement>('.rt-round')!;
+    inspectOnHover(roundEl, {
+      title: `Round ${s.round.n} of ${limit}`,
+      sub: 'Game length',
+      lines: [
+        'A standard game runs 5 rounds, then the game ends and you total Victory Points.',
+        'The rulebook sets the same 5 rounds for every battle scale. Skirmish, Standard and Large differ only in the points you may spend, not in how long the game lasts.',
+        'Scenarios override this with their own printed round count, which is why loading one can change the number here.',
+      ],
+    });
 
     this.root.querySelectorAll<HTMLButtonElement>('.rt-phase').forEach((b) => {
       const p = PHASES[Number(b.dataset.i)];

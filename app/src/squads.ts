@@ -1,9 +1,11 @@
 import type { GameData } from './data';
-import { cardName, SIDE_LABEL } from './data';
+import { cardName, FACTION_LABEL, SIDE_LABEL } from './data';
 import { inspectOnHover, type InspectInfo } from './inspector';
 import type { GameState, PartSlot, PartState, Stance, Token } from './types';
-import { STATUSES } from './types';
-import { SLOT_LABEL, tokenCards } from './units';
+import { SCALES, STATUSES } from './types';
+import { factionProblems, SLOT_LABEL, tokenCards, tokenFactions } from './units';
+
+const esc = (s: string): string => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!);
 
 const NEXT_STATE: Record<PartState, PartState> = { intact: 'damaged', damaged: 'destroyed', destroyed: 'intact' };
 const STANCES: Stance[] = ['offensive', 'defensive', 'mobility', 'shutdown'];
@@ -43,8 +45,58 @@ export class SquadTracker {
       sec.className = `squad squad-${side}`;
       const h = document.createElement('h3');
       const pts = tokens.reduce((sum, t) => sum + this.tokenPoints(t), 0);
-      h.innerHTML = `${SIDE_LABEL[side]} squad <span class="pts">${pts}p · ${tokens.length} unit${tokens.length === 1 ? '' : 's'}</span>`;
+      const activeScale = this.state.scale ?? 'standard';
+      const sc = SCALES.find((x) => x.id === activeScale)!;
+      const over = !sc.openEnded && pts > sc.points;
+      const squadFactions = [...new Set(tokens.flatMap((t) => tokenFactions(this.data, t).factions))];
+      const facChip =
+        squadFactions.length === 1
+          ? `<span class="fac-chip">${FACTION_LABEL[squadFactions[0]] ?? squadFactions[0]}</span>`
+          : squadFactions.length > 1
+            ? `<span class="fac-chip bad">${squadFactions.map((f) => FACTION_LABEL[f] ?? f).join(' + ')}</span>`
+            : '';
+      const teamName = this.state.sideNames?.[side];
+      h.innerHTML = `${teamName ? esc(teamName) : `${SIDE_LABEL[side]} squad`}${facChip} <span class="pts${over ? ' over' : ''}">${pts}<small>/${sc.points}${sc.openEnded ? '+' : ''}</small>p · ${tokens.length} unit${tokens.length === 1 ? '' : 's'}</span>`;
+      inspectOnHover(h, {
+        title: `${SIDE_LABEL[side]} squad`,
+        sub: `${pts} points of ${sc.points}${sc.openEnded ? ' or more' : ''} · ${sc.name} battle`,
+        lines: over
+          ? [
+              `This squad is ${pts - sc.points} points over the ${sc.name} limit of ${sc.points}.`,
+              'Remove a unit, or switch the battle scale in the round bar at the top of the board.',
+              'Nothing is blocked here, so you can keep playing an oversized game if you both agree.',
+            ]
+          : [
+              `${sc.points - pts} points still available at this battle scale.`,
+              'Every Part, Pilot and Drone counts. Projectiles and Deployables are Low Value Units worth 0.',
+              'Change the battle scale in the round bar above the board.',
+            ],
+      });
       sec.appendChild(h);
+      if (over) {
+        const warn = document.createElement('p');
+        warn.className = 'squad-over';
+        warn.textContent = `Over the ${sc.name} limit by ${pts - sc.points} points.`;
+        sec.appendChild(warn);
+      }
+      for (const p of factionProblems(this.data, tokens)) {
+        const bad = document.createElement('p');
+        bad.className = 'squad-illegal';
+        bad.innerHTML = `<b>Illegal: ${p.kind === 'mixed-squad' ? 'mixed factions' : `${p.label} mixes factions`}</b><br>${p.detail}`;
+        inspectOnHover(bad, {
+          title: p.kind === 'mixed-squad' ? 'Squad mixes factions' : `${p.label} mixes factions`,
+          sub: 'Rulebook 5.1, squad composition',
+          lines: [
+            p.detail,
+            p.kind === 'mixed-squad'
+              ? 'A Squad may only contain Units from a single faction. The three base factions are RDL, UN and GoF.'
+              : 'A Mech can only be composed of Parts from a single faction. The rulebook prints a mixed RDL and UN mech as an example of what is not allowed.',
+            'A card that may be used by more than one faction says so in its own rules text.',
+            'Parts whose faction we cannot determine are not counted here, so this only fires on a confirmed clash.',
+          ],
+        });
+        sec.appendChild(bad);
+      }
       if (!tokens.length) {
         const p = document.createElement('p');
         p.className = 'dim';

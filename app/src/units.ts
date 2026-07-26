@@ -1,5 +1,5 @@
 import type { GameData } from './data';
-import { isAerial, unitSize } from './data';
+import { cardName, isAerial, unitSize } from './data';
 import type { Card, CardAction, GameState, MechLoadout, PartSlot, Side, Stance, Token } from './types';
 
 export const PART_SLOTS: PartSlot[] = ['torso', 'chasis', 'leftHand', 'rightHand', 'backpack'];
@@ -133,6 +133,52 @@ export function mechCards(data: GameData, loadout: MechLoadout): Card[] {
   return PART_SLOTS.map((s) => (loadout[s] ? data.byId.get(loadout[s]!) : undefined)).filter((x): x is Card => !!x);
 }
 
+// ---------- faction legality ----------
+
+export interface FactionProblem {
+  kind: 'mixed-mech' | 'mixed-squad';
+  label: string;
+  detail: string;
+}
+
+export function tokenFactions(data: GameData, t: Token): { factions: string[]; unknown: number } {
+  const seen = new Set<string>();
+  let unknown = 0;
+  for (const { card } of tokenCards(data, t)) {
+    const f = data.factionOf(card);
+    if (f) seen.add(f);
+    else unknown++;
+  }
+  return { factions: [...seen], unknown };
+}
+
+export function factionProblems(data: GameData, tokens: Token[]): FactionProblem[] {
+  const out: FactionProblem[] = [];
+  const squad = new Set<string>();
+  for (const t of tokens) {
+    const { factions } = tokenFactions(data, t);
+    factions.forEach((f) => squad.add(f));
+    if (t.kind === 'mech' && factions.length > 1) {
+      const parts = tokenCards(data, t)
+        .map(({ slot, card }) => ({ slot, f: data.factionOf(card), card }))
+        .filter((x) => x.f);
+      out.push({
+        kind: 'mixed-mech',
+        label: t.label,
+        detail: `${factions.join(' and ')} parts on one mech: ${parts.map((p) => `${cardName(p.card)} (${p.f})`).join(', ')}`,
+      });
+    }
+  }
+  if (squad.size > 1) {
+    out.push({
+      kind: 'mixed-squad',
+      label: 'Squad',
+      detail: `This squad mixes ${[...squad].join(', ')}. A squad may only contain units from a single faction.`,
+    });
+  }
+  return out;
+}
+
 export function tokenCards(data: GameData, t: Token): { slot: PartSlot | 'pilot' | 'main'; card: Card }[] {
   if (t.kind === 'mech' && t.mech) {
     const out: { slot: PartSlot | 'pilot'; card: Card }[] = [];
@@ -212,6 +258,9 @@ export function migrateState(raw: unknown, data: GameData): GameState | null {
     commandTokens: s.commandTokens ?? { blue: 0, red: 0 },
     markers: (s as { markers?: GameState['markers'] }).markers ?? [],
     removedTerrain: (s as { removedTerrain?: string[] }).removedTerrain ?? [],
+    scale: (s as { scale?: GameState['scale'] }).scale ?? 'standard',
+    roundLimit: (s as { roundLimit?: number }).roundLimit ?? 5,
+    sideNames: (s as { sideNames?: GameState['sideNames'] }).sideNames ?? {},
   };
   for (const rawTok of s.tokens) {
     const t = rawTok as Partial<Token>;

@@ -187,6 +187,22 @@ export interface Marker {
   row: number;
 }
 
+export type BattleScale = 'skirmish' | 'standard' | 'large';
+
+export interface ScaleDef {
+  id: BattleScale;
+  name: string;
+  points: number;
+  openEnded: boolean;
+  note: string;
+}
+
+export const SCALES: ScaleDef[] = [
+  { id: 'skirmish', name: 'Skirmish', points: 600, openEnded: false, note: 'A small game. Squad total may not exceed 600 points.' },
+  { id: 'standard', name: 'Standard', points: 900, openEnded: false, note: 'The usual size. Squad total may not exceed 900 points.' },
+  { id: 'large', name: 'Large', points: 1200, openEnded: true, note: 'A big game. Squads start at 1200 points and there is no printed ceiling, so agree one with your opponent.' },
+];
+
 export interface GameState {
   v: 3;
   map: string;
@@ -196,6 +212,9 @@ export interface GameState {
   commandTokens: Record<Side, number>;
   markers?: Marker[];
   removedTerrain?: string[];
+  scale?: BattleScale;
+  roundLimit?: number;
+  sideNames?: Partial<Record<Side, string>>;
 }
 
 // --- builder-site squad import ---

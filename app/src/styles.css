@@ -244,6 +244,13 @@ main { display: flex; flex: 1; min-height: 0; }
 }
 .rt-round { font-weight: 700; font-size: 15px; color: var(--accent); font-family: var(--mono); }
 .rt-round small { color: var(--text2); font-weight: 400; font-family: var(--font); }
+.rt-round.over { color: var(--red); }
+.rt-scale {
+  border: none; background: var(--surface2); color: var(--text2);
+  border-radius: var(--radius); padding: 5px 8px; font-size: 11.5px; font-weight: 600;
+  font-family: var(--font); cursor: pointer;
+}
+.rt-scale:hover { background: var(--surface3); color: var(--text); }
 .rt-phases { display: flex; gap: 3px; }
 .rt-phase {
   border: none; background: var(--surface2); color: var(--text2);
@@ -481,6 +488,26 @@ body.targeting #hint { color: var(--accent); font-weight: 700; }
 .squad-blue h3 { color: var(--blue); }
 .squad-red h3 { color: var(--red); }
 .squad h3 .pts { color: var(--text2); font-weight: 400; font-size: 11px; margin-left: 6px; font-family: var(--mono); }
+.squad h3 .pts.over { color: var(--red); font-weight: 700; }
+.squad h3 .pts small { color: var(--text3); }
+.squad-over {
+  margin: 0 0 6px; padding: 6px 8px; font-size: 11.5px; font-weight: 600;
+  color: var(--red); background: var(--red-lt); border-radius: var(--radius);
+}
+.squad-illegal {
+  margin: 0 0 6px; padding: 7px 9px; font-size: 11.5px; line-height: 1.45;
+  color: var(--red); background: var(--red-lt); border-radius: var(--radius);
+  border-left: 3px solid var(--red);
+}
+.squad-illegal b { display: inline-block; margin-bottom: 2px; }
+.mech-faction { margin: 2px 0 0; font-size: 11.5px; color: var(--text2); font-weight: 600; }
+.mech-faction.bad { color: var(--red); }
+.fac-chip {
+  display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 999px;
+  font-size: 10px; font-weight: 700; letter-spacing: 0.3px;
+  background: var(--surface3); color: var(--text2); font-family: var(--font);
+}
+.fac-chip.bad { background: var(--red-lt); color: var(--red); }
 .squad-unit {
   border: 1px solid transparent; border-radius: var(--radius); padding: 7px 9px 5px; margin-bottom: 6px;
   background: var(--surface2); transition: background 0.12s, border-color 0.12s;
