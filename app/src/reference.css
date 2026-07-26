@@ -10,6 +10,7 @@
 
   --accent: #f0b429;
   --accent-lt: rgba(240, 180, 41, 0.13);
+  --on-accent: #0f1216;
   --blue: #5cb3ff;
   --blue-lt: rgba(92, 179, 255, 0.13);
   --green: #3ddc84;
@@ -27,6 +28,7 @@
   --collab-lt: rgba(238, 241, 245, 0.16);
 
   --radius: 6px;
+  --radius-sm: 4px;
   --font: "Inter", "Segoe UI", system-ui, sans-serif;
   --mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
   font-family: var(--font);

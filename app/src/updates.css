@@ -1,0 +1,26 @@
+/* ---------- update notice ---------- */
+#update-toast {
+  flex-shrink: 0; margin: 8px; z-index: 40;
+  display: flex; overflow: hidden;
+  background: var(--surface2); border-radius: var(--radius);
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.55);
+  animation: ut-in 0.22s ease;
+}
+#update-toast.ut-floating {
+  position: fixed; left: 12px; bottom: 12px; max-width: 300px; margin: 0;
+}
+@keyframes ut-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+#update-toast .ut-bar { width: 3px; flex-shrink: 0; background: var(--accent); }
+#update-toast .ut-body { padding: 9px 11px; }
+#update-toast b { display: block; font-size: 12px; color: var(--accent); margin-bottom: 3px; }
+#update-toast p { margin: 0 0 8px; font-size: 11px; line-height: 1.45; color: var(--text2); }
+#update-toast .ut-actions { display: flex; gap: 6px; }
+#update-toast button {
+  border: none; border-radius: var(--radius-sm); cursor: pointer;
+  font-family: var(--font); font-size: 11px; font-weight: 600; padding: 5px 10px;
+  transition: background 0.12s, color 0.12s;
+}
+#update-toast .ut-reload { background: var(--accent); color: var(--on-accent); }
+#update-toast .ut-reload:hover { filter: brightness(1.08); }
+#update-toast .ut-later { background: var(--surface3); color: var(--text2); }
+#update-toast .ut-later:hover { color: var(--text); }

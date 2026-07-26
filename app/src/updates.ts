@@ -1,3 +1,5 @@
+import './updates.css';
+
 declare const __BUILD_ID__: string;
 
 const POLL_MS = 5 * 60 * 1000;
@@ -22,6 +24,7 @@ function show(build: string): void {
   if (document.getElementById('update-toast')) return;
   if (localStorage.getItem(DISMISS_KEY) === build) return;
 
+  const infoBox = document.getElementById('inspect-box');
   const box = document.createElement('div');
   box.id = 'update-toast';
   box.setAttribute('role', 'status');
@@ -29,7 +32,7 @@ function show(build: string): void {
     <div class="ut-bar"></div>
     <div class="ut-body">
       <b>New version available</b>
-      <p>The tool has been updated since you opened this page. Reload to pick up the changes. Your board is saved, so nothing is lost.</p>
+      <p>The tool has been updated since you opened this page. Reload to pick up the changes.${infoBox ? ' Your board is saved, so nothing is lost.' : ''}</p>
       <div class="ut-actions">
         <button class="ut-reload">Reload now</button>
         <button class="ut-later">Later</button>
@@ -41,7 +44,6 @@ function show(build: string): void {
     box.remove();
   });
 
-  const infoBox = document.getElementById('inspect-box');
   if (infoBox?.parentElement) {
     infoBox.parentElement.insertBefore(box, infoBox);
   } else {
