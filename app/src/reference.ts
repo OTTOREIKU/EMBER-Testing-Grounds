@@ -1,6 +1,7 @@
 import './reference.css';
-import { actionIconUrl, cardName, loadData, missionImageUrl, portraitUrl, secondaryImageUrl, statIconUrl, zeroCostReason, type GameData, type KeywordDef } from './data';
-import { mountCardImage, preloadCardImages } from './images';
+import { actionIconUrl, cardName, FACTION_LABEL, loadData, missionImageUrl, portraitUrl, secondaryImageUrl, statIconUrl, zeroCostReason, type GameData, type KeywordDef } from './data';
+import { mountCardImage, preloadCardImages, warmAllImagesWhenIdle } from './images';
+import { watchForUpdates } from './updates';
 import type { Card } from './types';
 
 type Tab = 'keywords' | 'parts' | 'units' | 'pilots' | 'tactics' | 'missions' | 'rules';
@@ -45,17 +46,28 @@ const UNIT_FACETS: Facet[] = [
   { id: 'large', label: 'Large', match: (c) => c.type === 'large' },
 ];
 
-const PILOT_FACETS: Facet[] = [
-  { id: 'RDL', label: 'RDL', match: (c) => c.faction === 'RDL' },
-  { id: 'UN', label: 'UN', match: (c) => c.faction === 'UN' },
-  { id: 'GOF', label: 'GOF', match: (c) => c.faction === 'GOF' },
-  { id: 'PD', label: 'PD', match: (c) => c.faction === 'PD' },
-];
+const FACTION_ORDER = ['RDL', 'UN', 'GOF', 'PD', 'COLLABORATION'];
+
+// Factions come from the same box-membership derivation the squad legality check uses, so parts and
+// drones can be filtered by faction even though the card database records one only for pilots.
+function factionFacets(pool: Card[]): Facet[] {
+  const present = new Set<string>();
+  for (const c of pool) {
+    const f = data.factionOf(c);
+    if (f) present.add(f);
+  }
+  const known = FACTION_ORDER.filter((f) => present.has(f));
+  const rest = [...present].filter((f) => !FACTION_ORDER.includes(f)).sort();
+  return [...known, ...rest].map((f) => ({
+    id: f,
+    label: FACTION_LABEL[f] ?? f,
+    match: (c: Card) => data.factionOf(c) === f,
+  }));
+}
 
 function facetsFor(t: Tab): Facet[] {
   if (t === 'parts') return PART_FACETS;
   if (t === 'units') return UNIT_FACETS;
-  if (t === 'pilots') return PILOT_FACETS;
   return [];
 }
 
@@ -63,6 +75,7 @@ let data: GameData;
 let tab: Tab = 'keywords';
 let query = '';
 const facetChoice: Partial<Record<Tab, string>> = {};
+const factionChoice: Partial<Record<Tab, string>> = {};
 
 const body = () => document.getElementById('ref-body')!;
 const esc = (s: string) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!);
@@ -456,33 +469,56 @@ function render(): void {
     return norm(`${cardName(c)} ${c.id} ${c.type ?? ''} ${kw} ${acts}`).includes(q);
   });
 
-  const facets = facetsFor(tab);
-  const chosen = facetChoice[tab];
-  const active = facets.find((f) => f.id === chosen);
-  const list = pool.filter((c) => !active || active.match(c)).sort((a, b) => cardName(a).localeCompare(cardName(b)));
+  const kinds = facetsFor(tab);
+  const factions = factionFacets(pool);
+  const kind = kinds.find((f) => f.id === facetChoice[tab]);
+  const faction = factions.find((f) => f.id === factionChoice[tab]);
 
-  const chips = facets.length
-    ? `<div class="ref-facets">
-        <button class="ref-facet${active ? '' : ' active'}" data-facet="">All <span class="fc-n">${pool.length}</span></button>
-        ${facets
-          .map((f) => {
-            const n = pool.filter(f.match).length;
-            return `<button class="ref-facet${active?.id === f.id ? ' active' : ''}${n ? '' : ' empty'}" data-facet="${f.id}"${n ? '' : ' disabled'}>${esc(f.label)} <span class="fc-n">${n}</span></button>`;
-          })
-          .join('')}
-      </div>`
-    : '';
+  const list = pool
+    .filter((c) => (!kind || kind.match(c)) && (!faction || faction.match(c)))
+    .sort((a, b) => cardName(a).localeCompare(cardName(b)));
+
+  // Each row counts against the other row's choice, so the numbers show what a click would give.
+  const row = (
+    items: Facet[],
+    activeId: string | undefined,
+    attr: string,
+    others: Facet | undefined,
+    extraClass = '',
+  ): string => {
+    if (!items.length) return '';
+    const base = pool.filter((c) => !others || others.match(c));
+    return `<div class="ref-facets${extraClass}">
+      <button class="ref-facet${activeId ? '' : ' active'}" data-${attr}="">All <span class="fc-n">${base.length}</span></button>
+      ${items
+        .map((f) => {
+          const n = base.filter(f.match).length;
+          const on = activeId === f.id;
+          return `<button class="ref-facet${on ? ' active' : ''}${n ? '' : ' empty'}"${
+            extraClass ? ` data-fac="${esc(f.id)}"` : ''
+          } data-${attr}="${esc(f.id)}"${n ? '' : ' disabled'}>${esc(f.label)} <span class="fc-n">${n}</span></button>`;
+        })
+        .join('')}
+    </div>`;
+  };
 
   el.innerHTML =
-    chips +
+    row(kinds, facetChoice[tab], 'facet', faction) +
+    row(factions, factionChoice[tab], 'faction', kind, ' ref-facets-faction') +
     (list.length
       ? `<p class="ref-count">${list.length} card${list.length === 1 ? '' : 's'}</p>${list.map(cardRow).join('')}`
       : '<p class="ref-count">No matches</p>');
 
-  el.querySelectorAll<HTMLButtonElement>('.ref-facet').forEach((b) =>
+  el.querySelectorAll<HTMLButtonElement>('[data-facet]').forEach((b) =>
     b.addEventListener('click', () => {
-      const id = b.dataset.facet ?? '';
-      facetChoice[tab] = id || undefined;
+      facetChoice[tab] = b.dataset.facet || undefined;
+      render();
+      body().scrollTop = 0;
+    }),
+  );
+  el.querySelectorAll<HTMLButtonElement>('[data-faction]').forEach((b) =>
+    b.addEventListener('click', () => {
+      factionChoice[tab] = b.dataset.faction || undefined;
       render();
       body().scrollTop = 0;
     }),
@@ -629,6 +665,8 @@ function keywordDetail(name: string): string | null {
 async function init(): Promise<void> {
   data = await loadData();
   preloadCardImages(data.cards.map((c) => c.id));
+  warmAllImagesWhenIdle();
+  watchForUpdates();
 
   document.querySelectorAll<HTMLButtonElement>('#ref-tabs button').forEach((b) =>
     b.addEventListener('click', () => {

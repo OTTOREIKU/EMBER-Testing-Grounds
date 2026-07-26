@@ -56,10 +56,10 @@ export class Inventory {
     const dlg = document.createElement('div');
     dlg.id = 'inv-dialog';
     dlg.innerHTML = `<div class="inv-panel">
+      <button id="inv-close" class="dlg-close" title="Close">✕</button>
       <div class="inv-head">
         <b>My inventory</b>
         <label class="inv-filter"><input type="checkbox" id="inv-filter" ${this.filterEnabled ? 'checked' : ''}> Only show what I own</label>
-        <button id="inv-close">✕</button>
       </div>
       <p class="dim">Set how many copies of each box you own. Card lists then show your available copy counts.</p>
       <div class="inv-list">
