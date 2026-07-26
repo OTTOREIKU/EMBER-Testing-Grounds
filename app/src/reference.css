@@ -79,12 +79,11 @@ body.ref-locked { overflow: hidden; }
 
 #ref-body { padding: 12px 14px calc(28px + env(safe-area-inset-bottom, 0px)); }
 
-/* One line per row. Narrow screens scroll sideways instead of stacking. */
+/* Phones wrap onto extra lines: a sideways scroll here is too easy to miss, and a filter you cannot
+   see is a filter you do not use. Wide screens get the single line instead, see the query below. */
 .ref-facets {
-  display: flex; flex-wrap: nowrap; gap: 6px; margin: 0 0 8px;
-  overflow-x: auto; padding-bottom: 2px; scrollbar-width: none;
+  display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px;
 }
-.ref-facets::-webkit-scrollbar { height: 0; }
 .ref-facets-faction { margin-bottom: 12px; }
 .ref-facet {
   flex: 0 0 auto; background: var(--surface2); color: var(--text2); border: none;
@@ -258,6 +257,12 @@ body.ref-locked { overflow: hidden; }
   /* The bar itself stays full width so the sticky surface spans the window, but its contents are
      padded into the same 1136px column the cards use, so title, search and tabs line up with them. */
   #ref-head { padding: 14px max(22px, calc((100% - 1136px) / 2)) 12px; }
+  /* There is room for one line here, and overflow-x is only a safety net if a tab ever gains
+     enough chips to exceed the column. On phones the base rule wraps instead. */
+  .ref-facets {
+    flex-wrap: nowrap; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none;
+  }
+  .ref-facets::-webkit-scrollbar { height: 0; }
   #ref-body {
     padding: 16px 22px 44px; max-width: 1180px; margin: 0 auto;
     display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px;
