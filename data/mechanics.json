@@ -93,7 +93,7 @@
    "name": "Secondary Task Cards",
    "ref": "Rulebook 5.2.3",
    "match": [],
-   "text": "Each player also picks 1 Secondary Task during setup, starting with the First Player, and scores it privately alongside the Main Task. The core box has 8. Only two are pictured in the rulebook. DECAPITATION: your opponent names one of their own mechs as the Leader, and destroying it is worth 5 VP. ANNIHILATION: 2 VP for each enemy mech destroyed and 1 VP for each drone destroyed. The other six are not documented anywhere we can reach, so read them from your physical cards."
+   "text": "Each player also picks 1 Secondary Task during setup, starting with the First Player, and scores it privately alongside the shared Main Task. The core box has 8 and all of them are in the Missions tab. Three ask you to designate one of your own mechs: Escort scores 3 VP if it survives, Weapons Test scores 1 VP each time it destroys a Part or a Drone, and Disposal Procedure scores 2 VP when it dies. Two target the enemy: Decapitation is worth 5 VP but your opponent picks which of their mechs is the target, while Bounty Hunt is worth 4 VP and you pick. Annihilation scores 2 VP per enemy mech and 1 VP per drone, Mercy scores 2 VP for destroying no enemy mech at all, and Potential Excavation Area scores 2 VP for holding a Tactical Zone you nominate. The card text is our English rendering of the printed Korean, so the physical card wins."
   },
   {
    "id": "tactics_cards",

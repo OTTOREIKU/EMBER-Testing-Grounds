@@ -64,8 +64,9 @@ are there too, and they are selectable in the Add tab with their point values so
 your list. The card text is my English rendering of the printed Korean, so the physical card always
 wins over what you read here.
 
-The **eight Secondary Task cards are not included**. I have not found a scan of them anywhere, so
-bring those from the box.
+All **eight Secondary Task cards** are in there too, the ones each player picks in secret and scores
+on their own. They took some digging to find, so the text is my English rendering of the Korean
+cards and the scan is one tap away if you want to check me.
 
 Everything saves to your browser. Nothing is uploaded anywhere and there is no server.
 

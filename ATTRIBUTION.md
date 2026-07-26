@@ -24,9 +24,9 @@ transcribing the whole card catalogue; this tool would not exist without it.
 
 ## The mission and battlefield cards
 
-The Main Task card and Battlefield card scans in `assets/missions/` and `assets/battlefield/`
-come from the Korean **namu.wiki** article on EMBER: Obsidian Protocol, which documents them in
-detail. namu.wiki content is licensed **CC BY-NC-SA 2.0 KR**, and the cards themselves remain
+The Main Task, Secondary Task and Battlefield card scans in `assets/missions/`,
+`assets/secondary/` and `assets/battlefield/` come from the Korean **namu.wiki** article on
+EMBER: Obsidian Protocol, which documents them in detail. namu.wiki content is licensed **CC BY-NC-SA 2.0 KR**, and the cards themselves remain
 Queti's copyright. Our English text for those cards is a translation of the printed Korean, so
 treat it as unofficial and let the physical card win.
 

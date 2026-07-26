@@ -1,0 +1,95 @@
+{
+ "_comment": "The 8 Secondary Task cards from the core box, transcribed and translated from the Korean card scans documented on namu.wiki. Each card's VP value is printed in its text and drawn again as that many VP tokens on the card face, so both were checked against each other. Card text here is our English rendering of the printed Korean; the printed card always wins.",
+ "_source": "https://namu.wiki/w/EMBER:%20Obsidian%20Protocol/%EC%84%B8%EC%BB%A8%EB%8D%94%EB%A6%AC%20%EB%AF%B8%EC%85%98%20%EC%B9%B4%EB%93%9C",
+ "_rules": "Rulebook 5.2.3: during setup each player picks 1 Secondary Task, starting with the First Player, and scores it privately alongside the shared Main Task. Every setup step below happens in the Mission Preparation step.",
+ "cards": [
+  {
+   "id": "decapitation",
+   "name": "Decapitation",
+   "nameKo": "참수",
+   "token": "Head",
+   "setup": "Mission Preparation: your opponent designates one of their own mechs as the High-Value Target.",
+   "scoring": "Score 5 VP when the High-Value Target is destroyed.",
+   "vp": 5,
+   "note": "Your opponent chooses, so expect their least exposed mech. That is why this pays more than Bounty Hunt.",
+   "inRulebook": true
+  },
+  {
+   "id": "bounty-hunt",
+   "name": "Bounty Hunt",
+   "nameKo": "현상금 사냥",
+   "token": "Bounty",
+   "setup": "Mission Preparation: you designate one of your opponent's mechs as the Bounty Target.",
+   "scoring": "Score 4 VP when the Bounty Target is destroyed.",
+   "vp": 4,
+   "note": "The mirror of Decapitation. You pick the target here, so it pays 1 VP less.",
+   "inRulebook": false
+  },
+  {
+   "id": "annihilation",
+   "name": "Annihilation",
+   "nameKo": "전멸",
+   "token": null,
+   "setup": "No setup. This card needs no designated target.",
+   "scoring": "Score 2 VP each time an enemy mech is destroyed, and 1 VP each time an enemy drone is destroyed.",
+   "vp": 2,
+   "note": "The most commonly chosen Secondary Task, since it scores from fighting rather than from a plan.",
+   "inRulebook": true
+  },
+  {
+   "id": "escort",
+   "name": "Escort",
+   "nameKo": "호위",
+   "token": "Escortee",
+   "setup": "Mission Preparation: you designate one of your own mechs as the Escort Target.",
+   "scoring": "Score 3 VP if the Escort Target has not been destroyed when the game ends.",
+   "vp": 3,
+   "note": "Pick something you were going to keep back anyway, then actually keep it back.",
+   "inRulebook": false
+  },
+  {
+   "id": "weapons-test",
+   "name": "Weapons Test",
+   "nameKo": "무기 테스트",
+   "token": "Test Unit",
+   "setup": "Mission Preparation: you designate one of your own mechs as the Test Unit.",
+   "scoring": "Score 1 VP each time the Test Unit destroys a Part or a Drone.",
+   "vp": 1,
+   "note": "The only card that scores off Parts rather than whole units, so it rewards a mech that lands a lot of small hits.",
+   "inRulebook": false
+  },
+  {
+   "id": "disposal-procedure",
+   "name": "Disposal Procedure",
+   "nameKo": "폐기 절차",
+   "token": "Obsolete Mech",
+   "setup": "Mission Preparation: you designate one of your own mechs as the Disposal Target.",
+   "scoring": "Score 2 VP when the Disposal Target is destroyed.",
+   "vp": 2,
+   "note": "You score when your own designated mech dies, so pick something you are happy to spend and then spend it.",
+   "inRulebook": false
+  },
+  {
+   "id": "mercy",
+   "name": "Mercy",
+   "nameKo": "자비로움",
+   "token": null,
+   "setup": "No setup. This card needs no designated target.",
+   "scoring": "Score 2 VP if no enemy mech has been destroyed by the time the game ends. A mech removed because it could not maintain Integrity does not count as destroyed.",
+   "vp": 2,
+   "note": "The opposite of Annihilation. Take it when you plan to win on objectives without killing anything.",
+   "inRulebook": false
+  },
+  {
+   "id": "potential-excavation-area",
+   "name": "Potential Excavation Area",
+   "nameKo": "잠재적 발굴 지역",
+   "token": "Excavation Area",
+   "setup": "Mission Preparation: you designate one Tactical Zone as the Excavation Site.",
+   "scoring": "Score 2 VP if, when the game ends, the only units in the Excavation Site are yours. Low Value Units do not count either way.",
+   "vp": 2,
+   "note": "An empty Excavation Site does not score. You need at least one of your own units that is not a Low Value Unit standing in it.",
+   "inRulebook": false
+  }
+ ]
+}

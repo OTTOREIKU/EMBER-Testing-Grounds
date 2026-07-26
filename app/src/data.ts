@@ -130,6 +130,18 @@ export interface StanceDef {
   cost: string;
 }
 
+export interface SecondaryTask {
+  id: string;
+  name: string;
+  nameKo?: string;
+  token?: string | null;
+  setup: string;
+  scoring: string;
+  vp?: number;
+  note?: string;
+  inRulebook?: boolean;
+}
+
 export interface PlayData {
   phases: PhaseDef[];
   timings: TimingDef[];
@@ -150,6 +162,7 @@ export interface GameData {
   mechanicsFor(...text: (string | undefined)[]): MechanicDef[];
   actionTranslation(actionId: string): { english: string | null; confidence: string; note?: string } | undefined;
   missions: MissionData;
+  secondary: SecondaryTask[];
   play: PlayData;
 }
 
@@ -196,7 +209,7 @@ function applyTactics(cards: Card[], table: Record<string, TacticEntry>): void {
 }
 
 export async function loadData(): Promise<GameData> {
-  const [cards, terrain, boxes, rawKeywords, patch, mech, xlate, names, missions, tactics, play] = await Promise.all([
+  const [cards, terrain, boxes, rawKeywords, patch, mech, xlate, names, missions, tactics, play, secondary] = await Promise.all([
     fetch(dataUrl('cards.json')).then((r) => r.json() as Promise<Card[]>),
     fetch(dataUrl('terrain_layouts.json')).then((r) => r.json() as Promise<TerrainData>),
     fetch(dataUrl('boxes.json')).then((r) => r.json() as Promise<BoxDef[]>),
@@ -222,6 +235,9 @@ export async function loadData(): Promise<GameData> {
     fetch(dataUrl('play.json'))
       .then((r) => (r.ok ? (r.json() as Promise<PlayData>) : NO_PLAY))
       .catch(() => NO_PLAY),
+    fetch(dataUrl('secondary.json'))
+      .then((r) => (r.ok ? (r.json() as Promise<{ cards?: SecondaryTask[] }>) : { cards: [] }))
+      .catch(() => ({ cards: [] as SecondaryTask[] })),
   ]);
 
   cleanCardText(cards);
@@ -295,6 +311,7 @@ export async function loadData(): Promise<GameData> {
     mechanicsFor,
     actionTranslation,
     missions: { families: missions.families ?? [], cards: missions.cards ?? [] },
+    secondary: secondary.cards ?? [],
     play: {
       phases: play.phases ?? [],
       timings: play.timings ?? [],
@@ -387,6 +404,10 @@ const STAT_ICONS: Record<string, string> = {
 export function statIconUrl(field: string): string | null {
   const name = STAT_ICONS[field];
   return name ? assetUrl(`tokens/tab/icon_${name}.webp`) : null;
+}
+
+export function secondaryImageUrl(id: string): string {
+  return assetUrl(`secondary/${id}.webp`);
 }
 
 export function missionImageUrl(id: string): string {

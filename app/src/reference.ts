@@ -1,5 +1,5 @@
 import './reference.css';
-import { actionIconUrl, cardName, loadData, missionImageUrl, portraitUrl, statIconUrl, zeroCostReason, type GameData, type KeywordDef } from './data';
+import { actionIconUrl, cardName, loadData, missionImageUrl, portraitUrl, secondaryImageUrl, statIconUrl, zeroCostReason, type GameData, type KeywordDef } from './data';
 import { mountCardImage, preloadCardImages } from './images';
 import type { Card } from './types';
 
@@ -277,7 +277,10 @@ function render(): void {
     const fams = data.missions.families.filter(
       (f) => !q || norm(`${f.name} ${f.text} ${(f.faq ?? []).map((x) => x.q + x.a).join(' ')}`).includes(q),
     );
-    if (!cards.length && !fams.length) {
+    const secs = data.secondary.filter(
+      (s) => !q || norm(`${s.name} ${s.nameKo ?? ''} ${s.setup} ${s.scoring} ${s.token ?? ''} ${s.note ?? ''}`).includes(q),
+    );
+    if (!cards.length && !fams.length && !secs.length) {
       el.innerHTML = '<p class="ref-count">No matches</p>';
       return;
     }
@@ -320,7 +323,32 @@ function render(): void {
               : ''}
           </article>`,
         )
-        .join('');
+        .join('') +
+      (secs.length
+        ? `<p class="ref-count">${secs.length} secondary task${secs.length === 1 ? '' : 's'} · you pick 1, scored privately</p>` +
+          secs
+            .map(
+              (s) => `<article class="card">
+            <div class="card-title">${esc(s.name)}</div>
+            ${s.nameKo ? `<div class="ref-note">${esc(s.nameKo)}</div>` : ''}
+            <button class="mis-thumb" data-secondary="${esc(s.id)}" title="Tap for the full card">
+              <img src="${secondaryImageUrl(s.id)}" alt="${esc(s.name)} card" loading="lazy">
+              <span>Tap to enlarge</span>
+            </button>
+            <div class="card-body">
+              <p><b>Setup.</b> ${esc(s.setup)}</p>
+              <p><b>Scoring.</b> ${esc(s.scoring)}</p>
+              ${s.note ? `<p class="ref-note">${esc(s.note)}</p>` : ''}
+            </div>
+            <div class="card-badges">
+              ${typeof s.vp === 'number' ? `<span class="tag mono">${s.vp} VP</span>` : ''}
+              ${s.token ? `<span class="tag tag-kw">${esc(s.token)} token</span>` : '<span class="tag">no token</span>'}
+              ${s.inRulebook ? '<span class="tag mono">in rulebook</span>' : ''}
+            </div>
+          </article>`,
+            )
+            .join('')
+        : '');
     return;
   }
 
@@ -550,14 +578,16 @@ function closeDetail(): void {
   navStack = [];
 }
 
-function showMissionImage(id: string): void {
-  const card = data.missions.cards.find((m) => m.id === id);
+function showMissionImage(id: string, kind: 'main' | 'secondary' = 'main'): void {
+  const card =
+    kind === 'secondary' ? data.secondary.find((s) => s.id === id) : data.missions.cards.find((m) => m.id === id);
+  const src = kind === 'secondary' ? secondaryImageUrl(id) : missionImageUrl(id);
   document.querySelector('.mis-lightbox')?.remove();
   const box = document.createElement('div');
   box.className = 'mis-lightbox';
   box.innerHTML = `<div class="mis-lightbox-inner">
       <button class="mis-close" title="Close">✕</button>
-      <img src="${missionImageUrl(id)}" alt="${esc(card?.name ?? id)} card">
+      <img src="${src}" alt="${esc(card?.name ?? id)} card">
       <p>${esc(card?.name ?? id)}${card?.nameKo ? ` · ${esc(card.nameKo)}` : ''}</p>
     </div>`;
   const close = () => {
@@ -633,6 +663,12 @@ async function init(): Promise<void> {
     if (mis) {
       ev.preventDefault();
       showMissionImage(mis.dataset.mission!);
+      return;
+    }
+    const sec = t.closest<HTMLElement>('[data-secondary]');
+    if (sec) {
+      ev.preventDefault();
+      showMissionImage(sec.dataset.secondary!, 'secondary');
       return;
     }
     const card = t.closest<HTMLElement>('[data-card]');
