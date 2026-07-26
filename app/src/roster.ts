@@ -106,7 +106,7 @@ export class Roster {
     note.className = 'tac-note';
     note.innerHTML =
       'Tactics Cards are held in hand rather than placed on the board, so there is nothing to deploy. Each costs 30 points against your squad total. Tap one to read it.' +
-      '<br><b>You may only play 1 Tactics Card per round</b>, so there is little point taking more than you have rounds to spend them.';
+      '<br><b>You may only play 1 Tactics Card per round.</b>';
     this.body.appendChild(note);
 
     if (!cards.length) {
@@ -135,11 +135,6 @@ export class Roster {
       list.appendChild(row);
     }
     this.body.appendChild(list);
-
-    const total = document.createElement('p');
-    total.className = 'points';
-    total.textContent = `Taking all ${cards.length} would cost ${cards.reduce((n, c) => n + (c.score ?? 0), 0)} points, and a 4-round game only lets you play 4 of them`;
-    this.body.appendChild(total);
   }
 
   private mechFactions(): { factions: string[]; unknown: number } {
