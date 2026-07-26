@@ -289,7 +289,7 @@ function render(): void {
       (f) => !q || norm(`${f.name} ${f.text} ${(f.faq ?? []).map((x) => x.q + x.a).join(' ')}`).includes(q),
     );
     const secs = data.secondary.filter(
-      (s) => !q || norm(`${s.name} ${s.nameKo ?? ''} ${s.setup} ${s.scoring} ${s.token ?? ''} ${s.note ?? ''}`).includes(q),
+      (s) => !q || norm(`${s.name} ${s.nameKo ?? ''} ${s.setup} ${s.scoring} ${s.token ?? ''}`).includes(q),
     );
     if (!cards.length && !fams.length && !secs.length) {
       el.innerHTML = '<p class="ref-count">No matches</p>';
@@ -349,7 +349,6 @@ function render(): void {
             <div class="card-body">
               <p><b>Setup.</b> ${esc(s.setup)}</p>
               <p><b>Scoring.</b> ${esc(s.scoring)}</p>
-              ${s.note ? `<p class="ref-note">${esc(s.note)}</p>` : ''}
             </div>
             <div class="card-badges">
               ${typeof s.vp === 'number' ? `<span class="tag mono">${s.vp} VP</span>` : ''}

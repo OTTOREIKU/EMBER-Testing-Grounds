@@ -136,7 +136,6 @@ export interface SecondaryTask {
   setup: string;
   scoring: string;
   vp?: number;
-  note?: string;
   inRulebook?: boolean;
 }
 

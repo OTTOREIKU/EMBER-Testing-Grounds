@@ -11,7 +11,6 @@
    "setup": "Mission Preparation: your opponent designates one of their own mechs as the High-Value Target.",
    "scoring": "Score 5 VP when the High-Value Target is destroyed.",
    "vp": 5,
-   "note": "Your opponent chooses, so expect their least exposed mech. That is why this pays more than Bounty Hunt.",
    "inRulebook": true
   },
   {
@@ -22,7 +21,6 @@
    "setup": "Mission Preparation: you designate one of your opponent's mechs as the Bounty Target.",
    "scoring": "Score 4 VP when the Bounty Target is destroyed.",
    "vp": 4,
-   "note": "The mirror of Decapitation. You pick the target here, so it pays 1 VP less.",
    "inRulebook": false
   },
   {
@@ -33,7 +31,6 @@
    "setup": "No setup. This card needs no designated target.",
    "scoring": "Score 2 VP each time an enemy mech is destroyed, and 1 VP each time an enemy drone is destroyed.",
    "vp": 2,
-   "note": "The most commonly chosen Secondary Task, since it scores from fighting rather than from a plan.",
    "inRulebook": true
   },
   {
@@ -44,7 +41,6 @@
    "setup": "Mission Preparation: you designate one of your own mechs as the Escort Target.",
    "scoring": "Score 3 VP if the Escort Target has not been destroyed when the game ends.",
    "vp": 3,
-   "note": "Pick something you were going to keep back anyway, then actually keep it back.",
    "inRulebook": false
   },
   {
@@ -55,7 +51,6 @@
    "setup": "Mission Preparation: you designate one of your own mechs as the Test Unit.",
    "scoring": "Score 1 VP each time the Test Unit destroys a Part or a Drone.",
    "vp": 1,
-   "note": "The only card that scores off Parts rather than whole units, so it rewards a mech that lands a lot of small hits.",
    "inRulebook": false
   },
   {
@@ -66,7 +61,6 @@
    "setup": "Mission Preparation: you designate one of your own mechs as the Disposal Target.",
    "scoring": "Score 2 VP when the Disposal Target is destroyed.",
    "vp": 2,
-   "note": "You score when your own designated mech dies, so pick something you are happy to spend and then spend it.",
    "inRulebook": false
   },
   {
@@ -77,7 +71,6 @@
    "setup": "No setup. This card needs no designated target.",
    "scoring": "Score 2 VP if no enemy mech has been destroyed by the time the game ends. A mech removed because it could not maintain Integrity does not count as destroyed.",
    "vp": 2,
-   "note": "The opposite of Annihilation. Take it when you plan to win on objectives without killing anything.",
    "inRulebook": false
   },
   {
@@ -88,7 +81,6 @@
    "setup": "Mission Preparation: you designate one Tactical Zone as the Excavation Site.",
    "scoring": "Score 2 VP if, when the game ends, the only units in the Excavation Site are yours. Low Value Units do not count either way.",
    "vp": 2,
-   "note": "An empty Excavation Site does not score. You need at least one of your own units that is not a Low Value Unit standing in it.",
    "inRulebook": false
   }
  ]
