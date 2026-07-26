@@ -158,10 +158,13 @@ function cardRow(c: Card): string {
   const kws = [...new Set((c.keywords ?? []).map(kwLabel).filter(Boolean))].slice(0, 3);
   const isPilot = c.category === 'pilot';
   const isTactic = c.category === 'tactics_or_upgrade';
+  const tacticText = isTactic
+    ? ((c.actions ?? []).map((a) => a.description?.en || a.description?.zh || '').find(Boolean) ?? '')
+    : '';
   const body = isPilot
     ? `${c.faction ?? ''}${c.trait ? ' · has a trait ability' : ''}`
     : isTactic
-      ? 'Tap to read the card. The rules text lives on the scan, not in the card data.'
+      ? tacticText
       : acts.join(' · ');
   return `<article class="card card-tap${isPilot ? ' card-pilot' : ''}" data-card="${esc(c.id)}">
     ${isPilot ? `<div class="pilot-thumb" data-portrait="${esc(c.id)}"></div>` : ''}
