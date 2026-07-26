@@ -125,6 +125,7 @@ export class RoundTracker {
     const limit = s.roundLimit ?? 5;
     this.root.innerHTML = `
       <span class="rt-round${s.round.n > limit ? ' over' : ''}">R${s.round.n}<small>/${limit}</small></span>
+      <div class="rt-controls">
       <select id="rt-scale" class="rt-scale">
         ${SCALES.map((sc) => `<option value="${sc.id}"${sc.id === scale ? ' selected' : ''}>${sc.name} ${sc.points}${sc.openEnded ? '+' : ''}p</option>`).join('')}
       </select>
@@ -140,7 +141,8 @@ export class RoundTracker {
             (side) => `<span class="cmd-${side}" title="${SIDE_LABEL[side]} Command Tokens">${SIDE_LABEL[side]} <button data-cmd="${side}" data-d="-1">−</button><b>${s.commandTokens[side]}</b><button data-cmd="${side}" data-d="1">+</button></span>`,
           )
           .join('')}
-      </span>`;
+      </span>
+      </div>`;
 
     const next = this.root.querySelector<HTMLButtonElement>('#rt-next')!;
     next.addEventListener('click', () => this.advance());

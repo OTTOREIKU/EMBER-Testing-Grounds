@@ -5,12 +5,8 @@ import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
-// Stamped into the bundle and written to version.json. The running page polls that file and offers
-// a reload when the two stop matching, which is how a visitor finds out a new deploy exists.
 const BUILD_ID = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
 
-// Every image under ../assets, as paths relative to the assets root. The preloader fetches this
-// so "warm everything" cannot silently miss a folder someone adds later.
 function assetManifest(dir: string): string[] {
   const out: string[] = [];
   const walk = (d: string, prefix: string) => {
@@ -24,7 +20,6 @@ function assetManifest(dir: string): string[] {
   return out.sort();
 }
 
-// Serve ../data and ../assets (which live outside the app root) at /data and /assets.
 function staticDirs(map: Record<string, string>): Plugin {
   const mime: Record<string, string> = {
     '.json': 'application/json',
@@ -47,7 +42,6 @@ function staticDirs(map: Record<string, string>): Plugin {
         for (const [prefix, dir] of Object.entries(map)) {
           if (url.startsWith(prefix)) {
             const file = path.join(dir, url.slice(prefix.length));
-            // stay inside the mapped directory
             if (!file.startsWith(path.resolve(dir))) break;
             if (fs.existsSync(file) && fs.statSync(file).isFile()) {
               res.setHeader('Content-Type', mime[path.extname(file).toLowerCase()] ?? 'application/octet-stream');
@@ -62,8 +56,6 @@ function staticDirs(map: Record<string, string>): Plugin {
   };
 }
 
-// The dev middleware above only exists while `vite` is running, so a production build has to
-// copy ../data and ../assets into dist itself or the published site loads with no cards.
 function copyDataAndAssets(map: Record<string, string>): Plugin {
   let outDir = 'dist';
   return {
@@ -89,14 +81,12 @@ function copyDataAndAssets(map: Record<string, string>): Plugin {
           JSON.stringify({ images: assetManifest(assetsOut) }),
         );
       }
-      // GitHub Pages runs Jekyll unless told not to, which skips files starting with _
       fs.writeFileSync(path.resolve(here, outDir, '.nojekyll'), '');
     },
   };
 }
 
 export default defineConfig({
-  // relative base so the build works from a user site, a project subpath or a local file
   base: './',
   define: { __BUILD_ID__: JSON.stringify(BUILD_ID) },
   plugins: [
@@ -110,10 +100,7 @@ export default defineConfig({
     }),
   ],
   build: {
-    // Vite's own chunks go here, NOT the default "assets", which would collide with the
-    // game's assets/ directory copied in above and get wiped by it.
     assetsDir: 'build',
-    // two entry points: the tabletop and the phone-friendly reference page
     rollupOptions: {
       input: {
         main: path.resolve(here, 'index.html'),

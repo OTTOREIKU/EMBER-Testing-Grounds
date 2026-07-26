@@ -41,8 +41,6 @@ function show(build: string): void {
     box.remove();
   });
 
-  // On the tabletop it slots into the left column directly above the info box, so it pushes the
-  // box down rather than covering it. The reference sheet has no such column, so it floats.
   const infoBox = document.getElementById('inspect-box');
   if (infoBox?.parentElement) {
     infoBox.parentElement.insertBefore(box, infoBox);
@@ -52,7 +50,6 @@ function show(build: string): void {
   }
 }
 
-// Poll for a newer deploy. Silent when version.json is missing, which is the case in dev.
 export function watchForUpdates(): void {
   const mine = typeof __BUILD_ID__ === 'string' ? __BUILD_ID__ : null;
   if (!mine) return;

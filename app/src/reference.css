@@ -79,8 +79,6 @@ body.ref-locked { overflow: hidden; }
 
 #ref-body { padding: 12px 14px calc(28px + env(safe-area-inset-bottom, 0px)); }
 
-/* Phones wrap onto extra lines: a sideways scroll here is too easy to miss, and a filter you cannot
-   see is a filter you do not use. Wide screens get the single line instead, see the query below. */
 .ref-facets {
   display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px;
 }
@@ -94,8 +92,6 @@ body.ref-locked { overflow: hidden; }
 .ref-facet:hover:not(:disabled) { background: var(--surface3); color: var(--text); }
 .ref-facet.active { background: var(--accent-lt); color: var(--accent); }
 .ref-facet:disabled { opacity: 0.4; cursor: default; }
-/* The count sits in a fixed-width, right-aligned slot with tabular figures, so a chip keeps the
-   same width whether it reads 9 or 273 and the row stops shifting under the cursor. */
 .ref-facet .fc-n {
   font-family: var(--mono, ui-monospace, monospace); font-size: 10.5px;
   opacity: 0.75; margin-left: 4px;
@@ -103,7 +99,6 @@ body.ref-locked { overflow: hidden; }
   font-variant-numeric: tabular-nums;
 }
 
-/* Faction chips take their own colour once chosen, so the active filter is obvious at a glance. */
 .ref-facet[data-fac="RDL"].active { background: var(--rdl-lt); color: var(--rdl); }
 .ref-facet[data-fac="UN"].active { background: var(--un-lt); color: var(--un); }
 .ref-facet[data-fac="GOF"].active { background: var(--gof-lt); color: var(--gof); }
@@ -166,8 +161,6 @@ body.ref-locked { overflow: hidden; }
 }
 .tag-kw { background: var(--blue-lt); color: var(--blue); }
 
-/* The source icons are ~900px dark-and-red art on transparency, so they need an explicit
-   small size and a light plate to sit on, the way they are printed on the cards. */
 .act-icons { display: inline-flex; gap: 3px; align-items: center; }
 .act-icon,
 .stat-icon {
@@ -254,11 +247,7 @@ body.ref-locked { overflow: hidden; }
 .ref-userlink:hover { background: var(--surface3); color: var(--text); }
 
 @media (min-width: 720px) {
-  /* The bar itself stays full width so the sticky surface spans the window, but its contents are
-     padded into the same 1136px column the cards use, so title, search and tabs line up with them. */
   #ref-head { padding: 14px max(22px, calc((100% - 1136px) / 2)) 12px; }
-  /* There is room for one line here, and overflow-x is only a safety net if a tab ever gains
-     enough chips to exceed the column. On phones the base rule wraps instead. */
   .ref-facets {
     flex-wrap: nowrap; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none;
   }
@@ -268,8 +257,6 @@ body.ref-locked { overflow: hidden; }
     display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px;
   }
   .ref-count { grid-column: 1 / -1; margin-bottom: 0; }
-  /* The filter rows are full-width bars, not cards, so they must span every column. Without this
-     they get squeezed into one grid track and wrap even with plenty of room to spare. */
   .ref-facets { grid-column: 1 / -1; }
   .card { margin-bottom: 0; }
   #ref-detail { align-items: center; padding: 24px; }

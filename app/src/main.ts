@@ -7,7 +7,19 @@ import { importSquadFile } from './importer';
 import { Inventory } from './inventory';
 import { isInspectPinned, showInspect, unpinInspect } from './inspector';
 import { dataUrl, loadData, missionImageUrl, parseGridRef, SIDE_LABEL } from './data';
-import { deleteCustomMap, loadCustomMaps, makePiece, PALETTE, pieceCells, saveCustomMap, type PaletteItem } from './mapeditor';
+import {
+  deleteCustomMap,
+  emptyCustomMap,
+  loadCustomMap,
+  loadCustomMaps,
+  makePiece,
+  PALETTE,
+  pieceCells,
+  saveCustomMap,
+  type CustomMap,
+  type CustomZone,
+  type PaletteItem,
+} from './mapeditor';
 import { Panel } from './panel';
 import { Roster } from './roster';
 import { inArc, losBetween, rangeBetween, reachableGrids } from './rules';
@@ -44,7 +56,22 @@ async function init() {
     vertical: boolean;
     working: TerrainPiece[];
     baseline: string;
-  } = { active: false, item: null, erase: false, vertical: false, working: [], baseline: '[]' };
+    paint: null | { kind: 'zone'; zoneId: string } | { kind: 'deploy'; side: 'black' | 'white' };
+    drag: null | { from: { col: number; row: number }; to: { col: number; row: number }; erase: boolean };
+    zones: CustomZone[];
+    deploy: { black: { col: number; row: number }[]; white: { col: number; row: number }[] };
+  } = {
+    active: false,
+    item: null,
+    erase: false,
+    vertical: false,
+    working: [],
+    baseline: '[]',
+    paint: null,
+    drag: null,
+    zones: [],
+    deploy: { black: [], white: [] },
+  };
 
   installTooltip();
   preloadCards(data.cards.map((c) => c.id));
@@ -205,6 +232,12 @@ async function init() {
     },
     onCellClick(col, row, erase) {
       if (!editor.active) return;
+      if (editor.paint) {
+        const at = { col: Math.floor(col / 3), row: Math.floor(row / 3) };
+        editor.drag = { from: at, to: at, erase: erase || editor.erase };
+        board.showGhost(dragSmallCells(editor.drag), !editor.drag.erase);
+        return;
+      }
       if (erase || editor.erase) {
         removeTerrainAt(col, row);
         return;
@@ -217,6 +250,15 @@ async function init() {
     },
     onCellHover(col, row) {
       if (!editor.active) return;
+      if (editor.paint) {
+        if (editor.drag) {
+          editor.drag.to = { col: Math.floor(col / 3), row: Math.floor(row / 3) };
+          board.showGhost(dragSmallCells(editor.drag), !editor.drag.erase);
+        } else {
+          board.showGhost(largeGridCells(col, row), true);
+        }
+        return;
+      }
       if (editor.erase || !editor.item) {
         board.clearGhost();
         return;
@@ -616,7 +658,7 @@ async function init() {
   function currentTerrain(): TerrainPiece[] {
     if (editor.active) return editor.working;
     if (!state.map) return [];
-    const base = state.map.startsWith('custom:') ? loadCustomMaps()[state.map.slice(7)] ?? [] : data.terrain.layouts[state.map] ?? [];
+    const base = state.map.startsWith('custom:') ? loadCustomMap(state.map.slice(7)).pieces : data.terrain.layouts[state.map] ?? [];
     const removed = state.removedTerrain;
     return removed?.length ? base.filter((p) => !removed.includes(p.id)) : base;
   }
@@ -624,6 +666,83 @@ async function init() {
   // ---------- map editor ----------
 
   const editorBar = document.getElementById('editor-bar')!;
+
+  window.addEventListener('pointerup', () => {
+    if (editor.drag) commitDrag();
+  });
+  window.addEventListener('pointercancel', () => {
+    if (editor.drag) commitDrag();
+  });
+
+  function largeGridCells(col: number, row: number): { col: number; row: number }[] {
+    const c = Math.floor(col / 3) * 3;
+    const r = Math.floor(row / 3) * 3;
+    const out: { col: number; row: number }[] = [];
+    for (let dc = 0; dc < 3; dc++) for (let dr = 0; dr < 3; dr++) out.push({ col: c + dc, row: r + dr });
+    return out;
+  }
+
+  function dragGrids(d: { from: { col: number; row: number }; to: { col: number; row: number } }): { col: number; row: number }[] {
+    const c0 = Math.min(d.from.col, d.to.col);
+    const c1 = Math.max(d.from.col, d.to.col);
+    const r0 = Math.min(d.from.row, d.to.row);
+    const r1 = Math.max(d.from.row, d.to.row);
+    const out: { col: number; row: number }[] = [];
+    for (let c = c0; c <= c1; c++) for (let r = r0; r <= r1; r++) out.push({ col: c, row: r });
+    return out;
+  }
+
+  function dragSmallCells(d: { from: { col: number; row: number }; to: { col: number; row: number } }): { col: number; row: number }[] {
+    return dragGrids(d).flatMap((g) => largeGridCells(g.col * 3, g.row * 3));
+  }
+
+  function commitDrag(): void {
+    const d = editor.drag;
+    const p = editor.paint;
+    editor.drag = null;
+    board.clearGhost();
+    if (!d || !p) return;
+    const grids = dragGrids(d);
+    const held = p.kind === 'deploy' ? editor.deploy[p.side] : (editor.zones.find((z) => z.id === p.zoneId)?.cells ?? []);
+    const single = grids.length === 1;
+    const untoggle = single && !d.erase && held.some((c) => c.col === grids[0].col && c.row === grids[0].row);
+    for (const g of grids) paintCell(g.col, g.row, d.erase || untoggle);
+    afterEdit();
+  }
+
+  function paintCell(gcol: number, grow: number, erase: boolean): void {
+    const p = editor.paint;
+    if (!p) return;
+    const cell = { col: gcol, row: grow };
+    const same = (a: { col: number; row: number }) => a.col === cell.col && a.row === cell.row;
+
+    if (p.kind === 'deploy') {
+      const list = editor.deploy[p.side];
+      const at = list.findIndex(same);
+      if (erase) {
+        if (at >= 0) list.splice(at, 1);
+      } else if (at < 0) {
+        const other = p.side === 'black' ? 'white' : 'black';
+        const clash = editor.deploy[other].findIndex(same);
+        if (clash >= 0) editor.deploy[other].splice(clash, 1);
+        list.push(cell);
+      }
+    } else {
+      const zone = editor.zones.find((z) => z.id === p.zoneId);
+      if (!zone) return;
+      const at = zone.cells.findIndex(same);
+      if (erase) {
+        if (at >= 0) zone.cells.splice(at, 1);
+      } else if (at < 0) {
+        for (const z of editor.zones) {
+          if (z.id === zone.id) continue;
+          const dup = z.cells.findIndex(same);
+          if (dup >= 0) z.cells.splice(dup, 1);
+        }
+        zone.cells.push(cell);
+      }
+    }
+  }
 
   function renderEditorBar(): void {
     if (!editor.active) {
@@ -633,25 +752,104 @@ async function init() {
     editorBar.hidden = false;
     const dirty = editorDirty();
     editorBar.innerHTML = `
-      <b>MAP EDITOR</b>
-      ${PALETTE.map((p) => `<button class="ed-piece${editor.item?.id === p.id ? ' active' : ''}" data-piece="${p.id}" title="${p.label}">${p.label.split(' (')[0]}</button>`).join('')}
-      <button id="ed-rotate" class="ed-tool" title="Rotate the armed piece (R)"${editor.item?.rotatable ? '' : ' disabled'}>${editor.vertical ? '↕' : '↔'} R</button>
-      <button id="ed-erase" class="ed-tool${editor.erase ? ' active' : ''}" title="Erase tool. Right-click erases too.">⌫ Erase</button>
-      <span class="ed-status">${editorStatus()}</span>
-      <span class="ed-count">${editor.working.length} piece${editor.working.length === 1 ? '' : 's'}${dirty ? ' · <b>unsaved</b>' : ''}</span>
-      <button id="ed-clear"${editor.working.length ? '' : ' disabled'}>Clear all</button>
-      ${state.map.startsWith('custom:') ? '<button id="ed-delete" title="Delete this custom map">Delete map</button>' : ''}
-      <button id="ed-exit">${dirty ? 'Discard' : 'Close'}</button>
-      <button id="ed-save" class="ed-primary">Save map…</button>`;
+      <b>TERRAIN</b>
+      <div class="ed-line">
+        ${PALETTE.map((p) => `<button class="ed-piece${editor.item?.id === p.id ? ' active' : ''}" data-piece="${p.id}" title="${p.label}">${p.label.split(' (')[0]}</button>`).join('')}
+        <button id="ed-rotate" class="ed-tool" title="Rotate the armed piece (R)"${editor.item?.rotatable ? '' : ' disabled'}>${editor.vertical ? '↕' : '↔'} R</button>
+        <button id="ed-erase" class="ed-tool${editor.erase ? ' active' : ''}" title="Erase tool. Right-click erases too.">⌫ Erase</button>
+      </div>
+      <div class="ed-actions">
+        <span class="ed-count">${editor.working.length} piece${editor.working.length === 1 ? '' : 's'}${dirty ? ' · <b>unsaved</b>' : ''}</span>
+        <button id="ed-clear"${editor.working.length || editor.zones.length || editor.deploy.black.length || editor.deploy.white.length ? '' : ' disabled'}>Clear all</button>
+        ${state.map.startsWith('custom:') ? '<button id="ed-delete" title="Delete this custom map">Delete map</button>' : ''}
+        <button id="ed-exit">${dirty ? 'Discard' : 'Close'}</button>
+        <button id="ed-save" class="ed-primary">Save map…</button>
+      </div>
+      <b>ZONES</b>
+      <div class="ed-line">
+        ${editor.zones
+          .map(
+            (z) =>
+              `<button class="ed-zone${editor.paint?.kind === 'zone' && editor.paint.zoneId === z.id ? ' active' : ''}" data-zone="${z.id}" title="Paint large grids into ${z.name}. Drag to fill a block; right-click removes.">${z.name} <small>${z.cells.length}</small></button>`,
+          )
+          .join('')}
+        <button id="ed-addzone" class="ed-tool" title="Create a named objective zone">+ Zone</button>
+        ${editor.paint?.kind === 'zone' ? '<button id="ed-zone-rename" class="ed-tool" title="Rename or delete the selected zone">Rename…</button>' : ''}
+        <span class="ed-sep"></span>
+        <button id="ed-dz-black" class="ed-tool ed-dz-black${editor.paint?.kind === 'deploy' && editor.paint.side === 'black' ? ' active' : ''}" title="Paint the Black deployment zone. Drag to fill a block.">Black Deploy <small>${editor.deploy.black.length}</small></button>
+        <button id="ed-dz-white" class="ed-tool ed-dz-white${editor.paint?.kind === 'deploy' && editor.paint.side === 'white' ? ' active' : ''}" title="Paint the White deployment zone. Drag to fill a block.">White Deploy <small>${editor.deploy.white.length}</small></button>
+        <span class="ed-status">${editorStatus()}</span>
+      </div>`;
     editorBar.querySelectorAll<HTMLButtonElement>('.ed-piece').forEach((b) =>
       b.addEventListener('click', () => {
         const picked = PALETTE.find((p) => p.id === b.dataset.piece) ?? null;
         editor.item = editor.item?.id === picked?.id ? null : picked;
         editor.erase = false;
+        editor.paint = null;
         board.clearGhost();
         renderEditorBar();
       }),
     );
+    editorBar.querySelectorAll<HTMLButtonElement>('.ed-zone').forEach((b) =>
+      b.addEventListener('click', () => {
+        const id = b.dataset.zone!;
+        const on = editor.paint?.kind === 'zone' && editor.paint.zoneId === id;
+        editor.paint = on ? null : { kind: 'zone', zoneId: id };
+        editor.item = null;
+        editor.erase = false;
+        board.clearGhost();
+        renderEditorBar();
+      }),
+    );
+    for (const side of ['black', 'white'] as const) {
+      editorBar.querySelector(`#ed-dz-${side}`)!.addEventListener('click', () => {
+        const on = editor.paint?.kind === 'deploy' && editor.paint.side === side;
+        editor.paint = on ? null : { kind: 'deploy', side };
+        editor.item = null;
+        editor.erase = false;
+        board.clearGhost();
+        renderEditorBar();
+      });
+    }
+    editorBar.querySelector('#ed-addzone')!.addEventListener('click', () => {
+      void (async () => {
+        const name = await promptDialog({
+          title: 'Name the zone',
+          body: 'Objective zones are drawn on the board and can be named anything. The printed board uses Alpha through India.',
+          placeholder: 'Alpha',
+          confirmLabel: 'Create zone',
+        });
+        if (!name?.trim()) return;
+        const id = `z${Date.now().toString(36)}`;
+        editor.zones.push({ id, name: name.trim(), cells: [] });
+        editor.paint = { kind: 'zone', zoneId: id };
+        editor.item = null;
+        editor.erase = false;
+        afterEdit();
+      })();
+    });
+    editorBar.querySelector('#ed-zone-rename')?.addEventListener('click', () => {
+      void (async () => {
+        const p = editor.paint;
+        if (p?.kind !== 'zone') return;
+        const zone = editor.zones.find((z) => z.id === p.zoneId);
+        if (!zone) return;
+        const name = await promptDialog({
+          title: `Rename "${zone.name}"`,
+          body: 'Clear the field and confirm to delete this zone instead.',
+          value: zone.name,
+          confirmLabel: 'Save',
+        });
+        if (name === null) return;
+        if (!name.trim()) {
+          editor.zones = editor.zones.filter((z) => z.id !== zone.id);
+          editor.paint = null;
+        } else {
+          zone.name = name.trim();
+        }
+        afterEdit();
+      })();
+    });
     editorBar.querySelector('#ed-erase')!.addEventListener('click', () => {
       editor.erase = !editor.erase;
       if (editor.erase) editor.item = null;
@@ -664,16 +862,21 @@ async function init() {
     });
     editorBar.querySelector('#ed-clear')!.addEventListener('click', async () => {
       const n = editor.working.length;
+      const z = editor.zones.length;
+      const d = editor.deploy.black.length + editor.deploy.white.length;
       if (
-        !n ||
+        !(n || z || d) ||
         (await confirmDialog({
-          title: 'Remove all terrain?',
-          body: `This clears all ${n} piece${n === 1 ? '' : 's'} from the map you are editing.`,
-          confirmLabel: 'Remove all',
+          title: 'Empty this map?',
+          body: `This clears ${n} piece${n === 1 ? '' : 's'}, ${z} zone${z === 1 ? '' : 's'} and any deployment zones from the map you are editing.`,
+          confirmLabel: 'Clear it all',
           danger: true,
         }))
       ) {
         editor.working = [];
+        editor.zones = [];
+        editor.deploy = { black: [], white: [] };
+        editor.paint = null;
         afterEdit();
       }
     });
@@ -682,31 +885,45 @@ async function init() {
       const name = state.map.slice(7);
       const ok = await confirmDialog({
         title: `Delete "${name}"?`,
-        body: 'The saved map is removed from this browser. Units on the board are left alone.',
+        body: 'The saved map is removed from this browser, along with any zones painted into it. Units on the board are left alone.',
         confirmLabel: 'Delete map',
         danger: true,
       });
       if (!ok) return;
       deleteCustomMap(name);
       state.map = '';
+      if (state.zoneSet === `custom:${name}`) state.zoneSet = '';
       exitEditor();
     });
     editorBar.querySelector('#ed-exit')!.addEventListener('click', () => requestExitEditor());
   }
 
   function editorStatus(): string {
+    const p = editor.paint;
+    if (p) {
+      const what =
+        p.kind === 'deploy'
+          ? `the ${p.side === 'black' ? 'Black' : 'White'} deployment zone`
+          : (editor.zones.find((z) => z.id === p.zoneId)?.name ?? 'a zone');
+      return `Painting ${what}. Click a large grid or drag across several; right-click removes.`;
+    }
     if (editor.erase) return 'Erase: click a piece to remove it.';
-    if (!editor.item) return 'Pick a piece above, then click the board to place it.';
+    if (!editor.item) return '';
     const rot = editor.item.rotatable ? ' · R rotates' : '';
     return `Placing ${editor.item.label.split(' (')[0]}. Click the board; right-click erases${rot}.`;
   }
 
+  function editorSnapshot(): string {
+    return JSON.stringify({ pieces: editor.working, zones: editor.zones, deploy: editor.deploy });
+  }
+
   function editorDirty(): boolean {
-    return JSON.stringify(editor.working) !== editor.baseline;
+    return editorSnapshot() !== editor.baseline;
   }
 
   function afterEdit(): void {
     board.renderTerrain(editor.working, true);
+    board.renderZones(overlayZones(), overlayDeployment());
     renderEditorBar();
   }
 
@@ -727,8 +944,12 @@ async function init() {
       confirmLabel: 'Save map',
     });
     if (!name) return false;
-    saveCustomMap(name, editor.working);
+    saveCustomMap(name, { pieces: editor.working, zones: editor.zones, deploy: editor.deploy });
     state.map = `custom:${name}`;
+    if (editor.zones.some((z) => z.cells.length) || editor.deploy.black.length || editor.deploy.white.length) {
+      state.zoneSet = `custom:${name}`;
+      state.showZones = true;
+    }
     exitEditor();
     return true;
   }
@@ -736,9 +957,13 @@ async function init() {
   async function requestExitEditor(): Promise<void> {
     if (editorDirty()) {
       const n = editor.working.length;
+      const z = editor.zones.filter((zn) => zn.cells.length).length;
+      const bits = [`${n} piece${n === 1 ? '' : 's'}`];
+      if (z) bits.push(`${z} zone${z === 1 ? '' : 's'}`);
+      if (editor.deploy.black.length || editor.deploy.white.length) bits.push('deployment zones');
       const choice = await choiceDialog({
         title: 'Save this map before closing?',
-        body: `The map has unsaved changes (${n} piece${n === 1 ? '' : 's'}). Terrain only lives in a saved map, so closing without saving loses it.`,
+        body: `The map has unsaved changes (${bits.join(', ')}). Terrain and zones only live in a saved map, so closing without saving loses them.`,
         choices: [
           { id: 'save', label: 'Save map…', primary: true },
           { id: 'discard', label: 'Discard changes', danger: true },
@@ -755,15 +980,21 @@ async function init() {
   }
 
   function enterEditor(): void {
+    const existing = currentCustomMap();
     editor.working = JSON.parse(JSON.stringify(currentTerrain())) as TerrainPiece[];
-    editor.baseline = JSON.stringify(editor.working);
+    editor.zones = JSON.parse(JSON.stringify(existing?.zones ?? [])) as CustomZone[];
+    editor.deploy = JSON.parse(JSON.stringify(existing?.deploy ?? emptyCustomMap().deploy)) as CustomMap['deploy'];
     editor.active = true;
     editor.item = null;
     editor.erase = false;
+    editor.paint = null;
+    editor.drag = null;
+    editor.baseline = editorSnapshot();
     board.panEnabled = false;
     board.editing = true;
     renderEditorBar();
     board.renderTerrain(editor.working, true);
+    board.renderZones(overlayZones(), overlayDeployment());
     board.clearHighlights();
   }
 
@@ -771,6 +1002,8 @@ async function init() {
     editor.active = false;
     editor.item = null;
     editor.erase = false;
+    editor.paint = null;
+    editor.drag = null;
     board.panEnabled = true;
     board.editing = false;
     board.clearGhost();
@@ -895,18 +1128,23 @@ async function init() {
 
   function openMapManager(): void {
     document.getElementById('map-dialog')?.remove();
-    const names = Object.keys(loadCustomMaps()).sort();
+    const maps = loadCustomMaps();
+    const names = Object.keys(maps).sort();
     const dlg = document.createElement('div');
     dlg.id = 'map-dialog';
     const rows = names
       .map((n) => {
-        const pieces = loadCustomMaps()[n]?.length ?? 0;
+        const map = maps[n];
+        const pieces = map.pieces.length;
+        const zones = map.zones.filter((z) => z.cells.length).length;
+        const spawns = map.deploy.black.length || map.deploy.white.length;
+        const extra = [zones ? `${zones} zone${zones === 1 ? '' : 's'}` : '', spawns ? 'deployment zones' : ''].filter(Boolean);
         const scn = n.startsWith('[scn] ');
         const inUse = state.map === `custom:${n}`;
         return `<div class="map-row">
           <div class="map-info">
             <b>${scn ? n.slice(6) : n}</b>
-            <span class="dim">${scn ? 'from a scenario' : 'saved by you'} · ${pieces} piece${pieces === 1 ? '' : 's'}${inUse ? ' · in use now' : ''}</span>
+            <span class="dim">${scn ? 'from a scenario' : 'saved by you'} · ${pieces} piece${pieces === 1 ? '' : 's'}${extra.length ? ` · ${extra.join(' · ')}` : ''}${inUse ? ' · in use now' : ''}</span>
           </div>
           <button class="map-del" data-name="${n.replace(/"/g, '&quot;')}">Delete</button>
         </div>`;
@@ -918,10 +1156,10 @@ async function init() {
       <div class="inv-head"><b>Saved maps</b></div>
       ${
         names.length
-          ? `<p class="dim">Loading a scenario saves its board here so you can come back to it. Deleting one only removes it from this list; the scenario itself still loads fine.</p>
+          ? `<p class="dim">A saved map holds its terrain and any zones you painted into it. Those zones show up in the toolbar's Zones list, so you can put them on any board. Loading a scenario saves its map here too; deleting one only removes it from this list, the scenario itself still loads fine.</p>
              <div class="scn-list">${rows}</div>
              ${scnCount > 1 ? `<div class="map-bulk"><button id="map-del-scn">Delete all ${scnCount} scenario maps</button></div>` : ''}`
-          : '<p class="dim">No saved maps yet. Build one in the map editor, or load a scenario.</p>'
+          : '<p class="dim">No saved maps yet. Build one in the map editor, where you can also paint objective zones and deployment zones, or load a scenario.</p>'
       }
     </div>`;
     dlg.addEventListener('click', (ev) => {
@@ -933,6 +1171,7 @@ async function init() {
       for (const n of victims) {
         deleteCustomMap(n);
         if (state.map === `custom:${n}`) state.map = '';
+        if (state.zoneSet === `custom:${n}`) state.zoneSet = '';
       }
       save();
       populateMapSelect();
@@ -971,51 +1210,169 @@ async function init() {
 
   document.getElementById('btn-mapmanage')!.addEventListener('click', openMapManager);
 
-  // ---------- mission overlay ----------
+  // ---------- zone sets ----------
 
   function activeMission(): (typeof data.missions.cards)[number] | undefined {
     return state.mission ? data.missions.cards.find((m) => m.id === state.mission) : undefined;
   }
 
-  function overlayZones(): BoardZone[] {
-    if (!state.showZones) return [];
-    const mission = activeMission();
-    const want = mission?.zones?.map((z) => z.toLowerCase());
-    return data.zoneData.zones
-      .filter((z) => !want || want.includes(z.id))
-      .map((z) => ({
-        name: z.name,
-        cells: z.cells.map(parseGridRef).filter(Boolean) as { col: number; row: number }[],
-      }))
+  function currentCustomMap(): CustomMap | null {
+    return state.map.startsWith('custom:') ? loadCustomMap(state.map.slice(7)) : null;
+  }
+
+  function printedZones(ids?: string[]): BoardZone[] {
+    const pool = ids ? data.zoneData.zones.filter((z) => ids.includes(z.id)) : data.zoneData.zones;
+    return pool
+      .map((z) => ({ name: z.name, cells: z.cells.map(parseGridRef).filter(Boolean) as { col: number; row: number }[] }))
       .filter((z) => z.cells.length);
   }
 
-  function overlayDeployment(): BoardDeployment | null {
-    if (!state.showZones) return null;
-    const id = state.deployLayout ?? (state.mission ? data.zoneData.missionDeployment[state.mission] : null);
+  function printedDeployment(id: string | null | undefined): BoardDeployment | null {
     const def = id ? data.zoneData.deployments.find((d) => d.id === id) : undefined;
     if (!def) return null;
-    const box = (from: string, to: string) => {
+    const box = (from: string, to: string, label: string) => {
       const a = parseGridRef(from);
       const b = parseGridRef(to);
       if (!a || !b) return undefined;
-      return { col: Math.min(a.col, b.col), row: Math.min(a.row, b.row), cols: Math.abs(b.col - a.col) + 1, rows: Math.abs(b.row - a.row) + 1 };
+      const rect = {
+        col: Math.min(a.col, b.col),
+        row: Math.min(a.row, b.row),
+        cols: Math.abs(b.col - a.col) + 1,
+        rows: Math.abs(b.row - a.row) + 1,
+      };
+      return { rect, label: `${label} ${rect.rows}x${rect.cols}` };
     };
-    return { black: box(def.black.from, def.black.to), white: box(def.white.from, def.white.to) };
+    return { black: box(def.black.from, def.black.to, 'BLACK'), white: box(def.white.from, def.white.to, 'WHITE') };
+  }
+
+  function paintedShapes(map: CustomMap | null): { zones: BoardZone[]; deploy: BoardDeployment | null } {
+    const shape = (cells: { col: number; row: number }[], label: string) => (cells.length ? { cells, label } : undefined);
+    const zones = (map?.zones ?? []).filter((z) => z.cells.length).map((z) => ({ name: z.name, cells: z.cells }));
+    const black = shape(map?.deploy.black ?? [], 'BLACK');
+    const white = shape(map?.deploy.white ?? [], 'WHITE');
+    return { zones, deploy: black || white ? { black, white } : null };
+  }
+
+  function resolveZoneSet(id: string): { zones: BoardZone[]; deploy: BoardDeployment | null } {
+    if (!id) return { zones: [], deploy: null };
+    if (id.startsWith('custom:')) return paintedShapes(loadCustomMaps()[id.slice(7)] ?? null);
+    if (id.startsWith('mission:')) {
+      const m = data.missions.cards.find((c) => c.id === id.slice(8));
+      if (!m) return { zones: [], deploy: null };
+      return {
+        zones: printedZones(m.zones?.map((z) => z.toLowerCase()) ?? []),
+        deploy: printedDeployment(data.zoneData.missionDeployment[m.id]),
+      };
+    }
+    const spec = id.startsWith('board:') ? id.slice(6) : '';
+    const parts = spec.split('+');
+    return {
+      zones: parts.includes('zones') ? printedZones() : [],
+      deploy: printedDeployment(parts.find((p) => p === 'corners' || p === 'strips')),
+    };
+  }
+
+  function overlayZones(): BoardZone[] {
+    if (editor.active) return editor.zones.filter((z) => z.cells.length).map((z) => ({ name: z.name, cells: z.cells }));
+    return state.showZones === false ? [] : resolveZoneSet(state.zoneSet ?? '').zones;
+  }
+
+  function overlayDeployment(): BoardDeployment | null {
+    if (editor.active) return paintedShapes({ pieces: [], zones: [], deploy: editor.deploy }).deploy;
+    return state.showZones === false ? null : resolveZoneSet(state.zoneSet ?? '').deploy;
+  }
+
+  const BOARD_SETS = [
+    { id: 'board:zones+strips', label: 'All nine zones + 2x12 strips', short: 'Zones + 2x12' },
+    { id: 'board:zones+corners', label: 'All nine zones + 3x5 corners', short: 'Zones + 3x5' },
+    { id: 'board:zones', label: 'All nine zones, no deployment', short: 'Nine zones' },
+    { id: 'board:strips', label: 'Deployment only: 2x12 strips', short: '2x12 strips' },
+    { id: 'board:corners', label: 'Deployment only: 3x5 corners', short: '3x5 corners' },
+  ];
+
+  const zoneSelect = document.getElementById('zone-select') as HTMLSelectElement;
+
+  function zoneSetLabel(id: string, short = false): string {
+    if (!id) return 'No zones';
+    const preset = BOARD_SETS.find((b) => b.id === id);
+    if (preset) return short ? preset.short : preset.label;
+    if (id.startsWith('mission:')) {
+      const name = data.missions.cards.find((m) => m.id === id.slice(8))?.name ?? 'Main Task';
+      return short ? (name.split(': ')[1] ?? name) : name;
+    }
+    if (id.startsWith('custom:')) return id.slice(7).replace(/^\[scn\] /, '');
+    return 'No zones';
+  }
+
+  function populateZoneSelect(): void {
+    zoneSelect.replaceChildren();
+    const opt = (value: string, text: string, into: HTMLElement) => {
+      const o = document.createElement('option');
+      o.value = value;
+      o.textContent = text;
+      into.appendChild(o);
+    };
+    const group = (label: string) => {
+      const g = document.createElement('optgroup');
+      g.label = label;
+      zoneSelect.appendChild(g);
+      return g;
+    };
+    opt('', 'No zones', zoneSelect);
+    const printed = group('Printed board');
+    for (const b of BOARD_SETS) opt(b.id, b.label, printed);
+    const missions = group('Main Task cards');
+    for (const m of data.missions.cards) {
+      const dep = data.zoneData.deployments.find((d) => d.id === data.zoneData.missionDeployment[m.id]);
+      opt(`mission:${m.id}`, `${m.name}${dep ? ` (${dep.id === 'strips' ? '2x12' : '3x5'})` : ''}`, missions);
+    }
+    const maps = loadCustomMaps();
+    const painted = Object.keys(maps)
+      .filter((n) => maps[n].zones.some((z) => z.cells.length) || maps[n].deploy.black.length || maps[n].deploy.white.length)
+      .sort();
+    if (painted.length) {
+      const mine = group('Zones you painted');
+      for (const n of painted) {
+        const m = maps[n];
+        const zn = m.zones.filter((z) => z.cells.length).length;
+        const bits = [zn ? `${zn} zone${zn === 1 ? '' : 's'}` : '', m.deploy.black.length || m.deploy.white.length ? 'deploy' : ''].filter(Boolean);
+        opt(`custom:${n}`, `★ ${n.replace(/^\[scn\] /, '')} (${bits.join(', ')})`, mine);
+      }
+    }
+    const want = state.zoneSet ?? '';
+    zoneSelect.value = want;
+    if (zoneSelect.value !== want) {
+      state.zoneSet = '';
+      zoneSelect.value = '';
+    }
   }
 
   function renderZoneOverlay(): void {
     board.renderZones(overlayZones(), overlayDeployment());
+    populateZoneSelect();
+    const on = !!state.zoneSet && state.showZones !== false;
     const btn = document.getElementById('btn-zones')!;
-    btn.setAttribute('aria-pressed', state.showZones ? 'true' : 'false');
-    btn.classList.toggle('on', !!state.showZones);
-    const m = activeMission();
-    btn.textContent = state.showZones ? (m ? m.name.split(':')[0] : 'Zones') : 'Zones';
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    btn.classList.toggle('on', on);
+    btn.classList.toggle('empty', !state.zoneSet);
+    btn.textContent = state.zoneSet ? (on ? zoneSetLabel(state.zoneSet, true) : 'Zones') : 'Empty';
+    btn.title = state.zoneSet
+      ? `${on ? 'Hide' : 'Show'} the overlay: ${zoneSetLabel(state.zoneSet)}`
+      : 'Nothing to show. Pick a zone set from the Zones list in the toolbar first.';
   }
 
+  function setZoneSet(id: string): void {
+    state.zoneSet = id;
+    state.showZones = !!id;
+    save();
+    renderZoneOverlay();
+  }
+
+  zoneSelect.addEventListener('change', () => setZoneSet(zoneSelect.value));
+
   document.getElementById('btn-zones')!.addEventListener('click', () => {
-    state.showZones = !state.showZones;
-    if (state.showZones && !state.mission && !state.deployLayout) state.deployLayout = 'strips';
+    if (!state.zoneSet) return;
+    state.showZones = state.showZones === false;
     save();
     renderZoneOverlay();
   });
@@ -1027,21 +1384,17 @@ async function init() {
     const rows = data.missions.cards
       .map((m, i) => {
         const dep = data.zoneData.deployments.find((d) => d.id === data.zoneData.missionDeployment[m.id]);
-        return `<div class="scn-row${state.mission === m.id ? ' current' : ''}">
+        const live = state.zoneSet === `mission:${m.id}`;
+        return `<div class="scn-row${live ? ' current' : ''}">
           <div class="scn-info"><b>${m.name}</b><br><span class="dim">${(m.zones ?? []).join(', ') || 'no tactical zones'} · ${dep?.name ?? 'deployment not known'}</span></div>
-          <button data-i="${i}" class="scn-load">${state.mission === m.id ? 'Reload' : 'Overlay'}</button>
+          <button data-i="${i}" class="scn-load">${live ? 'On the board' : 'Use it'}</button>
         </div>`;
       })
       .join('');
     dlg.innerHTML = `<div class="scn-panel">
       <button id="mis-close" class="dlg-close" title="Close">✕</button>
-      <div class="inv-head"><b>Main Task overlays</b></div>
-      <p class="dim">This draws the mission's tactical zones and both deployment zones over whatever map you have loaded. It does not place terrain, because the Main Task cards do not specify any; use a Battlefield Card layout or build your own.</p>
-      <div class="mis-actions">
-        <button id="mis-plain-strips">Deployment only: 2x12 strips</button>
-        <button id="mis-plain-corners">Deployment only: 3x5 corners</button>
-        <button id="mis-clear">Clear overlay</button>
-      </div>
+      <div class="inv-head"><b>Main Task cards</b></div>
+      <p class="dim">Picking one opens its briefing and draws its tactical zones and deployment zones on the board. Main Task cards do not specify terrain, so load a Battlefield Card layout or build your own map. Every zone set, including plain deployment zones and your own painted ones, is also in the Zones list in the toolbar.</p>
       <div class="scn-list">${rows}</div>
     </div>`;
     dlg.addEventListener('click', (ev) => {
@@ -1052,33 +1405,12 @@ async function init() {
       b.addEventListener('click', () => {
         const m = data.missions.cards[Number(b.dataset.i)];
         state.mission = m.id;
-        state.deployLayout = null;
-        state.showZones = true;
-        save();
-        renderZoneOverlay();
+        setZoneSet(`mission:${m.id}`);
         document.getElementById('details-body')!.replaceChildren(missionBriefing(m));
         showSideTab('details');
         dlg.remove();
       }),
     );
-    const plain = (id: string) => {
-      state.mission = null;
-      state.deployLayout = id;
-      state.showZones = true;
-      save();
-      renderZoneOverlay();
-      dlg.remove();
-    };
-    dlg.querySelector('#mis-plain-strips')!.addEventListener('click', () => plain('strips'));
-    dlg.querySelector('#mis-plain-corners')!.addEventListener('click', () => plain('corners'));
-    dlg.querySelector('#mis-clear')!.addEventListener('click', () => {
-      state.mission = null;
-      state.deployLayout = null;
-      state.showZones = false;
-      save();
-      renderZoneOverlay();
-      dlg.remove();
-    });
     document.body.appendChild(dlg);
   });
 

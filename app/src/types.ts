@@ -218,6 +218,7 @@ export interface GameState {
   mission?: string | null;
   showZones?: boolean;
   deployLayout?: string | null;
+  zoneSet?: string;
 }
 
 // --- builder-site squad import ---

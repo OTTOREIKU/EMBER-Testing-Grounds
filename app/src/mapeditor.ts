@@ -46,17 +46,51 @@ export function makePiece(item: PaletteItem, cells: { col: number; row: number }
   };
 }
 
-export function loadCustomMaps(): Record<string, TerrainPiece[]> {
+export interface CustomZone {
+  id: string;
+  name: string;
+  cells: { col: number; row: number }[];
+}
+
+export interface CustomMap {
+  pieces: TerrainPiece[];
+  zones: CustomZone[];
+  deploy: { black: { col: number; row: number }[]; white: { col: number; row: number }[] };
+}
+
+export function emptyCustomMap(): CustomMap {
+  return { pieces: [], zones: [], deploy: { black: [], white: [] } };
+}
+
+function normalise(raw: unknown): CustomMap {
+  if (Array.isArray(raw)) return { ...emptyCustomMap(), pieces: raw as TerrainPiece[] };
+  const o = (raw ?? {}) as Partial<CustomMap>;
+  return {
+    pieces: o.pieces ?? [],
+    zones: o.zones ?? [],
+    deploy: { black: o.deploy?.black ?? [], white: o.deploy?.white ?? [] },
+  };
+}
+
+export function loadCustomMaps(): Record<string, CustomMap> {
+  let raw: Record<string, unknown>;
   try {
-    return JSON.parse(localStorage.getItem(KEY) ?? '{}');
+    raw = JSON.parse(localStorage.getItem(KEY) ?? '{}');
   } catch {
     return {};
   }
+  const out: Record<string, CustomMap> = {};
+  for (const [name, v] of Object.entries(raw)) out[name] = normalise(v);
+  return out;
 }
 
-export function saveCustomMap(name: string, pieces: TerrainPiece[]): void {
+export function loadCustomMap(name: string): CustomMap {
+  return loadCustomMaps()[name] ?? emptyCustomMap();
+}
+
+export function saveCustomMap(name: string, map: CustomMap | TerrainPiece[]): void {
   const maps = loadCustomMaps();
-  maps[name] = pieces;
+  maps[name] = normalise(map);
   localStorage.setItem(KEY, JSON.stringify(maps));
 }
 

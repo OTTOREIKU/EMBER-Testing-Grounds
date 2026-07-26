@@ -8,9 +8,6 @@ export function warmProgress(): { total: number; done: number; running: boolean 
   return { ...warmState };
 }
 
-// Pull every image in assets/ into the browser cache. The manifest is generated from the assets
-// folder itself, so a new folder cannot be missed. Kept at a low concurrency with low fetch
-// priority so it never competes with whatever the user is actually looking at.
 export async function warmAllImages(concurrency = 6): Promise<void> {
   if (warmState.running) return;
   warmState.running = true;
@@ -57,10 +54,6 @@ interface NetInfo {
   effectiveType?: string;
 }
 
-// Bulk-warming pulls roughly 33 MB. That is free on a desktop and rude on a metered phone, and the
-// reference sheet is built for exactly that phone. Skip it when the browser says the connection is
-// metered or slow; images then load on demand as before. Browsers without the Network Information
-// API report nothing, so they warm, which keeps desktop Safari and Firefox behaving as intended.
 export function warmDecision(): { warm: boolean; reason: string } {
   const net = (navigator as Navigator & { connection?: NetInfo }).connection;
   if (!net) return { warm: true, reason: 'connection unknown, warming' };
@@ -71,7 +64,6 @@ export function warmDecision(): { warm: boolean; reason: string } {
   return { warm: true, reason: `connection reports ${net.effectiveType ?? 'fast'}` };
 }
 
-// Wait until the page has settled, then start warming in the background.
 export function warmAllImagesWhenIdle(): void {
   const decision = warmDecision();
   if (!decision.warm) {

@@ -9,13 +9,19 @@
   <div id="app">
     <header id="toolbar">
       <span id="logo">EMBER <em>Testing Grounds</em></span>
+      <div id="tb-controls">
       <label>Map
         <select id="map-select">
           <option value="">Empty board</option>
         </select>
       </label>
       <button id="btn-mapmanage" title="Delete saved and scenario maps you no longer want in the list">Manage maps</button>
-      <button id="btn-missions" title="Overlay a Main Task's tactical zones and deployment zones on the board">Missions</button>
+      <label>Zones
+        <select id="zone-select" title="Choose which objective and deployment zones are drawn on the board">
+          <option value="">No zones</option>
+        </select>
+      </label>
+      <button id="btn-missions" title="Read a Main Task card and put its zones on the board">Missions</button>
       <button id="btn-scenarios" title="Load a demo scenario: squads, terrain, objectives">Scenarios</button>
       <button id="btn-inventory" title="Set which boxes you own; card lists can filter to your collection">Inventory</button>
       <button id="btn-import-squad" title="Import a squad built on the community builder site (.json export or squad .png image)">Import squad</button>
@@ -25,9 +31,10 @@
       <button id="btn-clear" title="Remove all units">Clear</button>
       <a id="btn-reference" href="reference.html" target="_blank" rel="noopener"
          title="Glossary and card lookup. Opens a phone-friendly companion page.">Reference ↗</a>
+      </div>
+      <p id="hint">Drag move · Q/E rotate · M move-range · A arcs · Del remove · hover = range/LOS</p>
       <input type="file" id="import-file" accept=".json" hidden />
       <input type="file" id="import-squad-file" accept=".json,.png" hidden />
-      <span id="hint">Drag move · Q/E rotate · M move-range · A arcs · Del remove · hover = range/LOS</span>
     </header>
     <main>
       <aside id="left-panel">

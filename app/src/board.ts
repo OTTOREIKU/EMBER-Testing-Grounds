@@ -24,9 +24,15 @@ export interface BoardZone {
   cells: { col: number; row: number }[];
 }
 
+export interface DeployShape {
+  rect?: { col: number; row: number; cols: number; rows: number };
+  cells?: { col: number; row: number }[];
+  label?: string;
+}
+
 export interface BoardDeployment {
-  black?: { col: number; row: number; cols: number; rows: number };
-  white?: { col: number; row: number; cols: number; rows: number };
+  black?: DeployShape;
+  white?: DeployShape;
 }
 
 export interface BoardCallbacks {
@@ -44,6 +50,47 @@ function el<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, 
   const e = document.createElementNS(SVG_NS, tag);
   for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, String(v));
   return e;
+}
+
+function outlinePath(cells: { col: number; row: number }[], size: number): string {
+  const filled = new Set(cells.map((c) => `${c.col},${c.row}`));
+  const has = (col: number, row: number) => filled.has(`${col},${row}`);
+  const runs = (lines: Map<number, number[]>): [number, number, number][] => {
+    const out: [number, number, number][] = [];
+    for (const [fixed, raw] of lines) {
+      const sorted = [...raw].sort((a, b) => a - b);
+      let start = sorted[0];
+      let end = start + 1;
+      for (const v of sorted.slice(1)) {
+        if (v === end) {
+          end = v + 1;
+          continue;
+        }
+        out.push([fixed, start, end]);
+        start = v;
+        end = v + 1;
+      }
+      out.push([fixed, start, end]);
+    }
+    return out;
+  };
+  const horizontal = new Map<number, number[]>();
+  const vertical = new Map<number, number[]>();
+  const push = (map: Map<number, number[]>, key: number, v: number) => {
+    const list = map.get(key);
+    if (list) list.push(v);
+    else map.set(key, [v]);
+  };
+  for (const c of cells) {
+    if (!has(c.col, c.row - 1)) push(horizontal, c.row, c.col);
+    if (!has(c.col, c.row + 1)) push(horizontal, c.row + 1, c.col);
+    if (!has(c.col - 1, c.row)) push(vertical, c.col, c.row);
+    if (!has(c.col + 1, c.row)) push(vertical, c.col + 1, c.row);
+  }
+  const parts: string[] = [];
+  for (const [y, x0, x1] of runs(horizontal)) parts.push(`M${x0 * size} ${y * size}H${x1 * size}`);
+  for (const [x, y0, y1] of runs(vertical)) parts.push(`M${x * size} ${y0 * size}V${y1 * size}`);
+  return parts.join('');
 }
 
 export class Board {
@@ -285,25 +332,30 @@ export class Board {
 
     if (deploy) {
       for (const side of ['black', 'white'] as const) {
-        const r = deploy[side];
-        if (!r) continue;
+        const shape = deploy[side];
+        if (!shape) continue;
         const g = el('g', { class: `dz dz-${side}` });
-        g.appendChild(
-          el('rect', {
-            x: r.col * LG,
-            y: r.row * LG,
-            width: r.cols * LG,
-            height: r.rows * LG,
-            rx: 4,
-          }),
-        );
-        const label = el('text', {
-          x: r.col * LG + (r.cols * LG) / 2,
-          y: r.row * LG + (r.rows * LG) / 2 + 6,
-          'text-anchor': 'middle',
-          class: 'dz-label',
-        });
-        label.textContent = `${side === 'black' ? 'BLACK' : 'WHITE'} ${r.rows}x${r.cols}`;
+        let lx = 0;
+        let ly = 0;
+        if (shape.rect) {
+          const r = shape.rect;
+          g.appendChild(el('rect', { x: r.col * LG, y: r.row * LG, width: r.cols * LG, height: r.rows * LG, rx: 4, class: 'zone-fill' }));
+          g.appendChild(el('rect', { x: r.col * LG, y: r.row * LG, width: r.cols * LG, height: r.rows * LG, rx: 4, class: 'zone-edge' }));
+          lx = r.col * LG + (r.cols * LG) / 2;
+          ly = r.row * LG + (r.rows * LG) / 2 + 6;
+        } else if (shape.cells?.length) {
+          for (const c of shape.cells) {
+            g.appendChild(el('rect', { x: c.col * LG, y: c.row * LG, width: LG, height: LG, class: 'zone-fill' }));
+          }
+          g.appendChild(el('path', { d: outlinePath(shape.cells, LG), class: 'zone-edge' }));
+          const top = [...shape.cells].sort((a, b) => a.row - b.row || a.col - b.col)[0];
+          lx = top.col * LG + LG / 2;
+          ly = top.row * LG + LG / 2 + 6;
+        } else {
+          continue;
+        }
+        const label = el('text', { x: lx, y: ly, 'text-anchor': 'middle', class: 'dz-label' });
+        label.textContent = shape.label ?? (side === 'black' ? 'BLACK' : 'WHITE');
         g.appendChild(label);
         this.gZones.appendChild(g);
       }
@@ -312,8 +364,9 @@ export class Board {
     for (const z of zones) {
       const g = el('g', { class: 'tz' });
       for (const c of z.cells) {
-        g.appendChild(el('rect', { x: c.col * LG, y: c.row * LG, width: LG, height: LG, rx: 3 }));
+        g.appendChild(el('rect', { x: c.col * LG, y: c.row * LG, width: LG, height: LG, class: 'zone-fill' }));
       }
+      if (z.cells.length) g.appendChild(el('path', { d: outlinePath(z.cells, LG), class: 'zone-edge' }));
       const first = z.cells[0];
       if (first) {
         const label = el('text', {

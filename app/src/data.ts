@@ -39,8 +39,6 @@ function buildFactionIndex(cards: Card[], boxes: BoxDef[]): Map<string, string |
       f.forEach((x) => any.add(x));
       if (f.length === 1) single.add(f[0]);
     }
-    // A card printed in a mixed box such as the Combat Pack is not multi-faction; prefer the
-    // boxes that name a single faction and only fall back when none of them do.
     const resolved = single.size ? single : any;
     out.set(c.id, resolved.size === 1 ? [...resolved][0] : null);
   }
@@ -164,7 +162,6 @@ export interface ZoneData {
 
 const NO_ZONES: ZoneData = { zones: [], deployments: [], missionDeployment: {} };
 
-// Board reference like "B7": column letter A..L, then row 1..12.
 export function parseGridRef(ref: string): { col: number; row: number } | null {
   const m = /^([A-La-l])(\d{1,2})$/.exec(ref.trim());
   if (!m) return null;

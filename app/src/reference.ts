@@ -48,8 +48,6 @@ const UNIT_FACETS: Facet[] = [
 
 const FACTION_ORDER = ['RDL', 'UN', 'GOF', 'PD', 'COLLABORATION'];
 
-// Factions come from the same box-membership derivation the squad legality check uses, so parts and
-// drones can be filtered by faction even though the card database records one only for pilots.
 function factionFacets(pool: Card[]): Facet[] {
   const present = new Set<string>();
   for (const c of pool) {
@@ -478,7 +476,6 @@ function render(): void {
     .filter((c) => (!kind || kind.match(c)) && (!faction || faction.match(c)))
     .sort((a, b) => cardName(a).localeCompare(cardName(b)));
 
-  // Each row counts against the other row's choice, so the numbers show what a click would give.
   const row = (
     items: Facet[],
     activeId: string | undefined,

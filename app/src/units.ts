@@ -237,6 +237,14 @@ export function guidedActions(data: GameData, t: Token): GuidedAction[] {
   return out;
 }
 
+function legacyZoneSet(s: unknown): string {
+  const o = (s ?? {}) as { mission?: string | null; deployLayout?: string | null; map?: string };
+  if (o.mission) return `mission:${o.mission}`;
+  if (o.deployLayout) return `board:${o.deployLayout}`;
+  if (o.map?.startsWith('custom:')) return o.map;
+  return '';
+}
+
 export function migrateState(raw: unknown, data: GameData): GameState | null {
   if (!raw || typeof raw !== 'object') return null;
   const s = raw as {
@@ -264,6 +272,7 @@ export function migrateState(raw: unknown, data: GameData): GameState | null {
     mission: (s as { mission?: string | null }).mission ?? null,
     showZones: (s as { showZones?: boolean }).showZones ?? false,
     deployLayout: (s as { deployLayout?: string | null }).deployLayout ?? null,
+    zoneSet: (s as { zoneSet?: string }).zoneSet ?? legacyZoneSet(s),
   };
   for (const rawTok of s.tokens) {
     const t = rawTok as Partial<Token>;
