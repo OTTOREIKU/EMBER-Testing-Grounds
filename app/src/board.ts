@@ -3,7 +3,7 @@ import { statusCount, statusStacks } from './types';
 import { mechPartUrl, SIDE_LABEL, tabImageUrl } from './data';
 import type { InspectInfo } from './inspector';
 
-const MECH_LAYER_ORDER = ['chasis', 'backpack', 'torso', 'leftHand', 'rightHand'] as const;
+export const MECH_LAYER_ORDER = ['chasis', 'backpack', 'torso', 'leftHand', 'rightHand'] as const;
 
 export const CELL = 30;
 export const CELLS = 36;

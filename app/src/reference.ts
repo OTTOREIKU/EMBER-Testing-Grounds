@@ -2,7 +2,7 @@ import './reference.css';
 import { actionIconUrl, cardName, FACTION_LABEL, loadData, missionImageUrl, portraitUrl, secondaryImageUrl, statIconUrl, zeroCostReason, type GameData, type KeywordDef } from './data';
 import { mountCardImage, preloadCardImages, warmAllImagesWhenIdle } from './images';
 import { watchForUpdates } from './updates';
-import type { Card } from './types';
+import { TIMINGS, type Card } from './types';
 
 type Tab = 'keywords' | 'parts' | 'units' | 'pilots' | 'tactics' | 'missions' | 'rules';
 
@@ -387,15 +387,33 @@ function render(): void {
           .join('')
       : '';
 
+    const timingStrip =
+      q || p.timings.length < 2
+        ? ''
+        : `<div class="tm-strip">${p.timings
+            .map((x) => {
+              const icon = actionIconUrl(TIMINGS.find((t) => t.id === x.id)?.pilotKey);
+              return `<span class="tm-step" style="--t-tint: var(--t-${esc(x.id)})">
+                ${icon ? `<img src="${icon}" alt="">` : ''}<b>${x.order}</b><span>${esc(x.name)}</span>
+              </span>`;
+            })
+            .join('<i class="tm-arrow">▸</i>')}</div>`;
+
     const timingHtml = timings.length
       ? `<p class="ref-count">Action timings, in the order they resolve</p>` +
+        timingStrip +
         timings
-          .map(
-            (x) => `<article class="card">
-              <div class="card-title"><span class="play-num">${x.order}</span>${esc(x.name)} Timing</div>
+          .map((x) => {
+            const def = TIMINGS.find((t) => t.id === x.id);
+            const icon = actionIconUrl(def?.pilotKey);
+            return `<article class="card tm-card" style="--t-tint: var(--t-${esc(x.id)})">
+              <div class="card-title">
+                ${icon ? `<img class="tm-icon" src="${icon}" alt="">` : ''}
+                <span class="play-num tm-num">${x.order}</span><span class="tm-name">${esc(x.name)}</span> Timing
+              </div>
               <div class="card-body">${linkKeywords(x.text)}</div>
-            </article>`,
-          )
+            </article>`;
+          })
           .join('') +
         (p.timingNotes && !q
           ? `<article class="card"><div class="card-title">How timings work</div>

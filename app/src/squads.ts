@@ -1,11 +1,39 @@
 import type { GameData } from './data';
-import { cardName, FACTION_LABEL, SIDE_LABEL } from './data';
+import { actionIconUrl, cardName, FACTION_LABEL, mechPartUrl, SIDE_LABEL, tabImageUrl } from './data';
+import { MECH_LAYER_ORDER } from './board';
 import { inspectOnHover, linkMechanics, type InspectInfo } from './inspector';
 import type { GameState, PartSlot, PartState, Stance, Timing, TimingDef, Token } from './types';
 import { SCALES, statusCount, STATUSES, TIMINGS } from './types';
 import { factionProblems, initiativeFor, pilotCard, SLOT_LABEL, tokenCards, tokenFactions } from './units';
 
 const esc = (s: string): string => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!);
+
+// ---------- timing dial popout ----------
+
+let openDial: { pop: HTMLElement; trigger: HTMLElement; teardown: () => void } | null = null;
+
+function closeDialPopout(): HTMLElement | null {
+  if (!openDial) return null;
+  const was = openDial.trigger;
+  openDial.teardown();
+  openDial.pop.remove();
+  openDial = null;
+  return was;
+}
+
+function placeDialPopout(pop: HTMLElement, trigger: HTMLElement): void {
+  const t = trigger.getBoundingClientRect();
+  const p = pop.getBoundingClientRect();
+  const gap = 8;
+  let left = t.left - p.width - gap;
+  pop.classList.remove('flip');
+  if (left < 8) {
+    left = Math.min(t.right + gap, window.innerWidth - p.width - 8);
+    pop.classList.add('flip');
+  }
+  pop.style.left = `${Math.max(8, left)}px`;
+  pop.style.top = `${Math.max(8, Math.min(t.top - 6, window.innerHeight - p.height - 8))}px`;
+}
 
 const NEXT_STATE: Record<PartState, PartState> = { intact: 'damaged', damaged: 'destroyed', destroyed: 'intact' };
 const STANCES: Stance[] = ['offensive', 'defensive', 'mobility', 'shutdown'];
@@ -87,6 +115,7 @@ export class SquadTracker {
 
   private render(): void {
     if (!this.state) return;
+    closeDialPopout();
     this.root.replaceChildren();
     const order = this.orderPanel();
     if (order) this.root.appendChild(order);
@@ -177,9 +206,37 @@ export class SquadTracker {
     return tokenCards(this.data, t).reduce((s, { card }) => s + (card.score ?? 0), 0);
   }
 
+  private unitArt(t: Token): HTMLElement | null {
+    const layers: string[] = [];
+    if (t.kind === 'mech' && t.mech) {
+      for (const slot of MECH_LAYER_ORDER) {
+        const id = t.mech[slot];
+        if (!id) continue;
+        if (t.partStates[slot] === 'destroyed' && slot !== 'torso' && slot !== 'chasis') continue;
+        layers.push(mechPartUrl(id));
+      }
+    }
+    if (!layers.length && t.cardId) layers.push(tabImageUrl(t.cardId));
+    if (!layers.length) return null;
+    const art = document.createElement('div');
+    art.className = 'su-art';
+    art.setAttribute('aria-hidden', 'true');
+    for (const href of layers) {
+      const img = document.createElement('img');
+      img.src = href;
+      img.loading = 'lazy';
+      img.addEventListener('error', () => img.remove(), { once: true });
+      art.appendChild(img);
+    }
+    return art;
+  }
+
   private unitRow(t: Token): HTMLElement {
     const row = document.createElement('div');
     row.className = `squad-unit${t.uid === this.selectedUid ? ' selected' : ''}`;
+
+    const art = this.unitArt(t);
+    if (art) row.appendChild(art);
 
     const head = document.createElement('div');
     head.className = 'squad-unit-head';
@@ -207,6 +264,17 @@ export class SquadTracker {
     headPts.textContent = `${this.tokenPoints(t)}p`;
     head.appendChild(headPts);
 
+    const del = document.createElement('button');
+    del.className = 'squad-del';
+    del.textContent = '✕';
+    del.title = 'Remove this unit from the board';
+    del.addEventListener('click', () => this.cb.onDelete(t.uid));
+    head.appendChild(del);
+
+    const edge = document.createElement('span');
+    edge.className = 'su-fac-edge';
+    head.appendChild(edge);
+
     const meta = document.createElement('div');
     meta.className = 'squad-unit-meta';
 
@@ -219,23 +287,23 @@ export class SquadTracker {
       linkMechanics(meta, this.data.mechanics);
     }
 
+    let linkCtrl: HTMLElement | null = null;
     if (t.kind === 'mech') {
-      const dial = document.createElement('span');
-      dial.className = `dial-ctrl${t.timing ? ' set' : ''}`;
-      if (t.timing) dial.style.setProperty('--t-tint', `var(--t-${t.timing})`);
       const cur = t.timing ? TIMINGS.find((x) => x.id === t.timing) : undefined;
       const init = t.timing ? initiativeFor(this.data, t, t.timing) : undefined;
-      dial.innerHTML = `<select class="dial-sel" title="Timing Dial">
-          <option value=""${t.timing ? '' : ' selected'}>Dial…</option>
-          ${TIMINGS.map((x) => `<option value="${x.id}"${x.id === t.timing ? ' selected' : ''}>${x.name}</option>`).join('')}
-        </select>${cur && init !== undefined ? `<b class="dial-init" title="Pilot Initiative for ${cur.name}">${init}</b>` : ''}`;
-      inspectOnHover(dial, this.dialInfo(t, cur, init));
-      dial.querySelector<HTMLSelectElement>('.dial-sel')!.addEventListener('change', (ev) => {
-        const v = (ev.target as HTMLSelectElement).value;
-        t.timing = v ? (v as Timing) : undefined;
-        this.cb.onChanged();
+      const trig = document.createElement('button');
+      trig.className = `dial-trig${cur ? ' set' : ''}`;
+      if (cur) trig.style.setProperty('--t-tint', `var(--t-${cur.id})`);
+      const icon = cur ? actionIconUrl(cur.pilotKey) : null;
+      trig.innerHTML = `${icon ? `<img src="${icon}" alt="">` : ''}<span>${cur ? cur.name : 'Dial'}</span>${
+        init !== undefined ? `<b>${init}</b>` : ''
+      }<i>▾</i>`;
+      inspectOnHover(trig, this.dialInfo(t, cur, init));
+      trig.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        this.openDial(t, trig);
       });
-      meta.appendChild(dial);
+      meta.appendChild(trig);
 
       const pilotCard = tokenCards(this.data, t).find((c) => c.slot === 'pilot')?.card;
       const maxLink = pilotCard?.LV ?? 0;
@@ -261,31 +329,39 @@ export class SquadTracker {
         t.link = (t.link ?? 0) + 1;
         this.cb.onChanged();
       });
-      meta.appendChild(link);
+      linkCtrl = link;
     }
 
-    const stance = document.createElement('select');
-    stance.className = `stance stance-${t.stance}`;
-    for (const s of STANCES) {
-      const o = document.createElement('option');
-      o.value = s;
-      o.textContent = STANCE_SHORT[s];
-      if (t.stance === s) o.selected = true;
-      stance.appendChild(o);
+    if (t.kind === 'mech') {
+      const stance = document.createElement('select');
+      stance.className = `stance stance-${t.stance}`;
+      for (const s of STANCES) {
+        const o = document.createElement('option');
+        o.value = s;
+        o.textContent = STANCE_SHORT[s];
+        if (t.stance === s) o.selected = true;
+        stance.appendChild(o);
+      }
+      inspectOnHover(stance, this.stanceInfo(t));
+      stance.addEventListener('change', () => {
+        t.stance = stance.value as Stance;
+        this.cb.onChanged();
+      });
+      meta.appendChild(stance);
+    } else {
+      const stance = document.createElement('span');
+      stance.className = `stance stance-fixed stance-${t.stance}`;
+      stance.innerHTML = `<i class="stance-lock" aria-hidden="true">🔒</i>${STANCE_SHORT[t.stance]}`;
+      inspectOnHover(stance, this.stanceInfo(t));
+      meta.appendChild(stance);
     }
-    inspectOnHover(stance, this.stanceInfo(t));
-    stance.addEventListener('change', () => {
-      t.stance = stance.value as Stance;
-      this.cb.onChanged();
-    });
-    meta.appendChild(stance);
 
-    const del = document.createElement('button');
-    del.className = 'squad-del';
-    del.textContent = '✕';
-    del.title = 'Remove this unit from the board';
-    del.addEventListener('click', () => this.cb.onDelete(t.uid));
-    meta.appendChild(del);
+    if (linkCtrl) {
+      const gap = document.createElement('span');
+      gap.className = 'su-gap';
+      meta.appendChild(gap);
+      meta.appendChild(linkCtrl);
+    }
 
     row.appendChild(head);
     row.appendChild(meta);
@@ -300,18 +376,83 @@ export class SquadTracker {
     if (!def) {
       return { title: 'Stance', sub: t.stance.toUpperCase(), lines: ['No stance details loaded.'] };
     }
+    const noun = t.kind === 'drone' ? 'Drone' : t.kind === 'projectile' ? 'Projectile' : 'unit';
     return {
       title: def.name,
-      sub: `${def.short}${fixed ? ' · fixed on this unit type' : ' · change it each Action Opportunity'}`,
+      sub: `${def.short}${fixed ? ' · printed on the card, locked' : ' · change it each Action Opportunity'}`,
       lines: [
         def.effect,
         `<b>Use it when</b> ${def.good}`,
         `<b>Trade-off</b> ${def.cost}`,
         fixed
-          ? 'Drones, Projectiles and Deployables have a fixed Stance printed on their card and cannot change it.'
+          ? `Every Drone, Projectile and Deployable card prints one Stance and stays in it for the whole game, so there is nothing to choose here. This ${noun} is ${def.short}.`
           : 'A Mech may pick its Stance every time it gets an Action Opportunity, before deciding whether to Maneuver.',
       ],
     };
+  }
+
+  private openDial(t: Token, trigger: HTMLElement): void {
+    if (closeDialPopout() === trigger) return;
+
+    const pop = document.createElement('div');
+    pop.className = 'dial-pop';
+    const pilot = pilotCard(this.data, t);
+    pop.innerHTML =
+      `<h5>Timing dial${pilot ? ` · ${esc(cardName(pilot))}` : ''}</h5>` +
+      TIMINGS.map((def) => {
+        const v = initiativeFor(this.data, t, def.id);
+        const ic = actionIconUrl(def.pilotKey);
+        return `<button class="dial-opt${def.id === t.timing ? ' sel' : ''}" data-t="${def.id}" style="--t-tint:var(--t-${def.id})">
+          ${ic ? `<img src="${ic}" alt="">` : '<span class="dial-noicon"></span>'}
+          <span>${def.name}</span><b>${v ?? '-'}</b>
+        </button>`;
+      }).join('') +
+      `<button class="dial-opt dial-clear" data-t="">Clear the dial</button>`;
+
+    document.body.appendChild(pop);
+    placeDialPopout(pop, trigger);
+
+    const pick = (v: string): void => {
+      t.timing = v ? (v as Timing) : undefined;
+      closeDialPopout();
+      this.cb.onChanged();
+    };
+    pop.querySelectorAll<HTMLButtonElement>('.dial-opt').forEach((b) =>
+      b.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        pick(b.dataset.t ?? '');
+      }),
+    );
+    const onKey = (ev: KeyboardEvent): void => {
+      const opts = [...pop.querySelectorAll<HTMLButtonElement>('.dial-opt')];
+      if (ev.key === 'Escape') {
+        ev.stopPropagation();
+        closeDialPopout();
+        trigger.focus();
+        return;
+      }
+      if (ev.key !== 'ArrowDown' && ev.key !== 'ArrowUp') return;
+      ev.preventDefault();
+      const at = opts.indexOf(document.activeElement as HTMLButtonElement);
+      const next = ev.key === 'ArrowDown' ? at + 1 : at - 1;
+      opts[(next + opts.length) % opts.length]?.focus();
+    };
+    const onAway = (): void => {
+      closeDialPopout();
+    };
+    document.addEventListener('keydown', onKey, true);
+    window.addEventListener('resize', onAway);
+    window.setTimeout(() => document.addEventListener('click', onAway), 0);
+    openDial = {
+      pop,
+      trigger,
+      teardown: () => {
+        document.removeEventListener('keydown', onKey, true);
+        document.removeEventListener('click', onAway);
+        window.removeEventListener('resize', onAway);
+      },
+    };
+    pop.querySelector<HTMLButtonElement>('.dial-opt.sel')?.focus();
   }
 
   private dialInfo(t: Token, cur: TimingDef | undefined, init: number | undefined): InspectInfo {

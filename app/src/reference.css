@@ -27,6 +27,14 @@
   --collab: #eef1f5;
   --collab-lt: rgba(238, 241, 245, 0.16);
 
+  /* timing tints, sampled from the action icons in assets/tokens/tab */
+  --t-swift: #f2eb74;
+  --t-melee: #edb246;
+  --t-projectile: #df6470;
+  --t-firing: #da5643;
+  --t-movement: #1aacdc;
+  --t-tactical: #37ad9e;
+
   --radius: 6px;
   --radius-sm: 4px;
   --font: "Inter", "Segoe UI", system-ui, sans-serif;
@@ -260,6 +268,7 @@ body.ref-locked { overflow: hidden; }
   }
   .ref-count { grid-column: 1 / -1; margin-bottom: 0; }
   .ref-facets { grid-column: 1 / -1; }
+  .tm-strip { grid-column: 1 / -1; margin-bottom: 0; }
   .card { margin-bottom: 0; }
   #ref-detail { align-items: center; padding: 24px; }
   .ref-detail-inner { border-radius: 12px; max-height: 86vh; }
@@ -306,6 +315,37 @@ body.ref-locked { overflow: hidden; }
   background: var(--accent-lt); color: var(--accent); border-radius: var(--radius-sm, 4px);
   font-family: var(--mono); font-size: 11px; font-weight: 700; margin-right: 7px;
 }
+/* ---------- timing cards ---------- */
+.tm-strip {
+  display: flex; align-items: stretch; flex-wrap: wrap; gap: 4px;
+  margin: 0 0 12px; padding: 8px 10px;
+  background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius);
+}
+.tm-step {
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
+  flex: 1 1 74px; min-width: 62px; padding: 5px 4px 4px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--t-tint) 9%, transparent);
+  border: 1px solid color-mix(in srgb, var(--t-tint) 26%, transparent);
+}
+.tm-step img { width: 26px; height: 26px; object-fit: contain; }
+.tm-step b {
+  font-family: var(--mono); font-size: 10px; font-weight: 700; line-height: 1;
+  color: var(--t-tint);
+}
+.tm-step > span {
+  font-size: 10.5px; font-weight: 600; letter-spacing: 0.2px; color: var(--text);
+  text-align: center; line-height: 1.15;
+}
+.tm-arrow { align-self: center; color: var(--text2); font-size: 10px; font-style: normal; }
+.tm-card .card-title { display: flex; align-items: center; gap: 0; }
+.tm-icon {
+  width: 26px; height: 26px; object-fit: contain; margin-right: 8px; flex-shrink: 0;
+  filter: drop-shadow(0 1px 2px #0008);
+}
+.tm-num { background: color-mix(in srgb, var(--t-tint) 20%, transparent); color: var(--t-tint); }
+.tm-name { color: var(--t-tint); }
+
 .card-body ul { margin: 4px 0 10px; padding-left: 18px; }
 .card-body li { margin-bottom: 4px; }
 .play-can, .play-cant { margin: 0; font-size: 12px; }

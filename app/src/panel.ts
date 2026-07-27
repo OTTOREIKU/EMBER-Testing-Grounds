@@ -1,7 +1,20 @@
 import type { Card, Token } from './types';
-import { cardImageUrl, cardName, SIDE_LABEL, type GameData } from './data';
+import { cardImageUrl, cardName, mechPartUrl, SIDE_LABEL, tabImageUrl, type GameData } from './data';
 import { inspectOnHover } from './inspector';
 import { guidedActions, SLOT_LABEL, tokenCards } from './units';
+
+const ACTION_TINT: Record<string, string> = {
+  Swift: 'swift',
+  Melee: 'melee',
+  Projectile: 'projectile',
+  Firing: 'firing',
+  Moving: 'movement',
+  Tactic: 'tactical',
+  Passive: 'passive',
+  Immediate: 'immediate',
+  Delay: 'delay',
+  Detonation: 'detonation',
+};
 
 const STAT_FIELDS: [keyof Card, string][] = [
   ['score', 'Points'],
@@ -87,21 +100,49 @@ export class Panel {
     }
   }
 
+  private actionArt(cardId: string): HTMLElement {
+    const art = document.createElement('div');
+    art.className = 'act-art';
+    art.setAttribute('aria-hidden', 'true');
+    const img = document.createElement('img');
+    const sources = [mechPartUrl(cardId), tabImageUrl(cardId)];
+    let next = 0;
+    const advance = (): void => {
+      if (next < sources.length) img.src = sources[next++];
+      else art.remove();
+    };
+    img.addEventListener('error', advance);
+    advance();
+    art.appendChild(img);
+    return art;
+  }
+
   private actionRow(t: Token, ga: ReturnType<typeof guidedActions>[number]): HTMLElement {
     const { action: a, available, reason, ammoLeft, projectiles } = ga;
     const row = document.createElement('div');
     row.className = `action${available ? '' : ' unavailable'}`;
     row.dataset.tipCard = ga.card.id;
+    row.style.setProperty('--t', `var(--t-${ACTION_TINT[a.type ?? ''] ?? 'passive'})`);
+
+    row.appendChild(this.actionArt(ga.card.id));
 
     const dice: string[] = [];
     if (a.redDice) dice.push(`${a.redDice}R`);
     if (a.yellowDice) dice.push(`${a.yellowDice}Y`);
 
+    const head = document.createElement('div');
+    head.className = 'act-head';
+    head.innerHTML = `<b class="act-name">${a.name.en || a.name.zh || a.id}</b>${
+      a.type ? `<span class="act-type">${a.type}</span>` : ''
+    }`;
+
     const info = document.createElement('div');
     info.className = 'action-info';
     const range = a.range === 0 ? 'R --' : a.range ? `R ${a.range}` : '';
-    info.innerHTML = `<b>${a.name.en || a.name.zh || a.id}</b>
-      <span class="dim">${[SLOT_LABEL[ga.slot], a.type, range, dice.join('+')].filter(Boolean).join(' · ')}</span>
+    info.innerHTML = `<span class="dim"><span class="act-slot">${SLOT_LABEL[ga.slot]}</span>${[range, dice.join('+')]
+      .filter(Boolean)
+      .map((s) => ` · ${s}`)
+      .join('')}</span>
       ${
         ammoLeft !== undefined
           ? `<span class="ammo" data-reload="${a.id}" title="Ammo ${ammoLeft}/${a.storage}. Spent automatically when the action is used; click to put one back.">${'●'.repeat(ammoLeft)}${'○'.repeat((a.storage ?? 0) - ammoLeft)}</span>`
@@ -127,21 +168,25 @@ export class Panel {
       lines.push('<em>No rules text on this card in the data; the values above come from the card.</em>');
     }
     for (const m of mechs) lines.push(`<b>${m.name}</b>${m.ref ? ` <em>(${m.ref})</em>` : ''}: ${m.text}`);
-    inspectOnHover(
-      info,
-      {
-        title: actName,
-        sub: [SLOT_LABEL[ga.slot], a.type, range, dice.join('+')].filter(Boolean).join(' · '),
-        lines,
-      },
-      { pinKey: `action:${t.uid}:${a.id}` },
-    );
+    const tip = {
+      title: actName,
+      sub: [SLOT_LABEL[ga.slot], a.type, range, dice.join('+')].filter(Boolean).join(' · '),
+      lines,
+    };
+    const pin = { pinKey: `action:${t.uid}:${a.id}` };
+    inspectOnHover(head, tip, pin);
+    inspectOnHover(info, tip, pin);
     info.querySelector('[data-reload]')?.addEventListener('click', (ev) => {
       ev.stopPropagation();
       this.cb.onRestoreAmmo(t, a.id);
     });
     if (a.keywords?.length) info.appendChild(this.keywordChips(a.keywords));
-    row.appendChild(info);
+    row.appendChild(head);
+
+    const body = document.createElement('div');
+    body.className = 'act-body';
+    body.appendChild(info);
+    row.appendChild(body);
 
     const btns = document.createElement('div');
     btns.className = 'action-btns';
@@ -208,7 +253,7 @@ export class Panel {
       });
       btns.appendChild(launch);
     }
-    row.appendChild(btns);
+    body.appendChild(btns);
     return row;
   }
 
