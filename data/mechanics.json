@@ -2,6 +2,38 @@
  "_comment": "Rulebook mechanics that Action NAMES reference but which are not glossary keywords (so they have no entry in keywords.json). Matched case-insensitively against an action's name/description so the app can explain them. Text is condensed from the verified digests in ../rules.",
  "mechanics": [
   {
+   "id": "optical_camouflage",
+   "name": "Optical Camouflage",
+   "ref": "Rulebook 4.12.2",
+   "match": [
+    "optical camouflage",
+    "光学迷彩"
+   ],
+   "text": "A stealth state rather than a token. A unit enters it by performing an Action that activates Optical Camouflage, or by deploying straight into it. On activation, swap the unit for its Optical Camouflage model and remove every Hexagon Token from it. While camouflaged, any Melee, Firing or Explosion Damage attack aimed at it must Scan first: if the Scan fails the attack fails outright, and a failed attack skips every step against the defender while the attacker still pays its own costs such as Ammo, Charge and Detonation. A unit whose Electronic Value is 0 or a dash cannot target it at all, because it cannot start the Scan counter-roll. Attacks that hit every unit in range need no Scan. The camouflage model marks only a suspected position, so the real unit may be elsewhere."
+  },
+  {
+   "id": "revealed",
+   "name": "Revealed",
+   "ref": "Rulebook 4.12.2",
+   "match": [
+    "reveal",
+    "现身",
+    "顕現"
+   ],
+   "text": "Leaving Optical Camouflage. Swap the camouflage model back for the unit model. Four things reveal a unit and then let it make Manifestation Movement: its own |Reveal| Common Action, performing any Action that lacks the Silence keyword (Maneuvering counts, including a facing change with no movement), an enemy ending a move in contact with its base, and a successful enemy Scan. Passive Actions and Interception do not reveal it. Destroying the Part that performed the activating Action reveals it in place with no Manifestation Movement."
+  },
+  {
+   "id": "manifestation_movement",
+   "name": "Manifestation Movement",
+   "ref": "Rulebook 4.12.2",
+   "match": [
+    "stealth",
+    "manifestation",
+    "隐秘"
+   ],
+   "text": "The move a unit makes the instant it is Revealed. Because the Optical Camouflage model only marked a suspected position, the unit may appear up to X grids away, where X is the Stealth Value of the Action that activated the camouflage, so Stealth 2 means up to 2 grids and Stealth 0 means it appears where it stood. It is Teleportation Movement, so terrain and units in between are ignored. If the new position still meets the incoming attack's Range and Line of Sight requirements the attack carries on from there; if it does not, the attack fails."
+  },
+  {
    "id": "scanning",
    "name": "Scanning",
    "ref": "Rulebook 4.12.4",
@@ -9,7 +41,7 @@
     "scan",
     "扫描"
    ],
-   "text": "Reveals enemy units in Optical Camouflage and strips Low Profile Tokens. Designate an enemy that is in Optical Camouflage or bearing a Low Profile Token, then make an Electronic Counter-roll as the Initiator. On success: camouflaged targets are Revealed (they then make Manifestation Movement), and Low Profile Tokens are removed. Only token-based Low Profile can be scanned away — aura-based Low Profile cannot. Every Mech has |Scan| as a Common Action, and attacking a camouflaged unit forces a Scan first."
+   "text": "Reveals enemy units in Optical Camouflage and strips Low Profile Tokens. Designate an enemy that is in Optical Camouflage or bearing a Low Profile Token, then make an Electronic Counter-roll as the Initiator. On success: camouflaged targets are Revealed (they then make Manifestation Movement), and Low Profile Tokens are removed. Only token-based Low Profile can be scanned away; aura-based Low Profile cannot. Every Mech has |Scan| as a Common Action, and attacking a camouflaged unit forces a Scan first."
   },
   {
    "id": "electronic_counter_roll",
@@ -52,7 +84,7 @@
     "focus",
     "专注"
    ],
-   "text": "Spend 1 Link to reroll dice on any roll, including the Black part-locator die. You may not voluntarily spend down to 0 Link (you need the cost plus one), but damage-driven loss can reach 0 — which immediately forces Shutdown stance."
+   "text": "Spend 1 Link to reroll dice on any roll, including the Black part-locator die. You may not voluntarily spend down to 0 Link (you need the cost plus one), but damage-driven loss can reach 0, which immediately forces Shutdown stance."
   },
   {
    "id": "crush",
@@ -63,6 +95,84 @@
     "碾压"
    ],
    "text": "Only Large (3x3) units can Crush, and only units smaller than themselves. Moving into an occupied grid forces a Crush: the victim takes Forced Movement of 1 grid, or swaps places if it cannot move, or is destroyed outright if it cannot be moved at all. The mover then enters the grid and its Movement Action ends immediately. Crushing also destroys destructible terrain."
+  },
+  {
+   "id": "penetration",
+   "name": "Penetration",
+   "ref": "Rulebook 4.4.3",
+   "match": [
+    "penetrat",
+    "穿透"
+   ],
+   "text": "The damage step every attack builds toward. After Damage Resolution, any Heavy Hit or Light Hit left unoffset causes Penetration on the target Unit or Part. With no Structure Value it is Destroyed at once. With a Structure Value it takes a Damaged Token, or is Destroyed instead if it already had one, so health runs Intact to Damaged to Destroyed and the amount of leftover damage never changes that step. While Damaged, a Part rolls its Structure Value rather than its Armor Value for White Dice in Defense. Hit and Penetration are separate: damage offset by Defense counts as a Hit with no Penetration, so On-Hit riders such as Concussion and Knockback still fire, while damage offset by Dodge counts as neither."
+  },
+  {
+   "id": "surplus_damage",
+   "name": "Surplus Damage",
+   "ref": "Rulebook 4.4.5",
+   "match": [
+    "surplus",
+    "mutilation",
+    "cleaving",
+    "scatter-shot",
+    "毁伤",
+    "顺劈",
+    "霰射"
+   ],
+   "text": "Once a Penetration has happened, every Heavy Hit and Light Hit still unoffset is Surplus Damage. On its own it does nothing: it matters only when the Action carries a Surplus Damage keyword such as Mutilation, Cleaving or Scatter-shot, which spend it per Section 4.8. Those keywords are why an attack can roll far past what it needed and turn the excess into a second determined Part rather than wasting it."
+  },
+  {
+   "id": "integrity_loss",
+   "name": "Integrity Loss",
+   "ref": "Rulebook 4.4.4",
+   "match": [
+    "integrity"
+   ],
+   "text": "A Mech reduced to 2 or fewer remaining Parts suffers Integrity Loss. It still acts as normal for the rest of the Round in which that happened, then is removed during that Round's End Phase, before Token Management and scoring. Destroying the Torso is different and kills the unit outright. Every other Part destroyed flips its card face-down, stops counting toward any Value, and costs 1 Link, and a Mech whose Link reaches 0 drops straight into Shutdown Stance."
+  },
+  {
+   "id": "break_away",
+   "name": "Break Away",
+   "ref": "Rulebook 4.3.5",
+   "match": [
+    "break away",
+    "melee lock",
+    "近战锁定"
+   ],
+   "text": "The movement tax for leaving a Melee Lock. A unit is Melee Locked when an adjacent enemy with a Melee Action has Line of Sight to it, which means almost any Mech outside Shutdown Stance, since all Mechs have Punch/Kick. A locked unit cannot perform Firing Actions at all. When it makes Basic Movement it pays 1 extra Movement Range each time it exits a grid while locked, and 1 extra for every unit locking it at that moment, so leaving two lockers costs 2 extra. Flying Movement ignores Melee Lock completely and Forced Movement ignores the extra cost. Aerial units and units in Optical Camouflage cannot be Melee Locked."
+  },
+  {
+   "id": "ammo_and_charge",
+   "name": "Ammo and Charge",
+   "ref": "Rulebook 4.13 and 4.14",
+   "match": [
+    "ammo",
+    "charged",
+    "charge for",
+    "charge token",
+    "弹药",
+    "充能"
+   ],
+   "text": "Two separate token economies printed as icons on an Action. Ammo caps how many times an Action can be used: place one face-up Ammo Token per Ammo Icon at deployment, flip one face-down per use, and once they are all spent the Action cannot be performed. Volley X spends one Ammo Token per Projectile launched. Some Actions replenish Ammo by naming a Unit or Part and flipping consumed tokens back face-up, never above the starting number. Charge is a one-shot state instead: the token starts face-down, the |Charge| Action flips one named Part's token face-up, only one Part per Charge Action, and it cannot be Charged again until spent. An Action with a Charge-conditional effect may consume it by flipping the token back down."
+  },
+  {
+   "id": "screeching",
+   "name": "Screeching",
+   "ref": "Rulebook 4.11.3",
+   "match": [
+    "screech",
+    "尖啸"
+   ],
+   "text": "An Electronic Attack that costs the target Link. Like all Electronic Warfare it ignores Terrain and Line of Sight and needs only Range, and it resolves as an Electronic Counter-roll with the attacker as Initiator. It is one of the four things that take Link away, alongside Focus, Part Destruction and Concussion, and it is one of the three that can drive Link all the way to 0, which immediately forces the target into Shutdown Stance. Focus can never do that, because a voluntary reroll cannot spend your last point."
+  },
+  {
+   "id": "remote_access",
+   "name": "Remote Access",
+   "ref": "Rulebook 5.3",
+   "match": [
+    "remote access"
+   ],
+   "text": "The second way to take a Terminal, and a Universal Action every Mech has in the Terminals missions. Perform it in the End Phase with the Torso at Range 4 for 1 action point, then make an Electronic Counter-roll against the Terminal, whose Electronic Value is 3. Success counts as accessing it. The alternative is Direct Access: at the End Phase you hold a Terminal if one of your Mechs outside Shutdown Stance or one of your Drones is inside its Tactical Zone and no enemy unit is. Either way a Terminal can only be accessed once per Round, its token flips face-down when taken, and every Terminal token flips back face-up at the End Phase."
   },
   {
    "id": "detonation",

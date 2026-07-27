@@ -548,16 +548,19 @@ async function init() {
         }),
       );
       const apply = (t: Token): void => {
-        const cur = new Set(t.statuses ?? []);
-        const label = STATUSES.find((s) => s.id === pick)?.label ?? pick;
-        if (cur.has(pick)) {
-          cur.delete(pick);
+        const def = STATUSES.find((s) => s.id === pick);
+        const label = def?.label ?? pick;
+        const list = [...(t.statuses ?? [])];
+        const at = list.lastIndexOf(pick);
+        if (at >= 0 && !def?.stacking) {
+          list.splice(at, 1);
           logTo(t, `${label} removed from ${t.label}.`);
         } else {
-          cur.add(pick);
-          logTo(t, `${name} from ${proj.label}: ${t.label} gains ${label}.`);
+          list.push(pick);
+          const n = list.filter((x) => x === pick).length;
+          logTo(t, `${name} from ${proj.label}: ${t.label} gains ${label}${def?.stacking && n > 1 ? ` (now ×${n})` : ''}.`);
         }
-        t.statuses = [...cur];
+        t.statuses = list;
       };
       body.querySelectorAll<HTMLButtonElement>('#det-units button').forEach((b) =>
         b.addEventListener('click', () => {
@@ -569,8 +572,9 @@ async function init() {
         }),
       );
       body.querySelector('#det-all')?.addEventListener('click', () => {
+        const stacking = !!STATUSES.find((s) => s.id === pick)?.stacking;
         for (const { t } of caught) {
-          if ((t.statuses ?? []).includes(pick)) continue;
+          if (!stacking && (t.statuses ?? []).includes(pick)) continue;
           apply(t);
         }
         onChanged();

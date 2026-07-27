@@ -1,8 +1,8 @@
 import type { GameData } from './data';
 import { cardName, FACTION_LABEL, SIDE_LABEL } from './data';
-import { inspectOnHover, type InspectInfo } from './inspector';
+import { inspectOnHover, linkMechanics, type InspectInfo } from './inspector';
 import type { GameState, PartSlot, PartState, Stance, Token } from './types';
-import { SCALES, STATUSES } from './types';
+import { SCALES, statusCount, STATUSES } from './types';
 import { factionProblems, SLOT_LABEL, tokenCards, tokenFactions } from './units';
 
 const esc = (s: string): string => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!);
@@ -153,6 +153,16 @@ export class SquadTracker {
 
     const meta = document.createElement('div');
     meta.className = 'squad-unit-meta';
+
+    if (t.kind === 'mech' && parts.length && parts.filter(([, s]) => s !== 'destroyed').length <= 2) {
+      const flag = document.createElement('span');
+      flag.className = 'su-integrity';
+      flag.dataset.mech = 'integrity_loss';
+      flag.textContent = 'INTEGRITY';
+      meta.appendChild(flag);
+      linkMechanics(meta, this.data.mechanics);
+    }
+
     const pts = document.createElement('span');
     pts.className = 'su-pts';
     pts.textContent = `${this.tokenPoints(t)}p`;
@@ -240,22 +250,48 @@ export class SquadTracker {
     const wrap = document.createElement('div');
     wrap.className = 'status-row';
     for (const s of STATUSES) {
-      const on = (t.statuses ?? []).includes(s.id);
+      const n = statusCount(t.statuses, s.id);
+      const on = n > 0;
       const b = document.createElement('button');
       b.className = `status-chip${on ? ' on' : ''}`;
-      b.textContent = s.icon;
+      b.textContent = s.stacking && n > 1 ? `${s.icon}×${n}` : s.icon;
       b.style.setProperty('--chip-tint', s.tint);
       inspectOnHover(b, {
-        title: s.label,
+        title: s.stacking && on ? `${s.label} ×${n}` : s.label,
         sub: on ? `${s.icon} · on ${t.label}` : `${s.icon} · not on this unit`,
-        lines: [s.note, on ? 'Click to take this token off the unit.' : 'Click to put this token on the unit.'],
+        lines: [
+          s.note,
+          s.stacking
+            ? on
+              ? `${n} token${n === 1 ? '' : 's'}, so ${n} fewer White ${n === 1 ? 'die' : 'dice'} on defence. Click to add another, shift-click to remove one.`
+              : 'Click to put a token on the unit.'
+            : on
+              ? 'Click to take this token off the unit.'
+              : 'Click to put this token on the unit.',
+        ],
       });
-      b.addEventListener('click', () => {
-        const cur = new Set(t.statuses ?? []);
-        if (cur.has(s.id)) cur.delete(s.id);
-        else cur.add(s.id);
-        t.statuses = [...cur];
+      const change = (delta: number) => {
+        const list = [...(t.statuses ?? [])];
+        if (delta > 0) {
+          if (s.stacking || !list.includes(s.id)) list.push(s.id);
+        } else {
+          const at = list.lastIndexOf(s.id);
+          if (at >= 0) list.splice(at, 1);
+        }
+        t.statuses = list;
         this.cb.onChanged();
+      };
+      b.addEventListener('click', (ev) => {
+        if (!s.stacking) {
+          change(statusCount(t.statuses, s.id) ? -1 : 1);
+          return;
+        }
+        change(ev.shiftKey ? -1 : 1);
+      });
+      b.addEventListener('contextmenu', (ev) => {
+        if (!s.stacking) return;
+        ev.preventDefault();
+        change(-1);
       });
       wrap.appendChild(b);
     }

@@ -1,5 +1,5 @@
-import type { GameState, Marker, StatusDef, TerrainPiece, Token } from './types';
-import { STATUSES } from './types';
+import type { GameState, Marker, TerrainPiece, Token } from './types';
+import { statusCount, statusStacks } from './types';
 import { mechPartUrl, SIDE_LABEL, tabImageUrl } from './data';
 import type { InspectInfo } from './inspector';
 
@@ -429,8 +429,9 @@ export class Board {
     const half = visPx / 2;
     const wrecked = t.kind === 'mech' ? t.partStates.torso === 'destroyed' : t.partStates.main === 'destroyed';
     const shutdown = !wrecked && t.stance === 'shutdown';
+    const camo = !wrecked && statusCount(t.statuses, 'camouflage') > 0;
     const g = el('g', {
-      class: `token side-${t.side}${t.aerial ? ' aerial' : ''} kind-${t.kind}${wrecked ? ' wrecked' : ''}${shutdown ? ' shutdown' : ''}`,
+      class: `token side-${t.side}${t.aerial ? ' aerial' : ''} kind-${t.kind}${wrecked ? ' wrecked' : ''}${shutdown ? ' shutdown' : ''}${camo ? ' camo' : ''}`,
     });
     g.dataset.uid = String(t.uid);
     g.setAttribute('transform', `translate(${t.col * CELL}, ${t.row * CELL})`);
@@ -470,6 +471,16 @@ export class Board {
       addLayer(tabImageUrl(t.cardId));
     }
 
+    if (camo) {
+      for (let i = 1; i <= 3; i++) {
+        const y = cy - half + (visPx * i) / 4;
+        g.appendChild(el('line', { x1: cx - half + 5, y1: y, x2: cx + half - 5, y2: y, class: 'token-ghost' }));
+      }
+      const mark = el('text', { x: cx, y: cy + half - 6, 'font-size': 9, class: 'token-ghost-text' });
+      mark.textContent = 'CAMO';
+      g.appendChild(mark);
+    }
+
     const tip = cy - half - 3;
     const arrow = el('path', {
       d: `M ${cx} ${tip} L ${cx + 10} ${tip + 14} L ${cx - 10} ${tip + 14} Z`,
@@ -488,20 +499,22 @@ export class Board {
     label.textContent = t.label;
     g.appendChild(label);
 
-    const active = (t.statuses ?? []).map((id) => STATUSES.find((s) => s.id === id)).filter(Boolean) as StatusDef[];
+    const active = statusStacks(t.statuses);
     if (active.length) {
       const bw = 19;
       const startX = cx - (active.length * bw) / 2 + bw / 2;
-      active.forEach((s, i) => {
+      active.forEach(({ def: s, n }, i) => {
+        const stacked = !!s.stacking && n > 1;
         const bx = startX + i * bw;
         const by = cy - half - 9;
         const badge = el('g', { class: 'status-badge' });
-        badge.appendChild(el('rect', { x: bx - 8.5, y: by - 6.5, width: 17, height: 13, rx: 3, fill: s.tint, stroke: '#0f1216', 'stroke-width': 1 }));
+        const w = stacked ? 22 : 17;
+        badge.appendChild(el('rect', { x: bx - w / 2, y: by - 6.5, width: w, height: 13, rx: 3, fill: s.tint, stroke: '#0f1216', 'stroke-width': 1 }));
         const txt = el('text', { x: bx, y: by + 3.5, 'text-anchor': 'middle', class: 'status-badge-text' });
-        txt.textContent = s.icon;
+        txt.textContent = stacked ? `${s.icon}${n}` : s.icon;
         badge.appendChild(txt);
         this.attachInspect(badge as SVGGElement, {
-          title: s.label,
+          title: stacked ? `${s.label} ×${n}` : s.label,
           sub: `${s.icon} · on ${t.label}`,
           lines: [s.note, 'Toggle this token from the unit’s row in the Squads tab.'],
         });

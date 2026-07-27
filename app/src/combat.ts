@@ -1,7 +1,9 @@
 import type { GameData } from './data';
 import { cardName } from './data';
 import { iconSvg } from './dice';
+import { linkMechanics } from './inspector';
 import type { Card, CardAction, DiceData, DiceIcon, DieColor, PartSlot, Token } from './types';
+import { statusCount } from './types';
 import { SLOT_LABEL, tokenCards } from './units';
 
 type Step = 'part' | 'attack' | 'defense' | 'resolve';
@@ -176,6 +178,7 @@ export class AttackHelper {
     let white = st === 'damaged' ? card?.structure ?? 0 : card?.armor ?? 0;
     if (white < 1) white = 1;
     white += this.ctx!.protection;
+    white = Math.max(0, white - statusCount(d.statuses, 'fragile'));
     let blue = 0;
     if (d.stance === 'mobility') {
       blue = tokenCards(this.data, d)
@@ -523,6 +526,12 @@ export class AttackHelper {
         c.defender.stance === 'defensive' ? ' · DEF stance: hollow Defense icons count as solid' : ''
       }.</p>
       ${c.protection ? `<p class="ah-protect">🛡 ${c.protectionNote}. <b>+${c.protection} White</b> is already added to the pool below.</p>` : ''}
+      ${(() => {
+        const frg = statusCount(c.defender.statuses, 'fragile');
+        return frg
+          ? `<p class="ah-fragile">💥 ${c.defender.label} bears ${frg} Fragile Token${frg === 1 ? '' : 's'}, so <b>−${frg} White</b> is already taken off the pool below.</p>`
+          : '';
+      })()}
       ${c.explosion ? '<p class="dim">Explosion damage allows no Terrain or Unit Protection, so the pool below is Armour and Dodge only.</p>' : ''}
       ${!c.protection && !c.explosion && c.action.type === 'Firing' ? '<p class="dim">Line of sight is clear, so there is no Terrain or Unit Protection. Obstructed firing would add +2 White.</p>' : ''}`;
     wrap.appendChild(
@@ -565,7 +574,9 @@ export class AttackHelper {
     const wrap = document.createElement('div');
     wrap.className = 'ah-step';
     const { penetrating, text, duel } = this.resolve();
-    wrap.innerHTML = `<h4>4 · Resolution${c.surplusRound ? ` (Surplus round ${c.surplusRound})` : ''}</h4>`;
+    wrap.innerHTML = `<h4>4 · <span data-mech="penetration">Resolution</span>${
+      c.surplusRound ? ` (<span data-mech="surplus_damage">Surplus round ${c.surplusRound}</span>)` : ''
+    }</h4>`;
     const duelEl = this.duelView(duel);
     wrap.appendChild(duelEl);
     const summary = document.createElement('div');
@@ -574,6 +585,7 @@ export class AttackHelper {
         ? 'Focus on an Explosion is defender-only: the defender may spend 1 Link to reroll defence dice. Use the reroll buttons in the previous step, then adjust Link in the Squads tab.'
         : 'Focus: either side may spend 1 Link to reroll dice, attacker first. Use the reroll buttons in the previous steps, then adjust Link in the Squads tab.'}</p>`;
     wrap.appendChild(summary);
+    linkMechanics(wrap, this.data.mechanics);
     window.setTimeout(() => this.playDuel(duelEl), 0);
 
     if (penetrating > 0 && c.targetPart) {

@@ -51,6 +51,22 @@ export function pinInspect(key: string, info: InspectInfo): void {
   render(info, true);
 }
 
+export interface LinkableMechanic {
+  id: string;
+  name: string;
+  ref?: string;
+  text: string;
+}
+
+export function linkMechanics(root: ParentNode, mechanics: LinkableMechanic[]): void {
+  root.querySelectorAll<HTMLElement>('[data-mech]').forEach((node) => {
+    const m = mechanics.find((x) => x.id === node.dataset.mech);
+    if (!m) return;
+    node.classList.add('mech-link');
+    inspectOnHover(node, { title: m.name, sub: m.ref, lines: [m.text] }, { pinKey: `mech:${m.id}` });
+  });
+}
+
 export function inspectOnHover(node: HTMLElement | SVGElement, info: InspectInfo, opts?: { pinKey?: string }): void {
   const key = opts?.pinKey;
   node.addEventListener('pointerenter', () => showInspect(info));

@@ -128,6 +128,25 @@ export interface StatusDef {
   icon: string;
   tint: string;
   note: string;
+  stacking?: boolean;
+}
+
+export function statusCount(statuses: string[] | undefined, id: string): number {
+  return (statuses ?? []).filter((s) => s === id).length;
+}
+
+export function statusStacks(statuses: string[] | undefined): { def: StatusDef; n: number }[] {
+  const out: { def: StatusDef; n: number }[] = [];
+  for (const id of statuses ?? []) {
+    const found = out.find((x) => x.def.id === id);
+    if (found) {
+      found.n++;
+      continue;
+    }
+    const def = STATUSES.find((s) => s.id === id);
+    if (def) out.push({ def, n: 1 });
+  }
+  return out;
 }
 
 export const STATUSES: StatusDef[] = [
@@ -137,6 +156,28 @@ export const STATUSES: StatusDef[] = [
     icon: 'FCI',
     tint: '#c9a6ff',
     note: 'Gained when an enemy Electronic Attack succeeds against this unit (rulebook 4.11). Marks the unit as jammed; see the originating card for what it blocks.',
+  },
+  {
+    id: 'fragile',
+    label: 'Fragile',
+    icon: 'FRG',
+    tint: '#f0916b',
+    stacking: true,
+    note: 'Each Fragile Token costs this unit 1 White die on its Defense Rolls, and they stack. Laser Weapon grants one on every hit, and Ion Weapon may exchange Lightning for a Heavy Hit against a unit bearing one. Click to add a token, shift-click or right-click to take one off.',
+  },
+  {
+    id: 'immobilized',
+    label: 'Immobilized',
+    icon: 'IMB',
+    tint: '#8fa0b5',
+    note: 'This unit cannot perform Movement Actions or Maneuver, and that includes changing facing on the spot.',
+  },
+  {
+    id: 'camouflage',
+    label: 'Optical Camouflage',
+    icon: 'OC',
+    tint: '#4fd1c5',
+    note: 'This unit is in the Optical Camouflage State (4.12.2). On the table its model is swapped for a camouflage model and all Hexagon Tokens come off it. Attacks against it must Scan first or fail, and Electronic Value 0 or a dash cannot target it at all. The marked square is only a suspected position: when Revealed the unit makes Manifestation Movement up to its Stealth value.',
   },
   {
     id: 'lowProfile',
