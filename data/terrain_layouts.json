@@ -298,11 +298,11 @@
     "type": "container",
     "subCells": [
      {
-      "col": 7,
+      "col": 6,
       "row": 14
      },
      {
-      "col": 8,
+      "col": 7,
       "row": 14
      }
     ],
@@ -1523,7 +1523,18 @@
      {
       "col": 23,
       "row": 8
-     },
+     }
+    ],
+    "height": 3,
+    "blocksLos": true,
+    "providesProtection": true,
+    "isFragile": false,
+    "displayName": "建筑物"
+   },
+   {
+    "id": "terrain_2",
+    "type": "building",
+    "subCells": [
      {
       "col": 23,
       "row": 9
@@ -1568,7 +1579,7 @@
     "displayName": "建筑物"
    },
    {
-    "id": "terrain_2",
+    "id": "terrain_3",
     "type": "container",
     "subCells": [
      {
@@ -1583,7 +1594,7 @@
     "displayName": "集装箱"
    },
    {
-    "id": "terrain_3",
+    "id": "terrain_4",
     "type": "high_wall",
     "subCells": [
      {
@@ -1606,7 +1617,7 @@
     "displayName": "防线墙（高）"
    },
    {
-    "id": "terrain_4",
+    "id": "terrain_5",
     "type": "low_wall",
     "subCells": [
      {
@@ -1629,7 +1640,7 @@
     "displayName": "防线墙（矮）"
    },
    {
-    "id": "terrain_5",
+    "id": "terrain_6",
     "type": "high_wall",
     "subCells": [
      {
@@ -1652,7 +1663,7 @@
     "displayName": "防线墙（高）"
    },
    {
-    "id": "terrain_6",
+    "id": "terrain_7",
     "type": "high_wall",
     "subCells": [
      {
@@ -1675,7 +1686,7 @@
     "displayName": "防线墙（高）"
    },
    {
-    "id": "terrain_7",
+    "id": "terrain_8",
     "type": "container",
     "subCells": [
      {
@@ -1694,7 +1705,7 @@
     "displayName": "集装箱"
    },
    {
-    "id": "terrain_8",
+    "id": "terrain_9",
     "type": "building",
     "subCells": [
      {
@@ -1741,23 +1752,15 @@
     "displayName": "建筑物"
    },
    {
-    "id": "terrain_9",
+    "id": "terrain_10",
     "type": "container",
     "subCells": [
      {
-      "col": 30,
-      "row": 13
-     },
-     {
-      "col": 30,
+      "col": 28,
       "row": 14
      },
      {
       "col": 29,
-      "row": 14
-     },
-     {
-      "col": 28,
       "row": 14
      }
     ],
@@ -1768,7 +1771,26 @@
     "displayName": "集装箱"
    },
    {
-    "id": "terrain_10",
+    "id": "terrain_11",
+    "type": "container",
+    "subCells": [
+     {
+      "col": 30,
+      "row": 13
+     },
+     {
+      "col": 30,
+      "row": 14
+     }
+    ],
+    "height": 1,
+    "blocksLos": false,
+    "providesProtection": false,
+    "isFragile": true,
+    "displayName": "集装箱"
+   },
+   {
+    "id": "terrain_12",
     "type": "container",
     "subCells": [
      {
@@ -1783,7 +1805,7 @@
     "displayName": "集装箱"
    },
    {
-    "id": "terrain_11",
+    "id": "terrain_13",
     "type": "low_wall",
     "subCells": [
      {
@@ -1806,7 +1828,7 @@
     "displayName": "防线墙（矮）"
    },
    {
-    "id": "terrain_12",
+    "id": "terrain_14",
     "type": "low_wall",
     "subCells": [
      {
@@ -1829,7 +1851,7 @@
     "displayName": "防线墙（矮）"
    },
    {
-    "id": "terrain_13",
+    "id": "terrain_15",
     "type": "container",
     "subCells": [
      {
@@ -1844,19 +1866,11 @@
     "displayName": "集装箱"
    },
    {
-    "id": "terrain_14",
+    "id": "terrain_16",
     "type": "container",
     "subCells": [
      {
       "col": 5,
-      "row": 21
-     },
-     {
-      "col": 6,
-      "row": 21
-     },
-     {
-      "col": 7,
       "row": 21
      },
      {
@@ -1871,7 +1885,26 @@
     "displayName": "集装箱"
    },
    {
-    "id": "terrain_15",
+    "id": "terrain_17",
+    "type": "container",
+    "subCells": [
+     {
+      "col": 6,
+      "row": 21
+     },
+     {
+      "col": 7,
+      "row": 21
+     }
+    ],
+    "height": 1,
+    "blocksLos": false,
+    "providesProtection": false,
+    "isFragile": true,
+    "displayName": "集装箱"
+   },
+   {
+    "id": "terrain_18",
     "type": "building",
     "subCells": [
      {
@@ -1918,7 +1951,7 @@
     "displayName": "建筑物"
    },
    {
-    "id": "terrain_16",
+    "id": "terrain_19",
     "type": "container",
     "subCells": [
      {
@@ -1937,7 +1970,7 @@
     "displayName": "集装箱"
    },
    {
-    "id": "terrain_17",
+    "id": "terrain_20",
     "type": "high_wall",
     "subCells": [
      {
@@ -1960,7 +1993,7 @@
     "displayName": "防线墙（高）"
    },
    {
-    "id": "terrain_18",
+    "id": "terrain_21",
     "type": "high_wall",
     "subCells": [
      {
@@ -1983,7 +2016,7 @@
     "displayName": "防线墙（高）"
    },
    {
-    "id": "terrain_19",
+    "id": "terrain_22",
     "type": "building",
     "subCells": [
      {
@@ -2021,7 +2054,18 @@
      {
       "col": 14,
       "row": 26
-     },
+     }
+    ],
+    "height": 3,
+    "blocksLos": true,
+    "providesProtection": true,
+    "isFragile": false,
+    "displayName": "建筑物"
+   },
+   {
+    "id": "terrain_23",
+    "type": "building",
+    "subCells": [
      {
       "col": 14,
       "row": 27
@@ -2066,7 +2110,7 @@
     "displayName": "建筑物"
    },
    {
-    "id": "terrain_20",
+    "id": "terrain_24",
     "type": "low_wall",
     "subCells": [
      {
@@ -2089,7 +2133,7 @@
     "displayName": "防线墙（矮）"
    },
    {
-    "id": "terrain_21",
+    "id": "terrain_25",
     "type": "high_wall",
     "subCells": [
      {
@@ -2112,12 +2156,12 @@
     "displayName": "防线墙（高）"
    },
    {
-    "id": "terrain_22",
+    "id": "terrain_26",
     "type": "container",
     "subCells": [
      {
       "col": 9,
-      "row": 29
+      "row": 27
      }
     ],
     "height": 1,
@@ -2127,7 +2171,7 @@
     "displayName": "集装箱"
    },
    {
-    "id": "terrain_23",
+    "id": "terrain_27",
     "type": "container",
     "subCells": [
      {
@@ -2142,5 +2186,7 @@
     "displayName": "集装箱"
    }
   ]
- }
+ },
+ "_hotspot_note": "Hotspot was transcribed with four merged pieces: two pairs of stacked buildings stored as single 18-cell blocks, and two pairs of adjacent 1x2 containers stored as single 4-cell blocks, which is not a legal piece. Split against the card art in assets/battlefield/hotspot.webp by overlaying a fitted 12x12 grid.",
+ "_card_vs_art": "Where the Battlefield card legends disagree with their own printed maps, the maps win, because that is what you lay out. Crossroads: the map draws 6 containers 1x2, the legend lists 4. Hotspot: the map draws 4 low walls, the legend lists 6. Alley agrees with itself at 6/6/6/6/6."
 }

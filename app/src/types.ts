@@ -111,6 +111,7 @@ export interface Token {
   aerial: boolean;
   stance: Stance;
   link?: number;
+  timing?: Timing;
   partStates: Partial<Record<PartSlot | 'main', PartState>>;
   ammo: Record<string, number>;
   log?: LogEntry[];
@@ -121,6 +122,24 @@ export interface LogEntry {
   round: number;
   text: string;
 }
+
+export type Timing = 'swift' | 'melee' | 'projectile' | 'firing' | 'movement' | 'tactical';
+
+export interface TimingDef {
+  id: Timing;
+  name: string;
+  short: string;
+  pilotKey: 'swift' | 'melee' | 'projectile' | 'firing' | 'moving' | 'tactic';
+}
+
+export const TIMINGS: TimingDef[] = [
+  { id: 'swift', name: 'Swift', short: 'SWF', pilotKey: 'swift' },
+  { id: 'melee', name: 'Melee', short: 'MEL', pilotKey: 'melee' },
+  { id: 'projectile', name: 'Projectile', short: 'PRJ', pilotKey: 'projectile' },
+  { id: 'firing', name: 'Firing', short: 'FIR', pilotKey: 'firing' },
+  { id: 'movement', name: 'Movement', short: 'MOV', pilotKey: 'moving' },
+  { id: 'tactical', name: 'Tactical', short: 'TAC', pilotKey: 'tactic' },
+];
 
 export interface StatusDef {
   id: string;

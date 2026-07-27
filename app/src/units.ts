@@ -1,6 +1,7 @@
 import type { GameData } from './data';
 import { cardName, isAerial, unitSize } from './data';
-import type { Card, CardAction, GameState, MechLoadout, PartSlot, Side, Stance, Token } from './types';
+import type { Card, CardAction, GameState, MechLoadout, PartSlot, Side, Stance, Timing, Token } from './types';
+import { TIMINGS } from './types';
 
 export const PART_SLOTS: PartSlot[] = ['torso', 'chasis', 'leftHand', 'rightHand', 'backpack'];
 export const SLOT_LABEL: Record<PartSlot | 'pilot' | 'main', string> = {
@@ -179,6 +180,18 @@ export function factionProblems(data: GameData, tokens: Token[]): FactionProblem
   return out;
 }
 
+export function pilotCard(data: GameData, t: Token): Card | undefined {
+  return t.kind === 'mech' && t.mech?.pilot ? data.byId.get(t.mech.pilot) : undefined;
+}
+
+export function initiativeFor(data: GameData, t: Token, timing: Timing): number | undefined {
+  const def = TIMINGS.find((x) => x.id === timing);
+  const pilot = pilotCard(data, t);
+  if (!def || !pilot) return undefined;
+  const v = pilot[def.pilotKey];
+  return typeof v === 'number' ? v : undefined;
+}
+
 export function tokenCards(data: GameData, t: Token): { slot: PartSlot | 'pilot' | 'main'; card: Card }[] {
   if (t.kind === 'mech' && t.mech) {
     const out: { slot: PartSlot | 'pilot'; card: Card }[] = [];
@@ -311,6 +324,7 @@ export function migrateState(raw: unknown, data: GameData): GameState | null {
       aerial: t.aerial ?? false,
       stance: t.stance ?? ((card?.stance as Stance) || 'offensive'),
       link: t.link ?? (t.kind === 'mech' ? pilot?.LV ?? 3 : undefined),
+      timing: t.timing,
       partStates: partStates as Token['partStates'],
       ammo: t.ammo ?? initAmmo(cards),
       log: t.log ?? [],

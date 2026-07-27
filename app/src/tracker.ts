@@ -101,6 +101,7 @@ export class RoundTracker {
       s.round.n++;
       s.round.firstPlayer = s.round.firstPlayer === 'blue' ? 'red' : 'blue';
       s.commandTokens = { blue: 0, red: 0 };
+      for (const t of s.tokens) t.timing = undefined;
     }
     this.onChanged();
   }

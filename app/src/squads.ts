@@ -1,9 +1,9 @@
 import type { GameData } from './data';
 import { cardName, FACTION_LABEL, SIDE_LABEL } from './data';
 import { inspectOnHover, linkMechanics, type InspectInfo } from './inspector';
-import type { GameState, PartSlot, PartState, Stance, Token } from './types';
-import { SCALES, statusCount, STATUSES } from './types';
-import { factionProblems, SLOT_LABEL, tokenCards, tokenFactions } from './units';
+import type { GameState, PartSlot, PartState, Stance, Timing, TimingDef, Token } from './types';
+import { SCALES, statusCount, STATUSES, TIMINGS } from './types';
+import { factionProblems, initiativeFor, pilotCard, SLOT_LABEL, tokenCards, tokenFactions } from './units';
 
 const esc = (s: string): string => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!);
 
@@ -36,9 +36,60 @@ export class SquadTracker {
     this.render();
   }
 
+  private orderPanel(): HTMLElement | null {
+    const s = this.state!;
+    const mechs = s.tokens.filter((t) => t.kind === 'mech' && t.partStates.torso !== 'destroyed');
+    if (!mechs.length) return null;
+    const planning = s.round.phase === 1;
+    const action = s.round.phase === 2;
+    if (!planning && !action) return null;
+
+    const set = mechs.filter((t) => t.timing);
+    const wrap = document.createElement('div');
+    wrap.className = 'act-order';
+    if (planning) {
+      wrap.innerHTML = `<h4>Planning: set the dials</h4>
+        <p class="dim">${set.length} of ${mechs.length} Mech${mechs.length === 1 ? '' : 's'} set. Both players reveal at once, so set them all before moving on.</p>`;
+      return wrap;
+    }
+
+    const rows: string[] = [];
+    let n = 0;
+    for (const def of TIMINGS) {
+      const group = set.filter((t) => t.timing === def.id);
+      if (!group.length) continue;
+      const scored = group
+        .map((t) => ({ t, init: initiativeFor(this.data, t, def.id) }))
+        .sort((a, b) => (a.init ?? 99) - (b.init ?? 99));
+      const counts = new Map<number, number>();
+      for (const g of scored) if (g.init !== undefined) counts.set(g.init, (counts.get(g.init) ?? 0) + 1);
+      rows.push(`<div class="ao-timing" style="--t-tint:var(--t-${def.id})">${def.name}</div>`);
+      for (const g of scored) {
+        n++;
+        const tie = g.init !== undefined && (counts.get(g.init) ?? 0) > 1;
+        rows.push(`<div class="ao-row side-${g.t.side}" data-uid="${g.t.uid}">
+          <span class="ao-n">${n}</span>
+          <span class="ao-name">${esc(g.t.label)}</span>
+          <span class="ao-init">${g.init ?? '?'}</span>
+          ${tie ? '<span class="ao-tie" title="Tied initiative: the First Player picks the order">tie</span>' : ''}
+        </div>`);
+      }
+    }
+    const missing = mechs.length - set.length;
+    wrap.innerHTML = `<h4>Activation order</h4>
+      ${rows.length ? rows.join('') : '<p class="dim">No dials are set, so there is no order to resolve.</p>'}
+      ${missing ? `<p class="dim">${missing} Mech${missing === 1 ? ' has' : 's have'} no dial set and will not activate.</p>` : ''}`;
+    wrap.querySelectorAll<HTMLElement>('.ao-row').forEach((r) =>
+      r.addEventListener('click', () => this.cb.onSelect(Number(r.dataset.uid))),
+    );
+    return wrap;
+  }
+
   private render(): void {
     if (!this.state) return;
     this.root.replaceChildren();
+    const order = this.orderPanel();
+    if (order) this.root.appendChild(order);
     for (const side of ['blue', 'red'] as const) {
       const tokens = this.state.tokens.filter((t) => t.side === side);
       const sec = document.createElement('div');
@@ -151,6 +202,11 @@ export class SquadTracker {
     name.addEventListener('click', () => this.cb.onSelect(t.uid));
     head.appendChild(name);
 
+    const headPts = document.createElement('span');
+    headPts.className = 'su-pts su-pts-head';
+    headPts.textContent = `${this.tokenPoints(t)}p`;
+    head.appendChild(headPts);
+
     const meta = document.createElement('div');
     meta.className = 'squad-unit-meta';
 
@@ -163,12 +219,24 @@ export class SquadTracker {
       linkMechanics(meta, this.data.mechanics);
     }
 
-    const pts = document.createElement('span');
-    pts.className = 'su-pts';
-    pts.textContent = `${this.tokenPoints(t)}p`;
-    meta.appendChild(pts);
-
     if (t.kind === 'mech') {
+      const dial = document.createElement('span');
+      dial.className = `dial-ctrl${t.timing ? ' set' : ''}`;
+      if (t.timing) dial.style.setProperty('--t-tint', `var(--t-${t.timing})`);
+      const cur = t.timing ? TIMINGS.find((x) => x.id === t.timing) : undefined;
+      const init = t.timing ? initiativeFor(this.data, t, t.timing) : undefined;
+      dial.innerHTML = `<select class="dial-sel" title="Timing Dial">
+          <option value=""${t.timing ? '' : ' selected'}>Dial…</option>
+          ${TIMINGS.map((x) => `<option value="${x.id}"${x.id === t.timing ? ' selected' : ''}>${x.name}</option>`).join('')}
+        </select>${cur && init !== undefined ? `<b class="dial-init" title="Pilot Initiative for ${cur.name}">${init}</b>` : ''}`;
+      inspectOnHover(dial, this.dialInfo(t, cur, init));
+      dial.querySelector<HTMLSelectElement>('.dial-sel')!.addEventListener('change', (ev) => {
+        const v = (ev.target as HTMLSelectElement).value;
+        t.timing = v ? (v as Timing) : undefined;
+        this.cb.onChanged();
+      });
+      meta.appendChild(dial);
+
       const pilotCard = tokenCards(this.data, t).find((c) => c.slot === 'pilot')?.card;
       const maxLink = pilotCard?.LV ?? 0;
       const link = document.createElement('span');
@@ -242,6 +310,23 @@ export class SquadTracker {
         fixed
           ? 'Drones, Projectiles and Deployables have a fixed Stance printed on their card and cannot change it.'
           : 'A Mech may pick its Stance every time it gets an Action Opportunity, before deciding whether to Maneuver.',
+      ],
+    };
+  }
+
+  private dialInfo(t: Token, cur: TimingDef | undefined, init: number | undefined): InspectInfo {
+    const pilot = pilotCard(this.data, t);
+    const all = pilot
+      ? TIMINGS.map((x) => `${x.name} ${typeof pilot[x.pilotKey] === 'number' ? pilot[x.pilotKey] : '-'}`).join(' · ')
+      : '';
+    return {
+      title: cur ? `Timing Dial: ${cur.name}` : 'Timing Dial not set',
+      sub: cur && init !== undefined ? `Pilot Initiative ${init}` : 'Set in the Planning Phase',
+      lines: [
+        'Every Mech secretly picks one Timing in the Planning Phase, then all dials reveal at once. That choice fixes both when the Mech acts and which Action Type it may use.',
+        'The Action Phase resolves Swift, Melee, Projectile, Firing, Movement, then Tactical.',
+        'Within a Timing the lower Pilot Initiative activates first. If two are still tied, the First Player chooses the order.',
+        pilot ? `${cardName(pilot)} initiative: ${all}` : 'This Mech has no Pilot card, so it has no Initiative values.',
       ],
     };
   }
