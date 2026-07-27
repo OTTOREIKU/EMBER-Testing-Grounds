@@ -6,9 +6,11 @@ export interface CacheStats {
 export function registerOffline(): void {
   if (!('serviceWorker' in navigator)) return;
   if (!import.meta.env.PROD) return;
-  window.addEventListener('load', () => {
+  const go = (): void => {
     void navigator.serviceWorker.register(new URL('sw.js', document.baseURI).href).catch(() => {});
-  });
+  };
+  if (document.readyState === 'complete') go();
+  else window.addEventListener('load', go, { once: true });
 }
 
 export function cacheStats(timeoutMs = 1500): Promise<CacheStats | null> {

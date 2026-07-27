@@ -4,8 +4,58 @@ const ASSET_CACHE = 'ember-assets-v1';
 const RUNTIME_CACHE = 'ember-runtime-v1';
 const KEEP = [ASSET_CACHE, RUNTIME_CACHE];
 
-self.addEventListener('install', () => {
-  self.skipWaiting();
+const SHELL_PAGES = ['index.html', 'reference.html'];
+
+async function precacheShell() {
+  const cache = await caches.open(RUNTIME_CACHE);
+  for (const page of SHELL_PAGES) {
+    try {
+      const pageUrl = new URL(page, self.registration.scope).href;
+      const res = await fetch(pageUrl, { cache: 'reload' });
+      if (!res || !res.ok) continue;
+      const html = await res.clone().text();
+      await cache.put(pageUrl, res);
+      const refs = [...html.matchAll(/(?:src|href)="([^"]+\.(?:js|css))"/g)].map((m) => m[1]);
+      await Promise.all(
+        refs.map(async (ref) => {
+          try {
+            const url = new URL(ref, pageUrl).href;
+            const r = await fetch(url);
+            if (r && r.ok) await cache.put(url, r);
+          } catch (err) {
+            void err;
+          }
+        }),
+      );
+    } catch (err) {
+      void err;
+    }
+  }
+  try {
+    const manifestUrl = new URL('data/manifest.json', self.registration.scope).href;
+    const res = await fetch(manifestUrl);
+    if (res && res.ok) {
+      await cache.put(manifestUrl, res.clone());
+      const files = (await res.json()).files ?? [];
+      await Promise.all(
+        files.map(async (name) => {
+          try {
+            const url = new URL('data/' + name, self.registration.scope).href;
+            const r = await fetch(url);
+            if (r && r.ok) await cache.put(url, r);
+          } catch (err) {
+            void err;
+          }
+        }),
+      );
+    }
+  } catch (err) {
+    void err;
+  }
+}
+
+self.addEventListener('install', (e) => {
+  e.waitUntil(precacheShell().then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (e) => {

@@ -20,6 +20,14 @@ function assetManifest(dir: string): string[] {
   return out.sort();
 }
 
+function dataManifest(dir: string): string[] {
+  return fs
+    .readdirSync(dir, { withFileTypes: true })
+    .filter((e) => e.isFile() && e.name.endsWith('.json') && e.name !== 'manifest.json')
+    .map((e) => e.name)
+    .sort();
+}
+
 function staticDirs(map: Record<string, string>): Plugin {
   const mime: Record<string, string> = {
     '.json': 'application/json',
@@ -37,6 +45,11 @@ function staticDirs(map: Record<string, string>): Plugin {
         if (url === '/assets/manifest.json' && map['/assets/']) {
           res.setHeader('Content-Type', 'application/json');
           res.end(JSON.stringify({ images: assetManifest(map['/assets/']) }));
+          return;
+        }
+        if (url === '/data/manifest.json' && map['/data/']) {
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ files: dataManifest(map['/data/']) }));
           return;
         }
         for (const [prefix, dir] of Object.entries(map)) {
@@ -79,6 +92,13 @@ function copyDataAndAssets(map: Record<string, string>): Plugin {
         fs.writeFileSync(
           path.resolve(assetsOut, 'manifest.json'),
           JSON.stringify({ images: assetManifest(assetsOut) }),
+        );
+      }
+      const dataOut = path.resolve(here, outDir, 'data');
+      if (fs.existsSync(dataOut)) {
+        fs.writeFileSync(
+          path.resolve(dataOut, 'manifest.json'),
+          JSON.stringify({ files: dataManifest(dataOut) }),
         );
       }
       fs.writeFileSync(path.resolve(here, outDir, '.nojekyll'), '');
