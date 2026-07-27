@@ -149,6 +149,8 @@ body.ref-locked { overflow: hidden; }
 /* ---------- framed card: background accents only, layout untouched ---------- */
 .card-framed {
   --fac-glow: var(--accent);
+  content-visibility: auto;
+  contain-intrinsic-size: auto 155px;
   position: relative; overflow: hidden;
   border-color: var(--border);
   background:

@@ -1,5 +1,7 @@
 import { assetUrl, cardImageUrl } from './data';
 
+const CARD_CACHE_MAX = 40;
+
 const cache = new Map<string, HTMLImageElement>();
 const warmed = new Set<string>();
 let warmState: { total: number; done: number; running: boolean } = { total: 0, done: 0, running: false };
@@ -26,22 +28,18 @@ export async function warmAllImages(concurrency = 6): Promise<void> {
   }
 
   const queue = list.slice();
-  const one = (): Promise<void> =>
-    new Promise((resolve) => {
-      const p = queue.shift();
-      if (!p) return resolve();
-      warmed.add(p);
-      const img = new Image();
-      (img as HTMLImageElement & { fetchPriority?: string }).fetchPriority = 'low';
-      img.decoding = 'async';
-      const done = () => {
-        warmState.done++;
-        resolve();
-      };
-      img.onload = done;
-      img.onerror = done;
-      img.src = assetUrl(p);
-    });
+  const one = async (): Promise<void> => {
+    const p = queue.shift();
+    if (!p) return;
+    warmed.add(p);
+    try {
+      const res = await fetch(assetUrl(p), { priority: 'low' } as RequestInit);
+      if (res.ok) await res.arrayBuffer();
+    } catch (err) {
+      void err;
+    }
+    warmState.done++;
+  };
   const worker = async (): Promise<void> => {
     while (queue.length) await one();
   };
@@ -80,11 +78,21 @@ export function warmAllImagesWhenIdle(): void {
 }
 
 export function loadCardImage(id: string): HTMLImageElement {
-  let img = cache.get(id);
-  if (!img) {
-    img = new Image();
-    img.src = cardImageUrl(id);
-    cache.set(id, img);
+  const existing = cache.get(id);
+  if (existing) {
+    cache.delete(id);
+    cache.set(id, existing);
+    return existing;
+  }
+  const img = new Image();
+  img.src = cardImageUrl(id);
+  cache.set(id, img);
+  while (cache.size > CARD_CACHE_MAX) {
+    const oldest = cache.keys().next().value as string | undefined;
+    if (oldest === undefined) break;
+    const dropped = cache.get(oldest);
+    cache.delete(oldest);
+    if (dropped && !dropped.isConnected) dropped.removeAttribute('src');
   }
   return img;
 }
@@ -104,7 +112,7 @@ export function mountCardImage(slot: HTMLElement, id: string, className: string)
 
 export function preloadCardImages(ids: string[]): void {
   if (!warmDecision().warm) return;
-  const queue = ids.slice();
+  const queue = ids.slice(0, CARD_CACHE_MAX);
   const schedule =
     (window as unknown as { requestIdleCallback?: (cb: () => void) => void }).requestIdleCallback ??
     ((cb: () => void) => setTimeout(cb, 60));
