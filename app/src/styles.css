@@ -1225,6 +1225,27 @@ button.add:hover { filter: brightness(1.25); }
 .chip-intact .chip-def { color: var(--green); }
 .chip-damaged .chip-def { color: var(--accent); }
 
+.ew-side {
+  margin: 8px 0; padding: 7px 9px; border-radius: var(--radius);
+  background: var(--surface); border: 1px solid var(--border);
+}
+.ew-side h5 {
+  margin: 0 0 5px; font-size: 10.5px; font-weight: 700; letter-spacing: 0.4px;
+  text-transform: uppercase; color: var(--text2);
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+}
+.ew-ev {
+  font-family: var(--mono); font-size: 10px; padding: 1px 5px; border-radius: var(--radius-sm);
+  background: var(--accent-lt); color: var(--accent); letter-spacing: 0;
+}
+.ew-off {
+  font-size: 9px; padding: 1px 5px; border-radius: var(--radius-sm); letter-spacing: 0.3px;
+  background: rgba(255, 157, 157, 0.16); color: #ff9d9d;
+}
+.ew-side .ah-roll { margin: 4px 0; }
+.ew-side .ah-sum { margin: 2px 0 0; }
+.ew-side .ah-sum b { color: var(--accent); font-family: var(--mono); }
+
 .ah-partpick { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
 .ah-partpick .chip { width: 100%; }
 .ah-log {
@@ -1280,5 +1301,8 @@ button.add:hover { filter: brightness(1.25); }
   font-size: 12px; line-height: 1.5;
 }
 .card-action b { color: var(--accent); font-size: 12.5px; }
+.rules-list { margin: 3px 0 0; padding-left: 15px; }
+.rules-list li { margin-bottom: 2px; }
+.pilot-trait .rules-list { color: var(--text2); }
 .card-action .dim { font-size: 10.5px; }
 .card-action span:last-child { display: block; margin-top: 3px; color: var(--text2); }

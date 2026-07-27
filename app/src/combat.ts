@@ -2,9 +2,9 @@ import type { GameData } from './data';
 import { cardName } from './data';
 import { iconSvg } from './dice';
 import { linkMechanics } from './inspector';
-import type { Card, CardAction, DiceData, DiceIcon, DieColor, PartSlot, Token } from './types';
-import { statusCount } from './types';
-import { SLOT_LABEL, tokenCards } from './units';
+import type { Card, CardAction, DiceData, DiceIcon, DieColor, GameRuleEffect, PartSlot, Token } from './types';
+import { statusCount, STATUSES } from './types';
+import { electronicValue, SLOT_LABEL, tokenCards } from './units';
 
 type Step = 'part' | 'attack' | 'defense' | 'resolve';
 
@@ -185,6 +185,7 @@ export class AttackHelper {
         .filter(({ slot: s }) => s !== 'pilot' && (d.partStates[s as PartSlot | 'main'] ?? 'intact') !== 'destroyed')
         .reduce((sum, { card: c }) => sum + (c.dodge ?? 0), 0);
     }
+    if (statusCount(d.statuses, 'immobilized') > 0) blue = 0;
     return { white, blue };
   }
 
@@ -218,6 +219,11 @@ export class AttackHelper {
     const c = this.ctx!;
     const atk = this.countIcons(c.attackRoll ?? [], c.attacker.stance === 'offensive');
     const def = this.countIcons(c.defenseRoll ?? [], c.defender.stance === 'defensive');
+    const lowProfile = c.action.type === 'Firing' && statusCount(c.defender.statuses, 'lowProfile') > 0;
+    if (lowProfile && def.eye) {
+      def.dodge = (def.dodge ?? 0) + def.eye;
+      def.eye = 0;
+    }
     let heavy = c.surplusRound === 0 ? atk.heavyHit ?? 0 : 0;
     let light = c.surplusRound === 0 ? atk.lightHit ?? 0 : 0;
     if (c.surplusRound > 0) {
@@ -228,6 +234,7 @@ export class AttackHelper {
     const defense = def.defense ?? 0;
     const text: string[] = [];
     if (c.protection) text.push(`🛡 ${c.protectionNote}: defender rolled +${c.protection} White`);
+    if (lowProfile && dodge) text.push(`Low Profile: [Eye] counted as [Dodge] against this Firing Attack`);
     const totalIcons = heavy + light;
 
     const { icons, spareDodge, idleDefense, dodged, blocked, penetrating, hits } = offsetIcons(heavy, light, dodge, defense);
@@ -661,5 +668,290 @@ export class AttackHelper {
     el.appendChild(done);
     this.root.replaceChildren(el);
     this.ctx = null;
+  }
+}
+
+// ---------- electronic warfare ----------
+
+export function resolveCounterRoll(
+  init: { lightning: number; light: number },
+  resp: { lightning: number; light: number },
+): { initiatorWins: boolean; why: string } {
+  if (init.lightning !== resp.lightning) {
+    return {
+      initiatorWins: init.lightning > resp.lightning,
+      why: `Lightning ${init.lightning} vs ${resp.lightning}`,
+    };
+  }
+  if (init.light !== resp.light) {
+    return {
+      initiatorWins: init.light > resp.light,
+      why: `Lightning level at ${init.lightning}, Light Hit ${init.light} vs ${resp.light}`,
+    };
+  }
+  return { initiatorWins: true, why: 'level on both counts, so the tie goes to the Initiator' };
+}
+
+interface EwCtx {
+  initiator: Token;
+  responder: Token;
+  action: CardAction;
+  initEv: number;
+  respEv: number;
+  initRoll: Rolled[] | null;
+  respRoll: Rolled[] | null;
+  rerolled: { init: boolean; resp: boolean };
+  log: string[];
+  done: boolean;
+}
+
+export class ElectronicHelper {
+  private data: GameData;
+  private dice: DiceData;
+  private root: HTMLElement;
+  private onChanged: () => void;
+  private onClose: () => void;
+  private onLog: (t: Token, text: string) => void;
+  private ctx: EwCtx | null = null;
+
+  constructor(
+    data: GameData,
+    dice: DiceData,
+    root: HTMLElement,
+    onChanged: () => void,
+    onClose: () => void,
+    onLog: (t: Token, text: string) => void = () => {},
+  ) {
+    this.data = data;
+    this.dice = dice;
+    this.root = root;
+    this.onChanged = onChanged;
+    this.onClose = onClose;
+    this.onLog = onLog;
+  }
+
+  get active(): boolean {
+    return !!this.ctx;
+  }
+
+  start(initiator: Token, action: CardAction, responder: Token): void {
+    const initEv = electronicValue(this.data, initiator);
+    const respEv = electronicValue(this.data, responder);
+    this.ctx = {
+      initiator,
+      responder,
+      action,
+      initEv,
+      respEv,
+      initRoll: null,
+      respRoll: null,
+      rerolled: { init: false, resp: false },
+      log: [],
+      done: false,
+    };
+    const what = action.name.en || action.name.zh || action.id;
+    this.note(`${initiator.label} opens ${what} against ${responder.label}.`, [initiator, responder]);
+    this.render();
+  }
+
+  cancel(): void {
+    this.ctx = null;
+    this.onClose();
+  }
+
+  private note(text: string, who: Token[] = []): void {
+    if (this.ctx) this.ctx.log.push(text);
+    for (const t of who) this.onLog(t, text);
+  }
+
+  private rollYellow(n: number): Rolled[] {
+    const out: Rolled[] = [];
+    for (let i = 0; i < n; i++) out.push({ color: 'yellow', face: Math.floor(Math.random() * this.dice.dice.yellow.sides), selected: false });
+    return out;
+  }
+
+  private tally(roll: Rolled[], offensive: boolean): { lightning: number; light: number } {
+    let lightning = 0;
+    let light = 0;
+    for (const d of roll) {
+      for (const icon of this.dice.dice.yellow.faces[d.face]) {
+        if (icon.hollow && !offensive) continue;
+        if (icon.type === 'lightning') lightning++;
+        else if (icon.type === 'lightHit') light++;
+      }
+    }
+    return { lightning, light };
+  }
+
+  private applyEffects(): string[] {
+    const c = this.ctx!;
+    const done: string[] = [];
+    const walk = (list: GameRuleEffect[]): void => {
+      for (const e of list) {
+        if (e.type === 'apply_status') {
+          const def = STATUSES.find((s) => s.label === e.status || s.id === e.status) ?? STATUSES.find((s) => s.id === 'fci');
+          if (def) {
+            const n = e.stacks ?? 1;
+            for (let i = 0; i < n; i++) c.responder.statuses = [...(c.responder.statuses ?? []), def.id];
+            done.push(`${c.responder.label} gains ${n} ${def.label}`);
+            if (def.id === 'fci' && c.responder.kind === 'projectile' && c.respEv > 0) {
+              done.push(
+                `${c.responder.label} is a Projectile with an Electronic Value, so it is destroyed outright (rulebook 6.3.2)`,
+              );
+            }
+          }
+        }
+        if (e.effects) walk(e.effects);
+      }
+    };
+    for (const g of c.action.gameRules ?? []) walk(g.effects ?? []);
+    return done;
+  }
+
+  private render(): void {
+    const c = this.ctx;
+    if (!c) return;
+    const el = document.createElement('div');
+    el.className = 'attack-helper';
+    const what = c.action.name.en || c.action.name.zh || c.action.id;
+    el.innerHTML = `<div class="ah-head">
+      <b>${c.initiator.label}</b> ⚡ <b>${c.responder.label}</b>
+      <span class="dim">${what}</span>
+      <button class="ah-cancel" title="Cancel">✕</button>
+    </div>
+    <p class="ah-los" data-mech="electronic_counter_roll">Electronic Warfare ignores terrain and line of sight. Range only.</p>`;
+
+    el.appendChild(this.stepRoll());
+    if (c.log.length) {
+      const log = document.createElement('div');
+      log.className = 'ah-log';
+      log.innerHTML = c.log.map((l) => `<div>${l}</div>`).join('');
+      el.appendChild(log);
+    }
+    el.querySelector('.ah-cancel')!.addEventListener('click', () => this.cancel());
+    linkMechanics(el, this.data.mechanics);
+    this.root.replaceChildren(el);
+  }
+
+  private side(who: 'init' | 'resp'): HTMLElement {
+    const c = this.ctx!;
+    const t = who === 'init' ? c.initiator : c.responder;
+    const ev = who === 'init' ? c.initEv : c.respEv;
+    const roll = who === 'init' ? c.initRoll : c.respRoll;
+    const wrap = document.createElement('div');
+    wrap.className = 'ew-side';
+    wrap.innerHTML = `<h5>${who === 'init' ? 'Initiator' : 'Responder'} · ${t.label}
+      <span class="ew-ev">EV ${ev}</span>${t.stance === 'offensive' ? '<span class="ew-off">OFF: hollow counts</span>' : ''}</h5>`;
+    if (roll) {
+      const row = document.createElement('div');
+      row.className = 'ah-roll';
+      roll.forEach((d) => {
+        const b = document.createElement('button');
+        b.className = `die die-yellow${d.selected ? ' sel' : ''}`;
+        const face = this.dice.dice.yellow.faces[d.face];
+        b.innerHTML = face.length ? face.map((ic: DiceIcon) => iconSvg(ic)).join('') : '<span class="blank">·</span>';
+        b.title = 'select for a Focus reroll';
+        b.addEventListener('click', () => {
+          d.selected = !d.selected;
+          this.render();
+        });
+        row.appendChild(b);
+      });
+      wrap.appendChild(row);
+      const n = this.tally(roll, t.stance === 'offensive');
+      const sum = document.createElement('p');
+      sum.className = 'ah-sum';
+      sum.innerHTML = `Lightning <b>${n.lightning}</b> · Light Hit <b>${n.light}</b>`;
+      wrap.appendChild(sum);
+      const spent = who === 'init' ? c.rerolled.init : c.rerolled.resp;
+      if (!spent && (t.link ?? 0) > 0) {
+        const rr = document.createElement('button');
+        rr.className = 'ah-cancel';
+        rr.textContent = 'Focus reroll (1 Link)';
+        rr.addEventListener('click', () => {
+          const sel = roll.filter((d) => d.selected);
+          if (!sel.length) return;
+          for (const d of sel) {
+            d.face = Math.floor(Math.random() * this.dice.dice.yellow.sides);
+            d.selected = false;
+          }
+          t.link = Math.max(0, (t.link ?? 0) - 1);
+          if (who === 'init') c.rerolled.init = true;
+          else c.rerolled.resp = true;
+          this.note(`${t.label} spends 1 Link to Focus, rerolling ${sel.length} die.`);
+          this.onChanged();
+          this.render();
+        });
+        wrap.appendChild(rr);
+      }
+    }
+    return wrap;
+  }
+
+  private stepRoll(): HTMLElement {
+    const c = this.ctx!;
+    const wrap = document.createElement('div');
+    wrap.className = 'ah-step';
+
+    if (c.initEv === 0) {
+      wrap.innerHTML = `<h4><span class="ah-n">!</span>Cannot initiate</h4>
+        <p class="dim">${c.initiator.label} has Electronic Value 0, so it cannot start an Electronic Counter-roll. A unit at 0 may still respond to one.</p>`;
+      const done = document.createElement('button');
+      done.className = 'ah-primary';
+      done.textContent = 'Close';
+      done.addEventListener('click', () => this.cancel());
+      wrap.appendChild(done);
+      return wrap;
+    }
+
+    wrap.innerHTML = `<h4><span class="ah-n">1</span>Electronic Counter-roll</h4>
+      <p class="dim">Each side rolls Yellow dice equal to its Electronic Value. More Lightning wins; on a tie, more Light Hits; if both are level the Initiator wins.</p>`;
+    wrap.appendChild(this.side('init'));
+    wrap.appendChild(this.side('resp'));
+
+    if (!c.initRoll || !c.respRoll) {
+      const roll = document.createElement('button');
+      roll.className = 'ah-primary';
+      roll.innerHTML = `<i class="btn-ico">🎲</i> Roll ${c.initEv}Y vs ${c.respEv}Y`;
+      roll.addEventListener('click', () => {
+        c.initRoll = this.rollYellow(c.initEv);
+        c.respRoll = this.rollYellow(c.respEv);
+        this.render();
+      });
+      wrap.appendChild(roll);
+      return wrap;
+    }
+
+    if (!c.done) {
+      const resolve = document.createElement('button');
+      resolve.className = 'ah-primary';
+      resolve.textContent = 'Resolve ▸';
+      resolve.addEventListener('click', () => {
+        const a = this.tally(c.initRoll!, c.initiator.stance === 'offensive');
+        const b = this.tally(c.respRoll!, c.responder.stance === 'offensive');
+        const { initiatorWins: win, why } = resolveCounterRoll(a, b);
+        c.done = true;
+        if (win) {
+          const applied = this.applyEffects();
+          this.note(
+            `Counter-roll: ${why}. ${c.initiator.label} succeeds.${applied.length ? ` ${applied.join('; ')}.` : ''}`,
+            [c.initiator, c.responder],
+          );
+        } else {
+          this.note(`Counter-roll: ${why}. ${c.responder.label} holds, so nothing applies.`, [c.initiator, c.responder]);
+        }
+        this.onChanged();
+        this.render();
+      });
+      wrap.appendChild(resolve);
+      return wrap;
+    }
+
+    const done = document.createElement('button');
+    done.className = 'ah-primary';
+    done.textContent = 'Done';
+    done.addEventListener('click', () => this.cancel());
+    wrap.appendChild(done);
+    return wrap;
   }
 }

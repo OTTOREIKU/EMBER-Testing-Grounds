@@ -4,6 +4,14 @@ export interface LangText {
   jp?: string;
 }
 
+export interface GameRuleEffect {
+  type?: string;
+  mode?: string;
+  status?: string;
+  stacks?: number;
+  effects?: GameRuleEffect[];
+}
+
 export interface CardAction {
   id: string;
   name: LangText;
@@ -15,6 +23,7 @@ export interface CardAction {
   yellowDice?: number;
   redDice?: number;
   keywords?: { key?: string; en?: string; inline?: string }[];
+  gameRules?: { id?: string; effects?: GameRuleEffect[] }[];
 }
 
 export interface Card {
@@ -43,6 +52,7 @@ export interface Card {
   moving?: number;
   trait?: string;
   traitDescription?: LangText;
+  description?: LangText;
   keywords: { key?: string; en?: string; inline?: string }[];
   containedIn?: { box: string; quantityPerBox: number }[];
   actions?: CardAction[];
@@ -174,7 +184,7 @@ export const STATUSES: StatusDef[] = [
     label: 'Fire Control Interference',
     icon: 'FCI',
     tint: '#c9a6ff',
-    note: 'Gained when an enemy Electronic Attack succeeds against this unit (rulebook 4.11). Marks the unit as jammed; see the originating card for what it blocks.',
+    note: 'A unit bearing this cannot perform Firing Actions or Interception (rulebook 6.3.2). Gained when an enemy Electronic Attack succeeds against it (4.11). A Projectile that has an Electronic Value is destroyed outright the moment it takes one. Firing actions are greyed out in the Details tab while this is on.',
   },
   {
     id: 'fragile',
@@ -189,7 +199,7 @@ export const STATUSES: StatusDef[] = [
     label: 'Immobilized',
     icon: 'IMB',
     tint: '#8fa0b5',
-    note: 'This unit cannot perform Movement Actions or Maneuver, and that includes changing facing on the spot.',
+    note: 'This unit cannot perform Movement Actions or Maneuver, and that includes changing facing on the spot. It also rolls no Blue dice at all on its Defense Rolls, even in Mobility Stance (rulebook 6.3.2). Movement actions are greyed out in the Details tab while this is on.',
   },
   {
     id: 'camouflage',
@@ -203,7 +213,7 @@ export const STATUSES: StatusDef[] = [
     label: 'Low Profile',
     icon: 'LP',
     tint: '#9ad9b5',
-    note: 'This unit may exchange [Eye] for [Dodge] in Defense rolls against Firing Actions (4.12). Maneuvering, including a facing-only change, removes the token; Scanning also strips it.',
+    note: 'Against Firing Attacks this unit counts every [Eye] in its Defense Roll as a [Dodge] (rulebook 6.3.3), which the attack helper applies for you. Maneuvering, including a facing-only change, removes the token; Scanning also strips it.',
   },
   {
     id: 'interception',
@@ -224,7 +234,7 @@ export const STATUSES: StatusDef[] = [
     label: 'Repaired',
     icon: 'REP',
     tint: '#3ddc84',
-    note: 'Triangle token: this unit has already been repaired, so it cannot be repaired again.',
+    note: 'Triangle token: emergency repair of a Destroyed Part. The Part may be used as normal again, but if it is ever the target of an Attack no Defense Roll is made and it is Destroyed immediately (rulebook 6.3.1).',
   },
   {
     id: 'smoke',

@@ -395,11 +395,18 @@ function cleanRulesText(s: string): string {
     .replace(/（/g, '(')
     .replace(/）/g, ')')
     .replace(/，/g, ', ')
+    .replace(/：/g, ': ')
+    .replace(/；/g, '; ')
+    .replace(/！/g, '!')
+    .replace(/？/g, '?')
+    .replace(/[·•][ \t]*[·•]/g, '·')
+    .replace(/\|([^|\n]{1,40})\|/g, '$1')
     .replace(/[ \t]{2,}/g, ' ')
     .replace(/[ \t]+([.,;:!?])/g, '$1')
-    .replace(/([;,])([A-Za-z])/g, '$1 $2')
+    .replace(/([;,:])([A-Za-z])/g, '$1 $2')
+    .replace(/([a-z0-9)])\.([A-Z])/g, '$1. $2')
     .replace(/[ \t]+\n/g, '\n')
-    .replace(/\n·[ \t]*$/g, '')
+    .replace(/\n[·•][ \t]*$/g, '')
     .replace(/[ \t]+$/g, '')
     .trim();
 }
@@ -408,6 +415,7 @@ function cleanCardText(cards: Card[]): void {
   for (const c of cards) {
     for (const k of ['en', 'zh', 'jp'] as const) {
       if (c.name[k]) c.name[k] = cleanName(c.name[k]!);
+      if (c.description?.[k]) c.description[k] = cleanRulesText(c.description[k]!);
     }
     for (const a of c.actions ?? []) {
       for (const k of ['en', 'zh', 'jp'] as const) {
@@ -421,6 +429,14 @@ function cleanCardText(cards: Card[]): void {
       }
     }
   }
+}
+
+export function rulesLines(text: string | undefined): string[] {
+  if (!text) return [];
+  return text
+    .split('\n')
+    .map((l) => l.replace(/^[·•\s]+/, '').trim())
+    .filter(Boolean);
 }
 
 export function cardImageUrl(id: string): string {

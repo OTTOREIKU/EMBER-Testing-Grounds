@@ -1,6 +1,6 @@
 import './styles.css';
 import { Board, CELLS, footprint, snapPlacement, type BoardDeployment, type BoardZone } from './board';
-import { AttackHelper } from './combat';
+import { AttackHelper, ElectronicHelper } from './combat';
 import { alertDialog, choiceDialog, confirmDialog, promptDialog } from './dialog';
 import { DiceTray } from './dice';
 import { importSquadFile } from './importer';
@@ -33,6 +33,7 @@ import { PHASES, RoundTracker } from './tracker';
 import type { DiceData, Facing, GameState, MechLoadout, Side, TerrainPiece, Token } from './types';
 import { SCALES, STATUSES } from './types';
 import { factionProblems, makeDroneToken, makeMechToken, migrateState, tokenCards } from './units';
+import { registerOffline } from './offline';
 
 const SAVE_KEY = 'ember-testing-grounds-v1';
 
@@ -50,7 +51,7 @@ async function init() {
   };
   let selectedUid: number | null = null;
   let replayActive = false;
-  let pendingAttack: { attackerUid: number; actionId: string } | null = null;
+  let pendingAttack: { attackerUid: number; actionId: string; mode: 'attack' | 'electronic' } | null = null;
   const editor: {
     active: boolean;
     item: PaletteItem | null;
@@ -78,6 +79,7 @@ async function init() {
   installTooltip();
   preloadCards(data.cards.map((c) => c.id));
   warmAllImagesWhenIdle();
+  registerOffline();
   watchForUpdates();
   const inventory = new Inventory(data.boxes, () => roster.render());
 
@@ -102,6 +104,29 @@ async function init() {
     },
   );
 
+  const electronicHelper = new ElectronicHelper(
+    data,
+    dice,
+    document.getElementById('combat-body')!,
+    () => onChanged(),
+    () => {
+      renderCombatIdle();
+      const t = state.tokens.find((x) => x.uid === selectedUid);
+      if (t) panel.showToken(t);
+      showSideTab('details');
+    },
+    (t, text) => {
+      t.log = [...(t.log ?? []), { round: state.round.n, text }];
+      if (t.log.length > 200) t.log = t.log.slice(-200);
+      renderUnitLog();
+      save();
+    },
+  );
+
+  function combatBusy(): boolean {
+    return attackHelper.active || electronicHelper.active;
+  }
+
   const roundTracker = new RoundTracker(document.getElementById('round-tracker')!, () => onChanged());
 
   const panel = new Panel(data, {
@@ -113,7 +138,7 @@ async function init() {
       if (t.ammo[actionId] !== undefined && t.ammo[actionId] > 0) {
         t.ammo[actionId]--;
         onChanged();
-        if (!attackHelper.active) panel.showToken(t);
+        if (!combatBusy()) panel.showToken(t);
       }
     },
     onRestoreAmmo(t, actionId) {
@@ -123,7 +148,7 @@ async function init() {
       if (t.ammo[actionId] !== undefined && max !== undefined && t.ammo[actionId] < max) {
         t.ammo[actionId]++;
         onChanged();
-        if (!attackHelper.active) panel.showToken(t);
+        if (!combatBusy()) panel.showToken(t);
       }
     },
     onLaunch(t, projectile) {
@@ -140,10 +165,16 @@ async function init() {
       onChanged();
     },
     onStartAttack(t, actionId) {
-      pendingAttack = { attackerUid: t.uid, actionId };
+      pendingAttack = { attackerUid: t.uid, actionId, mode: 'attack' };
       document.body.classList.add('targeting');
       const hint = document.getElementById('hint')!;
       hint.textContent = '⌖ Click the TARGET unit on the board (Esc cancels)';
+    },
+    onStartElectronic(t, actionId) {
+      pendingAttack = { attackerUid: t.uid, actionId, mode: 'electronic' };
+      document.body.classList.add('targeting');
+      const hint = document.getElementById('hint')!;
+      hint.textContent = '⚡ Click the TARGET of the Electronic Attack (Esc cancels)';
     },
     onShowMoveRange(t, steps) {
       const flying = !!data.byId.get(t.cardId)?.moveAsFlight;
@@ -190,10 +221,15 @@ async function init() {
         const attacker = state.tokens.find((x) => x.uid === pendingAttack!.attackerUid);
         const defender = state.tokens.find((x) => x.uid === uid);
         const action = attacker && tokenCards(data, attacker).flatMap(({ card }) => card.actions ?? []).find((a) => a.id === pendingAttack!.actionId);
+        const mode = pendingAttack.mode;
         endTargeting();
         if (attacker && defender && action) {
-          const prot = protectionFor(attacker, defender, action);
-          attackHelper.start(attacker, action, defender, losNote(attacker, defender, action), prot.white, prot.note);
+          if (mode === 'electronic') {
+            electronicHelper.start(attacker, action, defender);
+          } else {
+            const prot = protectionFor(attacker, defender, action);
+            attackHelper.start(attacker, action, defender, losNote(attacker, defender, action), prot.white, prot.note);
+          }
           showSideTab('combat');
         }
         return;
@@ -373,8 +409,8 @@ async function init() {
     const t = state.tokens.find((x) => x.uid === uid);
     if (t) {
       panel.showToken(t);
-      if (!attackHelper.active) showSideTab('details');
-    } else if (!attackHelper.active) {
+      if (!combatBusy()) showSideTab('details');
+    } else if (!combatBusy()) {
       panel.clear();
     }
     renderUnitLog();
@@ -1895,7 +1931,7 @@ async function init() {
       const d = k === 'q' ? 3 : 1;
       t.facing = ((t.facing + d) % 4) as Facing;
       onChanged();
-      if (!attackHelper.active) panel.showToken(t);
+      if (!combatBusy()) panel.showToken(t);
     } else if (k === 'm') {
       let base = 0;
       if (t.kind === 'mech' && t.mech?.chasis) base = data.byId.get(t.mech.chasis)?.move ?? 0;

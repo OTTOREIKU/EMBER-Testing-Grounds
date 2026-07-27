@@ -1,7 +1,7 @@
 import type { GameData } from './data';
 import { cardName, isAerial, unitSize } from './data';
 import type { Card, CardAction, GameState, MechLoadout, PartSlot, Side, Stance, Timing, Token } from './types';
-import { TIMINGS } from './types';
+import { statusCount, TIMINGS } from './types';
 
 export const PART_SLOTS: PartSlot[] = ['torso', 'chasis', 'leftHand', 'rightHand', 'backpack'];
 export const SLOT_LABEL: Record<PartSlot | 'pilot' | 'main', string> = {
@@ -101,6 +101,21 @@ const TYPE_SUFFIXES = [
 
 export function shortName(card: Card): string {
   return compactName(card);
+}
+
+export function isElectronicAttack(a: CardAction): boolean {
+  if ((a.gameRules ?? []).some((g) => (g.effects ?? []).some((e) => e.type === 'electronic' && e.mode === 'attack'))) return true;
+  const text = `${a.description?.en ?? ''} ${a.description?.zh ?? ''} ${(a.keywords ?? [])
+    .map((k) => `${k.en ?? ''} ${k.key ?? ''} ${k.inline ?? ''}`)
+    .join(' ')}`.toLowerCase();
+  return text.includes('electronic attack') || text.includes('电子攻击');
+}
+
+export function electronicValue(data: GameData, t: Token): number {
+  return tokenCards(data, t)
+    .filter(({ slot }) => slot !== 'pilot')
+    .filter(({ slot }) => (t.partStates[slot as PartSlot | 'main'] ?? 'intact') !== 'destroyed')
+    .reduce((sum, { card }) => sum + (card.electronic ?? 0), 0);
 }
 
 export function defaultUnitLabel(data: GameData, t: Token): string {
@@ -241,6 +256,12 @@ export function guidedActions(data: GameData, t: Token): GuidedAction[] {
       } else if (partState === 'destroyed') {
         available = false;
         reason = `${SLOT_LABEL[slot]} destroyed`;
+      } else if (a.type === 'Firing' && statusCount(t.statuses, 'fci') > 0) {
+        available = false;
+        reason = 'Fire Control Interference blocks Firing';
+      } else if (a.type === 'Moving' && statusCount(t.statuses, 'immobilized') > 0) {
+        available = false;
+        reason = 'Immobilized blocks Movement';
       }
       const ammoLeft = a.storage && a.storage > 0 ? t.ammo[a.id] ?? a.storage : undefined;
       if (available && ammoLeft === 0) {

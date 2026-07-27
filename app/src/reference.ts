@@ -1,8 +1,9 @@
 import './reference.css';
-import { actionIconUrl, cardName, FACTION_LABEL, loadData, missionImageUrl, portraitUrl, secondaryImageUrl, statIconUrl, zeroCostReason, type GameData, type KeywordDef } from './data';
+import { actionIconUrl, cardName, FACTION_LABEL, loadData, mechPartUrl, missionImageUrl, portraitUrl, secondaryImageUrl, statIconUrl, tabImageUrl, zeroCostReason, type GameData, type KeywordDef } from './data';
 import { mountCardImage, preloadCardImages, warmAllImagesWhenIdle } from './images';
 import { watchForUpdates } from './updates';
 import { TIMINGS, type Card } from './types';
+import { registerOffline } from './offline';
 
 type Tab = 'keywords' | 'parts' | 'units' | 'pilots' | 'tactics' | 'missions' | 'rules';
 
@@ -177,8 +178,13 @@ function cardRow(c: Card): string {
     : isTactic
       ? tacticText
       : acts.join(' · ');
-  return `<article class="card card-tap${isPilot ? ' card-pilot' : ''}" data-card="${esc(c.id)}">
+  const fac = data.factionOf(c);
+  return `<article class="card card-tap card-framed${isPilot ? ' card-pilot' : ''}"${
+    fac ? ` data-fac="${esc(fac)}"` : ''
+  } data-card="${esc(c.id)}">
+    ${pointsChip(c)}
     ${isPilot ? `<div class="pilot-thumb" data-portrait="${esc(c.id)}"></div>` : ''}
+    ${isPilot ? '' : `<div class="ref-art" data-partart="${esc(c.id)}" aria-hidden="true"></div>`}
     <div class="card-main">
       <div class="card-title">${esc(cardName(c))}</div>
       ${body ? `<div class="card-body">${esc(body)}</div>` : ''}
@@ -187,7 +193,6 @@ function cardRow(c: Card): string {
         ${actIcons ? `<span class="act-icons">${actIcons}</span>` : ''}
         ${isPilot && typeof c.LV === 'number' ? `<span class="tag mono">Link ${c.LV}</span>` : ''}
         ${stats.length ? `<span class="mono card-stats">${esc(stats.join(' '))}</span>` : ''}
-        ${pointsChip(c)}
       </div>
       ${kws.length ? `<div class="card-badges">${kws.map((k) => `<span class="tag tag-kw">${esc(k)}</span>`).join('')}</div>` : ''}
     </div>
@@ -244,7 +249,7 @@ function cardDetail(c: Card): string {
     traitName || traitText
       ? `<div class="ref-trait${traitName ? '' : ' ref-flavour'}"><b>${
           traitName ? `Pilot Trait <i>${esc(traitName)}</i>` : 'No trait ability'
-        }</b><p>${linkKeywords(traitText)}</p>${
+        }</b><p>${linkKeywords(traitText).replace(/\n/g, '<br>')}</p>${
           traitName ? '' : '<p class="ref-note">This pilot has no trait ability. The line above is card flavour text.</p>'
         }</div>`
       : '';
@@ -554,6 +559,22 @@ function fillPortraits(root: HTMLElement, lazy: boolean): void {
     img.addEventListener('error', () => slot.classList.add('portrait-missing'), { once: true });
     slot.appendChild(img);
   });
+  root.querySelectorAll<HTMLElement>('[data-partart]').forEach((slot) => {
+    if (slot.childElementCount) return;
+    const id = slot.dataset.partart!;
+    const img = document.createElement('img');
+    img.alt = '';
+    img.loading = 'lazy';
+    const sources = [mechPartUrl(id), tabImageUrl(id)];
+    let next = 0;
+    const advance = (): void => {
+      if (next < sources.length) img.src = sources[next++];
+      else slot.remove();
+    };
+    img.addEventListener('error', advance);
+    advance();
+    slot.appendChild(img);
+  });
 }
 
 interface DetailView {
@@ -684,6 +705,7 @@ async function init(): Promise<void> {
   data = await loadData();
   preloadCardImages(data.cards.map((c) => c.id));
   warmAllImagesWhenIdle();
+  registerOffline();
   watchForUpdates();
 
   document.querySelectorAll<HTMLButtonElement>('#ref-tabs button').forEach((b) =>

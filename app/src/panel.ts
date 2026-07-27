@@ -1,7 +1,7 @@
 import type { Card, Token } from './types';
-import { cardImageUrl, cardName, mechPartUrl, SIDE_LABEL, tabImageUrl, type GameData } from './data';
+import { cardImageUrl, cardName, mechPartUrl, rulesLines, SIDE_LABEL, tabImageUrl, type GameData } from './data';
 import { inspectOnHover } from './inspector';
-import { guidedActions, SLOT_LABEL, tokenCards } from './units';
+import { guidedActions, isElectronicAttack, SLOT_LABEL, tokenCards } from './units';
 
 const ACTION_TINT: Record<string, string> = {
   Swift: 'swift',
@@ -32,6 +32,7 @@ export interface PanelCallbacks {
   onRestoreAmmo(t: Token, actionId: string): void;
   onLaunch(t: Token, projectile: Card): void;
   onStartAttack(t: Token, actionId: string): void;
+  onStartElectronic(t: Token, actionId: string): void;
   onShowMoveRange(t: Token, steps: number): void;
   onShowActionRange(t: Token, range: number, label: string): void;
   onDetonate(t: Token, actionId: string): void;
@@ -157,13 +158,14 @@ export class Panel {
     const mechs = this.data.mechanicsFor(actName, a.name.zh, en, orig);
     const lines: string[] = [];
     if (en) {
-      lines.push(en);
+      lines.push(...rulesLines(en));
     } else if (tr?.english) {
       const caveat = tr.confidence !== 'high' ? ` <em>(${tr.confidence}-confidence translation, so verify it against the card)</em>` : '';
       lines.push(`${tr.english}${caveat}`);
       lines.push('<em>Translated from the Chinese card text, not official English.</em>');
     } else if (orig) {
-      lines.push(`${orig}  <em>(the card data has no English for this action)</em>`);
+      lines.push(...rulesLines(orig));
+      lines.push('<em>(the card data has no English for this action)</em>');
     } else {
       lines.push('<em>No rules text on this card in the data; the values above come from the card.</em>');
     }
@@ -201,6 +203,17 @@ export class Panel {
         if (ammoLeft !== undefined) this.cb.onSpendAmmo(t, a.id);
       });
       btns.appendChild(atk);
+    }
+    if (available && isElectronicAttack(a)) {
+      const ew = document.createElement('button');
+      ew.className = 'attack-btn';
+      ew.innerHTML = '<i class="btn-ico">⚡</i> Electronic Attack…';
+      ew.title = 'Guided Electronic Counter-roll: click this, then click the target unit on the board';
+      ew.addEventListener('click', () => {
+        this.cb.onStartElectronic(t, a.id);
+        if (ammoLeft !== undefined) this.cb.onSpendAmmo(t, a.id);
+      });
+      btns.appendChild(ew);
     }
     if (available && a.type === 'Moving' && a.range) {
       const mv = document.createElement('button');
@@ -344,10 +357,13 @@ export class Panel {
       const trait = document.createElement('div');
       trait.className = `pilot-trait${hasTrait ? '' : ' pilot-flavour'}`;
       const head = hasTrait ? `Pilot Trait <i>${card.trait}</i>` : 'No trait ability';
-      const body = hasTrait
-        ? traitDesc
-        : `${traitDesc}<em>This pilot has no trait ability. The line above is card flavour text.</em>`;
-      trait.innerHTML = `<b>${head}</b>${traitDesc ? `<span>${body!.replace(/^[·\s]+/, '')}</span>` : ''}`;
+      const bullets = rulesLines(traitDesc);
+      const text =
+        bullets.length > 1
+          ? `<ul class="rules-list">${bullets.map((l) => `<li>${l}</li>`).join('')}</ul>`
+          : (bullets[0] ?? '');
+      const body = hasTrait ? text : `${text}<em>This pilot has no trait ability. The line above is card flavour text.</em>`;
+      trait.innerHTML = `<b>${head}</b>${traitDesc ? `<span>${body}</span>` : ''}`;
       wrap.appendChild(trait);
     }
 
@@ -363,7 +379,12 @@ export class Panel {
       const meta = [a.type, a.range ? `R ${a.range}` : '', dice].filter(Boolean).join(' · ');
       const row = document.createElement('div');
       row.className = 'card-action';
-      row.innerHTML = `<b>${a.name.en || a.name.zh || a.id}</b>${meta ? `<span class="dim"> ${meta}</span>` : ''}<span>${text}</span>`;
+      const bullets = rulesLines(text);
+      row.innerHTML = `<b>${a.name.en || a.name.zh || a.id}</b>${meta ? `<span class="dim"> ${meta}</span>` : ''}${
+        bullets.length > 1
+          ? `<ul class="rules-list">${bullets.map((l) => `<li>${l}</li>`).join('')}</ul>`
+          : `<span>${bullets[0] ?? text}</span>`
+      }`;
       wrap.appendChild(row);
     }
 

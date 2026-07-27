@@ -20,7 +20,7 @@
     "现身",
     "顕現"
    ],
-   "text": "Leaving Optical Camouflage. Swap the camouflage model back for the unit model. Four things reveal a unit and then let it make Manifestation Movement: its own |Reveal| Common Action, performing any Action that lacks the Silence keyword (Maneuvering counts, including a facing change with no movement), an enemy ending a move in contact with its base, and a successful enemy Scan. Passive Actions and Interception do not reveal it. Destroying the Part that performed the activating Action reveals it in place with no Manifestation Movement."
+   "text": "Leaving Optical Camouflage. Swap the camouflage model back for the unit model. Four things reveal a unit and then let it make Manifestation Movement: its own Reveal Common Action, performing any Action that lacks the Silence keyword (Maneuvering counts, including a facing change with no movement), an enemy ending a move in contact with its base, and a successful enemy Scan. Passive Actions and Interception do not reveal it. Destroying the Part that performed the activating Action reveals it in place with no Manifestation Movement."
   },
   {
    "id": "manifestation_movement",
@@ -41,7 +41,7 @@
     "scan",
     "扫描"
    ],
-   "text": "Reveals enemy units in Optical Camouflage and strips Low Profile Tokens. Designate an enemy that is in Optical Camouflage or bearing a Low Profile Token, then make an Electronic Counter-roll as the Initiator. On success: camouflaged targets are Revealed (they then make Manifestation Movement), and Low Profile Tokens are removed. Only token-based Low Profile can be scanned away; aura-based Low Profile cannot. Every Mech has |Scan| as a Common Action, and attacking a camouflaged unit forces a Scan first."
+   "text": "Reveals enemy units in Optical Camouflage and strips Low Profile Tokens. Designate an enemy that is in Optical Camouflage or bearing a Low Profile Token, then make an Electronic Counter-roll as the Initiator. On success: camouflaged targets are Revealed (they then make Manifestation Movement), and Low Profile Tokens are removed. Only token-based Low Profile can be scanned away; aura-based Low Profile cannot. Every Mech has Scan as a Common Action, and attacking a camouflaged unit forces a Scan first."
   },
   {
    "id": "electronic_counter_roll",
@@ -153,7 +153,7 @@
     "弹药",
     "充能"
    ],
-   "text": "Two separate token economies printed as icons on an Action. Ammo caps how many times an Action can be used: place one face-up Ammo Token per Ammo Icon at deployment, flip one face-down per use, and once they are all spent the Action cannot be performed. Volley X spends one Ammo Token per Projectile launched. Some Actions replenish Ammo by naming a Unit or Part and flipping consumed tokens back face-up, never above the starting number. Charge is a one-shot state instead: the token starts face-down, the |Charge| Action flips one named Part's token face-up, only one Part per Charge Action, and it cannot be Charged again until spent. An Action with a Charge-conditional effect may consume it by flipping the token back down."
+   "text": "Two separate token economies printed as icons on an Action. Ammo caps how many times an Action can be used: place one face-up Ammo Token per Ammo Icon at deployment, flip one face-down per use, and once they are all spent the Action cannot be performed. Volley X spends one Ammo Token per Projectile launched. Some Actions replenish Ammo by naming a Unit or Part and flipping consumed tokens back face-up, never above the starting number. Charge is a one-shot state instead: the token starts face-down, the Charge Action flips one named Part's token face-up, only one Part per Charge Action, and it cannot be Charged again until spent. An Action with a Charge-conditional effect may consume it by flipping the token back down."
   },
   {
    "id": "screeching",

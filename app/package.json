@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node tests/offset.test.mjs"
+    "test": "node tests/offset.test.mjs && node tests/counterroll.test.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.1.1",

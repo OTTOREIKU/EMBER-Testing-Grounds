@@ -1,10 +1,366 @@
 {
- "_comment": "Per-card faction corrections merged over cards.json at load time, applied after the box-derived faction index. Only for cards whose own faction field contradicts the box they ship in. Keys are card ids, values are faction codes (RDL, UN, GOF, PD, COLLABORATION).",
+ "_comment": "Per-card faction corrections merged over cards.json at load time, applied after the box-derived faction index. Two reasons an entry exists: the card ships in a box tagged with more than one faction (or in no box at all), so buildFactionIndex cannot decide it; or its own faction field contradicts the box it ships in. Most entries were read off the card scans: the printed header band is the faction colour, sampled at 10-19% of card height across the full width. Validated against all 243 parts whose faction was already known: GoF 44/44, and no RDL/UN confusion in either direction. Discard \"(D)\" cards print grey by rule, so they inherit from their base card. Keys are card ids, values are faction codes (RDL, UN, GOF, PD, COLLABORATION).",
  "cards": {
+  "117": {
+   "faction": "UN",
+   "was": null,
+   "why": "Card front reads UN in the printed header band. Unboxed or only in a dual-faction box, so the box could not decide it."
+  },
+  "118": {
+   "faction": "UN",
+   "was": null,
+   "why": "Discard card, printed grey rather than in a faction colour, so the faction is taken from its base card 117."
+  },
+  "119": {
+   "faction": "UN",
+   "was": null,
+   "why": "Card front reads UN in the printed header band. Unboxed or only in a dual-faction box, so the box could not decide it."
+  },
+  "120": {
+   "faction": "UN",
+   "was": null,
+   "why": "Discard card, printed grey rather than in a faction colour, so the faction is taken from its base card 119."
+  },
+  "150": {
+   "faction": "UN",
+   "was": null,
+   "why": "Card front reads UN in the printed header band. Unboxed or only in a dual-faction box, so the box could not decide it."
+  },
+  "151": {
+   "faction": "UN",
+   "was": null,
+   "why": "Discard card, printed grey rather than in a faction colour, so the faction is taken from its base card 150."
+  },
+  "152": {
+   "faction": "UN",
+   "was": null,
+   "why": "Card front reads UN in the printed header band. Unboxed or only in a dual-faction box, so the box could not decide it."
+  },
+  "153": {
+   "faction": "UN",
+   "was": null,
+   "why": "Discard card, printed grey rather than in a faction colour, so the faction is taken from its base card 152."
+  },
+  "154": {
+   "faction": "UN",
+   "was": null,
+   "why": "Card front reads UN in the printed header band. Unboxed or only in a dual-faction box, so the box could not decide it."
+  },
+  "155": {
+   "faction": "UN",
+   "was": null,
+   "why": "Card front reads UN in the printed header band. Unboxed or only in a dual-faction box, so the box could not decide it."
+  },
+  "156": {
+   "faction": "UN",
+   "was": null,
+   "why": "Card front reads UN in the printed header band. Unboxed or only in a dual-faction box, so the box could not decide it."
+  },
+  "157": {
+   "faction": "UN",
+   "was": null,
+   "why": "Card front reads UN in the printed header band. Unboxed or only in a dual-faction box, so the box could not decide it."
+  },
+  "158": {
+   "faction": "UN",
+   "was": null,
+   "why": "Unboxed and printed grey. Sits inside the 154-157 block, which is UN throughout."
+  },
+  "246": {
+   "faction": "RDL",
+   "was": "PD",
+   "why": "Card front reads RDL red. It ships in UNSALE, which our boxes.json tagged PD wholesale, but \"Unsale Content\" is a release-status label rather than a faction and the box mixes factions."
+  },
+  "249": {
+   "faction": "RDL",
+   "was": "PD",
+   "why": "Card front reads RDL red. It ships in UNSALE, which our boxes.json tagged PD wholesale, but \"Unsale Content\" is a release-status label rather than a faction and the box mixes factions."
+  },
+  "252": {
+   "faction": "RDL",
+   "was": "PD",
+   "why": "Card front reads RDL red. It ships in UNSALE, which our boxes.json tagged PD wholesale, but \"Unsale Content\" is a release-status label rather than a faction and the box mixes factions."
+  },
+  "253": {
+   "faction": "RDL",
+   "was": "PD",
+   "why": "Discard card, printed grey, so it follows its base card 252, which reads RDL. Was PD only because the whole UNSALE box was tagged PD."
+  },
+  "254": {
+   "faction": "RDL",
+   "was": "PD",
+   "why": "Card front reads RDL red. It ships in UNSALE, which our boxes.json tagged PD wholesale, but \"Unsale Content\" is a release-status label rather than a faction and the box mixes factions."
+  },
+  "255": {
+   "faction": "RDL",
+   "was": "PD",
+   "why": "Discard card, printed grey, so it follows its base card 254, which reads RDL. Was PD only because the whole UNSALE box was tagged PD."
+  },
+  "264": {
+   "faction": "RDL",
+   "was": "PD",
+   "why": "Card front reads RDL red. It ships in UNSALE, which our boxes.json tagged PD wholesale, but \"Unsale Content\" is a release-status label rather than a faction and the box mixes factions."
+  },
+  "267": {
+   "faction": "RDL",
+   "was": null,
+   "why": "Card front reads RDL in the printed header band. Unboxed or only in a dual-faction box, so the box could not decide it."
+  },
+  "268": {
+   "faction": "RDL",
+   "was": null,
+   "why": "Card front reads RDL in the printed header band. Unboxed or only in a dual-faction box, so the box could not decide it."
+  },
+  "280": {
+   "faction": "RDL",
+   "was": "PD",
+   "why": "Card front reads RDL red. It ships in UNSALE, which our boxes.json tagged PD wholesale, but \"Unsale Content\" is a release-status label rather than a faction and the box mixes factions."
+  },
+  "281": {
+   "faction": "RDL",
+   "was": "PD",
+   "why": "Card front reads RDL red. It ships in UNSALE, which our boxes.json tagged PD wholesale, but \"Unsale Content\" is a release-status label rather than a faction and the box mixes factions."
+  },
+  "282": {
+   "faction": "RDL",
+   "was": "PD",
+   "why": "Card front reads RDL red. It ships in UNSALE, which our boxes.json tagged PD wholesale, but \"Unsale Content\" is a release-status label rather than a faction and the box mixes factions."
+  },
+  "283": {
+   "faction": "RDL",
+   "was": "PD",
+   "why": "Discard card, printed grey, so it follows its base card 282, which reads RDL. Was PD only because the whole UNSALE box was tagged PD."
+  },
+  "284": {
+   "faction": "RDL",
+   "was": "PD",
+   "why": "Card front reads RDL red. It ships in UNSALE, which our boxes.json tagged PD wholesale, but \"Unsale Content\" is a release-status label rather than a faction and the box mixes factions."
+  },
+  "285": {
+   "faction": "RDL",
+   "was": "PD",
+   "why": "Discard card, printed grey, so it follows its base card 284, which reads RDL. Was PD only because the whole UNSALE box was tagged PD."
+  },
+  "286": {
+   "faction": "RDL",
+   "was": "PD",
+   "why": "Card front reads RDL red. It ships in UNSALE, which our boxes.json tagged PD wholesale, but \"Unsale Content\" is a release-status label rather than a faction and the box mixes factions."
+  },
+  "299": {
+   "faction": "RDL",
+   "was": null,
+   "why": "Card front reads RDL in the printed header band. Unboxed or only in a dual-faction box, so the box could not decide it."
+  },
+  "300": {
+   "faction": "UN",
+   "was": null,
+   "why": "Card front reads UN in the printed header band. Unboxed or only in a dual-faction box, so the box could not decide it."
+  },
+  "521": {
+   "faction": "RDL",
+   "was": null,
+   "why": "Card front reads RDL in the printed header band. Unboxed or only in a dual-faction box, so the box could not decide it."
+  },
+  "532": {
+   "faction": "RDL",
+   "was": null,
+   "why": "Card front reads RDL in the printed header band. Unboxed or only in a dual-faction box, so the box could not decide it."
+  },
+  "533": {
+   "faction": "RDL",
+   "was": null,
+   "why": "Card front reads RDL in the printed header band. Unboxed or only in a dual-faction box, so the box could not decide it."
+  },
+  "534": {
+   "faction": "RDL",
+   "was": null,
+   "why": "Card front reads RDL in the printed header band. Unboxed or only in a dual-faction box, so the box could not decide it."
+  },
+  "535": {
+   "faction": "RDL",
+   "was": null,
+   "why": "Card front reads RDL in the printed header band. Unboxed or only in a dual-faction box, so the box could not decide it."
+  },
+  "536": {
+   "faction": "RDL",
+   "was": null,
+   "why": "Card front reads RDL in the printed header band. Unboxed or only in a dual-faction box, so the box could not decide it."
+  },
+  "537": {
+   "faction": "RDL",
+   "was": null,
+   "why": "Discard card, printed grey rather than in a faction colour, so the faction is taken from its base card 536."
+  },
+  "538": {
+   "faction": "UN",
+   "was": null,
+   "why": "Card front reads UN in the printed header band. Unboxed or only in a dual-faction box, so the box could not decide it."
+  },
+  "539": {
+   "faction": "UN",
+   "was": null,
+   "why": "Card front reads UN in the printed header band. Unboxed or only in a dual-faction box, so the box could not decide it."
+  },
+  "540": {
+   "faction": "UN",
+   "was": null,
+   "why": "Card front reads UN in the printed header band. Unboxed or only in a dual-faction box, so the box could not decide it."
+  },
+  "541": {
+   "faction": "UN",
+   "was": null,
+   "why": "Card front reads UN in the printed header band. Unboxed or only in a dual-faction box, so the box could not decide it."
+  },
+  "542": {
+   "faction": "UN",
+   "was": null,
+   "why": "Discard card, printed grey rather than in a faction colour, so the faction is taken from its base card 541."
+  },
+  "543": {
+   "faction": "UN",
+   "was": null,
+   "why": "Card front reads UN in the printed header band. Unboxed or only in a dual-faction box, so the box could not decide it."
+  },
   "ACE-01": {
    "faction": "COLLABORATION",
    "was": "PD",
    "why": "Karl Fried is the exclusive pilot of the ACE-001 White Dwarf and ships in LAB_WHITE_DWARF, which the builder site lists under its COLLABORATION category alongside RDL, UN, GOF and PD. His card record is the only one of all 52 pilots whose faction disagrees with its box. Left as PD he cannot legally pilot the mech he is sold with, since parts and pilots are both faction-locked and the six White Dwarf parts read as COLLABORATION. PD most likely records Planetring Dynamics as the manufacturer rather than the play faction."
+  },
+  "005": {
+   "faction": "RDL",
+   "was": null,
+   "why": "Card front reads RDL in the printed header band. Unboxed or only in a dual-faction box, so the box could not decide it."
+  },
+  "027": {
+   "faction": "RDL",
+   "was": null,
+   "why": "Card front reads RDL in the printed header band. Unboxed or only in a dual-faction box, so the box could not decide it."
+  },
+  "037": {
+   "faction": "RDL",
+   "was": null,
+   "why": "Card front reads RDL in the printed header band. Unboxed or only in a dual-faction box, so the box could not decide it."
+  },
+  "038": {
+   "faction": "RDL",
+   "was": null,
+   "why": "Card front reads RDL in the printed header band. Unboxed or only in a dual-faction box, so the box could not decide it."
+  },
+  "040": {
+   "faction": "RDL",
+   "was": null,
+   "why": "Card front reads RDL in the printed header band. Unboxed or only in a dual-faction box, so the box could not decide it."
+  },
+  "071": {
+   "faction": "RDL",
+   "was": null,
+   "why": "Card front reads RDL in the printed header band. Unboxed or only in a dual-faction box, so the box could not decide it."
+  },
+  "072": {
+   "faction": "RDL",
+   "was": null,
+   "why": "Card front reads RDL in the printed header band. Unboxed or only in a dual-faction box, so the box could not decide it."
+  },
+  "073": {
+   "faction": "RDL",
+   "was": null,
+   "why": "Card front reads RDL in the printed header band. Unboxed or only in a dual-faction box, so the box could not decide it."
+  },
+  "074": {
+   "faction": "RDL",
+   "was": null,
+   "why": "Card front reads RDL in the printed header band. Unboxed or only in a dual-faction box, so the box could not decide it."
+  },
+  "075": {
+   "faction": "RDL",
+   "was": null,
+   "why": "Card front reads RDL in the printed header band. Unboxed or only in a dual-faction box, so the box could not decide it."
+  },
+  "076": {
+   "faction": "RDL",
+   "was": null,
+   "why": "Card front reads RDL in the printed header band. Unboxed or only in a dual-faction box, so the box could not decide it."
+  },
+  "077": {
+   "faction": "RDL",
+   "was": null,
+   "why": "Card front reads RDL in the printed header band. Unboxed or only in a dual-faction box, so the box could not decide it."
+  },
+  "093": {
+   "faction": "UN",
+   "was": null,
+   "why": "Card front reads UN in the printed header band. Unboxed or only in a dual-faction box, so the box could not decide it."
+  },
+  "095": {
+   "faction": "UN",
+   "was": null,
+   "why": "Card front reads UN in the printed header band. Unboxed or only in a dual-faction box, so the box could not decide it."
+  },
+  "ZHAM-001A": {
+   "faction": "GOF",
+   "was": null,
+   "why": "Card front reads GOF in the printed header band. Unboxed or only in a dual-faction box, so the box could not decide it."
+  },
+  "ZHAM-002": {
+   "faction": "GOF",
+   "was": null,
+   "why": "Card front reads GOF in the printed header band. Unboxed or only in a dual-faction box, so the box could not decide it."
+  },
+  "ZHAM-003": {
+   "faction": "GOF",
+   "was": null,
+   "why": "Card front reads GOF in the printed header band. Unboxed or only in a dual-faction box, so the box could not decide it."
+  },
+  "ZHAM-004": {
+   "faction": "GOF",
+   "was": null,
+   "why": "Card front reads GOF in the printed header band. Unboxed or only in a dual-faction box, so the box could not decide it."
+  },
+  "028": {
+   "faction": "RDL",
+   "was": null,
+   "why": "Discard card, printed grey rather than in a faction colour, so the faction is taken from its base card 027."
+  },
+  "039": {
+   "faction": "RDL",
+   "was": null,
+   "why": "Discard card, printed grey rather than in a faction colour, so the faction is taken from its base card 038."
+  },
+  "PDAM-001": {
+   "faction": "PD",
+   "was": null,
+   "why": "Unboxed. Card front reads grey, matching the PD sample average, and the PDAM- id prefix marks it as PD ordnance."
+  },
+  "PDAM-002": {
+   "faction": "PD",
+   "was": null,
+   "why": "Unboxed. Card front reads grey, matching the PD sample average, and the PDAM- id prefix marks it as PD ordnance."
+  },
+  "PDAM-003": {
+   "faction": "PD",
+   "was": null,
+   "why": "Unboxed. Card front reads grey, matching the PD sample average, and the PDAM- id prefix marks it as PD ordnance."
+  },
+  "PDAM-004": {
+   "faction": "PD",
+   "was": null,
+   "why": "Unboxed. Card front reads grey, matching the PD sample average, and the PDAM- id prefix marks it as PD ordnance."
+  },
+  "PDAM-005": {
+   "faction": "PD",
+   "was": null,
+   "why": "Unboxed. Card front reads grey, matching the PD sample average, and the PDAM- id prefix marks it as PD ordnance."
+  },
+  "PDAM-006": {
+   "faction": "PD",
+   "was": null,
+   "why": "Unboxed. Card front reads grey, matching the PD sample average, and the PDAM- id prefix marks it as PD ordnance."
+  },
+  "PDAM-007": {
+   "faction": "PD",
+   "was": null,
+   "why": "Unboxed. Card front reads grey, matching the PD sample average, and the PDAM- id prefix marks it as PD ordnance."
   }
- }
+ },
+ "_corrections": "UNSALE is \"Unsale Content\", a release-status label covering unreleased cards from several factions, not a PD-only box. Our boxes.json tagged it PD, which stamped PD on all 37 of its cards. 14 of them read RDL on the card front and are corrected here. 23 have no card scan at all, so they cannot be checked the same way and keep the box default; see the note below."
 }

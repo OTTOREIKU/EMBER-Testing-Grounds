@@ -1,7 +1,7 @@
 {
  "_comment": "Glossary fixes applied on top of the generated keywords.json (which comes from the community builder bundle). Sourced from the verified rulebook digests in ../rules. Keep this file when re-running tools/extract_cards.js — it is merged at load time by the app.",
  "_source": "rules/05_advanced_combat.md §4.17, rules/06_missions_and_appendix.md §6.2",
- "_corrections": "推动X was labelled 'Knock Back X' in the bundle, which collides with 击退X 'Knockback X'; the rulebook names it Push X (it alone reduces Link). 离子武器 was OCR'd as 'lon Weapon' (capital I read as lowercase L).",
+ "_corrections": "推动X was labelled 'Knock Back X' in the bundle, which collides with 击退X 'Knockback X'; the rulebook names it Push X (it alone reduces Link). 离子武器 was OCR'd as 'lon Weapon' (capital I read as lowercase L). 多目标X shipped a truncated English value in the bundle, cut off mid-list at \"applied at this time;\" while the Chinese ran to the end of the rule; the remainder is translated from the Chinese here.",
  "overrides": {
   "空手": {
    "en": {
@@ -157,6 +157,12 @@
    "en": {
     "name": "Target Tracer",
     "value": "When a Drone performs Automatic Actions, it may designate a Unit bearing a Target Tracer Token as the target even if it is not the closest Enemy Unit. When a Drone performs any Attack / Electronic Attack targeting a Unit bearing a Target Tracer Token, it is treated as being in the Offensive Stance."
+   }
+  },
+  "多目标X": {
+   "en": {
+    "name": "Multi-Target X",
+    "value": "This Action can select X targets at the same time. If it does, resolve the Attack as follows: determine the total number of Attack Dice for this Action, applying any effect that increases that number now; split those dice between the targets however you like, then run one separate attack sequence against each target in turn, rolling the dice allotted to it. If a Mech performs this Action it may Focus on each attack sequence separately. If the Attack inflicts a special effect, each attack sequence applies that effect to its own target on its own."
    }
   }
  }
