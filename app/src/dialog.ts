@@ -124,10 +124,7 @@ export function promptDialog(o: PromptOpts): Promise<string | null> {
           close();
           resolve(val);
         };
-        const submit = () => {
-          const v = input.value.trim();
-          done(v ? v : null);
-        };
+        const submit = () => done(input.value.trim());
         panel.querySelector<HTMLButtonElement>('[data-ok]')!.addEventListener('click', submit);
         panel.querySelector<HTMLButtonElement>('[data-cancel]')!.addEventListener('click', () => done(null));
         input.addEventListener('keydown', (ev) => {

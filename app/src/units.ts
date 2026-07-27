@@ -103,6 +103,12 @@ export function shortName(card: Card): string {
   return compactName(card);
 }
 
+export function defaultUnitLabel(data: GameData, t: Token): string {
+  if (t.kind === 'mech') return mechLabel(data, t.mech ?? {});
+  const card = t.cardId ? data.byId.get(t.cardId) : undefined;
+  return card ? shortName(card) : t.label;
+}
+
 export function tidyUnitLabel(name: string): string {
   return (
     name

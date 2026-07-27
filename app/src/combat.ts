@@ -357,14 +357,14 @@ export class AttackHelper {
     const c = this.ctx!;
     const wrap = document.createElement('div');
     wrap.className = 'ah-step';
-    wrap.innerHTML = `<h4>1 · Determine target Part</h4>
+    wrap.innerHTML = `<h4><span class="ah-n">1</span>Determine target Part</h4>
       <p class="dim">${c.explosion
         ? 'Roll the Black Die, or pick a Part directly if the target is Shutdown. Explosions have no facing, so there is no Back Attack here.'
         : 'Roll the Black Die, or pick a Part directly. You may choose when the target is Shutdown or you have a Back Attack, and some Actions designate the Part for you.'}</p>`;
 
     const rollBtn = document.createElement('button');
     rollBtn.className = 'ah-primary';
-    rollBtn.textContent = '🎲 Roll Black Die';
+    rollBtn.innerHTML = '<i class="btn-ico">🎲</i> Roll Black Die';
     rollBtn.addEventListener('click', () => {
       const face = this.dice.dice.black.faces[Math.floor(Math.random() * 6)][0];
       let part = face.part ?? 'any';
@@ -477,7 +477,7 @@ export class AttackHelper {
     const wrap = document.createElement('div');
     wrap.className = 'ah-step';
     const partCard = c.targetPart ? this.defenderPartCard(c.targetPart) : undefined;
-    wrap.innerHTML = `<h4>2 · Attack Roll ${c.targetPart ? `vs <b>${SLOT_LABEL[c.targetPart as PartSlot | 'main']}</b> (${partCard ? cardName(partCard) : ''})` : ''}</h4>
+    wrap.innerHTML = `<h4><span class="ah-n">2</span>Attack Roll ${c.targetPart ? `vs <b>${SLOT_LABEL[c.targetPart as PartSlot | 'main']}</b> (${partCard ? cardName(partCard) : ''})` : ''}</h4>
       ${c.attacker.stance === 'offensive' ? '<p class="dim">OFF stance: hollow attack icons count as solid.</p>' : ''}`;
     wrap.appendChild(
       this.poolEditor(
@@ -489,7 +489,7 @@ export class AttackHelper {
     if (!c.attackRoll) {
       const roll = document.createElement('button');
       roll.className = 'ah-primary';
-      roll.textContent = '🎲 Roll attack dice';
+      roll.innerHTML = '<i class="btn-ico">🎲</i> Roll attack dice';
       roll.addEventListener('click', () => {
         c.attackRoll = this.rollPool({ red: c.attackPool.red, yellow: c.attackPool.yellow });
         this.render();
@@ -519,7 +519,7 @@ export class AttackHelper {
     const wrap = document.createElement('div');
     wrap.className = 'ah-step';
     const st = c.targetPart ? c.defender.partStates[c.targetPart as PartSlot | 'main'] ?? 'intact' : 'intact';
-    wrap.innerHTML = `<h4>3 · Defense Roll</h4>
+    wrap.innerHTML = `<h4><span class="ah-n">3</span>Defense Roll</h4>
       <p class="dim">White = target Part ${st === 'damaged' ? 'STRUCTURE (part is Damaged)' : 'Armor'} (min 1)${
         c.protection ? ` + ${c.protection} protection` : ''
       }${c.defender.stance === 'mobility' ? ' · MOB stance: + Blue = Dodge value' : ''}${
@@ -529,7 +529,7 @@ export class AttackHelper {
       ${(() => {
         const frg = statusCount(c.defender.statuses, 'fragile');
         return frg
-          ? `<p class="ah-fragile">💥 ${c.defender.label} bears ${frg} Fragile Token${frg === 1 ? '' : 's'}, so <b>−${frg} White</b> is already taken off the pool below.</p>`
+          ? `<p class="ah-fragile"><i class="btn-ico">💥</i> ${c.defender.label} bears ${frg} Fragile Token${frg === 1 ? '' : 's'}, so <b>−${frg} White</b> is already taken off the pool below.</p>`
           : '';
       })()}
       ${c.explosion ? '<p class="dim">Explosion damage allows no Terrain or Unit Protection, so the pool below is Armour and Dodge only.</p>' : ''}
@@ -544,7 +544,7 @@ export class AttackHelper {
     if (!c.defenseRoll) {
       const roll = document.createElement('button');
       roll.className = 'ah-primary';
-      roll.textContent = '🎲 Roll defense dice';
+      roll.innerHTML = '<i class="btn-ico">🎲</i> Roll defense dice';
       roll.addEventListener('click', () => {
         c.defenseRoll = this.rollPool({ white: c.defensePool.white, blue: c.defensePool.blue });
         this.render();
@@ -574,7 +574,7 @@ export class AttackHelper {
     const wrap = document.createElement('div');
     wrap.className = 'ah-step';
     const { penetrating, text, duel } = this.resolve();
-    wrap.innerHTML = `<h4>4 · <span data-mech="penetration">Resolution</span>${
+    wrap.innerHTML = `<h4><span class="ah-n">4</span><span data-mech="penetration">Resolution</span>${
       c.surplusRound ? ` (<span data-mech="surplus_damage">Surplus round ${c.surplusRound}</span>)` : ''
     }</h4>`;
     const duelEl = this.duelView(duel);

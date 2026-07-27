@@ -1,5 +1,5 @@
 {
- "_comment": "English names for cards/actions whose `en` field in the community data still holds Chinese/Japanese. \"derived\" entries reuse the official English that the same Chinese name carries on other cards; \"translated\" entries had no precedent and were translated here. Merged over cards.json at load time.",
+ "_comment": "English names for cards/actions whose `en` field in the community data still holds Chinese/Japanese. \"derived\" entries reuse the official English that the same Chinese name carries on other cards; \"translated\" entries had no precedent and were translated here. Merged over cards.json at load time. \"traits\" holds English for pilot traitDescription text.",
  "cards": {
   "154": {
    "en": "M7 Grenade",
@@ -56,11 +56,11 @@
   },
   "XPA-59": {
    "en": "Combatant A-101",
-   "source": "translated"
+   "source": "derived"
   },
   "XPA-61": {
    "en": "Combatant A-103",
-   "source": "translated"
+   "source": "derived"
   },
   "XPA-62": {
    "en": "Seagull",
@@ -269,6 +269,20 @@
   },
   "TM39D_B": {
    "en": "Launch Snake Eye",
+   "source": "translated"
+  }
+ },
+ "traits": {
+  "XPA-59": {
+   "en": "Every combatant’s combat prosthetic carries an LK-series implant, so the LUKAS system can reach it remotely.",
+   "source": "translated"
+  },
+  "XPA-61": {
+   "en": "Work is work, but an executor squadron does not usually switch partners at short notice.",
+   "source": "translated"
+  },
+  "XPA-62": {
+   "en": "· This unit’s Projectile action Range +2.",
    "source": "translated"
   }
  }

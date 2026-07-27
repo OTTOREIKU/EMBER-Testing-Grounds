@@ -206,6 +206,11 @@ interface ActionTranslations {
 interface NameOverrides {
   cards?: Record<string, { en: string }>;
   actions?: Record<string, { en: string }>;
+  traits?: Record<string, { en: string }>;
+}
+
+interface FactionOverrides {
+  cards?: Record<string, { faction: string }>;
 }
 
 const NO_MISSIONS: MissionData = { families: [], cards: [] };
@@ -238,7 +243,7 @@ function applyTactics(cards: Card[], table: Record<string, TacticEntry>): void {
 }
 
 export async function loadData(): Promise<GameData> {
-  const [cards, terrain, boxes, rawKeywords, patch, mech, xlate, names, missions, tactics, play, secondary, zoneData] = await Promise.all([
+  const [cards, terrain, boxes, rawKeywords, patch, mech, xlate, names, missions, tactics, play, secondary, zoneData, facPatch] = await Promise.all([
     fetch(dataUrl('cards.json')).then((r) => r.json() as Promise<Card[]>),
     fetch(dataUrl('terrain_layouts.json')).then((r) => r.json() as Promise<TerrainData>),
     fetch(dataUrl('boxes.json')).then((r) => r.json() as Promise<BoxDef[]>),
@@ -270,6 +275,9 @@ export async function loadData(): Promise<GameData> {
     fetch(dataUrl('zones.json'))
       .then((r) => (r.ok ? (r.json() as Promise<ZoneData>) : NO_ZONES))
       .catch(() => NO_ZONES),
+    fetch(dataUrl('faction_overrides.json'))
+      .then((r) => (r.ok ? (r.json() as Promise<FactionOverrides>) : ({} as FactionOverrides)))
+      .catch(() => ({}) as FactionOverrides),
   ]);
 
   cleanCardText(cards);
@@ -278,6 +286,8 @@ export async function loadData(): Promise<GameData> {
   for (const c of cards) {
     const cn = names.cards?.[c.id];
     if (cn) c.name = { ...c.name, en: cn.en };
+    const tn = names.traits?.[c.id];
+    if (tn) c.traitDescription = { ...c.traitDescription, en: tn.en };
     for (const a of c.actions ?? []) {
       const an = names.actions?.[a.id];
       if (an) a.name = { ...a.name, en: an.en };
@@ -329,6 +339,9 @@ export async function loadData(): Promise<GameData> {
   const actionTranslation = (actionId: string) => translations[actionId];
 
   const factionIndex = buildFactionIndex(cards, boxes);
+  for (const [id, o] of Object.entries(facPatch.cards ?? {})) {
+    if (o?.faction) factionIndex.set(id, o.faction.toUpperCase());
+  }
   const factionOf = (card: Card): string | null => factionIndex.get(card.id) ?? null;
 
   return {

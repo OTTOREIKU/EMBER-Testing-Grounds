@@ -2,6 +2,8 @@ import type { Card, ImportedSquad, MechLoadout, PartSlot } from './types';
 
 const SLOTS: PartSlot[] = ['torso', 'chasis', 'leftHand', 'rightHand', 'backpack'];
 
+const PLACEHOLDER_NAME = /^\s*(?:new\s+mech|new\s+unit|untitled|mech|unnamed)\s*\d*\s*$/i;
+
 function refId(x: unknown): string | undefined {
   if (!x) return undefined;
   if (typeof x === 'string') return x;
@@ -22,16 +24,14 @@ export function parseSquadJson(raw: unknown, byId: Map<string, Card>): ImportedS
   };
 
   const mechs = Array.isArray(team.mechs) ? team.mechs : [];
-  const importedMechs = mechs.map((m, i) => {
+  const importedMechs = mechs.map((m) => {
     const mech = m as Record<string, unknown>;
     const parts = (mech.parts ?? mech) as Record<string, unknown>;
     const loadout: MechLoadout = {};
     for (const slot of SLOTS) loadout[slot] = check(refId(parts[slot]));
     loadout.pilot = check(refId(mech.pilot));
-    const name =
-      typeof mech.name === 'string' && mech.name
-        ? mech.name
-        : `Mech ${i + 1}`;
+    const raw = typeof mech.name === 'string' ? mech.name.trim() : '';
+    const name = raw && !PLACEHOLDER_NAME.test(raw) ? raw : undefined;
     return { name, loadout };
   });
 

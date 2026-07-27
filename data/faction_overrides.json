@@ -1,0 +1,10 @@
+{
+ "_comment": "Per-card faction corrections merged over cards.json at load time, applied after the box-derived faction index. Only for cards whose own faction field contradicts the box they ship in. Keys are card ids, values are faction codes (RDL, UN, GOF, PD, COLLABORATION).",
+ "cards": {
+  "ACE-01": {
+   "faction": "COLLABORATION",
+   "was": "PD",
+   "why": "Karl Fried is the exclusive pilot of the ACE-001 White Dwarf and ships in LAB_WHITE_DWARF, which the builder site lists under its COLLABORATION category alongside RDL, UN, GOF and PD. His card record is the only one of all 52 pilots whose faction disagrees with its box. Left as PD he cannot legally pilot the mech he is sold with, since parts and pilots are both faction-locked and the six White Dwarf parts read as COLLABORATION. PD most likely records Planetring Dynamics as the manufacturer rather than the play faction."
+  }
+ }
+}

@@ -284,7 +284,7 @@ export interface GameState {
 // --- builder-site squad import ---
 
 export interface ImportedMech {
-  name: string;
+  name?: string;
   loadout: MechLoadout;
 }
 

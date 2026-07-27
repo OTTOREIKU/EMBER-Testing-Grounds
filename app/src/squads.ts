@@ -4,9 +4,12 @@ import { MECH_LAYER_ORDER } from './board';
 import { inspectOnHover, linkMechanics, type InspectInfo } from './inspector';
 import type { GameState, PartSlot, PartState, Stance, Timing, TimingDef, Token } from './types';
 import { SCALES, statusCount, STATUSES, TIMINGS } from './types';
-import { factionProblems, initiativeFor, pilotCard, SLOT_LABEL, tokenCards, tokenFactions } from './units';
+import { defaultUnitLabel, factionProblems, initiativeFor, pilotCard, SLOT_LABEL, tidyUnitLabel, tokenCards, tokenFactions } from './units';
+import { promptDialog } from './dialog';
 
 const esc = (s: string): string => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!);
+
+const DOUBLE_CLICK_MS = 500;
 
 // ---------- timing dial popout ----------
 
@@ -51,6 +54,8 @@ export class SquadTracker {
   private root: HTMLElement;
   private state: GameState | null = null;
   private selectedUid: number | null = null;
+  private lastNameClick: { uid: number; at: number } | null = null;
+  private renaming = false;
 
   constructor(data: GameData, root: HTMLElement, cb: SquadCallbacks) {
     this.data = data;
@@ -206,6 +211,30 @@ export class SquadTracker {
     return tokenCards(this.data, t).reduce((s, { card }) => s + (card.score ?? 0), 0);
   }
 
+  private async rename(t: Token): Promise<void> {
+    if (this.renaming) return;
+    this.renaming = true;
+    const fallback = defaultUnitLabel(this.data, t);
+    try {
+      const next = await promptDialog({
+        title: `Rename ${t.label}`,
+        body:
+          'Give this unit a callsign so you can tell it apart from an identical build. ' +
+          `Leave it empty to go back to the default, ${fallback}.`,
+        value: t.label,
+        placeholder: fallback,
+        confirmLabel: 'Rename',
+      });
+      if (next === null) return;
+      const trimmed = next.trim();
+      t.label = trimmed ? tidyUnitLabel(trimmed) || fallback : fallback;
+      this.cb.onChanged();
+    } finally {
+      this.renaming = false;
+      this.lastNameClick = null;
+    }
+  }
+
   private unitArt(t: Token): HTMLElement | null {
     const layers: string[] = [];
     if (t.kind === 'mech' && t.mech) {
@@ -253,10 +282,20 @@ export class SquadTracker {
         `Stance ${t.stance.toUpperCase()}${t.link !== undefined ? ` · Link ⚡${t.link}` : ''}`,
         `Grid ${String.fromCharCode(65 + Math.floor(t.col / 3))}${Math.floor(t.row / 3) + 1} · facing ${['North', 'East', 'South', 'West'][t.facing]}`,
         `${parts.filter(([, s]) => s === 'intact').length} intact, ${parts.filter(([, s]) => s === 'damaged').length} damaged, ${parts.filter(([, s]) => s === 'destroyed').length} destroyed`,
-        'Click to select this unit on the board.',
+        'Click to select this unit on the board. Double-click to rename it.',
       ],
     });
-    name.addEventListener('click', () => this.cb.onSelect(t.uid));
+    name.title = 'Click to select · double-click to rename';
+    name.addEventListener('click', () => {
+      const now = performance.now();
+      const again = this.lastNameClick?.uid === t.uid && now - this.lastNameClick.at < DOUBLE_CLICK_MS;
+      this.lastNameClick = again ? null : { uid: t.uid, at: now };
+      if (again) {
+        void this.rename(t);
+        return;
+      }
+      this.cb.onSelect(t.uid);
+    });
     head.appendChild(name);
 
     const headPts = document.createElement('span');

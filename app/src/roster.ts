@@ -160,15 +160,38 @@ export class Roster {
       return;
     }
     if (factions.length === 1) {
-      el.textContent = `${factions[0]} mech${unknown ? `, plus ${unknown} part${unknown === 1 ? '' : 's'} of unknown faction` : ''}`;
+      el.textContent = `${factions[0]} mech${
+        unknown ? `, plus ${unknown} part${unknown === 1 ? '' : 's'} of unknown faction` : ''
+      }. Parts and pilots from other factions are dimmed in the lists.`;
       return;
     }
     el.textContent = `Illegal: this mixes ${factions.join(' and ')}. A mech may only use parts from one faction.`;
   }
 
+  private lockedFaction(): string | null {
+    const { factions } = this.mechFactions();
+    return factions.length === 1 ? factions[0] : null;
+  }
+
+  private paintFactionLock(selects: HTMLSelectElement[]): void {
+    const locked = this.lockedFaction();
+    for (const sel of selects) {
+      for (const o of Array.from(sel.options)) {
+        if (!o.value) continue;
+        const card = this.data.byId.get(o.value);
+        const f = card ? this.data.factionOf(card) : null;
+        const off = !!locked && !!f && f !== locked;
+        o.classList.toggle('off-faction', off);
+        o.title = off ? `${f} card. This mech is locked to ${locked} by what you have already picked.` : '';
+      }
+      sel.classList.toggle('faction-locked', !!locked);
+    }
+  }
+
   private renderMechBuilder(): void {
     const wrap = document.createElement('div');
     wrap.className = 'mech-builder';
+    const selects: HTMLSelectElement[] = [];
     for (const slot of SLOTS) {
       const label = document.createElement('label');
       label.textContent = slot.label;
@@ -194,7 +217,9 @@ export class Roster {
         if (card) this.cb.onPreview(card, { focus: false });
         pts.textContent = this.pointsText();
         this.paintFaction(fac);
+        this.paintFactionLock(selects);
       });
+      selects.push(sel);
       label.appendChild(sel);
       wrap.appendChild(label);
     }
@@ -207,6 +232,7 @@ export class Roster {
     fac.className = 'mech-faction';
     wrap.appendChild(fac);
     this.paintFaction(fac);
+    this.paintFactionLock(selects);
 
     const btns = document.createElement('div');
     btns.className = 'mech-add-btns';

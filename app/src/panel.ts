@@ -194,7 +194,7 @@ export class Panel {
     if (available && isAttack && (a.redDice || a.yellowDice)) {
       const atk = document.createElement('button');
       atk.className = 'attack-btn';
-      atk.textContent = '⌖ Attack…';
+      atk.innerHTML = '<i class="btn-ico">⌖</i> Attack…';
       atk.title = 'Guided attack: click this, then click the target unit on the board';
       atk.addEventListener('click', () => {
         this.cb.onStartAttack(t, a.id);
@@ -218,7 +218,7 @@ export class Panel {
     if (available && t.kind === 'projectile' && a.type !== 'Passive') {
       const det = document.createElement('button');
       det.className = 'detonate-btn';
-      det.textContent = '💥 Detonate…';
+      det.innerHTML = '<i class="btn-ico">💥</i> Detonate…';
       det.title = (a.redDice || a.yellowDice)
         ? 'Resolve this projectile: pick a unit in range and deal Explosion damage'
         : 'Resolve this projectile: apply its effect to the units in range';
@@ -339,11 +339,15 @@ export class Panel {
     wrap.appendChild(stats);
 
     const traitDesc = card.traitDescription?.en || card.traitDescription?.zh;
-    if (card.trait || traitDesc) {
+    const hasTrait = !!card.trait?.trim();
+    if (hasTrait || traitDesc) {
       const trait = document.createElement('div');
-      trait.className = 'pilot-trait';
-      const zhName = card.trait ? ` <i>${card.trait}</i>` : '';
-      trait.innerHTML = `<b>Pilot Trait${zhName}</b>${traitDesc ? `<span>${traitDesc.replace(/^[·\s]+/, '')}</span>` : ''}`;
+      trait.className = `pilot-trait${hasTrait ? '' : ' pilot-flavour'}`;
+      const head = hasTrait ? `Pilot Trait <i>${card.trait}</i>` : 'No trait ability';
+      const body = hasTrait
+        ? traitDesc
+        : `${traitDesc}<em>This pilot has no trait ability. The line above is card flavour text.</em>`;
+      trait.innerHTML = `<b>${head}</b>${traitDesc ? `<span>${body!.replace(/^[·\s]+/, '')}</span>` : ''}`;
       wrap.appendChild(trait);
     }
 

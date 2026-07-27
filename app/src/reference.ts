@@ -238,11 +238,15 @@ function cardDetail(c: Card): string {
       </div>`;
     })
     .join('');
+  const traitName = c.trait?.trim();
+  const traitText = c.traitDescription?.en || c.traitDescription?.zh || '';
   const trait =
-    c.trait || c.traitDescription
-      ? `<div class="ref-trait"><b>Pilot Trait${c.trait ? ` <i>${esc(c.trait)}</i>` : ''}</b><p>${linkKeywords(
-          c.traitDescription?.en || c.traitDescription?.zh || '',
-        )}</p></div>`
+    traitName || traitText
+      ? `<div class="ref-trait${traitName ? '' : ' ref-flavour'}"><b>${
+          traitName ? `Pilot Trait <i>${esc(traitName)}</i>` : 'No trait ability'
+        }</b><p>${linkKeywords(traitText)}</p>${
+          traitName ? '' : '<p class="ref-note">This pilot has no trait ability. The line above is card flavour text.</p>'
+        }</div>`
       : '';
   const boxes = (c.containedIn ?? [])
     .map((b) => data.boxes.find((x) => x.key === b.box))

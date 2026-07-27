@@ -426,7 +426,7 @@ async function init() {
       return;
     }
     body.innerHTML = `<div class="attack-helper">
-      <div class="ah-head"><b>💥 ${escapeHtml(detonateHeading(name, proj.label))}</b>
+      <div class="ah-head"><b><i class="btn-ico">💥</i> ${escapeHtml(detonateHeading(name, proj.label))}</b>
         <span class="dim">R${range} from ${escapeHtml(proj.label)}</span></div>
       <p class="ah-los">Explosion damage ignores line of sight and facing, and the defender gets
         no Terrain or Unit Protection. Only the defender may spend Link to Focus.</p>
@@ -497,7 +497,7 @@ async function init() {
 
     const draw = (): void => {
       body.innerHTML = `<div class="attack-helper">
-        <div class="ah-head"><b>💥 ${escapeHtml(detonateHeading(name, proj.label))}</b>
+        <div class="ah-head"><b><i class="btn-ico">💥</i> ${escapeHtml(detonateHeading(name, proj.label))}</b>
           <span class="dim">${range === 0 ? 'this grid' : `R${range}`} from ${escapeHtml(proj.label)}</span></div>
         <p class="ah-los">${escapeHtml(text)}</p>
         <div class="ah-step">
@@ -1723,11 +1723,17 @@ async function init() {
   });
 
   document.getElementById('btn-clear')!.addEventListener('click', async () => {
-    if (!state.tokens.length && !state.markers?.length) return;
+    if (!state.tokens.length && !state.markers?.length && !state.zoneSet) return;
     const n = state.tokens.length;
+    const bits = [
+      n ? `${n} unit${n === 1 ? '' : 's'}` : '',
+      state.markers?.length ? 'all objective markers' : '',
+      state.zoneSet ? `the ${zoneSetLabel(state.zoneSet)} overlay` : '',
+    ].filter(Boolean);
+    const removes = bits.length > 1 ? `${bits.slice(0, -1).join(', ')} and ${bits[bits.length - 1]}` : bits[0];
     const ok = await confirmDialog({
       title: 'Clear the board?',
-      body: `This removes ${n} unit${n === 1 ? '' : 's'} and all objective markers, and puts the round track back to Round 1 of 5. Terrain and the chosen map are kept.`,
+      body: `This removes ${removes}. The round track goes back to Round 1 of 5, and terrain and the chosen map are kept.`,
       confirmLabel: 'Clear board',
       danger: true,
     });
@@ -1739,6 +1745,9 @@ async function init() {
     state.commandTokens = { blue: 0, red: 0 };
     state.roundLimit = 5;
     state.scale = 'standard';
+    state.zoneSet = '';
+    state.showZones = false;
+    state.mission = undefined;
     selectToken(null);
     renderAll();
   });
