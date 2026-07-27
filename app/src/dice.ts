@@ -120,6 +120,70 @@ export class DiceTray {
     }, 55);
   }
 
+  showGroups(groups: { label: string; roll: { color: DieColor; face: number }[] }[]): void {
+    if (this.animTimer) clearInterval(this.animTimer);
+    this.root.classList.remove('rolling');
+    this.pool = {};
+    this.rolled = [];
+    const section = (g: { label: string; roll: { color: DieColor; face: number }[] }) => {
+      const dice = g.roll
+        .map((d) => {
+          const face = this.dice.dice[d.color].faces[d.face];
+          const icons = face.length ? face.map((ic) => iconSvg(ic)).join('') : '<span class="blank">·</span>';
+          return `<span class="die die-${d.color}">${icons}</span>`;
+        })
+        .join('');
+      const counts = new Map<string, number>();
+      for (const d of g.roll) {
+        for (const icon of this.dice.dice[d.color].faces[d.face]) {
+          const key = icon.type === 'part' ? `→ ${PART_SHORT[icon.part ?? 'any']}` : `${icon.hollow ? 'hollow ' : ''}${ICON_LABEL[icon.type] ?? icon.type}`;
+          counts.set(key, (counts.get(key) ?? 0) + 1);
+        }
+      }
+      const totals = [...counts.entries()].map(([k, v]) => `<span class="total-chip">${v}× ${k}</span>`).join('');
+      return `<div class="tray-group">
+        <div class="tray-group-head">${g.label}</div>
+        <div class="tray-results">${dice}</div>
+        ${totals ? `<div class="totals">${totals}</div>` : ''}
+      </div>`;
+    };
+    this.root.innerHTML = `<div class="tray-versus">${groups.map(section).join('<div class="tray-vs">vs</div>')}</div>`;
+  }
+
+  showFixed(dice: { color: DieColor; face: number }[], animate = true): void {
+    this.pool = {};
+    for (const d of dice) this.pool[d.color] = (this.pool[d.color] ?? 0) + 1;
+    this.rolled = dice.map((d) => ({ color: d.color, face: d.face, selected: false }));
+    this.rerollUsed = { blue: true, red: true };
+    if (!animate) {
+      this.render();
+      return;
+    }
+    const want = this.rolled.map((d) => d.face);
+    if (this.animTimer) clearInterval(this.animTimer);
+    let ticks = 0;
+    this.root.classList.add('rolling');
+    this.animTimer = window.setInterval(() => {
+      ticks++;
+      this.rolled.forEach((d, i) => {
+        d.face = ticks < 6 ? this.randomFace(d.color) : want[i];
+      });
+      this.render();
+      if (ticks >= 6) {
+        clearInterval(this.animTimer);
+        this.root.classList.remove('rolling');
+      }
+    }, 55);
+  }
+
+  clear(): void {
+    if (this.animTimer) clearInterval(this.animTimer);
+    this.root.classList.remove('rolling');
+    this.pool = {};
+    this.rolled = [];
+    this.render();
+  }
+
   private rerollSelected(player: 'blue' | 'red'): void {
     if (this.rerollUsed[player]) return;
     const sel = this.rolled.filter((d) => d.selected);

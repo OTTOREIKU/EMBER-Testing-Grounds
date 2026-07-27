@@ -4,6 +4,8 @@ import { SCALES, type BattleScale, type GameState, type Side } from './types';
 
 export const PHASES = ['Command', 'Planning', 'Action', 'Automatic', 'Delay', 'End'] as const;
 
+const ROUND_CHOICES = [3, 4, 5, 6, 8];
+
 type Phase = (typeof PHASES)[number];
 
 const PHASE_INFO: Record<Phase, { sub: string; lines: string[] }> = {
@@ -123,17 +125,24 @@ export class RoundTracker {
     const phaseName = PHASES[s.round.phase];
     const scale = s.scale ?? 'standard';
     const limit = s.roundLimit ?? 5;
+    const over = s.round.n > limit;
     this.root.innerHTML = `
-      <span class="rt-round${s.round.n > limit ? ' over' : ''}">R${s.round.n}<small>/${limit}</small></span>
+      <span class="rt-round${over ? ' over' : ''}">R${s.round.n}<small>/${limit}</small></span>
       <div class="rt-controls">
       <select id="rt-scale" class="rt-scale">
         ${SCALES.map((sc) => `<option value="${sc.id}"${sc.id === scale ? ' selected' : ''}>${sc.name} ${sc.points}${sc.openEnded ? '+' : ''}p</option>`).join('')}
       </select>
+      <select id="rt-limit" class="rt-scale" title="Game length in rounds">
+        ${ROUND_CHOICES.map((n) => `<option value="${n}"${n === limit ? ' selected' : ''}>${n} rounds</option>`).join('')}
+      </select>
+      ${s.round.n > 1 || s.round.phase > 0 ? '<button id="rt-reset" class="rt-scale" title="Back to Round 1, Command Phase">↺</button>' : ''}
       <span class="rt-phases">
         ${PHASES.map((p, i) => `<button class="rt-phase${i === s.round.phase ? ' active' : ''}" data-i="${i}">${p}</button>`).join('')}
       </span>
-      <button id="rt-next">${s.round.phase === PHASES.length - 1 ? `End round ${s.round.n} ▸` : 'Next phase ▸'}</button>
-      <span class="rt-first side-${s.round.firstPlayer}" title="First Player (flips every round)">1st: ${SIDE_LABEL[s.round.firstPlayer]}</span>
+      <button id="rt-next">${
+        s.round.phase === PHASES.length - 1 ? (s.round.n >= limit ? `Extra round ${s.round.n + 1} ▸` : `End round ${s.round.n} ▸`) : 'Next phase ▸'
+      }</button>
+      <span class="rt-first side-${s.round.firstPlayer}">1st: ${SIDE_LABEL[s.round.firstPlayer]}</span>
       <span class="rt-cmd">
         CMD
         ${(['blue', 'red'] as Side[])
@@ -154,14 +163,60 @@ export class RoundTracker {
       s.scale = scaleSel.value as BattleScale;
       this.onChanged();
     });
+    const limitSel = this.root.querySelector<HTMLSelectElement>('#rt-limit')!;
+    inspectOnHover(limitSel, {
+      title: 'Game length',
+      sub: `${limit} rounds`,
+      lines: [
+        'A standard game runs 5 rounds, then it ends and you total Victory Points.',
+        'The rulebook sets the same 5 rounds for every battle scale. Skirmish, Standard and Large differ only in the points you may spend, not in how long the game lasts.',
+        'Loading a scenario sets this to that scenario’s printed length, so change it back here when you go back to a normal game.',
+      ],
+    });
+    limitSel.addEventListener('change', () => {
+      s.roundLimit = Number(limitSel.value);
+      this.onChanged();
+    });
+
+    const resetBtn = this.root.querySelector<HTMLButtonElement>('#rt-reset');
+    if (resetBtn) {
+      inspectOnHover(resetBtn, {
+        title: 'Restart the round track',
+        sub: 'Back to Round 1, Command Phase',
+        lines: [
+          'Sets the round number back to 1 and the phase back to Command, and clears both Command Token pools.',
+          'Units, damage and positions on the board are left exactly as they are.',
+        ],
+      });
+      resetBtn.addEventListener('click', () => {
+        s.round.n = 1;
+        s.round.phase = 0;
+        s.commandTokens = { blue: 0, red: 0 };
+        this.onChanged();
+      });
+    }
+
     const roundEl = this.root.querySelector<HTMLElement>('.rt-round')!;
     inspectOnHover(roundEl, {
       title: `Round ${s.round.n} of ${limit}`,
-      sub: 'Game length',
+      sub: over ? 'Past the agreed length' : 'Game length',
       lines: [
-        'A standard game runs 5 rounds, then the game ends and you total Victory Points.',
-        'The rulebook sets the same 5 rounds for every battle scale. Skirmish, Standard and Large differ only in the points you may spend, not in how long the game lasts.',
-        'Scenarios override this with their own printed round count, which is why loading one can change the number here.',
+        over
+          ? `This game was set to ${limit} rounds and is now on round ${s.round.n}. Nothing stops you playing on, but the printed game ended at ${limit}. Use the round selector to change the length, or the reset button to start the track again.`
+          : 'A standard game runs 5 rounds, then it ends and you total Victory Points.',
+        'The dropdown beside this sets the length. Loading a scenario overrides it with that scenario’s printed count.',
+      ],
+    });
+
+    const other: Side = s.round.firstPlayer === 'blue' ? 'red' : 'blue';
+    inspectOnHover(this.root.querySelector<HTMLElement>('.rt-first')!, {
+      title: `First Player: ${SIDE_LABEL[s.round.firstPlayer]}`,
+      sub: 'Who goes first, not who owns the phase',
+      lines: [
+        'A phase is not one side’s turn. Both sides act inside every phase, and the First Player simply goes first each time.',
+        `So in this round's Command Phase, ${SIDE_LABEL[s.round.firstPlayer]} issues a Command, then ${SIDE_LABEL[other]} does, and you keep alternating until nobody has tokens left to spend.`,
+        'The Action Phase is the exception to strict alternation: Mechs there activate in Timing order, and the First Player only decides ties between Mechs sharing a timing.',
+        'It flips at the end of every round, so the side that moved second last round moves first this one.',
       ],
     });
 

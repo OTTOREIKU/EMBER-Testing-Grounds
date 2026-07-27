@@ -24,11 +24,12 @@ import { Panel } from './panel';
 import { Roster } from './roster';
 import { inArc, losBetween, rangeBetween, reachableGrids } from './rules';
 import { instantiateScenario, loadScenarios, type Scenario } from './scenarios';
+import { loadReplays, ReplayPlayer, type ReplayScript, type ReplayStep, type ReplayTally } from './replay';
 import { SquadTracker } from './squads';
 import { warmAllImagesWhenIdle } from './images';
 import { watchForUpdates } from './updates';
 import { installTooltip, preloadCards } from './tooltip';
-import { RoundTracker } from './tracker';
+import { PHASES, RoundTracker } from './tracker';
 import type { DiceData, Facing, GameState, MechLoadout, Side, TerrainPiece, Token } from './types';
 import { SCALES, STATUSES } from './types';
 import { factionProblems, makeDroneToken, makeMechToken, migrateState, tokenCards } from './units';
@@ -48,6 +49,7 @@ async function init() {
     commandTokens: { blue: 0, red: 0 },
   };
   let selectedUid: number | null = null;
+  let replayActive = false;
   let pendingAttack: { attackerUid: number; actionId: string } | null = null;
   const editor: {
     active: boolean;
@@ -1018,6 +1020,7 @@ async function init() {
   }
 
   function save(): void {
+    if (replayActive) return;
     localStorage.setItem(SAVE_KEY, JSON.stringify(state));
   }
 
@@ -1466,6 +1469,7 @@ async function init() {
   // ---------- scenarios ----------
 
   const scenarios = await loadScenarios();
+  const replays = await loadReplays();
 
   function scenarioBriefing(scn: Scenario): HTMLElement {
     const div = document.createElement('div');
@@ -1484,6 +1488,161 @@ async function init() {
     return div;
   }
 
+  // ---------- scripted replay ----------
+
+  const replayBar = document.getElementById('replay-bar')!;
+  let replay: ReplayPlayer | null = null;
+  let beforeReplay: string | null = null;
+
+  function replayNarration(script: ReplayScript, step: ReplayStep | null, tally: ReplayTally): HTMLElement {
+    const div = document.createElement('div');
+    div.className = 'scn-brief rp-brief';
+    if (!step) {
+      div.innerHTML = `<h3>${escapeHtml(script.title)}</h3>${(script.intro ?? []).map((p) => `<p>${escapeHtml(p)}</p>`).join('')}
+        <p class="dim">Press play, or step through one beat at a time.</p>`;
+      return div;
+    }
+    const vp = `<p class="rp-vp"><b>VP</b> <span class="rp-red">Red ${tally.vp.red}</span> · <span class="rp-blue">Blue ${tally.vp.blue}</span></p>`;
+    div.innerHTML = `<h3>${escapeHtml(step.title)}</h3>
+      <p class="dim">Round ${step.round} · ${PHASES[step.phase] ?? ''} Phase</p>
+      ${(step.say ?? []).map((p) => `<p>${escapeHtml(p)}</p>`).join('')}
+      ${step.dice?.reading ? `<p class="rp-read"><b>Reading the dice.</b> ${escapeHtml(step.dice.reading)}</p>` : ''}
+      ${tally.scored.length ? vp : ''}`;
+    return div;
+  }
+
+  function renderReplayBar(): void {
+    if (!replay) {
+      replayBar.hidden = true;
+      return;
+    }
+    const r = replay;
+    const at = r.index;
+    const step = at >= 0 ? r.script.steps[at] : null;
+    replayBar.hidden = false;
+    replayBar.innerHTML = `
+      <b>DEMO</b>
+      <div class="ed-line">
+        <button id="rp-prev" title="Previous step"${at < 0 ? ' disabled' : ''}>◀</button>
+        <button id="rp-play" class="ed-primary" title="${r.playing ? 'Pause' : 'Play'}">${r.playing ? '❚❚ Pause' : '▶ Play'}</button>
+        <button id="rp-next" title="Next step"${at >= r.total - 1 ? ' disabled' : ''}>▶❙</button>
+        <span class="rp-pos">${at + 1} / ${r.total}</span>
+        <span class="rp-where">${step ? `R${step.round} · ${PHASES[step.phase] ?? ''}` : 'ready'}</span>
+        <span class="ed-gap"></span>
+        <label class="rp-speed">Speed
+          <select id="rp-speed">
+            <option value="5000"${r.stepSpeed === 5000 ? ' selected' : ''}>Slow</option>
+            <option value="3200"${r.stepSpeed === 3200 ? ' selected' : ''}>Normal</option>
+            <option value="1800"${r.stepSpeed === 1800 ? ' selected' : ''}>Brisk</option>
+          </select>
+        </label>
+        <button id="rp-restart" title="Back to the start">↺ Restart</button>
+        <button id="rp-exit">Exit demo</button>
+      </div>`;
+    replayBar.querySelector('#rp-prev')!.addEventListener('click', () => r.prev());
+    replayBar.querySelector('#rp-next')!.addEventListener('click', () => {
+      r.pause();
+      r.next();
+      renderReplayBar();
+    });
+    replayBar.querySelector('#rp-play')!.addEventListener('click', () => {
+      if (r.playing) r.pause();
+      else r.play();
+      renderReplayBar();
+    });
+    replayBar.querySelector('#rp-restart')!.addEventListener('click', () => {
+      r.pause();
+      r.goto(-1);
+      tray.clear();
+      document.getElementById('details-body')!.replaceChildren(replayNarration(r.script, null, r.tally));
+      renderReplayBar();
+    });
+    replayBar.querySelector('#rp-exit')!.addEventListener('click', () => stopReplay());
+    replayBar.querySelector<HTMLSelectElement>('#rp-speed')!.addEventListener('change', (ev) => {
+      r.setSpeed(Number((ev.target as HTMLSelectElement).value));
+      renderReplayBar();
+    });
+  }
+
+  function startReplay(scn: Scenario, script: ReplayScript): void {
+    if (editor.active) exitEditor();
+    beforeReplay = JSON.stringify(state);
+    replayActive = true;
+    const result = instantiateScenario(scn, state, data);
+    state.tokens = result.tokens;
+    state.markers = result.markers;
+    state.sideNames = result.sideNames;
+    state.map = result.mapKey;
+    state.removedTerrain = [];
+    state.round = { n: 1, phase: 0, firstPlayer: 'blue' };
+    state.commandTokens = { blue: 0, red: 0 };
+    state.scale = 'skirmish';
+    state.roundLimit = scn.rounds ?? 3;
+    selectedUid = null;
+    populateMapSelect();
+    board.panEnabled = true;
+
+    replay = new ReplayPlayer(script, state, data, {
+      onState: () => {
+        board.renderTokens(state);
+        board.renderMarkers(state.markers ?? []);
+        squadTracker.update(state, null);
+        roundTracker.update(state);
+      },
+      onStep: (step, _i, _n, tally) => {
+        document.getElementById('details-body')!.replaceChildren(replayNarration(script, step, tally));
+        showSideTab('details');
+        if (step.dice?.groups?.length) tray.showGroups(step.dice.groups);
+        else if (step.dice?.roll?.length) tray.showFixed(step.dice.roll);
+        else tray.clear();
+        const first = (step.focus ?? [])[0];
+        if (first) {
+          const t = state.tokens.find((x) => {
+            const raw = first.includes(':') ? first.split(':')[1] : first;
+            const side = first.includes(':') ? first.split(':')[0] : null;
+            return (!side || x.side === side) && x.label.toLowerCase().includes(raw.trim().toLowerCase());
+          });
+          board.setSelected(t?.uid ?? null);
+        } else {
+          board.setSelected(null);
+        }
+        renderReplayBar();
+      },
+      onFinish: () => {
+        document.getElementById('details-body')!.replaceChildren(replayNarration(script, null, replay!.tally));
+        renderReplayBar();
+      },
+    });
+    renderAll();
+    replay.goto(-1);
+    tray.clear();
+    document.getElementById('details-body')!.replaceChildren(replayNarration(script, null, replay.tally));
+    showSideTab('details');
+    renderReplayBar();
+    document.body.classList.add('replaying');
+  }
+
+  function stopReplay(): void {
+    replay?.stop();
+    replay = null;
+    replayActive = false;
+    replayBar.hidden = true;
+    document.body.classList.remove('replaying');
+    tray.clear();
+    board.setSelected(null);
+    if (beforeReplay) {
+      const prior = migrateState(JSON.parse(beforeReplay), data);
+      if (prior) state = prior;
+      beforeReplay = null;
+    }
+    selectedUid = null;
+    populateMapSelect();
+    panel.clear();
+    document.getElementById('details-body')!.replaceChildren();
+    showSideTab('squad');
+    renderAll();
+  }
+
   document.getElementById('btn-scenarios')!.addEventListener('click', () => {
     document.getElementById('scn-dialog')?.remove();
     const dlg = document.createElement('div');
@@ -1496,6 +1655,7 @@ async function init() {
         .map(
           (s, i) => `<div class="scn-row">
             <div class="scn-info"><b>${s.name}</b><br><span class="dim">${s.subtitle ?? ''}</span></div>
+            ${replays.some((r) => r.scenarioId === s.id) ? `<button data-i="${i}" class="scn-watch" title="Watch this game played out step by step">▶ Watch</button>` : ''}
             <button data-i="${i}" class="scn-load">Load</button>
           </div>`,
         )
@@ -1505,6 +1665,23 @@ async function init() {
       if (ev.target === dlg) dlg.remove();
     });
     dlg.querySelector('#scn-close')!.addEventListener('click', () => dlg.remove());
+    dlg.querySelectorAll<HTMLButtonElement>('.scn-watch').forEach((b) =>
+      b.addEventListener('click', async () => {
+        const scn = scenarios[Number(b.dataset.i)];
+        const script = replays.find((r) => r.scenarioId === scn.id);
+        if (!script) return;
+        if (state.tokens.length) {
+          const ok = await confirmDialog({
+            title: `Watch "${script.title}"?`,
+            body: 'This replaces whatever is on the board with the scenario setup, then plays the game out step by step.',
+            confirmLabel: 'Watch it',
+          });
+          if (!ok) return;
+        }
+        dlg.remove();
+        startReplay(scn, script);
+      }),
+    );
     dlg.querySelectorAll<HTMLButtonElement>('.scn-load').forEach((b) =>
       b.addEventListener('click', async () => {
         const scn = scenarios[Number(b.dataset.i)];
@@ -1524,6 +1701,7 @@ async function init() {
         state.removedTerrain = [];
         state.round = { n: 1, phase: 0, firstPlayer: 'blue' };
         state.commandTokens = { blue: 0, red: 0 };
+        state.roundLimit = scn.rounds ?? 5;
         selectedUid = null;
         populateMapSelect();
         renderAll();
@@ -1549,7 +1727,7 @@ async function init() {
     const n = state.tokens.length;
     const ok = await confirmDialog({
       title: 'Clear the board?',
-      body: `This removes ${n} unit${n === 1 ? '' : 's'} and all objective markers. Terrain and the chosen map are kept.`,
+      body: `This removes ${n} unit${n === 1 ? '' : 's'} and all objective markers, and puts the round track back to Round 1 of 5. Terrain and the chosen map are kept.`,
       confirmLabel: 'Clear board',
       danger: true,
     });
@@ -1557,6 +1735,10 @@ async function init() {
     state.tokens = [];
     state.markers = [];
     state.sideNames = {};
+    state.round = { n: 1, phase: 0, firstPlayer: 'blue' };
+    state.commandTokens = { blue: 0, red: 0 };
+    state.roundLimit = 5;
+    state.scale = 'standard';
     selectToken(null);
     renderAll();
   });

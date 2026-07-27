@@ -1,0 +1,1277 @@
+{
+ "_comment": "Scripted play-throughs. Every position, range and line of sight in these scripts was checked against the app's own rules engine (rangeBetween / losBetween) using the scenario's real terrain, and every stat quoted comes from data/cards.json. Dice are fixed: each entry is a face index into data/dice.json, so the icons shown are real faces of that die.",
+ "_dice": "red 0-3 Heavy Hit, 4-5 hollow Heavy Hit, 6 Lightning, 7 Eye. yellow 0-1 two Light Hits, 2-3 Light Hit, 4 hollow Light Hit, 5 Lightning, 6 Eye, 7 blank. white 0 Defense, 1-2 two hollow Defense, 3 Dodge, 4-5 Lightning, 6 Eye, 7 blank. blue 0-1 Dodge, 2-3 Eye, 4 Lightning, 5-7 blank. black 0 Torso, 1 Chassis, 2 L.Arm, 3 R.Arm, 4 Backpack, 5 attacker chooses.",
+ "replays": [
+  {
+   "id": "rdl-core-demo",
+   "scenarioId": "rdl-core-box-demo",
+   "title": "RDL Core Box Demo, played through",
+   "intro": [
+    "A complete three-round game, resolved step by step with every dice roll shown. The rolls are fixed rather than random, so the same situations occur on every viewing.",
+    "Two identical RDL forces of 366 points. Red deploys west, Blue east. Each side fields two M.A.P.s and one Hyena missile drone.",
+    "Board on the right, dice tray on the left, commentary here. Step forward and back with the controls above the board."
+   ],
+   "steps": [
+    {
+     "round": 1,
+     "phase": 0,
+     "title": "The board",
+     "say": [
+      "Six units on a 12 by 12 field of large grids. Red deploys on the west edge, Blue on the east.",
+      "Terrain: 3-inch buildings at F6 and G7, 3-inch walls at E5, H5, E8 and H8. All four block line of sight.",
+      "The consequence is that no line of sight crosses the centre. Row 4 and row 9 are the only clear lanes across the board, and the four relay markers at F4, G4, F9 and G9 sit inside them.",
+      "The two control markers at F7 and G6 sit within the blocked area. They score for presence rather than for shooting, which is what makes them worth contesting."
+     ],
+     "do": [
+      {
+       "op": "first",
+       "side": "red"
+      }
+     ]
+    },
+    {
+     "round": 1,
+     "phase": 0,
+     "title": "Command Phase",
+     "say": [
+      "Each Mech generates 1 Command Token. Both sides field two Mechs, so both start with 2.",
+      "Players alternate spending 1 token to issue a Command to one Drone, beginning with the First Player. A commanded Drone resolves immediately.",
+      "Red is First Player this round. Unspent tokens are removed at the end of the phase and do not carry over."
+     ],
+     "do": [
+      {
+       "op": "cmd",
+       "side": "red",
+       "n": 2
+      },
+      {
+       "op": "cmd",
+       "side": "blue",
+       "n": 2
+      }
+     ]
+    },
+    {
+     "round": 1,
+     "phase": 0,
+     "title": "Red commands its Hyena",
+     "focus": [
+      "red:Hyena"
+     ],
+     "say": [
+      "Red spends 1 token. The DTG-30S Hyena Missile Type has Move 5.",
+      "It moves B6 to C9, a distance of 4, into the southern lane.",
+      "Red fields only one Drone, so the second token has no legal target and is removed."
+     ],
+     "do": [
+      {
+       "op": "move",
+       "unit": "red:Hyena",
+       "to": "C9"
+      }
+     ]
+    },
+    {
+     "round": 1,
+     "phase": 0,
+     "title": "Blue commands its Hyena",
+     "say": [
+      "Blue spends 1 token to move its Hyena from K7 to J9, a distance of 3.",
+      "A commanded Drone performs either 1 Movement Action or 1 Command Action, not both, so neither Drone has launched this round.",
+      "All unspent Command Tokens are now removed."
+     ],
+     "focus": [
+      "blue:Hyena"
+     ],
+     "do": [
+      {
+       "op": "move",
+       "unit": "blue:Hyena",
+       "to": "J9"
+      },
+      {
+       "op": "cmd",
+       "side": "red",
+       "n": 0
+      },
+      {
+       "op": "cmd",
+       "side": "blue",
+       "n": 0
+      }
+     ]
+    },
+    {
+     "round": 1,
+     "phase": 1,
+     "title": "Planning Phase",
+     "say": [
+      "Each Mech sets its Timing Dial face down, then both players reveal simultaneously.",
+      "All four Mechs select Movement. No unit is within weapon range of an enemy.",
+      "The dial fixes both the activation order and the permitted action type. A Mech set to Movement cannot perform a Firing Action this round."
+     ]
+    },
+    {
+     "round": 1,
+     "phase": 2,
+     "title": "Action Phase, Movement timing",
+     "say": [
+      "Activation order follows the timing sequence: Swift, Melee, Projectile, Firing, Movement, Tactical.",
+      "All four Mechs are on Movement, so they resolve in that step. Within a step, ties are broken by Pilot Initiative and then by the First Player.",
+      "Each activation provides 1 Maneuver Tick followed by 2 Action Ticks. One grid of movement costs the Maneuver Tick; a Move Action printed on the chassis card costs Action Ticks."
+     ]
+    },
+    {
+     "round": 1,
+     "phase": 2,
+     "title": "Red Fire Support takes the north lane",
+     "focus": [
+      "Fire Support"
+     ],
+     "say": [
+      "Maneuver Tick: A5 to A4.",
+      "Move Action: RL-08 Armored Chassis, Jet Dash, Range 3, with [Moving in Straight Line] granting +2 grids. A4 to D4 is 3 grids due east.",
+      "Final position D4, in the clear northern lane. Armament is the R-20 Shoulder-Mounted Railgun in the left arm and the AC-150 HMG in the right."
+     ],
+     "do": [
+      {
+       "op": "move",
+       "unit": "Fire Support",
+       "to": "D4"
+      },
+      {
+       "op": "face",
+       "unit": "Fire Support",
+       "dir": "E"
+      }
+     ]
+    },
+    {
+     "round": 1,
+     "phase": 2,
+     "title": "Blue Bulwark mirrors it",
+     "focus": [
+      "Bulwark Heavy"
+     ],
+     "say": [
+      "Blue performs the same sequence: Maneuver L5 to L4, then Jet Dash 3 grids west to I4.",
+      "D4 to I4 measures range 5 with clear line of sight, checked against the terrain layout.",
+      "Both units are heavy weapon platforms holding an open lane. Either can fire on the other next round without repositioning, which also qualifies them for their [Stationary] bonuses."
+     ],
+     "do": [
+      {
+       "op": "move",
+       "unit": "Bulwark Heavy",
+       "to": "I4"
+      },
+      {
+       "op": "face",
+       "unit": "Bulwark Heavy",
+       "dir": "W"
+      }
+     ]
+    },
+    {
+     "round": 1,
+     "phase": 2,
+     "title": "Both skirmishers go south",
+     "focus": [
+      "Support Skirmisher",
+      "Missile / Brawler"
+     ],
+     "say": [
+      "Red Support Skirmisher: Maneuver A8 to A9, then RL-06 Standard Chassis Sprint, Range 4, three grids east to D9.",
+      "Blue Missile / Brawler: Maneuver L8 to L9, then Sprint three grids west to I9.",
+      "Southern lane occupancy is now Red at C9 and D9, Blue at I9 and J9. Line of sight along row 9 is clear end to end."
+     ],
+     "do": [
+      {
+       "op": "move",
+       "unit": "Support Skirmisher",
+       "to": "D9"
+      },
+      {
+       "op": "face",
+       "unit": "Support Skirmisher",
+       "dir": "E"
+      },
+      {
+       "op": "move",
+       "unit": "Missile / Brawler",
+       "to": "I9"
+      },
+      {
+       "op": "face",
+       "unit": "Missile / Brawler",
+       "dir": "W"
+      }
+     ]
+    },
+    {
+     "round": 1,
+     "phase": 3,
+     "title": "Automatic Phase",
+     "say": [
+      "Drones not commanded during the Command Phase act here, forced to target the nearest enemy.",
+      "Both Drones were commanded, so neither acts again. A Drone acts once per round either way; the Command Token buys control over which action it takes."
+     ]
+    },
+    {
+     "round": 1,
+     "phase": 4,
+     "title": "Delay Phase",
+     "say": [
+      "No projectiles or deployables are on the board, so nothing resolves. This phase exists for delayed actions such as missile detonation."
+     ]
+    },
+    {
+     "round": 1,
+     "phase": 5,
+     "title": "End Phase, and nobody scores",
+     "say": [
+      "Sequence: remove Mechs at 2 or fewer Parts, remove Red tokens, flip Yellow tokens, remove all Command Tokens, then score.",
+      "Centre presence requires a M.A.P. on or adjacent to F7 or G6. Relay pressure requires a M.A.P. on or adjacent to a relay marker. Drones do not satisfy either condition.",
+      "D4 and I4 are 3 grids from the nearest relay. D9 and I9 are 2 grids from F9 and G9. Neither condition is met by either side.",
+      "Score after round 1: Red 0, Blue 0. First Player passes to Blue."
+     ],
+     "do": [
+      {
+       "op": "first",
+       "side": "blue"
+      }
+     ]
+    },
+    {
+     "round": 2,
+     "phase": 0,
+     "title": "Round 2, Command Phase",
+     "say": [
+      "Both sides generate 2 Command Tokens. Blue is First Player and commands first.",
+      "Blue moves its Hyena from J9 to H9, a distance of 2.",
+      "Red moves its Hyena from C9 to F9, a distance of 3, onto a relay marker. A Drone on a relay does not score relay pressure, but it does contest the space."
+     ],
+     "do": [
+      {
+       "op": "cmd",
+       "side": "red",
+       "n": 2
+      },
+      {
+       "op": "cmd",
+       "side": "blue",
+       "n": 2
+      },
+      {
+       "op": "move",
+       "unit": "red:Hyena",
+       "to": "F9"
+      },
+      {
+       "op": "move",
+       "unit": "blue:Hyena",
+       "to": "H9"
+      },
+      {
+       "op": "cmd",
+       "side": "red",
+       "n": 0
+      },
+      {
+       "op": "cmd",
+       "side": "blue",
+       "n": 0
+      }
+     ]
+    },
+    {
+     "round": 2,
+     "phase": 1,
+     "title": "Planning Phase",
+     "say": [
+      "Dials this round: Red Fire Support on Firing, Blue Bulwark on Firing, Blue Missile / Brawler on Projectile, Red Support Skirmisher on Movement.",
+      "Projectile resolves before Firing in the timing sequence, so the missile launches before either Mech fires. Timing selection controls sequencing as much as it controls the action."
+     ]
+    },
+    {
+     "round": 2,
+     "phase": 2,
+     "title": "Projectile timing: Blue launches",
+     "focus": [
+      "Missile / Brawler"
+     ],
+     "say": [
+      "ML-34 Quad Missile Rack: Projectile action, Range 3, Volley 2, Fire in arc, 4 missiles stored.",
+      "Blue launches 1 MC-3 Razor Missile from I9 to F9, a distance of 3, within the forward arc. Red's Hyena occupies F9.",
+      "The missile is placed on the board as a unit. Its Guided Attack is a Delay action, so it resolves in the Delay Phase rather than now.",
+      "Launching consumes 1 Ammo Token from the rack, flipped face down."
+     ],
+     "do": [
+      {
+       "op": "spawn",
+       "cardId": "071",
+       "side": "blue",
+       "at": "F9",
+       "label": "Razor Missile",
+       "parent": "Missile / Brawler"
+      }
+     ]
+    },
+    {
+     "round": 2,
+     "phase": 2,
+     "title": "Firing timing: Blue shoots first",
+     "focus": [
+      "Bulwark Heavy",
+      "Fire Support"
+     ],
+     "say": [
+      "Blue is First Player, so the Bulwark Heavy activates first.",
+      "AC-150 HMG, Full-auto: Range 8, 5 Yellow Dice, with [Stationary] +1 Yellow and the Suppression keyword.",
+      "The Bulwark has not moved this round, so [Stationary] applies, giving 6 Yellow Dice.",
+      "Target is Red's Fire Support at D4, range 5, clear line of sight. Blue is in Offensive Stance, which converts hollow attack icons to solid."
+     ]
+    },
+    {
+     "round": 2,
+     "phase": 2,
+     "title": "Which Part gets hit",
+     "focus": [
+      "Fire Support"
+     ],
+     "dice": {
+      "note": "Black Die: hit location",
+      "roll": [
+       {
+        "color": "black",
+        "face": 1
+       }
+      ],
+      "reading": "Chassis. The shot lands on the RL-08 Armored Chassis: Armor 6, Structure 1."
+     },
+     "say": [
+      "Rulebook 4.4 step 2: the Black Die determines the Part before any attack dice are rolled.",
+      "Result is Chassis. The target Part is the RL-08 Armored Chassis, Armor 6, Structure 1."
+     ]
+    },
+    {
+     "round": 2,
+     "phase": 2,
+     "title": "Blue's attack roll",
+     "dice": {
+      "note": "6 Yellow, AC-150 HMG Full-auto",
+      "roll": [
+       {
+        "color": "yellow",
+        "face": 0
+       },
+       {
+        "color": "yellow",
+        "face": 2
+       },
+       {
+        "color": "yellow",
+        "face": 3
+       },
+       {
+        "color": "yellow",
+        "face": 4
+       },
+       {
+        "color": "yellow",
+        "face": 6
+       },
+       {
+        "color": "yellow",
+        "face": 7
+       }
+      ],
+      "reading": "2 + 1 + 1 Light Hits, one hollow Light Hit made solid by Offensive Stance, one Eye, one blank. Total 5 Light Hits."
+     },
+     "say": [
+      "6 Yellow Dice. Yellow faces show one or two Light Hits, with one face showing a hollow Light Hit.",
+      "Result: 4 solid Light Hits, 1 hollow Light Hit, 1 Eye, 1 blank.",
+      "Offensive Stance converts the hollow, giving 5 Light Hits."
+     ]
+    },
+    {
+     "round": 2,
+     "phase": 2,
+     "title": "Red's defence roll",
+     "dice": {
+      "note": "6 White, chassis Armor 6",
+      "roll": [
+       {
+        "color": "white",
+        "face": 0
+       },
+       {
+        "color": "white",
+        "face": 0
+       },
+       {
+        "color": "white",
+        "face": 1
+       },
+       {
+        "color": "white",
+        "face": 3
+       },
+       {
+        "color": "white",
+        "face": 6
+       },
+       {
+        "color": "white",
+        "face": 7
+       }
+      ],
+      "reading": "2 Defense, 1 Dodge, 2 hollow Defense that do nothing, 1 Eye, 1 blank."
+     },
+     "say": [
+      "Line of sight is clear, so no Terrain or Unit Protection dice are added. The pool is the target Part's Armor value: 6 White.",
+      "Result: 2 Defense, 2 hollow Defense, 1 Dodge, 1 Eye.",
+      "Red is in Offensive Stance. That converts hollow attack icons, not hollow defence icons, so the 2 hollow Defense contribute nothing. Defensive Stance would have converted them.",
+      "Usable defence: 2 Defense and 1 Dodge against 5 Light Hits."
+     ]
+    },
+    {
+     "round": 2,
+     "phase": 2,
+     "title": "Offsetting, and a Damaged Token",
+     "focus": [
+      "Fire Support"
+     ],
+     "dice": {
+      "groups": [
+       {
+        "label": "Blue attacks: 6 Yellow",
+        "roll": [
+         {
+          "color": "yellow",
+          "face": 0
+         },
+         {
+          "color": "yellow",
+          "face": 2
+         },
+         {
+          "color": "yellow",
+          "face": 3
+         },
+         {
+          "color": "yellow",
+          "face": 4
+         },
+         {
+          "color": "yellow",
+          "face": 6
+         },
+         {
+          "color": "yellow",
+          "face": 7
+         }
+        ]
+       },
+       {
+        "label": "Red defends: 6 White",
+        "roll": [
+         {
+          "color": "white",
+          "face": 0
+         },
+         {
+          "color": "white",
+          "face": 0
+         },
+         {
+          "color": "white",
+          "face": 1
+         },
+         {
+          "color": "white",
+          "face": 3
+         },
+         {
+          "color": "white",
+          "face": 6
+         },
+         {
+          "color": "white",
+          "face": 7
+         }
+        ]
+       }
+      ]
+     },
+     "say": [
+      "Offsetting rules: 1 Dodge offsets any 1 damage icon, 1 Defense offsets 1 Light Hit only.",
+      "All incoming icons are Light Hits, so all three defence icons are usable. 5 minus 3 leaves 2 unoffset.",
+      "Unoffset damage means Penetration on the chassis.",
+      "The chassis has Structure 1, so it is not destroyed. It receives a Damaged Token, and a Damaged Part rolls its Structure value instead of its Armor value. That Part now contributes 1 White die rather than 6."
+     ],
+     "do": [
+      {
+       "op": "part",
+       "unit": "Fire Support",
+       "slot": "chasis",
+       "to": "damaged"
+      }
+     ]
+    },
+    {
+     "round": 2,
+     "phase": 2,
+     "title": "Red answers with the railgun",
+     "focus": [
+      "Fire Support",
+      "Bulwark Heavy"
+     ],
+     "say": [
+      "Red's Fire Support activates second within the same Firing step.",
+      "R-20 Shoulder-Mounted Railgun, Single Shot: Range 6, 3 Red Dice, with [Stationary] Range +2 and Armor Piercing 1.",
+      "It has not moved, so effective range is 8 against a target at range 5.",
+      "Red Dice produce Heavy Hits where Yellow Dice produce Light Hits. The offsetting rules treat the two differently, which decides this exchange."
+     ]
+    },
+    {
+     "round": 2,
+     "phase": 2,
+     "title": "Hit location and the attack",
+     "dice": {
+      "note": "Black Die, then 3 Red",
+      "roll": [
+       {
+        "color": "black",
+        "face": 3
+       },
+       {
+        "color": "red",
+        "face": 0
+       },
+       {
+        "color": "red",
+        "face": 1
+       },
+       {
+        "color": "red",
+        "face": 4
+       }
+      ],
+      "reading": "Right Arm. Then 2 Heavy Hits plus a hollow Heavy Hit, made solid by Offensive Stance. Total 3 Heavy Hits."
+     },
+     "say": [
+      "Black Die: Right Arm. The target Part is Blue's AC-150 HMG, Armor 4, with no Structure value.",
+      "Attack roll of 3 Red: 2 solid Heavy Hits and 1 hollow Heavy Hit. Offensive Stance converts the hollow, giving 3 Heavy Hits."
+     ]
+    },
+    {
+     "round": 2,
+     "phase": 2,
+     "title": "Armor Piercing bites",
+     "dice": {
+      "note": "3 White: Armor 4 minus 1 for Armor Piercing",
+      "roll": [
+       {
+        "color": "white",
+        "face": 0
+       },
+       {
+        "color": "white",
+        "face": 1
+       },
+       {
+        "color": "white",
+        "face": 4
+       }
+      ],
+      "reading": "1 Defense, 2 hollow Defense that do nothing in Offensive Stance, 1 Lightning."
+     },
+     "say": [
+      "Armor Piercing 1 removes 1 die from the defence pool, so Armor 4 rolls 3 White.",
+      "Result: 1 Defense, 2 hollow Defense, 1 Lightning. Blue is in Offensive Stance, so the hollows do not convert.",
+      "Usable defence: 1 Defense."
+     ]
+    },
+    {
+     "round": 2,
+     "phase": 2,
+     "title": "Defense cannot stop Heavy Hits",
+     "focus": [
+      "Bulwark Heavy"
+     ],
+     "dice": {
+      "groups": [
+       {
+        "label": "Red attacks: 3 Red",
+        "roll": [
+         {
+          "color": "red",
+          "face": 0
+         },
+         {
+          "color": "red",
+          "face": 1
+         },
+         {
+          "color": "red",
+          "face": 4
+         }
+        ]
+       },
+       {
+        "label": "Blue defends: 3 White",
+        "roll": [
+         {
+          "color": "white",
+          "face": 0
+         },
+         {
+          "color": "white",
+          "face": 1
+         },
+         {
+          "color": "white",
+          "face": 4
+         }
+        ]
+       }
+      ]
+     },
+     "say": [
+      "Defense icons offset Light Hits only. The incoming damage is 3 Heavy Hits, so the single Defense icon offsets nothing.",
+      "3 unoffset Heavy Hits produce Penetration.",
+      "The AC-150 HMG has no Structure value, so a single Penetration destroys it outright rather than damaging it.",
+      "Part destruction effects: the card is flipped face down, the Part contributes no values and performs no actions, and the Mech loses 1 Link. Blue's Bulwark drops from 4 Link to 3.",
+      "Red scores Part destruction, worth 1 VP once per game."
+     ],
+     "do": [
+      {
+       "op": "part",
+       "unit": "Bulwark Heavy",
+       "slot": "rightHand",
+       "to": "destroyed"
+      },
+      {
+       "op": "link",
+       "unit": "Bulwark Heavy",
+       "delta": -1
+      },
+      {
+       "op": "vp",
+       "side": "red",
+       "n": 1,
+       "why": "First enemy Part destroyed"
+      }
+     ]
+    },
+    {
+     "round": 2,
+     "phase": 2,
+     "title": "Movement timing: Red repositions",
+     "focus": [
+      "Support Skirmisher"
+     ],
+     "say": [
+      "Red's Support Skirmisher moves 1 grid, D9 to E9, of the 4 that Sprint allows.",
+      "From E9, the Blue Missile / Brawler at I9 is range 4 with clear line of sight, inside the AC-32 Automatic Rifle's Range 6.",
+      "From E9, the Blue Bulwark at I4 is blocked: that line passes through the buildings at F6 and G7. A unit in one lane cannot support the other, which is why the two fights resolve independently.",
+      "E9 is also adjacent to the F9 relay, which matters at the End Phase."
+     ],
+     "do": [
+      {
+       "op": "move",
+       "unit": "Support Skirmisher",
+       "to": "E9"
+      }
+     ]
+    },
+    {
+     "round": 2,
+     "phase": 3,
+     "title": "Automatic Phase",
+     "say": [
+      "Both Drones were commanded this round, so neither acts here."
+     ]
+    },
+    {
+     "round": 2,
+     "phase": 4,
+     "title": "Delay Phase: the missile finds its mark",
+     "focus": [
+      "Razor Missile",
+      "red:Hyena"
+     ],
+     "say": [
+      "Delayed actions resolve in this phase, alternating from the First Player.",
+      "MC-3 Razor Missile, Guided Attack: target 1 Enemy Unit within Range 3, fly into that unit's grid and undergo Detonation.",
+      "Red's Hyena occupies F9, which is the missile's own grid, so the target is at range 0."
+     ]
+    },
+    {
+     "round": 2,
+     "phase": 4,
+     "title": "Detonation, both rolls side by side",
+     "dice": {
+      "groups": [
+       {
+        "label": "Missile attacks: 3 Red + 1 Yellow",
+        "roll": [
+         {
+          "color": "red",
+          "face": 2
+         },
+         {
+          "color": "red",
+          "face": 3
+         },
+         {
+          "color": "red",
+          "face": 6
+         },
+         {
+          "color": "yellow",
+          "face": 1
+         }
+        ]
+       },
+       {
+        "label": "Hyena defends: 5 White, Armor 5",
+        "roll": [
+         {
+          "color": "white",
+          "face": 0
+         },
+         {
+          "color": "white",
+          "face": 3
+         },
+         {
+          "color": "white",
+          "face": 2
+         },
+         {
+          "color": "white",
+          "face": 6
+         },
+         {
+          "color": "white",
+          "face": 7
+         }
+        ]
+       }
+      ],
+      "reading": "Attack: 2 Heavy Hits, 2 Light Hits, 1 Lightning. Defence: 1 Defense, 1 Dodge, plus hollows and blanks that do nothing."
+     },
+     "say": [
+      "Attack and defence are shown together here. The upper group is the attack, the lower group is the defence.",
+      "Explosion damage allows no Terrain or Unit Protection, so the defence pool is the Drone's Armor value of 5 and nothing else.",
+      "Attack: 2 Heavy Hits, 2 Light Hits, 1 Lightning. Defence: 1 Defense, 1 Dodge, plus hollows that do not convert.",
+      "The Dodge offsets 1 Heavy Hit and the Defense offsets 1 Light Hit, leaving 1 Heavy Hit and 1 Light Hit unoffset. Penetration.",
+      "A Drone is a single Part with Armor 5 and Structure 2. The first Penetration would apply a Damaged Token, and the remaining damage destroys it. Destroyed Drones are removed from the board immediately.",
+      "A projectile that detonates is destroyed as well, so the missile is also removed."
+     ],
+     "do": [
+      {
+       "op": "remove",
+       "unit": "red:Hyena"
+      },
+      {
+       "op": "remove",
+       "unit": "Razor Missile"
+      },
+      {
+       "op": "vp",
+       "side": "blue",
+       "n": 1,
+       "why": "Projectile lesson: first projectile damage"
+      },
+      {
+       "op": "vp",
+       "side": "blue",
+       "n": 1,
+       "why": "Drone kill: enemy Hyena destroyed"
+      }
+     ]
+    },
+    {
+     "round": 2,
+     "phase": 5,
+     "title": "End Phase and scoring",
+     "say": [
+      "Scoring conditions are checked by position, and both centre presence and relay pressure require a M.A.P. rather than a Drone.",
+      "Red: the Support Skirmisher at E9 is adjacent to the F9 relay, so relay pressure scores. Combined with Part destruction earlier, Red takes 2 this round.",
+      "Blue: the Hyena at H9 is adjacent to the G9 relay but is a Drone, so it does not qualify. The Missile / Brawler at I9 is 2 grids from G9, which is not adjacent. Blue scores no position points, but takes Projectile lesson and Drone kill from the detonation, so 2 this round as well.",
+      "Running score: Red 2, Blue 2. First Player passes back to Red."
+     ],
+     "do": [
+      {
+       "op": "vp",
+       "side": "red",
+       "n": 1,
+       "why": "Relay pressure: Skirmisher adjacent to F9"
+      },
+      {
+       "op": "first",
+       "side": "red"
+      }
+     ]
+    },
+    {
+     "round": 3,
+     "phase": 0,
+     "title": "Round 3, the last round",
+     "say": [
+      "Final round, with the score level at 2 apiece. All remaining VP is decided at this End Phase.",
+      "Force state: Red has both Mechs, one with a Damaged chassis. Blue has both Mechs, one with a destroyed AC-150 HMG and 3 Link, plus its Drone.",
+      "Red is First Player and generates 2 Command Tokens, but has no Drone left. Command Tokens can only be issued to Drones, so both are removed unspent. Losing a Drone removes the use of two tokens every subsequent round."
+     ],
+     "do": [
+      {
+       "op": "first",
+       "side": "red"
+      },
+      {
+       "op": "cmd",
+       "side": "red",
+       "n": 2
+      },
+      {
+       "op": "cmd",
+       "side": "blue",
+       "n": 2
+      }
+     ]
+    },
+    {
+     "round": 3,
+     "phase": 0,
+     "title": "Blue's drone launches",
+     "focus": [
+      "blue:Hyena"
+     ],
+     "say": [
+      "Blue spends 1 token on its Hyena. The Drone's Missile action is marked with command speed, so a commanded Drone may launch instead of moving.",
+      "Launch from H9 to E9, a distance of 3, at the limit of Range 3. Red's Support Skirmisher occupies E9.",
+      "The missile resolves in the Delay Phase, as before."
+     ],
+     "do": [
+      {
+       "op": "spawn",
+       "cardId": "071",
+       "side": "blue",
+       "at": "E9",
+       "label": "Razor Missile",
+       "parent": "blue:Hyena"
+      },
+      {
+       "op": "cmd",
+       "side": "red",
+       "n": 0
+      },
+      {
+       "op": "cmd",
+       "side": "blue",
+       "n": 0
+      }
+     ]
+    },
+    {
+     "round": 3,
+     "phase": 1,
+     "title": "Planning Phase",
+     "say": [
+      "Dials: Red Fire Support on Firing, Red Support Skirmisher on Movement, Blue Bulwark on Movement, Blue Missile / Brawler on Firing.",
+      "Stances: Blue Bulwark takes Defensive, Red Support Skirmisher takes Mobility, the other two remain Offensive.",
+      "The Bulwark has no working weapon, so Firing would achieve nothing. Movement lets it contest an objective instead, which is the only value it has left."
+     ]
+    },
+    {
+     "round": 3,
+     "phase": 2,
+     "title": "Firing timing: the railgun again",
+     "focus": [
+      "Fire Support",
+      "Bulwark Heavy"
+     ],
+     "say": [
+      "Red is First Player. The Fire Support has not moved, so [Stationary] applies again: effective Range 8 against a target at range 5 with clear line of sight.",
+      "Blue is in Defensive Stance this round, which converts hollow Defense icons to solid. This is the stance built for absorbing fire."
+     ],
+     "do": [
+      {
+       "op": "stance",
+       "unit": "Bulwark Heavy",
+       "to": "defensive"
+      }
+     ]
+    },
+    {
+     "round": 3,
+     "phase": 2,
+     "title": "Five Defense icons, and it still lands",
+     "dice": {
+      "groups": [
+       {
+        "label": "Black Die, then Red attacks: 3 Red",
+        "roll": [
+         {
+          "color": "black",
+          "face": 0
+         },
+         {
+          "color": "red",
+          "face": 2
+         },
+         {
+          "color": "red",
+          "face": 3
+         },
+         {
+          "color": "red",
+          "face": 6
+         }
+        ]
+       },
+       {
+        "label": "Blue defends in DEF: 5 White",
+        "roll": [
+         {
+          "color": "white",
+          "face": 1
+         },
+         {
+          "color": "white",
+          "face": 2
+         },
+         {
+          "color": "white",
+          "face": 0
+         },
+         {
+          "color": "white",
+          "face": 3
+         },
+         {
+          "color": "white",
+          "face": 7
+         }
+        ]
+       }
+      ],
+      "reading": "Torso. Attack: 2 Heavy Hits and a Lightning. Defence: four hollow Defense made solid by DEF stance, one solid Defense, and one Dodge. Five Defense and one Dodge."
+     },
+     "say": [
+      "Black Die: Torso. The target Part is the RT-06 Mire Battle Core, Armor 6, Structure 2. Armor Piercing 1 reduces the pool to 5 White.",
+      "Attack: 2 Heavy Hits and 1 Lightning.",
+      "Defence, from 5 dice: 4 hollow Defense, 1 solid Defense, 1 Dodge. Defensive Stance converts the hollows, producing 5 Defense and 1 Dodge.",
+      "Defense offsets Light Hits only, and the attack contains none, so all 5 Defense icons offset nothing.",
+      "The Dodge offsets 1 Heavy Hit. The remaining Heavy Hit is unoffset, producing Penetration.",
+      "The torso has Structure 2, so it takes a Damaged Token and now contributes 2 White dice instead of 6.",
+      "The general rule this demonstrates: the number of defence dice matters less than whether the icons they produce can legally offset the incoming damage type."
+     ],
+     "do": [
+      {
+       "op": "part",
+       "unit": "Bulwark Heavy",
+       "slot": "torso",
+       "to": "damaged"
+      }
+     ]
+    },
+    {
+     "round": 3,
+     "phase": 2,
+     "title": "Blue answers in the south",
+     "focus": [
+      "Missile / Brawler",
+      "Support Skirmisher"
+     ],
+     "say": [
+      "Blue's Missile / Brawler fires the AC-32 Automatic Rifle: Range 6, 1 Yellow and 3 Red Dice. The [Two-Handed] range bonus does not apply, since the other hand holds the Type 55 Shield.",
+      "Target is Red's Support Skirmisher at E9, range 4, clear line of sight.",
+      "Red is in Mobility Stance, which adds Blue Dice equal to the Mech's total Dodge value. The RL-06 Standard Chassis supplies Dodge 3, so 3 Blue Dice are added."
+     ],
+     "do": [
+      {
+       "op": "stance",
+       "unit": "Support Skirmisher",
+       "to": "mobility"
+      }
+     ]
+    },
+    {
+     "round": 3,
+     "phase": 2,
+     "title": "Mobility Stance pays it back",
+     "dice": {
+      "groups": [
+       {
+        "label": "Black Die, then Blue attacks: 1 Yellow + 3 Red",
+        "roll": [
+         {
+          "color": "black",
+          "face": 2
+         },
+         {
+          "color": "yellow",
+          "face": 2
+         },
+         {
+          "color": "red",
+          "face": 0
+         },
+         {
+          "color": "red",
+          "face": 5
+         },
+         {
+          "color": "red",
+          "face": 7
+         }
+        ]
+       },
+       {
+        "label": "Red defends in MOB: 5 White + 3 Blue",
+        "roll": [
+         {
+          "color": "white",
+          "face": 0
+         },
+         {
+          "color": "white",
+          "face": 7
+         },
+         {
+          "color": "white",
+          "face": 6
+         },
+         {
+          "color": "white",
+          "face": 1
+         },
+         {
+          "color": "white",
+          "face": 4
+         },
+         {
+          "color": "blue",
+          "face": 0
+         },
+         {
+          "color": "blue",
+          "face": 1
+         },
+         {
+          "color": "blue",
+          "face": 5
+         }
+        ]
+       }
+      ],
+      "reading": "Left Arm. Attack: 2 Heavy Hits (one hollow made solid by Offensive Stance) and 1 Light Hit. Defence: 1 Defense and 2 Dodge."
+     },
+     "say": [
+      "Black Die: Left Arm. The target Part is the Type 55 Shield and CC-6 Cleaver, Armor 5, so the pool is 5 White plus 3 Blue.",
+      "Attack: 1 solid Heavy Hit, 1 hollow Heavy Hit converted by Offensive Stance, and 1 Light Hit. Total 2 Heavy Hits and 1 Light Hit.",
+      "Defence: 1 Defense and 2 Dodge. The hollow Defense icons do not convert in Mobility Stance.",
+      "The 2 Dodge icons offset both Heavy Hits and the Defense offsets the Light Hit. Nothing is unoffset, so there is no Penetration.",
+      "Direct comparison with the previous exchange: 5 Defense icons offset 0 Heavy Hits, while 2 Dodge icons offset 2. Stance selection determines which dice colour the defender rolls, and therefore which damage types can be stopped."
+     ]
+    },
+    {
+     "round": 3,
+     "phase": 2,
+     "title": "Movement timing: Red grabs a relay",
+     "focus": [
+      "Support Skirmisher"
+     ],
+     "say": [
+      "Red's Support Skirmisher moves 1 grid, E9 to F9, onto the relay marker.",
+      "The MC-3's Guided Attack selects its target when it resolves rather than when it launches, so moving within Range 3 of the launch point does not avoid it. The move is made for position, not evasion.",
+      "Relay pressure scores at the End Phase for a M.A.P. on or adjacent to a relay, and F9 satisfies it."
+     ],
+     "do": [
+      {
+       "op": "move",
+       "unit": "Support Skirmisher",
+       "to": "F9"
+      }
+     ]
+    },
+    {
+     "round": 3,
+     "phase": 2,
+     "title": "Blue walks a Mech into the centre",
+     "focus": [
+      "Bulwark Heavy"
+     ],
+     "say": [
+      "Jet Dash, I4 to G5, a distance of 3.",
+      "G5 is adjacent to the G6 control marker and also adjacent to the G4 relay marker, so one position satisfies both centre presence and relay pressure.",
+      "The Bulwark has a destroyed weapon and a Damaged torso. Neither affects scoring, because both conditions test position only. A damaged Mech on an objective scores the same as an intact one."
+     ],
+     "do": [
+      {
+       "op": "move",
+       "unit": "Bulwark Heavy",
+       "to": "G5"
+      }
+     ]
+    },
+    {
+     "round": 3,
+     "phase": 3,
+     "title": "Automatic Phase",
+     "say": [
+      "Blue's Hyena was commanded this round, so it does not act. Red has no Drone remaining."
+     ]
+    },
+    {
+     "round": 3,
+     "phase": 4,
+     "title": "Delay Phase: the missile chases",
+     "focus": [
+      "Razor Missile",
+      "Support Skirmisher"
+     ],
+     "say": [
+      "MC-3 Razor, Guided Attack: it selects an enemy within Range 3 and flies into that grid. F9 is 1 grid from the launch point at E9, well within range.",
+      "The missile moves to F9 and detonates. Explosion damage allows no Terrain or Unit Protection.",
+      "Red remains in Mobility Stance from its activation earlier this round, so the Blue Dice still apply on defence."
+     ],
+     "do": [
+      {
+       "op": "move",
+       "unit": "Razor Missile",
+       "to": "F9"
+      }
+     ]
+    },
+    {
+     "round": 3,
+     "phase": 4,
+     "title": "Dodged clean",
+     "dice": {
+      "groups": [
+       {
+        "label": "Black Die, then missile: 3 Red + 1 Yellow",
+        "roll": [
+         {
+          "color": "black",
+          "face": 4
+         },
+         {
+          "color": "red",
+          "face": 1
+         },
+         {
+          "color": "red",
+          "face": 4
+         },
+         {
+          "color": "red",
+          "face": 7
+         },
+         {
+          "color": "yellow",
+          "face": 2
+         }
+        ]
+       },
+       {
+        "label": "Red defends in MOB: 3 White + 3 Blue",
+        "roll": [
+         {
+          "color": "white",
+          "face": 0
+         },
+         {
+          "color": "white",
+          "face": 6
+         },
+         {
+          "color": "white",
+          "face": 7
+         },
+         {
+          "color": "blue",
+          "face": 0
+         },
+         {
+          "color": "blue",
+          "face": 1
+         },
+         {
+          "color": "blue",
+          "face": 5
+         }
+        ]
+       }
+      ],
+      "reading": "Backpack. Attack: 1 Heavy Hit and 1 Light Hit, plus a hollow Heavy that stays hollow and an Eye. Defence: 1 Defense and 2 Dodge."
+     },
+     "say": [
+      "Black Die: Backpack. The target Part is the AMS-190 Active Defense System, Armor 3, so the pool is 3 White plus 3 Blue.",
+      "Attack: 1 Heavy Hit, 1 Light Hit, 1 hollow Heavy Hit and 1 Eye. The missile is not in Offensive Stance, so the hollow does not convert.",
+      "Defence: 1 Defense and 2 Dodge.",
+      "One Dodge offsets the Heavy Hit, the Defense offsets the Light Hit, and one Dodge is unused. No Penetration.",
+      "Omitted here by the teaching rules: the AMS-190 carries Intercept 3, which could have attempted to destroy the missile before it resolved.",
+      "A projectile that detonates is destroyed regardless of the outcome."
+     ],
+     "do": [
+      {
+       "op": "remove",
+       "unit": "Razor Missile"
+      }
+     ]
+    },
+    {
+     "round": 3,
+     "phase": 5,
+     "title": "End Phase: the final count",
+     "focus": [
+      "Support Skirmisher",
+      "Bulwark Heavy"
+     ],
+     "say": [
+      "Integrity check: no Mech is at 2 or fewer Parts, so none are removed. Tokens then clear.",
+      "Red: the Support Skirmisher on the F9 relay satisfies relay pressure. No Red M.A.P. is on or adjacent to F7 or G6, so centre presence fails. Red scores 1.",
+      "Blue: the Bulwark at G5 is adjacent to G6, satisfying centre presence, and adjacent to G4, satisfying relay pressure. Blue scores 2 from that single position."
+     ],
+     "do": [
+      {
+       "op": "vp",
+       "side": "red",
+       "n": 1,
+       "why": "Relay pressure: Skirmisher on F9"
+      },
+      {
+       "op": "vp",
+       "side": "blue",
+       "n": 1,
+       "why": "Centre presence: Bulwark adjacent to G6"
+      },
+      {
+       "op": "vp",
+       "side": "blue",
+       "n": 1,
+       "why": "Relay pressure: Bulwark adjacent to G4"
+      }
+     ]
+    },
+    {
+     "round": 3,
+     "phase": 5,
+     "title": "Blue wins 4 to 3",
+     "say": [
+      "Final score: Blue 4, Red 3.",
+      "Damage summary: Red destroyed the AC-150 HMG and applied a Damaged Token to the Bulwark's torso. Blue destroyed Red's Hyena drone and applied a Damaged Token to the Fire Support's chassis.",
+      "VP summary: Red scored Part destruction once and relay pressure twice. Blue scored Projectile lesson and Drone kill once each, then took 2 in the final round from one correctly placed Mech.",
+      "The margin came from position at the End Phase rather than from damage. Part destruction and Drone kill pay once per game; centre presence and relay pressure pay in every round they are held, which rewards reading the scoring conditions before selecting targets.",
+      "Variations worth testing: Red committing a second Mech south from round 1 to contest both relays, or Blue using Mobility Stance in the north lane to blunt the railgun."
+     ]
+    }
+   ]
+  }
+ ]
+}
