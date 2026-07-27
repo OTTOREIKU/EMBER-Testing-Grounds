@@ -81,7 +81,7 @@ async function init() {
   warmAllImagesWhenIdle();
   registerOffline();
   watchForUpdates();
-  const inventory = new Inventory(data.boxes, () => roster.render());
+  const inventory = new Inventory(data.boxes, () => roster.render(), data.cards);
 
   const tray = new DiceTray(dice, document.getElementById('dice-tray')!);
 
