@@ -1,0 +1,14 @@
+{
+  "_comment": "Corrections to the box membership recorded in cards.json, keyed by box key. Each entry is authoritative for that box: on load the box is stripped from every card's containedIn, then re-added from the list here. Card ids map to quantityPerBox. Use this when the community data groups a set wrongly, rather than editing cards.json, which is regenerated from the builder bundle.",
+  "boxes": {
+    "LAB_PD_REAPER_TYPE_1": {
+      "_note": "The community data put four Reaper variants in this one box at 1 each. The product listing sells each Reaper alone, 2 copies per box, matching how Type E was already recorded.",
+      "cards": { "PRDR-101": 2 }
+    },
+    "LAB_PD_REAPER_TYPE_2": {
+      "_note": "Was empty in the community data; MD-4B was filed under the Type 1 box.",
+      "cards": { "PRDR-104": 2 }
+    }
+  },
+  "_unlisted": "MD-4C Reaper Type III (PRDR-102) and MD-4D Reaper Type IV (PRDR-103) were also filed under the Type 1 box, which is wrong, but no box is known to ship them. They are deliberately left with no box rather than guessed into one. Add an entry above if a listing turns up."
+}

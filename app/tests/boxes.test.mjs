@@ -65,5 +65,47 @@ check('gaps are confined to tactics, projectiles and a few parts', [...new Set(n
 check('no pilot or drone is left without a box', noData.filter((c) => c.category === 'pilot' || c.category === 'drone').map((c) => c.id), []);
 check('the parts gap has not grown', noData.filter((c) => c.category === 'mech_part').length, 12);
 
+// quantityPerBox 0 means the card ships with its parent rather than as a counted
+// copy — 14 Discard Cards that sit under their Part Card (4.17), plus alternate
+// modes like White Dwarf's Cruise Mode. Dropping them loses real box contents,
+// and treating the 0 as "unowned" hid them from the Add tab even when the box
+// was owned, so both readers must special-case it.
+const zeroEntries = [];
+for (const c of folded) for (const e of c.containedIn ?? []) if (!e.quantityPerBox) zeroEntries.push(c.id);
+check('the paired-card count is unchanged', zeroEntries.length, 21);
+check('White Dwarf Cruise Mode is one of them', zeroEntries.includes('288'), true);
+
+// The reference lists every containedIn entry regardless of quantity.
+const inBox = (key) => folded.filter((c) => (c.containedIn ?? []).some((e) => e.box === key)).map((c) => c.id).sort();
+check('White Dwarf lists all 10 cards', inBox('LAB_WHITE_DWARF').length, 10);
+
+// The app counts a 0 as 1 copy, since you do get the card with the box.
+const ownedCount = (card, owned) =>
+  (card.containedIn ?? []).reduce((n, e) => n + (owned[e.box] ?? 0) * Math.max(1, e.quantityPerBox), 0);
+const cruise = folded.find((c) => c.id === '288');
+check('a paired card counts as owned', ownedCount(cruise, { LAB_WHITE_DWARF: 1 }), 1);
+check('a paired card scales with copies of the box', ownedCount(cruise, { LAB_WHITE_DWARF: 2 }), 2);
+check('an unowned box still yields nothing', ownedCount(cruise, {}), 0);
+
+// The box-contents override is authoritative for whatever box it names, so a
+// typo in a card id or box key would silently empty that box instead of erroring.
+const patch = JSON.parse(readFileSync(new URL('../../data/box_contents_overrides.json', import.meta.url), 'utf8'));
+const patched = patch.boxes ?? {};
+const cardIds = new Set(list.map((c) => c.id));
+const badKeys = Object.keys(patched).filter((k) => !boxKeys.has(k));
+const badCards = Object.values(patched).flatMap((d) => Object.keys(d.cards ?? {})).filter((id) => !cardIds.has(id));
+check('override box keys all exist', badKeys, []);
+check('override card ids all exist', badCards, []);
+check('override quantities are positive integers',
+  Object.values(patched).flatMap((d) => Object.values(d.cards ?? {})).filter((n) => !Number.isInteger(n) || n < 1), []);
+
+// Each Reaper ships alone, two to a box, so the override must leave exactly one
+// card in each of the boxes it corrects.
+for (const [key, def] of Object.entries(patched)) {
+  if (!key.startsWith('LAB_PD_REAPER')) continue;
+  check(`${key} holds a single card`, Object.keys(def.cards ?? {}).length, 1);
+  check(`${key} ships 2 copies`, Object.values(def.cards ?? {}), [2]);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

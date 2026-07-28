@@ -76,7 +76,11 @@ export class Inventory {
 
   ownedCount(card: Card): number {
     let n = 0;
-    for (const c of card.containedIn ?? []) n += (this.owned[c.box] ?? 0) * c.quantityPerBox;
+    // quantityPerBox 0 means the card ships with its parent rather than as a
+    // counted copy: Discard Cards sit under their Part Card (4.17), and alternate
+    // modes are the same physical card. You still get one with the box, so a 0
+    // must not read as "you do not own this".
+    for (const c of card.containedIn ?? []) n += (this.owned[c.box] ?? 0) * Math.max(1, c.quantityPerBox);
     return n;
   }
 

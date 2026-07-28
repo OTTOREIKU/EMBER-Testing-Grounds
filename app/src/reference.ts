@@ -1,11 +1,11 @@
 import './reference.css';
-import { actionIconUrl, cardName, FACTION_LABEL, loadData, mechPartUrl, missionImageUrl, portraitUrl, secondaryImageUrl, statIconUrl, tabImageUrl, zeroCostReason, type GameData, type KeywordDef } from './data';
+import { actionIconUrl, boxCoverUrl, cardName, FACTION_LABEL, loadData, mechPartUrl, missionImageUrl, portraitUrl, secondaryImageUrl, statIconUrl, tabImageUrl, zeroCostReason, type BoxDef, type GameData, type KeywordDef } from './data';
 import { mountCardImage, preloadCardImages, warmAllImagesWhenIdle } from './images';
 import { watchForUpdates } from './updates';
 import { TIMINGS, type Card } from './types';
 import { registerOffline } from './offline';
 
-type Tab = 'keywords' | 'parts' | 'units' | 'pilots' | 'tactics' | 'missions' | 'rules';
+type Tab = 'keywords' | 'parts' | 'units' | 'pilots' | 'tactics' | 'boxes' | 'missions' | 'rules';
 
 const SLOT_LABEL: Record<string, string> = {
   torso: 'Torso',
@@ -253,11 +253,23 @@ function cardDetail(c: Card): string {
           traitName ? '' : '<p class="ref-note">This pilot has no trait ability. The line above is card flavour text.</p>'
         }</div>`
       : '';
-  const boxes = (c.containedIn ?? [])
-    .map((b) => data.boxes.find((x) => x.key === b.box))
-    .filter(Boolean)
-    .map((b) => esc(b!.name.en || b!.name.zh || b!.key))
-    .join(', ');
+  const inBoxes = (c.containedIn ?? [])
+    .map((e) => ({ def: data.boxes.find((x) => x.key === e.box), n: e.quantityPerBox }))
+    .filter((x) => x.def);
+  // UNSALE is not a product and is left out of the Boxes tab, so linking to it
+  // would send you to a page the listing does not contain.
+  const unsold = inBoxes.length > 0 && inBoxes.every((x) => x.def!.key === 'UNSALE');
+  const boxes = unsold
+    ? 'Not sold in any box yet. It is in the card database, but no set ships it.'
+    : inBoxes
+        .filter((x) => x.def!.key !== 'UNSALE')
+        .map(
+          (x) =>
+            `<a class="kw-link" data-box="${esc(x.def!.key)}">${esc(x.def!.name.en || x.def!.name.zh || x.def!.key)}</a>${
+              x.n > 1 ? ` <span class="mono">×${x.n}</span>` : ''
+            }`,
+        )
+        .join(', ');
 
   const free = zeroCostReason(c);
   return `<h2>${esc(cardName(c))}</h2>
@@ -269,7 +281,107 @@ function cardDetail(c: Card): string {
     ${kws ? `<div class="ref-kwlinks">${kws}</div>` : ''}
     ${trait}
     ${actions ? `<h3 class="ref-sub">Actions</h3>${actions}` : ''}
-    ${boxes ? `<p class="ref-boxes">In: ${boxes}</p>` : ''}`;
+    ${boxes ? `<p class="ref-boxes">${unsold ? '' : 'In: '}${boxes}</p>` : ''}`;
+}
+
+// ---------- boxes ----------
+
+const BOX_GROUPS: { label: string; match: (c: Card) => boolean }[] = [
+  { label: 'Torso', match: (c) => c.type === 'torso' },
+  { label: 'Chassis', match: (c) => c.type === 'chasis' },
+  { label: 'Left arm', match: (c) => c.type === 'leftHand' },
+  { label: 'Right arm', match: (c) => c.type === 'rightHand' },
+  { label: 'Backpack', match: (c) => c.type === 'backpack' },
+  { label: 'Pilots', match: (c) => c.category === 'pilot' },
+  { label: 'Drones', match: (c) => c.category === 'drone' },
+  { label: 'Projectiles', match: (c) => c.category === 'projectile' },
+  { label: 'Tactics', match: (c) => c.category === 'tactics_or_upgrade' },
+];
+
+// quantityPerBox 0 means the card ships with the box without being a counted
+// copy: Discard Cards sit under their parent Part Card (4.17), and alternate
+// modes such as White Dwarf's Cruise Mode are the same physical card. They are
+// in the box, so they are listed, just never counted as extra copies.
+function boxContents(key: string): { card: Card; n: number }[] {
+  return data.cards
+    .map((card) => ({ card, entry: (card.containedIn ?? []).find((e) => e.box === key) }))
+    .filter((x) => !!x.entry)
+    .map((x) => ({ card: x.card, n: x.entry!.quantityPerBox ?? 0 }));
+}
+
+function boxCardCount(key: string): { cards: number; pieces: number } {
+  const items = boxContents(key);
+  return { cards: items.length, pieces: items.reduce((s, i) => s + i.n, 0) };
+}
+
+function boxDetail(key: string): string | null {
+  const box = data.boxes.find((b) => b.key === key);
+  if (!box) return null;
+  const items = boxContents(key);
+  const { cards, pieces } = boxCardCount(key);
+  const used = new Set<string>();
+  const groups = BOX_GROUPS.map((g) => {
+    const hit = items.filter((i) => !used.has(i.card.id) && g.match(i.card));
+    hit.forEach((i) => used.add(i.card.id));
+    return { label: g.label, hit: hit.sort((a, b) => cardName(a.card).localeCompare(cardName(b.card))) };
+  }).filter((g) => g.hit.length);
+  const rest = items.filter((i) => !used.has(i.card.id));
+  if (rest.length) groups.push({ label: 'Other', hit: rest });
+
+  const facs = (box.faction ?? [])
+    .map((f) => `<span class="tag" data-fac="${esc(f)}">${esc(FACTION_LABEL[f] ?? f)}</span>`)
+    .join('');
+  const list = groups
+    .map(
+      (g) => `<h3 class="ref-sub">${esc(g.label)} <span class="fc-n">${g.hit.length}</span></h3>
+      <ul class="box-parts">${g.hit
+        .map(
+          // Every row emits all three trailing slots, empty ones included, so the
+          // points, counts and tags line up as columns down the list.
+          (i) => `<li data-card="${esc(i.card.id)}"${i.n ? '' : ' class="bp-paired"'}><span class="bp-name">${esc(cardName(i.card))}</span>
+            <span class="bp-slot">${
+              i.n
+                ? ''
+                : '<span class="tag bp-tag" title="Ships with its parent card rather than as a separate copy: a Discard Card sits under its Part Card, and alternate modes are the same physical card.">paired</span>'
+            }</span>
+            <span class="mono bp-pts">${i.card.score ? `${i.card.score}p` : ''}</span>
+            <span class="bp-n">${i.n > 1 ? `×${i.n}` : ''}</span></li>`,
+        )
+        .join('')}</ul>`,
+    )
+    .join('');
+
+  const paired = items.filter((i) => !i.n).length;
+  return `<h2>${esc(box.name.en || box.name.zh || box.key)}</h2>
+    <p class="ref-meta">${esc(
+      `${cards} card${cards === 1 ? '' : 's'} · ${pieces} copies${paired ? ` · ${paired} paired` : ''}`,
+    )}</p>
+    ${facs ? `<div class="ref-kwlinks">${facs}</div>` : ''}
+    ${box.hasImage ? `<div class="box-cover"><img src="${boxCoverUrl(box.id)}" alt="" loading="lazy" onerror="this.closest('.box-cover').remove()"></div>` : ''}
+    ${list || '<p class="ref-note">No cards in the data list this box.</p>'}`;
+}
+
+function boxRow(b: BoxDef): string {
+  const { cards, pieces } = boxCardCount(b.key);
+  const facs = (b.faction ?? [])
+    .map((f) => `<span class="tag">${esc(FACTION_LABEL[f] ?? f)}</span>`)
+    .join('');
+  const fac = (b.faction ?? [])[0];
+  return `<article class="card-tap card-framed box-card${b.hasImage ? ' has-cover' : ''}"${
+    fac ? ` data-fac="${esc(fac)}"` : ''
+  } data-box="${esc(b.key)}">
+    ${
+      b.hasImage
+        ? `<div class="box-bleed" aria-hidden="true"><img src="${boxCoverUrl(b.id)}" alt="" loading="lazy" onerror="this.closest('.box-card').classList.remove('has-cover'); this.closest('.box-bleed').remove()"></div>
+           <span class="box-scrim" aria-hidden="true"></span>`
+        : ''
+    }
+    <div class="box-body">
+      <div class="card-title">${esc(b.name.en || b.name.zh || b.key)}</div>
+      <div class="box-meta">${cards} card${cards === 1 ? '' : 's'} · ${pieces} copies</div>
+      ${facs ? `<div class="card-badges">${facs}</div>` : ''}
+    </div>
+  </article>`;
 }
 
 function render(): void {
@@ -477,6 +589,45 @@ function render(): void {
     return;
   }
 
+  if (tab === 'boxes') {
+    // UNSALE is not a product: it is a bucket for cards that ship in no box, and
+    // its cards are a mix of factions despite the entry being tagged PD.
+    const sellable = data.boxes.filter((b) => b.key !== 'UNSALE');
+    const pool = sellable.filter((b) => {
+      if (!q) return true;
+      const contents = boxContents(b.key).map((i) => cardName(i.card)).join(' ');
+      return norm(`${b.name.en ?? ''} ${b.name.zh ?? ''} ${b.key} ${contents}`).includes(q);
+    });
+    const facs = FACTION_ORDER.filter((f) => sellable.some((b) => (b.faction ?? []).includes(f)));
+    const choice = factionChoice.boxes;
+    const list = pool
+      .filter((b) => !choice || (b.faction ?? []).includes(choice))
+      .sort((a, b) => a.id - b.id);
+    el.innerHTML =
+      `<div class="ref-facets ref-facets-faction">
+        <button class="ref-facet${choice ? '' : ' active'}" data-faction="">All <span class="fc-n">${pool.length}</span></button>
+        ${facs
+          .map((f) => {
+            const n = pool.filter((b) => (b.faction ?? []).includes(f)).length;
+            return `<button class="ref-facet${choice === f ? ' active' : ''}${n ? '' : ' empty'}" data-fac="${esc(f)}" data-faction="${esc(f)}"${
+              n ? '' : ' disabled'
+            }>${esc(FACTION_LABEL[f] ?? f)} <span class="fc-n">${n}</span></button>`;
+          })
+          .join('')}
+      </div>` +
+      (list.length
+        ? `<p class="ref-count">${list.length} box${list.length === 1 ? '' : 'es'} · tap one to list what is inside</p>${list.map(boxRow).join('')}`
+        : '<p class="ref-count">No matches</p>');
+    el.querySelectorAll<HTMLButtonElement>('[data-faction]').forEach((b) =>
+      b.addEventListener('click', () => {
+        factionChoice.boxes = b.dataset.faction || undefined;
+        render();
+        body().scrollTop = 0;
+      }),
+    );
+    return;
+  }
+
   const want =
     tab === 'parts'
       ? (c: Card) => c.category === 'mech_part'
@@ -578,7 +729,7 @@ function fillPortraits(root: HTMLElement, lazy: boolean): void {
 }
 
 interface DetailView {
-  kind: 'card' | 'keyword';
+  kind: 'card' | 'keyword' | 'box';
   key: string;
   scroll?: number;
 }
@@ -593,11 +744,16 @@ function viewHtml(v: DetailView): string | null {
     const c = data.byId.get(v.key);
     return c ? cardDetail(c) : null;
   }
+  if (v.kind === 'box') return boxDetail(v.key);
   return keywordDetail(v.key);
 }
 
 function viewLabel(v: DetailView): string {
   if (v.kind === 'card') return cardName(data.byId.get(v.key));
+  if (v.kind === 'box') {
+    const b = data.boxes.find((x) => x.key === v.key);
+    return b ? b.name.en || b.name.zh || b.key : v.key;
+  }
   const def = data.keyword(v.key);
   return def?.en?.name?.replace(/^[•·\s]+/, '') || v.key;
 }
@@ -747,6 +903,12 @@ async function init(): Promise<void> {
     if (sec) {
       ev.preventDefault();
       showMissionImage(sec.dataset.secondary!, 'secondary');
+      return;
+    }
+    const box = t.closest<HTMLElement>('[data-box]');
+    if (box) {
+      ev.preventDefault();
+      navigateDetail('box', box.dataset.box!);
       return;
     }
     const card = t.closest<HTMLElement>('[data-card]');

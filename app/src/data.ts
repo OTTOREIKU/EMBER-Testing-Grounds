@@ -217,10 +217,36 @@ interface NameOverrides {
   cards?: Record<string, { en: string }>;
   actions?: Record<string, { en: string }>;
   traits?: Record<string, { en: string }>;
+  boxes?: Record<string, { en: string }>;
 }
 
 interface FactionOverrides {
   cards?: Record<string, { faction: string }>;
+}
+
+interface BoxContentsOverrides {
+  boxes?: Record<string, { cards?: Record<string, number> }>;
+}
+
+// Each listed box is authoritative: strip it from every card first, then re-add
+// only what the override names, so a wrongly grouped set is corrected in both
+// directions rather than merely gaining entries.
+function applyBoxContents(cards: Card[], patch: BoxContentsOverrides): void {
+  const boxes = patch.boxes ?? {};
+  const keys = new Set(Object.keys(boxes));
+  if (!keys.size) return;
+  const byId = new Map(cards.map((c) => [c.id, c]));
+  for (const c of cards) {
+    if (!c.containedIn?.length) continue;
+    c.containedIn = c.containedIn.filter((e) => !keys.has(e.box));
+  }
+  for (const [box, def] of Object.entries(boxes)) {
+    for (const [id, n] of Object.entries(def.cards ?? {})) {
+      const card = byId.get(id);
+      if (!card) continue;
+      card.containedIn = [...(card.containedIn ?? []), { box, quantityPerBox: n }];
+    }
+  }
 }
 
 const NO_MISSIONS: MissionData = { families: [], cards: [] };
@@ -253,7 +279,7 @@ function applyTactics(cards: Card[], table: Record<string, TacticEntry>): void {
 }
 
 export async function loadData(): Promise<GameData> {
-  const [cards, terrain, boxes, rawKeywords, patch, mech, xlate, names, missions, tactics, play, secondary, zoneData, facPatch] = await Promise.all([
+  const [cards, terrain, boxes, rawKeywords, patch, mech, xlate, names, missions, tactics, play, secondary, zoneData, facPatch, boxPatch] = await Promise.all([
     fetch(dataUrl('cards.json')).then((r) => r.json() as Promise<Card[]>),
     fetch(dataUrl('terrain_layouts.json')).then((r) => r.json() as Promise<TerrainData>),
     fetch(dataUrl('boxes.json')).then((r) => r.json() as Promise<BoxDef[]>),
@@ -288,11 +314,20 @@ export async function loadData(): Promise<GameData> {
     fetch(dataUrl('faction_overrides.json'))
       .then((r) => (r.ok ? (r.json() as Promise<FactionOverrides>) : ({} as FactionOverrides)))
       .catch(() => ({}) as FactionOverrides),
+    fetch(dataUrl('box_contents_overrides.json'))
+      .then((r) => (r.ok ? (r.json() as Promise<BoxContentsOverrides>) : ({} as BoxContentsOverrides)))
+      .catch(() => ({}) as BoxContentsOverrides),
   ]);
 
   cleanCardText(cards);
   applyTactics(cards, tactics.tactics ?? {});
   normaliseBoxes(cards);
+  applyBoxContents(cards, boxPatch);
+
+  for (const b of boxes) {
+    const bn = names.boxes?.[b.key];
+    if (bn) b.name = { ...b.name, en: bn.en };
+  }
 
   for (const c of cards) {
     const cn = names.cards?.[c.id];

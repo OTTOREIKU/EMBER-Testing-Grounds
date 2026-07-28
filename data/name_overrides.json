@@ -1,289 +1,307 @@
 {
- "_comment": "English names for cards/actions whose `en` field in the community data still holds Chinese/Japanese. \"derived\" entries reuse the official English that the same Chinese name carries on other cards; \"translated\" entries had no precedent and were translated here. Merged over cards.json at load time. \"traits\" holds English for pilot traitDescription text.",
- "cards": {
-  "154": {
-   "en": "M7 Grenade",
-   "source": "translated"
+  "_comment": "English names for cards/actions whose `en` field in the community data still holds Chinese/Japanese. \"derived\" entries reuse the official English that the same Chinese name carries on other cards; \"translated\" entries had no precedent and were translated here. Merged over cards.json at load time. \"traits\" holds English for pilot traitDescription text. \"boxes\" renames entries in boxes.json, keyed by box key.",
+  "cards": {
+    "154": {
+      "en": "M7 Grenade",
+      "source": "translated"
+    },
+    "155": {
+      "en": "M9 Stun Grenade"
+    },
+    "156": {
+      "en": "SGM2 \"Pholcus\" Automatic Mine",
+      "source": "translated"
+    },
+    "157": {
+      "en": "RKG70 Missile Group",
+      "source": "translated"
+    },
+    "158": {
+      "en": "DBP \"Turtle Shell\" Mobile Cover",
+      "source": "translated"
+    },
+    "274": {
+      "en": "Additional Instructions"
+    },
+    "278": {
+      "en": "Tactical Disposition"
+    },
+    "512": {
+      "en": "AH-21 Pistol + CC-50 Pile Bunker (R)",
+      "source": "corrected: source data labelled this 48-point part \"(R) (D)\", duplicating its own 0-point discard card 513"
+    },
+    "544": {
+      "en": "Quad \"Exocet\" Launcher",
+      "source": "translated"
+    },
+    "546": {
+      "en": "H2-A \"Crisis\" Type I",
+      "source": "translated"
+    },
+    "549": {
+      "en": "HL2-M \"Crisis\" Chassis M",
+      "source": "translated"
+    },
+    "552": {
+      "en": "Ot41 Laser Suppression System + Sd3 Shield",
+      "source": "translated"
+    },
+    "553": {
+      "en": "Ot50-ADS + Sd3 Shield",
+      "source": "translated"
+    },
+    "561": {
+      "en": "Lm382 Twin \"Exocet\" Launcher + Ls197 Autocannon",
+      "source": "translated"
+    },
+    "XPA-59": {
+      "en": "Combatant A-101",
+      "source": "derived"
+    },
+    "XPA-61": {
+      "en": "Combatant A-103",
+      "source": "derived"
+    },
+    "XPA-62": {
+      "en": "Seagull",
+      "source": "translated"
+    },
+    "LHDR-KK9": {
+      "en": "KK9 \"Snake Eye\" Micro Scout",
+      "source": "translated"
+    },
+    "S100+R6SS-L": {
+      "en": "S100 Shield + R6SS SMG (L)",
+      "source": "translated"
+    },
+    "S100+R6SS-L-T": {
+      "en": "S100 Shield + R6SS SMG (D)",
+      "source": "derived from 1 official card name(s)"
+    },
+    "R33S": {
+      "en": "R33S Silent Sniper Rifle",
+      "source": "translated"
+    },
+    "K21": {
+      "en": "K21 Heavy Nail Gun",
+      "source": "translated"
+    },
+    "K21-T": {
+      "en": "K21 Heavy Nail Gun (D)",
+      "source": "translated"
+    },
+    "XTC": {
+      "en": "XTC Right Arm",
+      "source": "translated"
+    },
+    "TM31RS": {
+      "en": "TM31RS \"Black Cat\" Support Core",
+      "source": "translated"
+    },
+    "TM35NA": {
+      "en": "TM35NA \"Nile Crocodile\" Electronic Warfare Core",
+      "source": "translated"
+    },
+    "TM39D": {
+      "en": "TM39D \"Cobra\" Tactical Core",
+      "source": "translated"
+    }
   },
-  "155": {
-   "en": "M9 Stun Grenade"
+  "actions": {
+    "544_A": {
+      "en": "Missile",
+      "source": "derived from 17 official action name(s)"
+    },
+    "PDBP-103_A": {
+      "en": "Missile",
+      "source": "derived from 17 official action name(s)"
+    },
+    "PDBP-103_B": {
+      "en": "Full-auto",
+      "source": "derived from 33 official action name(s)"
+    },
+    "545_A": {
+      "en": "Full-auto",
+      "source": "derived from 33 official action name(s)"
+    },
+    "545_B": {
+      "en": "Full-auto",
+      "source": "derived from 33 official action name(s)"
+    },
+    "548_A": {
+      "en": "Sprint",
+      "source": "derived from 12 official action name(s)"
+    },
+    "549_A": {
+      "en": "Sprint",
+      "source": "derived from 12 official action name(s)"
+    },
+    "552_A": {
+      "en": "Shield Up",
+      "source": "derived from 7 official action name(s)"
+    },
+    "552_B": {
+      "en": "Laser Suppression",
+      "source": "derived from 2 official action name(s)"
+    },
+    "553_A": {
+      "en": "Shield Up",
+      "source": "derived from 7 official action name(s)"
+    },
+    "553_B": {
+      "en": "Full-auto Interception",
+      "source": "derived from 5 official action name(s)"
+    },
+    "546_A": {
+      "en": "Full-auto",
+      "source": "derived from 33 official action name(s)"
+    },
+    "546_B": {
+      "en": "Emergency Smoke",
+      "source": "translated"
+    },
+    "534_A": {
+      "en": "Sprint",
+      "source": "derived from 12 official action name(s)"
+    },
+    "099_A": {
+      "en": "Sprint",
+      "source": "derived from 12 official action name(s)"
+    },
+    "100_A": {
+      "en": "Sprint",
+      "source": "derived from 12 official action name(s)"
+    },
+    "100_B": {
+      "en": "Stealth Movement",
+      "source": "derived from 2 official action name(s)"
+    },
+    "LHDR-KK9_A": {
+      "en": "Lock On",
+      "source": "derived from 1 official action name(s)"
+    },
+    "LHDR-KK9_B": {
+      "en": "Surveillance Strike",
+      "source": "translated"
+    },
+    "S100+R6SS-L_A": {
+      "en": "Full-auto",
+      "source": "derived from 33 official action name(s)"
+    },
+    "S100+R6SS-L_B": {
+      "en": "Mobile Defense",
+      "source": "derived from 3 official action name(s)"
+    },
+    "S100+R6SS-L-T_A": {
+      "en": "Full-auto",
+      "source": "derived from 33 official action name(s)"
+    },
+    "108_A": {
+      "en": "Grenade",
+      "source": "derived from 9 official action name(s)"
+    },
+    "154_A": {
+      "en": "Detonation",
+      "source": "derived from 1 official action name(s)"
+    },
+    "155_A": {
+      "en": "Detonate"
+    },
+    "156_A": {
+      "en": "Deploy",
+      "source": "translated"
+    },
+    "157_A": {
+      "en": "Guided Attack",
+      "source": "derived from 7 official action name(s)"
+    },
+    "158_A": {
+      "en": "Mobile Cover",
+      "source": "translated"
+    },
+    "R33S_A": {
+      "en": "Single Shot",
+      "source": "derived from 39 official action name(s)"
+    },
+    "K21_A": {
+      "en": "Single Shot",
+      "source": "derived from 39 official action name(s)"
+    },
+    "K21_B": {
+      "en": "Nail",
+      "source": "derived from 3 official action name(s)"
+    },
+    "XTC_A": {
+      "en": "Overload Injection",
+      "source": "translated"
+    },
+    "116_A": {
+      "en": "Full-auto",
+      "source": "derived from 33 official action name(s)"
+    },
+    "257_A": {
+      "en": "Nail",
+      "source": "derived from 3 official action name(s)"
+    },
+    "257_B": {
+      "en": "Stab",
+      "source": "derived from 4 official action name(s)"
+    },
+    "TM31RS_A": {
+      "en": "Coordinated Observation",
+      "source": "derived from 2 official action name(s)"
+    },
+    "TM31RS_B": {
+      "en": "Quick Clear",
+      "source": "translated"
+    },
+    "TM35NA_A": {
+      "en": "KC Armor",
+      "source": "derived from 6 official action name(s)"
+    },
+    "TM35NA_B": {
+      "en": "Red Shoes",
+      "source": "translated"
+    },
+    "TM39D_A": {
+      "en": "Ambush",
+      "source": "derived from 4 official action name(s)"
+    },
+    "TM39D_B": {
+      "en": "Launch Snake Eye",
+      "source": "translated"
+    }
   },
-  "156": {
-   "en": "SGM2 \"Pholcus\" Automatic Mine",
-   "source": "translated"
+  "traits": {
+    "XPA-59": {
+      "en": "Every combatant’s combat prosthetic carries an LK-series implant, so the LUKAS system can reach it remotely.",
+      "source": "translated"
+    },
+    "XPA-61": {
+      "en": "Work is work, but an executor squadron does not usually switch partners at short notice.",
+      "source": "translated"
+    },
+    "XPA-62": {
+      "en": "· This unit’s Projectile action Range +2.",
+      "source": "translated"
+    }
   },
-  "157": {
-   "en": "RKG70 Missile Group",
-   "source": "translated"
-  },
-  "158": {
-   "en": "DBP \"Turtle Shell\" Mobile Cover",
-   "source": "translated"
-  },
-  "274": {
-   "en": "Additional Instructions"
-  },
-  "278": {
-   "en": "Tactical Disposition"
-  },
-  "512": {
-   "en": "AH-21 Pistol + CC-50 Pile Bunker (R)",
-   "source": "corrected: source data labelled this 48-point part \"(R) (D)\", duplicating its own 0-point discard card 513"
-  },
-  "544": {
-   "en": "Quad \"Exocet\" Launcher",
-   "source": "translated"
-  },
-  "546": {
-   "en": "H2-A \"Crisis\" Type I",
-   "source": "translated"
-  },
-  "549": {
-   "en": "HL2-M \"Crisis\" Chassis M",
-   "source": "translated"
-  },
-  "552": {
-   "en": "Ot41 Laser Suppression System + Sd3 Shield",
-   "source": "translated"
-  },
-  "553": {
-   "en": "Ot50-ADS + Sd3 Shield",
-   "source": "translated"
-  },
-  "561": {
-   "en": "Lm382 Twin \"Exocet\" Launcher + Ls197 Autocannon",
-   "source": "translated"
-  },
-  "XPA-59": {
-   "en": "Combatant A-101",
-   "source": "derived"
-  },
-  "XPA-61": {
-   "en": "Combatant A-103",
-   "source": "derived"
-  },
-  "XPA-62": {
-   "en": "Seagull",
-   "source": "translated"
-  },
-  "LHDR-KK9": {
-   "en": "KK9 \"Snake Eye\" Micro Scout",
-   "source": "translated"
-  },
-  "S100+R6SS-L": {
-   "en": "S100 Shield + R6SS SMG (L)",
-   "source": "translated"
-  },
-  "S100+R6SS-L-T": {
-   "en": "S100 Shield + R6SS SMG (D)",
-   "source": "derived from 1 official card name(s)"
-  },
-  "R33S": {
-   "en": "R33S Silent Sniper Rifle",
-   "source": "translated"
-  },
-  "K21": {
-   "en": "K21 Heavy Nail Gun",
-   "source": "translated"
-  },
-  "K21-T": {
-   "en": "K21 Heavy Nail Gun (D)",
-   "source": "translated"
-  },
-  "XTC": {
-   "en": "XTC Right Arm",
-   "source": "translated"
-  },
-  "TM31RS": {
-   "en": "TM31RS \"Black Cat\" Support Core",
-   "source": "translated"
-  },
-  "TM35NA": {
-   "en": "TM35NA \"Nile Crocodile\" Electronic Warfare Core",
-   "source": "translated"
-  },
-  "TM39D": {
-   "en": "TM39D \"Cobra\" Tactical Core",
-   "source": "translated"
+  "boxes": {
+    "RDL_CORE": {
+      "en": "RDL Core",
+      "source": "faction prefix added to match the product listings; three boxes ship as plain \"Core\""
+    },
+    "UN_CORE": {
+      "en": "UN Core",
+      "source": "faction prefix added to match the product listings; three boxes ship as plain \"Core\""
+    },
+    "GOF_CORE": {
+      "en": "GoF Core",
+      "source": "faction prefix added to match the product listings; three boxes ship as plain \"Core\""
+    },
+    "COMBAT_RAID": {
+      "en": "Raid-2 Player Starter Pack",
+      "source": "renamed to match the product listing"
+    }
   }
- },
- "actions": {
-  "544_A": {
-   "en": "Missile",
-   "source": "derived from 17 official action name(s)"
-  },
-  "PDBP-103_A": {
-   "en": "Missile",
-   "source": "derived from 17 official action name(s)"
-  },
-  "PDBP-103_B": {
-   "en": "Full-auto",
-   "source": "derived from 33 official action name(s)"
-  },
-  "545_A": {
-   "en": "Full-auto",
-   "source": "derived from 33 official action name(s)"
-  },
-  "545_B": {
-   "en": "Full-auto",
-   "source": "derived from 33 official action name(s)"
-  },
-  "548_A": {
-   "en": "Sprint",
-   "source": "derived from 12 official action name(s)"
-  },
-  "549_A": {
-   "en": "Sprint",
-   "source": "derived from 12 official action name(s)"
-  },
-  "552_A": {
-   "en": "Shield Up",
-   "source": "derived from 7 official action name(s)"
-  },
-  "552_B": {
-   "en": "Laser Suppression",
-   "source": "derived from 2 official action name(s)"
-  },
-  "553_A": {
-   "en": "Shield Up",
-   "source": "derived from 7 official action name(s)"
-  },
-  "553_B": {
-   "en": "Full-auto Interception",
-   "source": "derived from 5 official action name(s)"
-  },
-  "546_A": {
-   "en": "Full-auto",
-   "source": "derived from 33 official action name(s)"
-  },
-  "546_B": {
-   "en": "Emergency Smoke",
-   "source": "translated"
-  },
-  "534_A": {
-   "en": "Sprint",
-   "source": "derived from 12 official action name(s)"
-  },
-  "099_A": {
-   "en": "Sprint",
-   "source": "derived from 12 official action name(s)"
-  },
-  "100_A": {
-   "en": "Sprint",
-   "source": "derived from 12 official action name(s)"
-  },
-  "100_B": {
-   "en": "Stealth Movement",
-   "source": "derived from 2 official action name(s)"
-  },
-  "LHDR-KK9_A": {
-   "en": "Lock On",
-   "source": "derived from 1 official action name(s)"
-  },
-  "LHDR-KK9_B": {
-   "en": "Surveillance Strike",
-   "source": "translated"
-  },
-  "S100+R6SS-L_A": {
-   "en": "Full-auto",
-   "source": "derived from 33 official action name(s)"
-  },
-  "S100+R6SS-L_B": {
-   "en": "Mobile Defense",
-   "source": "derived from 3 official action name(s)"
-  },
-  "S100+R6SS-L-T_A": {
-   "en": "Full-auto",
-   "source": "derived from 33 official action name(s)"
-  },
-  "108_A": {
-   "en": "Grenade",
-   "source": "derived from 9 official action name(s)"
-  },
-  "154_A": {
-   "en": "Detonation",
-   "source": "derived from 1 official action name(s)"
-  },
-  "155_A": {
-   "en": "Detonate"
-  },
-  "156_A": {
-   "en": "Deploy",
-   "source": "translated"
-  },
-  "157_A": {
-   "en": "Guided Attack",
-   "source": "derived from 7 official action name(s)"
-  },
-  "158_A": {
-   "en": "Mobile Cover",
-   "source": "translated"
-  },
-  "R33S_A": {
-   "en": "Single Shot",
-   "source": "derived from 39 official action name(s)"
-  },
-  "K21_A": {
-   "en": "Single Shot",
-   "source": "derived from 39 official action name(s)"
-  },
-  "K21_B": {
-   "en": "Nail",
-   "source": "derived from 3 official action name(s)"
-  },
-  "XTC_A": {
-   "en": "Overload Injection",
-   "source": "translated"
-  },
-  "116_A": {
-   "en": "Full-auto",
-   "source": "derived from 33 official action name(s)"
-  },
-  "257_A": {
-   "en": "Nail",
-   "source": "derived from 3 official action name(s)"
-  },
-  "257_B": {
-   "en": "Stab",
-   "source": "derived from 4 official action name(s)"
-  },
-  "TM31RS_A": {
-   "en": "Coordinated Observation",
-   "source": "derived from 2 official action name(s)"
-  },
-  "TM31RS_B": {
-   "en": "Quick Clear",
-   "source": "translated"
-  },
-  "TM35NA_A": {
-   "en": "KC Armor",
-   "source": "derived from 6 official action name(s)"
-  },
-  "TM35NA_B": {
-   "en": "Red Shoes",
-   "source": "translated"
-  },
-  "TM39D_A": {
-   "en": "Ambush",
-   "source": "derived from 4 official action name(s)"
-  },
-  "TM39D_B": {
-   "en": "Launch Snake Eye",
-   "source": "translated"
-  }
- },
- "traits": {
-  "XPA-59": {
-   "en": "Every combatant’s combat prosthetic carries an LK-series implant, so the LUKAS system can reach it remotely.",
-   "source": "translated"
-  },
-  "XPA-61": {
-   "en": "Work is work, but an executor squadron does not usually switch partners at short notice.",
-   "source": "translated"
-  },
-  "XPA-62": {
-   "en": "· This unit’s Projectile action Range +2.",
-   "source": "translated"
-  }
- }
 }
