@@ -283,7 +283,5 @@ export class DiceTray {
     );
     this.root.querySelector('#rr-blue')?.addEventListener('click', () => this.rerollSelected('blue'));
     this.root.querySelector('#rr-red')?.addEventListener('click', () => this.rerollSelected('red'));
-
-    this.root.closest('#left-panel')?.classList.toggle('dice-idle', this.rolled.length === 0);
   }
 }

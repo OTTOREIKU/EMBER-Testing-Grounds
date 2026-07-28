@@ -653,8 +653,12 @@ body.targeting #hint { color: var(--accent); font-weight: 700; }
 }
 
 /* ---------- dice tray ---------- */
+/* The tray takes exactly what its dice need and never gives that space back, so
+   the inspect box below can claim whatever is left rather than a fixed clamp.
+   The cap keeps a very tall tray from squeezing the inspect box out entirely. */
 #dice-tray {
-  background: var(--surface); padding: 10px; flex: 1; min-height: 0; overflow-y: auto;
+  background: var(--surface); padding: 10px; overflow-y: auto;
+  flex: 0 0 auto; min-height: 0; max-height: calc(100% - var(--chrome-h) - 92px);
   display: flex; flex-direction: column; gap: 8px;
 }
 .tray-pool { display: flex; flex-direction: column; gap: 4px; }
@@ -695,16 +699,21 @@ body.targeting #hint { color: var(--accent); font-weight: 700; }
 .tray-empty { color: var(--text2); font-size: 11.5px; }
 .tray-hint { font-size: 10.5px; color: var(--text2); margin: 0; }
 
+/* Sized by its own content, capped only by the room the tray leaves. Rolling one
+   pool no longer clamps it to a fixed height while space sits unused below. */
 #inspect-box {
-  flex-shrink: 0; border-top: 1px solid var(--border); background: var(--bg);
-  padding: 9px 10px; min-height: 92px; max-height: 190px; overflow-y: auto;
+  border-top: 1px solid var(--border); background: var(--bg);
+  padding: 9px 10px; min-height: 92px; overflow-y: auto;
+  flex: 0 1 auto; margin-top: auto;
 }
 #inspect-box.pinned {
-  max-height: 46vh; border-top-color: var(--accent);
+  border-top-color: var(--accent);
   box-shadow: inset 0 2px 0 0 var(--accent);
+  /* Pinning is a deliberate "keep this open to read it", so a pinned box may
+     take space back off the tray, which then scrolls. */
+  flex-shrink: 0; max-height: calc(100% - var(--chrome-h) - 132px);
 }
-#left-panel.dice-idle #inspect-box { max-height: min(62vh, 100vh - 330px); }
-#left-panel.dice-idle #inspect-box.pinned { max-height: min(72vh, 100vh - 260px); }
+#left-panel:has(#inspect-box.pinned) #dice-tray { flex-shrink: 1; min-height: 132px; }
 #inspect-box h4 {
   margin: 0 0 3px; font-size: 11px; color: var(--accent);
   text-transform: uppercase; letter-spacing: 0.7px; font-weight: 700;
