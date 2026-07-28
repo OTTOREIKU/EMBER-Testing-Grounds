@@ -137,7 +137,7 @@ async function init() {
   }
 
   const roundTracker = new RoundTracker(document.getElementById('round-tracker')!, () => onChanged());
-  roundTracker.onStartGame = () => void startGame();
+  roundTracker.onStartGame = () => void (normaliseSetup(state.setup) ? endGame() : startGame());
 
   const playGuide = new PlayGuide(document.getElementById('board-wrap')!, data, {
     onAdvancePhase: () => roundTracker.advance(),
@@ -642,6 +642,25 @@ async function init() {
     state.setup = newSetup();
     state.script = undefined;
     selectToken(null);
+    onChanged();
+  }
+
+  // Leaves the guided game and hands the board back, keeping everything where it
+  // stands so a match can be abandoned without losing the position.
+  async function endGame(): Promise<void> {
+    const waiting = state.tokens.filter((t) => t.deployed === false).length;
+    const ok = await confirmDialog({
+      title: 'End the game?',
+      body: waiting
+        ? `The board goes back to free play and the map and zones unlock. ${waiting} unit${
+            waiting === 1 ? ' is' : 's are'
+          } still waiting to deploy and will be put back on the board where they last stood.`
+        : 'The board goes back to free play and the map and zones unlock. Everything stays exactly where it is.',
+      confirmLabel: 'End game',
+    });
+    if (!ok) return;
+    for (const t of state.tokens) t.deployed = undefined;
+    state.setup = null;
     onChanged();
   }
 
@@ -2364,14 +2383,26 @@ async function init() {
   // The map and zone pickers are frozen for the life of a game, so nobody can
   // change the battlefield after deployment or between rounds.
   function paintBattlefieldLock(): void {
-    const locked = battlefieldLocked(normaliseSetup(state.setup));
-    const why = 'The battlefield is locked for this game. Press Start game to set up a new one.';
+    const setup = normaliseSetup(state.setup);
+    // Two levels. The map and zone pickers are open during the opening stage,
+    // since that is where the battlefield is agreed, then frozen. The tools that
+    // replace the whole board are shut for the entire game, because a Mission or
+    // Scenario would swap the map and units out from under the lock.
+    const locked = battlefieldLocked(setup);
+    const inGame = !!setup;
+    const why = 'Locked while a game is running. Press End game to change it.';
     for (const el of [mapSelect, zoneSelect]) {
       el.disabled = locked;
       el.title = locked ? why : '';
     }
     const zoneBtn = document.getElementById('btn-zones') as HTMLButtonElement | null;
     if (zoneBtn) zoneBtn.disabled = locked && !state.zoneSet;
+    for (const id of ['btn-missions', 'btn-scenarios', 'btn-mapedit', 'btn-mapmanage', 'btn-import-squad']) {
+      const b = document.getElementById(id) as HTMLButtonElement | null;
+      if (!b) continue;
+      b.disabled = inGame;
+      if (inGame) b.title = why;
+    }
   }
 
   function renderZoneOverlay(): void {
@@ -2394,6 +2425,8 @@ async function init() {
     state.showZones = !!id;
     save();
     renderZoneOverlay();
+    // The guide reports the chosen battlefield, so it has to hear about this.
+    onChanged();
   }
 
   zoneSelect.addEventListener('change', () => setZoneSet(zoneSelect.value));

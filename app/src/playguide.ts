@@ -465,17 +465,17 @@ export class PlayGuide {
     if (su) {
       if (su.stage === 'roll') {
         return firstPlayerFrom(su)
-          ? 'Take the First Player result before the round starts'
+          ? 'Take the result first'
           : su.rolls.blue.length && su.rolls.red.length
-            ? 'The roll is tied, so both sides roll again'
-            : 'Roll for First Player before the round starts';
+            ? 'Tied, roll again'
+            : 'Roll for First Player';
       }
-      if (su.stage === 'map') return 'Lock the map and zones before the round starts';
-      if (su.stage === 'side') return 'Choose a board edge before the round starts';
-      return deploymentComplete(s) ? 'Begin round 1 to leave deployment' : 'Deploy every unit before the round starts';
+      if (su.stage === 'map') return 'Lock the battlefield';
+      if (su.stage === 'side') return 'Choose a board edge';
+      return deploymentComplete(s) ? 'Press Begin round 1' : 'Deploy every unit';
     }
     if (PHASES[s.round.phase] === 'Planning' && this.script(s).stage !== `${s.round.n}:1:locked`) {
-      return 'Confirm the timings first';
+      return 'Confirm the timings';
     }
     return null;
   }

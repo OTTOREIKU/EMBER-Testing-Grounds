@@ -87,6 +87,10 @@ export class RoundTracker {
 
   // The round bar can advance the round on its own, so it has to respect the
   // same lock the guide does or setup can simply be walked past.
+  private inGame(): boolean {
+    return !!normaliseSetup(this.state?.setup);
+  }
+
   private blocked(): string | null {
     const s = this.state;
     if (!s) return null;
@@ -157,7 +161,11 @@ export class RoundTracker {
             }>↺</button>`
           : ''
       }
-      <button id="rt-start" class="rt-start" title="Take everything off the board into its squad, roll for First Player, then deploy properly">Start game</button>
+      <button id="rt-start" class="rt-start${this.inGame() ? ' ending' : ''}" title="${
+        this.inGame()
+          ? 'Leave the guided game and go back to free play, keeping everything where it stands'
+          : 'Take everything off the board into its squad, roll for First Player, then deploy properly'
+      }">${this.inGame() ? 'End game' : 'Start game'}</button>
       <span class="rt-phases">
         ${PHASES.map(
           (p, i) =>
