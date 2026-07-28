@@ -3,7 +3,7 @@ import { actionIconUrl, cardName, FACTION_LABEL, mechPartUrl, SIDE_LABEL, tabIma
 import { MECH_LAYER_ORDER } from './board';
 import { inspectOnHover, linkMechanics, type InspectInfo } from './inspector';
 import type { GameState, PartSlot, PartState, Stance, Timing, TimingDef, Token } from './types';
-import { SCALES, statusCount, STATUSES, TIMINGS } from './types';
+import { addStatus, SCALES, SHAPE_NOTE, statusCount, statusesFor, TIMINGS } from './types';
 import { defaultUnitLabel, factionProblems, initiativeFor, pilotCard, SLOT_LABEL, tidyUnitLabel, tokenCards, tokenFactions } from './units';
 import { promptDialog } from './dialog';
 
@@ -514,17 +514,18 @@ export class SquadTracker {
   private statusRow(t: Token): HTMLElement {
     const wrap = document.createElement('div');
     wrap.className = 'status-row';
-    for (const s of STATUSES) {
+    for (const s of statusesFor(t.kind)) {
       const n = statusCount(t.statuses, s.id);
       const on = n > 0;
       const b = document.createElement('button');
-      b.className = `status-chip${on ? ' on' : ''}`;
+      b.className = `status-chip shape-${s.shape}${on ? ' on' : ''}`;
       b.textContent = s.stacking && n > 1 ? `${s.icon}×${n}` : s.icon;
       b.style.setProperty('--chip-tint', s.tint);
       inspectOnHover(b, {
         title: s.stacking && on ? `${s.label} ×${n}` : s.label,
         sub: on ? `${s.icon} · on ${t.label}` : `${s.icon} · not on this unit`,
         lines: [
+          SHAPE_NOTE[s.shape],
           s.note,
           s.stacking
             ? on
@@ -536,14 +537,15 @@ export class SquadTracker {
         ],
       });
       const change = (delta: number) => {
-        const list = [...(t.statuses ?? [])];
         if (delta > 0) {
-          if (s.stacking || !list.includes(s.id)) list.push(s.id);
+          if (!s.stacking && statusCount(t.statuses, s.id)) return;
+          t.statuses = addStatus(t.statuses, s.id);
         } else {
+          const list = [...(t.statuses ?? [])];
           const at = list.lastIndexOf(s.id);
           if (at >= 0) list.splice(at, 1);
+          t.statuses = list;
         }
-        t.statuses = list;
         this.cb.onChanged();
       };
       b.addEventListener('click', (ev) => {

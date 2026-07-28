@@ -16,6 +16,11 @@ const ACTION_TINT: Record<string, string> = {
   Detonation: 'detonation',
 };
 
+function pipRow(kind: string, label: string, left: number, max: number, attrs: string): string {
+  const dots = Array.from({ length: max }, (_, i) => `<i class="pip${i < left ? '' : ' off'}"></i>`).join('');
+  return `<span class="pips pips-${kind}${left ? '' : ' spent'}" ${attrs}><b class="pip-label">${label}</b>${dots}<b class="pip-n">${left}/${max}</b></span>`;
+}
+
 const STAT_FIELDS: [keyof Card, string][] = [
   ['score', 'Points'],
   ['armor', 'Armor'],
@@ -29,6 +34,8 @@ const STAT_FIELDS: [keyof Card, string][] = [
 export interface PanelCallbacks {
   onRollDice(pool: { red?: number; yellow?: number }): void;
   onSpendAmmo(t: Token, actionId: string): void;
+  onSpendIntercept(t: Token, actionId: string): void;
+  onRestoreIntercept(t: Token, actionId: string): void;
   onRestoreAmmo(t: Token, actionId: string): void;
   onLaunch(t: Token, projectile: Card): void;
   onStartAttack(t: Token, actionId: string): void;
@@ -119,7 +126,7 @@ export class Panel {
   }
 
   private actionRow(t: Token, ga: ReturnType<typeof guidedActions>[number]): HTMLElement {
-    const { action: a, available, reason, ammoLeft, projectiles } = ga;
+    const { action: a, available, reason, ammoLeft, intercept, projectiles } = ga;
     const row = document.createElement('div');
     row.className = `action${available ? '' : ' unavailable'}`;
     row.dataset.tipCard = ga.card.id;
@@ -144,12 +151,10 @@ export class Panel {
       .filter(Boolean)
       .map((s) => ` · ${s}`)
       .join('')}</span>
-      ${
-        ammoLeft !== undefined
-          ? `<span class="ammo" data-reload="${a.id}" title="Ammo ${ammoLeft}/${a.storage}. Spent automatically when the action is used; click to put one back.">${'●'.repeat(ammoLeft)}${'○'.repeat((a.storage ?? 0) - ammoLeft)}</span>`
-          : ''
-      }
-      ${!available && reason ? `<span class="reason">${reason}</span>` : ''}`;
+      ${ammoLeft !== undefined ? pipRow('ammo', 'AMO', ammoLeft, a.storage ?? 0, `data-reload="${a.id}"`) : ''}
+      ${intercept ? pipRow('intercept', 'INT', intercept.left, intercept.max, `data-restore-int="${a.id}"`) : ''}
+      ${!available && reason ? `<span class="reason">${reason}</span>` : ''}
+      ${available && intercept && !intercept.can && intercept.reason ? `<span class="reason">${intercept.reason}</span>` : ''}`;
     const actName = a.name.en || a.name.zh || a.id;
     const rawEn = a.description?.en?.trim();
     const en = rawEn && !/[぀-ヿ一-鿿]/.test(rawEn) ? rawEn : undefined;
@@ -178,10 +183,37 @@ export class Panel {
     const pin = { pinKey: `action:${t.uid}:${a.id}` };
     inspectOnHover(head, tip, pin);
     inspectOnHover(info, tip, pin);
-    info.querySelector('[data-reload]')?.addEventListener('click', (ev) => {
-      ev.stopPropagation();
-      this.cb.onRestoreAmmo(t, a.id);
-    });
+    const ammoPips = info.querySelector<HTMLElement>('[data-reload]');
+    if (ammoPips) {
+      inspectOnHover(ammoPips, {
+        title: 'Ammo',
+        sub: `${ammoLeft}/${a.storage} · ${actName}`,
+        lines: [
+          'Round Token on the Part Card. One comes off every time the Action is used, and the Action stops working at zero.',
+          'The app spends these for you when you use the Action. Click here to put one back if you spent it by mistake.',
+        ],
+      });
+      ammoPips.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        this.cb.onRestoreAmmo(t, a.id);
+      });
+    }
+    const intPips = info.querySelector<HTMLElement>('[data-restore-int]');
+    if (intPips && intercept) {
+      inspectOnHover(intPips, {
+        title: 'Interception Tokens',
+        sub: `${intercept.left}/${intercept.max} · ${actName}`,
+        lines: [
+          'Round Tokens placed on this Part Card during the Deployment Phase, one per point of Intercept X.',
+          'Each Interception spends one and they are never restored, so once the Part is empty it cannot Intercept again for the rest of the game (rulebook 4.9).',
+          'Click here to put one back if you spent it by mistake.',
+        ],
+      });
+      intPips.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        this.cb.onRestoreIntercept(t, a.id);
+      });
+    }
     if (a.keywords?.length) info.appendChild(this.keywordChips(a.keywords));
     row.appendChild(head);
 
@@ -215,6 +247,22 @@ export class Panel {
       });
       btns.appendChild(ew);
     }
+    if (intercept?.can) {
+      const int = document.createElement('button');
+      int.className = 'intercept-btn';
+      int.innerHTML = `<i class="btn-ico">⊘</i> Intercept (${intercept.left})`;
+      inspectOnHover(int, {
+        title: 'Intercept',
+        sub: `${intercept.left} of ${intercept.max} left · ${actName}`,
+        lines: [
+          'Spends 1 Interception Token to attack an enemy Missile or Projectile that moved or launched within Range (rulebook 4.9).',
+          'Interception happens automatically when an enemy Aerial Unit moves, so use this to record one you have resolved.',
+          'Tokens are never restored, so this Part gets a fixed number of Interceptions for the whole game.',
+        ],
+      });
+      int.addEventListener('click', () => this.cb.onSpendIntercept(t, a.id));
+      btns.appendChild(int);
+    }
     if (available && a.type === 'Moving' && a.range) {
       const mv = document.createElement('button');
       mv.textContent = `Show range (${a.range})`;
@@ -224,7 +272,14 @@ export class Panel {
     if (a.range && a.type !== 'Moving') {
       const rng = document.createElement('button');
       rng.textContent = `Show R${a.range}`;
-      rng.title = `Highlight every grid within Range ${a.range}. Range is large-grid distance only, so line of sight and firing arc still apply.`;
+      inspectOnHover(rng, {
+        title: `Range ${a.range}`,
+        sub: actName,
+        lines: [
+          `Highlights every Grid within Range ${a.range} of this unit.`,
+          'Range is large-grid distance only, so line of sight and the firing arc still have to be checked on top of it.',
+        ],
+      });
       rng.addEventListener('click', () => this.cb.onShowActionRange(t, a.range!, actName));
       btns.appendChild(rng);
     }
@@ -257,9 +312,14 @@ export class Panel {
       if (!available) break;
       const launch = document.createElement('button');
       launch.textContent = `Launch ${cardName(p)}`;
-      launch.title = `Places the projectile token next to this unit, then drag it to its Landing Point grid.${
-        ammoLeft !== undefined ? ' Consumes 1 Ammo.' : ''
-      }`;
+      inspectOnHover(launch, {
+        title: `Launch ${cardName(p)}`,
+        sub: actName,
+        lines: [
+          'Places the projectile token next to this unit. Drag it to its Landing Point Grid, then resolve it with Detonate.',
+          ammoLeft !== undefined ? 'Spends 1 Ammo Token from this Part.' : '',
+        ].filter(Boolean),
+      });
       launch.addEventListener('click', () => {
         this.cb.onLaunch(t, p);
         if (ammoLeft !== undefined) this.cb.onSpendAmmo(t, a.id);

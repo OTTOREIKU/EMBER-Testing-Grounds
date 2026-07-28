@@ -124,6 +124,7 @@ export interface Token {
   timing?: Timing;
   partStates: Partial<Record<PartSlot | 'main', PartState>>;
   ammo: Record<string, number>;
+  intercept?: Record<string, number>;
   log?: LogEntry[];
   statuses?: string[];
 }
@@ -151,13 +152,53 @@ export const TIMINGS: TimingDef[] = [
   { id: 'tactical', name: 'Tactical', short: 'TAC', pilotKey: 'tactic' },
 ];
 
+export type TokenShape = 'square' | 'hexagon' | 'triangle' | 'round' | 'state';
+
 export interface StatusDef {
   id: string;
   label: string;
   icon: string;
   tint: string;
   note: string;
+  shape: TokenShape;
   stacking?: boolean;
+  clearsHexagons?: boolean;
+  appliesTo?: Token['kind'][];
+}
+
+export function statusesFor(kind: Token['kind']): StatusDef[] {
+  return STATUSES.filter((s) => !s.appliesTo || s.appliesTo.includes(kind));
+}
+
+export const INTERCEPT_DEF: StatusDef = {
+  id: 'interception',
+  shape: 'round',
+  label: 'Interception',
+  icon: 'INT',
+  tint: '#65a2d8',
+  note: 'Intercept X puts X Round Tokens on the Part at Deployment, and they are never restored. Each Interception spends one, and once a Part is empty it cannot Intercept again for the rest of the game (rulebook 4.9). The count here is what the unit has left across all of its Parts.',
+};
+
+export const SHAPE_NOTE: Record<TokenShape, string> = {
+  square: 'Square Token. A unit may bear any number of these at once.',
+  hexagon: 'Hexagon Token. A unit may bear only one, so taking a new one removes the old (2.5.3).',
+  triangle: 'Triangle Token. In the physical game this sits on the Part Card, not the unit.',
+  round: 'Round Token. In the physical game this sits on the Part Card, not the unit.',
+  state: 'Not a token. This is a State the unit is in (2.5.4).',
+};
+
+export function hexagonIds(): Set<string> {
+  return new Set(STATUSES.filter((s) => s.shape === 'hexagon').map((s) => s.id));
+}
+
+export function addStatus(statuses: string[] | undefined, id: string): string[] {
+  const def = STATUSES.find((s) => s.id === id);
+  let list = [...(statuses ?? [])];
+  if (def?.shape === 'hexagon' || def?.clearsHexagons) {
+    const hexes = hexagonIds();
+    list = list.filter((s) => !hexes.has(s));
+  }
+  return [...list, id];
 }
 
 export function statusCount(statuses: string[] | undefined, id: string): number {
@@ -181,6 +222,7 @@ export function statusStacks(statuses: string[] | undefined): { def: StatusDef; 
 export const STATUSES: StatusDef[] = [
   {
     id: 'fci',
+    shape: 'square',
     label: 'Fire Control Interference',
     icon: 'FCI',
     tint: '#c9a6ff',
@@ -188,42 +230,50 @@ export const STATUSES: StatusDef[] = [
   },
   {
     id: 'fragile',
+    shape: 'square',
     label: 'Fragile',
     icon: 'FRG',
     tint: '#f0916b',
     stacking: true,
-    note: 'Each Fragile Token costs this unit 1 White die on its Defense Rolls, and they stack. Laser Weapon grants one on every hit, and Ion Weapon may exchange Lightning for a Heavy Hit against a unit bearing one. Click to add a token, shift-click or right-click to take one off.',
+    note: 'Each Fragile Token costs this unit 1 White die on its Defense Rolls, and they stack. Laser Weapon grants one on every hit, and Ion Weapon may exchange Lightning for a Heavy Hit against a unit bearing one. A Defense Roll can never drop below 1 White (4.4.1), so on an Armor 0 unit such as most missiles this often changes nothing except the Ion Weapon trigger. Click to add a token, shift-click or right-click to take one off.',
   },
   {
     id: 'immobilized',
+    shape: 'square',
     label: 'Immobilized',
     icon: 'IMB',
     tint: '#8fa0b5',
-    note: 'This unit cannot perform Movement Actions or Maneuver, and that includes changing facing on the spot. It also rolls no Blue dice at all on its Defense Rolls, even in Mobility Stance (rulebook 6.3.2). Movement actions are greyed out in the Details tab while this is on.',
+    note: 'This unit cannot perform Movement Actions or Maneuver, and that includes changing facing on the spot. It also rolls no Blue dice at all on its Defense Rolls, even in Mobility Stance (rulebook 6.3.2). Movement actions are greyed out in the Details tab while this is on. Note that a Projectile has no Movement Actions to lose, since its card only carries Immediate, Delay and Passive actions, so on a missile this mainly strips the Blue dice it would get from a printed Mobility stance.',
   },
   {
     id: 'camouflage',
+    shape: 'state',
+    clearsHexagons: true,
+    appliesTo: ['mech', 'drone'],
     label: 'Optical Camouflage',
     icon: 'OC',
     tint: '#4fd1c5',
-    note: 'This unit is in the Optical Camouflage State (4.12.2). On the table its model is swapped for a camouflage model and all Hexagon Tokens come off it. Attacks against it must Scan first or fail, and Electronic Value 0 or a dash cannot target it at all. The marked square is only a suspected position: when Revealed the unit makes Manifestation Movement up to its Stealth value.',
+    note: 'This unit is in the Optical Camouflage State (4.12.2). On the table its model is swapped for a camouflage model and all Hexagon Tokens come off it. Attacks against it must Scan first or fail, and Electronic Value 0 or a dash cannot target it at all. The marked square is only a suspected position: when Revealed the unit makes Manifestation Movement up to its Stealth value. Not offered on Projectiles: the only two ways in are an Action that activates it or deploying in the state, and Projectiles cannot be placed during the Deployment stage (5.1).',
   },
   {
     id: 'lowProfile',
+    shape: 'hexagon',
     label: 'Low Profile',
     icon: 'LP',
     tint: '#9ad9b5',
     note: 'Against Firing Attacks this unit counts every [Eye] in its Defense Roll as a [Dodge] (rulebook 6.3.3), which the attack helper applies for you. Maneuvering, including a facing-only change, removes the token; Scanning also strips it.',
   },
   {
-    id: 'interception',
-    label: 'Interception used',
-    icon: 'INT',
-    tint: '#65a2d8',
-    note: 'This unit has spent its Interception for the round (4.7.4).',
+    id: 'highlight',
+    shape: 'hexagon',
+    label: 'Highlight',
+    icon: 'HL',
+    tint: '#ffd166',
+    note: 'This unit counts as having the Highlight keyword (rulebook 6.3.3). Any enemy performing an Attack Action that is able to target it must target it, and cannot pick a different unit with that Attack. Hexagon token, so taking a different one replaces this.',
   },
   {
     id: 'targetTracer',
+    shape: 'hexagon',
     label: 'Target Tracer',
     icon: 'TT',
     tint: '#ff8b6b',
@@ -231,17 +281,20 @@ export const STATUSES: StatusDef[] = [
   },
   {
     id: 'repaired',
+    shape: 'triangle',
+    appliesTo: ['mech'],
     label: 'Repaired',
     icon: 'REP',
     tint: '#3ddc84',
-    note: 'Triangle token: emergency repair of a Destroyed Part. The Part may be used as normal again, but if it is ever the target of an Attack no Defense Roll is made and it is Destroyed immediately (rulebook 6.3.1).',
+    note: 'Emergency repair of a Destroyed Part. The Part may be used as normal again, but if it is ever the target of an Attack no Defense Roll is made and it is Destroyed immediately (rulebook 6.3.1). Mechs only: they are the only units built from Parts, the attack sequence skips the target-Part step for everything else (4.5.1), and a Destroyed Drone or Projectile leaves the board at once (4.4.4).',
   },
   {
     id: 'smoke',
+    shape: 'state',
     label: 'In smoke',
     icon: 'SMK',
     tint: '#a6b0bd',
-    note: 'Standing in a Smoke Screen. Treat line of sight through the screen per 4.16.',
+    note: 'This unit shares its Grid with a Smoke Screen, so line of sight cannot be established to it or from it for Firing Actions (rulebook 4.16). It cannot be shot at, and it cannot shoot out, in any direction. Melee and Projectile Actions ignore smoke completely, so it can still be hit in melee and it can still launch. Smoke blocks both sides equally no matter who placed it, and Aerial units are no exception. Screens placed on the board apply this for you in the attack helper, so use this chip only to note smoke you are tracking by hand.',
   },
 ];
 
@@ -255,6 +308,12 @@ export interface Marker {
   kind: string;
   col: number;
   row: number;
+}
+
+export interface SmokeScreen {
+  col: number;
+  row: number;
+  side: Side;
 }
 
 export type BattleScale = 'skirmish' | 'standard' | 'large';
@@ -281,6 +340,7 @@ export interface GameState {
   round: RoundState;
   commandTokens: Record<Side, number>;
   markers?: Marker[];
+  smoke?: SmokeScreen[];
   removedTerrain?: string[];
   scale?: BattleScale;
   roundLimit?: number;

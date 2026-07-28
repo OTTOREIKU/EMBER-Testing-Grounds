@@ -3,7 +3,7 @@ import { cardName } from './data';
 import { iconSvg } from './dice';
 import { linkMechanics } from './inspector';
 import type { Card, CardAction, DiceData, DiceIcon, DieColor, GameRuleEffect, PartSlot, Token } from './types';
-import { statusCount, STATUSES } from './types';
+import { addStatus, statusCount, STATUSES } from './types';
 import { electronicValue, SLOT_LABEL, tokenCards } from './units';
 
 type Step = 'part' | 'attack' | 'defense' | 'resolve';
@@ -792,8 +792,14 @@ export class ElectronicHelper {
           const def = STATUSES.find((s) => s.label === e.status || s.id === e.status) ?? STATUSES.find((s) => s.id === 'fci');
           if (def) {
             const n = e.stacks ?? 1;
-            for (let i = 0; i < n; i++) c.responder.statuses = [...(c.responder.statuses ?? []), def.id];
+            const before = c.responder.statuses ?? [];
+            for (let i = 0; i < n; i++) c.responder.statuses = addStatus(c.responder.statuses, def.id);
             done.push(`${c.responder.label} gains ${n} ${def.label}`);
+            const lost = before.filter((s) => !c.responder.statuses!.includes(s));
+            for (const id of lost) {
+              const old = STATUSES.find((s) => s.id === id);
+              if (old) done.push(`${old.label} comes off ${c.responder.label}, since a unit may bear only 1 Hexagon Token (2.5.3)`);
+            }
             if (def.id === 'fci' && c.responder.kind === 'projectile' && c.respEv > 0) {
               done.push(
                 `${c.responder.label} is a Projectile with an Electronic Value, so it is destroyed outright (rulebook 6.3.2)`,

@@ -266,6 +266,9 @@ export class Roster {
             if (!ok) return;
           }
           this.cb.onAddMech({ ...this.mech }, side);
+          // Those Parts are on the board now, so start the next build empty.
+          this.mech = {};
+          this.render();
         })();
       });
       btns.appendChild(b);

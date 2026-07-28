@@ -22,6 +22,16 @@ export const FACTION_LABEL: Record<string, string> = {
   COLLABORATION: 'Collab',
 };
 
+// Pilots record their set as a single `box` string; everything else uses the
+// `containedIn` array. Fold the former into the latter so one lookup serves both.
+function normaliseBoxes(cards: Card[]): void {
+  for (const c of cards) {
+    const box = (c as { box?: string }).box;
+    if (!box || c.containedIn?.length) continue;
+    c.containedIn = [{ box, quantityPerBox: 1 }];
+  }
+}
+
 function buildFactionIndex(cards: Card[], boxes: BoxDef[]): Map<string, string | null> {
   const boxFaction = new Map(boxes.map((b) => [b.key, b.faction ?? []]));
   const out = new Map<string, string | null>();
@@ -282,6 +292,7 @@ export async function loadData(): Promise<GameData> {
 
   cleanCardText(cards);
   applyTactics(cards, tactics.tactics ?? {});
+  normaliseBoxes(cards);
 
   for (const c of cards) {
     const cn = names.cards?.[c.id];

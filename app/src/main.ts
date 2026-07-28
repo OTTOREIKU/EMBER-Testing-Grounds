@@ -22,7 +22,7 @@ import {
 } from './mapeditor';
 import { Panel } from './panel';
 import { Roster } from './roster';
-import { inArc, losBetween, rangeBetween, reachableGrids } from './rules';
+import { dissipationFor, inArc, LG, losBetween, rangeBetween, reachableGrids, smokeBlocks } from './rules';
 import { instantiateScenario, loadScenarios, type Scenario } from './scenarios';
 import { loadReplays, ReplayPlayer, type ReplayScript, type ReplayStep, type ReplayTally } from './replay';
 import { SquadTracker } from './squads';
@@ -30,9 +30,9 @@ import { warmAllImagesWhenIdle } from './images';
 import { watchForUpdates } from './updates';
 import { installTooltip, preloadCards } from './tooltip';
 import { PHASES, RoundTracker } from './tracker';
-import type { DiceData, Facing, GameState, MechLoadout, Side, TerrainPiece, Token } from './types';
-import { SCALES, STATUSES } from './types';
-import { factionProblems, makeDroneToken, makeMechToken, migrateState, tokenCards } from './units';
+import type { Card, DiceData, Facing, GameState, MechLoadout, Side, SmokeScreen, StatusDef, TerrainPiece, Token } from './types';
+import { addStatus, SCALES, statusCount, statusesFor, STATUSES } from './types';
+import { deployedCardCounts, factionProblems, interceptCapacity, makeDroneToken, makeMechToken, migrateState, smokePlacement, tokenCards } from './units';
 import { registerOffline } from './offline';
 
 const SAVE_KEY = 'ember-testing-grounds-v1';
@@ -151,6 +151,34 @@ async function init() {
         if (!combatBusy()) panel.showToken(t);
       }
     },
+    onSpendIntercept(t, actionId) {
+      const left = t.intercept?.[actionId];
+      if (left === undefined || left <= 0) return;
+      t.intercept![actionId] = left - 1;
+      const act = tokenCards(data, t)
+        .flatMap(({ card }) => card.actions ?? [])
+        .find((a) => a.id === actionId);
+      const name = act?.name.en || act?.name.zh || actionId;
+      logTo(
+        t,
+        left - 1 === 0
+          ? `${t.label} Intercepts with ${name}, spending its last Interception Token. That Part cannot Intercept again this game.`
+          : `${t.label} Intercepts with ${name}. ${left - 1} Interception Token${left - 1 === 1 ? '' : 's'} left on the Part.`,
+      );
+      onChanged();
+      if (!combatBusy()) panel.showToken(t);
+    },
+    onRestoreIntercept(t, actionId) {
+      const act = tokenCards(data, t)
+        .flatMap(({ card }) => card.actions ?? [])
+        .find((a) => a.id === actionId);
+      const max = act ? interceptCapacity(act) : undefined;
+      const left = t.intercept?.[actionId];
+      if (left === undefined || max === undefined || left >= max) return;
+      t.intercept![actionId] = left + 1;
+      onChanged();
+      if (!combatBusy()) panel.showToken(t);
+    },
     onLaunch(t, projectile) {
       const tok = makeDroneToken(state, data, projectile, t.side);
       const spot = findSpotNear(t, tok.size, tok.aerial);
@@ -236,9 +264,23 @@ async function init() {
       }
       selectToken(uid);
     },
-    onMove(uid, col, row) {
+    onMove(uid, col, row, forced) {
       const t = state.tokens.find((x) => x.uid === uid);
       if (!t) return;
+      if (statusCount(t.statuses, 'immobilized') > 0 && !forced) {
+        board.renderTokens(state);
+        board.setSelected(uid);
+        showInspect({
+          title: 'Immobilized',
+          sub: `IMB · on ${t.label}`,
+          lines: [
+            'This unit cannot perform Movement Actions or Maneuver, and that includes changing facing on the spot (rulebook 6.3.2).',
+            'Being displaced by someone else’s effect is still legal, so hold Shift while dragging to move it anyway.',
+            'Take the IMB token off in the Squads tab to move it normally again.',
+          ],
+        });
+        return;
+      }
       const snapped = snapPlacement(col, row, t.size);
       if (snapped && isFree(snapped.col, snapped.row, t.size, t.aerial, t.uid)) {
         if (t.size === 3) {
@@ -265,7 +307,7 @@ async function init() {
         board.clearRange();
         return;
       }
-      const los = losBetween(sel, hov, currentTerrain(), state.tokens);
+      const los = smokeBlocks(sel, hov, state.smoke ?? []) ? 'smoked' : losBetween(sel, hov, currentTerrain(), state.tokens);
       board.showRange(sel, hov, `${rangeText(sel, hov)} · ${los}`);
     },
     onCellClick(col, row, erase) {
@@ -348,13 +390,18 @@ async function init() {
     }
     bits.push(fwd ? 'in forward arc ✓' : '⚠ NOT in forward arc');
     if (action.type === 'Firing') {
-      bits.push(los === 'clear' ? 'LOS clear ✓' : los === 'obstructed' ? '⚠ obstructed, so consider +2 White protection' : '✕ LOS blocked (3" terrain)');
+      if (smokeBlocks(attacker, defender, state.smoke ?? [])) bits.push('✕ LOS blocked by a Smoke Screen (4.16)');
+      else bits.push(los === 'clear' ? 'LOS clear ✓' : los === 'obstructed' ? '⚠ obstructed, so consider +2 White protection' : '✕ LOS blocked (3" terrain)');
     }
     return bits.join(' · ');
   }
 
   function protectionFor(attacker: Token, defender: Token, action: { type?: string }): { white: number; note: string } {
     if (action.type !== 'Firing') return { white: 0, note: '' };
+    // Smoke removes line of sight outright, so there is no protection to add on top.
+    if (smokeBlocks(attacker, defender, state.smoke ?? [])) {
+      return { white: 0, note: 'No line of sight: a Smoke Screen is in the way (4.16)' };
+    }
     const los = losBetween(attacker, defender, currentTerrain(), state.tokens);
     if (los === 'clear') return { white: 0, note: '' };
     const terrainOnly = losBetween(attacker, defender, currentTerrain(), []);
@@ -378,10 +425,26 @@ async function init() {
     document.getElementById('hint')!.textContent = 'Drag move · Q/E rotate · M move-range · A arcs · Del remove · hover = range/LOS';
   }
 
+  // How many more of this card you could still put on the board.
+  // null means no limit: either the filter is off, or the card has no box data.
+  function stockLeft(card: Card): number | null {
+    if (!inventory.filterEnabled || !inventory.hasAny()) return null;
+    if (!(card.containedIn ?? []).length) return null;
+    const owned = inventory.ownedCount(card);
+    if (!owned) return 0;
+    return Math.max(0, owned - (deployedCardCounts(state.tokens).get(card.id) ?? 0));
+  }
+
   const roster = new Roster(data, {
-    cardFilter: (card) => inventory.passes(card),
+    cardFilter: (card) => {
+      if (!inventory.passes(card)) return false;
+      const left = stockLeft(card);
+      return left === null || left > 0;
+    },
     cardBadge: (card) => {
       if (!inventory.hasAny()) return '';
+      const left = stockLeft(card);
+      if (left !== null) return ` ×${left} left`;
       const n = inventory.ownedCount(card);
       return n > 0 ? ` ×${n}` : '';
     },
@@ -430,6 +493,216 @@ async function init() {
     onChanged();
   }
 
+  // ---------- smoke screens (rulebook 4.16) ----------
+
+  let smokePlacing: {
+    side: Side;
+    left: number;
+    connected: boolean;
+    placed: SmokeScreen[];
+    origin: { c: number; r: number } | null;
+    range: { c: number; r: number; max: number } | null;
+    label: string;
+    done: () => void;
+  } | null = null;
+
+  function smokeCandidates(): { c: number; r: number; ok: boolean }[] {
+    const m = smokePlacing!;
+    const out: { c: number; r: number; ok: boolean }[] = [];
+    const mine = (state.smoke ?? []).filter((s) => s.side === m.side);
+    for (let c = 0; c < LG; c++) {
+      for (let r = 0; r < LG; r++) {
+        if (m.range && Math.abs(c - m.range.c) + Math.abs(r - m.range.r) > m.range.max) continue;
+        // The same player may not stack two screens in one Grid; the enemy may.
+        if (mine.some((s) => s.col === c && s.row === r)) continue;
+        if (m.placed.length === 0) {
+          if (m.origin && (c !== m.origin.c || r !== m.origin.r)) continue;
+          out.push({ c, r, ok: true });
+          continue;
+        }
+        if (m.connected && !m.placed.some((s) => Math.abs(s.col - c) + Math.abs(s.row - r) === 1)) continue;
+        out.push({ c, r, ok: true });
+      }
+    }
+    return out;
+  }
+
+  function renderSmokeStep(): void {
+    const m = smokePlacing;
+    if (!m) return;
+    const body = document.getElementById('combat-body')!;
+    const cands = smokeCandidates();
+    body.innerHTML = `<div class="attack-helper">
+      <div class="ah-head"><b>Place Smoke Screens</b>
+        <span class="dim">${escapeHtml(m.label)} · ${m.left} left</span></div>
+      <p class="ah-los">${
+        m.placed.length === 0 && m.origin
+          ? 'The first screen goes on the landing point.'
+          : m.connected
+            ? 'Each screen must be in Contact with one already placed by this Action, so pick a Grid sharing an edge with the smoke.'
+            : 'Pick any Grid within range. This Action does not require the screens to be Connected.'
+      } A Smoke Screen sits in one Large Grid and may share it with units and terrain.</p>
+      <div class="ah-step"><h4>Click a highlighted Grid on the board</h4>
+        <p class="dim">${cands.length} legal ${cands.length === 1 ? 'Grid' : 'Grids'}. You may stop early: the card says <i>up to</i> ${m.left + m.placed.length} screens.</p>
+      </div></div>`;
+    const head = body.querySelector('.ah-head')!;
+    const cancel = document.createElement('button');
+    cancel.className = 'ah-cancel';
+    cancel.textContent = m.placed.length ? 'Stop here' : 'Cancel';
+    cancel.addEventListener('click', () => finishSmoke());
+    head.appendChild(cancel);
+    board.showSmokeTargets(cands, (c, r) => {
+      const s: SmokeScreen = { col: c, row: r, side: m.side };
+      state.smoke = [...(state.smoke ?? []), s];
+      m.placed.push(s);
+      m.left--;
+      onChanged();
+      if (m.left <= 0) finishSmoke();
+      else renderSmokeStep();
+    });
+    showSideTab('combat');
+  }
+
+  function finishSmoke(): void {
+    const m = smokePlacing;
+    smokePlacing = null;
+    board.clearHighlights();
+    if (m) m.done();
+    onChanged();
+  }
+
+  function startSmokePlacement(o: {
+    side: Side;
+    count: number;
+    connected: boolean;
+    origin?: { c: number; r: number };
+    range?: { c: number; r: number; max: number };
+    label: string;
+    done: () => void;
+  }): void {
+    smokePlacing = {
+      side: o.side,
+      left: o.count,
+      connected: o.connected,
+      placed: [],
+      origin: o.origin ?? null,
+      range: o.range ?? null,
+      label: o.label,
+      done: o.done,
+    };
+    renderSmokeStep();
+  }
+
+  function renderSmokePrompt(): void {
+    const host = document.getElementById('smoke-prompt');
+    if (!host) return;
+    const smoke = state.smoke ?? [];
+    const endPhase = PHASES[state.round.phase] === 'End';
+    if (smokeChoices?.length) return;
+    if (!smoke.length || !endPhase || smokePlacing) {
+      host.replaceChildren();
+      host.hidden = true;
+      return;
+    }
+    const order: Side[] = state.round.firstPlayer === 'blue' ? ['blue', 'red'] : ['red', 'blue'];
+    const owed = order
+      .map((side) => ({ side, ...dissipationFor(smoke, side) }))
+      .filter((d) => d.isolated.length || d.groups.length);
+    if (!owed.length) {
+      host.replaceChildren();
+      host.hidden = true;
+      return;
+    }
+    host.hidden = false;
+    host.innerHTML = `<div class="smoke-prompt-head"><b>Smoke dissipation</b>
+        <span class="dim">End Phase of round ${state.round.n}</span></div>
+      <p class="dim">Every screen that is not Connected comes off, and each Connected group loses one.
+        Players alternate, ${escapeHtml(SIDE_LABEL[order[0]])} first. Groups are counted once now, so a
+        removal that splits a group owes nothing more until next round.</p>
+      <ul class="smoke-owed">${owed
+        .map(
+          (d) =>
+            `<li><b>${escapeHtml(SIDE_LABEL[d.side])}</b>: ${
+              [
+                d.isolated.length ? `${d.isolated.length} isolated screen${d.isolated.length === 1 ? '' : 's'} removed` : '',
+                d.groups.length ? `1 from each of ${d.groups.length} connected group${d.groups.length === 1 ? '' : 's'}` : '',
+              ]
+                .filter(Boolean)
+                .join(' · ')
+            }</li>`,
+        )
+        .join('')}</ul>
+      <button id="smoke-dissipate" class="ah-primary">Resolve dissipation</button>`;
+    host.querySelector('#smoke-dissipate')!.addEventListener('click', () => resolveDissipation());
+  }
+
+  // The owner picks which screen leaves each group, and the group list is fixed
+  // before any of it happens, so a removal that splits a group owes nothing more.
+  let smokeChoices: { side: Side; group: SmokeScreen[] }[] | null = null;
+
+  function resolveDissipation(): void {
+    const smoke = state.smoke ?? [];
+    if (!smoke.length) return;
+    const order: Side[] = state.round.firstPlayer === 'blue' ? ['blue', 'red'] : ['red', 'blue'];
+    const doomed = new Set<SmokeScreen>();
+    const queue: { side: Side; group: SmokeScreen[] }[] = [];
+    let isolated = 0;
+    for (const side of order) {
+      const d = dissipationFor(smoke, side);
+      for (const s of d.isolated) doomed.add(s);
+      isolated += d.isolated.length;
+      for (const g of d.groups) queue.push({ side, group: g });
+    }
+    state.smoke = smoke.filter((s) => !doomed.has(s));
+    smokeChoices = queue;
+    onChanged();
+    if (!queue.length) {
+      void alertDialog({
+        title: 'Smoke dissipated',
+        body: `${isolated} isolated Smoke Screen${isolated === 1 ? '' : 's'} removed. Nothing was Connected, so there was nothing to choose.`,
+      });
+      return;
+    }
+    renderSmokeChoice(isolated);
+  }
+
+  function renderSmokeChoice(isolated: number): void {
+    const host = document.getElementById('smoke-prompt')!;
+    const next = smokeChoices?.[0];
+    if (!next) {
+      smokeChoices = null;
+      board.clearHighlights();
+      onChanged();
+      void alertDialog({
+        title: 'Smoke dissipated',
+        body: `Dissipation is done. ${(state.smoke ?? []).length} Smoke Screen${(state.smoke ?? []).length === 1 ? '' : 's'} still on the board.`,
+      });
+      return;
+    }
+    host.hidden = false;
+    host.innerHTML = `<div class="smoke-prompt-head"><b>Smoke dissipation</b>
+        <span class="dim">${escapeHtml(SIDE_LABEL[next.side])} chooses · ${smokeChoices!.length} group${smokeChoices!.length === 1 ? '' : 's'} left</span></div>
+      <p class="dim">${isolated ? `${isolated} isolated screen${isolated === 1 ? '' : 's'} came off already. ` : ''}Click one
+        highlighted Smoke Screen to take it off this Connected group. Splitting the group costs nothing further this round.</p>
+      <button id="smoke-auto" class="ah-cancel">Pick for me</button>`;
+    board.showSmokeTargets(
+      next.group.map((s) => ({ c: s.col, r: s.row, ok: true })),
+      (c, r) => {
+        const gone = next.group.find((s) => s.col === c && s.row === r);
+        state.smoke = (state.smoke ?? []).filter((s) => s !== gone);
+        smokeChoices = smokeChoices!.slice(1);
+        onChanged();
+        renderSmokeChoice(0);
+      },
+    );
+    host.querySelector('#smoke-auto')!.addEventListener('click', () => {
+      state.smoke = (state.smoke ?? []).filter((s) => s !== next.group[0]);
+      smokeChoices = smokeChoices!.slice(1);
+      onChanged();
+      renderSmokeChoice(0);
+    });
+  }
+
   function detonateHeading(actionName: string, projLabel: string): string {
     if (/^detonat\w*$/i.test(actionName.trim())) return `Detonate ${projLabel}`;
     return /detonat/i.test(actionName) ? actionName : `Detonate ${actionName}`;
@@ -456,6 +729,25 @@ async function init() {
 
     const body = document.getElementById('combat-body')!;
     const name = action.name.en || action.name.zh || action.id;
+
+    const smoke = smokePlacement(action);
+    if (smoke) {
+      board.clearHighlights();
+      startSmokePlacement({
+        side: proj.side,
+        count: smoke.count,
+        connected: smoke.connected,
+        origin: { c: Math.floor(proj.col / 3), r: Math.floor(proj.row / 3) },
+        label: `${name} · ${proj.label}`,
+        done: () => {
+          state.tokens = state.tokens.filter((x) => x.uid !== proj.uid);
+          if (selectedUid === proj.uid) selectToken(null);
+          renderCombatIdle();
+          showSideTab('details');
+        },
+      });
+      return;
+    }
 
     if (!action.redDice && !action.yellowDice) {
       renderEffectDetonation(proj, action, name, range, targets);
@@ -531,6 +823,14 @@ async function init() {
     if (needsLos) for (const { t } of targets) los.set(t.uid, losBetween(proj, t, currentTerrain(), state.tokens));
     const caught = needsLos ? targets.filter(({ t }) => los.get(t.uid) !== 'blocked') : targets;
 
+    // Only offer tokens that could legally land on something in the blast, so a
+    // grenade over a missile does not advertise Repaired or Optical Camouflage.
+    const detStatuses = (): StatusDef[] => {
+      const kinds = new Set(targets.map((x) => x.t.kind));
+      if (!kinds.size) return statusesFor('mech');
+      return STATUSES.filter((s) => [...kinds].some((k) => !s.appliesTo || s.appliesTo.includes(k)));
+    };
+
     const draw = (): void => {
       body.innerHTML = `<div class="attack-helper">
         <div class="ah-head"><b><i class="btn-ico">💥</i> ${escapeHtml(detonateHeading(name, proj.label))}</b>
@@ -541,8 +841,8 @@ async function init() {
           <p class="dim">This detonation causes an effect rather than damage, so there is no attack
             roll. Pick the token it applies, then click each unit inside the blast. The card text
             above is what actually happens; the token is just a reminder on the board.</p>
-          <div class="status-row" id="det-status">${STATUSES.map(
-            (s) => `<button class="status-chip${s.id === pick ? ' on' : ''}" data-sid="${s.id}"
+          <div class="status-row" id="det-status">${detStatuses().map(
+            (s) => `<button class="status-chip shape-${s.shape}${s.id === pick ? ' on' : ''}" data-sid="${s.id}"
                       style="--chip-tint:${s.tint}" title="${escapeHtml(s.label)}: ${escapeHtml(s.note)}">${s.icon}</button>`,
           ).join('')}</div>
           ${needsLos
@@ -588,17 +888,26 @@ async function init() {
       const apply = (t: Token): void => {
         const def = STATUSES.find((s) => s.id === pick);
         const label = def?.label ?? pick;
-        const list = [...(t.statuses ?? [])];
-        const at = list.lastIndexOf(pick);
-        if (at >= 0 && !def?.stacking) {
-          list.splice(at, 1);
-          logTo(t, `${label} removed from ${t.label}.`);
-        } else {
-          list.push(pick);
-          const n = list.filter((x) => x === pick).length;
-          logTo(t, `${name} from ${proj.label}: ${t.label} gains ${label}${def?.stacking && n > 1 ? ` (now ×${n})` : ''}.`);
+        if (def?.appliesTo && !def.appliesTo.includes(t.kind)) {
+          logTo(t, `${label} does not apply to a ${t.kind}, so ${t.label} was skipped.`);
+          return;
         }
-        t.statuses = list;
+        const at = (t.statuses ?? []).lastIndexOf(pick);
+        if (at >= 0 && !def?.stacking) {
+          const list = [...(t.statuses ?? [])];
+          list.splice(at, 1);
+          t.statuses = list;
+          logTo(t, `${label} removed from ${t.label}.`);
+          return;
+        }
+        const before = t.statuses ?? [];
+        t.statuses = addStatus(before, pick);
+        const lost = before.filter((s) => !t.statuses!.includes(s)).map((s) => STATUSES.find((d) => d.id === s)?.label ?? s);
+        const n = t.statuses.filter((x) => x === pick).length;
+        logTo(
+          t,
+          `${name} from ${proj.label}: ${t.label} gains ${label}${def?.stacking && n > 1 ? ` (now ×${n})` : ''}${lost.length ? `, losing ${lost.join(' and ')}` : ''}.`,
+        );
       };
       body.querySelectorAll<HTMLButtonElement>('#det-units button').forEach((b) =>
         b.addEventListener('click', () => {
@@ -1069,12 +1378,26 @@ async function init() {
     }
   }
 
+  let lastStockSig = '';
+
   function onChanged(): void {
     save();
     board.renderTokens(state);
+    board.renderSmoke(state.smoke ?? []);
     board.setSelected(selectedUid);
     squadTracker.update(state, selectedUid);
     roundTracker.update(state);
+    renderSmokePrompt();
+    // Redraw the Add tab only when what is on the board actually changed, so
+    // dragging a unit or toggling a token does not reset the list underneath you.
+    const sig = [...deployedCardCounts(state.tokens)]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([id, n]) => `${id}:${n}`)
+      .join(',');
+    if (sig !== lastStockSig) {
+      lastStockSig = sig;
+      roster.render();
+    }
   }
 
   function renderAll(): void {
@@ -1607,6 +1930,7 @@ async function init() {
     const result = instantiateScenario(scn, state, data);
     state.tokens = result.tokens;
     state.markers = result.markers;
+    state.smoke = [];
     state.sideNames = result.sideNames;
     state.map = result.mapKey;
     state.removedTerrain = [];
@@ -1732,6 +2056,7 @@ async function init() {
         const result = instantiateScenario(scn, state, data);
         state.tokens = result.tokens;
         state.markers = result.markers;
+        state.smoke = [];
         state.sideNames = result.sideNames;
         state.map = result.mapKey;
         state.removedTerrain = [];
@@ -1776,6 +2101,7 @@ async function init() {
     if (!ok) return;
     state.tokens = [];
     state.markers = [];
+    state.smoke = [];
     state.sideNames = {};
     state.round = { n: 1, phase: 0, firstPlayer: 'blue' };
     state.commandTokens = { blue: 0, red: 0 };
@@ -1928,6 +2254,17 @@ async function init() {
     if (!t) return;
     const k = ev.key.toLowerCase();
     if (k === 'q' || k === 'e') {
+      if (statusCount(t.statuses, 'immobilized') > 0 && !ev.shiftKey) {
+        showInspect({
+          title: 'Immobilized',
+          sub: `IMB · on ${t.label}`,
+          lines: [
+            'Turning on the spot is a Maneuver, and an Immobilized unit cannot Maneuver (rulebook 6.3.2).',
+            'Hold Shift with Q or E to turn it anyway, for effects that reposition it without its own action.',
+          ],
+        });
+        return;
+      }
       const d = k === 'q' ? 3 : 1;
       t.facing = ((t.facing + d) % 4) as Facing;
       onChanged();

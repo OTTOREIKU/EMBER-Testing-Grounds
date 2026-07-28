@@ -1,6 +1,87 @@
-import type { TerrainPiece, Token } from './types';
+import type { Side, SmokeScreen, TerrainPiece, Token } from './types';
 
 export const LG = 12;
+
+// ---------- smoke screens (rulebook 4.16) ----------
+
+export function smokeKey(s: { col: number; row: number }): string {
+  return `${s.col},${s.row}`;
+}
+
+export function smokeAt(smoke: SmokeScreen[], c: number, r: number, side?: Side): SmokeScreen[] {
+  return smoke.filter((s) => s.col === c && s.row === r && (side === undefined || s.side === side));
+}
+
+// Contact is edge sharing, so diagonal-only corner touch does not connect (4.2.3).
+export function smokeNeighbours(a: SmokeScreen, b: SmokeScreen): boolean {
+  return Math.abs(a.col - b.col) + Math.abs(a.row - b.row) === 1;
+}
+
+export function smokeGroups(smoke: SmokeScreen[], side: Side): SmokeScreen[][] {
+  const mine = smoke.filter((s) => s.side === side);
+  const seen = new Set<number>();
+  const groups: SmokeScreen[][] = [];
+  for (let i = 0; i < mine.length; i++) {
+    if (seen.has(i)) continue;
+    const group: SmokeScreen[] = [];
+    const queue = [i];
+    seen.add(i);
+    while (queue.length) {
+      const at = queue.pop()!;
+      group.push(mine[at]);
+      for (let j = 0; j < mine.length; j++) {
+        if (seen.has(j) || !smokeNeighbours(mine[at], mine[j])) continue;
+        seen.add(j);
+        queue.push(j);
+      }
+    }
+    groups.push(group);
+  }
+  return groups;
+}
+
+export interface Dissipation {
+  isolated: SmokeScreen[];
+  groups: SmokeScreen[][];
+}
+
+// The End Phase snapshot is taken once and then applied, which is what makes the
+// merge and split notes on p.77 fall out on their own.
+export function dissipationFor(smoke: SmokeScreen[], side: Side): Dissipation {
+  const groups = smokeGroups(smoke, side);
+  return {
+    isolated: groups.filter((g) => g.length === 1).map((g) => g[0]),
+    groups: groups.filter((g) => g.length > 1),
+  };
+}
+
+export function smokeBlocks(a: Token, b: Token, smoke: SmokeScreen[]): boolean {
+  if (!smoke.length) return false;
+  const grids = new Set(smoke.map(smokeKey));
+  const inSmoke = (t: Token): boolean => {
+    if (t.aerial) return false;
+    for (let dc = 0; dc < t.size; dc++) {
+      for (let dr = 0; dr < t.size; dr++) {
+        if (grids.has(`${Math.floor((t.col + dc) / 3)},${Math.floor((t.row + dr) / 3)}`)) return true;
+      }
+    }
+    return false;
+  };
+  if (inSmoke(a) || inSmoke(b)) return true;
+
+  // Aerial units are not exempt from smoke the way they are from terrain (4.16).
+  const ax = a.col + a.size / 2;
+  const ay = a.row + a.size / 2;
+  const bx = b.col + b.size / 2;
+  const by = b.row + b.size / 2;
+  const steps = Math.max(2, Math.ceil(Math.hypot(bx - ax, by - ay) * 3));
+  for (let i = 1; i < steps; i++) {
+    const x = ax + ((bx - ax) * i) / steps;
+    const y = ay + ((by - ay) * i) / steps;
+    if (grids.has(`${Math.floor(x / 3)},${Math.floor(y / 3)}`)) return true;
+  }
+  return false;
+}
 
 export interface LargeGrid {
   c: number;

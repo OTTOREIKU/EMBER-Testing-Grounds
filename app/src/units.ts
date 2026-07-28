@@ -26,6 +26,77 @@ function initAmmo(cards: Card[]): Record<string, number> {
   return ammo;
 }
 
+export function interceptCapacity(a: CardAction): number | undefined {
+  for (const k of a.keywords ?? []) {
+    const m = /^拦截\s*(\d+)$/.exec((k.inline ?? '').trim());
+    if (m) return Number(m[1]);
+  }
+  for (const text of [a.description?.en, a.description?.zh, a.description?.jp]) {
+    const m = /(?:Intercept|拦截|迎撃)\s*(\d+)/.exec(text ?? '');
+    if (m) return Number(m[1]);
+  }
+  return undefined;
+}
+
+// Every card id currently on the board, so the Add tab can subtract what is
+// already in play from what the inventory says you own.
+export function deployedCardCounts(tokens: Token[]): Map<string, number> {
+  const out = new Map<string, number>();
+  const bump = (id?: string) => {
+    if (!id) return;
+    out.set(id, (out.get(id) ?? 0) + 1);
+  };
+  for (const t of tokens) {
+    if (t.kind === 'mech') {
+      for (const slot of PART_SLOTS) bump(t.mech?.[slot]);
+      bump(t.mech?.pilot);
+      continue;
+    }
+    bump(t.cardId);
+    bump(t.droneBackpack);
+  }
+  return out;
+}
+
+export interface SmokePlacement {
+  count: number;
+  connected: boolean;
+}
+
+export function smokePlacement(a: CardAction): SmokePlacement | undefined {
+  const texts = [a.description?.en, a.description?.zh, a.description?.jp, ...(a.keywords ?? []).map((k) => k.inline ?? k.en ?? k.key ?? '')];
+  const blob = texts.filter(Boolean).join(' ');
+  if (!/Smoke Screen|烟幕|煙幕/i.test(blob)) return undefined;
+  const en = /place (?:up to )?(\d+) Smoke Screens?/i.exec(blob);
+  const zh = /放置\s*(\d+)\s*(?:个)?(?:烟幕|煙幕)/.exec(blob);
+  const count = Number(en?.[1] ?? zh?.[1] ?? 0);
+  if (!count) return undefined;
+  return { count, connected: /Connected|相连|連結/i.test(blob) };
+}
+
+function initIntercept(cards: Card[]): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const c of cards) {
+    for (const a of c.actions ?? []) {
+      const n = interceptCapacity(a);
+      if (n !== undefined) out[a.id] = n;
+    }
+  }
+  return out;
+}
+
+export function interceptLeft(t: Token): number {
+  return Object.values(t.intercept ?? {}).reduce((s, n) => s + n, 0);
+}
+
+export function interceptTotal(data: GameData, t: Token): number {
+  let n = 0;
+  for (const { card } of tokenCards(data, t)) {
+    for (const a of card.actions ?? []) n += interceptCapacity(a) ?? 0;
+  }
+  return n;
+}
+
 export function makeDroneToken(state: GameState, data: GameData, card: Card, side: Side, backpack?: string): Omit<Token, 'col' | 'row' | 'facing'> {
   const cards = [card, backpack ? data.byId.get(backpack) : undefined].filter((x): x is Card => !!x);
   return {
@@ -40,6 +111,7 @@ export function makeDroneToken(state: GameState, data: GameData, card: Card, sid
     stance: (card.stance as Stance) || 'offensive',
     partStates: { main: 'intact', ...(backpack ? { backpack: 'intact' } : {}) },
     ammo: initAmmo(cards),
+    intercept: initIntercept(cards),
   };
 }
 
@@ -62,6 +134,7 @@ export function makeMechToken(state: GameState, data: GameData, loadout: MechLoa
     link: pilot?.LV ?? 3,
     partStates,
     ammo: initAmmo(cards),
+    intercept: initIntercept(cards),
   };
 }
 
@@ -240,6 +313,7 @@ export interface GuidedAction {
   available: boolean;
   reason?: string;
   ammoLeft?: number;
+  intercept?: { left: number; max: number; can: boolean; reason?: string };
   projectiles: Card[];
 }
 
@@ -268,10 +342,35 @@ export function guidedActions(data: GameData, t: Token): GuidedAction[] {
         available = false;
         reason = 'out of ammo';
       }
+
+      const max = interceptCapacity(a);
+      let intercept: GuidedAction['intercept'];
+      if (max !== undefined) {
+        const left = t.intercept?.[a.id] ?? max;
+        let can = true;
+        let iReason: string | undefined;
+        if (!available) {
+          can = false;
+          iReason = reason;
+        } else if (statusCount(t.statuses, 'fci') > 0) {
+          can = false;
+          iReason = 'Fire Control Interference blocks Interception';
+        } else if (left === 0) {
+          can = false;
+          iReason = 'no Interception Tokens left';
+        }
+        intercept = { left, max, can, reason: iReason };
+        // A Passive Intercept part exists only to Intercept, so an empty one has nothing left to do.
+        if (available && !can && a.type === 'Passive') {
+          available = false;
+          reason = iReason;
+        }
+      }
+
       const projectiles = Array.isArray(card.projectile)
         ? card.projectile.map((id) => data.byId.get(id)).filter((x): x is Card => !!x)
         : [];
-      out.push({ action: a, card, slot, available, reason, ammoLeft, projectiles: a.type === 'Projectile' ? projectiles : [] });
+      out.push({ action: a, card, slot, available, reason, ammoLeft, intercept, projectiles: a.type === 'Projectile' ? projectiles : [] });
     }
   }
   return out;
@@ -305,6 +404,7 @@ export function migrateState(raw: unknown, data: GameData): GameState | null {
     round: s.round ?? { n: 1, phase: 0, firstPlayer: 'blue' },
     commandTokens: s.commandTokens ?? { blue: 0, red: 0 },
     markers: (s as { markers?: GameState['markers'] }).markers ?? [],
+    smoke: (s as { smoke?: GameState['smoke'] }).smoke ?? [],
     removedTerrain: (s as { removedTerrain?: string[] }).removedTerrain ?? [],
     scale: (s as { scale?: GameState['scale'] }).scale ?? 'standard',
     roundLimit: (s as { roundLimit?: number }).roundLimit ?? 5,
@@ -354,8 +454,9 @@ export function migrateState(raw: unknown, data: GameData): GameState | null {
       timing: t.timing,
       partStates: partStates as Token['partStates'],
       ammo: t.ammo ?? initAmmo(cards),
+      intercept: t.intercept ?? initIntercept(cards),
       log: t.log ?? [],
-      statuses: t.statuses ?? [],
+      statuses: (t.statuses ?? []).filter((s: string) => s !== 'interception'),
     });
   }
   return state;

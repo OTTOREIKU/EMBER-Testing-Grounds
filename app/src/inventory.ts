@@ -82,6 +82,8 @@ export class Inventory {
 
   passes(card: Card): boolean {
     if (!this.filterEnabled || !this.hasAny()) return true;
+    // No box data at all means we cannot tell, so show it rather than imply you lack it.
+    if (!(card.containedIn ?? []).length) return true;
     return this.ownedCount(card) > 0;
   }
 

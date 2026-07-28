@@ -2,6 +2,7 @@ import type { GameData } from './data';
 import { dataUrl } from './data';
 import { saveCustomMap } from './mapeditor';
 import type { Facing, GameState, Marker, MechLoadout, PartSlot, PartState, Side, TerrainPiece, Token } from './types';
+import { addStatus } from './types';
 import { makeDroneToken, makeMechToken } from './units';
 
 export interface ScenarioUnit {
@@ -116,7 +117,7 @@ function startingState(
   if (u.startLinkDelta) {
     out.link = Math.max(0, (tok.link ?? 0) + u.startLinkDelta);
   }
-  if (u.startStatuses?.length) out.statuses = [...u.startStatuses];
+  if (u.startStatuses?.length) out.statuses = u.startStatuses.reduce<string[]>((acc, id) => addStatus(acc, id), []);
   return out;
 }
 

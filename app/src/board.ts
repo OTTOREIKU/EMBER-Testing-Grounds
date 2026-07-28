@@ -1,5 +1,5 @@
-import type { GameState, Marker, TerrainPiece, Token } from './types';
-import { statusCount, statusStacks } from './types';
+import type { GameState, Marker, SmokeScreen, StatusDef, TerrainPiece, Token, TokenShape } from './types';
+import { INTERCEPT_DEF, SHAPE_NOTE, statusCount, statusStacks } from './types';
 import { mechPartUrl, SIDE_LABEL, tabImageUrl } from './data';
 import type { InspectInfo } from './inspector';
 
@@ -38,7 +38,7 @@ export interface BoardDeployment {
 export interface BoardCallbacks {
   onSelect(uid: number | null): void;
   onInspect?(info: InspectInfo | null): void;
-  onMove(uid: number, col: number, row: number): void;
+  onMove(uid: number, col: number, row: number, forced?: boolean): void;
   onHover?(uid: number | null): void;
   onCellClick?(col: number, row: number, erase: boolean): void;
   onCellHover?(col: number, row: number): void;
@@ -50,6 +50,64 @@ function el<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, 
   const e = document.createElementNS(SVG_NS, tag);
   for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, String(v));
   return e;
+}
+
+function badgeWidth(shape: TokenShape, stacked: boolean): number {
+  const base = stacked ? 24 : 17;
+  if (shape === 'hexagon') return base + 6;
+  if (shape === 'triangle') return base + 11;
+  if (shape === 'round') return base + 4;
+  return base;
+}
+
+function badgeShape(shape: TokenShape, bx: number, by: number, w: number, tint: string): SVGElement {
+  const skin = { fill: tint, stroke: '#0f1216', 'stroke-width': 1 };
+  const h = 13;
+  if (shape === 'hexagon') {
+    const k = 4.5;
+    const pts = [
+      [bx - w / 2, by],
+      [bx - w / 2 + k, by - h / 2],
+      [bx + w / 2 - k, by - h / 2],
+      [bx + w / 2, by],
+      [bx + w / 2 - k, by + h / 2],
+      [bx - w / 2 + k, by + h / 2],
+    ];
+    return el('polygon', { points: pts.map((p) => p.join(',')).join(' '), ...skin });
+  }
+  if (shape === 'triangle') {
+    const top = by - 9.5;
+    const bot = by + 7.5;
+    return el('polygon', { points: `${bx},${top} ${bx + w / 2},${bot} ${bx - w / 2},${bot}`, ...skin });
+  }
+  if (shape === 'round') {
+    return el('rect', { x: bx - w / 2, y: by - h / 2, width: w, height: h, rx: h / 2, ...skin });
+  }
+  if (shape === 'state') {
+    return el('rect', { x: bx - w / 2, y: by - h / 2, width: w, height: h, rx: 2, 'stroke-dasharray': '2.5 1.75', ...skin });
+  }
+  return el('rect', { x: bx - w / 2, y: by - h / 2, width: w, height: h, rx: 1.5, ...skin });
+}
+
+// Top-left and bottom-right corners cut, matching the squad and reference cards.
+function notchedSquare(x: number, y: number, s: number, n: number): string {
+  return `M${x + n} ${y} H${x + s} V${y + s - n} L${x + s - n} ${y + s} H${x} V${y + n} Z`;
+}
+
+function smokeHatchDefs(): SVGDefsElement {
+  const defs = el('defs');
+  for (const side of ['blue', 'red'] as const) {
+    const p = el('pattern', {
+      id: `smoke-hatch-${side}`,
+      width: 13,
+      height: 13,
+      patternUnits: 'userSpaceOnUse',
+      patternTransform: 'rotate(45)',
+    });
+    p.appendChild(el('line', { x1: 0, y1: 0, x2: 0, y2: 13, class: `smoke-hatch smoke-hatch-${side}` }));
+    defs.appendChild(p);
+  }
+  return defs;
 }
 
 function outlinePath(cells: { col: number; row: number }[], size: number): string {
@@ -101,6 +159,8 @@ export class Board {
   private gOverlay: SVGGElement;
   private gHighlight: SVGGElement;
   private gMarkers!: SVGGElement;
+  private gSmoke!: SVGGElement;
+  private gPick!: SVGGElement;
   private gGhost: SVGGElement;
   private callbacks: BoardCallbacks;
   private selectedUid: number | null = null;
@@ -130,21 +190,27 @@ export class Board {
       viewBox: `${-M} ${-M} ${SIZE + 2 * M} ${SIZE + 2 * M}`,
       id: 'board',
     });
+    this.svg.appendChild(smokeHatchDefs());
     this.svg.appendChild(this.buildGrid());
     this.gZones = el('g', { class: 'zones', 'pointer-events': 'none' });
     this.svg.appendChild(this.gZones);
     this.gTerrain = el('g');
     this.gMarkers = el('g', { class: 'markers' });
+    this.gSmoke = el('g', { class: 'smoke-layer' });
     this.gHighlight = el('g', { class: 'highlight', 'pointer-events': 'none' });
     this.gTokens = el('g');
     this.gGhost = el('g', { class: 'ghost', 'pointer-events': 'none' });
     this.gOverlay = el('g', { class: 'overlay', 'pointer-events': 'none' });
+    // Above the tokens, so a unit standing on a candidate Grid cannot eat the click.
+    this.gPick = el('g', { class: 'pick-layer' });
     this.svg.appendChild(this.gTerrain);
     this.svg.appendChild(this.gMarkers);
+    this.svg.appendChild(this.gSmoke);
     this.svg.appendChild(this.gHighlight);
     this.svg.appendChild(this.gTokens);
     this.svg.appendChild(this.gGhost);
     this.svg.appendChild(this.gOverlay);
+    this.svg.appendChild(this.gPick);
     let pan: { x: number; y: number; l: number; t: number; moved: boolean } | null = null;
     this.svg.addEventListener('pointerdown', (ev) => {
       const bg = !(ev.target as Element).closest?.('.token');
@@ -499,24 +565,40 @@ export class Board {
     label.textContent = t.label;
     g.appendChild(label);
 
-    const active = statusStacks(t.statuses);
+    const active: { def: StatusDef; n: number; counted: boolean; spent: boolean; hint: string }[] = statusStacks(t.statuses).map(
+      ({ def, n }) => ({ def, n, counted: !!def.stacking && n > 1, spent: false, hint: 'Toggle this token from the unit’s row in the Squads tab.' }),
+    );
+    const slots = Object.keys(t.intercept ?? {}).length;
+    if (slots > 0) {
+      const left = Object.values(t.intercept!).reduce((s, n) => s + n, 0);
+      active.push({
+        def: INTERCEPT_DEF,
+        n: left,
+        counted: true,
+        spent: left === 0,
+        hint: left
+          ? 'Spend one with the Intercept button on that Part’s action in the Details tab.'
+          : 'Every Interception Token on this unit is spent, so it cannot Intercept again this game.',
+      });
+    }
     if (active.length) {
-      const bw = 19;
-      const startX = cx - (active.length * bw) / 2 + bw / 2;
-      active.forEach(({ def: s, n }, i) => {
-        const stacked = !!s.stacking && n > 1;
-        const bx = startX + i * bw;
-        const by = cy - half - 9;
-        const badge = el('g', { class: 'status-badge' });
-        const w = stacked ? 22 : 17;
-        badge.appendChild(el('rect', { x: bx - w / 2, y: by - 6.5, width: w, height: 13, rx: 3, fill: s.tint, stroke: '#0f1216', 'stroke-width': 1 }));
-        const txt = el('text', { x: bx, y: by + 3.5, 'text-anchor': 'middle', class: 'status-badge-text' });
-        txt.textContent = stacked ? `${s.icon}${n}` : s.icon;
+      const by = cy - half - 9;
+      const widths = active.map(({ def: s, counted }) => badgeWidth(s.shape, counted));
+      const total = widths.reduce((a, w) => a + w, 0) + 2 * (active.length - 1);
+      let x = cx - total / 2;
+      active.forEach(({ def: s, n, counted, spent, hint }, i) => {
+        const w = widths[i];
+        const bx = x + w / 2;
+        x += w + 2;
+        const badge = el('g', { class: `status-badge shape-${s.shape}${spent ? ' spent' : ''}` });
+        badge.appendChild(badgeShape(s.shape, bx, by, w, s.tint));
+        const txt = el('text', { x: bx, y: by + (s.shape === 'triangle' ? 5.5 : 3.5), 'text-anchor': 'middle', class: 'status-badge-text' });
+        txt.textContent = counted ? `${s.icon}${n}` : s.icon;
         badge.appendChild(txt);
         this.attachInspect(badge as SVGGElement, {
-          title: stacked ? `${s.label} ×${n}` : s.label,
+          title: counted ? `${s.label} ×${n}` : s.label,
           sub: `${s.icon} · on ${t.label}`,
-          lines: [s.note, 'Toggle this token from the unit’s row in the Squads tab.'],
+          lines: [SHAPE_NOTE[s.shape], s.note, hint],
         });
         g.appendChild(badge);
       });
@@ -540,6 +622,64 @@ export class Board {
 
     this.attachDrag(g, t);
     return g;
+  }
+
+  renderSmoke(smoke: SmokeScreen[]): void {
+    this.gSmoke.replaceChildren();
+    const perGrid = new Map<string, SmokeScreen[]>();
+    for (const s of smoke) {
+      const k = `${s.col},${s.row}`;
+      perGrid.set(k, [...(perGrid.get(k) ?? []), s]);
+    }
+    for (const [, list] of perGrid) {
+      list.forEach((s, i) => {
+        const x = s.col * 3 * CELL;
+        const y = s.row * 3 * CELL;
+        const inset = 3 + i * 5;
+        const size = 3 * CELL - inset * 2;
+        const d = notchedSquare(x + inset, y + inset, size, Math.min(13, size / 5));
+        const g = el('g', { class: `smoke smoke-${s.side}`, 'data-smoke': `${s.col},${s.row},${s.side}` });
+        g.appendChild(el('path', { d, class: 'smoke-body', fill: `url(#smoke-hatch-${s.side})` }));
+        g.appendChild(el('path', { d, class: 'smoke-frame' }));
+        this.attachInspect(g, {
+          title: 'Smoke Screen',
+          sub: `${SIDE_LABEL[s.side]} · Grid ${String.fromCharCode(65 + s.col)}${s.row + 1}`,
+          lines: [
+            'Line of sight cannot be established through this Grid for Firing Actions, and a unit standing in it can neither shoot out nor be shot at (rulebook 4.16).',
+            'Melee and Projectile Actions ignore Smoke Screens completely.',
+            'In the End Phase every isolated screen comes off, plus one from each connected group.',
+          ],
+        });
+        this.gSmoke.appendChild(g);
+      });
+    }
+  }
+
+  showSmokeTargets(grids: { c: number; r: number; ok: boolean }[], onPick: (c: number, r: number) => void): void {
+    this.clearHighlights();
+    const g = el('g', { class: 'smoke-pick' });
+    for (const cell of grids) {
+      const rect = el('rect', {
+        x: cell.c * 3 * CELL + 2,
+        y: cell.r * 3 * CELL + 2,
+        width: 3 * CELL - 4,
+        height: 3 * CELL - 4,
+        rx: 4,
+        class: `smoke-target${cell.ok ? '' : ' blocked'}`,
+      });
+      // Picks resolve on pointerdown: the board's own pointerup deselects, which
+      // tears this layer down before a click event could ever reach the rect.
+      if (cell.ok) {
+        rect.addEventListener('pointerdown', (ev) => {
+          if ((ev as PointerEvent).button !== 0) return;
+          ev.stopPropagation();
+          ev.preventDefault();
+          onPick(cell.c, cell.r);
+        });
+      }
+      g.appendChild(rect);
+    }
+    this.gPick.appendChild(g);
   }
 
   showReachable(grids: { c: number; r: number; dist: number }[], maxDist: number): void {
@@ -622,6 +762,7 @@ export class Board {
 
   clearHighlights(): void {
     this.gHighlight.replaceChildren();
+    this.gPick.replaceChildren();
   }
 
   showGhost(cells: { col: number; row: number }[], ok: boolean): void {
@@ -710,7 +851,7 @@ export class Board {
       }
       const col = Math.round(orig.col + dx / CELL);
       const row = Math.round(orig.row + dy / CELL);
-      this.callbacks.onMove(t.uid, col, row);
+      this.callbacks.onMove(t.uid, col, row, ev.shiftKey);
     };
 
     const detach = (): void => {
