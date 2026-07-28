@@ -1,3 +1,5 @@
+import type { SetupState } from './setup';
+
 export interface LangText {
   zh?: string;
   en?: string;
@@ -17,7 +19,10 @@ export interface CardAction {
   name: LangText;
   description?: LangText;
   type?: string;
-  speed?: string;
+  size?: string;
+  // Drone control mode: 'command' acts on a Command, 'auto' in the Automatic
+  // Phase, 'passive' is always on (rulebook 2.4.1). Absent on mech parts.
+  speed?: 'command' | 'auto' | 'passive';
   range?: number;
   storage?: number;
   yellowDice?: number;
@@ -122,6 +127,9 @@ export interface Token {
   stance: Stance;
   link?: number;
   timing?: Timing;
+  // false means the unit is in the squad but not yet on the board. Absent counts
+  // as deployed, so saves written before the Deployment Phase existed still load.
+  deployed?: boolean;
   partStates: Partial<Record<PartSlot | 'main', PartState>>;
   ammo: Record<string, number>;
   intercept?: Record<string, number>;
@@ -316,6 +324,112 @@ export interface SmokeScreen {
   side: Side;
 }
 
+// Progress through the guided round, saved with the game so it survives a reload.
+// `seats` and `mode` are the seams a networked game would need later: today every
+// seat is local, but nothing here assumes one screen holds both players.
+// One Mech's Action Opportunity: the Ticks it generated and what it has spent
+// them on so far. The rules that read this live in ticks.ts.
+export interface ExtraTick {
+  id: string;
+  label: string;
+  timing?: Timing;
+}
+
+export interface Opportunity {
+  uid: number;
+  timing?: Timing;
+  maneuver: number;
+  action: number;
+  extras: ExtraTick[];
+  maneuvered: boolean;
+  started: boolean;
+  performed: string[];
+  spentExtras: string[];
+}
+
+export function newOpportunity(uid: number, timing?: Timing): Opportunity {
+  return {
+    uid,
+    timing,
+    maneuver: 1,
+    action: 2,
+    extras: [],
+    maneuvered: false,
+    started: false,
+    performed: [],
+    spentExtras: [],
+  };
+}
+
+export function normaliseOpportunity(raw: unknown): Opportunity | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Partial<Opportunity>;
+  if (typeof o.uid !== 'number') return null;
+  const base = newOpportunity(o.uid, o.timing);
+  const list = (v: unknown): string[] => (Array.isArray(v) ? (v as string[]).filter((x) => typeof x === 'string') : []);
+  return {
+    uid: o.uid,
+    timing: o.timing,
+    maneuver: typeof o.maneuver === 'number' ? o.maneuver : base.maneuver,
+    action: typeof o.action === 'number' ? o.action : base.action,
+    extras: Array.isArray(o.extras) ? (o.extras as ExtraTick[]).filter((x) => x && typeof x.id === 'string') : [],
+    maneuvered: !!o.maneuvered,
+    started: !!o.started,
+    performed: list(o.performed),
+    spentExtras: list(o.spentExtras),
+  };
+}
+
+export interface ScriptState {
+  turn: Side;
+  acted: number[];
+  commanded: number[];
+  passed: Side[];
+  stage: string;
+  mode: 'hotseat' | 'hidden';
+  seats: Record<Side, 'local' | 'remote'>;
+  opp: Opportunity | null;
+  // Interceptions the rules oblige but nobody has resolved yet (4.9).
+  intercepts: { uid: number; actionId: string; targetUid: number }[];
+}
+
+export function newScriptState(firstPlayer: Side): ScriptState {
+  return {
+    turn: firstPlayer,
+    acted: [],
+    commanded: [],
+    passed: [],
+    stage: '',
+    mode: 'hotseat',
+    seats: { blue: 'local', red: 'local' },
+    opp: null,
+    intercepts: [],
+  };
+}
+
+// A save written by an earlier build can hold a script missing fields added since,
+// so every read goes through here rather than trusting the stored shape.
+export function normaliseScript(raw: unknown, firstPlayer: Side): ScriptState {
+  const base = newScriptState(firstPlayer);
+  const s = (raw ?? {}) as Partial<ScriptState>;
+  const list = (v: unknown, fallback: number[]): number[] => (Array.isArray(v) ? (v as number[]) : fallback);
+  return {
+    turn: s.turn === 'blue' || s.turn === 'red' ? s.turn : base.turn,
+    acted: list(s.acted, base.acted),
+    commanded: list(s.commanded, base.commanded),
+    passed: Array.isArray(s.passed) ? s.passed : base.passed,
+    stage: typeof s.stage === 'string' ? s.stage : base.stage,
+    mode: s.mode === 'hidden' ? 'hidden' : 'hotseat',
+    seats: { ...base.seats, ...(s.seats ?? {}) },
+    opp: normaliseOpportunity(s.opp),
+    intercepts: Array.isArray(s.intercepts)
+      ? s.intercepts.filter(
+          (x) => x && typeof x.uid === 'number' && typeof x.targetUid === 'number' && typeof x.actionId === 'string',
+        )
+      : base.intercepts,
+  };
+}
+
 export type BattleScale = 'skirmish' | 'standard' | 'large';
 
 export interface ScaleDef {
@@ -341,11 +455,17 @@ export interface GameState {
   commandTokens: Record<Side, number>;
   markers?: Marker[];
   smoke?: SmokeScreen[];
+  script?: ScriptState;
   removedTerrain?: string[];
   scale?: BattleScale;
   roundLimit?: number;
   sideNames?: Partial<Record<Side, string>>;
   mission?: string | null;
+  // Set while a prebuilt scenario is loaded. Several community scenarios use
+  // squads that break the single-faction rule on purpose, so the legality
+  // warnings are suppressed rather than shouting at a fixed list.
+  scenario?: string | null;
+  setup?: SetupState | null;
   showZones?: boolean;
   deployLayout?: string | null;
   zoneSet?: string;

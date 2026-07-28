@@ -1,7 +1,8 @@
 import type { GameData } from './data';
 import { cardName, isAerial, unitSize } from './data';
 import type { Card, CardAction, GameState, MechLoadout, PartSlot, Side, Stance, Timing, Token } from './types';
-import { statusCount, TIMINGS } from './types';
+import { normaliseScript, statusCount, TIMINGS } from './types';
+import { normaliseSetup } from './setup';
 
 export const PART_SLOTS: PartSlot[] = ['torso', 'chasis', 'leftHand', 'rightHand', 'backpack'];
 export const SLOT_LABEL: Record<PartSlot | 'pilot' | 'main', string> = {
@@ -24,6 +25,43 @@ function initAmmo(cards: Card[]): Record<string, number> {
     }
   }
   return ammo;
+}
+
+// Volley X: up to X Projectiles in one Action, one Ammo Token each (4.13).
+// Absent means a single Projectile per performance.
+export function volleyOf(a: CardAction): number {
+  const hay = [
+    a.description?.zh ?? '',
+    a.description?.en ?? '',
+    ...(a.keywords ?? []).map((k) => k.inline ?? k.key ?? ''),
+  ].join(' ');
+  const m = /(?:齐射|斉射|Vol+(?:ey|y))\s*(\d+)/i.exec(hay);
+  return m ? Math.max(1, Number(m[1])) : 1;
+}
+
+// Direct Fire needs sight of the Landing Point; Fire in arc explicitly does not.
+export function needsSightToLanding(a: CardAction): boolean {
+  const hay = [
+    a.description?.zh ?? '',
+    a.description?.en ?? '',
+    ...(a.keywords ?? []).map((k) => k.inline ?? k.key ?? ''),
+  ].join(' ');
+  if (/曲射|Fire in arc/i.test(hay)) return false;
+  return /直射|Direct Fire/i.test(hay);
+}
+
+// A unit may only start the game hidden if something it carries can put it into
+// the Optical Camouflage State (4.12.2). Silence merely stops camouflage being
+// removed, and the Firefly trait only applies while already hidden, so neither
+// counts. Only an Action that activates it does.
+export function canActivateCamo(data: GameData, t: Token): boolean {
+  for (const { card } of tokenCards(data, t)) {
+    for (const a of card.actions ?? []) {
+      const text = `${a.description?.zh ?? ''} ${a.description?.en ?? ''}`;
+      if (/开启光学迷彩|Activate Optical Camouflage/i.test(text)) return true;
+    }
+  }
+  return false;
 }
 
 export function interceptCapacity(a: CardAction): number | undefined {
@@ -83,6 +121,19 @@ function initIntercept(cards: Card[]): Record<string, number> {
     }
   }
   return out;
+}
+
+// The furthest an Intercept Action on this unit reaches, so a launch can say
+// whose Interception it woke up.
+export function interceptReach(data: GameData, t: Token): number {
+  let best = 0;
+  for (const { card } of tokenCards(data, t)) {
+    for (const a of card.actions ?? []) {
+      if (interceptCapacity(a) === undefined) continue;
+      best = Math.max(best, a.range ?? 0);
+    }
+  }
+  return best;
 }
 
 export function interceptLeft(t: Token): number {
@@ -247,6 +298,12 @@ export function tokenFactions(data: GameData, t: Token): { factions: string[]; u
   return { factions: [...seen], unknown };
 }
 
+// Factions that hire out rather than field their own squads. Confirmed with the
+// community: Planetring Dynamics and the White Dwarf collaboration are both
+// mercenary, so they may serve alongside RDL, UN or GoF. GoF itself is a real
+// allegiance and still cannot mix with RDL or UN.
+export const MERCENARY_FACTIONS = ['PD', 'COLLABORATION'];
+
 export function factionProblems(data: GameData, tokens: Token[]): FactionProblem[] {
   const out: FactionProblem[] = [];
   const squad = new Set<string>();
@@ -264,11 +321,14 @@ export function factionProblems(data: GameData, tokens: Token[]): FactionProblem
       });
     }
   }
-  if (squad.size > 1) {
+  // PD and the White Dwarf collaboration are mercenary: their units hire out to
+  // any squad, so only the allegiance factions have to agree with each other.
+  const allegiance = [...squad].filter((f) => !MERCENARY_FACTIONS.includes(f));
+  if (allegiance.length > 1) {
     out.push({
       kind: 'mixed-squad',
       label: 'Squad',
-      detail: `This squad mixes ${[...squad].join(', ')}. A squad may only contain units from a single faction.`,
+      detail: `This squad mixes ${allegiance.join(' and ')}. A squad may only contain units from a single faction, though mercenaries may join any of them.`,
     });
   }
   return out;
@@ -276,6 +336,14 @@ export function factionProblems(data: GameData, tokens: Token[]): FactionProblem
 
 export function pilotCard(data: GameData, t: Token): Card | undefined {
   return t.kind === 'mech' && t.mech?.pilot ? data.byId.get(t.mech.pilot) : undefined;
+}
+
+// A Mech Maneuvers at the Maneuver Value printed on its Chassis; a Drone moves at
+// its own value. Mobility Stance doubles it (rulebook 3.4.3).
+export function maneuverRange(data: GameData, t: Token): number {
+  const card = t.kind === 'mech' && t.mech?.chasis ? data.byId.get(t.mech.chasis) : data.byId.get(t.cardId);
+  const base = card?.move ?? 0;
+  return t.stance === 'mobility' ? base * 2 : base;
 }
 
 export function initiativeFor(data: GameData, t: Token, timing: Timing): number | undefined {
@@ -405,11 +473,14 @@ export function migrateState(raw: unknown, data: GameData): GameState | null {
     commandTokens: s.commandTokens ?? { blue: 0, red: 0 },
     markers: (s as { markers?: GameState['markers'] }).markers ?? [],
     smoke: (s as { smoke?: GameState['smoke'] }).smoke ?? [],
+    script: normaliseScript((s as { script?: unknown }).script, (s.round ?? { firstPlayer: 'blue' }).firstPlayer ?? 'blue'),
     removedTerrain: (s as { removedTerrain?: string[] }).removedTerrain ?? [],
     scale: (s as { scale?: GameState['scale'] }).scale ?? 'standard',
     roundLimit: (s as { roundLimit?: number }).roundLimit ?? 5,
     sideNames: (s as { sideNames?: GameState['sideNames'] }).sideNames ?? {},
     mission: (s as { mission?: string | null }).mission ?? null,
+    scenario: (s as { scenario?: string | null }).scenario ?? null,
+    setup: normaliseSetup((s as { setup?: unknown }).setup),
     showZones: (s as { showZones?: boolean }).showZones ?? false,
     deployLayout: (s as { deployLayout?: string | null }).deployLayout ?? null,
     zoneSet: (s as { zoneSet?: string }).zoneSet ?? legacyZoneSet(s),
@@ -452,6 +523,7 @@ export function migrateState(raw: unknown, data: GameData): GameState | null {
       stance: t.stance ?? ((card?.stance as Stance) || 'offensive'),
       link: t.link ?? (t.kind === 'mech' ? pilot?.LV ?? 3 : undefined),
       timing: t.timing,
+      deployed: t.deployed === false ? false : undefined,
       partStates: partStates as Token['partStates'],
       ammo: t.ammo ?? initAmmo(cards),
       intercept: t.intercept ?? initIntercept(cards),
