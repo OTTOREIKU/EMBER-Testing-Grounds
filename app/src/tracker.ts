@@ -1,6 +1,7 @@
 import { SIDE_LABEL } from './data';
 import { inspectOnHover, pinInspect, type InspectInfo } from './inspector';
 import { SCALES, type BattleScale, type GameState, type Side } from './types';
+import { normaliseSetup } from './setup';
 
 export const PHASES = ['Command', 'Planning', 'Action', 'Automatic', 'Delay', 'End'] as const;
 
@@ -81,6 +82,18 @@ export class RoundTracker {
   private state: GameState | null = null;
   private onChanged: () => void;
   onStartGame: (() => void) | null = null;
+  // Set by the play guide, which owns the pre-game and Planning gates.
+  blockedReason: ((s: GameState) => string | null) | null = null;
+
+  // The round bar can advance the round on its own, so it has to respect the
+  // same lock the guide does or setup can simply be walked past.
+  private blocked(): string | null {
+    const s = this.state;
+    if (!s) return null;
+    const su = normaliseSetup(s.setup);
+    if (su && su.stage !== 'done') return 'Finish the pre-game roll and deployment first';
+    return this.blockedReason?.(s) ?? null;
+  }
   private lastClick: { phase: Phase; at: number } | null = null;
 
   constructor(root: HTMLElement, onChanged: () => void) {
@@ -137,12 +150,23 @@ export class RoundTracker {
       <select id="rt-limit" class="rt-scale" title="Game length in rounds">
         ${ROUND_CHOICES.map((n) => `<option value="${n}"${n === limit ? ' selected' : ''}>${n} rounds</option>`).join('')}
       </select>
-      ${s.round.n > 1 || s.round.phase > 0 ? '<button id="rt-reset" class="rt-scale" title="Back to Round 1, Command Phase">↺</button>' : ''}
+      ${
+        s.round.n > 1 || s.round.phase > 0
+          ? `<button id="rt-reset" class="rt-scale"${
+              this.blocked() ? ` disabled title="${this.blocked()}"` : ' title="Back to Round 1, Command Phase"'
+            }>↺</button>`
+          : ''
+      }
       <button id="rt-start" class="rt-start" title="Take everything off the board into its squad, roll for First Player, then deploy properly">Start game</button>
       <span class="rt-phases">
-        ${PHASES.map((p, i) => `<button class="rt-phase${i === s.round.phase ? ' active' : ''}" data-i="${i}">${p}</button>`).join('')}
+        ${PHASES.map(
+          (p, i) =>
+            `<button class="rt-phase${i === s.round.phase ? ' active' : ''}"${
+              this.blocked() && i !== s.round.phase ? ` disabled title="${this.blocked()}"` : ''
+            } data-i="${i}">${p}</button>`,
+        ).join('')}
       </span>
-      <button id="rt-next">${
+      <button id="rt-next"${this.blocked() ? ` disabled title="${this.blocked()}"` : ''}>${
         s.round.phase === PHASES.length - 1 ? (s.round.n >= limit ? `Extra round ${s.round.n + 1} ▸` : `End round ${s.round.n} ▸`) : 'Next phase ▸'
       }</button>
       <span class="rt-first side-${s.round.firstPlayer}">1st: ${SIDE_LABEL[s.round.firstPlayer]}</span>

@@ -35,7 +35,7 @@ import type { Card, CardAction, DiceData, Facing, GameState, MechLoadout, Side, 
 import { addStatus, SCALES, statusCount, statusesFor, STATUSES } from './types';
 import { deployedCardCounts, factionProblems, guidedActions, interceptCapacity, interceptLeft, interceptReach, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf } from './units';
 import { registerOffline } from './offline';
-import { countHits, firstPlayerFrom, newSetup, normaliseSetup, type SetupState } from './setup';
+import { battlefieldLocked, countHits, firstPlayerFrom, newSetup, normaliseSetup, type SetupState } from './setup';
 
 const SAVE_KEY = 'ember-testing-grounds-v1';
 
@@ -158,9 +158,13 @@ async function init() {
     },
     onRollFirstPlayer: (side) => rollForFirstPlayer(side),
     onPlaceUnit: (uid, opts) => startDeployPlacement(uid, opts),
+    mapLabel: () => mapSelect.options[mapSelect.selectedIndex]?.textContent ?? state.map ?? 'none',
+    zoneLabel: () => zoneSetLabel(state.zoneSet ?? ''),
     onNote: (t, text) => logTo(t, text),
     onChanged: () => onChanged(),
   });
+
+  roundTracker.blockedReason = (s) => playGuide.blockedReason(s);
 
   const panel = new Panel(data, {
     onRollDice(pool) {
@@ -2014,6 +2018,7 @@ async function init() {
     squadTracker.update(state, selectedUid);
     roundTracker.update(state);
     playGuide.update(state);
+    paintBattlefieldLock();
     renderSmokePrompt();
     // Redraw the Add tab only when what is on the board actually changed, so
     // dragging a unit or toggling a token does not reset the list underneath you.
@@ -2356,9 +2361,23 @@ async function init() {
     }
   }
 
+  // The map and zone pickers are frozen for the life of a game, so nobody can
+  // change the battlefield after deployment or between rounds.
+  function paintBattlefieldLock(): void {
+    const locked = battlefieldLocked(normaliseSetup(state.setup));
+    const why = 'The battlefield is locked for this game. Press Start game to set up a new one.';
+    for (const el of [mapSelect, zoneSelect]) {
+      el.disabled = locked;
+      el.title = locked ? why : '';
+    }
+    const zoneBtn = document.getElementById('btn-zones') as HTMLButtonElement | null;
+    if (zoneBtn) zoneBtn.disabled = locked && !state.zoneSet;
+  }
+
   function renderZoneOverlay(): void {
     board.renderZones(overlayZones(), overlayDeployment());
     populateZoneSelect();
+    paintBattlefieldLock();
     const on = !!state.zoneSet && state.showZones !== false;
     const btn = document.getElementById('btn-zones')!;
     btn.setAttribute('aria-pressed', on ? 'true' : 'false');
@@ -2756,6 +2775,7 @@ async function init() {
     state.showZones = false;
     state.mission = undefined;
     state.scenario = null;
+    state.setup = null;
     selectToken(null);
     renderAll();
   });

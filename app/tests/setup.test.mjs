@@ -36,8 +36,17 @@ check('neither rolled means no winner', S.firstPlayerFrom(S.newSetup()), null);
 // A saved setup has to survive a reload without losing where it had got to.
 const live = { stage: 'deploy', rolls: { blue: [2], red: [1] }, edge: { blue: 'black', red: 'white' }, placed: { blue: 2, red: 1 } };
 check('a live setup round-trips', S.normaliseSetup(live), live);
-check('junk is refused', S.normaliseSetup({ nope: 1 }).stage, 'roll');
-check('a bad stage falls back', S.normaliseSetup({ stage: 'wat' }).stage, 'roll');
+check('junk is refused', S.normaliseSetup({ nope: 1 }).stage, 'map');
+check('a bad stage falls back', S.normaliseSetup({ stage: 'wat' }).stage, 'map');
+check('a fresh setup opens on the map stage', S.newSetup().stage, 'map');
+
+// The battlefield is agreed first, then frozen for the rest of the game.
+check('the map stage leaves it unlocked', S.battlefieldLocked(S.newSetup()), false);
+for (const stage of ['roll', 'side', 'deploy', 'done']) {
+  check(`the ${stage} stage locks it`, S.battlefieldLocked({ ...S.newSetup(), stage }), true);
+}
+check('no setup at all leaves it unlocked', S.battlefieldLocked(null), false);
+check('and undefined too', S.battlefieldLocked(undefined), false);
 check('a bad edge falls back', S.normaliseSetup({ edge: { blue: 'green' } }).edge.blue, 'white');
 check('negative counts are refused', S.normaliseSetup({ placed: { blue: -3 } }).placed.blue, 0);
 check('nothing at all reads as null', S.normaliseSetup(null), null);

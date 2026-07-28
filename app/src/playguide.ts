@@ -156,6 +156,8 @@ export interface GuideCallbacks {
   onIntercept(uid: number, actionId: string, targetUid: number): void;
   onRollFirstPlayer(side: Side): void;
   onPlaceUnit(uid: number, opts: { stance: Stance; camo: boolean }): void;
+  mapLabel(): string;
+  zoneLabel(): string;
   onNote(t: Token, text: string): void;
   onChanged(): void;
 }
@@ -258,7 +260,7 @@ export class PlayGuide {
       </div>
       <div class="pg-body">
         <p class="pg-sub">${info.sub}</p>
-        ${this.warn && phase === 'Planning' ? `<p class="pg-warn">${esc(this.warn)}</p>` : ''}
+        ${this.warn && (phase === 'Planning' || this.setupState(s)) ? `<p class="pg-warn">${esc(this.warn)}</p>` : ''}
         ${
           this.setupState(s)
             ? this.setupHtml(s)
@@ -271,9 +273,9 @@ export class PlayGuide {
         </details>
       </div>
       <div class="pg-foot">
-        <span class="pg-left">${info.sub.split('·').pop()?.trim() ?? ''}</span>
+        <span class="pg-left">${esc(this.blockedReason(s) ?? info.sub.split('·').pop()?.trim() ?? '')}</span>
         <button class="pg-next"${
-          phase === 'Planning' && this.script(s).stage !== `${s.round.n}:1:locked` ? ' disabled title="Confirm the timings first"' : ''
+          this.blockedReason(s) ? ` disabled title="${esc(this.blockedReason(s)!)}"` : ''
         }>${last ? `End round ${s.round.n}` : `Next: ${PHASES[s.round.phase + 1]}`}</button>
       </div>`;
 
@@ -301,6 +303,17 @@ export class PlayGuide {
     this.root.querySelectorAll<HTMLButtonElement>('[data-act]').forEach((b) =>
       b.addEventListener('click', () => this.tryAction(b.dataset.act!)),
     );
+    this.root.querySelector('[data-lock-map]')?.addEventListener('click', () => {
+      const su = normaliseSetup(s.setup) ?? newSetup();
+      if (!s.zoneSet && !this.warn) {
+        this.warn = 'No zone overlay is selected, so no unit will have a Deployment Zone to go in. Lock it again to continue anyway.';
+        this.render();
+        return;
+      }
+      this.warn = null;
+      s.setup = { ...su, stage: 'roll' };
+      this.cb.onChanged();
+    });
     this.root.querySelectorAll<HTMLButtonElement>('[data-roll]').forEach((b) =>
       b.addEventListener('click', () => this.cb.onRollFirstPlayer(b.dataset.roll as Side)),
     );
@@ -445,6 +458,28 @@ export class PlayGuide {
     this.cb.onPlaceUnit(d.uid, { stance: d.stance, camo: d.camo });
   }
 
+  // Nothing may advance the round while the pre-game is unfinished, or the
+  // Planning dials are unconfirmed. Returns why, or null when the way is clear.
+  blockedReason(s: GameState): string | null {
+    const su = this.setupState(s);
+    if (su) {
+      if (su.stage === 'roll') {
+        return firstPlayerFrom(su)
+          ? 'Take the First Player result before the round starts'
+          : su.rolls.blue.length && su.rolls.red.length
+            ? 'The roll is tied, so both sides roll again'
+            : 'Roll for First Player before the round starts';
+      }
+      if (su.stage === 'map') return 'Lock the map and zones before the round starts';
+      if (su.stage === 'side') return 'Choose a board edge before the round starts';
+      return deploymentComplete(s) ? 'Begin round 1 to leave deployment' : 'Deploy every unit before the round starts';
+    }
+    if (PHASES[s.round.phase] === 'Planning' && this.script(s).stage !== `${s.round.n}:1:locked`) {
+      return 'Confirm the timings first';
+    }
+    return null;
+  }
+
   private setupState(s: GameState): SetupState | null {
     const su = normaliseSetup(s.setup);
     return su && su.stage !== 'done' ? su : null;
@@ -452,9 +487,32 @@ export class PlayGuide {
 
   private setupHtml(s: GameState): string {
     const su = this.setupState(s)!;
+    if (su.stage === 'map') return this.mapHtml(s);
     if (su.stage === 'roll') return this.rollHtml(s, su);
     if (su.stage === 'side') return this.edgeHtml(s, su);
     return this.deployHtml(s, su);
+  }
+
+  // The battlefield is agreed before anything else, then locked, so nobody can
+  // swap the map or the zone overlay once units are down or between rounds.
+  private mapHtml(s: GameState): string {
+    const zones = s.zoneSet ?? '';
+    return `<p class="pg-active">Agree the battlefield
+        <small>pick the map and zone overlay in the toolbar, then lock them in</small></p>
+      <div class="pg-dials">
+        <div class="pg-dial-row"><span class="pg-dial-unit">Map</span>
+          <span class="pg-dial-set">${esc(this.cb.mapLabel())}</span></div>
+        <div class="pg-dial-row${zones ? '' : ' unset'}"><span class="pg-dial-unit">Zones</span>
+          <span class="pg-dial-set">${esc(this.cb.zoneLabel())}</span></div>
+      </div>
+      <div class="pg-units">
+        <button class="pg-unit${zones ? '' : ' warn'}" data-lock-map="1">Lock the battlefield</button>
+      </div>
+      <p class="pg-intercept-note">${
+        zones
+          ? 'Both are fixed for the rest of the game once locked.'
+          : 'No zone overlay is selected, so there are no Deployment Zones to place units into. Pick one from the Zones list in the toolbar first.'
+      }</p>`;
   }
 
   private rollHtml(s: GameState, su: SetupState): string {

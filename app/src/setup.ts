@@ -2,7 +2,7 @@ import type { GameState, Side, Token } from './types';
 
 // ---------- pre-game setup (rulebook 3.1.2 and 3.1.4) ----------
 
-export type SetupStage = 'roll' | 'side' | 'deploy' | 'done';
+export type SetupStage = 'map' | 'roll' | 'side' | 'deploy' | 'done';
 
 export interface SetupState {
   stage: SetupStage;
@@ -14,9 +14,15 @@ export interface SetupState {
   placed: Record<Side, number>;
 }
 
+// The battlefield is fixed once the game starts, so neither player can swap the
+// map or the zone overlay between rounds. Only the opening stage may change it.
+export function battlefieldLocked(setup: SetupState | null | undefined): boolean {
+  return !!setup && setup.stage !== 'map';
+}
+
 export function newSetup(): SetupState {
   return {
-    stage: 'roll',
+    stage: 'map',
     rolls: { blue: [], red: [] },
     edge: { blue: 'white', red: 'black' },
     placed: { blue: 0, red: 0 },
@@ -27,7 +33,7 @@ export function normaliseSetup(raw: unknown): SetupState | null {
   if (!raw || typeof raw !== 'object') return null;
   const s = raw as Partial<SetupState>;
   const base = newSetup();
-  const stages: SetupStage[] = ['roll', 'side', 'deploy', 'done'];
+  const stages: SetupStage[] = ['map', 'roll', 'side', 'deploy', 'done'];
   const nums = (v: unknown): number[] => (Array.isArray(v) ? v.filter((x) => typeof x === 'number') : []);
   const edge = (v: unknown, fallback: 'black' | 'white') => (v === 'black' || v === 'white' ? v : fallback);
   const count = (v: unknown) => (typeof v === 'number' && v >= 0 ? v : 0);
