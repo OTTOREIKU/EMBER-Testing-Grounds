@@ -16,7 +16,7 @@ function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-const UI_KEY = 'ember-playguide-ui-v2';
+const UI_KEY = 'ember-playguide-ui-v3';
 
 interface GuideUi {
   open: boolean;
@@ -30,14 +30,14 @@ function loadUi(): GuideUi {
   try {
     const raw = JSON.parse(localStorage.getItem(UI_KEY) ?? '{}') as Partial<GuideUi>;
     return {
-      open: raw.open ?? true,
+      open: raw.open ?? false,
       collapsed: raw.collapsed ?? false,
       rules: raw.rules ?? false,
       x: raw.x ?? null,
       y: raw.y ?? null,
     };
   } catch {
-    return { open: true, collapsed: false, rules: false, x: null, y: null };
+    return { open: false, collapsed: false, rules: false, x: null, y: null };
   }
 }
 
@@ -231,7 +231,7 @@ export class PlayGuide {
     if (!s) return;
     if (!this.ui.open) {
       this.root.className = 'closed';
-      this.root.innerHTML = `<button class="pg-reopen" title="Show the play guide">Guide</button>`;
+      this.root.innerHTML = `<button class="pg-reopen" title="Show the play guide. Middle click and drag to move it.">Guide</button>`;
       this.root.querySelector('.pg-reopen')!.addEventListener('click', () => {
         this.ui.open = true;
         this.saveUi();
@@ -942,14 +942,25 @@ export class PlayGuide {
     };
     this.root.addEventListener('pointerdown', (ev) => {
       const t = ev.target as HTMLElement;
-      if (!t.closest('.pg-grip') && !t.closest('.pg-head')) return;
-      if (t.closest('button')) return;
+      // Middle button drags from anywhere on the guide, which is the only way to
+      // move it while it is collapsed to its button. The left button still only
+      // drags by the header, so buttons there keep working.
+      const middle = ev.button === 1;
+      if (!middle) {
+        if (!t.closest('.pg-grip') && !t.closest('.pg-head')) return;
+        if (t.closest('button')) return;
+      }
       const host = this.host.getBoundingClientRect();
       const b = this.root.getBoundingClientRect();
       from = { x: ev.clientX, y: ev.clientY, l: b.right - host.left, t: b.top - host.top };
       ev.preventDefault();
       window.addEventListener('pointermove', move);
       window.addEventListener('pointerup', up);
+    });
+    // Middle press otherwise starts the browser's autoscroll, which hijacks the
+    // drag and leaves a scroll cursor stuck over the board.
+    this.root.addEventListener('auxclick', (ev) => {
+      if (ev.button === 1) ev.preventDefault();
     });
   }
 }

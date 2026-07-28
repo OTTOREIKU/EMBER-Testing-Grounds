@@ -462,6 +462,7 @@ main { display: flex; flex: 1; min-height: 0; }
   font-family: var(--font); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
 }
 .pg-reopen:hover { background: var(--surface3); }
+#play-guide.closed { touch-action: none; }
 .pg-head {
   display: flex; align-items: center; gap: 6px; padding: 7px 8px 7px 6px;
   border-bottom: 1px solid var(--border); cursor: grab; user-select: none;
