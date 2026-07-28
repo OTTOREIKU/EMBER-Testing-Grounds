@@ -1,6 +1,9 @@
 import type { Card, MechLoadout } from './types';
-import { cardName, type GameData } from './data';
-import { alertDialog, confirmDialog } from './dialog';
+import { BASE_FACTIONS, cardName, FACTION_LABEL, mechPartUrl, tabImageUrl, type GameData } from './data';
+import { alertDialog, confirmDialog, promptDialog } from './dialog';
+import { deleteMechPreset, loadMechPresets, saveMechPreset } from './presets';
+
+const escAttr = (v: string): string => v.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 
 export interface RosterCallbacks {
   onAddUnit(card: Card, side: 'blue' | 'red'): void;
@@ -8,6 +11,7 @@ export interface RosterCallbacks {
   onPreview(card: Card, opts?: { focus?: boolean }): void;
   cardFilter?(card: Card): boolean;
   cardBadge?(card: Card): string;
+  now(): number;
 }
 
 const SLOTS: { key: keyof MechLoadout; label: string; type: string }[] = [
@@ -204,12 +208,34 @@ export class Roster {
         .filter((c) => (slot.key === 'pilot' ? c.category === 'pilot' : c.category === 'mech_part' && c.type === slot.type))
         .filter((c) => (this.cb.cardFilter?.(c) ?? true) || this.mech[slot.key] === c.id)
         .sort((a, b) => cardName(a).localeCompare(cardName(b)));
+      // Grouped by faction, in a fixed order so the list does not reshuffle as
+      // parts are picked. A Mech may only use Parts from one faction (5.1), so
+      // this is the division that actually decides what you can legally take.
+      const groups = new Map<string, Card[]>();
       for (const c of options) {
-        const o = document.createElement('option');
-        o.value = c.id;
-        o.textContent = `${cardName(c)}${c.score ? ` (${c.score}p)` : ''}${this.cb.cardBadge?.(c) ?? ''}`;
-        if (this.mech[slot.key] === c.id) o.selected = true;
-        sel.appendChild(o);
+        const key = this.data.factionOf(c) ?? '';
+        const list = groups.get(key);
+        if (list) list.push(c);
+        else groups.set(key, [c]);
+      }
+      const order = [...BASE_FACTIONS, 'PD', 'COLLABORATION'];
+      const keys = [...groups.keys()].sort((a, b) => {
+        const ai = order.indexOf(a);
+        const bi = order.indexOf(b);
+        return (ai < 0 ? order.length : ai) - (bi < 0 ? order.length : bi);
+      });
+      for (const key of keys) {
+        const group = document.createElement('optgroup');
+        const members = groups.get(key)!;
+        group.label = `${key ? (FACTION_LABEL[key] ?? key) : 'Faction not recorded'} · ${members.length}`;
+        for (const c of members) {
+          const o = document.createElement('option');
+          o.value = c.id;
+          o.textContent = `${cardName(c)}${c.score ? ` (${c.score}p)` : ''}${this.cb.cardBadge?.(c) ?? ''}`;
+          if (this.mech[slot.key] === c.id) o.selected = true;
+          group.appendChild(o);
+        }
+        sel.appendChild(group);
       }
       sel.addEventListener('change', () => {
         this.mech[slot.key] = sel.value || undefined;
@@ -221,6 +247,39 @@ export class Roster {
       });
       selects.push(sel);
       label.appendChild(sel);
+      // A native <option> cannot be hovered reliably, so the chosen card gets a
+      // thumbnail beside the picker that shows the full card the usual way.
+      const peek = document.createElement('span');
+      peek.className = 'slot-peek';
+      const paintPeek = (): void => {
+        const card = this.mech[slot.key] ? this.data.byId.get(this.mech[slot.key]!) : undefined;
+        peek.replaceChildren();
+        if (!card) {
+          delete peek.dataset.tipCard;
+          peek.classList.add('empty');
+          peek.textContent = '?';
+          return;
+        }
+        peek.classList.remove('empty');
+        peek.dataset.tipCard = card.id;
+        const img = document.createElement('img');
+        const sources = [mechPartUrl(card.id), tabImageUrl(card.id)];
+        let next = 0;
+        const advance = (): void => {
+          if (next < sources.length) img.src = sources[next++];
+          else img.remove();
+        };
+        img.addEventListener('error', advance);
+        advance();
+        peek.appendChild(img);
+      };
+      paintPeek();
+      peek.addEventListener('click', () => {
+        const card = this.mech[slot.key] ? this.data.byId.get(this.mech[slot.key]!) : undefined;
+        if (card) this.cb.onPreview(card);
+      });
+      sel.addEventListener('change', paintPeek);
+      label.appendChild(peek);
       wrap.appendChild(label);
     }
     const pts = document.createElement('p');
@@ -233,6 +292,58 @@ export class Roster {
     wrap.appendChild(fac);
     this.paintFaction(fac);
     this.paintFactionLock(selects);
+
+    // Presets sit directly above the add buttons, so a build can be stored and
+    // recalled without rebuilding it slot by slot every game.
+    const presets = document.createElement('div');
+    presets.className = 'mech-presets';
+    const renderPresets = (): void => {
+      const list = loadMechPresets();
+      presets.innerHTML = `<select class="preset-pick"><option value="">Saved mechs…</option>${list
+        .map((p) => `<option value="${escAttr(p.id)}">${escAttr(p.name)}</option>`)
+        .join('')}</select>
+        <button class="preset-save" title="Save the current build under a name">Save</button>
+        <button class="preset-del" title="Delete the selected preset" ${list.length ? '' : 'disabled'}>✕</button>`;
+      const pick = presets.querySelector<HTMLSelectElement>('.preset-pick')!;
+      pick.addEventListener('change', () => {
+        const found = loadMechPresets().find((p) => p.id === pick.value);
+        if (!found) return;
+        this.mech = { ...found.mech };
+        this.render();
+      });
+      presets.querySelector('.preset-save')!.addEventListener('click', () => {
+        void (async () => {
+          const suggested = this.mech.torso ? cardName(this.data.byId.get(this.mech.torso)!) : 'My mech';
+          const name = await promptDialog({
+            title: 'Save this mech',
+            body: 'Saved builds are kept on this device and can be dropped onto the board in any later game. Reusing a name overwrites that preset.',
+            value: suggested,
+            placeholder: 'Preset name',
+            confirmLabel: 'Save',
+          });
+          if (!name) return;
+          saveMechPreset(name, this.mech, this.cb.now());
+          this.render();
+        })();
+      });
+      presets.querySelector('.preset-del')!.addEventListener('click', () => {
+        void (async () => {
+          const found = loadMechPresets().find((p) => p.id === pick.value);
+          if (!found) return;
+          const ok = await confirmDialog({
+            title: `Delete “${found.name}”?`,
+            body: 'This only removes the saved build. Anything already on the board stays.',
+            confirmLabel: 'Delete',
+            danger: true,
+          });
+          if (!ok) return;
+          deleteMechPreset(found.id);
+          this.render();
+        })();
+      });
+    };
+    renderPresets();
+    wrap.appendChild(presets);
 
     const btns = document.createElement('div');
     btns.className = 'mech-add-btns';

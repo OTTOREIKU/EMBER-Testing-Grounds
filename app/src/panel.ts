@@ -1,7 +1,8 @@
-import type { Card, Token } from './types';
+import type { Card, CardAction, Token } from './types';
 import { cardImageUrl, cardName, mechPartUrl, rulesLines, SIDE_LABEL, tabImageUrl, type GameData } from './data';
 import { inspectOnHover } from './inspector';
 import { guidedActions, isElectronicAttack, SLOT_LABEL, tokenCards } from './units';
+import { costLabel, LENGTH_NAME, lengthOf, TICK_COST } from './ticks';
 
 const ACTION_TINT: Record<string, string> = {
   Swift: 'swift',
@@ -37,7 +38,7 @@ export interface PanelCallbacks {
   onSpendIntercept(t: Token, actionId: string): void;
   onRestoreIntercept(t: Token, actionId: string): void;
   onRestoreAmmo(t: Token, actionId: string): void;
-  onLaunch(t: Token, projectile: Card): void;
+  onLaunch(t: Token, action: CardAction, projectile: Card): void;
   onStartAttack(t: Token, actionId: string): void;
   onStartElectronic(t: Token, actionId: string): void;
   onShowMoveRange(t: Token, steps: number): void;
@@ -68,7 +69,10 @@ export class Panel {
     this.body.replaceChildren();
     const head = document.createElement('p');
     head.className = `token-head side-${t.side}`;
-    head.textContent = `${t.label} · ${SIDE_LABEL[t.side]}, ${t.stance.toUpperCase()}, ${['facing N', 'facing E', 'facing S', 'facing W'][t.facing]}`;
+    head.innerHTML = `<b class="th-name"></b><span class="th-meta"></span>`;
+    head.querySelector('.th-name')!.textContent = t.label;
+    head.querySelector('.th-meta')!.textContent =
+      `${SIDE_LABEL[t.side]}, ${t.stance.toUpperCase()}, ${['facing N', 'facing E', 'facing S', 'facing W'][t.facing]}`;
     this.body.appendChild(head);
 
     const actions = guidedActions(this.data, t);
@@ -129,6 +133,7 @@ export class Panel {
     const { action: a, available, reason, ammoLeft, intercept, projectiles } = ga;
     const row = document.createElement('div');
     row.className = `action${available ? '' : ' unavailable'}`;
+    row.dataset.actionRow = a.id;
     row.dataset.tipCard = ga.card.id;
     row.style.setProperty('--t', `var(--t-${ACTION_TINT[a.type ?? ''] ?? 'passive'})`);
 
@@ -138,11 +143,36 @@ export class Panel {
     if (a.redDice) dice.push(`${a.redDice}R`);
     if (a.yellowDice) dice.push(`${a.yellowDice}Y`);
 
+    // Only Mechs spend Ticks, so only their Actions carry a length worth showing.
+    const len = lengthOf(a);
+    const cost = len ? TICK_COST[len] : undefined;
+
     const head = document.createElement('div');
     head.className = 'act-head';
     head.innerHTML = `<b class="act-name">${a.name.en || a.name.zh || a.id}</b>${
       a.type ? `<span class="act-type">${a.type}</span>` : ''
+    }${
+      cost
+        ? `<span class="act-cost">${LENGTH_NAME[len!]}<i class="tick-pips">${
+            cost.maneuver ? '<i class="tick-man"></i>' : ''
+          }${'<i class="tick-act"></i>'.repeat(cost.action)}</i></span>`
+        : ''
     }`;
+    // Long help goes in the inspect box rather than a native tooltip, which
+    // would otherwise cover the action rows it is describing.
+    const costEl = head.querySelector<HTMLElement>('.act-cost');
+    if (costEl && cost && len) {
+      inspectOnHover(costEl, {
+        title: `${LENGTH_NAME[len]} Action`,
+        sub: `${a.name.en || a.name.zh || a.id} · costs ${costLabel(cost)}`,
+        lines: [
+          'A Mech generates 1 Maneuver Tick and 2 Action Ticks each time it receives an Action Opportunity (rulebook 3.4.5).',
+          'Short costs 1 Action Tick, Medium costs 2, and Long costs the Maneuver Tick plus both Action Ticks, so a Long Action rules out Maneuvering.',
+          'Ticks are spent in order: the Maneuver Tick is unusable once any Action Tick has gone.',
+          'The first Action of an Opportunity is the Starting Action and its type must match the Timing Dial. Later Actions in the same Opportunity have no type restriction.',
+        ],
+      });
+    }
 
     const info = document.createElement('div');
     info.className = 'action-info';
@@ -250,13 +280,14 @@ export class Panel {
     if (intercept?.can) {
       const int = document.createElement('button');
       int.className = 'intercept-btn';
-      int.innerHTML = `<i class="btn-ico">⊘</i> Intercept (${intercept.left})`;
+      int.innerHTML = `<i class="btn-ico">⊘</i> Intercept… (${intercept.left})`;
       inspectOnHover(int, {
         title: 'Intercept',
         sub: `${intercept.left} of ${intercept.max} left · ${actName}`,
         lines: [
           'Spends 1 Interception Token to attack an enemy Missile or Projectile that moved or launched within Range (rulebook 4.9).',
-          'Interception happens automatically when an enemy Aerial Unit moves, so use this to record one you have resolved.',
+          'Pick the target on the board. It attacks as a Firing Attack, except the target must be the unit that triggered it, no Forward Arc is needed, line of sight always exists, and no Terrain or Unit Protection applies.',
+          'If the target survives, this unit MUST intercept again until its tokens run out or the target is destroyed.',
           'Tokens are never restored, so this Part gets a fixed number of Interceptions for the whole game.',
         ],
       });
@@ -311,19 +342,18 @@ export class Panel {
     for (const p of projectiles) {
       if (!available) break;
       const launch = document.createElement('button');
-      launch.textContent = `Launch ${cardName(p)}`;
+      launch.textContent = `Launch ${cardName(p)}…`;
       inspectOnHover(launch, {
         title: `Launch ${cardName(p)}`,
         sub: actName,
         lines: [
-          'Places the projectile token next to this unit. Drag it to its Landing Point Grid, then resolve it with Detonate.',
-          ammoLeft !== undefined ? 'Spends 1 Ammo Token from this Part.' : '',
+          'Shows the Landing Points in range, then places the projectile on the Grid you click. A Landing Point is a Grid, not a unit (rulebook 4.7.1).',
+          ammoLeft !== undefined ? 'Spends 1 Ammo Token per projectile placed.' : '',
         ].filter(Boolean),
       });
-      launch.addEventListener('click', () => {
-        this.cb.onLaunch(t, p);
-        if (ammoLeft !== undefined) this.cb.onSpendAmmo(t, a.id);
-      });
+      // The launch flow spends the Ammo itself, once per projectile actually
+      // placed, so nothing is deducted here.
+      launch.addEventListener('click', () => this.cb.onLaunch(t, a, p));
       btns.appendChild(launch);
     }
     body.appendChild(btns);
@@ -436,7 +466,9 @@ export class Panel {
       const dice = [a.redDice ? `${a.redDice}R` : '', a.yellowDice ? `${a.yellowDice}Y` : '']
         .filter(Boolean)
         .join('+');
-      const meta = [a.type, a.range ? `R ${a.range}` : '', dice].filter(Boolean).join(' · ');
+      const alen = lengthOf(a);
+      const acost = alen ? `${LENGTH_NAME[alen]} (${costLabel(TICK_COST[alen])})` : '';
+      const meta = [a.type, acost, a.range ? `R ${a.range}` : '', dice].filter(Boolean).join(' · ');
       const row = document.createElement('div');
       row.className = 'card-action';
       const bullets = rulesLines(text);

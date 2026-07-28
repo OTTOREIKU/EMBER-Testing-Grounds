@@ -4,6 +4,7 @@ import { mountCardImage, preloadCardImages, warmAllImagesWhenIdle } from './imag
 import { watchForUpdates } from './updates';
 import { TIMINGS, type Card } from './types';
 import { registerOffline } from './offline';
+import { costLabel, LENGTH_NAME, lengthOf, TICK_COST } from './ticks';
 
 type Tab = 'keywords' | 'parts' | 'units' | 'pilots' | 'tactics' | 'boxes' | 'missions' | 'rules';
 
@@ -220,7 +221,9 @@ function cardDetail(c: Card): string {
   const actions = (c.actions ?? [])
     .map((a) => {
       const dice = [a.redDice ? `${a.redDice}R` : '', a.yellowDice ? `${a.yellowDice}Y` : ''].filter(Boolean).join('+');
-      const meta = [a.type, a.range === 0 ? 'R --' : a.range ? `R ${a.range}` : '', dice, a.storage ? `Ammo ${a.storage}` : '']
+      const len = lengthOf(a);
+      const cost = len ? `${LENGTH_NAME[len]} (${costLabel(TICK_COST[len])})` : '';
+      const meta = [a.type, cost, a.range === 0 ? 'R --' : a.range ? `R ${a.range}` : '', dice, a.storage ? `Ammo ${a.storage}` : '']
         .filter(Boolean)
         .join(' · ');
       const rawEn = a.description?.en?.trim();

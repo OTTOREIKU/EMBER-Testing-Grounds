@@ -4,7 +4,7 @@ import { MECH_LAYER_ORDER } from './board';
 import { inspectOnHover, linkMechanics, type InspectInfo } from './inspector';
 import type { GameState, PartSlot, PartState, Stance, Timing, TimingDef, Token } from './types';
 import { addStatus, SCALES, SHAPE_NOTE, statusCount, statusesFor, TIMINGS } from './types';
-import { defaultUnitLabel, factionProblems, initiativeFor, pilotCard, SLOT_LABEL, tidyUnitLabel, tokenCards, tokenFactions } from './units';
+import { defaultUnitLabel, factionProblems, initiativeFor, MERCENARY_FACTIONS, pilotCard, SLOT_LABEL, tidyUnitLabel, tokenCards, tokenFactions } from './units';
 import { promptDialog } from './dialog';
 
 const esc = (s: string): string => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!);
@@ -134,14 +134,20 @@ export class SquadTracker {
       const sc = SCALES.find((x) => x.id === activeScale)!;
       const over = !sc.openEnded && pts > sc.points;
       const squadFactions = [...new Set(tokens.flatMap((t) => tokenFactions(this.data, t).factions))];
+      // Mercenaries alongside one allegiance is a legal squad, so the chip only
+      // turns red when two real allegiances are mixed.
+      const allegiance = squadFactions.filter((f) => !MERCENARY_FACTIONS.includes(f));
       const facChip =
         squadFactions.length === 1
           ? `<span class="fac-chip">${FACTION_LABEL[squadFactions[0]] ?? squadFactions[0]}</span>`
           : squadFactions.length > 1
-            ? `<span class="fac-chip bad">${squadFactions.map((f) => FACTION_LABEL[f] ?? f).join(' + ')}</span>`
+            ? `<span class="fac-chip${allegiance.length > 1 ? ' bad' : ''}">${squadFactions.map((f) => FACTION_LABEL[f] ?? f).join(' + ')}</span>`
             : '';
+      const waiting = tokens.filter((t) => t.deployed === false).length;
       const teamName = this.state.sideNames?.[side];
-      h.innerHTML = `${teamName ? esc(teamName) : `${SIDE_LABEL[side]} squad`}${facChip} <span class="pts${over ? ' over' : ''}">${pts}<small>/${sc.points}${sc.openEnded ? '+' : ''}</small>p · ${tokens.length} unit${tokens.length === 1 ? '' : 's'}</span>`;
+      h.innerHTML = `${teamName ? esc(teamName) : `${SIDE_LABEL[side]} squad`}${facChip} <span class="pts${over ? ' over' : ''}">${pts}<small>/${sc.points}${sc.openEnded ? '+' : ''}</small>p · ${tokens.length} unit${tokens.length === 1 ? '' : 's'}${
+        waiting ? ` · <b class="sq-waiting">${waiting} to deploy</b>` : ''
+      }</span>`;
       inspectOnHover(h, {
         title: `${SIDE_LABEL[side]} squad`,
         sub: `${pts} points of ${sc.points}${sc.openEnded ? ' or more' : ''} · ${sc.name} battle`,
@@ -164,7 +170,8 @@ export class SquadTracker {
         warn.textContent = `Over the ${sc.name} limit by ${pts - sc.points} points.`;
         sec.appendChild(warn);
       }
-      for (const p of factionProblems(this.data, tokens)) {
+      // A prebuilt scenario is played as printed, mixed factions and all.
+      for (const p of this.state.scenario ? [] : factionProblems(this.data, tokens)) {
         const bad = document.createElement('p');
         bad.className = 'squad-illegal';
         bad.innerHTML = `<b>Illegal: ${p.kind === 'mixed-squad' ? 'mixed factions' : `${p.label} mixes factions`}</b><br>${p.detail}`;

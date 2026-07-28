@@ -188,6 +188,44 @@ export interface PlayData {
   stanceNotes?: { ref?: string; lines: string[] };
 }
 
+export interface CommonAction extends CardAction {
+  slots: string[];
+  silence?: boolean;
+  requires?: string;
+  phase?: string;
+}
+
+export interface ExtraTickGrant {
+  actionId: string;
+  card: string;
+  label: string;
+  timing: string;
+  condition: string;
+}
+
+interface AmmoOverrides {
+  actions?: Record<string, number>;
+}
+
+// The generated cards.json records no Ammo for almost every Drone action, so the
+// printed counts are patched back in here (see data/ammo_overrides.json).
+function applyAmmo(cards: Card[], patch: AmmoOverrides): void {
+  const byId = patch.actions ?? {};
+  for (const c of cards) {
+    for (const a of c.actions ?? []) {
+      const n = byId[a.id];
+      if (typeof n === 'number') a.storage = n;
+    }
+  }
+}
+
+interface CommonActionData {
+  actions?: CommonAction[];
+  extraTicks?: ExtraTickGrant[];
+}
+
+const NO_COMMON: CommonActionData = { actions: [], extraTicks: [] };
+
 export interface GameData {
   cards: Card[];
   byId: Map<string, Card>;
@@ -203,6 +241,8 @@ export interface GameData {
   secondary: SecondaryTask[];
   zoneData: ZoneData;
   play: PlayData;
+  commonActions: CommonAction[];
+  extraTicks: ExtraTickGrant[];
 }
 
 interface KeywordOverrides {
@@ -279,7 +319,7 @@ function applyTactics(cards: Card[], table: Record<string, TacticEntry>): void {
 }
 
 export async function loadData(): Promise<GameData> {
-  const [cards, terrain, boxes, rawKeywords, patch, mech, xlate, names, missions, tactics, play, secondary, zoneData, facPatch, boxPatch] = await Promise.all([
+  const [cards, terrain, boxes, rawKeywords, patch, mech, xlate, names, missions, tactics, play, secondary, zoneData, facPatch, boxPatch, common, ammoPatch] = await Promise.all([
     fetch(dataUrl('cards.json')).then((r) => r.json() as Promise<Card[]>),
     fetch(dataUrl('terrain_layouts.json')).then((r) => r.json() as Promise<TerrainData>),
     fetch(dataUrl('boxes.json')).then((r) => r.json() as Promise<BoxDef[]>),
@@ -317,12 +357,19 @@ export async function loadData(): Promise<GameData> {
     fetch(dataUrl('box_contents_overrides.json'))
       .then((r) => (r.ok ? (r.json() as Promise<BoxContentsOverrides>) : ({} as BoxContentsOverrides)))
       .catch(() => ({}) as BoxContentsOverrides),
+    fetch(dataUrl('common_actions.json'))
+      .then((r) => (r.ok ? (r.json() as Promise<CommonActionData>) : NO_COMMON))
+      .catch(() => NO_COMMON),
+    fetch(dataUrl('ammo_overrides.json'))
+      .then((r) => (r.ok ? (r.json() as Promise<AmmoOverrides>) : ({} as AmmoOverrides)))
+      .catch(() => ({}) as AmmoOverrides),
   ]);
 
   cleanCardText(cards);
   applyTactics(cards, tactics.tactics ?? {});
   normaliseBoxes(cards);
   applyBoxContents(cards, boxPatch);
+  applyAmmo(cards, ammoPatch);
 
   for (const b of boxes) {
     const bn = names.boxes?.[b.key];
@@ -415,6 +462,8 @@ export async function loadData(): Promise<GameData> {
       stances: play.stances ?? [],
       stanceNotes: play.stanceNotes,
     },
+    commonActions: common.actions ?? [],
+    extraTicks: common.extraTicks ?? [],
   };
 }
 
