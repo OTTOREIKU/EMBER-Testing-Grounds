@@ -1284,10 +1284,11 @@
       "name": "UN Escort M.A.P.",
       "grid": "L8",
       "facing": "W",
-      "torso": null,
-      "chasis": null,
-      "leftHand": null,
-      "rightHand": "145"
+      "torso": "098",
+      "chasis": "101",
+      "leftHand": "142",
+      "rightHand": "145",
+      "pilot": "LPA-20"
      },
      {
       "kind": "drone",
@@ -1468,13 +1469,14 @@
    "Non-card list lines kept as notes: RDL 'Scenario missile reserve - Extra MC-3 Razor teaching reserve' (58 pts) and UN 'Scenario escort discount' (-148 pts). For strict matched play, rebuild the lists from official cards.",
    "Round 1 scripted: RDL artillery creates a launch window around C5/D5, spotter screens via C8/D8; UN VIP advances J6/I6 inside the umbrella, escort holds J8/I8; place one or two missile threats and resolve slowly in Delay Phase. Round 2: saturation vs token economy. Rounds 3-4 free play.",
    "Terrain is not itemised ('the centre remains terrain-heavy'); buildings and walls copied from the series-standard map - treat as an inferred layout. Wall orientations inferred from symmetry.",
-   "Optional replays: simple mode (one Porcupine), true umbrella (exact ammo, no caps), mirror defence (RDL AMS-190 intercepts), smoke lanes, convoy variant."
+   "Optional replays: simple mode (one Porcupine), true umbrella (exact ammo, no caps), mirror defence (RDL AMS-190 intercepts), smoke lanes, convoy variant.",
+   "UN Escort M.A.P. substitution: the booklet lists TM17 “Wolfhound” Guard Core and LM108 Agile Chassis, neither of which exists in the community card database, so the unit could not be built as printed. Rebuilt from the closest legal UN parts: TM35B Bison Assault Core (098) for the Guard Core, since “Guard” is a protective role and A5 is the best UN armour available; LM213B Combat Chassis (101), matching the VIP so the escort keeps pace, the only other UN chassis being a Stealth one whose speciality an escort cannot use; S100 Shield (142) in the left arm, a literal shield at Parry 2 pairing with the printed M15BO Katana; and pilot LPA-20 Panzer, which avoids the VIP's LPA-19 so no Pilot ID repeats. 246 points."
   ],
   "unmatched": [
-   "TM17 \"Wolfhound\" Guard Core (no card found in database)",
-   "LM108 Agile Chassis (no card found in database)",
-   "R6SD SMG (card 124 is right-hand only; the Escort's right hand holds M15BO Katana)",
-   "ECS-2 External Cooler (card 002; Missile Artillery backpack slot holds ML-34 Quad Missile Rack - booklet lists two backpacks)"
+   "TM17 \"Wolfhound\" Guard Core is not in the card database, so the Escort uses TM35B Bison Assault Core (098) instead.",
+   "LM108 Agile Chassis is not in the card database, so the Escort uses LM213B Combat Chassis (101) instead.",
+   "R6SD SMG is listed for the Escort's left arm but card 124 is a right-hand part, and the right hand already holds M15BO Katana. The left arm uses S100 Shield (142) instead.",
+   "The booklet lists two backpacks for the Missile Artillery. ML-34 Quad Missile Rack is fitted and ECS-2 External Cooler (card 002) is left off."
   ]
  },
  {

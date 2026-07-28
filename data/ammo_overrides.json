@@ -1,0 +1,27 @@
+{
+  "_comment": "Ammo Token counts that the card bundle does not carry. Rulebook 4.13: the Ammo Icon on an Action is a black pill whose marks say how many Ammo Tokens go on the card at Deployment, and each performance spends one (Volley X spends one per Projectile launched). The generated cards.json records storage 0 for 77 of the 78 Drone actions, so a missile drone showed no ammo at all. Every value below was read off the printed card scan in assets/cards/en/, not inferred. The printed card always wins over this file.",
+  "_scope": "Only Drone actions that launch or deploy something are listed, because those are the ones whose printed Ammo pill is certainly missing from the data. A wider sweep of the remaining Drone and mech-part actions has not been done, so absence from this file does not mean an action has no Ammo.",
+  "_shape": "actions maps an action id to its printed Ammo Token count.",
+  "actions": {
+    "079_A": 4,
+    "ZHDR-104_A": 2,
+    "ZHDR-106_B": 2,
+    "ZHDR-201_B": 3,
+    "PRDR-101_B": 6,
+    "PRDR-102_B": 6,
+    "PRDR-203_A": 4,
+    "PRDR-204_A": 2,
+    "PRDR-204_C": 1
+  },
+  "_notes": {
+    "079_A": "DTG-30S \"Hyena\" Missile Type. Volley 2, so four tokens are two full volleys.",
+    "ZHDR-104_A": "N14 Vanguard IV \"Javelin\". Fires one M707 \"Swift\" Missile per use; the pill shows two missile marks rather than the \"!\" bars the RDL cards use.",
+    "ZHDR-106_B": "N113 Aegis II \"Ballista\". Same missile and same two marks as the Javelin.",
+    "ZHDR-201_B": "N31 Hound I \"Beagle\". Volley 3 against three marks, so one full volley.",
+    "PRDR-101_B": "MD-4A Reaper Type I. Volley 3 against six marks, so two full volleys.",
+    "PRDR-102_B": "MD-4C Reaper Type III. Identical missile block to the Type I.",
+    "PRDR-203_A": "LD-5B \"Vigilant\" Bombing Type. Volley 2 against four marks.",
+    "PRDR-204_A": "LD-5S \"Vigilant\" Support Type. The same Cluster Grenade action as the Bombing Type but with half the ammo, which is the difference between the two variants.",
+    "PRDR-204_C": "LD-5S \"Vigilant\" Support Type, Beacon. Not a Volley action, and proof that the gap is not limited to Volley actions."
+  }
+}
