@@ -1,4 +1,4 @@
-import type { GameState, Marker, SmokeScreen, StatusDef, TerrainPiece, Token, TokenShape } from './types';
+import type { GameState, Marker, Side, SmokeScreen, StatusDef, TerrainPiece, Token, TokenShape } from './types';
 import { INTERCEPT_DEF, SHAPE_NOTE, statusCount, statusStacks } from './types';
 import { mechPartUrl, SIDE_LABEL, tabImageUrl } from './data';
 import type { InspectInfo } from './inspector';
@@ -256,9 +256,25 @@ export class Board {
     this.scrollWrap.appendChild(this.svg);
     container.appendChild(this.scrollWrap);
 
+    // Panels float over the board inside this same container, so a wheel event
+    // that lands on something with its own scrollbar belongs to that panel.
+    const overOwnScroller = (ev: WheelEvent): boolean => {
+      // Stop at the board's own scroll wrapper: zooming in makes it scrollable,
+      // and treating that as a panel would kill wheel-zoom over the board itself.
+      let el = ev.target as HTMLElement | null;
+      while (el && el !== container && el !== this.scrollWrap) {
+        if (el.scrollHeight > el.clientHeight + 1) {
+          const oy = getComputedStyle(el).overflowY;
+          if (oy === 'auto' || oy === 'scroll') return true;
+        }
+        el = el.parentElement;
+      }
+      return false;
+    };
     container.addEventListener(
       'wheel',
       (ev) => {
+        if (overOwnScroller(ev)) return;
         ev.preventDefault();
         this.setZoom(this.zoom * (ev.deltaY < 0 ? 1.12 : 1 / 1.12));
       },
@@ -472,7 +488,8 @@ export class Board {
 
   renderTokens(state: GameState): void {
     this.gTokens.replaceChildren();
-    for (const t of state.tokens) this.gTokens.appendChild(this.buildToken(t));
+    // A unit awaiting deployment is in the squad but not on the board yet.
+    for (const t of state.tokens) if (t.deployed !== false) this.gTokens.appendChild(this.buildToken(t));
     this.applySelection();
   }
 
@@ -652,6 +669,65 @@ export class Board {
         });
         this.gSmoke.appendChild(g);
       });
+    }
+  }
+
+  // The route a unit will walk, drawn through the centre of each Large Grid and
+  // tinted to the owning side so it is obvious whose move is being planned.
+  showMovePath(path: { c: number; r: number }[], side: Side, locked = false): void {
+    this.gOverlay.replaceChildren();
+    if (path.length < 2) return;
+    const pt = (g: { c: number; r: number }) => `${g.c * 3 * CELL + 1.5 * CELL},${g.r * 3 * CELL + 1.5 * CELL}`;
+    const g = el('g', { class: `move-path side-${side}${locked ? ' locked' : ''}` });
+    g.appendChild(el('polyline', { points: path.map(pt).join(' '), class: 'move-path-line' }));
+    for (const step of path.slice(1, -1)) {
+      const [x, y] = pt(step).split(',').map(Number);
+      g.appendChild(el('circle', { cx: x, cy: y, r: 3.5, class: 'move-path-dot' }));
+    }
+    const last = path[path.length - 1];
+    const [ex, ey] = pt(last).split(',').map(Number);
+    g.appendChild(el('circle', { cx: ex, cy: ey, r: 7, class: 'move-path-end' }));
+    this.gOverlay.appendChild(g);
+  }
+
+  clearMovePath(): void {
+    this.gOverlay.replaceChildren();
+  }
+
+  // Walks the token along the path one Large Grid at a time so the other player
+  // can see the route taken rather than the unit teleporting. Uses timers rather
+  // than rAF, which never fires when the pane is not compositing.
+  // `stops` are small-cell positions, the last being exactly where state will put
+  // the unit, so the animation cannot land somewhere the model disagrees with.
+  // One continuous animation across every waypoint rather than a timer per hop.
+  // Chaining CSS transitions raced the timers and produced a slide-then-jump, so
+  // the whole route is handed to the engine at once and eased end to end.
+  animateMove(uid: number, stops: { col: number; row: number }[], done: () => void): void {
+    const g = this.gTokens.querySelector<SVGGElement>(`[data-uid="${uid}"]`);
+    if (!g || stops.length < 2) {
+      done();
+      return;
+    }
+    const hops = stops.length - 1;
+    const total = Math.min(1500, 260 + hops * 170);
+    const frames = stops.map((s) => ({ transform: `translate(${s.col * CELL}px, ${s.row * CELL}px)` }));
+    const settle = () => {
+      if (g.dataset.moveDone) return;
+      g.dataset.moveDone = '1';
+      g.classList.remove('moving');
+      g.setAttribute('transform', `translate(${stops[hops].col * CELL}, ${stops[hops].row * CELL})`);
+      delete g.dataset.moveDone;
+      done();
+    };
+    g.classList.add('moving');
+    // The pane does not advance the animation clock when it is not compositing, so
+    // a timer guarantees the move completes even if onfinish never fires.
+    window.setTimeout(settle, total + 120);
+    try {
+      const anim = g.animate(frames, { duration: total, easing: 'ease-in-out', fill: 'forwards' });
+      anim.onfinish = settle;
+    } catch {
+      settle();
     }
   }
 

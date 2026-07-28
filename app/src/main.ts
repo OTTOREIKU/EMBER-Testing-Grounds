@@ -1,12 +1,12 @@
 import './styles.css';
-import { Board, CELLS, footprint, snapPlacement, type BoardDeployment, type BoardZone } from './board';
+import { Board, CELLS, footprint, snapPlacement, type BoardDeployment, type BoardZone, type DeployShape } from './board';
 import { AttackHelper, ElectronicHelper } from './combat';
 import { alertDialog, choiceDialog, confirmDialog, promptDialog } from './dialog';
 import { DiceTray } from './dice';
 import { importSquadFile } from './importer';
 import { Inventory } from './inventory';
 import { isInspectPinned, showInspect, unpinInspect } from './inspector';
-import { dataUrl, loadData, missionImageUrl, parseGridRef, SIDE_LABEL } from './data';
+import { cardName, dataUrl, loadData, missionImageUrl, parseGridRef, rulesLines, SIDE_LABEL } from './data';
 import {
   deleteCustomMap,
   emptyCustomMap,
@@ -22,7 +22,7 @@ import {
 } from './mapeditor';
 import { Panel } from './panel';
 import { Roster } from './roster';
-import { dissipationFor, inArc, LG, losBetween, rangeBetween, reachableGrids, smokeBlocks } from './rules';
+import { dissipationFor, extendPath, inArc, LG, losBetween, rangeBetween, reachableGrids, smokeBlocks, standingSpot } from './rules';
 import { instantiateScenario, loadScenarios, type Scenario } from './scenarios';
 import { loadReplays, ReplayPlayer, type ReplayScript, type ReplayStep, type ReplayTally } from './replay';
 import { SquadTracker } from './squads';
@@ -30,10 +30,12 @@ import { warmAllImagesWhenIdle } from './images';
 import { watchForUpdates } from './updates';
 import { installTooltip, preloadCards } from './tooltip';
 import { PHASES, RoundTracker } from './tracker';
-import type { Card, DiceData, Facing, GameState, MechLoadout, Side, SmokeScreen, StatusDef, TerrainPiece, Token } from './types';
+import { PlayGuide } from './playguide';
+import type { Card, CardAction, DiceData, Facing, GameState, MechLoadout, Side, SmokeScreen, Stance, StatusDef, TerrainPiece, Token } from './types';
 import { addStatus, SCALES, statusCount, statusesFor, STATUSES } from './types';
-import { deployedCardCounts, factionProblems, interceptCapacity, makeDroneToken, makeMechToken, migrateState, smokePlacement, tokenCards } from './units';
+import { deployedCardCounts, factionProblems, guidedActions, interceptCapacity, interceptLeft, interceptReach, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf } from './units';
 import { registerOffline } from './offline';
+import { countHits, firstPlayerFrom, newSetup, normaliseSetup, type SetupState } from './setup';
 
 const SAVE_KEY = 'ember-testing-grounds-v1';
 
@@ -51,7 +53,13 @@ async function init() {
   };
   let selectedUid: number | null = null;
   let replayActive = false;
-  let pendingAttack: { attackerUid: number; actionId: string; mode: 'attack' | 'electronic' } | null = null;
+  let pendingAttack: {
+    attackerUid: number;
+    actionId: string;
+    mode: 'attack' | 'electronic';
+    action?: CardAction;
+    done?: (fired: boolean) => void;
+  } | null = null;
   const editor: {
     active: boolean;
     item: PaletteItem | null;
@@ -95,6 +103,7 @@ async function init() {
       const t = state.tokens.find((x) => x.uid === selectedUid);
       if (t) panel.showToken(t);
       showSideTab('details');
+      checkInterceptFollowUp();
     },
     (t, text) => {
       t.log = [...(t.log ?? []), { round: state.round.n, text }];
@@ -128,6 +137,30 @@ async function init() {
   }
 
   const roundTracker = new RoundTracker(document.getElementById('round-tracker')!, () => onChanged());
+  roundTracker.onStartGame = () => void startGame();
+
+  const playGuide = new PlayGuide(document.getElementById('board-wrap')!, data, {
+    onAdvancePhase: () => roundTracker.advance(),
+    onSelectUnit: (uid) => selectToken(uid),
+    onMoveUnit: (uid, opts, done) => startMove(uid, opts, done),
+    onPerformAction: (uid, actionId, done) => performGuided(uid, actionId, done),
+    onSetStance: (uid, stance) => {
+      const t = state.tokens.find((x) => x.uid === uid);
+      if (!t) return;
+      t.stance = stance;
+      onChanged();
+    },
+    onIntercept: (uid, actionId, targetUid) => {
+      const t = state.tokens.find((x) => x.uid === uid);
+      if (!t) return;
+      interceptPrefer = targetUid;
+      startIntercept(t, actionId);
+    },
+    onRollFirstPlayer: (side) => rollForFirstPlayer(side),
+    onPlaceUnit: (uid, opts) => startDeployPlacement(uid, opts),
+    onNote: (t, text) => logTo(t, text),
+    onChanged: () => onChanged(),
+  });
 
   const panel = new Panel(data, {
     onRollDice(pool) {
@@ -152,21 +185,7 @@ async function init() {
       }
     },
     onSpendIntercept(t, actionId) {
-      const left = t.intercept?.[actionId];
-      if (left === undefined || left <= 0) return;
-      t.intercept![actionId] = left - 1;
-      const act = tokenCards(data, t)
-        .flatMap(({ card }) => card.actions ?? [])
-        .find((a) => a.id === actionId);
-      const name = act?.name.en || act?.name.zh || actionId;
-      logTo(
-        t,
-        left - 1 === 0
-          ? `${t.label} Intercepts with ${name}, spending its last Interception Token. That Part cannot Intercept again this game.`
-          : `${t.label} Intercepts with ${name}. ${left - 1} Interception Token${left - 1 === 1 ? '' : 's'} left on the Part.`,
-      );
-      onChanged();
-      if (!combatBusy()) panel.showToken(t);
+      startIntercept(t, actionId);
     },
     onRestoreIntercept(t, actionId) {
       const act = tokenCards(data, t)
@@ -179,18 +198,8 @@ async function init() {
       onChanged();
       if (!combatBusy()) panel.showToken(t);
     },
-    onLaunch(t, projectile) {
-      const tok = makeDroneToken(state, data, projectile, t.side);
-      const spot = findSpotNear(t, tok.size, tok.aerial);
-      if (!spot) {
-        void alertDialog({
-          title: 'No room to launch',
-          body: 'There is no free grid next to the launcher for the projectile. Move the unit, or clear the space around it, and try again.',
-        });
-        return;
-      }
-      state.tokens.push({ ...tok, parentUid: t.uid, col: spot.col, row: spot.row, facing: t.facing });
-      onChanged();
+    onLaunch(t, action, projectile) {
+      startLaunch(t, action, projectile, () => {});
     },
     onStartAttack(t, actionId) {
       pendingAttack = { attackerUid: t.uid, actionId, mode: 'attack' };
@@ -245,20 +254,49 @@ async function init() {
 
   const board = new Board(document.getElementById('board-wrap')!, {
     onSelect(uid) {
+      // Planning a move turns panning off, which makes the board treat every click
+      // as a background deselect. Keep the unit being moved selected.
+      if (movePlan && uid === null) return;
       if (pendingAttack && uid !== null && uid !== pendingAttack.attackerUid) {
         const attacker = state.tokens.find((x) => x.uid === pendingAttack!.attackerUid);
         const defender = state.tokens.find((x) => x.uid === uid);
-        const action = attacker && tokenCards(data, attacker).flatMap(({ card }) => card.actions ?? []).find((a) => a.id === pendingAttack!.actionId);
+        const action = pendingAttack.action ?? (attacker && findAction(attacker, pendingAttack.actionId));
         const mode = pendingAttack.mode;
+        const done = pendingAttack.done;
+        const intercepting = pendingIntercept;
+        if (intercepting && defender && !defender.aerial) {
+          void alertDialog({
+            title: 'Not an Interception target',
+            body: `Interception only ever attacks the Aerial Unit that triggered it, and ${defender.label} is not Aerial (rulebook 4.9). Pick the Missile or Projectile, or press Esc.`,
+          });
+          return;
+        }
         endTargeting();
+        pendingIntercept = null;
         if (attacker && defender && action) {
           if (mode === 'electronic') {
             electronicHelper.start(attacker, action, defender);
+          } else if (intercepting) {
+            spendIntercept(attacker, intercepting.actionId, action.name.en || action.name.zh || action.id);
+            attackHelper.start(
+              attacker,
+              action,
+              defender,
+              'Interception: line of sight always exists and no Forward Arc is required (4.9).',
+              0,
+              '',
+            );
+            interceptFollowUp = { uid: attacker.uid, actionId: intercepting.actionId, targetUid: defender.uid };
           } else {
             const prot = protectionFor(attacker, defender, action);
             attackHelper.start(attacker, action, defender, losNote(attacker, defender, action), prot.white, prot.note);
           }
           showSideTab('combat');
+          // An Action is performed the moment it is declared against a legal
+          // target (3.4.5), so the Tick is spent here rather than after the dice.
+          done?.(true);
+        } else {
+          done?.(false);
         }
         return;
       }
@@ -311,6 +349,10 @@ async function init() {
       board.showRange(sel, hov, `${rangeText(sel, hov)} · ${los}`);
     },
     onCellClick(col, row, erase) {
+      if (movePlan) {
+        if (!erase) lockMove();
+        return;
+      }
       if (!editor.active) return;
       if (editor.paint) {
         const at = { col: Math.floor(col / 3), row: Math.floor(row / 3) };
@@ -329,6 +371,10 @@ async function init() {
       afterEdit();
     },
     onCellHover(col, row) {
+      if (movePlan) {
+        traceMove(Math.floor(col / 3), Math.floor(row / 3));
+        return;
+      }
       if (!editor.active) return;
       if (editor.paint) {
         if (editor.drag) {
@@ -419,8 +465,443 @@ async function init() {
     return { white, note: parts.join(' + ') || 'Obstructed line of sight' };
   }
 
-  function endTargeting(): void {
+  // ---------- performing an action from the play guide ----------
+
+  function findAction(t: Token, actionId: string): CardAction | undefined {
+    const own = tokenCards(data, t)
+      .flatMap(({ card }) => card.actions ?? [])
+      .find((a) => a.id === actionId);
+    return own ?? data.commonActions.find((a) => a.id === actionId);
+  }
+
+  // The guide is meant to play the turn, not just tally it, so each Action Type
+  // opens the tool that actually resolves it. The Tick is only spent if the
+  // action goes through, so backing out costs nothing.
+  function performGuided(uid: number, actionId: string, done: (performed: boolean) => void): void {
+    const t = state.tokens.find((x) => x.uid === uid);
+    const action = t && findAction(t, actionId);
+    if (!t || !action) return done(false);
+    selectToken(uid);
+    const what = action.name.en || action.name.zh || action.id;
+
+    if (action.type === 'Firing' || action.type === 'Melee') {
+      const electronic = isElectronicAttack(action);
+      pendingAttack = { attackerUid: uid, actionId, mode: electronic ? 'electronic' : 'attack', action, done };
+      document.body.classList.add('targeting');
+      if (action.range) board.showRangeRings(t, action.range);
+      const reach = action.range ? ` Range ${action.range} is shown.` : '';
+      setHint(`${what}: click the target unit on the board.${reach} Esc cancels and keeps the Tick.`);
+      return;
+    }
+
+    if (action.type === 'Moving') {
+      const range = action.range || maneuverRange(data, t);
+      startMove(uid, { range, label: what }, done);
+      return;
+    }
+
+    if (action.type === 'Projectile') {
+      const ga = guidedActions(data, t).find((g) => g.action.id === actionId);
+      const shot = ga?.projectiles ?? [];
+      if (!shot.length) {
+        void alertDialog({
+          title: 'Nothing to place',
+          body: `${what} is a Projectile Action, but the card data does not say which Projectile or Deployable it puts on the board. Place it by hand from the Add tab, then mark the action done.`,
+        });
+        return done(false);
+      }
+      if (shot.length === 1) {
+        startLaunch(t, action, shot[0], done);
+        return;
+      }
+      void choiceDialog({
+        title: `${what}: what are you launching?`,
+        body: 'This Action can put more than one thing on the board, so pick which.',
+        choices: shot.map((p) => ({ id: p.id, label: cardName(p) })),
+      }).then((id) => {
+        const pick = shot.find((p) => p.id === id);
+        if (pick) startLaunch(t, action, pick, done);
+        else done(false);
+      });
+      return;
+    }
+
+    // Swift and Tactical actions are card text rather than a board procedure, so
+    // the guide puts the text in front of you and lets you carry it out.
+    showSideTab('details');
+    document.querySelector(`[data-action-row="${actionId}"]`)?.scrollIntoView({ block: 'nearest' });
+    if (action.range) board.showRangeRings(t, action.range);
+    showInspect({
+      title: what,
+      sub: `${action.type ?? 'Action'} · ${t.label}`,
+      lines: rulesLines(action.description?.en || data.actionTranslation(actionId)?.english || action.description?.zh || 'Follow the text on the card.'),
+    });
+    setHint(`${what}: follow the action text, shown in the Details tab.`);
+    return done(true);
+  }
+
+  // ---------- pre-game setup (rulebook 3.1.2, 3.1.4) ----------
+
+  // Two dice each, most Hits goes first. The rulebook digest lost the printed
+  // die colour here, so the roll uses Yellow, which is the Hit die with the
+  // widest spread and therefore the fewest ties.
+  function rollForFirstPlayer(side: Side): void {
+    const su = normaliseSetup(state.setup) ?? newSetup();
+    const faces = [0, 1].map(() => dice.dice.yellow.faces[Math.floor(Math.random() * dice.dice.yellow.sides)]);
+    const hits = faces.map((f) => countHits([f]));
+    su.rolls = { ...su.rolls, [side]: hits } as SetupState['rolls'];
+    // A re-roll after a tie starts the comparison over for both sides.
+    if (su.rolls.blue.length && su.rolls.red.length && !firstPlayerFrom(su) && side === 'red') {
+      tray.addToPool({ yellow: 2 }, true);
+    }
+    state.setup = su;
+    onChanged();
+  }
+
+  // Placement highlights only the Grids of that side's own Deployment Zone, so a
+  // unit cannot be dropped outside it.
+  function startDeployPlacement(uid: number, opts: { stance: Stance; camo: boolean }): void {
+    const t = state.tokens.find((x) => x.uid === uid);
+    const su = normaliseSetup(state.setup);
+    if (!t || !su) return;
+    const shape = overlayDeployment()?.[su.edge[t.side]];
+    const cells = deployCells(shape);
+    if (!cells.length) {
+      void alertDialog({
+        title: 'No Deployment Zone on this map',
+        body: `Nothing is painted for the ${su.edge[t.side]} side. Pick a zone set that includes deployment from the Zones list in the toolbar, or paint one in the map editor, then try again.`,
+      });
+      return;
+    }
+    const terrain = currentTerrain();
+    // A unit still waiting to deploy keeps its old coordinates, so it must not be
+    // treated as standing anywhere.
+    const onBoard = state.tokens.filter((x) => x.deployed !== false);
+    // selectToken clears the highlight layer, so the picker is drawn after it.
+    selectToken(uid);
+    const free = cells.filter((g) => standingSpot(g.c, g.r, t.size, t.aerial, terrain, onBoard, t.uid));
+    board.showSmokeTargets(
+      free.map((g) => ({ ...g, ok: true })),
+      (c, r) => {
+        const spot = standingSpot(c, r, t.size, t.aerial, terrain, onBoard, t.uid);
+        if (!spot) return;
+        t.col = spot.col;
+        t.row = spot.row;
+        t.facing = t.side === 'blue' ? 2 : 0;
+        t.deployed = true;
+        // A Mech picks its Stance as it lands; anything else keeps its printed one.
+        if (t.kind === 'mech') t.stance = opts.stance;
+        if (opts.camo) t.statuses = addStatus(t.statuses, 'camouflage');
+        su.placed = { ...su.placed, [t.side]: su.placed[t.side] + 1 } as SetupState['placed'];
+        state.setup = su;
+        board.clearHighlights();
+        logTo(
+          t,
+          `Deployed to ${gridRef(c, r)}${t.kind === 'mech' ? ` in ${opts.stance.toUpperCase()} stance` : ''}${
+            opts.camo ? ', already in Optical Camouflage' : ''
+          }.`,
+        );
+        selectToken(uid);
+        onChanged();
+      },
+    );
+    setHint(`Deploying ${t.label}: click a highlighted Grid in the ${su.edge[t.side]} Deployment Zone. Esc stops.`);
+  }
+
+  function deployCells(shape: DeployShape | undefined): { c: number; r: number }[] {
+    if (!shape) return [];
+    if (shape.cells?.length) return shape.cells.map((x) => ({ c: x.col, r: x.row }));
+    const rect = shape.rect;
+    if (!rect) return [];
+    const out: { c: number; r: number }[] = [];
+    for (let c = rect.col; c < rect.col + rect.cols; c++) for (let r = rect.row; r < rect.row + rect.rows; r++) out.push({ c, r });
+    return out;
+  }
+
+  // Taking every unit off the board but leaving it in the squad, so a game can
+  // start properly from whatever was being messed about with.
+  async function startGame(): Promise<void> {
+    const live = state.tokens.filter((t) => t.kind !== 'projectile');
+    const ok = await confirmDialog({
+      title: 'Start a game?',
+      body: live.length
+        ? `The ${live.length} unit${live.length === 1 ? '' : 's'} on the board come off and wait in their squads. You then roll for First Player and deploy them one at a time. Projectiles are cleared.`
+        : 'Both squads are empty, so you roll for First Player and then build squads from the Add tab before deploying.',
+      confirmLabel: 'Start game',
+    });
+    if (!ok) return;
+    state.tokens = state.tokens.filter((t) => t.kind !== 'projectile');
+    for (const t of state.tokens) t.deployed = false;
+    state.smoke = [];
+    state.round = { n: 1, phase: 0, firstPlayer: 'blue' };
+    state.commandTokens = { blue: 0, red: 0 };
+    state.setup = newSetup();
+    state.script = undefined;
+    selectToken(null);
+    onChanged();
+  }
+
+  // ---------- interception (rulebook 4.9) ----------
+
+  // Interception is a Firing Attack against the Aerial Unit that triggered it,
+  // so it goes through the attack helper rather than merely ticking a counter.
+  // The target must be that unit, there is no Forward Arc test, line of sight
+  // always exists, and no Terrain or Unit Protection may be claimed.
+  function startIntercept(t: Token, actionId: string): void {
+    const left = t.intercept?.[actionId] ?? 0;
+    const action = findAction(t, actionId);
+    if (!action) return;
+    const name = action.name.en || action.name.zh || actionId;
+    if (left <= 0) {
+      void alertDialog({
+        title: 'No Interception Tokens left',
+        body: `${name} has spent all of its Interception Tokens. They are never restored, so this Part cannot Intercept again for the rest of the game (rulebook 4.9).`,
+      });
+      return;
+    }
+    const reach = action.range ?? 0;
+    const targets = state.tokens.filter(
+      (x) => x.side !== t.side && x.aerial && rangeBetween(t, x).range <= reach,
+    );
+    if (!targets.length) {
+      void alertDialog({
+        title: 'Nothing to Intercept',
+        body: `Interception only triggers on an enemy Aerial Unit that Moved or was Launched, and there is none within Range ${reach} of ${t.label}. Projectiles and Missiles are the usual targets.`,
+      });
+      return;
+    }
+    const chosen = interceptPrefer !== null ? targets.find((x) => x.uid === interceptPrefer) : undefined;
+    interceptPrefer = null;
+    pendingIntercept = { uid: t.uid, actionId, action };
+    if (chosen) {
+      spendIntercept(t, actionId, name);
+      attackHelper.start(t, action, chosen, 'Interception: line of sight always exists and no Forward Arc is required (4.9).', 0, '');
+      interceptFollowUp = { uid: t.uid, actionId, targetUid: chosen.uid };
+      pendingIntercept = null;
+      selectToken(t.uid);
+      showSideTab('combat');
+      onChanged();
+      return;
+    }
+    pendingAttack = {
+      attackerUid: t.uid,
+      actionId,
+      mode: 'attack',
+      action,
+      done: () => {},
+    };
+    document.body.classList.add('targeting');
+    board.showRangeRings(t, reach);
+    setHint(`${name}: click the enemy Aerial Unit that triggered this Interception. Esc cancels without spending a Token.`);
+  }
+
+  let pendingIntercept: { uid: number; actionId: string; action: CardAction } | null = null;
+  let interceptFollowUp: { uid: number; actionId: string; targetUid: number } | null = null;
+  let interceptPrefer: number | null = null;
+
+  // An Interception that fails to destroy its target obliges the SAME unit to
+  // intercept again until its Tokens run out or the target dies (4.9), so the
+  // guide chases it rather than letting the chain be forgotten.
+  function checkInterceptFollowUp(): void {
+    const f = interceptFollowUp;
+    interceptFollowUp = null;
+    if (!f) return;
+    const t = state.tokens.find((x) => x.uid === f.uid);
+    const target = state.tokens.find((x) => x.uid === f.targetUid);
+    if (!t) return;
+    const dead = !target || (target.partStates.main ?? 'intact') === 'destroyed';
+    const left = t.intercept?.[f.actionId] ?? 0;
+    if (dead) {
+      showInspect({
+        title: 'Interception complete',
+        sub: `${t.label}`,
+        lines: ['The target was destroyed, so the chain ends here.', `${left} Interception Token${left === 1 ? '' : 's'} left on that Part for the rest of the game.`],
+      });
+      return;
+    }
+    if (left <= 0) {
+      showInspect({
+        title: 'Out of Interception Tokens',
+        sub: `${t.label}`,
+        lines: [
+          `${target.label} survived, but ${t.label} has spent every Interception Token on that Part and cannot try again (4.9).`,
+          'Any other unit in range now intercepts in sequence.',
+        ],
+      });
+      return;
+    }
+    void confirmDialog({
+      title: 'Intercept again',
+      body: `${target.label} survived, so ${t.label} MUST Intercept again until its Tokens run out or the target is destroyed (rulebook 4.9). ${left} Token${left === 1 ? '' : 's'} left.`,
+      confirmLabel: 'Intercept again',
+      cancelLabel: 'Stop here',
+    }).then((again) => {
+      if (again) startIntercept(t, f.actionId);
+    });
+  }
+
+  function spendIntercept(t: Token, actionId: string, name: string): void {
+    const left = t.intercept?.[actionId] ?? 0;
+    if (left <= 0) return;
+    t.intercept![actionId] = left - 1;
+    logTo(
+      t,
+      left - 1 === 0
+        ? `${t.label} Intercepts with ${name}, spending its last Interception Token. That Part cannot Intercept again this game.`
+        : `${t.label} Intercepts with ${name}. ${left - 1} Interception Token${left - 1 === 1 ? '' : 's'} left on the Part.`,
+    );
+  }
+
+  // ---------- launching projectiles (rulebook 4.7) ----------
+
+  function gridRef(c: number, r: number): string {
+    return `${String.fromCharCode(65 + c)}${r + 1}`;
+  }
+
+
+  let launching: {
+    uid: number;
+    action: CardAction;
+    card: Card;
+    left: number;
+    placed: number;
+    done: (performed: boolean) => void;
+  } | null = null;
+
+  // A Landing Point is a Grid within the Action's Range. Direct Fire needs sight
+  // of it and cannot pick a Grid that terrain fills; Fire in arc needs neither.
+  function landingCandidates(): { c: number; r: number; ok: boolean }[] {
+    const m = launching!;
+    const t = state.tokens.find((x) => x.uid === m.uid);
+    if (!t) return [];
+    const sight = needsSightToLanding(m.action);
+    const range = m.action.range ?? 0;
+    const terrain = currentTerrain();
+    const out: { c: number; r: number; ok: boolean }[] = [];
+    const from = { c: Math.floor(t.col / 3), r: Math.floor(t.row / 3) };
+    for (let c = 0; c < LG; c++) {
+      for (let r = 0; r < LG; r++) {
+        if (Math.abs(c - from.c) + Math.abs(r - from.r) > range) continue;
+        if (sight) {
+          const probe = { ...t, col: c * 3 + 1, row: r * 3 + 1, size: 1 as const };
+          if (losBetween(t, probe, terrain, state.tokens) === 'blocked') continue;
+          if (!standingSpot(c, r, 1, false, terrain, state.tokens, t.uid)) continue;
+        }
+        out.push({ c, r, ok: true });
+      }
+    }
+    return out;
+  }
+
+  function renderLaunchStep(): void {
+    const m = launching;
+    if (!m) return;
+    const body = document.getElementById('combat-body')!;
+    const cands = landingCandidates();
+    const total = m.left + m.placed;
+    body.innerHTML = `<div class="attack-helper">
+      <div class="ah-head"><b>Launch ${escapeHtml(cardName(m.card))}</b>
+        <span class="dim">${escapeHtml(m.action.name.en || m.action.name.zh || m.action.id)} · ${m.placed} of ${total} launched</span></div>
+      <p class="ah-los">${
+        needsSightToLanding(m.action)
+          ? 'Direct Fire, so the Landing Point has to be a Grid this unit can see and one terrain does not fill.'
+          : 'Fire in arc, so no line of sight to the Landing Point is needed.'
+      } A Landing Point is a Grid, not a unit, and nothing is targeted yet.</p>
+      <div class="ah-step"><h4>Click a highlighted Grid on the board</h4>
+        <p class="dim">${cands.length} legal ${cands.length === 1 ? 'Grid' : 'Grids'} within Range ${m.action.range ?? 0}.
+          ${total > 1 ? `Volley ${total} lets you place up to ${total}, one Ammo Token each, and you may stop early.` : 'One Ammo Token is spent.'}</p>
+      </div></div>`;
+    const cancel = document.createElement('button');
+    cancel.className = 'ah-cancel';
+    cancel.textContent = m.placed ? 'Stop here' : 'Cancel';
+    cancel.addEventListener('click', () => finishLaunch());
+    body.querySelector('.ah-head')!.appendChild(cancel);
+    board.showSmokeTargets(cands, (c, r) => placeLaunched(c, r));
+    showSideTab('combat');
+  }
+
+  function placeLaunched(c: number, r: number): void {
+    const m = launching;
+    if (!m) return;
+    const t = state.tokens.find((x) => x.uid === m.uid);
+    if (!t) return;
+    const tok = makeDroneToken(state, data, m.card, t.side);
+    const spot = standingSpot(c, r, tok.size, tok.aerial, currentTerrain(), state.tokens, undefined, { col: t.col, row: t.row });
+    if (!spot) {
+      void alertDialog({
+        title: 'Nothing fits there',
+        body: `There is no room in that Grid for ${cardName(m.card)}. Rulebook 4.7.2 needs the projectile's base to sit entirely inside the Landing Point Grid, so pick another one.`,
+      });
+      return;
+    }
+    state.tokens.push({ ...tok, parentUid: t.uid, col: spot.col, row: spot.row, facing: t.facing });
+    const id = m.action.id;
+    if (t.ammo[id] !== undefined) t.ammo[id] = Math.max(0, t.ammo[id] - 1);
+    m.placed++;
+    m.left--;
+    logTo(t, `Launched ${cardName(m.card)} to ${gridRef(c, r)}${t.ammo[id] !== undefined ? ` (Ammo ${t.ammo[id]} left)` : ''}.`);
+    onChanged();
+    if (m.left <= 0 || (t.ammo[id] !== undefined && t.ammo[id] <= 0)) finishLaunch();
+    else renderLaunchStep();
+  }
+
+  function finishLaunch(): void {
+    const m = launching;
+    launching = null;
+    board.clearHighlights();
+    if (!m) return;
+    if (m.placed) noteInterception(m.uid);
+    m.done(m.placed > 0);
+    onChanged();
+  }
+
+  // Interception fires the moment an Aerial Unit is Launched or Moves (4.9), so
+  // the guide says who it woke up rather than leaving it to be remembered.
+  function noteInterception(launcherUid: number): void {
+    const t = state.tokens.find((x) => x.uid === launcherUid);
+    if (!t || !state.script) return;
+    const fresh = state.tokens.filter((x) => x.parentUid === launcherUid && x.kind === 'projectile');
+    if (!fresh.length) return;
+    const owed: { uid: number; actionId: string; targetUid: number }[] = [];
+    for (const x of state.tokens) {
+      if (x.side === t.side || interceptLeft(x) <= 0) continue;
+      for (const { card } of tokenCards(data, x)) {
+        for (const a of card.actions ?? []) {
+          if (interceptCapacity(a) === undefined) continue;
+          if ((x.intercept?.[a.id] ?? 0) <= 0) continue;
+          for (const p of fresh) {
+            if (rangeBetween(x, p).range > (a.range ?? 0)) continue;
+            owed.push({ uid: x.uid, actionId: a.id, targetUid: p.uid });
+          }
+        }
+      }
+    }
+    if (!owed.length) return;
+    state.script.intercepts = [...state.script.intercepts, ...owed];
+    logTo(t, `Launch triggers Interception: ${owed.length} attempt${owed.length === 1 ? '' : 's'} owed.`);
+  }
+
+  function startLaunch(t: Token, action: CardAction, card: Card, done: (performed: boolean) => void): void {
+    const ammo = t.ammo[action.id];
+    const shots = Math.min(volleyOf(action), ammo === undefined ? volleyOf(action) : ammo);
+    if (shots <= 0) {
+      void alertDialog({
+        title: 'Out of Ammo',
+        body: `${action.name.en || action.id} has no Ammo Tokens left, so it cannot be performed (rulebook 4.13).`,
+      });
+      return done(false);
+    }
+    launching = { uid: t.uid, action, card, left: shots, placed: 0, done };
+    selectToken(t.uid);
+    setHint(`${action.name.en || action.id}: click a Landing Point Grid on the board. Esc stops.`);
+    renderLaunchStep();
+  }
+
+  function endTargeting(cancelled = false): void {
+    if (cancelled) pendingAttack?.done?.(false);
     pendingAttack = null;
+    pendingIntercept = null;
+    board.clearHighlights();
     document.body.classList.remove('targeting');
     document.getElementById('hint')!.textContent = 'Drag move · Q/E rotate · M move-range · A arcs · Del remove · hover = range/LOS';
   }
@@ -436,6 +917,7 @@ async function init() {
   }
 
   const roster = new Roster(data, {
+    now: () => Date.now(),
     cardFilter: (card) => {
       if (!inventory.passes(card)) return false;
       const left = stockLeft(card);
@@ -480,7 +962,19 @@ async function init() {
     squadTracker.update(state, selectedUid);
   }
 
+  function deployingNow(): boolean {
+    const su = normaliseSetup(state.setup);
+    return !!su && su.stage !== 'done';
+  }
+
   function placeNew(tok: Omit<Token, 'col' | 'row' | 'facing'>, side: Side): void {
+    // Mid-setup a new unit joins the squad rather than the board, so it goes
+    // through deployment like everything else.
+    if (deployingNow()) {
+      state.tokens.push({ ...tok, col: 0, row: 0, facing: side === 'blue' ? 2 : 0, deployed: false });
+      onChanged();
+      return;
+    }
     const spot = findFreeSpot(tok.size, side, tok.aerial);
     if (!spot) {
       void alertDialog({
@@ -491,6 +985,150 @@ async function init() {
     }
     state.tokens.push({ ...tok, col: spot.col, row: spot.row, facing: side === 'blue' ? 2 : 0 });
     onChanged();
+  }
+
+  // ---------- guided movement ----------
+
+  let movePlan: {
+    uid: number;
+    side: Side;
+    steps: number;
+    flying: boolean;
+    path: { c: number; r: number }[];
+    locked: boolean;
+    done: (moved: boolean) => void;
+  } | null = null;
+
+  // The route is traced by the cursor rather than solved, so a deliberate zigzag
+  // is expressible.
+  function traceMove(c: number, r: number): void {
+    const m = movePlan;
+    if (!m || m.locked) return;
+    const t = state.tokens.find((x) => x.uid === m.uid);
+    if (!t) return;
+    const next = extendPath(m.path, { c, r }, t, m.steps, currentTerrain(), state.tokens, m.flying);
+    if (!next) return;
+    m.path = next;
+    board.showMovePath(next, m.side, false);
+    renderMoveCtrl();
+  }
+
+  function renderMoveCtrl(): void {
+    const bar = document.getElementById('move-ctrl')!;
+    const m = movePlan;
+    if (!m) {
+      bar.hidden = true;
+      return;
+    }
+    bar.hidden = false;
+    const info = document.getElementById('move-info')!;
+    const confirm = document.getElementById('move-confirm') as HTMLButtonElement;
+    const n = Math.max(0, m.path.length - 1);
+    info.textContent = n ? `${n} of ${m.steps} grids${m.locked ? ' · locked' : ''}` : `Draw a route (up to ${m.steps})`;
+    confirm.disabled = n === 0;
+  }
+
+  function moveRangeFor(t: Token): number {
+    let base = 0;
+    if (t.kind === 'mech' && t.mech?.chasis) base = data.byId.get(t.mech.chasis)?.move ?? 0;
+    else base = data.byId.get(t.cardId)?.move ?? 0;
+    return t.stance === 'mobility' ? base * 2 : base;
+  }
+
+  function startMove(uid: number, opts: { range?: number; label: string }, done: (moved: boolean) => void): void {
+    const t = state.tokens.find((x) => x.uid === uid);
+    if (!t) return done(false);
+    const steps = opts.range ?? moveRangeFor(t);
+    if (steps <= 0) {
+      void alertDialog({
+        title: 'This unit cannot move',
+        body: `${t.label} has no Movement Range on its card, so there is nothing to move with.`,
+      });
+      return done(false);
+    }
+    const flying = !!data.byId.get(t.cardId)?.moveAsFlight;
+    movePlan = {
+      uid,
+      side: t.side,
+      steps,
+      flying,
+      path: [{ c: Math.floor(t.col / 3), r: Math.floor(t.row / 3) }],
+      locked: false,
+      done,
+    };
+    selectToken(uid);
+    board.showReachable(reachableGrids(t, steps, currentTerrain(), state.tokens, flying), steps);
+    board.panEnabled = false;
+    renderMoveCtrl();
+    setHint(`${opts.label} for ${t.label}: drag the cursor across grids to draw the route, click to lock it, then Confirm. Esc cancels.`);
+  }
+
+  // Clicking freezes the traced route so the cursor can leave the board for the
+  // Confirm button without dragging the path along behind it.
+  function lockMove(): void {
+    const m = movePlan;
+    if (!m || m.path.length < 2) return;
+    m.locked = !m.locked;
+    board.showMovePath(m.path, m.side, m.locked);
+    renderMoveCtrl();
+  }
+
+  function commitMove(): void {
+    const m = movePlan;
+    if (!m) return;
+    const t = state.tokens.find((x) => x.uid === m.uid);
+    if (!t) return;
+    const path = m.path;
+    if (path.length < 2) return;
+    // Each stop takes the free part of its Grid rather than the middle, so a unit
+    // crossing a Grid that holds a low wall walks past it instead of onto it.
+    const terrain = currentTerrain();
+    const stops: { col: number; row: number }[] = [];
+    let from = { col: t.col, row: t.row };
+    for (const g of path) {
+      const spot =
+        standingSpot(g.c, g.r, t.size, m.flying || t.aerial, terrain, state.tokens, t.uid, from) ??
+        snapPlacement(g.c * 3 + 1, g.r * 3 + 1, t.size);
+      if (!spot) continue;
+      stops.push(spot);
+      from = spot;
+    }
+    const last = stops[stops.length - 1];
+    if (!last) return;
+    movePlan = null;
+    board.panEnabled = true;
+    board.clearHighlights();
+    board.clearMovePath();
+    renderMoveCtrl();
+    const finish = () => {
+      t.col = last.col;
+      t.row = last.row;
+      logTo(t, `${t.label} moves ${path.length - 1} grid${path.length - 1 === 1 ? '' : 's'}.`);
+      onChanged();
+      setHint('');
+      m.done(true);
+    };
+    board.animateMove(m.uid, stops, finish);
+  }
+
+  function cancelMove(): void {
+    const m = movePlan;
+    if (!m) return;
+    movePlan = null;
+    board.panEnabled = true;
+    board.clearHighlights();
+    board.clearMovePath();
+    renderMoveCtrl();
+    setHint('');
+    m.done(false);
+  }
+
+  function setHint(text: string): void {
+    const el = document.getElementById('hint');
+    if (!el) return;
+    if (text) el.dataset.guide = '1';
+    else delete el.dataset.guide;
+    el.textContent = text || 'Drag move · Q/E rotate · M move-range · A arcs · Del remove · hover = range/LOS';
   }
 
   // ---------- smoke screens (rulebook 4.16) ----------
@@ -993,19 +1631,6 @@ async function init() {
     return null;
   }
 
-  function findSpotNear(t: Token, size: 1 | 2 | 3, aerial: boolean): { col: number; row: number } | null {
-    for (let radius = 1; radius < CELLS; radius++) {
-      for (let dr = -radius; dr <= radius; dr++) {
-        for (let dc = -radius; dc <= radius; dc++) {
-          if (Math.max(Math.abs(dc), Math.abs(dr)) !== radius) continue;
-          const s = snapPlacement(t.col + dc, t.row + dr, size);
-          if (s && isFree(s.col, s.row, size, aerial)) return s;
-        }
-      }
-    }
-    return null;
-  }
-
   function currentTerrain(): TerrainPiece[] {
     if (editor.active) return editor.working;
     if (!state.map) return [];
@@ -1297,6 +1922,7 @@ async function init() {
     if (!name) return false;
     saveCustomMap(name, { pieces: editor.working, zones: editor.zones, deploy: editor.deploy });
     state.map = `custom:${name}`;
+    adoptMapZones();
     if (editor.zones.some((z) => z.cells.length) || editor.deploy.black.length || editor.deploy.white.length) {
       state.zoneSet = `custom:${name}`;
       state.showZones = true;
@@ -1387,6 +2013,7 @@ async function init() {
     board.setSelected(selectedUid);
     squadTracker.update(state, selectedUid);
     roundTracker.update(state);
+    playGuide.update(state);
     renderSmokePrompt();
     // Redraw the Add tab only when what is on the board actually changed, so
     // dragging a unit or toggling a token does not reset the list underneath you.
@@ -1483,9 +2110,25 @@ async function init() {
   mapSelect.addEventListener('change', () => {
     state.map = mapSelect.value;
     state.removedTerrain = [];
+    adoptMapZones();
     save();
     renderAll();
   });
+
+  // A custom map carries its own zones and deployment strips, so switching to one
+  // picks them up rather than leaving whatever overlay happened to be selected.
+  function adoptMapZones(): void {
+    const map = state.map ?? '';
+    if (!map.startsWith('custom:')) return;
+    const name = map.slice(7);
+    const painted = loadCustomMaps()[name];
+    if (!painted) return;
+    const has = painted.zones.some((z) => z.cells.length) || painted.deploy.black.length || painted.deploy.white.length;
+    if (!has) return;
+    if (state.zoneSet === `custom:${name}`) return;
+    state.zoneSet = `custom:${name}`;
+    state.showZones = true;
+  }
 
   document.getElementById('btn-mapedit')!.addEventListener('click', () => {
     if (editor.active) exitEditor();
@@ -1934,6 +2577,7 @@ async function init() {
     state.sideNames = result.sideNames;
     state.map = result.mapKey;
     state.removedTerrain = [];
+    state.scenario = scn.id;
     state.round = { n: 1, phase: 0, firstPlayer: 'blue' };
     state.commandTokens = { blue: 0, red: 0 };
     state.scale = 'skirmish';
@@ -2060,6 +2704,7 @@ async function init() {
         state.sideNames = result.sideNames;
         state.map = result.mapKey;
         state.removedTerrain = [];
+        state.scenario = scn.id;
         state.round = { n: 1, phase: 0, firstPlayer: 'blue' };
         state.commandTokens = { blue: 0, red: 0 };
         state.roundLimit = scn.rounds ?? 5;
@@ -2110,6 +2755,7 @@ async function init() {
     state.zoneSet = '';
     state.showZones = false;
     state.mission = undefined;
+    state.scenario = null;
     selectToken(null);
     renderAll();
   });
@@ -2188,7 +2834,7 @@ async function init() {
           closeLabel: 'Continue',
         });
       }
-      const problems = factionProblems(data, state.tokens.filter((t) => t.side === side));
+      const problems = state.scenario ? [] : factionProblems(data, state.tokens.filter((t) => t.side === side));
       if (problems.length) {
         void alertDialog({
           title: 'That squad breaks the faction rule',
@@ -2222,16 +2868,23 @@ async function init() {
     squadFile.value = '';
   });
 
+  document.getElementById('move-confirm')!.addEventListener('click', () => commitMove());
+  document.getElementById('move-cancel')!.addEventListener('click', () => cancelMove());
+
   // ---------- keyboard ----------
 
   document.addEventListener('keydown', (ev) => {
     if (ev.target instanceof Element && ev.target.matches('input,select,textarea')) return;
     if (ev.key === 'Escape') {
+      if (movePlan) {
+        cancelMove();
+        return;
+      }
       if (isInspectPinned()) {
         unpinInspect();
         return;
       }
-      endTargeting();
+      endTargeting(true);
       board.clearHighlights();
       board.clearGhost();
       if (editor.active) {

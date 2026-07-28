@@ -8,7 +8,7 @@ const ROUND_CHOICES = [3, 4, 5, 6, 8];
 
 type Phase = (typeof PHASES)[number];
 
-const PHASE_INFO: Record<Phase, { sub: string; lines: string[] }> = {
+export const PHASE_INFO: Record<Phase, { sub: string; lines: string[] }> = {
   Command: {
     sub: 'Phase 1 of 6 · drones get their orders',
     lines: [
@@ -80,6 +80,7 @@ export class RoundTracker {
   private root: HTMLElement;
   private state: GameState | null = null;
   private onChanged: () => void;
+  onStartGame: (() => void) | null = null;
   private lastClick: { phase: Phase; at: number } | null = null;
 
   constructor(root: HTMLElement, onChanged: () => void) {
@@ -92,7 +93,7 @@ export class RoundTracker {
     this.render();
   }
 
-  private advance(): void {
+  advance(): void {
     const s = this.state!;
     if (s.round.phase < PHASES.length - 1) {
       s.round.phase++;
@@ -137,6 +138,7 @@ export class RoundTracker {
         ${ROUND_CHOICES.map((n) => `<option value="${n}"${n === limit ? ' selected' : ''}>${n} rounds</option>`).join('')}
       </select>
       ${s.round.n > 1 || s.round.phase > 0 ? '<button id="rt-reset" class="rt-scale" title="Back to Round 1, Command Phase">↺</button>' : ''}
+      <button id="rt-start" class="rt-start" title="Take everything off the board into its squad, roll for First Player, then deploy properly">Start game</button>
       <span class="rt-phases">
         ${PHASES.map((p, i) => `<button class="rt-phase${i === s.round.phase ? ' active' : ''}" data-i="${i}">${p}</button>`).join('')}
       </span>
@@ -154,6 +156,7 @@ export class RoundTracker {
       </span>
       </div>`;
 
+    this.root.querySelector<HTMLButtonElement>('#rt-start')!.addEventListener('click', () => this.onStartGame?.());
     const next = this.root.querySelector<HTMLButtonElement>('#rt-next')!;
     next.addEventListener('click', () => this.advance());
     inspectOnHover(next, phaseInfo(phaseName));
