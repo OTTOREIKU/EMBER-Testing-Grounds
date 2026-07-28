@@ -35,6 +35,7 @@ export function offsetIcons(heavy: number, light: number, dodge: number, defense
   blocked: number;
   penetrating: number;
   hits: number;
+  unoffset: { heavy: number; light: number };
 } {
   const icons: DuelIcon[] = [];
   for (let i = 0; i < heavy; i++) icons.push({ kind: 'heavyHit', offset: null });
@@ -55,8 +56,38 @@ export function offsetIcons(heavy: number, light: number, dodge: number, defense
   }
   const dodged = icons.filter((i) => i.offset === 'dodge').length;
   const blocked = icons.filter((i) => i.offset === 'defense').length;
-  const penetrating = icons.filter((i) => !i.offset).length;
-  return { icons, spareDodge: d, idleDefense: f, dodged, blocked, penetrating, hits: heavy + light - dodged };
+  const open = icons.filter((i) => !i.offset);
+  const penetrating = open.length;
+  const unoffset = {
+    heavy: open.filter((i) => i.kind === 'heavyHit').length,
+    light: open.filter((i) => i.kind === 'lightHit').length,
+  };
+  return { icons, spareDodge: d, idleDefense: f, dodged, blocked, penetrating, hits: heavy + light - dodged, unoffset };
+}
+
+// ---------- surplus damage (rulebook 4.4.5, 4.8) ----------
+
+// Surplus Damage is defined after every Penetration, but it only DOES anything
+// when the Action carries one of these keywords. Without one, leftover damage is
+// simply lost and the attack ends.
+export interface SurplusEffect {
+  key: string;
+  name: string;
+  targets: string;
+}
+
+const SURPLUS_EFFECTS: SurplusEffect[] = [
+  { key: '毁伤', name: 'Mutilation', targets: 'the Structure of the same Part' },
+  { key: '顺劈', name: 'Cleaving', targets: 'another random Part, or another Unit in Range' },
+  { key: '霰射', name: 'Scatter-shot', targets: 'another random Part, if the target is a Mech' },
+];
+
+export function surplusEffects(action: CardAction): SurplusEffect[] {
+  const hay = [
+    action.description?.zh ?? '',
+    ...(action.keywords ?? []).map((k) => k.inline ?? k.key ?? ''),
+  ].join(' ');
+  return SURPLUS_EFFECTS.filter((e) => hay.includes(e.key));
 }
 
 const ICON_LABEL: Record<string, string> = {
@@ -84,7 +115,8 @@ interface Ctx {
   blackResult: string | null;
   rerolls: Record<'attack' | 'defense', Record<'blue' | 'red', boolean>>;
   surplusRound: number;
-  carriedIcons: number;
+  carried: { heavy: number; light: number };
+  surplusKeyword: SurplusEffect | null;
   log: string[];
   explosion: boolean;
 }
@@ -144,7 +176,8 @@ export class AttackHelper {
       blackResult: null,
       rerolls: { attack: { blue: false, red: false }, defense: { blue: false, red: false } },
       surplusRound: 0,
-      carriedIcons: 0,
+      carried: { heavy: 0, light: 0 },
+      surplusKeyword: null,
       log: [],
       explosion,
     };
@@ -177,7 +210,8 @@ export class AttackHelper {
     const st = d.partStates[slot as PartSlot | 'main'] ?? 'intact';
     let white = st === 'damaged' ? card?.structure ?? 0 : card?.armor ?? 0;
     if (white < 1) white = 1;
-    white += this.ctx!.protection;
+    // Surplus Damage grants the defender no Terrain or Unit Protection (4.8).
+    if (!this.ctx!.surplusRound) white += this.ctx!.protection;
     white = Math.max(0, white - statusCount(d.statuses, 'fragile'));
     let blue = 0;
     if (d.stance === 'mobility') {
@@ -215,7 +249,7 @@ export class AttackHelper {
     return counts;
   }
 
-  private resolve(): { hits: number; penetrating: number; text: string[]; duel: Duel } {
+  private resolve(): { hits: number; penetrating: number; unoffset: { heavy: number; light: number }; text: string[]; duel: Duel } {
     const c = this.ctx!;
     const atk = this.countIcons(c.attackRoll ?? [], c.attacker.stance === 'offensive');
     const def = this.countIcons(c.defenseRoll ?? [], c.defender.stance === 'defensive');
@@ -227,17 +261,17 @@ export class AttackHelper {
     let heavy = c.surplusRound === 0 ? atk.heavyHit ?? 0 : 0;
     let light = c.surplusRound === 0 ? atk.lightHit ?? 0 : 0;
     if (c.surplusRound > 0) {
-      heavy = c.carriedIcons;
-      light = 0;
+      heavy = c.carried.heavy;
+      light = c.carried.light;
     }
     const dodge = def.dodge ?? 0;
     const defense = def.defense ?? 0;
     const text: string[] = [];
-    if (c.protection) text.push(`🛡 ${c.protectionNote}: defender rolled +${c.protection} White`);
+    if (c.protection && !c.surplusRound) text.push(`🛡 ${c.protectionNote}: defender rolled +${c.protection} White`);
     if (lowProfile && dodge) text.push(`Low Profile: [Eye] counted as [Dodge] against this Firing Attack`);
     const totalIcons = heavy + light;
 
-    const { icons, spareDodge, idleDefense, dodged, blocked, penetrating, hits } = offsetIcons(heavy, light, dodge, defense);
+    const { icons, spareDodge, idleDefense, dodged, blocked, penetrating, hits, unoffset } = offsetIcons(heavy, light, dodge, defense);
     const triggers: DuelIcon[] = [];
     if (c.surplusRound === 0) {
       for (let i = 0; i < (atk.lightning ?? 0); i++) triggers.push({ kind: 'lightning', offset: null });
@@ -249,6 +283,7 @@ export class AttackHelper {
     return {
       hits,
       penetrating,
+      unoffset,
       text,
       duel: { icons, triggers, spareDodge, idleDefense, carried: c.surplusRound > 0 },
     };
@@ -416,7 +451,9 @@ export class AttackHelper {
     const c = this.ctx!;
     c.targetPart = slot;
     c.defensePool = this.suggestedDefensePool(slot);
-    c.step = 'attack';
+    // Surplus Damage makes no Attack Roll: the un-offset icons from the first
+    // Penetration ARE the roll (4.8 step 3), so the attack step is skipped.
+    c.step = c.surplusRound > 0 ? 'defense' : 'attack';
     this.render();
   }
 
@@ -526,7 +563,14 @@ export class AttackHelper {
     const wrap = document.createElement('div');
     wrap.className = 'ah-step';
     const st = c.targetPart ? c.defender.partStates[c.targetPart as PartSlot | 'main'] ?? 'intact' : 'intact';
-    wrap.innerHTML = `<h4><span class="ah-n">3</span>Defense Roll</h4>
+    wrap.innerHTML = `<h4><span class="ah-n">${c.surplusRound ? '2' : '3'}</span>Defense Roll</h4>
+      ${
+        c.surplusRound
+          ? `<p class="ah-protect">No Attack Roll is made. The ${c.carried.heavy + c.carried.light} un-offset icon${
+              c.carried.heavy + c.carried.light === 1 ? '' : 's'
+            } carried over from the first Penetration stand in for it, and Terrain Protection, Unit Protection and Parry are all barred here (4.8).</p>`
+          : ''
+      }
       <p class="dim">White = target Part ${st === 'damaged' ? 'STRUCTURE (part is Damaged)' : 'Armor'} (min 1)${
         c.protection ? ` + ${c.protection} protection` : ''
       }${c.defender.stance === 'mobility' ? ' · MOB stance: + Blue = Dodge value' : ''}${
@@ -580,9 +624,11 @@ export class AttackHelper {
     const c = this.ctx!;
     const wrap = document.createElement('div');
     wrap.className = 'ah-step';
-    const { penetrating, text, duel } = this.resolve();
+    const { penetrating, unoffset, text, duel } = this.resolve();
     wrap.innerHTML = `<h4><span class="ah-n">4</span><span data-mech="penetration">Resolution</span>${
-      c.surplusRound ? ` (<span data-mech="surplus_damage">Surplus round ${c.surplusRound}</span>)` : ''
+      c.surplusRound
+        ? ` (<span data-mech="surplus_damage">${c.surplusKeyword?.name ?? 'Surplus'} Damage, no Attack Roll</span>)`
+        : ''
     }</h4>`;
     const duelEl = this.duelView(duel);
     wrap.appendChild(duelEl);
@@ -627,18 +673,33 @@ export class AttackHelper {
           }
         }
         this.onChanged();
-        const surplus = penetrating - 1;
-        if (surplus > 0 && c.surplusRound === 0 && c.defender.kind === 'mech') {
+        // Every un-offset icon is Surplus Damage (4.4.5), but it only resolves
+        // against a second target when the Action carries a keyword that says so
+        // (4.8), and it never chains past a second Penetration.
+        const effects = surplusEffects(c.action);
+        const carried = unoffset;
+        const surplus = carried.heavy + carried.light;
+        if (surplus > 0 && effects.length && c.surplusRound === 0 && c.defender.kind === 'mech') {
+          const effect = effects[0];
           c.surplusRound = 1;
-          c.carriedIcons = surplus;
+          c.carried = carried;
+          c.surplusKeyword = effect;
           c.targetPart = null;
           c.attackRoll = null;
           c.defenseRoll = null;
           c.rerolls = { attack: { blue: false, red: false }, defense: { blue: false, red: false } };
-          this.note(`${surplus} surplus icon${surplus === 1 ? '' : 's'} carry over, so determine a NEW Part. No protection dice this time.`);
+          this.note(
+            `${effect.name}: ${surplus} un-offset icon${surplus === 1 ? '' : 's'} carry over as Surplus Damage against ${effect.targets}. No Attack Roll is made, and the defender gets no Protection or Parry dice.`,
+          );
+          if (effects.length > 1) {
+            this.note(`This Action also has ${effects.slice(1).map((e) => e.name).join(' and ')}; the attacker picks one, and ${effect.name} is applied here.`);
+          }
           c.step = 'part';
           this.render();
         } else {
+          if (surplus > 0 && !effects.length) {
+            this.note(`${surplus} un-offset icon${surplus === 1 ? '' : 's'} of Surplus Damage, but this Action has no Mutilation, Cleaving or Scatter-shot, so it does nothing.`);
+          }
           this.note('Attack resolved.');
           this.finish(wrap);
         }

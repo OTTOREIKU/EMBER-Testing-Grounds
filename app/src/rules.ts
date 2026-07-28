@@ -92,6 +92,58 @@ export function largeGridOf(t: { col: number; row: number }): LargeGrid {
   return { c: Math.floor(t.col / 3), r: Math.floor(t.row / 3) };
 }
 
+// Where inside Large Grid (c,r) a unit of this size actually fits. A Grid is 3x3
+// small cells, so a 1x1 or 2x2 unit sharing it with terrain has to take the free
+// corner rather than the middle. Returns the small-cell origin, or null if the
+// unit cannot stand in that Grid at all. `toward` biases the choice, so a unit
+// hugs the side it arrived from instead of jumping across the Grid.
+export function standingSpot(
+  c: number,
+  r: number,
+  size: 1 | 2 | 3,
+  aerial: boolean,
+  terrain: TerrainPiece[],
+  tokens: Token[],
+  ignoreUid?: number,
+  toward?: { col: number; row: number },
+): { col: number; row: number } | null {
+  if (c < 0 || r < 0 || c >= LG || r >= LG) return null;
+  const maxOff = 3 - size;
+  const mid = (size - 1) / 2;
+  const centre = { col: c * 3 + 1, row: r * 3 + 1 };
+  const score = (col: number, row: number): number => {
+    const cx = col + mid;
+    const cy = row + mid;
+    const home = Math.abs(cx - centre.col) + Math.abs(cy - centre.row);
+    if (!toward) return home;
+    return home + 0.5 * (Math.abs(cx - toward.col) + Math.abs(cy - toward.row));
+  };
+  const spots: { col: number; row: number }[] = [];
+  for (let oc = 0; oc <= maxOff; oc++) for (let or = 0; or <= maxOff; or++) spots.push({ col: c * 3 + oc, row: r * 3 + or });
+  spots.sort((a, b) => score(a.col, a.row) - score(b.col, b.row));
+  if (aerial) return spots[0];
+
+  const blocked = new Set<string>();
+  for (const p of terrain) for (const cell of p.subCells) blocked.add(`${cell.col},${cell.row}`);
+  for (const t of tokens) {
+    if (t.uid === ignoreUid || t.aerial) continue;
+    for (let dc = 0; dc < t.size; dc++) for (let dr = 0; dr < t.size; dr++) blocked.add(`${t.col + dc},${t.row + dr}`);
+  }
+  for (const spot of spots) {
+    let ok = true;
+    outer: for (let dc = 0; dc < size; dc++) {
+      for (let dr = 0; dr < size; dr++) {
+        if (blocked.has(`${spot.col + dc},${spot.row + dr}`)) {
+          ok = false;
+          break outer;
+        }
+      }
+    }
+    if (ok) return spot;
+  }
+  return null;
+}
+
 export function canStandIn(
   c: number,
   r: number,
@@ -101,43 +153,23 @@ export function canStandIn(
   tokens: Token[],
   ignoreUid?: number,
 ): boolean {
-  if (c < 0 || r < 0 || c >= LG || r >= LG) return false;
-  if (aerial) return true;
-  const blocked = new Set<string>();
-  for (const p of terrain) for (const cell of p.subCells) blocked.add(`${cell.col},${cell.row}`);
-  for (const t of tokens) {
-    if (t.uid === ignoreUid || t.aerial) continue;
-    for (let dc = 0; dc < t.size; dc++) for (let dr = 0; dr < t.size; dr++) blocked.add(`${t.col + dc},${t.row + dr}`);
-  }
-  const maxOff = 3 - size;
-  for (let oc = 0; oc <= maxOff; oc++) {
-    for (let or = 0; or <= maxOff; or++) {
-      let ok = true;
-      outer: for (let dc = 0; dc < size; dc++) {
-        for (let dr = 0; dr < size; dr++) {
-          if (blocked.has(`${c * 3 + oc + dc},${r * 3 + or + dr}`)) {
-            ok = false;
-            break outer;
-          }
-        }
-      }
-      if (ok) return true;
-    }
-  }
-  return false;
+  return standingSpot(c, r, size, aerial, terrain, tokens, ignoreUid) !== null;
 }
 
-export function reachableGrids(
-  t: Token,
-  steps: number,
-  terrain: TerrainPiece[],
-  tokens: Token[],
-  flying: boolean,
-): (LargeGrid & { dist: number })[] {
+interface MoveSearch {
+  dist: Map<string, number>;
+  parent: Map<string, string>;
+  reachable: (LargeGrid & { dist: number })[];
+}
+
+// One BFS serving both the range overlay and the route a unit will actually walk,
+// so the path drawn is the path the search found rather than a straight line.
+function searchMoves(t: Token, steps: number, terrain: TerrainPiece[], tokens: Token[], flying: boolean): MoveSearch {
   const start = largeGridOf(t);
   const dist = new Map<string, number>([[`${start.c},${start.r}`, 0]]);
+  const parent = new Map<string, string>();
   const queue: LargeGrid[] = [start];
-  const out: (LargeGrid & { dist: number })[] = [];
+  const reachable: (LargeGrid & { dist: number })[] = [];
   while (queue.length) {
     const g = queue.shift()!;
     const d = dist.get(`${g.c},${g.r}`)!;
@@ -150,11 +182,74 @@ export function reachableGrids(
       const passable = flying || t.aerial ? true : standable;
       if (!passable) continue;
       dist.set(key, d + 1);
+      parent.set(key, `${g.c},${g.r}`);
       queue.push(n);
-      if (standable) out.push({ ...n, dist: d + 1 });
+      if (standable) reachable.push({ ...n, dist: d + 1 });
     }
   }
-  return out;
+  return { dist, parent, reachable };
+}
+
+export function reachableGrids(
+  t: Token,
+  steps: number,
+  terrain: TerrainPiece[],
+  tokens: Token[],
+  flying: boolean,
+): (LargeGrid & { dist: number })[] {
+  return searchMoves(t, steps, terrain, tokens, flying).reachable;
+}
+
+// The route from the unit's grid to `to`, inclusive of both ends. Empty when the
+// target is out of range or unreachable.
+export function movePath(
+  t: Token,
+  to: LargeGrid,
+  steps: number,
+  terrain: TerrainPiece[],
+  tokens: Token[],
+  flying: boolean,
+): LargeGrid[] {
+  const { dist, parent } = searchMoves(t, steps, terrain, tokens, flying);
+  const goal = `${to.c},${to.r}`;
+  if (!dist.has(goal)) return [];
+  const path: LargeGrid[] = [];
+  let at: string | undefined = goal;
+  while (at) {
+    const [c, r] = at.split(',').map(Number);
+    path.unshift({ c, r });
+    at = parent.get(at);
+  }
+  return path;
+}
+
+// One cursor sample against a route being traced by hand. Returns the new route,
+// or null when the sample changes nothing. Backing onto the previous grid rubs
+// the last step out; a gap left by a fast cursor is bridged by the shortest legal
+// run; a run that would cross the route already drawn is refused, so the trace
+// stays a simple path the unit can actually walk.
+export function extendPath(
+  path: LargeGrid[],
+  to: LargeGrid,
+  t: Token,
+  steps: number,
+  terrain: TerrainPiece[],
+  tokens: Token[],
+  flying: boolean,
+): LargeGrid[] | null {
+  if (!path.length) return null;
+  const last = path[path.length - 1];
+  if (last.c === to.c && last.r === to.r) return null;
+  const prev = path[path.length - 2];
+  if (prev && prev.c === to.c && prev.r === to.r) return path.slice(0, -1);
+  if (path.some((g) => g.c === to.c && g.r === to.r)) return null;
+  const budget = steps - (path.length - 1);
+  if (budget <= 0) return null;
+  const from = { ...t, col: last.c * 3 + 1, row: last.r * 3 + 1 };
+  const run = movePath(from, to, budget, terrain, tokens, flying).slice(1);
+  if (!run.length) return null;
+  if (run.some((g) => path.some((p) => p.c === g.c && p.r === g.r))) return null;
+  return [...path, ...run];
 }
 
 export function losBetween(
