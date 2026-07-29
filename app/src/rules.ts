@@ -162,32 +162,149 @@ interface MoveSearch {
   reachable: (LargeGrid & { dist: number })[];
 }
 
-// One BFS serving both the range overlay and the route a unit will actually walk,
-// so the path drawn is the path the search found rather than a straight line.
-function searchMoves(t: Token, steps: number, terrain: TerrainPiece[], tokens: Token[], flying: boolean): MoveSearch {
+export interface MoveOpts {
+  // Extra Movement Range charged for leaving a Large Grid, which is what Break
+  // Away costs (4.3.5). Flying and Forced Movement leave this out.
+  exitCost?: (c: number, r: number) => number;
+  // Large Grids a Large Unit may enter by Crushing what is already there. The
+  // Movement Action ends on arrival (4.3.6), so these are never expanded.
+  crushable?: (c: number, r: number) => boolean;
+}
+
+// One search serving both the range overlay and the route a unit will actually
+// walk, so the path drawn is the path the search found rather than a straight
+// line. Steps normally cost 1, but Break Away makes leaving a Grid dearer, so
+// this is a cheapest-first walk rather than a plain breadth-first one.
+function searchMoves(
+  t: Token,
+  steps: number,
+  terrain: TerrainPiece[],
+  tokens: Token[],
+  flying: boolean,
+  opts?: MoveOpts,
+): MoveSearch {
   const start = largeGridOf(t);
   const dist = new Map<string, number>([[`${start.c},${start.r}`, 0]]);
   const parent = new Map<string, string>();
-  const queue: LargeGrid[] = [start];
   const reachable: (LargeGrid & { dist: number })[] = [];
+  const crushed = new Set<string>();
+  const queue: (LargeGrid & { d: number })[] = [{ ...start, d: 0 }];
   while (queue.length) {
-    const g = queue.shift()!;
-    const d = dist.get(`${g.c},${g.r}`)!;
-    if (d >= steps) continue;
+    let best = 0;
+    for (let i = 1; i < queue.length; i++) if (queue[i].d < queue[best].d) best = i;
+    const g = queue.splice(best, 1)[0];
+    const key = `${g.c},${g.r}`;
+    if (g.d > (dist.get(key) ?? Infinity)) continue;
+    // A Crush ends the Movement Action the moment the Grid is entered.
+    if (crushed.has(key)) continue;
+    const exit = flying || t.aerial ? 0 : opts?.exitCost?.(g.c, g.r) ?? 0;
     for (const [dc, dr] of [[0, -1], [1, 0], [0, 1], [-1, 0]] as const) {
       const n = { c: g.c + dc, r: g.r + dr };
-      const key = `${n.c},${n.r}`;
-      if (n.c < 0 || n.r < 0 || n.c >= LG || n.r >= LG || dist.has(key)) continue;
+      const nk = `${n.c},${n.r}`;
+      if (n.c < 0 || n.r < 0 || n.c >= LG || n.r >= LG) continue;
+      const d = g.d + 1 + exit;
+      if (d > steps || d >= (dist.get(nk) ?? Infinity)) continue;
       const standable = canStandIn(n.c, n.r, t.size, t.aerial, terrain, tokens, t.uid);
-      const passable = flying || t.aerial ? true : standable;
+      const crush = !standable && !flying && !t.aerial && (opts?.crushable?.(n.c, n.r) ?? false);
+      const passable = flying || t.aerial ? true : standable || crush;
       if (!passable) continue;
-      dist.set(key, d + 1);
-      parent.set(key, `${g.c},${g.r}`);
-      queue.push(n);
-      if (standable) reachable.push({ ...n, dist: d + 1 });
+      dist.set(nk, d);
+      parent.set(nk, key);
+      queue.push({ ...n, d });
+      if (crush) crushed.add(nk);
+      if (standable || crush) reachable.push({ ...n, dist: d });
     }
   }
-  return { dist, parent, reachable };
+  const seen = new Set<string>();
+  return {
+    dist,
+    parent,
+    reachable: reachable
+      .sort((a, b) => a.dist - b.dist)
+      .filter((g) => {
+        const k = `${g.c},${g.r}`;
+        if (seen.has(k) || (g.c === start.c && g.r === start.r)) return false;
+        seen.add(k);
+        return g.dist === dist.get(k);
+      }),
+  };
+}
+
+// The direction Forced Movement travels for Knockback and Push: the straight
+// line running away from the attacker, snapped to one of the four orthogonal
+// steps. A shot from directly on a diagonal falls back to the attacker's facing,
+// which is the "direction the attacker is facing" the appendix note describes.
+export function attackDirection(attacker: Token, victim: Token): { dc: number; dr: number } {
+  const a = largeGridOf(attacker);
+  const b = largeGridOf(victim);
+  const dc = b.c - a.c;
+  const dr = b.r - a.r;
+  if (Math.abs(dc) > Math.abs(dr)) return { dc: Math.sign(dc), dr: 0 };
+  if (Math.abs(dr) > Math.abs(dc)) return { dc: 0, dr: Math.sign(dr) };
+  const facing = [[0, -1], [1, 0], [0, 1], [-1, 0]][attacker.facing] as [number, number];
+  return { dc: facing[0], dr: facing[1] };
+}
+
+// Where Knockback X actually lands the victim. The move is a straight line and
+// stops early the moment a Unit or Terrain blocks it, and a Flying victim is
+// blocked too, which is the one place Flying Movement does not pass through
+// things (appendix, Knockback X).
+export function knockbackPath(
+  victim: Token,
+  dir: { dc: number; dr: number },
+  grids: number,
+  terrain: TerrainPiece[],
+  tokens: Token[],
+): LargeGrid[] {
+  const path: LargeGrid[] = [];
+  let at = largeGridOf(victim);
+  for (let i = 0; i < grids; i++) {
+    const next = { c: at.c + dir.dc, r: at.r + dir.dr };
+    if (next.c < 0 || next.r < 0 || next.c >= LG || next.r >= LG) break;
+    if (!canStandIn(next.c, next.r, victim.size, false, terrain, tokens, victim.uid)) break;
+    path.push(next);
+    at = next;
+  }
+  return path;
+}
+
+export interface CrushVictims {
+  units: Token[];
+  terrain: TerrainPiece[];
+}
+
+// What a Large Unit would Crush by entering Large Grid (c,r), or null when the
+// Grid holds something it cannot Crush (4.3.6). Only Large Units Crush, and only
+// Units smaller than themselves; Destructible Terrain in the way is destroyed.
+export function crushTargets(
+  t: Token,
+  c: number,
+  r: number,
+  terrain: TerrainPiece[],
+  tokens: Token[],
+): CrushVictims | null {
+  if (t.size !== 3 || t.aerial) return null;
+  if (c < 0 || r < 0 || c >= LG || r >= LG) return null;
+  const covers = (cells: { col: number; row: number }[]) =>
+    cells.some((cell) => Math.floor(cell.col / 3) === c && Math.floor(cell.row / 3) === r);
+
+  const hitTerrain: TerrainPiece[] = [];
+  for (const p of terrain) {
+    if (!covers(p.subCells)) continue;
+    if (!p.isFragile) return null;
+    hitTerrain.push(p);
+  }
+  const units: Token[] = [];
+  for (const o of tokens) {
+    if (o.uid === t.uid || o.aerial) continue;
+    const cells: { col: number; row: number }[] = [];
+    for (let dc = 0; dc < o.size; dc++) for (let dr = 0; dr < o.size; dr++) cells.push({ col: o.col + dc, row: o.row + dr });
+    if (!covers(cells)) continue;
+    if (o.size >= t.size) return null;
+    units.push(o);
+  }
+  if (!units.length && !hitTerrain.length) return null;
+  return { units, terrain: hitTerrain };
 }
 
 export function reachableGrids(
@@ -196,8 +313,9 @@ export function reachableGrids(
   terrain: TerrainPiece[],
   tokens: Token[],
   flying: boolean,
+  opts?: MoveOpts,
 ): (LargeGrid & { dist: number })[] {
-  return searchMoves(t, steps, terrain, tokens, flying).reachable;
+  return searchMoves(t, steps, terrain, tokens, flying, opts).reachable;
 }
 
 // The route from the unit's grid to `to`, inclusive of both ends. Empty when the
@@ -209,8 +327,9 @@ export function movePath(
   terrain: TerrainPiece[],
   tokens: Token[],
   flying: boolean,
+  opts?: MoveOpts,
 ): LargeGrid[] {
-  const { dist, parent } = searchMoves(t, steps, terrain, tokens, flying);
+  const { dist, parent } = searchMoves(t, steps, terrain, tokens, flying, opts);
   const goal = `${to.c},${to.r}`;
   if (!dist.has(goal)) return [];
   const path: LargeGrid[] = [];
@@ -228,6 +347,15 @@ export function movePath(
 // the last step out; a gap left by a fast cursor is bridged by the shortest legal
 // run; a run that would cross the route already drawn is refused, so the trace
 // stays a simple path the unit can actually walk.
+// What a drawn route has already spent. Every step is 1, plus whatever Break Away
+// adds for leaving each Grid along the way.
+export function pathCost(path: LargeGrid[], flying: boolean, opts?: MoveOpts): number {
+  if (path.length < 2) return 0;
+  let n = path.length - 1;
+  if (!flying && opts?.exitCost) for (let i = 0; i < path.length - 1; i++) n += opts.exitCost(path[i].c, path[i].r);
+  return n;
+}
+
 export function extendPath(
   path: LargeGrid[],
   to: LargeGrid,
@@ -236,6 +364,7 @@ export function extendPath(
   terrain: TerrainPiece[],
   tokens: Token[],
   flying: boolean,
+  opts?: MoveOpts,
 ): LargeGrid[] | null {
   if (!path.length) return null;
   const last = path[path.length - 1];
@@ -243,10 +372,10 @@ export function extendPath(
   const prev = path[path.length - 2];
   if (prev && prev.c === to.c && prev.r === to.r) return path.slice(0, -1);
   if (path.some((g) => g.c === to.c && g.r === to.r)) return null;
-  const budget = steps - (path.length - 1);
+  const budget = steps - pathCost(path, flying || t.aerial, opts);
   if (budget <= 0) return null;
   const from = { ...t, col: last.c * 3 + 1, row: last.r * 3 + 1 };
-  const run = movePath(from, to, budget, terrain, tokens, flying).slice(1);
+  const run = movePath(from, to, budget, terrain, tokens, flying, opts).slice(1);
   if (!run.length) return null;
   if (run.some((g) => path.some((p) => p.c === g.c && p.r === g.r))) return null;
   return [...path, ...run];
