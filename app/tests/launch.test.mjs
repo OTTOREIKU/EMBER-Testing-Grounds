@@ -2,7 +2,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 
 const src = readFileSync(new URL('../src/units.ts', import.meta.url), 'utf8');
-const start = src.indexOf('// Volley X:');
+const start = src.indexOf('export function volleyOf');
 const end = src.indexOf('export function interceptCapacity');
 if (start < 0 || end < 0) throw new Error('could not locate the launch helpers in units.ts');
 const tmp = new URL('./_launch.slice.ts', import.meta.url);
