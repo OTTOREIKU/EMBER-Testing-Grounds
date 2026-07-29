@@ -1,6 +1,7 @@
 import type { Card, CardAction, Token } from './types';
 import { cardImageUrl, cardName, mechPartUrl, rulesLines, SIDE_LABEL, tabImageUrl, type GameData } from './data';
 import { inspectOnHover } from './inspector';
+import { ICON_BOLT } from './icons';
 import { type ActionWorld, guidedActions, isElectronicAttack, knockbackOf, SLOT_LABEL, tokenCards } from './units';
 import { costLabel, LENGTH_NAME, lengthOf, TICK_COST } from './ticks';
 
@@ -378,7 +379,7 @@ export class Panel {
     if (available && isElectronicAttack(a)) {
       const ew = document.createElement('button');
       ew.className = 'attack-btn';
-      ew.innerHTML = '<i class="btn-ico">⚡</i> Electronic Attack…';
+      ew.innerHTML = `<i class="btn-ico bolt-gold">${ICON_BOLT}</i> Electronic Attack…`;
       inspectOnHover(ew, {
         title: 'Electronic Attack',
         sub: actName,

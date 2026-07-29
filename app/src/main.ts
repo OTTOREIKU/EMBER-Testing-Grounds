@@ -37,7 +37,7 @@ import { PHASES, RoundTracker } from './tracker';
 import { PlayGuide } from './playguide';
 import type { Card, CardAction, DiceData, Facing, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, StatusDef, TerrainPiece, Token } from './types';
 import { addStatus, SCALES, statusCount, statusesFor, STATUSES } from './types';
-import { chargeableSlots, deployedCardCounts, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, type Resupply, resupplyOf, SLOT_LABEL, interceptLeft, interceptReach, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf } from './units';
+import { chargeableSlots, defaultUnitLabel, deployedCardCounts, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, type Resupply, resupplyOf, SLOT_LABEL, interceptLeft, interceptReach, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf } from './units';
 import { registerOffline } from './offline';
 import { battlefieldLocked, countHits, firstPlayerFrom, newSetup, normaliseSetup, type SetupState } from './setup';
 
@@ -319,6 +319,12 @@ async function init() {
     },
     onDelete(uid) {
       void removeUnit(uid);
+    },
+    onEditMech(uid) {
+      const t = state.tokens.find((x) => x.uid === uid);
+      if (!t || t.kind !== 'mech') return;
+      roster.editMech(uid, t.side, t.label, t.mech ?? {});
+      showSideTab('add');
     },
     onPlayTactic(side, id) {
       void playTactic(side, id);
@@ -797,6 +803,10 @@ async function init() {
     state.removedTerrain = [];
     state.tokens = state.tokens.filter((t) => t.kind !== 'projectile');
     state.smoke = [];
+    // Tactics are stamped with the round they were played in, so a fresh game
+    // starting back at round 1 would otherwise find the old stamps and read
+    // every card as already spent.
+    state.tacticsPlayed = { blue: [], red: [] };
     onChanged();
   }
 
@@ -1129,6 +1139,29 @@ async function init() {
     onAddMech(loadout: MechLoadout, side) {
       const tok = makeMechToken(state, data, loadout, side);
       placeNew(tok, side);
+    },
+    // The unit keeps its identity across an edit: same uid, square, facing,
+    // stance, Link, tokens and log. Only a slot whose Part actually changed is
+    // reset, because that is a different Part now and its damage went with the
+    // old one. A default label is recomputed so a renamed unit keeps its name.
+    onSaveMech(uid, loadout) {
+      const t = state.tokens.find((x) => x.uid === uid);
+      if (!t || t.kind !== 'mech') return;
+      const before = t.mech ?? {};
+      const named = t.label !== defaultUnitLabel(data, t);
+      const states = { ...t.partStates };
+      for (const slot of ['torso', 'chasis', 'leftHand', 'rightHand', 'backpack', 'pilot'] as const) {
+        if (before[slot] === loadout[slot]) continue;
+        if (slot === 'pilot') continue;
+        if (loadout[slot]) states[slot] = 'intact';
+        else delete states[slot];
+      }
+      t.mech = { ...loadout };
+      t.partStates = states;
+      if (!named) t.label = defaultUnitLabel(data, t);
+      selectToken(t.uid);
+      onChanged();
+      panel.showToken(t);
     },
   });
 

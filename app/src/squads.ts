@@ -5,8 +5,10 @@ import { inspectOnHover, linkMechanics, type InspectInfo } from './inspector';
 import type { GameState, PartSlot, PartState, Side, Stance, Timing, TimingDef, Token } from './types';
 import { addStatus, SCALES, SHAPE_NOTE, statusCount, statusesFor, TIMINGS } from './types';
 import { normaliseTasks } from './tasks';
+import { normaliseSetup } from './setup';
 import { defaultUnitLabel, factionProblems, initiativeFor, MERCENARY_FACTIONS, pilotCard, SLOT_LABEL, tidyUnitLabel, tokenCards, tokenFactions } from './units';
 import { alertDialog, promptDialog } from './dialog';
+import { factionColour, ICON_BOLT, ICON_EDIT } from './icons';
 
 const esc = (s: string): string => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!);
 
@@ -47,6 +49,7 @@ export interface SquadCallbacks {
   onSelect(uid: number, focusSlot?: string): void;
   onChanged(): void;
   onDelete(uid: number): void;
+  onEditMech(uid: number): void;
   onPlayTactic(side: Side, id: string): void;
 }
 
@@ -224,8 +227,12 @@ export class SquadTracker {
   // The 1-per-round cap (5.4.2) is tracked by stamping the round onto each play,
   // which avoids needing a reset hook on every path that advances the round.
   private playedThisRound(side: Side): string[] {
-    const round = this.state?.round.n ?? 1;
-    return (this.state?.tacticsPlayed?.[side] ?? []).filter((e) => e.startsWith(`${round}:`));
+    const s = this.state;
+    if (!s) return [];
+    // Free play is a sandbox with no round structure worth policing, so the
+    // 1-per-round cap only applies once a game is actually running.
+    if (!normaliseSetup(s.setup)) return [];
+    return (s.tacticsPlayed?.[side] ?? []).filter((e) => e.startsWith(`${s.round.n}:`));
   }
 
   private tacticsBlock(side: Side): HTMLElement | null {
@@ -304,6 +311,12 @@ export class SquadTracker {
       return b;
     };
 
+    // The Main Task governs the whole game while a Secondary belongs to one
+    // player, so the Main gets a line to itself and the two Secondaries share
+    // the line under it rather than all three wrapping as one run of chips.
+    const secRow = document.createElement('div');
+    secRow.className = 'sq-task-row';
+
     if (mission) {
       bar.appendChild(chip('Main Task', mission.name, () => {
         void alertDialog({
@@ -328,7 +341,7 @@ export class SquadTracker {
         : tasks.secTarget[side] !== undefined
           ? `Designated: ${s.tokens.find((t) => t.uid === tasks.secTarget[side])?.label ?? 'a unit'}`
           : '';
-      bar.appendChild(chip(`${SIDE_LABEL[side]} Secondary`, card.name, () => {
+      secRow.appendChild(chip(`${SIDE_LABEL[side]} Secondary`, card.name, () => {
         void alertDialog({
           title: `${SIDE_LABEL[side]}: ${card.name}`,
           image: secondaryImageUrl(card.id),
@@ -337,6 +350,7 @@ export class SquadTracker {
         });
       }));
     }
+    if (secRow.childElementCount) bar.appendChild(secRow);
     return bar;
   }
 
@@ -436,6 +450,21 @@ export class SquadTracker {
     headPts.textContent = `${this.tokenPoints(t)}p`;
     head.appendChild(headPts);
 
+    // Swapping Parts mid-game would rewrite a unit the other player has already
+    // been shooting at, so the editor is a free play tool only.
+    if (t.kind === 'mech') {
+      const locked = !!normaliseSetup(this.state?.setup);
+      const edit = document.createElement('button');
+      edit.className = 'squad-edit';
+      edit.innerHTML = ICON_EDIT;
+      edit.disabled = locked;
+      edit.title = locked
+        ? 'Parts are locked while a game is running. End the game to edit this mech.'
+        : 'Change this mech’s parts';
+      edit.addEventListener('click', () => this.cb.onEditMech(t.uid));
+      head.appendChild(edit);
+    }
+
     const del = document.createElement('button');
     del.className = 'squad-del';
     del.textContent = '✕';
@@ -482,7 +511,9 @@ export class SquadTracker {
       const maxLink = pilotCard?.LV ?? 0;
       const link = document.createElement('span');
       link.className = 'link-ctrl';
-      link.innerHTML = `<button class="lk-minus" title="Spend/lose 1 Link">−</button><b class="lk-val">⚡${t.link ?? 0}${maxLink ? `<small>/${maxLink}</small>` : ''}</b><button class="lk-plus" title="Recover 1 Link">+</button>`;
+      // The printed pilot card tints its Link bolt to the pilot's faction.
+      const bolt = `<i class="lk-bolt" style="color:${factionColour(pilotCard ? this.data.factionOf(pilotCard) : null)}">${ICON_BOLT}</i>`;
+      link.innerHTML = `<button class="lk-minus" title="Spend/lose 1 Link">−</button><b class="lk-val">${bolt}${t.link ?? 0}${maxLink ? `<small>/${maxLink}</small>` : ''}</b><button class="lk-plus" title="Recover 1 Link">+</button>`;
       inspectOnHover(link, {
         title: `Link ${t.link ?? 0}${maxLink ? ` / ${maxLink}` : ''}`,
         sub: 'Pilot and machine sync, not hit points',
@@ -712,7 +743,7 @@ export class SquadTracker {
         tr.className = 'pt-pilot';
         tr.innerHTML = `<td class="pt-slot">${SLOT_LABEL[slot]}</td>
           <td class="pt-name">${cardName(card)}</td>
-          <td class="pt-def">⚡${card.LV ?? 0}</td>
+          <td class="pt-def"><i class="lk-bolt" style="color:${factionColour(card.faction ?? this.data.factionOf(card))}">${ICON_BOLT}</i>${card.LV ?? 0}</td>
           <td class="pt-state">—</td>`;
         inspectOnHover(tr, {
           title: cardName(card),

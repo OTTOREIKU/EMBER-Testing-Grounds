@@ -233,6 +233,9 @@ export class RoundTracker {
         s.round.n = 1;
         s.round.phase = 0;
         s.commandTokens = { blue: 0, red: 0 };
+        // Plays are stamped with a round number, so winding the track back to 1
+        // would leave round 1's cards reading as already spent.
+        s.tacticsPlayed = { blue: [], red: [] };
         this.onChanged();
       });
     }

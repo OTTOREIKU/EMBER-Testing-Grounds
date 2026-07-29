@@ -9,6 +9,7 @@ const escAttr = (v: string): string => v.replace(/&/g, '&amp;').replace(/"/g, '&
 export interface RosterCallbacks {
   onAddUnit(card: Card, side: 'blue' | 'red'): void;
   onAddMech(loadout: MechLoadout, side: 'blue' | 'red'): void;
+  onSaveMech(uid: number, loadout: MechLoadout): void;
   onPreview(card: Card, opts?: { focus?: boolean }): void;
   cardFilter?(card: Card): boolean;
   cardBadge?(card: Card): string;
@@ -41,6 +42,46 @@ export class Roster {
   private tab: 'drones' | 'mech' | 'projectiles' | 'tactics' = 'drones';
   private search = '';
   private mech: MechLoadout = {};
+  private editing: { uid: number; side: 'blue' | 'red'; label: string } | null = null;
+
+  // The build rules are the same whether a mech is being added or edited, so
+  // both paths run this and only the confirm wording changes.
+  private async legalBuild(confirmLabel: string): Promise<boolean> {
+    const missing = [
+      this.mech.torso ? '' : 'a Torso',
+      this.mech.chasis ? '' : 'a Chassis',
+      this.mech.leftHand || this.mech.rightHand ? '' : 'at least one Arm',
+    ].filter(Boolean);
+    if (missing.length) {
+      await alertDialog({
+        title: 'That mech is not legal yet',
+        body: `A mech needs a Torso, a Chassis and at least one Arm (rulebook 2.2.2). Still to pick: ${missing.join(', ')}.`,
+      });
+      return false;
+    }
+    const { factions } = this.mechFactions();
+    if (factions.length > 1) {
+      return confirmDialog({
+        title: 'That mech mixes factions',
+        body: `It uses ${factions.join(' and ')} parts. Rulebook 5.1 says a Mech can only be composed of Parts from a single faction, so this build is not legal.`,
+        confirmLabel,
+        cancelLabel: 'Let me fix it',
+        danger: true,
+      });
+    }
+    return true;
+  }
+
+  // Pulls an existing mech off the board and back onto the bench.
+  editMech(uid: number, side: 'blue' | 'red', label: string, loadout: MechLoadout): void {
+    this.editing = { uid, side, label };
+    this.mech = { ...loadout };
+    this.tab = 'mech';
+    for (const b of document.querySelectorAll<HTMLButtonElement>('#add-tabs button')) {
+      b.classList.toggle('active', b.dataset.tab === 'mech');
+    }
+    this.render();
+  }
 
   constructor(data: GameData, cb: RosterCallbacks) {
     this.data = data;
@@ -90,10 +131,16 @@ export class Roster {
       const row = document.createElement('div');
       row.className = 'unit-row';
       row.dataset.tipCard = c.id;
+      // Points ride in their own cell so they line up down the list instead of
+      // trailing each name at a different indent.
       const name = document.createElement('button');
       name.className = 'unit-name';
       const badge = this.cb.cardBadge?.(c) ?? '';
-      name.textContent = `${cardName(c)}${c.score ? ` · ${c.score}p` : ''}${badge}`;
+      // Low Value units really do cost nothing, so they get a dash rather than a
+      // blank cell, which in a column reads as a missing value.
+      name.innerHTML = `<span class="un-name"></span>${badge ? `<span class="un-badge"></span>` : ''}<span class="un-pts">${c.score ? `${c.score}p` : '—'}</span>`;
+      name.querySelector('.un-name')!.textContent = cardName(c);
+      if (badge) name.querySelector('.un-badge')!.textContent = badge;
       name.title = 'Show card';
       name.addEventListener('click', () => this.cb.onPreview(c));
       const addB = document.createElement('button');
@@ -223,6 +270,12 @@ export class Roster {
   private renderMechBuilder(): void {
     const wrap = document.createElement('div');
     wrap.className = 'mech-builder';
+    if (this.editing) {
+      const flag = document.createElement('p');
+      flag.className = 'mech-editing';
+      flag.textContent = `Editing ${this.editing.label}. Damage on any part you change is cleared; everything else about the unit stays as it is.`;
+      wrap.appendChild(flag);
+    }
     const selects: HTMLSelectElement[] = [];
     for (const slot of SLOTS) {
       const label = document.createElement('label');
@@ -375,42 +428,45 @@ export class Roster {
 
     const btns = document.createElement('div');
     btns.className = 'mech-add-btns';
-    for (const side of ['blue', 'red'] as const) {
-      const b = document.createElement('button');
-      b.className = `add ${side}`;
-      b.textContent = `Add mech (${side === 'blue' ? 'UN' : 'RDL'})`;
-      b.addEventListener('click', () => {
+    if (this.editing) {
+      const ed = this.editing;
+      const save = document.createElement('button');
+      save.className = `add ${ed.side}`;
+      save.textContent = 'Save changes';
+      save.addEventListener('click', () => {
         void (async () => {
-          const missing = [
-            this.mech.torso ? '' : 'a Torso',
-            this.mech.chasis ? '' : 'a Chassis',
-            this.mech.leftHand || this.mech.rightHand ? '' : 'at least one Arm',
-          ].filter(Boolean);
-          if (missing.length) {
-            await alertDialog({
-              title: 'That mech is not legal yet',
-              body: `A mech needs a Torso, a Chassis and at least one Arm (rulebook 2.2.2). Still to pick: ${missing.join(', ')}.`,
-            });
-            return;
-          }
-          const { factions } = this.mechFactions();
-          if (factions.length > 1) {
-            const ok = await confirmDialog({
-              title: 'That mech mixes factions',
-              body: `It uses ${factions.join(' and ')} parts. Rulebook 5.1 says a Mech can only be composed of Parts from a single faction, so this build is not legal.`,
-              confirmLabel: 'Add it anyway',
-              cancelLabel: 'Let me fix it',
-              danger: true,
-            });
-            if (!ok) return;
-          }
-          this.cb.onAddMech({ ...this.mech }, side);
-          // Those Parts are on the board now, so start the next build empty.
+          if (!(await this.legalBuild('Save it anyway'))) return;
+          this.cb.onSaveMech(ed.uid, { ...this.mech });
+          this.editing = null;
           this.mech = {};
           this.render();
         })();
       });
-      btns.appendChild(b);
+      const cancel = document.createElement('button');
+      cancel.className = 'add grey';
+      cancel.textContent = 'Cancel';
+      cancel.addEventListener('click', () => {
+        this.editing = null;
+        this.mech = {};
+        this.render();
+      });
+      btns.append(save, cancel);
+    } else {
+      for (const side of ['blue', 'red'] as const) {
+        const b = document.createElement('button');
+        b.className = `add ${side}`;
+        b.textContent = `Add mech (${side === 'blue' ? 'UN' : 'RDL'})`;
+        b.addEventListener('click', () => {
+          void (async () => {
+            if (!(await this.legalBuild('Add it anyway'))) return;
+            this.cb.onAddMech({ ...this.mech }, side);
+            // Those Parts are on the board now, so start the next build empty.
+            this.mech = {};
+            this.render();
+          })();
+        });
+        btns.appendChild(b);
+      }
     }
     wrap.appendChild(btns);
 
