@@ -11,6 +11,8 @@
    "setup": "Mission Preparation: your opponent designates one of their own mechs as the High-Value Target.",
    "scoring": "Score 5 VP when the High-Value Target is destroyed.",
    "vp": 5,
+   "kind": "destroy-designated",
+   "designate": "enemy-own-mech",
    "inRulebook": true
   },
   {
@@ -21,6 +23,8 @@
    "setup": "Mission Preparation: you designate one of your opponent's mechs as the Bounty Target.",
    "scoring": "Score 4 VP when the Bounty Target is destroyed.",
    "vp": 4,
+   "kind": "destroy-designated",
+   "designate": "enemy-mech",
    "inRulebook": false
   },
   {
@@ -31,6 +35,8 @@
    "setup": "No setup. This card needs no designated target.",
    "scoring": "Score 2 VP each time an enemy mech is destroyed, and 1 VP each time an enemy drone is destroyed.",
    "vp": 2,
+   "kind": "per-kill",
+   "designate": "none",
    "inRulebook": true
   },
   {
@@ -41,6 +47,8 @@
    "setup": "Mission Preparation: you designate one of your own mechs as the Escort Target.",
    "scoring": "Score 3 VP if the Escort Target has not been destroyed when the game ends.",
    "vp": 3,
+   "kind": "survive-designated",
+   "designate": "own-mech",
    "inRulebook": false
   },
   {
@@ -51,6 +59,8 @@
    "setup": "Mission Preparation: you designate one of your own mechs as the Test Unit.",
    "scoring": "Score 1 VP each time the Test Unit destroys a Part or a Drone.",
    "vp": 1,
+   "kind": "per-kill-by-unit",
+   "designate": "own-mech",
    "inRulebook": false
   },
   {
@@ -61,6 +71,8 @@
    "setup": "Mission Preparation: you designate one of your own mechs as the Disposal Target.",
    "scoring": "Score 2 VP when the Disposal Target is destroyed.",
    "vp": 2,
+   "kind": "destroy-designated",
+   "designate": "own-mech",
    "inRulebook": false
   },
   {
@@ -71,6 +83,8 @@
    "setup": "No setup. This card needs no designated target.",
    "scoring": "Score 2 VP if no enemy mech has been destroyed by the time the game ends. A mech removed because it could not maintain Integrity does not count as destroyed.",
    "vp": 2,
+   "kind": "no-mech-lost",
+   "designate": "none",
    "inRulebook": false
   },
   {
@@ -81,6 +95,8 @@
    "setup": "Mission Preparation: you designate one Tactical Zone as the Excavation Site.",
    "scoring": "Score 2 VP if, when the game ends, the only units in the Excavation Site are yours. Low Value Units do not count either way.",
    "vp": 2,
+   "kind": "hold-zone",
+   "designate": "zone",
    "inRulebook": false
   }
  ]

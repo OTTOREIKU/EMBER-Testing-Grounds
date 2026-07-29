@@ -51,6 +51,8 @@
    "setup": "Place 1 black box in each of the Bravo, Charlie, Delta, Echo, Golf, Foxtrot and Hotel tactical zones.",
    "scoring": "At the end of Round 5, each player scores 2 VP for every black box they hold.",
    "vp": 2,
+   "fromRound": 1,
+   "cadence": "at-end",
    "zones": ["Bravo", "Charlie", "Delta", "Echo", "Golf", "Foxtrot", "Hotel"],
    "deployment": "Black 3x5 and White 3x5, in opposite corners",
    "inRulebook": true
@@ -63,6 +65,8 @@
    "setup": "Place 1 black box in each of the Bravo, Delta, Echo, Foxtrot and Hotel tactical zones.",
    "scoring": "At the end of Round 5, each player scores 4 VP for every black box they hold.",
    "vp": 4,
+   "fromRound": 1,
+   "cadence": "at-end",
    "zones": ["Bravo", "Delta", "Echo", "Foxtrot", "Hotel"],
    "deployment": "Black 2x12 and White 2x12, along opposite edges",
    "inRulebook": false
@@ -75,6 +79,8 @@
    "setup": "Place 1 black box in each of the Alpha, Charlie, Golf and India tactical zones.",
    "scoring": "At the end of Round 5, each player scores 4 VP for every black box they hold that is in the Echo zone. Boxes have to be carried to the centre to count.",
    "vp": 4,
+   "fromRound": 1,
+   "cadence": "at-end",
    "zones": ["Alpha", "Charlie", "Golf", "India"],
    "scoringZone": "Echo",
    "deployment": "Black 2x12 and White 2x12, along opposite edges",
@@ -88,6 +94,8 @@
    "setup": "The Alpha, Bravo, Charlie, Golf, Hotel and India tactical zones become control zones. All start uncontrolled.",
    "scoring": "From Round 2 onward, score 1 VP for each control zone you hold.",
    "vp": 1,
+   "fromRound": 2,
+   "cadence": "per-round",
    "zones": ["Alpha", "Bravo", "Charlie", "Golf", "Hotel", "India"],
    "deployment": "Black 3x5 and White 3x5, in opposite corners",
    "inRulebook": true
@@ -100,6 +108,8 @@
    "setup": "The Bravo, Echo and Hotel tactical zones become control zones. All start uncontrolled.",
    "scoring": "From Round 2 onward, score 2 VP for each control zone you hold.",
    "vp": 2,
+   "fromRound": 2,
+   "cadence": "per-round",
    "zones": ["Bravo", "Echo", "Hotel"],
    "deployment": "Black 3x5 and White 3x5, in opposite corners",
    "inRulebook": true
@@ -112,6 +122,8 @@
    "setup": "The Alpha, Echo and India tactical zones become control zones. All start uncontrolled. Alpha and India sit in the two deployment corners, so each side begins next to one of them.",
    "scoring": "From Round 2 onward, score 2 VP for each control zone you hold.",
    "vp": 2,
+   "fromRound": 2,
+   "cadence": "per-round",
    "zones": ["Alpha", "Echo", "India"],
    "deployment": "Black 3x5 and White 3x5, in opposite corners",
    "inRulebook": false
@@ -124,6 +136,8 @@
    "setup": "Place 1 terminal in each of the Bravo, Charlie, Golf and Hotel tactical zones.",
    "scoring": "Score 2 VP for each terminal you access.",
    "vp": 2,
+   "fromRound": 1,
+   "cadence": "per-round",
    "zones": ["Bravo", "Charlie", "Golf", "Hotel"],
    "deployment": "Black 3x5 and White 3x5, in opposite corners",
    "inRulebook": false
@@ -136,6 +150,8 @@
    "setup": "Place 1 terminal in each of the Bravo, Echo and Hotel tactical zones.",
    "scoring": "Score 2 VP for each terminal you access.",
    "vp": 2,
+   "fromRound": 1,
+   "cadence": "per-round",
    "zones": ["Bravo", "Echo", "Hotel"],
    "deployment": "Black 2x12 and White 2x12, along opposite edges",
    "inRulebook": true
@@ -148,6 +164,8 @@
    "setup": "Place 1 terminal in each of the Bravo, Delta, Foxtrot and Hotel tactical zones.",
    "scoring": "Score 2 VP for each terminal you access.",
    "vp": 2,
+   "fromRound": 1,
+   "cadence": "per-round",
    "zones": ["Bravo", "Delta", "Foxtrot", "Hotel"],
    "deployment": "Black 3x5 and White 3x5, in opposite corners",
    "inRulebook": false
@@ -160,6 +178,8 @@
    "setup": "In the mission preparation step each player designates one of their own mechs as the Commander.",
    "scoring": "Destroying a Commander scores the attacking side 10 VP and ends the game immediately. If neither Commander has been destroyed by the end of Round 5, score 3 VP for each part of the enemy Commander you destroyed.",
    "vp": 10,
+   "fromRound": 1,
+   "cadence": "per-round",
    "zones": [],
    "deployment": "Black 2x12 and White 2x12, along opposite edges",
    "inRulebook": false
