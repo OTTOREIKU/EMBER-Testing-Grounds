@@ -5,6 +5,15 @@ Extracted 2026-07-23 from the community builder site bundle
 rulebook v1.0. Re-extract with `node tools/extract_cards.js` / `extract_terrain.js`
 (paths inside point at a downloaded copy of the bundle).
 
+Re-checked 2026-07-29 against the then-current bundle (`assets/index.BXLZ9l80.js`).
+All 401 cards still matched by id, and across every numeric stat plus `stance` only
+three values had changed upstream: 078 and 079 stance offensive to defensive, and 161
+move 0 to 5. All three are corrections the site made after our snapshot, and all three
+were already covered by `stat_overrides.json` from the card scans, so nothing needed
+re-extracting. Note that the site is where this data came from, so it cannot be used to
+verify a stat, only to see what upstream has changed since. Four errors found in the
+scan sweep (159, 074, 158, ZHAM-002) are still present upstream.
+
 ## cards.json — 401 cards
 One flat array; `category` distinguishes: `mech_part` (273), `pilot` (52), `drone` (44),
 `projectile` (26), `tactics_or_upgrade` (6).
