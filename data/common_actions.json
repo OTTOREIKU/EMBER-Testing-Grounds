@@ -1,5 +1,5 @@
 {
-  "_comment": "The seven Common Actions from rulebook 6.1 (book p.91). Every Mech has these in addition to the Actions printed on its Parts, so a squad's real options are its Part Actions plus whichever of these its surviving Parts can initiate. They are not in cards.json because they are not printed on any card, so they are transcribed here by hand. The printed rulebook always wins over this file.",
+  "_comment": "The seven Common Actions from rulebook 6.1 (book p.91), plus the Remote Access Universal Action every Mech gains from 5.3.3. Every Mech has these in addition to the Actions printed on its Parts, so a squad's real options are its Part Actions plus whichever of these its surviving Parts can initiate. They are not in cards.json because they are not printed on any card, so they are transcribed here by hand. The printed rulebook always wins over this file.",
   "_shape": "Each entry mirrors a CardAction closely enough to be merged into the guided action list: id, name, type (the Action Type, matching the card data's spelling), size (s = Short = 1 Action Tick, m = Medium = 2 Action Ticks), and the Part slots that can initiate it. `phase` marks the three that resolve in the End Phase rather than during an Action Opportunity.",
   "_source": "rules/06_missions_and_appendix.md section 6.1, transcribed from book p.91",
   "actions": [
@@ -70,6 +70,17 @@
       "silence": true,
       "description": {
         "en": "· End Phase action. Silence.\n· Remove 1 Square Token or 1 Hexagon Token from this Unit, then Restore 1 Link."
+      }
+    },
+    {
+      "id": "COMMON_REMOTE_ACCESS",
+      "name": { "en": "Remote Access" },
+      "type": "Tactic",
+      "size": "s",
+      "range": 4,
+      "slots": ["torso"],
+      "description": {
+        "en": "· Perform an Electronic Counter-roll against the Terminal. If successful, the player successfully Accesses this Terminal.\n· The Terminal's Electronic Value is 3, and each Terminal may only be accessed once per round."
       }
     },
     {
