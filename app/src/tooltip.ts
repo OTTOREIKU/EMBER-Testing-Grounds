@@ -2,6 +2,8 @@ import { isCardImageReady, loadCardImage } from './images';
 
 let tip: HTMLDivElement | null = null;
 let currentId: string | null = null;
+let pinTo: HTMLElement | null = null;
+let lastMove: MouseEvent | null = null;
 
 function ensureTip(): HTMLDivElement {
   if (!tip) {
@@ -13,21 +15,34 @@ function ensureTip(): HTMLDivElement {
   return tip;
 }
 
-function position(ev: MouseEvent): void {
+function position(): void {
   if (!tip) return;
   const pad = 14;
-  const w = 260;
+  const w = tip.offsetWidth || 260;
   const h = tip.offsetHeight || 360;
+  const clampY = (y: number) => Math.max(4, Math.min(y, window.innerHeight - h - 4));
+  const panel = pinTo?.closest('aside')?.getBoundingClientRect();
+  if (panel) {
+    const outside = panel.left - w - 10 >= 4 ? panel.left - w - 10
+      : panel.right + 10 + w <= window.innerWidth - 4 ? panel.right + 10
+      : null;
+    if (outside !== null) {
+      tip.style.left = `${outside}px`;
+      tip.style.top = `${clampY(pinTo!.getBoundingClientRect().top)}px`;
+      return;
+    }
+  }
+  const ev = lastMove;
+  if (!ev) return;
   let x = ev.clientX + pad;
-  let y = ev.clientY + pad;
   if (x + w > window.innerWidth) x = ev.clientX - w - pad;
-  if (y + h > window.innerHeight) y = Math.max(4, window.innerHeight - h - 4);
-  tip.style.left = `${x}px`;
-  tip.style.top = `${y}px`;
+  tip.style.left = `${Math.max(4, x)}px`;
+  tip.style.top = `${clampY(ev.clientY + pad)}px`;
 }
 
 function hide(): void {
   currentId = null;
+  pinTo = null;
   if (tip) tip.classList.remove('visible');
 }
 
@@ -41,18 +56,21 @@ export function installTooltip(): void {
     const id = (el as HTMLElement).dataset.tipCard!;
     if (id === currentId) return;
     currentId = id;
+    pinTo = (el as HTMLElement).closest('aside') ? (el as HTMLElement) : null;
     const t = ensureTip();
     const shown = t.querySelector('img')!;
     const src = loadCardImage(id);
     if (isCardImageReady(id)) {
       shown.src = src.src;
       t.classList.add('visible');
+      position();
     } else {
       t.classList.remove('visible');
       src.onload = () => {
         if (currentId !== id) return;
         shown.src = src.src;
         t.classList.add('visible');
+        position();
       };
       src.onerror = () => {
         if (currentId === id) hide();
@@ -60,8 +78,12 @@ export function installTooltip(): void {
     }
   });
   document.addEventListener('mousemove', (ev) => {
-    if (currentId) position(ev);
+    lastMove = ev;
+    if (currentId && !pinTo) position();
   });
+  document.addEventListener('scroll', () => {
+    if (currentId && pinTo) position();
+  }, true);
 }
 
 export { preloadCardImages as preloadCards } from './images';
