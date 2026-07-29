@@ -243,7 +243,7 @@
     "yellow token",
     "red token"
    ],
-   "text": "The background colour printed on a Square or Hexagon Token says how long it lasts. Green stays in effect indefinitely until an Action or effect removes it. Yellow is flipped to its reverse side at the end of the round, and that reverse is usually red. Red is about to expire and is removed at the end of the round. So a yellow token lasts two rounds: it flips at the first End Phase and comes off at the second. Fragile and Low Profile are green; Fire Control Jamming, Immobilized, Highlight and Target Tracer are yellow."
+   "text": "The background colour printed on a Square or Hexagon Token says how long it lasts. Green stays in effect indefinitely until an Action or effect removes it. Yellow is flipped to its reverse side at the end of the round, and that reverse is usually red. Red is about to expire and is removed at the end of the round. So a yellow token lasts two rounds: it flips at the first End Phase and comes off at the second. Low Recognition is the green one, printed green on its face and red on its reverse. Fragile, Fire Control Jamming, Immobilized and Highlight Target are yellow, each printed yellow on its face and red on its reverse."
   },
   {
    "id": "deployment",
