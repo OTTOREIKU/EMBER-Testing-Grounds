@@ -1,0 +1,23 @@
+{
+  "_comment": "Printed stat values that the generated cards.json gets wrong. Every value below was read off the printed card scan in assets/cards/en/, not inferred. The printed card always wins over the community database.",
+  "_scope": "Only stats confirmed wrong against a scan are listed. No systematic sweep of every card has been done, so absence from this file does not mean a stat is correct.",
+  "_shape": "cards maps a card id to the stat fields to overwrite.",
+  "cards": {
+    "078": { "stance": "defensive" },
+    "079": { "stance": "defensive" },
+    "159": { "stance": "offensive" },
+    "161": { "move": 5 },
+    "074": { "electronic": 0 },
+    "158": { "electronic": 0 },
+    "ZHAM-002": { "armor": 3, "dodge": 0 }
+  },
+  "_notes": {
+    "078": "DTG-30M \"Hyena\" MG Type. Database says offensive; the printed stance strip reads DEF. All three Hyenas (078, 079, 080) print DEF, and the database only has 080 right.",
+    "079": "DTG-30S \"Hyena\" Missile Type. Same as 078: database offensive, card prints DEF.",
+    "159": "AMDS210 \"Delphinium\" Automatic Defense System. Database says mobility; the printed strip reads OFF · ✗ in red. Its Move box is printed blank, so the recorded Move 0 is correct and is not patched.",
+    "161": "ADK15/MAS \"Porcupine\" Microwave Type. The card database records Move 0, but the scan prints the same ↑5 Move box in the bottom-right as its two siblings ADK15D (160) and ADK15P (543), both of which the database has at 5.",
+    "074": "GM-35 Anti-Armor Mine. Recorded as electronic -1; the card prints \"--\" in the Electronic box, meaning no value. Every other card printing \"--\" (154, 155, 267, 268, PDAM-003/004/005) is recorded as 0, so -1 is a misparse of the dash. It matters because electronicValue() sums this field, so -1 actively subtracts 1, and the reference page renders it as \"E-1\".",
+    "158": "DBP \"Turtle Shell\" Barricade. Same \"--\" misparse as 074.",
+    "ZHAM-002": "M60 \"Boomerang\" Missile. The card prints only two stat boxes, an orange Electronic 1 and a grey Armor 3, with no blue Dodge box at all; the database records armor 0 and dodge 6. Box colours were confirmed by sampling pixels, not by eye: the orange box spans x540-594 and the grey x618-666, and no blue pixels appear anywhere in the stat row. On this same GOF template ZHAM-003 prints orange/blue/grey for electronic/dodge/armor and ZHAM-004 prints blue/grey for dodge/armor, so a lone grey box after the orange one is Armor. NOTE: this is the only finding in the sweep where the database is wrong on two fields at once, and the card layout is the sole evidence. Worth re-checking against a physical card when the box arrives."
+  }
+}

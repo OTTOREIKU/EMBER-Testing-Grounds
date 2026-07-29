@@ -225,6 +225,20 @@ function applyAmmo(cards: Card[], patch: AmmoOverrides): void {
   }
 }
 
+interface StatOverrides {
+  cards?: Record<string, Partial<Card>>;
+}
+
+// A few printed stats are wrong in the community database, so the scanned values
+// are patched back in here (see data/stat_overrides.json).
+function applyStats(cards: Card[], patch: StatOverrides): void {
+  const byId = patch.cards ?? {};
+  for (const c of cards) {
+    const fix = byId[c.id];
+    if (fix) Object.assign(c, fix);
+  }
+}
+
 interface CommonActionData {
   actions?: CommonAction[];
   extraTicks?: ExtraTickGrant[];
@@ -325,7 +339,7 @@ function applyTactics(cards: Card[], table: Record<string, TacticEntry>): void {
 }
 
 export async function loadData(): Promise<GameData> {
-  const [cards, terrain, boxes, rawKeywords, patch, mech, xlate, names, missions, tactics, play, secondary, zoneData, facPatch, boxPatch, common, ammoPatch] = await Promise.all([
+  const [cards, terrain, boxes, rawKeywords, patch, mech, xlate, names, missions, tactics, play, secondary, zoneData, facPatch, boxPatch, common, ammoPatch, statPatch] = await Promise.all([
     fetch(dataUrl('cards.json')).then((r) => r.json() as Promise<Card[]>),
     fetch(dataUrl('terrain_layouts.json')).then((r) => r.json() as Promise<TerrainData>),
     fetch(dataUrl('boxes.json')).then((r) => r.json() as Promise<BoxDef[]>),
@@ -369,6 +383,9 @@ export async function loadData(): Promise<GameData> {
     fetch(dataUrl('ammo_overrides.json'))
       .then((r) => (r.ok ? (r.json() as Promise<AmmoOverrides>) : ({} as AmmoOverrides)))
       .catch(() => ({}) as AmmoOverrides),
+    fetch(dataUrl('stat_overrides.json'))
+      .then((r) => (r.ok ? (r.json() as Promise<StatOverrides>) : ({} as StatOverrides)))
+      .catch(() => ({}) as StatOverrides),
   ]);
 
   cleanCardText(cards);
@@ -376,6 +393,7 @@ export async function loadData(): Promise<GameData> {
   normaliseBoxes(cards);
   applyBoxContents(cards, boxPatch);
   applyAmmo(cards, ammoPatch);
+  applyStats(cards, statPatch);
 
   for (const b of boxes) {
     const bn = names.boxes?.[b.key];
