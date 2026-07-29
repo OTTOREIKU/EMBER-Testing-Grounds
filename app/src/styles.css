@@ -1411,13 +1411,14 @@ button.add:hover { filter: brightness(1.25); }
 .action.unavailable .tick-man, .action.unavailable .tick-act { background: var(--text3); }
 
 .act-body {
-  position: relative; display: flex; align-items: flex-end; gap: 8px;
-  justify-content: space-between; margin-top: 3px;
+  position: relative; display: flex; flex-direction: column;
+  align-items: stretch; gap: 6px; margin-top: 3px;
 }
 .act-slot { text-transform: uppercase; font-size: 10px; font-weight: 700; letter-spacing: 0.4px; color: var(--text3); }
 .action.unavailable { opacity: 0.6; }
 .action.unavailable .act-type { background: var(--surface3); color: var(--text3); }
 .action-info { position: relative; display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.act-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 3px; }
 .action-info .dim { font-size: 11px; }
 .action .reason { color: #e08c8c; font-size: 11px; }
 
@@ -1452,36 +1453,50 @@ button.add:hover { filter: brightness(1.25); }
 /* ---------- consumable pips (ammo, charge, interception) ---------- */
 .pips {
   --pip: var(--accent);
-  display: inline-flex; align-items: center; gap: 3px; cursor: pointer;
-  border: 1px solid color-mix(in srgb, var(--pip) 32%, transparent);
-  border-radius: 999px; padding: 1px 7px; line-height: 1;
+  display: inline-flex; align-items: center; gap: 4px; cursor: pointer;
+  border: none; background: color-mix(in srgb, var(--pip) 15%, transparent);
+  border-radius: var(--radius-sm); padding: 3px 8px;
 }
+.pips:hover { background: color-mix(in srgb, var(--pip) 26%, transparent); }
 .pips-intercept { --pip: #65a2d8; }
 .pips-charge { --pip: #4bb884; }
 .pip-label, .pip-n {
-  font-size: 9px; font-weight: 700; letter-spacing: 0.4px; color: var(--pip);
+  font-size: 10.5px; font-weight: 600; letter-spacing: 0.2px; color: var(--pip);
 }
 .pip-n { opacity: 0.75; }
 .pips .pip {
-  width: 7px; height: 7px; border-radius: 50%; flex: 0 0 7px;
+  width: 6px; height: 6px; border-radius: 50%; flex: 0 0 6px;
   background: var(--pip); box-shadow: none;
 }
 .pips .pip.off { background: transparent; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--pip) 45%, transparent); }
 .pips.spent { --pip: var(--text2); opacity: 0.75; }
 .intercept-btn {
   background: rgba(101, 162, 216, 0.16) !important; color: #65a2d8 !important;
-  border-radius: 999px !important;
 }
 .intercept-btn:hover { background: #65a2d8 !important; color: var(--on-accent) !important; }
 .status-badge.spent > :first-child { fill-opacity: 0.25; }
 .status-badge.spent .status-badge-text { fill: #cdd6e0; }
-.action-btns { position: relative; display: flex; flex-direction: column; gap: 3px; flex-shrink: 0; }
+.action-btns {
+  position: relative; display: flex; flex-wrap: wrap; gap: 4px;
+  padding-top: 6px; border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+}
+.action-btns:empty { display: none; }
 .action-btns button {
-  border: none; background: var(--accent-lt); color: var(--accent); font-weight: 600;
-  font-size: 11px; border-radius: var(--radius-sm); padding: 4px 9px; cursor: pointer;
+  flex: 1 1 0; min-width: 0; height: 26px; padding: 0 8px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  border: none; background: var(--surface3); color: var(--text2); font-weight: 600;
+  font-size: 11px; border-radius: var(--radius-sm); cursor: pointer;
   white-space: nowrap; font-family: var(--font); transition: background 0.12s, color 0.12s;
 }
 .action-btns button:hover { background: var(--accent); color: var(--on-accent); }
+.action-btns .attack-btn, .action-btns .intercept-btn, .action-btns .shove-btn,
+.action-btns .detonate-btn, .action-btns .launch-btn { flex: 1 1 100%; order: -1; }
+.action-btns .attack-btn, .action-btns .shove-btn, .action-btns .launch-btn {
+  background: color-mix(in srgb, var(--t) 22%, transparent); color: var(--t); font-weight: 700;
+}
+.action-btns .attack-btn:hover, .action-btns .shove-btn:hover, .action-btns .launch-btn:hover {
+  background: var(--t); color: #101319;
+}
 
 .part-tabs { display: flex; flex-wrap: wrap; gap: 3px; margin: 8px 0 6px; }
 .part-tabs button {

@@ -22,6 +22,11 @@ function pipRow(kind: string, label: string, left: number, max: number, attrs: s
   return `<span class="pips pips-${kind}${left ? '' : ' spent'}" ${attrs}><b class="pip-label">${label}</b>${dots}<b class="pip-n">${left}/${max}</b></span>`;
 }
 
+function projectileTag(name: string): string {
+  const lead = name.trim().split(/[\s"“]/)[0];
+  return /\d/.test(lead) && lead.length <= 9 ? lead : name;
+}
+
 const STAT_FIELDS: [keyof Card, string][] = [
   ['score', 'Points'],
   ['armor', 'Armor'],
@@ -182,9 +187,11 @@ export class Panel {
       .filter(Boolean)
       .map((s) => ` · ${s}`)
       .join('')}</span>
-      ${ammoLeft !== undefined ? pipRow('ammo', 'AMO', ammoLeft, a.storage ?? 0, `data-reload="${a.id}"`) : ''}
-      ${intercept ? pipRow('intercept', 'INT', intercept.left, intercept.max, `data-restore-int="${a.id}"`) : ''}
-      ${charge ? pipRow('charge', 'CHG', charge.charged ? 1 : 0, 1, `data-charge="${ga.slot}"`) : ''}
+      <div class="act-chips">
+        ${ammoLeft !== undefined ? pipRow('ammo', 'AMO', ammoLeft, a.storage ?? 0, `data-reload="${a.id}"`) : ''}
+        ${intercept ? pipRow('intercept', 'INT', intercept.left, intercept.max, `data-restore-int="${a.id}"`) : ''}
+        ${charge ? pipRow('charge', 'CHG', charge.charged ? 1 : 0, 1, `data-charge="${ga.slot}"`) : ''}
+      </div>
       ${!available && reason ? `<span class="reason">${reason}</span>` : ''}
       ${available && intercept && !intercept.can && intercept.reason ? `<span class="reason">${intercept.reason}</span>` : ''}`;
     const actName = a.name.en || a.name.zh || a.id;
@@ -263,7 +270,9 @@ export class Panel {
         this.cb.onCharge(t, ga.slot, !charge.charged);
       });
     }
-    if (a.keywords?.length) info.appendChild(this.keywordChips(a.keywords));
+    const chipRow = info.querySelector<HTMLElement>('.act-chips')!;
+    if (a.keywords?.length) for (const chip of [...this.keywordChips(a.keywords).children]) chipRow.appendChild(chip);
+    if (!chipRow.childElementCount) chipRow.remove();
     row.appendChild(head);
 
     const body = document.createElement('div');
@@ -372,7 +381,8 @@ export class Panel {
     for (const p of projectiles) {
       if (!available) break;
       const launch = document.createElement('button');
-      launch.textContent = `Launch ${cardName(p)}…`;
+      launch.className = 'launch-btn';
+      launch.textContent = projectiles.length > 1 ? `Launch ${projectileTag(cardName(p))}…` : 'Launch…';
       inspectOnHover(launch, {
         title: `Launch ${cardName(p)}`,
         sub: actName,
