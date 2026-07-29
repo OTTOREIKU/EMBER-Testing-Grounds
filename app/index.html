@@ -15,22 +15,22 @@
           <option value="">Empty board</option>
         </select>
       </label>
-      <button id="btn-mapmanage" title="Delete saved and scenario maps you no longer want in the list">Manage maps</button>
+      <button id="btn-mapmanage" data-tip-title="Manage maps" data-tip="Delete saved and scenario maps you no longer want in the list.">Manage maps</button>
       <label>Zones
-        <select id="zone-select" title="Choose which objective and deployment zones are drawn on the board">
+        <select id="zone-select" data-tip-title="Zones" data-tip="Chooses which objective and deployment zones are drawn on the board.|Picking a Mission also sets up its Task Items.">
           <option value="">No zones</option>
         </select>
       </label>
-      <button id="btn-missions" title="Read a Main Task card and put its zones on the board">Missions</button>
-      <button id="btn-scenarios" title="Load a demo scenario: squads, terrain, objectives">Scenarios</button>
-      <button id="btn-inventory" title="Set which boxes you own; card lists can filter to your collection">Inventory</button>
-      <button id="btn-import-squad" title="Import a squad built on the community builder site (.json export or squad .png image)">Import squad</button>
-      <button id="btn-mapedit" title="Build a custom map from the official terrain pieces">Map editor</button>
+      <button id="btn-missions" data-tip-title="Missions" data-tip="Reads a Main Task card and puts its zones on the board.|Locked once the battlefield is set, because Tasks are chosen before the roll (3.1.1).">Missions</button>
+      <button id="btn-scenarios" data-tip-title="Scenarios" data-tip="Loads a demo scenario complete with squads, terrain and objectives.|Good for trying a mechanic without building a list first.">Scenarios</button>
+      <button id="btn-inventory" data-tip-title="Inventory" data-tip="Set which boxes you own.|Card lists can then filter down to just your collection.">Inventory</button>
+      <button id="btn-import-squad" data-tip-title="Import squad" data-tip="Imports a squad built on the community builder site.|Accepts either the .json export or the squad .png image.">Import squad</button>
+      <button id="btn-mapedit" data-tip-title="Map editor" data-tip="Builds a custom map from the official terrain pieces.|Paint zones and deployment strips onto it too.">Map editor</button>
       <button id="btn-export" title="Download the board state as a JSON file">Save board</button>
       <button id="btn-import" title="Load a saved board state">Load board</button>
       <button id="btn-clear" title="Remove all units">Clear</button>
       <a id="btn-reference" href="reference.html" target="_blank" rel="noopener"
-         title="Glossary and card lookup. Opens a phone-friendly companion page.">Reference ↗</a>
+         data-tip-title="Reference" data-tip="Glossary and card lookup.|Opens a phone-friendly companion page in a new tab.">Reference ↗</a>
       </div>
       <p id="hint">Drag move · Q/E rotate · M move-range · A arcs · Del remove · hover = range/LOS</p>
       <input type="file" id="import-file" accept=".json" hidden />
@@ -49,7 +49,7 @@
         <div id="replay-bar" hidden></div>
         <div id="board-wrap">
           <div class="zone-ctrl">
-            <button id="btn-zones" title="Show or hide the tactical zone and deployment overlay" aria-pressed="false">Zones</button>
+            <button id="btn-zones" data-tip-title="Zone overlay" data-tip="Shows or hides the tactical zone and deployment overlay drawn on the board." aria-pressed="false">Zones</button>
           </div>
           <div id="move-ctrl" hidden>
             <span id="move-info"></span>

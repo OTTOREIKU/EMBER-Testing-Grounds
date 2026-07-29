@@ -6,7 +6,7 @@ import { applyKill, gameResult, isLowValue, newTaskState, normaliseTasks, type T
 import { DiceTray } from './dice';
 import { importSquadFile } from './importer';
 import { Inventory } from './inventory';
-import { isInspectPinned, showInspect, unpinInspect } from './inspector';
+import { bindTips, inspectOnHover, isInspectPinned, showInspect, unpinInspect } from './inspector';
 import { cardName, dataUrl, loadData, missionImageUrl, parseGridRef, rulesLines, type SecondaryTask, SIDE_LABEL } from './data';
 import {
   deleteCustomMap,
@@ -87,6 +87,7 @@ async function init() {
   };
 
   installTooltip();
+  bindTips(document);
   preloadCards(data.cards.map((c) => c.id));
   warmAllImagesWhenIdle();
   registerOffline();
@@ -1943,7 +1944,8 @@ async function init() {
     const remove = document.createElement('button');
     remove.className = 'ah-primary';
     remove.textContent = targets.length ? 'Done: destroy the projectile' : 'Destroy the projectile';
-    remove.title = 'A projectile that has detonated is destroyed (4.7.5)';
+    const det = data.mechanics.find((m) => m.id === 'detonation');
+    if (det) inspectOnHover(remove, { title: det.name, sub: det.ref, lines: [det.text] });
     remove.addEventListener('click', () => {
       state.tokens = state.tokens.filter((x) => x.uid !== proj.uid);
       board.clearHighlights();
@@ -2018,7 +2020,7 @@ async function init() {
                   const l = los.get(t.uid);
                   const blocked = l === 'blocked';
                   return `<button class="chip${on ? ' chip-intact' : ''}${blocked ? ' chip-destroyed' : ''}" data-uid="${t.uid}"
-                      ${blocked ? 'title="No line of sight to the grenade, so the card does not affect this unit. You can still mark it by hand."' : ''}>
+                      ${blocked ? 'data-tip-title="No line of sight" data-tip="This unit cannot see the grenade, so the card does not affect it.|You can still mark it by hand if you have ruled otherwise."' : ''}>
                     <b>${t.side === proj.side ? 'ALLY' : 'ENEMY'}</b> ${escapeHtml(t.label)}
                     <small>R${dist}${l ? ` · LoS ${l}` : ''}${on ? ' ✓' : ''}</small></button>`;
                 })
@@ -2041,6 +2043,7 @@ async function init() {
       });
       body.querySelector('.ah-head')!.appendChild(cancel);
 
+      bindTips(body);
       body.querySelectorAll<HTMLButtonElement>('#det-status button').forEach((b) =>
         b.addEventListener('click', () => {
           pick = b.dataset.sid!;

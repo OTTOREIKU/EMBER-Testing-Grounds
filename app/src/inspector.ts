@@ -58,12 +58,33 @@ export interface LinkableMechanic {
   text: string;
 }
 
-export function linkMechanics(root: ParentNode, mechanics: LinkableMechanic[]): void {
+export function linkMechanics(
+  root: ParentNode,
+  mechanics: LinkableMechanic[],
+  opts?: { pin?: boolean; mark?: boolean },
+): void {
   root.querySelectorAll<HTMLElement>('[data-mech]').forEach((node) => {
     const m = mechanics.find((x) => x.id === node.dataset.mech);
     if (!m) return;
-    node.classList.add('mech-link');
-    inspectOnHover(node, { title: m.name, sub: m.ref, lines: [m.text] }, { pinKey: `mech:${m.id}` });
+    if (opts?.mark !== false) node.classList.add('mech-link');
+    inspectOnHover(
+      node,
+      { title: m.name, sub: m.ref, lines: [m.text] },
+      opts?.pin === false ? undefined : { pinKey: `mech:${m.id}` },
+    );
+  });
+}
+
+export function bindTips(root: ParentNode): void {
+  root.querySelectorAll<HTMLElement>('[data-tip]').forEach((node) => {
+    if (node.dataset.tipBound) return;
+    node.dataset.tipBound = '1';
+    inspectOnHover(node, {
+      title: node.dataset.tipTitle || node.textContent?.trim() || '',
+      sub: node.dataset.tipSub,
+      lines: node.dataset.tip!.split('|'),
+    });
+    node.removeAttribute('title');
   });
 }
 

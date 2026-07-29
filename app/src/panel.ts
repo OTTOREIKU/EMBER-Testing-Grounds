@@ -287,7 +287,14 @@ export class Panel {
       const atk = document.createElement('button');
       atk.className = 'attack-btn';
       atk.innerHTML = '<i class="btn-ico">⌖</i> Attack…';
-      atk.title = 'Guided attack: click this, then click the target unit on the board';
+      inspectOnHover(atk, {
+        title: 'Attack',
+        sub: actName,
+        lines: [
+          'Click this, then click the target unit on the board to open the guided attack.',
+          'The wizard walks the rulebook 4.4 sequence: range and arc, line of sight, protection, then the roll.',
+        ],
+      });
       atk.addEventListener('click', () => {
         this.cb.onStartAttack(t, a.id);
         if (ammoLeft !== undefined) this.cb.onSpendAmmo(t, a.id);
@@ -298,7 +305,14 @@ export class Panel {
       const ew = document.createElement('button');
       ew.className = 'attack-btn';
       ew.innerHTML = '<i class="btn-ico">⚡</i> Electronic Attack…';
-      ew.title = 'Guided Electronic Counter-roll: click this, then click the target unit on the board';
+      inspectOnHover(ew, {
+        title: 'Electronic Attack',
+        sub: actName,
+        lines: [
+          'Click this, then click the target unit on the board to open the guided Counter-roll.',
+          'Electronic Warfare ignores terrain and line of sight. Range is the only restriction.',
+        ],
+      });
       ew.addEventListener('click', () => {
         this.cb.onStartElectronic(t, a.id);
         if (ammoLeft !== undefined) this.cb.onSpendAmmo(t, a.id);
@@ -329,13 +343,29 @@ export class Panel {
       const sh = document.createElement('button');
       sh.className = 'shove-btn';
       sh.innerHTML = `<i class="btn-ico">⇥</i> ${shove.push ? `Push ${shove.grids}` : `Shove ${shove.grids}`}…`;
-      sh.title = `Force the enemy Ground Unit in the Grid this Mech faces ${shove.grids} Grid${shove.grids === 1 ? '' : 's'} straight back${shove.push ? ', costing it 1 Link' : ''}`;
+      inspectOnHover(sh, {
+        title: shove.push ? 'Push' : 'Shove',
+        sub: actName,
+        lines: [
+          `Forces the enemy Ground Unit in the Grid this Mech faces ${shove.grids} Grid${shove.grids === 1 ? '' : 's'} straight back.`,
+          shove.push ? 'The target also loses 1 Link.' : '',
+          'The target stops early if something blocks the path, and a unit in Melee Lock cannot be forced out of it.',
+        ],
+      });
       sh.addEventListener('click', () => this.cb.onShove(t, a.id));
       btns.appendChild(sh);
     }
     if (available && a.type === 'Moving' && a.range) {
       const mv = document.createElement('button');
       mv.textContent = `Show range (${a.range})`;
+      inspectOnHover(mv, {
+        title: `Movement range ${a.range}`,
+        sub: actName,
+        lines: [
+          `Highlights every Grid this unit could reach with ${actName}, counting ${a.range} Grid${a.range === 1 ? '' : 's'} of movement.`,
+          'Difficult terrain costs extra to enter and Melee Lock adds the Break Away cost, so the reachable area can be smaller than the raw number.',
+        ],
+      });
       mv.addEventListener('click', () => this.cb.onShowMoveRange(t, a.range!));
       btns.appendChild(mv);
     }
@@ -366,6 +396,7 @@ export class Panel {
     if (available && (a.redDice || a.yellowDice)) {
       const roll = document.createElement('button');
       roll.textContent = `Roll ${dice.join('+')}`;
+      roll.title = `Roll ${dice.join(' and ')} in the dice tray`;
       roll.addEventListener('click', () => {
         this.cb.onRollDice({ red: a.redDice, yellow: a.yellowDice });
         if (!isAttack && ammoLeft !== undefined) this.cb.onSpendAmmo(t, a.id);
@@ -374,7 +405,7 @@ export class Panel {
     } else if (available && ammoLeft !== undefined && !projectiles.length) {
       const use = document.createElement('button');
       use.textContent = 'Use';
-      use.title = 'Perform this action and consume 1 Ammo';
+      inspectOnHover(use, { title: 'Use', sub: actName, lines: ['Performs this Action and consumes 1 Ammo Token.'] });
       use.addEventListener('click', () => this.cb.onSpendAmmo(t, a.id));
       btns.appendChild(use);
     }

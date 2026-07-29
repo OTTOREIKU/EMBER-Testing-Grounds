@@ -1,5 +1,5 @@
 import { SIDE_LABEL } from './data';
-import { inspectOnHover, pinInspect, type InspectInfo } from './inspector';
+import { bindTips, inspectOnHover, pinInspect, type InspectInfo } from './inspector';
 import { SCALES, type BattleScale, type GameState, type Side } from './types';
 import { normaliseSetup } from './setup';
 
@@ -164,10 +164,12 @@ export class RoundTracker {
             }>↺</button>`
           : ''
       }
-      <button id="rt-start" class="rt-start${this.inGame() ? ' ending' : ''}" title="${
+      <button id="rt-start" class="rt-start${this.inGame() ? ' ending' : ''}" data-tip-title="${
+        this.inGame() ? 'End game' : 'Start game'
+      }" data-tip="${
         this.inGame()
-          ? 'Leave the guided game and go back to free play, keeping everything where it stands'
-          : 'Take everything off the board into its squad, roll for First Player, then deploy properly'
+          ? 'Leaves the guided game and goes back to free play.|Everything stays exactly where it stands on the board.'
+          : 'Takes every unit off the board and back into its squad.|Rolls for First Player, then walks deployment in the proper order (3.1.1).'
       }">${this.inGame() ? 'End game' : 'Start game'}</button>
       <span class="rt-phases">
         ${PHASES.map(
@@ -259,6 +261,7 @@ export class RoundTracker {
       ],
     });
 
+    bindTips(this.root);
     this.root.querySelectorAll<HTMLButtonElement>('.rt-phase').forEach((b) => {
       const p = PHASES[Number(b.dataset.i)];
       inspectOnHover(b, phaseInfo(p));

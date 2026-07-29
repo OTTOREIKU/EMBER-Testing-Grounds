@@ -2,6 +2,7 @@ import type { CardAction, ExtraTick, GameState, Opportunity, ScriptState, Side, 
 import { ageTokens, newOpportunity, normaliseScript, statusCount, STATUSES, TIMINGS } from './types';
 import type { GameData, MissionCard } from './data';
 import { SIDE_LABEL } from './data';
+import { bindTips, linkMechanics } from './inspector';
 import { PHASES, PHASE_INFO } from './tracker';
 import { type ActionWorld, canActivateCamo, guidedActions, initiativeFor, maneuverRange, SLOT_LABEL, tokenCards } from './units';
 import { canManeuver, canPerform, costLabel, costOf, LENGTH_NAME, lengthOf, spendAction, spendManeuver } from './ticks';
@@ -296,6 +297,8 @@ export class PlayGuide {
         }>${last ? `End round ${s.round.n}` : `Next: ${PHASES[s.round.phase + 1]}`}</button>
       </div>`;
 
+    bindTips(this.root);
+    linkMechanics(this.root, this.data.mechanics, { pin: false, mark: false });
     this.root.querySelectorAll<HTMLButtonElement>('[data-designate]').forEach((b) =>
       b.addEventListener('click', () => this.designate(Number(b.dataset.designate))),
     );
@@ -495,7 +498,7 @@ export class PlayGuide {
         const by = s.tokens.find((t) => t.uid === x.uid);
         const at = s.tokens.find((t) => t.uid === x.targetUid);
         if (!by || !at) return '';
-        return `<button class="pg-act" data-intercept="${i}" title="Interception attacks as a Firing Attack, but the target must be this unit, no Forward Arc is needed, line of sight always exists, and no Terrain or Unit Protection applies.">
+        return `<button class="pg-act" data-intercept="${i}" data-mech="interception">
           <span class="pg-act-name">${esc(by.label)} → ${esc(at.label)}</span>
           <span class="pg-act-cost">INT</span>
         </button>`;
@@ -567,9 +570,9 @@ export class PlayGuide {
           none
             ? '<div class="pg-units"><button class="pg-pass" data-end-step="commons">Nothing to do</button></div>'
             : `<div class="pg-units">
-                ${canStabilise.map((t) => `<button class="pg-unit" data-stabilise="${t.uid}" title="Torso: remove 1 Square or Hexagon Token from this Mech, then restore 1 Link">Stabilize ${esc(t.label)}</button>`).join('')}
-                ${canReveal.map((t) => `<button class="pg-unit" data-reveal="${t.uid}" title="Become Revealed, then make Manifestation Movement up to this unit's Stealth value">Reveal ${esc(t.label)}</button>`).join('')}
-                ${canScan.map((t) => `<button class="pg-unit" data-scan="${t.uid}" title="Torso, Range 6: make an Electronic counter-roll against a camouflaged or Low Profile enemy">Scan with ${esc(t.label)}</button>`).join('')}
+                ${canStabilise.map((t) => `<button class="pg-unit" data-stabilise="${t.uid}" data-tip-title="Stabilize System" data-tip-sub="End Phase Common Action" data-tip="Torso Action.|Remove 1 Square or Hexagon Token from this Mech, then restore 1 Link.">Stabilize ${esc(t.label)}</button>`).join('')}
+                ${canReveal.map((t) => `<button class="pg-unit" data-reveal="${t.uid}" data-mech="revealed">Reveal ${esc(t.label)}</button>`).join('')}
+                ${canScan.map((t) => `<button class="pg-unit" data-scan="${t.uid}" data-mech="scanning">Scan with ${esc(t.label)}</button>`).join('')}
                 <button class="pg-pass" data-end-step="commons">Done</button>
               </div>`,
         );
@@ -864,9 +867,9 @@ export class PlayGuide {
         })
         .join('')}</div>
       <div class="pg-units">
-        <button class="pg-unit${unset.length ? ' warn' : ''}" data-lock-dials="1" title="${
+        <button class="pg-unit${unset.length ? ' warn' : ''}" data-lock-dials="1" data-tip-title="Confirm timings" data-tip="${
           unset.length
-            ? `${unset.length} Mech${unset.length === 1 ? '' : 's'} still has no dial and would not activate at all.`
+            ? `${unset.length} Mech${unset.length === 1 ? '' : 's'} still has no dial and would not activate at all.|Set every dial in the Squads tab before locking in.`
             : 'Lock the dials in and move on.'
         }">Confirm timings</button>
       </div>`;
@@ -959,7 +962,7 @@ export class PlayGuide {
     const rebootRow = shutdown
       ? `<p class="pg-warn">${esc(t.label)} is in Shutdown Stance, so Reboot is the only thing it may do. It cannot Maneuver and no other Action is legal (4.1.1).</p>
          <div class="pg-stances">${(['defensive', 'mobility', 'offensive'] as const)
-            .map((x) => `<button class="pg-stance" data-reboot="${x}" title="Reboot into ${x} Stance and restore 1 Link">Reboot to ${x[0].toUpperCase()}${x.slice(1)}</button>`)
+            .map((x) => `<button class="pg-stance" data-reboot="${x}" data-mech="reboot">Reboot to ${x[0].toUpperCase()}${x.slice(1)}</button>`)
             .join('')}</div>`
       : '';
 
@@ -981,7 +984,7 @@ export class PlayGuide {
     const maneuverRow = shutdown
       ? ''
       : `<div class="pg-units">
-        <button class="pg-unit${man.ok ? '' : ' warn'}" data-maneuver="1" title="${esc(man.ok ? `Maneuver up to ${range} Grid${range === 1 ? '' : 's'}` : man.why ?? '')}">Maneuver ${range}</button>
+        <button class="pg-unit${man.ok ? '' : ' warn'}" data-maneuver="1" data-tip-title="Maneuver" data-tip="${esc(man.ok ? `Move up to ${range} Grid${range === 1 ? '' : 's'}. Maneuver is free once per Action Opportunity.` : man.why ?? '')}">Maneuver ${range}</button>
       </div>`;
     const actionRows = shutdown
       ? ''
