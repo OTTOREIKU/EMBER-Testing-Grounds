@@ -1,7 +1,7 @@
 import type { Card, CardAction, Token } from './types';
 import { cardImageUrl, cardName, mechPartUrl, rulesLines, SIDE_LABEL, tabImageUrl, type GameData } from './data';
 import { inspectOnHover } from './inspector';
-import { guidedActions, isElectronicAttack, SLOT_LABEL, tokenCards } from './units';
+import { type ActionWorld, guidedActions, isElectronicAttack, knockbackOf, SLOT_LABEL, tokenCards } from './units';
 import { costLabel, LENGTH_NAME, lengthOf, TICK_COST } from './ticks';
 
 const ACTION_TINT: Record<string, string> = {
@@ -33,6 +33,7 @@ const STAT_FIELDS: [keyof Card, string][] = [
 ];
 
 export interface PanelCallbacks {
+  world(): ActionWorld;
   onRollDice(pool: { red?: number; yellow?: number }): void;
   onSpendAmmo(t: Token, actionId: string): void;
   onSpendIntercept(t: Token, actionId: string): void;
@@ -44,6 +45,8 @@ export interface PanelCallbacks {
   onShowMoveRange(t: Token, steps: number): void;
   onShowActionRange(t: Token, range: number, label: string): void;
   onDetonate(t: Token, actionId: string): void;
+  onShove(t: Token, actionId: string): void;
+  onCharge(t: Token, slot: string, on: boolean): void;
 }
 
 export class Panel {
@@ -75,7 +78,7 @@ export class Panel {
       `${SIDE_LABEL[t.side]}, ${t.stance.toUpperCase()}, ${['facing N', 'facing E', 'facing S', 'facing W'][t.facing]}`;
     this.body.appendChild(head);
 
-    const actions = guidedActions(this.data, t);
+    const actions = guidedActions(this.data, t, this.cb.world());
     if (actions.length) {
       const h = document.createElement('h4');
       h.textContent = 'Actions (from this unit’s parts)';
@@ -130,7 +133,7 @@ export class Panel {
   }
 
   private actionRow(t: Token, ga: ReturnType<typeof guidedActions>[number]): HTMLElement {
-    const { action: a, available, reason, ammoLeft, intercept, projectiles } = ga;
+    const { action: a, available, reason, ammoLeft, intercept, charge, projectiles } = ga;
     const row = document.createElement('div');
     row.className = `action${available ? '' : ' unavailable'}`;
     row.dataset.actionRow = a.id;
@@ -158,8 +161,6 @@ export class Panel {
           }${'<i class="tick-act"></i>'.repeat(cost.action)}</i></span>`
         : ''
     }`;
-    // Long help goes in the inspect box rather than a native tooltip, which
-    // would otherwise cover the action rows it is describing.
     const costEl = head.querySelector<HTMLElement>('.act-cost');
     if (costEl && cost && len) {
       inspectOnHover(costEl, {
@@ -183,6 +184,7 @@ export class Panel {
       .join('')}</span>
       ${ammoLeft !== undefined ? pipRow('ammo', 'AMO', ammoLeft, a.storage ?? 0, `data-reload="${a.id}"`) : ''}
       ${intercept ? pipRow('intercept', 'INT', intercept.left, intercept.max, `data-restore-int="${a.id}"`) : ''}
+      ${charge ? pipRow('charge', 'CHG', charge.charged ? 1 : 0, 1, `data-charge="${ga.slot}"`) : ''}
       ${!available && reason ? `<span class="reason">${reason}</span>` : ''}
       ${available && intercept && !intercept.can && intercept.reason ? `<span class="reason">${intercept.reason}</span>` : ''}`;
     const actName = a.name.en || a.name.zh || a.id;
@@ -244,6 +246,23 @@ export class Panel {
         this.cb.onRestoreIntercept(t, a.id);
       });
     }
+    const chgPips = info.querySelector<HTMLElement>('[data-charge]');
+    if (chgPips && charge) {
+      inspectOnHover(chgPips, {
+        title: 'Charge Token',
+        sub: `${charge.charged ? 'face-up, Charged' : 'face-down, not Charged'} · ${actName}`,
+        lines: [
+          'One Charge Token sits on this Part Card from the start of the game, face-down, meaning the Action has not been Charged (rulebook 4.14).',
+          'The Charge Action flips it face-up, and only one Part may be Charged per Charge Action. A Part that is already Charged cannot be Charged again until the token is spent.',
+          'While it is face-up, performing this Action may consume it to apply the effect its text marks as [Charged].',
+          'Click here to flip it by hand.',
+        ],
+      });
+      chgPips.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        this.cb.onCharge(t, ga.slot, !charge.charged);
+      });
+    }
     if (a.keywords?.length) info.appendChild(this.keywordChips(a.keywords));
     row.appendChild(head);
 
@@ -293,6 +312,17 @@ export class Panel {
       });
       int.addEventListener('click', () => this.cb.onSpendIntercept(t, a.id));
       btns.appendChild(int);
+    }
+    // Knockback riding on a Movement Action can be resolved on its own here, so
+    // the shove is reachable without going through the guide.
+    const shove = a.type === 'Moving' ? knockbackOf(a, this.data.actionTranslation(a.id)?.english ?? undefined) : undefined;
+    if (available && shove) {
+      const sh = document.createElement('button');
+      sh.className = 'shove-btn';
+      sh.innerHTML = `<i class="btn-ico">⇥</i> ${shove.push ? `Push ${shove.grids}` : `Shove ${shove.grids}`}…`;
+      sh.title = `Force the enemy Ground Unit in the Grid this Mech faces ${shove.grids} Grid${shove.grids === 1 ? '' : 's'} straight back${shove.push ? ', costing it 1 Link' : ''}`;
+      sh.addEventListener('click', () => this.cb.onShove(t, a.id));
+      btns.appendChild(sh);
     }
     if (available && a.type === 'Moving' && a.range) {
       const mv = document.createElement('button');

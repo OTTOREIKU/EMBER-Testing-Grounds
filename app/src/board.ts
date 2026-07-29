@@ -1,3 +1,4 @@
+import type { TaskItem } from './tasks';
 import type { GameState, Marker, Side, SmokeScreen, StatusDef, TerrainPiece, Token, TokenShape } from './types';
 import { INTERCEPT_DEF, SHAPE_NOTE, statusCount, statusStacks } from './types';
 import { mechPartUrl, SIDE_LABEL, tabImageUrl } from './data';
@@ -159,6 +160,7 @@ export class Board {
   private gOverlay: SVGGElement;
   private gHighlight: SVGGElement;
   private gMarkers!: SVGGElement;
+  private gTaskItems!: SVGGElement;
   private gSmoke!: SVGGElement;
   private gPick!: SVGGElement;
   private gGhost: SVGGElement;
@@ -196,6 +198,7 @@ export class Board {
     this.svg.appendChild(this.gZones);
     this.gTerrain = el('g');
     this.gMarkers = el('g', { class: 'markers' });
+    this.gTaskItems = el('g', { class: 'task-items', 'pointer-events': 'none' });
     this.gSmoke = el('g', { class: 'smoke-layer' });
     this.gHighlight = el('g', { class: 'highlight', 'pointer-events': 'none' });
     this.gTokens = el('g');
@@ -205,6 +208,7 @@ export class Board {
     this.gPick = el('g', { class: 'pick-layer' });
     this.svg.appendChild(this.gTerrain);
     this.svg.appendChild(this.gMarkers);
+    this.svg.appendChild(this.gTaskItems);
     this.svg.appendChild(this.gSmoke);
     this.svg.appendChild(this.gHighlight);
     this.svg.appendChild(this.gTokens);
@@ -486,6 +490,37 @@ export class Board {
     }
   }
 
+  // Task Items (5.3). A Black Box sits on a Small Grid and can overlap a Unit; a
+  // Terminal and a Control dial mark their whole Tactical Zone, so they are drawn
+  // at the centre of the Zone rather than on a cell.
+  renderTaskItems(items: TaskItem[], centre: (zone: string) => { c: number; r: number } | null): void {
+    this.gTaskItems.replaceChildren();
+    for (const it of items) {
+      let cx: number;
+      let cy: number;
+      if (it.kind === 'blackbox' && it.col !== undefined && it.row !== undefined) {
+        cx = it.col * CELL + CELL / 2;
+        cy = it.row * CELL + CELL / 2;
+      } else {
+        const g = centre(it.zone);
+        if (!g) continue;
+        cx = g.c * 3 * CELL + 1.5 * CELL;
+        cy = g.r * 3 * CELL + 1.5 * CELL;
+      }
+      const side = it.kind === 'control' ? it.control : it.kind === 'terminal' ? it.accessed : null;
+      const held = it.kind === 'blackbox' && it.bearerUid !== undefined;
+      const g = el('g', {
+        class: `task-item task-${it.kind}${side ? ` side-${side}` : ''}${held ? ' carried' : ''}`,
+        'data-task-item': it.id,
+      });
+      g.appendChild(el('circle', { cx, cy, r: it.kind === 'blackbox' ? 9 : 13 }));
+      const icon = el('text', { x: cx, y: cy + 4, 'text-anchor': 'middle', class: 'task-icon' });
+      icon.textContent = it.kind === 'blackbox' ? '◆' : it.kind === 'terminal' ? 'W' : '◉';
+      g.appendChild(icon);
+      this.gTaskItems.appendChild(g);
+    }
+  }
+
   renderTokens(state: GameState): void {
     this.gTokens.replaceChildren();
     // A unit awaiting deployment is in the squad but not on the board yet.
@@ -582,8 +617,19 @@ export class Board {
     label.textContent = t.label;
     g.appendChild(label);
 
+    // A token flipped to its red side is drawn red, the way it looks on the table
+    // once it is one round from expiring (2.5.3).
+    const expiring = new Set(t.expiring ?? []);
     const active: { def: StatusDef; n: number; counted: boolean; spent: boolean; hint: string }[] = statusStacks(t.statuses).map(
-      ({ def, n }) => ({ def, n, counted: !!def.stacking && n > 1, spent: false, hint: 'Toggle this token from the unit’s row in the Squads tab.' }),
+      ({ def, n }) => ({
+        def: expiring.has(def.id) ? { ...def, tint: '#e05c5c' } : def,
+        n,
+        counted: !!def.stacking && n > 1,
+        spent: false,
+        hint: expiring.has(def.id)
+          ? 'Showing its red side, so it comes off at the end of this round.'
+          : 'Toggle this token from the unit’s row in the Squads tab.',
+      }),
     );
     const slots = Object.keys(t.intercept ?? {}).length;
     if (slots > 0) {

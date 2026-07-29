@@ -13,6 +13,7 @@ interface BaseOpts {
 
 interface ChoiceOpts extends BaseOpts {
   choices: DialogChoice[];
+  stacked?: boolean;
 }
 
 interface PromptOpts extends BaseOpts {
@@ -68,7 +69,7 @@ export function choiceDialog(o: ChoiceOpts): Promise<string | null> {
       )
       .join('');
     open(
-      `<h3 class="dlg-title">${esc(o.title)}</h3>${bodyHtml(o)}<div class="dlg-actions">${buttons}</div>`,
+      `<h3 class="dlg-title">${esc(o.title)}</h3>${bodyHtml(o)}<div class="dlg-actions${o.stacked ? ' dlg-stacked' : ''}">${buttons}</div>`,
       (panel, close) => {
         let settled = false;
         panel.querySelectorAll<HTMLButtonElement>('.dlg-actions button').forEach((b) =>
