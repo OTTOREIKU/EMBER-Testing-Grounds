@@ -8,7 +8,7 @@ import { importSquadFile } from './importer';
 import { Inventory } from './inventory';
 import { BOARD_THEMES, boardTheme } from './boards';
 import { bindTips, inspectOnHover, isInspectPinned, showInspect, unpinInspect } from './inspector';
-import { cardName, dataUrl, loadData, missionImageUrl, parseGridRef, rulesLines, type SecondaryTask, SIDE_LABEL } from './data';
+import { cardName, dataUrl, loadData, missionImageUrl, parseGridRef, rulesLines, secondaryImageUrl, type SecondaryTask, SIDE_LABEL } from './data';
 import {
   deleteCustomMap,
   emptyCustomMap,
@@ -164,6 +164,22 @@ async function init() {
     onStartGame: () => void startGame(),
     onAdvancePhase: () => roundTracker.advance(),
     onSelectUnit: (uid) => selectToken(uid),
+    onShowDial: (uid) => {
+      selectToken(uid);
+      showSideTab('squad');
+      // The Squads tab rebuilds more than once on selection, so a single frame
+      // is not enough: the element the hint lands on gets replaced under it.
+      let tries = 0;
+      const point = (): void => {
+        const trig = document.querySelector<HTMLElement>(`.dial-trig[data-dial-uid="${uid}"]`);
+        if (trig) {
+          trig.scrollIntoView({ block: 'center' });
+          trig.classList.add('dial-hint');
+        }
+        if (++tries < 5) setTimeout(point, 100);
+      };
+      setTimeout(point, 0);
+    },
     onMoveUnit: (uid, opts, done) => startMove(uid, opts, done),
     onPerformAction: (uid, actionId, done) => performGuided(uid, actionId, done),
     onSetStance: (uid, stance) => {
@@ -180,6 +196,7 @@ async function init() {
     },
     onRollFirstPlayer: (side) => rollForFirstPlayer(side),
     onPlaceUnit: (uid, opts) => startDeployPlacement(uid, opts),
+    onPickMission: () => openMissions(),
     onPickSecondary: (side) => void pickSecondary(side),
     onRemoveSpent: () => {
       const gone = new Set(
@@ -766,6 +783,10 @@ async function init() {
     }
     for (const t of state.tokens) t.deployed = undefined;
     state.setup = null;
+    // The next game picks its own Tasks, and terrain knocked down during this
+    // one belongs to the match rather than to the map.
+    state.tasks = null;
+    state.removedTerrain = [];
     onChanged();
   }
 
@@ -1153,6 +1174,7 @@ async function init() {
     flying: boolean;
     path: { c: number; r: number }[];
     locked: boolean;
+    label: string;
     done: (moved: boolean) => void;
   } | null = null;
 
@@ -1170,11 +1192,39 @@ async function init() {
     renderMoveCtrl();
   }
 
+  // The move bar lives under the board, which a first-time player reading the
+  // guide never looks at. Mirror it into the guide for as long as a move is live.
+  function renderGuideMove(label: string, drawn: number, steps: number, locked: boolean): void {
+    const body = document.querySelector('#play-guide .pg-body');
+    document.getElementById('pg-move')?.remove();
+    if (!body) return;
+    const box = document.createElement('div');
+    box.id = 'pg-move';
+    box.className = 'pg-move';
+    const info = document.createElement('p');
+    info.className = 'pg-move-info';
+    info.textContent = drawn
+      ? `${label}: ${drawn} of ${steps} grids${locked ? ' · locked' : ''}`
+      : `${label}: draw a route on the board (up to ${steps})`;
+    const ok = document.createElement('button');
+    ok.className = 'pg-move-ok';
+    ok.textContent = 'Confirm move';
+    ok.disabled = drawn === 0;
+    ok.addEventListener('click', () => commitMove());
+    const no = document.createElement('button');
+    no.className = 'pg-move-no';
+    no.textContent = 'Cancel';
+    no.addEventListener('click', () => cancelMove());
+    box.append(info, ok, no);
+    body.prepend(box);
+  }
+
   function renderMoveCtrl(): void {
     const bar = document.getElementById('move-ctrl')!;
     const m = movePlan;
     if (!m) {
       bar.hidden = true;
+      document.getElementById('pg-move')?.remove();
       return;
     }
     bar.hidden = false;
@@ -1183,6 +1233,7 @@ async function init() {
     const n = Math.max(0, m.path.length - 1);
     info.textContent = n ? `${n} of ${m.steps} grids${m.locked ? ' · locked' : ''}` : `Draw a route (up to ${m.steps})`;
     confirm.disabled = n === 0;
+    renderGuideMove(m.label, n, m.steps, m.locked);
   }
 
   function moveRangeFor(t: Token): number {
@@ -1211,6 +1262,7 @@ async function init() {
       flying,
       path: [{ c: Math.floor(t.col / 3), r: Math.floor(t.row / 3) }],
       locked: false,
+      label: opts.label,
       done,
     };
     selectToken(uid);
@@ -2470,7 +2522,7 @@ async function init() {
 
   function afterEdit(): void {
     board.renderTerrain(editor.working, true);
-    board.renderZones(overlayZones(), overlayDeployment());
+    board.renderZones(overlayZones(), overlayDeployment(), claimedZones());
     renderEditorBar();
   }
 
@@ -2542,7 +2594,7 @@ async function init() {
     board.editing = true;
     renderEditorBar();
     board.renderTerrain(editor.working, true);
-    board.renderZones(overlayZones(), overlayDeployment());
+    board.renderZones(overlayZones(), overlayDeployment(), claimedZones());
     board.clearHighlights();
   }
 
@@ -2873,6 +2925,20 @@ async function init() {
     };
   }
 
+  // Which sides have designated each Tactical Zone, so the board can show it.
+  function claimedZones(): Record<string, Side[]> {
+    const out: Record<string, Side[]> = {};
+    const zone = normaliseTasks(state.tasks).zone;
+    for (const side of ['blue', 'red'] as const) {
+      const id = zone[side];
+      if (!id) continue;
+      // Designations are stored by zone id; the board draws zones by name.
+      const name = data.zoneData.zones.find((z) => z.id === id)?.name ?? id;
+      (out[name] ??= []).push(side);
+    }
+    return out;
+  }
+
   function overlayZones(): BoardZone[] {
     if (editor.active) return editor.zones.filter((z) => z.cells.length).map((z) => ({ name: z.name, cells: z.cells }));
     return state.showZones === false ? [] : resolveZoneSet(state.zoneSet ?? '').zones;
@@ -2976,7 +3042,7 @@ async function init() {
   }
 
   function renderZoneOverlay(): void {
-    board.renderZones(overlayZones(), overlayDeployment());
+    board.renderZones(overlayZones(), overlayDeployment(), claimedZones());
     populateZoneSelect();
     paintBattlefieldLock();
     const on = !!state.zoneSet && state.showZones !== false;
@@ -3008,7 +3074,7 @@ async function init() {
     renderZoneOverlay();
   });
 
-  document.getElementById('btn-missions')!.addEventListener('click', () => {
+  function openMissions(): void {
     document.getElementById('mis-dialog')?.remove();
     const dlg = document.createElement('div');
     dlg.id = 'mis-dialog';
@@ -3045,19 +3111,31 @@ async function init() {
       }),
     );
     document.body.appendChild(dlg);
-  });
+  }
+  document.getElementById('btn-missions')!.addEventListener('click', openMissions);
 
   // Secondary Task selection (5.2.3). Open information, so both picks are made
   // here and shown to everyone. A card that needs a designated Unit or Zone asks
   // for it straight away, because the designation is part of Task Setup.
   async function pickSecondary(side: Side): Promise<void> {
     const tasks = normaliseTasks(state.tasks);
-    const taken = side === 'blue' ? tasks.secondary.red : tasks.secondary.blue;
-    const open = data.secondary.filter((c) => c.id !== taken);
+    // Both sides may take the same Secondary, so nothing is removed from the list.
+    const open = data.secondary;
+    // A card that designates a Tactical Area needs the board to have some. The
+    // Main Task decides that, and VIP places none at all.
+    const mission = state.mission ? data.missions.cards.find((m) => m.id === state.mission) : undefined;
+    const hasZones = (mission?.zones ?? []).length > 0;
     const id = await choiceDialog({
       title: `${SIDE_LABEL[side]}: choose a Secondary Task`,
       body: 'Both players pick one and show it to the other, so this is open information.',
-      choices: open.map((c) => ({ id: c.id, label: `${c.name} (${c.vp ?? 0} VP)` })),
+      stacked: true,
+      choices: open.map((c) => ({
+        id: c.id,
+        label: `${c.name} · ${c.vp ?? 0} VP`,
+        image: secondaryImageUrl(c.id),
+        disabled: c.designate === 'zone' && !hasZones,
+        note: c.designate === 'zone' && !hasZones ? 'needs a Main Task with Tactical Zones' : undefined,
+      })),
     });
     const card = open.find((c) => c.id === id);
     if (!card) return;
@@ -3074,10 +3152,15 @@ async function init() {
     const tasks = normaliseTasks(state.tasks);
     const enemy: Side = side === 'blue' ? 'red' : 'blue';
     if (card.designate === 'zone') {
-      const zones = data.zoneData.zones;
+      // Only zones the Main Task actually placed are on the board, so the rest
+      // would be designating somewhere the players cannot see.
+      const mission = state.mission ? data.missions.cards.find((m) => m.id === state.mission) : undefined;
+      const placed = new Set(mission?.zones ?? []);
+      const zones = data.zoneData.zones.filter((z) => placed.has(z.name) || placed.has(z.id));
       const id = await choiceDialog({
         title: `${card.name}: which Tactical Zone?`,
         body: card.setup,
+        stacked: true,
         choices: zones.map((z) => ({ id: z.id, label: z.name })),
       });
       if (id) tasks.zone[side] = id;

@@ -153,6 +153,8 @@ export interface GuideCallbacks {
   onAdvancePhase(): void;
   onStartGame(): void;
   onSelectUnit(uid: number): void;
+  onPickMission(): void;
+  onShowDial(uid: number): void;
   onMoveUnit(uid: number, opts: { range?: number; label: string }, done: (moved: boolean) => void): void;
   onPerformAction(uid: number, actionId: string, done: (performed: boolean) => void): void;
   onSetStance(uid: number, stance: Stance): void;
@@ -431,6 +433,7 @@ export class PlayGuide {
       s.commandTokens = { blue: 0, red: 0 };
       markEnd('tokens');
     });
+    this.root.querySelector('[data-pick-mission]')?.addEventListener('click', () => this.cb.onPickMission());
     this.root.querySelector('[data-lock-map]')?.addEventListener('click', () => {
       const su = normaliseSetup(s.setup) ?? newSetup();
       if (!s.zoneSet && !this.warn) {
@@ -455,11 +458,20 @@ export class PlayGuide {
     });
     this.root.querySelectorAll<HTMLButtonElement>('[data-edge]').forEach((b) =>
       b.addEventListener('click', () => {
+        // Tasks are prepared before deployment (5.1), so the edge cannot carry
+        // the setup forward while either side is still without a Secondary.
+        const picked = normaliseTasks(s.tasks).secondary;
+        if (!picked.blue || !picked.red) {
+          this.warn = 'Both sides pick a Secondary Task before deployment starts.';
+          this.cb.onChanged();
+          return;
+        }
         const su = normaliseSetup(s.setup) ?? newSetup();
         const mine = b.dataset.edge as 'black' | 'white';
         const fp = s.round.firstPlayer;
         const other: Side = fp === 'blue' ? 'red' : 'blue';
         s.setup = { ...su, stage: 'deploy', edge: { ...su.edge, [fp]: mine, [other]: mine === 'black' ? 'white' : 'black' } as SetupState['edge'] };
+        this.warn = null;
         this.cb.onChanged();
       }),
     );
@@ -493,7 +505,7 @@ export class PlayGuide {
       this.cb.onChanged();
     });
     this.root.querySelectorAll<HTMLButtonElement>('[data-dial]').forEach((b) =>
-      b.addEventListener('click', () => this.cb.onSelectUnit(Number(b.dataset.dial))),
+      b.addEventListener('click', () => this.cb.onShowDial(Number(b.dataset.dial))),
     );
     this.root.querySelector('[data-lock-dials]')?.addEventListener('click', () => {
       const sc = this.script(s);
@@ -799,54 +811,75 @@ export class PlayGuide {
 
   // The battlefield is agreed before anything else, then locked, so nobody can
   // swap the map or the zone overlay once units are down or between rounds.
+  // The Main Task decides which zones the board needs, so it is chosen here
+  // rather than after the battlefield is fixed. Picking one draws its tactical
+  // and deployment zones, which is what later Task designations need to exist.
   private mapHtml(s: GameState): string {
     const zones = s.zoneSet ?? '';
+    const mission = s.mission ? this.data.missions.cards.find((m) => m.id === s.mission) : undefined;
+    const ready = !!mission && !!zones;
     return `<p class="pg-active">Agree the battlefield
-        <small>pick the map and zone overlay in the toolbar, then lock them in</small></p>
+        <small>choose the Main Task, then the map, and lock them in</small></p>
       <div class="pg-dials">
+        <div class="pg-dial-row${mission ? '' : ' unset'}"><span class="pg-dial-unit">Main Task</span>
+          <span class="pg-dial-set">${mission ? esc(mission.name) : 'not chosen'}</span></div>
         <div class="pg-dial-row"><span class="pg-dial-unit">Map</span>
           <span class="pg-dial-set">${esc(this.cb.mapLabel())}</span></div>
         <div class="pg-dial-row${zones ? '' : ' unset'}"><span class="pg-dial-unit">Zones</span>
           <span class="pg-dial-set">${esc(this.cb.zoneLabel())}</span></div>
       </div>
       <div class="pg-units">
-        <button class="pg-unit${zones ? '' : ' warn'}" data-lock-map="1">Lock the battlefield</button>
+        <button class="pg-unit${mission ? '' : ' warn'}" data-pick-mission="1">${
+          mission ? 'Change the Main Task' : 'Choose a Main Task'
+        }</button>
+        <button class="pg-unit${ready ? '' : ' warn'}" data-lock-map="1"${
+          ready ? '' : ' disabled title="Choose a Main Task first"'
+        }>Lock the battlefield</button>
       </div>
       <p class="pg-intercept-note">${
-        zones
-          ? 'Both are fixed for the rest of the game once locked.'
-          : 'No zone overlay is selected, so there are no Deployment Zones to place units into. Pick one from the Zones list in the toolbar first.'
+        !mission
+          ? 'Start with the Main Task. It draws its own tactical zones and Deployment Zones, so the board is ready for the Tasks that come next.'
+          : zones
+            ? 'Both are fixed for the rest of the game once locked.'
+            : 'No zone overlay is selected, so there are no Deployment Zones to place units into. Pick one from the Zones list in the toolbar.'
       }</p>`;
   }
 
   private rollHtml(s: GameState, su: SetupState): string {
+    const both = su.rolls.blue.length && su.rolls.red.length;
+    const winner = firstPlayerFrom(su);
+    // A tie sends both sides back to the dice, so the buttons have to read as
+    // waiting on the player again rather than as already done.
+    const tie = !!both && !winner;
     const line = (side: Side) => {
       const r = su.rolls[side];
       return `<div class="pg-roll-row">
-        <button class="pg-unit${r.length ? ' warn' : ''}" data-roll="${side}">${SIDE_LABEL[side]} roll</button>
+        <button class="pg-unit${r.length && !tie ? ' warn' : ''}" data-roll="${side}">${
+          tie ? `${SIDE_LABEL[side]} roll again` : `${SIDE_LABEL[side]} roll`
+        }</button>
         <span class="pg-roll-res">${r.length ? `${rollTotal(r)} Hit${rollTotal(r) === 1 ? '' : 's'}` : 'not rolled'}</span>
       </div>`;
     };
-    const both = su.rolls.blue.length && su.rolls.red.length;
-    const winner = firstPlayerFrom(su);
     return `<p class="pg-active">Table edge and First Player <small>Both players roll 2 dice. Most Hits goes first and picks a board edge.</small></p>
       ${line('blue')}${line('red')}
       ${
         both
           ? winner
             ? `${phaseDone(`${SIDE_LABEL[winner]} rolls higher and is First Player`)}<div class="pg-units"><button class="pg-unit" data-roll-accept="1">Continue</button></div>`
-            : `<p class="pg-warn">A tie. The rulebook gives no tie procedure, so both sides roll again.</p>`
+            : `<p class="pg-warn">A tie on ${rollTotal(su.rolls.blue)}. The rulebook gives no tie procedure, so press both roll buttons again.</p>`
           : ''
       }`;
   }
 
   private edgeHtml(s: GameState, su: SetupState): string {
     const fp = s.round.firstPlayer;
+    const picked = normaliseTasks(s.tasks).secondary;
+    const edgeLock = picked.blue && picked.red ? '' : ' disabled title="Pick both Secondary Tasks first"';
     return `<p class="pg-active">Now: <b class="side-${fp}">${SIDE_LABEL[fp]}</b>
         <small>As First Player, choose which edge of the board to play from.</small></p>
       <div class="pg-units">
-        <button class="pg-unit" data-edge="white">Take the White side</button>
-        <button class="pg-unit" data-edge="black">Take the Black side</button>
+        <button class="pg-unit" data-edge="white"${edgeLock}>Take the White side</button>
+        <button class="pg-unit" data-edge="black"${edgeLock}>Take the Black side</button>
       </div>
       <p class="pg-intercept-note">The other side takes the opposite edge. Deployment Zones follow the edges, so this decides where each squad starts.</p>
       ${this.secondaryHtml(s)}`;
@@ -955,7 +988,7 @@ export class PlayGuide {
           const cur = TIMINGS.find((x) => x.id === t.timing);
           const init = t.timing ? this.init(t, t.timing) : undefined;
           return `<div class="pg-dial-row${t.timing ? '' : ' unset'}">
-            <button class="pg-dial-unit side-${t.side}" data-dial="${t.uid}" title="Open this Mech in the Squads tab to turn its dial">${esc(t.label)}</button>
+            <button class="pg-dial-unit side-${t.side}" data-dial="${t.uid}" title="Jump to this Mech's dial in the Squads tab">${esc(t.label)}</button>
             <span class="pg-dial-set">${cur ? `${cur.name}${init === undefined ? '' : ` · Init ${init}`}` : 'not set'}</span>
           </div>`;
         })
@@ -1380,6 +1413,17 @@ export class PlayGuide {
     if (chosen) {
       const what = phase === 'Command' ? 'It may move, or take one Command action.' : 'Resolve its action, then mark it done.';
       const own = this.phaseActions(chosen, phase);
+      // A Drone's attack is usually an Automatic Action, so it is absent here by
+      // design. Say where it went rather than leaving an empty list.
+      const elsewhere = own.length
+        ? ''
+        : guidedActions(this.data, chosen, this.cb.world())
+            .filter((g) => g.action.speed && g.action.speed !== 'passive')
+            .map((g) => g.action.speed)
+            .filter((sp, i, all) => all.indexOf(sp) === i)
+            .filter((sp) => sp !== (phase === 'Command' ? 'command' : 'auto'))
+            .map((sp) => (sp === 'auto' ? 'Automatic' : 'Command'))
+            .join(' and ');
       const list = own.length
         ? `<div class="pg-acts">${own
             .map(
@@ -1395,6 +1439,13 @@ export class PlayGuide {
           <small>${chosen.label}: ${what}</small></p>
         ${this.warn ? `<p class="pg-warn">${esc(this.warn)}</p>` : ''}
         ${list}
+        ${
+          elsewhere && phase === 'Command'
+            ? `<p class="pg-intercept-note">This Drone has no Command Action. Its actions are marked <b>!</b> on the card, meaning Automatic: they fire by themselves in the Automatic Phase. A Command can only move it, and a Drone that acts on a Command does not act again that round, so commanding it here costs that attack.</p>`
+            : elsewhere
+              ? `<p class="pg-intercept-note">Nothing to choose in this phase. This unit's actions are ${esc(elsewhere)} Actions, offered in the ${esc(elsewhere)} Phase.</p>`
+              : ''
+        }
         <div class="pg-units">
           <button class="pg-unit" data-move="${chosen.uid}">Move</button>
           <button class="pg-pass" data-acted="${chosen.uid}" title="Mark this unit done without the guide driving the action">Did it myself</button>
