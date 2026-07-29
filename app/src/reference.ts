@@ -79,6 +79,13 @@ const factionChoice: Partial<Record<Tab, string>> = {};
 let rulesSection: string | undefined;
 
 const body = () => document.getElementById('ref-body')!;
+// The boxed glyph printed beside a Drone action's name says when it happens.
+const SPEED_MARK: Record<string, { glyph: string; title: string; label: string }> = {
+  auto: { glyph: '!', title: 'Automatic Action', label: 'Automatic Action' },
+  command: { glyph: '?', title: 'Command Action', label: 'Command Action' },
+  passive: { glyph: '∞', title: 'Passive', label: 'Passive' },
+};
+
 const esc = (s: string) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!);
 const norm = (s: string) => s.toLowerCase();
 
@@ -169,6 +176,11 @@ function cardRow(c: Card): string {
     .filter((x) => x.url)
     .map((x) => `<img class="act-icon" src="${x.url}" alt="" title="${esc(String(x.t))}">`)
     .join('');
+  // Drones carry a speed glyph per action, so the summary shows which speeds a
+  // card has without needing the card open.
+  const speedMarks = [...new Set((c.actions ?? []).map((a) => a.speed).filter((sp) => !!sp && sp !== 'passive'))]
+    .map((sp) => `<span class="act-speed sp-${esc(sp!)}" title="${esc(SPEED_MARK[sp!]?.title ?? '')}">${SPEED_MARK[sp!]?.glyph ?? ''}</span>`)
+    .join('');
   const kws = [...new Set((c.keywords ?? []).map(kwLabel).filter(Boolean))].slice(0, 3);
   const isPilot = c.category === 'pilot';
   const isTactic = c.category === 'tactics_or_upgrade';
@@ -192,7 +204,7 @@ function cardRow(c: Card): string {
       ${body ? `<div class="card-body">${esc(body)}</div>` : ''}
       <div class="card-foot">
         ${slot ? `<span class="tag">${esc(slot)}</span>` : ''}
-        ${actIcons ? `<span class="act-icons">${actIcons}</span>` : ''}
+        ${actIcons || speedMarks ? `<span class="act-icons">${actIcons}${speedMarks}</span>` : ''}
         ${isPilot && typeof c.LV === 'number' ? `<span class="tag mono">Link ${c.LV}</span>` : ''}
         ${stats.length ? `<span class="mono card-stats">${esc(stats.join(' '))}</span>` : ''}
       </div>
@@ -240,7 +252,12 @@ function cardDetail(c: Card): string {
         .join('');
       const icon = actionIconUrl(a.type);
       return `<div class="ref-action">
-        <h4>${icon ? `<img class="act-icon" src="${icon}" alt="" title="${esc(a.type ?? '')}">` : ''}${esc(a.name.en || a.name.zh || a.id)}</h4>
+        <h4>${icon ? `<img class="act-icon" src="${icon}" alt="" title="${esc(a.type ?? '')}">` : ''}${
+          SPEED_MARK[a.speed ?? ''] ? `<span class="act-speed sp-${esc(a.speed!)}" title="${esc(SPEED_MARK[a.speed!].title)}">${SPEED_MARK[a.speed!].glyph}</span>` : ''
+        }${esc(a.name.en || a.name.zh || a.id)}</h4>
+        ${a.speed && SPEED_MARK[a.speed]
+          ? `<p class="ref-speed"><a class="kw-link" data-kw="${esc(SPEED_MARK[a.speed].label)}">${esc(SPEED_MARK[a.speed].label)}</a></p>`
+          : ''}
         <p class="ref-meta">${esc(meta)}</p>
         <p>${text.replace(/\n/g, '<br>')}</p>
         ${mechHtml}

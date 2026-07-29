@@ -20,3 +20,6 @@ rules/
 
 # Stray artboard export picked up with the part art. Nothing references it.
 assets/mech_parts/画板 1.webp
+
+# Internal review notes, not for the public repo
+docs/review-*.md

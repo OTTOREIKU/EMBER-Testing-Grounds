@@ -224,6 +224,13 @@
    "text": "Every time a Mech receives an Action Opportunity it generates 1 Maneuver Tick and 2 Action Ticks. A Maneuver costs the Maneuver Tick, a Short Action costs 1 Action Tick, a Medium costs 2, and a Long costs the Maneuver Tick plus both Action Ticks, which is why a Long Action rules out Maneuvering. Ticks are spent in order: once any Action Tick has gone the Maneuver Tick can no longer be used, so a Maneuver has to come first. The first Action of the Opportunity is the Starting Action and its Action Type must match the Timing on the dial; later Actions in the same Opportunity have no type restriction. Each Action on a Part may only be performed once per Opportunity. Extra Ticks are separate: they may only be used after every base Tick is spent, never combine with a base Tick to pay for one Action, only pay for their own Action Type when one is named, and may repeat an Action already performed."
   },
   {
+   "id": "drone_action_speed",
+   "name": "Automatic and Command Actions",
+   "ref": "Rulebook 3.2 and 3.5",
+   "match": ["automatic action", "command action", "commanded drone", "action speed"],
+   "text": "Every Action on a Drone card is marked with a boxed icon beside its name that says when it happens. An exclamation mark is an Automatic Action: it resolves by itself in the Automatic Phase without being told to. A question mark is a Command Action: it only happens if you spend a Command Token on that Drone in the Command Phase. An Action with neither box is Passive and is always on. Mechs generate 1 Command Token each and Drones receive them. A commanded Drone acts immediately and either moves or performs one Command Action, so an Automatic Action cannot be taken on a Command. A Drone that acted on a Command does not act again that round, which means spending a token on a Drone whose only weapon is Automatic trades that attack away for a move. Unspent Command Tokens are removed at the end of the phase."
+  },
+  {
    "id": "activation_order",
    "name": "Activation order in the Action Phase",
    "ref": "Rulebook 3.4.1",
