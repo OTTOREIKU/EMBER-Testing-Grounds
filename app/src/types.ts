@@ -1,3 +1,4 @@
+import type { TaskState } from './tasks';
 import type { SetupState } from './setup';
 
 export interface LangText {
@@ -20,15 +21,13 @@ export interface CardAction {
   description?: LangText;
   type?: string;
   size?: string;
-  // Drone control mode: 'command' acts on a Command, 'auto' in the Automatic
-  // Phase, 'passive' is always on (rulebook 2.4.1). Absent on mech parts.
   speed?: 'command' | 'auto' | 'passive';
   range?: number;
   storage?: number;
   yellowDice?: number;
   redDice?: number;
   keywords?: { key?: string; en?: string; inline?: string }[];
-  gameRules?: { id?: string; effects?: GameRuleEffect[] }[];
+  gameRules?: { id?: string; consumesCharge?: boolean; conditions?: { type?: string }[]; effects?: GameRuleEffect[] }[];
 }
 
 export interface Card {
@@ -127,12 +126,12 @@ export interface Token {
   stance: Stance;
   link?: number;
   timing?: Timing;
-  // false means the unit is in the squad but not yet on the board. Absent counts
-  // as deployed, so saves written before the Deployment Phase existed still load.
   deployed?: boolean;
+  expiring?: string[];
   partStates: Partial<Record<PartSlot | 'main', PartState>>;
   ammo: Record<string, number>;
   intercept?: Record<string, number>;
+  charge?: string[];
   log?: LogEntry[];
   statuses?: string[];
 }
@@ -164,6 +163,7 @@ export type TokenShape = 'square' | 'hexagon' | 'triangle' | 'round' | 'state';
 
 export interface StatusDef {
   id: string;
+  decay?: 'green' | 'yellow';
   label: string;
   icon: string;
   tint: string;
@@ -213,6 +213,22 @@ export function statusCount(statuses: string[] | undefined, id: string): number 
   return (statuses ?? []).filter((s) => s === id).length;
 }
 
+export function ageTokens(t: Token): { removed: string[]; flipped: string[] } {
+  const statuses = [...(t.statuses ?? [])];
+  const removed: string[] = [];
+  for (const id of t.expiring ?? []) {
+    const at = statuses.indexOf(id);
+    if (at >= 0) {
+      statuses.splice(at, 1);
+      removed.push(id);
+    }
+  }
+  const flipped = statuses.filter((id) => STATUSES.find((d) => d.id === id)?.decay === 'yellow');
+  t.statuses = statuses;
+  t.expiring = flipped.length ? flipped : undefined;
+  return { removed, flipped };
+}
+
 export function statusStacks(statuses: string[] | undefined): { def: StatusDef; n: number }[] {
   const out: { def: StatusDef; n: number }[] = [];
   for (const id of statuses ?? []) {
@@ -230,6 +246,7 @@ export function statusStacks(statuses: string[] | undefined): { def: StatusDef; 
 export const STATUSES: StatusDef[] = [
   {
     id: 'fci',
+    decay: 'yellow',
     shape: 'square',
     label: 'Fire Control Interference',
     icon: 'FCI',
@@ -238,6 +255,7 @@ export const STATUSES: StatusDef[] = [
   },
   {
     id: 'fragile',
+    decay: 'green',
     shape: 'square',
     label: 'Fragile',
     icon: 'FRG',
@@ -247,6 +265,7 @@ export const STATUSES: StatusDef[] = [
   },
   {
     id: 'immobilized',
+    decay: 'yellow',
     shape: 'square',
     label: 'Immobilized',
     icon: 'IMB',
@@ -265,6 +284,7 @@ export const STATUSES: StatusDef[] = [
   },
   {
     id: 'lowProfile',
+    decay: 'green',
     shape: 'hexagon',
     label: 'Low Profile',
     icon: 'LP',
@@ -273,6 +293,7 @@ export const STATUSES: StatusDef[] = [
   },
   {
     id: 'highlight',
+    decay: 'yellow',
     shape: 'hexagon',
     label: 'Highlight',
     icon: 'HL',
@@ -281,6 +302,7 @@ export const STATUSES: StatusDef[] = [
   },
   {
     id: 'targetTracer',
+    decay: 'yellow',
     shape: 'hexagon',
     label: 'Target Tracer',
     icon: 'TT',
@@ -324,11 +346,6 @@ export interface SmokeScreen {
   side: Side;
 }
 
-// Progress through the guided round, saved with the game so it survives a reload.
-// `seats` and `mode` are the seams a networked game would need later: today every
-// seat is local, but nothing here assumes one screen holds both players.
-// One Mech's Action Opportunity: the Ticks it generated and what it has spent
-// them on so far. The rules that read this live in ticks.ts.
 export interface ExtraTick {
   id: string;
   label: string;
@@ -389,8 +406,8 @@ export interface ScriptState {
   mode: 'hotseat' | 'hidden';
   seats: Record<Side, 'local' | 'remote'>;
   opp: Opportunity | null;
-  // Interceptions the rules oblige but nobody has resolved yet (4.9).
   intercepts: { uid: number; actionId: string; targetUid: number }[];
+  endDone: string[];
 }
 
 export function newScriptState(firstPlayer: Side): ScriptState {
@@ -404,11 +421,10 @@ export function newScriptState(firstPlayer: Side): ScriptState {
     seats: { blue: 'local', red: 'local' },
     opp: null,
     intercepts: [],
+    endDone: [],
   };
 }
 
-// A save written by an earlier build can hold a script missing fields added since,
-// so every read goes through here rather than trusting the stored shape.
 export function normaliseScript(raw: unknown, firstPlayer: Side): ScriptState {
   const base = newScriptState(firstPlayer);
   const s = (raw ?? {}) as Partial<ScriptState>;
@@ -427,6 +443,7 @@ export function normaliseScript(raw: unknown, firstPlayer: Side): ScriptState {
           (x) => x && typeof x.uid === 'number' && typeof x.targetUid === 'number' && typeof x.actionId === 'string',
         )
       : base.intercepts,
+    endDone: Array.isArray(s.endDone) ? s.endDone.filter((x) => typeof x === 'string') : base.endDone,
   };
 }
 
@@ -461,9 +478,7 @@ export interface GameState {
   roundLimit?: number;
   sideNames?: Partial<Record<Side, string>>;
   mission?: string | null;
-  // Set while a prebuilt scenario is loaded. Several community scenarios use
-  // squads that break the single-faction rule on purpose, so the legality
-  // warnings are suppressed rather than shouting at a fixed list.
+  tasks?: TaskState | null;
   scenario?: string | null;
   setup?: SetupState | null;
   showZones?: boolean;

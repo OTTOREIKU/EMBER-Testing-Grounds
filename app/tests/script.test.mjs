@@ -44,7 +44,8 @@ for (const [name, raw] of Object.entries(shapes)) {
 // Real values must survive rather than being reset, or a reload would lose the round.
 const opp = { uid: 7, timing: 'firing', maneuver: 0, action: 1, extras: [], maneuvered: true, started: true, performed: ['a1'], spentExtras: [] };
 const intercepts = [{ uid: 3, actionId: 'PRDR-101_C', targetUid: 9 }];
-const live = { turn: 'red', acted: [7, 8], commanded: [9], passed: ['blue'], stage: '2:3', mode: 'hidden', seats: { blue: 'local', red: 'remote' }, opp, intercepts };
+const endDone = ['2:end:remove', '2:end:tokens'];
+const live = { turn: 'red', acted: [7, 8], commanded: [9], passed: ['blue'], stage: '2:3', mode: 'hidden', seats: { blue: 'local', red: 'remote' }, opp, intercepts, endDone };
 check('a complete script is preserved exactly', normaliseScript(live, 'blue'), live);
 // A half-spent Action Opportunity has to survive a reload, or the Mech would get
 // its Ticks back and could act twice.
@@ -55,6 +56,10 @@ check('a junk opportunity is dropped rather than half-restored', normaliseScript
 check('owed interceptions survive', normaliseScript(live, 'blue').intercepts, intercepts);
 check('a missing list reads back empty', normaliseScript({ ...live, intercepts: undefined }, 'blue').intercepts, []);
 check('half-formed entries are dropped', normaliseScript({ ...live, intercepts: [{ uid: 1 }, ...intercepts] }, 'blue').intercepts, intercepts);
+// A half-finished End Phase has to survive a reload, since 3.7 fixes the order.
+check('finished end steps survive', normaliseScript(live, 'blue').endDone, endDone);
+check('a missing end list reads back empty', normaliseScript({ ...live, endDone: undefined }, 'blue').endDone, []);
+check('non-string end steps are dropped', normaliseScript({ ...live, endDone: [1, ...endDone] }, 'blue').endDone, endDone);
 // The tickable step list was dropped once the guide started driving each phase.
 // A save that still carries it must load without it rather than resurrecting it.
 check('the dropped step list is not carried forward', 'done' in normaliseScript(shapes['slice-3 save (still carries the dropped step list)'], 'blue'), false);

@@ -22,8 +22,6 @@ export const FACTION_LABEL: Record<string, string> = {
   COLLABORATION: 'Collab',
 };
 
-// Pilots record their set as a single `box` string; everything else uses the
-// `containedIn` array. Fold the former into the latter so one lookup serves both.
 function normaliseBoxes(cards: Card[]): void {
   for (const c of cards) {
     const box = (c as { box?: string }).box;
@@ -100,6 +98,10 @@ export interface MissionCard {
   setup: string;
   scoring: string;
   vp?: number;
+  // The first Round this Task can pay out, and whether it pays every Round or
+  // once at the end. Both are read off the printed English on the card.
+  fromRound?: number;
+  cadence?: 'per-round' | 'at-end';
   zones?: string[];
   scoringZone?: string;
   deployment?: string;
@@ -146,6 +148,10 @@ export interface SecondaryTask {
   setup: string;
   scoring: string;
   vp?: number;
+  // How the card scores, and who names its target, both read off the printed
+  // card text so the End Phase can settle it without a human reading prose.
+  kind?: 'destroy-designated' | 'survive-designated' | 'per-kill' | 'per-kill-by-unit' | 'no-mech-lost' | 'hold-zone';
+  designate?: 'none' | 'own-mech' | 'enemy-mech' | 'enemy-own-mech' | 'zone';
   inRulebook?: boolean;
 }
 

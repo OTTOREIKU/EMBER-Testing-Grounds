@@ -2,11 +2,12 @@ import './styles.css';
 import { Board, CELLS, footprint, snapPlacement, type BoardDeployment, type BoardZone, type DeployShape } from './board';
 import { AttackHelper, ElectronicHelper } from './combat';
 import { alertDialog, choiceDialog, confirmDialog, promptDialog } from './dialog';
+import { applyKill, gameResult, isLowValue, newTaskState, normaliseTasks, type TaskItem, type TaskState } from './tasks';
 import { DiceTray } from './dice';
 import { importSquadFile } from './importer';
 import { Inventory } from './inventory';
 import { isInspectPinned, showInspect, unpinInspect } from './inspector';
-import { cardName, dataUrl, loadData, missionImageUrl, parseGridRef, rulesLines, SIDE_LABEL } from './data';
+import { cardName, dataUrl, loadData, missionImageUrl, parseGridRef, rulesLines, type SecondaryTask, SIDE_LABEL } from './data';
 import {
   deleteCustomMap,
   emptyCustomMap,
@@ -22,7 +23,8 @@ import {
 } from './mapeditor';
 import { Panel } from './panel';
 import { Roster } from './roster';
-import { dissipationFor, extendPath, inArc, LG, losBetween, rangeBetween, reachableGrids, smokeBlocks, standingSpot } from './rules';
+import { attackDirection, crushTargets, type CrushVictims, dissipationFor, extendPath, inArc, knockbackPath, largeGridOf, type LargeGrid, LG, losBetween, type MoveOpts, rangeBetween, reachableGrids, smokeBlocks, standingSpot } from './rules';
+import { breakAwayCost, canBeForceMoved, lockersOf } from './melee';
 import { instantiateScenario, loadScenarios, type Scenario } from './scenarios';
 import { loadReplays, ReplayPlayer, type ReplayScript, type ReplayStep, type ReplayTally } from './replay';
 import { SquadTracker } from './squads';
@@ -31,9 +33,9 @@ import { watchForUpdates } from './updates';
 import { installTooltip, preloadCards } from './tooltip';
 import { PHASES, RoundTracker } from './tracker';
 import { PlayGuide } from './playguide';
-import type { Card, CardAction, DiceData, Facing, GameState, MechLoadout, Side, SmokeScreen, Stance, StatusDef, TerrainPiece, Token } from './types';
+import type { Card, CardAction, DiceData, Facing, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, StatusDef, TerrainPiece, Token } from './types';
 import { addStatus, SCALES, statusCount, statusesFor, STATUSES } from './types';
-import { deployedCardCounts, factionProblems, guidedActions, interceptCapacity, interceptLeft, interceptReach, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf } from './units';
+import { chargeableSlots, deployedCardCounts, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, type Resupply, resupplyOf, SLOT_LABEL, interceptLeft, interceptReach, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf } from './units';
 import { registerOffline } from './offline';
 import { battlefieldLocked, countHits, firstPlayerFrom, newSetup, normaliseSetup, type SetupState } from './setup';
 
@@ -111,6 +113,22 @@ async function init() {
       renderUnitLog();
       save();
     },
+    (attacker, defender, action, hits) => {
+      void resolveKnockback(attacker, defender, action, hits);
+      if (attacker.kind === 'projectile') {
+        state.tokens = state.tokens.filter((x) => x.uid !== attacker.uid);
+        if (selectedUid === attacker.uid) selectToken(null);
+        onChanged();
+      }
+    },
+    (killer, victim, what) => {
+      recordKill(killer, victim, what);
+      if (what === 'unit') {
+        state.tokens = state.tokens.filter((x) => x.uid !== victim.uid);
+        if (selectedUid === victim.uid) selectToken(null);
+      }
+    },
+    (victim) => dropBlackBoxes(victim),
   );
 
   const electronicHelper = new ElectronicHelper(
@@ -140,6 +158,7 @@ async function init() {
   roundTracker.onStartGame = () => void (normaliseSetup(state.setup) ? endGame() : startGame());
 
   const playGuide = new PlayGuide(document.getElementById('board-wrap')!, data, {
+    world: () => ({ tokens: state.tokens, terrain: currentTerrain() }),
     onAdvancePhase: () => roundTracker.advance(),
     onSelectUnit: (uid) => selectToken(uid),
     onMoveUnit: (uid, opts, done) => startMove(uid, opts, done),
@@ -158,6 +177,18 @@ async function init() {
     },
     onRollFirstPlayer: (side) => rollForFirstPlayer(side),
     onPlaceUnit: (uid, opts) => startDeployPlacement(uid, opts),
+    onPickSecondary: (side) => void pickSecondary(side),
+    onRemoveSpent: () => {
+      const gone = new Set(
+        state.tokens
+          .filter((t) => t.kind === 'mech' && Object.values(t.partStates).filter((p) => p !== 'destroyed').length <= 2)
+          .map((t) => t.uid),
+      );
+      if (!gone.size) return;
+      state.tokens = state.tokens.filter((t) => !gone.has(t.uid));
+      if (selectedUid !== null && gone.has(selectedUid)) selectToken(null);
+      onChanged();
+    },
     mapLabel: () => mapSelect.options[mapSelect.selectedIndex]?.textContent ?? state.map ?? 'none',
     zoneLabel: () => zoneSetLabel(state.zoneSet ?? ''),
     onNote: (t, text) => logTo(t, text),
@@ -167,6 +198,7 @@ async function init() {
   roundTracker.blockedReason = (s) => playGuide.blockedReason(s);
 
   const panel = new Panel(data, {
+    world: () => ({ tokens: state.tokens, terrain: currentTerrain() }),
     onRollDice(pool) {
       tray.addToPool(pool, true);
       tray.roll();
@@ -219,7 +251,7 @@ async function init() {
     },
     onShowMoveRange(t, steps) {
       const flying = !!data.byId.get(t.cardId)?.moveAsFlight;
-      const grids = reachableGrids(t, steps, currentTerrain(), state.tokens, flying);
+      const grids = reachableGrids(t, steps, currentTerrain(), state.tokens, flying, moveOpts(t, flying));
       board.showReachable(grids, steps);
     },
     onShowActionRange(t, range, label) {
@@ -230,6 +262,15 @@ async function init() {
     },
     onDetonate(t, actionId) {
       startDetonation(t, actionId);
+    },
+    onShove(t, actionId) {
+      const action = findAction(t, actionId);
+      if (action) void offerShove(t, action);
+    },
+    onCharge(t, slot, on) {
+      setCharge(t, slot, on);
+      onChanged();
+      panel.showToken(t);
     },
   });
 
@@ -335,6 +376,28 @@ async function init() {
         t.col = snapped.col;
         t.row = snapped.row;
         save();
+        board.renderTokens(state);
+        board.setSelected(uid);
+        return;
+      }
+      // Dragging a Large Unit onto something smaller is a Crush, not an illegal
+      // drop, so offer it here the same way a guided Maneuver would (4.3.6).
+      const goal = { c: Math.floor(col / 3), r: Math.floor(row / 3) };
+      const victims = !forced && crushTargets(t, goal.c, goal.r, currentTerrain(), state.tokens);
+      if (victims) {
+        board.renderTokens(state);
+        board.setSelected(uid);
+        resolveCrush(t, goal, victims, () => {
+          const spot = standingSpot(goal.c, goal.r, t.size, t.aerial, currentTerrain(), state.tokens, t.uid);
+          if (spot) {
+            t.col = spot.col;
+            t.row = spot.row;
+          }
+          logTo(t, `${t.label} Crushes into ${gridRef(goal.c, goal.r)}, and its Movement ends there.`);
+          onChanged();
+          setHint('');
+        });
+        return;
       }
       board.renderTokens(state);
       board.setSelected(uid);
@@ -488,8 +551,25 @@ async function init() {
     selectToken(uid);
     const what = action.name.en || action.name.zh || action.id;
 
+    if (action.id === 'COMMON_REMOTE_ACCESS') {
+      void performRemoteAccess(t, action, done);
+      return;
+    }
+
+    if (isChargeAction(action)) {
+      void performCharge(t, action, done);
+      return;
+    }
+
+    const supply = resupplyOf(action);
+    if (supply) {
+      void performResupply(t, action, supply, done);
+      return;
+    }
+
     if (action.type === 'Firing' || action.type === 'Melee') {
       const electronic = isElectronicAttack(action);
+      void offerChargeSpend(t, actionId);
       pendingAttack = { attackerUid: uid, actionId, mode: electronic ? 'electronic' : 'attack', action, done };
       document.body.classList.add('targeting');
       if (action.range) board.showRangeRings(t, action.range);
@@ -500,12 +580,17 @@ async function init() {
 
     if (action.type === 'Moving') {
       const range = action.range || maneuverRange(data, t);
-      startMove(uid, { range, label: what }, done);
+      // A shove rides on the Movement rather than replacing it, so the push is
+      // offered once the Mech has finished moving.
+      startMove(uid, { range, label: what }, (moved) => {
+        if (!moved || !knockbackOf(action, data.actionTranslation(actionId)?.english ?? undefined)) return done(moved);
+        void offerShove(t, action).then(() => done(true));
+      });
       return;
     }
 
     if (action.type === 'Projectile') {
-      const ga = guidedActions(data, t).find((g) => g.action.id === actionId);
+      const ga = guidedActions(data, t, { tokens: state.tokens, terrain: currentTerrain() }).find((g) => g.action.id === actionId);
       const shot = ga?.projectiles ?? [];
       if (!shot.length) {
         void alertDialog({
@@ -528,6 +613,13 @@ async function init() {
         else done(false);
       });
       return;
+    }
+
+    // A Projectile acting in the Delay Phase is resolving its payload, so its
+    // action opens the same Detonation resolver the Details tab uses (3.6.2).
+    if (t.kind === 'projectile' && action.type !== 'Passive') {
+      startDetonation(t, actionId);
+      return done(true);
     }
 
     // Swift and Tactical actions are card text rather than a board procedure, so
@@ -659,6 +751,16 @@ async function init() {
       confirmLabel: 'End game',
     });
     if (!ok) return;
+    // Most Victory Points wins, and a tie goes to Mech Parts and Drones left on
+    // the board (5.2.4). Reported before the board unlocks and units move.
+    const tasks = normaliseTasks(state.tasks);
+    if (state.mission || tasks.vp.blue || tasks.vp.red) {
+      const res = gameResult(tasks, state.tokens);
+      await alertDialog({
+        title: res.winner ? `${SIDE_LABEL[res.winner]} wins` : 'A draw',
+        body: `${res.why}.`,
+      });
+    }
     for (const t of state.tokens) t.deployed = undefined;
     state.setup = null;
     onChanged();
@@ -878,8 +980,6 @@ async function init() {
     onChanged();
   }
 
-  // Interception fires the moment an Aerial Unit is Launched or Moves (4.9), so
-  // the guide says who it woke up rather than leaving it to be remembered.
   function noteInterception(launcherUid: number): void {
     const t = state.tokens.find((x) => x.uid === launcherUid);
     if (!t || !state.script) return;
@@ -1029,7 +1129,7 @@ async function init() {
     if (!m || m.locked) return;
     const t = state.tokens.find((x) => x.uid === m.uid);
     if (!t) return;
-    const next = extendPath(m.path, { c, r }, t, m.steps, currentTerrain(), state.tokens, m.flying);
+    const next = extendPath(m.path, { c, r }, t, m.steps, currentTerrain(), state.tokens, m.flying, moveOpts(t, m.flying));
     if (!next) return;
     m.path = next;
     board.showMovePath(next, m.side, false);
@@ -1080,10 +1180,14 @@ async function init() {
       done,
     };
     selectToken(uid);
-    board.showReachable(reachableGrids(t, steps, currentTerrain(), state.tokens, flying), steps);
+    board.showReachable(reachableGrids(t, steps, currentTerrain(), state.tokens, flying, moveOpts(t, flying)), steps);
     board.panEnabled = false;
     renderMoveCtrl();
-    setHint(`${opts.label} for ${t.label}: drag the cursor across grids to draw the route, click to lock it, then Confirm. Esc cancels.`);
+    const locked = flying || t.aerial ? [] : lockersOf(data, t, state.tokens, currentTerrain());
+    const breakAway = locked.length
+      ? ` Melee Locked by ${locked.map((o) => o.label).join(', ')}, so leaving a Grid costs ${locked.length} extra Movement Range (4.3.5).`
+      : '';
+    setHint(`${opts.label} for ${t.label}: drag the cursor across grids to draw the route, click to lock it, then Confirm. Esc cancels.${breakAway}`);
   }
 
   // Clicking freezes the traced route so the cursor can leave the board for the
@@ -1118,20 +1222,416 @@ async function init() {
     }
     const last = stops[stops.length - 1];
     if (!last) return;
+    const goal = path[path.length - 1];
+    const victims = crushTargets(t, goal.c, goal.r, terrain, state.tokens);
     movePlan = null;
     board.panEnabled = true;
     board.clearHighlights();
     board.clearMovePath();
     renderMoveCtrl();
-    const finish = () => {
-      t.col = last.col;
-      t.row = last.row;
+    const settle = (col: number, row: number) => {
+      t.col = col;
+      t.row = row;
       logTo(t, `${t.label} moves ${path.length - 1} grid${path.length - 1 === 1 ? '' : 's'}.`);
       onChanged();
       setHint('');
-      m.done(true);
+      void offerBlackBoxes(t, path).then(() => m.done(true));
     };
-    board.animateMove(m.uid, stops, finish);
+    if (victims) {
+      // The Grid is entered only once whatever was standing there is dealt with,
+      // and the Movement Action ends there regardless of Range left (4.3.6).
+      board.animateMove(m.uid, stops.slice(0, -1), () =>
+        resolveCrush(t, goal, victims, () => {
+          const spot = standingSpot(goal.c, goal.r, t.size, t.aerial, currentTerrain(), state.tokens, t.uid)
+            ?? snapPlacement(goal.c * 3 + 1, goal.r * 3 + 1, t.size);
+          board.animateMove(m.uid, spot ? [spot] : [], () => settle(spot?.col ?? last.col, spot?.row ?? last.row));
+        }));
+      return;
+    }
+    board.animateMove(m.uid, stops, () => settle(last.col, last.row));
+  }
+
+  // Resupply (4.13). Ammo only comes back to a Part that has actually spent some,
+  // and never above the number it started with.
+  async function performResupply(t: Token, action: CardAction, rule: Resupply, done: (ok: boolean) => void): Promise<void> {
+    const what = action.name.en || action.name.zh || action.id;
+    const from = largeGridOf(t);
+    const holders = state.tokens.filter((o) => {
+      if (o.deployed === false) return false;
+      if (o.uid !== t.uid && (!rule.allies || o.side !== t.side)) return false;
+      const g = largeGridOf(o);
+      if (Math.abs(g.c - from.c) + Math.abs(g.r - from.r) > rule.range) return false;
+      const max = tokenCards(data, o).flatMap(({ card }) => card.actions ?? []).find((a) => a.id === rule.actionId)?.storage;
+      if (!max) return false;
+      return (o.ammo[rule.actionId] ?? max) < max;
+    });
+    if (!holders.length) {
+      await alertDialog({
+        title: 'Nothing to resupply',
+        body: `${what} restores Ammo to a Part carrying that Action, and nothing in reach has spent any. Ammo can only be replenished for a Part that has consumed some, and never past what it started with (4.13).`,
+      });
+      return done(false);
+    }
+    let unit: Token | undefined = holders[0];
+    if (holders.length > 1) {
+      const id = await choiceDialog({
+        title: `${what}: resupply which unit?`,
+        body: rule.range ? 'This Mech, or an Ally Unit within reach, that has spent the Ammo this Action restores.' : 'Only this Mech is in reach.',
+        choices: holders.map((o) => ({ id: String(o.uid), label: `${o.label}${o.uid === t.uid ? ' (this Mech)' : ''}` })),
+      });
+      unit = holders.find((o) => String(o.uid) === id);
+    }
+    if (!unit) return done(false);
+    const max = tokenCards(data, unit).flatMap(({ card }) => card.actions ?? []).find((a) => a.id === rule.actionId)?.storage ?? 0;
+    const before = unit.ammo[rule.actionId] ?? max;
+    unit.ammo[rule.actionId] = Math.min(max, before + rule.amount);
+    logTo(unit, `${what} from ${t.label}: Ammo restored to ${unit.ammo[rule.actionId]}/${max}.`);
+    onChanged();
+    done(true);
+  }
+
+  async function offerBlackBoxes(t: Token, path: { c: number; r: number }[]): Promise<void> {
+    const tasks = normaliseTasks(state.tasks);
+    const loose = tasks.items.filter((i) => i.kind === 'blackbox' && i.bearerUid === undefined
+      && i.col !== undefined && i.row !== undefined
+      && path.some((g) => g.c === Math.floor(i.col! / 3) && g.r === Math.floor(i.row! / 3)));
+    if (!loose.length) return;
+    for (const box of loose) {
+      const taken = tasks.items.filter((i) => i.bearerUid === t.uid && i.bearerSlot).map((i) => i.bearerSlot!);
+      const hands = freehandSlots(data, t, taken);
+      const where = gridRef(Math.floor(box.col! / 3), Math.floor(box.row! / 3));
+      if (!hands.length) {
+        await alertDialog({
+          title: 'No free Freehand',
+          body: `${t.label} passed the Black Box in ${where}, but a Unit needs a Part with the Freehand tag that is not already carrying one. A Part bearing a Black Box has its Freehand treated as invalid (5.3.1).`,
+        });
+        continue;
+      }
+      const take = await confirmDialog({
+        title: `Pick up the Black Box in ${where}?`,
+        body: `Picking one up is optional. It goes onto one of this unit's Freehand Parts, and that Part cannot take another while it holds this one.`,
+        confirmLabel: 'Pick it up',
+        cancelLabel: 'Leave it',
+      });
+      if (!take) continue;
+      let slot = hands[0].slot as string;
+      if (hands.length > 1) {
+        const id = await choiceDialog({
+          title: 'Which Part carries it?',
+          body: 'Any Freehand Part that is not already holding a Black Box.',
+          choices: hands.map((h) => ({ id: String(h.slot), label: h.label })),
+        });
+        if (!id) continue;
+        slot = id;
+      }
+      box.bearerUid = t.uid;
+      box.bearerSlot = slot;
+      box.col = undefined;
+      box.row = undefined;
+      logTo(t, `Picked up the Black Box from ${where}, carried on the ${SLOT_LABEL[slot as PartSlot | 'main']}.`);
+    }
+    state.tasks = tasks;
+    onChanged();
+  }
+
+  // When a Unit bearing a Black Box is Penetrated, the Box goes on the board and
+  // the ATTACKER says where, in contact with the bearer's base (5.3.1).
+  function dropBlackBoxes(victim: Token): void {
+    const tasks = normaliseTasks(state.tasks);
+    const held = tasks.items.filter((i) => i.kind === 'blackbox' && i.bearerUid === victim.uid);
+    if (!held.length) return;
+    const g = largeGridOf(victim);
+    const spots: { c: number; r: number; ok: boolean }[] = [];
+    for (const [dc, dr] of [[0, 0], [0, -1], [1, 0], [0, 1], [-1, 0], [1, -1], [1, 1], [-1, 1], [-1, -1]] as const) {
+      const c = g.c + dc;
+      const r = g.r + dr;
+      if (c < 0 || r < 0 || c >= LG || r >= LG) continue;
+      spots.push({ c, r, ok: true });
+    }
+    const box = held[0];
+    setHint(`${victim.label} was Penetrated and drops a Black Box. As the attacker, click a Grid in contact with it to say where the Box lands (5.3.1).`);
+    board.showSmokeTargets(spots, (c, r) => {
+      box.bearerUid = undefined;
+      box.bearerSlot = undefined;
+      box.col = c * 3 + 1;
+      box.row = r * 3 + 1;
+      state.tasks = tasks;
+      board.clearHighlights();
+      logTo(victim, `Penetrated while carrying a Black Box, which drops in ${gridRef(c, r)}.`);
+      setHint('');
+      onChanged();
+      // More than one Box can be carried, so keep going until they are all down.
+      dropBlackBoxes(victim);
+    });
+  }
+
+  // Secondary Tasks count what has been destroyed, and a destroyed Unit leaves
+  // the board, so the tally is kept as it happens. Low Value Units are never
+  // counted, because no Task awards Victory Points for killing one (book p.82).
+  // A Low Value Unit has no Point Value (book p.82), which is exactly how the
+  // card data marks them: the carried and generated Drones all cost 0.
+  function isLowValueUnit(t: Token): boolean {
+    if (t.kind === 'projectile') return true;
+    if (t.kind !== 'drone') return false;
+    return (data.byId.get(t.cardId)?.score ?? 0) === 0;
+  }
+
+  function recordKill(killer: Token, victim: Token, what: 'part' | 'unit'): void {
+    const tasks = normaliseTasks(state.tasks);
+    applyKill(tasks, killer, { side: victim.side, kind: victim.kind, lowValue: isLowValueUnit(victim) }, what);
+    state.tasks = tasks;
+  }
+
+  // Remote Access (5.3.3): an Electronic Counter-roll against a Terminal within
+  // Range 4. A Terminal is only worth accessing once a round, so one already
+  // taken is not offered again.
+  async function performRemoteAccess(t: Token, action: CardAction, done: (ok: boolean) => void): Promise<void> {
+    const tasks = normaliseTasks(state.tasks);
+    const from = largeGridOf(t);
+    const reach = action.range ?? 4;
+    const open = tasks.items.filter((i) => {
+      if (i.kind !== 'terminal' || i.accessed) return false;
+      const centre = zoneCentre(i.zone);
+      return !!centre && Math.abs(centre.c - from.c) + Math.abs(centre.r - from.r) <= reach;
+    });
+    if (!open.length) {
+      await alertDialog({
+        title: 'No Terminal in reach',
+        body: `Remote Access needs a Terminal within Range ${reach} that has not already been accessed this round. Each Terminal may only be accessed once per round (5.3.3).`,
+      });
+      return done(false);
+    }
+    const zoneName = (id: string) => data.zoneData.zones.find((z) => z.id === id)?.name ?? id;
+    let pick = open[0];
+    if (open.length > 1) {
+      const id = await choiceDialog({
+        title: 'Remote Access: which Terminal?',
+        body: `Each is an Electronic Counter-roll against the Terminal, whose Electronic Value is 3.`,
+        choices: open.map((i) => ({ id: i.id, label: zoneName(i.zone) })),
+      });
+      const found = open.find((i) => i.id === id);
+      if (!found) return done(false);
+      pick = found;
+    }
+    const won = await confirmDialog({
+      title: `Remote Access on ${zoneName(pick.zone)}`,
+      body: `Make the Electronic Counter-roll now, against the Terminal's Electronic Value of 3. Did it succeed?`,
+      confirmLabel: 'It succeeded',
+      cancelLabel: 'It failed',
+    });
+    if (!won) {
+      logTo(t, `Remote Access on the ${zoneName(pick.zone)} Terminal failed.`);
+      onChanged();
+      return done(true);
+    }
+    pick.accessed = t.side;
+    state.tasks = tasks;
+    logTo(t, `Remote Access succeeded on the ${zoneName(pick.zone)} Terminal, which is now face-down for the rest of the round.`);
+    onChanged();
+    done(true);
+  }
+
+  // Charge (4.14). The token starts face-down; the Charge Action flips one Part's
+  // token face-up, and an Action whose text is conditional on [Charged] may flip
+  // it back down to apply that effect.
+  function setCharge(t: Token, slot: string, on: boolean): void {
+    const held = new Set(t.charge ?? []);
+    if (on) held.add(slot);
+    else held.delete(slot);
+    t.charge = held.size ? [...held] : undefined;
+  }
+
+  async function performCharge(t: Token, action: CardAction, done: (ok: boolean) => void): Promise<void> {
+    const slots = chargeableSlots(data, t);
+    const open = slots.filter((s) => !s.charged);
+    const what = action.name.en || action.name.zh || action.id;
+    if (!slots.length) {
+      await alertDialog({
+        title: 'Nothing to Charge',
+        body: `${t.label} has no Part with a Chargeable Action, so ${what} has nothing to put a Charge Token on (4.14).`,
+      });
+      return done(false);
+    }
+    if (!open.length) {
+      await alertDialog({
+        title: 'Already Charged',
+        body: `Every Chargeable Part on ${t.label} already holds a face-up Charge Token. An Action that is Charged cannot be Charged again until the token is spent (4.14).`,
+      });
+      return done(false);
+    }
+    let slot = open[0].slot as string;
+    if (open.length > 1) {
+      const id = await choiceDialog({
+        title: `${what}: which Part?`,
+        body: 'Only one Part may be Charged per Charge Action, and it has to be one whose token is still face-down.',
+        choices: open.map((o) => ({ id: String(o.slot), label: o.label })),
+      });
+      if (!id) return done(false);
+      slot = id;
+    }
+    setCharge(t, slot, true);
+    logTo(t, `Charged ${SLOT_LABEL[slot as PartSlot | 'main']}: its Charge Token is now face-up.`);
+    onChanged();
+    done(true);
+  }
+
+  // Offered when a [Charged] Action is performed while its Part holds a face-up
+  // token. Consuming it is the player's choice, so this asks rather than assumes.
+  async function offerChargeSpend(t: Token, actionId: string): Promise<void> {
+    const found = guidedActions(data, t, { tokens: state.tokens, terrain: currentTerrain() })
+      .find((g) => g.action.id === actionId);
+    if (!found?.charge?.charged) return;
+    const what = found.action.name.en || found.action.name.zh || found.action.id;
+    const spend = await confirmDialog({
+      title: `Consume the Charge on ${what}?`,
+      body: `${SLOT_LABEL[found.slot]} holds a face-up Charge Token. Flipping it back down now applies the effect this Action marks as [Charged]. You may also keep it for a later use.`,
+      confirmLabel: 'Consume it',
+      cancelLabel: 'Keep it',
+    });
+    if (!spend) return;
+    setCharge(t, found.slot, false);
+    logTo(t, `Consumed the Charge on ${SLOT_LABEL[found.slot]} for ${what}.`);
+    onChanged();
+  }
+
+  // A shove is a Knockback with no Attack behind it, so it needs a victim first.
+  // The card wants an enemy Ground Unit in the Grid the Mech is facing, which is
+  // the only place the shove can go.
+  async function offerShove(t: Token, action: CardAction): Promise<void> {
+    const g = largeGridOf(t);
+    const fv = [[0, -1], [1, 0], [0, 1], [-1, 0]][t.facing] as [number, number];
+    const ahead = { c: g.c + fv[0], r: g.r + fv[1] };
+    const what = action.name.en || action.name.zh || action.id;
+    const victims = state.tokens.filter((o) => {
+      if (o.side === t.side || o.uid === t.uid || o.aerial || o.deployed === false) return false;
+      const og = largeGridOf(o);
+      return og.c === ahead.c && og.r === ahead.r;
+    });
+    if (!victims.length) {
+      setHint(`${what}: no enemy Ground Unit in ${gridRef(ahead.c, ahead.r)}, the Grid in front, so there is nothing to shove.`);
+      return;
+    }
+    let pick: Token | undefined = victims[0];
+    if (victims.length > 1) {
+      const id = await choiceDialog({
+        title: `${what}: shove which unit?`,
+        body: `More than one enemy is in ${gridRef(ahead.c, ahead.r)}.`,
+        choices: victims.map((v) => ({ id: String(v.uid), label: v.label })),
+      });
+      pick = victims.find((v) => String(v.uid) === id);
+    }
+    if (!pick) return;
+    await resolveKnockback(t, pick, action, 1);
+  }
+
+  // Knockback X and Push X (appendix). The victim is Force-Moved in a straight
+  // line away from the attacker and stops early on a Unit or Terrain, so there is
+  // nothing for the player to pick; the dialog only exists to show the working.
+  async function resolveKnockback(attacker: Token, victim: Token, action: CardAction, hits: number): Promise<void> {
+    const kb = knockbackOf(action, data.actionTranslation(action.id)?.english ?? undefined);
+    if (!kb) return;
+    if (!state.tokens.some((t) => t.uid === victim.uid)) return;
+    const what = action.name.en || action.name.zh || action.id;
+    const name = kb.push ? `Push ${kb.grids}` : `Knockback ${kb.grids}`;
+    if (kb.onHit && hits === 0) {
+      await alertDialog({
+        title: `${name} does not trigger`,
+        body: `${what} only knocks back On Hit, and this attack scored no Hits, so ${victim.label} stays where it is.`,
+      });
+      return;
+    }
+    const dir = attackDirection(attacker, victim);
+    const path = knockbackPath(victim, dir, kb.grids, currentTerrain(), state.tokens);
+    const heading = ['north', 'east', 'south', 'west'][dir.dr < 0 ? 0 : dir.dc > 0 ? 1 : dir.dr > 0 ? 2 : 3];
+    if (!path.length) {
+      await alertDialog({
+        title: `${name} is blocked`,
+        body: `${victim.label} would be forced ${heading}, but a Unit, Terrain or the board edge is in the way, so it does not move. Knockback stops the moment it is blocked.`,
+      });
+      return;
+    }
+    const end = path[path.length - 1];
+    const short = path.length < kb.grids;
+    const go = await confirmDialog({
+      title: `${name} on ${victim.label}`,
+      body: `${what} forces ${victim.label} ${path.length} Grid${path.length === 1 ? '' : 's'} ${heading} to ${gridRef(end.c, end.r)}${
+        short ? `, short of the full ${kb.grids} because something blocks the rest of the line` : ''
+      }.${kb.push && victim.kind === 'mech' ? ' Push also costs it 1 Link.' : ''}`,
+      confirmLabel: 'Force the move',
+      cancelLabel: 'Skip',
+    });
+    if (!go) return;
+    const spot = standingSpot(end.c, end.r, victim.size, victim.aerial, currentTerrain(), state.tokens, victim.uid, { col: victim.col, row: victim.row });
+    if (spot) {
+      victim.col = spot.col;
+      victim.row = spot.row;
+    }
+    logTo(victim, `${name} from ${attacker.label}: forced ${path.length} Grid${path.length === 1 ? '' : 's'} ${heading} to ${gridRef(end.c, end.r)}.`);
+    if (kb.push && victim.kind === 'mech') {
+      victim.link = Math.max(0, (victim.link ?? 0) - 1);
+      logTo(victim, `Push costs 1 Link (now ${victim.link}).`);
+      if (victim.link === 0 && victim.stance !== 'shutdown') {
+        victim.stance = 'shutdown';
+        logTo(victim, `Link has reached 0, so ${victim.label} SHUTS DOWN.`);
+      }
+    }
+    onChanged();
+  }
+
+  // Crush resolution (4.3.6). Destructible Terrain in the way is destroyed, then
+  // each smaller Unit takes Forced Movement of 1 Grid with the crushing player
+  // picking where. A Unit with nowhere to go swaps places with the crusher, and
+  // one that cannot be Force-Moved at all is destroyed instead.
+  function resolveCrush(t: Token, goal: LargeGrid, victims: CrushVictims, done: () => void): void {
+    if (victims.terrain.length) {
+      state.removedTerrain = [...(state.removedTerrain ?? []), ...victims.terrain.map((p) => p.id)];
+      board.renderTerrain(currentTerrain());
+      logTo(t, `Crushed ${victims.terrain.length === 1 ? 'terrain' : `${victims.terrain.length} terrain pieces`} in ${gridRef(goal.c, goal.r)}.`);
+    }
+    const queue = [...victims.units];
+    const step = (): void => {
+      const v = queue.shift();
+      if (!v) {
+        done();
+        return;
+      }
+      if (!canBeForceMoved(data, v)) {
+        state.tokens = state.tokens.filter((x) => x.uid !== v.uid);
+        logTo(t, `Crushed ${v.label}, which cannot be Force-Moved, so it is destroyed.`);
+        board.renderTokens(state);
+        step();
+        return;
+      }
+      const from = largeGridOf(v);
+      const spots = ([[0, -1], [1, 0], [0, 1], [-1, 0]] as const)
+        .map(([dc, dr]) => ({ c: from.c + dc, r: from.r + dr }))
+        .filter((g) => g.c >= 0 && g.r >= 0 && g.c < LG && g.r < LG)
+        .filter((g) => !(g.c === goal.c && g.r === goal.r))
+        .filter((g) => standingSpot(g.c, g.r, v.size, v.aerial, currentTerrain(), state.tokens, v.uid) !== null);
+      if (!spots.length) {
+        const swap = standingSpot(largeGridOf(t).c, largeGridOf(t).r, v.size, v.aerial, currentTerrain(), state.tokens, v.uid);
+        if (swap) {
+          v.col = swap.col;
+          v.row = swap.row;
+          logTo(t, `Crushed ${v.label}, which had nowhere to go, so the two swap positions.`);
+        }
+        board.renderTokens(state);
+        step();
+        return;
+      }
+      setHint(`Crush: click a Grid to Force-Move ${v.label} 1 Grid. You choose, because you caused it (4.3.4).`);
+      board.showSmokeTargets(spots.map((g) => ({ ...g, ok: true })), (c, r) => {
+        const spot = standingSpot(c, r, v.size, v.aerial, currentTerrain(), state.tokens, v.uid);
+        if (!spot) return;
+        v.col = spot.col;
+        v.row = spot.row;
+        logTo(t, `Crushed ${v.label}, Force-Moved to ${gridRef(c, r)}.`);
+        board.clearHighlights();
+        board.renderTokens(state);
+        step();
+      });
+    };
+    step();
   }
 
   function cancelMove(): void {
@@ -1297,8 +1797,6 @@ async function init() {
     host.querySelector('#smoke-dissipate')!.addEventListener('click', () => resolveDissipation());
   }
 
-  // The owner picks which screen leaves each group, and the group list is fixed
-  // before any of it happens, so a removal that splits a group owes nothing more.
   let smokeChoices: { side: Side; group: SmokeScreen[] }[] | null = null;
 
   function resolveDissipation(): void {
@@ -1414,14 +1912,17 @@ async function init() {
       renderEffectDetonation(proj, action, name, range, targets);
       return;
     }
+    const scope = explosionScope(action, data.actionTranslation(action.id)?.english ?? undefined);
     body.innerHTML = `<div class="attack-helper">
       <div class="ah-head"><b><i class="btn-ico">💥</i> ${escapeHtml(detonateHeading(name, proj.label))}</b>
         <span class="dim">R${range} from ${escapeHtml(proj.label)}</span></div>
       <p class="ah-los">Explosion damage ignores line of sight and facing, and the defender gets
         no Terrain or Unit Protection. Only the defender may spend Link to Focus.</p>
-      <div class="ah-step"><h4>Choose the unit to damage</h4>
+      <div class="ah-step"><h4>${scope === 'all' ? 'Resolve every unit it caught' : 'Choose the unit to damage'}</h4>
         ${targets.length
-          ? '<p class="dim">Cards that say "all Units within range" hit allies too, so everything in reach is listed. Resolve them one at a time.</p>'
+          ? scope === 'all'
+            ? '<p class="dim">This card says <b>all Units within range</b>, so it hits allies too and every unit listed takes a separate attack. Resolve them one at a time (4.7.6).</p>'
+            : '<p class="dim">This card damages a <b>single target</b>, so only one of these takes the attack. Pick it, resolve it, then destroy the projectile (4.7.6).</p>'
           : '<p class="dim">No units within range. A projectile with a delayed action that needs a target is destroyed instead (4.7.5).</p>'}
         <div class="ah-partpick" id="det-targets">${targets
           .map(({ t, dist }) => `<button class="chip" data-uid="${t.uid}">
@@ -1652,6 +2153,17 @@ async function init() {
       }
     }
     return null;
+  }
+
+  // Break Away and Crush both bend the movement search, and every caller that
+  // draws a route or a range overlay has to bend it the same way or the overlay
+  // promises a move the confirm step will refuse.
+  function moveOpts(t: Token, flying: boolean): MoveOpts {
+    const terrain = currentTerrain();
+    return {
+      exitCost: flying || t.aerial ? undefined : breakAwayCost(data, t, state.tokens, terrain),
+      crushable: (c, r) => crushTargets(t, c, r, terrain, state.tokens) !== null,
+    };
   }
 
   function currentTerrain(): TerrainPiece[] {
@@ -2032,6 +2544,7 @@ async function init() {
   function onChanged(): void {
     save();
     board.renderTokens(state);
+    board.renderTaskItems(normaliseTasks(state.tasks).items, zoneCentre);
     board.renderSmoke(state.smoke ?? []);
     board.setSelected(selectedUid);
     squadTracker.update(state, selectedUid);
@@ -2054,6 +2567,7 @@ async function init() {
   function renderAll(): void {
     board.renderTerrain(currentTerrain(), editor.active);
     board.renderMarkers(state.markers ?? []);
+    board.renderTaskItems(normaliseTasks(state.tasks).items, zoneCentre);
     renderZoneOverlay();
     onChanged();
     board.refit();
@@ -2389,7 +2903,6 @@ async function init() {
     // replace the whole board are shut for the entire game, because a Mission or
     // Scenario would swap the map and units out from under the lock.
     const locked = battlefieldLocked(setup);
-    const inGame = !!setup;
     const why = 'Locked while a game is running. Press End game to change it.';
     for (const el of [mapSelect, zoneSelect]) {
       el.disabled = locked;
@@ -2397,11 +2910,14 @@ async function init() {
     }
     const zoneBtn = document.getElementById('btn-zones') as HTMLButtonElement | null;
     if (zoneBtn) zoneBtn.disabled = locked && !state.zoneSet;
+    // Setup 3.1.1 puts the board layout and the Tasks BEFORE the first-player
+    // roll, so these stay open while the battlefield is still being agreed and
+    // freeze the moment it locks.
     for (const id of ['btn-missions', 'btn-scenarios', 'btn-mapedit', 'btn-mapmanage', 'btn-import-squad']) {
       const b = document.getElementById(id) as HTMLButtonElement | null;
       if (!b) continue;
-      b.disabled = inGame;
-      if (inGame) b.title = why;
+      b.disabled = locked;
+      b.title = locked ? why : '';
     }
   }
 
@@ -2466,6 +2982,8 @@ async function init() {
       b.addEventListener('click', () => {
         const m = data.missions.cards[Number(b.dataset.i)];
         state.mission = m.id;
+        state.tasks = taskItemsFor(m);
+        if (m.family === 'vip') void designateCommanders();
         setZoneSet(`mission:${m.id}`);
         document.getElementById('details-body')!.replaceChildren(missionBriefing(m));
         showSideTab('details');
@@ -2474,6 +2992,120 @@ async function init() {
     );
     document.body.appendChild(dlg);
   });
+
+  // Secondary Task selection (5.2.3). Open information, so both picks are made
+  // here and shown to everyone. A card that needs a designated Unit or Zone asks
+  // for it straight away, because the designation is part of Task Setup.
+  async function pickSecondary(side: Side): Promise<void> {
+    const tasks = normaliseTasks(state.tasks);
+    const taken = side === 'blue' ? tasks.secondary.red : tasks.secondary.blue;
+    const open = data.secondary.filter((c) => c.id !== taken);
+    const id = await choiceDialog({
+      title: `${SIDE_LABEL[side]}: choose a Secondary Task`,
+      body: 'Both players pick one and show it to the other, so this is open information.',
+      choices: open.map((c) => ({ id: c.id, label: `${c.name} (${c.vp ?? 0} VP)` })),
+    });
+    const card = open.find((c) => c.id === id);
+    if (!card) return;
+    tasks.secondary[side] = card.id;
+    state.tasks = tasks;
+
+    if (card.designate && card.designate !== 'none') {
+      await designateFor(side, card);
+    }
+    onChanged();
+  }
+
+  async function designateFor(side: Side, card: SecondaryTask): Promise<void> {
+    const tasks = normaliseTasks(state.tasks);
+    const enemy: Side = side === 'blue' ? 'red' : 'blue';
+    if (card.designate === 'zone') {
+      const zones = data.zoneData.zones;
+      const id = await choiceDialog({
+        title: `${card.name}: which Tactical Zone?`,
+        body: card.setup,
+        choices: zones.map((z) => ({ id: z.id, label: z.name })),
+      });
+      if (id) tasks.zone[side] = id;
+      state.tasks = tasks;
+      return;
+    }
+    // The Unit is stored against the side that SCORES the card, so two cards can
+    // never fight over one key. Who OWNS the named Mech still differs by card:
+    // enemy-own-mech has the opponent name one of theirs, enemy-mech has you
+    // name one of theirs, own-mech is your own.
+    const owner: Side = card.designate === 'enemy-mech' || card.designate === 'enemy-own-mech' ? enemy : side;
+    const mechs = state.tokens.filter((t) => t.kind === 'mech' && t.side === owner);
+    if (!mechs.length) {
+      await alertDialog({
+        title: 'Nothing to designate',
+        body: `${card.name} needs a Mech named, and ${SIDE_LABEL[owner]} has none on the board yet. Add the squads first, then pick the Task again.`,
+      });
+      return;
+    }
+    const uid = await choiceDialog({
+      title: `${card.name}: which Mech?`,
+      body: card.setup,
+      choices: mechs.map((t) => ({ id: String(t.uid), label: t.label })),
+    });
+    const pick = mechs.find((t) => String(t.uid) === uid);
+    if (pick) tasks.secTarget[side] = pick.uid;
+    state.tasks = tasks;
+  }
+
+  // The VIP mission needs both Commanders named, one per side, before there is
+  // anything to assassinate (5.2.3). Stored by the side that OWNS the Mech.
+  async function designateCommanders(): Promise<void> {
+    const tasks = normaliseTasks(state.tasks);
+    for (const side of ['blue', 'red'] as Side[]) {
+      const mechs = state.tokens.filter((t) => t.kind === 'mech' && t.side === side);
+      if (!mechs.length) continue;
+      const uid = await choiceDialog({
+        title: `${SIDE_LABEL[side]}: designate your Commander`,
+        body: 'Destroying the enemy Commander scores 10 Victory Points and ends the game immediately.',
+        choices: mechs.map((t) => ({ id: String(t.uid), label: t.label })),
+      });
+      const pick = mechs.find((t) => String(t.uid) === uid);
+      if (pick) tasks.leader[side] = pick.uid;
+    }
+    state.tasks = tasks;
+    onChanged();
+  }
+
+  // The middle Large Grid of a Tactical Zone, used to sit a Terminal or a
+  // Control dial where it reads as covering the whole Zone.
+  function zoneCentre(zoneId: string): { c: number; r: number } | null {
+    const zone = data.zoneData.zones.find((z) => z.id === zoneId);
+    if (!zone?.cells.length) return null;
+    const grids = zone.cells.map((ref) => parseGridRef(ref)).filter((g): g is { col: number; row: number } => !!g);
+    if (!grids.length) return null;
+    const c = Math.round(grids.reduce((n, g) => n + g.col, 0) / grids.length);
+    const r = Math.round(grids.reduce((n, g) => n + g.row, 0) / grids.length);
+    return { c, r };
+  }
+
+  // Task Setup (5.3): the Main Task names the Tactical Zones its Items go in, so
+  // picking the card lays them out. A Black Box has a physical position, a
+  // Terminal covers its whole Zone, and a Control dial starts neutral.
+  function taskItemsFor(m: (typeof data.missions.cards)[number]): TaskState {
+    const st = newTaskState();
+    const kind = m.family === 'blackbox' ? 'blackbox' : m.family === 'terminal' ? 'terminal' : m.family === 'control' ? 'control' : null;
+    if (!kind) return st;
+    for (const name of m.zones ?? []) {
+      const zone = data.zoneData.zones.find((z) => z.name.toLowerCase() === name.toLowerCase());
+      if (!zone) continue;
+      const item: TaskItem = { id: `${kind}-${zone.id}`, kind, zone: zone.id, control: null, accessed: null };
+      if (kind === 'blackbox') {
+        const first = zone.cells[0] && parseGridRef(zone.cells[0]);
+        if (first) {
+          item.col = first.col * 3 + 1;
+          item.row = first.row * 3 + 1;
+        }
+      }
+      st.items.push(item);
+    }
+    return st;
+  }
 
   function showMissionCard(m: (typeof data.missions.cards)[number]): void {
     document.querySelector('.mis-lightbox')?.remove();
@@ -2642,6 +3274,7 @@ async function init() {
       onState: () => {
         board.renderTokens(state);
         board.renderMarkers(state.markers ?? []);
+        board.renderTaskItems(normaliseTasks(state.tasks).items, zoneCentre);
         squadTracker.update(state, null);
         roundTracker.update(state);
       },
@@ -2780,36 +3413,82 @@ async function init() {
     document.body.appendChild(dlg);
   });
 
-  document.getElementById('btn-clear')!.addEventListener('click', async () => {
-    if (!state.tokens.length && !state.markers?.length && !state.zoneSet) return;
-    const n = state.tokens.length;
-    const bits = [
-      n ? `${n} unit${n === 1 ? '' : 's'}` : '',
-      state.markers?.length ? 'all objective markers' : '',
-      state.zoneSet ? `the ${zoneSetLabel(state.zoneSet)} overlay` : '',
-    ].filter(Boolean);
-    const removes = bits.length > 1 ? `${bits.slice(0, -1).join(', ')} and ${bits[bits.length - 1]}` : bits[0];
-    const ok = await confirmDialog({
-      title: 'Clear the board?',
-      body: `This removes ${removes}. The round track goes back to Round 1 of 5, and terrain and the chosen map are kept.`,
-      confirmLabel: 'Clear board',
-      danger: true,
-    });
-    if (!ok) return;
+  function clearUnits(): void {
     state.tokens = [];
-    state.markers = [];
     state.smoke = [];
     state.sideNames = {};
-    state.round = { n: 1, phase: 0, firstPlayer: 'blue' };
     state.commandTokens = { blue: 0, red: 0 };
-    state.roundLimit = 5;
-    state.scale = 'standard';
-    state.zoneSet = '';
-    state.showZones = false;
-    state.mission = undefined;
-    state.scenario = null;
     state.setup = null;
     selectToken(null);
+  }
+
+  function clearObjectives(): void {
+    state.markers = [];
+  }
+
+  function clearTerrain(): void {
+    state.map = '';
+    state.removedTerrain = [];
+    populateMapSelect();
+  }
+
+  function clearZones(): void {
+    state.zoneSet = '';
+    state.showZones = false;
+  }
+
+  document.getElementById('btn-clear')!.addEventListener('click', async () => {
+    const units = state.tokens.length;
+    const markers = state.markers?.length ?? 0;
+    const terrain = currentTerrain().length;
+    const zones = state.zoneSet ? 1 : 0;
+    if (!units && !markers && !terrain && !zones) {
+      void alertDialog({ title: 'Nothing to clear', body: 'The board is already empty.' });
+      return;
+    }
+    const count = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+    const pick = await choiceDialog({
+      title: 'Clear what?',
+      body: 'Each option only touches its own kind, so nothing else on the board is disturbed.',
+      stacked: true,
+      choices: [
+        ...(units ? [{ id: 'units', label: `Units (${count(units, 'unit')})` }] : []),
+        ...(markers ? [{ id: 'markers', label: `Objectives (${count(markers, 'marker')})` }] : []),
+        ...(terrain ? [{ id: 'terrain', label: `Terrain (${count(terrain, 'piece')})` }] : []),
+        ...(zones ? [{ id: 'zones', label: `Zones (${zoneSetLabel(state.zoneSet ?? '')})` }] : []),
+        { id: 'all', label: 'Everything', danger: true },
+        { id: 'cancel', label: 'Cancel' },
+      ],
+    });
+    if (!pick || pick === 'cancel') return;
+
+    if (pick === 'all') {
+      const ok = await confirmDialog({
+        title: 'Clear everything?',
+        body: 'Units, objectives, terrain and zones all go, and the round track returns to Round 1. Saved maps and mech presets are untouched.',
+        confirmLabel: 'Clear everything',
+        danger: true,
+      });
+      if (!ok) return;
+      clearUnits();
+      clearObjectives();
+      clearTerrain();
+      clearZones();
+      state.tasks = null;
+      state.round = { n: 1, phase: 0, firstPlayer: 'blue' };
+      state.roundLimit = 5;
+      state.scale = 'standard';
+      state.mission = undefined;
+      state.scenario = null;
+    } else if (pick === 'units') {
+      clearUnits();
+    } else if (pick === 'markers') {
+      clearObjectives();
+    } else if (pick === 'terrain') {
+      clearTerrain();
+    } else if (pick === 'zones') {
+      clearZones();
+    }
     renderAll();
   });
 
@@ -2982,7 +3661,7 @@ async function init() {
       if (t.stance === 'mobility') base *= 2;
       if (base > 0) {
         const flying = !!data.byId.get(t.cardId)?.moveAsFlight;
-        board.showReachable(reachableGrids(t, base, currentTerrain(), state.tokens, flying), base);
+        board.showReachable(reachableGrids(t, base, currentTerrain(), state.tokens, flying, moveOpts(t, flying)), base);
       }
     } else if (k === 'a') {
       board.showArcs(t);

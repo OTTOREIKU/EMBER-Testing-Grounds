@@ -1,8 +1,10 @@
 import type { GameData } from './data';
 import { cardName, isAerial, unitSize } from './data';
-import type { Card, CardAction, GameState, MechLoadout, PartSlot, Side, Stance, Timing, Token } from './types';
+import type { Card, CardAction, GameState, MechLoadout, PartSlot, Side, Stance, TerrainPiece, Timing, Token } from './types';
 import { normaliseScript, statusCount, TIMINGS } from './types';
 import { normaliseSetup } from './setup';
+import { isMeleeFiring, lockersOf } from './melee';
+import { normaliseTasks } from './tasks';
 
 export const PART_SLOTS: PartSlot[] = ['torso', 'chasis', 'leftHand', 'rightHand', 'backpack'];
 export const SLOT_LABEL: Record<PartSlot | 'pilot' | 'main', string> = {
@@ -27,8 +29,6 @@ function initAmmo(cards: Card[]): Record<string, number> {
   return ammo;
 }
 
-// Volley X: up to X Projectiles in one Action, one Ammo Token each (4.13).
-// Absent means a single Projectile per performance.
 export function volleyOf(a: CardAction): number {
   const hay = [
     a.description?.zh ?? '',
@@ -39,7 +39,90 @@ export function volleyOf(a: CardAction): number {
   return m ? Math.max(1, Number(m[1])) : 1;
 }
 
-// Direct Fire needs sight of the Landing Point; Fire in arc explicitly does not.
+export interface Knockback {
+  grids: number;
+  push: boolean;
+  onHit: boolean;
+}
+
+export function knockbackOf(a: CardAction, english?: string): Knockback | undefined {
+  const printed = (a.description?.en ?? '').trim() || (english ?? '').trim();
+  const hay = printed || [a.description?.zh ?? '', ...(a.keywords ?? []).map((k) => k.inline ?? '')].join(' ');
+  const onHit = /命中时|命中時|\[?on hit\]?/i.test(hay);
+  const m = /(击退|擊退|推动|推動|Knock ?back|Push)\s*(\d+)/i.exec(hay);
+  if (m) return { grids: Math.max(1, Number(m[2])), push: /推动|推動|Push/i.test(m[1]), onHit };
+  const shove = /(?:Shove|推挤|推擠)[^.。]*?(\d+)\s*(?:Grid|格)/i.exec(hay);
+  if (shove) return { grids: Math.max(1, Number(shove[1])), push: false, onHit };
+  return undefined;
+}
+
+export interface Resupply {
+  actionId: string;
+  amount: number;
+  range: number;
+  allies: boolean;
+}
+
+export function resupplyOf(a: CardAction): Resupply | undefined {
+  for (const g of a.gameRules ?? []) {
+    for (const e of g.effects ?? []) {
+      const eff = e as { type?: string; actionId?: string; amount?: number; range?: number; targetSide?: string };
+      if (eff.type !== 'resupply_action_ammo' || !eff.actionId) continue;
+      return {
+        actionId: eff.actionId,
+        amount: Math.max(1, eff.amount ?? 1),
+        range: eff.range ?? 0,
+        allies: eff.targetSide !== 'self',
+      };
+    }
+  }
+  return undefined;
+}
+
+export function freehandSlots(data: GameData, t: Token, taken: string[] = []): { slot: PartSlot | 'pilot' | 'main'; label: string }[] {
+  const out: { slot: PartSlot | 'pilot' | 'main'; label: string }[] = [];
+  for (const { slot, card } of tokenCards(data, t)) {
+    if ((t.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
+    if (taken.includes(slot)) continue;
+    if (!(card.keywords ?? []).some((k) => k.en === 'Freehand' || k.key === '空手')) continue;
+    out.push({ slot, label: SLOT_LABEL[slot] });
+  }
+  return out;
+}
+
+// ---------- Charge (rulebook 4.14) ----------
+
+export function consumesCharge(a: CardAction): boolean {
+  return (a.gameRules ?? []).some((g) => g.consumesCharge === true
+    || (g.conditions ?? []).some((c) => c.type === 'charge_available'));
+}
+
+export function isChargeAction(a: CardAction): boolean {
+  return a.id === 'COMMON_CHARGE'
+    || (a.gameRules ?? []).some((g) => (g.effects ?? []).some((e) => (e as { type?: string }).type === 'set_unit_charge'));
+}
+
+export function isCharged(t: Token, slot: string): boolean {
+  return (t.charge ?? []).includes(slot);
+}
+
+export function chargeableSlots(data: GameData, t: Token): { slot: PartSlot | 'pilot' | 'main'; label: string; charged: boolean }[] {
+  const out: { slot: PartSlot | 'pilot' | 'main'; label: string; charged: boolean }[] = [];
+  for (const { slot, card } of tokenCards(data, t)) {
+    if ((t.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
+    if (!(card.actions ?? []).some((a) => consumesCharge(a))) continue;
+    out.push({ slot, label: SLOT_LABEL[slot], charged: isCharged(t, slot) });
+  }
+  return out;
+}
+
+export function explosionScope(a: CardAction, english?: string): 'single' | 'all' {
+  const printed = (a.description?.en ?? '').trim() || (english ?? '').trim();
+  const hay = printed || a.description?.zh || '';
+  if (/all\s+units|所有单位|每个单位/i.test(hay)) return 'all';
+  return 'single';
+}
+
 export function needsSightToLanding(a: CardAction): boolean {
   const hay = [
     a.description?.zh ?? '',
@@ -50,10 +133,6 @@ export function needsSightToLanding(a: CardAction): boolean {
   return /直射|Direct Fire/i.test(hay);
 }
 
-// A unit may only start the game hidden if something it carries can put it into
-// the Optical Camouflage State (4.12.2). Silence merely stops camouflage being
-// removed, and the Firefly trait only applies while already hidden, so neither
-// counts. Only an Action that activates it does.
 export function canActivateCamo(data: GameData, t: Token): boolean {
   for (const { card } of tokenCards(data, t)) {
     for (const a of card.actions ?? []) {
@@ -321,8 +400,6 @@ export function factionProblems(data: GameData, tokens: Token[]): FactionProblem
       });
     }
   }
-  // PD and the White Dwarf collaboration are mercenary: their units hire out to
-  // any squad, so only the allegiance factions have to agree with each other.
   const allegiance = [...squad].filter((f) => !MERCENARY_FACTIONS.includes(f));
   if (allegiance.length > 1) {
     out.push({
@@ -382,11 +459,19 @@ export interface GuidedAction {
   reason?: string;
   ammoLeft?: number;
   intercept?: { left: number; max: number; can: boolean; reason?: string };
+  // Present only on an Action carrying the Charge Icon (4.14).
+  charge?: { charged: boolean };
   projectiles: Card[];
 }
 
-export function guidedActions(data: GameData, t: Token): GuidedAction[] {
+export interface ActionWorld {
+  tokens: Token[];
+  terrain: TerrainPiece[];
+}
+
+export function guidedActions(data: GameData, t: Token, world?: ActionWorld): GuidedAction[] {
   const out: GuidedAction[] = [];
+  const lockers = world ? lockersOf(data, t, world.tokens, world.terrain) : [];
   for (const { slot, card } of tokenCards(data, t)) {
     const partState = t.partStates[slot as PartSlot | 'main'] ?? 'intact';
     for (const a of card.actions ?? []) {
@@ -401,6 +486,9 @@ export function guidedActions(data: GameData, t: Token): GuidedAction[] {
       } else if (a.type === 'Firing' && statusCount(t.statuses, 'fci') > 0) {
         available = false;
         reason = 'Fire Control Interference blocks Firing';
+      } else if (a.type === 'Firing' && lockers.length && !isMeleeFiring(a)) {
+        available = false;
+        reason = `Melee Locked by ${lockers.map((o) => o.label).join(', ')}`;
       } else if (a.type === 'Moving' && statusCount(t.statuses, 'immobilized') > 0) {
         available = false;
         reason = 'Immobilized blocks Movement';
@@ -438,7 +526,8 @@ export function guidedActions(data: GameData, t: Token): GuidedAction[] {
       const projectiles = Array.isArray(card.projectile)
         ? card.projectile.map((id) => data.byId.get(id)).filter((x): x is Card => !!x)
         : [];
-      out.push({ action: a, card, slot, available, reason, ammoLeft, intercept, projectiles: a.type === 'Projectile' ? projectiles : [] });
+      const charge = consumesCharge(a) ? { charged: isCharged(t, slot) } : undefined;
+      out.push({ action: a, card, slot, available, reason, ammoLeft, intercept, charge, projectiles: a.type === 'Projectile' ? projectiles : [] });
     }
   }
   return out;
@@ -479,6 +568,7 @@ export function migrateState(raw: unknown, data: GameData): GameState | null {
     roundLimit: (s as { roundLimit?: number }).roundLimit ?? 5,
     sideNames: (s as { sideNames?: GameState['sideNames'] }).sideNames ?? {},
     mission: (s as { mission?: string | null }).mission ?? null,
+    tasks: (s as { tasks?: unknown }).tasks ? normaliseTasks((s as { tasks?: unknown }).tasks) : null,
     scenario: (s as { scenario?: string | null }).scenario ?? null,
     setup: normaliseSetup((s as { setup?: unknown }).setup),
     showZones: (s as { showZones?: boolean }).showZones ?? false,
@@ -524,9 +614,11 @@ export function migrateState(raw: unknown, data: GameData): GameState | null {
       link: t.link ?? (t.kind === 'mech' ? pilot?.LV ?? 3 : undefined),
       timing: t.timing,
       deployed: t.deployed === false ? false : undefined,
+      expiring: Array.isArray(t.expiring) ? t.expiring.filter((x) => typeof x === 'string') : undefined,
       partStates: partStates as Token['partStates'],
       ammo: t.ammo ?? initAmmo(cards),
       intercept: t.intercept ?? initIntercept(cards),
+      charge: Array.isArray(t.charge) && t.charge.length ? t.charge.filter((x: unknown) => typeof x === 'string') : undefined,
       log: t.log ?? [],
       statuses: (t.statuses ?? []).filter((s: string) => s !== 'interception'),
     });

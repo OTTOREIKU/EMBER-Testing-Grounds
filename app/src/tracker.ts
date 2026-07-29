@@ -120,6 +120,9 @@ export class RoundTracker {
       s.round.firstPlayer = s.round.firstPlayer === 'blue' ? 'red' : 'blue';
       s.commandTokens = { blue: 0, red: 0 };
       for (const t of s.tokens) t.timing = undefined;
+      // All Terminal Tokens flip back face-up at the End Phase (5.3.3), so the
+      // new round starts with every Terminal accessible again.
+      for (const i of s.tasks?.items ?? []) if (i.kind === 'terminal') i.accessed = null;
     }
     this.onChanged();
   }

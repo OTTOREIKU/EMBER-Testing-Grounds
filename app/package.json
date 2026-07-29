@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node tests/activation.test.mjs && node tests/ammo.test.mjs && node tests/boxes.test.mjs && node tests/counterroll.test.mjs && node tests/faction.test.mjs && node tests/intercept.test.mjs && node tests/launch.test.mjs && node tests/loops.test.mjs && node tests/movepath.test.mjs && node tests/offset.test.mjs && node tests/script.test.mjs && node tests/setup.test.mjs && node tests/smoke.test.mjs && node tests/standing.test.mjs && node tests/stock.test.mjs && node tests/surplus.test.mjs && node tests/ticks.test.mjs && node tests/tokenshapes.test.mjs && node tests/tracepath.test.mjs"
+    "test": "node tests/activation.test.mjs && node tests/ammo.test.mjs && node tests/boxes.test.mjs && node tests/breakaway.test.mjs && node tests/charge.test.mjs && node tests/counterroll.test.mjs && node tests/faction.test.mjs && node tests/intercept.test.mjs && node tests/knockback.test.mjs && node tests/launch.test.mjs && node tests/loops.test.mjs && node tests/meleelock.test.mjs && node tests/movepath.test.mjs && node tests/offset.test.mjs && node tests/script.test.mjs && node tests/setup.test.mjs && node tests/smoke.test.mjs && node tests/standing.test.mjs && node tests/stock.test.mjs && node tests/surplus.test.mjs && node tests/tasks.test.mjs && node tests/ticks.test.mjs && node tests/tokendecay.test.mjs && node tests/tokenshapes.test.mjs && node tests/tracepath.test.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.1.1",

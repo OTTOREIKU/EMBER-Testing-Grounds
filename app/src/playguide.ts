@@ -1,13 +1,13 @@
 import type { CardAction, ExtraTick, GameState, Opportunity, ScriptState, Side, Stance, Timing, Token } from './types';
-import { newOpportunity, normaliseScript, TIMINGS } from './types';
-import type { GameData } from './data';
+import { ageTokens, newOpportunity, normaliseScript, statusCount, STATUSES, TIMINGS } from './types';
+import type { GameData, MissionCard } from './data';
 import { SIDE_LABEL } from './data';
 import { PHASES, PHASE_INFO } from './tracker';
-import { canActivateCamo, guidedActions, initiativeFor, maneuverRange, SLOT_LABEL, tokenCards } from './units';
+import { type ActionWorld, canActivateCamo, guidedActions, initiativeFor, maneuverRange, SLOT_LABEL, tokenCards } from './units';
 import { canManeuver, canPerform, costLabel, costOf, LENGTH_NAME, lengthOf, spendAction, spendManeuver } from './ticks';
 import { deployable, deploymentComplete, deployTurn, firstPlayerFrom, newSetup, normaliseSetup, rollTotal, type SetupState } from './setup';
+import { controlOf, directAccess, normaliseTasks, scoreMain, scoreSecondary, unpaidLines, type ScoreLine, type ScoreResult, type SecondaryScoring, type TaskState } from './tasks';
 
-// A finished phase reads better as a single green marker than as a sentence.
 function phaseDone(text: string): string {
   return `<p class="pg-complete"><i>✓</i><span>${text}</span></p>`;
 }
@@ -148,6 +148,7 @@ export function actionPhaseComplete(state: GameState, init: InitLookup): boolean
 }
 
 export interface GuideCallbacks {
+  world(): ActionWorld;
   onAdvancePhase(): void;
   onSelectUnit(uid: number): void;
   onMoveUnit(uid: number, opts: { range?: number; label: string }, done: (moved: boolean) => void): void;
@@ -156,6 +157,8 @@ export interface GuideCallbacks {
   onIntercept(uid: number, actionId: string, targetUid: number): void;
   onRollFirstPlayer(side: Side): void;
   onPlaceUnit(uid: number, opts: { stance: Stance; camo: boolean }): void;
+  onRemoveSpent(): void;
+  onPickSecondary(side: Side): void;
   mapLabel(): string;
   zoneLabel(): string;
   onNote(t: Token, text: string): void;
@@ -215,11 +218,17 @@ export class PlayGuide {
     const leaving = sc.stage.split(':')[1];
     // Unspent Command Tokens do not carry over (3.2.3).
     if (leaving === '0') s.commandTokens = { blue: 0, red: 0 };
+    // Control captures are a judgement of the End Phase itself (5.3.2), so
+    // walking out of it must not lose them, Award or no Award.
+    if (leaving === '5') this.settleTasks(s);
     if (s.round.phase === 0) {
       s.commandTokens = { blue: commandTokensFor(s, 'blue'), red: commandTokensFor(s, 'red') };
       sc.commanded = [];
     }
     if (s.round.phase === 0 || s.round.phase === 2) sc.acted = [];
+    // End Phase ticks are keyed by round, so drop the ones that can never match
+    // again rather than letting the list grow for the length of the game.
+    sc.endDone = sc.endDone.filter((k) => k.startsWith(`${s.round.n}:`));
     // Ticks belong to one Action Opportunity, so none survives a phase change.
     sc.opp = null;
     sc.passed = [];
@@ -265,7 +274,15 @@ export class PlayGuide {
           this.setupState(s)
             ? this.setupHtml(s)
             : `${this.interceptHtml(s)}
-        ${phase === 'Action' ? this.actionHtml(s) : phase === 'Planning' ? this.planningHtml(s) : this.loopHtml(s, phase)}`
+        ${
+          phase === 'Action'
+            ? this.actionHtml(s)
+            : phase === 'Planning'
+              ? this.planningHtml(s)
+              : phase === 'End'
+                ? this.endHtml(s)
+                : this.loopHtml(s, phase)
+        }`
         }
         <details class="pg-rules"${this.ui.rules ? ' open' : ''}>
           <summary>How this phase works</summary>
@@ -299,10 +316,55 @@ export class PlayGuide {
         if (o) this.cb.onSetStance(o.uid, b.dataset.stance as Stance);
       }),
     );
+    this.root.querySelector('[data-score]')?.addEventListener('click', () => this.awardScore());
+    this.root.querySelectorAll<HTMLButtonElement>('[data-secondary]').forEach((b) =>
+      b.addEventListener('click', () => this.cb.onPickSecondary(b.dataset.secondary as Side)),
+    );
+    this.root.querySelectorAll<HTMLButtonElement>('[data-stabilise]').forEach((b) =>
+      b.addEventListener('click', () => this.stabilise(Number(b.dataset.stabilise))),
+    );
+    this.root.querySelectorAll<HTMLButtonElement>('[data-reveal]').forEach((b) =>
+      b.addEventListener('click', () => this.revealUnit(Number(b.dataset.reveal))),
+    );
+    this.root.querySelectorAll<HTMLButtonElement>('[data-scan]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const t = this.state?.tokens.find((x) => x.uid === Number(b.dataset.scan));
+        if (!t) return;
+        this.cb.onSelectUnit(t.uid);
+        this.cb.onNote(t, 'Scan: pick a camouflaged or Low Profile enemy within Range 6 and make an Electronic counter-roll against it. On a success the camouflage is Revealed, or a Low Profile Token comes off.');
+      }),
+    );
+    this.root.querySelectorAll<HTMLButtonElement>('[data-reboot]').forEach((b) =>
+      b.addEventListener('click', () => this.reboot(b.dataset.reboot as Stance)),
+    );
     this.root.querySelector('[data-maneuver]')?.addEventListener('click', () => this.tryManeuver());
     this.root.querySelectorAll<HTMLButtonElement>('[data-act]').forEach((b) =>
       b.addEventListener('click', () => this.tryAction(b.dataset.act!)),
     );
+    const markEnd = (id: string): void => {
+      if (id === 'tasks') this.settleTasks(s);
+      const sc = this.script(s);
+      const key = `${s.round.n}:end:${id}`;
+      if (!sc.endDone.includes(key)) sc.endDone.push(key);
+      this.cb.onChanged();
+    };
+    this.root.querySelectorAll<HTMLButtonElement>('[data-end-step]').forEach((b) =>
+      b.addEventListener('click', () => markEnd(b.dataset.endStep!)),
+    );
+    this.root.querySelector('[data-end-remove]')?.addEventListener('click', () => {
+      this.cb.onRemoveSpent();
+      markEnd('remove');
+    });
+    this.root.querySelector('[data-end-tokens]')?.addEventListener('click', () => {
+      for (const t of s.tokens) {
+        const { removed, flipped } = ageTokens(t);
+        const names = (ids: string[]) => [...new Set(ids)].map((id) => STATUSES.find((d) => d.id === id)?.label ?? id).join(', ');
+        if (removed.length) this.cb.onNote(t, `End Phase: ${names(removed)} expired and came off.`);
+        if (flipped.length) this.cb.onNote(t, `End Phase: ${names(flipped)} flipped to red and leaves next round.`);
+      }
+      s.commandTokens = { blue: 0, red: 0 };
+      markEnd('tokens');
+    });
     this.root.querySelector('[data-lock-map]')?.addEventListener('click', () => {
       const su = normaliseSetup(s.setup) ?? newSetup();
       if (!s.zoneSet && !this.warn) {
@@ -400,6 +462,7 @@ export class PlayGuide {
     this.root.querySelector('[data-end]')?.addEventListener('click', () => this.endActivation());
     this.root.querySelector('[data-unpick]')?.addEventListener('click', () => {
       this.picked = null;
+      this.warn = null;
       this.render();
     });
     this.root.querySelector('.pg-pass:not([data-unpick])')?.addEventListener('click', () => this.pass());
@@ -447,10 +510,156 @@ export class PlayGuide {
     </div>`;
   }
 
+  // ---------- end phase (rulebook 3.7) ----------
+
+  private endHtml(s: GameState): string {
+    const sc = this.script(s);
+    const fp = `<p class="pg-turn">First player: <b class="side-${s.round.firstPlayer}">${SIDE_LABEL[s.round.firstPlayer]}</b></p>`;
+    const doomed = s.tokens.filter(
+      (t) => t.kind === 'mech' && Object.values(t.partStates).filter((p) => p !== 'destroyed').length <= 2,
+    );
+    const marked = s.tokens.filter((t) => (t.statuses ?? []).some((id: string) => {
+      const def = STATUSES.find((d) => d.id === id);
+      return def?.shape === 'square' || def?.shape === 'hexagon';
+    }));
+    const cmd = (s.commandTokens.blue ?? 0) + (s.commandTokens.red ?? 0);
+    const done = new Set(sc.endDone);
+    const step = (id: string, n: number, title: string, body: string, action = '') => {
+      const ok = done.has(`${s.round.n}:end:${id}`);
+      return `<div class="pg-endstep${ok ? ' done' : ''}">
+        <p class="pg-endhead"><i>${ok ? '✓' : n}</i><b>${title}</b></p>
+        <p class="pg-endbody">${body}</p>
+        ${ok ? '' : action}
+      </div>`;
+    };
+
+    return `${fp}
+      ${step(
+        'remove',
+        1,
+        'Remove units',
+        doomed.length
+          ? `${doomed.map((t) => esc(t.label)).join(', ')} ${doomed.length === 1 ? 'has' : 'have'} 2 or fewer Parts left, so ${
+              doomed.length === 1 ? 'it comes' : 'they come'
+            } off now. Alternate removals from the First Player if the order could matter.`
+          : 'No Mech is down to 2 or fewer Parts, and nothing is marked to leave at the end of the round.',
+        doomed.length
+          ? `<div class="pg-units"><button class="pg-unit" data-end-remove="1">Remove ${doomed.length}</button></div>`
+          : `<div class="pg-units"><button class="pg-pass" data-end-step="remove">Nothing to remove</button></div>`,
+      )}
+      ${(() => {
+        const torso = (t: Token) => (t.partStates.torso ?? 'intact') !== 'destroyed';
+        const canStabilise = s.tokens.filter((t) => t.kind === 'mech' && alive(t) && torso(t) && (t.statuses ?? []).some((id) => {
+          const d = STATUSES.find((x) => x.id === id);
+          return d?.shape === 'square' || d?.shape === 'hexagon';
+        }));
+        const canReveal = s.tokens.filter((t) => alive(t) && statusCount(t.statuses, 'camouflage') > 0);
+        const hidden = s.tokens.filter((t) => alive(t) && (statusCount(t.statuses, 'camouflage') > 0 || statusCount(t.statuses, 'lowProfile') > 0));
+        const canScan = hidden.length ? s.tokens.filter((t) => t.kind === 'mech' && alive(t) && torso(t) && hidden.some((h) => h.side !== t.side)) : [];
+        const none = !canStabilise.length && !canReveal.length && !canScan.length;
+        return step(
+          'commons',
+          2,
+          'End Phase actions',
+          none
+            ? 'Nobody can Scan, Stabilize System or Reveal this round, so there is nothing to spend an End Phase Action on.'
+            : 'Scan, Stabilize System and Reveal each cost 1 Action Tick and are taken now, before tokens are managed.',
+          none
+            ? '<div class="pg-units"><button class="pg-pass" data-end-step="commons">Nothing to do</button></div>'
+            : `<div class="pg-units">
+                ${canStabilise.map((t) => `<button class="pg-unit" data-stabilise="${t.uid}" title="Torso: remove 1 Square or Hexagon Token from this Mech, then restore 1 Link">Stabilize ${esc(t.label)}</button>`).join('')}
+                ${canReveal.map((t) => `<button class="pg-unit" data-reveal="${t.uid}" title="Become Revealed, then make Manifestation Movement up to this unit's Stealth value">Reveal ${esc(t.label)}</button>`).join('')}
+                ${canScan.map((t) => `<button class="pg-unit" data-scan="${t.uid}" title="Torso, Range 6: make an Electronic counter-roll against a camouflaged or Low Profile enemy">Scan with ${esc(t.label)}</button>`).join('')}
+                <button class="pg-pass" data-end-step="commons">Done</button>
+              </div>`,
+        );
+      })()}
+      ${(() => {
+        const red = s.tokens.flatMap((t) => (t.expiring ?? []).map((id) => ({ t, id })));
+        const yellow = s.tokens.flatMap((t) =>
+          (t.statuses ?? [])
+            .filter((id) => STATUSES.find((d) => d.id === id)?.decay === 'yellow' && !(t.expiring ?? []).includes(id))
+            .map((id) => ({ t, id })),
+        );
+        const unknown = s.tokens.flatMap((t) =>
+          (t.statuses ?? []).filter((id) => {
+            const d = STATUSES.find((x) => x.id === id);
+            return (d?.shape === 'square' || d?.shape === 'hexagon') && !d.decay;
+          }),
+        );
+        const name = (id: string) => STATUSES.find((d) => d.id === id)?.label ?? id;
+        const bits = [
+          red.length ? `${red.length} red token${red.length === 1 ? '' : 's'} to remove (${[...new Set(red.map((x) => name(x.id)))].join(', ')})` : '',
+          yellow.length ? `${yellow.length} yellow to flip (${[...new Set(yellow.map((x) => name(x.id)))].join(', ')})` : '',
+          cmd ? `${cmd} Command Token${cmd === 1 ? '' : 's'}` : '',
+        ].filter(Boolean);
+        return step(
+          'tokens',
+          3,
+          'Token management',
+          `Red Square and Hexagon Tokens come off, Yellow ones flip to their red side, and every Command Token is removed.${
+            bits.length ? ` Waiting: ${bits.join(' · ')}.` : ' Nothing is waiting.'
+          }${
+            unknown.length
+              ? `<em>${[...new Set(unknown.map(name))].join(', ')} ${
+                  new Set(unknown).size === 1 ? 'has' : 'have'
+                } no printed colour recorded, so ${new Set(unknown).size === 1 ? 'it is' : 'they are'} left alone.</em>`
+              : ''
+          }`,
+          `<div class="pg-units"><button class="pg-unit" data-end-tokens="1">Age the tokens</button>
+            <button class="pg-pass" data-end-step="tokens">Skip</button></div>`,
+        );
+      })()}
+      ${(() => {
+        const tasks = normaliseTasks(s.tasks);
+        const mission = this.data.missions.cards.find((c) => c.id === s.mission);
+        const last = s.round.n >= (s.roundLimit ?? 5);
+        const preview = this.previewScore(s, tasks, mission, last);
+        const total = `<p class="pg-vp"><b>Victory Points</b>
+          <span class="side-blue">${SIDE_LABEL.blue} ${tasks.vp.blue}</span> ·
+          <span class="side-red">${SIDE_LABEL.red} ${tasks.vp.red}</span></p>`;
+        const secLine = (['blue', 'red'] as Side[])
+          .map((side) => {
+            const card = tasks.secondary[side] ? this.data.secondary.find((c) => c.id === tasks.secondary[side]) : undefined;
+            return card ? `<span class="side-${side}">${SIDE_LABEL[side]}: ${esc(card.name)}</span>` : '';
+          })
+          .filter(Boolean)
+          .join(' · ');
+        const body = `${mission
+          ? `<b>${esc(mission.name)}</b>. ${esc(mission.scoring)}`
+          : 'No Main Task is chosen, so there is nothing to score. Pick one from the Missions button in the toolbar.'}${
+          secLine ? `<br><small>${secLine}</small>` : ''}`;
+        const lines = preview.lines.length
+          ? `<ul class="pg-score">${preview.lines
+              .map((l) => `<li><b class="side-${l.side}">${SIDE_LABEL[l.side]}</b> +${l.vp} VP, ${esc(l.why)}</li>`)
+              .join('')}</ul>`
+          : mission
+            ? `<p class="dim">Nothing scores this round${mission.cadence === 'at-end' && !last ? `, because this Task only pays out at the end of Round ${s.roundLimit ?? 5}` : ''}.</p>`
+            : '';
+        return step(
+          'tasks',
+          4,
+          'Tasks and victory points',
+          `${body}${total}${lines}`,
+          preview.blue || preview.red
+            ? `<div class="pg-units"><button class="pg-unit" data-score="1">Award ${preview.blue ? `${SIDE_LABEL.blue} +${preview.blue}` : ''}${preview.blue && preview.red ? ' and ' : ''}${preview.red ? `${SIDE_LABEL.red} +${preview.red}` : ''}</button>
+                <button class="pg-pass" data-end-step="tasks">Skip</button></div>`
+            : '<div class="pg-units"><button class="pg-pass" data-end-step="tasks">Nothing to score</button></div>',
+        );
+      })()}
+      ${step(
+        'round',
+        5,
+        'End of round',
+        `The First Player Token flips, so ${SIDE_LABEL[s.round.firstPlayer === 'blue' ? 'red' : 'blue']} goes first next round.${
+          s.round.n >= (s.roundLimit ?? 5) ? ' This is the last scheduled round, so the game ends here unless you play on.' : ''
+        }`,
+        '',
+      )}`;
+  }
+
   // ---------- pre-game setup (rulebook 3.1.2, 3.1.4) ----------
 
-  // Re-arms the board picker with the current Stance and camouflage choice, so
-  // changing either before clicking a Grid is picked up.
   private armPlacement(): void {
     const d = this.deploying;
     if (!d) return;
@@ -458,8 +667,6 @@ export class PlayGuide {
     this.cb.onPlaceUnit(d.uid, { stance: d.stance, camo: d.camo });
   }
 
-  // Nothing may advance the round while the pre-game is unfinished, or the
-  // Planning dials are unconfirmed. Returns why, or null when the way is clear.
   blockedReason(s: GameState): string | null {
     const su = this.setupState(s);
     if (su) {
@@ -544,11 +751,29 @@ export class PlayGuide {
         <button class="pg-unit" data-edge="white">Take the White side</button>
         <button class="pg-unit" data-edge="black">Take the Black side</button>
       </div>
-      <p class="pg-intercept-note">The other side takes the opposite edge. Deployment Zones follow the edges, so this decides where each squad starts.</p>`;
+      <p class="pg-intercept-note">The other side takes the opposite edge. Deployment Zones follow the edges, so this decides where each squad starts.</p>
+      ${this.secondaryHtml(s)}`;
+  }
+
+  // Prepare Tasks (5.1 step 3): starting from the First Player, each side picks
+  // one Secondary Task and shows it, then names whatever the card designates.
+  private secondaryHtml(s: GameState): string {
+    const tasks = normaliseTasks(s.tasks);
+    const order: Side[] = s.round.firstPlayer === 'blue' ? ['blue', 'red'] : ['red', 'blue'];
+    const row = (side: Side) => {
+      const card = tasks.secondary[side] ? this.data.secondary.find((c) => c.id === tasks.secondary[side]) : undefined;
+      return `<button class="pg-unit${card ? '' : ' warn'}" data-secondary="${side}">
+        ${SIDE_LABEL[side]}: ${card ? esc(card.name) : 'pick a Secondary Task'}</button>`;
+    };
+    return `<p class="pg-active" style="margin-top:12px">Secondary Tasks
+        <small>One each, open information, ${SIDE_LABEL[order[0]]} first.</small></p>
+      <div class="pg-units">${row(order[0])}${row(order[1])}</div>`;
   }
 
   private deployHtml(s: GameState, su: SetupState): string {
     const fp = `<p class="pg-turn">First player: <b class="side-${s.round.firstPlayer}">${SIDE_LABEL[s.round.firstPlayer]}</b></p>`;
+    const tasks = normaliseTasks(s.tasks);
+    const secRow = !tasks.secondary.blue || !tasks.secondary.red ? this.secondaryHtml(s) : '';
     if (deploymentComplete(s)) {
       return `${fp}${phaseDone('Everything is deployed')}
         <div class="pg-units"><button class="pg-unit" data-deploy-done="1">Begin round 1</button></div>`;
@@ -593,6 +818,7 @@ export class PlayGuide {
     }
 
     return `${fp}
+      ${secRow}
       <p class="pg-active">Now: <b class="side-${turn}">${SIDE_LABEL[turn]}</b>
         <small>place one unit in the ${su.edge[turn]} Deployment Zone · ${waiting.length} left${
           otherLeft ? '' : `, then ${SIDE_LABEL[turn]} places the rest`
@@ -610,9 +836,6 @@ export class PlayGuide {
 
   // ---------- planning phase (rulebook 3.3) ----------
 
-  // Every Mech needs a Timing before the Action Phase can order anything, and a
-  // Mech with no dial simply never activates, so the phase is not done until
-  // they are all set and the player has said so.
   private planningHtml(s: GameState): string {
     const sc = this.script(s);
     const fp = `<p class="pg-turn">First player: <b class="side-${s.round.firstPlayer}">${SIDE_LABEL[s.round.firstPlayer]}</b></p>`;
@@ -651,11 +874,9 @@ export class PlayGuide {
 
   // ---------- action phase (rulebook 3.4) ----------
 
-  // Every Action a Mech could pay Ticks for: the ones printed on its Parts, plus
-  // the Common Actions any Mech can initiate through a surviving Part.
   private tickActions(t: Token): { action: CardAction; label: string; note?: string; blocked?: string }[] {
     const out: { action: CardAction; label: string; note?: string; blocked?: string }[] = [];
-    for (const ga of guidedActions(this.data, t)) {
+    for (const ga of guidedActions(this.data, t, this.cb.world())) {
       if (!lengthOf(ga.action)) continue;
       out.push({
         action: ga.action,
@@ -669,8 +890,10 @@ export class PlayGuide {
         .filter(([, v]) => v !== 'destroyed')
         .map(([k]) => k),
     );
+    const hasTerminals = normaliseTasks(this.state?.tasks).items.some((i) => i.kind === 'terminal');
     for (const c of this.data.commonActions) {
       if (c.phase) continue;
+      if (c.id === 'COMMON_REMOTE_ACCESS' && !hasTerminals) continue;
       const usable = c.slots.some((x) => slots.has(x));
       out.push({
         action: c,
@@ -726,13 +949,19 @@ export class PlayGuide {
       ${o.extras.length ? `<span class="pips pips-extra${extrasLeft.length ? '' : ' spent'}"><b class="pip-label">XTR</b>${o.extras.map((x) => pip(!o.spentExtras.includes(x.id))).join('')}</span>` : ''}
     </div>`;
 
-    // Stance is chosen before anything is spent, and a Shutdown Mech may only Reboot.
+    const shutdown = t.stance === 'shutdown';
     const stanceRow =
-      !o.maneuvered && !o.started && t.stance !== 'shutdown'
+      !o.maneuvered && !o.started && !shutdown
         ? `<div class="pg-stances">${(['defensive', 'mobility', 'offensive'] as const)
             .map((x) => `<button class="pg-stance${t.stance === x ? ' sel' : ''}" data-stance="${x}">${x[0].toUpperCase()}${x.slice(1)}</button>`)
             .join('')}</div>`
         : '';
+    const rebootRow = shutdown
+      ? `<p class="pg-warn">${esc(t.label)} is in Shutdown Stance, so Reboot is the only thing it may do. It cannot Maneuver and no other Action is legal (4.1.1).</p>
+         <div class="pg-stances">${(['defensive', 'mobility', 'offensive'] as const)
+            .map((x) => `<button class="pg-stance" data-reboot="${x}" title="Reboot into ${x} Stance and restore 1 Link">Reboot to ${x[0].toUpperCase()}${x.slice(1)}</button>`)
+            .join('')}</div>`
+      : '';
 
     const man = canManeuver(o);
     const range = maneuverRange(this.data, t);
@@ -749,20 +978,165 @@ export class PlayGuide {
       })
       .join('');
 
+    const maneuverRow = shutdown
+      ? ''
+      : `<div class="pg-units">
+        <button class="pg-unit${man.ok ? '' : ' warn'}" data-maneuver="1" title="${esc(man.ok ? `Maneuver up to ${range} Grid${range === 1 ? '' : 's'}` : man.why ?? '')}">Maneuver ${range}</button>
+      </div>`;
+    const actionRows = shutdown
+      ? ''
+      : `<div class="pg-acts">${rows || '<p class="pg-done-note">This Mech has no Action that costs Ticks.</p>'}</div>`;
+
     return `${fp}
       <p class="pg-active">Now: <b class="side-${t.side}">${SIDE_LABEL[t.side]}</b>
         <small>${esc(t.label)} · ${timing?.name ?? 'no dial'}${init === undefined ? '' : ` · Initiative ${init}`} · ${at + 1} of ${order.length}</small></p>
       ${pool}
       ${this.warn ? `<p class="pg-warn">${esc(this.warn)}</p>` : ''}
       ${stanceRow}
-      <div class="pg-units">
-        <button class="pg-unit${man.ok ? '' : ' warn'}" data-maneuver="1" title="${esc(man.ok ? `Maneuver up to ${range} Grid${range === 1 ? '' : 's'}` : man.why ?? '')}">Maneuver ${range}</button>
-      </div>
-      <div class="pg-acts">${rows || '<p class="pg-done-note">This Mech has no Action that costs Ticks.</p>'}</div>
+      ${rebootRow}
+      ${maneuverRow}
+      ${actionRows}
       <div class="pg-units">
         <button class="pg-pass" data-end="1">End activation</button>
       </div>
       ${upNext ? `<p class="pg-next-up">Up next: ${esc(s.tokens.find((x) => x.uid === upNext.uid)?.label ?? '?')} <small>${TIMINGS.find((x) => x.id === upNext.timing)?.name}</small></p>` : ''}`;
+  }
+
+  private refreshControl(s: GameState, tasks: TaskState): void {
+    for (const item of tasks.items) {
+      const cells = this.data.zoneData.zones.find((z) => z.id === item.zone)?.cells ?? [];
+      if (item.kind === 'control') {
+        const holder = controlOf(cells, s.tokens);
+        if (holder) item.control = holder;
+        continue;
+      }
+      if (item.kind === 'terminal' && !item.accessed) {
+        item.accessed = directAccess(cells, s.tokens);
+      }
+    }
+  }
+
+  private previewScore(s: GameState, tasks: TaskState, mission: MissionCard | undefined, finalRound: boolean): ScoreResult {
+    this.refreshControl(s, tasks);
+    const cells = (zone: string) => this.data.zoneData.zones.find((z) => z.id === zone)?.cells ?? [];
+    const all: ScoreLine[] = [];
+    if (mission) all.push(...this.mainScore(s, tasks, mission, finalRound).lines);
+    for (const side of ['blue', 'red'] as Side[]) {
+      const id = tasks.secondary[side];
+      const card = id ? this.data.secondary.find((c) => c.id === id) : undefined;
+      if (!card?.kind) continue;
+      all.push(...scoreSecondary(
+        { id: card.id, name: card.name, vp: card.vp ?? 0, kind: card.kind as SecondaryScoring['kind'] },
+        side, tasks, s.tokens, cells, finalRound,
+        (t) => t.kind === 'projectile' || (t.kind === 'drone' && (this.data.byId.get(t.cardId)?.score ?? 0) === 0),
+      ).lines);
+    }
+    const open = unpaidLines(all, tasks.scored);
+    let blue = 0;
+    let red = 0;
+    for (const l of open) {
+      if (l.side === 'blue') blue += l.vp;
+      else red += l.vp;
+    }
+    return { lines: open, blue, red };
+  }
+
+  private mainScore(s: GameState, tasks: TaskState, mission: MissionCard, finalRound: boolean): ScoreResult {
+    return scoreMain(
+      {
+        family: (mission.family as 'blackbox' | 'control' | 'terminal' | 'vip'),
+        vp: mission.vp ?? 0,
+        zones: mission.zones ?? [],
+        fromRound: mission.fromRound ?? 1,
+        cadence: mission.cadence ?? 'per-round',
+      },
+      tasks,
+      s.tokens,
+      s.round.n,
+      finalRound,
+    );
+  }
+
+  private settleTasks(s: GameState): void {
+    const tasks = normaliseTasks(s.tasks);
+    this.refreshControl(s, tasks);
+    s.tasks = tasks;
+  }
+
+  private awardScore(): void {
+    const s = this.state;
+    if (!s) return;
+    const mission = this.data.missions.cards.find((c) => c.id === s.mission);
+    const tasks = normaliseTasks(s.tasks);
+    const last = s.round.n >= (s.roundLimit ?? 5);
+    const got = this.previewScore(s, tasks, mission, last);
+    tasks.vp.blue += got.blue;
+    tasks.vp.red += got.red;
+    for (const l of got.lines) if (l.key && !tasks.scored.includes(l.key)) tasks.scored.push(l.key);
+    tasks.paidKills = { blue: { ...tasks.kills.blue }, red: { ...tasks.kills.red } };
+    tasks.paidTestKills = { ...tasks.testKills };
+    s.tasks = tasks;
+    const key = `${s.round.n}:end:tasks`;
+    const sc = this.script(s);
+    if (!sc.endDone.includes(key)) sc.endDone.push(key);
+    this.cb.onChanged();
+  }
+
+  // Stabilize System (6.1): Torso removes 1 Square or Hexagon Token from this
+  // Mech, then restores 1 Link.
+  private stabilise(uid: number): void {
+    const s = this.state;
+    const t = s?.tokens.find((x) => x.uid === uid);
+    if (!s || !t) return;
+    const shed = (t.statuses ?? []).find((id) => {
+      const d = STATUSES.find((x) => x.id === id);
+      return d?.shape === 'square' || d?.shape === 'hexagon';
+    });
+    if (!shed) return;
+    t.statuses = (t.statuses ?? []).filter((id, i) => !(id === shed && (t.statuses ?? []).indexOf(shed) === i));
+    t.expiring = (t.expiring ?? []).filter((id) => id !== shed);
+    if (!t.expiring.length) t.expiring = undefined;
+    t.link = Math.min(this.maxLink(t), (t.link ?? 0) + 1);
+    const label = STATUSES.find((x) => x.id === shed)?.label ?? shed;
+    this.cb.onNote(t, `Stabilize System: ${label} removed and Link restored to ${t.link}.`);
+    this.cb.onChanged();
+  }
+
+  // Reveal (6.1): leave the Optical Camouflage State, then make Manifestation
+  // Movement, which the player performs by hand up to the unit's Stealth value.
+  private revealUnit(uid: number): void {
+    const s = this.state;
+    const t = s?.tokens.find((x) => x.uid === uid);
+    if (!s || !t) return;
+    t.statuses = (t.statuses ?? []).filter((id) => id !== 'camouflage');
+    this.cb.onSelectUnit(t.uid);
+    this.cb.onNote(t, `Reveal: out of the Optical Camouflage State. Now make Manifestation Movement, up to this unit's Stealth value, to where it really is.`);
+    this.cb.onChanged();
+  }
+
+  private maxLink(t: Token): number {
+    const pilot = t.kind === 'mech' && t.mech?.pilot ? this.data.byId.get(t.mech.pilot) : undefined;
+    return (pilot as { LV?: number } | undefined)?.LV ?? 99;
+  }
+
+  private reboot(stance: Stance): void {
+    const s = this.state;
+    if (!s) return;
+    const first = this.opportunity(s);
+    const t = first && s.tokens.find((x) => x.uid === first.uid);
+    if (!first || !t) return;
+    this.cb.onSetStance(first.uid, stance);
+    t.link = Math.min(this.maxLink(t), (t.link ?? 0) + 1);
+    const o = this.opportunity(s);
+    if (!o) return;
+    o.maneuver = 0;
+    o.maneuvered = true;
+    o.action = 1;
+    o.started = false;
+    o.performed = [...o.performed, 'COMMON_REBOOT'];
+    this.warn = null;
+    this.cb.onNote(t, `Reboot: out of Shutdown into ${stance} Stance, Link restored to ${t.link}. One Action Tick is left and it must match the dial.`);
+    this.cb.onChanged();
   }
 
   private tryManeuver(): void {
@@ -841,9 +1215,18 @@ export class PlayGuide {
   ): { action: CardAction; label: string; tag: string; note: string; blocked?: string }[] {
     const want = phase === 'Command' ? 'command' : phase === 'Automatic' ? 'auto' : null;
     const out: { action: CardAction; label: string; tag: string; note: string; blocked?: string }[] = [];
-    for (const ga of guidedActions(this.data, t)) {
+    for (const ga of guidedActions(this.data, t, this.cb.world())) {
       const a = ga.action;
-      if (want ? a.speed !== want : a.type !== 'Delay') continue;
+      // In the Delay Phase a Projectile performs whatever action it carries
+      // (3.6.2). The card data types these four ways: Delay, Tactic (guided
+      // attacks, mortar shells), and Immediate (detonate-on-landing grenades,
+      // which mostly resolve at launch but can still be waiting here). Passive
+      // is always on and never chosen.
+      if (want) {
+        if (a.speed !== want) continue;
+      } else if (a.type === 'Passive' || a.speed === 'passive') {
+        continue;
+      }
       const ammo = ga.ammoLeft;
       out.push({
         action: a,
@@ -861,10 +1244,19 @@ export class PlayGuide {
   private performUnitAction(uid: number, actionId: string): void {
     const s = this.state;
     if (!s) return;
+    const unit = s.tokens.find((x) => x.uid === uid);
+    const ga = unit && guidedActions(this.data, unit, this.cb.world()).find((g) => g.action.id === actionId);
+    const why = ga && !ga.available ? ga.reason ?? null : null;
+    if (why && this.warn !== why) {
+      this.warn = why;
+      this.render();
+      return;
+    }
+    this.warn = null;
     this.cb.onPerformAction(uid, actionId, (performed) => {
       if (!performed) return;
       const t = s.tokens.find((x) => x.uid === uid);
-      const a = t && guidedActions(this.data, t).find((g) => g.action.id === actionId)?.action;
+      const a = t && guidedActions(this.data, t, this.cb.world()).find((g) => g.action.id === actionId)?.action;
       if (t && a) this.cb.onNote(t, `${a.name.en || a.name.zh || a.id}.`);
       this.finishDesignation(uid);
     });
@@ -904,6 +1296,7 @@ export class PlayGuide {
       return `${fp}${tokens}
         <p class="pg-active">Now: <b class="side-${turn}">${SIDE_LABEL[turn]}</b>
           <small>${chosen.label}: ${what}</small></p>
+        ${this.warn ? `<p class="pg-warn">${esc(this.warn)}</p>` : ''}
         ${list}
         <div class="pg-units">
           <button class="pg-unit" data-move="${chosen.uid}">Move</button>
@@ -925,14 +1318,13 @@ export class PlayGuide {
       </div>`;
   }
 
-  // Picking a unit does not end its go. A commanded Drone either moves or takes one
-  // Command action (3.2.2), so the turn only passes once that choice is resolved.
   private designate(uid: number): void {
     const s = this.state;
     if (!s) return;
     const phase = PHASES[s.round.phase];
     if (!isLoopPhase(phase)) return;
     this.picked = uid;
+    this.warn = null;
     this.cb.onSelectUnit(uid);
     this.render();
   }
@@ -952,6 +1344,7 @@ export class PlayGuide {
       sc.acted.push(uid);
     }
     this.picked = null;
+    this.warn = null;
     sc.turn = nextTurn(s, phase, unit.side) ?? unit.side;
     this.cb.onChanged();
   }
@@ -968,9 +1361,6 @@ export class PlayGuide {
     this.cb.onChanged();
   }
 
-  // Position is stored as the RIGHT edge, not the left. Closing shrinks the panel
-  // to a small button, and a left anchor would strand it a panel-width away from
-  // the close button it replaces. A right anchor keeps it exactly where the X was.
   private place(): void {
     if (this.ui.x === null || this.ui.y === null) return;
     const r = this.host.getBoundingClientRect();
