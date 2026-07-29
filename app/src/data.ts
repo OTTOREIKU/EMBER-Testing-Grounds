@@ -573,6 +573,19 @@ export function statIconUrl(field: string): string | null {
   return name ? assetUrl(`tokens/tab/icon_${name}.webp`) : null;
 }
 
+export const TOKEN_PRINT: Record<string, string[]> = {
+  fci: ['fci-yellow', 'fci-red'],
+  fragile: ['fragile-yellow', 'fragile-red'],
+  immobilized: ['immobilized-yellow', 'immobilized-red'],
+  highlight: ['highlight-yellow', 'highlight-red'],
+  lowProfile: ['lowProfile-green', 'lowProfile-red'],
+  repaired: ['repaired'],
+};
+
+export function tokenPrintUrl(name: string): string {
+  return assetUrl(`tokens/print/${name}.webp`);
+}
+
 export function secondaryImageUrl(id: string): string {
   return assetUrl(`secondary/${id}.webp`);
 }

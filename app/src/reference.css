@@ -455,6 +455,10 @@ body.ref-locked { overflow: hidden; }
 /* ---------- token reference ---------- */
 .tok-card .card-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .tok-art { display: inline-flex; align-items: center; gap: 4px; }
+.tok-print {
+  height: 30px; width: auto; vertical-align: middle; margin-left: 3px;
+  border-radius: 4px; background: rgba(255,255,255,0.04);
+}
 .tok-badge { display: block; }
 .tag.tok-green { background: rgba(61, 220, 132, 0.16); color: #2fa968; }
 .tag.tok-yellow { background: rgba(240, 180, 41, 0.18); color: #b07c0d; }

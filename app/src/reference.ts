@@ -1,5 +1,5 @@
 import './reference.css';
-import { actionIconUrl, boxCoverUrl, cardName, FACTION_LABEL, loadData, mechPartUrl, missionImageUrl, portraitUrl, secondaryImageUrl, statIconUrl, tabImageUrl, zeroCostReason, type BoxDef, type GameData, type KeywordDef } from './data';
+import { actionIconUrl, boxCoverUrl, cardName, TOKEN_PRINT, tokenPrintUrl, FACTION_LABEL, loadData, mechPartUrl, missionImageUrl, portraitUrl, secondaryImageUrl, statIconUrl, tabImageUrl, zeroCostReason, type BoxDef, type GameData, type KeywordDef } from './data';
 import { mountCardImage, preloadCardImages, warmAllImagesWhenIdle } from './images';
 import { watchForUpdates } from './updates';
 import { SHAPE_NOTE, STATUSES, TIMINGS, type Card, type StatusDef } from './types';
@@ -601,6 +601,9 @@ function render(): void {
             return `<article class="card tok-card">
               <div class="card-title">
                 <span class="tok-art">${tokenSvg(d)}${d.decay === 'yellow' ? tokenSvg(d, true) : ''}</span>
+                ${(TOKEN_PRINT[d.id] ?? [])
+                  .map((n) => `<img class="tok-print" src="${tokenPrintUrl(n)}" alt="">`)
+                  .join('')}
                 ${esc(d.label)}
                 <span class="tag mono">${esc(d.shape)}</span>
                 ${dur ? `<span class="tag mono tok-${esc(d.decay!)}">${esc(dur.label)}</span>` : ''}
