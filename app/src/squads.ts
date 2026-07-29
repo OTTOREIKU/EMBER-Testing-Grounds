@@ -2,7 +2,7 @@ import type { GameData } from './data';
 import { actionIconUrl, cardName, FACTION_LABEL, mechPartUrl, SIDE_LABEL, tabImageUrl } from './data';
 import { MECH_LAYER_ORDER } from './board';
 import { inspectOnHover, linkMechanics, type InspectInfo } from './inspector';
-import type { GameState, PartSlot, PartState, Stance, Timing, TimingDef, Token } from './types';
+import type { GameState, PartSlot, PartState, Side, Stance, Timing, TimingDef, Token } from './types';
 import { addStatus, SCALES, SHAPE_NOTE, statusCount, statusesFor, TIMINGS } from './types';
 import { defaultUnitLabel, factionProblems, initiativeFor, MERCENARY_FACTIONS, pilotCard, SLOT_LABEL, tidyUnitLabel, tokenCards, tokenFactions } from './units';
 import { promptDialog } from './dialog';
@@ -170,6 +170,8 @@ export class SquadTracker {
         warn.textContent = `Over the ${sc.name} limit by ${pts - sc.points} points.`;
         sec.appendChild(warn);
       }
+      const tac = this.tacticsBlock(side);
+      if (tac) sec.appendChild(tac);
       // A prebuilt scenario is played as printed, mixed factions and all.
       for (const p of this.state.scenario ? [] : factionProblems(this.data, tokens)) {
         const bad = document.createElement('p');
@@ -212,6 +214,69 @@ export class SquadTracker {
       }
       this.root.appendChild(sec);
     }
+  }
+
+  // Tactics are held in hand, so they live on the squad rather than the board.
+  // The 1-per-round cap (5.4.2) is tracked by stamping the round onto each play,
+  // which avoids needing a reset hook on every path that advances the round.
+  private playedThisRound(side: Side): string[] {
+    const round = this.state?.round.n ?? 1;
+    return (this.state?.tacticsPlayed?.[side] ?? []).filter((e) => e.startsWith(`${round}:`));
+  }
+
+  private tacticsBlock(side: Side): HTMLElement | null {
+    const held = this.state?.tactics?.[side] ?? [];
+    if (!held.length) return null;
+    const spent = this.playedThisRound(side);
+    const box = document.createElement('div');
+    box.className = 'sq-tactics';
+    const head = document.createElement('p');
+    head.className = 'sq-tac-head';
+    head.textContent = spent.length
+      ? `Tactics (${held.length}) · 1 played this round`
+      : `Tactics (${held.length})`;
+    box.appendChild(head);
+    const counts = new Map<string, number>();
+    for (const id of held) counts.set(id, (counts.get(id) ?? 0) + 1);
+    for (const [id, n] of counts) {
+      const card = this.data.byId.get(id);
+      if (!card) continue;
+      const used = spent.filter((e) => e === `${this.state?.round.n ?? 1}:${id}`).length;
+      const row = document.createElement('div');
+      row.className = 'sq-tac-row';
+      row.dataset.tipCard = id;
+      const name = document.createElement('span');
+      name.className = 'sq-tac-name';
+      name.textContent = `${cardName(card)}${n > 1 ? ` ×${n}` : ''}`;
+      const timing = document.createElement('span');
+      timing.className = 'sq-tac-when';
+      timing.textContent = card.actions?.[0]?.name?.en ?? '';
+      const play = document.createElement('button');
+      play.className = 'sq-tac-play';
+      play.textContent = used ? 'Played' : 'Play';
+      play.disabled = spent.length > 0 || used >= n;
+      play.title = spent.length
+        ? 'Only 1 Tactics Card may be played per round (5.4.2)'
+        : `Play ${cardName(card)}`;
+      play.addEventListener('click', () => this.playTactic(side, id));
+      inspectOnHover(row, {
+        title: cardName(card),
+        sub: card.actions?.[0]?.name?.en,
+        lines: [card.actions?.[0]?.description?.en ?? '', 'Only 1 Tactics Card may be played per round (rulebook 5.4.2).'],
+      });
+      row.append(name, timing, play);
+      box.appendChild(row);
+    }
+    return box;
+  }
+
+  private playTactic(side: Side, id: string): void {
+    const s = this.state;
+    if (!s) return;
+    if (this.playedThisRound(side).length) return;
+    if (!s.tacticsPlayed) s.tacticsPlayed = { blue: [], red: [] };
+    s.tacticsPlayed[side].push(`${s.round.n}:${id}`);
+    this.cb.onChanged();
   }
 
   private tokenPoints(t: Token): number {

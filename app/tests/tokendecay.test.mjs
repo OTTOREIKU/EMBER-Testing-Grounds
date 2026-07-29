@@ -27,7 +27,8 @@ console.log('End Phase token management\n');
 
 // The Square Token colours, read off the printed tokens on book p.23.
 const decayOf = (id) => T.STATUSES.find((d) => d.id === id)?.decay;
-check('Fragile is green, so it never ages', decayOf('fragile'), 'green');
+check('Fragile is yellow, as printed on the token', decayOf('fragile'), 'yellow');
+check('Low Recognition is the green one', decayOf('lowProfile'), 'green');
 check('Immobilized is yellow', decayOf('immobilized'), 'yellow');
 check('Fire Control Interference is yellow', decayOf('fci'), 'yellow');
 check('Highlight is yellow', decayOf('highlight'), 'yellow');
@@ -53,10 +54,10 @@ check('the unit is clear', t.statuses, []);
 check('and nothing is left expiring', t.expiring, undefined);
 
 // Green tokens are untouched by either pass.
-const g = unit(['fragile', 'fragile']);
+const g = unit(['lowProfile', 'lowProfile']);
 T.ageTokens(g);
 T.ageTokens(g);
-check('green tokens survive two end phases', g.statuses, ['fragile', 'fragile']);
+check('green tokens survive two end phases', g.statuses, ['lowProfile', 'lowProfile']);
 check('and never flip', g.expiring, undefined);
 
 // Low Profile is green, so the End Phase never touches it; it comes off only by
@@ -72,11 +73,11 @@ check('an unknown id does not flip', xOut.flipped, []);
 check('and is not removed', x.statuses, ['notAToken']);
 
 // Mixed unit: red goes, yellow flips, green and unknown stay, all in one pass.
-const m = unit(['fci', 'immobilized', 'fragile', 'lowProfile'], ['fci']);
+const m = unit(['fci', 'immobilized', 'notAToken', 'lowProfile'], ['fci']);
 const mOut = T.ageTokens(m);
 check('the red one is removed', mOut.removed, ['fci']);
 check('the yellow one flips', mOut.flipped, ['immobilized']);
-check('green and unknown are untouched', m.statuses.sort(), ['fragile', 'immobilized', 'lowProfile']);
+check('green and unknown are untouched', m.statuses.sort(), ['immobilized', 'lowProfile', 'notAToken']);
 check('only the flipped one is expiring', m.expiring, ['immobilized']);
 
 // Removal happens before flipping, so a token cannot be added and removed in one
@@ -85,7 +86,7 @@ const order = unit(['immobilized']);
 T.ageTokens(order);
 check('a token flipped this pass is not also removed', order.statuses, ['immobilized']);
 
-// Stacking green tokens keep their count.
+// A stack keeps its count through the flip rather than being thinned one a round.
 const stack = unit(['fragile', 'fragile', 'fragile']);
 T.ageTokens(stack);
 check('a stack is not thinned', T.statusCount(stack.statuses, 'fragile'), 3);

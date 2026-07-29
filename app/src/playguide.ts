@@ -1,7 +1,7 @@
 import type { CardAction, ExtraTick, GameState, Opportunity, ScriptState, Side, Stance, Timing, Token } from './types';
 import { ageTokens, newOpportunity, normaliseScript, statusCount, STATUSES, TIMINGS } from './types';
 import type { GameData, MissionCard } from './data';
-import { SIDE_LABEL } from './data';
+import { cardName, SIDE_LABEL } from './data';
 import { bindTips, linkMechanics } from './inspector';
 import { PHASES, PHASE_INFO } from './tracker';
 import { type ActionWorld, canActivateCamo, guidedActions, initiativeFor, maneuverRange, SLOT_LABEL, tokenCards } from './units';
@@ -31,14 +31,14 @@ function loadUi(): GuideUi {
   try {
     const raw = JSON.parse(localStorage.getItem(UI_KEY) ?? '{}') as Partial<GuideUi>;
     return {
-      open: raw.open ?? false,
+      open: raw.open ?? true,
       collapsed: raw.collapsed ?? false,
       rules: raw.rules ?? false,
       x: raw.x ?? null,
       y: raw.y ?? null,
     };
   } catch {
-    return { open: false, collapsed: false, rules: false, x: null, y: null };
+    return { open: true, collapsed: false, rules: false, x: null, y: null };
   }
 }
 
@@ -167,6 +167,14 @@ export interface GuideCallbacks {
   onChanged(): void;
 }
 
+function tacticFitsPhase(when: string, phase: string): boolean {
+  const w = when.toLowerCase();
+  if (w.includes('command')) return phase === 'Command';
+  if (w.includes('end phase')) return phase === 'End';
+  if (w.includes('action opportunity')) return phase === 'Action';
+  return false;
+}
+
 export class PlayGuide {
   private host: HTMLElement;
   private root: HTMLElement;
@@ -250,16 +258,21 @@ export class PlayGuide {
         <button class="pg-close" title="Hide the play guide">✕</button>
       </div>
       <div class="pg-body">
-        <p class="pg-sub">Waiting for a game to start</p>
-        <p class="pg-idle-lead">The guide does nothing until a game begins. Start one and it takes over: the pre-game roll, deployment in the proper order, then every round driven phase by phase, tracking whose turn it is, spending Ticks and settling the End Phase.</p>
+        <p class="pg-sub">New here? Start with step 1</p>
+        <p class="pg-idle-lead">You need a squad before you can play. Build one in the <b>ADD</b> tab on the right, then start a game and this guide takes over: the pre-game roll, deployment, and every round driven phase by phase.</p>
+        <ol class="pg-firststeps">
+          <li><b>Build a squad.</b> Open the <b>ADD</b> tab on the right, then pick Mech, assemble your units and add them to their corresponding faction's squad, most teams are comprised of a few mechs and drones. Or use Squad Builder and Import Squad at the bottom of that tab.</li>
+          <li><b>Pick a battlefield.</b> Choose a Map and a Mission from the toolbar.</li>
+          <li><b>Start the game.</b> The button below walks you through the rest.</li>
+        </ol>
         <div class="pg-units"><button class="pg-start" data-start-game="1">Start game</button></div>
-        <p class="pg-idle-note">You can also start it from the round bar above the board.</p>
+        <p class="pg-idle-note">In a hurry? Load a ready-made squad and board from <b>Scenarios</b> in the toolbar.</p>
         <details class="pg-rules"${this.ui.rules ? ' open' : ''}>
           <summary>Playing without the guide</summary>
           <ul class="pg-steps">
             <li>Move units, roll dice and run attacks by hand from the Details panel.</li>
             <li>Step the round bar through the phases yourself.</li>
-            <li>Browse cards, missions and the glossary at any time.</li>
+            <li>Browse cards, missions and the <a href="reference.html" target="_blank" rel="noopener">Reference</a> at any time.</li>
           </ul>
         </details>
       </div>`;
@@ -324,7 +337,7 @@ export class PlayGuide {
         ${
           this.setupState(s)
             ? this.setupHtml(s)
-            : `${this.interceptHtml(s)}
+            : `${this.tacticsHtml(s, phase)}${this.interceptHtml(s)}
         ${
           phase === 'Action'
             ? this.actionHtml(s)
@@ -540,6 +553,37 @@ export class PlayGuide {
 
   // Interception fires the instant an Aerial Unit Moves or is Launched, so an
   // owed attempt is shown wherever we are in the round rather than waiting.
+  // Tactics are held in hand, so the guide can only remind. Each card's printed
+  // timing decides which phase it belongs to, and 5.4.2 caps play at 1 a round.
+  private tacticsHtml(s: GameState, phase: string): string {
+    const rows: string[] = [];
+    for (const side of ['blue', 'red'] as const) {
+      const held = s.tactics?.[side] ?? [];
+      if (!held.length) continue;
+      const spent = (s.tacticsPlayed?.[side] ?? []).filter((e) => e.startsWith(`${s.round.n}:`));
+      const seen = new Set<string>();
+      for (const id of held) {
+        if (seen.has(id)) continue;
+        seen.add(id);
+        const card = this.data.byId.get(id);
+        if (!card) continue;
+        const when = card.actions?.[0]?.name?.en ?? '';
+        if (!tacticFitsPhase(when, phase)) continue;
+        rows.push(`<div class="pg-tac-row${spent.length ? ' spent' : ''}">
+          <span class="side-${side}">${SIDE_LABEL[side]}</span>
+          <b>${esc(cardName(card))}</b>
+          <small>${esc(when)}</small>
+        </div>`);
+      }
+    }
+    if (!rows.length) return '';
+    return `<div class="pg-tactics">
+      <p class="pg-tac-head">Tactics you could play now</p>
+      ${rows.join('')}
+      <p class="pg-tac-note">Play them from the Squads tab. Only 1 per player per round (5.4.2).</p>
+    </div>`;
+  }
+
   private interceptHtml(s: GameState): string {
     const owed = this.script(s).intercepts;
     if (!owed.length) return '';

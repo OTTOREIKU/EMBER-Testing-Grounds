@@ -1,5 +1,6 @@
 import type { Card, MechLoadout } from './types';
-import { BASE_FACTIONS, cardName, FACTION_LABEL, mechPartUrl, tabImageUrl, type GameData } from './data';
+import { BASE_FACTIONS, cardName, FACTION_LABEL, mechPartUrl, SIDE_LABEL, tabImageUrl, type GameData } from './data';
+import { inspectOnHover } from './inspector';
 import { alertDialog, confirmDialog, promptDialog } from './dialog';
 import { deleteMechPreset, loadMechPresets, saveMechPreset } from './presets';
 
@@ -11,8 +12,18 @@ export interface RosterCallbacks {
   onPreview(card: Card, opts?: { focus?: boolean }): void;
   cardFilter?(card: Card): boolean;
   cardBadge?(card: Card): string;
+  pointsCap?(): { name: string; points: number; openEnded: boolean } | null;
+  squadPoints?(): { blue: number; red: number };
+  heldTactics?(): { blue: string[]; red: string[] };
+  onAddTactic?(card: Card, side: 'blue' | 'red'): void;
+  onDropTactic?(card: Card, side: 'blue' | 'red'): void;
   now(): number;
 }
+
+const MELON_RIND = 'M2,6A10,10 0 0,0 22,6Z M3.5,6A8.5,8.5 0 0,0 20.5,6Z';
+const MELON_FLESH = 'M4.4,6A7.6,7.6 0 0,0 19.6,6Z'
+  + [[7.8,8.5],[10.4,8.1],[13.2,8.3],[15.9,8.6],[9.1,10.5],[11.9,10.7],[14.7,10.4],[7.2,10.0],[16.9,9.9],[10.5,12.5],[13.4,12.4],[12.0,9.3]]
+    .map(([cx, cy]) => `M${cx - 0.5},${cy}a0.5,0.78 0 1,0 1,0a0.5,0.78 0 1,0 -1,0Z`).join('');
 
 const SLOTS: { key: keyof MechLoadout; label: string; type: string }[] = [
   { key: 'torso', label: 'Torso', type: 'torso' },
@@ -136,6 +147,23 @@ export class Roster {
       pts.className = 'tac-pts';
       pts.textContent = `${c.score ?? 0}p`;
       row.append(name, pts);
+
+      const held = this.cb.heldTactics?.();
+      for (const side of ['blue', 'red'] as const) {
+        const n = held ? held[side].filter((x) => x === c.id).length : 0;
+        const b = document.createElement('button');
+        b.className = `tac-add side-${side}${n ? ' has' : ''}`;
+        b.textContent = n ? `${SIDE_LABEL[side]} ×${n}` : SIDE_LABEL[side];
+        b.title = n
+          ? `In the ${SIDE_LABEL[side]} squad. Click to add another, right-click to remove one.`
+          : `Add to the ${SIDE_LABEL[side]} squad`;
+        b.addEventListener('click', () => this.cb.onAddTactic?.(c, side));
+        b.addEventListener('contextmenu', (ev) => {
+          ev.preventDefault();
+          if (n) this.cb.onDropTactic?.(c, side);
+        });
+        row.appendChild(b);
+      }
       list.appendChild(row);
     }
     this.body.appendChild(list);
@@ -385,6 +413,34 @@ export class Roster {
       btns.appendChild(b);
     }
     wrap.appendChild(btns);
+
+    const squad = document.createElement('div');
+    squad.className = 'mech-squad-btns';
+    const builder = document.createElement('a');
+    builder.id = 'btn-builder';
+    builder.className = 'squad-btn';
+    builder.href = 'https://watermelon02.github.io/builder-web/';
+    builder.target = '_blank';
+    builder.rel = 'noopener';
+    builder.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="${MELON_RIND}"/><path fill-rule="evenodd" d="${MELON_FLESH}"/></svg>Squad Builder`;
+    inspectOnHover(builder, {
+      title: 'Squad Builder',
+      lines: [
+        "Opens watermelon's community squad builder in a new tab.",
+        'Build a list there, export it, then bring it back with Import Squad.',
+      ],
+    });
+    const imp = document.createElement('button');
+    imp.className = 'squad-btn';
+    imp.textContent = 'Import Squad';
+    inspectOnHover(imp, {
+      title: 'Import Squad',
+      lines: ['Reads a squad exported from the builder site.', 'Accepts either the .json export or the squad .png image.'],
+    });
+    imp.addEventListener('click', () => document.getElementById('import-squad-file')!.click());
+    squad.append(builder, imp);
+    wrap.appendChild(squad);
+
     this.body.appendChild(wrap);
   }
 
@@ -395,6 +451,16 @@ export class Roster {
       const c = id ? this.data.byId.get(id) : undefined;
       if (c?.score) total += c.score;
     }
-    return `Squad points: ${total}`;
+    const lines = [`Current build: ${total} points`];
+    const squads = this.cb.squadPoints?.();
+    if (squads) lines.push(`Squad points: UN ${squads.blue} / RDL ${squads.red}`);
+    const cap = this.cb.pointsCap?.();
+    if (cap) {
+      const limit = `${cap.points}${cap.openEnded ? '+' : ''}`;
+      const worst = squads ? Math.max(squads.blue, squads.red) : total;
+      const over = !cap.openEnded && worst > cap.points;
+      lines.push(`Battle size: ${cap.name}, ${limit} points${over ? ' — over the cap' : ''}`);
+    }
+    return lines.join('\n');
   }
 }

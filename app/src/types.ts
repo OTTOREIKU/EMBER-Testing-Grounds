@@ -255,7 +255,7 @@ export const STATUSES: StatusDef[] = [
   },
   {
     id: 'fragile',
-    decay: 'green',
+    decay: 'yellow',
     shape: 'square',
     label: 'Fragile',
     icon: 'FRG',
@@ -484,6 +484,9 @@ export interface GameState {
   showZones?: boolean;
   deployLayout?: string | null;
   zoneSet?: string;
+  boardTheme?: string;
+  tactics?: Record<Side, string[]>;
+  tacticsPlayed?: Record<Side, string[]>;
 }
 
 // --- builder-site squad import ---

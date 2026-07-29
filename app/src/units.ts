@@ -1,3 +1,4 @@
+import { DEFAULT_BOARD } from './boards';
 import type { GameData } from './data';
 import { cardName, isAerial, unitSize } from './data';
 import type { Card, CardAction, GameState, MechLoadout, PartSlot, Side, Stance, TerrainPiece, Timing, Token } from './types';
@@ -541,6 +542,12 @@ function legacyZoneSet(s: unknown): string {
   return '';
 }
 
+function normaliseTactics(raw: unknown): Record<Side, string[]> {
+  const v = (raw ?? {}) as Partial<Record<Side, unknown>>;
+  const side = (x: unknown): string[] => (Array.isArray(x) ? x.filter((n): n is string => typeof n === 'string') : []);
+  return { blue: side(v.blue), red: side(v.red) };
+}
+
 export function migrateState(raw: unknown, data: GameData): GameState | null {
   if (!raw || typeof raw !== 'object') return null;
   const s = raw as {
@@ -574,6 +581,9 @@ export function migrateState(raw: unknown, data: GameData): GameState | null {
     showZones: (s as { showZones?: boolean }).showZones ?? false,
     deployLayout: (s as { deployLayout?: string | null }).deployLayout ?? null,
     zoneSet: (s as { zoneSet?: string }).zoneSet ?? legacyZoneSet(s),
+    boardTheme: (s as { boardTheme?: string }).boardTheme ?? DEFAULT_BOARD,
+    tactics: normaliseTactics((s as { tactics?: unknown }).tactics),
+    tacticsPlayed: normaliseTactics((s as { tacticsPlayed?: unknown }).tacticsPlayed),
   };
   for (const rawTok of s.tokens) {
     const t = rawTok as Partial<Token>;

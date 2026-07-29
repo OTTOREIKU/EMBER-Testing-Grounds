@@ -6,6 +6,7 @@ import { applyKill, gameResult, isLowValue, newTaskState, normaliseTasks, type T
 import { DiceTray } from './dice';
 import { importSquadFile } from './importer';
 import { Inventory } from './inventory';
+import { BOARD_THEMES, boardTheme } from './boards';
 import { bindTips, inspectOnHover, isInspectPinned, showInspect, unpinInspect } from './inspector';
 import { cardName, dataUrl, loadData, missionImageUrl, parseGridRef, rulesLines, type SecondaryTask, SIDE_LABEL } from './data';
 import {
@@ -1047,6 +1048,37 @@ async function init() {
       if (!inventory.passes(card)) return false;
       const left = stockLeft(card);
       return left === null || left > 0;
+    },
+    squadPoints: () => {
+      const out = { blue: 0, red: 0 };
+      for (const t of state.tokens) {
+        if (t.kind === 'projectile') continue;
+        out[t.side] += tokenCards(data, t).reduce((n, { card }) => n + (card.score ?? 0), 0);
+      }
+      for (const side of ['blue', 'red'] as const) {
+        for (const id of state.tactics?.[side] ?? []) out[side] += data.byId.get(id)?.score ?? 0;
+      }
+      return out;
+    },
+    heldTactics: () => ({ blue: state.tactics?.blue ?? [], red: state.tactics?.red ?? [] }),
+    onAddTactic: (card, side) => {
+      if (!state.tactics) state.tactics = { blue: [], red: [] };
+      state.tactics[side].push(card.id);
+      save();
+      roster.render();
+    },
+    onDropTactic: (card, side) => {
+      const held = state.tactics?.[side];
+      if (!held) return;
+      const i = held.lastIndexOf(card.id);
+      if (i < 0) return;
+      held.splice(i, 1);
+      save();
+      roster.render();
+    },
+    pointsCap: () => {
+      const sc = SCALES.find((x) => x.id === (state.scale ?? 'standard'));
+      return sc ? { name: sc.name, points: sc.points, openEnded: !!sc.openEnded } : null;
     },
     cardBadge: (card) => {
       if (!inventory.hasAny()) return '';
@@ -2569,6 +2601,7 @@ async function init() {
   }
 
   function renderAll(): void {
+    applyBoardTheme();
     board.renderTerrain(currentTerrain(), editor.active);
     board.renderMarkers(state.markers ?? []);
     board.renderTaskItems(normaliseTasks(state.tasks).items, zoneCentre);
@@ -2623,6 +2656,11 @@ async function init() {
   // ---------- toolbar ----------
 
   const mapSelect = document.getElementById('map-select') as HTMLSelectElement;
+  function applyBoardTheme(): void {
+    const id = boardTheme(state.boardTheme).id;
+    state.boardTheme = id;
+    board.setBoardTheme(id);
+  }
 
   function populateMapSelect(): void {
     mapSelect.replaceChildren();
@@ -2704,7 +2742,11 @@ async function init() {
     const scnCount = names.filter((n) => n.startsWith('[scn] ')).length;
     dlg.innerHTML = `<div class="scn-panel">
       <button id="map-close" class="dlg-close" title="Close">✕</button>
-      <div class="inv-head"><b>Saved maps</b></div>
+      <div class="inv-head"><b>Map settings</b></div>
+      <div class="map-board">
+        <label for="board-select">Board style</label>
+        <select id="board-select">${BOARD_THEMES.map((t) => `<option value="${t.id}">${t.name}</option>`).join('')}</select>
+      </div>
       ${
         names.length
           ? `<p class="dim">A saved map holds its terrain and any zones you painted into it. Those zones show up in the toolbar's Zones list, so you can put them on any board. Loading a scenario saves its map here too; deleting one only removes it from this list, the scenario itself still loads fine.</p>
@@ -2717,6 +2759,14 @@ async function init() {
       if (ev.target === dlg) dlg.remove();
     });
     dlg.querySelector('#map-close')!.addEventListener('click', () => dlg.remove());
+
+    const boardSelect = dlg.querySelector<HTMLSelectElement>('#board-select')!;
+    boardSelect.value = boardTheme(state.boardTheme).id;
+    boardSelect.addEventListener('change', () => {
+      state.boardTheme = boardSelect.value;
+      board.setBoardTheme(boardSelect.value);
+      save();
+    });
 
     const dropMaps = (victims: string[]): void => {
       for (const n of victims) {
@@ -3527,7 +3577,7 @@ async function init() {
   });
 
   const squadFile = document.getElementById('import-squad-file') as HTMLInputElement;
-  document.getElementById('btn-import-squad')!.addEventListener('click', () => squadFile.click());
+  document.getElementById('btn-import-squad')?.addEventListener('click', () => squadFile.click());
   squadFile.addEventListener('change', async () => {
     const file = squadFile.files?.[0];
     if (!file) return;
