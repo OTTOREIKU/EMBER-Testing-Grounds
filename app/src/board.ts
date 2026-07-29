@@ -434,7 +434,7 @@ export class Board {
     }
   }
 
-  renderZones(zones: BoardZone[], deploy: BoardDeployment | null): void {
+  renderZones(zones: BoardZone[], deploy: BoardDeployment | null, claimed?: Record<string, Side[]>): void {
     this.gZones.replaceChildren();
     const LG = 3 * CELL;
 
@@ -475,6 +475,17 @@ export class Board {
         g.appendChild(el('rect', { x: c.col * LG, y: c.row * LG, width: LG, height: LG, class: 'zone-fill' }));
       }
       if (z.cells.length) g.appendChild(el('path', { d: outlinePath(z.cells, LG), class: 'zone-edge' }));
+      // A Secondary Task can designate this zone. Both sides may name the same
+      // one, so the second claim is drawn inset rather than on top of the first.
+      const by = claimed?.[z.name] ?? [];
+      by.forEach((side, i) => {
+        g.appendChild(el('path', {
+          d: outlinePath(z.cells, LG),
+          class: `tz-claim tz-claim-${side}`,
+          'stroke-dasharray': '14 14',
+          'stroke-dashoffset': i ? 14 : 0,
+        }));
+      });
       const first = z.cells[0];
       if (first) {
         const label = el('text', {

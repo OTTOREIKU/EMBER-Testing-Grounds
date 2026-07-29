@@ -3,12 +3,16 @@ export interface DialogChoice {
   label: string;
   primary?: boolean;
   danger?: boolean;
+  image?: string;
+  disabled?: boolean;
+  note?: string;
 }
 
 interface BaseOpts {
   title: string;
   body?: string;
   list?: string[];
+  image?: string;
 }
 
 interface ChoiceOpts extends BaseOpts {
@@ -31,7 +35,8 @@ function bodyHtml(o: BaseOpts): string {
   const list = o.list?.length
     ? `<ul class="dlg-list">${o.list.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>`
     : '';
-  return text + list;
+  const art = o.image ? `<img class="dlg-art" src="${esc(o.image)}" alt="">` : '';
+  return art + text + list;
 }
 
 function open(inner: string, wire: (panel: HTMLElement, close: () => void) => void): void {
@@ -65,6 +70,8 @@ export function choiceDialog(o: ChoiceOpts): Promise<string | null> {
         (c, i) =>
           `<button data-id="${esc(c.id)}"${c.primary ? ' class="dlg-primary" data-autofocus' : c.danger ? ' class="dlg-danger"' : ''}${
             i === o.choices.length - 1 ? ' data-cancel' : ''
+          }${c.image ? ` data-tip-img="${esc(c.image)}"` : ''}${
+            c.disabled ? ` disabled title="${esc(c.note ?? '')}"` : ''
           }>${esc(c.label)}</button>`,
       )
       .join('');

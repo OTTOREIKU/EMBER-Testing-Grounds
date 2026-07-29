@@ -21,7 +21,8 @@ function position(): void {
   const w = tip.offsetWidth || 260;
   const h = tip.offsetHeight || 360;
   const clampY = (y: number) => Math.max(4, Math.min(y, window.innerHeight - h - 4));
-  const panel = pinTo?.closest('aside')?.getBoundingClientRect();
+  const anchor = pinTo?.closest('.dlg-panel') ?? pinTo?.closest('aside');
+  const panel = anchor?.getBoundingClientRect();
   if (panel) {
     const outside = panel.left - w - 10 >= 4 ? panel.left - w - 10
       : panel.right + 10 + w <= window.innerWidth - 4 ? panel.right + 10
@@ -48,15 +49,27 @@ function hide(): void {
 
 export function installTooltip(): void {
   document.addEventListener('mouseover', (ev) => {
-    const el = (ev.target as Element).closest?.('[data-tip-card]');
+    const el = (ev.target as Element).closest?.('[data-tip-card],[data-tip-img]');
     if (!el) {
       if (currentId) hide();
+      return;
+    }
+    const direct = (el as HTMLElement).dataset.tipImg;
+    if (direct) {
+      if (direct === currentId) return;
+      currentId = direct;
+      pinTo = (el as HTMLElement).closest('.dlg-panel, aside') ? (el as HTMLElement) : null;
+      const t = ensureTip();
+      const shown = t.querySelector('img')!;
+      shown.src = direct;
+      t.classList.add('visible');
+      position();
       return;
     }
     const id = (el as HTMLElement).dataset.tipCard!;
     if (id === currentId) return;
     currentId = id;
-    pinTo = (el as HTMLElement).closest('aside') ? (el as HTMLElement) : null;
+    pinTo = (el as HTMLElement).closest('.dlg-panel, aside') ? (el as HTMLElement) : null;
     const t = ensureTip();
     const shown = t.querySelector('img')!;
     const src = loadCardImage(id);

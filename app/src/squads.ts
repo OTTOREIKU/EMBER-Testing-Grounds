@@ -1,11 +1,12 @@
 import type { GameData } from './data';
-import { actionIconUrl, cardName, FACTION_LABEL, mechPartUrl, SIDE_LABEL, tabImageUrl } from './data';
+import { actionIconUrl, cardName, FACTION_LABEL, mechPartUrl, missionImageUrl, secondaryImageUrl, SIDE_LABEL, tabImageUrl } from './data';
 import { MECH_LAYER_ORDER } from './board';
 import { inspectOnHover, linkMechanics, type InspectInfo } from './inspector';
 import type { GameState, PartSlot, PartState, Side, Stance, Timing, TimingDef, Token } from './types';
 import { addStatus, SCALES, SHAPE_NOTE, statusCount, statusesFor, TIMINGS } from './types';
+import { normaliseTasks } from './tasks';
 import { defaultUnitLabel, factionProblems, initiativeFor, MERCENARY_FACTIONS, pilotCard, SLOT_LABEL, tidyUnitLabel, tokenCards, tokenFactions } from './units';
-import { promptDialog } from './dialog';
+import { alertDialog, promptDialog } from './dialog';
 
 const esc = (s: string): string => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!);
 
@@ -122,6 +123,8 @@ export class SquadTracker {
     if (!this.state) return;
     closeDialPopout();
     this.root.replaceChildren();
+    const taskBar = this.taskBar();
+    if (taskBar) this.root.appendChild(taskBar);
     const order = this.orderPanel();
     if (order) this.root.appendChild(order);
     for (const side of ['blue', 'red'] as const) {
@@ -279,6 +282,63 @@ export class SquadTracker {
     this.cb.onChanged();
   }
 
+  // The Main Task briefing is shown once when it is picked and then lost behind
+  // the next unit selection, so the Tasks in play get a permanent home here.
+  private taskBar(): HTMLElement | null {
+    const s = this.state;
+    if (!s) return null;
+    const tasks = normaliseTasks(s.tasks);
+    const mission = s.mission ? this.data.missions.cards.find((m) => m.id === s.mission) : undefined;
+    const anySecondary = tasks.secondary.blue || tasks.secondary.red;
+    if (!mission && !anySecondary) return null;
+
+    const bar = document.createElement('div');
+    bar.className = 'sq-tasks';
+
+    const chip = (label: string, name: string, open: () => void): HTMLElement => {
+      const b = document.createElement('button');
+      b.className = 'sq-task';
+      b.innerHTML = `<span class="sq-task-kind">${esc(label)}</span><span class="sq-task-name">${esc(name)}</span>`;
+      b.addEventListener('click', open);
+      return b;
+    };
+
+    if (mission) {
+      bar.appendChild(chip('Main Task', mission.name, () => {
+        void alertDialog({
+          title: mission.name,
+          image: missionImageUrl(mission.id),
+          body: mission.scoring ?? '',
+          list: [
+            (mission.zones ?? []).length ? `Tactical Zones: ${(mission.zones ?? []).join(', ')}` : 'No Tactical Zones',
+            mission.deployment ? `Deployment: ${mission.deployment}` : '',
+          ].filter(Boolean),
+        });
+      }));
+    }
+
+    for (const side of ['blue', 'red'] as const) {
+      const id = tasks.secondary[side];
+      if (!id) continue;
+      const card = this.data.secondary.find((c) => c.id === id);
+      if (!card) continue;
+      const named = tasks.zone[side]
+        ? `Tactical Area: ${tasks.zone[side]}`
+        : tasks.secTarget[side] !== undefined
+          ? `Designated: ${s.tokens.find((t) => t.uid === tasks.secTarget[side])?.label ?? 'a unit'}`
+          : '';
+      bar.appendChild(chip(`${SIDE_LABEL[side]} Secondary`, card.name, () => {
+        void alertDialog({
+          title: `${SIDE_LABEL[side]}: ${card.name}`,
+          image: secondaryImageUrl(card.id),
+          body: card.scoring ?? '',
+          list: [card.setup ?? '', named].filter(Boolean),
+        });
+      }));
+    }
+    return bar;
+  }
+
   private tokenPoints(t: Token): number {
     return tokenCards(this.data, t).reduce((s, { card }) => s + (card.score ?? 0), 0);
   }
@@ -404,6 +464,7 @@ export class SquadTracker {
       const init = t.timing ? initiativeFor(this.data, t, t.timing) : undefined;
       const trig = document.createElement('button');
       trig.className = `dial-trig${cur ? ' set' : ''}`;
+      trig.dataset.dialUid = String(t.uid);
       if (cur) trig.style.setProperty('--t-tint', `var(--t-${cur.id})`);
       const icon = cur ? actionIconUrl(cur.pilotKey) : null;
       trig.innerHTML = `${icon ? `<img src="${icon}" alt="">` : ''}<span>${cur ? cur.name : 'Dial'}</span>${
