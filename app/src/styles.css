@@ -506,6 +506,21 @@ main { display: flex; flex: 1; min-height: 0; }
 .pg-pass { background: var(--surface3); color: var(--text2); }
 .pg-pass:hover { background: var(--border); color: var(--text); }
 
+/* ---------- guide idle state (no game started) ---------- */
+.pg-idle-tag {
+  margin-left: auto; color: var(--text3); font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.5px; font-size: 11px;
+}
+.pg-head-idle .pg-title { color: var(--text2); }
+.pg-idle-lead { margin: 0 0 10px; color: var(--text); font-size: 11.5px; line-height: 1.5; }
+.pg-idle-note { margin: 0 0 9px; color: var(--text3); font-size: 11px; }
+.pg-start {
+  border: none; border-radius: var(--radius-sm); cursor: pointer;
+  font-family: var(--font); font-size: 12px; font-weight: 700; padding: 7px 14px;
+  background: var(--accent); color: var(--on-accent); width: 100%;
+}
+.pg-start:hover { filter: brightness(1.15); }
+
 /* ---------- action opportunity (ticks) ---------- */
 .pg-ticks { display: flex; gap: 6px; margin: 0 0 7px; }
 .pg-ticks .pips-man { --pip: #f0b429; }

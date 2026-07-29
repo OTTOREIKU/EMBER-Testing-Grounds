@@ -151,6 +151,7 @@ export function actionPhaseComplete(state: GameState, init: InitLookup): boolean
 export interface GuideCallbacks {
   world(): ActionWorld;
   onAdvancePhase(): void;
+  onStartGame(): void;
   onSelectUnit(uid: number): void;
   onMoveUnit(uid: number, opts: { range?: number; label: string }, done: (moved: boolean) => void): void;
   onPerformAction(uid: number, actionId: string, done: (performed: boolean) => void): void;
@@ -238,6 +239,50 @@ export class PlayGuide {
     return true;
   }
 
+  private renderIdle(): void {
+    this.root.className = this.ui.collapsed ? 'collapsed' : '';
+    this.root.innerHTML = `
+      <div class="pg-head pg-head-idle">
+        <span class="pg-grip" title="Drag to move">⠿</span>
+        <b class="pg-title">Play guide</b>
+        <span class="pg-phase pg-idle-tag">Not started</span>
+        <button class="pg-fold" title="${this.ui.collapsed ? 'Expand' : 'Collapse'}">${this.ui.collapsed ? '▸' : '▾'}</button>
+        <button class="pg-close" title="Hide the play guide">✕</button>
+      </div>
+      <div class="pg-body">
+        <p class="pg-sub">Waiting for a game to start</p>
+        <p class="pg-idle-lead">The guide does nothing until a game begins. Start one and it takes over: the pre-game roll, deployment in the proper order, then every round driven phase by phase, tracking whose turn it is, spending Ticks and settling the End Phase.</p>
+        <div class="pg-units"><button class="pg-start" data-start-game="1">Start game</button></div>
+        <p class="pg-idle-note">You can also start it from the round bar above the board.</p>
+        <details class="pg-rules"${this.ui.rules ? ' open' : ''}>
+          <summary>Playing without the guide</summary>
+          <ul class="pg-steps">
+            <li>Move units, roll dice and run attacks by hand from the Details panel.</li>
+            <li>Step the round bar through the phases yourself.</li>
+            <li>Browse cards, missions and the glossary at any time.</li>
+          </ul>
+        </details>
+      </div>`;
+
+    bindTips(this.root);
+    this.root.querySelector<HTMLButtonElement>('.pg-start')!.addEventListener('click', () => this.cb.onStartGame());
+    this.root.querySelector('.pg-fold')!.addEventListener('click', () => {
+      this.ui.collapsed = !this.ui.collapsed;
+      this.saveUi();
+      this.render();
+    });
+    this.root.querySelector('.pg-close')!.addEventListener('click', () => {
+      this.ui.open = false;
+      this.saveUi();
+      this.render();
+    });
+    this.root.querySelector('.pg-rules')!.addEventListener('toggle', (ev) => {
+      this.ui.rules = (ev.currentTarget as HTMLDetailsElement).open;
+      this.saveUi();
+    });
+    this.place();
+  }
+
   private render(): void {
     const s = this.state;
     if (!s) return;
@@ -250,6 +295,11 @@ export class PlayGuide {
         this.render();
       });
       this.place();
+      return;
+    }
+
+    if (!normaliseSetup(s.setup)) {
+      this.renderIdle();
       return;
     }
 

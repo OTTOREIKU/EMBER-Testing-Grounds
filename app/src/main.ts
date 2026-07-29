@@ -160,6 +160,7 @@ async function init() {
 
   const playGuide = new PlayGuide(document.getElementById('board-wrap')!, data, {
     world: () => ({ tokens: state.tokens, terrain: currentTerrain() }),
+    onStartGame: () => void startGame(),
     onAdvancePhase: () => roundTracker.advance(),
     onSelectUnit: (uid) => selectToken(uid),
     onMoveUnit: (uid, opts, done) => startMove(uid, opts, done),
