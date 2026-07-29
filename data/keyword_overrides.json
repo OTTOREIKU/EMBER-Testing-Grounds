@@ -47,8 +47,8 @@
   },
   "巡航": {
    "en": {
-    "name": "Cruise",
-    "value": "Projectile subtype tag on the card banner. Not a special rule — the card's actions carry its behaviour."
+    "name": "Cruising",
+    "value": "If there is no target within Range, this Projectile is not destroyed. It flies to any Grid within Range instead and stays on the board."
    }
   },
   "榴弹": {
@@ -125,8 +125,8 @@
   },
   "异形X": {
    "en": {
-    "name": "Irregular X",
-    "value": "When performing this Action, consume X Link. (Unofficial English name — this keyword has no English entry in the community data and does not appear in the rulebook's keyword glossary; the rules text here is translated from the Chinese.)"
+    "name": "Non-humanoid X",
+    "value": "When performing this Action, consume X Link. (Name read off the English card scan of PLK400 \"Centaur-Light\" Mobility Chassis; this keyword has no entry in the rulebook appendix, and the rules text is translated from the Chinese.)"
    }
   },
   "电子攻击": {
@@ -163,6 +163,30 @@
    "en": {
     "name": "Multi-Target X",
     "value": "This Action can select X targets at the same time. If it does, resolve the Attack as follows: determine the total number of Attack Dice for this Action, applying any effect that increases that number now; split those dice between the targets however you like, then run one separate attack sequence against each target in turn, rolling the dice allotted to it. If a Mech performs this Action it may Focus on each attack sequence separately. If the Attack inflicts a special effect, each attack sequence applies that effect to its own target on its own."
+   }
+  },
+  "路障": {
+   "en": {
+    "name": "Barricade",
+    "value": "While another Ally Unit is the target of an Attack, this Unit counts as 3-inch high Terrain, so it can block line of sight or grant Terrain Protection to the unit behind it."
+   }
+  },
+  "命中": {
+   "en": {
+    "name": "Hit",
+    "value": "Conditional keyword. When this Attack is resolved, the effect applies if any Damage was not offset by a [Dodge]. A [Defense] icon still counts as a Hit, so an attack can trigger this without causing a Penetration."
+   }
+  },
+  "不可阻挡": {
+   "en": {
+    "name": "Unstoppable",
+    "value": "Movement Actions with this Keyword can still be performed while the unit is Immobilized."
+   }
+  },
+  "直線移動": {
+   "en": {
+    "name": "Moving in Straight Line",
+    "value": "Conditional keyword. The effect applies if the entire Movement Path this Action makes runs in a single direction, wholly horizontal or wholly vertical across the board. Printed in traditional characters on at least one card; the simplified 直线移动 is the same keyword."
    }
   }
  }

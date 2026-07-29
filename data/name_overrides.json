@@ -20,6 +20,10 @@
       "en": "DBP \"Turtle Shell\" Mobile Cover",
       "source": "translated"
     },
+    "257": {
+      "en": "K9 Nail Gun + M14BO Wakizashi Trial Model (R)",
+      "source": "read off the English card scan; the bundle English said (L) while its own Chinese (右) and Japanese (R) both say right"
+    },
     "274": {
       "en": "Additional Instructions"
     },
@@ -31,8 +35,8 @@
       "source": "corrected: source data labelled this 48-point part \"(R) (D)\", duplicating its own 0-point discard card 513"
     },
     "544": {
-      "en": "Quad \"Exocet\" Launcher",
-      "source": "translated"
+      "en": "Quad \"Exocet\" Missile Launcher",
+      "source": "read off the English card scan"
     },
     "546": {
       "en": "H2-A \"Crisis\" Type I",
@@ -205,7 +209,8 @@
       "source": "derived from 1 official action name(s)"
     },
     "155_A": {
-      "en": "Detonate"
+      "en": "Detonation",
+      "source": "read off the English card scan"
     },
     "156_A": {
       "en": "Deploy",

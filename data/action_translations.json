@@ -14,13 +14,12 @@
   },
   "180_B": {
    "english": "· All Move Actions and Maneuver of this Part have Silence.",
-   "confidence": "high",
-   "note": "Wording matches the officially-printed card text quoted in rules/05_advanced_combat.md line 206 (|Stealth Movement|). 调整移动 = Maneuver, confirmed by the jp text (マニューバー) and gameRules adjust_move."
+   "confidence": "printed"
   },
   "181_A": {
-   "english": "· Irregular 1\n· Unstoppable\n· After this Mech Moves, if there is an Enemy Ground Unit in the adjacent grid in front of it, may cause Push 1 to that Unit.",
-   "confidence": "medium",
-   "note": "异形X has no English name in glossary.json (it maps to itself) and does not appear in the rulebook keyword glossary; rendered provisionally as \"Irregular 1\" — needs an official name. 推动1 rendered as Knock Back 1 per glossary/STYLE (the rulebook appendix calls this keyword \"Push X\")."
+   "english": "· Non-humanoid 1\n· Unstoppable\n· If there is an Enemy Ground Unit in the adjacent grid in front of the Mech after performing this Action, may cause Push 1.",
+   "confidence": "printed",
+   "note": "Read off the English card scan. Corrects three things against the earlier machine translation: 异形1 is printed Non-humanoid 1 rather than Irregular 1, the trigger is after performing this Action rather than after the Mech Moves, and Push 1 is confirmed."
   },
   "181_B": {
    "english": null,
@@ -33,146 +32,147 @@
    "note": "no source text in card data"
   },
   "182_B": {
-   "english": "· [On Hit] Push 1.",
-   "confidence": "high"
+   "english": "· [On Hit] Knock Back 1.",
+   "confidence": "printed",
+   "note": "Read off the English card scan. The Chinese is 推动1 (Push 1, which costs the target 1 Link) but the printed English says Knock Back 1, which does not. English card text is authoritative."
   },
   "ZHDR-201_A": {
-   "english": "· [On Hit] Target gains 1 Fragile Token.",
-   "confidence": "high"
+   "english": "· [On hit], target gains 1 Fragile Token.",
+   "confidence": "printed"
   },
   "ZHDR-201_B": {
-   "english": "· Volley 3 · Fire in arc\n· Launch 1 M60 \"Boomerang\" Missile.",
-   "confidence": "high",
-   "note": "回旋镖 / ブーメラン = Boomerang, translated like MC-3 \"Razor\" Missile in the STYLE examples."
+   "english": "· Volley 3 · Fire in arc · Fire 1 M60 \"Boomerang\" Missile.",
+   "confidence": "printed",
+   "note": "The card prints \"Fire 1\", not the rulebook term \"Launch\"; kept as printed."
   },
   "ZHDR-202_A": {
-   "english": "· [On Hit] Target gains 1 Fragile Token.",
-   "confidence": "high"
+   "english": "· [On hit], target gains 1 Fragile Token.",
+   "confidence": "printed"
   },
   "ZHDR-202_B": {
-   "english": "· Aura\n· When Enemy Units within range conduct Electronic Counter Rolls, Strength -1. This effect does not stack.",
-   "confidence": "high"
+   "english": "· Aura · When Enemy Units within range make Electronic Counter Rolls, Strength -1. This effect cannot be stacked.",
+   "confidence": "printed"
   },
   "ZHDR-203_A": {
-   "english": "· [On Hit] Target gains 1 Fragile Token.",
-   "confidence": "high"
+   "english": "· [On hit], target gains 1 Fragile Token.",
+   "confidence": "printed"
   },
   "ZHDR-203_B": {
    "english": "· Airborne Movement",
-   "confidence": "high"
+   "confidence": "printed"
   },
   "ZHDR-303_A": {
-   "english": "· Omni-direction Firing\n· Melee Firing\n· {Lightning} Target Mech immediately switches to Shutdown Stance.",
-   "confidence": "high",
-   "note": "宕机姿态 = Shutdown Stance (rulebook term)."
+   "english": "· Omni-direction Firing · Melee Firing · {Lightning} may make Target Mech switch into Shutdown Stance immediately.",
+   "confidence": "printed",
+   "note": "The printed English says \"may make\", so the Shutdown switch is optional; the earlier translation read as automatic."
   },
   "ZHDR-303_B": {
-   "english": "· Aura\n· At the end of the round, all Ally Mechs within range restore 1 Link Value.",
-   "confidence": "high"
+   "english": "· Aura · At the end of each Round, all Ally Mechs within range recover 1 Link.",
+   "confidence": "printed"
   },
   "ZHDR-304_A": {
-   "english": "· Omni-direction Firing\n· Melee Firing\n· {Lightning} Target Mech immediately switches to Shutdown Stance.",
-   "confidence": "high"
+   "english": "· Omni-direction Firing · Melee Firing · {Lightning} may make Target Mech switch into Shutdown Stance immediately.",
+   "confidence": "printed",
+   "note": "The printed English says \"may make\", so the Shutdown switch is optional; the earlier translation read as automatic."
   },
   "ZHDR-304_B": {
-   "english": "· When performing a Command Movement, may consume 1 additional Command Token to Drag 1 adjacent Ally Unit.",
-   "confidence": "low",
-   "note": "zh and jp disagree; zh followed per STYLE rule 4. The jp field is unfinished editorial material: it repeats the Chinese, adds \"-2移动力\" (Move Range -2), narrows the target to an Ally Mech or Ally Drone, and contains a translator's parenthetical question about timing. None of those extras are in the zh text, so they are omitted. Also 指令移动 is rendered \"Command Movement\" (a Moving Action performed via a Command Token) — not a keyword confirmed in the digests."
+   "english": "· When performing a Command Movement, may consume 1 additional Command Token and -2 Movement to drag 1 adjacent Ally Mech or Ally Drone.",
+   "confidence": "printed",
+   "note": "The earlier translation dropped the -2 Movement cost entirely and widened \"Ally Mech or Ally Drone\" to \"Ally Unit\"."
   },
   "ZHDR-101_A": {
-   "english": "· This Unit may provide Unit Protection to Ally Units.\n· Automatic Shield",
-   "confidence": "high"
+   "english": "· May provide Unit Protection to Ally Units. · Automatic Shield",
+   "confidence": "printed"
   },
   "ZHDR-102_A": {
-   "english": "· Intercept 1\n· Omni-direction Firing\n· Melee Firing",
-   "confidence": "high"
+   "english": "· Intercept 1 · Omni-direction Firing · Melee Firing",
+   "confidence": "printed"
   },
   "ZHDR-103_A": {
-   "english": "· Omni-direction Firing\n· Melee Firing",
-   "confidence": "high"
+   "english": "· Omni-direction Firing · Melee Firing",
+   "confidence": "printed"
   },
   "ZHDR-104_A": {
-   "english": "· Fire in arc\n· Launch 1 M707 \"Swift\" Missile.",
-   "confidence": "high",
-   "note": "雨燕 / スウィフト = Swift."
+   "english": "· Fire in arc · Fire 1 M707 \"Swift\" Missile.",
+   "confidence": "printed",
+   "note": "The card prints \"Fire 1\", not the rulebook term \"Launch\"; kept as printed."
   },
   "ZHDR-106_A": {
-   "english": "· Armor Piercing 1\n· Melee Firing",
-   "confidence": "high"
+   "english": "· Armor Piercing 1 · Melee Firing",
+   "confidence": "printed"
   },
   "ZHDR-106_B": {
-   "english": "· Fire in arc\n· Launch 1 M707 \"Swift\" Missile.",
-   "confidence": "high"
+   "english": "· Fire in arc · Fire 1 M707 \"Swift\" Missile.",
+   "confidence": "printed",
+   "note": "The card prints \"Fire 1\", not the rulebook term \"Launch\"; kept as printed."
   },
   "ZHDR-107_A": {
    "english": "· Suppression",
-   "confidence": "high"
+   "confidence": "printed"
   },
   "ZHDR-301_A": {
-   "english": "· Scatter-shot · Melee Firing\n· Knockback 1",
-   "confidence": "high",
-   "note": "击退1 = Knockback 1 per glossary (distinct from 推动 = Knock Back)."
+   "english": "· Scatter-shot · Melee Firing · Knock Back 1",
+   "confidence": "printed",
+   "note": "The card prints \"Knock Back 1\" for 击退1, matching card 510. This is Knockback, so it costs the target no Link."
   },
   "ZHDR-301_B": {
-   "english": "· When this Part is hit, {Defense} may cancel out {Heavy Hit}.\n· Automatic Shield",
-   "confidence": "high",
-   "note": "zh says 本部件 (this Part); the jp says \"this Unit\" and adds \"in the roll\" — zh preferred per STYLE rule 4."
+   "english": "· When this Unit is attacked, may use {Defense} to offset {Heavy Hit}. · Automatic Shield",
+   "confidence": "printed-truncated",
+   "note": "The printed English overflows its box and stops at \"· Automatic\"; \"Shield\" is completed from the Chinese and from every sibling shield part. The card also says \"this Unit is attacked\", not \"this Part is hit\"."
   },
   "ZHDR-302_A": {
-   "english": "· [On Hit] Target gains 1 Immobilized Token.",
-   "confidence": "high"
+   "english": "· [On Hit] target gains 1 Immobilized Token.",
+   "confidence": "printed"
   },
   "ZHDR-302_B": {
-   "english": "· When this Unit is Destroyed, immediately undergo Detonation.\n· On Detonation, cause Explosion damage to all Units within range.",
-   "confidence": "high",
-   "note": "jp carries a translator's note asking whether the two lines can be merged; kept as two clauses per zh."
+   "english": "· When this unit is destroyed, undergo Detonation immediately. · On Detonation, cause Explosion damage to all Units within range.",
+   "confidence": "printed-truncated",
+   "note": "The printed English overflows its box and stops at \"· On\"; the rest is completed from the Chinese."
   },
   "ZHDR-204_A": {
-   "english": "· When Enemy Units within range perform a Firing Action, the target is treated as having Low Profile.",
-   "confidence": "high"
+   "english": "· When Enemy Units within range perform a Firing Action, the target is considered to have Low Profile.",
+   "confidence": "printed"
   },
   "ZHDR-205_A": {
-   "english": "· Electronic Attack\n· Conduct Electronic Counter Rolls with all Enemy Mechs within range, Strength +1, if successful, reduce the target's Link Value by 1.",
-   "confidence": "medium",
-   "note": "zh followed per STYLE rule 4: the jp omits 强度+1 (Strength +1) entirely and appends a translator's parenthetical alternative reading (\"reduce the Link Value of enemy Mechs that failed\"). Strength +X is a real Electronic Counter Roll modifier (rules/05_advanced_combat.md), so the zh reading is retained."
+   "english": "· Electronic Attack · Perform Electronic Counter Roll with all Enemy Mechs within range, Strength +1, reduce 1 Link of Target if successful.",
+   "confidence": "printed"
   },
   "ZHDR-206_A": {
    "english": "· All Actions of Enemy Units within range lose Silence.",
-   "confidence": "high"
+   "confidence": "printed"
   },
   "ZHDR-206_B": {
-   "english": "· Electronic Support\n· Make 1 Ally Mech within range that is not in Shutdown Stance change its Stance.",
-   "confidence": "high"
+   "english": "· Electronic Support · May make an Ally Mech within range switch its Stance.",
+   "confidence": "printed-truncated",
+   "note": "The printed English runs out of room and stops mid-sentence at \"...within range switch\"; the tail is completed from the Chinese, which also adds a condition the card had no space for: the Ally Mech must not be in Shutdown Stance."
   },
   "ZYDR-108_A": {
    "english": "· Omni-direction Firing",
-   "confidence": "high"
+   "confidence": "printed"
   },
   "ZYDR-108_B": {
-   "english": "· Remove 1 Damaged Token from an Ally Unit, then remove this Unit.",
-   "confidence": "high"
+   "english": "· Remove 1 Damaged Token from Ally Unit, then remove this Unit.",
+   "confidence": "printed"
   },
   "544_A": {
    "english": "· Volley 2 · Fire in arc\n· Launch 1 FGM46 \"Exocet\" Missile.",
-   "confidence": "high",
-   "note": "Matches the officially translated text on other \"Exocet\" launcher cards in cards.json."
+   "confidence": "printed"
   },
   "PDBP-103_A": {
    "english": "· Volley 2 · Fire in arc\n· Launch 1 FGM46 \"Exocet\" Missile.",
-   "confidence": "high",
-   "note": "Matches the officially translated text on other \"Exocet\" launcher cards in cards.json."
+   "confidence": "printed"
   },
   "PDBP-103_B": {
    "english": "· Suppression",
-   "confidence": "high"
+   "confidence": "printed"
   },
   "545_A": {
    "english": "· Suppression",
-   "confidence": "high"
+   "confidence": "printed"
   },
   "545_B": {
    "english": "· Suppression",
-   "confidence": "high"
+   "confidence": "printed"
   },
   "289_A": {
    "english": null,
@@ -206,12 +206,11 @@
   },
   "PRDR-101_B": {
    "english": "· Volley 3 · Fire in arc\n· Launch 1 FGM25 \"Piranha\" Missile.",
-   "confidence": "high",
-   "note": "Missile name taken from the official FGM25 \"Piranha\" Missile card."
+   "confidence": "printed"
   },
   "PRDR-101_C": {
    "english": "· Intercept 2",
-   "confidence": "high"
+   "confidence": "printed"
   },
   "PRDR-102_A": {
    "english": null,
@@ -220,13 +219,11 @@
   },
   "PRDR-102_B": {
    "english": "· Volley 3 · Fire in arc\n· Launch 1 FGM25 \"Piranha\" Missile.",
-   "confidence": "high",
-   "note": "Missile name taken from the official FGM25 \"Piranha\" Missile card."
+   "confidence": "printed"
   },
   "PRDR-102_C": {
-   "english": "· [On Hit] Target gains 1 Fire Control Interference Token.\n· This Attack causes no damage.",
-   "confidence": "high",
-   "note": "zh reads 命中使... without brackets; rendered as the standard [On Hit] conditional per the jp text and the on_hit hook in gameRules."
+   "english": "· [On Hit] target gains 1 Fire Control Interference Token.\n· Does not cause damage.",
+   "confidence": "printed"
   },
   "PRDR-103_A": {
    "english": null,
@@ -240,7 +237,7 @@
   },
   "PRDR-103_C": {
    "english": "· Intercept 2",
-   "confidence": "high"
+   "confidence": "printed"
   },
   "PRDR-104_A": {
    "english": null,
@@ -253,9 +250,8 @@
    "note": "no source text in card data"
   },
   "PRDR-104_C": {
-   "english": "· [On Hit] Target gains 1 Fire Control Interference Token.\n· This Attack causes no damage.",
-   "confidence": "high",
-   "note": "zh reads 命中使... without brackets; rendered as the standard [On Hit] conditional per gameRules on_hit hook. No jp text on this card."
+   "english": "· [On Hit] target gains 1 Fire Control Interference Token.\n· Does not cause damage.",
+   "confidence": "printed"
   },
   "PRDR-105_A": {
    "english": null,
@@ -264,47 +260,43 @@
   },
   "PRDR-105_B": {
    "english": "· Direct Fire\n· Deploy 1 AS3 Inflatable Wall.",
-   "confidence": "high",
-   "note": "\"AS3系列充气墙\" is rendered \"AS3 Inflatable Wall\" on the official AS3 cards (the 系列/\"series\" is dropped)."
+   "confidence": "printed"
   },
   "PRDR-105_C": {
-   "english": "· Before the game starts, this Drone may Covert Carry 2 identical AS3 Inflatable Walls.",
-   "confidence": "medium",
-   "note": "Wording follows the official B3 Beacon equivalent (\"Before the game starts, this mech may Covert Carry 1 B3 Beacon.\"), which inserts \"may\" although the zh has no 可以. Subject is a Drone here (confirmed by jp このドローン)."
+   "english": "· Before the game starts, this drone may Covert Carry 2 AS3 Inflatable Wall of the same type.",
+   "confidence": "printed"
   },
   "PRDR-201_A": {
    "english": "· Omni-direction Firing\n· Melee Firing",
-   "confidence": "high"
+   "confidence": "printed"
   },
   "PRDR-201_B": {
    "english": "· Airborne Movement",
-   "confidence": "high"
+   "confidence": "printed"
   },
   "PRDR-201_C": {
    "english": "· Omni-direction Firing\n· Melee Firing",
-   "confidence": "high"
+   "confidence": "printed"
   },
   "PRDR-202_A": {
-   "english": "· Select 1 target within range with Line of Sight, it gains a Highlight Token.",
-   "confidence": "medium",
-   "note": "No official English precedent for this sentence; \"有视线的目标\" rendered with the book's \"Line of Sight\" phrasing. gameRules confirms the target may be on either side, so \"target\" is left unqualified as in the zh."
+   "english": "· Select a target within range with line of sight, give it a Highlight Token.",
+   "confidence": "printed"
   },
   "PRDR-202_B": {
    "english": "· Airborne Movement",
-   "confidence": "high"
+   "confidence": "printed"
   },
   "PRDR-202_C": {
    "english": "· Omni-direction Firing\n· Melee Firing",
-   "confidence": "high"
+   "confidence": "printed"
   },
   "552_A": {
-   "english": "· This Mech may Designate this part to resolve damage in the Defensive Stance.\n· [Defensive Stance] Gain Automatic Shield.",
-   "confidence": "high",
-   "note": "gameRules only encodes the first clause; second clause taken from zh text."
+   "english": "· This Mech may Designate this part to resolve damage in the Defensive Stance.\n· [Defensive Stance] gains Automatic Shield.",
+   "confidence": "printed"
   },
   "552_B": {
-   "english": "· [On Hit] Target gains 1 Fire Control Interference Token.\n· Does not cause damage.",
-   "confidence": "high"
+   "english": "· [On Hit] target gains 1 Fire Control Interference Token.\n· Does not cause damage.",
+   "confidence": "printed"
   },
   "PDLH-202_B": {
    "english": null,
@@ -312,13 +304,12 @@
    "note": "no source text in card data"
   },
   "553_A": {
-   "english": "· This Mech may Designate this part to resolve damage in the Defensive Stance.\n· [Defensive Stance] Gain Automatic Shield.",
-   "confidence": "high",
-   "note": "gameRules only encodes the first clause; second clause taken from zh text."
+   "english": "· This Mech may Designate this part to resolve damage in the Defensive Stance.\n· [Defensive Stance] gains Automatic Shield.",
+   "confidence": "printed"
   },
   "553_B": {
    "english": "· Intercept 2",
-   "confidence": "high"
+   "confidence": "printed"
   },
   "288_A": {
    "english": null,
@@ -331,13 +322,13 @@
    "note": "no source text in card data"
   },
   "546_A": {
-   "english": "· [Stationary] +1Y.\n· Multi-Target 5",
-   "confidence": "high"
+   "english": "· [Stationary] +{1Y}\n· Multi-Target 5",
+   "confidence": "printed"
   },
   "546_B": {
-   "english": "· After this Mech is fired upon, it may place 2 Smoke Screens within range.",
-   "confidence": "high",
-   "note": "gameRules adds usableAfterDestroyed, which the zh text does not state; not rendered."
+   "english": "· After this unit is attacked by a Firing Action, may place 2 Smoke Screens within range.",
+   "confidence": "printed",
+   "note": "The card says attacked by a Firing Action, which is narrower than the earlier \"fired upon\", and says unit rather than Mech."
   },
   "534_A": {
    "english": null,
@@ -351,7 +342,7 @@
   },
   "281_B": {
    "english": "· This Mech may Designate this part to resolve damage in the Defensive Stance.",
-   "confidence": "high"
+   "confidence": "printed"
   },
   "506_A": {
    "english": null,
@@ -365,30 +356,30 @@
   },
   "078_A": {
    "english": "· Intercept 1\n· Omni-direction Firing\n· Melee Firing",
-   "confidence": "high"
+   "confidence": "printed"
   },
   "079_A": {
-   "english": "· Volley 2 · Fire in arc\n· Launch 1 MC-3 \"Razor\" Missile.",
-   "confidence": "high",
-   "note": "zh names the missile 利剑; official English/jp name is \"Razor\"."
+   "english": "· Volley 2\n· Fire in arc\n· Launch 1 MC-3 \"Razor\" Missile.",
+   "confidence": "printed"
   },
   "080_A": {
-   "english": "· Detect all Enemy Units within range.",
-   "confidence": "high"
+   "english": "· Scan all Enemy Targets within range.",
+   "confidence": "printed",
+   "note": "The card says Scan, which is the defined counter-roll, not the generic \"detect\" the earlier translation used."
   },
   "080_B": {
-   "english": "· When Ally Units Intercept a target visible to this Unit, {Eye} counts as {1 Light Hit}.",
-   "confidence": "medium",
-   "note": "zh says \"targets visible to this unit\"; jp instead says \"within this drone's line of sight range\" and specifies all Ally Units. Followed zh per style rule 4."
+   "english": "· When Ally Units Intercept targets that are visible to this drone, they may exchange {Eye} for {Light Hit}.",
+   "confidence": "printed",
+   "note": "The English is an optional exchange (\"may exchange\"); the Chinese 视为 reads as automatic. English card text is authoritative."
   },
   "522_A": {
-   "english": "· Detect all Enemy Units within range.",
-   "confidence": "high"
+   "english": "· Scan all Enemy Targets within range.",
+   "confidence": "printed",
+   "note": "Same correction as 080_A: the card says Scan, the defined counter-roll, not the generic \"detect\"."
   },
   "522_B": {
-   "english": "· When Ally Units fire at a target within range, target -1B.",
-   "confidence": "high",
-   "note": "jp clarifies the -1B applies to the target's Defense Roll; zh states only \"target -1{B}\"."
+   "english": "· When Ally Units perform Firing Actions against Targets within Range, Target -{1B}.",
+   "confidence": "printed"
   },
   "029_A": {
    "english": null,
@@ -432,8 +423,7 @@
   },
   "100_B": {
    "english": "· All Move Actions and Maneuver of this part have Silence.",
-   "confidence": "high",
-   "note": "Matches the official |Stealth Movement| card wording quoted in the rulebook digest (05_advanced_combat.md)."
+   "confidence": "printed"
   },
   "101_A": {
    "english": null,
@@ -470,9 +460,8 @@
    "note": "Matches official English for identical zh text on sister cards."
   },
   "108_A": {
-   "english": "· Volley 3 · Fire in arc · Launch 1 M7 Grenade.",
-   "confidence": "high",
-   "note": "Exact official English for identical zh text elsewhere in card data; kept zh's single-line layout."
+   "english": "· Volley 3 · Fire in arc\n· Launch 1 M7 Grenade.",
+   "confidence": "printed"
   },
   "111_B": {
    "english": null,
@@ -500,9 +489,9 @@
    "note": "no source text in card data"
   },
   "256_B": {
-   "english": "· [Two-Handed] Gains Mutilation.",
-   "confidence": "high",
-   "note": "zh missing; translated from jp \"·[両手]切断を得る。\". Verified in card data that jp 切断 corresponds to zh 毁伤, whose official English is \"· [Two-Handed] Gains Mutilation.\""
+   "english": null,
+   "confidence": "printed",
+   "note": "The printed card shows Stab with a Range and a dice table and no rules text at all, and the bundle has no Chinese or English for it either. The previous entry (\"[Two-Handed] Gains Mutilation\") had no source in either language and has been removed."
   },
   "R33S_A": {
    "english": "· Laser Weapon\n· [Stationary] gains Snipe.\n· Silence",
@@ -534,9 +523,8 @@
    "note": "no source text in card data"
   },
   "116_A": {
-   "english": "· Laser Weapon · [Stationary] +1Y.",
-   "confidence": "high",
-   "note": "Kept zh's single-line layout (jp splits into two lines); zh is authoritative."
+   "english": "· Laser Weapon\n· [Stationary] +{1Y}.",
+   "confidence": "printed"
   },
   "133_A": {
    "english": null,
@@ -550,8 +538,7 @@
   },
   "257_A": {
    "english": "· Silence\n· [On Hit] reduces target Link by 1.",
-   "confidence": "high",
-   "note": "Exact official English for identical zh text elsewhere in card data."
+   "confidence": "printed"
   },
   "257_B": {
    "english": null,
@@ -589,29 +576,27 @@
    "note": "微型侦察机 rendered \"Micro Scout\" per official English of the MD-1 \"Dragonfly\" card; \"Snake Eye\" (蛇眼) has no official English in the card data, so this name is our rendering."
   },
   "154_A": {
-   "english": "· Undergo Detonation immediately.\n· On Detonation, cause Explosion damage to all units within this grid.",
-   "confidence": "high",
-   "note": "card data had Chinese in its English field; wording follows the official Detonation cards"
+   "english": "· Undergo Detonation immediately.\n· On Detonation, cause Explosion damage to target unit.",
+   "confidence": "printed",
+   "note": "Rules difference between editions. The Chinese says 对所在格的所有单位 (every unit in the grid it occupies); the printed English says target unit. English card text is authoritative."
   },
   "155_A": {
-   "english": "Detonate immediately. On Detonation, every unit within range that has line of sight to this grenade gains 1 Fire Control Interference Token.",
-   "confidence": "high",
-   "note": "Card name confirmed against the printed TM31C Gray Wolf Battle Core, whose action reads \"Launch 1 M9 Stun Grenade\"."
+   "english": "· Undergo Detonation immediately.\n· On Detonation, all units within range gain 1 Fire Control Interference Token.",
+   "confidence": "printed",
+   "note": "Rules difference between editions. The Chinese restricts this to units that have line of sight to the grenade; the printed English has no line of sight condition at all. English card text is authoritative."
   },
   "156_A": {
-   "english": "· Replace this unit with SGM2 \"Pholcus\" Automatic Mine (Deployed).\n· After replacing, if its grid is occupied, undergo Detonation immediately.",
-   "confidence": "high",
-   "note": "card data had Chinese in its English field; \"Pholcus\" taken from the official launch action text"
+   "english": "· Replaces this unit with SGM2 \"Pholcus\" Automatic Mine (Unfolded).\n· If the grid is occupied, the replacing unit must undergo Detonation immediately",
+   "confidence": "printed",
+   "note": "The card says Unfolded, matching the Unfold action name; the earlier translation said Deployed."
   },
   "157_A": {
    "english": "· Target 1 Enemy Unit within range, Fly into target grid and undergo Detonation.\n· On Detonation, cause Explosion damage to target.\n· Missile Group 3",
-   "confidence": "high",
-   "note": "card data had Chinese in its English field; matches the official Guided Attack wording"
+   "confidence": "printed"
   },
   "158_A": {
-   "english": "· Mobile Cover\n· This unit cannot be Crushed.",
-   "confidence": "high",
-   "note": "card data had Chinese in its English field; wording follows the official Wall card"
+   "english": "· Barricade\n· This unit cannot be Crushed.",
+   "confidence": "printed"
   }
  }
 }
