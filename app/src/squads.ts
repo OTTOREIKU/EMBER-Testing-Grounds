@@ -47,6 +47,7 @@ export interface SquadCallbacks {
   onSelect(uid: number, focusSlot?: string): void;
   onChanged(): void;
   onDelete(uid: number): void;
+  onPlayTactic(side: Side, id: string): void;
 }
 
 export class SquadTracker {
@@ -273,13 +274,13 @@ export class SquadTracker {
     return box;
   }
 
+  // The effect itself needs dialogs, the board and the move picker, so the app
+  // resolves it and only stamps the play once the effect actually happened. A
+  // card cancelled at the target picker stays in hand.
   private playTactic(side: Side, id: string): void {
-    const s = this.state;
-    if (!s) return;
+    if (!this.state) return;
     if (this.playedThisRound(side).length) return;
-    if (!s.tacticsPlayed) s.tacticsPlayed = { blue: [], red: [] };
-    s.tacticsPlayed[side].push(`${s.round.n}:${id}`);
-    this.cb.onChanged();
+    this.cb.onPlayTactic(side, id);
   }
 
   // The Main Task briefing is shown once when it is picked and then lost behind

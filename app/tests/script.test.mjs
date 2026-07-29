@@ -45,7 +45,7 @@ for (const [name, raw] of Object.entries(shapes)) {
 const opp = { uid: 7, timing: 'firing', maneuver: 0, action: 1, extras: [], maneuvered: true, started: true, performed: ['a1'], spentExtras: [] };
 const intercepts = [{ uid: 3, actionId: 'PRDR-101_C', targetUid: 9 }];
 const endDone = ['2:end:remove', '2:end:tokens'];
-const live = { turn: 'red', acted: [7, 8], commanded: [9], passed: ['blue'], stage: '2:3', mode: 'hidden', seats: { blue: 'local', red: 'remote' }, opp, intercepts, endDone };
+const live = { turn: 'red', acted: [7, 8], commanded: [9], freeCommand: [], passed: ['blue'], stage: '2:3', mode: 'hidden', seats: { blue: 'local', red: 'remote' }, opp, intercepts, endDone };
 check('a complete script is preserved exactly', normaliseScript(live, 'blue'), live);
 // A half-spent Action Opportunity has to survive a reload, or the Mech would get
 // its Ticks back and could act twice.

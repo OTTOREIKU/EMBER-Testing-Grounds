@@ -401,6 +401,7 @@ export interface ScriptState {
   turn: Side;
   acted: number[];
   commanded: number[];
+  freeCommand: number[];
   passed: Side[];
   stage: string;
   mode: 'hotseat' | 'hidden';
@@ -415,6 +416,7 @@ export function newScriptState(firstPlayer: Side): ScriptState {
     turn: firstPlayer,
     acted: [],
     commanded: [],
+    freeCommand: [],
     passed: [],
     stage: '',
     mode: 'hotseat',
@@ -433,6 +435,7 @@ export function normaliseScript(raw: unknown, firstPlayer: Side): ScriptState {
     turn: s.turn === 'blue' || s.turn === 'red' ? s.turn : base.turn,
     acted: list(s.acted, base.acted),
     commanded: list(s.commanded, base.commanded),
+    freeCommand: list(s.freeCommand, base.freeCommand),
     passed: Array.isArray(s.passed) ? s.passed : base.passed,
     stage: typeof s.stage === 'string' ? s.stage : base.stage,
     mode: s.mode === 'hidden' ? 'hidden' : 'hotseat',

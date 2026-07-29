@@ -68,8 +68,19 @@ export function eligibleUnits(state: GameState, phase: LoopPhase, side: Side): T
   const acted = new Set(sc.acted);
   const commanded = new Set(sc.commanded);
   if (phase === 'Command') {
-    if ((state.commandTokens[side] ?? 0) <= 0) return [];
-    return state.tokens.filter((t) => t.side === side && t.kind === 'drone' && alive(t) && !commanded.has(t.uid));
+    // Additional Instructions pays for its own designation, so a side out of
+    // Command Tokens can still act on the Drone the card named.
+    const free = new Set(sc.freeCommand);
+    const broke = (state.commandTokens[side] ?? 0) <= 0;
+    if (broke && !free.size) return [];
+    return state.tokens.filter(
+      (t) =>
+        t.side === side
+        && t.kind === 'drone'
+        && alive(t)
+        && !commanded.has(t.uid)
+        && (!broke || free.has(t.uid)),
+    );
   }
   if (phase === 'Automatic') {
     return state.tokens.filter(
@@ -163,6 +174,7 @@ export interface GuideCallbacks {
   onPlaceUnit(uid: number, opts: { stance: Stance; camo: boolean }): void;
   onRemoveSpent(): void;
   onPickSecondary(side: Side): void;
+  onPlayTactic(side: Side, id: string): void;
   mapLabel(): string;
   zoneLabel(): string;
   onNote(t: Token, text: string): void;
@@ -236,6 +248,7 @@ export class PlayGuide {
     if (s.round.phase === 0) {
       s.commandTokens = { blue: commandTokensFor(s, 'blue'), red: commandTokensFor(s, 'red') };
       sc.commanded = [];
+      sc.freeCommand = [];
     }
     if (s.round.phase === 0 || s.round.phase === 2) sc.acted = [];
     // End Phase ticks are keyed by round, so drop the ones that can never match
@@ -406,6 +419,12 @@ export class PlayGuide {
       b.addEventListener('click', () => this.reboot(b.dataset.reboot as Stance)),
     );
     this.root.querySelector('[data-maneuver]')?.addEventListener('click', () => this.tryManeuver());
+    for (const b of [...this.root.querySelectorAll<HTMLButtonElement>('[data-tactic]')]) {
+      b.addEventListener('click', () => {
+        const [side, id] = b.dataset.tactic!.split(':');
+        this.cb.onPlayTactic(side as Side, id);
+      });
+    }
     this.root.querySelectorAll<HTMLButtonElement>('[data-act]').forEach((b) =>
       b.addEventListener('click', () => this.tryAction(b.dataset.act!)),
     );
@@ -585,6 +604,9 @@ export class PlayGuide {
           <span class="side-${side}">${SIDE_LABEL[side]}</span>
           <b>${esc(cardName(card))}</b>
           <small>${esc(when)}</small>
+          <button class="pg-tac-play" data-tactic="${side}:${id}"${spent.length ? ' disabled' : ''}>${
+            spent.length ? 'Spent' : 'Play'
+          }</button>
         </div>`);
       }
     }
@@ -592,7 +614,7 @@ export class PlayGuide {
     return `<div class="pg-tactics">
       <p class="pg-tac-head">Tactics you could play now</p>
       ${rows.join('')}
-      <p class="pg-tac-note">Play them from the Squads tab. Only 1 per player per round (5.4.2).</p>
+      <p class="pg-tac-note">Only 1 per player per round (5.4.2).</p>
     </div>`;
   }
 
@@ -790,6 +812,9 @@ export class PlayGuide {
       if (su.stage === 'side') return 'Choose a board edge';
       return deploymentComplete(s) ? 'Press Begin round 1' : 'Deploy every unit';
     }
+    // Free play is a sandbox: with no game running nothing is gated, so the
+    // round bar can be driven by hand for testing.
+    if (!normaliseSetup(s.setup)) return null;
     if (PHASES[s.round.phase] === 'Planning' && this.script(s).stage !== `${s.round.n}:1:locked`) {
       return 'Confirm the timings';
     }
@@ -1486,7 +1511,11 @@ export class PlayGuide {
     const unit = s.tokens.find((t) => t.uid === uid);
     if (!unit) return;
     if (phase === 'Command') {
-      s.commandTokens[unit.side] = Math.max(0, (s.commandTokens[unit.side] ?? 0) - 1);
+      // Additional Instructions buys one Command Action outright, so the token
+      // stays in the pool for this designation only.
+      const free = sc.freeCommand.includes(uid);
+      if (free) sc.freeCommand = sc.freeCommand.filter((x) => x !== uid);
+      else s.commandTokens[unit.side] = Math.max(0, (s.commandTokens[unit.side] ?? 0) - 1);
       if (!sc.commanded.includes(uid)) sc.commanded.push(uid);
     } else if (!sc.acted.includes(uid)) {
       sc.acted.push(uid);

@@ -23,6 +23,7 @@ import {
   type PaletteItem,
 } from './mapeditor';
 import { Panel } from './panel';
+import { tacticSpec, tacticTargets } from './tactics';
 import { Roster } from './roster';
 import { attackDirection, crushTargets, type CrushVictims, dissipationFor, extendPath, inArc, knockbackPath, largeGridOf, type LargeGrid, LG, losBetween, type MoveOpts, rangeBetween, reachableGrids, smokeBlocks, standingSpot } from './rules';
 import { breakAwayCost, canBeForceMoved, lockersOf } from './melee';
@@ -198,6 +199,7 @@ async function init() {
     onPlaceUnit: (uid, opts) => startDeployPlacement(uid, opts),
     onPickMission: () => openMissions(),
     onPickSecondary: (side) => void pickSecondary(side),
+    onPlayTactic: (side, id) => void playTactic(side, id),
     onRemoveSpent: () => {
       const gone = new Set(
         state.tokens
@@ -287,6 +289,11 @@ async function init() {
       const action = findAction(t, actionId);
       if (action) void offerShove(t, action);
     },
+    tacticNote(t) {
+      return state.script?.freeCommand.includes(t.uid)
+        ? 'Additional Instructions: this Drone has 1 Command Action owed, and taking it spends no Command Token.'
+        : null;
+    },
     onCharge(t, slot, on) {
       setCharge(t, slot, on);
       onChanged();
@@ -311,9 +318,10 @@ async function init() {
       if (t) panel.showToken(t);
     },
     onDelete(uid) {
-      state.tokens = state.tokens.filter((x) => x.uid !== uid && x.parentUid !== uid);
-      if (selectedUid === uid) selectToken(null);
-      onChanged();
+      void removeUnit(uid);
+    },
+    onPlayTactic(side, id) {
+      void playTactic(side, id);
     },
   });
 
@@ -783,10 +791,12 @@ async function init() {
     }
     for (const t of state.tokens) t.deployed = undefined;
     state.setup = null;
-    // The next game picks its own Tasks, and terrain knocked down during this
-    // one belongs to the match rather than to the map.
+    // The next game picks its own Tasks, and the terrain knocked down during
+    // this one, along with anything launched, belongs to the match not the map.
     state.tasks = null;
     state.removedTerrain = [];
+    state.tokens = state.tokens.filter((t) => t.kind !== 'projectile');
+    state.smoke = [];
     onChanged();
   }
 
@@ -2629,8 +2639,111 @@ async function init() {
 
   let lastStockSig = '';
 
+  // A Projectile is spent scenery and goes without asking. Anything else is a
+  // built unit with no undo behind it, so it gets a confirmation.
+  // Tactics resolve here rather than in the squad list because every one of them
+  // needs a target picker, and two of them need a second choice on top of that.
+  // Nothing is stamped as played until the effect has actually landed, so backing
+  // out of a picker leaves the card in hand.
+  async function playTactic(side: Side, id: string): Promise<void> {
+    const spec = tacticSpec(id);
+    if (!spec) return;
+    const ctx = {
+      maxLink: (t: Token) => tokenCards(data, t).find((c) => c.slot === 'pilot')?.card.LV ?? 0,
+    };
+    const targets = tacticTargets(spec, state, side, ctx);
+    if (!targets.length) {
+      await alertDialog({ title: `${spec.name} has no legal target`, body: spec.none });
+      return;
+    }
+    const phase = PHASES[state.round.phase];
+    if (state.script && phase !== spec.phase) {
+      const ok = await confirmDialog({
+        title: `It is the ${phase} Phase`,
+        body: `${spec.name} is a ${spec.timing} card. Play it anyway?`,
+        confirmLabel: 'Play it',
+      });
+      if (!ok) return;
+    }
+    const uid = targets.length === 1
+      ? String(targets[0].uid)
+      : await choiceDialog({
+        title: spec.name,
+        body: spec.prompt,
+        stacked: true,
+        choices: [
+          ...targets.map((t) => ({
+            id: String(t.uid),
+            label: `${t.label} · ${t.stance.toUpperCase()}${t.link !== undefined ? ` ⚡${t.link}` : ''}`,
+          })),
+          { id: 'cancel', label: 'Cancel' },
+        ],
+      });
+    if (!uid || uid === 'cancel') return;
+    const target = state.tokens.find((t) => t.uid === Number(uid));
+    if (!target) return;
+
+    let pick: string | null = null;
+    if (spec.choices) {
+      const opts = spec.choices(target, state, ctx);
+      if (!opts.length) {
+        await alertDialog({ title: `${spec.name} has nothing to do`, body: spec.none });
+        return;
+      }
+      pick = opts.length === 1
+        ? opts[0].id
+        : await choiceDialog({
+          title: spec.choiceTitle ?? spec.name,
+          body: target.label,
+          stacked: true,
+          choices: [
+            ...opts.map((o) => ({ id: o.id, label: o.note ? `${o.label} · ${o.note}` : o.label })),
+            { id: 'cancel', label: 'Cancel' },
+          ],
+        });
+      if (!pick || pick === 'cancel') return;
+    }
+
+    const out = spec.apply(target, state, ctx, pick);
+    if (out.freeCommand && state.script) {
+      state.script.commanded = state.script.commanded.filter((x) => x !== target.uid);
+      if (!state.script.freeCommand.includes(target.uid)) state.script.freeCommand.push(target.uid);
+    }
+    if (!state.tacticsPlayed) state.tacticsPlayed = { blue: [], red: [] };
+    state.tacticsPlayed[side].push(`${state.round.n}:${id}`);
+    logTo(target, out.log);
+    selectToken(target.uid);
+    onChanged();
+    if (out.maneuver) {
+      startMove(target.uid, { range: maneuverRange(data, target), label: 'Maneuver' }, () => onChanged());
+      return;
+    }
+    await alertDialog({ title: spec.name, body: out.log });
+  }
+
+  async function removeUnit(uid: number): Promise<void> {
+    const t = state.tokens.find((x) => x.uid === uid);
+    if (!t) return;
+    const carried = state.tokens.filter((x) => x.parentUid === uid && x.kind === 'projectile').length;
+    if (t.kind !== 'projectile') {
+      const ok = await confirmDialog({
+        title: `Remove ${t.label}?`,
+        body: carried
+          ? `It comes off the board along with ${carried} projectile${carried === 1 ? '' : 's'} it launched. There is no undo.`
+          : 'It comes off the board and out of its squad. There is no undo.',
+        confirmLabel: 'Remove',
+        danger: true,
+      });
+      if (!ok) return;
+    }
+    state.tokens = state.tokens.filter((x) => x.uid !== uid && x.parentUid !== uid);
+    if (selectedUid === uid) selectToken(null);
+    onChanged();
+  }
+
   function onChanged(): void {
     save();
+    board.renderZones(overlayZones(), overlayDeployment(), claimedZones());
     board.renderTokens(state);
     board.renderTaskItems(normaliseTasks(state.tasks).items, zoneCentre);
     board.renderSmoke(state.smoke ?? []);
@@ -3803,9 +3916,7 @@ async function init() {
     } else if (k === 'a') {
       board.showArcs(t);
     } else if (ev.key === 'Delete' || ev.key === 'Backspace') {
-      state.tokens = state.tokens.filter((x) => x.uid !== t.uid);
-      selectToken(null);
-      onChanged();
+      void removeUnit(t.uid);
     }
   });
 

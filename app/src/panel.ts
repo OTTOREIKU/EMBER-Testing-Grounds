@@ -27,6 +27,34 @@ function projectileTag(name: string): string {
   return /\d/.test(lead) && lead.length <= 9 ? lead : name;
 }
 
+// The boxed glyph a Drone card prints beside an action name, saying when it
+// happens. Mech Parts and Projectiles carry no speed, so they show nothing.
+const SPEED_MARK: Record<string, { glyph: string; label: string; lines: string[] }> = {
+  auto: {
+    glyph: '!',
+    label: 'Automatic Action',
+    lines: [
+      'Printed on the card as a boxed ! beside the action name.',
+      'It resolves by itself in the Automatic Phase, without being told to.',
+      'A Drone that acted on a Command this round does not act again, so spending a Command Token on this unit gives up this action.',
+    ],
+  },
+  command: {
+    glyph: '?',
+    label: 'Command Action',
+    lines: [
+      'Printed on the card as a boxed ? beside the action name.',
+      'It only happens if a Command Token is spent on this Drone in the Command Phase.',
+      'A commanded Drone acts immediately and either moves or performs one Command Action.',
+    ],
+  },
+  passive: {
+    glyph: '∞',
+    label: 'Passive',
+    lines: ['No speed box is printed beside the name.', 'It is always on and is never chosen, so it costs nothing.'],
+  },
+};
+
 const STAT_FIELDS: [keyof Card, string][] = [
   ['score', 'Points'],
   ['armor', 'Armor'],
@@ -52,6 +80,7 @@ export interface PanelCallbacks {
   onDetonate(t: Token, actionId: string): void;
   onShove(t: Token, actionId: string): void;
   onCharge(t: Token, slot: string, on: boolean): void;
+  tacticNote(t: Token): string | null;
 }
 
 export class Panel {
@@ -92,6 +121,16 @@ export class Panel {
     head.querySelector('.th-meta')!.textContent =
       `${SIDE_LABEL[t.side]}, ${t.stance.toUpperCase()}, ${['facing N', 'facing E', 'facing S', 'facing W'][t.facing]}`;
     this.body.appendChild(head);
+
+    // A Tactics Card that leaves something owed says so here, because the effect
+    // is spent through the normal action flow and nothing else would show it.
+    const owed = this.cb.tacticNote(t);
+    if (owed) {
+      const flag = document.createElement('p');
+      flag.className = 'tok-tactic';
+      flag.textContent = owed;
+      this.body.appendChild(flag);
+    }
 
     const actions = guidedActions(this.data, t, this.cb.world());
     if (actions.length) {
@@ -182,7 +221,9 @@ export class Panel {
 
     const head = document.createElement('div');
     head.className = 'act-head';
-    head.innerHTML = `<b class="act-name">${a.name.en || a.name.zh || a.id}</b>${
+    head.innerHTML = `${
+      SPEED_MARK[a.speed ?? ''] ? `<span class="act-speed sp-${a.speed}">${SPEED_MARK[a.speed!].glyph}</span>` : ''
+    }<b class="act-name">${a.name.en || a.name.zh || a.id}</b>${
       a.type ? `<span class="act-type">${a.type}</span>` : ''
     }${
       cost
@@ -191,6 +232,14 @@ export class Panel {
           }${'<i class="tick-act"></i>'.repeat(cost.action)}</i></span>`
         : ''
     }`;
+    const speedEl = head.querySelector<HTMLElement>('.act-speed');
+    if (speedEl && a.speed && SPEED_MARK[a.speed]) {
+      inspectOnHover(speedEl, {
+        title: SPEED_MARK[a.speed].label,
+        sub: a.name.en || a.name.zh || a.id,
+        lines: SPEED_MARK[a.speed].lines,
+      });
+    }
     const costEl = head.querySelector<HTMLElement>('.act-cost');
     if (costEl && cost && len) {
       inspectOnHover(costEl, {
