@@ -2,6 +2,7 @@ import type { TaskItem } from './tasks';
 import type { GameState, Marker, Side, SmokeScreen, StatusDef, TerrainPiece, Token, TokenShape } from './types';
 import { INTERCEPT_DEF, SHAPE_NOTE, statusCount, statusStacks } from './types';
 import { mechPartUrl, SIDE_LABEL, tabImageUrl } from './data';
+import { type BoardTheme, boardArtUrl, boardTheme, DEFAULT_BOARD } from './boards';
 import type { InspectInfo } from './inspector';
 
 export const MECH_LAYER_ORDER = ['chasis', 'backpack', 'torso', 'leftHand', 'rightHand'] as const;
@@ -154,6 +155,8 @@ function outlinePath(cells: { col: number; row: number }[], size: number): strin
 
 export class Board {
   svg: SVGSVGElement;
+  private gGrid!: SVGGElement;
+  private theme: BoardTheme = boardTheme(DEFAULT_BOARD);
   private gZones!: SVGGElement;
   private gTerrain: SVGGElement;
   private gTokens: SVGGElement;
@@ -193,7 +196,8 @@ export class Board {
       id: 'board',
     });
     this.svg.appendChild(smokeHatchDefs());
-    this.svg.appendChild(this.buildGrid());
+    this.gGrid = this.buildGrid();
+    this.svg.appendChild(this.gGrid);
     this.gZones = el('g', { class: 'zones', 'pointer-events': 'none' });
     this.svg.appendChild(this.gZones);
     this.gTerrain = el('g');
@@ -320,15 +324,33 @@ export class Board {
     this.applyZoom();
   }
 
+  setBoardTheme(id: string): void {
+    const next = boardTheme(id);
+    if (next.id === this.theme.id && this.gGrid) return;
+    this.theme = next;
+    const fresh = this.buildGrid();
+    this.gGrid.replaceWith(fresh);
+    this.gGrid = fresh;
+  }
+
   private buildGrid(): SVGGElement {
+    const t = this.theme;
     const g = el('g', { id: 'grid' });
-    const bg = el('rect', { x: 0, y: 0, width: SIZE, height: SIZE, fill: '#f4f1ea' });
-    g.appendChild(bg);
+    g.appendChild(el('rect', { x: 0, y: 0, width: SIZE, height: SIZE, fill: t.base }));
+    const art = boardArtUrl(t, SIZE);
+    if (art) {
+      const img = el('image', { x: 0, y: 0, width: SIZE, height: SIZE, 'pointer-events': 'none' });
+      img.setAttribute('href', art);
+      g.appendChild(img);
+    }
+    this.svg.style.setProperty('--grid-label', t.label);
     for (let i = 0; i <= CELLS; i++) {
       const large = i % 3 === 0;
       const p = i * CELL;
-      g.appendChild(el('line', { x1: p, y1: 0, x2: p, y2: SIZE, stroke: large ? '#8a8577' : '#d8d2c4', 'stroke-width': large ? 1.6 : 0.6 }));
-      g.appendChild(el('line', { x1: 0, y1: p, x2: SIZE, y2: p, stroke: large ? '#8a8577' : '#d8d2c4', 'stroke-width': large ? 1.6 : 0.6 }));
+      const stroke = large ? t.major : t.minor;
+      const w = large ? 1.6 : 0.6;
+      g.appendChild(el('line', { x1: p, y1: 0, x2: p, y2: SIZE, stroke, 'stroke-width': w }));
+      g.appendChild(el('line', { x1: 0, y1: p, x2: SIZE, y2: p, stroke, 'stroke-width': w }));
     }
     for (let i = 0; i < 12; i++) {
       const c = i * 3 * CELL + 1.5 * CELL;
@@ -339,7 +361,7 @@ export class Board {
       g.appendChild(col);
       g.appendChild(row);
     }
-    const border = el('rect', { x: 0, y: 0, width: SIZE, height: SIZE, fill: 'none', stroke: '#57534e', 'stroke-width': 2.5 });
+    const border = el('rect', { x: 0, y: 0, width: SIZE, height: SIZE, fill: 'none', stroke: t.border, 'stroke-width': 2.5 });
     g.appendChild(border);
     return g;
   }
