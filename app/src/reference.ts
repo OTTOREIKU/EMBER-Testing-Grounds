@@ -2,7 +2,7 @@ import './reference.css';
 import { actionIconUrl, boxCoverUrl, cardName, FACTION_LABEL, loadData, mechPartUrl, missionImageUrl, portraitUrl, secondaryImageUrl, statIconUrl, tabImageUrl, zeroCostReason, type BoxDef, type GameData, type KeywordDef } from './data';
 import { mountCardImage, preloadCardImages, warmAllImagesWhenIdle } from './images';
 import { watchForUpdates } from './updates';
-import { TIMINGS, type Card } from './types';
+import { SHAPE_NOTE, STATUSES, TIMINGS, type Card, type StatusDef } from './types';
 import { registerOffline } from './offline';
 import { costLabel, LENGTH_NAME, lengthOf, TICK_COST } from './ticks';
 
@@ -76,6 +76,7 @@ let tab: Tab = 'keywords';
 let query = '';
 const facetChoice: Partial<Record<Tab, string>> = {};
 const factionChoice: Partial<Record<Tab, string>> = {};
+let rulesSection: string | undefined;
 
 const body = () => document.getElementById('ref-body')!;
 const esc = (s: string) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!);
@@ -259,8 +260,6 @@ function cardDetail(c: Card): string {
   const inBoxes = (c.containedIn ?? [])
     .map((e) => ({ def: data.boxes.find((x) => x.key === e.box), n: e.quantityPerBox }))
     .filter((x) => x.def);
-  // UNSALE is not a product and is left out of the Boxes tab, so linking to it
-  // would send you to a page the listing does not contain.
   const unsold = inBoxes.length > 0 && inBoxes.every((x) => x.def!.key === 'UNSALE');
   const boxes = unsold
     ? 'Not sold in any box yet. It is in the card database, but no set ships it.'
@@ -339,8 +338,6 @@ function boxDetail(key: string): string | null {
       (g) => `<h3 class="ref-sub">${esc(g.label)} <span class="fc-n">${g.hit.length}</span></h3>
       <ul class="box-parts">${g.hit
         .map(
-          // Every row emits all three trailing slots, empty ones included, so the
-          // points, counts and tags line up as columns down the list.
           (i) => `<li data-card="${esc(i.card.id)}"${i.n ? '' : ' class="bp-paired"'}><span class="bp-name">${esc(cardName(i.card))}</span>
             <span class="bp-slot">${
               i.n
@@ -570,15 +567,55 @@ function render(): void {
           : '')
       : '';
 
-    const head = phaseHtml + timingHtml + stanceHtml;
-    if (!filtered.length && !head) {
-      el.innerHTML = '<p class="ref-count">No matches</p>';
-      return;
-    }
-    el.innerHTML =
-      head +
-      (filtered.length
-        ? `<p class="ref-count">${filtered.length} mechanic${filtered.length === 1 ? '' : 's'}</p>` +
+    const DURATION: Record<string, { label: string; text: string }> = {
+      green: { label: 'Green', text: 'Stays in effect until an Action or effect removes it.' },
+      yellow: {
+        label: 'Yellow',
+        text: 'Flipped to its red reverse at the end of the round, then removed at the end of the next one, so it lasts two rounds.',
+      },
+    };
+    const tokenSvg = (def: StatusDef, red = false): string => {
+      const tint = red ? '#e05c5c' : def.tint;
+      const w = def.shape === 'triangle' ? 40 : def.shape === 'hexagon' ? 42 : 34;
+      const body =
+        def.shape === 'hexagon'
+          ? `<polygon points="6,13 12,3 ${w - 12},3 ${w - 6},13 ${w - 12},23 12,23" fill="${tint}" stroke="#0f1216"/>`
+          : def.shape === 'triangle'
+            ? `<polygon points="${w / 2},2 ${w - 3},24 3,24" fill="${tint}" stroke="#0f1216"/>`
+            : def.shape === 'round'
+              ? `<rect x="3" y="4" width="${w - 6}" height="18" rx="9" fill="${tint}" stroke="#0f1216"/>`
+              : def.shape === 'state'
+                ? `<rect x="3" y="4" width="${w - 6}" height="18" rx="3" fill="${tint}" stroke="#0f1216" stroke-dasharray="3 2"/>`
+                : `<rect x="3" y="4" width="${w - 6}" height="18" rx="2" fill="${tint}" stroke="#0f1216"/>`;
+      return `<svg class="tok-badge" viewBox="0 0 ${w} 26" width="${w}" height="26" aria-hidden="true">${body}
+        <text x="${w / 2}" y="17" text-anchor="middle" font-size="9" font-weight="700" fill="#0f1216">${esc(def.icon)}</text></svg>`;
+    };
+    const tokenList = STATUSES.filter((d) =>
+      hit(`${d.label} ${d.icon} ${d.shape} ${d.note} ${d.decay ?? ''} token`),
+    );
+    const tokenHtml = tokenList.length
+      ? `<p class="ref-count">Tokens and states</p>` +
+        tokenList
+          .map((d) => {
+            const dur = d.decay ? DURATION[d.decay] : null;
+            return `<article class="card tok-card">
+              <div class="card-title">
+                <span class="tok-art">${tokenSvg(d)}${d.decay === 'yellow' ? tokenSvg(d, true) : ''}</span>
+                ${esc(d.label)}
+                <span class="tag mono">${esc(d.shape)}</span>
+                ${dur ? `<span class="tag mono tok-${esc(d.decay!)}">${esc(dur.label)}</span>` : ''}
+              </div>
+              <div class="card-body">
+                <p>${linkKeywords(d.note)}</p>
+                <p class="ref-note">${esc(SHAPE_NOTE[d.shape])}${dur ? ` ${esc(dur.text)}` : ''}</p>
+              </div>
+            </article>`;
+          })
+          .join('')
+      : '';
+
+    const mechanicHtml = filtered.length
+      ? `<p class="ref-count">${filtered.length} mechanic${filtered.length === 1 ? '' : 's'}</p>` +
         filtered
           .map(
             (m) => `<article class="card">
@@ -588,13 +625,43 @@ function render(): void {
             </article>`,
           )
           .join('')
-        : '');
+      : '';
+
+    const sections = [
+      { id: 'phases', label: 'Phases', n: phases.length, html: phaseHtml },
+      { id: 'timings', label: 'Timings', n: timings.length, html: timingHtml },
+      { id: 'stances', label: 'Stances', n: stances.length, html: stanceHtml },
+      { id: 'tokens', label: 'Tokens', n: tokenList.length, html: tokenHtml },
+      { id: 'mechanics', label: 'Mechanics', n: filtered.length, html: mechanicHtml },
+    ];
+    const total = sections.reduce((sum, x) => sum + x.n, 0);
+    const chosen = sections.find((x) => x.id === rulesSection && x.n);
+    const bar = `<div class="ref-facets ref-facets-faction">
+      <button class="ref-facet${chosen ? '' : ' active'}" data-rules="">All <span class="fc-n">${total}</span></button>
+      ${sections
+        .map(
+          (x) =>
+            `<button class="ref-facet${chosen?.id === x.id ? ' active' : ''}${x.n ? '' : ' empty'}" data-rules="${x.id}"${
+              x.n ? '' : ' disabled'
+            }>${x.label} <span class="fc-n">${x.n}</span></button>`,
+        )
+        .join('')}
+    </div>`;
+
+    el.innerHTML = total
+      ? bar + (chosen ? chosen.html : sections.map((x) => x.html).join(''))
+      : bar + '<p class="ref-count">No matches</p>';
+    el.querySelectorAll<HTMLButtonElement>('[data-rules]').forEach((b) =>
+      b.addEventListener('click', () => {
+        rulesSection = b.dataset.rules || undefined;
+        render();
+        body().scrollTop = 0;
+      }),
+    );
     return;
   }
 
   if (tab === 'boxes') {
-    // UNSALE is not a product: it is a bucket for cards that ship in no box, and
-    // its cards are a mix of factions despite the entry being tagged PD.
     const sellable = data.boxes.filter((b) => b.key !== 'UNSALE');
     const pool = sellable.filter((b) => {
       if (!q) return true;

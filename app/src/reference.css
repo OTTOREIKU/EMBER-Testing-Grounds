@@ -451,3 +451,10 @@ body.ref-locked { overflow: hidden; }
 .play-can, .play-cant { margin: 0; font-size: 12px; }
 .play-can b { color: var(--green); }
 .play-cant b { color: #ff8b6b; }
+
+/* ---------- token reference ---------- */
+.tok-card .card-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tok-art { display: inline-flex; align-items: center; gap: 4px; }
+.tok-badge { display: block; }
+.tag.tok-green { background: rgba(61, 220, 132, 0.16); color: #2fa968; }
+.tag.tok-yellow { background: rgba(240, 180, 41, 0.18); color: #b07c0d; }
