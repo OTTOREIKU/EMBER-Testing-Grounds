@@ -67,9 +67,6 @@ export function offsetIcons(heavy: number, light: number, dodge: number, defense
 
 // ---------- surplus damage (rulebook 4.4.5, 4.8) ----------
 
-// Surplus Damage is defined after every Penetration, but it only DOES anything
-// when the Action carries one of these keywords. Without one, leftover damage is
-// simply lost and the attack ends.
 export interface SurplusEffect {
   key: string;
   name: string;
@@ -119,6 +116,7 @@ interface Ctx {
   surplusKeyword: SurplusEffect | null;
   log: string[];
   explosion: boolean;
+  hits: number;
 }
 
 export class AttackHelper {
@@ -128,6 +126,9 @@ export class AttackHelper {
   private onChanged: () => void;
   private onClose: () => void;
   private onLog: (t: Token, text: string) => void;
+  private onKnockback: (attacker: Token, defender: Token, action: CardAction, hits: number) => void;
+  private onDestroyed: (killer: Token, victim: Token, what: 'part' | 'unit') => void;
+  private onPenetrated: (victim: Token) => void;
   private ctx: Ctx | null = null;
   private duelGen = 0;
 
@@ -138,6 +139,9 @@ export class AttackHelper {
     onChanged: () => void,
     onClose: () => void,
     onLog: (t: Token, text: string) => void = () => {},
+    onKnockback: (attacker: Token, defender: Token, action: CardAction, hits: number) => void = () => {},
+    onDestroyed: (killer: Token, victim: Token, what: 'part' | 'unit') => void = () => {},
+    onPenetrated: (victim: Token) => void = () => {},
   ) {
     this.data = data;
     this.dice = dice;
@@ -145,6 +149,9 @@ export class AttackHelper {
     this.onChanged = onChanged;
     this.onClose = onClose;
     this.onLog = onLog;
+    this.onKnockback = onKnockback;
+    this.onDestroyed = onDestroyed;
+    this.onPenetrated = onPenetrated;
   }
 
   get active(): boolean {
@@ -180,6 +187,7 @@ export class AttackHelper {
       surplusKeyword: null,
       log: [],
       explosion,
+      hits: 0,
     };
     if (defender.kind !== 'mech') this.ctx.defensePool = this.suggestedDefensePool('main');
     const what = action.name.en || action.name.zh || action.id;
@@ -624,7 +632,8 @@ export class AttackHelper {
     const c = this.ctx!;
     const wrap = document.createElement('div');
     wrap.className = 'ah-step';
-    const { penetrating, unoffset, text, duel } = this.resolve();
+    const { hits, penetrating, unoffset, text, duel } = this.resolve();
+    c.hits = hits;
     wrap.innerHTML = `<h4><span class="ah-n">4</span><span data-mech="penetration">Resolution</span>${
       c.surplusRound
         ? ` (<span data-mech="surplus_damage">${c.surplusKeyword?.name ?? 'Surplus'} Damage, no Attack Roll</span>)`
@@ -652,8 +661,11 @@ export class AttackHelper {
         const hasStructure = (partCard?.structure ?? 0) > 0;
         const next = cur === 'intact' ? (hasStructure ? 'damaged' : 'destroyed') : 'destroyed';
         c.defender.partStates[slot] = next;
+        this.onPenetrated(c.defender);
+        if (next === 'destroyed') this.onDestroyed(c.attacker, c.defender, 'part');
         const how = c.explosion ? 'Explosion damage' : 'Penetration';
         this.note(`${how} from ${c.attacker.label}: ${SLOT_LABEL[slot]} goes ${cur} to ${next.toUpperCase()}.`, [c.attacker, c.defender]);
+        if (next === 'destroyed' && c.defender.kind !== 'mech') this.onDestroyed(c.attacker, c.defender, 'unit');
         if (next === 'destroyed' && c.defender.kind === 'mech') {
           c.defender.link = Math.max(0, (c.defender.link ?? 0) - 1);
           this.note(`Part destroyed, so ${c.defender.label} loses 1 Link (now ${c.defender.link}).`, [c.defender]);
@@ -661,7 +673,10 @@ export class AttackHelper {
             c.defender.stance = 'shutdown';
             this.note(`Link has reached 0, so ${c.defender.label} SHUTS DOWN.`, [c.defender]);
           }
-          if (slot === 'torso') this.note(`⚠ Torso destroyed, so the unit is destroyed. Remove it from the board.`, [c.defender]);
+          if (slot === 'torso') {
+            this.onDestroyed(c.attacker, c.defender, 'unit');
+            this.note(`⚠ Torso destroyed, so the unit is destroyed. Remove it from the board.`, [c.defender]);
+          }
           else {
             const left = Object.entries(c.defender.partStates).filter(([, s]) => s !== 'destroyed').length;
             if (left <= 2) {
@@ -679,7 +694,10 @@ export class AttackHelper {
         const effects = surplusEffects(c.action);
         const carried = unoffset;
         const surplus = carried.heavy + carried.light;
-        if (surplus > 0 && effects.length && c.surplusRound === 0 && c.defender.kind === 'mech') {
+        // A destroyed Unit ends the attack outright (4.4.4), so Surplus Damage
+        // never carries on against a Mech whose Torso just went.
+        if (surplus > 0 && effects.length && c.surplusRound === 0 && c.defender.kind === 'mech'
+          && (c.defender.partStates.torso ?? 'intact') !== 'destroyed') {
           const effect = effects[0];
           c.surplusRound = 1;
           c.carried = carried;
@@ -709,7 +727,10 @@ export class AttackHelper {
       const done = document.createElement('button');
       done.className = 'ah-primary';
       done.textContent = 'Done';
-      done.addEventListener('click', () => this.cancel());
+      // An Attack with no Penetration still ends through finish(), because icons
+      // the defence offset are Hits and on-hit riders such as Knockback fire on
+      // them (4.4 note on Hit versus Penetration).
+      done.addEventListener('click', () => this.finish(wrap));
       wrap.appendChild(done);
     }
     return wrap;
@@ -718,6 +739,7 @@ export class AttackHelper {
   private finish(_wrap: HTMLElement): void {
     const c = this.ctx!;
     c.step = 'resolve';
+    const rider = { attacker: c.attacker, defender: c.defender, action: c.action, hits: c.hits };
     const el = document.createElement('div');
     el.className = 'attack-helper';
     el.innerHTML = `<div class="ah-head"><b>Attack resolved</b></div>
@@ -729,6 +751,7 @@ export class AttackHelper {
     el.appendChild(done);
     this.root.replaceChildren(el);
     this.ctx = null;
+    this.onKnockback(rider.attacker, rider.defender, rider.action, rider.hits);
   }
 }
 
