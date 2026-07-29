@@ -58,6 +58,8 @@ export class Panel {
   private data: GameData;
   private body: HTMLElement;
   private cb: PanelCallbacks;
+  private shownUid: number | null = null;
+  private activeSlot: string | null = null;
 
   constructor(data: GameData, cb: PanelCallbacks) {
     this.data = data;
@@ -66,14 +68,22 @@ export class Panel {
   }
 
   clear(): void {
+    this.shownUid = null;
+    this.activeSlot = null;
     this.body.innerHTML = '<p class="dim">Select a unit on the board, or pick a card from the Add tab.</p>';
   }
 
   showCard(card: Card): void {
+    this.shownUid = null;
+    this.activeSlot = null;
     this.body.replaceChildren(this.cardBlock(card));
   }
 
   showToken(t: Token, focusSlot?: string): void {
+    const scroller = this.body.closest<HTMLElement>('.side-tab');
+    const sameUnit = this.shownUid === t.uid;
+    const keepTop = sameUnit && !focusSlot ? (scroller?.scrollTop ?? 0) : 0;
+    this.shownUid = t.uid;
     this.body.replaceChildren();
     const head = document.createElement('p');
     head.className = `token-head side-${t.side}`;
@@ -96,10 +106,12 @@ export class Panel {
       const tabs = document.createElement('div');
       tabs.className = 'part-tabs';
       const content = document.createElement('div');
-      const show = (card: Card) => content.replaceChildren(this.cardBlock(card));
-      const focusIdx = focusSlot ? cards.findIndex((c) => c.slot === focusSlot) : -1;
+      const blocks = cards.map(({ card }) => this.cardBlock(card));
+      const show = (i: number) => blocks.forEach((b, j) => b.classList.toggle('part-hidden', j !== i));
+      const wanted = focusSlot ?? (sameUnit ? this.activeSlot : null);
+      const focusIdx = wanted ? cards.findIndex((c) => c.slot === wanted) : -1;
       const startIdx = focusIdx >= 0 ? focusIdx : 0;
-      cards.forEach(({ slot, card }, i) => {
+      cards.forEach(({ slot, card: _card }, i) => {
         const b = document.createElement('button');
         const st = t.partStates[slot as keyof Token['partStates']];
         b.textContent = SLOT_LABEL[slot];
@@ -107,16 +119,29 @@ export class Panel {
         b.addEventListener('click', () => {
           tabs.querySelectorAll('button').forEach((x) => x.classList.remove('active'));
           b.classList.add('active');
-          show(card);
+          this.activeSlot = slot;
+          show(i);
         });
         if (i === startIdx) b.classList.add('active');
         tabs.appendChild(b);
       });
+      this.activeSlot = cards[startIdx].slot;
       this.body.appendChild(tabs);
+      for (const b of blocks) content.appendChild(b);
       this.body.appendChild(content);
-      show(cards[startIdx].card);
+      show(startIdx);
     } else if (cards.length === 1) {
+      this.activeSlot = cards[0].slot;
       this.body.appendChild(this.cardBlock(cards[0].card));
+    } else {
+      this.activeSlot = null;
+    }
+
+    if (scroller) {
+      scroller.scrollTop = keepTop;
+      requestAnimationFrame(() => {
+        scroller.scrollTop = keepTop;
+      });
     }
   }
 
@@ -478,7 +503,7 @@ export class Panel {
     img.className = 'card-img';
     img.src = cardImageUrl(card.id);
     img.alt = cardName(card);
-    img.loading = 'lazy';
+
     img.addEventListener('error', () => img.remove(), { once: true });
     wrap.appendChild(img);
 
