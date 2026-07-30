@@ -254,7 +254,7 @@
   "sides": {
    "red": {
     "name": "UN Red Team - Fireline / Grenadier",
-    "pointsNote": "Booklet total 459 (Fireline 213 + Grenadier 213 + drone 33). Placed cards sum to 417 because the R7 Automatic Rifle (42 pts, card 104) could not be slotted - it is a right-hand card and the right hand already holds the R33 Sniper Rifle.",
+    "pointsNote": "The booklet lists both the R33 Sniper Rifle and the R7 Automatic Rifle on the Fireline, but both are right-hand cards and a Mech has one right hand. The R33 is fitted and the left arm carries the MDXS \"Fairy\" System + R6 SMG (117), whose Full-auto is a Laser Weapon, so Red still teaches laser fire from two Parts.",
     "units": [
      {
       "kind": "mech",
@@ -263,7 +263,7 @@
       "facing": "E",
       "torso": "092",
       "chasis": "099",
-      "leftHand": null,
+      "leftHand": "117",
       "rightHand": "106",
       "backpack": "083",
       "pilot": "LPA-19"
@@ -490,9 +490,7 @@
    "Pilot mapping: 'Charger-31' = card LPA-31 'Charger1' (6 pts) and 'Rifleman-27' = card LPA-27 'Rifleman1' (9 pts); points match the booklet.",
    "Wall/container orientations inferred from map symmetry (not printed in the booklet)."
   ],
-  "unmatched": [
-   "R7 Automatic Rifle (card 104 is right-hand only; the right hand already holds R33 Sniper Rifle and no left-hand variant exists)"
-  ]
+  "unmatched": []
  },
  {
   "id": "asymmetric-duel",
@@ -754,7 +752,7 @@
    },
    "blue": {
     "name": "UN Team - Ghost Pattern Ace",
-    "pointsNote": "Booklet total 406. Placed cards sum to 358 because the R9B Tactical Rifle (48 pts, card 127) is right-hand only and the right hand holds the R6SD SMG.",
+    "pointsNote": "The booklet lists the R9B Tactical Rifle alongside the R6SD SMG, but both are right-hand cards. The SMG is fitted and the left arm carries the K9 Nail Gun + M14BO Wakizashi (126): its Nail has Silence, which is the stealth lesson, and the card has the Freehand tag, which switches on the SMG's [Two-Handed] Range +2.",
     "units": [
      {
       "kind": "mech",
@@ -763,7 +761,7 @@
       "facing": "W",
       "torso": "096",
       "chasis": "100",
-      "leftHand": null,
+      "leftHand": "126",
       "rightHand": "124",
       "backpack": "090",
       "pilot": "LPA-21"
@@ -950,9 +948,7 @@
    "UN Ace may start with Low Profile only (instead of Optical Camouflage) for a gentler first run.",
    "Terrain: booklet lists buildings and walls only (no containers); wall orientations inferred from map symmetry."
   ],
-  "unmatched": [
-   "R9B Tactical Rifle (card 127 is right-hand only; right hand holds R6SD SMG - no left-hand variant exists)"
-  ]
+  "unmatched": []
  },
  {
   "id": "signal-relay-war",
@@ -964,7 +960,7 @@
   "sides": {
    "red": {
     "name": "RDL Team - Signal Net Task Group",
-    "pointsNote": "Booklet total 455. Placed cards sum to 431: the Relay Marksman's AC-32 Automatic Rifle (24 pts, card 025) is right-hand only and the right hand holds the R-35 Heavy Railgun.",
+    "pointsNote": "The booklet lists the AC-32 Automatic Rifle beside the R-35 Heavy Railgun and both are right-hand cards. The railgun is fitted and the left arm carries the Type 55 Shield + MES Beacon Launcher (064), which launches a beacon and so teaches the relay half of this scenario directly.",
     "units": [
      {
       "kind": "mech",
@@ -985,7 +981,7 @@
       "facing": "E",
       "torso": "019",
       "chasis": "506",
-      "leftHand": null,
+      "leftHand": "064",
       "rightHand": "043",
       "backpack": "002",
       "pilot": "FPA-01"
@@ -1001,7 +997,7 @@
    },
    "blue": {
     "name": "UN Team - Drone Interference Cell",
-    "pointsNote": "Booklet total 454. Placed cards sum to 355: the R6SD SMG (60 pts, card 124, right-hand only; slot taken by R9B Tactical Rifle) and the EBS/X40 Armor Energy Charger (39 pts, card 081; backpack slot taken by OCSP Overloading Pack) could not be slotted.",
+    "pointsNote": "The booklet lists the R6SD SMG beside the R9B Tactical Rifle, both right-hand cards, and a second backpack that cannot be fitted. The rifle is fitted and the left arm carries the MSH1 Assistance Arm (121): it has the Freehand tag, so it switches on the rifle's [Two-Handed] Range +2 and its Tracking Assist takes 2 Blue dice off the target, which suits a disruptor.",
     "units": [
      {
       "kind": "mech",
@@ -1010,7 +1006,7 @@
       "facing": "W",
       "torso": "091",
       "chasis": "101",
-      "leftHand": null,
+      "leftHand": "121",
       "rightHand": "127",
       "backpack": "090",
       "pilot": "LPA-19"
@@ -1213,8 +1209,6 @@
    "Terrain fix: the inferred tall walls originally copied to E8 and H8 sat on this booklet's own printed Terminal markers. They are moved to E9 and H9, the only free grids left in those columns, which keeps the blocked centre the booklet describes without burying an objective."
   ],
   "unmatched": [
-   "AC-32 Automatic Rifle (card 025 is right-hand only; the Relay Marksman's right hand holds R-35 Heavy Railgun)",
-   "R6SD SMG (card 124 is right-hand only; the Network Breaker's right hand holds R9B Tactical Rifle)",
    "EBS/X40 Armor Energy Charger (card 081; the Network Breaker's backpack slot already holds the OCSP Overloading Pack - booklet lists two backpacks)"
   ]
  },
