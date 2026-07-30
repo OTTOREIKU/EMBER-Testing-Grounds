@@ -93,9 +93,16 @@ export function freehandSlots(data: GameData, t: Token, taken: string[] = []): {
 
 // ---------- Charge (rulebook 4.14) ----------
 
+// Only 5 cards carry machine-readable gameRules for this, and they are a
+// disjoint set from the 7 that spend a Charge Token through the KC Armor or
+// Charged keywords, so the keyword text has to be read as well or a card like
+// TM31KC offers no Charge control at all.
+const CHARGE_KEYWORD = /充能|KC装甲|\bCharged\b|\bKC Armor\b/i;
+
 export function consumesCharge(a: CardAction): boolean {
-  return (a.gameRules ?? []).some((g) => g.consumesCharge === true
-    || (g.conditions ?? []).some((c) => c.type === 'charge_available'));
+  if ((a.gameRules ?? []).some((g) => g.consumesCharge === true
+    || (g.conditions ?? []).some((c) => c.type === 'charge_available'))) return true;
+  return (a.keywords ?? []).some((k) => CHARGE_KEYWORD.test(k.inline ?? k.key ?? ''));
 }
 
 export function isChargeAction(a: CardAction): boolean {
