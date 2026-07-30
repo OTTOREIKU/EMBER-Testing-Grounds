@@ -5,6 +5,7 @@ import { watchForUpdates } from './updates';
 import { SHAPE_NOTE, STATUSES, TIMINGS, type Card, type StatusDef } from './types';
 import { registerOffline } from './offline';
 import { costLabel, LENGTH_NAME, lengthOf, TICK_COST } from './ticks';
+import { maskGlyphs } from './glyphs';
 
 type Tab = 'keywords' | 'parts' | 'units' | 'pilots' | 'tactics' | 'boxes' | 'missions' | 'rules';
 
@@ -92,7 +93,9 @@ const norm = (s: string) => s.toLowerCase();
 let linkPatterns: { name: string; re: RegExp }[] | null = null;
 
 function linkKeywords(text: string): string {
-  const src = esc(text);
+  // Glyph placeholders are masked out before the keyword pass, because several
+  // of them ({Heavy Hit}, {Dodge}) are keyword names in their own right.
+  const { masked: src, restore } = maskGlyphs(esc(text));
   if (!linkPatterns) {
     const seen = new Set<string>();
     linkPatterns = [];
@@ -119,7 +122,7 @@ function linkKeywords(text: string): string {
       if (!hits.some((h) => start < h.end && end > h.start)) hits.push({ start, end, label: name });
     }
   }
-  if (!hits.length) return src;
+  if (!hits.length) return restore(src);
 
   hits.sort((a, b) => a.start - b.start);
   let out = '';
@@ -129,7 +132,7 @@ function linkKeywords(text: string): string {
     out += `<a class="kw-link" data-kw="${esc(h.label)}">${src.slice(h.start, h.end)}</a>`;
     at = h.end;
   }
-  return out + src.slice(at);
+  return restore(out + src.slice(at));
 }
 
 function keywordCard(k: KeywordDef): string {

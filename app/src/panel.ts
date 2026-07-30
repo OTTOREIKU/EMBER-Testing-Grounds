@@ -2,6 +2,7 @@ import type { Card, CardAction, Token } from './types';
 import { cardImageUrl, cardName, mechPartUrl, rulesLines, SIDE_LABEL, tabImageUrl, type GameData } from './data';
 import { inspectOnHover } from './inspector';
 import { ICON_BOLT } from './icons';
+import { expandGlyphs } from './glyphs';
 import { type ActionWorld, guidedActions, isElectronicAttack, knockbackOf, SLOT_LABEL, tokenCards } from './units';
 import { costLabel, LENGTH_NAME, lengthOf, TICK_COST } from './ticks';
 
@@ -28,6 +29,13 @@ function projectileTag(name: string): string {
   return /\d/.test(lead) && lead.length <= 9 ? lead : name;
 }
 
+// Showing the mark itself beats describing it in words, since the reader is
+// looking for that symbol on a card.
+const SPEED_GLYPH: Record<string, string> = {
+  auto: '<span class="act-speed sp-auto">!</span>',
+  command: '<span class="act-speed sp-command">?</span>',
+};
+
 // The boxed glyph a Drone card prints beside an action name, saying when it
 // happens. Mech Parts and Projectiles carry no speed, so they show nothing.
 const SPEED_MARK: Record<string, { glyph: string; label: string; lines: string[] }> = {
@@ -35,7 +43,7 @@ const SPEED_MARK: Record<string, { glyph: string; label: string; lines: string[]
     glyph: '!',
     label: 'Automatic Action',
     lines: [
-      'Printed on the card as a boxed ! beside the action name.',
+      `Printed on the card as ${SPEED_GLYPH.auto} beside the action name.`,
       'It resolves by itself in the Automatic Phase, without being told to.',
       'A Drone that acted on a Command this round does not act again, so spending a Command Token on this unit gives up this action.',
     ],
@@ -44,7 +52,7 @@ const SPEED_MARK: Record<string, { glyph: string; label: string; lines: string[]
     glyph: '?',
     label: 'Command Action',
     lines: [
-      'Printed on the card as a boxed ? beside the action name.',
+      `Printed on the card as ${SPEED_GLYPH.command} beside the action name.`,
       'It only happens if a Command Token is spent on this Drone in the Command Phase.',
       'A commanded Drone acts immediately and either moves or performs one Command Action.',
     ],
@@ -146,8 +154,20 @@ export class Panel {
       const tabs = document.createElement('div');
       tabs.className = 'part-tabs';
       const content = document.createElement('div');
-      const blocks = cards.map(({ card }) => this.cardBlock(card));
-      const show = (i: number) => blocks.forEach((b, j) => b.classList.toggle('part-hidden', j !== i));
+      // Each part keeps a stable host. The card inside can be swapped by the
+      // projectile flip without the host losing its hidden state, which is what
+      // used to leave two cards stacked on top of each other.
+      const blocks = cards.map(({ card }) => {
+        const host = document.createElement('div');
+        host.className = 'part-host';
+        host.appendChild(this.cardBlock(card));
+        return host;
+      });
+      const show = (i: number) => {
+        blocks.forEach((b, j) => b.classList.toggle('part-hidden', j !== i));
+        // Coming back to a part shows the part, not whatever it was flipped to.
+        blocks[i].replaceChildren(this.cardBlock(cards[i].card));
+      };
       const wanted = focusSlot ?? (sameUnit ? this.activeSlot : null);
       const focusIdx = wanted ? cards.findIndex((c) => c.slot === wanted) : -1;
       const startIdx = focusIdx >= 0 ? focusIdx : 0;
@@ -183,6 +203,18 @@ export class Panel {
         scroller.scrollTop = keepTop;
       });
     }
+  }
+
+  // A card names what it launches through its own `projectile` list; several
+  // parts carry more than one, and a Projectile card can itself point onward.
+  private projectilesOf(card: Card): Card[] {
+    const ids = Array.isArray(card.projectile) ? card.projectile : [];
+    const out: Card[] = [];
+    for (const id of ids) {
+      const p = this.data.byId.get(String(id));
+      if (p && p.id !== card.id) out.push(p);
+    }
+    return out;
   }
 
   private actionArt(cardId: string): HTMLElement {
@@ -545,17 +577,50 @@ export class Panel {
     return box;
   }
 
-  private cardBlock(card: Card): HTMLElement {
+  private cardBlock(card: Card, back?: { card: Card; label: string }): HTMLElement {
     const wrap = document.createElement('div');
     wrap.className = 'card-block';
 
+    // A launcher names its Projectile in the action text but never shows it, so
+    // the art doubles as a flip: forward to what it fires, back to the Part.
+    const shot = wrap.appendChild(document.createElement('div'));
+    shot.className = 'card-shot';
     const img = document.createElement('img');
     img.className = 'card-img';
     img.src = cardImageUrl(card.id);
     img.alt = cardName(card);
-
     img.addEventListener('error', () => img.remove(), { once: true });
-    wrap.appendChild(img);
+    shot.appendChild(img);
+
+    const flipTo = (next: Card, backTo?: { card: Card; label: string }) => {
+      wrap.replaceWith(this.cardBlock(next, backTo));
+    };
+    if (back) {
+      const prev = document.createElement('button');
+      prev.className = 'card-flip prev';
+      prev.innerHTML = '‹';
+      prev.title = `Back to ${back.label}`;
+      prev.setAttribute('aria-label', prev.title);
+      prev.addEventListener('click', () => flipTo(back.card));
+      shot.appendChild(prev);
+    }
+    // A launcher can carry several rounds, so the arrow steps through them and
+    // the last one wraps back to the first rather than dead-ending.
+    const shots = back ? this.projectilesOf(back.card) : this.projectilesOf(card);
+    const here = back ? shots.findIndex((p) => p.id === card.id) : -1;
+    const upcoming = shots[here + 1] ?? (back && shots.length > 1 ? shots[0] : shots[0]);
+    if (upcoming && upcoming.id !== card.id) {
+      const home = back ?? { card, label: cardName(card) };
+      const next = document.createElement('button');
+      next.className = 'card-flip next';
+      next.innerHTML = '›';
+      next.title = shots.length > 1
+        ? `Show ${cardName(upcoming)} (${shots.indexOf(upcoming) + 1} of ${shots.length})`
+        : `Show ${cardName(upcoming)}`;
+      next.setAttribute('aria-label', next.title);
+      next.addEventListener('click', () => flipTo(upcoming, home));
+      shot.appendChild(next);
+    }
 
     const h = document.createElement('h3');
     h.textContent = cardName(card);
@@ -618,10 +683,18 @@ export class Panel {
       const row = document.createElement('div');
       row.className = 'card-action';
       const bullets = rulesLines(text);
+      // Some actions print only their keyword as the description ("· KC Armor"),
+      // which tells a reader nothing. Fall through to the glossary rules text.
+      const spelled = bullets.length === 1
+        && bullets[0].trim().toLowerCase() === (a.name.en || a.name.zh || '').trim().toLowerCase()
+        ? this.data.keyword(bullets[0])?.en?.value
+        : undefined;
       row.innerHTML = `<b>${a.name.en || a.name.zh || a.id}</b>${meta ? `<span class="dim"> ${meta}</span>` : ''}${
-        bullets.length > 1
-          ? `<ul class="rules-list">${bullets.map((l) => `<li>${l}</li>`).join('')}</ul>`
-          : `<span>${bullets[0] ?? text}</span>`
+        spelled
+          ? `<span>${expandGlyphs(spelled)}</span>`
+          : bullets.length > 1
+            ? `<ul class="rules-list">${bullets.map((l) => `<li>${expandGlyphs(l)}</li>`).join('')}</ul>`
+            : `<span>${expandGlyphs(bullets[0] ?? text)}</span>`
       }`;
       wrap.appendChild(row);
     }

@@ -1590,14 +1590,37 @@ p.points { white-space: pre-line; }
   position: relative; display: flex; flex-direction: column;
   align-items: stretch; gap: 6px; margin-top: 3px;
 }
-.act-head .act-speed {
+/* Unscoped: the same mark is used inline in glossary and info-box prose, where
+   showing the symbol beats describing it. */
+.act-speed {
   display: inline-flex; align-items: center; justify-content: center;
-  min-width: 17px; height: 17px; padding: 0 3px; margin-right: 5px;
+  min-width: 14px; height: 15px; padding: 0 2px;
   border-radius: 3px; font-size: 11px; font-weight: 800; line-height: 1;
-  background: var(--surface3); color: var(--text2); cursor: help;
+  background: var(--surface3); color: var(--text2);
+  vertical-align: -2px;
 }
-.act-head .act-speed.sp-auto { background: rgba(240, 180, 41, 0.2); color: #f0b429; }
-.act-head .act-speed.sp-command { background: rgba(101, 162, 216, 0.2); color: #65a2d8; }
+/* The action row wants a bigger tap/hover target than the same mark set in prose. */
+.act-head .act-speed { min-width: 17px; height: 17px; padding: 0 3px; margin-right: 5px; cursor: help; vertical-align: -3px; }
+/* Keeps a glyph and the punctuation after it on one line. Display is stated so a
+   container rule cannot promote it to a block and strand the punctuation. */
+.glyph-run { display: inline; white-space: nowrap; }
+.act-speed.sp-auto { background: rgba(240, 180, 41, 0.2); color: #f0b429; }
+.act-speed.sp-command { background: rgba(101, 162, 216, 0.2); color: #65a2d8; }
+
+/* Dice symbols written into card and glossary text as {Eye}, {Heavy Hit}, {B}. */
+.glyph-ico {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 15px; height: 15px; vertical-align: -3px; color: var(--text);
+}
+.glyph-ico svg { width: 14px; height: 14px; }
+.glyph-die {
+  display: inline-block; width: 11px; height: 11px; border-radius: 2px;
+  vertical-align: -1px; border: 1px solid rgba(0, 0, 0, 0.35);
+}
+.glyph-die.die-blue { background: var(--die-blue); }
+.glyph-die.die-yellow { background: var(--die-yellow); }
+.glyph-die.die-red { background: var(--die-red); }
+.glyph-die.die-white { background: var(--die-white); }
 
 .act-slot { text-transform: uppercase; font-size: 10px; font-weight: 700; letter-spacing: 0.4px; color: var(--text3); }
 .action.unavailable { opacity: 0.6; }
@@ -1981,7 +2004,22 @@ p.points { white-space: pre-line; }
 
 /* ---------- card block ---------- */
 .card-block h3 { font-size: 14px; margin: 8px 0 4px; }
-.card-img { width: 100%; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.5); }
+.card-img { width: 100%; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.5); display: block; }
+
+/* Flip between a launcher and the Projectile it fires. Arrows stay hidden until
+   the art is hovered or a control has keyboard focus. */
+.card-shot { position: relative; }
+.card-flip {
+  position: absolute; top: 50%; transform: translateY(-50%);
+  width: 30px; height: 44px; border: none; border-radius: 6px; cursor: pointer;
+  background: rgba(12, 15, 20, 0.72); color: #fff; font-size: 22px; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; transition: opacity 0.12s, background 0.12s;
+}
+.card-flip.prev { left: 6px; }
+.card-flip.next { right: 6px; }
+.card-shot:hover .card-flip, .card-flip:focus-visible { opacity: 1; }
+.card-flip:hover { background: rgba(12, 15, 20, 0.92); }
 .part-hidden { display: none; }
 .stats { display: flex; flex-wrap: wrap; gap: 5px; font-size: 10.5px; color: var(--text2); }
 .stats b { font-size: 13px; margin-right: 3px; color: var(--text); font-family: var(--mono); font-weight: 600; }
@@ -2031,7 +2069,9 @@ p.points { white-space: pre-line; }
 .rules-list li { margin-bottom: 2px; }
 .pilot-trait .rules-list { color: var(--text2); }
 .card-action .dim { font-size: 10.5px; }
-.card-action span:last-child { display: block; margin-top: 3px; color: var(--text2); }
+/* Direct child only: the description span holds inline glyph spans of its own,
+   and a descendant selector turned those into blocks. */
+.card-action > span:last-child { display: block; margin-top: 3px; color: var(--text2); }
 
 /* ---------- task scoring in the End Phase ---------- */
 .pg-vp {

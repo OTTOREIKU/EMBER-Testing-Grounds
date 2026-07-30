@@ -858,14 +858,14 @@
   "key": "Automatic Action",
   "en": {
    "name": "Automatic Action:",
-   "value": "Printed on a Drone card as a boxed ! beside the action name. The action resolves by itself in the Automatic Phase without being told to. A Drone that already acted on a Command this round does not act again, so an Automatic Action is lost if a Command Token was spent on that Drone."
+   "value": "Printed on a Drone card as {!} beside the action name. The action resolves by itself in the Automatic Phase without being told to. A Drone that already acted on a Command this round does not act again, so an Automatic Action is lost if a Command Token was spent on that Drone."
   }
  },
  {
   "key": "Command Action",
   "en": {
    "name": "Command Action:",
-   "value": "Printed on a Drone card as a boxed ? beside the action name. It only happens if a Command Token is spent on that Drone in the Command Phase. A commanded Drone acts immediately and either moves or performs one Command Action."
+   "value": "Printed on a Drone card as {?} beside the action name. It only happens if a Command Token is spent on that Drone in the Command Phase. A commanded Drone acts immediately and either moves or performs one Command Action."
   }
  },
  {

@@ -463,13 +463,36 @@ body.ref-locked { overflow: hidden; }
 .tag.tok-green { background: rgba(61, 220, 132, 0.16); color: #2fa968; }
 .tag.tok-yellow { background: rgba(240, 180, 41, 0.18); color: #b07c0d; }
 
+/* Set inline in glossary prose as well as ahead of an action name, so the base
+   carries no margin: the sentence already supplies its own space. */
 .act-speed {
   display: inline-flex; align-items: center; justify-content: center;
-  min-width: 17px; height: 17px; padding: 0 3px; margin-right: 5px;
+  min-width: 14px; height: 15px; padding: 0 2px;
   border-radius: 3px; font-size: 11px; font-weight: 800; line-height: 1;
-  background: var(--surface3); color: var(--text2); cursor: help; vertical-align: middle;
+  background: var(--surface3); color: var(--text2); vertical-align: -2px;
 }
+.act-icons .act-speed, .ref-action h4 .act-speed {
+  min-width: 17px; height: 17px; padding: 0 3px; margin-right: 5px;
+  cursor: help; vertical-align: middle;
+}
+.act-icons .act-speed:last-child { margin-right: 0; }
 .act-speed.sp-auto { background: rgba(240, 180, 41, 0.2); color: #f0b429; }
 .act-speed.sp-command { background: rgba(101, 162, 216, 0.2); color: #65a2d8; }
+
+/* Dice symbols written into card and glossary text as {Eye}, {Heavy Hit}, {B}. */
+.glyph-run { display: inline; white-space: nowrap; }
+.glyph-ico {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 15px; height: 15px; vertical-align: -3px; color: var(--text);
+}
+.glyph-ico svg { width: 14px; height: 14px; }
+.glyph-die {
+  display: inline-block; width: 11px; height: 11px; border-radius: 2px;
+  vertical-align: -1px; border: 1px solid rgba(0, 0, 0, 0.35);
+}
+.glyph-die.die-blue { background: #3a7bd3; }
+.glyph-die.die-yellow { background: #e6a817; }
+.glyph-die.die-red { background: #d33a3a; }
+.glyph-die.die-white { background: #ececec; }
 
 .ref-speed { margin: 2px 0 4px; font-size: 11.5px; color: var(--text2); }
