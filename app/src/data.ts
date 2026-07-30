@@ -506,7 +506,16 @@ function cleanName(s: string): string {
     .trim();
 }
 
+// Misspellings in the generated card text. cards.json is rebuilt from the
+// community bundle, so a correction made there would vanish on the next
+// extract; fixing them on load survives that. Each one is checked against the
+// printed card scan before it goes in.
+const TYPOS: [RegExp, string][] = [
+  [/Anti-Aromor/g, 'Anti-Armor'],
+];
+
 function cleanRulesText(s: string): string {
+  for (const [re, fix] of TYPOS) s = s.replace(re, fix);
   return s
     .replace(/\r\n?/g, '\n')
     .replace(/。/g, '.')

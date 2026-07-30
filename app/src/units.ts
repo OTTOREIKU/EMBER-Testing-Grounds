@@ -30,6 +30,15 @@ function initAmmo(cards: Card[]): Record<string, number> {
   return ammo;
 }
 
+// Gives a token the Ammo and Interception Tokens its current Parts print,
+// without touching a count it already carries. Needed after a Part is swapped
+// in, since nothing else re-seeds until the next load.
+export function syncMagazines(data: GameData, t: Token): void {
+  const cards = tokenCards(data, t).map(({ card }) => card);
+  t.ammo = { ...initAmmo(cards), ...(t.ammo ?? {}) };
+  t.intercept = { ...initIntercept(cards), ...(t.intercept ?? {}) };
+}
+
 export function volleyOf(a: CardAction): number {
   const hay = [
     a.description?.zh ?? '',
@@ -633,8 +642,13 @@ export function migrateState(raw: unknown, data: GameData): GameState | null {
       deployed: t.deployed === false ? false : undefined,
       expiring: Array.isArray(t.expiring) ? t.expiring.filter((x) => typeof x === 'string') : undefined,
       partStates: partStates as Token['partStates'],
-      ammo: t.ammo ?? initAmmo(cards),
-      intercept: t.intercept ?? initIntercept(cards),
+      // Top up rather than default. `?? initAmmo` only fired when the field was
+      // absent, so a token carrying an empty object, which is what a save from
+      // before Ammo existed holds, could never gain a count and every launcher
+      // on it silently spent nothing. A key already present always wins, so a
+      // magazine spent down to 0 is not refilled.
+      ammo: { ...initAmmo(cards), ...(t.ammo ?? {}) },
+      intercept: { ...initIntercept(cards), ...(t.intercept ?? {}) },
       charge: Array.isArray(t.charge) && t.charge.length ? t.charge.filter((x: unknown) => typeof x === 'string') : undefined,
       log: t.log ?? [],
       statuses: (t.statuses ?? []).filter((s: string) => s !== 'interception'),
