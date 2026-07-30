@@ -330,6 +330,15 @@ async function init() {
     onPlayTactic(side, id) {
       void playTactic(side, id);
     },
+    scenarioName(id) {
+      return scenarios.find((x) => x.id === id)?.name ?? null;
+    },
+    onShowScenario() {
+      const scn = scenarios.find((x) => x.id === state.scenario);
+      if (!scn) return;
+      document.getElementById('details-body')!.replaceChildren(scenarioBriefing(scn));
+      showSideTab('details');
+    },
   });
 
   const board = new Board(document.getElementById('board-wrap')!, {
@@ -3745,14 +3754,11 @@ async function init() {
         document.getElementById('details-body')!.replaceChildren(scenarioBriefing(scn));
         showSideTab('details');
         dlg.remove();
-        if (result.warnings.length) {
-          void alertDialog({
-            title: 'Scenario loaded, with notes',
-            body: `"${scn.name}" is set up. A few things did not map cleanly onto the card data:`,
-            list: result.warnings,
-            closeLabel: 'Continue',
-          });
-        }
+        // No popup on load. What is left in `unmatched` is a second backpack or
+        // a second same-hand weapon the booklet lists but a Mech has no slot
+        // for, which nothing can fix, so raising it every time only worries a
+        // player about a squad that is already correct. The notes stay in
+        // scenarios.json for anyone reading the data.
       }),
     );
     document.body.appendChild(dlg);
@@ -3764,6 +3770,10 @@ async function init() {
     state.sideNames = {};
     state.commandTokens = { blue: 0, red: 0 };
     state.setup = null;
+    // Tactics are held in hand rather than placed, so clearing the board left
+    // them behind and the next squad started holding the last one's cards.
+    state.tactics = { blue: [], red: [] };
+    state.tacticsPlayed = { blue: [], red: [] };
     selectToken(null);
   }
 

@@ -51,6 +51,8 @@ export interface SquadCallbacks {
   onDelete(uid: number): void;
   onEditMech(uid: number): void;
   onPlayTactic(side: Side, id: string): void;
+  scenarioName(id: string): string | null;
+  onShowScenario(): void;
 }
 
 export class SquadTracker {
@@ -298,7 +300,10 @@ export class SquadTracker {
     const tasks = normaliseTasks(s.tasks);
     const mission = s.mission ? this.data.missions.cards.find((m) => m.id === s.mission) : undefined;
     const anySecondary = tasks.secondary.blue || tasks.secondary.red;
-    if (!mission && !anySecondary) return null;
+    // A scenario briefing is written into the Details panel once on load and is
+    // gone at the next click, so it gets a permanent way back in too.
+    const scenario = s.scenario ? this.cb.scenarioName(s.scenario) : null;
+    if (!mission && !anySecondary && !scenario) return null;
 
     const bar = document.createElement('div');
     bar.className = 'sq-tasks';
@@ -316,6 +321,8 @@ export class SquadTracker {
     // the line under it rather than all three wrapping as one run of chips.
     const secRow = document.createElement('div');
     secRow.className = 'sq-task-row';
+
+    if (scenario) bar.appendChild(chip('Scenario', scenario, () => this.cb.onShowScenario()));
 
     if (mission) {
       bar.appendChild(chip('Main Task', mission.name, () => {
