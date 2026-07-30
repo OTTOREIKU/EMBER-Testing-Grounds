@@ -1,5 +1,5 @@
 import type { Card, MechLoadout } from './types';
-import { BASE_FACTIONS, cardName, FACTION_LABEL, mechPartUrl, SIDE_LABEL, tabImageUrl, type GameData } from './data';
+import { BASE_FACTIONS, cardName, FACTION_LABEL, isDiscardCard, mechPartUrl, SIDE_LABEL, tabImageUrl, type GameData } from './data';
 import { inspectOnHover } from './inspector';
 import { alertDialog, confirmDialog, promptDialog } from './dialog';
 import { deleteMechPreset, loadMechPresets, saveMechPreset } from './presets';
@@ -42,6 +42,7 @@ export class Roster {
   private tab: 'drones' | 'mech' | 'projectiles' | 'tactics' = 'drones';
   private search = '';
   private mech: MechLoadout = {};
+  private presetId = '';
   private editing: { uid: number; side: 'blue' | 'red'; label: string } | null = null;
 
   // The build rules are the same whether a mech is being added or edited, so
@@ -287,6 +288,10 @@ export class Roster {
       sel.appendChild(empty);
       const options = this.data.cards
         .filter((c) => (slot.key === 'pilot' ? c.category === 'pilot' : c.category === 'mech_part' && c.type === slot.type))
+        // A Discard Card is the flipped face of a Part you already own, not a
+        // Part you can equip, so it has no business in a build picker. Kept if
+        // somehow already selected, so an old save still shows what it holds.
+        .filter((c) => !isDiscardCard(c) || this.mech[slot.key] === c.id)
         .filter((c) => (this.cb.cardFilter?.(c) ?? true) || this.mech[slot.key] === c.id)
         .sort((a, b) => cardName(a).localeCompare(cardName(b)));
       // Grouped by faction, in a fixed order so the list does not reshuffle as
@@ -380,15 +385,24 @@ export class Roster {
     presets.className = 'mech-presets';
     const renderPresets = (): void => {
       const list = loadMechPresets();
+      // Loading a preset re-renders the whole builder, which used to reset this
+      // select to its placeholder. The delete button then read an empty value
+      // and silently did nothing, so the choice is held on the instance and
+      // re-applied here instead.
+      if (this.presetId && !list.some((p) => p.id === this.presetId)) this.presetId = '';
+      const chosen = list.find((p) => p.id === this.presetId);
       presets.innerHTML = `<select class="preset-pick"><option value="">Saved mechs…</option>${list
-        .map((p) => `<option value="${escAttr(p.id)}">${escAttr(p.name)}</option>`)
+        .map((p) => `<option value="${escAttr(p.id)}"${p.id === this.presetId ? ' selected' : ''}>${escAttr(p.name)}</option>`)
         .join('')}</select>
         <button class="preset-save" title="Save the current build under a name">Save</button>
-        <button class="preset-del" title="Delete the selected preset" ${list.length ? '' : 'disabled'}>✕</button>`;
+        <button class="preset-del" title="${
+          chosen ? `Delete “${escAttr(chosen.name)}”` : 'Pick a saved mech to delete it'
+        }" ${chosen ? '' : 'disabled'}>✕</button>`;
       const pick = presets.querySelector<HTMLSelectElement>('.preset-pick')!;
       pick.addEventListener('change', () => {
+        this.presetId = pick.value;
         const found = loadMechPresets().find((p) => p.id === pick.value);
-        if (!found) return;
+        if (!found) return this.render();
         this.mech = { ...found.mech };
         this.render();
       });
@@ -409,7 +423,7 @@ export class Roster {
       });
       presets.querySelector('.preset-del')!.addEventListener('click', () => {
         void (async () => {
-          const found = loadMechPresets().find((p) => p.id === pick.value);
+          const found = loadMechPresets().find((p) => p.id === this.presetId);
           if (!found) return;
           const ok = await confirmDialog({
             title: `Delete “${found.name}”?`,
@@ -419,6 +433,7 @@ export class Roster {
           });
           if (!ok) return;
           deleteMechPreset(found.id);
+          this.presetId = '';
           this.render();
         })();
       });

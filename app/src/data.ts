@@ -628,9 +628,15 @@ export function portraitUrl(id: string): string {
   return assetUrl(`tokens/tab/${id}.webp`);
 }
 
+// The face a Part is flipped to once it is thrown away (4.17). It is never a
+// build choice: it comes with its parent Part and sits under it.
+export function isDiscardCard(c: Card): boolean {
+  return /\(D\)|（抛弃卡）|抛弃卡/.test(`${c.name.en ?? ''}${c.name.zh ?? ''}`);
+}
+
 export function zeroCostReason(c: Card): string | null {
   if (c.score) return null;
-  if (/\(D\)|（抛弃卡）|抛弃卡/.test(`${c.name.en ?? ''}${c.name.zh ?? ''}`)) return 'discard state of a paid part';
+  if (isDiscardCard(c)) return 'discard state of a paid part';
   if (/tether mode|cruise mode|\(deployed\)/i.test(c.name.en ?? '')) return 'alternate mode of a paid part';
   if (c.category === 'projectile') return 'Low Value Unit — Projectiles cost 0';
   if (c.category === 'drone') return 'Low Value Unit — costs 0, gives no VP';
