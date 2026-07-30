@@ -37,7 +37,7 @@ import { PHASES, RoundTracker } from './tracker';
 import { PlayGuide } from './playguide';
 import type { Card, CardAction, DiceData, Facing, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, StatusDef, TerrainPiece, Token } from './types';
 import { addStatus, SCALES, statusCount, statusesFor, STATUSES } from './types';
-import { chargeableSlots, defaultUnitLabel, deployedCardCounts, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, type Resupply, resupplyOf, SLOT_LABEL, interceptLeft, interceptReach, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf } from './units';
+import { chargeableSlots, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, type Resupply, resupplyOf, SLOT_LABEL, interceptLeft, interceptReach, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf } from './units';
 import { registerOffline } from './offline';
 import { battlefieldLocked, countHits, firstPlayerFrom, newSetup, normaliseSetup, type SetupState } from './setup';
 
@@ -945,6 +945,8 @@ async function init() {
     card: Card;
     left: number;
     placed: number;
+    // Every projectile put down this volley, so the last one can be taken back.
+    placedUids: number[];
     done: (performed: boolean) => void;
   } | null = null;
 
@@ -980,8 +982,10 @@ async function init() {
     const cands = landingCandidates();
     const total = m.left + m.placed;
     body.innerHTML = `<div class="attack-helper">
-      <div class="ah-head"><b>Launch ${escapeHtml(cardName(m.card))}</b>
-        <span class="dim">${escapeHtml(m.action.name.en || m.action.name.zh || m.action.id)} · ${m.placed} of ${total} launched</span></div>
+      <div class="ah-head ah-head-stack"><b>Launch ${escapeHtml(cardName(m.card))}</b>
+        <span class="dim">${escapeHtml(m.action.name.en || m.action.name.zh || m.action.id)}${
+          total > 1 ? ` ${m.placed} of ${total} launched` : ''
+        }</span></div>
       <p class="ah-los">${
         needsSightToLanding(m.action)
           ? 'Direct Fire, so the Landing Point has to be a Grid this unit can see and one terrain does not fill.'
@@ -991,11 +995,21 @@ async function init() {
         <p class="dim">${cands.length} legal ${cands.length === 1 ? 'Grid' : 'Grids'} within Range ${m.action.range ?? 0}.
           ${total > 1 ? `Volley ${total} lets you place up to ${total}, one Ammo Token each, and you may stop early.` : 'One Ammo Token is spent.'}</p>
       </div></div>`;
+    const head = body.querySelector('.ah-head')!;
+    if (m.placed) {
+      const undo = document.createElement('button');
+      undo.className = 'ah-undo';
+      undo.innerHTML = '↺';
+      undo.title = `Take back the last ${cardName(m.card)}, and its Ammo`;
+      undo.setAttribute('aria-label', undo.title);
+      undo.addEventListener('click', () => undoLaunched());
+      head.appendChild(undo);
+    }
     const cancel = document.createElement('button');
     cancel.className = 'ah-cancel';
     cancel.textContent = m.placed ? 'Stop here' : 'Cancel';
     cancel.addEventListener('click', () => finishLaunch());
-    body.querySelector('.ah-head')!.appendChild(cancel);
+    head.appendChild(cancel);
     board.showSmokeTargets(cands, (c, r) => placeLaunched(c, r));
     showSideTab('combat');
   }
@@ -1014,25 +1028,59 @@ async function init() {
       });
       return;
     }
-    state.tokens.push({ ...tok, parentUid: t.uid, col: spot.col, row: spot.row, facing: t.facing });
+    const placed = { ...tok, parentUid: t.uid, col: spot.col, row: spot.row, facing: t.facing };
+    state.tokens.push(placed);
+    m.placedUids.push(placed.uid);
     const id = m.action.id;
     if (t.ammo[id] !== undefined) t.ammo[id] = Math.max(0, t.ammo[id] - 1);
     m.placed++;
     m.left--;
     logTo(t, `Launched ${cardName(m.card)} to ${gridRef(c, r)}${t.ammo[id] !== undefined ? ` (Ammo ${t.ammo[id]} left)` : ''}.`);
     onChanged();
-    if (m.left <= 0 || (t.ammo[id] !== undefined && t.ammo[id] <= 0)) finishLaunch();
+    // A single shot closes on its own, but a Volley stays open once it is spent
+    // so the last projectile can still be taken back before it counts.
+    const spent = m.left <= 0 || (t.ammo[id] !== undefined && t.ammo[id] <= 0);
+    if (spent && m.placed + m.left <= 1) finishLaunch();
     else renderLaunchStep();
+  }
+
+  // Interception is only owed once the launch is finished, so taking one back
+  // before then just undoes the placement and the Ammo that paid for it.
+  function undoLaunched(): void {
+    const m = launching;
+    if (!m || !m.placedUids.length) return;
+    const uid = m.placedUids.pop()!;
+    state.tokens = state.tokens.filter((x) => x.uid !== uid);
+    const t = state.tokens.find((x) => x.uid === m.uid);
+    const id = m.action.id;
+    if (t && t.ammo[id] !== undefined) t.ammo[id] = t.ammo[id] + 1;
+    m.placed--;
+    m.left++;
+    if (t) logTo(t, `Took back a ${cardName(m.card)}${t.ammo[id] !== undefined ? ` (Ammo ${t.ammo[id]} left)` : ''}.`);
+    if (selectedUid === uid) selectToken(m.uid);
+    onChanged();
+    renderLaunchStep();
   }
 
   function finishLaunch(): void {
     const m = launching;
     launching = null;
     board.clearHighlights();
+    setHint('');
     if (!m) return;
     if (m.placed) noteInterception(m.uid);
     m.done(m.placed > 0);
     onChanged();
+    // The launch panel has nothing left to say once the volley is over, and
+    // leaving it up with live-looking buttons reads as unfinished business.
+    renderCombatIdle();
+    const shooter = state.tokens.find((x) => x.uid === m.uid);
+    if (shooter) {
+      selectToken(shooter.uid);
+      panel.showToken(shooter);
+    }
+    showSideTab('details');
+    checkInterceptFollowUp();
   }
 
   function noteInterception(launcherUid: number): void {
@@ -1069,7 +1117,7 @@ async function init() {
       });
       return done(false);
     }
-    launching = { uid: t.uid, action, card, left: shots, placed: 0, done };
+    launching = { uid: t.uid, action, card, left: shots, placed: 0, placedUids: [], done };
     selectToken(t.uid);
     setHint(`${action.name.en || action.id}: click a Landing Point Grid on the board. Esc stops.`);
     renderLaunchStep();
@@ -1169,6 +1217,9 @@ async function init() {
       }
       t.mech = { ...loadout };
       t.partStates = states;
+      // A Part swapped in brings its own magazine, and nothing else would seed
+      // it until the next load.
+      syncMagazines(data, t);
       if (!named) t.label = defaultUnitLabel(data, t);
       selectToken(t.uid);
       onChanged();

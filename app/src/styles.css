@@ -1106,6 +1106,13 @@ body.targeting #hint { color: var(--accent); font-weight: 700; }
   50% { transform: rotate(6deg); }
   100% { transform: rotate(-6deg); }
 }
+/* The Black Die rolled inside the attack helper to choose the target Part. The
+   shake comes from `.rolling .die` above, which matches any die inside an
+   element carrying the class, so neither this nor .ah-roll restates it. */
+.ah-blackroll { display: flex; align-items: center; gap: 10px; margin-top: 8px; min-height: 44px; }
+.ah-blackroll .die { cursor: default; flex-shrink: 0; }
+.ah-blackcap { font-size: 12px; font-weight: 600; color: var(--accent); }
+
 .die.sel { outline: 2.5px solid var(--accent); outline-offset: 1px; }
 .die .blank { color: #00000055; font-size: 18px; }
 .die .part-icon { width: 26px; height: 26px; object-fit: contain; }
@@ -1131,7 +1138,8 @@ body.targeting #hint { color: var(--accent); font-weight: 700; }
 .rerolls { display: flex; gap: 6px; }
 .rerolls button {
   flex: 1; border-radius: var(--radius); border: none; background: var(--surface2);
-  color: var(--text2); font-size: 11.5px; padding: 5px 9px; cursor: pointer;
+  color: var(--text2); font-size: 11.5px; padding: 5px 6px; cursor: pointer;
+  white-space: nowrap; text-transform: capitalize;
   transition: background 0.12s, color 0.12s;
 }
 .rerolls button:hover:not(:disabled) { background: var(--surface3); color: var(--text); }
@@ -1728,12 +1736,24 @@ p.points { white-space: pre-line; }
   padding-bottom: 8px; margin-bottom: 8px; border-bottom: 1px solid var(--border);
 }
 .ah-head .dim { font-size: 11.5px; }
+/* The launch head carries a volley counter, so the name takes a line of its own
+   and the counter shares the next one with the stop button pushed right. */
+.ah-head-stack > b { flex: 0 0 100%; }
+.ah-head-stack .dim { flex: 1 1 auto; min-width: 0; }
 .ah-cancel {
   margin-left: auto; border: none; background: var(--surface3); color: var(--text2);
   border-radius: var(--radius); cursor: pointer; padding: 5px 10px; font-family: var(--font);
   transition: background 0.12s, color 0.12s;
 }
 .ah-cancel:hover { background: var(--border); color: var(--text); }
+/* Sits immediately left of Stop here, so margin-left:auto stays on the cancel. */
+.ah-undo {
+  border: none; background: var(--surface3); color: var(--text2); border-radius: var(--radius);
+  cursor: pointer; padding: 5px 9px; font-size: 14px; line-height: 1; font-family: var(--font);
+  margin-left: auto; transition: background 0.12s, color 0.12s;
+}
+.ah-undo + .ah-cancel { margin-left: 0; }
+.ah-undo:hover { background: var(--accent-lt); color: var(--accent); }
 .ah-los { font-size: 11.5px; color: var(--accent); background: var(--accent-lt); border-radius: var(--radius); padding: 6px 9px; margin: 0; }
 .ah-step h4 {
   font-size: 11px; text-transform: uppercase; letter-spacing: 0.7px; color: var(--text2);

@@ -131,6 +131,9 @@ export class AttackHelper {
   private onPenetrated: (victim: Token) => void;
   private ctx: Ctx | null = null;
   private duelGen = 0;
+  private blackTimer: number | undefined;
+  private spinTimer: number | undefined;
+  private spinFor: 'attack' | 'defense' | null = null;
 
   constructor(
     data: GameData,
@@ -158,6 +161,44 @@ export class AttackHelper {
     return !!this.ctx;
   }
 
+  private stopBlack(): void {
+    if (this.blackTimer) window.clearInterval(this.blackTimer);
+    this.blackTimer = undefined;
+    if (this.spinTimer) window.clearInterval(this.spinTimer);
+    this.spinTimer = undefined;
+    this.spinFor = null;
+  }
+
+  private faceHtml(color: DieColor, face: number): string {
+    const f = this.dice.dice[color].faces[face];
+    return f.length ? f.map((ic: DiceIcon) => iconSvg(ic)).join('') : '<span class="blank">·</span>';
+  }
+
+  // The attack and defence dice used to appear already settled, which read as
+  // the app deciding rather than a roll happening. They cycle faces first and
+  // land on the values rollPool already chose. `.rolling .die` supplies the
+  // shake, so the class alone is enough.
+  private spinDice(container: HTMLElement, roll: Rolled[]): void {
+    if (this.spinTimer) window.clearInterval(this.spinTimer);
+    const dice = [...container.querySelectorAll<HTMLElement>('.die')];
+    if (!dice.length) return;
+    container.classList.add('rolling');
+    let ticks = 0;
+    this.spinTimer = window.setInterval(() => {
+      ticks++;
+      const done = ticks >= 8;
+      dice.forEach((el, i) => {
+        const d = roll[i];
+        if (!d) return;
+        el.innerHTML = this.faceHtml(d.color, done ? d.face : Math.floor(Math.random() * this.dice.dice[d.color].sides));
+      });
+      if (!done) return;
+      window.clearInterval(this.spinTimer);
+      this.spinTimer = undefined;
+      container.classList.remove('rolling');
+    }, 55);
+  }
+
   start(
     attacker: Token,
     action: CardAction,
@@ -167,6 +208,7 @@ export class AttackHelper {
     protectionNote = '',
     explosion = false,
   ): void {
+    this.stopBlack();
     this.ctx = {
       attacker,
       defender,
@@ -201,6 +243,7 @@ export class AttackHelper {
   }
 
   cancel(): void {
+    this.stopBlack();
     this.ctx = null;
     this.onClose();
   }
@@ -412,30 +455,43 @@ export class AttackHelper {
         ? 'Roll the Black Die, or pick a Part directly if the target is Shutdown. Explosions have no facing, so there is no Back Attack here.'
         : 'Roll the Black Die, or pick a Part directly. You may choose when the target is Shutdown or you have a Back Attack, and some Actions designate the Part for you.'}</p>`;
 
+    // The result used to appear as a line of text after the fact, so a new
+    // player never saw which Part the die actually chose. The die is shown
+    // rolling here and settles on its face before the step moves on.
+    const stage = document.createElement('div');
+    stage.className = 'ah-blackroll';
+    const die = document.createElement('span');
+    die.className = 'die die-black';
+    const caption = document.createElement('span');
+    caption.className = 'ah-blackcap';
+    const faceHtml = (i: number) => this.dice.dice.black.faces[i].map((ic) => iconSvg(ic)).join('');
+    const showFace = (i: number) => { die.innerHTML = faceHtml(i); };
+    showFace(0);
+    stage.append(die, caption);
+
     const rollBtn = document.createElement('button');
     rollBtn.className = 'ah-primary';
     rollBtn.innerHTML = '<i class="btn-ico">🎲</i> Roll Black Die';
     rollBtn.addEventListener('click', () => {
-      const face = this.dice.dice.black.faces[Math.floor(Math.random() * 6)][0];
-      let part = face.part ?? 'any';
-      c.blackResult = part;
-      if (part === 'any') {
-        this.note('Black Die: ANY, so the attacker picks the Part.');
-        this.render();
-        return;
-      }
-      const slotMap: Record<string, string> = { torso: 'torso', chassis: 'chasis', leftArm: 'leftHand', rightArm: 'rightHand', backpack: 'backpack' };
-      let slot = slotMap[part] ?? 'torso';
-      const state = c.defender.partStates[slot as PartSlot];
-      if (state === undefined || state === 'destroyed') {
-        this.note(`Black Die: ${part}. That Part is missing or already destroyed, so the hit redirects to the Torso.`);
-        slot = 'torso';
-      } else {
-        this.note(`Black Die: ${part}.`);
-      }
-      this.pickPart(slot);
+      if (this.blackTimer) return;
+      rollBtn.disabled = true;
+      pickWrap.querySelectorAll('button').forEach((b) => { b.disabled = true; });
+      const landed = Math.floor(Math.random() * 6);
+      stage.classList.add('rolling');
+      caption.textContent = '';
+      let ticks = 0;
+      this.blackTimer = window.setInterval(() => {
+        ticks++;
+        showFace(ticks >= 8 ? landed : Math.floor(Math.random() * 6));
+        if (ticks < 8) return;
+        window.clearInterval(this.blackTimer);
+        this.blackTimer = undefined;
+        stage.classList.remove('rolling');
+        this.settleBlack(landed, caption);
+      }, 55);
     });
     wrap.appendChild(rollBtn);
+    wrap.appendChild(stage);
 
     const pickWrap = document.createElement('div');
     pickWrap.className = 'ah-partpick';
@@ -453,6 +509,34 @@ export class AttackHelper {
     }
     wrap.appendChild(pickWrap);
     return wrap;
+  }
+
+  // Reads the landed face, says what it means, then hands on. A pause lets the
+  // player see the settled die before the panel changes under them.
+  private settleBlack(face: number, caption: HTMLElement): void {
+    const c = this.ctx!;
+    const part = this.dice.dice.black.faces[face][0]?.part ?? 'any';
+    c.blackResult = part;
+    if (part === 'any') {
+      caption.textContent = 'ANY — the attacker picks the Part.';
+      this.note('Black Die: ANY, so the attacker picks the Part.');
+      // The panel can be closed during the pause, so nothing here assumes ctx.
+      window.setTimeout(() => { if (this.ctx === c) this.render(); }, 700);
+      return;
+    }
+    const slotMap: Record<string, string> = { torso: 'torso', chassis: 'chasis', leftArm: 'leftHand', rightArm: 'rightHand', backpack: 'backpack' };
+    let slot = slotMap[part] ?? 'torso';
+    const state = c.defender.partStates[slot as PartSlot];
+    if (state === undefined || state === 'destroyed') {
+      caption.textContent = `${SLOT_LABEL[slot as PartSlot] ?? part} is gone, so the hit redirects to the Torso.`;
+      this.note(`Black Die: ${part}. That Part is missing or already destroyed, so the hit redirects to the Torso.`);
+      slot = 'torso';
+    } else {
+      caption.textContent = `${SLOT_LABEL[slot as PartSlot] ?? part} takes the hit.`;
+      this.note(`Black Die: ${part}.`);
+    }
+    const landed = slot;
+    window.setTimeout(() => { if (this.ctx === c) this.pickPart(landed); }, 700);
   }
 
   private pickPart(slot: string): void {
@@ -502,6 +586,11 @@ export class AttackHelper {
       });
       div.appendChild(b);
     });
+    // Runs after this element is in the document, so the shake is visible.
+    if (this.spinFor === which) {
+      this.spinFor = null;
+      window.setTimeout(() => this.spinDice(div, roll), 0);
+    }
     const rr = document.createElement('span');
     rr.className = 'rerolls';
     for (const side of ['blue', 'red'] as const) {
@@ -516,6 +605,7 @@ export class AttackHelper {
           d.face = Math.floor(Math.random() * this.dice.dice[d.color].sides);
           d.selected = false;
         }
+        this.spinFor = which;
         this.render();
       });
       rr.appendChild(b);
@@ -544,6 +634,7 @@ export class AttackHelper {
       roll.innerHTML = '<i class="btn-ico">🎲</i> Roll attack dice';
       roll.addEventListener('click', () => {
         c.attackRoll = this.rollPool({ red: c.attackPool.red, yellow: c.attackPool.yellow });
+        this.spinFor = 'attack';
         this.render();
       });
       wrap.appendChild(roll);
@@ -606,6 +697,7 @@ export class AttackHelper {
       roll.innerHTML = '<i class="btn-ico">🎲</i> Roll defense dice';
       roll.addEventListener('click', () => {
         c.defenseRoll = this.rollPool({ white: c.defensePool.white, blue: c.defensePool.blue });
+        this.spinFor = 'defense';
         this.render();
       });
       wrap.appendChild(roll);
