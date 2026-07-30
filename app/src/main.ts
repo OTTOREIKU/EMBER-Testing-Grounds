@@ -200,6 +200,7 @@ async function init() {
     onPickMission: () => openMissions(),
     onPickSecondary: (side) => void pickSecondary(side),
     onPlayTactic: (side, id) => void playTactic(side, id),
+    onEndGame: () => void endGame(),
     onRemoveSpent: () => {
       const gone = new Set(
         state.tokens
@@ -524,10 +525,13 @@ async function init() {
     return cells.every((c) => c.col >= 0 && c.row >= 0 && c.col < CELLS && c.row < CELLS && !occupied.has(`${c.col},${c.row}`));
   }
 
-  function losNote(attacker: Token, defender: Token, action: { type?: string; range?: number }): string {
+  function losNote(attacker: Token, defender: Token, action: { type?: string; range?: number; keywords?: unknown[] }): string {
     const r = rangeBetween(attacker, defender);
     const los = losBetween(attacker, defender, currentTerrain(), state.tokens);
     const fwd = inArc(attacker, defender, 'forward');
+    // Omni-direction Firing waives the Forward Arc requirement outright, so
+    // warning about the arc on such an action is wrong guidance.
+    const omni = (action.keywords ?? []).some((k) => /全向|omni/i.test(JSON.stringify(k)));
     const bits: string[] = [];
     bits.push(r.sameGrid ? 'same grid' : r.adjacent ? 'adjacent (R1)' : `Range ${r.range}`);
     if (action.range === 0) {
@@ -535,7 +539,7 @@ async function init() {
     } else if (action.range && r.range > action.range) {
       bits.push(`⚠ beyond action range (R${action.range})`);
     }
-    bits.push(fwd ? 'in forward arc ✓' : '⚠ NOT in forward arc');
+    bits.push(omni ? 'Omni-direction Firing: no arc check ✓' : fwd ? 'in forward arc ✓' : '⚠ NOT in forward arc');
     if (action.type === 'Firing') {
       if (smokeBlocks(attacker, defender, state.smoke ?? [])) bits.push('✕ LOS blocked by a Smoke Screen (4.16)');
       else bits.push(los === 'clear' ? 'LOS clear ✓' : los === 'obstructed' ? '⚠ obstructed, so consider +2 White protection' : '✕ LOS blocked (3" terrain)');
@@ -878,6 +882,13 @@ async function init() {
     const t = state.tokens.find((x) => x.uid === f.uid);
     const target = state.tokens.find((x) => x.uid === f.targetUid);
     if (!t) return;
+    // A destroyed interceptor owes nothing: the obligation to keep trying (4.9)
+    // died with the unit, so no prompt should name it.
+    const tDead =
+      t.kind === 'mech'
+        ? Object.values(t.partStates).filter((p) => p !== 'destroyed').length === 0
+        : (t.partStates.main ?? 'intact') === 'destroyed';
+    if (tDead) return;
     const dead = !target || (target.partStates.main ?? 'intact') === 'destroyed';
     const left = t.intercept?.[f.actionId] ?? 0;
     if (dead) {

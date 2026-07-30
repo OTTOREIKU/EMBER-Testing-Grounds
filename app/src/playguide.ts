@@ -175,6 +175,7 @@ export interface GuideCallbacks {
   onRemoveSpent(): void;
   onPickSecondary(side: Side): void;
   onPlayTactic(side: Side, id: string): void;
+  onEndGame(): void;
   mapLabel(): string;
   zoneLabel(): string;
   onNote(t: Token, text: string): void;
@@ -372,7 +373,13 @@ export class PlayGuide {
         <span class="pg-left">${esc(this.blockedReason(s) ?? info.sub.split('·').pop()?.trim() ?? '')}</span>
         <button class="pg-next"${
           this.blockedReason(s) ? ` disabled title="${esc(this.blockedReason(s)!)}"` : ''
-        }>${last ? `End round ${s.round.n}` : `Next: ${PHASES[s.round.phase + 1]}`}</button>
+        }>${
+          last
+            ? s.round.n >= (s.roundLimit ?? 5)
+              ? `Extra round ${s.round.n + 1} ▸`
+              : `End round ${s.round.n}`
+            : `Next: ${PHASES[s.round.phase + 1]}`
+        }</button>
       </div>`;
 
     bindTips(this.root);
@@ -477,14 +484,8 @@ export class PlayGuide {
     });
     this.root.querySelectorAll<HTMLButtonElement>('[data-edge]').forEach((b) =>
       b.addEventListener('click', () => {
-        // Tasks are prepared before deployment (5.1), so the edge cannot carry
-        // the setup forward while either side is still without a Secondary.
-        const picked = normaliseTasks(s.tasks).secondary;
-        if (!picked.blue || !picked.red) {
-          this.warn = 'Both sides pick a Secondary Task before deployment starts.';
-          this.cb.onChanged();
-          return;
-        }
+        // The edge follows the roll directly (3.1.2). Tasks still come before
+        // any unit lands, but that is the deploy stage's gate, not this one's.
         const su = normaliseSetup(s.setup) ?? newSetup();
         const mine = b.dataset.edge as 'black' | 'white';
         const fp = s.round.firstPlayer;
@@ -518,9 +519,15 @@ export class PlayGuide {
       this.deploying = null;
       this.cb.onChanged();
     });
+    this.root.querySelector('[data-game-over]')?.addEventListener('click', () => this.cb.onEndGame());
     this.root.querySelector('[data-deploy-done]')?.addEventListener('click', () => {
       const su = normaliseSetup(s.setup) ?? newSetup();
       s.setup = { ...su, stage: 'done' };
+      // The Command Phase stage was entered back when the game started, before
+      // the roll decided the First Player, so its turn points at the pre-roll
+      // side. Clearing the stage makes syncStage run again now that the real
+      // First Player is known (3.2.2 starts the command loop from them).
+      this.script(s).stage = '';
       this.cb.onChanged();
     });
     this.root.querySelectorAll<HTMLButtonElement>('[data-dial]').forEach((b) =>
@@ -562,7 +569,11 @@ export class PlayGuide {
       this.warn = null;
       this.render();
     });
-    this.root.querySelector('.pg-pass:not([data-unpick])')?.addEventListener('click', () => this.pass());
+    // Bind by explicit attribute: several other buttons share the pg-pass look
+    // ("Did it myself", "Back", the End Phase steps), and a class selector here
+    // used to catch "Did it myself" too, so marking a drone done also passed
+    // its whole side and silently skipped the other drones.
+    this.root.querySelector('[data-pass]')?.addEventListener('click', () => this.pass());
 
     this.root.querySelector('.pg-rules')?.addEventListener('toggle', (ev) => {
       this.ui.rules = (ev.target as HTMLDetailsElement).open;
@@ -778,15 +789,28 @@ export class PlayGuide {
             : '<div class="pg-units"><button class="pg-pass" data-end-step="tasks">Nothing to score</button></div>',
         );
       })()}
-      ${step(
-        'round',
-        5,
-        'End of round',
-        `The First Player Token flips, so ${SIDE_LABEL[s.round.firstPlayer === 'blue' ? 'red' : 'blue']} goes first next round.${
-          s.round.n >= (s.roundLimit ?? 5) ? ' This is the last scheduled round, so the game ends here unless you play on.' : ''
-        }`,
-        '',
-      )}`;
+      ${(() => {
+        // After the last scheduled round the game ends and the totals decide it
+        // (3.7.4), so the guide has to say so and offer the exit, not roll on
+        // into another Command Phase as if nothing happened.
+        const final = s.round.n >= (s.roundLimit ?? 5);
+        const t = normaliseTasks(s.tasks);
+        const verdict = t.vp.blue === t.vp.red
+          ? `${t.vp.blue} Victory Points each, so the tiebreak counts Mech Parts and Drones left on the board (5.2.4).`
+          : `${SIDE_LABEL[t.vp.blue > t.vp.red ? 'blue' : 'red']} leads ${Math.max(t.vp.blue, t.vp.red)} to ${Math.min(t.vp.blue, t.vp.red)}.`;
+        return step(
+          'round',
+          5,
+          final ? 'End of the game' : 'End of round',
+          final
+            ? `This was the last scheduled round, so the game ends and Victory Points are totalled (3.7.4). ${verdict}`
+            : `The First Player Token flips, so ${SIDE_LABEL[s.round.firstPlayer === 'blue' ? 'red' : 'blue']} goes first next round.`,
+          final
+            ? `<div class="pg-units"><button class="pg-unit" data-game-over="1">End the game and settle the result</button></div>
+               <p class="pg-intercept-note">Or press ${esc(`Extra round ${s.round.n + 1}`)} below to keep playing past the printed limit.</p>`
+            : '',
+        );
+      })()}`;
   }
 
   // ---------- pre-game setup (rulebook 3.1.2, 3.1.4) ----------
@@ -896,15 +920,16 @@ export class PlayGuide {
       }`;
   }
 
+  // The printed order is 3.1.2 edge, then 3.1.3 Secondary Tasks, then 3.1.4
+  // deployment, so the edge is free to pick straight after the roll and it is
+  // DEPLOYMENT that waits for the tasks, not the other way round.
   private edgeHtml(s: GameState, su: SetupState): string {
     const fp = s.round.firstPlayer;
-    const picked = normaliseTasks(s.tasks).secondary;
-    const edgeLock = picked.blue && picked.red ? '' : ' disabled title="Pick both Secondary Tasks first"';
     return `<p class="pg-active">Now: <b class="side-${fp}">${SIDE_LABEL[fp]}</b>
         <small>As First Player, choose which edge of the board to play from.</small></p>
       <div class="pg-units">
-        <button class="pg-unit" data-edge="white"${edgeLock}>Take the White side</button>
-        <button class="pg-unit" data-edge="black"${edgeLock}>Take the Black side</button>
+        <button class="pg-unit" data-edge="white">Take the White side</button>
+        <button class="pg-unit" data-edge="black">Take the Black side</button>
       </div>
       <p class="pg-intercept-note">The other side takes the opposite edge. Deployment Zones follow the edges, so this decides where each squad starts.</p>
       ${this.secondaryHtml(s)}`;
@@ -932,6 +957,13 @@ export class PlayGuide {
     if (deploymentComplete(s)) {
       return `${fp}${phaseDone('Everything is deployed')}
         <div class="pg-units"><button class="pg-unit" data-deploy-done="1">Begin round 1</button></div>`;
+    }
+    // Tasks come before deployment (3.1.3 then 3.1.4), so the placement list
+    // holds back until both Secondary Tasks are on the table. This is what
+    // stops the first placement from skipping past the task step entirely.
+    if (secRow) {
+      return `${fp}${secRow}
+        <p class="pg-intercept-note">Both Secondary Tasks are picked before anything deploys, so each side knows what the other is playing for.</p>`;
     }
     const turn = deployTurn(s, su);
     if (!turn) return `${fp}${phaseDone('Everything is deployed')}`;
@@ -1472,7 +1504,11 @@ export class PlayGuide {
               : ''
         }
         <div class="pg-units">
-          <button class="pg-unit" data-move="${chosen.uid}">Move</button>
+          ${
+            phase === 'Command'
+              ? `<button class="pg-unit" data-move="${chosen.uid}">Move</button>`
+              : ''
+          }
           <button class="pg-pass" data-acted="${chosen.uid}" title="Mark this unit done without the guide driving the action">Did it myself</button>
           <button class="pg-pass" data-unpick="1">Back</button>
         </div>`;
@@ -1487,7 +1523,7 @@ export class PlayGuide {
         ${units
           .map((t) => `<button class="pg-unit" data-designate="${t.uid}">${t.label}</button>`)
           .join('')}
-        <button class="pg-pass" title="This side is done for the phase">Pass</button>
+        <button class="pg-pass" data-pass="1" title="This side is done for the phase">Pass</button>
       </div>`;
   }
 
