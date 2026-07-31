@@ -1189,16 +1189,22 @@ export class PlayGuide {
       ${upNext ? `<p class="pg-next-up">Up next: ${esc(s.tokens.find((x) => x.uid === upNext.uid)?.label ?? '?')} <small>${TIMINGS.find((x) => x.id === upNext.timing)?.name}</small></p>` : ''}`;
   }
 
+  // A Drone printed at 0 points carries the Low Value tag; Projectiles are Low
+  // Value by default (p.82). Shared with the secondary-task scoring so a unit
+  // cannot be Low Value for one Task and not for another.
+  private lowValue = (t: Token): boolean =>
+    t.kind === 'projectile' || (t.kind === 'drone' && (this.data.byId.get(t.cardId)?.score ?? 0) === 0);
+
   private refreshControl(s: GameState, tasks: TaskState): void {
     for (const item of tasks.items) {
       const cells = this.data.zoneData.zones.find((z) => z.id === item.zone)?.cells ?? [];
       if (item.kind === 'control') {
-        const holder = controlOf(cells, s.tokens);
+        const holder = controlOf(cells, s.tokens, this.lowValue);
         if (holder) item.control = holder;
         continue;
       }
       if (item.kind === 'terminal' && !item.accessed) {
-        item.accessed = directAccess(cells, s.tokens);
+        item.accessed = directAccess(cells, s.tokens, this.lowValue);
       }
     }
   }
@@ -1214,8 +1220,7 @@ export class PlayGuide {
       if (!card?.kind) continue;
       all.push(...scoreSecondary(
         { id: card.id, name: card.name, vp: card.vp ?? 0, kind: card.kind as SecondaryScoring['kind'] },
-        side, tasks, s.tokens, cells, finalRound,
-        (t) => t.kind === 'projectile' || (t.kind === 'drone' && (this.data.byId.get(t.cardId)?.score ?? 0) === 0),
+        side, tasks, s.tokens, cells, finalRound, this.lowValue,
       ).lines);
     }
     const open = unpaidLines(all, tasks.scored);

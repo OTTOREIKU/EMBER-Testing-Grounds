@@ -56,6 +56,28 @@ check('a friendly projectile does not hold it alone', T.controlOf(ZONE, [unit(1,
 check('an undeployed unit is not in the zone', T.controlOf(ZONE, [unit(1, 'blue', 1, 1, { deployed: false })]), null);
 check('two friendly units still take it', T.controlOf(ZONE, [unit(1, 'blue', 1, 1), drone(3, 'blue', 2, 2)]), 'blue');
 
+// A 0 point Drone is Low Value, and the two halves of 5.3.2 treat it differently:
+// it may not capture, because capturing is interacting with a Task Item (p.82),
+// but it still denies the Zone, because the second half says "no enemy Units"
+// with no carve out. The Excavation Claim card has to print its own exclusion,
+// which is the clearest evidence that presence alone is the default.
+const LV = (t) => t.kind === 'drone' && t.cardId === 'bit';
+const bit = (uid, side, c, r) => drone(uid, side, c, r, { cardId: 'bit' });
+check('a low value drone cannot hold a zone', T.controlOf(ZONE, [bit(1, 'blue', 1, 1)], LV), null);
+check('a scoring drone still can', T.controlOf(ZONE, [drone(1, 'blue', 1, 1)], LV), 'blue');
+check('but a low value drone still contests one', T.controlOf(ZONE, [unit(1, 'blue', 1, 1), bit(2, 'red', 2, 2)], LV), null);
+check('and it rides along with a unit that can hold', T.controlOf(ZONE, [bit(1, 'blue', 1, 1), unit(2, 'blue', 2, 2)], LV), 'blue');
+
+// ---------- Terminals (5.3.3) ----------
+
+// Direct Access reads the same board state as a Control Zone, so the Low Value
+// rule has to reach it identically. A Terminal a Low Value Drone could access
+// would be worth 2VP a round for a unit that may not touch Task Items at all.
+check('a mech reaches a terminal', T.directAccess(ZONE, [unit(1, 'blue', 1, 1)]), 'blue');
+check('a low value drone does not', T.directAccess(ZONE, [bit(1, 'blue', 1, 1)], LV), null);
+check('and it blocks an enemy from reaching one', T.directAccess(ZONE, [unit(1, 'blue', 1, 1), bit(2, 'red', 2, 2)], LV), null);
+check('a shutdown mech reaches nothing', T.directAccess(ZONE, [unit(1, 'blue', 1, 1, { stance: 'shutdown' })]), null);
+
 // ---------- Main Task scoring ----------
 
 const state = (over = {}) => ({ ...T.newTaskState(), ...over });

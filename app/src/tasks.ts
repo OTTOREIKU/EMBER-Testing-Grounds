@@ -126,13 +126,22 @@ export function isLowValue(t: Token, tagged?: (t: Token) => boolean): boolean {
 
 // ---------- control zones (5.3.2) ----------
 
-export function controlOf(cells: string[], tokens: Token[]): Side | null {
+// 5.3.2 and 5.3.3 are deliberately asymmetric, so the two halves differ here.
+// Capturing is interacting with a Task Item, which a Low Value Unit may never do
+// (p.82), and the rule names "Mechs or Drones". Blocking is not interacting: it
+// is standing on contested ground, and the rule widens to "no enemy Units" with
+// no Low Value carve-out. The Excavation Claim card has to print "Low Value
+// Units do not count" precisely because that exclusion is not the default, which
+// is the clearest evidence the default is presence-counts-for-everything.
+export function controlOf(cells: string[], tokens: Token[], lowValue?: (t: Token) => boolean): Side | null {
   const inside = tokens.filter((t) => t.deployed !== false && inZone(t, cells));
   if (!inside.length) return null;
   const sides: Side[] = ['blue', 'red'];
   for (const side of sides) {
     const holds = inside.some(
-      (t) => t.side === side && ((t.kind === 'mech' && t.stance !== 'shutdown') || t.kind === 'drone'),
+      (t) => t.side === side
+        && !isLowValue(t, lowValue)
+        && ((t.kind === 'mech' && t.stance !== 'shutdown') || t.kind === 'drone'),
     );
     const enemy = inside.some((t) => t.side !== side);
     if (holds && !enemy) return side;
@@ -142,8 +151,8 @@ export function controlOf(cells: string[], tokens: Token[]): Side | null {
 
 // ---------- terminals (5.3.3) ----------
 
-export function directAccess(cells: string[], tokens: Token[]): Side | null {
-  return controlOf(cells, tokens);
+export function directAccess(cells: string[], tokens: Token[], lowValue?: (t: Token) => boolean): Side | null {
+  return controlOf(cells, tokens, lowValue);
 }
 
 // ---------- scoring ----------
