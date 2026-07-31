@@ -23,3 +23,6 @@ assets/mech_parts/画板 1.webp
 
 # Internal review notes, not for the public repo
 docs/review-*.md
+
+# Multiplayer design notes. Internal planning, not part of the released tool.
+MULTIPLAYER_DESIGN.md
