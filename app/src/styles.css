@@ -1685,6 +1685,7 @@ p.points { white-space: pre-line; }
   background: var(--pip); box-shadow: none;
 }
 .pips .pip.off { background: transparent; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--pip) 45%, transparent); }
+.pips .pip.off.lapsed { box-shadow: inset 0 0 0 1px var(--text3); }
 .pips.spent { --pip: var(--text2); opacity: 0.75; }
 .intercept-btn {
   background: rgba(101, 162, 216, 0.16) !important; color: #65a2d8 !important;

@@ -41,7 +41,7 @@ check('Long costs the Maneuver Tick and both Action Ticks', T.costOf(fire.l), { 
 check('cost reads back in words', T.costLabel(T.costOf(fire.l)), '1 Maneuver Tick + 2 Action Ticks');
 
 // A fresh Opportunity generates 1 Maneuver Tick and 2 Action Ticks.
-const fresh = () => T.newOpportunity(1, 'firing');
+const fresh = (timing = 'firing') => T.newOpportunity(1, timing);
 check('a new opportunity has three ticks', T.ticksLeft(fresh()), 3);
 
 // The Starting Action must match the dial; later Actions are unrestricted.
@@ -100,6 +100,68 @@ check('a typed extra still refuses the wrong type', T.canPerform(noMan, melee.s)
 // But a Maneuver Tick that is still legally spendable does hold the pool open.
 const stillCould = { ...fresh(), extras: [{ id: 'e1', label: 'x', timing: 'firing' }] };
 check('an untouched pool is not spent', T.baseSpent(stillCould), false);
+
+// ---------- grant conditions ----------
+
+// The Tempest core grants its Tick only while the Mech is Stationary, and the
+// keyword measures that at the moment of use: "has not performed any Movement
+// during its Action Opportunity before performing this Action". So the grant is
+// read when the Tick is spent, not frozen when the Opportunity opens.
+const move = act('mv', 'Moving', 's');
+const tempest = { id: 'tempest', label: 'Extra Firing Tick', timing: 'firing', check: 'stationary' };
+const stayed = { ...T.spendAction(T.spendAction(fresh(), fire.s), melee.s), extras: [tempest] };
+check('a stationary mech keeps the tempest tick', T.canPerform(stayed, fire.s).ok, true);
+check('and it counts as a tick in hand', T.ticksLeft(stayed), 2);
+
+const walked = { ...T.spendAction(T.spendAction(fresh(), move), melee.s), extras: [tempest] };
+check('spending an action tick on a Moving action counts as movement', walked.moved, true);
+check('a mech that moved loses the tempest tick', T.canPerform(walked, fire.s).ok, false);
+check('and is told which condition lapsed', /Stationary/.test(T.canPerform(walked, fire.s).why), true);
+check('a lapsed grant is not a tick in hand', T.ticksLeft(walked), 1);
+check('so the opportunity can end on it', T.opportunityOver({ ...walked, maneuver: 0 }), true);
+
+// Maneuvering is Movement too, and the keyword counts a change of facing, which
+// a Maneuver may be by itself.
+const turned = T.spendManeuver(fresh());
+check('maneuvering marks the mech as moved', turned.moved, true);
+const afterMan = { ...T.spendAction(T.spendAction(turned, fire.s), melee.s), extras: [tempest] };
+check('a mech that maneuvered loses the tempest tick', T.canPerform(afterMan, fire.s).ok, false);
+
+// The Glacier core is the other shape: the grant exists only while the dial is
+// set to Firing, which is a condition on holding the Tick rather than on what
+// it may pay for.
+const glacier = { id: 'glacier', label: 'Extra Firing Tick', timing: 'firing', check: 'timing' };
+const onFiring = { ...T.spendAction(T.spendAction(fresh('firing'), fire.s), melee.s), extras: [glacier] };
+check('the glacier tick exists on the firing dial', T.canPerform(onFiring, fire.s).ok, true);
+const onMelee = { ...T.spendAction(T.spendAction(fresh('melee'), melee.s), fire.s), extras: [glacier] };
+check('but not on another dial', T.canPerform(onMelee, fire.s).ok, false);
+check('an unconditional grant is unaffected by movement', T.canPerform({ ...walked, extras: [{ id: 'e1', label: 'x', timing: 'firing' }] }, fire.s).ok, true);
+
+// ---------- Overload (OCSP Overloading Pack, card 090) ----------
+
+// The Pack buys ordinary Action Ticks, not Extra Ticks. That distinction is the
+// whole point: two bought Ticks pay for one Medium Action, which no pair of
+// Extra Ticks can do.
+const drained = T.spendAction(T.spendAction(fresh(), fire.s), melee.s);
+check('a spent pool cannot afford a medium action', T.canPerform(drained, fire.m).ok, false);
+const bought = T.spendOverload(T.spendOverload(drained));
+check('two overloaded ticks can', T.canPerform(bought, fire.m).ok, true);
+check('and they land in the base pool, not the extras', [bought.action, bought.extras.length], [2, 0]);
+check('overload is capped at two link', T.canOverload(bought, 5).ok, false);
+check('and refused with no link to spend', T.canOverload(fresh(), 0).ok, false);
+check('a fresh mech with link may overload', T.canOverload(fresh(), 1).ok, true);
+
+// The trap this fix exists for. canManeuver once inferred "an Action Tick was
+// spent" by comparing the pool to its usual size of two. Overload puts the pool
+// above that size, so a Mech that had already acted read as untouched and could
+// Maneuver out of turn order.
+const overloadedFirst = T.spendOverload(fresh());
+check('overloading before acting leaves the maneuver tick', T.canManeuver(overloadedFirst).ok, true);
+check('and the pool is genuinely larger', overloadedFirst.action, 3);
+const actedThenChecked = T.spendAction(overloadedFirst, fire.s);
+check('the pool is still at the old full size after acting', actedThenChecked.action, 2);
+check('but maneuvering is refused, because an action was performed', T.canManeuver(actedThenChecked).ok, false);
+check('a long action is refused for the same reason', T.canPerform({ ...actedThenChecked, maneuver: 1 }, fire.l).ok, false);
 
 // The three worked examples printed on book p.32, played out move by move.
 // A: Movement dial. Maneuver, then a Medium Movement Action.

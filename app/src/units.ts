@@ -89,6 +89,44 @@ export function resupplyOf(a: CardAction): Resupply | undefined {
   return undefined;
 }
 
+export interface ExtraActivation {
+  range: number;
+  minimumLink: number;
+  excludeSelf: boolean;
+  linkCost: number;
+  suppressGrants: boolean;
+}
+
+// The printed English reads "Select 1 Ally Mech except this mech ... This mech
+// immediately loses 1 Link and gets 1 Extra Action Opportunity", where the
+// second "this mech" is the selected ally rather than the one acting. The
+// Chinese 它 and the Japanese この機甲 both point at the selection, and the rule
+// is named for a chosen allied mech, so the target pays and the target acts.
+export function extraActivationOf(a: CardAction): ExtraActivation | undefined {
+  for (const g of a.gameRules ?? []) {
+    for (const e of g.effects ?? []) {
+      const eff = e as {
+        target?: { excludeSelf?: boolean; minimumLink?: number };
+        effects?: { type?: string; delta?: number; suppressExtraActivationActions?: boolean }[];
+      };
+      const inner = eff.effects ?? [];
+      const grant = inner.find((x) => x.type === 'grant_extra_activation');
+      if (!grant) continue;
+      const link = inner.find((x) => x.type === 'modify_link');
+      return {
+        range: a.range ?? 0,
+        // The card refuses a target that cannot afford the Link without
+        // Shutting Down, so the minimum is a real restriction on the pick.
+        minimumLink: eff.target?.minimumLink ?? 1,
+        excludeSelf: eff.target?.excludeSelf !== false,
+        linkCost: Math.abs(link?.delta ?? 1),
+        suppressGrants: grant.suppressExtraActivationActions === true,
+      };
+    }
+  }
+  return undefined;
+}
+
 export function freehandSlots(data: GameData, t: Token, taken: string[] = []): { slot: PartSlot | 'pilot' | 'main'; label: string }[] {
   const out: { slot: PartSlot | 'pilot' | 'main'; label: string }[] = [];
   for (const { slot, card } of tokenCards(data, t)) {

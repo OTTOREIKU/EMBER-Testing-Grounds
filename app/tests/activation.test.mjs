@@ -12,7 +12,7 @@ writeFileSync(
   tmp,
   'type GameState = any;\ntype Side = any;\ntype Timing = any;\ntype Token = any;\n' + timings + src.slice(start, end),
 );
-const { activationOrder, nextActivation, actionPhaseComplete } = await import(tmp.href);
+const { activationOrder, nextActivation, actionPhaseComplete, onExtraOpportunity } = await import(tmp.href);
 
 let pass = 0, fail = 0;
 const check = (name, got, want) => {
@@ -28,10 +28,10 @@ const mech = (uid, side, timing, init) => {
   return { uid, side, timing, kind: 'mech', partStates: { torso: 'intact' } };
 };
 const lookup = (t, timing) => INIT.get(`${t.uid}:${timing}`);
-const world = (tokens, firstPlayer = 'blue', acted = []) => ({
+const world = (tokens, firstPlayer = 'blue', acted = [], extraOpps = []) => ({
   tokens,
   round: { n: 1, phase: 2, firstPlayer },
-  script: { acted },
+  script: { acted, extraOpps },
 });
 const order = (tokens, fp) => activationOrder(world(tokens, fp), lookup).map((a) => a.uid);
 
@@ -108,6 +108,27 @@ check('the phase is not over while one is owed', actionPhaseComplete(world(three
 check('the phase ends when all have acted', actionPhaseComplete(world(three, 'blue', [1, 2, 3]), lookup), true);
 check('an empty board ends the phase at once', actionPhaseComplete(world([]), lookup), true);
 check('the activation carries its timing and initiative', nextActivation(world(three), lookup), { uid: 1, timing: 'swift', init: 3 });
+
+// ---------- Extra Action Opportunities (Echoes Support Backpack) ----------
+
+// An Extra Opportunity waits for the normal order to finish. That is where it
+// belongs rather than a simplification: only a Tactic grants one, and Tactical
+// is the last Timing, so everyone else has already acted by the time it is cast.
+check('an owed mech does not jump the queue', nextActivation(world(three, 'blue', [], [3]), lookup).uid, 1);
+check('the normal order runs first', nextActivation(world(three, 'blue', [1], [3]), lookup).uid, 2);
+check('the extra comes once everyone has acted', nextActivation(world(three, 'blue', [1, 2, 3], [3]), lookup).uid, 3);
+check('and it carries that mech\'s own timing', nextActivation(world(three, 'blue', [1, 2, 3], [3]), lookup).timing, 'firing');
+check('the phase is not over while an extra is owed', actionPhaseComplete(world(three, 'blue', [1, 2, 3], [3]), lookup), false);
+check('and ends once it is spent', actionPhaseComplete(world(three, 'blue', [1, 2, 3], []), lookup), true);
+check('two owed mechs are served in the order granted', nextActivation(world(three, 'blue', [1, 2, 3], [2, 1]), lookup).uid, 2);
+
+// A grant aimed at a destroyed or undialled mech has no slot in the order, so it
+// must be dropped rather than stalling the phase forever.
+check('an owed mech with no activation is skipped', actionPhaseComplete(world(three, 'blue', [1, 2, 3], [99]), lookup), true);
+
+check('a mech acting normally is not on an extra', onExtraOpportunity(world(three, 'blue', [], [3]), 3), false);
+check('one that has acted and is owed is', onExtraOpportunity(world(three, 'blue', [3], [3]), 3), true);
+check('and one merely finished is not', onExtraOpportunity(world(three, 'blue', [3], []), 3), false);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

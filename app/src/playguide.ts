@@ -3,9 +3,10 @@ import { ageTokens, newOpportunity, normaliseScript, statusCount, STATUSES, TIMI
 import type { GameData, MissionCard } from './data';
 import { cardName, SIDE_LABEL } from './data';
 import { bindTips, linkMechanics } from './inspector';
+import { choiceDialog } from './dialog';
 import { PHASES, PHASE_INFO } from './tracker';
-import { type ActionWorld, canActivateCamo, guidedActions, initiativeFor, maneuverRange, SLOT_LABEL, tokenCards } from './units';
-import { canManeuver, canPerform, costLabel, costOf, LENGTH_NAME, lengthOf, spendAction, spendManeuver } from './ticks';
+import { type ActionWorld, canActivateCamo, type ExtraActivation, extraActivationOf, guidedActions, initiativeFor, maneuverRange, SLOT_LABEL, tokenCards } from './units';
+import { canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, spendAction, spendManeuver, spendOverload, whyGrantLapsed } from './ticks';
 import { deployable, deploymentComplete, deployTurn, firstPlayerFrom, newSetup, normaliseSetup, rollTotal, type SetupState } from './setup';
 import { controlOf, directAccess, normaliseTasks, scoreMain, scoreSecondary, unpaidLines, type ScoreLine, type ScoreResult, type SecondaryScoring, type TaskState } from './tasks';
 
@@ -149,10 +150,28 @@ export function activationOrder(state: GameState, init: InitLookup): Activation[
   return out;
 }
 
-// The next Mech still owed an Action Opportunity this phase.
+// The next Mech still owed an Action Opportunity this phase. Extra Opportunities
+// are served once the normal order is exhausted, which is where they belong
+// rather than a simplification: the only Action that grants one is a Tactic, and
+// Tactical is the last Timing, so every other Mech has already acted by then.
 export function nextActivation(state: GameState, init: InitLookup): Activation | null {
   const done = new Set(state.script?.acted ?? []);
-  return activationOrder(state, init).find((a) => !done.has(a.uid)) ?? null;
+  const order = activationOrder(state, init);
+  const normal = order.find((a) => !done.has(a.uid));
+  if (normal) return normal;
+  const owed = state.script?.extraOpps ?? [];
+  for (const uid of owed) {
+    const found = order.find((a) => a.uid === uid);
+    if (found) return found;
+  }
+  return null;
+}
+
+// An Extra Action Opportunity is a fresh one for a Mech that has already acted,
+// so it must not be told apart by uid alone.
+export function onExtraOpportunity(state: GameState, uid: number): boolean {
+  const done = new Set(state.script?.acted ?? []);
+  return done.has(uid) && (state.script?.extraOpps ?? []).includes(uid);
 }
 
 export function actionPhaseComplete(state: GameState, init: InitLookup): boolean {
@@ -426,6 +445,7 @@ export class PlayGuide {
       b.addEventListener('click', () => this.reboot(b.dataset.reboot as Stance)),
     );
     this.root.querySelector('[data-maneuver]')?.addEventListener('click', () => this.tryManeuver());
+    this.root.querySelector('[data-overload]')?.addEventListener('click', () => this.tryOverload());
     for (const b of [...this.root.querySelectorAll<HTMLButtonElement>('[data-tactic]')]) {
       b.addEventListener('click', () => {
         const [side, id] = b.dataset.tactic!.split(':');
@@ -1063,13 +1083,20 @@ export class PlayGuide {
 
   private tickActions(t: Token): { action: CardAction; label: string; note?: string; blocked?: string }[] {
     const out: { action: CardAction; label: string; note?: string; blocked?: string }[] = [];
+    // An Extra Opportunity cannot hand out another one, or two Coordinating
+    // Mechs would keep granting each other Opportunities for the rest of the
+    // Round. The card carries the suppression itself.
+    const onExtra = !!this.state && onExtraOpportunity(this.state, t.uid);
     for (const ga of guidedActions(this.data, t, this.cb.world())) {
       if (!lengthOf(ga.action)) continue;
+      const chained = onExtra && extraActivationOf(ga.action)?.suppressGrants;
       out.push({
         action: ga.action,
         label: ga.action.name.en || ga.action.name.zh || ga.action.id,
         note: SLOT_LABEL[ga.slot],
-        blocked: ga.available ? undefined : ga.reason,
+        blocked: chained
+          ? 'This is already an Extra Action Opportunity, and it cannot grant another one.'
+          : ga.available ? undefined : ga.reason,
       });
     }
     const slots = new Set(
@@ -1096,7 +1123,7 @@ export class PlayGuide {
     const have = new Set(tokenCards(this.data, t).flatMap(({ card }) => (card.actions ?? []).map((a) => a.id)));
     return this.data.extraTicks
       .filter((g) => have.has(g.actionId))
-      .map((g) => ({ id: g.actionId, label: g.label, timing: g.timing as Timing }));
+      .map((g) => ({ id: g.actionId, label: g.label, timing: g.timing as Timing, check: g.check }));
   }
 
   private opportunity(s: GameState): Opportunity | null {
@@ -1129,11 +1156,17 @@ export class PlayGuide {
     const init = o.timing ? this.init(t, o.timing) : undefined;
 
     const pip = (on: boolean) => `<i class="pip${on ? '' : ' off'}"></i>`;
-    const extrasLeft = o.extras.filter((x) => !o.spentExtras.includes(x.id));
+    const live = extrasLeft(o);
+    // A grant whose condition has lapsed reads as unavailable rather than spent,
+    // and the title says which condition, since the pip alone cannot.
+    const extraPip = (x: ExtraTick) => {
+      if (o.spentExtras.includes(x.id)) return pip(false);
+      return grantHolds(o, x) ? `<i class="pip" title="${esc(x.label)}"></i>` : `<i class="pip off lapsed" title="${esc(whyGrantLapsed(x))}"></i>`;
+    };
     const pool = `<div class="pg-ticks">
       <span class="pips pips-man${o.maneuver ? '' : ' spent'}"><b class="pip-label">MAN</b>${pip(o.maneuver > 0)}</span>
       <span class="pips pips-act${o.action ? '' : ' spent'}"><b class="pip-label">ACT</b>${pip(o.action > 0)}${pip(o.action > 1)}</span>
-      ${o.extras.length ? `<span class="pips pips-extra${extrasLeft.length ? '' : ' spent'}"><b class="pip-label">XTR</b>${o.extras.map((x) => pip(!o.spentExtras.includes(x.id))).join('')}</span>` : ''}
+      ${o.extras.length ? `<span class="pips pips-extra${live.length ? '' : ' spent'}"><b class="pip-label">XTR</b>${o.extras.map(extraPip).join('')}</span>` : ''}
     </div>`;
 
     const shutdown = t.stance === 'shutdown';
@@ -1165,10 +1198,16 @@ export class PlayGuide {
       })
       .join('');
 
+    const onExtra = onExtraOpportunity(s, o.uid);
+    const ovl = this.hasOverload(t) ? canOverload(o, t.link ?? 0) : null;
+    const ovlTip = ovl?.ok
+      ? `Consume 1 Link for 1 Action Tick, up to ${OVERLOAD_MAX} an Action Opportunity. These are ordinary Action Ticks, so two of them pay for one Medium Action.`
+      : ovl?.why ?? '';
     const maneuverRow = shutdown
       ? ''
       : `<div class="pg-units">
         <button class="pg-unit${man.ok ? '' : ' warn'}" data-maneuver="1" data-tip-title="Maneuver" data-tip="${esc(man.ok ? `Move up to ${range} Grid${range === 1 ? '' : 's'}. Maneuver is free once per Action Opportunity.` : man.why ?? '')}">Maneuver ${range}</button>
+        ${ovl ? `<button class="pg-unit${ovl.ok ? '' : ' warn'}" data-overload="1" data-tip-title="Overload" data-tip="${esc(ovlTip)}">Overload ${o.overload}/${OVERLOAD_MAX}</button>` : ''}
       </div>`;
     const actionRows = shutdown
       ? ''
@@ -1176,7 +1215,7 @@ export class PlayGuide {
 
     return `${fp}
       <p class="pg-active">Now: <b class="side-${t.side}">${SIDE_LABEL[t.side]}</b>
-        <small>${esc(t.label)} · ${timing?.name ?? 'no dial'}${init === undefined ? '' : ` · Initiative ${init}`} · ${at + 1} of ${order.length}</small></p>
+        <small>${esc(t.label)} · ${timing?.name ?? 'no dial'}${init === undefined ? '' : ` · Initiative ${init}`} · ${onExtra ? 'Extra Action Opportunity' : `${at + 1} of ${order.length}`}</small></p>
       ${pool}
       ${this.warn ? `<p class="pg-warn">${esc(this.warn)}</p>` : ''}
       ${stanceRow}
@@ -1353,6 +1392,87 @@ export class PlayGuide {
     });
   }
 
+  // Range is counted the same way the rest of the app counts it: Manhattan
+  // distance on the Large Grid.
+  private gridsApart(a: Token, b: Token): number {
+    return Math.abs(Math.floor(a.col / 3) - Math.floor(b.col / 3))
+      + Math.abs(Math.floor(a.row / 3) - Math.floor(b.row / 3));
+  }
+
+  private async grantExtraOpportunity(s: GameState, from: Token, g: ExtraActivation): Promise<void> {
+    const targets = s.tokens.filter(
+      (t) => t.kind === 'mech'
+        && t.side === from.side
+        && t.deployed !== false
+        && alive(t)
+        && (!g.excludeSelf || t.uid !== from.uid)
+        && this.gridsApart(from, t) <= g.range,
+    );
+    // The card refuses a Mech that could not pay, so a target too low on Link is
+    // shown and disabled rather than hidden: a player needs to see why.
+    const choices = targets.map((t) => ({
+      id: String(t.uid),
+      label: `${t.label} — Link ${t.link ?? 0}${(t.link ?? 0) < g.minimumLink ? ` (needs ${g.minimumLink})` : ''}`,
+      disabled: (t.link ?? 0) < g.minimumLink,
+      note: `This Mech needs at least ${g.minimumLink} Link to be chosen.`,
+    }));
+    if (!choices.some((c) => !c.disabled)) {
+      this.warn = `No Ally Mech within Range ${g.range} has the ${g.minimumLink} Link this needs.`;
+      this.render();
+      return;
+    }
+    // choiceDialog treats the last choice as the Escape and backdrop target, so
+    // the cancel is spelled out rather than left to whichever Mech sorts last.
+    const id = await choiceDialog({
+      title: 'Coordinate: which Ally Mech?',
+      body: `That Mech pays ${g.linkCost} Link and takes an Extra Action Opportunity once the normal order is through.`,
+      choices: [...choices, { id: 'cancel', label: 'Cancel' }],
+    });
+    const pick = targets.find((t) => String(t.uid) === id);
+    if (!pick) {
+      this.render();
+      return;
+    }
+    const sc = this.script(s);
+    pick.link = Math.max(0, (pick.link ?? 0) - g.linkCost);
+    sc.extraOpps.push(pick.uid);
+    this.cb.onNote(pick, `Coordinate: pays ${g.linkCost} Link (now ${pick.link}) and is owed an Extra Action Opportunity.`);
+    this.cb.onChanged();
+  }
+
+  private hasOverload(t: Token): boolean {
+    const ids = new Set(this.data.overload.map((g) => g.actionId));
+    return tokenCards(this.data, t).some(({ card }) => (card.actions ?? []).some((a) => ids.has(a.id)));
+  }
+
+  // Link bought as Ticks is Link the Mech no longer has, and a Mech on 0 Link
+  // Shuts Down. The Pack does not exempt it, so the guide spends the Link and
+  // reports the Shutdown rather than quietly refusing the last point.
+  private tryOverload(): void {
+    const s = this.state;
+    if (!s) return;
+    const o = this.opportunity(s);
+    if (!o) return;
+    const t = s.tokens.find((x) => x.uid === o.uid);
+    if (!t) return;
+    const v = canOverload(o, t.link ?? 0);
+    if (!v.ok) {
+      this.warn = v.why ?? null;
+      this.render();
+      return;
+    }
+    this.warn = null;
+    const sc = this.script(s);
+    t.link = Math.max(0, (t.link ?? 0) - 1);
+    sc.opp = spendOverload(o);
+    this.cb.onNote(t, `Overload: consumed 1 Link for 1 Action Tick (Link now ${t.link}, ${sc.opp.overload} of ${OVERLOAD_MAX} used).`);
+    if (t.link === 0 && t.stance !== 'shutdown') {
+      t.stance = 'shutdown';
+      this.cb.onNote(t, `Link has reached 0, so ${t.label} SHUTS DOWN.`);
+    }
+    this.cb.onChanged();
+  }
+
   // Warn rather than block: the rules have more exceptions than the app knows, so
   // the guide says what is wrong and lets you overrule it.
   private tryAction(actionId: string): void {
@@ -1381,6 +1501,11 @@ export class PlayGuide {
       const sc = this.script(s);
       sc.opp = spendAction(o, row.action);
       this.cb.onNote(t, `${row.label} (${LENGTH_NAME[lengthOf(row.action)!]}, ${costLabel(costOf(row.action)!)}).`);
+      const grant = extraActivationOf(row.action);
+      if (grant) {
+        void this.grantExtraOpportunity(s, t, grant);
+        return;
+      }
       this.cb.onChanged();
     });
   }
@@ -1391,7 +1516,15 @@ export class PlayGuide {
     const sc = this.script(s);
     const o = this.opportunity(s);
     if (!o) return;
-    if (!sc.acted.includes(o.uid)) sc.acted.push(o.uid);
+    // Ending an Extra Opportunity spends the grant. Ending a normal one records
+    // the Mech as having acted. A Mech granted one before its own turn comes up
+    // takes the normal Opportunity first, then the extra.
+    if (onExtraOpportunity(s, o.uid)) {
+      const at = sc.extraOpps.indexOf(o.uid);
+      if (at >= 0) sc.extraOpps.splice(at, 1);
+    } else if (!sc.acted.includes(o.uid)) {
+      sc.acted.push(o.uid);
+    }
     sc.opp = null;
     this.warn = null;
     this.cb.onChanged();

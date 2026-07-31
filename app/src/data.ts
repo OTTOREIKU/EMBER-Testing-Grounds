@@ -1,4 +1,4 @@
-import type { Card, CardAction, LangText, Side, TerrainData } from './types';
+import type { Card, CardAction, ExtraTickCheck, LangText, Side, TerrainData } from './types';
 
 export const SIDE_LABEL: Record<Side, string> = { blue: 'UN', red: 'RDL' };
 
@@ -207,6 +207,7 @@ export interface ExtraTickGrant {
   label: string;
   timing: string;
   condition: string;
+  check?: ExtraTickCheck;
 }
 
 interface AmmoOverrides {
@@ -239,12 +240,19 @@ function applyStats(cards: Card[], patch: StatOverrides): void {
   }
 }
 
+export interface OverloadGrant {
+  actionId: string;
+  card: string;
+  label: string;
+}
+
 interface CommonActionData {
   actions?: CommonAction[];
   extraTicks?: ExtraTickGrant[];
+  overload?: OverloadGrant[];
 }
 
-const NO_COMMON: CommonActionData = { actions: [], extraTicks: [] };
+const NO_COMMON: CommonActionData = { actions: [], extraTicks: [], overload: [] };
 
 export interface GameData {
   cards: Card[];
@@ -263,6 +271,7 @@ export interface GameData {
   play: PlayData;
   commonActions: CommonAction[];
   extraTicks: ExtraTickGrant[];
+  overload: OverloadGrant[];
 }
 
 interface KeywordOverrides {
@@ -488,6 +497,7 @@ export async function loadData(): Promise<GameData> {
     },
     commonActions: common.actions ?? [],
     extraTicks: common.extraTicks ?? [],
+    overload: common.overload ?? [],
   };
 }
 

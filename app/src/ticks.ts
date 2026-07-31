@@ -33,8 +33,6 @@ export const TICK_COST: Record<ActionLength, TickCost> = {
 
 export const MANEUVER_COST: TickCost = { maneuver: 1, action: 0 };
 
-export const FRESH_POOL = { maneuver: 1, action: 2 };
-
 export function timingOf(a: CardAction): Timing | undefined {
   return a.type ? TIMING_OF_TYPE[a.type] : undefined;
 }
@@ -82,11 +80,29 @@ export function canManeuver(o: Opportunity): TickVerdict {
   if (o.maneuvered) return { ok: false, why: 'This Mech has already Maneuvered this Action Opportunity.' };
   if (o.maneuver < 1) return { ok: false, why: 'The Maneuver Tick is gone.' };
   // Ticks are consumed in order, so the Maneuver Tick is unusable once an
-  // Action Tick has been spent (3.4.5).
-  if (o.action < FRESH_POOL.action) {
+  // Action Tick has been spent (3.4.5). This asks whether an Action was
+  // performed rather than comparing the pool to its usual size, because
+  // Overload can put the pool above that size and the comparison would then
+  // read a spent Tick as an unspent one.
+  if (o.started) {
     return { ok: false, why: 'The Maneuver Tick must be spent before any Action Tick, and an Action has already been performed.' };
   }
   return { ok: true };
+}
+
+// A grant's condition is read when the Tick is used, not when the Opportunity
+// opens. The Stationary keyword is worded "has not performed any Movement
+// during its Action Opportunity before performing this Action", so a Mech that
+// has already moved has lost the Tick, and one that has not still holds it.
+export function grantHolds(o: Opportunity, x: ExtraTick): boolean {
+  if (x.check === 'stationary') return !o.moved;
+  if (x.check === 'timing') return !!x.timing && o.timing === x.timing;
+  return true;
+}
+
+export function whyGrantLapsed(x: ExtraTick): string {
+  if (x.check === 'stationary') return `${x.label} needs this Mech to be Stationary, and it has already moved this Action Opportunity.`;
+  return `${x.label} is only granted while this Mech acts during the ${x.timing ?? 'matching'} Timing.`;
 }
 
 // Which Extra Tick, if any, could pay for this Action on its own.
@@ -94,7 +110,9 @@ function extraFor(o: Opportunity, a: CardAction): ExtraTick | undefined {
   const len = lengthOf(a);
   if (len !== 'short') return undefined;
   const timing = timingOf(a);
-  return o.extras.find((x) => !o.spentExtras.includes(x.id) && (!x.timing || x.timing === timing));
+  return o.extras.find(
+    (x) => !o.spentExtras.includes(x.id) && (!x.timing || x.timing === timing) && grantHolds(o, x),
+  );
 }
 
 export function canPerform(o: Opportunity, a: CardAction): TickVerdict {
@@ -106,6 +124,12 @@ export function canPerform(o: Opportunity, a: CardAction): TickVerdict {
   if (baseSpent(o)) {
     const extra = extraFor(o, a);
     if (!extra) {
+      // A grant that would otherwise have paid, and failed only on its own
+      // condition, is worth naming. Anything else is the generic shortfall.
+      const lapsed = o.extras.find(
+        (x) => !o.spentExtras.includes(x.id) && (!x.timing || x.timing === timing) && !grantHolds(o, x),
+      );
+      if (lapsed && len === 'short') return { ok: false, why: whyGrantLapsed(lapsed) };
       return o.extras.length
         ? { ok: false, why: 'No Extra Tick left that can pay for this Action. Extra Ticks pay for one Short Action each, and a typed one only pays for its own Action Type.' }
         : { ok: false, why: 'No Ticks left. The Action Opportunity is over.' };
@@ -121,7 +145,7 @@ export function canPerform(o: Opportunity, a: CardAction): TickVerdict {
   if (o.performed.includes(a.id)) {
     return { ok: false, why: 'Each Action of a Part can only be performed once per Action Opportunity. Only an Extra Tick may repeat one.' };
   }
-  if (len === 'long' && (o.maneuvered || o.maneuver < 1 || o.action < FRESH_POOL.action)) {
+  if (len === 'long' && (o.maneuvered || o.maneuver < 1 || o.started)) {
     return { ok: false, why: 'A Long Action costs the Maneuver Tick plus both Action Ticks, so it must be the first and only thing this Opportunity, with no Maneuver.' };
   }
   if (cost.action > o.action || cost.maneuver > o.maneuver) {
@@ -130,8 +154,30 @@ export function canPerform(o: Opportunity, a: CardAction): TickVerdict {
   return { ok: true };
 }
 
+// ---------- Overload (OCSP Overloading Pack, card 090) ----------
+
+// The Pack buys Action Ticks with Link, up to two per Action Opportunity. What
+// it grants are ordinary Action Ticks rather than Extra Ticks, so they join the
+// base pool: two of them pay for one Medium Action, which no pair of Extra Ticks
+// can do, and they are spent before any Extra Tick as usual.
+export const OVERLOAD_MAX = 2;
+
+export function canOverload(o: Opportunity, link: number): TickVerdict {
+  if (o.overload >= OVERLOAD_MAX) {
+    return { ok: false, why: `Overload is limited to ${OVERLOAD_MAX} Link per Action Opportunity, and both are spent.` };
+  }
+  if (link < 1) return { ok: false, why: 'This Mech has no Link left to consume.' };
+  return { ok: true };
+}
+
+export function spendOverload(o: Opportunity): Opportunity {
+  return { ...o, action: o.action + 1, overload: o.overload + 1 };
+}
+
+// Maneuvering is Movement, and the Stationary keyword counts a change of facing
+// as Movement too, which a Maneuver may be on its own.
 export function spendManeuver(o: Opportunity): Opportunity {
-  return { ...o, maneuver: Math.max(0, o.maneuver - MANEUVER_COST.maneuver), maneuvered: true };
+  return { ...o, maneuver: Math.max(0, o.maneuver - MANEUVER_COST.maneuver), maneuvered: true, moved: true };
 }
 
 export function spendAction(o: Opportunity, a: CardAction): Opportunity {
@@ -147,12 +193,19 @@ export function spendAction(o: Opportunity, a: CardAction): Opportunity {
     maneuver: Math.max(0, o.maneuver - cost.maneuver),
     action: Math.max(0, o.action - cost.action),
     started: true,
+    moved: o.moved || timingOf(a) === 'movement',
     performed: o.performed.includes(a.id) ? o.performed : [...o.performed, a.id],
   };
 }
 
+// A grant whose condition has lapsed is not a Tick in hand, so it must not keep
+// an Opportunity open or show as available.
+export function extrasLeft(o: Opportunity): ExtraTick[] {
+  return o.extras.filter((x) => !o.spentExtras.includes(x.id) && grantHolds(o, x));
+}
+
 export function ticksLeft(o: Opportunity): number {
-  return o.maneuver + o.action + o.extras.filter((x) => !o.spentExtras.includes(x.id)).length;
+  return o.maneuver + o.action + extrasLeft(o).length;
 }
 
 export function opportunityOver(o: Opportunity): boolean {

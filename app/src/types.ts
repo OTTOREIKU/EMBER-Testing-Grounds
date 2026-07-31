@@ -346,10 +346,17 @@ export interface SmokeScreen {
   side: Side;
 }
 
+// A grant may carry a condition. "stationary" is the printed keyword: no
+// Movement yet this Action Opportunity. "timing" means the grant only exists
+// when the dial is set to the grant's own Timing, which is a condition on
+// having the Tick at all rather than on what it may pay for.
+export type ExtraTickCheck = 'stationary' | 'timing';
+
 export interface ExtraTick {
   id: string;
   label: string;
   timing?: Timing;
+  check?: ExtraTickCheck;
 }
 
 export interface Opportunity {
@@ -359,7 +366,9 @@ export interface Opportunity {
   action: number;
   extras: ExtraTick[];
   maneuvered: boolean;
+  moved: boolean;
   started: boolean;
+  overload: number;
   performed: string[];
   spentExtras: string[];
 }
@@ -372,7 +381,9 @@ export function newOpportunity(uid: number, timing?: Timing): Opportunity {
     action: 2,
     extras: [],
     maneuvered: false,
+    moved: false,
     started: false,
+    overload: 0,
     performed: [],
     spentExtras: [],
   };
@@ -391,7 +402,9 @@ export function normaliseOpportunity(raw: unknown): Opportunity | null {
     action: typeof o.action === 'number' ? o.action : base.action,
     extras: Array.isArray(o.extras) ? (o.extras as ExtraTick[]).filter((x) => x && typeof x.id === 'string') : [],
     maneuvered: !!o.maneuvered,
+    moved: !!o.moved,
     started: !!o.started,
+    overload: typeof o.overload === 'number' ? Math.max(0, Math.round(o.overload)) : base.overload,
     performed: list(o.performed),
     spentExtras: list(o.spentExtras),
   };
@@ -400,6 +413,7 @@ export function normaliseOpportunity(raw: unknown): Opportunity | null {
 export interface ScriptState {
   turn: Side;
   acted: number[];
+  extraOpps: number[];
   commanded: number[];
   freeCommand: number[];
   passed: Side[];
@@ -415,6 +429,7 @@ export function newScriptState(firstPlayer: Side): ScriptState {
   return {
     turn: firstPlayer,
     acted: [],
+    extraOpps: [],
     commanded: [],
     freeCommand: [],
     passed: [],
@@ -434,6 +449,7 @@ export function normaliseScript(raw: unknown, firstPlayer: Side): ScriptState {
   return {
     turn: s.turn === 'blue' || s.turn === 'red' ? s.turn : base.turn,
     acted: list(s.acted, base.acted),
+    extraOpps: list(s.extraOpps, base.extraOpps),
     commanded: list(s.commanded, base.commanded),
     freeCommand: list(s.freeCommand, base.freeCommand),
     passed: Array.isArray(s.passed) ? s.passed : base.passed,

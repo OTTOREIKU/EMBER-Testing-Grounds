@@ -102,14 +102,24 @@
       "card": "015",
       "label": "Extra Firing Tick",
       "timing": "firing",
-      "condition": "while this Mech stays Stationary for the whole Action Opportunity"
+      "condition": "while this Mech has not moved yet this Action Opportunity",
+      "check": "stationary"
     },
     {
       "actionId": "019_A",
       "card": "019",
       "label": "Extra Firing Tick",
       "timing": "firing",
-      "condition": "while this Mech acts during the Firing Timing"
+      "condition": "while this Mech acts during the Firing Timing",
+      "check": "timing"
+    }
+  ],
+  "_overload": "The OCSP Overloading Pack buys ordinary Action Ticks with Link. Ordinary matters: two of them pay for one Medium Action, which no pair of Extra Ticks can do. Only the binding to the printed Action lives here; the limit of two is the rule and lives in the tick engine.",
+  "overload": [
+    {
+      "actionId": "090_A",
+      "card": "090",
+      "label": "Overload"
     }
   ]
 }
