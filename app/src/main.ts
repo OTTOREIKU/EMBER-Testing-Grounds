@@ -2077,6 +2077,37 @@ async function init() {
       .sort((a, b) => a.dist - b.dist);
   }
 
+  const TERRAIN_NAME: Record<TerrainPiece['type'], string> = {
+    building: 'Building',
+    high_wall: 'Defense wall 3"',
+    low_wall: 'Defense wall 2"',
+    container: 'Container',
+  };
+
+  function terrainLabel(p: TerrainPiece): string {
+    const cell = p.subCells[0];
+    const where = cell ? ` at ${gridRef(Math.floor(cell.col / 3), Math.floor(cell.row / 3))}` : '';
+    const size = p.type === 'container' ? ` 1×${p.subCells.length}` : '';
+    return `${TERRAIN_NAME[p.type]}${size}${where}`;
+  }
+
+  // Destructible Terrain is always a legal target for a Projectile in range
+  // unless the card says otherwise (4.7.5), and only the 1-inch Containers are
+  // destructible: Buildings and both Defense walls are not (p.21).
+  function fragileTerrainWithin(from: Token, range: number): { piece: TerrainPiece; dist: number }[] {
+    const gc = Math.floor(from.col / 3);
+    const gr = Math.floor(from.row / 3);
+    return currentTerrain()
+      .filter((p) => p.isFragile)
+      .map((piece) => {
+        const cells = piece.subCells.map((c) => ({ c: Math.floor(c.col / 3), r: Math.floor(c.row / 3) }));
+        const dist = Math.min(...cells.map((c) => Math.abs(c.c - gc) + Math.abs(c.r - gr)));
+        return { piece, dist };
+      })
+      .filter((x) => x.dist <= range)
+      .sort((a, b) => a.dist - b.dist);
+  }
+
   function startDetonation(proj: Token, actionId: string): void {
     const action = tokenCards(data, proj)
       .flatMap(({ card }) => card.actions ?? [])
@@ -2084,6 +2115,7 @@ async function init() {
     if (!action) return;
     const range = action.range ?? 0;
     const targets = unitsWithin(proj, range);
+    const terrain = fragileTerrainWithin(proj, range);
     board.showRangeRings(proj, range);
 
     const body = document.getElementById('combat-body')!;
@@ -2123,13 +2155,26 @@ async function init() {
           ? scope === 'all'
             ? '<p class="dim">This card says <b>all Units within range</b>, so it hits allies too and every unit listed takes a separate attack. Resolve them one at a time (4.7.6).</p>'
             : '<p class="dim">This card damages a <b>single target</b>, so only one of these takes the attack. Pick it, resolve it, then destroy the projectile (4.7.6).</p>'
-          : '<p class="dim">No units within range. A projectile with a delayed action that needs a target is destroyed instead (4.7.5).</p>'}
+          : terrain.length
+            ? '<p class="dim">No units within range, but Destructible Terrain is always a legal target, so this projectile still has something to hit (4.7.5).</p>'
+            : '<p class="dim">No units and no Destructible Terrain within range. A projectile with a delayed action that needs a target is destroyed instead (4.7.5).</p>'}
         <div class="ah-partpick" id="det-targets">${targets
           .map(({ t, dist }) => `<button class="chip" data-uid="${t.uid}">
               <b>${t.side === proj.side ? 'ALLY' : 'ENEMY'}</b> ${escapeHtml(t.label)}
               <small>R${dist}</small></button>`)
           .join('')}</div>
-      </div></div>`;
+      </div>
+      ${terrain.length
+        ? `<div class="ah-step"><h4>Or hit Destructible Terrain</h4>
+            <p class="dim">Terrain takes no roll. It is removed directly when a Firing, Melee or Explosion attack hits it (p.21). Only the 1-inch Containers can be destroyed; Buildings and Defense walls cannot.</p>
+            <div class="ah-partpick" id="det-terrain">${terrain
+              .map(({ piece, dist }) => `<button class="chip" data-terrain="${escapeHtml(piece.id)}">
+                  <b>TERRAIN</b> ${escapeHtml(terrainLabel(piece))}
+                  <small>R${dist}</small></button>`)
+              .join('')}</div>
+          </div>`
+        : ''}
+      </div>`;
     const cancel = document.createElement('button');
     cancel.className = 'ah-cancel';
     cancel.textContent = 'Cancel';
@@ -2142,7 +2187,7 @@ async function init() {
 
     const remove = document.createElement('button');
     remove.className = 'ah-primary';
-    remove.textContent = targets.length ? 'Done: destroy the projectile' : 'Destroy the projectile';
+    remove.textContent = targets.length || terrain.length ? 'Done: destroy the projectile' : 'Destroy the projectile';
     const det = data.mechanics.find((m) => m.id === 'detonation');
     if (det) inspectOnHover(remove, { title: det.name, sub: det.ref, lines: [det.text] });
     remove.addEventListener('click', () => {
@@ -2162,6 +2207,20 @@ async function init() {
         board.clearHighlights();
         attackHelper.start(proj, action, target, 'Explosion damage: no line of sight or facing check.', 0, '', true);
         showSideTab('combat');
+      }),
+    );
+    // Terrain is removed on the spot rather than handed to the attack helper,
+    // because hitting it needs no roll at all.
+    body.querySelectorAll<HTMLButtonElement>('#det-terrain button').forEach((b) =>
+      b.addEventListener('click', () => {
+        const id = b.dataset.terrain!;
+        if (state.removedTerrain?.includes(id)) return;
+        const hit = currentTerrain().find((p) => p.id === id);
+        state.removedTerrain = [...(state.removedTerrain ?? []), id];
+        board.renderTerrain(currentTerrain());
+        logTo(proj, `${name} destroys ${hit ? terrainLabel(hit) : 'terrain'}. Destructible Terrain takes no roll.`);
+        b.disabled = true;
+        onChanged();
       }),
     );
     showSideTab('combat');
