@@ -274,14 +274,6 @@ export function interceptLeft(t: Token): number {
   return Object.values(t.intercept ?? {}).reduce((s, n) => s + n, 0);
 }
 
-export function interceptTotal(data: GameData, t: Token): number {
-  let n = 0;
-  for (const { card } of tokenCards(data, t)) {
-    for (const a of card.actions ?? []) n += interceptCapacity(a) ?? 0;
-  }
-  return n;
-}
-
 export function makeDroneToken(state: GameState, data: GameData, card: Card, side: Side, backpack?: string): Omit<Token, 'col' | 'row' | 'facing'> {
   const cards = [card, backpack ? data.byId.get(backpack) : undefined].filter((x): x is Card => !!x);
   return {

@@ -631,10 +631,6 @@ export function missionImageUrl(id: string): string {
   return assetUrl(`missions/${id}.webp`);
 }
 
-export function battlefieldImageUrl(mapKey: string): string {
-  return assetUrl(`battlefield/${mapKey}.webp`);
-}
-
 export function tabImageUrl(id: string): string {
   return assetUrl(`tokens/tab/${id}.webp`);
 }
