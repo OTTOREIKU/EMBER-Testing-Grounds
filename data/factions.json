@@ -1,0 +1,30 @@
+{
+  "_comment": "Faction lore for the reference's Factions tab. Text and key art are the publisher's, taken from the official faction pages. Only the three major factions have lore: Planetring Dynamics (PD) supplies cards but is a manufacturer rather than a playable faction with published lore, and COLLABORATION is a crossover tag rather than a faction.",
+  "_source": "obsidianprotocol.com faction pages, transcribed 2026-08-01",
+  "factions": [
+    {
+      "key": "RDL",
+      "name": "Reconstruction Development League",
+      "short": "RDL",
+      "supplier": "Tieling Heavy Industries",
+      "hook": "Efficiency above all, directed by an algorithm.",
+      "text": "The Reconstruction Development League is a faction that prioritizes efficiency. A super-coordination algorithm known as the \"Guidance System\" manages the schedules of all citizens to maximize overall well-being and drive rapid community development.\n\nMost of this faction's combat equipment is produced by Tieling Heavy Industries. Their main battle units are cost-effective despite average performance, while elite units emphasize firepower and heavy armor. By strategically balancing these forces, you can overwhelm your opponents with a combination of pure firepower and numerical superiority."
+    },
+    {
+      "key": "UN",
+      "name": "United Network",
+      "short": "UN",
+      "supplier": "Red Dot Technologies",
+      "hook": "A corporate coalition of specialists and veteran PMCs.",
+      "text": "The United Network is a highly commercialized corporate coalition that values skill specialization and leads in the research of ancient relic technology.\n\nIts armed forces primarily consist of battle-hardened PMC units, offering a vast pool of elite pilots at your command. They are equipped with the most well-rounded and high-performance military gear, ensuring efficient mission execution.\n\nUnder the United Network, Red Dot Technologies and other suppliers provide advanced equipment for these forces. Their products excel in precision shooting and exceptional mobility, but come at a higher cost. As a result, you must carefully manage each soldier in your ranks."
+    },
+    {
+      "key": "GOF",
+      "name": "Guardians of Freedom",
+      "short": "GoF",
+      "supplier": "Wildfire Dynamics",
+      "hook": "The smallest faction, fighting mostly with drones.",
+      "text": "The Guardians of Freedom originated as a small community devoted to absolute free will.\n\nAs their influence grew, their commitment to preserving free will evolved into a deep reverence for the human mind. They reject consciousness digitization, making them the smallest of the three major factions. Even their mech pilots rely solely on brain-machine interfaces for control.\n\nTheir primary supplier, Wildfire Dynamics, is a rising tech company that emerged after the Great War. With the most advanced AI and drone technology in human civilization, the Guardians of Freedom rely heavily on unmanned units as the backbone of their forces, while a handful of powerful and costly mechs serve as the army's core."
+    }
+  ]
+}
