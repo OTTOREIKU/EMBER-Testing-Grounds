@@ -20,6 +20,31 @@ async function liveBuild(): Promise<string | null> {
   }
 }
 
+// A plain location.reload() is enough for code and data, which the Service
+// Worker serves network-first, and the build hashes every script and stylesheet
+// anyway. It is not enough for images: those are served cache-first from a
+// cache the Worker never clears, and their filenames are stable, so a redrawn
+// card keeps its old picture until the caches go. Taking the update clears them
+// and refreshes the Worker, which is what a hard refresh did by hand.
+//
+// This does mean dropping the warmed image cache, which is the bulk of what is
+// stored. It refills on its own at idle, and skips refilling on a metered or
+// slow connection, so the cost lands on a deliberate update rather than on
+// every visit.
+async function hardReload(): Promise<void> {
+  try {
+    if ('caches' in window) {
+      const names = await caches.keys();
+      await Promise.all(names.map((n) => caches.delete(n)));
+    }
+    const reg = await navigator.serviceWorker?.getRegistration();
+    await reg?.update();
+  } catch (err) {
+    void err;
+  }
+  location.reload();
+}
+
 function show(build: string): void {
   if (document.getElementById('update-toast')) return;
   if (localStorage.getItem(DISMISS_KEY) === build) return;
@@ -38,7 +63,7 @@ function show(build: string): void {
         <button class="ut-later">Later</button>
       </div>
     </div>`;
-  box.querySelector('.ut-reload')!.addEventListener('click', () => location.reload());
+  box.querySelector('.ut-reload')!.addEventListener('click', () => void hardReload());
   box.querySelector('.ut-later')!.addEventListener('click', () => {
     localStorage.setItem(DISMISS_KEY, build);
     box.remove();
