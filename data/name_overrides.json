@@ -3,60 +3,63 @@
   "cards": {
     "154": {
       "en": "M7 Grenade",
-      "source": "translated"
+      "source": "printed English card scan"
     },
     "155": {
-      "en": "M9 Stun Grenade"
+      "en": "M9 Stun Grenade",
+      "source": "printed English card scan"
     },
     "156": {
       "en": "SGM2 \"Pholcus\" Automatic Mine",
-      "source": "translated"
+      "source": "printed English card scan"
     },
     "157": {
       "en": "RKG70 Missile Group",
-      "source": "translated"
+      "source": "printed English card scan"
     },
     "158": {
-      "en": "DBP \"Turtle Shell\" Mobile Cover",
-      "source": "translated"
+      "en": "DBP \"Turtle Shell\" Barricade",
+      "source": "printed English card scan"
     },
     "257": {
       "en": "K9 Nail Gun + M14BO Wakizashi Trial Model (R)",
       "source": "read off the English card scan; the bundle English said (L) while its own Chinese (右) and Japanese (R) both say right"
     },
     "274": {
-      "en": "Additional Instructions"
+      "en": "Additional Instructions",
+      "source": "printed English card scan"
     },
     "278": {
-      "en": "Tactical Disposition"
+      "en": "Tactical Disposition",
+      "source": "printed English card scan"
     },
     "512": {
-      "en": "AH-21 Pistol + CC-50 Pile Bunker (R)",
-      "source": "corrected: source data labelled this 48-point part \"(R) (D)\", duplicating its own 0-point discard card 513"
+      "en": "AH-21 Pistol + CC50 Pile Bunker (R)",
+      "source": "printed English card scan; the scan also confirms the earlier correction, since the source data labelled this 48-point part \"(R) (D)\", duplicating its own 0-point discard card 513"
     },
     "544": {
-      "en": "Quad \"Exocet\" Missile Launcher",
-      "source": "read off the English card scan"
+      "en": "Lm384 Quad \"Exocet\" Missile Launcher",
+      "source": "printed English card scan"
     },
     "546": {
-      "en": "H2-A \"Crisis\" Type I",
-      "source": "translated"
+      "en": "H2-A \"Crisis\" I",
+      "source": "printed English card scan"
     },
     "549": {
       "en": "HL2-M \"Crisis\" Chassis M",
-      "source": "translated"
+      "source": "printed English card scan"
     },
     "552": {
-      "en": "Ot41 Laser Suppression System + Sd3 Shield",
-      "source": "translated"
+      "en": "Ot41 LSS + Sd3 Shield",
+      "source": "printed English card scan"
     },
     "553": {
-      "en": "Ot50-ADS + Sd3 Shield",
-      "source": "translated"
+      "en": "Ot50 ADS + Sd3 Shield",
+      "source": "printed English card scan"
     },
     "561": {
-      "en": "Lm382 Twin \"Exocet\" Launcher + Ls197 Autocannon",
-      "source": "translated"
+      "en": "Lm382 Dual \"Exocet\" Missile Launcher + Ls197 Autocannon",
+      "source": "printed English card scan"
     },
     "XPA-59": {
       "en": "Combatant A-101",
