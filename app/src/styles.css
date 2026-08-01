@@ -1625,6 +1625,8 @@ p.points { white-space: pre-line; }
   display: inline-block; width: 11px; height: 11px; border-radius: 2px;
   vertical-align: -1px; border: 1px solid rgba(0, 0, 0, 0.35);
 }
+.glyph-dice { display: inline; white-space: nowrap; }
+.glyph-dice .glyph-die + .glyph-die { margin-left: 2px; }
 .glyph-die.die-blue { background: var(--die-blue); }
 .glyph-die.die-yellow { background: var(--die-yellow); }
 .glyph-die.die-red { background: var(--die-red); }
@@ -2065,6 +2067,16 @@ p.points { white-space: pre-line; }
 }
 .pilot-trait b { display: block; color: var(--accent); font-size: 12.5px; margin-bottom: 3px; }
 .pilot-trait span { font-size: 12px; color: var(--text2); line-height: 1.5; }
+.card-selftext {
+  margin: 8px 0; padding: 9px 10px; border-radius: var(--radius);
+  background: var(--surface2); font-size: 12px; color: var(--text2); line-height: 1.5;
+}
+.card-selftext .rules-list { margin: 0; padding-left: 16px; }
+.pilot-trait .trait-mech, .card-selftext .trait-mech {
+  display: block; margin-top: 6px; padding-top: 6px;
+  border-top: 1px solid var(--border); color: var(--text3);
+}
+.pilot-trait .trait-mech b { display: inline; color: var(--blue); font-size: 12px; margin: 0; }
 .pilot-flavour b { color: var(--text3); }
 .pilot-flavour span { font-style: italic; }
 .pilot-flavour em { display: block; margin-top: 4px; font-size: 11px; color: var(--text3); font-style: normal; }

@@ -652,6 +652,22 @@ export class Panel {
     }
     wrap.appendChild(stats);
 
+    // Rules printed on the card rather than on one of its Actions. A "White
+    // Dwarf" Bit reads "· Low Value · High Altitude", and that line is the whole
+    // reason it may not take a Task Item, so it cannot be left off the panel.
+    const cardText = card.description?.en?.trim() || card.description?.zh?.trim();
+    if (cardText && card.category !== 'pilot') {
+      const note = document.createElement('div');
+      note.className = 'card-selftext';
+      const lines = rulesLines(cardText);
+      const mechs = this.data
+        .mechanicsFor(card.description?.en, card.description?.zh)
+        .map((m) => `<span class="trait-mech"><b>${m.name}</b>${m.ref ? ` <em>(${m.ref})</em>` : ''}: ${m.text}</span>`)
+        .join('');
+      note.innerHTML = `${lines.length > 1 ? `<ul class="rules-list">${lines.map((l) => `<li>${l}</li>`).join('')}</ul>` : `<span>${lines[0] ?? ''}</span>`}${mechs}`;
+      wrap.appendChild(note);
+    }
+
     const traitDesc = card.traitDescription?.en || card.traitDescription?.zh;
     const hasTrait = !!card.trait?.trim();
     if (hasTrait || traitDesc) {
@@ -663,8 +679,14 @@ export class Panel {
         bullets.length > 1
           ? `<ul class="rules-list">${bullets.map((l) => `<li>${l}</li>`).join('')}</ul>`
           : (bullets[0] ?? '');
+      // Same reason as the reference: a trait may name a mechanic rather than a
+      // keyword, and Crush on Onyx is unreadable without the rule beside it.
+      const traitMechs = hasTrait ? this.data.mechanicsFor(traitDesc, card.trait) : [];
+      const mechHtml = traitMechs
+        .map((m) => `<span class="trait-mech"><b>${m.name}</b>${m.ref ? ` <em>(${m.ref})</em>` : ''}: ${m.text}</span>`)
+        .join('');
       const body = hasTrait ? text : `${text}<em>This pilot has no trait ability. The line above is card flavour text.</em>`;
-      trait.innerHTML = `<b>${head}</b>${traitDesc ? `<span>${body}</span>` : ''}`;
+      trait.innerHTML = `<b>${head}</b>${traitDesc ? `<span>${body}</span>` : ''}${mechHtml}`;
       wrap.appendChild(trait);
     }
 

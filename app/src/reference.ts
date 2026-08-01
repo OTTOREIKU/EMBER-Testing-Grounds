@@ -1,5 +1,5 @@
 import './reference.css';
-import { actionIconUrl, boxCoverUrl, cardName, TOKEN_PRINT, tokenPrintUrl, FACTION_LABEL, loadData, mechPartUrl, missionImageUrl, portraitUrl, secondaryImageUrl, statIconUrl, tabImageUrl, zeroCostReason, type BoxDef, type GameData, type KeywordDef } from './data';
+import { actionIconUrl, boxCoverUrl, cardName, TOKEN_PRINT, tokenPrintUrl, factionArtUrl, FACTION_LABEL, loadData, mechPartUrl, missionImageUrl, portraitUrl, secondaryImageUrl, statIconUrl, tabImageUrl, zeroCostReason, type BoxDef, type FactionDef, type GameData, type KeywordDef } from './data';
 import { mountCardImage, preloadCardImages, warmAllImagesWhenIdle } from './images';
 import { watchForUpdates } from './updates';
 import { SHAPE_NOTE, STATUSES, TIMINGS, type Card, type StatusDef } from './types';
@@ -7,7 +7,7 @@ import { registerOffline } from './offline';
 import { costLabel, LENGTH_NAME, lengthOf, TICK_COST } from './ticks';
 import { maskGlyphs } from './glyphs';
 
-type Tab = 'keywords' | 'parts' | 'units' | 'pilots' | 'tactics' | 'boxes' | 'missions' | 'rules';
+type Tab = 'keywords' | 'parts' | 'units' | 'pilots' | 'tactics' | 'boxes' | 'factions' | 'missions' | 'rules';
 
 const SLOT_LABEL: Record<string, string> = {
   torso: 'Torso',
@@ -135,6 +135,17 @@ function linkKeywords(text: string): string {
   return restore(out + src.slice(at));
 }
 
+// Keywords link because they are glossary entries; rules like Crush and Low
+// Value are mechanics rather than keywords, so they get spelled out beneath the
+// text that names them. Anything not mentioned matches nothing and prints
+// nothing, so this stays quiet wherever it is not wanted.
+function mechBlocks(...text: (string | undefined)[]): string {
+  return data
+    .mechanicsFor(...text)
+    .map((m) => `<p class="ref-mech"><b>${esc(m.name)}</b>${m.ref ? ` <em>(${esc(m.ref)})</em>` : ''}: ${linkKeywords(m.text)}</p>`)
+    .join('');
+}
+
 function keywordCard(k: KeywordDef): string {
   const name = k.en?.name?.replace(/^[•·\s]+/, '') || k.key;
   const val = k.en?.value || '';
@@ -249,10 +260,7 @@ function cardDetail(c: Card): string {
       if (en) text = linkKeywords(en);
       else if (tr?.english) text = `${linkKeywords(tr.english)}<em class="ref-note"> — translated from the Chinese card text</em>`;
       else text = '<em class="ref-note">No rules text on this card.</em>';
-      const mechs = data.mechanicsFor(a.name.en, a.name.zh, en, tr?.english ?? undefined);
-      const mechHtml = mechs
-        .map((m) => `<p class="ref-mech"><b>${esc(m.name)}</b>${m.ref ? ` <em>(${esc(m.ref)})</em>` : ''}: ${linkKeywords(m.text)}</p>`)
-        .join('');
+      const mechHtml = mechBlocks(a.name.en, a.name.zh, en, tr?.english ?? undefined);
       const icon = actionIconUrl(a.type);
       return `<div class="ref-action">
         <h4>${icon ? `<img class="act-icon" src="${icon}" alt="" title="${esc(a.type ?? '')}">` : ''}${
@@ -269,12 +277,16 @@ function cardDetail(c: Card): string {
     .join('');
   const traitName = c.trait?.trim();
   const traitText = c.traitDescription?.en || c.traitDescription?.zh || '';
+  // A trait may name a rule rather than a keyword. Onyx says its Mech "may Crush
+  // large units", and Crush is a mechanic, so the keyword pass alone left the
+  // one word a reader needs unexplained. Actions already spell these out.
+  const traitMechs = mechBlocks(traitText, c.traitDescription?.zh, traitName);
   const trait =
     traitName || traitText
       ? `<div class="ref-trait${traitName ? '' : ' ref-flavour'}"><b>${
           traitName ? `Pilot Trait <i>${esc(traitName)}</i>` : 'No trait ability'
         }</b><p>${linkKeywords(traitText).replace(/\n/g, '<br>')}</p>${
-          traitName ? '' : '<p class="ref-note">This pilot has no trait ability. The line above is card flavour text.</p>'
+          traitName ? traitMechs : '<p class="ref-note">This pilot has no trait ability. The line above is card flavour text.</p>'
         }</div>`
       : '';
   const inBoxes = (c.containedIn ?? [])
@@ -293,6 +305,17 @@ function cardDetail(c: Card): string {
         )
         .join(', ');
 
+  // Some cards print rules on the card itself rather than on an Action. A
+  // "White Dwarf" Bit reads "· Low Value · High Altitude", and that line is the
+  // whole reason it cannot take a Task Item, so dropping it loses real rules.
+  const cardText = c.description?.en?.trim() || c.description?.zh?.trim() || '';
+  const cardMechs = mechBlocks(c.description?.en, c.description?.zh);
+  // Pilots are left out: their card line is flavour, and the trait block below
+  // already labels it as such.
+  const cardBlock = cardText && c.category !== 'pilot'
+    ? `<div class="ref-cardtext"><p>${linkKeywords(cardText).replace(/\n/g, '<br>')}</p>${cardMechs}</div>`
+    : '';
+
   const free = zeroCostReason(c);
   return `<h2>${esc(cardName(c))}</h2>
     <p class="ref-meta">${esc([c.category, c.type, c.faction].filter(Boolean).join(' · '))}</p>
@@ -301,6 +324,7 @@ function cardDetail(c: Card): string {
     ${free ? `<p class="ref-free">Costs 0 points — ${esc(free)}.</p>` : ''}
     ${stats || pilotStats ? `<div class="ref-stats">${stats}${pilotStats}</div>` : ''}
     ${kws ? `<div class="ref-kwlinks">${kws}</div>` : ''}
+    ${cardBlock}
     ${trait}
     ${actions ? `<h3 class="ref-sub">Actions</h3>${actions}` : ''}
     ${boxes ? `<p class="ref-boxes">${unsold ? '' : 'In: '}${boxes}</p>` : ''}`;
@@ -381,6 +405,53 @@ function boxDetail(key: string): string | null {
     ${list || '<p class="ref-note">No cards in the data list this box.</p>'}`;
 }
 
+// Laid out like a box: art bleeding behind a scrim, name and hook on top. The
+// counts are live rather than written into the lore file, so a card added to
+// the database shows up here without anyone remembering to update a number.
+function factionRow(f: FactionDef): string {
+  const owned = data.cards.filter((c) => data.factionOf(c) === f.key);
+  const pilots = owned.filter((c) => c.category === 'pilot').length;
+  return `<article class="card-tap card-framed box-card has-cover faction-card" data-fac="${esc(f.key)}" data-factionitem="${esc(f.key)}">
+    <div class="box-bleed" aria-hidden="true"><img src="${factionArtUrl(f.key)}" alt="" loading="lazy" onerror="this.closest('.faction-card').classList.remove('has-cover'); this.closest('.box-bleed').remove()"></div>
+    <span class="box-scrim" aria-hidden="true"></span>
+    <div class="box-body">
+      <div class="card-title">${esc(f.name)}</div>
+      ${f.hook ? `<div class="box-meta">${esc(f.hook)}</div>` : ''}
+      <div class="card-badges">
+        <span class="tag">${esc(FACTION_LABEL[f.key] ?? f.short)}</span>
+        <span class="tag mono">${owned.length} card${owned.length === 1 ? '' : 's'}</span>
+        ${pilots ? `<span class="tag mono">${pilots} pilot${pilots === 1 ? '' : 's'}</span>` : ''}
+      </div>
+    </div>
+  </article>`;
+}
+
+function factionDetail(key: string): string | null {
+  const f = data.factions.find((x) => x.key === key);
+  if (!f) return null;
+  const owned = data.cards.filter((c) => data.factionOf(c) === f.key);
+  const count = (label: string, n: number) => (n ? `<span class="tag mono">${n} ${label}${n === 1 ? '' : 's'}</span>` : '');
+  const boxes = data.boxes
+    .filter((b) => b.key !== 'UNSALE' && (b.faction ?? []).includes(f.key))
+    .sort((a, b) => a.id - b.id);
+  return `<h2>${esc(f.name)}</h2>
+    <p class="ref-meta">${esc(FACTION_LABEL[f.key] ?? f.short)}${f.supplier ? ` · supplied by ${esc(f.supplier)}` : ''}</p>
+    <div class="ref-faction-art"><img src="${factionArtUrl(f.key)}" alt="${esc(f.name)} key art" loading="lazy"></div>
+    <div class="ref-lore">${f.text.split('\n\n').map((p) => `<p>${esc(p)}</p>`).join('')}</div>
+    <div class="card-badges">
+      ${count('card', owned.length)}
+      ${count('pilot', owned.filter((c) => c.category === 'pilot').length)}
+      ${count('part', owned.filter((c) => c.category === 'mech_part').length)}
+      ${count('drone', owned.filter((c) => c.category === 'drone').length)}
+    </div>
+    ${boxes.length
+      ? `<h3 class="ref-sub">Boxes</h3><p class="ref-boxes">${boxes
+          .map((b) => `<a class="kw-link" data-box="${esc(b.key)}">${esc(b.name.en || b.name.zh || b.key)}</a>`)
+          .join(', ')}</p>`
+      : ''}
+    <p class="ref-note">Lore and key art are the publisher's, from the official faction pages.</p>`;
+}
+
 function boxRow(b: BoxDef): string {
   const { cards, pieces } = boxCardCount(b.key);
   const facs = (b.faction ?? [])
@@ -449,9 +520,10 @@ function render(): void {
               <span>Tap to enlarge</span>
             </button>
             <div class="card-body">
-              <p><b>Setup.</b> ${esc(m.setup)}</p>
-              <p><b>Scoring.</b> ${esc(m.scoring)}</p>
-              ${m.deployment ? `<p><b>Deployment.</b> ${esc(m.deployment)}</p>` : ''}
+              <p><b>Setup.</b> ${linkKeywords(m.setup)}</p>
+              <p><b>Scoring.</b> ${linkKeywords(m.scoring)}</p>
+              ${m.deployment ? `<p><b>Deployment.</b> ${linkKeywords(m.deployment)}</p>` : ''}
+              ${mechBlocks(m.setup, m.scoring)}
             </div>
             <div class="card-badges">
               ${f ? `<span class="tag tag-kw">${esc(f.name)}</span>` : ''}
@@ -468,9 +540,10 @@ function render(): void {
           (f) => `<article class="card">
             <div class="card-title">${esc(f.name)}${f.nameKo ? ` <span class="ref-note">${esc(f.nameKo)}</span>` : ''}</div>
             <div class="card-body">${linkKeywords(f.text).replace(/\n/g, '<br>')}</div>
+            ${mechBlocks(f.text, ...(f.faq ?? []).map((x) => x.a))}
             ${(f.faq ?? []).length
               ? `<div class="mis-faq">${(f.faq ?? [])
-                  .map((x) => `<p><b>Q.</b> ${esc(x.q)}<br><b>A.</b> ${esc(x.a)}</p>`)
+                  .map((x) => `<p><b>Q.</b> ${linkKeywords(x.q)}<br><b>A.</b> ${linkKeywords(x.a)}</p>`)
                   .join('')}</div>`
               : ''}
           </article>`,
@@ -488,8 +561,9 @@ function render(): void {
               <span>Tap to enlarge</span>
             </button>
             <div class="card-body">
-              <p><b>Setup.</b> ${esc(s.setup)}</p>
-              <p><b>Scoring.</b> ${esc(s.scoring)}</p>
+              <p><b>Setup.</b> ${linkKeywords(s.setup)}</p>
+              <p><b>Scoring.</b> ${linkKeywords(s.scoring)}</p>
+              ${mechBlocks(s.setup, s.scoring)}
             </div>
             <div class="card-badges">
               ${typeof s.vp === 'number' ? `<span class="tag mono">${s.vp} VP</span>` : ''}
@@ -684,6 +758,16 @@ function render(): void {
     return;
   }
 
+  if (tab === 'factions') {
+    const list = data.factions.filter(
+      (f) => !q || norm(`${f.name} ${f.short} ${f.key} ${f.supplier ?? ''} ${f.hook ?? ''} ${f.text}`).includes(q),
+    );
+    el.innerHTML = list.length
+      ? `<p class="ref-count">${list.length} faction${list.length === 1 ? '' : 's'} · tap one for its story</p>${list.map(factionRow).join('')}`
+      : '<p class="ref-count">No matches</p>';
+    return;
+  }
+
   if (tab === 'boxes') {
     const sellable = data.boxes.filter((b) => b.key !== 'UNSALE');
     const pool = sellable.filter((b) => {
@@ -822,7 +906,7 @@ function fillPortraits(root: HTMLElement, lazy: boolean): void {
 }
 
 interface DetailView {
-  kind: 'card' | 'keyword' | 'box';
+  kind: 'card' | 'keyword' | 'box' | 'faction';
   key: string;
   scroll?: number;
 }
@@ -838,6 +922,7 @@ function viewHtml(v: DetailView): string | null {
     return c ? cardDetail(c) : null;
   }
   if (v.kind === 'box') return boxDetail(v.key);
+  if (v.kind === 'faction') return factionDetail(v.key);
   return keywordDetail(v.key);
 }
 
@@ -847,6 +932,7 @@ function viewLabel(v: DetailView): string {
     const b = data.boxes.find((x) => x.key === v.key);
     return b ? b.name.en || b.name.zh || b.key : v.key;
   }
+  if (v.kind === 'faction') return data.factions.find((x) => x.key === v.key)?.name ?? v.key;
   const def = data.keyword(v.key);
   return def?.en?.name?.replace(/^[•·\s]+/, '') || v.key;
 }
@@ -996,6 +1082,12 @@ async function init(): Promise<void> {
     if (sec) {
       ev.preventDefault();
       showMissionImage(sec.dataset.secondary!, 'secondary');
+      return;
+    }
+    const fac = t.closest<HTMLElement>('[data-factionitem]');
+    if (fac) {
+      ev.preventDefault();
+      navigateDetail('faction', fac.dataset.factionitem!);
       return;
     }
     const box = t.closest<HTMLElement>('[data-box]');

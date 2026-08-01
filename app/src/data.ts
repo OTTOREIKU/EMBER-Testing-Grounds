@@ -67,6 +67,19 @@ export function boxCoverUrl(id: number): string {
   return assetUrl(`box_cover/${id}.webp`);
 }
 
+export function factionArtUrl(key: string): string {
+  return assetUrl(`factions/${key}.jpg`);
+}
+
+export interface FactionDef {
+  key: string;
+  name: string;
+  short: string;
+  supplier?: string;
+  hook?: string;
+  text: string;
+}
+
 export interface KeywordDef {
   key: string;
   zh?: { name?: string; value?: string };
@@ -272,6 +285,7 @@ export interface GameData {
   commonActions: CommonAction[];
   extraTicks: ExtraTickGrant[];
   overload: OverloadGrant[];
+  factions: FactionDef[];
 }
 
 interface KeywordOverrides {
@@ -348,7 +362,7 @@ function applyTactics(cards: Card[], table: Record<string, TacticEntry>): void {
 }
 
 export async function loadData(): Promise<GameData> {
-  const [cards, terrain, boxes, rawKeywords, patch, mech, xlate, names, missions, tactics, play, secondary, zoneData, facPatch, boxPatch, common, ammoPatch, statPatch] = await Promise.all([
+  const [cards, terrain, boxes, rawKeywords, patch, mech, xlate, names, missions, tactics, play, secondary, zoneData, facPatch, boxPatch, common, ammoPatch, statPatch, factionData] = await Promise.all([
     fetch(dataUrl('cards.json')).then((r) => r.json() as Promise<Card[]>),
     fetch(dataUrl('terrain_layouts.json')).then((r) => r.json() as Promise<TerrainData>),
     fetch(dataUrl('boxes.json')).then((r) => r.json() as Promise<BoxDef[]>),
@@ -395,6 +409,9 @@ export async function loadData(): Promise<GameData> {
     fetch(dataUrl('stat_overrides.json'))
       .then((r) => (r.ok ? (r.json() as Promise<StatOverrides>) : ({} as StatOverrides)))
       .catch(() => ({}) as StatOverrides),
+    fetch(dataUrl('factions.json'))
+      .then((r) => (r.ok ? (r.json() as Promise<{ factions?: FactionDef[] }>) : { factions: [] }))
+      .catch(() => ({ factions: [] as FactionDef[] })),
   ]);
 
   cleanCardText(cards);
@@ -498,6 +515,7 @@ export async function loadData(): Promise<GameData> {
     commonActions: common.actions ?? [],
     extraTicks: common.extraTicks ?? [],
     overload: common.overload ?? [],
+    factions: factionData.factions ?? [],
   };
 }
 
@@ -520,8 +538,16 @@ function cleanName(s: string): string {
 // community bundle, so a correction made there would vanish on the next
 // extract; fixing them on load survives that. Each one is checked against the
 // printed card scan before it goes in.
+// Printed slips, not edition differences. Each term below is spelled one way on
+// almost every card and another way on one or two, so the odd one out is a
+// misprint rather than a distinct rule. The majority spelling wins, except for
+// Anti-Armor, where card 074 settles it by carrying the term in its own name.
 const TYPOS: [RegExp, string][] = [
   [/Anti-Aromor/g, 'Anti-Armor'],
+  [/Anti-armor/g, 'Anti-Armor'],
+  [/DIrect Fire/g, 'Direct Fire'],
+  [/\[On hit\]/g, '[On Hit]'],
+  [/\[Two-handed\]/g, '[Two-Handed]'],
 ];
 
 function cleanRulesText(s: string): string {

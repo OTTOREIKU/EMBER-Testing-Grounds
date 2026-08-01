@@ -45,6 +45,18 @@ function render(raw: string): string | null {
   }
   const die = DICE[key];
   if (die) return `<span class="glyph-die die-${die.colour}" title="${die.label}"></span>`;
+  // Cards write a die count as {1Y} or {3R} as often as they write {Y}, and a
+  // bare colour table leaves those printed as literal braces.
+  const counted = /^(\d{1,2})\s*([byrw])$/.exec(key);
+  if (counted) {
+    const n = Number(counted[1]);
+    const d = DICE[counted[2]];
+    if (d && n > 0 && n <= 9) {
+      const label = n === 1 ? `1 ${d.label}` : `${n} ${d.label.replace(/die$/, 'dice')}`;
+      const pips = `<span class="glyph-die die-${d.colour}"></span>`.repeat(n);
+      return `<span class="glyph-dice" title="${label}">${pips}</span>`;
+    }
+  }
   return null;
 }
 

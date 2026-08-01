@@ -20,7 +20,8 @@
    "nameKo": "통제구역",
    "text": "A control zone is an area that can be occupied. Normally one tactical zone is designated as one control zone, covering all the grids of that tactical area.\n\nNo marker is placed at the start. When a player takes a zone, place the mission marker with that player's colour face up; when the other player takes it, flip the marker over.\n\nAt the end of a round you occupy a control zone if you have a mech that is not in Shutdown stance, or one drone, inside the zone, and there are no enemy units in the zone. A control zone scores for its controller from the round it is occupied.",
    "faq": [
-    { "q": "Do projectiles and deployables count for occupying a control zone?", "a": "No. Only mechs and drones count, and Low Value Units are excluded." },
+    { "q": "Do projectiles and deployables count for occupying a control zone?", "a": "Not for taking it. Only a Mech out of Shutdown Stance or a Drone can occupy a zone, and a Low Value Unit cannot, because taking a zone means interacting with a Task Item and Low Value Units may never do that (p.82)." },
+    { "q": "Can a Low Value Unit still stop the enemy taking a zone?", "a": "Yes, and this is the half that catches people out. The two conditions are not symmetrical: taking a zone names Mechs and Drones, but the blocking condition says only that there must be no enemy Units in the zone, with no exclusion. So a lone Projectile or a 0 point Drone contests a zone it could never take. The Excavation Claim card has to print its own exclusion for Low Value Units, which would be pointless if they were already excluded from being present." },
     { "q": "Does having more units in the zone help?", "a": "No, the number of units does not matter." }
    ]
   },

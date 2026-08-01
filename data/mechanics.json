@@ -224,6 +224,71 @@
    "text": "Every time a Mech receives an Action Opportunity it generates 1 Maneuver Tick and 2 Action Ticks. A Maneuver costs the Maneuver Tick, a Short Action costs 1 Action Tick, a Medium costs 2, and a Long costs the Maneuver Tick plus both Action Ticks, which is why a Long Action rules out Maneuvering. Ticks are spent in order: once any Action Tick has gone the Maneuver Tick can no longer be used, so a Maneuver has to come first. The first Action of the Opportunity is the Starting Action and its Action Type must match the Timing on the dial; later Actions in the same Opportunity have no type restriction. Each Action on a Part may only be performed once per Opportunity. Extra Ticks are separate: they may only be used after every base Tick is spent, never combine with a base Tick to pay for one Action, only pay for their own Action Type when one is named, and may repeat an Action already performed."
   },
   {
+   "id": "extra_tick",
+   "name": "Extra Ticks",
+   "ref": "Rulebook 3.4.5",
+   "match": [
+    "extra tick",
+    "extra firing tick",
+    "额外指示物"
+   ],
+   "text": "An Extra Tick is not a spare Action Tick. It pays for one Short Action on its own, and two of them never combine into a Medium: that is the difference between an Extra Tick and an Action Tick bought some other way. It may only be used once every base Tick is spent or forfeited, it may repeat an Action already performed this Opportunity, and where the grant names an Action Type it pays only for that type. A grant usually carries a condition, and the condition is read at the moment the Tick is spent rather than when the Opportunity opens: the Tempest core grants its Tick only while the Mech is Stationary, so a Mech that has already moved has lost it, while the Glacier core grants its Tick only while the dial is set to Firing."
+  },
+  {
+   "id": "overload",
+   "name": "Overload",
+   "ref": "OCSP Overloading Pack, card 090",
+   "_match_note": "Deliberately English-only. The Chinese 超载 also appears in XTC's 超载注入, an unrelated Electronic Attack, and the Pack's own Action carries the English name so nothing is lost.",
+   "match": [
+    "overload"
+   ],
+   "text": "The OCSP Overloading Pack lets a Mech consume up to 2 Link during its Action Opportunity, gaining 1 Action Tick for each point spent. These are ordinary Action Ticks rather than Extra Ticks, which is the whole point of the Part: two of them pay for one Medium Action, something no pair of Extra Ticks can do, and they are spent before any Extra Tick in the usual order. The Link is gone either way, and a Mech reduced to 0 Link Shuts Down, so the Pack is a real trade rather than free tempo. This Part cannot be used as a Load."
+  },
+  {
+   "id": "extra_action_opportunity",
+   "name": "Extra Action Opportunity",
+   "ref": "Echoes Support Backpack, card 009",
+   "match": [
+    "extra action opportunity",
+    "额外行动机会"
+   ],
+   "text": "A whole second Action Opportunity, not an extra Tick: the Mech receiving it gets a fresh Maneuver Tick, two fresh Action Ticks, and any Extra Tick its Parts grant, so a Tempest core can grant its Firing Tick again inside it. The Echoes Support Backpack's Coordinate Action gives one to a chosen Ally Mech within Range 4, and that Mech pays the Link rather than the one Coordinating. The target must hold at least 2 Link to be chosen, so it can never be spent down to a Shutdown, and an Extra Opportunity may not itself grant another, so two Coordinating Mechs cannot trade Opportunities all round. Coordinate is a Tactic and Tactical is the last Timing, so in practice the extra Opportunity is taken after every Mech has acted."
+  },
+  {
+   "id": "on_hit",
+   "name": "On Hit",
+   "ref": "Rulebook 4.4.2 and 4.4.3",
+   "match": [
+    "on hit",
+    "命中时",
+    "命中時"
+   ],
+   "text": "A Hit and a Penetration are not the same thing, and an effect marked [On Hit] keys off the weaker of the two. A Hit is any damage the defender did not offset with Dodge. A Penetration is damage left unoffset by anything at all. Defense dice offset Light Hits only, so damage stopped by Defense still counts as a Hit even though nothing got through: the Action's [On Hit] rider still fires while the target takes no damage. Dodge is what prevents a Hit outright, which is why Mobility Stance turns off these riders and Defense Stance does not."
+  },
+  {
+   "id": "stance_condition",
+   "name": "Stance as a condition",
+   "ref": "Rulebook 4.1",
+   "match": [
+    "offensive stance",
+    "defensive stance",
+    "mobility stance",
+    "攻击态势",
+    "防御态势"
+   ],
+   "text": "An Action that names a Stance in brackets only applies that part of its text while the Mech is in that Stance, checked as the Action is performed rather than when the dial was set. The four Stances are set in the Command Phase and last until changed: Offensive converts hollow attack icons to solid, Defensive converts hollow defence icons to solid, Mobility adds Dodge dice and doubles the Maneuver, and Shutdown is the state a Mech falls into at 0 Link, where it may do nothing but Reboot. All four are listed in full under the Rules tab."
+  },
+  {
+   "id": "low_value_unit",
+   "name": "Low Value Units",
+   "ref": "Rulebook p.82",
+   "match": [
+    "low value",
+    "低价值"
+   ],
+   "text": "A Low Value Unit may never interact with a Task Item. Projectiles are Low Value by default, and so is any Drone printed at 0 points. The consequence people miss is that the restriction is one-directional. Taking a Control Zone or reaching a Terminal is interacting, so a Low Value Unit cannot do either, however long it stands there. Denying one is not interacting: the rule for blocking says only that there must be no enemy Units present, with no exclusion, so a lone Projectile or a 0 point Drone contests ground it could never claim. The Excavation Claim card has to print its own exclusion for Low Value Units, which would be redundant if presence alone were already ruled out."
+  },
+  {
    "id": "drone_action_speed",
    "name": "Automatic and Command Actions",
    "ref": "Rulebook 3.2 and 3.5",
