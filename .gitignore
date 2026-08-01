@@ -28,5 +28,9 @@ docs/review-*.md
 # only confuse a reader of the public repo into thinking data/ were unverified.
 docs/part-stat-audit.internal.json
 
+# Plan for turning the two fixed sides into generic squads. Internal planning,
+# and it describes an app that does not exist yet.
+docs/SQUAD_REWORK_PLAN.internal.md
+
 # Multiplayer design notes. Internal planning, not part of the released tool.
 MULTIPLAYER_DESIGN.md
