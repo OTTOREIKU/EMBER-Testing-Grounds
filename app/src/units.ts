@@ -430,6 +430,40 @@ export function tokenFactions(data: GameData, t: Token): { factions: string[]; u
 // allegiance and still cannot mix with RDL or UN.
 export const MERCENARY_FACTIONS = ['PD', 'COLLABORATION'];
 
+export interface SquadAllegiance {
+  faction: string | null;
+  mixed: string[];
+  mercenaries: string[];
+  unknown: number;
+}
+
+// A squad has no faction of its own. It takes one from the first unit that
+// carries an allegiance and holds it until that unit leaves, so an empty squad
+// accepts anything. Mercenaries never set it and units whose faction cannot be
+// determined never set it, which is why both are counted separately here rather
+// than folded into `mixed`.
+export function squadAllegiance(data: GameData, tokens: Token[]): SquadAllegiance {
+  const seen = new Set<string>();
+  let unknown = 0;
+  for (const t of tokens) {
+    const f = tokenFactions(data, t);
+    unknown += f.unknown;
+    f.factions.forEach((x) => seen.add(x));
+  }
+  const mercenaries = [...seen].filter((f) => MERCENARY_FACTIONS.includes(f));
+  const mixed = [...seen].filter((f) => !MERCENARY_FACTIONS.includes(f));
+  return { faction: mixed.length === 1 ? mixed[0] : null, mixed, mercenaries, unknown };
+}
+
+// Whether a card could join this squad without creating a second allegiance.
+// Mercenaries always may, and so does anything while the squad is still empty.
+export function cardFitsSquad(data: GameData, allegiance: SquadAllegiance, card: Card): boolean {
+  const f = data.factionOf(card);
+  if (!f || MERCENARY_FACTIONS.includes(f)) return true;
+  if (allegiance.mixed.length === 0) return true;
+  return allegiance.mixed.includes(f);
+}
+
 export function factionProblems(data: GameData, tokens: Token[]): FactionProblem[] {
   const out: FactionProblem[] = [];
   const squad = new Set<string>();

@@ -1,12 +1,15 @@
 import type { Card, MechLoadout } from './types';
-import { BASE_FACTIONS, cardName, FACTION_LABEL, isDiscardCard, mechPartUrl, SIDE_LABEL, tabImageUrl, type GameData } from './data';
+import { BASE_FACTIONS, cardName, FACTION_LABEL, isDiscardCard, mechPartUrl, SQUAD_ORDER, squadLabel, squadNumber, tabImageUrl, type GameData } from './data';
 import { inspectOnHover } from './inspector';
 import { alertDialog, confirmDialog, promptDialog } from './dialog';
 import { deleteMechPreset, loadMechPresets, saveMechPreset } from './presets';
+import { cardFitsSquad, type SquadAllegiance } from './units';
+import { factionColour } from './icons';
 
 const escAttr = (v: string): string => v.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 
 export interface RosterCallbacks {
+  squadAllegiance(side: 'blue' | 'red'): SquadAllegiance;
   onAddUnit(card: Card, side: 'blue' | 'red'): void;
   onAddMech(loadout: MechLoadout, side: 'blue' | 'red'): void;
   onSaveMech(uid: number, loadout: MechLoadout): void;
@@ -84,6 +87,42 @@ export class Roster {
     this.render();
   }
 
+  // Every "put this in a squad" button in the Add tab is built here so the
+  // number, the colour and the off-faction dimming cannot drift apart between
+  // the drone list, the projectile list, the tactics list and the mech builder.
+  // The label is always the squad number: renaming a squad must not move the
+  // buttons around under the player's cursor.
+  private squadButton(side: 'blue' | 'red', card: Card | null, suffix = ''): HTMLButtonElement {
+    const b = document.createElement('button');
+    b.className = 'add sq-add';
+    b.textContent = `${squadNumber(side)}${suffix}`;
+    const faction = this.cb.squadAllegiance(side).faction;
+    if (faction) {
+      b.classList.add('has-faction');
+      b.style.setProperty('--sq-tint', factionColour(faction));
+    }
+    const fits = card ? this.squadTakes(side, card) : { ok: true, why: '' };
+    if (!fits.ok) {
+      b.classList.add('off-faction');
+      b.title = fits.why;
+    } else {
+      b.title = `Add to ${squadLabel(side)}`;
+    }
+    return b;
+  }
+
+  private squadTakes(side: 'blue' | 'red', card: Card): { ok: boolean; why: string } {
+    const a = this.cb.squadAllegiance(side);
+    if (cardFitsSquad(this.data, a, card)) return { ok: true, why: '' };
+    const theirs = FACTION_LABEL[a.faction!] ?? a.faction;
+    const f = this.data.factionOf(card);
+    const mine = f ? (FACTION_LABEL[f] ?? f) : 'of no known faction';
+    return {
+      ok: false,
+      why: `${squadLabel(side)} is ${theirs}, and this is ${mine}. A squad may only hold one faction, plus mercenaries. Adding it anyway is allowed and will be flagged in the Squads tab.`,
+    };
+  }
+
   constructor(data: GameData, cb: RosterCallbacks) {
     this.data = data;
     this.cb = cb;
@@ -144,17 +183,12 @@ export class Roster {
       if (badge) name.querySelector('.un-badge')!.textContent = badge;
       name.title = 'Show card';
       name.addEventListener('click', () => this.cb.onPreview(c));
-      const addB = document.createElement('button');
-      addB.className = 'add blue';
-      addB.textContent = '+UN';
-      addB.title = 'Add for UN (blue)';
-      addB.addEventListener('click', () => this.cb.onAddUnit(c, 'blue'));
-      const addR = document.createElement('button');
-      addR.className = 'add red';
-      addR.textContent = '+RDL';
-      addR.title = 'Add for RDL (red)';
-      addR.addEventListener('click', () => this.cb.onAddUnit(c, 'red'));
-      row.append(name, addB, addR);
+      const adds = SQUAD_ORDER.map((side) => {
+        const b = this.squadButton(side, c);
+        b.addEventListener('click', () => this.cb.onAddUnit(c, side));
+        return b;
+      });
+      row.append(name, ...adds);
       return row;
     });
   }
@@ -186,25 +220,27 @@ export class Roster {
       const row = document.createElement('div');
       row.className = 'unit-row';
       row.dataset.tipCard = c.id;
+      // Laid out exactly like a drone row so the faction tags and the points
+      // form straight columns instead of trailing each name at its own indent.
       const name = document.createElement('button');
       name.className = 'unit-name';
-      name.innerHTML = `${cardName(c)}${c.faction ? ` <span class="tac-faction">${c.faction}</span>` : ''}`;
+      name.innerHTML = `<span class="un-name"></span><span class="tac-faction"></span><span class="un-pts">${c.score ?? 0}p</span>`;
+      name.querySelector('.un-name')!.textContent = cardName(c);
+      name.querySelector('.tac-faction')!.textContent = c.faction ? (FACTION_LABEL[c.faction] ?? c.faction) : '';
       name.title = 'Show this card';
       name.addEventListener('click', () => this.cb.onPreview(c));
-      const pts = document.createElement('span');
-      pts.className = 'tac-pts';
-      pts.textContent = `${c.score ?? 0}p`;
-      row.append(name, pts);
+      row.append(name);
 
       const held = this.cb.heldTactics?.();
-      for (const side of ['blue', 'red'] as const) {
+      for (const side of SQUAD_ORDER) {
         const n = held ? held[side].filter((x) => x === c.id).length : 0;
-        const b = document.createElement('button');
-        b.className = `tac-add side-${side}${n ? ' has' : ''}`;
-        b.textContent = n ? `${SIDE_LABEL[side]} ×${n}` : SIDE_LABEL[side];
-        b.title = n
-          ? `In the ${SIDE_LABEL[side]} squad. Click to add another, right-click to remove one.`
-          : `Add to the ${SIDE_LABEL[side]} squad`;
+        const b = this.squadButton(side, c, n ? ` ×${n}` : '');
+        if (n) b.classList.add('has');
+        if (!b.classList.contains('off-faction')) {
+          b.title = n
+            ? `In ${squadLabel(side)}. Click to add another, right-click to remove one.`
+            : `Add to ${squadLabel(side)}`;
+        }
         b.addEventListener('click', () => this.cb.onAddTactic?.(c, side));
         b.addEventListener('contextmenu', (ev) => {
           ev.preventDefault();
@@ -467,10 +503,13 @@ export class Roster {
       });
       btns.append(save, cancel);
     } else {
-      for (const side of ['blue', 'red'] as const) {
-        const b = document.createElement('button');
-        b.className = `add ${side}`;
-        b.textContent = `Add mech (${side === 'blue' ? 'UN' : 'RDL'})`;
+      for (const side of SQUAD_ORDER) {
+        // The built mech has a faction of its own, so the button can say whether
+        // it would clash before the player commits to the build.
+        const torso = this.mech.torso ? this.data.byId.get(this.mech.torso) : undefined;
+        const b = this.squadButton(side, torso ?? null);
+        b.classList.add('sq-wide');
+        b.textContent = `Add mech to ${squadLabel(side)}`;
         b.addEventListener('click', () => {
           void (async () => {
             if (!(await this.legalBuild('Add it anyway'))) return;

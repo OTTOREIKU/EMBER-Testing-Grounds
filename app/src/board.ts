@@ -1,7 +1,7 @@
 import type { TaskItem } from './tasks';
 import type { GameState, Marker, Side, SmokeScreen, StatusDef, TerrainPiece, Token, TokenShape } from './types';
 import { INTERCEPT_DEF, SHAPE_NOTE, statusCount, statusStacks } from './types';
-import { mechPartUrl, SIDE_LABEL, tabImageUrl } from './data';
+import { mechPartUrl, squadLabel, tabImageUrl } from './data';
 import { type BoardTheme, boardArtUrl, boardTheme, DEFAULT_BOARD } from './boards';
 import type { InspectInfo } from './inspector';
 
@@ -705,7 +705,7 @@ export class Board {
     const hurt = parts.filter(([, s]) => s === 'damaged').length;
     this.attachInspect(g, {
       title: t.label,
-      sub: `${SIDE_LABEL[t.side]} · ${t.kind}`,
+      sub: `${squadLabel(t.side)} · ${t.kind}`,
       lines: [
         `Stance ${t.stance.toUpperCase()}${t.link !== undefined ? ` · Link ⚡${t.link}` : ''}`,
         `Facing ${['North', 'East', 'South', 'West'][t.facing]}`,
@@ -739,7 +739,7 @@ export class Board {
         g.appendChild(el('path', { d, class: 'smoke-frame' }));
         this.attachInspect(g, {
           title: 'Smoke Screen',
-          sub: `${SIDE_LABEL[s.side]} · Grid ${String.fromCharCode(65 + s.col)}${s.row + 1}`,
+          sub: `${squadLabel(s.side)} · Grid ${String.fromCharCode(65 + s.col)}${s.row + 1}`,
           lines: [
             'Line of sight cannot be established through this Grid for Firing Actions, and a unit standing in it can neither shoot out nor be shot at (rulebook 4.16).',
             'Melee and Projectile Actions ignore Smoke Screens completely.',

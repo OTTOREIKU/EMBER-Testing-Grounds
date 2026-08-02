@@ -1,12 +1,12 @@
 import type { GameData } from './data';
-import { actionIconUrl, cardName, FACTION_LABEL, mechPartUrl, missionImageUrl, secondaryImageUrl, SIDE_LABEL, tabImageUrl } from './data';
+import { actionIconUrl, cardName, FACTION_LABEL, mechPartUrl, missionImageUrl, secondaryImageUrl, setSquadNames, squadLabel, squadName, tabImageUrl } from './data';
 import { MECH_LAYER_ORDER } from './board';
 import { inspectOnHover, linkMechanics, type InspectInfo } from './inspector';
 import type { GameState, PartSlot, PartState, Side, Stance, Timing, TimingDef, Token } from './types';
 import { addStatus, SCALES, SHAPE_NOTE, statusCount, statusesFor, TIMINGS } from './types';
 import { normaliseTasks } from './tasks';
 import { normaliseSetup } from './setup';
-import { defaultUnitLabel, factionProblems, initiativeFor, MERCENARY_FACTIONS, pilotCard, SLOT_LABEL, tidyUnitLabel, tokenCards, tokenFactions } from './units';
+import { defaultUnitLabel, factionProblems, initiativeFor, pilotCard, squadAllegiance, SLOT_LABEL, tidyUnitLabel, tokenCards, tokenFactions } from './units';
 import { alertDialog, promptDialog } from './dialog';
 import { factionColour, ICON_BOLT, ICON_EDIT } from './icons';
 
@@ -63,6 +63,26 @@ export class SquadTracker {
   private selectedUid: number | null = null;
   private lastNameClick: { uid: number; at: number } | null = null;
   private renaming = false;
+
+  // Clearing the box restores the default, so a squad can always get its number
+  // back without the player having to guess what it was called.
+  private async renameSquad(side: Side): Promise<void> {
+    const s = this.state;
+    if (!s) return;
+    const name = await promptDialog({
+      title: `Rename ${squadLabel(side)}`,
+      body: 'Leave it empty to go back to the default name.',
+      value: s.sideNames?.[side] ?? '',
+      placeholder: squadName(side),
+    });
+    if (name === null) return;
+    const next = { ...(s.sideNames ?? {}) };
+    if (name.trim()) next[side] = name.trim();
+    else delete next[side];
+    s.sideNames = next;
+    setSquadNames(next);
+    this.cb.onChanged();
+  }
 
   constructor(data: GameData, root: HTMLElement, cb: SquadCallbacks) {
     this.data = data;
@@ -145,20 +165,21 @@ export class SquadTracker {
       const squadFactions = [...new Set(tokens.flatMap((t) => tokenFactions(this.data, t).factions))];
       // Mercenaries alongside one allegiance is a legal squad, so the chip only
       // turns red when two real allegiances are mixed.
-      const allegiance = squadFactions.filter((f) => !MERCENARY_FACTIONS.includes(f));
+      const alg = squadAllegiance(this.data, tokens);
       const facChip =
         squadFactions.length === 1
           ? `<span class="fac-chip">${FACTION_LABEL[squadFactions[0]] ?? squadFactions[0]}</span>`
           : squadFactions.length > 1
-            ? `<span class="fac-chip${allegiance.length > 1 ? ' bad' : ''}">${squadFactions.map((f) => FACTION_LABEL[f] ?? f).join(' + ')}</span>`
-            : '';
+            ? `<span class="fac-chip${alg.mixed.length > 1 ? ' bad' : ''}">${squadFactions.map((f) => FACTION_LABEL[f] ?? f).join(' + ')}</span>`
+            : '<span class="fac-chip generic" title="No faction yet. The first unit with an allegiance sets it, and mercenaries never do.">Generic</span>';
       const waiting = tokens.filter((t) => t.deployed === false).length;
-      const teamName = this.state.sideNames?.[side];
-      h.innerHTML = `${teamName ? esc(teamName) : `${SIDE_LABEL[side]} squad`}${facChip} <span class="pts${over ? ' over' : ''}">${pts}<small>/${sc.points}${sc.openEnded ? '+' : ''}</small>p · ${tokens.length} unit${tokens.length === 1 ? '' : 's'}${
+      sec.style.setProperty('--squad-tint', factionColour(alg.faction));
+      h.innerHTML = `<button class="sq-name" title="Rename this squad">${esc(squadLabel(side))}</button>${facChip} <span class="pts${over ? ' over' : ''}">${pts}<small>/${sc.points}${sc.openEnded ? '+' : ''}</small>p · ${tokens.length} unit${tokens.length === 1 ? '' : 's'}${
         waiting ? ` · <b class="sq-waiting">${waiting} to deploy</b>` : ''
       }</span>`;
+      h.querySelector('.sq-name')!.addEventListener('click', () => void this.renameSquad(side));
       inspectOnHover(h, {
-        title: `${SIDE_LABEL[side]} squad`,
+        title: squadLabel(side),
         sub: `${pts} points of ${sc.points}${sc.openEnded ? ' or more' : ''} · ${sc.name} battle`,
         lines: over
           ? [
@@ -348,9 +369,9 @@ export class SquadTracker {
         : tasks.secTarget[side] !== undefined
           ? `Designated: ${s.tokens.find((t) => t.uid === tasks.secTarget[side])?.label ?? 'a unit'}`
           : '';
-      secRow.appendChild(chip(`${SIDE_LABEL[side]} Secondary`, card.name, () => {
+      secRow.appendChild(chip(`${squadLabel(side)} Secondary`, card.name, () => {
         void alertDialog({
-          title: `${SIDE_LABEL[side]}: ${card.name}`,
+          title: `${squadLabel(side)}: ${card.name}`,
           image: secondaryImageUrl(card.id),
           body: card.scoring ?? '',
           list: [card.setup ?? '', named].filter(Boolean),
@@ -431,7 +452,7 @@ export class SquadTracker {
     const parts = Object.entries(t.partStates);
     inspectOnHover(name, {
       title: t.label,
-      sub: `${SIDE_LABEL[t.side]} · ${t.kind} · ${this.tokenPoints(t)} pts`,
+      sub: `${squadLabel(t.side)} · ${t.kind} · ${this.tokenPoints(t)} pts`,
       lines: [
         `Stance ${t.stance.toUpperCase()}${t.link !== undefined ? ` · Link ⚡${t.link}` : ''}`,
         `Grid ${String.fromCharCode(65 + Math.floor(t.col / 3))}${Math.floor(t.row / 3) + 1} · facing ${['North', 'East', 'South', 'West'][t.facing]}`,

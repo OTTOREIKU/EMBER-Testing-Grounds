@@ -1,7 +1,7 @@
 import type { CardAction, ExtraTick, GameState, Opportunity, ScriptState, Side, Stance, Timing, Token } from './types';
 import { ageTokens, newOpportunity, normaliseScript, statusCount, STATUSES, TIMINGS } from './types';
 import type { GameData, MissionCard } from './data';
-import { cardName, SIDE_LABEL } from './data';
+import { cardName, squadLabel } from './data';
 import { bindTips, linkMechanics } from './inspector';
 import { choiceDialog } from './dialog';
 import { PHASES, PHASE_INFO } from './tracker';
@@ -632,7 +632,7 @@ export class PlayGuide {
         const when = card.actions?.[0]?.name?.en ?? '';
         if (!tacticFitsPhase(when, phase)) continue;
         rows.push(`<div class="pg-tac-row${spent.length ? ' spent' : ''}">
-          <span class="side-${side}">${SIDE_LABEL[side]}</span>
+          <span class="side-${side}">${squadLabel(side)}</span>
           <b>${esc(cardName(card))}</b>
           <small>${esc(when)}</small>
           <button class="pg-tac-play" data-tactic="${side}:${id}"${spent.length ? ' disabled' : ''}>${
@@ -676,7 +676,7 @@ export class PlayGuide {
 
   private endHtml(s: GameState): string {
     const sc = this.script(s);
-    const fp = `<p class="pg-turn">First player: <b class="side-${s.round.firstPlayer}">${SIDE_LABEL[s.round.firstPlayer]}</b></p>`;
+    const fp = `<p class="pg-turn">First player: <b class="side-${s.round.firstPlayer}">${squadLabel(s.round.firstPlayer)}</b></p>`;
     const doomed = s.tokens.filter(
       (t) => t.kind === 'mech' && Object.values(t.partStates).filter((p) => p !== 'destroyed').length <= 2,
     );
@@ -778,12 +778,12 @@ export class PlayGuide {
         const last = s.round.n >= (s.roundLimit ?? 5);
         const preview = this.previewScore(s, tasks, mission, last);
         const total = `<p class="pg-vp"><b>Victory Points</b>
-          <span class="side-blue">${SIDE_LABEL.blue} ${tasks.vp.blue}</span> ·
-          <span class="side-red">${SIDE_LABEL.red} ${tasks.vp.red}</span></p>`;
+          <span class="side-blue">${squadLabel('blue')} ${tasks.vp.blue}</span> ·
+          <span class="side-red">${squadLabel('red')} ${tasks.vp.red}</span></p>`;
         const secLine = (['blue', 'red'] as Side[])
           .map((side) => {
             const card = tasks.secondary[side] ? this.data.secondary.find((c) => c.id === tasks.secondary[side]) : undefined;
-            return card ? `<span class="side-${side}">${SIDE_LABEL[side]}: ${esc(card.name)}</span>` : '';
+            return card ? `<span class="side-${side}">${squadLabel(side)}: ${esc(card.name)}</span>` : '';
           })
           .filter(Boolean)
           .join(' · ');
@@ -793,7 +793,7 @@ export class PlayGuide {
           secLine ? `<br><small>${secLine}</small>` : ''}`;
         const lines = preview.lines.length
           ? `<ul class="pg-score">${preview.lines
-              .map((l) => `<li><b class="side-${l.side}">${SIDE_LABEL[l.side]}</b> +${l.vp} VP, ${esc(l.why)}</li>`)
+              .map((l) => `<li><b class="side-${l.side}">${squadLabel(l.side)}</b> +${l.vp} VP, ${esc(l.why)}</li>`)
               .join('')}</ul>`
           : mission
             ? `<p class="dim">Nothing scores this round${mission.cadence === 'at-end' && !last ? `, because this Task only pays out at the end of Round ${s.roundLimit ?? 5}` : ''}.</p>`
@@ -804,7 +804,7 @@ export class PlayGuide {
           'Tasks and victory points',
           `${body}${total}${lines}`,
           preview.blue || preview.red
-            ? `<div class="pg-units"><button class="pg-unit" data-score="1">Award ${preview.blue ? `${SIDE_LABEL.blue} +${preview.blue}` : ''}${preview.blue && preview.red ? ' and ' : ''}${preview.red ? `${SIDE_LABEL.red} +${preview.red}` : ''}</button>
+            ? `<div class="pg-units"><button class="pg-unit" data-score="1">Award ${preview.blue ? `${squadLabel('blue')} +${preview.blue}` : ''}${preview.blue && preview.red ? ' and ' : ''}${preview.red ? `${squadLabel('red')} +${preview.red}` : ''}</button>
                 <button class="pg-pass" data-end-step="tasks">Skip</button></div>`
             : '<div class="pg-units"><button class="pg-pass" data-end-step="tasks">Nothing to score</button></div>',
         );
@@ -817,14 +817,14 @@ export class PlayGuide {
         const t = normaliseTasks(s.tasks);
         const verdict = t.vp.blue === t.vp.red
           ? `${t.vp.blue} Victory Points each, so the tiebreak counts Mech Parts and Drones left on the board (5.2.4).`
-          : `${SIDE_LABEL[t.vp.blue > t.vp.red ? 'blue' : 'red']} leads ${Math.max(t.vp.blue, t.vp.red)} to ${Math.min(t.vp.blue, t.vp.red)}.`;
+          : `${squadLabel(t.vp.blue > t.vp.red ? 'blue' : 'red')} leads ${Math.max(t.vp.blue, t.vp.red)} to ${Math.min(t.vp.blue, t.vp.red)}.`;
         return step(
           'round',
           5,
           final ? 'End of the game' : 'End of round',
           final
             ? `This was the last scheduled round, so the game ends and Victory Points are totalled (3.7.4). ${verdict}`
-            : `The First Player Token flips, so ${SIDE_LABEL[s.round.firstPlayer === 'blue' ? 'red' : 'blue']} goes first next round.`,
+            : `The First Player Token flips, so ${squadLabel(s.round.firstPlayer === 'blue' ? 'red' : 'blue')} goes first next round.`,
           final
             ? `<div class="pg-units"><button class="pg-unit" data-game-over="1">End the game and settle the result</button></div>
                <p class="pg-intercept-note">Or press ${esc(`Extra round ${s.round.n + 1}`)} below to keep playing past the printed limit.</p>`
@@ -924,7 +924,7 @@ export class PlayGuide {
       const r = su.rolls[side];
       return `<div class="pg-roll-row">
         <button class="pg-unit${r.length && !tie ? ' warn' : ''}" data-roll="${side}">${
-          tie ? `${SIDE_LABEL[side]} roll again` : `${SIDE_LABEL[side]} roll`
+          tie ? `${squadLabel(side)} roll again` : `${squadLabel(side)} roll`
         }</button>
         <span class="pg-roll-res">${r.length ? `${rollTotal(r)} Hit${rollTotal(r) === 1 ? '' : 's'}` : 'not rolled'}</span>
       </div>`;
@@ -934,7 +934,7 @@ export class PlayGuide {
       ${
         both
           ? winner
-            ? `${phaseDone(`${SIDE_LABEL[winner]} rolls higher and is First Player`)}<div class="pg-units"><button class="pg-unit" data-roll-accept="1">Continue</button></div>`
+            ? `${phaseDone(`${squadLabel(winner)} rolls higher and is First Player`)}<div class="pg-units"><button class="pg-unit" data-roll-accept="1">Continue</button></div>`
             : `<p class="pg-warn">A tie on ${rollTotal(su.rolls.blue)}. The rulebook gives no tie procedure, so press both roll buttons again.</p>`
           : ''
       }`;
@@ -945,7 +945,7 @@ export class PlayGuide {
   // DEPLOYMENT that waits for the tasks, not the other way round.
   private edgeHtml(s: GameState, su: SetupState): string {
     const fp = s.round.firstPlayer;
-    return `<p class="pg-active">Now: <b class="side-${fp}">${SIDE_LABEL[fp]}</b>
+    return `<p class="pg-active">Now: <b class="side-${fp}">${squadLabel(fp)}</b>
         <small>As First Player, choose which edge of the board to play from.</small></p>
       <div class="pg-units">
         <button class="pg-unit" data-edge="white">Take the White side</button>
@@ -963,15 +963,15 @@ export class PlayGuide {
     const row = (side: Side) => {
       const card = tasks.secondary[side] ? this.data.secondary.find((c) => c.id === tasks.secondary[side]) : undefined;
       return `<button class="pg-unit${card ? '' : ' warn'}" data-secondary="${side}">
-        ${SIDE_LABEL[side]}: ${card ? esc(card.name) : 'pick a Secondary Task'}</button>`;
+        ${squadLabel(side)}: ${card ? esc(card.name) : 'pick a Secondary Task'}</button>`;
     };
     return `<p class="pg-active" style="margin-top:12px">Secondary Tasks
-        <small>One each, open information, ${SIDE_LABEL[order[0]]} first.</small></p>
+        <small>One each, open information, ${squadLabel(order[0])} first.</small></p>
       <div class="pg-units">${row(order[0])}${row(order[1])}</div>`;
   }
 
   private deployHtml(s: GameState, su: SetupState): string {
-    const fp = `<p class="pg-turn">First player: <b class="side-${s.round.firstPlayer}">${SIDE_LABEL[s.round.firstPlayer]}</b></p>`;
+    const fp = `<p class="pg-turn">First player: <b class="side-${s.round.firstPlayer}">${squadLabel(s.round.firstPlayer)}</b></p>`;
     const tasks = normaliseTasks(s.tasks);
     const secRow = !tasks.secondary.blue || !tasks.secondary.red ? this.secondaryHtml(s) : '';
     if (deploymentComplete(s)) {
@@ -1026,9 +1026,9 @@ export class PlayGuide {
 
     return `${fp}
       ${secRow}
-      <p class="pg-active">Now: <b class="side-${turn}">${SIDE_LABEL[turn]}</b>
+      <p class="pg-active">Now: <b class="side-${turn}">${squadLabel(turn)}</b>
         <small>place one unit in the ${su.edge[turn]} Deployment Zone · ${waiting.length} left${
-          otherLeft ? '' : `, then ${SIDE_LABEL[turn]} places the rest`
+          otherLeft ? '' : `, then ${squadLabel(turn)} places the rest`
         }</small></p>
       <div class="pg-acts">${waiting
         .map(
@@ -1045,7 +1045,7 @@ export class PlayGuide {
 
   private planningHtml(s: GameState): string {
     const sc = this.script(s);
-    const fp = `<p class="pg-turn">First player: <b class="side-${s.round.firstPlayer}">${SIDE_LABEL[s.round.firstPlayer]}</b></p>`;
+    const fp = `<p class="pg-turn">First player: <b class="side-${s.round.firstPlayer}">${squadLabel(s.round.firstPlayer)}</b></p>`;
     const mechs = s.tokens.filter((t) => t.kind === 'mech' && alive(t));
     if (!mechs.length) return `${fp}<p class="pg-done-note">No Mechs on the board, so there are no dials to set.</p>`;
     const unset = mechs.filter((t) => !t.timing);
@@ -1139,7 +1139,7 @@ export class PlayGuide {
   }
 
   private actionHtml(s: GameState): string {
-    const fp = `<p class="pg-turn">First player: <b class="side-${s.round.firstPlayer}">${SIDE_LABEL[s.round.firstPlayer]}</b></p>`;
+    const fp = `<p class="pg-turn">First player: <b class="side-${s.round.firstPlayer}">${squadLabel(s.round.firstPlayer)}</b></p>`;
     const order = activationOrder(s, this.init);
     if (!order.length) {
       return `${fp}<p class="pg-done-note">No Mech has a Timing Dial set, so nobody activates. Set the dials in the Planning Phase, or step past this phase.</p>`;
@@ -1214,7 +1214,7 @@ export class PlayGuide {
       : `<div class="pg-acts">${rows || '<p class="pg-done-note">This Mech has no Action that costs Ticks.</p>'}</div>`;
 
     return `${fp}
-      <p class="pg-active">Now: <b class="side-${t.side}">${SIDE_LABEL[t.side]}</b>
+      <p class="pg-active">Now: <b class="side-${t.side}">${squadLabel(t.side)}</b>
         <small>${esc(t.label)} · ${timing?.name ?? 'no dial'}${init === undefined ? '' : ` · Initiative ${init}`} · ${onExtra ? 'Extra Action Opportunity' : `${at + 1} of ${order.length}`}</small></p>
       ${pool}
       ${this.warn ? `<p class="pg-warn">${esc(this.warn)}</p>` : ''}
@@ -1589,12 +1589,12 @@ export class PlayGuide {
 
   private loopHtml(s: GameState, phase: string): string {
     const sc = this.script(s);
-    const fp = `<p class="pg-turn">First player: <b class="side-${s.round.firstPlayer}">${SIDE_LABEL[s.round.firstPlayer]}</b></p>`;
+    const fp = `<p class="pg-turn">First player: <b class="side-${s.round.firstPlayer}">${squadLabel(s.round.firstPlayer)}</b></p>`;
     if (!isLoopPhase(phase)) return fp;
 
     const tokens =
       phase === 'Command'
-        ? `<p class="pg-tokens">Command tokens: <b class="side-blue">${SIDE_LABEL.blue} ${s.commandTokens.blue}</b> · <b class="side-red">${SIDE_LABEL.red} ${s.commandTokens.red}</b></p>`
+        ? `<p class="pg-tokens">Command tokens: <b class="side-blue">${squadLabel('blue')} ${s.commandTokens.blue}</b> · <b class="side-red">${squadLabel('red')} ${s.commandTokens.red}</b></p>`
         : '';
 
     if (loopComplete(s, phase)) {
@@ -1630,7 +1630,7 @@ export class PlayGuide {
             .join('')}</div>`
         : '';
       return `${fp}${tokens}
-        <p class="pg-active">Now: <b class="side-${turn}">${SIDE_LABEL[turn]}</b>
+        <p class="pg-active">Now: <b class="side-${turn}">${squadLabel(turn)}</b>
           <small>${chosen.label}: ${what}</small></p>
         ${this.warn ? `<p class="pg-warn">${esc(this.warn)}</p>` : ''}
         ${list}
@@ -1655,7 +1655,7 @@ export class PlayGuide {
     const verb = phase === 'Command' ? 'command' : 'activate';
     const noun = phase === 'Delay' ? 'projectile' : 'drone';
     return `${fp}${tokens}
-      <p class="pg-active">Now: <b class="side-${turn}">${SIDE_LABEL[turn]}</b>
+      <p class="pg-active">Now: <b class="side-${turn}">${squadLabel(turn)}</b>
         <small>pick a ${noun} to ${verb}</small></p>
       <div class="pg-units">
         ${units

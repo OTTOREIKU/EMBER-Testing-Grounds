@@ -1,6 +1,32 @@
 import type { Card, CardAction, ExtraTickCheck, LangText, Side, TerrainData } from './types';
 
-export const SIDE_LABEL: Record<Side, string> = { blue: 'UN', red: 'RDL' };
+// A squad is numbered, not factioned. The internal id stays a colour word so
+// saved games and scenarios keep loading, but nothing displays it: the number
+// below is what a player sees, and the colour comes from the squad's faction.
+export const SQUAD_ORDER: Side[] = ['blue', 'red'];
+
+export function squadNumber(side: Side): number {
+  const at = SQUAD_ORDER.indexOf(side);
+  return at < 0 ? 1 : at + 1;
+}
+
+export function squadName(side: Side, custom?: string): string {
+  return custom?.trim() || `Squad ${squadNumber(side)}`;
+}
+
+// Display only. The names live in GameState, but the board, the roster and the
+// unit panel all render squad labels without a state reference, and threading
+// one through fifty call sites to print a word is not worth it. main.ts
+// refreshes this whenever the state changes.
+let currentSquadNames: Partial<Record<Side, string>> = {};
+
+export function setSquadNames(names: Partial<Record<Side, string>> | undefined): void {
+  currentSquadNames = names ?? {};
+}
+
+export function squadLabel(side: Side): string {
+  return squadName(side, currentSquadNames[side]);
+}
 
 export interface BoxDef {
   key: string;

@@ -5,10 +5,11 @@ import { alertDialog, choiceDialog, confirmDialog, promptDialog } from './dialog
 import { applyKill, gameResult, isLowValue, newTaskState, normaliseTasks, type TaskItem, type TaskState } from './tasks';
 import { DiceTray } from './dice';
 import { importSquadFile } from './importer';
+import { factionColour } from './icons';
 import { Inventory } from './inventory';
 import { BOARD_THEMES, boardTheme } from './boards';
 import { bindTips, inspectOnHover, isInspectPinned, showInspect, unpinInspect } from './inspector';
-import { cardName, dataUrl, loadData, missionImageUrl, parseGridRef, rulesLines, secondaryImageUrl, type SecondaryTask, SIDE_LABEL } from './data';
+import { cardName, dataUrl, loadData, missionImageUrl, parseGridRef, rulesLines, secondaryImageUrl, type SecondaryTask, setSquadNames, SQUAD_ORDER, squadLabel } from './data';
 import {
   deleteCustomMap,
   emptyCustomMap,
@@ -37,7 +38,7 @@ import { PHASES, RoundTracker } from './tracker';
 import { PlayGuide } from './playguide';
 import type { Card, CardAction, DiceData, Facing, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, StatusDef, TerrainPiece, Token } from './types';
 import { addStatus, SCALES, statusCount, statusesFor, STATUSES } from './types';
-import { chargeableSlots, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, type Resupply, resupplyOf, SLOT_LABEL, interceptLeft, interceptReach, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf } from './units';
+import { chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, type Resupply, resupplyOf, SLOT_LABEL, interceptLeft, interceptReach, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf } from './units';
 import { registerOffline } from './offline';
 import { battlefieldLocked, countHits, firstPlayerFrom, newSetup, normaliseSetup, type SetupState } from './setup';
 
@@ -804,7 +805,7 @@ async function init() {
     if (state.mission || tasks.vp.blue || tasks.vp.red) {
       const res = gameResult(tasks, state.tokens);
       await alertDialog({
-        title: res.winner ? `${SIDE_LABEL[res.winner]} wins` : 'A draw',
+        title: res.winner ? `${squadLabel(res.winner)} wins` : 'A draw',
         body: `${res.why}.`,
       });
     }
@@ -1153,6 +1154,7 @@ async function init() {
 
   const roster = new Roster(data, {
     now: () => Date.now(),
+    squadAllegiance: (side) => squadAllegiance(data, state.tokens.filter((t) => t.side === side)),
     cardFilter: (card) => {
       if (!inventory.passes(card)) return false;
       const left = stockLeft(card);
@@ -1978,12 +1980,12 @@ async function init() {
     host.innerHTML = `<div class="smoke-prompt-head"><b>Smoke dissipation</b>
         <span class="dim">End Phase of round ${state.round.n}</span></div>
       <p class="dim">Every screen that is not Connected comes off, and each Connected group loses one.
-        Players alternate, ${escapeHtml(SIDE_LABEL[order[0]])} first. Groups are counted once now, so a
+        Players alternate, ${escapeHtml(squadLabel(order[0]))} first. Groups are counted once now, so a
         removal that splits a group owes nothing more until next round.</p>
       <ul class="smoke-owed">${owed
         .map(
           (d) =>
-            `<li><b>${escapeHtml(SIDE_LABEL[d.side])}</b>: ${
+            `<li><b>${escapeHtml(squadLabel(d.side))}</b>: ${
               [
                 d.isolated.length ? `${d.isolated.length} isolated screen${d.isolated.length === 1 ? '' : 's'} removed` : '',
                 d.groups.length ? `1 from each of ${d.groups.length} connected group${d.groups.length === 1 ? '' : 's'}` : '',
@@ -2040,7 +2042,7 @@ async function init() {
     }
     host.hidden = false;
     host.innerHTML = `<div class="smoke-prompt-head"><b>Smoke dissipation</b>
-        <span class="dim">${escapeHtml(SIDE_LABEL[next.side])} chooses · ${smokeChoices!.length} group${smokeChoices!.length === 1 ? '' : 's'} left</span></div>
+        <span class="dim">${escapeHtml(squadLabel(next.side))} chooses · ${smokeChoices!.length} group${smokeChoices!.length === 1 ? '' : 's'} left</span></div>
       <p class="dim">${isolated ? `${isolated} isolated screen${isolated === 1 ? '' : 's'} came off already. ` : ''}Click one
         highlighted Smoke Screen to take it off this Connected group. Splitting the group costs nothing further this round.</p>
       <button id="smoke-auto" class="ah-cancel">Pick for me</button>`;
@@ -2904,7 +2906,20 @@ async function init() {
     onChanged();
   }
 
+  // A squad shows its faction everywhere it appears: board tokens, move paths,
+  // squad cards, task markers. Two custom properties carry the tint so the CSS
+  // stays declarative and nothing has to be repainted element by element.
+  function syncSquadTints(): void {
+    const root = document.documentElement;
+    for (const side of SQUAD_ORDER) {
+      const f = squadAllegiance(data, state.tokens.filter((t) => t.side === side)).faction;
+      root.style.setProperty(`--sq-${side}`, factionColour(f));
+    }
+  }
+
   function onChanged(): void {
+    setSquadNames(state.sideNames);
+    syncSquadTints();
     save();
     board.renderZones(overlayZones(), overlayDeployment(), claimedZones());
     board.renderTokens(state);
@@ -3402,7 +3417,7 @@ async function init() {
     const mission = state.mission ? data.missions.cards.find((m) => m.id === state.mission) : undefined;
     const hasZones = (mission?.zones ?? []).length > 0;
     const id = await choiceDialog({
-      title: `${SIDE_LABEL[side]}: choose a Secondary Task`,
+      title: `${squadLabel(side)}: choose a Secondary Task`,
       body: 'Both players pick one and show it to the other, so this is open information.',
       stacked: true,
       choices: open.map((c) => ({
@@ -3452,7 +3467,7 @@ async function init() {
     if (!mechs.length) {
       await alertDialog({
         title: 'Nothing to designate',
-        body: `${card.name} needs a Mech named, and ${SIDE_LABEL[owner]} has none on the board yet. Add the squads first, then pick the Task again.`,
+        body: `${card.name} needs a Mech named, and ${squadLabel(owner)} has none on the board yet. Add the squads first, then pick the Task again.`,
       });
       return;
     }
@@ -3474,7 +3489,7 @@ async function init() {
       const mechs = state.tokens.filter((t) => t.kind === 'mech' && t.side === side);
       if (!mechs.length) continue;
       const uid = await choiceDialog({
-        title: `${SIDE_LABEL[side]}: designate your Commander`,
+        title: `${squadLabel(side)}: designate your Commander`,
         body: 'Destroying the enemy Commander scores 10 Victory Points and ends the game immediately.',
         choices: mechs.map((t) => ({ id: String(t.uid), label: t.label })),
       });
@@ -3984,7 +3999,7 @@ async function init() {
       if (problems.length) {
         void alertDialog({
           title: 'That squad breaks the faction rule',
-          body: `${SIDE_LABEL[side]} was imported, but rulebook 5.1 says a squad may only contain units from a single faction, and a mech may only use parts from one faction.`,
+          body: `${squadLabel(side)} was imported, but rulebook 5.1 says a squad may only contain units from a single faction, and a mech may only use parts from one faction.`,
           list: problems.map((p) => p.detail),
           closeLabel: 'Got it',
         });
@@ -3996,7 +4011,7 @@ async function init() {
       if (!sc.openEnded && sidePts > sc.points) {
         void alertDialog({
           title: 'That squad is over the points limit',
-          body: `${SIDE_LABEL[side]} now totals ${sidePts} points, which is ${sidePts - sc.points} over the ${sc.name} limit of ${sc.points}.`,
+          body: `${squadLabel(side)} now totals ${sidePts} points, which is ${sidePts - sc.points} over the ${sc.name} limit of ${sc.points}.`,
           list: [
             'The squad was still imported, so you can play it if you both agree.',
             'To play it legally, remove units or switch the battle scale in the round bar above the board.',
@@ -4084,6 +4099,8 @@ async function init() {
     }
   });
 
+  setSquadNames(state.sideNames);
+  syncSquadTints();
   panel.clear();
   renderCombatIdle();
   renderUnitLog();

@@ -1,4 +1,4 @@
-import { SIDE_LABEL } from './data';
+import { squadLabel } from './data';
 import { bindTips, inspectOnHover, pinInspect, type InspectInfo } from './inspector';
 import { SCALES, type BattleScale, type GameState, type Side } from './types';
 import { normaliseSetup } from './setup';
@@ -182,12 +182,12 @@ export class RoundTracker {
       <button id="rt-next"${this.blocked() ? ` disabled title="${this.blocked()}"` : ''}>${
         s.round.phase === PHASES.length - 1 ? (s.round.n >= limit ? `Extra round ${s.round.n + 1} ▸` : `End round ${s.round.n} ▸`) : 'Next phase ▸'
       }</button>
-      <span class="rt-first side-${s.round.firstPlayer}">1st: ${SIDE_LABEL[s.round.firstPlayer]}</span>
+      <span class="rt-first side-${s.round.firstPlayer}">1st: ${squadLabel(s.round.firstPlayer)}</span>
       <span class="rt-cmd">
         CMD
         ${(['blue', 'red'] as Side[])
           .map(
-            (side) => `<span class="cmd-${side}" title="${SIDE_LABEL[side]} Command Tokens">${SIDE_LABEL[side]} <button data-cmd="${side}" data-d="-1">−</button><b>${s.commandTokens[side]}</b><button data-cmd="${side}" data-d="1">+</button></span>`,
+            (side) => `<span class="cmd-${side}" title="${squadLabel(side)} Command Tokens">${squadLabel(side)} <button data-cmd="${side}" data-d="-1">−</button><b>${s.commandTokens[side]}</b><button data-cmd="${side}" data-d="1">+</button></span>`,
           )
           .join('')}
       </span>
@@ -254,11 +254,11 @@ export class RoundTracker {
 
     const other: Side = s.round.firstPlayer === 'blue' ? 'red' : 'blue';
     inspectOnHover(this.root.querySelector<HTMLElement>('.rt-first')!, {
-      title: `First Player: ${SIDE_LABEL[s.round.firstPlayer]}`,
+      title: `First Player: ${squadLabel(s.round.firstPlayer)}`,
       sub: 'Who goes first, not who owns the phase',
       lines: [
         'A phase is not one side’s turn. Both sides act inside every phase, and the First Player simply goes first each time.',
-        `So in this round's Command Phase, ${SIDE_LABEL[s.round.firstPlayer]} issues a Command, then ${SIDE_LABEL[other]} does, and you keep alternating until nobody has tokens left to spend.`,
+        `So in this round's Command Phase, ${squadLabel(s.round.firstPlayer)} issues a Command, then ${squadLabel(other)} does, and you keep alternating until nobody has tokens left to spend.`,
         'The Action Phase is the exception to strict alternation: Mechs there activate in Timing order, and the First Player only decides ties between Mechs sharing a timing.',
         'It flips at the end of every round, so the side that moved second last round moves first this one.',
       ],

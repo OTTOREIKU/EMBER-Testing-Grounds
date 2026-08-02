@@ -1,5 +1,5 @@
 import type { Card, CardAction, Token } from './types';
-import { cardImageUrl, cardName, mechPartUrl, rulesLines, SIDE_LABEL, tabImageUrl, type GameData } from './data';
+import { cardImageUrl, cardName, mechPartUrl, rulesLines, squadLabel, tabImageUrl, type GameData } from './data';
 import { inspectOnHover } from './inspector';
 import { ICON_BOLT } from './icons';
 import { expandGlyphs } from './glyphs';
@@ -128,7 +128,7 @@ export class Panel {
     head.innerHTML = `<b class="th-name"></b><span class="th-meta"></span>`;
     head.querySelector('.th-name')!.textContent = t.label;
     head.querySelector('.th-meta')!.textContent =
-      `${SIDE_LABEL[t.side]}, ${t.stance.toUpperCase()}, ${['facing N', 'facing E', 'facing S', 'facing W'][t.facing]}`;
+      `${squadLabel(t.side)}, ${t.stance.toUpperCase()}, ${['facing N', 'facing E', 'facing S', 'facing W'][t.facing]}`;
     this.body.appendChild(head);
 
     // A Tactics Card that leaves something owed says so here, because the effect

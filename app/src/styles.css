@@ -33,6 +33,8 @@
   --pd-lt: rgba(179, 157, 219, 0.16);
   --collab: #eef1f5;
   --collab-lt: rgba(238, 241, 245, 0.16);
+  --sq-blue: var(--accent);
+  --sq-red: var(--accent);
   --blue: #65a2d8;
   --red: #ea6d76;
 
@@ -418,8 +420,8 @@ main { display: flex; flex: 1; min-height: 0; }
 }
 .move-path-dot { fill: var(--accent); opacity: 0.85; }
 .move-path-end { fill: none; stroke: var(--accent); stroke-width: 2.5; }
-.move-path.side-blue { color: var(--blue); }
-.move-path.side-red { color: var(--red); }
+.move-path.side-blue { color: var(--sq-blue); }
+.move-path.side-red { color: var(--sq-red); }
 .move-path.side-blue .move-path-line,
 .move-path.side-red .move-path-line { stroke: currentColor; }
 .move-path.side-blue .move-path-end,
@@ -485,14 +487,14 @@ main { display: flex; flex: 1; min-height: 0; }
 .pg-body { padding: 9px 10px 4px; }
 .pg-sub { margin: 0 0 6px; color: var(--text3); font-size: 11px; }
 .pg-turn { margin: 0 0 8px; color: var(--text2); font-size: 11.5px; }
-.pg-turn .side-blue { color: var(--un); }
-.pg-turn .side-red { color: var(--rdl); }
+.pg-turn .side-blue { color: var(--sq-blue); }
+.pg-turn .side-red { color: var(--sq-red); }
 .pg-tokens { margin: 0 0 6px; color: var(--text2); font-size: 11.5px; }
-.pg-tokens .side-blue { color: var(--un); }
-.pg-tokens .side-red { color: var(--rdl); }
+.pg-tokens .side-blue { color: var(--sq-blue); }
+.pg-tokens .side-red { color: var(--sq-red); }
 .pg-active { margin: 0 0 6px; font-size: 12px; color: var(--text); }
-.pg-active .side-blue { color: var(--un); }
-.pg-active .side-red { color: var(--rdl); }
+.pg-active .side-blue { color: var(--sq-blue); }
+.pg-active .side-red { color: var(--sq-red); }
 .pg-active small { display: block; color: var(--text3); font-size: 11px; }
 .pg-done-note { margin: 0 0 8px; color: var(--green, #3ddc84); font-size: 11.5px; }
 .pg-units { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 9px; }
@@ -587,15 +589,6 @@ main { display: flex; flex: 1; min-height: 0; }
 
 .pg-tac-note { margin: 4px 0 0; font-size: 10.5px; color: var(--text3); }
 
-/* ---------- tactics cards in the Add tab ---------- */
-.tac-add {
-  border: none; border-radius: var(--radius-sm); cursor: pointer;
-  font-family: var(--font); font-size: 11px; font-weight: 700; padding: 4px 8px;
-  background: var(--surface3); color: var(--text2); white-space: nowrap;
-  transition: background 0.12s, color 0.12s;
-}
-.tac-add.side-blue:hover, .tac-add.side-blue.has { background: var(--un-lt, rgba(101,162,216,0.2)); color: var(--un, #65a2d8); }
-.tac-add.side-red:hover, .tac-add.side-red.has { background: var(--rdl-lt, rgba(224,140,140,0.2)); color: var(--rdl, #e08c8c); }
 
 /* ---------- board style picker, inside the map manager ---------- */
 .map-board {
@@ -692,8 +685,8 @@ main { display: flex; flex: 1; min-height: 0; }
   border: none; background: none; padding: 0; text-align: left; cursor: pointer;
   font-family: var(--font); font-size: 11px; font-weight: 600;
 }
-.pg-dial-unit.side-blue { color: var(--un); }
-.pg-dial-unit.side-red { color: var(--rdl); }
+.pg-dial-unit.side-blue { color: var(--sq-blue); }
+.pg-dial-unit.side-red { color: var(--sq-red); }
 .pg-dial-set { flex: 0 0 auto; font-family: var(--mono); font-size: 10px; color: var(--text2); }
 .pg-dial-row.unset .pg-dial-set { color: #f0b429; }
 .pg-next:disabled { background: var(--surface2); color: var(--text3); cursor: default; }
@@ -912,13 +905,13 @@ body.replaying #board .token { cursor: default; }
 }
 #rt-next:disabled { background: var(--surface2); color: var(--text3); }
 .rt-first { font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; }
-.rt-first.side-blue { color: var(--blue); }
-.rt-first.side-red { color: var(--red); }
+.rt-first.side-blue { color: var(--sq-blue); }
+.rt-first.side-red { color: var(--sq-red); }
 .rt-cmd { display: flex; align-items: center; gap: 6px; color: var(--text2); font-size: 11px; margin-left: auto; }
 .rt-cmd span { display: flex; align-items: center; gap: 3px; }
 .rt-cmd b { min-width: 14px; text-align: center; font-size: 13px; font-family: var(--mono); }
-.cmd-blue b { color: var(--blue); }
-.cmd-red b { color: var(--red); }
+.cmd-blue b { color: var(--sq-blue); }
+.cmd-red b { color: var(--sq-red); }
 .rt-cmd button {
   width: 18px; height: 18px; border: none; background: var(--surface2); color: var(--text2);
   border-radius: var(--radius-sm); cursor: pointer; line-height: 1;
@@ -942,13 +935,13 @@ body.targeting #hint { color: var(--accent); font-weight: 700; }
 /* ---------- tokens ---------- */
 .token { cursor: grab; }
 .token-base { fill: #fff; stroke-width: 2; }
-.side-blue .token-base { stroke: var(--blue); fill: #eaf2fa; }
-.side-red .token-base { stroke: var(--red); fill: #faecec; }
+.side-blue .token-base { stroke: var(--sq-blue); fill: color-mix(in srgb, var(--sq-blue) 13%, #fff); }
+.side-red .token-base { stroke: var(--sq-red); fill: color-mix(in srgb, var(--sq-red) 13%, #fff); }
 .token.aerial .token-base { fill-opacity: 0.65; stroke-dasharray: 4 3; }
 .token.selected .token-base { stroke-width: 3.5; filter: drop-shadow(0 0 5px #f0b42999); }
 .token-facing { stroke: #fff; stroke-width: 1.5; stroke-linejoin: round; paint-order: stroke; }
-.side-blue .token-facing { fill: #3b82f6; }
-.side-red .token-facing { fill: #ef4444; }
+.side-blue .token-facing { fill: var(--sq-blue); }
+.side-red .token-facing { fill: var(--sq-red); }
 .token.selected .token-facing { fill: var(--accent); }
 .token-label {
   font-size: 9px; fill: #f5f5f4; paint-order: stroke; stroke: #0f1216; stroke-width: 2.4px;
@@ -1169,8 +1162,14 @@ body.targeting #hint { color: var(--accent); font-weight: 700; }
 /* ---------- squads tab ---------- */
 #squad-body { padding: 10px 12px; }
 .squad h3 { font-size: 11px; margin: 10px 0 6px; letter-spacing: 0.7px; text-transform: uppercase; font-weight: 700; }
-.squad-blue h3 { color: var(--blue); }
-.squad-red h3 { color: var(--red); }
+/* A squad takes its colour from the faction of the units in it, set inline as
+   --squad-tint, and falls back to the accent while it is still generic. */
+.squad h3 { color: var(--squad-tint, var(--accent)); }
+.squad h3 .sq-name {
+  background: none; border: 0; padding: 0; font: inherit; color: inherit;
+  letter-spacing: inherit; text-transform: inherit; cursor: pointer;
+}
+.squad h3 .sq-name:hover { text-decoration: underline dotted; }
 .squad h3 .pts { color: var(--text2); font-weight: 400; font-size: 11px; margin-left: 6px; font-family: var(--mono); }
 .squad h3 .pts.over { color: var(--red); font-weight: 700; }
 .squad h3 .pts small { color: var(--text3); }
@@ -1192,20 +1191,21 @@ body.targeting #hint { color: var(--accent); font-weight: 700; }
   background: var(--surface3); color: var(--text2); font-family: var(--font);
 }
 .fac-chip.bad { background: var(--red-lt); color: var(--red); }
+.fac-chip.generic { background: transparent; color: var(--text3); border: 1px dashed var(--border); }
 .squad-unit {
   position: relative; overflow: hidden;
   border: 1px solid transparent; border-radius: var(--radius); padding: 7px 9px 5px; margin-bottom: 6px;
   background: var(--surface2); transition: background 0.12s, border-color 0.12s;
 }
 .squad-unit:hover { border-color: var(--border); }
-.squad-blue .squad-unit { --fac: 92, 179, 255; }
-.squad-red .squad-unit { --fac: 234, 109, 118; }
+.squad-blue .squad-unit { --fac: var(--sq-blue); }
+.squad-red .squad-unit { --fac: var(--sq-red); }
 
 /* ---------- squad unit card frame ---------- */
 .squad-unit:not(.nested) {
   padding: 8px 10px 6px; margin-bottom: 8px; border-color: #35404d;
   background:
-    radial-gradient(120% 90% at 0% 0%, rgba(var(--fac), 0.3), transparent 62%),
+    radial-gradient(120% 90% at 0% 0%, color-mix(in srgb, var(--fac) 30%, transparent), transparent 62%),
     linear-gradient(160deg, #242a33, var(--surface) 70%);
 }
 .squad-unit:not(.nested)::before {
@@ -1229,7 +1229,7 @@ body.targeting #hint { color: var(--accent); font-weight: 700; }
 .squad-unit-head, .squad-unit-meta, .status-row, .squad-unit table { position: relative; }
 .su-fac-edge {
   position: absolute; left: 0; right: 0; bottom: 0; height: 2px;
-  background: linear-gradient(90deg, rgb(var(--fac)), transparent 70%);
+  background: linear-gradient(90deg, var(--fac), transparent 70%);
 }
 .squad-unit.selected { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 .squad-unit.selected .su-art { opacity: 0.2; }
@@ -1307,8 +1307,8 @@ body.targeting #hint { color: var(--accent); font-weight: 700; }
 .ao-row:hover { background: var(--surface3); }
 .ao-n { font-family: var(--mono); font-size: 10.5px; color: var(--text3); min-width: 14px; }
 .ao-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ao-row.side-blue .ao-name { color: var(--blue); }
-.ao-row.side-red .ao-name { color: var(--red); }
+.ao-row.side-blue .ao-name { color: var(--sq-blue); }
+.ao-row.side-red .ao-name { color: var(--sq-red); }
 .ao-init { font-family: var(--mono); font-size: 11px; color: var(--text2); }
 .ao-tie {
   font-size: 9.5px; font-weight: 700; letter-spacing: 0.4px; padding: 1px 5px;
@@ -1444,8 +1444,21 @@ button.add {
   border: none; border-radius: var(--radius-sm); color: #fff; font-size: 11.5px;
   padding: 3px 10px; cursor: pointer; transition: filter 0.12s;
 }
-button.add.blue { background: #33689c; }
-button.add.red { background: #a2464e; }
+/* The number says which squad, the colour says its faction. Grey until the
+   squad has one, so a generic squad does not borrow an allegiance it lacks. */
+button.add.sq-add {
+  background: var(--surface3); color: var(--text2); font-weight: 700;
+  min-width: 26px; text-align: center;
+}
+button.add.sq-add:hover { background: var(--border); color: var(--text); }
+button.add.sq-add.has-faction {
+  background: color-mix(in srgb, var(--sq-tint) 26%, var(--surface3));
+  color: var(--sq-tint);
+}
+button.add.sq-add.has-faction:hover { background: color-mix(in srgb, var(--sq-tint) 40%, var(--surface3)); }
+button.add.sq-add.has { background: color-mix(in srgb, var(--sq-tint, var(--accent)) 40%, var(--surface3)); }
+button.add.sq-add.sq-wide { min-width: 0; flex: 1; padding: 6px 10px; font-size: 12px; }
+button.add.off-faction { opacity: 0.4; }
 /* Without a side colour a bare .add falls back to the browser button face, which
    reads as a bright white slab next to the coloured one. */
 button.add.grey { background: var(--surface3); color: var(--text2); }
@@ -1545,8 +1558,8 @@ p.points { white-space: pre-line; }
   display: block; font-weight: 600; font-size: 11px; letter-spacing: 0.3px;
   color: var(--text2); text-transform: none;
 }
-.token-head.side-blue { color: var(--blue); }
-.token-head.side-red { color: var(--red); }
+.token-head.side-blue { color: var(--sq-blue); }
+.token-head.side-red { color: var(--sq-red); }
 
 .action {
   position: relative; overflow: hidden;
@@ -2086,11 +2099,12 @@ p.points { white-space: pre-line; }
   background: var(--surface2); border-radius: var(--radius); padding: 8px 10px;
 }
 .tac-faction {
-  font-size: 9px; font-weight: 700; letter-spacing: 0.4px; padding: 2px 5px;
-  border-radius: var(--radius-sm); background: var(--accent-lt); color: var(--accent);
-  margin-left: 5px;
+  flex-shrink: 0; width: 46px; text-align: center;
+  font-size: 9px; font-weight: 700; letter-spacing: 0.4px; padding: 2px 0;
+  border-radius: var(--radius-sm); color: var(--accent);
 }
-.tac-pts { flex-shrink: 0; font-family: var(--mono); font-size: 11.5px; color: var(--text2); }
+.tac-faction:not(:empty) { background: var(--accent-lt); }
+
 
 .card-action {
   margin: 7px 0 0; padding: 8px 10px; border-radius: var(--radius);
@@ -2125,9 +2139,9 @@ p.points { white-space: pre-line; }
   font-size: 11px; font-weight: 700; fill: var(--text2);
   font-family: var(--font); pointer-events: none;
 }
-.task-item.side-blue circle { fill: color-mix(in srgb, var(--blue) 30%, var(--surface2)); stroke: var(--blue); }
-.task-item.side-blue .task-icon { fill: var(--blue); }
-.task-item.side-red circle { fill: color-mix(in srgb, var(--red) 30%, var(--surface2)); stroke: var(--red); }
-.task-item.side-red .task-icon { fill: var(--red); }
+.task-item.side-blue circle { fill: color-mix(in srgb, var(--sq-blue) 30%, var(--surface2)); stroke: var(--sq-blue); }
+.task-item.side-blue .task-icon { fill: var(--sq-blue); }
+.task-item.side-red circle { fill: color-mix(in srgb, var(--sq-red) 30%, var(--surface2)); stroke: var(--sq-red); }
+.task-item.side-red .task-icon { fill: var(--sq-red); }
 .task-item.carried { opacity: 0.35; }
 .task-item.task-control circle { stroke-dasharray: 3 2; }
