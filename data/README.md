@@ -37,7 +37,7 @@ token art `assets/tokens/tab/<id>.png` (353/401), part art `assets/mech_parts/`.
 
 ## keywords.json — 57 entries
 `{key (zh canonical), zh/en/jp: {name, value}}` — full rules text per language.
-Tooltip-ready. Cross-check subtle ones against `rules/06_missions_and_appendix.md`
+Tooltip-ready. Cross-check subtle ones against the printed rulebook's appendix
 (the book has a couple of print errata the site may or may not repeat).
 
 ## boxes.json — 26 retail boxes
