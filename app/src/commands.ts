@@ -6,7 +6,7 @@ import { canManeuver, canOverload, canPerform, spendAction, spendManeuver, spend
 import { tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { deploymentComplete, deployTurn, firstPlayerFrom, newSetup, normaliseSetup } from './setup';
 import { applyKill, normaliseTasks, settleControl } from './tasks';
-import { eligibleUnits, isLoopPhase, nextTurn, onExtraOpportunity } from './loop';
+import { dialHidden, eligibleUnits, isLoopPhase, nextTurn, onExtraOpportunity } from './loop';
 import { dissipationFor } from './rules';
 
 // ---------- the command layer (multiplayer phase 1) ----------
@@ -71,7 +71,9 @@ export type Command =
   | { kind: 'despawn'; seat: Side; uid: number; targetUid: number }
   | { kind: 'placeSmoke'; seat: Side; at: { col: number; row: number } }
   | { kind: 'removeSmoke'; seat: Side; at: { col: number; row: number } }
-  | { kind: 'dissipateSmoke'; seat: Side };
+  | { kind: 'dissipateSmoke'; seat: Side }
+  | { kind: 'setMode'; seat: Side; mode: 'hotseat' | 'hidden' }
+  | { kind: 'handOver'; seat: Side };
 
 export type CheckResult = { ok: true } | { ok: false; why: string };
 
@@ -126,11 +128,13 @@ function actorOptional(cmd: Command): cmd is Command & { kind: 'forceMove' | 're
 type TableKind =
   | 'advancePhase' | 'setPhase' | 'resetRounds' | 'adjustCommandTokens' | 'passTurn' | 'markEndStep' | 'award'
   | 'lockMap' | 'rollSetup' | 'acceptRoll' | 'pickEdge' | 'lockDials' | 'finishDeployment'
-  | 'queueIntercepts' | 'clearIntercepts' | 'placeSmoke' | 'removeSmoke' | 'dissipateSmoke';
+  | 'queueIntercepts' | 'clearIntercepts' | 'placeSmoke' | 'removeSmoke' | 'dissipateSmoke'
+  | 'setMode' | 'handOver';
 const TABLE_KINDS = new Set<Command['kind']>([
   'advancePhase', 'setPhase', 'resetRounds', 'adjustCommandTokens', 'passTurn', 'markEndStep', 'award',
   'lockMap', 'rollSetup', 'acceptRoll', 'pickEdge', 'lockDials', 'finishDeployment',
   'queueIntercepts', 'clearIntercepts', 'placeSmoke', 'removeSmoke', 'dissipateSmoke',
+  'setMode', 'handOver',
 ]);
 function tableLevel(cmd: Command): cmd is Command & { kind: TableKind } {
   return TABLE_KINDS.has(cmd.kind);
@@ -227,6 +231,19 @@ function checkTable(state: GameState, cmd: Command & { kind: TableKind }): Check
     }
     case 'dissipateSmoke':
       return ok;
+    case 'setMode': {
+      if (cmd.mode !== 'hotseat' && cmd.mode !== 'hidden') return no('That is not a table mode.');
+      if (!state.script) return no('There is no guided game running.');
+      return ok;
+    }
+    case 'handOver': {
+      const sc = state.script;
+      if (!sc || sc.mode !== 'hidden') return no('Handing over belongs to pass-and-play.');
+      if (state.round.phase !== 1) return no('The device is handed over during the Planning Phase (3.3).');
+      if (sc.stage === `${state.round.n}:1:locked`) return no('The dials are already locked in.');
+      if (sc.turn !== cmd.seat) return no('The device is not with this squad.');
+      return ok;
+    }
   }
 }
 
@@ -285,6 +302,7 @@ function checkActed(
       if (t.partStates.torso === 'destroyed') return no('A destroyed Mech cannot set a dial.');
       if (cmd.timing !== undefined && !TIMINGS.some((x) => x.id === cmd.timing)) return no('That is not a Timing the dial can be set to.');
       if (state.round.phase !== 1) return no('Dials are set in the Planning Phase (3.3).');
+      if (dialHidden(state, t)) return no('In pass-and-play a squad sets its dials on its own planning turn (3.3).');
       return ok;
     }
     case 'setStance': {
@@ -584,6 +602,18 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
     const at = list.findIndex((x) => x.col === cmd.at.col && x.row === cmd.at.row);
     if (at >= 0) list.splice(at, 1);
     state.smoke = list;
+    return;
+  }
+  if (cmd.kind === 'setMode') {
+    if (state.script) state.script.mode = cmd.mode;
+    return;
+  }
+  if (cmd.kind === 'handOver') {
+    // Pass-and-play planning runs as two sub-turns on sc.turn: the First
+    // Player sets their dials, hands the device over, and the other squad
+    // sets theirs before the lock reveals both at once.
+    const sc = state.script;
+    if (sc) sc.turn = cmd.seat === 's1' ? 's2' : 's1';
     return;
   }
   if (cmd.kind === 'dissipateSmoke') {

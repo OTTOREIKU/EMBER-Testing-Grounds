@@ -633,6 +633,19 @@ main { display: flex; flex: 1; min-height: 0; }
   margin: 0 0 7px; padding: 5px 7px; border-radius: var(--radius-sm);
   background: rgba(240, 180, 41, 0.12); color: #f0b429; font-size: 11px; line-height: 1.4;
 }
+.pg-gate {
+  position: fixed; inset: 0; z-index: 1400; background: rgba(9, 11, 15, 0.96);
+  display: flex; align-items: center; justify-content: center;
+}
+.pg-gate-card {
+  width: min(340px, 86vw); padding: 22px 24px; text-align: center;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+}
+.pg-gate-card h3 { margin: 0 0 8px; font-size: 16px; }
+.pg-gate-card p { margin: 0 0 14px; font-size: 12.5px; line-height: 1.5; color: var(--dim); }
+.pg-gate-card .pg-unit { width: 100%; padding: 9px 0; font-size: 13px; }
+.pg-mode { cursor: pointer; border: 1px solid var(--border); background: none; color: inherit; border-radius: var(--radius-sm); padding: 1px 7px; }
+.pg-mode:hover { border-color: var(--accent); }
 .pg-stances { display: flex; gap: 4px; margin: 0 0 7px; }
 .pg-stance {
   flex: 1; border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer;

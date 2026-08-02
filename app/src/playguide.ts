@@ -91,6 +91,10 @@ export class PlayGuide {
   private warn: string | null = null;
   private deploying: { uid: number; stance: Stance; camo: boolean } | null = null;
   private ui: GuideUi;
+  // The pass-and-play gate. The ack is per round-and-seat and deliberately not
+  // saved: a reload mid-handoff puts the gate back up, which is the safe side.
+  private gateAck: string | null = null;
+  private gate: HTMLElement | null = null;
 
   constructor(host: HTMLElement, data: GameData, cb: GuideCallbacks) {
     this.host = host;
@@ -203,9 +207,42 @@ export class PlayGuide {
     this.place();
   }
 
+  // The full-screen handoff between planning sub-turns. Nothing on the board
+  // leaks while it is up, because the dial filter already masks the seat that
+  // is not holding the device; the gate is the ceremony that makes the swap
+  // deliberate.
+  private syncGate(s: GameState): void {
+    const sc = s.script;
+    const su = normaliseSetup(s.setup);
+    const need = !!sc && sc.mode === 'hidden' && !!su && su.stage === 'done'
+      && s.round.phase === 1 && sc.stage !== `${s.round.n}:1:locked`;
+    const key = need && sc ? `${s.round.n}:${sc.turn}` : null;
+    if (!key || this.gateAck === key) {
+      this.gate?.remove();
+      this.gate = null;
+      return;
+    }
+    if (!this.gate) {
+      this.gate = document.createElement('div');
+      this.gate.className = 'pg-gate';
+      document.body.appendChild(this.gate);
+    }
+    const who = squadLabel(sc!.turn);
+    this.gate.innerHTML = `<div class="pg-gate-card">
+        <h3>Pass the device</h3>
+        <p><b class="side-${sc!.turn}">${esc(who)}</b> sets its Timing Dials in secret (3.3).</p>
+        <button class="pg-unit" data-gate-go="1">${esc(who)} has the device</button>
+      </div>`;
+    this.gate.querySelector('[data-gate-go]')!.addEventListener('click', () => {
+      this.gateAck = key;
+      this.render();
+    });
+  }
+
   private render(): void {
     const s = this.state;
     if (!s) return;
+    this.syncGate(s);
     if (!this.ui.open) {
       this.root.className = 'closed';
       this.root.innerHTML = `<button class="pg-reopen" title="Show the play guide. Middle click and drag to move it.">Guide</button>`;
@@ -412,6 +449,23 @@ export class PlayGuide {
     this.root.querySelectorAll<HTMLButtonElement>('[data-dial]').forEach((b) =>
       b.addEventListener('click', () => this.cb.onShowDial(Number(b.dataset.dial))),
     );
+    this.root.querySelector('[data-hand-over]')?.addEventListener('click', () => {
+      const sc = this.script(s);
+      const mineUnset = s.tokens.filter((t) => t.kind === 'mech' && alive(t) && t.side === sc.turn && !t.timing);
+      if (mineUnset.length && !this.warn) {
+        this.warn = `${mineUnset.length} of this squad's Mechs still ${mineUnset.length === 1 ? 'has' : 'have'} no Timing Dial and will not activate at all this round. Hand over again to continue anyway.`;
+        this.render();
+        return;
+      }
+      this.warn = null;
+      perform(this.data, s, { kind: 'handOver', seat: sc.turn });
+      this.cb.onChanged();
+    });
+    this.root.querySelector('[data-mode-toggle]')?.addEventListener('click', () => {
+      const sc = this.script(s);
+      perform(this.data, s, { kind: 'setMode', seat: sc.turn, mode: sc.mode === 'hidden' ? 'hotseat' : 'hidden' });
+      this.cb.onChanged();
+    });
     this.root.querySelector('[data-lock-dials]')?.addEventListener('click', () => {
       const sc = this.script(s);
       const unset = s.tokens.filter((t) => t.kind === 'mech' && alive(t) && !t.timing);
@@ -747,6 +801,7 @@ export class PlayGuide {
     const zones = s.zoneSet ?? '';
     const mission = s.mission ? this.data.missions.cards.find((m) => m.id === s.mission) : undefined;
     const ready = !!mission && !!zones;
+    const hidden = this.script(s).mode === 'hidden';
     return `<p class="pg-active">Agree the battlefield
         <small>choose the Main Task, then the map, and lock them in</small></p>
       <div class="pg-dials">
@@ -756,6 +811,12 @@ export class PlayGuide {
           <span class="pg-dial-set">${esc(this.cb.mapLabel())}</span></div>
         <div class="pg-dial-row${zones ? '' : ' unset'}"><span class="pg-dial-unit">Zones</span>
           <span class="pg-dial-set">${esc(this.cb.zoneLabel())}</span></div>
+        <div class="pg-dial-row"><span class="pg-dial-unit">Dials</span>
+          <button class="pg-dial-set pg-mode" data-mode-toggle="1" data-tip-title="Dial secrecy" data-tip="${
+            hidden
+              ? 'Pass-and-play: the Planning Phase runs as two hand-offs, each squad sets its dials in secret, and both reveal at once (3.3). Click for an open table.'
+              : 'Open table: both squads set their dials in the open, like sitting across a real table. Click for pass-and-play, which keeps the dials secret until the reveal (3.3).'
+          }">${hidden ? 'Pass-and-play' : 'Open table'}</button></div>
       </div>
       <div class="pg-units">
         <button class="pg-unit${mission ? '' : ' warn'}" data-pick-mission="1">${
@@ -918,25 +979,41 @@ export class PlayGuide {
           )
           .join('')}</div>`;
     }
-    return `${fp}
-      <p class="pg-active">Set a Timing Dial on every Mech <small>${mechs.length - unset.length} of ${mechs.length} set. Both players reveal at once.</small></p>
+    const hidden = sc.mode === 'hidden';
+    const second = hidden && sc.turn !== s.round.firstPlayer;
+    const mine = hidden ? mechs.filter((t) => t.side === sc.turn) : mechs;
+    const mineUnset = mine.filter((t) => !t.timing);
+    const other: Side = sc.turn === 's1' ? 's2' : 's1';
+    const head = hidden
+      ? `<p class="pg-active"><b class="side-${sc.turn}">${esc(squadLabel(sc.turn))}</b> sets its dials in secret <small>${mine.length - mineUnset.length} of ${mine.length} set. The other squad's dials stay masked until the reveal (3.3).</small></p>`
+      : `<p class="pg-active">Set a Timing Dial on every Mech <small>${mechs.length - unset.length} of ${mechs.length} set. Both players reveal at once.</small></p>`;
+    const button = !hidden || second
+      ? `<button class="pg-unit${unset.length ? ' warn' : ''}" data-lock-dials="1" data-tip-title="Confirm timings" data-tip="${
+        unset.length
+          ? `${unset.length} Mech${unset.length === 1 ? '' : 's'} still has no dial and would not activate at all.|Set every dial in the Squads tab before locking in.`
+          : hidden ? 'Lock both squads in and reveal the dials together.' : 'Lock the dials in and move on.'
+      }">Confirm timings${hidden ? ' and reveal' : ''}</button>`
+      : `<button class="pg-unit${mineUnset.length ? ' warn' : ''}" data-hand-over="1" data-tip-title="Hand the device over" data-tip="${
+        mineUnset.length
+          ? `${mineUnset.length} of this squad's Mechs still ${mineUnset.length === 1 ? 'has' : 'have'} no dial and would not activate at all.`
+          : `Done here. ${esc(squadLabel(other))} sets its dials next.`
+      }">Hand the device to ${esc(squadLabel(other))}</button>`;
+    return `${fp}${head}
       <div class="pg-dials">${mechs
         .map((t) => {
-          const cur = TIMINGS.find((x) => x.id === t.timing);
-          const init = t.timing ? this.init(t, t.timing) : undefined;
-          return `<div class="pg-dial-row${t.timing ? '' : ' unset'}">
-            <button class="pg-dial-unit side-${t.side}" data-dial="${t.uid}" title="Jump to this Mech's dial in the Squads tab">${esc(t.label)}</button>
-            <span class="pg-dial-set">${cur ? `${cur.name}${init === undefined ? '' : ` · Init ${init}`}` : 'not set'}</span>
+          const masked = hidden && t.side !== sc.turn;
+          const cur = masked ? undefined : TIMINGS.find((x) => x.id === t.timing);
+          const init = !masked && t.timing ? this.init(t, t.timing) : undefined;
+          return `<div class="pg-dial-row${t.timing || masked ? '' : ' unset'}">
+            ${masked
+              ? `<span class="pg-dial-unit side-${t.side}">${esc(t.label)}</span>
+                <span class="pg-dial-set">${t.timing ? 'set · hidden' : 'not set'}</span>`
+              : `<button class="pg-dial-unit side-${t.side}" data-dial="${t.uid}" title="Jump to this Mech's dial in the Squads tab">${esc(t.label)}</button>
+                <span class="pg-dial-set">${cur ? `${cur.name}${init === undefined ? '' : ` · Init ${init}`}` : 'not set'}</span>`}
           </div>`;
         })
         .join('')}</div>
-      <div class="pg-units">
-        <button class="pg-unit${unset.length ? ' warn' : ''}" data-lock-dials="1" data-tip-title="Confirm timings" data-tip="${
-          unset.length
-            ? `${unset.length} Mech${unset.length === 1 ? '' : 's'} still has no dial and would not activate at all.|Set every dial in the Squads tab before locking in.`
-            : 'Lock the dials in and move on.'
-        }">Confirm timings</button>
-      </div>`;
+      <div class="pg-units">${button}</div>`;
   }
 
   // ---------- action phase (rulebook 3.4) ----------

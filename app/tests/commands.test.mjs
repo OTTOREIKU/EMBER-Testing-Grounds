@@ -550,6 +550,34 @@ C.apply(data, ws, { kind: 'removeSmoke', seat: 's1', at: { col: 3, row: 3 } });
 check('a group pick removes one screen', ws.smoke.map((x) => `${x.col},${x.row}`), ['4,3']);
 check('removing missing smoke is refused', C.check(data, ws, { kind: 'removeSmoke', seat: 's1', at: { col: 9, row: 9 } }).ok, false);
 
+// ---------- pass-and-play (rulebook 3.3) ----------
+
+const hiddenWorld = () => {
+  const w = world([mech(1, 's1'), mech(2, 's2')], 1);
+  w.script.mode = 'hidden';
+  return w;
+};
+check('a made-up mode is refused', C.check(data, world([]), { kind: 'setMode', seat: 's1', mode: 'psychic' }).ok, false);
+const wmode = world([]);
+C.apply(data, wmode, { kind: 'setMode', seat: 's1', mode: 'hidden' });
+check('setMode flips the table over to pass-and-play', wmode.script.mode, 'hidden');
+check('handing over needs pass-and-play', C.check(data, world([], 1), { kind: 'handOver', seat: 's1' }).ok, false);
+const wh = hiddenWorld();
+check('and belongs to the Planning Phase', C.check(data, ((x) => { x.round.phase = 2; return x; })(hiddenWorld()), { kind: 'handOver', seat: 's1' }).ok, false);
+check('the squad without the device cannot hand it over', C.check(data, wh, { kind: 'handOver', seat: 's2' }).ok, false);
+check('the holder can', C.check(data, wh, { kind: 'handOver', seat: 's1' }).ok, true);
+// The dial filter: the seat not holding the device is masked.
+check('the holder\'s own dial is open', C.dialHidden(wh, wh.tokens[0]), false);
+check('the other squad\'s dial is masked', C.dialHidden(wh, wh.tokens[1]), true);
+check('and setting it is refused', C.check(data, wh, st({ seat: 's2', uid: 2 })).ok, false);
+check('while the holder sets its own freely', C.check(data, wh, st()).ok, true);
+C.apply(data, wh, { kind: 'handOver', seat: 's1' });
+check('the hand-over swaps the device', wh.script.turn, 's2');
+check('and the masks swap with it', [C.dialHidden(wh, wh.tokens[0]), C.dialHidden(wh, wh.tokens[1])], [true, false]);
+wh.script.stage = '1:1:locked';
+check('the lock reveals every dial', [C.dialHidden(wh, wh.tokens[0]), C.dialHidden(wh, wh.tokens[1])], [false, false]);
+check('an open table never masks', C.dialHidden(world([mech(1, 's1')], 1), { side: 's2' }), false);
+
 // ---------- determinism ----------
 
 const a = wm();

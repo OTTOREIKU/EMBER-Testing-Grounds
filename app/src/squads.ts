@@ -7,6 +7,7 @@ import { addStatus, SCALES, SHAPE_NOTE, statusCount, statusesFor, TIMINGS } from
 import { normaliseTasks } from './tasks';
 import { normaliseSetup } from './setup';
 import { perform } from './commands';
+import { dialHidden } from './loop';
 import { defaultUnitLabel, factionProblems, initiativeFor, pilotCard, squadAllegiance, SLOT_LABEL, tidyUnitLabel, tokenCards, tokenFactions } from './units';
 import { alertDialog, promptDialog } from './dialog';
 import { factionColour, ICON_BOLT, ICON_EDIT } from './icons';
@@ -519,19 +520,27 @@ export class SquadTracker {
 
     let linkCtrl: HTMLElement | null = null;
     if (t.kind === 'mech') {
-      const cur = t.timing ? TIMINGS.find((x) => x.id === t.timing) : undefined;
-      const init = t.timing ? initiativeFor(this.data, t, t.timing) : undefined;
+      // The one piece of hidden information (3.3): in pass-and-play, the dial
+      // of the squad not holding the device is masked and cannot be opened.
+      const masked = !!this.state && dialHidden(this.state, t);
+      const cur = !masked && t.timing ? TIMINGS.find((x) => x.id === t.timing) : undefined;
+      const init = !masked && t.timing ? initiativeFor(this.data, t, t.timing) : undefined;
       const trig = document.createElement('button');
       trig.className = `dial-trig${cur ? ' set' : ''}`;
       trig.dataset.dialUid = String(t.uid);
       if (cur) trig.style.setProperty('--t-tint', `var(--t-${cur.id})`);
       const icon = cur ? actionIconUrl(cur.pilotKey) : null;
-      trig.innerHTML = `${icon ? `<img src="${icon}" alt="">` : ''}<span>${cur ? cur.name : 'Dial'}</span>${
-        init !== undefined ? `<b>${init}</b>` : ''
-      }<i>▾</i>`;
-      inspectOnHover(trig, this.dialInfo(t, cur, init));
+      trig.innerHTML = masked
+        ? `<span>${t.timing ? 'Set · hidden' : 'Dial'}</span>`
+        : `${icon ? `<img src="${icon}" alt="">` : ''}<span>${cur ? cur.name : 'Dial'}</span>${
+          init !== undefined ? `<b>${init}</b>` : ''
+        }<i>▾</i>`;
+      inspectOnHover(trig, masked
+        ? { title: 'Timing Dial', sub: 'hidden', lines: ['Pass-and-play keeps a squad\'s dials secret until both reveal at once (3.3). This one belongs to the squad not holding the device.'] }
+        : this.dialInfo(t, cur, init));
       trig.addEventListener('click', (ev) => {
         ev.stopPropagation();
+        if (this.state && dialHidden(this.state, t)) return;
         this.openDial(t, trig);
       });
       meta.appendChild(trig);

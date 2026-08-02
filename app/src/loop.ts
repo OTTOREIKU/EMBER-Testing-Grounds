@@ -138,3 +138,18 @@ export function onExtraOpportunity(state: GameState, uid: number): boolean {
 export function actionPhaseComplete(state: GameState, init: InitLookup): boolean {
   return nextActivation(state, init) === null;
 }
+
+// ---------- the one piece of hidden information (rulebook 3.3) ----------
+
+// Players are entitled to keep their chosen Action Timings secret until the
+// reveal. In pass-and-play the Planning Phase runs as two sub-turns, and the
+// dial of any Mech outside the seat currently holding the device is masked.
+// Everything else in the game is open information, so this single rule is the
+// whole of the view filter.
+export function dialHidden(state: GameState, t: Token): boolean {
+  const sc = state.script;
+  if (!sc || sc.mode !== 'hidden') return false;
+  if (state.round.phase !== 1) return false;
+  if (sc.stage === `${state.round.n}:1:locked`) return false;
+  return t.side !== sc.turn;
+}
