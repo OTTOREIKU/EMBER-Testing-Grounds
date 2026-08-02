@@ -5,8 +5,9 @@ import { cardName, squadLabel } from './data';
 import { bindTips, linkMechanics } from './inspector';
 import { choiceDialog } from './dialog';
 import { PHASES, PHASE_INFO } from './tracker';
-import { type ActionWorld, canActivateCamo, type ExtraActivation, extraActivationOf, guidedActions, initiativeFor, maneuverRange, SLOT_LABEL, tokenCards } from './units';
-import { canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, spendAction, spendManeuver, spendOverload, whyGrantLapsed } from './ticks';
+import { type ActionWorld, canActivateCamo, type ExtraActivation, extraActivationOf, guidedActions, initiativeFor, maneuverRange, maxLink, SLOT_LABEL, tokenCards } from './units';
+import { canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed } from './ticks';
+import { perform } from './commands';
 import { deployable, deploymentComplete, deployTurn, firstPlayerFrom, newSetup, normaliseSetup, rollTotal, type SetupState } from './setup';
 import { controlOf, directAccess, normaliseTasks, scoreMain, scoreSecondary, unpaidLines, type ScoreLine, type ScoreResult, type SecondaryScoring, type TaskState } from './tasks';
 
@@ -1327,7 +1328,7 @@ export class PlayGuide {
     t.statuses = (t.statuses ?? []).filter((id, i) => !(id === shed && (t.statuses ?? []).indexOf(shed) === i));
     t.expiring = (t.expiring ?? []).filter((id) => id !== shed);
     if (!t.expiring.length) t.expiring = undefined;
-    t.link = Math.min(this.maxLink(t), (t.link ?? 0) + 1);
+    t.link = Math.min(maxLink(this.data, t), (t.link ?? 0) + 1);
     const label = STATUSES.find((x) => x.id === shed)?.label ?? shed;
     this.cb.onNote(t, `Stabilize System: ${label} removed and Link restored to ${t.link}.`);
     this.cb.onChanged();
@@ -1345,26 +1346,13 @@ export class PlayGuide {
     this.cb.onChanged();
   }
 
-  private maxLink(t: Token): number {
-    const pilot = t.kind === 'mech' && t.mech?.pilot ? this.data.byId.get(t.mech.pilot) : undefined;
-    return (pilot as { LV?: number } | undefined)?.LV ?? 99;
-  }
-
   private reboot(stance: Stance): void {
     const s = this.state;
     if (!s) return;
     const first = this.opportunity(s);
     const t = first && s.tokens.find((x) => x.uid === first.uid);
     if (!first || !t) return;
-    this.cb.onSetStance(first.uid, stance);
-    t.link = Math.min(this.maxLink(t), (t.link ?? 0) + 1);
-    const o = this.opportunity(s);
-    if (!o) return;
-    o.maneuver = 0;
-    o.maneuvered = true;
-    o.action = 1;
-    o.started = false;
-    o.performed = [...o.performed, 'COMMON_REBOOT'];
+    perform(this.data, s, { kind: 'reboot', seat: t.side, uid: t.uid, stance });
     this.warn = null;
     this.cb.onNote(t, `Reboot: out of Shutdown into ${stance} Stance, Link restored to ${t.link}. One Action Tick is left and it must match the dial.`);
     this.cb.onChanged();
@@ -1386,8 +1374,9 @@ export class PlayGuide {
     this.warn = null;
     this.cb.onMoveUnit(o.uid, { range: maneuverRange(this.data, t), label: 'Maneuver' }, (moved) => {
       if (!moved) return;
-      const sc = this.script(s);
-      sc.opp = spendManeuver(o);
+      // The interactive move has already landed the token, so the command
+      // records where it ended up: a no-op here, the real move on a mirror.
+      perform(this.data, s, { kind: 'maneuver', seat: t.side, uid: t.uid, to: { col: t.col, row: t.row }, facing: t.facing });
       this.cb.onChanged();
     });
   }
@@ -1462,12 +1451,11 @@ export class PlayGuide {
       return;
     }
     this.warn = null;
+    const wasShut = t.stance === 'shutdown';
+    perform(this.data, s, { kind: 'overload', seat: t.side, uid: t.uid });
     const sc = this.script(s);
-    t.link = Math.max(0, (t.link ?? 0) - 1);
-    sc.opp = spendOverload(o);
-    this.cb.onNote(t, `Overload: consumed 1 Link for 1 Action Tick (Link now ${t.link}, ${sc.opp.overload} of ${OVERLOAD_MAX} used).`);
-    if (t.link === 0 && t.stance !== 'shutdown') {
-      t.stance = 'shutdown';
+    this.cb.onNote(t, `Overload: consumed 1 Link for 1 Action Tick (Link now ${t.link}, ${sc.opp?.overload ?? '?'} of ${OVERLOAD_MAX} used).`);
+    if (!wasShut && t.stance === 'shutdown') {
       this.cb.onNote(t, `Link has reached 0, so ${t.label} SHUTS DOWN.`);
     }
     this.cb.onChanged();
@@ -1498,8 +1486,7 @@ export class PlayGuide {
         this.render();
         return;
       }
-      const sc = this.script(s);
-      sc.opp = spendAction(o, row.action);
+      perform(this.data, s, { kind: 'performAction', seat: t.side, uid: t.uid, actionId: row.action.id });
       this.cb.onNote(t, `${row.label} (${LENGTH_NAME[lengthOf(row.action)!]}, ${costLabel(costOf(row.action)!)}).`);
       const grant = extraActivationOf(row.action);
       if (grant) {

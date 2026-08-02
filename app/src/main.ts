@@ -6,6 +6,7 @@ import { applyKill, gameResult, isLowValue, newTaskState, normaliseTasks, type T
 import { DiceTray } from './dice';
 import { importSquadFile } from './importer';
 import { factionColour } from './icons';
+import { perform } from './commands';
 import { Inventory } from './inventory';
 import { BOARD_THEMES, boardTheme } from './boards';
 import { bindTips, inspectOnHover, isInspectPinned, showInspect, unpinInspect } from './inspector';
@@ -187,7 +188,7 @@ async function init() {
     onSetStance: (uid, stance) => {
       const t = state.tokens.find((x) => x.uid === uid);
       if (!t) return;
-      t.stance = stance;
+      perform(data, state, { kind: 'setStance', seat: t.side, uid, stance });
       onChanged();
     },
     onIntercept: (uid, actionId, targetUid) => {

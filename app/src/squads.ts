@@ -577,7 +577,7 @@ export class SquadTracker {
       }
       inspectOnHover(stance, this.stanceInfo(t));
       stance.addEventListener('change', () => {
-        t.stance = stance.value as Stance;
+        perform(this.data, this.state!, { kind: 'setStance', seat: t.side, uid: t.uid, stance: stance.value as Stance });
         this.cb.onChanged();
       });
       meta.appendChild(stance);
@@ -646,7 +646,7 @@ export class SquadTracker {
     placeDialPopout(pop, trigger);
 
     const pick = (v: string): void => {
-      perform(this.state!, { kind: 'setTiming', seat: t.side, uid: t.uid, timing: v ? (v as Timing) : undefined });
+      perform(this.data, this.state!, { kind: 'setTiming', seat: t.side, uid: t.uid, timing: v ? (v as Timing) : undefined });
       closeDialPopout();
       this.cb.onChanged();
     };

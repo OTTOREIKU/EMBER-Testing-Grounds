@@ -496,6 +496,12 @@ export function pilotCard(data: GameData, t: Token): Card | undefined {
   return t.kind === 'mech' && t.mech?.pilot ? data.byId.get(t.mech.pilot) : undefined;
 }
 
+// The pilot's Link Value is the ceiling Link can recover to. A pilotless mech
+// gets no ceiling rather than zero, so sandbox setups without pilots still work.
+export function maxLink(data: GameData, t: Token): number {
+  return pilotCard(data, t)?.LV ?? 99;
+}
+
 // A Mech Maneuvers at the Maneuver Value printed on its Chassis; a Drone moves at
 // its own value. Mobility Stance doubles it (rulebook 3.4.3).
 export function maneuverRange(data: GameData, t: Token): number {
