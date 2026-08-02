@@ -158,7 +158,7 @@ async function init() {
     return attackHelper.active || electronicHelper.active;
   }
 
-  const roundTracker = new RoundTracker(document.getElementById('round-tracker')!, () => onChanged());
+  const roundTracker = new RoundTracker(document.getElementById('round-tracker')!, () => onChanged(), (cmd) => perform(data, state, cmd));
   roundTracker.onStartGame = () => void (normaliseSetup(state.setup) ? endGame() : startGame());
 
   const playGuide = new PlayGuide(document.getElementById('board-wrap')!, data, {
@@ -202,15 +202,10 @@ async function init() {
     onPickSecondary: (side) => void pickSecondary(side),
     onPlayTactic: (side, id) => void playTactic(side, id),
     onEndGame: () => void endGame(),
+    // The removal itself is the guide's markEndStep command; this only tidies
+    // a selection left pointing at a unit that is no longer there.
     onRemoveSpent: () => {
-      const gone = new Set(
-        state.tokens
-          .filter((t) => t.kind === 'mech' && Object.values(t.partStates).filter((p) => p !== 'destroyed').length <= 2)
-          .map((t) => t.uid),
-      );
-      if (!gone.size) return;
-      state.tokens = state.tokens.filter((t) => !gone.has(t.uid));
-      if (selectedUid !== null && gone.has(selectedUid)) selectToken(null);
+      if (selectedUid !== null && !state.tokens.some((t) => t.uid === selectedUid)) selectToken(null);
       onChanged();
     },
     mapLabel: () => mapSelect.options[mapSelect.selectedIndex]?.textContent ?? state.map ?? 'none',

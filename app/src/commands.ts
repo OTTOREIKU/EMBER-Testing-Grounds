@@ -1,11 +1,12 @@
 import type { Facing, GameState, PartSlot, Side, Stance, Timing, Token } from './types';
-import { addStatus, PHASES, STATUSES, TIMINGS } from './types';
+import { addStatus, ageTokens, PHASES, STATUSES, TIMINGS } from './types';
 import type { GameData } from './data';
 import { maxLink, tokenCards } from './units';
 import { canManeuver, canOverload, canPerform, spendAction, spendManeuver, spendOverload } from './ticks';
 import { tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { deployTurn, normaliseSetup } from './setup';
-import { applyKill, normaliseTasks } from './tasks';
+import { applyKill, normaliseTasks, settleControl } from './tasks';
+import { eligibleUnits, isLoopPhase, nextTurn, onExtraOpportunity } from './loop';
 
 // ---------- the command layer (multiplayer phase 1) ----------
 
@@ -43,7 +44,19 @@ export type Command =
   | { kind: 'spendAmmo'; seat: Side; uid: number; actionId: string }
   | { kind: 'restoreAmmo'; seat: Side; uid: number; actionId: string; amount?: number }
   | { kind: 'recordKill'; seat: Side; uid: number; targetUid: number; what: 'part' | 'unit' }
-  | { kind: 'destroyTerrain'; seat: Side; uid: number; pieces: string[] };
+  | { kind: 'destroyTerrain'; seat: Side; uid: number; pieces: string[] }
+  | { kind: 'advancePhase'; seat: Side }
+  | { kind: 'setPhase'; seat: Side; phase: number }
+  | { kind: 'resetRounds'; seat: Side }
+  | { kind: 'adjustCommandTokens'; seat: Side; pool: Side; delta: number }
+  | { kind: 'endOpportunity'; seat: Side; uid: number }
+  | { kind: 'designate'; seat: Side; uid: number }
+  | { kind: 'passTurn'; seat: Side }
+  | { kind: 'grantExtra'; seat: Side; uid: number; linkCost: number }
+  | { kind: 'markEndStep'; seat: Side; step: string }
+  | { kind: 'award'; seat: Side; vp: { s1: number; s2: number }; keys: string[] }
+  | { kind: 'stabilise'; seat: Side; uid: number }
+  | { kind: 'reveal'; seat: Side; uid: number };
 
 export type CheckResult = { ok: true } | { ok: false; why: string };
 
@@ -91,7 +104,55 @@ function actorOptional(cmd: Command): cmd is Command & { kind: 'forceMove' | 're
   return cmd.kind === 'forceMove' || cmd.kind === 'recordKill' || cmd.kind === 'destroyTerrain';
 }
 
+// The round track, the designation loop's pass and the End Phase checklist
+// belong to the table, not to a unit, so these carry a seat and nothing else.
+type TableKind = 'advancePhase' | 'setPhase' | 'resetRounds' | 'adjustCommandTokens' | 'passTurn' | 'markEndStep' | 'award';
+const TABLE_KINDS = new Set<Command['kind']>(['advancePhase', 'setPhase', 'resetRounds', 'adjustCommandTokens', 'passTurn', 'markEndStep', 'award']);
+function tableLevel(cmd: Command): cmd is Command & { kind: TableKind } {
+  return TABLE_KINDS.has(cmd.kind);
+}
+
+// The lookup the zone-control judgement reads its Grids from.
+const zoneCells = (data: GameData) => (zone: string): string[] => data.zoneData.zones.find((z) => z.id === zone)?.cells ?? [];
+
+function checkTable(state: GameState, cmd: Command & { kind: TableKind }): CheckResult {
+  switch (cmd.kind) {
+    case 'advancePhase': {
+      const su = normaliseSetup(state.setup);
+      if (su && su.stage !== 'done') return no('Finish the pre-game roll and deployment first (3.1).');
+      return ok;
+    }
+    case 'setPhase': {
+      if (!Number.isInteger(cmd.phase) || cmd.phase < 0 || cmd.phase >= PHASES.length) return no('That is not a phase.');
+      return ok;
+    }
+    case 'resetRounds':
+      return ok;
+    case 'adjustCommandTokens': {
+      if (!Number.isInteger(cmd.delta) || cmd.delta === 0) return no('Nothing to adjust.');
+      if ((state.commandTokens?.[cmd.pool] ?? 0) + cmd.delta < 0) return no('A Command Token pool cannot go below zero.');
+      return ok;
+    }
+    case 'passTurn': {
+      if (!state.script) return no('There is no guided game running.');
+      if (!isLoopPhase(PHASES[state.round.phase])) return no('There is no designation loop to pass in this phase.');
+      if (state.script.passed.includes(cmd.seat)) return no('This squad has already passed for the phase (3.2.2).');
+      return ok;
+    }
+    case 'markEndStep': {
+      if (!state.script) return no('The End Phase checklist belongs to a guided game.');
+      if (state.round.phase !== PHASES.length - 1) return no('These steps belong to the End Phase (3.7).');
+      return ok;
+    }
+    case 'award': {
+      if (!Number.isFinite(cmd.vp.s1) || !Number.isFinite(cmd.vp.s2) || cmd.vp.s1 < 0 || cmd.vp.s2 < 0) return no('That is not a score.');
+      return ok;
+    }
+  }
+}
+
 export function check(data: GameData, state: GameState, cmd: Command): CheckResult {
+  if (tableLevel(cmd)) return checkTable(state, cmd);
   const t = state.tokens.find((x) => x.uid === cmd.uid);
   if (!actorOptional(cmd)) {
     if (!t) return no('That unit is not on the board.');
@@ -125,7 +186,12 @@ export function check(data: GameData, state: GameState, cmd: Command): CheckResu
   }
 }
 
-function checkActed(data: GameData, state: GameState, cmd: Exclude<Command, { kind: 'forceMove' | 'recordKill' | 'destroyTerrain' }>, t: Token): CheckResult {
+function checkActed(
+  data: GameData,
+  state: GameState,
+  cmd: Exclude<Command, { kind: 'forceMove' | 'recordKill' | 'destroyTerrain' | TableKind }>,
+  t: Token,
+): CheckResult {
   switch (cmd.kind) {
     case 'setTiming': {
       if (t.kind !== 'mech') return no('Only a Mech has a Timing Dial. Drones act in the Command and Automatic Phases instead.');
@@ -239,10 +305,122 @@ function checkActed(data: GameData, state: GameState, cmd: Exclude<Command, { ki
       if (max !== undefined && held >= max) return no('That Action is already at its full Storage.');
       return ok;
     }
+    case 'endOpportunity': {
+      if (!oppOf(state, cmd.uid)) return no('It is not this unit\'s Action Opportunity.');
+      return ok;
+    }
+    case 'designate': {
+      const phase = PHASES[state.round.phase];
+      if (!isLoopPhase(phase)) return no('Designation happens in the Command, Automatic and Delay Phases.');
+      const sc = state.script;
+      if (!sc) return no('There is no guided game running.');
+      if (sc.turn !== cmd.seat) return no('It is the other squad\'s turn to designate (3.2.2).');
+      if (!eligibleUnits(state, phase, cmd.seat).some((x) => x.uid === cmd.uid)) return no(`${t.label} cannot be designated this phase.`);
+      return ok;
+    }
+    case 'grantExtra': {
+      if (t.kind !== 'mech') return no('Only a Mech takes an Extra Action Opportunity.');
+      if ((t.link ?? 0) < cmd.linkCost) return no(`This needs ${cmd.linkCost} Link, and ${t.label} has ${t.link ?? 0}.`);
+      return ok;
+    }
+    case 'stabilise': {
+      const shed = (t.statuses ?? []).some((id) => {
+        const d = STATUSES.find((x) => x.id === id);
+        return d?.shape === 'square' || d?.shape === 'hexagon';
+      });
+      if (!shed) return no('No Square or Hexagon Token to remove (6.1).');
+      return ok;
+    }
+    case 'reveal': {
+      if (!(t.statuses ?? []).includes('camouflage')) return no('This unit is not in the Optical Camouflage State.');
+      return ok;
+    }
   }
 }
 
 export function apply(data: GameData, state: GameState, cmd: Command): void {
+  if (cmd.kind === 'advancePhase') {
+    const r = state.round;
+    if (r.phase < PHASES.length - 1) {
+      r.phase++;
+    } else {
+      r.phase = 0;
+      r.n++;
+      r.firstPlayer = r.firstPlayer === 's1' ? 's2' : 's1';
+      state.commandTokens = { s1: 0, s2: 0 };
+      for (const x of state.tokens) x.timing = undefined;
+      // All Terminal Tokens flip back face-up at the End Phase (5.3.3), so the
+      // new round starts with every Terminal accessible again.
+      for (const i of state.tasks?.items ?? []) if (i.kind === 'terminal') i.accessed = null;
+    }
+    return;
+  }
+  if (cmd.kind === 'setPhase') {
+    state.round.phase = cmd.phase;
+    return;
+  }
+  if (cmd.kind === 'resetRounds') {
+    state.round.n = 1;
+    state.round.phase = 0;
+    state.commandTokens = { s1: 0, s2: 0 };
+    // Plays are stamped with a round number, so winding the track back to 1
+    // would leave round 1's cards reading as already spent.
+    state.tacticsPlayed = { s1: [], s2: [] };
+    return;
+  }
+  if (cmd.kind === 'adjustCommandTokens') {
+    if (!state.commandTokens) state.commandTokens = { s1: 0, s2: 0 };
+    state.commandTokens[cmd.pool] = Math.max(0, state.commandTokens[cmd.pool] + cmd.delta);
+    return;
+  }
+  if (cmd.kind === 'passTurn') {
+    const sc = state.script;
+    const phase = PHASES[state.round.phase];
+    if (!sc || !isLoopPhase(phase)) return;
+    if (!sc.passed.includes(cmd.seat)) sc.passed.push(cmd.seat);
+    sc.turn = nextTurn(state, phase, cmd.seat) ?? cmd.seat;
+    return;
+  }
+  if (cmd.kind === 'markEndStep') {
+    const sc = state.script;
+    if (!sc) return;
+    if (cmd.step === 'tokens') {
+      // Yellow tokens flip, red tokens come off (2.5.3), and unspent Command
+      // Tokens never carry over (3.2.3).
+      for (const x of state.tokens) ageTokens(x);
+      state.commandTokens = { s1: 0, s2: 0 };
+    }
+    if (cmd.step === 'remove') {
+      // Integrity Loss (4.4.4): a Mech down to 2 Parts leaves in the End Phase.
+      state.tokens = state.tokens.filter((x) => !(x.kind === 'mech' && Object.values(x.partStates).filter((p) => p !== 'destroyed').length <= 2));
+    }
+    if (cmd.step === 'tasks') {
+      const tasks = normaliseTasks(state.tasks);
+      settleControl(tasks, zoneCells(data), state.tokens, (x) => lowValueUnit(data, x));
+      state.tasks = tasks;
+    }
+    const key = `${state.round.n}:end:${cmd.step}`;
+    if (!sc.endDone.includes(key)) sc.endDone.push(key);
+    return;
+  }
+  if (cmd.kind === 'award') {
+    const tasks = normaliseTasks(state.tasks);
+    // The Award judges control as part of the same reading of the board that
+    // it scores (5.3.2), so the settlement happens here too.
+    settleControl(tasks, zoneCells(data), state.tokens, (x) => lowValueUnit(data, x));
+    tasks.vp.s1 += cmd.vp.s1;
+    tasks.vp.s2 += cmd.vp.s2;
+    for (const k of cmd.keys) if (!tasks.scored.includes(k)) tasks.scored.push(k);
+    tasks.paidKills = { s1: { ...tasks.kills.s1 }, s2: { ...tasks.kills.s2 } };
+    tasks.paidTestKills = { ...tasks.testKills };
+    state.tasks = tasks;
+    const sc = state.script;
+    if (sc) {
+      const key = `${state.round.n}:end:tasks`;
+      if (!sc.endDone.includes(key)) sc.endDone.push(key);
+    }
+    return;
+  }
   if (cmd.kind === 'forceMove') {
     const target = state.tokens.find((x) => x.uid === cmd.targetUid);
     if (!target) return;
@@ -388,6 +566,61 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
       const max = ammoMax(data, t, cmd.actionId);
       const next = t.ammo[cmd.actionId] + (cmd.amount ?? 1);
       t.ammo[cmd.actionId] = max !== undefined ? Math.min(max, next) : next;
+      return;
+    }
+    case 'endOpportunity': {
+      if (!sc) return;
+      // Ending an Extra Opportunity spends the grant. Ending a normal one
+      // records the Mech as having acted. A Mech granted one before its own
+      // turn comes up takes the normal Opportunity first, then the extra.
+      if (onExtraOpportunity(state, cmd.uid)) {
+        const at = sc.extraOpps.indexOf(cmd.uid);
+        if (at >= 0) sc.extraOpps.splice(at, 1);
+      } else if (!sc.acted.includes(cmd.uid)) {
+        sc.acted.push(cmd.uid);
+      }
+      sc.opp = null;
+      return;
+    }
+    case 'designate': {
+      const phase = PHASES[state.round.phase];
+      if (!sc || !isLoopPhase(phase)) return;
+      if (phase === 'Command') {
+        // Additional Instructions buys one Command Action outright, so the
+        // token stays in the pool for this designation only.
+        const free = sc.freeCommand.includes(cmd.uid);
+        if (free) sc.freeCommand = sc.freeCommand.filter((x) => x !== cmd.uid);
+        else state.commandTokens[t.side] = Math.max(0, (state.commandTokens[t.side] ?? 0) - 1);
+        if (!sc.commanded.includes(cmd.uid)) sc.commanded.push(cmd.uid);
+      } else if (!sc.acted.includes(cmd.uid)) {
+        sc.acted.push(cmd.uid);
+      }
+      sc.turn = nextTurn(state, phase, t.side) ?? t.side;
+      return;
+    }
+    case 'grantExtra': {
+      t.link = Math.max(0, (t.link ?? 0) - cmd.linkCost);
+      if (sc) sc.extraOpps.push(cmd.uid);
+      return;
+    }
+    case 'stabilise': {
+      // Stabilize System (6.1): Torso removes 1 Square or Hexagon Token from
+      // this Mech, then restores 1 Link.
+      const shed = (t.statuses ?? []).find((id) => {
+        const d = STATUSES.find((x) => x.id === id);
+        return d?.shape === 'square' || d?.shape === 'hexagon';
+      });
+      if (!shed) return;
+      const list = [...(t.statuses ?? [])];
+      list.splice(list.indexOf(shed), 1);
+      t.statuses = list;
+      t.expiring = (t.expiring ?? []).filter((id) => id !== shed);
+      if (!t.expiring.length) t.expiring = undefined;
+      t.link = Math.min(maxLink(data, t), (t.link ?? 0) + 1);
+      return;
+    }
+    case 'reveal': {
+      t.statuses = (t.statuses ?? []).filter((id) => id !== 'camouflage');
       return;
     }
   }

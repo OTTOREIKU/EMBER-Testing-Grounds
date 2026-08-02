@@ -1,4 +1,5 @@
 import { STATUSES, type GameState, type Side, type Stance, type Token } from './types';
+import { alive } from './loop';
 
 // ---------- shape ----------
 
@@ -32,11 +33,6 @@ export interface TacticSpec {
 }
 
 // ---------- helpers ----------
-
-function alive(t: Token): boolean {
-  if (t.kind !== 'mech') return (t.partStates.main ?? 'intact') !== 'destroyed';
-  return Object.values(t.partStates).filter((p) => p !== 'destroyed').length > 0;
-}
 
 function removable(t: Token): TacticPick[] {
   const held = t.statuses ?? [];

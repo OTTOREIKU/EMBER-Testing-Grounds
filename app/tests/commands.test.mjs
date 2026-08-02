@@ -10,6 +10,7 @@ const types = readFileSync(new URL('../src/types.ts', import.meta.url), 'utf8');
 const setupSrc = readFileSync(new URL('../src/setup.ts', import.meta.url), 'utf8');
 const tacticsSrc = readFileSync(new URL('../src/tactics.ts', import.meta.url), 'utf8');
 const tasksSrc = readFileSync(new URL('../src/tasks.ts', import.meta.url), 'utf8');
+const loopSrc = readFileSync(new URL('../src/loop.ts', import.meta.url), 'utf8');
 const timings = types.slice(types.indexOf('export const PHASES'), types.indexOf('export type TokenShape'));
 const statuses = types.slice(types.indexOf('export function hexagonIds'), types.indexOf('export interface RoundState'));
 const tmp = new URL('./_commands.slice.ts', import.meta.url);
@@ -36,6 +37,7 @@ writeFileSync(
     + setupSrc.replace(/^import[^\n]*\n/gm, '')
     + tacticsSrc.replace(/^import[^\n]*\n/gm, '')
     + tasksSrc.replace(/^import[^\n]*\n/gm, '')
+    + loopSrc.replace(/^import[^\n]*\n/gm, '')
     + ticks.replace(/^import[^\n]*\n/gm, '')
     + stubs
     + commands.replace(/^import[^\n]*\n/gm, ''),
@@ -60,7 +62,7 @@ const opp = (uid, over = {}) => ({
 const world = (tokens, phase = 1, o = null) => ({
   tokens,
   round: { n: 1, phase, firstPlayer: 's1' },
-  script: { opp: o, acted: [], extraOpps: [], commanded: [], freeCommand: [], passed: [], turn: 's1' },
+  script: { opp: o, acted: [], extraOpps: [], commanded: [], freeCommand: [], passed: [], turn: 's1', endDone: [] },
 });
 const fire = { id: 'A1', type: 'Firing', size: 's', name: { en: 'Shot' } };
 const fireM = { id: 'A2', type: 'Firing', size: 'm', name: { en: 'Barrage' } };
@@ -76,6 +78,7 @@ const data = {
   ]),
   commonActions: [{ id: 'COMMON_CHARGE', type: 'Tactic', size: 's', name: { en: 'Charge' } }],
   overload: [{ actionId: '090_A', card: '090', label: 'Overload' }],
+  zoneData: { zones: [] },
 };
 
 console.log('The command layer\n');
@@ -347,6 +350,127 @@ check('destroyed terrain is recorded', wter.removedTerrain, ['w1', 'w2']);
 check('destroying it again is refused', C.check(data, wter, dt()).ok, false);
 C.apply(data, wter, dt({ pieces: ['w1', 'w3'] }));
 check('and re-recording dedupes', wter.removedTerrain, ['w1', 'w2', 'w3']);
+
+// ---------- the round track ----------
+
+const ap = () => ({ kind: 'advancePhase', seat: 's1' });
+const wadv = world([mech(1, 's1')], 4);
+C.apply(data, wadv, ap());
+check('a phase advance steps forward', wadv.round.phase, 5);
+wadv.tokens[0].timing = 'firing';
+wadv.tasks = { items: [{ kind: 'terminal', accessed: 's1' }, { kind: 'blackbox', accessed: 's2' }] };
+C.apply(data, wadv, ap());
+check('the End Phase wraps to a new round', [wadv.round.n, wadv.round.phase, wadv.round.firstPlayer], [2, 0, 's2']);
+check('which clears the dials', wadv.tokens[0].timing, undefined);
+check('and flips Terminals face-up, leaving Black Boxes alone', [wadv.tasks.items[0].accessed, wadv.tasks.items[1].accessed], [null, 's2']);
+check('and empties both Command Token pools', wadv.commandTokens, { s1: 0, s2: 0 });
+const wsetup = world([mech(1, 's1')]);
+wsetup.setup = { stage: 'deploy', rolls: { s1: [], s2: [] }, edge: { s1: 'white', s2: 'black' }, placed: { s1: 0, s2: 0 } };
+check('no advancing past an unfinished setup', C.check(data, wsetup, ap()).ok, false);
+check('a made-up phase is refused', C.check(data, world([]), { kind: 'setPhase', seat: 's1', phase: 9 }).ok, false);
+const wjump = world([]);
+C.apply(data, wjump, { kind: 'setPhase', seat: 's1', phase: 3 });
+check('a phase jump lands', wjump.round.phase, 3);
+const wres = world([], 4);
+wres.round.n = 3;
+wres.tacticsPlayed = { s1: ['2:274'], s2: [] };
+C.apply(data, wres, { kind: 'resetRounds', seat: 's1' });
+check('the reset rewinds the track', [wres.round.n, wres.round.phase], [1, 0]);
+check('and unstamps the played cards', wres.tacticsPlayed, { s1: [], s2: [] });
+const wtok = world([]);
+check('spending from an empty pool is refused', C.check(data, wtok, { kind: 'adjustCommandTokens', seat: 's1', pool: 's1', delta: -1 }).ok, false);
+C.apply(data, wtok, { kind: 'adjustCommandTokens', seat: 's1', pool: 's1', delta: 2 });
+C.apply(data, wtok, { kind: 'adjustCommandTokens', seat: 's1', pool: 's1', delta: -1 });
+check('token adjustments accumulate', wtok.commandTokens.s1, 1);
+
+// ---------- the guided loops ----------
+
+const eo = (over = {}) => ({ kind: 'endOpportunity', seat: 's1', uid: 1, ...over });
+check('ending needs the open opportunity', C.check(data, world([mech(1, 's1')], 2), eo()).ok, false);
+const wend = world([mech(1, 's1')], 2, opp(1));
+check('with it open it passes', C.check(data, wend, eo()).ok, true);
+C.apply(data, wend, eo());
+check('a normal opportunity records the mech as acted', [wend.script.acted, wend.script.opp], [[1], null]);
+const wex = world([mech(1, 's1')], 2, opp(1));
+wex.script.acted = [1];
+wex.script.extraOpps = [1];
+C.apply(data, wex, eo());
+check('an extra opportunity spends the grant instead', [wex.script.acted, wex.script.extraOpps], [[1], []]);
+
+const dg = (over = {}) => ({ kind: 'designate', seat: 's1', uid: 2, ...over });
+const wcmd = () => {
+  const w = world([mech(1, 's1'), drone(2, 's1'), drone(3, 's2')], 0);
+  w.commandTokens = { s1: 2, s2: 1 };
+  return w;
+};
+check('designating out of turn is refused', C.check(data, wcmd(), dg({ seat: 's2', uid: 3 })).ok, false);
+check('a mech is never designated in the Command Phase', C.check(data, wcmd(), dg({ uid: 1 })).ok, false);
+check('on turn with a drone it passes', C.check(data, wcmd(), dg()).ok, true);
+const wc1 = wcmd();
+C.apply(data, wc1, dg());
+check('a Command designation spends the token', [wc1.commandTokens.s1, wc1.script.commanded], [1, [2]]);
+check('and the turn alternates', wc1.script.turn, 's2');
+const wfree2 = wcmd();
+wfree2.commandTokens = { s1: 0, s2: 1 };
+wfree2.script.freeCommand = [2];
+C.apply(data, wfree2, dg());
+check('a free Command spends the card instead', [wfree2.commandTokens.s1, wfree2.script.freeCommand, wfree2.script.commanded], [0, [], [2]]);
+const wauto = world([drone(2, 's1'), drone(3, 's2')], 3);
+C.apply(data, wauto, dg());
+check('an Automatic designation just records the act', [wauto.script.acted, wauto.script.turn], [[2], 's2']);
+
+check('a pass outside the loop phases is refused', C.check(data, world([], 2), { kind: 'passTurn', seat: 's1' }).ok, false);
+const wpass = world([drone(2, 's1'), drone(3, 's2')], 3);
+C.apply(data, wpass, { kind: 'passTurn', seat: 's1' });
+check('a pass sits the squad out and hands the turn over', [wpass.script.passed, wpass.script.turn], [['s1'], 's2']);
+check('passing twice is refused', C.check(data, wpass, { kind: 'passTurn', seat: 's1' }).ok, false);
+
+const ge = (over = {}) => ({ kind: 'grantExtra', seat: 's1', uid: 1, linkCost: 1, ...over });
+check('a grant the mech cannot pay for is refused', C.check(data, world([mech(1, 's1', { link: 0 })]), ge()).ok, false);
+const wge = world([mech(1, 's1', { link: 3 })]);
+C.apply(data, wge, ge());
+check('Coordinate pays the Link and owes the opportunity', [wge.tokens[0].link, wge.script.extraOpps], [2, [1]]);
+
+// ---------- the End Phase checklist ----------
+
+const me = (step) => ({ kind: 'markEndStep', seat: 's1', step });
+check('the checklist belongs to the End Phase', C.check(data, world([], 2), me('tokens')).ok, false);
+const wme = world([mech(1, 's1', { statuses: ['fci'], expiring: ['fci'] })], 5);
+wme.commandTokens = { s1: 2, s2: 0 };
+C.apply(data, wme, me('tokens'));
+check('the tokens step ages every unit', wme.tokens[0].statuses, []);
+check('and clears the unspent Command Tokens', wme.commandTokens, { s1: 0, s2: 0 });
+check('and ticks the checklist', wme.script.endDone, ['1:end:tokens']);
+const wrm = world([
+  mech(1, 's1', { partStates: { torso: 'intact', chasis: 'destroyed', leftHand: 'destroyed', rightHand: 'destroyed', backpack: 'destroyed' } }),
+  mech(2, 's2', { partStates: { torso: 'intact', chasis: 'intact', leftHand: 'intact' } }),
+], 5);
+C.apply(data, wrm, me('remove'));
+check('Integrity Loss removes the spent mech', wrm.tokens.map((t) => t.uid), [2]);
+const wts = world([], 5);
+wts.tasks = { items: [] };
+C.apply(data, wts, me('tasks'));
+check('the tasks step ticks the checklist', wts.script.endDone, ['1:end:tasks']);
+
+check('a negative Award is refused', C.check(data, world([], 5), { kind: 'award', seat: 's1', vp: { s1: -1, s2: 0 }, keys: [] }).ok, false);
+const waw = world([], 5);
+const aw = { kind: 'award', seat: 's1', vp: { s1: 3, s2: 1 }, keys: ['1:main'] };
+C.apply(data, waw, aw);
+check('the Award banks the points and marks the lines paid', [waw.tasks.vp, waw.tasks.scored], [{ s1: 3, s2: 1 }, ['1:main']]);
+C.apply(data, waw, aw);
+check('and a paid line is never marked twice', waw.tasks.scored, ['1:main']);
+
+// ---------- stabilise and reveal (6.1) ----------
+
+check('nothing to shed is refused', C.check(data, world([mech(1, 's1')]), { kind: 'stabilise', seat: 's1', uid: 1 }).ok, false);
+const wsb = world([mech(1, 's1', { statuses: ['fci', 'fci'], expiring: ['fci'], link: 1 })]);
+C.apply(data, wsb, { kind: 'stabilise', seat: 's1', uid: 1 });
+check('Stabilize sheds one token and restores 1 Link', [wsb.tokens[0].statuses, wsb.tokens[0].link], [['fci'], 2]);
+
+check('reveal needs the camouflage', C.check(data, world([mech(1, 's1')]), { kind: 'reveal', seat: 's1', uid: 1 }).ok, false);
+const wrev = world([mech(1, 's1', { statuses: ['camouflage'] })]);
+C.apply(data, wrev, { kind: 'reveal', seat: 's1', uid: 1 });
+check('reveal drops the camouflage state', wrev.tokens[0].statuses, []);
 
 // ---------- determinism ----------
 

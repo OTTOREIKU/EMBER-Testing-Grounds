@@ -2,6 +2,7 @@ import { squadLabel } from './data';
 import { bindTips, inspectOnHover, pinInspect, type InspectInfo } from './inspector';
 import { PHASES, SCALES, type BattleScale, type GameState, type Side } from './types';
 import { normaliseSetup } from './setup';
+import type { Command } from './commands';
 
 export { PHASES };
 
@@ -81,6 +82,7 @@ export class RoundTracker {
   private root: HTMLElement;
   private state: GameState | null = null;
   private onChanged: () => void;
+  private onCommand: (cmd: Command) => void;
   onStartGame: (() => void) | null = null;
   // Set by the play guide, which owns the pre-game and Planning gates.
   blockedReason: ((s: GameState) => string | null) | null = null;
@@ -100,9 +102,10 @@ export class RoundTracker {
   }
   private lastClick: { phase: Phase; at: number } | null = null;
 
-  constructor(root: HTMLElement, onChanged: () => void) {
+  constructor(root: HTMLElement, onChanged: () => void, onCommand: (cmd: Command) => void = () => {}) {
     this.root = root;
     this.onChanged = onChanged;
+    this.onCommand = onCommand;
   }
 
   update(state: GameState): void {
@@ -110,20 +113,15 @@ export class RoundTracker {
     this.render();
   }
 
-  advance(): void {
+  // The track belongs to the table, so the seat on its commands is whoever's
+  // turn the script says it is, and the First Player otherwise.
+  private seat(): Side {
     const s = this.state!;
-    if (s.round.phase < PHASES.length - 1) {
-      s.round.phase++;
-    } else {
-      s.round.phase = 0;
-      s.round.n++;
-      s.round.firstPlayer = s.round.firstPlayer === 's1' ? 's2' : 's1';
-      s.commandTokens = { s1: 0, s2: 0 };
-      for (const t of s.tokens) t.timing = undefined;
-      // All Terminal Tokens flip back face-up at the End Phase (5.3.3), so the
-      // new round starts with every Terminal accessible again.
-      for (const i of s.tasks?.items ?? []) if (i.kind === 'terminal') i.accessed = null;
-    }
+    return s.script?.turn ?? s.round.firstPlayer;
+  }
+
+  advance(): void {
+    this.onCommand({ kind: 'advancePhase', seat: this.seat() });
     this.onChanged();
   }
 
@@ -230,12 +228,7 @@ export class RoundTracker {
         ],
       });
       resetBtn.addEventListener('click', () => {
-        s.round.n = 1;
-        s.round.phase = 0;
-        s.commandTokens = { s1: 0, s2: 0 };
-        // Plays are stamped with a round number, so winding the track back to 1
-        // would leave round 1's cards reading as already spent.
-        s.tacticsPlayed = { s1: [], s2: [] };
+        this.onCommand({ kind: 'resetRounds', seat: this.seat() });
         this.onChanged();
       });
     }
@@ -276,14 +269,14 @@ export class RoundTracker {
           pinInspect(`phase:${p}`, phaseInfo(p));
           return;
         }
-        s.round.phase = Number(b.dataset.i);
+        this.onCommand({ kind: 'setPhase', seat: this.seat(), phase: Number(b.dataset.i) });
         this.onChanged();
       });
     });
     this.root.querySelectorAll<HTMLButtonElement>('[data-cmd]').forEach((b) =>
       b.addEventListener('click', () => {
         const side = b.dataset.cmd as Side;
-        s.commandTokens[side] = Math.max(0, s.commandTokens[side] + Number(b.dataset.d));
+        this.onCommand({ kind: 'adjustCommandTokens', seat: this.seat(), pool: side, delta: Number(b.dataset.d) });
         this.onChanged();
       }),
     );

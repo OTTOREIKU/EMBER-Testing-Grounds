@@ -1,14 +1,12 @@
 // Checks the alternating designation loops against rulebook 3.2.2, 3.5 and 3.6.1.
 import { readFileSync, writeFileSync } from 'node:fs';
 
-// Slice out the pure loop rules — playguide.ts's class body needs the DOM.
-const srcUrl = new URL('../src/playguide.ts', import.meta.url);
+// The pure loop rules live in loop.ts; only its activation-order half needs
+// TIMINGS, which these tests do not touch, so a stub keeps the slice light.
+const srcUrl = new URL('../src/loop.ts', import.meta.url);
 const src = readFileSync(srcUrl, 'utf8');
-const start = src.indexOf('export const LOOP_PHASES');
-const end = src.indexOf('export interface GuideCallbacks');
-if (start < 0 || end < 0) throw new Error('could not locate the loop rules in playguide.ts');
 const tmp = new URL('./_loops.slice.ts', import.meta.url);
-writeFileSync(tmp, 'type GameState = any;\ntype Side = any;\ntype Token = any;\n' + src.slice(start, end));
+writeFileSync(tmp, 'type GameState = any;\ntype Side = any;\ntype Token = any;\ntype Timing = any;\nconst TIMINGS: any[] = [];\n' + src.replace(/^import[^\n]*\n/gm, ''));
 const { eligibleUnits, canAct, loopComplete, nextTurn, commandTokensFor } = await import(tmp.href);
 
 let pass = 0, fail = 0;

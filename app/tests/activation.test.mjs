@@ -1,16 +1,14 @@
 // Checks the Action Phase activation order (rulebook 3.4.1).
 import { readFileSync, writeFileSync } from 'node:fs';
 
-const src = readFileSync(new URL('../src/playguide.ts', import.meta.url), 'utf8');
+const src = readFileSync(new URL('../src/loop.ts', import.meta.url), 'utf8');
 const types = readFileSync(new URL('../src/types.ts', import.meta.url), 'utf8');
 const timings = types.slice(types.indexOf('export const TIMINGS'), types.indexOf('export type TokenShape'));
-const start = src.indexOf('function alive(');
-const end = src.indexOf('export interface GuideCallbacks');
-if (start < 0 || end < 0 || !timings) throw new Error('could not locate the activation order in playguide.ts');
+if (!timings) throw new Error('could not locate TIMINGS in types.ts');
 const tmp = new URL('./_activation.slice.ts', import.meta.url);
 writeFileSync(
   tmp,
-  'type GameState = any;\ntype Side = any;\ntype Timing = any;\ntype Token = any;\n' + timings + src.slice(start, end),
+  'type GameState = any;\ntype Side = any;\ntype Timing = any;\ntype Token = any;\n' + timings + src.replace(/^import[^\n]*\n/gm, ''),
 );
 const { activationOrder, nextActivation, actionPhaseComplete, onExtraOpportunity } = await import(tmp.href);
 

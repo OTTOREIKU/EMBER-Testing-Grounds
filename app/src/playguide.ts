@@ -1,5 +1,5 @@
 import type { CardAction, ExtraTick, GameState, Opportunity, ScriptState, Side, Stance, Timing, Token } from './types';
-import { ageTokens, newOpportunity, normaliseScript, statusCount, STATUSES, TIMINGS } from './types';
+import { newOpportunity, normaliseScript, statusCount, STATUSES, TIMINGS } from './types';
 import type { GameData, MissionCard } from './data';
 import { cardName, squadLabel } from './data';
 import { bindTips, linkMechanics } from './inspector';
@@ -8,8 +8,9 @@ import { PHASES, PHASE_INFO } from './tracker';
 import { type ActionWorld, canActivateCamo, type ExtraActivation, extraActivationOf, guidedActions, initiativeFor, maneuverRange, maxLink, SLOT_LABEL, tokenCards } from './units';
 import { canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed } from './ticks';
 import { perform } from './commands';
+import { alive, canAct, isLoopPhase, nextTurn, onExtraOpportunity, type LoopPhase, nextActivation, activationOrder, actionPhaseComplete, loopComplete, eligibleUnits, commandTokensFor, type InitLookup, type Activation } from './loop';
 import { deployable, deploymentComplete, deployTurn, firstPlayerFrom, newSetup, normaliseSetup, rollTotal, type SetupState } from './setup';
-import { controlOf, directAccess, normaliseTasks, scoreMain, scoreSecondary, unpaidLines, type ScoreLine, type ScoreResult, type SecondaryScoring, type TaskState } from './tasks';
+import { normaliseTasks, scoreMain, scoreSecondary, settleControl, unpaidLines, type ScoreLine, type ScoreResult, type SecondaryScoring, type TaskState } from './tasks';
 
 function phaseDone(text: string): string {
   return `<p class="pg-complete"><i>✓</i><span>${text}</span></p>`;
@@ -44,140 +45,10 @@ function loadUi(): GuideUi {
   }
 }
 
-// ---------- alternating designation loops (rulebook 3.2.2, 3.5.1, 3.6.1) ----------
-
-export const LOOP_PHASES = ['Command', 'Automatic', 'Delay'] as const;
-export type LoopPhase = (typeof LOOP_PHASES)[number];
-
-export function isLoopPhase(phase: string): phase is LoopPhase {
-  return (LOOP_PHASES as readonly string[]).includes(phase);
-}
-
-function alive(t: Token): boolean {
-  if (t.kind !== 'mech') return (t.partStates.main ?? 'intact') !== 'destroyed';
-  return Object.values(t.partStates).filter((p) => p !== 'destroyed').length > 0;
-}
-
-export function commandTokensFor(state: GameState, side: Side): number {
-  return state.tokens.filter((t) => t.side === side && t.kind === 'mech' && alive(t)).length;
-}
-
-// Who this side may still designate this phase. A Drone commanded during the
-// Command Phase does not act again in the Automatic Phase (3.5).
-export function eligibleUnits(state: GameState, phase: LoopPhase, side: Side): Token[] {
-  const sc = state.script;
-  if (!sc) return [];
-  const acted = new Set(sc.acted);
-  const commanded = new Set(sc.commanded);
-  if (phase === 'Command') {
-    // Additional Instructions pays for its own designation, so a side out of
-    // Command Tokens can still act on the Drone the card named.
-    const free = new Set(sc.freeCommand);
-    const broke = (state.commandTokens[side] ?? 0) <= 0;
-    if (broke && !free.size) return [];
-    return state.tokens.filter(
-      (t) =>
-        t.side === side
-        && t.kind === 'drone'
-        && alive(t)
-        && !commanded.has(t.uid)
-        && (!broke || free.has(t.uid)),
-    );
-  }
-  if (phase === 'Automatic') {
-    return state.tokens.filter(
-      (t) => t.side === side && t.kind === 'drone' && alive(t) && !commanded.has(t.uid) && !acted.has(t.uid),
-    );
-  }
-  return state.tokens.filter((t) => t.side === side && t.kind === 'projectile' && alive(t) && !acted.has(t.uid));
-}
-
-export function canAct(state: GameState, phase: LoopPhase, side: Side): boolean {
-  const sc = state.script;
-  if (!sc) return false;
-  if (sc.passed.includes(side)) return false;
-  return eligibleUnits(state, phase, side).length > 0;
-}
-
-export function loopComplete(state: GameState, phase: LoopPhase): boolean {
-  return !canAct(state, phase, 's1') && !canAct(state, phase, 's2');
-}
-
-// A player who passes is out for the phase, but the opponent may keep going, so
-// the turn only alternates to a side that can still do something (3.2.2).
-export function nextTurn(state: GameState, phase: LoopPhase, from: Side): Side | null {
-  const other: Side = from === 's1' ? 's2' : 's1';
-  if (canAct(state, phase, other)) return other;
-  if (canAct(state, phase, from)) return from;
-  return null;
-}
-
-// ---------- action phase activation order (rulebook 3.4.1) ----------
-
-export interface Activation {
-  uid: number;
-  timing: Timing;
-  init?: number;
-}
-
-export type InitLookup = (t: Token, timing: Timing) => number | undefined;
-
-// Timing order never changes, and within one Timing the lowest Pilot Initiative
-// goes first. Mechs tied on both belong to no natural order, so the First
-// Player's Mech goes first and the sides alternate from there.
-export function activationOrder(state: GameState, init: InitLookup): Activation[] {
-  const mechs = state.tokens.filter((t) => t.kind === 'mech' && alive(t) && t.timing);
-  const out: Activation[] = [];
-  for (const def of TIMINGS) {
-    const group = mechs
-      .filter((t) => t.timing === def.id)
-      .map((t) => ({ t, init: init(t, def.id) }));
-    if (!group.length) continue;
-    const values = [...new Set(group.map((g) => g.init))].sort(
-      (a, b) => (a ?? Infinity) - (b ?? Infinity),
-    );
-    for (const v of values) {
-      const tied = group.filter((g) => g.init === v);
-      const mine = tied.filter((g) => g.t.side === state.round.firstPlayer);
-      const theirs = tied.filter((g) => g.t.side !== state.round.firstPlayer);
-      let turn = mine;
-      while (mine.length || theirs.length) {
-        const next = (turn.length ? turn : turn === mine ? theirs : mine).shift()!;
-        out.push({ uid: next.t.uid, timing: def.id, init: next.init });
-        turn = turn === mine ? theirs : mine;
-      }
-    }
-  }
-  return out;
-}
-
-// The next Mech still owed an Action Opportunity this phase. Extra Opportunities
-// are served once the normal order is exhausted, which is where they belong
-// rather than a simplification: the only Action that grants one is a Tactic, and
-// Tactical is the last Timing, so every other Mech has already acted by then.
-export function nextActivation(state: GameState, init: InitLookup): Activation | null {
-  const done = new Set(state.script?.acted ?? []);
-  const order = activationOrder(state, init);
-  const normal = order.find((a) => !done.has(a.uid));
-  if (normal) return normal;
-  const owed = state.script?.extraOpps ?? [];
-  for (const uid of owed) {
-    const found = order.find((a) => a.uid === uid);
-    if (found) return found;
-  }
-  return null;
-}
-
-// An Extra Action Opportunity is a fresh one for a Mech that has already acted,
-// so it must not be told apart by uid alone.
-export function onExtraOpportunity(state: GameState, uid: number): boolean {
-  const done = new Set(state.script?.acted ?? []);
-  return done.has(uid) && (state.script?.extraOpps ?? []).includes(uid);
-}
-
-export function actionPhaseComplete(state: GameState, init: InitLookup): boolean {
-  return nextActivation(state, init) === null;
-}
+// The alternating designation loops and the Action Phase activation order live
+// in loop.ts, shared with the command layer.
+export { LOOP_PHASES, isLoopPhase, commandTokensFor, eligibleUnits, canAct, loopComplete, nextTurn, activationOrder, nextActivation, onExtraOpportunity, actionPhaseComplete } from './loop';
+export type { Activation, InitLookup, LoopPhase } from './loop';
 
 export interface GuideCallbacks {
   world(): ActionWorld;
@@ -457,28 +328,27 @@ export class PlayGuide {
       b.addEventListener('click', () => this.tryAction(b.dataset.act!)),
     );
     const markEnd = (id: string): void => {
-      if (id === 'tasks') this.settleTasks(s);
-      const sc = this.script(s);
-      const key = `${s.round.n}:end:${id}`;
-      if (!sc.endDone.includes(key)) sc.endDone.push(key);
+      perform(this.data, s, { kind: 'markEndStep', seat: this.script(s).turn, step: id });
       this.cb.onChanged();
     };
     this.root.querySelectorAll<HTMLButtonElement>('[data-end-step]').forEach((b) =>
       b.addEventListener('click', () => markEnd(b.dataset.endStep!)),
     );
     this.root.querySelector('[data-end-remove]')?.addEventListener('click', () => {
-      this.cb.onRemoveSpent();
       markEnd('remove');
+      this.cb.onRemoveSpent();
     });
     this.root.querySelector('[data-end-tokens]')?.addEventListener('click', () => {
-      for (const t of s.tokens) {
-        const { removed, flipped } = ageTokens(t);
-        const names = (ids: string[]) => [...new Set(ids)].map((id) => STATUSES.find((d) => d.id === id)?.label ?? id).join(', ');
+      // The aging happens inside the command, so what it will do is read off
+      // the tokens first and narrated after.
+      const preview = s.tokens.map((t) => ({ t, removed: (t.expiring ?? []).filter((id) => (t.statuses ?? []).includes(id)) }));
+      markEnd('tokens');
+      const names = (ids: string[]) => [...new Set(ids)].map((id) => STATUSES.find((d) => d.id === id)?.label ?? id).join(', ');
+      for (const { t, removed } of preview) {
+        const flipped = t.expiring ?? [];
         if (removed.length) this.cb.onNote(t, `End Phase: ${names(removed)} expired and came off.`);
         if (flipped.length) this.cb.onNote(t, `End Phase: ${names(flipped)} flipped to red and leaves next round.`);
       }
-      s.commandTokens = { s1: 0, s2: 0 };
-      markEnd('tokens');
     });
     this.root.querySelector('[data-pick-mission]')?.addEventListener('click', () => this.cb.onPickMission());
     this.root.querySelector('[data-lock-map]')?.addEventListener('click', () => {
@@ -1236,17 +1106,7 @@ export class PlayGuide {
     t.kind === 'projectile' || (t.kind === 'drone' && (this.data.byId.get(t.cardId)?.score ?? 0) === 0);
 
   private refreshControl(s: GameState, tasks: TaskState): void {
-    for (const item of tasks.items) {
-      const cells = this.data.zoneData.zones.find((z) => z.id === item.zone)?.cells ?? [];
-      if (item.kind === 'control') {
-        const holder = controlOf(cells, s.tokens, this.lowValue);
-        if (holder) item.control = holder;
-        continue;
-      }
-      if (item.kind === 'terminal' && !item.accessed) {
-        item.accessed = directAccess(cells, s.tokens, this.lowValue);
-      }
-    }
+    settleControl(tasks, (zone) => this.data.zoneData.zones.find((z) => z.id === zone)?.cells ?? [], s.tokens, this.lowValue);
   }
 
   private previewScore(s: GameState, tasks: TaskState, mission: MissionCard | undefined, finalRound: boolean): ScoreResult {
@@ -1295,22 +1155,21 @@ export class PlayGuide {
     s.tasks = tasks;
   }
 
+  // The scoring judgement stays here, where the mission logic lives; the
+  // command carries the resulting numbers, so a mirrored seat applies the
+  // same Award without re-deriving it.
   private awardScore(): void {
     const s = this.state;
     if (!s) return;
     const mission = this.data.missions.cards.find((c) => c.id === s.mission);
-    const tasks = normaliseTasks(s.tasks);
     const last = s.round.n >= (s.roundLimit ?? 5);
-    const got = this.previewScore(s, tasks, mission, last);
-    tasks.vp.s1 += got.s1;
-    tasks.vp.s2 += got.s2;
-    for (const l of got.lines) if (l.key && !tasks.scored.includes(l.key)) tasks.scored.push(l.key);
-    tasks.paidKills = { s1: { ...tasks.kills.s1 }, s2: { ...tasks.kills.s2 } };
-    tasks.paidTestKills = { ...tasks.testKills };
-    s.tasks = tasks;
-    const key = `${s.round.n}:end:tasks`;
-    const sc = this.script(s);
-    if (!sc.endDone.includes(key)) sc.endDone.push(key);
+    const got = this.previewScore(s, normaliseTasks(s.tasks), mission, last);
+    perform(this.data, s, {
+      kind: 'award',
+      seat: this.script(s).turn,
+      vp: { s1: got.s1, s2: got.s2 },
+      keys: got.lines.map((l) => l.key).filter((k): k is string => !!k),
+    });
     this.cb.onChanged();
   }
 
@@ -1325,10 +1184,7 @@ export class PlayGuide {
       return d?.shape === 'square' || d?.shape === 'hexagon';
     });
     if (!shed) return;
-    t.statuses = (t.statuses ?? []).filter((id, i) => !(id === shed && (t.statuses ?? []).indexOf(shed) === i));
-    t.expiring = (t.expiring ?? []).filter((id) => id !== shed);
-    if (!t.expiring.length) t.expiring = undefined;
-    t.link = Math.min(maxLink(this.data, t), (t.link ?? 0) + 1);
+    perform(this.data, s, { kind: 'stabilise', seat: t.side, uid });
     const label = STATUSES.find((x) => x.id === shed)?.label ?? shed;
     this.cb.onNote(t, `Stabilize System: ${label} removed and Link restored to ${t.link}.`);
     this.cb.onChanged();
@@ -1340,7 +1196,7 @@ export class PlayGuide {
     const s = this.state;
     const t = s?.tokens.find((x) => x.uid === uid);
     if (!s || !t) return;
-    t.statuses = (t.statuses ?? []).filter((id) => id !== 'camouflage');
+    perform(this.data, s, { kind: 'reveal', seat: t.side, uid });
     this.cb.onSelectUnit(t.uid);
     this.cb.onNote(t, `Reveal: out of the Optical Camouflage State. Now make Manifestation Movement, up to this unit's Stealth value, to where it really is.`);
     this.cb.onChanged();
@@ -1422,9 +1278,7 @@ export class PlayGuide {
       this.render();
       return;
     }
-    const sc = this.script(s);
-    pick.link = Math.max(0, (pick.link ?? 0) - g.linkCost);
-    sc.extraOpps.push(pick.uid);
+    perform(this.data, s, { kind: 'grantExtra', seat: pick.side, uid: pick.uid, linkCost: g.linkCost });
     this.cb.onNote(pick, `Coordinate: pays ${g.linkCost} Link (now ${pick.link}) and is owed an Extra Action Opportunity.`);
     this.cb.onChanged();
   }
@@ -1500,19 +1354,11 @@ export class PlayGuide {
   private endActivation(): void {
     const s = this.state;
     if (!s) return;
-    const sc = this.script(s);
     const o = this.opportunity(s);
     if (!o) return;
-    // Ending an Extra Opportunity spends the grant. Ending a normal one records
-    // the Mech as having acted. A Mech granted one before its own turn comes up
-    // takes the normal Opportunity first, then the extra.
-    if (onExtraOpportunity(s, o.uid)) {
-      const at = sc.extraOpps.indexOf(o.uid);
-      if (at >= 0) sc.extraOpps.splice(at, 1);
-    } else if (!sc.acted.includes(o.uid)) {
-      sc.acted.push(o.uid);
-    }
-    sc.opp = null;
+    const t = s.tokens.find((x) => x.uid === o.uid);
+    if (!t) return;
+    perform(this.data, s, { kind: 'endOpportunity', seat: t.side, uid: o.uid });
     this.warn = null;
     this.cb.onChanged();
   }
@@ -1666,24 +1512,13 @@ export class PlayGuide {
   private finishDesignation(uid: number): void {
     const s = this.state;
     if (!s) return;
-    const sc = this.script(s);
     const phase = PHASES[s.round.phase];
     if (!isLoopPhase(phase)) return;
     const unit = s.tokens.find((t) => t.uid === uid);
     if (!unit) return;
-    if (phase === 'Command') {
-      // Additional Instructions buys one Command Action outright, so the token
-      // stays in the pool for this designation only.
-      const free = sc.freeCommand.includes(uid);
-      if (free) sc.freeCommand = sc.freeCommand.filter((x) => x !== uid);
-      else s.commandTokens[unit.side] = Math.max(0, (s.commandTokens[unit.side] ?? 0) - 1);
-      if (!sc.commanded.includes(uid)) sc.commanded.push(uid);
-    } else if (!sc.acted.includes(uid)) {
-      sc.acted.push(uid);
-    }
+    perform(this.data, s, { kind: 'designate', seat: unit.side, uid });
     this.picked = null;
     this.warn = null;
-    sc.turn = nextTurn(s, phase, unit.side) ?? unit.side;
     this.cb.onChanged();
   }
 
@@ -1693,9 +1528,10 @@ export class PlayGuide {
     const sc = this.script(s);
     const phase = PHASES[s.round.phase];
     if (!isLoopPhase(phase)) return;
+    // The pass belongs to whoever's turn it actually is, so a stale turn
+    // pointer is normalised before the command is issued.
     const turn = canAct(s, phase, sc.turn) ? sc.turn : (nextTurn(s, phase, sc.turn) ?? sc.turn);
-    if (!sc.passed.includes(turn)) sc.passed.push(turn);
-    sc.turn = nextTurn(s, phase, turn) ?? turn;
+    perform(this.data, s, { kind: 'passTurn', seat: turn });
     this.cb.onChanged();
   }
 

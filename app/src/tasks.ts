@@ -151,6 +151,27 @@ export function controlOf(cells: string[], tokens: Token[], lowValue?: (t: Token
 
 // ---------- terminals (5.3.3) ----------
 
+// A Control dial keeps its holder until someone else takes the zone, while a
+// Terminal is only marked when nobody has accessed it yet this round (5.3).
+export function settleControl(
+  tasks: TaskState,
+  zoneCells: (zone: string) => string[],
+  tokens: Token[],
+  lowValue?: (t: Token) => boolean,
+): void {
+  for (const item of tasks.items) {
+    const cells = zoneCells(item.zone);
+    if (item.kind === 'control') {
+      const holder = controlOf(cells, tokens, lowValue);
+      if (holder) item.control = holder;
+      continue;
+    }
+    if (item.kind === 'terminal' && !item.accessed) {
+      item.accessed = directAccess(cells, tokens, lowValue);
+    }
+  }
+}
+
 export function directAccess(cells: string[], tokens: Token[], lowValue?: (t: Token) => boolean): Side | null {
   return controlOf(cells, tokens, lowValue);
 }
