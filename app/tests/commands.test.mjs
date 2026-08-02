@@ -11,6 +11,8 @@ const setupSrc = readFileSync(new URL('../src/setup.ts', import.meta.url), 'utf8
 const tacticsSrc = readFileSync(new URL('../src/tactics.ts', import.meta.url), 'utf8');
 const tasksSrc = readFileSync(new URL('../src/tasks.ts', import.meta.url), 'utf8');
 const loopSrc = readFileSync(new URL('../src/loop.ts', import.meta.url), 'utf8');
+const rules = readFileSync(new URL('../src/rules.ts', import.meta.url), 'utf8');
+const smokeRules = rules.slice(rules.indexOf('export function smokeKey'), rules.indexOf('export function smokeBlocks'));
 const timings = types.slice(types.indexOf('export const PHASES'), types.indexOf('export type TokenShape'));
 const statuses = types.slice(types.indexOf('export function hexagonIds'), types.indexOf('export interface RoundState'));
 const tmp = new URL('./_commands.slice.ts', import.meta.url);
@@ -28,6 +30,13 @@ export function maxLink(data: any, t: any): number {
   const pilot = t.kind === 'mech' && t.mech?.pilot ? data.byId.get(t.mech.pilot) : undefined;
   return pilot?.LV ?? 99;
 }
+export function makeDroneToken(state: any, data: any, card: any, side: any): any {
+  return {
+    uid: state.nextUid++, side, kind: card.category === 'projectile' ? 'projectile' : 'drone',
+    cardId: card.id, label: card.id, size: 1, aerial: false, stance: 'offensive',
+    partStates: { main: 'intact' }, ammo: {},
+  };
+}
 `;
 writeFileSync(
   tmp,
@@ -38,6 +47,7 @@ writeFileSync(
     + tacticsSrc.replace(/^import[^\n]*\n/gm, '')
     + tasksSrc.replace(/^import[^\n]*\n/gm, '')
     + loopSrc.replace(/^import[^\n]*\n/gm, '')
+    + smokeRules
     + ticks.replace(/^import[^\n]*\n/gm, '')
     + stubs
     + commands.replace(/^import[^\n]*\n/gm, ''),
@@ -471,6 +481,74 @@ check('reveal needs the camouflage', C.check(data, world([mech(1, 's1')]), { kin
 const wrev = world([mech(1, 's1', { statuses: ['camouflage'] })]);
 C.apply(data, wrev, { kind: 'reveal', seat: 's1', uid: 1 });
 check('reveal drops the camouflage state', wrev.tokens[0].statuses, []);
+
+// ---------- pre-game setup ----------
+
+const wmap = world([]);
+C.apply(data, wmap, { kind: 'lockMap', seat: 's1' });
+check('locking the map opens the roll', wmap.setup.stage, 'roll');
+check('locking twice is refused', C.check(data, wmap, { kind: 'lockMap', seat: 's1' }).ok, false);
+C.apply(data, wmap, { kind: 'rollSetup', seat: 's1', hits: [2, 1] });
+C.apply(data, wmap, { kind: 'rollSetup', seat: 's2', hits: [0, 1] });
+check('the rolls ride as hits', wmap.setup.rolls, { s1: [2, 1], s2: [0, 1] });
+C.apply(data, wmap, { kind: 'acceptRoll', seat: 's1' });
+check('accepting crowns the First Player', [wmap.round.firstPlayer, wmap.setup.stage], ['s1', 'side']);
+check('the other squad cannot pick the edge', C.check(data, wmap, { kind: 'pickEdge', seat: 's2', edge: 'black' }).ok, false);
+C.apply(data, wmap, { kind: 'pickEdge', seat: 's1', edge: 'black' });
+check('the edge pick splits the table', [wmap.setup.stage, wmap.setup.edge], ['deploy', { s1: 'black', s2: 'white' }]);
+const wtie = world([]);
+wtie.setup = { stage: 'roll', rolls: { s1: [1], s2: [1] }, edge: { s1: 'white', s2: 'black' }, placed: { s1: 0, s2: 0 } };
+check('a tied roll cannot be accepted', C.check(data, wtie, { kind: 'acceptRoll', seat: 's1' }).ok, false);
+check('deployment cannot finish early', C.check(data, world([mech(1, 's1', { deployed: false })]), { kind: 'finishDeployment', seat: 's1' }).ok, false);
+const wfd = world([mech(1, 's1')]);
+wfd.script.stage = '1:0';
+C.apply(data, wfd, { kind: 'finishDeployment', seat: 's1' });
+check('finishing deployment starts the game proper', [wfd.setup.stage, wfd.script.stage], ['done', '']);
+const wld = world([], 1);
+C.apply(data, wld, { kind: 'lockDials', seat: 's1' });
+check('locking the dials stamps the stage', wld.script.stage, '1:1:locked');
+check('outside Planning the lock is refused', C.check(data, world([], 2), { kind: 'lockDials', seat: 's1' }).ok, false);
+
+// ---------- the intercept queue ----------
+
+const it = { uid: 1, actionId: 'I1', targetUid: 9 };
+const wq = world([mech(1, 's1')], 2);
+wq.script.intercepts = [];
+C.apply(data, wq, { kind: 'queueIntercepts', seat: 's2', items: [it, { uid: 1, actionId: 'I1', targetUid: 10 }] });
+check('owed interceptions are queued', wq.script.intercepts.length, 2);
+check('a queued interception may resolve', C.check(data, wq, { kind: 'resolveIntercept', seat: 's1', ...it }).ok, true);
+C.apply(data, wq, { kind: 'resolveIntercept', seat: 's1', ...it });
+check('resolving consumes exactly one', [wq.script.intercepts.length, wq.script.intercepts[0].targetUid], [1, 10]);
+check('an interception not owed is refused', C.check(data, wq, { kind: 'resolveIntercept', seat: 's1', ...it }).ok, false);
+C.apply(data, wq, { kind: 'clearIntercepts', seat: 's1' });
+check('skipping clears the queue', wq.script.intercepts, []);
+
+// ---------- launch and despawn ----------
+
+const wl = world([mech(1, 's1', { mech: { torso: 'T4', pilot: 'P1' }, ammo: { L1: 2 } })], 2);
+wl.nextUid = 50;
+C.apply(data, wl, { kind: 'launch', seat: 's1', uid: 1, actionId: 'L1', cardId: 'D1', to: { col: 9, row: 9 }, facing: 2 });
+const born = wl.tokens[1];
+check('a launch spawns the projectile where it landed', [born.uid, born.parentUid, born.col, born.row, born.facing], [50, 1, 9, 9, 2]);
+check('and spends the Ammo with it', wl.tokens[0].ammo.L1, 1);
+check('and the uid counter advanced', wl.nextUid, 51);
+check('launching a made-up card is refused', C.check(data, wl, { kind: 'launch', seat: 's1', uid: 1, actionId: 'L1', cardId: 'NOPE', to: { col: 9, row: 9 }, facing: 0 }).ok, false);
+C.apply(data, wl, { kind: 'despawn', seat: 's1', uid: 1, targetUid: 50 });
+check('a despawn takes it back off', wl.tokens.length, 1);
+
+// ---------- smoke screens ----------
+
+const ws = world([]);
+check('smoke lands only on the board', C.check(data, ws, { kind: 'placeSmoke', seat: 's1', at: { col: 20, row: 3 } }).ok, false);
+C.apply(data, ws, { kind: 'placeSmoke', seat: 's1', at: { col: 3, row: 3 } });
+C.apply(data, ws, { kind: 'placeSmoke', seat: 's1', at: { col: 4, row: 3 } });
+C.apply(data, ws, { kind: 'placeSmoke', seat: 's1', at: { col: 9, row: 9 } });
+check('screens are recorded with their side', ws.smoke.length, 3);
+C.apply(data, ws, { kind: 'dissipateSmoke', seat: 's1' });
+check('dissipation removes only the isolated screen', ws.smoke.map((x) => `${x.col},${x.row}`), ['3,3', '4,3']);
+C.apply(data, ws, { kind: 'removeSmoke', seat: 's1', at: { col: 3, row: 3 } });
+check('a group pick removes one screen', ws.smoke.map((x) => `${x.col},${x.row}`), ['4,3']);
+check('removing missing smoke is refused', C.check(data, ws, { kind: 'removeSmoke', seat: 's1', at: { col: 9, row: 9 } }).ok, false);
 
 // ---------- determinism ----------
 

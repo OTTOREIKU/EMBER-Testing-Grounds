@@ -10,7 +10,7 @@ import { perform } from './commands';
 import { Inventory } from './inventory';
 import { BOARD_THEMES, boardTheme } from './boards';
 import { bindTips, inspectOnHover, isInspectPinned, showInspect, unpinInspect } from './inspector';
-import { cardName, dataUrl, loadData, missionImageUrl, parseGridRef, rulesLines, secondaryImageUrl, type SecondaryTask, setSquadNames, SQUAD_ORDER, squadLabel } from './data';
+import { cardName, dataUrl, isAerial, loadData, missionImageUrl, parseGridRef, rulesLines, secondaryImageUrl, type SecondaryTask, setSquadNames, SQUAD_ORDER, squadLabel, unitSize } from './data';
 import {
   deleteCustomMap,
   emptyCustomMap,
@@ -678,15 +678,14 @@ async function init() {
   // die colour here, so the roll uses Yellow, which is the Hit die with the
   // widest spread and therefore the fewest ties.
   function rollForFirstPlayer(side: Side): void {
-    const su = normaliseSetup(state.setup) ?? newSetup();
     const faces = [0, 1].map(() => dice.dice.yellow.faces[Math.floor(Math.random() * dice.dice.yellow.sides)]);
-    const hits = faces.map((f) => countHits([f]));
-    su.rolls = { ...su.rolls, [side]: hits } as SetupState['rolls'];
+    // The dice ride in the command as Hits, never re-rolled by a receiver.
+    perform(data, state, { kind: 'rollSetup', seat: side, hits: faces.map((f) => countHits([f])) });
+    const su = normaliseSetup(state.setup) ?? newSetup();
     // A re-roll after a tie starts the comparison over for both sides.
     if (su.rolls.s1.length && su.rolls.s2.length && !firstPlayerFrom(su) && side === 's2') {
       tray.addToPool({ yellow: 2 }, true);
     }
-    state.setup = su;
     onChanged();
   }
 
@@ -1010,8 +1009,9 @@ async function init() {
     if (!m) return;
     const t = state.tokens.find((x) => x.uid === m.uid);
     if (!t) return;
-    const tok = makeDroneToken(state, data, m.card, t.side);
-    const spot = standingSpot(c, r, tok.size, tok.aerial, currentTerrain(), state.tokens, undefined, { col: t.col, row: t.row });
+    // Sizing the landing check off the card rather than a probe token: minting
+    // one here would burn a uid the launch command then cannot reproduce.
+    const spot = standingSpot(c, r, unitSize(m.card), isAerial(m.card), currentTerrain(), state.tokens, undefined, { col: t.col, row: t.row });
     if (!spot) {
       void alertDialog({
         title: 'Nothing fits there',
@@ -1019,11 +1019,11 @@ async function init() {
       });
       return;
     }
-    const placed = { ...tok, parentUid: t.uid, col: spot.col, row: spot.row, facing: t.facing };
-    state.tokens.push(placed);
-    m.placedUids.push(placed.uid);
     const id = m.action.id;
-    perform(data, state, { kind: 'spendAmmo', seat: t.side, uid: t.uid, actionId: id });
+    // The launch spawns the projectile and spends the Ammo in one command.
+    perform(data, state, { kind: 'launch', seat: t.side, uid: t.uid, actionId: id, cardId: m.card.id, to: { col: spot.col, row: spot.row }, facing: t.facing });
+    const placed = state.tokens[state.tokens.length - 1];
+    m.placedUids.push(placed.uid);
     m.placed++;
     m.left--;
     logTo(t, `Launched ${cardName(m.card)} to ${gridRef(c, r)}${t.ammo[id] !== undefined ? ` (Ammo ${t.ammo[id]} left)` : ''}.`);
@@ -1041,10 +1041,14 @@ async function init() {
     const m = launching;
     if (!m || !m.placedUids.length) return;
     const uid = m.placedUids.pop()!;
-    state.tokens = state.tokens.filter((x) => x.uid !== uid);
     const t = state.tokens.find((x) => x.uid === m.uid);
     const id = m.action.id;
-    if (t) perform(data, state, { kind: 'restoreAmmo', seat: t.side, uid: t.uid, actionId: id });
+    if (t) {
+      perform(data, state, { kind: 'despawn', seat: t.side, uid: t.uid, targetUid: uid });
+      perform(data, state, { kind: 'restoreAmmo', seat: t.side, uid: t.uid, actionId: id });
+    } else {
+      state.tokens = state.tokens.filter((x) => x.uid !== uid);
+    }
     m.placed--;
     m.left++;
     if (t) logTo(t, `Took back a ${cardName(m.card)}${t.ammo[id] !== undefined ? ` (Ammo ${t.ammo[id]} left)` : ''}.`);
@@ -1094,7 +1098,7 @@ async function init() {
       }
     }
     if (!owed.length) return;
-    state.script.intercepts = [...state.script.intercepts, ...owed];
+    perform(data, state, { kind: 'queueIntercepts', seat: t.side, items: owed });
     logTo(t, `Launch triggers Interception: ${owed.length} attempt${owed.length === 1 ? '' : 's'} owed.`);
   }
 
@@ -1756,7 +1760,7 @@ async function init() {
         return;
       }
       if (!canBeForceMoved(data, v)) {
-        state.tokens = state.tokens.filter((x) => x.uid !== v.uid);
+        perform(data, state, { kind: 'despawn', seat: t.side, uid: t.uid, targetUid: v.uid });
         logTo(t, `Crushed ${v.label}, which cannot be Force-Moved, so it is destroyed.`);
         board.renderTokens(state);
         step();
@@ -1871,9 +1875,8 @@ async function init() {
     cancel.addEventListener('click', () => finishSmoke());
     head.appendChild(cancel);
     board.showSmokeTargets(cands, (c, r) => {
-      const s: SmokeScreen = { col: c, row: r, side: m.side };
-      state.smoke = [...(state.smoke ?? []), s];
-      m.placed.push(s);
+      perform(data, state, { kind: 'placeSmoke', seat: m.side, at: { col: c, row: r } });
+      m.placed.push(state.smoke![state.smoke!.length - 1]);
       m.left--;
       onChanged();
       if (m.left <= 0) finishSmoke();
@@ -1970,7 +1973,7 @@ async function init() {
       isolated += d.isolated.length;
       for (const g of d.groups) queue.push({ side, group: g });
     }
-    state.smoke = smoke.filter((s) => !doomed.has(s));
+    perform(data, state, { kind: 'dissipateSmoke', seat: state.round.firstPlayer });
     smokeChoices = queue;
     onChanged();
     if (!queue.length) {
@@ -2005,15 +2008,14 @@ async function init() {
     board.showSmokeTargets(
       next.group.map((s) => ({ c: s.col, r: s.row, ok: true })),
       (c, r) => {
-        const gone = next.group.find((s) => s.col === c && s.row === r);
-        state.smoke = (state.smoke ?? []).filter((s) => s !== gone);
+        perform(data, state, { kind: 'removeSmoke', seat: next.side, at: { col: c, row: r } });
         smokeChoices = smokeChoices!.slice(1);
         onChanged();
         renderSmokeChoice(0);
       },
     );
     host.querySelector('#smoke-auto')!.addEventListener('click', () => {
-      state.smoke = (state.smoke ?? []).filter((s) => s !== next.group[0]);
+      perform(data, state, { kind: 'removeSmoke', seat: next.side, at: { col: next.group[0].col, row: next.group[0].row } });
       smokeChoices = smokeChoices!.slice(1);
       onChanged();
       renderSmokeChoice(0);
@@ -2089,7 +2091,7 @@ async function init() {
         origin: { c: Math.floor(proj.col / 3), r: Math.floor(proj.row / 3) },
         label: `${name} · ${proj.label}`,
         done: () => {
-          state.tokens = state.tokens.filter((x) => x.uid !== proj.uid);
+          perform(data, state, { kind: 'despawn', seat: proj.side, uid: proj.uid, targetUid: proj.uid });
           if (selectedUid === proj.uid) selectToken(null);
           renderCombatIdle();
           showSideTab('details');
@@ -2149,7 +2151,7 @@ async function init() {
     const det = data.mechanics.find((m) => m.id === 'detonation');
     if (det) inspectOnHover(remove, { title: det.name, sub: det.ref, lines: [det.text] });
     remove.addEventListener('click', () => {
-      state.tokens = state.tokens.filter((x) => x.uid !== proj.uid);
+      perform(data, state, { kind: 'despawn', seat: proj.side, uid: proj.uid, targetUid: proj.uid });
       board.clearHighlights();
       if (selectedUid === proj.uid) selectToken(null);
       renderCombatIdle();
@@ -2309,7 +2311,7 @@ async function init() {
         draw();
       });
       body.querySelector('#det-done')!.addEventListener('click', () => {
-        state.tokens = state.tokens.filter((x) => x.uid !== proj.uid);
+        perform(data, state, { kind: 'despawn', seat: proj.side, uid: proj.uid, targetUid: proj.uid });
         board.clearHighlights();
         if (selectedUid === proj.uid) selectToken(null);
         renderCombatIdle();

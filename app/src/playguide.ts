@@ -359,7 +359,7 @@ export class PlayGuide {
         return;
       }
       this.warn = null;
-      s.setup = { ...su, stage: 'roll' };
+      perform(this.data, s, { kind: 'lockMap', seat: s.round.firstPlayer });
       this.cb.onChanged();
     });
     this.root.querySelectorAll<HTMLButtonElement>('[data-roll]').forEach((b) =>
@@ -367,21 +367,15 @@ export class PlayGuide {
     );
     this.root.querySelector('[data-roll-accept]')?.addEventListener('click', () => {
       const su = normaliseSetup(s.setup) ?? newSetup();
-      const winner = firstPlayerFrom(su);
-      if (!winner) return;
-      s.round.firstPlayer = winner;
-      s.setup = { ...su, stage: 'side' };
+      if (!firstPlayerFrom(su)) return;
+      perform(this.data, s, { kind: 'acceptRoll', seat: s.round.firstPlayer });
       this.cb.onChanged();
     });
     this.root.querySelectorAll<HTMLButtonElement>('[data-edge]').forEach((b) =>
       b.addEventListener('click', () => {
         // The edge follows the roll directly (3.1.2). Tasks still come before
         // any unit lands, but that is the deploy stage's gate, not this one's.
-        const su = normaliseSetup(s.setup) ?? newSetup();
-        const mine = b.dataset.edge as 'black' | 'white';
-        const fp = s.round.firstPlayer;
-        const other: Side = fp === 's1' ? 's2' : 's1';
-        s.setup = { ...su, stage: 'deploy', edge: { ...su.edge, [fp]: mine, [other]: mine === 'black' ? 'white' : 'black' } as SetupState['edge'] };
+        perform(this.data, s, { kind: 'pickEdge', seat: s.round.firstPlayer, edge: b.dataset.edge as 'black' | 'white' });
         this.warn = null;
         this.cb.onChanged();
       }),
@@ -412,13 +406,7 @@ export class PlayGuide {
     });
     this.root.querySelector('[data-game-over]')?.addEventListener('click', () => this.cb.onEndGame());
     this.root.querySelector('[data-deploy-done]')?.addEventListener('click', () => {
-      const su = normaliseSetup(s.setup) ?? newSetup();
-      s.setup = { ...su, stage: 'done' };
-      // The Command Phase stage was entered back when the game started, before
-      // the roll decided the First Player, so its turn points at the pre-roll
-      // side. Clearing the stage makes syncStage run again now that the real
-      // First Player is known (3.2.2 starts the command loop from them).
-      this.script(s).stage = '';
+      perform(this.data, s, { kind: 'finishDeployment', seat: s.round.firstPlayer });
       this.cb.onChanged();
     });
     this.root.querySelectorAll<HTMLButtonElement>('[data-dial]').forEach((b) =>
@@ -433,7 +421,7 @@ export class PlayGuide {
         return;
       }
       this.warn = null;
-      sc.stage = `${s.round.n}:1:locked`;
+      perform(this.data, s, { kind: 'lockDials', seat: sc.turn });
       this.cb.onChanged();
     });
     this.root.querySelectorAll<HTMLButtonElement>('[data-intercept]').forEach((b) =>
@@ -441,12 +429,13 @@ export class PlayGuide {
         const sc = this.script(s);
         const item = sc.intercepts[Number(b.dataset.intercept)];
         if (!item) return;
-        sc.intercepts = sc.intercepts.filter((x) => x !== item);
+        const owner = s.tokens.find((x) => x.uid === item.uid);
+        perform(this.data, s, { kind: 'resolveIntercept', seat: owner?.side ?? s.round.firstPlayer, ...item });
         this.cb.onIntercept(item.uid, item.actionId, item.targetUid);
       }),
     );
     this.root.querySelector('[data-intercept-skip]')?.addEventListener('click', () => {
-      this.script(s).intercepts = [];
+      perform(this.data, s, { kind: 'clearIntercepts', seat: this.script(s).turn });
       this.cb.onChanged();
     });
     this.root.querySelectorAll<HTMLButtonElement>('[data-unit-act]').forEach((b) =>

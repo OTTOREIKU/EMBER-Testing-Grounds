@@ -1,12 +1,13 @@
-import type { Facing, GameState, PartSlot, Side, Stance, Timing, Token } from './types';
+import type { Facing, GameState, PartSlot, Side, SmokeScreen, Stance, Timing, Token } from './types';
 import { addStatus, ageTokens, PHASES, STATUSES, TIMINGS } from './types';
 import type { GameData } from './data';
-import { maxLink, tokenCards } from './units';
+import { makeDroneToken, maxLink, tokenCards } from './units';
 import { canManeuver, canOverload, canPerform, spendAction, spendManeuver, spendOverload } from './ticks';
 import { tacticSpec, tacticTargets, type TacticCtx } from './tactics';
-import { deployTurn, normaliseSetup } from './setup';
+import { deploymentComplete, deployTurn, firstPlayerFrom, newSetup, normaliseSetup } from './setup';
 import { applyKill, normaliseTasks, settleControl } from './tasks';
 import { eligibleUnits, isLoopPhase, nextTurn, onExtraOpportunity } from './loop';
+import { dissipationFor } from './rules';
 
 // ---------- the command layer (multiplayer phase 1) ----------
 
@@ -56,7 +57,21 @@ export type Command =
   | { kind: 'markEndStep'; seat: Side; step: string }
   | { kind: 'award'; seat: Side; vp: { s1: number; s2: number }; keys: string[] }
   | { kind: 'stabilise'; seat: Side; uid: number }
-  | { kind: 'reveal'; seat: Side; uid: number };
+  | { kind: 'reveal'; seat: Side; uid: number }
+  | { kind: 'lockMap'; seat: Side }
+  | { kind: 'rollSetup'; seat: Side; hits: number[] }
+  | { kind: 'acceptRoll'; seat: Side }
+  | { kind: 'pickEdge'; seat: Side; edge: 'black' | 'white' }
+  | { kind: 'lockDials'; seat: Side }
+  | { kind: 'finishDeployment'; seat: Side }
+  | { kind: 'queueIntercepts'; seat: Side; items: { uid: number; actionId: string; targetUid: number }[] }
+  | { kind: 'resolveIntercept'; seat: Side; uid: number; actionId: string; targetUid: number }
+  | { kind: 'clearIntercepts'; seat: Side }
+  | { kind: 'launch'; seat: Side; uid: number; actionId: string; cardId: string; to: { col: number; row: number }; facing: Facing }
+  | { kind: 'despawn'; seat: Side; uid: number; targetUid: number }
+  | { kind: 'placeSmoke'; seat: Side; at: { col: number; row: number } }
+  | { kind: 'removeSmoke'; seat: Side; at: { col: number; row: number } }
+  | { kind: 'dissipateSmoke'; seat: Side };
 
 export type CheckResult = { ok: true } | { ok: false; why: string };
 
@@ -96,18 +111,27 @@ function oppOf(state: GameState, uid: number) {
   return o && o.uid === uid ? o : undefined;
 }
 
-// Forced Movement, kill tallies and terrain destruction may outlive their
-// actor: a grenade's Knockback resolves after the spent projectile has left
-// the board. So these three carry the actor for attribution, and the on-board
-// gate binds only while it is still standing.
-function actorOptional(cmd: Command): cmd is Command & { kind: 'forceMove' | 'recordKill' | 'destroyTerrain' } {
-  return cmd.kind === 'forceMove' || cmd.kind === 'recordKill' || cmd.kind === 'destroyTerrain';
+// Forced Movement, kill tallies, terrain destruction and the intercept queue
+// may outlive their actor: a grenade's Knockback resolves after the spent
+// projectile has left the board, and an owed Interception survives its unit
+// dying. So these carry the actor for attribution, and the on-board gate binds
+// only while it is still standing.
+function actorOptional(cmd: Command): cmd is Command & { kind: 'forceMove' | 'recordKill' | 'destroyTerrain' | 'resolveIntercept' } {
+  return cmd.kind === 'forceMove' || cmd.kind === 'recordKill' || cmd.kind === 'destroyTerrain' || cmd.kind === 'resolveIntercept';
 }
 
-// The round track, the designation loop's pass and the End Phase checklist
-// belong to the table, not to a unit, so these carry a seat and nothing else.
-type TableKind = 'advancePhase' | 'setPhase' | 'resetRounds' | 'adjustCommandTokens' | 'passTurn' | 'markEndStep' | 'award';
-const TABLE_KINDS = new Set<Command['kind']>(['advancePhase', 'setPhase', 'resetRounds', 'adjustCommandTokens', 'passTurn', 'markEndStep', 'award']);
+// The round track, the pre-game stages, the smoke and intercept books, the
+// designation loop's pass and the End Phase checklist belong to the table, not
+// to a unit, so these carry a seat and nothing else.
+type TableKind =
+  | 'advancePhase' | 'setPhase' | 'resetRounds' | 'adjustCommandTokens' | 'passTurn' | 'markEndStep' | 'award'
+  | 'lockMap' | 'rollSetup' | 'acceptRoll' | 'pickEdge' | 'lockDials' | 'finishDeployment'
+  | 'queueIntercepts' | 'clearIntercepts' | 'placeSmoke' | 'removeSmoke' | 'dissipateSmoke';
+const TABLE_KINDS = new Set<Command['kind']>([
+  'advancePhase', 'setPhase', 'resetRounds', 'adjustCommandTokens', 'passTurn', 'markEndStep', 'award',
+  'lockMap', 'rollSetup', 'acceptRoll', 'pickEdge', 'lockDials', 'finishDeployment',
+  'queueIntercepts', 'clearIntercepts', 'placeSmoke', 'removeSmoke', 'dissipateSmoke',
+]);
 function tableLevel(cmd: Command): cmd is Command & { kind: TableKind } {
   return TABLE_KINDS.has(cmd.kind);
 }
@@ -148,6 +172,61 @@ function checkTable(state: GameState, cmd: Command & { kind: TableKind }): Check
       if (!Number.isFinite(cmd.vp.s1) || !Number.isFinite(cmd.vp.s2) || cmd.vp.s1 < 0 || cmd.vp.s2 < 0) return no('That is not a score.');
       return ok;
     }
+    case 'lockMap': {
+      const su = normaliseSetup(state.setup);
+      if (su && su.stage !== 'map') return no('The battlefield is already locked (3.1.2).');
+      return ok;
+    }
+    case 'rollSetup': {
+      const su = normaliseSetup(state.setup);
+      if (!su || su.stage !== 'roll') return no('The table-edge roll comes after the battlefield is locked (3.1.2).');
+      if (!Array.isArray(cmd.hits) || !cmd.hits.length || cmd.hits.some((h) => !Number.isInteger(h) || h < 0)) return no('That is not a roll.');
+      return ok;
+    }
+    case 'acceptRoll': {
+      const su = normaliseSetup(state.setup);
+      if (!su || !firstPlayerFrom(su)) return no('The roll is tied, so it must be made again (3.1.2).');
+      return ok;
+    }
+    case 'pickEdge': {
+      const su = normaliseSetup(state.setup);
+      if (!su || su.stage !== 'side') return no('The table-edge pick follows the First Player roll (3.1.2).');
+      if (cmd.seat !== state.round.firstPlayer) return no('The First Player picks the table edge (3.1.2).');
+      if (cmd.edge !== 'black' && cmd.edge !== 'white') return no('That is not a table edge.');
+      return ok;
+    }
+    case 'lockDials': {
+      if (!state.script) return no('There is no guided game running.');
+      if (state.round.phase !== 1) return no('Dials lock at the end of the Planning Phase (3.3).');
+      return ok;
+    }
+    case 'finishDeployment': {
+      if (!deploymentComplete(state)) return no('Units are still waiting to deploy (3.1.4).');
+      return ok;
+    }
+    case 'queueIntercepts': {
+      if (!state.script) return no('There is no guided game running.');
+      if (!cmd.items.length) return no('No Interceptions owed.');
+      if (cmd.items.some((x) => !Number.isInteger(x.uid) || !Number.isInteger(x.targetUid) || typeof x.actionId !== 'string')) {
+        return no('That is not an Interception.');
+      }
+      return ok;
+    }
+    case 'clearIntercepts': {
+      if (!state.script) return no('There is no guided game running.');
+      return ok;
+    }
+    case 'placeSmoke': {
+      const { col, row } = cmd.at;
+      if (!Number.isInteger(col) || !Number.isInteger(row) || col < 0 || row < 0 || col > 11 || row > 11) return no('That is not a Grid.');
+      return ok;
+    }
+    case 'removeSmoke': {
+      if (!(state.smoke ?? []).some((x) => x.col === cmd.at.col && x.row === cmd.at.row)) return no('There is no Smoke Screen there.');
+      return ok;
+    }
+    case 'dissipateSmoke':
+      return ok;
   }
 }
 
@@ -183,13 +262,21 @@ export function check(data: GameData, state: GameState, cmd: Command): CheckResu
       if (cmd.pieces.every((p) => gone.has(p))) return no('That terrain is already destroyed.');
       return ok;
     }
+    case 'resolveIntercept': {
+      const sc = state.script;
+      if (!sc) return no('There is no guided game running.');
+      if (!sc.intercepts.some((x) => x.uid === cmd.uid && x.actionId === cmd.actionId && x.targetUid === cmd.targetUid)) {
+        return no('That Interception is not owed.');
+      }
+      return ok;
+    }
   }
 }
 
 function checkActed(
   data: GameData,
   state: GameState,
-  cmd: Exclude<Command, { kind: 'forceMove' | 'recordKill' | 'destroyTerrain' | TableKind }>,
+  cmd: Exclude<Command, { kind: 'forceMove' | 'recordKill' | 'destroyTerrain' | 'resolveIntercept' | TableKind }>,
   t: Token,
 ): CheckResult {
   switch (cmd.kind) {
@@ -335,6 +422,19 @@ function checkActed(
       if (!(t.statuses ?? []).includes('camouflage')) return no('This unit is not in the Optical Camouflage State.');
       return ok;
     }
+    case 'launch': {
+      if (!data.byId.get(cmd.cardId)) return no('That is not a card the database knows.');
+      if (!findAction(data, state, cmd.uid, cmd.actionId)) return no('This unit has no such Action.');
+      const { col, row } = cmd.to;
+      if (!Number.isInteger(col) || !Number.isInteger(row) || col < 0 || row < 0 || col > 35 || row > 35) {
+        return no('That is not a place on the board.');
+      }
+      return ok;
+    }
+    case 'despawn': {
+      if (!state.tokens.some((x) => x.uid === cmd.targetUid)) return no('That unit is not on the board.');
+      return ok;
+    }
   }
 }
 
@@ -419,6 +519,80 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
       const key = `${state.round.n}:end:tasks`;
       if (!sc.endDone.includes(key)) sc.endDone.push(key);
     }
+    return;
+  }
+  if (cmd.kind === 'lockMap') {
+    state.setup = { ...(normaliseSetup(state.setup) ?? newSetup()), stage: 'roll' };
+    return;
+  }
+  if (cmd.kind === 'rollSetup') {
+    // The dice were rolled by the sender; the command carries the Hits, so a
+    // mirrored seat never re-rolls them.
+    const su = normaliseSetup(state.setup) ?? newSetup();
+    su.rolls = { ...su.rolls, [cmd.seat]: cmd.hits };
+    state.setup = su;
+    return;
+  }
+  if (cmd.kind === 'acceptRoll') {
+    const su = normaliseSetup(state.setup) ?? newSetup();
+    const winner = firstPlayerFrom(su);
+    if (!winner) return;
+    state.round.firstPlayer = winner;
+    state.setup = { ...su, stage: 'side' };
+    return;
+  }
+  if (cmd.kind === 'pickEdge') {
+    const su = normaliseSetup(state.setup) ?? newSetup();
+    const fp = state.round.firstPlayer;
+    const other: Side = fp === 's1' ? 's2' : 's1';
+    state.setup = { ...su, stage: 'deploy', edge: { ...su.edge, [fp]: cmd.edge, [other]: cmd.edge === 'black' ? 'white' : 'black' } };
+    return;
+  }
+  if (cmd.kind === 'lockDials') {
+    if (state.script) state.script.stage = `${state.round.n}:1:locked`;
+    return;
+  }
+  if (cmd.kind === 'finishDeployment') {
+    state.setup = { ...(normaliseSetup(state.setup) ?? newSetup()), stage: 'done' };
+    // The Command Phase stage was entered before the roll decided the First
+    // Player; clearing it makes the guide's stage sync run again now that the
+    // real one is known (3.2.2 starts the command loop from them).
+    if (state.script) state.script.stage = '';
+    return;
+  }
+  if (cmd.kind === 'queueIntercepts') {
+    if (state.script) state.script.intercepts = [...state.script.intercepts, ...cmd.items];
+    return;
+  }
+  if (cmd.kind === 'resolveIntercept') {
+    const sc = state.script;
+    if (!sc) return;
+    const at = sc.intercepts.findIndex((x) => x.uid === cmd.uid && x.actionId === cmd.actionId && x.targetUid === cmd.targetUid);
+    if (at >= 0) sc.intercepts = sc.intercepts.filter((_, i) => i !== at);
+    return;
+  }
+  if (cmd.kind === 'clearIntercepts') {
+    if (state.script) state.script.intercepts = [];
+    return;
+  }
+  if (cmd.kind === 'placeSmoke') {
+    state.smoke = [...(state.smoke ?? []), { col: cmd.at.col, row: cmd.at.row, side: cmd.seat }];
+    return;
+  }
+  if (cmd.kind === 'removeSmoke') {
+    const list = [...(state.smoke ?? [])];
+    const at = list.findIndex((x) => x.col === cmd.at.col && x.row === cmd.at.row);
+    if (at >= 0) list.splice(at, 1);
+    state.smoke = list;
+    return;
+  }
+  if (cmd.kind === 'dissipateSmoke') {
+    // Isolated screens come off for both sides in one judgement (4.16); the
+    // Connected-group picks arrive as removeSmoke commands afterwards.
+    const smoke = state.smoke ?? [];
+    const doomed = new Set<SmokeScreen>();
+    for (const side of ['s1', 's2'] as Side[]) for (const iso of dissipationFor(smoke, side).isolated) doomed.add(iso);
+    state.smoke = smoke.filter((x) => !doomed.has(x));
     return;
   }
   if (cmd.kind === 'forceMove') {
@@ -621,6 +795,20 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
     }
     case 'reveal': {
       t.statuses = (t.statuses ?? []).filter((id) => id !== 'camouflage');
+      return;
+    }
+    case 'launch': {
+      const card = data.byId.get(cmd.cardId);
+      if (!card) return;
+      // The uid counter lives in the state, so a mirrored seat mints the same
+      // one. The Ammo that paid for the shot is spent in the same breath.
+      const tok = makeDroneToken(state, data, card, t.side);
+      state.tokens.push({ ...tok, parentUid: t.uid, col: cmd.to.col, row: cmd.to.row, facing: cmd.facing });
+      if (t.ammo[cmd.actionId] !== undefined) t.ammo[cmd.actionId] = Math.max(0, t.ammo[cmd.actionId] - 1);
+      return;
+    }
+    case 'despawn': {
+      state.tokens = state.tokens.filter((x) => x.uid !== cmd.targetUid);
       return;
     }
   }
