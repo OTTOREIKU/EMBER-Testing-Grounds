@@ -4,8 +4,9 @@ import { iconSvg } from './dice';
 import { linkMechanics } from './inspector';
 import { SQUAD_ORDER, squadLabel } from './data';
 import type { Card, CardAction, DiceData, DiceIcon, DieColor, GameRuleEffect, PartSlot, Side, Token } from './types';
-import { addStatus, statusCount, STATUSES } from './types';
+import { statusCount, STATUSES } from './types';
 import { electronicValue, SLOT_LABEL, tokenCards } from './units';
+import type { Command } from './commands';
 
 type Step = 'part' | 'attack' | 'defense' | 'resolve';
 
@@ -130,6 +131,7 @@ export class AttackHelper {
   private onKnockback: (attacker: Token, defender: Token, action: CardAction, hits: number) => void;
   private onDestroyed: (killer: Token, victim: Token, what: 'part' | 'unit') => void;
   private onPenetrated: (victim: Token) => void;
+  private onCommand: (cmd: Command) => void;
   private ctx: Ctx | null = null;
   private duelGen = 0;
   private blackTimer: number | undefined;
@@ -146,6 +148,7 @@ export class AttackHelper {
     onKnockback: (attacker: Token, defender: Token, action: CardAction, hits: number) => void = () => {},
     onDestroyed: (killer: Token, victim: Token, what: 'part' | 'unit') => void = () => {},
     onPenetrated: (victim: Token) => void = () => {},
+    onCommand: (cmd: Command) => void = () => {},
   ) {
     this.data = data;
     this.dice = dice;
@@ -156,6 +159,7 @@ export class AttackHelper {
     this.onKnockback = onKnockback;
     this.onDestroyed = onDestroyed;
     this.onPenetrated = onPenetrated;
+    this.onCommand = onCommand;
   }
 
   get active(): boolean {
@@ -750,20 +754,19 @@ export class AttackHelper {
       apply.addEventListener('click', () => {
         const slot = c.targetPart as PartSlot | 'main';
         const cur = c.defender.partStates[slot] ?? 'intact';
-        const partCard = this.defenderPartCard(slot);
-        const hasStructure = (partCard?.structure ?? 0) > 0;
-        const next = cur === 'intact' ? (hasStructure ? 'damaged' : 'destroyed') : 'destroyed';
-        c.defender.partStates[slot] = next;
+        const wasShut = c.defender.stance === 'shutdown';
+        // The state change is the command's; the wizard reads the result back
+        // off the token and keeps the narration and follow-up flow.
+        this.onCommand({ kind: 'applyPenetration', seat: c.attacker.side, uid: c.attacker.uid, targetUid: c.defender.uid, slot });
+        const next = c.defender.partStates[slot] ?? 'intact';
         this.onPenetrated(c.defender);
         if (next === 'destroyed') this.onDestroyed(c.attacker, c.defender, 'part');
         const how = c.explosion ? 'Explosion damage' : 'Penetration';
         this.note(`${how} from ${c.attacker.label}: ${SLOT_LABEL[slot]} goes ${cur} to ${next.toUpperCase()}.`, [c.attacker, c.defender]);
         if (next === 'destroyed' && c.defender.kind !== 'mech') this.onDestroyed(c.attacker, c.defender, 'unit');
         if (next === 'destroyed' && c.defender.kind === 'mech') {
-          c.defender.link = Math.max(0, (c.defender.link ?? 0) - 1);
           this.note(`Part destroyed, so ${c.defender.label} loses 1 Link (now ${c.defender.link}).`, [c.defender]);
-          if (c.defender.link === 0) {
-            c.defender.stance = 'shutdown';
+          if (!wasShut && c.defender.stance === 'shutdown') {
             this.note(`Link has reached 0, so ${c.defender.label} SHUTS DOWN.`, [c.defender]);
           }
           if (slot === 'torso') {
@@ -889,6 +892,7 @@ export class ElectronicHelper {
   private onChanged: () => void;
   private onClose: () => void;
   private onLog: (t: Token, text: string) => void;
+  private onCommand: (cmd: Command) => void;
   private ctx: EwCtx | null = null;
 
   constructor(
@@ -898,6 +902,7 @@ export class ElectronicHelper {
     onChanged: () => void,
     onClose: () => void,
     onLog: (t: Token, text: string) => void = () => {},
+    onCommand: (cmd: Command) => void = () => {},
   ) {
     this.data = data;
     this.dice = dice;
@@ -905,6 +910,7 @@ export class ElectronicHelper {
     this.onChanged = onChanged;
     this.onClose = onClose;
     this.onLog = onLog;
+    this.onCommand = onCommand;
   }
 
   get active(): boolean {
@@ -970,7 +976,7 @@ export class ElectronicHelper {
           if (def) {
             const n = e.stacks ?? 1;
             const before = c.responder.statuses ?? [];
-            for (let i = 0; i < n; i++) c.responder.statuses = addStatus(c.responder.statuses, def.id);
+            this.onCommand({ kind: 'applyStatus', seat: c.initiator.side, uid: c.initiator.uid, targetUid: c.responder.uid, statusId: def.id, stacks: n });
             done.push(`${c.responder.label} gains ${n} ${def.label}`);
             const lost = before.filter((s) => !c.responder.statuses!.includes(s));
             for (const id of lost) {
@@ -1058,10 +1064,12 @@ export class ElectronicHelper {
             d.face = Math.floor(Math.random() * this.dice.dice.yellow.sides);
             d.selected = false;
           }
-          t.link = Math.max(0, (t.link ?? 0) - 1);
+          const wasShut = t.stance === 'shutdown';
+          this.onCommand({ kind: 'focus', seat: t.side, uid: t.uid });
           if (who === 'init') c.rerolled.init = true;
           else c.rerolled.resp = true;
           this.note(`${t.label} spends 1 Link to Focus, rerolling ${sel.length} die.`);
+          if (!wasShut && t.stance === 'shutdown') this.note(`Link has reached 0, so ${t.label} SHUTS DOWN.`);
           this.onChanged();
           this.render();
         });

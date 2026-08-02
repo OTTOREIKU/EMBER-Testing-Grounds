@@ -8,12 +8,6 @@ export interface TacticPick {
   note?: string;
 }
 
-export interface TacticOutcome {
-  log: string;
-  maneuver?: boolean;
-  freeCommand?: boolean;
-}
-
 export interface TacticCtx {
   maxLink(t: Token): number;
 }
@@ -26,10 +20,15 @@ export interface TacticSpec {
   targets: 'mech' | 'drone' | 'unit';
   prompt: string;
   none: string;
+  // What follows the card's effect: a free Maneuver (276) or a Command Action
+  // that costs no token (274). Static per card, so the UI can read them without
+  // running apply.
+  maneuver?: boolean;
+  freeCommand?: boolean;
   eligible(t: Token, s: GameState, ctx: TacticCtx): boolean;
   choices?(t: Token, s: GameState, ctx: TacticCtx): TacticPick[];
   choiceTitle?: string;
-  apply(t: Token, s: GameState, ctx: TacticCtx, pick: string | null): TacticOutcome;
+  apply(t: Token, s: GameState, ctx: TacticCtx, pick: string | null): string;
 }
 
 // ---------- helpers ----------
@@ -81,11 +80,9 @@ export const TACTIC_SPECS: Record<string, TacticSpec> = {
     targets: 'drone',
     prompt: 'Which Drone gets the extra Command Action?',
     none: 'You have no Drones on the board to command.',
+    freeCommand: true,
     eligible: (t, _s, _c) => t.kind === 'drone' && alive(t),
-    apply: (t) => ({
-      log: `Additional Instructions: ${t.label} may take 1 more Command Action this phase without spending a Command Token.`,
-      freeCommand: true,
-    }),
+    apply: (t) => `Additional Instructions: ${t.label} may take 1 more Command Action this phase without spending a Command Token.`,
   },
   '275': {
     id: '275',
@@ -100,7 +97,7 @@ export const TACTIC_SPECS: Record<string, TacticSpec> = {
       const max = ctx.maxLink(t);
       return !max || (t.link ?? 0) < max;
     },
-    apply: (t, _s, ctx) => ({ log: `Battlefield Recovery: ${t.label} restores 1 Link (now ⚡${restoreLink(t, ctx)}).` }),
+    apply: (t, _s, ctx) => `Battlefield Recovery: ${t.label} restores 1 Link (now ⚡${restoreLink(t, ctx)}).`,
   },
   '276': {
     id: '276',
@@ -110,8 +107,9 @@ export const TACTIC_SPECS: Record<string, TacticSpec> = {
     targets: 'mech',
     prompt: 'Which Mech Maneuvers?',
     none: 'You have no Mech on the board to Maneuver.',
+    maneuver: true,
     eligible: (t) => t.stance !== 'shutdown',
-    apply: (t) => ({ log: `Hit and Run: ${t.label} Maneuvers as its Action Opportunity ends.`, maneuver: true }),
+    apply: (t) => `Hit and Run: ${t.label} Maneuvers as its Action Opportunity ends.`,
   },
   '277': {
     id: '277',
@@ -130,7 +128,7 @@ export const TACTIC_SPECS: Record<string, TacticSpec> = {
       if (at >= 0) held.splice(at, 1);
       t.statuses = held;
       const def = STATUSES.find((d) => d.id === pick);
-      return { log: `System Repair: ${def?.label ?? 'a token'} removed from ${t.label}.` };
+      return `System Repair: ${def?.label ?? 'a token'} removed from ${t.label}.`;
     },
   },
   '278': {
@@ -147,7 +145,7 @@ export const TACTIC_SPECS: Record<string, TacticSpec> = {
     apply: (t, _s, _c, pick) => {
       const was = t.stance;
       if (pick) t.stance = pick as Stance;
-      return { log: `Tactical Disposition: ${t.label} changes Stance from ${was.toUpperCase()} to ${t.stance.toUpperCase()}.` };
+      return `Tactical Disposition: ${t.label} changes Stance from ${was.toUpperCase()} to ${t.stance.toUpperCase()}.`;
     },
   },
   '279': {
@@ -163,9 +161,7 @@ export const TACTIC_SPECS: Record<string, TacticSpec> = {
     choiceTitle: 'Restart into which Stance?',
     apply: (t, _s, ctx, pick) => {
       if (pick) t.stance = pick as Stance;
-      return {
-        log: `Remote Restart: ${t.label} leaves Shutdown for ${t.stance.toUpperCase()} and restores 1 Link (now ⚡${restoreLink(t, ctx)}).`,
-      };
+      return `Remote Restart: ${t.label} leaves Shutdown for ${t.stance.toUpperCase()} and restores 1 Link (now ⚡${restoreLink(t, ctx)}).`;
     },
   },
 };

@@ -2,7 +2,7 @@ import './styles.css';
 import { Board, CELLS, footprint, snapPlacement, type BoardDeployment, type BoardZone, type DeployShape } from './board';
 import { AttackHelper, ElectronicHelper } from './combat';
 import { alertDialog, choiceDialog, confirmDialog, promptDialog } from './dialog';
-import { applyKill, gameResult, isLowValue, newTaskState, normaliseTasks, type TaskItem, type TaskState } from './tasks';
+import { gameResult, isLowValue, newTaskState, normaliseTasks, type TaskItem, type TaskState } from './tasks';
 import { DiceTray } from './dice';
 import { importSquadFile } from './importer';
 import { factionColour } from './icons';
@@ -127,13 +127,11 @@ async function init() {
       }
     },
     (killer, victim, what) => {
-      recordKill(killer, victim, what);
-      if (what === 'unit') {
-        state.tokens = state.tokens.filter((x) => x.uid !== victim.uid);
-        if (selectedUid === victim.uid) selectToken(null);
-      }
+      perform(data, state, { kind: 'recordKill', seat: killer.side, uid: killer.uid, targetUid: victim.uid, what });
+      if (what === 'unit' && selectedUid === victim.uid) selectToken(null);
     },
     (victim) => dropBlackBoxes(victim),
+    (cmd) => perform(data, state, cmd),
   );
 
   const electronicHelper = new ElectronicHelper(
@@ -153,6 +151,7 @@ async function init() {
       renderUnitLog();
       save();
     },
+    (cmd) => perform(data, state, cmd),
   );
 
   function combatBusy(): boolean {
@@ -229,21 +228,14 @@ async function init() {
       tray.roll();
     },
     onSpendAmmo(t, actionId) {
-      if (t.ammo[actionId] !== undefined && t.ammo[actionId] > 0) {
-        t.ammo[actionId]--;
-        onChanged();
-        if (!combatBusy()) panel.showToken(t);
-      }
+      perform(data, state, { kind: 'spendAmmo', seat: t.side, uid: t.uid, actionId });
+      onChanged();
+      if (!combatBusy()) panel.showToken(t);
     },
     onRestoreAmmo(t, actionId) {
-      const max = tokenCards(data, t)
-        .flatMap(({ card }) => card.actions ?? [])
-        .find((a) => a.id === actionId)?.storage;
-      if (t.ammo[actionId] !== undefined && max !== undefined && t.ammo[actionId] < max) {
-        t.ammo[actionId]++;
-        onChanged();
-        if (!combatBusy()) panel.showToken(t);
-      }
+      perform(data, state, { kind: 'restoreAmmo', seat: t.side, uid: t.uid, actionId });
+      onChanged();
+      if (!combatBusy()) panel.showToken(t);
     },
     onSpendIntercept(t, actionId) {
       startIntercept(t, actionId);
@@ -415,7 +407,7 @@ async function init() {
         if (t.size === 3) {
           const crushed = destructibleAt(snapped.col, snapped.row, t.size);
           if (crushed.length) {
-            state.removedTerrain = [...(state.removedTerrain ?? []), ...crushed];
+            perform(data, state, { kind: 'destroyTerrain', seat: t.side, uid: t.uid, pieces: crushed });
             board.renderTerrain(currentTerrain());
           }
         }
@@ -730,15 +722,8 @@ async function init() {
       (c, r) => {
         const spot = standingSpot(c, r, t.size, t.aerial, terrain, onBoard, t.uid);
         if (!spot) return;
-        t.col = spot.col;
-        t.row = spot.row;
-        t.facing = t.side === 's1' ? 2 : 0;
-        t.deployed = true;
-        // A Mech picks its Stance as it lands; anything else keeps its printed one.
-        if (t.kind === 'mech') t.stance = opts.stance;
-        if (opts.camo) t.statuses = addStatus(t.statuses, 'camouflage');
-        su.placed = { ...su.placed, [t.side]: su.placed[t.side] + 1 } as SetupState['placed'];
-        state.setup = su;
+        // The picker resolved the legal spot; the placement itself is a command.
+        perform(data, state, { kind: 'deployUnit', seat: t.side, uid: t.uid, to: { col: spot.col, row: spot.row }, stance: opts.stance, camo: opts.camo });
         board.clearHighlights();
         logTo(
           t,
@@ -1043,7 +1028,7 @@ async function init() {
     state.tokens.push(placed);
     m.placedUids.push(placed.uid);
     const id = m.action.id;
-    if (t.ammo[id] !== undefined) t.ammo[id] = Math.max(0, t.ammo[id] - 1);
+    perform(data, state, { kind: 'spendAmmo', seat: t.side, uid: t.uid, actionId: id });
     m.placed++;
     m.left--;
     logTo(t, `Launched ${cardName(m.card)} to ${gridRef(c, r)}${t.ammo[id] !== undefined ? ` (Ammo ${t.ammo[id]} left)` : ''}.`);
@@ -1064,7 +1049,7 @@ async function init() {
     state.tokens = state.tokens.filter((x) => x.uid !== uid);
     const t = state.tokens.find((x) => x.uid === m.uid);
     const id = m.action.id;
-    if (t && t.ammo[id] !== undefined) t.ammo[id] = t.ammo[id] + 1;
+    if (t) perform(data, state, { kind: 'restoreAmmo', seat: t.side, uid: t.uid, actionId: id });
     m.placed--;
     m.left++;
     if (t) logTo(t, `Took back a ${cardName(m.card)}${t.ammo[id] !== undefined ? ` (Ammo ${t.ammo[id]} left)` : ''}.`);
@@ -1486,8 +1471,7 @@ async function init() {
     }
     if (!unit) return done(false);
     const max = tokenCards(data, unit).flatMap(({ card }) => card.actions ?? []).find((a) => a.id === rule.actionId)?.storage ?? 0;
-    const before = unit.ammo[rule.actionId] ?? max;
-    unit.ammo[rule.actionId] = Math.min(max, before + rule.amount);
+    perform(data, state, { kind: 'restoreAmmo', seat: unit.side, uid: unit.uid, actionId: rule.actionId, amount: rule.amount });
     logTo(unit, `${what} from ${t.label}: Ammo restored to ${unit.ammo[rule.actionId]}/${max}.`);
     onChanged();
     done(true);
@@ -1566,23 +1550,6 @@ async function init() {
       // More than one Box can be carried, so keep going until they are all down.
       dropBlackBoxes(victim);
     });
-  }
-
-  // Secondary Tasks count what has been destroyed, and a destroyed Unit leaves
-  // the board, so the tally is kept as it happens. Low Value Units are never
-  // counted, because no Task awards Victory Points for killing one (book p.82).
-  // A Low Value Unit has no Point Value (book p.82), which is exactly how the
-  // card data marks them: the carried and generated Drones all cost 0.
-  function isLowValueUnit(t: Token): boolean {
-    if (t.kind === 'projectile') return true;
-    if (t.kind !== 'drone') return false;
-    return (data.byId.get(t.cardId)?.score ?? 0) === 0;
-  }
-
-  function recordKill(killer: Token, victim: Token, what: 'part' | 'unit'): void {
-    const tasks = normaliseTasks(state.tasks);
-    applyKill(tasks, killer, { side: victim.side, kind: victim.kind, lowValue: isLowValueUnit(victim) }, what);
-    state.tasks = tasks;
   }
 
   // Remote Access (5.3.3): an Electronic Counter-roll against a Terminal within
@@ -1764,19 +1731,14 @@ async function init() {
       cancelLabel: 'Skip',
     });
     if (!go) return;
-    const spot = standingSpot(end.c, end.r, victim.size, victim.aerial, currentTerrain(), state.tokens, victim.uid, { col: victim.col, row: victim.row });
-    if (spot) {
-      victim.col = spot.col;
-      victim.row = spot.row;
-    }
+    const spot = standingSpot(end.c, end.r, victim.size, victim.aerial, currentTerrain(), state.tokens, victim.uid, { col: victim.col, row: victim.row })
+      ?? { col: victim.col, row: victim.row };
+    const wasShut = victim.stance === 'shutdown';
+    perform(data, state, { kind: 'forceMove', seat: attacker.side, uid: attacker.uid, targetUid: victim.uid, to: { col: spot.col, row: spot.row }, push: kb.push });
     logTo(victim, `${name} from ${attacker.label}: forced ${path.length} Grid${path.length === 1 ? '' : 's'} ${heading} to ${gridRef(end.c, end.r)}.`);
     if (kb.push && victim.kind === 'mech') {
-      victim.link = Math.max(0, (victim.link ?? 0) - 1);
       logTo(victim, `Push costs 1 Link (now ${victim.link}).`);
-      if (victim.link === 0 && victim.stance !== 'shutdown') {
-        victim.stance = 'shutdown';
-        logTo(victim, `Link has reached 0, so ${victim.label} SHUTS DOWN.`);
-      }
+      if (!wasShut && victim.stance === 'shutdown') logTo(victim, `Link has reached 0, so ${victim.label} SHUTS DOWN.`);
     }
     onChanged();
   }
@@ -1787,7 +1749,7 @@ async function init() {
   // one that cannot be Force-Moved at all is destroyed instead.
   function resolveCrush(t: Token, goal: LargeGrid, victims: CrushVictims, done: () => void): void {
     if (victims.terrain.length) {
-      state.removedTerrain = [...(state.removedTerrain ?? []), ...victims.terrain.map((p) => p.id)];
+      perform(data, state, { kind: 'destroyTerrain', seat: t.side, uid: t.uid, pieces: victims.terrain.map((p) => p.id) });
       board.renderTerrain(currentTerrain());
       logTo(t, `Crushed ${victims.terrain.length === 1 ? 'terrain' : `${victims.terrain.length} terrain pieces`} in ${gridRef(goal.c, goal.r)}.`);
     }
@@ -1814,8 +1776,7 @@ async function init() {
       if (!spots.length) {
         const swap = standingSpot(largeGridOf(t).c, largeGridOf(t).r, v.size, v.aerial, currentTerrain(), state.tokens, v.uid);
         if (swap) {
-          v.col = swap.col;
-          v.row = swap.row;
+          perform(data, state, { kind: 'forceMove', seat: t.side, uid: t.uid, targetUid: v.uid, to: { col: swap.col, row: swap.row } });
           logTo(t, `Crushed ${v.label}, which had nowhere to go, so the two swap positions.`);
         }
         board.renderTokens(state);
@@ -1826,8 +1787,7 @@ async function init() {
       board.showSmokeTargets(spots.map((g) => ({ ...g, ok: true })), (c, r) => {
         const spot = standingSpot(c, r, v.size, v.aerial, currentTerrain(), state.tokens, v.uid);
         if (!spot) return;
-        v.col = spot.col;
-        v.row = spot.row;
+        perform(data, state, { kind: 'forceMove', seat: t.side, uid: t.uid, targetUid: v.uid, to: { col: spot.col, row: spot.row } });
         logTo(t, `Crushed ${v.label}, Force-Moved to ${gridRef(c, r)}.`);
         board.clearHighlights();
         board.renderTokens(state);
@@ -2219,7 +2179,7 @@ async function init() {
         const id = b.dataset.terrain!;
         if (state.removedTerrain?.includes(id)) return;
         const hit = currentTerrain().find((p) => p.id === id);
-        state.removedTerrain = [...(state.removedTerrain ?? []), id];
+        perform(data, state, { kind: 'destroyTerrain', seat: proj.side, uid: proj.uid, pieces: [id] });
         board.renderTerrain(currentTerrain());
         logTo(proj, `${name} destroys ${hit ? terrainLabel(hit) : 'terrain'}. Destructible Terrain takes no roll.`);
         b.disabled = true;
@@ -2870,21 +2830,19 @@ async function init() {
       if (!pick || pick === 'cancel') return;
     }
 
-    const out = spec.apply(target, state, ctx, pick);
-    if (out.freeCommand && state.script) {
-      state.script.commanded = state.script.commanded.filter((x) => x !== target.uid);
-      if (!state.script.freeCommand.includes(target.uid)) state.script.freeCommand.push(target.uid);
-    }
-    if (!state.tacticsPlayed) state.tacticsPlayed = { s1: [], s2: [] };
-    state.tacticsPlayed[side].push(`${state.round.n}:${id}`);
-    logTo(target, out.log);
+    // The pickers above are the interactive half; the effect itself is a
+    // command, so a mirrored seat replays it from (card, target, pick) alone.
+    // Its log line is written into the token by apply, and read back here.
+    const verdict = perform(data, state, { kind: 'playTactic', seat: side, uid: target.uid, cardId: id, pick: pick ?? undefined });
+    const log = target.log?.at(-1)?.text ?? spec.name;
+    renderUnitLog();
     selectToken(target.uid);
     onChanged();
-    if (out.maneuver) {
+    if (spec.maneuver) {
       startMove(target.uid, { range: maneuverRange(data, target), label: 'Maneuver' }, () => onChanged());
       return;
     }
-    await alertDialog({ title: spec.name, body: out.log });
+    await alertDialog({ title: spec.name, body: verdict.ok ? log : `${log}\n\n⚠ ${verdict.why}` });
   }
 
   async function removeUnit(uid: number): Promise<void> {

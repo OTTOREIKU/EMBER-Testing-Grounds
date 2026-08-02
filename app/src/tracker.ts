@@ -1,9 +1,9 @@
 import { squadLabel } from './data';
 import { bindTips, inspectOnHover, pinInspect, type InspectInfo } from './inspector';
-import { SCALES, type BattleScale, type GameState, type Side } from './types';
+import { PHASES, SCALES, type BattleScale, type GameState, type Side } from './types';
 import { normaliseSetup } from './setup';
 
-export const PHASES = ['Command', 'Planning', 'Action', 'Automatic', 'Delay', 'End'] as const;
+export { PHASES };
 
 const ROUND_CHOICES = [3, 4, 5, 6, 8];
 

@@ -161,6 +161,8 @@ export interface TimingDef {
   pilotKey: 'swift' | 'melee' | 'projectile' | 'firing' | 'moving' | 'tactic';
 }
 
+export const PHASES = ['Command', 'Planning', 'Action', 'Automatic', 'Delay', 'End'] as const;
+
 export const TIMINGS: TimingDef[] = [
   { id: 'swift', name: 'Swift', short: 'SWF', pilotKey: 'swift' },
   { id: 'melee', name: 'Melee', short: 'MEL', pilotKey: 'melee' },
