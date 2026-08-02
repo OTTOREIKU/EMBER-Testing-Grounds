@@ -53,8 +53,8 @@ async function init() {
     map: 'alley',
     tokens: [],
     nextUid: 1,
-    round: { n: 1, phase: 0, firstPlayer: 'blue' },
-    commandTokens: { blue: 0, red: 0 },
+    round: { n: 1, phase: 0, firstPlayer: 's1' },
+    commandTokens: { s1: 0, s2: 0 },
   };
   let selectedUid: number | null = null;
   let replayActive = false;
@@ -695,7 +695,7 @@ async function init() {
     const hits = faces.map((f) => countHits([f]));
     su.rolls = { ...su.rolls, [side]: hits } as SetupState['rolls'];
     // A re-roll after a tie starts the comparison over for both sides.
-    if (su.rolls.blue.length && su.rolls.red.length && !firstPlayerFrom(su) && side === 'red') {
+    if (su.rolls.s1.length && su.rolls.s2.length && !firstPlayerFrom(su) && side === 's2') {
       tray.addToPool({ yellow: 2 }, true);
     }
     state.setup = su;
@@ -731,7 +731,7 @@ async function init() {
         if (!spot) return;
         t.col = spot.col;
         t.row = spot.row;
-        t.facing = t.side === 'blue' ? 2 : 0;
+        t.facing = t.side === 's1' ? 2 : 0;
         t.deployed = true;
         // A Mech picks its Stance as it lands; anything else keeps its printed one.
         if (t.kind === 'mech') t.stance = opts.stance;
@@ -777,8 +777,8 @@ async function init() {
     state.tokens = state.tokens.filter((t) => t.kind !== 'projectile');
     for (const t of state.tokens) t.deployed = false;
     state.smoke = [];
-    state.round = { n: 1, phase: 0, firstPlayer: 'blue' };
-    state.commandTokens = { blue: 0, red: 0 };
+    state.round = { n: 1, phase: 0, firstPlayer: 's1' };
+    state.commandTokens = { s1: 0, s2: 0 };
     state.setup = newSetup();
     state.script = undefined;
     selectToken(null);
@@ -802,7 +802,7 @@ async function init() {
     // Most Victory Points wins, and a tie goes to Mech Parts and Drones left on
     // the board (5.2.4). Reported before the board unlocks and units move.
     const tasks = normaliseTasks(state.tasks);
-    if (state.mission || tasks.vp.blue || tasks.vp.red) {
+    if (state.mission || tasks.vp.s1 || tasks.vp.s2) {
       const res = gameResult(tasks, state.tokens);
       await alertDialog({
         title: res.winner ? `${squadLabel(res.winner)} wins` : 'A draw',
@@ -820,7 +820,7 @@ async function init() {
     // Tactics are stamped with the round they were played in, so a fresh game
     // starting back at round 1 would otherwise find the old stamps and read
     // every card as already spent.
-    state.tacticsPlayed = { blue: [], red: [] };
+    state.tacticsPlayed = { s1: [], s2: [] };
     onChanged();
   }
 
@@ -1161,19 +1161,19 @@ async function init() {
       return left === null || left > 0;
     },
     squadPoints: () => {
-      const out = { blue: 0, red: 0 };
+      const out = { s1: 0, s2: 0 };
       for (const t of state.tokens) {
         if (t.kind === 'projectile') continue;
         out[t.side] += tokenCards(data, t).reduce((n, { card }) => n + (card.score ?? 0), 0);
       }
-      for (const side of ['blue', 'red'] as const) {
+      for (const side of ['s1', 's2'] as const) {
         for (const id of state.tactics?.[side] ?? []) out[side] += data.byId.get(id)?.score ?? 0;
       }
       return out;
     },
-    heldTactics: () => ({ blue: state.tactics?.blue ?? [], red: state.tactics?.red ?? [] }),
+    heldTactics: () => ({ s1: state.tactics?.s1 ?? [], s2: state.tactics?.s2 ?? [] }),
     onAddTactic: (card, side) => {
-      if (!state.tactics) state.tactics = { blue: [], red: [] };
+      if (!state.tactics) state.tactics = { s1: [], s2: [] };
       state.tactics[side].push(card.id);
       save();
       roster.render();
@@ -1265,7 +1265,7 @@ async function init() {
     // Mid-setup a new unit joins the squad rather than the board, so it goes
     // through deployment like everything else.
     if (deployingNow()) {
-      state.tokens.push({ ...tok, col: 0, row: 0, facing: side === 'blue' ? 2 : 0, deployed: false });
+      state.tokens.push({ ...tok, col: 0, row: 0, facing: side === 's1' ? 2 : 0, deployed: false });
       onChanged();
       return;
     }
@@ -1277,7 +1277,7 @@ async function init() {
       });
       return;
     }
-    state.tokens.push({ ...tok, col: spot.col, row: spot.row, facing: side === 'blue' ? 2 : 0 });
+    state.tokens.push({ ...tok, col: spot.col, row: spot.row, facing: side === 's1' ? 2 : 0 });
     onChanged();
   }
 
@@ -1967,7 +1967,7 @@ async function init() {
       host.hidden = true;
       return;
     }
-    const order: Side[] = state.round.firstPlayer === 'blue' ? ['blue', 'red'] : ['red', 'blue'];
+    const order: Side[] = state.round.firstPlayer === 's1' ? ['s1', 's2'] : ['s2', 's1'];
     const owed = order
       .map((side) => ({ side, ...dissipationFor(smoke, side) }))
       .filter((d) => d.isolated.length || d.groups.length);
@@ -2004,7 +2004,7 @@ async function init() {
   function resolveDissipation(): void {
     const smoke = state.smoke ?? [];
     if (!smoke.length) return;
-    const order: Side[] = state.round.firstPlayer === 'blue' ? ['blue', 'red'] : ['red', 'blue'];
+    const order: Side[] = state.round.firstPlayer === 's1' ? ['s1', 's2'] : ['s2', 's1'];
     const doomed = new Set<SmokeScreen>();
     const queue: { side: Side; group: SmokeScreen[] }[] = [];
     let isolated = 0;
@@ -2408,7 +2408,7 @@ async function init() {
 
   function findFreeSpot(size: 1 | 2 | 3, side: Side, aerial: boolean): { col: number; row: number } | null {
     const rows = [...Array(CELLS - size + 1).keys()];
-    if (side === 'red') rows.reverse();
+    if (side === 's2') rows.reverse();
     for (const row of rows) {
       for (let col = 0; col <= CELLS - size; col++) {
         const s = snapPlacement(col, row, size);
@@ -2874,7 +2874,7 @@ async function init() {
       state.script.commanded = state.script.commanded.filter((x) => x !== target.uid);
       if (!state.script.freeCommand.includes(target.uid)) state.script.freeCommand.push(target.uid);
     }
-    if (!state.tacticsPlayed) state.tacticsPlayed = { blue: [], red: [] };
+    if (!state.tacticsPlayed) state.tacticsPlayed = { s1: [], s2: [] };
     state.tacticsPlayed[side].push(`${state.round.n}:${id}`);
     logTo(target, out.log);
     selectToken(target.uid);
@@ -3220,7 +3220,7 @@ async function init() {
   function claimedZones(): Record<string, Side[]> {
     const out: Record<string, Side[]> = {};
     const zone = normaliseTasks(state.tasks).zone;
-    for (const side of ['blue', 'red'] as const) {
+    for (const side of ['s1', 's2'] as const) {
       const id = zone[side];
       if (!id) continue;
       // Designations are stored by zone id; the board draws zones by name.
@@ -3441,7 +3441,7 @@ async function init() {
 
   async function designateFor(side: Side, card: SecondaryTask): Promise<void> {
     const tasks = normaliseTasks(state.tasks);
-    const enemy: Side = side === 'blue' ? 'red' : 'blue';
+    const enemy: Side = side === 's1' ? 's2' : 's1';
     if (card.designate === 'zone') {
       // Only zones the Main Task actually placed are on the board, so the rest
       // would be designating somewhere the players cannot see.
@@ -3485,7 +3485,7 @@ async function init() {
   // anything to assassinate (5.2.3). Stored by the side that OWNS the Mech.
   async function designateCommanders(): Promise<void> {
     const tasks = normaliseTasks(state.tasks);
-    for (const side of ['blue', 'red'] as Side[]) {
+    for (const side of ['s1', 's2'] as Side[]) {
       const mechs = state.tokens.filter((t) => t.kind === 'mech' && t.side === side);
       if (!mechs.length) continue;
       const uid = await choiceDialog({
@@ -3616,7 +3616,7 @@ async function init() {
         <p class="dim">Press play, or step through one beat at a time.</p>`;
       return div;
     }
-    const vp = `<p class="rp-vp"><b>VP</b> <span class="rp-red">Red ${tally.vp.red}</span> · <span class="rp-blue">Blue ${tally.vp.blue}</span></p>`;
+    const vp = `<p class="rp-vp"><b>VP</b> <span class="rp-red">Red ${tally.vp.s2}</span> · <span class="rp-blue">Blue ${tally.vp.s1}</span></p>`;
     div.innerHTML = `<h3>${escapeHtml(step.title)}</h3>
       <p class="dim">Round ${step.round} · ${PHASES[step.phase] ?? ''} Phase</p>
       ${(step.say ?? []).map((p) => `<p>${escapeHtml(p)}</p>`).join('')}
@@ -3690,8 +3690,8 @@ async function init() {
     state.map = result.mapKey;
     state.removedTerrain = [];
     state.scenario = scn.id;
-    state.round = { n: 1, phase: 0, firstPlayer: 'blue' };
-    state.commandTokens = { blue: 0, red: 0 };
+    state.round = { n: 1, phase: 0, firstPlayer: 's1' };
+    state.commandTokens = { s1: 0, s2: 0 };
     state.scale = 'skirmish';
     state.roundLimit = scn.rounds ?? 3;
     selectedUid = null;
@@ -3818,8 +3818,8 @@ async function init() {
         state.map = result.mapKey;
         state.removedTerrain = [];
         state.scenario = scn.id;
-        state.round = { n: 1, phase: 0, firstPlayer: 'blue' };
-        state.commandTokens = { blue: 0, red: 0 };
+        state.round = { n: 1, phase: 0, firstPlayer: 's1' };
+        state.commandTokens = { s1: 0, s2: 0 };
         state.roundLimit = scn.rounds ?? 5;
         selectedUid = null;
         populateMapSelect();
@@ -3842,12 +3842,12 @@ async function init() {
     state.tokens = [];
     state.smoke = [];
     state.sideNames = {};
-    state.commandTokens = { blue: 0, red: 0 };
+    state.commandTokens = { s1: 0, s2: 0 };
     state.setup = null;
     // Tactics are held in hand rather than placed, so clearing the board left
     // them behind and the next squad started holding the last one's cards.
-    state.tactics = { blue: [], red: [] };
-    state.tacticsPlayed = { blue: [], red: [] };
+    state.tactics = { s1: [], s2: [] };
+    state.tacticsPlayed = { s1: [], s2: [] };
     selectToken(null);
   }
 
@@ -3904,7 +3904,7 @@ async function init() {
       clearTerrain();
       clearZones();
       state.tasks = null;
-      state.round = { n: 1, phase: 0, firstPlayer: 'blue' };
+      state.round = { n: 1, phase: 0, firstPlayer: 's1' };
       state.roundLimit = 5;
       state.scale = 'standard';
       state.mission = undefined;
@@ -3967,12 +3967,12 @@ async function init() {
         title: `Import "${squad.name}"?`,
         body: `${parts.join(' and ')}. Which side is it deploying for?`,
         choices: [
-          { id: 'blue', label: 'UN (blue)', primary: true },
-          { id: 'red', label: 'RDL (red)' },
+          { id: 's1', label: 'UN (blue)', primary: true },
+          { id: 's2', label: 'RDL (red)' },
           { id: 'cancel', label: 'Cancel' },
         ],
       });
-      if (picked !== 'blue' && picked !== 'red') {
+      if (picked !== 's1' && picked !== 's2') {
         squadFile.value = '';
         return;
       }

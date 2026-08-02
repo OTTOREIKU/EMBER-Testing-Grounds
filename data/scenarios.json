@@ -7,43 +7,7 @@
   "rounds": 3,
   "description": "A 3-round beginner teaching game built from a single RDL Core box: 366 vs 366 points, two Mire-core M.A.P.s and one Hyena missile drone per side. Red plays a long-range fire-support style while Blue plays a tougher bulwark/missile style. It teaches timing dials, stances, movement, Command Phase drones, MC-3 Razor missiles, delayed projectiles, objectives, and terrain lanes.",
   "sides": {
-   "red": {
-    "name": "RDL Red Team - Fire Support / Control",
-    "units": [
-     {
-      "kind": "mech",
-      "name": "Red Fire Support M.A.P.",
-      "grid": "A5",
-      "facing": "E",
-      "torso": "012",
-      "chasis": "021",
-      "leftHand": "032",
-      "rightHand": "030",
-      "backpack": "002",
-      "pilot": "FPA-01"
-     },
-     {
-      "kind": "mech",
-      "name": "Red Support Skirmisher M.A.P.",
-      "grid": "A8",
-      "facing": "E",
-      "torso": "012",
-      "chasis": "020",
-      "leftHand": "023",
-      "rightHand": "025",
-      "backpack": "003",
-      "pilot": "FPA-14"
-     },
-     {
-      "kind": "drone",
-      "name": "Red Hyena Missile Drone",
-      "cardId": "079",
-      "grid": "B6",
-      "facing": "E"
-     }
-    ]
-   },
-   "blue": {
+   "s1": {
     "name": "RDL Blue Team - Bulwark / Missile Pressure",
     "units": [
      {
@@ -76,6 +40,42 @@
       "cardId": "079",
       "grid": "K7",
       "facing": "W"
+     }
+    ]
+   },
+   "s2": {
+    "name": "RDL Red Team - Fire Support / Control",
+    "units": [
+     {
+      "kind": "mech",
+      "name": "Red Fire Support M.A.P.",
+      "grid": "A5",
+      "facing": "E",
+      "torso": "012",
+      "chasis": "021",
+      "leftHand": "032",
+      "rightHand": "030",
+      "backpack": "002",
+      "pilot": "FPA-01"
+     },
+     {
+      "kind": "mech",
+      "name": "Red Support Skirmisher M.A.P.",
+      "grid": "A8",
+      "facing": "E",
+      "torso": "012",
+      "chasis": "020",
+      "leftHand": "023",
+      "rightHand": "025",
+      "backpack": "003",
+      "pilot": "FPA-14"
+     },
+     {
+      "kind": "drone",
+      "name": "Red Hyena Missile Drone",
+      "cardId": "079",
+      "grid": "B6",
+      "facing": "E"
      }
     ]
    }
@@ -252,7 +252,43 @@
   "rounds": 3,
   "description": "A 3-round beginner-plus teaching game built from a single UN Core box: 459 vs 459 points, two M.A.P.s and one drone per side. Red teaches laser fire, Fragile Tokens, grenades, and objective pressure; Blue teaches ion/KC durability, RKG70 missiles, Low Profile preview, and an anti-missile CIWS preview. Simple Intercept is reserved for a second playthrough.",
   "sides": {
-   "red": {
+   "s1": {
+    "name": "UN Blue Team - Bison / Missile Scout",
+    "units": [
+     {
+      "kind": "mech",
+      "name": "Blue Assault M.A.P.",
+      "grid": "L5",
+      "facing": "W",
+      "torso": "098",
+      "chasis": "099",
+      "leftHand": "142",
+      "rightHand": "140",
+      "backpack": "083",
+      "pilot": "LPA-31"
+     },
+     {
+      "kind": "mech",
+      "name": "Blue Missile Scout M.A.P.",
+      "grid": "L8",
+      "facing": "W",
+      "torso": "094",
+      "chasis": "099",
+      "leftHand": "129",
+      "rightHand": "113",
+      "backpack": "086",
+      "pilot": "LPA-27"
+     },
+     {
+      "kind": "drone",
+      "name": "Blue Porcupine CIWS Drone",
+      "cardId": "160",
+      "grid": "K7",
+      "facing": "W"
+     }
+    ]
+   },
+   "s2": {
     "name": "UN Red Team - Fireline / Grenadier",
     "pointsNote": "The booklet lists both the R33 Sniper Rifle and the R7 Automatic Rifle on the Fireline, but both are right-hand cards and a Mech has one right hand. The R33 is fitted and the left arm carries the MDXS \"Fairy\" System + R6 SMG (117), whose Full-auto is a Laser Weapon, so Red still teaches laser fire from two Parts.",
     "units": [
@@ -286,42 +322,6 @@
       "cardId": "163",
       "grid": "B6",
       "facing": "E"
-     }
-    ]
-   },
-   "blue": {
-    "name": "UN Blue Team - Bison / Missile Scout",
-    "units": [
-     {
-      "kind": "mech",
-      "name": "Blue Assault M.A.P.",
-      "grid": "L5",
-      "facing": "W",
-      "torso": "098",
-      "chasis": "099",
-      "leftHand": "142",
-      "rightHand": "140",
-      "backpack": "083",
-      "pilot": "LPA-31"
-     },
-     {
-      "kind": "mech",
-      "name": "Blue Missile Scout M.A.P.",
-      "grid": "L8",
-      "facing": "W",
-      "torso": "094",
-      "chasis": "099",
-      "leftHand": "129",
-      "rightHand": "113",
-      "backpack": "086",
-      "pilot": "LPA-27"
-     },
-     {
-      "kind": "drone",
-      "name": "Blue Porcupine CIWS Drone",
-      "cardId": "160",
-      "grid": "K7",
-      "facing": "W"
      }
     ]
    }
@@ -500,7 +500,31 @@
   "rounds": 3,
   "description": "A 3-round asymmetric teaching game: two lighter RDL M.A.P.s (351 pts) against one elite UN M.A.P. plus a Porcupine CIWS drone (351 pts). RDL wins by splitting, scoring relays, and surviving; UN wins by holding the centre and threatening decisive damage. Teaches activation economy, elite unit pressure, missiles, Simple Intercept, repair, and objective play.",
   "sides": {
-   "red": {
+   "s1": {
+    "name": "UN Team - Elite Duelist + Drone",
+    "units": [
+     {
+      "kind": "mech",
+      "name": "UN Elite M.A.P.",
+      "grid": "L6",
+      "facing": "W",
+      "torso": "091",
+      "chasis": "101",
+      "leftHand": "540",
+      "rightHand": "145",
+      "backpack": "081",
+      "pilot": "LPA-19"
+     },
+     {
+      "kind": "drone",
+      "name": "UN Porcupine CIWS Drone",
+      "cardId": "160",
+      "grid": "K7",
+      "facing": "W"
+     }
+    ]
+   },
+   "s2": {
     "name": "RDL Team - Twin Mire Hunters",
     "units": [
      {
@@ -526,30 +550,6 @@
       "rightHand": "030",
       "backpack": "004",
       "pilot": "FPA-02"
-     }
-    ]
-   },
-   "blue": {
-    "name": "UN Team - Elite Duelist + Drone",
-    "units": [
-     {
-      "kind": "mech",
-      "name": "UN Elite M.A.P.",
-      "grid": "L6",
-      "facing": "W",
-      "torso": "091",
-      "chasis": "101",
-      "leftHand": "540",
-      "rightHand": "145",
-      "backpack": "081",
-      "pilot": "LPA-19"
-     },
-     {
-      "kind": "drone",
-      "name": "UN Porcupine CIWS Drone",
-      "cardId": "160",
-      "grid": "K7",
-      "facing": "W"
      }
     ]
    }
@@ -713,44 +713,7 @@
   "rounds": 4,
   "description": "A 4-round advanced teaching game: an RDL counter-stealth net (449 pts, two M.A.P.s plus a Hyena drone) hunts a single UN stealth ace with a drone support package (406 pts). RDL is intentionally about 10% up on points to offset the UN advanced mechanic package. Teaches Low Profile, Optical Camouflage, Stealth 2 / Manifestation Movement, Silence, Scan, Fragile Tokens, smoke, and drone support.",
   "sides": {
-   "red": {
-    "name": "RDL Team - Counter-Stealth Hunter Net",
-    "pointsNote": "Booklet total 449. Placed cards sum to 440: the Fire Hunter's 'Type 55 Shield + PC-9 Shotgun + Smoke Grenade (R)' (51 pts, card 048) is right-hand only and the right hand holds the R-35 Heavy Railgun, so the left-hand 'Type 55 Shield + PC-9 Shotgun (L)' (card 053, 42 pts, no smoke grenade) was substituted.",
-    "units": [
-     {
-      "kind": "mech",
-      "name": "RDL Sensor / Support M.A.P.",
-      "grid": "A5",
-      "facing": "E",
-      "torso": "504",
-      "chasis": "507",
-      "leftHand": "064",
-      "rightHand": "058",
-      "backpack": "502",
-      "pilot": "FPA-06"
-     },
-     {
-      "kind": "mech",
-      "name": "RDL Fire Hunter M.A.P.",
-      "grid": "A8",
-      "facing": "E",
-      "torso": "019",
-      "chasis": "506",
-      "leftHand": "053",
-      "rightHand": "043",
-      "pilot": "FPA-01",
-      "pointsNote": "Booklet lists Type 55 Shield + PC-9 Shotgun + Smoke Grenade (R) at 51 pts (card 048, right-hand only); substituted left-hand variant card 053 (42 pts) so the R-35 Heavy Railgun keeps the right-hand slot. The smoke grenade lesson is lost by this substitution - proxy it if desired."
-     },
-     {
-      "kind": "drone",
-      "name": "RDL Hyena Missile Drone",
-      "cardId": "079",
-      "grid": "B7",
-      "facing": "E"
-     }
-    ]
-   },
-   "blue": {
+   "s1": {
     "name": "UN Team - Ghost Pattern Ace",
     "pointsNote": "The booklet lists the R9B Tactical Rifle alongside the R6SD SMG, but both are right-hand cards. The SMG is fitted and the left arm carries the K9 Nail Gun + M14BO Wakizashi (126): its Nail has Silence, which is the stealth lesson, and the card has the Freehand tag, which switches on the SMG's [Two-Handed] Range +2.",
     "units": [
@@ -786,6 +749,43 @@
       "cardId": "166",
       "grid": "K9",
       "facing": "W"
+     }
+    ]
+   },
+   "s2": {
+    "name": "RDL Team - Counter-Stealth Hunter Net",
+    "pointsNote": "Booklet total 449. Placed cards sum to 440: the Fire Hunter's 'Type 55 Shield + PC-9 Shotgun + Smoke Grenade (R)' (51 pts, card 048) is right-hand only and the right hand holds the R-35 Heavy Railgun, so the left-hand 'Type 55 Shield + PC-9 Shotgun (L)' (card 053, 42 pts, no smoke grenade) was substituted.",
+    "units": [
+     {
+      "kind": "mech",
+      "name": "RDL Sensor / Support M.A.P.",
+      "grid": "A5",
+      "facing": "E",
+      "torso": "504",
+      "chasis": "507",
+      "leftHand": "064",
+      "rightHand": "058",
+      "backpack": "502",
+      "pilot": "FPA-06"
+     },
+     {
+      "kind": "mech",
+      "name": "RDL Fire Hunter M.A.P.",
+      "grid": "A8",
+      "facing": "E",
+      "torso": "019",
+      "chasis": "506",
+      "leftHand": "053",
+      "rightHand": "043",
+      "pilot": "FPA-01",
+      "pointsNote": "Booklet lists Type 55 Shield + PC-9 Shotgun + Smoke Grenade (R) at 51 pts (card 048, right-hand only); substituted left-hand variant card 053 (42 pts) so the R-35 Heavy Railgun keeps the right-hand slot. The smoke grenade lesson is lost by this substitution - proxy it if desired."
+     },
+     {
+      "kind": "drone",
+      "name": "RDL Hyena Missile Drone",
+      "cardId": "079",
+      "grid": "B7",
+      "facing": "E"
      }
     ]
    }
@@ -958,44 +958,7 @@
   "rounds": 4,
   "description": "A 4-round intermediate teaching game about the information war: RDL (455 pts, two M.A.P.s plus a Hyena drone) builds a signal net of relays, Terminals, and Uplinks, while UN (454 pts, one elite command M.A.P. plus four drones) jams and disrupts it. Victory comes from relay control, Terminal access, electronic counter-rolls, command efficiency, and drone play rather than raw damage.",
   "sides": {
-   "red": {
-    "name": "RDL Team - Signal Net Task Group",
-    "pointsNote": "The booklet lists the AC-32 Automatic Rifle beside the R-35 Heavy Railgun and both are right-hand cards. The railgun is fitted and the left arm carries the Type 55 Shield + MES Beacon Launcher (064), which launches a beacon and so teaches the relay half of this scenario directly.",
-    "units": [
-     {
-      "kind": "mech",
-      "name": "RDL Signal Controller M.A.P.",
-      "grid": "A5",
-      "facing": "E",
-      "torso": "504",
-      "chasis": "507",
-      "leftHand": "064",
-      "rightHand": "058",
-      "backpack": "502",
-      "pilot": "FPA-06"
-     },
-     {
-      "kind": "mech",
-      "name": "RDL Relay Marksman M.A.P.",
-      "grid": "A8",
-      "facing": "E",
-      "torso": "019",
-      "chasis": "506",
-      "leftHand": "064",
-      "rightHand": "043",
-      "backpack": "002",
-      "pilot": "FPA-01"
-     },
-     {
-      "kind": "drone",
-      "name": "RDL Hyena Missile Drone",
-      "cardId": "079",
-      "grid": "B7",
-      "facing": "E"
-     }
-    ]
-   },
-   "blue": {
+   "s1": {
     "name": "UN Team - Drone Interference Cell",
     "pointsNote": "The booklet lists the R6SD SMG beside the R9B Tactical Rifle, both right-hand cards, and a second backpack that cannot be fitted. The rifle is fitted and the left arm carries the MSH1 Assistance Arm (121): it has the Freehand tag, so it switches on the rifle's [Two-Handed] Range +2 and its Tracking Assist takes 2 Blue dice off the target, which suits a disruptor.",
     "units": [
@@ -1038,6 +1001,43 @@
       "cardId": "166",
       "grid": "J10",
       "facing": "W"
+     }
+    ]
+   },
+   "s2": {
+    "name": "RDL Team - Signal Net Task Group",
+    "pointsNote": "The booklet lists the AC-32 Automatic Rifle beside the R-35 Heavy Railgun and both are right-hand cards. The railgun is fitted and the left arm carries the Type 55 Shield + MES Beacon Launcher (064), which launches a beacon and so teaches the relay half of this scenario directly.",
+    "units": [
+     {
+      "kind": "mech",
+      "name": "RDL Signal Controller M.A.P.",
+      "grid": "A5",
+      "facing": "E",
+      "torso": "504",
+      "chasis": "507",
+      "leftHand": "064",
+      "rightHand": "058",
+      "backpack": "502",
+      "pilot": "FPA-06"
+     },
+     {
+      "kind": "mech",
+      "name": "RDL Relay Marksman M.A.P.",
+      "grid": "A8",
+      "facing": "E",
+      "torso": "019",
+      "chasis": "506",
+      "leftHand": "064",
+      "rightHand": "043",
+      "backpack": "002",
+      "pilot": "FPA-01"
+     },
+     {
+      "kind": "drone",
+      "name": "RDL Hyena Missile Drone",
+      "cardId": "079",
+      "grid": "B7",
+      "facing": "E"
      }
     ]
    }
@@ -1220,44 +1220,7 @@
   "rounds": 4,
   "description": "A 4-round intermediate/advanced scenario where full Intercept is the main lesson. An RDL missile saturation battery (462 pts) tries to overwhelm a UN escort umbrella (458 pts) that must move a VIP command M.A.P. across the board under missile fire. Teaches launch/path/impact grid thinking, Interception Tokens, saturation fire, Fire in arc, and escort decisions.",
   "sides": {
-   "red": {
-    "name": "RDL Team - Saturation Battery",
-    "pointsNote": "Booklet total 462 includes a 58-pt 'Scenario missile reserve' teaching line. Placed cards sum to 371: the reserve is not a card, and the Missile Artillery's ECS-2 External Cooler (33 pts, card 002) could not be slotted because the booklet lists two backpacks (ML-34 kept, as the unit is the missile platform).",
-    "units": [
-     {
-      "kind": "mech",
-      "name": "RDL Missile Artillery M.A.P.",
-      "grid": "A5",
-      "facing": "E",
-      "torso": "019",
-      "chasis": "021",
-      "leftHand": "032",
-      "backpack": "004",
-      "pilot": "FPA-01",
-      "pointsNote": "R-20 Shoulder-Mounted Railgun side not stated in the booklet; left-hand card 032 chosen (right hand left free)."
-     },
-     {
-      "kind": "mech",
-      "name": "RDL Forward Spotter M.A.P.",
-      "grid": "A8",
-      "facing": "E",
-      "torso": "012",
-      "chasis": "020",
-      "leftHand": "023",
-      "rightHand": "025",
-      "backpack": "003",
-      "pilot": "FPA-14"
-     },
-     {
-      "kind": "drone",
-      "name": "RDL Hyena Missile Drone",
-      "cardId": "079",
-      "grid": "B6",
-      "facing": "E"
-     }
-    ]
-   },
-   "blue": {
+   "s1": {
     "name": "UN Team - Escort Umbrella",
     "pointsNote": "Booklet total 458 includes a -148 'Scenario escort discount'. Placed cards sum to 474: the discount is not a card, the Escort's TM17 Wolfhound Guard Core and LM108 Agile Chassis are not in the card database, and its R6SD SMG (card 124, right-hand only) clashes with the M15BO Katana.",
     "units": [
@@ -1304,6 +1267,43 @@
       "cardId": "164",
       "grid": "K9",
       "facing": "W"
+     }
+    ]
+   },
+   "s2": {
+    "name": "RDL Team - Saturation Battery",
+    "pointsNote": "Booklet total 462 includes a 58-pt 'Scenario missile reserve' teaching line. Placed cards sum to 371: the reserve is not a card, and the Missile Artillery's ECS-2 External Cooler (33 pts, card 002) could not be slotted because the booklet lists two backpacks (ML-34 kept, as the unit is the missile platform).",
+    "units": [
+     {
+      "kind": "mech",
+      "name": "RDL Missile Artillery M.A.P.",
+      "grid": "A5",
+      "facing": "E",
+      "torso": "019",
+      "chasis": "021",
+      "leftHand": "032",
+      "backpack": "004",
+      "pilot": "FPA-01",
+      "pointsNote": "R-20 Shoulder-Mounted Railgun side not stated in the booklet; left-hand card 032 chosen (right hand left free)."
+     },
+     {
+      "kind": "mech",
+      "name": "RDL Forward Spotter M.A.P.",
+      "grid": "A8",
+      "facing": "E",
+      "torso": "012",
+      "chasis": "020",
+      "leftHand": "023",
+      "rightHand": "025",
+      "backpack": "003",
+      "pilot": "FPA-14"
+     },
+     {
+      "kind": "drone",
+      "name": "RDL Hyena Missile Drone",
+      "cardId": "079",
+      "grid": "B6",
+      "facing": "E"
      }
     ]
    }
@@ -1481,7 +1481,39 @@
   "rounds": 4,
   "description": "A 4-round intermediate/advanced scenario about resource timing: charging, conserving ammo, holding Link, and committing to one decisive turn. RDL fields a two-M.A.P. capacitor strike pair (411 pts) against a UN burst assault ace with drone support (412 pts) on a map of Reactor Relays, Ammo Caches, and Core Nodes. Players score for preparing, threatening, baiting, and committing at the right time, not just for damage.",
   "sides": {
-   "red": {
+   "s1": {
+    "name": "UN Team - Burst Assault Team",
+    "pointsNote": "Booklet total 412 includes a 28-pt 'Resource training kit' and a generic 33-pt 'Raven / training support package' with no exact card. Placed cards sum to 351.",
+    "units": [
+     {
+      "kind": "mech",
+      "name": "UN Burst Striker",
+      "grid": "L5",
+      "facing": "W",
+      "torso": "091",
+      "chasis": "101",
+      "leftHand": "540",
+      "rightHand": "145",
+      "backpack": "081",
+      "pilot": "LPA-19"
+     },
+     {
+      "kind": "drone",
+      "name": "UN Raven / Training Support Drone",
+      "cardId": "166",
+      "grid": "L8",
+      "facing": "W"
+     },
+     {
+      "kind": "drone",
+      "name": "UN Porcupine CIWS Drone",
+      "cardId": "160",
+      "grid": "K7",
+      "facing": "W"
+     }
+    ]
+   },
+   "s2": {
     "name": "RDL Team - Capacitor Strike Pair",
     "pointsNote": "Booklet total 411 includes a 27-pt 'Resource training kit' scenario value. Placed cards sum to 354: the kit is not a card, and the Missile Brawler's SH-15 Field Repair System (30 pts, card 001) could not be slotted because the booklet lists two backpacks (ML-34 kept).",
     "units": [
@@ -1515,38 +1547,6 @@
       "cardId": "079",
       "grid": "B6",
       "facing": "E"
-     }
-    ]
-   },
-   "blue": {
-    "name": "UN Team - Burst Assault Team",
-    "pointsNote": "Booklet total 412 includes a 28-pt 'Resource training kit' and a generic 33-pt 'Raven / training support package' with no exact card. Placed cards sum to 351.",
-    "units": [
-     {
-      "kind": "mech",
-      "name": "UN Burst Striker",
-      "grid": "L5",
-      "facing": "W",
-      "torso": "091",
-      "chasis": "101",
-      "leftHand": "540",
-      "rightHand": "145",
-      "backpack": "081",
-      "pilot": "LPA-19"
-     },
-     {
-      "kind": "drone",
-      "name": "UN Raven / Training Support Drone",
-      "cardId": "166",
-      "grid": "L8",
-      "facing": "W"
-     },
-     {
-      "kind": "drone",
-      "name": "UN Porcupine CIWS Drone",
-      "cardId": "160",
-      "grid": "K7",
-      "facing": "W"
      }
     ]
    }
@@ -1691,7 +1691,37 @@
   "rounds": 4,
   "description": "A 4-round intermediate/advanced close-quarters scenario: an RDL breach pair (423 pts) must force a path through a fortified centre gate held by a UN gate guard (424 pts). It teaches Melee Lock, facing, forced movement (Push, Knock Back, Drag), screening/body-blocking, and scoring by moving through defended space rather than destroying parts.",
   "sides": {
-   "red": {
+   "s1": {
+    "name": "UN Team - Gate Guard",
+    "pointsNote": "Booklet total 424 includes a -38 'Narrow defensive deployment penalty'. Placed cards sum to 423: the Anchor's second shield (S100 Shield, 39 pts, card 142) is left-hand only and the left hand holds the S9 Meteor Shield + IGX106 Ion Shotgun.",
+    "units": [
+     {
+      "kind": "mech",
+      "name": "UN Anchor M.A.P.",
+      "grid": "L6",
+      "facing": "W",
+      "torso": "098",
+      "chasis": "101",
+      "leftHand": "540",
+      "rightHand": null,
+      "backpack": "083",
+      "pilot": "LPA-31"
+     },
+     {
+      "kind": "mech",
+      "name": "UN Duelist M.A.P.",
+      "grid": "L8",
+      "facing": "W",
+      "torso": "091",
+      "chasis": "099",
+      "leftHand": "111",
+      "rightHand": "145",
+      "pilot": "LPA-19",
+      "pointsNote": "RH21 Pistol + M3 Vibroblade side not stated; left-hand card 111 chosen since the M15BO Katana is right-hand. Card score 42 matches the booklet."
+     }
+    ]
+   },
+   "s2": {
     "name": "RDL Team - Breach Pair",
     "pointsNote": "Booklet total 423 includes a 48-pt 'Scenario breach kit' (gate markers / breach aid). Placed cards sum to 375.",
     "units": [
@@ -1725,36 +1755,6 @@
       "cardId": "079",
       "grid": "B7",
       "facing": "E"
-     }
-    ]
-   },
-   "blue": {
-    "name": "UN Team - Gate Guard",
-    "pointsNote": "Booklet total 424 includes a -38 'Narrow defensive deployment penalty'. Placed cards sum to 423: the Anchor's second shield (S100 Shield, 39 pts, card 142) is left-hand only and the left hand holds the S9 Meteor Shield + IGX106 Ion Shotgun.",
-    "units": [
-     {
-      "kind": "mech",
-      "name": "UN Anchor M.A.P.",
-      "grid": "L6",
-      "facing": "W",
-      "torso": "098",
-      "chasis": "101",
-      "leftHand": "540",
-      "rightHand": null,
-      "backpack": "083",
-      "pilot": "LPA-31"
-     },
-     {
-      "kind": "mech",
-      "name": "UN Duelist M.A.P.",
-      "grid": "L8",
-      "facing": "W",
-      "torso": "091",
-      "chasis": "099",
-      "leftHand": "111",
-      "rightHand": "145",
-      "pilot": "LPA-19",
-      "pointsNote": "RH21 Pistol + M3 Vibroblade side not stated; left-hand card 111 chosen since the M15BO Katana is right-hand. Card score 42 matches the booklet."
      }
     ]
    }
@@ -1869,7 +1869,39 @@
   "rounds": 4,
   "description": "A 4-round intermediate damage-control scenario: an RDL team (372 pts) escorts a pre-damaged data-carrier M.A.P. toward an eastern extraction zone while a UN pursuit team (381 pts) tries to disable its key parts before it escapes. Teaches part targeting, damaged/destroyed parts, Repaired Tokens, Stabilize System, Link restoration, and survival decisions.",
   "sides": {
-   "red": {
+   "s1": {
+    "name": "UN Pursuit Team",
+    "pointsNote": "Booklet total 381. Placed cards sum to 351: the 30-pt 'Raven-style support drone / approved UN support drone' is a generic placeholder with no exact card (unit placed at J9 with cardId null).",
+    "units": [
+     {
+      "kind": "mech",
+      "name": "UN Hunter M.A.P.",
+      "grid": "J4",
+      "facing": "W",
+      "torso": "091",
+      "chasis": "101",
+      "leftHand": "540",
+      "rightHand": "145",
+      "backpack": "081",
+      "pilot": "LPA-19"
+     },
+     {
+      "kind": "drone",
+      "name": "UN Raven-style Support Drone",
+      "cardId": "161",
+      "grid": "J9",
+      "facing": "W"
+     },
+     {
+      "kind": "drone",
+      "name": "UN Porcupine CIWS Drone",
+      "cardId": "160",
+      "grid": "I7",
+      "facing": "W"
+     }
+    ]
+   },
+   "s2": {
     "name": "RDL Extraction Team",
     "units": [
      {
@@ -1907,38 +1939,6 @@
       "cardId": "079",
       "grid": "C7",
       "facing": "E"
-     }
-    ]
-   },
-   "blue": {
-    "name": "UN Pursuit Team",
-    "pointsNote": "Booklet total 381. Placed cards sum to 351: the 30-pt 'Raven-style support drone / approved UN support drone' is a generic placeholder with no exact card (unit placed at J9 with cardId null).",
-    "units": [
-     {
-      "kind": "mech",
-      "name": "UN Hunter M.A.P.",
-      "grid": "J4",
-      "facing": "W",
-      "torso": "091",
-      "chasis": "101",
-      "leftHand": "540",
-      "rightHand": "145",
-      "backpack": "081",
-      "pilot": "LPA-19"
-     },
-     {
-      "kind": "drone",
-      "name": "UN Raven-style Support Drone",
-      "cardId": "161",
-      "grid": "J9",
-      "facing": "W"
-     },
-     {
-      "kind": "drone",
-      "name": "UN Porcupine CIWS Drone",
-      "cardId": "160",
-      "grid": "I7",
-      "facing": "W"
      }
     ]
    }
@@ -2105,7 +2105,43 @@
   "rounds": 5,
   "description": "Not a scripted scenario but a full setup guide for a first unscripted standard game: force-building by role, part-slot and pilot advice, a faction cheat sheet, a 450-point / 5-round recommended format, the generic 'Relay Control' mission, and a neutral board layout. It includes a sample core-box vs core-box force pair (RDL 449 pts vs UN 447 pts) which is loaded here as the playable content.",
   "sides": {
-   "red": {
+   "s1": {
+    "name": "UN 447 pts - Precision Assault Pair",
+    "units": [
+     {
+      "kind": "mech",
+      "name": "Precision M.A.P.",
+      "grid": "L5",
+      "facing": "W",
+      "torso": "092",
+      "chasis": "101",
+      "leftHand": "107",
+      "rightHand": "106",
+      "backpack": "083",
+      "pilot": "LPA-27"
+     },
+     {
+      "kind": "mech",
+      "name": "Assault / Objective M.A.P.",
+      "grid": "L8",
+      "facing": "W",
+      "torso": "091",
+      "chasis": "099",
+      "leftHand": "103",
+      "rightHand": "104",
+      "backpack": "081",
+      "pilot": "LPA-31"
+     },
+     {
+      "kind": "drone",
+      "name": "Tarantula Carrier Drone",
+      "cardId": "162",
+      "grid": "K7",
+      "facing": "W"
+     }
+    ]
+   },
+   "s2": {
     "name": "RDL 449 pts - Lane Control Pair",
     "units": [
      {
@@ -2145,42 +2181,6 @@
       "cardId": "080",
       "grid": "B7",
       "facing": "E"
-     }
-    ]
-   },
-   "blue": {
-    "name": "UN 447 pts - Precision Assault Pair",
-    "units": [
-     {
-      "kind": "mech",
-      "name": "Precision M.A.P.",
-      "grid": "L5",
-      "facing": "W",
-      "torso": "092",
-      "chasis": "101",
-      "leftHand": "107",
-      "rightHand": "106",
-      "backpack": "083",
-      "pilot": "LPA-27"
-     },
-     {
-      "kind": "mech",
-      "name": "Assault / Objective M.A.P.",
-      "grid": "L8",
-      "facing": "W",
-      "torso": "091",
-      "chasis": "099",
-      "leftHand": "103",
-      "rightHand": "104",
-      "backpack": "081",
-      "pilot": "LPA-31"
-     },
-     {
-      "kind": "drone",
-      "name": "Tarantula Carrier Drone",
-      "cardId": "162",
-      "grid": "K7",
-      "facing": "W"
      }
     ]
    }

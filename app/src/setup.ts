@@ -23,9 +23,9 @@ export function battlefieldLocked(setup: SetupState | null | undefined): boolean
 export function newSetup(): SetupState {
   return {
     stage: 'map',
-    rolls: { blue: [], red: [] },
-    edge: { blue: 'white', red: 'black' },
-    placed: { blue: 0, red: 0 },
+    rolls: { s1: [], s2: [] },
+    edge: { s1: 'white', s2: 'black' },
+    placed: { s1: 0, s2: 0 },
   };
 }
 
@@ -39,9 +39,9 @@ export function normaliseSetup(raw: unknown): SetupState | null {
   const count = (v: unknown) => (typeof v === 'number' && v >= 0 ? v : 0);
   return {
     stage: stages.includes(s.stage as SetupStage) ? (s.stage as SetupStage) : base.stage,
-    rolls: { blue: nums(s.rolls?.blue), red: nums(s.rolls?.red) },
-    edge: { blue: edge(s.edge?.blue, 'white'), red: edge(s.edge?.red, 'black') },
-    placed: { blue: count(s.placed?.blue), red: count(s.placed?.red) },
+    rolls: { s1: nums(s.rolls?.s1), s2: nums(s.rolls?.s2) },
+    edge: { s1: edge(s.edge?.s1, 'white'), s2: edge(s.edge?.s2, 'black') },
+    placed: { s1: count(s.placed?.s1), s2: count(s.placed?.s2) },
   };
 }
 
@@ -60,11 +60,11 @@ export function rollTotal(rolls: number[]): number {
 // More Hits wins. The book states no tie procedure, so a tie returns null and
 // the guide asks for a re-roll rather than inventing a winner.
 export function firstPlayerFrom(s: SetupState): Side | null {
-  if (!s.rolls.blue.length || !s.rolls.red.length) return null;
-  const blue = rollTotal(s.rolls.blue);
-  const red = rollTotal(s.rolls.red);
+  if (!s.rolls.s1.length || !s.rolls.s2.length) return null;
+  const blue = rollTotal(s.rolls.s1);
+  const red = rollTotal(s.rolls.s2);
   if (blue === red) return null;
-  return blue > red ? 'blue' : 'red';
+  return blue > red ? 's1' : 's2';
 }
 
 export function isDeployed(t: Token): boolean {
@@ -77,16 +77,16 @@ export function deployable(state: GameState, side: Side): Token[] {
 }
 
 export function deploymentComplete(state: GameState): boolean {
-  return !deployable(state, 'blue').length && !deployable(state, 'red').length;
+  return !deployable(state, 's1').length && !deployable(state, 's2').length;
 }
 
 // The First Player places one Unit, then the sides alternate. Once one side has
 // placed everything, the other places all of its remaining Units (3.1.4).
 export function deployTurn(state: GameState, setup: SetupState): Side | null {
   const first = state.round.firstPlayer;
-  const other: Side = first === 'blue' ? 'red' : 'blue';
-  const left = { blue: deployable(state, 'blue').length, red: deployable(state, 'red').length };
-  if (!left.blue && !left.red) return null;
+  const other: Side = first === 's1' ? 's2' : 's1';
+  const left = { s1: deployable(state, 's1').length, s2: deployable(state, 's2').length };
+  if (!left.s1 && !left.s2) return null;
   if (!left[first]) return other;
   if (!left[other]) return first;
   return setup.placed[first] <= setup.placed[other] ? first : other;

@@ -17,7 +17,7 @@ const check = (name, got, want) => {
   if (g === w) { pass++; console.log(`  ok   ${name}`); }
   else { fail++; console.log(`  FAIL ${name}\n       want ${w}, got ${g}`); }
 };
-const S = (col, row, side = 'blue') => ({ col, row, side });
+const S = (col, row, side = 's1') => ({ col, row, side });
 const sizes = (groups) => groups.map((g) => g.length).sort((a, b) => a - b);
 // One End Phase: snapshot the groups, then remove. That ordering is what makes
 // the merge and split notes on p.77 fall out without extra bookkeeping.
@@ -35,33 +35,33 @@ check('diagonal touch is NOT Contact', smokeNeighbours(S(3, 3), S(4, 4)), false)
 check('a gap is not Contact', smokeNeighbours(S(3, 3), S(5, 3)), false);
 
 // Groups are per player: the enemy's screens never join yours.
-check('one chain is one group', sizes(smokeGroups([S(1, 1), S(2, 1), S(3, 1)], 'blue')), [3]);
-check('two separate blobs are two groups', sizes(smokeGroups([S(1, 1), S(2, 1), S(6, 6)], 'blue')), [1, 2]);
-check('enemy screens do not join your group', sizes(smokeGroups([S(1, 1), S(2, 1, 'red')], 'blue')), [1]);
-check('enemy screens form their own group', sizes(smokeGroups([S(1, 1), S(2, 1, 'red')], 'red')), [1]);
+check('one chain is one group', sizes(smokeGroups([S(1, 1), S(2, 1), S(3, 1)], 's1')), [3]);
+check('two separate blobs are two groups', sizes(smokeGroups([S(1, 1), S(2, 1), S(6, 6)], 's1')), [1, 2]);
+check('enemy screens do not join your group', sizes(smokeGroups([S(1, 1), S(2, 1, 's2')], 's1')), [1]);
+check('enemy screens form their own group', sizes(smokeGroups([S(1, 1), S(2, 1, 's2')], 's2')), [1]);
 
 // Different players may share a Grid; the same player may not (enforced at placement).
-check('overlapping enemy screens stay separate', sizes(smokeGroups([S(4, 4), S(4, 4, 'red')], 'blue')), [1]);
+check('overlapping enemy screens stay separate', sizes(smokeGroups([S(4, 4), S(4, 4, 's2')], 's1')), [1]);
 
 // End Phase: every isolated screen goes, plus one from each connected group.
 const spread = [S(1, 1), S(5, 5), S(8, 8), S(8, 9)];
-const d1 = dissipationFor(spread, 'blue');
+const d1 = dissipationFor(spread, 's1');
 check('isolated screens are all owed', d1.isolated.length, 2);
 check('connected groups owe one each', d1.groups.length, 1);
-check('a round of dissipation leaves the survivors', round(spread, 'blue').length, 1);
+check('a round of dissipation leaves the survivors', round(spread, 's1').length, 1);
 
 // Merge note (p.77 ①): two groups joined by a new screen are one group, so one removal.
 const merged = [S(2, 2), S(3, 2), S(4, 2), S(5, 2)];
-check('merged chain is a single group', sizes(smokeGroups(merged, 'blue')), [4]);
-check('merged group loses only 1', merged.length - round(merged, 'blue').length, 1);
+check('merged chain is a single group', sizes(smokeGroups(merged, 's1')), [4]);
+check('merged group loses only 1', merged.length - round(merged, 's1').length, 1);
 
 // Split note (p.77 ②): removing the middle splits the group, but the halves owe
 // nothing more until the following End Phase.
 const line = [S(2, 2), S(3, 2), S(4, 2), S(5, 2), S(6, 2)];
 const afterFirst = line.filter((s) => s !== line[2]);
-check('removing the middle splits it in two', sizes(smokeGroups(afterFirst, 'blue')), [2, 2]);
+check('removing the middle splits it in two', sizes(smokeGroups(afterFirst, 's1')), [2, 2]);
 check('the split costs nothing extra that round', afterFirst.length, 4);
-check('next round each half loses one', round(afterFirst, 'blue').length, 2);
+check('next round each half loses one', round(afterFirst, 's1').length, 2);
 
 // LoS: smoke blocks Firing through it, and blinds a unit standing in it.
 const unit = (col, row, size = 1, aerial = false) => ({ col, row, size, aerial, uid: col * 100 + row });

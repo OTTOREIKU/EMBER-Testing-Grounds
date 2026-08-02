@@ -57,39 +57,39 @@ const lock = (me, others, terrain = []) => M.lockersOf(data, me, [me, ...others]
 console.log('Melee Lock\n');
 
 // Condition 1: the locker needs a Melee Action.
-const target = mech(1, 'blue', 2, 2);
-check('an adjacent enemy mech locks', lock(target, [mech(2, 'red', 2, 3)]), [2]);
-check('a shutdown mech cannot lock', lock(target, [mech(2, 'red', 2, 3, { stance: 'shutdown' })]), []);
-check('a mech with no chassis or hands cannot lock', lock(target, [mech(2, 'red', 2, 3, { partStates: { torso: 'intact', chasis: 'destroyed', leftHand: 'destroyed', rightHand: 'destroyed' } })]), []);
-check('one surviving hand is enough', lock(target, [mech(2, 'red', 2, 3, { partStates: { chasis: 'destroyed', leftHand: 'destroyed', rightHand: 'intact' } })]), [2]);
-check('a drone with no melee action cannot lock', lock(target, [drone(3, 'red', 2, 3, [{ type: 'Firing' }])]), []);
-check('a drone with one can', lock(target, [drone(3, 'red', 2, 3, [{ type: 'Melee' }])]), [3]);
-check('a drone whose hull is gone cannot', lock(target, [drone(3, 'red', 2, 3, [{ type: 'Melee' }], { partStates: { main: 'destroyed' } })]), []);
+const target = mech(1, 's1', 2, 2);
+check('an adjacent enemy mech locks', lock(target, [mech(2, 's2', 2, 3)]), [2]);
+check('a shutdown mech cannot lock', lock(target, [mech(2, 's2', 2, 3, { stance: 'shutdown' })]), []);
+check('a mech with no chassis or hands cannot lock', lock(target, [mech(2, 's2', 2, 3, { partStates: { torso: 'intact', chasis: 'destroyed', leftHand: 'destroyed', rightHand: 'destroyed' } })]), []);
+check('one surviving hand is enough', lock(target, [mech(2, 's2', 2, 3, { partStates: { chasis: 'destroyed', leftHand: 'destroyed', rightHand: 'intact' } })]), [2]);
+check('a drone with no melee action cannot lock', lock(target, [drone(3, 's2', 2, 3, [{ type: 'Firing' }])]), []);
+check('a drone with one can', lock(target, [drone(3, 's2', 2, 3, [{ type: 'Melee' }])]), [3]);
+check('a drone whose hull is gone cannot', lock(target, [drone(3, 's2', 2, 3, [{ type: 'Melee' }], { partStates: { main: 'destroyed' } })]), []);
 
 // Condition 2: adjacency, which includes the diagonals.
-check('a diagonal neighbour locks', lock(target, [mech(2, 'red', 3, 3)]), [2]);
-check('two grids away does not', lock(target, [mech(2, 'red', 2, 4)]), []);
-check('sharing a grid does', lock(target, [mech(2, 'red', 2, 2)]), [2]);
+check('a diagonal neighbour locks', lock(target, [mech(2, 's2', 3, 3)]), [2]);
+check('two grids away does not', lock(target, [mech(2, 's2', 2, 4)]), []);
+check('sharing a grid does', lock(target, [mech(2, 's2', 2, 2)]), [2]);
 
 // Condition 3: line of sight.
-check('a wall between them blocks the lock', lock(target, [mech(2, 'red', 2, 4)], [wall(2, 3)]), []);
+check('a wall between them blocks the lock', lock(target, [mech(2, 's2', 2, 4)], [wall(2, 3)]), []);
 
 // Condition 4: the target must not be a Flying Unit, and Optical Camouflage
 // hides it from being locked at all (book p.46).
-check('an aerial unit is never locked', lock({ ...target, aerial: true }, [mech(2, 'red', 2, 3)]), []);
-check('a camouflaged unit is never locked', lock({ ...target, statuses: ['camouflage'] }, [mech(2, 'red', 2, 3)]), []);
-check('an undeployed enemy does not lock', lock(target, [mech(2, 'red', 2, 3, { deployed: false })]), []);
-check('an undeployed unit is not locked either', lock({ ...target, deployed: false }, [mech(2, 'red', 2, 3)]), []);
+check('an aerial unit is never locked', lock({ ...target, aerial: true }, [mech(2, 's2', 2, 3)]), []);
+check('a camouflaged unit is never locked', lock({ ...target, statuses: ['camouflage'] }, [mech(2, 's2', 2, 3)]), []);
+check('an undeployed enemy does not lock', lock(target, [mech(2, 's2', 2, 3, { deployed: false })]), []);
+check('an undeployed unit is not locked either', lock({ ...target, deployed: false }, [mech(2, 's2', 2, 3)]), []);
 
 // Sides, and locking by more than one enemy at once.
-check('a friendly mech never locks', lock(target, [mech(2, 'blue', 2, 3)]), []);
-check('two enemies both lock', lock(target, [mech(2, 'red', 2, 3), mech(4, 'red', 1, 2)]), [2, 4]);
-check('and meleeLocked agrees', M.meleeLocked(data, target, [target, mech(2, 'red', 2, 3)], []), true);
+check('a friendly mech never locks', lock(target, [mech(2, 's1', 2, 3)]), []);
+check('two enemies both lock', lock(target, [mech(2, 's2', 2, 3), mech(4, 's2', 1, 2)]), [2, 4]);
+check('and meleeLocked agrees', M.meleeLocked(data, target, [target, mech(2, 's2', 2, 3)], []), true);
 check('with nobody near, it does not', M.meleeLocked(data, target, [target], []), false);
 
 // Break Away asks the question of Grids the unit has not reached yet, which is
 // what makes the cost vary along a route.
-const cost = M.breakAwayCost(data, target, [target, mech(2, 'red', 2, 3)], []);
+const cost = M.breakAwayCost(data, target, [target, mech(2, 's2', 2, 3)], []);
 check('leaving the starting grid is taxed', cost(2, 2), 1);
 check('the grid next to the locker too', cost(3, 3), 1);
 check('but a grid out of reach is free', cost(2, 0), 0);
@@ -101,11 +101,11 @@ check('an ordinary one is not', M.isMeleeFiring({ keywords: [{ key: '狙击' }] 
 check('and neither is one with no keywords', M.isMeleeFiring({}), false);
 
 // Forced Movement only shifts what has Movement in principle (4.3.4).
-check('a mech can always be force-moved', M.canBeForceMoved(data, mech(1, 'blue', 0, 0)), true);
-check('even one with a destroyed chassis', M.canBeForceMoved(data, mech(1, 'blue', 0, 0, { partStates: { chasis: 'destroyed' } })), true);
-check('a drone that moves can be', M.canBeForceMoved(data, drone(3, 'red', 0, 0, [{ type: 'Moving' }])), true);
+check('a mech can always be force-moved', M.canBeForceMoved(data, mech(1, 's1', 0, 0)), true);
+check('even one with a destroyed chassis', M.canBeForceMoved(data, mech(1, 's1', 0, 0, { partStates: { chasis: 'destroyed' } })), true);
+check('a drone that moves can be', M.canBeForceMoved(data, drone(3, 's2', 0, 0, [{ type: 'Moving' }])), true);
 check('so can one with a printed move value', M.canBeForceMoved(data, { kind: 'drone', cards: [{ slot: 'main', card: { move: 2 } }] }), true);
-check('a deployable that cannot move cannot be', M.canBeForceMoved(data, drone(3, 'red', 0, 0, [{ type: 'Firing' }])), false);
+check('a deployable that cannot move cannot be', M.canBeForceMoved(data, drone(3, 's2', 0, 0, [{ type: 'Firing' }])), false);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

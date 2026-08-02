@@ -94,7 +94,18 @@ export interface DiceData {
 // --- board state ---
 
 export type Facing = 0 | 1 | 2 | 3;
-export type Side = 'blue' | 'red';
+// Squads are identified positionally, not by colour: a squad's colour comes
+// from the faction of the units in it. Saved games from before this used 'blue'
+// and 'red', which migrateState maps on load.
+export type Side = 's1' | 's2';
+
+export const LEGACY_SIDE: Record<string, Side> = { blue: 's1', red: 's2' };
+
+export function asSide(v: unknown, fallback: Side = 's1'): Side {
+  if (v === 's1' || v === 's2') return v;
+  if (typeof v === 'string' && LEGACY_SIDE[v]) return LEGACY_SIDE[v];
+  return fallback;
+}
 export type Stance = 'offensive' | 'defensive' | 'mobility' | 'shutdown';
 export type PartState = 'intact' | 'damaged' | 'destroyed';
 
@@ -435,7 +446,7 @@ export function newScriptState(firstPlayer: Side): ScriptState {
     passed: [],
     stage: '',
     mode: 'hotseat',
-    seats: { blue: 'local', red: 'local' },
+    seats: { s1: 'local', s2: 'local' },
     opp: null,
     intercepts: [],
     endDone: [],
@@ -447,7 +458,7 @@ export function normaliseScript(raw: unknown, firstPlayer: Side): ScriptState {
   const s = (raw ?? {}) as Partial<ScriptState>;
   const list = (v: unknown, fallback: number[]): number[] => (Array.isArray(v) ? (v as number[]) : fallback);
   return {
-    turn: s.turn === 'blue' || s.turn === 'red' ? s.turn : base.turn,
+    turn: asSide(s.turn, base.turn),
     acted: list(s.acted, base.acted),
     extraOpps: list(s.extraOpps, base.extraOpps),
     commanded: list(s.commanded, base.commanded),

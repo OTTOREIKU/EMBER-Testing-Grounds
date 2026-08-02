@@ -99,13 +99,13 @@ export function canAct(state: GameState, phase: LoopPhase, side: Side): boolean 
 }
 
 export function loopComplete(state: GameState, phase: LoopPhase): boolean {
-  return !canAct(state, phase, 'blue') && !canAct(state, phase, 'red');
+  return !canAct(state, phase, 's1') && !canAct(state, phase, 's2');
 }
 
 // A player who passes is out for the phase, but the opponent may keep going, so
 // the turn only alternates to a side that can still do something (3.2.2).
 export function nextTurn(state: GameState, phase: LoopPhase, from: Side): Side | null {
-  const other: Side = from === 'blue' ? 'red' : 'blue';
+  const other: Side = from === 's1' ? 's2' : 's1';
   if (canAct(state, phase, other)) return other;
   if (canAct(state, phase, from)) return from;
   return null;
@@ -261,12 +261,12 @@ export class PlayGuide {
     if (sc.stage === now || sc.stage === `${now}:locked`) return false;
     const leaving = sc.stage.split(':')[1];
     // Unspent Command Tokens do not carry over (3.2.3).
-    if (leaving === '0') s.commandTokens = { blue: 0, red: 0 };
+    if (leaving === '0') s.commandTokens = { s1: 0, s2: 0 };
     // Control captures are a judgement of the End Phase itself (5.3.2), so
     // walking out of it must not lose them, Award or no Award.
     if (leaving === '5') this.settleTasks(s);
     if (s.round.phase === 0) {
-      s.commandTokens = { blue: commandTokensFor(s, 'blue'), red: commandTokensFor(s, 'red') };
+      s.commandTokens = { s1: commandTokensFor(s, 's1'), s2: commandTokensFor(s, 's2') };
       sc.commanded = [];
       sc.freeCommand = [];
     }
@@ -476,7 +476,7 @@ export class PlayGuide {
         if (removed.length) this.cb.onNote(t, `End Phase: ${names(removed)} expired and came off.`);
         if (flipped.length) this.cb.onNote(t, `End Phase: ${names(flipped)} flipped to red and leaves next round.`);
       }
-      s.commandTokens = { blue: 0, red: 0 };
+      s.commandTokens = { s1: 0, s2: 0 };
       markEnd('tokens');
     });
     this.root.querySelector('[data-pick-mission]')?.addEventListener('click', () => this.cb.onPickMission());
@@ -509,7 +509,7 @@ export class PlayGuide {
         const su = normaliseSetup(s.setup) ?? newSetup();
         const mine = b.dataset.edge as 'black' | 'white';
         const fp = s.round.firstPlayer;
-        const other: Side = fp === 'blue' ? 'red' : 'blue';
+        const other: Side = fp === 's1' ? 's2' : 's1';
         s.setup = { ...su, stage: 'deploy', edge: { ...su.edge, [fp]: mine, [other]: mine === 'black' ? 'white' : 'black' } as SetupState['edge'] };
         this.warn = null;
         this.cb.onChanged();
@@ -619,7 +619,7 @@ export class PlayGuide {
   // timing decides which phase it belongs to, and 5.4.2 caps play at 1 a round.
   private tacticsHtml(s: GameState, phase: string): string {
     const rows: string[] = [];
-    for (const side of ['blue', 'red'] as const) {
+    for (const side of ['s1', 's2'] as const) {
       const held = s.tactics?.[side] ?? [];
       if (!held.length) continue;
       const spent = (s.tacticsPlayed?.[side] ?? []).filter((e) => e.startsWith(`${s.round.n}:`));
@@ -684,7 +684,7 @@ export class PlayGuide {
       const def = STATUSES.find((d) => d.id === id);
       return def?.shape === 'square' || def?.shape === 'hexagon';
     }));
-    const cmd = (s.commandTokens.blue ?? 0) + (s.commandTokens.red ?? 0);
+    const cmd = (s.commandTokens.s1 ?? 0) + (s.commandTokens.s2 ?? 0);
     const done = new Set(sc.endDone);
     const step = (id: string, n: number, title: string, body: string, action = '') => {
       const ok = done.has(`${s.round.n}:end:${id}`);
@@ -778,9 +778,9 @@ export class PlayGuide {
         const last = s.round.n >= (s.roundLimit ?? 5);
         const preview = this.previewScore(s, tasks, mission, last);
         const total = `<p class="pg-vp"><b>Victory Points</b>
-          <span class="side-blue">${squadLabel('blue')} ${tasks.vp.blue}</span> ·
-          <span class="side-red">${squadLabel('red')} ${tasks.vp.red}</span></p>`;
-        const secLine = (['blue', 'red'] as Side[])
+          <span class="side-s1">${squadLabel('s1')} ${tasks.vp.s1}</span> ·
+          <span class="side-s2">${squadLabel('s2')} ${tasks.vp.s2}</span></p>`;
+        const secLine = (['s1', 's2'] as Side[])
           .map((side) => {
             const card = tasks.secondary[side] ? this.data.secondary.find((c) => c.id === tasks.secondary[side]) : undefined;
             return card ? `<span class="side-${side}">${squadLabel(side)}: ${esc(card.name)}</span>` : '';
@@ -803,8 +803,8 @@ export class PlayGuide {
           4,
           'Tasks and victory points',
           `${body}${total}${lines}`,
-          preview.blue || preview.red
-            ? `<div class="pg-units"><button class="pg-unit" data-score="1">Award ${preview.blue ? `${squadLabel('blue')} +${preview.blue}` : ''}${preview.blue && preview.red ? ' and ' : ''}${preview.red ? `${squadLabel('red')} +${preview.red}` : ''}</button>
+          preview.s1 || preview.s2
+            ? `<div class="pg-units"><button class="pg-unit" data-score="1">Award ${preview.s1 ? `${squadLabel('s1')} +${preview.s1}` : ''}${preview.s1 && preview.s2 ? ' and ' : ''}${preview.s2 ? `${squadLabel('s2')} +${preview.s2}` : ''}</button>
                 <button class="pg-pass" data-end-step="tasks">Skip</button></div>`
             : '<div class="pg-units"><button class="pg-pass" data-end-step="tasks">Nothing to score</button></div>',
         );
@@ -815,16 +815,16 @@ export class PlayGuide {
         // into another Command Phase as if nothing happened.
         const final = s.round.n >= (s.roundLimit ?? 5);
         const t = normaliseTasks(s.tasks);
-        const verdict = t.vp.blue === t.vp.red
-          ? `${t.vp.blue} Victory Points each, so the tiebreak counts Mech Parts and Drones left on the board (5.2.4).`
-          : `${squadLabel(t.vp.blue > t.vp.red ? 'blue' : 'red')} leads ${Math.max(t.vp.blue, t.vp.red)} to ${Math.min(t.vp.blue, t.vp.red)}.`;
+        const verdict = t.vp.s1 === t.vp.s2
+          ? `${t.vp.s1} Victory Points each, so the tiebreak counts Mech Parts and Drones left on the board (5.2.4).`
+          : `${squadLabel(t.vp.s1 > t.vp.s2 ? 's1' : 's2')} leads ${Math.max(t.vp.s1, t.vp.s2)} to ${Math.min(t.vp.s1, t.vp.s2)}.`;
         return step(
           'round',
           5,
           final ? 'End of the game' : 'End of round',
           final
             ? `This was the last scheduled round, so the game ends and Victory Points are totalled (3.7.4). ${verdict}`
-            : `The First Player Token flips, so ${squadLabel(s.round.firstPlayer === 'blue' ? 'red' : 'blue')} goes first next round.`,
+            : `The First Player Token flips, so ${squadLabel(s.round.firstPlayer === 's1' ? 's2' : 's1')} goes first next round.`,
           final
             ? `<div class="pg-units"><button class="pg-unit" data-game-over="1">End the game and settle the result</button></div>
                <p class="pg-intercept-note">Or press ${esc(`Extra round ${s.round.n + 1}`)} below to keep playing past the printed limit.</p>`
@@ -848,7 +848,7 @@ export class PlayGuide {
       if (su.stage === 'roll') {
         return firstPlayerFrom(su)
           ? 'Take the result first'
-          : su.rolls.blue.length && su.rolls.red.length
+          : su.rolls.s1.length && su.rolls.s2.length
             ? 'Tied, roll again'
             : 'Roll for First Player';
       }
@@ -915,7 +915,7 @@ export class PlayGuide {
   }
 
   private rollHtml(s: GameState, su: SetupState): string {
-    const both = su.rolls.blue.length && su.rolls.red.length;
+    const both = su.rolls.s1.length && su.rolls.s2.length;
     const winner = firstPlayerFrom(su);
     // A tie sends both sides back to the dice, so the buttons have to read as
     // waiting on the player again rather than as already done.
@@ -930,12 +930,12 @@ export class PlayGuide {
       </div>`;
     };
     return `<p class="pg-active">Table edge and First Player <small>Both players roll 2 dice. Most Hits goes first and picks a board edge.</small></p>
-      ${line('blue')}${line('red')}
+      ${line('s1')}${line('s2')}
       ${
         both
           ? winner
             ? `${phaseDone(`${squadLabel(winner)} rolls higher and is First Player`)}<div class="pg-units"><button class="pg-unit" data-roll-accept="1">Continue</button></div>`
-            : `<p class="pg-warn">A tie on ${rollTotal(su.rolls.blue)}. The rulebook gives no tie procedure, so press both roll buttons again.</p>`
+            : `<p class="pg-warn">A tie on ${rollTotal(su.rolls.s1)}. The rulebook gives no tie procedure, so press both roll buttons again.</p>`
           : ''
       }`;
   }
@@ -959,7 +959,7 @@ export class PlayGuide {
   // one Secondary Task and shows it, then names whatever the card designates.
   private secondaryHtml(s: GameState): string {
     const tasks = normaliseTasks(s.tasks);
-    const order: Side[] = s.round.firstPlayer === 'blue' ? ['blue', 'red'] : ['red', 'blue'];
+    const order: Side[] = s.round.firstPlayer === 's1' ? ['s1', 's2'] : ['s2', 's1'];
     const row = (side: Side) => {
       const card = tasks.secondary[side] ? this.data.secondary.find((c) => c.id === tasks.secondary[side]) : undefined;
       return `<button class="pg-unit${card ? '' : ' warn'}" data-secondary="${side}">
@@ -973,7 +973,7 @@ export class PlayGuide {
   private deployHtml(s: GameState, su: SetupState): string {
     const fp = `<p class="pg-turn">First player: <b class="side-${s.round.firstPlayer}">${squadLabel(s.round.firstPlayer)}</b></p>`;
     const tasks = normaliseTasks(s.tasks);
-    const secRow = !tasks.secondary.blue || !tasks.secondary.red ? this.secondaryHtml(s) : '';
+    const secRow = !tasks.secondary.s1 || !tasks.secondary.s2 ? this.secondaryHtml(s) : '';
     if (deploymentComplete(s)) {
       return `${fp}${phaseDone('Everything is deployed')}
         <div class="pg-units"><button class="pg-unit" data-deploy-done="1">Begin round 1</button></div>`;
@@ -988,7 +988,7 @@ export class PlayGuide {
     const turn = deployTurn(s, su);
     if (!turn) return `${fp}${phaseDone('Everything is deployed')}`;
     const waiting = deployable(s, turn);
-    const other: Side = turn === 'blue' ? 'red' : 'blue';
+    const other: Side = turn === 's1' ? 's2' : 's1';
     const otherLeft = deployable(s, other).length;
 
     // A Mech chooses its Stance as it lands, and anything that can activate
@@ -1253,7 +1253,7 @@ export class PlayGuide {
     const cells = (zone: string) => this.data.zoneData.zones.find((z) => z.id === zone)?.cells ?? [];
     const all: ScoreLine[] = [];
     if (mission) all.push(...this.mainScore(s, tasks, mission, finalRound).lines);
-    for (const side of ['blue', 'red'] as Side[]) {
+    for (const side of ['s1', 's2'] as Side[]) {
       const id = tasks.secondary[side];
       const card = id ? this.data.secondary.find((c) => c.id === id) : undefined;
       if (!card?.kind) continue;
@@ -1263,13 +1263,13 @@ export class PlayGuide {
       ).lines);
     }
     const open = unpaidLines(all, tasks.scored);
-    let blue = 0;
-    let red = 0;
+    let s1 = 0;
+    let s2 = 0;
     for (const l of open) {
-      if (l.side === 'blue') blue += l.vp;
-      else red += l.vp;
+      if (l.side === 's1') s1 += l.vp;
+      else s2 += l.vp;
     }
-    return { lines: open, blue, red };
+    return { lines: open, s1, s2 };
   }
 
   private mainScore(s: GameState, tasks: TaskState, mission: MissionCard, finalRound: boolean): ScoreResult {
@@ -1301,10 +1301,10 @@ export class PlayGuide {
     const tasks = normaliseTasks(s.tasks);
     const last = s.round.n >= (s.roundLimit ?? 5);
     const got = this.previewScore(s, tasks, mission, last);
-    tasks.vp.blue += got.blue;
-    tasks.vp.red += got.red;
+    tasks.vp.s1 += got.s1;
+    tasks.vp.s2 += got.s2;
     for (const l of got.lines) if (l.key && !tasks.scored.includes(l.key)) tasks.scored.push(l.key);
-    tasks.paidKills = { blue: { ...tasks.kills.blue }, red: { ...tasks.kills.red } };
+    tasks.paidKills = { s1: { ...tasks.kills.s1 }, s2: { ...tasks.kills.s2 } };
     tasks.paidTestKills = { ...tasks.testKills };
     s.tasks = tasks;
     const key = `${s.round.n}:end:tasks`;
@@ -1594,7 +1594,7 @@ export class PlayGuide {
 
     const tokens =
       phase === 'Command'
-        ? `<p class="pg-tokens">Command tokens: <b class="side-blue">${squadLabel('blue')} ${s.commandTokens.blue}</b> · <b class="side-red">${squadLabel('red')} ${s.commandTokens.red}</b></p>`
+        ? `<p class="pg-tokens">Command tokens: <b class="side-s1">${squadLabel('s1')} ${s.commandTokens.s1}</b> · <b class="side-s2">${squadLabel('s2')} ${s.commandTokens.s2}</b></p>`
         : '';
 
     if (loopComplete(s, phase)) {

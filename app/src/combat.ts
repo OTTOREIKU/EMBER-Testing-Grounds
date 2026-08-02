@@ -2,7 +2,8 @@ import type { GameData } from './data';
 import { cardName } from './data';
 import { iconSvg } from './dice';
 import { linkMechanics } from './inspector';
-import type { Card, CardAction, DiceData, DiceIcon, DieColor, GameRuleEffect, PartSlot, Token } from './types';
+import { SQUAD_ORDER, squadLabel } from './data';
+import type { Card, CardAction, DiceData, DiceIcon, DieColor, GameRuleEffect, PartSlot, Side, Token } from './types';
 import { addStatus, statusCount, STATUSES } from './types';
 import { electronicValue, SLOT_LABEL, tokenCards } from './units';
 
@@ -110,7 +111,7 @@ interface Ctx {
   attackRoll: Rolled[] | null;
   defenseRoll: Rolled[] | null;
   blackResult: string | null;
-  rerolls: Record<'attack' | 'defense', Record<'blue' | 'red', boolean>>;
+  rerolls: Record<'attack' | 'defense', Record<Side, boolean>>;
   surplusRound: number;
   carried: { heavy: number; light: number };
   surplusKeyword: SurplusEffect | null;
@@ -223,7 +224,7 @@ export class AttackHelper {
       attackRoll: null,
       defenseRoll: null,
       blackResult: null,
-      rerolls: { attack: { blue: false, red: false }, defense: { blue: false, red: false } },
+      rerolls: { attack: { s1: false, s2: false }, defense: { s1: false, s2: false } },
       surplusRound: 0,
       carried: { heavy: 0, light: 0 },
       surplusKeyword: null,
@@ -593,9 +594,9 @@ export class AttackHelper {
     }
     const rr = document.createElement('span');
     rr.className = 'rerolls';
-    for (const side of ['blue', 'red'] as const) {
+    for (const side of SQUAD_ORDER) {
       const b = document.createElement('button');
-      b.textContent = `${side} reroll`;
+      b.textContent = `${squadLabel(side)} reroll`;
       b.disabled = c.rerolls[which][side];
       b.addEventListener('click', () => {
         const sel = roll.filter((d) => d.selected);
@@ -797,7 +798,7 @@ export class AttackHelper {
           c.targetPart = null;
           c.attackRoll = null;
           c.defenseRoll = null;
-          c.rerolls = { attack: { blue: false, red: false }, defense: { blue: false, red: false } };
+          c.rerolls = { attack: { s1: false, s2: false }, defense: { s1: false, s2: false } };
           this.note(
             `${effect.name}: ${surplus} un-offset icon${surplus === 1 ? '' : 's'} carry over as Surplus Damage against ${effect.targets}. No Attack Roll is made, and the defender gets no Protection or Parry dice.`,
           );

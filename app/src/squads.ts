@@ -153,7 +153,7 @@ export class SquadTracker {
     if (taskBar) this.root.appendChild(taskBar);
     const order = this.orderPanel();
     if (order) this.root.appendChild(order);
-    for (const side of ['blue', 'red'] as const) {
+    for (const side of ['s1', 's2'] as const) {
       const tokens = this.state.tokens.filter((t) => t.side === side);
       const sec = document.createElement('div');
       sec.className = `squad squad-${side}`;
@@ -320,7 +320,7 @@ export class SquadTracker {
     if (!s) return null;
     const tasks = normaliseTasks(s.tasks);
     const mission = s.mission ? this.data.missions.cards.find((m) => m.id === s.mission) : undefined;
-    const anySecondary = tasks.secondary.blue || tasks.secondary.red;
+    const anySecondary = tasks.secondary.s1 || tasks.secondary.s2;
     // A scenario briefing is written into the Details panel once on load and is
     // gone at the next click, so it gets a permanent way back in too.
     const scenario = s.scenario ? this.cb.scenarioName(s.scenario) : null;
@@ -359,7 +359,7 @@ export class SquadTracker {
       }));
     }
 
-    for (const side of ['blue', 'red'] as const) {
+    for (const side of ['s1', 's2'] as const) {
       const id = tasks.secondary[side];
       if (!id) continue;
       const card = this.data.secondary.find((c) => c.id === id);

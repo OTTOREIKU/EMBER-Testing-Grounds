@@ -117,8 +117,8 @@ export class RoundTracker {
     } else {
       s.round.phase = 0;
       s.round.n++;
-      s.round.firstPlayer = s.round.firstPlayer === 'blue' ? 'red' : 'blue';
-      s.commandTokens = { blue: 0, red: 0 };
+      s.round.firstPlayer = s.round.firstPlayer === 's1' ? 's2' : 's1';
+      s.commandTokens = { s1: 0, s2: 0 };
       for (const t of s.tokens) t.timing = undefined;
       // All Terminal Tokens flip back face-up at the End Phase (5.3.3), so the
       // new round starts with every Terminal accessible again.
@@ -185,7 +185,7 @@ export class RoundTracker {
       <span class="rt-first side-${s.round.firstPlayer}">1st: ${squadLabel(s.round.firstPlayer)}</span>
       <span class="rt-cmd">
         CMD
-        ${(['blue', 'red'] as Side[])
+        ${(['s1', 's2'] as Side[])
           .map(
             (side) => `<span class="cmd-${side}" title="${squadLabel(side)} Command Tokens">${squadLabel(side)} <button data-cmd="${side}" data-d="-1">−</button><b>${s.commandTokens[side]}</b><button data-cmd="${side}" data-d="1">+</button></span>`,
           )
@@ -232,10 +232,10 @@ export class RoundTracker {
       resetBtn.addEventListener('click', () => {
         s.round.n = 1;
         s.round.phase = 0;
-        s.commandTokens = { blue: 0, red: 0 };
+        s.commandTokens = { s1: 0, s2: 0 };
         // Plays are stamped with a round number, so winding the track back to 1
         // would leave round 1's cards reading as already spent.
-        s.tacticsPlayed = { blue: [], red: [] };
+        s.tacticsPlayed = { s1: [], s2: [] };
         this.onChanged();
       });
     }
@@ -252,7 +252,7 @@ export class RoundTracker {
       ],
     });
 
-    const other: Side = s.round.firstPlayer === 'blue' ? 'red' : 'blue';
+    const other: Side = s.round.firstPlayer === 's1' ? 's2' : 's1';
     inspectOnHover(this.root.querySelector<HTMLElement>('.rt-first')!, {
       title: `First Player: ${squadLabel(s.round.firstPlayer)}`,
       sub: 'Who goes first, not who owns the phase',

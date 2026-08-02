@@ -133,14 +133,14 @@ export function instantiateScenario(scn: Scenario, state: GameState, data: GameD
   const warnings: string[] = [...(scn.unmatched ?? []).map((u) => `unmatched card: ${u}`)];
   const tokens: Token[] = [];
 
-  for (const side of ['blue', 'red'] as Side[]) {
+  for (const side of ['s1', 's2'] as Side[]) {
     for (const u of scn.sides[side]?.units ?? []) {
       const g = parseGrid(u.grid);
       if (!g) {
         warnings.push(`${u.name}: bad grid "${u.grid}"`);
         continue;
       }
-      const facing = FACING[(u.facing ?? (side === 'blue' ? 'S' : 'N')).toUpperCase()] ?? 0;
+      const facing = FACING[(u.facing ?? (side === 's1' ? 'S' : 'N')).toUpperCase()] ?? 0;
       if (u.kind === 'mech') {
         const loadout: MechLoadout = {
           torso: u.torso ?? undefined,
@@ -175,7 +175,7 @@ export function instantiateScenario(scn: Scenario, state: GameState, data: GameD
   saveCustomMap(mapName, terrainPieces(scn.terrain ?? []));
 
   const sideNames: Partial<Record<Side, string>> = {};
-  for (const side of ['blue', 'red'] as Side[]) {
+  for (const side of ['s1', 's2'] as Side[]) {
     const n = scn.sides[side]?.name;
     if (n) sideNames[side] = n;
   }

@@ -2,7 +2,7 @@ import { DEFAULT_BOARD } from './boards';
 import type { GameData } from './data';
 import { cardName, isAerial, unitSize } from './data';
 import type { Card, CardAction, GameState, MechLoadout, PartSlot, Side, Stance, TerrainPiece, Timing, Token } from './types';
-import { normaliseScript, statusCount, TIMINGS } from './types';
+import { LEGACY_SIDE, normaliseScript, statusCount, TIMINGS } from './types';
 import { normaliseSetup } from './setup';
 import { isMeleeFiring, lockersOf } from './melee';
 import { normaliseTasks } from './tasks';
@@ -625,10 +625,28 @@ function legacyZoneSet(s: unknown): string {
 function normaliseTactics(raw: unknown): Record<Side, string[]> {
   const v = (raw ?? {}) as Partial<Record<Side, unknown>>;
   const side = (x: unknown): string[] => (Array.isArray(x) ? x.filter((n): n is string => typeof n === 'string') : []);
-  return { blue: side(v.blue), red: side(v.red) };
+  return { s1: side(v.s1), s2: side(v.s2) };
 }
 
-export function migrateState(raw: unknown, data: GameData): GameState | null {
+// Squads used to be named for their colour, which meant a side id of 'blue' or
+// 'red'. Those ids appear as object keys, as array entries and as plain values,
+// nested several levels down through tasks, script and setup, so this renames
+// them wherever they occur rather than listing every path. Nothing else a saved
+// game stores can hold those two words: board themes, marker kinds, deployment
+// edges and dice colours all use other vocabulary, and dice are never persisted.
+function migrateSideIds(v: unknown): unknown {
+  if (typeof v === 'string') return LEGACY_SIDE[v] ?? v;
+  if (Array.isArray(v)) return v.map(migrateSideIds);
+  if (!v || typeof v !== 'object') return v;
+  const out: Record<string, unknown> = {};
+  for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+    out[LEGACY_SIDE[k] ?? k] = migrateSideIds(val);
+  }
+  return out;
+}
+
+export function migrateState(rawIn: unknown, data: GameData): GameState | null {
+  const raw = migrateSideIds(rawIn);
   if (!raw || typeof raw !== 'object') return null;
   const s = raw as {
     v?: number;
@@ -645,11 +663,11 @@ export function migrateState(raw: unknown, data: GameData): GameState | null {
     map: s.map ?? '',
     tokens: [],
     nextUid: s.nextUid ?? 1,
-    round: s.round ?? { n: 1, phase: 0, firstPlayer: 'blue' },
-    commandTokens: s.commandTokens ?? { blue: 0, red: 0 },
+    round: s.round ?? { n: 1, phase: 0, firstPlayer: 's1' },
+    commandTokens: s.commandTokens ?? { s1: 0, s2: 0 },
     markers: (s as { markers?: GameState['markers'] }).markers ?? [],
     smoke: (s as { smoke?: GameState['smoke'] }).smoke ?? [],
-    script: normaliseScript((s as { script?: unknown }).script, (s.round ?? { firstPlayer: 'blue' }).firstPlayer ?? 'blue'),
+    script: normaliseScript((s as { script?: unknown }).script, (s.round ?? { firstPlayer: 's1' }).firstPlayer ?? 's1'),
     removedTerrain: (s as { removedTerrain?: string[] }).removedTerrain ?? [],
     scale: (s as { scale?: GameState['scale'] }).scale ?? 'standard',
     roundLimit: (s as { roundLimit?: number }).roundLimit ?? 5,
@@ -688,7 +706,7 @@ export function migrateState(raw: unknown, data: GameData): GameState | null {
 
     state.tokens.push({
       uid: t.uid,
-      side: t.side ?? 'blue',
+      side: t.side ?? 's1',
       kind: t.kind ?? 'drone',
       cardId: t.cardId ?? '',
       mech: t.mech,

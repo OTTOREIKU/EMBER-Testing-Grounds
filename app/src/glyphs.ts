@@ -17,9 +17,9 @@ const ICONS: Record<string, string> = {
 };
 
 const DICE: Record<string, { colour: string; label: string }> = {
-  b: { colour: 'blue', label: 'Blue die' },
+  b: { colour: 's1', label: 'Blue die' },
   y: { colour: 'yellow', label: 'Yellow die' },
-  r: { colour: 'red', label: 'Red die' },
+  r: { colour: 's2', label: 'Red die' },
   w: { colour: 'white', label: 'White die' },
 };
 

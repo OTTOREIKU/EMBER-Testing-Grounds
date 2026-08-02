@@ -1,5 +1,5 @@
-import type { DiceData, DiceIcon, DieColor } from './types';
-import { assetUrl } from './data';
+import type { DiceData, DiceIcon, DieColor, Side } from './types';
+import { assetUrl, squadLabel } from './data';
 
 interface RolledDie {
   color: DieColor;
@@ -70,7 +70,7 @@ export class DiceTray {
   private root: HTMLElement;
   private pool: Partial<Record<DieColor, number>> = {};
   private rolled: RolledDie[] = [];
-  private rerollUsed: Record<'blue' | 'red', boolean> = { blue: false, red: false };
+  private rerollUsed: Record<Side, boolean> = { s1: false, s2: false };
   private animTimer: number | undefined;
 
   constructor(dice: DiceData, root: HTMLElement) {
@@ -95,7 +95,7 @@ export class DiceTray {
         this.rolled.push({ color, face: this.randomFace(color), selected: false });
       }
     }
-    this.rerollUsed = { blue: false, red: false };
+    this.rerollUsed = { s1: false, s2: false };
     this.animate();
   }
 
@@ -154,7 +154,7 @@ export class DiceTray {
     this.pool = {};
     for (const d of dice) this.pool[d.color] = (this.pool[d.color] ?? 0) + 1;
     this.rolled = dice.map((d) => ({ color: d.color, face: d.face, selected: false }));
-    this.rerollUsed = { blue: true, red: true };
+    this.rerollUsed = { s1: true, s2: true };
     if (!animate) {
       this.render();
       return;
@@ -184,7 +184,7 @@ export class DiceTray {
     this.render();
   }
 
-  private rerollSelected(player: 'blue' | 'red'): void {
+  private rerollSelected(player: Side): void {
     if (this.rerollUsed[player]) return;
     const sel = this.rolled.filter((d) => d.selected);
     if (!sel.length) return;
@@ -251,8 +251,8 @@ export class DiceTray {
       ${
         this.rolled.length
           ? `<div class="rerolls">
-              <button id="rr-blue" ${this.rerollUsed.blue ? 'disabled' : ''}>UN reroll</button>
-              <button id="rr-red" ${this.rerollUsed.red ? 'disabled' : ''}>RDL reroll</button>
+              <button id="rr-s1" ${this.rerollUsed.s1 ? 'disabled' : ''}>${squadLabel('s1')} reroll</button>
+              <button id="rr-s2" ${this.rerollUsed.s2 ? 'disabled' : ''}>${squadLabel('s2')} reroll</button>
              </div>
              <p class="tray-hint">Select dice above, then reroll (once per player).</p>`
           : ''
@@ -281,7 +281,7 @@ export class DiceTray {
         this.render();
       }),
     );
-    this.root.querySelector('#rr-blue')?.addEventListener('click', () => this.rerollSelected('blue'));
-    this.root.querySelector('#rr-red')?.addEventListener('click', () => this.rerollSelected('red'));
+    this.root.querySelector('#rr-s1')?.addEventListener('click', () => this.rerollSelected('s1'));
+    this.root.querySelector('#rr-s2')?.addEventListener('click', () => this.rerollSelected('s2'));
   }
 }

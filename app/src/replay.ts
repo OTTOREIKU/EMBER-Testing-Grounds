@@ -65,7 +65,7 @@ export interface ReplayTally {
 }
 
 export function emptyTally(): ReplayTally {
-  return { vp: { blue: 0, red: 0 }, scored: [] };
+  return { vp: { s1: 0, s2: 0 }, scored: [] };
 }
 
 function findUnit(tokens: Token[], name: string): Token | undefined {
@@ -105,7 +105,7 @@ export function applyOp(state: GameState, tally: ReplayTally, op: ReplayOp, data
       parentUid: parent?.uid,
       col: g.c * 3 + off,
       row: g.r * 3 + off,
-      facing: op.side === 'blue' ? 3 : 1,
+      facing: op.side === 's1' ? 3 : 1,
     });
     return null;
   }

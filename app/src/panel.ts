@@ -76,7 +76,7 @@ const STAT_FIELDS: [keyof Card, string][] = [
 
 export interface PanelCallbacks {
   world(): ActionWorld;
-  onRollDice(pool: { red?: number; yellow?: number }): void;
+  onRollDice(pool: { s2?: number; yellow?: number }): void;
   onSpendAmmo(t: Token, actionId: string): void;
   onSpendIntercept(t: Token, actionId: string): void;
   onRestoreIntercept(t: Token, actionId: string): void;
@@ -505,7 +505,7 @@ export class Panel {
       roll.textContent = `Roll ${dice.join('+')}`;
       roll.title = `Roll ${dice.join(' and ')} in the dice tray`;
       roll.addEventListener('click', () => {
-        this.cb.onRollDice({ red: a.redDice, yellow: a.yellowDice });
+        this.cb.onRollDice({ s2: a.redDice, yellow: a.yellowDice });
         if (!isAttack && ammoLeft !== undefined) this.cb.onSpendAmmo(t, a.id);
       });
       btns.appendChild(roll);

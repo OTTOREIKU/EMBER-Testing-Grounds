@@ -25,7 +25,7 @@
      "do": [
       {
        "op": "first",
-       "side": "red"
+       "side": "s2"
       }
      ]
     },
@@ -41,12 +41,12 @@
      "do": [
       {
        "op": "cmd",
-       "side": "red",
+       "side": "s2",
        "n": 2
       },
       {
        "op": "cmd",
-       "side": "blue",
+       "side": "s1",
        "n": 2
       }
      ]
@@ -91,12 +91,12 @@
       },
       {
        "op": "cmd",
-       "side": "red",
+       "side": "s2",
        "n": 0
       },
       {
        "op": "cmd",
-       "side": "blue",
+       "side": "s1",
        "n": 0
       }
      ]
@@ -237,7 +237,7 @@
      "do": [
       {
        "op": "first",
-       "side": "blue"
+       "side": "s1"
       }
      ]
     },
@@ -253,12 +253,12 @@
      "do": [
       {
        "op": "cmd",
-       "side": "red",
+       "side": "s2",
        "n": 2
       },
       {
        "op": "cmd",
-       "side": "blue",
+       "side": "s1",
        "n": 2
       },
       {
@@ -273,12 +273,12 @@
       },
       {
        "op": "cmd",
-       "side": "red",
+       "side": "s2",
        "n": 0
       },
       {
        "op": "cmd",
-       "side": "blue",
+       "side": "s1",
        "n": 0
       }
      ]
@@ -309,7 +309,7 @@
       {
        "op": "spawn",
        "cardId": "071",
-       "side": "blue",
+       "side": "s1",
        "at": "F9",
        "label": "Razor Missile",
        "parent": "Missile / Brawler"
@@ -658,7 +658,7 @@
       },
       {
        "op": "vp",
-       "side": "red",
+       "side": "s2",
        "n": 1,
        "why": "First enemy Part destroyed"
       }
@@ -781,13 +781,13 @@
       },
       {
        "op": "vp",
-       "side": "blue",
+       "side": "s1",
        "n": 1,
        "why": "Projectile lesson: first projectile damage"
       },
       {
        "op": "vp",
-       "side": "blue",
+       "side": "s1",
        "n": 1,
        "why": "Drone kill: enemy Hyena destroyed"
       }
@@ -806,13 +806,13 @@
      "do": [
       {
        "op": "vp",
-       "side": "red",
+       "side": "s2",
        "n": 1,
        "why": "Relay pressure: Skirmisher adjacent to F9"
       },
       {
        "op": "first",
-       "side": "red"
+       "side": "s2"
       }
      ]
     },
@@ -828,16 +828,16 @@
      "do": [
       {
        "op": "first",
-       "side": "red"
+       "side": "s2"
       },
       {
        "op": "cmd",
-       "side": "red",
+       "side": "s2",
        "n": 2
       },
       {
        "op": "cmd",
-       "side": "blue",
+       "side": "s1",
        "n": 2
       }
      ]
@@ -858,19 +858,19 @@
       {
        "op": "spawn",
        "cardId": "071",
-       "side": "blue",
+       "side": "s1",
        "at": "E9",
        "label": "Razor Missile",
        "parent": "blue:Hyena"
       },
       {
        "op": "cmd",
-       "side": "red",
+       "side": "s2",
        "n": 0
       },
       {
        "op": "cmd",
-       "side": "blue",
+       "side": "s1",
        "n": 0
       }
      ]
@@ -1241,19 +1241,19 @@
      "do": [
       {
        "op": "vp",
-       "side": "red",
+       "side": "s2",
        "n": 1,
        "why": "Relay pressure: Skirmisher on F9"
       },
       {
        "op": "vp",
-       "side": "blue",
+       "side": "s1",
        "n": 1,
        "why": "Centre presence: Bulwark adjacent to G6"
       },
       {
        "op": "vp",
-       "side": "blue",
+       "side": "s1",
        "n": 1,
        "why": "Relay pressure: Bulwark adjacent to G4"
       }

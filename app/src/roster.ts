@@ -1,4 +1,4 @@
-import type { Card, MechLoadout } from './types';
+import type { Card, MechLoadout, Side } from './types';
 import { BASE_FACTIONS, cardName, FACTION_LABEL, isDiscardCard, mechPartUrl, SQUAD_ORDER, squadLabel, squadNumber, tabImageUrl, type GameData } from './data';
 import { inspectOnHover } from './inspector';
 import { alertDialog, confirmDialog, promptDialog } from './dialog';
@@ -9,18 +9,18 @@ import { factionColour } from './icons';
 const escAttr = (v: string): string => v.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 
 export interface RosterCallbacks {
-  squadAllegiance(side: 'blue' | 'red'): SquadAllegiance;
-  onAddUnit(card: Card, side: 'blue' | 'red'): void;
-  onAddMech(loadout: MechLoadout, side: 'blue' | 'red'): void;
+  squadAllegiance(side: Side): SquadAllegiance;
+  onAddUnit(card: Card, side: Side): void;
+  onAddMech(loadout: MechLoadout, side: Side): void;
   onSaveMech(uid: number, loadout: MechLoadout): void;
   onPreview(card: Card, opts?: { focus?: boolean }): void;
   cardFilter?(card: Card): boolean;
   cardBadge?(card: Card): string;
   pointsCap?(): { name: string; points: number; openEnded: boolean } | null;
-  squadPoints?(): { blue: number; red: number };
-  heldTactics?(): { blue: string[]; red: string[] };
-  onAddTactic?(card: Card, side: 'blue' | 'red'): void;
-  onDropTactic?(card: Card, side: 'blue' | 'red'): void;
+  squadPoints?(): { s1: number; s2: number };
+  heldTactics?(): { s1: string[]; s2: string[] };
+  onAddTactic?(card: Card, side: Side): void;
+  onDropTactic?(card: Card, side: Side): void;
   now(): number;
 }
 
@@ -46,7 +46,7 @@ export class Roster {
   private search = '';
   private mech: MechLoadout = {};
   private presetId = '';
-  private editing: { uid: number; side: 'blue' | 'red'; label: string } | null = null;
+  private editing: { uid: number; side: Side; label: string } | null = null;
 
   // The build rules are the same whether a mech is being added or edited, so
   // both paths run this and only the confirm wording changes.
@@ -77,7 +77,7 @@ export class Roster {
   }
 
   // Pulls an existing mech off the board and back onto the bench.
-  editMech(uid: number, side: 'blue' | 'red', label: string, loadout: MechLoadout): void {
+  editMech(uid: number, side: Side, label: string, loadout: MechLoadout): void {
     this.editing = { uid, side, label };
     this.mech = { ...loadout };
     this.tab = 'mech';
@@ -92,7 +92,7 @@ export class Roster {
   // the drone list, the projectile list, the tactics list and the mech builder.
   // The label is always the squad number: renaming a squad must not move the
   // buttons around under the player's cursor.
-  private squadButton(side: 'blue' | 'red', card: Card | null, suffix = ''): HTMLButtonElement {
+  private squadButton(side: Side, card: Card | null, suffix = ''): HTMLButtonElement {
     const b = document.createElement('button');
     b.className = 'add sq-add';
     b.textContent = `${squadNumber(side)}${suffix}`;
@@ -111,7 +111,7 @@ export class Roster {
     return b;
   }
 
-  private squadTakes(side: 'blue' | 'red', card: Card): { ok: boolean; why: string } {
+  private squadTakes(side: Side, card: Card): { ok: boolean; why: string } {
     const a = this.cb.squadAllegiance(side);
     if (cardFitsSquad(this.data, a, card)) return { ok: true, why: '' };
     const theirs = FACTION_LABEL[a.faction!] ?? a.faction;
@@ -563,11 +563,11 @@ export class Roster {
     }
     const lines = [`Current build: ${total} points`];
     const squads = this.cb.squadPoints?.();
-    if (squads) lines.push(`Squad points: UN ${squads.blue} / RDL ${squads.red}`);
+    if (squads) lines.push(`Squad points: UN ${squads.s1} / RDL ${squads.s2}`);
     const cap = this.cb.pointsCap?.();
     if (cap) {
       const limit = `${cap.points}${cap.openEnded ? '+' : ''}`;
-      const worst = squads ? Math.max(squads.blue, squads.red) : total;
+      const worst = squads ? Math.max(squads.s1, squads.s2) : total;
       const over = !cap.openEnded && worst > cap.points;
       lines.push(`Battle size: ${cap.name}, ${limit} points${over ? ' — over the cap' : ''}`);
     }

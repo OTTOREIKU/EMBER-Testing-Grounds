@@ -28,7 +28,7 @@ const mech = (uid, side, timing, init) => {
   return { uid, side, timing, kind: 'mech', partStates: { torso: 'intact' } };
 };
 const lookup = (t, timing) => INIT.get(`${t.uid}:${timing}`);
-const world = (tokens, firstPlayer = 'blue', acted = [], extraOpps = []) => ({
+const world = (tokens, firstPlayer = 's1', acted = [], extraOpps = []) => ({
   tokens,
   round: { n: 1, phase: 2, firstPlayer },
   script: { acted, extraOpps },
@@ -40,14 +40,14 @@ console.log('Action Phase activation order\n');
 // Timing order is fixed and beats Initiative outright.
 check(
   'timing order comes before initiative',
-  order([mech(1, 'blue', 'tactical', 1), mech(2, 'red', 'swift', 9)]),
+  order([mech(1, 's1', 'tactical', 1), mech(2, 's2', 'swift', 9)]),
   [2, 1],
 );
 check(
   'all six timings resolve in book order',
   order([
-    mech(10, 'blue', 'tactical', 1), mech(11, 'blue', 'movement', 1), mech(12, 'blue', 'firing', 1),
-    mech(13, 'blue', 'projectile', 1), mech(14, 'blue', 'melee', 1), mech(15, 'blue', 'swift', 1),
+    mech(10, 's1', 'tactical', 1), mech(11, 's1', 'movement', 1), mech(12, 's1', 'firing', 1),
+    mech(13, 's1', 'projectile', 1), mech(14, 's1', 'melee', 1), mech(15, 's1', 'swift', 1),
   ]),
   [15, 14, 13, 12, 11, 10],
 );
@@ -55,57 +55,57 @@ check(
 // Inside one Timing, the LOWEST Initiative acts first.
 check(
   'lowest initiative acts first',
-  order([mech(1, 'blue', 'firing', 7), mech(2, 'red', 'firing', 2), mech(3, 'blue', 'firing', 5)]),
+  order([mech(1, 's1', 'firing', 7), mech(2, 's2', 'firing', 2), mech(3, 's1', 'firing', 5)]),
   [2, 3, 1],
 );
 
 // The worked example on book p.29: Melee/5, Melee/2 and Projectile/2 resolve B, A, C.
-const a = mech(101, 'blue', 'melee', 5);
-const b = mech(102, 'red', 'melee', 2);
-const c = mech(103, 'blue', 'projectile', 2);
+const a = mech(101, 's1', 'melee', 5);
+const b = mech(102, 's2', 'melee', 2);
+const c = mech(103, 's1', 'projectile', 2);
 check('book p.29 example resolves B, A, C', order([a, b, c]), [102, 101, 103]);
 
 // Tied on Timing AND Initiative: the First Player goes first, then the sides alternate.
 const tie = () => [
-  mech(1, 'blue', 'firing', 4), mech(2, 'blue', 'firing', 4),
-  mech(3, 'red', 'firing', 4), mech(4, 'red', 'firing', 4),
+  mech(1, 's1', 'firing', 4), mech(2, 's1', 'firing', 4),
+  mech(3, 's2', 'firing', 4), mech(4, 's2', 'firing', 4),
 ];
-check('a full tie alternates from the first player', order(tie(), 'blue'), [1, 3, 2, 4]);
-check('the other first player flips the alternation', order(tie(), 'red'), [3, 1, 4, 2]);
+check('a full tie alternates from the first player', order(tie(), 's1'), [1, 3, 2, 4]);
+check('the other first player flips the alternation', order(tie(), 's2'), [3, 1, 4, 2]);
 // When one side runs out mid-tie, the rest of the other side simply follows.
 check(
   'an uneven tie finishes with whoever is left',
-  order([mech(1, 'blue', 'firing', 4), mech(2, 'blue', 'firing', 4), mech(3, 'blue', 'firing', 4), mech(4, 'red', 'firing', 4)], 'blue'),
+  order([mech(1, 's1', 'firing', 4), mech(2, 's1', 'firing', 4), mech(3, 's1', 'firing', 4), mech(4, 's2', 'firing', 4)], 's1'),
   [1, 4, 2, 3],
 );
 // Ties are broken per initiative value, not across the whole timing.
 check(
   'each initiative value gets its own tie-break',
-  order([mech(1, 'red', 'firing', 2), mech(2, 'blue', 'firing', 2), mech(3, 'red', 'firing', 1), mech(4, 'blue', 'firing', 1)], 'blue'),
+  order([mech(1, 's2', 'firing', 2), mech(2, 's1', 'firing', 2), mech(3, 's2', 'firing', 1), mech(4, 's1', 'firing', 1)], 's1'),
   [4, 3, 2, 1],
 );
 
 // A Mech with no dial set never activates, and neither do drones or wrecks.
-check('a mech with no dial does not activate', order([{ uid: 5, side: 'blue', kind: 'mech', partStates: { torso: 'intact' } }]), []);
-check('drones do not activate in this phase', order([{ uid: 6, side: 'blue', kind: 'drone', timing: 'firing', partStates: {} }]), []);
+check('a mech with no dial does not activate', order([{ uid: 5, side: 's1', kind: 'mech', partStates: { torso: 'intact' } }]), []);
+check('drones do not activate in this phase', order([{ uid: 6, side: 's1', kind: 'drone', timing: 'firing', partStates: {} }]), []);
 check(
   'a mech with every part destroyed does not activate',
-  order([{ uid: 7, side: 'blue', kind: 'mech', timing: 'firing', partStates: { torso: 'destroyed' } }]),
+  order([{ uid: 7, side: 's1', kind: 'mech', timing: 'firing', partStates: { torso: 'destroyed' } }]),
   [],
 );
 // A pilotless mech has no Initiative Value, so it goes last within its timing.
 check(
   'an unknown initiative sorts last',
-  order([mech(1, 'blue', 'firing', undefined), mech(2, 'blue', 'firing', 6)]),
+  order([mech(1, 's1', 'firing', undefined), mech(2, 's1', 'firing', 6)]),
   [2, 1],
 );
 
 // The driver walks the order, skipping whoever has already had their opportunity.
-const three = [mech(1, 'blue', 'swift', 3), mech(2, 'red', 'melee', 3), mech(3, 'blue', 'firing', 3)];
+const three = [mech(1, 's1', 'swift', 3), mech(2, 's2', 'melee', 3), mech(3, 's1', 'firing', 3)];
 check('the first activation is the head of the order', nextActivation(world(three), lookup).uid, 1);
-check('an acted mech is skipped', nextActivation(world(three, 'blue', [1]), lookup).uid, 2);
-check('the phase is not over while one is owed', actionPhaseComplete(world(three, 'blue', [1, 2]), lookup), false);
-check('the phase ends when all have acted', actionPhaseComplete(world(three, 'blue', [1, 2, 3]), lookup), true);
+check('an acted mech is skipped', nextActivation(world(three, 's1', [1]), lookup).uid, 2);
+check('the phase is not over while one is owed', actionPhaseComplete(world(three, 's1', [1, 2]), lookup), false);
+check('the phase ends when all have acted', actionPhaseComplete(world(three, 's1', [1, 2, 3]), lookup), true);
 check('an empty board ends the phase at once', actionPhaseComplete(world([]), lookup), true);
 check('the activation carries its timing and initiative', nextActivation(world(three), lookup), { uid: 1, timing: 'swift', init: 3 });
 
@@ -114,21 +114,21 @@ check('the activation carries its timing and initiative', nextActivation(world(t
 // An Extra Opportunity waits for the normal order to finish. That is where it
 // belongs rather than a simplification: only a Tactic grants one, and Tactical
 // is the last Timing, so everyone else has already acted by the time it is cast.
-check('an owed mech does not jump the queue', nextActivation(world(three, 'blue', [], [3]), lookup).uid, 1);
-check('the normal order runs first', nextActivation(world(three, 'blue', [1], [3]), lookup).uid, 2);
-check('the extra comes once everyone has acted', nextActivation(world(three, 'blue', [1, 2, 3], [3]), lookup).uid, 3);
-check('and it carries that mech\'s own timing', nextActivation(world(three, 'blue', [1, 2, 3], [3]), lookup).timing, 'firing');
-check('the phase is not over while an extra is owed', actionPhaseComplete(world(three, 'blue', [1, 2, 3], [3]), lookup), false);
-check('and ends once it is spent', actionPhaseComplete(world(three, 'blue', [1, 2, 3], []), lookup), true);
-check('two owed mechs are served in the order granted', nextActivation(world(three, 'blue', [1, 2, 3], [2, 1]), lookup).uid, 2);
+check('an owed mech does not jump the queue', nextActivation(world(three, 's1', [], [3]), lookup).uid, 1);
+check('the normal order runs first', nextActivation(world(three, 's1', [1], [3]), lookup).uid, 2);
+check('the extra comes once everyone has acted', nextActivation(world(three, 's1', [1, 2, 3], [3]), lookup).uid, 3);
+check('and it carries that mech\'s own timing', nextActivation(world(three, 's1', [1, 2, 3], [3]), lookup).timing, 'firing');
+check('the phase is not over while an extra is owed', actionPhaseComplete(world(three, 's1', [1, 2, 3], [3]), lookup), false);
+check('and ends once it is spent', actionPhaseComplete(world(three, 's1', [1, 2, 3], []), lookup), true);
+check('two owed mechs are served in the order granted', nextActivation(world(three, 's1', [1, 2, 3], [2, 1]), lookup).uid, 2);
 
 // A grant aimed at a destroyed or undialled mech has no slot in the order, so it
 // must be dropped rather than stalling the phase forever.
-check('an owed mech with no activation is skipped', actionPhaseComplete(world(three, 'blue', [1, 2, 3], [99]), lookup), true);
+check('an owed mech with no activation is skipped', actionPhaseComplete(world(three, 's1', [1, 2, 3], [99]), lookup), true);
 
-check('a mech acting normally is not on an extra', onExtraOpportunity(world(three, 'blue', [], [3]), 3), false);
-check('one that has acted and is owed is', onExtraOpportunity(world(three, 'blue', [3], [3]), 3), true);
-check('and one merely finished is not', onExtraOpportunity(world(three, 'blue', [3], []), 3), false);
+check('a mech acting normally is not on an extra', onExtraOpportunity(world(three, 's1', [], [3]), 3), false);
+check('one that has acted and is owed is', onExtraOpportunity(world(three, 's1', [3], [3]), 3), true);
+check('and one merely finished is not', onExtraOpportunity(world(three, 's1', [3], []), 3), false);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

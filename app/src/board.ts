@@ -1,7 +1,7 @@
 import type { TaskItem } from './tasks';
 import type { GameState, Marker, Side, SmokeScreen, StatusDef, TerrainPiece, Token, TokenShape } from './types';
 import { INTERCEPT_DEF, SHAPE_NOTE, statusCount, statusStacks } from './types';
-import { mechPartUrl, squadLabel, tabImageUrl } from './data';
+import { mechPartUrl, squadLabel, squadNumber, tabImageUrl } from './data';
 import { type BoardTheme, boardArtUrl, boardTheme, DEFAULT_BOARD } from './boards';
 import type { InspectInfo } from './inspector';
 
@@ -98,7 +98,7 @@ function notchedSquare(x: number, y: number, s: number, n: number): string {
 
 function smokeHatchDefs(): SVGDefsElement {
   const defs = el('defs');
-  for (const side of ['blue', 'red'] as const) {
+  for (const side of ['s1', 's2'] as const) {
     const p = el('pattern', {
       id: `smoke-hatch-${side}`,
       width: 13,
@@ -639,6 +639,18 @@ export class Board {
       transform: `rotate(${t.facing * 90} ${cx} ${cy})`,
     });
     g.appendChild(arrow);
+
+    // Colour alone cannot separate two squads that picked the same faction, and
+    // a mirror match is the ordinary case rather than a corner one, so the
+    // number is always on the token. It sits bottom-left, away from the facing
+    // arrow, which rotates through the other three corners.
+    const badgeR = 7;
+    const badgeX = cx - half + badgeR + 2.5;
+    const badgeY = cy + half - badgeR - 2.5;
+    g.appendChild(el('circle', { cx: badgeX, cy: badgeY, r: badgeR, class: 'token-squad-dot' }));
+    const num = el('text', { x: badgeX, y: badgeY + 3.2, 'text-anchor': 'middle', class: 'token-squad-n' });
+    num.textContent = String(squadNumber(t.side));
+    g.appendChild(num);
 
     if (wrecked || shutdown) {
       const tag = el('text', { x: cx, y: cy + 4, 'text-anchor': 'middle', class: `token-status ${wrecked ? 'is-wrecked' : 'is-shutdown'}` });

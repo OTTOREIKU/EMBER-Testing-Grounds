@@ -3,7 +3,7 @@ import type { Card, CardAction, ExtraTickCheck, LangText, Side, TerrainData } fr
 // A squad is numbered, not factioned. The internal id stays a colour word so
 // saved games and scenarios keep loading, but nothing displays it: the number
 // below is what a player sees, and the colour comes from the squad's faction.
-export const SQUAD_ORDER: Side[] = ['blue', 'red'];
+export const SQUAD_ORDER: Side[] = ['s1', 's2'];
 
 export function squadNumber(side: Side): number {
   const at = SQUAD_ORDER.indexOf(side);

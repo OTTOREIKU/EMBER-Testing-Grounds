@@ -24,16 +24,16 @@ export interface Kills {
 
 export interface TaskState {
   main?: string;
-  secondary: { blue?: string; red?: string };
+  secondary: { s1?: string; s2?: string };
   items: TaskItem[];
-  vp: { blue: number; red: number };
-  leader: { blue?: number; red?: number };
-  secTarget: { blue?: number; red?: number };
-  zone: { blue?: string; red?: string };
-  kills: { blue: Kills; red: Kills };
-  testKills: { blue: number; red: number };
-  paidKills: { blue: Kills; red: Kills };
-  paidTestKills: { blue: number; red: number };
+  vp: { s1: number; s2: number };
+  leader: { s1?: number; s2?: number };
+  secTarget: { s1?: number; s2?: number };
+  zone: { s1?: string; s2?: string };
+  kills: { s1: Kills; s2: Kills };
+  testKills: { s1: number; s2: number };
+  paidKills: { s1: Kills; s2: Kills };
+  paidTestKills: { s1: number; s2: number };
   scored: string[];
 }
 
@@ -43,21 +43,21 @@ export function newKills(): Kills {
 
 export function newTaskState(): TaskState {
   return {
-    secondary: {}, items: [], vp: { blue: 0, red: 0 }, leader: {}, secTarget: {}, zone: {},
-    kills: { blue: newKills(), red: newKills() }, testKills: { blue: 0, red: 0 },
-    paidKills: { blue: newKills(), red: newKills() }, paidTestKills: { blue: 0, red: 0 }, scored: [],
+    secondary: {}, items: [], vp: { s1: 0, s2: 0 }, leader: {}, secTarget: {}, zone: {},
+    kills: { s1: newKills(), s2: newKills() }, testKills: { s1: 0, s2: 0 },
+    paidKills: { s1: newKills(), s2: newKills() }, paidTestKills: { s1: 0, s2: 0 }, scored: [],
   };
 }
 
 export function normaliseTasks(raw: unknown): TaskState {
   const t = (raw ?? {}) as Partial<TaskState>;
-  const side = (v: unknown): Side | undefined => (v === 'blue' || v === 'red' ? v : undefined);
+  const side = (v: unknown): Side | undefined => (v === 's1' || v === 's2' ? v : undefined);
   const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? Math.max(0, Math.round(v)) : 0);
   return {
     main: typeof t.main === 'string' ? t.main : undefined,
     secondary: {
-      blue: typeof t.secondary?.blue === 'string' ? t.secondary.blue : undefined,
-      red: typeof t.secondary?.red === 'string' ? t.secondary.red : undefined,
+      s1: typeof t.secondary?.s1 === 'string' ? t.secondary.s1 : undefined,
+      s2: typeof t.secondary?.s2 === 'string' ? t.secondary.s2 : undefined,
     },
     items: Array.isArray(t.items)
       ? t.items
@@ -74,23 +74,23 @@ export function normaliseTasks(raw: unknown): TaskState {
             accessed: side(i.accessed) ?? null,
           }))
       : [],
-    vp: { blue: num(t.vp?.blue), red: num(t.vp?.red) },
+    vp: { s1: num(t.vp?.s1), s2: num(t.vp?.s2) },
     leader: {
-      blue: typeof t.leader?.blue === 'number' ? t.leader.blue : undefined,
-      red: typeof t.leader?.red === 'number' ? t.leader.red : undefined,
+      s1: typeof t.leader?.s1 === 'number' ? t.leader.s1 : undefined,
+      s2: typeof t.leader?.s2 === 'number' ? t.leader.s2 : undefined,
     },
     zone: {
-      blue: typeof t.zone?.blue === 'string' ? t.zone.blue : undefined,
-      red: typeof t.zone?.red === 'string' ? t.zone.red : undefined,
+      s1: typeof t.zone?.s1 === 'string' ? t.zone.s1 : undefined,
+      s2: typeof t.zone?.s2 === 'string' ? t.zone.s2 : undefined,
     },
     secTarget: {
-      blue: typeof t.secTarget?.blue === 'number' ? t.secTarget.blue : undefined,
-      red: typeof t.secTarget?.red === 'number' ? t.secTarget.red : undefined,
+      s1: typeof t.secTarget?.s1 === 'number' ? t.secTarget.s1 : undefined,
+      s2: typeof t.secTarget?.s2 === 'number' ? t.secTarget.s2 : undefined,
     },
-    kills: { blue: kills(t.kills?.blue), red: kills(t.kills?.red) },
-    testKills: { blue: num(t.testKills?.blue), red: num(t.testKills?.red) },
-    paidKills: { blue: kills(t.paidKills?.blue), red: kills(t.paidKills?.red) },
-    paidTestKills: { blue: num(t.paidTestKills?.blue), red: num(t.paidTestKills?.red) },
+    kills: { s1: kills(t.kills?.s1), s2: kills(t.kills?.s2) },
+    testKills: { s1: num(t.testKills?.s1), s2: num(t.testKills?.s2) },
+    paidKills: { s1: kills(t.paidKills?.s1), s2: kills(t.paidKills?.s2) },
+    paidTestKills: { s1: num(t.paidTestKills?.s1), s2: num(t.paidTestKills?.s2) },
     scored: Array.isArray(t.scored) ? t.scored.filter((x): x is string => typeof x === 'string') : [],
   };
 
@@ -136,7 +136,7 @@ export function isLowValue(t: Token, tagged?: (t: Token) => boolean): boolean {
 export function controlOf(cells: string[], tokens: Token[], lowValue?: (t: Token) => boolean): Side | null {
   const inside = tokens.filter((t) => t.deployed !== false && inZone(t, cells));
   if (!inside.length) return null;
-  const sides: Side[] = ['blue', 'red'];
+  const sides: Side[] = ['s1', 's2'];
   for (const side of sides) {
     const holds = inside.some(
       (t) => t.side === side
@@ -178,8 +178,8 @@ export function unpaidLines(lines: ScoreLine[], scored: string[]): ScoreLine[] {
 
 export interface ScoreResult {
   lines: ScoreLine[];
-  blue: number;
-  red: number;
+  s1: number;
+  s2: number;
 }
 
 export function scoreMain(
@@ -191,11 +191,11 @@ export function scoreMain(
 ): ScoreResult {
   const lines: ScoreLine[] = [];
   const byUid = new Map(tokens.map((t) => [t.uid, t]));
-  if (round < m.fromRound) return { lines: [], blue: 0, red: 0 };
-  if (m.cadence === 'at-end' && !finalRound) return { lines: [], blue: 0, red: 0 };
+  if (round < m.fromRound) return { lines: [], s1: 0, s2: 0 };
+  if (m.cadence === 'at-end' && !finalRound) return { lines: [], s1: 0, s2: 0 };
 
   if (m.family === 'blackbox') {
-    for (const side of ['blue', 'red'] as Side[]) {
+    for (const side of ['s1', 's2'] as Side[]) {
       const held = st.items.filter((i) => {
         if (i.kind !== 'blackbox' || i.bearerUid === undefined) return false;
         const bearer = byUid.get(i.bearerUid);
@@ -208,7 +208,7 @@ export function scoreMain(
   }
 
   if (m.family === 'control') {
-    for (const side of ['blue', 'red'] as Side[]) {
+    for (const side of ['s1', 's2'] as Side[]) {
       const held = st.items.filter((i) => i.kind === 'control' && i.control === side);
       if (held.length) {
         lines.push({ side, vp: held.length * m.vp, why: `${held.length} controlled Zone${held.length === 1 ? '' : 's'} at ${m.vp} VP each` });
@@ -217,7 +217,7 @@ export function scoreMain(
   }
 
   if (m.family === 'terminal') {
-    for (const side of ['blue', 'red'] as Side[]) {
+    for (const side of ['s1', 's2'] as Side[]) {
       const got = st.items.filter((i) => i.kind === 'terminal' && i.accessed === side);
       if (got.length) {
         lines.push({ side, vp: got.length * m.vp, why: `${got.length} Terminal${got.length === 1 ? '' : 's'} accessed at ${m.vp} VP each` });
@@ -226,8 +226,8 @@ export function scoreMain(
   }
 
   if (m.family === 'vip') {
-    for (const side of ['blue', 'red'] as Side[]) {
-      const enemy: Side = side === 'blue' ? 'red' : 'blue';
+    for (const side of ['s1', 's2'] as Side[]) {
+      const enemy: Side = side === 's1' ? 's2' : 's1';
       const uid = st.leader[enemy];
       if (uid === undefined) continue;
       if (!byUid.has(uid)) {
@@ -241,13 +241,13 @@ export function scoreMain(
 }
 
 function tally(lines: ScoreLine[]): ScoreResult {
-  let blue = 0;
-  let red = 0;
+  let s1 = 0;
+  let s2 = 0;
   for (const l of lines) {
-    if (l.side === 'blue') blue += l.vp;
-    else red += l.vp;
+    if (l.side === 's1') s1 += l.vp;
+    else s2 += l.vp;
   }
-  return { lines, blue, red };
+  return { lines, s1, s2 };
 }
 
 // ---------- secondary tasks (5.2.3) ----------
@@ -362,9 +362,9 @@ export interface GameResult {
 // Most Victory Points wins. On a tie it is the side with more Mech Parts and
 // Drones left on the board, and only a tie in both is a genuine draw.
 export function gameResult(st: TaskState, tokens: Token[]): GameResult {
-  if (st.vp.blue !== st.vp.red) {
-    const winner: Side = st.vp.blue > st.vp.red ? 'blue' : 'red';
-    return { winner, why: `${st.vp.blue} Victory Points to ${st.vp.red}` };
+  if (st.vp.s1 !== st.vp.s2) {
+    const winner: Side = st.vp.s1 > st.vp.s2 ? 's1' : 's2';
+    return { winner, why: `${st.vp.s1} Victory Points to ${st.vp.s2}` };
   }
   const remaining = (side: Side): number =>
     tokens
@@ -373,12 +373,12 @@ export function gameResult(st: TaskState, tokens: Token[]): GameResult {
         if (t.kind === 'mech') return n + Object.values(t.partStates).filter((p) => p !== 'destroyed').length;
         return t.kind === 'drone' ? n + 1 : n;
       }, 0);
-  const blue = remaining('blue');
-  const red = remaining('red');
-  if (blue === red) return { winner: null, why: `level on ${st.vp.blue} Victory Points and on ${blue} Mech Parts and Drones left` };
-  const winner: Side = blue > red ? 'blue' : 'red';
+  const blue = remaining('s1');
+  const red = remaining('s2');
+  if (blue === red) return { winner: null, why: `level on ${st.vp.s1} Victory Points and on ${blue} Mech Parts and Drones left` };
+  const winner: Side = blue > red ? 's1' : 's2';
   return {
     winner,
-    why: `level on ${st.vp.blue} Victory Points, so it goes to Mech Parts and Drones left on the board, ${blue} to ${red}`,
+    why: `level on ${st.vp.s1} Victory Points, so it goes to Mech Parts and Drones left on the board, ${blue} to ${red}`,
   };
 }
