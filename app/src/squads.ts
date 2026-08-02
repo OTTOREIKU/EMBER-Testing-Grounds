@@ -6,6 +6,7 @@ import type { GameState, PartSlot, PartState, Side, Stance, Timing, TimingDef, T
 import { addStatus, SCALES, SHAPE_NOTE, statusCount, statusesFor, TIMINGS } from './types';
 import { normaliseTasks } from './tasks';
 import { normaliseSetup } from './setup';
+import { perform } from './commands';
 import { defaultUnitLabel, factionProblems, initiativeFor, pilotCard, squadAllegiance, SLOT_LABEL, tidyUnitLabel, tokenCards, tokenFactions } from './units';
 import { alertDialog, promptDialog } from './dialog';
 import { factionColour, ICON_BOLT, ICON_EDIT } from './icons';
@@ -645,7 +646,7 @@ export class SquadTracker {
     placeDialPopout(pop, trigger);
 
     const pick = (v: string): void => {
-      t.timing = v ? (v as Timing) : undefined;
+      perform(this.state!, { kind: 'setTiming', seat: t.side, uid: t.uid, timing: v ? (v as Timing) : undefined });
       closeDialPopout();
       this.cb.onChanged();
     };
