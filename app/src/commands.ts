@@ -6,7 +6,7 @@ import { canManeuver, canOverload, canPerform, spendAction, spendManeuver, spend
 import { tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { deploymentComplete, deployTurn, firstPlayerFrom, newSetup, normaliseSetup } from './setup';
 import { applyKill, normaliseTasks, settleControl } from './tasks';
-import { dialHidden, eligibleUnits, isLoopPhase, nextTurn, onExtraOpportunity } from './loop';
+import { dialHidden, eligibleUnits, getLocalSeat, isLoopPhase, nextTurn, onExtraOpportunity } from './loop';
 import { dissipationFor } from './rules';
 
 // ---------- the command layer (multiplayer phase 1) ----------
@@ -934,13 +934,25 @@ export function isSecret(cmd: Command): boolean {
 // the two clients would volley forever.
 let applyingRemote = false;
 
-export function applyRemote(data: GameData, state: GameState, cmd: Command): void {
+// A command from the other player, checked with the same engine before it is
+// allowed anywhere near this board.
+//
+// The relay orders and forwards but does not referee, and the client at the
+// other end is not ours to trust — it could be modified. So the move is put
+// through check() here, exactly as a local move is, and refused if the rules
+// refuse it. Returning the verdict rather than throwing lets the caller tell
+// the player and ask the server to resync, because a refusal can also mean the
+// two boards have drifted rather than that anyone is cheating.
+export function applyRemote(data: GameData, state: GameState, cmd: Command): CheckResult {
+  const verdict = check(data, state, cmd);
+  if (!verdict.ok) return verdict;
   applyingRemote = true;
   try {
     apply(data, state, cmd);
   } finally {
     applyingRemote = false;
   }
+  return verdict;
 }
 
 // The sandbox and the teaching guide warn rather than block, so they perform
@@ -949,7 +961,12 @@ export function applyRemote(data: GameData, state: GameState, cmd: Command): voi
 // one rule, two presentations.
 export function perform(data: GameData, state: GameState, cmd: Command): CheckResult {
   const verdict = check(data, state, cmd);
-  if (!verdict.ok && state.script?.strict) {
+  // An online game is always strict, whatever the guide is set to. Both
+  // clients have to refuse the same things or their boards drift apart, and a
+  // player who waved a rule away locally would otherwise push the result onto
+  // an opponent who never agreed to it.
+  const strict = !!state.script?.strict || !!getLocalSeat();
+  if (!verdict.ok && strict) {
     refused?.(verdict.why);
     return verdict;
   }

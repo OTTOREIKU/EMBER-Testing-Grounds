@@ -643,6 +643,31 @@ C.applyRemote(data, wsecret, { kind: 'setStance', seat: 's2', uid: 2, stance: 'm
 check('a received command is not bounced back', sent, []);
 C.onPerformed(null);
 
+// ---------- a move from the other player is not trusted ----------
+// The relay forwards but does not referee, and the client at the other end is
+// not ours to trust. Everything arriving is put through the same check().
+
+const wrem = world([mech(1, 's1', { stance: 'shutdown' }), mech(2, 's2')], 2);
+const illegal = { kind: 'setStance', seat: 's2', uid: 1, stance: 'mobility' };
+const bad = C.applyRemote(data, wrem, illegal);
+check('a move on a unit the sender does not own is refused', bad.ok, false);
+check('and the board is untouched', wrem.tokens[0].stance, 'shutdown');
+
+const legal = { kind: 'setStance', seat: 's2', uid: 2, stance: 'defensive' };
+const good = C.applyRemote(data, wrem, legal);
+check('a legal move from the other player is applied', [good.ok, wrem.tokens[1].stance], [true, 'defensive']);
+
+// Breaking a rule locally must not be pushed onto an opponent, so an online
+// game is strict whatever the guide is set to.
+const wonline = world([mech(1, 's1', { stance: 'shutdown' })], 2);
+wonline.script.strict = false;
+C.setLocalSeat('s1');
+const v = C.perform(data, wonline, sc({ stance: 'mobility' }));
+check('an online game refuses an illegal move even in teaching mode', [v.ok, wonline.tokens[0].stance], [false, 'shutdown']);
+C.setLocalSeat(null);
+const voff = C.perform(data, wonline, sc({ stance: 'mobility' }));
+check('while a local teaching game still warns and allows it', [voff.ok, wonline.tokens[0].stance], [false, 'mobility']);
+
 // ---------- what a client is allowed to see ----------
 
 const wd = planning();

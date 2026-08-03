@@ -119,6 +119,14 @@ export class Relay {
     this.send({ t: 'cmd', ...entry });
   }
 
+  // Asks the server for the board and everything since. Used when a revision
+  // gap appears, and when a command is refused — a refusal can mean the two
+  // boards have drifted rather than that anyone is cheating, and refetching
+  // settles which it was.
+  requestResync(): void {
+    if (this.view.room) this.send({ t: 'resync' });
+  }
+
   // Publishes the whole board. Cheap enough to do at the start of a game and
   // whenever the server asks, and far simpler than trying to replay from zero.
   publishCheckpoint(): void {

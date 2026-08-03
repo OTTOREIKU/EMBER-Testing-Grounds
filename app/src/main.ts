@@ -3909,7 +3909,16 @@ async function init() {
   // Neither side trusts the other's rules engine — both run the same one.
   const relay = new Relay(emberApi.base, {
     onCommand(cmd) {
-      applyRemote(data, state, cmd);
+      // Their move goes through the same rules ours does. A refusal is either
+      // a modified client or two boards that have drifted, and refetching
+      // settles which — so it is reported and then resynced rather than
+      // quietly applied or quietly dropped.
+      const verdict = applyRemote(data, state, cmd);
+      if (!verdict.ok) {
+        setHint(`⛔ Refused a move from the other player: ${verdict.why}`);
+        relay.requestResync();
+        return;
+      }
       if (cmd.kind === 'revealTimings') auditReveal(cmd);
       // Their commitment may be the second one, which releases ours.
       if (cmd.kind === 'commitTimings') maybeReveal();
