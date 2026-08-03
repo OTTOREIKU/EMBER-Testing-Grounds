@@ -2,7 +2,8 @@ import { ApiError, EmberApi, type Account, type MyRecord } from './api';
 import { Relay } from './net';
 import { applyRemote, onPerformed, onRefused, perform, type Command, type CheckResult } from './commands';
 import { setLocalSeat } from './loop';
-import { dataUrl, loadData, squadLabel, type GameData } from './data';
+import { dataUrl, loadData, missionImageUrl, squadLabel, type GameData } from './data';
+import { deployCellsFor, objectiveCells } from './matchhud';
 import { migrateState, tokenCards } from './units';
 import { countHits, normaliseSetup } from './setup';
 import { taskItemsFor } from './tasks';
@@ -116,6 +117,9 @@ const relay = new Relay(api.base, {
   },
   onChange(view) {
     setLocalSeat(view.room ? view.seat : null);
+    // Remembered for the Rejoin door: a dropped connection should not need
+    // the code typed back in.
+    if (view.room) localStorage.setItem('ember-last-room', view.room.id);
     render();
   },
   snapshot: () => JSON.parse(JSON.stringify(state)) as unknown,
@@ -131,10 +135,24 @@ onRefused((why) => {
 
 // ---------- the command path ----------
 
+// A running match pauses whenever a seat is empty or its player has dropped:
+// nothing may happen that the absent player cannot see happening.
+function paused(): { side: Side; gone: boolean } | null {
+  const room = relay.state.room;
+  if (!room || !running()) return null;
+  for (const side of ['s1', 's2'] as Side[]) {
+    if (!room.seats[side]) return { side, gone: true };
+    if (!room.online[side]) return { side, gone: false };
+  }
+  return null;
+}
+
 // One door for everything this page performs: the command, then the same
 // deterministic guide glue every client runs, ours or theirs.
 function send(cmd: Command): CheckResult {
   if (!data) return { ok: false, why: 'Still loading.' };
+  const p = paused();
+  if (p) return { ok: false, why: `Paused — waiting for ${squadLabel(p.side)}'s player.` };
   const v = perform(data, state, cmd);
   if (v.ok) glueAfter(data, state, cmd);
   return v;
@@ -297,6 +315,11 @@ function doorHtml(): string {
       </div>
     </div>
     ${doorErr ? `<div class="mc-err">${esc(doorErr)}</div>` : ''}
+    ${localStorage.getItem('ember-last-room')
+      ? `<div class="panel" style="margin-top:12px"><h3>Rejoin ${esc(localStorage.getItem('ember-last-room')!)}</h3>
+          <p class="hint">Your last table. Seats are kept by account, so dropping out never loses your place.</p>
+          <button class="btn wide" id="mc-rejoin" style="margin-top:0">Rejoin</button></div>`
+      : ''}
     <p class="quiet" style="margin-top:14px">Playing solo or hotseat? That stays on the <a href="./index.html" style="color:var(--text2)">board</a> — this page is only for linked games.</p>
   </div>`;
 }
@@ -318,14 +341,30 @@ function seatHtml(side: Side): string {
   </div>`;
 }
 
-// A small honest map: every occupied terrain cell as a rect, coloured by kind.
+// A small honest map: every occupied terrain cell as a rect, coloured by
+// kind, with the chosen Main Task's zones and both Deployment Zones on top —
+// the whole battlefield, not just the walls.
 function previewSvg(mapId: string): string {
   const pieces = data?.terrain.layouts[mapId] ?? [];
   const fill = (t: string) => (t === 'container' ? 'rgba(61,220,132,.55)' : t === 'low_wall' ? '#4a5563' : '#39424e');
   const cells = pieces
     .flatMap((p) => p.subCells.map((c) => `<rect x="${c.col + 0.06}" y="${c.row + 0.06}" width="0.88" height="0.88" rx="0.12" fill="${fill(p.type)}"/>`))
     .join('');
-  return `<svg class="mapsvg" viewBox="0 0 36 36" aria-hidden="true"><rect x="0" y="0" width="36" height="36" fill="none"/>${cells}</svg>`;
+  const zones = data
+    ? objectiveCells(data, state).map((z) => `<rect x="${z.c}" y="${z.r}" width="1" height="1" fill="rgba(240,180,41,.18)"/>`).join('')
+    : '';
+  const deploys = data
+    ? (['s1', 's2'] as Side[])
+        .flatMap((side) => {
+          const tint = side === 's1' ? 'rgba(101,162,216,.14)' : 'rgba(234,109,118,.14)';
+          return [...deployCellsFor(data!, state, side)].map((k) => {
+            const [c, r] = k.split(',');
+            return `<rect x="${c}" y="${r}" width="1" height="1" fill="${tint}"/>`;
+          });
+        })
+        .join('')
+    : '';
+  return `<svg class="mapsvg" viewBox="0 0 36 36" aria-hidden="true">${deploys}${zones}${cells}</svg>`;
 }
 
 // ---------- lobby ----------
@@ -409,9 +448,14 @@ function battlefieldStep(): string {
     )
     .join('');
   const missions = [
-    `<span class="chip${!state.mission ? ' sel' : ''}${editable ? '' : ' still'}" ${editable ? 'data-mission=""' : ''}>No Main Task</span>`,
+    `<div class="miscard${!state.mission ? ' sel' : ''}${editable ? '' : ' still'}" ${editable ? 'data-mission=""' : ''}>
+      <span class="mn">No Main Task</span><span class="mf">free battle</span>
+    </div>`,
     ...(data?.missions.cards ?? []).map(
-      (m) => `<span class="chip${state.mission === m.id ? ' sel' : ''}${editable ? '' : ' still'}" ${editable ? `data-mission="${m.id}"` : ''}>${esc(m.name)}</span>`,
+      (m) => `<div class="miscard${state.mission === m.id ? ' sel' : ''}${editable ? '' : ' still'}" ${editable ? `data-mission="${m.id}"` : ''}>
+        <span class="mn">${esc(m.name)}</span><span class="mf">${esc(m.family)} · ${esc(m.deployment ?? '')}</span>
+        <img class="mimg" loading="lazy" src="${esc(missionImageUrl(m.id))}" alt="">
+      </div>`,
     ),
   ].join('');
   return `<div class="steppane">
@@ -535,9 +579,38 @@ function lobbyHtml(): string {
 
 // ---------- the squad picker ----------
 
+// Whatever squads stand on the freeplay board right now, readable because the
+// two pages share an origin. Testing a list there and bringing it here should
+// not require a save first.
+function boardSquads(): { key: Side; label: string; mechs: SavedSquad['mechs']; drones: SavedSquad['drones'] }[] {
+  try {
+    const raw = localStorage.getItem('ember-testing-grounds-v1');
+    if (!raw) return [];
+    const board = JSON.parse(raw) as GameState;
+    return (['s1', 's2'] as Side[])
+      .map((side) => {
+        const units = (board.tokens ?? []).filter((t) => t.side === side && t.kind !== 'projectile' && t.parentUid === undefined);
+        const mechs = units.filter((t) => t.kind === 'mech' && (t.mech?.torso || t.mech?.chasis)).map((t) => ({ name: t.label, loadout: { ...t.mech } }));
+        const drones = units.filter((t) => t.kind === 'drone').map((t) => ({ cardId: t.cardId, backpack: t.droneBackpack }));
+        return { key: side, label: `${board.sideNames?.[side] ?? squadLabel(side)} (freeplay board)`, mechs, drones };
+      })
+      .filter((s) => s.mechs.length + s.drones.length > 0);
+  } catch {
+    return [];
+  }
+}
+
 function pickerHtml(): string {
   const saved = loadSquads();
-  const items = saved
+  const fromBoard = boardSquads()
+    .map(
+      (s) => `<button class="pickrow" data-boardsquad="${s.key}">
+        <span class="nm">${esc(s.label)}</span>
+        <span class="ct">${s.mechs.length}M ${s.drones.length}D</span>
+      </button>`,
+    )
+    .join('');
+  const items = fromBoard + saved
     .map(
       (s) => `<button class="pickrow" data-squad="${esc(s.id)}">
         <span class="nm">${esc(s.name)}</span>
@@ -584,8 +657,17 @@ function render(): void {
           : relay.state.room
             ? lobbyHtml()
             : doorHtml();
+  const p = hud ? paused() : null;
+  const pauseVeil = p
+    ? `<div class="mc-veil pauseveil"><div class="acct" style="text-align:center">
+        <div class="waitbox"><div class="spin">◐</div>
+        <div class="msg">Match paused</div>
+        <div class="sub">${esc(squadLabel(p.side))}'s player ${p.gone ? 'left the table' : 'lost their connection'}.<br>Everything waits until they return — their seat is kept.</div></div>
+        <button class="btn ghost" id="mc-leave" style="margin-top:6px">Leave the table</button>
+      </div></div>`
+    : '';
   const wide = data && ((account && relay.state.room) || hud);
-  root.innerHTML = `${barHtml()}<div class="mc-stage${wide ? ' wide' : ''}${hud ? ' hudmode' : ''}">${inner}</div>${acctOpen ? acctHtml() : ''}${pickerOpen ? pickerHtml() : ''}`;
+  root.innerHTML = `${barHtml()}<div class="mc-stage${wide ? ' wide' : ''}${hud ? ' hudmode' : ''}">${inner}</div>${acctOpen ? acctHtml() : ''}${pickerOpen ? pickerHtml() : ''}${pauseVeil}`;
   wire();
   if (hud) wireHud(root, hudCtx());
 }
@@ -684,6 +766,11 @@ function wire(): void {
     doorErr = null;
     relay.host();
   });
+  $('mc-rejoin')?.addEventListener('click', () => {
+    const code = localStorage.getItem('ember-last-room');
+    doorErr = null;
+    if (code) relay.join(code);
+  });
   $('mc-join')?.addEventListener('click', () => {
     const code = ($('mc-joincode') as HTMLInputElement | null)?.value.trim() ?? '';
     doorErr = code ? null : 'Enter the room code you were given.';
@@ -693,7 +780,10 @@ function wire(): void {
   $('mc-joincode')?.addEventListener('keydown', (ev) => {
     if ((ev as KeyboardEvent).key === 'Enter') $('mc-join')?.click();
   });
-  $('mc-leave')?.addEventListener('click', () => relay.leave());
+  $('mc-leave')?.addEventListener('click', () => {
+    localStorage.removeItem('ember-last-room');
+    relay.leave();
+  });
 
   // The lobby rail and steps.
   for (const el of root.querySelectorAll<HTMLElement>('[data-step]')) {
@@ -751,6 +841,12 @@ function wire(): void {
     el.addEventListener('click', () => {
       const sq = loadSquads().find((s) => s.id === el.dataset.squad);
       if (sq) bringSquad(sq.name, sq.mechs, sq.drones);
+    });
+  }
+  for (const el of root.querySelectorAll<HTMLElement>('[data-boardsquad]')) {
+    el.addEventListener('click', () => {
+      const sq = boardSquads().find((s) => s.key === el.dataset.boardsquad);
+      if (sq) bringSquad(sq.label.replace(' (freeplay board)', ''), sq.mechs, sq.drones);
     });
   }
   $('mc-file')?.addEventListener('click', () => $('mc-fileinput')?.click());

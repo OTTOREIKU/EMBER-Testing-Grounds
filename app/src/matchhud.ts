@@ -1,6 +1,6 @@
 import type { Command, CheckResult } from './commands';
 import type { GameData } from './data';
-import { squadLabel } from './data';
+import { secondaryImageUrl, squadLabel } from './data';
 import type { GameState, Side, Timing, Token, ExtraTick, Opportunity } from './types';
 import { newOpportunity, newScriptState, PHASES, TIMINGS } from './types';
 import { deployable, deployTurn, deploymentComplete, firstPlayerFrom, normaliseSetup, rollTotal, type SetupState } from './setup';
@@ -108,6 +108,49 @@ function opportunity(data: GameData, s: GameState): Opportunity | null {
   return fresh;
 }
 
+// ---------- zones & deployment geometry ----------
+
+function zref(ref: string): { col: number; row: number } | null {
+  const m = /^([A-La-l])(\d{1,2})$/.exec(ref.trim());
+  if (!m) return null;
+  return { col: m[1].toUpperCase().charCodeAt(0) - 65, row: Number(m[2]) - 1 };
+}
+
+// Board cells (36-grid) of a mission's objective zones, from the Task Items.
+export function objectiveCells(data: GameData, s: GameState): { c: number; r: number }[] {
+  const tasks = normaliseTasks(s.tasks);
+  const out: { c: number; r: number }[] = [];
+  for (const item of tasks.items) {
+    const zone = data.zoneData.zones.find((z) => z.id === item.zone);
+    for (const cell of zone?.cells ?? []) {
+      const p = zref(cell);
+      if (p) for (let dc = 0; dc < 3; dc++) for (let dr = 0; dr < 3; dr++) out.push({ c: p.col * 3 + dc, r: p.row * 3 + dr });
+    }
+  }
+  return out;
+}
+
+// The board cells a side may deploy into, from its edge and the mission's
+// printed deployment shape (2x12 strips when no mission says otherwise).
+export function deployCellsFor(data: GameData, s: GameState, side: Side): Set<string> {
+  const su = normaliseSetup(s.setup);
+  const out = new Set<string>();
+  if (!su) return out;
+  const shapeId = (s.mission && data.zoneData.missionDeployment[s.mission]) || 'strips';
+  const def = data.zoneData.deployments.find((d) => d.id === shapeId);
+  const area = def?.[su.edge[side]];
+  if (!area) return out;
+  const a = zref(area.from);
+  const b = zref(area.to);
+  if (!a || !b) return out;
+  for (let zc = Math.min(a.col, b.col); zc <= Math.max(a.col, b.col); zc++) {
+    for (let zr = Math.min(a.row, b.row); zr <= Math.max(a.row, b.row); zr++) {
+      for (let dc = 0; dc < 3; dc++) for (let dr = 0; dr < 3; dr++) out.add(`${zc * 3 + dc},${zr * 3 + dr}`);
+    }
+  }
+  return out;
+}
+
 // ---------- module UI state ----------
 
 let placing: number | null = null; // uid being deployed via board clicks
@@ -168,12 +211,26 @@ function boardHtml(ctx: HudCtx): string {
         <text x="${t.col + sz / 2}" y="${t.row + sz / 2 + 0.32}" text-anchor="middle" font-size="${sz > 1 ? 1.1 : 0.7}" fill="#0f1216" font-weight="700">${esc(t.label.slice(0, 2))}</text></g>`;
     })
     .join('');
+  const zones = objectiveCells(ctx.data, s)
+    .map((z) => `<rect x="${z.c}" y="${z.r}" width="1" height="1" fill="rgba(240,180,41,.16)"/>`)
+    .join('');
+  // While placing, the placer's legal zone is tinted and everything else is not.
+  let zoneTint = '';
+  if (placing !== null) {
+    const su = normaliseSetup(s.setup);
+    const turn = su ? deployTurn(s, su) : null;
+    if (turn) {
+      zoneTint = [...deployCellsFor(ctx.data, s, turn)]
+        .map((k) => { const [c, r] = k.split(','); return `<rect x="${c}" y="${r}" width="1" height="1" fill="rgba(61,220,132,.14)"/>`; })
+        .join('');
+    }
+  }
   const clicks = placing !== null || moving
     ? Array.from({ length: 36 }, (_, r) =>
         Array.from({ length: 36 }, (_, c) => `<rect class="cellhit" data-cell="${c},${r}" x="${c}" y="${r}" width="1" height="1" fill="transparent"/>`).join(''),
       ).join('')
     : '';
-  return `<div class="hudboardwrap"><svg class="hudsvg${placing !== null || moving ? ' placing' : ''}" viewBox="0 0 36 36">${terrain}${tokens}${clicks}</svg></div>`;
+  return `<div class="hudboardwrap"><svg class="hudsvg${placing !== null || moving ? ' placing' : ''}" viewBox="0 0 36 36">${zones}${zoneTint}${terrain}${tokens}${clicks}</svg></div>`;
 }
 
 // ---------- the turn panel: one question at a time ----------
@@ -446,13 +503,20 @@ function feedHtml(ctx: HudCtx): string {
 function secOverlay(ctx: HudCtx): string {
   if (!secOpen) return '';
   const rows = ctx.data.secondary
-    .map((c) => `<button class="pickrow" data-picksec="${esc(c.id)}"><span class="nm">${esc(c.name)}</span><span class="ct">${c.vp ?? 0} VP</span></button>`)
+    .map((c) => `<button class="pickrow" data-picksec="${esc(c.id)}" data-img="${esc(secondaryImageUrl(c.id))}"><span class="nm">${esc(c.name)}</span><span class="ct">${c.vp ?? 0} VP</span></button>`)
     .join('');
-  return `<div class="mc-veil" id="mc-secveil"><div class="acct">
+  // The card image rides on the left, filled in as rows are hovered — same
+  // habit as the freeplay picker, so the details decide the pick.
+  return `<div class="mc-veil" id="mc-secveil"><div class="acct seccards">
     <button class="x" id="mc-sec-x">✕</button>
-    <h3>Pick a Secondary Task</h3>
-    <div class="role">Open information — the other player sees your pick (3.1.3).</div>
-    ${rows}
+    <div class="secsplit">
+      <div class="seccard"><img id="mc-seccard" alt="" src="${esc(secondaryImageUrl(ctx.data.secondary[0]?.id ?? ''))}"></div>
+      <div class="seclist">
+        <h3>Pick a Secondary Task</h3>
+        <div class="role">Open information — the other player sees your pick (3.1.3). Hover to read the card.</div>
+        ${rows}
+      </div>
+    </div>
   </div></div>`;
 }
 
@@ -500,6 +564,12 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     secOpen = false;
     ctx.refresh();
   });
+  for (const el of root.querySelectorAll<HTMLElement>('[data-picksec]')) {
+    el.addEventListener('mouseenter', () => {
+      const img = root.querySelector<HTMLImageElement>('#mc-seccard');
+      if (img && el.dataset.img) img.src = el.dataset.img;
+    });
+  }
   root.querySelector('#mc-sec-x')?.addEventListener('click', () => { secOpen = false; ctx.refresh(); });
   on('[data-place]', (el) => {
     placing = placing === Number(el.dataset.place) ? null : Number(el.dataset.place);
@@ -519,6 +589,8 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     const su = normaliseSetup(s.setup);
     const turn = su ? deployTurn(s, su) : null;
     if (!turn) return;
+    // Strict placement: your Deployment Zone or nothing (3.1.4).
+    if (!deployCellsFor(ctx.data, s, turn).has(`${c},${r}`)) return;
     ctx.send({ kind: 'deployUnit', seat: turn, uid: placing, to: { col: c, row: r } });
     placing = null;
     ctx.refresh();

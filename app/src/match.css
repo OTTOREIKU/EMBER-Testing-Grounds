@@ -197,6 +197,34 @@ input.f.codebox { font-family: var(--mono); font-size: 16px; letter-spacing: 5px
 .chip.still:hover { background: var(--surface2); }
 .chip.still.sel:hover { background: var(--accent-lt); }
 
+/* mission cards */
+.miscard {
+  position: relative; border-radius: var(--radius-sm); background: var(--surface2);
+  box-shadow: var(--shadow); padding: 9px 11px; cursor: pointer; width: 168px;
+  transition: background 0.12s;
+}
+.miscard:hover { background: var(--surface3); }
+.miscard.sel { background: var(--accent-lt); }
+.miscard .mn { display: block; font-size: 11.5px; font-weight: 600; line-height: 1.3; }
+.miscard.sel .mn { color: var(--accent); }
+.miscard .mf { display: block; font-size: 9.5px; color: var(--text3); margin-top: 3px; text-transform: capitalize; }
+.miscard .mimg {
+  display: none; position: absolute; left: 50%; bottom: calc(100% + 8px); transform: translateX(-50%);
+  width: 240px; border-radius: var(--radius); box-shadow: var(--shadow-lg); z-index: 4;
+}
+.miscard:hover .mimg { display: block; }
+.miscard.still { cursor: default; }
+.miscard.still:hover { background: var(--surface2); }
+.miscard.still.sel:hover { background: var(--accent-lt); }
+
+/* secondary picker with the card on the left */
+.acct.seccards { max-width: 660px; }
+.secsplit { display: flex; gap: 14px; }
+.seccard { width: 250px; flex: none; display: flex; align-items: flex-start; }
+.seccard img { width: 100%; border-radius: var(--radius); box-shadow: var(--shadow); }
+.seclist { flex: 1; min-width: 0; }
+.pauseveil { z-index: 8; }
+
 /* squad picker rows */
 .pickrow {
   width: 100%; display: flex; align-items: center; gap: 9px; border: none;
