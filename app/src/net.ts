@@ -180,6 +180,10 @@ export class Relay {
         this.seq = 0;
         this.lastRev = room.revision;
         this.pending = [];
+        // Once we are in a room, reconnecting means rejoining *this* room.
+        // Leaving it as "create" would mint a fresh room on the first dropped
+        // connection and strand the other player in the old one.
+        this.wanted = { kind: 'join', room: room.id };
         this.set({
           status: room.seats.s1 && room.seats.s2 ? 'playing' : 'lobby',
           room, seat: you.seat, host: you.host, error: null, desynced: false,
