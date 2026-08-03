@@ -9,6 +9,9 @@ export interface NetControls {
   join(code: string): void;
   leave(): void;
   resend(): void;
+  // Opens the saved-squad picker (or the file picker) and imports the chosen
+  // squad as this seat. Lives in main with the other dialogs and the relay.
+  bringSquad(): void;
 }
 
 // The multiplayer area lives entirely in this popup. Nothing is added to the
@@ -160,6 +163,7 @@ export class MultiplayerDialog {
           : v.error ? `<p class="mp-notice error">${esc(v.error)}</p>` : ''}
         <div class="mp-actions">
           <button class="mp-btn ghost" id="mp-leave">Leave</button>
+          ${v.seat ? '<button class="mp-btn" id="mp-squad" data-tip-title="Bring a squad" data-tip="Imports a squad for your side, from your saved squads or a file.|It joins the table on both screens and deploys as normal.">Bring a squad</button>' : ''}
           <button class="mp-btn" id="mp-resend" data-tip-title="Resend board" data-tip="Sends your whole board to the other player, replacing theirs.|Use it if the two have drifted apart.">Resend board</button>
         </div>
       </div>`;
@@ -348,6 +352,7 @@ export class MultiplayerDialog {
       this.dlg?.querySelector('#mp-host')?.addEventListener('click', () => net.host());
       this.dlg?.querySelector('#mp-leave')?.addEventListener('click', () => net.leave());
       this.dlg?.querySelector('#mp-resend')?.addEventListener('click', () => net.resend());
+      this.dlg?.querySelector('#mp-squad')?.addEventListener('click', () => net.bringSquad());
     }
 
     const cur = this.input('mp-cur');

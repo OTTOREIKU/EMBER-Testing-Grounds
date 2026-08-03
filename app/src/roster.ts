@@ -3,6 +3,7 @@ import { BASE_FACTIONS, cardName, FACTION_LABEL, isDiscardCard, mechPartUrl, SQU
 import { inspectOnHover } from './inspector';
 import { alertDialog, confirmDialog, promptDialog } from './dialog';
 import { deleteMechPreset, loadMechPresets, saveMechPreset } from './presets';
+import { deleteSquad, loadSquads } from './squadstore';
 import { cardFitsSquad, type SquadAllegiance } from './units';
 import { factionColour } from './icons';
 
@@ -21,6 +22,11 @@ export interface RosterCallbacks {
   heldTactics?(): { s1: string[]; s2: string[] };
   onAddTactic?(card: Card, side: Side): void;
   onDropTactic?(card: Card, side: Side): void;
+  // The full-squad library. Saving needs the board and its dialogs, loading
+  // goes through the importSquad command, so both live in main and the roster
+  // only asks.
+  onSaveSquad?(): Promise<void>;
+  onLoadSquad?(id: string): void;
   now(): number;
 }
 
@@ -46,6 +52,7 @@ export class Roster {
   private search = '';
   private mech: MechLoadout = {};
   private presetId = '';
+  private squadId = '';
   private editing: { uid: number; side: Side; label: string } | null = null;
 
   // The build rules are the same whether a mech is being added or edited, so
@@ -522,8 +529,6 @@ export class Roster {
         btns.appendChild(b);
       }
     }
-    wrap.appendChild(btns);
-
     const squad = document.createElement('div');
     squad.className = 'mech-squad-btns';
     const builder = document.createElement('a');
@@ -549,7 +554,56 @@ export class Roster {
     });
     imp.addEventListener('click', () => document.getElementById('import-squad-file')!.click());
     squad.append(builder, imp);
-    wrap.appendChild(squad);
+
+    // The whole-squad library, in the same select–save–delete shape as the
+    // mech presets above so the two read as one convention. Saving stores a
+    // side's units off the board; picking one brings it back through the
+    // importSquad command, so in an online room it reaches both screens.
+    const squads = document.createElement('div');
+    squads.className = 'mech-presets squad-presets';
+    const renderSquads = (): void => {
+      const list = loadSquads();
+      if (this.squadId && !list.some((s) => s.id === this.squadId)) this.squadId = '';
+      const chosen = list.find((s) => s.id === this.squadId);
+      const blurb = (s: { mechs: unknown[]; drones: unknown[] }) =>
+        [s.mechs.length ? `${s.mechs.length}M` : '', s.drones.length ? `${s.drones.length}D` : ''].filter(Boolean).join(' ');
+      squads.innerHTML = `<select class="preset-pick"><option value="">Saved squads…</option>${list
+        .map((s) => `<option value="${escAttr(s.id)}"${s.id === this.squadId ? ' selected' : ''}>${escAttr(`${s.name} (${blurb(s)})`)}</option>`)
+        .join('')}</select>
+        <button class="preset-save" title="Save a squad now on the board under a name">Save</button>
+        <button class="preset-del" title="${
+          chosen ? `Delete “${escAttr(chosen.name)}”` : 'Pick a saved squad to delete it'
+        }" ${chosen ? '' : 'disabled'}>✕</button>`;
+      const pick = squads.querySelector<HTMLSelectElement>('.preset-pick')!;
+      pick.addEventListener('change', () => {
+        this.squadId = pick.value;
+        if (pick.value) this.cb.onLoadSquad?.(pick.value);
+        renderSquads();
+      });
+      squads.querySelector('.preset-save')!.addEventListener('click', () => {
+        void this.cb.onSaveSquad?.().then(() => renderSquads());
+      });
+      squads.querySelector('.preset-del')!.addEventListener('click', () => {
+        void (async () => {
+          const found = loadSquads().find((s) => s.id === this.squadId);
+          if (!found) return;
+          const ok = await confirmDialog({
+            title: `Delete “${found.name}”?`,
+            body: 'This only removes the saved squad. Anything already on the board stays.',
+            confirmLabel: 'Delete',
+            danger: true,
+          });
+          if (!ok) return;
+          deleteSquad(found.id);
+          this.squadId = '';
+          renderSquads();
+        })();
+      });
+    };
+    renderSquads();
+    // The two libraries read as one convention, so the squads row sits right
+    // under the mechs row, and the add buttons follow with room to breathe.
+    wrap.append(squads, btns, squad);
 
     this.body.appendChild(wrap);
   }
