@@ -2,7 +2,7 @@ import './styles.css';
 import { Board, CELLS, footprint, snapPlacement, type BoardDeployment, type BoardZone, type DeployShape } from './board';
 import { AttackHelper, ElectronicHelper } from './combat';
 import { alertDialog, choiceDialog, confirmDialog, promptDialog } from './dialog';
-import { gameResult, isLowValue, newTaskState, normaliseTasks, type GameResult, type TaskItem, type TaskState } from './tasks';
+import { gameResult, isLowValue, newTaskState, normaliseTasks, taskItemsFor, type GameResult, type TaskItem, type TaskState } from './tasks';
 import { DiceTray } from './dice';
 import { importSquadFile } from './importer';
 import { factionColour } from './icons';
@@ -47,6 +47,7 @@ import { chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts,
 import { registerOffline } from './offline';
 import { battlefieldLocked, countHits, firstPlayerFrom, newSetup, normaliseSetup, type SetupState } from './setup';
 import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
+import { dialsOf, hashDials, newSalt } from './secrecy';
 
 const SAVE_KEY = 'ember-testing-grounds-v1';
 
@@ -3425,7 +3426,7 @@ async function init() {
         // board picks up the whole choice rather than none of it.
         const v = perform(data, state, {
           kind: 'configureTable', seat: 's1',
-          mission: m.id, tasks: taskItemsFor(m), zoneSet: `mission:${m.id}`,
+          mission: m.id, tasks: taskItemsFor(data.zoneData.zones, m), zoneSet: `mission:${m.id}`,
         });
         if (!v.ok) return;
         state.showZones = true;
@@ -3547,27 +3548,8 @@ async function init() {
   }
 
   // Task Setup (5.3): the Main Task names the Tactical Zones its Items go in, so
-  // picking the card lays them out. A Black Box has a physical position, a
-  // Terminal covers its whole Zone, and a Control dial starts neutral.
-  function taskItemsFor(m: (typeof data.missions.cards)[number]): TaskState {
-    const st = newTaskState();
-    const kind = m.family === 'blackbox' ? 'blackbox' : m.family === 'terminal' ? 'terminal' : m.family === 'control' ? 'control' : null;
-    if (!kind) return st;
-    for (const name of m.zones ?? []) {
-      const zone = data.zoneData.zones.find((z) => z.name.toLowerCase() === name.toLowerCase());
-      if (!zone) continue;
-      const item: TaskItem = { id: `${kind}-${zone.id}`, kind, zone: zone.id, control: null, accessed: null };
-      if (kind === 'blackbox') {
-        const first = zone.cells[0] && parseGridRef(zone.cells[0]);
-        if (first) {
-          item.col = first.col * 3 + 1;
-          item.row = first.row * 3 + 1;
-        }
-      }
-      st.items.push(item);
-    }
-    return st;
-  }
+  // Moved to tasks.ts so the Match Centre derives the identical items; the
+  // call sites here pass data.zoneData.zones.
 
   function showMissionCard(m: (typeof data.missions.cards)[number]): void {
     document.querySelector('.mis-lightbox')?.remove();
@@ -4021,22 +4003,8 @@ async function init() {
   // ends up in a checkpoint.
   let dialSecret: { round: number; salt: string; dials: { uid: number; timing?: Timing }[] } | null = null;
 
-  function myDials(seat: Side): { uid: number; timing?: Timing }[] {
-    return state.tokens
-      .filter((t) => t.side === seat && t.kind === 'mech')
-      .map((t) => ({ uid: t.uid, timing: t.timing }));
-  }
-
-  // The commitment covers the dials in a fixed order, so the same choices
-  // always hash the same way regardless of token order on the board.
-  async function hashDials(salt: string, dials: { uid: number; timing?: Timing }[]): Promise<string> {
-    const canonical = JSON.stringify(
-      [...dials].sort((a, b) => a.uid - b.uid).map((d) => [d.uid, d.timing ?? null]),
-    );
-    const bytes = new TextEncoder().encode(`${salt}|${canonical}`);
-    const digest = await crypto.subtle.digest('SHA-256', bytes);
-    return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
-  }
+  // The dial list and the hash moved to secrecy.ts, shared with the Match
+  // Centre: a cross-page game must hash the same bytes on both ends.
 
   // Returns true when it took responsibility for confirming the dials, which
   // is only in a networked game; a local game locks them the usual way.
@@ -4046,9 +4014,8 @@ async function init() {
     const sc = state.script;
     if (sc?.commits[seat]) return true;
 
-    const dials = myDials(seat);
-    const salt = [...crypto.getRandomValues(new Uint8Array(16))]
-      .map((b) => b.toString(16).padStart(2, '0')).join('');
+    const dials = dialsOf(state, seat);
+    const salt = newSalt();
     dialSecret = { round: state.round.n, salt, dials };
     void hashDials(salt, dials).then((hash) => {
       perform(data, state, { kind: 'commitTimings', seat, hash });

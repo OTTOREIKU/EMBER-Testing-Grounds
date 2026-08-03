@@ -49,6 +49,44 @@ export function newTaskState(): TaskState {
   };
 }
 
+// ---------- Main Task setup (5.1) ----------
+
+export interface MissionLike { family: string; zones?: string[] }
+export interface ZoneLike { id: string; name: string; cells: string[] }
+
+// A ref ("C7") on the 12x12 zone overlay. A private copy of the parser in
+// data.ts, because this module is compiled standalone by the test slices.
+function zoneRef(ref: string): { col: number; row: number } | null {
+  const m = /^([A-La-l])(\d{1,2})$/.exec(ref.trim());
+  if (!m) return null;
+  const col = m[1].toUpperCase().charCodeAt(0) - 65;
+  const row = Number(m[2]) - 1;
+  if (col < 0 || col > 11 || row < 0 || row > 11) return null;
+  return { col, row };
+}
+
+// The Task Items a Main Task puts on the board, derived from its zones. Rides
+// inside configureTable pre-computed, so both seats hold the identical set.
+export function taskItemsFor(zones: ZoneLike[], m: MissionLike): TaskState {
+  const st = newTaskState();
+  const kind = m.family === 'blackbox' ? 'blackbox' : m.family === 'terminal' ? 'terminal' : m.family === 'control' ? 'control' : null;
+  if (!kind) return st;
+  for (const name of m.zones ?? []) {
+    const zone = zones.find((z) => z.name.toLowerCase() === name.toLowerCase());
+    if (!zone) continue;
+    const item: TaskItem = { id: `${kind}-${zone.id}`, kind, zone: zone.id, control: null, accessed: null };
+    if (kind === 'blackbox') {
+      const first = zone.cells[0] && zoneRef(zone.cells[0]);
+      if (first) {
+        item.col = first.col * 3 + 1;
+        item.row = first.row * 3 + 1;
+      }
+    }
+    st.items.push(item);
+  }
+  return st;
+}
+
 export function normaliseTasks(raw: unknown): TaskState {
   const t = (raw ?? {}) as Partial<TaskState>;
   const side = (v: unknown): Side | undefined => (v === 's1' || v === 's2' ? v : undefined);
