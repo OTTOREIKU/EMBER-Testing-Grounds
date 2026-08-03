@@ -134,15 +134,20 @@ export class MultiplayerDialog {
     const seatLine = (side: 's1' | 's2') => {
       const who = v.room!.seats[side];
       const mine = v.seat === side;
+      const here = v.room!.online?.[side] ?? false;
+      // A seat can be held by someone who has momentarily dropped. Saying so
+      // beats leaving the board looking mysteriously quiet.
+      const note = mine ? 'you' : who ? (here ? 'here' : 'away') : '';
       return `<div class="mp-game">
-        <span class="mp-res ${mine ? 'won' : 'draw'}">${side === 's1' ? 'SQ 1' : 'SQ 2'}</span>
+        <span class="mp-res ${mine ? 'won' : here ? 'draw' : 'lost'}">${side === 's1' ? 'SQ 1' : 'SQ 2'}</span>
         <span class="mp-game-mid">${who ? esc(who) : '<i class="dim">waiting…</i>'}</span>
-        ${mine ? '<span class="dim">you</span>' : ''}
+        ${note ? `<span class="dim">${note}</span>` : ''}
       </div>`;
     };
 
+    const both = !!v.room.seats.s1 && !!v.room.seats.s2;
     const status = v.status === 'connecting' ? 'Reconnecting…'
-      : v.status === 'lobby' ? 'Waiting for the other player'
+      : !both ? 'Waiting for the other player'
       : 'Both seats filled — play as normal, your moves are being sent';
 
     return `<div class="mp-section">
@@ -151,7 +156,7 @@ export class MultiplayerDialog {
         <p class="dim">${esc(status)}${v.seat ? '' : ' · you are spectating'}</p>
         <div class="mp-games">${seatLine('s1')}${seatLine('s2')}</div>
         ${v.desynced
-          ? `<p class="mp-notice error">The two boards have drifted apart. Ask the other player to press Resend board, or press it yourself to push yours.</p>`
+          ? `<p class="mp-notice error">Fell behind — fetching the board from the server. This should clear on its own.</p>`
           : v.error ? `<p class="mp-notice error">${esc(v.error)}</p>` : ''}
         <div class="mp-actions">
           <button class="mp-btn ghost" id="mp-leave">Leave</button>

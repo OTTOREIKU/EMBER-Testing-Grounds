@@ -13,6 +13,10 @@ export interface NetRoom {
   epoch: number;
   revision: number;
   seats: Record<Side, string | null>;
+  // Whether the player holding each seat is connected right now. A seat can be
+  // occupied by an account that has momentarily dropped, which is worth
+  // showing rather than leaving the board looking mysteriously quiet.
+  online: Record<Side, boolean>;
   hasCheckpoint: boolean;
 }
 
@@ -204,7 +208,8 @@ export class Relay {
         this.lastRev = Number(msg.rev ?? 0);
         this.pending = [];
         this.hooks.onCheckpoint(msg.state);
-        this.set({ desynced: false });
+        // Whatever we had fallen behind by, this is current again.
+        this.set({ desynced: false, error: null });
         return;
       }
 
@@ -222,8 +227,13 @@ export class Relay {
         }
         if (rev !== this.lastRev + 1) {
           // A gap means we missed something. Applying anyway would leave the
-          // two boards quietly different, which is worse than saying so.
-          this.set({ desynced: true, error: 'Fell behind the other player. Ask them to resend the board.' });
+          // two boards quietly different, so we stop and ask the server for
+          // the board and everything since — it holds both, so recovery needs
+          // nothing from the other player and no button from this one.
+          if (!this.view.desynced) {
+            this.set({ desynced: true, error: 'Fell behind. Catching up…' });
+            this.send({ t: 'resync' });
+          }
           return;
         }
         this.lastRev = rev;
