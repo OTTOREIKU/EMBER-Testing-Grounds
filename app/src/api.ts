@@ -25,6 +25,33 @@ export interface PasswordAssessment {
   issues: string[];
 }
 
+// What a squad looked like, as recorded. The category rides along because the
+// server has no card database — it is what makes "top pilots" and "top parts"
+// separable without teaching the API what a pilot is.
+export interface SquadEntry {
+  id: string;
+  cat: 'mech_part' | 'pilot' | 'drone' | 'projectile' | 'tactics_or_upgrade';
+}
+
+export interface GameReport {
+  mode: 'hotseat' | 'online';
+  mission?: string | null;
+  scale?: string | null;
+  rounds: number;
+  winnerSeat: 's1' | 's2' | null;
+  mySeat: 's1' | 's2' | null;
+  players: { seat: 's1' | 's2'; faction?: string | null; vp: number; squad: SquadEntry[] }[];
+}
+
+export interface MyRecord {
+  record: { played: number; won: number; drawn: number; lost: number };
+  recent: { id: number; played_at: string; mission: string | null; rounds: number; seat: string; vp: number; result: 'won' | 'lost' | 'draw' }[];
+  reported: number;
+}
+
+export interface CardStat { card: string; uses: number; wins: number }
+export interface FactionStat { faction: string; played: number; wins: number }
+
 export class ApiError extends Error {
   readonly status: number;
   readonly issues: string[];
@@ -182,6 +209,25 @@ export class EmberApi {
       this.csrf = null;
       this.announce();
     }
+  }
+
+  async recordGame(report: GameReport): Promise<{ id: number }> {
+    return this.call<{ id: number }>('/games', { method: 'POST', body: report });
+  }
+
+  async myRecord(): Promise<MyRecord> {
+    return this.call<MyRecord>('/stats/me');
+  }
+
+  async topCards(cat?: SquadEntry['cat'], limit = 10): Promise<CardStat[]> {
+    const query = `?limit=${limit}${cat ? `&cat=${cat}` : ''}`;
+    const r = await this.call<{ cards: CardStat[] }>(`/stats/cards${query}`);
+    return r.cards;
+  }
+
+  async factionUsage(): Promise<FactionStat[]> {
+    const r = await this.call<{ factions: FactionStat[] }>('/stats/factions');
+    return r.factions;
   }
 
   async changePassword(currentPassword: string, newPassword: string): Promise<void> {

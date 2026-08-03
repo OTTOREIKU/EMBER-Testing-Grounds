@@ -1,4 +1,4 @@
-import { ApiError, type Account, type EmberApi, type RegistrationInfo } from './api';
+import { ApiError, type Account, type CardStat, type EmberApi, type MyRecord, type RegistrationInfo } from './api';
 
 // The multiplayer area lives entirely in this popup. Nothing is added to the
 // permanent chrome: the board is the app, and an account is something you go
@@ -17,9 +17,15 @@ export class MultiplayerDialog {
   private busy = false;
   private notice: { kind: 'error' | 'ok'; text: string; issues?: string[] } | null = null;
   private meterTimer: number | undefined;
+  // Stats arrive after the panel is already on screen, so it renders without
+  // them and fills in. A card id means nothing to a player, so names are
+  // resolved here — only the client has the card database.
+  private stats: { record: MyRecord; top: CardStat[] } | null = null;
+  private cardName: (id: string) => string;
 
-  constructor(api: EmberApi) {
+  constructor(api: EmberApi, cardName: (id: string) => string = (id) => id) {
     this.api = api;
+    this.cardName = cardName;
   }
 
   async open(): Promise<void> {
@@ -47,6 +53,24 @@ export class MultiplayerDialog {
       }
     }
     this.render();
+    void this.loadStats();
+  }
+
+  // Fetched after the panel is up, so a slow or failed stats call never delays
+  // signing in. Failure leaves the section reading "Loading…" rather than
+  // throwing an error across a panel that is otherwise working.
+  private async loadStats(): Promise<void> {
+    if (!this.api.user) {
+      this.stats = null;
+      return;
+    }
+    try {
+      const [record, top] = await Promise.all([this.api.myRecord(), this.api.topCards(undefined, 10)]);
+      this.stats = { record, top };
+      if (this.dlg && this.api.user) this.render();
+    } catch {
+      /* advisory; the panel stands without it */
+    }
   }
 
   close(): void {
@@ -71,17 +95,54 @@ export class MultiplayerDialog {
     return `<p class="mp-notice ${kind}">${esc(text)}${list}</p>`;
   }
 
+  private statsHtml(): string {
+    if (!this.stats) return '<div class="mp-section"><h4>Your record</h4><p class="dim">Loading…</p></div>';
+    const { record, top } = this.stats;
+    const r = record.record;
+    if (!r.played && !record.reported) {
+      return `<div class="mp-section"><h4>Your record</h4>
+        <p class="dim">No games yet. End a game from the play guide and you will be offered the chance to record it.</p></div>`;
+    }
+    const cell = (n: number, label: string) => `<div class="mp-stat"><b>${n}</b><span>${label}</span></div>`;
+    const rate = r.played ? Math.round((r.won / r.played) * 100) : 0;
+    const recent = record.recent.slice(0, 5).map((g) => `<div class="mp-game">
+        <span class="mp-res ${g.result}">${g.result === 'won' ? 'Won' : g.result === 'lost' ? 'Lost' : 'Drew'}</span>
+        <span class="mp-game-mid">${esc(g.mission ?? 'no Main Task')}</span>
+        <span class="dim">${g.vp} VP · R${g.rounds}</span>
+      </div>`).join('');
+
+    return `<div class="mp-section">
+        <h4>Your record</h4>
+        <div class="mp-stats">
+          ${cell(r.played, 'played')}${cell(r.won, 'won')}${cell(r.lost, 'lost')}${cell(r.drawn, 'drawn')}
+        </div>
+        ${r.played ? `<p class="dim">${rate}% win rate across ${r.played} game${r.played === 1 ? '' : 's'}.${
+          record.reported > r.played ? ` ${record.reported - r.played} more recorded without claiming a side.` : ''
+        }</p>` : `<p class="dim">${record.reported} game${record.reported === 1 ? '' : 's'} recorded without claiming a side.</p>`}
+        ${recent ? `<div class="mp-games">${recent}</div>` : ''}
+      </div>
+      ${top.length ? `<div class="mp-section">
+        <h4>Most used cards</h4>
+        <div class="mp-games">${top.slice(0, 8).map((c) => `<div class="mp-game">
+          <span class="mp-game-mid">${esc(this.cardName(c.card))}</span>
+          <span class="dim">${c.uses} use${c.uses === 1 ? '' : 's'}${c.uses ? ` · ${Math.round((c.wins / c.uses) * 100)}% won` : ''}</span>
+        </div>`).join('')}</div>
+        <p class="dim">Across every game recorded by everyone, not just yours.</p>
+      </div>` : ''}`;
+  }
+
   private signedInHtml(user: Account): string {
     return `<div class="mp-section">
         <div class="mp-who">
           <b>${esc(user.displayName || user.username)}</b>
           <span class="mp-tag">${esc(user.role)}</span>
         </div>
-        <p class="dim">Signed in. Online play is still being built — for now an account only reserves your name and will carry your game history once stat recording lands.</p>
+        <p class="dim">Signed in. Networked play is still being built; for now an account records the games you finish.</p>
         <div class="mp-actions">
           <button class="mp-btn ghost" id="mp-signout">Sign out</button>
         </div>
       </div>
+      ${this.statsHtml()}
       <div class="mp-section">
         <h4>Change password</h4>
         ${this.field('mp-cur', 'Current password', 'password')}
@@ -180,7 +241,11 @@ export class MultiplayerDialog {
       this.notice = { kind: 'error', text: e.message ?? 'Something went wrong.', issues: e.issues };
     } finally {
       this.busy = false;
+      // Signing in or out changes whose stats these are, so drop the old set
+      // rather than showing the previous account's record for a moment.
+      this.stats = null;
       this.render();
+      void this.loadStats();
     }
   }
 

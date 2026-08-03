@@ -2,12 +2,12 @@ import './styles.css';
 import { Board, CELLS, footprint, snapPlacement, type BoardDeployment, type BoardZone, type DeployShape } from './board';
 import { AttackHelper, ElectronicHelper } from './combat';
 import { alertDialog, choiceDialog, confirmDialog, promptDialog } from './dialog';
-import { gameResult, isLowValue, newTaskState, normaliseTasks, type TaskItem, type TaskState } from './tasks';
+import { gameResult, isLowValue, newTaskState, normaliseTasks, type GameResult, type TaskItem, type TaskState } from './tasks';
 import { DiceTray } from './dice';
 import { importSquadFile } from './importer';
 import { factionColour } from './icons';
 import { onRefused, perform } from './commands';
-import { EmberApi } from './api';
+import { ApiError, EmberApi, type SquadEntry } from './api';
 import { MultiplayerDialog } from './multiplayer';
 import { Inventory } from './inventory';
 import { BOARD_THEMES, boardTheme } from './boards';
@@ -767,6 +767,69 @@ async function init() {
     onChanged();
   }
 
+  // Everything a squad brought, as card ids with their category. Duplicates are
+  // kept on purpose: two of the same Part is two uses, which is exactly what
+  // "most used" should count.
+  function squadEntriesFor(side: Side): SquadEntry[] {
+    const out: SquadEntry[] = [];
+    for (const t of state.tokens) {
+      if (t.side !== side || t.kind === 'projectile') continue;
+      for (const { card } of tokenCards(data, t)) {
+        out.push({ id: card.id, cat: (card.category ?? 'mech_part') as SquadEntry['cat'] });
+      }
+    }
+    for (const id of state.tactics?.[side] ?? []) {
+      if (data.byId.get(id)) out.push({ id, cat: 'tactics_or_upgrade' });
+    }
+    // The server caps a squad at 80 entries; no real list comes close.
+    return out.slice(0, 80);
+  }
+
+  // Recording is opt-in and never blocks ending a game. A failure here is
+  // reported and then dropped: the match happened whether or not the server
+  // heard about it.
+  async function offerToRecord(res: GameResult, tasks: TaskState): Promise<void> {
+    if (!emberApi.user) return;
+    const s1 = squadLabel('s1');
+    const s2 = squadLabel('s2');
+    const pick = await choiceDialog({
+      title: 'Record this game?',
+      body: `Saved to your account on embertg.online, where it counts towards squad and card statistics. Pick the squad you played, or record it without claiming a side.`,
+      stacked: true,
+      choices: [
+        { id: 's1', label: `I played ${s1}` },
+        { id: 's2', label: `I played ${s2}` },
+        { id: 'neither', label: 'I played both sides' },
+        { id: 'cancel', label: 'Do not record it' },
+      ],
+    });
+    if (!pick || pick === 'cancel') return;
+
+    const alg = (side: Side) => squadAllegiance(data, state.tokens.filter((t) => t.side === side)).faction;
+    try {
+      await emberApi.recordGame({
+        mode: 'hotseat',
+        mission: state.mission ?? null,
+        scale: state.scale ?? null,
+        rounds: Math.max(1, Math.min(20, state.round.n)),
+        winnerSeat: res.winner,
+        mySeat: pick === 'neither' ? null : (pick as Side),
+        players: (['s1', 's2'] as Side[]).map((side) => ({
+          seat: side,
+          faction: alg(side),
+          vp: Math.max(0, tasks.vp[side]),
+          squad: squadEntriesFor(side),
+        })),
+      });
+      setHint('Game recorded to your account.');
+    } catch (err) {
+      await alertDialog({
+        title: 'Could not record the game',
+        body: `${(err as ApiError).message} The game itself is unaffected.`,
+      });
+    }
+  }
+
   // Leaves the guided game and hands the board back, keeping everything where it
   // stands so a match can be abandoned without losing the position.
   async function endGame(): Promise<void> {
@@ -790,6 +853,9 @@ async function init() {
         title: res.winner ? `${squadLabel(res.winner)} wins` : 'A draw',
         body: `${res.why}.`,
       });
+      // Offered before the board unlocks, because the squads and Victory
+      // Points are still standing here and are gone a few lines below.
+      await offerToRecord(res, tasks);
     }
     for (const t of state.tokens) t.deployed = undefined;
     state.setup = null;
@@ -3834,7 +3900,10 @@ async function init() {
   // account check runs in the background and simply reads as signed out if the
   // API cannot be reached.
   const emberApi = new EmberApi();
-  const multiplayer = new MultiplayerDialog(emberApi);
+  const multiplayer = new MultiplayerDialog(emberApi, (id) => {
+    const card = data.byId.get(id);
+    return card ? cardName(card) : id;
+  });
   const mpButton = document.getElementById('btn-multiplayer')!;
   mpButton.addEventListener('click', () => void multiplayer.open());
   emberApi.onChange((account) => {
