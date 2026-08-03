@@ -112,6 +112,14 @@
     "TM39D": {
       "en": "TM39D \"Cobra\" Tactical Core",
       "source": "translated"
+    },
+    "ZPA-37": {
+      "en": "Foxhound",
+      "source": "championship-legal EN parts list v1.02 (publisher) — community data had \"Foxhund\"; the publisher list spells it Foxhound"
+    },
+    "ZPA-39": {
+      "en": "Zombie",
+      "source": "championship-legal EN parts list v1.02 (publisher) — community data had \"Cadaver\"; the publisher list calls this pilot Zombie"
     }
   },
   "actions": {
