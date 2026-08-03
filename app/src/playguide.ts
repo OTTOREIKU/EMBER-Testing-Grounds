@@ -276,7 +276,7 @@ export class PlayGuide {
         <button class="pg-close" title="Hide the play guide">✕</button>
       </div>
       <div class="pg-body">
-        <p class="pg-sub">${info.sub}</p>
+        ${this.script(s).strict ? '' : `<p class="pg-sub">${info.sub}</p>`}
         ${this.warn && (phase === 'Planning' || this.setupState(s)) ? `<p class="pg-warn">${esc(this.warn)}</p>` : ''}
         ${
           this.setupState(s)
@@ -292,10 +292,10 @@ export class PlayGuide {
                 : this.loopHtml(s, phase)
         }`
         }
-        <details class="pg-rules"${this.ui.rules ? ' open' : ''}>
+        ${this.script(s).strict ? '' : `<details class="pg-rules"${this.ui.rules ? ' open' : ''}>
           <summary>How this phase works</summary>
           <ul class="pg-steps">${info.lines.map((x) => `<li>${x}</li>`).join('')}</ul>
-        </details>
+        </details>`}
       </div>
       <div class="pg-foot">
         <span class="pg-left">${esc(this.blockedReason(s) ?? info.sub.split('·').pop()?.trim() ?? '')}</span>
@@ -464,6 +464,11 @@ export class PlayGuide {
     this.root.querySelector('[data-mode-toggle]')?.addEventListener('click', () => {
       const sc = this.script(s);
       perform(this.data, s, { kind: 'setMode', seat: sc.turn, mode: sc.mode === 'hidden' ? 'hotseat' : 'hidden' });
+      this.cb.onChanged();
+    });
+    this.root.querySelector('[data-strict-toggle]')?.addEventListener('click', () => {
+      const sc = this.script(s);
+      perform(this.data, s, { kind: 'setStrict', seat: sc.turn, strict: !sc.strict });
       this.cb.onChanged();
     });
     this.root.querySelector('[data-lock-dials]')?.addEventListener('click', () => {
@@ -817,6 +822,12 @@ export class PlayGuide {
               ? 'Pass-and-play: the Planning Phase runs as two hand-offs, each squad sets its dials in secret, and both reveal at once (3.3). Click for an open table.'
               : 'Open table: both squads set their dials in the open, like sitting across a real table. Click for pass-and-play, which keeps the dials secret until the reveal (3.3).'
           }">${hidden ? 'Pass-and-play' : 'Open table'}</button></div>
+        <div class="pg-dial-row"><span class="pg-dial-unit">Guide</span>
+          <button class="pg-dial-set pg-mode" data-strict-toggle="1" data-tip-title="Teaching or tracker" data-tip="${
+            this.script(s).strict
+              ? 'Strict tracker: anything against the rules is refused outright, with the reason in the hint bar, and the teaching notes are dropped. Click to go back to teaching.'
+              : 'Teaching: illegal moves go through with a warning, and every phase explains itself. Click for the strict tracker, which refuses them instead.'
+          }">${this.script(s).strict ? 'Strict tracker' : 'Teaching'}</button></div>
       </div>
       <div class="pg-units">
         <button class="pg-unit${mission ? '' : ' warn'}" data-pick-mission="1">${

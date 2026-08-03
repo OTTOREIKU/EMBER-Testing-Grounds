@@ -6,7 +6,7 @@ import { gameResult, isLowValue, newTaskState, normaliseTasks, type TaskItem, ty
 import { DiceTray } from './dice';
 import { importSquadFile } from './importer';
 import { factionColour } from './icons';
-import { perform } from './commands';
+import { onRefused, perform } from './commands';
 import { Inventory } from './inventory';
 import { BOARD_THEMES, boardTheme } from './boards';
 import { bindTips, inspectOnHover, isInspectPinned, showInspect, unpinInspect } from './inspector';
@@ -1807,6 +1807,11 @@ async function init() {
     setHint('');
     m.done(false);
   }
+
+  // The strict tracker refuses illegal commands inside perform; the reason
+  // lands in the hint bar rather than a modal, because a refusal should never
+  // interrupt more than the click that caused it.
+  onRefused((why) => setHint(`⛔ ${why}`));
 
   function setHint(text: string): void {
     const el = document.getElementById('hint');

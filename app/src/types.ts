@@ -432,6 +432,9 @@ export interface ScriptState {
   passed: Side[];
   stage: string;
   mode: 'hotseat' | 'hidden';
+  // Teaching explains and warns; the strict tracker refuses illegal commands
+  // outright and drops the prose. Same engine, two presentations.
+  strict: boolean;
   seats: Record<Side, 'local' | 'remote'>;
   opp: Opportunity | null;
   intercepts: { uid: number; actionId: string; targetUid: number }[];
@@ -448,6 +451,7 @@ export function newScriptState(firstPlayer: Side): ScriptState {
     passed: [],
     stage: '',
     mode: 'hotseat',
+    strict: false,
     seats: { s1: 'local', s2: 'local' },
     opp: null,
     intercepts: [],
@@ -468,6 +472,7 @@ export function normaliseScript(raw: unknown, firstPlayer: Side): ScriptState {
     passed: Array.isArray(s.passed) ? s.passed : base.passed,
     stage: typeof s.stage === 'string' ? s.stage : base.stage,
     mode: s.mode === 'hidden' ? 'hidden' : 'hotseat',
+    strict: !!s.strict,
     seats: { ...base.seats, ...(s.seats ?? {}) },
     opp: normaliseOpportunity(s.opp),
     intercepts: Array.isArray(s.intercepts)

@@ -73,7 +73,8 @@ export type Command =
   | { kind: 'removeSmoke'; seat: Side; at: { col: number; row: number } }
   | { kind: 'dissipateSmoke'; seat: Side }
   | { kind: 'setMode'; seat: Side; mode: 'hotseat' | 'hidden' }
-  | { kind: 'handOver'; seat: Side };
+  | { kind: 'handOver'; seat: Side }
+  | { kind: 'setStrict'; seat: Side; strict: boolean };
 
 export type CheckResult = { ok: true } | { ok: false; why: string };
 
@@ -129,12 +130,12 @@ type TableKind =
   | 'advancePhase' | 'setPhase' | 'resetRounds' | 'adjustCommandTokens' | 'passTurn' | 'markEndStep' | 'award'
   | 'lockMap' | 'rollSetup' | 'acceptRoll' | 'pickEdge' | 'lockDials' | 'finishDeployment'
   | 'queueIntercepts' | 'clearIntercepts' | 'placeSmoke' | 'removeSmoke' | 'dissipateSmoke'
-  | 'setMode' | 'handOver';
+  | 'setMode' | 'handOver' | 'setStrict';
 const TABLE_KINDS = new Set<Command['kind']>([
   'advancePhase', 'setPhase', 'resetRounds', 'adjustCommandTokens', 'passTurn', 'markEndStep', 'award',
   'lockMap', 'rollSetup', 'acceptRoll', 'pickEdge', 'lockDials', 'finishDeployment',
   'queueIntercepts', 'clearIntercepts', 'placeSmoke', 'removeSmoke', 'dissipateSmoke',
-  'setMode', 'handOver',
+  'setMode', 'handOver', 'setStrict',
 ]);
 function tableLevel(cmd: Command): cmd is Command & { kind: TableKind } {
   return TABLE_KINDS.has(cmd.kind);
@@ -242,6 +243,10 @@ function checkTable(state: GameState, cmd: Command & { kind: TableKind }): Check
       if (state.round.phase !== 1) return no('The device is handed over during the Planning Phase (3.3).');
       if (sc.stage === `${state.round.n}:1:locked`) return no('The dials are already locked in.');
       if (sc.turn !== cmd.seat) return no('The device is not with this squad.');
+      return ok;
+    }
+    case 'setStrict': {
+      if (!state.script) return no('There is no guided game running.');
       return ok;
     }
   }
@@ -608,6 +613,10 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
     if (state.script) state.script.mode = cmd.mode;
     return;
   }
+  if (cmd.kind === 'setStrict') {
+    if (state.script) state.script.strict = cmd.strict;
+    return;
+  }
   if (cmd.kind === 'handOver') {
     // Pass-and-play planning runs as two sub-turns on sc.turn: the First
     // Player sets their dials, hands the device over, and the other squad
@@ -844,11 +853,23 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
   }
 }
 
+// What a strict refusal does with its reason. The command layer cannot toast,
+// so the app registers a presenter once and every call site inherits it.
+let refused: ((why: string) => void) | null = null;
+export function onRefused(fn: (why: string) => void): void {
+  refused = fn;
+}
+
 // The sandbox and the teaching guide warn rather than block, so they perform
-// regardless and surface why when there is a why. The strict tracker will call
-// check() first and refuse instead: one rule, two presentations.
+// regardless and surface why when there is a why. The strict tracker refuses
+// instead, right here, which is what makes every call site strict at once:
+// one rule, two presentations.
 export function perform(data: GameData, state: GameState, cmd: Command): CheckResult {
   const verdict = check(data, state, cmd);
+  if (!verdict.ok && state.script?.strict) {
+    refused?.(verdict.why);
+    return verdict;
+  }
   apply(data, state, cmd);
   return verdict;
 }

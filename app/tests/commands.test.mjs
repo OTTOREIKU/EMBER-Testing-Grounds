@@ -578,6 +578,22 @@ wh.script.stage = '1:1:locked';
 check('the lock reveals every dial', [C.dialHidden(wh, wh.tokens[0]), C.dialHidden(wh, wh.tokens[1])], [false, false]);
 check('an open table never masks', C.dialHidden(world([mech(1, 's1')], 1), { side: 's2' }), false);
 
+// ---------- the strict tracker ----------
+
+const wstrict = world([mech(1, 's1', { stance: 'shutdown' })]);
+C.apply(data, wstrict, { kind: 'setStrict', seat: 's1', strict: true });
+check('setStrict flips the tracker on', wstrict.script.strict, true);
+const vs = C.perform(data, wstrict, sc({ stance: 'mobility' }));
+check('strict refuses instead of warning', [vs.ok, wstrict.tokens[0].stance], [false, 'shutdown']);
+let told = null;
+C.onRefused((why) => { told = why; });
+C.perform(data, wstrict, sc({ stance: 'mobility' }));
+check('and the reason reaches the presenter', typeof told, 'string');
+C.onRefused(() => {});
+C.apply(data, wstrict, { kind: 'setStrict', seat: 's1', strict: false });
+const vt = C.perform(data, wstrict, sc({ stance: 'mobility' }));
+check('teaching performs anyway and says why', [vt.ok, wstrict.tokens[0].stance], [false, 'mobility']);
+
 // ---------- determinism ----------
 
 const a = wm();
