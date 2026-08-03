@@ -265,6 +265,31 @@ function applyAmmo(cards: Card[], patch: AmmoOverrides): void {
   }
 }
 
+interface ActionOverrides {
+  actions?: Record<string, Partial<CardAction>>;
+}
+
+// Per-action corrections keyed by action id, for fields the community database
+// got wrong or never recorded — a Firing action with no range, a timing filed
+// under the generic Tactic. Source is the publisher's parts lists; see
+// data/action_overrides.json.
+function applyActionFixes(cards: Card[], patch: ActionOverrides): void {
+  const byId = patch.actions ?? {};
+  for (const c of cards) {
+    for (const a of c.actions ?? []) {
+      const fix = byId[a.id];
+      if (!fix) continue;
+      for (const [k, v] of Object.entries(fix)) {
+        if (k.startsWith('_')) continue;
+        // A name patch only ever supplies `en`; replacing the object outright
+        // would throw away the Chinese the card already has.
+        if (k === 'name' && v && typeof v === 'object') a.name = { ...a.name, ...v };
+        else (a as unknown as Record<string, unknown>)[k] = v;
+      }
+    }
+  }
+}
+
 interface StatOverrides {
   cards?: Record<string, Partial<Card>>;
 }
@@ -388,7 +413,7 @@ function applyTactics(cards: Card[], table: Record<string, TacticEntry>): void {
 }
 
 export async function loadData(): Promise<GameData> {
-  const [cards, terrain, boxes, rawKeywords, patch, mech, xlate, names, missions, tactics, play, secondary, zoneData, facPatch, boxPatch, common, ammoPatch, statPatch, factionData] = await Promise.all([
+  const [cards, terrain, boxes, rawKeywords, patch, mech, xlate, names, missions, tactics, play, secondary, zoneData, facPatch, boxPatch, common, ammoPatch, statPatch, actionPatch, factionData] = await Promise.all([
     fetch(dataUrl('cards.json')).then((r) => r.json() as Promise<Card[]>),
     fetch(dataUrl('terrain_layouts.json')).then((r) => r.json() as Promise<TerrainData>),
     fetch(dataUrl('boxes.json')).then((r) => r.json() as Promise<BoxDef[]>),
@@ -435,6 +460,9 @@ export async function loadData(): Promise<GameData> {
     fetch(dataUrl('stat_overrides.json'))
       .then((r) => (r.ok ? (r.json() as Promise<StatOverrides>) : ({} as StatOverrides)))
       .catch(() => ({}) as StatOverrides),
+    fetch(dataUrl('action_overrides.json'))
+      .then((r) => (r.ok ? (r.json() as Promise<ActionOverrides>) : ({} as ActionOverrides)))
+      .catch(() => ({}) as ActionOverrides),
     fetch(dataUrl('factions.json'))
       .then((r) => (r.ok ? (r.json() as Promise<{ factions?: FactionDef[] }>) : { factions: [] }))
       .catch(() => ({ factions: [] as FactionDef[] })),
@@ -445,6 +473,7 @@ export async function loadData(): Promise<GameData> {
   normaliseBoxes(cards);
   applyBoxContents(cards, boxPatch);
   applyAmmo(cards, ammoPatch);
+  applyActionFixes(cards, actionPatch);
   applyStats(cards, statPatch);
 
   for (const b of boxes) {
