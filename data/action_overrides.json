@@ -1,0 +1,109 @@
+{
+  "_comment": "Per-action corrections, keyed by action id (the card id plus its A/B slot, which is exactly how the publisher's sheets label them). Source for every entry below is the publisher's championship-legal English parts lists (v1.02). Those come from the game company, so they outrank both the community database that generated cards.json and an older card scan. Ranges of 0 on a Firing or Projectile action are the community data simply not recording a range at all.",
+  "actions": {
+    "547_A": {
+      "range": 8
+    },
+    "550_A": {
+      "range": 6
+    },
+    "551_A": {
+      "range": 6
+    },
+    "019_B": {
+      "range": 2
+    },
+    "173_B": {
+      "range": 6
+    },
+    "509_A": {
+      "range": 0
+    },
+    "181_B": {
+      "size": "s"
+    },
+    "182_B": {
+      "size": "s"
+    },
+    "045_B": {
+      "type": "Swift"
+    },
+    "PDAM-001_A": {
+      "type": "Delay"
+    },
+    "PDAM-002_A": {
+      "type": "Delay"
+    },
+    "PDAM-005_A": {
+      "type": "Immediate"
+    },
+    "546_A": {
+      "name": {
+        "en": "Full-auto"
+      }
+    },
+    "546_B": {
+      "name": {
+        "en": "Emergency Smoke"
+      }
+    },
+    "552_A": {
+      "name": {
+        "en": "Shield Up"
+      }
+    },
+    "552_B": {
+      "name": {
+        "en": "Laser Suppression"
+      }
+    },
+    "553_A": {
+      "name": {
+        "en": "Shield Up"
+      }
+    },
+    "553_B": {
+      "name": {
+        "en": "Full-auto Interception"
+      }
+    },
+    "544_A": {
+      "name": {
+        "en": "Missile"
+      }
+    },
+    "545_A": {
+      "name": {
+        "en": "Full-auto"
+      }
+    },
+    "545_B": {
+      "name": {
+        "en": "Full-auto"
+      }
+    }
+  },
+  "_notes": {
+    "547_A": "H2-B \"Crisis\" II, Full-auto. A Firing action recorded with no range; the list gives 8.",
+    "550_A": "Ls197R Autocannon (L), Single Shot. Firing with no range; the list gives 6.",
+    "551_A": "Ls197R Autocannon (R), Single Shot. Same card mirrored, same correction.",
+    "019_B": "RT-15C \"Glacier\" Assault Core, Smoke Grenade. A thrown Projectile with no range; the list gives 2.",
+    "173_B": "P7-A3 \"Centurion\" Node Core, Fire Control Planning. Passive with no range; the list gives 6. Passives do carry ranges in our data already, so 0 here was missing data rather than 'not applicable'.",
+    "509_A": "Type 55 Shield + PC-9K Shotgun (R) (D), Shield Bash. We had 1; the list prints Melee, which is range 0. Everything else on the action matches.",
+    "181_B": "PLK400 \"Centaur\" High-mobility Chassis, Sprint. We had a Medium action; the list says Small, which fits a high-mobility chassis.",
+    "182_B": "PL35 Armored Chassis, Kick. We had Medium; the list says Small.",
+    "045_B": "Type 79 Combat Shield, Barricade. We had the generic Tactic timing; the list says Swift.",
+    "PDAM-001_A": "FGM25 \"Piranha\" Missile, Guided Attack. Tactic in our data, Delayed on the list. Our vocabulary spells that timing 'Delay'.",
+    "PDAM-002_A": "FGM46 \"Exocet\" Missile, Guided Attack. Same correction.",
+    "PDAM-005_A": "FG33 \"Sardina\" Cluster Grenade, Detonation. Tactic in our data, Immediate on the list.",
+    "546_A": "English action name was blank in the community data; taken from the list.",
+    "546_B": "English action name was blank in the community data; taken from the list.",
+    "552_A": "English action name was blank in the community data; taken from the list.",
+    "552_B": "English action name was blank in the community data; taken from the list.",
+    "553_A": "English action name was blank in the community data; taken from the list.",
+    "553_B": "English action name was blank in the community data; taken from the list.",
+    "544_A": "English action name was blank in the community data; taken from the list.",
+    "545_A": "English action name was blank in the community data; taken from the list.",
+    "545_B": "English action name was blank in the community data; taken from the list."
+  }
+}
