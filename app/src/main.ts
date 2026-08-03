@@ -6,7 +6,8 @@ import { gameResult, isLowValue, newTaskState, normaliseTasks, type GameResult, 
 import { DiceTray } from './dice';
 import { importSquadFile } from './importer';
 import { factionColour } from './icons';
-import { onRefused, perform } from './commands';
+import { applyRemote, onPerformed, onRefused, perform } from './commands';
+import { Relay } from './net';
 import { ApiError, EmberApi, type SquadEntry } from './api';
 import { MultiplayerDialog } from './multiplayer';
 import { Inventory } from './inventory';
@@ -3900,15 +3901,61 @@ async function init() {
   // account check runs in the background and simply reads as signed out if the
   // API cannot be reached.
   const emberApi = new EmberApi();
-  const multiplayer = new MultiplayerDialog(emberApi, (id) => {
-    const card = data.byId.get(id);
-    return card ? cardName(card) : id;
+
+  // Networked play. Commands performed here are mirrored to the other player,
+  // and theirs are applied through applyRemote so they do not bounce back.
+  // Neither side trusts the other's rules engine — both run the same one.
+  const relay = new Relay(emberApi.base, {
+    onCommand(cmd) {
+      applyRemote(data, state, cmd);
+      onChanged();
+    },
+    onCheckpoint(raw) {
+      // migrateState rebuilds every field, so assigning over the live object
+      // keeps every closure and component pointing at the same state.
+      try {
+        Object.assign(state, migrateState(raw, data));
+      } catch {
+        setHint('⛔ The board that arrived could not be read.');
+        return;
+      }
+      selectToken(null);
+      renderAll();
+      setHint('Board received from the other player.');
+    },
+    onNeedCheckpoint() {
+      relay.publishCheckpoint();
+    },
+    onChange(view) {
+      multiplayer.refresh();
+      mpButton.classList.toggle('online', !!view.room);
+      if (view.room) setHint(`Online room ${view.room.id}${view.seat ? ` · you are ${squadLabel(view.seat)}` : ' · spectating'}`);
+    },
+    snapshot: () => JSON.parse(JSON.stringify(state)) as unknown,
   });
+  onPerformed((cmd) => relay.publish(cmd));
+
+  const multiplayer = new MultiplayerDialog(
+    emberApi,
+    (id) => {
+      const card = data.byId.get(id);
+      return card ? cardName(card) : id;
+    },
+    {
+      view: () => relay.state,
+      host: () => relay.host(),
+      join: (code) => relay.join(code),
+      leave: () => relay.leave(),
+      resend: () => relay.publishCheckpoint(),
+    },
+  );
   const mpButton = document.getElementById('btn-multiplayer')!;
   mpButton.addEventListener('click', () => void multiplayer.open());
   emberApi.onChange((account) => {
     mpButton.textContent = account ? account.displayName || account.username : 'Multiplayer';
     mpButton.classList.toggle('signed-in', !!account);
+    // A session ending takes any networked game with it.
+    if (!account) relay.leave();
   });
   void emberApi.refresh();
 

@@ -1,4 +1,15 @@
 import { ApiError, type Account, type CardStat, type EmberApi, type MyRecord, type RegistrationInfo } from './api';
+import type { NetView } from './net';
+
+// What the dialog is allowed to do to a networked game. Deliberately narrow:
+// the relay itself lives in main, and this only drives it.
+export interface NetControls {
+  view(): NetView;
+  host(): void;
+  join(code: string): void;
+  leave(): void;
+  resend(): void;
+}
 
 // The multiplayer area lives entirely in this popup. Nothing is added to the
 // permanent chrome: the board is the app, and an account is something you go
@@ -22,10 +33,18 @@ export class MultiplayerDialog {
   // resolved here — only the client has the card database.
   private stats: { record: MyRecord; top: CardStat[] } | null = null;
   private cardName: (id: string) => string;
+  private net: NetControls | null;
 
-  constructor(api: EmberApi, cardName: (id: string) => string = (id) => id) {
+  constructor(api: EmberApi, cardName: (id: string) => string = (id) => id, net: NetControls | null = null) {
     this.api = api;
     this.cardName = cardName;
+    this.net = net;
+  }
+
+  // The relay changes underneath the dialog — a peer joins, a connection
+  // drops — so the panel is refreshed from outside rather than polling.
+  refresh(): void {
+    if (this.dlg && !this.busy) this.render();
   }
 
   async open(): Promise<void> {
@@ -95,6 +114,52 @@ export class MultiplayerDialog {
     return `<p class="mp-notice ${kind}">${esc(text)}${list}</p>`;
   }
 
+  private onlineHtml(): string {
+    if (!this.net) return '';
+    const v = this.net.view();
+
+    if (!v.room) {
+      return `<div class="mp-section">
+        <h4>Play online</h4>
+        <p class="dim">Open a room and pass the code to your opponent, or enter one you were given. You each keep your own board; the moves travel between them.</p>
+        ${v.error ? `<p class="mp-notice error">${esc(v.error)}</p>` : ''}
+        ${this.field('mp-room', 'Room code', 'text', 'placeholder="XXXXX" maxlength="7"')}
+        <div class="mp-actions">
+          <button class="mp-btn ghost" id="mp-join">Join</button>
+          <button class="mp-btn" id="mp-host">Open a room</button>
+        </div>
+      </div>`;
+    }
+
+    const seatLine = (side: 's1' | 's2') => {
+      const who = v.room!.seats[side];
+      const mine = v.seat === side;
+      return `<div class="mp-game">
+        <span class="mp-res ${mine ? 'won' : 'draw'}">${side === 's1' ? 'SQ 1' : 'SQ 2'}</span>
+        <span class="mp-game-mid">${who ? esc(who) : '<i class="dim">waiting…</i>'}</span>
+        ${mine ? '<span class="dim">you</span>' : ''}
+      </div>`;
+    };
+
+    const status = v.status === 'connecting' ? 'Reconnecting…'
+      : v.status === 'lobby' ? 'Waiting for the other player'
+      : 'Both seats filled — play as normal, your moves are being sent';
+
+    return `<div class="mp-section">
+        <h4>Online game</h4>
+        <div class="mp-room-code">${esc(v.room.id)}</div>
+        <p class="dim">${esc(status)}${v.seat ? '' : ' · you are spectating'}</p>
+        <div class="mp-games">${seatLine('s1')}${seatLine('s2')}</div>
+        ${v.desynced
+          ? `<p class="mp-notice error">The two boards have drifted apart. Ask the other player to press Resend board, or press it yourself to push yours.</p>`
+          : v.error ? `<p class="mp-notice error">${esc(v.error)}</p>` : ''}
+        <div class="mp-actions">
+          <button class="mp-btn ghost" id="mp-leave">Leave</button>
+          <button class="mp-btn" id="mp-resend" data-tip-title="Resend board" data-tip="Sends your whole board to the other player, replacing theirs.|Use it if the two have drifted apart.">Resend board</button>
+        </div>
+      </div>`;
+  }
+
   private statsHtml(): string {
     if (!this.stats) return '<div class="mp-section"><h4>Your record</h4><p class="dim">Loading…</p></div>';
     const { record, top } = this.stats;
@@ -142,6 +207,7 @@ export class MultiplayerDialog {
           <button class="mp-btn ghost" id="mp-signout">Sign out</button>
         </div>
       </div>
+      ${this.onlineHtml()}
       ${this.statsHtml()}
       <div class="mp-section">
         <h4>Change password</h4>
@@ -253,6 +319,31 @@ export class MultiplayerDialog {
     this.dlg?.querySelector('#mp-signout')!.addEventListener('click', () => {
       void this.attempt(async () => { await this.api.logout(); });
     });
+
+    const net = this.net;
+    if (net) {
+      const code = this.input('mp-room');
+      // A room code is handed over in upper case; typing it lower should look
+      // the same on screen, exactly as the invite field does.
+      code?.addEventListener('input', () => {
+        const at = code.selectionStart;
+        code.value = code.value.toUpperCase();
+        code.setSelectionRange(at, at);
+      });
+      const join = (): void => {
+        if (!code?.value.trim()) {
+          this.notice = { kind: 'error', text: 'Enter the room code you were given.' };
+          this.render();
+          return;
+        }
+        net.join(code.value.trim());
+      };
+      code?.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') join(); });
+      this.dlg?.querySelector('#mp-join')?.addEventListener('click', join);
+      this.dlg?.querySelector('#mp-host')?.addEventListener('click', () => net.host());
+      this.dlg?.querySelector('#mp-leave')?.addEventListener('click', () => net.leave());
+      this.dlg?.querySelector('#mp-resend')?.addEventListener('click', () => net.resend());
+    }
 
     const cur = this.input('mp-cur');
     const next = this.input('mp-new');

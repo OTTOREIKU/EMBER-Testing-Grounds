@@ -852,6 +852,15 @@ main { display: flex; flex: 1; min-height: 0; }
 .mp-btn.ghost { background: var(--surface3); color: var(--text2); }
 .mp-btn.ghost:hover:not(:disabled) { background: var(--surface3); color: var(--text); }
 
+/* The room code is read aloud down a call, so it is the largest thing in the
+   panel and spaced out enough to dictate a character at a time. */
+.mp-room-code {
+  font-size: 26px; font-weight: 700; letter-spacing: 5px; text-align: center;
+  padding: 10px 0 8px; color: var(--accent); font-variant-numeric: tabular-nums;
+  user-select: all;
+}
+#btn-multiplayer.online { background: var(--green-lt); color: var(--green); }
+
 .mp-stats { display: flex; gap: 6px; }
 .mp-stat {
   flex: 1; text-align: center; padding: 7px 4px;

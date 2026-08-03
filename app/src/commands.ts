@@ -860,6 +860,29 @@ export function onRefused(fn: (why: string) => void): void {
   refused = fn;
 }
 
+// Where a command goes after it has been applied locally, when a networked
+// game is running. Registering it here rather than at each call site is the
+// whole reason the command layer exists: every move in the app becomes
+// sendable at once, and none of the UI has to know a socket is involved.
+let mirror: ((cmd: Command) => void) | null = null;
+export function onPerformed(fn: ((cmd: Command) => void) | null): void {
+  mirror = fn;
+}
+
+// True while a command that arrived from the other player is being applied.
+// Without it the mirror would bounce every received command straight back and
+// the two clients would volley forever.
+let applyingRemote = false;
+
+export function applyRemote(data: GameData, state: GameState, cmd: Command): void {
+  applyingRemote = true;
+  try {
+    apply(data, state, cmd);
+  } finally {
+    applyingRemote = false;
+  }
+}
+
 // The sandbox and the teaching guide warn rather than block, so they perform
 // regardless and surface why when there is a why. The strict tracker refuses
 // instead, right here, which is what makes every call site strict at once:
@@ -871,5 +894,8 @@ export function perform(data: GameData, state: GameState, cmd: Command): CheckRe
     return verdict;
   }
   apply(data, state, cmd);
+  // Mirrored only after it has actually landed here, so the other player never
+  // sees a move this client refused to make.
+  if (!applyingRemote) mirror?.(cmd);
   return verdict;
 }
