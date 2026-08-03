@@ -41,7 +41,7 @@ import { watchForUpdates } from './updates';
 import { installTooltip, preloadCards } from './tooltip';
 import { PHASES, RoundTracker } from './tracker';
 import { PlayGuide } from './playguide';
-import type { Card, CardAction, DiceData, Facing, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, StatusDef, TerrainPiece, Timing, Token } from './types';
+import type { Card, CardAction, DiceData, DieColor, Facing, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, StatusDef, TerrainPiece, Timing, Token } from './types';
 import { addStatus, SCALES, statusCount, statusesFor, STATUSES } from './types';
 import { chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, type Resupply, resupplyOf, SLOT_LABEL, interceptLeft, interceptReach, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf } from './units';
 import { registerOffline } from './offline';
@@ -3951,10 +3951,25 @@ async function init() {
     onNeedCheckpoint() {
       relay.publishCheckpoint();
     },
+    // Dice that landed in the room. The roller already has them from its own
+    // request; this is what puts the other player's roll on screen, so a roll
+    // is something both watch rather than a number one reports to the other.
+    onRolled(dice, seat, label, mine) {
+      if (mine) return;
+      tray.showFixed(dice.map((d) => ({ color: d.color as DieColor, face: d.face })));
+      setHint(`${squadLabel(seat)} rolled${label ? ` · ${label}` : ''}`);
+    },
     onChange(view) {
       // Drives the dial filter: with a seat set, the other squad's dials are
       // masked until they reveal.
       setLocalSeat(view.room ? view.seat : null);
+      // The server rolls only while a networked game is running; a local game
+      // keeps its own dice.
+      const roller = view.room && view.seat
+        ? (pool: Record<string, number>, tag?: string) => relay.rollDice(pool, tag)
+        : null;
+      attackHelper.roller = roller;
+      electronicHelper.roller = roller;
       multiplayer.refresh();
       mpButton.classList.toggle('online', !!view.room);
       if (view.room) setHint(`Online room ${view.room.id}${view.seat ? ` · you are ${squadLabel(view.seat)}` : ' · spectating'}`);

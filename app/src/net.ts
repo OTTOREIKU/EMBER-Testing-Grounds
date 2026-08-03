@@ -31,7 +31,16 @@ export interface NetView {
   desynced: boolean;
 }
 
+export interface RolledDie {
+  color: string;
+  face: number;
+}
+
 export interface NetHooks {
+  // Dice that landed in this room, whoever asked for them. Both players are
+  // told, so the roll is something they watch together rather than a number
+  // one of them reports to the other.
+  onRolled(dice: RolledDie[], seat: Side, label: string | null, mine: boolean): void;
   // A command from the other player, already ordered by the server.
   onCommand(cmd: Command, seat: Side): void;
   // The full board, either because we joined late or because we drifted.
@@ -64,6 +73,8 @@ export class Relay {
   private retry = 0;
   private retryTimer: number | undefined;
   private wanted: { kind: 'create' } | { kind: 'join'; room: string } | null = null;
+  // Rolls this client asked for and is still waiting on, by request id.
+  private rolls = new Map<string, { resolve: (d: RolledDie[]) => void; reject: (e: Error) => void; timer: number }>();
 
   constructor(apiBase: string, hooks: NetHooks) {
     this.url = relayUrl(apiBase);
@@ -117,6 +128,24 @@ export class Relay {
     const entry = { seq: this.seq, cmd };
     this.pending.push(entry);
     this.send({ t: 'cmd', ...entry });
+  }
+
+  // Asks the server to roll. The faces come back from there rather than from
+  // here, which is what stops a modified client choosing its own results —
+  // and it means both players watch the same dice land.
+  rollDice(pool: Record<string, number>, label?: string): Promise<RolledDie[]> {
+    if (!this.view.room || !this.view.seat) return Promise.reject(new Error('Not in a game.'));
+    const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    return new Promise<RolledDie[]>((resolve, reject) => {
+      // A roll that never comes back must not leave the wizard waiting for
+      // ever; the caller falls back to reporting the failure.
+      const timer = window.setTimeout(() => {
+        this.rolls.delete(id);
+        reject(new Error('The server did not answer the roll.'));
+      }, 10_000);
+      this.rolls.set(id, { resolve, reject, timer });
+      this.send({ t: 'roll', id, pool, label: label ?? null });
+    });
   }
 
   // Asks the server for the board and everything since. Used when a revision
@@ -246,6 +275,22 @@ export class Relay {
         }
         this.lastRev = rev;
         this.hooks.onCommand(msg.cmd as Command, seat);
+        return;
+      }
+
+      case 'rolled': {
+        const dice = (msg.dice ?? []) as RolledDie[];
+        const seat = msg.seat as Side;
+        const id = typeof msg.id === 'string' ? msg.id : null;
+        const waiting = id ? this.rolls.get(id) : undefined;
+        if (waiting) {
+          window.clearTimeout(waiting.timer);
+          this.rolls.delete(id!);
+          waiting.resolve(dice);
+        }
+        // Everyone in the room is told, including the roller — the hook is
+        // what puts the other player's dice on screen.
+        this.hooks.onRolled(dice, seat, (msg.label as string) ?? null, seat === this.view.seat);
         return;
       }
 

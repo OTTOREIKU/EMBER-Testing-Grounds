@@ -8,6 +8,11 @@ import { statusCount, STATUSES } from './types';
 import { electronicValue, SLOT_LABEL, tokenCards } from './units';
 import type { Command } from './commands';
 
+// Where dice results come from. Absent in a local game, which rolls its own;
+// set in a networked one, where the server rolls so neither client can pick
+// its own numbers.
+export type DiceRoller = (pool: Record<string, number>, label?: string) => Promise<{ color: string; face: number }[]>;
+
 type Step = 'part' | 'attack' | 'defense' | 'resolve';
 
 interface Rolled {
@@ -132,6 +137,8 @@ export class AttackHelper {
   private onDestroyed: (killer: Token, victim: Token, what: 'part' | 'unit') => void;
   private onPenetrated: (victim: Token) => void;
   private onCommand: (cmd: Command) => void;
+  // Set by the app while a networked game is running; cleared otherwise.
+  roller: DiceRoller | null = null;
   private ctx: Ctx | null = null;
   private duelGen = 0;
   private blackTimer: number | undefined;
@@ -279,12 +286,50 @@ export class AttackHelper {
     return { white, blue };
   }
 
-  private rollPool(pool: Partial<Record<DieColor, number>>): Rolled[] {
+  // Every result-deciding roll in this file goes through here. In a local game
+  // it is Math.random; in a networked one the server rolls, because a client
+  // that generates its own faces can simply choose them. Asynchronous for that
+  // reason — the wizard already shows a spin while it waits.
+  private async rollPool(pool: Partial<Record<DieColor, number>>, label?: string): Promise<Rolled[]> {
+    const source = this.roller;
+    if (source) {
+      try {
+        const dice = await source(pool as Record<string, number>, label);
+        return dice.map((d) => ({ color: d.color as DieColor, face: d.face, selected: false }));
+      } catch (err) {
+        // A roll that never lands must say so rather than quietly falling back
+        // to local dice, which is exactly the thing being prevented.
+        this.note(`The roll could not be made: ${(err as Error).message}`);
+        return [];
+      }
+    }
     const out: Rolled[] = [];
     for (const [color, n] of Object.entries(pool) as [DieColor, number][]) {
       for (let i = 0; i < (n ?? 0); i++) out.push({ color, face: Math.floor(Math.random() * this.dice.dice[color].sides), selected: false });
     }
     return out;
+  }
+
+  // Rerolls the selected dice in place, from the same source as the original.
+  private async reroll(roll: Rolled[], label: string): Promise<void> {
+    const sel = roll.filter((d) => d.selected);
+    if (!sel.length) return;
+    const pool: Partial<Record<DieColor, number>> = {};
+    for (const d of sel) pool[d.color] = (pool[d.color] ?? 0) + 1;
+    const fresh = await this.rollPool(pool, label);
+    // Matched back by colour, since the pool is grouped and the order within a
+    // colour is arbitrary.
+    const byColor = new Map<DieColor, number[]>();
+    for (const f of fresh) {
+      const list = byColor.get(f.color) ?? [];
+      list.push(f.face);
+      byColor.set(f.color, list);
+    }
+    for (const d of sel) {
+      const next = byColor.get(d.color)?.shift();
+      if (next !== undefined) d.face = next;
+      d.selected = false;
+    }
   }
 
   private note(text: string, who: Token[] = []): void {
@@ -603,15 +648,13 @@ export class AttackHelper {
       b.textContent = `${squadLabel(side)} reroll`;
       b.disabled = c.rerolls[which][side];
       b.addEventListener('click', () => {
-        const sel = roll.filter((d) => d.selected);
-        if (!sel.length) return;
+        if (!roll.some((d) => d.selected)) return;
         c.rerolls[which][side] = true;
-        for (const d of sel) {
-          d.face = Math.floor(Math.random() * this.dice.dice[d.color].sides);
-          d.selected = false;
-        }
-        this.spinFor = which;
-        this.render();
+        void (async () => {
+          this.spinFor = which;
+          await this.reroll(roll, 'Focus reroll');
+          this.render();
+        })();
       });
       rr.appendChild(b);
     }
@@ -638,9 +681,11 @@ export class AttackHelper {
       roll.className = 'ah-primary';
       roll.innerHTML = '<i class="btn-ico">🎲</i> Roll attack dice';
       roll.addEventListener('click', () => {
-        c.attackRoll = this.rollPool({ red: c.attackPool.red, yellow: c.attackPool.yellow });
-        this.spinFor = 'attack';
-        this.render();
+        void (async () => {
+          this.spinFor = 'attack';
+          c.attackRoll = await this.rollPool({ red: c.attackPool.red, yellow: c.attackPool.yellow }, 'Attack');
+          this.render();
+        })();
       });
       wrap.appendChild(roll);
     } else {
@@ -701,9 +746,11 @@ export class AttackHelper {
       roll.className = 'ah-primary';
       roll.innerHTML = '<i class="btn-ico">🎲</i> Roll defense dice';
       roll.addEventListener('click', () => {
-        c.defenseRoll = this.rollPool({ white: c.defensePool.white, blue: c.defensePool.blue });
-        this.spinFor = 'defense';
-        this.render();
+        void (async () => {
+          this.spinFor = 'defense';
+          c.defenseRoll = await this.rollPool({ white: c.defensePool.white, blue: c.defensePool.blue }, 'Defence');
+          this.render();
+        })();
       });
       wrap.appendChild(roll);
     } else {
@@ -893,6 +940,7 @@ export class ElectronicHelper {
   private onClose: () => void;
   private onLog: (t: Token, text: string) => void;
   private onCommand: (cmd: Command) => void;
+  roller: DiceRoller | null = null;
   private ctx: EwCtx | null = null;
 
   constructor(
@@ -947,7 +995,29 @@ export class ElectronicHelper {
     for (const t of who) this.onLog(t, text);
   }
 
-  private rollYellow(n: number): Rolled[] {
+  private async rerollYellow(roll: Rolled[], label: string): Promise<void> {
+    const sel = roll.filter((d) => d.selected);
+    if (!sel.length) return;
+    const fresh = await this.rollYellow(sel.length, label);
+    sel.forEach((d, i) => {
+      const face = fresh[i]?.face;
+      if (face !== undefined) d.face = face;
+      d.selected = false;
+    });
+  }
+
+  // Same rule as the attack wizard: the server rolls when there is one.
+  private async rollYellow(n: number, label: string): Promise<Rolled[]> {
+    const source = this.roller;
+    if (source) {
+      try {
+        const dice = await source({ yellow: n }, label);
+        return dice.map((d) => ({ color: 'yellow' as DieColor, face: d.face, selected: false }));
+      } catch (err) {
+        this.note(`The roll could not be made: ${(err as Error).message}`);
+        return [];
+      }
+    }
     const out: Rolled[] = [];
     for (let i = 0; i < n; i++) out.push({ color: 'yellow', face: Math.floor(Math.random() * this.dice.dice.yellow.sides), selected: false });
     return out;
@@ -1060,18 +1130,17 @@ export class ElectronicHelper {
         rr.addEventListener('click', () => {
           const sel = roll.filter((d) => d.selected);
           if (!sel.length) return;
-          for (const d of sel) {
-            d.face = Math.floor(Math.random() * this.dice.dice.yellow.sides);
-            d.selected = false;
-          }
           const wasShut = t.stance === 'shutdown';
           this.onCommand({ kind: 'focus', seat: t.side, uid: t.uid });
           if (who === 'init') c.rerolled.init = true;
           else c.rerolled.resp = true;
           this.note(`${t.label} spends 1 Link to Focus, rerolling ${sel.length} die.`);
           if (!wasShut && t.stance === 'shutdown') this.note(`Link has reached 0, so ${t.label} SHUTS DOWN.`);
-          this.onChanged();
-          this.render();
+          void (async () => {
+            await this.rerollYellow(roll, 'Focus reroll');
+            this.onChanged();
+            this.render();
+          })();
         });
         wrap.appendChild(rr);
       }
@@ -1105,9 +1174,14 @@ export class ElectronicHelper {
       roll.className = 'ah-primary';
       roll.innerHTML = `<i class="btn-ico">🎲</i> Roll ${c.initEv}Y vs ${c.respEv}Y`;
       roll.addEventListener('click', () => {
-        c.initRoll = this.rollYellow(c.initEv);
-        c.respRoll = this.rollYellow(c.respEv);
-        this.render();
+        void (async () => {
+          // Both sides of the counter-roll come from one request, so neither
+          // player can see the other's dice before their own are fixed.
+          const both = await this.rollYellow(c.initEv + c.respEv, 'Electronic counter-roll');
+          c.initRoll = both.slice(0, c.initEv);
+          c.respRoll = both.slice(c.initEv);
+          this.render();
+        })();
       });
       wrap.appendChild(roll);
       return wrap;
