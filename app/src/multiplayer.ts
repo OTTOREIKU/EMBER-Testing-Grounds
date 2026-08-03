@@ -130,6 +130,7 @@ export class MultiplayerDialog {
         <div class="mp-actions">
           <button class="mp-btn ghost" id="mp-join">Join</button>
           <button class="mp-btn" id="mp-host">Open a room</button>
+          <a class="mp-btn ghost" href="match.html" style="text-decoration:none;display:inline-block">Match Centre ↗</a>
         </div>
       </div>`;
     }

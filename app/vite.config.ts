@@ -125,6 +125,7 @@ export default defineConfig({
       input: {
         main: path.resolve(here, 'index.html'),
         reference: path.resolve(here, 'reference.html'),
+        match: path.resolve(here, 'match.html'),
       },
     },
   },
