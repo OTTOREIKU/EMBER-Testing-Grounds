@@ -48,6 +48,7 @@ import { registerOffline } from './offline';
 import { battlefieldLocked, countHits, firstPlayerFrom, newSetup, normaliseSetup, type SetupState } from './setup';
 import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
 import { dialsOf, hashDials, newSalt } from './secrecy';
+import { resolveZoneSetData } from './overlays';
 
 const SAVE_KEY = 'ember-testing-grounds-v1';
 
@@ -3193,30 +3194,8 @@ async function init() {
     return state.map.startsWith('custom:') ? loadCustomMap(state.map.slice(7)) : null;
   }
 
-  function printedZones(ids?: string[]): BoardZone[] {
-    const pool = ids ? data.zoneData.zones.filter((z) => ids.includes(z.id)) : data.zoneData.zones;
-    return pool
-      .map((z) => ({ name: z.name, cells: z.cells.map(parseGridRef).filter(Boolean) as { col: number; row: number }[] }))
-      .filter((z) => z.cells.length);
-  }
-
-  function printedDeployment(id: string | null | undefined): BoardDeployment | null {
-    const def = id ? data.zoneData.deployments.find((d) => d.id === id) : undefined;
-    if (!def) return null;
-    const box = (from: string, to: string, label: string) => {
-      const a = parseGridRef(from);
-      const b = parseGridRef(to);
-      if (!a || !b) return undefined;
-      const rect = {
-        col: Math.min(a.col, b.col),
-        row: Math.min(a.row, b.row),
-        cols: Math.abs(b.col - a.col) + 1,
-        rows: Math.abs(b.row - a.row) + 1,
-      };
-      return { rect, label: `${label} ${rect.rows}x${rect.cols}` };
-    };
-    return { black: box(def.black.from, def.black.to, 'BLACK'), white: box(def.white.from, def.white.to, 'WHITE') };
-  }
+  // printedZones and printedDeployment moved to overlays.ts, shared with the
+  // Match Centre so both pages draw the identical battlefield.
 
   function paintedShapes(map: CustomMap | null): { zones: BoardZone[]; deploy: BoardDeployment | null } {
     const shape = (cells: { col: number; row: number }[], label: string) => (cells.length ? { cells, label } : undefined);
@@ -3227,22 +3206,8 @@ async function init() {
   }
 
   function resolveZoneSet(id: string): { zones: BoardZone[]; deploy: BoardDeployment | null } {
-    if (!id) return { zones: [], deploy: null };
     if (id.startsWith('custom:')) return paintedShapes(loadCustomMaps()[id.slice(7)] ?? null);
-    if (id.startsWith('mission:')) {
-      const m = data.missions.cards.find((c) => c.id === id.slice(8));
-      if (!m) return { zones: [], deploy: null };
-      return {
-        zones: printedZones(m.zones?.map((z) => z.toLowerCase()) ?? []),
-        deploy: printedDeployment(data.zoneData.missionDeployment[m.id]),
-      };
-    }
-    const spec = id.startsWith('board:') ? id.slice(6) : '';
-    const parts = spec.split('+');
-    return {
-      zones: parts.includes('zones') ? printedZones() : [],
-      deploy: printedDeployment(parts.find((p) => p === 'corners' || p === 'strips')),
-    };
+    return resolveZoneSetData(data, id);
   }
 
   // Which sides have designated each Tactical Zone, so the board can show it.
