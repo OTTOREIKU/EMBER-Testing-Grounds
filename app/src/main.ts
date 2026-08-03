@@ -6,8 +6,9 @@ import { gameResult, isLowValue, newTaskState, normaliseTasks, type GameResult, 
 import { DiceTray } from './dice';
 import { importSquadFile } from './importer';
 import { factionColour } from './icons';
-import { applyRemote, onPerformed, onRefused, perform } from './commands';
+import { applyRemote, onPerformed, onRefused, perform, type Command } from './commands';
 import { Relay } from './net';
+import { setLocalSeat } from './loop';
 import { ApiError, EmberApi, type SquadEntry } from './api';
 import { MultiplayerDialog } from './multiplayer';
 import { Inventory } from './inventory';
@@ -40,7 +41,7 @@ import { watchForUpdates } from './updates';
 import { installTooltip, preloadCards } from './tooltip';
 import { PHASES, RoundTracker } from './tracker';
 import { PlayGuide } from './playguide';
-import type { Card, CardAction, DiceData, Facing, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, StatusDef, TerrainPiece, Token } from './types';
+import type { Card, CardAction, DiceData, Facing, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, StatusDef, TerrainPiece, Timing, Token } from './types';
 import { addStatus, SCALES, statusCount, statusesFor, STATUSES } from './types';
 import { chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, type Resupply, resupplyOf, SLOT_LABEL, interceptLeft, interceptReach, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf } from './units';
 import { registerOffline } from './offline';
@@ -205,6 +206,7 @@ async function init() {
     onPickSecondary: (side) => void pickSecondary(side),
     onPlayTactic: (side, id) => void playTactic(side, id),
     onEndGame: () => void endGame(),
+    onConfirmTimings: () => commitTimings(),
     // The removal itself is the guide's markEndStep command; this only tidies
     // a selection left pointing at a unit that is no longer there.
     onRemoveSpent: () => {
@@ -3908,9 +3910,19 @@ async function init() {
   const relay = new Relay(emberApi.base, {
     onCommand(cmd) {
       applyRemote(data, state, cmd);
+      if (cmd.kind === 'revealTimings') auditReveal(cmd);
+      // Their commitment may be the second one, which releases ours.
+      if (cmd.kind === 'commitTimings') maybeReveal();
       onChanged();
     },
     onCheckpoint(raw) {
+      // A checkpoint carries the whole board, which would overwrite our own
+      // dials with the blanks the other client holds for them. They are this
+      // client's secret until the reveal, so they are put back afterwards.
+      const seat = relay.state.seat;
+      const keep = seat && !state.script?.revealed.includes(seat)
+        ? state.tokens.filter((t) => t.side === seat).map((t) => ({ uid: t.uid, timing: t.timing }))
+        : [];
       // migrateState rebuilds every field, so assigning over the live object
       // keeps every closure and component pointing at the same state.
       try {
@@ -3918,6 +3930,10 @@ async function init() {
       } catch {
         setHint('⛔ The board that arrived could not be read.');
         return;
+      }
+      for (const d of keep) {
+        const t = state.tokens.find((x) => x.uid === d.uid);
+        if (t) t.timing = d.timing;
       }
       selectToken(null);
       renderAll();
@@ -3927,13 +3943,105 @@ async function init() {
       relay.publishCheckpoint();
     },
     onChange(view) {
+      // Drives the dial filter: with a seat set, the other squad's dials are
+      // masked until they reveal.
+      setLocalSeat(view.room ? view.seat : null);
       multiplayer.refresh();
       mpButton.classList.toggle('online', !!view.room);
       if (view.room) setHint(`Online room ${view.room.id}${view.seat ? ` · you are ${squadLabel(view.seat)}` : ' · spectating'}`);
     },
-    snapshot: () => JSON.parse(JSON.stringify(state)) as unknown,
+    // Nothing unrevealed goes over the wire. A checkpoint is the whole board,
+    // so any dial belonging to a squad that has not revealed is stripped out
+    // of the copy that leaves this client.
+    snapshot: () => {
+      const copy = JSON.parse(JSON.stringify(state)) as GameState;
+      const revealed = state.script?.revealed ?? [];
+      for (const t of copy.tokens) {
+        if (t.kind === 'mech' && !revealed.includes(t.side)) t.timing = undefined;
+      }
+      return copy as unknown;
+    },
   });
-  onPerformed((cmd) => relay.publish(cmd));
+  onPerformed((cmd) => {
+    // Secret commands never reach here — commands.ts withholds them, so the
+    // rule cannot be lost by a change on this side.
+    relay.publish(cmd);
+    // Committing is what both sides are waiting on, so check straight away
+    // whether that was the second one.
+    if (cmd.kind === 'commitTimings') maybeReveal();
+  });
+
+  // ---------- networked dial secrecy (3.3) ----------
+
+  // The salt behind this round's commitment. Kept out of GameState on purpose:
+  // it is this client's secret until the reveal, and anything in GameState
+  // ends up in a checkpoint.
+  let dialSecret: { round: number; salt: string; dials: { uid: number; timing?: Timing }[] } | null = null;
+
+  function myDials(seat: Side): { uid: number; timing?: Timing }[] {
+    return state.tokens
+      .filter((t) => t.side === seat && t.kind === 'mech')
+      .map((t) => ({ uid: t.uid, timing: t.timing }));
+  }
+
+  // The commitment covers the dials in a fixed order, so the same choices
+  // always hash the same way regardless of token order on the board.
+  async function hashDials(salt: string, dials: { uid: number; timing?: Timing }[]): Promise<string> {
+    const canonical = JSON.stringify(
+      [...dials].sort((a, b) => a.uid - b.uid).map((d) => [d.uid, d.timing ?? null]),
+    );
+    const bytes = new TextEncoder().encode(`${salt}|${canonical}`);
+    const digest = await crypto.subtle.digest('SHA-256', bytes);
+    return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  // Returns true when it took responsibility for confirming the dials, which
+  // is only in a networked game; a local game locks them the usual way.
+  function commitTimings(): boolean {
+    const seat = relay.state.seat;
+    if (!relay.state.room || !seat) return false;
+    const sc = state.script;
+    if (sc?.commits[seat]) return true;
+
+    const dials = myDials(seat);
+    const salt = [...crypto.getRandomValues(new Uint8Array(16))]
+      .map((b) => b.toString(16).padStart(2, '0')).join('');
+    dialSecret = { round: state.round.n, salt, dials };
+    void hashDials(salt, dials).then((hash) => {
+      perform(data, state, { kind: 'commitTimings', seat, hash });
+      onChanged();
+      setHint('Dials committed. They stay hidden until the other player commits too.');
+    });
+    return true;
+  }
+
+  // Sends our dials once, and only once both squads have committed. Called
+  // after either commitment lands, from whichever side completed the pair.
+  function maybeReveal(): void {
+    const seat = relay.state.seat;
+    const sc = state.script;
+    if (!seat || !sc || !dialSecret || dialSecret.round !== state.round.n) return;
+    if (!sc.commits.s1 || !sc.commits.s2) return;
+    if (sc.revealed.includes(seat)) return;
+    perform(data, state, { kind: 'revealTimings', seat, salt: dialSecret.salt, dials: dialSecret.dials });
+    onChanged();
+  }
+
+  // Their reveal is applied as it arrives so command order is preserved, then
+  // checked against what they committed to. A mismatch means the dials they
+  // showed are not the dials they chose, which is worth saying loudly.
+  function auditReveal(cmd: Extract<Command, { kind: 'revealTimings' }>): void {
+    const promised = state.script?.commits[cmd.seat];
+    if (!promised) return;
+    void hashDials(cmd.salt, cmd.dials).then((actual) => {
+      if (actual !== promised) {
+        void alertDialog({
+          title: 'Their dials do not match what they committed to',
+          body: `${squadLabel(cmd.seat)} published Timing Dials that do not match the commitment sent before the reveal. Either something went wrong, or those are not the dials they chose. The board has been updated with what they sent.`,
+        });
+      }
+    });
+  }
 
   const multiplayer = new MultiplayerDialog(
     emberApi,

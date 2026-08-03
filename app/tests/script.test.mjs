@@ -55,7 +55,17 @@ for (const [name, raw] of Object.entries(shapes)) {
 const opp = { uid: 7, timing: 'firing', maneuver: 0, action: 1, extras: [], maneuvered: true, moved: true, started: true, overload: 1, performed: ['a1'], spentExtras: [] };
 const intercepts = [{ uid: 3, actionId: 'PRDR-101_C', targetUid: 9 }];
 const endDone = ['2:end:remove', '2:end:tokens'];
-const live = { turn: 's2', acted: [7, 8], extraOpps: [8], commanded: [9], freeCommand: [], passed: ['s1'], stage: '2:3', mode: 'hidden', strict: true, seats: { s1: 'local', s2: 'remote' }, opp, intercepts, endDone };
+// Every value here is deliberately NOT the default, so a field that
+// normaliseScript forgets to carry across fails rather than coincidentally
+// matching what it would have defaulted to.
+const live = { turn: 's2', acted: [7, 8], extraOpps: [8], commanded: [9], freeCommand: [], passed: ['s1'], stage: '2:3', mode: 'hidden', strict: true, commits: { s1: 'deadbeef' }, revealed: ['s2'], seats: { s1: 'local', s2: 'remote' }, opp, intercepts, endDone };
+
+// This fixture has lagged behind ScriptState four times now, each costing a
+// confusing deep-equal diff. Naming the missing field turns that into an
+// instruction, since the fixture must list every field the state has.
+const missing = Object.keys(newScriptState('s1')).filter((k) => !(k in live));
+check(`the fixture covers every ScriptState field${missing.length ? ` — add: ${missing.join(', ')}` : ''}`, missing, []);
+
 check('a complete script is preserved exactly', normaliseScript(live, 's1'), live);
 // A half-spent Action Opportunity has to survive a reload, or the Mech would get
 // its Ticks back and could act twice.

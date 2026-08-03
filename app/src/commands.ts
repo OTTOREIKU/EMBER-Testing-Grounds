@@ -74,7 +74,12 @@ export type Command =
   | { kind: 'dissipateSmoke'; seat: Side }
   | { kind: 'setMode'; seat: Side; mode: 'hotseat' | 'hidden' }
   | { kind: 'handOver'; seat: Side }
-  | { kind: 'setStrict'; seat: Side; strict: boolean };
+  | { kind: 'setStrict'; seat: Side; strict: boolean }
+  // The two halves of the networked dial reveal (3.3). A seat publishes a
+  // hash of its dials first and the dials themselves only once both hashes
+  // are in, so neither player can see the other's before fixing their own.
+  | { kind: 'commitTimings'; seat: Side; hash: string }
+  | { kind: 'revealTimings'; seat: Side; salt: string; dials: { uid: number; timing?: Timing }[] };
 
 export type CheckResult = { ok: true } | { ok: false; why: string };
 
@@ -130,12 +135,12 @@ type TableKind =
   | 'advancePhase' | 'setPhase' | 'resetRounds' | 'adjustCommandTokens' | 'passTurn' | 'markEndStep' | 'award'
   | 'lockMap' | 'rollSetup' | 'acceptRoll' | 'pickEdge' | 'lockDials' | 'finishDeployment'
   | 'queueIntercepts' | 'clearIntercepts' | 'placeSmoke' | 'removeSmoke' | 'dissipateSmoke'
-  | 'setMode' | 'handOver' | 'setStrict';
+  | 'setMode' | 'handOver' | 'setStrict' | 'commitTimings' | 'revealTimings';
 const TABLE_KINDS = new Set<Command['kind']>([
   'advancePhase', 'setPhase', 'resetRounds', 'adjustCommandTokens', 'passTurn', 'markEndStep', 'award',
   'lockMap', 'rollSetup', 'acceptRoll', 'pickEdge', 'lockDials', 'finishDeployment',
   'queueIntercepts', 'clearIntercepts', 'placeSmoke', 'removeSmoke', 'dissipateSmoke',
-  'setMode', 'handOver', 'setStrict',
+  'setMode', 'handOver', 'setStrict', 'commitTimings', 'revealTimings',
 ]);
 function tableLevel(cmd: Command): cmd is Command & { kind: TableKind } {
   return TABLE_KINDS.has(cmd.kind);
@@ -247,6 +252,24 @@ function checkTable(state: GameState, cmd: Command & { kind: TableKind }): Check
     }
     case 'setStrict': {
       if (!state.script) return no('There is no guided game running.');
+      return ok;
+    }
+    case 'commitTimings': {
+      const sc = state.script;
+      if (!sc) return no('There is no guided game running.');
+      if (state.round.phase !== 1) return no('Dials are committed in the Planning Phase (3.3).');
+      if (typeof cmd.hash !== 'string' || cmd.hash.length < 16) return no('That is not a commitment.');
+      if (sc.commits[cmd.seat]) return no('This squad has already committed its dials this round.');
+      return ok;
+    }
+    case 'revealTimings': {
+      const sc = state.script;
+      if (!sc) return no('There is no guided game running.');
+      // A reveal is only meaningful against a commitment made earlier — that
+      // pairing is the whole guarantee, so an uncommitted reveal is refused.
+      if (!sc.commits[cmd.seat]) return no('That squad never committed its dials, so there is nothing to check the reveal against.');
+      if (sc.revealed.includes(cmd.seat)) return no('This squad has already revealed.');
+      if (typeof cmd.salt !== 'string' || !Array.isArray(cmd.dials)) return no('That is not a reveal.');
       return ok;
     }
   }
@@ -472,6 +495,12 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
       r.firstPlayer = r.firstPlayer === 's1' ? 's2' : 's1';
       state.commandTokens = { s1: 0, s2: 0 };
       for (const x of state.tokens) x.timing = undefined;
+      // Last round's commitments describe dials that no longer exist, and
+      // leaving them would let the next round's reveal check against them.
+      if (state.script) {
+        state.script.commits = {};
+        state.script.revealed = [];
+      }
       // All Terminal Tokens flip back face-up at the End Phase (5.3.3), so the
       // new round starts with every Terminal accessible again.
       for (const i of state.tasks?.items ?? []) if (i.kind === 'terminal') i.accessed = null;
@@ -489,6 +518,10 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
     // Plays are stamped with a round number, so winding the track back to 1
     // would leave round 1's cards reading as already spent.
     state.tacticsPlayed = { s1: [], s2: [] };
+    if (state.script) {
+      state.script.commits = {};
+      state.script.revealed = [];
+    }
     return;
   }
   if (cmd.kind === 'adjustCommandTokens') {
@@ -615,6 +648,22 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
   }
   if (cmd.kind === 'setStrict') {
     if (state.script) state.script.strict = cmd.strict;
+    return;
+  }
+  if (cmd.kind === 'commitTimings') {
+    if (state.script) state.script.commits = { ...state.script.commits, [cmd.seat]: cmd.hash };
+    return;
+  }
+  if (cmd.kind === 'revealTimings') {
+    const sc = state.script;
+    if (!sc) return;
+    // Only ever writes dials onto that seat's own units, so a reveal cannot
+    // reach across and rewrite the other player's plan.
+    for (const d of cmd.dials) {
+      const t = state.tokens.find((x) => x.uid === d.uid);
+      if (t && t.side === cmd.seat) t.timing = d.timing;
+    }
+    if (!sc.revealed.includes(cmd.seat)) sc.revealed = [...sc.revealed, cmd.seat];
     return;
   }
   if (cmd.kind === 'handOver') {
@@ -869,6 +918,17 @@ export function onPerformed(fn: ((cmd: Command) => void) | null): void {
   mirror = fn;
 }
 
+// Commands that must never leave this client. Setting a Timing Dial is the
+// game's one piece of hidden information (3.3): it travels only inside a
+// revealTimings, once both squads have committed to what they chose. Keeping
+// the rule here rather than at the call site makes it structural — no future
+// caller can forget it, and it can be tested.
+const SECRET_KINDS = new Set<Command['kind']>(['setTiming']);
+
+export function isSecret(cmd: Command): boolean {
+  return SECRET_KINDS.has(cmd.kind);
+}
+
 // True while a command that arrived from the other player is being applied.
 // Without it the mirror would bounce every received command straight back and
 // the two clients would volley forever.
@@ -895,7 +955,7 @@ export function perform(data: GameData, state: GameState, cmd: Command): CheckRe
   }
   apply(data, state, cmd);
   // Mirrored only after it has actually landed here, so the other player never
-  // sees a move this client refused to make.
-  if (!applyingRemote) mirror?.(cmd);
+  // sees a move this client refused to make — and never if it is secret.
+  if (!applyingRemote && !isSecret(cmd)) mirror?.(cmd);
   return verdict;
 }

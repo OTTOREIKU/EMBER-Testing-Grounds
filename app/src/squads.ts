@@ -7,7 +7,7 @@ import { addStatus, SCALES, SHAPE_NOTE, statusCount, statusesFor, TIMINGS } from
 import { normaliseTasks } from './tasks';
 import { normaliseSetup } from './setup';
 import { perform } from './commands';
-import { dialHidden } from './loop';
+import { dialHidden, getLocalSeat } from './loop';
 import { defaultUnitLabel, factionProblems, initiativeFor, pilotCard, squadAllegiance, SLOT_LABEL, tidyUnitLabel, tokenCards, tokenFactions } from './units';
 import { alertDialog, promptDialog } from './dialog';
 import { factionColour, ICON_BOLT, ICON_EDIT } from './icons';
@@ -530,13 +530,25 @@ export class SquadTracker {
       trig.dataset.dialUid = String(t.uid);
       if (cur) trig.style.setProperty('--t-tint', `var(--t-${cur.id})`);
       const icon = cur ? actionIconUrl(cur.pilotKey) : null;
+      // Networked and pass-and-play mask for different reasons, and the chip
+      // says which. Over a network we genuinely do not hold the value — the
+      // most we can know is that they have committed to one.
+      const online = !!getLocalSeat();
+      const committed = !!this.state?.script?.commits?.[t.side];
+      const maskedLabel = online ? (committed ? 'Committed' : 'Choosing…') : (t.timing ? 'Set · hidden' : 'Dial');
       trig.innerHTML = masked
-        ? `<span>${t.timing ? 'Set · hidden' : 'Dial'}</span>`
+        ? `<span>${maskedLabel}</span>`
         : `${icon ? `<img src="${icon}" alt="">` : ''}<span>${cur ? cur.name : 'Dial'}</span>${
           init !== undefined ? `<b>${init}</b>` : ''
         }<i>▾</i>`;
       inspectOnHover(trig, masked
-        ? { title: 'Timing Dial', sub: 'hidden', lines: ['Pass-and-play keeps a squad\'s dials secret until both reveal at once (3.3). This one belongs to the squad not holding the device.'] }
+        ? {
+          title: 'Timing Dial',
+          sub: online ? (committed ? 'committed, not yet revealed' : 'not yet committed') : 'hidden',
+          lines: [online
+            ? 'In an online game this client has never been sent the other squad\'s dials. They arrive only once both squads have committed to their choices, so neither can decide after seeing the other (3.3).'
+            : 'Pass-and-play keeps a squad\'s dials secret until both reveal at once (3.3). This one belongs to the squad not holding the device.'],
+        }
         : this.dialInfo(t, cur, init));
       trig.addEventListener('click', (ev) => {
         ev.stopPropagation();

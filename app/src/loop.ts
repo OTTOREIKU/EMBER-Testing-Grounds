@@ -142,14 +142,40 @@ export function actionPhaseComplete(state: GameState, init: InitLookup): boolean
 // ---------- the one piece of hidden information (rulebook 3.3) ----------
 
 // Players are entitled to keep their chosen Action Timings secret until the
-// reveal. In pass-and-play the Planning Phase runs as two sub-turns, and the
-// dial of any Mech outside the seat currently holding the device is masked.
-// Everything else in the game is open information, so this single rule is the
-// whole of the view filter.
+// reveal. Everything else in the game is open information, so this is the
+// whole of the view filter — but it covers two quite different situations.
+//
+// Pass-and-play hides the dial behind a screen: the Planning Phase runs as two
+// sub-turns and the seat not holding the device is masked. That is a courtesy,
+// and only as good as the players are honest.
+//
+// Over a network it is not a courtesy. The other player's dials are masked
+// because their client has never been sent them — see the commit/reveal pair
+// in commands.ts. Masking here is what makes the display agree with what this
+// client actually knows.
+// Which seat this browser is playing in a networked game, or null when the
+// game is local. Per-client by nature — the two players hold different values
+// — so it cannot live in the shared GameState.
+let localSeat: Side | null = null;
+
+export function setLocalSeat(seat: Side | null): void {
+  localSeat = seat;
+}
+
+export function getLocalSeat(): Side | null {
+  return localSeat;
+}
+
 export function dialHidden(state: GameState, t: Token): boolean {
   const sc = state.script;
-  if (!sc || sc.mode !== 'hidden') return false;
+  if (!sc) return false;
   if (state.round.phase !== 1) return false;
+
+  // Networked: a seat's dials stay hidden until that seat has revealed them.
+  // Mine are always visible to me, revealed or not.
+  if (localSeat) return t.side !== localSeat && !sc.revealed.includes(t.side);
+
+  if (sc.mode !== 'hidden') return false;
   if (sc.stage === `${state.round.n}:1:locked`) return false;
   return t.side !== sc.turn;
 }

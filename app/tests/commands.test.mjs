@@ -72,7 +72,7 @@ const opp = (uid, over = {}) => ({
 const world = (tokens, phase = 1, o = null) => ({
   tokens,
   round: { n: 1, phase, firstPlayer: 's1' },
-  script: { opp: o, acted: [], extraOpps: [], commanded: [], freeCommand: [], passed: [], turn: 's1', endDone: [] },
+  script: { opp: o, acted: [], extraOpps: [], commanded: [], freeCommand: [], passed: [], turn: 's1', endDone: [], commits: {}, revealed: [] },
 });
 const fire = { id: 'A1', type: 'Firing', size: 's', name: { en: 'Shot' } };
 const fireM = { id: 'A2', type: 'Firing', size: 'm', name: { en: 'Barrage' } };
@@ -577,6 +577,87 @@ check('and the masks swap with it', [C.dialHidden(wh, wh.tokens[0]), C.dialHidde
 wh.script.stage = '1:1:locked';
 check('the lock reveals every dial', [C.dialHidden(wh, wh.tokens[0]), C.dialHidden(wh, wh.tokens[1])], [false, false]);
 check('an open table never masks', C.dialHidden(world([mech(1, 's1')], 1), { side: 's2' }), false);
+
+// ---------- networked dial secrecy (3.3) ----------
+
+const HASH = 'a'.repeat(64);
+const planning = () => world([mech(1, 's1'), mech(2, 's2')], 1);
+const commit = (over = {}) => ({ kind: 'commitTimings', seat: 's1', hash: HASH, ...over });
+
+check('a commitment belongs to the Planning Phase', C.check(data, world([], 2), commit()).ok, false);
+check('a stub of a hash is refused', C.check(data, planning(), commit({ hash: 'short' })).ok, false);
+const wc = planning();
+check('a real commitment passes', C.check(data, wc, commit()).ok, true);
+C.apply(data, wc, commit());
+check('and is recorded against the seat', wc.script.commits.s1, HASH);
+check('committing twice is refused', C.check(data, wc, commit()).ok, false);
+
+const reveal = (over = {}) => ({
+  kind: 'revealTimings', seat: 's1', salt: 'abc',
+  dials: [{ uid: 1, timing: 'firing' }], ...over,
+});
+// The pairing is the whole guarantee, so a reveal with nothing to check
+// against must not be accepted.
+check('a reveal with no commitment behind it is refused', C.check(data, planning(), reveal()).ok, false);
+check('with a commitment it passes', C.check(data, wc, reveal()).ok, true);
+C.apply(data, wc, reveal());
+check('the reveal sets that squad\'s dial', wc.tokens[0].timing, 'firing');
+check('and marks the squad revealed', wc.script.revealed, ['s1']);
+check('revealing twice is refused', C.check(data, wc, reveal()).ok, false);
+
+// A reveal must never be able to write the other player's plan.
+const wx = planning();
+C.apply(data, wx, commit({ seat: 's2' }));
+C.apply(data, wx, reveal({ seat: 's2', dials: [{ uid: 1, timing: 'melee' }, { uid: 2, timing: 'swift' }] }));
+check('a reveal cannot set the other squad\'s dial', wx.tokens[0].timing, undefined);
+check('only its own', wx.tokens[1].timing, 'swift');
+
+// Last round's commitments must not survive to be checked against new dials.
+const wround = world([mech(1, 's1', { timing: 'firing' })], 5);
+wround.script.commits = { s1: HASH, s2: HASH };
+wround.script.revealed = ['s1', 's2'];
+C.apply(data, wround, { kind: 'advancePhase', seat: 's1' });
+check('a new round clears the commitments', [wround.script.commits, wround.script.revealed], [{}, []]);
+check('and the dials with them', wround.tokens[0].timing, undefined);
+
+// ---------- what actually leaves this client ----------
+// The crux of dial secrecy over a network: a dial must never be mirrored as it
+// is set, or whoever confirms first hands their plan to the other player.
+
+const sent = [];
+C.onPerformed((cmd) => sent.push(cmd.kind));
+const wsecret = planning();
+C.perform(data, wsecret, st());
+check('setting a dial is never mirrored to the other player', sent, []);
+check('but it still applies locally', wsecret.tokens[0].timing, 'firing');
+C.perform(data, wsecret, { kind: 'setStance', seat: 's1', uid: 1, stance: 'defensive' });
+check('an ordinary command is mirrored', sent, ['setStance']);
+sent.length = 0;
+C.perform(data, wsecret, commit({ hash: HASH }));
+C.perform(data, wsecret, reveal());
+check('the commitment and the reveal both travel', sent, ['commitTimings', 'revealTimings']);
+check('and only setTiming is withheld', [C.isSecret(st()), C.isSecret(reveal()), C.isSecret(commit())], [true, false, false]);
+// A command arriving from the other player must not be echoed back.
+sent.length = 0;
+C.applyRemote(data, wsecret, { kind: 'setStance', seat: 's2', uid: 2, stance: 'mobility' });
+check('a received command is not bounced back', sent, []);
+C.onPerformed(null);
+
+// ---------- what a client is allowed to see ----------
+
+const wd = planning();
+C.setLocalSeat('s1');
+check('my own dial is never hidden from me', C.dialHidden(wd, wd.tokens[0]), false);
+check('the other squad\'s is hidden before they reveal', C.dialHidden(wd, wd.tokens[1]), true);
+C.apply(data, wd, commit({ seat: 's2' }));
+check('a commitment alone does not reveal anything', C.dialHidden(wd, wd.tokens[1]), true);
+C.apply(data, wd, reveal({ seat: 's2', dials: [{ uid: 2, timing: 'melee' }] }));
+check('once they reveal it is visible', C.dialHidden(wd, wd.tokens[1]), false);
+// Outside Planning nothing is secret.
+const wa = world([mech(1, 's1'), mech(2, 's2')], 2);
+check('no dial is hidden outside the Planning Phase', C.dialHidden(wa, wa.tokens[1]), false);
+C.setLocalSeat(null);
+check('with no seat the networked filter is inert', C.dialHidden(planning(), planning().tokens[1]), false);
 
 // ---------- the strict tracker ----------
 

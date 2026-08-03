@@ -64,6 +64,9 @@ export interface GuideCallbacks {
   onRollFirstPlayer(side: Side): void;
   onPlaceUnit(uid: number, opts: { stance: Stance; camo: boolean }): void;
   onRemoveSpent(): void;
+  // Returns true when the app has taken responsibility for confirming the
+  // dials, which happens only in a networked game.
+  onConfirmTimings?(): boolean;
   onPickSecondary(side: Side): void;
   onPlayTactic(side: Side, id: string): void;
   onEndGame(): void;
@@ -480,6 +483,13 @@ export class PlayGuide {
         return;
       }
       this.warn = null;
+      // In a networked game confirming publishes a commitment rather than
+      // locking outright: the dials are only shown once both sides have
+      // committed, so neither can choose after seeing the other's.
+      if (this.cb.onConfirmTimings?.()) {
+        this.cb.onChanged();
+        return;
+      }
       perform(this.data, s, { kind: 'lockDials', seat: sc.turn });
       this.cb.onChanged();
     });

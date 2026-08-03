@@ -435,6 +435,14 @@ export interface ScriptState {
   // Teaching explains and warns; the strict tracker refuses illegal commands
   // outright and drops the prose. Same engine, two presentations.
   strict: boolean;
+  // Networked dial secrecy (3.3). Each seat publishes a hash of its Timing
+  // Dials before anyone publishes the dials themselves, so the reveal can be
+  // simultaneous and neither side can change its mind after seeing the other's.
+  // Empty in a hotseat game, where the gate is a screen rather than a wire.
+  commits: Partial<Record<Side, string>>;
+  // Seats whose dials are now public. Until a seat is in here, the other
+  // player's client has never been sent its timings at all.
+  revealed: Side[];
   seats: Record<Side, 'local' | 'remote'>;
   opp: Opportunity | null;
   intercepts: { uid: number; actionId: string; targetUid: number }[];
@@ -452,6 +460,8 @@ export function newScriptState(firstPlayer: Side): ScriptState {
     stage: '',
     mode: 'hotseat',
     strict: false,
+    commits: {},
+    revealed: [],
     seats: { s1: 'local', s2: 'local' },
     opp: null,
     intercepts: [],
@@ -473,6 +483,8 @@ export function normaliseScript(raw: unknown, firstPlayer: Side): ScriptState {
     stage: typeof s.stage === 'string' ? s.stage : base.stage,
     mode: s.mode === 'hidden' ? 'hidden' : 'hotseat',
     strict: !!s.strict,
+    commits: s.commits && typeof s.commits === 'object' ? { ...s.commits } : {},
+    revealed: Array.isArray(s.revealed) ? s.revealed.filter((x) => x === 's1' || x === 's2') : [],
     seats: { ...base.seats, ...(s.seats ?? {}) },
     opp: normaliseOpportunity(s.opp),
     intercepts: Array.isArray(s.intercepts)
