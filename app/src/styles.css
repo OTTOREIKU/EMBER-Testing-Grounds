@@ -363,7 +363,7 @@ main { display: flex; flex: 1; min-height: 0; }
 .marker-blackbox circle { stroke: #e9eaec; }
 .marker-blackbox text { fill: #e9eaec; }
 
-#scn-dialog, #map-dialog, #mis-dialog { position: fixed; inset: 0; z-index: 900; background: rgba(0, 0, 0, 0.62); display: flex; align-items: center; justify-content: center; }
+#scn-dialog, #map-dialog, #mis-dialog, #mp-dialog { position: fixed; inset: 0; z-index: 900; background: rgba(0, 0, 0, 0.62); display: flex; align-items: center; justify-content: center; }
 .scn-row.current { outline: 1px solid var(--accent); background: var(--accent-lt); }
 .scn-watch {
   border: none; background: var(--blue-lt); color: var(--blue); font-weight: 700;
@@ -806,6 +806,71 @@ main { display: flex; flex: 1; min-height: 0; }
 .scn-brief h4 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.7px; color: var(--text2); font-weight: 700; margin: 12px 0 4px; }
 .scn-brief p, .scn-brief li { font-size: 12.5px; line-height: 1.5; }
 .scn-brief ul { margin: 2px 0; padding-left: 18px; }
+
+/* ---------- multiplayer ---------- */
+/* The toolbar button becomes the signed-in name, which is the only permanent
+   trace multiplayer leaves on the chrome. */
+#btn-multiplayer.signed-in { background: var(--accent-lt); color: var(--accent); }
+
+.mp-panel { width: 400px; }
+.mp-body { overflow-y: auto; display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
+.mp-section { background: var(--surface2); border-radius: var(--radius); padding: 12px 13px; }
+.mp-section h4 {
+  margin: 0 0 8px; font-size: 11px; text-transform: uppercase;
+  letter-spacing: 0.7px; color: var(--text2); font-weight: 700;
+}
+.mp-section .dim { font-size: 11.5px; line-height: 1.5; margin: 8px 0 0; }
+.mp-section h4 + .dim { margin: -2px 0 4px; }
+/* A closed door reads as flat and quiet rather than as a broken panel. */
+.mp-shut { opacity: 0.72; }
+
+.mp-field { display: block; margin-top: 8px; }
+.mp-field span {
+  display: block; font-size: 11px; color: var(--text2);
+  margin-bottom: 3px; letter-spacing: 0.2px;
+}
+.mp-field .dlg-input { margin-top: 0; font-size: 13px; padding: 8px 10px; }
+
+.mp-actions { display: flex; gap: 6px; justify-content: flex-end; margin-top: 12px; flex-wrap: wrap; }
+.mp-btn {
+  border: none; background: var(--accent-lt); color: var(--accent); font-weight: 600;
+  border-radius: var(--radius); padding: 7px 14px; cursor: pointer; font-size: 12.5px;
+  font-family: var(--font); white-space: nowrap;
+  transition: background 0.12s, color 0.12s, opacity 0.12s;
+}
+.mp-btn:hover:not(:disabled) { background: var(--accent); color: var(--on-accent); }
+.mp-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.mp-btn.ghost { background: var(--surface3); color: var(--text2); }
+.mp-btn.ghost:hover:not(:disabled) { background: var(--surface3); color: var(--text); }
+
+.mp-who { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.mp-tag {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px;
+  background: var(--surface3); color: var(--text2); padding: 2px 7px; border-radius: 999px;
+}
+
+.mp-notice {
+  margin: 8px 0 0; padding: 8px 10px; border-radius: var(--radius);
+  font-size: 11.5px; line-height: 1.45;
+}
+.mp-notice.error { background: rgba(234, 109, 118, 0.14); color: #ea6d76; }
+.mp-notice.ok { background: var(--green-lt); color: var(--green); }
+.mp-issues { margin: 5px 0 0; padding-left: 16px; }
+.mp-issues li { margin-bottom: 2px; }
+
+/* Four segments that fill as the score climbs, so strength reads at a glance
+   without a number. Colour comes from the fill, not from a border. */
+.mp-meter { display: flex; align-items: center; gap: 3px; margin-top: 7px; }
+.mp-meter i { flex: 1; height: 3px; border-radius: 2px; background: var(--surface3); }
+.mp-meter span { flex: 0 0 auto; margin-left: 6px; font-size: 10.5px; color: var(--text2); }
+.mp-meter[data-score="1"] i:nth-child(-n + 1),
+.mp-meter[data-score="2"] i:nth-child(-n + 2) { background: #ea6d76; }
+.mp-meter[data-score="3"] i:nth-child(-n + 3) { background: var(--accent); }
+.mp-meter[data-score="4"] i { background: var(--green); }
+
+@media (max-width: 460px) {
+  .mp-panel { width: min(94vw, 400px); }
+}
 
 #editor-bar {
   display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center;

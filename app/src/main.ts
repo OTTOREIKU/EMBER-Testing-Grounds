@@ -7,6 +7,8 @@ import { DiceTray } from './dice';
 import { importSquadFile } from './importer';
 import { factionColour } from './icons';
 import { onRefused, perform } from './commands';
+import { EmberApi } from './api';
+import { MultiplayerDialog } from './multiplayer';
 import { Inventory } from './inventory';
 import { BOARD_THEMES, boardTheme } from './boards';
 import { bindTips, inspectOnHover, isInspectPinned, showInspect, unpinInspect } from './inspector';
@@ -3826,6 +3828,20 @@ async function init() {
     state.zoneSet = '';
     state.showZones = false;
   }
+
+  // Multiplayer lives entirely behind this button. The tool has always worked
+  // with no server at all, so nothing here is allowed to block start-up: the
+  // account check runs in the background and simply reads as signed out if the
+  // API cannot be reached.
+  const emberApi = new EmberApi();
+  const multiplayer = new MultiplayerDialog(emberApi);
+  const mpButton = document.getElementById('btn-multiplayer')!;
+  mpButton.addEventListener('click', () => void multiplayer.open());
+  emberApi.onChange((account) => {
+    mpButton.textContent = account ? account.displayName || account.username : 'Multiplayer';
+    mpButton.classList.toggle('signed-in', !!account);
+  });
+  void emberApi.refresh();
 
   document.getElementById('btn-clear')!.addEventListener('click', async () => {
     const units = state.tokens.length;
