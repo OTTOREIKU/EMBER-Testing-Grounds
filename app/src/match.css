@@ -247,6 +247,8 @@ input.f.codebox { font-family: var(--mono); font-size: 16px; letter-spacing: 5px
 .tl.now { background: var(--accent-lt); color: var(--accent); font-weight: 700; }
 .tl b { display: block; font-size: 10.5px; font-weight: inherit; }
 .hudboardwrap { flex: 1; display: grid; place-items: center; padding: 14px; min-height: 0; }
+/* Host for the shared freeplay renderer — same box recipe as #board-wrap. */
+.hudboardhost { flex: 1; min-height: 0; min-width: 0; overflow: hidden; position: relative; }
 .hudsvg {
   width: min(100%, calc(100vh - 190px)); aspect-ratio: 1; display: block; border-radius: var(--radius);
   background:

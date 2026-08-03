@@ -1,6 +1,8 @@
 import type { Command, CheckResult } from './commands';
 import type { GameData } from './data';
 import { secondaryImageUrl, squadLabel } from './data';
+import { Board, type BoardCallbacks } from './board';
+import { printedDeployment, resolveZoneSetData } from './overlays';
 import type { GameState, Side, Timing, Token, ExtraTick, Opportunity } from './types';
 import { newOpportunity, newScriptState, PHASES, TIMINGS } from './types';
 import { deployable, deployTurn, deploymentComplete, firstPlayerFrom, normaliseSetup, rollTotal, type SetupState } from './setup';
@@ -190,9 +192,95 @@ function orderStripHtml(ctx: HudCtx): string {
   return `<div class="orderstrip">${chips}</div>`;
 }
 
-// An honest schematic of the board: terrain cells, deployed tokens, and (while
-// placing) clickable grids. The full interactive board is part 3b.
-function boardHtml(ctx: HudCtx): string {
+// ---------- the real board, shared with the freeplay page ----------
+
+let board: Board | null = null;
+let hudRef: HudCtx | null = null;
+
+function boardCallbacks(): BoardCallbacks {
+  return {
+    onSelect(uid) {
+      const ctx = hudRef;
+      if (!ctx) return;
+      const s = ctx.state;
+      const sc = ensureScript(s);
+      const actor = sc.opp ? s.tokens.find((x) => x.uid === sc.opp!.uid) : undefined;
+      const t = uid !== null ? s.tokens.find((x) => x.uid === uid) : undefined;
+      if (t && actor && t.side !== actor.side) targetUid = targetUid === t.uid ? null : t.uid;
+      ctx.refresh();
+    },
+    onMove(uid, col, row) {
+      const ctx = hudRef;
+      if (!ctx) return;
+      const t = ctx.state.tokens.find((x) => x.uid === uid);
+      // A drag is a Maneuver attempt; the engine refuses anything that is not
+      // this unit's turn to spend, and the refusal shows in the panel.
+      if (t) ctx.send({ kind: 'maneuver', seat: t.side, uid, to: { col, row } });
+      ctx.refresh();
+    },
+    onCellClick(col, row) {
+      const ctx = hudRef;
+      if (!ctx) return;
+      const s = ctx.state;
+      if (moving) {
+        const sc = ensureScript(s);
+        const t = sc.opp ? s.tokens.find((x) => x.uid === sc.opp!.uid) : undefined;
+        if (t) ctx.send({ kind: 'maneuver', seat: t.side, uid: t.uid, to: { col, row } });
+        moving = false;
+        ctx.refresh();
+        return;
+      }
+      if (placing === null) return;
+      const su = normaliseSetup(s.setup);
+      const turn = su ? deployTurn(s, su) : null;
+      if (!turn) return;
+      // Strict placement: your Deployment Zone or nothing (3.1.4).
+      if (!deployCellsFor(ctx.data, s, turn).has(`${col},${row}`)) return;
+      ctx.send({ kind: 'deployUnit', seat: turn, uid: placing, to: { col, row } });
+      placing = null;
+      ctx.refresh();
+    },
+    onDestroyTerrain(id) {
+      const ctx = hudRef;
+      if (!ctx) return;
+      ctx.send({ kind: 'destroyTerrain', seat: ctx.seat ?? 's1', uid: 0, pieces: [id] });
+      ctx.refresh();
+    },
+  };
+}
+
+function renderBoard(ctx: HudCtx): void {
+  if (!board) return;
+  const s = ctx.state;
+  // Panning is the default; a placement or move click needs the cell instead.
+  board.panEnabled = placing === null && !moving;
+  const gone = new Set(s.removedTerrain ?? []);
+  board.renderTerrain((ctx.data.terrain.layouts[s.map] ?? []).filter((p) => !gone.has(p.id)));
+  const ov = resolveZoneSetData(ctx.data, s.zoneSet ?? '');
+  // While setup runs, the printed Deployment Zones are always on the table,
+  // whatever the zone overlay says (3.1.4).
+  const su = normaliseSetup(s.setup);
+  let deploy = ov.deploy;
+  if (su && su.stage !== 'done' && !deploy) {
+    const shapeId = (s.mission && ctx.data.zoneData.missionDeployment[s.mission]) || 'strips';
+    deploy = printedDeployment(ctx.data, shapeId);
+  }
+  board.renderZones(ov.zones, deploy);
+  const tasks = normaliseTasks(s.tasks);
+  board.renderTaskItems(tasks.items, (zone) => {
+    const z = ctx.data.zoneData.zones.find((x) => x.id === zone);
+    const p = z?.cells[0] ? zref(z.cells[0]) : null;
+    return p ? { c: p.col * 3 + 1, r: p.row * 3 + 1 } : null;
+  });
+  board.renderTokens(s);
+  board.renderSmoke(s.smoke ?? []);
+  board.renderMarkers(s.markers ?? []);
+  board.setSelected(ensureScript(s).opp?.uid ?? null);
+}
+
+// The old schematic renderer, kept exported for reference until the lobby
+// preview adopts the shared board too; the HUD no longer uses it.
+export function boardHtml(ctx: HudCtx): string {
   const s = ctx.state;
   const pieces = ctx.data.terrain.layouts[s.map] ?? [];
   const fill = (t: string) => (t === 'container' ? 'rgba(61,220,132,.45)' : t === 'low_wall' ? '#4a5563' : '#39424e');
@@ -520,19 +608,29 @@ function secOverlay(ctx: HudCtx): string {
   </div></div>`;
 }
 
-export function hudHtml(ctx: HudCtx): string {
-  return `<div class="hud">
-    <div class="hudmain">
-      ${timelineHtml(ctx.state)}
-      ${boardHtml(ctx)}
-      ${orderStripHtml(ctx)}
-    </div>
-    <div class="turnpanel">
-      ${ctx.note ? `<div class="mc-err" style="margin:10px 12px 0">${esc(ctx.note)}</div>` : ''}
-      ${panelHtml(ctx)}
-      ${feedHtml(ctx)}
-    </div>
-  </div>${secOverlay(ctx)}`;
+// Mounts the HUD once and updates it in place from then on. The board is the
+// same stateful renderer the freeplay page uses — zoom, pan, art and all — so
+// it must never be torn down by a re-render.
+export function ensureHud(host: HTMLElement, ctx: HudCtx): void {
+  hudRef = ctx;
+  if (!host.querySelector('#hud-shell')) {
+    host.innerHTML = `<div class="hud" id="hud-shell">
+      <div class="hudmain">
+        <div id="hud-tl"></div>
+        <div id="mc-board" class="hudboardhost"></div>
+        <div id="hud-strip"></div>
+      </div>
+      <div class="turnpanel" id="hud-panel"></div>
+    </div><div id="hud-veils"></div>`;
+    board = new Board(host.querySelector('#mc-board')!, boardCallbacks());
+  }
+  (host.querySelector('#hud-tl') as HTMLElement).innerHTML = timelineHtml(ctx.state);
+  (host.querySelector('#hud-strip') as HTMLElement).innerHTML = orderStripHtml(ctx);
+  (host.querySelector('#hud-panel') as HTMLElement).innerHTML =
+    `${ctx.note ? `<div class="mc-err" style="margin:10px 12px 0">${esc(ctx.note)}</div>` : ''}${panelHtml(ctx)}${feedHtml(ctx)}`;
+  (host.querySelector('#hud-veils') as HTMLElement).innerHTML = secOverlay(ctx);
+  wireHud(host, ctx);
+  renderBoard(ctx);
 }
 
 // ---------- wiring ----------
@@ -575,35 +673,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     placing = placing === Number(el.dataset.place) ? null : Number(el.dataset.place);
     ctx.refresh();
   });
-  on('[data-cell]', (el) => {
-    const [c, r] = el.dataset.cell!.split(',').map(Number);
-    if (moving) {
-      const sc = ensureScript(s);
-      const t = sc.opp ? s.tokens.find((x) => x.uid === sc.opp!.uid) : undefined;
-      if (t) ctx.send({ kind: 'maneuver', seat: t.side, uid: t.uid, to: { col: c, row: r } });
-      moving = false;
-      ctx.refresh();
-      return;
-    }
-    if (placing === null) return;
-    const su = normaliseSetup(s.setup);
-    const turn = su ? deployTurn(s, su) : null;
-    if (!turn) return;
-    // Strict placement: your Deployment Zone or nothing (3.1.4).
-    if (!deployCellsFor(ctx.data, s, turn).has(`${c},${r}`)) return;
-    ctx.send({ kind: 'deployUnit', seat: turn, uid: placing, to: { col: c, row: r } });
-    placing = null;
-    ctx.refresh();
-  });
-  on('[data-tok]', (el) => {
-    const t = s.tokens.find((x) => x.uid === Number(el.dataset.tok));
-    const sc = ensureScript(s);
-    const actor = sc.opp ? s.tokens.find((x) => x.uid === sc.opp!.uid) : undefined;
-    if (t && actor && t.side !== actor.side) {
-      targetUid = targetUid === t.uid ? null : t.uid;
-      ctx.refresh();
-    }
-  });
+  // Cell and token interaction now belongs to the shared Board's callbacks.
   on('[data-act="deploydone"]', () => { ctx.send({ kind: 'finishDeployment', seat: me() }); ctx.refresh(); });
 
   on('[data-dial]', (el) => {

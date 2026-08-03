@@ -10,7 +10,7 @@ import { taskItemsFor } from './tasks';
 import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
 import { importSquadFile } from './importer';
 import { dialsOf, hashDials, newSalt, type DialEntry } from './secrecy';
-import { glueAfter, hudHtml, wireHud, type DiceLine, type HudCtx } from './matchhud';
+import { ensureHud, glueAfter, type DiceLine, type HudCtx } from './matchhud';
 import type { DiceData, DieColor, GameState, Side } from './types';
 import { PHASES } from './types';
 
@@ -646,17 +646,15 @@ function bringSquad(name: string, mechs: SavedSquad['mechs'], drones: SavedSquad
 
 function render(): void {
   const hud = !!data && ((running() && !!relay.state.room) || (!!devSeat && running()));
-  const inner = !data
-    ? `<div class="mc-col" style="max-width:400px"><p class="mc-sub">Loading the card database…</p></div>`
-    : hud
-      ? hudHtml(hudCtx())
-      : devSeat
-        ? devPane()
-        : !account
-          ? loginHtml()
-          : relay.state.room
-            ? lobbyHtml()
-            : doorHtml();
+  // Three fixed hosts, so the stateful board survives every re-render: the
+  // bar and veils redraw freely, the body only redraws outside HUD mode.
+  if (!document.getElementById('mc-barhost')) {
+    root.innerHTML = '<div id="mc-barhost"></div><div id="mc-bodyhost"></div><div id="mc-veilhost"></div>';
+  }
+  const barhost = document.getElementById('mc-barhost')!;
+  const bodyhost = document.getElementById('mc-bodyhost')!;
+  const veilhost = document.getElementById('mc-veilhost')!;
+  barhost.innerHTML = barHtml();
   const p = hud ? paused() : null;
   const pauseVeil = p
     ? `<div class="mc-veil pauseveil"><div class="acct" style="text-align:center">
@@ -666,10 +664,29 @@ function render(): void {
         <button class="btn ghost" id="mc-leave" style="margin-top:6px">Leave the table</button>
       </div></div>`
     : '';
-  const wide = data && ((account && relay.state.room) || hud);
-  root.innerHTML = `${barHtml()}<div class="mc-stage${wide ? ' wide' : ''}${hud ? ' hudmode' : ''}">${inner}</div>${acctOpen ? acctHtml() : ''}${pickerOpen ? pickerHtml() : ''}${pauseVeil}`;
+  veilhost.innerHTML = `${acctOpen ? acctHtml() : ''}${pickerOpen ? pickerHtml() : ''}${pauseVeil}`;
+  if (hud) {
+    const stage = bodyhost.querySelector('.mc-stage.hudmode');
+    let host = stage as HTMLElement | null;
+    if (!host) {
+      bodyhost.innerHTML = '<div class="mc-stage wide hudmode"></div>';
+      host = bodyhost.querySelector('.mc-stage') as HTMLElement;
+    }
+    ensureHud(host, hudCtx());
+  } else {
+    const inner = !data
+      ? `<div class="mc-col" style="max-width:400px"><p class="mc-sub">Loading the card database…</p></div>`
+      : devSeat
+        ? devPane()
+        : !account
+          ? loginHtml()
+          : relay.state.room
+            ? lobbyHtml()
+            : doorHtml();
+    const wide = data && account && relay.state.room;
+    bodyhost.innerHTML = `<div class="mc-stage${wide ? ' wide' : ''}">${inner}</div>`;
+  }
   wire();
-  if (hud) wireHud(root, hudCtx());
 }
 
 function acctHtml(): string {
