@@ -8,7 +8,7 @@ import { PHASES, PHASE_INFO } from './tracker';
 import { type ActionWorld, canActivateCamo, type ExtraActivation, extraActivationOf, guidedActions, initiativeFor, maneuverRange, maxLink, SLOT_LABEL, tokenCards } from './units';
 import { canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed } from './ticks';
 import { perform } from './commands';
-import { alive, canAct, isLoopPhase, nextTurn, onExtraOpportunity, type LoopPhase, nextActivation, activationOrder, actionPhaseComplete, loopComplete, eligibleUnits, commandTokensFor, type InitLookup, type Activation } from './loop';
+import { alive, canAct, getLocalSeat, isLoopPhase, nextTurn, onExtraOpportunity, type LoopPhase, nextActivation, activationOrder, actionPhaseComplete, loopComplete, eligibleUnits, commandTokensFor, type InitLookup, type Activation } from './loop';
 import { deployable, deploymentComplete, deployTurn, firstPlayerFrom, newSetup, normaliseSetup, rollTotal, type SetupState } from './setup';
 import { normaliseTasks, scoreMain, scoreSecondary, settleControl, unpaidLines, type ScoreLine, type ScoreResult, type SecondaryScoring, type TaskState } from './tasks';
 
@@ -864,10 +864,15 @@ export class PlayGuide {
     const tie = !!both && !winner;
     const line = (side: Side) => {
       const r = su.rolls[side];
+      // Your opponent's roll is theirs to make: the button only exists on
+      // their screen, and this one shows the result when it arrives.
+      const btn = this.notMySeat(side)
+        ? `<span class="pg-roll-res">${squadLabel(side)}${r.length && !tie ? '' : ' is rolling…'}</span>`
+        : `<button class="pg-unit${r.length && !tie ? ' warn' : ''}" data-roll="${side}">${
+            tie ? `${squadLabel(side)} roll again` : `${squadLabel(side)} roll`
+          }</button>`;
       return `<div class="pg-roll-row">
-        <button class="pg-unit${r.length && !tie ? ' warn' : ''}" data-roll="${side}">${
-          tie ? `${squadLabel(side)} roll again` : `${squadLabel(side)} roll`
-        }</button>
+        ${btn}
         <span class="pg-roll-res">${r.length ? `${rollTotal(r)} Hit${rollTotal(r) === 1 ? '' : 's'}` : 'not rolled'}</span>
       </div>`;
     };
@@ -885,14 +890,28 @@ export class PlayGuide {
   // The printed order is 3.1.2 edge, then 3.1.3 Secondary Tasks, then 3.1.4
   // deployment, so the edge is free to pick straight after the roll and it is
   // DEPLOYMENT that waits for the tasks, not the other way round.
+  // Networked, a control that belongs to the other seat is not a button: the
+  // relay would drop the command anyway, so the guide shows who it waits on.
+  private notMySeat(side: Side): boolean {
+    const me = getLocalSeat();
+    return !!me && me !== side;
+  }
+
+  private waitingOn(side: Side, doing: string): string {
+    return `<p class="pg-intercept-note pg-waiting">Waiting for <b class="side-${side}">${squadLabel(side)}</b> to ${doing}…</p>`;
+  }
+
   private edgeHtml(s: GameState, su: SetupState): string {
     const fp = s.round.firstPlayer;
-    return `<p class="pg-active">Now: <b class="side-${fp}">${squadLabel(fp)}</b>
-        <small>As First Player, choose which edge of the board to play from.</small></p>
-      <div class="pg-units">
+    const pickRow = this.notMySeat(fp)
+      ? this.waitingOn(fp, 'pick a table edge')
+      : `<div class="pg-units">
         <button class="pg-unit" data-edge="white">Take the White side</button>
         <button class="pg-unit" data-edge="black">Take the Black side</button>
-      </div>
+      </div>`;
+    return `<p class="pg-active">Now: <b class="side-${fp}">${squadLabel(fp)}</b>
+        <small>As First Player, choose which edge of the board to play from.</small></p>
+      ${pickRow}
       <p class="pg-intercept-note">The other side takes the opposite edge. Deployment Zones follow the edges, so this decides where each squad starts.</p>
       ${this.secondaryHtml(s)}`;
   }
@@ -904,6 +923,9 @@ export class PlayGuide {
     const order: Side[] = s.round.firstPlayer === 's1' ? ['s1', 's2'] : ['s2', 's1'];
     const row = (side: Side) => {
       const card = tasks.secondary[side] ? this.data.secondary.find((c) => c.id === tasks.secondary[side]) : undefined;
+      if (this.notMySeat(side)) {
+        return `<span class="pg-roll-res">${squadLabel(side)}: ${card ? esc(card.name) : 'picking a Secondary Task…'}</span>`;
+      }
       return `<button class="pg-unit${card ? '' : ' warn'}" data-secondary="${side}">
         ${squadLabel(side)}: ${card ? esc(card.name) : 'pick a Secondary Task'}</button>`;
     };
@@ -932,6 +954,11 @@ export class PlayGuide {
     const waiting = deployable(s, turn);
     const other: Side = turn === 's1' ? 's2' : 's1';
     const otherLeft = deployable(s, other).length;
+    if (this.notMySeat(turn)) {
+      return `${fp}
+        <p class="pg-active">Deployment <small>${waiting.length} of theirs and ${otherLeft} of yours still to place</small></p>
+        ${this.waitingOn(turn, 'place a unit')}`;
+    }
 
     // A Mech chooses its Stance as it lands, and anything that can activate
     // Optical Camouflage may be deployed already in it (3.1.4, 4.12.2).
@@ -1106,6 +1133,10 @@ export class PlayGuide {
     if (!o) return `${fp}${phaseDone('Every Mech has had its Action Opportunity')}`;
     const t = s.tokens.find((x) => x.uid === o.uid);
     if (!t) return `${fp}<p class="pg-done-note">The active Mech is no longer on the board.</p>`;
+    if (this.notMySeat(t.side)) {
+      return `${fp}<p class="pg-active">Activating: <b class="side-${t.side}">${esc(t.label)}</b></p>
+        ${this.waitingOn(t.side, 'take its Action Opportunity')}`;
+    }
 
     const done = new Set(this.script(s).acted);
     const at = order.findIndex((a) => a.uid === o.uid);
@@ -1523,6 +1554,10 @@ export class PlayGuide {
 
     const turn = canAct(s, phase, sc.turn) ? sc.turn : (nextTurn(s, phase, sc.turn) ?? sc.turn);
     const units = eligibleUnits(s, phase, turn);
+    if (this.notMySeat(turn)) {
+      const noun = phase === 'Delay' ? 'projectile' : 'drone';
+      return `${fp}${tokens}${this.waitingOn(turn, `${phase === 'Command' ? 'command' : 'activate'} a ${noun} or pass`)}`;
+    }
 
     const chosen = this.picked !== null ? units.find((t) => t.uid === this.picked) : undefined;
     if (chosen) {

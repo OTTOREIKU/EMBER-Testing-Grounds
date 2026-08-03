@@ -46,6 +46,7 @@ import { addStatus, SCALES, statusCount, statusesFor, STATUSES } from './types';
 import { chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, type Resupply, resupplyOf, SLOT_LABEL, interceptLeft, interceptReach, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf } from './units';
 import { registerOffline } from './offline';
 import { battlefieldLocked, countHits, firstPlayerFrom, newSetup, normaliseSetup, type SetupState } from './setup';
+import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
 
 const SAVE_KEY = 'ember-testing-grounds-v1';
 
@@ -759,13 +760,9 @@ async function init() {
       confirmLabel: 'Start game',
     });
     if (!ok) return;
-    state.tokens = state.tokens.filter((t) => t.kind !== 'projectile');
-    for (const t of state.tokens) t.deployed = false;
-    state.smoke = [];
-    state.round = { n: 1, phase: 0, firstPlayer: 's1' };
-    state.commandTokens = { s1: 0, s2: 0 };
-    state.setup = newSetup();
-    state.script = undefined;
+    // The state half lives in the command layer, so a networked opponent
+    // starts the identical match at the same moment.
+    perform(data, state, { kind: 'startMatch', seat: 's1' });
     selectToken(null);
     onChanged();
   }
@@ -860,18 +857,9 @@ async function init() {
       // Points are still standing here and are gone a few lines below.
       await offerToRecord(res, tasks);
     }
-    for (const t of state.tokens) t.deployed = undefined;
-    state.setup = null;
-    // The next game picks its own Tasks, and the terrain knocked down during
-    // this one, along with anything launched, belongs to the match not the map.
-    state.tasks = null;
-    state.removedTerrain = [];
-    state.tokens = state.tokens.filter((t) => t.kind !== 'projectile');
-    state.smoke = [];
-    // Tactics are stamped with the round they were played in, so a fresh game
-    // starting back at round 1 would otherwise find the old stamps and read
-    // every card as already spent.
-    state.tacticsPlayed = { s1: [], s2: [] };
+    // The cleanup lives in the command layer, so both boards leave the match
+    // together. The result dialog and recording above already ran.
+    perform(data, state, { kind: 'endMatch', seat: 's1' });
     onChanged();
   }
 
@@ -1265,6 +1253,11 @@ async function init() {
     onAddMech(loadout: MechLoadout, side) {
       const tok = makeMechToken(state, data, loadout, side);
       placeNew(tok, side);
+    },
+    onSaveSquad: () => saveSquadFlow(),
+    onLoadSquad: (id) => {
+      const sq = loadSquads().find((s) => s.id === id);
+      if (sq) void loadSavedSquad(sq);
     },
     // The unit keeps its identity across an edit: same uid, square, facing,
     // stance, Link, tokens and log. Only a slot whose Part actually changed is
@@ -3063,8 +3056,11 @@ async function init() {
   }
   populateMapSelect();
   mapSelect.addEventListener('change', () => {
-    state.map = mapSelect.value;
-    state.removedTerrain = [];
+    const v = perform(data, state, { kind: 'configureTable', seat: 's1', map: mapSelect.value });
+    if (!v.ok) {
+      mapSelect.value = state.map;
+      return;
+    }
     adoptMapZones();
     save();
     renderAll();
@@ -3380,7 +3376,8 @@ async function init() {
   }
 
   function setZoneSet(id: string): void {
-    state.zoneSet = id;
+    const v = perform(data, state, { kind: 'configureTable', seat: 's1', zoneSet: id });
+    if (!v.ok) return;
     state.showZones = !!id;
     save();
     renderZoneOverlay();
@@ -3424,10 +3421,16 @@ async function init() {
     dlg.querySelectorAll<HTMLButtonElement>('.scn-load').forEach((b) =>
       b.addEventListener('click', () => {
         const m = data.missions.cards[Number(b.dataset.i)];
-        state.mission = m.id;
-        state.tasks = taskItemsFor(m);
+        // Mission, Tasks and zones travel as one command, so the guest's
+        // board picks up the whole choice rather than none of it.
+        const v = perform(data, state, {
+          kind: 'configureTable', seat: 's1',
+          mission: m.id, tasks: taskItemsFor(m), zoneSet: `mission:${m.id}`,
+        });
+        if (!v.ok) return;
+        state.showZones = true;
+        renderZoneOverlay();
         if (m.family === 'vip') void designateCommanders();
-        setZoneSet(`mission:${m.id}`);
         document.getElementById('details-body')!.replaceChildren(missionBriefing(m));
         showSideTab('details');
         dlg.remove();
@@ -3462,8 +3465,7 @@ async function init() {
     });
     const card = open.find((c) => c.id === id);
     if (!card) return;
-    tasks.secondary[side] = card.id;
-    state.tasks = tasks;
+    if (!perform(data, state, { kind: 'pickSecondary', seat: side, cardId: card.id }).ok) return;
 
     if (card.designate && card.designate !== 'none') {
       await designateFor(side, card);
@@ -3963,6 +3965,23 @@ async function init() {
       // Drives the dial filter: with a seat set, the other squad's dials are
       // masked until they reveal.
       setLocalSeat(view.room ? view.seat : null);
+      // A guest's table controls go quiet: the host sets up the table, and a
+      // control that only mutates one board is how the playtest desynced.
+      const guest = !!view.room && !view.host;
+      for (const id of ['map-select', 'zone-select', 'btn-missions', 'btn-scenarios', 'btn-mapedit', 'btn-mapmanage', 'btn-import', 'btn-clear']) {
+        const el = document.getElementById(id) as HTMLButtonElement | HTMLSelectElement | null;
+        if (!el) continue;
+        el.disabled = guest;
+        if (guest) {
+          if (el.dataset.tipSave === undefined) el.dataset.tipSave = el.title;
+          el.title = 'The host sets up the table.';
+        } else if (el.dataset.tipSave !== undefined) {
+          el.title = el.dataset.tipSave;
+          delete el.dataset.tipSave;
+        }
+      }
+      roundTracker.hostLocked = guest;
+      roundTracker.update(state);
       // The server rolls only while a networked game is running; a local game
       // keeps its own dice.
       const roller = view.room && view.seat
@@ -4078,6 +4097,7 @@ async function init() {
       host: () => relay.host(),
       join: (code) => relay.join(code),
       leave: () => relay.leave(),
+      bringSquad: () => void bringSquadToRoom(),
       resend: () => relay.publishCheckpoint(),
     },
   );
@@ -4177,6 +4197,123 @@ async function init() {
   });
 
   const squadFile = document.getElementById('import-squad-file') as HTMLInputElement;
+  // One path for every squad arriving at the table: the importSquad command
+  // mirrors to the other seat, and a refusal (a game already past deployment)
+  // is explained rather than swallowed.
+  function sendSquad(
+    side: Side,
+    name: string,
+    mechs: { name?: string; loadout: MechLoadout }[],
+    drones: { cardId: string; backpack?: string }[],
+  ): boolean {
+    const verdict = perform(data, state, { kind: 'importSquad', seat: side, name, mechs, drones });
+    if (!verdict.ok) {
+      void alertDialog({ title: 'The squad could not join', body: verdict.why });
+      return false;
+    }
+    onChanged();
+    setHint(`Squad "${name}" joins ${squadLabel(side)}${deployingNow() ? ' — it deploys with everything else (3.1.4)' : ''}.`);
+    return true;
+  }
+
+  // The multiplayer popup's "bring a squad": the saved library first, and the
+  // file picker as the way in when the library is empty or the squad is new.
+  async function bringSquadToRoom(): Promise<void> {
+    const seat = relay.state.seat;
+    if (!seat) return;
+    const saved = loadSquads();
+    if (!saved.length) {
+      squadFile.click();
+      return;
+    }
+    const picked = await choiceDialog({
+      title: 'Bring which squad?',
+      body: 'The squad joins your side and deploys with everything else.',
+      stacked: true,
+      choices: [
+        ...saved.map((s) => ({ id: s.id, label: s.name })),
+        { id: 'file', label: 'From a squad file…' },
+        { id: 'cancel', label: 'Cancel' },
+      ],
+    });
+    if (!picked || picked === 'cancel') return;
+    if (picked === 'file') {
+      squadFile.click();
+      return;
+    }
+    const sq = saved.find((s) => s.id === picked);
+    if (sq) void loadSavedSquad(sq);
+  }
+
+  // Loading from the roster's Saved Squads row. In an online room the squad
+  // can only be yours; on a local table the side is asked.
+  async function loadSavedSquad(sq: SavedSquad): Promise<void> {
+    let side = relay.state.room ? relay.state.seat : null;
+    if (relay.state.room && !side) return;
+    if (!side) {
+      const picked = await choiceDialog({
+        title: `Load "${sq.name}"?`,
+        body: 'Which squad does it join?',
+        choices: [
+          { id: 's1', label: squadLabel('s1'), primary: true },
+          { id: 's2', label: squadLabel('s2') },
+          { id: 'cancel', label: 'Cancel' },
+        ],
+      });
+      if (picked !== 's1' && picked !== 's2') return;
+      side = picked;
+    }
+    sendSquad(side, sq.name, sq.mechs, sq.drones);
+  }
+
+  // Saving what stands on the board: launched drones and projectiles are
+  // spawns rather than squad members, so they stay behind.
+  async function saveSquadFlow(): Promise<void> {
+    const owned = (side: Side) =>
+      state.tokens.filter((t) => t.side === side && t.kind !== 'projectile' && t.parentUid === undefined);
+    const sides = (['s1', 's2'] as Side[]).filter((sd) => owned(sd).length);
+    if (!sides.length) {
+      await alertDialog({
+        title: 'Nothing to save',
+        body: 'Neither side has units on the board. Build or import a squad first.',
+      });
+      return;
+    }
+    let side = sides.length === 1 ? sides[0] : null;
+    if (!side) {
+      const picked = await choiceDialog({
+        title: 'Save which squad?',
+        body: 'Both squads have units on the board.',
+        choices: [
+          { id: 's1', label: squadLabel('s1'), primary: true },
+          { id: 's2', label: squadLabel('s2') },
+          { id: 'cancel', label: 'Cancel' },
+        ],
+      });
+      if (picked !== 's1' && picked !== 's2') return;
+      side = picked;
+    }
+    const units = owned(side);
+    const mechs = units
+      .filter((t) => t.kind === 'mech' && (t.mech?.torso || t.mech?.chasis))
+      .map((t) => ({ name: t.label, loadout: { ...t.mech } }));
+    const drones = units
+      .filter((t) => t.kind === 'drone')
+      .map((t) => ({ cardId: t.cardId, backpack: t.droneBackpack }));
+    const name = await promptDialog({
+      title: 'Save this squad',
+      body: `${mechs.length} mech${mechs.length === 1 ? '' : 's'} and ${drones.length} drone${
+        drones.length === 1 ? '' : 's'
+      }. Saved squads are kept on this device, load from the Saved Squads row or the multiplayer popup, and reusing a name overwrites it.`,
+      value: squadLabel(side),
+      placeholder: 'Squad name',
+      confirmLabel: 'Save',
+    });
+    if (!name) return;
+    saveSquad(name, mechs, drones, Date.now());
+    setHint(`Squad "${name}" saved.`);
+  }
+
   document.getElementById('btn-import-squad')?.addEventListener('click', () => squadFile.click());
   squadFile.addEventListener('change', async () => {
     const file = squadFile.files?.[0];
@@ -4188,29 +4325,34 @@ async function init() {
         squad.mechs.length ? `${squad.mechs.length} mech${squad.mechs.length === 1 ? '' : 's'}` : '',
         squad.drones.length ? `${squad.drones.length} drone${squad.drones.length === 1 ? '' : 's'}` : '',
       ].filter(Boolean);
-      const picked = await choiceDialog({
-        title: `Import "${squad.name}"?`,
-        body: `${parts.join(' and ')}. Which side is it deploying for?`,
-        choices: [
-          { id: 's1', label: 'UN (blue)', primary: true },
-          { id: 's2', label: 'RDL (red)' },
-          { id: 'cancel', label: 'Cancel' },
-        ],
-      });
-      if (picked !== 's1' && picked !== 's2') {
+      // Every squad that arrives by file is remembered, which is what the
+      // multiplayer "bring a squad" picker chooses from next time.
+      saveSquad(squad.name, squad.mechs, squad.drones, Date.now());
+      // In an online room the squad can only be yours — the relay refuses
+      // commands sent as the other seat — so the side question disappears.
+      const mySeat = relay.state.room ? relay.state.seat : null;
+      let side: Side;
+      if (mySeat) {
+        side = mySeat;
+      } else {
+        const picked = await choiceDialog({
+          title: `Import "${squad.name}"?`,
+          body: `${parts.join(' and ')}. Which squad is it deploying for?`,
+          choices: [
+            { id: 's1', label: squadLabel('s1'), primary: true },
+            { id: 's2', label: squadLabel('s2') },
+            { id: 'cancel', label: 'Cancel' },
+          ],
+        });
+        if (picked !== 's1' && picked !== 's2') {
+          squadFile.value = '';
+          return;
+        }
+        side = picked;
+      }
+      if (!sendSquad(side, squad.name, squad.mechs, squad.drones)) {
         squadFile.value = '';
         return;
-      }
-      const side: Side = picked;
-      for (const m of squad.mechs) {
-        const tok = makeMechToken(state, data, m.loadout, side, m.name);
-        placeNew(tok, side);
-      }
-      for (const d of squad.drones) {
-        const card = data.byId.get(d.cardId);
-        if (!card) continue;
-        const tok = makeDroneToken(state, data, card, side, d.backpack);
-        placeNew(tok, side);
       }
       if (squad.unknownIds.length) {
         void alertDialog({

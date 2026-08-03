@@ -30,11 +30,27 @@ export function maxLink(data: any, t: any): number {
   const pilot = t.kind === 'mech' && t.mech?.pilot ? data.byId.get(t.mech.pilot) : undefined;
   return pilot?.LV ?? 99;
 }
-export function makeDroneToken(state: any, data: any, card: any, side: any): any {
+export function makeDroneToken(state: any, data: any, card: any, side: any, backpack?: string): any {
   return {
     uid: state.nextUid++, side, kind: card.category === 'projectile' ? 'projectile' : 'drone',
-    cardId: card.id, label: card.id, size: 1, aerial: false, stance: 'offensive',
-    partStates: { main: 'intact' }, ammo: {},
+    cardId: card.id, droneBackpack: backpack, label: card.id, size: 1, aerial: false, stance: 'offensive',
+    partStates: { main: 'intact', ...(backpack ? { backpack: 'intact' } : {}) }, ammo: {},
+  };
+}
+export function makeMechToken(state: any, data: any, loadout: any, side: any, name?: string): any {
+  const partStates: any = {};
+  const ammo: any = {};
+  for (const slot of ['torso', 'chasis', 'leftHand', 'rightHand', 'backpack']) {
+    if (loadout[slot]) partStates[slot] = 'intact';
+  }
+  for (const id of Object.values(loadout)) {
+    for (const a of (data.byId.get(id)?.actions ?? [])) if ((a.storage ?? 0) > 0) ammo[a.id] = a.storage;
+  }
+  const pilot = loadout.pilot ? data.byId.get(loadout.pilot) : undefined;
+  return {
+    uid: state.nextUid++, side, kind: 'mech', cardId: loadout.torso ?? '', mech: loadout,
+    label: name ?? 'Mech', size: 3, aerial: false, stance: 'offensive',
+    link: pilot?.LV ?? 3, partStates, ammo,
   };
 }
 `;
@@ -89,6 +105,7 @@ const data = {
   commonActions: [{ id: 'COMMON_CHARGE', type: 'Tactic', size: 's', name: { en: 'Charge' } }],
   overload: [{ actionId: '090_A', card: '090', label: 'Overload' }],
   zoneData: { zones: [] },
+  secondary: [{ id: 'SEC1', name: 'Recon' }],
 };
 
 console.log('The command layer\n');
@@ -699,6 +716,77 @@ C.onRefused(() => {});
 C.apply(data, wstrict, { kind: 'setStrict', seat: 's1', strict: false });
 const vt = C.perform(data, wstrict, sc({ stance: 'mobility' }));
 check('teaching performs anyway and says why', [vt.ok, wstrict.tokens[0].stance], [false, 'mobility']);
+
+// ---------- importSquad ----------
+
+const squadCmd = (over = {}) => ({
+  kind: 'importSquad', seat: 's1', name: 'Test',
+  mechs: [{ loadout: { torso: 'T1', pilot: 'P1' } }],
+  drones: [{ cardId: 'D1' }],
+  ...over,
+});
+const openTable = () => ({ tokens: [], nextUid: 1, round: { n: 1, phase: 0, firstPlayer: 's1' }, commandTokens: { s1: 0, s2: 0 } });
+
+check('a squad may join an open table', C.check(data, openTable(), squadCmd()).ok, true);
+check('an empty squad is refused', C.check(data, openTable(), squadCmd({ mechs: [], drones: [] })).ok, false);
+check('an unknown card is refused', C.check(data, openTable(), squadCmd({ mechs: [{ loadout: { torso: 'NOPE' } }] })).ok, false);
+check('an unknown drone backpack is refused', C.check(data, openTable(), squadCmd({ drones: [{ cardId: 'D1', backpack: 'NOPE' }] })).ok, false);
+check('a mech with no torso or chassis is refused', C.check(data, openTable(), squadCmd({ mechs: [{ loadout: { pilot: 'P1' } }] })).ok, false);
+
+const during = { ...openTable(), script: { strict: true }, setup: { ...C.newSetup(), stage: 'deploy' } };
+check('a squad may still join during deployment', C.check(data, during, squadCmd()).ok, true);
+C.apply(data, during, squadCmd());
+check('during setup the units wait for deployment', during.tokens.map((t) => t.deployed), [false, false]);
+check('the mech carries its loadout and pilot link', [during.tokens[0].kind, during.tokens[0].link], ['mech', 4]);
+
+const late = { ...openTable(), script: { strict: true }, setup: { ...C.newSetup(), stage: 'done' } };
+check('a game past deployment refuses the squad', C.check(data, late, squadCmd()).ok, false);
+// End game clears the setup but leaves the script for the record, and that
+// table is back in free play — a lingering script must not lock it.
+check('a lingering script without a setup does not lock the table', C.check(data, { ...openTable(), script: { strict: true } }, squadCmd()).ok, true);
+
+const freeA = openTable();
+C.apply(data, freeA, squadCmd());
+check('on an open table the units land straight away', freeA.tokens.every((t) => t.deployed !== false), true);
+const freeB = openTable();
+C.apply(data, freeB, squadCmd());
+check('and a mirrored seat lands them identically', JSON.stringify(freeB.tokens), JSON.stringify(freeA.tokens));
+const freeC = openTable();
+C.apply(data, freeC, squadCmd({ seat: 's2' }));
+check('each squad arrives from its own edge', freeA.tokens[0].row < freeC.tokens[0].row, true);
+
+// ---------- the table lifecycle ----------
+
+const table = openTable();
+check('configuring nothing is refused', C.check(data, table, { kind: 'configureTable', seat: 's1' }).ok, false);
+check('a made-up scale is refused', C.check(data, table, { kind: 'configureTable', seat: 's1', scale: 'huge' }).ok, false);
+C.apply(data, table, { kind: 'configureTable', seat: 's1', map: 'alley', scale: 'skirmish', roundLimit: 4 });
+check('the table takes map, scale and length', [table.map, table.scale, table.roundLimit], ['alley', 'skirmish', 4]);
+check('with no game running, ending is refused', C.check(data, table, { kind: 'endMatch', seat: 's1' }).ok, false);
+check('starting a match is allowed', C.check(data, table, { kind: 'startMatch', seat: 's1' }).ok, true);
+C.apply(data, table, { kind: 'startMatch', seat: 's1' });
+check('the match begins at setup, round 1', [C.normaliseSetup(table.setup)?.stage, table.round.n], ['map', 1]);
+check('a second start is refused', C.check(data, table, { kind: 'startMatch', seat: 's1' }).ok, false);
+table.setup = { ...C.newSetup(), stage: 'roll' };
+check('the battlefield locks once the game starts', C.check(data, table, { kind: 'configureTable', seat: 's1', map: 'other' }).ok, false);
+check('but the game length may still change', C.check(data, table, { kind: 'configureTable', seat: 's1', roundLimit: 6 }).ok, true);
+C.apply(data, table, { kind: 'endMatch', seat: 's1' });
+check('ending clears the setup and the tasks', [table.setup, table.tasks], [null, null]);
+
+check('an unknown Secondary Task is refused', C.check(data, openTable(), { kind: 'pickSecondary', seat: 's1', cardId: 'NOPE' }).ok, false);
+const sec = openTable();
+C.apply(data, sec, { kind: 'pickSecondary', seat: 's2', cardId: 'SEC1' });
+check('a Secondary pick lands on that squad alone', [sec.tasks.secondary.s2, sec.tasks.secondary.s1], ['SEC1', null]);
+
+// Networked, an attribution seat is stamped with the sender's own, because
+// the relay refuses anything sent as the other player.
+let stamped = null;
+C.onPerformed((c) => { stamped = c; });
+C.setLocalSeat('s2');
+C.perform(data, openTable(), { kind: 'adjustCommandTokens', seat: 's1', pool: 's1', delta: 2 });
+check('a table command travels stamped as the sender', stamped?.seat, 's2');
+C.setLocalSeat(null);
+C.onPerformed(() => {});
 
 // ---------- determinism ----------
 

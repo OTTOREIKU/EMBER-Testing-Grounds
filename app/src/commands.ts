@@ -1,10 +1,10 @@
-import type { Facing, GameState, PartSlot, Side, SmokeScreen, Stance, Timing, Token } from './types';
+import type { Facing, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, Timing, Token } from './types';
 import { addStatus, ageTokens, PHASES, STATUSES, TIMINGS } from './types';
 import type { GameData } from './data';
-import { makeDroneToken, maxLink, tokenCards } from './units';
+import { makeDroneToken, makeMechToken, maxLink, tokenCards } from './units';
 import { canManeuver, canOverload, canPerform, spendAction, spendManeuver, spendOverload } from './ticks';
 import { tacticSpec, tacticTargets, type TacticCtx } from './tactics';
-import { deploymentComplete, deployTurn, firstPlayerFrom, newSetup, normaliseSetup } from './setup';
+import { battlefieldLocked, deploymentComplete, deployTurn, firstPlayerFrom, newSetup, normaliseSetup } from './setup';
 import { applyKill, normaliseTasks, settleControl } from './tasks';
 import { dialHidden, eligibleUnits, getLocalSeat, isLoopPhase, nextTurn, onExtraOpportunity } from './loop';
 import { dissipationFor } from './rules';
@@ -75,6 +75,18 @@ export type Command =
   | { kind: 'setMode'; seat: Side; mode: 'hotseat' | 'hidden' }
   | { kind: 'handOver'; seat: Side }
   | { kind: 'setStrict'; seat: Side; strict: boolean }
+  // A whole squad arriving at the table, as data rather than as a local
+  // mutation, so both ends of a wire mint the same units.
+  | { kind: 'importSquad'; seat: Side; name?: string; mechs: { name?: string; loadout: MechLoadout }[]; drones: { cardId: string; backpack?: string }[] }
+  // The table itself: map, zones, mission and scale used to be local
+  // mutations, which is why a host's picks never reached the guest. Tasks
+  // ride in the command pre-derived, like dials ride in a reveal.
+  | { kind: 'configureTable'; seat: Side; map?: string; zoneSet?: string; mission?: string | null; tasks?: GameState['tasks']; scale?: GameState['scale']; roundLimit?: number }
+  | { kind: 'startMatch'; seat: Side }
+  | { kind: 'endMatch'; seat: Side }
+  // A squad's open-information Secondary Task pick (3.1.3). The seat is the
+  // side choosing, so a player can only ever pick their own.
+  | { kind: 'pickSecondary'; seat: Side; cardId: string }
   // The two halves of the networked dial reveal (3.3). A seat publishes a
   // hash of its dials first and the dials themselves only once both hashes
   // are in, so neither player can see the other's before fixing their own.
@@ -135,12 +147,26 @@ type TableKind =
   | 'advancePhase' | 'setPhase' | 'resetRounds' | 'adjustCommandTokens' | 'passTurn' | 'markEndStep' | 'award'
   | 'lockMap' | 'rollSetup' | 'acceptRoll' | 'pickEdge' | 'lockDials' | 'finishDeployment'
   | 'queueIntercepts' | 'clearIntercepts' | 'placeSmoke' | 'removeSmoke' | 'dissipateSmoke'
-  | 'setMode' | 'handOver' | 'setStrict' | 'commitTimings' | 'revealTimings';
+  | 'setMode' | 'handOver' | 'setStrict' | 'commitTimings' | 'revealTimings' | 'importSquad'
+  | 'configureTable' | 'startMatch' | 'endMatch' | 'pickSecondary';
 const TABLE_KINDS = new Set<Command['kind']>([
   'advancePhase', 'setPhase', 'resetRounds', 'adjustCommandTokens', 'passTurn', 'markEndStep', 'award',
   'lockMap', 'rollSetup', 'acceptRoll', 'pickEdge', 'lockDials', 'finishDeployment',
   'queueIntercepts', 'clearIntercepts', 'placeSmoke', 'removeSmoke', 'dissipateSmoke',
-  'setMode', 'handOver', 'setStrict', 'commitTimings', 'revealTimings',
+  'setMode', 'handOver', 'setStrict', 'commitTimings', 'revealTimings', 'importSquad',
+  'configureTable', 'startMatch', 'endMatch', 'pickSecondary',
+]);
+
+// Table commands whose seat is attribution rather than a choice one squad
+// owns. Networked, they are stamped with the sender's own seat, because the
+// relay refuses anything sent as the other player — a guest advancing the
+// phase with a hard-coded 's1' would apply locally and silently never travel.
+const ATTRIBUTED = new Set<Command['kind']>([
+  'advancePhase', 'setPhase', 'resetRounds', 'markEndStep', 'award',
+  'lockMap', 'acceptRoll', 'lockDials', 'finishDeployment',
+  'queueIntercepts', 'clearIntercepts', 'placeSmoke', 'removeSmoke', 'dissipateSmoke',
+  'setMode', 'setStrict', 'adjustCommandTokens',
+  'configureTable', 'startMatch', 'endMatch',
 ]);
 function tableLevel(cmd: Command): cmd is Command & { kind: TableKind } {
   return TABLE_KINDS.has(cmd.kind);
@@ -149,8 +175,81 @@ function tableLevel(cmd: Command): cmd is Command & { kind: TableKind } {
 // The lookup the zone-control judgement reads its Grids from.
 const zoneCells = (data: GameData) => (zone: string): string[] => data.zoneData.zones.find((z) => z.id === zone)?.cells ?? [];
 
-function checkTable(state: GameState, cmd: Command & { kind: TableKind }): CheckResult {
+// The first clear square for a newly arrived unit, scanning row by row from
+// the squad's own edge — Squad 1 from the top of the board, Squad 2 from the
+// bottom, the same orientation the interactive spot-finder uses. Pure function
+// of the state, because a mirrored seat must land the unit on the same Grid.
+const CELLS = 36;
+function freeSpot(state: GameState, size: number, side: Side, aerial: boolean): { col: number; row: number } | null {
+  const rows = [...Array(CELLS - size + 1).keys()];
+  if (side === 's2') rows.reverse();
+  for (const row of rows) {
+    for (let col = 0; col <= CELLS - size; col++) {
+      const clash = state.tokens.some(
+        (t) =>
+          t.deployed !== false
+          && t.aerial === aerial
+          && col < t.col + t.size && t.col < col + size
+          && row < t.row + t.size && t.row < row + size,
+      );
+      if (!clash) return { col, row };
+    }
+  }
+  return null;
+}
+
+function checkTable(data: GameData, state: GameState, cmd: Command & { kind: TableKind }): CheckResult {
   switch (cmd.kind) {
+    case 'configureTable': {
+      if (cmd.map === undefined && cmd.zoneSet === undefined && cmd.mission === undefined
+        && cmd.tasks === undefined && cmd.scale === undefined && cmd.roundLimit === undefined) {
+        return no('Nothing to configure.');
+      }
+      if (cmd.scale !== undefined && !['skirmish', 'standard', 'large'].includes(cmd.scale as string)) return no('That is not a battle scale.');
+      if (cmd.roundLimit !== undefined && (!Number.isInteger(cmd.roundLimit) || cmd.roundLimit < 1 || cmd.roundLimit > 12)) return no('That is not a game length.');
+      // The battlefield is fixed once the game starts (3.1.2).
+      if ((cmd.map !== undefined || cmd.zoneSet !== undefined || cmd.mission !== undefined)
+        && battlefieldLocked(normaliseSetup(state.setup))) {
+        return no('The battlefield is locked once the game starts (3.1.2). End the game to change it.');
+      }
+      return ok;
+    }
+    case 'startMatch': {
+      if (normaliseSetup(state.setup)) return no('A game is already running. End it before starting another.');
+      return ok;
+    }
+    case 'endMatch': {
+      if (!normaliseSetup(state.setup)) return no('No game is running.');
+      return ok;
+    }
+    case 'pickSecondary': {
+      if (!(data.secondary ?? []).some((c) => c.id === cmd.cardId)) return no('That is not a Secondary Task card.');
+      return ok;
+    }
+    case 'importSquad': {
+      const mechs = Array.isArray(cmd.mechs) ? cmd.mechs : [];
+      const drones = Array.isArray(cmd.drones) ? cmd.drones : [];
+      if (!mechs.length && !drones.length) return no('The squad is empty.');
+      for (const m of mechs) {
+        if (!m.loadout?.torso && !m.loadout?.chasis) return no('A Mech needs at least a Torso or a Chassis.');
+        for (const id of Object.values(m.loadout ?? {})) {
+          if (id && !data.byId.get(id)) return no(`The database has no card "${id}", so this squad cannot be built.`);
+        }
+      }
+      for (const d of drones) {
+        if (!data.byId.get(d.cardId ?? '')) return no(`The database has no card "${d.cardId}", so this squad cannot be built.`);
+        if (d.backpack && !data.byId.get(d.backpack)) return no(`The database has no card "${d.backpack}", so this squad cannot be built.`);
+      }
+      // In a running game a squad joins before deployment closes (3.1.4).
+      // "Running" is what the round tracker calls it — a setup block exists.
+      // End game clears the setup but leaves the script standing, so the
+      // script alone must not lock a table that has gone back to free play.
+      const su = normaliseSetup(state.setup);
+      if (su && su.stage === 'done') {
+        return no('Squads join before deployment is finished (3.1.4). End the game to change the table freely.');
+      }
+      return ok;
+    }
     case 'advancePhase': {
       const su = normaliseSetup(state.setup);
       if (su && su.stage !== 'done') return no('Finish the pre-game roll and deployment first (3.1).');
@@ -276,7 +375,7 @@ function checkTable(state: GameState, cmd: Command & { kind: TableKind }): Check
 }
 
 export function check(data: GameData, state: GameState, cmd: Command): CheckResult {
-  if (tableLevel(cmd)) return checkTable(state, cmd);
+  if (tableLevel(cmd)) return checkTable(data, state, cmd);
   const t = state.tokens.find((x) => x.uid === cmd.uid);
   if (!actorOptional(cmd)) {
     if (!t) return no('That unit is not on the board.');
@@ -575,6 +674,79 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
       const key = `${state.round.n}:end:tasks`;
       if (!sc.endDone.includes(key)) sc.endDone.push(key);
     }
+    return;
+  }
+  if (cmd.kind === 'importSquad') {
+    const su = normaliseSetup(state.setup);
+    const staging = !!su && su.stage !== 'done';
+    const facing: Facing = cmd.seat === 's1' ? 2 : 0;
+    const arrive = (tok: Token) => {
+      if (staging) {
+        // Setup is running, so the unit joins the squad rather than the board
+        // and goes through the 3.1.4 deployment alternation like everything.
+        tok.deployed = false;
+      } else {
+        // The open table places it straight away, on the first clear spot from
+        // the squad's own edge. Terrain-blind on purpose: a mirrored placement
+        // only has to agree on both clients, and free play lets the owner drag
+        // it from there — the careful spot-finding stays with the local UI.
+        const spot = freeSpot(state, tok.size, cmd.seat, tok.aerial);
+        if (spot) { tok.col = spot.col; tok.row = spot.row; }
+        else tok.deployed = false;
+      }
+      state.tokens.push(tok);
+    };
+    for (const m of (Array.isArray(cmd.mechs) ? cmd.mechs : [])) {
+      arrive({ ...makeMechToken(state, data, m.loadout, cmd.seat, m.name), col: 0, row: 0, facing } as Token);
+    }
+    for (const d of (Array.isArray(cmd.drones) ? cmd.drones : [])) {
+      const card = data.byId.get(d.cardId);
+      if (!card) continue;
+      arrive({ ...makeDroneToken(state, data, card, cmd.seat, d.backpack), col: 0, row: 0, facing } as Token);
+    }
+    return;
+  }
+  if (cmd.kind === 'configureTable') {
+    // A new battlefield starts whole: the rubble belonged to the old one.
+    if (cmd.map !== undefined) {
+      state.map = cmd.map;
+      state.removedTerrain = [];
+    }
+    if (cmd.zoneSet !== undefined) state.zoneSet = cmd.zoneSet;
+    if (cmd.mission !== undefined) state.mission = cmd.mission;
+    if (cmd.tasks !== undefined) state.tasks = cmd.tasks === null ? null : normaliseTasks(cmd.tasks);
+    if (cmd.scale !== undefined) state.scale = cmd.scale;
+    if (cmd.roundLimit !== undefined) state.roundLimit = cmd.roundLimit;
+    return;
+  }
+  if (cmd.kind === 'startMatch') {
+    // The state half of "Start game": both ends of a wire begin the identical
+    // match. Anything already standing goes back to its squad for deployment.
+    state.tokens = state.tokens.filter((t) => t.kind !== 'projectile');
+    for (const t of state.tokens) t.deployed = false;
+    state.smoke = [];
+    state.round = { n: 1, phase: 0, firstPlayer: 's1' };
+    state.commandTokens = { s1: 0, s2: 0 };
+    state.setup = newSetup();
+    state.script = undefined;
+    return;
+  }
+  if (cmd.kind === 'pickSecondary') {
+    const tasks = normaliseTasks(state.tasks);
+    tasks.secondary[cmd.seat] = cmd.cardId;
+    state.tasks = tasks;
+    return;
+  }
+  if (cmd.kind === 'endMatch') {
+    // The state half of "End game"; the result dialog and the recording offer
+    // stay with the UI, which runs them before this lands.
+    for (const t of state.tokens) t.deployed = undefined;
+    state.setup = null;
+    state.tasks = null;
+    state.removedTerrain = [];
+    state.tokens = state.tokens.filter((t) => t.kind !== 'projectile');
+    state.smoke = [];
+    state.tacticsPlayed = { s1: [], s2: [] };
     return;
   }
   if (cmd.kind === 'lockMap') {
@@ -960,6 +1132,10 @@ export function applyRemote(data: GameData, state: GameState, cmd: Command): Che
 // instead, right here, which is what makes every call site strict at once:
 // one rule, two presentations.
 export function perform(data: GameData, state: GameState, cmd: Command): CheckResult {
+  // Attribution seats are stamped with the sender's own seat when networked,
+  // so a table command clicked from either chair both applies and travels.
+  const me = getLocalSeat();
+  if (me && ATTRIBUTED.has(cmd.kind) && cmd.seat !== me) cmd = { ...cmd, seat: me };
   const verdict = check(data, state, cmd);
   // An online game is always strict, whatever the guide is set to. Both
   // clients have to refuse the same things or their boards drift apart, and a

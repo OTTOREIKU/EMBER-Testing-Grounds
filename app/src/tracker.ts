@@ -86,6 +86,9 @@ export class RoundTracker {
   onStartGame: (() => void) | null = null;
   // Set by the play guide, which owns the pre-game and Planning gates.
   blockedReason: ((s: GameState) => string | null) | null = null;
+  // A guest at an online table: the host owns the table settings, so the
+  // scale, length, start and jump controls go quiet rather than desync.
+  hostLocked = false;
 
   // The round bar can advance the round on its own, so it has to respect the
   // same lock the guide does or setup can simply be walked past.
@@ -111,6 +114,12 @@ export class RoundTracker {
   update(state: GameState): void {
     this.state = state;
     this.render();
+    if (this.hostLocked) {
+      for (const el of this.root.querySelectorAll<HTMLButtonElement | HTMLSelectElement>('#rt-start, #rt-scale, #rt-limit, #rt-reset, .rt-phase')) {
+        el.disabled = true;
+        el.title = 'The host runs the table settings.';
+      }
+    }
   }
 
   // The track belongs to the table, so the seat on its commands is whoever's
@@ -199,7 +208,7 @@ export class RoundTracker {
     const scaleSel = this.root.querySelector<HTMLSelectElement>('#rt-scale')!;
     inspectOnHover(scaleSel, this.scaleInfo(scale));
     scaleSel.addEventListener('change', () => {
-      s.scale = scaleSel.value as BattleScale;
+      this.onCommand({ kind: 'configureTable', seat: 's1', scale: scaleSel.value as BattleScale });
       this.onChanged();
     });
     const limitSel = this.root.querySelector<HTMLSelectElement>('#rt-limit')!;
@@ -213,7 +222,7 @@ export class RoundTracker {
       ],
     });
     limitSel.addEventListener('change', () => {
-      s.roundLimit = Number(limitSel.value);
+      this.onCommand({ kind: 'configureTable', seat: 's1', roundLimit: Number(limitSel.value) });
       this.onChanged();
     });
 

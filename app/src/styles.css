@@ -1659,6 +1659,9 @@ p.points { white-space: pre-line; }
 .token-reserve { opacity: 0.55; }
 
 .mech-presets { display: flex; gap: 5px; align-items: center; margin: 0 0 8px; }
+.squad-presets { margin: 0 0 14px; }
+.pg-waiting { font-style: italic; animation: pg-wait-pulse 2.4s ease-in-out infinite; }
+@keyframes pg-wait-pulse { 50% { opacity: 0.55; } }
 .mech-presets select {
   flex: 1; min-width: 0; padding: 6px 7px; border: none; border-radius: var(--radius-sm);
   background: var(--surface2); color: var(--text); font-family: var(--font); font-size: 12px; cursor: pointer;

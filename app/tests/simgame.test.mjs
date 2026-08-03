@@ -37,11 +37,27 @@ export function maxLink(data: any, t: any): number {
   const pilot = t.kind === 'mech' && t.mech?.pilot ? data.byId.get(t.mech.pilot) : undefined;
   return pilot?.LV ?? 99;
 }
-export function makeDroneToken(state: any, data: any, card: any, side: any): any {
+export function makeDroneToken(state: any, data: any, card: any, side: any, backpack?: string): any {
   return {
     uid: state.nextUid++, side, kind: card.category === 'projectile' ? 'projectile' : 'drone',
-    cardId: card.id, label: card.id, size: 1, aerial: false, stance: 'offensive',
-    partStates: { main: 'intact' }, ammo: {},
+    cardId: card.id, droneBackpack: backpack, label: card.id, size: 1, aerial: false, stance: 'offensive',
+    partStates: { main: 'intact', ...(backpack ? { backpack: 'intact' } : {}) }, ammo: {},
+  };
+}
+export function makeMechToken(state: any, data: any, loadout: any, side: any, name?: string): any {
+  const partStates: any = {};
+  const ammo: any = {};
+  for (const slot of ['torso', 'chasis', 'leftHand', 'rightHand', 'backpack']) {
+    if (loadout[slot]) partStates[slot] = 'intact';
+  }
+  for (const id of Object.values(loadout)) {
+    for (const a of (data.byId.get(id)?.actions ?? [])) if ((a.storage ?? 0) > 0) ammo[a.id] = a.storage;
+  }
+  const pilot = loadout.pilot ? data.byId.get(loadout.pilot) : undefined;
+  return {
+    uid: state.nextUid++, side, kind: 'mech', cardId: loadout.torso ?? '', mech: loadout,
+    label: name ?? 'Mech', size: 3, aerial: false, stance: 'offensive',
+    link: pilot?.LV ?? 3, partStates, ammo,
   };
 }
 `;
@@ -339,6 +355,16 @@ function candidates(s, rng) {
           out.push({ kind: 'deployUnit', seat, uid: t.uid, to: { col: irnd(rng, 36), row: irnd(rng, 36) } });
         }
       }
+      // A late squad joining mid-deployment: it must fold into the same
+      // alternation as everything already waiting.
+      if (rng() < 0.06) {
+        const side = pick(rng, ['s1', 's2']);
+        out.push({
+          kind: 'importSquad', seat: side, name: 'Reinforcements',
+          mechs: [{ loadout: { torso: pick(rng, partsOf('torso')).id, chasis: pick(rng, partsOf('chasis')).id, pilot: pick(rng, pilots).id } }],
+          drones: rng() < 0.5 ? [{ cardId: pick(rng, drones).id }] : [],
+        });
+      }
       if (C.deploymentComplete(s)) out.push({ kind: 'finishDeployment', seat: 's1' });
     }
     return out;
@@ -443,6 +469,12 @@ function adversaries(s, rng) {
     if (mine.deployed !== false) out.push({ kind: 'deployUnit', seat: 's1', uid: mine.uid, to: { col: 1, row: 1 } });
   }
   out.push({ kind: 'applyPenetration', seat: 's1', uid: mine?.uid ?? 1, targetUid: 9999, slot: 'torso' });
+  out.push({ kind: 'importSquad', seat: 's1', mechs: [{ loadout: { torso: 'no-such-card' } }], drones: [] });
+  const su = C.normaliseSetup(s.setup);
+  if (su && su.stage === 'done') {
+    // A perfectly well-formed squad is still refused once deployment closed.
+    out.push({ kind: 'importSquad', seat: 's1', mechs: [{ loadout: { torso: partsOf('torso')[0].id } }], drones: [] });
+  }
   if (mine) {
     // A card the squad does not hold, and a choice the card does not offer.
     const hand = s.tactics?.s1 ?? [];
@@ -539,7 +571,7 @@ const CORE = [
   'lockMap', 'rollSetup', 'acceptRoll', 'pickEdge', 'deployUnit', 'finishDeployment',
   'setTiming', 'lockDials', 'advancePhase', 'designate', 'maneuver', 'performAction',
   'endOpportunity', 'passTurn', 'applyPenetration', 'spendAmmo', 'markEndStep',
-  'playTactic',
+  'playTactic', 'importSquad',
 ];
 for (const kind of CORE) {
   check(`the games exercised ${kind}`, (applied.get(kind) ?? 0) > 0, true);
