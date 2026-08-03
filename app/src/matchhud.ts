@@ -1,8 +1,10 @@
 import type { Command, CheckResult } from './commands';
 import type { GameData } from './data';
 import { secondaryImageUrl, squadLabel } from './data';
-import { Board, type BoardCallbacks } from './board';
+import { Board, footprint, snapPlacement, type BoardCallbacks } from './board';
 import { printedDeployment, resolveZoneSetData } from './overlays';
+import { maneuverRange, squadAllegiance } from './units';
+import { factionColour } from './icons';
 import type { GameState, Side, Timing, Token, ExtraTick, Opportunity } from './types';
 import { newOpportunity, newScriptState, PHASES, TIMINGS } from './types';
 import { deployable, deployTurn, deploymentComplete, firstPlayerFrom, normaliseSetup, rollTotal, type SetupState } from './setup';
@@ -156,6 +158,7 @@ export function deployCellsFor(data: GameData, s: GameState, side: Side): Set<st
 // ---------- module UI state ----------
 
 let placing: number | null = null; // uid being deployed via board clicks
+let unconfirmed: number | null = null; // placed this turn, still nudgeable
 let moving = false;                // active unit is picking a destination
 let targetUid: number | null = null; // enemy picked for damage bookkeeping
 let attack: { y: number; r: number; name: string } | null = null; // pool of the action just performed
@@ -197,6 +200,12 @@ function orderStripHtml(ctx: HudCtx): string {
 let board: Board | null = null;
 let hudRef: HudCtx | null = null;
 
+// A snapped footprint counts only when every cell sits inside the zone.
+function fitsZone(ctx: HudCtx, side: Side, at: { col: number; row: number }, size: number): boolean {
+  const zone = deployCellsFor(ctx.data, ctx.state, side);
+  return footprint({ ...at, size }).every((c) => zone.has(`${c.col},${c.row}`));
+}
+
 function boardCallbacks(): BoardCallbacks {
   return {
     onSelect(uid) {
@@ -213,10 +222,36 @@ function boardCallbacks(): BoardCallbacks {
       const ctx = hudRef;
       if (!ctx) return;
       const t = ctx.state.tokens.find((x) => x.uid === uid);
-      // A drag is a Maneuver attempt; the engine refuses anything that is not
-      // this unit's turn to spend, and the refusal shows in the panel.
-      if (t) ctx.send({ kind: 'maneuver', seat: t.side, uid, to: { col, row } });
+      if (!t) return;
+      const snap = snapPlacement(col, row, (t.size ?? 1) as 1 | 2 | 3) ?? { col, row };
+      // During deployment a drag nudges the unit inside its zone; in play it
+      // is a Maneuver attempt the engine judges.
+      const su = normaliseSetup(ctx.state.setup);
+      if (su && su.stage === 'deploy') {
+        if (fitsZone(ctx, t.side, snap, t.size ?? 1)) ctx.send({ kind: 'deployUnit', seat: t.side, uid, to: snap });
+      } else {
+        ctx.send({ kind: 'maneuver', seat: t.side, uid, to: snap });
+      }
       ctx.refresh();
+    },
+    onCellHover(col, row) {
+      const ctx = hudRef;
+      if (!ctx || !board) return;
+      const s = ctx.state;
+      if (placing !== null) {
+        const t = s.tokens.find((x) => x.uid === placing);
+        if (!t) return;
+        const size = (t.size ?? 1) as 1 | 2 | 3;
+        const snap = snapPlacement(col, row, size) ?? { col, row };
+        board.showGhost(footprint({ ...snap, size }), fitsZone(ctx, t.side, snap, size));
+      } else if (moving) {
+        const sc = ensureScript(s);
+        const t = sc.opp ? s.tokens.find((x) => x.uid === sc.opp!.uid) : undefined;
+        if (!t) return;
+        const size = (t.size ?? 1) as 1 | 2 | 3;
+        const snap = snapPlacement(col, row, size) ?? { col, row };
+        board.showGhost(footprint({ ...snap, size }), true);
+      }
     },
     onCellClick(col, row) {
       const ctx = hudRef;
@@ -225,19 +260,27 @@ function boardCallbacks(): BoardCallbacks {
       if (moving) {
         const sc = ensureScript(s);
         const t = sc.opp ? s.tokens.find((x) => x.uid === sc.opp!.uid) : undefined;
-        if (t) ctx.send({ kind: 'maneuver', seat: t.side, uid: t.uid, to: { col, row } });
+        if (t) {
+          const snap = snapPlacement(col, row, (t.size ?? 1) as 1 | 2 | 3) ?? { col, row };
+          ctx.send({ kind: 'maneuver', seat: t.side, uid: t.uid, to: snap });
+        }
         moving = false;
+        board?.clearGhost();
         ctx.refresh();
         return;
       }
       if (placing === null) return;
-      const su = normaliseSetup(s.setup);
-      const turn = su ? deployTurn(s, su) : null;
-      if (!turn) return;
-      // Strict placement: your Deployment Zone or nothing (3.1.4).
-      if (!deployCellsFor(ctx.data, s, turn).has(`${col},${row}`)) return;
-      ctx.send({ kind: 'deployUnit', seat: turn, uid: placing, to: { col, row } });
-      placing = null;
+      const t = s.tokens.find((x) => x.uid === placing);
+      if (!t) return;
+      const size = (t.size ?? 1) as 1 | 2 | 3;
+      const snap = snapPlacement(col, row, size) ?? { col, row };
+      // Strict placement: your whole footprint inside your own Deployment
+      // Zone, aligned to the grid, or nothing lands (3.1.4). The seat is the
+      // unit's side — a nudge stays legal after the alternation moves on.
+      if (!fitsZone(ctx, t.side, snap, size)) return;
+      const v = ctx.send({ kind: 'deployUnit', seat: t.side, uid: placing, to: snap });
+      if (v.ok) unconfirmed = placing;
+      board?.clearGhost();
       ctx.refresh();
     },
     onDestroyTerrain(id) {
@@ -252,8 +295,22 @@ function boardCallbacks(): BoardCallbacks {
 function renderBoard(ctx: HudCtx): void {
   if (!board) return;
   const s = ctx.state;
+  // The squad tints carry each side's faction, same custom properties the
+  // freeplay page sets — without them every token reads as the default gold.
+  for (const side of ['s1', 's2'] as Side[]) {
+    const f = squadAllegiance(ctx.data, s.tokens.filter((t) => t.side === side)).faction;
+    document.documentElement.style.setProperty(`--sq-${side}`, factionColour(f));
+  }
   // Panning is the default; a placement or move click needs the cell instead.
   board.panEnabled = placing === null && !moving;
+  board.clearHighlights();
+  if (moving) {
+    const sc = ensureScript(s);
+    const t = sc.opp ? s.tokens.find((x) => x.uid === sc.opp!.uid) : undefined;
+    if (t) board.showRangeRings(t as { col: number; row: number; size: number }, maneuverRange(ctx.data, t));
+  } else if (placing === null) {
+    board.clearGhost();
+  }
   const gone = new Set(s.removedTerrain ?? []);
   board.renderTerrain((ctx.data.terrain.layouts[s.map] ?? []).filter((p) => !gone.has(p.id)));
   const ov = resolveZoneSetData(ctx.data, s.zoneSet ?? '');
@@ -381,15 +438,19 @@ function setupPanel(ctx: HudCtx, su: SetupState): string {
       + `<div class="tp-body">${edge}<div class="tp-gap"></div>${secRows}</div><div class="tp-foot"></div>`;
   }
   // deploy
+  const confirmRow = unconfirmed !== null
+    ? `<button class="bigbtn" data-act="confirmplace">Confirm placement</button>
+       <p class="tp-note">Or click another Grid in your zone to move it first.</p>`
+    : '';
   const turn = deployTurn(s, su);
   if (!turn || deploymentComplete(s)) {
     return head('Setup', 'Deployment complete', '', true)
-      + `<div class="tp-body"></div><div class="tp-foot"><button class="bigbtn" data-act="deploydone">Begin Round 1</button></div>`;
+      + `<div class="tp-body"></div><div class="tp-foot">${confirmRow}<button class="bigbtn${unconfirmed !== null ? ' ghost2' : ''}" data-act="deploydone">Begin Round 1</button></div>`;
   }
   if (!mine(ctx, turn)) {
     placing = null;
     return head('Deployment', `${squadLabel(turn)} places a unit`, '', false)
-      + `<div class="tp-body">${waiting(turn, 'placing a unit')}</div><div class="tp-foot"></div>`;
+      + `<div class="tp-body">${unconfirmed !== null ? confirmRow : ''}${waiting(turn, 'placing a unit')}</div><div class="tp-foot"></div>`;
   }
   const waitingUnits = deployable(s, turn);
   const rows = waitingUnits
@@ -397,8 +458,8 @@ function setupPanel(ctx: HudCtx, su: SetupState): string {
       (t) => `<button class="rowwide${placing === t.uid ? ' sel' : ''}" data-place="${t.uid}">${esc(t.label)}<span class="ct">${t.kind}</span></button>`,
     )
     .join('');
-  return head('Your move', 'Place a unit', placing !== null ? 'Now click a Grid on the board. Your edge is ' + su.edge[turn] + '.' : 'Pick a unit, then click a Grid on the board.', true)
-    + `<div class="tp-body">${rows}</div><div class="tp-foot"><p class="tp-note">Deployment zones highlight in part 3b — the ${su.edge[turn]} edge is yours.</p></div>`;
+  return head('Your move', 'Place a unit', placing !== null ? `Hover shows the landing spot; click a Grid in your ${su.edge[turn]} zone.` : 'Pick a unit, then click a Grid on the board.', true)
+    + `<div class="tp-body">${rows}</div><div class="tp-foot">${confirmRow}</div>`;
 }
 
 function planningPanel(ctx: HudCtx): string {
@@ -670,7 +731,15 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
   }
   root.querySelector('#mc-sec-x')?.addEventListener('click', () => { secOpen = false; ctx.refresh(); });
   on('[data-place]', (el) => {
+    // Picking the next unit stands by the previous placement.
+    unconfirmed = null;
     placing = placing === Number(el.dataset.place) ? null : Number(el.dataset.place);
+    ctx.refresh();
+  });
+  on('[data-act="confirmplace"]', () => {
+    unconfirmed = null;
+    placing = null;
+    board?.clearGhost();
     ctx.refresh();
   });
   // Cell and token interaction now belongs to the shared Board's callbacks.

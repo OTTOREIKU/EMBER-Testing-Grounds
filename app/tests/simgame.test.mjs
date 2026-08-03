@@ -466,7 +466,11 @@ function adversaries(s, rng) {
   if (mine) {
     out.push({ kind: 'maneuver', seat: 's1', uid: mine.uid, to: { col: 99, row: 1 } });
     out.push({ kind: 'spendAmmo', seat: 's1', uid: mine.uid, actionId: 'no-such-action' });
-    if (mine.deployed !== false) out.push({ kind: 'deployUnit', seat: 's1', uid: mine.uid, to: { col: 1, row: 1 } });
+    // A unit already down may be nudged during the deploy stage (3.1.4), so
+    // re-deploying is only an offence once deployment has closed.
+    if (mine.deployed !== false && C.normaliseSetup(s.setup)?.stage !== 'deploy') {
+      out.push({ kind: 'deployUnit', seat: 's1', uid: mine.uid, to: { col: 1, row: 1 } });
+    }
   }
   out.push({ kind: 'applyPenetration', seat: 's1', uid: mine?.uid ?? 1, targetUid: 9999, slot: 'torso' });
   out.push({ kind: 'importSquad', seat: 's1', mechs: [{ loadout: { torso: 'no-such-card' } }], drones: [] });

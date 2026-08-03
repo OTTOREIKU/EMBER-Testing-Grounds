@@ -493,10 +493,13 @@ function checkActed(
       // Like the maneuver, the Deployment Zone and the standing-spot rules stay
       // with the placement UI, which only offers legal Grids.
       if (t.kind === 'projectile') return no('A Projectile is never deployed; it arrives when something launches it.');
-      if (t.deployed !== false) return no(`${t.label} is already on the board.`);
       const su = normaliseSetup(state.setup);
-      if (!su || su.stage !== 'deploy') return no('Units are placed in the deployment stage of setup (3.1.4).');
-      if (deployTurn(state, su) !== cmd.seat) return no('It is the other squad\'s turn to place a unit (3.1.4).');
+      if (!su || su.stage !== 'deploy') {
+        return no(t.deployed !== false ? `${t.label} is already on the board.` : 'Units are placed in the deployment stage of setup (3.1.4).');
+      }
+      // A unit already down may be nudged until deployment closes; only a
+      // fresh placement spends the alternation turn (3.1.4).
+      if (t.deployed === false && deployTurn(state, su) !== cmd.seat) return no('It is the other squad\'s turn to place a unit (3.1.4).');
       const { col, row } = cmd.to;
       if (!Number.isInteger(col) || !Number.isInteger(row) || col < 0 || row < 0 || col > 35 || row > 35) {
         return no('That is not a place on the board.');
@@ -952,6 +955,7 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
       return;
     }
     case 'deployUnit': {
+      const fresh = t.deployed === false;
       t.col = cmd.to.col;
       t.row = cmd.to.row;
       t.facing = t.side === 's1' ? 2 : 0;
@@ -959,8 +963,10 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
       // A Mech picks its Stance as it lands; anything else keeps its printed one.
       if (t.kind === 'mech' && cmd.stance) t.stance = cmd.stance;
       if (cmd.camo) t.statuses = addStatus(t.statuses, 'camouflage');
+      // Nudging a unit already down is not a placement, so the alternation
+      // count only moves on the first landing.
       const su = normaliseSetup(state.setup);
-      if (su) {
+      if (su && fresh) {
         su.placed = { ...su.placed, [t.side]: su.placed[t.side] + 1 };
         state.setup = su;
       }
