@@ -108,6 +108,29 @@ export function pendingDesignations(
   return out;
 }
 
+// The Large Grid a Tactical Zone's Item sits in: the middle of the zone, not
+// the corner of it. Both boards read this, because an Item drawn from the
+// first cell instead of the average lands somewhere the zone is not.
+export function zoneCentreGrid(
+  zones: ZoneLike[],
+  zoneId: string,
+): { c: number; r: number } | null {
+  const zone = zones.find((z) => z.id === zoneId);
+  if (!zone?.cells.length) return null;
+  const grids = zone.cells.map(gridRef).filter((g): g is { col: number; row: number } => !!g);
+  if (!grids.length) return null;
+  return {
+    c: Math.round(grids.reduce((n, g) => n + g.col, 0) / grids.length),
+    r: Math.round(grids.reduce((n, g) => n + g.row, 0) / grids.length),
+  };
+}
+
+function gridRef(ref: string): { col: number; row: number } | null {
+  const m = /^([A-La-l])(\d{1,2})$/.exec(ref.trim());
+  if (!m) return null;
+  return { col: m[1].toUpperCase().charCodeAt(0) - 65, row: Number(m[2]) - 1 };
+}
+
 // ---------- Main Task setup (5.1) ----------
 
 export interface MissionLike { family: string; zones?: string[] }

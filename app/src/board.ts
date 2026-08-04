@@ -495,14 +495,29 @@ export class Board {
       });
       const first = z.cells[0];
       if (first) {
+        // The name sits at the top of its Grid rather than the middle of it,
+        // because the middle is where a Task Item goes and a token over the
+        // name leaves the zone unreadable.
         const label = el('text', {
           x: first.col * LG + LG / 2,
-          y: first.row * LG + LG / 2 + 5,
+          y: first.row * LG + 15,
           'text-anchor': 'middle',
           class: 'tz-label',
         });
         label.textContent = z.name;
         g.appendChild(label);
+        // Whose claim the ring is. Squads can share a faction and so a colour,
+        // so the number is what actually tells them apart.
+        by.forEach((side, i) => {
+          const bx = first.col * LG + LG - 13 - i * 20;
+          const byy = first.row * LG + 13;
+          const badge = el('g', { class: `tz-claimtag tz-claim-${side}` });
+          badge.appendChild(el('circle', { cx: bx, cy: byy, r: 9 }));
+          const num = el('text', { x: bx, y: byy + 4, 'text-anchor': 'middle', class: 'tz-claimnum' });
+          num.textContent = side === 's1' ? '1' : '2';
+          badge.appendChild(num);
+          g.appendChild(badge);
+        });
       }
       this.gZones.appendChild(g);
     }

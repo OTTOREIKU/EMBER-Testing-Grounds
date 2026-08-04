@@ -13,7 +13,7 @@ import { newOpportunity, newScriptState, PHASES, TIMINGS } from './types';
 import { deployable, deployTurn, deploymentComplete, firstPlayerFrom, normaliseSetup, rollTotal, type SetupState } from './setup';
 import { actionPhaseComplete, activationOrder, alive, canAct, commandTokensFor, eligibleUnits, isLoopPhase, loopComplete, nextActivation, nextTurn, type InitLookup, type LoopPhase } from './loop';
 import { canManeuver, canPerform } from './ticks';
-import { normaliseTasks, type Designation } from './tasks';
+import { normaliseTasks, zoneCentreGrid, type Designation } from './tasks';
 import { tokenCards } from './units';
 
 // The in-match HUD (Match Centre part 3a): one question at a time, per seat.
@@ -473,13 +473,19 @@ function renderBoard(ctx: HudCtx): void {
     const shapeId = (s.mission && ctx.data.zoneData.missionDeployment[s.mission]) || 'strips';
     deploy = printedDeployment(ctx.data, shapeId);
   }
-  board.renderZones(ov.zones, deploy);
   const tasks = normaliseTasks(s.tasks);
-  board.renderTaskItems(tasks.items, (zone) => {
-    const z = ctx.data.zoneData.zones.find((x) => x.id === zone);
-    const p = z?.cells[0] ? zref(z.cells[0]) : null;
-    return p ? { c: p.col * 3 + 1, r: p.row * 3 + 1 } : null;
-  });
+  // Which squads have named each Tactical Zone for a Secondary Task, so the
+  // board can ring it. Designations are stored by zone id; zones are drawn by
+  // name, which is the same translation the freeplay board makes.
+  const claimed: Record<string, Side[]> = {};
+  for (const side of ['s1', 's2'] as Side[]) {
+    const id = tasks.zone[side];
+    if (!id) continue;
+    const name = ctx.data.zoneData.zones.find((z) => z.id === id)?.name ?? id;
+    (claimed[name] ??= []).push(side);
+  }
+  board.renderZones(ov.zones, deploy, claimed);
+  board.renderTaskItems(tasks.items, (zone) => zoneCentreGrid(ctx.data.zoneData.zones, zone));
   board.renderTokens(s);
   board.renderSmoke(s.smoke ?? []);
   board.renderMarkers(s.markers ?? []);

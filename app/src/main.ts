@@ -2,7 +2,7 @@ import './styles.css';
 import { Board, CELLS, footprint, snapPlacement, type BoardDeployment, type BoardZone, type DeployShape } from './board';
 import { AttackHelper, ElectronicHelper } from './combat';
 import { alertDialog, choiceDialog, confirmDialog, promptDialog } from './dialog';
-import { gameResult, isLowValue, newTaskState, normaliseTasks, taskItemsFor, type GameResult, type TaskItem, type TaskState } from './tasks';
+import { gameResult, isLowValue, newTaskState, normaliseTasks, taskItemsFor, zoneCentreGrid, type GameResult, type TaskItem, type TaskState } from './tasks';
 import { DiceTray } from './dice';
 import { importSquadFile } from './importer';
 import { factionColour } from './icons';
@@ -3502,15 +3502,9 @@ async function init() {
 
   // The middle Large Grid of a Tactical Zone, used to sit a Terminal or a
   // Control dial where it reads as covering the whole Zone.
-  function zoneCentre(zoneId: string): { c: number; r: number } | null {
-    const zone = data.zoneData.zones.find((z) => z.id === zoneId);
-    if (!zone?.cells.length) return null;
-    const grids = zone.cells.map((ref) => parseGridRef(ref)).filter((g): g is { col: number; row: number } => !!g);
-    if (!grids.length) return null;
-    const c = Math.round(grids.reduce((n, g) => n + g.col, 0) / grids.length);
-    const r = Math.round(grids.reduce((n, g) => n + g.row, 0) / grids.length);
-    return { c, r };
-  }
+  // Shared with the Match Centre, so an Item cannot land in one place here and
+  // another place there.
+  const zoneCentre = (zoneId: string) => zoneCentreGrid(data.zoneData.zones, zoneId);
 
   // Task Setup (5.3): the Main Task names the Tactical Zones its Items go in, so
   // Moved to tasks.ts so the Match Centre derives the identical items; the
@@ -3921,6 +3915,9 @@ async function init() {
     },
     onNeedCheckpoint() {
       relay.publishCheckpoint();
+    },
+    onClosed() {
+      setHint('The table was closed by its host.');
     },
     // Dice that landed in the room. The roller already has them from its own
     // request; this is what puts the other player's roll on screen, so a roll

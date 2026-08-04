@@ -534,6 +534,12 @@ main { display: flex; flex: 1; min-height: 0; }
 .tz-claim { fill: none; stroke-width: 4; stroke-linejoin: round; }
 .tz-claim-s1 { stroke: var(--sq-s1); }
 .tz-claim-s2 { stroke: var(--sq-s2); }
+/* The squad number on a claimed zone: the ring says someone claimed it, this
+   says which squad, which colour alone cannot when both share a faction. */
+.tz-claimtag circle { fill: #0d1116cc; stroke: currentColor; stroke-width: 2.5; }
+.tz-claimtag.tz-claim-s1 { color: var(--sq-s1); }
+.tz-claimtag.tz-claim-s2 { color: var(--sq-s2); }
+.tz-claimnum { fill: currentColor; font-size: 11px; font-weight: 800; }
 
 .dlg-art {
   display: block; width: 100%; max-width: 340px; height: auto;
