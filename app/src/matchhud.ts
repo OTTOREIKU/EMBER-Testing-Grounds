@@ -4,6 +4,8 @@ import { secondaryImageUrl, squadLabel } from './data';
 import { Board, footprint, snapPlacement, type BoardCallbacks } from './board';
 import { printedDeployment, resolveZoneSetData } from './overlays';
 import { maneuverRange, squadAllegiance } from './units';
+import { crushTargets, reachableGrids } from './rules';
+import { breakAwayCost } from './melee';
 import { factionColour } from './icons';
 import type { GameState, Side, Timing, Token, ExtraTick, Opportunity } from './types';
 import { newOpportunity, newScriptState, PHASES, TIMINGS } from './types';
@@ -200,6 +202,30 @@ function orderStripHtml(ctx: HudCtx): string {
 let board: Board | null = null;
 let hudRef: HudCtx | null = null;
 
+// The same reachability the freeplay board offers: Large Grids within the
+// unit's Movement Range, terrain-aware, with Break Away and Crush priced the
+// same way. The path law lives in the UI on both pages — the engine's
+// maneuver trusts the move it is handed.
+function terrainOf(ctx: HudCtx) {
+  const gone = new Set(ctx.state.removedTerrain ?? []);
+  return (ctx.data.terrain.layouts[ctx.state.map] ?? []).filter((p) => !gone.has(p.id));
+}
+
+function reachableFor(ctx: HudCtx, t: Token) {
+  const terrain = terrainOf(ctx);
+  const flying = !!t.aerial;
+  return reachableGrids(t, maneuverRange(ctx.data, t), terrain, ctx.state.tokens, flying, {
+    exitCost: flying ? undefined : breakAwayCost(ctx.data, t, ctx.state.tokens, terrain),
+    crushable: (c, r) => crushTargets(t, c, r, terrain, ctx.state.tokens) !== null,
+  });
+}
+
+function canReach(ctx: HudCtx, t: Token, col: number, row: number): boolean {
+  const c = Math.floor(col / 3);
+  const r = Math.floor(row / 3);
+  return reachableFor(ctx, t).some((g) => g.c === c && g.r === r);
+}
+
 // A snapped footprint counts only when every cell sits inside the zone.
 function fitsZone(ctx: HudCtx, side: Side, at: { col: number; row: number }, size: number): boolean {
   const zone = deployCellsFor(ctx.data, ctx.state, side);
@@ -229,7 +255,9 @@ function boardCallbacks(): BoardCallbacks {
       const su = normaliseSetup(ctx.state.setup);
       if (su && su.stage === 'deploy') {
         if (fitsZone(ctx, t.side, snap, t.size ?? 1)) ctx.send({ kind: 'deployUnit', seat: t.side, uid, to: snap });
-      } else {
+      } else if (canReach(ctx, t, snap.col, snap.row)) {
+        // The drop only lands inside the unit's real Movement Range — the
+        // same law the freeplay board enforces before offering a grid.
         ctx.send({ kind: 'maneuver', seat: t.side, uid, to: snap });
       }
       ctx.refresh();
@@ -250,7 +278,7 @@ function boardCallbacks(): BoardCallbacks {
         if (!t) return;
         const size = (t.size ?? 1) as 1 | 2 | 3;
         const snap = snapPlacement(col, row, size) ?? { col, row };
-        board.showGhost(footprint({ ...snap, size }), true);
+        board.showGhost(footprint({ ...snap, size }), canReach(ctx, t, snap.col, snap.row));
       }
     },
     onCellClick(col, row) {
@@ -262,6 +290,7 @@ function boardCallbacks(): BoardCallbacks {
         const t = sc.opp ? s.tokens.find((x) => x.uid === sc.opp!.uid) : undefined;
         if (t) {
           const snap = snapPlacement(col, row, (t.size ?? 1) as 1 | 2 | 3) ?? { col, row };
+          if (!canReach(ctx, t, snap.col, snap.row)) return; // outside the range overlay
           ctx.send({ kind: 'maneuver', seat: t.side, uid: t.uid, to: snap });
         }
         moving = false;
@@ -307,7 +336,9 @@ function renderBoard(ctx: HudCtx): void {
   if (moving) {
     const sc = ensureScript(s);
     const t = sc.opp ? s.tokens.find((x) => x.uid === sc.opp!.uid) : undefined;
-    if (t) board.showRangeRings(t as { col: number; row: number; size: number }, maneuverRange(ctx.data, t));
+    // The same overlay freeplay shows: the Large Grids this unit can really
+    // enter, with the step count on each.
+    if (t) board.showReachable(reachableFor(ctx, t), maneuverRange(ctx.data, t));
   } else if (placing === null) {
     board.clearGhost();
   }
