@@ -414,6 +414,19 @@ function boardCallbacks(): BoardCallbacks {
       const ctx = hudRef;
       if (!ctx) return;
       const s = ctx.state;
+      if (launchPlan) {
+        const owner = s.tokens.find((x) => x.uid === launchPlan!.uid);
+        if (owner) {
+          ctx.send({
+            kind: 'launch', seat: owner.side, uid: launchPlan.uid,
+            actionId: launchPlan.actionId, cardId: launchPlan.cardId,
+            to: { col, row }, facing: 0,
+          });
+        }
+        launchPlan = null;
+        ctx.refresh();
+        return;
+      }
       if (movePlan) {
         lockMove(ctx);
         return;
@@ -453,7 +466,7 @@ function renderBoard(ctx: HudCtx): void {
     document.documentElement.style.setProperty(`--sq-${side}`, factionColour(f));
   }
   // Panning is the default; a placement or a route needs the cell instead.
-  board.panEnabled = placing === null && !movePlan;
+  board.panEnabled = placing === null && !movePlan && !launchPlan;
   if (movePlan) {
     const t = s.tokens.find((x) => x.uid === movePlan!.uid);
     // The same overlay freeplay shows: the Large Grids this unit can really
@@ -898,6 +911,9 @@ function resultPanel(ctx: HudCtx, vp: { s1: number; s2: number }): string {
 
 function panelHtml(ctx: HudCtx): string {
   const s = ctx.state;
+  // A launch is waiting on a square, and a grant on an Ally: both are questions
+  // already asked, so they come before whatever the phase would otherwise show.
+  if (launchPlan) return launchPanel(ctx);
   // A grant is answered before anything else: the Action has been performed
   // and the Ally is owed its Opportunity.
   if (grantPick) return grantPanel(ctx);
@@ -976,6 +992,27 @@ export function animateRemoteMove(uid: number, from: { col: number; row: number 
   board.animateMove(uid, [from, to], () => {
     if (hudRef) renderBoard(hudRef);
   });
+}
+
+// ---------- launching a Projectile ----------
+//
+// The unit card picks the Action and the Projectile; all that is left is where
+// it lands, which is one click on the board. Freeplay takes the board over with
+// startLaunch for the same reason — a command that needs a square cannot be
+// sent from a card alone.
+
+let launchPlan: { uid: number; actionId: string; cardId: string; label: string } | null = null;
+
+export function startLaunchPlan(uid: number, actionId: string, cardId: string, label: string): void {
+  launchPlan = { uid, actionId, cardId, label };
+  hudRef?.refresh();
+}
+
+function launchPanel(ctx: HudCtx): string {
+  const t = ctx.state.tokens.find((x) => x.uid === launchPlan!.uid);
+  return head('Your move', `Launch ${launchPlan!.label}`, `Click the Grid it lands on. ${t ? esc(t.label) : 'The launcher'} stays where it is.`, true)
+    + `<div class="tp-body"><p class="tp-note">The Projectile arrives on the square you pick, facing as it lands.</p></div>
+       <div class="tp-foot"><button class="bigbtn ghost2" data-act="launchcancel">Cancel</button></div>`;
 }
 
 // ---------- Extra Action Opportunities (Coordinate) ----------
@@ -1379,6 +1416,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     ctx.refresh();
   });
   on('[data-act="grantcancel"]', () => { grantPick = null; ctx.refresh(); });
+  on('[data-act="launchcancel"]', () => { launchPlan = null; ctx.refresh(); });
   on('[data-stance]', (el) => {
     const sc = ensureScript(s);
     const t = sc.opp ? s.tokens.find((x) => x.uid === sc.opp!.uid) : undefined;

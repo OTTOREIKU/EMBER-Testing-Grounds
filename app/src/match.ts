@@ -11,7 +11,7 @@ import { normaliseTasks, taskItemsFor } from './tasks';
 import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
 import { importSquadFile } from './importer';
 import { dialsOf, hashDials, newSalt, type DialEntry } from './secrecy';
-import { animateRemoteMove, ensureHud, glueAfter, type DiceLine, type HudCtx } from './matchhud';
+import { animateRemoteMove, ensureHud, glueAfter, startLaunchPlan, type DiceLine, type HudCtx } from './matchhud';
 import { SquadTracker } from './squads';
 import { Panel } from './panel';
 import { iconSvg } from './dice';
@@ -343,7 +343,10 @@ function mountSide(): void {
     },
     onSpendIntercept: () => {},
     onRestoreIntercept: () => {},
-    onLaunch: () => {},
+    // The card has chosen the Action and the Projectile; the board asks where.
+    onLaunch: (t, action, projectile) => {
+      startLaunchPlan(t.uid, action.id, projectile.id, projectile.name?.en || projectile.id);
+    },
     onStartAttack: () => {},
     onStartElectronic: () => {},
     onShowMoveRange: () => {},
