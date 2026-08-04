@@ -121,16 +121,13 @@ export class MultiplayerDialog {
     if (!this.net) return '';
     const v = this.net.view();
 
+    // Linked games have one door, and it is the Match Centre. Joining a room
+    // from here reached an older, half-built version of the same thing.
     if (!v.room) {
       return `<div class="mp-section">
         <h4>Play online</h4>
-        <p class="dim">Open a room and pass the code to your opponent, or enter one you were given. You each keep your own board; the moves travel between them.</p>
         ${v.error ? `<p class="mp-notice error">${esc(v.error)}</p>` : ''}
-        ${this.field('mp-room', 'Room code', 'text', 'placeholder="XXXXX" maxlength="7"')}
-        <div class="mp-actions">
-          <button class="mp-btn ghost" id="mp-join">Join</button>
-          <a class="mp-btn" href="match.html" style="text-decoration:none;display:inline-block">Match Centre</a>
-        </div>
+        <a class="mp-btn big" href="match.html">Match Centre</a>
       </div>`;
     }
 
@@ -331,24 +328,6 @@ export class MultiplayerDialog {
 
     const net = this.net;
     if (net) {
-      const code = this.input('mp-room');
-      // A room code is handed over in upper case; typing it lower should look
-      // the same on screen, exactly as the invite field does.
-      code?.addEventListener('input', () => {
-        const at = code.selectionStart;
-        code.value = code.value.toUpperCase();
-        code.setSelectionRange(at, at);
-      });
-      const join = (): void => {
-        if (!code?.value.trim()) {
-          this.notice = { kind: 'error', text: 'Enter the room code you were given.' };
-          this.render();
-          return;
-        }
-        net.join(code.value.trim());
-      };
-      code?.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') join(); });
-      this.dlg?.querySelector('#mp-join')?.addEventListener('click', join);
       this.dlg?.querySelector('#mp-host')?.addEventListener('click', () => net.host());
       this.dlg?.querySelector('#mp-leave')?.addEventListener('click', () => net.leave());
       this.dlg?.querySelector('#mp-resend')?.addEventListener('click', () => net.resend());

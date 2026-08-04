@@ -93,7 +93,15 @@ p.mc-sub { font-size: 12.5px; color: var(--text2); line-height: 1.55; margin: 0 
 .panel .quiet { font-size: 10.5px; color: var(--text3); line-height: 1.5; margin: 10px 0 0; }
 
 .mc-row { display: flex; gap: 12px; flex-wrap: wrap; }
-.mc-row > .panel { flex: 1; min-width: 260px; }
+/* Stacked panels space themselves; side by side they are one row and the gap
+   already does it, so the stacking margin would only drop the second one. */
+.mc-row > .panel { flex: 1; min-width: 260px; margin-top: 0; }
+
+/* The two ways in stand side by side and must read as one choice: same panel,
+   same height, and the buttons on one line however much sits above them. */
+.panel.door { display: flex; flex-direction: column; gap: 12px; }
+.panel.door h3 { margin: 0; }
+.panel.door .btn.wide { margin-top: auto; }
 
 label.f { display: block; font-size: 9.5px; letter-spacing: 0.8px; text-transform: uppercase; color: var(--text3); font-weight: 700; margin: 12px 0 4px; }
 input.f {
@@ -164,6 +172,7 @@ input.f.codebox { font-family: var(--mono); font-size: 16px; letter-spacing: 5px
 .step .dot.wait { background: var(--accent); }
 .step.locked .label { color: var(--text3); }
 .mc-rail .foot { margin-top: auto; padding: 12px 10px 4px; font-size: 10.5px; color: var(--text3); line-height: 1.5; }
+.mc-rail .foot .quiet { display: block; margin-bottom: 7px; }
 .mc-rail .foot b { display: block; color: var(--text2); font-size: 11.5px; font-weight: 600; margin-bottom: 2px; }
 
 .mc-stagepane { flex: 1; min-width: 0; padding: 18px 22px; max-width: 780px; }
@@ -230,12 +239,13 @@ input.f.codebox { font-family: var(--mono); font-size: 16px; letter-spacing: 5px
 .hudside .side-tab { display: none; flex: 1; min-height: 0; overflow-y: auto; }
 .hudside .side-tab.active { display: block; }
 /* the setup roll readout: just the dice that landed, per player */
-.hudtray { margin: 10px 0 4px; display: flex; flex-direction: column; gap: 6px; }
-.rollrow { display: flex; align-items: center; gap: 9px; background: var(--surface2); border-radius: var(--radius-sm); padding: 7px 9px; box-shadow: var(--shadow); }
-.rollwho { font-size: 10px; letter-spacing: 0.5px; text-transform: uppercase; color: var(--text3); font-weight: 700; min-width: 54px; }
-.rolldice { display: flex; gap: 5px; }
+.rolldice { display: flex; gap: 4px; flex-shrink: 0; }
+/* A face can carry two icons — the yellow die has two Hits on two of its
+   sides — so they lay out in a row. Centring them all in one place drew them
+   on top of each other, which read as a die showing a symbol it does not have. */
 .rolldice .die {
-  width: 26px; height: 26px; border-radius: var(--radius-sm); display: grid; place-items: center;
+  width: 30px; height: 30px; border-radius: var(--radius-sm); flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center; gap: 1px;
   background: var(--die-yellow, #e6a817); color: #231a00;
 }
 .rolldice .die-red { background: var(--die-red, #d33a3a); color: #fff; }
@@ -243,7 +253,7 @@ input.f.codebox { font-family: var(--mono); font-size: 16px; letter-spacing: 5px
 .rolldice .die-blue { background: var(--die-blue, #3a7bd3); color: #fff; }
 .rolldice .die-black { background: var(--die-black, #26262a); color: #eee; }
 .die-blank { font-size: 13px; opacity: 0.5; }
-.rollrow.rolling .rolldice { animation: mc-shake 0.13s linear 4; }
+.feedline.rolling .rolldice .die { animation: mc-shake 0.13s linear 4; }
 @keyframes mc-shake { 25% { transform: translateY(-3px) rotate(-4deg); } 75% { transform: translateY(3px) rotate(4deg); } }
 .pickrow.blocked { opacity: 0.45; cursor: default; }
 .pickrow.sel { background: var(--accent-lt); }
@@ -332,6 +342,9 @@ input.f.codebox { font-family: var(--mono); font-size: 16px; letter-spacing: 5px
 .tp-body { padding: 12px 14px; flex: 1; overflow-y: auto; }
 .tp-foot { padding: 12px 14px; background: var(--surface2); }
 .tp-note { font-size: 11px; color: var(--text2); line-height: 1.5; margin: 6px 0 0; }
+/* In the foot the note explains the button under it, so it sits above and the
+   button keeps its place against the bottom edge. */
+.tp-foot .tp-note { margin: 0 0 8px; }
 .tp-dim { font-size: 10.5px; color: var(--text3); font-style: italic; }
 .tp-gap { height: 12px; }
 b.s1 { color: var(--s1); } b.s2 { color: var(--s2); }
@@ -397,7 +410,11 @@ b.s1 { color: var(--s1); } b.s2 { color: var(--s2); }
 .rowbtn.warnb { background: var(--red-lt); color: var(--red); }
 .actrow.armed { background: var(--accent-lt); }
 .dicefeed { padding: 9px 14px 12px; background: var(--surface2); }
-.feedline { font-size: 10.5px; color: var(--text2); padding: 3px 0; }
+.feedline {
+  font-size: 10.5px; color: var(--text2); padding: 3px 0;
+  display: flex; align-items: center; gap: 7px;
+}
+.feedline .feedtext { min-width: 0; }
 
 /* ---------- account flyout ---------- */
 .mc-veil {

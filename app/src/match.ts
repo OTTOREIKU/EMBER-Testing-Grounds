@@ -1,5 +1,5 @@
 import { ApiError, EmberApi, type Account, type MyRecord } from './api';
-import { Relay } from './net';
+import { Relay, type RollKind } from './net';
 import { applyRemote, onPerformed, onRefused, perform, type Command, type CheckResult } from './commands';
 import { setLocalSeat } from './loop';
 import { dataUrl, loadData, missionImageUrl, squadLabel, type GameData } from './data';
@@ -81,16 +81,40 @@ let acctNote: { ok: boolean; text: string } | null = null;
 let busy = false;
 let copied = false;
 
+// A catch-up walks the board through the whole tail of history at once. Each
+// step is a real state change, but drawing every one of them is what turned a
+// rejoin into ten seconds of frozen page, so the screen is left alone until
+// the replay lands and then drawn once.
+let catchingUp = false;
+// Asking for the board back is the right answer to a command that will not
+// apply, but only the first time: if the replay itself is what refuses, an
+// unthrottled ask becomes a loop of checkpoint, replay, refuse, ask.
+let lastResync = 0;
+
+function resyncSoon(): void {
+  const now = Date.now();
+  if (now - lastResync < 6000) {
+    lobbyNote = 'The two boards disagree and would not settle. Leave and rejoin the table if this does not clear.';
+    return;
+  }
+  lastResync = now;
+  relay.requestResync();
+}
+
 const relay = new Relay(api.base, {
   onCommand(cmd) {
     if (!data) return;
     const verdict = applyRemote(data, state, cmd);
     if (!verdict.ok) {
-      relay.requestResync();
-      render();
+      resyncSoon();
+      if (!catchingUp) render();
       return;
     }
     glueAfter(data, state, cmd);
+    // Nothing below this line belongs in a replay: the commitments and reveals
+    // are being re-read from history, and answering them again would send this
+    // client's reveal a second time.
+    if (catchingUp) return;
     // Their commitment may be the second one, which releases our reveal; and
     // their reveal is checked against the hash they promised.
     if (cmd.kind === 'commitTimings') maybeReveal();
@@ -111,15 +135,25 @@ const relay = new Relay(api.base, {
     if (!data) return;
     const s = migrateState(raw, data);
     if (s) state = s;
+    if (!catchingUp) render();
+  },
+  onCatchUp(active) {
+    catchingUp = active;
+    if (active) return;
+    // The board is whole again: draw it, and answer anything the replay
+    // walked past — a commitment made while we were away may be waiting on
+    // this client's reveal.
+    maybeReveal();
     render();
   },
   onNeedCheckpoint() {
     relay.publishCheckpoint();
   },
-  onRolled(dice, seat, label, isMine) {
-    if (isMine || !diceData) return;
-    const hits = dice.reduce((n, d) => n + countHits([diceData!.dice[d.color as DieColor]?.faces[d.face] ?? []]), 0);
-    diceFeed.push({ seat, text: `${label ?? 'rolled'} — ${hits} Hit${hits === 1 ? '' : 's'}` });
+  // Every roll in the room lands here, the roller's included, so both players
+  // read the same line and watch the same faces. The roller adds nothing of
+  // its own; doing so is what left the other player with a number and no dice.
+  onRolled(dice, seat, label, _mine, kind) {
+    pushRoll(seat, label, dice, kind);
     render();
   },
   onChange(view) {
@@ -127,7 +161,7 @@ const relay = new Relay(api.base, {
     // Remembered for the Rejoin door: a dropped connection should not need
     // the code typed back in.
     if (view.room) localStorage.setItem('ember-last-room', view.room.id);
-    render();
+    if (!catchingUp) render();
   },
   snapshot: () => JSON.parse(JSON.stringify(state)) as unknown,
 });
@@ -165,23 +199,52 @@ function send(cmd: Command): CheckResult {
   return v;
 }
 
+// The faces a roll landed on, read from the same printed data both players
+// hold. Every count on screen comes through here, so what a player is told
+// their roll was worth is derived from the very faces they are shown.
+function facesOf(dice: { color: string; face: number }[]) {
+  return dice.map((d) => diceData?.dice[d.color as DieColor]?.faces[d.face] ?? []);
+}
+
+let feedSeq = 0;
+
+function pushRoll(seat: Side, label: string | null, dice: { color: string; face: number }[], kind: RollKind): void {
+  const faces = facesOf(dice);
+  let text: string;
+  if (kind === 'hits') {
+    // The table-edge roll is decided on Hits alone, which is why a face
+    // carrying two Hit icons is worth two: the count is of icons, not of dice.
+    const n = countHits(faces);
+    text = `${label ?? 'rolled'} — ${n} Hit${n === 1 ? '' : 's'}`;
+  } else {
+    const counts: Record<string, number> = {};
+    for (const face of faces) for (const icon of face) counts[icon.type] = (counts[icon.type] ?? 0) + 1;
+    const pretty = (k: string) => k.replace(/([A-Z])/g, ' $1').toLowerCase();
+    const parts = Object.entries(counts).map(([k, n]) => `${n}× ${pretty(k)}`).join(', ');
+    text = `${label ?? 'rolled'} — ${parts || 'all blank'}`;
+  }
+  feedSeq += 1;
+  diceFeed.push({ seat, text, dice, n: feedSeq });
+}
+
 // Server dice in a room; honest local dice in dev. Either way the Hits per
-// die come from the same printed faces, and the faces come back so the tray
-// can roll them on screen.
+// die come from the same printed faces, and the faces come back so the feed
+// can show what landed. In a room the feed line is added when the server
+// announces the roll to everyone, so both players get it the same way.
 async function rollHits(n: number, label: string): Promise<{ hits: number[]; dice: { color: string; face: number }[] }> {
   if (!diceData) return { hits: Array.from({ length: n }, () => 0), dice: [] };
   const faces = diceData.dice.yellow;
   let idx: number[];
   if (relay.state.room && relay.state.seat) {
-    const rolled = await relay.rollDice({ yellow: n }, label);
+    const rolled = await relay.rollDice({ yellow: n }, label, 'hits');
     idx = rolled.map((d) => d.face);
   } else {
     idx = Array.from({ length: n }, () => Math.floor(Math.random() * faces.sides));
   }
+  const dice = idx.map((i) => ({ color: 'yellow', face: i }));
   const hits = idx.map((i) => countHits([faces.faces[i] ?? []]));
-  const total = hits.reduce((a, b) => a + b, 0);
-  diceFeed.push({ seat: relay.state.seat ?? devSeat ?? 's1', text: `${label} — ${total} Hit${total === 1 ? '' : 's'}` });
-  return { hits, dice: idx.map((i) => ({ color: 'yellow', face: i })) };
+  if (!relay.state.room) pushRoll(devSeat ?? 's1', label, dice, 'hits');
+  return { hits, dice };
 }
 
 // ---------- the left side panel, borrowed whole from freeplay ----------
@@ -239,27 +302,6 @@ function syncSide(uid: number | null): void {
   else panel?.clear();
 }
 
-// Just the dice that were rolled, with the faces they landed on — no pool
-// spinners, no roll button. Clean like the combat readout.
-function showDice(el: HTMLElement, dice: { color: string; face: number }[], who: string): void {
-  if (!diceData) return;
-  const faces = dice
-    .map((d) => {
-      const icons = (diceData!.dice[d.color as DieColor]?.faces[d.face] ?? [])
-        .map((ic) => iconSvg(ic, 18))
-        .join('');
-      return `<span class="die die-${d.color}">${icons || '<span class="die-blank">·</span>'}</span>`;
-    })
-    .join('');
-  const row = document.createElement('div');
-  row.className = 'rollrow';
-  row.innerHTML = `<span class="rollwho">${who}</span><span class="rolldice">${faces}</span>`;
-  el.appendChild(row);
-  // Roll them in: a brief shuffle before the faces settle.
-  row.classList.add('rolling');
-  setTimeout(() => row.classList.remove('rolling'), 520);
-}
-
 // An attack pool: server dice in a room, local otherwise, and the face icons
 // summarised into the shared feed either way.
 async function rollPool(y: number, r: number, label: string): Promise<void> {
@@ -269,22 +311,16 @@ async function rollPool(y: number, r: number, label: string): Promise<void> {
   if (r) pool.red = r;
   let rolled: { color: string; face: number }[];
   if (relay.state.room && relay.state.seat) {
-    rolled = await relay.rollDice(pool, label);
+    rolled = await relay.rollDice(pool, label, 'pool');
   } else {
     rolled = Object.entries(pool).flatMap(([c, n]) =>
       Array.from({ length: n }, () => ({ color: c, face: Math.floor(Math.random() * (diceData!.dice[c as DieColor]?.sides ?? 6)) })),
     );
   }
-  const counts: Record<string, number> = {};
-  for (const d of rolled) {
-    for (const icon of diceData.dice[d.color as DieColor]?.faces[d.face] ?? []) {
-      counts[icon.type] = (counts[icon.type] ?? 0) + 1;
-    }
+  if (!relay.state.room) {
+    pushRoll(relay.state.seat ?? devSeat ?? 's1', label, rolled, 'pool');
+    render();
   }
-  const pretty = (k: string) => k.replace(/([A-Z])/g, ' $1').toLowerCase();
-  const text = `${label} — ${Object.entries(counts).map(([k, n]) => `${n}× ${pretty(k)}`).join(', ') || 'all blank'}`;
-  diceFeed.push({ seat: relay.state.seat ?? 's1', text });
-  render();
 }
 
 // The commit half of the dial secrecy; the reveal follows once both are in.
@@ -384,16 +420,13 @@ function loginHtml(): string {
 function doorHtml(): string {
   return `<div class="mc-col">
     <h1 class="mc-h">Start a match</h1>
-    <p class="mc-sub">One player opens a table and shares the code. The host sets the battlefield and the rules; both players bring a squad.</p>
     <div class="mc-row">
-      <div class="panel">
-        <h3>Open a table</h3>
-        <p class="hint">You become the host. You pick the map, the Main Task and the game length, then launch when both squads are in.</p>
-        <button class="btn wide" id="mc-host"${busy ? ' disabled' : ''}>Open a table</button>
+      <div class="panel door">
+        <h3>Host a game</h3>
+        <button class="btn wide" id="mc-host"${busy ? ' disabled' : ''}>Host a game</button>
       </div>
-      <div class="panel">
+      <div class="panel door">
         <h3>Join with a code</h3>
-        <p class="hint">From whoever opened the table. You bring a squad and pick your Secondary Task; they handle the rest.</p>
         <input class="f codebox" id="mc-joincode" maxlength="8" placeholder="CODE" />
         <button class="btn wide" id="mc-join"${busy ? ' disabled' : ''}>Join</button>
       </div>
@@ -401,10 +434,9 @@ function doorHtml(): string {
     ${doorErr ? `<div class="mc-err">${esc(doorErr)}</div>` : ''}
     ${localStorage.getItem('ember-last-room')
       ? `<div class="panel" style="margin-top:12px"><h3>Rejoin ${esc(localStorage.getItem('ember-last-room')!)}</h3>
-          <p class="hint">Your last table. Seats are kept by account, so dropping out never loses your place.</p>
+          <p class="hint">Seats are kept by account, so dropping out never loses your place.</p>
           <button class="btn wide" id="mc-rejoin" style="margin-top:0">Rejoin</button></div>`
       : ''}
-    <p class="quiet" style="margin-top:14px">Playing solo or hotseat? That stays on the <a href="./index.html" style="color:var(--text2)">board</a> — this page is only for linked games.</p>
   </div>`;
 }
 
@@ -519,13 +551,16 @@ function railHtml(): string {
   const foot = running()
     ? `<div class="foot"><b>Match running</b>Round ${state.round.n} · ${PHASES[state.round.phase]} Phase</div>`
     : isHost()
+      // The line above the button says what it is waiting on, and it changes
+      // as the table fills. Above, because the foot is pinned to the bottom of
+      // the rail: text that grows and shrinks then never moves the button.
       ? `<div class="foot">
+          <span class="quiet">${esc(why)}</span>
           <button class="btn wide" id="mc-launch" style="margin-top:0"${canLaunch ? '' : ' disabled'}>Launch match</button>
-          <span class="quiet" style="display:block;margin-top:6px">${esc(why)}</span>
         </div>`
       : `<div class="foot">
+          <span class="quiet">${iAmReady ? 'Waiting for the host to launch.' : 'Ready when you have looked over the battlefield.'}</span>
           <button class="btn wide${iAmReady ? ' ghost' : ''}" id="mc-ready" style="margin-top:0">${iAmReady ? '✓ Ready — tap to undo' : 'Ready'}</button>
-          <span class="quiet" style="display:block;margin-top:6px">${iAmReady ? 'The host can start when they are ready too.' : 'Press Ready when you have looked over the battlefield.'}</span>
         </div>`;
   return `<div class="mc-rail">
     <div class="grouphead">Match setup</div>
@@ -536,10 +571,10 @@ function railHtml(): string {
 
 function roomStep(): string {
   return `<div class="steppane">
-    <div class="stephead"><h3>Room</h3><span>who is at the table</span></div>
+    <div class="stephead"><h3>Room</h3></div>
     <div class="roomhead">
       <span class="codebig" id="mc-code2" title="Copy the room code">${esc(relay.state.room!.id)}${copied ? ' ✓' : ''}</span>
-      <span class="who">Give this code to your opponent.<br>${isHost() ? 'You are the host: the table settings are yours.' : 'The host sets up the table; you bring a squad.'}</span>
+      <span class="who">Give this code to your opponent.</span>
     </div>
     ${seatHtml('s1')}
     ${seatHtml('s2')}
@@ -576,8 +611,8 @@ function battlefieldStep(): string {
       </div>`
     : `<div class="mispanel empty"><p class="quiet">Pick a Main Task to read its card here.<br>A free battle plays without one.</p></div>`;
   return `<div class="steppane">
-    <div class="stephead"><h3>Battlefield</h3><span>the map and the Main Task, set before the first roll (3.1.1)</span></div>
-    ${editable ? '' : `<p class="hint">${running() ? 'The battlefield is locked while the game runs.' : 'The host sets the battlefield. You are watching it live.'}</p>`}
+    <div class="stephead"><h3>Battlefield</h3></div>
+    ${editable ? '' : `<p class="hint">${running() ? 'Locked while the game runs.' : 'Host only.'}</p>`}
     <div class="pickgrid three">
       <div class="mappanel">
         <div class="previewhead"><span class="t">Preview</span><span class="n">${esc(mapName(state.map))}</span></div>
@@ -589,7 +624,6 @@ function battlefieldStep(): string {
       </div>
     </div>
     <div class="missionrow">${missions}</div>
-    <p class="quiet">Picking a Main Task lays its zones and Task Items on both boards in one step.</p>
   </div>`;
 }
 
@@ -609,9 +643,9 @@ function squadsStep(): string {
     })
     .join('');
   return `<div class="steppane">
-    <div class="stephead"><h3>Squads</h3><span>each seat brings its own — they land on both screens</span></div>
+    <div class="stephead"><h3>Squads</h3></div>
     ${rows}
-    <p class="quiet">Squads come from your saved library or a builder file, and wait undeployed until the match starts. To change a squad, leave and rejoin — a proper remove lands with the HUD.</p>
+    <p class="quiet">To change a squad, leave the table and rejoin.</p>
   </div>`;
 }
 
@@ -628,13 +662,13 @@ function rulesStep(): string {
     )
     .join('');
   return `<div class="steppane">
-    <div class="stephead"><h3>Rules</h3><span>battle scale and game length</span></div>
-    ${editable ? '' : '<p class="hint">The host sets the rules. You are watching them live.</p>'}
+    <div class="stephead"><h3>Rules</h3></div>
+    ${editable ? '' : '<p class="hint">Host only.</p>'}
     <div class="sect2">Battle scale</div>
     <div class="missionrow" style="margin-top:6px">${scales}</div>
     <div class="sect2" style="margin-top:14px">Game length</div>
     <div class="missionrow" style="margin-top:6px">${rounds}</div>
-    <p class="quiet">Scale caps squad points (600 / 900 / 1200+). The rulebook plays 5 rounds at every scale.</p>
+    <p class="quiet">Scale caps squad points: 600 / 900 / 1200+.</p>
   </div>`;
 }
 
@@ -659,7 +693,7 @@ function hudCtx(): HudCtx {
     },
     mountSide,
     syncSide,
-    showDice,
+    diceData,
     refresh: () => render(),
   };
 }

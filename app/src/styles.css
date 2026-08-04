@@ -849,6 +849,11 @@ main { display: flex; flex: 1; min-height: 0; }
 }
 .mp-btn:hover:not(:disabled) { background: var(--accent); color: var(--on-accent); }
 .mp-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+/* The one way into a linked game, so it is the size of the decision. */
+.mp-btn.big {
+  display: block; width: 100%; margin-top: 10px; padding: 16px 12px;
+  font-size: 13px; text-align: center; text-decoration: none;
+}
 .mp-btn.ghost { background: var(--surface3); color: var(--text2); }
 .mp-btn.ghost:hover:not(:disabled) { background: var(--surface3); color: var(--text); }
 

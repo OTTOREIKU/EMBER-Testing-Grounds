@@ -7,7 +7,8 @@ import { maneuverRange, squadAllegiance } from './units';
 import { crushTargets, extendPath, reachableGrids, standingSpot, type LargeGrid } from './rules';
 import { breakAwayCost } from './melee';
 import { factionColour } from './icons';
-import type { GameState, Side, Timing, Token, ExtraTick, Opportunity } from './types';
+import { iconSvg } from './dice';
+import type { DiceData, DieColor, GameState, Side, Timing, Token, ExtraTick, Opportunity } from './types';
 import { newOpportunity, newScriptState, PHASES, TIMINGS } from './types';
 import { deployable, deployTurn, deploymentComplete, firstPlayerFrom, normaliseSetup, rollTotal, type SetupState } from './setup';
 import { actionPhaseComplete, activationOrder, alive, canAct, commandTokensFor, eligibleUnits, isLoopPhase, loopComplete, nextActivation, nextTurn, type InitLookup, type LoopPhase } from './loop';
@@ -23,6 +24,12 @@ import { tokenCards } from './units';
 export interface DiceLine {
   seat: Side;
   text: string;
+  // The faces that landed, so the feed can show the dice rather than only
+  // report a number. Both players are given the same ones.
+  dice: { color: string; face: number }[];
+  // Rising, so a line that has only just arrived can tumble on screen once and
+  // then sit still through every redraw after it.
+  n: number;
 }
 
 export interface HudCtx {
@@ -49,8 +56,8 @@ export interface HudCtx {
   mountSide(): void;
   // Redraws the side panel and shows a unit's card when one is selected.
   syncSide(uid: number | null): void;
-  // Renders one player's rolled dice into the setup readout.
-  showDice(el: HTMLElement, dice: { color: string; face: number }[], who: string): void;
+  // The printed faces, for drawing the dice a roll landed on.
+  diceData: DiceData | null;
   refresh(): void;
 }
 
@@ -509,7 +516,7 @@ function setupPanel(ctx: HudCtx, su: SetupState): string {
       ? `<p class="tp-note">A tie on ${rollTotal(su.rolls.s1)}. The rulebook gives no tie procedure, so both squads roll again — the first re-roll clears the other total.</p>`
       : winner ? `<p class="tp-note">${squadLabel(winner)} rolls higher.</p>` : '';
     return head('Setup', 'Roll for First Player', 'Two dice each, most Hits goes first (3.1.2).', true)
-      + `<div class="tp-body">${rows}<div id="hud-tray" class="hudtray"></div>${verdict}</div>
+      + `<div class="tp-body">${rows}${verdict}</div>
         <div class="tp-foot">${winner ? '<button class="bigbtn" data-act="accept">Continue</button>' : ''}</div>`;
   }
   if (su.stage === 'side') {
@@ -539,9 +546,12 @@ function setupPanel(ctx: HudCtx, su: SetupState): string {
   }
   // deploy — every button that ends or advances a step lives in the FOOT, so
   // the panel reads the same in every state.
+  // The note goes above the button, never below it. The foot is anchored to
+  // the bottom of the panel, so text that comes and goes grows upward and the
+  // button it explains stays where the hand expects it.
   const confirmRow = unconfirmed !== null
-    ? `<button class="bigbtn" data-act="confirmplace">Confirm placement</button>
-       <p class="tp-note">Or click another Grid in your zone to move it first.</p>`
+    ? `<p class="tp-note">Or click another Grid in your zone to move it first.</p>
+       <button class="bigbtn" data-act="confirmplace">Confirm placement</button>`
     : '';
   const turn = deployTurn(s, su);
   if (!turn || deploymentComplete(s)) {
@@ -768,12 +778,35 @@ function panelHtml(ctx: HudCtx): string {
   return endPanel(ctx);
 }
 
+// The last roll drawn. Anything newer than this has not been on screen yet and
+// gets its one tumble; everything else is redrawn as it stands, so a roll does
+// not re-roll itself every time something else on the page changes.
+let feedSeen = 0;
+
+// One die: its face's icons laid out in a row. They have to sit side by side —
+// a face carrying two Hit icons drawn in one place looks like a single broken
+// symbol, and reads as a die showing something it never showed.
+function dieHtml(ctx: HudCtx, d: { color: string; face: number }): string {
+  const face = ctx.diceData?.dice[d.color as DieColor]?.faces[d.face] ?? [];
+  const icons = face.map((ic) => iconSvg(ic, 15)).join('');
+  return `<span class="die die-${esc(d.color)}">${icons || '<span class="die-blank">·</span>'}</span>`;
+}
+
 function feedHtml(ctx: HudCtx): string {
   if (!ctx.diceFeed.length) return '';
-  const rows = ctx.diceFeed
-    .slice(-3)
-    .map((d) => `<div class="feedline"><b class="${d.seat}">${squadLabel(d.seat)}</b> ${esc(d.text)}</div>`)
+  const lines = ctx.diceFeed.slice(-3);
+  const highest = lines.reduce((n, d) => Math.max(n, d.n), feedSeen);
+  const rows = lines
+    .map((d) => {
+      const dice = d.dice.length
+        ? `<span class="rolldice">${d.dice.map((x) => dieHtml(ctx, x)).join('')}</span>`
+        : '';
+      return `<div class="feedline${d.n > feedSeen ? ' rolling' : ''}">
+        <b class="${d.seat}">${squadLabel(d.seat)}</b>${dice}<span class="feedtext">${esc(d.text)}</span>
+      </div>`;
+    })
     .join('');
+  feedSeen = highest;
   return `<div class="dicefeed">${rows}</div>`;
 }
 
@@ -886,13 +919,11 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
   on('[data-act="lockmap"]', () => { ctx.send({ kind: 'lockMap', seat: me() }); ctx.refresh(); });
   on('[data-roll]', (el) => {
     const side = el.dataset.roll as Side;
+    // The dice themselves reach the feed from the roll announcement, which
+    // both players get; this only has to record what they were worth.
     void ctx.rollHits(2, `${squadLabel(side)} rolls for First Player`).then((res) => {
       ctx.send({ kind: 'rollSetup', seat: side, hits: res.hits });
       ctx.refresh();
-      // Painted after the refresh, because the redraw rebuilds the tray
-      // element the dice would otherwise land in.
-      const tray = root.querySelector<HTMLElement>('#hud-tray');
-      if (tray) ctx.showDice(tray, res.dice, squadLabel(side));
     });
   });
   on('[data-act="accept"]', () => { ctx.send({ kind: 'acceptRoll', seat: me() }); ctx.refresh(); });
