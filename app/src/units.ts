@@ -678,6 +678,7 @@ export function migrateState(rawIn: unknown, data: GameData): GameState | null {
     scale: (s as { scale?: GameState['scale'] }).scale ?? 'standard',
     roundLimit: (s as { roundLimit?: number }).roundLimit ?? 5,
     sideNames: (s as { sideNames?: GameState['sideNames'] }).sideNames ?? {},
+    ready: (s as { ready?: GameState['ready'] }).ready ?? {},
     mission: (s as { mission?: string | null }).mission ?? null,
     tasks: (s as { tasks?: unknown }).tasks ? normaliseTasks((s as { tasks?: unknown }).tasks) : null,
     scenario: (s as { scenario?: string | null }).scenario ?? null,

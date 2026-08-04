@@ -773,6 +773,17 @@ check('but the game length may still change', C.check(data, table, { kind: 'conf
 C.apply(data, table, { kind: 'endMatch', seat: 's1' });
 check('ending clears the setup and the tasks', [table.setup, table.tasks], [null, null]);
 
+// Ready is a lobby signal: it stops the host starting while the other player
+// is still reading, and means nothing once the match is under way.
+const lobby = openTable();
+C.apply(data, lobby, { kind: 'setReady', seat: 's2', ready: true });
+check('a seat can declare itself ready', [lobby.ready.s2, lobby.ready.s1], [true, undefined]);
+C.apply(data, lobby, { kind: 'setReady', seat: 's2', ready: false });
+check('and can take it back', lobby.ready.s2, false);
+C.apply(data, lobby, { kind: 'startMatch', seat: 's1' });
+check('starting the match clears the ready flags', JSON.stringify(lobby.ready), '{}');
+check('ready is refused once the match runs', C.check(data, lobby, { kind: 'setReady', seat: 's2', ready: true }).ok, false);
+
 check('an unknown Secondary Task is refused', C.check(data, openTable(), { kind: 'pickSecondary', seat: 's1', cardId: 'NOPE' }).ok, false);
 const sec = openTable();
 C.apply(data, sec, { kind: 'pickSecondary', seat: 's2', cardId: 'SEC1' });

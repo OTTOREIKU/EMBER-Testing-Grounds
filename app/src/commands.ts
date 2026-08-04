@@ -87,6 +87,9 @@ export type Command =
   // A squad's open-information Secondary Task pick (3.1.3). The seat is the
   // side choosing, so a player can only ever pick their own.
   | { kind: 'pickSecondary'; seat: Side; cardId: string }
+  // A seat declaring itself ready in the lobby, so the host cannot start
+  // while the other player is still reading the battlefield.
+  | { kind: 'setReady'; seat: Side; ready: boolean }
   // The two halves of the networked dial reveal (3.3). A seat publishes a
   // hash of its dials first and the dials themselves only once both hashes
   // are in, so neither player can see the other's before fixing their own.
@@ -148,13 +151,13 @@ type TableKind =
   | 'lockMap' | 'rollSetup' | 'acceptRoll' | 'pickEdge' | 'lockDials' | 'finishDeployment'
   | 'queueIntercepts' | 'clearIntercepts' | 'placeSmoke' | 'removeSmoke' | 'dissipateSmoke'
   | 'setMode' | 'handOver' | 'setStrict' | 'commitTimings' | 'revealTimings' | 'importSquad'
-  | 'configureTable' | 'startMatch' | 'endMatch' | 'pickSecondary';
+  | 'configureTable' | 'startMatch' | 'endMatch' | 'pickSecondary' | 'setReady';
 const TABLE_KINDS = new Set<Command['kind']>([
   'advancePhase', 'setPhase', 'resetRounds', 'adjustCommandTokens', 'passTurn', 'markEndStep', 'award',
   'lockMap', 'rollSetup', 'acceptRoll', 'pickEdge', 'lockDials', 'finishDeployment',
   'queueIntercepts', 'clearIntercepts', 'placeSmoke', 'removeSmoke', 'dissipateSmoke',
   'setMode', 'handOver', 'setStrict', 'commitTimings', 'revealTimings', 'importSquad',
-  'configureTable', 'startMatch', 'endMatch', 'pickSecondary',
+  'configureTable', 'startMatch', 'endMatch', 'pickSecondary', 'setReady',
 ]);
 
 // Table commands whose seat is attribution rather than a choice one squad
@@ -224,6 +227,10 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
     }
     case 'pickSecondary': {
       if (!(data.secondary ?? []).some((c) => c.id === cmd.cardId)) return no('That is not a Secondary Task card.');
+      return ok;
+    }
+    case 'setReady': {
+      if (normaliseSetup(state.setup)) return no('The match has already started.');
       return ok;
     }
     case 'importSquad': {
@@ -732,6 +739,12 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
     state.commandTokens = { s1: 0, s2: 0 };
     state.setup = newSetup();
     state.script = undefined;
+    // Ready flags belong to the lobby that is now over.
+    state.ready = {};
+    return;
+  }
+  if (cmd.kind === 'setReady') {
+    state.ready = { ...(state.ready ?? {}), [cmd.seat]: cmd.ready };
     return;
   }
   if (cmd.kind === 'pickSecondary') {

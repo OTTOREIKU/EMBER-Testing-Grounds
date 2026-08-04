@@ -526,6 +526,8 @@ export interface GameState {
   scale?: BattleScale;
   roundLimit?: number;
   sideNames?: Partial<Record<Side, string>>;
+  // Lobby only: a seat saying it has finished reading and is happy to start.
+  ready?: Partial<Record<Side, boolean>>;
   mission?: string | null;
   tasks?: TaskState | null;
   scenario?: string | null;
