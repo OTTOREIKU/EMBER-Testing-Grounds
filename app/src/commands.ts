@@ -1,7 +1,7 @@
 import type { Facing, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, Timing, Token } from './types';
 import { addStatus, ageTokens, PHASES, STATUSES, TIMINGS } from './types';
 import type { GameData } from './data';
-import { makeDroneToken, makeMechToken, maxLink, tokenCards } from './units';
+import { interceptCapacity, makeDroneToken, makeMechToken, maxLink, tokenCards } from './units';
 import { canManeuver, canOverload, canPerform, spendAction, spendManeuver, spendOverload } from './ticks';
 import { tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { battlefieldLocked, deploymentComplete, deployTurn, firstPlayerFrom, newSetup, normaliseSetup } from './setup';
@@ -44,6 +44,11 @@ export type Command =
   | { kind: 'forceMove'; seat: Side; uid: number; targetUid: number; to: { col: number; row: number }; push?: boolean }
   | { kind: 'spendAmmo'; seat: Side; uid: number; actionId: string }
   | { kind: 'restoreAmmo'; seat: Side; uid: number; actionId: string; amount?: number }
+  // The Round Tokens an Intercept X Part carries (4.9). They are spent, never
+  // regained; the restore is an undo for a misclick, which a networked table
+  // needs to travel like anything else that changes a shared number.
+  | { kind: 'spendIntercept'; seat: Side; uid: number; actionId: string }
+  | { kind: 'restoreIntercept'; seat: Side; uid: number; actionId: string }
   | { kind: 'recordKill'; seat: Side; uid: number; targetUid: number; what: 'part' | 'unit' }
   | { kind: 'destroyTerrain'; seat: Side; uid: number; pieces: string[] }
   | { kind: 'advancePhase'; seat: Side }
@@ -119,6 +124,11 @@ function lowValueUnit(data: GameData, t: Token): boolean {
 
 function ammoMax(data: GameData, t: Token, actionId: string): number | undefined {
   return tokenCards(data, t).flatMap(({ card }) => card.actions ?? []).find((a) => a.id === actionId)?.storage;
+}
+
+function interceptMax(data: GameData, t: Token, actionId: string): number | undefined {
+  const a = tokenCards(data, t).flatMap(({ card }) => card.actions ?? []).find((x) => x.id === actionId);
+  return a ? interceptCapacity(a) : undefined;
 }
 
 function findAction(data: GameData, state: GameState, uid: number, actionId: string) {
@@ -619,6 +629,19 @@ function checkActed(
       if (max !== undefined && held >= max) return no('That Action is already at its full Storage.');
       return ok;
     }
+    case 'spendIntercept': {
+      const held = t.intercept?.[cmd.actionId];
+      if (held === undefined) return no('That Action carries no Interception Tokens.');
+      if (held < 1) return no('Every Interception Token on that Part is spent, and they are never restored (4.9).');
+      return ok;
+    }
+    case 'restoreIntercept': {
+      const held = t.intercept?.[cmd.actionId];
+      if (held === undefined) return no('That Action carries no Interception Tokens.');
+      const max = interceptMax(data, t, cmd.actionId);
+      if (max !== undefined && held >= max) return no('That Part still holds every Interception Token it started with.');
+      return ok;
+    }
     case 'endOpportunity': {
       if (!oppOf(state, cmd.uid)) return no('It is not this unit\'s Action Opportunity.');
       return ok;
@@ -1115,6 +1138,20 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
       const max = ammoMax(data, t, cmd.actionId);
       const next = t.ammo[cmd.actionId] + (cmd.amount ?? 1);
       t.ammo[cmd.actionId] = max !== undefined ? Math.min(max, next) : next;
+      return;
+    }
+    case 'spendIntercept': {
+      const bag = t.intercept;
+      if (!bag || bag[cmd.actionId] === undefined) return;
+      bag[cmd.actionId] = Math.max(0, bag[cmd.actionId] - 1);
+      return;
+    }
+    case 'restoreIntercept': {
+      const bag = t.intercept;
+      if (!bag || bag[cmd.actionId] === undefined) return;
+      const max = interceptMax(data, t, cmd.actionId);
+      const next = bag[cmd.actionId] + 1;
+      bag[cmd.actionId] = max !== undefined ? Math.min(max, next) : next;
       return;
     }
     case 'endOpportunity': {

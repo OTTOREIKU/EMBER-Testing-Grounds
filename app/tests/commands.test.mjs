@@ -12,7 +12,15 @@ const tacticsSrc = readFileSync(new URL('../src/tactics.ts', import.meta.url), '
 const tasksSrc = readFileSync(new URL('../src/tasks.ts', import.meta.url), 'utf8');
 const loopSrc = readFileSync(new URL('../src/loop.ts', import.meta.url), 'utf8');
 const rules = readFileSync(new URL('../src/rules.ts', import.meta.url), 'utf8');
+const unitsSrc = readFileSync(new URL('../src/units.ts', import.meta.url), 'utf8');
 const smokeRules = rules.slice(rules.indexOf('export function smokeKey'), rules.indexOf('export function smokeBlocks'));
+// interceptCapacity is pure, so it is sliced in rather than stubbed: a mirror
+// of that keyword regex here could drift from the one the app really reads.
+const interceptParser = unitsSrc.slice(
+  unitsSrc.indexOf('export function interceptCapacity'),
+  unitsSrc.indexOf('// Every card id currently on the board'),
+);
+if (!interceptParser) throw new Error('could not locate interceptCapacity in units.ts');
 const timings = types.slice(types.indexOf('export const PHASES'), types.indexOf('export type TokenShape'));
 const statuses = types.slice(types.indexOf('export function hexagonIds'), types.indexOf('export interface RoundState'));
 const tmp = new URL('./_commands.slice.ts', import.meta.url);
@@ -65,6 +73,7 @@ writeFileSync(
     + loopSrc.replace(/^import[^\n]*\n/gm, '')
     + smokeRules
     + ticks.replace(/^import[^\n]*\n/gm, '')
+    + interceptParser
     + stubs
     + commands.replace(/^import[^\n]*\n/gm, ''),
 );
@@ -99,6 +108,7 @@ const data = {
     ['T2', { id: 'T2', actions: [ovlAct] }],
     ['T3', { id: 'T3', structure: 2, actions: [] }],
     ['T4', { id: 'T4', actions: [{ id: 'L1', type: 'Projectile', size: 'm', name: { en: 'Launcher' }, storage: 3 }] }],
+    ['T5', { id: 'T5', actions: [fire, { id: 'I2', type: 'Passive', name: { en: 'CIWS' }, range: 2, keywords: [{ inline: '拦截2' }] }] }],
     ['D1', { id: 'D1', actions: [] }],
     ['P1', { id: 'P1', LV: 4 }],
   ]),
@@ -545,6 +555,28 @@ check('resolving consumes exactly one', [wq.script.intercepts.length, wq.script.
 check('an interception not owed is refused', C.check(data, wq, { kind: 'resolveIntercept', seat: 's1', ...it }).ok, false);
 C.apply(data, wq, { kind: 'clearIntercepts', seat: 's1' });
 check('skipping clears the queue', wq.script.intercepts, []);
+
+// ---------- Interception Tokens (4.9) ----------
+// They are placed at Deployment, spent one per attempt and never restored, so
+// the count is a shared number and has to travel like Ammo does.
+const wi = () => world([mech(1, 's1', { mech: { torso: 'T5', pilot: 'P1' }, intercept: { I2: 2 } })], 2);
+const spend = (over = {}) => ({ kind: 'spendIntercept', seat: 's1', uid: 1, actionId: 'I2', ...over });
+check('an Action with no Interception Tokens is refused', C.check(data, wi(), spend({ actionId: 'A1' })).ok, false);
+check('a Part holding Tokens may spend one', C.check(data, wi(), spend()).ok, true);
+const wspend = wi();
+C.apply(data, wspend, spend());
+check('spending takes exactly one', wspend.tokens[0].intercept.I2, 1);
+C.apply(data, wspend, spend());
+check('and the Part can empty', wspend.tokens[0].intercept.I2, 0);
+check('an empty Part cannot Intercept again', C.check(data, wspend, spend()).ok, false);
+check('the other squad cannot spend it', C.check(data, wi(), spend({ seat: 's2' })).ok, false);
+// The restore is the undo for a misclick, capped by what the card prints.
+C.apply(data, wspend, { kind: 'restoreIntercept', seat: 's1', uid: 1, actionId: 'I2' });
+check('an undo puts one back', wspend.tokens[0].intercept.I2, 1);
+C.apply(data, wspend, { kind: 'restoreIntercept', seat: 's1', uid: 1, actionId: 'I2' });
+C.apply(data, wspend, { kind: 'restoreIntercept', seat: 's1', uid: 1, actionId: 'I2' });
+check('but never past the printed Intercept X', wspend.tokens[0].intercept.I2, 2);
+check('and a full Part refuses the undo', C.check(data, wspend, { kind: 'restoreIntercept', seat: 's1', uid: 1, actionId: 'I2' }).ok, false);
 
 // ---------- launch and despawn ----------
 
