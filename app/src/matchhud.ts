@@ -12,7 +12,7 @@ import type { DiceData, DieColor, GameState, Side, Timing, Token, ExtraTick, Opp
 import { newOpportunity, newScriptState, PHASES, TIMINGS } from './types';
 import { deployable, deployTurn, deploymentComplete, firstPlayerFrom, normaliseSetup, rollTotal, type SetupState } from './setup';
 import { actionPhaseComplete, activationOrder, alive, canAct, commandTokensFor, eligibleUnits, isLoopPhase, loopComplete, nextActivation, nextTurn, onExtraOpportunity, type InitLookup, type LoopPhase } from './loop';
-import { canManeuver, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, whyGrantLapsed, type TickVerdict } from './ticks';
+import { canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed, type TickVerdict } from './ticks';
 import { normaliseTasks, scoreMain, scoreSecondary, settleControl, unpaidLines, zoneCentreGrid, type Designation, type ScoreLine, type ScoreResult, type SecondaryScoring } from './tasks';
 import { tokenCards } from './units';
 
@@ -724,9 +724,20 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
         <button class="bigbtn ghost2" data-act="cancelmove" style="margin-top:6px">Cancel</button>
       </div>`;
   }
+  // The Overloading Pack buys Action Ticks with Link, two at most an
+  // Opportunity. They are ordinary Action Ticks, so a pair pays for a Medium
+  // Action — which no pair of Extra Ticks can do.
+  const overloadIds = new Set(ctx.data.overload.map((g) => g.actionId));
+  const hasOverload = tokenCards(ctx.data, t).some(({ card }) => (card.actions ?? []).some((a) => overloadIds.has(a.id)));
+  const ovl = hasOverload ? canOverload(o, t.link ?? 0) : null;
+  const ovlRow = ovl
+    ? `<button class="actrow k-tactic${ovl.ok ? '' : ' warn'}"${ovl.ok ? '' : ` data-why="${esc(ovl.why ?? '')}"`} data-act="overload" title="${esc(ovl.ok ? `Consume 1 Link for 1 Action Tick, up to ${OVERLOAD_MAX} an Action Opportunity.` : ovl.why ?? '')}">
+        <span class="dotk"></span><span class="an">Overload</span><span class="ac">${o.overload}/${OVERLOAD_MAX} · Link ${t.link ?? 0}</span></button>`
+    : '';
   return `${ticks}
     <button class="actrow k-moving${man.ok ? '' : ' warn'}"${man.ok ? '' : ` data-why="${esc(man.why ?? '')}"`} data-act="maneuver" title="${esc(man.ok ? 'Draw a route on the board, then confirm.' : man.why ?? '')}">
       <span class="dotk"></span><span class="an">Maneuver</span><span class="ac">draw a route</span></button>
+    ${ovlRow}
     ${rows}
     ${combatStrip(ctx)}`;
 }
@@ -1332,6 +1343,21 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     ctx.refresh();
   });
   on('[data-act="grantcancel"]', () => { grantPick = null; ctx.refresh(); });
+  on('[data-act="overload"]', (el) => {
+    if (el.dataset.why) { ctx.noteNow(el.dataset.why); ctx.refresh(); return; }
+    const sc = ensureScript(s);
+    const t = sc.opp ? s.tokens.find((x) => x.uid === sc.opp!.uid) : undefined;
+    if (t) {
+      // Link bought as Ticks is Link the Mech no longer has, and a Mech on 0
+      // Link Shuts Down. The Pack does not exempt it, so the spend goes through
+      // and the Shutdown is reported rather than the last point being refused.
+      const wasShut = t.stance === 'shutdown';
+      if (ctx.send({ kind: 'overload', seat: t.side, uid: t.uid }).ok && !wasShut && t.stance === 'shutdown') {
+        ctx.noteNow(`Link has reached 0, so ${t.label} shuts down.`);
+      }
+    }
+    ctx.refresh();
+  });
   on('[data-act="maneuver"]', (el) => {
     if (el.dataset.why) { ctx.noteNow(el.dataset.why); ctx.refresh(); return; }
     const sc = ensureScript(s);
