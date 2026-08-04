@@ -13,7 +13,7 @@ import { newOpportunity, newScriptState, PHASES, TIMINGS } from './types';
 import { deployable, deployTurn, deploymentComplete, firstPlayerFrom, normaliseSetup, rollTotal, type SetupState } from './setup';
 import { actionPhaseComplete, activationOrder, alive, canAct, commandTokensFor, eligibleUnits, isLoopPhase, loopComplete, nextActivation, nextTurn, type InitLookup, type LoopPhase } from './loop';
 import { canManeuver, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, whyGrantLapsed, type TickVerdict } from './ticks';
-import { normaliseTasks, zoneCentreGrid, type Designation } from './tasks';
+import { normaliseTasks, scoreMain, scoreSecondary, settleControl, unpaidLines, zoneCentreGrid, type Designation, type ScoreLine, type ScoreResult, type SecondaryScoring } from './tasks';
 import { tokenCards } from './units';
 
 // The in-match HUD (Match Centre part 3a): one question at a time, per seat.
@@ -824,10 +824,16 @@ function endPanel(ctx: HudCtx): string {
   const all = steps.every((st) => sc.endDone.includes(`${s.round.n}:end:${st.id}`));
   const last = s.round.n >= (s.roundLimit ?? 5);
   const vp = normaliseTasks(s.tasks).vp;
+  // What the board owes each squad right now, judged rather than typed in.
+  const owed = scorePreview(ctx, last);
   const score = `<div class="sect2" style="margin-top:10px">Victory Points</div>
     <div class="dialrow"><span class="nm s1">${squadLabel('s1')} · ${vp.s1} VP</span><button class="rowbtn" data-award="s1">+1</button></div>
     <div class="dialrow"><span class="nm s2">${squadLabel('s2')} · ${vp.s2} VP</span><button class="rowbtn" data-award="s2">+1</button></div>
-    <p class="tp-note">Scored by hand for now, like the tabletop — the card text says what each squad earned.</p>`;
+    ${owed.lines.length
+      ? `<div class="sect2" style="margin-top:10px">This round earns</div>
+         ${owed.lines.map((l) => `<div class="dialrow"><span class="nm ${l.side}">${esc(l.why)}</span><span class="pickchip set">+${l.vp}</span></div>`).join('')}
+         <p class="tp-note">Read off the board the same way the guide reads it. The +1 buttons stay for anything the cards settle by hand.</p>`
+      : '<p class="tp-note">Nothing scores from the board this round. The +1 buttons stay for anything the cards settle by hand.</p>'}`;
   // The last round ends the game rather than rolling into another one. Without
   // this "Finish the game" started Round 6 and the match never ended at all.
   if (last && all) return resultPanel(ctx, vp);
@@ -933,6 +939,64 @@ export function animateRemoteMove(uid: number, from: { col: number; row: number 
   board.animateMove(uid, [from, to], () => {
     if (hudRef) renderBoard(hudRef);
   });
+}
+
+// ---------- scoring, judged the way the guide judges it ----------
+//
+// The mission logic lives in tasks.ts and both pages read it the same way; the
+// award command then carries the resulting numbers, so a mirrored seat applies
+// the same VP without re-deriving them. Scoring by hand was the last place the
+// Match Centre guessed where the guide knew.
+
+// A Drone printed at 0 points carries the Low Value tag; Projectiles are Low
+// Value by default (p.82). Shared between control and the Secondary Tasks so a
+// unit cannot be Low Value for one and not the other.
+function lowValueOf(ctx: HudCtx) {
+  return (t: Token): boolean =>
+    t.kind === 'projectile' || (t.kind === 'drone' && (ctx.data.byId.get(t.cardId)?.score ?? 0) === 0);
+}
+
+function zoneCellsOf(ctx: HudCtx) {
+  return (zone: string) => ctx.data.zoneData.zones.find((z) => z.id === zone)?.cells ?? [];
+}
+
+export function scorePreview(ctx: HudCtx, finalRound: boolean): ScoreResult {
+  const s = ctx.state;
+  const tasks = normaliseTasks(s.tasks);
+  const low = lowValueOf(ctx);
+  const cells = zoneCellsOf(ctx);
+  // Control is judged as part of the same reading of the board that scores it.
+  settleControl(tasks, cells, s.tokens, low);
+  const mission = s.mission ? ctx.data.missions.cards.find((c) => c.id === s.mission) : undefined;
+  const all: ScoreLine[] = [];
+  if (mission) {
+    all.push(...scoreMain(
+      {
+        family: mission.family as 'blackbox' | 'control' | 'terminal' | 'vip',
+        vp: mission.vp ?? 0,
+        zones: mission.zones ?? [],
+        fromRound: mission.fromRound ?? 1,
+        cadence: mission.cadence ?? 'per-round',
+      },
+      tasks, s.tokens, s.round.n, finalRound,
+    ).lines);
+  }
+  for (const side of ['s1', 's2'] as Side[]) {
+    const id = tasks.secondary[side];
+    const card = id ? ctx.data.secondary.find((c) => c.id === id) : undefined;
+    if (!card?.kind) continue;
+    all.push(...scoreSecondary(
+      { id: card.id, name: card.name, vp: card.vp ?? 0, kind: card.kind as SecondaryScoring['kind'] },
+      side, tasks, s.tokens, cells, finalRound, low,
+    ).lines);
+  }
+  // Anything already paid stays paid: a Task does not score twice for the same
+  // reason in a later round.
+  const open = unpaidLines(all, tasks.scored);
+  let s1 = 0;
+  let s2 = 0;
+  for (const l of open) (l.side === 's1' ? (s1 += l.vp) : (s2 += l.vp));
+  return { lines: open, s1, s2 };
 }
 
 // One row per squad: the Task they have taken, or the way to take one. Shown
@@ -1249,7 +1313,25 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     if (targetUid !== null && !s.tokens.some((x) => x.uid === targetUid)) targetUid = null;
     ctx.refresh();
   });
-  on('[data-endstep]', (el) => { ctx.send({ kind: 'markEndStep', seat: me(), step: el.dataset.endstep! }); ctx.refresh(); });
+  on('[data-endstep]', (el) => {
+    const step = el.dataset.endstep!;
+    // "Settle Task control" is the step that pays: the guide judges the board
+    // and sends the numbers with the Award, so a mirrored seat applies the same
+    // VP rather than working them out again and maybe differently.
+    if (step === 'tasks') {
+      const last = ctx.state.round.n >= (ctx.state.roundLimit ?? 5);
+      const got = scorePreview(ctx, last);
+      if (got.lines.length) {
+        ctx.send({
+          kind: 'award', seat: me(),
+          vp: { s1: got.s1, s2: got.s2 },
+          keys: got.lines.map((l) => l.key).filter((k): k is string => !!k),
+        });
+      }
+    }
+    ctx.send({ kind: 'markEndStep', seat: me(), step });
+    ctx.refresh();
+  });
   on('[data-act="advance"]', () => { ctx.send({ kind: 'advancePhase', seat: me() }); ctx.refresh(); });
   on('[data-act="record"]', () => {
     recording = true;
