@@ -319,12 +319,22 @@ function mountSide(): void {
     // Card buttons that would open the freeplay dice tray stay inert; rolls
     // in a match come from the turn panel and the server.
     onRollDice: () => {},
-    // The match panel drives actions through the turn panel, so the card's
-    // own buttons stay read-only here rather than half-working.
-    onSpendAmmo: () => {},
+    // A magazine is a number both players have to agree on, so the card's own
+    // Ammo buttons send the same commands the board sends rather than sitting
+    // dead. The ones that need a board flow of their own — launching, shoving,
+    // detonating, starting an Interception — are still to come.
+    onSpendAmmo: (t, actionId) => {
+      send({ kind: 'spendAmmo', seat: t.side, uid: t.uid, actionId });
+      render();
+      syncSide(t.uid);
+    },
+    onRestoreAmmo: (t, actionId) => {
+      send({ kind: 'restoreAmmo', seat: t.side, uid: t.uid, actionId });
+      render();
+      syncSide(t.uid);
+    },
     onSpendIntercept: () => {},
     onRestoreIntercept: () => {},
-    onRestoreAmmo: () => {},
     onLaunch: () => {},
     onStartAttack: () => {},
     onStartElectronic: () => {},
