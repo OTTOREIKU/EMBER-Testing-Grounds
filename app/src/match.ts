@@ -80,6 +80,8 @@ let lobbyNote: string | null = null;
 let acctNote: { ok: boolean; text: string } | null = null;
 let busy = false;
 let copied = false;
+// Set when the door is joining a table only to shut it down.
+let closeOnArrival = false;
 
 // A catch-up walks the board through the whole tail of history at once. Each
 // step is a real state change, but drawing every one of them is what turned a
@@ -163,11 +165,25 @@ const relay = new Relay(api.base, {
     pushRoll(seat, label, dice, kind);
     render();
   },
+  onClosed() {
+    // The table is gone for everyone, so the remembered code is worthless.
+    localStorage.removeItem('ember-last-room');
+    state = freshBoard();
+    closeOnArrival = false;
+    doorErr = 'That table has been closed.';
+    render();
+  },
   onChange(view) {
     setLocalSeat(view.room ? view.seat : null);
     // Remembered for the Rejoin door: a dropped connection should not need
     // the code typed back in.
     if (view.room) localStorage.setItem('ember-last-room', view.room.id);
+    // Arriving only to shut the table: the close needs a seat at it first.
+    if (view.room && closeOnArrival) {
+      closeOnArrival = false;
+      relay.closeRoom();
+      return;
+    }
     if (!catchingUp) render();
   },
   snapshot: () => JSON.parse(JSON.stringify(state)) as unknown,
@@ -409,6 +425,7 @@ function barHtml(): string {
     <span class="spacer"></span>
     <button class="mc-account" id="mc-acct">${account ? esc(account.username) : 'Sign in'}</button>
     <a class="mc-backbtn" href="./index.html">Back to Board</a>
+    ${v.room ? '<button class="mc-backbtn ghostbtn" id="mc-door" title="Leave this table and go back to the Match Centre">Match Centre</button>' : ''}
   </div>`;
 }
 
@@ -446,7 +463,10 @@ function doorHtml(): string {
     ${localStorage.getItem('ember-last-room')
       ? `<div class="panel" style="margin-top:12px"><h3>Rejoin ${esc(localStorage.getItem('ember-last-room')!)}</h3>
           <p class="hint">Seats are kept by account, so dropping out never loses your place.</p>
-          <button class="btn wide" id="mc-rejoin" style="margin-top:0">Rejoin</button></div>`
+          <div class="rejoinrow">
+            <button class="btn wide" id="mc-rejoin" style="margin-top:0">Rejoin</button>
+            <button class="btn ghost closex" id="mc-closeroom" title="Close this table for good">✕</button>
+          </div></div>`
       : ''}
   </div>`;
 }
@@ -1011,6 +1031,21 @@ function wire(): void {
     const code = localStorage.getItem('ember-last-room');
     doorErr = null;
     if (code) relay.join(code);
+  });
+  // Closing a table you are not sitting at means sitting down first: the room
+  // is closed over the same socket that plays in it.
+  $('mc-closeroom')?.addEventListener('click', () => {
+    const code = localStorage.getItem('ember-last-room');
+    if (!code) return;
+    doorErr = null;
+    closeOnArrival = true;
+    relay.join(code);
+    render();
+  });
+  $('mc-door')?.addEventListener('click', () => {
+    relay.leave();
+    step = 'room';
+    render();
   });
   $('mc-join')?.addEventListener('click', () => {
     const code = ($('mc-joincode') as HTMLInputElement | null)?.value.trim() ?? '';

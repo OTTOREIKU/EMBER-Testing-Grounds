@@ -449,3 +449,10 @@ b.s1 { color: var(--s1); } b.s2 { color: var(--s2); }
 .acct .sect { font-size: 9.5px; letter-spacing: 0.8px; text-transform: uppercase; color: var(--text3); font-weight: 700; margin: 16px 0 2px; }
 .acct .row2 { display: flex; gap: 8px; margin-top: 10px; }
 .acct .row2 .btn { flex: 1; }
+
+/* The door's Rejoin row: the table, or the end of it. */
+.rejoinrow { display: flex; gap: 8px; align-items: stretch; }
+.rejoinrow .btn.wide { flex: 1; margin-top: 0; }
+.btn.closex { flex: none; padding: 10px 14px; font-size: 13px; line-height: 1; }
+.mc-backbtn.ghostbtn { background: var(--surface3); color: var(--text2); border: none; cursor: pointer; font: inherit; }
+.mc-backbtn.ghostbtn:hover { background: #2c3542; color: var(--text); }

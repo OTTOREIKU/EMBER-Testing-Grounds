@@ -54,6 +54,8 @@ export interface NetHooks {
   // then walked forward through history. Worth drawing once at the end rather
   // than once per command, since the tail can be a whole match long.
   onCatchUp(active: boolean): void;
+  // The table was closed by its host. The room is gone, for everyone.
+  onClosed(): void;
   // The server dropped its history and wants the board republished.
   onNeedCheckpoint(): void;
   // Anything the UI should redraw on.
@@ -165,6 +167,13 @@ export class Relay {
     this.ws?.close();
     this.ws = null;
     this.set({ status: 'offline', room: null, seat: null, host: false, error: null, desynced: false });
+  }
+
+  // Ends the table for good rather than leaving it to the idle sweep. Only
+  // the host may; the server refuses anyone else.
+  closeRoom(): void {
+    if (!this.view.room) return;
+    this.send({ t: 'close' });
   }
 
   // Called by the app for every command performed locally.
@@ -378,6 +387,17 @@ export class Relay {
         this.hooks.onRolled(dice, seat, (msg.label as string) ?? null, seat === this.view.seat, kind);
         return;
       }
+
+      case 'closed':
+        // The room is gone, so there is nothing to reconnect to: forget it
+        // before the socket closes or we would sit here retrying a dead code.
+        this.wanted = null;
+        this.endReplay();
+        this.ws?.close();
+        this.ws = null;
+        this.set({ status: 'offline', room: null, seat: null, host: false, error: null, desynced: false });
+        this.hooks.onClosed();
+        return;
 
       case 'needCheckpoint':
         this.hooks.onNeedCheckpoint();
