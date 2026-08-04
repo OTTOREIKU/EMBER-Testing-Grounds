@@ -11,7 +11,7 @@ import { normaliseTasks, taskItemsFor } from './tasks';
 import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
 import { importSquadFile } from './importer';
 import { dialsOf, hashDials, newSalt, type DialEntry } from './secrecy';
-import { ensureHud, glueAfter, type DiceLine, type HudCtx } from './matchhud';
+import { animateRemoteMove, ensureHud, glueAfter, type DiceLine, type HudCtx } from './matchhud';
 import { SquadTracker } from './squads';
 import { Panel } from './panel';
 import { iconSvg } from './dice';
@@ -106,6 +106,11 @@ function resyncSoon(): void {
 const relay = new Relay(api.base, {
   onCommand(cmd) {
     if (!data) return;
+    // Where the unit stood before their command lands, so the board can walk
+    // it across rather than teleport it once the move has been applied.
+    const moving = cmd.kind === 'maneuver' || cmd.kind === 'forceMove' ? cmd.uid : null;
+    const walker = moving === null ? undefined : state.tokens.find((t) => t.uid === moving);
+    const from = walker ? { col: walker.col ?? 0, row: walker.row ?? 0 } : null;
     const verdict = applyRemote(data, state, cmd);
     if (!verdict.ok) {
       resyncSoon();
@@ -113,10 +118,15 @@ const relay = new Relay(api.base, {
       return;
     }
     glueAfter(data, state, cmd);
+    clearFeedAfter(cmd);
     // Nothing below this line belongs in a replay: the commitments and reveals
     // are being re-read from history, and answering them again would send this
     // client's reveal a second time.
     if (catchingUp) return;
+    if (from && moving !== null) {
+      const now = state.tokens.find((t) => t.uid === moving);
+      if (now) animateRemoteMove(moving, from, { col: now.col ?? 0, row: now.row ?? 0 });
+    }
     // Their commitment may be the second one, which releases our reveal; and
     // their reveal is checked against the hash they promised.
     if (cmd.kind === 'commitTimings') maybeReveal();
@@ -211,6 +221,18 @@ function paused(): { side: Side; gone: boolean } | null {
   return null;
 }
 
+// Dice belong to the moment they were rolled for. Once the game has moved on —
+// the roll-off accepted, a phase turned, an activation ended — leaving them on
+// screen only invites someone to read last week's numbers as this turn's.
+const CLEARS_THE_FEED = new Set([
+  'acceptRoll', 'pickEdge', 'finishDeployment', 'advancePhase', 'setPhase',
+  'designate', 'endOpportunity', 'passTurn', 'startMatch', 'endMatch',
+]);
+
+function clearFeedAfter(cmd: Command): void {
+  if (CLEARS_THE_FEED.has(cmd.kind)) diceFeed.length = 0;
+}
+
 // One door for everything this page performs: the command, then the same
 // deterministic guide glue every client runs, ours or theirs.
 function send(cmd: Command): CheckResult {
@@ -218,7 +240,10 @@ function send(cmd: Command): CheckResult {
   const p = paused();
   if (p) return { ok: false, why: `Paused — waiting for ${squadLabel(p.side)}'s player.` };
   const v = perform(data, state, cmd);
-  if (v.ok) glueAfter(data, state, cmd);
+  if (v.ok) {
+    glueAfter(data, state, cmd);
+    clearFeedAfter(cmd);
+  }
   return v;
 }
 

@@ -12,7 +12,7 @@ import type { DiceData, DieColor, GameState, Side, Timing, Token, ExtraTick, Opp
 import { newOpportunity, newScriptState, PHASES, TIMINGS } from './types';
 import { deployable, deployTurn, deploymentComplete, firstPlayerFrom, normaliseSetup, rollTotal, type SetupState } from './setup';
 import { actionPhaseComplete, activationOrder, alive, canAct, commandTokensFor, eligibleUnits, isLoopPhase, loopComplete, nextActivation, nextTurn, type InitLookup, type LoopPhase } from './loop';
-import { canManeuver, canPerform } from './ticks';
+import { canManeuver, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, whyGrantLapsed } from './ticks';
 import { normaliseTasks, zoneCentreGrid, type Designation } from './tasks';
 import { tokenCards } from './units';
 
@@ -190,7 +190,9 @@ export function deployCellsFor(data: GameData, s: GameState, side: Side): Set<st
 // ---------- module UI state ----------
 
 let placing: number | null = null; // uid being deployed via board clicks
-let unconfirmed: number | null = null; // placed this turn, still nudgeable
+// Where this player has put a unit but not yet confirmed it. Nothing is sent
+// and nothing lands on the board until they do, so the turn stays theirs.
+let pending: { uid: number; col: number; row: number; size: 1 | 2 | 3 } | null = null;
 // A route being drawn, exactly as the freeplay board does it: traced by the
 // cursor so a deliberate zigzag is expressible, clicked to lock, confirmed
 // from the turn panel. The engine only ever sees the destination.
@@ -425,9 +427,11 @@ function boardCallbacks(): BoardCallbacks {
       // Zone, aligned to the grid, or nothing lands (3.1.4). The seat is the
       // unit's side — a nudge stays legal after the alternation moves on.
       if (!fitsZone(ctx, t.side, snap, size)) return;
-      const v = ctx.send({ kind: 'deployUnit', seat: t.side, uid: placing, to: snap });
-      if (v.ok) unconfirmed = placing;
-      board?.clearGhost();
+      // Held here rather than sent: a unit that lands on the board counts as
+      // placed, and the alternation would move to the other squad before this
+      // player had confirmed anything. The ghost stands in until they do.
+      pending = { uid: placing, col: snap.col, row: snap.row, size };
+      board?.showGhost(footprint({ ...snap, size }), true);
       ctx.refresh();
     },
     onDestroyTerrain(id) {
@@ -457,7 +461,10 @@ function renderBoard(ctx: HudCtx): void {
     if (t) board.showReachable(reachableFor(ctx, t), movePlan.steps);
   } else {
     board.clearHighlights();
-    if (placing === null) board.clearGhost();
+    // A placement waiting to be confirmed keeps its ghost through every
+    // redraw: it is the only thing on the board showing where the unit went.
+    if (pending) board.showGhost(footprint({ col: pending.col, row: pending.row, size: pending.size }), true);
+    else if (placing === null) board.clearGhost();
   }
   const gone = new Set(s.removedTerrain ?? []);
   board.renderTerrain((ctx.data.terrain.layouts[s.map] ?? []).filter((p) => !gone.has(p.id)));
@@ -564,8 +571,8 @@ function setupPanel(ctx: HudCtx, su: SetupState): string {
   // The note goes above the button, never below it. The foot is anchored to
   // the bottom of the panel, so text that comes and goes grows upward and the
   // button it explains stays where the hand expects it.
-  const confirmRow = unconfirmed !== null
-    ? `<p class="tp-note">Or click another Grid in your zone to move it first.</p>
+  const confirmRow = pending !== null
+    ? `<p class="tp-note">Or click another Grid in your zone to move it first. It lands when you confirm.</p>
        <button class="bigbtn" data-act="confirmplace">Confirm placement</button>`
     : '';
   const turn = deployTurn(s, su);
@@ -579,11 +586,11 @@ function setupPanel(ctx: HudCtx, su: SetupState): string {
       const otherSeat: Side = ctx.seat === 's1' ? 's2' : 's1';
       const otherReady = !!s.ready?.[otherSeat];
       sub = meReady && otherReady ? 'Both squads confirmed.' : 'Both squads confirm before Round 1 begins — moves stay open until then.';
-      if (!meReady) foot.push(`<button class="bigbtn${unconfirmed !== null ? ' ghost2' : ''}" data-act="deployready">My deployment is final</button>`);
+      if (!meReady) foot.push(`<button class="bigbtn${pending !== null ? ' ghost2' : ''}" data-act="deployready">My deployment is final</button>`);
       else if (!otherReady) foot.push(`<button class="bigbtn ghost2" data-act="deployunready" title="Tap to withdraw">✓ Ready — waiting for ${squadLabel(otherSeat)}…</button>`);
       else foot.push('<button class="bigbtn" data-act="deploydone">Begin Round 1</button>');
     } else {
-      foot.push(`<button class="bigbtn${unconfirmed !== null ? ' ghost2' : ''}" data-act="deploydone">Begin Round 1</button>`);
+      foot.push(`<button class="bigbtn${pending !== null ? ' ghost2' : ''}" data-act="deploydone">Begin Round 1</button>`);
     }
     return head('Setup', 'Deployment complete', sub, true)
       + `<div class="tp-body"></div><div class="tp-foot">${foot.join('')}</div>`;
@@ -632,6 +639,25 @@ function planningPanel(ctx: HudCtx): string {
     + `<div class="tp-body">${rows}</div><div class="tp-foot">${foot}</div>`;
 }
 
+// The Ticks in hand, labelled the way the freeplay guide labels them: the
+// Maneuver Tick, the two Action Ticks, and any Extra Ticks a Part grants. A
+// grant whose condition has lapsed shows as unavailable rather than spent,
+// because those are different things and only one of them can come back.
+function tickPool(o: Opportunity): string {
+  const pip = (on: boolean, extra = '') => `<i class="pip${on ? '' : ' off'}${extra}"></i>`;
+  const live = extrasLeft(o);
+  const manUsable = canManeuver(o).ok;
+  const extraPip = (x: ExtraTick) => {
+    if (o.spentExtras.includes(x.id)) return pip(false);
+    return grantHolds(o, x) ? `<i class="pip" title="${esc(x.label)}"></i>` : `<i class="pip off lapsed" title="${esc(whyGrantLapsed(x))}"></i>`;
+  };
+  return `<div class="hudticks">
+    <span class="pips${manUsable ? '' : ' spent'}"><b class="pip-label">MAN</b>${pip(o.maneuver > 0 && manUsable)}</span>
+    <span class="pips${o.action ? '' : ' spent'}"><b class="pip-label">ACT</b>${pip(o.action > 0)}${pip(o.action > 1)}</span>
+    ${o.extras.length ? `<span class="pips${live.length ? '' : ' spent'}"><b class="pip-label">XTR</b>${o.extras.map(extraPip).join('')}</span>` : ''}
+  </div>`;
+}
+
 function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
   // Common Actions belong to Mechs (6.1); a Drone plays only what its card prints.
   const acts = [
@@ -643,22 +669,34 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
     .filter((a) => (seen.has(a.id) ? false : (seen.add(a.id), true)))
     .map((a) => {
       const v = canPerform(o, a);
-      const cost = a.size === 'l' ? 3 : a.size === 'm' ? 2 : 1;
+      const cost = costOf(a);
+      const len = lengthOf(a);
       const kind = (a.type ?? '').toLowerCase();
       const pool = `${a.yellowDice ?? 0},${a.redDice ?? 0}`;
-      return `<button class="actrow k-${kind}"${v.ok ? '' : ' disabled'} data-doact="${esc(a.id)}" data-pool="${pool}" data-an="${esc(a.name?.en || a.id)}" title="${esc(v.ok ? a.type ?? '' : v.why ?? '')}">
-        <span class="dotk"></span><span class="an">${esc((a.name?.en || a.id).slice(0, 30))}</span><span class="ac">${a.type ?? ''} · ${cost}t</span>
+      // What it costs, in the Ticks it actually spends, the way the guide
+      // writes it: M for the Maneuver Tick, a dot per Action Tick.
+      // No printed length means no Tick cost — Passives, and every Drone Action
+      // in the card data. Those show their type rather than a price they do
+      // not have, the way the guide leaves them off its Tick list entirely.
+      const price = v.extra ? 'XTR' : cost ? `${cost.maneuver ? 'M' : ''}${'●'.repeat(cost.action)}` : (a.type ?? '—');
+      const tip = v.ok
+        ? `${len ? LENGTH_NAME[len] : a.type ?? ''}${cost ? `: ${costLabel(cost)}` : ''}`
+        : v.why ?? '';
+      // Blocked Actions stay on the list and say why when pressed. A disabled
+      // row tells a player nothing, and "the Starting Action must match the
+      // dial" is exactly the thing they need told.
+      return `<button class="actrow k-${kind}${v.ok ? '' : ' warn'}" data-doact="${esc(a.id)}" data-pool="${pool}" data-an="${esc(a.name?.en || a.id)}"${v.ok ? '' : ` data-why="${esc(v.why ?? '')}"`} title="${esc(tip)}">
+        <span class="dotk"></span><span class="an">${esc((a.name?.en || a.id).slice(0, 30))}</span><span class="ac">${price}</span>
       </button>`;
     })
     .join('');
   const man = canManeuver(o);
-  const ticksUsed = o.performed.length + (o.maneuvered ? 1 : 0);
-  const ticks = Array.from({ length: o.maneuver + o.action }, (_, i) => `<span class="tick${i < ticksUsed ? ' used' : ''}"></span>`).join('');
+  const ticks = tickPool(o);
   // While a route is being drawn the panel becomes the move bar, the same way
   // the freeplay guide takes it over.
   if (movePlan && movePlan.uid === t.uid) {
     const drawn = movePlan.path.length - 1;
-    return `<div class="ticks">${ticks}</div>
+    return `${ticks}
       <div class="moveplan">
         <p class="tp-note">${drawn ? `${drawn} of ${movePlan.steps} grids${movePlan.locked ? ' · locked' : ''}` : `Draw a route on the board — up to ${movePlan.steps} grid${movePlan.steps === 1 ? '' : 's'}.`}</p>
         <p class="tp-dim">Move the cursor across grids to trace it, click to lock, then confirm.</p>
@@ -666,8 +704,8 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
         <button class="bigbtn ghost2" data-act="cancelmove" style="margin-top:6px">Cancel</button>
       </div>`;
   }
-  return `<div class="ticks">${ticks}</div>
-    <button class="actrow k-moving"${man.ok ? '' : ' disabled'} data-act="maneuver" title="${esc(man.ok ? 'Draw a route on the board, then confirm.' : man.why ?? '')}">
+  return `${ticks}
+    <button class="actrow k-moving${man.ok ? '' : ' warn'}"${man.ok ? '' : ` data-why="${esc(man.why ?? '')}"`} data-act="maneuver" title="${esc(man.ok ? 'Draw a route on the board, then confirm.' : man.why ?? '')}">
       <span class="dotk"></span><span class="an">Maneuver</span><span class="ac">draw a route</span></button>
     ${rows}
     ${combatStrip(ctx)}`;
@@ -874,6 +912,16 @@ function designationSummary(ctx: HudCtx, owed: Designation[]): string {
   return `<div class="tp-gap"></div>${rows}`;
 }
 
+// The other player's move, slid rather than snapped. They watched their unit
+// walk the route; this is the same walk seen from the other chair, which is
+// what makes a move read as something that happened rather than a jump cut.
+export function animateRemoteMove(uid: number, from: { col: number; row: number }, to: { col: number; row: number }): void {
+  if (!board || (from.col === to.col && from.row === to.row)) return;
+  board.animateMove(uid, [from, to], () => {
+    if (hudRef) renderBoard(hudRef);
+  });
+}
+
 // One row per squad: the Task they have taken, or the way to take one. Shown
 // while the edge is being picked and again before deployment, because both
 // moments are waiting on the same two answers.
@@ -1069,13 +1117,24 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
   });
   root.querySelector('#mc-sec-x')?.addEventListener('click', () => { secOpen = false; secPick = null; ctx.refresh(); });
   on('[data-place]', (el) => {
-    // Picking the next unit stands by the previous placement.
-    unconfirmed = null;
+    // Picking a different unit gives up an unconfirmed placement — it was
+    // never sent, so there is nothing on the board to take back.
+    pending = null;
+    board?.clearGhost();
     placing = placing === Number(el.dataset.place) ? null : Number(el.dataset.place);
     ctx.refresh();
   });
   on('[data-act="confirmplace"]', () => {
-    unconfirmed = null;
+    // Now it lands, and only now does the turn pass to the other squad.
+    if (pending) {
+      const t = ctx.state.tokens.find((x) => x.uid === pending!.uid);
+      const v = ctx.send({
+        kind: 'deployUnit', seat: t?.side ?? me(), uid: pending.uid,
+        to: { col: pending.col, row: pending.row },
+      });
+      if (!v.ok) { ctx.refresh(); return; }
+    }
+    pending = null;
     placing = null;
     board?.clearGhost();
     ctx.refresh();
@@ -1113,6 +1172,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
   });
   on('[data-act="pass"]', () => { ctx.send({ kind: 'passTurn', seat: me() }); ctx.refresh(); });
   on('[data-doact]', (el) => {
+    if (el.dataset.why) { ctx.noteNow(el.dataset.why); ctx.refresh(); return; }
     const sc = ensureScript(s);
     const t = sc.opp ? s.tokens.find((x) => x.uid === sc.opp!.uid) : undefined;
     if (t) {
@@ -1122,7 +1182,8 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     }
     ctx.refresh();
   });
-  on('[data-act="maneuver"]', () => {
+  on('[data-act="maneuver"]', (el) => {
+    if (el.dataset.why) { ctx.noteNow(el.dataset.why); ctx.refresh(); return; }
     const sc = ensureScript(s);
     const t = sc.opp ? s.tokens.find((x) => x.uid === sc.opp!.uid) : undefined;
     if (t) startMovePlan(ctx, t);
