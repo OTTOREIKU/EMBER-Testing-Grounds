@@ -3,7 +3,7 @@ import type { GameData } from './data';
 import { secondaryImageUrl, squadLabel } from './data';
 import { Board, footprint, snapPlacement, type BoardCallbacks } from './board';
 import { printedDeployment, resolveZoneSetData } from './overlays';
-import { maneuverRange, squadAllegiance } from './units';
+import { guidedActions, maneuverRange, squadAllegiance } from './units';
 import { crushTargets, extendPath, reachableGrids, standingSpot, type LargeGrid } from './rules';
 import { breakAwayCost } from './melee';
 import { factionColour } from './icons';
@@ -12,7 +12,7 @@ import type { DiceData, DieColor, GameState, Side, Timing, Token, ExtraTick, Opp
 import { newOpportunity, newScriptState, PHASES, TIMINGS } from './types';
 import { deployable, deployTurn, deploymentComplete, firstPlayerFrom, normaliseSetup, rollTotal, type SetupState } from './setup';
 import { actionPhaseComplete, activationOrder, alive, canAct, commandTokensFor, eligibleUnits, isLoopPhase, loopComplete, nextActivation, nextTurn, type InitLookup, type LoopPhase } from './loop';
-import { canManeuver, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, whyGrantLapsed } from './ticks';
+import { canManeuver, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, whyGrantLapsed, type TickVerdict } from './ticks';
 import { normaliseTasks, zoneCentreGrid, type Designation } from './tasks';
 import { tokenCards } from './units';
 
@@ -659,16 +659,29 @@ function tickPool(o: Opportunity): string {
 }
 
 function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
+  // The same list the freeplay guide builds, from the same function: it is
+  // where a destroyed Part, Shutdown, Melee Lock, Fire Control Interference,
+  // Immobilised and an empty magazine all take an Action away. Asking only the
+  // Tick engine, as this panel used to, let every one of those through.
+  const guided = guidedActions(ctx.data, t, { tokens: ctx.state.tokens, terrain: terrainOf(ctx) });
+  const blockedBy = new Map<string, string | undefined>();
+  for (const g of guided) if (!g.available) blockedBy.set(g.action.id, g.reason);
+  const ammoOf = new Map<string, number | undefined>();
+  for (const g of guided) ammoOf.set(g.action.id, g.ammoLeft);
   // Common Actions belong to Mechs (6.1); a Drone plays only what its card prints.
   const acts = [
-    ...tokenCards(ctx.data, t).flatMap(({ card }) => card.actions ?? []),
+    ...guided.map((g) => g.action),
     ...(t.kind === 'mech' ? ctx.data.commonActions : []),
   ];
   const seen = new Set<string>();
   const rows = acts
     .filter((a) => (seen.has(a.id) ? false : (seen.add(a.id), true)))
     .map((a) => {
-      const v = canPerform(o, a);
+      const ticks = canPerform(o, a);
+      // The board's reason comes first: being out of ammo is a truer answer
+      // than "not enough Ticks" when both are true.
+      const stopped = blockedBy.get(a.id);
+      const v: TickVerdict = stopped ? { ok: false, why: stopped } : ticks;
       const cost = costOf(a);
       const len = lengthOf(a);
       const kind = (a.type ?? '').toLowerCase();
@@ -686,7 +699,7 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
       // row tells a player nothing, and "the Starting Action must match the
       // dial" is exactly the thing they need told.
       return `<button class="actrow k-${kind}${v.ok ? '' : ' warn'}" data-doact="${esc(a.id)}" data-pool="${pool}" data-an="${esc(a.name?.en || a.id)}"${v.ok ? '' : ` data-why="${esc(v.why ?? '')}"`} title="${esc(tip)}">
-        <span class="dotk"></span><span class="an">${esc((a.name?.en || a.id).slice(0, 30))}</span><span class="ac">${price}</span>
+        <span class="dotk"></span><span class="an">${esc((a.name?.en || a.id).slice(0, 26))}${ammoOf.get(a.id) !== undefined ? ` ×${ammoOf.get(a.id)}` : ''}</span><span class="ac">${price}</span>
       </button>`;
     })
     .join('');

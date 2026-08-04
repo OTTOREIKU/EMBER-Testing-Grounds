@@ -454,7 +454,13 @@ b.s1 { color: var(--s1); } b.s2 { color: var(--s2); }
 .rejoinrow { display: flex; gap: 8px; align-items: stretch; }
 .rejoinrow .btn.wide { flex: 1; margin-top: 0; }
 .btn.closex { flex: none; padding: 10px 14px; font-size: 13px; line-height: 1; }
-.mc-backbtn.ghostbtn { background: var(--surface3); color: var(--text2); border: none; cursor: pointer; font: inherit; }
+/* Same button, quieter tone: it must not inherit the page font or it stops
+   matching the one it sits beside. */
+.mc-backbtn.ghostbtn {
+  background: var(--surface3); color: var(--text2); border: none; cursor: pointer;
+  font-family: inherit; font-size: 11.5px; font-weight: 700; padding: 7px 14px;
+  line-height: normal;
+}
 .mc-backbtn.ghostbtn:hover { background: #2c3542; color: var(--text); }
 
 /* The Ticks in hand, labelled as the guide labels them. */
