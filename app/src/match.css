@@ -69,11 +69,6 @@ button { font-family: inherit; }
   text-decoration: none; display: inline-block; transition: filter 0.12s;
 }
 .mc-backbtn:hover { filter: brightness(1.08); }
-.mc-zonesbtn {
-  border: none; border-radius: 100px; background: var(--surface3); color: var(--text2);
-  font-size: 11px; font-weight: 600; padding: 6px 12px; cursor: pointer; transition: background 0.12s;
-}
-.mc-zonesbtn:hover { background: var(--accent-lt); color: var(--accent); }
 .mc-account {
   border: none; border-radius: 100px; background: var(--surface3); color: var(--text);
   font-size: 11.5px; font-weight: 600; padding: 6px 13px; cursor: pointer; transition: background 0.12s;

@@ -40,6 +40,10 @@ export interface HudCtx {
   note: string | null;
   // Shows a one-off message in the turn panel.
   noteNow(text: string): void;
+  // The local zone-overlay preference: this player's clean board is their
+  // own business, so it never crosses the wire.
+  zonesOn: boolean;
+  toggleZones(): void;
   // Builds the left side panel once the HUD shell exists (the freeplay
   // SquadTracker and Panel bind to ids inside it).
   mountSide(): void;
@@ -439,8 +443,8 @@ function renderBoard(ctx: HudCtx): void {
   const gone = new Set(s.removedTerrain ?? []);
   board.renderTerrain((ctx.data.terrain.layouts[s.map] ?? []).filter((p) => !gone.has(p.id)));
   // The Zones toggle is a local preference — a clean board to look at, not a
-  // rule change — so it only suppresses the overlay.
-  const showZones = s.showZones !== false;
+  // rule change — so it only suppresses the overlay and never crosses the wire.
+  const showZones = ctx.zonesOn;
   const ov = showZones ? resolveZoneSetData(ctx.data, s.zoneSet ?? '') : { zones: [], deploy: null };
   // While setup runs, the printed Deployment Zones are always on the table,
   // whatever the zone overlay says (3.1.4).
@@ -533,20 +537,36 @@ function setupPanel(ctx: HudCtx, su: SetupState): string {
     return head(mine(ctx, fp) ? 'Your move' : 'Setup', `${squadLabel(fp)} picks an edge`, 'The other side takes the opposite edge (3.1.2). Secondary Tasks are open information (3.1.3).', mine(ctx, fp))
       + `<div class="tp-body">${edge}<div class="tp-gap"></div>${secRows}</div><div class="tp-foot"></div>`;
   }
-  // deploy
+  // deploy — every button that ends or advances a step lives in the FOOT, so
+  // the panel reads the same in every state.
   const confirmRow = unconfirmed !== null
     ? `<button class="bigbtn" data-act="confirmplace">Confirm placement</button>
        <p class="tp-note">Or click another Grid in your zone to move it first.</p>`
     : '';
   const turn = deployTurn(s, su);
   if (!turn || deploymentComplete(s)) {
-    return head('Setup', 'Deployment complete', '', true)
-      + `<div class="tp-body"></div><div class="tp-foot">${confirmRow}<button class="bigbtn${unconfirmed !== null ? ' ghost2' : ''}" data-act="deploydone">Begin Round 1</button></div>`;
+    const foot: string[] = [confirmRow];
+    let sub = '';
+    if (ctx.networked && ctx.seat) {
+      // Round 1 begins only when BOTH squads have said their deployment is
+      // final — neither player can push the other forward.
+      const meReady = !!s.ready?.[ctx.seat];
+      const otherSeat: Side = ctx.seat === 's1' ? 's2' : 's1';
+      const otherReady = !!s.ready?.[otherSeat];
+      sub = meReady && otherReady ? 'Both squads confirmed.' : 'Both squads confirm before Round 1 begins — moves stay open until then.';
+      if (!meReady) foot.push(`<button class="bigbtn${unconfirmed !== null ? ' ghost2' : ''}" data-act="deployready">My deployment is final</button>`);
+      else if (!otherReady) foot.push(`<button class="bigbtn ghost2" data-act="deployunready" title="Tap to withdraw">✓ Ready — waiting for ${squadLabel(otherSeat)}…</button>`);
+      else foot.push('<button class="bigbtn" data-act="deploydone">Begin Round 1</button>');
+    } else {
+      foot.push(`<button class="bigbtn${unconfirmed !== null ? ' ghost2' : ''}" data-act="deploydone">Begin Round 1</button>`);
+    }
+    return head('Setup', 'Deployment complete', sub, true)
+      + `<div class="tp-body"></div><div class="tp-foot">${foot.join('')}</div>`;
   }
   if (!mine(ctx, turn)) {
     placing = null;
     return head('Deployment', `${squadLabel(turn)} places a unit`, '', false)
-      + `<div class="tp-body">${unconfirmed !== null ? confirmRow : ''}${waiting(turn, 'placing a unit')}</div><div class="tp-foot"></div>`;
+      + `<div class="tp-body">${waiting(turn, 'placing a unit')}</div><div class="tp-foot">${confirmRow}</div>`;
   }
   const waitingUnits = deployable(s, turn);
   const rows = waitingUnits
@@ -822,6 +842,13 @@ export function ensureHud(host: HTMLElement, ctx: HudCtx): void {
     // The shell was written this frame, so the board's own fit ran against a
     // column that had not settled yet.
     requestAnimationFrame(() => board?.fit());
+    // The zone toggle floats bottom-left INSIDE the board, exactly where the
+    // freeplay page keeps it — same markup, same .zone-ctrl styling.
+    const zc = document.createElement('div');
+    zc.className = 'zone-ctrl';
+    zc.innerHTML = '<button id="btn-zones" title="Shows or hides the tactical zone and deployment overlay drawn on the board." aria-pressed="true">Zones</button>';
+    host.querySelector('#mc-board')!.appendChild(zc);
+    zc.querySelector('#btn-zones')!.addEventListener('click', () => hudRef?.toggleZones());
     ctx.mountSide();
     for (const b of host.querySelectorAll<HTMLElement>('[data-sidetab]')) {
       b.addEventListener('click', () => {
@@ -837,6 +864,11 @@ export function ensureHud(host: HTMLElement, ctx: HudCtx): void {
   (host.querySelector('#hud-panel') as HTMLElement).innerHTML =
     `${ctx.note ? `<div class="mc-err" style="margin:10px 12px 0">${esc(ctx.note)}</div>` : ''}${panelHtml(ctx)}${feedHtml(ctx)}`;
   (host.querySelector('#hud-veils') as HTMLElement).innerHTML = secOverlay(ctx);
+  const zb = host.querySelector<HTMLButtonElement>('#btn-zones');
+  if (zb) {
+    zb.classList.toggle('on', ctx.zonesOn);
+    zb.setAttribute('aria-pressed', ctx.zonesOn ? 'true' : 'false');
+  }
   wireHud(host, ctx);
   renderBoard(ctx);
   ctx.syncSide(ensureScript(ctx.state).opp?.uid ?? null);
@@ -903,6 +935,8 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     ctx.refresh();
   });
   // Cell and token interaction now belongs to the shared Board's callbacks.
+  on('[data-act="deployready"]', () => { ctx.send({ kind: 'setReady', seat: me(), ready: true }); ctx.refresh(); });
+  on('[data-act="deployunready"]', () => { ctx.send({ kind: 'setReady', seat: me(), ready: false }); ctx.refresh(); });
   on('[data-act="deploydone"]', () => { ctx.send({ kind: 'finishDeployment', seat: me() }); ctx.refresh(); });
 
   on('[data-dial]', (el) => {

@@ -66,6 +66,9 @@ type Step = 'room' | 'battlefield' | 'squads' | 'rules';
 let step: Step = 'room';
 // ?dev=1 renders the HUD without a room, for building and testing it solo.
 const devSeat: Side | null = new URLSearchParams(location.search).get('dev') ? 's1' : null;
+// The zone overlay is a per-player view preference, held here rather than in
+// GameState so a checkpoint can never overwrite it. Always starts on.
+let zonesVisible = true;
 let diceData: DiceData | null = null;
 const diceFeed: DiceLine[] = [];
 let dialSecret: { round: number; salt: string; dials: DialEntry[] } | null = null;
@@ -357,7 +360,6 @@ function barHtml(): string {
     ${v.room ? `<span class="pill code" id="mc-code" title="Copy the room code">${esc(v.room.id)}${copied ? ' ✓' : ''}</span>` : ''}
     ${conn}
     <span class="spacer"></span>
-    ${running() ? `<button class="mc-zonesbtn" id="mc-zones" title="Show or hide the deployment and Tactical Zones">${state.showZones === false ? 'Zones off' : 'Zones on'}</button>` : ''}
     <button class="mc-account" id="mc-acct">${account ? esc(account.username) : 'Sign in'}</button>
     <a class="mc-backbtn" href="./index.html">Back to Board</a>
   </div>`;
@@ -499,7 +501,9 @@ function railHtml(): string {
       </div>`,
     )
     .join('');
-  const guestSeat: Side = 's2';
+  // The guest is whichever seat is not mine — seats are sticky by account,
+  // so the host does not always hold s1.
+  const guestSeat: Side = mySeat() === 's2' ? 's1' : 's2';
   const guestReady = !!state.ready?.[guestSeat];
   const seatsFull = !!relay.state.room?.seats.s1 && !!relay.state.room?.seats.s2;
   const squadsIn = sideSummary('s1').mechs + sideSummary('s1').drones > 0
@@ -648,6 +652,11 @@ function hudCtx(): HudCtx {
     diceFeed,
     note: lobbyNote,
     noteNow: (text) => { lobbyNote = text; },
+    zonesOn: zonesVisible,
+    toggleZones: () => {
+      zonesVisible = !zonesVisible;
+      render();
+    },
     mountSide,
     syncSide,
     showDice,
@@ -977,11 +986,6 @@ function wire(): void {
     const seat = mySeat();
     if (!seat) return;
     send({ kind: 'setReady', seat, ready: !state.ready?.[seat] });
-    render();
-  });
-  $('mc-zones')?.addEventListener('click', () => {
-    // Local only: hiding the overlay is a preference, not a rule change.
-    state.showZones = state.showZones === false;
     render();
   });
 

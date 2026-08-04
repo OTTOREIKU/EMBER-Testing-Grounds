@@ -784,6 +784,18 @@ C.apply(data, lobby, { kind: 'startMatch', seat: 's1' });
 check('starting the match clears the ready flags', JSON.stringify(lobby.ready), '{}');
 check('ready is refused once the match runs', C.check(data, lobby, { kind: 'setReady', seat: 's2', ready: true }).ok, false);
 
+// The same signal returns during deployment: Round 1 begins only when both
+// squads have agreed, and touching the board withdraws that agreement.
+const depLobby = { ...openTable(), tokens: [mech(1, 's1')], script: { strict: true }, setup: { ...C.newSetup(), stage: 'deploy' } };
+check('ready is allowed during deployment', C.check(data, depLobby, { kind: 'setReady', seat: 's1', ready: true }).ok, true);
+C.apply(data, depLobby, { kind: 'setReady', seat: 's1', ready: true });
+C.apply(data, depLobby, { kind: 'setReady', seat: 's2', ready: true });
+C.apply(data, depLobby, { kind: 'deployUnit', seat: 's1', uid: 1, to: { col: 2, row: 2 } });
+check('a nudge after ready withdraws both agreements', JSON.stringify(depLobby.ready), '{}');
+C.apply(data, depLobby, { kind: 'setReady', seat: 's1', ready: true });
+C.apply(data, depLobby, { kind: 'finishDeployment', seat: 's1' });
+check('finishing deployment consumes the ready flags', JSON.stringify(depLobby.ready), '{}');
+
 check('an unknown Secondary Task is refused', C.check(data, openTable(), { kind: 'pickSecondary', seat: 's1', cardId: 'NOPE' }).ok, false);
 const sec = openTable();
 C.apply(data, sec, { kind: 'pickSecondary', seat: 's2', cardId: 'SEC1' });

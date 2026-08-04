@@ -230,7 +230,10 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       return ok;
     }
     case 'setReady': {
-      if (normaliseSetup(state.setup)) return no('The match has already started.');
+      // Two moments wait on a ready signal: the lobby before launch, and the
+      // deployment stage, where "Begin Round 1" needs both squads to agree.
+      const su = normaliseSetup(state.setup);
+      if (su && su.stage !== 'deploy') return no('Nothing is waiting on a ready signal right now.');
       return ok;
     }
     case 'importSquad': {
@@ -804,6 +807,8 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
   }
   if (cmd.kind === 'finishDeployment') {
     state.setup = { ...(normaliseSetup(state.setup) ?? newSetup()), stage: 'done' };
+    // The deployment agreement is consumed; a fresh one is minted per stage.
+    state.ready = {};
     // The Command Phase stage was entered before the roll decided the First
     // Player; clearing it makes the guide's stage sync run again now that the
     // real one is known (3.2.2 starts the command loop from them).
@@ -989,6 +994,9 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
         su.placed = { ...su.placed, [t.side]: su.placed[t.side] + 1 };
         state.setup = su;
       }
+      // Moving a unit after declaring ready withdraws that agreement for
+      // everyone — the other player was ready for a different board.
+      if (!fresh) state.ready = {};
       return;
     }
     case 'applyPenetration': {
