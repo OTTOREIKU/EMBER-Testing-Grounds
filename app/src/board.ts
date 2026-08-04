@@ -319,6 +319,13 @@ export class Board {
     this.svg.style.height = `${sz}px`;
   }
 
+  // Re-fit to the container now. The ResizeObserver covers ordinary layout
+  // changes, but a host that mounts the board inside a column it is still
+  // sizing needs to be able to ask directly.
+  fit(): void {
+    this.applyZoom();
+  }
+
   setZoom(z: number): void {
     this.zoom = Math.max(0.6, Math.min(3.5, z));
     this.applyZoom();

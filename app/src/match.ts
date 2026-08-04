@@ -773,6 +773,8 @@ function render(): void {
   const barhost = document.getElementById('mc-barhost')!;
   const bodyhost = document.getElementById('mc-bodyhost')!;
   const veilhost = document.getElementById('mc-veilhost')!;
+  // The height chain only clamps in HUD mode; the lobby and door scroll.
+  root.classList.toggle('hudmode', hud);
   barhost.innerHTML = barHtml();
   const p = hud ? paused() : null;
   const pauseVeil = p

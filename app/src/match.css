@@ -35,10 +35,14 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--
 button { font-family: inherit; }
 
 .mc { min-height: 100%; display: flex; flex-direction: column; }
-/* In HUD mode the page itself never scrolls: each column owns its scrolling,
-   so the board stays put while a long squad list moves. */
-body:has(.mc-stage.hudmode) { overflow: hidden; height: 100vh; }
-.mc:has(.mc-stage.hudmode) { height: 100vh; min-height: 0; }
+/* In HUD mode the page itself never scrolls: each column owns its scrolling.
+   The height chain must be unbroken — every level between 100vh and the board
+   needs a definite height and min-height:0, exactly as the freeplay shell
+   does it (#app → main → #board-col → #board-wrap). A single auto-height
+   div anywhere in the chain collapses the board and makes it re-fit on every
+   content change, which is what the zoom jumping was. */
+.mc.hudmode { height: 100vh; min-height: 0; overflow: hidden; }
+.mc.hudmode > #mc-bodyhost { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 
 /* ---------- titlebar ---------- */
 .mc-bar {
@@ -226,7 +230,9 @@ input.f.codebox { font-family: var(--mono); font-size: 16px; letter-spacing: 5px
 }
 .hudtab:hover { background: var(--surface3); color: var(--text2); }
 .hudtab.active { background: var(--surface); color: var(--accent); }
-.hudside .side-tab { display: none; flex: 1; min-height: 0; overflow-y: auto; padding: 12px; }
+/* Same rule freeplay uses; #squad-body and #details-body carry their own
+   padding, so adding more here would double it. */
+.hudside .side-tab { display: none; flex: 1; min-height: 0; overflow-y: auto; }
 .hudside .side-tab.active { display: block; }
 /* the setup roll readout: just the dice that landed, per player */
 .hudtray { margin: 10px 0 4px; display: flex; flex-direction: column; gap: 6px; }
@@ -293,8 +299,8 @@ input.f.codebox { font-family: var(--mono); font-size: 16px; letter-spacing: 5px
 .pickrow .ct { font-family: var(--mono); font-size: 10px; color: var(--text3); }
 
 /* ---------- the in-match HUD ---------- */
-.mc-stage.hudmode { padding: 0; flex: 1; min-height: 0; }
-.hud { display: flex; height: 100%; min-height: 0; }
+.mc-stage.hudmode { padding: 0; flex: 1; min-height: 0; min-width: 0; display: flex; }
+.hud { display: flex; flex: 1; min-height: 0; min-width: 0; }
 .hudmain { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .timeline { display: flex; align-items: stretch; background: var(--surface2); }
 .roundchip { padding: 8px 13px; font-family: var(--mono); font-size: 11px; color: var(--text2); background: var(--surface3); display: flex; align-items: center; }

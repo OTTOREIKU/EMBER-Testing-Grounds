@@ -819,6 +819,9 @@ export function ensureHud(host: HTMLElement, ctx: HudCtx): void {
       </div>
     </div><div id="hud-veils"></div>`;
     board = new Board(host.querySelector('#mc-board')!, boardCallbacks());
+    // The shell was written this frame, so the board's own fit ran against a
+    // column that had not settled yet.
+    requestAnimationFrame(() => board?.fit());
     ctx.mountSide();
     for (const b of host.querySelectorAll<HTMLElement>('[data-sidetab]')) {
       b.addEventListener('click', () => {
