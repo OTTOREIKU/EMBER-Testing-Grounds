@@ -410,11 +410,14 @@ b.s1 { color: var(--s1); } b.s2 { color: var(--s2); }
 .rowbtn.warnb { background: var(--red-lt); color: var(--red); }
 .actrow.armed { background: var(--accent-lt); }
 .dicefeed { padding: 9px 14px 12px; background: var(--surface2); }
-.feedline {
-  font-size: 10.5px; color: var(--text2); padding: 3px 0;
-  display: flex; align-items: center; gap: 7px;
-}
-.feedline .feedtext { min-width: 0; }
+/* What it was rolled for on one line, what it came to on the next: the count
+   leads its own row so it can never wrap away from the word after it. */
+.feedline { font-size: 10.5px; color: var(--text2); padding: 4px 0; }
+.feedline + .feedline { border-top: 1px solid rgba(255, 255, 255, 0.05); }
+.feedwho { line-height: 1.4; }
+.feedres { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+.feedsum { font-size: 11px; color: var(--text2); }
+.feedsum b { font-size: 14px; font-weight: 700; color: var(--text); }
 
 /* ---------- account flyout ---------- */
 .mc-veil {

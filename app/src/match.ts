@@ -210,21 +210,20 @@ let feedSeq = 0;
 
 function pushRoll(seat: Side, label: string | null, dice: { color: string; face: number }[], kind: RollKind): void {
   const faces = facesOf(dice);
-  let text: string;
+  let result: { n: number; unit: string }[];
   if (kind === 'hits') {
     // The table-edge roll is decided on Hits alone, which is why a face
     // carrying two Hit icons is worth two: the count is of icons, not of dice.
     const n = countHits(faces);
-    text = `${label ?? 'rolled'} — ${n} Hit${n === 1 ? '' : 's'}`;
+    result = [{ n, unit: n === 1 ? 'Hit' : 'Hits' }];
   } else {
     const counts: Record<string, number> = {};
     for (const face of faces) for (const icon of face) counts[icon.type] = (counts[icon.type] ?? 0) + 1;
     const pretty = (k: string) => k.replace(/([A-Z])/g, ' $1').toLowerCase();
-    const parts = Object.entries(counts).map(([k, n]) => `${n}× ${pretty(k)}`).join(', ');
-    text = `${label ?? 'rolled'} — ${parts || 'all blank'}`;
+    result = Object.entries(counts).map(([k, n]) => ({ n, unit: pretty(k) }));
   }
   feedSeq += 1;
-  diceFeed.push({ seat, text, dice, n: feedSeq });
+  diceFeed.push({ seat, label: label ?? 'rolled', result, kind, dice, n: feedSeq });
 }
 
 // Server dice in a room; honest local dice in dev. Either way the Hits per
