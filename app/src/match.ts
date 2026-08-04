@@ -147,7 +147,14 @@ const relay = new Relay(api.base, {
     render();
   },
   onNeedCheckpoint() {
-    relay.publishCheckpoint();
+    // Only answer with a board we actually have. A client that has just
+    // loaded holds an empty table, and handing that over would wipe the match
+    // for everyone — which is the same mistake as republishing on rejoin, one
+    // step further along.
+    const room = relay.state.room;
+    const seeded = running() || state.tokens.length > 0;
+    const seedingANewRoom = relay.state.host && (room?.revision ?? 0) === 0;
+    if (seeded || seedingANewRoom) relay.publishCheckpoint();
   },
   // Every roll in the room lands here, the roller's included, so both players
   // read the same line and watch the same faces. The roller adds nothing of
@@ -383,12 +390,17 @@ function sideSummary(side: Side): { mechs: number; drones: number; points: numbe
 
 function barHtml(): string {
   const v = relay.state;
+  // Who is actually here, not just who holds a seat. Saying "both seated" over
+  // a paused board is the bar contradicting the veil in front of it.
+  const away = v.room ? (['s1', 's2'] as Side[]).find((s) => v.room!.seats[s] && !v.room!.online[s]) : undefined;
   const conn = v.room
-    ? v.status === 'playing'
-      ? '<span class="pill live">● both seated</span>'
-      : v.status === 'connecting'
-        ? '<span class="pill bad">● reconnecting</span>'
-        : '<span class="pill">● waiting for the other player</span>'
+    ? v.status === 'connecting'
+      ? '<span class="pill bad">● reconnecting</span>'
+      : away
+        ? `<span class="pill bad">● ${esc(squadLabel(away))} is away</span>`
+        : v.status === 'playing'
+          ? '<span class="pill live">● both seated</span>'
+          : '<span class="pill">● waiting for the other player</span>'
     : '';
   return `<div class="mc-bar">
     <a class="mc-logo" href="./index.html">EMBER <em>Testing Grounds</em><small>Match Centre</small></a>
@@ -539,12 +551,17 @@ function railHtml(): string {
   const seatsFull = !!relay.state.room?.seats.s1 && !!relay.state.room?.seats.s2;
   const squadsIn = sideSummary('s1').mechs + sideSummary('s1').drones > 0
     && sideSummary('s2').mechs + sideSummary('s2').drones > 0;
+  // A seat can be held by someone who has stepped away, and a Ready pressed
+  // ten minutes ago is no promise they are still at the table. Starting a
+  // match into an empty chair is how the first round happens without them.
+  const away = (['s1', 's2'] as Side[]).find((s) => relay.state.room?.seats[s] && !relay.state.room?.online[s]);
   // The host cannot start while the guest is still reading the battlefield.
-  const canLaunch = isHost() && !running() && seatsFull && squadsIn && guestReady;
+  const canLaunch = isHost() && !running() && seatsFull && squadsIn && guestReady && !away;
   const why = !seatsFull ? 'Waiting for the other player to sit down.'
-    : !squadsIn ? 'Both squads have to be brought in.'
-      : !guestReady ? 'Waiting for the other player to press Ready.'
-        : 'Both squads are in and ready.';
+    : away ? `${squadLabel(away)} is away — the match waits for them.`
+      : !squadsIn ? 'Both squads have to be brought in.'
+        : !guestReady ? 'Waiting for the other player to press Ready.'
+          : 'Both squads are in and ready.';
   const mine = mySeat();
   const iAmReady = mine ? !!state.ready?.[mine] : false;
   const foot = running()
