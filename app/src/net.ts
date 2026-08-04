@@ -229,9 +229,14 @@ export class Relay {
           status: room.seats.s1 && room.seats.s2 ? 'playing' : 'lobby',
           room, seat: you.seat, host: you.host, error: null, desynced: false,
         });
-        // The host seeds the room with the board it already has, so a guest
-        // joining an in-progress game is not staring at an empty table.
-        if (you.host && you.seat) this.publishCheckpoint();
+        // The host seeds a NEW room with the board it already has, so a guest
+        // joining is not staring at an empty table. A room that already holds
+        // a checkpoint must never be overwritten on join: rejoining after a
+        // reload would publish this client's fresh, empty board over the live
+        // match and send both players back to setup. The server sends the
+        // stored board through catchUp, and asks via needCheckpoint when it
+        // genuinely has none.
+        if (you.host && you.seat && !room.hasCheckpoint) this.publishCheckpoint();
         return;
       }
 

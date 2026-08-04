@@ -760,7 +760,13 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
     // The dice were rolled by the sender; the command carries the Hits, so a
     // mirrored seat never re-rolls them.
     const su = normaliseSetup(state.setup) ?? newSetup();
+    // A tie sends both squads back to the dice (3.1.2), so the first re-roll
+    // clears the other side's stale total rather than being compared against
+    // it — otherwise one player re-rolling alone would decide the tie.
+    const tied = !!su.rolls.s1.length && !!su.rolls.s2.length && !firstPlayerFrom(su);
+    const other: Side = cmd.seat === 's1' ? 's2' : 's1';
     su.rolls = { ...su.rolls, [cmd.seat]: cmd.hits };
+    if (tied) su.rolls = { ...su.rolls, [other]: [] };
     state.setup = su;
     return;
   }
