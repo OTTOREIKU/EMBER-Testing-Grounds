@@ -4,7 +4,7 @@ import { secondaryImageUrl, squadLabel } from './data';
 import { Board, footprint, snapPlacement, type BoardCallbacks } from './board';
 import { printedDeployment, resolveZoneSetData } from './overlays';
 import { maneuverRange, squadAllegiance } from './units';
-import { crushTargets, reachableGrids } from './rules';
+import { crushTargets, extendPath, reachableGrids, standingSpot, type LargeGrid } from './rules';
 import { breakAwayCost } from './melee';
 import { factionColour } from './icons';
 import type { GameState, Side, Timing, Token, ExtraTick, Opportunity } from './types';
@@ -37,6 +37,8 @@ export interface HudCtx {
   rollPool(y: number, r: number, label: string): Promise<void>;
   diceFeed: DiceLine[];
   note: string | null;
+  // Shows a one-off message in the turn panel.
+  noteNow(text: string): void;
   refresh(): void;
 }
 
@@ -161,7 +163,17 @@ export function deployCellsFor(data: GameData, s: GameState, side: Side): Set<st
 
 let placing: number | null = null; // uid being deployed via board clicks
 let unconfirmed: number | null = null; // placed this turn, still nudgeable
-let moving = false;                // active unit is picking a destination
+// A route being drawn, exactly as the freeplay board does it: traced by the
+// cursor so a deliberate zigzag is expressible, clicked to lock, confirmed
+// from the turn panel. The engine only ever sees the destination.
+let movePlan: {
+  uid: number;
+  side: Side;
+  steps: number;
+  flying: boolean;
+  path: LargeGrid[];
+  locked: boolean;
+} | null = null;
 let targetUid: number | null = null; // enemy picked for damage bookkeeping
 let attack: { y: number; r: number; name: string } | null = null; // pool of the action just performed
 let secOpen = false;               // the Secondary Task picker overlay
@@ -226,6 +238,94 @@ function canReach(ctx: HudCtx, t: Token, col: number, row: number): boolean {
   return reachableFor(ctx, t).some((g) => g.c === c && g.r === r);
 }
 
+function moveOptsFor(ctx: HudCtx, t: Token, flying: boolean) {
+  const terrain = terrainOf(ctx);
+  return {
+    exitCost: flying || t.aerial ? undefined : breakAwayCost(ctx.data, t, ctx.state.tokens, terrain),
+    crushable: (c: number, r: number) => crushTargets(t, c, r, terrain, ctx.state.tokens) !== null,
+  };
+}
+
+function startMovePlan(ctx: HudCtx, t: Token): void {
+  const steps = maneuverRange(ctx.data, t);
+  if (steps <= 0) {
+    ctx.noteNow(`${t.label} has no Movement Range on its card.`);
+    return;
+  }
+  movePlan = {
+    uid: t.uid,
+    side: t.side,
+    steps,
+    flying: !!ctx.data.byId.get(t.cardId)?.moveAsFlight,
+    path: [{ c: Math.floor(t.col / 3), r: Math.floor(t.row / 3) }],
+    locked: false,
+  };
+}
+
+// Traced by the cursor rather than solved, so a deliberate zigzag is
+// expressible and terrain stops the route where the rules say it stops.
+function traceMove(ctx: HudCtx, c: number, r: number): void {
+  const m = movePlan;
+  if (!m || m.locked || !board) return;
+  const t = ctx.state.tokens.find((x) => x.uid === m.uid);
+  if (!t) return;
+  const next = extendPath(m.path, { c, r }, t, m.steps, terrainOf(ctx), ctx.state.tokens, m.flying, moveOptsFor(ctx, t, m.flying));
+  if (!next) return;
+  m.path = next;
+  board.showMovePath(next, m.side, false);
+  ctx.refresh();
+}
+
+// Clicking freezes the route so the cursor can leave the board for Confirm
+// without dragging the path along behind it.
+function lockMove(ctx: HudCtx): void {
+  const m = movePlan;
+  if (!m || m.path.length < 2 || !board) return;
+  m.locked = !m.locked;
+  board.showMovePath(m.path, m.side, m.locked);
+  ctx.refresh();
+}
+
+function cancelMove(ctx: HudCtx): void {
+  movePlan = null;
+  board?.clearMovePath();
+  board?.clearHighlights();
+  ctx.refresh();
+}
+
+// Each stop takes the free part of its Grid rather than the middle, so a unit
+// crossing a Grid holding a low wall walks past it instead of onto it. Only
+// the destination goes to the engine; the walk is local animation.
+function commitMove(ctx: HudCtx): void {
+  const m = movePlan;
+  if (!m || m.path.length < 2 || !board) return;
+  const t = ctx.state.tokens.find((x) => x.uid === m.uid);
+  if (!t) return;
+  const terrain = terrainOf(ctx);
+  const stops: { col: number; row: number }[] = [];
+  let from = { col: t.col, row: t.row };
+  for (const g of m.path) {
+    const spot =
+      standingSpot(g.c, g.r, t.size, m.flying || t.aerial, terrain, ctx.state.tokens, t.uid, from)
+      ?? snapPlacement(g.c * 3 + 1, g.r * 3 + 1, t.size as 1 | 2 | 3);
+    if (!spot) continue;
+    stops.push(spot);
+    from = spot;
+  }
+  const last = stops[stops.length - 1];
+  movePlan = null;
+  board.clearMovePath();
+  board.clearHighlights();
+  if (!last) {
+    ctx.refresh();
+    return;
+  }
+  board.animateMove(t.uid, stops, () => {
+    ctx.send({ kind: 'maneuver', seat: t.side, uid: t.uid, to: last });
+    ctx.refresh();
+  });
+}
+
 // A snapped footprint counts only when every cell sits inside the zone.
 function fitsZone(ctx: HudCtx, side: Side, at: { col: number; row: number }, size: number): boolean {
   const zone = deployCellsFor(ctx.data, ctx.state, side);
@@ -272,30 +372,16 @@ function boardCallbacks(): BoardCallbacks {
         const size = (t.size ?? 1) as 1 | 2 | 3;
         const snap = snapPlacement(col, row, size) ?? { col, row };
         board.showGhost(footprint({ ...snap, size }), fitsZone(ctx, t.side, snap, size));
-      } else if (moving) {
-        const sc = ensureScript(s);
-        const t = sc.opp ? s.tokens.find((x) => x.uid === sc.opp!.uid) : undefined;
-        if (!t) return;
-        const size = (t.size ?? 1) as 1 | 2 | 3;
-        const snap = snapPlacement(col, row, size) ?? { col, row };
-        board.showGhost(footprint({ ...snap, size }), canReach(ctx, t, snap.col, snap.row));
+      } else if (movePlan) {
+        traceMove(ctx, Math.floor(col / 3), Math.floor(row / 3));
       }
     },
     onCellClick(col, row) {
       const ctx = hudRef;
       if (!ctx) return;
       const s = ctx.state;
-      if (moving) {
-        const sc = ensureScript(s);
-        const t = sc.opp ? s.tokens.find((x) => x.uid === sc.opp!.uid) : undefined;
-        if (t) {
-          const snap = snapPlacement(col, row, (t.size ?? 1) as 1 | 2 | 3) ?? { col, row };
-          if (!canReach(ctx, t, snap.col, snap.row)) return; // outside the range overlay
-          ctx.send({ kind: 'maneuver', seat: t.side, uid: t.uid, to: snap });
-        }
-        moving = false;
-        board?.clearGhost();
-        ctx.refresh();
+      if (movePlan) {
+        lockMove(ctx);
         return;
       }
       if (placing === null) return;
@@ -330,17 +416,16 @@ function renderBoard(ctx: HudCtx): void {
     const f = squadAllegiance(ctx.data, s.tokens.filter((t) => t.side === side)).faction;
     document.documentElement.style.setProperty(`--sq-${side}`, factionColour(f));
   }
-  // Panning is the default; a placement or move click needs the cell instead.
-  board.panEnabled = placing === null && !moving;
-  board.clearHighlights();
-  if (moving) {
-    const sc = ensureScript(s);
-    const t = sc.opp ? s.tokens.find((x) => x.uid === sc.opp!.uid) : undefined;
+  // Panning is the default; a placement or a route needs the cell instead.
+  board.panEnabled = placing === null && !movePlan;
+  if (movePlan) {
+    const t = s.tokens.find((x) => x.uid === movePlan!.uid);
     // The same overlay freeplay shows: the Large Grids this unit can really
     // enter, with the step count on each.
-    if (t) board.showReachable(reachableFor(ctx, t), maneuverRange(ctx.data, t));
-  } else if (placing === null) {
-    board.clearGhost();
+    if (t) board.showReachable(reachableFor(ctx, t), movePlan.steps);
+  } else {
+    board.clearHighlights();
+    if (placing === null) board.clearGhost();
   }
   const gone = new Set(s.removedTerrain ?? []);
   board.renderTerrain((ctx.data.terrain.layouts[s.map] ?? []).filter((p) => !gone.has(p.id)));
@@ -364,49 +449,6 @@ function renderBoard(ctx: HudCtx): void {
   board.renderSmoke(s.smoke ?? []);
   board.renderMarkers(s.markers ?? []);
   board.setSelected(ensureScript(s).opp?.uid ?? null);
-}
-
-// The old schematic renderer, kept exported for reference until the lobby
-// preview adopts the shared board too; the HUD no longer uses it.
-export function boardHtml(ctx: HudCtx): string {
-  const s = ctx.state;
-  const pieces = ctx.data.terrain.layouts[s.map] ?? [];
-  const fill = (t: string) => (t === 'container' ? 'rgba(61,220,132,.45)' : t === 'low_wall' ? '#4a5563' : '#39424e');
-  const terrain = pieces
-    .filter((p) => !(s.removedTerrain ?? []).includes(p.id))
-    .flatMap((p) => p.subCells.map((c) => `<rect x="${c.col + 0.06}" y="${c.row + 0.06}" width="0.88" height="0.88" rx="0.12" fill="${fill(p.type)}"/>`))
-    .join('');
-  const active = ensureScript(s).opp?.uid;
-  const tokens = s.tokens
-    .filter((t) => t.deployed !== false)
-    .map((t) => {
-      const col = t.side === 's1' ? '#65a2d8' : '#ea6d76';
-      const sz = t.size ?? 1;
-      const ring = t.uid === active ? ` stroke="#f0b429" stroke-width="0.22"` : t.uid === targetUid ? ` stroke="#ea6d76" stroke-width="0.22" stroke-dasharray="0.4 0.25"` : '';
-      return `<g data-tok="${t.uid}"><rect x="${t.col + 0.1}" y="${t.row + 0.1}" width="${sz - 0.2}" height="${sz - 0.2}" rx="0.25" fill="${col}" opacity="0.9"${ring}><title>${esc(t.label)}</title></rect>
-        <text x="${t.col + sz / 2}" y="${t.row + sz / 2 + 0.32}" text-anchor="middle" font-size="${sz > 1 ? 1.1 : 0.7}" fill="#0f1216" font-weight="700">${esc(t.label.slice(0, 2))}</text></g>`;
-    })
-    .join('');
-  const zones = objectiveCells(ctx.data, s)
-    .map((z) => `<rect x="${z.c}" y="${z.r}" width="1" height="1" fill="rgba(240,180,41,.16)"/>`)
-    .join('');
-  // While placing, the placer's legal zone is tinted and everything else is not.
-  let zoneTint = '';
-  if (placing !== null) {
-    const su = normaliseSetup(s.setup);
-    const turn = su ? deployTurn(s, su) : null;
-    if (turn) {
-      zoneTint = [...deployCellsFor(ctx.data, s, turn)]
-        .map((k) => { const [c, r] = k.split(','); return `<rect x="${c}" y="${r}" width="1" height="1" fill="rgba(61,220,132,.14)"/>`; })
-        .join('');
-    }
-  }
-  const clicks = placing !== null || moving
-    ? Array.from({ length: 36 }, (_, r) =>
-        Array.from({ length: 36 }, (_, c) => `<rect class="cellhit" data-cell="${c},${r}" x="${c}" y="${r}" width="1" height="1" fill="transparent"/>`).join(''),
-      ).join('')
-    : '';
-  return `<div class="hudboardwrap"><svg class="hudsvg${placing !== null || moving ? ' placing' : ''}" viewBox="0 0 36 36">${zones}${zoneTint}${terrain}${tokens}${clicks}</svg></div>`;
 }
 
 // ---------- the turn panel: one question at a time ----------
@@ -544,9 +586,21 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
   const man = canManeuver(o);
   const ticksUsed = o.performed.length + (o.maneuvered ? 1 : 0);
   const ticks = Array.from({ length: o.maneuver + o.action }, (_, i) => `<span class="tick${i < ticksUsed ? ' used' : ''}"></span>`).join('');
+  // While a route is being drawn the panel becomes the move bar, the same way
+  // the freeplay guide takes it over.
+  if (movePlan && movePlan.uid === t.uid) {
+    const drawn = movePlan.path.length - 1;
+    return `<div class="ticks">${ticks}</div>
+      <div class="moveplan">
+        <p class="tp-note">${drawn ? `${drawn} of ${movePlan.steps} grids${movePlan.locked ? ' · locked' : ''}` : `Draw a route on the board — up to ${movePlan.steps} grid${movePlan.steps === 1 ? '' : 's'}.`}</p>
+        <p class="tp-dim">Move the cursor across grids to trace it, click to lock, then confirm.</p>
+        <button class="bigbtn" data-act="commitmove"${drawn ? '' : ' disabled'}>Confirm move</button>
+        <button class="bigbtn ghost2" data-act="cancelmove" style="margin-top:6px">Cancel</button>
+      </div>`;
+  }
   return `<div class="ticks">${ticks}</div>
-    <button class="actrow k-moving${moving ? ' armed' : ''}"${man.ok ? '' : ' disabled'} data-act="maneuver" title="${esc(man.ok ? 'Then click the destination Grid. Path rules stay with the players for now.' : man.why ?? '')}">
-      <span class="dotk"></span><span class="an">Maneuver</span><span class="ac">${moving ? 'click a Grid…' : 'move'}</span></button>
+    <button class="actrow k-moving"${man.ok ? '' : ' disabled'} data-act="maneuver" title="${esc(man.ok ? 'Draw a route on the board, then confirm.' : man.why ?? '')}">
+      <span class="dotk"></span><span class="an">Maneuver</span><span class="ac">draw a route</span></button>
     ${rows}
     ${combatStrip(ctx)}`;
 }
@@ -800,9 +854,13 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     ctx.refresh();
   });
   on('[data-act="maneuver"]', () => {
-    moving = !moving;
+    const sc = ensureScript(s);
+    const t = sc.opp ? s.tokens.find((x) => x.uid === sc.opp!.uid) : undefined;
+    if (t) startMovePlan(ctx, t);
     ctx.refresh();
   });
+  on('[data-act="commitmove"]', () => commitMove(ctx));
+  on('[data-act="cancelmove"]', () => cancelMove(ctx));
   on('[data-rollpool]', (el) => {
     const [y, r] = el.dataset.rollpool!.split(',').map(Number);
     void ctx.rollPool(y, r, attack?.name ?? 'attack').then(() => ctx.refresh());
@@ -843,7 +901,8 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
       ctx.send({ kind: 'endOpportunity', seat: t?.side ?? me(), uid: sc.opp.uid });
     }
     attack = null;
-    moving = false;
+    movePlan = null;
+    board?.clearMovePath();
     if (targetUid !== null && !s.tokens.some((x) => x.uid === targetUid)) targetUid = null;
     ctx.refresh();
   });

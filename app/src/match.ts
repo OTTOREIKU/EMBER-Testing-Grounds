@@ -554,6 +554,7 @@ function hudCtx(): HudCtx {
     rollPool,
     diceFeed,
     note: lobbyNote,
+    noteNow: (text) => { lobbyNote = text; },
     refresh: () => render(),
   };
 }
