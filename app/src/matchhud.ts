@@ -3,7 +3,7 @@ import type { GameData } from './data';
 import { secondaryImageUrl, squadLabel } from './data';
 import { Board, footprint, snapPlacement, type BoardCallbacks } from './board';
 import { printedDeployment, resolveZoneSetData } from './overlays';
-import { extraActivationOf, guidedActions, maneuverRange, squadAllegiance, type ExtraActivation } from './units';
+import { canActivateCamo, extraActivationOf, guidedActions, maneuverRange, squadAllegiance, type ExtraActivation } from './units';
 import { crushTargets, extendPath, reachableGrids, standingSpot, type LargeGrid } from './rules';
 import { breakAwayCost } from './melee';
 import { factionColour } from './icons';
@@ -193,6 +193,10 @@ let placing: number | null = null; // uid being deployed via board clicks
 // Where this player has put a unit but not yet confirmed it. Nothing is sent
 // and nothing lands on the board until they do, so the turn stays theirs.
 let pending: { uid: number; col: number; row: number; size: 1 | 2 | 3 } | null = null;
+// The Stance a Mech lands in, and whether it lands hidden. Chosen before the
+// placement is confirmed, because both travel with it.
+let deployStance: Stance = 'offensive';
+let deployCamo = false;
 // A route being drawn, exactly as the freeplay board does it: traced by the
 // cursor so a deliberate zigzag is expressible, clicked to lock, confirmed
 // from the turn panel. The engine only ever sees the destination.
@@ -619,8 +623,24 @@ function setupPanel(ctx: HudCtx, su: SetupState): string {
       (t) => `<button class="rowwide${placing === t.uid ? ' sel' : ''}" data-place="${t.uid}">${esc(t.label)}<span class="ct">${t.kind}</span></button>`,
     )
     .join('');
+  // A Mech chooses its Stance as it lands, and anything that can activate
+  // Optical Camouflage may be deployed already in it (3.1.4, 4.12.2). Both
+  // travel with the placement, so they are decided before it is confirmed.
+  const chosen = placing !== null ? s.tokens.find((t) => t.uid === placing) : undefined;
+  let landing = '';
+  if (chosen) {
+    const stances = chosen.kind === 'mech'
+      ? `<div class="stancerow">${(['defensive', 'mobility', 'offensive'] as const)
+          .map((x) => `<button class="stancebtn${deployStance === x ? ' sel' : ''}" data-depstance="${x}">${x[0].toUpperCase()}${x.slice(1)}</button>`)
+          .join('')}</div>`
+      : '';
+    const camo = canActivateCamo(ctx.data, chosen)
+      ? `<div class="stancerow"><button class="stancebtn${deployCamo ? ' sel' : ''}" data-depcamo="1">${deployCamo ? '✓ Deploying hidden' : 'Deploy in Optical Camouflage'}</button></div>`
+      : '';
+    landing = stances + camo;
+  }
   return head('Your move', 'Place a unit', placing !== null ? `Hover shows the landing spot; click a Grid in your ${su.edge[turn]} zone.` : 'Pick a unit, then click a Grid on the board.', true)
-    + `<div class="tp-body">${rows}</div><div class="tp-foot">${confirmRow}</div>`;
+    + `<div class="tp-body">${rows}${landing}</div><div class="tp-foot">${confirmRow}</div>`;
 }
 
 function planningPanel(ctx: HudCtx): string {
@@ -1317,6 +1337,8 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     // never sent, so there is nothing on the board to take back.
     pending = null;
     board?.clearGhost();
+    deployStance = 'offensive';
+    deployCamo = false;
     placing = placing === Number(el.dataset.place) ? null : Number(el.dataset.place);
     ctx.refresh();
   });
@@ -1327,6 +1349,8 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
       const v = ctx.send({
         kind: 'deployUnit', seat: t?.side ?? me(), uid: pending.uid,
         to: { col: pending.col, row: pending.row },
+        stance: t?.kind === 'mech' ? deployStance : undefined,
+        camo: deployCamo || undefined,
       });
       if (!v.ok) { ctx.refresh(); return; }
     }
@@ -1417,6 +1441,8 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
   });
   on('[data-act="grantcancel"]', () => { grantPick = null; ctx.refresh(); });
   on('[data-act="launchcancel"]', () => { launchPlan = null; ctx.refresh(); });
+  on('[data-depstance]', (el) => { deployStance = el.dataset.depstance as Stance; ctx.refresh(); });
+  on('[data-depcamo]', () => { deployCamo = !deployCamo; ctx.refresh(); });
   on('[data-stance]', (el) => {
     const sc = ensureScript(s);
     const t = sc.opp ? s.tokens.find((x) => x.uid === sc.opp!.uid) : undefined;
