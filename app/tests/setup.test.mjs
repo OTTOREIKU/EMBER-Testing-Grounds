@@ -24,6 +24,11 @@ check('heavy and light hits both count', S.countHits([[{ type: 'heavyHit' }, { t
 check('lightning and eye are worth nothing', S.countHits([[{ type: 'lightning' }], [{ type: 'eye' }]]), 0);
 check('a blank face is worth nothing', S.countHits([[]]), 0);
 check('a double light hit face counts twice', S.countHits([[{ type: 'lightHit' }, { type: 'lightHit' }]]), 2);
+// Hollow icons do nothing until a Stance upgrades them, and nobody has taken
+// a Stance before the game has started.
+check('a hollow hit is worth nothing in the roll-off', S.countHits([[{ type: 'lightHit', hollow: true }]]), 0);
+check('and does not spoil the solid one beside it',
+  S.countHits([[{ type: 'lightHit' }, { type: 'lightHit', hollow: true }]]), 1);
 
 // More Hits goes first; the book gives no tie procedure, so a tie is unresolved.
 const rolled = (s1, s2) => ({ ...S.newSetup(), rolls: { s1, s2 } });

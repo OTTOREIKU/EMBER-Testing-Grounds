@@ -47,9 +47,20 @@ export function normaliseSetup(raw: unknown): SetupState | null {
 
 // The table-edge roll is decided on Hits, so only the Hit icons count. Lightning,
 // Eye and blank faces are all worth nothing here.
-export function countHits(faces: { type: string }[][]): number {
+//
+// Nor is a hollow Hit worth anything: the dice legend has hollow icons doing
+// nothing until a Stance upgrades them to solid, and no unit has taken a
+// Stance when this roll happens — the game has not started. A face can still
+// carry two icons and be worth two, which is what makes two dice able to come
+// to four.
+export function countHits(faces: { type: string; hollow?: boolean }[][]): number {
   let n = 0;
-  for (const face of faces) for (const icon of face) if (icon.type === 'heavyHit' || icon.type === 'lightHit') n++;
+  for (const face of faces) {
+    for (const icon of face) {
+      if (icon.hollow) continue;
+      if (icon.type === 'heavyHit' || icon.type === 'lightHit') n++;
+    }
+  }
   return n;
 }
 
