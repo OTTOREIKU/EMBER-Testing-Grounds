@@ -197,6 +197,15 @@ input.f.codebox { font-family: var(--mono); font-size: 16px; letter-spacing: 5px
 .chip.still:hover { background: var(--surface2); }
 .chip.still.sel:hover { background: var(--accent-lt); }
 
+/* the mission side panel */
+.pickgrid.three { grid-template-columns: minmax(0, 1fr) 250px 200px; }
+.mispanel { background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow); padding: 11px; }
+.mispanel img { width: 100%; border-radius: var(--radius-sm); box-shadow: var(--shadow); display: block; }
+.mispanel .mp-line { font-size: 10.5px; color: var(--text2); line-height: 1.5; margin-top: 9px; }
+.mispanel .mp-line b { display: block; font-size: 9px; letter-spacing: 0.8px; text-transform: uppercase; color: var(--text3); margin-bottom: 2px; }
+.mispanel.empty { display: grid; place-items: center; text-align: center; }
+.flatmap { background: #12161b !important; }
+
 /* mission cards */
 .miscard {
   position: relative; border-radius: var(--radius-sm); background: var(--surface2);

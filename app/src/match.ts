@@ -3,7 +3,8 @@ import { Relay } from './net';
 import { applyRemote, onPerformed, onRefused, perform, type Command, type CheckResult } from './commands';
 import { setLocalSeat } from './loop';
 import { dataUrl, loadData, missionImageUrl, squadLabel, type GameData } from './data';
-import { deployCellsFor, objectiveCells } from './matchhud';
+import { objectiveCells } from './matchhud';
+import { printedDeployment } from './overlays';
 import { migrateState, tokenCards } from './units';
 import { countHits, normaliseSetup } from './setup';
 import { taskItemsFor } from './tasks';
@@ -341,30 +342,41 @@ function seatHtml(side: Side): string {
   </div>`;
 }
 
-// A small honest map: every occupied terrain cell as a rect, coloured by
-// kind, with the chosen Main Task's zones and both Deployment Zones on top —
-// the whole battlefield, not just the walls.
+// The lobby's battlefield preview, drawn in the board's own language: flat
+// dark field, thin Large-Grid lines, terrain in the renderer's palette, the
+// Main Task's zones in amber, and the printed Deployment Zones with labels —
+// visible before any setup exists, because edges are decided later.
 function previewSvg(mapId: string): string {
-  const pieces = data?.terrain.layouts[mapId] ?? [];
-  const fill = (t: string) => (t === 'container' ? 'rgba(61,220,132,.55)' : t === 'low_wall' ? '#4a5563' : '#39424e');
+  if (!data) return '';
+  const pieces = data.terrain.layouts[mapId] ?? [];
+  const fill = (t: string) => (t === 'container' ? 'rgba(61,220,132,.5)' : t === 'low_wall' ? '#4a5563' : '#39424e');
   const cells = pieces
-    .flatMap((p) => p.subCells.map((c) => `<rect x="${c.col + 0.06}" y="${c.row + 0.06}" width="0.88" height="0.88" rx="0.12" fill="${fill(p.type)}"/>`))
+    .flatMap((p) => p.subCells.map((c) => `<rect x="${c.col + 0.08}" y="${c.row + 0.08}" width="0.84" height="0.84" rx="0.1" fill="${fill(p.type)}"/>`))
     .join('');
-  const zones = data
-    ? objectiveCells(data, state).map((z) => `<rect x="${z.c}" y="${z.r}" width="1" height="1" fill="rgba(240,180,41,.18)"/>`).join('')
-    : '';
-  const deploys = data
-    ? (['s1', 's2'] as Side[])
-        .flatMap((side) => {
-          const tint = side === 's1' ? 'rgba(101,162,216,.14)' : 'rgba(234,109,118,.14)';
-          return [...deployCellsFor(data!, state, side)].map((k) => {
-            const [c, r] = k.split(',');
-            return `<rect x="${c}" y="${r}" width="1" height="1" fill="${tint}"/>`;
-          });
-        })
-        .join('')
-    : '';
-  return `<svg class="mapsvg" viewBox="0 0 36 36" aria-hidden="true">${deploys}${zones}${cells}</svg>`;
+  // Large-Grid lines every 3 cells, like the board, plus a faint fine grid.
+  let lines = '';
+  for (let i = 0; i <= 36; i += 3) {
+    const w = i % 9 === 0 ? 0.1 : 0.06;
+    lines += `<line x1="${i}" y1="0" x2="${i}" y2="36" stroke="rgba(255,255,255,.09)" stroke-width="${w}"/>`;
+    lines += `<line x1="0" y1="${i}" x2="36" y2="${i}" stroke="rgba(255,255,255,.09)" stroke-width="${w}"/>`;
+  }
+  const zones = objectiveCells(data, state)
+    .map((z) => `<rect x="${z.c}" y="${z.r}" width="1" height="1" fill="rgba(240,180,41,.18)"/>`)
+    .join('');
+  // The printed shape straight from the data, independent of any setup.
+  const shapeId = (state.mission && data.zoneData.missionDeployment[state.mission]) || 'strips';
+  const dep = printedDeployment(data, shapeId);
+  const depRect = (shape: { rect?: { col: number; row: number; cols: number; rows: number }; label?: string } | undefined, light: boolean) => {
+    if (!shape?.rect) return '';
+    const { col, row, cols, rows } = shape.rect;
+    const x = col * 3;
+    const y = row * 3;
+    return `<rect x="${x}" y="${y}" width="${cols * 3}" height="${rows * 3}" fill="${light ? 'rgba(238,241,245,.10)' : 'rgba(15,18,22,.45)'}" stroke="${light ? 'rgba(238,241,245,.45)' : 'rgba(120,130,145,.6)'}" stroke-width="0.12" stroke-dasharray="0.7 0.4"/>
+      <text x="${x + (cols * 3) / 2}" y="${y + (rows * 3) / 2 + 0.4}" text-anchor="middle" font-size="1.1" fill="${light ? 'rgba(238,241,245,.75)' : 'rgba(160,170,185,.85)'}" font-family="var(--mono)">${esc(shape.label ?? '')}</text>`;
+  };
+  return `<svg class="mapsvg flatmap" viewBox="0 0 36 36" aria-hidden="true">
+    <rect x="0" y="0" width="36" height="36" fill="#12161b"/>
+    ${lines}${depRect(dep?.black, false)}${depRect(dep?.white, true)}${zones}${cells}</svg>`;
 }
 
 // ---------- lobby ----------
@@ -454,18 +466,27 @@ function battlefieldStep(): string {
     ...(data?.missions.cards ?? []).map(
       (m) => `<div class="miscard${state.mission === m.id ? ' sel' : ''}${editable ? '' : ' still'}" ${editable ? `data-mission="${m.id}"` : ''}>
         <span class="mn">${esc(m.name)}</span><span class="mf">${esc(m.family)} · ${esc(m.deployment ?? '')}</span>
-        <img class="mimg" loading="lazy" src="${esc(missionImageUrl(m.id))}" alt="">
       </div>`,
     ),
   ].join('');
+  const chosen = state.mission ? data?.missions.cards.find((m) => m.id === state.mission) : undefined;
+  const taskPanel = chosen
+    ? `<div class="mispanel">
+        <img src="${esc(missionImageUrl(chosen.id))}" alt="${esc(chosen.name)} card">
+        <div class="mp-line"><b>Setup</b>${esc(chosen.setup ?? '')}</div>
+        <div class="mp-line"><b>Scoring</b>${esc(chosen.scoring ?? '')}</div>
+        <div class="mp-line"><b>VP</b>${esc(String(chosen.vp ?? ''))}${chosen.cadence ? ` · ${esc(chosen.cadence)}` : ''}${chosen.fromRound ? ` · from round ${chosen.fromRound}` : ''}</div>
+      </div>`
+    : `<div class="mispanel empty"><p class="quiet">Pick a Main Task to read its card here.<br>A free battle plays without one.</p></div>`;
   return `<div class="steppane">
     <div class="stephead"><h3>Battlefield</h3><span>the map and the Main Task, set before the first roll (3.1.1)</span></div>
     ${editable ? '' : `<p class="hint">${running() ? 'The battlefield is locked while the game runs.' : 'The host sets the battlefield. You are watching it live.'}</p>`}
-    <div class="pickgrid">
+    <div class="pickgrid three">
       <div class="mappanel">
         <div class="previewhead"><span class="t">Preview</span><span class="n">${esc(mapName(state.map))}</span></div>
         ${previewSvg(state.map)}
       </div>
+      ${taskPanel}
       <div class="maplist">${maps}
         <p class="quiet">Custom maps stay on the board page for now — a guest may not have them.</p>
       </div>
