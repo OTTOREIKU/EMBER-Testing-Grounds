@@ -3,7 +3,7 @@ import type { GameData } from './data';
 import { secondaryImageUrl, squadLabel } from './data';
 import { Board, footprint, snapPlacement, type BoardCallbacks } from './board';
 import { printedDeployment, resolveZoneSetData } from './overlays';
-import { guidedActions, maneuverRange, squadAllegiance } from './units';
+import { extraActivationOf, guidedActions, maneuverRange, squadAllegiance, type ExtraActivation } from './units';
 import { crushTargets, extendPath, reachableGrids, standingSpot, type LargeGrid } from './rules';
 import { breakAwayCost } from './melee';
 import { factionColour } from './icons';
@@ -11,7 +11,7 @@ import { iconSvg } from './dice';
 import type { DiceData, DieColor, GameState, Side, Timing, Token, ExtraTick, Opportunity } from './types';
 import { newOpportunity, newScriptState, PHASES, TIMINGS } from './types';
 import { deployable, deployTurn, deploymentComplete, firstPlayerFrom, normaliseSetup, rollTotal, type SetupState } from './setup';
-import { actionPhaseComplete, activationOrder, alive, canAct, commandTokensFor, eligibleUnits, isLoopPhase, loopComplete, nextActivation, nextTurn, type InitLookup, type LoopPhase } from './loop';
+import { actionPhaseComplete, activationOrder, alive, canAct, commandTokensFor, eligibleUnits, isLoopPhase, loopComplete, nextActivation, nextTurn, onExtraOpportunity, type InitLookup, type LoopPhase } from './loop';
 import { canManeuver, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, whyGrantLapsed, type TickVerdict } from './ticks';
 import { normaliseTasks, scoreMain, scoreSecondary, settleControl, unpaidLines, zoneCentreGrid, type Designation, type ScoreLine, type ScoreResult, type SecondaryScoring } from './tasks';
 import { tokenCards } from './units';
@@ -664,6 +664,7 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
   // Immobilised and an empty magazine all take an Action away. Asking only the
   // Tick engine, as this panel used to, let every one of those through.
   const guided = guidedActions(ctx.data, t, { tokens: ctx.state.tokens, terrain: terrainOf(ctx) });
+  const onExtra = onExtraOpportunity(ctx.state, o.uid);
   const blockedBy = new Map<string, string | undefined>();
   for (const g of guided) if (!g.available) blockedBy.set(g.action.id, g.reason);
   const ammoOf = new Map<string, number | undefined>();
@@ -681,7 +682,13 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
       // The board's reason comes first: being out of ammo is a truer answer
       // than "not enough Ticks" when both are true.
       const stopped = blockedBy.get(a.id);
-      const v: TickVerdict = stopped ? { ok: false, why: stopped } : ticks;
+      // An Extra Action Opportunity cannot hand out another one, or two
+      // Coordinating Mechs would keep granting each other Opportunities for the
+      // rest of the Round. The card carries the suppression itself.
+      const chained = onExtra && extraActivationOf(a)?.suppressGrants
+        ? 'This is already an Extra Action Opportunity, and it cannot grant another one.'
+        : undefined;
+      const v: TickVerdict = chained ? { ok: false, why: chained } : stopped ? { ok: false, why: stopped } : ticks;
       const cost = costOf(a);
       const len = lengthOf(a);
       const kind = (a.type ?? '').toLowerCase();
@@ -864,6 +871,9 @@ function resultPanel(ctx: HudCtx, vp: { s1: number; s2: number }): string {
 
 function panelHtml(ctx: HudCtx): string {
   const s = ctx.state;
+  // A grant is answered before anything else: the Action has been performed
+  // and the Ally is owed its Opportunity.
+  if (grantPick) return grantPanel(ctx);
   const su = normaliseSetup(s.setup);
   if (su && su.stage !== 'done') return setupPanel(ctx, su);
   const phase = PHASES[s.round.phase];
@@ -939,6 +949,51 @@ export function animateRemoteMove(uid: number, from: { col: number; row: number 
   board.animateMove(uid, [from, to], () => {
     if (hudRef) renderBoard(hudRef);
   });
+}
+
+// ---------- Extra Action Opportunities (Coordinate) ----------
+//
+// An Action carrying the grant lets an Ally Mech in range pay Link for an
+// Opportunity of its own once the normal order is through. The guide asks which
+// Ally in a dialog; here the panel asks, which is the same question in the
+// place this HUD asks all its questions.
+
+let grantPick: { from: number; grant: ExtraActivation } | null = null;
+
+// Range is counted in Large Grids, the same way the guide counts it.
+function gridsApart(a: Token, b: Token): number {
+  return Math.abs(Math.floor(a.col / 3) - Math.floor(b.col / 3))
+    + Math.abs(Math.floor(a.row / 3) - Math.floor(b.row / 3));
+}
+
+function grantTargets(ctx: HudCtx, from: Token, g: ExtraActivation): Token[] {
+  return ctx.state.tokens.filter(
+    (t) => t.kind === 'mech'
+      && t.side === from.side
+      && t.deployed !== false
+      && alive(t)
+      && (!g.excludeSelf || t.uid !== from.uid)
+      && gridsApart(from, t) <= g.range,
+  );
+}
+
+function grantPanel(ctx: HudCtx): string {
+  const from = ctx.state.tokens.find((t) => t.uid === grantPick!.from);
+  const g = grantPick!.grant;
+  if (!from) return '';
+  const targets = grantTargets(ctx, from, g);
+  // A Mech too low on Link is shown and refused rather than hidden: a player
+  // needs to see why it cannot be chosen.
+  const rows = targets
+    .map((t) => {
+      const short = (t.link ?? 0) < g.minimumLink;
+      return `<button class="rowwide${short ? ' warn' : ''}" data-grant="${t.uid}"${short ? ` data-why="${esc(`${t.label} needs at least ${g.minimumLink} Link to be chosen.`)}"` : ''}>${esc(t.label)}<span class="ct">Link ${t.link ?? 0}</span></button>`;
+    })
+    .join('');
+  const none = !targets.some((t) => (t.link ?? 0) >= g.minimumLink);
+  return head('Your move', 'Coordinate: which Ally Mech?', `That Mech pays ${g.linkCost} Link and takes an Extra Action Opportunity once the normal order is through.`, true)
+    + `<div class="tp-body">${none ? `<p class="tp-note">No Ally Mech within Range ${g.range} has the ${g.minimumLink} Link this needs.</p>` : rows}</div>
+       <div class="tp-foot"><button class="bigbtn ghost2" data-act="grantcancel">Cancel</button></div>`;
 }
 
 // ---------- scoring, judged the way the guide judges it ----------
@@ -1256,9 +1311,27 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
       const v = ctx.send({ kind: 'performAction', seat: t.side, uid: t.uid, actionId: el.dataset.doact! });
       const [y, r] = (el.dataset.pool ?? '0,0').split(',').map(Number);
       if (v.ok && (y || r)) attack = { y, r, name: el.dataset.an ?? 'attack' };
+      // An Action that grants an Extra Action Opportunity asks who takes it,
+      // the same question the guide asks in its dialog.
+      if (v.ok) {
+        const act = guidedActions(ctx.data, t, { tokens: s.tokens, terrain: terrainOf(ctx) })
+          .find((g) => g.action.id === el.dataset.doact);
+        const grant = act ? extraActivationOf(act.action) : undefined;
+        if (grant) grantPick = { from: t.uid, grant };
+      }
     }
     ctx.refresh();
   });
+  on('[data-grant]', (el) => {
+    if (el.dataset.why) { ctx.noteNow(el.dataset.why); ctx.refresh(); return; }
+    const pick = s.tokens.find((x) => x.uid === Number(el.dataset.grant));
+    if (pick && grantPick) {
+      ctx.send({ kind: 'grantExtra', seat: pick.side, uid: pick.uid, linkCost: grantPick.grant.linkCost });
+    }
+    grantPick = null;
+    ctx.refresh();
+  });
+  on('[data-act="grantcancel"]', () => { grantPick = null; ctx.refresh(); });
   on('[data-act="maneuver"]', (el) => {
     if (el.dataset.why) { ctx.noteNow(el.dataset.why); ctx.refresh(); return; }
     const sc = ensureScript(s);
