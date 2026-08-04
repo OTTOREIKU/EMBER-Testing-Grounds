@@ -1,14 +1,14 @@
 import { missionZones, taskDesignations, type Command, type CheckResult } from './commands';
 import type { GameData } from './data';
-import { secondaryImageUrl, squadLabel } from './data';
+import { isAerial, secondaryImageUrl, squadLabel, unitSize } from './data';
 import { Board, footprint, snapPlacement, type BoardCallbacks } from './board';
 import { printedDeployment, resolveZoneSetData } from './overlays';
-import { canActivateCamo, extraActivationOf, guidedActions, maneuverRange, squadAllegiance, type ExtraActivation } from './units';
-import { crushTargets, extendPath, reachableGrids, standingSpot, type LargeGrid } from './rules';
+import { canActivateCamo, explosionScope, extraActivationOf, guidedActions, interceptCapacity, interceptLeft, knockbackOf, maneuverRange, needsSightToLanding, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation } from './units';
+import { attackDirection, crushTargets, dissipationFor, extendPath, knockbackPath, LG, losBetween, rangeBetween, reachableGrids, standingSpot, type LargeGrid } from './rules';
 import { breakAwayCost } from './melee';
 import { factionColour } from './icons';
 import { iconSvg } from './dice';
-import type { DiceData, DieColor, GameState, Side, Stance, Timing, Token, ExtraTick, Opportunity } from './types';
+import type { CardAction, DiceData, DieColor, GameState, Side, Stance, Timing, Token, ExtraTick, Opportunity } from './types';
 import { newOpportunity, newScriptState, PHASES, STATUSES, TIMINGS } from './types';
 import { deployable, deployTurn, deploymentComplete, firstPlayerFrom, normaliseSetup, rollTotal, type SetupState } from './setup';
 import { actionPhaseComplete, activationOrder, alive, canAct, commandTokensFor, eligibleUnits, isLoopPhase, loopComplete, nextActivation, nextTurn, onExtraOpportunity, type InitLookup, type LoopPhase } from './loop';
@@ -130,6 +130,25 @@ export function glueAfter(data: GameData, state: GameState, cmd: Command): void 
     opp.extras = t ? extrasFor(data, t) : [];
     sc.opp = opp;
   }
+  // Smoke dissipation takes the isolated screens off both sides in one
+  // judgement and then owes one removal per Connected group, chosen by its
+  // owner (4.16). The queue is snapshotted here rather than re-derived, because
+  // a removal that splits a group owes nothing further this round — and it is
+  // built from the command itself so both seats hold the identical list.
+  if (cmd.kind === 'dissipateSmoke') {
+    const order: Side[] = state.round.firstPlayer === 's1' ? ['s1', 's2'] : ['s2', 's1'];
+    smokeOwed = order.flatMap((side) =>
+      dissipationFor(state.smoke ?? [], side).groups.map((g) => ({ side, cells: g.map((s) => ({ col: s.col, row: s.row })) })),
+    );
+    if (!smokeOwed.length) smokeOwed = null;
+  }
+  if (cmd.kind === 'removeSmoke' && smokeOwed) {
+    smokeOwed = smokeOwed.slice(1);
+    if (!smokeOwed.length) smokeOwed = null;
+  }
+  // Leaving the End Phase abandons anything still owed; next round judges the
+  // board afresh.
+  if (cmd.kind === 'advancePhase' || cmd.kind === 'setPhase' || cmd.kind === 'startMatch' || cmd.kind === 'endMatch') smokeOwed = null;
 }
 
 function opportunity(data: GameData, s: GameState): Opportunity | null {
@@ -209,7 +228,12 @@ let movePlan: {
   locked: boolean;
 } | null = null;
 let targetUid: number | null = null; // enemy picked for damage bookkeeping
-let attack: { y: number; r: number; name: string } | null = null; // pool of the action just performed
+// Whose card the Details tab is showing, when the player has asked for one
+// rather than taking the active unit's.
+let inspectUid: number | null = null;
+// The Action just performed: its pool for the roll button, and its id so the
+// strip can tell whether it carries Knockback without guessing from the name.
+let attack: { y: number; r: number; name: string; actionId: string } | null = null;
 let recording = false;             // a record is being sent
 let recorded = false;              // and the server took it
 let recordNote: string | null = null;
@@ -380,6 +404,11 @@ function boardCallbacks(): BoardCallbacks {
       const actor = sc.opp ? s.tokens.find((x) => x.uid === sc.opp!.uid) : undefined;
       const t = uid !== null ? s.tokens.find((x) => x.uid === uid) : undefined;
       if (t && actor && t.side !== actor.side) targetUid = targetUid === t.uid ? null : t.uid;
+      // Clicking a unit opens ITS card, and it stays open. Without this the
+      // Details tab snapped straight back to whoever held the Opportunity on
+      // the very next render, which left a Projectile's own Detonate button
+      // unreachable — there is no other way to a Projectile's card.
+      inspectUid = t ? t.uid : null;
       ctx.refresh();
     },
     onMove(uid, col, row) {
@@ -418,19 +447,10 @@ function boardCallbacks(): BoardCallbacks {
       const ctx = hudRef;
       if (!ctx) return;
       const s = ctx.state;
-      if (launchPlan) {
-        const owner = s.tokens.find((x) => x.uid === launchPlan!.uid);
-        if (owner) {
-          ctx.send({
-            kind: 'launch', seat: owner.side, uid: launchPlan.uid,
-            actionId: launchPlan.actionId, cardId: launchPlan.cardId,
-            to: { col, row }, facing: 0,
-          });
-        }
-        launchPlan = null;
-        ctx.refresh();
-        return;
-      }
+      // A launch takes its Landing Point from the highlighted picker in gPick,
+      // which stops the event before it reaches here — so a press that does
+      // arrive landed on an illegal Grid and must do nothing at all.
+      if (launchPlan) return;
       if (movePlan) {
         lockMove(ctx);
         return;
@@ -470,12 +490,21 @@ function renderBoard(ctx: HudCtx): void {
     document.documentElement.style.setProperty(`--sq-${side}`, factionColour(f));
   }
   // Panning is the default; a placement or a route needs the cell instead.
-  board.panEnabled = placing === null && !movePlan && !launchPlan;
+  board.panEnabled = placing === null && !movePlan && !launchPlan && !smokePlan && !smokeOwed?.length;
   if (movePlan) {
     const t = s.tokens.find((x) => x.uid === movePlan!.uid);
     // The same overlay freeplay shows: the Large Grids this unit can really
     // enter, with the step count on each.
     if (t) board.showReachable(reachableFor(ctx, t), movePlan.steps);
+  } else if (launchPlan) {
+    board.showSmokeTargets(landingCandidates(ctx), (c, r) => placeLaunched(ctx, c, r));
+  } else if (smokePlan) {
+    board.showSmokeTargets(smokeCandidates(ctx), (c, r) => placeSmokeAt(ctx, c, r));
+  } else if (smokeOwed?.length && mine(ctx, smokeOwed[0].side)) {
+    board.showSmokeTargets(
+      smokeOwed[0].cells.map((s) => ({ c: s.col, r: s.row, ok: true })),
+      (c, r) => removeOwedSmoke(ctx, { col: c, row: r }),
+    );
   } else {
     board.clearHighlights();
     // A placement waiting to be confirmed keeps its ghost through every
@@ -573,9 +602,13 @@ function setupPanel(ctx: HudCtx, su: SetupState): string {
   // guide holds its placement list back: the edge pick moves the stage on, so
   // without this the First Player could take an edge and start placing while
   // the other squad never got to choose a Task at all.
-  const pending = normaliseTasks(s.tasks);
-  if (!pending.secondary.s1 || !pending.secondary.s2) {
-    return head('Setup', 'Secondary Tasks', 'Both are picked before anything deploys, so each side knows what the other is playing for (3.1.3).', !pending.secondary[ctx.seat ?? 's1'])
+  // Named for the Tasks it holds, not `pending` — that is the module-level
+  // placement waiting to be confirmed, and a local of the same name shadowed it
+  // so every `pending !== null` below read a TaskState and was always true. The
+  // Confirm button and its note then showed with nothing placed.
+  const taskState = normaliseTasks(s.tasks);
+  if (!taskState.secondary.s1 || !taskState.secondary.s2) {
+    return head('Setup', 'Secondary Tasks', 'Both are picked before anything deploys, so each side knows what the other is playing for (3.1.3).', !taskState.secondary[ctx.seat ?? 's1'])
       + `<div class="tp-body">${secondaryRows(ctx)}</div><div class="tp-foot"></div>`;
   }
   // A Task that names a Mech or a Zone is part of the same step, and the naming
@@ -817,6 +850,15 @@ function combatStrip(ctx: HudCtx): string {
       <button class="rowbtn" data-act="killpart">Score a Part kill</button>
       <button class="rowbtn${dead ? ' warnb' : ''}" data-act="killunit">${dead ? 'Remove the unit' : 'Destroy the unit'}</button>
     </div>`);
+    // An Action carrying Knockback X or Push X owes the victim a Forced
+    // Movement once the damage is settled, so the strip offers it here rather
+    // than leaving the players to remember an appendix keyword.
+    const actor = actingToken(ctx);
+    const kbAction = actor && attack?.actionId ? actionOn(ctx, actor, attack.actionId) : undefined;
+    const kb = kbAction ? knockbackOf(kbAction) : undefined;
+    if (kb && !target.aerial) {
+      parts.push(`<button class="rowwide" data-act="knockback" style="margin-top:8px">${kb.push ? 'Push' : 'Knockback'} ${kb.grids}<span class="ct">${kb.onHit ? 'on Hit' : 'appendix'}</span></button>`);
+    }
   }
   return `<div class="combat">${parts.join('')}</div>`;
 }
@@ -877,8 +919,12 @@ function actionPanel(ctx: HudCtx): string {
 function endPanel(ctx: HudCtx): string {
   const s = ctx.state;
   const sc = ensureScript(s);
+  const smoke = s.smoke ?? [];
   const steps: { id: string; label: string }[] = [
     { id: 'tokens', label: 'Age tokens & clear Command pools' },
+    // Only offered when there is smoke to judge, so a game that never sees a
+    // grenade never grows a step it cannot do anything with.
+    ...(smoke.length ? [{ id: 'smoke', label: `Smoke dissipation — ${smoke.length} screen${smoke.length === 1 ? '' : 's'}` }] : []),
     { id: 'remove', label: 'Integrity Loss — remove spent Mechs' },
     { id: 'tasks', label: 'Settle Task control' },
   ];
@@ -934,6 +980,15 @@ function panelHtml(ctx: HudCtx): string {
   // A launch is waiting on a square, and a grant on an Ally: both are questions
   // already asked, so they come before whatever the phase would otherwise show.
   if (launchPlan) return launchPanel(ctx);
+  if (smokePlan) return smokePanel(ctx);
+  if (smokeOwed?.length) return smokeChoicePanel(ctx);
+  if (shovePlan) return shovePanel(ctx);
+  if (detonateNow) return detonatePanel(ctx);
+  // Interception fires the instant a Projectile is Launched and is resolved
+  // before play goes on (4.9), so it outranks the phase — but only while there
+  // is something drawable. Dead debt, whose Part or target has left the board,
+  // must never take the panel over and strand the table.
+  if (interceptNow || interceptPick || owedItems(ctx).length) return interceptPanel(ctx);
   // A grant is answered before anything else: the Action has been performed
   // and the Ally is owed its Opportunity.
   if (grantPick) return grantPanel(ctx);
@@ -1014,25 +1069,671 @@ export function animateRemoteMove(uid: number, from: { col: number; row: number 
   });
 }
 
-// ---------- launching a Projectile ----------
+// ---------- launching a Projectile (rulebook 4.7) ----------
 //
 // The unit card picks the Action and the Projectile; all that is left is where
-// it lands, which is one click on the board. Freeplay takes the board over with
-// startLaunch for the same reason — a command that needs a square cannot be
-// sent from a card alone.
+// it lands. Freeplay takes the board over with startLaunch for the same reason —
+// a command that needs a square cannot be sent from a card alone — and this is
+// the same flow: only legal Landing Points are offered, Volley X may place
+// several off one Action, and the last one can be taken back before it counts.
 
-let launchPlan: { uid: number; actionId: string; cardId: string; label: string } | null = null;
+let launchPlan: {
+  uid: number;
+  actionId: string;
+  cardId: string;
+  label: string;
+  // Shots left in the volley and the ones already down, so the last can be
+  // taken back with the Ammo that paid for it.
+  left: number;
+  placed: number;
+  placedUids: number[];
+} | null = null;
 
 export function startLaunchPlan(uid: number, actionId: string, cardId: string, label: string): void {
-  launchPlan = { uid, actionId, cardId, label };
-  hudRef?.refresh();
+  const ctx = hudRef;
+  if (!ctx) return;
+  const t = ctx.state.tokens.find((x) => x.uid === uid);
+  const a = t ? actionOn(ctx, t, actionId) : undefined;
+  if (!t || !a) return;
+  // Volley X caps the shots per Action and each one spends an Ammo Token, so
+  // the real cap is whichever runs out first.
+  const ammo = t.ammo?.[actionId];
+  const shots = Math.min(volleyOf(a), ammo === undefined ? volleyOf(a) : ammo);
+  if (shots <= 0) {
+    ctx.noteNow(`${a.name?.en || actionId} has no Ammo Tokens left, so it cannot be performed (4.13).`);
+    ctx.refresh();
+    return;
+  }
+  launchPlan = { uid, actionId, cardId, label, left: shots, placed: 0, placedUids: [] };
+  ctx.refresh();
+}
+
+// A Landing Point is a Grid within the Action's Range. Direct Fire needs sight
+// of it and cannot pick a Grid terrain fills; Fire in arc needs neither.
+// Mirrors landingCandidates in main.ts.
+function landingCandidates(ctx: HudCtx): { c: number; r: number; ok: boolean }[] {
+  const m = launchPlan;
+  if (!m) return [];
+  const t = ctx.state.tokens.find((x) => x.uid === m.uid);
+  const a = t ? actionOn(ctx, t, m.actionId) : undefined;
+  if (!t || !a) return [];
+  const sight = needsSightToLanding(a);
+  const range = a.range ?? 0;
+  const terrain = terrainOf(ctx);
+  const from = { c: Math.floor(t.col / 3), r: Math.floor(t.row / 3) };
+  const out: { c: number; r: number; ok: boolean }[] = [];
+  for (let c = 0; c < LG; c++) {
+    for (let r = 0; r < LG; r++) {
+      if (Math.abs(c - from.c) + Math.abs(r - from.r) > range) continue;
+      if (sight) {
+        const probe = { ...t, col: c * 3 + 1, row: r * 3 + 1, size: 1 as const };
+        if (losBetween(t, probe, terrain, ctx.state.tokens) === 'blocked') continue;
+        if (!standingSpot(c, r, 1, false, terrain, ctx.state.tokens, t.uid)) continue;
+      }
+      out.push({ c, r, ok: true });
+    }
+  }
+  return out;
+}
+
+function placeLaunched(ctx: HudCtx, c: number, r: number): void {
+  const m = launchPlan;
+  if (!m) return;
+  const t = ctx.state.tokens.find((x) => x.uid === m.uid);
+  const card = ctx.data.byId.get(m.cardId);
+  if (!t || !card) return;
+  // Sized off the card rather than a probe token: minting one here would burn a
+  // uid the launch command then cannot reproduce on the other seat.
+  const spot = standingSpot(c, r, unitSize(card), isAerial(card), terrainOf(ctx), ctx.state.tokens, undefined, { col: t.col, row: t.row });
+  if (!spot) {
+    ctx.noteNow(`There is no room in that Grid for ${m.label}. 4.7.2 needs the Projectile's base entirely inside the Landing Point.`);
+    ctx.refresh();
+    return;
+  }
+  const v = ctx.send({
+    kind: 'launch', seat: t.side, uid: t.uid,
+    actionId: m.actionId, cardId: m.cardId,
+    to: { col: spot.col, row: spot.row }, facing: t.facing,
+  });
+  if (!v.ok) { ctx.refresh(); return; }
+  m.placedUids.push(ctx.state.tokens[ctx.state.tokens.length - 1].uid);
+  m.placed++;
+  m.left--;
+  // A single shot closes on its own; a volley stays open once it is spent so
+  // the last Projectile can still be taken back before it counts.
+  const ammoLeft = t.ammo?.[m.actionId];
+  const spent = m.left <= 0 || (ammoLeft !== undefined && ammoLeft <= 0);
+  if (spent && m.placed + m.left <= 1) finishLaunchPlan(ctx);
+  else ctx.refresh();
+}
+
+// Interception is only owed once the launch is finished, so taking one back
+// before then just undoes the placement and the Ammo that paid for it.
+function undoLaunched(ctx: HudCtx): void {
+  const m = launchPlan;
+  if (!m || !m.placedUids.length) return;
+  const uid = m.placedUids.pop()!;
+  const t = ctx.state.tokens.find((x) => x.uid === m.uid);
+  if (t) {
+    ctx.send({ kind: 'despawn', seat: t.side, uid: t.uid, targetUid: uid });
+    ctx.send({ kind: 'restoreAmmo', seat: t.side, uid: t.uid, actionId: m.actionId });
+  }
+  m.placed--;
+  m.left++;
+  ctx.refresh();
+}
+
+function finishLaunchPlan(ctx: HudCtx): void {
+  const m = launchPlan;
+  launchPlan = null;
+  board?.clearHighlights();
+  if (!m) { ctx.refresh(); return; }
+  const owner = ctx.state.tokens.find((x) => x.uid === m.uid);
+  const born = m.placedUids
+    .map((uid) => ctx.state.tokens.find((x) => x.uid === uid))
+    .filter((x): x is Token => !!x);
+  if (owner && born.length) queueInterceptsFor(ctx, owner, born);
+  ctx.refresh();
 }
 
 function launchPanel(ctx: HudCtx): string {
-  const t = ctx.state.tokens.find((x) => x.uid === launchPlan!.uid);
-  return head('Your move', `Launch ${launchPlan!.label}`, `Click the Grid it lands on. ${t ? esc(t.label) : 'The launcher'} stays where it is.`, true)
-    + `<div class="tp-body"><p class="tp-note">The Projectile arrives on the square you pick, facing as it lands.</p></div>
-       <div class="tp-foot"><button class="bigbtn ghost2" data-act="launchcancel">Cancel</button></div>`;
+  const m = launchPlan!;
+  const t = ctx.state.tokens.find((x) => x.uid === m.uid);
+  const a = t ? actionOn(ctx, t, m.actionId) : undefined;
+  const total = m.left + m.placed;
+  const cands = landingCandidates(ctx);
+  const sight = a ? needsSightToLanding(a) : false;
+  const foot = [
+    m.placed ? `<button class="bigbtn ghost2" data-act="launchundo">↺ Take back the last one</button>` : '',
+    `<button class="bigbtn${m.placed ? '' : ' ghost2'}" data-act="launchcancel">${m.placed ? 'Stop here' : 'Cancel'}</button>`,
+  ].join('');
+  return head('Your move', `Launch ${esc(m.label)}`, `${esc(a?.name?.en || m.actionId)}${total > 1 ? ` — ${m.placed} of ${total} launched` : ''}.`, true)
+    + `<div class="tp-body">
+        <p class="tp-note">${sight
+          ? 'Direct Fire, so the Landing Point has to be a Grid this unit can see and one terrain does not fill.'
+          : 'Fire in arc, so no line of sight to the Landing Point is needed.'} A Landing Point is a Grid, not a unit, and nothing is targeted yet.</p>
+        <p class="tp-dim">${cands.length} legal ${cands.length === 1 ? 'Grid' : 'Grids'} within Range ${a?.range ?? 0}. ${total > 1
+          ? `Volley ${total} lets you place up to ${total}, one Ammo Token each, and you may stop early.`
+          : 'One Ammo Token is spent.'}</p>
+        ${cands.length ? '' : '<p class="tp-note">Nothing is in range and in sight, so there is nowhere legal to put it.</p>'}
+      </div>
+      <div class="tp-foot">${foot}</div>`;
+}
+
+// ---------- Interception (rulebook 4.9) ----------
+//
+// Launching an Aerial Unit hands every enemy Part carrying Intercept X in range
+// an attempt at it, at once, wherever the round happens to be. The owed list
+// lives in the shared script state, so both clients see the same debt and only
+// the squad that owns the intercepting Parts is asked to pay it.
+//
+// The attack itself is the Match Centre's ordinary manual combat: the same
+// pool roll and the same damage bookkeeping as any other shot. What 4.9 changes
+// is who may be shot at (only the Aerial Unit that triggered it), that line of
+// sight always exists and no Forward Arc is needed, that no Terrain or Unit
+// Protection dice may be claimed, and that a survivor must be shot at again.
+
+// The attempt on the table right now. `script.intercepts` says what is OWED;
+// this says what is being resolved, and it is the acting unit for as long as
+// it is set — an Interception is made outside the activation order.
+let interceptNow: { uid: number; actionId: string; targetUid: number } | null = null;
+// An attempt started from the unit card instead of the owed list, where nobody
+// has named the target yet.
+let interceptPick: { uid: number; actionId: string } | null = null;
+
+export function startInterceptPick(uid: number, actionId: string): void {
+  interceptPick = { uid, actionId };
+  interceptNow = null;
+  hudRef?.refresh();
+}
+
+function actionOn(ctx: HudCtx, t: Token, actionId: string): CardAction | undefined {
+  return tokenCards(ctx.data, t).flatMap(({ card }) => card.actions ?? []).find((a) => a.id === actionId);
+}
+
+// Mirrors noteInterception in main.ts, which is the reference implementation.
+// The Range test is per ACTION rather than per unit, because one unit may carry
+// two Intercept Parts of different Range and only the longer one reaches. It
+// takes the whole volley, since the debt is owed once the launch is finished
+// rather than once per Projectile put down.
+function queueInterceptsFor(ctx: HudCtx, launcher: Token, born: Token[]): void {
+  const s = ctx.state;
+  // Only an AERIAL Unit triggers Interception (4.9), and five launchable cards
+  // are Drones rather than Projectiles. Freeplay filters on `kind` instead;
+  // across the whole card database the two agree, since no launchable Drone is
+  // Aerial, but this is the test the rule actually names.
+  const fresh = born.filter((p) => p.parentUid === launcher.uid && p.aerial);
+  if (!fresh.length || !s.script) return;
+  const owed: { uid: number; actionId: string; targetUid: number }[] = [];
+  for (const x of s.tokens) {
+    if (x.side === launcher.side || x.deployed === false || !alive(x) || interceptLeft(x) <= 0) continue;
+    for (const { card } of tokenCards(ctx.data, x)) {
+      for (const a of card.actions ?? []) {
+        if (interceptCapacity(a) === undefined) continue;
+        if ((x.intercept?.[a.id] ?? 0) <= 0) continue;
+        for (const p of fresh) {
+          if (rangeBetween(x, p).range > (a.range ?? 0)) continue;
+          owed.push({ uid: x.uid, actionId: a.id, targetUid: p.uid });
+        }
+      }
+    }
+  }
+  if (!owed.length) return;
+  const defender: Side = launcher.side === 's1' ? 's2' : 's1';
+  ctx.send({ kind: 'queueIntercepts', seat: launcher.side, items: owed });
+  ctx.noteNow(`The launch triggers Interception: ${owed.length} attempt${owed.length === 1 ? '' : 's'} owed to ${squadLabel(defender)} (4.9).`);
+}
+
+// The owed attempts that can still be drawn. An attempt whose Part or target
+// has left the board is dead debt: the guide skips those rows, and here they
+// must not take the panel over either.
+function owedItems(ctx: HudCtx): { uid: number; actionId: string; targetUid: number }[] {
+  const s = ctx.state;
+  return ensureScript(s).intercepts.filter(
+    (x) => s.tokens.some((t) => t.uid === x.uid && alive(t)) && s.tokens.some((t) => t.uid === x.targetUid),
+  );
+}
+
+function interceptSide(ctx: HudCtx): Side | null {
+  const first = owedItems(ctx)[0];
+  return ctx.state.tokens.find((t) => t.uid === first?.uid)?.side ?? null;
+}
+
+// Whoever is acting: normally the unit holding the Action Opportunity, but for
+// as long as an Interception is being resolved it is the intercepting unit —
+// otherwise the damage would be attributed to whoever happened to be activating.
+function actingToken(ctx: HudCtx): Token | undefined {
+  const s = ctx.state;
+  if (interceptNow) return s.tokens.find((x) => x.uid === interceptNow!.uid);
+  // A detonating Projectile is the attacker for its own Explosion (4.7.6), and
+  // it is nobody's Action Opportunity.
+  if (detonateNow) return s.tokens.find((x) => x.uid === detonateNow!.uid);
+  const sc = ensureScript(s);
+  return sc.opp ? s.tokens.find((x) => x.uid === sc.opp!.uid) : undefined;
+}
+
+function beginIntercept(ctx: HudCtx, by: Token, actionId: string, target: Token): void {
+  const a = actionOn(ctx, by, actionId);
+  interceptNow = { uid: by.uid, actionId, targetUid: target.uid };
+  interceptPick = null;
+  targetUid = target.uid;
+  attack = a && ((a.yellowDice ?? 0) || (a.redDice ?? 0))
+    ? { y: a.yellowDice ?? 0, r: a.redDice ?? 0, name: a.name?.en || actionId, actionId }
+    : null;
+}
+
+function interceptPanel(ctx: HudCtx): string {
+  const s = ctx.state;
+  if (interceptNow) {
+    const by = s.tokens.find((x) => x.uid === interceptNow!.uid);
+    const at = s.tokens.find((x) => x.uid === interceptNow!.targetUid);
+    const a = by ? actionOn(ctx, by, interceptNow.actionId) : undefined;
+    const left = by?.intercept?.[interceptNow.actionId] ?? 0;
+    return head('Your move', `Intercepting ${at ? esc(at.label) : 'the target'}`, `${by ? esc(by.label) : ''} — ${esc(a?.name?.en || interceptNow.actionId)}.`, true)
+      + `<div class="tp-body">
+          <p class="tp-note">Line of sight always exists and no Forward Arc is required. The target claims no Terrain or Unit Protection dice (4.9).</p>
+          <p class="tp-dim">${left} Interception Token${left === 1 ? '' : 's'} left on that Part, for the rest of the game.</p>
+          ${combatStrip(ctx)}
+        </div>
+        <div class="tp-foot"><button class="bigbtn" data-act="interceptdone">Done — this attempt is resolved</button></div>`;
+  }
+  if (interceptPick) {
+    const by = s.tokens.find((x) => x.uid === interceptPick!.uid);
+    const a = by ? actionOn(ctx, by, interceptPick.actionId) : undefined;
+    const reach = a?.range ?? 0;
+    // Interception only ever attacks an Aerial Unit, which is what a Missile or
+    // a Projectile is; anything else on the board is not a legal target.
+    const targets = by
+      ? s.tokens.filter((x) => x.side !== by.side && x.aerial && x.deployed !== false && rangeBetween(by, x).range <= reach)
+      : [];
+    const rows = targets
+      .map((x) => `<button class="rowwide" data-inttarget="${x.uid}">${esc(x.label)}<span class="ct">Range ${rangeBetween(by!, x).range}</span></button>`)
+      .join('');
+    return head('Your move', 'Intercept what?', `Only the Aerial Unit that Moved or was Launched, within Range ${reach} (4.9).`, true)
+      + `<div class="tp-body">${rows || `<p class="tp-note">Nothing Aerial is within Range ${reach} of ${by ? esc(by.label) : 'that Part'}.</p>`}</div>
+         <div class="tp-foot"><button class="bigbtn ghost2" data-act="interceptcancel">Cancel — spend nothing</button></div>`;
+  }
+  const owed = owedItems(ctx);
+  const side = interceptSide(ctx);
+  if (side && !mine(ctx, side)) {
+    return head('Waiting', `${squadLabel(side)} is intercepting`, `${owed.length} attempt${owed.length === 1 ? '' : 's'} owed (4.9).`, false)
+      + `<div class="tp-body">${waiting(side, 'resolving an Interception')}</div><div class="tp-foot"></div>`;
+  }
+  const rows = owed
+    .map((x, i) => {
+      const by = s.tokens.find((t) => t.uid === x.uid)!;
+      const at = s.tokens.find((t) => t.uid === x.targetUid)!;
+      const a = actionOn(ctx, by, x.actionId);
+      const left = by.intercept?.[x.actionId] ?? 0;
+      return `<button class="rowwide" data-intercept="${i}">${esc(by.label)} → ${esc(at.label)}<span class="ct">${esc(a?.name?.en || x.actionId)} · ${left} left</span></button>`;
+    })
+    .join('');
+  return head('Your move', 'Interception owed', 'A launch by an Aerial Unit triggers this at once, before anything else happens (4.9).', true)
+    + `<div class="tp-body">${rows}
+        <p class="tp-note">Each attempt spends a Token, and a Part must keep going until its Tokens run out or the target is destroyed. Tokens are never restored.</p></div>
+       <div class="tp-foot"><button class="bigbtn ghost2" data-act="interceptskip">Skip the rest</button></div>`;
+}
+
+// ---------- Forced Movement: Knockback, Push and the shove (appendix) ----------
+//
+// The victim is Force-Moved in a straight line away from the attacker and stops
+// the moment a Unit, Terrain or the board edge blocks it, so there is nothing
+// for the player to choose about where it lands — the panel exists to show the
+// working before it happens. A shove is the same thing with no Attack behind
+// it: the card wants an enemy Ground Unit in the Grid the Mech is facing.
+
+let shovePlan: { uid: number; actionId: string; targetUid: number | null } | null = null;
+
+export function startShove(uid: number, actionId: string, targetUid?: number): void {
+  shovePlan = { uid, actionId, targetUid: targetUid ?? null };
+  hudRef?.refresh();
+}
+
+function gridAhead(t: Token): { c: number; r: number } {
+  const g = { c: Math.floor(t.col / 3), r: Math.floor(t.row / 3) };
+  const fv = [[0, -1], [1, 0], [0, 1], [-1, 0]][t.facing] as [number, number];
+  return { c: g.c + fv[0], r: g.r + fv[1] };
+}
+
+function shoveVictims(ctx: HudCtx, t: Token): Token[] {
+  const ahead = gridAhead(t);
+  return ctx.state.tokens.filter((o) => {
+    if (o.side === t.side || o.uid === t.uid || o.aerial || o.deployed === false) return false;
+    return Math.floor(o.col / 3) === ahead.c && Math.floor(o.row / 3) === ahead.r;
+  });
+}
+
+function gridName(c: number, r: number): string {
+  return `${String.fromCharCode(65 + c)}${r + 1}`;
+}
+
+// What the Forced Movement would do, or why it does nothing.
+function shoveOutcome(ctx: HudCtx, by: Token, victim: Token, a: CardAction) {
+  const kb = knockbackOf(a);
+  if (!kb) return null;
+  const dir = attackDirection(by, victim);
+  const path = knockbackPath(victim, dir, kb.grids, terrainOf(ctx), ctx.state.tokens);
+  const heading = ['north', 'east', 'south', 'west'][dir.dr < 0 ? 0 : dir.dc > 0 ? 1 : dir.dr > 0 ? 2 : 3];
+  const end = path[path.length - 1];
+  return { kb, path, heading, end, short: path.length < kb.grids };
+}
+
+function shovePanel(ctx: HudCtx): string {
+  const s = ctx.state;
+  const m = shovePlan!;
+  const by = s.tokens.find((x) => x.uid === m.uid);
+  const a = by ? actionOn(ctx, by, m.actionId) : undefined;
+  if (!by || !a) return head('Forced Movement', 'That unit is gone', '', true)
+    + '<div class="tp-body"></div><div class="tp-foot"><button class="bigbtn ghost2" data-act="shovecancel">Close</button></div>';
+  const name = a.name?.en || m.actionId;
+  const kb = knockbackOf(a);
+  const label = kb ? (kb.push ? `Push ${kb.grids}` : `Knockback ${kb.grids}`) : 'Forced Movement';
+  if (m.targetUid === null) {
+    const ahead = gridAhead(by);
+    // A Mech on the edge facing outward has no Grid in front at all, and
+    // naming one that is not on the board reads as a bug.
+    const offBoard = ahead.c < 0 || ahead.r < 0 || ahead.c >= LG || ahead.r >= LG;
+    const where = offBoard ? 'off the board' : gridName(ahead.c, ahead.r);
+    const victims = offBoard ? [] : shoveVictims(ctx, by);
+    const rows = victims
+      .map((v) => `<button class="rowwide" data-shovepick="${v.uid}">${esc(v.label)}<span class="ct">${v.kind}</span></button>`)
+      .join('');
+    return head('Your move', `${esc(name)}: shove which unit?`, offBoard ? `${esc(by.label)} faces off the board.` : `The Grid in front is ${where}.`, true)
+      + `<div class="tp-body">${rows || `<p class="tp-note">${offBoard
+        ? `${esc(by.label)} is on the edge facing outward, so there is no Grid in front to shove anything out of.`
+        : `No enemy Ground Unit in ${where}, the Grid in front, so there is nothing to shove.`}</p>`}</div>
+         <div class="tp-foot"><button class="bigbtn ghost2" data-act="shovecancel">Cancel</button></div>`;
+  }
+  const victim = s.tokens.find((x) => x.uid === m.targetUid);
+  if (!victim) return head('Forced Movement', 'That target is gone', '', true)
+    + '<div class="tp-body"></div><div class="tp-foot"><button class="bigbtn ghost2" data-act="shovecancel">Close</button></div>';
+  const out = shoveOutcome(ctx, by, victim, a);
+  if (!out) return head('Forced Movement', `${esc(name)} carries none`, '', true)
+    + '<div class="tp-body"></div><div class="tp-foot"><button class="bigbtn ghost2" data-act="shovecancel">Close</button></div>';
+  const blocked = !out.path.length;
+  return head('Your move', `${label} on ${esc(victim.label)}`, `${esc(name)} from ${esc(by.label)}.`, true)
+    + `<div class="tp-body">
+        <p class="tp-note">${blocked
+          ? `${esc(victim.label)} would be forced ${out.heading}, but a Unit, Terrain or the board edge is in the way, so it does not move. Forced Movement stops the moment it is blocked.`
+          : `${esc(victim.label)} is forced ${out.path.length} Grid${out.path.length === 1 ? '' : 's'} ${out.heading} to ${gridName(out.end.c, out.end.r)}${out.short ? `, short of the full ${out.kb.grids} because something blocks the rest of the line` : ''}.`}</p>
+        ${out.kb.push && victim.kind === 'mech' ? '<p class="tp-dim">Push also costs it 1 Link, and a Mech on 0 Link Shuts Down.</p>' : ''}
+        ${out.kb.onHit ? '<p class="tp-dim">This one only triggers On Hit, so skip it if the attack scored none.</p>' : ''}
+      </div>
+      <div class="tp-foot">${blocked ? '' : '<button class="bigbtn" data-act="shovego">Force the move</button>'}
+        <button class="bigbtn ghost2" data-act="shovecancel" style="margin-top:6px">${blocked ? 'Close' : 'Skip'}</button></div>`;
+}
+
+function resolveShove(ctx: HudCtx): void {
+  const m = shovePlan;
+  const s = ctx.state;
+  const by = m ? s.tokens.find((x) => x.uid === m.uid) : undefined;
+  const victim = m?.targetUid !== null && m ? s.tokens.find((x) => x.uid === m.targetUid) : undefined;
+  const a = by && m ? actionOn(ctx, by, m.actionId) : undefined;
+  const out = by && victim && a ? shoveOutcome(ctx, by, victim, a) : null;
+  shovePlan = null;
+  if (!out || !out.path.length || !by || !victim) { ctx.refresh(); return; }
+  const spot = standingSpot(out.end.c, out.end.r, victim.size, victim.aerial, terrainOf(ctx), s.tokens, victim.uid, { col: victim.col, row: victim.row })
+    ?? { col: victim.col, row: victim.row };
+  const wasShut = victim.stance === 'shutdown';
+  ctx.send({ kind: 'forceMove', seat: by.side, uid: by.uid, targetUid: victim.uid, to: spot, push: out.kb.push });
+  const shut = out.kb.push && victim.kind === 'mech' && !wasShut && victim.stance === 'shutdown';
+  ctx.noteNow(`${victim.label} is forced ${out.path.length} Grid${out.path.length === 1 ? '' : 's'} ${out.heading} to ${gridName(out.end.c, out.end.r)}.${
+    out.kb.push && victim.kind === 'mech' ? ` Push costs 1 Link (now ${victim.link}).` : ''}${shut ? ' Link has reached 0, so it shuts down.' : ''}`);
+  ctx.refresh();
+}
+
+// ---------- Detonation (rulebook 4.7.5 / 4.7.6) ----------
+//
+// A Projectile resolves its Delayed Action and is then Destroyed, whatever it
+// achieved. Three shapes, the same three freeplay has: a smoke card places
+// screens, a card with no dice applies an effect to everything it caught, and a
+// card with a pool makes an Explosion attack. Explosion damage ignores line of
+// sight and facing and the defender claims no Terrain or Unit Protection.
+
+let detonateNow: { uid: number; actionId: string } | null = null;
+// Which token the effect-only detonation is about to hand out.
+let detonateStatus = 'smoke';
+
+export function startDetonation(uid: number, actionId: string): void {
+  const ctx = hudRef;
+  if (!ctx) return;
+  const proj = ctx.state.tokens.find((x) => x.uid === uid);
+  const a = proj ? actionOn(ctx, proj, actionId) : undefined;
+  if (!proj || !a) return;
+  // A smoke card never targets anything: it puts screens down from where the
+  // Projectile is standing and then the Projectile is spent.
+  const smoke = smokePlacement(a);
+  if (smoke) {
+    startSmokePlan({
+      side: proj.side,
+      count: smoke.count,
+      connected: smoke.connected,
+      origin: { c: Math.floor(proj.col / 3), r: Math.floor(proj.row / 3) },
+      label: `${a.name?.en || actionId} · ${proj.label}`,
+      thenDespawn: proj.uid,
+    });
+    return;
+  }
+  detonateNow = { uid, actionId };
+  detonateStatus = /interfer|jam|stun/i.test(`${a.name?.en ?? ''} ${detonationText(ctx, a)}`) ? 'fci' : 'smoke';
+  targetUid = null;
+  attack = null;
+  ctx.refresh();
+}
+
+// "Detonate Detonation" is what naming the Action naively produces, since half
+// these cards call the Action exactly that.
+function detonateHeading(actionName: string, projLabel: string): string {
+  if (/^detonat\w*$/i.test(actionName.trim())) return `Detonate ${projLabel}`;
+  return /detonat/i.test(actionName) ? actionName : `Detonate ${actionName}`;
+}
+
+// What the card actually says, in English where there is any. The printed EN
+// field is often empty and the zh text is what the data carries, so the curated
+// translation is the middle step — the same order freeplay reads them in.
+function detonationText(ctx: HudCtx, a: CardAction): string {
+  const en = a.description?.en?.trim();
+  if (en && !/[぀-ヿ一-鿿]/.test(en)) return en;
+  const tr = ctx.data.actionTranslation(a.id)?.english;
+  return tr?.trim() || a.description?.zh?.trim() || 'See the card for what this detonation does.';
+}
+
+function unitsWithin(ctx: HudCtx, from: Token, range: number): { t: Token; dist: number }[] {
+  const gc = Math.floor(from.col / 3);
+  const gr = Math.floor(from.row / 3);
+  return ctx.state.tokens
+    .filter((x) => x.uid !== from.uid && x.deployed !== false)
+    .map((t) => ({ t, dist: Math.abs(Math.floor(t.col / 3) - gc) + Math.abs(Math.floor(t.row / 3) - gr) }))
+    .filter((x) => x.dist <= range)
+    .sort((a, b) => a.dist - b.dist);
+}
+
+// Destructible Terrain is always a legal target for a Projectile in range
+// unless the card says otherwise (4.7.5), and only the 1-inch Containers are
+// destructible: Buildings and both Defense walls are not (p.21).
+function fragileTerrainWithin(ctx: HudCtx, from: Token, range: number) {
+  const gc = Math.floor(from.col / 3);
+  const gr = Math.floor(from.row / 3);
+  return terrainOf(ctx)
+    .filter((p) => p.isFragile)
+    .map((piece) => {
+      const cells = piece.subCells.map((c) => ({ c: Math.floor(c.col / 3), r: Math.floor(c.row / 3) }));
+      return { piece, dist: Math.min(...cells.map((c) => Math.abs(c.c - gc) + Math.abs(c.r - gr))) };
+    })
+    .filter((x) => x.dist <= range)
+    .sort((a, b) => a.dist - b.dist);
+}
+
+function detonatePanel(ctx: HudCtx): string {
+  const s = ctx.state;
+  const proj = s.tokens.find((x) => x.uid === detonateNow!.uid);
+  if (!proj) return head('Detonation', 'That Projectile is gone', '', true)
+    + '<div class="tp-body"></div><div class="tp-foot"><button class="bigbtn" data-act="detdone">Close</button></div>';
+  const a = actionOn(ctx, proj, detonateNow!.actionId);
+  const name = a?.name?.en || detonateNow!.actionId;
+  const range = a?.range ?? 0;
+  const targets = unitsWithin(ctx, proj, range);
+  const terrain = fragileTerrainWithin(ctx, proj, range);
+  const damaging = !!(a && ((a.yellowDice ?? 0) || (a.redDice ?? 0)));
+  const scope = a ? explosionScope(a) : 'single';
+  const rows = targets
+    .map(({ t, dist }) => `<button class="rowwide" data-dettarget="${t.uid}"><span class="${t.side}">${t.side === proj.side ? 'ALLY' : 'ENEMY'}</span> ${esc(t.label)}<span class="ct">R${dist}</span></button>`)
+    .join('');
+  const terrainRows = terrain
+    .map(({ piece, dist }) => `<button class="rowwide" data-detterrain="${esc(piece.id)}">TERRAIN ${esc(piece.type.replace('_', ' '))}<span class="ct">R${dist}</span></button>`)
+    .join('');
+  const body = damaging
+    ? `<p class="tp-note">Explosion damage ignores line of sight and facing, and the defender gets no Terrain or Unit Protection. Only the defender may spend Link to Focus.</p>
+       <p class="tp-dim">${targets.length
+         ? scope === 'all'
+           ? 'This card says all Units within range, so it hits allies too and every one takes a separate attack. Resolve them one at a time (4.7.6).'
+           : 'This card damages a single target, so only one of these takes the attack.'
+         : terrain.length
+           ? 'No units within range, but Destructible Terrain is always a legal target (4.7.5).'
+           : 'No units and no Destructible Terrain within range. A Projectile whose Delayed Action needs a target is destroyed instead (4.7.5).'}</p>
+       ${rows}
+       ${terrainRows ? `<div class="sect2" style="margin-top:10px">Or hit Destructible Terrain</div><p class="tp-dim">Terrain takes no roll — it is removed directly when an attack hits it (p.21).</p>${terrainRows}` : ''}
+       ${targetUid !== null ? combatStrip(ctx) : ''}`
+    : `<p class="tp-note">${esc(a ? detonationText(ctx, a) : 'See the card for what this detonation does.')}</p>
+       <p class="tp-dim">This detonation causes an effect rather than damage, so there is no attack roll. Pick the token it applies, then the units inside the blast. The card text is what actually happens; the token is a reminder on the board.</p>
+       <div class="stancerow">${STATUSES.filter((d) => !d.appliesTo || targets.some(({ t }) => d.appliesTo!.includes(t.kind)))
+         .map((d) => `<button class="stancebtn${detonateStatus === d.id ? ' sel' : ''}" data-detstatus="${esc(d.id)}" title="${esc(d.note)}">${d.icon} ${esc(d.label)}</button>`)
+         .join('')}</div>
+       ${targets.length
+         ? `${targets.map(({ t, dist }) => {
+             const on = (t.statuses ?? []).includes(detonateStatus);
+             return `<button class="rowwide${on ? ' sel' : ''}" data-deteffect="${t.uid}"><span class="${t.side}">${t.side === proj.side ? 'ALLY' : 'ENEMY'}</span> ${esc(t.label)}<span class="ct">R${dist}${on ? ' ✓' : ''}</span></button>`;
+           }).join('')}`
+         : '<p class="tp-dim">No units inside the blast.</p>'}`;
+  return head('Your move', esc(detonateHeading(name, proj.label)), `${esc(proj.label)} — ${range === 0 ? 'this Grid' : `Range ${range}`}.`, true)
+    + `<div class="tp-body">${body}</div>
+       <div class="tp-foot"><button class="bigbtn" data-act="detdone">${targets.length || terrain.length ? 'Done — destroy the Projectile' : 'Destroy the Projectile'}</button>
+         <button class="bigbtn ghost2" data-act="detcancel" style="margin-top:6px">Cancel</button></div>`;
+}
+
+// ---------- Smoke Screens (rulebook 4.16) ----------
+//
+// A screen sits in one Large Grid, shares it freely with units and terrain, and
+// cuts line of sight through it. Placement comes off a card that says how many
+// and whether they must be Connected; freeplay reaches it by detonating a smoke
+// grenade, and so does this.
+
+let smokePlan: {
+  side: Side;
+  left: number;
+  connected: boolean;
+  placed: { col: number; row: number }[];
+  origin: { c: number; r: number } | null;
+  label: string;
+  // Detonating spends the Projectile once the screens are down (4.7.5).
+  thenDespawn: number | null;
+} | null = null;
+
+export function startSmokePlan(o: {
+  side: Side;
+  count: number;
+  connected: boolean;
+  origin?: { c: number; r: number };
+  label: string;
+  thenDespawn?: number;
+}): void {
+  smokePlan = {
+    side: o.side,
+    left: o.count,
+    connected: o.connected,
+    placed: [],
+    origin: o.origin ?? null,
+    label: o.label,
+    thenDespawn: o.thenDespawn ?? null,
+  };
+  hudRef?.refresh();
+}
+
+// Mirrors smokeCandidates in main.ts.
+function smokeCandidates(ctx: HudCtx): { c: number; r: number; ok: boolean }[] {
+  const m = smokePlan;
+  if (!m) return [];
+  const mine = (ctx.state.smoke ?? []).filter((s) => s.side === m.side);
+  const out: { c: number; r: number; ok: boolean }[] = [];
+  for (let c = 0; c < LG; c++) {
+    for (let r = 0; r < LG; r++) {
+      // The same player may not stack two screens in one Grid; the enemy may.
+      if (mine.some((s) => s.col === c && s.row === r)) continue;
+      if (!m.placed.length) {
+        if (m.origin && (c !== m.origin.c || r !== m.origin.r)) continue;
+        out.push({ c, r, ok: true });
+        continue;
+      }
+      if (m.connected && !m.placed.some((s) => Math.abs(s.col - c) + Math.abs(s.row - r) === 1)) continue;
+      out.push({ c, r, ok: true });
+    }
+  }
+  return out;
+}
+
+function placeSmokeAt(ctx: HudCtx, c: number, r: number): void {
+  const m = smokePlan;
+  if (!m) return;
+  const v = ctx.send({ kind: 'placeSmoke', seat: m.side, at: { col: c, row: r } });
+  if (!v.ok) { ctx.refresh(); return; }
+  m.placed.push({ col: c, row: r });
+  m.left--;
+  if (m.left <= 0) finishSmokePlan(ctx);
+  else ctx.refresh();
+}
+
+function finishSmokePlan(ctx: HudCtx): void {
+  const m = smokePlan;
+  smokePlan = null;
+  board?.clearHighlights();
+  if (m?.thenDespawn !== null && m?.thenDespawn !== undefined) {
+    const proj = ctx.state.tokens.find((x) => x.uid === m.thenDespawn);
+    if (proj) ctx.send({ kind: 'despawn', seat: proj.side, uid: proj.uid, targetUid: proj.uid });
+  }
+  if (m) ctx.noteNow(`${m.label}: ${m.placed.length} Smoke Screen${m.placed.length === 1 ? '' : 's'} placed.`);
+  ctx.refresh();
+}
+
+function smokePanel(ctx: HudCtx): string {
+  const m = smokePlan!;
+  const cands = smokeCandidates(ctx);
+  const total = m.left + m.placed.length;
+  return head('Your move', 'Place Smoke Screens', `${esc(m.label)} — ${m.left} left.`, true)
+    + `<div class="tp-body">
+        <p class="tp-note">${!m.placed.length && m.origin
+          ? 'The first screen goes on the landing point.'
+          : m.connected
+            ? 'Each screen must be in Contact with one already placed by this Action, so pick a Grid sharing an edge with the smoke.'
+            : 'Pick any highlighted Grid. This Action does not require the screens to be Connected.'} A Smoke Screen sits in one Large Grid and may share it with units and terrain.</p>
+        <p class="tp-dim">${cands.length} legal ${cands.length === 1 ? 'Grid' : 'Grids'}. You may stop early: the card says <i>up to</i> ${total}.</p>
+      </div>
+      <div class="tp-foot"><button class="bigbtn ghost2" data-act="smokestop">${m.placed.length ? 'Stop here' : 'Cancel'}</button></div>`;
+}
+
+// The Connected groups still owing a removal this End Phase, snapshotted when
+// dissipation ran. A removal that splits a group owes nothing further until
+// next round (4.16), so this cannot be re-derived from the board. Both clients
+// build it from the same command in glueAfter, so both hold the same queue.
+let smokeOwed: { side: Side; cells: { col: number; row: number }[] }[] | null = null;
+
+function smokeChoicePanel(ctx: HudCtx): string {
+  const next = smokeOwed![0];
+  if (!mine(ctx, next.side)) {
+    return head('Waiting', `${squadLabel(next.side)} thins its smoke`, `${smokeOwed!.length} Connected group${smokeOwed!.length === 1 ? '' : 's'} left.`, false)
+      + `<div class="tp-body">${waiting(next.side, 'choosing a Smoke Screen to remove')}</div><div class="tp-foot"></div>`;
+  }
+  return head('Your move', 'Smoke dissipation', `Take one screen off this Connected group — ${smokeOwed!.length} group${smokeOwed!.length === 1 ? '' : 's'} left.`, true)
+    + `<div class="tp-body">
+        <p class="tp-note">Click one highlighted Smoke Screen on the board. Splitting the group costs nothing further this round (4.16).</p>
+      </div>
+      <div class="tp-foot"><button class="bigbtn ghost2" data-act="smokeauto">Pick for me</button></div>`;
+}
+
+function removeOwedSmoke(ctx: HudCtx, at: { col: number; row: number }): void {
+  const next = smokeOwed?.[0];
+  if (!next) return;
+  ctx.send({ kind: 'removeSmoke', seat: next.side, at });
+  ctx.refresh();
 }
 
 // ---------- Extra Action Opportunities (Coordinate) ----------
@@ -1279,7 +1980,10 @@ export function ensureHud(host: HTMLElement, ctx: HudCtx): void {
   }
   wireHud(host, ctx);
   renderBoard(ctx);
-  ctx.syncSide(ensureScript(ctx.state).opp?.uid ?? null);
+  // A unit the player clicked wins over the active one, until it leaves the
+  // board or they end the activation.
+  if (inspectUid !== null && !ctx.state.tokens.some((t) => t.uid === inspectUid)) inspectUid = null;
+  ctx.syncSide(inspectUid ?? ensureScript(ctx.state).opp?.uid ?? null);
 }
 
 // ---------- wiring ----------
@@ -1398,7 +2102,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     if (t) {
       const v = ctx.send({ kind: 'performAction', seat: t.side, uid: t.uid, actionId: el.dataset.doact! });
       const [y, r] = (el.dataset.pool ?? '0,0').split(',').map(Number);
-      if (v.ok && (y || r)) attack = { y, r, name: el.dataset.an ?? 'attack' };
+      if (v.ok && (y || r)) attack = { y, r, name: el.dataset.an ?? 'attack', actionId: el.dataset.doact! };
       // Two Common Actions do more than spend a Tick, and the work lives in
       // its own command: Stabilize sheds a Status and restores Link, Reveal
       // leaves the Optical Camouflage State. Performing them without this was
@@ -1440,7 +2144,134 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     ctx.refresh();
   });
   on('[data-act="grantcancel"]', () => { grantPick = null; ctx.refresh(); });
-  on('[data-act="launchcancel"]', () => { launchPlan = null; ctx.refresh(); });
+  // Stopping early is still a finished launch, so anything already placed owes
+  // its Interceptions; cancelling with nothing down owes none.
+  on('[data-act="launchcancel"]', () => finishLaunchPlan(ctx));
+  on('[data-act="launchundo"]', () => undoLaunched(ctx));
+  on('[data-act="smokestop"]', () => finishSmokePlan(ctx));
+  // ---------- Forced Movement ----------
+  on('[data-shovepick]', (el) => {
+    if (shovePlan) shovePlan = { ...shovePlan, targetUid: Number(el.dataset.shovepick) };
+    ctx.refresh();
+  });
+  on('[data-act="shovego"]', () => resolveShove(ctx));
+  on('[data-act="shovecancel"]', () => { shovePlan = null; ctx.refresh(); });
+  on('[data-act="knockback"]', () => {
+    const actor = actingToken(ctx);
+    if (actor && attack?.actionId && targetUid !== null) startShove(actor.uid, attack.actionId, targetUid);
+    ctx.refresh();
+  });
+  // ---------- Detonation (4.7.5) ----------
+  on('[data-dettarget]', (el) => {
+    const proj = s.tokens.find((x) => x.uid === detonateNow?.uid);
+    const a = proj && detonateNow ? actionOn(ctx, proj, detonateNow.actionId) : undefined;
+    targetUid = Number(el.dataset.dettarget);
+    attack = a && ((a.yellowDice ?? 0) || (a.redDice ?? 0))
+      ? { y: a.yellowDice ?? 0, r: a.redDice ?? 0, name: a.name?.en || detonateNow!.actionId, actionId: detonateNow!.actionId }
+      : null;
+    ctx.refresh();
+  });
+  on('[data-detterrain]', (el) => {
+    const proj = s.tokens.find((x) => x.uid === detonateNow?.uid);
+    if (proj) ctx.send({ kind: 'destroyTerrain', seat: proj.side, uid: proj.uid, pieces: [el.dataset.detterrain!] });
+    ctx.noteNow('Destructible Terrain takes no roll: it is removed outright (p.21).');
+    ctx.refresh();
+  });
+  on('[data-detstatus]', (el) => { detonateStatus = el.dataset.detstatus!; ctx.refresh(); });
+  on('[data-deteffect]', (el) => {
+    const proj = s.tokens.find((x) => x.uid === detonateNow?.uid);
+    const hit = s.tokens.find((x) => x.uid === Number(el.dataset.deteffect));
+    if (proj && hit) {
+      ctx.send({ kind: 'applyStatus', seat: proj.side, uid: proj.uid, targetUid: hit.uid, statusId: detonateStatus });
+    }
+    ctx.refresh();
+  });
+  // The Projectile is Destroyed whatever it achieved (4.7.5), so both the Done
+  // and the Cancel path have to say which one happened.
+  on('[data-act="detdone"]', () => {
+    const proj = s.tokens.find((x) => x.uid === detonateNow?.uid);
+    detonateNow = null;
+    attack = null;
+    targetUid = null;
+    if (proj) {
+      ctx.send({ kind: 'despawn', seat: proj.side, uid: proj.uid, targetUid: proj.uid });
+      ctx.noteNow(`${proj.label} detonated and is destroyed (4.7.5).`);
+    }
+    ctx.refresh();
+  });
+  on('[data-act="detcancel"]', () => {
+    detonateNow = null;
+    attack = null;
+    targetUid = null;
+    ctx.refresh();
+  });
+  on('[data-act="smokeauto"]', () => {
+    const next = smokeOwed?.[0];
+    if (next?.cells.length) removeOwedSmoke(ctx, next.cells[0]);
+  });
+
+  // ---------- Interception (4.9) ----------
+  // Taking an owed attempt spends the Token and clears the debt in one move, so
+  // a refused spend must not leave the attempt struck off the list.
+  on('[data-intercept]', (el) => {
+    const item = owedItems(ctx)[Number(el.dataset.intercept)];
+    const by = item ? s.tokens.find((x) => x.uid === item.uid) : undefined;
+    const at = item ? s.tokens.find((x) => x.uid === item.targetUid) : undefined;
+    if (!item || !by || !at) { ctx.refresh(); return; }
+    const paid = ctx.send({ kind: 'spendIntercept', seat: by.side, uid: by.uid, actionId: item.actionId });
+    if (!paid.ok) { ctx.refresh(); return; }
+    ctx.send({ kind: 'resolveIntercept', seat: by.side, uid: item.uid, actionId: item.actionId, targetUid: item.targetUid });
+    beginIntercept(ctx, by, item.actionId, at);
+    ctx.refresh();
+  });
+  on('[data-inttarget]', (el) => {
+    const pick = interceptPick;
+    const by = pick ? s.tokens.find((x) => x.uid === pick.uid) : undefined;
+    const at = s.tokens.find((x) => x.uid === Number(el.dataset.inttarget));
+    if (!pick || !by || !at) { ctx.refresh(); return; }
+    const paid = ctx.send({ kind: 'spendIntercept', seat: by.side, uid: by.uid, actionId: pick.actionId });
+    if (!paid.ok) { ctx.refresh(); return; }
+    // The same attempt may also be sitting in the owed list; paying it from the
+    // card settles that debt too rather than leaving it to be asked again. Only
+    // when it really is owed, though — sending it blind reports "That
+    // Interception is not owed" over an attempt that was perfectly legal.
+    const owedToo = ensureScript(s).intercepts.some(
+      (x) => x.uid === by.uid && x.actionId === pick.actionId && x.targetUid === at.uid,
+    );
+    if (owedToo) ctx.send({ kind: 'resolveIntercept', seat: by.side, uid: by.uid, actionId: pick.actionId, targetUid: at.uid });
+    beginIntercept(ctx, by, pick.actionId, at);
+    ctx.refresh();
+  });
+  on('[data-act="interceptcancel"]', () => { interceptPick = null; ctx.refresh(); });
+  on('[data-act="interceptskip"]', () => {
+    ctx.send({ kind: 'clearIntercepts', seat: interceptSide(ctx) ?? me() });
+    ctx.refresh();
+  });
+  // A target that survived obliges the SAME Part to try again until its Tokens
+  // run out or the target dies (4.9), so the attempt goes back on the owed list
+  // rather than being left to the players to remember.
+  on('[data-act="interceptdone"]', () => {
+    const f = interceptNow;
+    interceptNow = null;
+    attack = null;
+    if (f) {
+      const by = s.tokens.find((x) => x.uid === f.uid);
+      const at = s.tokens.find((x) => x.uid === f.targetUid);
+      const left = by?.intercept?.[f.actionId] ?? 0;
+      if (!at) {
+        ctx.noteNow(`The target is destroyed, so the chain ends. ${left} Interception Token${left === 1 ? '' : 's'} left on that Part for the rest of the game.`);
+      } else if (!by || !alive(by)) {
+        // The obligation died with the unit; nothing more is owed.
+      } else if (left <= 0) {
+        ctx.noteNow(`${at.label} survived, but ${by.label} has spent every Interception Token on that Part and cannot try again (4.9).`);
+      } else {
+        ctx.send({ kind: 'queueIntercepts', seat: by.side, items: [f] });
+        ctx.noteNow(`${at.label} survived, so ${by.label} must Intercept again until its Tokens run out or the target is destroyed (4.9). ${left} left.`);
+      }
+    }
+    if (targetUid !== null && !s.tokens.some((x) => x.uid === targetUid)) targetUid = null;
+    ctx.refresh();
+  });
   on('[data-depstance]', (el) => { deployStance = el.dataset.depstance as Stance; ctx.refresh(); });
   on('[data-depcamo]', () => { deployCamo = !deployCamo; ctx.refresh(); });
   on('[data-stance]', (el) => {
@@ -1484,23 +2315,22 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     void ctx.rollPool(y, r, attack?.name ?? 'attack').then(() => ctx.refresh());
   });
   on('[data-act="untarget"]', () => { targetUid = null; ctx.refresh(); });
+  // Damage is attributed to whoever is acting, which during an Interception is
+  // the intercepting Part and not the Mech whose Opportunity is open.
   on('[data-pen]', (el) => {
-    const sc = ensureScript(s);
-    const actor = sc.opp ? s.tokens.find((x) => x.uid === sc.opp!.uid) : undefined;
+    const actor = actingToken(ctx);
     if (actor && targetUid !== null) {
       ctx.send({ kind: 'applyPenetration', seat: actor.side, uid: actor.uid, targetUid, slot: el.dataset.pen as never });
     }
     ctx.refresh();
   });
   on('[data-act="killpart"]', () => {
-    const sc = ensureScript(s);
-    const actor = sc.opp ? s.tokens.find((x) => x.uid === sc.opp!.uid) : undefined;
+    const actor = actingToken(ctx);
     if (actor && targetUid !== null) ctx.send({ kind: 'recordKill', seat: actor.side, uid: actor.uid, targetUid, what: 'part' });
     ctx.refresh();
   });
   on('[data-act="killunit"]', () => {
-    const sc = ensureScript(s);
-    const actor = sc.opp ? s.tokens.find((x) => x.uid === sc.opp!.uid) : undefined;
+    const actor = actingToken(ctx);
     if (actor && targetUid !== null) {
       ctx.send({ kind: 'recordKill', seat: actor.side, uid: actor.uid, targetUid, what: 'unit' });
       targetUid = null;
@@ -1520,12 +2350,25 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     }
     attack = null;
     movePlan = null;
+    inspectUid = null;
     board?.clearMovePath();
     if (targetUid !== null && !s.tokens.some((x) => x.uid === targetUid)) targetUid = null;
     ctx.refresh();
   });
   on('[data-endstep]', (el) => {
     const step = el.dataset.endstep!;
+    // Dissipation takes the isolated screens off both sides at once and then
+    // owes one from each Connected group; glueAfter turns that into the queue
+    // the choice panel walks. Said out loud, because it changes the board.
+    if (step === 'smoke') {
+      const before = (['s1', 's2'] as Side[]).map((side) => ({ side, ...dissipationFor(ctx.state.smoke ?? [], side) }));
+      const iso = before.reduce((n, d) => n + d.isolated.length, 0);
+      const groups = before.reduce((n, d) => n + d.groups.length, 0);
+      ctx.send({ kind: 'dissipateSmoke', seat: me() });
+      ctx.noteNow(iso || groups
+        ? `${iso} isolated Smoke Screen${iso === 1 ? '' : 's'} removed${groups ? `, and ${groups === 1 ? 'one Connected group loses one' : `each of ${groups} Connected groups loses one`}` : ''} (4.16).`
+        : 'Nothing to dissipate.');
+    }
     // "Settle Task control" is the step that pays: the guide judges the board
     // and sends the numbers with the Award, so a mirrored seat applies the same
     // VP rather than working them out again and maybe differently.
