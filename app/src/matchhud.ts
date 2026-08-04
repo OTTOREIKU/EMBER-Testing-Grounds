@@ -45,8 +45,8 @@ export interface HudCtx {
   mountSide(): void;
   // Redraws the side panel and shows a unit's card when one is selected.
   syncSide(uid: number | null): void;
-  // Renders rolled dice into the HUD tray with the tray's own animation.
-  showDice(el: HTMLElement, dice: { color: string; face: number }[]): void;
+  // Renders one player's rolled dice into the setup readout.
+  showDice(el: HTMLElement, dice: { color: string; face: number }[], who: string): void;
   refresh(): void;
 }
 
@@ -438,12 +438,15 @@ function renderBoard(ctx: HudCtx): void {
   }
   const gone = new Set(s.removedTerrain ?? []);
   board.renderTerrain((ctx.data.terrain.layouts[s.map] ?? []).filter((p) => !gone.has(p.id)));
-  const ov = resolveZoneSetData(ctx.data, s.zoneSet ?? '');
+  // The Zones toggle is a local preference — a clean board to look at, not a
+  // rule change — so it only suppresses the overlay.
+  const showZones = s.showZones !== false;
+  const ov = showZones ? resolveZoneSetData(ctx.data, s.zoneSet ?? '') : { zones: [], deploy: null };
   // While setup runs, the printed Deployment Zones are always on the table,
   // whatever the zone overlay says (3.1.4).
   const su = normaliseSetup(s.setup);
   let deploy = ov.deploy;
-  if (su && su.stage !== 'done' && !deploy) {
+  if (showZones && su && su.stage !== 'done' && !deploy) {
     const shapeId = (s.mission && ctx.data.zoneData.missionDeployment[s.mission]) || 'strips';
     deploy = printedDeployment(ctx.data, shapeId);
   }
@@ -797,7 +800,15 @@ export function ensureHud(host: HTMLElement, ctx: HudCtx): void {
     // The freeplay side panel moves to the LEFT here and keeps its own tabs,
     // so a player can read either squad and any card mid-match. The ids are
     // the ones SquadTracker and Panel bind to.
+    // Squads and Details sit on the RIGHT, where a player coming from the
+    // freeplay board expects them; the turn panel takes the left.
     host.innerHTML = `<div class="hud" id="hud-shell">
+      <div class="turnpanel" id="hud-panel"></div>
+      <div class="hudmain">
+        <div id="hud-tl"></div>
+        <div id="mc-board" class="hudboardhost"></div>
+        <div id="hud-strip"></div>
+      </div>
       <div class="hudside">
         <div class="hudtabs">
           <button class="hudtab active" data-sidetab="squad">Squads</button>
@@ -806,12 +817,6 @@ export function ensureHud(host: HTMLElement, ctx: HudCtx): void {
         <section id="tab-squad" class="side-tab active"><div id="squad-body"></div></section>
         <section id="tab-details" class="side-tab"><div id="details-body"></div></section>
       </div>
-      <div class="hudmain">
-        <div id="hud-tl"></div>
-        <div id="mc-board" class="hudboardhost"></div>
-        <div id="hud-strip"></div>
-      </div>
-      <div class="turnpanel" id="hud-panel"></div>
     </div><div id="hud-veils"></div>`;
     board = new Board(host.querySelector('#mc-board')!, boardCallbacks());
     ctx.mountSide();
@@ -852,7 +857,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
       // Painted after the refresh, because the redraw rebuilds the tray
       // element the dice would otherwise land in.
       const tray = root.querySelector<HTMLElement>('#hud-tray');
-      if (tray) ctx.showDice(tray, res.dice);
+      if (tray) ctx.showDice(tray, res.dice, squadLabel(side));
     });
   });
   on('[data-act="accept"]', () => { ctx.send({ kind: 'acceptRoll', seat: me() }); ctx.refresh(); });

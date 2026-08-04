@@ -14,7 +14,7 @@ import { dialsOf, hashDials, newSalt, type DialEntry } from './secrecy';
 import { ensureHud, glueAfter, type DiceLine, type HudCtx } from './matchhud';
 import { SquadTracker } from './squads';
 import { Panel } from './panel';
-import { DiceTray } from './dice';
+import { iconSvg } from './dice';
 import type { DiceData, DieColor, GameState, Side } from './types';
 import { PHASES } from './types';
 
@@ -185,7 +185,6 @@ async function rollHits(n: number, label: string): Promise<{ hits: number[]; dic
 
 let squadTracker: SquadTracker | null = null;
 let panel: Panel | null = null;
-let hudTray: DiceTray | null = null;
 
 function mountSide(): void {
   if (!data) return;
@@ -204,7 +203,9 @@ function mountSide(): void {
   });
   panel = new Panel(data, {
     world: () => ({ tokens: state.tokens, terrain: terrainNow() }),
-    onRollDice: (pool) => { if (hudTray) hudTray.addToPool(pool as Record<string, number>, true); },
+    // Card buttons that would open the freeplay dice tray stay inert; rolls
+    // in a match come from the turn panel and the server.
+    onRollDice: () => {},
     // The match panel drives actions through the turn panel, so the card's
     // own buttons stay read-only here rather than half-working.
     onSpendAmmo: () => {},
@@ -221,8 +222,6 @@ function mountSide(): void {
     onCharge: () => {},
     tacticNote: () => null,
   });
-  const trayHost = document.getElementById('hud-tray');
-  if (diceData && trayHost) hudTray = new DiceTray(diceData, trayHost);
 }
 
 function terrainNow() {
@@ -237,11 +236,25 @@ function syncSide(uid: number | null): void {
   else panel?.clear();
 }
 
-function showDice(el: HTMLElement, dice: { color: string; face: number }[]): void {
+// Just the dice that were rolled, with the faces they landed on — no pool
+// spinners, no roll button. Clean like the combat readout.
+function showDice(el: HTMLElement, dice: { color: string; face: number }[], who: string): void {
   if (!diceData) return;
-  // A tray per mount point; recreated when the panel redraws it.
-  const tray = new DiceTray(diceData, el);
-  tray.showFixed(dice as { color: DieColor; face: number }[], true);
+  const faces = dice
+    .map((d) => {
+      const icons = (diceData!.dice[d.color as DieColor]?.faces[d.face] ?? [])
+        .map((ic) => iconSvg(ic, 18))
+        .join('');
+      return `<span class="die die-${d.color}">${icons || '<span class="die-blank">·</span>'}</span>`;
+    })
+    .join('');
+  const row = document.createElement('div');
+  row.className = 'rollrow';
+  row.innerHTML = `<span class="rollwho">${who}</span><span class="rolldice">${faces}</span>`;
+  el.appendChild(row);
+  // Roll them in: a brief shuffle before the faces settle.
+  row.classList.add('rolling');
+  setTimeout(() => row.classList.remove('rolling'), 520);
 }
 
 // An attack pool: server dice in a room, local otherwise, and the face icons
@@ -344,8 +357,9 @@ function barHtml(): string {
     ${v.room ? `<span class="pill code" id="mc-code" title="Copy the room code">${esc(v.room.id)}${copied ? ' ✓' : ''}</span>` : ''}
     ${conn}
     <span class="spacer"></span>
-    <a class="mc-back" href="./index.html">← Board</a>
+    ${running() ? `<button class="mc-zonesbtn" id="mc-zones" title="Show or hide the deployment and Tactical Zones">${state.showZones === false ? 'Zones off' : 'Zones on'}</button>` : ''}
     <button class="mc-account" id="mc-acct">${account ? esc(account.username) : 'Sign in'}</button>
+    <a class="mc-backbtn" href="./index.html">Back to Board</a>
   </div>`;
 }
 
@@ -485,18 +499,30 @@ function railHtml(): string {
       </div>`,
     )
     .join('');
-  const canLaunch = isHost() && !running()
-    && !!relay.state.room?.seats.s1 && !!relay.state.room?.seats.s2
-    && sideSummary('s1').mechs + sideSummary('s1').drones > 0
+  const guestSeat: Side = 's2';
+  const guestReady = !!state.ready?.[guestSeat];
+  const seatsFull = !!relay.state.room?.seats.s1 && !!relay.state.room?.seats.s2;
+  const squadsIn = sideSummary('s1').mechs + sideSummary('s1').drones > 0
     && sideSummary('s2').mechs + sideSummary('s2').drones > 0;
+  // The host cannot start while the guest is still reading the battlefield.
+  const canLaunch = isHost() && !running() && seatsFull && squadsIn && guestReady;
+  const why = !seatsFull ? 'Waiting for the other player to sit down.'
+    : !squadsIn ? 'Both squads have to be brought in.'
+      : !guestReady ? 'Waiting for the other player to press Ready.'
+        : 'Both squads are in and ready.';
+  const mine = mySeat();
+  const iAmReady = mine ? !!state.ready?.[mine] : false;
   const foot = running()
     ? `<div class="foot"><b>Match running</b>Round ${state.round.n} · ${PHASES[state.round.phase]} Phase</div>`
     : isHost()
       ? `<div class="foot">
           <button class="btn wide" id="mc-launch" style="margin-top:0"${canLaunch ? '' : ' disabled'}>Launch match</button>
-          <span class="quiet" style="display:block;margin-top:6px">${canLaunch ? 'Both squads are in.' : 'Needs both seats filled and both squads brought.'}</span>
+          <span class="quiet" style="display:block;margin-top:6px">${esc(why)}</span>
         </div>`
-      : `<div class="foot"><b>The host launches</b>when both squads are in.</div>`;
+      : `<div class="foot">
+          <button class="btn wide${iAmReady ? ' ghost' : ''}" id="mc-ready" style="margin-top:0">${iAmReady ? '✓ Ready — tap to undo' : 'Ready'}</button>
+          <span class="quiet" style="display:block;margin-top:6px">${iAmReady ? 'The host can start when they are ready too.' : 'Press Ready when you have looked over the battlefield.'}</span>
+        </div>`;
   return `<div class="mc-rail">
     <div class="grouphead">Match setup</div>
     ${steps}
@@ -945,6 +971,17 @@ function wire(): void {
     render();
   });
   $('mc-devseed')?.addEventListener('click', () => devSeed());
+  $('mc-ready')?.addEventListener('click', () => {
+    const seat = mySeat();
+    if (!seat) return;
+    send({ kind: 'setReady', seat, ready: !state.ready?.[seat] });
+    render();
+  });
+  $('mc-zones')?.addEventListener('click', () => {
+    // Local only: hiding the overlay is a preference, not a rule change.
+    state.showZones = state.showZones === false;
+    render();
+  });
 
   $('mc-bring')?.addEventListener('click', () => {
     pickerOpen = true;
