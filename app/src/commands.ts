@@ -5,7 +5,7 @@ import { makeDroneToken, makeMechToken, maxLink, tokenCards } from './units';
 import { canManeuver, canOverload, canPerform, spendAction, spendManeuver, spendOverload } from './ticks';
 import { tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { battlefieldLocked, deploymentComplete, deployTurn, firstPlayerFrom, newSetup, normaliseSetup } from './setup';
-import { applyKill, normaliseTasks, settleControl } from './tasks';
+import { applyKill, normaliseTasks, pendingDesignations, settleControl, type Designation } from './tasks';
 import { dialHidden, eligibleUnits, getLocalSeat, isLoopPhase, nextTurn, onExtraOpportunity } from './loop';
 import { dissipationFor } from './rules';
 
@@ -87,6 +87,10 @@ export type Command =
   // A squad's open-information Secondary Task pick (3.1.3). The seat is the
   // side choosing, so a player can only ever pick their own.
   | { kind: 'pickSecondary'; seat: Side; cardId: string }
+  // Naming the Mech or the Tactical Zone a Task is about. `seat` is whoever
+  // makes the choice, which is not always whose Task it is — Behead has the
+  // opponent name one of their own — so `for` carries the squad that scores it.
+  | { kind: 'designateTask'; seat: Side; what: 'target' | 'zone' | 'leader'; for?: Side; uid?: number; zone?: string }
   // A seat declaring itself ready in the lobby, so the host cannot start
   // while the other player is still reading the battlefield.
   | { kind: 'setReady'; seat: Side; ready: boolean }
@@ -151,13 +155,13 @@ type TableKind =
   | 'lockMap' | 'rollSetup' | 'acceptRoll' | 'pickEdge' | 'lockDials' | 'finishDeployment'
   | 'queueIntercepts' | 'clearIntercepts' | 'placeSmoke' | 'removeSmoke' | 'dissipateSmoke'
   | 'setMode' | 'handOver' | 'setStrict' | 'commitTimings' | 'revealTimings' | 'importSquad'
-  | 'configureTable' | 'startMatch' | 'endMatch' | 'pickSecondary' | 'setReady';
+  | 'configureTable' | 'startMatch' | 'endMatch' | 'pickSecondary' | 'setReady' | 'designateTask';
 const TABLE_KINDS = new Set<Command['kind']>([
   'advancePhase', 'setPhase', 'resetRounds', 'adjustCommandTokens', 'passTurn', 'markEndStep', 'award',
   'lockMap', 'rollSetup', 'acceptRoll', 'pickEdge', 'lockDials', 'finishDeployment',
   'queueIntercepts', 'clearIntercepts', 'placeSmoke', 'removeSmoke', 'dissipateSmoke',
   'setMode', 'handOver', 'setStrict', 'commitTimings', 'revealTimings', 'importSquad',
-  'configureTable', 'startMatch', 'endMatch', 'pickSecondary', 'setReady',
+  'configureTable', 'startMatch', 'endMatch', 'pickSecondary', 'setReady', 'designateTask',
 ]);
 
 // Table commands whose seat is attribution rather than a choice one squad
@@ -168,7 +172,7 @@ const ATTRIBUTED = new Set<Command['kind']>([
   'advancePhase', 'setPhase', 'resetRounds', 'markEndStep', 'award',
   'lockMap', 'acceptRoll', 'lockDials', 'finishDeployment',
   'queueIntercepts', 'clearIntercepts', 'placeSmoke', 'removeSmoke', 'dissipateSmoke',
-  'setMode', 'setStrict', 'adjustCommandTokens',
+  'setMode', 'setStrict', 'adjustCommandTokens', 'designateTask',
   'configureTable', 'startMatch', 'endMatch',
 ]);
 function tableLevel(cmd: Command): cmd is Command & { kind: TableKind } {
@@ -234,6 +238,25 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
     }
     case 'pickSecondary': {
       if (!(data.secondary ?? []).some((c) => c.id === cmd.cardId)) return no('That is not a Secondary Task card.');
+      return ok;
+    }
+    case 'designateTask': {
+      const owed = taskDesignations(data, state);
+      const forSide: Side = cmd.for ?? cmd.seat;
+      const want = owed.find((d) => d.side === forSide && d.what === cmd.what);
+      if (!want) return no('Nothing is waiting to be named for that Task.');
+      // The card decides who chooses. Naming on someone else's behalf is how a
+      // player would hand themselves an easy target.
+      if (want.by !== cmd.seat) return no('That choice belongs to the other player.');
+      if (cmd.what === 'zone') {
+        if (!missionZones(data, state).some((z) => z.id === cmd.zone)) {
+          return no('That is not a Tactical Zone on this battlefield.');
+        }
+        return ok;
+      }
+      const t = state.tokens.find((x) => x.uid === cmd.uid);
+      if (!t || t.kind !== 'mech') return no('That is not a Mech.');
+      if (t.side !== want.owner) return no(`${want.label} names one of the other squad's Mechs.`);
       return ok;
     }
     case 'setReady': {
@@ -402,6 +425,20 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
   }
 }
 
+// The Tactical Zones this battlefield actually has: the Main Task places them,
+// so anything else would be naming a place neither player can see.
+export function missionZones(data: GameData, state: GameState): { id: string; name: string }[] {
+  const mission = state.mission ? data.missions.cards.find((m) => m.id === state.mission) : undefined;
+  const placed = new Set(mission?.zones ?? []);
+  return (data.zoneData?.zones ?? []).filter((z) => placed.has(z.name) || placed.has(z.id));
+}
+
+// Everything Task Setup is still waiting to have named, and who names it.
+export function taskDesignations(data: GameData, state: GameState): Designation[] {
+  const mission = state.mission ? data.missions.cards.find((m) => m.id === state.mission) : undefined;
+  return pendingDesignations(normaliseTasks(state.tasks), data.secondary ?? [], mission, state.tokens);
+}
+
 export function check(data: GameData, state: GameState, cmd: Command): CheckResult {
   if (tableLevel(cmd)) return checkTable(data, state, cmd);
   const t = state.tokens.find((x) => x.uid === cmd.uid);
@@ -535,6 +572,12 @@ function checkActed(
       if (getLocalSeat() && t.deployed === false) {
         const picked = normaliseTasks(state.tasks).secondary;
         if (!picked.s1 || !picked.s2) return no('Both squads pick a Secondary Task before anything deploys (3.1.3).');
+        // A Task that names a Mech or a Zone is not set up until it has, and
+        // naming it after seeing where everything stands would be choosing
+        // with the board in front of you.
+        if (taskDesignations(data, state).length) {
+          return no('Every Task names its Mech or Zone before anything deploys (5.2.3).');
+        }
       }
       const { col, row } = cmd.to;
       if (!Number.isInteger(col) || !Number.isInteger(row) || col < 0 || row < 0 || col > 35 || row > 35) {
@@ -779,6 +822,19 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
   if (cmd.kind === 'pickSecondary') {
     const tasks = normaliseTasks(state.tasks);
     tasks.secondary[cmd.seat] = cmd.cardId;
+    // Changing the card drops whatever the old one had named, so a Task never
+    // carries a target chosen for a different card.
+    tasks.secTarget[cmd.seat] = undefined;
+    tasks.zone[cmd.seat] = undefined;
+    state.tasks = tasks;
+    return;
+  }
+  if (cmd.kind === 'designateTask') {
+    const tasks = normaliseTasks(state.tasks);
+    const forSide: Side = cmd.for ?? cmd.seat;
+    if (cmd.what === 'zone') tasks.zone[forSide] = cmd.zone;
+    else if (cmd.what === 'leader') tasks.leader[forSide] = cmd.uid;
+    else tasks.secTarget[forSide] = cmd.uid;
     state.tasks = tasks;
     return;
   }

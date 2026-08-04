@@ -1,4 +1,4 @@
-import type { Command, CheckResult } from './commands';
+import { missionZones, taskDesignations, type Command, type CheckResult } from './commands';
 import type { GameData } from './data';
 import { secondaryImageUrl, squadLabel } from './data';
 import { Board, footprint, snapPlacement, type BoardCallbacks } from './board';
@@ -13,7 +13,7 @@ import { newOpportunity, newScriptState, PHASES, TIMINGS } from './types';
 import { deployable, deployTurn, deploymentComplete, firstPlayerFrom, normaliseSetup, rollTotal, type SetupState } from './setup';
 import { actionPhaseComplete, activationOrder, alive, canAct, commandTokensFor, eligibleUnits, isLoopPhase, loopComplete, nextActivation, nextTurn, type InitLookup, type LoopPhase } from './loop';
 import { canManeuver, canPerform } from './ticks';
-import { normaliseTasks } from './tasks';
+import { normaliseTasks, type Designation } from './tasks';
 import { tokenCards } from './units';
 
 // The in-match HUD (Match Centre part 3a): one question at a time, per seat.
@@ -23,7 +23,13 @@ import { tokenCards } from './units';
 
 export interface DiceLine {
   seat: Side;
-  text: string;
+  // What the roll was for, without the squad name — the feed puts that in
+  // front, coloured, so the line reads as one sentence.
+  label: string;
+  // The result, counted rather than written out, so the number can carry the
+  // weight and never gets wrapped away from the word it belongs to.
+  result: { n: number; unit: string }[];
+  kind: 'hits' | 'pool';
   // The faces that landed, so the feed can show the dice rather than only
   // report a number. Both players are given the same ones.
   dice: { color: string; face: number }[];
@@ -536,6 +542,11 @@ function setupPanel(ctx: HudCtx, su: SetupState): string {
     return head('Setup', 'Secondary Tasks', 'Both are picked before anything deploys, so each side knows what the other is playing for (3.1.3).', !pending.secondary[ctx.seat ?? 's1'])
       + `<div class="tp-body">${secondaryRows(ctx)}</div><div class="tp-foot"></div>`;
   }
+  // A Task that names a Mech or a Zone is part of the same step, and the naming
+  // is not always the scorer's to do — Behead has the opponent name one of
+  // their own. Nothing deploys until every one of them is answered.
+  const owed = taskDesignations(ctx.data, s);
+  if (owed.length) return designatePanel(ctx, owed);
   // deploy — every button that ends or advances a step lives in the FOOT, so
   // the panel reads the same in every state.
   // The note goes above the button, never below it. The foot is anchored to
@@ -784,6 +795,50 @@ function dieHtml(ctx: HudCtx, d: { color: string; face: number }): string {
   return `<span class="die die-${esc(d.color)}">${icons || '<span class="die-blank">·</span>'}</span>`;
 }
 
+// The naming step. One question at a time, asked of whoever the card says
+// makes the choice, and the other player watches it happen — the freeplay
+// guide asks the same questions in the same order, it just never has to
+// decide whose screen to put them on.
+function designatePanel(ctx: HudCtx, owed: Designation[]): string {
+  const s = ctx.state;
+  const mine = owed.filter((d) => !ctx.seat || d.by === ctx.seat);
+  const now = mine[0] ?? owed[0];
+  const theirCall = !!ctx.seat && now.by !== ctx.seat;
+  const title = now.what === 'zone' ? `${now.label}: which Tactical Zone?`
+    : now.what === 'leader' ? 'Designate your Commander'
+      : `${now.label}: which Mech?`;
+  const why = now.what === 'leader'
+    ? 'Destroying the enemy Commander scores 10 VP and ends the game at once (5.2.3).'
+    : now.side === now.by
+      ? 'Named now, before anything deploys (5.2.3).'
+      : `${squadLabel(now.side)} is playing for this, so you name the Mech (5.2.3).`;
+  if (theirCall) {
+    return head('Setup', 'Task Setup', 'Every Task names its Mech or Zone before anything deploys (5.2.3).', false)
+      + `<div class="tp-body">${waiting(now.by, now.what === 'zone' ? 'naming a Tactical Zone' : 'naming a Mech')}
+        ${designationSummary(ctx, owed)}</div><div class="tp-foot"></div>`;
+  }
+  const rows = now.what === 'zone'
+    ? missionZones(ctx.data, s)
+      .map((z) => `<button class="rowwide" data-desigzone="${esc(z.id)}">${esc(z.name)}</button>`)
+      .join('')
+    : s.tokens
+      .filter((t) => t.kind === 'mech' && t.side === now.owner)
+      .map((t) => `<button class="rowwide" data-desigmech="${t.uid}" data-desigfor="${now.side}" data-desigwhat="${now.what}">${esc(t.label)}<span class="ct">${squadLabel(t.side)}</span></button>`)
+      .join('');
+  return head('Your move', title, why, true)
+    + `<div class="tp-body">${rows}${designationSummary(ctx, owed)}</div><div class="tp-foot"></div>`;
+}
+
+// What the whole step is still waiting on, so neither player is left guessing
+// why the game has not started.
+function designationSummary(ctx: HudCtx, owed: Designation[]): string {
+  if (owed.length < 2) return '';
+  const rows = owed.slice(1)
+    .map((d) => `<div class="dialrow"><span class="nm ${d.side}">${esc(d.label)}</span><span class="tp-dim">${squadLabel(d.by)} to name</span></div>`)
+    .join('');
+  return `<div class="tp-gap"></div>${rows}`;
+}
+
 // One row per squad: the Task they have taken, or the way to take one. Shown
 // while the edge is being picked and again before deployment, because both
 // moments are waiting on the same two answers.
@@ -816,8 +871,14 @@ function feedHtml(ctx: HudCtx): string {
       const dice = d.dice.length
         ? `<span class="rolldice">${d.dice.map((x) => dieHtml(ctx, x)).join('')}</span>`
         : '';
+      // The count sits on its own line under what it was rolled for, so a long
+      // label can never wrap the number away from the word it belongs to.
+      const sum = d.result.length
+        ? d.result.map((r) => `<b>${r.n}</b>${d.kind === 'pool' ? '× ' : ' '}${esc(r.unit)}`).join(', ')
+        : 'all blank';
       return `<div class="feedline${d.n > feedSeen ? ' rolling' : ''}">
-        <b class="${d.seat}">${squadLabel(d.seat)}</b>${dice}<span class="feedtext">${esc(d.text)}</span>
+        <div class="feedwho"><b class="${d.seat}">${squadLabel(d.seat)}</b> ${esc(d.label)}</div>
+        <div class="feedres">${dice}<span class="feedsum">${sum}</span></div>
       </div>`;
     })
     .join('');
@@ -935,8 +996,9 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
   on('[data-roll]', (el) => {
     const side = el.dataset.roll as Side;
     // The dice themselves reach the feed from the roll announcement, which
-    // both players get; this only has to record what they were worth.
-    void ctx.rollHits(2, `${squadLabel(side)} rolls for First Player`).then((res) => {
+    // both players get; this only has to record what they were worth. The
+    // squad's name is not in the label because the feed prints it in front.
+    void ctx.rollHits(2, 'rolls for First Player').then((res) => {
       ctx.send({ kind: 'rollSetup', seat: side, hits: res.hits });
       ctx.refresh();
     });
@@ -989,6 +1051,20 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     const [uid, timing] = el.dataset.dial!.split(':');
     const t = s.tokens.find((x) => x.uid === Number(uid));
     if (t) ctx.send({ kind: 'setTiming', seat: t.side, uid: t.uid, timing: timing as Timing });
+    ctx.refresh();
+  });
+
+  on('[data-desigzone]', (el) => {
+    ctx.send({ kind: 'designateTask', seat: me(), what: 'zone', zone: el.dataset.desigzone! });
+    ctx.refresh();
+  });
+  on('[data-desigmech]', (el) => {
+    ctx.send({
+      kind: 'designateTask', seat: me(),
+      what: el.dataset.desigwhat as 'target' | 'leader',
+      for: el.dataset.desigfor as Side,
+      uid: Number(el.dataset.desigmech),
+    });
     ctx.refresh();
   });
 

@@ -49,6 +49,65 @@ export function newTaskState(): TaskState {
   };
 }
 
+// ---------- what Task Setup is still waiting on (5.2.3) ----------
+//
+// A Task that names a Mech or a Tactical Zone is only set up once the naming
+// has happened, and the naming is not always done by the player who scores it:
+// Behead has the OPPONENT name one of their own Mechs. Both halves of the app
+// read this, so the panel that asks and the rule that waits cannot disagree.
+
+export interface SecondaryLike { id: string; name: string; designate?: string }
+
+export interface Designation {
+  // Whose Task this belongs to — the side that will score it.
+  side: Side;
+  what: 'target' | 'zone' | 'leader';
+  // The player who makes the choice.
+  by: Side;
+  // For a Mech, the squad it has to come from.
+  owner?: Side;
+  label: string;
+}
+
+const other = (s: Side): Side => (s === 's1' ? 's2' : 's1');
+
+export function pendingDesignations(
+  st: TaskState,
+  cards: SecondaryLike[],
+  mission: MissionLike | undefined,
+  tokens: Token[],
+): Designation[] {
+  const out: Designation[] = [];
+  const hasMech = (side: Side) => tokens.some((t) => t.kind === 'mech' && t.side === side);
+  for (const side of ['s1', 's2'] as Side[]) {
+    const card = st.secondary[side] ? cards.find((c) => c.id === st.secondary[side]) : undefined;
+    if (!card || !card.designate || card.designate === 'none') continue;
+    if (card.designate === 'zone') {
+      if (!st.zone[side]) out.push({ side, what: 'zone', by: side, label: card.name });
+      continue;
+    }
+    // Who OWNS the named Mech differs by card: enemy-own-mech and enemy-mech
+    // both name one of the opponent's, own-mech names your own. Who CHOOSES
+    // differs too — enemy-own-mech is the opponent's call about their own
+    // squad, the rest are yours.
+    const owner: Side = card.designate === 'enemy-mech' || card.designate === 'enemy-own-mech' ? other(side) : side;
+    const by: Side = card.designate === 'enemy-own-mech' ? owner : side;
+    if (st.secTarget[side] === undefined && hasMech(owner)) {
+      out.push({ side, what: 'target', by, owner, label: card.name });
+    }
+  }
+  // The VIP Main Task needs both Commanders named before there is anything to
+  // assassinate, and each side names their own.
+  if (mission?.family === 'vip') {
+    for (const side of ['s1', 's2'] as Side[]) {
+      if (st.leader[side] === undefined && hasMech(side)) {
+        out.push({ side, what: 'leader', by: side, owner: side, label: 'Commander' });
+      }
+    }
+  }
+  return out;
+}
+
 // ---------- Main Task setup (5.1) ----------
 
 export interface MissionLike { family: string; zones?: string[] }

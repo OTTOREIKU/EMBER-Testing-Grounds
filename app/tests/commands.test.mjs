@@ -105,7 +105,13 @@ const data = {
   commonActions: [{ id: 'COMMON_CHARGE', type: 'Tactic', size: 's', name: { en: 'Charge' } }],
   overload: [{ actionId: '090_A', card: '090', label: 'Overload' }],
   zoneData: { zones: [] },
-  secondary: [{ id: 'SEC1', name: 'Recon' }],
+  secondary: [
+    { id: 'SEC1', name: 'Recon' },
+    { id: 'decapitation', name: 'Behead', designate: 'enemy-own-mech' },
+    { id: 'bounty-hunt', name: 'Bounty Hunt', designate: 'enemy-mech' },
+    { id: 'escort', name: 'Escort', designate: 'own-mech' },
+    { id: 'annihilation', name: 'Annihilation', designate: 'none' },
+  ],
 };
 
 console.log('The command layer\n');
@@ -826,6 +832,33 @@ C.setLocalSeat(null);
 check('a solo game needs no such signal',
   C.check(data, openTable(), { kind: 'startMatch', seat: 's1' }).ok, true);
 check('and finishes deployment on its own', C.check(data, gate, { kind: 'finishDeployment', seat: 's1' }).ok, true);
+
+// A Task that names a Mech is only set up once it has been named, and the card
+// decides who does the naming: Behead has the OPPONENT name one of their own.
+const desig = { ...openTable(), tokens: [mech(1, 's1'), mech(2, 's2')] };
+C.apply(data, desig, { kind: 'pickSecondary', seat: 's1', cardId: 'decapitation' });
+const owed = C.taskDesignations(data, desig);
+check('Behead leaves one thing to name', owed.length, 1);
+check('it belongs to the squad that scores it, and the other names it',
+  [owed[0].side, owed[0].by, owed[0].owner], ['s1', 's2', 's2']);
+check('the scorer cannot name it themselves',
+  C.check(data, desig, { kind: 'designateTask', seat: 's1', what: 'target', for: 's1', uid: 2 }).ok, false);
+check('nor can the namer point at the wrong squad',
+  C.check(data, desig, { kind: 'designateTask', seat: 's2', what: 'target', for: 's1', uid: 1 }).ok, false);
+check('but the opponent may name one of their own',
+  C.check(data, desig, { kind: 'designateTask', seat: 's2', what: 'target', for: 's1', uid: 2 }).ok, true);
+C.apply(data, desig, { kind: 'designateTask', seat: 's2', what: 'target', for: 's1', uid: 2 });
+check('and it is stored against the squad that scores it', desig.tasks.secTarget.s1, 2);
+check('after which nothing is outstanding', C.taskDesignations(data, desig).length, 0);
+// Changing the card must not keep a target chosen for the old one.
+C.apply(data, desig, { kind: 'pickSecondary', seat: 's1', cardId: 'annihilation' });
+check('changing the Task drops the name it carried', desig.tasks.secTarget.s1, undefined);
+
+// Bounty Hunt names an enemy Mech, but the choice is the scorer's.
+const bounty = { ...openTable(), tokens: [mech(1, 's1'), mech(2, 's2')] };
+C.apply(data, bounty, { kind: 'pickSecondary', seat: 's1', cardId: 'bounty-hunt' });
+const bo = C.taskDesignations(data, bounty)[0];
+check('Bounty Hunt is the scorer\'s call about an enemy Mech', [bo.by, bo.owner], ['s1', 's2']);
 
 check('an unknown Secondary Task is refused', C.check(data, openTable(), { kind: 'pickSecondary', seat: 's1', cardId: 'NOPE' }).ok, false);
 const sec = openTable();
