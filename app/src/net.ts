@@ -87,6 +87,9 @@ export class Relay {
   private replayTo = 0;
   private replaying = false;
   private replayGuard: number | undefined;
+  // A board was asked for while this client still had work in flight, so it
+  // goes out as soon as the queue drains.
+  private checkpointDue = false;
   private retry = 0;
   private retryTimer: number | undefined;
   private wanted: { kind: 'create' } | { kind: 'join'; room: string } | null = null;
@@ -157,6 +160,7 @@ export class Relay {
     this.seq = 0;
     this.lastRev = 0;
     this.replayTo = 0;
+    this.checkpointDue = false;
     if (this.connected) this.send({ t: 'leave' });
     this.ws?.close();
     this.ws = null;
@@ -203,8 +207,21 @@ export class Relay {
   // The revision travels with the board. Without it the server would file the
   // snapshot under wherever it had got to, and any command that landed while
   // this one was being taken would be discarded as already included.
+  //
+  // A board is only worth the revision it claims when nothing of ours is still
+  // in flight. With a command outstanding the board already shows that
+  // command's work while the number still says otherwise, so the server keeps
+  // the command in its log and the next player to join applies it a second
+  // time on top of a board that already had it. Waiting for the queue to drain
+  // is what makes the two agree: with nothing pending, this board is exactly
+  // the last revision we were told about.
   publishCheckpoint(): void {
     if (!this.view.room || !this.view.seat) return;
+    if (this.pending.length) {
+      this.checkpointDue = true;
+      return;
+    }
+    this.checkpointDue = false;
     this.send({ t: 'checkpoint', rev: this.lastRev, state: this.hooks.snapshot() });
     this.set({ desynced: false });
   }
@@ -331,6 +348,8 @@ export class Relay {
           // needs replaying.
           const ack = Number(msg.seq);
           if (Number.isInteger(ack)) this.pending = this.pending.filter((p) => p.seq > ack);
+          // A board that was waiting on this can go now.
+          if (this.checkpointDue && !this.pending.length && !this.replaying) this.publishCheckpoint();
         }
         // Live, our own work is already on this board and applying it again
         // would double it. Inside a catch-up nothing here has been applied at

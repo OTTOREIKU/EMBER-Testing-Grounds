@@ -167,6 +167,21 @@ i.relay.publishCheckpoint();
 check('a published board says which revision it reflects',
   i.ws.sent.filter((m) => m.t === 'checkpoint').map((m) => m.rev), [1]);
 
+// Publishing a board while our own command is still in flight is the trap:
+// the board already shows that command's work, but the number cannot say so
+// yet. Sent as it stands, the server would keep the command in its log and the
+// next player to join would apply it twice — once from the board, once from
+// the tail. So it waits for the acknowledgement.
+const j = seated();
+j.relay.publish({ kind: 'broughtSquad' });
+j.relay.publishCheckpoint();
+check('a board is not published over work still in flight',
+  j.ws.sent.filter((m) => m.t === 'checkpoint').length, 0);
+j.ws.deliver({ t: 'cmd', rev: 1, seat: 's1', seq: 1, cmd: { kind: 'broughtSquad' } });
+const late = j.ws.sent.filter((m) => m.t === 'checkpoint');
+check('and goes out once the command is acknowledged', late.length, 1);
+check('carrying the revision that now includes it', late[0]?.rev, 1);
+
 // ---------- the server asking us ----------
 
 const f = seated();
