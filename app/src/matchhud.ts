@@ -512,8 +512,16 @@ function setupPanel(ctx: HudCtx, su: SetupState): string {
       .map((side) => {
         const card = tasks.secondary[side] ? ctx.data.secondary.find((c) => c.id === tasks.secondary[side]) : undefined;
         const isMe = mine(ctx, side);
-        return `<div class="dialrow"><span class="nm ${side}">${squadLabel(side)}</span>
-          ${card ? `<span class="pickchip set">${esc(card.name)}</span>` : isMe ? `<button class="rowbtn" data-sec="${side}">Pick a Secondary Task</button>` : '<span class="tp-dim">picking…</span>'}</div>`;
+        // Your own pick stays changeable until deployment begins — the Task
+        // is open information, not a commitment you can be trapped by.
+        const cell = card
+          ? isMe
+            ? `<button class="rowbtn" data-sec="${side}" title="Change this Secondary Task">${esc(card.name)} ✎</button>`
+            : `<span class="pickchip set">${esc(card.name)}</span>`
+          : isMe
+            ? `<button class="rowbtn" data-sec="${side}">Pick a Secondary Task</button>`
+            : '<span class="tp-dim">picking…</span>';
+        return `<div class="dialrow"><span class="nm ${side}">${squadLabel(side)}</span>${cell}</div>`;
       })
       .join('');
     const edge = mine(ctx, fp)
