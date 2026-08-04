@@ -8,7 +8,7 @@ import { crushTargets, extendPath, reachableGrids, standingSpot, type LargeGrid 
 import { breakAwayCost } from './melee';
 import { factionColour } from './icons';
 import { iconSvg } from './dice';
-import type { DiceData, DieColor, GameState, Side, Timing, Token, ExtraTick, Opportunity } from './types';
+import type { DiceData, DieColor, GameState, Side, Stance, Timing, Token, ExtraTick, Opportunity } from './types';
 import { newOpportunity, newScriptState, PHASES, STATUSES, TIMINGS } from './types';
 import { deployable, deployTurn, deploymentComplete, firstPlayerFrom, normaliseSetup, rollTotal, type SetupState } from './setup';
 import { actionPhaseComplete, activationOrder, alive, canAct, commandTokensFor, eligibleUnits, isLoopPhase, loopComplete, nextActivation, nextTurn, onExtraOpportunity, type InitLookup, type LoopPhase } from './loop';
@@ -734,7 +734,23 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
     ? `<button class="actrow k-tactic${ovl.ok ? '' : ' warn'}"${ovl.ok ? '' : ` data-why="${esc(ovl.why ?? '')}"`} data-act="overload" title="${esc(ovl.ok ? `Consume 1 Link for 1 Action Tick, up to ${OVERLOAD_MAX} an Action Opportunity.` : ovl.why ?? '')}">
         <span class="dotk"></span><span class="an">Overload</span><span class="ac">${o.overload}/${OVERLOAD_MAX} · Link ${t.link ?? 0}</span></button>`
     : '';
-  return `${ticks}
+  // Stance is chosen before the Mech has done anything, and a Mech in Shutdown
+  // may only Reboot (4.1.1) — which matters twice over now that Overload can
+  // spend a Mech's last Link and shut it down.
+  const shutdown = t.stance === 'shutdown';
+  const active = ['defensive', 'mobility', 'offensive'] as const;
+  const stanceRow = !shutdown && !o.maneuvered && !o.started && t.kind === 'mech'
+    ? `<div class="stancerow">${active
+        .map((x) => `<button class="stancebtn${t.stance === x ? ' sel' : ''}" data-stance="${x}">${x[0].toUpperCase()}${x.slice(1)}</button>`)
+        .join('')}</div>`
+    : '';
+  const rebootRow = shutdown && t.kind === 'mech'
+    ? `<p class="tp-note">${esc(t.label)} is in Shutdown Stance, so Reboot is the only thing it may do (4.1.1).</p>
+       <div class="stancerow">${active
+        .map((x) => `<button class="stancebtn" data-reboot="${x}">Reboot to ${x[0].toUpperCase()}${x.slice(1)}</button>`)
+        .join('')}</div>`
+    : '';
+  return `${ticks}${stanceRow}${rebootRow}
     <button class="actrow k-moving${man.ok ? '' : ' warn'}"${man.ok ? '' : ` data-why="${esc(man.why ?? '')}"`} data-act="maneuver" title="${esc(man.ok ? 'Draw a route on the board, then confirm.' : man.why ?? '')}">
       <span class="dotk"></span><span class="an">Maneuver</span><span class="ac">draw a route</span></button>
     ${ovlRow}
@@ -1322,6 +1338,26 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
       const v = ctx.send({ kind: 'performAction', seat: t.side, uid: t.uid, actionId: el.dataset.doact! });
       const [y, r] = (el.dataset.pool ?? '0,0').split(',').map(Number);
       if (v.ok && (y || r)) attack = { y, r, name: el.dataset.an ?? 'attack' };
+      // Two Common Actions do more than spend a Tick, and the work lives in
+      // its own command: Stabilize sheds a Status and restores Link, Reveal
+      // leaves the Optical Camouflage State. Performing them without this was
+      // paying the cost and getting nothing.
+      if (v.ok && el.dataset.doact === 'COMMON_STABILIZE') {
+        const shed = (t.statuses ?? []).find((id) => {
+          const d = STATUSES.find((x) => x.id === id);
+          return d?.shape === 'square' || d?.shape === 'hexagon';
+        });
+        if (shed) {
+          ctx.send({ kind: 'stabilise', seat: t.side, uid: t.uid });
+          ctx.noteNow(`Stabilize System: ${STATUSES.find((x) => x.id === shed)?.label ?? shed} removed and Link restored to ${t.link}.`);
+        } else {
+          ctx.noteNow('Stabilize System sheds a square or hexagon Status, and this Mech carries none.');
+        }
+      }
+      if (v.ok && el.dataset.doact === 'COMMON_REVEAL') {
+        ctx.send({ kind: 'reveal', seat: t.side, uid: t.uid });
+        ctx.noteNow('Reveal: out of the Optical Camouflage State. Now make Manifestation Movement, up to this unit\'s Stealth value, to where it really is.');
+      }
       // An Action that grants an Extra Action Opportunity asks who takes it,
       // the same question the guide asks in its dialog.
       if (v.ok) {
@@ -1343,6 +1379,18 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     ctx.refresh();
   });
   on('[data-act="grantcancel"]', () => { grantPick = null; ctx.refresh(); });
+  on('[data-stance]', (el) => {
+    const sc = ensureScript(s);
+    const t = sc.opp ? s.tokens.find((x) => x.uid === sc.opp!.uid) : undefined;
+    if (t) ctx.send({ kind: 'setStance', seat: t.side, uid: t.uid, stance: el.dataset.stance as Stance });
+    ctx.refresh();
+  });
+  on('[data-reboot]', (el) => {
+    const sc = ensureScript(s);
+    const t = sc.opp ? s.tokens.find((x) => x.uid === sc.opp!.uid) : undefined;
+    if (t) ctx.send({ kind: 'reboot', seat: t.side, uid: t.uid, stance: el.dataset.reboot as Stance });
+    ctx.refresh();
+  });
   on('[data-act="overload"]', (el) => {
     if (el.dataset.why) { ctx.noteNow(el.dataset.why); ctx.refresh(); return; }
     const sc = ensureScript(s);
