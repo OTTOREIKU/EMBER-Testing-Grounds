@@ -3856,6 +3856,11 @@ async function init() {
   // Networked play. Commands performed here are mirrored to the other player,
   // and theirs are applied through applyRemote so they do not bounce back.
   // Neither side trusts the other's rules engine — both run the same one.
+  // A catch-up walks the board through the whole tail of history at once.
+  // Drawing every step of it is what made rejoining a slideshow, so the screen
+  // waits and is drawn once at the end.
+  let catchingUp = false;
+
   const relay = new Relay(emberApi.base, {
     onCommand(cmd) {
       // Their move goes through the same rules ours does. A refusal is either
@@ -3868,10 +3873,26 @@ async function init() {
         relay.requestResync();
         return;
       }
+      // None of what follows belongs in a replay: the commitments and reveals
+      // are history being re-read, and answering them again would send this
+      // client's reveal a second time.
+      if (catchingUp) return;
       if (cmd.kind === 'revealTimings') auditReveal(cmd);
       // Their commitment may be the second one, which releases ours.
       if (cmd.kind === 'commitTimings') maybeReveal();
       onChanged();
+    },
+    onCatchUp(active) {
+      catchingUp = active;
+      if (active) {
+        setHint('Catching up on the game so far…');
+        return;
+      }
+      // Whole again: answer anything the replay walked past, then draw.
+      maybeReveal();
+      selectToken(null);
+      renderAll();
+      setHint('Caught up with the table.');
     },
     onCheckpoint(raw) {
       // A checkpoint carries the whole board, which would overwrite our own
@@ -3893,6 +3914,7 @@ async function init() {
         const t = state.tokens.find((x) => x.uid === d.uid);
         if (t) t.timing = d.timing;
       }
+      if (catchingUp) return;
       selectToken(null);
       renderAll();
       setHint('Board received from the other player.');

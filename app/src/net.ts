@@ -36,15 +36,24 @@ export interface RolledDie {
   face: number;
 }
 
+// What a roll is being read for. The faces are the same either way; this only
+// decides how the result is summarised, and it travels with the roll so both
+// players read it the same way.
+export type RollKind = 'hits' | 'pool';
+
 export interface NetHooks {
   // Dice that landed in this room, whoever asked for them. Both players are
   // told, so the roll is something they watch together rather than a number
   // one of them reports to the other.
-  onRolled(dice: RolledDie[], seat: Side, label: string | null, mine: boolean): void;
+  onRolled(dice: RolledDie[], seat: Side, label: string | null, mine: boolean, kind: RollKind): void;
   // A command from the other player, already ordered by the server.
   onCommand(cmd: Command, seat: Side): void;
   // The full board, either because we joined late or because we drifted.
   onCheckpoint(state: unknown): void;
+  // A catch-up is running: the board is being rebuilt from a checkpoint and
+  // then walked forward through history. Worth drawing once at the end rather
+  // than once per command, since the tail can be a whole match long.
+  onCatchUp(active: boolean): void;
   // The server dropped its history and wants the board republished.
   onNeedCheckpoint(): void;
   // Anything the UI should redraw on.
@@ -70,6 +79,14 @@ export class Relay {
   // server suppresses duplicates by sequence number, so resending something it
   // already saw is harmless.
   private pending: { seq: number; cmd: Command }[] = [];
+  // The revision a running catch-up ends at. Commands at or below it are
+  // history being replayed onto a checkpoint, so they are applied whoever sent
+  // them — including our own, which the checkpoint predates. Above it we are
+  // live again, and our own commands coming back are acknowledgements of work
+  // this client already did.
+  private replayTo = 0;
+  private replaying = false;
+  private replayGuard: number | undefined;
   private retry = 0;
   private retryTimer: number | undefined;
   private wanted: { kind: 'create' } | { kind: 'join'; room: string } | null = null;
@@ -108,13 +125,38 @@ export class Relay {
     this.open();
   }
 
+  get catchingUp(): boolean {
+    return this.replaying;
+  }
+
+  // Opens and closes the replay window. The guard is there because the window
+  // suppresses drawing: a tail that never arrives must not leave the board
+  // frozen, so it closes itself if the history stops coming.
+  private beginReplay(through: number): void {
+    this.replayTo = through;
+    if (this.replaying) return;
+    this.replaying = true;
+    this.hooks.onCatchUp(true);
+    window.clearTimeout(this.replayGuard);
+    this.replayGuard = window.setTimeout(() => this.endReplay(), 8000);
+  }
+
+  private endReplay(): void {
+    if (!this.replaying) return;
+    window.clearTimeout(this.replayGuard);
+    this.replaying = false;
+    this.hooks.onCatchUp(false);
+  }
+
   leave(): void {
     this.wanted = null;
     window.clearTimeout(this.retryTimer);
+    this.endReplay();
     this.retry = 0;
     this.pending = [];
     this.seq = 0;
     this.lastRev = 0;
+    this.replayTo = 0;
     if (this.connected) this.send({ t: 'leave' });
     this.ws?.close();
     this.ws = null;
@@ -133,7 +175,7 @@ export class Relay {
   // Asks the server to roll. The faces come back from there rather than from
   // here, which is what stops a modified client choosing its own results —
   // and it means both players watch the same dice land.
-  rollDice(pool: Record<string, number>, label?: string): Promise<RolledDie[]> {
+  rollDice(pool: Record<string, number>, label?: string, kind: RollKind = 'pool'): Promise<RolledDie[]> {
     if (!this.view.room || !this.view.seat) return Promise.reject(new Error('Not in a game.'));
     const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
     return new Promise<RolledDie[]>((resolve, reject) => {
@@ -144,7 +186,7 @@ export class Relay {
         reject(new Error('The server did not answer the roll.'));
       }, 10_000);
       this.rolls.set(id, { resolve, reject, timer });
-      this.send({ t: 'roll', id, pool, label: label ?? null });
+      this.send({ t: 'roll', id, pool, label: label ?? null, kind });
     });
   }
 
@@ -158,9 +200,12 @@ export class Relay {
 
   // Publishes the whole board. Cheap enough to do at the start of a game and
   // whenever the server asks, and far simpler than trying to replay from zero.
+  // The revision travels with the board. Without it the server would file the
+  // snapshot under wherever it had got to, and any command that landed while
+  // this one was being taken would be discarded as already included.
   publishCheckpoint(): void {
     if (!this.view.room || !this.view.seat) return;
-    this.send({ t: 'checkpoint', state: this.hooks.snapshot() });
+    this.send({ t: 'checkpoint', rev: this.lastRev, state: this.hooks.snapshot() });
     this.set({ desynced: false });
   }
 
@@ -186,6 +231,8 @@ export class Relay {
 
     ws.onclose = () => {
       this.ws = null;
+      // A tail cut off halfway must not leave the board waiting to be drawn.
+      this.endReplay();
       if (!this.wanted) {
         this.set({ status: 'offline', room: null, seat: null });
         return;
@@ -249,6 +296,10 @@ export class Relay {
       case 'checkpoint': {
         this.lastRev = Number(msg.rev ?? 0);
         this.pending = [];
+        // The server says how far the history it is about to send runs. Older
+        // servers do not, in which case the room's revision is the best guess.
+        const through = Number(msg.through ?? this.view.room?.revision ?? this.lastRev);
+        if (through > this.lastRev) this.beginReplay(through);
         this.hooks.onCheckpoint(msg.state);
         // Whatever we had fallen behind by, this is current again.
         this.set({ desynced: false, error: null });
@@ -258,15 +309,9 @@ export class Relay {
       case 'cmd': {
         const rev = Number(msg.rev);
         const seat = msg.seat as Side;
-        // Our own command coming back is the server acknowledging it. Anything
-        // at or below that sequence number has landed and no longer needs
-        // replaying, and it must not be applied a second time here.
-        if (seat === this.view.seat) {
-          const ack = Number(msg.seq);
-          if (Number.isInteger(ack)) this.pending = this.pending.filter((p) => p.seq > ack);
-          this.lastRev = rev;
-          return;
-        }
+        // The gap check comes first and covers our own commands too: the
+        // server orders everything through one counter, so a hole under our
+        // own seat is exactly as much of a hole as one under theirs.
         if (rev !== this.lastRev + 1) {
           // A gap means we missed something. Applying anyway would leave the
           // two boards quietly different, so we stop and ask the server for
@@ -279,7 +324,21 @@ export class Relay {
           return;
         }
         this.lastRev = rev;
-        this.hooks.onCommand(msg.cmd as Command, seat);
+        const mine = seat === this.view.seat;
+        if (mine) {
+          // Our own command coming back is the server acknowledging it.
+          // Anything at or below that sequence number has landed and no longer
+          // needs replaying.
+          const ack = Number(msg.seq);
+          if (Number.isInteger(ack)) this.pending = this.pending.filter((p) => p.seq > ack);
+        }
+        // Live, our own work is already on this board and applying it again
+        // would double it. Inside a catch-up nothing here has been applied at
+        // all — the state came from a checkpoint taken before any of it — so
+        // every command in the tail counts, ours included. Skipping them was
+        // what sent a rejoining player back to an empty table.
+        if (!mine || this.replaying) this.hooks.onCommand(msg.cmd as Command, seat);
+        if (this.replaying && rev >= this.replayTo) this.endReplay();
         return;
       }
 
@@ -294,8 +353,10 @@ export class Relay {
           waiting.resolve(dice);
         }
         // Everyone in the room is told, including the roller — the hook is
-        // what puts the other player's dice on screen.
-        this.hooks.onRolled(dice, seat, (msg.label as string) ?? null, seat === this.view.seat);
+        // what puts the dice on screen, and both players get them from the
+        // same message rather than one drawing its own.
+        const kind: RollKind = msg.kind === 'hits' ? 'hits' : 'pool';
+        this.hooks.onRolled(dice, seat, (msg.label as string) ?? null, seat === this.view.seat, kind);
         return;
       }
 

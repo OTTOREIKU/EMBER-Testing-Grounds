@@ -47,10 +47,12 @@ const ROOM = { id: 'AB2CD', epoch: 1, revision: 0, seats: { s1: 'me', s2: 'them'
 function seated(seat = 's1') {
   const applied = [];
   const boards = [];
+  const catchup = [];
   let needed = 0;
   const relay = new Relay('http://localhost:3002', {
     onCommand: (cmd) => applied.push(cmd),
     onCheckpoint: (state) => boards.push(state),
+    onCatchUp: (active) => catchup.push(active),
     onNeedCheckpoint: () => { needed++; },
     onChange: () => {},
     snapshot: () => ({ board: true }),
@@ -61,7 +63,7 @@ function seated(seat = 's1') {
   ws.deliver({ t: 'welcome', protocol: 1, user: { id: 1, username: 'me' } });
   ws.deliver({ t: 'room', you: { seat, host: true }, room: ROOM });
   ws.sent.length = 0;
-  return { relay, ws, applied, boards, needed: () => needed };
+  return { relay, ws, applied, boards, catchup, needed: () => needed };
 }
 
 console.log('The relay client\n');
@@ -124,6 +126,46 @@ const before = FakeSocket.instances.length;
 e.relay.leave();
 check('leaving does not reconnect', FakeSocket.instances.length, before);
 check('and clears the room', e.relay.state.room, null);
+
+// ---------- coming back to a game in progress ----------
+
+// The bug this guards against: a player who rejoins is sent the stored board
+// and then every command since, their own included — the checkpoint was taken
+// before any of it. Treating those as acknowledgements, the way a live echo is
+// treated, rebuilt the match out of the other player's moves alone and left
+// the rejoining player looking at an empty table.
+const g = seated('s1');
+g.ws.deliver({ t: 'checkpoint', rev: 0, through: 3, state: { fromRoomOpening: true } });
+check('a catch-up announces itself before the board lands', g.catchup, [true]);
+g.ws.deliver({ t: 'cmd', rev: 1, seat: 's1', seq: 7, cmd: { kind: 'iDeployed' } });
+g.ws.deliver({ t: 'cmd', rev: 2, seat: 's2', seq: 4, cmd: { kind: 'theyDeployed' } });
+g.ws.deliver({ t: 'cmd', rev: 3, seat: 's1', seq: 8, cmd: { kind: 'iMoved' } });
+check('history is replayed whoever made it',
+  g.applied.map((c) => c.kind), ['iDeployed', 'theyDeployed', 'iMoved']);
+check('and the catch-up closes at the revision it was told to run to', g.catchup, [true, false]);
+
+// Past the tail the ordinary rule is back: our own work is already on this
+// board, and applying the echo would double it.
+g.relay.publish({ kind: 'mineNow' });
+g.ws.deliver({ t: 'cmd', rev: 4, seat: 's1', seq: 1, cmd: { kind: 'mineNow' } });
+check('once live again, our own command is an acknowledgement',
+  g.applied.map((c) => c.kind), ['iDeployed', 'theyDeployed', 'iMoved']);
+check('and no further catch-up was declared', g.catchup, [true, false]);
+
+// A checkpoint with nothing behind it is just a board, not a replay.
+const h = seated();
+h.ws.deliver({ t: 'checkpoint', rev: 2, through: 2, state: { current: true } });
+check('a board that is already current starts no catch-up', h.catchup, []);
+check('and is still handed to the app', h.boards, [{ current: true }]);
+
+// The board is filed under the revision it actually reflects. Filing it as
+// whatever the server had reached would discard any command that landed while
+// the snapshot was being taken.
+const i = seated();
+i.ws.deliver({ t: 'cmd', rev: 1, seat: 's2', seq: 1, cmd: { kind: 'one' } });
+i.relay.publishCheckpoint();
+check('a published board says which revision it reflects',
+  i.ws.sent.filter((m) => m.t === 'checkpoint').map((m) => m.rev), [1]);
 
 // ---------- the server asking us ----------
 
