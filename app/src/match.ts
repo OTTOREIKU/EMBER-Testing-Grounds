@@ -305,7 +305,15 @@ function mountSide(): void {
     onSelect: (uid) => syncSide(uid),
     onChanged: () => render(),
     // Editing a squad mid-match belongs to the lobby, so these are inert here.
-    onDelete: () => {},
+    // Taking a wreck off the board. Your own units only — the command layer
+    // refuses the other squad's, and the removal travels so both boards clear
+    // the same token.
+    onDelete: (uid) => {
+      const t = state.tokens.find((x) => x.uid === uid);
+      if (t) send({ kind: 'despawn', seat: t.side, uid, targetUid: uid });
+      render();
+      syncSide(null);
+    },
     onEditMech: () => {},
     onPlayTactic: (side, id) => {
       send({ kind: 'playTactic', seat: side, uid: state.tokens.find((t) => t.side === side)?.uid ?? 0, cardId: id });
