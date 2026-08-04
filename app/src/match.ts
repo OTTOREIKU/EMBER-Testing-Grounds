@@ -1,13 +1,13 @@
-import { ApiError, EmberApi, type Account, type MyRecord } from './api';
+import { ApiError, EmberApi, type Account, type MyRecord, type SquadEntry } from './api';
 import { Relay, type RollKind } from './net';
 import { applyRemote, onPerformed, onRefused, perform, type Command, type CheckResult } from './commands';
 import { setLocalSeat } from './loop';
 import { dataUrl, loadData, missionImageUrl, squadLabel, type GameData } from './data';
 import { objectiveCells } from './matchhud';
 import { printedDeployment } from './overlays';
-import { migrateState, tokenCards } from './units';
+import { migrateState, squadAllegiance, tokenCards } from './units';
 import { countHits, normaliseSetup } from './setup';
-import { taskItemsFor } from './tasks';
+import { normaliseTasks, taskItemsFor } from './tasks';
 import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
 import { importSquadFile } from './importer';
 import { dialsOf, hashDials, newSalt, type DialEntry } from './secrecy';
@@ -688,6 +688,49 @@ function rulesStep(): string {
   </div>`;
 }
 
+// The finished game, kept on the account that reports it. Both players may
+// record the same match; the server files each report against its reporter,
+// which is why the seat travels with it.
+async function recordMatch(): Promise<string | null> {
+  if (!data) return 'Still loading.';
+  if (!account) return 'Sign in to keep a record.';
+  const tasks = normaliseTasks(state.tasks);
+  const vp = tasks.vp;
+  const winner: Side | null = vp.s1 === vp.s2 ? null : vp.s1 > vp.s2 ? 's1' : 's2';
+  const entries = (side: Side) => {
+    const out: { id: string; cat: SquadEntry['cat'] }[] = [];
+    for (const t of state.tokens) {
+      if (t.side !== side || t.kind === 'projectile') continue;
+      for (const { card } of tokenCards(data!, t)) {
+        out.push({ id: card.id, cat: (card.category ?? 'mech_part') as SquadEntry['cat'] });
+      }
+    }
+    for (const id of state.tactics?.[side] ?? []) if (data!.byId.get(id)) out.push({ id, cat: 'tactics_or_upgrade' });
+    // The server caps a squad at 80 entries; no real list comes close.
+    return out.slice(0, 80);
+  };
+  try {
+    await api.recordGame({
+      mode: 'online',
+      mission: state.mission ?? null,
+      scale: state.scale ?? null,
+      rounds: Math.max(1, Math.min(20, state.round.n)),
+      winnerSeat: winner,
+      mySeat: mySeat(),
+      players: (['s1', 's2'] as Side[]).map((side) => ({
+        seat: side,
+        faction: squadAllegiance(data!, state.tokens.filter((t) => t.side === side)).faction,
+        vp: Math.max(0, vp[side]),
+        squad: entries(side),
+      })),
+    });
+    record = await api.myRecord().catch(() => record);
+    return null;
+  } catch (err) {
+    return `${(err as ApiError).message} The game itself is unaffected.`;
+  }
+}
+
 function hudCtx(): HudCtx {
   return {
     data: data!,
@@ -710,6 +753,7 @@ function hudCtx(): HudCtx {
     mountSide,
     syncSide,
     diceData,
+    recordMatch,
     refresh: () => render(),
   };
 }

@@ -64,6 +64,9 @@ export interface HudCtx {
   syncSide(uid: number | null): void;
   // The printed faces, for drawing the dice a roll landed on.
   diceData: DiceData | null;
+  // Keeps the finished game on both accounts. Resolves to null when it landed,
+  // or to why it did not — a failure here never stops the table closing.
+  recordMatch(): Promise<string | null>;
   refresh(): void;
 }
 
@@ -201,6 +204,9 @@ let movePlan: {
 } | null = null;
 let targetUid: number | null = null; // enemy picked for damage bookkeeping
 let attack: { y: number; r: number; name: string } | null = null; // pool of the action just performed
+let recording = false;             // a record is being sent
+let recorded = false;              // and the server took it
+let recordNote: string | null = null;
 let secOpen = false;               // the Secondary Task picker overlay
 let secFor: Side | null = null;    // whose pick the overlay is making
 let secPick: string | null = null; // highlighted card, not yet confirmed
@@ -765,9 +771,32 @@ function endPanel(ctx: HudCtx): string {
     <div class="dialrow"><span class="nm s1">${squadLabel('s1')} · ${vp.s1} VP</span><button class="rowbtn" data-award="s1">+1</button></div>
     <div class="dialrow"><span class="nm s2">${squadLabel('s2')} · ${vp.s2} VP</span><button class="rowbtn" data-award="s2">+1</button></div>
     <p class="tp-note">Scored by hand for now, like the tabletop — the card text says what each squad earned.</p>`;
+  // The last round ends the game rather than rolling into another one. Without
+  // this "Finish the game" started Round 6 and the match never ended at all.
+  if (last && all) return resultPanel(ctx, vp);
   return head('End Phase', `Round ${s.round.n} wraps up`, '', true)
     + `<div class="tp-body">${rows}${score}</div>
       <div class="tp-foot"><button class="bigbtn" data-act="advance"${all ? '' : ' disabled'}>${last ? 'Finish the game' : `Start Round ${s.round.n + 1}`}</button></div>`;
+}
+
+// What the game came to, and the offer to keep it. Recording is opt-in and
+// never blocks ending: the match happened whether or not the server hears
+// about it.
+function resultPanel(ctx: HudCtx, vp: { s1: number; s2: number }): string {
+  const winner: Side | null = vp.s1 === vp.s2 ? null : vp.s1 > vp.s2 ? 's1' : 's2';
+  const verdict = winner
+    ? `${squadLabel(winner)} wins ${Math.max(vp.s1, vp.s2)}–${Math.min(vp.s1, vp.s2)}`
+    : `A draw at ${vp.s1} VP each`;
+  const rows = (['s1', 's2'] as Side[])
+    .map((side) => `<div class="dialrow"><span class="nm ${side}">${squadLabel(side)}</span><span class="pickchip${winner === side ? ' set' : ''}">${vp[side]} VP</span></div>`)
+    .join('');
+  const foot = recorded
+    ? '<p class="tp-note">Saved to both accounts.</p><button class="bigbtn ghost2" data-act="endmatch">Close the table</button>'
+    : `<p class="tp-note">${esc(recordNote ?? 'Keep it on your record, or just close the table.')}</p>
+       <button class="bigbtn" data-act="record"${recording ? ' disabled' : ''}>${recording ? 'Recording…' : 'Record this match'}</button>
+       <button class="bigbtn ghost2" data-act="endmatch" style="margin-top:6px">Close the table</button>`;
+  return head('Game over', verdict, `${ctx.state.round.n} rounds played.`, true)
+    + `<div class="tp-body">${rows}</div><div class="tp-foot">${foot}</div>`;
 }
 
 function panelHtml(ctx: HudCtx): string {
@@ -987,7 +1016,10 @@ export function ensureHud(host: HTMLElement, ctx: HudCtx): void {
 
 export function wireHud(root: HTMLElement, ctx: HudCtx): void {
   const s = ctx.state;
-  const me = (): Side => ctx.seat ?? 's1';
+  // In a room this is simply my seat. Solo — the dev harness, where one screen
+  // walks both squads — it has to be whoever is being asked, or the second
+  // squad could never pass and the phase would never close.
+  const me = (): Side => ctx.seat ?? ensureScript(ctx.state).turn ?? 's1';
   const on = (sel: string, fn: (el: HTMLElement) => void) => {
     for (const el of root.querySelectorAll<HTMLElement>(sel)) el.addEventListener('click', () => fn(el));
   };
@@ -1139,6 +1171,23 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
   });
   on('[data-endstep]', (el) => { ctx.send({ kind: 'markEndStep', seat: me(), step: el.dataset.endstep! }); ctx.refresh(); });
   on('[data-act="advance"]', () => { ctx.send({ kind: 'advancePhase', seat: me() }); ctx.refresh(); });
+  on('[data-act="record"]', () => {
+    recording = true;
+    recordNote = null;
+    ctx.refresh();
+    void ctx.recordMatch().then((why) => {
+      recording = false;
+      recorded = !why;
+      recordNote = why;
+      ctx.refresh();
+    });
+  });
+  on('[data-act="endmatch"]', () => {
+    recorded = false;
+    recordNote = null;
+    ctx.send({ kind: 'endMatch', seat: me() });
+    ctx.refresh();
+  });
   on('[data-act="lockdials"]', () => {
     // The commit/reveal handshake lives in match.ts, which owns the salt.
     root.dispatchEvent(new CustomEvent('mc-lockdials', { bubbles: true }));
