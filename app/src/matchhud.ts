@@ -9,7 +9,7 @@ import { breakAwayCost } from './melee';
 import { factionColour } from './icons';
 import { iconSvg } from './dice';
 import type { DiceData, DieColor, GameState, Side, Timing, Token, ExtraTick, Opportunity } from './types';
-import { newOpportunity, newScriptState, PHASES, TIMINGS } from './types';
+import { newOpportunity, newScriptState, PHASES, STATUSES, TIMINGS } from './types';
 import { deployable, deployTurn, deploymentComplete, firstPlayerFrom, normaliseSetup, rollTotal, type SetupState } from './setup';
 import { actionPhaseComplete, activationOrder, alive, canAct, commandTokensFor, eligibleUnits, isLoopPhase, loopComplete, nextActivation, nextTurn, onExtraOpportunity, type InitLookup, type LoopPhase } from './loop';
 import { canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed, type TickVerdict } from './ticks';
@@ -1428,7 +1428,29 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
         });
       }
     }
+    // The command does the work; this reads the board first so it can say what
+    // the work was. A step that changes the board silently is the guide's one
+    // habit worth not copying.
+    const before = ctx.state.tokens.map((t) => ({
+      uid: t.uid,
+      label: t.label,
+      expiring: [...(t.expiring ?? [])].filter((id) => (t.statuses ?? []).includes(id)),
+      flipping: [...(t.expiring ?? [])],
+    }));
     ctx.send({ kind: 'markEndStep', seat: me(), step });
+    if (step === 'tokens') {
+      const names = (ids: string[]) => [...new Set(ids)].map((id) => STATUSES.find((d) => d.id === id)?.label ?? id).join(', ');
+      const said = before
+        .filter((b) => b.expiring.length || b.flipping.length)
+        .map((b) => `${b.label}: ${[b.expiring.length ? `${names(b.expiring)} expired` : '', b.flipping.length ? `${names(b.flipping)} flips to red` : ''].filter(Boolean).join(', ')}`);
+      ctx.noteNow(said.length ? said.join(' · ') : 'Tokens aged and both Command pools cleared.');
+    }
+    if (step === 'remove') {
+      const gone = before.filter((b) => !ctx.state.tokens.some((t) => t.uid === b.uid));
+      ctx.noteNow(gone.length
+        ? `Integrity Loss: ${gone.map((g) => g.label).join(', ')} left the board (4.4.4).`
+        : 'No Mech was down to two Parts, so nothing left the board.');
+    }
     ctx.refresh();
   });
   on('[data-act="advance"]', () => { ctx.send({ kind: 'advancePhase', seat: me() }); ctx.refresh(); });
