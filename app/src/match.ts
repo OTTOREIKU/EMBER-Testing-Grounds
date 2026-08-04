@@ -11,7 +11,7 @@ import { normaliseTasks, taskItemsFor } from './tasks';
 import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
 import { importSquadFile } from './importer';
 import { dialsOf, hashDials, newSalt, type DialEntry } from './secrecy';
-import { animateRemoteMove, ensureHud, glueAfter, startLaunchPlan, type DiceLine, type HudCtx } from './matchhud';
+import { animateRemoteMove, ensureHud, glueAfter, startDetonation, startInterceptPick, startLaunchPlan, startShove, type DiceLine, type HudCtx } from './matchhud';
 import { SquadTracker } from './squads';
 import { Panel } from './panel';
 import { iconSvg } from './dice';
@@ -328,9 +328,10 @@ function mountSide(): void {
     // in a match come from the turn panel and the server.
     onRollDice: () => {},
     // A magazine is a number both players have to agree on, so the card's own
-    // Ammo buttons send the same commands the board sends rather than sitting
-    // dead. The ones that need a board flow of their own — launching, shoving,
-    // detonating, starting an Interception — are still to come.
+    // buttons send the same commands the board sends rather than sitting dead.
+    // The ones that need a board flow of their own — launching, shoving,
+    // detonating and starting an Interception — hand off to the turn panel,
+    // which is where this HUD asks every question.
     onSpendAmmo: (t, actionId) => {
       send({ kind: 'spendAmmo', seat: t.side, uid: t.uid, actionId });
       render();
@@ -341,8 +342,17 @@ function mountSide(): void {
       render();
       syncSide(t.uid);
     },
-    onSpendIntercept: () => {},
-    onRestoreIntercept: () => {},
+    // The card has chosen the Part; the turn panel asks which Aerial Unit,
+    // since Interception may only ever attack the one that triggered it (4.9).
+    onSpendIntercept: (t, actionId) => {
+      startInterceptPick(t.uid, actionId);
+      render();
+    },
+    onRestoreIntercept: (t, actionId) => {
+      send({ kind: 'restoreIntercept', seat: t.side, uid: t.uid, actionId });
+      render();
+      syncSide(t.uid);
+    },
     // The card has chosen the Action and the Projectile; the board asks where.
     onLaunch: (t, action, projectile) => {
       startLaunchPlan(t.uid, action.id, projectile.id, projectile.name?.en || projectile.id);
@@ -351,8 +361,18 @@ function mountSide(): void {
     onStartElectronic: () => {},
     onShowMoveRange: () => {},
     onShowActionRange: () => {},
-    onDetonate: () => {},
-    onShove: () => {},
+    // Resolving a Projectile's Delayed Action: the turn panel asks what it
+    // caught, then destroys it (4.7.5).
+    onDetonate: (t, actionId) => {
+      startDetonation(t.uid, actionId);
+      render();
+    },
+    // A shove is a Knockback with no Attack behind it, so the panel asks which
+    // enemy Ground Unit in the Grid ahead takes it.
+    onShove: (t, actionId) => {
+      startShove(t.uid, actionId);
+      render();
+    },
     onCharge: () => {},
     tacticNote: () => null,
   });
