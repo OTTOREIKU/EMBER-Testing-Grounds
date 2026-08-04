@@ -219,6 +219,13 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
     }
     case 'startMatch': {
       if (normaliseSetup(state.setup)) return no('A game is already running. End it before starting another.');
+      // Across a table, the other player has to have said they are ready. A
+      // disabled button is a hint, not a rule: the rule lives here, where both
+      // clients run it and neither can start the game on the other's behalf.
+      if (getLocalSeat()) {
+        const other: Side = cmd.seat === 's1' ? 's2' : 's1';
+        if (!state.ready?.[other]) return no('The other player has not pressed Ready yet.');
+      }
       return ok;
     }
     case 'endMatch': {
@@ -293,7 +300,12 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
     }
     case 'lockMap': {
       const su = normaliseSetup(state.setup);
-      if (su && su.stage !== 'map') return no('The battlefield is already locked (3.1.2).');
+      // Locking the battlefield is a step inside setup, so there has to be a
+      // setup to be inside. Without this the command conjures one, which makes
+      // it a second way to start a match — one that answers to none of the
+      // agreements the real one does.
+      if (!su) return no('No game is running.');
+      if (su.stage !== 'map') return no('The battlefield is already locked (3.1.2).');
       return ok;
     }
     case 'rollSetup': {
@@ -321,6 +333,12 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
     }
     case 'finishDeployment': {
       if (!deploymentComplete(state)) return no('Units are still waiting to deploy (3.1.4).');
+      // Both squads confirm before Round 1 begins, and the confirmation is
+      // checked here rather than only drawn in the panel, so neither player
+      // can push the other out of deployment.
+      if (getLocalSeat() && !(state.ready?.s1 && state.ready?.s2)) {
+        return no('Both squads confirm their deployment before Round 1 begins.');
+      }
       return ok;
     }
     case 'queueIntercepts': {
@@ -510,6 +528,14 @@ function checkActed(
       // A unit already down may be nudged until deployment closes; only a
       // fresh placement spends the alternation turn (3.1.4).
       if (t.deployed === false && deployTurn(state, su) !== cmd.seat) return no('It is the other squad\'s turn to place a unit (3.1.4).');
+      // Tasks come before deployment (3.1.3 then 3.1.4). Across a table that
+      // ordering has to be a rule rather than a drawn panel, or the First
+      // Player could take an edge and start placing while the other squad
+      // never got the chance to choose one.
+      if (getLocalSeat() && t.deployed === false) {
+        const picked = normaliseTasks(state.tasks).secondary;
+        if (!picked.s1 || !picked.s2) return no('Both squads pick a Secondary Task before anything deploys (3.1.3).');
+      }
       const { col, row } = cmd.to;
       if (!Number.isInteger(col) || !Number.isInteger(row) || col < 0 || row < 0 || col > 35 || row > 35) {
         return no('That is not a place on the board.');

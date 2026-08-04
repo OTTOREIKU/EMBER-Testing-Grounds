@@ -521,28 +521,20 @@ function setupPanel(ctx: HudCtx, su: SetupState): string {
   }
   if (su.stage === 'side') {
     const fp = s.round.firstPlayer;
-    const tasks = normaliseTasks(s.tasks);
-    const secRows = (['s1', 's2'] as Side[])
-      .map((side) => {
-        const card = tasks.secondary[side] ? ctx.data.secondary.find((c) => c.id === tasks.secondary[side]) : undefined;
-        const isMe = mine(ctx, side);
-        // Your own pick stays changeable until deployment begins — the Task
-        // is open information, not a commitment you can be trapped by.
-        const cell = card
-          ? isMe
-            ? `<button class="rowbtn" data-sec="${side}" title="Change this Secondary Task">${esc(card.name)} ✎</button>`
-            : `<span class="pickchip set">${esc(card.name)}</span>`
-          : isMe
-            ? `<button class="rowbtn" data-sec="${side}">Pick a Secondary Task</button>`
-            : '<span class="tp-dim">picking…</span>';
-        return `<div class="dialrow"><span class="nm ${side}">${squadLabel(side)}</span>${cell}</div>`;
-      })
-      .join('');
     const edge = mine(ctx, fp)
       ? `<div class="btnrow"><button class="rowbtn" data-edge="white">Take the White edge</button><button class="rowbtn" data-edge="black">Take the Black edge</button></div>`
       : waiting(fp, 'picking a table edge');
     return head(mine(ctx, fp) ? 'Your move' : 'Setup', `${squadLabel(fp)} picks an edge`, 'The other side takes the opposite edge (3.1.2). Secondary Tasks are open information (3.1.3).', mine(ctx, fp))
-      + `<div class="tp-body">${edge}<div class="tp-gap"></div>${secRows}</div><div class="tp-foot"></div>`;
+      + `<div class="tp-body">${edge}<div class="tp-gap"></div>${secondaryRows(ctx)}</div><div class="tp-foot"></div>`;
+  }
+  // Tasks come before deployment (3.1.3 then 3.1.4), the same way the freeplay
+  // guide holds its placement list back: the edge pick moves the stage on, so
+  // without this the First Player could take an edge and start placing while
+  // the other squad never got to choose a Task at all.
+  const pending = normaliseTasks(s.tasks);
+  if (!pending.secondary.s1 || !pending.secondary.s2) {
+    return head('Setup', 'Secondary Tasks', 'Both are picked before anything deploys, so each side knows what the other is playing for (3.1.3).', !pending.secondary[ctx.seat ?? 's1'])
+      + `<div class="tp-body">${secondaryRows(ctx)}</div><div class="tp-foot"></div>`;
   }
   // deploy — every button that ends or advances a step lives in the FOOT, so
   // the panel reads the same in every state.
@@ -790,6 +782,29 @@ function dieHtml(ctx: HudCtx, d: { color: string; face: number }): string {
   const face = ctx.diceData?.dice[d.color as DieColor]?.faces[d.face] ?? [];
   const icons = face.map((ic) => iconSvg(ic, 15)).join('');
   return `<span class="die die-${esc(d.color)}">${icons || '<span class="die-blank">·</span>'}</span>`;
+}
+
+// One row per squad: the Task they have taken, or the way to take one. Shown
+// while the edge is being picked and again before deployment, because both
+// moments are waiting on the same two answers.
+function secondaryRows(ctx: HudCtx): string {
+  const tasks = normaliseTasks(ctx.state.tasks);
+  return (['s1', 's2'] as Side[])
+    .map((side) => {
+      const card = tasks.secondary[side] ? ctx.data.secondary.find((c) => c.id === tasks.secondary[side]) : undefined;
+      const isMe = mine(ctx, side);
+      // Your own pick stays changeable until deployment begins — the Task is
+      // open information, not a commitment you can be trapped by.
+      const cell = card
+        ? isMe
+          ? `<button class="rowbtn" data-sec="${side}" title="Change this Secondary Task">${esc(card.name)} ✎</button>`
+          : `<span class="pickchip set">${esc(card.name)}</span>`
+        : isMe
+          ? `<button class="rowbtn" data-sec="${side}">Pick a Secondary Task</button>`
+          : '<span class="tp-dim">picking…</span>';
+      return `<div class="dialrow"><span class="nm ${side}">${squadLabel(side)}</span>${cell}</div>`;
+    })
+    .join('');
 }
 
 function feedHtml(ctx: HudCtx): string {

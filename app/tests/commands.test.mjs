@@ -796,6 +796,37 @@ C.apply(data, depLobby, { kind: 'setReady', seat: 's1', ready: true });
 C.apply(data, depLobby, { kind: 'finishDeployment', seat: 's1' });
 check('finishing deployment consumes the ready flags', JSON.stringify(depLobby.ready), '{}');
 
+// Neither of those agreements is only a drawn button: across a table the rule
+// is checked here, so one player cannot start the game or end deployment on
+// the other's behalf however the click was made.
+const gate = { ...openTable(), tokens: [mech(1, 's1')], setup: { ...C.newSetup(), stage: 'deploy' } };
+C.setLocalSeat('s1');
+check('deployment will not finish with nobody ready',
+  C.check(data, gate, { kind: 'finishDeployment', seat: 's1' }).ok, false);
+C.apply(data, gate, { kind: 'setReady', seat: 's1', ready: true });
+check('nor with only my own agreement',
+  C.check(data, gate, { kind: 'finishDeployment', seat: 's1' }).ok, false);
+C.apply(data, gate, { kind: 'setReady', seat: 's2', ready: true });
+check('and finishes once both squads agree',
+  C.check(data, gate, { kind: 'finishDeployment', seat: 's1' }).ok, true);
+
+const launch = openTable();
+check('a match will not start while the other player is not ready',
+  C.check(data, launch, { kind: 'startMatch', seat: 's1' }).ok, false);
+// Locking the battlefield used to build a setup out of nothing, which made it
+// a back door into a running match that no agreement guarded.
+check('and locking the battlefield is not a way in either',
+  C.check(data, launch, { kind: 'lockMap', seat: 's1' }).ok, false);
+C.apply(data, launch, { kind: 'setReady', seat: 's2', ready: true });
+check('and starts once they are', C.check(data, launch, { kind: 'startMatch', seat: 's1' }).ok, true);
+C.apply(data, launch, { kind: 'startMatch', seat: 's1' });
+check('after which the battlefield locks normally',
+  C.check(data, launch, { kind: 'lockMap', seat: 's1' }).ok, true);
+C.setLocalSeat(null);
+check('a solo game needs no such signal',
+  C.check(data, openTable(), { kind: 'startMatch', seat: 's1' }).ok, true);
+check('and finishes deployment on its own', C.check(data, gate, { kind: 'finishDeployment', seat: 's1' }).ok, true);
+
 check('an unknown Secondary Task is refused', C.check(data, openTable(), { kind: 'pickSecondary', seat: 's1', cardId: 'NOPE' }).ok, false);
 const sec = openTable();
 C.apply(data, sec, { kind: 'pickSecondary', seat: 's2', cardId: 'SEC1' });

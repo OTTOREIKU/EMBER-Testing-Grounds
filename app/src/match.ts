@@ -1009,10 +1009,14 @@ function wire(): void {
   $('mc-launch')?.addEventListener('click', () => {
     if (!data) return;
     lobbyNote = null;
-    send({ kind: 'startMatch', seat: mySeat() ?? 's1' });
-    // The battlefield was chosen in the lobby, so the separate lock step
-    // (3.1.2) is already answered — go straight to the First Player roll.
-    send({ kind: 'lockMap', seat: mySeat() ?? 's1' });
+    // Only lock the battlefield if the match actually started. The refusal
+    // that stops one player launching without the other must stop the whole
+    // launch, not just its first half.
+    if (send({ kind: 'startMatch', seat: mySeat() ?? 's1' }).ok) {
+      // The battlefield was chosen in the lobby, so the separate lock step
+      // (3.1.2) is already answered — go straight to the First Player roll.
+      send({ kind: 'lockMap', seat: mySeat() ?? 's1' });
+    }
     render();
   });
   $('mc-devseed')?.addEventListener('click', () => devSeed());
