@@ -1417,7 +1417,11 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     // "Settle Task control" is the step that pays: the guide judges the board
     // and sends the numbers with the Award, so a mirrored seat applies the same
     // VP rather than working them out again and maybe differently.
-    if (step === 'tasks') {
+    // Marking the step is idempotent; paying for it is not. Both players can
+    // see this button, so without the guard two near-simultaneous presses
+    // would award the round twice.
+    const alreadySettled = ensureScript(ctx.state).endDone.includes(`${ctx.state.round.n}:end:tasks`);
+    if (step === 'tasks' && !alreadySettled) {
       const last = ctx.state.round.n >= (ctx.state.roundLimit ?? 5);
       const got = scorePreview(ctx, last);
       if (got.lines.length) {
