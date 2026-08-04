@@ -31,14 +31,22 @@ export interface HudCtx {
   seat: Side | null;
   networked: boolean;
   send(cmd: Command): CheckResult;
-  // Rolls n yellow dice (server dice in a room, local in dev) → Hits per die.
-  rollHits(n: number, label: string): Promise<number[]>;
+  // Rolls n yellow dice (server dice in a room, local in dev): the Hits per
+  // die for the command, and the faces so the tray can show them.
+  rollHits(n: number, label: string): Promise<{ hits: number[]; dice: { color: string; face: number }[] }>;
   // Rolls an attack pool; the result lands in the shared dice feed.
   rollPool(y: number, r: number, label: string): Promise<void>;
   diceFeed: DiceLine[];
   note: string | null;
   // Shows a one-off message in the turn panel.
   noteNow(text: string): void;
+  // Builds the left side panel once the HUD shell exists (the freeplay
+  // SquadTracker and Panel bind to ids inside it).
+  mountSide(): void;
+  // Redraws the side panel and shows a unit's card when one is selected.
+  syncSide(uid: number | null): void;
+  // Renders rolled dice into the HUD tray with the tray's own animation.
+  showDice(el: HTMLElement, dice: { color: string; face: number }[]): void;
   refresh(): void;
 }
 
@@ -178,6 +186,7 @@ let targetUid: number | null = null; // enemy picked for damage bookkeeping
 let attack: { y: number; r: number; name: string } | null = null; // pool of the action just performed
 let secOpen = false;               // the Secondary Task picker overlay
 let secFor: Side | null = null;    // whose pick the overlay is making
+let secPick: string | null = null; // highlighted card, not yet confirmed
 
 // ---------- pieces ----------
 
@@ -472,25 +481,28 @@ function mine(ctx: HudCtx, side: Side): boolean {
 function setupPanel(ctx: HudCtx, su: SetupState): string {
   const s = ctx.state;
   if (su.stage === 'map') {
-    return head('Setup', 'Confirm the battlefield', 'The map and Main Task were set in the lobby (3.1.1).', true)
-      + `<div class="tp-body"><p class="tp-note">${esc(s.map)} · ${s.mission ? esc(s.mission) : 'no Main Task'}</p></div>
-        <div class="tp-foot"><button class="bigbtn" data-act="lockmap">Lock the battlefield</button></div>`;
+    // The battlefield was settled in the lobby; the lock is sent for us.
+    return head('Setup', 'Preparing the battlefield', '', true) + '<div class="tp-body"></div><div class="tp-foot"></div>';
   }
   if (su.stage === 'roll') {
     const winner = firstPlayerFrom(su);
+    const both = !!su.rolls.s1.length && !!su.rolls.s2.length;
+    const tie = both && !winner;
     const rows = (['s1', 's2'] as Side[])
       .map((side) => {
         const r = su.rolls[side];
         const isMe = mine(ctx, side);
-        const tie = su.rolls.s1.length && su.rolls.s2.length && !winner;
         const btn = isMe
-          ? `<button class="rowbtn" data-roll="${side}">${tie ? 'Roll again' : r.length ? 'Re-roll' : 'Roll 2 dice'}</button>`
-          : `<span class="tp-dim">${r.length && !tie ? '' : 'rolling…'}</span>`;
+          ? `<button class="rowbtn" data-roll="${side}">${r.length ? 'Re-roll' : 'Roll 2 dice'}</button>`
+          : `<span class="tp-dim">${r.length ? '' : 'rolling…'}</span>`;
         return `<div class="dialrow"><span class="nm ${side}">${squadLabel(side)}</span>${btn}<span class="pickchip${r.length ? ' set' : ''}">${r.length ? `${rollTotal(r)} Hits` : '—'}</span></div>`;
       })
       .join('');
+    const verdict = tie
+      ? `<p class="tp-note">A tie on ${rollTotal(su.rolls.s1)}. The rulebook gives no tie procedure, so both squads roll again — the first re-roll clears the other total.</p>`
+      : winner ? `<p class="tp-note">${squadLabel(winner)} rolls higher.</p>` : '';
     return head('Setup', 'Roll for First Player', 'Two dice each, most Hits goes first (3.1.2).', true)
-      + `<div class="tp-body">${rows}${winner ? `<p class="tp-note">${squadLabel(winner)} rolls higher.</p>` : ''}</div>
+      + `<div class="tp-body">${rows}<div id="hud-tray" class="hudtray"></div>${verdict}</div>
         <div class="tp-foot">${winner ? '<button class="bigbtn" data-act="accept">Continue</button>' : ''}</div>`;
   }
   if (su.stage === 'side') {
@@ -736,19 +748,33 @@ function feedHtml(ctx: HudCtx): string {
 
 function secOverlay(ctx: HudCtx): string {
   if (!secOpen) return '';
+  // A card that designates a Tactical Area needs the board to have some. The
+  // Main Task decides that, and VIP places none at all — the same gate the
+  // freeplay picker applies, so an impossible Task can never be chosen.
+  const mission = ctx.state.mission ? ctx.data.missions.cards.find((m) => m.id === ctx.state.mission) : undefined;
+  const hasZones = (mission?.zones ?? []).length > 0;
   const rows = ctx.data.secondary
-    .map((c) => `<button class="pickrow" data-picksec="${esc(c.id)}" data-img="${esc(secondaryImageUrl(c.id))}"><span class="nm">${esc(c.name)}</span><span class="ct">${c.vp ?? 0} VP</span></button>`)
+    .map((c) => {
+      const blocked = c.designate === 'zone' && !hasZones;
+      return `<button class="pickrow${blocked ? ' blocked' : ''}${secPick === c.id ? ' sel' : ''}"${blocked ? ' disabled' : ''} data-picksec="${esc(c.id)}" data-img="${esc(secondaryImageUrl(c.id))}">
+        <span class="nm">${esc(c.name)}</span>
+        <span class="ct">${blocked ? 'needs Tactical Zones' : `${c.vp ?? 0} VP`}</span>
+      </button>`;
+    })
     .join('');
+  const shown = secPick || ctx.data.secondary[0]?.id || '';
   // The card image rides on the left, filled in as rows are hovered — same
   // habit as the freeplay picker, so the details decide the pick.
   return `<div class="mc-veil" id="mc-secveil"><div class="acct seccards">
     <button class="x" id="mc-sec-x">✕</button>
     <div class="secsplit">
-      <div class="seccard"><img id="mc-seccard" alt="" src="${esc(secondaryImageUrl(ctx.data.secondary[0]?.id ?? ''))}"></div>
+      <div class="seccard"><img id="mc-seccard" alt="" src="${esc(secondaryImageUrl(shown))}"></div>
       <div class="seclist">
         <h3>Pick a Secondary Task</h3>
-        <div class="role">Open information — the other player sees your pick (3.1.3). Hover to read the card.</div>
+        <div class="role">Open information — the other player sees your pick (3.1.3). Hover to read a card, then confirm.</div>
         ${rows}
+        ${!hasZones ? '<p class="quiet">This Main Task places no Tactical Zones, so Tasks that designate one are unavailable.</p>' : ''}
+        <button class="btn wide" id="mc-sec-ok"${secPick ? '' : ' disabled'}>Confirm this Task</button>
       </div>
     </div>
   </div></div>`;
@@ -760,7 +786,18 @@ function secOverlay(ctx: HudCtx): string {
 export function ensureHud(host: HTMLElement, ctx: HudCtx): void {
   hudRef = ctx;
   if (!host.querySelector('#hud-shell')) {
+    // The freeplay side panel moves to the LEFT here and keeps its own tabs,
+    // so a player can read either squad and any card mid-match. The ids are
+    // the ones SquadTracker and Panel bind to.
     host.innerHTML = `<div class="hud" id="hud-shell">
+      <div class="hudside">
+        <div class="hudtabs">
+          <button class="hudtab active" data-sidetab="squad">Squads</button>
+          <button class="hudtab" data-sidetab="details">Details</button>
+        </div>
+        <section id="tab-squad" class="side-tab active"><div id="squad-body"></div></section>
+        <section id="tab-details" class="side-tab"><div id="details-body"></div></section>
+      </div>
       <div class="hudmain">
         <div id="hud-tl"></div>
         <div id="mc-board" class="hudboardhost"></div>
@@ -769,6 +806,15 @@ export function ensureHud(host: HTMLElement, ctx: HudCtx): void {
       <div class="turnpanel" id="hud-panel"></div>
     </div><div id="hud-veils"></div>`;
     board = new Board(host.querySelector('#mc-board')!, boardCallbacks());
+    ctx.mountSide();
+    for (const b of host.querySelectorAll<HTMLElement>('[data-sidetab]')) {
+      b.addEventListener('click', () => {
+        for (const x of host.querySelectorAll('.hudtab')) x.classList.toggle('active', x === b);
+        for (const s of host.querySelectorAll<HTMLElement>('.side-tab')) {
+          s.classList.toggle('active', s.id === `tab-${b.dataset.sidetab}`);
+        }
+      });
+    }
   }
   (host.querySelector('#hud-tl') as HTMLElement).innerHTML = timelineHtml(ctx.state);
   (host.querySelector('#hud-strip') as HTMLElement).innerHTML = orderStripHtml(ctx);
@@ -777,6 +823,7 @@ export function ensureHud(host: HTMLElement, ctx: HudCtx): void {
   (host.querySelector('#hud-veils') as HTMLElement).innerHTML = secOverlay(ctx);
   wireHud(host, ctx);
   renderBoard(ctx);
+  ctx.syncSide(ensureScript(ctx.state).opp?.uid ?? null);
 }
 
 // ---------- wiring ----------
@@ -791,21 +838,27 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
   on('[data-act="lockmap"]', () => { ctx.send({ kind: 'lockMap', seat: me() }); ctx.refresh(); });
   on('[data-roll]', (el) => {
     const side = el.dataset.roll as Side;
-    void ctx.rollHits(2, 'First Player roll').then((hits) => {
-      ctx.send({ kind: 'rollSetup', seat: side, hits });
+    void ctx.rollHits(2, `${squadLabel(side)} rolls for First Player`).then((res) => {
+      ctx.send({ kind: 'rollSetup', seat: side, hits: res.hits });
       ctx.refresh();
+      // Painted after the refresh, because the redraw rebuilds the tray
+      // element the dice would otherwise land in.
+      const tray = root.querySelector<HTMLElement>('#hud-tray');
+      if (tray) ctx.showDice(tray, res.dice);
     });
   });
   on('[data-act="accept"]', () => { ctx.send({ kind: 'acceptRoll', seat: me() }); ctx.refresh(); });
   on('[data-edge]', (el) => { ctx.send({ kind: 'pickEdge', seat: s.round.firstPlayer, edge: el.dataset.edge as 'black' | 'white' }); ctx.refresh(); });
   on('[data-sec]', (el) => {
     secFor = el.dataset.sec as Side;
+    secPick = null;
     secOpen = true;
     ctx.refresh();
   });
+  // Choosing highlights; confirming commits. A Task is only locked in once
+  // the player has read it and said so.
   on('[data-picksec]', (el) => {
-    ctx.send({ kind: 'pickSecondary', seat: secFor ?? me(), cardId: el.dataset.picksec! });
-    secOpen = false;
+    secPick = el.dataset.picksec!;
     ctx.refresh();
   });
   for (const el of root.querySelectorAll<HTMLElement>('[data-picksec]')) {
@@ -814,7 +867,13 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
       if (img && el.dataset.img) img.src = el.dataset.img;
     });
   }
-  root.querySelector('#mc-sec-x')?.addEventListener('click', () => { secOpen = false; ctx.refresh(); });
+  root.querySelector('#mc-sec-ok')?.addEventListener('click', () => {
+    if (secPick) ctx.send({ kind: 'pickSecondary', seat: secFor ?? me(), cardId: secPick });
+    secOpen = false;
+    secPick = null;
+    ctx.refresh();
+  });
+  root.querySelector('#mc-sec-x')?.addEventListener('click', () => { secOpen = false; secPick = null; ctx.refresh(); });
   on('[data-place]', (el) => {
     // Picking the next unit stands by the previous placement.
     unconfirmed = null;

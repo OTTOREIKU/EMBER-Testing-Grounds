@@ -12,6 +12,9 @@ import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
 import { importSquadFile } from './importer';
 import { dialsOf, hashDials, newSalt, type DialEntry } from './secrecy';
 import { ensureHud, glueAfter, type DiceLine, type HudCtx } from './matchhud';
+import { SquadTracker } from './squads';
+import { Panel } from './panel';
+import { DiceTray } from './dice';
 import type { DiceData, DieColor, GameState, Side } from './types';
 import { PHASES } from './types';
 
@@ -160,21 +163,85 @@ function send(cmd: Command): CheckResult {
 }
 
 // Server dice in a room; honest local dice in dev. Either way the Hits per
-// die come from the same printed faces.
-async function rollHits(n: number, label: string): Promise<number[]> {
-  if (!diceData) return Array.from({ length: n }, () => 0);
+// die come from the same printed faces, and the faces come back so the tray
+// can roll them on screen.
+async function rollHits(n: number, label: string): Promise<{ hits: number[]; dice: { color: string; face: number }[] }> {
+  if (!diceData) return { hits: Array.from({ length: n }, () => 0), dice: [] };
   const faces = diceData.dice.yellow;
   let idx: number[];
   if (relay.state.room && relay.state.seat) {
-    const dice = await relay.rollDice({ yellow: n }, label);
-    idx = dice.map((d) => d.face);
+    const rolled = await relay.rollDice({ yellow: n }, label);
+    idx = rolled.map((d) => d.face);
   } else {
     idx = Array.from({ length: n }, () => Math.floor(Math.random() * faces.sides));
   }
   const hits = idx.map((i) => countHits([faces.faces[i] ?? []]));
   const total = hits.reduce((a, b) => a + b, 0);
   diceFeed.push({ seat: relay.state.seat ?? devSeat ?? 's1', text: `${label} — ${total} Hit${total === 1 ? '' : 's'}` });
-  return hits;
+  return { hits, dice: idx.map((i) => ({ color: 'yellow', face: i })) };
+}
+
+// ---------- the left side panel, borrowed whole from freeplay ----------
+
+let squadTracker: SquadTracker | null = null;
+let panel: Panel | null = null;
+let hudTray: DiceTray | null = null;
+
+function mountSide(): void {
+  if (!data) return;
+  squadTracker = new SquadTracker(data, document.getElementById('squad-body')!, {
+    onSelect: (uid) => syncSide(uid),
+    onChanged: () => render(),
+    // Editing a squad mid-match belongs to the lobby, so these are inert here.
+    onDelete: () => {},
+    onEditMech: () => {},
+    onPlayTactic: (side, id) => {
+      send({ kind: 'playTactic', seat: side, uid: state.tokens.find((t) => t.side === side)?.uid ?? 0, cardId: id });
+      render();
+    },
+    scenarioName: () => null,
+    onShowScenario: () => {},
+  });
+  panel = new Panel(data, {
+    world: () => ({ tokens: state.tokens, terrain: terrainNow() }),
+    onRollDice: (pool) => { if (hudTray) hudTray.addToPool(pool as Record<string, number>, true); },
+    // The match panel drives actions through the turn panel, so the card's
+    // own buttons stay read-only here rather than half-working.
+    onSpendAmmo: () => {},
+    onSpendIntercept: () => {},
+    onRestoreIntercept: () => {},
+    onRestoreAmmo: () => {},
+    onLaunch: () => {},
+    onStartAttack: () => {},
+    onStartElectronic: () => {},
+    onShowMoveRange: () => {},
+    onShowActionRange: () => {},
+    onDetonate: () => {},
+    onShove: () => {},
+    onCharge: () => {},
+    tacticNote: () => null,
+  });
+  const trayHost = document.getElementById('hud-tray');
+  if (diceData && trayHost) hudTray = new DiceTray(diceData, trayHost);
+}
+
+function terrainNow() {
+  const gone = new Set(state.removedTerrain ?? []);
+  return (data?.terrain.layouts[state.map] ?? []).filter((p) => !gone.has(p.id));
+}
+
+function syncSide(uid: number | null): void {
+  squadTracker?.update(state, uid);
+  const t = uid !== null ? state.tokens.find((x) => x.uid === uid) : undefined;
+  if (t) panel?.showToken(t);
+  else panel?.clear();
+}
+
+function showDice(el: HTMLElement, dice: { color: string; face: number }[]): void {
+  if (!diceData) return;
+  // A tray per mount point; recreated when the panel redraws it.
+  const tray = new DiceTray(diceData, el);
+  tray.showFixed(dice as { color: DieColor; face: number }[], true);
 }
 
 // An attack pool: server dice in a room, local otherwise, and the face icons
@@ -555,6 +622,9 @@ function hudCtx(): HudCtx {
     diceFeed,
     note: lobbyNote,
     noteNow: (text) => { lobbyNote = text; },
+    mountSide,
+    syncSide,
+    showDice,
     refresh: () => render(),
   };
 }
@@ -582,6 +652,7 @@ function devSeed(): void {
     });
   }
   send({ kind: 'startMatch', seat: devSeat ?? 's1' });
+  send({ kind: 'lockMap', seat: devSeat ?? 's1' });
   render();
 }
 
@@ -868,6 +939,9 @@ function wire(): void {
     if (!data) return;
     lobbyNote = null;
     send({ kind: 'startMatch', seat: mySeat() ?? 's1' });
+    // The battlefield was chosen in the lobby, so the separate lock step
+    // (3.1.2) is already answered — go straight to the First Player roll.
+    send({ kind: 'lockMap', seat: mySeat() ?? 's1' });
     render();
   });
   $('mc-devseed')?.addEventListener('click', () => devSeed());
