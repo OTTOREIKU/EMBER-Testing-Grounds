@@ -3,7 +3,7 @@ import type { GameData } from './data';
 import { cardName, isAerial, secondaryImageUrl, squadLabel, unitSize } from './data';
 import { Board, footprint, snapPlacement, type BoardCallbacks } from './board';
 import { printedDeployment, resolveZoneSetData } from './overlays';
-import { canActivateCamo, chargeableSlots, electronicValue, explosionScope, extraActivationOf, guidedActions, interceptCapacity, interceptLeft, isChargeAction, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
+import { canActivateCamo, chargeableSlots, electronicValue, explosionScope, extraActivationOf, guidedActions, interceptCapacity, interceptLeft, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
 import { resolveCounterRoll, tallyCounter } from './combat';
 import { tacticFitsPhase, tacticSpec } from './tactics';
 import { attackDirection, crushTargets, dissipationFor, extendPath, knockbackPath, LG, losBetween, losNote, protectionFor, rangeBetween, reachableGrids, standingSpot, type LargeGrid } from './rules';
@@ -67,10 +67,13 @@ export interface HudCtx {
   // True while the shared AttackHelper is resolving an attack, so the turn
   // panel steps out of the way instead of offering the manual buttons beside it.
   combatBusy(): boolean;
-  // Opens the §4.4 pipeline on a target the player has just picked.
-  startAttack(uid: number, actionId: string, targetUid: number): void;
+  // Opens the §4.4 pipeline on a target the player has just picked. The mode
+  // decides what the defender may claim: an ordinary attack reads Terrain and
+  // Unit Protection off the board, an Interception grants none and needs no
+  // arc or sight (4.9), and an Explosion grants none and ignores facing (4.7.6).
+  startAttack(uid: number, actionId: string, targetUid: number, mode?: 'attack' | 'intercept' | 'explosion'): void;
   // Brings a side tab forward by name.
-  showTab(name: 'squad' | 'details' | 'combat'): void;
+  showTab(name: 'squad' | 'details'): void;
   // The printed faces, for drawing the dice a roll landed on.
   diceData: DiceData | null;
   // Keeps the finished game on both accounts. Resolves to null when it landed,
@@ -243,7 +246,6 @@ let movePlan: {
   // not also spend the Maneuver Tick.
   free?: boolean;
 } | null = null;
-let targetUid: number | null = null; // enemy picked for damage bookkeeping
 // Whose card the Details tab is showing, when the player has asked for one
 // rather than taking the active unit's.
 let inspectUid: number | null = null;
@@ -255,9 +257,6 @@ export function showRangeOverlay(uid: number, kind: 'move' | 'range', n: number)
   rangeOverlay = n > 0 ? { uid, kind, n } : null;
   hudRef?.refresh();
 }
-// The Action just performed: its pool for the roll button, and its id so the
-// strip can tell whether it carries Knockback without guessing from the name.
-let attack: { y: number; r: number; name: string; actionId: string } | null = null;
 let recording = false;             // a record is being sent
 let recorded = false;              // and the server took it
 let recordNote: string | null = null;
@@ -299,6 +298,9 @@ function orderStripHtml(ctx: HudCtx): string {
 
 let board: Board | null = null;
 let hudRef: HudCtx | null = null;
+// A unit mid-walk. Redrawing the token layer under a running animation kills
+// it, so renderBoard leaves the layer alone until the walk is over.
+let animatingUid: number | null = null;
 
 // The same reachability the freeplay board offers: Large Grids within the
 // unit's Movement Range, terrain-aware, with Break Away and Crush priced the
@@ -453,10 +455,7 @@ function boardCallbacks(): BoardCallbacks {
       const ctx = hudRef;
       if (!ctx) return;
       const s = ctx.state;
-      const sc = ensureScript(s);
-      const actor = sc.opp ? s.tokens.find((x) => x.uid === sc.opp!.uid) : undefined;
       const t = uid !== null ? s.tokens.find((x) => x.uid === uid) : undefined;
-      if (t && actor && t.side !== actor.side) targetUid = targetUid === t.uid ? null : t.uid;
       // Clicking a unit opens ITS card, and it stays open. Without this the
       // Details tab snapped straight back to whoever held the Opportunity on
       // the very next render, which left a Projectile's own Detonate button
@@ -474,7 +473,12 @@ function boardCallbacks(): BoardCallbacks {
       // is a Maneuver attempt the engine judges.
       const su = normaliseSetup(ctx.state.setup);
       if (su && su.stage === 'deploy') {
-        if (fitsZone(ctx, t.side, snap, t.size ?? 1)) ctx.send({ kind: 'deployUnit', seat: t.side, uid, to: snap });
+        if (!fitsZone(ctx, t.side, snap, t.size ?? 1)) { ctx.refresh(); return; }
+        // Dragging the unit you are placing just moves the pending spot — it
+        // must not land, because landing passes the alternation to the other
+        // squad before you have confirmed anything.
+        if (pending && pending.uid === uid) pending = { ...pending, col: snap.col, row: snap.row };
+        else ctx.send({ kind: 'deployUnit', seat: t.side, uid, to: snap });
       } else if (canReach(ctx, t, snap.col, snap.row)) {
         // The drop only lands inside the unit's real Movement Range — the
         // same law the freeplay board enforces before offering a grid.
@@ -614,7 +618,9 @@ function renderBoard(ctx: HudCtx): void {
   }
   board.renderZones(ov.zones, deploy, claimed);
   board.renderTaskItems(tasks.items, (zone) => zoneCentreGrid(ctx.data.zoneData.zones, zone));
-  board.renderTokens(s);
+  // Everything else on the board still redraws while a unit is walking; only
+  // the token layer waits, because rebuilding it would cut the animation short.
+  if (animatingUid === null) board.renderTokens(s, pending ?? undefined);
   board.renderSmoke(s.smoke ?? []);
   board.renderMarkers(s.markers ?? []);
   board.setSelected(ensureScript(s).opp?.uid ?? null);
@@ -893,50 +899,10 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
         .join('')}</div>`
     : '';
   return `${ticks}${stanceRow}${rebootRow}
-    <button class="actrow k-moving${man.ok ? '' : ' warn'}"${man.ok ? '' : ` data-why="${esc(man.why ?? '')}"`} data-act="maneuver" title="${esc(man.ok ? 'Draw a route on the board, then confirm.' : man.why ?? '')}">
-      <span class="dotk"></span><span class="an">Maneuver</span><span class="ac">draw a route</span></button>
+    <button class="actrow k-moving${man.ok ? '' : ' warn'}"${man.ok ? '' : ` data-why="${esc(man.why ?? '')}"`} data-act="maneuver" title="${esc(man.ok ? `Draw a route on the board, then confirm. The Maneuver Value comes off the Chassis Card${t.stance === 'mobility' ? ', doubled by Mobility Stance' : ''} — a Movement Action carries its own, usually longer, Range.` : man.why ?? '')}">
+      <span class="dotk"></span><span class="an">Maneuver</span><span class="ac">${maneuverRange(ctx.data, t)} ${maneuverRange(ctx.data, t) === 1 ? 'grid' : 'grids'}${t.stance === 'mobility' && t.kind === 'mech' ? ' ×2' : ''}</span></button>
     ${ovlRow}
-    ${rows}
-    ${combatStrip(ctx)}`;
-}
-
-// The after-an-attack strip: shared dice, then the damage bookkeeping — the
-// same manual moves the physical table makes, each one a mirrored command.
-function combatStrip(ctx: HudCtx): string {
-  const s = ctx.state;
-  const target = targetUid !== null ? s.tokens.find((x) => x.uid === targetUid) : undefined;
-  const parts: string[] = [];
-  if (attack && (attack.y || attack.r)) {
-    parts.push(`<button class="rowwide" data-rollpool="${attack.y},${attack.r}">🎲 Roll ${attack.y ? `${attack.y}Y` : ''}${attack.r ? ` ${attack.r}R` : ''} — ${esc(attack.name)}</button>`);
-  }
-  parts.push(target
-    ? `<div class="dialrow"><span class="nm">Target: <b class="${target.side}">${esc(target.label)}</b></span><button class="rowbtn" data-act="untarget">clear</button></div>`
-    : `<p class="tp-note">Click an enemy token on the board to target it for damage.</p>`);
-  if (target) {
-    const slots = tokenCards(ctx.data, target).map(({ slot }) => slot);
-    const slotBtns = slots
-      .map((sl) => {
-        const st = target.partStates[sl as keyof typeof target.partStates] ?? 'intact';
-        return `<button class="rowbtn sl-${st}" data-pen="${esc(sl)}"${st === 'destroyed' ? ' disabled' : ''}>${esc(sl)}${st === 'damaged' ? ' ◐' : st === 'destroyed' ? ' ✕' : ''}</button>`;
-      })
-      .join('');
-    parts.push(`<div class="sect2" style="margin-top:8px">Penetrate</div><div class="btnwrap">${slotBtns}</div>`);
-    const dead = Object.values(target.partStates).every((p) => p === 'destroyed');
-    parts.push(`<div class="btnrow" style="margin-top:8px">
-      <button class="rowbtn" data-act="killpart">Score a Part kill</button>
-      <button class="rowbtn${dead ? ' warnb' : ''}" data-act="killunit">${dead ? 'Remove the unit' : 'Destroy the unit'}</button>
-    </div>`);
-    // An Action carrying Knockback X or Push X owes the victim a Forced
-    // Movement once the damage is settled, so the strip offers it here rather
-    // than leaving the players to remember an appendix keyword.
-    const actor = actingToken(ctx);
-    const kbAction = actor && attack?.actionId ? actionOn(ctx, actor, attack.actionId) : undefined;
-    const kb = kbAction ? knockbackOf(kbAction) : undefined;
-    if (kb && !target.aerial) {
-      parts.push(`<button class="rowwide" data-act="knockback" style="margin-top:8px">${kb.push ? 'Push' : 'Knockback'} ${kb.grids}<span class="ct">${kb.onHit ? 'on Hit' : 'appendix'}</span></button>`);
-    }
-  }
-  return `<div class="combat">${parts.join('')}</div>`;
+    ${rows}`;
 }
 
 function loopPanel(ctx: HudCtx, phase: LoopPhase): string {
@@ -1062,10 +1028,11 @@ function panelHtml(ctx: HudCtx): string {
   // An attack in the helper owns the screen until it is resolved; the turn
   // panel says so rather than offering a second set of damage buttons beside it.
   if (ctx.combatBusy()) {
-    return head('Your move', 'Resolving the attack', 'The Combat tab has the dice.', true)
-      + '<div class="tp-body"><p class="tp-note">Work through the roll there. What it settles — penetration, destruction, Knockback — travels to the other player on its own.</p></div><div class="tp-foot"></div>';
+    return head('Your move', 'Resolving the attack', 'The combat window has the dice.', true)
+      + '<div class="tp-body"><p class="tp-note">Work through the roll over the board. What it settles — the target Part, the Penetration, a destruction, a Knockback — is applied for you and travels to the other player on its own.</p></div><div class="tp-foot"></div>';
   }
   if (launchPlan) return launchPanel(ctx);
+  if (launchPick) return launchPickPanel(ctx);
   // A Counter-roll is a live two-player exchange, so it outranks everything
   // else on both screens until it is closed.
   if (ensureScript(s).counter) return counterPanel(ctx);
@@ -1158,7 +1125,15 @@ function designationSummary(ctx: HudCtx, owed: Designation[]): string {
 // what makes a move read as something that happened rather than a jump cut.
 export function animateRemoteMove(uid: number, from: { col: number; row: number }, to: { col: number; row: number }): void {
   if (!board || (from.col === to.col && from.row === to.row)) return;
+  // The command has already landed, so a render is moments away and
+  // renderTokens would replace the very element being animated — which is why
+  // the other player saw a snap while the mover saw a walk. Hold the token
+  // layer still for the length of the walk and redraw when it finishes.
+  animatingUid = uid;
   board.animateMove(uid, [from, to], () => {
+    // Two moves arriving back to back would have the first release the hold
+    // out from under the second, so only the walk that set it clears it.
+    if (animatingUid === uid) animatingUid = null;
     if (hudRef) renderBoard(hudRef);
   });
 }
@@ -1406,14 +1381,13 @@ function actingToken(ctx: HudCtx): Token | undefined {
   return sc.opp ? s.tokens.find((x) => x.uid === sc.opp!.uid) : undefined;
 }
 
+// The attempt is remembered so the 4.9 obligation can be judged when it ends,
+// and the roll itself is the shared AttackHelper — the same pipeline every
+// other attack goes through, just with no Protection and no arc.
 function beginIntercept(ctx: HudCtx, by: Token, actionId: string, target: Token): void {
-  const a = actionOn(ctx, by, actionId);
   interceptNow = { uid: by.uid, actionId, targetUid: target.uid };
   interceptPick = null;
-  targetUid = target.uid;
-  attack = a && ((a.yellowDice ?? 0) || (a.redDice ?? 0))
-    ? { y: a.yellowDice ?? 0, r: a.redDice ?? 0, name: a.name?.en || actionId, actionId }
-    : null;
+  ctx.startAttack(by.uid, actionId, target.uid, 'intercept');
 }
 
 function interceptPanel(ctx: HudCtx): string {
@@ -1426,8 +1400,7 @@ function interceptPanel(ctx: HudCtx): string {
     return head('Your move', `Intercepting ${at ? esc(at.label) : 'the target'}`, `${by ? esc(by.label) : ''} — ${esc(a?.name?.en || interceptNow.actionId)}.`, true)
       + `<div class="tp-body">
           <p class="tp-note">Line of sight always exists and no Forward Arc is required. The target claims no Terrain or Unit Protection dice (4.9).</p>
-          <p class="tp-dim">${left} Interception Token${left === 1 ? '' : 's'} left on that Part, for the rest of the game.</p>
-          ${combatStrip(ctx)}
+          <p class="tp-dim">${left} Interception Token${left === 1 ? '' : 's'} left on that Part, for the rest of the game. Roll it out in the combat window.</p>
         </div>
         <div class="tp-foot"><button class="bigbtn" data-act="interceptdone">Done — this attempt is resolved</button></div>`;
   }
@@ -1784,6 +1757,84 @@ function chargePanel(ctx: HudCtx): string {
        <div class="tp-foot"><button class="bigbtn ghost2" data-act="chargecancel">${m.on ? 'Cancel' : 'Keep it'}</button></div>`;
 }
 
+// ---------- what an Action opens ----------
+//
+// A faithful mirror of performGuided() in main.ts, in the same order: the guide
+// plays the turn rather than tallying it, so every Action Type opens the tool
+// that actually resolves it. The one deliberate difference is when the Tick is
+// spent — freeplay opens the tool and pays on success, the Match Centre pays
+// first because 3.4.5 performs an Action the moment it is declared and the
+// command has to travel before either player can act on it.
+//
+// Anything added to performGuided belongs here too, or the Match Centre goes
+// back to spending Ticks and doing nothing.
+
+// A Projectile Action that can put more than one thing on the board asks which.
+let launchPick: { uid: number; actionId: string; cardIds: string[] } | null = null;
+
+function routeAction(ctx: HudCtx, t: Token, a: CardAction, ga?: ReturnType<typeof guidedActions>[number]): void {
+  if (isChargeAction(a)) {
+    chargePlan = { uid: t.uid, on: true };
+    return;
+  }
+  const supply = resupplyOf(a);
+  if (supply) {
+    resupplyPick = { uid: t.uid, actionId: a.id, rule: supply };
+    return;
+  }
+  if (a.type === 'Firing' || a.type === 'Melee') {
+    // A [Charged] Part offers to spend its token before the attack, exactly as
+    // offerChargeSpend does ahead of the targeting step.
+    if (ga?.charge?.charged) chargePlan = { uid: t.uid, on: false, actionId: a.id };
+    else if (isElectronicAttack(a)) ewPick = { uid: t.uid, actionId: a.id };
+    else attackPick = { uid: t.uid, actionId: a.id };
+    return;
+  }
+  if (a.type === 'Moving') {
+    startMovePlan(ctx, t, {
+      range: a.range || undefined,
+      label: `${a.name?.en || a.id} · Range ${a.range || maneuverRange(ctx.data, t)}`,
+      shoveActionId: knockbackOf(a, ctx.data.actionTranslation(a.id)?.english ?? undefined) ? a.id : undefined,
+      free: true,
+    });
+    return;
+  }
+  if (a.type === 'Projectile') {
+    const shot = ga?.projectiles ?? [];
+    if (!shot.length) {
+      ctx.noteNow(`${a.name?.en || a.id} is a Projectile Action, but the card data does not say what it puts on the board. Place it by hand from the squad list.`);
+      return;
+    }
+    if (shot.length === 1) startLaunchPlan(t.uid, a.id, shot[0].id, shot[0].name?.en || shot[0].id);
+    else launchPick = { uid: t.uid, actionId: a.id, cardIds: shot.map((c) => c.id) };
+    return;
+  }
+  // A Projectile resolving its payload in the Delay Phase opens the same
+  // Detonation resolver its card button uses (3.6.2).
+  if (t.kind === 'projectile' && a.type !== 'Passive') {
+    startDetonation(t.uid, a.id);
+    return;
+  }
+  // Swift and Tactical Actions are card text rather than a board procedure, so
+  // the card is put in front of the player to carry out.
+  ctx.showTab('details');
+  ctx.noteNow(`${a.name?.en || a.id}: follow the Action text on the card.`);
+}
+
+function launchPickPanel(ctx: HudCtx): string {
+  const m = launchPick!;
+  const t = ctx.state.tokens.find((x) => x.uid === m.uid);
+  const rows = m.cardIds
+    .map((id) => {
+      const c = ctx.data.byId.get(id);
+      return c ? `<button class="rowwide" data-launchpick="${esc(id)}">${esc(cardName(c))}<span class="ct">${esc(c.category ?? '')}</span></button>` : '';
+    })
+    .join('');
+  return head('Your move', 'What are you launching?', `${t ? esc(t.label) : 'This Action'} can put more than one thing on the board.`, true)
+    + `<div class="tp-body">${rows}</div>
+       <div class="tp-foot"><button class="bigbtn ghost2" data-act="launchpickcancel">Cancel</button></div>`;
+}
+
 // ---------- attacking (rulebook 4.4) ----------
 //
 // The card picks the Action; the panel asks which enemy, then hands the whole
@@ -1969,8 +2020,6 @@ export function startDetonation(uid: number, actionId: string): void {
   }
   detonateNow = { uid, actionId };
   detonateStatus = /interfer|jam|stun/i.test(`${a.name?.en ?? ''} ${detonationText(ctx, a)}`) ? 'fci' : 'smoke';
-  targetUid = null;
-  attack = null;
   ctx.refresh();
 }
 
@@ -2046,7 +2095,7 @@ function detonatePanel(ctx: HudCtx): string {
            : 'No units and no Destructible Terrain within range. A Projectile whose Delayed Action needs a target is destroyed instead (4.7.5).'}</p>
        ${rows}
        ${terrainRows ? `<div class="sect2" style="margin-top:10px">Or hit Destructible Terrain</div><p class="tp-dim">Terrain takes no roll — it is removed directly when an attack hits it (p.21).</p>${terrainRows}` : ''}
-       ${targetUid !== null ? combatStrip(ctx) : ''}`
+       `
     : `<p class="tp-note">${esc(a ? detonationText(ctx, a) : 'See the card for what this detonation does.')}</p>
        <p class="tp-dim">This detonation causes an effect rather than damage, so there is no attack roll. Pick the token it applies, then the units inside the blast. The card text is what actually happens; the token is a reminder on the board.</p>
        <div class="stancerow">${STATUSES.filter((d) => !d.appliesTo || targets.some(({ t }) => d.appliesTo!.includes(t.kind)))
@@ -2409,7 +2458,7 @@ function secOverlay(ctx: HudCtx): string {
 // an attack starting has to put the Combat tab in front by itself.
 let sideTabHost: HTMLElement | null = null;
 
-export function showSideTab(host: HTMLElement | null, name: 'squad' | 'details' | 'combat'): void {
+export function showSideTab(host: HTMLElement | null, name: 'squad' | 'details'): void {
   const root = host ?? sideTabHost;
   if (!root) return;
   for (const x of root.querySelectorAll<HTMLElement>('.hudtab')) x.classList.toggle('active', x.dataset.sidetab === name);
@@ -2438,17 +2487,22 @@ export function ensureHud(host: HTMLElement, ctx: HudCtx): void {
         <div class="hudtabs">
           <button class="hudtab active" data-sidetab="squad">Squads</button>
           <button class="hudtab" data-sidetab="details">Details</button>
-          <button class="hudtab" data-sidetab="combat">Combat</button>
         </div>
         <section id="tab-squad" class="side-tab active"><div id="squad-body"></div></section>
         <section id="tab-details" class="side-tab"><div id="details-body"></div></section>
-        <!-- The freeplay AttackHelper renders straight into #combat-body, and
-             match.html already loads styles.css, so its markup arrives styled.
-             This section is written once and never by a re-render — the helper
-             owns what is inside it for as long as an attack is running. -->
-        <section id="tab-combat" class="side-tab"><div id="combat-body"></div></section>
       </div>
-    </div><div id="hud-veils"></div>`;
+    </div>
+    <!-- The freeplay AttackHelper renders straight into #combat-body, and
+         match.html already loads styles.css, so its markup arrives styled. It
+         floats over the board rather than living in a tab, because resolving an
+         attack is the thing you are doing, not a panel you consult. Written
+         once and never by a re-render: the helper owns its contents for as long
+         as an attack is running. -->
+    <div id="combat-pop" class="combatpop" hidden>
+      <div class="combatpop-head"><b>Combat</b><span class="cp-hint">4.4 · the roll, the defence and the damage</span></div>
+      <div id="combat-body"></div>
+    </div>
+    <div id="hud-veils"></div>`;
     board = new Board(host.querySelector('#mc-board')!, boardCallbacks());
     // The shell was written this frame, so the board's own fit ran against a
     // column that had not settled yet.
@@ -2462,7 +2516,7 @@ export function ensureHud(host: HTMLElement, ctx: HudCtx): void {
     zc.querySelector('#btn-zones')!.addEventListener('click', () => hudRef?.toggleZones());
     ctx.mountSide();
     for (const b of host.querySelectorAll<HTMLElement>('[data-sidetab]')) {
-      b.addEventListener('click', () => showSideTab(host, b.dataset.sidetab as 'squad' | 'details' | 'combat'));
+      b.addEventListener('click', () => showSideTab(host, b.dataset.sidetab as 'squad' | 'details'));
     }
     sideTabHost = host;
   }
@@ -2476,6 +2530,9 @@ export function ensureHud(host: HTMLElement, ctx: HudCtx): void {
     zb.classList.toggle('on', ctx.zonesOn);
     zb.setAttribute('aria-pressed', ctx.zonesOn ? 'true' : 'false');
   }
+  // The combat window is up exactly while an attack is being resolved.
+  const pop = host.querySelector<HTMLElement>('#combat-pop');
+  if (pop) pop.hidden = !ctx.combatBusy();
   wireHud(host, ctx);
   renderBoard(ctx);
   // A unit the player clicked wins over the active one, until it leaves the
@@ -2599,8 +2656,6 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     const t = sc.opp ? s.tokens.find((x) => x.uid === sc.opp!.uid) : undefined;
     if (t) {
       const v = ctx.send({ kind: 'performAction', seat: t.side, uid: t.uid, actionId: el.dataset.doact! });
-      const [y, r] = (el.dataset.pool ?? '0,0').split(',').map(Number);
-      if (v.ok && (y || r)) attack = { y, r, name: el.dataset.an ?? 'attack', actionId: el.dataset.doact! };
       // Two Common Actions do more than spend a Tick, and the work lives in
       // its own command: Stabilize sheds a Status and restores Link, Reveal
       // leaves the Optical Camouflage State. Performing them without this was
@@ -2622,33 +2677,15 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
         ctx.noteNow('Reveal: out of the Optical Camouflage State. Now make Manifestation Movement, up to this unit\'s Stealth value, to where it really is.');
       }
       // An Action that grants an Extra Action Opportunity asks who takes it,
-      // the same question the guide asks in its dialog.
+      // the same question the guide asks in its dialog. Everything else about
+      // what the Action opens is routeAction's job, mirroring performGuided.
       if (v.ok) {
         const act = guidedActions(ctx.data, t, { tokens: s.tokens, terrain: terrainOf(ctx) })
           .find((g) => g.action.id === el.dataset.doact);
         const grant = act ? extraActivationOf(act.action) : undefined;
         if (grant) grantPick = { from: t.uid, grant };
-        // A Charge Action turns a token face-up; an Action marked [Charged]
-        // offers to spend the one its own Part is holding. Both are questions,
-        // so neither happens on its own (4.14).
-        const common = ctx.data.commonActions.find((a) => a.id === el.dataset.doact);
-        const performed = act?.action ?? common;
-        if (performed && isChargeAction(performed)) chargePlan = { uid: t.uid, on: true };
-        else if (act?.charge?.charged) chargePlan = { uid: t.uid, on: false, actionId: act.action.id };
-        // An Action that puts Ammo back asks who gets it (4.13).
-        const supply = performed ? resupplyOf(performed) : undefined;
-        if (supply) resupplyPick = { uid: t.uid, actionId: performed!.id, rule: supply };
-        // A Movement Action moves the unit, and by its OWN printed Range — the
-        // chassis Maneuver Value is a different number. Without this the Action
-        // spent its Tick and nothing on the board changed.
-        if (performed?.type === 'Moving') {
-          startMovePlan(ctx, t, {
-            range: performed.range || undefined,
-            label: `${performed.name?.en || performed.id} · Range ${performed.range || maneuverRange(ctx.data, t)}`,
-            shoveActionId: knockbackOf(performed, ctx.data.actionTranslation(performed.id)?.english ?? undefined) ? performed.id : undefined,
-            free: true,
-          });
-        }
+        const performed = act?.action ?? ctx.data.commonActions.find((a) => a.id === el.dataset.doact);
+        if (performed) routeAction(ctx, t, performed, act);
       }
     }
     ctx.refresh();
@@ -2667,6 +2704,14 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
   // its Interceptions; cancelling with nothing down owes none.
   on('[data-act="launchcancel"]', () => finishLaunchPlan(ctx));
   on('[data-act="launchundo"]', () => undoLaunched(ctx));
+  on('[data-launchpick]', (el) => {
+    const m = launchPick;
+    launchPick = null;
+    const c = ctx.data.byId.get(el.dataset.launchpick!);
+    if (m && c) startLaunchPlan(m.uid, m.actionId, c.id, c.name?.en || c.id);
+    ctx.refresh();
+  });
+  on('[data-act="launchpickcancel"]', () => { launchPick = null; ctx.refresh(); });
   on('[data-attacktarget]', (el) => {
     const m = attackPick;
     attackPick = null;
@@ -2783,19 +2828,14 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
   });
   on('[data-act="shovego"]', () => resolveShove(ctx));
   on('[data-act="shovecancel"]', () => { shovePlan = null; ctx.refresh(); });
-  on('[data-act="knockback"]', () => {
-    const actor = actingToken(ctx);
-    if (actor && attack?.actionId && targetUid !== null) startShove(actor.uid, attack.actionId, targetUid);
-    ctx.refresh();
-  });
+  // Knockback is no longer a button either: the helper's onKnockback fires when
+  // the attack finishes and opens the Forced Movement panel itself.
   // ---------- Detonation (4.7.5) ----------
+  // The Explosion is the same pipeline as any other attack, just with facing,
+  // sight and Protection all out of scope (4.7.6).
   on('[data-dettarget]', (el) => {
     const proj = s.tokens.find((x) => x.uid === detonateNow?.uid);
-    const a = proj && detonateNow ? actionOn(ctx, proj, detonateNow.actionId) : undefined;
-    targetUid = Number(el.dataset.dettarget);
-    attack = a && ((a.yellowDice ?? 0) || (a.redDice ?? 0))
-      ? { y: a.yellowDice ?? 0, r: a.redDice ?? 0, name: a.name?.en || detonateNow!.actionId, actionId: detonateNow!.actionId }
-      : null;
+    if (proj && detonateNow) ctx.startAttack(proj.uid, detonateNow.actionId, Number(el.dataset.dettarget), 'explosion');
     ctx.refresh();
   });
   on('[data-detterrain]', (el) => {
@@ -2818,8 +2858,6 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
   on('[data-act="detdone"]', () => {
     const proj = s.tokens.find((x) => x.uid === detonateNow?.uid);
     detonateNow = null;
-    attack = null;
-    targetUid = null;
     if (proj) {
       ctx.send({ kind: 'despawn', seat: proj.side, uid: proj.uid, targetUid: proj.uid });
       ctx.noteNow(`${proj.label} detonated and is destroyed (4.7.5).`);
@@ -2828,8 +2866,6 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
   });
   on('[data-act="detcancel"]', () => {
     detonateNow = null;
-    attack = null;
-    targetUid = null;
     ctx.refresh();
   });
   on('[data-act="smokeauto"]', () => {
@@ -2880,7 +2916,6 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
   on('[data-act="interceptdone"]', () => {
     const f = interceptNow;
     interceptNow = null;
-    attack = null;
     if (f) {
       const by = s.tokens.find((x) => x.uid === f.uid);
       const at = s.tokens.find((x) => x.uid === f.targetUid);
@@ -2896,7 +2931,6 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
         ctx.noteNow(`${at.label} survived, so ${by.label} must Intercept again until its Tokens run out or the target is destroyed (4.9). ${left} left.`);
       }
     }
-    if (targetUid !== null && !s.tokens.some((x) => x.uid === targetUid)) targetUid = null;
     ctx.refresh();
   });
   on('[data-depstance]', (el) => { deployStance = el.dataset.depstance as Stance; ctx.refresh(); });
@@ -2937,33 +2971,10 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
   });
   on('[data-act="commitmove"]', () => commitMove(ctx));
   on('[data-act="cancelmove"]', () => cancelMove(ctx));
-  on('[data-rollpool]', (el) => {
-    const [y, r] = el.dataset.rollpool!.split(',').map(Number);
-    void ctx.rollPool(y, r, attack?.name ?? 'attack').then(() => ctx.refresh());
-  });
-  on('[data-act="untarget"]', () => { targetUid = null; ctx.refresh(); });
-  // Damage is attributed to whoever is acting, which during an Interception is
-  // the intercepting Part and not the Mech whose Opportunity is open.
-  on('[data-pen]', (el) => {
-    const actor = actingToken(ctx);
-    if (actor && targetUid !== null) {
-      ctx.send({ kind: 'applyPenetration', seat: actor.side, uid: actor.uid, targetUid, slot: el.dataset.pen as never });
-    }
-    ctx.refresh();
-  });
-  on('[data-act="killpart"]', () => {
-    const actor = actingToken(ctx);
-    if (actor && targetUid !== null) ctx.send({ kind: 'recordKill', seat: actor.side, uid: actor.uid, targetUid, what: 'part' });
-    ctx.refresh();
-  });
-  on('[data-act="killunit"]', () => {
-    const actor = actingToken(ctx);
-    if (actor && targetUid !== null) {
-      ctx.send({ kind: 'recordKill', seat: actor.side, uid: actor.uid, targetUid, what: 'unit' });
-      targetUid = null;
-    }
-    ctx.refresh();
-  });
+  // Rolling the pool, choosing the Part, applying the Penetration and recording
+  // the kill all used to be buttons here. They belong to the AttackHelper now:
+  // it walks the whole of 4.4 and issues the same commands at the right moment,
+  // which is what "the app does the work and says what it did" means.
   on('[data-award]', (el) => {
     const side = el.dataset.award as Side;
     ctx.send({ kind: 'award', seat: me(), vp: { s1: side === 's1' ? 1 : 0, s2: side === 's2' ? 1 : 0 }, keys: [] });
@@ -2975,11 +2986,9 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
       const t = s.tokens.find((x) => x.uid === sc.opp!.uid);
       ctx.send({ kind: 'endOpportunity', seat: t?.side ?? me(), uid: sc.opp.uid });
     }
-    attack = null;
     movePlan = null;
     inspectUid = null;
     board?.clearMovePath();
-    if (targetUid !== null && !s.tokens.some((x) => x.uid === targetUid)) targetUid = null;
     ctx.refresh();
   });
   on('[data-endstep]', (el) => {

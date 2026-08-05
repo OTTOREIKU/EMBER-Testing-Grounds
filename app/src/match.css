@@ -312,6 +312,27 @@ input.f.codebox { font-family: var(--mono); font-size: 16px; letter-spacing: 5px
 }
 .picksect:first-of-type { margin-top: 8px; }
 
+/* The combat window: the §4.4 pipeline floating over the board, because
+   resolving an attack is the thing you are doing rather than a panel you
+   consult. Tone and shadow only, like everything else on this page. */
+.combatpop {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  z-index: 40; width: min(430px, calc(100% - 28px)); max-height: calc(100% - 28px);
+  display: flex; flex-direction: column;
+  background: var(--surface); border-radius: var(--radius-lg);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.55);
+}
+.combatpop[hidden] { display: none; }
+.combatpop-head {
+  display: flex; align-items: baseline; gap: 9px; padding: 11px 14px 8px;
+  font-size: 12.5px;
+}
+.combatpop-head .cp-hint { font-size: 9.5px; color: var(--text3); }
+.combatpop #combat-body { overflow: auto; padding: 0 14px 14px; min-height: 0; }
+/* The helper's own markup comes from styles.css; it only needs to stop
+   assuming it sits in a full-height sidebar. */
+.combatpop .attack-helper { max-width: none; }
+
 /* the lobby roster: what is on your side, and the way to take it back off */
 .roster { margin-top: 7px; display: flex; flex-direction: column; gap: 3px; }
 .rosterrow {
@@ -329,7 +350,9 @@ input.f.codebox { font-family: var(--mono); font-size: 16px; letter-spacing: 5px
 
 /* ---------- the in-match HUD ---------- */
 .mc-stage.hudmode { padding: 0; flex: 1; min-height: 0; min-width: 0; display: flex; }
-.hud { display: flex; flex: 1; min-height: 0; min-width: 0; }
+/* `relative` so the combat window can float over the board inside the shell
+   rather than over the whole viewport. */
+.hud { display: flex; flex: 1; min-height: 0; min-width: 0; position: relative; }
 .hudmain { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .timeline { display: flex; align-items: stretch; background: var(--surface2); }
 .roundchip { padding: 8px 13px; font-family: var(--mono); font-size: 11px; color: var(--text2); background: var(--surface3); display: flex; align-items: center; }

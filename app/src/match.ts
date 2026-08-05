@@ -10,6 +10,7 @@ import { countHits, normaliseSetup } from './setup';
 import { gameResult, normaliseTasks, taskItemsFor } from './tasks';
 import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
 import { loadMechPresets } from './presets';
+import { installTooltip, preloadCards } from './tooltip';
 import { importSquadFile } from './importer';
 import { dialsOf, hashDials, newSalt, type DialEntry } from './secrecy';
 import { animateRemoteMove, ensureHud, glueAfter, showRangeOverlay, showSideTab, startAttackPick, startDetonation, startElectronicPick, startInterceptPick, startLaunchPlan, startShove, type DiceLine, type HudCtx } from './matchhud';
@@ -327,7 +328,7 @@ function combatRoller() {
     : null;
 }
 
-function startAttack(uid: number, actionId: string, targetUid: number): void {
+function startAttack(uid: number, actionId: string, targetUid: number, mode: 'attack' | 'intercept' | 'explosion' = 'attack'): void {
   if (!data || !attackHelper) return;
   const attacker = state.tokens.find((t) => t.uid === uid);
   const defender = state.tokens.find((t) => t.uid === targetUid);
@@ -337,10 +338,19 @@ function startAttack(uid: number, actionId: string, targetUid: number): void {
   if (!attacker || !defender || !action) return;
   const terrain = terrainNow();
   const smoke = state.smoke ?? [];
-  const prot = protectionFor(attacker, defender, action, terrain, state.tokens, smoke);
+  // Interception and Explosion both hand the defender no Terrain or Unit
+  // Protection, and neither checks arc or line of sight — so the reading of the
+  // board that an ordinary attack needs would be wrong guidance for them.
+  const note = mode === 'intercept'
+    ? 'Interception: line of sight always exists and no Forward Arc is required, and the target claims no Terrain or Unit Protection (4.9).'
+    : mode === 'explosion'
+      ? 'Explosion damage ignores line of sight and facing, and the defender claims no Terrain or Unit Protection (4.7.6).'
+      : losNote(attacker, defender, action, terrain, state.tokens, smoke);
+  const prot = mode === 'attack'
+    ? protectionFor(attacker, defender, action, terrain, state.tokens, smoke)
+    : { white: 0, note: '' };
   attackHelper.roller = combatRoller();
-  attackHelper.start(attacker, action, defender, losNote(attacker, defender, action, terrain, state.tokens, smoke), prot.white, prot.note);
-  showSideTab(null, 'combat');
+  attackHelper.start(attacker, action, defender, note, prot.white, prot.note, mode === 'explosion');
   render();
 }
 
@@ -1437,5 +1447,10 @@ void (async () => {
   data = d;
   account = user;
   diceData = dice;
+  // The squad list and the card panel already tag their rows with
+  // `data-tip-card`; this is the delegated listener that turns those into the
+  // hover previews the freeplay board has. Nothing else was missing.
+  installTooltip();
+  preloadCards(d.cards.map((c) => c.id));
   render();
 })();
