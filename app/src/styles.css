@@ -1069,6 +1069,11 @@ body.targeting #hint { color: var(--accent); font-weight: 700; }
 .side-s2 .token-base { stroke: var(--sq-s2); fill: color-mix(in srgb, var(--sq-s2) 13%, #fff); }
 .token.aerial .token-base { fill-opacity: 0.65; stroke-dasharray: 4 3; }
 .token.selected .token-base { stroke-width: 3.5; filter: drop-shadow(0 0 5px #f0b42999); }
+/* A placement made but not confirmed: the real unit, drawn as not-quite-there
+   so it reads as a proposal rather than a landed model. It is still draggable,
+   which is the whole point of showing it. */
+.token.pending { opacity: 0.6; }
+.token.pending .token-base { stroke-dasharray: 5 3; }
 .token-facing { stroke: #fff; stroke-width: 1.5; stroke-linejoin: round; paint-order: stroke; }
 .token-squad-dot { fill: #11151a; stroke: #fff; stroke-width: 1.2; opacity: 0.92; }
 .side-s1 .token-squad-dot { stroke: var(--sq-s1); }
