@@ -23,11 +23,18 @@ globalThis.WebSocket = FakeSocket;
 // Timers are collected rather than run, so a test decides when the reconnect
 // backoff fires instead of racing it.
 const timers = [];
+// The heartbeat's interval is collected the same way, so a test can fire a
+// beat on demand rather than waiting fifteen real seconds for one.
+const beats = new Map();
+let nextBeat = 1;
 globalThis.window = {
   setTimeout: (fn) => { timers.push(fn); return timers.length; },
   clearTimeout: () => {},
+  setInterval: (fn) => { const id = nextBeat++; beats.set(id, fn); return id; },
+  clearInterval: (id) => { beats.delete(id); },
 };
 const flushTimers = () => { const due = timers.splice(0); for (const fn of due) fn(); };
+const beat = () => { for (const fn of [...beats.values()]) fn(); };
 
 const src = readFileSync(new URL('../src/net.ts', import.meta.url), 'utf8');
 const tmp = new URL('./_net.slice.ts', import.meta.url);
@@ -44,7 +51,7 @@ const check = (name, got, want) => {
 const ROOM = { id: 'AB2CD', epoch: 1, revision: 0, seats: { s1: 'me', s2: 'them' }, online: { s1: true, s2: true }, hasCheckpoint: true };
 
 // A relay already seated in a room, which is the state everything below tests.
-function seated(seat = 's1') {
+function seated(seat = 's1', fingerprint) {
   const applied = [];
   const boards = [];
   const catchup = [];
@@ -56,6 +63,7 @@ function seated(seat = 's1') {
     onNeedCheckpoint: () => { needed++; },
     onChange: () => {},
     snapshot: () => ({ board: true }),
+    ...(fingerprint ? { fingerprint } : {}),
   });
   relay.host();
   const ws = FakeSocket.instances.at(-1);
@@ -187,6 +195,71 @@ check('carrying the revision that now includes it', late[0]?.rev, 1);
 const f = seated();
 f.ws.deliver({ t: 'needCheckpoint' });
 check('a request for the board reaches the app', f.needed(), 1);
+
+// ---------- the heartbeat ----------
+
+const hb1 = seated();
+beat();
+check('a quiet socket gets a ping', hb1.ws.kinds(), ['ping']);
+hb1.ws.sent.length = 0;
+hb1.ws.deliver({ t: 'pong' });
+check('and the pong is not mistaken for a command', hb1.applied.length, 0);
+// Anything arriving counts as a sign of life, so a busy game never pings.
+const hb2 = seated();
+hb2.ws.deliver({ t: 'cmd', rev: 1, seat: 's2', seq: 1, cmd: { kind: 'one' } });
+hb2.ws.sent.length = 0;
+beat();
+check('traffic postpones the ping', hb2.ws.kinds(), ['ping']);
+// A black-holed socket never fires onclose by itself, so the beat closes it —
+// that is the only path that schedules a reconnect.
+const hb3 = seated();
+hb3.relay.heard = Date.now() - 60_000;
+beat();
+check('a socket that has gone deaf is closed', hb3.ws.readyState, 3);
+check('and closing it asks for a reconnect', hb3.relay.state.status, 'connecting');
+
+// ---------- drift ----------
+
+const same = () => 'aaaa1111';
+// The sender was at revision 0 and so are we, and the boards agree.
+const d1 = seated('s1', same);
+d1.ws.deliver({ t: 'cmd', rev: 1, seat: 's2', seq: 1, cmd: { kind: 'ok' }, fp: '0:aaaa1111' });
+check('a matching fingerprint applies as normal', d1.applied.map((c) => c.kind), ['ok']);
+check('and asks for nothing', d1.ws.kinds(), []);
+
+const d2 = seated('s1', same);
+d2.ws.deliver({ t: 'cmd', rev: 1, seat: 's2', seq: 1, cmd: { kind: 'no' }, fp: '0:bbbb2222' });
+check('boards that disagree do not apply the command', d2.applied.length, 0);
+check('and a resync is asked for', d2.ws.kinds(), ['resync']);
+check('the desync is flagged for the UI', d2.relay.state.desynced, true);
+
+// The sender may have been behind when it stamped: it had not yet seen the
+// commands we already applied, so the two hashes describe different moments
+// and comparing them would cry wolf.
+const d3 = seated('s1', same);
+d3.ws.deliver({ t: 'cmd', rev: 1, seat: 's2', seq: 1, cmd: { kind: 'one' }, fp: '0:aaaa1111' });
+d3.ws.deliver({ t: 'cmd', rev: 2, seat: 's2', seq: 2, cmd: { kind: 'two' }, fp: '0:bbbb2222' });
+check('a stale fingerprint is ignored rather than trusted', d3.applied.map((c) => c.kind), ['one', 'two']);
+
+// Our own command echoed back carries our own fingerprint; comparing it to
+// ourselves proves nothing and the board has already moved on.
+const d4 = seated('s1', () => String(Math.random()));
+d4.relay.publish({ kind: 'mine', seat: 's1' });
+d4.ws.sent.length = 0;
+d4.ws.deliver({ t: 'cmd', rev: 1, seat: 's1', seq: 1, cmd: { kind: 'mine' }, fp: '0:whatever' });
+check('our own echo is never drift-checked', d4.ws.kinds(), []);
+
+// An app that offers no fingerprint keeps the old behaviour exactly.
+const d5 = seated();
+d5.ws.deliver({ t: 'cmd', rev: 1, seat: 's2', seq: 1, cmd: { kind: 'ok' }, fp: '0:bbbb2222' });
+check('no fingerprint hook means no drift checking', d5.applied.map((c) => c.kind), ['ok']);
+
+// And the stamp we send carries the revision we were at.
+const d6 = seated('s1', same);
+d6.ws.deliver({ t: 'cmd', rev: 1, seat: 's2', seq: 1, cmd: { kind: 'one' }, fp: '0:aaaa1111' });
+d6.ws.sent.length = 0;
+d6.relay.publish({ kind: 'mine', seat: 's1' });
+check('our own stamp names the revision it describes', d6.ws.sent[0].fp, '1:aaaa1111');
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

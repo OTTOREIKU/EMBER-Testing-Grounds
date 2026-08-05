@@ -62,6 +62,11 @@ export interface NetHooks {
   onChange(view: NetView): void;
   // Our own board, for publishing.
   snapshot(): unknown;
+  // A short digest of the facts both clients must agree on, or null to opt out
+  // of drift checking. Whatever legitimately differs between the two — a
+  // Timing Dial before its reveal — has to be left out, or every Planning
+  // Phase reads as a desync.
+  fingerprint?(): string | null;
 }
 
 function relayUrl(apiBase: string): string {
@@ -94,6 +99,13 @@ export class Relay {
   private checkpointDue = false;
   private retry = 0;
   private retryTimer: number | undefined;
+  // The client half of the liveness check. The server pings every 10s and
+  // terminates whoever stops answering, but a browser never sees those frames,
+  // so this end cannot tell a black-holed socket from an opponent taking their
+  // time — and a turn-based game is quiet for minutes at a stretch. So we ping
+  // too, and treat a silence longer than a few rounds of it as a dead line.
+  private beat: number | undefined;
+  private heard = 0;
   private wanted: { kind: 'create' } | { kind: 'join'; room: string } | null = null;
   // Rolls this client asked for and is still waiting on, by request id.
   private rolls = new Map<string, { resolve: (d: RolledDie[]) => void; reject: (e: Error) => void; timer: number }>();
@@ -153,9 +165,63 @@ export class Relay {
     this.hooks.onCatchUp(false);
   }
 
+  // Every 15s while a socket is open, with a 45s silence — three unanswered
+  // beats — counting as gone. Long enough that a phone waking up or a slow
+  // hop reconnects on its own rather than being torn down mid-turn.
+  private static readonly BEAT_MS = 15_000;
+  private static readonly DEAF_MS = 45_000;
+
+  // `<rev>:<hash>` — the board this client had applied, and how far it had got.
+  // Null when the app offers no fingerprint, which is how the board page opts
+  // out without a second code path.
+  private stamp(): string | null {
+    const fp = this.hooks.fingerprint?.();
+    return fp === undefined || fp === null ? null : `${this.lastRev}:${fp}`;
+  }
+
+  // A command carries the sender's board as it was before it. If we are at the
+  // same revision we can hold ours against it, and a difference means the two
+  // boards have drifted while every revision arrived — which no gap check can
+  // see, because the numbers agree. That is the shape a non-deterministic
+  // apply() takes, and it is silent without this.
+  private driftedFrom(raw: unknown): boolean {
+    if (typeof raw !== 'string') return false;
+    const at = raw.indexOf(':');
+    if (at < 1) return false;
+    const rev = Number(raw.slice(0, at));
+    // Their board was one revision behind this command, ours is too, and only
+    // then do the two describe the same moment.
+    if (!Number.isInteger(rev) || rev !== this.lastRev) return false;
+    const mine = this.hooks.fingerprint?.();
+    if (mine === undefined || mine === null) return false;
+    return mine !== raw.slice(at + 1);
+  }
+
+  private startBeat(): void {
+    window.clearInterval(this.beat);
+    this.heard = Date.now();
+    this.beat = window.setInterval(() => {
+      if (this.ws?.readyState !== WebSocket.OPEN) return;
+      if (Date.now() - this.heard > Relay.DEAF_MS) {
+        // Closing by hand is what makes it recoverable: onclose is the only
+        // path that schedules a reconnect, and a black-holed socket will never
+        // fire it on its own.
+        this.ws.close();
+        return;
+      }
+      this.send({ t: 'ping' });
+    }, Relay.BEAT_MS);
+  }
+
+  private stopBeat(): void {
+    window.clearInterval(this.beat);
+    this.beat = undefined;
+  }
+
   leave(): void {
     this.wanted = null;
     window.clearTimeout(this.retryTimer);
+    this.stopBeat();
     this.endReplay();
     this.retry = 0;
     this.pending = [];
@@ -182,7 +248,11 @@ export class Relay {
     this.seq += 1;
     const entry = { seq: this.seq, cmd };
     this.pending.push(entry);
-    this.send({ t: 'cmd', ...entry });
+    // The board as it stood before this command. The revision rides inside the
+    // string rather than as a second field, so the server forwards one opaque
+    // value and never has to know what it means — and the receiver can tell
+    // whether it is even comparable.
+    this.send({ t: 'cmd', ...entry, fp: this.stamp() });
   }
 
   // Asks the server to roll. The faces come back from there rather than from
@@ -249,14 +319,20 @@ export class Relay {
 
     ws.onopen = () => {
       this.retry = 0;
+      this.startBeat();
       if (this.wanted?.kind === 'create') this.send({ t: 'create' });
       else if (this.wanted?.kind === 'join') this.send({ t: 'join', room: this.wanted.room });
     };
 
-    ws.onmessage = (ev) => this.receive(String(ev.data));
+    ws.onmessage = (ev) => {
+      // Anything at all counts as a sign of life, so a busy game never pings.
+      this.heard = Date.now();
+      this.receive(String(ev.data));
+    };
 
     ws.onclose = () => {
       this.ws = null;
+      this.stopBeat();
       // A tail cut off halfway must not leave the board waiting to be drawn.
       this.endReplay();
       if (!this.wanted) {
@@ -284,6 +360,11 @@ export class Relay {
 
     switch (msg.t) {
       case 'welcome':
+        return;
+
+      // Nothing to do: arriving at all is the whole point, and onmessage has
+      // already stamped it.
+      case 'pong':
         return;
 
       case 'room': {
@@ -345,6 +426,17 @@ export class Relay {
           // nothing from the other player and no button from this one.
           if (!this.view.desynced) {
             this.set({ desynced: true, error: 'Fell behind. Catching up…' });
+            this.send({ t: 'resync' });
+          }
+          return;
+        }
+        // Before lastRev moves and before anything is applied: the sender's
+        // fingerprint describes the board *without* this command, which is the
+        // one we are still holding. A replay is exempt — the tail is being laid
+        // onto a checkpoint, not onto the board that made the fingerprint.
+        if (!this.replaying && seat !== this.view.seat && this.driftedFrom(msg.fp)) {
+          if (!this.view.desynced) {
+            this.set({ desynced: true, error: 'The two boards disagree. Catching up…' });
             this.send({ t: 'resync' });
           }
           return;
