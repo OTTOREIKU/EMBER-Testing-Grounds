@@ -5,13 +5,15 @@ import { setLocalSeat } from './loop';
 import { dataUrl, loadData, missionImageUrl, squadLabel, type GameData } from './data';
 import { objectiveCells } from './matchhud';
 import { printedDeployment } from './overlays';
-import { migrateState, squadAllegiance, tokenCards } from './units';
+import { knockbackOf, migrateState, squadAllegiance, tokenCards } from './units';
 import { countHits, normaliseSetup } from './setup';
-import { normaliseTasks, taskItemsFor } from './tasks';
+import { gameResult, normaliseTasks, taskItemsFor } from './tasks';
 import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
 import { importSquadFile } from './importer';
 import { dialsOf, hashDials, newSalt, type DialEntry } from './secrecy';
-import { animateRemoteMove, ensureHud, glueAfter, startDetonation, startInterceptPick, startLaunchPlan, startShove, type DiceLine, type HudCtx } from './matchhud';
+import { animateRemoteMove, ensureHud, glueAfter, showRangeOverlay, showSideTab, startAttackPick, startDetonation, startElectronicPick, startInterceptPick, startLaunchPlan, startShove, type DiceLine, type HudCtx } from './matchhud';
+import { AttackHelper } from './combat';
+import { losNote, protectionFor } from './rules';
 import { SquadTracker } from './squads';
 import { Panel } from './panel';
 import { iconSvg } from './dice';
@@ -298,6 +300,48 @@ async function rollHits(n: number, label: string): Promise<{ hits: number[]; dic
 
 let squadTracker: SquadTracker | null = null;
 let panel: Panel | null = null;
+// The freeplay §4.4 pipeline, rendering into the Combat tab. It never touches
+// the board itself — every change it makes leaves as a command — which is what
+// makes it safe to run on a networked table.
+let attackHelper: AttackHelper | null = null;
+
+function combatBusy(): boolean {
+  return !!attackHelper?.active;
+}
+
+function renderCombatIdle(): void {
+  const body = document.getElementById('combat-body');
+  if (!body) return;
+  body.innerHTML = attackHelper
+    ? `<p class="dim combat-idle">No attack in progress. Open a unit's card in the Details tab and use
+       <b>⌖ Attack…</b> or <b>💥 Detonate…</b> on one of its Actions.</p>`
+    : '<p class="dim combat-idle">The dice data did not load, so attacks cannot be resolved here. Reload the page to try again.</p>';
+}
+
+// Server dice in a room so neither client picks its own numbers; local dice
+// solo. Same rule the freeplay board follows.
+function combatRoller() {
+  return relay.state.room && relay.state.seat
+    ? (pool: Record<string, number>, tag?: string) => relay.rollDice(pool, tag)
+    : null;
+}
+
+function startAttack(uid: number, actionId: string, targetUid: number): void {
+  if (!data || !attackHelper) return;
+  const attacker = state.tokens.find((t) => t.uid === uid);
+  const defender = state.tokens.find((t) => t.uid === targetUid);
+  const action = tokenCards(data, attacker ?? ({} as never))
+    .flatMap(({ card }) => card.actions ?? [])
+    .find((a) => a.id === actionId) ?? data.commonActions.find((a) => a.id === actionId);
+  if (!attacker || !defender || !action) return;
+  const terrain = terrainNow();
+  const smoke = state.smoke ?? [];
+  const prot = protectionFor(attacker, defender, action, terrain, state.tokens, smoke);
+  attackHelper.roller = combatRoller();
+  attackHelper.start(attacker, action, defender, losNote(attacker, defender, action, terrain, state.tokens, smoke), prot.white, prot.note);
+  showSideTab(null, 'combat');
+  render();
+}
 
 function mountSide(): void {
   if (!data) return;
@@ -357,10 +401,26 @@ function mountSide(): void {
     onLaunch: (t, action, projectile) => {
       startLaunchPlan(t.uid, action.id, projectile.id, projectile.name?.en || projectile.id);
     },
-    onStartAttack: () => {},
-    onStartElectronic: () => {},
-    onShowMoveRange: () => {},
-    onShowActionRange: () => {},
+    // The card names the Action; the turn panel asks which enemy, reading the
+    // range, arc and line of sight off the board for each one.
+    onStartAttack: (t, actionId) => {
+      startAttackPick(t.uid, actionId);
+      render();
+    },
+    // The Counter-roll is a two-seat exchange rather than a wizard on one
+    // screen, because both sides roll and either may spend its own Link (4.11).
+    onStartElectronic: (t, actionId) => {
+      startElectronicPick(t.uid, actionId);
+      render();
+    },
+    // What an Action reaches, drawn on the board until something else is asked
+    // for. Movement counts terrain and Break Away; a plain Range does not.
+    onShowMoveRange: (t, steps) => {
+      showRangeOverlay(t.uid, 'move', steps);
+    },
+    onShowActionRange: (t, range) => {
+      showRangeOverlay(t.uid, 'range', range);
+    },
     // Resolving a Projectile's Delayed Action: the turn panel asks what it
     // caught, then destroys it (4.7.5).
     onDetonate: (t, actionId) => {
@@ -373,9 +433,51 @@ function mountSide(): void {
       startShove(t.uid, actionId);
       render();
     },
-    onCharge: () => {},
+    // The card's own pip, flipping one Part's token directly (4.14). The
+    // guided moments — a Charge Action, and an Action marked [Charged] — ask
+    // in the turn panel instead.
+    onCharge: (t, slot, on) => {
+      send({ kind: 'setCharge', seat: t.side, uid: t.uid, slot, on });
+      render();
+      syncSide(t.uid);
+    },
     tacticNote: () => null,
   });
+  if (diceData) {
+    attackHelper = new AttackHelper(
+      data,
+      diceData,
+      document.getElementById('combat-body')!,
+      () => render(),
+      () => {
+        renderCombatIdle();
+        showSideTab(null, 'details');
+        render();
+      },
+      // Unit logs are a freeplay habit; here the turn panel's note carries what
+      // the roll worked out, so the other player is not left guessing.
+      (t, text) => { void t; lobbyNote = text; },
+      (attacker, defender, action, hits) => {
+        // This fires after EVERY completed attack, so the Knockback keyword has
+        // to be tested here — opening the Forced Movement panel unconditionally
+        // greeted every ordinary shot with "this Action carries none". An
+        // On-Hit Knockback that scored nothing does not trigger either.
+        const kb = knockbackOf(action, data?.actionTranslation(action.id)?.english ?? undefined);
+        if (attacker.kind === 'projectile') send({ kind: 'despawn', seat: attacker.side, uid: attacker.uid, targetUid: attacker.uid });
+        else if (kb && !(kb.onHit && hits === 0)) startShove(attacker.uid, action.id, defender.uid);
+        render();
+      },
+      (killer, victim, what) => {
+        send({ kind: 'recordKill', seat: killer.side, uid: killer.uid, targetUid: victim.uid, what });
+        render();
+      },
+      // Black Box bearers are a freeplay flow the Match Centre has no
+      // equivalent for yet, so a penetration only redraws.
+      () => render(),
+      (cmd) => { send(cmd); },
+    );
+  }
+  renderCombatIdle();
 }
 
 function terrainNow() {
@@ -782,7 +884,9 @@ async function recordMatch(): Promise<string | null> {
   if (!account) return 'Sign in to keep a record.';
   const tasks = normaliseTasks(state.tasks);
   const vp = tasks.vp;
-  const winner: Side | null = vp.s1 === vp.s2 ? null : vp.s1 > vp.s2 ? 's1' : 's2';
+  // The same verdict the panel shows, tiebreak and all (5.2.4). Recording a
+  // draw where the board settled it would put the wrong result on both accounts.
+  const winner = gameResult(tasks, state.tokens).winner;
   const entries = (side: Side) => {
     const out: { id: string; cat: SquadEntry['cat'] }[] = [];
     for (const t of state.tokens) {
@@ -838,6 +942,9 @@ function hudCtx(): HudCtx {
     },
     mountSide,
     syncSide,
+    combatBusy,
+    startAttack,
+    showTab: (name) => showSideTab(null, name),
     diceData,
     recordMatch,
     refresh: () => render(),
@@ -866,6 +973,8 @@ function devSeed(): void {
       drones: drone ? [{ cardId: drone }] : [],
     });
   }
+  // A Tactics Card each, so the timing strip has something to remind about.
+  state.tactics = { s1: ['274', '275'], s2: ['276'] };
   send({ kind: 'startMatch', seat: devSeat ?? 's1' });
   send({ kind: 'lockMap', seat: devSeat ?? 's1' });
   render();

@@ -1,19 +1,21 @@
 import { missionZones, taskDesignations, type Command, type CheckResult } from './commands';
 import type { GameData } from './data';
-import { isAerial, secondaryImageUrl, squadLabel, unitSize } from './data';
+import { cardName, isAerial, secondaryImageUrl, squadLabel, unitSize } from './data';
 import { Board, footprint, snapPlacement, type BoardCallbacks } from './board';
 import { printedDeployment, resolveZoneSetData } from './overlays';
-import { canActivateCamo, explosionScope, extraActivationOf, guidedActions, interceptCapacity, interceptLeft, knockbackOf, maneuverRange, needsSightToLanding, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation } from './units';
-import { attackDirection, crushTargets, dissipationFor, extendPath, knockbackPath, LG, losBetween, rangeBetween, reachableGrids, standingSpot, type LargeGrid } from './rules';
-import { breakAwayCost } from './melee';
+import { canActivateCamo, chargeableSlots, electronicValue, explosionScope, extraActivationOf, guidedActions, interceptCapacity, interceptLeft, isChargeAction, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
+import { resolveCounterRoll, tallyCounter } from './combat';
+import { tacticFitsPhase, tacticSpec } from './tactics';
+import { attackDirection, crushTargets, dissipationFor, extendPath, knockbackPath, LG, losBetween, losNote, protectionFor, rangeBetween, reachableGrids, standingSpot, type LargeGrid } from './rules';
+import { breakAwayCost, canBeForceMoved } from './melee';
 import { factionColour } from './icons';
 import { iconSvg } from './dice';
-import type { CardAction, DiceData, DieColor, GameState, Side, Stance, Timing, Token, ExtraTick, Opportunity } from './types';
+import type { CardAction, CounterRoll, DiceData, DieColor, GameState, Side, Stance, Timing, Token, ExtraTick, Opportunity } from './types';
 import { newOpportunity, newScriptState, PHASES, STATUSES, TIMINGS } from './types';
 import { deployable, deployTurn, deploymentComplete, firstPlayerFrom, normaliseSetup, rollTotal, type SetupState } from './setup';
 import { actionPhaseComplete, activationOrder, alive, canAct, commandTokensFor, eligibleUnits, isLoopPhase, loopComplete, nextActivation, nextTurn, onExtraOpportunity, type InitLookup, type LoopPhase } from './loop';
 import { canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed, type TickVerdict } from './ticks';
-import { normaliseTasks, scoreMain, scoreSecondary, settleControl, unpaidLines, zoneCentreGrid, type Designation, type ScoreLine, type ScoreResult, type SecondaryScoring } from './tasks';
+import { gameResult, normaliseTasks, scoreMain, scoreSecondary, settleControl, unpaidLines, zoneCentreGrid, type Designation, type ScoreLine, type ScoreResult, type SecondaryScoring } from './tasks';
 import { tokenCards } from './units';
 
 // The in-match HUD (Match Centre part 3a): one question at a time, per seat.
@@ -62,6 +64,13 @@ export interface HudCtx {
   mountSide(): void;
   // Redraws the side panel and shows a unit's card when one is selected.
   syncSide(uid: number | null): void;
+  // True while the shared AttackHelper is resolving an attack, so the turn
+  // panel steps out of the way instead of offering the manual buttons beside it.
+  combatBusy(): boolean;
+  // Opens the §4.4 pipeline on a target the player has just picked.
+  startAttack(uid: number, actionId: string, targetUid: number): void;
+  // Brings a side tab forward by name.
+  showTab(name: 'squad' | 'details' | 'combat'): void;
   // The printed faces, for drawing the dice a roll landed on.
   diceData: DiceData | null;
   // Keeps the finished game on both accounts. Resolves to null when it landed,
@@ -226,11 +235,26 @@ let movePlan: {
   flying: boolean;
   path: LargeGrid[];
   locked: boolean;
+  // What is being spent: the Maneuver Tick by default, or a named Movement
+  // Action, which carries its own Range and may owe a shove at the end of it.
+  label: string;
+  shoveActionId?: string;
+  // A Movement Action has already paid with an Action Tick, so its move must
+  // not also spend the Maneuver Tick.
+  free?: boolean;
 } | null = null;
 let targetUid: number | null = null; // enemy picked for damage bookkeeping
 // Whose card the Details tab is showing, when the player has asked for one
 // rather than taking the active unit's.
 let inspectUid: number | null = null;
+// A card asking the board to show what an Action reaches. Held rather than
+// drawn once, because every refresh clears the highlight layer.
+let rangeOverlay: { uid: number; kind: 'move' | 'range'; n: number } | null = null;
+
+export function showRangeOverlay(uid: number, kind: 'move' | 'range', n: number): void {
+  rangeOverlay = n > 0 ? { uid, kind, n } : null;
+  hudRef?.refresh();
+}
 // The Action just performed: its pool for the roll button, and its id so the
 // strip can tell whether it carries Knockback without guessing from the name.
 let attack: { y: number; r: number; name: string; actionId: string } | null = null;
@@ -308,8 +332,11 @@ function moveOptsFor(ctx: HudCtx, t: Token, flying: boolean) {
   };
 }
 
-function startMovePlan(ctx: HudCtx, t: Token): void {
-  const steps = maneuverRange(ctx.data, t);
+// A Maneuver by default. A Movement Action passes its own Range instead: the
+// chassis `move` is the Maneuver Value (1–2 Grids) and has nothing to do with a
+// Sprint-style Action's printed range, which is usually 4.
+function startMovePlan(ctx: HudCtx, t: Token, opts: { range?: number; label?: string; shoveActionId?: string; free?: boolean } = {}): void {
+  const steps = opts.range || maneuverRange(ctx.data, t);
   if (steps <= 0) {
     ctx.noteNow(`${t.label} has no Movement Range on its card.`);
     return;
@@ -321,6 +348,9 @@ function startMovePlan(ctx: HudCtx, t: Token): void {
     flying: !!ctx.data.byId.get(t.cardId)?.moveAsFlight,
     path: [{ c: Math.floor(t.col / 3), r: Math.floor(t.row / 3) }],
     locked: false,
+    label: opts.label ?? 'Maneuver',
+    shoveActionId: opts.shoveActionId,
+    free: opts.free,
   };
 }
 
@@ -375,6 +405,9 @@ function commitMove(ctx: HudCtx): void {
     from = spot;
   }
   const last = stops[stops.length - 1];
+  const shoveId = m.shoveActionId;
+  const free = m.free;
+  const goal = m.path[m.path.length - 1];
   movePlan = null;
   board.clearMovePath();
   board.clearHighlights();
@@ -382,8 +415,28 @@ function commitMove(ctx: HudCtx): void {
     ctx.refresh();
     return;
   }
+  // Ending in an occupied Grid is a Crush, and everything in there has to give
+  // way before the crusher lands (4.3.6). The Movement ends there either way.
+  const victims = crushTargets(t, goal.c, goal.r, terrain, ctx.state.tokens);
+  if (victims && (victims.units.length || victims.terrain.length)) {
+    crushPlan = {
+      uid: t.uid,
+      goal,
+      terrain: victims.terrain.map((p) => p.id),
+      queue: victims.units.map((v) => v.uid),
+      stops,
+      free,
+      shoveActionId: shoveId,
+    };
+    advanceCrush(ctx);
+    ctx.refresh();
+    return;
+  }
   board.animateMove(t.uid, stops, () => {
-    ctx.send({ kind: 'maneuver', seat: t.side, uid: t.uid, to: last });
+    ctx.send({ kind: 'maneuver', seat: t.side, uid: t.uid, to: last, free });
+    // A shove rides on the Movement rather than replacing it, so it is offered
+    // once the Mech has finished moving and is facing whatever it ended beside.
+    if (shoveId) startShove(t.uid, shoveId);
     ctx.refresh();
   });
 }
@@ -490,7 +543,7 @@ function renderBoard(ctx: HudCtx): void {
     document.documentElement.style.setProperty(`--sq-${side}`, factionColour(f));
   }
   // Panning is the default; a placement or a route needs the cell instead.
-  board.panEnabled = placing === null && !movePlan && !launchPlan && !smokePlan && !smokeOwed?.length;
+  board.panEnabled = placing === null && !movePlan && !launchPlan && !smokePlan && !smokeOwed?.length && !crushPlan?.queue.length;
   if (movePlan) {
     const t = s.tokens.find((x) => x.uid === movePlan!.uid);
     // The same overlay freeplay shows: the Large Grids this unit can really
@@ -500,6 +553,12 @@ function renderBoard(ctx: HudCtx): void {
     board.showSmokeTargets(landingCandidates(ctx), (c, r) => placeLaunched(ctx, c, r));
   } else if (smokePlan) {
     board.showSmokeTargets(smokeCandidates(ctx), (c, r) => placeSmokeAt(ctx, c, r));
+  } else if (crushPlan?.queue.length) {
+    const v = s.tokens.find((x) => x.uid === crushPlan!.queue[0]);
+    board.showSmokeTargets(
+      v ? crushEscapes(ctx, v, crushPlan.goal).map((g) => ({ ...g, ok: true })) : [],
+      (c, r) => placeCrushed(ctx, c, r),
+    );
   } else if (smokeOwed?.length && mine(ctx, smokeOwed[0].side)) {
     board.showSmokeTargets(
       smokeOwed[0].cells.map((s) => ({ c: s.col, r: s.row, ok: true })),
@@ -507,6 +566,22 @@ function renderBoard(ctx: HudCtx): void {
     );
   } else {
     board.clearHighlights();
+    // A range the player asked to see, redrawn because clearHighlights above
+    // wipes it. It survives until they ask for something else.
+    const ov = rangeOverlay ? s.tokens.find((x) => x.uid === rangeOverlay!.uid) : undefined;
+    if (rangeOverlay && ov) {
+      if (rangeOverlay.kind === 'move') {
+        const flying = !!ctx.data.byId.get(ov.cardId)?.moveAsFlight || !!ov.aerial;
+        board.showReachable(
+          reachableGrids(ov, rangeOverlay.n, terrainOf(ctx), s.tokens, flying, moveOptsFor(ctx, ov, flying)),
+          rangeOverlay.n,
+        );
+      } else {
+        board.showRangeRings(ov, rangeOverlay.n);
+      }
+    } else if (rangeOverlay) {
+      rangeOverlay = null;
+    }
     // A placement waiting to be confirmed keeps its ghost through every
     // redraw: it is the only thing on the board showing where the unit went.
     if (pending) board.showGhost(footprint({ col: pending.col, row: pending.row, size: pending.size }), true);
@@ -784,6 +859,7 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
     const drawn = movePlan.path.length - 1;
     return `${ticks}
       <div class="moveplan">
+        <p class="tp-dim">${esc(movePlan.label)}</p>
         <p class="tp-note">${drawn ? `${drawn} of ${movePlan.steps} grids${movePlan.locked ? ' · locked' : ''}` : `Draw a route on the board — up to ${movePlan.steps} grid${movePlan.steps === 1 ? '' : 's'}.`}</p>
         <p class="tp-dim">Move the cursor across grids to trace it, click to lock, then confirm.</p>
         <button class="bigbtn" data-act="commitmove"${drawn ? '' : ' disabled'}>Confirm move</button>
@@ -959,7 +1035,11 @@ function endPanel(ctx: HudCtx): string {
 // never blocks ending: the match happened whether or not the server hears
 // about it.
 function resultPanel(ctx: HudCtx, vp: { s1: number; s2: number }): string {
-  const winner: Side | null = vp.s1 === vp.s2 ? null : vp.s1 > vp.s2 ? 's1' : 's2';
+  // Most Victory Points wins, but a tie goes to Mech Parts and Drones left on
+  // the board and only a tie in both is a real draw (5.2.4). Deciding on VP
+  // alone called a win a draw — and recorded it as one.
+  const res = gameResult(normaliseTasks(ctx.state.tasks), ctx.state.tokens);
+  const winner = res.winner;
   const verdict = winner
     ? `${squadLabel(winner)} wins ${Math.max(vp.s1, vp.s2)}–${Math.min(vp.s1, vp.s2)}`
     : `A draw at ${vp.s1} VP each`;
@@ -972,14 +1052,28 @@ function resultPanel(ctx: HudCtx, vp: { s1: number; s2: number }): string {
        <button class="bigbtn" data-act="record"${recording ? ' disabled' : ''}>${recording ? 'Recording…' : 'Record this match'}</button>
        <button class="bigbtn ghost2" data-act="endmatch" style="margin-top:6px">Close the table</button>`;
   return head('Game over', verdict, `${ctx.state.round.n} rounds played.`, true)
-    + `<div class="tp-body">${rows}</div><div class="tp-foot">${foot}</div>`;
+    + `<div class="tp-body">${rows}<p class="tp-dim">${esc(res.why)}.</p></div><div class="tp-foot">${foot}</div>`;
 }
 
 function panelHtml(ctx: HudCtx): string {
   const s = ctx.state;
   // A launch is waiting on a square, and a grant on an Ally: both are questions
   // already asked, so they come before whatever the phase would otherwise show.
+  // An attack in the helper owns the screen until it is resolved; the turn
+  // panel says so rather than offering a second set of damage buttons beside it.
+  if (ctx.combatBusy()) {
+    return head('Your move', 'Resolving the attack', 'The Combat tab has the dice.', true)
+      + '<div class="tp-body"><p class="tp-note">Work through the roll there. What it settles — penetration, destruction, Knockback — travels to the other player on its own.</p></div><div class="tp-foot"></div>';
+  }
   if (launchPlan) return launchPanel(ctx);
+  // A Counter-roll is a live two-player exchange, so it outranks everything
+  // else on both screens until it is closed.
+  if (ensureScript(s).counter) return counterPanel(ctx);
+  if (ewPick) return ewPanel(ctx);
+  if (crushPlan?.queue.length) return crushPanel(ctx);
+  if (resupplyPick) return resupplyPanel(ctx);
+  if (chargePlan) return chargePanel(ctx);
+  if (attackPick) return attackPanel(ctx);
   if (smokePlan) return smokePanel(ctx);
   if (smokeOwed?.length) return smokeChoicePanel(ctx);
   if (shovePlan) return shovePanel(ctx);
@@ -1372,6 +1466,365 @@ function interceptPanel(ctx: HudCtx): string {
     + `<div class="tp-body">${rows}
         <p class="tp-note">Each attempt spends a Token, and a Part must keep going until its Tokens run out or the target is destroyed. Tokens are never restored.</p></div>
        <div class="tp-foot"><button class="bigbtn ghost2" data-act="interceptskip">Skip the rest</button></div>`;
+}
+
+// ---------- Electronic Warfare (rulebook 4.11) ----------
+//
+// The one interaction where both players roll and both may spend Link, so it
+// cannot be driven from one chair: each seat submits its own faces for its own
+// unit, and both clients derive the verdict from `resolveCounterRoll`. Range is
+// the only reach test — Electronic Warfare ignores Terrain and line of sight
+// outright (4.11.1) — so the target list deliberately says nothing about arcs.
+
+let ewPick: { uid: number; actionId: string } | null = null;
+
+export function startElectronicPick(uid: number, actionId: string): void {
+  ewPick = { uid, actionId };
+  hudRef?.refresh();
+}
+
+function ewPanel(ctx: HudCtx): string {
+  const s = ctx.state;
+  const m = ewPick!;
+  const by = s.tokens.find((x) => x.uid === m.uid);
+  const a = by ? actionOn(ctx, by, m.actionId) : undefined;
+  if (!by || !a) return head('Electronic Warfare', 'That unit is gone', '', true)
+    + '<div class="tp-body"></div><div class="tp-foot"><button class="bigbtn ghost2" data-act="ewcancel">Close</button></div>';
+  const reach = a.range ?? 0;
+  const ev = electronicValue(ctx.data, by);
+  const rows = s.tokens
+    .filter((t) => t.side !== by.side && t.deployed !== false && alive(t))
+    .map((t) => {
+      const d = gridsApart(by, t);
+      const theirs = electronicValue(ctx.data, t);
+      const far = d > reach;
+      return `<button class="rowwide${far ? ' warn' : ''}" data-ewtarget="${t.uid}"${far ? ` data-why="${esc(`${t.label} is at Range ${d}, beyond this Action's Range ${reach}.`)}"` : ''}>${esc(t.label)}<span class="ct">R${d} · EV ${theirs}</span></button>`;
+    })
+    .join('');
+  return head('Your move', `${esc(a.name?.en || m.actionId)}: which enemy?`, `${esc(by.label)} — Electronic Value ${ev}, Range ${reach}.`, true)
+    + `<div class="tp-body">${rows || '<p class="tp-note">No enemy unit is on the board.</p>'}
+        <p class="tp-dim">Electronic Warfare ignores Terrain and line of sight, so only Range matters (4.11.1). Both units then roll Yellow dice equal to their Electronic Value.</p></div>
+       <div class="tp-foot"><button class="bigbtn ghost2" data-act="ewcancel">Cancel</button></div>`;
+}
+
+// Whose turn it is to act inside an open Counter-roll, and what they owe.
+function counterStep(ctx: HudCtx, c: CounterRoll) {
+  const s = ctx.state;
+  const init = s.tokens.find((x) => x.uid === c.initiatorUid);
+  const resp = s.tokens.find((x) => x.uid === c.responderUid);
+  if (!init || !resp) return null;
+  const both = c.initRoll !== null && c.respRoll !== null;
+  return {
+    init,
+    resp,
+    both,
+    initEv: electronicValue(ctx.data, init),
+    respEv: electronicValue(ctx.data, resp),
+  };
+}
+
+function counterVerdict(ctx: HudCtx, c: CounterRoll, init: Token, resp: Token) {
+  const dice = ctx.diceData;
+  if (!dice || !c.initRoll || !c.respRoll) return null;
+  // Hollow faces count for a roller in Offensive Stance, so each side's dice
+  // are read under its own stance (4.11.3).
+  const a = tallyCounter(dice, c.initRoll, init.stance === 'offensive');
+  const b = tallyCounter(dice, c.respRoll, resp.stance === 'offensive');
+  return { a, b, ...resolveCounterRoll(a, b) };
+}
+
+function counterPanel(ctx: HudCtx): string {
+  const s = ctx.state;
+  const c = ensureScript(s).counter!;
+  const step = counterStep(ctx, c);
+  if (!step) {
+    return head('Electronic Warfare', 'A unit in the Counter-roll is gone', '', true)
+      + '<div class="tp-body"></div><div class="tp-foot"><button class="bigbtn" data-act="ewclose">Close it</button></div>';
+  }
+  const { init, resp, initEv, respEv } = step;
+  const a = actionOn(ctx, init, c.actionId);
+  const name = a?.name?.en || c.actionId;
+  const sub = `${esc(init.label)} EV ${initEv} vs ${esc(resp.label)} EV ${respEv}.`;
+  const rolled = (t: Token, faces: number[] | null) => faces
+    ? `<span class="rolldice">${faces.map((f) => dieHtml(ctx, { color: 'yellow', face: f })).join('')}</span>`
+    : `<span class="tp-dim">not rolled</span>`;
+  const board = `<div class="dialrow"><span class="nm ${init.side}">${esc(init.label)}</span>${rolled(init, c.initRoll)}</div>
+    <div class="dialrow"><span class="nm ${resp.side}">${esc(resp.label)}</span>${rolled(resp, c.respRoll)}</div>`;
+
+  // Each seat is asked only about its own unit, which is what makes the whole
+  // thing sendable: a player never issues a command for the other's Mech.
+  const owed: { t: Token; ev: number; faces: number[] | null; focused: boolean }[] = [
+    { t: init, ev: initEv, faces: c.initRoll, focused: c.initFocused },
+    { t: resp, ev: respEv, faces: c.respRoll, focused: c.respFocused },
+  ];
+  const mineNow = owed.find((o) => mine(ctx, o.t.side) && o.faces === null);
+  if (mineNow) {
+    return head('Your move', `${esc(name)}: roll the Counter-roll`, sub, true)
+      + `<div class="tp-body">${board}
+          <p class="tp-note">${esc(mineNow.t.label)} rolls ${mineNow.ev} Yellow ${mineNow.ev === 1 ? 'die' : 'dice'}${mineNow.t.stance === 'offensive' ? ', and Offensive Stance makes hollow faces count' : ''}.</p></div>
+         <div class="tp-foot"><button class="bigbtn" data-ewroll="${mineNow.t.uid}">🎲 Roll ${mineNow.ev} ${mineNow.ev === 1 ? 'die' : 'dice'}</button></div>`;
+  }
+  if (!step.both) {
+    const waitOn = owed.find((o) => o.faces === null)!;
+    return head('Waiting', `${squadLabel(waitOn.t.side)} is rolling`, sub, false)
+      + `<div class="tp-body">${board}</div><div class="tp-foot"></div>`;
+  }
+
+  const v = counterVerdict(ctx, c, init, resp);
+  const line = v
+    ? `${esc(init.label)} ${v.initiatorWins ? 'succeeds' : 'fails'} — ${esc(v.why)}.`
+    : 'Both sides have rolled.';
+  // Focus is offered after the verdict is visible, which is when a player
+  // actually knows whether they need it (4.10).
+  const canFocus = owed.filter((o) => mine(ctx, o.t.side) && !o.focused && (o.t.link ?? 0) > 0);
+  const focusRows = canFocus
+    .map((o) => `<button class="rowwide" data-ewfocus="${o.t.uid}">Focus with ${esc(o.t.label)}<span class="ct">1 Link · ${o.t.link} left</span></button>`)
+    .join('');
+  const winner = v?.initiatorWins ? init : resp;
+  const iOwn = mine(ctx, init.side);
+  return head(iOwn ? 'Your move' : 'Waiting', v?.initiatorWins ? 'The Counter-roll succeeds' : 'The Counter-roll fails', sub, iOwn)
+    + `<div class="tp-body">${board}
+        <p class="tp-note">${line}</p>
+        ${v ? `<p class="tp-dim">Lightning ${v.a.lightning}–${v.b.lightning}, Light Hit ${v.a.light}–${v.b.light}. A tie on both goes to the Initiator (4.11.2).</p>` : ''}
+        <p class="tp-dim">${esc(winner.label)} won this Counter-roll, so any "on successful Counter-roll" Passive it carries triggers — that works for the Responder too.</p>
+        ${focusRows ? `<div class="sect2" style="margin-top:10px">Reroll with Focus</div><p class="tp-dim">1 Link, once each, and the verdict is re-read from the new dice.</p>${focusRows}` : ''}
+      </div>
+      <div class="tp-foot">${iOwn && v?.initiatorWins
+        ? `<button class="bigbtn" data-ewapply="1">Apply ${esc(name)} to ${esc(resp.label)}</button><button class="bigbtn ghost2" data-act="ewclose" style="margin-top:6px">Done</button>`
+        : '<button class="bigbtn" data-act="ewclose">Done</button>'}</div>`;
+}
+
+// ---------- Crush (rulebook 4.3.6) ----------
+//
+// A Large Unit may end its Movement in a Grid holding smaller Units and
+// Destructible Terrain, and everything in there gives way: the terrain is
+// destroyed, each Unit is Force-Moved 1 Grid with the CRUSHING player choosing
+// where, one with nowhere to go swaps places with the crusher, and one that
+// cannot be Force-Moved at all is destroyed instead.
+//
+// The victims are cleared before the crusher lands, which is the order freeplay
+// uses — moving the crusher in first would make the swap case place a unit into
+// the Grid it is being pushed out of.
+
+let crushPlan: {
+  uid: number;
+  goal: LargeGrid;
+  terrain: string[];
+  queue: number[];
+  stops: { col: number; row: number }[];
+  free?: boolean;
+  shoveActionId?: string;
+} | null = null;
+
+// Where a crushed Unit may be pushed: an orthogonal neighbour that is on the
+// board, is not the Grid being crushed into, and has room for it.
+function crushEscapes(ctx: HudCtx, v: Token, goal: LargeGrid): LargeGrid[] {
+  const from = { c: Math.floor(v.col / 3), r: Math.floor(v.row / 3) };
+  return ([[0, -1], [1, 0], [0, 1], [-1, 0]] as const)
+    .map(([dc, dr]) => ({ c: from.c + dc, r: from.r + dr }))
+    .filter((g) => g.c >= 0 && g.r >= 0 && g.c < LG && g.r < LG)
+    .filter((g) => !(g.c === goal.c && g.r === goal.r))
+    .filter((g) => standingSpot(g.c, g.r, v.size, v.aerial, terrainOf(ctx), ctx.state.tokens, v.uid) !== null);
+}
+
+// Works the queue down, handling everything that needs no choice, and stops as
+// soon as it reaches a victim the player has to place.
+function advanceCrush(ctx: HudCtx): void {
+  const m = crushPlan;
+  if (!m) return;
+  const s = ctx.state;
+  const crusher = s.tokens.find((x) => x.uid === m.uid);
+  if (!crusher) { crushPlan = null; ctx.refresh(); return; }
+  if (m.terrain.length) {
+    ctx.send({ kind: 'destroyTerrain', seat: crusher.side, uid: crusher.uid, pieces: m.terrain });
+    ctx.noteNow(`${crusher.label} crushes ${m.terrain.length === 1 ? 'a piece of' : `${m.terrain.length} pieces of`} Destructible Terrain in ${gridName(m.goal.c, m.goal.r)}.`);
+    m.terrain = [];
+  }
+  while (m.queue.length) {
+    const v = s.tokens.find((x) => x.uid === m.queue[0]);
+    if (!v) { m.queue.shift(); continue; }
+    if (!canBeForceMoved(ctx.data, v)) {
+      ctx.send({ kind: 'despawn', seat: crusher.side, uid: crusher.uid, targetUid: v.uid });
+      ctx.noteNow(`${v.label} cannot be Force-Moved, so being crushed destroys it (4.3.6).`);
+      m.queue.shift();
+      continue;
+    }
+    const out = crushEscapes(ctx, v, m.goal);
+    if (!out.length) {
+      // Nowhere to go: the two swap, which is the crusher's Grid as it stands
+      // now — it has not moved yet.
+      const swap = standingSpot(Math.floor(crusher.col / 3), Math.floor(crusher.row / 3), v.size, v.aerial, terrainOf(ctx), s.tokens, v.uid);
+      if (swap) {
+        ctx.send({ kind: 'forceMove', seat: crusher.side, uid: crusher.uid, targetUid: v.uid, to: swap });
+        ctx.noteNow(`${v.label} had nowhere to go, so it swaps places with ${crusher.label}.`);
+      }
+      m.queue.shift();
+      continue;
+    }
+    return; // this one needs the player to choose
+  }
+  finishCrush(ctx);
+}
+
+function finishCrush(ctx: HudCtx): void {
+  const m = crushPlan;
+  crushPlan = null;
+  board?.clearHighlights();
+  if (!m) { ctx.refresh(); return; }
+  const t = ctx.state.tokens.find((x) => x.uid === m.uid);
+  const last = m.stops[m.stops.length - 1];
+  if (!t || !last) { ctx.refresh(); return; }
+  // The Grid is clear now, so the crusher takes the spot it can actually stand
+  // in rather than the one computed before anything gave way.
+  const spot = standingSpot(m.goal.c, m.goal.r, t.size, t.aerial, terrainOf(ctx), ctx.state.tokens, t.uid) ?? last;
+  const stops = [...m.stops.slice(0, -1), spot];
+  board?.animateMove(t.uid, stops, () => {
+    ctx.send({ kind: 'maneuver', seat: t.side, uid: t.uid, to: spot, free: m.free });
+    ctx.noteNow(`${t.label} crushes into ${gridName(m.goal.c, m.goal.r)}, and its Movement ends there (4.3.6).`);
+    if (m.shoveActionId) startShove(t.uid, m.shoveActionId);
+    ctx.refresh();
+  });
+}
+
+function placeCrushed(ctx: HudCtx, c: number, r: number): void {
+  const m = crushPlan;
+  const v = m ? ctx.state.tokens.find((x) => x.uid === m.queue[0]) : undefined;
+  const crusher = m ? ctx.state.tokens.find((x) => x.uid === m.uid) : undefined;
+  if (!m || !v || !crusher) return;
+  const spot = standingSpot(c, r, v.size, v.aerial, terrainOf(ctx), ctx.state.tokens, v.uid);
+  if (!spot) return;
+  ctx.send({ kind: 'forceMove', seat: crusher.side, uid: crusher.uid, targetUid: v.uid, to: spot });
+  ctx.noteNow(`${crusher.label} crushes ${v.label}, Force-Moved to ${gridName(c, r)}.`);
+  m.queue.shift();
+  advanceCrush(ctx);
+  ctx.refresh();
+}
+
+function crushPanel(ctx: HudCtx): string {
+  const m = crushPlan!;
+  const v = ctx.state.tokens.find((x) => x.uid === m.queue[0]);
+  const crusher = ctx.state.tokens.find((x) => x.uid === m.uid);
+  if (!v || !crusher) return head('Crush', 'Nothing left to move', '', true)
+    + '<div class="tp-body"></div><div class="tp-foot"><button class="bigbtn" data-act="crushauto">Continue</button></div>';
+  const out = crushEscapes(ctx, v, m.goal);
+  return head('Your move', `Crush: where does ${esc(v.label)} go?`, `${esc(crusher.label)} is entering ${gridName(m.goal.c, m.goal.r)}.`, true)
+    + `<div class="tp-body">
+        <p class="tp-note">Click a highlighted Grid on the board. It is forced 1 Grid, and you choose which, because you caused it (4.3.4).</p>
+        <p class="tp-dim">${out.length} Grid${out.length === 1 ? '' : 's'} open${m.queue.length > 1 ? ` · ${m.queue.length - 1} more unit${m.queue.length === 2 ? '' : 's'} after this` : ''}.</p>
+      </div>
+      <div class="tp-foot"><button class="bigbtn ghost2" data-act="crushauto">Pick for me</button></div>`;
+}
+
+// ---------- Resupply (rulebook 4.13) ----------
+//
+// Ammo only comes back to a Part that has actually spent some, and never above
+// what it started with. Some Actions reach an Ally as well as themselves, so
+// the panel asks which unit gets it.
+
+let resupplyPick: { uid: number; actionId: string; rule: Resupply } | null = null;
+
+function resupplyHolders(ctx: HudCtx, from: Token, rule: Resupply): Token[] {
+  return ctx.state.tokens.filter((o) => {
+    if (o.deployed === false) return false;
+    if (o.uid !== from.uid && (!rule.allies || o.side !== from.side)) return false;
+    if (gridsApart(from, o) > rule.range) return false;
+    const max = tokenCards(ctx.data, o).flatMap(({ card }) => card.actions ?? []).find((a) => a.id === rule.actionId)?.storage;
+    if (!max) return false;
+    return (o.ammo?.[rule.actionId] ?? max) < max;
+  });
+}
+
+function resupplyPanel(ctx: HudCtx): string {
+  const m = resupplyPick!;
+  const from = ctx.state.tokens.find((x) => x.uid === m.uid);
+  const a = from ? actionOn(ctx, from, m.actionId) : undefined;
+  if (!from) return head('Resupply', 'That unit is gone', '', true)
+    + '<div class="tp-body"></div><div class="tp-foot"><button class="bigbtn ghost2" data-act="resupplycancel">Close</button></div>';
+  const holders = resupplyHolders(ctx, from, m.rule);
+  const rows = holders
+    .map((o) => {
+      const max = tokenCards(ctx.data, o).flatMap(({ card }) => card.actions ?? []).find((x) => x.id === m.rule.actionId)?.storage ?? 0;
+      const held = o.ammo?.[m.rule.actionId] ?? max;
+      return `<button class="rowwide" data-resupply="${o.uid}">${esc(o.label)}${o.uid === from.uid ? ' (this Mech)' : ''}<span class="ct">Ammo ${held}/${max} · +${m.rule.amount}</span></button>`;
+    })
+    .join('');
+  return head('Your move', `${esc(a?.name?.en || m.actionId)}: resupply which unit?`, m.rule.range
+    ? `This Mech, or an Ally within Range ${m.rule.range}, that has spent the Ammo this Action restores.`
+    : 'Only this Mech is in reach.', true)
+    + `<div class="tp-body">${rows || '<p class="tp-note">Nothing in reach has spent any of that Ammo. It can only be replenished for a Part that has consumed some, and never past what it started with (4.13).</p>'}</div>
+       <div class="tp-foot"><button class="bigbtn ghost2" data-act="resupplycancel">${holders.length ? 'Skip' : 'Close'}</button></div>`;
+}
+
+// ---------- Charge Tokens (rulebook 4.14) ----------
+//
+// A Charge Action turns one Part's token face-up; an Action marked [Charged]
+// may flip it back down for its stronger effect, and keeping it for later is a
+// real choice, so both are asked rather than assumed.
+
+let chargePlan: { uid: number; on: boolean; actionId?: string } | null = null;
+
+function chargePanel(ctx: HudCtx): string {
+  const s = ctx.state;
+  const m = chargePlan!;
+  const t = s.tokens.find((x) => x.uid === m.uid);
+  if (!t) return head('Charge', 'That unit is gone', '', true)
+    + '<div class="tp-body"></div><div class="tp-foot"><button class="bigbtn ghost2" data-act="chargecancel">Close</button></div>';
+  const slots = chargeableSlots(ctx.data, t).filter((x) => x.charged !== m.on);
+  const rows = slots
+    .map((x) => `<button class="rowwide" data-chargeslot="${esc(String(x.slot))}">${esc(x.label)}<span class="ct">${m.on ? 'turn face-up' : 'spend it'}</span></button>`)
+    .join('');
+  const why = m.on
+    ? 'Only one Part may be Charged per Charge Action, and only one whose token is still face-down.'
+    : 'Flipping it back down applies the effect this Action marks as [Charged]. Keeping it for a later use is allowed.';
+  const empty = m.on
+    ? `${esc(t.label)} has no Chargeable Part whose token is still face-down (4.14).`
+    : `${esc(t.label)} holds no face-up Charge Token.`;
+  return head('Your move', m.on ? 'Charge which Part?' : 'Consume the Charge?', why, true)
+    + `<div class="tp-body">${rows || `<p class="tp-note">${empty}</p>`}</div>
+       <div class="tp-foot"><button class="bigbtn ghost2" data-act="chargecancel">${m.on ? 'Cancel' : 'Keep it'}</button></div>`;
+}
+
+// ---------- attacking (rulebook 4.4) ----------
+//
+// The card picks the Action; the panel asks which enemy, then hands the whole
+// §4.4 pipeline to the shared AttackHelper — the same class the freeplay board
+// runs, rendering into the Combat tab. Every state change it makes travels as a
+// command, so the other seat sees the damage even though the dice tray itself
+// is the attacker's screen.
+
+let attackPick: { uid: number; actionId: string } | null = null;
+
+export function startAttackPick(uid: number, actionId: string): void {
+  attackPick = { uid, actionId };
+  hudRef?.refresh();
+}
+
+function attackPanel(ctx: HudCtx): string {
+  const s = ctx.state;
+  const m = attackPick!;
+  const by = s.tokens.find((x) => x.uid === m.uid);
+  const a = by ? actionOn(ctx, by, m.actionId) : undefined;
+  if (!by || !a) return head('Attack', 'That unit is gone', '', true)
+    + '<div class="tp-body"></div><div class="tp-foot"><button class="bigbtn ghost2" data-act="attackcancel">Close</button></div>';
+  const terrain = terrainOf(ctx);
+  const smoke = s.smoke ?? [];
+  // Every enemy on the board is offered, with the reading of the line beside
+  // it: out of range or out of arc is a warning the player may still overrule,
+  // the same way the guide warns rather than blocks.
+  const rows = s.tokens
+    .filter((t) => t.side !== by.side && t.deployed !== false && alive(t))
+    .map((t) => {
+      const note = losNote(by, t, a, terrain, s.tokens, smoke);
+      const bad = note.includes('⚠') || note.includes('✕');
+      const prot = protectionFor(by, t, a, terrain, s.tokens, smoke);
+      return `<button class="rowwide${bad ? ' warn' : ''}" data-attacktarget="${t.uid}">${esc(t.label)}
+        <span class="ct">${esc(note)}${prot.white ? ` · +${prot.white}W` : ''}</span></button>`;
+    })
+    .join('');
+  return head('Your move', `${esc(a.name?.en || m.actionId)}: which target?`, `${esc(by.label)} — ${a.yellowDice ?? 0}Y ${a.redDice ?? 0}R.`, true)
+    + `<div class="tp-body">${rows || '<p class="tp-note">No enemy unit is on the board.</p>'}
+        <p class="tp-dim">Range, Forward Arc and line of sight are read off the board for each one. A warning does not stop you — the rulebook is the judge, not the app.</p></div>
+       <div class="tp-foot"><button class="bigbtn ghost2" data-act="attackcancel">Cancel</button></div>`;
 }
 
 // ---------- Forced Movement: Knockback, Push and the shove (appendix) ----------
@@ -1862,6 +2315,38 @@ function secondaryRows(ctx: HudCtx): string {
     .join('');
 }
 
+// ---------- Tactics Cards (rulebook 5.4.2) ----------
+//
+// Held in hand, so the app can only remind: each card's printed timing names
+// the phase it belongs to, and a squad may play one a round. A reminder rather
+// than a question, so it sits under the turn panel instead of taking it over.
+function tacticsHtml(ctx: HudCtx): string {
+  const s = ctx.state;
+  if (!normaliseSetup(s.setup)) return '';
+  const phase = PHASES[s.round.phase];
+  const sides: Side[] = ctx.seat ? [ctx.seat] : ['s1', 's2'];
+  const rows: string[] = [];
+  for (const side of sides) {
+    const held = s.tactics?.[side] ?? [];
+    if (!held.length) continue;
+    const spent = (s.tacticsPlayed?.[side] ?? []).filter((e) => e.startsWith(`${s.round.n}:`));
+    const seen = new Set<string>();
+    for (const id of held) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const card = ctx.data.byId.get(id);
+      if (!card || !tacticFitsPhase(id, phase)) continue;
+      const when = tacticSpec(id)?.timing ?? '';
+      rows.push(`<div class="dialrow"><span class="nm ${side}">${esc(cardName(card))}</span>
+        <span class="tp-dim">${esc(when)}</span>
+        <button class="rowbtn" data-tactic="${side}:${esc(id)}"${spent.length ? ' disabled' : ''}>${spent.length ? 'Spent' : 'Play'}</button></div>`);
+    }
+  }
+  if (!rows.length) return '';
+  return `<div class="tacticstrip"><div class="sect2">Tactics you could play now</div>${rows.join('')}
+    <p class="tp-dim">Only 1 per player per round (5.4.2). The card itself is in your hand — this only says its moment has come.</p></div>`;
+}
+
 function feedHtml(ctx: HudCtx): string {
   if (!ctx.diceFeed.length) return '';
   const lines = ctx.diceFeed.slice(-3);
@@ -1920,6 +2405,17 @@ function secOverlay(ctx: HudCtx): string {
   </div></div>`;
 }
 
+// The shell, so a tab can be brought forward from outside the click handler —
+// an attack starting has to put the Combat tab in front by itself.
+let sideTabHost: HTMLElement | null = null;
+
+export function showSideTab(host: HTMLElement | null, name: 'squad' | 'details' | 'combat'): void {
+  const root = host ?? sideTabHost;
+  if (!root) return;
+  for (const x of root.querySelectorAll<HTMLElement>('.hudtab')) x.classList.toggle('active', x.dataset.sidetab === name);
+  for (const s of root.querySelectorAll<HTMLElement>('.side-tab')) s.classList.toggle('active', s.id === `tab-${name}`);
+}
+
 // Mounts the HUD once and updates it in place from then on. The board is the
 // same stateful renderer the freeplay page uses — zoom, pan, art and all — so
 // it must never be torn down by a re-render.
@@ -1942,9 +2438,15 @@ export function ensureHud(host: HTMLElement, ctx: HudCtx): void {
         <div class="hudtabs">
           <button class="hudtab active" data-sidetab="squad">Squads</button>
           <button class="hudtab" data-sidetab="details">Details</button>
+          <button class="hudtab" data-sidetab="combat">Combat</button>
         </div>
         <section id="tab-squad" class="side-tab active"><div id="squad-body"></div></section>
         <section id="tab-details" class="side-tab"><div id="details-body"></div></section>
+        <!-- The freeplay AttackHelper renders straight into #combat-body, and
+             match.html already loads styles.css, so its markup arrives styled.
+             This section is written once and never by a re-render — the helper
+             owns what is inside it for as long as an attack is running. -->
+        <section id="tab-combat" class="side-tab"><div id="combat-body"></div></section>
       </div>
     </div><div id="hud-veils"></div>`;
     board = new Board(host.querySelector('#mc-board')!, boardCallbacks());
@@ -1960,18 +2462,14 @@ export function ensureHud(host: HTMLElement, ctx: HudCtx): void {
     zc.querySelector('#btn-zones')!.addEventListener('click', () => hudRef?.toggleZones());
     ctx.mountSide();
     for (const b of host.querySelectorAll<HTMLElement>('[data-sidetab]')) {
-      b.addEventListener('click', () => {
-        for (const x of host.querySelectorAll('.hudtab')) x.classList.toggle('active', x === b);
-        for (const s of host.querySelectorAll<HTMLElement>('.side-tab')) {
-          s.classList.toggle('active', s.id === `tab-${b.dataset.sidetab}`);
-        }
-      });
+      b.addEventListener('click', () => showSideTab(host, b.dataset.sidetab as 'squad' | 'details' | 'combat'));
     }
+    sideTabHost = host;
   }
   (host.querySelector('#hud-tl') as HTMLElement).innerHTML = timelineHtml(ctx.state);
   (host.querySelector('#hud-strip') as HTMLElement).innerHTML = orderStripHtml(ctx);
   (host.querySelector('#hud-panel') as HTMLElement).innerHTML =
-    `${ctx.note ? `<div class="mc-err" style="margin:10px 12px 0">${esc(ctx.note)}</div>` : ''}${panelHtml(ctx)}${feedHtml(ctx)}`;
+    `${ctx.note ? `<div class="mc-err" style="margin:10px 12px 0">${esc(ctx.note)}</div>` : ''}${panelHtml(ctx)}${tacticsHtml(ctx)}${feedHtml(ctx)}`;
   (host.querySelector('#hud-veils') as HTMLElement).innerHTML = secOverlay(ctx);
   const zb = host.querySelector<HTMLButtonElement>('#btn-zones');
   if (zb) {
@@ -2130,6 +2628,27 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
           .find((g) => g.action.id === el.dataset.doact);
         const grant = act ? extraActivationOf(act.action) : undefined;
         if (grant) grantPick = { from: t.uid, grant };
+        // A Charge Action turns a token face-up; an Action marked [Charged]
+        // offers to spend the one its own Part is holding. Both are questions,
+        // so neither happens on its own (4.14).
+        const common = ctx.data.commonActions.find((a) => a.id === el.dataset.doact);
+        const performed = act?.action ?? common;
+        if (performed && isChargeAction(performed)) chargePlan = { uid: t.uid, on: true };
+        else if (act?.charge?.charged) chargePlan = { uid: t.uid, on: false, actionId: act.action.id };
+        // An Action that puts Ammo back asks who gets it (4.13).
+        const supply = performed ? resupplyOf(performed) : undefined;
+        if (supply) resupplyPick = { uid: t.uid, actionId: performed!.id, rule: supply };
+        // A Movement Action moves the unit, and by its OWN printed Range — the
+        // chassis Maneuver Value is a different number. Without this the Action
+        // spent its Tick and nothing on the board changed.
+        if (performed?.type === 'Moving') {
+          startMovePlan(ctx, t, {
+            range: performed.range || undefined,
+            label: `${performed.name?.en || performed.id} · Range ${performed.range || maneuverRange(ctx.data, t)}`,
+            shoveActionId: knockbackOf(performed, ctx.data.actionTranslation(performed.id)?.english ?? undefined) ? performed.id : undefined,
+            free: true,
+          });
+        }
       }
     }
     ctx.refresh();
@@ -2148,6 +2667,114 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
   // its Interceptions; cancelling with nothing down owes none.
   on('[data-act="launchcancel"]', () => finishLaunchPlan(ctx));
   on('[data-act="launchundo"]', () => undoLaunched(ctx));
+  on('[data-attacktarget]', (el) => {
+    const m = attackPick;
+    attackPick = null;
+    if (m) ctx.startAttack(m.uid, m.actionId, Number(el.dataset.attacktarget));
+    ctx.refresh();
+  });
+  on('[data-act="attackcancel"]', () => { attackPick = null; ctx.refresh(); });
+
+  // ---------- Electronic Warfare (4.11) ----------
+  on('[data-ewtarget]', (el) => {
+    if (el.dataset.why) { ctx.noteNow(el.dataset.why); ctx.refresh(); return; }
+    const m = ewPick;
+    const by = m ? s.tokens.find((x) => x.uid === m.uid) : undefined;
+    ewPick = null;
+    if (m && by) ctx.send({ kind: 'startCounterRoll', seat: by.side, uid: by.uid, actionId: m.actionId, targetUid: Number(el.dataset.ewtarget) });
+    ctx.refresh();
+  });
+  on('[data-act="ewcancel"]', () => { ewPick = null; ctx.refresh(); });
+  // Each seat rolls its OWN unit's dice and sends them as faces. The receiver
+  // never re-rolls them, so both clients read the same Counter-roll.
+  on('[data-ewroll]', (el) => {
+    const t = s.tokens.find((x) => x.uid === Number(el.dataset.ewroll));
+    if (!t) return;
+    const ev = electronicValue(ctx.data, t);
+    void ctx.rollHits(ev, `rolls ${ev} for the Electronic Counter-roll`).then((res) => {
+      ctx.send({ kind: 'rollCounter', seat: t.side, uid: t.uid, faces: res.dice.map((d) => d.face) });
+      ctx.refresh();
+    });
+  });
+  on('[data-ewfocus]', (el) => {
+    const t = s.tokens.find((x) => x.uid === Number(el.dataset.ewfocus));
+    if (!t) return;
+    // The Link is spent by the unit's own player, which is the whole reason
+    // this exchange is split across the two seats.
+    if (!ctx.send({ kind: 'focus', seat: t.side, uid: t.uid }).ok) { ctx.refresh(); return; }
+    const ev = electronicValue(ctx.data, t);
+    void ctx.rollHits(ev, `spends 1 Link to Focus the Counter-roll`).then((res) => {
+      ctx.send({ kind: 'rollCounter', seat: t.side, uid: t.uid, faces: res.dice.map((d) => d.face), focused: true });
+      ctx.refresh();
+    });
+  });
+  on('[data-ewapply]', () => {
+    const c = ensureScript(s).counter;
+    const init = c ? s.tokens.find((x) => x.uid === c.initiatorUid) : undefined;
+    const resp = c ? s.tokens.find((x) => x.uid === c.responderUid) : undefined;
+    if (c && init && resp) {
+      const a = actionOn(ctx, init, c.actionId);
+      // Fire Control Interference is what an Electronic Attack hands out unless
+      // the card names another token, which the effect data would carry.
+      const named = (a?.gameRules ?? []).flatMap((g) => g.effects ?? [])
+        .find((e) => (e as { type?: string }).type === 'apply_status') as { status?: string; stacks?: number } | undefined;
+      const def = STATUSES.find((x) => x.label === named?.status || x.id === named?.status) ?? STATUSES.find((x) => x.id === 'fci')!;
+      ctx.send({ kind: 'applyStatus', seat: init.side, uid: init.uid, targetUid: resp.uid, statusId: def.id, stacks: named?.stacks ?? 1 });
+      ctx.noteNow(`${init.label} succeeds: ${resp.label} gains ${def.label} (4.11.3).`);
+      ctx.send({ kind: 'clearCounterRoll', seat: init.side });
+    }
+    ctx.refresh();
+  });
+  on('[data-act="ewclose"]', () => { ctx.send({ kind: 'clearCounterRoll', seat: me() }); ctx.refresh(); });
+  on('[data-tactic]', (el) => {
+    const [side, id] = el.dataset.tactic!.split(':');
+    // The command wants a unit of that squad to hang the play on, the same way
+    // the freeplay tracker plays one.
+    const owner = s.tokens.find((t) => t.side === side);
+    if (owner) {
+      const v = ctx.send({ kind: 'playTactic', seat: side as Side, uid: owner.uid, cardId: id });
+      if (v.ok) ctx.noteNow(`${squadLabel(side as Side)} plays ${ctx.data.byId.get(id)?.name?.en ?? id}. Resolve the card's text; only 1 a round (5.4.2).`);
+    }
+    ctx.refresh();
+  });
+  on('[data-chargeslot]', (el) => {
+    const m = chargePlan;
+    const t = m ? s.tokens.find((x) => x.uid === m.uid) : undefined;
+    chargePlan = null;
+    if (m && t) {
+      const slot = el.dataset.chargeslot!;
+      if (ctx.send({ kind: 'setCharge', seat: t.side, uid: t.uid, slot, on: m.on }).ok) {
+        ctx.noteNow(m.on
+          ? `${t.label}: the Charge Token on ${slot} is now face-up.`
+          : `${t.label}: the Charge Token on ${slot} is spent.`);
+      }
+    }
+    ctx.refresh();
+  });
+  on('[data-act="chargecancel"]', () => { chargePlan = null; ctx.refresh(); });
+  on('[data-resupply]', (el) => {
+    const m = resupplyPick;
+    const to = s.tokens.find((x) => x.uid === Number(el.dataset.resupply));
+    resupplyPick = null;
+    if (m && to) {
+      const max = tokenCards(ctx.data, to).flatMap(({ card }) => card.actions ?? []).find((a) => a.id === m.rule.actionId)?.storage ?? 0;
+      // The command caps at the printed Storage, so the count is read back
+      // rather than assumed.
+      if (ctx.send({ kind: 'restoreAmmo', seat: to.side, uid: to.uid, actionId: m.rule.actionId, amount: m.rule.amount }).ok) {
+        ctx.noteNow(`Resupply: ${to.label} is back to Ammo ${to.ammo?.[m.rule.actionId] ?? 0}/${max}.`);
+      }
+    }
+    ctx.refresh();
+  });
+  on('[data-act="resupplycancel"]', () => { resupplyPick = null; ctx.refresh(); });
+  on('[data-act="crushauto"]', () => {
+    const m = crushPlan;
+    const v = m ? s.tokens.find((x) => x.uid === m.queue[0]) : undefined;
+    if (!m || !v) { advanceCrush(ctx); ctx.refresh(); return; }
+    const out = crushEscapes(ctx, v, m.goal);
+    if (out.length) placeCrushed(ctx, out[0].c, out[0].r);
+    else { m.queue.shift(); advanceCrush(ctx); ctx.refresh(); }
+  });
   on('[data-act="smokestop"]', () => finishSmokePlan(ctx));
   // ---------- Forced Movement ----------
   on('[data-shovepick]', (el) => {
