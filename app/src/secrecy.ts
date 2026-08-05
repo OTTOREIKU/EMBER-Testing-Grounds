@@ -40,12 +40,19 @@ export function newSalt(): string {
 // same revision and ending up different, which is what a non-deterministic
 // apply() looks like. The numbers agree, so nothing else would ever notice.
 //
-// Two rules for what goes in:
+// Three rules for what goes in:
 //   1. Only facts a command put there. Anything local — a UI toggle, a hand of
 //      Tactics Cards the other client was never told about, a Timing Dial
 //      before its reveal — legitimately differs, and including it would report
 //      an honest game as a desync every Planning Phase.
-//   2. Fixed order, always. Sort by id, list fields explicitly rather than
+//   2. **Nothing derived.** `script` is turn bookkeeping each client works out
+//      for itself and never sends: `enterPhase` derives it from a command, but
+//      `opportunity()` mints `script.opp` from inside a *render*. The sender
+//      hashes before its next render and the receiver after its last one, so
+//      the two disagree by one frame on every command — which is exactly the
+//      false alarm that stopped a live game on 2026-08-05. The board is
+//      commanded; the bookkeeping is computed. Only hash what is commanded.
+//   3. Fixed order, always. Sort by id, list fields explicitly rather than
 //      leaning on object key order, or the same board hashes two ways.
 //
 // Not a security boundary: it detects accident, not tampering, so a fast
@@ -83,7 +90,6 @@ export function boardFingerprint(state: GameState): string {
   const items = [...(tasks?.items ?? [])]
     .sort((a, b) => String(a.id).localeCompare(String(b.id)))
     .map((i) => keyed(i as unknown as Record<string, unknown>));
-  const sc = (s.script ?? null) as Record<string, unknown> | null;
   return fold(JSON.stringify([
     s.round?.n, s.round?.phase, s.round?.firstPlayer,
     s.map, s.mission ?? null, s.scale ?? null, s.roundLimit ?? null,
@@ -92,6 +98,7 @@ export function boardFingerprint(state: GameState): string {
     [...(s.removedTerrain ?? [])].sort(),
     [...(s.smoke ?? [])].map((x) => keyed(x as unknown as Record<string, unknown>)),
     tasks?.vp ?? null, items,
-    sc ? [sc.turn ?? null, [...((sc.acted as number[]) ?? [])].sort(), [...((sc.passed as string[]) ?? [])].sort(), sc.opp ?? null] : null,
+    // No `script`: see rule 2. Where the units stand and what they have spent
+    // is the thing worth agreeing on, and it is all commanded.
   ]));
 }

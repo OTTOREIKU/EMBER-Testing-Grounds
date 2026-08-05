@@ -68,6 +68,20 @@ const committed = board();
 committed.script.commits = { s1: 'abc' };
 committed.script.revealed = ['s1'];
 check('nor the dial commitments', boardFingerprint(committed), boardFingerprint(board()));
+// The one that stopped a live game: `opportunity()` mints `script.opp` from
+// inside a render, so the sender hashes before its next frame and the receiver
+// after its last one and the two differ by one every time. None of the turn
+// bookkeeping is commanded, so none of it is comparable.
+const opped = board();
+opped.script.opp = { uid: 1, timing: 'firing', action: 2, maneuver: 1 };
+check('and NOT the Action Opportunity, which each client derives itself', boardFingerprint(opped), boardFingerprint(board()));
+const turned2 = board();
+turned2.script.turn = 's2';
+turned2.script.acted = [1, 2];
+turned2.script.passed = ['s1'];
+check('nor whose turn it is, or who has acted', boardFingerprint(turned2), boardFingerprint(board()));
+const noScript = board({ script: undefined });
+check('a board with no script at all hashes the same', boardFingerprint(noScript), boardFingerprint(board()));
 
 // ---------- it notices what must not differ ----------
 
@@ -84,9 +98,6 @@ const scored = board({ tasks: { vp: { s1: 2, s2: 0 }, items: [] } });
 check('a difference in VP is caught', boardFingerprint(scored) !== boardFingerprint(board()), true);
 const phased = board({ round: { n: 1, phase: 3, firstPlayer: 's1' } });
 check('a different phase is caught', boardFingerprint(phased) !== boardFingerprint(board()), true);
-const opped = board();
-opped.script.opp = { uid: 1, timing: 'firing', action: 2 };
-check('a different Action Opportunity is caught', boardFingerprint(opped) !== boardFingerprint(board()), true);
 const carried = board({ tasks: { vp: { s1: 0, s2: 0 }, items: [{ id: 'bb1', kind: 'blackbox', bearerUid: 1 }] } });
 const loose = board({ tasks: { vp: { s1: 0, s2: 0 }, items: [{ id: 'bb1', kind: 'blackbox', col: 4, row: 4 }] } });
 check('a Black Box in hand versus on the ground is caught', boardFingerprint(carried) !== boardFingerprint(loose), true);

@@ -430,16 +430,22 @@ export class Relay {
           }
           return;
         }
-        // Before lastRev moves and before anything is applied: the sender's
-        // fingerprint describes the board *without* this command, which is the
-        // one we are still holding. A replay is exempt — the tail is being laid
-        // onto a checkpoint, not onto the board that made the fingerprint.
-        if (!this.replaying && seat !== this.view.seat && this.driftedFrom(msg.fp)) {
-          if (!this.view.desynced) {
-            this.set({ desynced: true, error: 'The two boards disagree. Catching up…' });
-            this.send({ t: 'resync' });
-          }
-          return;
+        // Read before lastRev moves and before anything is applied: the
+        // sender's fingerprint describes the board *without* this command,
+        // which is the one we are still holding. A replay is exempt — the tail
+        // is laid onto a checkpoint, not onto the board that made it.
+        //
+        // Asking for a checkpoint but APPLYING ANYWAY is deliberate. A drift
+        // report is a hint, not a verdict: the fingerprint could be hashing
+        // something it should not, and the first version of it did. Dropping
+        // the command on that suspicion stranded a live game — the move never
+        // landed, the next revision then read as a gap, and the table sat there
+        // telling both players it would not settle. The checkpoint that follows
+        // overwrites whatever this command did, so applying it costs nothing
+        // and a false alarm costs one redundant resync instead of the match.
+        if (!this.replaying && seat !== this.view.seat && this.driftedFrom(msg.fp) && !this.view.desynced) {
+          this.set({ desynced: true, error: 'The two boards disagree. Catching up…' });
+          this.send({ t: 'resync' });
         }
         this.lastRev = rev;
         const mine = seat === this.view.seat;

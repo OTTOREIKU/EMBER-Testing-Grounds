@@ -229,9 +229,14 @@ check('and asks for nothing', d1.ws.kinds(), []);
 
 const d2 = seated('s1', same);
 d2.ws.deliver({ t: 'cmd', rev: 1, seat: 's2', seq: 1, cmd: { kind: 'no' }, fp: '0:bbbb2222' });
-check('boards that disagree do not apply the command', d2.applied.length, 0);
-check('and a resync is asked for', d2.ws.kinds(), ['resync']);
+check('a resync is asked for when the boards disagree', d2.ws.kinds(), ['resync']);
 check('the desync is flagged for the UI', d2.relay.state.desynced, true);
+// Applied anyway: the checkpoint on its way overwrites it, so a fingerprint
+// that is wrong about something costs a resync rather than the whole match.
+check('but the command still lands', d2.applied.map((c) => c.kind), ['no']);
+// And play carries on rather than reading the next revision as a gap.
+d2.ws.deliver({ t: 'cmd', rev: 2, seat: 's2', seq: 2, cmd: { kind: 'next' }, fp: '1:aaaa1111' });
+check('the next command is not mistaken for a gap', d2.applied.map((c) => c.kind), ['no', 'next']);
 
 // The sender may have been behind when it stamped: it had not yet seen the
 // commands we already applied, so the two hashes describe different moments
