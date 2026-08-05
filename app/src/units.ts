@@ -504,10 +504,20 @@ export function maxLink(data: GameData, t: Token): number {
 
 // A Mech Maneuvers at the Maneuver Value printed on its Chassis; a Drone moves at
 // its own value. Mobility Stance doubles it (rulebook 3.4.3).
+// A Mech's Maneuver Value comes off its Chassis Card; anything else moves on
+// the Movement Range printed on its own card.
+//
+// Mobility Stance doubles "the Movement Range for Maneuver" (4.1), and Maneuver
+// is a Mech-only thing: only a Mech generates a Maneuver Tick, the Maneuver
+// Value is printed on a Chassis Card, and 4.3.1 lists a Drone's movement
+// separately as a Command Action. A Drone in Mobility Stance keeps the Dodge
+// dice — that clause is written about "the Unit" — but its printed Move is not
+// doubled. 18 of the 44 Drones print Mobility, so getting this wrong moved most
+// of them at twice their range.
 export function maneuverRange(data: GameData, t: Token): number {
   const card = t.kind === 'mech' && t.mech?.chasis ? data.byId.get(t.mech.chasis) : data.byId.get(t.cardId);
   const base = card?.move ?? 0;
-  return t.stance === 'mobility' ? base * 2 : base;
+  return t.kind === 'mech' && t.stance === 'mobility' ? base * 2 : base;
 }
 
 export function initiativeFor(data: GameData, t: Token, timing: Timing): number | undefined {
