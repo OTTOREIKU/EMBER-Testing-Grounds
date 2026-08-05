@@ -19,6 +19,18 @@
     "509_A": {
       "range": 0
     },
+    "179_A": {
+      "range": 4
+    },
+    "180_A": {
+      "range": 3
+    },
+    "181_A": {
+      "range": 5
+    },
+    "182_A": {
+      "range": 4
+    },
     "181_B": {
       "size": "s"
     },
@@ -90,6 +102,10 @@
     "019_B": "RT-15C \"Glacier\" Assault Core, Smoke Grenade. A thrown Projectile with no range; the list gives 2.",
     "173_B": "P7-A3 \"Centurion\" Node Core, Fire Control Planning. Passive with no range; the list gives 6. Passives do carry ranges in our data already, so 0 here was missing data rather than 'not applicable'.",
     "509_A": "Type 55 Shield + PC-9K Shotgun (R) (D), Shield Bash. We had 1; the list prints Melee, which is range 0. Everything else on the action matches.",
+    "179_A": "PL1 Standard Chassis, Sprint. Movement action recorded with no range; the GoF Chasis sheet gives 4. Found 2026-08-05: these four GoF chassis were the only Moving actions in the whole database at range 0, and with nothing printed the app fell back to the Maneuver Value, so a PL1 Sprint offered 1 Grid instead of 4.",
+    "180_A": "PL29 Stealth Chassis, Sprint. Same gap; the list gives 3.",
+    "181_A": "PLK400 \"Centaur\" High-mobility Chassis, Run. Same gap; the list gives 5. Its Action B was already corrected above.",
+    "182_A": "PL35 Armored Chassis, Sprint. Same gap; the list gives 4.",
     "181_B": "PLK400 \"Centaur\" High-mobility Chassis, Sprint. We had a Medium action; the list says Small, which fits a high-mobility chassis.",
     "182_B": "PL35 Armored Chassis, Kick. We had Medium; the list says Small.",
     "045_B": "Type 79 Combat Shield, Barricade. We had the generic Tactic timing; the list says Swift.",
