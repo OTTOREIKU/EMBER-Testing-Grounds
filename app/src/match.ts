@@ -13,7 +13,7 @@ import { loadMechPresets } from './presets';
 import { installTooltip, preloadCards } from './tooltip';
 import { importSquadFile } from './importer';
 import { dialsOf, hashDials, newSalt, type DialEntry } from './secrecy';
-import { animateRemoteMove, ensureHud, glueAfter, showRangeOverlay, showSideTab, startAttackPick, startDetonation, startElectronicPick, startInterceptPick, startLaunchPlan, startShove, type DiceLine, type HudCtx } from './matchhud';
+import { animateRemoteMove, ensureHud, glueAfter, showRangeOverlay, showSideTab, startAttackPick, startBoxDrop, startDetonation, startElectronicPick, startInterceptPick, startLaunchPlan, startShove, type DiceLine, type HudCtx } from './matchhud';
 import { AttackHelper } from './combat';
 import { losNote, protectionFor } from './rules';
 import { SquadTracker } from './squads';
@@ -485,9 +485,14 @@ function mountSide(): void {
         send({ kind: 'recordKill', seat: killer.side, uid: killer.uid, targetUid: victim.uid, what });
         render();
       },
-      // Black Box bearers are a freeplay flow the Match Centre has no
-      // equivalent for yet, so a penetration only redraws.
-      () => render(),
+      // A Penetrated bearer drops its Black Box, and the ATTACKER says where
+      // (5.3.1) — so the question opens on this seat, not the victim's.
+      (victim, attacker) => {
+        const box = normaliseTasks(state.tasks).items
+          .find((i) => i.kind === 'blackbox' && i.bearerUid === victim.uid);
+        if (box) startBoxDrop(box.id, victim.uid, attacker.side, attacker.uid);
+        render();
+      },
       (cmd) => { send(cmd); },
     );
   }

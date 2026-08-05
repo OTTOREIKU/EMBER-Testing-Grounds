@@ -135,7 +135,9 @@ export class AttackHelper {
   private onLog: (t: Token, text: string) => void;
   private onKnockback: (attacker: Token, defender: Token, action: CardAction, hits: number) => void;
   private onDestroyed: (killer: Token, victim: Token, what: 'part' | 'unit') => void;
-  private onPenetrated: (victim: Token) => void;
+  // The attacker rides along because a Penetrated Black Box bearer drops it
+  // where the ATTACKER says (5.3.1), and only that seat may send the command.
+  private onPenetrated: (victim: Token, attacker: Token) => void;
   private onCommand: (cmd: Command) => void;
   // Set by the app while a networked game is running; cleared otherwise.
   roller: DiceRoller | null = null;
@@ -154,7 +156,7 @@ export class AttackHelper {
     onLog: (t: Token, text: string) => void = () => {},
     onKnockback: (attacker: Token, defender: Token, action: CardAction, hits: number) => void = () => {},
     onDestroyed: (killer: Token, victim: Token, what: 'part' | 'unit') => void = () => {},
-    onPenetrated: (victim: Token) => void = () => {},
+    onPenetrated: (victim: Token, attacker: Token) => void = () => {},
     onCommand: (cmd: Command) => void = () => {},
   ) {
     this.data = data;
@@ -806,7 +808,7 @@ export class AttackHelper {
         // off the token and keeps the narration and follow-up flow.
         this.onCommand({ kind: 'applyPenetration', seat: c.attacker.side, uid: c.attacker.uid, targetUid: c.defender.uid, slot });
         const next = c.defender.partStates[slot] ?? 'intact';
-        this.onPenetrated(c.defender);
+        this.onPenetrated(c.defender, c.attacker);
         if (next === 'destroyed') this.onDestroyed(c.attacker, c.defender, 'part');
         const how = c.explosion ? 'Explosion damage' : 'Penetration';
         this.note(`${how} from ${c.attacker.label}: ${SLOT_LABEL[slot]} goes ${cur} to ${next.toUpperCase()}.`, [c.attacker, c.defender]);

@@ -137,7 +137,7 @@ async function init() {
       perform(data, state, { kind: 'recordKill', seat: killer.side, uid: killer.uid, targetUid: victim.uid, what });
       if (what === 'unit' && selectedUid === victim.uid) selectToken(null);
     },
-    (victim) => dropBlackBoxes(victim),
+    (victim, attacker) => dropBlackBoxes(victim, attacker),
     (cmd) => perform(data, state, cmd),
   );
 
@@ -1506,15 +1506,19 @@ async function init() {
   }
 
   async function offerBlackBoxes(t: Token, path: { c: number; r: number }[]): Promise<void> {
-    const tasks = normaliseTasks(state.tasks);
-    const loose = tasks.items.filter((i) => i.kind === 'blackbox' && i.bearerUid === undefined
-      && i.col !== undefined && i.row !== undefined
-      && path.some((g) => g.c === Math.floor(i.col! / 3) && g.r === Math.floor(i.row! / 3)));
+    const loose = normaliseTasks(state.tasks).items
+      .filter((i) => i.kind === 'blackbox' && i.bearerUid === undefined
+        && i.col !== undefined && i.row !== undefined
+        && path.some((g) => g.c === Math.floor(i.col! / 3) && g.r === Math.floor(i.row! / 3)))
+      .map((i) => ({ id: i.id, where: gridRef(Math.floor(i.col! / 3), Math.floor(i.row! / 3)) }));
     if (!loose.length) return;
     for (const box of loose) {
+      // Re-read every time round: taking one replaces state.tasks wholesale, so
+      // a snapshot from before the loop would offer the same Freehand twice.
+      const tasks = normaliseTasks(state.tasks);
       const taken = tasks.items.filter((i) => i.bearerUid === t.uid && i.bearerSlot).map((i) => i.bearerSlot!);
       const hands = freehandSlots(data, t, taken);
-      const where = gridRef(Math.floor(box.col! / 3), Math.floor(box.row! / 3));
+      const where = box.where;
       if (!hands.length) {
         await alertDialog({
           title: 'No free Freehand',
@@ -1539,21 +1543,18 @@ async function init() {
         if (!id) continue;
         slot = id;
       }
-      box.bearerUid = t.uid;
-      box.bearerSlot = slot;
-      box.col = undefined;
-      box.row = undefined;
+      // Through the command layer rather than by hand: the same rule then reads
+      // the same on a networked table, and check() is the only place it lives.
+      if (!perform(data, state, { kind: 'takeBlackBox', seat: t.side, uid: t.uid, itemId: box.id, slot }).ok) continue;
       logTo(t, `Picked up the Black Box from ${where}, carried on the ${SLOT_LABEL[slot as PartSlot | 'main']}.`);
     }
-    state.tasks = tasks;
     onChanged();
   }
 
   // When a Unit bearing a Black Box is Penetrated, the Box goes on the board and
   // the ATTACKER says where, in contact with the bearer's base (5.3.1).
-  function dropBlackBoxes(victim: Token): void {
-    const tasks = normaliseTasks(state.tasks);
-    const held = tasks.items.filter((i) => i.kind === 'blackbox' && i.bearerUid === victim.uid);
+  function dropBlackBoxes(victim: Token, attacker: Token): void {
+    const held = normaliseTasks(state.tasks).items.filter((i) => i.kind === 'blackbox' && i.bearerUid === victim.uid);
     if (!held.length) return;
     const g = largeGridOf(victim);
     const spots: { c: number; r: number; ok: boolean }[] = [];
@@ -1566,17 +1567,17 @@ async function init() {
     const box = held[0];
     setHint(`${victim.label} was Penetrated and drops a Black Box. As the attacker, click a Grid in contact with it to say where the Box lands (5.3.1).`);
     board.showSmokeTargets(spots, (c, r) => {
-      box.bearerUid = undefined;
-      box.bearerSlot = undefined;
-      box.col = c * 3 + 1;
-      box.row = r * 3 + 1;
-      state.tasks = tasks;
+      // The attacker's seat, because the attacker is the one choosing.
+      perform(data, state, {
+        kind: 'dropBlackBox', seat: attacker.side, uid: attacker.uid,
+        itemId: box.id, to: { col: c * 3 + 1, row: r * 3 + 1 },
+      });
       board.clearHighlights();
       logTo(victim, `Penetrated while carrying a Black Box, which drops in ${gridRef(c, r)}.`);
       setHint('');
       onChanged();
       // More than one Box can be carried, so keep going until they are all down.
-      dropBlackBoxes(victim);
+      dropBlackBoxes(victim, attacker);
     });
   }
 

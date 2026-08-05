@@ -1,7 +1,7 @@
 import type { Facing, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, Timing, Token } from './types';
 import { addStatus, ageTokens, PHASES, STATUSES, TIMINGS } from './types';
 import type { GameData } from './data';
-import { consumesCharge, electronicValue, interceptCapacity, makeDroneToken, makeMechToken, maxLink, tokenCards } from './units';
+import { consumesCharge, electronicValue, freehandSlots, interceptCapacity, makeDroneToken, makeMechToken, maxLink, tokenCards } from './units';
 import { canManeuver, canOverload, canPerform, spendAction, spendManeuver, spendOverload } from './ticks';
 import { tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { battlefieldLocked, deploymentComplete, deployTurn, firstPlayerFrom, newSetup, normaliseSetup } from './setup';
@@ -40,7 +40,11 @@ export type Command =
   // `via` is the route walked, purely so the other player watches the same walk
   // instead of a slide through the wall the mover went around. Nothing reads it
   // but the animation, and a command without it still lands correctly.
-  | { kind: 'maneuver'; seat: Side; uid: number; to: { col: number; row: number }; facing?: Facing; free?: boolean; via?: { col: number; row: number }[] }
+  //
+  // `granted` is a Movement a card handed out rather than one the Opportunity
+  // paid for — Hit and Run (276) moves a Mech as its Opportunity *ends*, when
+  // there is no Opportunity left to check or to charge.
+  | { kind: 'maneuver'; seat: Side; uid: number; to: { col: number; row: number }; facing?: Facing; free?: boolean; granted?: boolean; via?: { col: number; row: number }[] }
   | { kind: 'performAction'; seat: Side; uid: number; actionId: string }
   | { kind: 'overload'; seat: Side; uid: number }
   | { kind: 'playTactic'; seat: Side; uid: number; cardId: string; pick?: string }
@@ -63,6 +67,16 @@ export type Command =
   | { kind: 'setCharge'; seat: Side; uid: number; slot: string; on: boolean }
   | { kind: 'recordKill'; seat: Side; uid: number; targetUid: number; what: 'part' | 'unit' }
   | { kind: 'destroyTerrain'; seat: Side; uid: number; pieces: string[] }
+  // A Black Box changing hands (5.3.1). Picking one up is optional and happens
+  // as a unit's Movement passes through its Grid; the route itself stays with
+  // the move UI, the way it does for `maneuver`. `slot` is the Freehand Part
+  // that carries it, and that Part's Freehand counts as spent while it does.
+  | { kind: 'takeBlackBox'; seat: Side; uid: number; itemId: string; slot: string }
+  // Dropped when the bearer is Penetrated, and it is the ATTACKER who says
+  // where it lands — hence a seat that is not the bearer's. `uid` is the
+  // attacker, for attribution only: it may be a Projectile that is already
+  // spent by the time the Grid is chosen, so this one is actor-optional.
+  | { kind: 'dropBlackBox'; seat: Side; uid: number; itemId: string; to: { col: number; row: number } }
   | { kind: 'advancePhase'; seat: Side }
   | { kind: 'setPhase'; seat: Side; phase: number }
   | { kind: 'resetRounds'; seat: Side }
@@ -186,8 +200,9 @@ function oppOf(state: GameState, uid: number) {
 // projectile has left the board, and an owed Interception survives its unit
 // dying. So these carry the actor for attribution, and the on-board gate binds
 // only while it is still standing.
-function actorOptional(cmd: Command): cmd is Command & { kind: 'forceMove' | 'recordKill' | 'destroyTerrain' | 'resolveIntercept' } {
-  return cmd.kind === 'forceMove' || cmd.kind === 'recordKill' || cmd.kind === 'destroyTerrain' || cmd.kind === 'resolveIntercept';
+function actorOptional(cmd: Command): cmd is Command & { kind: 'forceMove' | 'recordKill' | 'destroyTerrain' | 'resolveIntercept' | 'dropBlackBox' } {
+  return cmd.kind === 'forceMove' || cmd.kind === 'recordKill' || cmd.kind === 'destroyTerrain'
+    || cmd.kind === 'resolveIntercept' || cmd.kind === 'dropBlackBox';
 }
 
 // The round track, the pre-game stages, the smoke and intercept books, the
@@ -528,13 +543,29 @@ export function check(data: GameData, state: GameState, cmd: Command): CheckResu
       }
       return ok;
     }
+    case 'dropBlackBox': {
+      const box = normaliseTasks(state.tasks).items.find((i) => i.id === cmd.itemId);
+      if (!box || box.kind !== 'blackbox') return no('That is not a Black Box.');
+      if (box.bearerUid === undefined) return no('That Black Box is already on the board.');
+      const bearer = state.tokens.find((x) => x.uid === box.bearerUid);
+      if (!bearer) return no('Whatever was carrying that Black Box has left the board.');
+      const { col, row } = cmd.to;
+      if (!Number.isInteger(col) || !Number.isInteger(row) || col < 0 || row < 0 || col > 35 || row > 35) {
+        return no('That is not a place on the board.');
+      }
+      // "In contact with the bearer's base" is the Grid it stands in or one
+      // touching it, diagonals included (5.3.1).
+      const near = Math.max(Math.abs(Math.floor(col / 3) - Math.floor(bearer.col / 3)), Math.abs(Math.floor(row / 3) - Math.floor(bearer.row / 3)));
+      if (near > 1) return no(`A dropped Black Box lands in contact with ${bearer.label}'s base (5.3.1).`);
+      return ok;
+    }
   }
 }
 
 function checkActed(
   data: GameData,
   state: GameState,
-  cmd: Exclude<Command, { kind: 'forceMove' | 'recordKill' | 'destroyTerrain' | 'resolveIntercept' | TableKind }>,
+  cmd: Exclude<Command, { kind: 'forceMove' | 'recordKill' | 'destroyTerrain' | 'resolveIntercept' | 'dropBlackBox' | TableKind }>,
   t: Token,
 ): CheckResult {
   switch (cmd.kind) {
@@ -567,6 +598,10 @@ function checkActed(
       if (!Number.isInteger(col) || !Number.isInteger(row) || col < 0 || row < 0 || col > 35 || row > 35) {
         return no('That is not a place on the board.');
       }
+      // A Movement a card handed out belongs to the card, not to an Action
+      // Opportunity: Hit and Run moves a Mech as its Opportunity ends, when
+      // there is no longer one to check against or to charge.
+      if (cmd.granted) return ok;
       const o = oppOf(state, cmd.uid);
       if (!o) return no('It is not this Mech\'s Action Opportunity.');
       // A free move rides on an Action that has already been performed; without
@@ -671,6 +706,29 @@ function checkActed(
       if (held === undefined) return no('That Action does not track Ammo.');
       const max = ammoMax(data, t, cmd.actionId);
       if (max !== undefined && held >= max) return no('That Action is already at its full Storage.');
+      return ok;
+    }
+    case 'takeBlackBox': {
+      // A Low Value Unit may never interact with a Task Item (p.82), and a
+      // Projectile is always one.
+      if (t.kind === 'projectile') return no('A Projectile never picks up a Black Box.');
+      const tasks = normaliseTasks(state.tasks);
+      const box = tasks.items.find((i) => i.id === cmd.itemId);
+      if (!box || box.kind !== 'blackbox') return no('That is not a Black Box.');
+      if (box.bearerUid !== undefined) {
+        return box.bearerUid === t.uid
+          ? no(`${t.label} is already carrying that Black Box.`)
+          : no('Another unit is already carrying that Black Box.');
+      }
+      if (box.col === undefined || box.row === undefined) return no('That Black Box is not on the board.');
+      // A Part already bearing one has its Freehand treated as invalid (5.3.1),
+      // so a Part can only ever hold a single Box.
+      const taken = tasks.items.filter((i) => i.bearerUid === t.uid && i.bearerSlot).map((i) => i.bearerSlot!);
+      const hands = freehandSlots(data, t, taken);
+      if (!hands.length) {
+        return no(`${t.label} has no free Freehand Part. Carrying a Black Box needs one, and a Part already holding one does not count (5.3.1).`);
+      }
+      if (!hands.some((h) => h.slot === cmd.slot)) return no('That Part cannot carry a Black Box.');
       return ok;
     }
     case 'spendIntercept': {
@@ -1106,6 +1164,19 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
     state.removedTerrain = [...(state.removedTerrain ?? []), ...cmd.pieces.filter((p) => !gone.has(p))];
     return;
   }
+  // Above the actor lookup: the attacker who chose the Grid may be a Projectile
+  // that is already spent by the time this lands.
+  if (cmd.kind === 'dropBlackBox') {
+    const tasks = normaliseTasks(state.tasks);
+    const box = tasks.items.find((i) => i.id === cmd.itemId);
+    if (!box) return;
+    box.bearerUid = undefined;
+    box.bearerSlot = undefined;
+    box.col = cmd.to.col;
+    box.row = cmd.to.row;
+    state.tasks = tasks;
+    return;
+  }
 
   const t = state.tokens.find((x) => x.uid === cmd.uid);
   if (!t) return;
@@ -1139,7 +1210,9 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
       t.row = cmd.to.row;
       if (cmd.facing !== undefined) t.facing = cmd.facing;
       const o = oppOf(state, cmd.uid);
-      if (o && sc && !cmd.free) sc.opp = spendManeuver(o);
+      // A Movement Action already paid with an Action Tick, and one a card
+      // handed out was never charged to the Opportunity at all.
+      if (o && sc && !cmd.free && !cmd.granted) sc.opp = spendManeuver(o);
       return;
     }
     case 'performAction': {
@@ -1230,6 +1303,18 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
       const max = ammoMax(data, t, cmd.actionId);
       const next = t.ammo[cmd.actionId] + (cmd.amount ?? 1);
       t.ammo[cmd.actionId] = max !== undefined ? Math.min(max, next) : next;
+      return;
+    }
+    case 'takeBlackBox': {
+      const tasks = normaliseTasks(state.tasks);
+      const box = tasks.items.find((i) => i.id === cmd.itemId);
+      if (!box) return;
+      box.bearerUid = t.uid;
+      box.bearerSlot = cmd.slot;
+      // Off the board and onto the unit: a carried Box has no square of its own.
+      box.col = undefined;
+      box.row = undefined;
+      state.tasks = tasks;
       return;
     }
     case 'spendIntercept': {

@@ -36,6 +36,19 @@ const evReader = unitsSrc.slice(
   unitsSrc.indexOf('export function defaultUnitLabel'),
 );
 if (!evReader) throw new Error('could not locate electronicValue in units.ts');
+// takeBlackBox asks freehandSlots which Parts can carry one, so the Freehand
+// keyword test is sliced rather than mirrored. SLOT_LABEL rides along because
+// it is a module-level const the function reads.
+const slotLabels = unitsSrc.slice(
+  unitsSrc.indexOf('export const SLOT_LABEL'),
+  unitsSrc.indexOf('let uidSource'),
+);
+if (!slotLabels) throw new Error('could not locate SLOT_LABEL in units.ts');
+const freehand = unitsSrc.slice(
+  unitsSrc.indexOf('export function freehandSlots'),
+  unitsSrc.indexOf('// ---------- Charge (rulebook 4.14) ----------'),
+);
+if (!freehand) throw new Error('could not locate freehandSlots in units.ts');
 const timings = types.slice(types.indexOf('export const PHASES'), types.indexOf('export type TokenShape'));
 const statuses = types.slice(types.indexOf('export function hexagonIds'), types.indexOf('export interface RoundState'));
 const tmp = new URL('./_commands.slice.ts', import.meta.url);
@@ -91,6 +104,8 @@ writeFileSync(
     + interceptParser
     + chargeParser
     + evReader
+    + slotLabels
+    + freehand
     + stubs
     + commands.replace(/^import[^\n]*\n/gm, ''),
 );
@@ -130,6 +145,8 @@ const data = {
     ['EW1', { id: 'EW1', electronic: 5, actions: [{ id: 'EWA', type: 'Firing', size: 's', range: 4, name: { en: 'Fire Control Interference' }, keywords: [{ en: 'Electronic Attack' }] }] }],
     ['EW2', { id: 'EW2', electronic: 3, actions: [] }],
     ['D1', { id: 'D1', actions: [] }],
+    // Freehand is what lets a Part carry a Black Box (5.3.1).
+    ['FH1', { id: 'FH1', actions: [], keywords: [{ en: 'Freehand' }] }],
     ['P1', { id: 'P1', LV: 4 }],
   ]),
   commonActions: [{ id: 'COMMON_CHARGE', type: 'Tactic', size: 's', name: { en: 'Charge' } }],
@@ -656,6 +673,16 @@ const wman = wmv();
 C.apply(data, wman, { kind: 'maneuver', seat: 's1', uid: 1, to: { col: 9, row: 9 } });
 check('while an ordinary Maneuver still spends it', [wman.script.opp.maneuver, wman.script.opp.maneuvered], [0, true]);
 
+// A Movement a card handed out belongs to the card. Hit and Run moves a Mech as
+// its Opportunity *ends*, when there is none left to check against or charge.
+const granted = { kind: 'maneuver', seat: 's1', uid: 1, to: { col: 9, row: 9 }, granted: true };
+check('a granted Movement needs no Opportunity', C.check(data, world([mech(1, 's1')], 2), granted).ok, true);
+const wgr = wmv({ performed: ['A1'], maneuver: 1 });
+C.apply(data, wgr, granted);
+check('and spends no Maneuver Tick', [wgr.script.opp.maneuver, wgr.script.opp.maneuvered], [1, false]);
+check('but still moves the unit', [wgr.tokens[0].col, wgr.tokens[0].row], [9, 9]);
+check('an ungranted move with no Opportunity is still refused', C.check(data, world([mech(1, 's1')], 2), mv()).ok, false);
+
 // ---------- Charge Tokens (4.14) ----------
 const wc2 = () => world([mech(1, 's1', { mech: { torso: 'T6', chasis: 'T1', pilot: 'P1' }, partStates: { torso: 'intact', chasis: 'intact' } })], 2);
 const chg = (over = {}) => ({ kind: 'setCharge', seat: 's1', uid: 1, slot: 'torso', on: true, ...over });
@@ -1002,6 +1029,68 @@ C.perform(data, openTable(), { kind: 'adjustCommandTokens', seat: 's1', pool: 's
 check('a table command travels stamped as the sender', stamped?.seat, 's2');
 C.setLocalSeat(null);
 C.onPerformed(() => {});
+
+// ---------- Black Boxes (5.3.1) ----------
+//
+// The Freehand test is the real freehandSlots, so a Part that cannot carry one
+// here cannot carry one in the app either.
+
+// One Freehand arm and one ordinary torso, so "which Parts may carry it" is a
+// real question rather than a formality.
+const boxWorld = (over = {}) => ({
+  ...world([
+    mech(1, 's1', { mech: { torso: 'T1', rightHand: 'FH1', pilot: 'P1' }, partStates: { torso: 'intact', rightHand: 'intact' }, col: 12, row: 12 }),
+    mech(2, 's2', { col: 15, row: 15 }),
+  ]),
+  tasks: { items: [{ id: 'bb1', kind: 'blackbox', zone: 'echo', col: 13, row: 13 }], ...over },
+});
+const take = (over = {}) => ({ kind: 'takeBlackBox', seat: 's1', uid: 1, itemId: 'bb1', slot: 'rightHand', ...over });
+
+check('a Freehand Part may take a loose Black Box', C.check(data, boxWorld(), take()).ok, true);
+check('a Part without the Freehand keyword may not', C.check(data, boxWorld(), take({ slot: 'torso' })).ok, false);
+check('an unknown Box is refused', C.check(data, boxWorld(), take({ itemId: 'nope' })).ok, false);
+
+const held = boxWorld();
+C.apply(data, held, take());
+check('the Box moves onto the unit', [held.tasks.items[0].bearerUid, held.tasks.items[0].bearerSlot], [1, 'rightHand']);
+check('and leaves the board', [held.tasks.items[0].col, held.tasks.items[0].row], [undefined, undefined]);
+check('taking it twice is refused', C.check(data, held, take()).ok, false);
+// A Part bearing one has its Freehand treated as invalid, so a second Box
+// needs a second Freehand Part.
+const two = { ...held, tasks: { items: [...held.tasks.items, { id: 'bb2', kind: 'blackbox', zone: 'golf', col: 13, row: 13 }] } };
+check('a second Box needs another free Freehand', C.check(data, two, take({ itemId: 'bb2' })).ok, false);
+// Give it a second Freehand Part and the second Box goes on that one.
+const twoHands = JSON.parse(JSON.stringify(two));
+twoHands.tokens[0].mech.leftHand = 'FH1';
+twoHands.tokens[0].partStates.leftHand = 'intact';
+check('a second Freehand Part may take the second Box', C.check(data, twoHands, take({ itemId: 'bb2', slot: 'leftHand' })).ok, true);
+check('but not the Part already holding one', C.check(data, twoHands, take({ itemId: 'bb2', slot: 'rightHand' })).ok, false);
+
+const destroyed = boxWorld();
+destroyed.tokens[0].partStates.rightHand = 'destroyed';
+check('a destroyed Part carries nothing', C.check(data, destroyed, take()).ok, false);
+const proj = boxWorld();
+proj.tokens[0].kind = 'projectile';
+check('a Projectile never picks one up', C.check(data, proj, take()).ok, false);
+check('nor may the other squad command the unit', C.check(data, boxWorld(), take({ seat: 's2' })).ok, false);
+
+// Dropping: the ATTACKER says where, so the seat is deliberately not the
+// bearer's, and the Grid has to touch the bearer's own.
+const drop = (over = {}) => ({ kind: 'dropBlackBox', seat: 's2', uid: 2, itemId: 'bb1', to: { col: 13, row: 13 }, ...over });
+check('a loose Box cannot be dropped', C.check(data, boxWorld(), drop()).ok, false);
+check('the attacker drops it beside the bearer', C.check(data, held, drop()).ok, true);
+check('and not across the board', C.check(data, held, drop({ to: { col: 33, row: 33 } })).ok, false);
+check('a diagonal Grid is still contact', C.check(data, held, drop({ to: { col: 10, row: 10 } })).ok, true);
+check('off the board is refused', C.check(data, held, drop({ to: { col: -1, row: 4 } })).ok, false);
+
+const dropped = JSON.parse(JSON.stringify(held));
+C.apply(data, dropped, drop());
+check('the Box lands where the attacker said', [dropped.tasks.items[0].col, dropped.tasks.items[0].row], [13, 13]);
+check('and nobody is carrying it', dropped.tasks.items[0].bearerUid, undefined);
+// The attacker may be a Projectile that is spent before the Grid is chosen.
+const gone = JSON.parse(JSON.stringify(held));
+gone.tokens = gone.tokens.filter((t) => t.uid !== 2);
+check('a drop survives its attacker leaving the board', C.check(data, gone, drop()).ok, true);
 
 // ---------- determinism ----------
 

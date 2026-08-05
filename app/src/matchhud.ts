@@ -3,9 +3,9 @@ import type { GameData } from './data';
 import { actionIconUrl, cardName, isAerial, secondaryImageUrl, squadLabel, unitSize } from './data';
 import { Board, footprint, snapPlacement, type BoardCallbacks } from './board';
 import { printedDeployment, resolveZoneSetData } from './overlays';
-import { canActivateCamo, chargeableSlots, electronicValue, explosionScope, extraActivationOf, guidedActions, initiativeFor, interceptCapacity, interceptLeft, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
+import { canActivateCamo, chargeableSlots, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
 import { resolveCounterRoll, tallyCounter } from './combat';
-import { tacticFitsPhase, tacticSpec } from './tactics';
+import { tacticFitsPhase, tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { attackDirection, crushTargets, dissipationFor, extendPath, knockbackPath, LG, losBetween, losNote, protectionFor, rangeBetween, reachableGrids, standingSpot, type LargeGrid } from './rules';
 import { breakAwayCost, canBeForceMoved } from './melee';
 import { factionColour } from './icons';
@@ -248,6 +248,8 @@ let movePlan: {
   // A Movement Action has already paid with an Action Tick, so its move must
   // not also spend the Maneuver Tick.
   free?: boolean;
+  // A Movement a Tactics Card handed out, which belongs to no Opportunity.
+  granted?: boolean;
   // Turning on the spot costs no Movement Range but is still Movement, so the
   // facing is chosen inside the Movement and travels with it. A route of no
   // steps and a new facing is a legal Maneuver on its own.
@@ -350,7 +352,7 @@ function moveOptsFor(ctx: HudCtx, t: Token, flying: boolean) {
 // A Maneuver by default. A Movement Action passes its own Range instead: the
 // chassis `move` is the Maneuver Value (1–2 Grids) and has nothing to do with a
 // Sprint-style Action's printed range, which is usually 4.
-function startMovePlan(ctx: HudCtx, t: Token, opts: { range?: number; label?: string; shoveActionId?: string; free?: boolean } = {}): void {
+function startMovePlan(ctx: HudCtx, t: Token, opts: { range?: number; label?: string; shoveActionId?: string; free?: boolean; granted?: boolean } = {}): void {
   const steps = opts.range || maneuverRange(ctx.data, t);
   if (steps <= 0) {
     ctx.noteNow(`${t.label} has no Movement Range on its card.`);
@@ -366,6 +368,7 @@ function startMovePlan(ctx: HudCtx, t: Token, opts: { range?: number; label?: st
     label: opts.label ?? 'Maneuver',
     shoveActionId: opts.shoveActionId,
     free: opts.free,
+    granted: opts.granted,
     facing: t.facing,
     turned: false,
   };
@@ -437,7 +440,7 @@ function commitMove(ctx: HudCtx): void {
     board.clearMovePath();
     board.clearHighlights();
     commitAction(ctx);
-    ctx.send({ kind: 'maneuver', seat: t.side, uid: t.uid, to: { col: t.col, row: t.row }, facing: m.facing, free: m.free });
+    ctx.send({ kind: 'maneuver', seat: t.side, uid: t.uid, to: { col: t.col, row: t.row }, facing: m.facing, free: m.free, granted: m.granted });
     ctx.noteNow(`${t.label} turns on the spot. A pivot spends no Movement Range, but it is Movement.`);
     ctx.refresh();
     return;
@@ -456,6 +459,7 @@ function commitMove(ctx: HudCtx): void {
   const last = stops[stops.length - 1];
   const shoveId = m.shoveActionId;
   const free = m.free;
+  const granted = m.granted;
   const facing = m.turned ? m.facing : undefined;
   const goal = m.path[m.path.length - 1];
   movePlan = null;
@@ -480,16 +484,22 @@ function commitMove(ctx: HudCtx): void {
       queue: victims.units.map((v) => v.uid),
       stops,
       free,
+      granted,
       shoveActionId: shoveId,
       facing,
+      path: m.path,
     };
     advanceCrush(ctx);
     ctx.refresh();
     return;
   }
+  const walked = m.path;
   board.animateMove(t.uid, stops, () => {
     // The route travels with the move so the other player watches the same walk.
-    ctx.send({ kind: 'maneuver', seat: t.side, uid: t.uid, to: last, free, via: stops, facing });
+    ctx.send({ kind: 'maneuver', seat: t.side, uid: t.uid, to: last, free, granted, via: stops, facing });
+    // A Black Box in a Grid the route passed through may be picked up, which is
+    // read off the whole route rather than the destination (5.3.1).
+    offerBoxesOn(ctx, t.uid, walked);
     // A shove rides on the Movement rather than replacing it, so it is offered
     // once the Mech has finished moving and is facing whatever it ended beside.
     if (shoveId) startShove(t.uid, shoveId);
@@ -602,8 +612,16 @@ function renderBoard(ctx: HudCtx): void {
     document.documentElement.style.setProperty(`--sq-${side}`, factionColour(f));
   }
   // Panning is the default; a placement or a route needs the cell instead.
-  board.panEnabled = placing === null && !movePlan && !launchPlan && !smokePlan && !smokeOwed?.length && !crushPlan?.queue.length;
-  if (movePlan) {
+  board.panEnabled = placing === null && !movePlan && !launchPlan && !smokePlan && !smokeOwed?.length && !crushPlan?.queue.length && !boxDrop;
+  // Lit for the attacker choosing where a dropped Box lands. It outranks the
+  // rest because it is asked mid-attack and nothing else can be open.
+  if (boxDrop && mine(ctx, boxDrop.bySide)) {
+    const bearer = s.tokens.find((x) => x.uid === boxDrop!.bearerUid);
+    board.showSmokeTargets(
+      bearer ? dropGrids(ctx, bearer).map((g) => ({ ...g, ok: true })) : [],
+      (c, r) => placeDroppedBox(ctx, c, r),
+    );
+  } else if (movePlan) {
     const t = s.tokens.find((x) => x.uid === movePlan!.uid);
     // The same overlay freeplay shows: the Large Grids this unit can really
     // enter, with the step count on each.
@@ -1124,10 +1142,18 @@ function panelHtml(ctx: HudCtx): string {
   // already asked, so they come before whatever the phase would otherwise show.
   // An attack in the helper owns the screen until it is resolved; the turn
   // panel says so rather than offering a second set of damage buttons beside it.
+  // A dropped Black Box is asked for in the middle of the attack that caused it
+  // (5.3.1), so it has to outrank the combat window's own panel — the helper
+  // keeps the dice, this keeps the question.
+  if (boxDrop) return boxDropPanel(ctx);
   if (ctx.combatBusy()) {
     return head('Your move', 'Resolving the attack', 'The combat window has the dice.', true)
       + '<div class="tp-body"><p class="tp-note">Work through the roll over the board. What it settles — the target Part, the Penetration, a destruction, a Knockback — is applied for you and travels to the other player on its own.</p></div><div class="tp-foot"></div>';
   }
+  if (boxPick) return boxPickPanel(ctx);
+  // A Tactics Card is played into a moment, so its two questions come before
+  // whatever the phase would otherwise be asking.
+  if (tacticPlan) return tacticPanel(ctx);
   if (launchPlan) return launchPanel(ctx);
   if (launchPick) return launchPickPanel(ctx);
   // A Counter-roll is a live two-player exchange, so it outranks everything
@@ -1687,6 +1713,138 @@ function counterPanel(ctx: HudCtx): string {
         : '<button class="bigbtn" data-act="ewclose">Done</button>'}</div>`;
 }
 
+// ---------- Black Boxes (rulebook 5.3.1) ----------
+//
+// A Main Task item, and the only one that moves: a Unit whose Movement passes
+// through a loose Box may pick it up onto a Freehand Part, and a bearer that is
+// Penetrated drops it where the ATTACKER says, in contact with its base. Both
+// halves are commands, so the Box changes hands on both screens at once — the
+// freeplay board mutated `state.tasks` in place, which could never have
+// travelled.
+
+// Boxes the mover just walked over, offered one at a time. `slotFor` is the
+// second question, asked only when the unit has more than one free Freehand.
+let boxPick: { uid: number; queue: string[]; slotFor?: string } | null = null;
+// The attacker choosing where a Penetrated bearer's Box lands.
+let boxDrop: { itemId: string; bearerUid: number; bySide: Side; byUid: number } | null = null;
+
+function taskItems(ctx: HudCtx) {
+  return normaliseTasks(ctx.state.tasks).items;
+}
+
+// A Part already bearing a Box has its Freehand treated as invalid (5.3.1).
+function freeHandsFor(ctx: HudCtx, t: Token) {
+  const taken = taskItems(ctx).filter((i) => i.bearerUid === t.uid && i.bearerSlot).map((i) => i.bearerSlot!);
+  return freehandSlots(ctx.data, t, taken);
+}
+
+// Called once a Movement has landed: every loose Box in a Grid the route passed
+// through is offered, which is the reading freeplay uses.
+function offerBoxesOn(ctx: HudCtx, uid: number, path: LargeGrid[]): void {
+  const on = taskItems(ctx).filter((i) => i.kind === 'blackbox' && i.bearerUid === undefined
+    && i.col !== undefined && i.row !== undefined
+    && path.some((g) => g.c === Math.floor(i.col! / 3) && g.r === Math.floor(i.row! / 3)));
+  if (on.length) boxPick = { uid, queue: on.map((i) => i.id) };
+}
+
+function boxPickPanel(ctx: HudCtx): string {
+  const m = boxPick!;
+  const t = ctx.state.tokens.find((x) => x.uid === m.uid);
+  const box = taskItems(ctx).find((i) => i.id === m.queue[0]);
+  if (!t || !box || box.col === undefined || box.row === undefined) {
+    return head('Black Box', 'It is no longer there', '', true)
+      + '<div class="tp-body"></div><div class="tp-foot"><button class="bigbtn ghost2" data-act="boxskip">Close</button></div>';
+  }
+  const where = gridName(Math.floor(box.col / 3), Math.floor(box.row / 3));
+  const hands = freeHandsFor(ctx, t);
+  const left = m.queue.length > 1 ? `<p class="tp-dim">${m.queue.length - 1} more on this route after this one.</p>` : '';
+  if (!hands.length) {
+    return head('Your move', `The Black Box in ${where}`, `${esc(t.label)} walked over it.`, true)
+      + `<div class="tp-body"><p class="tp-note">A Black Box goes onto a Part with the Freehand tag, and ${esc(t.label)} has none free — a Part already carrying one does not count (5.3.1).</p>${left}</div>
+         <div class="tp-foot"><button class="bigbtn" data-act="boxskip">Leave it</button></div>`;
+  }
+  // One Freehand Part is no question at all, so it is picked up in one press.
+  const rows = hands
+    .map((h) => `<button class="rowwide" data-boxtake="${esc(String(h.slot))}">${hands.length > 1 ? esc(h.label) : `Pick it up · ${esc(h.label)}`}<span class="ct">carries it</span></button>`)
+    .join('');
+  return head('Your move', `Pick up the Black Box in ${where}?`, hands.length > 1 ? 'Which Part carries it?' : 'Picking one up is optional.', true)
+    + `<div class="tp-body">${rows}
+        <p class="tp-dim">The Part carrying it has its Freehand spent while it does, so it cannot take a second (5.3.1). A Penetration makes the bearer drop it.</p>${left}</div>
+       <div class="tp-foot"><button class="bigbtn ghost2" data-act="boxskip">Leave it</button></div>`;
+}
+
+function takeBox(ctx: HudCtx, slot: string): void {
+  const m = boxPick;
+  const t = m ? ctx.state.tokens.find((x) => x.uid === m.uid) : undefined;
+  if (!m || !t) { boxPick = null; ctx.refresh(); return; }
+  const itemId = m.queue[0];
+  if (ctx.send({ kind: 'takeBlackBox', seat: t.side, uid: t.uid, itemId, slot }).ok) {
+    ctx.noteNow(`${t.label} picks up the Black Box, carried on the ${freehandSlots(ctx.data, t).find((h) => h.slot === slot)?.label ?? slot}.`);
+  }
+  nextBox(ctx);
+}
+
+function nextBox(ctx: HudCtx): void {
+  if (!boxPick) return;
+  boxPick.queue.shift();
+  if (!boxPick.queue.length) boxPick = null;
+  ctx.refresh();
+}
+
+// Where a dropped Box may land: the bearer's own Grid or one touching it.
+function dropGrids(ctx: HudCtx, bearer: Token): LargeGrid[] {
+  const g = { c: Math.floor(bearer.col / 3), r: Math.floor(bearer.row / 3) };
+  const out: LargeGrid[] = [];
+  for (const [dc, dr] of [[0, 0], [0, -1], [1, 0], [0, 1], [-1, 0], [1, -1], [1, 1], [-1, 1], [-1, -1]] as const) {
+    const c = g.c + dc;
+    const r = g.r + dr;
+    if (c >= 0 && r >= 0 && c < LG && r < LG) out.push({ c, r });
+  }
+  return out;
+}
+
+// Opened from the attack pipeline the moment a bearer is Penetrated. The
+// attacker's own client asks, because the attacker chooses.
+export function startBoxDrop(itemId: string, bearerUid: number, bySide: Side, byUid: number): void {
+  boxDrop = { itemId, bearerUid, bySide, byUid };
+  hudRef?.refresh();
+}
+
+function boxDropPanel(ctx: HudCtx): string {
+  const m = boxDrop!;
+  const bearer = ctx.state.tokens.find((x) => x.uid === m.bearerUid);
+  if (!bearer) {
+    return head('Black Box', 'The bearer is gone', '', true)
+      + '<div class="tp-body"></div><div class="tp-foot"><button class="bigbtn ghost2" data-act="boxdropclose">Close</button></div>';
+  }
+  if (!mine(ctx, m.bySide)) {
+    return head('Waiting', `${squadLabel(m.bySide)} places the Black Box`, `${esc(bearer.label)} was Penetrated carrying one.`, false)
+      + `<div class="tp-body">${waiting(m.bySide, 'saying where the Box lands')}</div><div class="tp-foot"></div>`;
+  }
+  const rows = dropGrids(ctx, bearer)
+    .map((g) => `<button class="rowwide" data-boxdrop="${g.c}:${g.r}">${gridName(g.c, g.r)}<span class="ct">${g.c === Math.floor(bearer.col / 3) && g.r === Math.floor(bearer.row / 3) ? 'under it' : 'in contact'}</span></button>`)
+    .join('');
+  return head('Your move', 'Where does the Black Box land?', `${esc(bearer.label)} was Penetrated and drops it. As the attacker, you choose (5.3.1).`, true)
+    + `<div class="tp-body">${rows}
+        <p class="tp-dim">It has to be in contact with the bearer's base, which includes the Grid it is standing in. The Grids are lit on the board too.</p></div>
+       <div class="tp-foot"></div>`;
+}
+
+function placeDroppedBox(ctx: HudCtx, c: number, r: number): void {
+  const m = boxDrop;
+  if (!m) return;
+  const bearer = ctx.state.tokens.find((x) => x.uid === m.bearerUid);
+  boxDrop = null;
+  board?.clearHighlights();
+  if (ctx.send({ kind: 'dropBlackBox', seat: m.bySide, uid: m.byUid, itemId: m.itemId, to: { col: c * 3 + 1, row: r * 3 + 1 } }).ok) {
+    ctx.noteNow(`${bearer?.label ?? 'The bearer'} was Penetrated carrying a Black Box, which lands in ${gridName(c, r)} (5.3.1).`);
+  }
+  // A unit can carry more than one, so the next is asked for straight away.
+  const still = taskItems(ctx).find((i) => i.kind === 'blackbox' && i.bearerUid === m.bearerUid);
+  if (still) startBoxDrop(still.id, m.bearerUid, m.bySide, m.byUid);
+  else ctx.refresh();
+}
+
 // ---------- Crush (rulebook 4.3.6) ----------
 //
 // A Large Unit may end its Movement in a Grid holding smaller Units and
@@ -1706,8 +1864,12 @@ let crushPlan: {
   queue: number[];
   stops: { col: number; row: number }[];
   free?: boolean;
+  granted?: boolean;
   shoveActionId?: string;
   facing?: Facing;
+  // The route, kept so the Boxes it walked over are still offered once the
+  // crush has been worked through.
+  path: LargeGrid[];
 } | null = null;
 
 // Where a crushed Unit may be pushed: an orthogonal neighbour that is on the
@@ -1773,8 +1935,9 @@ function finishCrush(ctx: HudCtx): void {
   const spot = standingSpot(m.goal.c, m.goal.r, t.size, t.aerial, terrainOf(ctx), ctx.state.tokens, t.uid) ?? last;
   const stops = [...m.stops.slice(0, -1), spot];
   board?.animateMove(t.uid, stops, () => {
-    ctx.send({ kind: 'maneuver', seat: t.side, uid: t.uid, to: spot, free: m.free, via: stops, facing: m.facing });
+    ctx.send({ kind: 'maneuver', seat: t.side, uid: t.uid, to: spot, free: m.free, granted: m.granted, via: stops, facing: m.facing });
     ctx.noteNow(`${t.label} crushes into ${gridName(m.goal.c, m.goal.r)}, and its Movement ends there (4.3.6).`);
+    offerBoxesOn(ctx, t.uid, m.path);
     if (m.shoveActionId) startShove(t.uid, m.shoveActionId);
     ctx.refresh();
   });
@@ -2479,8 +2642,9 @@ export function scorePreview(ctx: HudCtx, finalRound: boolean): ScoreResult {
         zones: mission.zones ?? [],
         fromRound: mission.fromRound ?? 1,
         cadence: mission.cadence ?? 'per-round',
+        scoringZone: mission.scoringZone,
       },
-      tasks, s.tokens, s.round.n, finalRound,
+      tasks, s.tokens, s.round.n, finalRound, cells,
     ).lines);
   }
   for (const side of ['s1', 's2'] as Side[]) {
@@ -2526,9 +2690,81 @@ function secondaryRows(ctx: HudCtx): string {
 
 // ---------- Tactics Cards (rulebook 5.4.2) ----------
 //
-// Held in hand, so the app can only remind: each card's printed timing names
-// the phase it belongs to, and a squad may play one a round. A reminder rather
-// than a question, so it sits under the turn panel instead of taking it over.
+// The strip is the reminder: each card's printed timing names the phase it
+// belongs to, and a squad may play one a round. Playing one is two questions —
+// which unit, then which option — exactly as playTactic asks them in freeplay.
+// The strip used to send the command with the side's first token and no pick,
+// which check() refused for every card that needs either.
+
+let tacticPlan: { side: Side; cardId: string; uid?: number } | null = null;
+
+function tacticCtxOf(ctx: HudCtx): TacticCtx {
+  return { maxLink: (t: Token) => tokenCards(ctx.data, t).find((c) => c.slot === 'pilot')?.card.LV ?? 0 };
+}
+
+function startTactic(ctx: HudCtx, side: Side, cardId: string): void {
+  const spec = tacticSpec(cardId);
+  if (!spec) return;
+  const targets = tacticTargets(spec, ctx.state, side, tacticCtxOf(ctx));
+  if (!targets.length) { ctx.noteNow(`${spec.name}: ${spec.none}`); return; }
+  // One legal unit is no question, so it goes straight to the second one.
+  tacticPlan = { side, cardId, uid: targets.length === 1 ? targets[0].uid : undefined };
+  if (targets.length === 1) advanceTactic(ctx);
+}
+
+// Sends the play once both questions are answered, and skips either that has
+// only one answer — the same shortcuts the freeplay dialogs take.
+function advanceTactic(ctx: HudCtx): void {
+  const m = tacticPlan;
+  const spec = m ? tacticSpec(m.cardId) : null;
+  const t = m?.uid !== undefined ? ctx.state.tokens.find((x) => x.uid === m.uid) : undefined;
+  if (!m || !spec || !t) return;
+  if (spec.choices) {
+    const opts = spec.choices(t, ctx.state, tacticCtxOf(ctx));
+    if (!opts.length) { tacticPlan = null; ctx.noteNow(`${spec.name}: ${spec.none}`); return; }
+    if (opts.length > 1) return; // the panel asks
+    playTactic(ctx, opts[0].id);
+    return;
+  }
+  playTactic(ctx, null);
+}
+
+function playTactic(ctx: HudCtx, pick: string | null): void {
+  const m = tacticPlan;
+  const spec = m ? tacticSpec(m.cardId) : null;
+  const t = m?.uid !== undefined ? ctx.state.tokens.find((x) => x.uid === m.uid) : undefined;
+  tacticPlan = null;
+  if (!m || !spec || !t) { ctx.refresh(); return; }
+  const v = ctx.send({ kind: 'playTactic', seat: m.side, uid: t.uid, cardId: m.cardId, pick: pick ?? undefined });
+  if (!v.ok) { ctx.refresh(); return; }
+  // apply writes the card's own line into the unit's log, which is the only
+  // place that knows what the effect worked out to.
+  ctx.noteNow(t.log?.at(-1)?.text ?? `${squadLabel(m.side)} plays ${spec.name}.`);
+  // Hit and Run hands out a Movement that no Opportunity paid for.
+  if (spec.maneuver) startMovePlan(ctx, t, { label: `${spec.name} · Maneuver`, granted: true });
+  ctx.refresh();
+}
+
+function tacticPanel(ctx: HudCtx): string {
+  const m = tacticPlan!;
+  const spec = tacticSpec(m.cardId)!;
+  if (m.uid === undefined) {
+    const rows = tacticTargets(spec, ctx.state, m.side, tacticCtxOf(ctx))
+      .map((t) => `<button class="rowwide" data-tacticunit="${t.uid}">${esc(t.label)}<span class="ct">${t.stance.toUpperCase()}${t.link !== undefined ? ` · ⚡${t.link}` : ''}</span></button>`)
+      .join('');
+    return head('Your move', esc(spec.name), esc(spec.prompt), true)
+      + `<div class="tp-body">${rows}</div>
+         <div class="tp-foot"><button class="bigbtn ghost2" data-act="tacticcancel">Cancel</button></div>`;
+  }
+  const t = ctx.state.tokens.find((x) => x.uid === m.uid);
+  const opts = t && spec.choices ? spec.choices(t, ctx.state, tacticCtxOf(ctx)) : [];
+  const rows = opts
+    .map((o) => `<button class="rowwide" data-tacticpick="${esc(o.id)}">${esc(o.label)}${o.note ? `<span class="ct">${esc(o.note)}</span>` : ''}</button>`)
+    .join('');
+  return head('Your move', esc(spec.choiceTitle ?? spec.name), esc(t?.label ?? ''), true)
+    + `<div class="tp-body">${rows}</div>
+       <div class="tp-foot"><button class="bigbtn ghost2" data-act="tacticcancel">Cancel</button></div>`;
+}
 function tacticsHtml(ctx: HudCtx): string {
   const s = ctx.state;
   if (!normaliseSetup(s.setup)) return '';
@@ -2976,15 +3212,16 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
   on('[data-act="ewclose"]', () => { ctx.send({ kind: 'clearCounterRoll', seat: me() }); ctx.refresh(); });
   on('[data-tactic]', (el) => {
     const [side, id] = el.dataset.tactic!.split(':');
-    // The command wants a unit of that squad to hang the play on, the same way
-    // the freeplay tracker plays one.
-    const owner = s.tokens.find((t) => t.side === side);
-    if (owner) {
-      const v = ctx.send({ kind: 'playTactic', seat: side as Side, uid: owner.uid, cardId: id });
-      if (v.ok) ctx.noteNow(`${squadLabel(side as Side)} plays ${ctx.data.byId.get(id)?.name?.en ?? id}. Resolve the card's text; only 1 a round (5.4.2).`);
-    }
+    startTactic(ctx, side as Side, id);
     ctx.refresh();
   });
+  on('[data-tacticunit]', (el) => {
+    if (tacticPlan) tacticPlan.uid = Number(el.dataset.tacticunit);
+    advanceTactic(ctx);
+    ctx.refresh();
+  });
+  on('[data-tacticpick]', (el) => playTactic(ctx, el.dataset.tacticpick!));
+  on('[data-act="tacticcancel"]', () => { tacticPlan = null; ctx.refresh(); });
   on('[data-chargeslot]', (el) => {
     const m = chargePlan;
     const t = m ? s.tokens.find((x) => x.uid === m.uid) : undefined;
@@ -3191,6 +3428,13 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
   on('[data-act="commitmove"]', () => commitMove(ctx));
   on('[data-act="cancelmove"]', () => cancelMove(ctx));
   on('[data-turn]', (el) => { rotate(ctx, el.dataset.turn === 'ccw' ? 3 : 1); });
+  on('[data-boxtake]', (el) => takeBox(ctx, el.dataset.boxtake!));
+  on('[data-act="boxskip"]', () => nextBox(ctx));
+  on('[data-boxdrop]', (el) => {
+    const [c, r] = el.dataset.boxdrop!.split(':').map(Number);
+    placeDroppedBox(ctx, c, r);
+  });
+  on('[data-act="boxdropclose"]', () => { boxDrop = null; board?.clearHighlights(); ctx.refresh(); });
   // Rolling the pool, choosing the Part, applying the Penetration and recording
   // the kill all used to be buttons here. They belong to the AttackHelper now:
   // it walks the whole of 4.4 and issues the same commands at the right moment,
