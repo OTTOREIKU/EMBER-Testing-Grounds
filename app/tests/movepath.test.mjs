@@ -66,5 +66,40 @@ const long = movePath(unit(), { c: 3, r: 3 }, 10, [], [], false);
 const hops = long.slice(1).map((g, i) => Math.abs(g.c - long[i].c) + Math.abs(g.r - long[i].r));
 check('every hop is one orthogonal grid', [...new Set(hops)], [1]);
 
+// ---------- the overlay and the tracer must be the same answer ----------
+//
+// The green squares come from reachableGrids and the route the cursor draws
+// comes from movePath. They share one search, and this is the property that
+// says so: a Grid is lit if and only if a route to it exists inside the budget.
+// Asked because a wall in the way made the overlay look wrong — it was not, the
+// detour around it simply costs the steps it costs.
+
+const maze = [wall(1, 0), wall(1, 1)]; // a wall two Grids tall, open below
+for (const steps of [1, 2, 3, 4, 5, 6]) {
+  const lit = new Set(cells(reachableGrids(unit(), steps, maze, [], false)));
+  const walkable = new Set();
+  // Wider than the biggest budget tested, or the sweep misses Grids the search
+  // legitimately reaches and the invariant reads as broken.
+  for (let c = 0; c <= 7; c++) {
+    for (let r = 0; r <= 7; r++) {
+      if (c === 0 && r === 0) continue;
+      const p = movePath(unit(), { c, r }, steps, maze, [], false);
+      if (p.length) walkable.add(`${c},${r}`);
+    }
+  }
+  const litNotWalkable = [...lit].filter((k) => !walkable.has(k));
+  const walkableNotLit = [...walkable].filter((k) => !lit.has(k));
+  check(`at ${steps} steps every lit Grid has a route`, litNotWalkable, []);
+  check(`at ${steps} steps every reachable Grid is lit`, walkableNotLit, []);
+}
+// And the detour is genuinely what costs the steps. (2,0) is two Grids away as
+// the crow flies, but the wall is two Grids tall, so the way round is
+// (0,1)(0,2)(1,2)(2,2)(2,1)(2,0) — six. That gap between what looks close and
+// what the route costs is why the overlay reads as if terrain had eaten it.
+check('a Grid behind a wall is out of reach at five steps', cells(movePath(unit(), { c: 2, r: 0 }, 5, maze, [], false)), []);
+check('and reachable at six, the long way round', cells(movePath(unit(), { c: 2, r: 0 }, 6, maze, [], false)).length, 7);
+check('so at five steps it is correctly NOT lit', cells(reachableGrids(unit(), 5, maze, [], false)).includes('2,0'), false);
+check('and at six steps it is', cells(reachableGrids(unit(), 6, maze, [], false)).includes('2,0'), true);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
