@@ -1255,11 +1255,13 @@ export class PlayGuide {
         zones: mission.zones ?? [],
         fromRound: mission.fromRound ?? 1,
         cadence: mission.cadence ?? 'per-round',
+        scoringZone: mission.scoringZone,
       },
       tasks,
       s.tokens,
       s.round.n,
       finalRound,
+      (zone) => this.data.zoneData.zones.find((z) => z.id === zone)?.cells ?? [],
     );
   }
 

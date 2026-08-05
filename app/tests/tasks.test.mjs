@@ -102,6 +102,23 @@ check('a destroyed bearer scores nothing', [bbGone.s1, bbGone.s2], [0, 2]);
 const bbEarly = T.scoreMain(BB, boxes, [unit(1, 's1', 0, 0), unit(2, 's2', 5, 5)], 3, false);
 check('black boxes pay nothing mid-game', [bbEarly.s1, bbEarly.s2], [0, 0]);
 
+// Asset Preservation pays only for Boxes carried into the zone it names, so a
+// bearer standing anywhere else is holding them for nothing.
+const ASSET = { family: 'blackbox', vp: 4, zones: [], fromRound: 1, cadence: 'at-end', scoringZone: 'echo' };
+const echoCells = (zone) => (zone === 'echo' ? ['F6', 'F7'] : []);
+const inEcho = T.scoreMain(ASSET, boxes, [unit(1, 's1', 5, 5), unit(2, 's2', 0, 0)], 5, true, echoCells);
+check('boxes carried into the scoring zone pay', [inEcho.s1, inEcho.s2], [8, 0]);
+check('and the line names the zone', inEcho.lines[0].why.includes('held in echo'), true);
+const outside = T.scoreMain(ASSET, boxes, [unit(1, 's1', 0, 0), unit(2, 's2', 1, 1)], 5, true, echoCells);
+check('boxes held outside it pay nothing', [outside.s1, outside.s2], [0, 0]);
+// Without a lookup the zone cannot be read, and paying for every box would be
+// wrong in the holder's favour.
+const noLookup = T.scoreMain(ASSET, boxes, [unit(1, 's1', 5, 5), unit(2, 's2', 5, 5)], 5, true);
+check('no zone lookup pays nobody', [noLookup.s1, noLookup.s2], [0, 0]);
+// A mission with no scoringZone is unaffected by the lookup being there.
+const plain = T.scoreMain(BB, boxes, [unit(1, 's1', 0, 0), unit(2, 's2', 5, 5)], 5, true, echoCells);
+check('a mission with no scoring zone pays as before', [plain.s1, plain.s2], [4, 2]);
+
 // Control: nothing before the round the card names, then every round after.
 const zones = state({
   items: [

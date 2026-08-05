@@ -304,6 +304,10 @@ export interface MissionScoring {
   zones: string[];
   fromRound: number;
   cadence: 'per-round' | 'at-end';
+  // Asset Preservation scores only the Boxes "they hold that is in the Echo
+  // zone" — the Boxes have to be carried to the centre. A held Box is wherever
+  // its bearer stands, so this is read off the bearer's Grid.
+  scoringZone?: string;
 }
 
 export interface ScoreLine {
@@ -323,12 +327,16 @@ export interface ScoreResult {
   s2: number;
 }
 
+// `zoneCells` is last and optional so the older five-argument calls still read
+// correctly — the argument order of the two scorers has bitten this codebase
+// before. It is only consulted by a mission that names a scoringZone.
 export function scoreMain(
   m: MissionScoring,
   st: TaskState,
   tokens: Token[],
   round: number,
   finalRound: boolean,
+  zoneCells?: (zone: string) => string[],
 ): ScoreResult {
   const lines: ScoreLine[] = [];
   const byUid = new Map(tokens.map((t) => [t.uid, t]));
@@ -336,14 +344,26 @@ export function scoreMain(
   if (m.cadence === 'at-end' && !finalRound) return { lines: [], s1: 0, s2: 0 };
 
   if (m.family === 'blackbox') {
+    // Asset Preservation pays only for Boxes carried into one named zone. With
+    // no lookup to read it with, the zone cannot be judged, and scoring every
+    // held Box would be the wrong answer in the safer direction for the holder
+    // — so nothing scores rather than everything.
+    const wants = m.scoringZone;
+    const cells = wants && zoneCells ? zoneCells(wants) : null;
     for (const side of ['s1', 's2'] as Side[]) {
       const held = st.items.filter((i) => {
         if (i.kind !== 'blackbox' || i.bearerUid === undefined) return false;
         const bearer = byUid.get(i.bearerUid);
-        return !!bearer && bearer.side === side;
+        if (!bearer || bearer.side !== side) return false;
+        if (!wants) return true;
+        return !!cells?.length && inZone(bearer, cells);
       });
       if (held.length) {
-        lines.push({ side, vp: held.length * m.vp, why: `${held.length} Black Box${held.length === 1 ? '' : 'es'} in possession at ${m.vp} VP each` });
+        lines.push({
+          side,
+          vp: held.length * m.vp,
+          why: `${held.length} Black Box${held.length === 1 ? '' : 'es'}${wants ? ` held in ${wants}` : ' in possession'} at ${m.vp} VP each`,
+        });
       }
     }
   }
