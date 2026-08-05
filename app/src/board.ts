@@ -1,5 +1,5 @@
 import type { TaskItem } from './tasks';
-import type { GameState, Marker, Side, SmokeScreen, StatusDef, TerrainPiece, Token, TokenShape } from './types';
+import type { Facing, GameState, Marker, Side, SmokeScreen, StatusDef, TerrainPiece, Token, TokenShape } from './types';
 import { INTERCEPT_DEF, SHAPE_NOTE, statusCount, statusStacks } from './types';
 import { mechPartUrl, squadLabel, squadNumber, tabImageUrl } from './data';
 import { type BoardTheme, boardArtUrl, boardTheme, DEFAULT_BOARD } from './boards';
@@ -579,14 +579,18 @@ export class Board {
   // `preview` is a placement the player has made but not confirmed. It is not
   // on the board as far as the state is concerned, but showing only an outline
   // meant they could not see what they were placing or drag it somewhere else.
-  renderTokens(state: GameState, preview?: { uid: number; col: number; row: number }): void {
+  // `preview` is one token drawn as it is about to be rather than as it is: a
+  // square and facing for a unit still being placed, or just a facing for one
+  // already down that its player is turning.
+  renderTokens(state: GameState, preview?: { uid: number; col?: number; row?: number; facing?: Facing }): void {
     this.gTokens.replaceChildren();
     for (const t of state.tokens) {
+      const pv = preview && preview.uid === t.uid ? preview : null;
       // A unit awaiting deployment is in the squad but not on the board yet.
       if (t.deployed !== false) {
-        this.gTokens.appendChild(this.buildToken(t));
-      } else if (preview && t.uid === preview.uid) {
-        const g = this.buildToken({ ...t, col: preview.col, row: preview.row });
+        this.gTokens.appendChild(this.buildToken(pv?.facing !== undefined ? { ...t, facing: pv.facing } : t));
+      } else if (pv && pv.col !== undefined && pv.row !== undefined) {
+        const g = this.buildToken({ ...t, col: pv.col, row: pv.row, facing: pv.facing ?? t.facing });
         g.classList.add('pending');
         this.gTokens.appendChild(g);
       }

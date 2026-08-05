@@ -1,6 +1,6 @@
 import { ApiError, EmberApi, type Account, type MyRecord, type SquadEntry } from './api';
 import { Relay, type RollKind } from './net';
-import { applyRemote, onPerformed, onRefused, perform, type Command, type CheckResult } from './commands';
+import { applyRemote, check, onPerformed, onRefused, perform, type Command, type CheckResult } from './commands';
 import { setLocalSeat } from './loop';
 import { dataUrl, loadData, missionImageUrl, squadLabel, type GameData } from './data';
 import { objectiveCells } from './matchhud';
@@ -129,7 +129,10 @@ const relay = new Relay(api.base, {
     if (catchingUp) return;
     if (from && moving !== null) {
       const now = state.tokens.find((t) => t.uid === moving);
-      if (now) animateRemoteMove(moving, from, { col: now.col ?? 0, row: now.row ?? 0 });
+      // A Maneuver carries the route it took; a Forced Movement is a straight
+      // line by definition, so there is nothing to carry.
+      const via = cmd.kind === 'maneuver' ? cmd.via : undefined;
+      if (now) animateRemoteMove(moving, from, { col: now.col ?? 0, row: now.row ?? 0 }, via);
     }
     // Their commitment may be the second one, which releases our reveal; and
     // their reveal is checked against the hash they promised.
@@ -956,6 +959,7 @@ function hudCtx(): HudCtx {
     seat: relay.state.seat,
     networked: !!relay.state.room,
     send,
+    check: (cmd) => (data ? check(data, state, cmd) : { ok: false, why: 'Still loading.' }),
     rollHits,
     rollPool,
     diceFeed,

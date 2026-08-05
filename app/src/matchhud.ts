@@ -1,16 +1,16 @@
 import { missionZones, taskDesignations, type Command, type CheckResult } from './commands';
 import type { GameData } from './data';
-import { cardName, isAerial, secondaryImageUrl, squadLabel, unitSize } from './data';
+import { actionIconUrl, cardName, isAerial, secondaryImageUrl, squadLabel, unitSize } from './data';
 import { Board, footprint, snapPlacement, type BoardCallbacks } from './board';
 import { printedDeployment, resolveZoneSetData } from './overlays';
-import { canActivateCamo, chargeableSlots, electronicValue, explosionScope, extraActivationOf, guidedActions, interceptCapacity, interceptLeft, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
+import { canActivateCamo, chargeableSlots, electronicValue, explosionScope, extraActivationOf, guidedActions, initiativeFor, interceptCapacity, interceptLeft, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
 import { resolveCounterRoll, tallyCounter } from './combat';
 import { tacticFitsPhase, tacticSpec } from './tactics';
 import { attackDirection, crushTargets, dissipationFor, extendPath, knockbackPath, LG, losBetween, losNote, protectionFor, rangeBetween, reachableGrids, standingSpot, type LargeGrid } from './rules';
 import { breakAwayCost, canBeForceMoved } from './melee';
 import { factionColour } from './icons';
 import { iconSvg } from './dice';
-import type { CardAction, CounterRoll, DiceData, DieColor, GameState, Side, Stance, Timing, Token, ExtraTick, Opportunity } from './types';
+import type { CardAction, CounterRoll, DiceData, DieColor, Facing, GameState, Side, Stance, Timing, Token, ExtraTick, Opportunity } from './types';
 import { newOpportunity, newScriptState, PHASES, STATUSES, TIMINGS } from './types';
 import { deployable, deployTurn, deploymentComplete, firstPlayerFrom, normaliseSetup, rollTotal, type SetupState } from './setup';
 import { actionPhaseComplete, activationOrder, alive, canAct, commandTokensFor, eligibleUnits, isLoopPhase, loopComplete, nextActivation, nextTurn, onExtraOpportunity, type InitLookup, type LoopPhase } from './loop';
@@ -46,6 +46,9 @@ export interface HudCtx {
   seat: Side | null;
   networked: boolean;
   send(cmd: Command): CheckResult;
+  // Legality without paying for it. An Action that opens a tool is only
+  // charged when the tool succeeds, so its cost has to be testable first.
+  check(cmd: Command): CheckResult;
   // Rolls n yellow dice (server dice in a room, local in dev): the Hits per
   // die for the command, and the faces so the tray can show them.
   rollHits(n: number, label: string): Promise<{ hits: number[]; dice: { color: string; face: number }[] }>;
@@ -223,7 +226,7 @@ export function deployCellsFor(data: GameData, s: GameState, side: Side): Set<st
 let placing: number | null = null; // uid being deployed via board clicks
 // Where this player has put a unit but not yet confirmed it. Nothing is sent
 // and nothing lands on the board until they do, so the turn stays theirs.
-let pending: { uid: number; col: number; row: number; size: 1 | 2 | 3 } | null = null;
+let pending: { uid: number; col: number; row: number; size: 1 | 2 | 3; facing: Facing } | null = null;
 // The Stance a Mech lands in, and whether it lands hidden. Chosen before the
 // placement is confirmed, because both travel with it.
 let deployStance: Stance = 'offensive';
@@ -245,6 +248,11 @@ let movePlan: {
   // A Movement Action has already paid with an Action Tick, so its move must
   // not also spend the Maneuver Tick.
   free?: boolean;
+  // Turning on the spot costs no Movement Range but is still Movement, so the
+  // facing is chosen inside the Movement and travels with it. A route of no
+  // steps and a new facing is a legal Maneuver on its own.
+  facing: Facing;
+  turned: boolean;
 } | null = null;
 // Whose card the Details tab is showing, when the player has asked for one
 // rather than taking the active unit's.
@@ -257,6 +265,7 @@ export function showRangeOverlay(uid: number, kind: 'move' | 'range', n: number)
   rangeOverlay = n > 0 ? { uid, kind, n } : null;
   hudRef?.refresh();
 }
+let keysWired = false;             // the document key handler is installed once
 let recording = false;             // a record is being sent
 let recorded = false;              // and the server took it
 let recordNote: string | null = null;
@@ -311,10 +320,14 @@ function terrainOf(ctx: HudCtx) {
   return (ctx.data.terrain.layouts[ctx.state.map] ?? []).filter((p) => !gone.has(p.id));
 }
 
-function reachableFor(ctx: HudCtx, t: Token) {
+// `steps` is how far this particular Movement reaches — a Maneuver uses the
+// Chassis Value, a Movement Action its own printed Range. Hardcoding the
+// Maneuver here drew the Maneuver's reach under a Sprint that could go further,
+// so the panel said 4 grids while the board highlighted 1.
+function reachableFor(ctx: HudCtx, t: Token, steps = maneuverRange(ctx.data, t)) {
   const terrain = terrainOf(ctx);
   const flying = !!t.aerial;
-  return reachableGrids(t, maneuverRange(ctx.data, t), terrain, ctx.state.tokens, flying, {
+  return reachableGrids(t, steps, terrain, ctx.state.tokens, flying, {
     exitCost: flying ? undefined : breakAwayCost(ctx.data, t, ctx.state.tokens, terrain),
     crushable: (c, r) => crushTargets(t, c, r, terrain, ctx.state.tokens) !== null,
   });
@@ -353,7 +366,25 @@ function startMovePlan(ctx: HudCtx, t: Token, opts: { range?: number; label?: st
     label: opts.label ?? 'Maneuver',
     shoveActionId: opts.shoveActionId,
     free: opts.free,
+    facing: t.facing,
+    turned: false,
   };
+}
+
+// Q and E, the same two keys the freeplay board turns a unit with. A pivot is
+// free of Movement Range but it is Movement, so it only happens inside one —
+// or as the unit lands, where nothing has fixed its facing yet.
+function rotate(ctx: HudCtx, dir: 1 | 3): boolean {
+  if (movePlan) {
+    movePlan.facing = ((movePlan.facing + dir) % 4) as Facing;
+    movePlan.turned = true;
+  } else if (pending) {
+    pending.facing = ((pending.facing + dir) % 4) as Facing;
+  } else {
+    return false;
+  }
+  ctx.refresh();
+  return true;
 }
 
 // Traced by the cursor rather than solved, so a deliberate zigzag is
@@ -382,6 +413,9 @@ function lockMove(ctx: HudCtx): void {
 
 function cancelMove(ctx: HudCtx): void {
   movePlan = null;
+  // A Maneuver has nothing pending; a Movement Action backing out gives its
+  // Ticks back.
+  dropAction();
   board?.clearMovePath();
   board?.clearHighlights();
   ctx.refresh();
@@ -392,9 +426,22 @@ function cancelMove(ctx: HudCtx): void {
 // the destination goes to the engine; the walk is local animation.
 function commitMove(ctx: HudCtx): void {
   const m = movePlan;
-  if (!m || m.path.length < 2 || !board) return;
+  if (!m || !board) return;
   const t = ctx.state.tokens.find((x) => x.uid === m.uid);
   if (!t) return;
+  // Turning on the spot is a Movement in its own right and costs no Range, so a
+  // Maneuver that only pivots is a finished Maneuver.
+  if (m.path.length < 2) {
+    if (!m.turned) return;
+    movePlan = null;
+    board.clearMovePath();
+    board.clearHighlights();
+    commitAction(ctx);
+    ctx.send({ kind: 'maneuver', seat: t.side, uid: t.uid, to: { col: t.col, row: t.row }, facing: m.facing, free: m.free });
+    ctx.noteNow(`${t.label} turns on the spot. A pivot spends no Movement Range, but it is Movement.`);
+    ctx.refresh();
+    return;
+  }
   const terrain = terrainOf(ctx);
   const stops: { col: number; row: number }[] = [];
   let from = { col: t.col, row: t.row };
@@ -409,6 +456,7 @@ function commitMove(ctx: HudCtx): void {
   const last = stops[stops.length - 1];
   const shoveId = m.shoveActionId;
   const free = m.free;
+  const facing = m.turned ? m.facing : undefined;
   const goal = m.path[m.path.length - 1];
   movePlan = null;
   board.clearMovePath();
@@ -417,6 +465,10 @@ function commitMove(ctx: HudCtx): void {
     ctx.refresh();
     return;
   }
+  // The route is committed, so a Movement Action pays here — and it has to pay
+  // before the maneuver travels, since a free move is only legal once its Action
+  // has been performed this Opportunity.
+  commitAction(ctx);
   // Ending in an occupied Grid is a Crush, and everything in there has to give
   // way before the crusher lands (4.3.6). The Movement ends there either way.
   const victims = crushTargets(t, goal.c, goal.r, terrain, ctx.state.tokens);
@@ -429,13 +481,15 @@ function commitMove(ctx: HudCtx): void {
       stops,
       free,
       shoveActionId: shoveId,
+      facing,
     };
     advanceCrush(ctx);
     ctx.refresh();
     return;
   }
   board.animateMove(t.uid, stops, () => {
-    ctx.send({ kind: 'maneuver', seat: t.side, uid: t.uid, to: last, free });
+    // The route travels with the move so the other player watches the same walk.
+    ctx.send({ kind: 'maneuver', seat: t.side, uid: t.uid, to: last, free, via: stops, facing });
     // A shove rides on the Movement rather than replacing it, so it is offered
     // once the Mech has finished moving and is facing whatever it ended beside.
     if (shoveId) startShove(t.uid, shoveId);
@@ -524,7 +578,8 @@ function boardCallbacks(): BoardCallbacks {
       // Held here rather than sent: a unit that lands on the board counts as
       // placed, and the alternation would move to the other squad before this
       // player had confirmed anything. The ghost stands in until they do.
-      pending = { uid: placing, col: snap.col, row: snap.row, size };
+      // Facing its own table edge to start with, and Q/E turn it from there.
+      pending = { uid: placing, col: snap.col, row: snap.row, size, facing: pending?.uid === placing ? pending.facing : (t.side === 's1' ? 2 : 0) };
       board?.showGhost(footprint({ ...snap, size }), true);
       ctx.refresh();
     },
@@ -552,7 +607,7 @@ function renderBoard(ctx: HudCtx): void {
     const t = s.tokens.find((x) => x.uid === movePlan!.uid);
     // The same overlay freeplay shows: the Large Grids this unit can really
     // enter, with the step count on each.
-    if (t) board.showReachable(reachableFor(ctx, t), movePlan.steps);
+    if (t) board.showReachable(reachableFor(ctx, t, movePlan.steps), movePlan.steps);
   } else if (launchPlan) {
     board.showSmokeTargets(landingCandidates(ctx), (c, r) => placeLaunched(ctx, c, r));
   } else if (smokePlan) {
@@ -620,7 +675,10 @@ function renderBoard(ctx: HudCtx): void {
   board.renderTaskItems(tasks.items, (zone) => zoneCentreGrid(ctx.data.zoneData.zones, zone));
   // Everything else on the board still redraws while a unit is walking; only
   // the token layer waits, because rebuilding it would cut the animation short.
-  if (animatingUid === null) board.renderTokens(s, pending ?? undefined);
+  // A pivot inside an open Movement shows before it is confirmed, the same way
+  // an unconfirmed placement does.
+  const preview = pending ?? (movePlan?.turned ? { uid: movePlan.uid, facing: movePlan.facing } : undefined);
+  if (animatingUid === null) board.renderTokens(s, preview);
   board.renderSmoke(s.smoke ?? []);
   board.renderMarkers(s.markers ?? []);
   board.setSelected(ensureScript(s).opp?.uid ?? null);
@@ -704,6 +762,7 @@ function setupPanel(ctx: HudCtx, su: SetupState): string {
   // button it explains stays where the hand expects it.
   const confirmRow = pending !== null
     ? `<p class="tp-note">Or click another Grid in your zone to move it first. It lands when you confirm.</p>
+       ${turnRow(FACING_NAME[pending.facing], 'Nothing in 3.1.4 fixes which way a unit lands facing, so point it where you want it before confirming.')}
        <button class="bigbtn" data-act="confirmplace">Confirm placement</button>`
     : '';
   const turn = deployTurn(s, su);
@@ -757,6 +816,12 @@ function setupPanel(ctx: HudCtx, su: SetupState): string {
     + `<div class="tp-body">${rows}${landing}</div><div class="tp-foot">${confirmRow}</div>`;
 }
 
+// Which Mech's dial is open. Six timings times a whole squad is more rows than
+// the panel wants at once, so one Mech shows its choices at a time — the same
+// trigger-then-stack shape the Squads tab uses, in a column that has no room
+// for a popout.
+let dialOpen: number | null = null;
+
 function planningPanel(ctx: HudCtx): string {
   const s = ctx.state;
   const sc = ensureScript(s);
@@ -765,10 +830,22 @@ function planningPanel(ctx: HudCtx): string {
   const rows = sides
     .flatMap((side) => s.tokens.filter((t) => t.side === side && t.kind === 'mech' && alive(t) && t.partStates.torso !== 'destroyed'))
     .map((t) => {
-      const chips = TIMINGS.map(
-        (d) => `<button class="tchip t-${d.id}${t.timing === d.id ? ' sel' : ''}" data-dial="${t.uid}:${d.id}" title="${d.name}">${d.short}</button>`,
-      ).join('');
-      return `<div class="dialrow"><span class="nm">${esc(t.label)}</span><span class="tchips">${chips}</span></div>`;
+      const cur = TIMINGS.find((x) => x.id === t.timing);
+      const open = dialOpen === t.uid;
+      const trig = `<button class="rowwide dialtrig${open ? ' sel' : ''}" data-dialopen="${t.uid}"${cur ? ` style="--t-tint:var(--t-${cur.id})"` : ''}>
+        <span class="dotk"></span><span class="an">${esc(t.label)}</span>
+        <span class="ct">${cur ? esc(cur.name) : 'no dial yet'} ▾</span></button>`;
+      if (!open) return trig;
+      // Initiative comes off the pilot card, and it is what the choice is
+      // actually about: a low number acts earlier in its slot (3.4.2).
+      const opts = TIMINGS.map((d) => {
+        const init = initiativeFor(ctx.data, t, d.id);
+        const ic = actionIconUrl(d.pilotKey);
+        return `<button class="rowwide dialopt${t.timing === d.id ? ' sel' : ''}" data-dial="${t.uid}:${d.id}" style="--t-tint:var(--t-${d.id})">
+          ${ic ? `<img src="${ic}" alt="">` : '<span class="dotk"></span>'}
+          <span class="an">${esc(d.name)}</span><span class="ct">Initiative ${init ?? '—'}</span></button>`;
+      }).join('');
+      return `${trig}<div class="dialstack">${opts}</div>`;
     })
     .join('');
   const myMechs = me ? s.tokens.filter((t) => t.side === me && t.kind === 'mech' && alive(t) && t.partStates.torso !== 'destroyed') : [];
@@ -784,6 +861,18 @@ function planningPanel(ctx: HudCtx): string {
     : `<button class="bigbtn" data-act="advance"${left ? ' disabled' : ''}>${left ? `${left} dial${left === 1 ? '' : 's'} left` : 'Continue to the Action Phase'}</button>`;
   return head(me ? 'Your move' : 'Planning', 'Set your Timing Dials', me ? 'Your opponent cannot see these until both squads lock in.' : 'Both squads set dials.', true)
     + `<div class="tp-body">${rows}</div><div class="tp-foot">${foot}</div>`;
+}
+
+const FACING_NAME = ['north', 'east', 'south', 'west'];
+
+// Turning, offered as buttons as well as Q and E — the keys are what the board
+// page trained, but nothing on screen would otherwise say the option exists.
+function turnRow(facing: string, why: string): string {
+  return `<div class="turnrow" title="${esc(why)}">
+      <button class="rowbtn" data-turn="ccw">↺ Q</button>
+      <span class="ct">facing ${esc(facing)}</span>
+      <button class="rowbtn" data-turn="cw">E ↻</button>
+    </div>`;
 }
 
 // The Ticks in hand, labelled the way the freeplay guide labels them: the
@@ -825,7 +914,12 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
   const rows = acts
     .filter((a) => (seen.has(a.id) ? false : (seen.add(a.id), true)))
     .map((a) => {
-      const ticks = canPerform(o, a);
+      const len = lengthOf(a);
+      // No printed length means the Tick engine has no say: a Drone's Action
+      // costs an activation, not Ticks, and asking canPerform about one only
+      // ever came back "this is not an Action a Mech performs with Ticks",
+      // which blocked every Drone Action there is. Freeplay never asks.
+      const ticks: TickVerdict = len ? canPerform(o, a) : { ok: true };
       // The board's reason comes first: being out of ammo is a truer answer
       // than "not enough Ticks" when both are true.
       const stopped = blockedBy.get(a.id);
@@ -837,7 +931,6 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
         : undefined;
       const v: TickVerdict = chained ? { ok: false, why: chained } : stopped ? { ok: false, why: stopped } : ticks;
       const cost = costOf(a);
-      const len = lengthOf(a);
       const kind = (a.type ?? '').toLowerCase();
       const pool = `${a.yellowDice ?? 0},${a.redDice ?? 0}`;
       // What it costs, in the Ticks it actually spends, the way the guide
@@ -858,7 +951,10 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
     })
     .join('');
   const man = canManeuver(o);
-  const ticks = tickPool(o);
+  // Ticks are a Mech's Action Opportunity (3.4). A Drone or Projectile gets an
+  // activation instead — one Action, no price printed on any of them — so the
+  // pool is left off the way the freeplay guide leaves it off its phase panels.
+  const ticks = t.kind === 'mech' ? tickPool(o) : '';
   // While a route is being drawn the panel becomes the move bar, the same way
   // the freeplay guide takes it over.
   if (movePlan && movePlan.uid === t.uid) {
@@ -868,7 +964,8 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
         <p class="tp-dim">${esc(movePlan.label)}</p>
         <p class="tp-note">${drawn ? `${drawn} of ${movePlan.steps} grids${movePlan.locked ? ' · locked' : ''}` : `Draw a route on the board — up to ${movePlan.steps} grid${movePlan.steps === 1 ? '' : 's'}.`}</p>
         <p class="tp-dim">Move the cursor across grids to trace it, click to lock, then confirm.</p>
-        <button class="bigbtn" data-act="commitmove"${drawn ? '' : ' disabled'}>Confirm move</button>
+        ${turnRow(FACING_NAME[movePlan.facing], 'A pivot costs no Movement Range, but it is Movement — so it happens inside this one.')}
+        <button class="bigbtn" data-act="commitmove"${drawn || movePlan.turned ? '' : ' disabled'}>${drawn ? 'Confirm move' : 'Turn on the spot'}</button>
         <button class="bigbtn ghost2" data-act="cancelmove" style="margin-top:6px">Cancel</button>
       </div>`;
   }
@@ -1098,13 +1195,16 @@ function designatePanel(ctx: HudCtx, owed: Designation[]): string {
       + `<div class="tp-body">${waiting(now.by, now.what === 'zone' ? 'naming a Tactical Zone' : 'naming a Mech')}
         ${designationSummary(ctx, owed)}</div><div class="tp-foot"></div>`;
   }
+  // The choice is sent as the squad the card says makes it, not as whoever is
+  // to move: solo, nobody holds a seat, and Behead is named by the squad that
+  // does not own the Mech.
   const rows = now.what === 'zone'
     ? missionZones(ctx.data, s)
-      .map((z) => `<button class="rowwide" data-desigzone="${esc(z.id)}">${esc(z.name)}</button>`)
+      .map((z) => `<button class="rowwide" data-desigzone="${esc(z.id)}" data-desigby="${now.by}">${esc(z.name)}</button>`)
       .join('')
     : s.tokens
       .filter((t) => t.kind === 'mech' && t.side === now.owner)
-      .map((t) => `<button class="rowwide" data-desigmech="${t.uid}" data-desigfor="${now.side}" data-desigwhat="${now.what}">${esc(t.label)}<span class="ct">${squadLabel(t.side)}</span></button>`)
+      .map((t) => `<button class="rowwide" data-desigmech="${t.uid}" data-desigfor="${now.side}" data-desigby="${now.by}" data-desigwhat="${now.what}">${esc(t.label)}<span class="ct">${squadLabel(t.side)}</span></button>`)
       .join('');
   return head('Your move', title, why, true)
     + `<div class="tp-body">${rows}${designationSummary(ctx, owed)}</div><div class="tp-foot"></div>`;
@@ -1123,14 +1223,23 @@ function designationSummary(ctx: HudCtx, owed: Designation[]): string {
 // The other player's move, slid rather than snapped. They watched their unit
 // walk the route; this is the same walk seen from the other chair, which is
 // what makes a move read as something that happened rather than a jump cut.
-export function animateRemoteMove(uid: number, from: { col: number; row: number }, to: { col: number; row: number }): void {
+// `via` is the route the mover actually walked. Without it the walk is a
+// straight line from A to B, which slid a Mech through the wall it had just
+// spent its Movement going around.
+export function animateRemoteMove(
+  uid: number,
+  from: { col: number; row: number },
+  to: { col: number; row: number },
+  via?: { col: number; row: number }[],
+): void {
   if (!board || (from.col === to.col && from.row === to.row)) return;
+  const route = via?.length ? [from, ...via] : [from, to];
   // The command has already landed, so a render is moments away and
   // renderTokens would replace the very element being animated — which is why
   // the other player saw a snap while the mover saw a walk. Hold the token
   // layer still for the length of the walk and redraw when it finishes.
   animatingUid = uid;
-  board.animateMove(uid, [from, to], () => {
+  board.animateMove(uid, route, () => {
     // Two moves arriving back to back would have the first release the hold
     // out from under the second, so only the walk that set it clears it.
     if (animatingUid === uid) animatingUid = null;
@@ -1219,11 +1328,17 @@ function placeLaunched(ctx: HudCtx, c: number, r: number): void {
     ctx.refresh();
     return;
   }
-  const v = ctx.send({
+  const shot: Command = {
     kind: 'launch', seat: t.side, uid: t.uid,
     actionId: m.actionId, cardId: m.cardId,
     to: { col: spot.col, row: spot.row }, facing: t.facing,
-  });
+  };
+  // A refused launch must not have cost anything, so the Ticks are only paid
+  // once this one is going through. The first Projectile down is the Action;
+  // the rest of a Volley ride on the same Ticks and commitAction is a no-op.
+  if (!ctx.check(shot).ok) { ctx.send(shot); ctx.refresh(); return; }
+  commitAction(ctx);
+  const v = ctx.send(shot);
   if (!v.ok) { ctx.refresh(); return; }
   m.placedUids.push(ctx.state.tokens[ctx.state.tokens.length - 1].uid);
   m.placed++;
@@ -1255,6 +1370,8 @@ function undoLaunched(ctx: HudCtx): void {
 function finishLaunchPlan(ctx: HudCtx): void {
   const m = launchPlan;
   launchPlan = null;
+  // Stopping with nothing placed is a cancel, and the Ticks are still unspent.
+  if (!m?.placed) dropAction();
   board?.clearHighlights();
   if (!m) { ctx.refresh(); return; }
   const owner = ctx.state.tokens.find((x) => x.uid === m.uid);
@@ -1471,7 +1588,10 @@ function ewPanel(ctx: HudCtx): string {
       const d = gridsApart(by, t);
       const theirs = electronicValue(ctx.data, t);
       const far = d > reach;
-      return `<button class="rowwide${far ? ' warn' : ''}" data-ewtarget="${t.uid}"${far ? ` data-why="${esc(`${t.label} is at Range ${d}, beyond this Action's Range ${reach}.`)}"` : ''}>${esc(t.label)}<span class="ct">R${d} · EV ${theirs}</span></button>`;
+      const bits = [far ? `⚠ Range ${d}, beyond this Action's Range ${reach}` : `Range ${d}`, `Electronic Value ${theirs}`];
+      return `<button class="rowwide targrow${far ? ' warn' : ''}" data-ewtarget="${t.uid}"${far ? ` data-why="${esc(`${t.label} is at Range ${d}, beyond this Action's Range ${reach}.`)}"` : ''}>
+        <span class="tgname">${esc(t.label)}</span>
+        <span class="tgbits">${bits.map((b) => `<span${/[⚠✕]/.test(b) ? ' class="bad"' : ''}>${esc(b)}</span>`).join('')}</span></button>`;
     })
     .join('');
   return head('Your move', `${esc(a.name?.en || m.actionId)}: which enemy?`, `${esc(by.label)} — Electronic Value ${ev}, Range ${reach}.`, true)
@@ -1587,6 +1707,7 @@ let crushPlan: {
   stops: { col: number; row: number }[];
   free?: boolean;
   shoveActionId?: string;
+  facing?: Facing;
 } | null = null;
 
 // Where a crushed Unit may be pushed: an orthogonal neighbour that is on the
@@ -1652,7 +1773,7 @@ function finishCrush(ctx: HudCtx): void {
   const spot = standingSpot(m.goal.c, m.goal.r, t.size, t.aerial, terrainOf(ctx), ctx.state.tokens, t.uid) ?? last;
   const stops = [...m.stops.slice(0, -1), spot];
   board?.animateMove(t.uid, stops, () => {
-    ctx.send({ kind: 'maneuver', seat: t.side, uid: t.uid, to: spot, free: m.free });
+    ctx.send({ kind: 'maneuver', seat: t.side, uid: t.uid, to: spot, free: m.free, via: stops, facing: m.facing });
     ctx.noteNow(`${t.label} crushes into ${gridName(m.goal.c, m.goal.r)}, and its Movement ends there (4.3.6).`);
     if (m.shoveActionId) startShove(t.uid, m.shoveActionId);
     ctx.refresh();
@@ -1761,10 +1882,8 @@ function chargePanel(ctx: HudCtx): string {
 //
 // A faithful mirror of performGuided() in main.ts, in the same order: the guide
 // plays the turn rather than tallying it, so every Action Type opens the tool
-// that actually resolves it. The one deliberate difference is when the Tick is
-// spent — freeplay opens the tool and pays on success, the Match Centre pays
-// first because 3.4.5 performs an Action the moment it is declared and the
-// command has to travel before either player can act on it.
+// that actually resolves it, and the Ticks are only spent when that tool
+// reports success.
 //
 // Anything added to performGuided belongs here too, or the Match Centre goes
 // back to spending Ticks and doing nothing.
@@ -1772,53 +1891,91 @@ function chargePanel(ctx: HudCtx): string {
 // A Projectile Action that can put more than one thing on the board asks which.
 let launchPick: { uid: number; actionId: string; cardIds: string[] } | null = null;
 
-function routeAction(ctx: HudCtx, t: Token, a: CardAction, ga?: ReturnType<typeof guidedActions>[number]): void {
+// An Action whose tool is open but whose Ticks are not yet spent. Freeplay only
+// pays when the tool reports success, so backing out costs nothing; the Match
+// Centre used to pay on declaration, which left a cancelled Action having eaten
+// the Opportunity. The command waits here until the tool actually does
+// something, and is dropped if the player changes their mind.
+let pendingAction: Command | null = null;
+
+// Called at the moment a tool succeeds, always BEFORE the tool's own command —
+// a free Movement Action move, for one, is only legal once its Action has been
+// performed this Opportunity.
+function commitAction(ctx: HudCtx): CheckResult {
+  const cmd = pendingAction;
+  pendingAction = null;
+  return cmd ? ctx.send(cmd) : { ok: true };
+}
+
+// Backing out. The Extra Action Opportunity an Action would have handed out goes
+// with it, or a cancelled Action could still be paying for someone else's turn.
+function dropAction(): void {
+  pendingAction = null;
+  grantPick = null;
+}
+
+// Targeting. An Electronic Attack is answered by the defender rather than rolled
+// against, so it opens the Counter-roll handshake instead (4.11).
+function openAttackPick(t: Token, a: CardAction): void {
+  if (isElectronicAttack(a)) ewPick = { uid: t.uid, actionId: a.id };
+  else attackPick = { uid: t.uid, actionId: a.id };
+}
+
+// Returns true when it has opened a tool that will report back — the Ticks then
+// wait in `pendingAction` until that tool succeeds. False means the Action is
+// already done and should be paid for now.
+function routeAction(ctx: HudCtx, t: Token, a: CardAction, ga?: ReturnType<typeof guidedActions>[number]): boolean {
   if (isChargeAction(a)) {
     chargePlan = { uid: t.uid, on: true };
-    return;
+    return true;
   }
   const supply = resupplyOf(a);
   if (supply) {
     resupplyPick = { uid: t.uid, actionId: a.id, rule: supply };
-    return;
+    return true;
   }
   if (a.type === 'Firing' || a.type === 'Melee') {
     // A [Charged] Part offers to spend its token before the attack, exactly as
-    // offerChargeSpend does ahead of the targeting step.
+    // offerChargeSpend does ahead of the targeting step. Answering that question
+    // either way then opens the targeting.
     if (ga?.charge?.charged) chargePlan = { uid: t.uid, on: false, actionId: a.id };
-    else if (isElectronicAttack(a)) ewPick = { uid: t.uid, actionId: a.id };
-    else attackPick = { uid: t.uid, actionId: a.id };
-    return;
+    else openAttackPick(t, a);
+    return true;
   }
   if (a.type === 'Moving') {
     startMovePlan(ctx, t, {
       range: a.range || undefined,
       label: `${a.name?.en || a.id} · Range ${a.range || maneuverRange(ctx.data, t)}`,
       shoveActionId: knockbackOf(a, ctx.data.actionTranslation(a.id)?.english ?? undefined) ? a.id : undefined,
-      free: true,
+      // Free means "the Action Tick already paid for this move". A Drone's
+      // Action costs no Tick, so there is no performed Action for a free move to
+      // ride on and it is an ordinary Movement.
+      free: !!lengthOf(a),
     });
-    return;
+    return true;
   }
   if (a.type === 'Projectile') {
     const shot = ga?.projectiles ?? [];
     if (!shot.length) {
       ctx.noteNow(`${a.name?.en || a.id} is a Projectile Action, but the card data does not say what it puts on the board. Place it by hand from the squad list.`);
-      return;
+      return true;
     }
     if (shot.length === 1) startLaunchPlan(t.uid, a.id, shot[0].id, shot[0].name?.en || shot[0].id);
     else launchPick = { uid: t.uid, actionId: a.id, cardIds: shot.map((c) => c.id) };
-    return;
+    return true;
   }
   // A Projectile resolving its payload in the Delay Phase opens the same
-  // Detonation resolver its card button uses (3.6.2).
+  // Detonation resolver its card button uses (3.6.2). Freeplay counts this as
+  // performed the moment the resolver opens, and so does this.
   if (t.kind === 'projectile' && a.type !== 'Passive') {
     startDetonation(t.uid, a.id);
-    return;
+    return false;
   }
   // Swift and Tactical Actions are card text rather than a board procedure, so
-  // the card is put in front of the player to carry out.
+  // the card is put in front of the player to carry out. Nothing to back out of.
   ctx.showTab('details');
   ctx.noteNow(`${a.name?.en || a.id}: follow the Action text on the card.`);
+  return false;
 }
 
 function launchPickPanel(ctx: HudCtx): string {
@@ -1868,13 +2025,16 @@ function attackPanel(ctx: HudCtx): string {
       const note = losNote(by, t, a, terrain, s.tokens, smoke);
       const bad = note.includes('⚠') || note.includes('✕');
       const prot = protectionFor(by, t, a, terrain, s.tokens, smoke);
-      return `<button class="rowwide${bad ? ' warn' : ''}" data-attacktarget="${t.uid}">${esc(t.label)}
-        <span class="ct">${esc(note)}${prot.white ? ` · +${prot.white}W` : ''}</span></button>`;
+      // One reading per line. Range, arc and line of sight are three separate
+      // judgements and running them together on one line made the list unusable.
+      const bits = note.split(' · ').concat(prot.white ? [`+${prot.white} White ${prot.white === 1 ? 'die' : 'dice'} of Protection`] : []);
+      return `<button class="rowwide targrow${bad ? ' warn' : ''}" data-attacktarget="${t.uid}">
+        <span class="tgname">${esc(t.label)}</span>
+        <span class="tgbits">${bits.map((b) => `<span${/[⚠✕]/.test(b) ? ' class="bad"' : ''}>${esc(b)}</span>`).join('')}</span></button>`;
     })
     .join('');
   return head('Your move', `${esc(a.name?.en || m.actionId)}: which target?`, `${esc(by.label)} — ${a.yellowDice ?? 0}Y ${a.redDice ?? 0}R.`, true)
-    + `<div class="tp-body">${rows || '<p class="tp-note">No enemy unit is on the board.</p>'}
-        <p class="tp-dim">Range, Forward Arc and line of sight are read off the board for each one. A warning does not stop you — the rulebook is the judge, not the app.</p></div>
+    + `<div class="tp-body">${rows || '<p class="tp-note">No enemy unit is on the board.</p>'}</div>
        <div class="tp-foot"><button class="bigbtn ghost2" data-act="attackcancel">Cancel</button></div>`;
 }
 
@@ -2552,6 +2712,19 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
   const on = (sel: string, fn: (el: HTMLElement) => void) => {
     for (const el of root.querySelectorAll<HTMLElement>(sel)) el.addEventListener('click', () => fn(el));
   };
+  // The panel is rebuilt every render, so its buttons are rewired every render;
+  // the keyboard is not part of the panel and is installed once.
+  if (!keysWired) {
+    keysWired = true;
+    document.addEventListener('keydown', (ev) => {
+      const c = hudRef;
+      if (!c || ev.metaKey || ev.ctrlKey || ev.altKey) return;
+      const el = document.activeElement as HTMLElement | null;
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
+      const k = ev.key.toLowerCase();
+      if ((k === 'q' || k === 'e') && rotate(c, k === 'q' ? 3 : 1)) ev.preventDefault();
+    });
+  }
 
   on('[data-act="lockmap"]', () => { ctx.send({ kind: 'lockMap', seat: me() }); ctx.refresh(); });
   on('[data-roll]', (el) => {
@@ -2610,6 +2783,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
         to: { col: pending.col, row: pending.row },
         stance: t?.kind === 'mech' ? deployStance : undefined,
         camo: deployCamo || undefined,
+        facing: pending.facing,
       });
       if (!v.ok) { ctx.refresh(); return; }
     }
@@ -2623,20 +2797,28 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
   on('[data-act="deployunready"]', () => { ctx.send({ kind: 'setReady', seat: me(), ready: false }); ctx.refresh(); });
   on('[data-act="deploydone"]', () => { ctx.send({ kind: 'finishDeployment', seat: me() }); ctx.refresh(); });
 
+  on('[data-dialopen]', (el) => {
+    const uid = Number(el.dataset.dialopen);
+    dialOpen = dialOpen === uid ? null : uid;
+    ctx.refresh();
+  });
   on('[data-dial]', (el) => {
     const [uid, timing] = el.dataset.dial!.split(':');
     const t = s.tokens.find((x) => x.uid === Number(uid));
-    if (t) ctx.send({ kind: 'setTiming', seat: t.side, uid: t.uid, timing: timing as Timing });
+    // Picking the one already set clears it, which is the only way back to an
+    // empty dial without a Clear row taking up a slot in the stack.
+    if (t) ctx.send({ kind: 'setTiming', seat: t.side, uid: t.uid, timing: t.timing === timing ? undefined : timing as Timing });
+    dialOpen = null;
     ctx.refresh();
   });
 
   on('[data-desigzone]', (el) => {
-    ctx.send({ kind: 'designateTask', seat: me(), what: 'zone', zone: el.dataset.desigzone! });
+    ctx.send({ kind: 'designateTask', seat: (el.dataset.desigby as Side) ?? me(), what: 'zone', zone: el.dataset.desigzone! });
     ctx.refresh();
   });
   on('[data-desigmech]', (el) => {
     ctx.send({
-      kind: 'designateTask', seat: me(),
+      kind: 'designateTask', seat: (el.dataset.desigby as Side) ?? me(),
       what: el.dataset.desigwhat as 'target' | 'leader',
       for: el.dataset.desigfor as Side,
       uid: Number(el.dataset.desigmech),
@@ -2655,37 +2837,52 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     const sc = ensureScript(s);
     const t = sc.opp ? s.tokens.find((x) => x.uid === sc.opp!.uid) : undefined;
     if (t) {
-      const v = ctx.send({ kind: 'performAction', seat: t.side, uid: t.uid, actionId: el.dataset.doact! });
-      // Two Common Actions do more than spend a Tick, and the work lives in
-      // its own command: Stabilize sheds a Status and restores Link, Reveal
-      // leaves the Optical Camouflage State. Performing them without this was
-      // paying the cost and getting nothing.
-      if (v.ok && el.dataset.doact === 'COMMON_STABILIZE') {
-        const shed = (t.statuses ?? []).find((id) => {
-          const d = STATUSES.find((x) => x.id === id);
-          return d?.shape === 'square' || d?.shape === 'hexagon';
-        });
-        if (shed) {
-          ctx.send({ kind: 'stabilise', seat: t.side, uid: t.uid });
-          ctx.noteNow(`Stabilize System: ${STATUSES.find((x) => x.id === shed)?.label ?? shed} removed and Link restored to ${t.link}.`);
-        } else {
-          ctx.noteNow('Stabilize System sheds a square or hexagon Status, and this Mech carries none.');
-        }
-      }
-      if (v.ok && el.dataset.doact === 'COMMON_REVEAL') {
-        ctx.send({ kind: 'reveal', seat: t.side, uid: t.uid });
-        ctx.noteNow('Reveal: out of the Optical Camouflage State. Now make Manifestation Movement, up to this unit\'s Stealth value, to where it really is.');
-      }
       // An Action that grants an Extra Action Opportunity asks who takes it,
       // the same question the guide asks in its dialog. Everything else about
       // what the Action opens is routeAction's job, mirroring performGuided.
-      if (v.ok) {
-        const act = guidedActions(ctx.data, t, { tokens: s.tokens, terrain: terrainOf(ctx) })
-          .find((g) => g.action.id === el.dataset.doact);
-        const grant = act ? extraActivationOf(act.action) : undefined;
-        if (grant) grantPick = { from: t.uid, grant };
-        const performed = act?.action ?? ctx.data.commonActions.find((a) => a.id === el.dataset.doact);
-        if (performed) routeAction(ctx, t, performed, act);
+      const act = guidedActions(ctx.data, t, { tokens: s.tokens, terrain: terrainOf(ctx) })
+        .find((g) => g.action.id === el.dataset.doact);
+      const performed = act?.action ?? ctx.data.commonActions.find((a) => a.id === el.dataset.doact);
+      // Only a Mech's Action is bought with Ticks. A Drone's activation buys
+      // one Action outright, so there is no performAction to send — the guide
+      // opens the tool and sends nothing else either.
+      if (performed && lengthOf(performed)) {
+        // Legality is read now, but nothing is spent: the Ticks wait in
+        // pendingAction until the Action's tool actually does something, so a
+        // misclick that gets cancelled leaves the Opportunity intact.
+        const v = ctx.check({ kind: 'performAction', seat: t.side, uid: t.uid, actionId: el.dataset.doact! });
+        if (!v.ok) {
+          if (v.why) ctx.noteNow(v.why);
+          ctx.refresh();
+          return;
+        }
+        pendingAction = { kind: 'performAction', seat: t.side, uid: t.uid, actionId: el.dataset.doact! };
+      }
+      const grant = act ? extraActivationOf(act.action) : undefined;
+      if (grant) grantPick = { from: t.uid, grant };
+      // No tool to wait on means the Action is already done, so it pays now.
+      if (!performed || !routeAction(ctx, t, performed, act)) {
+        const paid = commitAction(ctx);
+        // Two Common Actions do more than spend a Tick, and the work lives in
+        // its own command: Stabilize sheds a Status and restores Link, Reveal
+        // leaves the Optical Camouflage State. Performing them without this was
+        // paying the cost and getting nothing.
+        if (paid.ok && el.dataset.doact === 'COMMON_STABILIZE') {
+          const shed = (t.statuses ?? []).find((id) => {
+            const d = STATUSES.find((x) => x.id === id);
+            return d?.shape === 'square' || d?.shape === 'hexagon';
+          });
+          if (shed) {
+            ctx.send({ kind: 'stabilise', seat: t.side, uid: t.uid });
+            ctx.noteNow(`Stabilize System: ${STATUSES.find((x) => x.id === shed)?.label ?? shed} removed and Link restored to ${t.link}.`);
+          } else {
+            ctx.noteNow('Stabilize System sheds a square or hexagon Status, and this Mech carries none.');
+          }
+        }
+        if (paid.ok && el.dataset.doact === 'COMMON_REVEAL') {
+          ctx.send({ kind: 'reveal', seat: t.side, uid: t.uid });
+          ctx.noteNow('Reveal: out of the Optical Camouflage State. Now make Manifestation Movement, up to this unit\'s Stealth value, to where it really is.');
+        }
       }
     }
     ctx.refresh();
@@ -2711,14 +2908,17 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     if (m && c) startLaunchPlan(m.uid, m.actionId, c.id, c.name?.en || c.id);
     ctx.refresh();
   });
-  on('[data-act="launchpickcancel"]', () => { launchPick = null; ctx.refresh(); });
+  on('[data-act="launchpickcancel"]', () => { launchPick = null; dropAction(); ctx.refresh(); });
   on('[data-attacktarget]', (el) => {
     const m = attackPick;
     attackPick = null;
-    if (m) ctx.startAttack(m.uid, m.actionId, Number(el.dataset.attacktarget));
+    if (m) {
+      commitAction(ctx);
+      ctx.startAttack(m.uid, m.actionId, Number(el.dataset.attacktarget));
+    }
     ctx.refresh();
   });
-  on('[data-act="attackcancel"]', () => { attackPick = null; ctx.refresh(); });
+  on('[data-act="attackcancel"]', () => { attackPick = null; dropAction(); ctx.refresh(); });
 
   // ---------- Electronic Warfare (4.11) ----------
   on('[data-ewtarget]', (el) => {
@@ -2726,10 +2926,13 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     const m = ewPick;
     const by = m ? s.tokens.find((x) => x.uid === m.uid) : undefined;
     ewPick = null;
-    if (m && by) ctx.send({ kind: 'startCounterRoll', seat: by.side, uid: by.uid, actionId: m.actionId, targetUid: Number(el.dataset.ewtarget) });
+    if (m && by) {
+      commitAction(ctx);
+      ctx.send({ kind: 'startCounterRoll', seat: by.side, uid: by.uid, actionId: m.actionId, targetUid: Number(el.dataset.ewtarget) });
+    }
     ctx.refresh();
   });
-  on('[data-act="ewcancel"]', () => { ewPick = null; ctx.refresh(); });
+  on('[data-act="ewcancel"]', () => { ewPick = null; dropAction(); ctx.refresh(); });
   // Each seat rolls its OWN unit's dice and sends them as faces. The receiver
   // never re-rolls them, so both clients read the same Counter-roll.
   on('[data-ewroll]', (el) => {
@@ -2788,21 +2991,37 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     chargePlan = null;
     if (m && t) {
       const slot = el.dataset.chargeslot!;
+      // Charging is the whole Action; spending is the run-up to an attack, and
+      // that attack is the tool the Ticks are waiting on.
+      if (m.on) commitAction(ctx);
       if (ctx.send({ kind: 'setCharge', seat: t.side, uid: t.uid, slot, on: m.on }).ok) {
         ctx.noteNow(m.on
           ? `${t.label}: the Charge Token on ${slot} is now face-up.`
           : `${t.label}: the Charge Token on ${slot} is spent.`);
       }
+      const next = m.actionId ? actionOn(ctx, t, m.actionId) : undefined;
+      if (next) openAttackPick(t, next);
     }
     ctx.refresh();
   });
-  on('[data-act="chargecancel"]', () => { chargePlan = null; ctx.refresh(); });
+  // Keeping the Charge Token still leaves the attack to make; cancelling the
+  // Charge Action itself gives the Ticks back.
+  on('[data-act="chargecancel"]', () => {
+    const m = chargePlan;
+    const t = m ? s.tokens.find((x) => x.uid === m.uid) : undefined;
+    chargePlan = null;
+    const next = m?.actionId && t ? actionOn(ctx, t, m.actionId) : undefined;
+    if (next && t) openAttackPick(t, next);
+    else dropAction();
+    ctx.refresh();
+  });
   on('[data-resupply]', (el) => {
     const m = resupplyPick;
     const to = s.tokens.find((x) => x.uid === Number(el.dataset.resupply));
     resupplyPick = null;
     if (m && to) {
       const max = tokenCards(ctx.data, to).flatMap(({ card }) => card.actions ?? []).find((a) => a.id === m.rule.actionId)?.storage ?? 0;
+      commitAction(ctx);
       // The command caps at the printed Storage, so the count is read back
       // rather than assumed.
       if (ctx.send({ kind: 'restoreAmmo', seat: to.side, uid: to.uid, actionId: m.rule.actionId, amount: m.rule.amount }).ok) {
@@ -2811,7 +3030,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     }
     ctx.refresh();
   });
-  on('[data-act="resupplycancel"]', () => { resupplyPick = null; ctx.refresh(); });
+  on('[data-act="resupplycancel"]', () => { resupplyPick = null; dropAction(); ctx.refresh(); });
   on('[data-act="crushauto"]', () => {
     const m = crushPlan;
     const v = m ? s.tokens.find((x) => x.uid === m.queue[0]) : undefined;
@@ -2971,6 +3190,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
   });
   on('[data-act="commitmove"]', () => commitMove(ctx));
   on('[data-act="cancelmove"]', () => cancelMove(ctx));
+  on('[data-turn]', (el) => { rotate(ctx, el.dataset.turn === 'ccw' ? 3 : 1); });
   // Rolling the pool, choosing the Part, applying the Penetration and recording
   // the kill all used to be buttons here. They belong to the AttackHelper now:
   // it walks the whole of 4.4 and issues the same commands at the right moment,
@@ -2986,6 +3206,8 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
       const t = s.tokens.find((x) => x.uid === sc.opp!.uid);
       ctx.send({ kind: 'endOpportunity', seat: t?.side ?? me(), uid: sc.opp.uid });
     }
+    // Walking away from a tool that never resolved leaves its Action unperformed.
+    dropAction();
     movePlan = null;
     inspectUid = null;
     board?.clearMovePath();

@@ -36,11 +36,17 @@ export type Command =
   // `free` is a Movement Action moving the unit on the Action Tick it has
   // already paid for, so it must not also spend the Maneuver Tick. Everything
   // else that moves a unit under its own power is a Maneuver.
-  | { kind: 'maneuver'; seat: Side; uid: number; to: { col: number; row: number }; facing?: Facing; free?: boolean }
+  //
+  // `via` is the route walked, purely so the other player watches the same walk
+  // instead of a slide through the wall the mover went around. Nothing reads it
+  // but the animation, and a command without it still lands correctly.
+  | { kind: 'maneuver'; seat: Side; uid: number; to: { col: number; row: number }; facing?: Facing; free?: boolean; via?: { col: number; row: number }[] }
   | { kind: 'performAction'; seat: Side; uid: number; actionId: string }
   | { kind: 'overload'; seat: Side; uid: number }
   | { kind: 'playTactic'; seat: Side; uid: number; cardId: string; pick?: string }
-  | { kind: 'deployUnit'; seat: Side; uid: number; to: { col: number; row: number }; stance?: Stance; camo?: boolean }
+  // Nothing in 3.1.4 fixes which way a unit faces as it lands, so the facing is
+  // the player's to choose while the placement is still theirs to take back.
+  | { kind: 'deployUnit'; seat: Side; uid: number; to: { col: number; row: number }; stance?: Stance; camo?: boolean; facing?: Facing }
   | { kind: 'applyPenetration'; seat: Side; uid: number; targetUid: number; slot: PartSlot | 'main' }
   | { kind: 'applyStatus'; seat: Side; uid: number; targetUid: number; statusId: string; stacks?: number }
   | { kind: 'focus'; seat: Side; uid: number }
@@ -1171,7 +1177,9 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
       const fresh = t.deployed === false;
       t.col = cmd.to.col;
       t.row = cmd.to.row;
-      t.facing = t.side === 's1' ? 2 : 0;
+      // Facing its own table edge is the default; a player who turned it before
+      // confirming gets the way they pointed it.
+      t.facing = cmd.facing ?? (t.side === 's1' ? 2 : 0);
       t.deployed = true;
       // A Mech picks its Stance as it lands; anything else keeps its printed one.
       if (t.kind === 'mech' && cmd.stance) t.stance = cmd.stance;
