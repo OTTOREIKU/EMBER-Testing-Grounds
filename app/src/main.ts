@@ -1367,11 +1367,10 @@ async function init() {
     renderGuideMove(m.label, n, m.steps, m.locked);
   }
 
+  // The shared reading, not a local copy of it: Mobility Stance doubles a Mech's
+  // Maneuver Value and only a Mech's, and this used to double a Drone's too.
   function moveRangeFor(t: Token): number {
-    let base = 0;
-    if (t.kind === 'mech' && t.mech?.chasis) base = data.byId.get(t.mech.chasis)?.move ?? 0;
-    else base = data.byId.get(t.cardId)?.move ?? 0;
-    return t.stance === 'mobility' ? base * 2 : base;
+    return maneuverRange(data, t);
   }
 
   function startMove(uid: number, opts: { range?: number; label: string }, done: (moved: boolean) => void): void {
@@ -4366,10 +4365,7 @@ async function init() {
       onChanged();
       if (!combatBusy()) panel.showToken(t);
     } else if (k === 'm') {
-      let base = 0;
-      if (t.kind === 'mech' && t.mech?.chasis) base = data.byId.get(t.mech.chasis)?.move ?? 0;
-      else base = data.byId.get(t.cardId)?.move ?? 0;
-      if (t.stance === 'mobility') base *= 2;
+      const base = moveRangeFor(t);
       if (base > 0) {
         const flying = !!data.byId.get(t.cardId)?.moveAsFlight;
         board.showReachable(reachableGrids(t, base, currentTerrain(), state.tokens, flying, moveOpts(t, flying)), base);
