@@ -180,6 +180,35 @@ export function spendManeuver(o: Opportunity): Opportunity {
   return { ...o, maneuver: Math.max(0, o.maneuver - MANEUVER_COST.maneuver), maneuvered: true, moved: true };
 }
 
+// ---------- a Drone's activation (2.4.1) ----------
+//
+// A Mech buys its Actions with Ticks. A Drone or a Projectile has none: its
+// activation buys **one Action or one Movement, never both**. So the same
+// Opportunity object is read a second way for them — `maneuvered` closes off
+// the Movement, `started` closes off the Actions, and either one closes both.
+//
+// This cannot be told from the Action alone, because a Mech's Passives are also
+// length-less and must not eat its whole Opportunity. The caller knows the unit;
+// it has to be the one to ask.
+
+export function canActivate(o: Opportunity): TickVerdict {
+  if (o.maneuvered) return { ok: false, why: 'It has already moved this activation, and it may move or act, not both (2.4.1).' };
+  if (o.started) return { ok: false, why: 'It has already acted this activation.' };
+  return { ok: true };
+}
+
+// `started`, not `maneuvered`: both close the activation either way, but only
+// one of them is true, and the refusal quotes whichever it finds. Setting both
+// made a Drone that had just fired be told it had already moved.
+export function spendActivation(o: Opportunity, a: CardAction): Opportunity {
+  return {
+    ...o,
+    maneuver: 0,
+    started: true,
+    performed: o.performed.includes(a.id) ? o.performed : [...o.performed, a.id],
+  };
+}
+
 export function spendAction(o: Opportunity, a: CardAction): Opportunity {
   const len = lengthOf(a);
   if (!len) return o;

@@ -1095,6 +1095,47 @@ const gone = JSON.parse(JSON.stringify(held));
 gone.tokens = gone.tokens.filter((t) => t.uid !== 2);
 check('a drop survives its attacker leaving the board', C.check(data, gone, drop()).ok, true);
 
+// ---------- a Drone's activation (2.4.1) ----------
+//
+// One Action or one Movement, never both. A Mech's Passives are length-less
+// too, so this has to key off the unit rather than off the Action.
+
+const dAct = { id: 'DA', type: 'Firing', name: { en: 'Full-auto' } }; // no size: no Tick price
+const dData = { ...data, byId: new Map([...data.byId, ['DR1', { id: 'DR1', actions: [dAct] }]]) };
+const droneAt = (over = {}) => world(
+  [{ uid: 1, side: 's1', kind: 'drone', stance: 'offensive', label: 'D1', col: 3, row: 3, facing: 0, cardId: 'DR1', partStates: { main: 'intact' }, ammo: {} }],
+  3, opp(1, over),
+);
+const dPerform = { kind: 'performAction', seat: 's1', uid: 1, actionId: 'DA' };
+const dMove = { kind: 'maneuver', seat: 's1', uid: 1, to: { col: 9, row: 9 } };
+
+check('a fresh Drone may act', C.check(dData, droneAt(), dPerform).ok, true);
+check('and may move instead', C.check(dData, droneAt(), dMove).ok, true);
+
+// Acting spends the whole activation.
+const dActed = droneAt();
+C.apply(dData, dActed, dPerform);
+check('acting closes the activation', [dActed.script.opp.started, dActed.script.opp.maneuver], [true, 0]);
+check('so it cannot act again', C.check(dData, dActed, dPerform).ok, false);
+check('and cannot then move', C.check(dData, dActed, dMove).ok, false);
+// Only one of the two flags is ever set, so the refusal can name what it was.
+check('and is told it acted, not that it moved', C.check(dData, dActed, dPerform).why.includes('already acted'), true);
+check('while one that moved is told it moved', C.check(dData, (() => { const w = droneAt(); C.apply(dData, w, dMove); return w; })(), dPerform).why.includes('already moved'), true);
+
+// And moving spends it just the same — this is the bug that let a Drone move
+// and then shoot in a real game.
+const dMoved = droneAt();
+C.apply(dData, dMoved, dMove);
+check('moving closes the activation too', dMoved.script.opp.maneuvered, true);
+check('so it cannot then act', C.check(dData, dMoved, dPerform).ok, false);
+
+// A Mech's Passive is length-less as well, and must NOT eat its Opportunity.
+const passive = { id: 'P9', type: 'Passive', name: { en: 'Data Link' } };
+const mData = { ...data, byId: new Map([...data.byId, ['T9', { id: 'T9', actions: [passive] }]]) };
+const wPass = world([mech(1, 's1', { mech: { torso: 'T9', pilot: 'P1' } })], 2, opp(1));
+C.apply(mData, wPass, { kind: 'performAction', seat: 's1', uid: 1, actionId: 'P9' });
+check('a Mech Passive spends none of its Opportunity', [wPass.script.opp.action, wPass.script.opp.maneuver, wPass.script.opp.started], [2, 1, false]);
+
 // ---------- the hand of Tactics Cards (5.4) ----------
 //
 // It has to travel: check() for playTactic reads the SENDER's hand, so a hand

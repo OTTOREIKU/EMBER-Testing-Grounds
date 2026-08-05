@@ -2,7 +2,7 @@ import type { Facing, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stanc
 import { addStatus, ageTokens, PHASES, STATUSES, TIMINGS } from './types';
 import type { GameData } from './data';
 import { consumesCharge, electronicValue, freehandSlots, interceptCapacity, makeDroneToken, makeMechToken, maxLink, tokenCards } from './units';
-import { canManeuver, canOverload, canPerform, spendAction, spendManeuver, spendOverload } from './ticks';
+import { canActivate, canManeuver, canOverload, canPerform, spendAction, spendActivation, spendManeuver, spendOverload } from './ticks';
 import { tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { battlefieldLocked, deploymentComplete, deployTurn, firstPlayerFrom, newSetup, normaliseSetup } from './setup';
 import { applyKill, normaliseTasks, pendingDesignations, settleControl, type Designation } from './tasks';
@@ -635,6 +635,10 @@ function checkActed(
       if (!a) return no('This unit has no such Action.');
       const o = oppOf(state, cmd.uid);
       if (!o) return no('It is not this unit\'s Action Opportunity.');
+      // Ticks are a Mech's economy. Everything else gets an activation worth
+      // one Action or one Movement, and the unit is the only thing that says
+      // which reading applies — a Mech's Passives are length-less too.
+      if (t.kind !== 'mech') return fromVerdict(canActivate(o));
       return fromVerdict(canPerform(o, a));
     }
     case 'overload': {
@@ -1244,7 +1248,7 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
     case 'performAction': {
       const a = findAction(data, state, cmd.uid, cmd.actionId);
       const o = oppOf(state, cmd.uid);
-      if (a && o && sc) sc.opp = spendAction(o, a);
+      if (a && o && sc) sc.opp = t.kind === 'mech' ? spendAction(o, a) : spendActivation(o, a);
       return;
     }
     case 'overload': {
