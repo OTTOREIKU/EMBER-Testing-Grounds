@@ -459,3 +459,70 @@ export function inArc(a: Token, b: Token, arc: 'forward' | 'rear'): boolean {
   const perp = Math.abs(dx * dir[1] - dy * dir[0]);
   return perp <= along;
 }
+
+// ---------- what a shot has to get through (4.2, 4.4.2, 4.16) ----------
+//
+// Both pages read the same board the same way. These were local to main.ts and
+// the Match Centre had neither, so its attacks claimed no Protection at all and
+// never mentioned the arc; a second copy would have drifted from the first.
+
+// A target line for the attack helper: range, arc, and line of sight.
+export function losNote(
+  attacker: Token,
+  defender: Token,
+  action: { type?: string; range?: number; keywords?: unknown[] },
+  terrain: TerrainPiece[],
+  tokens: Token[],
+  smoke: SmokeScreen[],
+): string {
+  const r = rangeBetween(attacker, defender);
+  const los = losBetween(attacker, defender, terrain, tokens);
+  const fwd = inArc(attacker, defender, 'forward');
+  // Omni-direction Firing waives the Forward Arc requirement outright, so
+  // warning about the arc on such an action is wrong guidance.
+  const omni = (action.keywords ?? []).some((k) => /全向|omni/i.test(JSON.stringify(k)));
+  const bits: string[] = [];
+  bits.push(r.sameGrid ? 'same grid' : r.adjacent ? 'adjacent (R1)' : `Range ${r.range}`);
+  if (action.range === 0) {
+    if (!r.adjacent && !r.sameGrid) bits.push('⚠ target not adjacent (action range is “--”)');
+  } else if (action.range && r.range > action.range) {
+    bits.push(`⚠ beyond action range (R${action.range})`);
+  }
+  bits.push(omni ? 'Omni-direction Firing: no arc check ✓' : fwd ? 'in forward arc ✓' : '⚠ NOT in forward arc');
+  if (action.type === 'Firing') {
+    if (smokeBlocks(attacker, defender, smoke)) bits.push('✕ LOS blocked by a Smoke Screen (4.16)');
+    else bits.push(los === 'clear' ? 'LOS clear ✓' : los === 'obstructed' ? '⚠ obstructed, so consider +2 White protection' : '✕ LOS blocked (3" terrain)');
+  }
+  return bits.join(' · ');
+}
+
+// The extra White dice an obstructed shot hands the defender. Terrain and Unit
+// Protection are separate +2s and both can apply to the same line.
+export function protectionFor(
+  attacker: Token,
+  defender: Token,
+  action: { type?: string },
+  terrain: TerrainPiece[],
+  tokens: Token[],
+  smoke: SmokeScreen[],
+): { white: number; note: string } {
+  if (action.type !== 'Firing') return { white: 0, note: '' };
+  // Smoke removes line of sight outright, so there is no protection to add on top.
+  if (smokeBlocks(attacker, defender, smoke)) {
+    return { white: 0, note: 'No line of sight: a Smoke Screen is in the way (4.16)' };
+  }
+  if (losBetween(attacker, defender, terrain, tokens) === 'clear') return { white: 0, note: '' };
+  const terrainOnly = losBetween(attacker, defender, terrain, []);
+  const unitsOnly = losBetween(attacker, defender, [], tokens);
+  let white = 0;
+  const parts: string[] = [];
+  if (terrainOnly !== 'clear') {
+    white += 2;
+    parts.push('Terrain Protection (obstructed by terrain ≥2")');
+  }
+  if (unitsOnly !== 'clear') {
+    white += 2;
+    parts.push('Unit Protection (obstructed by a Large unit)');
+  }
+  return { white, note: parts.join(' + ') || 'Obstructed line of sight' };
+}

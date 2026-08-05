@@ -31,7 +31,7 @@ import {
 import { Panel } from './panel';
 import { tacticSpec, tacticTargets } from './tactics';
 import { Roster } from './roster';
-import { attackDirection, crushTargets, type CrushVictims, dissipationFor, extendPath, inArc, knockbackPath, largeGridOf, type LargeGrid, LG, losBetween, type MoveOpts, rangeBetween, reachableGrids, smokeBlocks, standingSpot } from './rules';
+import { attackDirection, crushTargets, type CrushVictims, dissipationFor, extendPath, inArc, knockbackPath, largeGridOf, type LargeGrid, LG, losBetween, losNote as losNoteFor, type MoveOpts, protectionFor as protectionForShared, rangeBetween, reachableGrids, smokeBlocks, standingSpot } from './rules';
 import { breakAwayCost, canBeForceMoved, lockersOf } from './melee';
 import { instantiateScenario, loadScenarios, type Scenario } from './scenarios';
 import { loadReplays, ReplayPlayer, type ReplayScript, type ReplayStep, type ReplayTally } from './replay';
@@ -531,49 +531,13 @@ async function init() {
     return cells.every((c) => c.col >= 0 && c.row >= 0 && c.col < CELLS && c.row < CELLS && !occupied.has(`${c.col},${c.row}`));
   }
 
+  // Both now live in rules.ts so the Match Centre reads the board the same way.
   function losNote(attacker: Token, defender: Token, action: { type?: string; range?: number; keywords?: unknown[] }): string {
-    const r = rangeBetween(attacker, defender);
-    const los = losBetween(attacker, defender, currentTerrain(), state.tokens);
-    const fwd = inArc(attacker, defender, 'forward');
-    // Omni-direction Firing waives the Forward Arc requirement outright, so
-    // warning about the arc on such an action is wrong guidance.
-    const omni = (action.keywords ?? []).some((k) => /全向|omni/i.test(JSON.stringify(k)));
-    const bits: string[] = [];
-    bits.push(r.sameGrid ? 'same grid' : r.adjacent ? 'adjacent (R1)' : `Range ${r.range}`);
-    if (action.range === 0) {
-      if (!r.adjacent && !r.sameGrid) bits.push('⚠ target not adjacent (action range is “--”)');
-    } else if (action.range && r.range > action.range) {
-      bits.push(`⚠ beyond action range (R${action.range})`);
-    }
-    bits.push(omni ? 'Omni-direction Firing: no arc check ✓' : fwd ? 'in forward arc ✓' : '⚠ NOT in forward arc');
-    if (action.type === 'Firing') {
-      if (smokeBlocks(attacker, defender, state.smoke ?? [])) bits.push('✕ LOS blocked by a Smoke Screen (4.16)');
-      else bits.push(los === 'clear' ? 'LOS clear ✓' : los === 'obstructed' ? '⚠ obstructed, so consider +2 White protection' : '✕ LOS blocked (3" terrain)');
-    }
-    return bits.join(' · ');
+    return losNoteFor(attacker, defender, action, currentTerrain(), state.tokens, state.smoke ?? []);
   }
 
   function protectionFor(attacker: Token, defender: Token, action: { type?: string }): { white: number; note: string } {
-    if (action.type !== 'Firing') return { white: 0, note: '' };
-    // Smoke removes line of sight outright, so there is no protection to add on top.
-    if (smokeBlocks(attacker, defender, state.smoke ?? [])) {
-      return { white: 0, note: 'No line of sight: a Smoke Screen is in the way (4.16)' };
-    }
-    const los = losBetween(attacker, defender, currentTerrain(), state.tokens);
-    if (los === 'clear') return { white: 0, note: '' };
-    const terrainOnly = losBetween(attacker, defender, currentTerrain(), []);
-    const unitsOnly = losBetween(attacker, defender, [], state.tokens);
-    let white = 0;
-    const parts: string[] = [];
-    if (terrainOnly !== 'clear') {
-      white += 2;
-      parts.push('Terrain Protection (obstructed by terrain ≥2")');
-    }
-    if (unitsOnly !== 'clear') {
-      white += 2;
-      parts.push('Unit Protection (obstructed by a Large unit)');
-    }
-    return { white, note: parts.join(' + ') || 'Obstructed line of sight' };
+    return protectionForShared(attacker, defender, action, currentTerrain(), state.tokens, state.smoke ?? []);
   }
 
   // ---------- performing an action from the play guide ----------

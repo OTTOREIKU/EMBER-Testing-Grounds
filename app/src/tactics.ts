@@ -175,3 +175,11 @@ export function tacticTargets(spec: TacticSpec, s: GameState, side: Side, ctx: T
       && spec.eligible(t, s, ctx),
   );
 }
+
+// When a Tactics Card may be played. The card data carries NO actions for these
+// six, so reading the moment off `card.actions[0].name` — which both pages used
+// to do — always came back empty and the prompt never appeared at all. The
+// hand-written spec above is the only place that knows.
+export function tacticFitsPhase(id: string, phase: string): boolean {
+  return tacticSpec(id)?.phase === phase;
+}

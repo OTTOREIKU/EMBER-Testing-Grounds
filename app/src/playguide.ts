@@ -8,6 +8,7 @@ import { PHASES, PHASE_INFO } from './tracker';
 import { type ActionWorld, canActivateCamo, type ExtraActivation, extraActivationOf, guidedActions, initiativeFor, maneuverRange, maxLink, SLOT_LABEL, tokenCards } from './units';
 import { canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed } from './ticks';
 import { perform } from './commands';
+import { tacticFitsPhase, tacticSpec } from './tactics';
 import { alive, canAct, getLocalSeat, isLoopPhase, nextTurn, onExtraOpportunity, type LoopPhase, nextActivation, activationOrder, actionPhaseComplete, loopComplete, eligibleUnits, commandTokensFor, type InitLookup, type Activation } from './loop';
 import { deployable, deploymentComplete, deployTurn, firstPlayerFrom, newSetup, normaliseSetup, rollTotal, type SetupState } from './setup';
 import { normaliseTasks, scoreMain, scoreSecondary, settleControl, unpaidLines, type ScoreLine, type ScoreResult, type SecondaryScoring, type TaskState } from './tasks';
@@ -76,13 +77,6 @@ export interface GuideCallbacks {
   onChanged(): void;
 }
 
-function tacticFitsPhase(when: string, phase: string): boolean {
-  const w = when.toLowerCase();
-  if (w.includes('command')) return phase === 'Command';
-  if (w.includes('end phase')) return phase === 'End';
-  if (w.includes('action opportunity')) return phase === 'Action';
-  return false;
-}
 
 export class PlayGuide {
   private host: HTMLElement;
@@ -557,9 +551,11 @@ export class PlayGuide {
         if (seen.has(id)) continue;
         seen.add(id);
         const card = this.data.byId.get(id);
-        if (!card) continue;
-        const when = card.actions?.[0]?.name?.en ?? '';
-        if (!tacticFitsPhase(when, phase)) continue;
+        // Read off the spec, not the card: these six carry no actions in the
+        // data, so the old `card.actions[0].name` was always empty and this
+        // prompt could never appear.
+        if (!card || !tacticFitsPhase(id, phase)) continue;
+        const when = tacticSpec(id)?.timing ?? '';
         rows.push(`<div class="pg-tac-row${spent.length ? ' spent' : ''}">
           <span class="side-${side}">${squadLabel(side)}</span>
           <b>${esc(cardName(card))}</b>
