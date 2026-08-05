@@ -900,6 +900,27 @@ export class AttackHelper {
 
 // ---------- electronic warfare ----------
 
+// What a counter-roll's dice are worth to their roller. Hollow faces count as
+// solid for a unit in Offensive Stance (4.11.3), so validity is per-roller and
+// the two sides can read the same dice differently. Shared, because the whole
+// rule turns on this count agreeing across both clients.
+export function tallyCounter(
+  dice: DiceData,
+  faces: number[],
+  offensive: boolean,
+): { lightning: number; light: number } {
+  let lightning = 0;
+  let light = 0;
+  for (const f of faces) {
+    for (const icon of dice.dice.yellow.faces[f] ?? []) {
+      if (icon.hollow && !offensive) continue;
+      if (icon.type === 'lightning') lightning++;
+      else if (icon.type === 'lightHit') light++;
+    }
+  }
+  return { lightning, light };
+}
+
 export function resolveCounterRoll(
   init: { lightning: number; light: number },
   resp: { lightning: number; light: number },
@@ -1024,16 +1045,7 @@ export class ElectronicHelper {
   }
 
   private tally(roll: Rolled[], offensive: boolean): { lightning: number; light: number } {
-    let lightning = 0;
-    let light = 0;
-    for (const d of roll) {
-      for (const icon of this.dice.dice.yellow.faces[d.face]) {
-        if (icon.hollow && !offensive) continue;
-        if (icon.type === 'lightning') lightning++;
-        else if (icon.type === 'lightHit') light++;
-      }
-    }
-    return { lightning, light };
+    return tallyCounter(this.dice, roll.map((d) => d.face), offensive);
   }
 
   private applyEffects(): string[] {

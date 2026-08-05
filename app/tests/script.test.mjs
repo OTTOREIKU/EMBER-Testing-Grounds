@@ -58,7 +58,8 @@ const endDone = ['2:end:remove', '2:end:tokens'];
 // Every value here is deliberately NOT the default, so a field that
 // normaliseScript forgets to carry across fails rather than coincidentally
 // matching what it would have defaulted to.
-const live = { turn: 's2', acted: [7, 8], extraOpps: [8], commanded: [9], freeCommand: [], passed: ['s1'], stage: '2:3', mode: 'hidden', strict: true, commits: { s1: 'deadbeef' }, revealed: ['s2'], seats: { s1: 'local', s2: 'remote' }, opp, intercepts, endDone };
+const counter = { initiatorUid: 7, responderUid: 9, actionId: 'EWA', initRoll: [0, 3], respRoll: null, initFocused: true, respFocused: false };
+const live = { turn: 's2', acted: [7, 8], extraOpps: [8], commanded: [9], freeCommand: [], passed: ['s1'], stage: '2:3', mode: 'hidden', strict: true, commits: { s1: 'deadbeef' }, revealed: ['s2'], seats: { s1: 'local', s2: 'remote' }, opp, intercepts, counter, endDone };
 
 // This fixture has lagged behind ScriptState four times now, each costing a
 // confusing deep-equal diff. Naming the missing field turns that into an
@@ -76,6 +77,13 @@ check('a junk opportunity is dropped rather than half-restored', normaliseScript
 check('owed interceptions survive', normaliseScript(live, 's1').intercepts, intercepts);
 check('a missing list reads back empty', normaliseScript({ ...live, intercepts: undefined }, 's1').intercepts, []);
 check('half-formed entries are dropped', normaliseScript({ ...live, intercepts: [{ uid: 1 }, ...intercepts] }, 's1').intercepts, intercepts);
+// A Counter-roll is a live two-player exchange, so a reload mid-roll must not
+// lose whose dice are already down (4.11.2).
+check('an open counter-roll survives', normaliseScript(live, 's1').counter, counter);
+check('no counter-roll reads back null', normaliseScript({ ...live, counter: undefined }, 's1').counter, null);
+check('a half-formed one is dropped rather than restored', normaliseScript({ ...live, counter: { initiatorUid: 1 } }, 's1').counter, null);
+check('junk faces are filtered out of a roll',
+  normaliseScript({ ...live, counter: { ...counter, initRoll: [0, 'x', 3] } }, 's1').counter.initRoll, [0, 3]);
 // A half-finished End Phase has to survive a reload, since 3.7 fixes the order.
 check('finished end steps survive', normaliseScript(live, 's1').endDone, endDone);
 check('a missing end list reads back empty', normaliseScript({ ...live, endDone: undefined }, 's1').endDone, []);

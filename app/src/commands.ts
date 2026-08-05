@@ -1,7 +1,7 @@
 import type { Facing, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, Timing, Token } from './types';
 import { addStatus, ageTokens, PHASES, STATUSES, TIMINGS } from './types';
 import type { GameData } from './data';
-import { interceptCapacity, makeDroneToken, makeMechToken, maxLink, tokenCards } from './units';
+import { consumesCharge, electronicValue, interceptCapacity, makeDroneToken, makeMechToken, maxLink, tokenCards } from './units';
 import { canManeuver, canOverload, canPerform, spendAction, spendManeuver, spendOverload } from './ticks';
 import { tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { battlefieldLocked, deploymentComplete, deployTurn, firstPlayerFrom, newSetup, normaliseSetup } from './setup';
@@ -33,7 +33,10 @@ export type Command =
   | { kind: 'setTiming'; seat: Side; uid: number; timing?: Timing }
   | { kind: 'setStance'; seat: Side; uid: number; stance: Stance }
   | { kind: 'reboot'; seat: Side; uid: number; stance: Stance }
-  | { kind: 'maneuver'; seat: Side; uid: number; to: { col: number; row: number }; facing?: Facing }
+  // `free` is a Movement Action moving the unit on the Action Tick it has
+  // already paid for, so it must not also spend the Maneuver Tick. Everything
+  // else that moves a unit under its own power is a Maneuver.
+  | { kind: 'maneuver'; seat: Side; uid: number; to: { col: number; row: number }; facing?: Facing; free?: boolean }
   | { kind: 'performAction'; seat: Side; uid: number; actionId: string }
   | { kind: 'overload'; seat: Side; uid: number }
   | { kind: 'playTactic'; seat: Side; uid: number; cardId: string; pick?: string }
@@ -49,6 +52,9 @@ export type Command =
   // needs to travel like anything else that changes a shared number.
   | { kind: 'spendIntercept'; seat: Side; uid: number; actionId: string }
   | { kind: 'restoreIntercept'; seat: Side; uid: number; actionId: string }
+  // A Part's Charge Token turned face-up or back down (4.14). Which Parts hold
+  // one is a shared fact, so the flip has to travel like Ammo does.
+  | { kind: 'setCharge'; seat: Side; uid: number; slot: string; on: boolean }
   | { kind: 'recordKill'; seat: Side; uid: number; targetUid: number; what: 'part' | 'unit' }
   | { kind: 'destroyTerrain'; seat: Side; uid: number; pieces: string[] }
   | { kind: 'advancePhase'; seat: Side }
@@ -69,6 +75,12 @@ export type Command =
   | { kind: 'pickEdge'; seat: Side; edge: 'black' | 'white' }
   | { kind: 'lockDials'; seat: Side }
   | { kind: 'finishDeployment'; seat: Side }
+  // An Electronic Counter-roll (4.11.2). Both sides roll their own Electronic
+  // Value in Yellow dice and either may Focus, so it cannot be driven from one
+  // chair: each seat submits its own faces, and both clients derive the verdict.
+  | { kind: 'startCounterRoll'; seat: Side; uid: number; actionId: string; targetUid: number }
+  | { kind: 'rollCounter'; seat: Side; uid: number; faces: number[]; focused?: boolean }
+  | { kind: 'clearCounterRoll'; seat: Side }
   | { kind: 'queueIntercepts'; seat: Side; items: { uid: number; actionId: string; targetUid: number }[] }
   | { kind: 'resolveIntercept'; seat: Side; uid: number; actionId: string; targetUid: number }
   | { kind: 'clearIntercepts'; seat: Side }
@@ -131,6 +143,21 @@ function interceptMax(data: GameData, t: Token, actionId: string): number | unde
   return a ? interceptCapacity(a) : undefined;
 }
 
+// Large-grid Manhattan distance, the only reach test an Electronic Warfare
+// Action needs (4.11.1).
+function gridRange(a: Token, b: Token): number {
+  return Math.abs(Math.floor(a.col / 3) - Math.floor(b.col / 3)) + Math.abs(Math.floor(a.row / 3) - Math.floor(b.row / 3));
+}
+
+// A Part may hold a Charge Token only if one of its own Actions spends one.
+function chargeable(data: GameData, t: Token, slot: string): boolean {
+  return tokenCards(data, t).some(
+    ({ slot: s, card }) => s === slot
+      && (t.partStates[s as PartSlot | 'main'] ?? 'intact') !== 'destroyed'
+      && (card.actions ?? []).some((a) => consumesCharge(a)),
+  );
+}
+
 function findAction(data: GameData, state: GameState, uid: number, actionId: string) {
   const t = state.tokens.find((x) => x.uid === uid);
   if (!t) return undefined;
@@ -164,12 +191,14 @@ type TableKind =
   | 'advancePhase' | 'setPhase' | 'resetRounds' | 'adjustCommandTokens' | 'passTurn' | 'markEndStep' | 'award'
   | 'lockMap' | 'rollSetup' | 'acceptRoll' | 'pickEdge' | 'lockDials' | 'finishDeployment'
   | 'queueIntercepts' | 'clearIntercepts' | 'placeSmoke' | 'removeSmoke' | 'dissipateSmoke'
+  | 'clearCounterRoll'
   | 'setMode' | 'handOver' | 'setStrict' | 'commitTimings' | 'revealTimings' | 'importSquad'
   | 'configureTable' | 'startMatch' | 'endMatch' | 'pickSecondary' | 'setReady' | 'designateTask';
 const TABLE_KINDS = new Set<Command['kind']>([
   'advancePhase', 'setPhase', 'resetRounds', 'adjustCommandTokens', 'passTurn', 'markEndStep', 'award',
   'lockMap', 'rollSetup', 'acceptRoll', 'pickEdge', 'lockDials', 'finishDeployment',
   'queueIntercepts', 'clearIntercepts', 'placeSmoke', 'removeSmoke', 'dissipateSmoke',
+  'clearCounterRoll',
   'setMode', 'handOver', 'setStrict', 'commitTimings', 'revealTimings', 'importSquad',
   'configureTable', 'startMatch', 'endMatch', 'pickSecondary', 'setReady', 'designateTask',
 ]);
@@ -182,7 +211,7 @@ const ATTRIBUTED = new Set<Command['kind']>([
   'advancePhase', 'setPhase', 'resetRounds', 'markEndStep', 'award',
   'lockMap', 'acceptRoll', 'lockDials', 'finishDeployment',
   'queueIntercepts', 'clearIntercepts', 'placeSmoke', 'removeSmoke', 'dissipateSmoke',
-  'setMode', 'setStrict', 'adjustCommandTokens', 'designateTask',
+  'setMode', 'setStrict', 'adjustCommandTokens', 'designateTask', 'clearCounterRoll',
   'configureTable', 'startMatch', 'endMatch',
 ]);
 function tableLevel(cmd: Command): cmd is Command & { kind: TableKind } {
@@ -386,6 +415,10 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       if (!state.script) return no('There is no guided game running.');
       return ok;
     }
+    case 'clearCounterRoll': {
+      if (!state.script?.counter) return no('No Electronic Counter-roll is open.');
+      return ok;
+    }
     case 'placeSmoke': {
       const { col, row } = cmd.at;
       if (!Number.isInteger(col) || !Number.isInteger(row) || col < 0 || row < 0 || col > 11 || row > 11) return no('That is not a Grid.');
@@ -530,6 +563,11 @@ function checkActed(
       }
       const o = oppOf(state, cmd.uid);
       if (!o) return no('It is not this Mech\'s Action Opportunity.');
+      // A free move rides on an Action that has already been performed; without
+      // one there is nothing that could have moved the unit.
+      if (cmd.free) {
+        return o.performed.length ? ok : no('No Action has been performed this Opportunity, so there is nothing to move with.');
+      }
       return fromVerdict(canManeuver(o));
     }
     case 'performAction': {
@@ -640,6 +678,43 @@ function checkActed(
       if (held === undefined) return no('That Action carries no Interception Tokens.');
       const max = interceptMax(data, t, cmd.actionId);
       if (max !== undefined && held >= max) return no('That Part still holds every Interception Token it started with.');
+      return ok;
+    }
+    case 'startCounterRoll': {
+      const target = state.tokens.find((x) => x.uid === cmd.targetUid);
+      if (!target) return no('That target is not on the board.');
+      if (target.side === t.side) return no('An Electronic Attack is made against an enemy Unit (4.11.1).');
+      if (state.script?.counter) return no('An Electronic Counter-roll is already open.');
+      const a = findAction(data, state, cmd.uid, cmd.actionId);
+      if (!a) return no('This unit has no such Action.');
+      // Range only: Electronic Warfare ignores Terrain and line of sight
+      // entirely (4.11.1), so the arc and sight checks a Firing Action needs
+      // have no place here.
+      const reach = a.range ?? 0;
+      if (gridRange(t, target) > reach) return no(`${target.label} is beyond Range ${reach}.`);
+      // EV 0 cannot Initiate; EV "-" cannot Respond (4.11.2).
+      if (electronicValue(data, t) <= 0) return no(`${t.label} has an Electronic Value of 0, so it cannot Initiate a Counter-roll (4.11.2).`);
+      if (electronicValue(data, target) < 0) return no(`${target.label} cannot be the Responder of a Counter-roll (4.11.2).`);
+      return ok;
+    }
+    case 'rollCounter': {
+      const c = state.script?.counter;
+      if (!c) return no('No Electronic Counter-roll is open.');
+      if (cmd.uid !== c.initiatorUid && cmd.uid !== c.responderUid) return no('That unit is not in this Counter-roll.');
+      if (!Array.isArray(cmd.faces) || cmd.faces.some((f) => !Number.isInteger(f) || f < 0)) return no('That is not a roll.');
+      const mine = cmd.uid === c.initiatorUid ? c.initRoll : c.respRoll;
+      const focused = cmd.uid === c.initiatorUid ? c.initFocused : c.respFocused;
+      // A first roll, or one Focus reroll: Focus costs Link and the Link spend
+      // is its own command, so this only guards against a free second roll.
+      if (mine && !cmd.focused) return no('That unit has already rolled.');
+      if (cmd.focused && (!mine || focused)) return no('Focus rerolls a roll that has been made, and only once here.');
+      return ok;
+    }
+    case 'setCharge': {
+      if (!chargeable(data, t, cmd.slot)) return no('That Part has no Action that spends a Charge Token (4.14).');
+      const already = (t.charge ?? []).includes(cmd.slot);
+      if (cmd.on && already) return no('That Part is already Charged, and a Charged Action cannot be Charged again until the token is spent (4.14).');
+      if (!cmd.on && !already) return no('That Part is not holding a Charge Token.');
       return ok;
     }
     case 'endOpportunity': {
@@ -935,6 +1010,10 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
     if (state.script) state.script.intercepts = [];
     return;
   }
+  if (cmd.kind === 'clearCounterRoll') {
+    if (state.script) state.script.counter = null;
+    return;
+  }
   if (cmd.kind === 'placeSmoke') {
     state.smoke = [...(state.smoke ?? []), { col: cmd.at.col, row: cmd.at.row, side: cmd.seat }];
     return;
@@ -1049,7 +1128,7 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
       t.row = cmd.to.row;
       if (cmd.facing !== undefined) t.facing = cmd.facing;
       const o = oppOf(state, cmd.uid);
-      if (o && sc) sc.opp = spendManeuver(o);
+      if (o && sc && !cmd.free) sc.opp = spendManeuver(o);
       return;
     }
     case 'performAction': {
@@ -1152,6 +1231,40 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
       const max = interceptMax(data, t, cmd.actionId);
       const next = bag[cmd.actionId] + 1;
       bag[cmd.actionId] = max !== undefined ? Math.min(max, next) : next;
+      return;
+    }
+    case 'startCounterRoll': {
+      if (!sc) return;
+      sc.counter = {
+        initiatorUid: cmd.uid,
+        responderUid: cmd.targetUid,
+        actionId: cmd.actionId,
+        initRoll: null,
+        respRoll: null,
+        initFocused: false,
+        respFocused: false,
+      };
+      return;
+    }
+    case 'rollCounter': {
+      const c = sc?.counter;
+      if (!c) return;
+      if (cmd.uid === c.initiatorUid) {
+        c.initRoll = [...cmd.faces];
+        if (cmd.focused) c.initFocused = true;
+      } else if (cmd.uid === c.responderUid) {
+        c.respRoll = [...cmd.faces];
+        if (cmd.focused) c.respFocused = true;
+      }
+      return;
+    }
+    case 'setCharge': {
+      // Absent rather than empty when nothing is Charged, which is what
+      // migrateState writes back and what isCharged reads.
+      const held = new Set(t.charge ?? []);
+      if (cmd.on) held.add(cmd.slot);
+      else held.delete(cmd.slot);
+      t.charge = held.size ? [...held] : undefined;
       return;
     }
     case 'endOpportunity': {

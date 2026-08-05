@@ -14,13 +14,28 @@ const loopSrc = readFileSync(new URL('../src/loop.ts', import.meta.url), 'utf8')
 const rules = readFileSync(new URL('../src/rules.ts', import.meta.url), 'utf8');
 const unitsSrc = readFileSync(new URL('../src/units.ts', import.meta.url), 'utf8');
 const smokeRules = rules.slice(rules.indexOf('export function smokeKey'), rules.indexOf('export function smokeBlocks'));
-// interceptCapacity is pure, so it is sliced in rather than stubbed: a mirror
-// of that keyword regex here could drift from the one the app really reads.
+// interceptCapacity and consumesCharge are pure, so they are sliced in rather
+// than stubbed: a mirror of those keyword regexes here could drift from the
+// ones the app really reads.
 const interceptParser = unitsSrc.slice(
   unitsSrc.indexOf('export function interceptCapacity'),
   unitsSrc.indexOf('// Every card id currently on the board'),
 );
 if (!interceptParser) throw new Error('could not locate interceptCapacity in units.ts');
+// Starts at CHARGE_KEYWORD, not at the function: the regex is a module-level
+// const just above it and slicing from the export leaves it undefined.
+const chargeParser = unitsSrc.slice(
+  unitsSrc.indexOf('const CHARGE_KEYWORD'),
+  unitsSrc.indexOf('export function isChargeAction'),
+);
+if (!chargeParser) throw new Error('could not locate consumesCharge in units.ts');
+// electronicValue reads the stubbed tokenCards, so slicing it in keeps the
+// Electronic Value rule (Parts only, destroyed Parts excluded) in one place.
+const evReader = unitsSrc.slice(
+  unitsSrc.indexOf('export function electronicValue'),
+  unitsSrc.indexOf('export function defaultUnitLabel'),
+);
+if (!evReader) throw new Error('could not locate electronicValue in units.ts');
 const timings = types.slice(types.indexOf('export const PHASES'), types.indexOf('export type TokenShape'));
 const statuses = types.slice(types.indexOf('export function hexagonIds'), types.indexOf('export interface RoundState'));
 const tmp = new URL('./_commands.slice.ts', import.meta.url);
@@ -74,6 +89,8 @@ writeFileSync(
     + smokeRules
     + ticks.replace(/^import[^\n]*\n/gm, '')
     + interceptParser
+    + chargeParser
+    + evReader
     + stubs
     + commands.replace(/^import[^\n]*\n/gm, ''),
 );
@@ -109,6 +126,9 @@ const data = {
     ['T3', { id: 'T3', structure: 2, actions: [] }],
     ['T4', { id: 'T4', actions: [{ id: 'L1', type: 'Projectile', size: 'm', name: { en: 'Launcher' }, storage: 3 }] }],
     ['T5', { id: 'T5', actions: [fire, { id: 'I2', type: 'Passive', name: { en: 'CIWS' }, range: 2, keywords: [{ inline: '拦截2' }] }] }],
+    ['T6', { id: 'T6', actions: [{ id: 'C1', type: 'Firing', size: 's', name: { en: 'Charged Shot' }, keywords: [{ inline: '充能' }] }] }],
+    ['EW1', { id: 'EW1', electronic: 5, actions: [{ id: 'EWA', type: 'Firing', size: 's', range: 4, name: { en: 'Fire Control Interference' }, keywords: [{ en: 'Electronic Attack' }] }] }],
+    ['EW2', { id: 'EW2', electronic: 3, actions: [] }],
     ['D1', { id: 'D1', actions: [] }],
     ['P1', { id: 'P1', LV: 4 }],
   ]),
@@ -577,6 +597,82 @@ C.apply(data, wspend, { kind: 'restoreIntercept', seat: 's1', uid: 1, actionId: 
 C.apply(data, wspend, { kind: 'restoreIntercept', seat: 's1', uid: 1, actionId: 'I2' });
 check('but never past the printed Intercept X', wspend.tokens[0].intercept.I2, 2);
 check('and a full Part refuses the undo', C.check(data, wspend, { kind: 'restoreIntercept', seat: 's1', uid: 1, actionId: 'I2' }).ok, false);
+
+// ---------- Electronic Counter-rolls (4.11.2) ----------
+// Both sides roll their own Electronic Value, so each seat submits its own
+// faces and neither can send the other's.
+const ewMech = (uid, side, torso, extra = {}) => ({
+  uid, side, kind: 'mech', stance: 'offensive', label: `E${uid}`, col: 3, row: 3, facing: 0,
+  mech: { torso, pilot: 'P1' }, partStates: { torso: 'intact' }, ...extra,
+});
+const ewWorld = (over = {}) => {
+  const w = world([ewMech(1, 's1', 'EW1'), ewMech(2, 's2', 'EW2', { col: 9, row: 3 })], 2, opp(1));
+  Object.assign(w.script, over);
+  return w;
+};
+const startEw = (over = {}) => ({ kind: 'startCounterRoll', seat: 's1', uid: 1, actionId: 'EWA', targetUid: 2, ...over });
+check('an Electronic Attack in range opens', C.check(data, ewWorld(), startEw()).ok, true);
+check('a friendly target is refused', C.check(data, ewWorld(), startEw({ targetUid: 1 })).ok, false);
+const wfar = ewWorld();
+wfar.tokens[1].col = 33;
+check('and one beyond the Action Range is refused', C.check(data, wfar, startEw()).ok, false);
+const wnoEv = ewWorld();
+wnoEv.tokens[0].mech = { torso: 'T1', pilot: 'P1' };
+check('a unit with Electronic Value 0 cannot Initiate', C.check(data, wnoEv, startEw()).ok, false);
+const wew = ewWorld();
+C.apply(data, wew, startEw());
+check('the Counter-roll is opened on the shared state',
+  [wew.script.counter.initiatorUid, wew.script.counter.responderUid, wew.script.counter.initRoll], [1, 2, null]);
+check('a second one is refused while it is open', C.check(data, wew, startEw()).ok, false);
+check('the Initiator may roll', C.check(data, wew, { kind: 'rollCounter', seat: 's1', uid: 1, faces: [0, 1, 2] }).ok, true);
+check('a unit outside the Counter-roll may not', C.check(data, wew, { kind: 'rollCounter', seat: 's1', uid: 9, faces: [0] }).ok, false);
+C.apply(data, wew, { kind: 'rollCounter', seat: 's1', uid: 1, faces: [0, 1, 2] });
+check('its faces are recorded', wew.script.counter.initRoll, [0, 1, 2]);
+check('and it cannot simply roll again', C.check(data, wew, { kind: 'rollCounter', seat: 's1', uid: 1, faces: [3] }).ok, false);
+check('but it may Focus once', C.check(data, wew, { kind: 'rollCounter', seat: 's1', uid: 1, faces: [3], focused: true }).ok, true);
+C.apply(data, wew, { kind: 'rollCounter', seat: 's1', uid: 1, faces: [3], focused: true });
+check('the Focus reroll replaces the faces', [wew.script.counter.initRoll, wew.script.counter.initFocused], [[3], true]);
+check('and not twice', C.check(data, wew, { kind: 'rollCounter', seat: 's1', uid: 1, faces: [4], focused: true }).ok, false);
+C.apply(data, wew, { kind: 'rollCounter', seat: 's2', uid: 2, faces: [5, 6] });
+check('the Responder rolls for itself', wew.script.counter.respRoll, [5, 6]);
+C.apply(data, wew, { kind: 'clearCounterRoll', seat: 's1' });
+check('and clearing closes it', wew.script.counter, null);
+
+// ---------- a Movement Action's move (3.4.4) ----------
+// It rides on the Action Tick the Action already paid, so it must not also
+// spend the Maneuver Tick — and it needs an Action to have been performed.
+const wmv = (over = {}) => world([mech(1, 's1')], 2, opp(1, over));
+const freeMove = { kind: 'maneuver', seat: 's1', uid: 1, to: { col: 9, row: 9 }, free: true };
+check('a free move needs an Action behind it', C.check(data, wmv(), freeMove).ok, false);
+check('and passes once one is performed', C.check(data, wmv({ performed: ['A1'] }), freeMove).ok, true);
+const wSpentMan = wmv({ performed: ['A1'], maneuver: 0, maneuvered: true });
+check('even with the Maneuver Tick already gone', C.check(data, wSpentMan, freeMove).ok, true);
+C.apply(data, wSpentMan, freeMove);
+check('it moves the unit', [wSpentMan.tokens[0].col, wSpentMan.tokens[0].row], [9, 9]);
+const wnorm = wmv({ performed: ['A1'] });
+C.apply(data, wnorm, freeMove);
+check('and leaves the Maneuver Tick alone', [wnorm.script.opp.maneuver, wnorm.script.opp.maneuvered], [1, false]);
+const wman = wmv();
+C.apply(data, wman, { kind: 'maneuver', seat: 's1', uid: 1, to: { col: 9, row: 9 } });
+check('while an ordinary Maneuver still spends it', [wman.script.opp.maneuver, wman.script.opp.maneuvered], [0, true]);
+
+// ---------- Charge Tokens (4.14) ----------
+const wc2 = () => world([mech(1, 's1', { mech: { torso: 'T6', chasis: 'T1', pilot: 'P1' }, partStates: { torso: 'intact', chasis: 'intact' } })], 2);
+const chg = (over = {}) => ({ kind: 'setCharge', seat: 's1', uid: 1, slot: 'torso', on: true, ...over });
+check('a Part whose Action spends a Charge may hold one', C.check(data, wc2(), chg()).ok, true);
+check('a Part with no Chargeable Action may not', C.check(data, wc2(), chg({ slot: 'chasis' })).ok, false);
+const wchg = wc2();
+C.apply(data, wchg, chg());
+check('turning it face-up records the slot', wchg.tokens[0].charge, ['torso']);
+check('and a Charged Part cannot be Charged again', C.check(data, wchg, chg()).ok, false);
+check('but it can be spent', C.check(data, wchg, chg({ on: false })).ok, true);
+C.apply(data, wchg, chg({ on: false }));
+check('spending it leaves nothing behind', wchg.tokens[0].charge, undefined);
+check('and an uncharged Part has nothing to spend', C.check(data, wchg, chg({ on: false })).ok, false);
+check('the other squad cannot flip it', C.check(data, wc2(), chg({ seat: 's2' })).ok, false);
+const wdead = wc2();
+wdead.tokens[0].partStates.torso = 'destroyed';
+check('a destroyed Part holds nothing', C.check(data, wdead, chg()).ok, false);
 
 // ---------- launch and despawn ----------
 

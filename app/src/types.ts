@@ -446,7 +446,23 @@ export interface ScriptState {
   seats: Record<Side, 'local' | 'remote'>;
   opp: Opportunity | null;
   intercepts: { uid: number; actionId: string; targetUid: number }[];
+  // An Electronic Counter-roll in progress (4.11.2). It lives in shared state
+  // rather than on one client because BOTH sides roll and either may spend Link
+  // to Focus, and a player may only ever send commands for their own units.
+  counter: CounterRoll | null;
   endDone: string[];
+}
+
+export interface CounterRoll {
+  initiatorUid: number;
+  responderUid: number;
+  actionId: string;
+  // Rolled faces, submitted by each side for its own unit. Never re-rolled by
+  // the receiver; the verdict is derived from these on both clients.
+  initRoll: number[] | null;
+  respRoll: number[] | null;
+  initFocused: boolean;
+  respFocused: boolean;
 }
 
 export function newScriptState(firstPlayer: Side): ScriptState {
@@ -465,7 +481,24 @@ export function newScriptState(firstPlayer: Side): ScriptState {
     seats: { s1: 'local', s2: 'local' },
     opp: null,
     intercepts: [],
+    counter: null,
     endDone: [],
+  };
+}
+
+function normaliseCounter(raw: unknown): CounterRoll | null {
+  const c = raw as Partial<CounterRoll> | null | undefined;
+  if (!c || typeof c.initiatorUid !== 'number' || typeof c.responderUid !== 'number' || typeof c.actionId !== 'string') return null;
+  const faces = (v: unknown): number[] | null =>
+    Array.isArray(v) ? v.filter((x): x is number => typeof x === 'number') : null;
+  return {
+    initiatorUid: c.initiatorUid,
+    responderUid: c.responderUid,
+    actionId: c.actionId,
+    initRoll: faces(c.initRoll),
+    respRoll: faces(c.respRoll),
+    initFocused: !!c.initFocused,
+    respFocused: !!c.respFocused,
   };
 }
 
@@ -492,6 +525,7 @@ export function normaliseScript(raw: unknown, firstPlayer: Side): ScriptState {
           (x) => x && typeof x.uid === 'number' && typeof x.targetUid === 'number' && typeof x.actionId === 'string',
         )
       : base.intercepts,
+    counter: normaliseCounter(s.counter),
     endDone: Array.isArray(s.endDone) ? s.endDone.filter((x) => typeof x === 'string') : base.endDone,
   };
 }
