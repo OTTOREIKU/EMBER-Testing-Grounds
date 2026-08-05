@@ -14,7 +14,7 @@ import type { CardAction, CounterRoll, DiceData, DieColor, Facing, GameState, Si
 import { newOpportunity, newScriptState, PHASES, STATUSES, TIMINGS } from './types';
 import { deployable, deployTurn, deploymentComplete, firstPlayerFrom, normaliseSetup, rollTotal, type SetupState } from './setup';
 import { actionPhaseComplete, activationOrder, alive, canAct, commandTokensFor, eligibleUnits, isLoopPhase, loopComplete, nextActivation, nextTurn, onExtraOpportunity, type InitLookup, type LoopPhase } from './loop';
-import { canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed, type TickVerdict } from './ticks';
+import { canActivate, canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed, type TickVerdict } from './ticks';
 import { gameResult, normaliseTasks, scoreMain, scoreSecondary, settleControl, unpaidLines, zoneCentreGrid, type Designation, type ScoreLine, type ScoreResult, type SecondaryScoring } from './tasks';
 import { tokenCards } from './units';
 
@@ -933,11 +933,13 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
     .filter((a) => (seen.has(a.id) ? false : (seen.add(a.id), true)))
     .map((a) => {
       const len = lengthOf(a);
-      // No printed length means the Tick engine has no say: a Drone's Action
-      // costs an activation, not Ticks, and asking canPerform about one only
-      // ever came back "this is not an Action a Mech performs with Ticks",
-      // which blocked every Drone Action there is. Freeplay never asks.
-      const ticks: TickVerdict = len ? canPerform(o, a) : { ok: true };
+      // Ticks are a Mech's economy. A Drone's Action costs its activation
+      // instead — one Action or one Movement, never both — and asking
+      // canPerform about one only ever came back "this is not an Action a Mech
+      // performs with Ticks", which blocked every Drone Action there is. A
+      // Mech's own Passives are length-less too, which is why this asks the
+      // unit rather than the Action.
+      const ticks: TickVerdict = t.kind !== 'mech' ? canActivate(o) : len ? canPerform(o, a) : { ok: true };
       // The board's reason comes first: being out of ammo is a truer answer
       // than "not enough Ticks" when both are true.
       const stopped = blockedBy.get(a.id);
@@ -968,7 +970,9 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
       </button>`;
     })
     .join('');
-  const man = canManeuver(o);
+  // A Drone's move is barred by the same one-thing-per-activation rule as its
+  // Actions, so it needs that reason rather than the Mech one about Tick order.
+  const man = t.kind === 'mech' ? canManeuver(o) : canActivate(o);
   // Ticks are a Mech's Action Opportunity (3.4). A Drone or Projectile gets an
   // activation instead — one Action, no price printed on any of them — so the
   // pool is left off the way the freeplay guide leaves it off its phase panels.
@@ -1013,9 +1017,18 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
         .map((x) => `<button class="stancebtn" data-reboot="${x}">Reboot to ${x[0].toUpperCase()}${x.slice(1)}</button>`)
         .join('')}</div>`
     : '';
+  // Only a Mech has both a Maneuver and Movement Actions to tell apart. A Drone
+  // just moves, so calling its one option a Maneuver invented a distinction the
+  // card never makes.
+  const moveWord = t.kind === 'mech' ? 'Maneuver' : 'Movement';
+  const moveTip = man.ok
+    ? t.kind === 'mech'
+      ? `Draw a route on the board, then confirm. The Maneuver Value comes off the Chassis Card${t.stance === 'mobility' ? ', doubled by Mobility Stance' : ''} — a Movement Action carries its own, usually longer, Range.`
+      : 'Draw a route on the board, then confirm. This activation buys a Movement or an Action, not both (2.4.1).'
+    : man.why ?? '';
   return `${ticks}${stanceRow}${rebootRow}
-    <button class="actrow k-moving${man.ok ? '' : ' warn'}"${man.ok ? '' : ` data-why="${esc(man.why ?? '')}"`} data-act="maneuver" title="${esc(man.ok ? `Draw a route on the board, then confirm. The Maneuver Value comes off the Chassis Card${t.stance === 'mobility' ? ', doubled by Mobility Stance' : ''} — a Movement Action carries its own, usually longer, Range.` : man.why ?? '')}">
-      <span class="dotk"></span><span class="an">Maneuver</span><span class="ac">${maneuverRange(ctx.data, t)} ${maneuverRange(ctx.data, t) === 1 ? 'grid' : 'grids'}${t.stance === 'mobility' && t.kind === 'mech' ? ' ×2' : ''}</span></button>
+    <button class="actrow k-moving${man.ok ? '' : ' warn'}"${man.ok ? '' : ` data-why="${esc(man.why ?? '')}"`} data-act="maneuver" title="${esc(moveTip)}">
+      <span class="dotk"></span><span class="an">${moveWord}</span><span class="ac">${maneuverRange(ctx.data, t)} ${maneuverRange(ctx.data, t) === 1 ? 'grid' : 'grids'}${t.stance === 'mobility' && t.kind === 'mech' ? ' ×2' : ''}</span></button>
     ${ovlRow}
     ${rows}`;
 }
@@ -2895,7 +2908,8 @@ export function ensureHud(host: HTMLElement, ctx: HudCtx): void {
          once and never by a re-render: the helper owns its contents for as long
          as an attack is running. -->
     <div id="combat-pop" class="combatpop" hidden>
-      <div class="combatpop-head"><b>Combat</b><span class="cp-hint">4.4 · the roll, the defence and the damage</span></div>
+      <div class="combatpop-head"><span class="cp-grip" title="Drag to move">⠿</span><b>Combat</b><span class="cp-hint">4.4 · the roll, the defence and the damage</span>
+        <button id="cp-min" class="cp-min" title="Roll it up out of the way. The attack keeps going.">–</button></div>
       <div id="combat-body"></div>
     </div>
     <div id="hud-veils"></div>`;
@@ -2910,6 +2924,7 @@ export function ensureHud(host: HTMLElement, ctx: HudCtx): void {
     zc.innerHTML = '<button id="btn-zones" title="Shows or hides the tactical zone and deployment overlay drawn on the board." aria-pressed="true">Zones</button>';
     host.querySelector('#mc-board')!.appendChild(zc);
     zc.querySelector('#btn-zones')!.addEventListener('click', () => hudRef?.toggleZones());
+    attachCombatWindow(host);
     ctx.mountSide();
     for (const b of host.querySelectorAll<HTMLElement>('[data-sidetab]')) {
       b.addEventListener('click', () => showSideTab(host, b.dataset.sidetab as 'squad' | 'details'));
@@ -2935,6 +2950,62 @@ export function ensureHud(host: HTMLElement, ctx: HudCtx): void {
   // board or they end the activation.
   if (inspectUid !== null && !ctx.state.tokens.some((t) => t.uid === inspectUid)) inspectUid = null;
   ctx.syncSide(inspectUid ?? ensureScript(ctx.state).opp?.uid ?? null);
+}
+
+// ---------- the combat window ----------
+//
+// Wired once, when the shell is built, and never by a re-render: the helper
+// owns the window's contents for as long as an attack lasts, and rebinding
+// under it would drop a drag halfway. Where it sits and whether it is rolled up
+// survive being reopened, because a player who moved it out of the way meant it.
+
+let combatSpot: { x: number; y: number } | null = null;
+let combatRolled = false;
+
+function attachCombatWindow(host: HTMLElement): void {
+  const pop = host.querySelector<HTMLElement>('#combat-pop');
+  if (!pop) return;
+  const place = (): void => {
+    if (!combatSpot) return;
+    // Once dragged it is positioned by its own corner, so the centring
+    // transform has to go or it lands half a window off.
+    pop.style.transform = 'none';
+    pop.style.left = `${combatSpot.x}px`;
+    pop.style.top = `${combatSpot.y}px`;
+  };
+  host.querySelector('#cp-min')?.addEventListener('click', () => {
+    combatRolled = !combatRolled;
+    pop.classList.toggle('rolled', combatRolled);
+  });
+  let from: { x: number; y: number; l: number; t: number } | null = null;
+  const move = (ev: PointerEvent): void => {
+    if (!from) return;
+    const b = host.getBoundingClientRect();
+    const w = pop.getBoundingClientRect();
+    // Kept inside the HUD, and by enough of its header that the grip and the
+    // minimise button are always still there to grab.
+    combatSpot = {
+      x: Math.max(0, Math.min(from.l + (ev.clientX - from.x), b.width - 60)),
+      y: Math.max(0, Math.min(from.t + (ev.clientY - from.y), b.height - Math.min(w.height, 40))),
+    };
+    place();
+  };
+  const up = (): void => {
+    from = null;
+    window.removeEventListener('pointermove', move);
+    window.removeEventListener('pointerup', up);
+  };
+  pop.addEventListener('pointerdown', (ev) => {
+    const el = ev.target as HTMLElement;
+    if (!el.closest('.combatpop-head') || el.closest('button')) return;
+    const b = host.getBoundingClientRect();
+    const w = pop.getBoundingClientRect();
+    from = { x: ev.clientX, y: ev.clientY, l: w.left - b.left, t: w.top - b.top };
+    ev.preventDefault();
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  });
+  place();
 }
 
 // ---------- wiring ----------
@@ -3079,10 +3150,11 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
       const act = guidedActions(ctx.data, t, { tokens: s.tokens, terrain: terrainOf(ctx) })
         .find((g) => g.action.id === el.dataset.doact);
       const performed = act?.action ?? ctx.data.commonActions.find((a) => a.id === el.dataset.doact);
-      // Only a Mech's Action is bought with Ticks. A Drone's activation buys
-      // one Action outright, so there is no performAction to send — the guide
-      // opens the tool and sends nothing else either.
-      if (performed && lengthOf(performed)) {
+      // A Mech's Action is bought with Ticks and a Drone's with its whole
+      // activation, but both are recorded by the same command — without it
+      // nothing marked the activation spent and a Drone could move and then
+      // shoot. Only a Mech's length-less Passive sends nothing.
+      if (performed && (t.kind !== 'mech' || lengthOf(performed))) {
         // Legality is read now, but nothing is spent: the Ticks wait in
         // pendingAction until the Action's tool actually does something, so a
         // misclick that gets cancelled leaves the Opportunity intact.
@@ -3422,7 +3494,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     if (el.dataset.why) { ctx.noteNow(el.dataset.why); ctx.refresh(); return; }
     const sc = ensureScript(s);
     const t = sc.opp ? s.tokens.find((x) => x.uid === sc.opp!.uid) : undefined;
-    if (t) startMovePlan(ctx, t);
+    if (t) startMovePlan(ctx, t, { label: t.kind === 'mech' ? 'Maneuver' : 'Movement' });
     ctx.refresh();
   });
   on('[data-act="commitmove"]', () => commitMove(ctx));

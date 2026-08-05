@@ -238,8 +238,14 @@ const CLEARS_THE_FEED = new Set([
   'designate', 'endOpportunity', 'passTurn', 'startMatch', 'endMatch',
 ]);
 
+// The dice and the note both describe the moment that has just ended, so they
+// go together. Without this the note outlived it by a mile — an attack line was
+// still sitting at the top of the panel several activations later, while its
+// mech had long since stopped being the one moving.
 function clearFeedAfter(cmd: Command): void {
-  if (CLEARS_THE_FEED.has(cmd.kind)) diceFeed.length = 0;
+  if (!CLEARS_THE_FEED.has(cmd.kind)) return;
+  diceFeed.length = 0;
+  lobbyNote = null;
 }
 
 // One door for everything this page performs: the command, then the same
@@ -597,6 +603,11 @@ function sideSummary(side: Side): { mechs: number; drones: number; points: numbe
 // The six Tactics Cards, held in hand rather than deployed (5.4). Chosen here
 // because they are bought with the squad, and they have to travel: check() for
 // playTactic reads the sender's hand, and the other client has to have it.
+//
+// Folded away by default. Plenty of squads never take one, and six rows of
+// something you are not using is six rows in the way of the units you are.
+let tacticsOpen = false;
+
 function tacticsPicker(side: Side): string {
   if (!data) return '';
   const held = state.tactics?.[side] ?? [];
@@ -604,20 +615,27 @@ function tacticsPicker(side: Side): string {
     .filter((c) => c.category === 'tactics_or_upgrade')
     .sort((a, b) => cardName(a).localeCompare(cardName(b)));
   if (!cards.length) return '';
-  const rows = cards
+  const points = held.reduce((n, id) => n + (data?.byId.get(id)?.score ?? 0), 0);
+  const summary = held.length ? `${held.length} in hand · ${points}p` : 'none';
+  // `data-tip-card` is all the preview needs: the page installs one delegated
+  // listener that shows any card's scan on hover, so a player can read what a
+  // Tactic does before spending points on it.
+  const rows = !tacticsOpen ? '' : cards
     .map((c) => {
       const n = held.filter((x) => x === c.id).length;
       const when = tacticSpec(c.id)?.timing ?? '';
-      return `<button class="tacpick${n ? ' on' : ''}" data-tacpick="${esc(c.id)}" title="${esc(when)}">
+      return `<button class="tacpick${n ? ' on' : ''}" data-tacpick="${esc(c.id)}" data-tip-card="${esc(c.id)}" title="${esc(when)}">
         <span class="tn">${esc(cardName(c))}</span>
         <span class="tw">${esc(when)}</span>
         <span class="tp">${n ? `×${n}` : `${c.score ?? 0}p`}</span></button>`;
     })
-    .join('');
+    .join('')
+    + '<p class="quiet" style="margin:6px 0 0">Tap to add, tap again to take one back. Hover to read the card. Each costs points against your total, and only 1 may be played per round (5.4.2).</p>';
   return `<div class="tacbox">
-    <div class="taclabel">Tactics Cards${held.length ? ` — ${held.length} in hand` : ''}</div>
+    <button class="taclabel" id="mc-tactoggle" aria-expanded="${tacticsOpen}">
+      <span class="tcaret">${tacticsOpen ? '▾' : '▸'}</span>Tactics Cards<span class="tsum">${esc(summary)}</span>
+    </button>
     ${rows}
-    <p class="quiet" style="margin:6px 0 0">Tap to add, tap again to take one back. Each costs points against your total, and only 1 may be played per round (5.4.2).</p>
   </div>`;
 }
 
@@ -1067,7 +1085,7 @@ function lobbyHtml(): string {
 // Whatever squads stand on the freeplay board right now, readable because the
 // two pages share an origin. Testing a list there and bringing it here should
 // not require a save first.
-function boardSquads(): { key: Side; label: string; mechs: SavedSquad['mechs']; drones: SavedSquad['drones'] }[] {
+function boardSquads(): { key: Side; label: string; mechs: SavedSquad['mechs']; drones: SavedSquad['drones']; tactics: string[] }[] {
   try {
     const raw = localStorage.getItem('ember-testing-grounds-v1');
     if (!raw) return [];
@@ -1077,7 +1095,11 @@ function boardSquads(): { key: Side; label: string; mechs: SavedSquad['mechs']; 
         const units = (board.tokens ?? []).filter((t) => t.side === side && t.kind !== 'projectile' && t.parentUid === undefined);
         const mechs = units.filter((t) => t.kind === 'mech' && (t.mech?.torso || t.mech?.chasis)).map((t) => ({ name: t.label, loadout: { ...t.mech } }));
         const drones = units.filter((t) => t.kind === 'drone').map((t) => ({ cardId: t.cardId, backpack: t.droneBackpack }));
-        return { key: side, label: `${board.sideNames?.[side] ?? squadLabel(side)} (freeplay board)`, mechs, drones };
+        // A Tactics Card is never a token, so it has to be read off the board
+        // separately — otherwise a squad brought over arrives without the hand
+        // it was built with.
+        const tactics = (board.tactics?.[side] ?? []).filter((id) => !!data?.byId.get(id));
+        return { key: side, label: `${board.sideNames?.[side] ?? squadLabel(side)} (freeplay board)`, mechs, drones, tactics };
       })
       .filter((s) => s.mechs.length + s.drones.length > 0);
   } catch {
@@ -1104,7 +1126,7 @@ function pickerHtml(): string {
     .map(
       (s) => `<button class="pickrow" data-boardsquad="${s.key}">
         <span class="nm">${esc(s.label)}</span>
-        <span class="ct">${s.mechs.length}M ${s.drones.length}D</span>
+        <span class="ct">${s.mechs.length}M ${s.drones.length}D${s.tactics.length ? ` ${s.tactics.length}T` : ''}</span>
         ${squadContents(s.mechs, s.drones)}
       </button>`,
     )
@@ -1146,12 +1168,17 @@ function pickerHtml(): string {
   </div>`;
 }
 
-function bringSquad(name: string, mechs: SavedSquad['mechs'], drones: SavedSquad['drones']): void {
+function bringSquad(name: string, mechs: SavedSquad['mechs'], drones: SavedSquad['drones'], tactics?: string[]): void {
   const seat = mySeat();
   if (!seat || !data) return;
   lobbyNote = null;
   const v = perform(data, state, { kind: 'importSquad', seat, name, mechs, drones });
   if (v.ok) {
+    // A hand brought with the squad adds to whatever is already held, the same
+    // way topping up with another list adds units rather than replacing them.
+    if (tactics?.length) {
+      perform(data, state, { kind: 'setTactics', seat, cards: [...(state.tactics?.[seat] ?? []), ...tactics] });
+    }
     pickerOpen = false;
     relay.publishCheckpoint();
   }
@@ -1409,7 +1436,7 @@ function wire(): void {
   for (const el of root.querySelectorAll<HTMLElement>('[data-boardsquad]')) {
     el.addEventListener('click', () => {
       const sq = boardSquads().find((s) => s.key === el.dataset.boardsquad);
-      if (sq) bringSquad(sq.label.replace(' (freeplay board)', ''), sq.mechs, sq.drones);
+      if (sq) bringSquad(sq.label.replace(' (freeplay board)', ''), sq.mechs, sq.drones, sq.tactics);
     });
   }
   for (const el of root.querySelectorAll<HTMLElement>('[data-mechpreset]')) {
@@ -1431,6 +1458,7 @@ function wire(): void {
       render();
     });
   }
+  $('mc-tactoggle')?.addEventListener('click', () => { tacticsOpen = !tacticsOpen; render(); });
   // The hand is chosen by tapping: once to take a card, again to put it back.
   // The whole hand travels each time, so a repeat cannot double it.
   for (const el of root.querySelectorAll<HTMLElement>('[data-tacpick]')) {

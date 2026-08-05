@@ -159,7 +159,15 @@ input.f.codebox { font-family: var(--mono); font-size: 16px; letter-spacing: 5px
 /* The hand of Tactics Cards, chosen with the squad because it is bought with
    the same points. One row per card, tapped on and off. */
 .tacbox { margin-top: 10px; }
-.taclabel { font-size: 9.5px; letter-spacing: 0.9px; text-transform: uppercase; color: var(--text3); font-weight: 700; margin-bottom: 6px; }
+.taclabel {
+  width: 100%; display: flex; align-items: center; gap: 7px; border: none; background: none;
+  font-size: 9.5px; letter-spacing: 0.9px; text-transform: uppercase; color: var(--text3);
+  font-weight: 700; margin-bottom: 6px; padding: 4px 0; cursor: pointer; text-align: left;
+  font-family: inherit;
+}
+.taclabel:hover { color: var(--text2); }
+.taclabel .tcaret { font-size: 8px; width: 9px; }
+.taclabel .tsum { margin-left: auto; letter-spacing: 0; text-transform: none; font-weight: 400; }
 .tacpick {
   width: 100%; display: flex; align-items: center; gap: 8px; border: none; text-align: left;
   border-radius: var(--radius-sm); background: var(--surface2); color: var(--text2);
@@ -349,9 +357,21 @@ input.f.codebox { font-family: var(--mono); font-size: 16px; letter-spacing: 5px
 .combatpop[hidden] { display: none; }
 .combatpop-head {
   display: flex; align-items: baseline; gap: 9px; padding: 11px 14px 8px;
-  font-size: 12.5px;
+  font-size: 12.5px; cursor: grab; user-select: none;
 }
-.combatpop-head .cp-hint { font-size: 9.5px; color: var(--text3); }
+.combatpop-head:active { cursor: grabbing; }
+.combatpop-head .cp-hint { font-size: 9.5px; color: var(--text3); flex: 1; }
+.combatpop-head .cp-grip { color: var(--text3); font-size: 12px; cursor: grab; }
+.cp-min {
+  border: none; background: var(--surface3); color: var(--text2); cursor: pointer;
+  width: 22px; height: 22px; border-radius: var(--radius-sm); font-size: 15px; line-height: 1;
+  align-self: center; flex: none;
+}
+.cp-min:hover { background: #2c3542; color: var(--text); }
+/* Rolled up: the header stays, so the attack is still obviously running and
+   there is something to grab to bring it back. */
+.combatpop.rolled #combat-body { display: none; }
+.combatpop.rolled { width: auto; min-width: 260px; }
 .combatpop #combat-body { overflow: auto; padding: 0 14px 14px; min-height: 0; }
 /* The helper's own markup comes from styles.css; it only needs to stop
    assuming it sits in a full-height sidebar. */
