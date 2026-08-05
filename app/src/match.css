@@ -302,6 +302,30 @@ input.f.codebox { font-family: var(--mono); font-size: 16px; letter-spacing: 5px
 .pickrow:hover { background: #2c3542; }
 .pickrow .nm { flex: 1; font-weight: 500; }
 .pickrow .ct { font-family: var(--mono); font-size: 10px; color: var(--text3); }
+/* What a list holds, wrapped under its name: two entries carrying the same
+   units have to read as the same units, which is the whole point of showing it. */
+.pickrow { flex-wrap: wrap; }
+.pickrow .pickwhat { flex-basis: 100%; font-size: 10px; color: var(--text2); line-height: 1.45; }
+.picksect {
+  font-size: 9px; letter-spacing: 0.8px; text-transform: uppercase;
+  color: var(--text3); margin: 12px 0 5px;
+}
+.picksect:first-of-type { margin-top: 8px; }
+
+/* the lobby roster: what is on your side, and the way to take it back off */
+.roster { margin-top: 7px; display: flex; flex-direction: column; gap: 3px; }
+.rosterrow {
+  display: flex; align-items: center; gap: 8px; font-size: 11px;
+  background: var(--surface3); border-radius: var(--radius-sm); padding: 5px 6px 5px 9px;
+}
+.rosterrow .rn { flex: 1; }
+.rosterrow .rk { font-family: var(--mono); font-size: 9px; color: var(--text3); }
+.rosterrow .rx {
+  border: none; background: transparent; color: var(--text3); cursor: pointer;
+  font-size: 12px; line-height: 1; padding: 3px 5px; border-radius: var(--radius-sm);
+  transition: background 0.12s, color 0.12s;
+}
+.rosterrow .rx:hover { background: var(--red-lt); color: var(--red); }
 
 /* ---------- the in-match HUD ---------- */
 .mc-stage.hudmode { padding: 0; flex: 1; min-height: 0; min-width: 0; display: flex; }

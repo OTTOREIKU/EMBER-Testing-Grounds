@@ -9,6 +9,7 @@ import { knockbackOf, migrateState, squadAllegiance, tokenCards } from './units'
 import { countHits, normaliseSetup } from './setup';
 import { gameResult, normaliseTasks, taskItemsFor } from './tasks';
 import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
+import { loadMechPresets } from './presets';
 import { importSquadFile } from './importer';
 import { dialsOf, hashDials, newSalt, type DialEntry } from './secrecy';
 import { animateRemoteMove, ensureHud, glueAfter, showRangeOverlay, showSideTab, startAttackPick, startDetonation, startElectronicPick, startInterceptPick, startLaunchPlan, startShove, type DiceLine, type HudCtx } from './matchhud';
@@ -839,17 +840,32 @@ function squadsStep(): string {
       const mine = v.seat === side;
       const s = sideSummary(side);
       const has = s.mechs + s.drones > 0;
+      const named = state.sideNames?.[side];
+      // The units actually standing on your side, each removable. Bringing the
+      // same list twice is easy to do by accident, and before this there was no
+      // way to take one back off without leaving the table.
+      const roster = mine && has && !running()
+        ? `<div class="roster">${state.tokens
+            .filter((t) => t.side === side && t.kind !== 'projectile')
+            .map((t) => `<div class="rosterrow"><span class="rn">${esc(t.label)}</span>
+              <span class="rk">${t.kind}</span>
+              <button class="rx" data-drop="${t.uid}" title="Take ${esc(t.label)} back off">✕</button></div>`)
+            .join('')}</div>`
+        : '';
       return `<div class="seatcard ${side}">
         <div class="who"><span class="sq">${side === 's1' ? 'SQ1' : 'SQ2'}</span>${who ? esc(who) : '<i>empty seat</i>'}${mine ? ' <i>(you)</i>' : ''}</div>
-        <div class="st${has ? ' on' : ''}">${has ? `✓ ${s.mechs} mech${s.mechs === 1 ? '' : 's'}, ${s.drones} drone${s.drones === 1 ? '' : 's'} · ${s.points} points` : mine ? 'no squad yet' : 'no squad yet — waiting on them'}</div>
-        ${mine && !running() ? `<button class="btn${has ? ' ghost' : ''}" id="mc-bring" style="margin-top:9px">${has ? 'Add another squad' : 'Bring a squad'}</button>` : ''}
+        <div class="st${has ? ' on' : ''}">${has
+          ? `✓ ${named ? `${esc(named)} — ` : ''}${s.mechs} mech${s.mechs === 1 ? '' : 's'}, ${s.drones} drone${s.drones === 1 ? '' : 's'} · ${s.points} points`
+          : mine ? 'no squad yet' : 'no squad yet — waiting on them'}</div>
+        ${roster}
+        ${mine && !running() ? `<button class="btn${has ? ' ghost' : ''}" id="mc-bring" style="margin-top:9px">${has ? 'Add another unit' : 'Bring a squad'}</button>` : ''}
       </div>`;
     })
     .join('');
   return `<div class="steppane">
     <div class="stephead"><h3>Squads</h3></div>
     ${rows}
-    <p class="quiet">To change a squad, leave the table and rejoin.</p>
+    <p class="quiet">Add as many as you like, and take any back off with ✕ before the match starts.</p>
   </div>`;
 }
 
@@ -1017,30 +1033,61 @@ function boardSquads(): { key: Side; label: string; mechs: SavedSquad['mechs']; 
   }
 }
 
+// What a list actually holds, so two entries with the same units read as the
+// same units. A squad saved from the freeplay board and the board itself are
+// the usual pair, and without this they look like unrelated choices.
+function squadContents(mechs: SavedSquad['mechs'], drones: SavedSquad['drones']): string {
+  const names = [
+    ...mechs.map((m) => m.name || (m.loadout.torso && data?.byId.get(m.loadout.torso)?.name?.en) || 'Mech'),
+    ...drones.map((d) => data?.byId.get(d.cardId)?.name?.en || d.cardId),
+  ];
+  if (!names.length) return '';
+  const shown = names.slice(0, 4).join(', ');
+  return `<span class="pickwhat">${esc(shown)}${names.length > 4 ? ` +${names.length - 4} more` : ''}</span>`;
+}
+
 function pickerHtml(): string {
-  const saved = loadSquads();
+  const section = (title: string, rows: string) => (rows ? `<div class="picksect">${title}</div>${rows}` : '');
   const fromBoard = boardSquads()
     .map(
       (s) => `<button class="pickrow" data-boardsquad="${s.key}">
         <span class="nm">${esc(s.label)}</span>
         <span class="ct">${s.mechs.length}M ${s.drones.length}D</span>
+        ${squadContents(s.mechs, s.drones)}
       </button>`,
     )
     .join('');
-  const items = fromBoard + saved
+  const savedSquads = loadSquads()
     .map(
       (s) => `<button class="pickrow" data-squad="${esc(s.id)}">
         <span class="nm">${esc(s.name)}</span>
         <span class="ct">${s.mechs.length}M ${s.drones.length}D</span>
+        ${squadContents(s.mechs, s.drones)}
       </button>`,
     )
     .join('');
+  // A single saved Mech, for topping a squad up rather than bringing a whole
+  // second one.
+  const savedMechs = loadMechPresets()
+    .map((p) => {
+      const torso = p.mech.torso ? data?.byId.get(p.mech.torso)?.name?.en : undefined;
+      return `<button class="pickrow" data-mechpreset="${esc(p.id)}">
+        <span class="nm">${esc(p.name)}</span>
+        <span class="ct">1M</span>
+        ${torso ? `<span class="pickwhat">${esc(torso)}</span>` : ''}
+      </button>`;
+    })
+    .join('');
+  const any = fromBoard || savedSquads || savedMechs;
   return `<div class="mc-veil" id="mc-veil2">
     <div class="acct">
       <button class="x" id="mc-picker-x">✕</button>
-      <h3>Bring a squad</h3>
-      <div class="role">It joins your side on both screens and waits for deployment.</div>
-      ${items || '<p class="hint">No saved squads yet — import one from a builder file below, and it will be remembered here.</p>'}
+      <h3>Bring a squad or a mech</h3>
+      <div class="role">Whatever you pick joins your side on both screens and waits for deployment. Pick again to add more.</div>
+      ${section('On the freeplay board', fromBoard)}
+      ${section('Saved squads', savedSquads)}
+      ${section('Saved mechs', savedMechs)}
+      ${any ? '' : '<p class="hint">Nothing saved on this device yet — import a squad from a builder file below, and it will be remembered here.</p>'}
       <button class="btn ghost wide" id="mc-file" style="margin-top:10px">From a squad file…</button>
       <input type="file" id="mc-fileinput" accept=".json,.png" hidden />
     </div>
@@ -1311,6 +1358,25 @@ function wire(): void {
     el.addEventListener('click', () => {
       const sq = boardSquads().find((s) => s.key === el.dataset.boardsquad);
       if (sq) bringSquad(sq.label.replace(' (freeplay board)', ''), sq.mechs, sq.drones);
+    });
+  }
+  for (const el of root.querySelectorAll<HTMLElement>('[data-mechpreset]')) {
+    el.addEventListener('click', () => {
+      const p = loadMechPresets().find((x) => x.id === el.dataset.mechpreset);
+      if (p) bringSquad(p.name, [{ name: p.name, loadout: p.mech }], []);
+    });
+  }
+  // Taking a unit back off before the match starts. The command layer already
+  // does this for a wreck mid-game; here it is the undo for bringing the wrong
+  // list, or the same one twice.
+  for (const el of root.querySelectorAll<HTMLElement>('[data-drop]')) {
+    el.addEventListener('click', () => {
+      const uid = Number(el.dataset.drop);
+      const t = state.tokens.find((x) => x.uid === uid);
+      if (!t) return;
+      send({ kind: 'despawn', seat: t.side, uid, targetUid: uid });
+      relay.publishCheckpoint();
+      render();
     });
   }
   $('mc-file')?.addEventListener('click', () => $('mc-fileinput')?.click());

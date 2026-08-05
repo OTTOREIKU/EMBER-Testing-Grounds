@@ -859,6 +859,11 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
   if (cmd.kind === 'importSquad') {
     const su = normaliseSetup(state.setup);
     const staging = !!su && su.stage !== 'done';
+    // The first list a side brings names it. Topping up afterwards leaves the
+    // name alone — adding one mech should not rename the whole squad.
+    if (cmd.name && !state.sideNames?.[cmd.seat]) {
+      state.sideNames = { ...(state.sideNames ?? {}), [cmd.seat]: cmd.name };
+    }
     const facing: Facing = cmd.seat === 's1' ? 2 : 0;
     const arrive = (tok: Token) => {
       if (staging) {
@@ -1333,7 +1338,14 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
       return;
     }
     case 'despawn': {
+      const gone = state.tokens.find((x) => x.uid === cmd.targetUid);
       state.tokens = state.tokens.filter((x) => x.uid !== cmd.targetUid);
+      // A side emptied of units keeps no squad name, so the next list brought
+      // in gets to name it. Only ever true in the lobby.
+      if (gone && state.sideNames?.[gone.side]
+        && !state.tokens.some((x) => x.side === gone.side && x.kind !== 'projectile')) {
+        delete state.sideNames[gone.side];
+      }
       return;
     }
   }
