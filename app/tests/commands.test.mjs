@@ -147,6 +147,9 @@ const data = {
     ['D1', { id: 'D1', actions: [] }],
     // Freehand is what lets a Part carry a Black Box (5.3.1).
     ['FH1', { id: 'FH1', actions: [], keywords: [{ en: 'Freehand' }] }],
+    // Two of the six Tactics Cards, which are held in hand rather than deployed.
+    ['274', { id: '274', category: 'tactics_or_upgrade', score: 30, actions: [] }],
+    ['275', { id: '275', category: 'tactics_or_upgrade', score: 30, actions: [] }],
     ['P1', { id: 'P1', LV: 4 }],
   ]),
   commonActions: [{ id: 'COMMON_CHARGE', type: 'Tactic', size: 's', name: { en: 'Charge' } }],
@@ -1091,6 +1094,33 @@ check('and nobody is carrying it', dropped.tasks.items[0].bearerUid, undefined);
 const gone = JSON.parse(JSON.stringify(held));
 gone.tokens = gone.tokens.filter((t) => t.uid !== 2);
 check('a drop survives its attacker leaving the board', C.check(data, gone, drop()).ok, true);
+
+// ---------- the hand of Tactics Cards (5.4) ----------
+//
+// It has to travel: check() for playTactic reads the SENDER's hand, so a hand
+// set locally is one the receiving client would refuse a play against.
+
+const tacHand = (over = {}) => ({ kind: 'setTactics', seat: 's1', cards: ['274'], ...over });
+check('a squad may take a Tactics Card', C.check(data, openTable(), tacHand()).ok, true);
+check('an empty hand is allowed', C.check(data, openTable(), tacHand({ cards: [] })).ok, true);
+check('something that is not a Tactics Card is refused', C.check(data, openTable(), tacHand({ cards: ['T1'] })).ok, false);
+check('an unknown card is refused', C.check(data, openTable(), tacHand({ cards: ['NOPE'] })).ok, false);
+check('an absurd hand is refused', C.check(data, openTable(), tacHand({ cards: Array(9).fill('274') })).ok, false);
+
+const wHand = openTable();
+C.apply(data, wHand, tacHand({ cards: ['274', '275'] }));
+check('the hand lands on that squad alone', [wHand.tactics.s1, wHand.tactics.s2], [['274', '275'], []]);
+// The whole hand travels each time, so a command applied twice cannot double it.
+C.apply(data, wHand, tacHand({ cards: ['274', '275'] }));
+check('applying it again does not double the hand', wHand.tactics.s1, ['274', '275']);
+C.apply(data, wHand, tacHand({ cards: ['274'] }));
+check('and putting one back replaces the hand', wHand.tactics.s1, ['274']);
+
+// Hands are chosen with the squad, not drawn mid-match.
+const midGame = { ...openTable(), setup: { ...C.newSetup(), stage: 'done' } };
+check('the hand closes once the game is running', C.check(data, midGame, tacHand()).ok, false);
+const deploying = { ...openTable(), setup: { ...C.newSetup(), stage: 'deploy' } };
+check('but is still open during deployment', C.check(data, deploying, tacHand()).ok, true);
 
 // ---------- determinism ----------
 

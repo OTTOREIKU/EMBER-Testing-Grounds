@@ -156,6 +156,22 @@ input.f.codebox { font-family: var(--mono); font-size: 16px; letter-spacing: 5px
 .seatcard .st.on { color: var(--green); }
 .seatcard .who i { font-style: italic; font-weight: 400; color: var(--text3); }
 
+/* The hand of Tactics Cards, chosen with the squad because it is bought with
+   the same points. One row per card, tapped on and off. */
+.tacbox { margin-top: 10px; }
+.taclabel { font-size: 9.5px; letter-spacing: 0.9px; text-transform: uppercase; color: var(--text3); font-weight: 700; margin-bottom: 6px; }
+.tacpick {
+  width: 100%; display: flex; align-items: center; gap: 8px; border: none; text-align: left;
+  border-radius: var(--radius-sm); background: var(--surface2); color: var(--text2);
+  padding: 8px 10px; margin-bottom: 4px; cursor: pointer; font-size: 11.5px; transition: background 0.12s;
+}
+.tacpick:hover { background: var(--surface3); }
+.tacpick.on { background: var(--accent-lt); color: var(--text); }
+.tacpick .tn { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tacpick .tw { font-size: 9.5px; color: var(--text3); white-space: nowrap; }
+.tacpick .tp { font-family: var(--mono); font-size: 9.5px; color: var(--text3); min-width: 30px; text-align: right; }
+.tacpick.on .tp { color: var(--accent); font-weight: 700; }
+
 /* ---------- the lobby: rail + stage ---------- */
 .mc-stage.wide { place-items: stretch; padding: 0; display: block; }
 .mc-lobby { display: flex; min-height: calc(100vh - 46px); }

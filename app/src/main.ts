@@ -1182,18 +1182,20 @@ async function init() {
       return out;
     },
     heldTactics: () => ({ s1: state.tactics?.s1 ?? [], s2: state.tactics?.s2 ?? [] }),
+    // Through the command layer rather than by hand: a hand set locally is a
+    // hand the other client never sees, and check() for playTactic reads the
+    // *sender's* hand — so a card played across a table would be refused.
     onAddTactic: (card, side) => {
-      if (!state.tactics) state.tactics = { s1: [], s2: [] };
-      state.tactics[side].push(card.id);
+      perform(data, state, { kind: 'setTactics', seat: side, cards: [...(state.tactics?.[side] ?? []), card.id] });
       save();
       roster.render();
     },
     onDropTactic: (card, side) => {
-      const held = state.tactics?.[side];
-      if (!held) return;
+      const held = [...(state.tactics?.[side] ?? [])];
       const i = held.lastIndexOf(card.id);
       if (i < 0) return;
       held.splice(i, 1);
+      perform(data, state, { kind: 'setTactics', seat: side, cards: held });
       save();
       roster.render();
     },

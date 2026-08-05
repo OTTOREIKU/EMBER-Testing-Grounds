@@ -2,7 +2,8 @@ import { ApiError, EmberApi, type Account, type MyRecord, type SquadEntry } from
 import { Relay, type RollKind } from './net';
 import { applyRemote, check, onPerformed, onRefused, perform, type Command, type CheckResult } from './commands';
 import { setLocalSeat } from './loop';
-import { dataUrl, loadData, missionImageUrl, squadLabel, type GameData } from './data';
+import { cardName, dataUrl, loadData, missionImageUrl, squadLabel, type GameData } from './data';
+import { tacticSpec } from './tactics';
 import { objectiveCells } from './matchhud';
 import { printedDeployment } from './overlays';
 import { knockbackOf, migrateState, squadAllegiance, tokenCards } from './units';
@@ -12,7 +13,7 @@ import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
 import { loadMechPresets } from './presets';
 import { installTooltip, preloadCards } from './tooltip';
 import { importSquadFile } from './importer';
-import { dialsOf, hashDials, newSalt, type DialEntry } from './secrecy';
+import { boardFingerprint, dialsOf, hashDials, newSalt, type DialEntry } from './secrecy';
 import { animateRemoteMove, ensureHud, glueAfter, showRangeOverlay, showSideTab, startAttackPick, startBoxDrop, startDetonation, startElectronicPick, startInterceptPick, startLaunchPlan, startShove, type DiceLine, type HudCtx } from './matchhud';
 import { AttackHelper } from './combat';
 import { losNote, protectionFor } from './rules';
@@ -204,6 +205,7 @@ const relay = new Relay(api.base, {
     if (!catchingUp) render();
   },
   snapshot: () => JSON.parse(JSON.stringify(state)) as unknown,
+  fingerprint: () => boardFingerprint(state),
 });
 
 // Everything performed on this page mirrors, same as on the board — and a
@@ -585,8 +587,38 @@ function sideSummary(side: Side): { mechs: number; drones: number; points: numbe
       else drones++;
       points += tokenCards(data, t).reduce((n, { card }) => n + (card.score ?? 0), 0);
     }
+    // A Tactics Card is never on the board but is paid for out of the same
+    // budget, so leaving it out understated what a squad had spent.
+    for (const id of state.tactics?.[side] ?? []) points += data.byId.get(id)?.score ?? 0;
   }
   return { mechs, drones, points };
+}
+
+// The six Tactics Cards, held in hand rather than deployed (5.4). Chosen here
+// because they are bought with the squad, and they have to travel: check() for
+// playTactic reads the sender's hand, and the other client has to have it.
+function tacticsPicker(side: Side): string {
+  if (!data) return '';
+  const held = state.tactics?.[side] ?? [];
+  const cards = data.cards
+    .filter((c) => c.category === 'tactics_or_upgrade')
+    .sort((a, b) => cardName(a).localeCompare(cardName(b)));
+  if (!cards.length) return '';
+  const rows = cards
+    .map((c) => {
+      const n = held.filter((x) => x === c.id).length;
+      const when = tacticSpec(c.id)?.timing ?? '';
+      return `<button class="tacpick${n ? ' on' : ''}" data-tacpick="${esc(c.id)}" title="${esc(when)}">
+        <span class="tn">${esc(cardName(c))}</span>
+        <span class="tw">${esc(when)}</span>
+        <span class="tp">${n ? `×${n}` : `${c.score ?? 0}p`}</span></button>`;
+    })
+    .join('');
+  return `<div class="tacbox">
+    <div class="taclabel">Tactics Cards${held.length ? ` — ${held.length} in hand` : ''}</div>
+    ${rows}
+    <p class="quiet" style="margin:6px 0 0">Tap to add, tap again to take one back. Each costs points against your total, and only 1 may be played per round (5.4.2).</p>
+  </div>`;
 }
 
 // ---------- pieces ----------
@@ -877,6 +909,7 @@ function squadsStep(): string {
           : mine ? 'no squad yet' : 'no squad yet — waiting on them'}</div>
         ${roster}
         ${mine && !running() ? `<button class="btn${has ? ' ghost' : ''}" id="mc-bring" style="margin-top:9px">${has ? 'Add another unit' : 'Bring a squad'}</button>` : ''}
+        ${mine && !running() ? tacticsPicker(side) : ''}
       </div>`;
     })
     .join('');
@@ -1394,6 +1427,22 @@ function wire(): void {
       const t = state.tokens.find((x) => x.uid === uid);
       if (!t) return;
       send({ kind: 'despawn', seat: t.side, uid, targetUid: uid });
+      relay.publishCheckpoint();
+      render();
+    });
+  }
+  // The hand is chosen by tapping: once to take a card, again to put it back.
+  // The whole hand travels each time, so a repeat cannot double it.
+  for (const el of root.querySelectorAll<HTMLElement>('[data-tacpick]')) {
+    el.addEventListener('click', () => {
+      const seat = mySeat();
+      if (!seat) return;
+      const id = el.dataset.tacpick!;
+      const held = [...(state.tactics?.[seat] ?? [])];
+      const at = held.lastIndexOf(id);
+      if (at >= 0) held.splice(at, 1);
+      else held.push(id);
+      send({ kind: 'setTactics', seat, cards: held });
       relay.publishCheckpoint();
       render();
     });

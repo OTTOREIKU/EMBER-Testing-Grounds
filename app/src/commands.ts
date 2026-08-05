@@ -124,6 +124,12 @@ export type Command =
   // A squad's open-information Secondary Task pick (3.1.3). The seat is the
   // side choosing, so a player can only ever pick their own.
   | { kind: 'pickSecondary'; seat: Side; cardId: string }
+  // A squad's hand of Tactics Cards, chosen with the squad and held rather
+  // than played onto the board (5.4). It travels because `check()` for
+  // playTactic reads the *sender's* hand, which the receiving client would
+  // otherwise never have seen — and because a hand set locally is a hand the
+  // other player cannot see the cost of.
+  | { kind: 'setTactics'; seat: Side; cards: string[] }
   // Naming the Mech or the Tactical Zone a Task is about. `seat` is whoever
   // makes the choice, which is not always whose Task it is — Behead has the
   // opponent name one of their own — so `for` carries the squad that scores it.
@@ -214,14 +220,14 @@ type TableKind =
   | 'queueIntercepts' | 'clearIntercepts' | 'placeSmoke' | 'removeSmoke' | 'dissipateSmoke'
   | 'clearCounterRoll'
   | 'setMode' | 'handOver' | 'setStrict' | 'commitTimings' | 'revealTimings' | 'importSquad'
-  | 'configureTable' | 'startMatch' | 'endMatch' | 'pickSecondary' | 'setReady' | 'designateTask';
+  | 'configureTable' | 'startMatch' | 'endMatch' | 'pickSecondary' | 'setTactics' | 'setReady' | 'designateTask';
 const TABLE_KINDS = new Set<Command['kind']>([
   'advancePhase', 'setPhase', 'resetRounds', 'adjustCommandTokens', 'passTurn', 'markEndStep', 'award',
   'lockMap', 'rollSetup', 'acceptRoll', 'pickEdge', 'lockDials', 'finishDeployment',
   'queueIntercepts', 'clearIntercepts', 'placeSmoke', 'removeSmoke', 'dissipateSmoke',
   'clearCounterRoll',
   'setMode', 'handOver', 'setStrict', 'commitTimings', 'revealTimings', 'importSquad',
-  'configureTable', 'startMatch', 'endMatch', 'pickSecondary', 'setReady', 'designateTask',
+  'configureTable', 'startMatch', 'endMatch', 'pickSecondary', 'setTactics', 'setReady', 'designateTask',
 ]);
 
 // Table commands whose seat is attribution rather than a choice one squad
@@ -298,6 +304,19 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
     }
     case 'pickSecondary': {
       if (!(data.secondary ?? []).some((c) => c.id === cmd.cardId)) return no('That is not a Secondary Task card.');
+      return ok;
+    }
+    case 'setTactics': {
+      if (!Array.isArray(cmd.cards)) return no('That is not a hand.');
+      if (cmd.cards.length > 8) return no('That is more Tactics Cards than any squad could pay for.');
+      for (const id of cmd.cards) {
+        const card = data.byId.get(id);
+        if (!card || card.category !== 'tactics_or_upgrade') return no('That is not a Tactics Card.');
+      }
+      // The hand is chosen with the squad, so it closes when the game starts —
+      // 5.4 has you holding them from the off, not drawing mid-match.
+      const su = normaliseSetup(state.setup);
+      if (su && su.stage === 'done') return no('The hand is set before the game begins.');
       return ok;
     }
     case 'designateTask': {
@@ -994,6 +1013,13 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
     tasks.secTarget[cmd.seat] = undefined;
     tasks.zone[cmd.seat] = undefined;
     state.tasks = tasks;
+    return;
+  }
+  if (cmd.kind === 'setTactics') {
+    if (!state.tactics) state.tactics = { s1: [], s2: [] };
+    // Replaces rather than appends: the command carries the whole hand, so a
+    // repeat of one that was already applied cannot double it.
+    state.tactics = { ...state.tactics, [cmd.seat]: [...cmd.cards] };
     return;
   }
   if (cmd.kind === 'designateTask') {
