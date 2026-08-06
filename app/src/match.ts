@@ -96,6 +96,39 @@ let catchingUp = false;
 // Asking for the board back is the right answer to a command that will not
 // apply, but only the first time: if the replay itself is what refuses, an
 // unthrottled ask becomes a loop of checkpoint, replay, refuse, ask.
+// The code for the Rejoin door, and when we were last sat at it.
+//
+// The server reaps an idle room after an hour, so anything older than that is
+// a code for a table that is not there. Without the timestamp the door went on
+// offering yesterday's game, which is exactly what the server's own hour is
+// meant to prevent.
+const LAST_ROOM = 'ember-last-room';
+const REJOIN_WINDOW_MS = 60 * 60 * 1000;
+
+function rememberRoom(id: string): void {
+  localStorage.setItem(LAST_ROOM, JSON.stringify({ id, at: Date.now() }));
+}
+
+function forgetRoom(): void {
+  localStorage.removeItem(LAST_ROOM);
+}
+
+function lastRoom(): string | null {
+  const raw = localStorage.getItem(LAST_ROOM);
+  if (!raw) return null;
+  // Bare codes are what earlier versions wrote. Undatable, so not offered.
+  if (!raw.startsWith('{')) { forgetRoom(); return null; }
+  try {
+    const { id, at } = JSON.parse(raw) as { id?: string; at?: number };
+    if (typeof id !== 'string' || typeof at !== 'number') { forgetRoom(); return null; }
+    if (Date.now() - at > REJOIN_WINDOW_MS) { forgetRoom(); return null; }
+    return id;
+  } catch {
+    forgetRoom();
+    return null;
+  }
+}
+
 let lastResync = 0;
 
 function resyncSoon(): void {
@@ -185,7 +218,7 @@ const relay = new Relay(api.base, {
   },
   onClosed() {
     // The table is gone for everyone, so the remembered code is worthless.
-    localStorage.removeItem('ember-last-room');
+    forgetRoom();
     state = freshBoard();
     closeOnArrival = false;
     doorErr = 'That table has been closed.';
@@ -195,7 +228,10 @@ const relay = new Relay(api.base, {
     setLocalSeat(view.room ? view.seat : null);
     // Remembered for the Rejoin door: a dropped connection should not need
     // the code typed back in.
-    if (view.room) localStorage.setItem('ember-last-room', view.room.id);
+    if (view.room) rememberRoom(view.room.id);
+    // A refused join with nothing to show for it means the code is dead, so
+    // the door stops offering it rather than failing the same way twice.
+    else if (view.error && !view.room) forgetRoom();
     // Arriving only to shut the table: the close needs a seat at it first.
     if (view.room && closeOnArrival) {
       closeOnArrival = false;
@@ -253,7 +289,7 @@ function clearFeedAfter(cmd: Command): void {
 function send(cmd: Command): CheckResult {
   if (!data) return { ok: false, why: 'Still loading.' };
   const p = paused();
-  if (p) return { ok: false, why: `Paused — waiting for ${squadLabel(p.side)}'s player.` };
+  if (p) return { ok: false, why: `Paused. Waiting for ${squadLabel(p.side)}'s player.` };
   const v = perform(data, state, cmd);
   if (v.ok) {
     glueAfter(data, state, cmd);
@@ -697,9 +733,9 @@ function doorHtml(): string {
       </div>
     </div>
     ${doorErr ? `<div class="mc-err">${esc(doorErr)}</div>` : ''}
-    ${localStorage.getItem('ember-last-room')
-      ? `<div class="panel" style="margin-top:12px"><h3>Rejoin ${esc(localStorage.getItem('ember-last-room')!)}</h3>
-          <p class="hint">Seats are kept by account, so dropping out never loses your place.</p>
+    ${lastRoom()
+      ? `<div class="panel" style="margin-top:12px"><h3>Rejoin ${esc(lastRoom()!)}</h3>
+          <p class="hint">Your seat is kept for you.</p>
           <div class="rejoinrow">
             <button class="btn wide" id="mc-rejoin" style="margin-top:0">Rejoin</button>
             <button class="btn ghost closex" id="mc-closeroom" title="Close this table for good">✕</button>
@@ -716,12 +752,12 @@ function seatHtml(side: Side): string {
   const mine = v.seat === side;
   if (!who) {
     return `<div class="seatcard empty">
-      <div class="who"><span class="sq">${side === 's1' ? 'SQ1' : 'SQ2'}</span><i>empty seat — share the code</i></div>
+      <div class="who"><span class="sq">${side === 's1' ? 'SQ1' : 'SQ2'}</span><i>empty seat · share the code</i></div>
     </div>`;
   }
   return `<div class="seatcard ${side}">
     <div class="who"><span class="sq">${side === 's1' ? 'SQ1' : 'SQ2'}</span>${esc(who)}${mine ? ' <i>(you)</i>' : ''}${v.host && mine ? ' <i>· host</i>' : ''}</div>
-    <div class="st${here ? ' on' : ''}">${here ? '● connected' : '○ away — their seat is kept'}</div>
+    <div class="st${here ? ' on' : ''}">${here ? '● connected' : '○ away · seat kept'}</div>
   </div>`;
 }
 
@@ -732,9 +768,25 @@ function seatHtml(side: Side): string {
 function previewSvg(mapId: string): string {
   if (!data) return '';
   const pieces = data.terrain.layouts[mapId] ?? [];
-  const fill = (t: string) => (t === 'container' ? 'rgba(61,220,132,.5)' : t === 'low_wall' ? '#4a5563' : '#39424e');
+  // One shape per piece, not one per Small Grid. Drawn from the same bounding
+  // box and the same fills the board itself uses, so a 3x1 wall reads as a wall
+  // here rather than as three tiles that happen to be touching, and what a
+  // player picks is what they get.
+  const fill: Record<string, string> = {
+    building: '#4b5563', high_wall: '#6b7280', low_wall: '#d1d5db', container: '#2fae6e',
+  };
   const cells = pieces
-    .flatMap((p) => p.subCells.map((c) => `<rect x="${c.col + 0.08}" y="${c.row + 0.08}" width="0.84" height="0.84" rx="0.1" fill="${fill(p.type)}"/>`))
+    .map((p) => {
+      const cols = p.subCells.map((c) => c.col);
+      const rows = p.subCells.map((c) => c.row);
+      const x0 = Math.min(...cols);
+      const y0 = Math.min(...rows);
+      const w = Math.max(...cols) - x0 + 1;
+      const h = Math.max(...rows) - y0 + 1;
+      return `<rect x="${x0 + 0.05}" y="${y0 + 0.05}" width="${w - 0.1}" height="${h - 0.1}" rx="${p.type === 'container' ? 0.12 : 0.08}"`
+        + ` fill="${fill[p.type] ?? '#39424e'}" opacity="0.95"`
+        + ` stroke="${p.blocksLos ? '#111827' : '#0006'}" stroke-width="${p.blocksLos ? 0.06 : 0.04}"/>`;
+    })
     .join('');
   // Large-Grid lines every 3 cells, like the board, plus a faint fine grid.
   let lines = '';
@@ -815,7 +867,7 @@ function railHtml(): string {
   // The host cannot start while the guest is still reading the battlefield.
   const canLaunch = isHost() && !running() && seatsFull && squadsIn && guestReady && !away;
   const why = !seatsFull ? 'Waiting for the other player to sit down.'
-    : away ? `${squadLabel(away)} is away — the match waits for them.`
+    : away ? `${squadLabel(away)} is away.<br>The match waits for them.`
       : !squadsIn ? 'Both squads have to be brought in.'
         : !guestReady ? 'Waiting for the other player to press Ready.'
           : 'Both squads are in and ready.';
@@ -833,7 +885,7 @@ function railHtml(): string {
         </div>`
       : `<div class="foot">
           <span class="quiet">${iAmReady ? 'Waiting for the host to launch.' : 'Ready when you have looked over the battlefield.'}</span>
-          <button class="btn wide${iAmReady ? ' ghost' : ''}" id="mc-ready" style="margin-top:0">${iAmReady ? '✓ Ready — tap to undo' : 'Ready'}</button>
+          <button class="btn wide${iAmReady ? ' ghost' : ''}" id="mc-ready" style="margin-top:0">${iAmReady ? '✓ Ready (tap to undo)' : 'Ready'}</button>
         </div>`;
   return `<div class="mc-rail">
     <div class="grouphead">Match setup</div>
@@ -893,7 +945,7 @@ function battlefieldStep(): string {
       </div>
       ${taskPanel}
       <div class="maplist">${maps}
-        <p class="quiet">Custom maps stay on the board page for now — a guest may not have them.</p>
+        <p class="quiet">Custom maps stay on the board page. A guest may not have them.</p>
       </div>
     </div>
     <div class="missionrow">${missions}</div>
@@ -923,8 +975,8 @@ function squadsStep(): string {
       return `<div class="seatcard ${side}">
         <div class="who"><span class="sq">${side === 's1' ? 'SQ1' : 'SQ2'}</span>${who ? esc(who) : '<i>empty seat</i>'}${mine ? ' <i>(you)</i>' : ''}</div>
         <div class="st${has ? ' on' : ''}">${has
-          ? `✓ ${named ? `${esc(named)} — ` : ''}${s.mechs} mech${s.mechs === 1 ? '' : 's'}, ${s.drones} drone${s.drones === 1 ? '' : 's'} · ${s.points} points`
-          : mine ? 'no squad yet' : 'no squad yet — waiting on them'}</div>
+          ? `✓ ${named ? `${esc(named)} · ` : ''}${s.mechs} mech${s.mechs === 1 ? '' : 's'}, ${s.drones} drone${s.drones === 1 ? '' : 's'} · ${s.points} points`
+          : mine ? 'no squad yet' : 'no squad yet · waiting on them'}</div>
         ${roster}
         ${mine && !running() ? `<button class="btn${has ? ' ghost' : ''}" id="mc-bring" style="margin-top:9px">${has ? 'Add another unit' : 'Bring a squad'}</button>` : ''}
         ${mine && !running() ? tacticsPicker(side) : ''}
@@ -1042,7 +1094,7 @@ function hudCtx(): HudCtx {
 function devPane(): string {
   return `<div class="mc-col" style="max-width:420px">
     <h1 class="mc-h">HUD dev harness</h1>
-    <p class="mc-sub">No room — this walks the in-match HUD locally.</p>
+    <p class="mc-sub">No room. This walks the in-match HUD locally.</p>
     <div class="panel"><button class="btn wide" id="mc-devseed" style="margin-top:0">Seed two demo squads and start</button></div>
   </div>`;
 }
@@ -1161,7 +1213,7 @@ function pickerHtml(): string {
       ${section('On the freeplay board', fromBoard)}
       ${section('Saved squads', savedSquads)}
       ${section('Saved mechs', savedMechs)}
-      ${any ? '' : '<p class="hint">Nothing saved on this device yet — import a squad from a builder file below, and it will be remembered here.</p>'}
+      ${any ? '' : '<p class="hint">Nothing saved on this device yet.<br>Import a squad file below and it is kept here.</p>'}
       <button class="btn ghost wide" id="mc-file" style="margin-top:10px">From a squad file…</button>
       <input type="file" id="mc-fileinput" accept=".json,.png" hidden />
     </div>
@@ -1205,7 +1257,7 @@ function render(): void {
     ? `<div class="mc-veil pauseveil"><div class="acct" style="text-align:center">
         <div class="waitbox"><div class="spin">◐</div>
         <div class="msg">Match paused</div>
-        <div class="sub">${esc(squadLabel(p.side))}'s player ${p.gone ? 'left the table' : 'lost their connection'}.<br>Everything waits until they return — their seat is kept.</div></div>
+        <div class="sub">${esc(squadLabel(p.side))}'s player ${p.gone ? 'left the table' : 'lost their connection'}.<br>Everything waits until they return.<br>Their seat is kept.</div></div>
         <button class="btn ghost" id="mc-leave" style="margin-top:6px">Leave the table</button>
       </div></div>`
     : '';
@@ -1329,7 +1381,7 @@ function wire(): void {
     relay.host();
   });
   $('mc-rejoin')?.addEventListener('click', () => {
-    const code = localStorage.getItem('ember-last-room');
+    const code = lastRoom();
     doorErr = null;
     if (code) relay.join(code);
   });
