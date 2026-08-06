@@ -164,6 +164,21 @@ export function glueAfter(data: GameData, state: GameState, cmd: Command): void 
   // Leaving the End Phase abandons anything still owed; next round judges the
   // board afresh.
   if (cmd.kind === 'advancePhase' || cmd.kind === 'setPhase' || cmd.kind === 'startMatch' || cmd.kind === 'endMatch') smokeOwed = null;
+  // Whose Action Opportunity it is, derived HERE — off the command, the way
+  // every other piece of turn bookkeeping is.
+  //
+  // It used to be minted inside actionPanel(), which meant it only refreshed on
+  // a client that happened to be *drawing* that panel, and eighteen other
+  // panels return before it. A player with the combat window, an owed
+  // Interception or a Tactics Card open therefore held a stale `opp`, and every
+  // command the other player sent for the active unit was refused with "it is
+  // not this Mech's Action Opportunity" — twice inside six seconds and the
+  // table announced it would not settle. The same render-time derivation is
+  // what made the board fingerprint cry wolf the day before.
+  //
+  // Both clients run this after every command, ours and theirs, so both reach
+  // the same answer without it ever crossing the wire.
+  if (state.round.phase === 2) opportunity(data, state);
 }
 
 function opportunity(data: GameData, s: GameState): Opportunity | null {
