@@ -155,6 +155,8 @@ function outlinePath(cells: { col: number; row: number }[], size: number): strin
 
 export class Board {
   svg: SVGSVGElement;
+  private gWorld!: SVGGElement;
+  private flipped = false;
   private gGrid!: SVGGElement;
   private theme: BoardTheme = boardTheme(DEFAULT_BOARD);
   private gZones!: SVGGElement;
@@ -178,15 +180,38 @@ export class Board {
   panEnabled = true;
   editing = false;
 
-  private cellAt(ev: PointerEvent): { col: number; row: number } | null {
+  // Screen to board. Deliberately the WORLD group's matrix and not the svg's:
+  // the world carries the half-turn that puts a player's own Deployment Zone at
+  // the bottom, and taking it from here is what makes the flip a pure view
+  // change. Every click is converted back into the one set of coordinates the
+  // state and the commands are written in, so nothing downstream — the rules,
+  // the relay, the fingerprint — ever learns which way up a screen is.
+  private toWorld(ev: { clientX: number; clientY: number }): { x: number; y: number } {
     const pt = this.svg.createSVGPoint();
     pt.x = ev.clientX;
     pt.y = ev.clientY;
-    const p = pt.matrixTransform(this.svg.getScreenCTM()!.inverse());
+    const p = pt.matrixTransform(this.gWorld.getScreenCTM()!.inverse());
+    return { x: p.x, y: p.y };
+  }
+
+  private cellAt(ev: PointerEvent): { col: number; row: number } | null {
+    const p = this.toWorld(ev);
     const col = Math.floor(p.x / CELL);
     const row = Math.floor(p.y / CELL);
     if (col < 0 || row < 0 || col >= CELLS || row >= CELLS) return null;
     return { col, row };
+  }
+
+  // Which way up this screen draws the board. The state never changes; only
+  // this does, and only for the player whose zone would otherwise be at the top
+  // — because at a real table you sit behind your own units.
+  setFlipped(on: boolean): void {
+    if (this.flipped === on) return;
+    this.flipped = on;
+    this.gWorld.setAttribute('transform', on ? `rotate(180 ${SIZE / 2} ${SIZE / 2})` : '');
+    // Text and unit art turn back the right way up from a stylesheet rule; a
+    // facing arrow, an arc and a drawn route all correctly turn with the board.
+    this.svg.classList.toggle('flipped', on);
   }
 
   constructor(container: HTMLElement, callbacks: BoardCallbacks) {
@@ -196,10 +221,16 @@ export class Board {
       id: 'board',
     });
     this.svg.appendChild(smokeHatchDefs());
+    // Everything that lives in board coordinates hangs off one group, so the
+    // half-turn that puts a player's own zone at the bottom is a single
+    // attribute rather than a rewrite of every draw call — and so `toWorld`
+    // has one matrix to undo it with.
+    this.gWorld = el('g', { class: 'board-world' });
+    this.svg.appendChild(this.gWorld);
     this.gGrid = this.buildGrid();
-    this.svg.appendChild(this.gGrid);
+    this.gWorld.appendChild(this.gGrid);
     this.gZones = el('g', { class: 'zones', 'pointer-events': 'none' });
-    this.svg.appendChild(this.gZones);
+    this.gWorld.appendChild(this.gZones);
     this.gTerrain = el('g');
     this.gMarkers = el('g', { class: 'markers' });
     this.gTaskItems = el('g', { class: 'task-items', 'pointer-events': 'none' });
@@ -210,15 +241,15 @@ export class Board {
     this.gOverlay = el('g', { class: 'overlay', 'pointer-events': 'none' });
     // Above the tokens, so a unit standing on a candidate Grid cannot eat the click.
     this.gPick = el('g', { class: 'pick-layer' });
-    this.svg.appendChild(this.gTerrain);
-    this.svg.appendChild(this.gMarkers);
-    this.svg.appendChild(this.gTaskItems);
-    this.svg.appendChild(this.gSmoke);
-    this.svg.appendChild(this.gHighlight);
-    this.svg.appendChild(this.gTokens);
-    this.svg.appendChild(this.gGhost);
-    this.svg.appendChild(this.gOverlay);
-    this.svg.appendChild(this.gPick);
+    this.gWorld.appendChild(this.gTerrain);
+    this.gWorld.appendChild(this.gMarkers);
+    this.gWorld.appendChild(this.gTaskItems);
+    this.gWorld.appendChild(this.gSmoke);
+    this.gWorld.appendChild(this.gHighlight);
+    this.gWorld.appendChild(this.gTokens);
+    this.gWorld.appendChild(this.gGhost);
+    this.gWorld.appendChild(this.gOverlay);
+    this.gWorld.appendChild(this.gPick);
     let pan: { x: number; y: number; l: number; t: number; moved: boolean } | null = null;
     this.svg.addEventListener('pointerdown', (ev) => {
       const bg = !(ev.target as Element).closest?.('.token');
@@ -470,7 +501,7 @@ export class Board {
           continue;
         }
         const label = el('text', { x: lx, y: ly, 'text-anchor': 'middle', class: 'dz-label' });
-        label.textContent = shape.label ?? (side === 'black' ? 'BLACK' : 'WHITE');
+        label.textContent = shape.label ?? `${side === 'black' ? 'BLACK' : 'WHITE'} DEPLOYMENT ZONE`;
         g.appendChild(label);
         this.gZones.appendChild(g);
       }
@@ -1024,14 +1055,7 @@ export class Board {
     let orig = { col: t.col, row: t.row };
     let moved = false;
 
-    const toBoard = (ev: PointerEvent) => {
-      const pt = this.svg.createSVGPoint();
-      pt.x = ev.clientX;
-      pt.y = ev.clientY;
-      const m = this.svg.getScreenCTM();
-      const p = pt.matrixTransform(m!.inverse());
-      return { x: p.x, y: p.y };
-    };
+    const toBoard = (ev: PointerEvent) => this.toWorld(ev);
 
     const onMove = (ev: PointerEvent) => {
       if (!start) return;

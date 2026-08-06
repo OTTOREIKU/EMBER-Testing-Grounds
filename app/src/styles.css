@@ -144,6 +144,21 @@ main { display: flex; flex: 1; min-height: 0; }
 
 .grid-label { font-size: 12px; fill: var(--grid-label, var(--text2)); }
 
+/* A player sits behind their own Deployment Zone, so the board is drawn a half
+   turn round for whoever would otherwise be looking at theirs from the far
+   side. The turn is one transform on .board-world — see Board.setFlipped — and
+   these two put back the things that should not be upside down: writing, and
+   the picture of a unit. A facing arrow, a Forward Arc and a drawn route all
+   SHOULD turn with the board, so they are deliberately not listed. Anything
+   with its own transform attribute must stay out of this rule, since a CSS
+   transform would replace it rather than compose with it. */
+#board.flipped text,
+#board.flipped .token-art {
+  transform-box: fill-box;
+  transform-origin: center;
+  transform: rotate(180deg);
+}
+
 #card-tip {
   position: fixed; z-index: 1300; width: 260px; pointer-events: none;
   opacity: 0; transition: opacity 0.08s; border-radius: 8px; overflow: hidden;
