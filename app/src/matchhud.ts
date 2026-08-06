@@ -797,7 +797,7 @@ function setupPanel(ctx: HudCtx, su: SetupState): string {
       })
       .join('');
     const verdict = tie
-      ? `<p class="tp-note">A tie on ${rollTotal(su.rolls.s1)}. The rulebook gives no tie procedure, so both squads roll again — the first re-roll clears the other total.</p>`
+      ? `<p class="tp-note">A tie on ${rollTotal(su.rolls.s1)}. No tie procedure in the rulebook, so both roll again.<br>The first re-roll clears the other total.</p>`
       : winner ? `<p class="tp-note">${squadLabel(winner)} rolls higher.</p>` : '';
     return head('Setup', 'Roll for First Player', 'Two dice each, most Hits goes first (3.1.2).', true)
       + `<div class="tp-body">${rows}${verdict}</div>
@@ -849,9 +849,9 @@ function setupPanel(ctx: HudCtx, su: SetupState): string {
       const meReady = !!s.ready?.[ctx.seat];
       const otherSeat: Side = ctx.seat === 's1' ? 's2' : 's1';
       const otherReady = !!s.ready?.[otherSeat];
-      sub = meReady && otherReady ? 'Both squads confirmed.' : 'Both squads confirm before Round 1 begins — moves stay open until then.';
+      sub = meReady && otherReady ? 'Both squads confirmed.' : 'Both squads confirm before Round 1.<br>Moves stay open until then.';
       if (!meReady) foot.push(`<button class="bigbtn${pending !== null ? ' ghost2' : ''}" data-act="deployready">My deployment is final</button>`);
-      else if (!otherReady) foot.push(`<button class="bigbtn ghost2" data-act="deployunready" title="Tap to withdraw">✓ Ready — waiting for ${squadLabel(otherSeat)}…</button>`);
+      else if (!otherReady) foot.push(`<button class="bigbtn ghost2" data-act="deployunready" title="Tap to withdraw">✓ Ready · waiting for ${squadLabel(otherSeat)}…</button>`);
       else foot.push('<button class="bigbtn" data-act="deploydone">Begin Round 1</button>');
     } else {
       foot.push(`<button class="bigbtn${pending !== null ? ' ghost2' : ''}" data-act="deploydone">Begin Round 1</button>`);
@@ -931,7 +931,7 @@ function planningPanel(ctx: HudCtx): string {
       ? bothRevealed
         ? '<button class="bigbtn" data-act="advance">Continue to the Action Phase</button>'
         : `<p class="tp-note">Committed. Waiting for ${esc(squadLabel(me === 's1' ? 's2' : 's1'))} to lock in…</p>`
-      : `<button class="bigbtn" data-act="lockdials"${left ? ' disabled' : ''}>${left ? `Lock in — ${left} dial${left === 1 ? '' : 's'} left` : 'Lock in'}</button>`
+      : `<button class="bigbtn" data-act="lockdials"${left ? ' disabled' : ''}>${left ? `Lock in (${left} dial${left === 1 ? '' : 's'} left)` : 'Lock in'}</button>`
     : `<button class="bigbtn" data-act="advance"${left ? ' disabled' : ''}>${left ? `${left} dial${left === 1 ? '' : 's'} left` : 'Continue to the Action Phase'}</button>`;
   return head(me ? 'Your move' : 'Planning', 'Set your Timing Dials', me ? 'Your opponent cannot see these until both squads lock in.' : 'Both squads set dials.', true)
     + `<div class="tp-body">${rows}</div><div class="tp-foot">${foot}</div>`;
@@ -1040,9 +1040,9 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
     return `${ticks}
       <div class="moveplan">
         <p class="tp-dim">${esc(movePlan.label)}</p>
-        <p class="tp-note">${drawn ? `${drawn} of ${movePlan.steps} grids${movePlan.locked ? ' · locked' : ''}` : `Draw a route on the board — up to ${movePlan.steps} grid${movePlan.steps === 1 ? '' : 's'}.`}</p>
+        <p class="tp-note">${drawn ? `${drawn} of ${movePlan.steps} grids${movePlan.locked ? ' · locked' : ''}` : `Draw a route on the board. Up to ${movePlan.steps} grid${movePlan.steps === 1 ? '' : 's'}.`}</p>
         <p class="tp-dim">Move the cursor across grids to trace it, click to lock, then confirm.</p>
-        ${turnRow(FACING_NAME[movePlan.facing], 'A pivot costs no Movement Range, but it is Movement — so it happens inside this one.')}
+        ${turnRow(FACING_NAME[movePlan.facing], 'A pivot costs no Movement Range, but it is still Movement, so it happens inside this one.')}
         <button class="bigbtn" data-act="commitmove"${drawn || movePlan.turned ? '' : ' disabled'}>${drawn ? 'Confirm move' : 'Turn on the spot'}</button>
         <button class="bigbtn ghost2" data-act="cancelmove" style="margin-top:6px">Cancel</button>
       </div>`;
@@ -1079,8 +1079,8 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
   const moveWord = t.kind === 'mech' ? 'Maneuver' : 'Movement';
   const moveTip = man.ok
     ? t.kind === 'mech'
-      ? `Draw a route on the board, then confirm. The Maneuver Value comes off the Chassis Card${t.stance === 'mobility' ? ', doubled by Mobility Stance' : ''} — a Movement Action carries its own, usually longer, Range.`
-      : 'Draw a route on the board, then confirm. This activation buys a Movement or an Action, not both (2.4.1).'
+      ? `Draw a route, then confirm. The Maneuver Value comes off the Chassis Card${t.stance === 'mobility' ? ', doubled by Mobility Stance' : ''}. A Movement Action carries its own Range.`
+      : 'Draw a route, then confirm. This activation buys a Movement or an Action, not both (2.4.1).'
     : man.why ?? '';
   return `${ticks}${stanceRow}${rebootRow}
     <button class="actrow k-moving${man.ok ? '' : ' warn'}"${man.ok ? '' : ` data-why="${esc(man.why ?? '')}"`} data-act="maneuver" title="${esc(moveTip)}">
@@ -1093,18 +1093,18 @@ function loopPanel(ctx: HudCtx, phase: LoopPhase): string {
   const s = ctx.state;
   const sc = ensureScript(s);
   const tokens = phase === 'Command'
-    ? `<p class="tp-note">Command tokens — <b class="s1">${s.commandTokens.s1}</b> · <b class="s2">${s.commandTokens.s2}</b></p>`
+    ? `<p class="tp-note">Command tokens · <b class="s1">${s.commandTokens.s1}</b> · <b class="s2">${s.commandTokens.s2}</b></p>`
     : '';
   if (sc.opp) {
     const t = s.tokens.find((x) => x.uid === sc.opp!.uid);
     if (t) {
       if (!mine(ctx, t.side)) {
-        return head('Waiting', `${squadLabel(t.side)} is acting`, `${esc(t.label)} — ${phase} Phase.`, false)
+        return head('Waiting', `${squadLabel(t.side)} is acting`, `${esc(t.label)} · ${phase} Phase.`, false)
           + `<div class="tp-body">${waiting(t.side, 'resolving its action')}</div><div class="tp-foot"></div>`;
       }
       return head('Your move', esc(t.label), phase === 'Command' ? 'One Command Action, or move it.' : 'Resolve its action, then end.', true)
         + `<div class="tp-body">${actionButtons(ctx, t, sc.opp)}</div>
-          <div class="tp-foot"><button class="bigbtn" data-act="endopp">Done — end this activation</button></div>`;
+          <div class="tp-foot"><button class="bigbtn" data-act="endopp">End this activation</button></div>`;
     }
   }
   if (loopComplete(s, phase)) {
@@ -1134,10 +1134,10 @@ function actionPanel(ctx: HudCtx): string {
   if (!t) return head('Action Phase', 'The active Mech is gone', '', true) + `<div class="tp-body"></div><div class="tp-foot"><button class="bigbtn" data-act="endopp">Skip</button></div>`;
   const timing = TIMINGS.find((x) => x.id === o.timing)?.name ?? '';
   if (!mine(ctx, t.side)) {
-    return head('Waiting', `${squadLabel(t.side)} is acting`, `${esc(t.label)} — ${esc(timing)}.`, false)
+    return head('Waiting', `${squadLabel(t.side)} is acting`, `${esc(t.label)} · ${esc(timing)}.`, false)
       + `<div class="tp-body">${waiting(t.side, 'taking its Action Opportunity')}</div><div class="tp-foot"></div>`;
   }
-  return head('Your move', `${esc(t.label)} — ${esc(timing)}`, '1 Maneuver and 2 Action ticks. Spend what you like, then end.', true)
+  return head('Your move', `${esc(t.label)} · ${esc(timing)}`, '1 Maneuver, 2 Action ticks.', true)
     + `<div class="tp-body">${actionButtons(ctx, t, o)}</div>
       <div class="tp-foot"><button class="bigbtn" data-act="endopp">End this Opportunity</button></div>`;
 }
@@ -1150,8 +1150,8 @@ function endPanel(ctx: HudCtx): string {
     { id: 'tokens', label: 'Age tokens & clear Command pools' },
     // Only offered when there is smoke to judge, so a game that never sees a
     // grenade never grows a step it cannot do anything with.
-    ...(smoke.length ? [{ id: 'smoke', label: `Smoke dissipation — ${smoke.length} screen${smoke.length === 1 ? '' : 's'}` }] : []),
-    { id: 'remove', label: 'Integrity Loss — remove spent Mechs' },
+    ...(smoke.length ? [{ id: 'smoke', label: `Smoke dissipation · ${smoke.length} screen${smoke.length === 1 ? '' : 's'}` }] : []),
+    { id: 'remove', label: 'Integrity Loss: remove spent Mechs' },
     { id: 'tasks', label: 'Settle Task control' },
   ];
   const rows = steps
@@ -1171,8 +1171,8 @@ function endPanel(ctx: HudCtx): string {
     ${owed.lines.length
       ? `<div class="sect2" style="margin-top:10px">This round earns</div>
          ${owed.lines.map((l) => `<div class="dialrow"><span class="nm ${l.side}">${esc(l.why)}</span><span class="pickchip set">+${l.vp}</span></div>`).join('')}
-         <p class="tp-note">Read off the board the same way the guide reads it. The +1 buttons stay for anything the cards settle by hand.</p>`
-      : '<p class="tp-note">Nothing scores from the board this round. The +1 buttons stay for anything the cards settle by hand.</p>'}`;
+         <p class="tp-note">Read off the board.<br>The +1 buttons stay for anything you settle by hand.</p>`
+      : '<p class="tp-note">Nothing scores from the board this round.<br>The +1 buttons stay for anything you settle by hand.</p>'}`;
   // The last round ends the game rather than rolling into another one. Without
   // this "Finish the game" started Round 6 and the match never ended at all.
   if (last && all) return resultPanel(ctx, vp);
@@ -1217,7 +1217,7 @@ function panelHtml(ctx: HudCtx): string {
   if (boxDrop) return boxDropPanel(ctx);
   if (ctx.combatBusy()) {
     return head('Your move', 'Resolving the attack', 'The combat window has the dice.', true)
-      + '<div class="tp-body"><p class="tp-note">Work through the roll over the board. What it settles — the target Part, the Penetration, a destruction, a Knockback — is applied for you and travels to the other player on its own.</p></div><div class="tp-foot"></div>';
+      + '<div class="tp-body"><p class="tp-note">The combat window has it. Everything it settles is applied for you<br>and reaches the other player on its own.</p></div><div class="tp-foot"></div>';
   }
   if (boxPick) return boxPickPanel(ctx);
   // A Tactics Card is played into a moment, so its two questions come before
@@ -1488,11 +1488,11 @@ function launchPanel(ctx: HudCtx): string {
     m.placed ? `<button class="bigbtn ghost2" data-act="launchundo">↺ Take back the last one</button>` : '',
     `<button class="bigbtn${m.placed ? '' : ' ghost2'}" data-act="launchcancel">${m.placed ? 'Stop here' : 'Cancel'}</button>`,
   ].join('');
-  return head('Your move', `Launch ${esc(m.label)}`, `${esc(a?.name?.en || m.actionId)}${total > 1 ? ` — ${m.placed} of ${total} launched` : ''}.`, true)
+  return head('Your move', `Launch ${esc(m.label)}`, `${esc(a?.name?.en || m.actionId)}${total > 1 ? ` · ${m.placed} of ${total} launched` : ''}.`, true)
     + `<div class="tp-body">
         <p class="tp-note">${sight
-          ? 'Direct Fire, so the Landing Point has to be a Grid this unit can see and one terrain does not fill.'
-          : 'Fire in arc, so no line of sight to the Landing Point is needed.'} A Landing Point is a Grid, not a unit, and nothing is targeted yet.</p>
+          ? 'Direct Fire: the Landing Point must be a Grid this unit can see, and one terrain does not fill.'
+          : 'Fire in arc, so no line of sight to the Landing Point is needed.'} A Landing Point is a Grid, not a unit. Nothing is targeted yet.</p>
         <p class="tp-dim">${cands.length} legal ${cands.length === 1 ? 'Grid' : 'Grids'} within Range ${a?.range ?? 0}. ${total > 1
           ? `Volley ${total} lets you place up to ${total}, one Ammo Token each, and you may stop early.`
           : 'One Ammo Token is spent.'}</p>
@@ -1609,12 +1609,12 @@ function interceptPanel(ctx: HudCtx): string {
     const at = s.tokens.find((x) => x.uid === interceptNow!.targetUid);
     const a = by ? actionOn(ctx, by, interceptNow.actionId) : undefined;
     const left = by?.intercept?.[interceptNow.actionId] ?? 0;
-    return head('Your move', `Intercepting ${at ? esc(at.label) : 'the target'}`, `${by ? esc(by.label) : ''} — ${esc(a?.name?.en || interceptNow.actionId)}.`, true)
+    return head('Your move', `Intercepting ${at ? esc(at.label) : 'the target'}`, `${by ? esc(by.label) : ''} · ${esc(a?.name?.en || interceptNow.actionId)}.`, true)
       + `<div class="tp-body">
           <p class="tp-note">Line of sight always exists and no Forward Arc is required. The target claims no Terrain or Unit Protection dice (4.9).</p>
           <p class="tp-dim">${left} Interception Token${left === 1 ? '' : 's'} left on that Part, for the rest of the game. Roll it out in the combat window.</p>
         </div>
-        <div class="tp-foot"><button class="bigbtn" data-act="interceptdone">Done — this attempt is resolved</button></div>`;
+        <div class="tp-foot"><button class="bigbtn" data-act="interceptdone">This attempt is resolved</button></div>`;
   }
   if (interceptPick) {
     const by = s.tokens.find((x) => x.uid === interceptPick!.uid);
@@ -1630,7 +1630,7 @@ function interceptPanel(ctx: HudCtx): string {
       .join('');
     return head('Your move', 'Intercept what?', `Only the Aerial Unit that Moved or was Launched, within Range ${reach} (4.9).`, true)
       + `<div class="tp-body">${rows || `<p class="tp-note">Nothing Aerial is within Range ${reach} of ${by ? esc(by.label) : 'that Part'}.</p>`}</div>
-         <div class="tp-foot"><button class="bigbtn ghost2" data-act="interceptcancel">Cancel — spend nothing</button></div>`;
+         <div class="tp-foot"><button class="bigbtn ghost2" data-act="interceptcancel">Cancel, spend nothing</button></div>`;
   }
   const owed = owedItems(ctx);
   const side = interceptSide(ctx);
@@ -1649,7 +1649,7 @@ function interceptPanel(ctx: HudCtx): string {
     .join('');
   return head('Your move', 'Interception owed', 'A launch by an Aerial Unit triggers this at once, before anything else happens (4.9).', true)
     + `<div class="tp-body">${rows}
-        <p class="tp-note">Each attempt spends a Token, and a Part must keep going until its Tokens run out or the target is destroyed. Tokens are never restored.</p></div>
+        <p class="tp-note">Each attempt spends a Token. A Part keeps going until its Tokens run out or the target dies.<br>Tokens are never restored.</p></div>
        <div class="tp-foot"><button class="bigbtn ghost2" data-act="interceptskip">Skip the rest</button></div>`;
 }
 
@@ -1689,9 +1689,9 @@ function ewPanel(ctx: HudCtx): string {
         <span class="tgbits">${bits.map((b) => `<span${/[⚠✕]/.test(b) ? ' class="bad"' : ''}>${esc(b)}</span>`).join('')}</span></button>`;
     })
     .join('');
-  return head('Your move', `${esc(a.name?.en || m.actionId)}: which enemy?`, `${esc(by.label)} — Electronic Value ${ev}, Range ${reach}.`, true)
+  return head('Your move', `${esc(a.name?.en || m.actionId)}: which enemy?`, `${esc(by.label)} · Electronic Value ${ev}, Range ${reach}.`, true)
     + `<div class="tp-body">${rows || '<p class="tp-note">No enemy unit is on the board.</p>'}
-        <p class="tp-dim">Electronic Warfare ignores Terrain and line of sight, so only Range matters (4.11.1). Both units then roll Yellow dice equal to their Electronic Value.</p></div>
+        <p class="tp-dim">Only Range matters. Terrain and line of sight are ignored (4.11.1).<br>Both units roll Yellow dice equal to their Electronic Value.</p></div>
        <div class="tp-foot"><button class="bigbtn ghost2" data-act="ewcancel">Cancel</button></div>`;
 }
 
@@ -1760,7 +1760,7 @@ function counterPanel(ctx: HudCtx): string {
 
   const v = counterVerdict(ctx, c, init, resp);
   const line = v
-    ? `${esc(init.label)} ${v.initiatorWins ? 'succeeds' : 'fails'} — ${esc(v.why)}.`
+    ? `${esc(init.label)} ${v.initiatorWins ? 'succeeds' : 'fails'}. ${esc(v.why)}.`
     : 'Both sides have rolled.';
   // Focus is offered after the verdict is visible, which is when a player
   // actually knows whether they need it (4.10).
@@ -1774,7 +1774,7 @@ function counterPanel(ctx: HudCtx): string {
     + `<div class="tp-body">${board}
         <p class="tp-note">${line}</p>
         ${v ? `<p class="tp-dim">Lightning ${v.a.lightning}–${v.b.lightning}, Light Hit ${v.a.light}–${v.b.light}. A tie on both goes to the Initiator (4.11.2).</p>` : ''}
-        <p class="tp-dim">${esc(winner.label)} won this Counter-roll, so any "on successful Counter-roll" Passive it carries triggers — that works for the Responder too.</p>
+        <p class="tp-dim">${esc(winner.label)} won this Counter-roll, so any "on successful Counter-roll" Passive it carries triggers. That works for the Responder too.</p>
         ${focusRows ? `<div class="sect2" style="margin-top:10px">Reroll with Focus</div><p class="tp-dim">1 Link, once each, and the verdict is re-read from the new dice.</p>${focusRows}` : ''}
       </div>
       <div class="tp-foot">${iOwn && v?.initiatorWins
@@ -1829,7 +1829,7 @@ function boxPickPanel(ctx: HudCtx): string {
   const left = m.queue.length > 1 ? `<p class="tp-dim">${m.queue.length - 1} more on this route after this one.</p>` : '';
   if (!hands.length) {
     return head('Your move', `The Black Box in ${where}`, `${esc(t.label)} walked over it.`, true)
-      + `<div class="tp-body"><p class="tp-note">A Black Box goes onto a Part with the Freehand tag, and ${esc(t.label)} has none free — a Part already carrying one does not count (5.3.1).</p>${left}</div>
+      + `<div class="tp-body"><p class="tp-note">A Black Box goes onto a Part with the Freehand tag, and ${esc(t.label)} has none free.<br>A Part already carrying one does not count (5.3.1).</p>${left}</div>
          <div class="tp-foot"><button class="bigbtn" data-act="boxskip">Leave it</button></div>`;
   }
   // One Freehand Part is no question at all, so it is picked up in one press.
@@ -1838,7 +1838,7 @@ function boxPickPanel(ctx: HudCtx): string {
     .join('');
   return head('Your move', `Pick up the Black Box in ${where}?`, hands.length > 1 ? 'Which Part carries it?' : 'Picking one up is optional.', true)
     + `<div class="tp-body">${rows}
-        <p class="tp-dim">The Part carrying it has its Freehand spent while it does, so it cannot take a second (5.3.1). A Penetration makes the bearer drop it.</p>${left}</div>
+        <p class="tp-dim">That Part cannot take a second while it holds this one (5.3.1).<br>A Penetration makes the bearer drop it.</p>${left}</div>
        <div class="tp-foot"><button class="bigbtn ghost2" data-act="boxskip">Leave it</button></div>`;
 }
 
@@ -1895,7 +1895,7 @@ function boxDropPanel(ctx: HudCtx): string {
     .join('');
   return head('Your move', 'Where does the Black Box land?', `${esc(bearer.label)} was Penetrated and drops it. As the attacker, you choose (5.3.1).`, true)
     + `<div class="tp-body">${rows}
-        <p class="tp-dim">It has to be in contact with the bearer's base, which includes the Grid it is standing in. The Grids are lit on the board too.</p></div>
+        <p class="tp-dim">In contact with the bearer's base, its own Grid included.<br>The choices are lit on the board.</p></div>
        <div class="tp-foot"></div>`;
 }
 
@@ -2035,7 +2035,7 @@ function crushPanel(ctx: HudCtx): string {
   const out = crushEscapes(ctx, v, m.goal);
   return head('Your move', `Crush: where does ${esc(v.label)} go?`, `${esc(crusher.label)} is entering ${gridName(m.goal.c, m.goal.r)}.`, true)
     + `<div class="tp-body">
-        <p class="tp-note">Click a highlighted Grid on the board. It is forced 1 Grid, and you choose which, because you caused it (4.3.4).</p>
+        <p class="tp-note">Click a lit Grid. It moves 1 Grid, and you choose which, because you caused it (4.3.4).</p>
         <p class="tp-dim">${out.length} Grid${out.length === 1 ? '' : 's'} open${m.queue.length > 1 ? ` · ${m.queue.length - 1} more unit${m.queue.length === 2 ? '' : 's'} after this` : ''}.</p>
       </div>
       <div class="tp-foot"><button class="bigbtn ghost2" data-act="crushauto">Pick for me</button></div>`;
@@ -2077,7 +2077,7 @@ function resupplyPanel(ctx: HudCtx): string {
   return head('Your move', `${esc(a?.name?.en || m.actionId)}: resupply which unit?`, m.rule.range
     ? `This Mech, or an Ally within Range ${m.rule.range}, that has spent the Ammo this Action restores.`
     : 'Only this Mech is in reach.', true)
-    + `<div class="tp-body">${rows || '<p class="tp-note">Nothing in reach has spent any of that Ammo. It can only be replenished for a Part that has consumed some, and never past what it started with (4.13).</p>'}</div>
+    + `<div class="tp-body">${rows || '<p class="tp-note">Nothing in reach has spent any of that Ammo.<br>Only a Part that has used some can be topped up, never past its Storage (4.13).</p>'}</div>
        <div class="tp-foot"><button class="bigbtn ghost2" data-act="resupplycancel">${holders.length ? 'Skip' : 'Close'}</button></div>`;
 }
 
@@ -2265,7 +2265,7 @@ function attackPanel(ctx: HudCtx): string {
         <span class="tgbits">${bits.map((b) => `<span${/[⚠✕]/.test(b) ? ' class="bad"' : ''}>${esc(b)}</span>`).join('')}</span></button>`;
     })
     .join('');
-  return head('Your move', `${esc(a.name?.en || m.actionId)}: which target?`, `${esc(by.label)} — ${a.yellowDice ?? 0}Y ${a.redDice ?? 0}R.`, true)
+  return head('Your move', `${esc(a.name?.en || m.actionId)}: which target?`, `${esc(by.label)} · ${a.yellowDice ?? 0}Y ${a.redDice ?? 0}R.`, true)
     + `<div class="tp-body">${rows || '<p class="tp-note">No enemy unit is on the board.</p>'}</div>
        <div class="tp-foot"><button class="bigbtn ghost2" data-act="attackcancel">Cancel</button></div>`;
 }
@@ -2486,7 +2486,7 @@ function detonatePanel(ctx: HudCtx): string {
            ? 'No units within range, but Destructible Terrain is always a legal target (4.7.5).'
            : 'No units and no Destructible Terrain within range. A Projectile whose Delayed Action needs a target is destroyed instead (4.7.5).'}</p>
        ${rows}
-       ${terrainRows ? `<div class="sect2" style="margin-top:10px">Or hit Destructible Terrain</div><p class="tp-dim">Terrain takes no roll — it is removed directly when an attack hits it (p.21).</p>${terrainRows}` : ''}
+       ${terrainRows ? `<div class="sect2" style="margin-top:10px">Or hit Destructible Terrain</div><p class="tp-dim">Terrain takes no roll. An attack that hits removes it (p.21).</p>${terrainRows}` : ''}
        `
     : `<p class="tp-note">${esc(a ? detonationText(ctx, a) : 'See the card for what this detonation does.')}</p>
        <p class="tp-dim">This detonation causes an effect rather than damage, so there is no attack roll. Pick the token it applies, then the units inside the blast. The card text is what actually happens; the token is a reminder on the board.</p>
@@ -2499,9 +2499,9 @@ function detonatePanel(ctx: HudCtx): string {
              return `<button class="rowwide${on ? ' sel' : ''}" data-deteffect="${t.uid}"><span class="${t.side}">${t.side === proj.side ? 'ALLY' : 'ENEMY'}</span> ${esc(t.label)}<span class="ct">R${dist}${on ? ' ✓' : ''}</span></button>`;
            }).join('')}`
          : '<p class="tp-dim">No units inside the blast.</p>'}`;
-  return head('Your move', esc(detonateHeading(name, proj.label)), `${esc(proj.label)} — ${range === 0 ? 'this Grid' : `Range ${range}`}.`, true)
+  return head('Your move', esc(detonateHeading(name, proj.label)), `${esc(proj.label)} · ${range === 0 ? 'this Grid' : `Range ${range}`}.`, true)
     + `<div class="tp-body">${body}</div>
-       <div class="tp-foot"><button class="bigbtn" data-act="detdone">${targets.length || terrain.length ? 'Done — destroy the Projectile' : 'Destroy the Projectile'}</button>
+       <div class="tp-foot"><button class="bigbtn" data-act="detdone">${targets.length || terrain.length ? 'Destroy the Projectile' : 'Destroy the Projectile'}</button>
          <button class="bigbtn ghost2" data-act="detcancel" style="margin-top:6px">Cancel</button></div>`;
 }
 
@@ -2592,7 +2592,7 @@ function smokePanel(ctx: HudCtx): string {
   const m = smokePlan!;
   const cands = smokeCandidates(ctx);
   const total = m.left + m.placed.length;
-  return head('Your move', 'Place Smoke Screens', `${esc(m.label)} — ${m.left} left.`, true)
+  return head('Your move', 'Place Smoke Screens', `${esc(m.label)} · ${m.left} left.`, true)
     + `<div class="tp-body">
         <p class="tp-note">${!m.placed.length && m.origin
           ? 'The first screen goes on the landing point.'
@@ -2616,7 +2616,7 @@ function smokeChoicePanel(ctx: HudCtx): string {
     return head('Waiting', `${squadLabel(next.side)} thins its smoke`, `${smokeOwed!.length} Connected group${smokeOwed!.length === 1 ? '' : 's'} left.`, false)
       + `<div class="tp-body">${waiting(next.side, 'choosing a Smoke Screen to remove')}</div><div class="tp-foot"></div>`;
   }
-  return head('Your move', 'Smoke dissipation', `Take one screen off this Connected group — ${smokeOwed!.length} group${smokeOwed!.length === 1 ? '' : 's'} left.`, true)
+  return head('Your move', 'Smoke dissipation', `Take one screen off this Connected group.<br>${smokeOwed!.length} group${smokeOwed!.length === 1 ? '' : 's'} left.`, true)
     + `<div class="tp-body">
         <p class="tp-note">Click one highlighted Smoke Screen on the board. Splitting the group costs nothing further this round (4.16).</p>
       </div>
@@ -2858,7 +2858,7 @@ function tacticsHtml(ctx: HudCtx): string {
   }
   if (!rows.length) return '';
   return `<div class="tacticstrip"><div class="sect2">Tactics you could play now</div>${rows.join('')}
-    <p class="tp-dim">Only 1 per player per round (5.4.2). The card itself is in your hand — this only says its moment has come.</p></div>`;
+    <p class="tp-dim">Only 1 per player per round (5.4.2).<br>The card is in your hand. This just says when.</p></div>`;
 }
 
 function feedHtml(ctx: HudCtx): string {
@@ -2910,7 +2910,7 @@ function secOverlay(ctx: HudCtx): string {
       <div class="seccard"><img id="mc-seccard" alt="" src="${esc(secondaryImageUrl(shown))}"></div>
       <div class="seclist">
         <h3>Pick a Secondary Task</h3>
-        <div class="role">Open information — the other player sees your pick (3.1.3). Hover to read a card, then confirm.</div>
+        <div class="role">Open information: the other player sees your pick (3.1.3).<br>Hover to read a card, then confirm.</div>
         ${rows}
         ${!hasZones ? '<p class="quiet">This Main Task places no Tactical Zones, so Tasks that designate one are unavailable.</p>' : ''}
         <button class="btn wide" id="mc-sec-ok"${secPick ? '' : ' disabled'}>Confirm this Task</button>
