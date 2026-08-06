@@ -221,6 +221,35 @@ export function deployCellsFor(data: GameData, s: GameState, side: Side): Set<st
   return out;
 }
 
+// The middle of a squad's Deployment Zone, in cells. Used to point a unit at
+// the enemy as it lands, so nothing has to be turned by hand before confirming.
+function zoneCentre(cells: Set<string>): { col: number; row: number } | null {
+  if (!cells.size) return null;
+  let c = 0;
+  let r = 0;
+  for (const k of cells) {
+    const [cc, rr] = k.split(',').map(Number);
+    c += cc;
+    r += rr;
+  }
+  return { col: c / cells.size, row: r / cells.size };
+}
+
+// Which way a unit faces as it deploys: at the other squad's zone. Whichever
+// axis the two zones are further apart on wins, so it works for the corner
+// deployments as well as the strips along opposite edges. Falls back to facing
+// the far side of the board if the enemy zone is unknown.
+export function deployFacing(data: GameData, s: GameState, side: Side, at?: { col: number; row: number }): Facing {
+  const mine = at ?? zoneCentre(deployCellsFor(data, s, side));
+  const theirs = zoneCentre(deployCellsFor(data, s, side === 's1' ? 's2' : 's1'));
+  const from = mine ?? { col: 17.5, row: 17.5 };
+  const to = theirs ?? { col: 17.5, row: 35 - (from.row) };
+  const dc = to.col - from.col;
+  const dr = to.row - from.row;
+  if (Math.abs(dr) >= Math.abs(dc)) return (dr >= 0 ? 2 : 0) as Facing;
+  return (dc >= 0 ? 1 : 3) as Facing;
+}
+
 // ---------- module UI state ----------
 
 let placing: number | null = null; // uid being deployed via board clicks
@@ -588,8 +617,13 @@ function boardCallbacks(): BoardCallbacks {
       // Held here rather than sent: a unit that lands on the board counts as
       // placed, and the alternation would move to the other squad before this
       // player had confirmed anything. The ghost stands in until they do.
-      // Facing its own table edge to start with, and Q/E turn it from there.
-      pending = { uid: placing, col: snap.col, row: snap.row, size, facing: pending?.uid === placing ? pending.facing : (t.side === 's1' ? 2 : 0) };
+      // Pointed at the other squad's Deployment Zone from where it actually
+      // stands, which is what a player would turn it to anyway; Q/E still
+      // override. A unit already placed keeps whatever it was turned to.
+      pending = {
+        uid: placing, col: snap.col, row: snap.row, size,
+        facing: pending?.uid === placing ? pending.facing : deployFacing(ctx.data, s, t.side, snap),
+      };
       board?.showGhost(footprint({ ...snap, size }), true);
       ctx.refresh();
     },
@@ -605,6 +639,13 @@ function boardCallbacks(): BoardCallbacks {
 function renderBoard(ctx: HudCtx): void {
   if (!board) return;
   const s = ctx.state;
+  // Your own Deployment Zone belongs at the bottom of your screen, because that
+  // is where you would be standing. Worked out from where the zone actually is
+  // rather than from which colour it is, so a corner deployment gets the same
+  // treatment as the strips. Only with a real seat: the solo harness and anyone
+  // watching keep the one canonical view.
+  const own = ctx.seat ? zoneCentre(deployCellsFor(ctx.data, s, ctx.seat)) : null;
+  board.setFlipped(!!own && own.row < 17.5);
   // The squad tints carry each side's faction, same custom properties the
   // freeplay page sets — without them every token reads as the default gold.
   for (const side of ['s1', 's2'] as Side[]) {
@@ -750,7 +791,7 @@ function setupPanel(ctx: HudCtx, su: SetupState): string {
   if (su.stage === 'side') {
     const fp = s.round.firstPlayer;
     const edge = mine(ctx, fp)
-      ? `<div class="btnrow"><button class="rowbtn" data-edge="white">Take the White edge</button><button class="rowbtn" data-edge="black">Take the Black edge</button></div>`
+      ? `<div class="btnrow"><button class="rowbtn" data-edge="white">Take the White Deployment Zone</button><button class="rowbtn" data-edge="black">Take the Black Deployment Zone</button></div>`
       : waiting(fp, 'picking a table edge');
     return head(mine(ctx, fp) ? 'Your move' : 'Setup', `${squadLabel(fp)} picks an edge`, 'The other side takes the opposite edge (3.1.2). Secondary Tasks are open information (3.1.3).', mine(ctx, fp))
       + `<div class="tp-body">${edge}<div class="tp-gap"></div>${secondaryRows(ctx)}</div><div class="tp-foot"></div>`;

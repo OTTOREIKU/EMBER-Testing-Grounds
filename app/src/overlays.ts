@@ -25,7 +25,9 @@ export function printedDeployment(data: GameData, id: string | null | undefined)
       cols: Math.abs(b.col - a.col) + 1,
       rows: Math.abs(b.row - a.row) + 1,
     };
-    return { rect, label: `${label} ${rect.rows}x${rect.cols}` };
+    // "Deployment Zone" rather than "edge": what the strip is for, in the words
+    // the setup step and the rulebook use for it.
+    return { rect, label: `${label} DEPLOYMENT ZONE ${rect.rows}x${rect.cols}` };
   };
   return { black: box(def.black.from, def.black.to, 'BLACK'), white: box(def.white.from, def.white.to, 'WHITE') };
 }
