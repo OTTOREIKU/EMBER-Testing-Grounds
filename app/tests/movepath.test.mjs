@@ -101,5 +101,33 @@ check('and reachable at six, the long way round', cells(movePath(unit(), { c: 2,
 check('so at five steps it is correctly NOT lit', cells(reachableGrids(unit(), 5, maze, [], false)).includes('2,0'), false);
 check('and at six steps it is', cells(reachableGrids(unit(), 6, maze, [], false)).includes('2,0'), true);
 
+// ---------- terrain blocks by footprint, not by height ----------
+//
+// Reported twice as "the green squares never appear on a Grid with terrain in
+// it". For a Mech that is correct and is the rule, not a bug: a Large model's
+// base fills the whole Large Grid, so one occupied Small Grid leaves no room —
+// "the Movement Path must end in a Grid that can accommodate the Model" (3.4).
+// Height decides LOS and Protection, never whether a model fits. The thing that
+// would be a real bug is if it blocked a Drone too, so both are pinned here.
+
+// One Small Grid of terrain in the middle of Large Grid (1,0) — a crate, not a wall.
+const crate = (c, r) => ({
+  id: `k${c}${r}`, type: 'container', height: 1, blocksLos: false, providesProtection: false, isFragile: false,
+  subCells: [{ col: c * 3 + 1, row: r * 3 + 1 }],
+});
+const oneCrate = [crate(1, 0)];
+const small = unit(0, 0, 1);
+const large = unit(0, 0, 3);
+
+check('a Drone can enter a Grid holding a crate', cells(reachableGrids(small, 2, oneCrate, [], false)).includes('1,0'), true);
+check('and route through it', cells(movePath(small, { c: 2, r: 0 }, 3, oneCrate, [], false)), ['0,0', '1,0', '2,0']);
+check('a Mech cannot, its base fills the Grid', cells(reachableGrids(large, 2, oneCrate, [], false)).includes('1,0'), false);
+check('so it goes around instead', cells(movePath(large, { c: 2, r: 0 }, 4, oneCrate, [], false)).includes('1,0'), false);
+check('and it does still get there', cells(movePath(large, { c: 2, r: 0 }, 4, oneCrate, [], false)).length > 0, true);
+// Height is irrelevant to fitting: the same crate at 3 inches blocks the Drone
+// no more than at 1, because what stops a model is the space, not the height.
+const tall = [{ ...crate(1, 0), height: 3, blocksLos: true }];
+check('a tall crate is no worse for the Drone', cells(reachableGrids(small, 2, tall, [], false)).includes('1,0'), true);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
