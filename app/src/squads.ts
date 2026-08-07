@@ -160,7 +160,10 @@ export class SquadTracker {
       const sec = document.createElement('div');
       sec.className = `squad squad-${side}`;
       const h = document.createElement('h3');
-      const pts = tokens.reduce((sum, t) => sum + this.tokenPoints(t), 0);
+      // A Tactics Card is added to the Squad and counts against its point limit
+      // (5.4.2), so the header has to reach past the board for them: they are
+      // held in hand and never appear as a token.
+      const pts = tokens.reduce((sum, t) => sum + this.tokenPoints(t), 0) + this.tacticPoints(side);
       const activeScale = this.state.scale ?? 'standard';
       const sc = SCALES.find((x) => x.id === activeScale)!;
       const over = !sc.openEnded && pts > sc.points;
@@ -192,6 +195,7 @@ export class SquadTracker {
           : [
               `${sc.points - pts} points still available at this battle scale.`,
               'Every Part, Pilot and Drone counts. Projectiles and Deployables are Low Value Units worth 0.',
+              this.tacticPoints(side) ? `Includes ${this.tacticPoints(side)} points of Tactics Cards held in hand.` : '',
               'Change the battle scale in the round bar above the board.',
             ],
       });
@@ -386,6 +390,10 @@ export class SquadTracker {
 
   private tokenPoints(t: Token): number {
     return tokenCards(this.data, t).reduce((s, { card }) => s + (card.score ?? 0), 0);
+  }
+
+  private tacticPoints(side: Side): number {
+    return (this.state?.tactics?.[side] ?? []).reduce((s, id) => s + (this.data.byId.get(id)?.score ?? 0), 0);
   }
 
   private async rename(t: Token): Promise<void> {

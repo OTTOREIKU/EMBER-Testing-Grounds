@@ -1185,9 +1185,13 @@ async function init() {
     // Through the command layer rather than by hand: a hand set locally is a
     // hand the other client never sees, and check() for playTactic reads the
     // *sender's* hand — so a card played across a table would be refused.
+    // A hand is not on the board, so the stock signature onChanged() watches
+    // never changes and it would not repaint the Add tab on its own. Both
+    // panels are redrawn by hand: onChanged() for the squad card and its
+    // points, roster.render() for the ×N on the buttons.
     onAddTactic: (card, side) => {
       perform(data, state, { kind: 'setTactics', seat: side, cards: [...(state.tactics?.[side] ?? []), card.id] });
-      save();
+      onChanged();
       roster.render();
     },
     onDropTactic: (card, side) => {
@@ -1196,7 +1200,7 @@ async function init() {
       if (i < 0) return;
       held.splice(i, 1);
       perform(data, state, { kind: 'setTactics', seat: side, cards: held });
-      save();
+      onChanged();
       roster.render();
     },
     pointsCap: () => {

@@ -98,7 +98,8 @@ export class Roster {
   // number, the colour and the off-faction dimming cannot drift apart between
   // the drone list, the projectile list, the tactics list and the mech builder.
   // The label is always the squad number: renaming a squad must not move the
-  // buttons around under the player's cursor.
+  // buttons around under the player's cursor. Pass no card to get the button
+  // without the faction test, which is what the tactics list wants.
   private squadButton(side: Side, card: Card | null, suffix = ''): HTMLButtonElement {
     const b = document.createElement('button');
     b.className = 'add sq-add';
@@ -241,7 +242,10 @@ export class Roster {
       const held = this.cb.heldTactics?.();
       for (const side of SQUAD_ORDER) {
         const n = held ? held[side].filter((x) => x === c.id).length : 0;
-        const b = this.squadButton(side, c, n ? ` ×${n}` : '');
+        // Every Tactics Card prints a faction emblem, but 5.1 restricts Units
+        // and 5.4.2 calls these commander actions rather than Units, so they
+        // join any squad. Passing no card skips the faction test.
+        const b = this.squadButton(side, null, n ? ` ×${n}` : '');
         if (n) b.classList.add('has');
         if (!b.classList.contains('off-faction')) {
           b.title = n
