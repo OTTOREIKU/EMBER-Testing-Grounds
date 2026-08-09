@@ -10,7 +10,7 @@ import { perform } from './commands';
 import { dialHidden, getLocalSeat } from './loop';
 import { defaultUnitLabel, factionProblems, initiativeFor, pilotCard, squadAllegiance, SLOT_LABEL, tidyUnitLabel, tokenCards, tokenFactions } from './units';
 import { alertDialog, promptDialog } from './dialog';
-import { factionColour, ICON_BOLT, ICON_EDIT } from './icons';
+import { factionColour, ICON_BOLT, ICON_EDIT, squadColour } from './icons';
 
 const esc = (s: string): string => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!);
 
@@ -176,9 +176,20 @@ export class SquadTracker {
           ? `<span class="fac-chip">${FACTION_LABEL[squadFactions[0]] ?? squadFactions[0]}</span>`
           : squadFactions.length > 1
             ? `<span class="fac-chip${alg.mixed.length > 1 ? ' bad' : ''}">${squadFactions.map((f) => FACTION_LABEL[f] ?? f).join(' + ')}</span>`
-            : '<span class="fac-chip generic" title="No faction yet. The first unit with an allegiance sets it, and mercenaries never do.">Generic</span>';
+            : '<span class="fac-chip generic" title="No faction yet">Generic</span>';
+      // The chip is one word and sits inside the heading, so its explanation
+      // rides along in the heading's own details rather than as a second hover
+      // target nested inside the first.
+      const factionNote =
+        squadFactions.length === 0
+          ? 'No faction yet. The first unit with an allegiance sets it, and mercenaries never do.'
+          : alg.mixed.length > 1
+            ? `Illegal: ${alg.mixed.map((f) => FACTION_LABEL[f] ?? f).join(' and ')} cannot share a squad.`
+            : alg.mercenaries.length
+              ? 'Mercenaries carry no allegiance of their own, so they may join any squad.'
+              : '';
       const waiting = tokens.filter((t) => t.deployed === false).length;
-      sec.style.setProperty('--squad-tint', factionColour(alg.faction));
+      sec.style.setProperty('--squad-tint', squadColour(alg.faction));
       h.innerHTML = `<button class="sq-name" title="Rename this squad">${esc(squadLabel(side))}</button>${facChip} <span class="pts${over ? ' over' : ''}">${pts}<small>/${sc.points}${sc.openEnded ? '+' : ''}</small>p · ${tokens.length} unit${tokens.length === 1 ? '' : 's'}${
         waiting ? ` · <b class="sq-waiting">${waiting} to deploy</b>` : ''
       }</span>`;
@@ -186,7 +197,7 @@ export class SquadTracker {
       inspectOnHover(h, {
         title: squadLabel(side),
         sub: `${pts} points of ${sc.points}${sc.openEnded ? ' or more' : ''} · ${sc.name} battle`,
-        lines: over
+        lines: (over
           ? [
               `This squad is ${pts - sc.points} points over the ${sc.name} limit of ${sc.points}.`,
               'Remove a unit, or switch the battle scale in the round bar at the top of the board.',
@@ -197,7 +208,8 @@ export class SquadTracker {
               'Every Part, Pilot and Drone counts. Projectiles and Deployables are Low Value Units worth 0.',
               this.tacticPoints(side) ? `Includes ${this.tacticPoints(side)} points of Tactics Cards held in hand.` : '',
               'Change the battle scale in the round bar above the board.',
-            ],
+            ]
+        ).concat(factionNote),
       });
       sec.appendChild(h);
       if (over) {

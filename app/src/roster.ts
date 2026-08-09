@@ -5,7 +5,8 @@ import { alertDialog, confirmDialog, promptDialog } from './dialog';
 import { deleteMechPreset, loadMechPresets, saveMechPreset } from './presets';
 import { deleteSquad, loadSquads } from './squadstore';
 import { cardFitsSquad, type SquadAllegiance } from './units';
-import { factionColour } from './icons';
+import { ICON_EXPAND, squadColour } from './icons';
+import { openPartPicker } from './partpicker';
 
 const escAttr = (v: string): string => v.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 
@@ -107,28 +108,39 @@ export class Roster {
     const faction = this.cb.squadAllegiance(side).faction;
     if (faction) {
       b.classList.add('has-faction');
-      b.style.setProperty('--sq-tint', factionColour(faction));
+      b.style.setProperty('--sq-tint', squadColour(faction));
     }
     const fits = card ? this.squadTakes(side, card) : { ok: true, why: '' };
     if (!fits.ok) {
       b.classList.add('off-faction');
-      b.title = fits.why;
+      // The reason is three sentences of rules, which is too much for a cursor
+      // tooltip. The button says what is wrong and the details panel explains.
+      b.title = `Off-faction for ${squadLabel(side)}`;
+      inspectOnHover(b, {
+        title: `${squadLabel(side)} would mix factions`,
+        sub: 'Rulebook 5.1, squad composition',
+        lines: [
+          fits.why,
+          'A squad may only hold one faction, and mercenaries (PD, Collaboration) may join any of them.',
+          'Nothing is blocked. Add it and the Squads tab will flag the squad as illegal.',
+        ],
+      });
     } else {
       b.title = `Add to ${squadLabel(side)}`;
     }
     return b;
   }
 
+  // `why` is one plain sentence naming the clash. Callers that have somewhere to
+  // put the rest — the details panel — add it; the part browser has only a
+  // tooltip, because its own window covers that panel.
   private squadTakes(side: Side, card: Card): { ok: boolean; why: string } {
     const a = this.cb.squadAllegiance(side);
     if (cardFitsSquad(this.data, a, card)) return { ok: true, why: '' };
     const theirs = FACTION_LABEL[a.faction!] ?? a.faction;
     const f = this.data.factionOf(card);
     const mine = f ? (FACTION_LABEL[f] ?? f) : 'of no known faction';
-    return {
-      ok: false,
-      why: `${squadLabel(side)} is ${theirs}, and this is ${mine}. A squad may only hold one faction, plus mercenaries. Adding it anyway is allowed and will be flagged in the Squads tab.`,
-    };
+    return { ok: false, why: `${squadLabel(side)} is ${theirs}, and this is ${mine}.` };
   }
 
   constructor(data: GameData, cb: RosterCallbacks) {
@@ -160,7 +172,22 @@ export class Roster {
       this.search = searchEl.value;
       list.replaceChildren(...this.buildRows(category));
     });
-    this.body.appendChild(searchEl);
+    // Drones get the same browser the mech slots have. Projectiles do not: they
+    // are launched from a Part rather than chosen against each other.
+    if (category === 'drone') {
+      const bar = document.createElement('div');
+      bar.className = 'add-bar';
+      const pop = document.createElement('button');
+      pop.type = 'button';
+      pop.className = 'slot-pop';
+      pop.innerHTML = ICON_EXPAND;
+      pop.title = 'Browse and compare Drone cards';
+      pop.addEventListener('click', () => this.openDronePicker());
+      bar.append(searchEl, pop);
+      this.body.appendChild(bar);
+    } else {
+      this.body.appendChild(searchEl);
+    }
 
     const list = document.createElement('div');
     list.className = 'unit-list';
@@ -264,6 +291,90 @@ export class Roster {
     this.body.appendChild(list);
   }
 
+  // The one place that decides what may go in a slot. Both the dropdown and the
+  // popout picker read it, so a card can never be offered by one and withheld by
+  // the other.
+  private slotCards(slot: { key: keyof MechLoadout; type: string }): Card[] {
+    return this.data.cards
+      .filter((c) => (slot.key === 'pilot' ? c.category === 'pilot' : c.category === 'mech_part' && c.type === slot.type))
+      // A Discard Card is the flipped face of a Part you already own, not a
+      // Part you can equip, so it has no business in a build picker. Kept if
+      // somehow already selected, so an old save still shows what it holds.
+      .filter((c) => !isDiscardCard(c) || this.mech[slot.key] === c.id)
+      .filter((c) => (this.cb.cardFilter?.(c) ?? true) || this.mech[slot.key] === c.id)
+      .sort((a, b) => cardName(a).localeCompare(cardName(b)));
+  }
+
+  // Grouped by faction in a fixed order so the list does not reshuffle as parts
+  // are picked. A Mech may only use Parts from one faction (5.1), so this is the
+  // division that actually decides what you can legally take.
+  private byFaction(cards: Card[]): { faction: string; cards: Card[] }[] {
+    const groups = new Map<string, Card[]>();
+    for (const c of cards) {
+      const key = this.data.factionOf(c) ?? '';
+      const list = groups.get(key);
+      if (list) list.push(c);
+      else groups.set(key, [c]);
+    }
+    const order = [...BASE_FACTIONS, 'PD', 'COLLABORATION'];
+    return [...groups.keys()]
+      .sort((a, b) => {
+        const ai = order.indexOf(a);
+        const bi = order.indexOf(b);
+        return (ai < 0 ? order.length : ai) - (bi < 0 ? order.length : bi);
+      })
+      .map((faction) => ({ faction, cards: groups.get(faction)! }));
+  }
+
+  // Picking here lands in exactly the same place a dropdown change does: the
+  // slot is set, the card opens in the Details panel, and the builder redraws so
+  // the points, the faction line and the off-faction dimming all catch up.
+  private openSlotPicker(slot: { key: keyof MechLoadout; label: string; type: string }): void {
+    openPartPicker({
+      data: this.data,
+      slotLabel: slot.label,
+      groups: this.byFaction(this.slotCards(slot)),
+      chosen: this.mech[slot.key],
+      lockedFaction: this.lockedFaction(),
+      badge: (c) => this.cb.cardBadge?.(c) ?? '',
+      actions: [
+        {
+          label: 'Use this',
+          run: (card) => {
+            this.mech[slot.key] = card.id;
+            this.cb.onPreview(card, { focus: false });
+            this.render();
+          },
+        },
+      ],
+    });
+  }
+
+  // The drone list has no single slot to fill, so the two squad buttons come
+  // through as the actions and a row click only holds the card for comparison.
+  private openDronePicker(): void {
+    openPartPicker({
+      data: this.data,
+      slotLabel: 'Drones',
+      groups: this.byFaction(
+        this.data.cards
+          .filter((c) => c.category === 'drone')
+          .filter((c) => this.cb.cardFilter?.(c) ?? true)
+          .sort((a, b) => cardName(a).localeCompare(cardName(b))),
+      ),
+      badge: (c) => this.cb.cardBadge?.(c) ?? '',
+      actions: SQUAD_ORDER.map((side) => ({
+        label: `Add to ${squadLabel(side)}`,
+        tint: squadColour(this.cb.squadAllegiance(side).faction),
+        check: (card: Card) => this.squadTakes(side, card),
+        run: (card: Card) => {
+          this.cb.onAddUnit(card, side);
+          this.render();
+        },
+      })),
+    });
+  }
+
   private mechFactions(): { factions: string[]; unknown: number } {
     const seen = new Set<string>();
     let unknown = 0;
@@ -333,34 +444,10 @@ export class Roster {
       empty.value = '';
       empty.textContent = '—';
       sel.appendChild(empty);
-      const options = this.data.cards
-        .filter((c) => (slot.key === 'pilot' ? c.category === 'pilot' : c.category === 'mech_part' && c.type === slot.type))
-        // A Discard Card is the flipped face of a Part you already own, not a
-        // Part you can equip, so it has no business in a build picker. Kept if
-        // somehow already selected, so an old save still shows what it holds.
-        .filter((c) => !isDiscardCard(c) || this.mech[slot.key] === c.id)
-        .filter((c) => (this.cb.cardFilter?.(c) ?? true) || this.mech[slot.key] === c.id)
-        .sort((a, b) => cardName(a).localeCompare(cardName(b)));
-      // Grouped by faction, in a fixed order so the list does not reshuffle as
-      // parts are picked. A Mech may only use Parts from one faction (5.1), so
-      // this is the division that actually decides what you can legally take.
-      const groups = new Map<string, Card[]>();
-      for (const c of options) {
-        const key = this.data.factionOf(c) ?? '';
-        const list = groups.get(key);
-        if (list) list.push(c);
-        else groups.set(key, [c]);
-      }
-      const order = [...BASE_FACTIONS, 'PD', 'COLLABORATION'];
-      const keys = [...groups.keys()].sort((a, b) => {
-        const ai = order.indexOf(a);
-        const bi = order.indexOf(b);
-        return (ai < 0 ? order.length : ai) - (bi < 0 ? order.length : bi);
-      });
-      for (const key of keys) {
+      const grouped = this.byFaction(this.slotCards(slot));
+      for (const { faction, cards: members } of grouped) {
         const group = document.createElement('optgroup');
-        const members = groups.get(key)!;
-        group.label = `${key ? (FACTION_LABEL[key] ?? key) : 'Faction not recorded'} · ${members.length}`;
+        group.label = `${faction ? (FACTION_LABEL[faction] ?? faction) : 'Faction not recorded'} · ${members.length}`;
         for (const c of members) {
           const o = document.createElement('option');
           o.value = c.id;
@@ -380,6 +467,20 @@ export class Roster {
       });
       selects.push(sel);
       label.appendChild(sel);
+      // A dropdown can only ever show one card at a time and cannot show the art
+      // at all, so the slot also opens a browser where the scans can be read and
+      // two candidates put side by side.
+      const pop = document.createElement('button');
+      pop.type = 'button';
+      pop.className = 'slot-pop';
+      pop.innerHTML = ICON_EXPAND;
+      pop.title = `Browse and compare ${slot.label} cards`;
+      pop.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        this.openSlotPicker(slot);
+      });
+      label.appendChild(pop);
       // A native <option> cannot be hovered reliably, so the chosen card gets a
       // thumbnail beside the picker that shows the full card the usual way.
       const peek = document.createElement('span');

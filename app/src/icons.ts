@@ -9,6 +9,15 @@ export const ICON_EDIT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentCo
 export const ICON_BOLT = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">'
   + '<path d="M14 2 5 13.4h5.2L9 22l10-12.2h-6.1L14 2Z"/></svg>';
 
+export const ICON_EXPAND = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"'
+  + ' stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+  + '<path d="M14 4h6v6"/><path d="M10 20H4v-6"/><path d="M20 4l-7 7"/><path d="M4 20l7-7"/></svg>';
+
+// Two panels side by side: what the compare pin does to the preview column.
+export const ICON_COMPARE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"'
+  + ' stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+  + '<rect x="3" y="5" width="7.5" height="14" rx="1.4"/><rect x="13.5" y="5" width="7.5" height="14" rx="1.4"/></svg>';
+
 // The printed pilot cards tint the Link bolt to the pilot's faction, so the
 // readout follows suit. Electronic warfare keeps the gold accent instead.
 const FACTION_VAR: Record<string, string> = {
@@ -21,4 +30,13 @@ const FACTION_VAR: Record<string, string> = {
 
 export function factionColour(faction: string | null | undefined): string {
   return `var(${(faction && FACTION_VAR[faction]) || '--accent'})`;
+}
+
+// A whole squad's colour, which is not the same question as one card's. A squad
+// with no single allegiance — empty, mercenaries only, or two factions at once
+// — has no faction to show, and borrowing the accent for it reads as GoF. Card
+// -level lookups keep using factionColour, where the accent is a fine "not
+// recorded" fallback.
+export function squadColour(faction: string | null | undefined): string {
+  return faction ? factionColour(faction) : 'var(--neutral)';
 }

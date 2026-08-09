@@ -5,7 +5,7 @@ import { alertDialog, choiceDialog, confirmDialog, promptDialog } from './dialog
 import { gameResult, isLowValue, newTaskState, normaliseTasks, taskItemsFor, zoneCentreGrid, type GameResult, type TaskItem, type TaskState } from './tasks';
 import { DiceTray } from './dice';
 import { importSquadFile } from './importer';
-import { factionColour } from './icons';
+import { factionColour, squadColour } from './icons';
 import { applyRemote, onPerformed, onRefused, perform, type Command } from './commands';
 import { Relay } from './net';
 import { setLocalSeat } from './loop';
@@ -37,6 +37,7 @@ import { instantiateScenario, loadScenarios, type Scenario } from './scenarios';
 import { loadReplays, ReplayPlayer, type ReplayScript, type ReplayStep, type ReplayTally } from './replay';
 import { SquadTracker } from './squads';
 import { warmAllImagesWhenIdle } from './images';
+import { runFirstVisitPreload } from './preload';
 import { watchForUpdates } from './updates';
 import { installTooltip, preloadCards } from './tooltip';
 import { PHASES, RoundTracker } from './tracker';
@@ -100,7 +101,10 @@ async function init() {
   installTooltip();
   bindTips(document);
   preloadCards(data.cards.map((c) => c.id));
-  warmAllImagesWhenIdle();
+  // First visit gets the whole art set behind a progress screen; every visit
+  // after that tops up whatever is missing in the background. Not awaited, so
+  // the board is live underneath and Skip costs nothing.
+  void runFirstVisitPreload().then(() => warmAllImagesWhenIdle());
   registerOffline();
   watchForUpdates();
   const inventory = new Inventory(data.boxes, () => roster.render(), data.cards);
@@ -2543,7 +2547,7 @@ async function init() {
         ${editor.zones
           .map(
             (z) =>
-              `<button class="ed-zone${editor.paint?.kind === 'zone' && editor.paint.zoneId === z.id ? ' active' : ''}" data-zone="${z.id}" title="Paint large grids into ${z.name}. Drag to fill a block; right-click removes.">${z.name} <small>${z.cells.length}</small></button>`,
+              `<button class="ed-zone${editor.paint?.kind === 'zone' && editor.paint.zoneId === z.id ? ' active' : ''}" data-zone="${z.id}" data-tip-title="Paint ${z.name}" data-tip-sub="Large grids, 3x3 cells each" data-tip="Drag to fill a block of grids.|Right-click a painted grid to remove it.|A single click on a painted grid removes it too.">${z.name} <small>${z.cells.length}</small></button>`,
           )
           .join('')}
         <button id="ed-addzone" class="ed-tool" title="Create a named objective zone">+ Zone</button>
@@ -2553,6 +2557,9 @@ async function init() {
         <button id="ed-dz-white" class="ed-tool ed-dz-white${editor.paint?.kind === 'deploy' && editor.paint.side === 'white' ? ' active' : ''}" title="Paint the White deployment zone. Drag to fill a block.">White Deploy <small>${editor.deploy.white.length}</small></button>
         <span class="ed-status">${editorStatus()}</span>
       </div>`;
+    // The bar is rebuilt on every edit, so its data-tip nodes have to be bound
+    // again each time; the one call at startup only ever saw the first render.
+    bindTips(editorBar);
     editorBar.querySelectorAll<HTMLButtonElement>('.ed-piece').forEach((b) =>
       b.addEventListener('click', () => {
         const picked = PALETTE.find((p) => p.id === b.dataset.piece) ?? null;
@@ -2910,7 +2917,7 @@ async function init() {
     const root = document.documentElement;
     for (const side of SQUAD_ORDER) {
       const f = squadAllegiance(data, state.tokens.filter((t) => t.side === side)).faction;
-      root.style.setProperty(`--sq-${side}`, factionColour(f));
+      root.style.setProperty(`--sq-${side}`, squadColour(f));
     }
   }
 

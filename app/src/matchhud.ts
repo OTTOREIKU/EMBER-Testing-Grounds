@@ -8,7 +8,7 @@ import { resolveCounterRoll, tallyCounter } from './combat';
 import { tacticFitsPhase, tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { attackDirection, crushTargets, dissipationFor, extendPath, knockbackPath, LG, losBetween, losNote, protectionFor, rangeBetween, reachableGrids, standingSpot, type LargeGrid } from './rules';
 import { breakAwayCost, canBeForceMoved } from './melee';
-import { factionColour } from './icons';
+import { factionColour, squadColour } from './icons';
 import { iconSvg } from './dice';
 import type { CardAction, CounterRoll, DiceData, DieColor, Facing, GameState, Side, Stance, Timing, Token, ExtraTick, Opportunity } from './types';
 import { newOpportunity, newScriptState, PHASES, STATUSES, TIMINGS } from './types';
@@ -665,7 +665,7 @@ function renderBoard(ctx: HudCtx): void {
   // freeplay page sets — without them every token reads as the default gold.
   for (const side of ['s1', 's2'] as Side[]) {
     const f = squadAllegiance(ctx.data, s.tokens.filter((t) => t.side === side)).faction;
-    document.documentElement.style.setProperty(`--sq-${side}`, factionColour(f));
+    document.documentElement.style.setProperty(`--sq-${side}`, squadColour(f));
   }
   // Panning is the default; a placement or a route needs the cell instead.
   board.panEnabled = placing === null && !movePlan && !launchPlan && !smokePlan && !smokeOwed?.length && !crushPlan?.queue.length && !boxDrop;

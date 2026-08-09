@@ -26,6 +26,9 @@
   --pd-lt: rgba(179, 157, 219, 0.16);
   --collab: #eef1f5;
   --collab-lt: rgba(238, 241, 245, 0.16);
+  /* No single allegiance. Defined here too because this sheet has its own :root. */
+  --neutral: #b9c3cf;
+  --neutral-lt: rgba(185, 195, 207, 0.16);
 
   /* timing tints, sampled from the action icons in assets/tokens/tab */
   --t-swift: #f2eb74;
