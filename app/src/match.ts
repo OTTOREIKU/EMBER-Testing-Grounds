@@ -12,6 +12,8 @@ import { gameResult, normaliseTasks, taskItemsFor } from './tasks';
 import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
 import { loadMechPresets } from './presets';
 import { installTooltip, preloadCards } from './tooltip';
+import { warmAllImagesWhenIdle } from './images';
+import { runFirstVisitPreload } from './preload';
 import { importSquadFile } from './importer';
 import { boardFingerprint, dialsOf, hashDials, newSalt, type DialEntry } from './secrecy';
 import { animateRemoteMove, ensureHud, glueAfter, showRangeOverlay, showSideTab, startAttackPick, startBoxDrop, startDetonation, startElectronicPick, startInterceptPick, startLaunchPlan, startShove, type DiceLine, type HudCtx } from './matchhud';
@@ -1590,5 +1592,8 @@ void (async () => {
   // hover previews the freeplay board has. Nothing else was missing.
   installTooltip();
   preloadCards(d.cards.map((c) => c.id));
+  // This page never warmed the full art set at all, so every card scan it
+  // showed was fetched cold the first time a player hovered it.
+  void runFirstVisitPreload().then(() => warmAllImagesWhenIdle());
   render();
 })();

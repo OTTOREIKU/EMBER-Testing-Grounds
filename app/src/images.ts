@@ -10,8 +10,26 @@ export function warmProgress(): { total: number; done: number; running: boolean 
   return { ...warmState };
 }
 
-export async function warmAllImages(concurrency = 6): Promise<void> {
-  if (warmState.running) return;
+// Set by cancelWarm() so a player who skips the first-run download is not left
+// pulling 37MB in the background on a connection they are paying for.
+let cancelled = false;
+
+export function cancelWarm(): void {
+  cancelled = true;
+}
+
+export interface WarmTick {
+  done: number;
+  total: number;
+  bytes: number;
+}
+
+export async function warmAllImages(
+  concurrency = 6,
+  onProgress?: (tick: WarmTick) => void,
+): Promise<WarmTick> {
+  if (warmState.running) return { ...warmProgress(), bytes: 0 };
+  cancelled = false;
   warmState.running = true;
   let list: string[] = [];
   try {
@@ -22,29 +40,38 @@ export async function warmAllImages(concurrency = 6): Promise<void> {
   }
   list = list.filter((p) => !warmed.has(p) && p !== 'manifest.json');
   warmState = { total: list.length, done: 0, running: true };
+  let bytes = 0;
+  const tick = (): WarmTick => ({ done: warmState.done, total: warmState.total, bytes });
+  onProgress?.(tick());
   if (!list.length) {
     warmState.running = false;
-    return;
+    return tick();
   }
 
   const queue = list.slice();
   const one = async (): Promise<void> => {
     const p = queue.shift();
     if (!p) return;
-    warmed.add(p);
     try {
       const res = await fetch(assetUrl(p), { priority: 'low' } as RequestInit);
-      if (res.ok) await res.arrayBuffer();
+      if (res.ok) {
+        // Marked only once it is really in the HTTP cache, so a cancelled run
+        // does not make a later pass skip files it never fetched.
+        bytes += (await res.arrayBuffer()).byteLength;
+        warmed.add(p);
+      }
     } catch (err) {
       void err;
     }
     warmState.done++;
+    onProgress?.(tick());
   };
   const worker = async (): Promise<void> => {
-    while (queue.length) await one();
+    while (queue.length && !cancelled) await one();
   };
   await Promise.all(Array.from({ length: Math.max(1, concurrency) }, worker));
   warmState.running = false;
+  return tick();
 }
 
 interface NetInfo {

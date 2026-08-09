@@ -1,6 +1,7 @@
 import './reference.css';
 import { actionIconUrl, boxCoverUrl, cardName, TOKEN_PRINT, tokenPrintUrl, factionArtUrl, FACTION_LABEL, loadData, mechPartUrl, missionImageUrl, portraitUrl, secondaryImageUrl, statIconUrl, tabImageUrl, zeroCostReason, type BoxDef, type FactionDef, type GameData, type KeywordDef } from './data';
 import { mountCardImage, preloadCardImages, warmAllImagesWhenIdle } from './images';
+import { runFirstVisitPreload } from './preload';
 import { watchForUpdates } from './updates';
 import { SHAPE_NOTE, STATUSES, TIMINGS, type Card, type StatusDef } from './types';
 import { registerOffline } from './offline';
@@ -1039,7 +1040,7 @@ function keywordDetail(name: string): string | null {
 async function init(): Promise<void> {
   data = await loadData();
   preloadCardImages(data.cards.map((c) => c.id));
-  warmAllImagesWhenIdle();
+  void runFirstVisitPreload().then(() => warmAllImagesWhenIdle());
   registerOffline();
   watchForUpdates();
 
