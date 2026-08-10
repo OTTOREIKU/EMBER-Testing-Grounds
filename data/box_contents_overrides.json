@@ -14,7 +14,7 @@
       }
     },
     "LAB_PD_CRISIS1": {
-      "_note": "The retail LAB-CRISIS H2-A box prints 6 Part Cards, 1 Pilot Card, 1 Projectile Card and 4 Projectile miniatures. The community data had only five parts here and filed BOTH HL2 chassis under the H2-B box, which leaves this kit with no legs to stand on. The base HL2 chassis (548) is the sixth card; the two kits share it, which is what the product's modular-magnetic-parts design implies. INFERRED from the printed card count - check a physical box if one turns up. PDAM-002 is the Exocet both backpacks launch. The Pilot Card is Combatant A-69 (XPA-59), added 2026-08-10: OTTO reports the H2-A contents panel shows the same pilot as H2-B, which prints ID 69. WEAKER than the H2-B assignment - box panels reuse art, so H2-A may really ship A-70. Worth a look when a physical box turns up; the three Combatants are mechanically identical, so only the printed number is at stake.",
+      "_note": "The retail LAB-CRISIS H2-A box prints 6 Part Cards, 1 Pilot Card, 1 Projectile Card and 4 Projectile miniatures. The community data had only five parts here and filed BOTH HL2 chassis under the H2-B box, which leaves this kit with no legs to stand on. The base HL2 chassis (548) is the sixth card; the two kits share it, which is what the product's modular-magnetic-parts design implies. INFERRED from the printed card count - check a physical box if one turns up. PDAM-002 is the Exocet both backpacks launch. The Pilot Card is Combatant A-70 (XPA-60), confirmed by OTTO 2026-08-10. It was briefly recorded as A-69 on the reading that the H2-A and H2-B contents panels showed the same pilot; they do not, and the panels being near-identical art is exactly why they cannot be told apart at a glance. Read the ID number in the card's corner, not the artwork.",
       "cards": {
         "546": 1,
         "548": 1,
@@ -23,11 +23,11 @@
         "544": 1,
         "561": 1,
         "PDAM-002": 1,
-        "XPA-59": 1
+        "XPA-60": 1
       }
     },
     "LAB_PD_CRISIS2": {
-      "_note": "Restated rather than changed: this file is authoritative per box, so a box named here must list everything it ships. Torso, both chassis, both arms and the backpack are the 6 Part Cards. The Pilot Card is Combatant A-69 (XPA-59), added 2026-08-10: OTTO read the box contents panel, and the pilot pictured on it prints ID 69.",
+      "_note": "Restated rather than changed: this file is authoritative per box, so a box named here must list everything it ships. Torso, both chassis, both arms and the backpack are the 6 Part Cards. The Pilot Card is Combatant A-69 (XPA-59), added 2026-08-10: OTTO read the ID number off the box contents panel. H2-A ships A-70, so the two kits take one Combatant each.",
       "cards": {
         "547": 1,
         "548": 1,
@@ -39,5 +39,5 @@
       }
     }
   },
-  "_unlisted": "MD-4C Reaper Type III (PRDR-102) and MD-4D Reaper Type IV (PRDR-103) were also filed under the Type 1 box, which is wrong, but no box is known to ship them. They are deliberately left with no box rather than guessed into one. Add an entry above if a listing turns up. The PD pilots were the same case until 2026-08-10: the community data filed all three Combatants under H2-B at once, and nothing said which box printed which, so all three were held back. OTTO then read the box contents panels, where the pilot pictured prints ID 69, and our own card scans settled the numbering - XPA-59/60/61 print ID 69/70/71, NOT the A-101/A-102/A-103 the community data gave them. Combatant A-69 is now in both CRISIS boxes. A-70 and A-71 stay unassigned: they exist in the publisher's PD Pilots list but nothing yet says what ships them. A card with no box is treated as \"cannot tell, show it\" rather than \"not owned\"."
+  "_unlisted": "MD-4C Reaper Type III (PRDR-102) and MD-4D Reaper Type IV (PRDR-103) were also filed under the Type 1 box, which is wrong, but no box is known to ship them. They are deliberately left with no box rather than guessed into one. Add an entry above if a listing turns up. The PD pilots were the same case until 2026-08-10: the community data filed all three Combatants under H2-B at once, and nothing said which box printed which, so all three were held back. OTTO then read the ID number off each box's contents panel, and our own card scans settled the numbering - XPA-59/60/61 print ID 69/70/71, NOT the A-101/A-102/A-103 the community data gave them. H2-B ships Combatant A-69 and H2-A ships A-70, one each, which is what the boxes' \"1 Pilot Card\" always implied. A-71 stays unassigned: it exists in the publisher's PD Pilots list but nothing yet says what ships it - most likely a third PD kit. A card with no box is treated as \"cannot tell, show it\" rather than \"not owned\"."
 }
