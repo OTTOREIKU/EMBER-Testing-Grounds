@@ -7,10 +7,15 @@
 //
 // The QR code on the back of a retail box opens
 // `obsidianprotocol.net/#/info?id=<n>&lang=en`, which is a thin client over
-// this API. It is the company's own database, it carries `updated_at`, and it
-// has already been shown to be NEWER than the championship parts lists (card
-// 001 reads 33 here and 30 in the 1.02 xlsx). Under the standing rule - newest
-// company source wins - it outranks everything else for any id it has filled in.
+// this API. It is the company's own database - but it is NOT their newest data,
+// and that is the trap this tool exists to avoid walking into.
+//
+// Check `updated_at` before believing a row. The bulk of these records were
+// written on 2025-09-26 and never touched again; card 001's dates from
+// 2024-07-30. The championship parts lists are from 2026-08-03 and the GoF
+// 1.021 revision is newer still, so **the lists supersede this API**, and a
+// difference here usually means the DATABASE is behind, not us. Treat it as a
+// cross-check and as the source for cards no list covers, not as an authority.
 //
 // Three things to know before trusting a row:
 //
@@ -143,7 +148,7 @@ for (const c of targets) {
     const mine = c[field];
     if (mine === undefined || mine === null) continue;
     if (Number(mine) === Number(val)) continue;
-    diffs.push({ id: c.id, field, ours: mine, official: val, title, overridden: held.has(`${c.id}.${field}`) });
+    diffs.push({ id: c.id, field, ours: mine, official: val, title, updated: (d.updated_at || '').slice(0, 10), overridden: held.has(`${c.id}.${field}`) });
   }
   if (!asJson && checked % 25 === 0) console.log(`  ... ${checked} checked, ${diffs.length} differences so far`);
 }
@@ -164,9 +169,10 @@ if (asJson) {
   for (const d of diffs) byField[d.field] = (byField[d.field] ?? 0) + 1;
   console.log('  by field:', JSON.stringify(byField));
   for (const d of diffs) {
-    console.log(`  ${d.id.padEnd(6)} ${d.field.padEnd(10)} ours=${String(d.ours).padEnd(5)} official=${String(d.official).padEnd(5)} ${d.overridden ? '[we set this deliberately] ' : ''}${d.title.slice(0, 40)}`);
+    console.log(`  ${d.id.padEnd(6)} ${d.field.padEnd(10)} ours=${String(d.ours).padEnd(5)} official=${String(d.official).padEnd(5)} db-updated=${(d.updated || '?').padEnd(10)} ${d.overridden ? '[we set this deliberately] ' : ''}${d.title.slice(0, 34)}`);
   }
-  console.log('\nThe publisher database is live and outranks the parts lists where it is filled in,');
-  console.log('but a row we hold via an override was set from a source with its own version - read');
-  console.log('Project-Documents/research/source-versions.md before changing one back.');
+  console.log('\nA difference here is NOT a correction to make. Most of these records were last');
+  console.log('written on 2025-09-26 and the championship parts lists are from 2026-08-03, so');
+  console.log("the usual explanation is that the database is behind. Check each row's updated_at");
+  console.log('against the newest list for that faction - see Project-Documents/research/source-versions.md.');
 }
