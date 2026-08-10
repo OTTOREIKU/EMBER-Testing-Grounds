@@ -140,6 +140,11 @@ export interface Token {
   // Whoever last destroyed one of this Mech's Parts: an Integrity-Loss removal
   // in the End Phase credits the kill to them (FAQ P4).
   lastDamagedBy?: { side: Side; uid: number };
+  // Parts bearing a Repaired Token (SH-15). The Part STAYS destroyed in
+  // partStates - that one choice makes J21 free: no Integrity, no Link back -
+  // while its Actions come back to life, and a hit removes it outright with
+  // the attack redirecting to the Core (FAQ J23).
+  repairedSlots?: string[];
   stance: Stance;
   link?: number;
   timing?: Timing;

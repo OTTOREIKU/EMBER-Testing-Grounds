@@ -567,6 +567,23 @@ check('integrity loss removes the mech and credits the kill (P4)',
   [wilv.tokens.some((x) => x.uid === 2), (wilv.tasks.kills ?? []).length > 0 || JSON.stringify(wilv.tasks).includes('s1')],
   [false, true]);
 
+// ---------- per-Part Repaired (FAQ D7/J21/J23) ----------
+
+const wrp = world([mech(1, 's1', { mech: { torso: 'T1', chasis: 'C1', pilot: 'P1' }, partStates: { torso: 'intact', chasis: 'destroyed' }, link: 2 })]);
+check('a live part cannot take a Repaired Token', C.check(data, wrp, { kind: 'repairPart', seat: 's1', uid: 1, slot: 'torso', mode: 'repaired' }).ok, false);
+C.apply(data, wrp, { kind: 'repairPart', seat: 's1', uid: 1, slot: 'chasis', mode: 'repaired' });
+check('repairing marks the slot and leaves it destroyed (J21)',
+  [wrp.tokens[0].repairedSlots, wrp.tokens[0].partStates.chasis, wrp.tokens[0].link],
+  [['chasis'], 'destroyed', 2]);
+check('a second Token on the same Part is refused', C.check(data, wrp, { kind: 'repairPart', seat: 's1', uid: 1, slot: 'chasis', mode: 'repaired' }).ok, false);
+C.apply(data, wrp, { kind: 'breakRepaired', seat: 's2', uid: 1, targetUid: 1, slot: 'chasis' });
+check('a hit removes the Token without a Link loss (J23)',
+  [wrp.tokens[0].repairedSlots, wrp.tokens[0].link], [undefined, 2]);
+
+const wmd = world([mech(1, 's1', { partStates: { torso: 'damaged' } })]);
+C.apply(data, wmd, { kind: 'repairPart', seat: 's1', uid: 1, slot: 'torso', mode: 'mend' });
+check('mending turns Damaged back to intact', wmd.tokens[0].partStates.torso, 'intact');
+
 // ---------- stabilise and reveal (6.1) ----------
 
 // Either half justifies the action (FAQ J4/J6-J8): refusal needs BOTH no

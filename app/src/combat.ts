@@ -5,7 +5,8 @@ import { linkMechanics } from './inspector';
 import { SQUAD_ORDER, squadLabel } from './data';
 import type { Card, CardAction, DiceData, DiceIcon, DieColor, GameRuleEffect, PartSlot, Side, Token } from './types';
 import { statusCount, STATUSES } from './types';
-import { electronicValue, SLOT_LABEL, tokenCards } from './units';
+import { auraEffectsOn, electronicValue, SLOT_LABEL, tokenCards } from './units';
+import { rangeBetween } from './rules';
 import type { Command } from './commands';
 
 // Where dice results come from. Absent in a local game, which rolls its own;
@@ -13,7 +14,7 @@ import type { Command } from './commands';
 // its own numbers.
 export type DiceRoller = (pool: Record<string, number>, label?: string) => Promise<{ color: string; face: number }[]>;
 
-type Step = 'part' | 'attack' | 'defense' | 'resolve';
+type Step = 'part' | 'attack' | 'defense' | 'resolve' | 'surplus';
 
 interface Rolled {
   color: DieColor;
@@ -124,6 +125,9 @@ interface Ctx {
   // The Part the original hit landed on: Scatter-shot and Cleaving must send
   // the Surplus somewhere ELSE (FAQ D4/D6), and Mutilation back into exactly it.
   surplusOriginalPart: string | null;
+  // The setup pending on the attacker's choices: which keyword when the Action
+  // carries several (FAQ D1), and Cleaving's part-or-other-unit fork (D4).
+  surplusSetup: { effects: SurplusEffect[]; chosen: SurplusEffect | null } | null;
   log: string[];
   explosion: boolean;
   hits: number;
@@ -144,6 +148,8 @@ export class AttackHelper {
   private onCommand: (cmd: Command) => void;
   // Set by the app while a networked game is running; cleared otherwise.
   roller: DiceRoller | null = null;
+  // The whole board, for aura reads (FAQ Q1: judged when the roll happens).
+  tokens: (() => Token[]) | null = null;
   private ctx: Ctx | null = null;
   private duelGen = 0;
   private blackTimer: number | undefined;
@@ -245,6 +251,7 @@ export class AttackHelper {
       carried: { heavy: 0, light: 0 },
       surplusKeyword: null,
       surplusOriginalPart: null,
+      surplusSetup: null,
       log: [],
       explosion,
       hits: 0,
@@ -360,7 +367,10 @@ export class AttackHelper {
     const c = this.ctx!;
     const atk = this.countIcons(c.attackRoll ?? [], c.attacker.stance === 'offensive');
     const def = this.countIcons(c.defenseRoll ?? [], c.defender.stance === 'defensive');
-    const lowProfile = c.action.type === 'Firing' && statusCount(c.defender.statuses, 'lowProfile') > 0;
+    // The Token, or the MES Beacon's aura: the aura grants the KEYWORD, so it
+    // works exactly like the Token here and Scan cannot strip it (FAQ Q3/J2).
+    const lowProfile = c.action.type === 'Firing' && (statusCount(c.defender.statuses, 'lowProfile') > 0
+      || (this.tokens ? auraEffectsOn(this.data, this.tokens(), c.defender).has('low_profile') : false));
     if (lowProfile && def.eye) {
       def.dodge = (def.dodge ?? 0) + def.eye;
       def.eye = 0;
@@ -486,6 +496,7 @@ export class AttackHelper {
     </div>
     <p class="ah-los">${c.losNote}</p>`;
 
+    if (c.step === 'surplus') el.appendChild(this.stepSurplus());
     if (c.step === 'part') el.appendChild(this.stepPart());
     if (c.step === 'attack') el.appendChild(this.stepAttack());
     if (c.step === 'defense') el.appendChild(this.stepDefense());
@@ -500,6 +511,109 @@ export class AttackHelper {
 
     el.querySelector('.ah-cancel')!.addEventListener('click', () => this.cancel());
     this.root.replaceChildren(el);
+  }
+
+  // Enemies of the attacker, other than the current defender, inside the
+  // Action's own range: where Cleaving may send the Surplus instead (FAQ D4).
+  // Melee cannot reach Aerial (M10).
+  private cleaveTargets(): Token[] {
+    const c = this.ctx!;
+    const all = this.tokens ? this.tokens() : [];
+    return all.filter((u) => {
+      if (u.side === c.attacker.side || u.uid === c.defender.uid || u.deployed === false) return false;
+      if ((u.partStates[u.kind === 'mech' ? 'torso' : 'main'] ?? 'intact') === 'destroyed') return false;
+      if (c.action.type === 'Melee' && u.aerial) return false;
+      return rangeBetween(c.attacker, u).range <= (c.action.range ?? 1);
+    });
+  }
+
+  private chooseSurplus(effect: SurplusEffect): void {
+    const c = this.ctx!;
+    c.surplusKeyword = effect;
+    c.surplusSetup = { effects: c.surplusSetup?.effects ?? [effect], chosen: effect };
+    const original = c.surplusOriginalPart;
+    if (effect.name === 'Mutilation') {
+      // Same Part, no second Black Die (4.8.1 step 2.1): the keyword itself
+      // has already determined the target, now defending with its Structure.
+      const slot = c.defender.kind === 'mech' ? (original ?? 'torso') : 'main';
+      this.note(`Mutilation strikes the same Part again: ${SLOT_LABEL[slot as PartSlot | 'main'] ?? slot}, now defending with its Structure.`);
+      this.pickPart(slot);
+      return;
+    }
+    if (effect.name === 'Cleaving') {
+      // The fork stays open in the surplus step: another Part of the same
+      // target (never the same Part, D4), or another Unit in Range.
+      c.step = 'surplus';
+      this.render();
+      return;
+    }
+    this.note(`${effect.name}: the Surplus resolves against ${effect.targets}.`);
+    c.step = 'part';
+    this.render();
+  }
+
+  private cleaveInto(uid: number): void {
+    const c = this.ctx!;
+    const u = this.cleaveTargets().find((x) => x.uid === uid);
+    if (!u) return;
+    // The whole rest of the attack now reads the new defender: part pick,
+    // defense, penetration, kill credit (FAQ D4 - Cleaving crosses units).
+    c.defender = u;
+    c.surplusOriginalPart = null;
+    this.note(`Cleaving carries the Surplus into ${u.label}.`);
+    if (u.kind === 'mech') {
+      c.step = 'part';
+      this.render();
+    } else {
+      this.pickPart('main');
+    }
+  }
+
+  private stepSurplus(): HTMLElement {
+    const c = this.ctx!;
+    const wrap = document.createElement('div');
+    wrap.className = 'ah-step';
+    const setup = c.surplusSetup;
+    if (setup && !setup.chosen) {
+      wrap.innerHTML = `<h4><span class="ah-n">2</span>Surplus Damage: pick ONE keyword</h4>
+        <p class="dim">The Action carries more than one Surplus effect, and only one may be chosen (FAQ D1).</p>`;
+      const row = document.createElement('div');
+      row.className = 'ah-partpick';
+      for (const e of setup.effects) {
+        const b = document.createElement('button');
+        b.className = 'chip chip-intact';
+        b.innerHTML = `<b>${e.name}</b> ${e.targets}`;
+        b.addEventListener('click', () => this.chooseSurplus(e));
+        row.appendChild(b);
+      }
+      wrap.appendChild(row);
+      return wrap;
+    }
+    // Cleaving's fork: another Part, or another Unit in Range (FAQ D4).
+    wrap.innerHTML = `<h4><span class="ah-n">2</span>Cleaving: where does the Surplus go?</h4>
+      <p class="dim">Another Part of ${c.defender.label} (never the same Part), or another Unit within the Action's range.${c.defender.kind !== 'mech' ? ' A Drone target cannot be chosen again, so only another Unit will do (FAQ D4).' : ''}</p>`;
+    const row = document.createElement('div');
+    row.className = 'ah-partpick';
+    if (c.defender.kind === 'mech') {
+      const b = document.createElement('button');
+      b.className = 'chip chip-intact';
+      b.innerHTML = `<b>Another Part</b> of ${c.defender.label}`;
+      b.addEventListener('click', () => {
+        const cc = this.ctx!;
+        cc.step = 'part';
+        this.render();
+      });
+      row.appendChild(b);
+    }
+    for (const u of this.cleaveTargets()) {
+      const b = document.createElement('button');
+      b.className = 'chip chip-intact';
+      b.innerHTML = `<b>${u.label}</b> ${u.kind}`;
+      b.addEventListener('click', () => this.cleaveInto(u.uid));
+      row.appendChild(b);
+    }
+    wrap.appendChild(row);
+    return wrap;
   }
 
   private stepPart(): HTMLElement {
@@ -610,6 +724,16 @@ export class AttackHelper {
 
   private pickPart(slot: string): void {
     const c = this.ctx!;
+    // A Repaired Part chosen as the hit location is removed at once - no
+    // Penetration, no rewards, no second Link loss - and the whole attack
+    // redirects to the Core, rolled as normal (FAQ J23/D7).
+    if (c.defender.kind === 'mech' && slot !== 'torso' && (c.defender.repairedSlots ?? []).includes(slot)) {
+      this.onCommand({ kind: 'breakRepaired', seat: c.attacker.side, uid: c.attacker.uid, targetUid: c.defender.uid, slot });
+      this.note(`${SLOT_LABEL[slot as PartSlot | 'main']} bears a Repaired Token: it is removed outright, with no Penetration and no Link loss, and the hit redirects to the Torso (FAQ J23).`);
+      this.onChanged();
+      this.pickPart('torso');
+      return;
+    }
     c.targetPart = slot;
     c.defensePool = this.suggestedDefensePool(slot);
     // Surplus Damage makes no Attack Roll: the un-offset icons from the first
@@ -857,44 +981,38 @@ export class AttackHelper {
         const carried = unoffset;
         const surplus = carried.heavy + carried.light;
         // A destroyed Unit ends the attack outright (4.4.4), so Surplus Damage
-        // never carries on against a Mech whose Torso just went. A Drone takes
-        // it too when the keyword is Mutilation and it has Structure to resolve
-        // against (FAQ D8) — for anything else there is no second Part to hit.
+        // never carries on against a Mech whose Torso just went.
         const original = c.targetPart;
-        const effect = c.defender.kind === 'mech'
-          ? effects[0]
-          : effects.find((e) => e.name === 'Mutilation');
         const originalState = original ? c.defender.partStates[original as PartSlot | 'main'] ?? 'intact' : 'intact';
         const alive = c.defender.kind === 'mech'
           ? (c.defender.partStates.torso ?? 'intact') !== 'destroyed'
           : originalState !== 'destroyed';
-        if (surplus > 0 && effect && c.surplusRound === 0 && alive
-          // Mutilation goes back into the SAME Part, resolving against the
-          // Structure it now shows as Damaged. A Part the first Penetration
-          // destroyed outright has none, so the Surplus is dropped (FAQ D9),
-          // never redirected to the Torso.
-          && !(effect.name === 'Mutilation' && originalState === 'destroyed')) {
+        // Which printed keywords can actually do anything here. Mutilation
+        // strikes the SAME Part, so one destroyed outright offers nothing and
+        // the Surplus is dropped rather than Torso-redirected (FAQ D9). A
+        // Drone target takes Mutilation against its Structure (D8) or sends
+        // Cleaving to ANOTHER unit only (D4); Scatter-shot needs Parts.
+        const candidates = effects.filter((e) => {
+          if (e.name === 'Mutilation') return originalState !== 'destroyed';
+          if (c.defender.kind !== 'mech') return e.name === 'Cleaving' && this.cleaveTargets().length > 0;
+          return true;
+        });
+        if (surplus > 0 && candidates.length && c.surplusRound === 0 && alive) {
           c.surplusRound = 1;
           c.carried = carried;
-          c.surplusKeyword = effect;
           c.surplusOriginalPart = original;
           c.targetPart = null;
           c.attackRoll = null;
           c.defenseRoll = null;
           c.rerolls = { attack: { s1: false, s2: false }, defense: { s1: false, s2: false } };
           this.note(
-            `${effect.name}: ${surplus} un-offset icon${surplus === 1 ? '' : 's'} carry over as Surplus Damage against ${effect.targets}. No Attack Roll is made, and the defender gets no Protection or Parry dice.`,
+            `${surplus} un-offset icon${surplus === 1 ? '' : 's'} carry over as Surplus Damage. No Attack Roll is made, and the defender gets no Protection or Parry dice (4.8).`,
           );
-          if (effects.length > 1) {
-            this.note(`This Action also has ${effects.slice(1).map((e) => e.name).join(' and ')}; the attacker picks one, and ${effect.name} is applied here.`);
-          }
-          if (effect.name === 'Mutilation' && original) {
-            // Same Part, no second Black Die (4.8.1 step 2.1): the target is
-            // already determined by the keyword itself.
-            this.note(`Mutilation strikes the same Part again: ${SLOT_LABEL[original as PartSlot | 'main'] ?? original}, now defending with its Structure.`);
-            this.pickPart(original);
-          } else {
-            c.step = 'part';
+          // The attacker picks ONE keyword when the Action has several (FAQ D1).
+          c.surplusSetup = { effects: candidates, chosen: candidates.length === 1 ? candidates[0] : null };
+          if (c.surplusSetup.chosen) this.chooseSurplus(c.surplusSetup.chosen);
+          else {
+            c.step = 'surplus';
             this.render();
           }
         } else {

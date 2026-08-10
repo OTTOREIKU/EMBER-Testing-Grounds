@@ -286,6 +286,48 @@ function initIntercept(cards: Card[]): Record<string, number> {
 
 // The furthest an Intercept Action on this unit reaches, so a launch can say
 // whose Interception it woke up.
+// ---------- Auras (FAQ Q1-Q4, J2) ----------
+//
+// The card data records auras as structured effects on (usually Passive)
+// actions: { type: 'aura', effectTypes: [...], targetSide: 'ally' | 'enemy' }
+// with the action's own range. An aura is judged at the moment the affected
+// action or roll happens (Q1/Q2), a unit is its own ally (Q4), and what it
+// grants is a KEYWORD, not a Token - Scan cannot remove it (Q3). Deployables
+// and Aerial units are affected like anything else (J2).
+export function auraEffectsOn(data: GameData, tokens: Token[], t: Token): Set<string> {
+  const out = new Set<string>();
+  for (const src of tokens) {
+    if (src.deployed === false) continue;
+    if ((src.partStates[src.kind === 'mech' ? 'torso' : 'main'] ?? 'intact') === 'destroyed') continue;
+    for (const { slot, card } of tokenCards(data, src)) {
+      if ((src.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
+      for (const a of card.actions ?? []) {
+        for (const g of a.gameRules ?? []) {
+          for (const e of g.effects ?? []) {
+            const eff = e as { type?: string; effectTypes?: string[]; targetSide?: string };
+            if (eff.type !== 'aura' || !eff.effectTypes?.length) continue;
+            const allies = eff.targetSide !== 'enemy';
+            if (allies !== (src.side === t.side)) continue;
+            if (rangeBetween(src, t).range > (a.range ?? 0)) continue;
+            for (const kind of eff.effectTypes) out.add(kind);
+          }
+        }
+      }
+    }
+  }
+  return out;
+}
+
+// An action that hands out Repaired Tokens or mends Damage, read off the
+// printed text (SH-15 Damage Control: "give one destroyed Part of this mech a
+// Repaired marker, or remove one Damaged marker from a Part").
+export function repairSpec(a: CardAction): { repair: boolean; mend: boolean } | undefined {
+  const hay = (a.description?.zh ?? '') + (a.description?.en ?? '');
+  const repair = hay.includes('修补标记') || /Repaired (Token|marker)/i.test(hay);
+  const mend = hay.includes('破损标记') || /remove.{0,20}Damaged/i.test(hay);
+  return repair || mend ? { repair, mend } : undefined;
+}
+
 // Auto-attack target selection (3.5.2, FAQ O9/O10/O21). Among enemies in
 // range: if any bears a Highlight, the NEAREST Highlighted target must be
 // taken; otherwise the nearest target, with ties left to the player. Beacons
@@ -683,7 +725,9 @@ export function guidedActions(data: GameData, t: Token, world?: ActionWorld): Gu
       if (t.stance === 'shutdown') {
         available = false;
         reason = 'shutdown (Reboot only)';
-      } else if (partState === 'destroyed') {
+      } else if (partState === 'destroyed' && !(t.repairedSlots ?? []).includes(slot)) {
+        // A Repaired Part is broken in every way except that it can still
+        // perform actions (FAQ J23), so the destroyed gate steps aside for it.
         available = false;
         reason = `${SLOT_LABEL[slot]} destroyed`;
       } else if (a.type === 'Firing' && statusCount(t.statuses, 'fci') > 0) {
@@ -845,6 +889,7 @@ export function migrateState(rawIn: unknown, data: GameData): GameState | null {
       aerial: card ? isAerial(card) : (t.aerial ?? false),
       barricade: card && isBarricade(card) ? true : undefined,
       lastDamagedBy: t.lastDamagedBy,
+      repairedSlots: Array.isArray(t.repairedSlots) && t.repairedSlots.length ? t.repairedSlots : undefined,
       stance: t.stance ?? ((card?.stance as Stance) || 'offensive'),
       link: t.link ?? (t.kind === 'mech' ? pilot?.LV ?? 3 : undefined),
       timing: t.timing,

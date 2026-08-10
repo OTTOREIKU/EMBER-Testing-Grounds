@@ -88,6 +88,8 @@ export type Command =
   | { kind: 'markEndStep'; seat: Side; step: string }
   | { kind: 'award'; seat: Side; vp: { s1: number; s2: number }; keys: string[] }
   | { kind: 'stabilise'; seat: Side; uid: number; keepTokens?: boolean }
+  | { kind: 'repairPart'; seat: Side; uid: number; slot: string; mode: 'repaired' | 'mend' }
+  | { kind: 'breakRepaired'; seat: Side; uid: number; targetUid: number; slot: string }
   | { kind: 'reveal'; seat: Side; uid: number }
   | { kind: 'lockMap'; seat: Side }
   | { kind: 'finishTasks'; seat: Side }
@@ -861,6 +863,26 @@ function checkActed(
       if (!(t.statuses ?? []).includes('camouflage')) return no('This unit is not in the Optical Camouflage State.');
       return ok;
     }
+    case 'repairPart': {
+      // SH-15 Damage Control: a destroyed Part of THIS mech gains a Repaired
+      // Token, or a Damaged Part is mended. The Part stays destroyed for
+      // Integrity and Link (FAQ J21/J23).
+      if (t.kind !== 'mech') return no('Only a Mech has Parts to repair.');
+      const st = t.partStates[cmd.slot as PartSlot | 'main'] ?? 'intact';
+      if (cmd.mode === 'repaired') {
+        if (st !== 'destroyed') return no('Only a destroyed Part can take a Repaired Token.');
+        if ((t.repairedSlots ?? []).includes(cmd.slot)) return no('That Part already bears a Repaired Token.');
+        return ok;
+      }
+      if (st !== 'damaged') return no('Only a Damaged Part can be mended.');
+      return ok;
+    }
+    case 'breakRepaired': {
+      const target = state.tokens.find((x) => x.uid === cmd.targetUid);
+      if (!target) return no('That target is not on the board.');
+      if (!(target.repairedSlots ?? []).includes(cmd.slot)) return no('That Part bears no Repaired Token.');
+      return ok;
+    }
     case 'launch': {
       if (!data.byId.get(cmd.cardId)) return no('That is not a card the database knows.');
       if (!findAction(data, state, cmd.uid, cmd.actionId)) return no('This unit has no such Action.');
@@ -1506,6 +1528,29 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
         if (!t.expiring.length) t.expiring = undefined;
       }
       t.link = Math.min(maxLink(data, t), (t.link ?? 0) + 1);
+      return;
+    }
+    case 'repairPart': {
+      if (cmd.mode === 'mend') {
+        t.partStates[cmd.slot as PartSlot | 'main'] = 'intact';
+        return;
+      }
+      t.repairedSlots = [...(t.repairedSlots ?? []), cmd.slot];
+      // The unit-level chip rides along for display.
+      if (!(t.statuses ?? []).includes('repaired')) t.statuses = addStatus(t.statuses, 'repaired');
+      return;
+    }
+    case 'breakRepaired': {
+      // A Repaired Part chosen as the hit location is removed at once - no
+      // Penetration, no rewards, no second Link loss (FAQ J23). The attack
+      // redirect to the Core is the wizard's job.
+      const target = state.tokens.find((x) => x.uid === cmd.targetUid);
+      if (!target) return;
+      target.repairedSlots = (target.repairedSlots ?? []).filter((x) => x !== cmd.slot);
+      if (!target.repairedSlots.length) {
+        target.repairedSlots = undefined;
+        target.statuses = (target.statuses ?? []).filter((id) => id !== 'repaired');
+      }
       return;
     }
     case 'reveal': {
