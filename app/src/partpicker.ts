@@ -1,6 +1,7 @@
 import type { Card } from './types';
 import { cardImageUrl, cardName, FACTION_LABEL, type GameData } from './data';
 import { factionColour, ICON_COMPARE } from './icons';
+import { expandGlyphs } from './glyphs';
 
 const esc = (s: string): string =>
   s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
@@ -42,6 +43,7 @@ interface Slot {
   img: HTMLImageElement;
   name: HTMLElement;
   meta: HTMLElement;
+  trait: HTMLElement;
   uses: HTMLButtonElement[];
   drop: HTMLButtonElement;
   id: string | null;
@@ -100,7 +102,7 @@ export function openPartPicker(o: PartPickerOpts): void {
     const el = document.createElement('div');
     el.className = 'pp-slot';
     el.innerHTML = `<div class="pp-art"><img alt=""></div>
-      <div class="pp-cap"><span class="pp-cap-name"></span><span class="pp-cap-meta"></span></div>
+      <div class="pp-cap"><span class="pp-cap-name"></span><span class="pp-cap-meta"></span><span class="pp-cap-trait"></span></div>
       <div class="pp-cap-btns">${o.actions
         .map((a, i) => `<button class="pp-use" data-act="${i}"${
           a.tint ? ` style="--use-tint:${a.tint}"` : ''
@@ -115,6 +117,7 @@ export function openPartPicker(o: PartPickerOpts): void {
       img,
       name: el.querySelector<HTMLElement>('.pp-cap-name')!,
       meta: el.querySelector<HTMLElement>('.pp-cap-meta')!,
+      trait: el.querySelector<HTMLElement>('.pp-cap-trait')!,
       uses: [...el.querySelectorAll<HTMLButtonElement>('.pp-use')],
       drop: el.querySelector<HTMLButtonElement>('.pp-drop')!,
       id: null,
@@ -163,6 +166,18 @@ export function openPartPicker(o: PartPickerOpts): void {
       s.meta.innerHTML = `<i class="pp-dot" style="background:${factionColour(f)}"></i>${
         esc(f ? (FACTION_LABEL[f] ?? f) : 'Faction not recorded')
       } · ${card.score ?? 0}p`;
+      // Pinning one pilot and running the cursor down the list is what this
+      // window is for, and for a pilot the thing being compared is the trait.
+      // Only a NAMED trait is a rule: every generic Scout and Shock Troop also
+      // carries traitDescription text, but theirs is flavour ("A new Scout from
+      // Test and Evaluation Squadron 066"). The trait name itself is
+      // Chinese-only in the data, so only the English description is shown.
+      const traitText =
+        card.category === 'pilot' && (card.trait ?? '').trim()
+          ? (card.traitDescription?.en ?? '').trim().replace(/^[•·]\s*/, '')
+          : '';
+      s.trait.innerHTML = traitText ? expandGlyphs(esc(traitText)) : '';
+      s.trait.classList.toggle('off', !traitText);
       s.uses.forEach((b, n) => {
         const act = o.actions[n];
         b.dataset.use = id;

@@ -2182,6 +2182,14 @@ p.points { white-space: pre-line; }
 .pp-cap { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .pp-cap-name { font-size: 13px; font-weight: 600; }
 .pp-cap-meta { font-size: 11.5px; color: var(--text2); display: flex; align-items: center; gap: 6px; }
+/* A pilot's trait, under the card. This window exists to compare two cards, and
+   for a pilot the trait IS the comparison. Capped so a long one cannot push the
+   Use buttons off the bottom when two are pinned side by side. */
+.pp-cap-trait {
+  font-size: 11px; line-height: 1.45; color: var(--text2);
+  max-height: 4.4em; overflow-y: auto;
+}
+.pp-cap-trait.off { display: none; }
 .pp-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
 .pp-cap-btns { display: flex; gap: 6px; }
 .pp-cap-btns button {
