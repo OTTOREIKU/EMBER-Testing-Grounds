@@ -12,11 +12,13 @@
 //   1. the card database, extracted out of the live JS bundle
 //   2. the res/ image folders, listed through the GitHub API
 //
-// What it found on 2026-08-10, as a sense of scale: 412 cards upstream against
-// our 401, 17 entries we do not hold (the Centaur SK kit and a GoF wave, added
-// 8-9 August), 3 gone, and 130 field disagreements - of which the ones checked
-// against the publisher parts lists were ALL upstream drifting away from the
-// company's data, not us being stale.
+// What it found on 2026-08-10: 412 cards upstream against our 401, 17 entries we
+// do not hold (the Centaur SK kit and a GoF wave, added 8-9 August), 3 gone, and
+// 130 field disagreements - nearly all of them GoF, and nearly all of them US
+// being stale. He tracks the publisher's **1.021** GoF revision; our data and
+// the championship xlsx we audit against are **1.02**, and 1.021 repriced every
+// GoF torso and chassis. Read a disagreement as "which revision is each side
+// on", not as "who is wrong".
 //
 // Three things this has to get right, all of them learned the hard way:
 //
@@ -42,10 +44,10 @@ const SITE = 'https://watermelon02.github.io/builder-web/';
 const REPO = 'https://api.github.com/repos/watermelon02/builder-web/contents';
 const asJson = process.argv.includes('--json');
 
-// `held` collects every `id.field` we have deliberately set in an override
-// file. Those are the values the publisher parts lists gave us, and upstream
-// disagreeing with one is upstream being wrong rather than us being behind -
-// which is the opposite of how a bare diff reads.
+// `held` collects every `id.field` we have deliberately set in an override file,
+// so the report can say which side of a disagreement we chose on purpose. It
+// does NOT mean we are right: an override records the best source we had AT THE
+// TIME, and the publisher issues revisions. Check the version, not just the tag.
 const held = new Set();
 
 const say = (...a) => { if (!asJson) console.log(...a); };
@@ -257,7 +259,7 @@ if (asJson) {
     console.log(`\n${title}: ${xs.length}`);
     for (const x of xs.slice(0, n)) {
       if (typeof x === 'string') { console.log('   ' + x); continue; }
-      const ours = held.has(`${x.id}.${x.field}`) ? '   [ours is an override - publisher-backed]' : '';
+      const ours = held.has(`${x.id}.${x.field}`) ? '   [ours is an override - check which list version it came from]' : '';
       console.log(`   ${x.id}.${x.field}  ours=${JSON.stringify(x.ours)}  upstream=${JSON.stringify(x.theirs)}${ours}`);
     }
     if (xs.length > n) console.log(`   ... and ${xs.length - n} more`);
@@ -275,9 +277,10 @@ if (asJson) {
     if (r.extra.length) console.log(`      ours only:     ${r.extra.slice(0, 20).join(', ')}`);
   }
   if (artNoCard.length) console.log(`\nart with no card on either side (likely a set being prepared): ${artNoCard.join(', ')}`);
-  console.log('\nA disagreement is NOT a correction to make. Checked against the publisher parts');
-  console.log('lists on 2026-08-10, every GoF chassis we disagreed about had OUR value right');
-  console.log('and upstream wrong - card 180 has become a different chassis entirely there.');
-  console.log('Read this as "what he changed", and settle each one against the parts lists');
-  console.log('before touching our data.');
+  console.log('\nA disagreement is not automatically a correction, but it is not automatically');
+  console.log('noise either. On 2026-08-10 the GoF ones were all US being a revision behind:');
+  console.log('he tracks the publisher GoF list 1.021, our data and the championship xlsx are');
+  console.log('1.02, and 1.021 repriced every GoF torso and chassis and turned card 180 from');
+  console.log('the PL29 Stealth Chassis into the PL29 All-terrain Chassis. Settle each line');
+  console.log('against the NEWEST publisher list you hold before deciding either way.');
 }
