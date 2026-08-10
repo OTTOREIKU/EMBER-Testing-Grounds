@@ -1,0 +1,35 @@
+{
+  "_comment": "Whether each box can actually be bought, so collection tools count only what a player could own. Read off the publisher's own store catalogue (queti-tectonics.com/collections/frontpage) on 2026-08-10. 'available' = listed and buyable there; 'coming' = listed as Coming Soon; 'unreleased' = not listed at all. Retailers sometimes have stock the publisher's own store does not, so 'coming' is a soft no rather than a hard one. OTTO updates this as boxes arrive.",
+  "_why": "The whole GoF range is unreleased, so its cards must not count towards 'what can I buy' figures even though our card data has them. Same for anything else not yet on sale.",
+  "_shape": "boxes maps a box key to { status, product, checked }. status is available | coming | unreleased.",
+  "boxes": {
+    "RDL_CORE": { "status": "available", "product": "RDL Core", "checked": "2026-08-10" },
+    "RDL_CAVALRY": { "status": "available", "product": "RDL Cavalry", "checked": "2026-08-10" },
+    "RDL_HEAVY_METAL": { "status": "available", "product": "RDL Heavy Metal", "checked": "2026-08-10" },
+    "SINGLE_RDL_DUNE": { "status": "available", "product": "RDL Dune", "checked": "2026-08-10" },
+    "SINGLE_UN_TAURUS": { "status": "available", "product": "UN Taurus", "checked": "2026-08-10" },
+    "UN_SCALPEL": { "status": "available", "product": "UN Scalpel", "checked": "2026-08-10" },
+    "UN_DOORBREAKER": { "status": "available", "product": "UN Doorbreaker", "checked": "2026-08-10" },
+    "LAB_PD_CRISIS1": { "status": "available", "product": "LAB-CRISIS H2-A", "checked": "2026-08-10" },
+    "LAB_PD_CRISIS2": { "status": "available", "product": "LAB-CRISIS H2-B", "checked": "2026-08-10" },
+    "LAB_GOF_CENTAUR": { "status": "available", "product": "LAB-CENTAUR SK", "checked": "2026-08-10" },
+    "LAB_PD_REAPER_TYPE_1": { "status": "available", "product": "LAB-Reaper Type 1", "checked": "2026-08-10" },
+    "LAB_PD_REAPER_TYPE_2": { "status": "available", "product": "LAB-Reaper Type 2", "checked": "2026-08-10" },
+    "LAB_RDL_OASIS_AND_ESCARPMENT": { "status": "available", "product": "LAB-Oasis & Escarpment conversion kits", "checked": "2026-08-10" },
+
+    "COMBAT_RAID": { "status": "coming", "product": "RAID-2 PLAYER STARTER SET", "checked": "2026-08-10", "_note": "OTTO expects a copy in the week of 2026-08-10, so retailers have it before the publisher's own store does." },
+    "UN_CORE": { "status": "coming", "product": "UN Core", "checked": "2026-08-10" },
+    "LAB_WHITE_DWARF": { "status": "coming", "product": "LAB-White Dwarf", "checked": "2026-08-10" },
+    "LAB_PD_REAPER_TYPE_E": { "status": "coming", "product": "LAB-Reaper Type E", "checked": "2026-08-10" },
+    "LAB_PD_Vigilant_Autocannon_MG": { "status": "coming", "product": "LAB-\"Vigilant\" Autocannon & MG type", "checked": "2026-08-10" },
+    "LAB_PD_Vigilant_Bombing_Support": { "status": "coming", "product": "LAB-\"Vigilant\" Bombing & Support type", "checked": "2026-08-10" },
+
+    "GOF_CORE": { "status": "unreleased", "checked": "2026-08-10", "_note": "No GoF product of any kind appears in the publisher's catalogue. The faction's cards exist in the parts lists (v1.021) but nothing that contains them is on sale." },
+    "GOF_HUNTERS": { "status": "unreleased", "checked": "2026-08-10" },
+    "GOF_JUSTICE": { "status": "unreleased", "checked": "2026-08-10" },
+    "LAB_RDL_GENJI_AND_MALLARD": { "status": "unreleased", "checked": "2026-08-10" },
+    "LAB_TRIAL_UN_OCTOPUS": { "status": "unreleased", "checked": "2026-08-10", "_note": "Trial-model cards; never seen on the store." },
+    "GAME_PACK": { "status": "unreleased", "checked": "2026-08-10", "_note": "Promotional/event cards rather than a retail box." },
+    "UNSALE": { "status": "unreleased", "_note": "Named for it: content the publisher does not sell. Already excluded everywhere." }
+  }
+}
