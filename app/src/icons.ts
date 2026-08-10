@@ -54,8 +54,16 @@ export function squadColour(faction: string | null | undefined): string {
 // assetUrl rather than written into the stylesheet because the asset folder
 // sits outside the bundler's source tree, so a CSS url() could not be resolved
 // for both the dev server and the built site.
+//
+// It MUST be absolute. A url() inside a custom property is resolved against the
+// stylesheet that consumes it, not the element that declares it, so the relative
+// path assetUrl returns was re-resolved against the bundled CSS in /build/ and
+// 404'd on the live site while working perfectly on the dev server. A failed
+// mask counts as no mask, so the icon painted as a solid coloured block.
+const LINK_SRC = new URL(assetUrl('tokens/tab/icon_LV.webp'), document.baseURI).href;
+
 export function linkIcon(faction?: string | null, extraClass = ''): string {
   return `<i class="lk-icon${extraClass ? ` ${extraClass}` : ''}" aria-hidden="true" style="color:${factionColour(
     faction,
-  )};--lk-src:url(${assetUrl('tokens/tab/icon_LV.webp')})"></i>`;
+  )};--lk-src:url(${LINK_SRC})"></i>`;
 }
