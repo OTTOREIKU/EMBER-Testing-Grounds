@@ -1,5 +1,5 @@
 {
-  "_comment": "Faction lore for the reference's Factions tab. Lore text and key art for RDL, UN and GoF are the publisher's, taken from the official faction pages. PD and COLLABORATION have no published lore and no key art, but they ARE factions at squad level - the app treats all five as real, so listing only three left a reader unable to find out what a PD card is or that it may join their squad. Their entries say what is known and are marked as ours rather than the publisher's.",
+  "_comment": "Faction lore for the reference's Factions tab. Lore text and key art for RDL, UN and GoF are the publisher's, taken from the official faction pages. PD and COLLABORATION have no published lore and no key art, but they ARE factions at squad level - the app treats all five as real, so listing only three left a reader unable to find out what a PD card is or that it may join their squad. Their entries say what is known and are marked as ours rather than the publisher's. Both are currently `hidden`, which keeps them out of the Factions tab while OTTO decides how a non-lore faction should be presented - the text is kept here rather than deleted so it is ready when that is settled.",
   "_source": "obsidianprotocol.com faction pages, transcribed 2026-08-01",
   "factions": [
     {
@@ -31,6 +31,7 @@
       "name": "Planetring Dynamics",
       "short": "PD",
       "hook": "Mercenaries. They will fight for any of the three.",
+      "hidden": true,
       "art": false,
       "ours": true,
       "text": "Planetring Dynamics is a mercenary supplier rather than one of the three powers, and the rulebook does not name it at all: everything below is drawn from how its cards are sold and played rather than from published lore.\n\nWhat matters at the table is that PD units hire out. A PD mech may join an RDL, UN or GoF squad, which is what lets a small collection field a legal army. It is also the usual answer to the Guardians of Freedom having only one kit on sale.\n\nHiring them does not mix the parts. A PD mech is built entirely from PD parts and then joins your squad as a whole unit; you cannot bolt a PD arm onto an RDL mech, and its pilot has to be a PD pilot too. Its cards come from the LAB-CRISIS and Reaper kits and from the prerelease cores."
@@ -40,6 +41,7 @@
       "name": "White Dwarf Collaboration",
       "short": "Collab",
       "hook": "A one-box crossover that fights as its own faction.",
+      "hidden": true,
       "art": false,
       "ours": true,
       "text": "The White Dwarf is a crossover set rather than a faction with a story, and like Planetring Dynamics it appears nowhere in the rulebook. This entry is ours, not the publisher's.\n\nIt is a single box built around the ACE-001 White Dwarf, and it behaves as its own faction: its parts only combine with each other. Like PD it is mercenary, so the whole unit may join an RDL, UN or GoF squad.\n\nOne card to know about: its pilot Karl Fried is printed as Planetring Dynamics while shipping in the White Dwarf box. We treat him as part of this faction, because otherwise he could not legally pilot the mech he is sold with. The PD on his card most likely records who built the machine rather than who he fights for."

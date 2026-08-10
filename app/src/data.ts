@@ -124,6 +124,11 @@ export interface FactionDef {
   // so a missing file never requests and never fires an error to react to.
   // Absent means yes, so the three lore factions need no entry.
   art?: boolean;
+  // Kept in the data but not listed in the Factions tab. PD and the White Dwarf
+  // are real factions for squad building but have no lore or art, so they sat
+  // oddly beside three illustrated write-ups; the entries stay ready for
+  // whatever presentation replaces it.
+  hidden?: boolean;
 }
 
 export interface KeywordDef {

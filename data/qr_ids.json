@@ -7,7 +7,8 @@
     "_note": "Correct QR ids whose API record was still an unfilled placeholder on 2026-08-10. Re-run the check later and promote them into `cards` once the publisher enters them.",
     "PDAM-001": 273,
     "PDAM-003": 297,
-    "PDAM-004": 298
+    "PDAM-004": 298,
+    "XPA-61": 371
   },
   "cards": {
     "FPA-01": 301,
@@ -46,6 +47,8 @@
     "PRDR-202": 527,
     "PRDR-203": 528,
     "PRDR-204": 529,
+    "XPA-59": 369,
+    "XPA-60": 370,
     "XPA-62": 375
   }
 }

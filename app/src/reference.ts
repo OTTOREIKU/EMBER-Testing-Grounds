@@ -339,6 +339,9 @@ function cardDetail(c: Card): string {
       : c.category === 'tactics_or_upgrade'
         ? 'No box recorded in the card data. The rulebook has the six Tactics Cards coming in the core box.'
         : 'No box recorded. Nothing in the data says which set ships this card, which is not the same as it having none.';
+  // "In: " only makes sense in front of an actual list of boxes; the two
+  // fallbacks are whole sentences.
+  const listsBoxes = inBoxes.length > 0 && !unsold;
   const boxes = !inBoxes.length
     ? noBoxNote
     : unsold
@@ -394,7 +397,7 @@ function cardDetail(c: Card): string {
     ${cardBlock}
     ${trait}
     ${actions ? `<h3 class="ref-sub">Actions</h3>${actions}` : ''}
-    ${boxes ? `<p class="ref-boxes">${unsold ? '' : 'In: '}${boxes}</p>` : ''}`;
+    ${boxes ? `<p class="ref-boxes">${listsBoxes ? 'In: ' : ''}${boxes}</p>` : ''}`;
 }
 
 // ---------- boxes ----------
@@ -847,7 +850,9 @@ function render(): void {
 
   if (tab === 'factions') {
     const list = data.factions.filter(
-      (f) => !q || norm(`${f.name} ${f.short} ${f.key} ${f.supplier ?? ''} ${f.hook ?? ''} ${f.text}`).includes(q),
+      (f) =>
+        !f.hidden &&
+        (!q || norm(`${f.name} ${f.short} ${f.key} ${f.supplier ?? ''} ${f.hook ?? ''} ${f.text}`).includes(q)),
     );
     el.innerHTML = list.length
       ? `<p class="ref-count">${list.length} faction${list.length === 1 ? '' : 's'} · tap one for its story</p>${list.map(factionRow).join('')}`

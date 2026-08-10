@@ -125,6 +125,18 @@
       "en": "PL29 All-terrain Chassis",
       "source": "publisher GoF parts list v1.021 - renamed from \"PL29 Stealth Chassis\" in the redesign"
     },
+    "XPA-59": {
+      "en": "Combatant A-69",
+      "source": "The card itself. Our scan prints ID 69 in the corner, and the publisher's PD Pilots v1.0 EN list has exactly three Combatants numbered A-69, A-70 and A-71 at 10 points each. The community data numbered them A-101 to A-103, which matches nothing: not the card, not the parts list, not the publisher's own card pages (369/370/371). OTTO's photo of the H2 box contents shows the same ID 69."
+    },
+    "XPA-60": {
+      "en": "Combatant A-70",
+      "source": "Card scan prints ID 70. See XPA-59."
+    },
+    "XPA-61": {
+      "en": "Combatant A-71",
+      "source": "Card scan prints ID 71. See XPA-59."
+    },
     "FPA-06-2": {
       "en": "Keyhole - Hidden in Plain Sight",
       "source": "publisher card page id 362, reached by the QR code on the RDL Dune card itself. Both KeyHole pilots reach us named just \"KeyHole\" even though they are different cards (FPA-06 has the Aura/Electronic range trait, this one gains Low Profile inside an allied Aura). They were the only two cards in the whole pool sharing a name, which also made this the one card the API sweep could not have matched automatically."
