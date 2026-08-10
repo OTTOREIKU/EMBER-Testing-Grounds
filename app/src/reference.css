@@ -213,6 +213,15 @@ body.ref-locked { overflow: hidden; }
   padding: 8px 11px; font-size: 12.5px; margin: 10px 0;
 }
 
+/* The publisher's own page for this card, the one its QR code opens. */
+.ref-official { margin: -4px 0 10px; font-size: 12px; }
+.ref-official a {
+  color: var(--blue); text-decoration: none; font-weight: 600;
+  background: var(--blue-lt); border-radius: var(--radius);
+  padding: 5px 9px; display: inline-block;
+}
+.ref-official a:hover { text-decoration: underline; }
+
 .tag {
   display: inline-block; font-size: 11px; font-weight: 600; padding: 3px 9px;
   border-radius: 4px; background: var(--surface3); color: var(--text2);

@@ -228,6 +228,18 @@ function cardRow(c: Card): string {
   </article>`;
 }
 
+// The publisher's own card page, which is what the QR code on the back of a
+// retail box opens. It is keyed by the numeric QR id, so the ~147 cards we hold
+// under a serial-style id have no link - we do not record their QR id. Some
+// numeric ids are not filled in upstream yet and show a placeholder there;
+// the wording below promises the publisher's page, not a guarantee of content.
+function officialLink(c: Card): string {
+  if (!/^\d+$/.test(c.id)) return '';
+  const url = `https://obsidianprotocol.net/#/info?id=${Number(c.id)}&lang=en`;
+  return `<p class="ref-official"><a href="${url}" target="_blank" rel="noopener noreferrer"
+    title="The publisher's own page for this card - the same one the QR code on the box opens">Official card page ↗</a></p>`;
+}
+
 function cardDetail(c: Card): string {
   const chip = (field: string, value: unknown, label: string) => {
     const ic = statIconUrl(field);
@@ -320,6 +332,7 @@ function cardDetail(c: Card): string {
   const free = zeroCostReason(c);
   return `<h2>${esc(cardName(c))}</h2>
     <p class="ref-meta">${esc([c.category, c.type, c.faction].filter(Boolean).join(' · '))}</p>
+    ${officialLink(c)}
     ${c.category === 'pilot' ? `<div class="ref-portrait" data-portrait="${esc(c.id)}"></div>` : ''}
     <div class="ref-cardimg-slot" data-img="${esc(c.id)}"></div>
     ${free ? `<p class="ref-free">Costs 0 points — ${esc(free)}.</p>` : ''}
