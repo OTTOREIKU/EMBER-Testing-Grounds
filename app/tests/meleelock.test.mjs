@@ -74,10 +74,11 @@ check('sharing a grid does', lock(target, [mech(2, 's2', 2, 2)]), [2]);
 // Condition 3: line of sight.
 check('a wall between them blocks the lock', lock(target, [mech(2, 's2', 2, 4)], [wall(2, 3)]), []);
 
-// Condition 4: the target must not be a Flying Unit, and Optical Camouflage
-// hides it from being locked at all (book p.46).
+// Condition 4: the target must not be a Flying Unit. Optical Camouflage runs
+// the OTHER way (FAQ I8): a camouflaged unit CAN be locked, but locks nobody.
 check('an aerial unit is never locked', lock({ ...target, aerial: true }, [mech(2, 's2', 2, 3)]), []);
-check('a camouflaged unit is never locked', lock({ ...target, statuses: ['camouflage'] }, [mech(2, 's2', 2, 3)]), []);
+check('a camouflaged unit can still be locked (I8)', lock({ ...target, statuses: ['camouflage'] }, [mech(2, 's2', 2, 3)]), [2]);
+check('a camouflaged unit locks nobody (I8)', lock(target, [mech(2, 's2', 2, 3, { statuses: ['camouflage'] })]), []);
 check('an undeployed enemy does not lock', lock(target, [mech(2, 's2', 2, 3, { deployed: false })]), []);
 check('an undeployed unit is not locked either', lock({ ...target, deployed: false }, [mech(2, 's2', 2, 3)]), []);
 

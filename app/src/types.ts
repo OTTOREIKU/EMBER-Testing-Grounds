@@ -134,6 +134,12 @@ export interface Token {
   size: 1 | 2 | 3;
   facing: Facing;
   aerial: boolean;
+  // A deployed Barricade (Turtle Shell, the AS3 walls): grounded, blocking,
+  // and exempt from Crush and Forced Movement (FAQ E6/M13).
+  barricade?: boolean;
+  // Whoever last destroyed one of this Mech's Parts: an Integrity-Loss removal
+  // in the End Phase credits the kill to them (FAQ P4).
+  lastDamagedBy?: { side: Side; uid: number };
   stance: Stance;
   link?: number;
   timing?: Timing;
@@ -261,6 +267,7 @@ export const STATUSES: StatusDef[] = [
     id: 'fci',
     decay: 'yellow',
     shape: 'square',
+    stacking: true,
     label: 'Fire Control Interference',
     icon: 'FCI',
     tint: '#c9a6ff',
@@ -280,6 +287,7 @@ export const STATUSES: StatusDef[] = [
     id: 'immobilized',
     decay: 'yellow',
     shape: 'square',
+    stacking: true,
     label: 'Immobilized',
     icon: 'IMB',
     tint: '#8fa0b5',
@@ -297,6 +305,7 @@ export const STATUSES: StatusDef[] = [
   },
   {
     id: 'lowProfile',
+    appliesTo: ['mech', 'drone'],
     decay: 'green',
     shape: 'hexagon',
     label: 'Low Profile',
@@ -306,6 +315,7 @@ export const STATUSES: StatusDef[] = [
   },
   {
     id: 'highlight',
+    appliesTo: ['mech', 'drone'],
     decay: 'yellow',
     shape: 'hexagon',
     label: 'Highlight',
@@ -315,6 +325,7 @@ export const STATUSES: StatusDef[] = [
   },
   {
     id: 'targetTracer',
+    appliesTo: ['mech', 'drone'],
     decay: 'yellow',
     shape: 'hexagon',
     label: 'Target Tracer',

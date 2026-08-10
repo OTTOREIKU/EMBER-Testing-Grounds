@@ -52,5 +52,11 @@ check('a defensive drone is unchanged too', maneuverRange(data, drone('defensive
 // Projectiles are in the same boat as Drones on this.
 check('a mobility projectile is not doubled', maneuverRange(data, { kind: 'projectile', stance: 'mobility', cardId: 'DRN' }), 6);
 
+// A destroyed Chassis cannot carry the Mech anywhere (3.4.4, FAQ E4) — only
+// the free change of Facing remains, and that costs no range.
+check('a destroyed chassis moves nothing (E4)', maneuverRange(data, { ...mech('CH2', 'offensive'), partStates: { chasis: 'destroyed' } }), 0);
+check('even in mobility stance (E4)', maneuverRange(data, { ...mech('CH2', 'mobility'), partStates: { chasis: 'destroyed' } }), 0);
+check('a damaged chassis still moves', maneuverRange(data, { ...mech('CH2', 'offensive'), partStates: { chasis: 'damaged' } }), 2);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

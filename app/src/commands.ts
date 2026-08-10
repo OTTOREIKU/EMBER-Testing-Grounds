@@ -1,7 +1,7 @@
 import type { Facing, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, Timing, Token } from './types';
-import { addStatus, ageTokens, PHASES, STATUSES, TIMINGS } from './types';
+import { addStatus, ageTokens, PHASES, statusCount, STATUSES, TIMINGS } from './types';
 import type { GameData } from './data';
-import { consumesCharge, electronicValue, freehandSlots, interceptCapacity, makeDroneToken, makeMechToken, maxLink, tokenCards } from './units';
+import { consumesCharge, electronicValue, freehandSlots, interceptCapacity, makeDroneToken, makeMechToken, maxLink, pilotCard, tokenCards } from './units';
 import { canActivate, canManeuver, canOverload, canPerform, spendAction, spendActivation, spendManeuver, spendOverload } from './ticks';
 import { tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { battlefieldLocked, deploymentComplete, deployTurn, firstPlayerFrom, newSetup, normaliseSetup } from './setup';
@@ -54,7 +54,7 @@ export type Command =
   | { kind: 'applyPenetration'; seat: Side; uid: number; targetUid: number; slot: PartSlot | 'main' }
   | { kind: 'applyStatus'; seat: Side; uid: number; targetUid: number; statusId: string; stacks?: number }
   | { kind: 'focus'; seat: Side; uid: number }
-  | { kind: 'forceMove'; seat: Side; uid: number; targetUid: number; to: { col: number; row: number }; push?: boolean }
+  | { kind: 'forceMove'; seat: Side; uid: number; targetUid: number; to: { col: number; row: number }; push?: boolean; facing?: Facing }
   | { kind: 'spendAmmo'; seat: Side; uid: number; actionId: string }
   | { kind: 'restoreAmmo'; seat: Side; uid: number; actionId: string; amount?: number }
   // The Round Tokens an Intercept X Part carries (4.9). They are spent, never
@@ -87,9 +87,10 @@ export type Command =
   | { kind: 'grantExtra'; seat: Side; uid: number; linkCost: number }
   | { kind: 'markEndStep'; seat: Side; step: string }
   | { kind: 'award'; seat: Side; vp: { s1: number; s2: number }; keys: string[] }
-  | { kind: 'stabilise'; seat: Side; uid: number }
+  | { kind: 'stabilise'; seat: Side; uid: number; keepTokens?: boolean }
   | { kind: 'reveal'; seat: Side; uid: number }
   | { kind: 'lockMap'; seat: Side }
+  | { kind: 'finishTasks'; seat: Side }
   | { kind: 'rollSetup'; seat: Side; hits: number[] }
   | { kind: 'acceptRoll'; seat: Side }
   | { kind: 'pickEdge'; seat: Side; edge: 'black' | 'white' }
@@ -216,14 +217,14 @@ function actorOptional(cmd: Command): cmd is Command & { kind: 'forceMove' | 're
 // to a unit, so these carry a seat and nothing else.
 type TableKind =
   | 'advancePhase' | 'setPhase' | 'resetRounds' | 'adjustCommandTokens' | 'passTurn' | 'markEndStep' | 'award'
-  | 'lockMap' | 'rollSetup' | 'acceptRoll' | 'pickEdge' | 'lockDials' | 'finishDeployment'
+  | 'lockMap' | 'rollSetup' | 'acceptRoll' | 'finishTasks' | 'pickEdge' | 'lockDials' | 'finishDeployment'
   | 'queueIntercepts' | 'clearIntercepts' | 'placeSmoke' | 'removeSmoke' | 'dissipateSmoke'
   | 'clearCounterRoll'
   | 'setMode' | 'handOver' | 'setStrict' | 'commitTimings' | 'revealTimings' | 'importSquad'
   | 'configureTable' | 'startMatch' | 'endMatch' | 'pickSecondary' | 'setTactics' | 'setReady' | 'designateTask';
 const TABLE_KINDS = new Set<Command['kind']>([
   'advancePhase', 'setPhase', 'resetRounds', 'adjustCommandTokens', 'passTurn', 'markEndStep', 'award',
-  'lockMap', 'rollSetup', 'acceptRoll', 'pickEdge', 'lockDials', 'finishDeployment',
+  'lockMap', 'rollSetup', 'acceptRoll', 'finishTasks', 'pickEdge', 'lockDials', 'finishDeployment',
   'queueIntercepts', 'clearIntercepts', 'placeSmoke', 'removeSmoke', 'dissipateSmoke',
   'clearCounterRoll',
   'setMode', 'handOver', 'setStrict', 'commitTimings', 'revealTimings', 'importSquad',
@@ -312,6 +313,11 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       for (const id of cmd.cards) {
         const card = data.byId.get(id);
         if (!card || card.category !== 'tactics_or_upgrade') return no('That is not a Tactics Card.');
+      }
+      // Only one copy of each Tactics Card may be purchased (FAQ P2), so a
+      // hand with a duplicate is refused whichever picker or import built it.
+      if (new Set(cmd.cards).size !== cmd.cards.length) {
+        return no('Only one copy of each Tactics Card may be included in a squad (FAQ P2).');
       }
       // The hand is chosen with the squad, so it closes when the game starts —
       // 5.4 has you holding them from the off, not drawing mid-match.
@@ -419,6 +425,11 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
     case 'acceptRoll': {
       const su = normaliseSetup(state.setup);
       if (!su || !firstPlayerFrom(su)) return no('The roll is tied, so it must be made again (3.1.2).');
+      return ok;
+    }
+    case 'finishTasks': {
+      const su = normaliseSetup(state.setup);
+      if (!su || su.stage !== 'tasks') return no('The Tasks step is not open.');
       return ok;
     }
     case 'pickEdge': {
@@ -711,11 +722,22 @@ function checkActed(
     case 'applyStatus': {
       const target = state.tokens.find((x) => x.uid === cmd.targetUid);
       if (!target) return no('That target is not on the board.');
+      const def = STATUSES.find((x) => x.id === cmd.statusId);
+      if (def?.shape === 'hexagon') {
+        // A Low Value Unit never carries a Hexagon Token (Supplement 1.6 via
+        // FAQ J3/M23): every Projectile, and any Drone worth 0 points.
+        if (lowValueUnit(data, target)) return no('Low Value Units cannot gain Hexagon Tokens (Rules Supplement 1.6).');
+        // Optical Camouflage refuses a Highlight but accepts Low Profile (I1).
+        if (cmd.statusId === 'highlight' && statusCount(target.statuses, 'camouflage') > 0) {
+          return no('A unit in Optical Camouflage cannot gain a Highlight Token (FAQ I1).');
+        }
+      }
       if (!STATUSES.some((s) => s.id === cmd.statusId)) return no('That is not a Token or State the game knows.');
       return ok;
     }
     case 'focus': {
-      if ((t.link ?? 0) < 1) return no('Focus spends 1 Link, and this unit has none to spend (4.6).');
+      // The last Link can never be spent voluntarily (4.10, FAQ L1).
+      if ((t.link ?? 0) < 2) return no('Focus spends 1 Link, and the last Link can never be spent voluntarily (4.10).');
       return ok;
     }
     case 'spendAmmo': {
@@ -823,11 +845,16 @@ function checkActed(
       return ok;
     }
     case 'stabilise': {
+      // Either half of the action justifies it on its own (FAQ J4/J6/J7):
+      // remove a Token, restore a Link, or both. Only a Mech with neither a
+      // removable Token nor a missing Link has nothing to change (J8).
       const shed = (t.statuses ?? []).some((id) => {
         const d = STATUSES.find((x) => x.id === id);
         return d?.shape === 'square' || d?.shape === 'hexagon';
       });
-      if (!shed) return no('No Square or Hexagon Token to remove (6.1).');
+      const pilot = pilotCard(data, t);
+      const canLink = !!pilot && (t.link ?? 0) < (pilot.LV ?? 0);
+      if (!shed && !canLink) return no('Nothing to stabilize: no Square or Hexagon Token to remove and no Link missing. An action that cannot produce any change cannot be performed (6.1).');
       return ok;
     }
     case 'reveal': {
@@ -914,7 +941,17 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
     }
     if (cmd.step === 'remove') {
       // Integrity Loss (4.4.4): a Mech down to 2 Parts leaves in the End Phase.
-      state.tokens = state.tokens.filter((x) => !(x.kind === 'mech' && Object.values(x.partStates).filter((p) => p !== 'destroyed').length <= 2));
+      // The kill is credited to the LAST unit that reduced its Part count
+      // (FAQ P4), which applyPenetration recorded on the way down.
+      const dying = state.tokens.filter((x) => x.kind === 'mech' && Object.values(x.partStates).filter((p) => p !== 'destroyed').length <= 2);
+      if (dying.length) {
+        const tasks = normaliseTasks(state.tasks);
+        for (const v of dying) {
+          if (v.lastDamagedBy) applyKill(tasks, v.lastDamagedBy, { side: v.side, kind: v.kind, lowValue: lowValueUnit(data, v) }, 'unit');
+        }
+        state.tasks = tasks;
+      }
+      state.tokens = state.tokens.filter((x) => !dying.includes(x));
     }
     if (cmd.step === 'tasks') {
       const tasks = normaliseTasks(state.tasks);
@@ -1070,6 +1107,14 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
     const winner = firstPlayerFrom(su);
     if (!winner) return;
     state.round.firstPlayer = winner;
+    // The Tasks come next, not the edges: the roll decides who reveals their
+    // Secondary Task first (FAQ P1 steps 3-5).
+    state.setup = { ...su, stage: 'tasks' };
+    return;
+  }
+  if (cmd.kind === 'finishTasks') {
+    const su = normaliseSetup(state.setup) ?? newSetup();
+    if (su.stage !== 'tasks') return;
     state.setup = { ...su, stage: 'side' };
     return;
   }
@@ -1170,6 +1215,9 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
     if (!target) return;
     target.col = cmd.to.col;
     target.row = cmd.to.row;
+    // The player causing a Forced Movement decides the victim's facing (3.4.4),
+    // and may also turn a victim that could not be moved at all.
+    if (cmd.facing !== undefined) target.facing = cmd.facing;
     // Push costs the victim 1 Link on top of the movement (4.13), and losing
     // the last one is a Shutdown like any other.
     if (cmd.push && target.kind === 'mech') {
@@ -1308,6 +1356,9 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
       if (target.partStates[cmd.slot] === 'destroyed' && target.kind === 'mech') {
         target.link = Math.max(0, (target.link ?? 0) - 1);
         if (target.link === 0 && target.stance !== 'shutdown') target.stance = 'shutdown';
+        // The last unit to reduce the Part count gets the Integrity-Loss kill
+        // if the Mech leaves in the End Phase (FAQ P4).
+        target.lastDamagedBy = { side: cmd.seat, uid: cmd.uid };
       }
       return;
     }
@@ -1317,6 +1368,14 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
       // addStatus owns the single-Hexagon rule (2.5.3), so stacking through it
       // keeps the displacement identical on every seat.
       for (let i = 0; i < (cmd.stacks ?? 1); i++) target.statuses = addStatus(target.statuses, cmd.statusId);
+      // A replaced or refreshed Hexagon starts on its yellow face (FAQ J22):
+      // the stale red marker would otherwise remove the fresh token a round
+      // early. Squares keep theirs — each stacked entry ages on its own.
+      const def = STATUSES.find((x) => x.id === cmd.statusId);
+      if (def?.shape === 'hexagon') {
+        const hexes = new Set(STATUSES.filter((x) => x.shape === 'hexagon').map((x) => x.id));
+        target.expiring = (target.expiring ?? []).filter((x) => !hexes.has(x));
+      }
       return;
     }
     case 'focus': {
@@ -1432,17 +1491,20 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
     }
     case 'stabilise': {
       // Stabilize System (6.1): Torso removes 1 Square or Hexagon Token from
-      // this Mech, then restores 1 Link.
-      const shed = (t.statuses ?? []).find((id) => {
+      // this Mech, then restores 1 Link. Both halves are optional in effect:
+      // the player may keep the Tokens and take only the Link (FAQ J4), and a
+      // token-less Mech may still recover the Link alone (J6).
+      const shed = cmd.keepTokens ? undefined : (t.statuses ?? []).find((id) => {
         const d = STATUSES.find((x) => x.id === id);
         return d?.shape === 'square' || d?.shape === 'hexagon';
       });
-      if (!shed) return;
-      const list = [...(t.statuses ?? [])];
-      list.splice(list.indexOf(shed), 1);
-      t.statuses = list;
-      t.expiring = (t.expiring ?? []).filter((id) => id !== shed);
-      if (!t.expiring.length) t.expiring = undefined;
+      if (shed) {
+        const list = [...(t.statuses ?? [])];
+        list.splice(list.indexOf(shed), 1);
+        t.statuses = list;
+        t.expiring = (t.expiring ?? []).filter((id) => id !== shed);
+        if (!t.expiring.length) t.expiring = undefined;
+      }
       t.link = Math.min(maxLink(data, t), (t.link ?? 0) + 1);
       return;
     }

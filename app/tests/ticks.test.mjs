@@ -78,6 +78,13 @@ check('repeating an action on base ticks is refused', T.canPerform(afterStart, f
 const withExtra = { ...two, extras: [{ id: 'e1', label: 'Extra Firing Tick', timing: 'firing' }] };
 check('an extra tick pays for a short action of its type', T.canPerform(withExtra, fire.s).ok, true);
 check('an extra tick may repeat an action already performed', T.canPerform(withExtra, fire.s).extra.id, 'e1');
+
+// The shared Charge Action is the one exception to once-only (FAQ H6/H7):
+// each use Charges a different Part, so two may run in one Opportunity.
+const chargeAct = act('COMMON_CHARGE', 'Tactic', 's');
+const charged = { ...fresh(), timing: 'tactical', started: true, performed: ['COMMON_CHARGE'], action: 1 };
+check('the common Charge may repeat on base ticks (H6)', T.canPerform(charged, chargeAct).ok, true);
+check('other actions still refuse a repeat', T.canPerform({ ...charged, performed: ['f1'], timing: 'firing' }, fire.s).ok, false);
 check('a typed extra tick refuses another type', T.canPerform(withExtra, melee.s).ok, false);
 check('an extra tick cannot pay for a medium action', T.canPerform(withExtra, fire.m).ok, false);
 const spent = T.spendAction(withExtra, fire.s);
@@ -149,7 +156,10 @@ check('two overloaded ticks can', T.canPerform(bought, fire.m).ok, true);
 check('and they land in the base pool, not the extras', [bought.action, bought.extras.length], [2, 0]);
 check('overload is capped at two link', T.canOverload(bought, 5).ok, false);
 check('and refused with no link to spend', T.canOverload(fresh(), 0).ok, false);
-check('a fresh mech with link may overload', T.canOverload(fresh(), 1).ok, true);
+// The last Link can never be spent voluntarily (4.10, FAQ L1), so Overload
+// needs at least 2 in hand.
+check('the last link cannot buy an overload (L1)', T.canOverload(fresh(), 1).ok, false);
+check('a fresh mech with spare link may overload', T.canOverload(fresh(), 2).ok, true);
 
 // The trap this fix exists for. canManeuver once inferred "an Action Tick was
 // spent" by comparing the pool to its usual size of two. Overload puts the pool

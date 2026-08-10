@@ -55,10 +55,16 @@ check('Optical Camouflage stays on mechs', ids('mech').includes('camouflage'), t
 
 // Everything else is a Unit-level rule with no kind restriction, so it stays on
 // every kind rather than being guessed away.
-for (const id of ['fci', 'fragile', 'immobilized', 'lowProfile', 'highlight', 'targetTracer', 'smoke']) {
+for (const id of ['fci', 'fragile', 'immobilized', 'smoke']) {
   check(`${id} applies to every unit kind`, ['mech', 'drone', 'projectile'].filter((k) => !ids(k).includes(id)), []);
 }
-check('projectiles keep the majority of tokens', ids('projectile').length, STATUSES.length - 2);
+// Projectiles are Low Value Units and can never gain a Hexagon Token
+// (Supplement 1.6 via FAQ J3), so the three hexagons stop at drones.
+for (const id of ['lowProfile', 'highlight', 'targetTracer']) {
+  check(`${id} stays off projectiles`, ids('projectile').includes(id), false);
+  check(`${id} still reaches mechs and drones`, ['mech', 'drone'].filter((k) => !ids(k).includes(id)), []);
+}
+check('projectiles keep the squares and smoke', ids('projectile').length, STATUSES.length - 5);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -2,7 +2,10 @@ import type { GameState, Side, Token } from './types';
 
 // ---------- pre-game setup (rulebook 3.1.2 and 3.1.4) ----------
 
-export type SetupStage = 'map' | 'roll' | 'side' | 'deploy' | 'done';
+// The official order (FAQ P1): map, then the First Player roll, then the
+// Tasks — Main first, then Secondaries with the First Player revealing first —
+// then edges and deployment.
+export type SetupStage = 'map' | 'roll' | 'tasks' | 'side' | 'deploy' | 'done';
 
 export interface SetupState {
   stage: SetupStage;
@@ -20,6 +23,13 @@ export function battlefieldLocked(setup: SetupState | null | undefined): boolean
   return !!setup && setup.stage !== 'map';
 }
 
+// The Tasks are chosen AFTER the First Player roll (FAQ P1), so the Missions
+// dialog and the zone overlay stay open through the roll and the tasks stage
+// and freeze once the edges are being picked.
+export function tasksLocked(setup: SetupState | null | undefined): boolean {
+  return !!setup && (setup.stage === 'side' || setup.stage === 'deploy' || setup.stage === 'done');
+}
+
 export function newSetup(): SetupState {
   return {
     stage: 'map',
@@ -33,7 +43,7 @@ export function normaliseSetup(raw: unknown): SetupState | null {
   if (!raw || typeof raw !== 'object') return null;
   const s = raw as Partial<SetupState>;
   const base = newSetup();
-  const stages: SetupStage[] = ['map', 'roll', 'side', 'deploy', 'done'];
+  const stages: SetupStage[] = ['map', 'roll', 'tasks', 'side', 'deploy', 'done'];
   const nums = (v: unknown): number[] => (Array.isArray(v) ? v.filter((x) => typeof x === 'number') : []);
   const edge = (v: unknown, fallback: 'black' | 'white') => (v === 'black' || v === 'white' ? v : fallback);
   const count = (v: unknown) => (typeof v === 'number' && v >= 0 ? v : 0);

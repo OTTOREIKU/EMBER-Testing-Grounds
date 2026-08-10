@@ -142,7 +142,10 @@ export function canPerform(o: Opportunity, a: CardAction): TickVerdict {
   if (!o.started && o.timing && timing !== o.timing) {
     return { ok: false, why: `The Starting Action must match the dial. This Mech is set to ${o.timing}, and this is a ${timing ?? 'typeless'} Action.` };
   }
-  if (o.performed.includes(a.id)) {
+  // The shared Charge Action is the one exception to once-only: each use
+  // Charges a different Part, so they count as separate Actions (FAQ H6/H7).
+  // A card-printed Charge has its own id per Part and never collides.
+  if (o.performed.includes(a.id) && a.id !== 'COMMON_CHARGE') {
     return { ok: false, why: 'Each Action of a Part can only be performed once per Action Opportunity. Only an Extra Tick may repeat one.' };
   }
   if (len === 'long' && (o.maneuvered || o.maneuver < 1 || o.started)) {
@@ -163,10 +166,17 @@ export function canPerform(o: Opportunity, a: CardAction): TickVerdict {
 export const OVERLOAD_MAX = 2;
 
 export function canOverload(o: Opportunity, link: number): TickVerdict {
+  // Declared at the START of the Action Opportunity, never added mid-way
+  // (FAQ K10) — though both Link may be spent in one declaration.
+  if (o.started || o.maneuvered) {
+    return { ok: false, why: 'Overload is declared at the beginning of the Action Opportunity, before anything is performed (FAQ K10).' };
+  }
   if (o.overload >= OVERLOAD_MAX) {
     return { ok: false, why: `Overload is limited to ${OVERLOAD_MAX} Link per Action Opportunity, and both are spent.` };
   }
-  if (link < 1) return { ok: false, why: 'This Mech has no Link left to consume.' };
+  // Overload is a voluntary spend, and the last Link can never be spent
+  // voluntarily (4.10, FAQ L1).
+  if (link < 2) return { ok: false, why: 'Overload consumes Link, and the last Link can never be spent voluntarily (4.10).' };
   return { ok: true };
 }
 
@@ -214,7 +224,9 @@ export function spendAction(o: Opportunity, a: CardAction): Opportunity {
   if (!len) return o;
   const verdict = canPerform(o, a);
   if (verdict.extra) {
-    return { ...o, spentExtras: [...o.spentExtras, verdict.extra.id] };
+    // A Movement Action is Movement however it is paid for, so the Extra Tick
+    // path forfeits Stationary too (the keyword counts any Movement).
+    return { ...o, spentExtras: [...o.spentExtras, verdict.extra.id], moved: o.moved || timingOf(a) === 'movement' };
   }
   const cost = TICK_COST[len];
   return {

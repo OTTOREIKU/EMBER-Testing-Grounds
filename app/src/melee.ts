@@ -24,7 +24,9 @@ export function meleeCapable(data: GameData, t: Token): boolean {
 }
 
 function lockable(t: Token): boolean {
-  return !t.aerial && statusCount(t.statuses, 'camouflage') === 0 && isDeployed(t);
+  // Optical Camouflage does NOT protect from being locked — the exception runs
+  // the other way: a camouflaged unit cannot APPLY Melee Lock (FAQ I8).
+  return !t.aerial && isDeployed(t);
 }
 
 function shifted(t: Token, at: { c: number; r: number }, terrain: TerrainPiece[], tokens: Token[]): Token {
@@ -45,6 +47,8 @@ export function lockersOf(
   const g = largeGridOf(me);
   return tokens.filter((o) => {
     if (o.side === t.side || o.uid === t.uid || !isDeployed(o)) return false;
+    // A camouflaged unit locks nobody (FAQ I8).
+    if (statusCount(o.statuses, 'camouflage') > 0) return false;
     const go = largeGridOf(o);
     if (Math.abs(go.c - g.c) > 1 || Math.abs(go.r - g.r) > 1) return false;
     if (!meleeCapable(data, o)) return false;

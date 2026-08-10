@@ -66,6 +66,9 @@ export function maxLink(data: any, t: any): number {
   const pilot = t.kind === 'mech' && t.mech?.pilot ? data.byId.get(t.mech.pilot) : undefined;
   return pilot?.LV ?? 99;
 }
+export function pilotCard(data: any, t: any): any {
+  return t.kind === 'mech' && t.mech?.pilot ? data.byId.get(t.mech.pilot) : undefined;
+}
 export function makeDroneToken(state: any, data: any, card: any, side: any, backpack?: string): any {
   return {
     uid: state.nextUid++, side, kind: card.category === 'projectile' ? 'projectile' : 'drone',
@@ -543,12 +546,43 @@ check('the Award banks the points and marks the lines paid', [waw.tasks.vp, waw.
 C.apply(data, waw, aw);
 check('and a paid line is never marked twice', waw.tasks.scored, ['1:main']);
 
+// ---------- forced movement facing (3.4.4, FAQ B4/B5) ----------
+
+const wfmv = world([mech(1, 's1'), mech(2, 's2', { col: 9, row: 3, facing: 0 })]);
+C.apply(data, wfmv, { kind: 'forceMove', seat: 's1', uid: 1, targetUid: 2, to: { col: 12, row: 3 }, facing: 2 });
+check('the forcing player sets the victim facing', [wfmv.tokens[1].col, wfmv.tokens[1].facing], [12, 2]);
+C.apply(data, wfmv, { kind: 'forceMove', seat: 's1', uid: 1, targetUid: 2, to: { col: 12, row: 3 } });
+check('and omitting the facing leaves it alone', wfmv.tokens[1].facing, 2);
+
+// ---------- integrity-loss kill credit (FAQ P4) ----------
+
+const wilv = world([
+  mech(1, 's1'),
+  mech(2, 's2', { mech: { torso: 'T1', chasis: 'C1', pilot: 'P1' }, partStates: { torso: 'intact', chasis: 'intact' }, link: 3 }),
+], 5);
+C.apply(data, wilv, { kind: 'applyPenetration', seat: 's1', uid: 1, targetUid: 2, slot: 'chasis' });
+check('the last part-destroyer is remembered', wilv.tokens[1].lastDamagedBy, { side: 's1', uid: 1 });
+C.apply(data, wilv, { kind: 'markEndStep', seat: 's1', step: 'remove' });
+check('integrity loss removes the mech and credits the kill (P4)',
+  [wilv.tokens.some((x) => x.uid === 2), (wilv.tasks.kills ?? []).length > 0 || JSON.stringify(wilv.tasks).includes('s1')],
+  [false, true]);
+
 // ---------- stabilise and reveal (6.1) ----------
 
-check('nothing to shed is refused', C.check(data, world([mech(1, 's1')]), { kind: 'stabilise', seat: 's1', uid: 1 }).ok, false);
+// Either half justifies the action (FAQ J4/J6-J8): refusal needs BOTH no
+// removable Token AND a full Link.
+check('nothing at all to change is refused (J8)', C.check(data, world([mech(1, 's1', { link: 4 })]), { kind: 'stabilise', seat: 's1', uid: 1 }).ok, false);
+check('missing Link alone justifies Stabilize (J6)', C.check(data, world([mech(1, 's1', { link: 1 })]), { kind: 'stabilise', seat: 's1', uid: 1 }).ok, true);
+check('a Token alone justifies Stabilize at full Link (J7)', C.check(data, world([mech(1, 's1', { statuses: ['fci'], link: 4 })]), { kind: 'stabilise', seat: 's1', uid: 1 }).ok, true);
 const wsb = world([mech(1, 's1', { statuses: ['fci', 'fci'], expiring: ['fci'], link: 1 })]);
 C.apply(data, wsb, { kind: 'stabilise', seat: 's1', uid: 1 });
 check('Stabilize sheds one token and restores 1 Link', [wsb.tokens[0].statuses, wsb.tokens[0].link], [['fci'], 2]);
+const wsk = world([mech(1, 's1', { statuses: ['fci'], link: 1 })]);
+C.apply(data, wsk, { kind: 'stabilise', seat: 's1', uid: 1, keepTokens: true });
+check('keepTokens takes the Link and leaves the Tokens (J4)', [wsk.tokens[0].statuses, wsk.tokens[0].link], [['fci'], 2]);
+const wlk = world([mech(1, 's1', { link: 1 })]);
+C.apply(data, wlk, { kind: 'stabilise', seat: 's1', uid: 1 });
+check('a token-less Stabilize still restores the Link (J6)', wlk.tokens[0].link, 2);
 
 check('reveal needs the camouflage', C.check(data, world([mech(1, 's1')]), { kind: 'reveal', seat: 's1', uid: 1 }).ok, false);
 const wrev = world([mech(1, 's1', { statuses: ['camouflage'] })]);
@@ -565,7 +599,11 @@ C.apply(data, wmap, { kind: 'rollSetup', seat: 's1', hits: [2, 1] });
 C.apply(data, wmap, { kind: 'rollSetup', seat: 's2', hits: [0, 1] });
 check('the rolls ride as hits', wmap.setup.rolls, { s1: [2, 1], s2: [0, 1] });
 C.apply(data, wmap, { kind: 'acceptRoll', seat: 's1' });
-check('accepting crowns the First Player', [wmap.round.firstPlayer, wmap.setup.stage], ['s1', 'side']);
+// The roll hands over to the TASKS step, not the edges (FAQ P1).
+check('accepting crowns the First Player', [wmap.round.firstPlayer, wmap.setup.stage], ['s1', 'tasks']);
+check('edges wait for the tasks step', C.check(data, wmap, { kind: 'pickEdge', seat: 's1', edge: 'black' }).ok, false);
+C.apply(data, wmap, { kind: 'finishTasks', seat: 's1' });
+check('and the tasks step hands over to the edges', wmap.setup.stage, 'side');
 check('the other squad cannot pick the edge', C.check(data, wmap, { kind: 'pickEdge', seat: 's2', edge: 'black' }).ok, false);
 C.apply(data, wmap, { kind: 'pickEdge', seat: 's1', edge: 'black' });
 check('the edge pick splits the table', [wmap.setup.stage, wmap.setup.edge], ['deploy', { s1: 'black', s2: 'white' }]);

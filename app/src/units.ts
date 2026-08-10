@@ -1,10 +1,11 @@
 import { DEFAULT_BOARD } from './boards';
 import type { GameData } from './data';
-import { cardName, isAerial, unitSize } from './data';
-import type { Card, CardAction, GameState, MechLoadout, PartSlot, Side, Stance, TerrainPiece, Timing, Token } from './types';
+import { cardName, isAerial, isBarricade, unitSize } from './data';
+import type { Card, CardAction, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, TerrainPiece, Timing, Token } from './types';
 import { LEGACY_SIDE, normaliseScript, statusCount, TIMINGS } from './types';
 import { normaliseSetup } from './setup';
 import { isMeleeFiring, lockersOf } from './melee';
+import { rangeBetween, smokeBlocks } from './rules';
 import { normaliseTasks } from './tasks';
 
 export const PART_SLOTS: PartSlot[] = ['torso', 'chasis', 'leftHand', 'rightHand', 'backpack'];
@@ -259,6 +260,55 @@ function initIntercept(cards: Card[]): Record<string, number> {
 
 // The furthest an Intercept Action on this unit reaches, so a launch can say
 // whose Interception it woke up.
+// How a Projectile Action delivers. Only a LAUNCHED projectile triggers
+// Interception; Deploy and Lay never do (FAQ M20). The launcher's wording wins:
+// the MES Beacon reads "Deployable" on the projectile card but "Launch" on the
+// launcher part, and it launches.
+export function projectileDelivery(a: CardAction): 'launch' | 'deploy' | 'lay' {
+  const hay = [
+    a.name?.en ?? '', a.name?.zh ?? '',
+    a.description?.zh ?? '', a.description?.en ?? '',
+    ...(a.keywords ?? []).map((k) => k.inline ?? k.key ?? ''),
+  ].join(' ');
+  if (/布设|布雷|Lay|Mine ?Lay/i.test(hay)) return 'lay';
+  if (/部署|Deploy/i.test(hay)) return 'deploy';
+  return 'launch';
+}
+
+// The Interception attempts one launch owes (4.9). The FAQ pins the geometry:
+// only the STARTING grid and the LANDING grid are checked (M9/M20), and an
+// Intercept is a Firing Action (M26), so Smoke over its sight of the
+// triggering grid takes the shot away (F3) and Fire Control Interference
+// grounds the interceptor outright (J5).
+export function interceptsOwed(
+  data: GameData,
+  tokens: Token[],
+  smoke: SmokeScreen[],
+  launcher: Token,
+  fresh: Token[],
+): { uid: number; actionId: string; targetUid: number }[] {
+  const owed: { uid: number; actionId: string; targetUid: number }[] = [];
+  for (const x of tokens) {
+    if (x.side === launcher.side || x.deployed === false || interceptLeft(x) <= 0) continue;
+    if ((x.partStates[x.kind === 'mech' ? 'torso' : 'main'] ?? 'intact') === 'destroyed') continue;
+    if (statusCount(x.statuses, 'fci') > 0) continue;
+    for (const { card } of tokenCards(data, x)) {
+      for (const a of card.actions ?? []) {
+        if (interceptCapacity(a) === undefined) continue;
+        if ((x.intercept?.[a.id] ?? 0) <= 0) continue;
+        for (const p of fresh) {
+          const reach = a.range ?? 0;
+          const atLanding = rangeBetween(x, p).range <= reach && !smokeBlocks(x, p, smoke);
+          const atStart = rangeBetween(x, launcher).range <= reach && !smokeBlocks(x, launcher, smoke);
+          if (!atLanding && !atStart) continue;
+          owed.push({ uid: x.uid, actionId: a.id, targetUid: p.uid });
+        }
+      }
+    }
+  }
+  return owed;
+}
+
 export function interceptReach(data: GameData, t: Token): number {
   let best = 0;
   for (const { card } of tokenCards(data, t)) {
@@ -285,6 +335,7 @@ export function makeDroneToken(state: GameState, data: GameData, card: Card, sid
     label: shortName(card),
     size: unitSize(card),
     aerial: isAerial(card),
+    barricade: isBarricade(card) || undefined,
     stance: (card.stance as Stance) || 'offensive',
     partStates: { main: 'intact', ...(backpack ? { backpack: 'intact' } : {}) },
     ammo: initAmmo(cards),
@@ -515,6 +566,10 @@ export function maxLink(data: GameData, t: Token): number {
 // doubled. 18 of the 44 Drones print Mobility, so getting this wrong moved most
 // of them at twice their range.
 export function maneuverRange(data: GameData, t: Token): number {
+  // A destroyed Chassis cannot carry the Mech anywhere: the rulebook lists it
+  // with Immobilized as "currently unable to move" (3.4.4), and FAQ E4 keeps
+  // only the free change of Facing, which costs no range and is not gated here.
+  if (t.kind === 'mech' && (t.partStates?.chasis ?? 'intact') === 'destroyed') return 0;
   const card = t.kind === 'mech' && t.mech?.chasis ? data.byId.get(t.mech.chasis) : data.byId.get(t.cardId);
   const base = card?.move ?? 0;
   return t.kind === 'mech' && t.stance === 'mobility' ? base * 2 : base;
@@ -734,7 +789,11 @@ export function migrateState(rawIn: unknown, data: GameData): GameState | null {
       row: t.row,
       size: t.size ?? 1,
       facing: t.facing ?? 0,
-      aerial: t.aerial ?? false,
+      // Re-derived from the card rather than trusted: saves from before the
+      // FAQ audit hold walls as aerial and the elevated drones as grounded.
+      aerial: card ? isAerial(card) : (t.aerial ?? false),
+      barricade: card && isBarricade(card) ? true : undefined,
+      lastDamagedBy: t.lastDamagedBy,
       stance: t.stance ?? ((card?.stance as Stance) || 'offensive'),
       link: t.link ?? (t.kind === 'mech' ? pilot?.LV ?? 3 : undefined),
       timing: t.timing,

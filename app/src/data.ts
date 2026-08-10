@@ -745,7 +745,23 @@ export function unitSize(c: Card): 1 | 2 | 3 {
   return 1;
 }
 
+// The three deployable barricades. The Rules Supplement (1.1.3, via FAQ A3/E6/
+// M13/M14) classes them "Neutral Unit - Deployables - Barricade": they stand on
+// the ground, block movement, give and receive Protection like any unit, and
+// can neither move, be moved, nor be Crushed. Everything else projectile-shaped
+// really is Aerial (missiles, grenades, beacons, mines).
+export const BARRICADE_CARDS = new Set(['PDAM-003', 'PDAM-004', '158']);
+
+export function isBarricade(c: Card): boolean {
+  return BARRICADE_CARDS.has(c.id);
+}
+
+// The data's two flight classes follow the printed bases (FAQ E1): 'flying' is
+// the square transparent base (Ravens) that crosses terrain but must land on
+// open ground, 'elevated' is the round base (Dragonfly, the Bits) that is
+// Aerial and may sit on terrain or units. No card carries the literal value
+// 'aerial'; testing for it alone grounded all five elevated drones.
 export function isAerial(c: Card): boolean {
-  if (c.category === 'projectile') return true;
-  return c.flyingOrElevated === 'aerial';
+  if (c.category === 'projectile') return !isBarricade(c);
+  return c.flyingOrElevated === 'elevated' || c.flyingOrElevated === 'aerial';
 }

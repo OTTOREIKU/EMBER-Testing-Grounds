@@ -37,6 +37,9 @@ export function maxLink(data: any, t: any): number {
   const pilot = t.kind === 'mech' && t.mech?.pilot ? data.byId.get(t.mech.pilot) : undefined;
   return pilot?.LV ?? 99;
 }
+export function pilotCard(data: any, t: any): any {
+  return t.kind === 'mech' && t.mech?.pilot ? data.byId.get(t.mech.pilot) : undefined;
+}
 export function makeDroneToken(state: any, data: any, card: any, side: any, backpack?: string): any {
   return {
     uid: state.nextUid++, side, kind: card.category === 'projectile' ? 'projectile' : 'drone',
@@ -347,6 +350,7 @@ function candidates(s, rng) {
       for (const seat of ['s1', 's2']) out.push({ kind: 'rollSetup', seat, hits: [irnd(rng, 4), irnd(rng, 4)] });
       out.push({ kind: 'acceptRoll', seat: 's1' });
     }
+    if (su.stage === 'tasks') out.push({ kind: 'finishTasks', seat: s.round.firstPlayer });
     if (su.stage === 'side') out.push({ kind: 'pickEdge', seat: s.round.firstPlayer, edge: rng() < 0.5 ? 'black' : 'white' });
     if (su.stage === 'deploy') {
       const seat = C.deployTurn(s, su);
@@ -572,7 +576,7 @@ for (let seed = 1; seed <= GAMES; seed++) {
 // leave that rule untested without failing anything, so the floor makes the
 // silence loud.
 const CORE = [
-  'lockMap', 'rollSetup', 'acceptRoll', 'pickEdge', 'deployUnit', 'finishDeployment',
+  'lockMap', 'rollSetup', 'acceptRoll', 'finishTasks', 'pickEdge', 'deployUnit', 'finishDeployment',
   'setTiming', 'lockDials', 'advancePhase', 'designate', 'maneuver', 'performAction',
   'endOpportunity', 'passTurn', 'applyPenetration', 'spendAmmo', 'markEndStep',
   'playTactic', 'importSquad',

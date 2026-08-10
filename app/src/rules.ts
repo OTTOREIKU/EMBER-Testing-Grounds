@@ -284,6 +284,9 @@ export function crushTargets(
   tokens: Token[],
 ): CrushVictims | null {
   if (t.size !== 3 || t.aerial) return null;
+  // An Optical Camouflage unit cannot Crush anything (FAQ I3/I9) — revealing
+  // is what Crushing would mean, and the ruling simply forbids it.
+  if ((t.statuses ?? []).filter((s) => s === 'camouflage').length > 0) return null;
   if (c < 0 || r < 0 || c >= LG || r >= LG) return null;
   const covers = (cells: { col: number; row: number }[]) =>
     cells.some((cell) => Math.floor(cell.col / 3) === c && Math.floor(cell.row / 3) === r);
@@ -301,6 +304,9 @@ export function crushTargets(
     for (let dc = 0; dc < o.size; dc++) for (let dr = 0; dr < o.size; dr++) cells.push({ col: o.col + dc, row: o.row + dr });
     if (!covers(cells)) continue;
     if (o.size >= t.size) return null;
+    // A Barricade can neither move nor be Crushed (FAQ E6), so a grid holding
+    // one cannot be entered at all.
+    if (o.barricade) return null;
     units.push(o);
   }
   if (!units.length && !hitTerrain.length) return null;
@@ -448,7 +454,23 @@ export function rangeBetween(a: Token, b: Token): { range: number; adjacent: boo
 export function inArc(a: Token, b: Token, arc: 'forward' | 'rear'): boolean {
   const ga = largeGridOf(a);
   const gb = largeGridOf(b);
-  if (ga.c === gb.c && ga.r === gb.r) return true;
+  if (ga.c === gb.c && ga.r === gb.r) {
+    // Sharing a Large Grid is not a shrug: front and rear are read from the
+    // SMALL grids (FAQ E15), except that overlapping footprints — an Aerial
+    // unit over a ground unit — treat each other as mutually in front
+    // (Supplement "Overlapping" via FAQ E15/I24), so Back Attack never
+    // triggers between them.
+    const overlap = a.col < b.col + b.size && b.col < a.col + a.size
+      && a.row < b.row + b.size && b.row < a.row + a.size;
+    if (overlap) return arc === 'forward';
+    const dx = (b.col + (b.size - 1) / 2) - (a.col + (a.size - 1) / 2);
+    const dy = (b.row + (b.size - 1) / 2) - (a.row + (a.size - 1) / 2);
+    const fv = [ [0, -1], [1, 0], [0, 1], [-1, 0] ][a.facing];
+    const dir = arc === 'forward' ? fv : [-fv[0], -fv[1]];
+    const dot = dx * dir[0] + dy * dir[1];
+    if (dot <= 0) return false;
+    return Math.abs(dx * dir[1] - dy * dir[0]) <= dot;
+  }
   const dx = gb.c - ga.c;
   const dy = gb.r - ga.r;
   const fv = [ [0, -1], [1, 0], [0, 1], [-1, 0] ][a.facing];
@@ -511,8 +533,19 @@ export function protectionFor(
   if (smokeBlocks(attacker, defender, smoke)) {
     return { white: 0, note: 'No line of sight: a Smoke Screen is in the way (4.16)' };
   }
-  if (losBetween(attacker, defender, terrain, tokens) === 'clear') return { white: 0, note: '' };
-  const terrainOnly = losBetween(attacker, defender, terrain, []);
+  // Terrain in Contact with the attacker's base grants no Terrain Protection
+  // (FAQ A1): shooting over the wall you are pressed against costs the
+  // defender nothing. Contact is Small-Grid edge overlap, so orthogonal
+  // adjacency to the footprint; a corner touch is not Contact.
+  const touching = (p: TerrainPiece): boolean =>
+    p.subCells.some((c) => {
+      const dc = c.col < attacker.col ? attacker.col - c.col : c.col - (attacker.col + attacker.size - 1);
+      const dr = c.row < attacker.row ? attacker.row - c.row : c.row - (attacker.row + attacker.size - 1);
+      return Math.max(dc, 0) + Math.max(dr, 0) <= 1;
+    });
+  const cover = terrain.filter((p) => !touching(p));
+  if (losBetween(attacker, defender, cover, tokens) === 'clear') return { white: 0, note: '' };
+  const terrainOnly = losBetween(attacker, defender, cover, []);
   const unitsOnly = losBetween(attacker, defender, [], tokens);
   let white = 0;
   const parts: string[] = [];
