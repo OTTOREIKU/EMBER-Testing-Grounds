@@ -120,6 +120,10 @@
     "ZPA-39": {
       "en": "Zombie",
       "source": "championship-legal EN parts list v1.02 (publisher) — community data had \"Cadaver\"; the publisher list calls this pilot Zombie"
+    },
+    "180": {
+      "en": "PL29 All-terrain Chassis",
+      "source": "publisher GoF parts list v1.021 - renamed from \"PL29 Stealth Chassis\" in the redesign"
     }
   },
   "actions": {
@@ -286,6 +290,10 @@
     "TM39D_B": {
       "en": "Launch Snake Eye",
       "source": "translated"
+    },
+    "180_B": {
+      "en": "Jump",
+      "source": "publisher GoF parts list v1.021 - replaced the Stealth Movement passive"
     }
   },
   "traits": {

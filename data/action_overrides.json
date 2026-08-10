@@ -23,7 +23,8 @@
       "range": 4
     },
     "180_A": {
-      "range": 3
+      "range": 4,
+      "_source": "GoF v1.021 (was 3 in v1.02)"
     },
     "181_A": {
       "range": 5
@@ -93,6 +94,18 @@
       "name": {
         "en": "Full-auto"
       }
+    },
+    "180_B": {
+      "type": "Moving",
+      "size": "s",
+      "range": 2,
+      "keywords": [
+        {
+          "key": "空中移动",
+          "en": "Airborne Movement"
+        }
+      ],
+      "_source": "GoF v1.021 - the Stealth Movement passive is now a Jump: a Short Movement Action, Range 2, with Airborne Movement"
     }
   },
   "_notes": {

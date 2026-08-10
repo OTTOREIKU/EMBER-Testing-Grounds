@@ -1,5 +1,5 @@
 {
-  "_comment": "Stat values that the generated cards.json gets wrong. Two sources, both better than the community database: values marked as read off a printed card scan in assets/cards/en/, and values taken from the publisher's championship-legal English parts lists (v1.02). Where the two disagree the parts list wins — it is the company's current data, while some scans are older printings (040's scan is watermarked Ver.2019 Crowdfunding). Points can ONLY come from the parts list: the printed card leaves the points box deliberately blank, and rulebook 6.1 says the online list wins.",
+  "_comment": "Stat values that the generated cards.json gets wrong. Two sources, both better than the community database: values marked as read off a printed card scan in assets/cards/en/, and values taken from the publisher's championship-legal English parts lists (v1.02). Where the two disagree the parts list wins — it is the company's current data, while some scans are older printings (040's scan is watermarked Ver.2019 Crowdfunding). Points can ONLY come from the parts list: the printed card leaves the points box deliberately blank, and rulebook 6.1 says the online list wins. Where the publisher has issued more than one revision the NEWEST wins: GoF is on v1.021, which repriced the faction and redesigned card 180; the other factions are still on v1.02.",
   "_scope": "Only stats confirmed wrong against a scan are listed. No systematic sweep of every card has been done, so absence from this file does not mean a stat is correct.",
   "_shape": "cards maps a card id to the stat fields to overwrite.",
   "cards": {
@@ -30,6 +30,95 @@
     },
     "040": {
       "parray": 1
+    },
+    "172": {
+      "score": 105,
+      "_source": "publisher GoF parts list v1.021 - the newest revision from the company, which supersedes the v1.02 championship xlsx the earlier sweeps used. 1.021 reprices the whole GoF line and marks every change in red; read it by rendering the pages, its text layer cannot be parsed."
+    },
+    "173": {
+      "score": 80,
+      "_source": "publisher GoF parts list v1.021 - the newest revision from the company, which supersedes the v1.02 championship xlsx the earlier sweeps used. 1.021 reprices the whole GoF line and marks every change in red; read it by rendering the pages, its text layer cannot be parsed."
+    },
+    "174": {
+      "score": 80,
+      "_source": "publisher GoF parts list v1.021 - the newest revision from the company, which supersedes the v1.02 championship xlsx the earlier sweeps used. 1.021 reprices the whole GoF line and marks every change in red; read it by rendering the pages, its text layer cannot be parsed."
+    },
+    "175": {
+      "score": 85,
+      "_source": "publisher GoF parts list v1.021 - the newest revision from the company, which supersedes the v1.02 championship xlsx the earlier sweeps used. 1.021 reprices the whole GoF line and marks every change in red; read it by rendering the pages, its text layer cannot be parsed."
+    },
+    "176": {
+      "score": 85,
+      "_source": "publisher GoF parts list v1.021 - the newest revision from the company, which supersedes the v1.02 championship xlsx the earlier sweeps used. 1.021 reprices the whole GoF line and marks every change in red; read it by rendering the pages, its text layer cannot be parsed."
+    },
+    "179": {
+      "score": 42,
+      "_source": "publisher GoF parts list v1.021 - the newest revision from the company, which supersedes the v1.02 championship xlsx the earlier sweeps used. 1.021 reprices the whole GoF line and marks every change in red; read it by rendering the pages, its text layer cannot be parsed."
+    },
+    "180": {
+      "score": 70,
+      "_source": "publisher GoF parts list v1.021 - the newest revision from the company, which supersedes the v1.02 championship xlsx the earlier sweeps used. 1.021 reprices the whole GoF line and marks every change in red; read it by rendering the pages, its text layer cannot be parsed. Card 180 is a REDESIGN: PL29 Stealth Chassis became PL29 All-terrain Chassis, losing Silence and gaining a Jump.",
+      "keywords": []
+    },
+    "181": {
+      "score": 80,
+      "_source": "publisher GoF parts list v1.021 - the newest revision from the company, which supersedes the v1.02 championship xlsx the earlier sweeps used. 1.021 reprices the whole GoF line and marks every change in red; read it by rendering the pages, its text layer cannot be parsed."
+    },
+    "ZHLA-202": {
+      "score": 59,
+      "_source": "publisher GoF parts list v1.021 - the newest revision from the company, which supersedes the v1.02 championship xlsx the earlier sweeps used. 1.021 reprices the whole GoF line and marks every change in red; read it by rendering the pages, its text layer cannot be parsed."
+    },
+    "ZYBP-101": {
+      "score": 30,
+      "_source": "publisher GoF parts list v1.021 - the newest revision from the company, which supersedes the v1.02 championship xlsx the earlier sweeps used. 1.021 reprices the whole GoF line and marks every change in red; read it by rendering the pages, its text layer cannot be parsed."
+    },
+    "ZYBP-302": {
+      "score": 30,
+      "_source": "publisher GoF parts list v1.021 - the newest revision from the company, which supersedes the v1.02 championship xlsx the earlier sweeps used. 1.021 reprices the whole GoF line and marks every change in red; read it by rendering the pages, its text layer cannot be parsed."
+    },
+    "ZHDR-201": {
+      "score": 51,
+      "_source": "publisher GoF parts list v1.021 - the newest revision from the company, which supersedes the v1.02 championship xlsx the earlier sweeps used. 1.021 reprices the whole GoF line and marks every change in red; read it by rendering the pages, its text layer cannot be parsed."
+    },
+    "ZHDR-202": {
+      "score": 48,
+      "_source": "publisher GoF parts list v1.021 - the newest revision from the company, which supersedes the v1.02 championship xlsx the earlier sweeps used. 1.021 reprices the whole GoF line and marks every change in red; read it by rendering the pages, its text layer cannot be parsed."
+    },
+    "ZHDR-203": {
+      "score": 48,
+      "_source": "publisher GoF parts list v1.021 - the newest revision from the company, which supersedes the v1.02 championship xlsx the earlier sweeps used. 1.021 reprices the whole GoF line and marks every change in red; read it by rendering the pages, its text layer cannot be parsed."
+    },
+    "ZHDR-101": {
+      "score": 42,
+      "armor": 1,
+      "structure": 4,
+      "_source": "publisher GoF parts list v1.021 - the newest revision from the company, which supersedes the v1.02 championship xlsx the earlier sweeps used. 1.021 reprices the whole GoF line and marks every change in red; read it by rendering the pages, its text layer cannot be parsed."
+    },
+    "ZHDR-102": {
+      "score": 48,
+      "armor": 1,
+      "structure": 4,
+      "_source": "publisher GoF parts list v1.021 - the newest revision from the company, which supersedes the v1.02 championship xlsx the earlier sweeps used. 1.021 reprices the whole GoF line and marks every change in red; read it by rendering the pages, its text layer cannot be parsed."
+    },
+    "ZHDR-103": {
+      "score": 48,
+      "armor": 1,
+      "structure": 4,
+      "_source": "publisher GoF parts list v1.021 - the newest revision from the company, which supersedes the v1.02 championship xlsx the earlier sweeps used. 1.021 reprices the whole GoF line and marks every change in red; read it by rendering the pages, its text layer cannot be parsed."
+    },
+    "ZHDR-104": {
+      "score": 48,
+      "armor": 1,
+      "structure": 4,
+      "_source": "publisher GoF parts list v1.021 - the newest revision from the company, which supersedes the v1.02 championship xlsx the earlier sweeps used. 1.021 reprices the whole GoF line and marks every change in red; read it by rendering the pages, its text layer cannot be parsed."
+    },
+    "ZHDR-106": {
+      "score": 70,
+      "_source": "publisher GoF parts list v1.021 - the newest revision from the company, which supersedes the v1.02 championship xlsx the earlier sweeps used. 1.021 reprices the whole GoF line and marks every change in red; read it by rendering the pages, its text layer cannot be parsed."
+    },
+    "ZHDR-107": {
+      "score": 70,
+      "_source": "publisher GoF parts list v1.021 - the newest revision from the company, which supersedes the v1.02 championship xlsx the earlier sweeps used. 1.021 reprices the whole GoF line and marks every change in red; read it by rendering the pages, its text layer cannot be parsed."
     }
   },
   "_notes": {
