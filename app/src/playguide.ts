@@ -350,6 +350,20 @@ export class PlayGuide {
     this.root.querySelectorAll<HTMLButtonElement>('[data-reboot]').forEach((b) =>
       b.addEventListener('click', () => this.reboot(b.dataset.reboot as Stance)),
     );
+    this.root.querySelector('[data-finish-tasks]')?.addEventListener('click', () => {
+      const s = this.state;
+      if (!s) return;
+      // The old lock-time zone warning lives here now: past this point the
+      // squads deploy, and with no overlay nothing has a Deployment Zone.
+      if (!s.zoneSet && !this.warn) {
+        this.warn = 'No zone overlay is selected, so no unit will have a Deployment Zone to go in. Press again to continue anyway.';
+        this.render();
+        return;
+      }
+      this.warn = null;
+      perform(this.data, s, { kind: 'finishTasks', seat: s.round.firstPlayer });
+      this.cb.onChanged();
+    });
     this.root.querySelector('[data-maneuver]')?.addEventListener('click', () => this.tryManeuver());
     this.root.querySelector('[data-overload]')?.addEventListener('click', () => this.tryOverload());
     for (const b of [...this.root.querySelectorAll<HTMLButtonElement>('[data-tactic]')]) {
@@ -386,12 +400,8 @@ export class PlayGuide {
     });
     this.root.querySelector('[data-pick-mission]')?.addEventListener('click', () => this.cb.onPickMission());
     this.root.querySelector('[data-lock-map]')?.addEventListener('click', () => {
-      const su = normaliseSetup(s.setup) ?? newSetup();
-      if (!s.zoneSet && !this.warn) {
-        this.warn = 'No zone overlay is selected, so no unit will have a Deployment Zone to go in. Lock it again to continue anyway.';
-        this.render();
-        return;
-      }
+      // Zones legitimately arrive later now — they come with the Main Task
+      // after the roll (FAQ P1) — so locking a zoneless map needs no warning.
       this.warn = null;
       perform(this.data, s, { kind: 'lockMap', seat: s.round.firstPlayer });
       this.cb.onChanged();
@@ -593,7 +603,9 @@ export class PlayGuide {
       <p class="pg-intercept-head"><i>⊘</i> Interception owed</p>
       <p class="pg-intercept-note">A launch or move by an Aerial Unit triggers this at once, in this phase. Each attempt spends a Token, and a unit must keep going until its Tokens run out or the target dies.</p>
       <div class="pg-acts">${rows}</div>
-      <button class="pg-pass" data-intercept-skip="1">Skip the rest</button>
+      ${this.script(s).strict
+        ? ''
+        : '<button class="pg-pass" data-intercept-skip="1">Skip the rest</button>'}
     </div>`;
   }
 
@@ -636,10 +648,14 @@ export class PlayGuide {
       )}
       ${(() => {
         const torso = (t: Token) => (t.partStates.torso ?? 'intact') !== 'destroyed';
-        const canStabilise = s.tokens.filter((t) => t.kind === 'mech' && alive(t) && torso(t) && (t.statuses ?? []).some((id) => {
-          const d = STATUSES.find((x) => x.id === id);
-          return d?.shape === 'square' || d?.shape === 'hexagon';
-        }));
+        // Either half of Stabilize justifies the action (FAQ J4/J6-J8): a
+        // Token to remove, or a Link short of the pilot's ceiling.
+        const canStabilise = s.tokens.filter((t) => t.kind === 'mech' && alive(t) && torso(t) && (
+          (t.statuses ?? []).some((id) => {
+            const d = STATUSES.find((x) => x.id === id);
+            return d?.shape === 'square' || d?.shape === 'hexagon';
+          }) || (t.link ?? 0) < maxLink(this.data, t) && maxLink(this.data, t) !== 99
+        ));
         const canReveal = s.tokens.filter((t) => alive(t) && statusCount(t.statuses, 'camouflage') > 0);
         const hidden = s.tokens.filter((t) => alive(t) && (statusCount(t.statuses, 'camouflage') > 0 || statusCount(t.statuses, 'lowProfile') > 0));
         const canScan = hidden.length ? s.tokens.filter((t) => t.kind === 'mech' && alive(t) && torso(t) && hidden.some((h) => h.side !== t.side)) : [];
@@ -778,6 +794,7 @@ export class PlayGuide {
             : 'Roll for First Player';
       }
       if (su.stage === 'map') return 'Lock the battlefield';
+      if (su.stage === 'tasks') return 'Choose the Tasks';
       if (su.stage === 'side') return 'Choose a board edge';
       return deploymentComplete(s) ? 'Press Begin round 1' : 'Deploy every unit';
     }
@@ -799,8 +816,39 @@ export class PlayGuide {
     const su = this.setupState(s)!;
     if (su.stage === 'map') return this.mapHtml(s);
     if (su.stage === 'roll') return this.rollHtml(s, su);
+    if (su.stage === 'tasks') return this.tasksSetupHtml(s);
     if (su.stage === 'side') return this.edgeHtml(s, su);
     return this.deployHtml(s, su);
+  }
+
+  // The Tasks come after the roll (FAQ P1): the Main Task first, then each
+  // side's Secondary with the First Player revealing theirs first. The pickers
+  // themselves live in the Missions dialog and the Zones dropdown, so this step
+  // narrates the order and holds the door until the table is ready.
+  private tasksSetupHtml(s: GameState): string {
+    const fp = s.round.firstPlayer;
+    const sp: Side = fp === 's1' ? 's2' : 's1';
+    const tasks = normaliseTasks(s.tasks);
+    const mission = s.mission ? this.data.missions.cards.find((m) => m.id === s.mission) : undefined;
+    const secName = (side: Side): string => {
+      const id = tasks.secondary[side];
+      const card = id ? this.data.secondary.find((c) => c.id === id) : undefined;
+      return card ? card.name : 'not picked';
+    };
+    const row = (label: string, value: string, done: boolean) =>
+      `<div class="pg-taskrow"><b>${esc(label)}</b><span class="${done ? '' : 'pg-missing'}">${esc(value)}</span></div>`;
+    return `<p>${squadLabel(fp)} won the roll and goes first. The official order (FAQ P1): pick the
+      Main Task, then ${esc(squadLabel(fp))} picks and reveals their Secondary Task, then
+      ${esc(squadLabel(sp))}. Use the <b>Missions</b> dialog and the <b>Zones</b> list in the toolbar.</p>
+      ${row('Main Task', mission ? mission.name : (s.zoneSet ? 'zones picked' : 'not picked'), !!mission || !!s.zoneSet)}
+      ${row(`${squadLabel(fp)} Secondary`, secName(fp), !!tasks.secondary[fp])}
+      ${row(`${squadLabel(sp)} Secondary`, secName(sp), !!tasks.secondary[sp])}
+      <p class="dim">Task Targets deploy with the zone overlay. Nothing here is blocked, so a
+      casual table may skip any of it.</p>
+      <div class="pg-units">
+        <button class="pg-unit${mission ? '' : ' warn'}" data-pick-mission="1">${mission ? 'Change the Main Task' : 'Choose a Main Task'}</button>
+        <button class="pg-unit" data-finish-tasks="1">Tasks are set, pick edges</button>
+      </div>`;
   }
 
   // The battlefield is agreed before anything else, then locked, so nobody can
@@ -809,19 +857,14 @@ export class PlayGuide {
   // rather than after the battlefield is fixed. Picking one draws its tactical
   // and deployment zones, which is what later Task designations need to exist.
   private mapHtml(s: GameState): string {
-    const zones = s.zoneSet ?? '';
-    const mission = s.mission ? this.data.missions.cards.find((m) => m.id === s.mission) : undefined;
-    const ready = !!mission && !!zones;
     const hidden = this.script(s).mode === 'hidden';
+    // Only the map is settled here: the official order (FAQ P1) rolls for
+    // First Player next and picks the Main Task and Secondaries after that.
     return `<p class="pg-active">Agree the battlefield
-        <small>choose the Main Task, then the map, and lock them in</small></p>
+        <small>choose the map and lock it in; the Tasks come after the roll</small></p>
       <div class="pg-dials">
-        <div class="pg-dial-row${mission ? '' : ' unset'}"><span class="pg-dial-unit">Main Task</span>
-          <span class="pg-dial-set">${mission ? esc(mission.name) : 'not chosen'}</span></div>
         <div class="pg-dial-row"><span class="pg-dial-unit">Map</span>
           <span class="pg-dial-set">${esc(this.cb.mapLabel())}</span></div>
-        <div class="pg-dial-row${zones ? '' : ' unset'}"><span class="pg-dial-unit">Zones</span>
-          <span class="pg-dial-set">${esc(this.cb.zoneLabel())}</span></div>
         <div class="pg-dial-row"><span class="pg-dial-unit">Dials</span>
           <button class="pg-dial-set pg-mode" data-mode-toggle="1" data-tip-title="Dial secrecy" data-tip="${
             hidden
@@ -836,19 +879,10 @@ export class PlayGuide {
           }">${this.script(s).strict ? 'Strict tracker' : 'Teaching'}</button></div>
       </div>
       <div class="pg-units">
-        <button class="pg-unit${mission ? '' : ' warn'}" data-pick-mission="1">${
-          mission ? 'Change the Main Task' : 'Choose a Main Task'
-        }</button>
-        <button class="pg-unit${ready ? '' : ' warn'}" data-lock-map="1"${
-          ready ? '' : ' disabled title="Choose a Main Task first"'
-        }>Lock the battlefield</button>
+        <button class="pg-unit" data-lock-map="1">Lock the battlefield</button>
       </div>
       <p class="pg-intercept-note">${
-        !mission
-          ? 'Start with the Main Task. It draws its own tactical zones and Deployment Zones, so the board is ready for the Tasks that come next.'
-          : zones
-            ? 'Both are fixed for the rest of the game once locked.'
-            : 'No zone overlay is selected, so there are no Deployment Zones to place units into. Pick one from the Zones list in the toolbar.'
+        'The map is fixed for the rest of the game once locked. The Main Task, the zone overlay and the Secondary Tasks are chosen after the First Player roll (FAQ P1).'
       }</p>`;
   }
 
@@ -1292,18 +1326,39 @@ export class PlayGuide {
   // Stabilize System (6.1): Torso removes 1 Square or Hexagon Token from this
   // Mech, then restores 1 Link.
   private stabilise(uid: number): void {
-    const s = this.state;
-    const t = s?.tokens.find((x) => x.uid === uid);
-    if (!s || !t) return;
-    const shed = (t.statuses ?? []).find((id) => {
-      const d = STATUSES.find((x) => x.id === id);
-      return d?.shape === 'square' || d?.shape === 'hexagon';
-    });
-    if (!shed) return;
-    perform(this.data, s, { kind: 'stabilise', seat: t.side, uid });
-    const label = STATUSES.find((x) => x.id === shed)?.label ?? shed;
-    this.cb.onNote(t, `Stabilize System: ${label} removed and Link restored to ${t.link}.`);
-    this.cb.onChanged();
+    void (async () => {
+      const s = this.state;
+      const t = s?.tokens.find((x) => x.uid === uid);
+      if (!s || !t) return;
+      const shed = (t.statuses ?? []).find((id) => {
+        const d = STATUSES.find((x) => x.id === id);
+        return d?.shape === 'square' || d?.shape === 'hexagon';
+      });
+      // Removing a Token is the player's choice, not a tax on the Link: they
+      // may keep their Tokens and take only the Link (FAQ J4).
+      let keepTokens = false;
+      if (shed) {
+        const label = STATUSES.find((x) => x.id === shed)?.label ?? shed;
+        const id = await choiceDialog({
+          title: `Stabilize ${t.label}`,
+          body: 'Stabilize System removes 1 Square or Hexagon Token and restores 1 Link. Removing the Token is optional (FAQ J4).',
+          choices: [
+            { id: 'both', label: `Remove ${label} and restore 1 Link`, primary: true },
+            { id: 'link', label: 'Keep the Tokens, restore 1 Link only' },
+            { id: 'cancel', label: 'Cancel' },
+          ],
+          stacked: true,
+        });
+        if (id === null || id === 'cancel') return;
+        keepTokens = id === 'link';
+      }
+      perform(this.data, s, { kind: 'stabilise', seat: t.side, uid, keepTokens });
+      const label = shed ? STATUSES.find((x) => x.id === shed)?.label ?? shed : null;
+      this.cb.onNote(t, keepTokens || !label
+        ? `Stabilize System: Link restored to ${t.link}.`
+        : `Stabilize System: ${label} removed and Link restored to ${t.link}.`);
+      this.cb.onChanged();
+    })();
   }
 
   // Reveal (6.1): leave the Optical Camouflage State, then make Manifestation

@@ -121,6 +121,9 @@ interface Ctx {
   surplusRound: number;
   carried: { heavy: number; light: number };
   surplusKeyword: SurplusEffect | null;
+  // The Part the original hit landed on: Scatter-shot and Cleaving must send
+  // the Surplus somewhere ELSE (FAQ D4/D6), and Mutilation back into exactly it.
+  surplusOriginalPart: string | null;
   log: string[];
   explosion: boolean;
   hits: number;
@@ -241,6 +244,7 @@ export class AttackHelper {
       surplusRound: 0,
       carried: { heavy: 0, light: 0 },
       surplusKeyword: null,
+      surplusOriginalPart: null,
       log: [],
       explosion,
       hits: 0,
@@ -549,6 +553,10 @@ export class AttackHelper {
     pickWrap.className = 'ah-partpick';
     for (const { slot, card } of tokenCards(this.data, c.defender)) {
       if (slot === 'pilot') continue;
+      // Scatter-shot and Cleaving send the Surplus somewhere OTHER than the
+      // Part the original hit landed on (FAQ D4/D6) — an "Any Part" result or
+      // a direct designation may pick anything except it.
+      if (c.surplusRound > 0 && slot === c.surplusOriginalPart) continue;
       const st = c.defender.partStates[slot as PartSlot | 'main'] ?? 'intact';
       const b = document.createElement('button');
       b.className = `chip chip-${st}`;
@@ -586,6 +594,15 @@ export class AttackHelper {
     } else {
       caption.textContent = `${SLOT_LABEL[slot as PartSlot] ?? part} takes the hit.`;
       this.note(`Black Die: ${part}.`);
+    }
+    // Surplus may not land back on the Part the original hit chose: the Part
+    // Die "must be rerolled" on a repeat (FAQ D4), and the redirect above can
+    // funnel into it too, so the check comes after the redirect.
+    if (c.surplusRound > 0 && slot === c.surplusOriginalPart) {
+      caption.textContent = `${SLOT_LABEL[slot as PartSlot] ?? part} was the original hit — reroll the Black Die.`;
+      this.note(`Black Die: ${part}, the Part the original hit landed on. Surplus Damage must go elsewhere, so the die is rerolled (FAQ D4).`);
+      window.setTimeout(() => { if (this.ctx === c) this.render(); }, 900);
+      return;
     }
     const landed = slot;
     window.setTimeout(() => { if (this.ctx === c) this.pickPart(landed); }, 700);
@@ -840,13 +857,27 @@ export class AttackHelper {
         const carried = unoffset;
         const surplus = carried.heavy + carried.light;
         // A destroyed Unit ends the attack outright (4.4.4), so Surplus Damage
-        // never carries on against a Mech whose Torso just went.
-        if (surplus > 0 && effects.length && c.surplusRound === 0 && c.defender.kind === 'mech'
-          && (c.defender.partStates.torso ?? 'intact') !== 'destroyed') {
-          const effect = effects[0];
+        // never carries on against a Mech whose Torso just went. A Drone takes
+        // it too when the keyword is Mutilation and it has Structure to resolve
+        // against (FAQ D8) — for anything else there is no second Part to hit.
+        const original = c.targetPart;
+        const effect = c.defender.kind === 'mech'
+          ? effects[0]
+          : effects.find((e) => e.name === 'Mutilation');
+        const originalState = original ? c.defender.partStates[original as PartSlot | 'main'] ?? 'intact' : 'intact';
+        const alive = c.defender.kind === 'mech'
+          ? (c.defender.partStates.torso ?? 'intact') !== 'destroyed'
+          : originalState !== 'destroyed';
+        if (surplus > 0 && effect && c.surplusRound === 0 && alive
+          // Mutilation goes back into the SAME Part, resolving against the
+          // Structure it now shows as Damaged. A Part the first Penetration
+          // destroyed outright has none, so the Surplus is dropped (FAQ D9),
+          // never redirected to the Torso.
+          && !(effect.name === 'Mutilation' && originalState === 'destroyed')) {
           c.surplusRound = 1;
           c.carried = carried;
           c.surplusKeyword = effect;
+          c.surplusOriginalPart = original;
           c.targetPart = null;
           c.attackRoll = null;
           c.defenseRoll = null;
@@ -857,9 +888,20 @@ export class AttackHelper {
           if (effects.length > 1) {
             this.note(`This Action also has ${effects.slice(1).map((e) => e.name).join(' and ')}; the attacker picks one, and ${effect.name} is applied here.`);
           }
-          c.step = 'part';
-          this.render();
+          if (effect.name === 'Mutilation' && original) {
+            // Same Part, no second Black Die (4.8.1 step 2.1): the target is
+            // already determined by the keyword itself.
+            this.note(`Mutilation strikes the same Part again: ${SLOT_LABEL[original as PartSlot | 'main'] ?? original}, now defending with its Structure.`);
+            this.pickPart(original);
+          } else {
+            c.step = 'part';
+            this.render();
+          }
         } else {
+          if (surplus > 0 && effects.length && effects[0].name === 'Mutilation'
+            && c.surplusRound === 0 && originalState === 'destroyed' && alive) {
+            this.note(`Mutilation: the ${original ? SLOT_LABEL[original as PartSlot | 'main'] ?? original : 'Part'} was destroyed outright, so it has no Structure and the Surplus Damage is dropped (4.8, FAQ D9).`);
+          }
           if (surplus > 0 && !effects.length) {
             this.note(`${surplus} un-offset icon${surplus === 1 ? '' : 's'} of Surplus Damage, but this Action has no Mutilation, Cleaving or Scatter-shot, so it does nothing.`);
           }
@@ -1137,7 +1179,8 @@ export class ElectronicHelper {
       sum.innerHTML = `Lightning <b>${n.lightning}</b> · Light Hit <b>${n.light}</b>`;
       wrap.appendChild(sum);
       const spent = who === 'init' ? c.rerolled.init : c.rerolled.resp;
-      if (!spent && (t.link ?? 0) > 0) {
+      // Voluntary spends stop above the last Link (4.10, FAQ L1).
+      if (!spent && (t.link ?? 0) > 1) {
         const rr = document.createElement('button');
         rr.className = 'ah-cancel';
         rr.textContent = 'Focus reroll (1 Link)';

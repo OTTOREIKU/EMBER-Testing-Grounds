@@ -31,7 +31,7 @@ import {
 import { Panel } from './panel';
 import { tacticSpec, tacticTargets } from './tactics';
 import { Roster } from './roster';
-import { attackDirection, crushTargets, type CrushVictims, dissipationFor, extendPath, inArc, knockbackPath, largeGridOf, type LargeGrid, LG, losBetween, losNote as losNoteFor, type MoveOpts, protectionFor as protectionForShared, rangeBetween, reachableGrids, smokeBlocks, standingSpot } from './rules';
+import { canStandIn, attackDirection, crushTargets, type CrushVictims, dissipationFor, extendPath, inArc, knockbackPath, largeGridOf, type LargeGrid, LG, losBetween, losNote as losNoteFor, type MoveOpts, protectionFor as protectionForShared, rangeBetween, reachableGrids, smokeBlocks, standingSpot } from './rules';
 import { breakAwayCost, canBeForceMoved, lockersOf } from './melee';
 import { instantiateScenario, loadScenarios, type Scenario } from './scenarios';
 import { loadReplays, ReplayPlayer, type ReplayScript, type ReplayStep, type ReplayTally } from './replay';
@@ -44,9 +44,9 @@ import { PHASES, RoundTracker } from './tracker';
 import { PlayGuide } from './playguide';
 import type { Card, CardAction, DiceData, DieColor, Facing, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, StatusDef, TerrainPiece, Timing, Token } from './types';
 import { addStatus, SCALES, statusCount, statusesFor, STATUSES } from './types';
-import { chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, type Resupply, resupplyOf, SLOT_LABEL, interceptLeft, interceptReach, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf } from './units';
+import { chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, type Resupply, resupplyOf, SLOT_LABEL, interceptLeft, interceptsOwed, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf } from './units';
 import { registerOffline } from './offline';
-import { battlefieldLocked, countHits, firstPlayerFrom, newSetup, normaliseSetup, type SetupState } from './setup';
+import { battlefieldLocked, countHits, firstPlayerFrom, newSetup, normaliseSetup, tasksLocked, type SetupState } from './setup';
 import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
 import { dialsOf, hashDials, newSalt } from './secrecy';
 import { resolveZoneSetData } from './overlays';
@@ -111,6 +111,10 @@ async function init() {
 
   const tray = new DiceTray(dice, document.getElementById('dice-tray')!);
 
+  // Penetrated Black Box bearers, held until the attack's Forced Movement has
+  // resolved so the drop is asked at the position the bearer ends up in.
+  const pendingBoxDrops: { victim: Token; attacker: Token }[] = [];
+
   const attackHelper = new AttackHelper(
     data,
     dice,
@@ -130,18 +134,24 @@ async function init() {
       save();
     },
     (attacker, defender, action, hits) => {
-      void resolveKnockback(attacker, defender, action, hits);
-      if (attacker.kind === 'projectile') {
-        state.tokens = state.tokens.filter((x) => x.uid !== attacker.uid);
-        if (selectedUid === attacker.uid) selectToken(null);
-        onChanged();
-      }
+      void (async () => {
+        // Forced Movement is part of the attack, so it resolves before a
+        // Penetrated bearer drops its Black Box — the Box lands around the
+        // NEW position (FAQ E19), which is why the drops queue until here.
+        await resolveKnockback(attacker, defender, action, hits);
+        for (const q of pendingBoxDrops.splice(0)) dropBlackBoxes(q.victim, q.attacker);
+        if (attacker.kind === 'projectile') {
+          state.tokens = state.tokens.filter((x) => x.uid !== attacker.uid);
+          if (selectedUid === attacker.uid) selectToken(null);
+          onChanged();
+        }
+      })();
     },
     (killer, victim, what) => {
       perform(data, state, { kind: 'recordKill', seat: killer.side, uid: killer.uid, targetUid: victim.uid, what });
       if (what === 'unit' && selectedUid === victim.uid) selectToken(null);
     },
-    (victim, attacker) => dropBlackBoxes(victim, attacker),
+    (victim, attacker) => pendingBoxDrops.push({ victim, attacker }),
     (cmd) => perform(data, state, cmd),
   );
 
@@ -377,6 +387,35 @@ async function init() {
               '',
             );
             interceptFollowUp = { uid: attacker.uid, actionId: intercepting.actionId, targetUid: defender.uid };
+          } else if (defender.side === attacker.side && !state.script?.strict) {
+            // Allies cannot be designated as Firing or Melee targets under
+            // normal circumstances (Supplement 1.4.1 via FAQ A10/A11); area
+            // damage is the intended way to hit your own. Warn, don't block —
+            // and the Tick is only spent if the attack actually declares.
+            void confirmDialog({
+              title: `${defender.label} is an ally`,
+              body: 'A squad cannot normally designate its own unit as the target of a Firing or Melee Action (Rules Supplement 1.4.1). Grenades and other area damage do hit allies; a direct attack needs a card that allows it or a house ruling.',
+              confirmLabel: 'Attack it anyway',
+              cancelLabel: 'Pick another target',
+              danger: true,
+            }).then((go) => {
+              if (!go) {
+                done?.(false);
+                return;
+              }
+              const prot = protectionFor(attacker, defender, action);
+              attackHelper.start(attacker, action, defender, losNote(attacker, defender, action), prot.white, prot.note);
+              showSideTab('combat');
+              done?.(true);
+            });
+            return;
+          } else if (defender.side === attacker.side) {
+            void alertDialog({
+              title: `${defender.label} is an ally`,
+              body: 'A squad cannot designate its own unit as the target of a Firing or Melee Action (Rules Supplement 1.4.1). The strict tracker refuses it; use area damage instead.',
+            });
+            done?.(false);
+            return;
           } else {
             const prot = protectionFor(attacker, defender, action);
             attackHelper.start(attacker, action, defender, losNote(attacker, defender, action), prot.white, prot.note);
@@ -929,6 +968,17 @@ async function init() {
       });
       return;
     }
+    // Interception is mandatory and repeats until the Tokens or targets run
+    // out (4.9, FAQ M5). The strict tracker enforces that outright; teaching
+    // mode keeps the door with a warning, in the house style.
+    if (state.script?.strict) {
+      void alertDialog({
+        title: 'Interception continues',
+        body: `${target.label} survived, so ${t.label} MUST Intercept again (rulebook 4.9, FAQ M5). ${left} Token${left === 1 ? '' : 's'} left.`,
+        closeLabel: 'Intercept again',
+      }).then(() => startIntercept(t, f.actionId));
+      return;
+    }
     void confirmDialog({
       title: 'Intercept again',
       body: `${target.label} survived, so ${t.label} MUST Intercept again until its Tokens run out or the target is destroyed (rulebook 4.9). ${left} Token${left === 1 ? '' : 's'} left.`,
@@ -1092,7 +1142,9 @@ async function init() {
     board.clearHighlights();
     setHint('');
     if (!m) return;
-    if (m.placed) noteInterception(m.uid);
+    // Only a LAUNCHED projectile triggers Interception; a Deployed or Laid
+    // one arrives quietly (FAQ M20).
+    if (m.placed && projectileDelivery(m.action) === 'launch') noteInterception(m.uid);
     m.done(m.placed > 0);
     onChanged();
     // The launch panel has nothing left to say once the volley is over, and
@@ -1112,20 +1164,7 @@ async function init() {
     if (!t || !state.script) return;
     const fresh = state.tokens.filter((x) => x.parentUid === launcherUid && x.kind === 'projectile');
     if (!fresh.length) return;
-    const owed: { uid: number; actionId: string; targetUid: number }[] = [];
-    for (const x of state.tokens) {
-      if (x.side === t.side || interceptLeft(x) <= 0) continue;
-      for (const { card } of tokenCards(data, x)) {
-        for (const a of card.actions ?? []) {
-          if (interceptCapacity(a) === undefined) continue;
-          if ((x.intercept?.[a.id] ?? 0) <= 0) continue;
-          for (const p of fresh) {
-            if (rangeBetween(x, p).range > (a.range ?? 0)) continue;
-            owed.push({ uid: x.uid, actionId: a.id, targetUid: p.uid });
-          }
-        }
-      }
-    }
+    const owed = interceptsOwed(data, state.tokens, state.smoke ?? [], t, fresh);
     if (!owed.length) return;
     perform(data, state, { kind: 'queueIntercepts', seat: t.side, items: owed });
     logTo(t, `Launch triggers Interception: ${owed.length} attempt${owed.length === 1 ? '' : 's'} owed.`);
@@ -1572,6 +1611,9 @@ async function init() {
       const c = g.c + dc;
       const r = g.r + dr;
       if (c < 0 || r < 0 || c >= LG || r >= LG) continue;
+      // Ground level only (FAQ P9): a Box cannot land on a building. Units do
+      // not block it — a Box may overlap one (P8) — so terrain is the test.
+      if (!canStandIn(c, r, 1, false, currentTerrain(), [], undefined)) continue;
       spots.push({ c, r, ok: true });
     }
     const box = held[0];
@@ -1752,11 +1794,33 @@ async function init() {
     const dir = attackDirection(attacker, victim);
     const path = knockbackPath(victim, dir, kb.grids, currentTerrain(), state.tokens);
     const heading = ['north', 'east', 'south', 'west'][dir.dr < 0 ? 0 : dir.dc > 0 ? 1 : dir.dr > 0 ? 2 : 3];
-    if (!path.length) {
-      await alertDialog({
-        title: `${name} is blocked`,
-        body: `${victim.label} would be forced ${heading}, but a Unit, Terrain or the board edge is in the way, so it does not move. Knockback stops the moment it is blocked.`,
+    // The player causing a Forced Movement picks the victim's facing, and a
+    // victim that cannot move may still be turned — or left alone, since the
+    // facing change is not mandatory when the movement fails (FAQ B4/B5).
+    const askFacing = async (note: string): Promise<Facing | undefined> => {
+      const id = await choiceDialog({
+        title: `Turn ${victim.label}?`,
+        body: `${note} As the forcing player you choose which way ${victim.label} ends up facing (3.4.4).`,
+        choices: [
+          ...(['North', 'East', 'South', 'West'] as const).map((label, i) => ({
+            id: String(i),
+            label: i === victim.facing ? `${label} (as it stands)` : label,
+          })),
+          { id: '', label: 'Leave its facing alone' },
+        ],
+        stacked: true,
       });
+      return id ? (Number(id) as Facing) : undefined;
+    };
+    if (!path.length) {
+      const facing = await askFacing(
+        `${victim.label} would be forced ${heading}, but a Unit, Terrain or the board edge is in the way, so it does not move.`,
+      );
+      if (facing !== undefined && facing !== victim.facing) {
+        perform(data, state, { kind: 'forceMove', seat: attacker.side, uid: attacker.uid, targetUid: victim.uid, to: { col: victim.col, row: victim.row }, facing });
+        logTo(victim, `${name} from ${attacker.label} was blocked, but it is turned to face ${['North', 'East', 'South', 'West'][facing]}.`);
+        onChanged();
+      }
       return;
     }
     const end = path[path.length - 1];
@@ -1773,7 +1837,8 @@ async function init() {
     const spot = standingSpot(end.c, end.r, victim.size, victim.aerial, currentTerrain(), state.tokens, victim.uid, { col: victim.col, row: victim.row })
       ?? { col: victim.col, row: victim.row };
     const wasShut = victim.stance === 'shutdown';
-    perform(data, state, { kind: 'forceMove', seat: attacker.side, uid: attacker.uid, targetUid: victim.uid, to: { col: spot.col, row: spot.row }, push: kb.push });
+    const facing = await askFacing(`${victim.label} is forced ${heading} to ${gridRef(end.c, end.r)}.`);
+    perform(data, state, { kind: 'forceMove', seat: attacker.side, uid: attacker.uid, targetUid: victim.uid, to: { col: spot.col, row: spot.row }, push: kb.push, facing });
     logTo(victim, `${name} from ${attacker.label}: forced ${path.length} Grid${path.length === 1 ? '' : 's'} ${heading} to ${gridRef(end.c, end.r)}.`);
     if (kb.push && victim.kind === 'mech') {
       logTo(victim, `Push costs 1 Link (now ${victim.link}).`);
@@ -1826,11 +1891,28 @@ async function init() {
       board.showSmokeTargets(spots.map((g) => ({ ...g, ok: true })), (c, r) => {
         const spot = standingSpot(c, r, v.size, v.aerial, currentTerrain(), state.tokens, v.uid);
         if (!spot) return;
-        perform(data, state, { kind: 'forceMove', seat: t.side, uid: t.uid, targetUid: v.uid, to: { col: spot.col, row: spot.row } });
-        logTo(t, `Crushed ${v.label}, Force-Moved to ${gridRef(c, r)}.`);
         board.clearHighlights();
-        board.renderTokens(state);
-        step();
+        // The crushing player also decides the victim's facing (3.4.4, FAQ L6),
+        // same as any other Forced Movement.
+        void (async () => {
+          const id = await choiceDialog({
+            title: `Turn ${v.label}?`,
+            body: `As the crushing player you choose which way ${v.label} ends up facing (3.4.4).`,
+            choices: [
+              ...(['North', 'East', 'South', 'West'] as const).map((label, i) => ({
+                id: String(i),
+                label: i === v.facing ? `${label} (as it stands)` : label,
+              })),
+              { id: '', label: 'Leave its facing alone' },
+            ],
+            stacked: true,
+          });
+          const facing = id ? (Number(id) as Facing) : undefined;
+          perform(data, state, { kind: 'forceMove', seat: t.side, uid: t.uid, targetUid: v.uid, to: { col: spot.col, row: spot.row }, facing });
+          logTo(t, `Crushed ${v.label}, Force-Moved to ${gridRef(c, r)}.`);
+          board.renderTokens(state);
+          step();
+        })();
       });
     };
     step();
@@ -2330,6 +2412,11 @@ async function init() {
         }
         const before = t.statuses ?? [];
         t.statuses = addStatus(before, pick);
+        // A replaced or refreshed Hexagon starts yellow again (FAQ J22).
+        if (STATUSES.find((d) => d.id === pick)?.shape === 'hexagon') {
+          const hexes = new Set(STATUSES.filter((d) => d.shape === 'hexagon').map((d) => d.id));
+          t.expiring = (t.expiring ?? []).filter((x) => !hexes.has(x));
+        }
         const lost = before.filter((s) => !t.statuses!.includes(s)).map((s) => STATUSES.find((d) => d.id === s)?.label ?? s);
         const n = t.statuses.filter((x) => x === pick).length;
         logTo(
@@ -3285,21 +3372,27 @@ async function init() {
     // replace the whole board are shut for the entire game, because a Mission or
     // Scenario would swap the map and units out from under the lock.
     const locked = battlefieldLocked(setup);
+    // The map is settled first, but the Tasks are chosen AFTER the roll
+    // (FAQ P1), so the Missions dialog and the zone overlay stay open through
+    // the tasks stage and freeze when the edges are picked.
+    const tl = tasksLocked(setup);
     const why = 'Locked while a game is running. Press End game to change it.';
-    for (const el of [mapSelect, zoneSelect]) {
-      el.disabled = locked;
-      el.title = locked ? why : '';
-    }
+    mapSelect.disabled = locked;
+    mapSelect.title = locked ? why : '';
+    zoneSelect.disabled = tl;
+    zoneSelect.title = tl ? why : '';
     const zoneBtn = document.getElementById('btn-zones') as HTMLButtonElement | null;
-    if (zoneBtn) zoneBtn.disabled = locked && !state.zoneSet;
-    // Setup 3.1.1 puts the board layout and the Tasks BEFORE the first-player
-    // roll, so these stay open while the battlefield is still being agreed and
-    // freeze the moment it locks.
-    for (const id of ['btn-missions', 'btn-scenarios', 'btn-mapedit', 'btn-mapmanage', 'btn-import-squad']) {
+    if (zoneBtn) zoneBtn.disabled = tl && !state.zoneSet;
+    for (const id of ['btn-scenarios', 'btn-mapedit', 'btn-mapmanage', 'btn-import-squad']) {
       const b = document.getElementById(id) as HTMLButtonElement | null;
       if (!b) continue;
       b.disabled = locked;
       b.title = locked ? why : '';
+    }
+    const missions = document.getElementById('btn-missions') as HTMLButtonElement | null;
+    if (missions) {
+      missions.disabled = tl;
+      missions.title = tl ? why : '';
     }
   }
 

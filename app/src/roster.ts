@@ -237,7 +237,7 @@ export class Roster {
     const note = document.createElement('p');
     note.className = 'tac-note';
     note.innerHTML =
-      'Tactics Cards are held in hand rather than placed on the board, so there is nothing to deploy. Each costs 30 points against your squad total. Tap one to read it.' +
+      'Tactics Cards are held in hand rather than placed on the board, so there is nothing to deploy. Each costs 30 points against your squad total, and only one copy of each may be included (FAQ P2). Tap one to read it.' +
       '<br><b>You may only play 1 Tactics Card per round.</b>';
     this.body.appendChild(note);
 
@@ -271,15 +271,20 @@ export class Roster {
         const n = held ? held[side].filter((x) => x === c.id).length : 0;
         // Every Tactics Card prints a faction emblem, but 5.1 restricts Units
         // and 5.4.2 calls these commander actions rather than Units, so they
-        // join any squad. Passing no card skips the faction test.
-        const b = this.squadButton(side, null, n ? ` ×${n}` : '');
+        // join any squad. Passing no card skips the faction test. Only one
+        // copy of each may be purchased (FAQ P2), so a held card's button
+        // turns into its own remover rather than offering a second copy.
+        const b = this.squadButton(side, null, n ? ' ✓' : '');
         if (n) b.classList.add('has');
         if (!b.classList.contains('off-faction')) {
           b.title = n
-            ? `In ${squadLabel(side)}. Click to add another, right-click to remove one.`
+            ? `In ${squadLabel(side)}. Click or right-click to take it back out. Only one copy of each Tactics Card may be included (FAQ P2).`
             : `Add to ${squadLabel(side)}`;
         }
-        b.addEventListener('click', () => this.cb.onAddTactic?.(c, side));
+        b.addEventListener('click', () => {
+          if (n) this.cb.onDropTactic?.(c, side);
+          else this.cb.onAddTactic?.(c, side);
+        });
         b.addEventListener('contextmenu', (ev) => {
           ev.preventDefault();
           if (n) this.cb.onDropTactic?.(c, side);
