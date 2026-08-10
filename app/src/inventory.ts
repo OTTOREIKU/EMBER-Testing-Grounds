@@ -241,7 +241,7 @@ export class Inventory {
       <button class="dlg-close inv-compare-close" title="Close">✕</button>
       <div class="inv-contents-head"><b>Compare boxes</b>
         <span class="inv-contents-sub">${shared} card${shared === 1 ? '' : 's'} in both</span></div>
-      <label class="inv-filter inv-cmp-filter"><input type="checkbox" id="inv-cmp-excl"${exclusiveOnly ? ' checked' : ''}><span class="inv-tick"></span> Only cards found in no other box</label>
+      <label class="inv-filter inv-cmp-filter"><input type="checkbox" id="inv-cmp-excl"${exclusiveOnly ? ' checked' : ''}><span class="inv-tick"></span> Exclusive cards</label>
       <div class="inv-cmp-grid">${column(0)}${column(1)}</div>`;
 
     panel.querySelector('.inv-compare-close')!.addEventListener('click', () => {

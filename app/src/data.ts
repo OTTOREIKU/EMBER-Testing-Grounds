@@ -41,7 +41,7 @@ export interface BoxDef {
 }
 
 interface BoxStatus {
-  boxes?: Record<string, { released?: boolean; product?: string }>;
+  boxes?: Record<string, { released?: boolean; product?: string; hasImage?: boolean }>;
 }
 
 // ---------- faction resolution ----------
@@ -494,6 +494,9 @@ export async function loadData(): Promise<GameData> {
     if (st) {
       b.released = st.released;
       b.product = st.product;
+      // Covers we have sourced ourselves; boxes.json only knows the ones the
+      // builder bundle shipped with.
+      if (st.hasImage) b.hasImage = true;
     }
   }
 
