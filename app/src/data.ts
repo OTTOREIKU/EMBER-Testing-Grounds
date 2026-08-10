@@ -34,6 +34,14 @@ export interface BoxDef {
   name: LangText;
   faction?: string[];
   hasImage?: boolean;
+  // From box_status.json: whether the box has ever been produced and sold.
+  // Undefined means nobody has checked, which is not the same as false.
+  released?: boolean;
+  product?: string;
+}
+
+interface BoxStatus {
+  boxes?: Record<string, { released?: boolean; product?: string }>;
 }
 
 // ---------- faction resolution ----------
@@ -413,7 +421,7 @@ function applyTactics(cards: Card[], table: Record<string, TacticEntry>): void {
 }
 
 export async function loadData(): Promise<GameData> {
-  const [cards, terrain, boxes, rawKeywords, patch, mech, xlate, names, missions, tactics, play, secondary, zoneData, facPatch, boxPatch, common, ammoPatch, statPatch, actionPatch, factionData] = await Promise.all([
+  const [cards, terrain, boxes, rawKeywords, patch, boxStatus, mech, xlate, names, missions, tactics, play, secondary, zoneData, facPatch, boxPatch, common, ammoPatch, statPatch, actionPatch, factionData] = await Promise.all([
     fetch(dataUrl('cards.json')).then((r) => r.json() as Promise<Card[]>),
     fetch(dataUrl('terrain_layouts.json')).then((r) => r.json() as Promise<TerrainData>),
     fetch(dataUrl('boxes.json')).then((r) => r.json() as Promise<BoxDef[]>),
@@ -421,6 +429,9 @@ export async function loadData(): Promise<GameData> {
     fetch(dataUrl('keyword_overrides.json'))
       .then((r) => (r.ok ? (r.json() as Promise<KeywordOverrides>) : { overrides: {} }))
       .catch(() => ({ overrides: {} }) as KeywordOverrides),
+    fetch(dataUrl('box_status.json'))
+      .then((r) => (r.ok ? (r.json() as Promise<BoxStatus>) : { boxes: {} }))
+      .catch(() => ({ boxes: {} }) as BoxStatus),
     fetch(dataUrl('mechanics.json'))
       .then((r) => (r.ok ? (r.json() as Promise<{ mechanics: MechanicDef[] }>) : { mechanics: [] }))
       .catch(() => ({ mechanics: [] as MechanicDef[] })),
@@ -479,6 +490,11 @@ export async function loadData(): Promise<GameData> {
   for (const b of boxes) {
     const bn = names.boxes?.[b.key];
     if (bn) b.name = { ...b.name, en: bn.en };
+    const st = boxStatus.boxes?.[b.key];
+    if (st) {
+      b.released = st.released;
+      b.product = st.product;
+    }
   }
 
   for (const c of cards) {

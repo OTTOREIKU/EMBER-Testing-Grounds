@@ -246,6 +246,54 @@ main { display: flex; flex: 1; min-height: 0; }
 .ip-name { flex: 1; min-width: 0; color: var(--text); line-height: 1.35; }
 .ip-n { flex-shrink: 0; font-family: var(--mono); font-size: 11px; color: var(--accent); }
 #inv-dialog.with-contents .inv-panel { max-width: calc(94vw - 320px); }
+
+/* ---------- box comparison ----------
+   Shares the flyout shell with the contents panel, just wider: two columns of
+   cards with a cover at the top of each. It reports and does not advise, so
+   there is no styling for a verdict - only counts, tags and list rows. */
+.inv-cmp-btn {
+  margin-left: auto; background: var(--surface3); color: var(--text2); border: none;
+  border-radius: var(--radius); padding: 6px 11px; font-size: 11.5px; font-weight: 600;
+  font-family: var(--font); cursor: pointer; transition: background 0.12s, color 0.12s;
+}
+.inv-cmp-btn:hover { background: var(--accent); color: #0f1216; }
+.inv-compare {
+  position: relative; flex: 0 0 min(640px, 62vw);
+  height: min(820px, 88vh); display: flex; flex-direction: column;
+  background: var(--surface2); border-right: 1px solid var(--border);
+  border-radius: var(--radius-lg) 0 0 var(--radius-lg);
+  padding: 18px; box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+}
+#inv-dialog:has(.inv-compare) .inv-panel { max-width: calc(94vw - min(640px, 62vw)); }
+.inv-cmp-filter { margin: 0 0 12px; }
+.inv-cmp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; min-height: 0; flex: 1; }
+.inv-cmp-col { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.inv-cmp-head { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+.inv-cmp-pick {
+  flex: 1; min-width: 0; font-size: 12px; font-family: var(--font);
+  background: var(--surface3); color: var(--text); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 6px 8px;
+}
+.inv-cmp-tag {
+  flex-shrink: 0; font-size: 9.5px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.4px; color: var(--text3); background: var(--surface3);
+  border-radius: var(--radius-sm); padding: 3px 6px;
+}
+.inv-cmp-cover { border-radius: var(--radius); overflow: hidden; background: var(--surface3); margin-bottom: 8px; }
+.inv-cmp-cover img { display: block; width: 100%; height: 96px; object-fit: cover; }
+.inv-cmp-tally { font-size: 10.5px; color: var(--text3); font-family: var(--mono); margin-bottom: 6px; }
+.inv-cmp-list { flex: 1; min-height: 0; }
+.inv-cmp-list li.shared .ip-name { color: var(--text2); }
+.ip-both, .ip-else {
+  flex-shrink: 0; font-size: 9.5px; font-weight: 700; letter-spacing: 0.3px;
+  text-transform: uppercase; border-radius: var(--radius-sm); padding: 2px 5px;
+}
+.ip-both { color: var(--blue); background: var(--blue-lt); }
+.ip-else { color: var(--text3); background: var(--surface3); font-family: var(--mono); }
+@media (max-width: 900px) {
+  .inv-compare { flex: 0 0 92vw; }
+  #inv-dialog:has(.inv-compare) .inv-panel { display: none; }
+}
 @media (max-width: 760px) {
   #inv-dialog.with-contents .inv-panel { display: none; }
   .inv-contents { flex-basis: min(320px, 94vw); border-radius: var(--radius-lg); border-right: none; }
