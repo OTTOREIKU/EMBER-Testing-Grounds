@@ -40,6 +40,8 @@ export interface BoxInfo {
   name: LangText;
   faction?: string[];
   hasImage?: boolean;
+  released?: boolean;
+  product?: string;
 }
 
 function boxCoverUrl(id: number): string {
@@ -53,6 +55,9 @@ export class Inventory {
   private onChange: () => void;
   private cards: Card[];
   private facChoice = '';
+  // Which two boxes the compare panel is showing. Kept on the instance so
+  // reopening the dialog does not lose the pair.
+  private cmp: [string, string] = ['', ''];
 
   constructor(boxes: BoxInfo[], onChange: () => void, cards: Card[] = []) {
     this.boxes = boxes;
@@ -136,6 +141,23 @@ export class Inventory {
     return out.sort((a, b) => rank(a.slot) - rank(b.slot) || a.name.localeCompare(b.name));
   }
 
+  // Every box a card ships in, so a row can say whether it is unique to the box
+  // being looked at or turns up elsewhere too. Cards with no box data at all are
+  // excluded from both sides rather than guessed at.
+  private boxesOf(id: string): string[] {
+    const c = this.cards.find((x) => x.id === id);
+    return (c?.containedIn ?? []).map((e) => e.box).filter((b) => b !== 'UNSALE');
+  }
+
+  private compareRows(key: string, other: string, exclusiveOnly: boolean) {
+    return this.boxContents(key)
+      .map((i) => {
+        const all = this.boxesOf(i.id);
+        return { ...i, elsewhere: all.filter((b) => b !== key), inOther: all.includes(other) };
+      })
+      .filter((i) => !exclusiveOnly || i.elsewhere.length === 0);
+  }
+
   private showContents(dlg: HTMLElement, key: string): void {
     dlg.querySelector('.inv-contents')?.remove();
     const box = this.boxes.find((b) => b.key === key);
@@ -169,6 +191,74 @@ export class Inventory {
     dlg.classList.add('with-contents');
   }
 
+  // Two boxes side by side: covers on the outside, contents down the middle.
+  // Deliberately states facts only - counts, which cards overlap, whether the
+  // box is sold - and draws no conclusions from them.
+  private showCompare(dlg: HTMLElement): void {
+    // Read the toggle BEFORE tearing the panel down: the checkbox lives inside
+    // it, so querying after the remove always answered false and the filter
+    // silently never applied.
+    const exclusiveOnly = dlg.querySelector<HTMLInputElement>('#inv-cmp-excl')?.checked ?? false;
+    dlg.querySelector('.inv-compare')?.remove();
+    const pool = this.sellableBoxes();
+    if (!this.cmp[0]) this.cmp = [pool[0]?.key ?? '', pool[1]?.key ?? ''];
+    const panel = document.createElement('div');
+    panel.className = 'inv-compare';
+
+    const picker = (side: 0 | 1) =>
+      `<select class="inv-cmp-pick" data-side="${side}" aria-label="Box ${side + 1}">${pool
+        .map((b) => `<option value="${b.key}"${this.cmp[side] === b.key ? ' selected' : ''}>${b.name.en || b.name.zh || b.key}</option>`)
+        .join('')}</select>`;
+
+    const column = (side: 0 | 1) => {
+      const key = this.cmp[side];
+      const box = pool.find((b) => b.key === key);
+      const rows = this.compareRows(key, this.cmp[side ? 0 : 1], exclusiveOnly);
+      const all = this.boxContents(key);
+      const uniq = all.filter((i) => this.boxesOf(i.id).length === 1).length;
+      const sold = box?.released === false ? '<span class="inv-cmp-tag">not currently sold</span>' : '';
+      return `<div class="inv-cmp-col">
+        <div class="inv-cmp-head">${picker(side)}${sold}</div>
+        ${box?.hasImage ? `<div class="inv-cmp-cover"><img src="${boxCoverUrl(box.id)}" alt="" loading="lazy" onerror="this.closest('.inv-cmp-cover').remove()"></div>` : ''}
+        <div class="inv-cmp-tally">${all.length} card${all.length === 1 ? '' : 's'} · ${uniq} in no other box · you own ${this.owned[key] ?? 0}</div>
+        <ul class="inv-parts inv-cmp-list">${
+          rows.length
+            ? rows
+                .map(
+                  (i) =>
+                    `<li data-tip-card="${i.id}"${i.inOther ? ' class="shared"' : ''}><span class="ip-slot">${i.slot}</span><span class="ip-name">${i.name}</span>${
+                      i.inOther ? '<span class="ip-both">both</span>' : i.elsewhere.length ? `<span class="ip-else">+${i.elsewhere.length}</span>` : ''
+                    }</li>`,
+                )
+                .join('')
+            : '<li class="dim">Nothing to show with this filter.</li>'
+        }</ul>
+      </div>`;
+    };
+
+    const shared = this.boxContents(this.cmp[0]).filter((i) => this.boxesOf(i.id).includes(this.cmp[1])).length;
+    panel.innerHTML = `
+      <button class="dlg-close inv-compare-close" title="Close">✕</button>
+      <div class="inv-contents-head"><b>Compare boxes</b>
+        <span class="inv-contents-sub">${shared} card${shared === 1 ? '' : 's'} in both</span></div>
+      <label class="inv-filter inv-cmp-filter"><input type="checkbox" id="inv-cmp-excl"${exclusiveOnly ? ' checked' : ''}><span class="inv-tick"></span> Exclusive cards</label>
+      <div class="inv-cmp-grid">${column(0)}${column(1)}</div>`;
+
+    panel.querySelector('.inv-compare-close')!.addEventListener('click', () => {
+      panel.remove();
+      dlg.classList.remove('with-contents');
+    });
+    panel.querySelectorAll<HTMLSelectElement>('.inv-cmp-pick').forEach((sel) =>
+      sel.addEventListener('change', () => {
+        this.cmp[Number(sel.dataset.side) as 0 | 1] = sel.value;
+        this.showCompare(dlg);
+      }),
+    );
+    panel.querySelector('#inv-cmp-excl')!.addEventListener('change', () => this.showCompare(dlg));
+    dlg.insertBefore(panel, dlg.querySelector('.inv-panel'));
+    dlg.classList.add('with-contents');
+  }
+
   openDialog(): void {
     document.getElementById('inv-dialog')?.remove();
     const dlg = document.createElement('div');
@@ -177,6 +267,7 @@ export class Inventory {
       <button id="inv-close" class="dlg-close" title="Close">✕</button>
       <div class="inv-head">
         <b>My inventory</b>
+        <button id="inv-compare-open" class="inv-cmp-btn">Compare boxes</button>
       </div>
       <p class="dim">Set how many copies of each box you own. Card lists then show your available copy counts.</p>
       <div class="inv-facets">
@@ -220,6 +311,7 @@ export class Inventory {
       if (ev.target === dlg) dlg.remove();
     });
     dlg.querySelector('#inv-close')!.addEventListener('click', () => dlg.remove());
+    dlg.querySelector('#inv-compare-open')!.addEventListener('click', () => this.showCompare(dlg));
     dlg.querySelector<HTMLInputElement>('#inv-filter')!.addEventListener('change', (ev) => {
       this.filterEnabled = (ev.target as HTMLInputElement).checked;
       this.save();
