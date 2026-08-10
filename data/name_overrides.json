@@ -318,6 +318,14 @@
     "COMBAT_RAID": {
       "en": "Raid-2 Player Starter Pack",
       "source": "renamed to match the product listing"
+    },
+    "LAB_PD_CRISIS1": {
+      "en": "LAB-CRISIS H2-A",
+      "source": "renamed to match the product listing"
+    },
+    "LAB_PD_CRISIS2": {
+      "en": "LAB-CRISIS H2-B",
+      "source": "renamed to match the product listing"
     }
   }
 }
