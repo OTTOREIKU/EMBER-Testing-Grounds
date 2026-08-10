@@ -236,8 +236,7 @@ function cardRow(c: Card): string {
 function officialLink(c: Card): string {
   if (!/^\d+$/.test(c.id)) return '';
   const url = `https://obsidianprotocol.net/#/info?id=${Number(c.id)}&lang=en`;
-  return `<p class="ref-official"><a href="${url}" target="_blank" rel="noopener noreferrer"
-    title="The publisher's own page for this card - the same one the QR code on the box opens">Official card page ↗</a></p>`;
+  return `<p class="ref-official"><a href="${url}" target="_blank" rel="noopener noreferrer">Official card page ↗</a></p>`;
 }
 
 function cardDetail(c: Card): string {
@@ -334,16 +333,15 @@ function cardDetail(c: Card): string {
     <p class="ref-meta">${esc([c.category, c.type, c.faction].filter(Boolean).join(' · '))}</p>
     ${officialLink(c)}
     ${c.category === 'pilot' ? `<div class="ref-portrait" data-portrait="${esc(c.id)}"></div>` : ''}
+    <div class="ref-cardimg-slot" data-img="${esc(c.id)}"></div>
+    <p class="ref-scan-note">Older scan. If it differs from the stats below, the stats are current.</p>
     ${free ? `<p class="ref-free">Costs 0 points — ${esc(free)}.</p>` : ''}
     ${stats || pilotStats ? `<div class="ref-stats">${stats}${pilotStats}</div>` : ''}
     ${kws ? `<div class="ref-kwlinks">${kws}</div>` : ''}
     ${cardBlock}
     ${trait}
     ${actions ? `<h3 class="ref-sub">Actions</h3>${actions}` : ''}
-    ${boxes ? `<p class="ref-boxes">${unsold ? '' : 'In: '}${boxes}</p>` : ''}
-    <div class="ref-cardimg-slot" data-img="${esc(c.id)}"></div>
-    <p class="ref-scan-note">The scan is the oldest source we have — some are early printings, and
-      one is watermarked Ver.2019. Where it disagrees with the numbers above, the numbers win.</p>`;
+    ${boxes ? `<p class="ref-boxes">${unsold ? '' : 'In: '}${boxes}</p>` : ''}`;
 }
 
 // ---------- boxes ----------
