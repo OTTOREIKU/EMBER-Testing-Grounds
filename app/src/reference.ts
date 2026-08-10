@@ -228,14 +228,14 @@ function cardRow(c: Card): string {
   </article>`;
 }
 
-// The publisher's own card page, which is what the QR code on the back of a
-// retail box opens. It is keyed by the numeric QR id, so the ~147 cards we hold
-// under a serial-style id have no link - we do not record their QR id. Some
-// numeric ids are not filled in upstream yet and show a placeholder there;
-// the wording below promises the publisher's page, not a guarantee of content.
+// The publisher's own card page, which is what the QR code on the card opens.
+// It is keyed by the QR number: our numeric ids are that number already, and
+// serial-style ids get theirs from data/qr_ids.json where one has been verified.
+// Some ids are not filled in upstream yet and show a placeholder there, so the
+// wording promises the publisher's page rather than a guarantee of content.
 function officialLink(c: Card): string {
-  if (!/^\d+$/.test(c.id)) return '';
-  const url = `https://obsidianprotocol.net/#/info?id=${Number(c.id)}&lang=en`;
+  if (!c.qrId) return '';
+  const url = `https://obsidianprotocol.net/#/info?id=${c.qrId}&lang=en`;
   return `<p class="ref-official"><a href="${url}" target="_blank" rel="noopener noreferrer">Official card page ↗</a></p>`;
 }
 

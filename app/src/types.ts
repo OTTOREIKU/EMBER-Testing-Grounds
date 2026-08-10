@@ -33,6 +33,9 @@ export interface CardAction {
 export interface Card {
   id: string;
   name: LangText;
+  // The number the publisher's own card page is keyed by. For our numeric ids
+  // it IS the id; cards held under a serial get theirs from data/qr_ids.json.
+  qrId?: number;
   category: 'mech_part' | 'pilot' | 'drone' | 'projectile' | 'tactics_or_upgrade' | 'unknown';
   type?: string;
   score?: number;

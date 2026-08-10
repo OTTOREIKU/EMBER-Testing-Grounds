@@ -44,6 +44,10 @@ interface BoxStatus {
   boxes?: Record<string, { released?: boolean; product?: string; hasImage?: boolean }>;
 }
 
+interface QrIds {
+  cards?: Record<string, number>;
+}
+
 // ---------- faction resolution ----------
 
 export const BASE_FACTIONS = ['RDL', 'UN', 'GOF'] as const;
@@ -421,7 +425,7 @@ function applyTactics(cards: Card[], table: Record<string, TacticEntry>): void {
 }
 
 export async function loadData(): Promise<GameData> {
-  const [cards, terrain, boxes, rawKeywords, patch, boxStatus, mech, xlate, names, missions, tactics, play, secondary, zoneData, facPatch, boxPatch, common, ammoPatch, statPatch, actionPatch, factionData] = await Promise.all([
+  const [cards, terrain, boxes, rawKeywords, patch, boxStatus, qrIds, mech, xlate, names, missions, tactics, play, secondary, zoneData, facPatch, boxPatch, common, ammoPatch, statPatch, actionPatch, factionData] = await Promise.all([
     fetch(dataUrl('cards.json')).then((r) => r.json() as Promise<Card[]>),
     fetch(dataUrl('terrain_layouts.json')).then((r) => r.json() as Promise<TerrainData>),
     fetch(dataUrl('boxes.json')).then((r) => r.json() as Promise<BoxDef[]>),
@@ -432,6 +436,9 @@ export async function loadData(): Promise<GameData> {
     fetch(dataUrl('box_status.json'))
       .then((r) => (r.ok ? (r.json() as Promise<BoxStatus>) : { boxes: {} }))
       .catch(() => ({ boxes: {} }) as BoxStatus),
+    fetch(dataUrl('qr_ids.json'))
+      .then((r) => (r.ok ? (r.json() as Promise<QrIds>) : { cards: {} }))
+      .catch(() => ({ cards: {} }) as QrIds),
     fetch(dataUrl('mechanics.json'))
       .then((r) => (r.ok ? (r.json() as Promise<{ mechanics: MechanicDef[] }>) : { mechanics: [] }))
       .catch(() => ({ mechanics: [] as MechanicDef[] })),
@@ -501,6 +508,9 @@ export async function loadData(): Promise<GameData> {
   }
 
   for (const c of cards) {
+    // A numeric id is already the QR number; a serial-style one needs the
+    // lookup, and only where it has been verified against the publisher.
+    c.qrId = /^\d+$/.test(c.id) ? Number(c.id) : qrIds.cards?.[c.id];
     const cn = names.cards?.[c.id];
     if (cn) c.name = { ...c.name, en: cn.en };
     const tn = names.traits?.[c.id];

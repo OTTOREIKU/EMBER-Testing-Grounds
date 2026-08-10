@@ -1,0 +1,25 @@
+{
+  "_comment": "QR ids for cards we hold under a serial-style id. Our numeric ids ARE the QR id already, so only serial-style cards need this. The number is what the publisher's own card page is keyed by: obsidianprotocol.net/#/info?id=<qr>&lang=en, which is what the QR code on the card opens.",
+  "_source": "The QR ID column of the championship parts lists (2026-08-03), then EVERY pair verified against the live API by name on 2026-08-10. Nothing here is taken on trust from the spreadsheet alone.",
+  "_trap": "QR ids RESTART PER SHEET TYPE, so they are not unique on their own. The six RDL pilots carry QR 1-6, and API ids 1-6 are backpacks and armaments - FPA-01 'Misty' resolves to the SH-15 Field Repair System. Every pilot therefore fails validation and is deliberately absent below. Never add an entry here without checking the name the API returns.",
+  "_pending": {
+    "_note": "Correct QR ids whose API record was still an unfilled placeholder on 2026-08-10. Re-run the check later and promote them into `cards` once the publisher enters them.",
+    "PDAM-001": 273,
+    "PDAM-003": 297,
+    "PDAM-004": 298
+  },
+  "cards": {
+    "PDAM-002": 554,
+    "PDAM-005": 531,
+    "PDAM-006": 530,
+    "PRDR-101": 269,
+    "PRDR-102": 270,
+    "PRDR-103": 271,
+    "PRDR-104": 272,
+    "PRDR-105": 296,
+    "PRDR-201": 526,
+    "PRDR-202": 527,
+    "PRDR-203": 528,
+    "PRDR-204": 529
+  }
+}
