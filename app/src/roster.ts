@@ -599,7 +599,17 @@ export class Roster {
     if (this.editing) {
       const ed = this.editing;
       const save = document.createElement('button');
-      save.className = `add ${ed.side}`;
+      // `add s1` styled nothing: there is no .s1 rule, so the button kept the
+      // browser's white face while button.add forces white text, and Save read
+      // as blank. It takes the squad tint the same way the Add buttons do -
+      // without squadButton's off-faction check, which would compare the mech
+      // against the very squad it is already in.
+      save.className = 'add sq-add sq-wide';
+      const saveFaction = this.cb.squadAllegiance(ed.side).faction;
+      if (saveFaction) {
+        save.classList.add('has-faction');
+        save.style.setProperty('--sq-tint', squadColour(saveFaction));
+      }
       save.textContent = 'Save changes';
       save.addEventListener('click', () => {
         void (async () => {
