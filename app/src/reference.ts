@@ -18,6 +18,23 @@ const SLOT_LABEL: Record<string, string> = {
   backpack: 'Backpack',
 };
 
+// The detail header used to print the raw category and type, so a reader met
+// "mech_part · chasis" - internal spelling and all - on the page most likely to
+// be someone's first. Sizes are not in SLOT_LABEL and just need a capital.
+const CATEGORY_LABEL: Record<string, string> = {
+  mech_part: 'Mech part',
+  drone: 'Drone',
+  projectile: 'Projectile',
+  pilot: 'Pilot',
+  tactics_or_upgrade: 'Tactics card',
+};
+
+const TYPE_LABEL: Record<string, string> = {
+  small: 'Small',
+  medium: 'Medium',
+  large: 'Large',
+};
+
 const STAT_FIELDS: [keyof Card, string][] = [
   ['score', 'Points'],
   ['armor', 'Armor'],
@@ -90,6 +107,15 @@ const SPEED_MARK: Record<string, { glyph: string; title: string; label: string }
 
 const esc = (s: string) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!);
 const norm = (s: string) => s.toLowerCase();
+
+// Several `en` fields in the card data still hold the Chinese text, so an `en`
+// value is not proof of English. Anything that would print card text has to
+// test the text itself, not just which field it came from.
+const CJK = /[぀-ヿ一-鿿]/;
+const englishOnly = (s: string | undefined): string | undefined => {
+  const t = s?.trim();
+  return t && !CJK.test(t) ? t : undefined;
+};
 
 let linkPatterns: { name: string; re: RegExp }[] | null = null;
 
@@ -182,6 +208,7 @@ function cardRow(c: Card): string {
   const stats: string[] = [];
   if (typeof c.armor === 'number' && c.armor) stats.push(`A${c.armor}`);
   if (typeof c.structure === 'number' && c.structure) stats.push(`S${c.structure}`);
+  if (typeof c.parray === 'number' && c.parray) stats.push(`P${c.parray}`);
   if (typeof c.dodge === 'number' && c.dodge) stats.push(`D${c.dodge}`);
   if (typeof c.electronic === 'number' && c.electronic) stats.push(`E${c.electronic}`);
   if (typeof c.move === 'number' && c.move) stats.push(`M${c.move}`);
@@ -265,8 +292,7 @@ function cardDetail(c: Card): string {
       const meta = [a.type, cost, a.range === 0 ? 'R --' : a.range ? `R ${a.range}` : '', dice, a.storage ? `Ammo ${a.storage}` : '']
         .filter(Boolean)
         .join(' · ');
-      const rawEn = a.description?.en?.trim();
-      const en = rawEn && !/[぀-ヿ一-鿿]/.test(rawEn) ? rawEn : undefined;
+      const en = englishOnly(a.description?.en);
       const tr = data.actionTranslation(a.id);
       let text = '';
       if (en) text = linkKeywords(en);
@@ -305,7 +331,17 @@ function cardDetail(c: Card): string {
     .map((e) => ({ def: data.boxes.find((x) => x.key === e.box), n: e.quantityPerBox }))
     .filter((x) => x.def);
   const unsold = inBoxes.length > 0 && inBoxes.every((x) => x.def!.key === 'UNSALE');
-  const boxes = unsold
+  // 49 cards have no box at all, and saying nothing read as an oversight rather
+  // than a known gap. Each kind is blank for its own reason, so each says so.
+  const noBoxNote =
+    c.category === 'projectile'
+      ? 'No box of its own. A Projectile is not bought separately: it comes with the Part that launches it.'
+      : c.category === 'tactics_or_upgrade'
+        ? 'No box recorded in the card data. The rulebook has the six Tactics Cards coming in the core box.'
+        : 'No box recorded. Nothing in the data says which set ships this card, which is not the same as it having none.';
+  const boxes = !inBoxes.length
+    ? noBoxNote
+    : unsold
     ? 'Not sold in any box yet. It is in the card database, but no set ships it.'
     : inBoxes
         .filter((x) => x.def!.key !== 'UNSALE')
@@ -320,7 +356,10 @@ function cardDetail(c: Card): string {
   // Some cards print rules on the card itself rather than on an Action. A
   // "White Dwarf" Bit reads "· Low Value · High Altitude", and that line is the
   // whole reason it cannot take a Task Item, so dropping it loses real rules.
-  const cardText = c.description?.en?.trim() || c.description?.zh?.trim() || '';
+  // The Chinese original is never shown: on the 16 cards that only have it, it
+  // is a keyword reminder line whose English is already a chip above, and the
+  // mechanics blocks below still read the zh text, so nothing is lost.
+  const cardText = englishOnly(c.description?.en) ?? '';
   const cardMechs = mechBlocks(c.description?.en, c.description?.zh);
   // Pilots are left out: their card line is flavour, and the trait block below
   // already labels it as such.
@@ -329,12 +368,26 @@ function cardDetail(c: Card): string {
     : '';
 
   const free = zeroCostReason(c);
+  // Only pilots carry a faction on the card; every other faction is derived from
+  // box membership. The list rows are already tinted by it, so the detail naming
+  // only the pilots' was the odd one out.
+  const detailFac = data.factionOf(c);
   return `<h2>${esc(cardName(c))}</h2>
-    <p class="ref-meta">${esc([c.category, c.type, c.faction].filter(Boolean).join(' · '))}</p>
+    <p class="ref-meta">${esc(
+      [
+        CATEGORY_LABEL[c.category] ?? c.category,
+        c.type ? SLOT_LABEL[c.type] ?? TYPE_LABEL[c.type] ?? c.type : '',
+        detailFac ? FACTION_LABEL[detailFac] ?? detailFac : '',
+      ]
+        .filter(Boolean)
+        .join(' · '),
+    )}</p>
     ${officialLink(c)}
     ${c.category === 'pilot' ? `<div class="ref-portrait" data-portrait="${esc(c.id)}"></div>` : ''}
-    <div class="ref-cardimg-slot" data-img="${esc(c.id)}"></div>
-    <p class="ref-scan-note">Older scan. If it differs from the stats below, the stats are current.</p>
+    <figure class="ref-scan">
+      <div class="ref-cardimg-slot" data-img="${esc(c.id)}"></div>
+      <figcaption class="ref-scan-note">Older scan. If it differs from the stats below, the stats are current.</figcaption>
+    </figure>
     ${free ? `<p class="ref-free">Costs 0 points — ${esc(free)}.</p>` : ''}
     ${stats || pilotStats ? `<div class="ref-stats">${stats}${pilotStats}</div>` : ''}
     ${kws ? `<div class="ref-kwlinks">${kws}</div>` : ''}
@@ -982,7 +1035,18 @@ function backDetail(): void {
 function paintDetail(html: string, scrollTop: number): void {
   const content = document.getElementById('ref-detail-content')!;
   content.innerHTML = html;
-  content.querySelectorAll<HTMLElement>('[data-img]').forEach((slot) => mountCardImage(slot, slot.dataset.img!, 'ref-cardimg'));
+  content.querySelectorAll<HTMLElement>('[data-img]').forEach((slot) => {
+    mountCardImage(slot, slot.dataset.img!, 'ref-cardimg');
+    // 25 cards have no scan. mountCardImage drops the broken image but not the
+    // caption beside it, which left those cards captioning a scan that is not
+    // there. Cached images have already failed by now and fire no fresh event,
+    // so the completed-but-empty case has to be tested directly.
+    const img = slot.querySelector('img');
+    if (!img) return;
+    const drop = () => slot.closest('.ref-scan')?.remove();
+    if (img.complete && !img.naturalWidth) drop();
+    else img.addEventListener('error', drop, { once: true });
+  });
   fillPortraits(content, false);
   sheet().hidden = false;
   document.body.classList.add('ref-locked');
