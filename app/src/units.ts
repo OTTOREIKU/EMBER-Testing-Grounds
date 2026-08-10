@@ -1,7 +1,7 @@
 import { DEFAULT_BOARD } from './boards';
 import type { GameData } from './data';
 import { cardName, isAerial, isBarricade, unitSize } from './data';
-import type { Card, CardAction, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, TerrainPiece, Timing, Token } from './types';
+import type { ExtraTick, Card, CardAction, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, TerrainPiece, Timing, Token } from './types';
 import { LEGACY_SIDE, normaliseScript, statusCount, TIMINGS } from './types';
 import { normaliseSetup } from './setup';
 import { isMeleeFiring, lockersOf } from './melee';
@@ -286,6 +286,16 @@ function initIntercept(cards: Card[]): Record<string, number> {
 
 // The furthest an Intercept Action on this unit reaches, so a launch can say
 // whose Interception it woke up.
+// The Extra Ticks a unit's cards grant, read off the curated extraTicks list.
+// The single home: the guide, the Match Centre glue and the grantExtra command
+// all build Opportunities from it, so the three can never drift.
+export function extrasFor(data: GameData, t: Token): ExtraTick[] {
+  const have = new Set(tokenCards(data, t).flatMap(({ card }) => (card.actions ?? []).map((a) => a.id)));
+  return data.extraTicks
+    .filter((g) => have.has(g.actionId))
+    .map((g) => ({ id: g.actionId, label: g.label, timing: g.timing as Timing, check: g.check }));
+}
+
 // ---------- Auras (FAQ Q1-Q4, J2) ----------
 //
 // The card data records auras as structured effects on (usually Passive)

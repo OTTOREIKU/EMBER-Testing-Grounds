@@ -53,13 +53,16 @@ for (const [name, raw] of Object.entries(shapes)) {
 
 // Real values must survive rather than being reset, or a reload would lose the round.
 const opp = { uid: 7, timing: 'firing', maneuver: 0, action: 1, extras: [], maneuvered: true, moved: true, started: true, overload: 1, performed: ['a1'], spentExtras: [] };
+// An interrupted opportunity waiting under a nested Extra one (FAQ K21) must
+// survive a reload with its spent ticks and the extra flag intact.
+const oppStack = [{ uid: 8, timing: 'melee', extra: true, maneuver: 1, action: 0, extras: [], maneuvered: false, moved: false, started: true, overload: 0, performed: ['a2'], spentExtras: [] }];
 const intercepts = [{ uid: 3, actionId: 'PRDR-101_C', targetUid: 9 }];
 const endDone = ['2:end:remove', '2:end:tokens'];
 // Every value here is deliberately NOT the default, so a field that
 // normaliseScript forgets to carry across fails rather than coincidentally
 // matching what it would have defaulted to.
 const counter = { initiatorUid: 7, responderUid: 9, actionId: 'EWA', initRoll: [0, 3], respRoll: null, initFocused: true, respFocused: false };
-const live = { turn: 's2', acted: [7, 8], extraOpps: [8], commanded: [9], freeCommand: [], passed: ['s1'], stage: '2:3', mode: 'hidden', strict: true, commits: { s1: 'deadbeef' }, revealed: ['s2'], seats: { s1: 'local', s2: 'remote' }, opp, intercepts, counter, endDone };
+const live = { turn: 's2', acted: [7, 8], extraOpps: [8], commanded: [9], freeCommand: [], passed: ['s1'], stage: '2:3', mode: 'hidden', strict: true, commits: { s1: 'deadbeef' }, revealed: ['s2'], seats: { s1: 'local', s2: 'remote' }, opp, oppStack, intercepts, counter, endDone };
 
 // This fixture has lagged behind ScriptState four times now, each costing a
 // confusing deep-equal diff. Naming the missing field turns that into an

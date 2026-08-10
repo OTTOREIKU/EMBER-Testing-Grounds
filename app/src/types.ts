@@ -391,6 +391,9 @@ export interface ExtraTick {
 export interface Opportunity {
   uid: number;
   timing?: Timing;
+  // True for a granted Extra Action Opportunity: it interrupts the granter's
+  // (FAQ K21/K3) and ending it resumes them instead of marking acted.
+  extra?: boolean;
   maneuver: number;
   action: number;
   extras: ExtraTick[];
@@ -406,6 +409,7 @@ export function newOpportunity(uid: number, timing?: Timing): Opportunity {
   return {
     uid,
     timing,
+    extra: undefined,
     maneuver: 1,
     action: 2,
     extras: [],
@@ -427,6 +431,9 @@ export function normaliseOpportunity(raw: unknown): Opportunity | null {
   return {
     uid: o.uid,
     timing: o.timing,
+    // A nested Extra Action Opportunity (FAQ K21): its end pops the granter
+    // back rather than marking anyone as having acted.
+    extra: o.extra === true ? true : undefined,
     maneuver: typeof o.maneuver === 'number' ? o.maneuver : base.maneuver,
     action: typeof o.action === 'number' ? o.action : base.action,
     extras: Array.isArray(o.extras) ? (o.extras as ExtraTick[]).filter((x) => x && typeof x.id === 'string') : [],
@@ -461,6 +468,9 @@ export interface ScriptState {
   revealed: Side[];
   seats: Record<Side, 'local' | 'remote'>;
   opp: Opportunity | null;
+  // Opportunities interrupted by a nested Extra one (FAQ K21), resumed in
+  // reverse order as the extras end.
+  oppStack: Opportunity[];
   intercepts: { uid: number; actionId: string; targetUid: number }[];
   // An Electronic Counter-roll in progress (4.11.2). It lives in shared state
   // rather than on one client because BOTH sides roll and either may spend Link
@@ -496,6 +506,7 @@ export function newScriptState(firstPlayer: Side): ScriptState {
     revealed: [],
     seats: { s1: 'local', s2: 'local' },
     opp: null,
+    oppStack: [],
     intercepts: [],
     counter: null,
     endDone: [],
@@ -536,6 +547,9 @@ export function normaliseScript(raw: unknown, firstPlayer: Side): ScriptState {
     revealed: Array.isArray(s.revealed) ? s.revealed.filter((x) => x === 's1' || x === 's2') : [],
     seats: { ...base.seats, ...(s.seats ?? {}) },
     opp: normaliseOpportunity(s.opp),
+    oppStack: Array.isArray(s.oppStack)
+      ? (s.oppStack as unknown[]).map(normaliseOpportunity).filter((x): x is Opportunity => !!x)
+      : [],
     intercepts: Array.isArray(s.intercepts)
       ? s.intercepts.filter(
           (x) => x && typeof x.uid === 'number' && typeof x.targetUid === 'number' && typeof x.actionId === 'string',

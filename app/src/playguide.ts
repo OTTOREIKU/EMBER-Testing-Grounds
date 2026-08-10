@@ -5,7 +5,7 @@ import { cardName, squadLabel } from './data';
 import { bindTips, linkMechanics } from './inspector';
 import { choiceDialog } from './dialog';
 import { PHASES, PHASE_INFO } from './tracker';
-import { isSilentAction, type ActionWorld, canActivateCamo, type ExtraActivation, extraActivationOf, guidedActions, initiativeFor, maneuverRange, maxLink, SLOT_LABEL, tokenCards } from './units';
+import { extrasFor, isSilentAction, type ActionWorld, canActivateCamo, type ExtraActivation, extraActivationOf, guidedActions, initiativeFor, maneuverRange, maxLink, SLOT_LABEL, tokenCards } from './units';
 import { canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed } from './ticks';
 import { perform } from './commands';
 import { tacticFitsPhase, tacticSpec } from './tactics';
@@ -1134,21 +1134,18 @@ export class PlayGuide {
     return out;
   }
 
-  private extrasFor(t: Token): ExtraTick[] {
-    const have = new Set(tokenCards(this.data, t).flatMap(({ card }) => (card.actions ?? []).map((a) => a.id)));
-    return this.data.extraTicks
-      .filter((g) => have.has(g.actionId))
-      .map((g) => ({ id: g.actionId, label: g.label, timing: g.timing as Timing, check: g.check }));
-  }
-
   private opportunity(s: GameState): Opportunity | null {
     const sc = this.script(s);
+    // A nested Extra Action Opportunity (FAQ K21) belongs to whoever was just
+    // granted it, NOT to whoever the activation order says is next - the
+    // re-derivation below would clobber it on the very next render.
+    if (sc.opp?.extra) return sc.opp;
     const next = nextActivation(s, this.init);
     if (!next) return null;
     if (sc.opp && sc.opp.uid === next.uid) return sc.opp;
     const t = s.tokens.find((x) => x.uid === next.uid);
     const fresh = newOpportunity(next.uid, next.timing);
-    fresh.extras = t ? this.extrasFor(t) : [];
+    fresh.extras = t ? extrasFor(this.data, t) : [];
     sc.opp = fresh;
     return fresh;
   }
@@ -1441,7 +1438,7 @@ export class PlayGuide {
     // the cancel is spelled out rather than left to whichever Mech sorts last.
     const id = await choiceDialog({
       title: 'Coordinate: which Ally Mech?',
-      body: `That Mech pays ${g.linkCost} Link and takes an Extra Action Opportunity once the normal order is through.`,
+      body: `That Mech pays ${g.linkCost} Link and IMMEDIATELY takes a complete Extra Action Opportunity - it acts now, and this Mech continues afterwards (FAQ K21).`,
       choices: [...choices, { id: 'cancel', label: 'Cancel' }],
     });
     const pick = targets.find((t) => String(t.uid) === id);
@@ -1450,7 +1447,7 @@ export class PlayGuide {
       return;
     }
     perform(this.data, s, { kind: 'grantExtra', seat: pick.side, uid: pick.uid, linkCost: g.linkCost });
-    this.cb.onNote(pick, `Coordinate: pays ${g.linkCost} Link (now ${pick.link}) and is owed an Extra Action Opportunity.`);
+    this.cb.onNote(pick, `Coordinate: pays ${g.linkCost} Link (now ${pick.link}) and immediately takes an Extra Action Opportunity (FAQ K21). ${from.label} resumes when it ends.`);
     this.cb.onChanged();
   }
 

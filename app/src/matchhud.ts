@@ -3,7 +3,7 @@ import type { GameData } from './data';
 import { actionIconUrl, cardName, isAerial, secondaryImageUrl, squadLabel, unitSize } from './data';
 import { Board, footprint, snapPlacement, type BoardCallbacks } from './board';
 import { printedDeployment, resolveZoneSetData } from './overlays';
-import { SLOT_LABEL, repairSpec, autoTargetsFor, isSilentAction, maneuverIsSilent, canActivateCamo, chargeableSlots, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
+import { extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, isSilentAction, maneuverIsSilent, canActivateCamo, chargeableSlots, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
 import { resolveCounterRoll, tallyCounter } from './combat';
 import { tacticFitsPhase, tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { inContact, canStandIn, attackDirection, crushTargets, dissipationFor, extendPath, knockbackPath, LG, losBetween, losNote, protectionFor, rangeBetween, reachableGrids, standingSpot, type LargeGrid } from './rules';
@@ -105,13 +105,6 @@ export function makeInit(data: GameData): InitLookup {
   };
 }
 
-function extrasFor(data: GameData, t: Token): ExtraTick[] {
-  const have = new Set(tokenCards(data, t).flatMap(({ card }) => (card.actions ?? []).map((a) => a.id)));
-  return data.extraTicks
-    .filter((g) => have.has(g.actionId))
-    .map((g) => ({ id: g.actionId, label: g.label, timing: g.timing as Timing, check: g.check }));
-}
-
 export function ensureScript(state: GameState): NonNullable<GameState['script']> {
   if (!state.script) state.script = { ...newScriptState(state.round.firstPlayer), strict: true };
   return state.script;
@@ -183,6 +176,10 @@ export function glueAfter(data: GameData, state: GameState, cmd: Command): void 
 
 function opportunity(data: GameData, s: GameState): Opportunity | null {
   const sc = ensureScript(s);
+  // A nested Extra Action Opportunity (FAQ K21) belongs to whoever was just
+  // granted it, NOT to whoever the activation order says is next - the
+  // re-derivation below would clobber it on the very next command.
+  if (sc.opp?.extra) return sc.opp;
   const next = nextActivation(s, makeInit(data));
   if (!next) return null;
   if (sc.opp && sc.opp.uid === next.uid) return sc.opp;
@@ -2809,10 +2806,10 @@ function removeOwedSmoke(ctx: HudCtx, at: { col: number; row: number }): void {
 
 // ---------- Extra Action Opportunities (Coordinate) ----------
 //
-// An Action carrying the grant lets an Ally Mech in range pay Link for an
-// Opportunity of its own once the normal order is through. The guide asks which
-// Ally in a dialog; here the panel asks, which is the same question in the
-// place this HUD asks all its questions.
+// An Action carrying the grant lets an Ally Mech in range pay Link and
+// IMMEDIATELY take a complete Opportunity of its own, nested inside this one
+// (FAQ K21). The guide asks which Ally in a dialog; here the panel asks, which
+// is the same question in the place this HUD asks all its questions.
 
 let grantPick: { from: number; grant: ExtraActivation } | null = null;
 
@@ -2847,7 +2844,7 @@ function grantPanel(ctx: HudCtx): string {
     })
     .join('');
   const none = !targets.some((t) => (t.link ?? 0) >= g.minimumLink);
-  return head('Your move', 'Coordinate: which Ally Mech?', `That Mech pays ${g.linkCost} Link and takes an Extra Action Opportunity once the normal order is through.`, true)
+  return head('Your move', 'Coordinate: which Ally Mech?', `That Mech pays ${g.linkCost} Link and immediately takes an Extra Action Opportunity - this Mech resumes when it ends (FAQ K21).`, true)
     + `<div class="tp-body">${none ? `<p class="tp-note">No Ally Mech within Range ${g.range} has the ${g.minimumLink} Link this needs.</p>` : rows}</div>
        <div class="tp-foot"><button class="bigbtn ghost2" data-act="grantcancel">Cancel</button></div>`;
 }

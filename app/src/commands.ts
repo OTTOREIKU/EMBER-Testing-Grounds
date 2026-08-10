@@ -1,7 +1,7 @@
 import type { Facing, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, Timing, Token } from './types';
-import { addStatus, ageTokens, PHASES, statusCount, STATUSES, TIMINGS } from './types';
+import { addStatus, ageTokens, newOpportunity, PHASES, statusCount, STATUSES, TIMINGS } from './types';
 import type { GameData } from './data';
-import { consumesCharge, electronicValue, freehandSlots, interceptCapacity, makeDroneToken, makeMechToken, maxLink, pilotCard, tokenCards } from './units';
+import { extrasFor, consumesCharge, electronicValue, freehandSlots, interceptCapacity, makeDroneToken, makeMechToken, maxLink, pilotCard, tokenCards } from './units';
 import { canActivate, canManeuver, canOverload, canPerform, spendAction, spendActivation, spendManeuver, spendOverload } from './ticks';
 import { tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { battlefieldLocked, deploymentComplete, deployTurn, firstPlayerFrom, newSetup, normaliseSetup } from './setup';
@@ -1478,9 +1478,14 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
     }
     case 'endOpportunity': {
       if (!sc) return;
-      // Ending an Extra Opportunity spends the grant. Ending a normal one
-      // records the Mech as having acted. A Mech granted one before its own
-      // turn comes up takes the normal Opportunity first, then the extra.
+      // A nested Extra Opportunity resumes whoever it interrupted (FAQ K21)
+      // and never marks the echoed Mech as having acted (K19).
+      if (sc.opp?.uid === cmd.uid && sc.opp.extra) {
+        sc.opp = sc.oppStack.pop() ?? null;
+        return;
+      }
+      // Ledger-era saves still carry end-of-order debts; spend those the old
+      // way. Ending a normal Opportunity records the Mech as having acted.
       if (onExtraOpportunity(state, cmd.uid)) {
         const at = sc.extraOpps.indexOf(cmd.uid);
         if (at >= 0) sc.extraOpps.splice(at, 1);
@@ -1508,7 +1513,20 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
     }
     case 'grantExtra': {
       t.link = Math.max(0, (t.link ?? 0) - cmd.linkCost);
-      if (sc) sc.extraOpps.push(cmd.uid);
+      if (t.link === 0 && t.stance !== 'shutdown') t.stance = 'shutdown';
+      // IMMEDIATE and NESTED (FAQ K21, and K3's worked example): the echoed
+      // Mech acts now with a complete Opportunity of its own - its OWN dial
+      // timing governs the Starting Action (K7) and its dial-based Extra
+      // Ticks ride along (K4) - and the granter resumes when it ends. Ending
+      // it never marks the target as having acted, so a Mech echoed before
+      // its own turn still takes that turn later (K19).
+      if (sc) {
+        if (sc.opp) sc.oppStack.push(sc.opp);
+        const fresh = newOpportunity(cmd.uid, t.timing);
+        fresh.extra = true;
+        fresh.extras = extrasFor(data, t);
+        sc.opp = fresh;
+      }
       return;
     }
     case 'stabilise': {

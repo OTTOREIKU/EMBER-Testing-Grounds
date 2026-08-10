@@ -131,6 +131,10 @@ export function nextActivation(state: GameState, init: InitLookup): Activation |
 // An Extra Action Opportunity is a fresh one for a Mech that has already acted,
 // so it must not be told apart by uid alone.
 export function onExtraOpportunity(state: GameState, uid: number): boolean {
+  // The live case: a nested Extra Opportunity carries its own flag (FAQ K21).
+  const opp = state.script?.opp;
+  if (opp?.uid === uid && opp.extra) return true;
+  // Ledger-era saves served extras at the end of the order instead.
   const done = new Set(state.script?.acted ?? []);
   return done.has(uid) && (state.script?.extraOpps ?? []).includes(uid);
 }

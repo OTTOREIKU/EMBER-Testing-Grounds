@@ -76,6 +76,13 @@ export function makeDroneToken(state: any, data: any, card: any, side: any, back
     partStates: { main: 'intact', ...(backpack ? { backpack: 'intact' } : {}) }, ammo: {},
   };
 }
+export function newOpportunity(uid: number, timing?: any): any {
+  return { uid, timing, extra: undefined, maneuver: 1, action: 2, extras: [], maneuvered: false, moved: false, started: false, overload: 0, performed: [], spentExtras: [] };
+}
+export function extrasFor(data: any, t: any): any[] {
+  const have = new Set(tokenCards(data, t).flatMap((x: any) => (x.card.actions ?? []).map((a: any) => a.id)));
+  return (data.extraTicks ?? []).filter((g: any) => have.has(g.actionId)).map((g: any) => ({ id: g.actionId, label: g.label, timing: g.timing, check: g.check }));
+}
 export function makeMechToken(state: any, data: any, loadout: any, side: any, name?: string): any {
   const partStates: any = {};
   const ammo: any = {};
@@ -132,7 +139,7 @@ const opp = (uid, over = {}) => ({
 const world = (tokens, phase = 1, o = null) => ({
   tokens,
   round: { n: 1, phase, firstPlayer: 's1' },
-  script: { opp: o, acted: [], extraOpps: [], commanded: [], freeCommand: [], passed: [], turn: 's1', endDone: [], commits: {}, revealed: [] },
+  script: { opp: o, oppStack: [], acted: [], extraOpps: [], commanded: [], freeCommand: [], passed: [], turn: 's1', endDone: [], commits: {}, revealed: [] },
 });
 const fire = { id: 'A1', type: 'Firing', size: 's', name: { en: 'Shot' } };
 const fireM = { id: 'A2', type: 'Firing', size: 'm', name: { en: 'Barrage' } };
@@ -515,7 +522,38 @@ const ge = (over = {}) => ({ kind: 'grantExtra', seat: 's1', uid: 1, linkCost: 1
 check('a grant the mech cannot pay for is refused', C.check(data, world([mech(1, 's1', { link: 0 })]), ge()).ok, false);
 const wge = world([mech(1, 's1', { link: 3 })]);
 C.apply(data, wge, ge());
-check('Coordinate pays the Link and owes the opportunity', [wge.tokens[0].link, wge.script.extraOpps], [2, [1]]);
+check('Coordinate pays the Link and opens the extra opportunity NOW (K21)',
+  [wge.tokens[0].link, wge.script.opp?.uid, wge.script.opp?.extra, wge.script.extraOpps], [2, 1, true, []]);
+
+// The full echo: mech 2's opportunity is interrupted, mech 1 acts inside it
+// with its own dial timing (K7), and mech 2 resumes when the extra ends. The
+// echoed mech is NOT marked as having acted (K19).
+const wnest = world([mech(1, 's1', { link: 3, timing: 'melee' }), mech(2, 's1', { link: 3 })], 2, opp(2));
+C.apply(data, wnest, ge({ uid: 1 }));
+check('the grant nests inside the open opportunity',
+  [wnest.script.opp?.uid, wnest.script.opp?.extra, wnest.script.opp?.timing, wnest.script.oppStack.map((o) => o.uid)],
+  [1, true, 'melee', [2]]);
+check('the extra reads as one while it runs', C.onExtraOpportunity(wnest, 1), true);
+check('the interrupted opportunity does not', C.onExtraOpportunity(wnest, 2), false);
+C.apply(data, wnest, eo({ uid: 1 }));
+check('ending the extra resumes the granter, echoed mech not acted (K19)',
+  [wnest.script.opp?.uid, wnest.script.opp?.extra, wnest.script.oppStack, wnest.script.acted], [2, undefined, [], []]);
+
+// Chained echoes stack and unwind in reverse (K8).
+const wchain = world([mech(1, 's1', { link: 3 }), mech(2, 's1', { link: 3 }), mech(3, 's1', { link: 3 })], 2, opp(1));
+C.apply(data, wchain, ge({ uid: 2 }));
+C.apply(data, wchain, ge({ uid: 3 }));
+check('two grants nest two deep', [wchain.script.opp?.uid, wchain.script.oppStack.map((o) => o.uid)], [3, [1, 2]]);
+C.apply(data, wchain, eo({ uid: 3 }));
+C.apply(data, wchain, eo({ uid: 2 }));
+check('and unwind in reverse to the original mech', [wchain.script.opp?.uid, wchain.script.oppStack, wchain.script.acted], [1, [], []]);
+C.apply(data, wchain, eo({ uid: 1 }));
+check('whose own opportunity still ends normally', [wchain.script.opp, wchain.script.acted], [null, [1]]);
+
+// Paying the grant down to 0 Link is a Shutdown like any other spend.
+const wgz = world([mech(1, 's1', { link: 1 })]);
+C.apply(data, wgz, ge());
+check('a grant that drains the Link shuts the mech down', [wgz.tokens[0].link, wgz.tokens[0].stance], [0, 'shutdown']);
 
 // ---------- the End Phase checklist ----------
 

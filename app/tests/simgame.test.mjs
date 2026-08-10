@@ -40,6 +40,10 @@ export function maxLink(data: any, t: any): number {
 export function pilotCard(data: any, t: any): any {
   return t.kind === 'mech' && t.mech?.pilot ? data.byId.get(t.mech.pilot) : undefined;
 }
+export function extrasFor(data: any, t: any): any[] {
+  const have = new Set(tokenCards(data, t).flatMap((x: any) => (x.card.actions ?? []).map((a: any) => a.id)));
+  return (data.extraTicks ?? []).filter((g: any) => have.has(g.actionId)).map((g: any) => ({ id: g.actionId, label: g.label, timing: g.timing, check: g.check }));
+}
 export function makeDroneToken(state: any, data: any, card: any, side: any, backpack?: string): any {
   return {
     uid: state.nextUid++, side, kind: card.category === 'projectile' ? 'projectile' : 'drone',
