@@ -2157,20 +2157,34 @@ p.points { white-space: pre-line; }
 
 /* The preview column. Two slots always exist; the second is only shown while
    something is pinned, so hovering the list never rebuilds an <img>. */
+/* Three shared rows - art, caption, buttons - with the slots dissolved into the
+   grid by `display: contents`, so both cards line their parts up against each
+   other instead of each stacking independently. A slot used to be its own flex
+   column with the art on `flex: 1`, which meant the art absorbed whatever the
+   caption left: give one pilot a two-line trait and its own card shrank, so two
+   pinned cards ended up different heights with their names on different lines.
+   Sharing the rows makes the caption row as tall as the taller caption for
+   both, and the art row identical for both, by construction. */
 .pp-preview {
-  min-width: 0; min-height: 0; display: grid; gap: 14px;
-  grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr);
+  min-width: 0; min-height: 0; display: grid; column-gap: 14px; row-gap: 8px;
+  grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) auto auto;
+  /* Column flow, or a dissolved slot's three parts auto-place row-major and its
+     caption lands beside its own art instead of under it. */
+  grid-auto-flow: column;
 }
 .pp-preview.two { grid-template-columns: 1fr 1fr; }
 .pp-blank {
   display: none; margin: 0; place-items: center; text-align: center; padding: 24px;
   border-radius: var(--radius); background: var(--surface2); color: var(--text3); font-size: 12.5px;
+  grid-column: 1 / -1; grid-row: 1 / -1;
 }
 .pp-preview.empty .pp-blank { display: grid; }
-.pp-slot { min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
+.pp-slot { min-width: 0; min-height: 0; display: contents; }
 .pp-slot.off { display: none; }
+/* A grid item in the shared 1fr row now, not a flex child, so it stretches to
+   the row rather than to whatever the caption beside it left over. */
 .pp-art {
-  flex: 1; min-height: 0; border-radius: var(--radius); background: var(--surface2);
+  min-height: 0; border-radius: var(--radius); background: var(--surface2);
   display: flex; align-items: center; justify-content: center; overflow: hidden;
 }
 .pp-art img { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
