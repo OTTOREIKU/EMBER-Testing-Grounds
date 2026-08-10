@@ -44,7 +44,7 @@ import { PHASES, RoundTracker } from './tracker';
 import { PlayGuide } from './playguide';
 import type { Card, CardAction, DiceData, DieColor, Facing, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, StatusDef, TerrainPiece, Timing, Token } from './types';
 import { addStatus, SCALES, statusCount, statusesFor, STATUSES } from './types';
-import { autoTargetsFor, isSilentAction, maneuverIsSilent, chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, type Resupply, resupplyOf, SLOT_LABEL, interceptLeft, interceptsOwed, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf } from './units';
+import { repairSpec, autoTargetsFor, isSilentAction, maneuverIsSilent, chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, type Resupply, resupplyOf, SLOT_LABEL, interceptLeft, interceptsOwed, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf } from './units';
 import { registerOffline } from './offline';
 import { battlefieldLocked, countHits, firstPlayerFrom, newSetup, normaliseSetup, tasksLocked, type SetupState } from './setup';
 import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
@@ -154,6 +154,8 @@ async function init() {
     (victim, attacker) => pendingBoxDrops.push({ victim, attacker }),
     (cmd) => perform(data, state, cmd),
   );
+
+  attackHelper.tokens = () => state.tokens;
 
   const electronicHelper = new ElectronicHelper(
     data,
@@ -645,6 +647,12 @@ async function init() {
 
     if (isChargeAction(action)) {
       void performCharge(t, action, done);
+      return;
+    }
+
+    const rep = repairSpec(action);
+    if (rep) {
+      void performRepair(t, action, rep, done);
       return;
     }
 
@@ -1825,6 +1833,47 @@ async function init() {
     }
     if (!pick) return;
     await resolveKnockback(t, pick, action, 1);
+  }
+
+  // SH-15 Damage Control (FAQ D7/J21/J23): a destroyed Part of this mech takes
+  // a Repaired Token - its Actions come back, everything else still reads it
+  // as destroyed - or a Damaged Part is mended back to intact.
+  async function performRepair(
+    t: Token,
+    action: CardAction,
+    rep: { repair: boolean; mend: boolean },
+    done: (performed: boolean) => void,
+  ): Promise<void> {
+    const parts = tokenCards(data, t).filter(({ slot }) => slot !== 'pilot');
+    const choices: { id: string; label: string }[] = [];
+    for (const { slot, card } of parts) {
+      const st = t.partStates[slot as PartSlot | 'main'] ?? 'intact';
+      if (rep.repair && st === 'destroyed' && !(t.repairedSlots ?? []).includes(slot)) {
+        choices.push({ id: `repaired:${slot}`, label: `Repair ${SLOT_LABEL[slot]} (${cardName(card)}) - its Actions return` });
+      }
+      if (rep.mend && st === 'damaged') {
+        choices.push({ id: `mend:${slot}`, label: `Mend ${SLOT_LABEL[slot]} (${cardName(card)}) - Damaged becomes intact` });
+      }
+    }
+    if (!choices.length) {
+      await alertDialog({
+        title: 'Nothing to repair',
+        body: `${action.name.en || action.id}: no destroyed Part is missing a Repaired Token and nothing is Damaged, and an action that cannot produce any change cannot be performed.`,
+      });
+      return done(false);
+    }
+    const id = await choiceDialog({
+      title: action.name.en || action.id,
+      body: 'A Repaired Part can act again, but stays destroyed for Integrity, gives back no Link, and is removed outright if hit, the attack moving to the Core (FAQ J21/J23).',
+      choices: [...choices, { id: '', label: 'Cancel' }],
+      stacked: true,
+    });
+    if (!id) return done(false);
+    const [mode, slot] = id.split(':');
+    perform(data, state, { kind: 'repairPart', seat: t.side, uid: t.uid, slot, mode: mode as 'repaired' | 'mend' });
+    logTo(t, `${action.name.en || action.id}: ${mode === 'mend' ? `${SLOT_LABEL[slot as PartSlot | 'main']} mended to intact` : `${SLOT_LABEL[slot as PartSlot | 'main']} takes a Repaired Token`}.`);
+    onChanged();
+    done(true);
   }
 
   // Knockback X and Push X (appendix). The victim is Force-Moved in a straight
