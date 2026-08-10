@@ -3,15 +3,15 @@ import type { GameData } from './data';
 import { actionIconUrl, cardName, isAerial, secondaryImageUrl, squadLabel, unitSize } from './data';
 import { Board, footprint, snapPlacement, type BoardCallbacks } from './board';
 import { printedDeployment, resolveZoneSetData } from './overlays';
-import { canActivateCamo, chargeableSlots, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
+import { autoTargetsFor, isSilentAction, maneuverIsSilent, canActivateCamo, chargeableSlots, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
 import { resolveCounterRoll, tallyCounter } from './combat';
 import { tacticFitsPhase, tacticSpec, tacticTargets, type TacticCtx } from './tactics';
-import { canStandIn, attackDirection, crushTargets, dissipationFor, extendPath, knockbackPath, LG, losBetween, losNote, protectionFor, rangeBetween, reachableGrids, standingSpot, type LargeGrid } from './rules';
+import { inContact, canStandIn, attackDirection, crushTargets, dissipationFor, extendPath, knockbackPath, LG, losBetween, losNote, protectionFor, rangeBetween, reachableGrids, standingSpot, type LargeGrid } from './rules';
 import { breakAwayCost, canBeForceMoved } from './melee';
 import { factionColour, squadColour } from './icons';
 import { iconSvg } from './dice';
 import type { CardAction, CounterRoll, DiceData, DieColor, Facing, GameState, Side, Stance, Timing, Token, ExtraTick, Opportunity } from './types';
-import { newOpportunity, newScriptState, PHASES, STATUSES, TIMINGS } from './types';
+import { statusCount, newOpportunity, newScriptState, PHASES, STATUSES, TIMINGS } from './types';
 import { deployable, deployTurn, deploymentComplete, firstPlayerFrom, normaliseSetup, rollTotal, type SetupState } from './setup';
 import { actionPhaseComplete, activationOrder, alive, canAct, commandTokensFor, eligibleUnits, isLoopPhase, loopComplete, nextActivation, nextTurn, onExtraOpportunity, type InitLookup, type LoopPhase } from './loop';
 import { canActivate, canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed, type TickVerdict } from './ticks';
@@ -541,9 +541,21 @@ function commitMove(ctx: HudCtx): void {
     return;
   }
   const walked = m.path;
+  // Movement by an enemy AERIAL unit triggers Interception, checked at the
+  // start and landing grids only (FAQ O11/O15, 4.9). The start is where it
+  // stands right now, so the probe is taken before the command applies.
+  const aerialStart = t.aerial ? { ...t } : null;
   board.animateMove(t.uid, stops, () => {
     // The route travels with the move so the other player watches the same walk.
     ctx.send({ kind: 'maneuver', seat: t.side, uid: t.uid, to: last, free, granted, via: stops, facing });
+    if (aerialStart) {
+      const moved = ctx.state.tokens.find((x) => x.uid === t.uid);
+      const owed = moved ? interceptsOwed(ctx.data, ctx.state.tokens, ctx.state.smoke ?? [], aerialStart, [moved]) : [];
+      if (owed.length) {
+        ctx.send({ kind: 'queueIntercepts', seat: t.side, items: owed });
+        ctx.noteNow(`${t.label} is an Aerial Unit, so its Movement triggers Interception: ${owed.length} attempt${owed.length === 1 ? '' : 's'} owed (4.9).`);
+      }
+    }
     // A Black Box in a Grid the route passed through may be picked up, which is
     // read off the whole route rather than the destination (5.3.1).
     offerBoxesOn(ctx, t.uid, walked);
@@ -689,7 +701,7 @@ function renderBoard(ctx: HudCtx): void {
     board.showSmokeTargets(landingCandidates(ctx), (c, r) => placeLaunched(ctx, c, r));
   } else if (smokePlan) {
     board.showSmokeTargets(smokeCandidates(ctx), (c, r) => placeSmokeAt(ctx, c, r));
-  } else if (crushPlan?.queue.length) {
+  } else if (crushPlan?.queue.length && !crushPlan.pendingSpot) {
     const v = s.tokens.find((x) => x.uid === crushPlan!.queue[0]);
     board.showSmokeTargets(
       v ? crushEscapes(ctx, v, crushPlan.goal).map((g) => ({ ...g, ok: true })) : [],
@@ -1256,6 +1268,9 @@ function panelHtml(ctx: HudCtx): string {
   // is something drawable. Dead debt, whose Part or target has left the board,
   // must never take the panel over and strand the table.
   if (interceptNow || interceptPick || owedItems(ctx).length) return interceptPanel(ctx);
+  // A broken camouflage waits for its owner's say-so, but never blocks the
+  // other player's view of the phase.
+  if (revealsOwed(ctx).some((x) => mine(ctx, x.t.side))) return revealPanel(ctx);
   // A grant is answered before anything else: the Action has been performed
   // and the Ally is owed its Opportunity.
   if (grantPick) return grantPanel(ctx);
@@ -1573,6 +1588,61 @@ function queueInterceptsFor(ctx: HudCtx, launcher: Token, born: Token[]): void {
 // The owed attempts that can still be drawn. An attempt whose Part or target
 // has left the board is dead debt: the guide skips those rows, and here they
 // must not take the panel over either.
+// ---------- Optical Camouflage reveals (4.12.2, FAQ I4/I5/I7/I10/I14) ----------
+//
+// Derived from the state on every read, the way this page derives everything:
+// an auto-send in the glue would replay on catch-up and double-fire. The owner
+// confirms with a click, and a house-rule dismissal is remembered per debt.
+const revealDismissed = new Set<string>();
+
+function revealsOwed(ctx: HudCtx): { t: Token; key: string; why: string }[] {
+  const s = ctx.state;
+  const sc = ensureScript(s);
+  const out: { t: Token; key: string; why: string }[] = [];
+  for (const t of s.tokens) {
+    if (statusCount(t.statuses, 'camouflage') === 0 || t.deployed === false) continue;
+    // A non-Silence action or a non-Silent Maneuver during the CURRENT
+    // Action Opportunity (FAQ I2/I5), read off the opportunity script.
+    if (sc.opp?.uid === t.uid) {
+      const acted = (sc.opp.performed ?? []).some((id) => {
+        const a = tokenCards(ctx.data, t).flatMap(({ card }) => card.actions ?? []).find((x) => x.id === id);
+        return a ? !isSilentAction(a) : false;
+      });
+      if (acted) out.push({ t, key: `${t.uid}:act:${s.round.n}`, why: 'performed a non-Silence action' });
+      else if (sc.opp.maneuvered && !maneuverIsSilent(ctx.data, t)) {
+        out.push({ t, key: `${t.uid}:mov:${s.round.n}`, why: 'moved without Silence' });
+      }
+    }
+    // Contact with an enemy that is neither Aerial nor camouflaged (I4/I7),
+    // including a landed enemy Mine or Beacon (I10). If the camouflage was
+    // activated AFTER the contact began, that is not "ending Movement in
+    // Contact" and owes nothing (I14) - the copy says so and Stay hidden is
+    // the answer there.
+    const toucher = s.tokens.find((o) => {
+      if (o.side === t.side || o.uid === t.uid || o.deployed === false) return false;
+      if (statusCount(o.statuses, 'camouflage') > 0) return false;
+      const card = ctx.data.byId.get(o.cardId ?? '');
+      const landedDeployable = o.kind === 'projectile'
+        && (!!o.barricade || /mine|beacon|地雷|信标/i.test(`${card?.name?.en ?? ''}${card?.name?.zh ?? ''}`));
+      if (o.aerial && !landedDeployable) return false;
+      return inContact(t, o);
+    });
+    if (toucher) out.push({ t, key: `${t.uid}:touch:${toucher.uid}`, why: `is in Contact with ${toucher.label}` });
+  }
+  return out.filter((x) => !revealDismissed.has(x.key));
+}
+
+function revealPanel(ctx: HudCtx): string {
+  const owed = revealsOwed(ctx).filter((x) => mine(ctx, x.t.side));
+  const x = owed[0];
+  if (!x) return '';
+  return head('Your move', `${esc(x.t.label)} breaks camouflage`,
+    `It ${esc(x.why)}, so under 4.12.2 the Optical Camouflage ends. Reveal movement up to its Stealth value may follow - move it by hand. If the camouflage was activated after this began (FAQ I14), stay hidden.`, true)
+    + `<div class="tp-body"></div>
+      <div class="tp-foot"><button class="bigbtn" data-revealgo="${x.t.uid}" data-revealkey="${esc(x.key)}">Reveal it (4.12.2)</button>
+      <button class="bigbtn ghost2" data-revealskip="${esc(x.key)}" style="margin-top:6px">Stay hidden (house rule)</button></div>`;
+}
+
 function owedItems(ctx: HudCtx): { uid: number; actionId: string; targetUid: number }[] {
   const s = ctx.state;
   return ensureScript(s).intercepts.filter(
@@ -1655,7 +1725,7 @@ function interceptPanel(ctx: HudCtx): string {
   return head('Your move', 'Interception owed', 'A launch by an Aerial Unit triggers this at once, before anything else happens (4.9).', true)
     + `<div class="tp-body">${rows}
         <p class="tp-note">Each attempt spends a Token. A Part keeps going until its Tokens run out or the target dies.<br>Tokens are never restored.</p></div>
-       <div class="tp-foot"><button class="bigbtn ghost2" data-act="interceptskip">Skip the rest</button></div>`;
+       <div class="tp-foot"></div>`;
 }
 
 // ---------- Electronic Warfare (rulebook 4.11) ----------
@@ -1962,6 +2032,8 @@ let crushPlan: {
   terrain: string[];
   queue: number[];
   stops: { col: number; row: number }[];
+  // A picked escape grid waiting on the facing choice (3.4.4, FAQ L6).
+  pendingSpot?: { col: number; row: number; c: number; r: number; facing?: Facing };
   free?: boolean;
   granted?: boolean;
   shoveActionId?: string;
@@ -2049,8 +2121,22 @@ function placeCrushed(ctx: HudCtx, c: number, r: number): void {
   if (!m || !v || !crusher) return;
   const spot = standingSpot(c, r, v.size, v.aerial, terrainOf(ctx), ctx.state.tokens, v.uid);
   if (!spot) return;
-  ctx.send({ kind: 'forceMove', seat: crusher.side, uid: crusher.uid, targetUid: v.uid, to: spot });
-  ctx.noteNow(`${crusher.label} crushes ${v.label}, Force-Moved to ${gridName(c, r)}.`);
+  // The crushing player also decides the victim's facing (3.4.4, FAQ L6), so
+  // the send waits for that choice in the panel.
+  m.pendingSpot = { col: spot.col, row: spot.row, c, r };
+  board?.clearHighlights();
+  ctx.refresh();
+}
+
+function confirmCrushed(ctx: HudCtx): void {
+  const m = crushPlan;
+  const v = m ? ctx.state.tokens.find((x) => x.uid === m.queue[0]) : undefined;
+  const crusher = m ? ctx.state.tokens.find((x) => x.uid === m.uid) : undefined;
+  const p = m?.pendingSpot;
+  if (!m || !v || !crusher || !p) return;
+  ctx.send({ kind: 'forceMove', seat: crusher.side, uid: crusher.uid, targetUid: v.uid, to: { col: p.col, row: p.row }, facing: p.facing });
+  ctx.noteNow(`${crusher.label} crushes ${v.label}, Force-Moved to ${gridName(p.c, p.r)}.`);
+  m.pendingSpot = undefined;
   m.queue.shift();
   advanceCrush(ctx);
   ctx.refresh();
@@ -2062,6 +2148,17 @@ function crushPanel(ctx: HudCtx): string {
   const crusher = ctx.state.tokens.find((x) => x.uid === m.uid);
   if (!v || !crusher) return head('Crush', 'Nothing left to move', '', true)
     + '<div class="tp-body"></div><div class="tp-foot"><button class="bigbtn" data-act="crushauto">Continue</button></div>';
+  if (m.pendingSpot) {
+    const p = m.pendingSpot;
+    const opts = (['N', 'E', 'S', 'W'] as const)
+      .map((lbl, i) => `<button class="rowbtn${p.facing === i ? ' on' : ''}" data-crushface="${i}">${lbl}${v.facing === i ? ' ·' : ''}</button>`)
+      .join('');
+    return head('Your move', `Crush: which way does ${esc(v.label)} face?`, `Force-Moved to ${gridName(p.c, p.r)} — you choose the facing too (3.4.4).`, true)
+      + `<div class="tp-body">
+          <div class="dialrow"><span class="nm">Facing</span><div class="btnrow">${opts}<button class="rowbtn${p.facing === undefined ? ' on' : ''}" data-crushface="">leave</button></div></div>
+        </div>
+        <div class="tp-foot"><button class="bigbtn" data-act="crushgo">Confirm</button></div>`;
+  }
   const out = crushEscapes(ctx, v, m.goal);
   return head('Your move', `Crush: where does ${esc(v.label)} go?`, `${esc(crusher.label)} is entering ${gridName(m.goal.c, m.goal.r)}.`, true)
     + `<div class="tp-body">
@@ -2280,9 +2377,13 @@ function attackPanel(ctx: HudCtx): string {
   const smoke = s.smoke ?? [];
   // Every enemy on the board is offered, with the reading of the line beside
   // it: out of range or out of arc is a warning the player may still overrule,
-  // the same way the guide warns rather than blocks.
+  // the same way the guide warns rather than blocks. An Automatic Action is
+  // the exception: it takes the nearest legal target, Highlighted first
+  // (3.5.2, FAQ O21), and networked play is strict, so only those show.
+  const autoLegal = a.speed === 'auto' ? autoTargetsFor(ctx.data, s.tokens, by, a) : null;
   const rows = s.tokens
     .filter((t) => t.side !== by.side && t.deployed !== false && alive(t))
+    .filter((t) => !autoLegal || !autoLegal.length || autoLegal.some((x) => x.uid === t.uid))
     .map((t) => {
       const note = losNote(by, t, a, terrain, s.tokens, smoke);
       const bad = note.includes('⚠') || note.includes('✕');
@@ -3452,7 +3553,8 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     const v = m ? s.tokens.find((x) => x.uid === m.queue[0]) : undefined;
     if (!m || !v) { advanceCrush(ctx); ctx.refresh(); return; }
     const out = crushEscapes(ctx, v, m.goal);
-    if (out.length) placeCrushed(ctx, out[0].c, out[0].r);
+    // The auto path completes the whole placement, facing left as it stands.
+    if (out.length) { placeCrushed(ctx, out[0].c, out[0].r); confirmCrushed(ctx); }
     else { m.queue.shift(); advanceCrush(ctx); ctx.refresh(); }
   });
   on('[data-act="smokestop"]', () => finishSmokePlan(ctx));
@@ -3463,6 +3565,26 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
   });
   on('[data-act="shovego"]', () => resolveShove(ctx));
   on('[data-act="shovecancel"]', () => { shovePlan = null; flushBoxDrops(); ctx.refresh(); });
+  on('[data-revealgo]', (el) => {
+    const uid = Number(el.dataset.revealgo);
+    const t = ctx.state.tokens.find((x) => x.uid === uid);
+    if (!t) return;
+    revealDismissed.add(el.dataset.revealkey ?? '');
+    ctx.send({ kind: 'reveal', seat: t.side, uid });
+    ctx.noteNow(`${t.label} is Revealed (4.12.2).`);
+    ctx.refresh();
+  });
+  on('[data-revealskip]', (el) => {
+    revealDismissed.add(el.dataset.revealskip ?? '');
+    ctx.refresh();
+  });
+  on('[data-crushface]', (el) => {
+    if (!crushPlan?.pendingSpot) return;
+    const v = el.dataset.crushface;
+    crushPlan.pendingSpot.facing = v === '' ? undefined : (Number(v) as Facing);
+    ctx.refresh();
+  });
+  on('[data-act="crushgo"]', () => confirmCrushed(ctx));
   on('[data-shoveface]', (el) => {
     if (!shovePlan) return;
     const v = el.dataset.shoveface;
