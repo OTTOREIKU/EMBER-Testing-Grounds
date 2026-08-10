@@ -116,6 +116,14 @@ export interface FactionDef {
   supplier?: string;
   hook?: string;
   text: string;
+  // PD and the White Dwarf collaboration have no published lore or key art, so
+  // their write-ups are ours and must not be credited to the publisher.
+  ours?: boolean;
+  // Whether key art exists for the faction. A flag rather than an onerror,
+  // matching BoxDef.hasImage: the art is lazy-loaded inside a scroll container,
+  // so a missing file never requests and never fires an error to react to.
+  // Absent means yes, so the three lore factions need no entry.
+  art?: boolean;
 }
 
 export interface KeywordDef {

@@ -232,6 +232,8 @@ body.ref-locked { overflow: hidden; }
   letter-spacing: 0.2px; white-space: nowrap;
 }
 .tag-kw { background: var(--blue-lt); color: var(--blue); }
+.tag-unsold { background: rgba(224, 92, 92, 0.16); color: #d05555; }
+.ref-unsold { color: #d05555; }
 
 .act-icons { display: inline-flex; gap: 3px; align-items: center; }
 .act-icon,

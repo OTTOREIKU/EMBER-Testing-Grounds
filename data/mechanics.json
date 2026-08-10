@@ -210,7 +210,7 @@
    "name": "Tactics Cards",
    "ref": "Rulebook 5.4.2",
    "match": [],
-   "text": "Six Tactics Cards come in the core box, each costing 30 points against your squad total: Additional Instructions and Battlefield Recovery (GOF), Hit and Run and Tactical Disposition (UN), System Repair and Remote Restart (RDL). To use one you add it to your squad during list building. The rulebook sets no limit on how many you may take, but it does limit how many you may play: each player may only use 1 Tactics Card per round. Taking more than the game has rounds is legal and simply wasted points. Each card carries a faction logo; the squad faction rule in 5.1 is written about Units and Pilots, and 5.4.2 says nothing about matching a Tactics Card to your faction, so whether you may play another faction's card is genuinely unclear. Agree it with your opponent."
+   "text": "Six Tactics Cards come in the core box, each costing 30 points against your squad total: Additional Instructions and Battlefield Recovery (GOF), Hit and Run and Tactical Disposition (UN), System Repair and Remote Restart (RDL). To use one you add it to your squad during list building. The rulebook sets no limit on how many you may take, but it does limit how many you may play: each player may only use 1 Tactics Card per round. Taking more than the game has rounds is legal and simply wasted points. Each card carries a faction emblem, but it is not a restriction: 5.1 limits Units to one faction and 5.4.2 calls Tactics Cards actions the commander takes rather than Units, and the rulebook's own anatomy of a Tactics Card lists a name, QR code, description and Points Value with no faction field. So a Tactics Card is the one thing in your squad that need not match your faction. This is a reading rather than a published ruling, so agree it with your opponent if it matters."
   },
   {
    "id": "ticks",
@@ -347,6 +347,54 @@
     "end of the round"
    ],
    "text": "Four steps, in this order. First remove units: every Mech left with 2 or fewer Parts goes, along with anything that says it is removed at the end of the round, alternating from the First Player if the order could matter. Second, token management: remove all Red Square and Hexagon Tokens, flip all Yellow ones to their reverse side, and remove every Command Token. Third, check Tasks, award Victory Points and test the victory conditions including the round limit. Fourth, flip the First Player Token so the other side goes first, and begin the next round. A standard game runs five rounds, after which Victory Points are totalled."
+  },
+  {
+   "id": "squad_building",
+   "name": "Building a squad",
+   "ref": "Rulebook 5.1, plus community practice where the book is silent",
+   "match": [
+    "squad building",
+    "single faction",
+    "mercenary"
+   ],
+   "text": "Agree a points limit first: 600 for a skirmish, 900 for a standard game, 1200 or more for a large one. Every card you take costs its Points Value against that total. Then the faction rule, which works at two levels. A single Mech must be built entirely from one faction's Parts (5.1), and in practice the Pilot counts as one of those Parts too, so an RDL pilot does not sit in a UN mech - the rulebook words rule 2 around Parts only, but tournaments enforce the pilot as well. Across the squad, RDL, UN and GoF cannot mix with each other. Planetring Dynamics and the White Dwarf collaboration are the exception: they are mercenaries, so their whole units may join an RDL, UN or GoF squad. That does not loosen the mech-level rule - a mercenary joins as a complete unit, never as an arm bolted onto someone else's mech. Tactics Cards are the one thing not faction-locked. Note that this tool warns rather than blocks: about 30 Parts have no faction recorded anywhere, so a squad it accepts is not proof of legality."
+  },
+  {
+   "id": "mines",
+   "name": "Mines",
+   "ref": "Official FAQ M3, M6, M7, M19, M22, M24",
+   "match": [
+    "地雷"
+   ],
+   "text": "A Mine sits in a Grid and fires when a Ground Unit is in that Grid, no matter how the unit arrived - walking in, being knocked back, or being shoved there by a Crush. M7 is explicit that one Movement may Crush a Drone onto a Mine and set it off. A Mine is treated as Aerial, which has two consequences people trip over: a Ground Unit entering its Grid sets it off rather than Crushing it, and a Flying Unit may land on one safely (E10, M24). Only the Mine's owner resolves the blast."
+  },
+  {
+   "id": "pholcus",
+   "name": "Pholcus automatic mines",
+   "ref": "Official FAQ M8, M18, M28",
+   "match": [
+    "自行地雷",
+    "pholcus"
+   ],
+   "text": "The SGM-2 Pholcus is a Mine that moves. It is laid folded and unfolds into its deployed form, at which point it behaves as a Mine. Unfolding into a Grid that already holds a unit detonates it immediately (M18.4) - the moment it shares a Grid is the trigger, since anything arriving later would have Crushed it instead. The folded and unfolded forms are separate cards in the card data with the same stats, which is why the same mine appears twice when browsing."
+  },
+  {
+   "id": "loads",
+   "name": "Loads",
+   "ref": "Official FAQ O3-O8, O16-O18",
+   "match": [
+    "负载"
+   ],
+   "text": "A Load is a Part carried by a Drone for a Mech to borrow. The Drone does not gain the Part's Actions or attributes - it is carrying it, not using it. A Mech may use a borrowed Part once per Carrier, so two Carriers lending the same Backpack lend two separate Parts and each may be used (O7). Ammo spent from a borrowed Part comes off the Drone carrying it, not the Mech. The loan only counts while the Mech is performing: a borrowed Pod adds its Electronic Value when the Mech is the Initiator of an Electronic Counter-roll, but never when it is the Responder rolling passively (O5). Several Backpacks print the Load keyword to say the opposite - that they can never be carried as a Load."
+  },
+  {
+   "id": "repeaters_radar",
+   "name": "Repeaters and AA radar",
+   "ref": "Official FAQ O12, O13, O19, O20",
+   "match": [
+    "repeater"
+   ],
+   "text": "A Repeater extends where a Mech's electronic reach starts from: an Electronic Attack or Electronic Support may measure its range from the Repeater rather than from the Mech, which is what lets a Mech act on something it could never reach itself. Anti-air radar works the other way round, covering an area against Aerial targets so a shot at one of them is taken as though the radar unit were the one seeing it."
   }
  ]
 }

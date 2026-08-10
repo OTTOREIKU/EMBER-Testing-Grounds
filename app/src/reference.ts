@@ -468,6 +468,11 @@ function boxDetail(key: string): string | null {
       `${cards} card${cards === 1 ? '' : 's'} · ${pieces} copies${paired ? ` · ${paired} paired` : ''}`,
     )}</p>
     ${facs ? `<div class="ref-kwlinks">${facs}</div>` : ''}
+    ${
+      box.released === false
+        ? '<p class="ref-note ref-unsold">No shop has been seen selling this box, so its cards are listed here but cannot be bought yet.</p>'
+        : ''
+    }
     ${box.hasImage ? `<div class="box-cover"><img src="${boxCoverUrl(box.id)}" alt="" loading="lazy" onerror="this.closest('.box-cover').remove()"></div>` : ''}
     ${list || '<p class="ref-note">No cards in the data list this box.</p>'}`;
 }
@@ -478,9 +483,14 @@ function boxDetail(key: string): string | null {
 function factionRow(f: FactionDef): string {
   const owned = data.cards.filter((c) => data.factionOf(c) === f.key);
   const pilots = owned.filter((c) => c.category === 'pilot').length;
-  return `<article class="card-tap card-framed box-card has-cover faction-card" data-fac="${esc(f.key)}" data-factionitem="${esc(f.key)}">
-    <div class="box-bleed" aria-hidden="true"><img src="${factionArtUrl(f.key)}" alt="" loading="lazy" onerror="this.closest('.faction-card').classList.remove('has-cover'); this.closest('.box-bleed').remove()"></div>
-    <span class="box-scrim" aria-hidden="true"></span>
+  const art = f.art !== false;
+  return `<article class="card-tap card-framed box-card${art ? ' has-cover' : ''} faction-card" data-fac="${esc(f.key)}" data-factionitem="${esc(f.key)}">
+    ${
+      art
+        ? `<div class="box-bleed" aria-hidden="true"><img src="${factionArtUrl(f.key)}" alt="" loading="lazy"></div>
+           <span class="box-scrim" aria-hidden="true"></span>`
+        : ''
+    }
     <div class="box-body">
       <div class="card-title">${esc(f.name)}</div>
       ${f.hook ? `<div class="box-meta">${esc(f.hook)}</div>` : ''}
@@ -503,7 +513,11 @@ function factionDetail(key: string): string | null {
     .sort((a, b) => a.id - b.id);
   return `<h2>${esc(f.name)}</h2>
     <p class="ref-meta">${esc(FACTION_LABEL[f.key] ?? f.short)}${f.supplier ? ` · supplied by ${esc(f.supplier)}` : ''}</p>
-    <div class="ref-faction-art"><img src="${factionArtUrl(f.key)}" alt="${esc(f.name)} key art" loading="lazy"></div>
+    ${
+      f.art === false
+        ? ''
+        : `<div class="ref-faction-art"><img src="${factionArtUrl(f.key)}" alt="${esc(f.name)} key art" loading="lazy"></div>`
+    }
     <div class="ref-lore">${f.text.split('\n\n').map((p) => `<p>${esc(p)}</p>`).join('')}</div>
     <div class="card-badges">
       ${count('card', owned.length)}
@@ -516,7 +530,11 @@ function factionDetail(key: string): string | null {
           .map((b) => `<a class="kw-link" data-box="${esc(b.key)}">${esc(b.name.en || b.name.zh || b.key)}</a>`)
           .join(', ')}</p>`
       : ''}
-    <p class="ref-note">Lore and key art are the publisher's, from the official faction pages.</p>`;
+    <p class="ref-note">${
+      f.ours
+        ? 'Not a published faction: the rulebook names only RDL, UN and GoF. This write-up is ours, from how the cards are sold and played.'
+        : "Lore and key art are the publisher's, from the official faction pages."
+    }</p>`;
 }
 
 function boxRow(b: BoxDef): string {
@@ -537,7 +555,9 @@ function boxRow(b: BoxDef): string {
     <div class="box-body">
       <div class="card-title">${esc(b.name.en || b.name.zh || b.key)}</div>
       <div class="box-meta">${cards} card${cards === 1 ? '' : 's'} · ${pieces} copies</div>
-      ${facs ? `<div class="card-badges">${facs}</div>` : ''}
+      <div class="card-badges">${facs}${
+        b.released === false ? '<span class="tag tag-unsold">not released yet</span>' : ''
+      }</div>
     </div>
   </article>`;
 }
