@@ -3,10 +3,10 @@ import type { GameData } from './data';
 import { actionIconUrl, cardName, isAerial, secondaryImageUrl, squadLabel, unitSize } from './data';
 import { Board, footprint, snapPlacement, type BoardCallbacks } from './board';
 import { printedDeployment, resolveZoneSetData } from './overlays';
-import { canActivateCamo, chargeableSlots, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
+import { canActivateCamo, chargeableSlots, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
 import { resolveCounterRoll, tallyCounter } from './combat';
 import { tacticFitsPhase, tacticSpec, tacticTargets, type TacticCtx } from './tactics';
-import { attackDirection, crushTargets, dissipationFor, extendPath, knockbackPath, LG, losBetween, losNote, protectionFor, rangeBetween, reachableGrids, standingSpot, type LargeGrid } from './rules';
+import { canStandIn, attackDirection, crushTargets, dissipationFor, extendPath, knockbackPath, LG, losBetween, losNote, protectionFor, rangeBetween, reachableGrids, standingSpot, type LargeGrid } from './rules';
 import { breakAwayCost, canBeForceMoved } from './melee';
 import { factionColour, squadColour } from './icons';
 import { iconSvg } from './dice';
@@ -372,7 +372,10 @@ function terrainOf(ctx: HudCtx) {
 // so the panel said 4 grids while the board highlighted 1.
 function reachableFor(ctx: HudCtx, t: Token, steps = maneuverRange(ctx.data, t)) {
   const terrain = terrainOf(ctx);
-  const flying = !!t.aerial;
+  // Same derivation as the freeplay board: a square-base flyer (moveAsFlight)
+  // crosses terrain even though it is not Aerial. Reading only `aerial` here
+  // grounded the Ravens on this page while the guide let them fly.
+  const flying = !!ctx.data.byId.get(t.cardId)?.moveAsFlight || !!t.aerial;
   return reachableGrids(t, steps, terrain, ctx.state.tokens, flying, {
     exitCost: flying ? undefined : breakAwayCost(ctx.data, t, ctx.state.tokens, terrain),
     crushable: (c, r) => crushTargets(t, c, r, terrain, ctx.state.tokens) !== null,
@@ -802,6 +805,17 @@ function setupPanel(ctx: HudCtx, su: SetupState): string {
     return head('Setup', 'Roll for First Player', 'Two dice each, most Hits goes first (3.1.2).', true)
       + `<div class="tp-body">${rows}${verdict}</div>
         <div class="tp-foot">${winner ? '<button class="bigbtn" data-act="accept">Continue</button>' : ''}</div>`;
+  }
+  if (su.stage === 'tasks') {
+    // Secondaries come before the edges, First Player revealing first (FAQ P1).
+    const fp = s.round.firstPlayer;
+    const taskState = normaliseTasks(s.tasks);
+    const both = !!taskState.secondary.s1 && !!taskState.secondary.s2;
+    const meNow = !taskState.secondary[fp] ? mine(ctx, fp) : !both ? mine(ctx, fp === 's1' ? 's2' : 's1') : false;
+    return head(meNow ? 'Your move' : 'Setup', 'Choose Secondary Tasks',
+      `${squadLabel(fp)} goes first and reveals their Secondary Task first (FAQ P1). The Main Task came with the table.`, meNow)
+      + `<div class="tp-body">${secondaryRows(ctx, fp)}</div>
+        <div class="tp-foot">${both ? '<button class="bigbtn" data-act="tasksdone">Continue to edges</button>' : ''}</div>`;
   }
   if (su.stage === 'side') {
     const fp = s.round.firstPlayer;
@@ -1473,7 +1487,11 @@ function finishLaunchPlan(ctx: HudCtx): void {
   const born = m.placedUids
     .map((uid) => ctx.state.tokens.find((x) => x.uid === uid))
     .filter((x): x is Token => !!x);
-  if (owner && born.length) queueInterceptsFor(ctx, owner, born);
+  // Only a LAUNCHED projectile triggers Interception (FAQ M20).
+  const act = owner
+    ? tokenCards(ctx.data, owner).flatMap(({ card }) => card.actions ?? []).find((a) => a.id === m.actionId)
+    : undefined;
+  if (owner && born.length && (!act || projectileDelivery(act) === 'launch')) queueInterceptsFor(ctx, owner, born);
   ctx.refresh();
 }
 
@@ -1545,20 +1563,7 @@ function queueInterceptsFor(ctx: HudCtx, launcher: Token, born: Token[]): void {
   // Aerial, but this is the test the rule actually names.
   const fresh = born.filter((p) => p.parentUid === launcher.uid && p.aerial);
   if (!fresh.length || !s.script) return;
-  const owed: { uid: number; actionId: string; targetUid: number }[] = [];
-  for (const x of s.tokens) {
-    if (x.side === launcher.side || x.deployed === false || !alive(x) || interceptLeft(x) <= 0) continue;
-    for (const { card } of tokenCards(ctx.data, x)) {
-      for (const a of card.actions ?? []) {
-        if (interceptCapacity(a) === undefined) continue;
-        if ((x.intercept?.[a.id] ?? 0) <= 0) continue;
-        for (const p of fresh) {
-          if (rangeBetween(x, p).range > (a.range ?? 0)) continue;
-          owed.push({ uid: x.uid, actionId: a.id, targetUid: p.uid });
-        }
-      }
-    }
-  }
+  const owed = interceptsOwed(ctx.data, s.tokens, s.smoke ?? [], launcher, fresh);
   if (!owed.length) return;
   const defender: Side = launcher.side === 's1' ? 's2' : 's1';
   ctx.send({ kind: 'queueIntercepts', seat: launcher.side, items: owed });
@@ -1764,7 +1769,8 @@ function counterPanel(ctx: HudCtx): string {
     : 'Both sides have rolled.';
   // Focus is offered after the verdict is visible, which is when a player
   // actually knows whether they need it (4.10).
-  const canFocus = owed.filter((o) => mine(ctx, o.t.side) && !o.focused && (o.t.link ?? 0) > 0);
+  // The last Link can never be spent voluntarily (4.10, FAQ L1).
+  const canFocus = owed.filter((o) => mine(ctx, o.t.side) && !o.focused && (o.t.link ?? 0) > 1);
   const focusRows = canFocus
     .map((o) => `<button class="rowwide" data-ewfocus="${o.t.uid}">Focus with ${esc(o.t.label)}<span class="ct">1 Link · ${o.t.link} left</span></button>`)
     .join('');
@@ -1863,11 +1869,17 @@ function nextBox(ctx: HudCtx): void {
 // Where a dropped Box may land: the bearer's own Grid or one touching it.
 function dropGrids(ctx: HudCtx, bearer: Token): LargeGrid[] {
   const g = { c: Math.floor(bearer.col / 3), r: Math.floor(bearer.row / 3) };
+  const terrain = terrainOf(ctx);
   const out: LargeGrid[] = [];
   for (const [dc, dr] of [[0, 0], [0, -1], [1, 0], [0, 1], [-1, 0], [1, -1], [1, 1], [-1, 1], [-1, -1]] as const) {
     const c = g.c + dc;
     const r = g.r + dr;
-    if (c >= 0 && r >= 0 && c < LG && r < LG) out.push({ c, r });
+    if (c < 0 || r < 0 || c >= LG || r >= LG) continue;
+    // A dropped Box sits at ground level and cannot go on top of a building
+    // (FAQ P9). Units do not block it — a Box may overlap one (P8) — so the
+    // test is against terrain alone.
+    if (!canStandIn(c, r, 1, false, terrain, [], undefined)) continue;
+    out.push({ c, r });
   }
   return out;
 }
@@ -1877,6 +1889,21 @@ function dropGrids(ctx: HudCtx, bearer: Token): LargeGrid[] {
 export function startBoxDrop(itemId: string, bearerUid: number, bySide: Side, byUid: number): void {
   boxDrop = { itemId, bearerUid, bySide, byUid };
   hudRef?.refresh();
+}
+
+// Forced Movement is part of the attack, so a Penetrated bearer's Box question
+// waits until any shove has settled and is asked at the NEW position (FAQ E19).
+// The queue drains one at a time through the normal picker.
+let pendingBoxDrops: { itemId: string; bearerUid: number; bySide: Side; byUid: number }[] = [];
+
+export function queueBoxDrop(itemId: string, bearerUid: number, bySide: Side, byUid: number): void {
+  pendingBoxDrops.push({ itemId, bearerUid, bySide, byUid });
+}
+
+export function flushBoxDrops(): void {
+  if (boxDrop || shovePlan) return;
+  const next = pendingBoxDrops.shift();
+  if (next) startBoxDrop(next.itemId, next.bearerUid, next.bySide, next.byUid);
 }
 
 function boxDropPanel(ctx: HudCtx): string {
@@ -1911,7 +1938,10 @@ function placeDroppedBox(ctx: HudCtx, c: number, r: number): void {
   // A unit can carry more than one, so the next is asked for straight away.
   const still = taskItems(ctx).find((i) => i.kind === 'blackbox' && i.bearerUid === m.bearerUid);
   if (still) startBoxDrop(still.id, m.bearerUid, m.bySide, m.byUid);
-  else ctx.refresh();
+  else {
+    flushBoxDrops();
+    ctx.refresh();
+  }
 }
 
 // ---------- Crush (rulebook 4.3.6) ----------
@@ -2278,7 +2308,7 @@ function attackPanel(ctx: HudCtx): string {
 // working before it happens. A shove is the same thing with no Attack behind
 // it: the card wants an enemy Ground Unit in the Grid the Mech is facing.
 
-let shovePlan: { uid: number; actionId: string; targetUid: number | null } | null = null;
+let shovePlan: { uid: number; actionId: string; targetUid: number | null; facing?: Facing } | null = null;
 
 export function startShove(uid: number, actionId: string, targetUid?: number): void {
   shovePlan = { uid, actionId, targetUid: targetUid ?? null };
@@ -2354,8 +2384,19 @@ function shovePanel(ctx: HudCtx): string {
           : `${esc(victim.label)} is forced ${out.path.length} Grid${out.path.length === 1 ? '' : 's'} ${out.heading} to ${gridName(out.end.c, out.end.r)}${out.short ? `, short of the full ${out.kb.grids} because something blocks the rest of the line` : ''}.`}</p>
         ${out.kb.push && victim.kind === 'mech' ? '<p class="tp-dim">Push also costs it 1 Link, and a Mech on 0 Link Shuts Down.</p>' : ''}
         ${out.kb.onHit ? '<p class="tp-dim">This one only triggers On Hit, so skip it if the attack scored none.</p>' : ''}
+      ${(() => {
+        // The forcing player picks the victim's facing (3.4.4), and a victim
+        // that cannot move may still be turned — optionally (FAQ B4/B5).
+        const opts = (['N', 'E', 'S', 'W'] as const)
+          .map((lbl, i) => `<button class="rowbtn${m.facing === i ? ' on' : ''}" data-shoveface="${i}">${lbl}${victim.facing === i ? ' ·' : ''}</button>`)
+          .join('');
+        return `<div class="dialrow"><span class="nm">Facing</span><div class="btnrow">${opts}<button class="rowbtn${m.facing === undefined ? ' on' : ''}" data-shoveface="">leave</button></div></div>
+          <p class="tp-dim">You choose which way ${esc(victim.label)} ends up facing (3.4.4).${blocked ? ' It cannot move, but it may still be turned.' : ''}</p>`;
+      })()}
       </div>
-      <div class="tp-foot">${blocked ? '' : '<button class="bigbtn" data-act="shovego">Force the move</button>'}
+      <div class="tp-foot">${blocked
+        ? (m.facing !== undefined ? '<button class="bigbtn" data-act="shoveturn">Turn it in place</button>' : '')
+        : '<button class="bigbtn" data-act="shovego">Force the move</button>'}
         <button class="bigbtn ghost2" data-act="shovecancel" style="margin-top:6px">${blocked ? 'Close' : 'Skip'}</button></div>`;
 }
 
@@ -2367,14 +2408,17 @@ function resolveShove(ctx: HudCtx): void {
   const a = by && m ? actionOn(ctx, by, m.actionId) : undefined;
   const out = by && victim && a ? shoveOutcome(ctx, by, victim, a) : null;
   shovePlan = null;
-  if (!out || !out.path.length || !by || !victim) { ctx.refresh(); return; }
+  if (!out || !out.path.length || !by || !victim) { flushBoxDrops(); ctx.refresh(); return; }
   const spot = standingSpot(out.end.c, out.end.r, victim.size, victim.aerial, terrainOf(ctx), s.tokens, victim.uid, { col: victim.col, row: victim.row })
     ?? { col: victim.col, row: victim.row };
   const wasShut = victim.stance === 'shutdown';
-  ctx.send({ kind: 'forceMove', seat: by.side, uid: by.uid, targetUid: victim.uid, to: spot, push: out.kb.push });
+  ctx.send({ kind: 'forceMove', seat: by.side, uid: by.uid, targetUid: victim.uid, to: spot, push: out.kb.push, facing: m?.facing });
   const shut = out.kb.push && victim.kind === 'mech' && !wasShut && victim.stance === 'shutdown';
   ctx.noteNow(`${victim.label} is forced ${out.path.length} Grid${out.path.length === 1 ? '' : 's'} ${out.heading} to ${gridName(out.end.c, out.end.r)}.${
     out.kb.push && victim.kind === 'mech' ? ` Push costs 1 Link (now ${victim.link}).` : ''}${shut ? ' Link has reached 0, so it shuts down.' : ''}`);
+  // The Forced Movement has settled, so a Penetrated bearer's Box question can
+  // finally be asked at the position it ended up in (FAQ E19).
+  flushBoxDrops();
   ctx.refresh();
 }
 
@@ -2737,21 +2781,27 @@ export function scorePreview(ctx: HudCtx, finalRound: boolean): ScoreResult {
 // One row per squad: the Task they have taken, or the way to take one. Shown
 // while the edge is being picked and again before deployment, because both
 // moments are waiting on the same two answers.
-function secondaryRows(ctx: HudCtx): string {
+function secondaryRows(ctx: HudCtx, fpFirst?: Side): string {
   const tasks = normaliseTasks(ctx.state.tasks);
-  return (['s1', 's2'] as Side[])
-    .map((side) => {
+  // With a First Player named, the rows run in reveal order and the second
+  // player's picker waits until the first has revealed (FAQ P1).
+  const order: Side[] = fpFirst ? [fpFirst, fpFirst === 's1' ? 's2' : 's1'] : ['s1', 's2'];
+  return order
+    .map((side, i) => {
       const card = tasks.secondary[side] ? ctx.data.secondary.find((c) => c.id === tasks.secondary[side]) : undefined;
       const isMe = mine(ctx, side);
+      const held = !!fpFirst && i === 1 && !tasks.secondary[order[0]];
       // Your own pick stays changeable until deployment begins — the Task is
       // open information, not a commitment you can be trapped by.
       const cell = card
         ? isMe
           ? `<button class="rowbtn" data-sec="${side}" title="Change this Secondary Task">${esc(card.name)} ✎</button>`
           : `<span class="pickchip set">${esc(card.name)}</span>`
-        : isMe
-          ? `<button class="rowbtn" data-sec="${side}">Pick a Secondary Task</button>`
-          : '<span class="tp-dim">picking…</span>';
+        : held
+          ? `<span class="tp-dim">waits for ${esc(squadLabel(order[0]))}</span>`
+          : isMe
+            ? `<button class="rowbtn" data-sec="${side}">Pick a Secondary Task</button>`
+            : '<span class="tp-dim">picking…</span>';
       return `<div class="dialrow"><span class="nm ${side}">${squadLabel(side)}</span>${cell}</div>`;
     })
     .join('');
@@ -3101,6 +3151,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     });
   });
   on('[data-act="accept"]', () => { ctx.send({ kind: 'acceptRoll', seat: me() }); ctx.refresh(); });
+  on('[data-act="tasksdone"]', () => { ctx.send({ kind: 'finishTasks', seat: me() }); ctx.refresh(); });
   on('[data-edge]', (el) => { ctx.send({ kind: 'pickEdge', seat: s.round.firstPlayer, edge: el.dataset.edge as 'black' | 'white' }); ctx.refresh(); });
   on('[data-sec]', (el) => {
     secFor = el.dataset.sec as Side;
@@ -3411,7 +3462,27 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     ctx.refresh();
   });
   on('[data-act="shovego"]', () => resolveShove(ctx));
-  on('[data-act="shovecancel"]', () => { shovePlan = null; ctx.refresh(); });
+  on('[data-act="shovecancel"]', () => { shovePlan = null; flushBoxDrops(); ctx.refresh(); });
+  on('[data-shoveface]', (el) => {
+    if (!shovePlan) return;
+    const v = el.dataset.shoveface;
+    shovePlan = { ...shovePlan, facing: v === '' ? undefined : (Number(v) as Facing) };
+    ctx.refresh();
+  });
+  on('[data-act="shoveturn"]', () => {
+    // A blocked Forced Movement may still turn the victim in place, the
+    // forcing player choosing — or leaving — the facing (FAQ B4/B5).
+    const m = shovePlan;
+    const by = m ? ctx.state.tokens.find((x) => x.uid === m.uid) : undefined;
+    const victim = m?.targetUid !== null && m ? ctx.state.tokens.find((x) => x.uid === m.targetUid) : undefined;
+    shovePlan = null;
+    if (by && victim && m?.facing !== undefined) {
+      ctx.send({ kind: 'forceMove', seat: by.side, uid: by.uid, targetUid: victim.uid, to: { col: victim.col, row: victim.row }, facing: m.facing });
+      ctx.noteNow(`${victim.label} could not be moved, but is turned to face ${['North', 'East', 'South', 'West'][m.facing]}.`);
+    }
+    flushBoxDrops();
+    ctx.refresh();
+  });
   // Knockback is no longer a button either: the helper's onKnockback fires when
   // the attack finishes and opens the Forced Movement panel itself.
   // ---------- Detonation (4.7.5) ----------

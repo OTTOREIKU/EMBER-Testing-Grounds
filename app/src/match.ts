@@ -4,7 +4,7 @@ import { applyRemote, check, onPerformed, onRefused, perform, type Command, type
 import { setLocalSeat } from './loop';
 import { cardName, dataUrl, loadData, missionImageUrl, squadLabel, type GameData } from './data';
 import { tacticSpec } from './tactics';
-import { objectiveCells } from './matchhud';
+import { flushBoxDrops, queueBoxDrop, objectiveCells } from './matchhud';
 import { printedDeployment } from './overlays';
 import { knockbackOf, migrateState, squadAllegiance, tokenCards } from './units';
 import { countHits, normaliseSetup } from './setup';
@@ -523,8 +523,12 @@ function mountSide(): void {
         // greeted every ordinary shot with "this Action carries none". An
         // On-Hit Knockback that scored nothing does not trigger either.
         const kb = knockbackOf(action, data?.actionTranslation(action.id)?.english ?? undefined);
+        const shoving = !!kb && !(kb.onHit && hits === 0) && attacker.kind !== 'projectile';
         if (attacker.kind === 'projectile') send({ kind: 'despawn', seat: attacker.side, uid: attacker.uid, targetUid: attacker.uid });
-        else if (kb && !(kb.onHit && hits === 0)) startShove(attacker.uid, action.id, defender.uid);
+        else if (shoving) startShove(attacker.uid, action.id, defender.uid);
+        // With no Forced Movement to wait for, a queued Black Box question is
+        // asked now; with one, the shove flow flushes it when it settles (E19).
+        if (!shoving) flushBoxDrops();
         render();
       },
       (killer, victim, what) => {
@@ -534,9 +538,11 @@ function mountSide(): void {
       // A Penetrated bearer drops its Black Box, and the ATTACKER says where
       // (5.3.1) — so the question opens on this seat, not the victim's.
       (victim, attacker) => {
+        // Queued rather than asked at once: Forced Movement resolves first and
+        // the Box lands around the NEW position (FAQ E19).
         const box = normaliseTasks(state.tasks).items
           .find((i) => i.kind === 'blackbox' && i.bearerUid === victim.uid);
-        if (box) startBoxDrop(box.id, victim.uid, attacker.side, attacker.uid);
+        if (box) queueBoxDrop(box.id, victim.uid, attacker.side, attacker.uid);
         render();
       },
       (cmd) => { send(cmd); },
@@ -665,10 +671,10 @@ function tacticsPicker(side: Side): string {
       return `<button class="tacpick${n ? ' on' : ''}" data-tacpick="${esc(c.id)}" data-tip-card="${esc(c.id)}" title="${esc(when)}">
         <span class="tn">${esc(cardName(c))}</span>
         <span class="tw">${esc(when)}</span>
-        <span class="tp">${n ? `×${n}` : `${c.score ?? 0}p`}</span></button>`;
+        <span class="tp">${n ? '✓' : `${c.score ?? 0}p`}</span></button>`;
     })
     .join('')
-    + '<p class="quiet" style="margin:6px 0 0">Tap to add, tap again to take one back. Hover to read the card. Each costs points against your total, and only 1 may be played per round (5.4.2).</p>';
+    + '<p class="quiet" style="margin:6px 0 0">Tap to add, tap again to take it back. One copy of each, and only 1 played per round (5.4.2).</p>';
   return `<div class="tacbox">
     <button class="taclabel" id="mc-tactoggle" aria-expanded="${tacticsOpen}">
       <span class="tcaret">${tacticsOpen ? '▾' : '▸'}</span>Tactics Cards<span class="tsum">${esc(summary)}</span>
