@@ -5,7 +5,7 @@ import { cardName, squadLabel } from './data';
 import { bindTips, linkMechanics } from './inspector';
 import { choiceDialog } from './dialog';
 import { PHASES, PHASE_INFO } from './tracker';
-import { type ActionWorld, canActivateCamo, type ExtraActivation, extraActivationOf, guidedActions, initiativeFor, maneuverRange, maxLink, SLOT_LABEL, tokenCards } from './units';
+import { isSilentAction, type ActionWorld, canActivateCamo, type ExtraActivation, extraActivationOf, guidedActions, initiativeFor, maneuverRange, maxLink, SLOT_LABEL, tokenCards } from './units';
 import { canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed } from './ticks';
 import { perform } from './commands';
 import { tacticFitsPhase, tacticSpec } from './tactics';
@@ -1512,6 +1512,27 @@ export class PlayGuide {
         return;
       }
       perform(this.data, s, { kind: 'performAction', seat: t.side, uid: t.uid, actionId: row.action.id });
+      // A non-Silence action ends Optical Camouflage (4.12.2, FAQ I5). The
+      // strict tracker reveals outright; teaching asks, in the house style.
+      if (statusCount(t.statuses, 'camouflage') > 0 && !isSilentAction(row.action)) {
+        if (this.script(s).strict) {
+          perform(this.data, s, { kind: 'reveal', seat: t.side, uid: t.uid });
+          this.cb.onNote(t, `${row.action.name?.en || row.action.id} is not Silent, so the Optical Camouflage ends (4.12.2). Reveal movement up to its Stealth value may follow.`);
+        } else {
+          void choiceDialog({
+            title: `${t.label} breaks camouflage`,
+            body: `${row.action.name?.en || row.action.id} is not a Silent action, so under 4.12.2 the unit Reveals. Reveal movement up to its Stealth value may follow.`,
+            choices: [
+              { id: 'reveal', label: 'Reveal it (4.12.2)', primary: true },
+              { id: 'keep', label: 'Keep it hidden (house rule)' },
+            ],
+          }).then((id) => {
+            if (id !== 'reveal') return;
+            perform(this.data, s, { kind: 'reveal', seat: t.side, uid: t.uid });
+            this.cb.onChanged();
+          });
+        }
+      }
       this.cb.onNote(t, `${row.label} (${LENGTH_NAME[lengthOf(row.action)!]}, ${costLabel(costOf(row.action)!)}).`);
       const grant = extraActivationOf(row.action);
       if (grant) {

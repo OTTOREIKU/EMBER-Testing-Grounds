@@ -31,7 +31,7 @@ import {
 import { Panel } from './panel';
 import { tacticSpec, tacticTargets } from './tactics';
 import { Roster } from './roster';
-import { canStandIn, attackDirection, crushTargets, type CrushVictims, dissipationFor, extendPath, inArc, knockbackPath, largeGridOf, type LargeGrid, LG, losBetween, losNote as losNoteFor, type MoveOpts, protectionFor as protectionForShared, rangeBetween, reachableGrids, smokeBlocks, standingSpot } from './rules';
+import { inContact, canStandIn, attackDirection, crushTargets, type CrushVictims, dissipationFor, extendPath, inArc, knockbackPath, largeGridOf, type LargeGrid, LG, losBetween, losNote as losNoteFor, type MoveOpts, protectionFor as protectionForShared, rangeBetween, reachableGrids, smokeBlocks, standingSpot } from './rules';
 import { breakAwayCost, canBeForceMoved, lockersOf } from './melee';
 import { instantiateScenario, loadScenarios, type Scenario } from './scenarios';
 import { loadReplays, ReplayPlayer, type ReplayScript, type ReplayStep, type ReplayTally } from './replay';
@@ -44,7 +44,7 @@ import { PHASES, RoundTracker } from './tracker';
 import { PlayGuide } from './playguide';
 import type { Card, CardAction, DiceData, DieColor, Facing, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, StatusDef, TerrainPiece, Timing, Token } from './types';
 import { addStatus, SCALES, statusCount, statusesFor, STATUSES } from './types';
-import { chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, type Resupply, resupplyOf, SLOT_LABEL, interceptLeft, interceptsOwed, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf } from './units';
+import { autoTargetsFor, isSilentAction, maneuverIsSilent, chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, type Resupply, resupplyOf, SLOT_LABEL, interceptLeft, interceptsOwed, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf } from './units';
 import { registerOffline } from './offline';
 import { battlefieldLocked, countHits, firstPlayerFrom, newSetup, normaliseSetup, tasksLocked, type SetupState } from './setup';
 import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
@@ -387,6 +387,37 @@ async function init() {
               '',
             );
             interceptFollowUp = { uid: attacker.uid, actionId: intercepting.actionId, targetUid: defender.uid };
+          } else if (action.speed === 'auto' && (() => {
+            const legal = autoTargetsFor(data, state.tokens, attacker, action);
+            return legal.length > 0 && !legal.some((x) => x.uid === defender.uid);
+          })()) {
+            // Automatic Actions take the nearest legal target, Highlighted
+            // first (3.5.2, FAQ O21). The strict tracker refuses anything
+            // else; teaching warns and lets a house rule through.
+            const legal = autoTargetsFor(data, state.tokens, attacker, action);
+            const names = legal.map((x) => x.label).join(', ');
+            if (state.script?.strict) {
+              void alertDialog({
+                title: 'Not the nearest target',
+                body: `An Automatic Action must take the nearest legal target${legal.some((x) => statusCount(x.statuses, 'highlight') > 0) ? ', and a Highlighted one first' : ''} (3.5.2, FAQ O21). Here that is ${names}.`,
+              });
+              done?.(false);
+              return;
+            }
+            void confirmDialog({
+              title: 'Not the nearest target',
+              body: `An Automatic Action normally takes the nearest legal target (3.5.2, FAQ O21) - here ${names}. Attack ${defender.label} anyway?`,
+              confirmLabel: 'Attack it anyway',
+              cancelLabel: 'Pick the nearest',
+              danger: true,
+            }).then((go) => {
+              if (!go) { done?.(false); return; }
+              const prot = protectionFor(attacker, defender, action);
+              attackHelper.start(attacker, action, defender, losNote(attacker, defender, action), prot.white, prot.note);
+              showSideTab('combat');
+              done?.(true);
+            });
+            return;
           } else if (defender.side === attacker.side && !state.script?.strict) {
             // Allies cannot be designated as Firing or Melee targets under
             // normal circumstances (Supplement 1.4.1 via FAQ A10/A11); area
@@ -419,6 +450,11 @@ async function init() {
           } else {
             const prot = protectionFor(attacker, defender, action);
             attackHelper.start(attacker, action, defender, losNote(attacker, defender, action), prot.white, prot.note);
+            // Declaring an attack is never Silent, so a camouflaged attacker
+            // Reveals with it (4.12.2, FAQ I5/I22 - the Reveal comes first).
+            if (statusCount(attacker.statuses, 'camouflage') > 0 && !isSilentAction(action)) {
+              promptReveal(attacker, `${attacker.label} attacks from camouflage.`);
+            }
           }
           showSideTab('combat');
           // An Action is performed the moment it is declared against a legal
@@ -1494,12 +1530,28 @@ async function init() {
     board.clearHighlights();
     board.clearMovePath();
     renderMoveCtrl();
+    const startPos = { ...t };
     const settle = (col: number, row: number) => {
       t.col = col;
       t.row = row;
       logTo(t, `${t.label} moves ${path.length - 1} grid${path.length - 1 === 1 ? '' : 's'}.`);
       onChanged();
       setHint('');
+      // Movement is a non-Silence action unless a surviving Part grants
+      // Silence to it (PL29 Stealth Chassis; FAQ I2/I5), so a camouflaged
+      // mover Reveals here. The Contact sweep handles the other half.
+      if (statusCount(t.statuses, 'camouflage') > 0 && !maneuverIsSilent(data, t)) {
+        promptReveal(t, `${t.label} moved without Silence.`);
+      }
+      // An enemy AERIAL unit's Movement triggers Interception, judged at the
+      // start and landing grids only (FAQ O11/O15, 4.9).
+      if (t.aerial) {
+        const owed = interceptsOwed(data, state.tokens, state.smoke ?? [], startPos, [t]);
+        if (owed.length) {
+          perform(data, state, { kind: 'queueIntercepts', seat: t.side, items: owed });
+          logTo(t, `Aerial Movement triggers Interception: ${owed.length} attempt${owed.length === 1 ? '' : 's'} owed (4.9).`);
+        }
+      }
       void offerBlackBoxes(t, path).then(() => m.done(true));
     };
     if (victims) {
@@ -3008,6 +3060,64 @@ async function init() {
     }
   }
 
+  // ---------- Optical Camouflage reveals (4.12.2, FAQ I4/I5/I7/I14/I23) ----------
+
+  // Which camouflaged units have already been asked about their current
+  // Contact, so the sweep asks once per touch rather than every repaint. A
+  // unit that ACTIVATES camo while already touching is seeded silently: that
+  // is not "ending Movement in Contact" and does not Reveal (FAQ I14).
+  const camoContactSeen = new Set<number>();
+  let prevCamo = new Set<number>();
+
+  function promptReveal(t: Token, why: string): void {
+    if (statusCount(t.statuses, 'camouflage') === 0) return;
+    if (state.script?.strict) {
+      perform(data, state, { kind: 'reveal', seat: t.side, uid: t.uid });
+      logTo(t, `${why} Optical Camouflage ends (4.12.2).`);
+      void alertDialog({
+        title: `${t.label} is Revealed`,
+        body: `${why} A camouflaged unit Reveals here (4.12.2). Reveal movement up to its Stealth value may follow — move it by hand if the card grants any.`,
+      });
+      onChanged();
+      return;
+    }
+    void confirmDialog({
+      title: `${t.label} breaks camouflage`,
+      body: `${why} Under 4.12.2 the Optical Camouflage ends and the unit Reveals. Reveal movement up to its Stealth value may follow.`,
+      confirmLabel: 'Reveal it (4.12.2)',
+      cancelLabel: 'Keep it hidden (house rule)',
+    }).then((go) => {
+      if (!go) return;
+      perform(data, state, { kind: 'reveal', seat: t.side, uid: t.uid });
+      logTo(t, `${why} Optical Camouflage ends (4.12.2).`);
+      onChanged();
+    });
+  }
+
+  function sweepCamoContacts(): void {
+    const nowCamo = new Set<number>();
+    for (const t of state.tokens) {
+      if (statusCount(t.statuses, 'camouflage') === 0 || t.deployed === false) {
+        camoContactSeen.delete(t.uid);
+        continue;
+      }
+      nowCamo.add(t.uid);
+      const touching = state.tokens.some((o) =>
+        o.side !== t.side && o.uid !== t.uid && !o.aerial && o.deployed !== false
+        && statusCount(o.statuses, 'camouflage') === 0 && inContact(t, o));
+      if (!touching) {
+        camoContactSeen.delete(t.uid);
+        continue;
+      }
+      if (camoContactSeen.has(t.uid)) continue;
+      camoContactSeen.add(t.uid);
+      // Freshly camouflaged while already touching: no Reveal (FAQ I14).
+      if (!prevCamo.has(t.uid)) continue;
+      promptReveal(t, `${t.label} is in Contact with an enemy unit after a Movement.`);
+    }
+    prevCamo = nowCamo;
+  }
+
   function onChanged(): void {
     setSquadNames(state.sideNames);
     syncSquadTints();
@@ -3022,6 +3132,7 @@ async function init() {
     playGuide.update(state);
     paintBattlefieldLock();
     renderSmokePrompt();
+    sweepCamoContacts();
     // Redraw the Add tab only when what is on the board actually changed, so
     // dragging a unit or toggling a token does not reset the list underneath you.
     const sig = [...deployedCardCounts(state.tokens)]
