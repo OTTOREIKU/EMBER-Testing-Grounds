@@ -7,6 +7,7 @@ import { SHAPE_NOTE, STATUSES, TIMINGS, type Card, type StatusDef } from './type
 import { registerOffline } from './offline';
 import { costLabel, LENGTH_NAME, lengthOf, TICK_COST } from './ticks';
 import { maskGlyphs } from './glyphs';
+import { linkIcon } from './icons';
 
 type Tab = 'keywords' | 'parts' | 'units' | 'pilots' | 'tactics' | 'boxes' | 'factions' | 'missions' | 'rules';
 
@@ -267,7 +268,11 @@ function officialLink(c: Card): string {
 }
 
 function cardDetail(c: Card): string {
+  // Link is the one stat the printed card colours, tinting its mark to the
+  // pilot's faction, so it is drawn through the mask rather than as one more
+  // white tile.
   const chip = (field: string, value: unknown, label: string) => {
+    if (field === 'LV') return `<span>${linkIcon(data.factionOf(c), 'lk-stat')}<b>${value}</b>${label}</span>`;
     const ic = statIconUrl(field);
     return `<span>${ic ? `<img class="stat-icon" src="${ic}" alt="">` : ''}<b>${value}</b>${label}</span>`;
   };

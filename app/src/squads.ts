@@ -10,7 +10,7 @@ import { perform } from './commands';
 import { dialHidden, getLocalSeat } from './loop';
 import { defaultUnitLabel, factionProblems, initiativeFor, pilotCard, squadAllegiance, SLOT_LABEL, tidyUnitLabel, tokenCards, tokenFactions } from './units';
 import { alertDialog, promptDialog } from './dialog';
-import { factionColour, ICON_BOLT, ICON_EDIT, squadColour } from './icons';
+import { factionColour, ICON_EDIT, linkIcon, squadColour } from './icons';
 
 const esc = (s: string): string => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!);
 
@@ -476,7 +476,7 @@ export class SquadTracker {
       title: t.label,
       sub: `${squadLabel(t.side)} · ${t.kind} · ${this.tokenPoints(t)} pts`,
       lines: [
-        `Stance ${t.stance.toUpperCase()}${t.link !== undefined ? ` · Link ⚡${t.link}` : ''}`,
+        `Stance ${t.stance.toUpperCase()}${t.link !== undefined ? ` · Link ${t.link}` : ''}`,
         `Grid ${String.fromCharCode(65 + Math.floor(t.col / 3))}${Math.floor(t.row / 3) + 1} · facing ${['North', 'East', 'South', 'West'][t.facing]}`,
         `${parts.filter(([, s]) => s === 'intact').length} intact, ${parts.filter(([, s]) => s === 'damaged').length} damaged, ${parts.filter(([, s]) => s === 'destroyed').length} destroyed`,
         'Click to select this unit on the board. Double-click to rename it.',
@@ -581,11 +581,11 @@ export class SquadTracker {
       const maxLink = pilotCard?.LV ?? 0;
       const link = document.createElement('span');
       link.className = 'link-ctrl';
-      // The printed pilot card tints its Link bolt to the pilot's faction.
-      const bolt = `<i class="lk-bolt" style="color:${factionColour(pilotCard ? this.data.factionOf(pilotCard) : null)}">${ICON_BOLT}</i>`;
+      // The printed pilot card tints its Link mark to the pilot's faction.
+      const bolt = linkIcon(pilotCard ? this.data.factionOf(pilotCard) : null);
       link.innerHTML = `<button class="lk-minus" title="Spend/lose 1 Link">−</button><b class="lk-val">${bolt}${t.link ?? 0}${maxLink ? `<small>/${maxLink}</small>` : ''}</b><button class="lk-plus" title="Recover 1 Link">+</button>`;
       inspectOnHover(link, {
-        title: `Link ${t.link ?? 0}${maxLink ? ` / ${maxLink}` : ''}`,
+        title: `${bolt}Link ${t.link ?? 0}${maxLink ? ` / ${maxLink}` : ''}`,
         sub: 'Pilot and machine sync, not hit points',
         lines: [
           'Spend 1 to Focus: reroll dice on an attack or defence roll.',
@@ -813,7 +813,7 @@ export class SquadTracker {
         tr.className = 'pt-pilot';
         tr.innerHTML = `<td class="pt-slot">${SLOT_LABEL[slot]}</td>
           <td class="pt-name">${cardName(card)}</td>
-          <td class="pt-def"><i class="lk-bolt" style="color:${factionColour(card.faction ?? this.data.factionOf(card))}">${ICON_BOLT}</i>${card.LV ?? 0}</td>
+          <td class="pt-def">${linkIcon(card.faction ?? this.data.factionOf(card))}${card.LV ?? 0}</td>
           <td class="pt-state">—</td>`;
         inspectOnHover(tr, {
           title: cardName(card),

@@ -3060,7 +3060,7 @@ async function init() {
         choices: [
           ...targets.map((t) => ({
             id: String(t.uid),
-            label: `${t.label} · ${t.stance.toUpperCase()}${t.link !== undefined ? ` ⚡${t.link}` : ''}`,
+            label: `${t.label} · ${t.stance.toUpperCase()}${t.link !== undefined ? ` · Link ${t.link}` : ''}`,
           })),
           { id: 'cancel', label: 'Cancel' },
         ],

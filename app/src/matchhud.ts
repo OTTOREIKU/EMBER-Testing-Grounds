@@ -8,7 +8,7 @@ import { resolveCounterRoll, tallyCounter } from './combat';
 import { tacticFitsPhase, tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { inContact, canStandIn, attackDirection, crushTargets, dissipationFor, extendPath, knockbackPath, LG, losBetween, losNote, protectionFor, rangeBetween, reachableGrids, standingSpot, type LargeGrid } from './rules';
 import { breakAwayCost, canBeForceMoved } from './melee';
-import { factionColour, squadColour } from './icons';
+import { factionColour, linkIcon, squadColour } from './icons';
 import { iconSvg } from './dice';
 import type { PartSlot, CardAction, CounterRoll, DiceData, DieColor, Facing, GameState, Side, Stance, Timing, Token, ExtraTick, Opportunity } from './types';
 import { statusCount, newOpportunity, newScriptState, PHASES, STATUSES, TIMINGS } from './types';
@@ -3049,7 +3049,7 @@ function tacticPanel(ctx: HudCtx): string {
   const spec = tacticSpec(m.cardId)!;
   if (m.uid === undefined) {
     const rows = tacticTargets(spec, ctx.state, m.side, tacticCtxOf(ctx))
-      .map((t) => `<button class="rowwide" data-tacticunit="${t.uid}">${esc(t.label)}<span class="ct">${t.stance.toUpperCase()}${t.link !== undefined ? ` · ⚡${t.link}` : ''}</span></button>`)
+      .map((t) => `<button class="rowwide" data-tacticunit="${t.uid}">${esc(t.label)}<span class="ct">${t.stance.toUpperCase()}${t.link !== undefined ? ` · ${linkIcon(null)}${t.link}` : ''}</span></button>`)
       .join('');
     return head('Your move', esc(spec.name), esc(spec.prompt), true)
       + `<div class="tp-body">${rows}</div>

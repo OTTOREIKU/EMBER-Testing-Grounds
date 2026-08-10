@@ -787,7 +787,7 @@ export class Board {
       title: t.label,
       sub: `${squadLabel(t.side)} · ${t.kind}`,
       lines: [
-        `Stance ${t.stance.toUpperCase()}${t.link !== undefined ? ` · Link ⚡${t.link}` : ''}`,
+        `Stance ${t.stance.toUpperCase()}${t.link !== undefined ? ` · Link ${t.link}` : ''}`,
         `Facing ${['North', 'East', 'South', 'West'][t.facing]}`,
         wrecked ? 'DESTROYED' : hurt || gone ? `${hurt} damaged, ${gone} destroyed part(s)` : 'All parts intact',
       ],

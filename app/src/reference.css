@@ -256,6 +256,15 @@ body.ref-locked { overflow: hidden; }
   vertical-align: -4px;
 }
 .stat-icon { margin-right: 5px; }
+/* The publisher's Link mark, masked so it can take the pilot's faction colour
+   the way the printed card does. --lk-src is set inline by linkIcon(). */
+.lk-icon {
+  display: inline-block; width: 14px; height: 14px; vertical-align: -2px;
+  background: currentColor;
+  -webkit-mask: var(--lk-src) center / contain no-repeat;
+  mask: var(--lk-src) center / contain no-repeat;
+}
+.lk-icon.lk-stat { width: 18px; height: 18px; margin-right: 5px; vertical-align: -4px; }
 .ref-action h4 .act-icon { margin-right: 6px; }
 .tag.mono { font-family: var(--mono); font-size: 10.5px; }
 

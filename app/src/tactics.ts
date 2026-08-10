@@ -93,7 +93,7 @@ export const TACTIC_SPECS: Record<string, TacticSpec> = {
       const max = ctx.maxLink(t);
       return !max || (t.link ?? 0) < max;
     },
-    apply: (t, _s, ctx) => `Battlefield Recovery: ${t.label} restores 1 Link (now ⚡${restoreLink(t, ctx)}).`,
+    apply: (t, _s, ctx) => `Battlefield Recovery: ${t.label} restores 1 Link (now Link ${restoreLink(t, ctx)}).`,
   },
   '276': {
     id: '276',
@@ -157,7 +157,7 @@ export const TACTIC_SPECS: Record<string, TacticSpec> = {
     choiceTitle: 'Restart into which Stance?',
     apply: (t, _s, ctx, pick) => {
       if (pick) t.stance = pick as Stance;
-      return `Remote Restart: ${t.label} leaves Shutdown for ${t.stance.toUpperCase()} and restores 1 Link (now ⚡${restoreLink(t, ctx)}).`;
+      return `Remote Restart: ${t.label} leaves Shutdown for ${t.stance.toUpperCase()} and restores 1 Link (now Link ${restoreLink(t, ctx)}).`;
     },
   },
 };

@@ -1536,6 +1536,14 @@ body.targeting #hint { color: var(--accent); font-weight: 700; }
 .su-gap { flex: 1 1 auto; min-width: 4px; }
 .link-ctrl { display: flex; align-items: center; gap: 3px; font-size: 12.5px; margin-left: auto; }
 .lk-val { color: var(--accent); cursor: help; white-space: nowrap; font-family: var(--mono); display: inline-flex; align-items: center; gap: 1px; }
+/* The publisher's Link mark, painted with currentColor through a mask so it can
+   carry the pilot's faction colour. --lk-src is set inline by linkIcon(). */
+.lk-icon {
+  display: inline-block; width: 11px; height: 11px; vertical-align: -1px; margin-right: 2px;
+  background: currentColor;
+  -webkit-mask: var(--lk-src) center / contain no-repeat;
+  mask: var(--lk-src) center / contain no-repeat;
+}
 .lk-bolt { display: inline-flex; align-items: center; }
 .lk-val svg { width: 11px; height: 11px; flex-shrink: 0; }
 .pt-def .lk-bolt svg { width: 10px; height: 10px; vertical-align: -1px; margin-right: 1px; }
