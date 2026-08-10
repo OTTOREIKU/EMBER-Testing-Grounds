@@ -234,6 +234,11 @@ body.ref-locked { overflow: hidden; }
 .tag-kw { background: var(--blue-lt); color: var(--blue); }
 .tag-unsold { background: rgba(224, 92, 92, 0.16); color: #d05555; }
 .ref-unsold { color: #d05555; }
+/* Tags are nowrap so a short label never breaks mid-word, but a rulebook
+   citation can be a sentence long, and one of those pushed the whole Rules tab
+   into sideways scrolling on a phone. Only the citation footer is allowed to
+   wrap, so nothing depends on an author keeping refs short. */
+.card-foot .tag.mono { white-space: normal; }
 
 .act-icons { display: inline-flex; gap: 3px; align-items: center; }
 .act-icon,
