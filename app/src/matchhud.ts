@@ -3,14 +3,14 @@ import type { GameData } from './data';
 import { actionIconUrl, cardName, isAerial, secondaryImageUrl, squadLabel, unitSize } from './data';
 import { Board, footprint, snapPlacement, type BoardCallbacks } from './board';
 import { printedDeployment, resolveZoneSetData } from './overlays';
-import { autoTargetsFor, isSilentAction, maneuverIsSilent, canActivateCamo, chargeableSlots, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
+import { SLOT_LABEL, repairSpec, autoTargetsFor, isSilentAction, maneuverIsSilent, canActivateCamo, chargeableSlots, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
 import { resolveCounterRoll, tallyCounter } from './combat';
 import { tacticFitsPhase, tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { inContact, canStandIn, attackDirection, crushTargets, dissipationFor, extendPath, knockbackPath, LG, losBetween, losNote, protectionFor, rangeBetween, reachableGrids, standingSpot, type LargeGrid } from './rules';
 import { breakAwayCost, canBeForceMoved } from './melee';
 import { factionColour, squadColour } from './icons';
 import { iconSvg } from './dice';
-import type { CardAction, CounterRoll, DiceData, DieColor, Facing, GameState, Side, Stance, Timing, Token, ExtraTick, Opportunity } from './types';
+import type { PartSlot, CardAction, CounterRoll, DiceData, DieColor, Facing, GameState, Side, Stance, Timing, Token, ExtraTick, Opportunity } from './types';
 import { statusCount, newOpportunity, newScriptState, PHASES, STATUSES, TIMINGS } from './types';
 import { deployable, deployTurn, deploymentComplete, firstPlayerFrom, normaliseSetup, rollTotal, type SetupState } from './setup';
 import { actionPhaseComplete, activationOrder, alive, canAct, commandTokensFor, eligibleUnits, isLoopPhase, loopComplete, nextActivation, nextTurn, onExtraOpportunity, type InitLookup, type LoopPhase } from './loop';
@@ -1257,6 +1257,7 @@ function panelHtml(ctx: HudCtx): string {
   if (ewPick) return ewPanel(ctx);
   if (crushPlan?.queue.length) return crushPanel(ctx);
   if (resupplyPick) return resupplyPanel(ctx);
+  if (repairPick) return repairPanel(ctx);
   if (chargePlan) return chargePanel(ctx);
   if (attackPick) return attackPanel(ctx);
   if (smokePlan) return smokePanel(ctx);
@@ -2176,6 +2177,32 @@ function crushPanel(ctx: HudCtx): string {
 
 let resupplyPick: { uid: number; actionId: string; rule: Resupply } | null = null;
 
+// ---------- SH-15 Damage Control (FAQ D7/J21/J23) ----------
+let repairPick: { uid: number; actionId: string; repair: boolean; mend: boolean } | null = null;
+
+function repairPanel(ctx: HudCtx): string {
+  const m = repairPick!;
+  const t = ctx.state.tokens.find((x) => x.uid === m.uid);
+  const a = t ? actionOn(ctx, t, m.actionId) : undefined;
+  if (!t || !a) return head('Repair', 'That unit is gone', '', true)
+    + '<div class="tp-body"></div><div class="tp-foot"><button class="bigbtn ghost2" data-act="repaircancel">Close</button></div>';
+  const rows: string[] = [];
+  for (const { slot, card } of tokenCards(ctx.data, t)) {
+    if (slot === 'pilot') continue;
+    const st = t.partStates[slot as PartSlot | 'main'] ?? 'intact';
+    if (m.repair && st === 'destroyed' && !(t.repairedSlots ?? []).includes(slot)) {
+      rows.push(`<button class="rowwide" data-repairgo="repaired:${slot}">Repair ${SLOT_LABEL[slot]}<span class="ct">${esc(cardName(card))} - its Actions return</span></button>`);
+    }
+    if (m.mend && st === 'damaged') {
+      rows.push(`<button class="rowwide" data-repairgo="mend:${slot}">Mend ${SLOT_LABEL[slot]}<span class="ct">${esc(cardName(card))} - Damaged becomes intact</span></button>`);
+    }
+  }
+  return head('Your move', `${esc(a.name?.en || m.actionId)}: repair what?`,
+    'A Repaired Part acts again but stays destroyed for Integrity, gives back no Link, and a hit removes it with the attack moving to the Core (FAQ J21/J23).', true)
+    + `<div class="tp-body">${rows.join('') || '<p class="tp-note">No destroyed Part is missing a Repaired Token and nothing is Damaged, so there is nothing this can change.</p>'}</div>
+       <div class="tp-foot"><button class="bigbtn ghost2" data-act="repaircancel">${rows.length ? 'Skip' : 'Close'}</button></div>`;
+}
+
 function resupplyHolders(ctx: HudCtx, from: Token, rule: Resupply): Token[] {
   return ctx.state.tokens.filter((o) => {
     if (o.deployed === false) return false;
@@ -2291,6 +2318,11 @@ function routeAction(ctx: HudCtx, t: Token, a: CardAction, ga?: ReturnType<typeo
   const supply = resupplyOf(a);
   if (supply) {
     resupplyPick = { uid: t.uid, actionId: a.id, rule: supply };
+    return true;
+  }
+  const rep = repairSpec(a);
+  if (rep) {
+    repairPick = { uid: t.uid, actionId: a.id, repair: rep.repair, mend: rep.mend };
     return true;
   }
   if (a.type === 'Firing' || a.type === 'Melee') {
@@ -3548,6 +3580,21 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     ctx.refresh();
   });
   on('[data-act="resupplycancel"]', () => { resupplyPick = null; dropAction(); ctx.refresh(); });
+  on('[data-repairgo]', (el) => {
+    const m = repairPick;
+    repairPick = null;
+    const t = m ? s.tokens.find((x) => x.uid === m.uid) : undefined;
+    if (!m || !t) { ctx.refresh(); return; }
+    const [mode, slot] = (el.dataset.repairgo ?? '').split(':');
+    commitAction(ctx);
+    if (ctx.send({ kind: 'repairPart', seat: t.side, uid: t.uid, slot, mode: mode as 'repaired' | 'mend' }).ok) {
+      ctx.noteNow(mode === 'mend'
+        ? `${t.label}: ${SLOT_LABEL[slot as PartSlot | 'main']} is mended back to intact.`
+        : `${t.label}: ${SLOT_LABEL[slot as PartSlot | 'main']} takes a Repaired Token - its Actions return, but it stays destroyed for Integrity (J21).`);
+    }
+    ctx.refresh();
+  });
+  on('[data-act="repaircancel"]', () => { repairPick = null; dropAction(); ctx.refresh(); });
   on('[data-act="crushauto"]', () => {
     const m = crushPlan;
     const v = m ? s.tokens.find((x) => x.uid === m.queue[0]) : undefined;

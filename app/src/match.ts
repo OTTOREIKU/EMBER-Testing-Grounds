@@ -547,6 +547,7 @@ function mountSide(): void {
       },
       (cmd) => { send(cmd); },
     );
+    attackHelper.tokens = () => state.tokens;
   }
   renderCombatIdle();
 }
