@@ -6,7 +6,7 @@ import { cardName, dataUrl, loadData, missionImageUrl, squadLabel, type GameData
 import { tacticSpec } from './tactics';
 import { flushBoxDrops, queueBoxDrop, objectiveCells } from './matchhud';
 import { printedDeployment } from './overlays';
-import { knockbackOf, migrateState, squadAllegiance, tokenCards } from './units';
+import { knockbackOf, migrateState, squadAllegiance, tokenCards, unfoldsOwed } from './units';
 import { countHits, normaliseSetup } from './setup';
 import { gameResult, normaliseTasks, taskItemsFor } from './tasks';
 import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
@@ -484,6 +484,12 @@ function mountSide(): void {
     // Resolving a Projectile's Delayed Action: the turn panel asks what it
     // caught, then destroys it (4.7.5).
     onDetonate: (t, actionId) => {
+      // Pholcus's Delayed Action is a replacement, not a payload (FAQ M18).
+      if (data && unfoldsOwed(data, [t]).some((x) => x.actionId === actionId)) {
+        send({ kind: 'unfold', seat: t.side, uid: t.uid });
+        render();
+        return;
+      }
       startDetonation(t.uid, actionId);
       render();
     },

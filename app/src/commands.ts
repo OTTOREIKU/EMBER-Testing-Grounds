@@ -1,7 +1,8 @@
 import type { Facing, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, Timing, Token } from './types';
 import { addStatus, ageTokens, newOpportunity, PHASES, statusCount, STATUSES, TIMINGS } from './types';
 import type { GameData } from './data';
-import { extrasFor, consumesCharge, electronicValue, freehandSlots, interceptCapacity, makeDroneToken, makeMechToken, maxLink, pilotCard, tokenCards } from './units';
+import { unfoldsInto } from './data';
+import { unfoldToken, extrasFor, consumesCharge, electronicValue, freehandSlots, interceptCapacity, makeDroneToken, makeMechToken, maxLink, pilotCard, tokenCards } from './units';
 import { canActivate, canManeuver, canOverload, canPerform, spendAction, spendActivation, spendManeuver, spendOverload } from './ticks';
 import { tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { battlefieldLocked, deploymentComplete, deployTurn, firstPlayerFrom, newSetup, normaliseSetup } from './setup';
@@ -109,6 +110,7 @@ export type Command =
   | { kind: 'clearIntercepts'; seat: Side }
   | { kind: 'launch'; seat: Side; uid: number; actionId: string; cardId: string; to: { col: number; row: number }; facing: Facing }
   | { kind: 'despawn'; seat: Side; uid: number; targetUid: number }
+  | { kind: 'unfold'; seat: Side; uid: number }
   | { kind: 'placeSmoke'; seat: Side; at: { col: number; row: number } }
   | { kind: 'removeSmoke'; seat: Side; at: { col: number; row: number } }
   | { kind: 'dissipateSmoke'; seat: Side }
@@ -896,6 +898,20 @@ function checkActed(
       if (!state.tokens.some((x) => x.uid === cmd.targetUid)) return no('That unit is not on the board.');
       return ok;
     }
+    case 'unfold': {
+      if (!t) return no('That unit is not on the board.');
+      const card = data.byId.get(t.cardId);
+      const into = card ? unfoldsInto(card) : undefined;
+      if (!into) return no(`${t.label} does not Unfold into anything.`);
+      if (!data.byId.get(into)) return no('The Unfolded card is missing from the data.');
+      // The replacement happens in the Delay Phase, which is also why the Drone
+      // cannot attack in the round it Unfolds - the Automatic Phase is already
+      // past (FAQ M8/M18.3).
+      if (PHASES[state.round.phase] !== 'Delay') {
+        return no(`${t.label} Unfolds in the Delay Phase (FAQ M18).`);
+      }
+      return ok;
+    }
   }
 }
 
@@ -1583,6 +1599,13 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
       const tok = makeDroneToken(state, data, card, t.side);
       state.tokens.push({ ...tok, parentUid: t.uid, col: cmd.to.col, row: cmd.to.row, facing: cmd.facing });
       if (t.ammo[cmd.actionId] !== undefined) t.ammo[cmd.actionId] = Math.max(0, t.ammo[cmd.actionId] - 1);
+      return;
+    }
+    case 'unfold': {
+      const card = data.byId.get(t.cardId);
+      const into = card ? unfoldsInto(card) : undefined;
+      const target = into ? data.byId.get(into) : undefined;
+      if (target) unfoldToken(state, data, t, target);
       return;
     }
     case 'despawn': {

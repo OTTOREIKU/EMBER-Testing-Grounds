@@ -44,7 +44,7 @@ import { PHASES, RoundTracker } from './tracker';
 import { PlayGuide } from './playguide';
 import type { Card, CardAction, DiceData, DieColor, Facing, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, StatusDef, TerrainPiece, Timing, Token } from './types';
 import { addStatus, SCALES, statusCount, statusesFor, STATUSES } from './types';
-import { repairSpec, autoTargetsFor, isSilentAction, maneuverIsSilent, chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, type Resupply, resupplyOf, SLOT_LABEL, interceptLeft, interceptsOwed, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf } from './units';
+import { minesOwed, unfoldsOwed, repairSpec, autoTargetsFor, isSilentAction, maneuverIsSilent, chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, type Resupply, resupplyOf, SLOT_LABEL, interceptLeft, interceptsOwed, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf } from './units';
 import { registerOffline } from './offline';
 import { battlefieldLocked, countHits, firstPlayerFrom, newSetup, normaliseSetup, tasksLocked, type SetupState } from './setup';
 import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
@@ -297,6 +297,12 @@ async function init() {
       hint.textContent = `${label}: R${range} shown. ${inRange.length} unit${inRange.length === 1 ? '' : 's'} in range. Line of sight and arc still apply.`;
     },
     onDetonate(t, actionId) {
+      if (unfoldsOwed(data, [t]).some((x) => x.actionId === actionId)) {
+        perform(data, state, { kind: 'unfold', seat: t.side, uid: t.uid });
+        logTo(t, `${t.label} Unfolds into its Drone form (FAQ M18).`);
+        onChanged();
+        return;
+      }
       startDetonation(t, actionId);
     },
     onShove(t, actionId) {
@@ -708,6 +714,16 @@ async function init() {
         else done(false);
       });
       return;
+    }
+
+    // Pholcus does not resolve a payload in the Delay Phase, it becomes a Drone
+    // (FAQ M18). The replacement lands first; if the Grid it comes up in is
+    // occupied, the sweep below has it detonate on the spot (M18.4).
+    if (unfoldsOwed(data, [t]).some((x) => x.actionId === actionId)) {
+      perform(data, state, { kind: 'unfold', seat: t.side, uid: t.uid });
+      logTo(t, `${t.label} Unfolds into its Drone form. It cannot act until next round - the Automatic Phase has already passed (FAQ M8).`);
+      onChanged();
+      return done(true);
     }
 
     // A Projectile acting in the Delay Phase is resolving its payload, so its
@@ -3167,6 +3183,51 @@ async function init() {
     prevCamo = nowCamo;
   }
 
+  // Which Mines have already been offered, so a declined detonation does not
+  // ask again on every render.
+  const mineSeen = new Set<number>();
+
+  // A Mine detonates the moment a Ground Unit is in its Grid, however it got
+  // there - a Maneuver, a Crush that shoves a Drone in (FAQ M7), a knockback,
+  // or a hand-dragged token in the sandbox. Reading it off the board rather
+  // than off a Movement is what covers all of those with one rule.
+  function sweepMines(): void {
+    const owed = minesOwed(data, state.tokens);
+    for (const uid of [...mineSeen]) {
+      if (!state.tokens.some((t) => t.uid === uid)) mineSeen.delete(uid);
+    }
+    const next = owed.find((x) => !mineSeen.has(x.uid));
+    if (!next) return;
+    const m = state.tokens.find((t) => t.uid === next.uid);
+    if (!m) return;
+    mineSeen.add(next.uid);
+    const caught = next.victims
+      .map((u) => state.tokens.find((t) => t.uid === u)?.label)
+      .filter((x): x is string => !!x);
+    // The blast is indiscriminate and catches everything in the Grid, allies
+    // and the Flying or Aerial units above it included (M6/M22). It never
+    // Reveals a camouflaged victim, and a Mech whose Chassis survives carries
+    // on moving (M19).
+    const body = `${m.label} is a Mine and ${next.why}, so it always Detonates - a Ground Unit never Crushes a Mine, it sets it off. `
+      + `The Explosion catches every unit in that Grid, ally or not: ${caught.join(', ') || 'nothing else'}. `
+      + 'It causes no Reveal, and a Mech whose Chassis survives finishes its Movement (FAQ M6/M19/M22).';
+    if (state.script?.strict) {
+      logTo(m, `${m.label} Detonates: ${next.why}.`);
+      void alertDialog({ title: `${m.label} Detonates`, body }).then(() => startDetonation(m, next.actionId));
+      return;
+    }
+    void confirmDialog({
+      title: `${m.label} Detonates`,
+      body,
+      confirmLabel: 'Resolve the Detonation',
+      cancelLabel: 'Skip it (house rule)',
+    }).then((go) => {
+      if (!go) return;
+      logTo(m, `${m.label} Detonates: ${next.why}.`);
+      startDetonation(m, next.actionId);
+    });
+  }
+
   function onChanged(): void {
     setSquadNames(state.sideNames);
     syncSquadTints();
@@ -3182,6 +3243,7 @@ async function init() {
     paintBattlefieldLock();
     renderSmokePrompt();
     sweepCamoContacts();
+    sweepMines();
     // Redraw the Add tab only when what is on the board actually changed, so
     // dragging a unit or toggling a token does not reset the list underneath you.
     const sig = [...deployedCardCounts(state.tokens)]

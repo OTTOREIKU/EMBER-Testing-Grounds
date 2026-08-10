@@ -1,11 +1,11 @@
 import { DEFAULT_BOARD } from './boards';
 import type { GameData } from './data';
-import { cardName, isAerial, isBarricade, unitSize } from './data';
+import { cardName, isAerial, isBarricade, isFlyingBase, isMine, isUnfolded, unfoldsInto, unitSize } from './data';
 import type { ExtraTick, Card, CardAction, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, TerrainPiece, Timing, Token } from './types';
 import { LEGACY_SIDE, normaliseScript, statusCount, TIMINGS } from './types';
 import { normaliseSetup } from './setup';
 import { isMeleeFiring, lockersOf } from './melee';
-import { rangeBetween, smokeBlocks } from './rules';
+import { largeGridOf, rangeBetween, smokeBlocks } from './rules';
 import { normaliseTasks } from './tasks';
 
 export const PART_SLOTS: PartSlot[] = ['torso', 'chasis', 'leftHand', 'rightHand', 'backpack'];
@@ -175,7 +175,10 @@ export function chargeableSlots(data: GameData, t: Token): { slot: PartSlot | 'p
 export function explosionScope(a: CardAction, english?: string): 'single' | 'all' {
   const printed = (a.description?.en ?? '').trim() || (english ?? '').trim();
   const hay = printed || a.description?.zh || '';
-  if (/all\s+units|所有单位|每个单位/i.test(hay)) return 'all';
+  // "all GROUND units" counts as all: the GM-35 Mine prints that, and FAQ M22
+  // widens it past ground anyway - a Mine catches the Flying and Aerial units
+  // sharing its Grid too.
+  if (/all\s+(?:\w+\s+)?units|所有[^。]{0,4}单位|每个单位/i.test(hay)) return 'all';
   return 'single';
 }
 
@@ -425,6 +428,122 @@ export function interceptReach(data: GameData, t: Token): number {
 
 export function interceptLeft(t: Token): number {
   return Object.values(t.intercept ?? {}).reduce((s, n) => s + n, 0);
+}
+
+// ---------- Mines (rulebook 4.7, FAQ M3/M6/M7/M19/M22/M24) ----------
+
+export interface MineTrigger {
+  uid: number;
+  actionId: string;
+  victims: number[];
+  why: string;
+}
+
+function alive(t: Token): boolean {
+  return t.deployed !== false && (t.partStates[t.kind === 'mech' ? 'torso' : 'main'] ?? 'intact') !== 'destroyed';
+}
+
+function coversGrid(t: Token, g: { c: number; r: number }): boolean {
+  for (let dc = 0; dc < t.size; dc++) {
+    for (let dr = 0; dr < t.size; dr++) {
+      if (Math.floor((t.col + dc) / 3) === g.c && Math.floor((t.row + dr) / 3) === g.r) return true;
+    }
+  }
+  return false;
+}
+
+// A Mine's trigger asks for a GROUND Unit. Anything Aerial is above it, and a
+// transparent-base Flying Unit lands ON the Mine without setting it off
+// (FAQ M3/M24). A Mech carries no flight class, so it is always ground.
+export function isGroundUnit(data: GameData, t: Token): boolean {
+  if (t.aerial) return false;
+  const card = data.byId.get(t.cardId);
+  return !card || !isFlyingBase(card);
+}
+
+// Every Mine standing under something that sets it off.
+//
+// DERIVED from the board rather than hooked onto a Movement, because a Mine
+// triggers on ENTRY however the entry happened: a Maneuver, a Crush that shoves
+// a Drone into the Grid (FAQ M7 says you may Lay and Crush in one Movement), a
+// knockback, a shove. A derived answer also reaches both seats identically with
+// nothing crossing the wire.
+export function minesOwed(data: GameData, tokens: Token[]): MineTrigger[] {
+  const live = tokens.filter(alive);
+  const isMineToken = (t: Token): boolean => {
+    const c = data.byId.get(t.cardId);
+    return !!c && isMine(c);
+  };
+  const out: MineTrigger[] = [];
+  for (const m of live) {
+    const card = data.byId.get(m.cardId);
+    // An Unfolded Pholcus that came up in an occupied Grid detonates on the
+    // spot, ally or not (FAQ M18.4). Nothing else can share a Grid with it -
+    // a Unit entering would Crush it - so sharing one IS that moment.
+    if (card && isUnfolded(card)) {
+      const blast = (card.actions ?? []).find((a) => (a.redDice ?? 0) + (a.yellowDice ?? 0) > 0);
+      const sharing = blast ? live.filter((o) => o.uid !== m.uid && coversGrid(o, largeGridOf(m))) : [];
+      if (blast && sharing.length) {
+        out.push({
+          uid: m.uid,
+          actionId: blast.id,
+          victims: sharing.map((o) => o.uid),
+          why: `${m.label} Unfolded into an occupied Grid`,
+        });
+      }
+      continue;
+    }
+    if (!card || !isMine(card)) continue;
+    const trigger = (card.actions ?? []).find((a) => (a.redDice ?? 0) + (a.yellowDice ?? 0) > 0);
+    if (!trigger) continue;
+    const g = largeGridOf(m);
+    // The blast catches everything in the Grid, ally, Flying and Aerial alike
+    // (M6/M22) - but only a Ground Unit sets it off.
+    const inGrid = live.filter((o) => o.uid !== m.uid && coversGrid(o, g));
+    const walker = inGrid.find((o) => isGroundUnit(data, o));
+    // Deploying a Mine into a Grid that already holds one sets off the one that
+    // was already there (M6). Uids are minted in order, so the higher uid is
+    // the Mine that just arrived.
+    const newer = inGrid.find((o) => o.uid > m.uid && isMineToken(o));
+    const by = walker ?? newer;
+    if (!by) continue;
+    out.push({
+      uid: m.uid,
+      actionId: trigger.id,
+      victims: inGrid.map((o) => o.uid),
+      why: walker
+        ? `${walker.label} is a Ground Unit standing in its Grid`
+        : `${newer!.label} was Deployed into its Grid`,
+    });
+  }
+  return out;
+}
+
+// ---------- Pholcus, the Mine that unfolds (FAQ M8/M18/M28) ----------
+
+// The folded Projectile becomes its Drone form in place. Everything the Drone
+// prints is taken from the new card through the same builder every other Drone
+// goes through - only the uid, where it stands and which way it faces survive,
+// so the board keeps tracking the same piece.
+export function unfoldToken(state: GameState, data: GameData, t: Token, into: Card): void {
+  const fresh = makeDroneToken(state, data, into, t.side);
+  Object.assign(t, fresh, { uid: t.uid, col: t.col, row: t.row, facing: t.facing, deployed: t.deployed });
+}
+
+// A folded Pholcus is owed its replacement in the Delay Phase (M18.3), which
+// the Drone form then cannot act on until the NEXT round: the Automatic Phase
+// has already been and gone by the time it Unfolds (M8).
+export function unfoldsOwed(data: GameData, tokens: Token[]): { uid: number; actionId: string; into: string }[] {
+  const out: { uid: number; actionId: string; into: string }[] = [];
+  for (const t of tokens.filter(alive)) {
+    const card = data.byId.get(t.cardId);
+    const into = card ? unfoldsInto(card) : undefined;
+    if (!card || !into) continue;
+    const act = (card.actions ?? []).find((a) => a.type === 'Delay');
+    if (!act) continue;
+    out.push({ uid: t.uid, actionId: act.id, into });
+  }
+  return out;
 }
 
 export function makeDroneToken(state: GameState, data: GameData, card: Card, side: Side, backpack?: string): Omit<Token, 'col' | 'row' | 'facing'> {

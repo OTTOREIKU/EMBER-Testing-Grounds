@@ -756,6 +756,51 @@ export function isBarricade(c: Card): boolean {
   return BARRICADE_CARDS.has(c.id);
 }
 
+// The one card in the box that becomes another. The folded SGM-2 "Pholcus"
+// Projectile is REPLACED by its Drone form in the Delay Phase of the round it
+// lands - not optionally, the FAQ says it must (M18.3) - and if the Grid it
+// lands in is occupied it detonates on the spot, ally or not (M18.4). Written
+// as a table rather than matched off the card text, because the replacement
+// names the target card in Chinese only.
+export const UNFOLDS_INTO: Record<string, string> = { '156': '167' };
+
+export function unfoldsInto(c: Card): string | undefined {
+  return UNFOLDS_INTO[c.id];
+}
+
+// The far side of that table: a unit that has already Unfolded.
+export function isUnfolded(c: Card): boolean {
+  return Object.values(UNFOLDS_INTO).includes(c.id);
+}
+
+// Mines and the one card that only looks like one. A GM-35 carries the printed
+// keyword on its own; Pholcus carries the SELF-PROPELLED variant, which is a
+// different unit entirely - it never triggers on entry, it unfolds and hunts
+// (FAQ M18). The two strings share a suffix, so both tests are exact.
+const MINE_KEYWORD = '地雷';
+const AUTO_MINE_KEYWORD = '自行地雷';
+
+function keywordSet(c: Card): string[] {
+  return (c.keywords ?? []).map((k) => (k.inline ?? k.key ?? k.en ?? '').trim());
+}
+
+// A Mine detonates when a GROUND Unit enters its Grid (FAQ M6, GM-35 card).
+export function isMine(c: Card): boolean {
+  return keywordSet(c).includes(MINE_KEYWORD);
+}
+
+// The folded SGM-2 "Pholcus": a Projectile that becomes a Drone (FAQ M18).
+export function isAutoMine(c: Card): boolean {
+  return keywordSet(c).includes(AUTO_MINE_KEYWORD);
+}
+
+// The square TRANSPARENT base. A Flying Unit may land in a mined Grid and sits
+// on top of the Mine without setting it off (FAQ M3/M24) - it is not a Ground
+// Unit, which is what a Mine's trigger asks about.
+export function isFlyingBase(c: Card): boolean {
+  return c.flyingOrElevated === 'flying';
+}
+
 // The data's two flight classes follow the printed bases (FAQ E1): 'flying' is
 // the square transparent base (Ravens) that crosses terrain but must land on
 // open ground, 'elevated' is the round base (Dragonfly, the Bits) that is

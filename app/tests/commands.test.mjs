@@ -76,6 +76,14 @@ export function makeDroneToken(state: any, data: any, card: any, side: any, back
     partStates: { main: 'intact', ...(backpack ? { backpack: 'intact' } : {}) }, ammo: {},
   };
 }
+export function unfoldsInto(c: any): any { return c?.unfoldsInto; }
+export function unfoldToken(state: any, data: any, t: any, into: any): void {
+  Object.assign(t, {
+    cardId: into.id, kind: into.category === 'projectile' ? 'projectile' : 'drone',
+    label: into.id, size: 1, aerial: false, stance: into.stance ?? 'offensive',
+    partStates: { main: 'intact' }, ammo: {},
+  });
+}
 export function newOpportunity(uid: number, timing?: any): any {
   return { uid, timing, extra: undefined, maneuver: 1, action: 2, extras: [], maneuvered: false, moved: false, started: false, overload: 0, performed: [], spentExtras: [] };
 }
@@ -161,6 +169,9 @@ const data = {
     ['274', { id: '274', category: 'tactics_or_upgrade', score: 30, actions: [] }],
     ['275', { id: '275', category: 'tactics_or_upgrade', score: 30, actions: [] }],
     ['P1', { id: 'P1', LV: 4 }],
+    // The folded Pholcus and the Drone it is replaced by (FAQ M18).
+    ['156', { id: '156', category: 'projectile', unfoldsInto: '167', actions: [{ id: '156_A', type: 'Delay', name: { en: 'Unfold' } }] }],
+    ['167', { id: '167', category: 'drone', stance: 'mobility', score: 0, actions: [{ id: '167_A', type: 'Detonation', speed: 'auto', range: 1, yellowDice: 6, name: { en: 'Automatic Attack' } }] }],
   ]),
   commonActions: [{ id: 'COMMON_CHARGE', type: 'Tactic', size: 's', name: { en: 'Charge' } }],
   overload: [{ actionId: '090_A', card: '090', label: 'Overload' }],
@@ -1263,6 +1274,26 @@ const b = wm();
 C.apply(data, a, mv());
 C.apply(data, b, mv());
 check('apply is deterministic across copies', JSON.stringify(a.script.opp), JSON.stringify(b.script.opp));
+
+// ---------- Pholcus unfolds (FAQ M8/M18) ----------
+
+const pho = (uid = 1, over = {}) => ({
+  uid, side: 's1', kind: 'projectile', cardId: '156', label: 'Pholcus', col: 3, row: 3,
+  facing: 0, size: 1, aerial: true, stance: 'mobility', partStates: { main: 'intact' }, ammo: {}, ...over,
+});
+const uf = (over = {}) => ({ kind: 'unfold', seat: 's1', uid: 1, ...over });
+// The replacement is a Delay Phase act, which is exactly why the Drone cannot
+// attack in the round it Unfolds - the Automatic Phase is already past (M8).
+check('unfolding outside the Delay Phase is refused', C.check(data, world([pho()], 2), uf()).ok, false);
+check('and in the Delay Phase it passes', C.check(data, world([pho()], 4), uf()).ok, true);
+check('a unit that does not Unfold is refused', C.check(data, world([mech(1, 's1')], 4), uf()).ok, false);
+check('and the other squad may not Unfold it', C.check(data, world([pho()], 4), uf({ seat: 's2' })).ok, false);
+const wuf = world([pho()], 4);
+C.apply(data, wuf, uf());
+check('the Projectile becomes its Drone form in place',
+  [wuf.tokens[0].cardId, wuf.tokens[0].kind, wuf.tokens[0].aerial], ['167', 'drone', false]);
+check('and keeps the same piece on the same spot',
+  [wuf.tokens[0].uid, wuf.tokens[0].col, wuf.tokens[0].row, wuf.tokens[0].side], [1, 3, 3, 's1']);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

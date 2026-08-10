@@ -3,7 +3,7 @@ import type { GameData } from './data';
 import { actionIconUrl, cardName, isAerial, secondaryImageUrl, squadLabel, unitSize } from './data';
 import { Board, footprint, snapPlacement, type BoardCallbacks } from './board';
 import { printedDeployment, resolveZoneSetData } from './overlays';
-import { extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, isSilentAction, maneuverIsSilent, canActivateCamo, chargeableSlots, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
+import { minesOwed, unfoldsOwed, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, isSilentAction, maneuverIsSilent, canActivateCamo, chargeableSlots, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
 import { resolveCounterRoll, tallyCounter } from './combat';
 import { tacticFitsPhase, tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { inContact, canStandIn, attackDirection, crushTargets, dissipationFor, extendPath, knockbackPath, LG, losBetween, losNote, protectionFor, rangeBetween, reachableGrids, standingSpot, type LargeGrid } from './rules';
@@ -1269,6 +1269,11 @@ function panelHtml(ctx: HudCtx): string {
   // A broken camouflage waits for its owner's say-so, but never blocks the
   // other player's view of the phase.
   if (revealsOwed(ctx).some((x) => mine(ctx, x.t.side))) return revealPanel(ctx);
+  // A Mine that something has stepped on ALWAYS detonates, so it takes the
+  // panel from its owner - the only side that may command it (M6). Nothing is
+  // queued for this: the trigger is read off the board, so both clients agree
+  // on it without a command and a rejoin re-derives it.
+  if (mineTriggers(ctx).length) return minePanel(ctx);
   // A grant is answered before anything else: the Action has been performed
   // and the Ally is owed its Opportunity.
   if (grantPick) return grantPanel(ctx);
@@ -1592,6 +1597,24 @@ function queueInterceptsFor(ctx: HudCtx, launcher: Token, born: Token[]): void {
 // an auto-send in the glue would replay on catch-up and double-fire. The owner
 // confirms with a click, and a house-rule dismissal is remembered per debt.
 const revealDismissed = new Set<string>();
+
+function mineTriggers(ctx: HudCtx): { trigger: MineTrigger; t: Token }[] {
+  return minesOwed(ctx.data, ctx.state.tokens)
+    .map((trigger) => ({ trigger, t: ctx.state.tokens.find((x) => x.uid === trigger.uid) }))
+    .filter((x): x is { trigger: MineTrigger; t: Token } => !!x.t && mine(ctx, x.t.side));
+}
+
+function minePanel(ctx: HudCtx): string {
+  const x = mineTriggers(ctx)[0];
+  if (!x) return '';
+  const caught = x.trigger.victims
+    .map((u) => ctx.state.tokens.find((o) => o.uid === u)?.label)
+    .filter((l): l is string => !!l);
+  return head('Your move', `${esc(x.t.label)} Detonates`,
+    `${esc(x.trigger.why)}, and a Ground Unit never Crushes a Mine - it sets it off. The Explosion catches every unit in that Grid, ally or not, and the Flying or Aerial units above it too. It causes no Reveal, and a Mech whose Chassis survives finishes its Movement (FAQ M6/M19/M22).`, true)
+    + `<div class="tp-body"><p class="tp-note">In the blast: ${esc(caught.join(', ') || 'nothing else')}</p></div>
+       <div class="tp-foot"><button class="bigbtn" data-minego="${x.t.uid}" data-mineact="${esc(x.trigger.actionId)}">Resolve the Detonation (4.7.6)</button></div>`;
+}
 
 function revealsOwed(ctx: HudCtx): { t: Token; key: string; why: string }[] {
   const s = ctx.state;
@@ -2350,6 +2373,14 @@ function routeAction(ctx: HudCtx, t: Token, a: CardAction, ga?: ReturnType<typeo
     }
     if (shot.length === 1) startLaunchPlan(t.uid, a.id, shot[0].id, shot[0].name?.en || shot[0].id);
     else launchPick = { uid: t.uid, actionId: a.id, cardIds: shot.map((c) => c.id) };
+    return true;
+  }
+  // Pholcus does not resolve a payload: it becomes a Drone in place (FAQ M18).
+  // If the Grid it comes up in is occupied, the derived blast list has it
+  // detonate on the spot (M18.4).
+  if (unfoldsOwed(ctx.data, [t]).some((x) => x.actionId === a.id)) {
+    ctx.send({ kind: 'unfold', seat: t.side, uid: t.uid });
+    ctx.noteNow(`${t.label} Unfolds into its Drone form. It cannot act until next round - the Automatic Phase has already passed (FAQ M8).`);
     return true;
   }
   // A Projectile resolving its payload in the Delay Phase opens the same
@@ -3609,6 +3640,10 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
   });
   on('[data-act="shovego"]', () => resolveShove(ctx));
   on('[data-act="shovecancel"]', () => { shovePlan = null; flushBoxDrops(); ctx.refresh(); });
+  on('[data-minego]', (el) => {
+    startDetonation(Number(el.dataset.minego), el.dataset.mineact ?? '');
+    ctx.refresh();
+  });
   on('[data-revealgo]', (el) => {
     const uid = Number(el.dataset.revealgo);
     const t = ctx.state.tokens.find((x) => x.uid === uid);
