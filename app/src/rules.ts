@@ -88,6 +88,17 @@ export interface LargeGrid {
   r: number;
 }
 
+// Contact is Small-Grid edge overlap (4.2.3): footprints sharing an edge, or
+// overlapping outright (an Aerial unit over a ground one counts, Supplement
+// "Overlapping"). A corner-only touch is NOT Contact.
+export function inContact(a: Token, b: Token): boolean {
+  const gapX = Math.max(a.col - (b.col + b.size), b.col - (a.col + a.size));
+  const gapY = Math.max(a.row - (b.row + b.size), b.row - (a.row + a.size));
+  // gap < 0 means overlap on that axis; gap === 0 means edges meet exactly.
+  if (gapX < 0 && gapY < 0) return true;
+  return (gapX === 0 && gapY < 0) || (gapY === 0 && gapX < 0);
+}
+
 export function largeGridOf(t: { col: number; row: number }): LargeGrid {
   return { c: Math.floor(t.col / 3), r: Math.floor(t.row / 3) };
 }

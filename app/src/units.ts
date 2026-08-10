@@ -189,6 +189,32 @@ export function needsSightToLanding(a: CardAction): boolean {
   return /直射|Direct Fire/i.test(hay);
 }
 
+// ---------- Silence (rulebook 4.12, FAQ E12/E13/I2/I5/I18) ----------
+
+// The printed keyword on cards and actions. Common Actions carry an explicit
+// silence flag in their JSON instead. Exact matches only: a substring test
+// on the English would catch Silencer flavour, so inline sticks to the CJK term.
+const SILENCE_KEYWORD = (k: { key?: string; en?: string; inline?: string }): boolean =>
+  k.key === '静默' || k.en === 'Silence' || (k.inline ?? '').includes('静默');
+
+export function isSilentAction(a: CardAction): boolean {
+  if ((a as { silence?: boolean }).silence === true) return true;
+  if ((a.keywords ?? []).some(SILENCE_KEYWORD)) return true;
+  // 12 actions carry the term only in their Chinese text. A false positive
+  // here fails safe: the unit is left hidden rather than nagged to Reveal.
+  return (a.description?.zh ?? '').includes('静默');
+}
+
+// A Maneuver is Silent only while a Part granting Silence survives — the PL29
+// Stealth Chassis carries the keyword on the card itself, and FAQ I2 destroys
+// the exemption with the Part: a facing change on a dead Stealth Chassis is a
+// non-Silence action and Reveals.
+export function maneuverIsSilent(data: GameData, t: Token): boolean {
+  return tokenCards(data, t).some(({ slot, card }) =>
+    (t.partStates[slot as PartSlot | 'main'] ?? 'intact') !== 'destroyed'
+    && (card.keywords ?? []).some(SILENCE_KEYWORD));
+}
+
 export function canActivateCamo(data: GameData, t: Token): boolean {
   for (const { card } of tokenCards(data, t)) {
     for (const a of card.actions ?? []) {
@@ -260,6 +286,31 @@ function initIntercept(cards: Card[]): Record<string, number> {
 
 // The furthest an Intercept Action on this unit reaches, so a launch can say
 // whose Interception it woke up.
+// Auto-attack target selection (3.5.2, FAQ O9/O10/O21). Among enemies in
+// range: if any bears a Highlight, the NEAREST Highlighted target must be
+// taken; otherwise the nearest target, with ties left to the player. Beacons
+// and Mines count as enemy units and so take priority over Neutral fallbacks
+// (O10); buildings are terrain and never valid. Melee cannot reach Aerial.
+export function autoTargetsFor(
+  data: GameData,
+  tokens: Token[],
+  t: Token,
+  a: CardAction,
+): Token[] {
+  const reach = a.range ?? 0;
+  const candidates = tokens.filter((o) => {
+    if (o.side === t.side || o.uid === t.uid || o.deployed === false) return false;
+    if ((o.partStates[o.kind === 'mech' ? 'torso' : 'main'] ?? 'intact') === 'destroyed') return false;
+    if (a.type === 'Melee' && o.aerial) return false;
+    return rangeBetween(t, o).range <= reach;
+  });
+  if (!candidates.length) return [];
+  const lit = candidates.filter((o) => statusCount(o.statuses, 'highlight') > 0);
+  const pool = lit.length ? lit : candidates;
+  const best = Math.min(...pool.map((o) => rangeBetween(t, o).range));
+  return pool.filter((o) => rangeBetween(t, o).range === best);
+}
+
 // How a Projectile Action delivers. Only a LAUNCHED projectile triggers
 // Interception; Deploy and Lay never do (FAQ M20). The launcher's wording wins:
 // the MES Beacon reads "Deployable" on the projectile card but "Launch" on the
@@ -270,8 +321,8 @@ export function projectileDelivery(a: CardAction): 'launch' | 'deploy' | 'lay' {
     a.description?.zh ?? '', a.description?.en ?? '',
     ...(a.keywords ?? []).map((k) => k.inline ?? k.key ?? ''),
   ].join(' ');
-  if (/布设|布雷|Lay|Mine ?Lay/i.test(hay)) return 'lay';
-  if (/部署|Deploy/i.test(hay)) return 'deploy';
+  if (/布设|布雷|\bLay\b|Mine ?Lay/i.test(hay)) return 'lay';
+  if (/部署|\bDeploy/i.test(hay)) return 'deploy';
   return 'launch';
 }
 

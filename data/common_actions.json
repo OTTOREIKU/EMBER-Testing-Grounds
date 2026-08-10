@@ -91,8 +91,9 @@
       "range": 6,
       "phase": "End",
       "slots": ["torso"],
+      "silence": true,
       "description": {
-        "en": "· End Phase action.\n· Target an enemy in the Optical Camouflage State or bearing a Low Profile Token, then make an Electronic-counter Roll.\n· On a success, a camouflaged target is Revealed and a Low Profile Token is removed."
+        "en": "· End Phase action.\n· Target an enemy in the Optical Camouflage State or bearing a Low Profile Token, then make an Electronic-counter Roll.\n· On a success, a camouflaged target is Revealed and a Low Profile Token is removed.\n· Silent, so a camouflaged scanner is not Revealed by using it (FAQ I18)."
       }
     }
   ],

@@ -10,10 +10,21 @@ import { readFileSync, writeFileSync } from 'node:fs';
 const src = readFileSync(new URL('../src/units.ts', import.meta.url), 'utf8');
 const start = src.indexOf('export function maneuverRange');
 const end = src.indexOf('export function initiativeFor');
+// The Silence classifiers ride in the same slice: they only need tokenCards,
+// which this harness mirrors below.
+const silStart = src.indexOf('// ---------- Silence');
+const silEnd = src.indexOf('export function canActivateCamo');
 if (start < 0 || end < 0) throw new Error('could not locate maneuverRange in units.ts');
 const tmp = new URL('./_maneuver.slice.ts', import.meta.url);
-writeFileSync(tmp, 'type GameData = any;\ntype Token = any;\n' + src.slice(start, end));
-const { maneuverRange } = await import(tmp.href);
+writeFileSync(tmp, `type GameData = any;
+type Token = any;
+type CardAction = any;
+type PartSlot = any;
+const tokenCards = (data, t) => t.kind === 'mech'
+  ? Object.entries(t.mech ?? {}).map(([slot, id]) => ({ slot, card: data.byId.get(id) })).filter((x) => x.card)
+  : [{ slot: 'main', card: data.byId.get(t.cardId) }].filter((x) => x.card);
+` + src.slice(silStart, silEnd) + src.slice(start, end));
+const { maneuverRange, isSilentAction, maneuverIsSilent } = await import(tmp.href);
 
 let pass = 0, fail = 0;
 const check = (name, got, want) => {
@@ -57,6 +68,16 @@ check('a mobility projectile is not doubled', maneuverRange(data, { kind: 'proje
 check('a destroyed chassis moves nothing (E4)', maneuverRange(data, { ...mech('CH2', 'offensive'), partStates: { chasis: 'destroyed' } }), 0);
 check('even in mobility stance (E4)', maneuverRange(data, { ...mech('CH2', 'mobility'), partStates: { chasis: 'destroyed' } }), 0);
 check('a damaged chassis still moves', maneuverRange(data, { ...mech('CH2', 'offensive'), partStates: { chasis: 'damaged' } }), 2);
+
+
+// ---------- Silence (FAQ I2/I5/I18) ----------
+check('a common-action silence flag is silent', isSilentAction({ id: 'X', silence: true }), true);
+check('the printed keyword is silent', isSilentAction({ id: 'X', keywords: [{ key: '静默' }] }), true);
+check('the zh text alone still counts', isSilentAction({ id: 'X', description: { zh: '静默 action' } }), true);
+check('a plain action is not silent', isSilentAction({ id: 'X', keywords: [], description: { en: 'Silencer-brand ammo' } }), false);
+const stealthData = { byId: new Map([['ST', { id: 'ST', keywords: [{ key: '静默', en: 'Silence' }] }], ['T1', { id: 'T1' }]]) };
+check('a live Silence part makes the maneuver silent (I2)', maneuverIsSilent(stealthData, { kind: 'mech', mech: { chasis: 'ST', torso: 'T1' }, partStates: {} }), true);
+check('a destroyed Silence part does not (I2)', maneuverIsSilent(stealthData, { kind: 'mech', mech: { chasis: 'ST', torso: 'T1' }, partStates: { chasis: 'destroyed' } }), false);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
