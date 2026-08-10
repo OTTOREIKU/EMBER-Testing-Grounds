@@ -1,7 +1,8 @@
 {
   "_comment": "QR ids for cards we hold under a serial-style id. Our numeric ids ARE the QR id already, so only serial-style cards need this. The number is what the publisher's own card page is keyed by: obsidianprotocol.net/#/info?id=<qr>&lang=en, which is what the QR code on the card opens.",
-  "_source": "The QR ID column of the championship parts lists (2026-08-03), then EVERY pair verified against the live API by name on 2026-08-10. Nothing here is taken on trust from the spreadsheet alone.",
-  "_trap": "QR ids RESTART PER SHEET TYPE, so they are not unique on their own. The six RDL pilots carry QR 1-6, and API ids 1-6 are backpacks and armaments - FPA-01 'Misty' resolves to the SH-15 Field Repair System. Every pilot therefore fails validation and is deliberately absent below. Never add an entry here without checking the name the API returns.",
+  "_source": "The QR ID column of the championship parts lists (2026-08-03), then EVERY pair verified against the live API by name on 2026-08-10. Nothing here is taken on trust from the spreadsheet alone. Extended 2026-08-10 by walking the API id space 1-600 and matching each record's title back to a card name, which is the only route for pilots: their sheet QR column restarts at 1 per sheet and the UN pilot sheet has no QR values at all.",
+  "_trap": "NEVER take a pilot's id from the parts lists. The QR ID column RESTARTS PER SHEET TYPE, so the six RDL pilots carry QR 1-6 - and API ids 1-6 are backpacks and armaments, so FPA-01 'Misty' resolves to the SH-15 Field Repair System. The UN pilot sheet leaves the column empty entirely. The real pilot ids came from the opposite direction: walk the API and match each record's title back to a card name. Never add an entry here without checking the name the API returns.",
+  "_ambiguity": "Name matching is only sound where the name is unique, and two names are not. The two KeyHole pilots reach us identically named, so id 306 matched both; the API separates them as 'KeyHole' (306) and 'Keyhole - Hidden in Plain Sight' (362), and OTTO scanned 362 off the RDL Dune card, which leaves 306 for the Cavalry pilot. The other clash is S100 Shield + R6SS SMG (D): our S100+R6SS-L-T is the LEFT hand and card 116 the RIGHT, sharing one name, so the serial card is deliberately still unlinked rather than risk pointing at its mirror. Every other pair was cross-checked on points - 25 of 25 agreed.",
   "_pending": {
     "_note": "Correct QR ids whose API record was still an unfilled placeholder on 2026-08-10. Re-run the check later and promote them into `cards` once the publisher enters them.",
     "PDAM-001": 273,
@@ -9,9 +10,33 @@
     "PDAM-004": 298
   },
   "cards": {
+    "FPA-01": 301,
+    "FPA-02": 302,
+    "FPA-03": 303,
+    "FPA-04": 304,
+    "FPA-04-2": 364,
+    "FPA-05": 305,
+    "FPA-06": 306,
+    "FPA-06-2": 362,
+    "LPA-19": 319,
+    "LPA-20": 320,
+    "LPA-21": 321,
+    "LPA-22": 322,
+    "LPA-23": 323,
+    "LPA-23-2": 365,
+    "LPA-24": 324,
+    "LPA-66": 366,
     "PDAM-002": 554,
     "PDAM-005": 531,
     "PDAM-006": 530,
+    "PDAM-007": 575,
+    "PDBP-202": 563,
+    "PDBP-203": 564,
+    "PDBP-204": 565,
+    "PDCH-201": 568,
+    "PDLH-201": 570,
+    "PDRH-201": 571,
+    "PDTR-201": 566,
     "PRDR-101": 269,
     "PRDR-102": 270,
     "PRDR-103": 271,
@@ -20,6 +45,7 @@
     "PRDR-201": 526,
     "PRDR-202": 527,
     "PRDR-203": 528,
-    "PRDR-204": 529
+    "PRDR-204": 529,
+    "XPA-62": 375
   }
 }

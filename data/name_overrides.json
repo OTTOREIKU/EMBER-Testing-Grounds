@@ -124,6 +124,10 @@
     "180": {
       "en": "PL29 All-terrain Chassis",
       "source": "publisher GoF parts list v1.021 - renamed from \"PL29 Stealth Chassis\" in the redesign"
+    },
+    "FPA-06-2": {
+      "en": "Keyhole - Hidden in Plain Sight",
+      "source": "publisher card page id 362, reached by the QR code on the RDL Dune card itself. Both KeyHole pilots reach us named just \"KeyHole\" even though they are different cards (FPA-06 has the Aura/Electronic range trait, this one gains Low Profile inside an allied Aura). They were the only two cards in the whole pool sharing a name, which also made this the one card the API sweep could not have matched automatically."
     }
   },
   "actions": {
