@@ -159,11 +159,16 @@ export class Inventory {
   }
 
   private showContents(dlg: HTMLElement, key: string): void {
+    // Only ever one reading panel beside the box list. Both this and the compare
+    // panel insert before .inv-panel, so leaving the other in place stacks them
+    // into a third column instead of replacing it.
     dlg.querySelector('.inv-contents')?.remove();
+    dlg.querySelector('.inv-compare')?.remove();
     const box = this.boxes.find((b) => b.key === key);
     const items = this.boxContents(key);
     const panel = document.createElement('div');
     panel.className = 'inv-contents';
+    panel.dataset.box = key;
     const total = items.reduce((s, i) => s + i.n, 0);
     panel.innerHTML = `
       <button class="dlg-close inv-contents-close" title="Close">✕</button>
@@ -201,6 +206,25 @@ export class Inventory {
     const exclusiveOnly = dlg.querySelector<HTMLInputElement>('#inv-cmp-excl')?.checked ?? false;
     dlg.querySelector('.inv-compare')?.remove();
     const pool = this.sellableBoxes();
+
+    // Opening compare while a box's card list is up should carry that box in as
+    // the left side rather than strand it as a third column. Only on the way in:
+    // the picker and the filter re-render through here too, and by then the
+    // contents panel is long gone.
+    const contents = dlg.querySelector<HTMLElement>('.inv-contents');
+    if (contents) {
+      const key = contents.dataset.box ?? '';
+      contents.remove();
+      if (pool.some((b) => b.key === key)) {
+        this.cmp[0] = key;
+        // Whatever the right side was stays, unless it is now the same box as
+        // the left or no longer in the pool.
+        if (this.cmp[1] === key || !pool.some((b) => b.key === this.cmp[1])) {
+          this.cmp[1] = pool.find((b) => b.key !== key)?.key ?? '';
+        }
+      }
+    }
+
     if (!this.cmp[0]) this.cmp = [pool[0]?.key ?? '', pool[1]?.key ?? ''];
     const panel = document.createElement('div');
     panel.className = 'inv-compare';
