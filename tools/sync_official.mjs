@@ -109,6 +109,7 @@ const targets = only ? numeric.filter((c) => c.id === only || c.id === String(Nu
 say(`checking ${targets.length} of ${cards.length} cards (the rest have serial-style ids and no QR id)`);
 
 const diffs = [];
+const partial = [];
 const stubs = [];
 const missing = [];
 const failed = [];
@@ -127,6 +128,14 @@ for (const c of targets) {
   if (isStub(d)) { stubs.push(c.id); continue; }
   checked++;
   const theirs = { score: d.score, ...statsOf(d) };
+  // A record can be HALF filled in: real title, points still 0. Zeroing a card
+  // we hold at 57 would be silent corruption, so a 0 against a non-zero value of
+  // ours is reported as an incomplete row, never as a repricing. (A genuine 0 is
+  // a Low Value unit, and we hold those at 0 too, so they never reach here.)
+  if (theirs.score === 0 && Number(c.score) > 0) {
+    partial.push({ id: c.id, ours: c.score, title: (d.title || '').replace(/[ ]+/g, ' ').trim() });
+    delete theirs.score;
+  }
   const title = (d.title || '').replace(/\s+/g, ' ').trim();
   const ourName = (c.name?.en || c.name?.zh || '').replace(/\s+/g, ' ').trim();
   for (const [field, val] of Object.entries(theirs)) {
@@ -140,12 +149,16 @@ for (const c of targets) {
 }
 
 if (asJson) {
-  console.log(JSON.stringify({ checked, diffs, stubs, missing, failed }, null, 1));
+  console.log(JSON.stringify({ checked, diffs, partial, stubs, missing, failed }, null, 1));
 } else {
   console.log(`\nchecked against the publisher: ${checked}`);
   console.log(`not filled in there yet (placeholder rows): ${stubs.length}${stubs.length ? ' -> ' + stubs.slice(0, 30).join(', ') : ''}`);
   if (missing.length) console.log(`no record at all: ${missing.length} -> ${missing.slice(0, 30).join(', ')}`);
   if (failed.length) console.log(`fetch failures: ${failed.length} -> ${failed.slice(0, 5).join(' | ')}`);
+  if (partial.length) {
+    console.log(`\nincomplete upstream rows (real title, points still 0) - IGNORED, do not copy: ${partial.length}`);
+    for (const p of partial) console.log(`  ${p.id.padEnd(6)} ours=${String(p.ours).padEnd(5)} ${p.title.slice(0, 44)}`);
+  }
   console.log(`\nDIFFERENCES: ${diffs.length}`);
   const byField = {};
   for (const d of diffs) byField[d.field] = (byField[d.field] ?? 0) + 1;
