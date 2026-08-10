@@ -115,7 +115,18 @@ function extraFor(o: Opportunity, a: CardAction): ExtraTick | undefined {
   );
 }
 
-export function canPerform(o: Opportunity, a: CardAction): TickVerdict {
+// A performed entry is the Action id, or `id@uid` when the Action came from a
+// Tarantula's Load. Anything that looks the Action back up has to strip that.
+export function actionIdOf(performedKey: string): string {
+  const at = performedKey.indexOf('@');
+  return at < 0 ? performedKey : performedKey.slice(0, at);
+}
+
+// `key` names the PART the Action is being taken from, defaulting to the Action
+// itself. Two Carrier Tarantulas lending the same Backpack lend two distinct
+// Parts, so a Mech may take that Action once from each without it counting as
+// repeated execution (FAQ O7) - the loan's key carries the lender's uid.
+export function canPerform(o: Opportunity, a: CardAction, key: string = a.id): TickVerdict {
   const len = lengthOf(a);
   if (!len) return { ok: false, why: 'This is not an Action a Mech performs with Ticks.' };
   const cost = TICK_COST[len];
@@ -145,7 +156,7 @@ export function canPerform(o: Opportunity, a: CardAction): TickVerdict {
   // The shared Charge Action is the one exception to once-only: each use
   // Charges a different Part, so they count as separate Actions (FAQ H6/H7).
   // A card-printed Charge has its own id per Part and never collides.
-  if (o.performed.includes(a.id) && a.id !== 'COMMON_CHARGE') {
+  if (o.performed.includes(key) && a.id !== 'COMMON_CHARGE') {
     return { ok: false, why: 'Each Action of a Part can only be performed once per Action Opportunity. Only an Extra Tick may repeat one.' };
   }
   if (len === 'long' && (o.maneuvered || o.maneuver < 1 || o.started)) {
@@ -219,10 +230,10 @@ export function spendActivation(o: Opportunity, a: CardAction): Opportunity {
   };
 }
 
-export function spendAction(o: Opportunity, a: CardAction): Opportunity {
+export function spendAction(o: Opportunity, a: CardAction, key: string = a.id): Opportunity {
   const len = lengthOf(a);
   if (!len) return o;
-  const verdict = canPerform(o, a);
+  const verdict = canPerform(o, a, key);
   if (verdict.extra) {
     // A Movement Action is Movement however it is paid for, so the Extra Tick
     // path forfeits Stationary too (the keyword counts any Movement).
@@ -235,7 +246,7 @@ export function spendAction(o: Opportunity, a: CardAction): Opportunity {
     action: Math.max(0, o.action - cost.action),
     started: true,
     moved: o.moved || timingOf(a) === 'movement',
-    performed: o.performed.includes(a.id) ? o.performed : [...o.performed, a.id],
+    performed: o.performed.includes(key) ? o.performed : [...o.performed, key],
   };
 }
 

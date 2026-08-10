@@ -3,7 +3,7 @@ import type { GameData } from './data';
 import { actionIconUrl, cardName, isAerial, secondaryImageUrl, squadLabel, unitSize } from './data';
 import { Board, footprint, snapPlacement, type BoardCallbacks } from './board';
 import { printedDeployment, resolveZoneSetData } from './overlays';
-import { minesOwed, unfoldsOwed, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, isSilentAction, maneuverIsSilent, canActivateCamo, chargeableSlots, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
+import { electronicOrigins, loanedParts, minesOwed, unfoldsOwed, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, isSilentAction, maneuverIsSilent, canActivateCamo, chargeableSlots, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
 import { resolveCounterRoll, tallyCounter } from './combat';
 import { tacticFitsPhase, tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { inContact, canStandIn, attackDirection, crushTargets, dissipationFor, extendPath, knockbackPath, LG, losBetween, losNote, protectionFor, rangeBetween, reachableGrids, standingSpot, type LargeGrid } from './rules';
@@ -14,7 +14,7 @@ import type { PartSlot, CardAction, CounterRoll, DiceData, DieColor, Facing, Gam
 import { statusCount, newOpportunity, newScriptState, PHASES, STATUSES, TIMINGS } from './types';
 import { deployable, deployTurn, deploymentComplete, firstPlayerFrom, normaliseSetup, rollTotal, type SetupState } from './setup';
 import { actionPhaseComplete, activationOrder, alive, canAct, commandTokensFor, eligibleUnits, isLoopPhase, loopComplete, nextActivation, nextTurn, onExtraOpportunity, type InitLookup, type LoopPhase } from './loop';
-import { canActivate, canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed, type TickVerdict } from './ticks';
+import { actionIdOf, canActivate, canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed, type TickVerdict } from './ticks';
 import { gameResult, normaliseTasks, scoreMain, scoreSecondary, settleControl, unpaidLines, zoneCentreGrid, type Designation, type ScoreLine, type ScoreResult, type SecondaryScoring } from './tasks';
 import { tokenCards } from './units';
 
@@ -998,19 +998,23 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
   // Tick engine, as this panel used to, let every one of those through.
   const guided = guidedActions(ctx.data, t, { tokens: ctx.state.tokens, terrain: terrainOf(ctx) });
   const onExtra = onExtraOpportunity(ctx.state, o.uid);
+  // Keyed by PART, not by Action: two Carrier Tarantulas lending the same
+  // Backpack lend two distinct Parts, and each may be used once (FAQ O7).
   const blockedBy = new Map<string, string | undefined>();
-  for (const g of guided) if (!g.available) blockedBy.set(g.action.id, g.reason);
+  for (const g of guided) if (!g.available) blockedBy.set(g.partKey, g.reason);
   const ammoOf = new Map<string, number | undefined>();
-  for (const g of guided) ammoOf.set(g.action.id, g.ammoLeft);
+  for (const g of guided) ammoOf.set(g.partKey, g.ammoLeft);
+  const lentBy = new Map<string, string>();
+  for (const g of guided) if (g.lentBy) lentBy.set(g.partKey, g.lentBy.label);
   // Common Actions belong to Mechs (6.1); a Drone plays only what its card prints.
-  const acts = [
-    ...guided.map((g) => g.action),
-    ...(t.kind === 'mech' ? ctx.data.commonActions : []),
+  const acts: { a: CardAction; key: string }[] = [
+    ...guided.map((g) => ({ a: g.action, key: g.partKey })),
+    ...(t.kind === 'mech' ? ctx.data.commonActions.map((a) => ({ a, key: a.id })) : []),
   ];
   const seen = new Set<string>();
   const rows = acts
-    .filter((a) => (seen.has(a.id) ? false : (seen.add(a.id), true)))
-    .map((a) => {
+    .filter(({ key }) => (seen.has(key) ? false : (seen.add(key), true)))
+    .map(({ a, key }) => {
       const len = lengthOf(a);
       // Ticks are a Mech's economy. A Drone's Action costs its activation
       // instead — one Action or one Movement, never both — and asking
@@ -1018,10 +1022,10 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
       // performs with Ticks", which blocked every Drone Action there is. A
       // Mech's own Passives are length-less too, which is why this asks the
       // unit rather than the Action.
-      const ticks: TickVerdict = t.kind !== 'mech' ? canActivate(o) : len ? canPerform(o, a) : { ok: true };
+      const ticks: TickVerdict = t.kind !== 'mech' ? canActivate(o) : len ? canPerform(o, a, key) : { ok: true };
       // The board's reason comes first: being out of ammo is a truer answer
       // than "not enough Ticks" when both are true.
-      const stopped = blockedBy.get(a.id);
+      const stopped = blockedBy.get(key);
       // An Extra Action Opportunity cannot hand out another one, or two
       // Coordinating Mechs would keep granting each other Opportunities for the
       // rest of the Round. The card carries the suppression itself.
@@ -1038,14 +1042,15 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
       // in the card data. Those show their type rather than a price they do
       // not have, the way the guide leaves them off its Tick list entirely.
       const price = v.extra ? 'XTR' : cost ? `${cost.maneuver ? 'M' : ''}${'●'.repeat(cost.action)}` : (a.type ?? '—');
+      const lender = lentBy.get(key);
       const tip = v.ok
-        ? `${len ? LENGTH_NAME[len] : a.type ?? ''}${cost ? `: ${costLabel(cost)}` : ''}`
+        ? `${lender ? `Load on ${lender} - ` : ''}${len ? LENGTH_NAME[len] : a.type ?? ''}${cost ? `: ${costLabel(cost)}` : ''}`
         : v.why ?? '';
       // Blocked Actions stay on the list and say why when pressed. A disabled
       // row tells a player nothing, and "the Starting Action must match the
       // dial" is exactly the thing they need told.
-      return `<button class="actrow k-${kind}${v.ok ? '' : ' warn'}" data-doact="${esc(a.id)}" data-pool="${pool}" data-an="${esc(a.name?.en || a.id)}"${v.ok ? '' : ` data-why="${esc(v.why ?? '')}"`} title="${esc(tip)}">
-        <span class="dotk"></span><span class="an">${esc((a.name?.en || a.id).slice(0, 26))}${ammoOf.get(a.id) !== undefined ? ` ×${ammoOf.get(a.id)}` : ''}</span><span class="ac">${price}</span>
+      return `<button class="actrow k-${kind}${v.ok ? '' : ' warn'}" data-doact="${esc(key)}" data-pool="${pool}" data-an="${esc(a.name?.en || a.id)}"${v.ok ? '' : ` data-why="${esc(v.why ?? '')}"`} title="${esc(tip)}">
+        <span class="dotk"></span><span class="an">${esc((a.name?.en || a.id).slice(0, 26))}${lender ? ' (Load)' : ''}${ammoOf.get(key) !== undefined ? ` ×${ammoOf.get(key)}` : ''}</span><span class="ac">${price}</span>
       </button>`;
     })
     .join('');
@@ -1565,7 +1570,10 @@ export function startInterceptPick(uid: number, actionId: string): void {
 }
 
 function actionOn(ctx: HudCtx, t: Token, actionId: string): CardAction | undefined {
-  return tokenCards(ctx.data, t).flatMap(({ card }) => card.actions ?? []).find((a) => a.id === actionId);
+  // The id may arrive as a part key when a Tarantula is lending the Part.
+  const id = actionIdOf(actionId);
+  return tokenCards(ctx.data, t).flatMap(({ card }) => card.actions ?? []).find((a) => a.id === id)
+    ?? loanedParts(ctx.data, ctx.state.tokens, t).flatMap(({ card }) => card.actions ?? []).find((a) => a.id === id);
 }
 
 // Mirrors noteInterception in main.ts, which is the reference implementation.
@@ -1625,7 +1633,8 @@ function revealsOwed(ctx: HudCtx): { t: Token; key: string; why: string }[] {
     // A non-Silence action or a non-Silent Maneuver during the CURRENT
     // Action Opportunity (FAQ I2/I5), read off the opportunity script.
     if (sc.opp?.uid === t.uid) {
-      const acted = (sc.opp.performed ?? []).some((id) => {
+      const acted = (sc.opp.performed ?? []).some((key) => {
+        const id = actionIdOf(key);
         const a = tokenCards(ctx.data, t).flatMap(({ card }) => card.actions ?? []).find((x) => x.id === id);
         return a ? !isSilentAction(a) : false;
       });
@@ -1772,20 +1781,30 @@ function ewPanel(ctx: HudCtx): string {
   if (!by || !a) return head('Electronic Warfare', 'That unit is gone', '', true)
     + '<div class="tp-body"></div><div class="tp-foot"><button class="bigbtn ghost2" data-act="ewcancel">Close</button></div>';
   const reach = a.range ?? 0;
-  const ev = electronicValue(ctx.data, by);
+  // The unit PERFORMING the Electronic Attack counts the Loads it is borrowing
+  // (FAQ O5/O6); the target, rolling passively, counts only its own Parts.
+  const ev = electronicValue(ctx.data, by, loanedParts(ctx.data, s.tokens, by));
+  // An allied Repeater lends its position to the shot (FAQ O19), so the Range
+  // shown is the best of the attacker's own and every Repeater covering it.
+  const origins = electronicOrigins(ctx.data, s.tokens, by);
+  const relay = origins.slice(1);
   const rows = s.tokens
     .filter((t) => t.side !== by.side && t.deployed !== false && alive(t))
     .map((t) => {
-      const d = gridsApart(by, t);
+      const own = gridsApart(by, t);
+      const best = origins.reduce((n, from) => Math.min(n, gridsApart(from, t)), own);
+      const via = best < own ? origins.find((from) => gridsApart(from, t) === best) : undefined;
+      const d = best;
       const theirs = electronicValue(ctx.data, t);
       const far = d > reach;
-      const bits = [far ? `⚠ Range ${d}, beyond this Action's Range ${reach}` : `Range ${d}`, `Electronic Value ${theirs}`];
+      const bits = [far ? `⚠ Range ${d}, beyond this Action's Range ${reach}` : `Range ${d}${via && via.uid !== by.uid ? ` via ${via.label}` : ''}`, `Electronic Value ${theirs}`];
       return `<button class="rowwide targrow${far ? ' warn' : ''}" data-ewtarget="${t.uid}"${far ? ` data-why="${esc(`${t.label} is at Range ${d}, beyond this Action's Range ${reach}.`)}"` : ''}>
         <span class="tgname">${esc(t.label)}</span>
         <span class="tgbits">${bits.map((b) => `<span${/[⚠✕]/.test(b) ? ' class="bad"' : ''}>${esc(b)}</span>`).join('')}</span></button>`;
     })
     .join('');
-  return head('Your move', `${esc(a.name?.en || m.actionId)}: which enemy?`, `${esc(by.label)} · Electronic Value ${ev}, Range ${reach}.`, true)
+  return head('Your move', `${esc(a.name?.en || m.actionId)}: which enemy?`,
+    `${esc(by.label)} · Electronic Value ${ev}, Range ${reach}.${relay.length ? ` Range may be measured from ${esc(relay.map((r) => r.label).join(' or '))} instead (Repeater, FAQ O19).` : ''}`, true)
     + `<div class="tp-body">${rows || '<p class="tp-note">No enemy unit is on the board.</p>'}
         <p class="tp-dim">Only Range matters. Terrain and line of sight are ignored (4.11.1).<br>Both units roll Yellow dice equal to their Electronic Value.</p></div>
        <div class="tp-foot"><button class="bigbtn ghost2" data-act="ewcancel">Cancel</button></div>`;
@@ -1802,7 +1821,7 @@ function counterStep(ctx: HudCtx, c: CounterRoll) {
     init,
     resp,
     both,
-    initEv: electronicValue(ctx.data, init),
+    initEv: electronicValue(ctx.data, init, loanedParts(ctx.data, s.tokens, init)),
     respEv: electronicValue(ctx.data, resp),
   };
 }
@@ -3416,8 +3435,8 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
       // the same question the guide asks in its dialog. Everything else about
       // what the Action opens is routeAction's job, mirroring performGuided.
       const act = guidedActions(ctx.data, t, { tokens: s.tokens, terrain: terrainOf(ctx) })
-        .find((g) => g.action.id === el.dataset.doact);
-      const performed = act?.action ?? ctx.data.commonActions.find((a) => a.id === el.dataset.doact);
+        .find((g) => g.partKey === el.dataset.doact || g.action.id === el.dataset.doact);
+      const performed = act?.action ?? ctx.data.commonActions.find((a) => a.id === actionIdOf(el.dataset.doact ?? ''));
       // A Mech's Action is bought with Ticks and a Drone's with its whole
       // activation, but both are recorded by the same command — without it
       // nothing marked the activation spent and a Drone could move and then
@@ -3426,13 +3445,14 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
         // Legality is read now, but nothing is spent: the Ticks wait in
         // pendingAction until the Action's tool actually does something, so a
         // misclick that gets cancelled leaves the Opportunity intact.
-        const v = ctx.check({ kind: 'performAction', seat: t.side, uid: t.uid, actionId: el.dataset.doact! });
+        const key = el.dataset.doact!;
+        const v = ctx.check({ kind: 'performAction', seat: t.side, uid: t.uid, actionId: actionIdOf(key), partKey: key });
         if (!v.ok) {
           if (v.why) ctx.noteNow(v.why);
           ctx.refresh();
           return;
         }
-        pendingAction = { kind: 'performAction', seat: t.side, uid: t.uid, actionId: el.dataset.doact! };
+        pendingAction = { kind: 'performAction', seat: t.side, uid: t.uid, actionId: actionIdOf(key), partKey: key };
       }
       const grant = act ? extraActivationOf(act.action) : undefined;
       if (grant) grantPick = { from: t.uid, grant };

@@ -40,6 +40,33 @@ export function maxLink(data: any, t: any): number {
 export function pilotCard(data: any, t: any): any {
   return t.kind === 'mech' && t.mech?.pilot ? data.byId.get(t.mech.pilot) : undefined;
 }
+export function repeatersFor(data: any, tokens: any[], t: any): any[] {
+  const grid = (x: any) => ({ c: Math.floor(x.col / 3), r: Math.floor(x.row / 3) });
+  const apart = (a: any, b: any) => Math.abs(grid(a).c - grid(b).c) + Math.abs(grid(a).r - grid(b).r);
+  return tokens.filter((r: any) => r.uid !== t.uid && r.side === t.side && r.deployed !== false
+    && (r.partStates?.main ?? 'intact') !== 'destroyed'
+    && data.byId.get(r.cardId)?.repeater
+    && apart(t, r) <= (data.byId.get(r.cardId)?.repeaterRange ?? 0));
+}
+export function electronicOrigins(data: any, tokens: any[], t: any): any[] {
+  return [t, ...repeatersFor(data, tokens, t)];
+}
+export function loanedParts(data: any, tokens: any[], t: any): any[] {
+  if (t.kind !== 'mech') return [];
+  const touch = (a: any, b: any): boolean => {
+    const gapX = Math.max(a.col - (b.col + b.size), b.col - (a.col + a.size));
+    const gapY = Math.max(a.row - (b.row + b.size), b.row - (a.row + a.size));
+    if (gapX < 0 && gapY < 0) return true;
+    return (gapX === 0 && gapY < 0) || (gapY === 0 && gapX < 0);
+  };
+  return tokens
+    .filter((d: any) => d.uid !== t.uid && d.side === t.side && d.deployed !== false && d.droneBackpack
+      && (d.partStates?.main ?? 'intact') !== 'destroyed'
+      && (d.partStates?.backpack ?? 'intact') !== 'destroyed'
+      && data.byId.get(d.cardId)?.carrier && touch(t, d))
+    .map((d: any) => ({ slot: 'load:' + d.uid, card: data.byId.get(d.droneBackpack), from: d }))
+    .filter((x: any) => !!x.card);
+}
 export function extrasFor(data: any, t: any): any[] {
   const have = new Set(tokenCards(data, t).flatMap((x: any) => (x.card.actions ?? []).map((a: any) => a.id)));
   return (data.extraTicks ?? []).filter((g: any) => have.has(g.actionId)).map((g: any) => ({ id: g.actionId, label: g.label, timing: g.timing, check: g.check }));

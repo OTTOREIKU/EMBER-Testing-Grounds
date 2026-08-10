@@ -1096,8 +1096,8 @@ export class PlayGuide {
 
   // ---------- action phase (rulebook 3.4) ----------
 
-  private tickActions(t: Token): { action: CardAction; label: string; note?: string; blocked?: string }[] {
-    const out: { action: CardAction; label: string; note?: string; blocked?: string }[] = [];
+  private tickActions(t: Token): { action: CardAction; label: string; partKey: string; note?: string; blocked?: string }[] {
+    const out: { action: CardAction; label: string; partKey: string; note?: string; blocked?: string }[] = [];
     // An Extra Opportunity cannot hand out another one, or two Coordinating
     // Mechs would keep granting each other Opportunities for the rest of the
     // Round. The card carries the suppression itself.
@@ -1108,7 +1108,10 @@ export class PlayGuide {
       out.push({
         action: ga.action,
         label: ga.action.name.en || ga.action.name.zh || ga.action.id,
-        note: SLOT_LABEL[ga.slot],
+        partKey: ga.partKey,
+        // A borrowed Load says whose back it is on, since the Mech may be
+        // touching two Tarantulas carrying the same Backpack (FAQ O7).
+        note: ga.lentBy ? `Load on ${ga.lentBy.label}` : SLOT_LABEL[ga.slot],
         blocked: chained
           ? 'This is already an Extra Action Opportunity, and it cannot grant another one.'
           : ga.available ? undefined : ga.reason,
@@ -1127,6 +1130,7 @@ export class PlayGuide {
       out.push({
         action: c,
         label: c.name.en || c.id,
+        partKey: c.id,
         note: 'Common',
         blocked: usable ? undefined : 'no surviving Part can initiate it',
       });
@@ -1203,11 +1207,11 @@ export class PlayGuide {
     const range = maneuverRange(this.data, t);
     const rows = this.tickActions(t)
       .map((r) => {
-        const v = canPerform(o, r.action);
+        const v = canPerform(o, r.action, r.partKey);
         const why = r.blocked ?? (v.ok ? undefined : v.why);
         const cost = costOf(r.action)!;
         const len = LENGTH_NAME[lengthOf(r.action)!];
-        return `<button class="pg-act${why ? ' warn' : ''}" data-act="${r.action.id}" title="${esc(why ?? `${len}: ${costLabel(cost)}`)}">
+        return `<button class="pg-act${why ? ' warn' : ''}" data-act="${r.partKey}" title="${esc(why ?? `${r.note ? `${r.note} - ` : ''}${len}: ${costLabel(cost)}`)}">
           <span class="pg-act-name">${esc(r.label)}</span>
           <span class="pg-act-cost">${v.extra ? 'XTR' : `${cost.maneuver ? 'M' : ''}${'●'.repeat(cost.action)}`}</span>
         </button>`;
@@ -1492,9 +1496,11 @@ export class PlayGuide {
     if (!o) return;
     const t = s.tokens.find((x) => x.uid === o.uid);
     if (!t) return;
-    const row = this.tickActions(t).find((r) => r.action.id === actionId);
+    // `actionId` arrives as the row's part key, which is the Action id unless a
+    // Tarantula is lending the Part (FAQ O7).
+    const row = this.tickActions(t).find((r) => r.partKey === actionId) ?? this.tickActions(t).find((r) => r.action.id === actionId);
     if (!row) return;
-    const why = row.blocked ?? (canPerform(o, row.action).ok ? undefined : canPerform(o, row.action).why);
+    const why = row.blocked ?? (canPerform(o, row.action, row.partKey).ok ? undefined : canPerform(o, row.action, row.partKey).why);
     if (why && this.warn !== why) {
       this.warn = why;
       this.render();
@@ -1503,12 +1509,13 @@ export class PlayGuide {
     this.warn = null;
     // The Tick is only spent if the action actually goes through, so backing out
     // of a target pick or a move costs nothing.
-    this.cb.onPerformAction(o.uid, actionId, (performed) => {
+    // The driver is handed the real Action id, never the part key.
+    this.cb.onPerformAction(o.uid, row.action.id, (performed) => {
       if (!performed) {
         this.render();
         return;
       }
-      perform(this.data, s, { kind: 'performAction', seat: t.side, uid: t.uid, actionId: row.action.id });
+      perform(this.data, s, { kind: 'performAction', seat: t.side, uid: t.uid, actionId: row.action.id, partKey: row.partKey });
       // A non-Silence action ends Optical Camouflage (4.12.2, FAQ I5). The
       // strict tracker reveals outright; teaching asks, in the house style.
       if (statusCount(t.statuses, 'camouflage') > 0 && !isSilentAction(row.action)) {

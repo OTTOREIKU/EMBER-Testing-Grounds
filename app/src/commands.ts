@@ -2,7 +2,7 @@ import type { Facing, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stanc
 import { addStatus, ageTokens, newOpportunity, PHASES, statusCount, STATUSES, TIMINGS } from './types';
 import type { GameData } from './data';
 import { unfoldsInto } from './data';
-import { unfoldToken, extrasFor, consumesCharge, electronicValue, freehandSlots, interceptCapacity, makeDroneToken, makeMechToken, maxLink, pilotCard, tokenCards } from './units';
+import { electronicOrigins, loanedParts, unfoldToken, extrasFor, consumesCharge, electronicValue, freehandSlots, interceptCapacity, makeDroneToken, makeMechToken, maxLink, pilotCard, tokenCards } from './units';
 import { canActivate, canManeuver, canOverload, canPerform, spendAction, spendActivation, spendManeuver, spendOverload } from './ticks';
 import { tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { battlefieldLocked, deploymentComplete, deployTurn, firstPlayerFrom, newSetup, normaliseSetup } from './setup';
@@ -46,7 +46,7 @@ export type Command =
   // paid for — Hit and Run (276) moves a Mech as its Opportunity *ends*, when
   // there is no Opportunity left to check or to charge.
   | { kind: 'maneuver'; seat: Side; uid: number; to: { col: number; row: number }; facing?: Facing; free?: boolean; granted?: boolean; via?: { col: number; row: number }[] }
-  | { kind: 'performAction'; seat: Side; uid: number; actionId: string }
+  | { kind: 'performAction'; seat: Side; uid: number; actionId: string; partKey?: string }
   | { kind: 'overload'; seat: Side; uid: number }
   | { kind: 'playTactic'; seat: Side; uid: number; cardId: string; pick?: string }
   // Nothing in 3.1.4 fixes which way a unit faces as it lands, so the facing is
@@ -189,10 +189,27 @@ function chargeable(data: GameData, t: Token, slot: string): boolean {
   );
 }
 
+// Ammo belongs to the Part, and a Load's Part belongs to the Tarantula that is
+// carrying it - so a Mech firing a borrowed Missile Rack spends the DRONE's
+// magazine (FAQ O3/O16). Resolved here rather than in the drivers, so every
+// path that spends Ammo lands on the same unit on both seats.
+function ammoHolder(data: GameData, state: GameState, t: Token, actionId: string): Token {
+  if (t.ammo?.[actionId] !== undefined) return t;
+  const loan = loanedParts(data, state.tokens, t)
+    .find(({ card }) => (card.actions ?? []).some((a) => a.id === actionId));
+  return loan && loan.from.ammo?.[actionId] !== undefined ? loan.from : t;
+}
+
 function findAction(data: GameData, state: GameState, uid: number, actionId: string) {
   const t = state.tokens.find((x) => x.uid === uid);
   if (!t) return undefined;
   for (const { card } of tokenCards(data, t)) {
+    const a = (card.actions ?? []).find((x) => x.id === actionId);
+    if (a) return a;
+  }
+  // A Backpack carried by a Carrier Tarantula in Contact is this Mech's Part
+  // while it acts (FAQ O3/O16), so its Actions are this Mech's Actions.
+  for (const { card } of loanedParts(data, state.tokens, t)) {
     const a = (card.actions ?? []).find((x) => x.id === actionId);
     if (a) return a;
   }
@@ -654,7 +671,9 @@ function checkActed(
       // one Action or one Movement, and the unit is the only thing that says
       // which reading applies — a Mech's Passives are length-less too.
       if (t.kind !== 'mech') return fromVerdict(canActivate(o));
-      return fromVerdict(canPerform(o, a));
+      // partKey names which Part the Action came from, so the same Action
+      // borrowed from two Tarantulas is two Parts, not one repeated (FAQ O7).
+      return fromVerdict(canPerform(o, a, cmd.partKey || a.id));
     }
     case 'overload': {
       const ids = new Set(data.overload.map((g) => g.actionId));
@@ -745,15 +764,17 @@ function checkActed(
       return ok;
     }
     case 'spendAmmo': {
-      const held = t.ammo[cmd.actionId];
+      const from = ammoHolder(data, state, t, cmd.actionId);
+      const held = from.ammo[cmd.actionId];
       if (held === undefined) return no('That Action does not track Ammo.');
       if (held < 1) return no('No Ammo left for that Action (4.12).');
       return ok;
     }
     case 'restoreAmmo': {
-      const held = t.ammo[cmd.actionId];
+      const from = ammoHolder(data, state, t, cmd.actionId);
+      const held = from.ammo[cmd.actionId];
       if (held === undefined) return no('That Action does not track Ammo.');
-      const max = ammoMax(data, t, cmd.actionId);
+      const max = ammoMax(data, from, cmd.actionId);
       if (max !== undefined && held >= max) return no('That Action is already at its full Storage.');
       return ok;
     }
@@ -804,9 +825,17 @@ function checkActed(
       // entirely (4.11.1), so the arc and sight checks a Firing Action needs
       // have no place here.
       const reach = a.range ?? 0;
-      if (gridRange(t, target) > reach) return no(`${target.label} is beyond Range ${reach}.`);
+      // An allied Repeater lends its position as the origin, and the Action's
+      // own Range is measured from there (FAQ O19). Derived rather than sent,
+      // so both seats judge the same shot.
+      const origins = electronicOrigins(data, state.tokens, t);
+      if (!origins.some((from) => gridRange(from, target) <= reach)) {
+        return no(`${target.label} is beyond Range ${reach}${origins.length > 1 ? ', even through the Repeater' : ''}.`);
+      }
       // EV 0 cannot Initiate; EV "-" cannot Respond (4.11.2).
-      if (electronicValue(data, t) <= 0) return no(`${t.label} has an Electronic Value of 0, so it cannot Initiate a Counter-roll (4.11.2).`);
+      // The Initiator is performing an Action, so a Tarantula's Load counts for
+      // it here (FAQ O5) - the Responder's passive roll never gains one.
+      if (electronicValue(data, t, loanedParts(data, state.tokens, t)) <= 0) return no(`${t.label} has an Electronic Value of 0, so it cannot Initiate a Counter-roll (4.11.2).`);
       if (electronicValue(data, target) < 0) return no(`${target.label} cannot be the Responder of a Counter-roll (4.11.2).`);
       return ok;
     }
@@ -1334,7 +1363,7 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
     case 'performAction': {
       const a = findAction(data, state, cmd.uid, cmd.actionId);
       const o = oppOf(state, cmd.uid);
-      if (a && o && sc) sc.opp = t.kind === 'mech' ? spendAction(o, a) : spendActivation(o, a);
+      if (a && o && sc) sc.opp = t.kind === 'mech' ? spendAction(o, a, cmd.partKey || a.id) : spendActivation(o, a);
       return;
     }
     case 'overload': {
@@ -1422,14 +1451,16 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
       return;
     }
     case 'spendAmmo': {
-      if (t.ammo[cmd.actionId] !== undefined) t.ammo[cmd.actionId] = Math.max(0, t.ammo[cmd.actionId] - 1);
+      const from = ammoHolder(data, state, t, cmd.actionId);
+      if (from.ammo[cmd.actionId] !== undefined) from.ammo[cmd.actionId] = Math.max(0, from.ammo[cmd.actionId] - 1);
       return;
     }
     case 'restoreAmmo': {
-      if (t.ammo[cmd.actionId] === undefined) return;
-      const max = ammoMax(data, t, cmd.actionId);
-      const next = t.ammo[cmd.actionId] + (cmd.amount ?? 1);
-      t.ammo[cmd.actionId] = max !== undefined ? Math.min(max, next) : next;
+      const from = ammoHolder(data, state, t, cmd.actionId);
+      if (from.ammo[cmd.actionId] === undefined) return;
+      const max = ammoMax(data, from, cmd.actionId);
+      const next = from.ammo[cmd.actionId] + (cmd.amount ?? 1);
+      from.ammo[cmd.actionId] = max !== undefined ? Math.min(max, next) : next;
       return;
     }
     case 'takeBlackBox': {

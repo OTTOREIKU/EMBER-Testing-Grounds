@@ -399,7 +399,7 @@ function startAttack(uid: number, actionId: string, targetUid: number, mode: 'at
     ? protectionFor(attacker, defender, action, terrain, state.tokens, smoke)
     : { white: 0, note: '' };
   attackHelper.roller = combatRoller();
-  attackHelper.start(attacker, action, defender, note, prot.white, prot.note, mode === 'explosion');
+  attackHelper.start(attacker, action, defender, note, prot.white, prot.note, mode === 'explosion', mode === 'intercept');
   render();
 }
 
@@ -554,6 +554,7 @@ function mountSide(): void {
       (cmd) => { send(cmd); },
     );
     attackHelper.tokens = () => state.tokens;
+    attackHelper.terrain = () => terrainNow();
   }
   renderCombatIdle();
 }

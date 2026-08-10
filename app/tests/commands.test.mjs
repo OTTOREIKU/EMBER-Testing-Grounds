@@ -76,6 +76,33 @@ export function makeDroneToken(state: any, data: any, card: any, side: any, back
     partStates: { main: 'intact', ...(backpack ? { backpack: 'intact' } : {}) }, ammo: {},
   };
 }
+export function repeatersFor(data: any, tokens: any[], t: any): any[] {
+  const grid = (x: any) => ({ c: Math.floor(x.col / 3), r: Math.floor(x.row / 3) });
+  const apart = (a: any, b: any) => Math.abs(grid(a).c - grid(b).c) + Math.abs(grid(a).r - grid(b).r);
+  return tokens.filter((r: any) => r.uid !== t.uid && r.side === t.side && r.deployed !== false
+    && (r.partStates?.main ?? 'intact') !== 'destroyed'
+    && data.byId.get(r.cardId)?.repeater
+    && apart(t, r) <= (data.byId.get(r.cardId)?.repeaterRange ?? 0));
+}
+export function electronicOrigins(data: any, tokens: any[], t: any): any[] {
+  return [t, ...repeatersFor(data, tokens, t)];
+}
+export function loanedParts(data: any, tokens: any[], t: any): any[] {
+  if (t.kind !== 'mech') return [];
+  const touch = (a: any, b: any): boolean => {
+    const gapX = Math.max(a.col - (b.col + b.size), b.col - (a.col + a.size));
+    const gapY = Math.max(a.row - (b.row + b.size), b.row - (a.row + a.size));
+    if (gapX < 0 && gapY < 0) return true;
+    return (gapX === 0 && gapY < 0) || (gapY === 0 && gapX < 0);
+  };
+  return tokens
+    .filter((d: any) => d.uid !== t.uid && d.side === t.side && d.deployed !== false && d.droneBackpack
+      && (d.partStates?.main ?? 'intact') !== 'destroyed'
+      && (d.partStates?.backpack ?? 'intact') !== 'destroyed'
+      && data.byId.get(d.cardId)?.carrier && touch(t, d))
+    .map((d: any) => ({ slot: 'load:' + d.uid, card: data.byId.get(d.droneBackpack), from: d }))
+    .filter((x: any) => !!x.card);
+}
 export function unfoldsInto(c: any): any { return c?.unfoldsInto; }
 export function unfoldToken(state: any, data: any, t: any, into: any): void {
   Object.assign(t, {
@@ -137,7 +164,7 @@ const check = (name, got, want) => {
 };
 
 const mech = (uid, side, extra = {}) => ({
-  uid, side, kind: 'mech', stance: 'offensive', label: `M${uid}`, col: 3, row: 3, facing: 0,
+  uid, side, kind: 'mech', stance: 'offensive', label: `M${uid}`, col: 3, row: 3, facing: 0, size: 3,
   mech: { torso: 'T1', pilot: 'P1' }, partStates: { torso: 'intact' }, ...extra,
 });
 const opp = (uid, over = {}) => ({
@@ -169,6 +196,10 @@ const data = {
     ['274', { id: '274', category: 'tactics_or_upgrade', score: 30, actions: [] }],
     ['275', { id: '275', category: 'tactics_or_upgrade', score: 30, actions: [] }],
     ['P1', { id: 'P1', LV: 4 }],
+    // A Carrier Tarantula and the Backpacks it lends (FAQ O3-O8/O16-O18).
+    ['CAR', { id: 'CAR', category: 'drone', carrier: true, actions: [] }],
+    ['REP', { id: 'REP', category: 'drone', repeater: true, repeaterRange: 6, actions: [] }],
+    ['BP1', { id: 'BP1', category: 'mech_part', type: 'backpack', electronic: 1, actions: [{ id: 'BP1_A', type: 'Firing', size: 's', range: 4, name: { en: 'Lent Gun' }, storage: 2 }] }],
     // The folded Pholcus and the Drone it is replaced by (FAQ M18).
     ['156', { id: '156', category: 'projectile', unfoldsInto: '167', actions: [{ id: '156_A', type: 'Delay', name: { en: 'Unfold' } }] }],
     ['167', { id: '167', category: 'drone', stance: 'mobility', score: 0, actions: [{ id: '167_A', type: 'Detonation', speed: 'auto', range: 1, yellowDice: 6, name: { en: 'Automatic Attack' } }] }],
@@ -1294,6 +1325,63 @@ check('the Projectile becomes its Drone form in place',
   [wuf.tokens[0].cardId, wuf.tokens[0].kind, wuf.tokens[0].aerial], ['167', 'drone', false]);
 check('and keeps the same piece on the same spot',
   [wuf.tokens[0].uid, wuf.tokens[0].col, wuf.tokens[0].row, wuf.tokens[0].side], [1, 3, 3, 's1']);
+
+// ---------- Tarantula Loads (FAQ O3-O8, O16-O18) ----------
+
+// A Carrier standing against the Mech, with a Backpack on its back.
+const loadCarrier = (uid, over = {}) => ({
+  uid, side: 's1', kind: 'drone', cardId: 'CAR', droneBackpack: 'BP1', label: `T${uid}`,
+  col: 6, row: 3, facing: 0, size: 1, aerial: false, stance: 'mobility',
+  partStates: { main: 'intact', backpack: 'intact' }, ammo: { BP1_A: 2 }, ...over,
+});
+const loadAct = (over = {}) => ({ kind: 'performAction', seat: 's1', uid: 1, actionId: 'BP1_A', ...over });
+
+// The Mech has no such Part of its own; the loan is what makes the Action legal.
+const wLoanNear = world([mech(1, 's1'), loadCarrier(2)], 2, opp(1, { timing: 'firing' }));
+check('a Load lends its Action to the Mech in Contact', C.check(data, wLoanNear, loadAct()).ok, true);
+const wLoanFar = world([mech(1, 's1'), loadCarrier(2, { col: 20 })], 2, opp(1, { timing: 'firing' }));
+check('but only while they are touching', C.check(data, wLoanFar, loadAct()).ok, false);
+const wLoanBare = world([mech(1, 's1'), loadCarrier(2, { droneBackpack: undefined })], 2, opp(1, { timing: 'firing' }));
+check('a Tarantula may carry nothing at all (O8)', C.check(data, wLoanBare, loadAct()).ok, false);
+const wLoanEnemy = world([mech(1, 's1'), loadCarrier(2, { side: 's2' })], 2, opp(1, { timing: 'firing' }));
+check('and an enemy Tarantula lends nothing', C.check(data, wLoanEnemy, loadAct()).ok, false);
+
+// The magazine stays on the Drone that is carrying the Part.
+const wLoanAmmo = world([mech(1, 's1'), loadCarrier(2)], 2, opp(1, { timing: 'firing' }));
+C.apply(data, wLoanAmmo, { kind: 'spendAmmo', seat: 's1', uid: 1, actionId: 'BP1_A' });
+check("firing a Load spends the Tarantula Ammo, not the Mech magazine",
+  [wLoanAmmo.tokens[1].ammo.BP1_A, wLoanAmmo.tokens[0].ammo?.BP1_A], [1, undefined]);
+
+// FAQ O7: two Tarantulas carrying the same Backpack are two Parts, so the same
+// Action may be taken once from each in one Opportunity.
+const wLoanTwo = world([mech(1, 's1'), loadCarrier(2), loadCarrier(3, { col: 2 })], 2, opp(1, { timing: 'firing' }));
+C.apply(data, wLoanTwo, loadAct({ partKey: 'BP1_A@2' }));
+check('the first loan is recorded against its lender', wLoanTwo.script.opp.performed, ['BP1_A@2']);
+check('the second Tarantula lends the same Action again (O7)',
+  C.check(data, wLoanTwo, loadAct({ partKey: 'BP1_A@3' })).ok, true);
+check('but the same lender cannot repeat it',
+  C.check(data, wLoanTwo, loadAct({ partKey: 'BP1_A@2' })).ok, false);
+
+// FAQ O5: the Initiator of a Counter-roll counts its Loads. T1 carries no
+// Electronic Value, so the only way this passes is the borrowed Pod.
+const wLoanEw = world([mech(1, 's1'), loadCarrier(2), mech(9, 's2', { col: 9 })], 2, opp(1));
+check('a borrowed Pod lets a Mech Initiate a Counter-roll (O5)',
+  C.check(data, wLoanEw, { kind: 'startCounterRoll', seat: 's1', uid: 1, targetUid: 9, actionId: 'BP1_A' }).ok, true);
+const wLoanNoEw = world([mech(1, 's1'), mech(9, 's2', { col: 9 })], 2, opp(1));
+check('and without one it is refused',
+  C.check(data, wLoanNoEw, { kind: 'startCounterRoll', seat: 's1', uid: 1, targetUid: 9, actionId: 'BP1_A' }).ok, false);
+
+// FAQ O19: an allied Repeater lends its position, and the Action's own Range is
+// measured from there rather than from the attacker.
+const relayDrone = (uid, col) => ({
+  uid, side: 's1', kind: 'drone', cardId: 'REP', label: `R${uid}`, col, row: 3, facing: 0,
+  size: 1, aerial: false, stance: 'mobility', partStates: { main: 'intact' }, ammo: {},
+});
+const ewShot = (over = {}) => ({ kind: 'startCounterRoll', seat: 's1', uid: 1, targetUid: 9, actionId: 'BP1_A', ...over });
+const wRelayNone = world([mech(1, 's1'), loadCarrier(2), mech(9, 's2', { col: 33 })], 2, opp(1));
+check('a target beyond the Action Range is refused', C.check(data, wRelayNone, ewShot()).ok, false);
+const wRelay = world([mech(1, 's1'), loadCarrier(2), relayDrone(3, 21), mech(9, 's2', { col: 33 })], 2, opp(1));
+check('but a Repeater covering the Mech brings it in Range (O19)', C.check(data, wRelay, ewShot()).ok, true);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

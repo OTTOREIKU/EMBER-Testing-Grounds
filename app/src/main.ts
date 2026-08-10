@@ -44,7 +44,8 @@ import { PHASES, RoundTracker } from './tracker';
 import { PlayGuide } from './playguide';
 import type { Card, CardAction, DiceData, DieColor, Facing, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, StatusDef, TerrainPiece, Timing, Token } from './types';
 import { addStatus, SCALES, statusCount, statusesFor, STATUSES } from './types';
-import { minesOwed, unfoldsOwed, repairSpec, autoTargetsFor, isSilentAction, maneuverIsSilent, chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, type Resupply, resupplyOf, SLOT_LABEL, interceptLeft, interceptsOwed, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf } from './units';
+import { actionIdOf } from './ticks';
+import { loanedParts, minesOwed, unfoldsOwed, repairSpec, autoTargetsFor, isSilentAction, maneuverIsSilent, chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, type Resupply, resupplyOf, SLOT_LABEL, interceptLeft, interceptsOwed, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf } from './units';
 import { registerOffline } from './offline';
 import { battlefieldLocked, countHits, firstPlayerFrom, newSetup, normaliseSetup, tasksLocked, type SetupState } from './setup';
 import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
@@ -156,6 +157,7 @@ async function init() {
   );
 
   attackHelper.tokens = () => state.tokens;
+  attackHelper.terrain = () => currentTerrain();
 
   const electronicHelper = new ElectronicHelper(
     data,
@@ -176,6 +178,7 @@ async function init() {
     },
     (cmd) => perform(data, state, cmd),
   );
+  electronicHelper.tokens = () => state.tokens;
 
   function combatBusy(): boolean {
     return attackHelper.active || electronicHelper.active;
@@ -393,6 +396,8 @@ async function init() {
               'Interception: line of sight always exists and no Forward Arc is required (4.9).',
               0,
               '',
+              false,
+              true,
             );
             interceptFollowUp = { uid: attacker.uid, actionId: intercepting.actionId, targetUid: defender.uid };
           } else if (action.speed === 'auto' && (() => {
@@ -630,10 +635,16 @@ async function init() {
   // ---------- performing an action from the play guide ----------
 
   function findAction(t: Token, actionId: string): CardAction | undefined {
+    const id = actionIdOf(actionId);
     const own = tokenCards(data, t)
       .flatMap(({ card }) => card.actions ?? [])
-      .find((a) => a.id === actionId);
-    return own ?? data.commonActions.find((a) => a.id === actionId);
+      .find((a) => a.id === id);
+    // A Backpack carried by a Tarantula in Contact is this Mech's Part while it
+    // acts (FAQ O3/O16), so its Actions answer here too.
+    const lent = own ?? loanedParts(data, state.tokens, t)
+      .flatMap(({ card }) => card.actions ?? [])
+      .find((a) => a.id === id);
+    return lent ?? data.commonActions.find((a) => a.id === id);
   }
 
   // The guide is meant to play the turn, not just tally it, so each Action Type
@@ -966,7 +977,7 @@ async function init() {
     pendingIntercept = { uid: t.uid, actionId, action };
     if (chosen) {
       spendIntercept(t, actionId, name);
-      attackHelper.start(t, action, chosen, 'Interception: line of sight always exists and no Forward Arc is required (4.9).', 0, '');
+      attackHelper.start(t, action, chosen, 'Interception: line of sight always exists and no Forward Arc is required (4.9).', 0, '', false, true);
       interceptFollowUp = { uid: t.uid, actionId, targetUid: chosen.uid };
       pendingIntercept = null;
       selectToken(t.uid);

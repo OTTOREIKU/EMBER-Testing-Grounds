@@ -5,7 +5,7 @@ import type { ExtraTick, Card, CardAction, GameState, MechLoadout, PartSlot, Sid
 import { LEGACY_SIDE, normaliseScript, statusCount, TIMINGS } from './types';
 import { normaliseSetup } from './setup';
 import { isMeleeFiring, lockersOf } from './melee';
-import { largeGridOf, rangeBetween, smokeBlocks } from './rules';
+import { inContact, largeGridOf, losBetween, rangeBetween, smokeBlocks } from './rules';
 import { normaliseTasks } from './tasks';
 
 export const PART_SLOTS: PartSlot[] = ['torso', 'chasis', 'leftHand', 'rightHand', 'backpack'];
@@ -128,13 +128,20 @@ export function extraActivationOf(a: CardAction): ExtraActivation | undefined {
   return undefined;
 }
 
-export function freehandSlots(data: GameData, t: Token, taken: string[] = []): { slot: PartSlot | 'pilot' | 'main'; label: string }[] {
+export function freehandSlots(data: GameData, t: Token, taken: string[] = [], loans: LoanedPart[] = []): { slot: PartSlot | 'pilot' | 'main'; label: string }[] {
   const out: { slot: PartSlot | 'pilot' | 'main'; label: string }[] = [];
+  const hasFreehand = (card: Card): boolean =>
+    (card.keywords ?? []).some((k) => k.en === 'Freehand' || k.key === '空手');
   for (const { slot, card } of tokenCards(data, t)) {
     if ((t.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
     if (taken.includes(slot)) continue;
-    if (!(card.keywords ?? []).some((k) => k.en === 'Freehand' || k.key === '空手')) continue;
+    if (!hasFreehand(card)) continue;
     out.push({ slot, label: SLOT_LABEL[slot] });
+  }
+  // A Load carries its Freehand to the Mech holding it (FAQ O16).
+  for (const { slot, card, from } of loans) {
+    if (taken.includes(slot) || !hasFreehand(card)) continue;
+    out.push({ slot: slot as PartSlot, label: `${cardName(card)} (${from.label})` });
   }
   return out;
 }
@@ -353,17 +360,89 @@ export function autoTargetsFor(
   a: CardAction,
 ): Token[] {
   const reach = a.range ?? 0;
+  // An Electronic Attack may be sent through an allied Repeater, and then the
+  // Range - and the nearest-target rule with it - is measured from there
+  // (FAQ O19/O20): the enemy one Grid from the Raven is nearer than the one two
+  // Grids from the attacker, and it is the one that must be taken.
+  const origins = isElectronicAttack(a) ? electronicOrigins(data, tokens, t) : [t];
+  const reachOf = (o: Token): number => Math.min(...origins.map((from) => rangeBetween(from, o).range));
   const candidates = tokens.filter((o) => {
     if (o.side === t.side || o.uid === t.uid || o.deployed === false) return false;
     if ((o.partStates[o.kind === 'mech' ? 'torso' : 'main'] ?? 'intact') === 'destroyed') return false;
     if (a.type === 'Melee' && o.aerial) return false;
-    return rangeBetween(t, o).range <= reach;
+    return reachOf(o) <= reach;
   });
   if (!candidates.length) return [];
   const lit = candidates.filter((o) => statusCount(o.statuses, 'highlight') > 0);
   const pool = lit.length ? lit : candidates;
-  const best = Math.min(...pool.map((o) => rangeBetween(t, o).range));
-  return pool.filter((o) => rangeBetween(t, o).range === best);
+  const best = Math.min(...pool.map(reachOf));
+  return pool.filter((o) => reachOf(o) === best);
+}
+
+// ---------- The Hyena's AA Radar (FAQ O12/O13) ----------
+//
+// "When an ally Intercepts a target VISIBLE TO THIS UNIT, [Eye] counts as
+// 1 Light Hit." Always on (O12), and Interception only - a normal Firing Action
+// at the same target gains nothing (O13). Visibility is the Radar's own line of
+// sight, not a Range, which is why the printed Range is 0.
+export function aaRadarCovers(
+  data: GameData,
+  tokens: Token[],
+  terrain: TerrainPiece[],
+  shooter: Token,
+  target: Token,
+): Token | undefined {
+  return tokens.find((r) => {
+    if (r.side !== shooter.side || r.deployed === false) return false;
+    if ((r.partStates[r.kind === 'mech' ? 'torso' : 'main'] ?? 'intact') === 'destroyed') return false;
+    const card = data.byId.get(r.cardId);
+    if (!card) return false;
+    // Named in English, or spelled out in the Chinese: Intercept + counts-as +
+    // Light Hit together. A bare "counts as" would catch half the box.
+    const radar = (card.actions ?? []).some((a) => {
+      const zh = a.description?.zh ?? '';
+      return /AA Radar/i.test(a.name?.en ?? '')
+        || (zh.includes('拦截') && zh.includes('视为') && zh.includes('轻击'));
+    });
+    if (!radar) return false;
+    return losBetween(r, target, terrain, tokens) !== 'blocked';
+  });
+}
+
+// ---------- Repeaters (FAQ O19/O20) ----------
+//
+// The EC Raven prints Repeater with a Range of its own: any ALLIED unit within
+// that Range may send its Electronic Attack from the Raven instead of from
+// itself, and the Action's own Range is then measured from the Raven. So an
+// Alligator with Range 4, standing 6 Grids from the Raven, reaches anything
+// within 4 of the RAVEN - not 10 of itself.
+
+const REPEATER_KEYWORD = '中继器';
+
+export function isRepeater(c: Card): boolean {
+  return (c.keywords ?? []).some((k) => k.key === REPEATER_KEYWORD || k.en === 'Repeater' || (k.inline ?? '') === REPEATER_KEYWORD);
+}
+
+// The allied Repeaters covering this unit right now.
+export function repeatersFor(data: GameData, tokens: Token[], t: Token): Token[] {
+  const out: Token[] = [];
+  for (const r of tokens) {
+    if (r.uid === t.uid || r.side !== t.side || r.deployed === false) continue;
+    if ((r.partStates[r.kind === 'mech' ? 'torso' : 'main'] ?? 'intact') === 'destroyed') continue;
+    const card = data.byId.get(r.cardId);
+    if (!card || !isRepeater(card)) continue;
+    const reach = Math.max(0, ...(card.actions ?? []).filter((a) => isRepeater(card)).map((a) => a.range ?? 0));
+    if (rangeBetween(t, r).range > reach) continue;
+    out.push(r);
+  }
+  return out;
+}
+
+// Where an Electronic Attack may be measured FROM: the unit itself, plus every
+// Repeater covering it. A Repeater is never mandatory, so the unit is always
+// first in the list.
+export function electronicOrigins(data: GameData, tokens: Token[], t: Token): Token[] {
+  return [t, ...repeatersFor(data, tokens, t)];
 }
 
 // How a Projectile Action delivers. Only a LAUNCHED projectile triggers
@@ -634,11 +713,15 @@ export function isElectronicAttack(a: CardAction): boolean {
   return text.includes('electronic attack') || text.includes('电子攻击');
 }
 
-export function electronicValue(data: GameData, t: Token): number {
-  return tokenCards(data, t)
+// `loans` is passed ONLY where the unit is performing the action. A Responder
+// making a passive Electronic Counter Roll gains nothing from a Tarantula's
+// Load (FAQ O5), and a Carrier never counts its own Load at all (O4).
+export function electronicValue(data: GameData, t: Token, loans: LoanedPart[] = []): number {
+  const own = tokenCards(data, t)
     .filter(({ slot }) => slot !== 'pilot')
     .filter(({ slot }) => (t.partStates[slot as PartSlot | 'main'] ?? 'intact') !== 'destroyed')
     .reduce((sum, { card }) => sum + (card.electronic ?? 0), 0);
+  return own + loans.reduce((sum, { card }) => sum + (card.electronic ?? 0), 0);
 }
 
 export function defaultUnitLabel(data: GameData, t: Token): string {
@@ -825,6 +908,61 @@ export function tokenCards(data: GameData, t: Token): { slot: PartSlot | 'pilot'
   return out as { slot: PartSlot | 'main'; card: Card }[];
 }
 
+// ---------- Tarantula Loads (FAQ O3-O8, O16-O18) ----------
+//
+// The ADK30C Carrier Tarantula carries one Backpack as a Load, and "Ally Mechs
+// in Contact with this drone may regard the Load of this drone as their own
+// Part when they perform actions". So the Load's Actions, its Electronic Value
+// and its Freehand all belong to the Mech for as long as it is touching the
+// Drone - stacking with the Mech's OWN Backpack (O3) and across several
+// Tarantulas (O6/O17). Two Tarantulas carrying the same Backpack lend two
+// DISTINCT Parts, so the Mech may use each one's Action once in an Opportunity
+// (O7); the slot key carries the lender's uid for exactly that reason.
+//
+// The Drone itself never uses what it carries (O4), and the loan is only good
+// while the Mech ACTS: a passive Electronic Counter Roll gains nothing (O5).
+
+const LOAD_KEYWORD = '负载';
+
+// The Carrier: a DRONE whose card prints the Load keyword. The category test is
+// load-bearing - three Backpacks print the same keyword to say the opposite,
+// that they may never be carried as one (JP1, JP5 and the Overloading Pack).
+export function isCarrier(c: Card): boolean {
+  if (c.category !== 'drone') return false;
+  return (c.keywords ?? []).some((k) => k.key === LOAD_KEYWORD || k.en === 'Load' || (k.inline ?? '') === LOAD_KEYWORD);
+}
+
+// A Part the FAQ has taken out of the Load pool (O18): the card says so itself.
+export function canBeLoad(c: Card): boolean {
+  const text = `${c.description?.en ?? ''} ${(c.actions ?? []).map((a) => a.description?.en ?? '').join(' ')}`;
+  return !/cannot be used as a Load/i.test(text);
+}
+
+export interface LoanedPart {
+  slot: string;
+  card: Card;
+  from: Token;
+}
+
+// What the Tarantulas touching this Mech are lending it right now.
+export function loanedParts(data: GameData, tokens: Token[], t: Token): LoanedPart[] {
+  if (t.kind !== 'mech') return [];
+  const out: LoanedPart[] = [];
+  for (const d of tokens) {
+    if (d.uid === t.uid || d.side !== t.side || d.deployed === false) continue;
+    if ((d.partStates.main ?? 'intact') === 'destroyed') continue;
+    const carrier = data.byId.get(d.cardId);
+    if (!carrier || !isCarrier(carrier)) continue;
+    // A Tarantula may stand there with nothing on its back (O8).
+    if (!d.droneBackpack || (d.partStates.backpack ?? 'intact') === 'destroyed') continue;
+    const load = data.byId.get(d.droneBackpack);
+    if (!load || !canBeLoad(load)) continue;
+    if (!inContact(t, d)) continue;
+    out.push({ slot: `load:${d.uid}`, card: load, from: d });
+  }
+  return out;
+}
+
 export interface GuidedAction {
   action: CardAction;
   card: Card;
@@ -836,6 +974,12 @@ export interface GuidedAction {
   // Present only on an Action carrying the Charge Icon (4.14).
   charge?: { charged: boolean };
   projectiles: Card[];
+  // Set when the Action comes from a Carrier Tarantula's Load rather than one
+  // of this Mech's own Parts (FAQ O3/O16). `partKey` is what the Opportunity
+  // records as performed, so the same Action lent by two Tarantulas is two
+  // Parts rather than one repeat (O7).
+  lentBy?: Token;
+  partKey: string;
 }
 
 export interface ActionWorld {
@@ -846,8 +990,15 @@ export interface ActionWorld {
 export function guidedActions(data: GameData, t: Token, world?: ActionWorld): GuidedAction[] {
   const out: GuidedAction[] = [];
   const lockers = world ? lockersOf(data, t, world.tokens, world.terrain) : [];
-  for (const { slot, card } of tokenCards(data, t)) {
-    const partState = t.partStates[slot as PartSlot | 'main'] ?? 'intact';
+  // A Load is a Backpack this Mech is holding for as long as it stays in
+  // Contact with the Carrier, so it walks the same gauntlet as its own Parts.
+  const loans = world ? loanedParts(data, world.tokens, t) : [];
+  const sources: { slot: PartSlot | 'pilot' | 'main'; card: Card; loan?: LoanedPart }[] = [
+    ...tokenCards(data, t),
+    ...loans.map((loan) => ({ slot: 'backpack' as PartSlot, card: loan.card, loan })),
+  ];
+  for (const { slot, card, loan } of sources) {
+    const partState = loan ? 'intact' : t.partStates[slot as PartSlot | 'main'] ?? 'intact';
     for (const a of card.actions ?? []) {
       let available = true;
       let reason: string | undefined;
@@ -869,7 +1020,9 @@ export function guidedActions(data: GameData, t: Token, world?: ActionWorld): Gu
         available = false;
         reason = 'Immobilized blocks Movement';
       }
-      const ammoLeft = a.storage && a.storage > 0 ? t.ammo[a.id] ?? a.storage : undefined;
+      // A Load's magazine and Interception Tokens stay on the Drone carrying it.
+      const holder = loan ? loan.from : t;
+      const ammoLeft = a.storage && a.storage > 0 ? holder.ammo[a.id] ?? a.storage : undefined;
       if (available && ammoLeft === 0) {
         available = false;
         reason = 'out of ammo';
@@ -878,7 +1031,7 @@ export function guidedActions(data: GameData, t: Token, world?: ActionWorld): Gu
       const max = interceptCapacity(a);
       let intercept: GuidedAction['intercept'];
       if (max !== undefined) {
-        const left = t.intercept?.[a.id] ?? max;
+        const left = holder.intercept?.[a.id] ?? max;
         let can = true;
         let iReason: string | undefined;
         if (!available) {
@@ -902,8 +1055,13 @@ export function guidedActions(data: GameData, t: Token, world?: ActionWorld): Gu
       const projectiles = Array.isArray(card.projectile)
         ? card.projectile.map((id) => data.byId.get(id)).filter((x): x is Card => !!x)
         : [];
-      const charge = consumesCharge(a) ? { charged: isCharged(t, slot) } : undefined;
-      out.push({ action: a, card, slot, available, reason, ammoLeft, intercept, charge, projectiles: a.type === 'Projectile' ? projectiles : [] });
+      const charge = consumesCharge(a) ? { charged: isCharged(loan ? loan.from : t, slot) } : undefined;
+      out.push({
+        action: a, card, slot, available, reason, ammoLeft, intercept, charge,
+        projectiles: a.type === 'Projectile' ? projectiles : [],
+        lentBy: loan?.from,
+        partKey: loan ? `${a.id}@${loan.from.uid}` : a.id,
+      });
     }
   }
   return out;

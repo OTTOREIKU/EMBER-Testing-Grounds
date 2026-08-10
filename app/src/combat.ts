@@ -3,9 +3,9 @@ import { cardName } from './data';
 import { iconSvg } from './dice';
 import { linkMechanics } from './inspector';
 import { SQUAD_ORDER, squadLabel } from './data';
-import type { Card, CardAction, DiceData, DiceIcon, DieColor, GameRuleEffect, PartSlot, Side, Token } from './types';
+import type { Card, CardAction, DiceData, DiceIcon, DieColor, GameRuleEffect, PartSlot, Side, TerrainPiece, Token } from './types';
 import { statusCount, STATUSES } from './types';
-import { auraEffectsOn, electronicValue, SLOT_LABEL, tokenCards } from './units';
+import { aaRadarCovers, auraEffectsOn, electronicValue, loanedParts, repeatersFor, SLOT_LABEL, tokenCards } from './units';
 import { rangeBetween } from './rules';
 import type { Command } from './commands';
 
@@ -107,6 +107,9 @@ const ICON_LABEL: Record<string, string> = {
 interface Ctx {
   attacker: Token;
   defender: Token;
+  // An Interception rather than an ordinary attack: the Hyena Radar's Eye
+  // conversion applies to one and not the other (FAQ O13).
+  intercept: boolean;
   action: CardAction;
   losNote: string;
   protection: number;
@@ -150,6 +153,8 @@ export class AttackHelper {
   roller: DiceRoller | null = null;
   // The whole board, for aura reads (FAQ Q1: judged when the roll happens).
   tokens: (() => Token[]) | null = null;
+  // Terrain, for the Hyena Radar's line of sight to the intercepted target.
+  terrain: (() => TerrainPiece[]) | null = null;
   private ctx: Ctx | null = null;
   private duelGen = 0;
   private blackTimer: number | undefined;
@@ -230,11 +235,13 @@ export class AttackHelper {
     protection = 0,
     protectionNote = '',
     explosion = false,
+    intercept = false,
   ): void {
     this.stopBlack();
     this.ctx = {
       attacker,
       defender,
+      intercept,
       action,
       losNote,
       protection: explosion ? 0 : protection,
@@ -375,6 +382,16 @@ export class AttackHelper {
       def.dodge = (def.dodge ?? 0) + def.eye;
       def.eye = 0;
     }
+    // The Hyena Radar's passive is always on, and turns the attacker's [Eye]
+    // into a Light Hit - but only on an INTERCEPTION, never on an ordinary
+    // Firing Action at the same target (FAQ O12/O13).
+    const radar = c.intercept && atk.eye && this.tokens
+      ? aaRadarCovers(this.data, this.tokens(), this.terrain ? this.terrain() : [], c.attacker, c.defender)
+      : undefined;
+    if (radar && atk.eye) {
+      atk.lightHit = (atk.lightHit ?? 0) + atk.eye;
+      atk.eye = 0;
+    }
     let heavy = c.surplusRound === 0 ? atk.heavyHit ?? 0 : 0;
     let light = c.surplusRound === 0 ? atk.lightHit ?? 0 : 0;
     if (c.surplusRound > 0) {
@@ -386,6 +403,7 @@ export class AttackHelper {
     const text: string[] = [];
     if (c.protection && !c.surplusRound) text.push(`🛡 ${c.protectionNote}: defender rolled +${c.protection} White`);
     if (lowProfile && dodge) text.push(`Low Profile: [Eye] counted as [Dodge] against this Firing Attack`);
+    if (radar) text.push(`${radar.label} sees the target: [Eye] counted as 1 Light Hit on this Interception (FAQ O12/O13)`);
     const totalIcons = heavy + light;
 
     const { icons, spareDodge, idleDefense, dodged, blocked, penetrating, hits, unoffset } = offsetIcons(heavy, light, dodge, defense);
@@ -1125,6 +1143,9 @@ export class ElectronicHelper {
   private onCommand: (cmd: Command) => void;
   roller: DiceRoller | null = null;
   private ctx: EwCtx | null = null;
+  // The board, for reading what the Initiator's Tarantulas are lending it
+  // (FAQ O5). Wired by the driver, the same way the AttackHelper's is.
+  tokens: (() => Token[]) | null = null;
 
   constructor(
     data: GameData,
@@ -1149,7 +1170,10 @@ export class ElectronicHelper {
   }
 
   start(initiator: Token, action: CardAction, responder: Token): void {
-    const initEv = electronicValue(this.data, initiator);
+    // Only the Initiator is performing an Action, so only the Initiator counts
+    // the Backpacks its Tarantulas are lending (FAQ O5).
+    const world = this.tokens ? this.tokens() : [];
+    const initEv = electronicValue(this.data, initiator, loanedParts(this.data, world, initiator));
     const respEv = electronicValue(this.data, responder);
     this.ctx = {
       initiator,
@@ -1241,6 +1265,20 @@ export class ElectronicHelper {
     return done;
   }
 
+  // An allied Repeater lends its position to an Electronic Attack, and the
+  // Action's Range is measured from there instead (FAQ O19).
+  private relayNote(c: EwCtx): string {
+    const world = this.tokens ? this.tokens() : [];
+    if (!world.length) return '';
+    const relay = repeatersFor(this.data, world, c.initiator);
+    if (!relay.length) return '';
+    const reach = c.action.range ?? 0;
+    const best = relay.find((r) => rangeBetween(r, c.responder).range <= reach);
+    return best
+      ? ` ${best.label} is a Repeater covering ${c.initiator.label}, so this shot may be measured from it - ${c.responder.label} is Range ${rangeBetween(best, c.responder).range} from there (FAQ O19).`
+      : ` ${relay.map((r) => r.label).join(', ')} covers ${c.initiator.label} as a Repeater, but this target is beyond Range ${reach} of it too.`;
+  }
+
   private render(): void {
     const c = this.ctx;
     if (!c) return;
@@ -1252,7 +1290,7 @@ export class ElectronicHelper {
       <span class="dim">${what}</span>
       <button class="ah-cancel" title="Cancel">✕</button>
     </div>
-    <p class="ah-los" data-mech="electronic_counter_roll">Electronic Warfare ignores terrain and line of sight. Range only.</p>`;
+    <p class="ah-los" data-mech="electronic_counter_roll">Electronic Warfare ignores terrain and line of sight. Range only.${this.relayNote(c)}</p>`;
 
     el.appendChild(this.stepRoll());
     if (c.log.length) {
