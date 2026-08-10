@@ -11,3 +11,6 @@ Thumbs.db
 # Test slices. Each suite writes its subject module to one of these and imports
 # it, so they are build output and are rewritten on every run.
 app/tests/_*.ts
+
+# Cached responses from the publisher's card API (tools/sync_official.mjs).
+.cache/
