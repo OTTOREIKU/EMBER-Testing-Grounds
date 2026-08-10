@@ -1,5 +1,5 @@
 import type { Card, LangText } from './types';
-import { assetUrl } from './data';
+import { assetUrl, isListedBox } from './data';
 
 const KEY = 'ember-inventory-v1';
 
@@ -42,7 +42,19 @@ export interface BoxInfo {
   hasImage?: boolean;
   released?: boolean;
   product?: string;
+  // Declared so isListedBox can actually read it here. The objects handed in are
+  // data.boxes itself, so the flag is present at runtime either way, but leaving
+  // it off the interface hides that from the compiler.
+  hidden?: boolean;
 }
+
+// Two box names carry double quotes - LAB-"Vigilant" Autocannon & MG type and
+// its Bombing sibling - and several carry an ampersand. Interpolated raw, the
+// quote closed the attribute early and left those two rows' number inputs with
+// no accessible name at all. Everything from the data is escaped now, and the
+// quote has to be escaped too, not just the three characters text needs.
+const esc = (s: string): string =>
+  s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
 function boxCoverUrl(id: number): string {
   return assetUrl(`box_cover/${id}.webp`);
@@ -97,7 +109,7 @@ export class Inventory {
   }
 
   private sellableBoxes(): BoxInfo[] {
-    return this.boxes.filter((b) => b.key !== 'UNSALE');
+    return this.boxes.filter(isListedBox);
   }
 
   private factionFacets(): { id: string; label: string; n: number }[] {
@@ -143,10 +155,14 @@ export class Inventory {
 
   // Every box a card ships in, so a row can say whether it is unique to the box
   // being looked at or turns up elsewhere too. Cards with no box data at all are
-  // excluded from both sides rather than guessed at.
+  // excluded from both sides rather than guessed at. Unlisted boxes drop out
+  // too: "exclusive" has to mean among boxes somebody can actually buy, or a
+  // card whose only other home is the Kickstarter pack reads as shared when in
+  // practice this box is the only way to get it.
   private boxesOf(id: string): string[] {
     const c = this.cards.find((x) => x.id === id);
-    return (c?.containedIn ?? []).map((e) => e.box).filter((b) => b !== 'UNSALE');
+    const listed = new Set(this.sellableBoxes().map((b) => b.key));
+    return (c?.containedIn ?? []).map((e) => e.box).filter((b) => listed.has(b));
   }
 
   private compareRows(key: string, other: string, exclusiveOnly: boolean) {
@@ -174,7 +190,7 @@ export class Inventory {
       <button class="dlg-close inv-contents-close" title="Close">✕</button>
       <div class="inv-contents-head">
         <div>
-          <b>${box?.name.en || box?.name.zh || key}</b>
+          <b>${esc(box?.name.en || box?.name.zh || key)}</b>
           <span class="inv-contents-sub">${items.length} card${items.length === 1 ? '' : 's'} · ${total} piece${total === 1 ? '' : 's'}</span>
         </div>
       </div>
@@ -183,7 +199,7 @@ export class Inventory {
           ? `<ul class="inv-parts">${items
               .map(
                 (i) =>
-                  `<li data-tip-card="${i.id}"><span class="ip-slot">${i.slot}</span><span class="ip-name">${i.name}</span>${i.n > 1 ? `<span class="ip-n">×${i.n}</span>` : ''}</li>`,
+                  `<li data-tip-card="${i.id}"><span class="ip-slot">${i.slot}</span><span class="ip-name">${esc(i.name)}</span>${i.n > 1 ? `<span class="ip-n">×${i.n}</span>` : ''}</li>`,
               )
               .join('')}</ul>`
           : '<p class="dim">No cards in the data are listed as coming from this box.</p>'
@@ -231,7 +247,7 @@ export class Inventory {
 
     const picker = (side: 0 | 1) =>
       `<select class="inv-cmp-pick" data-side="${side}" aria-label="Box ${side + 1}">${pool
-        .map((b) => `<option value="${b.key}"${this.cmp[side] === b.key ? ' selected' : ''}>${b.name.en || b.name.zh || b.key}</option>`)
+        .map((b) => `<option value="${b.key}"${this.cmp[side] === b.key ? ' selected' : ''}>${esc(b.name.en || b.name.zh || b.key)}</option>`)
         .join('')}</select>`;
 
     const column = (side: 0 | 1) => {
@@ -250,7 +266,7 @@ export class Inventory {
             ? rows
                 .map(
                   (i) =>
-                    `<li data-tip-card="${i.id}"${i.inOther ? ' class="shared"' : ''}><span class="ip-slot">${i.slot}</span><span class="ip-name">${i.name}</span>${
+                    `<li data-tip-card="${i.id}"${i.inOther ? ' class="shared"' : ''}><span class="ip-slot">${i.slot}</span><span class="ip-name">${esc(i.name)}</span>${
                       i.inOther ? '<span class="ip-both">both</span>' : i.elsewhere.length ? `<span class="ip-else">+${i.elsewhere.length}</span>` : ''
                     }</li>`,
                 )
@@ -318,12 +334,12 @@ export class Inventory {
                         .join('')}</span>`
                     : ''
                 }
-                <div class="inv-name">${b.name.en || b.name.zh || b.key}</div>
+                <div class="inv-name">${esc(b.name.en || b.name.zh || b.key)}</div>
                 <div class="inv-count">
                   <button class="inv-step" data-step="-1" data-box="${b.key}" title="One fewer">−</button>
-                  <input type="number" min="0" max="9" data-box="${b.key}" value="${n}" aria-label="${b.name.en || b.key} copies owned">
+                  <input type="number" min="0" max="9" data-box="${b.key}" value="${n}" aria-label="${esc(b.name.en || b.key)} copies owned">
                   <button class="inv-step" data-step="1" data-box="${b.key}" title="One more">+</button>
-                  <button class="inv-info" data-info="${b.key}" title="What is in this box" aria-label="Contents of ${b.name.en || b.key}">i</button>
+                  <button class="inv-info" data-info="${b.key}" title="What is in this box" aria-label="Contents of ${esc(b.name.en || b.key)}">i</button>
                 </div>
               </div>
             </div>`;

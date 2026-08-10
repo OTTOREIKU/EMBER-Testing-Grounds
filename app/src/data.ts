@@ -38,10 +38,14 @@ export interface BoxDef {
   // Undefined means nobody has checked, which is not the same as false.
   released?: boolean;
   product?: string;
+  // Kept in the data but never listed: something nobody can buy again, such as
+  // the Kickstarter Game Pack. Its cards stay and still name it, so a card that
+  // came from one is still explained.
+  hidden?: boolean;
 }
 
 interface BoxStatus {
-  boxes?: Record<string, { released?: boolean; product?: string; hasImage?: boolean }>;
+  boxes?: Record<string, { released?: boolean; product?: string; hasImage?: boolean; hidden?: boolean }>;
 }
 
 interface QrIds {
@@ -514,6 +518,7 @@ export async function loadData(): Promise<GameData> {
     if (st) {
       b.released = st.released;
       b.product = st.product;
+      b.hidden = st.hidden;
       // Covers we have sourced ourselves; boxes.json only knows the ones the
       // builder bundle shipped with.
       if (st.hasImage) b.hasImage = true;
@@ -698,6 +703,13 @@ export function rulesLines(text: string | undefined): string[] {
     .split('\n')
     .map((l) => l.replace(/^[·•\s]+/, '').trim())
     .filter(Boolean);
+}
+
+// A box worth listing. UNSALE is not a product at all, and `hidden` marks one
+// nobody can buy again, such as the Kickstarter Game Pack. Both keep their cards
+// and are still named on them; they simply never pad a list of boxes.
+export function isListedBox(b: BoxDef): boolean {
+  return b.key !== 'UNSALE' && !b.hidden;
 }
 
 export function cardImageUrl(id: string): string {

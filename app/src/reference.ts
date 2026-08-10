@@ -1,5 +1,5 @@
 import './reference.css';
-import { actionIconUrl, boxCoverUrl, cardName, TOKEN_PRINT, tokenPrintUrl, factionArtUrl, FACTION_LABEL, loadData, mechPartUrl, missionImageUrl, portraitUrl, secondaryImageUrl, statIconUrl, tabImageUrl, zeroCostReason, type BoxDef, type FactionDef, type GameData, type KeywordDef } from './data';
+import { actionIconUrl, boxCoverUrl, cardName, TOKEN_PRINT, tokenPrintUrl, factionArtUrl, FACTION_LABEL, isListedBox, loadData, mechPartUrl, missionImageUrl, portraitUrl, secondaryImageUrl, statIconUrl, tabImageUrl, zeroCostReason, type BoxDef, type FactionDef, type GameData, type KeywordDef } from './data';
 import { mountCardImage, preloadCardImages, warmAllImagesWhenIdle } from './images';
 import { runFirstVisitPreload } from './preload';
 import { watchForUpdates } from './updates';
@@ -517,7 +517,7 @@ function factionDetail(key: string): string | null {
   const owned = data.cards.filter((c) => data.factionOf(c) === f.key);
   const count = (label: string, n: number) => (n ? `<span class="tag mono">${n} ${label}${n === 1 ? '' : 's'}</span>` : '');
   const boxes = data.boxes
-    .filter((b) => b.key !== 'UNSALE' && (b.faction ?? []).includes(f.key))
+    .filter((b) => isListedBox(b) && (b.faction ?? []).includes(f.key))
     .sort((a, b) => a.id - b.id);
   return `<h2>${esc(f.name)}</h2>
     <p class="ref-meta">${esc(FACTION_LABEL[f.key] ?? f.short)}${f.supplier ? ` · supplied by ${esc(f.supplier)}` : ''}</p>
@@ -866,7 +866,7 @@ function render(): void {
   }
 
   if (tab === 'boxes') {
-    const sellable = data.boxes.filter((b) => b.key !== 'UNSALE');
+    const sellable = data.boxes.filter(isListedBox);
     const pool = sellable.filter((b) => {
       if (!q) return true;
       const contents = boxContents(b.key).map((i) => cardName(i.card)).join(' ');
