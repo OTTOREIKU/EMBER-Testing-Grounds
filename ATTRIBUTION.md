@@ -22,6 +22,12 @@ from the community army builder at **watermelon02.github.io/builder-web**, a fan
 **watermelon02** (`github.com/watermelon02/builder-web`). That site did the substantial work of
 transcribing the whole card catalogue; this tool would not exist without it.
 
+A handful of newer cards were never in that bundle and had no illustration at all. For those, the
+pilot portrait and part illustrations come from **Queti's own card pages** at
+`obsidianprotocol.net` — the pages the QR code on the back of each card opens. They are Queti's
+artwork, reproduced here under the same non-commercial terms as everything else on this page, and
+resized to match the rest of the set.
+
 ## The mission and battlefield cards
 
 The Main Task, Secondary Task and Battlefield card scans in `assets/missions/`,
