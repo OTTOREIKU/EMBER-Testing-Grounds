@@ -2,8 +2,8 @@
 
 A browser tabletop for learning **EMBER Obsidian Protocol**.
 
-**[Open the tabletop](https://ottoreiku.github.io/EMBER-Testing-Grounds/)** ·
-**[Open the reference](https://ottoreiku.github.io/EMBER-Testing-Grounds/reference.html)**
+**[Open the tabletop](https://embertg.online/)** ·
+**[Open the reference](https://embertg.online/reference.html)**
 
 ## What you can do with it
 
@@ -41,7 +41,7 @@ text located in the bottom left corner of the screen. Every keyword resolves to 
 
 ## The reference page works on its own
 
-The [reference page](https://ottoreiku.github.io/EMBER-Testing-Grounds/reference.html) is a
+The [reference page](https://embertg.online/reference.html) is a
 separate page built for a phone. Bookmark it and you have
 the full glossary, every part, unit, pilot and tactics card, and a searchable rules section in your
 pocket, without loading the tabletop first.
