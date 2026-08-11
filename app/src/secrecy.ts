@@ -41,10 +41,9 @@ export function newSalt(): string {
 // apply() looks like. The numbers agree, so nothing else would ever notice.
 //
 // Three rules for what goes in:
-//   1. Only facts a command put there. Anything local — a UI toggle, a hand of
-//      Tactics Cards the other client was never told about, a Timing Dial
-//      before its reveal — legitimately differs, and including it would report
-//      an honest game as a desync every Planning Phase.
+//   1. Only facts a command put there. Anything local — a UI toggle, a Timing
+//      Dial before its reveal — legitimately differs, and including it would
+//      report an honest game as a desync every Planning Phase.
 //   2. **Nothing derived.** `script` is turn bookkeeping each client works out
 //      for itself and never sends: `enterPhase` derives it from a command, but
 //      `opportunity()` mints `script.opp` from inside a *render*. The sender
@@ -83,6 +82,14 @@ export function boardFingerprint(state: GameState): string {
       keyed(t.partStates as unknown as Record<string, unknown>),
       [...(t.statuses ?? [])].sort(),
       keyed(t.ammo), keyed(t.intercept as unknown as Record<string, unknown>),
+      // All commanded, all rules-bearing, and all invisible to this hash until
+      // 2026-08-11: which Parts are Charged, which tokens show their red face,
+      // a Drone's Load, and the Mech loadout itself. A drift in any of them
+      // changes what check() will accept, so it has to be caught here.
+      [...(t.charge ?? [])].sort(),
+      [...(t.expiring ?? [])].sort(),
+      t.droneBackpack ?? null,
+      t.mech ? keyed(t.mech as unknown as Record<string, unknown>) : null,
       // Deliberately no `timing`: a dial is secret until both squads reveal
       // (3.3), so the two clients hold different ones and are meant to.
     ]);
@@ -98,6 +105,14 @@ export function boardFingerprint(state: GameState): string {
     [...(s.removedTerrain ?? [])].sort(),
     [...(s.smoke ?? [])].map((x) => keyed(x as unknown as Record<string, unknown>)),
     tasks?.vp ?? null, items,
+    // Hands stopped being local information when they became a command: both
+    // seats are told both hands, and playTactic's once-per-round check READS
+    // tacticsPlayed on the receiving side, so a drift here makes one client
+    // refuse a play the other accepted — the exact failure this hash exists
+    // to surface. (Rule 1's old example named the hand as a local thing;
+    // that stopped being true when the hand went on the wire.)
+    keyed(s.tactics as Record<string, unknown> | undefined),
+    keyed(s.tacticsPlayed as Record<string, unknown> | undefined),
     // No `script`: see rule 2. Where the units stand and what they have spent
     // is the thing worth agreeing on, and it is all commanded.
   ]));

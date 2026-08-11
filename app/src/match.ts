@@ -1123,7 +1123,9 @@ function devSeed(): void {
   for (const side of ['s1', 's2'] as Side[]) {
     send({
       kind: 'importSquad', seat: side, name: 'Demo',
-      mechs: [{ loadout: { torso: first('torso'), chasis: first('chasis'), rightHand: first('rightHand'), pilot } }],
+      // The GLP-15 rides along so the Auto Mine Laying offer is walkable in
+      // the harness — it is the one flow a demo squad could never reach.
+      mechs: [{ loadout: { torso: first('torso'), chasis: first('chasis'), rightHand: first('rightHand'), backpack: '006', pilot } }],
       drones: drone ? [{ cardId: drone }] : [],
     });
   }

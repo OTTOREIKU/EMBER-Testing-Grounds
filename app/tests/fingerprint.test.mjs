@@ -60,9 +60,17 @@ const dialled = board();
 dialled.tokens[0].timing = 'firing';
 dialled.tokens[1].timing = 'melee';
 check('a Timing Dial is not part of it', boardFingerprint(dialled), boardFingerprint(board()));
-// A hand of Tactics Cards is never sent to the other client either.
+// RE-PINNED 2026-08-11, deliberately the other way round. The original pin
+// said a hand of Tactics Cards is never fingerprinted, "never sent to the
+// other client" — which stopped being true when setTactics became a mirrored
+// command: both seats are told both hands, and playTactic's own check() reads
+// the hand and tacticsPlayed on the RECEIVING side. A drift there makes one
+// client refuse a play the other accepted, which is precisely what the hash
+// exists to catch, so the hand went from must-not-hash to must-hash.
 const handed = board({ tactics: { s1: ['274'], s2: [] } });
-check('nor is a hand of Tactics Cards', boardFingerprint(handed), boardFingerprint(board()));
+check('a Tactics hand IS caught, because setTactics mirrors it', boardFingerprint(handed) !== boardFingerprint(board()), true);
+const played = board({ tacticsPlayed: { s1: ['1:274'], s2: [] } });
+check('and so is the record of plays, which gates once-per-round', boardFingerprint(played) !== boardFingerprint(board()), true);
 // Per-seat handshake bookkeeping differs by design.
 const committed = board();
 committed.script.commits = { s1: 'abc' };
@@ -107,6 +115,30 @@ check('a missing unit is caught', boardFingerprint(gone) !== boardFingerprint(bo
 const ammo = board();
 ammo.tokens[0].ammo = { A1: 2 };
 check('a spent Ammo Token is caught', boardFingerprint(ammo) !== boardFingerprint(board()), true);
+
+// The four blind spots closed on 2026-08-11 — all commanded, all read back by
+// check(), and until then all invisible to the hash.
+const charged = board();
+charged.tokens[0].charge = ['torso'];
+check('a Charged Part is caught', boardFingerprint(charged) !== boardFingerprint(board()), true);
+const aging = board();
+aging.tokens[0].statuses = ['fci'];
+const aged = board();
+aged.tokens[0].statuses = ['fci'];
+aged.tokens[0].expiring = ['fci'];
+check('a token showing its red face is caught', boardFingerprint(aged) !== boardFingerprint(aging), true);
+const laden = board();
+laden.tokens[0].droneBackpack = '013';
+check('a Drone\'s Load is caught', boardFingerprint(laden) !== boardFingerprint(board()), true);
+const armed = board();
+armed.tokens[0].mech = { torso: 'T1', chasis: 'C1' };
+const rearmed = board();
+rearmed.tokens[0].mech = { torso: 'T1', chasis: 'C2' };
+check('a different Part in a Mech slot is caught', boardFingerprint(armed) !== boardFingerprint(rearmed), true);
+// Slot order is an object artefact, not a fact about the Mech.
+const slotOrder = board();
+slotOrder.tokens[0].mech = { chasis: 'C1', torso: 'T1' };
+check('but the order of the slots is not', boardFingerprint(slotOrder), boardFingerprint(armed));
 
 // ---------- shape ----------
 
