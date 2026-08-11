@@ -39,9 +39,14 @@ const data = {
     ['CH2', { id: 'CH2', move: 2 }],
     ['DRN', { id: 'DRN', move: 6 }],
     ['NOMOVE', { id: 'NOMOVE' }],
+    // An ordinary Core prints no Move; only a TRANSFORMED one does. Modelled on
+    // White Dwarf: card 287 the Core Part, 288 the Cruise Mode core at Move 3,
+    // 289 the Chassis Part at Move 1.
+    ['CORE', { id: 'CORE' }],
+    ['CRUISE', { id: 'CRUISE', move: 3 }],
   ]),
 };
-const mech = (chasis, stance) => ({ kind: 'mech', stance, mech: { chasis }, cardId: 'ignored' });
+const mech = (chasis, stance, torso = 'CORE') => ({ kind: 'mech', stance, mech: { chasis, torso }, cardId: 'ignored' });
 const drone = (stance, cardId = 'DRN') => ({ kind: 'drone', stance, cardId });
 
 console.log('Maneuver Value and Mobility Stance\n');
@@ -78,6 +83,24 @@ check('a plain action is not silent', isSilentAction({ id: 'X', keywords: [], de
 const stealthData = { byId: new Map([['ST', { id: 'ST', keywords: [{ key: '静默', en: 'Silence' }] }], ['T1', { id: 'T1' }]]) };
 check('a live Silence part makes the maneuver silent (I2)', maneuverIsSilent(stealthData, { kind: 'mech', mech: { chasis: 'ST', torso: 'T1' }, partStates: {} }), true);
 check('a destroyed Silence part does not (I2)', maneuverIsSilent(stealthData, { kind: 'mech', mech: { chasis: 'ST', torso: 'T1' }, partStates: { chasis: 'destroyed' } }), false);
+
+// ---------- E23: a transformed core carries its own Movement ----------
+//
+// White Dwarf's Cruise Mode core prints Move 3 while its Chassis Part prints 1.
+// Reading the chassis regardless walked a Cruise White Dwarf at 1 instead of 3.
+// The torso only wins WHEN IT HAS a Move value, which in the whole box is the
+// Cruise core alone — every one of the 21 chassis carries one, and 288 is the
+// only torso that does, so this cannot catch an ordinary Mech.
+check('a Cruise core moves on its own value, not the legs',
+  maneuverRange(data, mech('CH1', 'offensive', 'CRUISE')), 3);
+check('and E23 doubles it in Mobility like anything else',
+  maneuverRange(data, mech('CH1', 'mobility', 'CRUISE')), 6);
+check('an ordinary Core still leaves the chassis in charge',
+  maneuverRange(data, mech('CH2', 'offensive', 'CORE')), 2);
+// E4 is the explicit rule and is deliberately NOT excepted for Cruise Mode:
+// nothing in the FAQ says a transformed core flies on a wrecked chassis.
+check('a destroyed chassis still grounds a Cruise core (E4)',
+  maneuverRange(data, { kind: 'mech', stance: 'mobility', mech: { chasis: 'CH1', torso: 'CRUISE' }, partStates: { chasis: 'destroyed' } }), 0);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

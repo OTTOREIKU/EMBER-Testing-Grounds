@@ -6,7 +6,7 @@ import { cardName, dataUrl, loadData, missionImageUrl, squadLabel, type GameData
 import { tacticSpec } from './tactics';
 import { flushBoxDrops, queueBoxDrop, objectiveCells } from './matchhud';
 import { printedDeployment } from './overlays';
-import { knockbackOf, migrateState, squadAllegiance, tokenCards, unfoldsOwed } from './units';
+import { knockbackOf, migrateState, multiTargetLimit, squadAllegiance, tokenCards, unfoldsOwed, type AttackReaction } from './units';
 import { countHits, normaliseSetup } from './setup';
 import { gameResult, normaliseTasks, taskItemsFor } from './tasks';
 import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
@@ -16,13 +16,13 @@ import { warmAllImagesWhenIdle } from './images';
 import { runFirstVisitPreload } from './preload';
 import { importSquadFile } from './importer';
 import { boardFingerprint, dialsOf, hashDials, newSalt, type DialEntry } from './secrecy';
-import { animateRemoteMove, ensureHud, glueAfter, showRangeOverlay, showSideTab, startAttackPick, startBoxDrop, startDetonation, startElectronicPick, startInterceptPick, startLaunchPlan, startShove, type DiceLine, type HudCtx } from './matchhud';
+import { animateRemoteMove, ensureHud, glueAfter, showRangeOverlay, showSideTab, startAttackPick, startBoxDrop, startDetonation, startElectronicPick, startInterceptPick, startLaunchPlan, startShove, startSmokePlan, type DiceLine, type HudCtx } from './matchhud';
 import { AttackHelper } from './combat';
 import { losNote, protectionFor } from './rules';
 import { SquadTracker } from './squads';
 import { Panel } from './panel';
 import { iconSvg } from './dice';
-import type { DiceData, DieColor, GameState, Side } from './types';
+import type { DiceData, DieColor, GameState, Side, Token } from './types';
 import { PHASES } from './types';
 
 // The Match Centre: a separate page for networked play, so the freeplay board
@@ -399,7 +399,13 @@ function startAttack(uid: number, actionId: string, targetUid: number, mode: 'at
     ? protectionFor(attacker, defender, action, terrain, state.tokens, smoke)
     : { white: 0, note: '' };
   attackHelper.roller = combatRoller();
-  attackHelper.start(attacker, action, defender, note, prot.white, prot.note, mode === 'explosion', mode === 'intercept');
+  // Multi-Target opens on the helper's own split step: the extra targets, the
+  // shared pool and the split all live there, so this page needs no second
+  // targeting flow and cannot drift from freeplay. Interception and Explosion
+  // are single-target by rule and route to the ordinary front door.
+  const multi = mode === 'attack' ? multiTargetLimit(action) : undefined;
+  if (multi) attackHelper.startMulti(attacker, action, defender, multi);
+  else attackHelper.start(attacker, action, defender, note, prot.white, prot.note, mode === 'explosion', mode === 'intercept');
   render();
 }
 
@@ -555,8 +561,43 @@ function mountSide(): void {
     );
     attackHelper.tokens = () => state.tokens;
     attackHelper.terrain = () => terrainNow();
+    attackHelper.smoke = () => state.smoke ?? [];
+    // The defender's own reaction to being shot at. The helper holds these back
+    // until every sequence of a Multi-Target has resolved (FAQ B7), so by the
+    // time this fires the Screens are already too late to shield anyone the
+    // same Action hit — which is exactly the ruling.
+    //
+    // A QUEUE, because one Multi-Target can shoot two units that both carry
+    // Emergency Smoke and the helper flushes them back to back — a single
+    // smokePlan slot would drop all but the last. Driven from this (attacking)
+    // client since the combat popup lives here; `placeSmoke`'s `for` field is
+    // what keeps the Screens the DEFENDER's. The screens' owner should really
+    // also be the one choosing the Grids — that needs an owed-reaction queue
+    // like Interception's, and it is tasked, not forgotten.
+    attackHelper.onReaction = (defender, reaction) => {
+      reactionQueue.push({ defender, reaction });
+      pumpReactions();
+    };
   }
   renderCombatIdle();
+}
+
+const reactionQueue: { defender: Token; reaction: AttackReaction }[] = [];
+let reactionOpen = false;
+
+function pumpReactions(): void {
+  if (reactionOpen || !reactionQueue.length) return;
+  const { defender, reaction } = reactionQueue.shift()!;
+  reactionOpen = true;
+  startSmokePlan({
+    side: defender.side,
+    count: reaction.smoke.count,
+    connected: false,
+    range: { c: Math.floor(defender.col / 3), r: Math.floor(defender.row / 3), max: reaction.smoke.range },
+    label: `${defender.label}: ${reaction.name} — ${squadLabel(defender.side)}'s Screens, their call where`,
+    onDone: () => { reactionOpen = false; pumpReactions(); },
+  });
+  render();
 }
 
 function terrainNow() {

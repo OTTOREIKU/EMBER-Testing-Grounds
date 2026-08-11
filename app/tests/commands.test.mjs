@@ -57,6 +57,18 @@ const delivery = unitsSrc.slice(
   unitsSrc.indexOf('// The Interception attempts'),
 );
 if (!delivery) throw new Error('could not locate projectileDelivery in units.ts');
+// Prototype Blink's check asks blinkTargets who is a legal partner, and every
+// clause of that answer is a rule (ground, same size, Mech, in range). Sliced,
+// not stubbed, for the same reason: a mirror could pass while the app refuses.
+// isFlyingBase comes from data.ts and rangeBetween/largeGridOf from rules.ts,
+// so the Manhattan reach the check applies is the real one.
+const dataSrc = readFileSync(new URL('../src/data.ts', import.meta.url), 'utf8');
+const grids = rules.slice(rules.indexOf('export function largeGridOf'), rules.indexOf('// Where inside Large Grid'))
+  + rules.slice(rules.indexOf('export function rangeBetween'), rules.indexOf('export function inArc'));
+const flyingBase = dataSrc.slice(dataSrc.indexOf('export function isFlyingBase'), dataSrc.indexOf('export function isAerial'));
+const ground = unitsSrc.slice(unitsSrc.indexOf('export function isGroundUnit'), unitsSrc.indexOf('export function minesOwed'));
+const blinking = unitsSrc.slice(unitsSrc.indexOf('// Which Moving Actions are a position SWAP'), unitsSrc.indexOf("// ---------- The Hyena"));
+if (!grids || !flyingBase || !ground || !blinking) throw new Error('could not locate the blink helpers');
 const timings = types.slice(types.indexOf('export const PHASES'), types.indexOf('export type TokenShape'));
 const statuses = types.slice(types.indexOf('export function hexagonIds'), types.indexOf('export interface RoundState'));
 const tmp = new URL('./_commands.slice.ts', import.meta.url);
@@ -160,6 +172,10 @@ writeFileSync(
     + slotLabels
     + freehand
     + delivery
+    + grids
+    + flyingBase
+    + ground
+    + blinking
     + stubs
     + commands.replace(/^import[^\n]*\n/gm, ''),
 );
@@ -202,6 +218,9 @@ const data = {
     // A Mine Layer Backpack and the Mine it Lays: "Lay" in the Action name is
     // what projectileDelivery reads to tell Laying from a Launch.
     ['ML1', { id: 'ML1', projectile: ['MN1'], actions: [{ id: 'LAY1', type: 'Passive', name: { en: 'Auto Mine Laying' }, range: 0 }] }],
+    // The Taurus core: Prototype Blink is typed Moving and reads as a position
+    // exchange, which is how it is told apart from an ordinary Sprint.
+    ['TAU', { id: 'TAU', actions: [{ id: 'BLINK', type: 'Moving', size: 'm', range: 4, name: { en: 'Prototype Blink' }, description: { en: '· The Unit may exchanges positions with one Ground Mech Unit of the same size within its range.' } }] }],
     ['MN1', { id: 'MN1', category: 'projectile', actions: [] }],
     // Freehand is what lets a Part carry a Black Box (5.3.1).
     ['FH1', { id: 'FH1', actions: [], keywords: [{ en: 'Freehand' }] }],
@@ -883,6 +902,39 @@ check('launching a made-up card is refused', C.check(data, wl, { kind: 'launch',
 C.apply(data, wl, { kind: 'despawn', seat: 's1', uid: 1, targetUid: 50 });
 check('a despawn takes it back off', wl.tokens.length, 1);
 
+// ---------- Prototype Blink (FAQ E17/E20) ----------
+
+const wbl = world([
+  mech(1, 's1', { mech: { torso: 'TAU', pilot: 'P1' }, col: 12, row: 12, size: 3 }),
+  mech(2, 's2', { mech: { torso: 'T1', pilot: 'P1' }, col: 21, row: 12, size: 3 }),
+], 2);
+const bl = (over = {}) => ({ kind: 'blink', seat: 's1', uid: 1, actionId: 'BLINK', targetUid: 2, facing: 2, targetFacing: 0, ...over });
+check('a Ground Mech in range can be blinked with', C.check(data, wbl, bl()).ok, true);
+check('an absent target is refused', C.check(data, wbl, bl({ targetUid: 99 })).ok, false);
+// Forced Movement means BOTH facings are the Taurus player's to set, so a
+// command missing one is not a legal Blink.
+check('a bad facing is refused', C.check(data, wbl, bl({ targetFacing: 7 })).ok, false);
+// The named Action must really BE a swap, or any Action with a Range could be
+// sent as a blink command and teleport off it.
+check('an ordinary Action cannot be sent as a blink', C.check(data, wbl, bl({ actionId: 'A1' })).ok, false);
+C.apply(data, wbl, bl());
+check('the two units trade Grids', [
+  [wbl.tokens[0].col, wbl.tokens[0].row], [wbl.tokens[1].col, wbl.tokens[1].row],
+], [[21, 12], [12, 12]]);
+check('and the Taurus player set both facings (E17)', [wbl.tokens[0].facing, wbl.tokens[1].facing], [2, 0]);
+
+// The multiplayer property: one command, applied to two mirrored boards, must
+// leave them byte-identical. A swap is the case most likely to half-apply, so
+// it is stated here rather than assumed.
+const seatL = world([
+  mech(1, 's1', { mech: { torso: 'TAU', pilot: 'P1' }, col: 12, row: 12, size: 3 }),
+  mech(2, 's2', { mech: { torso: 'T1', pilot: 'P1' }, col: 21, row: 12, size: 3 }),
+], 2);
+const seatR = structuredClone(seatL);
+C.apply(data, seatL, bl());
+C.apply(data, seatR, bl());
+check('a mirrored blink lands identically on both seats', JSON.stringify(seatL), JSON.stringify(seatR));
+
 // ---------- laying Mines (FAQ M7) ----------
 
 // Given an Ammo counter it has no business touching, so "no Ammo moved" is a
@@ -925,6 +977,11 @@ C.apply(data, ws, { kind: 'placeSmoke', seat: 's1', at: { col: 3, row: 3 } });
 C.apply(data, ws, { kind: 'placeSmoke', seat: 's1', at: { col: 4, row: 3 } });
 C.apply(data, ws, { kind: 'placeSmoke', seat: 's1', at: { col: 9, row: 9 } });
 check('screens are recorded with their side', ws.smoke.length, 3);
+// A defender's Emergency Smoke is driven from the ATTACKING client, whose seat
+// the attribution stamp overwrites — `for` is what keeps the Screen theirs.
+C.apply(data, ws, { kind: 'placeSmoke', seat: 's1', for: 's2', at: { col: 6, row: 6 } });
+check('`for` names the owner past the seat stamp', ws.smoke.find((x) => x.col === 6 && x.row === 6)?.side, 's2');
+C.apply(data, ws, { kind: 'removeSmoke', seat: 's2', at: { col: 6, row: 6 } });
 C.apply(data, ws, { kind: 'dissipateSmoke', seat: 's1' });
 check('dissipation removes only the isolated screen', ws.smoke.map((x) => `${x.col},${x.row}`), ['3,3', '4,3']);
 C.apply(data, ws, { kind: 'removeSmoke', seat: 's1', at: { col: 3, row: 3 } });

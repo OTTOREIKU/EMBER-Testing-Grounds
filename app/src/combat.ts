@@ -3,10 +3,10 @@ import { cardName } from './data';
 import { iconSvg } from './dice';
 import { linkMechanics } from './inspector';
 import { SQUAD_ORDER, squadLabel } from './data';
-import type { Card, CardAction, DiceData, DiceIcon, DieColor, GameRuleEffect, PartSlot, Side, TerrainPiece, Token } from './types';
+import type { Card, CardAction, DiceData, DiceIcon, DieColor, GameRuleEffect, PartSlot, Side, SmokeScreen, TerrainPiece, Token } from './types';
 import { statusCount, STATUSES } from './types';
-import { aaRadarCovers, auraEffectsOn, electronicValue, loanedParts, repeatersFor, SLOT_LABEL, tokenCards } from './units';
-import { rangeBetween } from './rules';
+import { aaRadarCovers, attackReactionsOf, auraEffectsOn, designationsOn, electronicValue, followUpAfterKill, loanedParts, repeatersFor, SLOT_LABEL, tokenCards, type AttackReaction, type MultiTarget } from './units';
+import { losNote, protectionFor, rangeBetween } from './rules';
 import type { Command } from './commands';
 
 // Where dice results come from. Absent in a local game, which rolls its own;
@@ -14,7 +14,31 @@ import type { Command } from './commands';
 // its own numbers.
 export type DiceRoller = (pool: Record<string, number>, label?: string) => Promise<{ color: string; face: number }[]>;
 
-type Step = 'part' | 'attack' | 'defense' | 'resolve' | 'surplus';
+type Step = 'split' | 'part' | 'attack' | 'defense' | 'resolve' | 'surplus';
+
+// ---------- Multi-Target (keyword 多目标X, FAQ B7) ----------
+//
+// "Determine the total number of Attack Dice for this Action, applying any
+// effect that increases that number NOW; split those dice between the targets
+// however you like, then run one separate attack sequence against each target
+// in turn." So the pool is decided ONCE, before any target is resolved, and the
+// split is the player's to make — which is why this is a step of its own rather
+// than a per-target pool edit.
+//
+// FAQ B7 adds the ordering: all the attacks are resolved SIMULTANEOUSLY, so a
+// reaction a target triggers by being shot at — Emergency Smoke placing Screens
+// — lands only after every sequence is done, and cannot obscure the targets
+// still to be resolved. `pending` is what makes that true: reactions are
+// collected as they trigger and flushed at the end.
+interface MultiState {
+  cap: MultiTarget;
+  action: CardAction;
+  attacker: Token;
+  targets: { defender: Token; red: number; yellow: number }[];
+  total: { red: number; yellow: number };
+  index: number;
+  pending: { defender: Token; reaction: AttackReaction }[];
+}
 
 interface Rolled {
   color: DieColor;
@@ -128,6 +152,9 @@ interface Ctx {
   // The Part the original hit landed on: Scatter-shot and Cleaving must send
   // the Surplus somewhere ELSE (FAQ D4/D6), and Mutilation back into exactly it.
   surplusOriginalPart: string | null;
+  // Set when this attack destroyed a Part, which is the trigger for a card that
+  // grants a bonus attack on a kill (the Katana's Chop → Slash, FAQ B8).
+  killedPart: boolean;
   // The setup pending on the attacker's choices: which keyword when the Action
   // carries several (FAQ D1), and Cleaving's part-or-other-unit fork (D4).
   surplusSetup: { effects: SurplusEffect[]; chosen: SurplusEffect | null } | null;
@@ -155,7 +182,15 @@ export class AttackHelper {
   tokens: (() => Token[]) | null = null;
   // Terrain, for the Hyena Radar's line of sight to the intercepted target.
   terrain: (() => TerrainPiece[]) | null = null;
+  // Smoke, so a Multi-Target can read each target's own line of sight without
+  // the two pages having to compute it one at a time.
+  smoke: (() => SmokeScreen[]) | null = null;
+  // The page places whatever a deferred reaction produces — it owns the board.
+  // Called once, after every sequence of a Multi-Target has resolved (FAQ B7).
+  onReaction: (defender: Token, reaction: AttackReaction) => void = () => {};
   private ctx: Ctx | null = null;
+  // Survives across the individual attack sequences, which each replace `ctx`.
+  private multi: MultiState | null = null;
   private duelGen = 0;
   private blackTimer: number | undefined;
   private spinTimer: number | undefined;
@@ -258,6 +293,7 @@ export class AttackHelper {
       carried: { heavy: 0, light: 0 },
       surplusKeyword: null,
       surplusOriginalPart: null,
+      killedPart: false,
       surplusSetup: null,
       log: [],
       explosion,
@@ -274,9 +310,81 @@ export class AttackHelper {
     this.render();
   }
 
+  // A Multi-Target declaration. The page clicks ONE target as it always has;
+  // everything after that — the other targets, the shared pool and the split —
+  // is settled here, so neither page has to grow a second targeting flow and
+  // the two cannot drift.
+  startMulti(attacker: Token, action: CardAction, primary: Token, cap: MultiTarget): void {
+    this.stopBlack();
+    this.multi = {
+      cap,
+      action,
+      attacker,
+      targets: [{ defender: primary, red: action.redDice ?? 0, yellow: action.yellowDice ?? 0 }],
+      total: { red: action.redDice ?? 0, yellow: action.yellowDice ?? 0 },
+      index: 0,
+      pending: [],
+    };
+    this.openSequence(primary, 'split');
+  }
+
+  // Opens one attack sequence. `start` is the single-target front door and this
+  // is what both it and the Multi-Target queue go through, so a target added
+  // later cannot skip any of the setup the first one got.
+  private openSequence(defender: Token, step: Step, pool?: { red: number; yellow: number }): void {
+    const m = this.multi!;
+    const board = this.tokens ? this.tokens() : [];
+    const terrain = this.terrain ? this.terrain() : [];
+    const smoke = this.smoke ? this.smoke() : [];
+    const prot = protectionFor(m.attacker, defender, m.action, terrain, board, smoke);
+    this.ctx = {
+      attacker: m.attacker,
+      defender,
+      intercept: false,
+      action: m.action,
+      losNote: losNote(m.attacker, defender, m.action, terrain, board, smoke),
+      protection: prot.white,
+      protectionNote: prot.note,
+      step,
+      targetPart: defender.kind === 'mech' ? null : 'main',
+      attackPool: pool ?? { red: m.total.red, yellow: m.total.yellow },
+      defensePool: { white: 1, blue: 0 },
+      attackRoll: null,
+      defenseRoll: null,
+      blackResult: null,
+      rerolls: { attack: { s1: false, s2: false }, defense: { s1: false, s2: false } },
+      surplusRound: 0,
+      carried: { heavy: 0, light: 0 },
+      surplusKeyword: null,
+      surplusOriginalPart: null,
+      killedPart: false,
+      surplusSetup: null,
+      log: [],
+      explosion: false,
+      hits: 0,
+    };
+    if (defender.kind !== 'mech') this.ctx.defensePool = this.suggestedDefensePool('main');
+    this.render();
+  }
+
+  // Everything the attacker could add to a Multi-Target: enemies in the
+  // Action's own Range, minus whoever is already on the list. Same reading as
+  // cleaveTargets, because it is the same question — who else is reachable.
+  private multiCandidates(): Token[] {
+    const m = this.multi!;
+    const chosen = new Set(m.targets.map((t) => t.defender.uid));
+    return (this.tokens ? this.tokens() : []).filter((u) => {
+      if (u.side === m.attacker.side || chosen.has(u.uid) || u.deployed === false) return false;
+      if ((u.partStates[u.kind === 'mech' ? 'torso' : 'main'] ?? 'intact') === 'destroyed') return false;
+      if (m.action.type === 'Melee' && u.aerial) return false;
+      return rangeBetween(m.attacker, u).range <= (m.action.range ?? 1);
+    });
+  }
+
   cancel(): void {
     this.stopBlack();
     this.ctx = null;
+    this.multi = null;
     this.onClose();
   }
 
@@ -514,6 +622,7 @@ export class AttackHelper {
     </div>
     <p class="ah-los">${c.losNote}</p>`;
 
+    if (c.step === 'split') el.appendChild(this.stepSplit());
     if (c.step === 'surplus') el.appendChild(this.stepSurplus());
     if (c.step === 'part') el.appendChild(this.stepPart());
     if (c.step === 'attack') el.appendChild(this.stepAttack());
@@ -529,6 +638,163 @@ export class AttackHelper {
 
     el.querySelector('.ah-cancel')!.addEventListener('click', () => this.cancel());
     this.root.replaceChildren(el);
+  }
+
+  // ---------- Multi-Target: pick the targets, then split the pool ----------
+
+  private stepSplit(): HTMLElement {
+    const m = this.multi!;
+    const wrap = document.createElement('div');
+    wrap.className = 'ah-step';
+    const spent = m.targets.reduce((s, t) => ({ red: s.red + t.red, yellow: s.yellow + t.yellow }), { red: 0, yellow: 0 });
+    const left = { red: m.total.red - spent.red, yellow: m.total.yellow - spent.yellow };
+    wrap.innerHTML = `<h4><span class="ah-n">1</span>Multi-Target ${m.cap.limit}</h4>
+      <p class="dim">Up to ${m.cap.limit} targets at once. Settle the <b>total</b> pool first — every effect that adds dice applies to it now, once — then split those dice between the targets however you like. Each target then gets its own full attack sequence, and a Mech may Focus on each one separately.</p>
+      ${m.cap.condition ? `<p class="ah-protect">This Part only <b>gains</b> Multi-Target under a condition the app does not track: <b>${m.cap.condition}</b>. Check it holds before splitting.</p>` : ''}
+      <p class="ah-protect">All the attacks count as resolved <b>at the same time</b> (FAQ B7), so anything a target sets off by being shot at — Emergency Smoke, for one — is placed only after the last sequence and cannot shield the targets still to come.</p>`;
+    const totalLabel = document.createElement('p');
+    totalLabel.className = 'dim';
+    totalLabel.textContent = 'Total Attack Dice for the whole Action:';
+    wrap.append(totalLabel);
+    wrap.appendChild(
+      this.poolEditor(
+        [['Red', 'red'], ['Yellow', 'yellow']],
+        (col) => (col === 'red' ? m.total.red : m.total.yellow),
+        (col, n) => {
+          if (col === 'red') m.total.red = n; else m.total.yellow = n;
+          this.render();
+        },
+      ),
+    );
+    for (const row of m.targets) {
+      const box = document.createElement('div');
+      box.className = 'ah-mt-row';
+      const name = document.createElement('p');
+      name.className = 'ah-sum';
+      name.textContent = row.defender.label;
+      box.appendChild(name);
+      box.appendChild(
+        this.poolEditor(
+          [['Red', 'red'], ['Yellow', 'yellow']],
+          (col) => (col === 'red' ? row.red : row.yellow),
+          (col, n) => {
+            if (col === 'red') row.red = n; else row.yellow = n;
+            this.render();
+          },
+        ),
+      );
+      // The first target is the one the player clicked on the board, so
+      // dropping it would leave the attack with nothing declared.
+      if (row.defender.uid !== m.targets[0].defender.uid) {
+        const drop = document.createElement('button');
+        drop.className = 'ah-ghost';
+        drop.textContent = `Drop ${row.defender.label}`;
+        drop.addEventListener('click', () => {
+          m.targets = m.targets.filter((t) => t.defender.uid !== row.defender.uid);
+          this.render();
+        });
+        box.appendChild(drop);
+      }
+      wrap.appendChild(box);
+    }
+    if (m.targets.length < m.cap.limit) {
+      const more = this.multiCandidates();
+      const add = document.createElement('p');
+      add.className = 'dim';
+      add.textContent = more.length
+        ? `Add another target (${m.cap.limit - m.targets.length} more allowed):`
+        : 'No other enemy is in range to add.';
+      wrap.appendChild(add);
+      for (const u of more) {
+        const b = document.createElement('button');
+        b.className = 'ah-ghost';
+        b.textContent = `+ ${u.label}`;
+        b.addEventListener('click', () => {
+          m.targets.push({ defender: u, red: 0, yellow: 0 });
+          this.render();
+        });
+        wrap.appendChild(b);
+      }
+    }
+    const tally = document.createElement('p');
+    tally.className = 'ah-sum';
+    tally.textContent = left.red === 0 && left.yellow === 0
+      ? 'Every die is allotted.'
+      : `Still to allot: ${left.red} Red, ${left.yellow} Yellow.`;
+    wrap.appendChild(tally);
+    // Warn, do not block: the split is the player's, and a house rule or a card
+    // we have not modelled may legitimately leave the numbers looking odd.
+    if (left.red < 0 || left.yellow < 0) {
+      const over = document.createElement('p');
+      over.className = 'ah-protect';
+      over.textContent = 'That is more dice than the total pool holds.';
+      wrap.appendChild(over);
+    }
+    if (m.targets.some((t) => t.red + t.yellow === 0)) {
+      const none = document.createElement('p');
+      none.className = 'ah-protect';
+      none.textContent = 'A target with no dice allotted still gets an attack sequence, and it will roll nothing.';
+      wrap.appendChild(none);
+    }
+    const go = document.createElement('button');
+    go.className = 'ah-primary';
+    go.textContent = `Begin the attack on ${m.targets[0].defender.label} ▸`;
+    go.addEventListener('click', () => {
+      m.index = 0;
+      const first = m.targets[0];
+      this.openSequence(first.defender, first.defender.kind === 'mech' ? 'part' : 'attack', { red: first.red, yellow: first.yellow });
+      // After the sequence opens, so the declaration heads the log the player
+      // is about to read rather than the split screen they have just left.
+      // The simultaneity clause only means something with more than one target,
+      // and "All 1 attacks resolve simultaneously" reads like a bug.
+      this.note(
+        `${m.attacker.label} attacks with ${m.action.name.en || m.action.name.zh}: ${
+          m.targets.map((t) => `${t.defender.label} (${t.red}R ${t.yellow}Y)`).join(', ')
+        }.${m.targets.length > 1 ? ` All ${m.targets.length} attacks resolve simultaneously (FAQ B7).` : ''}`,
+        [m.attacker, ...m.targets.map((t) => t.defender)],
+      );
+      this.render();
+    });
+    wrap.appendChild(go);
+    return wrap;
+  }
+
+  // What a defender is owed for having been shot at. The card says "after this
+  // unit is ATTACKED BY A FIRING ACTION", so a Melee blow, an Explosion or an
+  // Interception does not wake it.
+  private reactionsFor(action: CardAction, defender: Token): AttackReaction[] {
+    if (action.type !== 'Firing') return [];
+    return attackReactionsOf(this.data, defender);
+  }
+
+  // Called when one sequence of a Multi-Target has finished. Returns true when
+  // it took over — the caller must not close the helper in that case.
+  private advanceMulti(): boolean {
+    const m = this.multi;
+    if (!m) return false;
+    // Whatever this target set off by being attacked waits for the end (B7).
+    const hit = m.targets[m.index]?.defender;
+    if (hit) {
+      for (const r of this.reactionsFor(m.action, hit)) m.pending.push({ defender: hit, reaction: r });
+    }
+    m.index++;
+    const next = m.targets[m.index];
+    if (next) {
+      this.openSequence(next.defender, next.defender.kind === 'mech' ? 'part' : 'attack', { red: next.red, yellow: next.yellow });
+      return true;
+    }
+    this.flushReactions();
+    this.multi = null;
+    return false;
+  }
+
+  // FAQ B7's payload: the Screens go down only now, with every attack already
+  // resolved. Handed to the page because placing them is a board command.
+  private flushReactions(): void {
+    const m = this.multi;
+    if (!m?.pending.length) return;
+    for (const p of m.pending) this.onReaction(p.defender, p.reaction);
+    m.pending = [];
   }
 
   // Enemies of the attacker, other than the current defender, inside the
@@ -837,6 +1103,22 @@ export class AttackHelper {
         (col, n) => (col === 'red' ? (c.attackPool.red = n) : (c.attackPool.yellow = n)),
       ),
     );
+    // The Volcano's card reads "when making ANY Dice Roll for this mech", not
+    // just a defence one, so the attacker's own roll gets the same seam that
+    // A25 pins for the defence: gathered, not yet rolled. Only a colour that is
+    // actually in THIS pool is worth raising here — the box's three Designate
+    // cards all name White, which is a defence die, so in practice this stays
+    // quiet and the defence step is where it speaks.
+    if (!c.attackRoll) {
+      for (const d of designationsOn(this.data, c.attacker).filter((x) => x.color === 'red' || x.color === 'yellow')) {
+        const p = document.createElement('p');
+        p.className = 'ah-protect';
+        p.textContent = `${d.name} Designates ${d.count} ${d.color} die: set ${
+          d.count === 1 ? 'its face' : 'their faces'
+        } now, take ${d.count} off the pool above and roll the rest (FAQ A25).`;
+        wrap.appendChild(p);
+      }
+    }
     if (!c.attackRoll) {
       const roll = document.createElement('button');
       roll.className = 'ah-primary';
@@ -902,6 +1184,22 @@ export class AttackHelper {
         (col, n) => (col === 'white' ? (c.defensePool.white = n) : (c.defensePool.blue = n)),
       ),
     );
+    // FAQ A25 asks exactly when the Volcano's Armor Countermeasures resolves,
+    // and the answer is this seam: the dice are gathered (the editor above) but
+    // not yet rolled (the button below). Said here rather than in the card text
+    // because the timing is the whole ruling. D11 is why it is NOT suppressed in
+    // a Surplus round: the effect triggers on being attacked, so it carries.
+    const designate = !c.defenseRoll ? designationsOn(this.data, c.defender) : [];
+    for (const d of designate) {
+      const p = document.createElement('p');
+      p.className = 'ah-protect';
+      p.innerHTML = `<b>${d.name}</b> Designates ${d.count} White die: set ${
+        d.count === 1 ? 'its face' : 'their faces'
+      } now, before anything is rolled (FAQ A25). Take ${d.count} off the White above, roll the rest, and count the Designated ${
+        d.count === 1 ? 'die' : 'dice'
+      } alongside the result.${c.surplusRound ? ' It applies here too — it triggered when the unit was attacked (FAQ D11).' : ''}`;
+      wrap.appendChild(p);
+    }
     if (!c.defenseRoll) {
       const roll = document.createElement('button');
       roll.className = 'ah-primary';
@@ -968,7 +1266,7 @@ export class AttackHelper {
         this.onCommand({ kind: 'applyPenetration', seat: c.attacker.side, uid: c.attacker.uid, targetUid: c.defender.uid, slot });
         const next = c.defender.partStates[slot] ?? 'intact';
         this.onPenetrated(c.defender, c.attacker);
-        if (next === 'destroyed') this.onDestroyed(c.attacker, c.defender, 'part');
+        if (next === 'destroyed') { c.killedPart = true; this.onDestroyed(c.attacker, c.defender, 'part'); }
         const how = c.explosion ? 'Explosion damage' : 'Penetration';
         this.note(`${how} from ${c.attacker.label}: ${SLOT_LABEL[slot]} goes ${cur} to ${next.toUpperCase()}.`, [c.attacker, c.defender]);
         if (next === 'destroyed' && c.defender.kind !== 'mech') this.onDestroyed(c.attacker, c.defender, 'unit');
@@ -1063,18 +1361,87 @@ export class AttackHelper {
     const c = this.ctx!;
     c.step = 'resolve';
     const rider = { attacker: c.attacker, defender: c.defender, action: c.action, hits: c.hits };
+    // A card that grants a bonus attack when it destroys a Part — the Katana's
+    // Chop offering an immediate Slash. Offered HERE because this is the one
+    // place every attack ends, on both pages, so the offer cannot exist on one
+    // and not the other. It is optional ("may perform"), and it is only owed
+    // while the defender is still standing.
+    const killed = c.killedPart;
+    const bonus = killed && this.aliveNow(c.defender)
+      ? followUpAfterKill(this.data, c.attacker, c.action)
+      : null;
     const el = document.createElement('div');
     el.className = 'attack-helper';
     el.innerHTML = `<div class="ah-head"><b>Attack resolved</b></div>
       <div class="ah-log">${c.log.map((l) => `<div>${l}</div>`).join('')}</div>`;
+    if (bonus) {
+      const note = document.createElement('p');
+      note.className = 'ah-note';
+      // FAQ B8 is the whole point of naming the defender in the label: the
+      // bonus may not wander to a fresher target.
+      note.textContent = `${cardName(bonus.card)} destroyed a Part, so it may perform ${bonus.action.name?.en ?? 'its bonus attack'} immediately — against ${c.defender.label} and no one else (FAQ B8).`;
+      el.appendChild(note);
+      // The rider carries Forced Movement, the Black Box drop flush and the
+      // spent-Projectile cleanup, so it must fire EXACTLY once whichever way
+      // the offer is answered — and before the bonus attack opens, or the
+      // shove from the first attack would land after the second.
+      const settle = () => {
+        this.ctx = null;
+        this.onKnockback(rider.attacker, rider.defender, rider.action, rider.hits);
+      };
+      const go = document.createElement('button');
+      go.className = 'ah-primary';
+      go.textContent = `Take the bonus ${bonus.action.name?.en ?? 'attack'}`;
+      go.addEventListener('click', () => {
+        settle();
+        // Same defender, by construction — the bonus target is not a choice.
+        this.start(rider.attacker, bonus.action, rider.defender,
+          'Bonus attack: it must take the same target as the attack that granted it (FAQ B8).');
+      });
+      const decline = document.createElement('button');
+      decline.className = 'ah-ghost';
+      decline.textContent = 'Decline it';
+      // Declining inside a Multi-Target ends this sequence, not the Action.
+      decline.addEventListener('click', () => {
+        settle();
+        if (!this.multi) {
+          for (const r of this.reactionsFor(rider.action, rider.defender)) this.onReaction(rider.defender, r);
+        }
+        if (!this.advanceMulti()) this.cancel();
+      });
+      el.append(go, decline);
+      this.root.replaceChildren(el);
+      return;
+    }
+    // Mid-Multi-Target, "Done" means "on to the next target" rather than
+    // "close": the Action is one declaration and is not finished until every
+    // sequence has run. The rider still fires per sequence, because each one is
+    // a real attack with its own shove and its own Black Box flush.
+    const m = this.multi;
+    const more = m && m.index + 1 < m.targets.length;
     const done = document.createElement('button');
     done.className = 'ah-primary';
-    done.textContent = 'Done';
-    done.addEventListener('click', () => this.cancel());
+    done.textContent = more ? `Next target: ${m!.targets[m!.index + 1].defender.label} ▸` : 'Done';
+    done.addEventListener('click', () => {
+      // An ordinary attack owes the reaction straight away — there is nothing
+      // else in this Action to hold it back from. B7 is what makes the
+      // Multi-Target path defer instead, and advanceMulti owns that.
+      if (!this.multi) {
+        for (const r of this.reactionsFor(rider.action, rider.defender)) this.onReaction(rider.defender, r);
+      }
+      this.ctx = null;
+      if (!this.advanceMulti()) this.cancel();
+    });
     el.appendChild(done);
     this.root.replaceChildren(el);
     this.ctx = null;
     this.onKnockback(rider.attacker, rider.defender, rider.action, rider.hits);
+  }
+
+  // Whether the defender is still on the board and not destroyed.
+  private aliveNow(t: Token): boolean {
+    const key = t.kind === 'mech' ? 'torso' : 'main';
+    return (t.partStates[key] ?? 'intact') !== 'destroyed';
   }
 }
 

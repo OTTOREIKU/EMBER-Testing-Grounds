@@ -3,7 +3,7 @@ import type { GameData } from './data';
 import { actionIconUrl, cardName, isAerial, secondaryImageUrl, squadLabel, unitSize } from './data';
 import { Board, footprint, snapPlacement, type BoardCallbacks } from './board';
 import { printedDeployment, resolveZoneSetData } from './overlays';
-import { autoDetonationsOwed, autoNeutralTargets, electronicOrigins, loanedParts, minesLayable, minesOwed, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, isSilentAction, maneuverIsSilent, canActivateCamo, chargeableSlots, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
+import { autoDetonationsOwed, autoNeutralTargets, blinkTargets, isPositionSwap, electronicOrigins, loanedParts, minesLayable, minesOwed, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, isSilentAction, maneuverIsSilent, canActivateCamo, chargeableSlots, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
 import { resolveCounterRoll, tallyCounter } from './combat';
 import { tacticFitsPhase, tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { inContact, canStandIn, attackDirection, crushTargets, dissipationFor, extendPath, knockbackPath, LG, losBetween, losNote, pathCost, protectionFor, rangeBetween, reachableGrids, standingSpot, type LargeGrid } from './rules';
@@ -1251,6 +1251,9 @@ function panelHtml(ctx: HudCtx): string {
     return head('Your move', 'Resolving the attack', 'The combat window has the dice.', true)
       + '<div class="tp-body"><p class="tp-note">The combat window has it. Everything it settles is applied for you<br>and reaches the other player on its own.</p></div><div class="tp-foot"></div>';
   }
+  // A Blink is mid-Action and owes its two facing answers before anything else
+  // makes sense, so it takes the panel until it is finished or cancelled.
+  if (blinkPlan) return blinkPanel(ctx);
   // Mines before Boxes, matching M7's sequence: the Mine goes down on the way
   // through, and only then does the Mech finish entering the last Grid.
   if (minePick) return minePickPanel(ctx);
@@ -2466,6 +2469,17 @@ function routeAction(ctx: HudCtx, t: Token, a: CardAction, ga?: ReturnType<typeo
     else openAttackPick(t, a);
     return true;
   }
+  // Prototype Blink is typed Moving but teleports (FAQ E20.2), so it must not
+  // reach startMovePlan — there is no route to draw. Mirrors performBlink in
+  // freeplay; routeAction and performGuided have to stay faithful to each other.
+  if (isPositionSwap(a)) {
+    // Both facings start unanswered. Seeding this one with t.facing would skip
+    // the Taurus's own question and leave freeplay asking three things where
+    // the Match Centre asks two.
+    blinkPlan = { uid: t.uid, actionId: a.id, targetUid: null, facing: null, targetFacing: null };
+    ctx.refresh();
+    return true;
+  }
   if (a.type === 'Moving') {
     startMovePlan(ctx, t, {
       range: a.range || undefined,
@@ -2584,6 +2598,98 @@ function attackPanel(ctx: HudCtx): string {
   return head('Your move', `${esc(a.name?.en || m.actionId)}: which target?`, `${esc(by.label)} · ${a.yellowDice ?? 0}Y ${a.redDice ?? 0}R.`, true)
     + `<div class="tp-body">${rows || '<p class="tp-note">No enemy unit is on the board.</p>'}${neutralNote}</div>
        <div class="tp-foot"><button class="bigbtn ghost2" data-act="attackcancel">Cancel</button></div>`;
+}
+
+// ---------- Prototype Blink (FAQ E17/E20) ----------
+//
+// Three questions in one panel, in order: which Mech to swap with, then the
+// facing of each, because it counts as Forced Movement and the Taurus player
+// sets both (E17/E20.5). Nothing is sent until all three are answered, so the
+// swap crosses the wire as ONE command and a mirrored seat can never see half
+// of it.
+// Both facings start null and the panel asks for whichever is still unanswered,
+// so the order is data rather than a flag to keep in step.
+let blinkPlan: {
+  uid: number; actionId: string;
+  targetUid: number | null;
+  facing: Facing | null; targetFacing: Facing | null;
+} | null = null;
+
+const COMPASS: { id: Facing; label: string }[] = [
+  { id: 0, label: 'North' }, { id: 1, label: 'East' }, { id: 2, label: 'South' }, { id: 3, label: 'West' },
+];
+
+function blinkPanel(ctx: HudCtx): string {
+  const m = blinkPlan!;
+  const t = ctx.state.tokens.find((x) => x.uid === m.uid);
+  const a = t ? actionOn(ctx, t, m.actionId) : undefined;
+  if (!t || !a) {
+    return head('Prototype Blink', 'That unit is gone', '', true)
+      + '<div class="tp-body"></div><div class="tp-foot"><button class="bigbtn ghost2" data-act="blinkcancel">Close</button></div>';
+  }
+  const targets = blinkTargets(ctx.data, ctx.state.tokens, t, a);
+  if (!targets.length) {
+    return head('Prototype Blink', 'Nothing to exchange with',
+      `It takes a GROUND MECH the same size as ${esc(t.label)} within Range ${a.range ?? 0}, on either side. Drones, Terrain and anything a different size cannot be chosen (FAQ E20).`, true)
+      + '<div class="tp-body"></div><div class="tp-foot"><button class="bigbtn" data-act="blinkcancel">Close</button></div>';
+  }
+  if (m.targetUid === null) {
+    const rows = targets.map((o) => `<button class="rowwide" data-blinktarget="${o.uid}">${esc(o.label)}${
+      o.side === t.side ? ' <span class="ct">ally</span>' : ' <span class="ct">enemy</span>'
+    }</button>`).join('');
+    return head('Your move', 'Prototype Blink: exchange with which Mech?',
+      'Teleportation, so terrain and whatever lies between do not matter (FAQ E20).', true)
+      + `<div class="tp-body">${rows}<p class="tp-dim">A Ground Mech of the same size within range, enemy or allied.</p></div>
+         <div class="tp-foot"><button class="bigbtn ghost2" data-act="blinkcancel">Cancel</button></div>`;
+  }
+  const other = ctx.state.tokens.find((x) => x.uid === m.targetUid);
+  const naming = m.facing === null ? t : other;
+  // The same five choices freeplay offers, including leaving it alone — a
+  // facing the player is happy with should not have to be re-picked off a
+  // compass.
+  const rows = COMPASS.map((f) => `<button class="rowwide" data-blinkface="${f.id}">${f.label}${
+    naming?.facing === f.id ? ' <span class="ct">as it was</span>' : ''
+  }</button>`).join('');
+  return head('Your move', `Which way does ${esc(naming?.label ?? 'it')} face?`,
+    'Prototype Blink is Forced Movement, so you set the facing of BOTH units (FAQ E17).', true)
+    + `<div class="tp-body">${rows}<p class="tp-dim">${
+        m.facing === null ? 'Then you will set the other one.' : 'Last question — the swap goes through after this.'
+      }</p></div>
+       <div class="tp-foot"><button class="bigbtn ghost2" data-act="blinkcancel">Cancel</button></div>`;
+}
+
+function blinkFace(ctx: HudCtx, f: Facing): void {
+  const m = blinkPlan;
+  if (!m || m.targetUid === null) return;
+  // Whichever facing is still unanswered is the one being answered.
+  if (m.facing === null) { m.facing = f; ctx.refresh(); return; }
+  m.targetFacing = f;
+  const t = ctx.state.tokens.find((x) => x.uid === m.uid);
+  const other = ctx.state.tokens.find((x) => x.uid === m.targetUid);
+  if (!t || !other) {
+    blinkPlan = null;
+    ctx.refresh();
+    return;
+  }
+  const cmd = {
+    kind: 'blink' as const, seat: t.side, uid: t.uid, actionId: m.actionId,
+    targetUid: other.uid, facing: m.facing, targetFacing: f,
+  };
+  // Legality first, THEN the Ticks: paying before a refused swap would eat the
+  // Opportunity for nothing. Once it checks, the Action pays for itself before
+  // its own command like every other tool — without this the Taurus teleported
+  // for free in the Match Centre while freeplay charged an Action Tick for it.
+  const v = ctx.check(cmd);
+  if (!v.ok) {
+    if (v.why) ctx.noteNow(v.why);
+  } else {
+    commitAction(ctx);
+    // One command carries the swap and both facings, so the two boards agree
+    // in a single step rather than converging over three.
+    if (ctx.send(cmd).ok) ctx.noteNow(`${t.label} exchanges positions with ${other.label} (Prototype Blink).`);
+  }
+  blinkPlan = null;
+  ctx.refresh();
 }
 
 // A Breakable Terrain piece named the way a player sees it on the board: what
@@ -2858,9 +2964,16 @@ let smokePlan: {
   connected: boolean;
   placed: { col: number; row: number }[];
   origin: { c: number; r: number } | null;
+  // A reaction places its Screens "within range" of the reacting unit rather
+  // than on a landing point, so this is a reach from a Grid rather than a fixed
+  // first cell. Freeplay's picker has always had it; this one had not.
+  range: { c: number; r: number; max: number } | null;
   label: string;
   // Detonating spends the Projectile once the screens are down (4.7.5).
   thenDespawn: number | null;
+  // Fires when the plan closes, placed or cancelled — a queued reaction behind
+  // this one needs to know the panel is free again.
+  onDone: (() => void) | null;
 } | null = null;
 
 export function startSmokePlan(o: {
@@ -2868,8 +2981,10 @@ export function startSmokePlan(o: {
   count: number;
   connected: boolean;
   origin?: { c: number; r: number };
+  range?: { c: number; r: number; max: number };
   label: string;
   thenDespawn?: number;
+  onDone?: () => void;
 }): void {
   smokePlan = {
     side: o.side,
@@ -2877,8 +2992,10 @@ export function startSmokePlan(o: {
     connected: o.connected,
     placed: [],
     origin: o.origin ?? null,
+    range: o.range ?? null,
     label: o.label,
     thenDespawn: o.thenDespawn ?? null,
+    onDone: o.onDone ?? null,
   };
   hudRef?.refresh();
 }
@@ -2891,6 +3008,7 @@ function smokeCandidates(ctx: HudCtx): { c: number; r: number; ok: boolean }[] {
   const out: { c: number; r: number; ok: boolean }[] = [];
   for (let c = 0; c < LG; c++) {
     for (let r = 0; r < LG; r++) {
+      if (m.range && Math.abs(c - m.range.c) + Math.abs(r - m.range.r) > m.range.max) continue;
       // The same player may not stack two screens in one Grid; the enemy may.
       if (mine.some((s) => s.col === c && s.row === r)) continue;
       if (!m.placed.length) {
@@ -2908,7 +3026,10 @@ function smokeCandidates(ctx: HudCtx): { c: number; r: number; ok: boolean }[] {
 function placeSmokeAt(ctx: HudCtx, c: number, r: number): void {
   const m = smokePlan;
   if (!m) return;
-  const v = ctx.send({ kind: 'placeSmoke', seat: m.side, at: { col: c, row: r } });
+  // `for` carries the owning squad past the ATTRIBUTED seat stamp: a
+  // defender's Emergency Smoke is driven from the attacking client, and
+  // without it the Screen would be recorded as the attacker's.
+  const v = ctx.send({ kind: 'placeSmoke', seat: m.side, for: m.side, at: { col: c, row: r } });
   if (!v.ok) { ctx.refresh(); return; }
   m.placed.push({ col: c, row: r });
   m.left--;
@@ -2926,6 +3047,7 @@ function finishSmokePlan(ctx: HudCtx): void {
   }
   if (m) ctx.noteNow(`${m.label}: ${m.placed.length} Smoke Screen${m.placed.length === 1 ? '' : 's'} placed.`);
   ctx.refresh();
+  m?.onDone?.();
 }
 
 function smokePanel(ctx: HudCtx): string {
@@ -3971,6 +4093,13 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     layMineAt(ctx, c, r);
   });
   on('[data-act="mineskip"]', () => { minePick = null; ctx.refresh(); });
+  on('[data-blinktarget]', (el) => {
+    if (blinkPlan) blinkPlan.targetUid = Number(el.dataset.blinktarget);
+    ctx.refresh();
+  });
+  on('[data-blinkface]', (el) => blinkFace(ctx, Number(el.dataset.blinkface) as Facing));
+  // Cancelling gives the Ticks back, the same as backing out of any other tool.
+  on('[data-act="blinkcancel"]', () => { blinkPlan = null; dropAction(); ctx.refresh(); });
   on('[data-boxdrop]', (el) => {
     const [c, r] = el.dataset.boxdrop!.split(':').map(Number);
     placeDroppedBox(ctx, c, r);

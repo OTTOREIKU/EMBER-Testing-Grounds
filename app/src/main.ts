@@ -8,7 +8,7 @@ import { importSquadFile } from './importer';
 import { factionColour, squadColour } from './icons';
 import { applyRemote, onPerformed, onRefused, perform, type Command } from './commands';
 import { Relay } from './net';
-import { setLocalSeat } from './loop';
+import { getLocalSeat, setLocalSeat } from './loop';
 import { ApiError, EmberApi, type SquadEntry } from './api';
 import { MultiplayerDialog } from './multiplayer';
 import { Inventory } from './inventory';
@@ -45,7 +45,7 @@ import { PlayGuide } from './playguide';
 import type { Card, CardAction, DiceData, DieColor, Facing, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, StatusDef, TerrainPiece, Timing, Token } from './types';
 import { addStatus, SCALES, statusCount, statusesFor, STATUSES } from './types';
 import { actionIdOf } from './ticks';
-import { autoDetonationsOwed, autoNeutralTargets, loanedParts, minesLayable, minesOwed, unfoldsOwed, repairSpec, autoTargetsFor, isSilentAction, maneuverIsSilent, chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, type Resupply, resupplyOf, SLOT_LABEL, interceptLeft, interceptsOwed, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf } from './units';
+import { autoDetonationsOwed, autoNeutralTargets, blinkTargets, isPositionSwap, loanedParts, minesLayable, minesOwed, multiTargetLimit, unfoldsOwed, repairSpec, autoTargetsFor, isSilentAction, maneuverIsSilent, chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, type Resupply, resupplyOf, SLOT_LABEL, interceptLeft, interceptsOwed, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf, type AttackReaction } from './units';
 import { registerOffline } from './offline';
 import { battlefieldLocked, countHits, firstPlayerFrom, newSetup, normaliseSetup, tasksLocked, type SetupState } from './setup';
 import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
@@ -158,6 +158,14 @@ async function init() {
 
   attackHelper.tokens = () => state.tokens;
   attackHelper.terrain = () => currentTerrain();
+  attackHelper.smoke = () => state.smoke ?? [];
+  // What a defender set off by being shot at. Queued rather than placed inline,
+  // because under Multi-Target the helper holds it back until every attack has
+  // resolved (FAQ B7) — by the time this runs, the ordering is already right.
+  attackHelper.onReaction = (defender, reaction) => {
+    pendingReactions.push({ defender, reaction });
+    renderReactionPrompt();
+  };
 
   const electronicHelper = new ElectronicHelper(
     data,
@@ -487,8 +495,16 @@ async function init() {
             done?.(false);
             return;
           } else {
-            const prot = protectionFor(attacker, defender, action);
-            attackHelper.start(attacker, action, defender, losNote(attacker, defender, action), prot.white, prot.note);
+            // Multi-Target opens on its split step instead: one declaration,
+            // several targets, and a pool decided once for all of them. The
+            // helper owns the rest, so this page and the Match Centre both do
+            // nothing more than route to it.
+            const multi = multiTargetLimit(action);
+            if (multi) attackHelper.startMulti(attacker, action, defender, multi);
+            else {
+              const prot = protectionFor(attacker, defender, action);
+              attackHelper.start(attacker, action, defender, losNote(attacker, defender, action), prot.white, prot.note);
+            }
             // Declaring an attack is never Silent, so a camouflaged attacker
             // Reveals with it (4.12.2, FAQ I5/I22 - the Reveal comes first).
             if (statusCount(attacker.statuses, 'camouflage') > 0 && !isSilentAction(action)) {
@@ -724,6 +740,16 @@ async function init() {
         } - which you destroy by clicking the piece (FAQ O9). Buildings and Defense walls never count (O10).`
         : '';
       setHint(`${what}: click the target unit on the board.${reach}${fallback} Esc cancels and keeps the Tick.`);
+      return;
+    }
+
+    // Prototype Blink is typed Moving but is TELEPORTATION (FAQ E20.2), so it
+    // must not fall into the route-drawing branch below: there is no path to
+    // walk, no Break Away to pay and no terrain in the way. It is caught by the
+    // swap it offers rather than by the card id, so any future card written the
+    // same way is covered.
+    if (isPositionSwap(action)) {
+      void performBlink(t, action, done);
       return;
     }
 
@@ -1685,6 +1711,63 @@ async function init() {
     done(true);
   }
 
+  // Prototype Blink (FAQ E17/E20): swap places with a Ground Mech of the same
+  // size in range, then set BOTH facings, because it counts as Forced Movement
+  // and the Taurus player decides them. No roll, no route, no Break Away.
+  async function performBlink(t: Token, action: CardAction, done: (ok: boolean) => void): Promise<void> {
+    const what = action.name.en || action.name.zh || action.id;
+    const targets = blinkTargets(data, state.tokens, t, action);
+    if (!targets.length) {
+      await alertDialog({
+        title: 'Nothing to exchange with',
+        body: `${what} takes one GROUND MECH of the same size as ${t.label}, within Range ${action.range ?? 0} — enemy or allied. Drones, Terrain and anything a different size cannot be chosen (FAQ E20).`,
+      });
+      return done(false);
+    }
+    // The trailing Cancel is not decoration: Esc and a backdrop click both fire
+    // the LAST choice, so a bare list of targets would teleport into whichever
+    // one happened to be last.
+    const pickId = targets.length === 1 ? String(targets[0].uid) : await choiceDialog({
+      title: `${what}: exchange with which Mech?`,
+      body: 'A Ground Mech of the same size within range, on either side. This is Teleportation, so terrain and distance in between do not matter (FAQ E20).',
+      choices: [
+        ...targets.map((o) => ({
+          id: String(o.uid),
+          label: `${o.label}${o.side === t.side ? ' (ally)' : ''} — ${gridRef(Math.floor(o.col / 3), Math.floor(o.row / 3))}`,
+        })),
+        { id: '', label: 'Cancel' },
+      ],
+    });
+    const target = targets.find((o) => String(o.uid) === pickId);
+    if (!target) return done(false);
+    // Forced Movement, so the Taurus player sets both facings (E17/E20.5).
+    const askFacing = async (who: Token, label: string): Promise<Facing | null> => {
+      const id = await choiceDialog({
+        title: `Which way does ${label} face?`,
+        body: 'Prototype Blink is Forced Movement, so you choose the facing of BOTH units (FAQ E17).',
+        choices: [
+          { id: '0', label: 'North' }, { id: '1', label: 'East' },
+          { id: '2', label: 'South' }, { id: '3', label: 'West' },
+          { id: String(who.facing), label: 'Leave it as it was' },
+          { id: '', label: 'Cancel' },
+        ],
+      });
+      return id === null || id === '' ? null : (Number(id) as Facing);
+    };
+    const mine = await askFacing(t, t.label);
+    if (mine === null) return done(false);
+    const theirs = await askFacing(target, target.label);
+    if (theirs === null) return done(false);
+    const v = perform(data, state, {
+      kind: 'blink', seat: t.side, uid: t.uid, actionId: action.id,
+      targetUid: target.uid, facing: mine, targetFacing: theirs,
+    });
+    if (!v.ok) return done(false);
+    logTo(t, `${what}: exchanged positions with ${target.label}.`);
+    onChanged();
+    done(true);
+  }
+
   // Auto Mine Laying (FAQ M7/M29). Offered after the route rather than before,
   // because the price is the Move Range the Mech did NOT spend: walk 2 of your 4
   // Grids and there are 2 points left to drop 2 Mines with. Laying is a Passive,
@@ -2215,7 +2298,9 @@ async function init() {
     cancel.addEventListener('click', () => finishSmoke());
     head.appendChild(cancel);
     board.showSmokeTargets(cands, (c, r) => {
-      perform(data, state, { kind: 'placeSmoke', seat: m.side, at: { col: c, row: r } });
+      // `for` carries the owner past the networked seat stamp: a defender's
+      // Emergency Smoke is placed from the attacking side of the table.
+      perform(data, state, { kind: 'placeSmoke', seat: m.side, for: m.side, at: { col: c, row: r } });
       m.placed.push(state.smoke![state.smoke!.length - 1]);
       m.left--;
       onChanged();
@@ -2253,6 +2338,49 @@ async function init() {
       done: o.done,
     };
     renderSmokeStep();
+  }
+
+  // Reactions a defender is owed. A queue rather than a single slot because a
+  // Multi-Target can shoot two units carrying Emergency Smoke, and FAQ B7 makes
+  // both of them wait for the same moment — the end of the whole Action.
+  const pendingReactions: { defender: Token; reaction: AttackReaction }[] = [];
+
+  function renderReactionPrompt(): void {
+    if (smokePlacing || !pendingReactions.length) return;
+    const next = pendingReactions.shift()!;
+    const { defender, reaction } = next;
+    void confirmDialog({
+      title: `${defender.label}: ${reaction.name}`,
+      body: `${defender.label} was attacked, so it may place ${reaction.smoke.count} Smoke Screen${
+        reaction.smoke.count === 1 ? '' : 's'
+      } within Range ${reaction.smoke.range}.${
+        reaction.afterDestroyed ? ' The card allows this even if the unit did not survive the attack (FAQ D10).' : ''
+      } Every attack in that Action has already been resolved, so these Screens cannot shield anyone else it shot at (FAQ B7).`,
+      confirmLabel: 'Place them',
+      cancelLabel: 'Skip it',
+    }).then((go) => {
+      if (!go) { renderReactionPrompt(); return; }
+      const before = (state.smoke ?? []).length;
+      startSmokePlacement({
+        side: defender.side,
+        count: reaction.smoke.count,
+        connected: false,
+        range: { c: Math.floor(defender.col / 3), r: Math.floor(defender.row / 3), max: reaction.smoke.range },
+        label: `${defender.label}: ${reaction.name}`,
+        // Whatever is still queued goes next, one at a time.
+        done: () => {
+          // The card prints storage 1, so a use is Ammo and placing anything
+          // spends it — that is what stops the offer repeating every attack.
+          // Only in a local game: networked, the defender's Ammo is not this
+          // client's to command, and the manual chip on the card covers it.
+          if ((state.smoke ?? []).length > before && !getLocalSeat()) {
+            perform(data, state, { kind: 'spendAmmo', seat: defender.side, uid: defender.uid, actionId: reaction.actionId });
+          }
+          onChanged();
+          renderReactionPrompt();
+        },
+      });
+    });
   }
 
   function renderSmokePrompt(): void {

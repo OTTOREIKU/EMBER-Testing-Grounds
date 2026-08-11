@@ -2,7 +2,7 @@ import type { Facing, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stanc
 import { addStatus, ageTokens, newOpportunity, PHASES, statusCount, STATUSES, TIMINGS } from './types';
 import type { GameData } from './data';
 import { unfoldsInto } from './data';
-import { electronicOrigins, loanedParts, unfoldToken, extrasFor, consumesCharge, electronicValue, freehandSlots, interceptCapacity, makeDroneToken, makeMechToken, maxLink, pilotCard, projectileDelivery, tokenCards } from './units';
+import { blinkTargets, isPositionSwap, electronicOrigins, loanedParts, unfoldToken, extrasFor, consumesCharge, electronicValue, freehandSlots, interceptCapacity, makeDroneToken, makeMechToken, maxLink, pilotCard, projectileDelivery, tokenCards } from './units';
 import { canActivate, canManeuver, canOverload, canPerform, spendAction, spendActivation, spendManeuver, spendOverload } from './ticks';
 import { tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { battlefieldLocked, deploymentComplete, deployTurn, firstPlayerFrom, newSetup, normaliseSetup } from './setup';
@@ -110,9 +110,14 @@ export type Command =
   | { kind: 'clearIntercepts'; seat: Side }
   | { kind: 'launch'; seat: Side; uid: number; actionId: string; cardId: string; to: { col: number; row: number }; facing: Facing }
   | { kind: 'layMine'; seat: Side; uid: number; actionId: string; cardId: string; to: { col: number; row: number } }
+  | { kind: 'blink'; seat: Side; uid: number; actionId: string; targetUid: number; facing: Facing; targetFacing: Facing }
   | { kind: 'despawn'; seat: Side; uid: number; targetUid: number }
   | { kind: 'unfold'; seat: Side; uid: number }
-  | { kind: 'placeSmoke'; seat: Side; at: { col: number; row: number } }
+  // `for` names the squad the Screen belongs to when it is not the sender's:
+  // a defender's Emergency Smoke is driven from the attacking client, whose
+  // seat the ATTRIBUTED stamping will overwrite. Ownership decides stacking
+  // and who dissipates it, so it has to survive the stamp.
+  | { kind: 'placeSmoke'; seat: Side; at: { col: number; row: number }; for?: Side }
   | { kind: 'removeSmoke'; seat: Side; at: { col: number; row: number } }
   | { kind: 'dissipateSmoke'; seat: Side }
   | { kind: 'setMode'; seat: Side; mode: 'hotseat' | 'hidden' }
@@ -924,6 +929,25 @@ function checkActed(
       }
       return ok;
     }
+    case 'blink': {
+      if (!t) return no('That unit is not on the board.');
+      const a = findAction(data, state, cmd.uid, cmd.actionId);
+      if (!a) return no('This unit has no such Action.');
+      // The named Action must really BE a position swap, or any Action with a
+      // Range could be sent as a blink and teleport off it.
+      if (!isPositionSwap(a)) return no('That Action does not exchange positions.');
+      const target = state.tokens.find((x) => x.uid === cmd.targetUid);
+      if (!target) return no('That target is not on the board.');
+      // The whole legality of the swap is one derivation, so check() asks it
+      // rather than restating the four clauses and drifting from them.
+      if (!blinkTargets(data, state.tokens, t, a).some((x) => x.uid === cmd.targetUid)) {
+        return no(`${target.label} cannot be exchanged with: Prototype Blink takes a GROUND MECH of the same size within Range ${a.range ?? 0}, enemy or allied (FAQ E20).`);
+      }
+      if (![0, 1, 2, 3].includes(cmd.facing) || ![0, 1, 2, 3].includes(cmd.targetFacing)) {
+        return no('Both units need a facing: Prototype Blink is Forced Movement, so the Taurus player sets them (FAQ E17).');
+      }
+      return ok;
+    }
     case 'layMine': {
       if (!t) return no('That unit is not on the board.');
       if (!data.byId.get(cmd.cardId)) return no('That is not a card the database knows.');
@@ -1243,7 +1267,7 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
     return;
   }
   if (cmd.kind === 'placeSmoke') {
-    state.smoke = [...(state.smoke ?? []), { col: cmd.at.col, row: cmd.at.row, side: cmd.seat }];
+    state.smoke = [...(state.smoke ?? []), { col: cmd.at.col, row: cmd.at.row, side: cmd.for ?? cmd.seat }];
     return;
   }
   if (cmd.kind === 'removeSmoke') {
@@ -1647,6 +1671,22 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
       const tok = makeDroneToken(state, data, card, t.side);
       state.tokens.push({ ...tok, parentUid: t.uid, col: cmd.to.col, row: cmd.to.row, facing: cmd.facing });
       if (t.ammo[cmd.actionId] !== undefined) t.ammo[cmd.actionId] = Math.max(0, t.ammo[cmd.actionId] - 1);
+      return;
+    }
+    case 'blink': {
+      const target = state.tokens.find((x) => x.uid === cmd.targetUid);
+      if (!target) return;
+      // A straight exchange, applied atomically so a mirrored seat can never
+      // land one half of it. Teleportation, so nothing is checked along the way
+      // and no Break Away is paid (E20.2) — the two units simply trade Grids.
+      const from = { col: t.col, row: t.row };
+      t.col = target.col;
+      t.row = target.row;
+      target.col = from.col;
+      target.row = from.row;
+      // Forced Movement, so the Taurus player set BOTH facings (E17/E20.5).
+      t.facing = cmd.facing;
+      target.facing = cmd.targetFacing;
       return;
     }
     case 'layMine': {

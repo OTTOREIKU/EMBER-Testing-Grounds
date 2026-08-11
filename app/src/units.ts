@@ -247,6 +247,124 @@ export function interceptCapacity(a: CardAction): number | undefined {
   return undefined;
 }
 
+// ---------- Multi-Target (keyword 多目标X, FAQ B7) ----------
+
+export interface MultiTarget {
+  limit: number;
+  // Two of the four printed cards only GAIN Multi-Target under a condition the
+  // app does not track ([Two-Handed] needs a designated Freehand, [Charged]
+  // needs a Charge Token and is one arm of an either/or). Named rather than
+  // silently applied or silently dropped, so the player can answer it.
+  condition: string | null;
+}
+
+const MULTI_CONDITION: Record<string, string> = {
+  freehand_designated: 'Two-Handed — a Freehand must be designated to support this Part',
+  charge_available: 'Charged — it costs the Charge Token, and Suppression is the other choice',
+};
+
+// The inline keyword is the literal string 多目标X — an X, never a number — so
+// the count has to come from the structured rule or the printed line. The
+// bundle's gameRules carry it exactly for all four cards that have it; the
+// prose fallback is there for a card added later without them.
+export function multiTargetLimit(a: CardAction): MultiTarget | undefined {
+  for (const g of a.gameRules ?? []) {
+    for (const e of g.effects ?? []) {
+      const eff = e as { type?: string; limit?: number };
+      if (eff.type !== 'set_multi_target_limit' || !eff.limit) continue;
+      const cond = (g.conditions ?? []).map((x) => x.type ?? '').find((x) => MULTI_CONDITION[x]);
+      return { limit: eff.limit, condition: cond ? MULTI_CONDITION[cond] : null };
+    }
+  }
+  for (const text of [a.description?.en, a.description?.zh, a.description?.jp]) {
+    const m = /(?:Multi-?Target|多目标|マルチターゲット)\s*(\d+)/i.exec(text ?? '');
+    if (!m) continue;
+    const line = (text ?? '').split(/\r?\n/).find((l) => l.includes(m[0])) ?? '';
+    const cond = /\[Two-Handed\]|【?双手】?/i.test(line)
+      ? MULTI_CONDITION.freehand_designated
+      : /\[Charged\]|【?充能】?/i.test(line)
+        ? MULTI_CONDITION.charge_available
+        : null;
+    return { limit: Number(m[1]), condition: cond };
+  }
+  return undefined;
+}
+
+// ---------- What a unit does BECAUSE it was attacked (FAQ B7/D10) ----------
+
+export interface AttackReaction {
+  actionId: string;
+  name: string;
+  smoke: { count: number; range: number };
+  // The card says it works even once the unit is gone. FAQ D10 asks exactly
+  // that about the Reaper and answers yes, so a destroyed Part is no bar.
+  afterDestroyed: boolean;
+}
+
+// Reactions the DEFENDER may take after being shot at. Read off the board so a
+// Part destroyed by the very attack that triggered it is handled by the card's
+// own flag rather than by when the sweep happens to run.
+export function attackReactionsOf(data: GameData, t: Token): AttackReaction[] {
+  const out: AttackReaction[] = [];
+  for (const { slot, card } of tokenCards(data, t)) {
+    for (const a of card.actions ?? []) {
+      for (const g of a.gameRules ?? []) {
+        for (const e of g.effects ?? []) {
+          const eff = e as { type?: string; count?: number; range?: number; usableAfterDestroyed?: boolean };
+          if (eff.type !== 'post_firing_smoke_reaction') continue;
+          const dead = (t.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed';
+          if (dead && eff.usableAfterDestroyed !== true) continue;
+          // The card prints storage 1, so syncMagazines already tracks its
+          // uses as Ammo — a spent Emergency Smoke must stop being offered.
+          if (t.ammo?.[a.id] === 0) continue;
+          out.push({
+            actionId: a.id,
+            name: a.name?.en || a.name?.zh || a.id,
+            smoke: { count: Math.max(1, eff.count ?? 1), range: eff.range ?? 0 },
+            afterDestroyed: eff.usableAfterDestroyed === true,
+          });
+        }
+      }
+    }
+  }
+  return out;
+}
+
+// ---------- Designate X (FAQ A25/D11) ----------
+
+export interface Designation {
+  name: string;
+  color: string;
+  count: number;
+}
+
+// "After any announcement of the number of dice, set the result of X dice."
+// FAQ A25 pins the moment for the Volcano's Armor Countermeasures — after the
+// defending dice are gathered, before they are rolled — and the bundle already
+// encodes it as `timing: before_initial_roll`. The card says ANY dice roll for
+// this mech, so it is read off whichever unit is about to roll rather than off
+// the defender alone.
+export function designationsOn(data: GameData, t: Token): Designation[] {
+  const out: Designation[] = [];
+  for (const { slot, card } of tokenCards(data, t)) {
+    if ((t.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
+    for (const a of card.actions ?? []) {
+      for (const g of a.gameRules ?? []) {
+        for (const e of g.effects ?? []) {
+          const eff = e as { type?: string; color?: string; count?: number };
+          if (eff.type !== 'designate_dice_result') continue;
+          out.push({
+            name: a.name?.en || a.name?.zh || a.id,
+            color: eff.color ?? 'white',
+            count: Math.max(1, eff.count ?? 1),
+          });
+        }
+      }
+    }
+  }
+  return out;
+}
+
 // Every card id currently on the board, so the Add tab can subtract what is
 // already in play from what the inventory says you own.
 export function deployedCardCounts(tokens: Token[]): Map<string, number> {
@@ -427,6 +545,54 @@ export function autoNeutralTargets(
   return near.filter((x) => x.dist === best).sort((x, y) => x.id.localeCompare(y.id));
 }
 
+// ---------- Prototype Blink (FAQ E17/E20) ----------
+//
+// The TM35BT "Taurus" Experimental Core swaps places with another Mech. Four
+// constraints, and they come from two different sources that have to be read
+// together:
+//
+// The PRINTED CARD: "exchanges positions with one Ground Mech Unit of the same
+// SIZE within its range". The size clause is on the card and nowhere in the
+// FAQ, so it would be lost by reading the ruling alone.
+//
+// FAQ E20: the target must be a ground MECH — "Drones, Terrain and similar
+// targets cannot be chosen" — and either side may be taken, enemy or allied.
+// It is TELEPORTATION Movement, not ground movement (E20.2), so nothing about
+// the route matters: no path, no Break Away, no terrain in between, and no
+// dice roll (E20.3). Its Timing is normally Move as a Starting Action, but
+// spare Action Ticks let it go at other Timings (E20.1), which is the ordinary
+// Tick economy and needs nothing special here.
+//
+// E17/E20.5: it counts as FORCED MOVEMENT, so the Taurus player chooses the
+// Facing of BOTH units afterwards - that is the driver's question to ask, not
+// this function's.
+// Which Moving Actions are a position SWAP rather than a walk. Typed Moving on
+// the card, so without this test Prototype Blink falls into the route-drawing
+// branch and asks the player to trace a path a teleport does not have. Matched
+// on the printed wording in either language, so the card decides, not an id.
+export function isPositionSwap(a: CardAction): boolean {
+  if (a.type !== 'Moving') return false;
+  return /exchange[sd]? positions?/i.test(a.description?.en ?? '')
+    || /交换位置/.test(a.description?.zh ?? '');
+}
+
+export function blinkTargets(
+  data: GameData,
+  tokens: Token[],
+  t: Token,
+  a: CardAction,
+): Token[] {
+  if (t.kind !== 'mech' || !alive(t) || t.deployed === false) return [];
+  const reach = a.range ?? 0;
+  return tokens.filter((o) => {
+    if (o.uid === t.uid || o.deployed === false || !alive(o)) return false;
+    if (o.kind !== 'mech') return false;              // E20.4: Mechs only
+    if (o.size !== t.size) return false;              // printed card: same size
+    if (!isGroundUnit(data, o)) return false;         // E20.4: ground only
+    return rangeBetween(t, o).range <= reach;
+  });
+}
+
 // ---------- The Hyena's AA Radar (FAQ O12/O13) ----------
 //
 // "When an ally Intercepts a target VISIBLE TO THIS UNIT, [Eye] counts as
@@ -506,6 +672,38 @@ export function projectileDelivery(a: CardAction): 'launch' | 'deploy' | 'lay' {
   if (/布设|布雷|\bLay\b|Mine ?Lay/i.test(hay)) return 'lay';
   if (/部署|\bDeploy/i.test(hay)) return 'deploy';
   return 'launch';
+}
+
+// A bonus attack a card grants when its attack destroys a Part — the Katana's
+// Chop offering an immediate Slash. Read off the printed text rather than the
+// card id: the sheet writes the granted action's name between PIPES, which is a
+// convention only card 145 uses today but costs nothing to honour generally, so
+// a future card written the same way is covered without being remembered.
+//
+// "with this part" is load-bearing. The bonus comes from the SAME Part that
+// struck, so the named action is looked up on that card alone; two Katanas do
+// not lend each other a Slash.
+//
+// FAQ B8 is not enforced here because it cannot be broken from here: the caller
+// re-runs the attack against the SAME defender, so the bonus can never wander
+// to a second target.
+export function followUpAfterKill(
+  data: GameData,
+  t: Token,
+  action: CardAction,
+): { card: Card; action: CardAction } | null {
+  const text = `${action.description?.en ?? ''} ${action.description?.zh ?? ''}`;
+  const named = /\|([^|]+)\|/.exec(text);
+  if (!named) return null;
+  const want = named[1].trim().toLowerCase();
+  if (!want) return null;
+  for (const { card } of tokenCards(data, t)) {
+    if (!(card.actions ?? []).some((a) => a.id === action.id)) continue;
+    const hit = (card.actions ?? []).find((a) =>
+      (a.name?.en ?? '').trim().toLowerCase() === want || (a.name?.zh ?? '').trim() === named[1].trim());
+    return hit ? { card, action: hit } : null;
+  }
+  return null;
 }
 
 // The Interception attempts one launch owes (4.9). The FAQ pins the geometry:
@@ -1020,8 +1218,21 @@ export function maneuverRange(data: GameData, t: Token): number {
   // with Immobilized as "currently unable to move" (3.4.4), and FAQ E4 keeps
   // only the free change of Facing, which costs no range and is not gated here.
   if (t.kind === 'mech' && (t.partStates?.chasis ?? 'intact') === 'destroyed') return 0;
-  const card = t.kind === 'mech' && t.mech?.chasis ? data.byId.get(t.mech.chasis) : data.byId.get(t.cardId);
+  // A TRANSFORMED core carries its own Movement and the legs stop mattering:
+  // White Dwarf's Cruise Mode core (288) prints Move 3 while its Chassis Part
+  // prints 1, and reading the chassis regardless made a Cruise White Dwarf walk
+  // at 1 instead of flying at 3 (FAQ E23). The test is safe because a torso
+  // printing a Move value is exactly the transformed case - all 21 chassis
+  // carry one and 288 is the ONLY torso in the box that does, so "torso wins
+  // when it has one" cannot catch anything else.
+  const torso = t.kind === 'mech' && t.mech?.torso ? data.byId.get(t.mech.torso) : undefined;
+  const chassis = t.kind === 'mech' && t.mech?.chasis ? data.byId.get(t.mech.chasis) : undefined;
+  const card = torso?.move ? torso : (chassis ?? data.byId.get(t.cardId));
   const base = card?.move ?? 0;
+  // E23's point: a Stance-LOCKED unit still takes the Stance movement effects,
+  // so Cruise Mode doubles to 6 in Mobility like anything else. Drones never
+  // double (Maneuver is Mech-only) - White Dwarf in Cruise is a Mech in a mode,
+  // not a Drone, so it qualifies.
   return t.kind === 'mech' && t.stance === 'mobility' ? base * 2 : base;
 }
 
