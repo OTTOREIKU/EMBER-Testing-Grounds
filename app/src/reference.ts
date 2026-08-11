@@ -365,14 +365,19 @@ function cardDetail(c: Card): string {
   // "White Dwarf" Bit reads "· Low Value · High Altitude", and that line is the
   // whole reason it cannot take a Task Item, so dropping it loses real rules.
   // The Chinese original is never shown: on the 16 cards that only have it, it
-  // is a keyword reminder line whose English is already a chip above, and the
-  // mechanics blocks below still read the zh text, so nothing is lost.
+  // is a keyword reminder line whose English is already a chip above. The
+  // mechanics blocks still read the zh, so a card whose only rules line is
+  // Chinese keeps its explanation — TM39D's Overwatch Fire token is nothing but
+  // that line, so gating the block on English would hide the one thing a reader
+  // who cannot read the card most needs.
   const cardText = englishOnly(c.description?.en) ?? '';
   const cardMechs = mechBlocks(c.description?.en, c.description?.zh);
   // Pilots are left out: their card line is flavour, and the trait block below
   // already labels it as such.
-  const cardBlock = cardText && c.category !== 'pilot'
-    ? `<div class="ref-cardtext"><p>${linkKeywords(cardText).replace(/\n/g, '<br>')}</p>${cardMechs}</div>`
+  const cardBlock = (cardText || cardMechs) && c.category !== 'pilot'
+    ? `<div class="ref-cardtext">${
+        cardText ? `<p>${linkKeywords(cardText).replace(/\n/g, '<br>')}</p>` : ''
+      }${cardMechs}</div>`
     : '';
 
   const free = zeroCostReason(c);

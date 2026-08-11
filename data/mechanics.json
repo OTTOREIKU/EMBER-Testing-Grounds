@@ -252,7 +252,7 @@
     "extra action opportunity",
     "额外行动机会"
    ],
-   "text": "A whole second Action Opportunity, not an extra Tick: the Mech receiving it gets a fresh Maneuver Tick, two fresh Action Ticks, and any Extra Tick its Parts grant, so a Tempest core can grant its Firing Tick again inside it. The Echoes Support Backpack's Coordinate Action gives one to a chosen Ally Mech within Range 4, and that Mech pays the Link rather than the one Coordinating. The target must hold at least 2 Link to be chosen, so it can never be spent down to a Shutdown, and an Extra Opportunity may not itself grant another, so two Coordinating Mechs cannot trade Opportunities all round. Coordinate is a Tactic and Tactical is the last Timing, so in practice the extra Opportunity is taken after every Mech has acted."
+   "text": "A whole second Action Opportunity, not an extra Tick: the Mech receiving it gets a fresh Maneuver Tick, two fresh Action Ticks, and any Extra Tick its Parts grant, so a Tempest core can grant its Firing Tick again inside it. The Echoes Support Backpack's Coordinate Action gives one to a chosen Ally Mech within Range 4, and that Mech pays the Link rather than the one Coordinating. The target must hold at least 2 Link to be chosen, so it can never be spent down to a Shutdown, and an Extra Opportunity may not itself grant another, so two Coordinating Mechs cannot trade Opportunities all round. It happens IMMEDIATELY, inside the Opportunity that granted it: the echoed Mech takes a complete Opportunity there and then, and the granter picks up where it left off afterwards (K21). Two grants nest two deep and unwind in reverse. A Mech echoed before its own turn in the order still gets that turn (K19), so being coordinated early costs it nothing."
   },
   {
    "id": "on_hit",
@@ -386,6 +386,37 @@
     "负载"
    ],
    "text": "A Load is a Part carried by a Drone for a Mech to borrow. The Drone does not gain the Part's Actions or attributes - it is carrying it, not using it. A Mech may use a borrowed Part once per Carrier, so two Carriers lending the same Backpack lend two separate Parts and each may be used (O7). Ammo spent from a borrowed Part comes off the Drone carrying it, not the Mech. The loan only counts while the Mech is performing: a borrowed Pod adds its Electronic Value when the Mech is the Initiator of an Electronic Counter-roll, but never when it is the Responder rolling passively (O5). Several Backpacks print the Load keyword to say the opposite - that they can never be carried as a Load."
+  },
+  {
+   "id": "smoke_screen",
+   "name": "Smoke Screens",
+   "ref": "Rulebook 4.16",
+   "match": [
+    "smoke screen",
+    "smoke grenade",
+    "烟幕"
+   ],
+   "text": "Made by detonating a Smoke Grenade, and placed as cards rather than tokens. They sit inside a Grid, never across two, and may share a Grid with units or terrain. When an Action places several at once its text usually requires them Connected, meaning each one touches another placed by that Action. Each card has a black and a white side showing who made it: your own may not overlap each other, but yours and your opponent's may share a Grid. What they do is block LINE OF SIGHT FOR FIRING ACTIONS ONLY, in both directions and for both players regardless of who placed them, including for Aerial units - a unit standing in smoke can neither shoot out nor be shot at. Melee and Projectile Actions are unaffected, which is the part people forget. They thin out in the End Phase: remove every isolated Smoke Screen, plus one from each of your Connected groups, players alternating. If placement merges two groups they count as one and lose only one card; if a removal splits a group in two, the halves owe nothing more this round but one each next round."
+  },
+  {
+   "id": "black_box",
+   "name": "Black Boxes",
+   "ref": "Rulebook 5.3.1",
+   "match": [
+    "black box",
+    "黑匣"
+   ],
+   "text": "A Task Item worth Victory Points in the missions built around it. On the board it counts as 1 small Grid, may overlap units, and blocks neither Line of Sight nor Movement. You pick one up either by moving through its position or by ending an Action Opportunity in its Grid - but only with a unit carrying the Freehand tag, and once carried that Freehand is spent, because the hand is full. Put the token on the Part or Unit Card that holds it; that card is the bearer. Lose a Black Box by being Penetrated: it goes back on the board in a spot the ATTACKER chooses, which must touch the bearer's base. Scoring is per mission and usually wants the box held in a particular zone at a particular time rather than merely carried, so read the Main Task card rather than assuming possession is enough."
+  },
+  {
+   "id": "overwatch",
+   "name": "Overwatch",
+   "ref": "Card text, and Official FAQ K15",
+   "match": [
+    "overwatch",
+    "监视"
+   ],
+   "text": "A shot held back and taken later. Both printings belong to one system, the TM39D Cobra tactical core and the KK9 Snake Eye micro scout it launches. OVERWATCH FIRE TOKEN, on the Cobra itself: at the END of the Delay Phase remove the token and this unit may perform 1 Firing Action - which is how a Mech that spent its Opportunity moving or ambushing still threatens the ground it crossed. OVERWATCH STRIKE, on the Snake Eye, which our translation of the card labels Surveillance Strike: designate 1 enemy unit within range, 1 ALLY Mech immediately performs 1 Firing Action against it, then the drone is removed - so the scout spends itself to hand its firing solution to someone with a gun, and the shooter need not be the drone's launcher. K15 settles what both raise: the Firing Action may be of any length, Short, Medium or Long, but it is ONE action, so a longer choice never buys a second shot."
   },
   {
    "id": "repeaters_radar",
