@@ -85,6 +85,16 @@ check('every Backpack that says it cannot be a Load is refused (O18)',
   cards.filter((c) => c.type === 'backpack' && !L.canBeLoad(c)).map((c) => String(c.id)).sort(),
   ['081', '088', '090', '265', '538']);
 check('an ordinary Backpack can be', L.canBeLoad(byId.get('083')), true);
+// A Load is a Backpack and nothing else. The exclusion list above is the
+// evidence: it lives entirely inside one slot, which only makes sense if that
+// slot is the whole pool. Without this the Load pickers offered every Part and
+// a Tarantula could be sent out carrying an arm.
+check('an arm cannot be a Load', L.canBeLoad(byId.get('109')), false);
+check('a torso cannot be a Load', L.canBeLoad(byId.get('014')), false);
+check('a chassis cannot be a Load', L.canBeLoad(byId.get('020')), false);
+check('nothing outside the Backpack slot survives the filter',
+  cards.filter((c) => L.canBeLoad(c)).every((c) => c.type === 'backpack'), true);
+check('a pilot is not a Load either', L.canBeLoad(byId.get('FPA-04-2')), false);
 
 // ---------- who is lending what ----------
 

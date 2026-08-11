@@ -944,8 +944,16 @@ export function isCarrier(c: Card): boolean {
   return (c.keywords ?? []).some((k) => k.key === LOAD_KEYWORD || k.en === 'Load' || (k.inline ?? '') === LOAD_KEYWORD);
 }
 
-// A Part the FAQ has taken out of the Load pool (O18): the card says so itself.
+// What a Carrier may have on its back. A Load is a BACKPACK: every one of the
+// five cards that prints "cannot be used as a Load" is a backpack, and an
+// exclusion list inside one slot only makes sense if that slot is the whole
+// pool - no arm or torso ever needs excluding. Our own state agrees, calling it
+// `droneBackpack` and tracking its damage under `partStates.backpack`.
+//
+// The type test is the load-bearing half. Without it the Load pickers offered
+// all 273 Parts and a Tarantula could be sent out carrying an SMG arm.
 export function canBeLoad(c: Card): boolean {
+  if (c.category !== 'mech_part' || c.type !== 'backpack') return false;
   const text = `${c.description?.en ?? ''} ${(c.actions ?? []).map((a) => a.description?.en ?? '').join(' ')}`;
   return !/cannot be used as a Load/i.test(text);
 }
