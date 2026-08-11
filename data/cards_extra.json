@@ -1,0 +1,34 @@
+{
+  "_comment": "Cards the community bundle does not have. cards.json is regenerated from that bundle, so anything added by hand has to live here or it would be wiped on the next regeneration - the same reason stat_overrides and name_overrides exist. Merged at load; an id here must NOT already exist in cards.json.",
+  "_rule": "Nothing goes in this file that is not sourced. Record where every value came from in `_source` on the card itself. A card invented to fill a gap is worse than a gap, because the gap is visible and the invention is not.",
+  "cards": [
+    {
+      "id": "FPA-63",
+      "_source": "The Raid 2-Player Starter ships three pilots and this is the third; the publisher's product page lists it as '63 Scout' alongside Onyx (Mellow Chord) and Hammerhead (Domestic Expert). Points 9 from the publisher's RDL pilot list (QR 63), and every dial read from the publisher's own card page at obsidianprotocol.net id 363: Swift 5, Melee 6, Projectile 7, Firing 4, Move 7, Tactical 3, Link 4. Those are identical to Scout-14 through Scout-18, which is what a generic Scout should be - the number is the only thing that differs.",
+      "_id_note": "OUR id, not the publisher's. The pilot sheets leave the Serial column empty, so no printed serial exists to copy; FPA-63 follows the FPA-14=Scout-14 pattern the other Scouts use. The authoritative link is the QR id in qr_ids.json.",
+      "name": {
+        "zh": "侦察兵-63",
+        "en": "Scout-63",
+        "jp": "斥候-63"
+      },
+      "score": 9,
+      "LV": 4,
+      "faction": "RDL",
+      "swift": 5,
+      "melee": 6,
+      "projectile": 7,
+      "firing": 4,
+      "moving": 7,
+      "tactic": 3,
+      "trait": "",
+      "traitDescription": {
+        "zh": "066测试中队的新晋侦察兵。",
+        "en": "A new Scout from Test and Evaluation Squadron 066",
+        "jp": "試験評価隊066の新米スカウト"
+      },
+      "_flavour_note": "Flavour text copied from the other Scouts rather than read off this card, which we have no scan of. It is flavour, not a rule, and the trait NAME is empty exactly as theirs is, so nothing mechanical rests on it.",
+      "category": "pilot",
+      "keywords": []
+    }
+  ]
+}

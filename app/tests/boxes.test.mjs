@@ -91,13 +91,21 @@ check('an unowned box still yields nothing', ownedCount(cruise, {}), 0);
 // typo in a card id or box key would silently empty that box instead of erroring.
 const patch = JSON.parse(readFileSync(new URL('../../data/box_contents_overrides.json', import.meta.url), 'utf8'));
 const patched = patch.boxes ?? {};
-const cardIds = new Set(list.map((c) => c.id));
+// cards_extra.json holds cards the community bundle lacks, and the override may
+// name one, so ids come from both files.
+const extra = JSON.parse(readFileSync(new URL('../../data/cards_extra.json', import.meta.url), 'utf8'));
+const cardIds = new Set([...list.map((c) => c.id), ...(extra.cards ?? []).map((c) => c.id)]);
+check('cards_extra never redefines a real card',
+  (extra.cards ?? []).map((c) => c.id).filter((id) => list.some((c) => c.id === id)), []);
 const badKeys = Object.keys(patched).filter((k) => !boxKeys.has(k));
 const badCards = Object.values(patched).flatMap((d) => Object.keys(d.cards ?? {})).filter((id) => !cardIds.has(id));
 check('override box keys all exist', badKeys, []);
 check('override card ids all exist', badCards, []);
-check('override quantities are positive integers',
-  Object.values(patched).flatMap((d) => Object.values(d.cards ?? {})).filter((n) => !Number.isInteger(n) || n < 1), []);
+// 0 is meaningful, not a mistake: it marks a card that ships as another card's
+// second face rather than as a counted copy, which is how the Raid box's slot
+// counts add up instead of double counting. Negative or fractional is still wrong.
+check('override quantities are whole and not negative',
+  Object.values(patched).flatMap((d) => Object.values(d.cards ?? {})).filter((n) => !Number.isInteger(n) || n < 0), []);
 
 // Each Reaper ships alone, two to a box, so the override must leave exactly one
 // card in each of the boxes it corrects.

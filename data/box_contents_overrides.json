@@ -13,6 +13,48 @@
         "PRDR-104": 2
       }
     },
+    "COMBAT_RAID": {
+      "_note": "Rebuilt 2026-08-11 from Queti's own contents list on the Raid product page, which OTTO supplied. That list is printed per slot - 3 Torso, 3 Chassis, 4 Left Arm, 4 Right Arm, 6 Backpack, 3 Drone, 2 Projectiles, 3 Pilots, 28 cards - and every 'A / B' line is ONE physical card with two faces, which is the whole reason the community data was wrong here.",
+      "_faces": "A face that shares its card with another is quantityPerBox 0, the same 'ships with its parent rather than as a counted copy' meaning the Discard Cards and White Dwarf's Cruise Mode use. That is what makes the copy counts add up to the publisher's per-slot numbers instead of double counting. The pattern is always a Raid-exclusive 5xx card paired with a card that also sells in a Core box.",
+      "_removed": "The community data also put ADK15/MAS Porcupine Microwave (161), ADK30F Tarantula Firepower (163) and the KK9 Snake Eye Micro Scout (LHDR-KK9) in this box. None appear on the publisher's list, and dropping exactly those three leaves the six drones it does name.",
+      "_rl08": "The published list writes the chassis as 'RL-08M / RL-08', but our scan of 534 prints RL-08C, RL-08M (249) is a different UNSALE card, and every other pairing is a 5xx Raid card beside a Core card. Read as a typo for RL-08C. Revisit if a physical box says otherwise.",
+      "cards": {
+        "533": 1, "012": 0,
+        "014": 1,
+        "539": 1, "092": 0,
+
+        "534": 1, "021": 0,
+        "020": 1,
+        "099": 1,
+
+        "535": 1,
+        "023": 1,
+        "032": 1,
+        "540": 1, "103": 0,
+
+        "536": 1, "537": 0, "025": 0,
+        "033": 1,
+        "541": 1, "542": 0, "104": 0, "109": 0,
+        "106": 1,
+
+        "001": 1,
+        "532": 1, "002": 0,
+        "003": 1,
+        "004": 1,
+        "538": 1,
+        "083": 1,
+
+        "162": 1,
+        "164": 1, "165": 0, "166": 0,
+        "160": 1, "543": 0,
+
+        "071": 2,
+
+        "FPA-04-2": 1,
+        "LPA-23-2": 1,
+        "FPA-63": 1
+      }
+    },
     "LAB_PD_CRISIS1": {
       "_note": "The retail LAB-CRISIS H2-A box prints 6 Part Cards, 1 Pilot Card, 1 Projectile Card and 4 Projectile miniatures. The community data had only five parts here and filed BOTH HL2 chassis under the H2-B box, which leaves this kit with no legs to stand on. The base HL2 chassis (548) is the sixth card; the two kits share it, which is what the product's modular-magnetic-parts design implies. INFERRED from the printed card count - check a physical box if one turns up. PDAM-002 is the Exocet both backpacks launch. The Pilot Card is Combatant A-70 (XPA-60), confirmed by OTTO 2026-08-10. It was briefly recorded as A-69 on the reading that the H2-A and H2-B contents panels showed the same pilot; they do not, and the panels being near-identical art is exactly why they cannot be told apart at a glance. Read the ID number in the card's corner, not the artwork.",
       "cards": {

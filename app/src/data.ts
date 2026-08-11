@@ -442,7 +442,7 @@ function applyTactics(cards: Card[], table: Record<string, TacticEntry>): void {
 }
 
 export async function loadData(): Promise<GameData> {
-  const [cards, terrain, boxes, rawKeywords, patch, boxStatus, qrIds, mech, xlate, names, missions, tactics, play, secondary, zoneData, facPatch, boxPatch, common, ammoPatch, statPatch, actionPatch, factionData] = await Promise.all([
+  const [cards, terrain, boxes, rawKeywords, patch, boxStatus, qrIds, mech, xlate, names, missions, tactics, play, secondary, zoneData, facPatch, boxPatch, common, ammoPatch, statPatch, actionPatch, factionData, extraCards] = await Promise.all([
     fetch(dataUrl('cards.json')).then((r) => r.json() as Promise<Card[]>),
     fetch(dataUrl('terrain_layouts.json')).then((r) => r.json() as Promise<TerrainData>),
     fetch(dataUrl('boxes.json')).then((r) => r.json() as Promise<BoxDef[]>),
@@ -501,7 +501,20 @@ export async function loadData(): Promise<GameData> {
     fetch(dataUrl('factions.json'))
       .then((r) => (r.ok ? (r.json() as Promise<{ factions?: FactionDef[] }>) : { factions: [] }))
       .catch(() => ({ factions: [] as FactionDef[] })),
+    fetch(dataUrl('cards_extra.json'))
+      .then((r) => (r.ok ? (r.json() as Promise<{ cards?: Card[] }>) : { cards: [] }))
+      .catch(() => ({ cards: [] as Card[] })),
   ]);
+
+  // Cards the community bundle does not have. cards.json is regenerated from
+  // that bundle, so a card added there by hand would vanish on the next
+  // regeneration; this file is the same escape hatch the override files are.
+  // An id already present wins from cards.json and the extra is dropped, so the
+  // file can never quietly redefine a real card - use stat_overrides for that.
+  for (const extra of extraCards.cards ?? []) {
+    if (cards.some((c) => c.id === extra.id)) continue;
+    cards.push(extra);
+  }
 
   cleanCardText(cards);
   applyTactics(cards, tactics.tactics ?? {});
