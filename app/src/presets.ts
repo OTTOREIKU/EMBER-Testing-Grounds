@@ -16,12 +16,13 @@ const SLOTS: (keyof MechLoadout)[] = ['torso', 'chasis', 'leftHand', 'rightHand'
 
 // Builds that ship with the app rather than being saved on one device, so
 // somebody opening the tabletop for the first time has something to drop on the
-// board. Everything below comes from a single Raid 2-Player Starter Set and the
-// two sides come to 413 points each, which is as far as that box stretches.
+// board. Everything below comes from a single Raid 2-Player Starter Set, and
+// RDL's 383 sits one point off UN's 382 - as close as the box allows, since
+// every RDL swap moves in threes.
 //
 // The Raid box prints several cards as two faces of ONE card, so these use at
-// most one face of each: the RDL chassis is RL-08 (its other face is RL-08C),
-// the RDL torso RTX-06SR (or RT-06), the right arm PC-6 (or AC-32), the UN
+// most one face of each: the RDL chassis is RL-08C (its other face is RL-08),
+// the RDL torso RTX-06SR (or RT-06), the right arm AC-32 (or PC-6), the UN
 // torso TM31Q (or TM31R), the UN left arm the Ion Shotgun (or the Pile Bunker)
 // and the UN right arm R7K (or R7, or R6). RDL fields two mechs because the box
 // holds two RDL torsos, chassis and pilots but only one of each for UN, which is
@@ -31,8 +32,8 @@ const BUILT_IN: MechPreset[] = [
     id: 'builtin:raid-rdl-1',
     name: 'RAID-RDL-Starter 1',
     saved: 0,
-    // Dune brawler, 227 points.
-    mech: { torso: '014', chasis: '021', leftHand: '535', rightHand: '536', backpack: '532', pilot: 'FPA-04-2' },
+    // Dune brawler, 197 points.
+    mech: { torso: '014', chasis: '534', leftHand: '535', rightHand: '025', backpack: '532', pilot: 'FPA-04-2' },
   },
   {
     id: 'builtin:raid-rdl-2',
@@ -46,9 +47,10 @@ const BUILT_IN: MechPreset[] = [
     id: 'builtin:raid-un',
     name: 'RAID-UN-Starter',
     saved: 0,
-    // Wild Cat, 295 points. The other 118 are the three drones the box ships -
-    // Porcupine Ion, Raven Interference and Tarantula Carrier - which are added
-    // from the Drones tab rather than built here.
+    // Wild Cat, 295 points. The other 87 are two drones - Porcupine CIWS and
+    // Raven Interference - which are added from the Drones tab rather than built
+    // here. The CIWS carries Intercept 3, which is what answers the missile rack
+    // on the Mire build.
     mech: { torso: '539', chasis: '099', leftHand: '540', rightHand: '541', backpack: '538', pilot: 'LPA-23-2' },
   },
 ];

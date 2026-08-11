@@ -17,6 +17,57 @@ export interface SavedSquad {
 
 const SLOTS: (keyof MechLoadout)[] = ['torso', 'chasis', 'leftHand', 'rightHand', 'backpack', 'pilot'];
 
+// Squads that ship with the app, so a first-time player has two sides to put on
+// the board without building anything. Both are drawn from a single Raid
+// 2-Player Starter Set and land a point apart, 383 to 382 - a 600 point game
+// needs a second box.
+//
+// The shape is forced by what the box holds: two RDL torsos, chassis and pilots
+// but only one of each for UN, so RDL fields two mechs and UN one mech that
+// makes up the difference in drones. Several Raid cards are two faces of ONE
+// card, and no squad here uses both faces of any of them.
+const BUILT_IN: SavedSquad[] = [
+  {
+    id: 'builtin:raid-rdl',
+    name: 'RAID-RDL-Starter',
+    saved: 0,
+    // 197 + 186 = 383.
+    mechs: [
+      {
+        name: 'Dune Brawler',
+        loadout: { torso: '014', chasis: '534', leftHand: '535', rightHand: '025', backpack: '532', pilot: 'FPA-04-2' },
+      },
+      {
+        name: 'Mire Fire Support',
+        loadout: { torso: '533', chasis: '020', leftHand: '032', rightHand: '033', backpack: '004', pilot: 'FPA-63' },
+      },
+    ],
+    drones: [],
+  },
+  {
+    id: 'builtin:raid-un',
+    name: 'RAID-UN-Starter',
+    saved: 0,
+    // 295 for the mech plus 87 of drones: Porcupine CIWS 51 and Raven
+    // Interference 36. The CIWS is here for its Intercept 3, which is the answer
+    // to the ML-34 rack on the RDL side and the reason to prefer it over the
+    // Porcupine Ion - they are two faces of one card, so only one can be
+    // fielded. The Tarantula Carrier is deliberately left out: its only keyword
+    // is Load, and the carrier rules are the fiddliest thing in the box.
+    mechs: [
+      {
+        name: 'Wild Cat',
+        loadout: { torso: '539', chasis: '099', leftHand: '540', rightHand: '541', backpack: '538', pilot: 'LPA-23-2' },
+      },
+    ],
+    drones: [{ cardId: '160' }, { cardId: '166' }],
+  },
+];
+
+export function isBuiltInSquad(id: string): boolean {
+  return id.startsWith('builtin:');
+}
+
 function clean(raw: unknown): SavedSquad | null {
   if (!raw || typeof raw !== 'object') return null;
   const s = raw as Partial<SavedSquad>;
@@ -45,13 +96,18 @@ function clean(raw: unknown): SavedSquad | null {
 }
 
 export function loadSquads(): SavedSquad[] {
+  let saved: SavedSquad[] = [];
   try {
     const raw = JSON.parse(localStorage.getItem(KEY) ?? '[]') as unknown[];
-    if (!Array.isArray(raw)) return [];
-    return raw.map(clean).filter((x): x is SavedSquad => !!x);
+    if (Array.isArray(raw)) saved = raw.map(clean).filter((x): x is SavedSquad => !!x);
   } catch {
-    return [];
+    saved = [];
   }
+  // A squad saved under a shipped name replaces it, so these can be reworked
+  // rather than sitting there uneditable beside a near-duplicate.
+  const taken = new Set(saved.map((s) => s.name.toLowerCase()));
+  const shipped = BUILT_IN.filter((s) => !taken.has(s.name.toLowerCase()));
+  return [...shipped, ...saved].sort((a, b) => a.name.localeCompare(b.name));
 }
 
 function write(list: SavedSquad[]): void {
@@ -66,20 +122,26 @@ export function saveSquad(
   drones: SavedSquad['drones'],
   now: number,
 ): SavedSquad[] {
-  const list = loadSquads();
   const trimmed = name.trim();
-  if (!trimmed || (!mechs.length && !drones.length)) return list;
-  const at = list.findIndex((s) => s.name.toLowerCase() === trimmed.toLowerCase());
-  const entry: SavedSquad = { id: at >= 0 ? list[at].id : `sq${now}`, name: trimmed, mechs, drones, saved: now };
-  if (at >= 0) list[at] = entry;
-  else list.push(entry);
-  list.sort((a, b) => a.name.localeCompare(b.name));
-  write(list);
-  return list;
+  if (!trimmed || (!mechs.length && !drones.length)) return loadSquads();
+  // Only this device's own squads are written back. Saving over a shipped name
+  // is allowed and shadows it, but stores a NEW entry rather than editing the
+  // shipped one in place.
+  const saved = loadSquads().filter((s) => !isBuiltInSquad(s.id));
+  const at = saved.findIndex((s) => s.name.toLowerCase() === trimmed.toLowerCase());
+  const entry: SavedSquad = { id: at >= 0 ? saved[at].id : `sq${now}`, name: trimmed, mechs, drones, saved: now };
+  if (at >= 0) saved[at] = entry;
+  else saved.push(entry);
+  write(saved);
+  return loadSquads();
 }
 
 export function deleteSquad(id: string): SavedSquad[] {
-  const list = loadSquads().filter((s) => s.id !== id);
-  write(list);
-  return list;
+  // Writing the merged list back would bake the shipped squads into local
+  // storage, and a later change to them would never reach anyone who had opened
+  // the tab once.
+  if (isBuiltInSquad(id)) return loadSquads();
+  const saved = loadSquads().filter((s) => !isBuiltInSquad(s.id) && s.id !== id);
+  write(saved);
+  return loadSquads();
 }

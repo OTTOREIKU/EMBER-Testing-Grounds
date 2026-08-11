@@ -3,7 +3,7 @@ import { BASE_FACTIONS, cardName, FACTION_LABEL, isDiscardCard, mechPartUrl, SQU
 import { inspectOnHover } from './inspector';
 import { alertDialog, confirmDialog, promptDialog } from './dialog';
 import { deleteMechPreset, isBuiltInPreset, loadMechPresets, saveMechPreset } from './presets';
-import { deleteSquad, loadSquads } from './squadstore';
+import { deleteSquad, isBuiltInSquad, loadSquads } from './squadstore';
 import { cardFitsSquad, type SquadAllegiance } from './units';
 import { ICON_EXPAND, squadColour } from './icons';
 import { openPartPicker } from './partpicker';
@@ -696,8 +696,12 @@ export class Roster {
         .join('')}</select>
         <button class="preset-save" title="Save a squad now on the board under a name">Save</button>
         <button class="preset-del" title="${
-          chosen ? `Delete “${escAttr(chosen.name)}”` : 'Pick a saved squad to delete it'
-        }" ${chosen ? '' : 'disabled'}>✕</button>`;
+          !chosen
+            ? 'Pick a saved squad to delete it'
+            : isBuiltInSquad(chosen.id)
+              ? `“${escAttr(chosen.name)}” ships with the app and cannot be deleted. Save over its name to replace it.`
+              : `Delete “${escAttr(chosen.name)}”`
+        }" ${chosen && !isBuiltInSquad(chosen.id) ? '' : 'disabled'}>✕</button>`;
       const pick = squads.querySelector<HTMLSelectElement>('.preset-pick')!;
       pick.addEventListener('change', () => {
         this.squadId = pick.value;
