@@ -201,5 +201,19 @@ check('nor a Hyena that cannot see the target',
 check('only the Radar Type carries it',
   L.aaRadarCovers(data, [alli, { ...hyena(2, 9, 3), cardId: '078' }, missile], [], alli, missile), undefined);
 
+// FAQ F5, confirmed off the PDF layout rather than the interleaved text dump:
+// "If the Hyena Radar is inside Smoke, or if Smoke blocks the line of sight
+// between it and the intercepted target, does AA Radar still work?" — "Yes, it
+// still works." That is easy to get WRONG later, because the card's own wording
+// is "visible to this unit" and adding a smoke test would read like a fix. It
+// works today only because aaRadarCovers takes terrain and tokens and NEVER a
+// smoke list, so this pin guards the signature: the day someone threads smoke
+// through it, F5 breaks and this says so.
+const radarFn = slice('export function aaRadarCovers', '// ---------- Repeaters (FAQ O19/O20)', 'aaRadarCovers in units.ts');
+check('F5: nothing in aaRadarCovers mentions smoke at all',
+  /smoke/i.test(radarFn), false);
+check('and its sight test is the terrain-and-tokens one, which has no smoke to consult',
+  radarFn.includes('losBetween(r, target, terrain, tokens)'), true);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
