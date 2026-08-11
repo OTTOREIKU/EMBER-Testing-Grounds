@@ -10,6 +10,27 @@ import { groupByFaction, openPartPicker } from './partpicker';
 
 const escAttr = (v: string): string => v.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 
+// Options for a saved-thing dropdown, with the builds that ship with the app
+// held apart from the player's own under a heading of their own. They were
+// interleaved alphabetically before, so somebody's saved mech sat between two
+// presets with nothing saying which was which. Shipped ones go LAST: the list
+// is the player's, and ours are the reference at the bottom of it.
+function savedOptions<T extends { id: string; name: string }>(
+  list: T[],
+  chosenId: string,
+  label: (item: T) => string,
+): string {
+  const opt = (p: T): string =>
+    `<option value="${escAttr(p.id)}"${p.id === chosenId ? ' selected' : ''}>${escAttr(label(p))}</option>`;
+  const mine = list.filter((p) => !p.id.startsWith('builtin:'));
+  const shipped = list.filter((p) => p.id.startsWith('builtin:'));
+  // A single group with nothing to separate it from would just be a stray
+  // heading, so the labels only appear once both kinds exist.
+  if (!mine.length || !shipped.length) return [...mine, ...shipped].map(opt).join('');
+  return `<optgroup label="Saved">${mine.map(opt).join('')}</optgroup>`
+    + `<optgroup label="Presets">${shipped.map(opt).join('')}</optgroup>`;
+}
+
 export interface RosterCallbacks {
   squadAllegiance(side: Side): SquadAllegiance;
   // `load` is the Part a Carrier drone carries onto the board (FAQ O3-O8). Only
@@ -593,9 +614,11 @@ export class Roster {
       // re-applied here instead.
       if (this.presetId && !list.some((p) => p.id === this.presetId)) this.presetId = '';
       const chosen = list.find((p) => p.id === this.presetId);
-      presets.innerHTML = `<select class="preset-pick"><option value="">Saved mechs…</option>${list
-        .map((p) => `<option value="${escAttr(p.id)}"${p.id === this.presetId ? ' selected' : ''}>${escAttr(p.name)}</option>`)
-        .join('')}</select>
+      presets.innerHTML = `<select class="preset-pick"><option value="">Saved mechs…</option>${savedOptions(
+        list,
+        this.presetId,
+        (p) => p.name,
+      )}</select>
         <button class="preset-save" title="Save the current build under a name">Save</button>
         <button class="preset-del" title="${
           !chosen
@@ -740,9 +763,11 @@ export class Roster {
       const chosen = list.find((s) => s.id === this.squadId);
       const blurb = (s: { mechs: unknown[]; drones: unknown[] }) =>
         [s.mechs.length ? `${s.mechs.length}M` : '', s.drones.length ? `${s.drones.length}D` : ''].filter(Boolean).join(' ');
-      squads.innerHTML = `<select class="preset-pick"><option value="">Saved squads…</option>${list
-        .map((s) => `<option value="${escAttr(s.id)}"${s.id === this.squadId ? ' selected' : ''}>${escAttr(`${s.name} (${blurb(s)})`)}</option>`)
-        .join('')}</select>
+      squads.innerHTML = `<select class="preset-pick"><option value="">Saved squads…</option>${savedOptions(
+        list,
+        this.squadId,
+        (s) => `${s.name} (${blurb(s)})`,
+      )}</select>
         <button class="preset-save" title="Save a squad now on the board under a name">Save</button>
         <button class="preset-del" title="${
           !chosen
