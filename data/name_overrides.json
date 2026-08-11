@@ -313,6 +313,14 @@
     }
   },
   "traits": {
+    "LPA-19": {
+      "en": "· Recover 1 Link at the end of each round.",
+      "source": "publisher parts list, UN Pilot EN sheet (1.02). Same rule as ours, which was missing the leading bullet and the full stop that every other trait in the data carries."
+    },
+    "ZPA-36": {
+      "en": "· Once per round, during the Command Phase, the piloted Mech may spend 1 Command Token to restore 1 Link to an Ally Mech.",
+      "source": "publisher parts list, GoF Pilots En sheet (1.02), QR 36 'Adjustment'. Fixes the bundle's 'Cmmand Token' typo AND takes the official text's subject with it: ours read 'may consume', naming nobody, where the official names the piloted Mech. Two deliberate departures from the sheet - it writes 'Command Stage', a term that appears NOWHERE in the rulebook (the digests say 'Command Phase' 30 times and 'Command Stage' zero), so the rulebook's term is kept; and 'the' is added before 'piloted Mech' for grammar."
+    },
     "XPA-59": {
       "en": "Every combatant’s combat prosthetic carries an LK-series implant, so the LUKAS system can reach it remotely.",
       "source": "translated"
