@@ -90,6 +90,18 @@ export function boardFingerprint(state: GameState): string {
       [...(t.expiring ?? [])].sort(),
       t.droneBackpack ?? null,
       t.mech ? keyed(t.mech as unknown as Record<string, unknown>) : null,
+      // Repaired Tokens are commanded (repairPart/breakRepaired) and READ BACK
+      // by check() on both, so a drift makes one client refuse a repair the
+      // other accepted.
+      [...(t.repairedSlots ?? [])].sort(),
+      // Who last destroyed a Part of this Mech. Commanded by applyPenetration
+      // and read by the End Phase Integrity-Loss removal to decide who scores
+      // the kill (P4) — so a drift here does not just desync, it awards the VP
+      // to different sides on the two boards.
+      t.lastDamagedBy ? `${t.lastDamagedBy.side}:${t.lastDamagedBy.uid}` : null,
+      // NOT hashed, deliberately: `label` and `log` are display, `timing` is
+      // secret until the reveal, and `aerial`/`barricade` are re-derived from
+      // the card by migrateState so they cannot drift while cardId agrees.
       // Deliberately no `timing`: a dial is secret until both squads reveal
       // (3.3), so the two clients hold different ones and are meant to.
     ]);

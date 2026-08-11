@@ -130,6 +130,19 @@ check('a token showing its red face is caught', boardFingerprint(aged) !== board
 const laden = board();
 laden.tokens[0].droneBackpack = '013';
 check('a Drone\'s Load is caught', boardFingerprint(laden) !== boardFingerprint(board()), true);
+// Found 2026-08-11 while closing D7: both of these are commanded AND read back
+// by rules, and both were missed by the first fingerprint sweep the same day.
+const repaired = board();
+repaired.tokens[0].repairedSlots = ['leftHand'];
+check('a Repaired Token is caught — check() reads it on both seats',
+  boardFingerprint(repaired) !== boardFingerprint(board()), true);
+const credited = board();
+credited.tokens[1].lastDamagedBy = { side: 's1', uid: 1 };
+const credited2 = board();
+credited2.tokens[1].lastDamagedBy = { side: 's2', uid: 2 };
+check('and so is the kill credit, which decides who scores an Integrity-Loss removal',
+  boardFingerprint(credited) !== boardFingerprint(credited2), true);
+
 const armed = board();
 armed.tokens[0].mech = { torso: 'T1', chasis: 'C1' };
 const rearmed = board();
