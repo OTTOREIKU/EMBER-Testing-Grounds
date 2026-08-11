@@ -225,6 +225,52 @@ export function maneuverIsSilent(data: GameData, t: Token): boolean {
     && (card.keywords ?? []).some(SILENCE_KEYWORD));
 }
 
+// ---------- Who breaks Optical Camouflage by standing next to it ----------
+//
+// 4.12.2's third Reveal trigger: "After any Movement that ends with an Enemy
+// Unit in Contact with the Base of the camouflaged Unit." Three rulings decide
+// what that sentence actually covers, and none of them is guessable from it:
+//
+// I4: "any Movement" is an EXPANDED concept — a Movement Action or Maneuver by
+// either unit, FORCED Movement of either (Crush, Drag, Knockback), and a
+// Projectile's Launch/Deploy/Lay counted as movement from carrier to landing.
+// So it is genuinely a question about the board, not about who did what, and
+// deriving it from the board is the correct shape rather than a shortcut.
+//
+// I23 names the enemy that qualifies: one "neither Airborne nor under Optical
+// Camouflage". That is where the two exclusions come from.
+//
+// I10 is the trap. A landed Beacon or Mine DOES break camouflage by Contact —
+// but this app models every Deployable as Aerial so units can share its Grid
+// (E10's "units may be placed above them"), so the plain Airborne test throws
+// away exactly the units I10 names. The printed Deployable keyword is what
+// tells a landed Beacon from a Missile in flight, and I10 excludes Missiles by
+// name, so the keyword IS the ruling rather than a proxy for it.
+const DEPLOYABLE_KEYWORD = '设置物';
+
+export function isDeployable(c: Card): boolean {
+  return (c.keywords ?? []).some((k) => (k.inline ?? k.key ?? '').trim() === DEPLOYABLE_KEYWORD)
+    || isBarricade(c);
+}
+
+// Whether this unit standing in Contact would break an enemy's camouflage.
+export function breaksCamoByContact(data: GameData, o: Token): boolean {
+  if (o.deployed === false) return false;
+  if (statusCount(o.statuses, 'camouflage') > 0) return false;      // I23
+  if (!o.aerial) return true;
+  const card = data.byId.get(o.cardId ?? '');
+  return !!o.barricade || (!!card && isDeployable(card));           // I10
+}
+
+// The enemy whose Contact ends a camouflaged unit's hiding, or nothing.
+// One home for both pages: this used to be written out twice and the two had
+// already drifted — the Match Centre honoured I10 and freeplay did not.
+export function camoBrokenBy(data: GameData, tokens: Token[], t: Token): Token | undefined {
+  if (statusCount(t.statuses, 'camouflage') === 0 || t.deployed === false) return undefined;
+  return tokens.find((o) => o.uid !== t.uid && o.side !== t.side
+    && breaksCamoByContact(data, o) && inContact(t, o));
+}
+
 export function canActivateCamo(data: GameData, t: Token): boolean {
   for (const { card } of tokenCards(data, t)) {
     for (const a of card.actions ?? []) {
@@ -1213,6 +1259,45 @@ export function maxLink(data: GameData, t: Token): number {
 // dice — that clause is written about "the Unit" — but its printed Move is not
 // doubled. 18 of the 44 Drones print Mobility, so getting this wrong moved most
 // of them at twice their range.
+// ---------- Maneuver bonuses from Parts (FAQ E21) ----------
+//
+// The JP5 Mobility Enhancement Pack (538) is a BACKPACK reading "The Move
+// attribute of this mech's lower limbs +1", and the audit had it recorded as
+// "no part grants a Maneuver bonus" — while 538 ships in the RDL/UN starter
+// preset, so the number was wrong in the first squad a new player loads.
+//
+// E21 pins the ORDER, which is the whole ruling: with the LM231 Standard
+// Chassis at Move 1, Mobility Stance gives (1+1)x2 = 4 and NOT 1x2+1 = 3. So
+// the bonus joins the base before the Stance doubles it.
+//
+// Read off the printed text: 538 carries no gameRules, and the FAQ paraphrases
+// the same card as "The Maneuver distance of this mech +1", so both wordings
+// are matched rather than the one this printing happens to use.
+//
+// TWO guards, because the loose version of this caught three cards it must not.
+// The RL-08's "Jet Dash" reads "[Moving in Straight Line] +2 grids" — that is a
+// Moving ACTION's own reach (Range 3 on the card, and the subject of FAQ E16),
+// not a standing bonus to the Mech's Maneuver. So the grant has to be a PASSIVE
+// the Mech simply has, and it has to name the Move ATTRIBUTE or the Maneuver
+// DISTANCE rather than "+N grids", which is how an Action states its own range.
+const MOVE_BONUS_EN = /(?:Move\s+attribute|Maneuver(?:\s+distance)?)[^.\n]{0,40}?\+\s*(\d+)/i;
+const MOVE_BONUS_ZH = /(?:move\s*属性|机动距离|移动力)[^。\n]{0,20}?\+\s*(\d+)/i;
+
+export function maneuverBonus(data: GameData, t: Token): number {
+  if (t.kind !== 'mech') return 0;
+  let bonus = 0;
+  for (const { slot, card } of tokenCards(data, t)) {
+    // A wrecked Part grants nothing, same as every other Part-borne rule here.
+    if ((t.partStates?.[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
+    for (const a of card.actions ?? []) {
+      if (a.type !== 'Passive') continue;
+      const m = MOVE_BONUS_EN.exec(a.description?.en ?? '') ?? MOVE_BONUS_ZH.exec(a.description?.zh ?? '');
+      if (m) bonus += Number(m[1]);
+    }
+  }
+  return bonus;
+}
+
 export function maneuverRange(data: GameData, t: Token): number {
   // A destroyed Chassis cannot carry the Mech anywhere: the rulebook lists it
   // with Immobilized as "currently unable to move" (3.4.4), and FAQ E4 keeps
@@ -1227,12 +1312,19 @@ export function maneuverRange(data: GameData, t: Token): number {
   // when it has one" cannot catch anything else.
   const torso = t.kind === 'mech' && t.mech?.torso ? data.byId.get(t.mech.torso) : undefined;
   const chassis = t.kind === 'mech' && t.mech?.chasis ? data.byId.get(t.mech.chasis) : undefined;
-  const card = torso?.move ? torso : (chassis ?? data.byId.get(t.cardId));
-  const base = card?.move ?? 0;
+  const transformed = !!torso?.move;
+  const card = transformed ? torso : (chassis ?? data.byId.get(t.cardId));
+  // A Part bonus is printed as "+1 to this mech's LOWER LIMBS", so it rides the
+  // chassis. A transformed core moves on its own value with the legs out of the
+  // picture, so the two do not stack - the number the JP5 raises is not the one
+  // Cruise Mode is using.
+  const base = (card?.move ?? 0) + (transformed ? 0 : maneuverBonus(data, t));
   // E23's point: a Stance-LOCKED unit still takes the Stance movement effects,
   // so Cruise Mode doubles to 6 in Mobility like anything else. Drones never
   // double (Maneuver is Mech-only) - White Dwarf in Cruise is a Mech in a mode,
-  // not a Drone, so it qualifies.
+  // not a Drone, so it qualifies. E21 fixes the ORDER against this line: the
+  // Part bonus is already in `base`, so Mobility gives (1+1)x2 = 4 rather than
+  // doubling first for 3.
   return t.kind === 'mech' && t.stance === 'mobility' ? base * 2 : base;
 }
 

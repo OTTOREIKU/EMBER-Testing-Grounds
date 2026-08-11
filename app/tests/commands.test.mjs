@@ -902,6 +902,37 @@ check('launching a made-up card is refused', C.check(data, wl, { kind: 'launch',
 C.apply(data, wl, { kind: 'despawn', seat: 's1', uid: 1, targetUid: 50 });
 check('a despawn takes it back off', wl.tokens.length, 1);
 
+// ---------- Owed reactions: Emergency Smoke (FAQ B7/D10) ----------
+//
+// The ATTACKING client queues the debt and only the DEFENDER may answer it,
+// which is the whole reason it is shared state rather than a local prompt.
+const wrx = world([
+  mech(1, 's1', { mech: { torso: 'T1', pilot: 'P1' } }),
+  mech(2, 's2', { mech: { torso: 'T1', pilot: 'P1' }, ammo: { REACT: 1 } }),
+], 2);
+const queueR = { kind: 'queueReactions', seat: 's1', items: [{ uid: 2, actionId: 'REACT', count: 2, range: 1 }] };
+check('the attacker may queue a reaction against the other squad', C.check(data, wrx, queueR).ok, true);
+check('but not for a unit that is not on the board',
+  C.check(data, wrx, { ...queueR, items: [{ uid: 99, actionId: 'REACT', count: 2, range: 1 }] }).ok, false);
+C.apply(data, wrx, queueR);
+check('the debt lands in shared script state', wrx.script.reactions, [{ uid: 2, actionId: 'REACT', count: 2, range: 1 }]);
+// Actor-scoped, so check() gives the ownership rule for free.
+check('the attacker may NOT answer it',
+  C.check(data, wrx, { kind: 'resolveReaction', seat: 's1', uid: 2, actionId: 'REACT' }).ok, false);
+check('the defender may', C.check(data, wrx, { kind: 'resolveReaction', seat: 's2', uid: 2, actionId: 'REACT' }).ok, true);
+C.apply(data, wrx, { kind: 'resolveReaction', seat: 's2', uid: 2, actionId: 'REACT' });
+check('answering clears the debt', wrx.script.reactions, []);
+// Cleared and spent in ONE command, so a drop between them cannot leave a free
+// Emergency Smoke behind.
+check('and spends the use in the same breath', wrx.tokens[1].ammo.REACT, 0);
+check('a debt already paid cannot be paid twice',
+  C.check(data, wrx, { kind: 'resolveReaction', seat: 's2', uid: 2, actionId: 'REACT' }).ok, false);
+// Appended, not replaced: a second attack can land while an earlier reaction
+// is still unanswered and neither is forfeit.
+C.apply(data, wrx, queueR);
+C.apply(data, wrx, { kind: 'queueReactions', seat: 's1', items: [{ uid: 2, actionId: 'OTHER', count: 1, range: 0 }] });
+check('a second debt queues behind the first', wrx.script.reactions.map((r) => r.actionId), ['REACT', 'OTHER']);
+
 // ---------- Prototype Blink (FAQ E17/E20) ----------
 
 const wbl = world([

@@ -3,7 +3,7 @@ import type { GameData } from './data';
 import { actionIconUrl, cardName, isAerial, secondaryImageUrl, squadLabel, unitSize } from './data';
 import { Board, footprint, snapPlacement, type BoardCallbacks } from './board';
 import { printedDeployment, resolveZoneSetData } from './overlays';
-import { autoDetonationsOwed, autoNeutralTargets, blinkTargets, isPositionSwap, electronicOrigins, loanedParts, minesLayable, minesOwed, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, isSilentAction, maneuverIsSilent, canActivateCamo, chargeableSlots, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
+import { autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, isPositionSwap, electronicOrigins, loanedParts, minesLayable, minesOwed, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, isSilentAction, maneuverIsSilent, canActivateCamo, chargeableSlots, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
 import { resolveCounterRoll, tallyCounter } from './combat';
 import { tacticFitsPhase, tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { inContact, canStandIn, attackDirection, crushTargets, dissipationFor, extendPath, knockbackPath, LG, losBetween, losNote, pathCost, protectionFor, rangeBetween, reachableGrids, standingSpot, type LargeGrid } from './rules';
@@ -1281,6 +1281,10 @@ function panelHtml(ctx: HudCtx): string {
   // is something drawable. Dead debt, whose Part or target has left the board,
   // must never take the panel over and strand the table.
   if (interceptNow || interceptPick || owedItems(ctx).length) return interceptPanel(ctx);
+  // A reaction the DEFENDER owes itself for having been shot at — Emergency
+  // Smoke. It waits in shared state until their own client answers it, which
+  // is why it takes the panel here rather than on the attacker's screen.
+  if (reactionsOwed(ctx).length) return reactionPanel(ctx);
   // A broken camouflage waits for its owner's say-so, but never blocks the
   // other player's view of the phase.
   if (revealsOwed(ctx).some((x) => mine(ctx, x.t.side))) return revealPanel(ctx);
@@ -1668,6 +1672,57 @@ function autoBoomPanel(ctx: HudCtx): string {
        <div class="tp-foot"><button class="bigbtn" data-minego="${x.t.uid}" data-mineact="${esc(x.actionId)}">Resolve the Detonation (4.7.6)</button></div>`;
 }
 
+// ---------- Owed reactions: Emergency Smoke (FAQ B7/D10) ----------
+//
+// The attacker's client queued these into `script.reactions` when the whole
+// Action finished; only the DEFENDER's client may answer one, because placing
+// the Screens and spending the use are commands on their own unit.
+function reactionsOwed(ctx: HudCtx): { t: Token; r: { uid: number; actionId: string; count: number; range: number } }[] {
+  const owed = ensureScript(ctx.state).reactions ?? [];
+  return owed
+    .map((r) => ({ t: ctx.state.tokens.find((x) => x.uid === r.uid)!, r }))
+    // Dead debt — the unit has left the board entirely — must never strand the
+    // table, the same guard the Interception queue carries.
+    .filter((x) => !!x.t && mine(ctx, x.t.side));
+}
+
+function reactionPanel(ctx: HudCtx): string {
+  const { t, r } = reactionsOwed(ctx)[0];
+  const card = ctx.data.byId.get(t.cardId ?? '');
+  const what = (card?.actions ?? []).find((a) => a.id === r.actionId);
+  const name = what?.name?.en || what?.name?.zh || 'Emergency Smoke';
+  return head('Your move', `${esc(t.label)}: ${esc(name)}`,
+    `${esc(t.label)} was attacked, so it may place ${r.count} Smoke Screen${r.count === 1 ? '' : 's'} within Range ${r.range}. Every attack in that Action has already resolved, so these cannot shield anyone else it shot at (FAQ B7).`, true)
+    + `<div class="tp-body"><p class="tp-dim">The card allows this even if the unit did not survive (FAQ D10). Taking it spends its one use.</p></div>
+       <div class="tp-foot"><button class="bigbtn" data-reactgo="${t.uid}:${esc(r.actionId)}">Place them</button>
+       <button class="bigbtn ghost2" data-reactskip="${t.uid}:${esc(r.actionId)}" style="margin-top:6px">Skip it</button></div>`;
+}
+
+// Both answers clear the debt; only one opens the picker. Taking it spends the
+// use in the same command that clears it, so a drop mid-placement cannot leave
+// a free Emergency Smoke behind.
+function answerReaction(ctx: HudCtx, key: string, place: boolean): void {
+  const [uidRaw, actionId] = key.split(':');
+  const uid = Number(uidRaw);
+  const t = ctx.state.tokens.find((x) => x.uid === uid);
+  const r = (ensureScript(ctx.state).reactions ?? []).find((x) => x.uid === uid && x.actionId === actionId);
+  if (!t || !r) { ctx.refresh(); return; }
+  if (!ctx.send({ kind: 'resolveReaction', seat: t.side, uid, actionId }).ok) { ctx.refresh(); return; }
+  if (!place) {
+    ctx.noteNow(`${t.label} declines its Emergency Smoke.`);
+    ctx.refresh();
+    return;
+  }
+  startSmokePlan({
+    side: t.side,
+    count: r.count,
+    connected: false,
+    range: { c: Math.floor(t.col / 3), r: Math.floor(t.row / 3), max: r.range },
+    label: `${t.label}: Emergency Smoke`,
+  });
+  ctx.refresh();
+}
+
 function revealsOwed(ctx: HudCtx): { t: Token; key: string; why: string }[] {
   const s = ctx.state;
   const sc = ensureScript(s);
@@ -1691,16 +1746,9 @@ function revealsOwed(ctx: HudCtx): { t: Token; key: string; why: string }[] {
     // including a landed enemy Mine or Beacon (I10). If the camouflage was
     // activated AFTER the contact began, that is not "ending Movement in
     // Contact" and owes nothing (I14) - the copy says so and Stay hidden is
-    // the answer there.
-    const toucher = s.tokens.find((o) => {
-      if (o.side === t.side || o.uid === t.uid || o.deployed === false) return false;
-      if (statusCount(o.statuses, 'camouflage') > 0) return false;
-      const card = ctx.data.byId.get(o.cardId ?? '');
-      const landedDeployable = o.kind === 'projectile'
-        && (!!o.barricade || /mine|beacon|地雷|信标/i.test(`${card?.name?.en ?? ''}${card?.name?.zh ?? ''}`));
-      if (o.aerial && !landedDeployable) return false;
-      return inContact(t, o);
-    });
+    // the answer there. The reading itself lives in units.ts now: this page
+    // matched a card NAME for the I10 case, which freeplay never did at all.
+    const toucher = camoBrokenBy(ctx.data, s.tokens, t);
     if (toucher) out.push({ t, key: `${t.uid}:touch:${toucher.uid}`, why: `is in Contact with ${toucher.label}` });
   }
   return out.filter((x) => !revealDismissed.has(x.key));
@@ -2506,6 +2554,11 @@ function routeAction(ctx: HudCtx, t: Token, a: CardAction, ga?: ReturnType<typeo
   // If the Grid it comes up in is occupied, the derived blast list has it
   // detonate on the spot (M18.4).
   if (unfoldsOwed(ctx.data, [t]).some((x) => x.actionId === a.id)) {
+    // Nothing to wait on: the Unfold happens here, so it pays here. Returning
+    // true without this left the activation sitting in pendingAction until
+    // some later Action dropped it, which is how the folded Pholcus could
+    // Unfold and then still act - freeplay's done(true) always charged it.
+    commitAction(ctx);
     ctx.send({ kind: 'unfold', seat: t.side, uid: t.uid });
     ctx.noteNow(`${t.label} Unfolds into its Drone form. It cannot act until next round - the Automatic Phase has already passed (FAQ M8).`);
     return true;
@@ -3891,6 +3944,8 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     else { m.queue.shift(); advanceCrush(ctx); ctx.refresh(); }
   });
   on('[data-act="smokestop"]', () => finishSmokePlan(ctx));
+  on('[data-reactgo]', (el) => answerReaction(ctx, el.dataset.reactgo!, true));
+  on('[data-reactskip]', (el) => answerReaction(ctx, el.dataset.reactskip!, false));
   // ---------- Forced Movement ----------
   on('[data-shovepick]', (el) => {
     if (shovePlan) shovePlan = { ...shovePlan, targetUid: Number(el.dataset.shovepick) };

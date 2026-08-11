@@ -57,12 +57,16 @@ const opp = { uid: 7, timing: 'firing', maneuver: 0, action: 1, extras: [], mane
 // survive a reload with its spent ticks and the extra flag intact.
 const oppStack = [{ uid: 8, timing: 'melee', extra: true, maneuver: 1, action: 0, extras: [], maneuvered: false, moved: false, started: true, overload: 0, performed: ['a2'], spentExtras: [] }];
 const intercepts = [{ uid: 3, actionId: 'PRDR-101_C', targetUid: 9 }];
+// A defender's owed Emergency Smoke (FAQ B7). It lives in shared state because
+// the ATTACKING client queues it and only the DEFENDER's may answer it, so a
+// reload that dropped it would hand out a free reaction or lose one.
+const reactions = [{ uid: 5, actionId: '546_B', count: 2, range: 1 }];
 const endDone = ['2:end:remove', '2:end:tokens'];
 // Every value here is deliberately NOT the default, so a field that
 // normaliseScript forgets to carry across fails rather than coincidentally
 // matching what it would have defaulted to.
 const counter = { initiatorUid: 7, responderUid: 9, actionId: 'EWA', initRoll: [0, 3], respRoll: null, initFocused: true, respFocused: false };
-const live = { turn: 's2', acted: [7, 8], extraOpps: [8], commanded: [9], freeCommand: [], passed: ['s1'], stage: '2:3', mode: 'hidden', strict: true, commits: { s1: 'deadbeef' }, revealed: ['s2'], seats: { s1: 'local', s2: 'remote' }, opp, oppStack, intercepts, counter, endDone };
+const live = { turn: 's2', acted: [7, 8], extraOpps: [8], commanded: [9], freeCommand: [], passed: ['s1'], stage: '2:3', mode: 'hidden', strict: true, commits: { s1: 'deadbeef' }, revealed: ['s2'], seats: { s1: 'local', s2: 'remote' }, opp, oppStack, intercepts, reactions, counter, endDone };
 
 // This fixture has lagged behind ScriptState four times now, each costing a
 // confusing deep-equal diff. Naming the missing field turns that into an
@@ -80,6 +84,11 @@ check('a junk opportunity is dropped rather than half-restored', normaliseScript
 check('owed interceptions survive', normaliseScript(live, 's1').intercepts, intercepts);
 check('a missing list reads back empty', normaliseScript({ ...live, intercepts: undefined }, 's1').intercepts, []);
 check('half-formed entries are dropped', normaliseScript({ ...live, intercepts: [{ uid: 1 }, ...intercepts] }, 's1').intercepts, intercepts);
+// Same for an owed reaction: it is a debt one client raised and the other must
+// pay, so losing it on a rejoin is a rule silently skipped.
+check('owed reactions survive', normaliseScript(live, 's1').reactions, reactions);
+check('a missing reaction list reads back empty', normaliseScript({ ...live, reactions: undefined }, 's1').reactions, []);
+check('half-formed reactions are dropped', normaliseScript({ ...live, reactions: [{ uid: 1 }, ...reactions] }, 's1').reactions, reactions);
 // A Counter-roll is a live two-player exchange, so a reload mid-roll must not
 // lose whose dice are already down (4.11.2).
 check('an open counter-roll survives', normaliseScript(live, 's1').counter, counter);

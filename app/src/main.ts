@@ -43,9 +43,9 @@ import { installTooltip, preloadCards } from './tooltip';
 import { PHASES, RoundTracker } from './tracker';
 import { PlayGuide } from './playguide';
 import type { Card, CardAction, DiceData, DieColor, Facing, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, StatusDef, TerrainPiece, Timing, Token } from './types';
-import { addStatus, SCALES, statusCount, statusesFor, STATUSES } from './types';
+import { addStatus, normaliseScript, SCALES, statusCount, statusesFor, STATUSES } from './types';
 import { actionIdOf } from './ticks';
-import { autoDetonationsOwed, autoNeutralTargets, blinkTargets, isPositionSwap, loanedParts, minesLayable, minesOwed, multiTargetLimit, unfoldsOwed, repairSpec, autoTargetsFor, isSilentAction, maneuverIsSilent, chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, type Resupply, resupplyOf, SLOT_LABEL, interceptLeft, interceptsOwed, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf, type AttackReaction } from './units';
+import { autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, isPositionSwap, loanedParts, minesLayable, minesOwed, multiTargetLimit, unfoldsOwed, repairSpec, autoTargetsFor, isSilentAction, maneuverIsSilent, chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, type Resupply, resupplyOf, SLOT_LABEL, interceptLeft, interceptsOwed, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf, type AttackReaction } from './units';
 import { registerOffline } from './offline';
 import { battlefieldLocked, countHits, firstPlayerFrom, newSetup, normaliseSetup, tasksLocked, type SetupState } from './setup';
 import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
@@ -163,7 +163,16 @@ async function init() {
   // because under Multi-Target the helper holds it back until every attack has
   // resolved (FAQ B7) — by the time this runs, the ordering is already right.
   attackHelper.onReaction = (defender, reaction) => {
-    pendingReactions.push({ defender, reaction });
+    // A BRAND-NEW board that has never been saved carries no script yet -
+    // every loaded board gets one from migrateState, and every reader already
+    // treats "no script" as the default script, but queueReactions' apply
+    // stores the debt IN the script, so it has to exist. Materialise the same
+    // default a reload would produce.
+    state.script ??= normaliseScript(undefined, state.round.firstPlayer);
+    perform(data, state, {
+      kind: 'queueReactions', seat: defender.side,
+      items: [{ uid: defender.uid, actionId: reaction.actionId, count: reaction.smoke.count, range: reaction.smoke.range }],
+    });
     renderReactionPrompt();
   };
 
@@ -943,7 +952,7 @@ async function init() {
         { id: 's1', label: `I played ${s1}` },
         { id: 's2', label: `I played ${s2}` },
         { id: 'neither', label: 'I played both sides' },
-        { id: 'cancel', label: 'Do not record it' },
+        { id: 'cancel', label: 'Do not record it', cancel: true },
       ],
     });
     if (!pick || pick === 'cancel') return;
@@ -1123,10 +1132,14 @@ async function init() {
     });
   }
 
+  // Through the command for the same reason Charge is: `t.intercept` is in the
+  // board fingerprint and check() reads it to refuse an Interception with no
+  // Token left, so spending one by hand left an online game disagreeing about
+  // what a Part could still do.
   function spendIntercept(t: Token, actionId: string, name: string): void {
     const left = t.intercept?.[actionId] ?? 0;
     if (left <= 0) return;
-    t.intercept![actionId] = left - 1;
+    if (!perform(data, state, { kind: 'spendIntercept', seat: t.side, uid: t.uid, actionId }).ok) return;
     logTo(
       t,
       left - 1 === 0
@@ -1724,9 +1737,10 @@ async function init() {
       });
       return done(false);
     }
-    // The trailing Cancel is not decoration: Esc and a backdrop click both fire
-    // the LAST choice, so a bare list of targets would teleport into whichever
-    // one happened to be last.
+    // The Cancel is marked, so Escape and a backdrop click land on it rather
+    // than on a target. Unmarked, they now resolve null and this returns
+    // done(false) anyway - the marker is what makes the button they hit the
+    // one the player can see.
     const pickId = targets.length === 1 ? String(targets[0].uid) : await choiceDialog({
       title: `${what}: exchange with which Mech?`,
       body: 'A Ground Mech of the same size within range, on either side. This is Teleportation, so terrain and distance in between do not matter (FAQ E20).',
@@ -1735,7 +1749,7 @@ async function init() {
           id: String(o.uid),
           label: `${o.label}${o.side === t.side ? ' (ally)' : ''} — ${gridRef(Math.floor(o.col / 3), Math.floor(o.row / 3))}`,
         })),
-        { id: '', label: 'Cancel' },
+        { id: '', label: 'Cancel', cancel: true },
       ],
     });
     const target = targets.find((o) => String(o.uid) === pickId);
@@ -1749,7 +1763,7 @@ async function init() {
           { id: '0', label: 'North' }, { id: '1', label: 'East' },
           { id: '2', label: 'South' }, { id: '3', label: 'West' },
           { id: String(who.facing), label: 'Leave it as it was' },
-          { id: '', label: 'Cancel' },
+          { id: '', label: 'Cancel', cancel: true },
         ],
       });
       return id === null || id === '' ? null : (Number(id) as Facing);
@@ -1930,8 +1944,10 @@ async function init() {
       onChanged();
       return done(true);
     }
-    pick.accessed = t.side;
-    state.tasks = tasks;
+    // Through the command: a Terminal turned face-down is worth VP at the End
+    // Phase, so setting `accessed` in place scored a different board on the
+    // other client.
+    if (!perform(data, state, { kind: 'accessTerminal', seat: t.side, uid: t.uid, itemId: pick.id }).ok) return done(false);
     logTo(t, `Remote Access succeeded on the ${zoneName(pick.zone)} Terminal, which is now face-down for the rest of the round.`);
     onChanged();
     done(true);
@@ -1940,11 +1956,14 @@ async function init() {
   // Charge (4.14). The token starts face-down; the Charge Action flips one Part's
   // token face-up, and an Action whose text is conditional on [Charged] may flip
   // it back down to apply that effect.
+  //
+  // Through the command, never by hand. This used to mutate `t.charge` directly,
+  // which is the shape that has now bitten four times (Black Boxes, Task
+  // designations, the Tactics hand, this): the flip is a SHARED fact - it is in
+  // the board fingerprint and check() reads it to refuse a second Charge - so a
+  // local mutation left an online game disagreeing about what was Charged.
   function setCharge(t: Token, slot: string, on: boolean): void {
-    const held = new Set(t.charge ?? []);
-    if (on) held.add(slot);
-    else held.delete(slot);
-    t.charge = held.size ? [...held] : undefined;
+    perform(data, state, { kind: 'setCharge', seat: t.side, uid: t.uid, slot, on });
   }
 
   async function performCharge(t: Token, action: CardAction, done: (ok: boolean) => void): Promise<void> {
@@ -2102,7 +2121,7 @@ async function init() {
             id: String(i),
             label: i === victim.facing ? `${label} (as it stands)` : label,
           })),
-          { id: '', label: 'Leave its facing alone' },
+          { id: '', label: 'Leave its facing alone', cancel: true },
         ],
         stacked: true,
       });
@@ -2199,7 +2218,7 @@ async function init() {
                 id: String(i),
                 label: i === v.facing ? `${label} (as it stands)` : label,
               })),
-              { id: '', label: 'Leave its facing alone' },
+              { id: '', label: 'Leave its facing alone', cancel: true },
             ],
             stacked: true,
           });
@@ -2340,42 +2359,46 @@ async function init() {
     renderSmokeStep();
   }
 
-  // Reactions a defender is owed. A queue rather than a single slot because a
-  // Multi-Target can shoot two units carrying Emergency Smoke, and FAQ B7 makes
-  // both of them wait for the same moment — the end of the whole Action.
-  const pendingReactions: { defender: Token; reaction: AttackReaction }[] = [];
-
+  // Reactions a defender is owed, held in SHARED state rather than a local
+  // array: a Multi-Target can shoot two units carrying Emergency Smoke, FAQ B7
+  // makes both wait for the end of the whole Action, and in a networked game
+  // the debt has to reach the defender's own client — only they may place the
+  // Screens and spend the use. Same queue and same two commands as the Match
+  // Centre, so neither page owns the rule.
   function renderReactionPrompt(): void {
-    if (smokePlacing || !pendingReactions.length) return;
-    const next = pendingReactions.shift()!;
-    const { defender, reaction } = next;
+    if (smokePlacing) return;
+    // In an online freeplay room only the DEFENDER's client may answer — the
+    // other seat's resolveReaction would apply locally and never travel. A
+    // local table has no seat, so both sides prompt as before.
+    const seat = getLocalSeat();
+    const owed = (normaliseScript(state.script, state.round.firstPlayer).reactions ?? [])
+      .map((r) => ({ r, t: state.tokens.find((x) => x.uid === r.uid) }))
+      .find((x) => !!x.t && (!seat || x.t.side === seat));
+    if (!owed?.t) return;
+    const { r, t: defender } = owed;
+    const card = data.byId.get(defender.cardId ?? '');
+    const act = (card?.actions ?? []).find((a) => a.id === r.actionId);
+    const name = act?.name?.en || act?.name?.zh || 'Emergency Smoke';
     void confirmDialog({
-      title: `${defender.label}: ${reaction.name}`,
-      body: `${defender.label} was attacked, so it may place ${reaction.smoke.count} Smoke Screen${
-        reaction.smoke.count === 1 ? '' : 's'
-      } within Range ${reaction.smoke.range}.${
-        reaction.afterDestroyed ? ' The card allows this even if the unit did not survive the attack (FAQ D10).' : ''
-      } Every attack in that Action has already been resolved, so these Screens cannot shield anyone else it shot at (FAQ B7).`,
+      title: `${defender.label}: ${name}`,
+      body: `${defender.label} was attacked, so it may place ${r.count} Smoke Screen${
+        r.count === 1 ? '' : 's'
+      } within Range ${r.range}. The card allows this even if the unit did not survive the attack (FAQ D10). Every attack in that Action has already been resolved, so these Screens cannot shield anyone else it shot at (FAQ B7).`,
       confirmLabel: 'Place them',
       cancelLabel: 'Skip it',
     }).then((go) => {
-      if (!go) { renderReactionPrompt(); return; }
-      const before = (state.smoke ?? []).length;
+      // Either answer clears the debt, and the same command spends the use, so
+      // the offer cannot come back on the next attack.
+      perform(data, state, { kind: 'resolveReaction', seat: defender.side, uid: defender.uid, actionId: r.actionId });
+      if (!go) { onChanged(); renderReactionPrompt(); return; }
       startSmokePlacement({
         side: defender.side,
-        count: reaction.smoke.count,
+        count: r.count,
         connected: false,
-        range: { c: Math.floor(defender.col / 3), r: Math.floor(defender.row / 3), max: reaction.smoke.range },
-        label: `${defender.label}: ${reaction.name}`,
+        range: { c: Math.floor(defender.col / 3), r: Math.floor(defender.row / 3), max: r.range },
+        label: `${defender.label}: ${name}`,
         // Whatever is still queued goes next, one at a time.
         done: () => {
-          // The card prints storage 1, so a use is Ammo and placing anything
-          // spends it — that is what stops the offer repeating every attack.
-          // Only in a local game: networked, the defender's Ammo is not this
-          // client's to command, and the manual chip on the card covers it.
-          if ((state.smoke ?? []).length > before && !getLocalSeat()) {
-            perform(data, state, { kind: 'spendAmmo', seat: defender.side, uid: defender.uid, actionId: reaction.actionId });
-          }
           onChanged();
           renderReactionPrompt();
         },
@@ -2750,23 +2773,23 @@ async function init() {
           logTo(t, `${label} does not apply to a ${t.kind}, so ${t.label} was skipped.`);
           return;
         }
+        // Both directions go through the command layer. A Token is rules-bearing
+        // and fingerprinted — Immobilized zeroes the Dodge pool, Fragile takes
+        // White off it — so a chip toggled by hand never reached the other
+        // client and left the two boards defending differently.
         const at = (t.statuses ?? []).lastIndexOf(pick);
         if (at >= 0 && !def?.stacking) {
-          const list = [...(t.statuses ?? [])];
-          list.splice(at, 1);
-          t.statuses = list;
+          perform(data, state, { kind: 'removeStatus', seat: proj.side, uid: proj.uid, targetUid: t.uid, statusId: pick });
           logTo(t, `${label} removed from ${t.label}.`);
           return;
         }
         const before = t.statuses ?? [];
-        t.statuses = addStatus(before, pick);
-        // A replaced or refreshed Hexagon starts yellow again (FAQ J22).
-        if (STATUSES.find((d) => d.id === pick)?.shape === 'hexagon') {
-          const hexes = new Set(STATUSES.filter((d) => d.shape === 'hexagon').map((d) => d.id));
-          t.expiring = (t.expiring ?? []).filter((x) => !hexes.has(x));
-        }
-        const lost = before.filter((s) => !t.statuses!.includes(s)).map((s) => STATUSES.find((d) => d.id === s)?.label ?? s);
-        const n = t.statuses.filter((x) => x === pick).length;
+        // addStatus's displacement and J22's yellow-face reset both live in the
+        // command, so every seat resolves the same knock-on.
+        perform(data, state, { kind: 'applyStatus', seat: proj.side, uid: proj.uid, targetUid: t.uid, statusId: pick });
+        const after = t.statuses ?? [];
+        const lost = before.filter((s) => !after.includes(s)).map((s) => STATUSES.find((d) => d.id === s)?.label ?? s);
+        const n = after.filter((x) => x === pick).length;
         logTo(
           t,
           `${name} from ${proj.label}: ${t.label} gains ${label}${def?.stacking && n > 1 ? ` (now ×${n})` : ''}${lost.length ? `, losing ${lost.join(' and ')}` : ''}.`,
@@ -3183,7 +3206,7 @@ async function init() {
         choices: [
           { id: 'save', label: 'Save map…', primary: true },
           { id: 'discard', label: 'Discard changes', danger: true },
-          { id: 'stay', label: 'Keep editing' },
+          { id: 'stay', label: 'Keep editing', cancel: true },
         ],
       });
       if (choice === 'save') {
@@ -3282,7 +3305,7 @@ async function init() {
             id: String(t.uid),
             label: `${t.label} · ${t.stance.toUpperCase()}${t.link !== undefined ? ` · Link ${t.link}` : ''}`,
           })),
-          { id: 'cancel', label: 'Cancel' },
+          { id: 'cancel', label: 'Cancel', cancel: true },
         ],
       });
     if (!uid || uid === 'cancel') return;
@@ -3304,7 +3327,7 @@ async function init() {
           stacked: true,
           choices: [
             ...opts.map((o) => ({ id: o.id, label: o.note ? `${o.label} · ${o.note}` : o.label })),
-            { id: 'cancel', label: 'Cancel' },
+            { id: 'cancel', label: 'Cancel', cancel: true },
           ],
         });
       if (!pick || pick === 'cancel') return;
@@ -3398,10 +3421,12 @@ async function init() {
         continue;
       }
       nowCamo.add(t.uid);
-      const touching = state.tokens.some((o) =>
-        o.side !== t.side && o.uid !== t.uid && !o.aerial && o.deployed !== false
-        && statusCount(o.statuses, 'camouflage') === 0 && inContact(t, o));
-      if (!touching) {
+      // One shared derivation rather than the plain !aerial test this used to
+      // run: that threw away landed Mines and Beacons, which FAQ I10 says DO
+      // break camouflage, and the Match Centre had the rule while this page
+      // did not.
+      const toucher = camoBrokenBy(data, state.tokens, t);
+      if (!toucher) {
         camoContactSeen.delete(t.uid);
         continue;
       }
@@ -3409,7 +3434,11 @@ async function init() {
       camoContactSeen.add(t.uid);
       // Freshly camouflaged while already touching: no Reveal (FAQ I14).
       if (!prevCamo.has(t.uid)) continue;
-      promptReveal(t, `${t.label} is in Contact with an enemy unit after a Movement.`);
+      // Forced arrivals Reveal too. I4 counts Crush, Drag and Knockback as
+      // "Movement" for this trigger and I23 spells it out for a Taurus swap,
+      // so the board is the right thing to read and how the unit got here is
+      // deliberately not asked.
+      promptReveal(t, `${t.label} ended a Movement in Contact with ${toucher.label}.`);
     }
     prevCamo = nowCamo;
   }
@@ -4017,7 +4046,6 @@ async function init() {
   }
 
   async function designateFor(side: Side, card: SecondaryTask): Promise<void> {
-    const tasks = normaliseTasks(state.tasks);
     const enemy: Side = side === 's1' ? 's2' : 's1';
     if (card.designate === 'zone') {
       // Only zones the Main Task actually placed are on the board, so the rest
@@ -4031,8 +4059,10 @@ async function init() {
         stacked: true,
         choices: zones.map((z) => ({ id: z.id, label: z.name })),
       });
-      if (id) tasks.zone[side] = id;
-      state.tasks = tasks;
+      // Through the command, like the Match Centre: a designation is a shared
+      // fact that scoring reads, and writing state.tasks by hand never reached
+      // the other client in an online freeplay room.
+      if (id) perform(data, state, { kind: 'designateTask', seat: side, what: 'zone', for: side, zone: id });
       return;
     }
     // The Unit is stored against the side that SCORES the card, so two cards can
@@ -4054,14 +4084,14 @@ async function init() {
       choices: mechs.map((t) => ({ id: String(t.uid), label: t.label })),
     });
     const pick = mechs.find((t) => String(t.uid) === uid);
-    if (pick) tasks.secTarget[side] = pick.uid;
-    state.tasks = tasks;
+    // `for` is the side that SCORES the card, which is not always the side
+    // that owns the named Mech — Behead has the opponent name one of theirs.
+    if (pick) perform(data, state, { kind: 'designateTask', seat: side, what: 'target', for: side, uid: pick.uid });
   }
 
   // The VIP mission needs both Commanders named, one per side, before there is
   // anything to assassinate (5.2.3). Stored by the side that OWNS the Mech.
   async function designateCommanders(): Promise<void> {
-    const tasks = normaliseTasks(state.tasks);
     for (const side of ['s1', 's2'] as Side[]) {
       const mechs = state.tokens.filter((t) => t.kind === 'mech' && t.side === side);
       if (!mechs.length) continue;
@@ -4071,9 +4101,9 @@ async function init() {
         choices: mechs.map((t) => ({ id: String(t.uid), label: t.label })),
       });
       const pick = mechs.find((t) => String(t.uid) === uid);
-      if (pick) tasks.leader[side] = pick.uid;
+      // Each side names its own, so seat and `for` are the same here.
+      if (pick) perform(data, state, { kind: 'designateTask', seat: side, what: 'leader', for: side, uid: pick.uid });
     }
-    state.tasks = tasks;
     onChanged();
   }
 
@@ -4659,7 +4689,7 @@ async function init() {
         ...(terrain ? [{ id: 'terrain', label: `Terrain (${count(terrain, 'piece')})` }] : []),
         ...(zones ? [{ id: 'zones', label: `Zones (${zoneSetLabel(state.zoneSet ?? '')})` }] : []),
         { id: 'all', label: 'Everything', danger: true },
-        { id: 'cancel', label: 'Cancel' },
+        { id: 'cancel', label: 'Cancel', cancel: true },
       ],
     });
     if (!pick || pick === 'cancel') return;
@@ -4761,7 +4791,7 @@ async function init() {
       choices: [
         ...saved.map((s) => ({ id: s.id, label: s.name })),
         { id: 'file', label: 'From a squad file…' },
-        { id: 'cancel', label: 'Cancel' },
+        { id: 'cancel', label: 'Cancel', cancel: true },
       ],
     });
     if (!picked || picked === 'cancel') return;
@@ -4785,7 +4815,7 @@ async function init() {
         choices: [
           { id: 's1', label: squadLabel('s1'), primary: true },
           { id: 's2', label: squadLabel('s2') },
-          { id: 'cancel', label: 'Cancel' },
+          { id: 'cancel', label: 'Cancel', cancel: true },
         ],
       });
       if (picked !== 's1' && picked !== 's2') return;
@@ -4815,7 +4845,7 @@ async function init() {
         choices: [
           { id: 's1', label: squadLabel('s1'), primary: true },
           { id: 's2', label: squadLabel('s2') },
-          { id: 'cancel', label: 'Cancel' },
+          { id: 'cancel', label: 'Cancel', cancel: true },
         ],
       });
       if (picked !== 's1' && picked !== 's2') return;
@@ -4869,7 +4899,7 @@ async function init() {
           choices: [
             { id: 's1', label: squadLabel('s1'), primary: true },
             { id: 's2', label: squadLabel('s2') },
-            { id: 'cancel', label: 'Cancel' },
+            { id: 'cancel', label: 'Cancel', cancel: true },
           ],
         });
         if (picked !== 's1' && picked !== 's2') {

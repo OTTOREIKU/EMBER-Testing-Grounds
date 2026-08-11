@@ -1346,7 +1346,7 @@ export class PlayGuide {
           choices: [
             { id: 'both', label: `Remove ${label} and restore 1 Link`, primary: true },
             { id: 'link', label: 'Keep the Tokens, restore 1 Link only' },
-            { id: 'cancel', label: 'Cancel' },
+            { id: 'cancel', label: 'Cancel', cancel: true },
           ],
           stacked: true,
         });
@@ -1438,8 +1438,8 @@ export class PlayGuide {
       this.render();
       return;
     }
-    // choiceDialog treats the last choice as the Escape and backdrop target, so
-    // the cancel is spelled out rather than left to whichever Mech sorts last.
+    // The cancel is spelled out AND marked, so Escape lands on it rather than
+    // on whichever Mech sorts last.
     const id = await choiceDialog({
       title: 'Coordinate: which Ally Mech?',
       body: `That Mech pays ${g.linkCost} Link and IMMEDIATELY takes a complete Extra Action Opportunity - it acts now, and this Mech continues afterwards (FAQ K21).`,
@@ -1528,7 +1528,7 @@ export class PlayGuide {
             body: `${row.action.name?.en || row.action.id} is not a Silent action, so under 4.12.2 the unit Reveals. Reveal movement up to its Stealth value may follow.`,
             choices: [
               { id: 'reveal', label: 'Reveal it (4.12.2)', primary: true },
-              { id: 'keep', label: 'Keep it hidden (house rule)' },
+              { id: 'keep', label: 'Keep it hidden (house rule)', cancel: true },
             ],
           }).then((id) => {
             if (id !== 'reveal') return;

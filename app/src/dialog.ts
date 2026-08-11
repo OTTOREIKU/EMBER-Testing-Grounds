@@ -6,6 +6,9 @@ export interface DialogChoice {
   image?: string;
   disabled?: boolean;
   note?: string;
+  // What Escape and a backdrop click select. Without one they select NOTHING
+  // and the dialog resolves null - see the note on `open`.
+  cancel?: boolean;
 }
 
 interface BaseOpts {
@@ -39,7 +42,14 @@ function bodyHtml(o: BaseOpts): string {
   return art + text + list;
 }
 
-function open(inner: string, wire: (panel: HTMLElement, close: () => void) => void): void {
+// Escape and a backdrop click both select the `[data-cancel]` button, and that
+// marker is now DELIBERATE rather than positional. It used to be stamped on the
+// last choice whatever that was, so every picker built as a bare list of
+// targets carried a silent "choose the last one" hotkey - press Escape over a
+// Prototype Blink target list and the Taurus teleported into whichever unit
+// happened to sort last. A dialog with nothing marked closes and resolves null,
+// which every caller already treats as "no choice made".
+function open(inner: string, wire: (panel: HTMLElement, close: () => void) => void, bail?: () => void): void {
   const back = document.createElement('div');
   back.className = 'dlg-back';
   back.innerHTML = `<div class="dlg-panel" role="dialog" aria-modal="true">${inner}</div>`;
@@ -48,14 +58,20 @@ function open(inner: string, wire: (panel: HTMLElement, close: () => void) => vo
     document.removeEventListener('keydown', onKey, true);
     back.remove();
   };
+  const dismiss = () => {
+    const btn = panel.querySelector<HTMLButtonElement>('[data-cancel]');
+    if (btn) { btn.click(); return; }
+    close();
+    bail?.();
+  };
   const onKey = (ev: KeyboardEvent) => {
     if (ev.key !== 'Escape') return;
     ev.stopPropagation();
     ev.preventDefault();
-    panel.querySelector<HTMLButtonElement>('[data-cancel]')?.click();
+    dismiss();
   };
   back.addEventListener('pointerdown', (ev) => {
-    if (ev.target === back) panel.querySelector<HTMLButtonElement>('[data-cancel]')?.click();
+    if (ev.target === back) dismiss();
   });
   document.addEventListener('keydown', onKey, true);
   document.body.appendChild(back);
@@ -65,20 +81,24 @@ function open(inner: string, wire: (panel: HTMLElement, close: () => void) => vo
 
 export function choiceDialog(o: ChoiceOpts): Promise<string | null> {
   return new Promise((resolve) => {
+    // A single choice IS its own dismissal - an alert's "Got it" has nothing
+    // else it could mean - so it is marked automatically. Anything longer must
+    // say which choice is the safe one, or Escape simply resolves null.
+    const soleChoice = o.choices.length === 1;
     const buttons = o.choices
       .map(
-        (c, i) =>
+        (c) =>
           `<button data-id="${esc(c.id)}"${c.primary ? ' class="dlg-primary" data-autofocus' : c.danger ? ' class="dlg-danger"' : ''}${
-            i === o.choices.length - 1 ? ' data-cancel' : ''
+            c.cancel || soleChoice ? ' data-cancel' : ''
           }${c.image ? ` data-tip-img="${esc(c.image)}"` : ''}${
             c.disabled ? ` disabled title="${esc(c.note ?? '')}"` : ''
           }>${esc(c.label)}</button>`,
       )
       .join('');
+    let settled = false;
     open(
       `<h3 class="dlg-title">${esc(o.title)}</h3>${bodyHtml(o)}<div class="dlg-actions${o.stacked ? ' dlg-stacked' : ''}">${buttons}</div>`,
       (panel, close) => {
-        let settled = false;
         panel.querySelectorAll<HTMLButtonElement>('.dlg-actions button').forEach((b) =>
           b.addEventListener('click', () => {
             if (settled) return;
@@ -87,6 +107,11 @@ export function choiceDialog(o: ChoiceOpts): Promise<string | null> {
             resolve(b.dataset.id ?? null);
           }),
         );
+      },
+      () => {
+        if (settled) return;
+        settled = true;
+        resolve(null);
       },
     );
   });
@@ -101,7 +126,9 @@ export async function confirmDialog(o: BaseOpts & {
     ...o,
     choices: [
       { id: 'ok', label: o.confirmLabel ?? 'OK', primary: !o.danger, danger: o.danger },
-      { id: 'cancel', label: o.cancelLabel ?? 'Cancel' },
+      // Escape on a confirmation means "no", which is what it always meant -
+      // now said outright rather than inherited from being last.
+      { id: 'cancel', label: o.cancelLabel ?? 'Cancel', cancel: true },
     ],
   });
   return id === 'ok';

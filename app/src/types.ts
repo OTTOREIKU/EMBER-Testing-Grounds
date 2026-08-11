@@ -475,6 +475,13 @@ export interface ScriptState {
   // reverse order as the extras end.
   oppStack: Opportunity[];
   intercepts: { uid: number; actionId: string; targetUid: number }[];
+  // Reactions a DEFENDER is owed for having been shot at — Emergency Smoke
+  // placing Screens (FAQ B7/D10). Shared state for the same reason `counter`
+  // is: the attacking client is the one that knows the attack finished, but
+  // the Screens are the defender's to place and only their client may send a
+  // command for their unit. Under Multi-Target these are flushed together
+  // after the LAST sequence, which is the whole of B7.
+  reactions: { uid: number; actionId: string; count: number; range: number }[];
   // An Electronic Counter-roll in progress (4.11.2). It lives in shared state
   // rather than on one client because BOTH sides roll and either may spend Link
   // to Focus, and a player may only ever send commands for their own units.
@@ -511,6 +518,7 @@ export function newScriptState(firstPlayer: Side): ScriptState {
     opp: null,
     oppStack: [],
     intercepts: [],
+    reactions: [],
     counter: null,
     endDone: [],
   };
@@ -558,6 +566,12 @@ export function normaliseScript(raw: unknown, firstPlayer: Side): ScriptState {
           (x) => x && typeof x.uid === 'number' && typeof x.targetUid === 'number' && typeof x.actionId === 'string',
         )
       : base.intercepts,
+    reactions: Array.isArray(s.reactions)
+      ? s.reactions.filter(
+          (x) => x && typeof x.uid === 'number' && typeof x.actionId === 'string'
+            && typeof x.count === 'number' && typeof x.range === 'number',
+        )
+      : base.reactions,
     counter: normaliseCounter(s.counter),
     endDone: Array.isArray(s.endDone) ? s.endDone.filter((x) => typeof x === 'string') : base.endDone,
   };

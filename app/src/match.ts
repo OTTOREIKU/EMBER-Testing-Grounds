@@ -567,37 +567,20 @@ function mountSide(): void {
     // time this fires the Screens are already too late to shield anyone the
     // same Action hit — which is exactly the ruling.
     //
-    // A QUEUE, because one Multi-Target can shoot two units that both carry
-    // Emergency Smoke and the helper flushes them back to back — a single
-    // smokePlan slot would drop all but the last. Driven from this (attacking)
-    // client since the combat popup lives here; `placeSmoke`'s `for` field is
-    // what keeps the Screens the DEFENDER's. The screens' owner should really
-    // also be the one choosing the Grids — that needs an owed-reaction queue
-    // like Interception's, and it is tasked, not forgotten.
+    // It becomes a DEBT IN SHARED STATE rather than a panel on this client.
+    // The attacking seat is the only one that knows the attack finished, but
+    // the Screens are the defender's to place and their Ammo is theirs to
+    // spend — and a client may only ever command its own units. Same shape as
+    // Interception's owed queue, for the same reason.
     attackHelper.onReaction = (defender, reaction) => {
-      reactionQueue.push({ defender, reaction });
-      pumpReactions();
+      send({
+        kind: 'queueReactions', seat: mySeat() ?? defender.side,
+        items: [{ uid: defender.uid, actionId: reaction.actionId, count: reaction.smoke.count, range: reaction.smoke.range }],
+      });
+      render();
     };
   }
   renderCombatIdle();
-}
-
-const reactionQueue: { defender: Token; reaction: AttackReaction }[] = [];
-let reactionOpen = false;
-
-function pumpReactions(): void {
-  if (reactionOpen || !reactionQueue.length) return;
-  const { defender, reaction } = reactionQueue.shift()!;
-  reactionOpen = true;
-  startSmokePlan({
-    side: defender.side,
-    count: reaction.smoke.count,
-    connected: false,
-    range: { c: Math.floor(defender.col / 3), r: Math.floor(defender.row / 3), max: reaction.smoke.range },
-    label: `${defender.label}: ${reaction.name} — ${squadLabel(defender.side)}'s Screens, their call where`,
-    onDone: () => { reactionOpen = false; pumpReactions(); },
-  });
-  render();
 }
 
 function terrainNow() {

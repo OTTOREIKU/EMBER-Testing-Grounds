@@ -54,6 +54,11 @@ export type Command =
   | { kind: 'deployUnit'; seat: Side; uid: number; to: { col: number; row: number }; stance?: Stance; camo?: boolean; facing?: Facing }
   | { kind: 'applyPenetration'; seat: Side; uid: number; targetUid: number; slot: PartSlot | 'main' }
   | { kind: 'applyStatus'; seat: Side; uid: number; targetUid: number; statusId: string; stacks?: number }
+  // Taking one back off. Tokens are rules-bearing and fingerprinted — an
+  // Immobilized or Fragile chip changes the defence pool — so a player peeling
+  // one off by hand has to travel like putting it on does. One at a time,
+  // matching the chip: a stacked Square loses its most recent entry.
+  | { kind: 'removeStatus'; seat: Side; uid: number; targetUid: number; statusId: string }
   | { kind: 'focus'; seat: Side; uid: number }
   | { kind: 'forceMove'; seat: Side; uid: number; targetUid: number; to: { col: number; row: number }; push?: boolean; facing?: Facing }
   | { kind: 'spendAmmo'; seat: Side; uid: number; actionId: string }
@@ -108,6 +113,17 @@ export type Command =
   | { kind: 'queueIntercepts'; seat: Side; items: { uid: number; actionId: string; targetUid: number }[] }
   | { kind: 'resolveIntercept'; seat: Side; uid: number; actionId: string; targetUid: number }
   | { kind: 'clearIntercepts'; seat: Side }
+  // The defender's owed reaction to being shot at. Queued by the ATTACKING
+  // client, which is the only one that knows the attack has finished, and
+  // resolved by the DEFENDER's, because the Screens are theirs to place. Under
+  // Multi-Target the whole batch is queued at once after the last sequence,
+  // which is FAQ B7's ordering made structural.
+  | { kind: 'queueReactions'; seat: Side; items: { uid: number; actionId: string; count: number; range: number }[] }
+  | { kind: 'resolveReaction'; seat: Side; uid: number; actionId: string }
+  // Remote Access turning a Terminal face-down for the rest of the round
+  // (5.3.3). Worth VP at the End Phase, so it has to travel — freeplay used to
+  // set `item.accessed` in place and the other client scored a different board.
+  | { kind: 'accessTerminal'; seat: Side; uid: number; itemId: string }
   | { kind: 'launch'; seat: Side; uid: number; actionId: string; cardId: string; to: { col: number; row: number }; facing: Facing }
   | { kind: 'layMine'; seat: Side; uid: number; actionId: string; cardId: string; to: { col: number; row: number } }
   | { kind: 'blink'; seat: Side; uid: number; actionId: string; targetUid: number; facing: Facing; targetFacing: Facing }
@@ -246,6 +262,9 @@ type TableKind =
   | 'advancePhase' | 'setPhase' | 'resetRounds' | 'adjustCommandTokens' | 'passTurn' | 'markEndStep' | 'award'
   | 'lockMap' | 'rollSetup' | 'acceptRoll' | 'finishTasks' | 'pickEdge' | 'lockDials' | 'finishDeployment'
   | 'queueIntercepts' | 'clearIntercepts' | 'placeSmoke' | 'removeSmoke' | 'dissipateSmoke'
+  // queueReactions only: `resolveReaction` names the defender's own unit, so it
+  // goes through the actor path and gets the "your units only" check free.
+  | 'queueReactions'
   | 'clearCounterRoll'
   | 'setMode' | 'handOver' | 'setStrict' | 'commitTimings' | 'revealTimings' | 'importSquad'
   | 'configureTable' | 'startMatch' | 'endMatch' | 'pickSecondary' | 'setTactics' | 'setReady' | 'designateTask';
@@ -253,6 +272,7 @@ const TABLE_KINDS = new Set<Command['kind']>([
   'advancePhase', 'setPhase', 'resetRounds', 'adjustCommandTokens', 'passTurn', 'markEndStep', 'award',
   'lockMap', 'rollSetup', 'acceptRoll', 'finishTasks', 'pickEdge', 'lockDials', 'finishDeployment',
   'queueIntercepts', 'clearIntercepts', 'placeSmoke', 'removeSmoke', 'dissipateSmoke',
+  'queueReactions',
   'clearCounterRoll',
   'setMode', 'handOver', 'setStrict', 'commitTimings', 'revealTimings', 'importSquad',
   'configureTable', 'startMatch', 'endMatch', 'pickSecondary', 'setTactics', 'setReady', 'designateTask',
@@ -266,6 +286,9 @@ const ATTRIBUTED = new Set<Command['kind']>([
   'advancePhase', 'setPhase', 'resetRounds', 'markEndStep', 'award',
   'lockMap', 'acceptRoll', 'lockDials', 'finishDeployment',
   'queueIntercepts', 'clearIntercepts', 'placeSmoke', 'removeSmoke', 'dissipateSmoke',
+  // Queued from the ATTACKING client but naming the defender's units, so the
+  // seat is pure attribution and gets stamped like any other table command.
+  'queueReactions',
   'setMode', 'setStrict', 'adjustCommandTokens', 'designateTask', 'clearCounterRoll',
   'configureTable', 'startMatch', 'endMatch',
 ]);
@@ -500,6 +523,13 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
     case 'placeSmoke': {
       const { col, row } = cmd.at;
       if (!Number.isInteger(col) || !Number.isInteger(row) || col < 0 || row < 0 || col > 11 || row > 11) return no('That is not a Grid.');
+      return ok;
+    }
+    case 'queueReactions': {
+      if (!state.script) return no('There is no guided game running.');
+      for (const it of cmd.items) {
+        if (!state.tokens.some((x) => x.uid === it.uid)) return no('That unit is not on the board.');
+      }
       return ok;
     }
     case 'removeSmoke': {
@@ -764,6 +794,12 @@ function checkActed(
       if (!STATUSES.some((s) => s.id === cmd.statusId)) return no('That is not a Token or State the game knows.');
       return ok;
     }
+    case 'removeStatus': {
+      const target = state.tokens.find((x) => x.uid === cmd.targetUid);
+      if (!target) return no('That target is not on the board.');
+      if (!(target.statuses ?? []).includes(cmd.statusId)) return no('That unit is not carrying it.');
+      return ok;
+    }
     case 'focus': {
       // The last Link can never be spent voluntarily (4.10, FAQ L1).
       if ((t.link ?? 0) < 2) return no('Focus spends 1 Link, and the last Link can never be spent voluntarily (4.10).');
@@ -927,6 +963,20 @@ function checkActed(
       if (!Number.isInteger(col) || !Number.isInteger(row) || col < 0 || row < 0 || col > 35 || row > 35) {
         return no('That is not a place on the board.');
       }
+      return ok;
+    }
+    case 'resolveReaction': {
+      if (!t) return no('That unit is not on the board.');
+      const owed = (state.script?.reactions ?? []).some((r) => r.uid === cmd.uid && r.actionId === cmd.actionId);
+      if (!owed) return no('That unit is owed no reaction.');
+      return ok;
+    }
+    case 'accessTerminal': {
+      if (!t) return no('That unit is not on the board.');
+      const item = normaliseTasks(state.tasks).items.find((i) => i.id === cmd.itemId);
+      if (!item || item.kind !== 'terminal') return no('That is not a Terminal.');
+      // Once per round each, and the End Phase flips them all back (5.3.3).
+      if (item.accessed) return no('That Terminal has already been accessed this round (5.3.3).');
       return ok;
     }
     case 'blink': {
@@ -1270,6 +1320,13 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
     state.smoke = [...(state.smoke ?? []), { col: cmd.at.col, row: cmd.at.row, side: cmd.for ?? cmd.seat }];
     return;
   }
+  if (cmd.kind === 'queueReactions') {
+    if (!state.script) return;
+    // Appended rather than replaced: a second attack can land while an earlier
+    // reaction is still unanswered, and neither is forfeit.
+    state.script.reactions = [...(state.script.reactions ?? []), ...cmd.items];
+    return;
+  }
   if (cmd.kind === 'removeSmoke') {
     const list = [...(state.smoke ?? [])];
     const at = list.findIndex((x) => x.col === cmd.at.col && x.row === cmd.at.row);
@@ -1486,6 +1543,22 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
       }
       return;
     }
+    case 'removeStatus': {
+      const target = state.tokens.find((x) => x.uid === cmd.targetUid);
+      if (!target) return;
+      // The LAST entry, so peeling one off a stacked Square leaves the rest —
+      // the same end the freeplay chip reached by hand.
+      const list = [...(target.statuses ?? [])];
+      const at = list.lastIndexOf(cmd.statusId);
+      if (at < 0) return;
+      list.splice(at, 1);
+      target.statuses = list;
+      // A token that is gone has no expiry left to track.
+      if (!list.includes(cmd.statusId)) {
+        target.expiring = (target.expiring ?? []).filter((x) => x !== cmd.statusId);
+      }
+      return;
+    }
     case 'focus': {
       t.link = Math.max(0, (t.link ?? 0) - 1);
       if (t.link === 0 && t.kind === 'mech' && t.stance !== 'shutdown') t.stance = 'shutdown';
@@ -1671,6 +1744,28 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
       const tok = makeDroneToken(state, data, card, t.side);
       state.tokens.push({ ...tok, parentUid: t.uid, col: cmd.to.col, row: cmd.to.row, facing: cmd.facing });
       if (t.ammo[cmd.actionId] !== undefined) t.ammo[cmd.actionId] = Math.max(0, t.ammo[cmd.actionId] - 1);
+      return;
+    }
+    case 'accessTerminal': {
+      const tasks = normaliseTasks(state.tasks);
+      const item = tasks.items.find((i) => i.id === cmd.itemId);
+      if (!item) return;
+      item.accessed = t.side;
+      state.tasks = tasks;
+      return;
+    }
+    case 'resolveReaction': {
+      const sc = state.script;
+      if (sc) {
+        const at = (sc.reactions ?? []).findIndex((r) => r.uid === cmd.uid && r.actionId === cmd.actionId);
+        if (at >= 0) sc.reactions = [...sc.reactions.slice(0, at), ...sc.reactions.slice(at + 1)];
+      }
+      // The use is spent in the SAME command as the debt is cleared, so a
+      // dropped connection between the two cannot leave a free Emergency
+      // Smoke. The card prints storage 1, which syncMagazines seeded as Ammo.
+      if (t.ammo?.[cmd.actionId] !== undefined) {
+        t.ammo[cmd.actionId] = Math.max(0, t.ammo[cmd.actionId] - 1);
+      }
       return;
     }
     case 'blink': {
