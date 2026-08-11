@@ -677,6 +677,24 @@ const wmd = world([mech(1, 's1', { partStates: { torso: 'damaged' } })]);
 C.apply(data, wmd, { kind: 'repairPart', seat: 's1', uid: 1, slot: 'torso', mode: 'mend' });
 check('mending turns Damaged back to intact', wmd.tokens[0].partStates.torso, 'intact');
 
+// The other half of J23 lives in the combat wizard, which is DOM-bound and
+// cannot be sliced — so it is guarded at the source. `pickPart` must catch a
+// Repaired slot BEFORE it sets `targetPart`, send the breakRepaired, and then
+// redirect the whole attack to the Torso. Getting the order wrong would roll a
+// Penetration against a Part that should simply have come off.
+const combatSrc = readFileSync(new URL('../src/combat.ts', import.meta.url), 'utf8');
+const pickPartFn = combatSrc.slice(
+  combatSrc.indexOf('private pickPart('),
+  combatSrc.indexOf('private poolEditor('),
+);
+check('the Repaired branch is inside pickPart', pickPartFn.includes('repairedSlots'), true);
+check('and it fires BEFORE the hit location is committed',
+  pickPartFn.indexOf('repairedSlots') < pickPartFn.indexOf('c.targetPart = slot'), true);
+check('it sends breakRepaired rather than a Penetration', pickPartFn.includes("kind: 'breakRepaired'"), true);
+check('and redirects the attack to the Torso (J23)', pickPartFn.includes("this.pickPart('torso')"), true);
+// A Torso bearing one would recurse forever, so the slot test must exclude it.
+check('the Torso itself is excluded from the redirect', pickPartFn.includes("slot !== 'torso'"), true);
+
 // ---------- stabilise and reveal (6.1) ----------
 
 // Either half justifies the action (FAQ J4/J6-J8): refusal needs BOTH no
