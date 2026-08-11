@@ -1332,8 +1332,10 @@ async function init() {
       panel.showCard(card);
       if (opts?.focus !== false) showSideTab('details');
     },
-    onAddUnit(card, side) {
-      const tok = makeDroneToken(state, data, card, side);
+    onAddUnit(card, side, load) {
+      // A Carrier arrives with its Load already on its back; every other unit
+      // passes nothing and makeDroneToken leaves the slot alone.
+      const tok = makeDroneToken(state, data, card, side, load);
       placeNew(tok, side);
     },
     onAddMech(loadout: MechLoadout, side) {

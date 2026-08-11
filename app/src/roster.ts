@@ -4,7 +4,7 @@ import { inspectOnHover } from './inspector';
 import { alertDialog, confirmDialog, promptDialog } from './dialog';
 import { deleteMechPreset, isBuiltInPreset, loadMechPresets, saveMechPreset } from './presets';
 import { deleteSquad, isBuiltInSquad, loadSquads } from './squadstore';
-import { cardFitsSquad, type SquadAllegiance } from './units';
+import { canBeLoad, cardFitsSquad, isCarrier, type SquadAllegiance } from './units';
 import { ICON_EXPAND, squadColour } from './icons';
 import { openPartPicker } from './partpicker';
 
@@ -12,7 +12,10 @@ const escAttr = (v: string): string => v.replace(/&/g, '&amp;').replace(/"/g, '&
 
 export interface RosterCallbacks {
   squadAllegiance(side: Side): SquadAllegiance;
-  onAddUnit(card: Card, side: Side): void;
+  // `load` is the Part a Carrier drone carries onto the board (FAQ O3-O8). Only
+  // a Carrier ever passes one, and it may be left off - a Tarantula is allowed
+  // to stand there with nothing on its back (O8).
+  onAddUnit(card: Card, side: Side, load?: string): void;
   onAddMech(loadout: MechLoadout, side: Side): void;
   onSaveMech(uid: number, loadout: MechLoadout): void;
   onPreview(card: Card, opts?: { focus?: boolean }): void;
@@ -52,6 +55,11 @@ export class Roster {
   private tab: 'drones' | 'mech' | 'projectiles' | 'tactics' = 'drones';
   private search = '';
   private mech: MechLoadout = {};
+  // What each Carrier drone will be sent onto the board carrying, keyed by the
+  // drone's card id. Held here rather than on the row so it survives the
+  // re-render that picking a Load causes, and so adding the same Carrier to both
+  // squads gives them the same Load without choosing twice.
+  private droneLoads: Record<string, string> = {};
   private presetId = '';
   private squadId = '';
   private editing: { uid: number; side: Side; label: string } | null = null;
@@ -220,11 +228,66 @@ export class Roster {
       name.addEventListener('click', () => this.cb.onPreview(c));
       const adds = SQUAD_ORDER.map((side) => {
         const b = this.squadButton(side, c);
-        b.addEventListener('click', () => this.cb.onAddUnit(c, side));
+        b.addEventListener('click', () => this.cb.onAddUnit(c, side, this.droneLoads[c.id]));
         return b;
       });
-      row.append(name, ...adds);
+      // Only a Carrier gets the extra control, so every other row keeps its
+      // shape. The Load is chosen before the drone is added, because it is what
+      // the drone walks on with.
+      row.append(name, ...(isCarrier(c) ? [this.loadButton(c)] : []), ...adds);
       return row;
+    });
+  }
+
+  // A Carrier lends the Part on its back to a Mech it is touching, so the Part
+  // has to be picked before the drone goes down. Empty is a real answer (O8).
+  private loadButton(carrier: Card): HTMLButtonElement {
+    const chosen = this.droneLoads[carrier.id];
+    const card = chosen ? this.data.byId.get(chosen) : undefined;
+    const b = document.createElement('button');
+    b.className = `add load-pick${card ? ' has-load' : ''}`;
+    b.textContent = card ? cardName(card) : 'Load…';
+    b.title = card
+      ? `Carrying ${cardName(card)}. Click to change it, or pick the same one again to take it off.`
+      : 'Give this Carrier a Part to lend. Optional: it can go on empty.';
+    inspectOnHover(b, {
+      title: card ? `Load: ${cardName(card)}` : 'Load',
+      sub: 'Official FAQ O3-O8',
+      lines: [
+        'A Carrier holds one Part and lends it to a friendly Mech it is in contact with.',
+        'The Carrier gains none of the Part\'s Actions or attributes; it is only carrying it.',
+        'Ammo spent from the borrowed Part comes off the Carrier, not the Mech.',
+        'It counts when the Mech initiates, never when it is the one being rolled against.',
+      ],
+    });
+    b.addEventListener('click', () => this.openLoadPicker(carrier));
+    return b;
+  }
+
+  private openLoadPicker(carrier: Card): void {
+    const faction = this.data.factionOf(carrier);
+    const parts = this.data.cards
+      .filter((c) => c.category === 'mech_part' && canBeLoad(c) && !isDiscardCard(c))
+      .filter((c) => this.cb.cardFilter?.(c) ?? true)
+      .sort((a, b) => cardName(a).localeCompare(cardName(b)));
+    openPartPicker({
+      data: this.data,
+      slotLabel: `Load for ${cardName(carrier)}`,
+      groups: this.byFaction(parts),
+      chosen: this.droneLoads[carrier.id],
+      lockedFaction: faction,
+      actions: [
+        {
+          label: 'Carry this',
+          run: (card: Card) => {
+            // Choosing what it already holds takes it off again, which is the
+            // only way back to an empty Carrier once one is picked.
+            if (this.droneLoads[carrier.id] === card.id) delete this.droneLoads[carrier.id];
+            else this.droneLoads[carrier.id] = card.id;
+            this.render();
+          },
+        },
+      ],
     });
   }
 
@@ -373,7 +436,7 @@ export class Roster {
         tint: squadColour(this.cb.squadAllegiance(side).faction),
         check: (card: Card) => this.squadTakes(side, card),
         run: (card: Card) => {
-          this.cb.onAddUnit(card, side);
+          this.cb.onAddUnit(card, side, this.droneLoads[card.id]);
           this.render();
         },
       })),
