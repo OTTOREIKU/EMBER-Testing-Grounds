@@ -2,7 +2,7 @@ import type { Card, MechLoadout, Side } from './types';
 import { BASE_FACTIONS, cardName, FACTION_LABEL, isDiscardCard, mechPartUrl, SQUAD_ORDER, squadLabel, squadNumber, tabImageUrl, type GameData } from './data';
 import { inspectOnHover } from './inspector';
 import { alertDialog, confirmDialog, promptDialog } from './dialog';
-import { deleteMechPreset, loadMechPresets, saveMechPreset } from './presets';
+import { deleteMechPreset, isBuiltInPreset, loadMechPresets, saveMechPreset } from './presets';
 import { deleteSquad, loadSquads } from './squadstore';
 import { cardFitsSquad, type SquadAllegiance } from './units';
 import { ICON_EXPAND, squadColour } from './icons';
@@ -549,8 +549,12 @@ export class Roster {
         .join('')}</select>
         <button class="preset-save" title="Save the current build under a name">Save</button>
         <button class="preset-del" title="${
-          chosen ? `Delete “${escAttr(chosen.name)}”` : 'Pick a saved mech to delete it'
-        }" ${chosen ? '' : 'disabled'}>✕</button>`;
+          !chosen
+            ? 'Pick a saved mech to delete it'
+            : isBuiltInPreset(chosen.id)
+              ? `“${escAttr(chosen.name)}” ships with the app and cannot be deleted. Save over its name to replace it.`
+              : `Delete “${escAttr(chosen.name)}”`
+        }" ${chosen && !isBuiltInPreset(chosen.id) ? '' : 'disabled'}>✕</button>`;
       const pick = presets.querySelector<HTMLSelectElement>('.preset-pick')!;
       pick.addEventListener('change', () => {
         this.presetId = pick.value;
