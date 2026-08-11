@@ -3,7 +3,7 @@ import type { GameData } from './data';
 import { actionIconUrl, cardName, isAerial, secondaryImageUrl, squadLabel, unitSize } from './data';
 import { Board, footprint, snapPlacement, type BoardCallbacks } from './board';
 import { printedDeployment, resolveZoneSetData } from './overlays';
-import { autoDetonationsOwed, electronicOrigins, loanedParts, minesLayable, minesOwed, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, isSilentAction, maneuverIsSilent, canActivateCamo, chargeableSlots, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
+import { autoDetonationsOwed, autoNeutralTargets, electronicOrigins, loanedParts, minesLayable, minesOwed, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, isSilentAction, maneuverIsSilent, canActivateCamo, chargeableSlots, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
 import { resolveCounterRoll, tallyCounter } from './combat';
 import { tacticFitsPhase, tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { inContact, canStandIn, attackDirection, crushTargets, dissipationFor, extendPath, knockbackPath, LG, losBetween, losNote, pathCost, protectionFor, rangeBetween, reachableGrids, standingSpot, type LargeGrid } from './rules';
@@ -2569,9 +2569,31 @@ function attackPanel(ctx: HudCtx): string {
         <span class="tgbits">${bits.map((b) => `<span${/[⚠✕]/.test(b) ? ' class="bad"' : ''}>${esc(b)}</span>`).join('')}</span></button>`;
     })
     .join('');
+  // FAQ O9: with no enemy inside an Auto Action's range, the nearest Breakable
+  // Terrain becomes a legal target — optional, and only the nearest. Named here
+  // rather than made clickable because destroying terrain already has its own
+  // path (click the piece on the board), and this is the half a player cannot
+  // work out for themselves: that the option exists at all.
+  const neutral = autoLegal && !autoLegal.length
+    ? autoNeutralTargets(ctx.data, s.tokens, terrain, by, a)
+    : [];
+  const neutralNote = neutral.length
+    ? `<p class="tp-note">No enemy Unit is inside Range ${a.range ?? 0}, so ${esc(by.label)} MAY attack Breakable Terrain instead — and only the nearest, which is
+       ${neutral.map((n) => esc(terrainLabel(ctx, n.id))).join(' or ')} (FAQ O9).<br>Click the piece on the board to destroy it. Buildings and Defense walls are never valid targets (O10).</p>`
+    : '';
   return head('Your move', `${esc(a.name?.en || m.actionId)}: which target?`, `${esc(by.label)} · ${a.yellowDice ?? 0}Y ${a.redDice ?? 0}R.`, true)
-    + `<div class="tp-body">${rows || '<p class="tp-note">No enemy unit is on the board.</p>'}</div>
+    + `<div class="tp-body">${rows || '<p class="tp-note">No enemy unit is on the board.</p>'}${neutralNote}</div>
        <div class="tp-foot"><button class="bigbtn ghost2" data-act="attackcancel">Cancel</button></div>`;
+}
+
+// A Breakable Terrain piece named the way a player sees it on the board: what
+// it is, and which Grid to look in.
+function terrainLabel(ctx: HudCtx, id: string): string {
+  const p = terrainOf(ctx).find((x) => x.id === id);
+  if (!p) return id;
+  const c = p.subCells[0];
+  const kind = p.type === 'container' ? 'Container' : p.type.replace(/_/g, ' ');
+  return c ? `the ${kind} in ${gridName(Math.floor(c.col / 3), Math.floor(c.row / 3))}` : `the ${kind}`;
 }
 
 // ---------- Forced Movement: Knockback, Push and the shove (appendix) ----------

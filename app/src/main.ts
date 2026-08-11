@@ -45,7 +45,7 @@ import { PlayGuide } from './playguide';
 import type { Card, CardAction, DiceData, DieColor, Facing, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, StatusDef, TerrainPiece, Timing, Token } from './types';
 import { addStatus, SCALES, statusCount, statusesFor, STATUSES } from './types';
 import { actionIdOf } from './ticks';
-import { autoDetonationsOwed, loanedParts, minesLayable, minesOwed, unfoldsOwed, repairSpec, autoTargetsFor, isSilentAction, maneuverIsSilent, chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, type Resupply, resupplyOf, SLOT_LABEL, interceptLeft, interceptsOwed, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf } from './units';
+import { autoDetonationsOwed, autoNeutralTargets, loanedParts, minesLayable, minesOwed, unfoldsOwed, repairSpec, autoTargetsFor, isSilentAction, maneuverIsSilent, chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, type Resupply, resupplyOf, SLOT_LABEL, interceptLeft, interceptsOwed, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf } from './units';
 import { registerOffline } from './offline';
 import { battlefieldLocked, countHits, firstPlayerFrom, newSetup, normaliseSetup, tasksLocked, type SetupState } from './setup';
 import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
@@ -280,7 +280,18 @@ async function init() {
       pendingAttack = { attackerUid: t.uid, actionId, mode: 'attack' };
       document.body.classList.add('targeting');
       const hint = document.getElementById('hint')!;
-      hint.textContent = '⌖ Click the TARGET unit on the board (Esc cancels)';
+      // The card's own Attack button is a second way in, beside the guide's
+      // performGuided - so the O9 Neutral fallback has to be said here too, or
+      // it only reaches players who are following the guide.
+      const act = tokenCards(data, t).flatMap(({ card }) => card.actions ?? []).find((a) => a.id === actionId);
+      const neutral = act?.speed === 'auto'
+        ? autoNeutralTargets(data, state.tokens, currentTerrain(), t, act)
+        : [];
+      hint.textContent = neutral.length
+        ? `⌖ No enemy is in range, so this Automatic Action MAY take the nearest Breakable Terrain instead — ${
+          neutral.map((n) => gridOfTerrain(n.id)).join(' or ')
+        } — destroyed by clicking the piece (FAQ O9). Esc cancels.`
+        : '⌖ Click the TARGET unit on the board (Esc cancels)';
     },
     onStartElectronic(t, actionId) {
       pendingAttack = { attackerUid: t.uid, actionId, mode: 'electronic' };
@@ -701,7 +712,18 @@ async function init() {
       document.body.classList.add('targeting');
       if (action.range) board.showRangeRings(t, action.range);
       const reach = action.range ? ` Range ${action.range} is shown.` : '';
-      setHint(`${what}: click the target unit on the board.${reach} Esc cancels and keeps the Tick.`);
+      // FAQ O9: an Auto Action with no enemy in reach MAY take Breakable Terrain
+      // instead, and only the nearest. Said here because it is the half a player
+      // cannot deduce - destroying the piece itself is already a click away.
+      const neutral = action.speed === 'auto'
+        ? autoNeutralTargets(data, state.tokens, currentTerrain(), t, action)
+        : [];
+      const fallback = neutral.length
+        ? ` No enemy is in range, so this MAY instead hit the nearest Breakable Terrain - ${
+          neutral.map((n) => gridOfTerrain(n.id)).join(' or ')
+        } - which you destroy by clicking the piece (FAQ O9). Buildings and Defense walls never count (O10).`
+        : '';
+      setHint(`${what}: click the target unit on the board.${reach}${fallback} Esc cancels and keeps the Tick.`);
       return;
     }
 
@@ -2367,6 +2389,13 @@ async function init() {
     const where = cell ? ` at ${gridRef(Math.floor(cell.col / 3), Math.floor(cell.row / 3))}` : '';
     const size = p.type === 'container' ? ` 1×${p.subCells.length}` : '';
     return `${TERRAIN_NAME[p.type]}${size}${where}`;
+  }
+
+  // Where a Breakable Terrain piece sits, for naming it in a hint.
+  function gridOfTerrain(id: string): string {
+    const p = currentTerrain().find((x) => x.id === id);
+    const c = p?.subCells[0];
+    return c ? gridRef(Math.floor(c.col / 3), Math.floor(c.row / 3)) : id;
   }
 
   // Destructible Terrain is always a legal target for a Projectile in range

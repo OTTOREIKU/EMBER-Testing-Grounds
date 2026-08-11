@@ -379,6 +379,54 @@ export function autoTargetsFor(
   return pool.filter((o) => reachOf(o) === best);
 }
 
+// The Neutral fallback for an automatic attack (FAQ O9/O10).
+//
+// O9: when NO enemy unit is inside the range of a Drone's Auto Action, it MAY
+// attack a Neutral Unit instead - and if it does, it must take the NEAREST one.
+// So this is a fallback, not a widening: it returns nothing at all while any
+// enemy is in reach, because enemies always outrank Neutrals.
+//
+// O10 draws the category lines, and both fall out of `isFragile` rather than
+// needing a list: BUILDINGS ARE NEVER VALID TARGETS for a Drone attack, and
+// buildings (like both Defense walls) are not fragile, so filtering on fragile
+// excludes them for free. The 1-inch Containers are the only Breakable Terrain
+// on the board. Beacons and Mines need no handling here either - O10 says there
+// is no such thing as a neutral one, so every Beacon and Mine already belongs to
+// a side and reaches `autoTargetsFor` as an ordinary enemy Unit, which is also
+// what gives them priority over anything returned here.
+//
+// Range is MANHATTAN over large Grids, the same metric rangeBetween applies to
+// units - a diagonal neighbour is 2 away, not 1.
+export interface NeutralTarget {
+  id: string;
+  dist: number;
+}
+
+export function autoNeutralTargets(
+  data: GameData,
+  tokens: Token[],
+  terrain: TerrainPiece[],
+  t: Token,
+  a: CardAction,
+): NeutralTarget[] {
+  // Enemies first, always. While one is in range there is no choice to offer.
+  if (autoTargetsFor(data, tokens, t, a).length) return [];
+  const reach = a.range ?? 0;
+  const g = largeGridOf(t);
+  const near = terrain
+    .filter((p) => p.isFragile)
+    .map((p) => ({
+      id: p.id,
+      dist: Math.min(...p.subCells.map((c) => Math.abs(Math.floor(c.col / 3) - g.c) + Math.abs(Math.floor(c.row / 3) - g.r))),
+    }))
+    .filter((x) => x.dist <= reach);
+  if (!near.length) return [];
+  // "The nearest" is the whole rule, so ties come back together and the player
+  // picks between them - the same shape autoTargetsFor uses for tied enemies.
+  const best = Math.min(...near.map((x) => x.dist));
+  return near.filter((x) => x.dist === best).sort((x, y) => x.id.localeCompare(y.id));
+}
+
 // ---------- The Hyena's AA Radar (FAQ O12/O13) ----------
 //
 // "When an ally Intercepts a target VISIBLE TO THIS UNIT, [Eye] counts as
@@ -494,6 +542,13 @@ export function interceptsOwed(
   return owed;
 }
 
+// The longest reach of any Intercept Action a unit carries. Nothing calls this
+// - it was written for an intercept-range overlay that was never built, and the
+// FAQ audit flagged it as a loose end. Kept rather than deleted because it is
+// the correct reading if that overlay is ever wanted (per ACTION range, not per
+// unit), but do not mistake it for part of the live path: `interceptsOwed` does
+// its own per-action range test, since one unit can carry two Intercept Actions
+// of different reach and the longer one must not lend its range to the shorter.
 export function interceptReach(data: GameData, t: Token): number {
   let best = 0;
   for (const { card } of tokenCards(data, t)) {

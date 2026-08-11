@@ -29,18 +29,23 @@ const delivery = slice(unitsSrc, '// How a Projectile Action delivers.', '// The
 const cardsOf = slice(unitsSrc, 'export function tokenCards', '// ---------- Tarantula Loads', 'tokenCards in units.ts');
 // M18.6's mandatory Detonation picks its targets with the SAME nearest-target
 // reader every other automatic attack uses, so it is sliced rather than faked.
+// autoTargetsFor runs to the AA Radar block, which sweeps in the O9/O10 Neutral
+// fallback that sits between them — deliberate, they are one rule read together.
 const autoTargets = slice(unitsSrc, 'export function autoTargetsFor', "// ---------- The Hyena's AA Radar", 'autoTargetsFor in units.ts');
 
 const tmp = new URL('./_mines.slice.ts', import.meta.url);
 writeFileSync(
   tmp,
-  'type Card = any;\ntype CardAction = any;\ntype GameData = any;\ntype Token = any;\ntype PartSlot = any;\n'
+  'type Card = any;\ntype CardAction = any;\ntype GameData = any;\ntype Token = any;\ntype PartSlot = any;\ntype TerrainPiece = any;\n'
     + 'function largeGridOf(t: any): any { return { c: Math.floor(t.col / 3), r: Math.floor(t.row / 3) }; }\n'
-    // Grid-distance and the two lookups autoTargetsFor leans on. Chebyshev over
-    // large Grids is what rules.ts computes; the Repeater and Highlight paths
-    // are exercised in their own files, so they are neutral here.
+    // Grid-distance and the two lookups autoTargetsFor leans on. Range in this
+    // game is MANHATTAN over large Grids - `dc + dr`, matching rangeBetween in
+    // rules.ts. It was mirrored here as Chebyshev at first and every pin still
+    // passed, because they all sat on one axis where the two metrics agree; the
+    // diagonal case below is what tells them apart. The Repeater and Highlight
+    // paths are exercised in their own files, so they are neutral here.
     + 'function rangeBetween(a: any, b: any): any { const p = largeGridOf(a), q = largeGridOf(b);\n'
-    + '  return { range: Math.max(Math.abs(p.c - q.c), Math.abs(p.r - q.r)) }; }\n'
+    + '  return { range: Math.abs(p.c - q.c) + Math.abs(p.r - q.r) }; }\n'
     + 'function isElectronicAttack(_a: any): boolean { return false; }\n'
     + 'function statusCount(list: any, id: string): number { return (list ?? []).filter((x: any) => x === id).length; }\n'
     + slots
@@ -256,6 +261,12 @@ check('an enemy in range makes it owe a Detonation', (() => {
 })(), [[1, '167_A', [2]]]);
 // Range 1 on the card, so two Grids away is out of reach and nothing is owed.
 check('an enemy out of range owes nothing', M.autoDetonationsOwed(data, [pholcus(1, 4, 4), foe(2, 6, 4)]), []);
+// The diagonal is the case that tells Manhattan from Chebyshev: one Grid across
+// and one down is range 2 here, NOT range 1, so a Range-1 Detonation cannot
+// reach it. Every other pin in this file sits on one axis, where both metrics
+// agree and a wrong one would pass unnoticed.
+check('a diagonal neighbour is range 2, so out of reach of Range 1',
+  M.autoDetonationsOwed(data, [pholcus(1, 4, 4), foe(2, 5, 5)]), []);
 check('an ALLY in range owes nothing', M.autoDetonationsOwed(data, [pholcus(1, 4, 4), foe(2, 5, 4, { side: 's1' })]), []);
 check('alone on the board it owes nothing', M.autoDetonationsOwed(data, [pholcus(1, 4, 4)]), []);
 // A destroyed unit is not a target, and a dead Pholcus does not act.
@@ -276,6 +287,43 @@ check('tied nearest targets are all returned, so the player still chooses', (() 
 check('the folded Pholcus owes no Detonation', M.autoDetonationsOwed(data, [tok(1, '156', 13, 13, { kind: 'projectile', aerial: true, label: 'folded' }), foe(2, 5, 4)]), []);
 // A GM-35 is a Mine, not an automatic attacker: it waits to be stood on.
 check('a GM-35 owes no automatic Detonation', M.autoDetonationsOwed(data, [mineAt(1, 13, 13), foe(2, 14, 13)]), []);
+
+// ---------- O9/O10: the Neutral fallback ----------
+
+// A container is Breakable Terrain; buildings and both Defense walls are not,
+// which is exactly how O10's "Buildings are not valid targets" is enforced.
+const box = (id, c, r) => ({ id, type: 'container', isFragile: true, height: 1, blocksLos: false, providesProtection: false,
+  subCells: [{ col: c * 3 + 1, row: r * 3 + 1 }] });
+const wall = (id, c, r) => ({ id, type: 'building', isFragile: false, height: 3, blocksLos: true, providesProtection: true,
+  subCells: [{ col: c * 3 + 1, row: r * 3 + 1 }] });
+// Range 1, like the Pholcus's own attack, so reach is easy to reason about.
+const autoAct = { id: 'A1', type: 'Firing', speed: 'auto', range: 1 };
+const drone = (uid, c, r, side = 's1') => tok(uid, '167', c * 3 + 1, r * 3 + 1, { side, kind: 'drone', label: 'Drone' });
+
+check('with no enemy in range, the nearest Breakable Terrain is offered',
+  M.autoNeutralTargets(data, [drone(1, 4, 4)], [box('t1', 5, 4)], drone(1, 4, 4), autoAct).map((x) => x.id), ['t1']);
+// O9 is a FALLBACK: enemies always outrank Neutrals, so while one is in reach
+// this must stay silent rather than adding to the list.
+check('an enemy in range suppresses it entirely', (() => {
+  const me = drone(1, 4, 4);
+  return M.autoNeutralTargets(data, [me, foe(2, 5, 4)], [box('t1', 5, 4)], me, autoAct);
+})(), []);
+// O10, and it needs no list of its own: a building is not fragile.
+check('a building is never offered, however close',
+  M.autoNeutralTargets(data, [drone(1, 4, 4)], [wall('w1', 4, 4), wall('w2', 5, 4)], drone(1, 4, 4), autoAct), []);
+check('terrain out of range is not offered',
+  M.autoNeutralTargets(data, [drone(1, 4, 4)], [box('t1', 6, 4)], drone(1, 4, 4), autoAct), []);
+// "The nearest" is the whole rule, so a farther piece loses even in range.
+check('only the nearest is offered, not everything in range',
+  M.autoNeutralTargets(data, [drone(1, 4, 4)], [box('near', 5, 4), box('far', 4, 4)], drone(1, 4, 4), { ...autoAct, range: 4 }).map((x) => x.id),
+  ['far']);
+// Ties come back together, the same way tied enemies do.
+check('tied nearest pieces both come back',
+  M.autoNeutralTargets(data, [drone(1, 4, 4)], [box('a', 5, 4), box('b', 3, 4)], drone(1, 4, 4), autoAct).map((x) => x.id), ['a', 'b']);
+// Manhattan again: the diagonal is 2, so Range 1 cannot reach it.
+check('a diagonal piece is range 2, so Range 1 misses it',
+  M.autoNeutralTargets(data, [drone(1, 4, 4)], [box('t1', 5, 5)], drone(1, 4, 4), autoAct), []);
+check('an empty board offers nothing', M.autoNeutralTargets(data, [drone(1, 4, 4)], [], drone(1, 4, 4), autoAct), []);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

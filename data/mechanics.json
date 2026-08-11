@@ -388,6 +388,17 @@
    "text": "A Load is a Part carried by a Drone for a Mech to borrow. The Drone does not gain the Part's Actions or attributes - it is carrying it, not using it. A Mech may use a borrowed Part once per Carrier, so two Carriers lending the same Backpack lend two separate Parts and each may be used (O7). Ammo spent from a borrowed Part comes off the Drone carrying it, not the Mech. The loan only counts while the Mech is performing: a borrowed Pod adds its Electronic Value when the Mech is the Initiator of an Electronic Counter-roll, but never when it is the Responder rolling passively (O5). Several Backpacks print the Load keyword to say the opposite - that they can never be carried as a Load."
   },
   {
+   "id": "auto_attack_targets",
+   "name": "What an Automatic Attack Must Shoot",
+   "ref": "Rulebook 3.5.2, and Official FAQ O9/O10/O21",
+   "match": [
+    "automatic attack",
+    "auto action",
+    "自动攻击"
+   ],
+   "text": "An Automatic Action does not get to pick a favourite. It takes the NEAREST enemy in range, and if any enemy in range carries a Highlight Token it must take the nearest HIGHLIGHTED one instead (O21) - only a tie leaves the choice to you. Range here is counted the board's way, across large Grids and not diagonally, so a unit one Grid across and one down is 2 away, not 1. If NO enemy is in range at all, the Action may fall back on a Neutral target, and again only the nearest: that means the 1-inch Breakable Terrain containers. BUILDINGS AND BOTH DEFENSE WALLS ARE NEVER VALID TARGETS for a Drone's attack (O10), so an Automatic Action facing nothing but a wall simply has nothing to shoot. Beacons and Mines are the pair that catch people out: there is no such thing as a neutral one, so every Beacon and Mine on the board counts as an enemy Unit and therefore OUTRANKS Breakable Terrain in the queue."
+  },
+  {
    "id": "smoke_screen",
    "name": "Smoke Screens",
    "ref": "Rulebook 4.16",
