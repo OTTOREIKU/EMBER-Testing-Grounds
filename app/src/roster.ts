@@ -6,7 +6,7 @@ import { deleteMechPreset, isBuiltInPreset, loadMechPresets, saveMechPreset } fr
 import { deleteSquad, isBuiltInSquad, loadSquads } from './squadstore';
 import { canBeLoad, cardFitsSquad, isCarrier, type SquadAllegiance } from './units';
 import { ICON_EXPAND, squadColour } from './icons';
-import { openPartPicker } from './partpicker';
+import { groupByFaction, openPartPicker } from './partpicker';
 
 const escAttr = (v: string): string => v.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 
@@ -377,21 +377,7 @@ export class Roster {
   // are picked. A Mech may only use Parts from one faction (5.1), so this is the
   // division that actually decides what you can legally take.
   private byFaction(cards: Card[]): { faction: string; cards: Card[] }[] {
-    const groups = new Map<string, Card[]>();
-    for (const c of cards) {
-      const key = this.data.factionOf(c) ?? '';
-      const list = groups.get(key);
-      if (list) list.push(c);
-      else groups.set(key, [c]);
-    }
-    const order = [...BASE_FACTIONS, 'PD', 'COLLABORATION'];
-    return [...groups.keys()]
-      .sort((a, b) => {
-        const ai = order.indexOf(a);
-        const bi = order.indexOf(b);
-        return (ai < 0 ? order.length : ai) - (bi < 0 ? order.length : bi);
-      })
-      .map((faction) => ({ faction, cards: groups.get(faction)! }));
+    return groupByFaction(this.data, cards);
   }
 
   // Picking here lands in exactly the same place a dropdown change does: the

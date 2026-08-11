@@ -1,10 +1,30 @@
 import type { Card } from './types';
-import { cardImageUrl, cardName, FACTION_LABEL, type GameData } from './data';
+import { BASE_FACTIONS, cardImageUrl, cardName, FACTION_LABEL, type GameData } from './data';
 import { factionColour, ICON_COMPARE } from './icons';
 import { expandGlyphs } from './glyphs';
 
 const esc = (s: string): string =>
   s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+
+// Grouping for the picker's list, shared so the mech builder, the drone list and
+// the Load picker cannot drift into different orders.
+export function groupByFaction(data: GameData, cards: Card[]): { faction: string; cards: Card[] }[] {
+  const groups = new Map<string, Card[]>();
+  for (const c of cards) {
+    const key = data.factionOf(c) ?? '';
+    const list = groups.get(key);
+    if (list) list.push(c);
+    else groups.set(key, [c]);
+  }
+  const order = [...BASE_FACTIONS, 'PD', 'COLLABORATION'];
+  return [...groups.keys()]
+    .sort((a, b) => {
+      const ai = order.indexOf(a);
+      const bi = order.indexOf(b);
+      return (ai < 0 ? order.length : ai) - (bi < 0 ? order.length : bi);
+    })
+    .map((faction) => ({ faction, cards: groups.get(faction)! }));
+}
 
 export interface PickAction {
   label: string;

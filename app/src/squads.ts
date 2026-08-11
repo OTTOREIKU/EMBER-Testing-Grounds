@@ -8,7 +8,7 @@ import { normaliseTasks } from './tasks';
 import { normaliseSetup } from './setup';
 import { perform } from './commands';
 import { dialHidden, getLocalSeat } from './loop';
-import { defaultUnitLabel, factionProblems, initiativeFor, pilotCard, squadAllegiance, SLOT_LABEL, tidyUnitLabel, tokenCards, tokenFactions } from './units';
+import { defaultUnitLabel, emptyCarriers, factionProblems, initiativeFor, pilotCard, squadAllegiance, SLOT_LABEL, tidyUnitLabel, tokenCards, tokenFactions } from './units';
 import { alertDialog, promptDialog } from './dialog';
 import { factionColour, ICON_EDIT, linkIcon, squadColour } from './icons';
 
@@ -217,6 +217,24 @@ export class SquadTracker {
         warn.className = 'squad-over';
         warn.textContent = `Over the ${sc.name} limit by ${pts - sc.points} points.`;
         sec.appendChild(warn);
+      }
+      // Legal but almost always unintended, so it reads as a reminder rather
+      // than joining the illegal list below. Shown in the Match Centre too,
+      // which mounts this same tracker.
+      for (const c of this.state.scenario ? [] : emptyCarriers(this.data, tokens)) {
+        const note = document.createElement('p');
+        note.className = 'squad-note';
+        note.textContent = `${c.label} is carrying nothing.`;
+        inspectOnHover(note, {
+          title: `${c.label} has no Load`,
+          sub: 'Official FAQ O8',
+          lines: [
+            'A Carrier lends the Part on its back to a friendly Mech it is in contact with. With nothing loaded it has nothing to lend.',
+            'This is allowed: O8 says a Tarantula may deploy empty. It is flagged because it is usually an oversight.',
+            'Give it a Part from the Load button on its card in the Details tab, or when adding it from the Add tab.',
+          ],
+        });
+        sec.appendChild(note);
       }
       const tac = this.tacticsBlock(side);
       if (tac) sec.appendChild(tac);

@@ -1,9 +1,10 @@
 import type { Card, CardAction, Token } from './types';
-import { cardImageUrl, cardName, mechPartUrl, rulesLines, squadLabel, tabImageUrl, type GameData } from './data';
+import { cardImageUrl, cardName, isDiscardCard, mechPartUrl, rulesLines, squadLabel, tabImageUrl, type GameData } from './data';
 import { inspectOnHover } from './inspector';
 import { ICON_BOLT } from './icons';
 import { expandGlyphs } from './glyphs';
-import { type ActionWorld, guidedActions, isElectronicAttack, knockbackOf, SLOT_LABEL, tokenCards } from './units';
+import { groupByFaction, openPartPicker } from './partpicker';
+import { type ActionWorld, canBeLoad, guidedActions, isCarrier, isElectronicAttack, knockbackOf, SLOT_LABEL, tokenCards } from './units';
 import { costLabel, LENGTH_NAME, lengthOf, TICK_COST } from './ticks';
 
 const ACTION_TINT: Record<string, string> = {
@@ -89,6 +90,10 @@ export interface PanelCallbacks {
   onDetonate(t: Token, actionId: string): void;
   onShove(t: Token, actionId: string): void;
   onCharge(t: Token, slot: string, on: boolean): void;
+  // Changing what a Carrier holds. Setup housekeeping rather than a game
+  // action - the Load is chosen during list building - so it is offered only in
+  // freeplay, where the board is a sandbox.
+  onSetLoad?(t: Token, cardId: string | undefined): void;
   tacticNote(t: Token): string | null;
 }
 
@@ -117,6 +122,49 @@ export class Panel {
     this.body.replaceChildren(this.cardBlock(card));
   }
 
+  // A Carrier's Load, changeable on the board. The Load is really chosen during
+  // list building, so this is a setup fix rather than a move: a Tarantula that
+  // went down empty can be given its Part without deleting and re-adding it.
+  private loadRow(t: Token): HTMLElement {
+    const held = t.droneBackpack ? this.data.byId.get(t.droneBackpack) : undefined;
+    const row = document.createElement('div');
+    row.className = 'tok-load';
+    const label = document.createElement('span');
+    label.className = 'tok-load-name';
+    label.textContent = held ? `Carrying ${cardName(held)}` : 'Carrying nothing';
+    const pick = document.createElement('button');
+    pick.className = 'tok-load-pick';
+    pick.textContent = held ? 'Change' : 'Add a Load';
+    pick.addEventListener('click', () => {
+      const parts = this.data.cards
+        .filter((c) => c.category === 'mech_part' && canBeLoad(c) && !isDiscardCard(c))
+        .sort((a, b) => cardName(a).localeCompare(cardName(b)));
+      openPartPicker({
+        data: this.data,
+        slotLabel: `Load for ${t.label}`,
+        groups: groupByFaction(this.data, parts),
+        chosen: t.droneBackpack,
+        lockedFaction: this.data.factionOf(this.data.byId.get(t.cardId)!) ?? null,
+        actions: [
+          {
+            label: 'Carry this',
+            run: (card: Card) => this.cb.onSetLoad?.(t, t.droneBackpack === card.id ? undefined : card.id),
+          },
+        ],
+      });
+    });
+    row.append(label, pick);
+    if (held) {
+      const off = document.createElement('button');
+      off.className = 'tok-load-pick';
+      off.textContent = 'Take off';
+      off.title = 'A Carrier may stand there empty (FAQ O8).';
+      off.addEventListener('click', () => this.cb.onSetLoad?.(t, undefined));
+      row.appendChild(off);
+    }
+    return row;
+  }
+
   showToken(t: Token, focusSlot?: string): void {
     const scroller = this.body.closest<HTMLElement>('.side-tab');
     const sameUnit = this.shownUid === t.uid;
@@ -139,6 +187,11 @@ export class Panel {
       flag.className = 'tok-tactic';
       flag.textContent = owed;
       this.body.appendChild(flag);
+    }
+
+    const carrier = this.data.byId.get(t.cardId);
+    if (this.cb.onSetLoad && t.kind === 'drone' && carrier && isCarrier(carrier)) {
+      this.body.appendChild(this.loadRow(t));
     }
 
     const actions = guidedActions(this.data, t, this.cb.world());

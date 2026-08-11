@@ -322,6 +322,21 @@ async function init() {
       onChanged();
       panel.showToken(t);
     },
+    // Rebuilt rather than patched: the Load feeds the drone's Ammo and Intercept
+    // pools, so setting `droneBackpack` alone would leave a Part on its back
+    // with no magazine. Same trick as unfoldToken - make a fresh token and keep
+    // only what identifies this one on the board.
+    onSetLoad(t, cardId) {
+      const card = data.byId.get(t.cardId);
+      if (!card || t.kind !== 'drone') return;
+      const fresh = makeDroneToken(state, data, card, t.side, cardId);
+      Object.assign(t, fresh, {
+        uid: t.uid, col: t.col, row: t.row, facing: t.facing, deployed: t.deployed, label: t.label,
+      });
+      logTo(t, cardId ? `Loaded with ${cardName(data.byId.get(cardId))}.` : 'Load taken off.');
+      onChanged();
+      panel.showToken(t);
+    },
   });
 
   const squadTracker = new SquadTracker(data, document.getElementById('squad-body')!, {

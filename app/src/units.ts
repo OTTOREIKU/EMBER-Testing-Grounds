@@ -820,6 +820,18 @@ export function cardFitsSquad(data: GameData, allegiance: SquadAllegiance, card:
   return allegiance.mixed.includes(f);
 }
 
+// Carriers standing there with nothing on their back. This is LEGAL - O8 says
+// so outright - so it is a reminder, never an illegality: an empty Tarantula is
+// simply a drone that does nothing, and it is almost always an oversight in
+// list building rather than a choice.
+export function emptyCarriers(data: GameData, tokens: Token[]): Token[] {
+  return tokens.filter((t) => {
+    if (t.kind !== 'drone' || t.droneBackpack) return false;
+    const card = data.byId.get(t.cardId);
+    return !!card && isCarrier(card);
+  });
+}
+
 export function factionProblems(data: GameData, tokens: Token[]): FactionProblem[] {
   const out: FactionProblem[] = [];
   const squad = new Set<string>();
