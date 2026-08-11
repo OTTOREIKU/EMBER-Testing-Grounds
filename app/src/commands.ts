@@ -2,7 +2,7 @@ import type { Facing, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stanc
 import { addStatus, ageTokens, newOpportunity, PHASES, statusCount, STATUSES, TIMINGS } from './types';
 import type { GameData } from './data';
 import { unfoldsInto } from './data';
-import { electronicOrigins, loanedParts, unfoldToken, extrasFor, consumesCharge, electronicValue, freehandSlots, interceptCapacity, makeDroneToken, makeMechToken, maxLink, pilotCard, tokenCards } from './units';
+import { electronicOrigins, loanedParts, unfoldToken, extrasFor, consumesCharge, electronicValue, freehandSlots, interceptCapacity, makeDroneToken, makeMechToken, maxLink, pilotCard, projectileDelivery, tokenCards } from './units';
 import { canActivate, canManeuver, canOverload, canPerform, spendAction, spendActivation, spendManeuver, spendOverload } from './ticks';
 import { tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { battlefieldLocked, deploymentComplete, deployTurn, firstPlayerFrom, newSetup, normaliseSetup } from './setup';
@@ -109,6 +109,7 @@ export type Command =
   | { kind: 'resolveIntercept'; seat: Side; uid: number; actionId: string; targetUid: number }
   | { kind: 'clearIntercepts'; seat: Side }
   | { kind: 'launch'; seat: Side; uid: number; actionId: string; cardId: string; to: { col: number; row: number }; facing: Facing }
+  | { kind: 'layMine'; seat: Side; uid: number; actionId: string; cardId: string; to: { col: number; row: number } }
   | { kind: 'despawn'; seat: Side; uid: number; targetUid: number }
   | { kind: 'unfold'; seat: Side; uid: number }
   | { kind: 'placeSmoke'; seat: Side; at: { col: number; row: number } }
@@ -923,6 +924,22 @@ function checkActed(
       }
       return ok;
     }
+    case 'layMine': {
+      if (!t) return no('That unit is not on the board.');
+      if (!data.byId.get(cmd.cardId)) return no('That is not a card the database knows.');
+      const a = findAction(data, state, cmd.uid, cmd.actionId);
+      if (!a) return no('This unit has no such Action.');
+      if (projectileDelivery(a) !== 'lay') return no('That Action does not Lay anything.');
+      const { col, row } = cmd.to;
+      if (!Number.isInteger(col) || !Number.isInteger(row) || col < 0 || row < 0 || col > 35 || row > 35) {
+        return no('That is not a place on the board.');
+      }
+      // Which Grids are legal and what the Move Range paid for is the route's
+      // business, and the route is gone by the time this arrives — the driver
+      // that drew it only offers Grids on it. Laying is a Passive, so unlike
+      // every other Action there is no Tick to check here either.
+      return ok;
+    }
     case 'despawn': {
       if (!state.tokens.some((x) => x.uid === cmd.targetUid)) return no('That unit is not on the board.');
       return ok;
@@ -1630,6 +1647,16 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
       const tok = makeDroneToken(state, data, card, t.side);
       state.tokens.push({ ...tok, parentUid: t.uid, col: cmd.to.col, row: cmd.to.row, facing: cmd.facing });
       if (t.ammo[cmd.actionId] !== undefined) t.ammo[cmd.actionId] = Math.max(0, t.ammo[cmd.actionId] - 1);
+      return;
+    }
+    case 'layMine': {
+      const card = data.byId.get(cmd.cardId);
+      if (!card) return;
+      // Same shape as a launch minus the Ammo: Auto Mine Laying has no magazine,
+      // it is paid for in Move Range, and that was spent by walking a shorter
+      // route. Facing is the layer's own so a mirrored seat draws it identically.
+      const tok = makeDroneToken(state, data, card, t.side);
+      state.tokens.push({ ...tok, parentUid: t.uid, col: cmd.to.col, row: cmd.to.row, facing: t.facing });
       return;
     }
     case 'unfold': {

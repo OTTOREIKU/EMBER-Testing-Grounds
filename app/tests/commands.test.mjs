@@ -49,6 +49,14 @@ const freehand = unitsSrc.slice(
   unitsSrc.indexOf('// ---------- Charge (rulebook 4.14) ----------'),
 );
 if (!freehand) throw new Error('could not locate freehandSlots in units.ts');
+// layMine's check asks whether the Action really Lays, and that reading is a
+// regex over the card's own wording — mirroring it here could drift from the
+// one the app applies, which is the whole point of the check.
+const delivery = unitsSrc.slice(
+  unitsSrc.indexOf('export function projectileDelivery'),
+  unitsSrc.indexOf('// The Interception attempts'),
+);
+if (!delivery) throw new Error('could not locate projectileDelivery in units.ts');
 const timings = types.slice(types.indexOf('export const PHASES'), types.indexOf('export type TokenShape'));
 const statuses = types.slice(types.indexOf('export function hexagonIds'), types.indexOf('export interface RoundState'));
 const tmp = new URL('./_commands.slice.ts', import.meta.url);
@@ -151,6 +159,7 @@ writeFileSync(
     + evReader
     + slotLabels
     + freehand
+    + delivery
     + stubs
     + commands.replace(/^import[^\n]*\n/gm, ''),
 );
@@ -190,6 +199,10 @@ const data = {
     ['EW1', { id: 'EW1', electronic: 5, actions: [{ id: 'EWA', type: 'Firing', size: 's', range: 4, name: { en: 'Fire Control Interference' }, keywords: [{ en: 'Electronic Attack' }] }] }],
     ['EW2', { id: 'EW2', electronic: 3, actions: [] }],
     ['D1', { id: 'D1', actions: [] }],
+    // A Mine Layer Backpack and the Mine it Lays: "Lay" in the Action name is
+    // what projectileDelivery reads to tell Laying from a Launch.
+    ['ML1', { id: 'ML1', projectile: ['MN1'], actions: [{ id: 'LAY1', type: 'Passive', name: { en: 'Auto Mine Laying' }, range: 0 }] }],
+    ['MN1', { id: 'MN1', category: 'projectile', actions: [] }],
     // Freehand is what lets a Part carry a Black Box (5.3.1).
     ['FH1', { id: 'FH1', actions: [], keywords: [{ en: 'Freehand' }] }],
     // Two of the six Tactics Cards, which are held in hand rather than deployed.
@@ -851,6 +864,40 @@ check('and the uid counter advanced', wl.nextUid, 51);
 check('launching a made-up card is refused', C.check(data, wl, { kind: 'launch', seat: 's1', uid: 1, actionId: 'L1', cardId: 'NOPE', to: { col: 9, row: 9 }, facing: 0 }).ok, false);
 C.apply(data, wl, { kind: 'despawn', seat: 's1', uid: 1, targetUid: 50 });
 check('a despawn takes it back off', wl.tokens.length, 1);
+
+// ---------- laying Mines (FAQ M7) ----------
+
+// Given an Ammo counter it has no business touching, so "no Ammo moved" is a
+// real assertion rather than a missing key reading as absence.
+const wlay = world([mech(1, 's1', { mech: { torso: 'T4', backpack: 'ML1', pilot: 'P1' }, ammo: { LAY1: 2, L1: 3 } })], 2);
+wlay.nextUid = 70;
+const lay = (over = {}) => ({ kind: 'layMine', seat: 's1', uid: 1, actionId: 'LAY1', cardId: 'MN1', to: { col: 12, row: 6 }, ...over });
+check('a Mine Layer may Lay', C.check(data, wlay, lay()).ok, true);
+// The route and the Move Range that paid for it are the driver's business; the
+// command only knows the Action really Lays something.
+check('an Action that does not Lay is refused', C.check(data, wlay, lay({ actionId: 'L1' })).ok, false);
+check('a made-up Mine is refused', C.check(data, wlay, lay({ cardId: 'NOPE' })).ok, false);
+check('and a spot off the board is refused', C.check(data, wlay, lay({ to: { col: 99, row: 6 } })).ok, false);
+C.apply(data, wlay, lay());
+const laid = wlay.tokens[1];
+check('laying puts the Mine on the board where it was named', [laid.uid, laid.parentUid, laid.col, laid.row], [70, 1, 12, 6]);
+check('it belongs to the layer', laid.side, 's1');
+// Auto Mine Laying has no magazine — it is paid for in Move Range, which the
+// shorter route already spent.
+check('and no Ammo moved', [wlay.tokens[0].ammo.LAY1, wlay.tokens[0].ammo.L1], [2, 3]);
+check('the uid counter advanced, so the next Mine sorts after this one', wlay.nextUid, 71);
+
+// The multiplayer property, stated directly: the same command applied to two
+// mirrored boards must leave them byte-identical, because that is all the
+// relay guarantees — it orders and forwards, it does not referee. Any hidden
+// dependence on local state (a random, a clock, a render) shows up here.
+const seatA = world([mech(1, 's1', { mech: { torso: 'T4', backpack: 'ML1', pilot: 'P1' } })], 2);
+seatA.nextUid = 70;
+const seatB = structuredClone(seatA);
+const layCmd = { kind: 'layMine', seat: 's1', uid: 1, actionId: 'LAY1', cardId: 'MN1', to: { col: 12, row: 6 } };
+C.apply(data, seatA, layCmd);
+C.apply(data, seatB, layCmd);
+check('a mirrored layMine lands identically on both seats', JSON.stringify(seatA), JSON.stringify(seatB));
 
 // ---------- smoke screens ----------
 

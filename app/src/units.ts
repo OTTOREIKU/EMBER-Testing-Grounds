@@ -598,6 +598,52 @@ export function minesOwed(data: GameData, tokens: Token[]): MineTrigger[] {
   return out;
 }
 
+// What a Mine Layer may drop, and where. The GLP-15's Auto Mine Laying is a
+// PASSIVE that costs no Tick and no Ammo — it is paid for in Move Range, 1 point
+// per Mine, and the Mines go "anywhere on the route" (M7). So the offer is read
+// off the route the Mech actually walked and whatever budget it did not spend,
+// which is why this takes a path and a spend rather than a destination: a player
+// who wants to lay two Mines has to stop two Grids short.
+//
+// M29 is the one exception to "anywhere on the route": a Flight Move's path is
+// only its starting and landing Grids, so a flying Mech may lay at either end
+// and nowhere between, however many Grids the drawn route crossed.
+export interface MineLaying {
+  uid: number;
+  actionId: string;
+  cardId: string;
+  grids: { c: number; r: number }[];
+  max: number;
+}
+
+export function minesLayable(
+  data: GameData,
+  t: Token,
+  path: { c: number; r: number }[],
+  spare: number,
+  flying: boolean,
+): MineLaying | null {
+  if (t.kind !== 'mech' || !alive(t) || !path.length || spare <= 0) return null;
+  for (const { card, slot } of tokenCards(data, t)) {
+    // A destroyed Part lends nothing, the same rule every other borrowed Action
+    // follows.
+    if ((t.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
+    for (const a of card.actions ?? []) {
+      if (projectileDelivery(a) !== 'lay') continue;
+      // The Mine it lays is the Part's own Projectile, so a card that lays
+      // something we do not hold offers nothing rather than a broken button.
+      // `projectile` is a count on some cards and a list of ids on others.
+      const cardId = Array.isArray(card.projectile) ? card.projectile[0] : undefined;
+      if (!cardId || !data.byId.get(cardId)) continue;
+      // Flight Move: the Grids between the ends were never on the path (M29).
+      const ends = path.length > 1 ? [path[0], path[path.length - 1]] : [path[0]];
+      const grids = flying ? ends : path;
+      return { uid: t.uid, actionId: a.id, cardId, grids, max: Math.min(spare, grids.length) };
+    }
+  }
+  return null;
+}
+
 // ---------- Pholcus, the Mine that unfolds (FAQ M8/M18/M28) ----------
 
 // The folded Projectile becomes its Drone form in place. Everything the Drone
@@ -621,6 +667,38 @@ export function unfoldsOwed(data: GameData, tokens: Token[]): { uid: number; act
     const act = (card.actions ?? []).find((a) => a.type === 'Delay');
     if (!act) continue;
     out.push({ uid: t.uid, actionId: act.id, into });
+  }
+  return out;
+}
+
+// The Detonations that MUST happen (FAQ M18.6). An Unfolded Pholcus with an
+// enemy in its attack range has no choice in the Automatic Phase: it jumps and
+// blows up. Derived from the board like `minesOwed` rather than hung off the
+// designation loop, and that is the whole reason this is small - the rule names
+// ONE unit, so refusing the player's Pass would over-reach (it would force every
+// other Drone to activate too) and would not even hold, since advancing the
+// phase skips the loop entirely. Reading the board instead catches both.
+//
+// Keyed on the Action's shape, `Detonation` + `auto`, not on the card id: the
+// Unfolded Pholcus is the only card in the box that carries it, so anything new
+// built the same way is covered without being remembered.
+//
+// The target is NOT decided here. Where several are tied for nearest the player
+// still picks, because M18.6 makes the Detonation mandatory, not the victim.
+export function autoDetonationsOwed(
+  data: GameData,
+  tokens: Token[],
+): { uid: number; actionId: string; targets: number[] }[] {
+  const out: { uid: number; actionId: string; targets: number[] }[] = [];
+  for (const t of tokens.filter(alive)) {
+    if (t.deployed === false) continue;
+    const card = data.byId.get(t.cardId);
+    if (!card) continue;
+    for (const a of card.actions ?? []) {
+      if (a.type !== 'Detonation' || a.speed !== 'auto') continue;
+      const targets = autoTargetsFor(data, tokens, t, a);
+      if (targets.length) out.push({ uid: t.uid, actionId: a.id, targets: targets.map((o) => o.uid) });
+    }
   }
   return out;
 }

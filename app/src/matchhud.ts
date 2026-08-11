@@ -3,10 +3,10 @@ import type { GameData } from './data';
 import { actionIconUrl, cardName, isAerial, secondaryImageUrl, squadLabel, unitSize } from './data';
 import { Board, footprint, snapPlacement, type BoardCallbacks } from './board';
 import { printedDeployment, resolveZoneSetData } from './overlays';
-import { electronicOrigins, loanedParts, minesOwed, unfoldsOwed, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, isSilentAction, maneuverIsSilent, canActivateCamo, chargeableSlots, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
+import { autoDetonationsOwed, electronicOrigins, loanedParts, minesLayable, minesOwed, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, isSilentAction, maneuverIsSilent, canActivateCamo, chargeableSlots, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
 import { resolveCounterRoll, tallyCounter } from './combat';
 import { tacticFitsPhase, tacticSpec, tacticTargets, type TacticCtx } from './tactics';
-import { inContact, canStandIn, attackDirection, crushTargets, dissipationFor, extendPath, knockbackPath, LG, losBetween, losNote, protectionFor, rangeBetween, reachableGrids, standingSpot, type LargeGrid } from './rules';
+import { inContact, canStandIn, attackDirection, crushTargets, dissipationFor, extendPath, knockbackPath, LG, losBetween, losNote, pathCost, protectionFor, rangeBetween, reachableGrids, standingSpot, type LargeGrid } from './rules';
 import { breakAwayCost, canBeForceMoved } from './melee';
 import { factionColour, linkIcon, squadColour } from './icons';
 import { iconSvg } from './dice';
@@ -532,6 +532,8 @@ function commitMove(ctx: HudCtx): void {
       shoveActionId: shoveId,
       facing,
       path: m.path,
+      steps: m.steps,
+      flying: m.flying,
     };
     advanceCrush(ctx);
     ctx.refresh();
@@ -554,7 +556,9 @@ function commitMove(ctx: HudCtx): void {
       }
     }
     // A Black Box in a Grid the route passed through may be picked up, which is
-    // read off the whole route rather than the destination (5.3.1).
+    // read off the whole route rather than the destination (5.3.1). Auto Mine
+    // Laying reads the same route, and goes first (M7).
+    offerMinesOn(ctx, t, walked, m.steps, m.flying);
     offerBoxesOn(ctx, t.uid, walked);
     // A shove rides on the Movement rather than replacing it, so it is offered
     // once the Mech has finished moving and is facing whatever it ended beside.
@@ -1247,6 +1251,9 @@ function panelHtml(ctx: HudCtx): string {
     return head('Your move', 'Resolving the attack', 'The combat window has the dice.', true)
       + '<div class="tp-body"><p class="tp-note">The combat window has it. Everything it settles is applied for you<br>and reaches the other player on its own.</p></div><div class="tp-foot"></div>';
   }
+  // Mines before Boxes, matching M7's sequence: the Mine goes down on the way
+  // through, and only then does the Mech finish entering the last Grid.
+  if (minePick) return minePickPanel(ctx);
   if (boxPick) return boxPickPanel(ctx);
   // A Tactics Card is played into a moment, so its two questions come before
   // whatever the phase would otherwise be asking.
@@ -1279,6 +1286,9 @@ function panelHtml(ctx: HudCtx): string {
   // queued for this: the trigger is read off the board, so both clients agree
   // on it without a command and a rejoin re-derives it.
   if (mineTriggers(ctx).length) return minePanel(ctx);
+  // A Mine already under something outranks this: that blast is already owed,
+  // and it may well remove the Pholcus before it ever gets to jump.
+  if (autoBoomsOwed(ctx).length) return autoBoomPanel(ctx);
   // A grant is answered before anything else: the Action has been performed
   // and the Ally is owed its Opportunity.
   if (grantPick) return grantPanel(ctx);
@@ -1624,6 +1634,37 @@ function minePanel(ctx: HudCtx): string {
        <div class="tp-foot"><button class="bigbtn" data-minego="${x.t.uid}" data-mineact="${esc(x.trigger.actionId)}">Resolve the Detonation (4.7.6)</button></div>`;
 }
 
+// FAQ M18.6: an Unfolded Pholcus with an enemy in range MUST Detonate in the
+// Automatic Phase. Derived, phase-gated, and shown to its OWNER - the same seat
+// rule the Mine blast follows, since it is that player's unit that acts.
+// Deliberately NOT wired into the designation loop: the rule names one unit, so
+// blocking the squad's Pass would over-reach and would miss a phase advance
+// anyway. Reading the board catches both.
+function autoBoomsOwed(ctx: HudCtx): { uid: number; actionId: string; targets: number[]; t: Token }[] {
+  if (PHASES[ctx.state.round.phase] !== 'Automatic') return [];
+  return autoDetonationsOwed(ctx.data, ctx.state.tokens)
+    .map((x) => ({ ...x, t: ctx.state.tokens.find((o) => o.uid === x.uid) }))
+    .filter((x): x is { uid: number; actionId: string; targets: number[]; t: Token } => !!x.t && mine(ctx, x.t.side));
+}
+
+function autoBoomPanel(ctx: HudCtx): string {
+  const x = autoBoomsOwed(ctx)[0];
+  if (!x) return '';
+  const names = x.targets
+    .map((u) => ctx.state.tokens.find((o) => o.uid === u)?.label)
+    .filter((l): l is string => !!l);
+  // Resolving is the only button. There is no "skip" here because the FAQ leaves
+  // no choice — where the player DOES still choose is which of several tied
+  // nearest targets it jumps to, and that happens inside the detonation flow.
+  return head('Your move', `${esc(x.t.label)} must Detonate`,
+    'An enemy is inside its attack range, and this is not a choice: it jumps to the target\'s Grid, Detonates there and is removed (FAQ M18.6).', true)
+    + `<div class="tp-body"><p class="tp-note">In range: ${esc(names.join(', ') || 'nothing')}${
+        names.length > 1 ? '<br>Tied for nearest, so you pick which.' : ''
+      }</p>
+        <p class="tp-dim">It is a Low Value Unit, so neither destroying it nor its self-Detonation scores (M8).</p></div>
+       <div class="tp-foot"><button class="bigbtn" data-minego="${x.t.uid}" data-mineact="${esc(x.actionId)}">Resolve the Detonation (4.7.6)</button></div>`;
+}
+
 function revealsOwed(ctx: HudCtx): { t: Token; key: string; why: string }[] {
   const s = ctx.state;
   const sc = ensureScript(s);
@@ -1932,6 +1973,54 @@ function offerBoxesOn(ctx: HudCtx, uid: number, path: LargeGrid[]): void {
   if (on.length) boxPick = { uid, queue: on.map((i) => i.id) };
 }
 
+// Auto Mine Laying, offered on the same signal as the Boxes: the route just
+// walked. `left` is how many more the unspent Move Range can pay for, so it
+// counts down as they go in rather than being asked once (FAQ M7/M29).
+let minePick: (MineLaying & { left: number; flight: boolean }) | null = null;
+
+function offerMinesOn(ctx: HudCtx, t: Token, path: LargeGrid[], steps: number, flying: boolean): void {
+  const spare = steps - pathCost(path, flying || !!t.aerial, moveOptsFor(ctx, t, flying));
+  const lay = minesLayable(ctx.data, t, path, spare, flying || !!t.aerial);
+  if (lay) minePick = { ...lay, left: lay.max, flight: flying || !!t.aerial };
+}
+
+function minePickPanel(ctx: HudCtx): string {
+  const m = minePick!;
+  const t = ctx.state.tokens.find((x) => x.uid === m.uid);
+  const mine = ctx.data.byId.get(m.cardId);
+  if (!t || !mine) {
+    return head('Lay a Mine', 'It is no longer available', '', true)
+      + '<div class="tp-body"></div><div class="tp-foot"><button class="bigbtn ghost2" data-act="mineskip">Close</button></div>';
+  }
+  const what = cardName(mine);
+  const rows = m.grids
+    .map((g) => `<button class="rowwide" data-minelay="${g.c},${g.r}">${esc(gridName(g.c, g.r))}<span class="ct">lay here</span></button>`)
+    .join('');
+  return head('Your move', `Lay ${esc(what)}?`, `${esc(t.label)} held ${m.left} point${m.left === 1 ? '' : 's'} of Move Range back.`, true)
+    + `<div class="tp-body">${rows}
+        <p class="tp-dim">Each Mine costs 1 Move Range, which is why the route was short. No Action Tick and no Ammo (FAQ M7).${
+          m.flight ? '<br>A Flight Move only has its starting and landing Grids to lay in (FAQ M29).' : ''
+        }</p></div>
+       <div class="tp-foot"><button class="bigbtn ghost2" data-act="mineskip">${m.left === m.max ? 'Lay none' : 'That is enough'}</button></div>`;
+}
+
+function layMineAt(ctx: HudCtx, c: number, r: number): void {
+  const m = minePick;
+  const t = m ? ctx.state.tokens.find((x) => x.uid === m.uid) : undefined;
+  if (!m || !t) { minePick = null; ctx.refresh(); return; }
+  // Online play is always strict, so a refusal really refuses — the offer must
+  // survive it or a declined command silently eats a Mine the player still has
+  // the Move Range for.
+  if (ctx.send({
+    kind: 'layMine', seat: t.side, uid: t.uid, actionId: m.actionId, cardId: m.cardId, to: { col: c * 3 + 1, row: r * 3 + 1 },
+  }).ok) {
+    ctx.noteNow(`${t.label} Lays ${cardName(ctx.data.byId.get(m.cardId))} in ${gridName(c, r)}, paid for with 1 Move Range.`);
+    m.left -= 1;
+    if (m.left <= 0) minePick = null;
+  }
+  ctx.refresh();
+}
+
 function boxPickPanel(ctx: HudCtx): string {
   const m = boxPick!;
   const t = ctx.state.tokens.find((x) => x.uid === m.uid);
@@ -2079,8 +2168,12 @@ let crushPlan: {
   shoveActionId?: string;
   facing?: Facing;
   // The route, kept so the Boxes it walked over are still offered once the
-  // crush has been worked through.
+  // crush has been worked through — and with it the budget it was drawn
+  // against, since Auto Mine Laying is priced in the Move Range left over
+  // and M7 allows Laying and Crushing inside one Movement.
   path: LargeGrid[];
+  steps: number;
+  flying: boolean;
 } | null = null;
 
 // Where a crushed Unit may be pushed: an orthogonal neighbour that is on the
@@ -2148,6 +2241,7 @@ function finishCrush(ctx: HudCtx): void {
   board?.animateMove(t.uid, stops, () => {
     ctx.send({ kind: 'maneuver', seat: t.side, uid: t.uid, to: spot, free: m.free, granted: m.granted, via: stops, facing: m.facing });
     ctx.noteNow(`${t.label} crushes into ${gridName(m.goal.c, m.goal.r)}, and its Movement ends there (4.3.6).`);
+    offerMinesOn(ctx, t, m.path, m.steps, m.flying);
     offerBoxesOn(ctx, t.uid, m.path);
     if (m.shoveActionId) startShove(t.uid, m.shoveActionId);
     ctx.refresh();
@@ -3850,6 +3944,11 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
   on('[data-turn]', (el) => { rotate(ctx, el.dataset.turn === 'ccw' ? 3 : 1); });
   on('[data-boxtake]', (el) => takeBox(ctx, el.dataset.boxtake!));
   on('[data-act="boxskip"]', () => nextBox(ctx));
+  on('[data-minelay]', (el) => {
+    const [c, r] = el.dataset.minelay!.split(',').map(Number);
+    layMineAt(ctx, c, r);
+  });
+  on('[data-act="mineskip"]', () => { minePick = null; ctx.refresh(); });
   on('[data-boxdrop]', (el) => {
     const [c, r] = el.dataset.boxdrop!.split(':').map(Number);
     placeDroppedBox(ctx, c, r);

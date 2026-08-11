@@ -31,7 +31,7 @@ import {
 import { Panel } from './panel';
 import { tacticSpec, tacticTargets } from './tactics';
 import { Roster } from './roster';
-import { inContact, canStandIn, attackDirection, crushTargets, type CrushVictims, dissipationFor, extendPath, inArc, knockbackPath, largeGridOf, type LargeGrid, LG, losBetween, losNote as losNoteFor, type MoveOpts, protectionFor as protectionForShared, rangeBetween, reachableGrids, smokeBlocks, standingSpot } from './rules';
+import { inContact, canStandIn, attackDirection, crushTargets, type CrushVictims, dissipationFor, extendPath, inArc, knockbackPath, largeGridOf, type LargeGrid, LG, losBetween, losNote as losNoteFor, type MoveOpts, pathCost, protectionFor as protectionForShared, rangeBetween, reachableGrids, smokeBlocks, standingSpot } from './rules';
 import { breakAwayCost, canBeForceMoved, lockersOf } from './melee';
 import { instantiateScenario, loadScenarios, type Scenario } from './scenarios';
 import { loadReplays, ReplayPlayer, type ReplayScript, type ReplayStep, type ReplayTally } from './replay';
@@ -45,7 +45,7 @@ import { PlayGuide } from './playguide';
 import type { Card, CardAction, DiceData, DieColor, Facing, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, StatusDef, TerrainPiece, Timing, Token } from './types';
 import { addStatus, SCALES, statusCount, statusesFor, STATUSES } from './types';
 import { actionIdOf } from './ticks';
-import { loanedParts, minesOwed, unfoldsOwed, repairSpec, autoTargetsFor, isSilentAction, maneuverIsSilent, chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, type Resupply, resupplyOf, SLOT_LABEL, interceptLeft, interceptsOwed, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf } from './units';
+import { autoDetonationsOwed, loanedParts, minesLayable, minesOwed, unfoldsOwed, repairSpec, autoTargetsFor, isSilentAction, maneuverIsSilent, chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, type Resupply, resupplyOf, SLOT_LABEL, interceptLeft, interceptsOwed, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf } from './units';
 import { registerOffline } from './offline';
 import { battlefieldLocked, countHits, firstPlayerFrom, newSetup, normaliseSetup, tasksLocked, type SetupState } from './setup';
 import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
@@ -1604,7 +1604,12 @@ async function init() {
           logTo(t, `Aerial Movement triggers Interception: ${owed.length} attempt${owed.length === 1 ? '' : 's'} owed (4.9).`);
         }
       }
-      void offerBlackBoxes(t, path).then(() => m.done(true));
+      // Mines first: M7's sequence Lays on the way through and only then enters
+      // the last Grid, so a Mine dropped here is already down when the sweep
+      // looks at the board.
+      void offerMines(t, path, m.steps, m.flying)
+        .then(() => offerBlackBoxes(t, path))
+        .then(() => m.done(true));
     };
     if (victims) {
       // The Grid is entered only once whatever was standing there is dealt with,
@@ -1656,6 +1661,47 @@ async function init() {
     logTo(unit, `${what} from ${t.label}: Ammo restored to ${unit.ammo[rule.actionId]}/${max}.`);
     onChanged();
     done(true);
+  }
+
+  // Auto Mine Laying (FAQ M7/M29). Offered after the route rather than before,
+  // because the price is the Move Range the Mech did NOT spend: walk 2 of your 4
+  // Grids and there are 2 points left to drop 2 Mines with. Laying is a Passive,
+  // so no Tick and no Ammo change hands - the shorter walk IS the cost.
+  async function offerMines(t: Token, path: { c: number; r: number }[], steps: number, flying: boolean): Promise<void> {
+    const spare = steps - pathCost(path, flying || t.aerial, moveOpts(t, flying));
+    const lay = minesLayable(data, t, path, spare, flying || !!t.aerial);
+    if (!lay) return;
+    const mine = data.byId.get(lay.cardId);
+    const what = mine ? cardName(mine) : 'a Mine';
+    for (let n = 0; n < lay.max; n++) {
+      const left = lay.max - n;
+      const go = await confirmDialog({
+        title: n === 0 ? `Lay ${what} along the route?` : `Lay another ${what}?`,
+        body: `${t.label} kept ${left} point${left === 1 ? '' : 's'} of Move Range back, and each one Lays 1 ${what} anywhere on the route it walked (FAQ M7).`
+          + (flying || t.aerial
+            ? ' This was a Flight Move, so the only Grids on its path are the one it started in and the one it landed in (FAQ M29).'
+            : '')
+          + ' Laying costs no Action Tick and no Ammo.',
+        confirmLabel: 'Lay one',
+        cancelLabel: n === 0 ? 'Lay none' : 'That is enough',
+      });
+      if (!go) return;
+      const where = await choiceDialog({
+        title: `Where does the ${what} go?`,
+        body: 'Any Grid on the route just walked.',
+        choices: lay.grids.map((g) => ({ id: `${g.c},${g.r}`, label: gridRef(g.c, g.r) })),
+      });
+      if (!where) return;
+      const [c, r] = where.split(',').map(Number);
+      // Through the command layer so a mirrored seat mints the same uid, which
+      // is also what lets minesOwed tell a Mine that just arrived from one that
+      // was already there (M6).
+      if (!perform(data, state, {
+        kind: 'layMine', seat: t.side, uid: t.uid, actionId: lay.actionId, cardId: lay.cardId, to: { col: c * 3 + 1, row: r * 3 + 1 },
+      }).ok) return;
+      logTo(t, `Laid ${what} in ${gridRef(c, r)}, paid for with 1 Move Range.`);
+      onChanged();
+    }
   }
 
   async function offerBlackBoxes(t: Token, path: { c: number; r: number }[]): Promise<void> {
@@ -3256,6 +3302,59 @@ async function init() {
     });
   }
 
+  // Which mandatory Detonations have already been offered, so a declined one
+  // does not ask again on every render.
+  const autoBoomSeen = new Set<number>();
+
+  // FAQ M18.6: an Unfolded Pholcus with an enemy in its attack range MUST
+  // Detonate in the Automatic Phase. Read off the board rather than off the
+  // designation loop, so passing the phase or skipping the unit does not lose
+  // it - the same reason the Mine trigger is derived. Phase-gated, because
+  // unlike a Mine this one only comes due in the Automatic Phase.
+  function sweepAutoDetonations(): void {
+    // No script gate: like sweepMines, the sandbox player clicking the round
+    // tracker to Automatic deserves the reminder too. The phase test is the
+    // gate, and leaving the phase re-arms it for next round.
+    if (PHASES[state.round.phase] !== 'Automatic') {
+      autoBoomSeen.clear();
+      return;
+    }
+    const owed = autoDetonationsOwed(data, state.tokens);
+    for (const uid of [...autoBoomSeen]) {
+      if (!state.tokens.some((t) => t.uid === uid)) autoBoomSeen.delete(uid);
+    }
+    const next = owed.find((x) => !autoBoomSeen.has(x.uid));
+    if (!next) return;
+    const t = state.tokens.find((x) => x.uid === next.uid);
+    if (!t) return;
+    autoBoomSeen.add(next.uid);
+    const names = next.targets
+      .map((u) => state.tokens.find((x) => x.uid === u)?.label)
+      .filter((x): x is string => !!x);
+    // It jumps to the target's Grid and blows up there, so the victim is the
+    // one it reaches - and where several are tied for nearest the choice is
+    // still the player's, which is why the target is not named here.
+    const body = `${t.label} has an enemy in its attack range, and the FAQ is explicit that it MUST Detonate `
+      + `in the Automatic Phase - this is not a choice (M18.6). It jumps to the target's Grid, Detonates there and is removed. `
+      + `In range: ${names.join(', ') || 'nothing'}${names.length > 1 ? ' - tied for nearest, so you pick which' : ''}. `
+      + 'Destroying it or its self-Detonation grants no score, since it is a Low Value Unit (M8).';
+    if (state.script?.strict) {
+      logTo(t, `${t.label} must Detonate: an enemy is in range (M18.6).`);
+      void alertDialog({ title: `${t.label} must Detonate`, body }).then(() => startDetonation(t, next.actionId));
+      return;
+    }
+    void confirmDialog({
+      title: `${t.label} must Detonate`,
+      body,
+      confirmLabel: 'Resolve the Detonation',
+      cancelLabel: 'Skip it (house rule)',
+    }).then((go) => {
+      if (!go) return;
+      logTo(t, `${t.label} must Detonate: an enemy is in range (M18.6).`);
+      startDetonation(t, next.actionId);
+    });
+  }
+
   function onChanged(): void {
     setSquadNames(state.sideNames);
     syncSquadTints();
@@ -3272,6 +3371,7 @@ async function init() {
     renderSmokePrompt();
     sweepCamoContacts();
     sweepMines();
+    sweepAutoDetonations();
     // Redraw the Add tab only when what is on the board actually changed, so
     // dragging a unit or toggling a token does not reset the list underneath you.
     const sig = [...deployedCardCounts(state.tokens)]
