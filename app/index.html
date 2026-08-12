@@ -33,23 +33,27 @@
         </div>
         <section id="ltab-setup" class="left-tab">
           <div id="setup-brief" class="brief"></div>
+          <!-- The two map TOOLS sit with the map picker they act on: building a
+               map and pruning the list are both about what that dropdown holds.
+               Battlefield is then only the two things that dress the board. -->
           <div class="field">
             <label for="map-select">Map</label>
             <select id="map-select">
               <option value="">Empty board</option>
             </select>
           </div>
+          <button class="setup-row" id="btn-mapedit" data-tip-title="Map editor" data-tip="Builds a custom map from the official terrain pieces.|Paint zones and deployment strips onto it too.">Map editor<span class="ct">build a map</span></button>
+          <button class="setup-row" id="btn-mapmanage" data-tip-title="Manage maps" data-tip="Delete saved and scenario maps you no longer want in the list.">Manage maps<span class="ct">saved &amp; scenario</span></button>
+
           <div class="field">
-            <label for="zone-select">Zones &amp; mission</label>
+            <label for="zone-select">Zones</label>
             <select id="zone-select" data-tip-title="Zones" data-tip="Chooses which objective and deployment zones are drawn on the board.|Picking a Mission also sets up its Task Items.">
               <option value="">No zones</option>
             </select>
           </div>
           <p class="setup-eyebrow">Battlefield</p>
           <button class="setup-row" id="btn-missions" data-tip-title="Missions" data-tip="Reads a Main Task card and puts its zones on the board.|Locked once the battlefield is set, because Tasks are chosen before the roll (3.1.1).">Missions<span class="ct">Main Task</span></button>
-          <button class="setup-row" id="btn-mapedit" data-tip-title="Map editor" data-tip="Builds a custom map from the official terrain pieces.|Paint zones and deployment strips onto it too.">Map editor<span class="ct">build a map</span></button>
           <button class="setup-row" id="btn-scenarios" data-tip-title="Scenarios" data-tip="Loads a demo scenario complete with squads, terrain and objectives.|Good for trying a mechanic without building a list first.">Scenarios<span class="ct">demo boards</span></button>
-          <button class="setup-row" id="btn-mapmanage" data-tip-title="Manage maps" data-tip="Delete saved and scenario maps you no longer want in the list.">Manage maps<span class="ct">saved &amp; scenario</span></button>
 
           <p class="setup-eyebrow">Board</p>
           <div class="setup-btnrow">

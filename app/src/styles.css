@@ -936,6 +936,36 @@ main { display: flex; flex: 1; min-height: 0; }
 .scn-row:hover { background: var(--surface3); border-color: var(--border); }
 .scn-info { flex: 1; font-size: 13px; }
 
+/* The hovered Main Task's card, hung off the panel's own left edge so it moves
+   with the panel rather than sitting at the screen edge. Absolute against
+   `.scn-panel` (which is already `position: relative`), so it never competes
+   with the list for width — as a flex sibling it squashed a 540px panel to
+   205. `pointer-events: none` so it cannot steal the hover keeping it up. */
+#mis-preview {
+  position: absolute; right: calc(100% + 12px); top: 0;
+  margin: 0; width: 300px;
+  display: flex; flex-direction: column; gap: 6px;
+  pointer-events: none;
+}
+#mis-preview[hidden] { display: none; }
+#mis-preview img {
+  width: 100%; border-radius: var(--radius); display: block;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+}
+#mis-preview figcaption {
+  font-size: 12px; font-weight: 600; color: var(--text2); text-align: center;
+}
+/* The panel is CENTRED, so the room to its left is (viewport - 540) / 2. The
+   preview needs 300 + 12, which means a viewport of 1164 before it stops
+   hanging off the screen edge — a 900px guess left it clipped at 1050, which
+   is an ordinary window. The rows still carry their zone and deployment
+   summary, so dropping the preview loses nothing structural. */
+@media (max-width: 1163px) {
+  #mis-preview { display: none; }
+}
+/* Capped against the panel's own 82vh so a tall card cannot outgrow it. */
+#mis-preview img { max-height: 72vh; object-fit: contain; }
+
 .map-row {
   display: flex; align-items: center; gap: 10px; padding: 9px 10px;
   border: 1px solid transparent; border-radius: var(--radius); background: var(--surface2);
@@ -1268,6 +1298,16 @@ body.replaying #board .token { cursor: default; }
 .rt-cmd b { min-width: 14px; text-align: center; font-size: 13px; font-family: var(--mono); }
 .cmd-s1 b { color: var(--sq-s1); }
 .cmd-s2 b { color: var(--sq-s2); }
+/* The group says what it counts rather than an abbreviation nobody expands. */
+.rt-cmd-label { text-transform: uppercase; letter-spacing: 0.6px; font-size: 9.5px; color: var(--text3); }
+/* A physical Command Token beside each number: the ring is what separates a
+   COUNT OF TOKENS from a score, which is exactly how the bare number read. It
+   takes the squad's own colour, so the pip and the digit agree. */
+.rt-cmd b { display: inline-flex; align-items: center; gap: 4px; }
+.cmd-pip {
+  width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto;
+  border: 2px solid currentColor; opacity: 0.85;
+}
 .rt-cmd button {
   width: 18px; height: 18px; border: none; background: var(--surface2); color: var(--text2);
   border-radius: var(--radius-sm); cursor: pointer; line-height: 1;

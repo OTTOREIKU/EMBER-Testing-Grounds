@@ -4229,7 +4229,7 @@ async function init() {
       .map((m, i) => {
         const dep = data.zoneData.deployments.find((d) => d.id === data.zoneData.missionDeployment[m.id]);
         const live = state.zoneSet === `mission:${m.id}`;
-        return `<div class="scn-row${live ? ' current' : ''}">
+        return `<div class="scn-row${live ? ' current' : ''}" data-mis="${escapeHtml(m.id)}">
           <div class="scn-info"><b>${m.name}</b><br><span class="dim">${(m.zones ?? []).join(', ') || 'no tactical zones'} · ${dep?.name ?? 'deployment not known'}</span></div>
           <button data-i="${i}" class="scn-load">${live ? 'On the board' : 'Use it'}</button>
         </div>`;
@@ -4240,11 +4240,39 @@ async function init() {
       <div class="inv-head"><b>Main Task cards</b></div>
       <p class="dim">Picking one opens its briefing and draws its tactical zones and deployment zones on the board. Main Task cards do not specify terrain, so load a Battlefield Card layout or build your own map. Every zone set, including plain deployment zones and your own painted ones, is also in the Zones list in the toolbar.</p>
       <div class="scn-list">${rows}</div>
+      <!-- The card itself, hung off the panel's own left edge. A Main Task's
+           zone layout and its scoring are the whole decision, and a name plus a
+           zone list conveys neither - so hovering a row puts the printed card
+           up beside the list. Inside the panel so it travels with it, the way
+           the other attached previews on this page do. -->
+      <figure id="mis-preview" hidden><img alt=""><figcaption></figcaption></figure>
     </div>`;
     dlg.addEventListener('click', (ev) => {
       if (ev.target === dlg) dlg.remove();
     });
     dlg.querySelector('#mis-close')!.addEventListener('click', () => dlg.remove());
+
+    // Hovering a row shows that Main Task's card. The image is only asked for
+    // on hover rather than being preloaded sixteen times over, and a mission
+    // whose scan is missing hides the frame instead of leaving a broken box.
+    const fig = dlg.querySelector<HTMLElement>('#mis-preview')!;
+    const img = fig.querySelector('img')!;
+    const cap = fig.querySelector('figcaption')!;
+    img.addEventListener('error', () => { fig.hidden = true; });
+    const show = (row: HTMLElement): void => {
+      const m = data.missions.cards.find((x) => x.id === row.dataset.mis);
+      if (!m) return;
+      cap.textContent = m.name;
+      fig.hidden = false;
+      img.src = missionImageUrl(m.id);
+    };
+    dlg.querySelectorAll<HTMLElement>('.scn-row').forEach((row) => {
+      row.addEventListener('mouseenter', () => show(row));
+      // Keyboard and touch reach it through focus, so the preview is not a
+      // mouse-only affordance.
+      row.addEventListener('focusin', () => show(row));
+    });
+    dlg.querySelector('.scn-list')!.addEventListener('mouseleave', () => { fig.hidden = true; });
     dlg.querySelectorAll<HTMLButtonElement>('.scn-load').forEach((b) =>
       b.addEventListener('click', () => {
         const m = data.missions.cards[Number(b.dataset.i)];

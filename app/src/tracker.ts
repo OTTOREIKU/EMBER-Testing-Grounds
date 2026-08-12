@@ -190,11 +190,14 @@ export class RoundTracker {
         s.round.phase === PHASES.length - 1 ? (s.round.n >= limit ? `Extra round ${s.round.n + 1} ▸` : `End round ${s.round.n} ▸`) : 'Next phase ▸'
       }</button>
       <span class="rt-first side-${s.round.firstPlayer}">1st: ${squadLabel(s.round.firstPlayer)}</span>
+      <!-- "CMD" beside a squad name and a bare number read as a scoreboard, so
+           it says what it counts and each number wears the token pip. The pip
+           is the thing that stops it looking like points (3.2). -->
       <span class="rt-cmd">
-        CMD
+        <span class="rt-cmd-label">Cmd tokens</span>
         ${(['s1', 's2'] as Side[])
           .map(
-            (side) => `<span class="cmd-${side}" title="${squadLabel(side)} Command Tokens">${squadLabel(side)} <button data-cmd="${side}" data-d="-1">−</button><b>${s.commandTokens[side]}</b><button data-cmd="${side}" data-d="1">+</button></span>`,
+            (side) => `<span class="cmd-${side}" title="${squadLabel(side)}: Command Tokens. A Mech takes these onto its Torso in the Command Phase, and spending one onto a Drone's card is what lets that Drone act (3.2).">${squadLabel(side)} <button data-cmd="${side}" data-d="-1">−</button><b><i class="cmd-pip" aria-hidden="true"></i>${s.commandTokens[side]}</b><button data-cmd="${side}" data-d="1">+</button></span>`,
           )
           .join('')}
       </span>
