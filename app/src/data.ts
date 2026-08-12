@@ -767,6 +767,39 @@ export const TOKEN_PRINT: Record<string, string[]> = {
   repaired: ['repaired'],
 };
 
+// The printed background colours, sampled from the token art itself and matching
+// the rulebook's token anatomy: colour is DURATION, not identity —
+//   green  = indefinite, never auto-transitions
+//   yellow = flips to its reverse (red) side at the end of the round
+//   red    = removed at the end of the round
+// This is why a per-token identity tint is the wrong model to draw with: two
+// tokens sharing a colour are telling you they come off at the same time, which
+// is the thing a player actually needs to read across a board.
+export const TOKEN_DURATION: Record<'green' | 'yellow' | 'red' | 'none', string> = {
+  green: '#a8c090',
+  yellow: '#fccc18',
+  red: '#e43c54',
+  // Triangle/round tokens carry no decay at all; Repaired's own printed blue.
+  none: '#b4cce4',
+};
+
+// Which printed face a token is currently showing. A yellow-side token that has
+// been flipped is showing red and comes off at the end of this round, so the
+// face IS the rule — reading it is how a player knows what survives the End
+// Phase. Returns null when we hold no scan for that token yet.
+export function tokenFace(id: string, decay: string | undefined, expiring: boolean): {
+  art: string | null;
+  colour: string;
+} {
+  const faces = TOKEN_PRINT[id];
+  const side: 'green' | 'yellow' | 'red' | 'none' = expiring ? 'red' : decay === 'green' ? 'green' : decay ? 'yellow' : 'none';
+  if (!faces) return { art: null, colour: TOKEN_DURATION[side] };
+  // `lowProfile-green` flips to `lowProfile-red`; a token with a single face
+  // (Repaired) shows it whatever the state.
+  const want = faces.find((f) => f.endsWith(`-${side}`));
+  return { art: want ?? faces[0], colour: TOKEN_DURATION[side] };
+}
+
 export function tokenPrintUrl(name: string): string {
   return assetUrl(`tokens/print/${name}.webp`);
 }

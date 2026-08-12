@@ -2352,6 +2352,16 @@ p.points { white-space: pre-line; }
   font-size: 7.5px; font-weight: 800; fill: #0f1216; letter-spacing: 0.2px;
   pointer-events: none; font-family: var(--font);
 }
+/* The printed token art, run down the edge of a base. A drop shadow so a light
+   token still reads against pale terrain, and no pointer events on the image
+   itself so the group keeps the hover. */
+.tok-art { filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.75)); }
+/* The stack count for a Square token, in the corner rather than inside the art,
+   because the art already carries its own printed name. */
+.tok-n-bg { fill: #0f1216; stroke: #e8edf3; stroke-width: 1; }
+.tok-n { font-size: 8px; font-weight: 800; fill: #e8edf3; pointer-events: none; font-family: var(--mono); }
+.tok-more-bg { fill: #1e242c; stroke: #7d8896; stroke-width: 1; }
+.tok-more-text { font-size: 8px; font-weight: 800; fill: #b9c3cf; pointer-events: none; font-family: var(--mono); }
 .status-badge.shape-triangle .status-badge-text { font-size: 6.2px; letter-spacing: 0; }
 .status-row { display: flex; flex-wrap: wrap; gap: 3px; margin: 5px 0 2px; justify-content: space-between; }
 .squad-unit .status-row { display: grid; grid-template-columns: repeat(5, 1fr); }
@@ -2364,6 +2374,80 @@ p.points { white-space: pre-line; }
 }
 .status-chip:hover { background: var(--border); color: var(--text); }
 .status-chip.on { background: var(--chip-tint); color: #0f1216; }
+/* A chip wearing the printed token: the art carries the identity, so the chip
+   stops being a coloured box and becomes the token itself. Dimmed while the
+   unit is not bearing it, exactly as the abbreviation chips were. */
+.status-chip.has-art {
+  background: none; padding: 2px; position: relative; line-height: 0;
+  filter: grayscale(0.85) opacity(0.45);
+  transition: filter 0.12s;
+}
+.status-chip.has-art:hover { filter: grayscale(0.3) opacity(0.8); }
+.status-chip.has-art.on { background: none; filter: none; }
+.status-chip.has-art img { width: 26px; height: 26px; object-fit: contain; display: block; }
+/* ---------- the squad row: what is worn, then a handle ---------- */
+.tok-row { display: flex; align-items: center; gap: 8px; margin: 5px 0 2px; }
+.tok-worn { display: flex; align-items: center; gap: 3px; flex: 1; min-width: 0; flex-wrap: wrap; }
+.tok-worn-one { position: relative; line-height: 0; display: inline-block; }
+.tok-worn-one img { width: 24px; height: 24px; object-fit: contain; display: block; }
+.tok-worn-one.no-art {
+  line-height: 1.6; font-size: 9px; font-weight: 800; color: #0f1216;
+  background: var(--chip-tint); border-radius: var(--radius-sm); padding: 2px 5px;
+}
+.tok-none { font-size: 10.5px; color: var(--text3); font-style: italic; }
+.tok-trig {
+  flex: 0 0 auto; border: none; background: var(--surface3); color: var(--text2);
+  border-radius: var(--radius-sm); font-size: 10.5px; font-weight: 600;
+  padding: 5px 9px; cursor: pointer; font-family: var(--font);
+  transition: background 0.12s, color 0.12s;
+}
+.tok-trig:hover { background: var(--surface3); color: var(--text); }
+
+/* ---------- the token popout, riding the dial's own shell ---------- */
+/* Wide enough that the longest label plus its ×N stays on one line: "Fire
+   Control Interference ×2" was wrapping the count onto its own row. */
+.tok-pop { width: 320px; }
+.tok-po-row {
+  display: flex; align-items: center; gap: 9px; padding: 5px 7px;
+  border-radius: var(--radius-sm);
+}
+.tok-po-row.on { background: var(--surface2); }
+.tok-po-row img { width: 28px; height: 28px; object-fit: contain; flex: 0 0 auto; }
+.tok-po-row:not(.on) img { filter: grayscale(0.85) opacity(0.5); }
+.tok-po-noart {
+  width: 28px; height: 28px; flex: 0 0 auto; display: grid; place-items: center;
+  background: var(--chip-tint); color: #0f1216; border-radius: var(--radius-sm);
+  font-size: 9px; font-weight: 800;
+}
+.tok-po-row:not(.on) .tok-po-noart { filter: grayscale(0.85) opacity(0.5); }
+.tok-po-txt { flex: 1; min-width: 0; }
+/* The name and its count are one unit and must not break apart, so the row
+   ellipses instead of wrapping if a longer token name ever turns up. */
+.tok-po-txt b {
+  display: block; font-size: 12px; font-weight: 600; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.tok-po-txt span { display: block; font-size: 10px; color: var(--text3); }
+.tok-po-btns { display: flex; gap: 3px; flex: 0 0 auto; }
+.tok-po-btns button {
+  width: 22px; height: 22px; border: none; border-radius: var(--radius-sm);
+  background: var(--surface3); color: var(--text2); cursor: pointer;
+  font-size: 13px; font-weight: 700; font-family: var(--font); line-height: 1;
+}
+.tok-po-btns button:hover:not(:disabled) { background: var(--accent-lt); color: var(--accent); }
+.tok-po-btns button:disabled { opacity: 0.3; cursor: default; }
+
+/* The stack count, matched to the board's: a filled disc on the token's corner,
+   not a pill. Scoped to `.chip-n` itself rather than to `.status-chip`, because
+   the squad row now uses `.tok-worn-one` and the old selector matched nothing —
+   which is why these numbers were coming out unstyled. */
+.chip-n {
+  position: absolute; right: -3px; bottom: -3px;
+  width: 13px; height: 13px; border-radius: 50%;
+  background: #0f1216; color: #e8edf3; border: 1px solid #e8edf3;
+  font-size: 8px; font-weight: 800; font-family: var(--mono);
+  display: grid; place-items: center; line-height: 1; padding: 0;
+}
 
 .status-chip.shape-square { border-radius: 2px; }
 .status-chip.shape-round { border-radius: 999px; padding-inline: 8px; }

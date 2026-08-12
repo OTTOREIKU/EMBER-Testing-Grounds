@@ -194,6 +194,12 @@ export interface StatusDef {
   label: string;
   icon: string;
   tint: string;
+  // What the token DOES, in one line, as close to the printed rule as it goes.
+  // `note` is the long form and carries our commentary — where the app greys a
+  // button, which edge cases bite, how to click it. That belongs in the
+  // reference and the panels, not floating over a board where the reader is
+  // mid-turn and wants the rule and nothing else.
+  rule: string;
   note: string;
   shape: TokenShape;
   stacking?: boolean;
@@ -211,6 +217,7 @@ export const INTERCEPT_DEF: StatusDef = {
   label: 'Interception',
   icon: 'INT',
   tint: '#65a2d8',
+  rule: 'Each Interception spends one token, and a Part with none left can never Intercept again this game (4.9).',
   note: 'Intercept X puts X Round Tokens on the Part at Deployment, and they are never restored. Each Interception spends one, and once a Part is empty it cannot Intercept again for the rest of the game (rulebook 4.9). The count here is what the unit has left across all of its Parts.',
 };
 
@@ -279,6 +286,7 @@ export const STATUSES: StatusDef[] = [
     label: 'Fire Control Interference',
     icon: 'FCI',
     tint: '#c9a6ff',
+    rule: 'Cannot perform Firing Actions or Interception (6.3.2).',
     note: 'A unit bearing this cannot perform Firing Actions or Interception (rulebook 6.3.2). Gained when an enemy Electronic Attack succeeds against it (4.11). A Projectile that has an Electronic Value is destroyed outright the moment it takes one. Firing actions are greyed out in the Details tab while this is on.',
   },
   {
@@ -289,6 +297,7 @@ export const STATUSES: StatusDef[] = [
     icon: 'FRG',
     tint: '#f0916b',
     stacking: true,
+    rule: 'Each token costs 1 White die on Defense Rolls, and they stack.',
     note: 'Each Fragile Token costs this unit 1 White die on its Defense Rolls, and they stack. Laser Weapon grants one on every hit, and Ion Weapon may exchange Lightning for a Heavy Hit against a unit bearing one. A Defense Roll can never drop below 1 White (4.4.1), so on an Armor 0 unit such as most missiles this often changes nothing except the Ion Weapon trigger. Click to add a token, shift-click or right-click to take one off.',
   },
   {
@@ -299,6 +308,7 @@ export const STATUSES: StatusDef[] = [
     label: 'Immobilized',
     icon: 'IMB',
     tint: '#8fa0b5',
+    rule: 'Cannot perform Movement Actions or Maneuver, including changing facing, and rolls no Blue dice on defence (6.3.2).',
     note: 'This unit cannot perform Movement Actions or Maneuver, and that includes changing facing on the spot. It also rolls no Blue dice at all on its Defense Rolls, even in Mobility Stance (rulebook 6.3.2). Movement actions are greyed out in the Details tab while this is on. Note that a Projectile has no Movement Actions to lose, since its card only carries Immediate, Delay and Passive actions, so on a missile this mainly strips the Blue dice it would get from a printed Mobility stance.',
   },
   {
@@ -309,6 +319,7 @@ export const STATUSES: StatusDef[] = [
     label: 'Optical Camouflage',
     icon: 'OC',
     tint: '#4fd1c5',
+    rule: 'Attacks against it must Scan first or fail; Electronic Value 0 or a dash cannot target it at all (4.12.2).',
     note: 'This unit is in the Optical Camouflage State (4.12.2). On the table its model is swapped for a camouflage model and all Hexagon Tokens come off it. Attacks against it must Scan first or fail, and Electronic Value 0 or a dash cannot target it at all. The marked square is only a suspected position: when Revealed the unit makes Manifestation Movement up to its Stealth value. Not offered on Projectiles: the only two ways in are an Action that activates it or deploying in the state, and Projectiles cannot be placed during the Deployment stage (5.1).',
   },
   {
@@ -319,6 +330,7 @@ export const STATUSES: StatusDef[] = [
     label: 'Low Profile',
     icon: 'LP',
     tint: '#9ad9b5',
+    rule: 'Against Firing Attacks, every [Eye] in its Defense Roll counts as a [Dodge] (6.3.3).',
     note: 'Against Firing Attacks this unit counts every [Eye] in its Defense Roll as a [Dodge] (rulebook 6.3.3), which the attack helper applies for you. Maneuvering, including a facing-only change, removes the token; Scanning also strips it.',
   },
   {
@@ -329,6 +341,7 @@ export const STATUSES: StatusDef[] = [
     label: 'Highlight',
     icon: 'HL',
     tint: '#ffd166',
+    rule: 'Any enemy Attack able to target this unit must target it (6.3.3).',
     note: 'This unit counts as having the Highlight keyword (rulebook 6.3.3). Any enemy performing an Attack Action that is able to target it must target it, and cannot pick a different unit with that Attack. Hexagon token, so taking a different one replaces this.',
   },
   {
@@ -339,6 +352,7 @@ export const STATUSES: StatusDef[] = [
     label: 'Target Tracer',
     icon: 'TT',
     tint: '#ff8b6b',
+    rule: 'Drones may target this unit even when it is not the closest enemy, and attack it as if in Offensive Stance.',
     note: 'Drones may target this unit even when it is not the closest enemy, and attack it as if in Offensive Stance.',
   },
   {
@@ -348,6 +362,7 @@ export const STATUSES: StatusDef[] = [
     label: 'Repaired',
     icon: 'REP',
     tint: '#3ddc84',
+    rule: 'The Part works again, but an Attack on it makes no Defense Roll and Destroys it outright (6.3.1).',
     note: 'Emergency repair of a Destroyed Part. The Part may be used as normal again, but if it is ever the target of an Attack no Defense Roll is made and it is Destroyed immediately (rulebook 6.3.1). Mechs only: they are the only units built from Parts, the attack sequence skips the target-Part step for everything else (4.5.1), and a Destroyed Drone or Projectile leaves the board at once (4.4.4).',
   },
   {
@@ -356,6 +371,7 @@ export const STATUSES: StatusDef[] = [
     label: 'In smoke',
     icon: 'SMK',
     tint: '#a6b0bd',
+    rule: 'No line of sight for Firing Actions into or out of this Grid; Melee and Projectile ignore it (4.16).',
     note: 'This unit shares its Grid with a Smoke Screen, so line of sight cannot be established to it or from it for Firing Actions (rulebook 4.16). It cannot be shot at, and it cannot shoot out, in any direction. Melee and Projectile Actions ignore smoke completely, so it can still be hit in melee and it can still launch. Smoke blocks both sides equally no matter who placed it, and Aerial units are no exception. Screens placed on the board apply this for you in the attack helper, so use this chip only to note smoke you are tracking by hand.',
   },
 ];

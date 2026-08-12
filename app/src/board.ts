@@ -1,7 +1,7 @@
 import type { TaskItem } from './tasks';
 import type { Facing, GameState, Marker, Side, SmokeScreen, StatusDef, TerrainPiece, Token, TokenShape } from './types';
 import { INTERCEPT_DEF, SHAPE_NOTE, statusCount, statusStacks } from './types';
-import { mechPartUrl, squadLabel, squadNumber, tabImageUrl } from './data';
+import { mechPartUrl, squadLabel, squadNumber, tabImageUrl, tokenFace, tokenPrintUrl } from './data';
 import { type BoardTheme, boardArtUrl, boardTheme, DEFAULT_BOARD } from './boards';
 import type { InspectInfo } from './inspector';
 
@@ -162,6 +162,9 @@ export class Board {
   private gZones!: SVGGElement;
   private gTerrain: SVGGElement;
   private gTokens: SVGGElement;
+  // Everything currently standing, staged by renderTokens so a unit's token
+  // strip can pick a side that is not already somebody else's base.
+  private onBoard: Token[] = [];
   private gOverlay: SVGGElement;
   private gHighlight: SVGGElement;
   private gMarkers!: SVGGElement;
@@ -615,6 +618,9 @@ export class Board {
   // already down that its player is turning.
   renderTokens(state: GameState, preview?: { uid: number; col?: number; row?: number; facing?: Facing }): void {
     this.gTokens.replaceChildren();
+    // The token strip has to know what is beside each unit before it picks a
+    // side to hang off, so the neighbours are staged here for buildToken.
+    this.onBoard = state.tokens.filter((x) => x.deployed !== false);
     for (const t of state.tokens) {
       const pv = preview && preview.uid === t.uid ? preview : null;
       // A unit awaiting deployment is in the squad but not on the board yet.
@@ -739,9 +745,11 @@ export class Board {
         n,
         counted: !!def.stacking && n > 1,
         spent: false,
-        hint: expiring.has(def.id)
-          ? 'Showing its red side, so it comes off at the end of this round.'
-          : 'Toggle this token from the unit’s row in the Squads tab.',
+        // Only the expiring line survives, because it is a RULE — a red face
+        // means this comes off in the End Phase. "Toggle it from the Squads
+        // tab" was advice, not a rule, and it went stale the moment that row
+        // became a handle.
+        hint: expiring.has(def.id) ? 'Showing its red side, so it comes off at the end of this round.' : '',
       }),
     );
     const slots = Object.keys(t.intercept ?? {}).length;
@@ -758,26 +766,99 @@ export class Board {
       });
     }
     if (active.length) {
-      const by = cy - half - 9;
-      const widths = active.map(({ def: s, counted }) => badgeWidth(s.shape, counted));
-      const total = widths.reduce((a, w) => a + w, 0) + 2 * (active.length - 1);
-      let x = cx - total / 2;
-      active.forEach(({ def: s, n, counted, spent, hint }, i) => {
-        const w = widths[i];
-        const bx = x + w / 2;
-        x += w + 2;
+      // Tokens run DOWN THE RIGHT EDGE of the base, the way they are laid beside
+      // a model, rather than in a row above it: a centred row is as wide as the
+      // number of tokens, so three of them already overhang a Large unit and a
+      // Drone disappears under its own labels. A column is one token wide
+      // whatever is on, and the printed art is what a player will meet on the
+      // table — the shape IS the stacking rule, so showing it teaches 2.5.3
+      // without a word. Anything past the base's height folds into a +N chip
+      // that opens the unit's token panel.
+      const SZ = 18;
+      const GAP = 2;
+      // Slots that fit WITHIN the base's own height, so the column never makes
+      // the unit taller than it is. A Small Drone is 30px and gets two anyway,
+      // since one token plus a "+N" is the least that can say anything.
+      const room = Math.max(2, Math.floor((half * 2) / (SZ + GAP)));
+      const over = active.length > room ? active.length - (room - 1) : 0;
+      const shown = over ? active.slice(0, room - 1) : active;
+      // Which side to hang the strip off. Right by default, but a unit standing
+      // in the next Grid would wear its neighbour's tokens - so the strip looks
+      // first for a free side. Measured in SMALL CELLS against every other
+      // base, the same footprint test the board uses everywhere else.
+      const clash = (dir: -1 | 1): boolean => {
+        const x0 = dir === 1 ? t.col + t.size : t.col - 1;
+        return this.onBoard.some(
+          (o) =>
+            o.uid !== t.uid &&
+            !o.aerial === !t.aerial &&
+            x0 >= o.col && x0 < o.col + o.size &&
+            t.row < o.row + o.size && o.row < t.row + t.size,
+        );
+      };
+      // Right unless it is taken and the left is free; if both are taken the
+      // strip stays right, because a covered token still beats a hidden one.
+      const side: -1 | 1 = clash(1) && !clash(-1) ? -1 : 1;
+      const sx = side === 1 ? cx + half + 4 : cx - half - 4 - SZ;
+      let sy = cy - half;
+      const place = (): { x: number; y: number } => {
+        const at = { x: sx, y: sy };
+        sy += SZ + GAP;
+        return at;
+      };
+      shown.forEach(({ def: s, n, counted, spent, hint }) => {
+        const at = place();
+        const face = tokenFace(s.id, s.decay, s.tint === '#e05c5c');
         const badge = el('g', { class: `status-badge shape-${s.shape}${spent ? ' spent' : ''}` });
-        badge.appendChild(badgeShape(s.shape, bx, by, w, s.tint));
-        const txt = el('text', { x: bx, y: by + (s.shape === 'triangle' ? 5.5 : 3.5), 'text-anchor': 'middle', class: 'status-badge-text' });
-        txt.textContent = counted ? `${s.icon}${n}` : s.icon;
-        badge.appendChild(txt);
+        if (face.art) {
+          // No `pointer-events: none` here: the group has no geometry of its
+          // own, so the image IS the hit area. Suppressing it left the badge
+          // unhoverable and silently killed the inspect text on every token.
+          badge.appendChild(el('image', {
+            href: tokenPrintUrl(face.art), x: at.x, y: at.y, width: SZ, height: SZ,
+            class: 'tok-art',
+          }));
+        } else {
+          // No scan for this one yet, so it falls back to its shape in the
+          // DURATION colour — same reading, just without the artwork.
+          badge.appendChild(badgeShape(s.shape, at.x + SZ / 2, at.y + SZ / 2, SZ - 2, face.colour));
+          const txt = el('text', {
+            x: at.x + SZ / 2, y: at.y + SZ / 2 + 3, 'text-anchor': 'middle', class: 'status-badge-text',
+          });
+          txt.textContent = s.icon;
+          badge.appendChild(txt);
+        }
+        if (counted) {
+          badge.appendChild(el('circle', { cx: at.x + SZ - 2, cy: at.y + SZ - 2, r: 6, class: 'tok-n-bg' }));
+          const cn = el('text', { x: at.x + SZ - 2, y: at.y + SZ + 0.5, 'text-anchor': 'middle', class: 'tok-n' });
+          cn.textContent = String(n);
+          badge.appendChild(cn);
+        }
+        // The RULE and nothing else. The long note carries our commentary —
+        // which button greys out, how to click it — and over a board, mid-turn,
+        // that buries the one line the reader came for. The shape line stays
+        // because it IS a rule, and it is the thing the artwork is teaching.
         this.attachInspect(badge as SVGGElement, {
           title: counted ? `${s.label} ×${n}` : s.label,
           sub: `${s.icon} · on ${t.label}`,
-          lines: [SHAPE_NOTE[s.shape], s.note, hint],
+          lines: [s.rule, SHAPE_NOTE[s.shape], hint],
         });
         g.appendChild(badge);
       });
+      if (over) {
+        const at = place();
+        const more = el('g', { class: 'status-badge tok-more' });
+        more.appendChild(el('rect', { x: at.x, y: at.y, width: SZ, height: SZ, rx: 4, class: 'tok-more-bg' }));
+        const txt = el('text', { x: at.x + SZ / 2, y: at.y + SZ / 2 + 3.5, 'text-anchor': 'middle', class: 'tok-more-text' });
+        txt.textContent = `+${over}`;
+        more.appendChild(txt);
+        this.attachInspect(more as SVGGElement, {
+          title: `${over} more token${over === 1 ? '' : 's'}`,
+          sub: `on ${t.label}`,
+          lines: [active.slice(shown.length).map((a) => a.def.label).join(', ')],
+        });
+        g.appendChild(more);
+      }
     }
 
     const parts = Object.entries(t.partStates);

@@ -1,9 +1,9 @@
 import type { GameData } from './data';
-import { actionIconUrl, cardName, FACTION_LABEL, mechPartUrl, missionImageUrl, secondaryImageUrl, setSquadNames, squadLabel, squadName, tabImageUrl } from './data';
+import { actionIconUrl, cardName, FACTION_LABEL, mechPartUrl, missionImageUrl, secondaryImageUrl, setSquadNames, squadLabel, squadName, tabImageUrl, tokenFace, tokenPrintUrl } from './data';
 import { MECH_LAYER_ORDER } from './board';
 import { inspectOnHover, linkMechanics, type InspectInfo } from './inspector';
 import type { GameState, PartSlot, PartState, Side, Stance, Timing, TimingDef, Token } from './types';
-import { addStatus, SCALES, SHAPE_NOTE, statusCount, statusesFor, TIMINGS } from './types';
+import { addStatus, SCALES, SHAPE_NOTE, statusCount, statusesFor, STATUSES, TIMINGS } from './types';
 import { normaliseTasks } from './tasks';
 import { normaliseSetup } from './setup';
 import { perform } from './commands';
@@ -657,7 +657,7 @@ export class SquadTracker {
 
     row.appendChild(head);
     row.appendChild(meta);
-    row.appendChild(this.statusRow(t));
+    row.appendChild(this.tokenHandleRow(t));
     row.appendChild(this.partTable(t));
     return row;
   }
@@ -680,6 +680,142 @@ export class SquadTracker {
           ? `Every Drone, Projectile and Deployable card prints one Stance and stays in it for the whole game, so there is nothing to choose here. This ${noun} is ${def.short}.`
           : 'A Mech may pick its Stance every time it gets an Action Opportunity, before deciding whether to Maneuver.',
       ],
+    };
+  }
+
+  // The tokens a unit is wearing, plus a handle. The full grid of every status
+  // shouted ten abbreviations at a unit carrying none; this shows what is
+  // actually on and puts the rest one click away, reusing the dial's popout so
+  // there is one "opens on the left" gesture on this panel rather than two.
+  private tokenHandleRow(t: Token): HTMLElement {
+    const wrap = document.createElement('div');
+    wrap.className = 'tok-row';
+    const worn = statusesFor(t.kind)
+      .map((s) => ({ s, n: statusCount(t.statuses, s.id) }))
+      .filter((x) => x.n > 0);
+    const list = document.createElement('div');
+    list.className = 'tok-worn';
+    for (const { s, n } of worn) {
+      const face = tokenFace(s.id, s.decay, false);
+      const chip = document.createElement('span');
+      chip.className = `tok-worn-one${face.art ? '' : ' no-art'}`;
+      if (face.art) {
+        const im = document.createElement('img');
+        im.src = tokenPrintUrl(face.art);
+        im.alt = '';
+        chip.appendChild(im);
+      } else {
+        chip.textContent = s.icon;
+        chip.style.setProperty('--chip-tint', face.colour);
+      }
+      if (s.stacking && n > 1) {
+        const c = document.createElement('span');
+        c.className = 'chip-n';
+        c.textContent = `×${n}`;
+        chip.appendChild(c);
+      }
+      inspectOnHover(chip, {
+        title: s.stacking && n > 1 ? `${s.label} ×${n}` : s.label,
+        sub: `${s.icon} · on ${t.label}`,
+        lines: [s.rule, SHAPE_NOTE[s.shape]],
+      });
+      list.appendChild(chip);
+    }
+    if (!worn.length) {
+      const none = document.createElement('span');
+      none.className = 'tok-none';
+      none.textContent = 'No tokens';
+      list.appendChild(none);
+    }
+    wrap.appendChild(list);
+    const trig = document.createElement('button');
+    trig.className = 'tok-trig';
+    trig.dataset.tokUid = String(t.uid);
+    trig.textContent = 'Tokens ▾';
+    inspectOnHover(trig, {
+      title: 'Tokens',
+      sub: `on ${t.label}`,
+      lines: ['Opens the token panel: every token this unit can take, with what it does, and its printed art.'],
+    });
+    trig.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      this.openTokens(t, trig);
+    });
+    wrap.appendChild(trig);
+    return wrap;
+  }
+
+  private openTokens(t: Token, trigger: HTMLElement): void {
+    if (closeDialPopout() === trigger) return;
+    const pop = document.createElement('div');
+    pop.className = 'dial-pop tok-pop';
+    const build = (): void => {
+      const rows = statusesFor(t.kind)
+        .map((s) => {
+          const n = statusCount(t.statuses, s.id);
+          const face = tokenFace(s.id, s.decay, false);
+          const art = face.art
+            ? `<img src="${tokenPrintUrl(face.art)}" alt="">`
+            : `<span class="tok-po-noart" style="--chip-tint:${face.colour}">${esc(s.icon)}</span>`;
+          return `<div class="tok-po-row${n ? ' on' : ''}" data-s="${esc(s.id)}">
+            ${art}
+            <span class="tok-po-txt"><b>${esc(s.label)}${s.stacking && n > 1 ? ` ×${n}` : ''}</b>
+              <span>${esc(SHAPE_NOTE[s.shape].replace(/\.$/, ''))}</span></span>
+            <span class="tok-po-btns">
+              ${n ? `<button data-d="-1" title="Take one off">−</button>` : ''}
+              <button data-d="1" title="${n && !s.stacking ? 'Already on' : 'Put one on'}"${n && !s.stacking ? ' disabled' : ''}>+</button>
+            </span>
+          </div>`;
+        })
+        .join('');
+      pop.innerHTML = `<h5>Tokens · ${esc(t.label)}</h5>${rows}`;
+      pop.querySelectorAll<HTMLButtonElement>('[data-d]').forEach((b) =>
+        b.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          const id = (b.closest('[data-s]') as HTMLElement).dataset.s!;
+          const def = STATUSES.find((x) => x.id === id)!;
+          if (Number(b.dataset.d) > 0) {
+            if (!def.stacking && statusCount(t.statuses, id)) return;
+            t.statuses = addStatus(t.statuses, id);
+            if (def.clearsHexagons) t.statuses = (t.statuses ?? []).filter((x) => x === id || STATUSES.find((y) => y.id === x)?.shape !== 'hexagon');
+          } else {
+            const l = [...(t.statuses ?? [])];
+            const at = l.lastIndexOf(id);
+            if (at >= 0) l.splice(at, 1);
+            t.statuses = l;
+          }
+          // The board has to update, but onChanged re-renders this panel and
+          // render() tears every popout down — so the panel is reopened against
+          // the FRESH handle for the same unit. Adding several tokens at once
+          // is the normal case after an Electronic Attack, and closing after
+          // each one would make that four round trips.
+          this.cb.onChanged();
+          const again = this.root.querySelector<HTMLElement>(`.tok-trig[data-tok-uid="${t.uid}"]`);
+          if (again) this.openTokens(t, again);
+        }),
+      );
+    };
+    build();
+    document.body.appendChild(pop);
+    placeDialPopout(pop, trigger);
+    const onKey = (ev: KeyboardEvent): void => {
+      if (ev.key !== 'Escape') return;
+      ev.stopPropagation();
+      closeDialPopout();
+      trigger.focus();
+    };
+    const onAway = (): void => { closeDialPopout(); };
+    document.addEventListener('keydown', onKey, true);
+    window.addEventListener('resize', onAway);
+    window.setTimeout(() => document.addEventListener('click', onAway), 0);
+    openDial = {
+      pop,
+      trigger,
+      teardown: () => {
+        document.removeEventListener('keydown', onKey, true);
+        document.removeEventListener('click', onAway);
+        window.removeEventListener('resize', onAway);
+      },
     };
   }
 
@@ -772,8 +908,28 @@ export class SquadTracker {
       const on = n > 0;
       const b = document.createElement('button');
       b.className = `status-chip shape-${s.shape}${on ? ' on' : ''}`;
-      b.textContent = s.stacking && n > 1 ? `${s.icon}×${n}` : s.icon;
-      b.style.setProperty('--chip-tint', s.tint);
+      // The printed token, so the chip here and the strip on the board are the
+      // same object and a player learns the real artwork. Colour comes from the
+      // token's DURATION side, not an identity tint: on the table, colour says
+      // when it comes off, and two tokens sharing one are telling you they
+      // expire together.
+      const face = tokenFace(s.id, s.decay, false);
+      b.style.setProperty('--chip-tint', face.colour);
+      if (face.art) {
+        b.classList.add('has-art');
+        const im = document.createElement('img');
+        im.src = tokenPrintUrl(face.art);
+        im.alt = '';
+        b.appendChild(im);
+        if (s.stacking && n > 1) {
+          const c = document.createElement('span');
+          c.className = 'chip-n';
+          c.textContent = `×${n}`;
+          b.appendChild(c);
+        }
+      } else {
+        b.textContent = s.stacking && n > 1 ? `${s.icon}×${n}` : s.icon;
+      }
       inspectOnHover(b, {
         title: s.stacking && on ? `${s.label} ×${n}` : s.label,
         sub: on ? `${s.icon} · on ${t.label}` : `${s.icon} · not on this unit`,
