@@ -3,7 +3,7 @@ import type { GameData } from './data';
 import { actionIconUrl, cardName, isAerial, secondaryImageUrl, squadLabel, unitSize } from './data';
 import { Board, footprint, snapPlacement, type BoardCallbacks } from './board';
 import { printedDeployment, resolveZoneSetData } from './overlays';
-import { autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, isPositionSwap, electronicOrigins, loanedParts, minesLayable, minesOwed, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, isSilentAction, maneuverIsSilent, canActivateCamo, chargeableSlots, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
+import { autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, electronicOrigins, loanedParts, minesLayable, minesOwed, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, isSilentAction, maneuverIsSilent, canActivateCamo, chargeableSlots, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
 import { resolveCounterRoll, tallyCounter } from './combat';
 import { tacticFitsPhase, tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { inContact, canStandIn, attackDirection, crushTargets, dissipationFor, extendPath, knockbackPath, LG, losBetween, losNote, pathCost, protectionFor, rangeBetween, reachableGrids, standingSpot, type LargeGrid } from './rules';
@@ -280,6 +280,10 @@ let movePlan: {
   side: Side;
   steps: number;
   flying: boolean;
+  // An Ojs200 lends its Mech Flying Movement on the MANEUVER and says "may", so
+  // this move can be flown or walked and the panel offers the switch. A Fairy
+  // pair grants it outright instead, which sets `flying` and leaves this false.
+  flightOptional?: boolean;
   path: LargeGrid[];
   locked: boolean;
   // What is being spent: the Maneuver Tick by default, or a named Movement
@@ -367,12 +371,15 @@ function terrainOf(ctx: HudCtx) {
 // Chassis Value, a Movement Action its own printed Range. Hardcoding the
 // Maneuver here drew the Maneuver's reach under a Sprint that could go further,
 // so the panel said 4 grids while the board highlighted 1.
-function reachableFor(ctx: HudCtx, t: Token, steps = maneuverRange(ctx.data, t)) {
+// `asFlight` overrides the derivation while a route is being drawn: a Part can
+// put a Mech into Flying Movement for this move only, and the highlight has to
+// answer to the plan or the toggle would change nothing on the board.
+function reachableFor(ctx: HudCtx, t: Token, steps = maneuverRange(ctx.data, t), asFlight?: boolean) {
   const terrain = terrainOf(ctx);
   // Same derivation as the freeplay board: a square-base flyer (moveAsFlight)
   // crosses terrain even though it is not Aerial. Reading only `aerial` here
   // grounded the Ravens on this page while the guide let them fly.
-  const flying = !!ctx.data.byId.get(t.cardId)?.moveAsFlight || !!t.aerial;
+  const flying = asFlight ?? (!!ctx.data.byId.get(t.cardId)?.moveAsFlight || !!t.aerial);
   return reachableGrids(t, steps, terrain, ctx.state.tokens, flying, {
     exitCost: flying ? undefined : breakAwayCost(ctx.data, t, ctx.state.tokens, terrain),
     crushable: (c, r) => crushTargets(t, c, r, terrain, ctx.state.tokens) !== null,
@@ -396,17 +403,25 @@ function moveOptsFor(ctx: HudCtx, t: Token, flying: boolean) {
 // A Maneuver by default. A Movement Action passes its own Range instead: the
 // chassis `move` is the Maneuver Value (1–2 Grids) and has nothing to do with a
 // Sprint-style Action's printed range, which is usually 4.
-function startMovePlan(ctx: HudCtx, t: Token, opts: { range?: number; label?: string; shoveActionId?: string; free?: boolean; granted?: boolean } = {}): void {
+function startMovePlan(ctx: HudCtx, t: Token, opts: { range?: number; label?: string; shoveActionId?: string; free?: boolean; granted?: boolean; maneuver?: boolean; airborne?: boolean } = {}): void {
   const steps = opts.range || maneuverRange(ctx.data, t);
   if (steps <= 0) {
     ctx.noteNow(`${t.label} has no Movement Range on its card.`);
     return;
   }
+  // Flight from a Part, on the same reading the freeplay board uses. A Fairy
+  // pair flies every move; an Ojs200 offers it on the Maneuver and may be
+  // declined, so it starts walking and the panel carries the switch. An
+  // Airborne Movement Action outranks all of it: that Jump simply IS Flying.
+  const base = !!ctx.data.byId.get(t.cardId)?.moveAsFlight;
+  const grant = base ? 'none' : flightGrant(ctx.data, t, loanedParts(ctx.data, ctx.state.tokens, t));
+  const optional = !opts.airborne && grant === 'maneuver' && !!opts.maneuver;
   movePlan = {
     uid: t.uid,
     side: t.side,
     steps,
-    flying: !!ctx.data.byId.get(t.cardId)?.moveAsFlight,
+    flying: base || !!opts.airborne || grant === 'always',
+    flightOptional: optional,
     path: [{ c: Math.floor(t.col / 3), r: Math.floor(t.row / 3) }],
     locked: false,
     label: opts.label ?? 'Maneuver',
@@ -697,7 +712,7 @@ function renderBoard(ctx: HudCtx): void {
     const t = s.tokens.find((x) => x.uid === movePlan!.uid);
     // The same overlay freeplay shows: the Large Grids this unit can really
     // enter, with the step count on each.
-    if (t) board.showReachable(reachableFor(ctx, t, movePlan.steps), movePlan.steps);
+    if (t) board.showReachable(reachableFor(ctx, t, movePlan.steps, movePlan.flying || !!t.aerial), movePlan.steps);
   } else if (launchPlan) {
     board.showSmokeTargets(landingCandidates(ctx), (c, r) => placeLaunched(ctx, c, r));
   } else if (smokePlan) {
@@ -1074,6 +1089,22 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
         <p class="tp-dim">${esc(movePlan.label)}</p>
         <p class="tp-note">${drawn ? `${drawn} of ${movePlan.steps} grids${movePlan.locked ? ' · locked' : ''}` : `Draw a route on the board. Up to ${movePlan.steps} grid${movePlan.steps === 1 ? '' : 's'}.`}</p>
         <p class="tp-dim">Move the cursor across grids to trace it, click to lock, then confirm.</p>
+        ${
+          // The Ojs200's optional Flying Movement. A toggle rather than a
+          // question up front, because the reachable grids redraw either way
+          // and seeing the difference IS the decision. Flying cannot Crush
+          // (FAQ E14), so the cost is spelled out rather than implied.
+          movePlan.flightOptional
+            ? `<button class="bigbtn ghost2" data-act="flytoggle" style="margin-top:6px">${
+                movePlan.flying ? 'Flying · cannot Crush' : 'Move normally'
+              }</button>
+               <p class="tp-dim">${
+                 movePlan.flying
+                   ? 'Crossing terrain and Melee Locks freely. Tap to walk instead.'
+                   : 'Tap to fly this Maneuver instead.'
+               }</p>`
+            : ''
+        }
         ${turnRow(FACING_NAME[movePlan.facing], 'A pivot costs no Movement Range, but it is still Movement, so it happens inside this one.')}
         <button class="bigbtn" data-act="commitmove"${drawn || movePlan.turned ? '' : ' disabled'}>${drawn ? 'Confirm move' : 'Turn on the spot'}</button>
         <button class="bigbtn ghost2" data-act="cancelmove" style="margin-top:6px">Cancel</button>
@@ -2537,6 +2568,9 @@ function routeAction(ctx: HudCtx, t: Token, a: CardAction, ga?: ReturnType<typeo
       // Action costs no Tick, so there is no performed Action for a free move to
       // ride on and it is an ordinary Movement.
       free: !!lengthOf(a),
+      // A Jump carrying Airborne Movement IS a Flying Movement (空中移动), with
+      // no choice in it - unlike the Ojs200's optional Maneuver.
+      airborne: isAirborneAction(a),
     });
     return true;
   }
@@ -3330,8 +3364,10 @@ function playTactic(ctx: HudCtx, pick: string | null): void {
   // apply writes the card's own line into the unit's log, which is the only
   // place that knows what the effect worked out to.
   ctx.noteNow(t.log?.at(-1)?.text ?? `${squadLabel(m.side)} plays ${spec.name}.`);
-  // Hit and Run hands out a Movement that no Opportunity paid for.
-  if (spec.maneuver) startMovePlan(ctx, t, { label: `${spec.name} · Maneuver`, granted: true });
+  // Hit and Run hands out a Movement that no Opportunity paid for. It is still
+  // a MANEUVER, so an Ojs200's optional flight is on offer here too - freeplay
+  // asks on this path and the two drivers must not disagree.
+  if (spec.maneuver) startMovePlan(ctx, t, { label: `${spec.name} · Maneuver`, granted: true, maneuver: true });
   ctx.refresh();
 }
 
@@ -4135,11 +4171,21 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     if (el.dataset.why) { ctx.noteNow(el.dataset.why); ctx.refresh(); return; }
     const sc = ensureScript(s);
     const t = sc.opp ? s.tokens.find((x) => x.uid === sc.opp!.uid) : undefined;
-    if (t) startMovePlan(ctx, t, { label: t.kind === 'mech' ? 'Maneuver' : 'Movement' });
+    if (t) startMovePlan(ctx, t, { label: t.kind === 'mech' ? 'Maneuver' : 'Movement', maneuver: true });
     ctx.refresh();
   });
   on('[data-act="commitmove"]', () => commitMove(ctx));
   on('[data-act="cancelmove"]', () => cancelMove(ctx));
+  on('[data-act="flytoggle"]', () => {
+    if (!movePlan?.flightOptional) return;
+    movePlan.flying = !movePlan.flying;
+    // The route was drawn against the other rule set — a walked path may cross
+    // a Grid that flying reaches and vice versa — so it goes back to the start
+    // rather than being carried over and silently revalidated.
+    movePlan.path = movePlan.path.slice(0, 1);
+    movePlan.locked = false;
+    ctx.refresh();
+  });
   on('[data-turn]', (el) => { rotate(ctx, el.dataset.turn === 'ccw' ? 3 : 1); });
   on('[data-boxtake]', (el) => takeBox(ctx, el.dataset.boxtake!));
   on('[data-act="boxskip"]', () => nextBox(ctx));

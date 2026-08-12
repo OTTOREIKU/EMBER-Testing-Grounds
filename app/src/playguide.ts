@@ -58,7 +58,9 @@ export interface GuideCallbacks {
   onSelectUnit(uid: number): void;
   onPickMission(): void;
   onShowDial(uid: number): void;
-  onMoveUnit(uid: number, opts: { range?: number; label: string }, done: (moved: boolean) => void): void;
+  // `maneuver` marks the Mech's own Maneuver rather than a Movement Action, so
+  // the driver knows whether an Ojs200's optional Flying Movement is on offer.
+  onMoveUnit(uid: number, opts: { range?: number; label: string; maneuver?: boolean }, done: (moved: boolean) => void): void;
   onPerformAction(uid: number, actionId: string, done: (performed: boolean) => void): void;
   onSetStance(uid: number, stance: Stance): void;
   onIntercept(uid: number, actionId: string, targetUid: number): void;
@@ -1400,7 +1402,7 @@ export class PlayGuide {
       return;
     }
     this.warn = null;
-    this.cb.onMoveUnit(o.uid, { range: maneuverRange(this.data, t), label: 'Maneuver' }, (moved) => {
+    this.cb.onMoveUnit(o.uid, { range: maneuverRange(this.data, t), label: 'Maneuver', maneuver: true }, (moved) => {
       if (!moved) return;
       // The interactive move has already landed the token, so the command
       // records where it ended up: a no-op here, the real move on a mirror.

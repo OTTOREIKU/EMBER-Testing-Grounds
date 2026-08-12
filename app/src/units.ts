@@ -1356,6 +1356,91 @@ export function tokenCards(data: GameData, t: Token): { slot: PartSlot | 'pilot'
   return out as { slot: PartSlot | 'main'; card: Card }[];
 }
 
+// ---------- Flying Movement granted by a Part ----------
+//
+// Three cards put a Mech into Flying Movement and they do NOT offer it on the
+// same terms, so one boolean cannot carry both:
+//
+//   PDBP-201 Ojs200 - "This mech's Maneuver may be considerd as Flying"
+//     (the publisher's own typo). OPTIONAL, and the Maneuver only.
+//   117/119 MDXS "Fairy" System, and their (D) faces 118/120 - "If the mech is
+//     equipped with this part and [the other hand], it's movement will be
+//     considered as Flying". AUTOMATIC, and all movement.
+//
+// The difference is worth the extra state: Flying Movement cannot Crush (FAQ
+// E14) and ignores Melee Lock, so flying gives something up. Making the Ojs200
+// automatic would quietly spend a choice the card hands the player, which is
+// why this was tasked rather than folded into `moveAsFlight`.
+//
+// Note `moveAsFlight` on the Card is a different thing entirely: it marks the
+// eight units whose printed BASE is flying. This is a Part lending a normal
+// Mech the movement mode, so the base stays what it is - which is why a Mech
+// flying on an Ojs200 still sets off a Mine it lands on (`triggersMine` reads
+// `isFlyingBase`, not the movement mode).
+//
+// Matched on the printed text rather than by card id, so the (D) faces are
+// covered without naming four ids. Verified word for word against the English
+// scans of 117/119, the UN 1.02 parts list and the PD 1.02 revision PDF.
+const FLIGHT_MAY_EN = /Maneuver\s+may\s+be\s+consider\w*\s+as\s+Flying/i;
+const FLIGHT_MAY_ZH = /调整移动可视为飞行/;
+const FLIGHT_PAIR_EN = /equipped with this part and\b[^.]*\bmovement will be considered as Flying/i;
+const FLIGHT_PAIR_ZH = /同时装备了[^。]*视为飞行/;
+
+// 'maneuver' is offered and may be declined; 'always' is not a choice.
+export type FlightGrant = 'none' | 'maneuver' | 'always';
+
+export function flightGrant(data: GameData, t: Token, loans: LoanedPart[] = []): FlightGrant {
+  if (t.kind !== 'mech') return 'none';
+  let may = false;
+  let pairHalves = 0;
+  const read = (card: Card): void => {
+    for (const a of card.actions ?? []) {
+      // A Passive, for the same reason the Maneuver bonus insists on one: an
+      // Action describing its own movement is not a standing property.
+      if (a.type !== 'Passive') continue;
+      const en = a.description?.en ?? '';
+      const zh = a.description?.zh ?? '';
+      const ruled = (a.gameRules ?? []).some(
+        (g) => g.id === 'adjust_move_as_flight' || (g.effects ?? []).some((e) => e.type === 'adjust_move_as_flight'),
+      );
+      if (ruled || FLIGHT_MAY_EN.test(en) || FLIGHT_MAY_ZH.test(zh)) may = true;
+      if (FLIGHT_PAIR_EN.test(en) || FLIGHT_PAIR_ZH.test(zh)) pairHalves++;
+    }
+  };
+  for (const { slot, card } of tokenCards(data, t)) {
+    // A wrecked Part grants nothing, as everywhere else here.
+    if ((t.partStates?.[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
+    read(card);
+  }
+  // A borrowed Load is the Mech's own Part while it acts (O3), and the Ojs200
+  // is a Backpack - so a Tarantula in Contact can hand a Mech its wings.
+  for (const l of loans) read(l.card);
+  // The Fairy needs BOTH hands; one arm alone grants nothing. Two Parts
+  // printing this passive necessarily sit in different hand slots, so counting
+  // them is enough and no left/right test is needed.
+  if (pairHalves >= 2) return 'always';
+  return may ? 'maneuver' : 'none';
+}
+
+// The fourth way a unit flies, and the only one that belongs to an ACTION
+// rather than to the unit or its Parts. The `Airborne Movement` keyword
+// (空中移动) reads "This Action is considered as Flying", so the Jump it sits on
+// is a Flying Movement while an ordinary Sprint from the same unit is not.
+//
+// Seven cards carry it, all on a Moving Action: both Jetpacks (010 TB-600,
+// 088 JP1 "Long Jump"), the four LD-5 Vigilant drones and ZHDR-203 Hound III.
+// Read off the KEYWORD, because three of the seven have a blank English
+// description and the Chinese inline tag is the only thing they all share.
+const AIRBORNE_KEYWORD = '空中移动';
+
+export function isAirborneAction(a: CardAction): boolean {
+  // A movement keyword on something that is not a Movement is not a grant.
+  if (a.type !== 'Moving') return false;
+  return (a.keywords ?? []).some(
+    (k) => k.key === AIRBORNE_KEYWORD || (k.inline ?? '') === AIRBORNE_KEYWORD || k.en === 'Airborne Movement',
+  );
+}
+
 // ---------- Tarantula Loads (FAQ O3-O8, O16-O18) ----------
 //
 // The ADK30C Carrier Tarantula carries one Backpack as a Load, and "Ally Mechs

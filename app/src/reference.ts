@@ -303,7 +303,13 @@ function cardDetail(c: Card): string {
       if (en) text = linkKeywords(en);
       else if (tr?.english) text = `${linkKeywords(tr.english)}<em class="ref-note"> — translated from the Chinese card text</em>`;
       else text = '<em class="ref-note">No rules text on this card.</em>';
-      const mechHtml = mechBlocks(a.name.en, a.name.zh, en, tr?.english ?? undefined);
+      // The Chinese DESCRIPTION has to be fed in as well as the Chinese name.
+      // Several mechanics can only be matched on it - Loads is `负载`, Mines is
+      // `地雷`, the Pholcus is `自行地雷` - because the English prints those as
+      // ordinary words that fire inside "payload" and "determined". Passing only
+      // the name meant those three entries were written, shipped, and never once
+      // displayed on the card that needed them.
+      const mechHtml = mechBlocks(a.name.en, a.name.zh, en, a.description?.zh, tr?.english ?? undefined);
       const icon = actionIconUrl(a.type);
       return `<div class="ref-action">
         <h4>${icon ? `<img class="act-icon" src="${icon}" alt="" title="${esc(a.type ?? '')}">` : ''}${

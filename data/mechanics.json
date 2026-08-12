@@ -292,7 +292,12 @@
    "id": "drone_action_speed",
    "name": "Automatic and Command Actions",
    "ref": "Rulebook 3.2 and 3.5",
-   "match": ["automatic action", "command action", "commanded drone", "action speed"],
+   "match": [
+    "automatic action",
+    "command action",
+    "commanded drone",
+    "action speed"
+   ],
    "text": "Every Action on a Drone card is marked with a boxed icon beside its name that says when it happens. {!} is an Automatic Action: it resolves by itself in the Automatic Phase without being told to. {?} is a Command Action: it only happens if you spend a Command Token on that Drone in the Command Phase. An Action with neither box is Passive and is always on. Mechs generate 1 Command Token each and Drones receive them. A commanded Drone acts immediately and either moves or performs one Command Action, so an Automatic Action cannot be taken on a Command. A Drone that acted on a Command does not act again that round, which means spending a token on a Drone whose only weapon is Automatic trades that attack away for a move. Unspent Command Tokens are removed at the end of the phase."
   },
   {
@@ -437,6 +442,29 @@
     "repeater"
    ],
    "text": "A Repeater extends where a Mech's electronic reach starts from: an Electronic Attack or Electronic Support may measure its range from the Repeater rather than from the Mech, which is what lets a Mech act on something it could never reach itself. Anti-air radar works the other way round, covering an area against Aerial targets so a shot at one of them is taken as though the radar unit were the one seeing it."
+  },
+  {
+   "id": "contact",
+   "name": "Contact",
+   "ref": "Rulebook 4.2.3",
+   "match": [
+    "contact",
+    "接触"
+   ],
+   "text": "Two Units or Terrain Objects are in Contact when at least one edge of the Small Grids they occupy overlaps. It is measured on the footprints, not on the Large Grid, so a 3x3 Mech is in Contact along its whole face. Contact is NOT the same as Adjacent, and the difference decides real rules: a corner-to-corner touch is Adjacent but not Contact, because meeting at a point is not an edge overlapping, and two Units sharing one Large Grid are Adjacent automatically but only in Contact if their footprints actually touch. Standing in the same Grid counts, which is how a landed Mine or a Flying Unit above a ground one is in Contact with it. Contact is what an enemy needs to break Optical Camouflage, and what a Carrier Tarantula needs before it will lend its Load."
+  },
+  {
+   "id": "adjacent",
+   "name": "Adjacent",
+   "ref": "Rulebook 4.2.2",
+   "match": [
+    "adjacent grid",
+    "adjacent ally",
+    "adjacent unit",
+    "adjacent enemy",
+    "相邻格"
+   ],
+   "text": "The eight Large Grids surrounding the one a Unit stands in are its Adjacent Grids, diagonals included, and a Unit standing in any of them is Adjacent to it. Small and Medium Units may share a Large Grid, and two Units sharing one are Adjacent as well. A Range of \"--\" on an Action means it can only target Adjacent Units. Adjacent is the looser of the game's two proximity terms: it is measured in whole Large Grids and counts diagonals, where Contact is measured on the Small Grid edges and does not."
   }
  ]
 }

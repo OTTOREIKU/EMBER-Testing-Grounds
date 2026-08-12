@@ -45,7 +45,7 @@ import { PlayGuide } from './playguide';
 import type { Card, CardAction, DiceData, DieColor, Facing, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, StatusDef, TerrainPiece, Timing, Token } from './types';
 import { addStatus, normaliseScript, SCALES, statusCount, statusesFor, STATUSES } from './types';
 import { actionIdOf } from './ticks';
-import { autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, isPositionSwap, loanedParts, minesLayable, minesOwed, multiTargetLimit, unfoldsOwed, repairSpec, autoTargetsFor, isSilentAction, maneuverIsSilent, chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, type Resupply, resupplyOf, SLOT_LABEL, interceptLeft, interceptsOwed, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf, type AttackReaction } from './units';
+import { autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, loanedParts, minesLayable, minesOwed, multiTargetLimit, unfoldsOwed, repairSpec, autoTargetsFor, isSilentAction, maneuverIsSilent, chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, type Resupply, resupplyOf, SLOT_LABEL, interceptLeft, interceptsOwed, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf, type AttackReaction } from './units';
 import { registerOffline } from './offline';
 import { battlefieldLocked, countHits, firstPlayerFrom, newSetup, normaliseSetup, tasksLocked, type SetupState } from './setup';
 import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
@@ -225,7 +225,7 @@ async function init() {
       };
       setTimeout(point, 0);
     },
-    onMoveUnit: (uid, opts, done) => startMove(uid, opts, done),
+    onMoveUnit: (uid, opts, done) => void startMove(uid, opts, done),
     onPerformAction: (uid, actionId, done) => performGuided(uid, actionId, done),
     onSetStance: (uid, stance) => {
       const t = state.tokens.find((x) => x.uid === uid);
@@ -769,7 +769,7 @@ async function init() {
       const range = action.range || maneuverRange(data, t);
       // A shove rides on the Movement rather than replacing it, so the push is
       // offered once the Mech has finished moving.
-      startMove(uid, { range, label: what }, (moved) => {
+      void startMove(uid, { range, label: what, airborne: isAirborneAction(action) }, (moved) => {
         if (!moved || !knockbackOf(action, data.actionTranslation(actionId)?.english ?? undefined)) return done(moved);
         void offerShove(t, action).then(() => done(true));
       });
@@ -1574,7 +1574,43 @@ async function init() {
     return maneuverRange(data, t);
   }
 
-  function startMove(uid: number, opts: { range?: number; label: string }, done: (moved: boolean) => void): void {
+  // Whether this move is a Flying Movement. Returns null if the player backed
+  // out, which cancels the move rather than guessing for them.
+  //
+  // Three sources, and only the middle one is a question:
+  //   the unit's printed base (the eight square-based flyers) - always,
+  //   an Ojs200 lending the Mech optional flight on its MANEUVER - ask,
+  //   a matched pair of Fairy arms - always, and on every move.
+  // Flying cannot Crush (FAQ E14) and ignores Melee Lock, so the choice is a
+  // real trade and the prompt says so rather than just offering two verbs.
+  async function flyingChoice(t: Token, isManeuver: boolean, forced = false): Promise<boolean | null> {
+    // An Airborne Movement Action is Flying by its own keyword, with no choice
+    // in it, so it never reaches the question below.
+    if (forced) return true;
+    if (data.byId.get(t.cardId)?.moveAsFlight) return true;
+    const grant = flightGrant(data, t, loanedParts(data, state.tokens, t));
+    if (grant === 'always') return true;
+    if (grant !== 'maneuver' || !isManeuver) return false;
+    const locked = lockersOf(data, t, state.tokens, currentTerrain());
+    const gains = [
+      ...(locked.length ? [`ignore the Melee Lock from ${locked.map((o) => o.label).join(', ')}`] : []),
+      'cross terrain and units freely',
+    ];
+    const pick = await choiceDialog({
+      title: 'Fly this Maneuver?',
+      body: `${t.label} may treat its Maneuver as Flying Movement. Flying lets it ${gains.join(' and ')} — but a Flying Movement can never Crush (FAQ E14).`,
+      stacked: true,
+      choices: [
+        { id: 'fly', label: 'Fly it', note: 'Flying Movement — cannot Crush' },
+        { id: 'walk', label: 'Move normally', note: 'May Crush, pays Melee Lock' },
+        { id: 'cancel', label: 'Cancel', cancel: true },
+      ],
+    });
+    if (!pick || pick === 'cancel') return null;
+    return pick === 'fly';
+  }
+
+  async function startMove(uid: number, opts: { range?: number; label: string; maneuver?: boolean; airborne?: boolean }, done: (moved: boolean) => void): Promise<void> {
     const t = state.tokens.find((x) => x.uid === uid);
     if (!t) return done(false);
     const steps = opts.range ?? moveRangeFor(t);
@@ -1585,7 +1621,9 @@ async function init() {
       });
       return done(false);
     }
-    const flying = !!data.byId.get(t.cardId)?.moveAsFlight;
+    const chosen = await flyingChoice(t, !!opts.maneuver, !!opts.airborne);
+    if (chosen === null) return done(false);
+    const flying = chosen;
     movePlan = {
       uid,
       side: t.side,
@@ -3446,7 +3484,7 @@ async function init() {
     selectToken(target.uid);
     onChanged();
     if (spec.maneuver) {
-      startMove(target.uid, { range: maneuverRange(data, target), label: 'Maneuver' }, () => onChanged());
+      void startMove(target.uid, { range: maneuverRange(data, target), label: 'Maneuver', maneuver: true }, () => onChanged());
       return;
     }
     await alertDialog({ title: spec.name, body: verdict.ok ? log : `${log}\n\n⚠ ${verdict.why}` });
