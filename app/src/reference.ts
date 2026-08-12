@@ -94,6 +94,9 @@ function facetsFor(t: Tab): Facet[] {
 let data: GameData;
 let tab: Tab = 'keywords';
 let query = '';
+// A fresh search casts across every tab at once; picking a tab narrows it.
+// Cleared by tapping any tab, reset by the next search that starts from empty.
+let allMode = true;
 const facetChoice: Partial<Record<Tab, string>> = {};
 const factionChoice: Partial<Record<Tab, string>> = {};
 let rulesSection: string | undefined;
@@ -434,7 +437,7 @@ const BOX_GROUPS: { label: string; match: (c: Card) => boolean }[] = [
 // copy: Discard Cards sit under their parent Part Card (4.17), and alternate
 // modes such as White Dwarf's Cruise Mode are the same physical card. They are
 // in the box, so they are listed, just never counted as extra copies.
-function boxContents(key: string): { card: Card; n: number }[] {
+function boxContents(key: string): { card: Card; n: number; discardOf?: string }[] {
   return data.cards
     .map((card) => ({ card, entry: (card.containedIn ?? []).find((e) => e.box === key) }))
     .filter((x) => !!x.entry)
@@ -460,6 +463,38 @@ function boxDetail(key: string): string | null {
   const rest = items.filter((i) => !used.has(i.card.id));
   if (rest.length) groups.push({ label: 'Other', hit: rest });
 
+  // A Discard Card is the same Part after its hand-held kit is dropped, and it
+  // ships under that Part (rulebook 1.x/5.x). Listed as a sibling it reads as a
+  // second, unrelated weapon - which is exactly how it read to OTTO - so it is
+  // attached to its parent instead: indented, named for what it is rather than
+  // repeating the parent's name, and NOT dimmed, because dimming was carrying
+  // the unrelated "not a counted copy" meaning.
+  const discardName = (n: string): string | null => {
+    const m = /^(.*?)\s*[（(]\s*D\s*[)）]\s*[）)]?\s*$/.exec(n);
+    return m ? m[1].trim() : null;
+  };
+  for (const g of groups) {
+    const out: typeof g.hit = [];
+    const taken = new Set<string>();
+    for (const i of g.hit) {
+      if (taken.has(i.card.id)) continue;
+      out.push(i);
+      taken.add(i.card.id);
+      // Pull this card's discard face up directly beneath it, wherever the
+      // alphabet had put it.
+      const mine = cardName(i.card).trim().toLowerCase();
+      for (const j of g.hit) {
+        if (taken.has(j.card.id)) continue;
+        const base = discardName(cardName(j.card));
+        if (base && base.toLowerCase() === mine) {
+          out.push({ ...j, discardOf: i.card.id });
+          taken.add(j.card.id);
+        }
+      }
+    }
+    g.hit = out;
+  }
+
   const facs = (box.faction ?? [])
     .map((f) => `<span class="tag" data-fac="${esc(f)}">${esc(FACTION_LABEL[f] ?? f)}</span>`)
     .join('');
@@ -468,23 +503,44 @@ function boxDetail(key: string): string | null {
       (g) => `<h3 class="ref-sub">${esc(g.label)} <span class="fc-n">${g.hit.length}</span></h3>
       <ul class="box-parts">${g.hit
         .map(
-          (i) => `<li data-card="${esc(i.card.id)}"${i.n ? '' : ' class="bp-paired"'}><span class="bp-name">${esc(cardName(i.card))}</span>
-            <span class="bp-slot">${
-              i.n
-                ? ''
-                : '<span class="tag bp-tag" title="Ships with its parent card rather than as a separate copy: a Discard Card sits under its Part Card, and alternate modes are the same physical card.">paired</span>'
+          (i) => {
+            // Three shapes of row. A discard face is a child of the row above
+            // it. A zero-count card that is NOT a discard is an alternate MODE
+            // — literally the same piece of cardboard, flipped — and that is
+            // the only thing still called paired. Everything else is a plain
+            // counted card.
+            const kid = !!i.discardOf;
+            const mode = !kid && !i.n;
+            return `<li data-card="${esc(i.card.id)}" class="${kid ? 'bp-kid' : ''}${mode ? ' bp-paired' : ''}">
+            <span class="bp-name">${
+              kid
+                ? '<span class="bp-tick" aria-hidden="true">└</span>discarded face'
+                : esc(cardName(i.card))
             }</span>
-            <span class="mono bp-pts">${i.card.score ? `${i.card.score}p` : ''}</span>
-            <span class="bp-n">${i.n > 1 ? `×${i.n}` : ''}</span></li>`,
+            <span class="bp-slot">${
+              mode
+                // Deliberately states the DATA fact and offers the usual cause,
+                // rather than asserting a physical claim we cannot always
+                // check: in the curated boxes these are confirmed second
+                // faces, in the leftovers bucket a couple are just unknowns.
+                ? '<span class="tag bp-tag" title="In the box, but not counted as a separate copy — usually the other face of a double-sided card, or an alternate mode of the card above it.">same card</span>'
+                : ''
+            }</span>
+            <span class="mono bp-pts">${!kid && i.card.score ? `${i.card.score}p` : ''}</span>
+            <span class="bp-n">${i.n > 1 ? `×${i.n}` : ''}</span></li>`;
+          },
         )
         .join('')}</ul>`,
     )
     .join('');
 
-  const paired = items.filter((i) => !i.n).length;
+  // Only alternate MODES are still counted as "same card"; a discard face is
+  // now shown as part of its parent's row rather than tallied as a curiosity.
+  const kids = new Set(groups.flatMap((g) => g.hit.filter((i) => i.discardOf).map((i) => i.card.id)));
+  const sameCard = items.filter((i) => !i.n && !kids.has(i.card.id)).length;
   return `<h2>${esc(box.name.en || box.name.zh || box.key)}</h2>
     <p class="ref-meta">${esc(
-      `${cards} card${cards === 1 ? '' : 's'} · ${pieces} copies${paired ? ` · ${paired} paired` : ''}`,
+      `${cards} card${cards === 1 ? '' : 's'} · ${pieces} copies${sameCard ? ` · ${sameCard} alternate face${sameCard === 1 ? '' : 's'}` : ''}`,
     )}</p>
     ${facs ? `<div class="ref-kwlinks">${facs}</div>` : ''}
     ${
@@ -581,16 +637,230 @@ function boxRow(b: BoxDef): string {
   </article>`;
 }
 
+// ---------- one predicate per pool, shared by the tab lists AND the badges ----------
+//
+// The counts painted onto the tab strip and the rows a tab then shows have to
+// come from the SAME test, or a badge promises matches the tab fails to
+// produce. So every filter that used to live inline in render() lives here
+// once, and both callers read it.
+const matchKeyword = (k: KeywordDef, q: string): boolean =>
+  !q || norm(`${k.en?.name ?? ''} ${k.en?.value ?? ''} ${k.key} ${k.zh?.name ?? ''}`).includes(q);
+const matchMission = (m: (typeof data.missions.cards)[number], q: string): boolean =>
+  !q || norm(`${m.name} ${m.nameKo ?? ''} ${m.setup} ${m.scoring} ${(m.zones ?? []).join(' ')}`).includes(q);
+const matchFamily = (f: (typeof data.missions.families)[number], q: string): boolean =>
+  !q || norm(`${f.name} ${f.text} ${(f.faq ?? []).map((x) => x.q + x.a).join(' ')}`).includes(q);
+const matchSecondary = (s: (typeof data.secondary)[number], q: string): boolean =>
+  !q || norm(`${s.name} ${s.nameKo ?? ''} ${s.setup} ${s.scoring} ${s.token ?? ''}`).includes(q);
+const matchFaction = (f: (typeof data.factions)[number], q: string): boolean =>
+  !f.hidden && (!q || norm(`${f.name} ${f.short} ${f.key} ${f.supplier ?? ''} ${f.hook ?? ''} ${f.text}`).includes(q));
+const matchBox = (b: (typeof data.boxes)[number], q: string): boolean => {
+  if (!q) return true;
+  const contents = boxContents(b.key).map((i) => cardName(i.card)).join(' ');
+  return norm(`${b.name.en ?? ''} ${b.name.zh ?? ''} ${b.key} ${contents}`).includes(q);
+};
+const matchCard = (c: Card, q: string): boolean => {
+  if (!q) return true;
+  const kw = (c.keywords ?? []).map((k) => k.en || k.inline || k.key).join(' ');
+  const acts = (c.actions ?? []).map((a) => `${a.name.en ?? ''} ${a.description?.en ?? ''}`).join(' ');
+  return norm(`${cardName(c)} ${c.id} ${c.type ?? ''} ${kw} ${acts}`).includes(q);
+};
+const matchMechanic = (m: (typeof data.mechanics)[number], q: string): boolean =>
+  !q || norm(`${m.name} ${m.text} ${m.ref ?? ''}`).includes(q);
+const matchPhase = (x: (typeof data.play.phases)[number], q: string): boolean =>
+  !q || norm(`${x.name} ${x.who ?? ''} ${x.can.join(' ')} ${x.cannot.join(' ')}`).includes(q);
+const matchTiming = (x: (typeof data.play.timings)[number], q: string): boolean =>
+  !q || norm(`${x.name} timing ${x.text}`).includes(q);
+const matchStance = (x: (typeof data.play.stances)[number], q: string): boolean =>
+  !q || norm(`${x.name} ${x.short} stance ${x.effect} ${x.good} ${x.cost}`).includes(q);
+const matchStatus = (d: (typeof STATUSES)[number], q: string): boolean =>
+  !q || norm(`${d.label} ${d.icon} ${d.shape} ${d.note} ${d.decay ?? ''} token`).includes(q);
+
+const wantFor = (t: Tab): ((c: Card) => boolean) =>
+  t === 'parts'
+    ? (c) => c.category === 'mech_part'
+    : t === 'units'
+      ? (c) => c.category === 'drone' || c.category === 'projectile'
+      : t === 'tactics'
+        ? (c) => c.category === 'tactics_or_upgrade'
+        : (c) => c.category === 'pilot';
+
+function tabCounts(q: string): Record<Tab, number> {
+  const cardsIn = (t: Tab): number => data.cards.filter(wantFor(t)).filter((c) => matchCard(c, q)).length;
+  return {
+    keywords: data.keywords.filter((k) => matchKeyword(k, q)).length,
+    parts: cardsIn('parts'),
+    units: cardsIn('units'),
+    pilots: cardsIn('pilots'),
+    tactics: cardsIn('tactics'),
+    missions:
+      data.missions.cards.filter((m) => matchMission(m, q)).length +
+      data.missions.families.filter((f) => matchFamily(f, q)).length +
+      data.secondary.filter((s) => matchSecondary(s, q)).length,
+    factions: data.factions.filter((f) => matchFaction(f, q)).length,
+    boxes: data.boxes.filter(isListedBox).filter((b) => matchBox(b, q)).length,
+    rules:
+      data.play.phases.filter((x) => matchPhase(x, q)).length +
+      data.play.timings.filter((x) => matchTiming(x, q)).length +
+      data.play.stances.filter((x) => matchStance(x, q)).length +
+      data.mechanics.filter((m) => matchMechanic(m, q)).length +
+      STATUSES.filter((d) => matchStatus(d, q)).length,
+  };
+}
+
+// While a search is live the strip doubles as the match map: every tab carries
+// its count, and a tab with nothing to show says so instead of inviting a
+// dead-end tap. With no search the strip goes back to being plain tabs.
+function paintTabs(q: string, everywhere: boolean): void {
+  const counts = q ? tabCounts(q) : null;
+  document.querySelectorAll<HTMLButtonElement>('#ref-tabs button').forEach((b) => {
+    const t = b.dataset.tab as Tab;
+    b.classList.toggle('active', !everywhere && t === tab);
+    let n = b.querySelector<HTMLElement>('.tab-n');
+    if (!counts) {
+      n?.remove();
+      b.classList.remove('no-match');
+      return;
+    }
+    if (!n) {
+      n = document.createElement('span');
+      n.className = 'tab-n';
+      b.appendChild(n);
+    }
+    n.textContent = String(counts[t]);
+    b.classList.toggle('no-match', counts[t] === 0);
+  });
+}
+
+// The everywhere view: a fresh search casts across every tab at once, because
+// mid-game nobody knows (or cares) which tab the answer lives in. Each group
+// is a horizontal strip of compact PREVIEW CHIPS that link to the real item -
+// never the tabs' full renderings, which are built for the masonry grid and
+// stack into odd towers of art and empty space outside it. Tapping a chip
+// opens the detail; a group header or a tab narrows; clearing the box returns
+// to the tab that was open.
+function renderEverywhere(el: HTMLElement, q: string): void {
+  const label: Record<Tab, string> = {
+    keywords: 'Keywords', parts: 'Parts', units: 'Units', pilots: 'Pilots', tactics: 'Tactics',
+    missions: 'Missions', factions: 'Factions', boxes: 'Boxes', rules: 'Rules',
+  };
+  // Result rows, forum-style: one per line, name on the left and its kind on
+  // the right, scanned top to bottom. Ten per group before the "all" link,
+  // which is about a screen on a phone.
+  const CAP = 10;
+  const chip = (attr: string, title: string, sub: string): string =>
+    `<button class="ref-hit" ${attr}><b>${esc(title)}</b><span>${esc(sub)}</span></button>`;
+  type Group = { t: Tab; total: number; rows: string[] };
+  const groups: Group[] = [];
+
+  const kws = data.keywords.filter((k) => matchKeyword(k, q));
+  if (kws.length) {
+    groups.push({
+      t: 'keywords', total: kws.length,
+      rows: kws.slice(0, CAP).map((k) => {
+        const name = k.en?.name?.replace(/^[•·\s]+/, '') || k.key;
+        return chip(`data-kwitem="${esc(name)}"`, name, 'keyword');
+      }),
+    });
+  }
+
+  for (const t of ['parts', 'units', 'pilots', 'tactics'] as Tab[]) {
+    const pool = data.cards.filter(wantFor(t)).filter((c) => matchCard(c, q))
+      .sort((a, b) => cardName(a).localeCompare(cardName(b)));
+    if (pool.length) {
+      groups.push({
+        t, total: pool.length,
+        rows: pool.slice(0, CAP).map((c) => {
+          const kind = c.type ? SLOT_LABEL[c.type] ?? c.type : c.category === 'pilot' ? 'pilot' : c.category;
+          const pts = c.score ? ` · ${c.score}p` : '';
+          return chip(`data-card="${esc(c.id)}"`, cardName(c), `${kind}${pts}`);
+        }),
+      });
+    }
+  }
+
+  const mains = data.missions.cards.filter((m) => matchMission(m, q));
+  const fams = data.missions.families.filter((f) => matchFamily(f, q));
+  const secs = data.secondary.filter((s) => matchSecondary(s, q));
+  if (mains.length + fams.length + secs.length) {
+    const rows = [
+      ...mains.map((m) => chip(`data-mission="${esc(m.id)}"`, m.name, 'Main Task')),
+      ...secs.map((s) => chip(`data-secondary="${esc(s.id)}"`, s.name, 'Secondary Task')),
+    ];
+    groups.push({ t: 'missions', total: mains.length + fams.length + secs.length, rows: rows.slice(0, CAP) });
+  }
+
+  const facs = data.factions.filter((f) => matchFaction(f, q));
+  if (facs.length) {
+    groups.push({
+      t: 'factions', total: facs.length,
+      rows: facs.slice(0, CAP).map((f) => chip(`data-factionitem="${esc(f.key)}"`, f.name, 'faction')),
+    });
+  }
+
+  const boxes = data.boxes.filter(isListedBox).filter((b) => matchBox(b, q)).sort((a, b) => a.id - b.id);
+  if (boxes.length) {
+    groups.push({
+      t: 'boxes', total: boxes.length,
+      rows: boxes.slice(0, CAP).map((b) => chip(`data-box="${esc(b.key)}"`, b.name.en || b.name.zh || b.key, 'box')),
+    });
+  }
+
+  const mechs = data.mechanics.filter((m) => matchMechanic(m, q));
+  const playBits =
+    data.play.phases.filter((x) => matchPhase(x, q)).length +
+    data.play.timings.filter((x) => matchTiming(x, q)).length +
+    data.play.stances.filter((x) => matchStance(x, q)).length +
+    STATUSES.filter((d) => matchStatus(d, q)).length;
+  if (mechs.length + playBits) {
+    // Mechanics are the chips worth naming; phases, timings, stances and
+    // tokens count toward the total and live behind the group's Rules link.
+    groups.push({
+      t: 'rules', total: mechs.length + playBits,
+      rows: mechs.slice(0, CAP).map((m) => chip('data-goto="rules"', m.name, m.ref ?? 'rules')),
+    });
+  }
+
+  const total = groups.reduce((s, g) => s + g.total, 0);
+  el.innerHTML = groups.length
+    ? `<p class="ref-count">${total} match${total === 1 ? '' : 'es'} everywhere · tap an item to open it, a group or a tab to narrow</p>` +
+      groups
+        .map(
+          (g) => `<div class="ref-group">
+        <button class="ref-group-head" data-goto="${g.t}">${esc(label[g.t])} <span class="fc-n">${g.total}</span><span class="rg-open">›</span></button>
+        <div class="ref-hits">${g.rows.join('')}${
+          g.total > g.rows.length ? `<button class="ref-hit ref-hit-more" data-goto="${g.t}"><b>All ${g.total} in ${esc(label[g.t])}</b><span>›</span></button>` : ''
+        }</div>
+      </div>`,
+        )
+        .join('')
+    : '<p class="ref-count">No matches anywhere</p>';
+
+  el.querySelectorAll<HTMLButtonElement>('[data-goto]').forEach((b) =>
+    b.addEventListener('click', (ev) => {
+      // A goto wrapping a clickable row (the Rules previews) is a navigation,
+      // not a detail open, so it wins the click.
+      ev.stopPropagation();
+      tab = b.dataset.goto as Tab;
+      allMode = false;
+      render();
+      window.scrollTo({ top: 0 });
+    }),
+  );
+}
+
 function render(): void {
   const q = norm(query.trim());
+  const everywhere = !!q && allMode;
+  paintTabs(q, everywhere);
   const el = body();
+  if (everywhere) {
+    renderEverywhere(el, q);
+    return;
+  }
 
   if (tab === 'keywords') {
     const list = data.keywords
-      .filter((k) => {
-        if (!q) return true;
-        return norm(`${k.en?.name ?? ''} ${k.en?.value ?? ''} ${k.key} ${k.zh?.name ?? ''}`).includes(q);
-      })
+      .filter((k) => matchKeyword(k, q))
       .sort((a, b) => (a.en?.name || a.key).localeCompare(b.en?.name || b.key));
     el.innerHTML = list.length
       ? `<p class="ref-count">${list.length} keyword${list.length === 1 ? '' : 's'}</p>${list.map(keywordCard).join('')}`
@@ -600,15 +870,9 @@ function render(): void {
 
   if (tab === 'missions') {
     const fam = new Map(data.missions.families.map((f) => [f.id, f]));
-    const cards = data.missions.cards.filter(
-      (m) => !q || norm(`${m.name} ${m.nameKo ?? ''} ${m.setup} ${m.scoring} ${(m.zones ?? []).join(' ')}`).includes(q),
-    );
-    const fams = data.missions.families.filter(
-      (f) => !q || norm(`${f.name} ${f.text} ${(f.faq ?? []).map((x) => x.q + x.a).join(' ')}`).includes(q),
-    );
-    const secs = data.secondary.filter(
-      (s) => !q || norm(`${s.name} ${s.nameKo ?? ''} ${s.setup} ${s.scoring} ${s.token ?? ''}`).includes(q),
-    );
+    const cards = data.missions.cards.filter((m) => matchMission(m, q));
+    const fams = data.missions.families.filter((f) => matchFamily(f, q));
+    const secs = data.secondary.filter((s) => matchSecondary(s, q));
     if (!cards.length && !fams.length && !secs.length) {
       el.innerHTML = '<p class="ref-count">No matches</p>';
       return;
@@ -685,11 +949,10 @@ function render(): void {
 
   if (tab === 'rules') {
     const p = data.play;
-    const hit = (s: string) => !q || norm(s).includes(q);
-    const phases = p.phases.filter((x) => hit(`${x.name} ${x.who ?? ''} ${x.can.join(' ')} ${x.cannot.join(' ')}`));
-    const timings = p.timings.filter((x) => hit(`${x.name} timing ${x.text}`));
-    const stances = p.stances.filter((x) => hit(`${x.name} ${x.short} stance ${x.effect} ${x.good} ${x.cost}`));
-    const filtered = data.mechanics.filter((m) => !q || norm(`${m.name} ${m.text} ${m.ref ?? ''}`).includes(q));
+    const phases = p.phases.filter((x) => matchPhase(x, q));
+    const timings = p.timings.filter((x) => matchTiming(x, q));
+    const stances = p.stances.filter((x) => matchStance(x, q));
+    const filtered = data.mechanics.filter((m) => matchMechanic(m, q));
 
     const phaseHtml = phases.length
       ? `<p class="ref-count">Round phases</p>` +
@@ -790,9 +1053,7 @@ function render(): void {
       return `<svg class="tok-badge" viewBox="0 0 ${w} 26" width="${w}" height="26" aria-hidden="true">${body}
         <text x="${w / 2}" y="17" text-anchor="middle" font-size="9" font-weight="700" fill="#0f1216">${esc(def.icon)}</text></svg>`;
     };
-    const tokenList = STATUSES.filter((d) =>
-      hit(`${d.label} ${d.icon} ${d.shape} ${d.note} ${d.decay ?? ''} token`),
-    );
+    const tokenList = STATUSES.filter((d) => matchStatus(d, q));
     const tokenHtml = tokenList.length
       ? `<p class="ref-count">Tokens and states</p>` +
         tokenList
@@ -865,11 +1126,7 @@ function render(): void {
   }
 
   if (tab === 'factions') {
-    const list = data.factions.filter(
-      (f) =>
-        !f.hidden &&
-        (!q || norm(`${f.name} ${f.short} ${f.key} ${f.supplier ?? ''} ${f.hook ?? ''} ${f.text}`).includes(q)),
-    );
+    const list = data.factions.filter((f) => matchFaction(f, q));
     el.innerHTML = list.length
       ? `<p class="ref-count">${list.length} faction${list.length === 1 ? '' : 's'} · tap one for its story</p>${list.map(factionRow).join('')}`
       : '<p class="ref-count">No matches</p>';
@@ -878,11 +1135,7 @@ function render(): void {
 
   if (tab === 'boxes') {
     const sellable = data.boxes.filter(isListedBox);
-    const pool = sellable.filter((b) => {
-      if (!q) return true;
-      const contents = boxContents(b.key).map((i) => cardName(i.card)).join(' ');
-      return norm(`${b.name.en ?? ''} ${b.name.zh ?? ''} ${b.key} ${contents}`).includes(q);
-    });
+    const pool = sellable.filter((b) => matchBox(b, q));
     const facs = FACTION_ORDER.filter((f) => sellable.some((b) => (b.faction ?? []).includes(f)));
     const choice = factionChoice.boxes;
     const list = pool
@@ -913,21 +1166,7 @@ function render(): void {
     return;
   }
 
-  const want =
-    tab === 'parts'
-      ? (c: Card) => c.category === 'mech_part'
-      : tab === 'units'
-        ? (c: Card) => c.category === 'drone' || c.category === 'projectile'
-        : tab === 'tactics'
-          ? (c: Card) => c.category === 'tactics_or_upgrade'
-          : (c: Card) => c.category === 'pilot';
-
-  const pool = data.cards.filter(want).filter((c) => {
-    if (!q) return true;
-    const kw = (c.keywords ?? []).map((k) => k.en || k.inline || k.key).join(' ');
-    const acts = (c.actions ?? []).map((a) => `${a.name.en ?? ''} ${a.description?.en ?? ''}`).join(' ');
-    return norm(`${cardName(c)} ${c.id} ${c.type ?? ''} ${kw} ${acts}`).includes(q);
-  });
+  const pool = data.cards.filter(wantFor(tab)).filter((c) => matchCard(c, q));
 
   const kinds = facetsFor(tab);
   const factions = factionFacets(pool);
@@ -1164,9 +1403,10 @@ async function init(): Promise<void> {
 
   document.querySelectorAll<HTMLButtonElement>('#ref-tabs button').forEach((b) =>
     b.addEventListener('click', () => {
-      document.querySelectorAll('#ref-tabs button').forEach((x) => x.classList.remove('active'));
-      b.classList.add('active');
       tab = b.dataset.tab as Tab;
+      // Picking a tab is the narrowing gesture, so the everywhere view yields.
+      // render() paints the active state, badges included.
+      allMode = false;
       render();
       window.scrollTo({ top: 0 });
     }),
@@ -1174,6 +1414,9 @@ async function init(): Promise<void> {
 
   const search = document.getElementById('ref-search') as HTMLInputElement;
   search.addEventListener('input', () => {
+    // Typing from an empty box starts a NEW question, so it casts wide again.
+    // Editing an existing query keeps whatever narrowing was already chosen.
+    if (!norm(query.trim()) && norm(search.value.trim())) allMode = true;
     query = search.value;
     render();
   });
@@ -1186,8 +1429,9 @@ async function init(): Promise<void> {
       navigateDetail('keyword', kw.dataset.kw!);
       return;
     }
+    // Also live in the everywhere view, which reuses the keyword cards.
     const kwItem = t.closest<HTMLElement>('[data-kwitem]');
-    if (kwItem && tab === 'keywords') {
+    if (kwItem && (tab === 'keywords' || (allMode && norm(query.trim())))) {
       navigateDetail('keyword', kwItem.dataset.kwitem!);
       return;
     }

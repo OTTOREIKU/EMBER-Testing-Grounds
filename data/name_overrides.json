@@ -33,6 +33,10 @@
       "en": "Tactical Disposition",
       "source": "printed English card scan"
     },
+    "537": {
+      "en": "PC-6 Shotgun (D)",
+      "source": "typo fix: the bundle name carries a stray full-width paren, \"PC-6 Shotgun (D)）\""
+    },
     "512": {
       "en": "AH-21 Pistol + CC50 Pile Bunker (R)",
       "source": "printed English card scan; the scan also confirms the earlier correction, since the source data labelled this 48-point part \"(R) (D)\", duplicating its own 0-point discard card 513"
