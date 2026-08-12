@@ -959,6 +959,12 @@ function checkActed(
     case 'launch': {
       if (!data.byId.get(cmd.cardId)) return no('That is not a card the database knows.');
       if (!findAction(data, state, cmd.uid, cmd.actionId)) return no('This unit has no such Action.');
+      // Every launch costs one Ammo Token (4.13), and apply clamps the count at
+      // zero - so without this line an empty magazine fired forever, in a
+      // strict game as much as the sandbox, because nothing ever said no.
+      if (t && t.ammo[cmd.actionId] !== undefined && t.ammo[cmd.actionId] <= 0) {
+        return no('No Ammo Tokens left for this Action (4.13).');
+      }
       const { col, row } = cmd.to;
       if (!Number.isInteger(col) || !Number.isInteger(row) || col < 0 || row < 0 || col > 35 || row > 35) {
         return no('That is not a place on the board.');

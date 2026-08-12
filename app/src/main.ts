@@ -296,25 +296,25 @@ async function init() {
     onStartAttack(t, actionId) {
       pendingAttack = { attackerUid: t.uid, actionId, mode: 'attack' };
       document.body.classList.add('targeting');
-      const hint = document.getElementById('hint')!;
       // The card's own Attack button is a second way in, beside the guide's
       // performGuided - so the O9 Neutral fallback has to be said here too, or
-      // it only reaches players who are following the guide.
+      // it only reaches players who are following the guide. Through setHint,
+      // not a bare textContent write - that is what hides the shortcut keys
+      // while the instruction is up.
       const act = tokenCards(data, t).flatMap(({ card }) => card.actions ?? []).find((a) => a.id === actionId);
       const neutral = act?.speed === 'auto'
         ? autoNeutralTargets(data, state.tokens, currentTerrain(), t, act)
         : [];
-      hint.textContent = neutral.length
+      setHint(neutral.length
         ? `⌖ No enemy is in range, so this Automatic Action MAY take the nearest Breakable Terrain instead — ${
           neutral.map((n) => gridOfTerrain(n.id)).join(' or ')
         } — destroyed by clicking the piece (FAQ O9). Esc cancels.`
-        : '⌖ Click the TARGET unit on the board (Esc cancels)';
+        : '⌖ Click the TARGET unit on the board (Esc cancels)');
     },
     onStartElectronic(t, actionId) {
       pendingAttack = { attackerUid: t.uid, actionId, mode: 'electronic' };
       document.body.classList.add('targeting');
-      const hint = document.getElementById('hint')!;
-      hint.textContent = '⚡ Click the TARGET of the Electronic Attack (Esc cancels)';
+      setHint('⚡ Click the TARGET of the Electronic Attack (Esc cancels)');
     },
     onShowMoveRange(t, steps) {
       const flying = !!data.byId.get(t.cardId)?.moveAsFlight;
@@ -324,8 +324,7 @@ async function init() {
     onShowActionRange(t, range, label) {
       board.showRangeRings(t, range);
       const inRange = unitsWithin(t, range);
-      const hint = document.getElementById('hint')!;
-      hint.textContent = `${label}: R${range} shown. ${inRange.length} unit${inRange.length === 1 ? '' : 's'} in range. Line of sight and arc still apply.`;
+      setHint(`${label}: R${range} shown. ${inRange.length} unit${inRange.length === 1 ? '' : 's'} in range. Line of sight and arc still apply.`);
     },
     onDetonate(t, actionId) {
       if (unfoldsOwed(data, [t]).some((x) => x.actionId === actionId)) {
@@ -1200,6 +1199,10 @@ async function init() {
     const body = document.getElementById('combat-body')!;
     const cands = landingCandidates();
     const total = m.left + m.placed;
+    // The volley is over but the panel stays for the undo. Arming the board in
+    // this state let a click launch a projectile the volley never had - the
+    // magazine clamp hid the overdraft - so a spent launch shows no targets.
+    const spent = m.left <= 0;
     body.innerHTML = `<div class="attack-helper">
       <div class="ah-head ah-head-stack"><b>Launch ${escapeHtml(cardName(m.card))}</b>
         <span class="dim">${escapeHtml(m.action.name.en || m.action.name.zh || m.action.id)}${
@@ -1210,10 +1213,14 @@ async function init() {
           ? 'Direct Fire, so the Landing Point has to be a Grid this unit can see and one terrain does not fill.'
           : 'Fire in arc, so no line of sight to the Landing Point is needed.'
       } A Landing Point is a Grid, not a unit, and nothing is targeted yet.</p>
-      <div class="ah-step"><h4>Click a highlighted Grid on the board</h4>
+      <div class="ah-step">${
+        spent
+          ? `<h4>Everything is launched</h4>
+        <p class="dim">Take one back with ↺, or stop here to finish the Action.</p>`
+          : `<h4>Click a highlighted Grid on the board</h4>
         <p class="dim">${cands.length} legal ${cands.length === 1 ? 'Grid' : 'Grids'} within Range ${m.action.range ?? 0}.
-          ${total > 1 ? `Volley ${total} lets you place up to ${total}, one Ammo Token each, and you may stop early.` : 'One Ammo Token is spent.'}</p>
-      </div></div>`;
+          ${total > 1 ? `Volley ${total} lets you place up to ${total}, one Ammo Token each, and you may stop early.` : 'One Ammo Token is spent.'}</p>`
+      }</div></div>`;
     const head = body.querySelector('.ah-head')!;
     if (m.placed) {
       const undo = document.createElement('button');
@@ -1229,13 +1236,24 @@ async function init() {
     cancel.textContent = m.placed ? 'Stop here' : 'Cancel';
     cancel.addEventListener('click', () => finishLaunch());
     head.appendChild(cancel);
-    board.showSmokeTargets(cands, (c, r) => placeLaunched(c, r));
+    // The hint follows the state both ways, because an undo walks the panel
+    // back from spent to placing and the old text would sit there lying.
+    if (spent) {
+      board.clearHighlights();
+      setHint(`${m.action.name.en || m.action.id}: all launched. Take one back or press Esc to finish.`);
+    } else {
+      board.showSmokeTargets(cands, (c, r) => placeLaunched(c, r));
+      setHint(`${m.action.name.en || m.action.id}: click a Landing Point Grid on the board. Esc stops.`);
+    }
     showSideTab('combat');
   }
 
   function placeLaunched(c: number, r: number): void {
     const m = launching;
     if (!m) return;
+    // The belt to the grace state's braces: even if a stale target layer fires,
+    // a volley with nothing left places nothing.
+    if (m.left <= 0) return;
     const t = state.tokens.find((x) => x.uid === m.uid);
     if (!t) return;
     // Sizing the landing check off the card rather than a probe token: minting
@@ -1249,8 +1267,14 @@ async function init() {
       return;
     }
     const id = m.action.id;
-    // The launch spawns the projectile and spends the Ammo in one command.
+    // The launch spawns the projectile and spends the Ammo in one command. In
+    // strict play a refusal spawns nothing, and reading the last token then
+    // would adopt some unrelated unit as the "projectile" and despawn it on
+    // undo - while the sandbox applies even a failing command, so the verdict
+    // alone cannot say whether anything landed. The board growing can.
+    const before = state.tokens.length;
     perform(data, state, { kind: 'launch', seat: t.side, uid: t.uid, actionId: id, cardId: m.card.id, to: { col: spot.col, row: spot.row }, facing: t.facing });
+    if (state.tokens.length === before) return;
     const placed = state.tokens[state.tokens.length - 1];
     m.placedUids.push(placed.uid);
     m.placed++;
@@ -1332,7 +1356,7 @@ async function init() {
     }
     launching = { uid: t.uid, action, card, left: shots, placed: 0, placedUids: [], done };
     selectToken(t.uid);
-    setHint(`${action.name.en || action.id}: click a Landing Point Grid on the board. Esc stops.`);
+    // renderLaunchStep owns the hint, so the text always matches the state.
     renderLaunchStep();
   }
 
@@ -1342,7 +1366,10 @@ async function init() {
     pendingIntercept = null;
     board.clearHighlights();
     document.body.classList.remove('targeting');
-    document.getElementById('hint')!.textContent = 'Drag move · Q/E rotate · M move-range · A arcs · Del remove · hover = range/LOS';
+    // Clearing through setHint, which is what brings the shortcut keys back.
+    // The old hard-coded shortcut string predates the hint bar owning them and
+    // left its text sitting where an instruction would go.
+    setHint('');
   }
 
   // How many more of this card you could still put on the board.
@@ -5213,6 +5240,14 @@ async function init() {
       }
       if (isInspectPinned()) {
         unpinInspect();
+        return;
+      }
+      // The launch hint says "Esc stops", and for a long time Esc only wiped
+      // the highlights: `launching` stayed set, the panel stayed up and the
+      // hint sat there forever. Finishing keeps what was already placed, the
+      // same as the panel's own Stop here button.
+      if (launching) {
+        finishLaunch();
         return;
       }
       endTargeting(true);

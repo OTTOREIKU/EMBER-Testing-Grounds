@@ -714,7 +714,11 @@ function renderBoard(ctx: HudCtx): void {
     // enter, with the step count on each.
     if (t) board.showReachable(reachableFor(ctx, t, movePlan.steps, movePlan.flying || !!t.aerial), movePlan.steps);
   } else if (launchPlan) {
-    board.showSmokeTargets(landingCandidates(ctx), (c, r) => placeLaunched(ctx, c, r));
+    // A spent volley keeps its panel for the undo but arms no targets - lit
+    // Grids in that state read as "you may launch another", and clicking one
+    // used to do exactly that.
+    if (launchPlan.left > 0) board.showSmokeTargets(landingCandidates(ctx), (c, r) => placeLaunched(ctx, c, r));
+    else board.clearHighlights();
   } else if (smokePlan) {
     board.showSmokeTargets(smokeCandidates(ctx), (c, r) => placeSmokeAt(ctx, c, r));
   } else if (crushPlan?.queue.length && !crushPlan.pendingSpot) {
@@ -1497,6 +1501,11 @@ function landingCandidates(ctx: HudCtx): { c: number; r: number; ok: boolean }[]
 function placeLaunched(ctx: HudCtx, c: number, r: number): void {
   const m = launchPlan;
   if (!m) return;
+  // A spent volley stays open only for the undo. Without this line a click in
+  // that state launched a Projectile the volley never had - the ammo check
+  // catches it for tracked magazines, but an Action with no printed Ammo has
+  // nothing else saying no.
+  if (m.left <= 0) return;
   const t = ctx.state.tokens.find((x) => x.uid === m.uid);
   const card = ctx.data.byId.get(m.cardId);
   if (!t || !card) return;

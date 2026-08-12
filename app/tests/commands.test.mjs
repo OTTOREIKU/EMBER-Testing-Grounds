@@ -901,6 +901,15 @@ check('and the uid counter advanced', wl.nextUid, 51);
 check('launching a made-up card is refused', C.check(data, wl, { kind: 'launch', seat: 's1', uid: 1, actionId: 'L1', cardId: 'NOPE', to: { col: 9, row: 9 }, facing: 0 }).ok, false);
 C.apply(data, wl, { kind: 'despawn', seat: 's1', uid: 1, targetUid: 50 });
 check('a despawn takes it back off', wl.tokens.length, 1);
+// Every launch costs an Ammo Token (4.13), and apply clamps the count at zero
+// - so without check() refusing, an empty magazine fired forever, in a strict
+// game as much as the sandbox. The volley UI found this the hard way.
+const shot = { kind: 'launch', seat: 's1', uid: 1, actionId: 'L1', cardId: 'D1', to: { col: 9, row: 9 }, facing: 0 };
+check('a launch with Ammo left is allowed', C.check(data, wl, shot).ok, true);
+wl.tokens[0].ammo.L1 = 0;
+check('a launch with no Ammo left is refused', C.check(data, wl, shot).ok, false);
+delete wl.tokens[0].ammo.L1;
+check('an Action with no tracked Ammo is not gated by it', C.check(data, wl, shot).ok, true);
 
 // ---------- Owed reactions: Emergency Smoke (FAQ B7/D10) ----------
 //
