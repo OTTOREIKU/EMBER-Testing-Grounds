@@ -618,6 +618,7 @@ async function init() {
       if (!editor.item) return;
       const cells = pieceCells(editor.item, col, row, editor.vertical);
       if (!placementOk(cells)) return;
+      pushUndo();
       editor.working.push(makePiece(editor.item, cells));
       afterEdit();
     },
@@ -646,6 +647,8 @@ async function init() {
     onTerrainClick(id, erase) {
       if (!editor.active) return;
       if (!(erase || editor.erase)) return;
+      if (!editor.working.some((p) => p.id === id)) return;
+      pushUndo();
       editor.working = editor.working.filter((p) => p.id !== id);
       afterEdit();
     },
@@ -2250,12 +2253,15 @@ async function init() {
   // interrupt more than the click that caused it.
   onRefused((why) => setHint(`⛔ ${why}`));
 
+  // The keyboard help is static markup in #hint-keys now, so an empty hint means
+  // "show the keys" rather than "write the keys out again": the CSS swaps the two
+  // on data-guide, and writing the old fallback here would print both.
   function setHint(text: string): void {
     const el = document.getElementById('hint');
     if (!el) return;
     if (text) el.dataset.guide = '1';
     else delete el.dataset.guide;
-    el.textContent = text || 'Drag move · Q/E rotate · M move-range · A arcs · Del remove · hover = range/LOS';
+    el.textContent = text;
   }
 
   // ---------- smoke screens (rulebook 4.16) ----------
@@ -2941,6 +2947,9 @@ async function init() {
     const held = p.kind === 'deploy' ? editor.deploy[p.side] : (editor.zones.find((z) => z.id === p.zoneId)?.cells ?? []);
     const single = grids.length === 1;
     const untoggle = single && !d.erase && held.some((c) => c.col === grids[0].col && c.row === grids[0].row);
+    // One snapshot for the whole gesture: a drag across twelve Grids is one
+    // thing the player did, so one Undo should put all twelve back.
+    pushUndo();
     for (const g of grids) paintCell(g.col, g.row, d.erase || untoggle);
     afterEdit();
   }
@@ -2979,6 +2988,29 @@ async function init() {
     }
   }
 
+  // The footprint a piece will actually occupy, drawn at the same 3x3 Large Grid
+  // the board uses, so the button shows the shape AND its current rotation
+  // before anything is committed. Fills are the board's own TERRAIN_FILL, or the
+  // preview would teach a colour the map does not use.
+  const PIECE_FILL: Record<string, string> = {
+    building: '#4b5563', high_wall: '#6b7280', low_wall: '#d1d5db', container: '#2fae6e',
+  };
+
+  function piecePreview(p: (typeof PALETTE)[number]): string {
+    // pieceCells works in board coordinates; asking it for the top-left Grid
+    // gives the shape in cells 0..2, which is exactly a 3x3 preview.
+    const cells = pieceCells(p, 0, 0, p.rotatable ? editor.vertical : false);
+    const on = new Set(cells.map((c) => `${c.col},${c.row}`));
+    let out = '<span class="ed-shape" aria-hidden="true">';
+    for (let r = 0; r < 3; r++) {
+      for (let c = 0; c < 3; c++) {
+        const lit = on.has(`${c},${r}`);
+        out += `<i${lit ? ` style="background:${PIECE_FILL[p.type]}"` : ''}></i>`;
+      }
+    }
+    return `${out}</span>`;
+  }
+
   function renderEditorBar(): void {
     if (!editor.active) {
       editorBar.hidden = true;
@@ -2986,34 +3018,59 @@ async function init() {
     }
     editorBar.hidden = false;
     const dirty = editorDirty();
+    const empty = !(editor.working.length || editor.zones.length || editor.deploy.black.length || editor.deploy.white.length);
+    // A column now, not a bar: header, scrolling body of tool groups, and the
+    // save/close actions pinned to the foot — the Match Centre's panel shape.
+    // Every id and functional class below is unchanged, so the bindings that
+    // follow this template bind exactly as they did across the board.
     editorBar.innerHTML = `
-      <b>TERRAIN</b>
-      <div class="ed-line">
-        ${PALETTE.map((p) => `<button class="ed-piece${editor.item?.id === p.id ? ' active' : ''}" data-piece="${p.id}" title="${p.label}">${p.label.split(' (')[0]}</button>`).join('')}
-        <button id="ed-rotate" class="ed-tool" title="Rotate the armed piece (R)"${editor.item?.rotatable ? '' : ' disabled'}>${editor.vertical ? '↕' : '↔'} R</button>
-        <button id="ed-erase" class="ed-tool${editor.erase ? ' active' : ''}" title="Erase tool. Right-click erases too.">⌫ Erase</button>
+      <div class="ed-head">
+        <div class="ed-eyebrow">Map editor</div>
+        <div class="ed-title">${escapeHtml(mapSelect.options[mapSelect.selectedIndex]?.text ?? 'Untitled map')}</div>
+        <div class="ed-headrow">
+          <span class="ed-count">${editor.working.length} piece${editor.working.length === 1 ? '' : 's'} · ${editor.zones.length} zone${editor.zones.length === 1 ? '' : 's'}${dirty ? ' · <b>unsaved</b>' : ''}</span>
+          <button id="ed-undo" class="ed-undo"${editorHistory.length ? '' : ' disabled'} title="Undo the last edit (Ctrl+Z)">⟲ Undo${editorHistory.length ? ` <small>${editorHistory.length}</small>` : ''}</button>
+        </div>
       </div>
-      <div class="ed-actions">
-        <span class="ed-count">${editor.working.length} piece${editor.working.length === 1 ? '' : 's'}${dirty ? ' · <b>unsaved</b>' : ''}</span>
-        <button id="ed-clear"${editor.working.length || editor.zones.length || editor.deploy.black.length || editor.deploy.white.length ? '' : ' disabled'}>Clear all</button>
-        ${state.map.startsWith('custom:') ? '<button id="ed-delete" title="Delete this custom map">Delete map</button>' : ''}
-        <button id="ed-exit">${dirty ? 'Discard' : 'Close'}</button>
-        <button id="ed-save" class="ed-primary">Save map…</button>
-      </div>
-      <b>ZONES</b>
-      <div class="ed-line">
+      <div class="ed-body">
+        <p class="ed-glabel">Terrain</p>
+        <div class="ed-grid">
+          ${PALETTE.map((p) => `<button class="ed-piece${editor.item?.id === p.id ? ' active' : ''}" data-piece="${p.id}" title="${p.label}">
+            ${piecePreview(p)}
+            <span class="ed-pname">${escapeHtml(p.label.split(' (')[0].replace(/\s\d+×\d+$/, ''))}</span>
+            <span class="ed-pnote">${escapeHtml((/\(([^)]*)\)/.exec(p.label)?.[1] ?? '').split(', ')[1] ?? '')}</span>
+          </button>`).join('')}
+        </div>
+        <div class="ed-tools">
+          <button id="ed-rotate" class="ed-tool" title="Rotate the armed piece (R)"${editor.item?.rotatable ? '' : ' disabled'}>${editor.vertical ? '↕' : '↔'} Rotate</button>
+          <button id="ed-erase" class="ed-tool${editor.erase ? ' active' : ''}" title="Erase tool. Right-click erases too.">⌫ Erase</button>
+        </div>
+
+        <p class="ed-glabel">Zones</p>
         ${editor.zones
           .map(
             (z) =>
-              `<button class="ed-zone${editor.paint?.kind === 'zone' && editor.paint.zoneId === z.id ? ' active' : ''}" data-zone="${z.id}" data-tip-title="Paint ${z.name}" data-tip-sub="Large grids, 3x3 cells each" data-tip="Drag to fill a block of grids.|Right-click a painted grid to remove it.|A single click on a painted grid removes it too.">${z.name} <small>${z.cells.length}</small></button>`,
+              `<button class="ed-row ed-zone${editor.paint?.kind === 'zone' && editor.paint.zoneId === z.id ? ' active' : ''}" data-zone="${z.id}" data-tip-title="Paint ${z.name}" data-tip-sub="Large grids, 3x3 cells each" data-tip="Drag to fill a block of grids.|Right-click a painted grid to remove it.|A single click on a painted grid removes it too.">${escapeHtml(z.name)}<small>${z.cells.length} grid${z.cells.length === 1 ? '' : 's'}</small></button>`,
           )
           .join('')}
-        <button id="ed-addzone" class="ed-tool" title="Create a named objective zone">+ Zone</button>
-        ${editor.paint?.kind === 'zone' ? '<button id="ed-zone-rename" class="ed-tool" title="Rename or delete the selected zone">Rename…</button>' : ''}
-        <span class="ed-sep"></span>
-        <button id="ed-dz-black" class="ed-tool ed-dz-black${editor.paint?.kind === 'deploy' && editor.paint.side === 'black' ? ' active' : ''}" title="Paint the Black deployment zone. Drag to fill a block.">Black Deploy <small>${editor.deploy.black.length}</small></button>
-        <button id="ed-dz-white" class="ed-tool ed-dz-white${editor.paint?.kind === 'deploy' && editor.paint.side === 'white' ? ' active' : ''}" title="Paint the White deployment zone. Drag to fill a block.">White Deploy <small>${editor.deploy.white.length}</small></button>
-        <span class="ed-status">${editorStatus()}</span>
+        <div class="ed-tools">
+          <button id="ed-addzone" class="ed-tool" title="Create a named objective zone">+ Zone</button>
+          ${editor.paint?.kind === 'zone' ? '<button id="ed-zone-rename" class="ed-tool" title="Rename or delete the selected zone">Rename…</button>' : ''}
+        </div>
+
+        <p class="ed-glabel">Deployment</p>
+        <button id="ed-dz-black" class="ed-row ed-dz-black${editor.paint?.kind === 'deploy' && editor.paint.side === 'black' ? ' active' : ''}" title="Paint the Black deployment zone. Drag to fill a block.">Black<small>${editor.deploy.black.length} grid${editor.deploy.black.length === 1 ? '' : 's'}</small></button>
+        <button id="ed-dz-white" class="ed-row ed-dz-white${editor.paint?.kind === 'deploy' && editor.paint.side === 'white' ? ' active' : ''}" title="Paint the White deployment zone. Drag to fill a block.">White<small>${editor.deploy.white.length} grid${editor.deploy.white.length === 1 ? '' : 's'}</small></button>
+
+        <p class="ed-status">${editorStatus()}</p>
+      </div>
+      <div class="ed-foot">
+        <button id="ed-save" class="ed-primary">Save map…</button>
+        <div class="ed-footrow">
+          <button id="ed-exit">${dirty ? 'Discard' : 'Close'}</button>
+          <button id="ed-clear"${empty ? ' disabled' : ''}>Clear all</button>
+          ${state.map.startsWith('custom:') ? '<button id="ed-delete" title="Delete this custom map">Delete map</button>' : ''}
+        </div>
       </div>`;
     // The bar is rebuilt on every edit, so its data-tip nodes have to be bound
     // again each time; the one call at startup only ever saw the first render.
@@ -3058,6 +3115,7 @@ async function init() {
           confirmLabel: 'Create zone',
         });
         if (!name?.trim()) return;
+        pushUndo();
         const id = `z${Date.now().toString(36)}`;
         editor.zones.push({ id, name: name.trim(), cells: [] });
         editor.paint = { kind: 'zone', zoneId: id };
@@ -3079,6 +3137,7 @@ async function init() {
           confirmLabel: 'Save',
         });
         if (name === null) return;
+        pushUndo();
         if (!name.trim()) {
           editor.zones = editor.zones.filter((z) => z.id !== zone.id);
           editor.paint = null;
@@ -3088,6 +3147,7 @@ async function init() {
         afterEdit();
       })();
     });
+    editorBar.querySelector('#ed-undo')!.addEventListener('click', () => undoEdit());
     editorBar.querySelector('#ed-erase')!.addEventListener('click', () => {
       editor.erase = !editor.erase;
       if (editor.erase) editor.item = null;
@@ -3111,6 +3171,7 @@ async function init() {
           danger: true,
         }))
       ) {
+        pushUndo();
         editor.working = [];
         editor.zones = [];
         editor.deploy = { black: [], white: [] };
@@ -3163,6 +3224,45 @@ async function init() {
     board.renderTerrain(editor.working, true);
     board.renderZones(overlayZones(), overlayDeployment(), claimedZones());
     renderEditorBar();
+  }
+
+  // ---------- editor undo ----------
+  //
+  // A whole-state snapshot rather than an inverse operation per edit. The
+  // editable state is three small arrays, a drag can repaint dozens of Grids in
+  // one gesture, and "put it back exactly" is the only behaviour that is
+  // obviously correct for a delete you did not mean.
+  interface EditorSnapshot {
+    working: TerrainPiece[];
+    zones: CustomZone[];
+    deploy: CustomMap['deploy'];
+  }
+  const editorHistory: EditorSnapshot[] = [];
+  const UNDO_LIMIT = 80;
+
+  function pushUndo(): void {
+    editorHistory.push({
+      working: JSON.parse(JSON.stringify(editor.working)) as TerrainPiece[],
+      zones: JSON.parse(JSON.stringify(editor.zones)) as CustomZone[],
+      deploy: JSON.parse(JSON.stringify(editor.deploy)) as CustomMap['deploy'],
+    });
+    if (editorHistory.length > UNDO_LIMIT) editorHistory.shift();
+  }
+
+  function undoEdit(): void {
+    const snap = editorHistory.pop();
+    if (!snap) return;
+    editor.working = snap.working;
+    editor.zones = snap.zones;
+    editor.deploy = snap.deploy;
+    // Undoing the creation of a zone leaves the paint tool armed at a zone that
+    // no longer exists, and every later click would then land nowhere.
+    const paint = editor.paint;
+    if (paint?.kind === 'zone' && !editor.zones.some((z) => z.id === paint.zoneId)) {
+      editor.paint = null;
+    }
+    board.clearGhost();
+    afterEdit();
   }
 
   function removeTerrainAt(col: number, row: number): void {
@@ -3229,6 +3329,9 @@ async function init() {
     editor.paint = null;
     editor.drag = null;
     editor.baseline = editorSnapshot();
+    // A fresh session: the history must never reach back past the map you
+    // opened, or Undo would restore a different map's terrain.
+    editorHistory.length = 0;
     board.panEnabled = false;
     board.editing = true;
     renderEditorBar();
@@ -3243,6 +3346,7 @@ async function init() {
     editor.erase = false;
     editor.paint = null;
     editor.drag = null;
+    editorHistory.length = 0;
     board.panEnabled = true;
     board.editing = false;
     board.clearGhost();
@@ -3554,6 +3658,7 @@ async function init() {
     roundTracker.update(state);
     playGuide.update(state);
     paintBattlefieldLock();
+    renderSetupBrief();
     renderSmokePrompt();
     sweepCamoContacts();
     sweepMines();
@@ -3578,6 +3683,58 @@ async function init() {
     renderZoneOverlay();
     onChanged();
     board.refit();
+  }
+
+  // ---------- left rail tabs ----------
+  //
+  // Setup and Dice. The battlefield is something you settle once, so Setup is
+  // where an empty board opens and Dice is where a board with units on it does;
+  // after that the choice is the player's and it is remembered. The inspect box
+  // belongs to neither — it sits under both and answers whichever is open.
+  const LEFT_TAB_KEY = 'ember-left-tab';
+
+  function showLeftTab(name: 'setup' | 'dice', remember = true): void {
+    document.querySelectorAll<HTMLButtonElement>('#left-tabs button')
+      .forEach((b) => b.classList.toggle('active', b.dataset.ltab === name));
+    document.querySelectorAll<HTMLElement>('.left-tab')
+      .forEach((s) => s.classList.toggle('active', s.id === `ltab-${name}`));
+    if (remember) {
+      try { localStorage.setItem(LEFT_TAB_KEY, name); } catch { /* private mode */ }
+    }
+  }
+  document.querySelectorAll<HTMLButtonElement>('#left-tabs button').forEach((b) =>
+    b.addEventListener('click', () => showLeftTab(b.dataset.ltab as 'setup' | 'dice')),
+  );
+  {
+    let want: 'setup' | 'dice' | null = null;
+    // 'play' is what this tab was called for one afternoon; treat it as Dice
+    // rather than dropping a returning player onto Setup for no reason.
+    try {
+      const saved = localStorage.getItem(LEFT_TAB_KEY);
+      want = saved === 'play' ? 'dice' : (saved as 'setup' | 'dice' | null);
+    } catch { want = null; }
+    showLeftTab(want ?? (state.tokens.length ? 'dice' : 'setup'), false);
+  }
+
+  // ---------- the board's shortcut strip ----------
+  //
+  // Hiding it is a preference, so it persists; a guided instruction ignores the
+  // preference, because that is the app asking a question rather than telling
+  // the player something they already know.
+  const HINT_KEY = 'ember-hint-keys';
+  {
+    const bar = document.getElementById('hintbar');
+    const setKeys = (on: boolean, remember = true) => {
+      bar?.classList.toggle('keys-off', !on);
+      if (remember) {
+        try { localStorage.setItem(HINT_KEY, on ? '1' : '0'); } catch { /* private mode */ }
+      }
+    };
+    document.getElementById('hint-hide')?.addEventListener('click', () => setKeys(false));
+    document.getElementById('hint-show')?.addEventListener('click', () => setKeys(true));
+    let saved: string | null = null;
+    try { saved = localStorage.getItem(HINT_KEY); } catch { saved = null; }
+    setKeys(saved !== '0', false);
   }
 
   // ---------- sidebar tabs ----------
@@ -3901,6 +4058,22 @@ async function init() {
 
   // The map and zone pickers are frozen for the life of a game, so nobody can
   // change the battlefield after deployment or between rounds.
+  // The Setup tab's headline: what this board IS, before you read a control.
+  // Read off the selects rather than re-derived, so it can never disagree with
+  // the pickers sitting under it.
+  function renderSetupBrief(): void {
+    const host = document.getElementById('setup-brief');
+    if (!host) return;
+    const mapName = mapSelect.options[mapSelect.selectedIndex]?.text ?? 'Empty board';
+    const zones = zoneSetLabel(state.zoneSet ?? '');
+    const units = state.tokens.filter((t) => t.deployed !== false && t.kind !== 'projectile').length;
+    const scale = SCALES.find((s) => s.id === (state.scale ?? 'standard'))?.name ?? '';
+    const terrain = currentTerrain().length;
+    host.innerHTML = `<div class="brief-map">${escapeHtml(mapName)}</div>
+      <div class="brief-sub">${escapeHtml(zones)}</div>
+      <div class="brief-stat">${units} unit${units === 1 ? '' : 's'} · ${terrain} terrain · ${escapeHtml(scale)}</div>`;
+  }
+
   function paintBattlefieldLock(): void {
     const setup = normaliseSetup(state.setup);
     // Two levels. The map and zone pickers are open during the opening stage,
@@ -3947,12 +4120,29 @@ async function init() {
       : 'Nothing to show. Pick a zone set from the Zones list in the toolbar first.';
   }
 
+  // Changing the zone set changes the MISSION, and the Task Items on the board —
+  // Black Boxes, Terminals, Control dials — belong to the mission that placed
+  // them. Sending only `zoneSet` left them sitting there with nothing to score
+  // for, and no way to remove them short of clearing the units too. Mission and
+  // tasks now travel with the change, exactly as the Missions dialog sends them.
   function setZoneSet(id: string): void {
-    const v = perform(data, state, { kind: 'configureTable', seat: 's1', zoneSet: id });
+    const mission = id.startsWith('mission:') ? data.missions.cards.find((m) => m.id === id.slice(8)) : undefined;
+    const v = perform(data, state, {
+      kind: 'configureTable', seat: 's1', zoneSet: id,
+      mission: mission?.id ?? null,
+      tasks: mission ? taskItemsFor(data.zoneData.zones, mission) : null,
+    });
     if (!v.ok) return;
     state.showZones = !!id;
     save();
     renderZoneOverlay();
+    // Picking a Mission here has to leave the table in the same shape the
+    // Missions dialog leaves it in, or a VIP mission arrives with its Task
+    // Items placed and nobody named to be hunted.
+    if (mission) {
+      if (mission.family === 'vip') void designateCommanders();
+      document.getElementById('details-body')!.replaceChildren(missionBriefing(mission));
+    }
     // The guide reports the chosen battlefield, so it has to hear about this.
     onChanged();
   }
@@ -4433,8 +4623,13 @@ async function init() {
     selectToken(null);
   }
 
+  // Task Items are objectives too. They are drawn on the board like markers and
+  // read like markers, so leaving them out meant a mission's Black Boxes could
+  // only be removed by clearing EVERYTHING, units included. Scoring history is
+  // left alone: this takes pieces off the table, it does not undo a game.
   function clearObjectives(): void {
     state.markers = [];
+    if (state.tasks) state.tasks.items = [];
   }
 
   function clearTerrain(): void {
@@ -4443,9 +4638,13 @@ async function init() {
     populateMapSelect();
   }
 
+  // The zone set and the Mission are one choice — a Mission's zones arrive as
+  // `mission:<id>` — so the Mission and its Task Items go with them.
   function clearZones(): void {
     state.zoneSet = '';
     state.showZones = false;
+    state.mission = undefined;
+    state.tasks = null;
   }
 
   // Multiplayer lives entirely behind this button. The tool has always worked
@@ -4671,9 +4870,10 @@ async function init() {
 
   document.getElementById('btn-clear')!.addEventListener('click', async () => {
     const units = state.tokens.length;
-    const markers = state.markers?.length ?? 0;
+    // Mission Task Items count as objectives here; see clearObjectives.
+    const markers = (state.markers?.length ?? 0) + (state.tasks?.items.length ?? 0);
     const terrain = currentTerrain().length;
-    const zones = state.zoneSet ? 1 : 0;
+    const zones = state.zoneSet || state.mission || state.tasks ? 1 : 0;
     if (!units && !markers && !terrain && !zones) {
       void alertDialog({ title: 'Nothing to clear', body: 'The board is already empty.' });
       return;
@@ -4687,7 +4887,7 @@ async function init() {
         ...(units ? [{ id: 'units', label: `Units (${count(units, 'unit')})` }] : []),
         ...(markers ? [{ id: 'markers', label: `Objectives (${count(markers, 'marker')})` }] : []),
         ...(terrain ? [{ id: 'terrain', label: `Terrain (${count(terrain, 'piece')})` }] : []),
-        ...(zones ? [{ id: 'zones', label: `Zones (${zoneSetLabel(state.zoneSet ?? '')})` }] : []),
+        ...(zones ? [{ id: 'zones', label: `Zones (${state.zoneSet ? zoneSetLabel(state.zoneSet) : 'mission setup'})` }] : []),
         { id: 'all', label: 'Everything', danger: true },
         { id: 'cancel', label: 'Cancel', cancel: true },
       ],
@@ -4961,6 +5161,13 @@ async function init() {
 
   document.addEventListener('keydown', (ev) => {
     if (ev.target instanceof Element && ev.target.matches('input,select,textarea')) return;
+    // Ctrl+Z is what a hand reaches for after a mis-click, and it only means
+    // anything while the editor is the thing on screen.
+    if (editor.active && (ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'z') {
+      ev.preventDefault();
+      undoEdit();
+      return;
+    }
     if (ev.key === 'Escape') {
       if (movePlan) {
         cancelMove();

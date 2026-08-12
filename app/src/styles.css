@@ -102,6 +102,24 @@ button { font-family: inherit; }
   font-weight: 700; letter-spacing: 0.5px; font-size: 15px; line-height: 25px;
   flex: 0 0 auto; min-width: calc(var(--left-w) + var(--board-pad) - 14px);
 }
+/* Everything about the battlefield left this bar for the Setup tab, so what is
+   left sits in a block exactly as wide as the sidebar beneath it — minus the
+   toolbar's own right padding — and the three share it evenly. The top of the
+   page then reads as two aligned columns rather than a ragged right edge. */
+/* Exactly the sidebar's box, so the three sit in the same column as the Squads
+   tabs below them. The negative margin cancels the toolbar's own right padding,
+   which would otherwise inset this block 14px from an edge the tab strip
+   beneath it runs right up to. */
+#tb-controls {
+  flex: 0 0 auto; margin-left: auto; margin-right: -14px;
+  width: var(--side-w); flex-wrap: nowrap; gap: 6px;
+  padding-right: 14px;
+}
+/* Doubled id on purpose: `#toolbar button` above is (0,1,0,1) and would beat a
+   plain `#tb-controls > *`, pinning these back to flex: 0 0 auto. */
+#toolbar #tb-controls > * {
+  flex: 1 1 0; min-width: 0; text-align: center; justify-content: center;
+}
 #logo em { color: var(--accent); font-style: normal; font-weight: 500; letter-spacing: 0.5px; }
 #toolbar label { display: flex; gap: 5px; align-items: center; font-size: 11.5px; color: var(--text2); flex: 0 0 auto; }
 #toolbar select, #toolbar button, #toolbar a { white-space: nowrap; flex: 0 0 auto; }
@@ -121,13 +139,66 @@ button { font-family: inherit; }
   text-decoration: none; cursor: pointer; font-weight: 600;
   transition: background 0.12s, color 0.12s;
 }
+/* The link has to be a flex item like its two button siblings, or it neither
+   stretches to its share of the row nor centres its own text. */
+#btn-reference { display: flex; align-items: center; }
 #btn-import-squad:hover, #btn-reference:hover { background: var(--accent); color: var(--on-accent); }
-#hint {
-  margin: 0; padding: 0 0 0 12px; box-sizing: border-box;
-  flex: 0 0 auto; width: calc(var(--side-w) - 14px); min-height: 27px;
-  display: flex; align-items: center; overflow: hidden;
-  font-size: 10.5px; line-height: 1.25; color: var(--text2);
+/* ---------- hint bar, on the board's bottom line ---------- */
+/* The third element of one row: Zones bottom-left, this in the middle, zoom
+   bottom-right — and centred on the BOARD, not on the gap between the other
+   two. Insetting by their differing widths (232 left, 116 right) centred it in
+   the leftover space instead, which put it visibly off to the right. Centring
+   on 50% and capping the width keeps it both true and clear of them. */
+#hintbar {
+  position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
+  max-width: calc(100% - 300px); z-index: 5;
+  display: flex; align-items: center; justify-content: center;
+  pointer-events: none;
 }
+#hint, #hint-keys {
+  background: #1e242ce6; border-radius: var(--radius);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35); padding: 6px 12px;
+  max-width: 100%; pointer-events: auto;
+}
+#hint {
+  margin: 0; font-size: 11.5px; line-height: 1.35; color: var(--text);
+  font-weight: 600; text-align: center;
+}
+#hint:not([data-guide]) { display: none; }
+#hintbar:has(#hint[data-guide]) #hint-keys { display: none; }
+#hint-keys {
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 13px;
+  font-size: 10.5px; line-height: 1.35; color: var(--text3);
+}
+#hint-keys span { white-space: nowrap; }
+#hint-keys b {
+  color: var(--text2); font-weight: 600; font-family: var(--mono);
+  font-size: 10px; background: var(--surface3); border-radius: 3px;
+  padding: 1px 5px; margin-right: 3px;
+}
+#hint-hide {
+  border: none; background: transparent; color: var(--text3); cursor: pointer;
+  font-size: 11px; line-height: 1; padding: 2px 1px 2px 3px; margin-left: -4px;
+  font-family: var(--font); transition: color 0.12s;
+}
+#hint-hide:hover { color: var(--text); }
+/* The handle the keys leave behind. Faint so it does not read as a control the
+   board needs, full strength once the pointer finds it. */
+#hint-show {
+  display: none; pointer-events: auto; border: none; cursor: pointer;
+  background: #1e242cb3; color: var(--text3); border-radius: var(--radius);
+  padding: 4px 12px; font-size: 12px; line-height: 1.2; opacity: 0.35;
+  transition: opacity 0.12s, color 0.12s;
+}
+#hint-show:hover { opacity: 1; color: var(--text); }
+/* Hidden is a state on the bar, so the guided instruction still comes through:
+   an Action asking a question outranks the player's tidying. */
+#hintbar.keys-off #hint-keys { display: none; }
+#hintbar.keys-off #hint-show { display: block; }
+#hintbar.keys-off:has(#hint[data-guide]) #hint-show { display: none; }
+/* Targeting already recolours the text; on a floating pill it needs the frame
+   to follow, or the emphasis reads as a mistake. */
+body.targeting #hint { background: var(--accent-lt); box-shadow: 0 0 0 1px var(--accent) inset, 0 2px 8px rgba(0, 0, 0, 0.35); }
 
 main { display: flex; flex: 1; min-height: 0; }
 
@@ -1006,32 +1077,105 @@ main { display: flex; flex: 1; min-height: 0; }
   .mp-panel { width: min(94vw, 400px); }
 }
 
+/* ---------- map editor: a panel in the rail, not a bar over the board ---------- */
+/* It takes the whole rail while open — head, scrolling body, pinned foot — and
+   keeps the amber identity so it still reads as a mode you are IN. */
 #editor-bar {
-  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center;
-  column-gap: 9px; row-gap: 6px;
-  padding: 7px 12px; background: #221d10; border-bottom: 1px solid var(--accent); font-size: 12px;
-}
-#editor-bar .ed-line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-#editor-bar .ed-actions {
-  grid-column: 3; grid-row: 1 / span 2;
-  display: flex; align-items: center; justify-content: flex-end; gap: 6px; flex-wrap: wrap;
+  flex: 1; min-height: 0; display: flex; flex-direction: column;
+  background: #1a1710; font-size: 12px;
 }
 #editor-bar[hidden] { display: none; }
-#editor-bar b { color: var(--accent); letter-spacing: 0.8px; font-size: 11px; font-weight: 700; }
-#editor-bar button {
-  border: none; background: #ffffff14; color: var(--text2);
-  border-radius: var(--radius-sm); padding: 5px 9px; font-size: 11.5px; cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+#left-panel:has(#editor-bar:not([hidden])) > #left-tabs,
+#left-panel:has(#editor-bar:not([hidden])) > .left-tab,
+#left-panel:has(#editor-bar:not([hidden])) > #inspect-box { display: none; }
+
+.ed-head { padding: 11px 12px 10px; background: #221d10; border-bottom: 1px solid var(--accent); }
+.ed-eyebrow {
+  font-size: 9.5px; letter-spacing: 0.9px; text-transform: uppercase;
+  color: var(--accent); font-weight: 700;
 }
-#editor-bar button:hover:not(:disabled) { background: #ffffff24; color: var(--text); }
+.ed-title {
+  font-size: 14px; font-weight: 600; margin-top: 3px; line-height: 1.25; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ed-headrow { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+#editor-bar .ed-count { font-size: 10px; color: #e8d9b0; font-family: var(--mono); min-width: 0; }
+#editor-bar .ed-count b { color: var(--accent); }
+#editor-bar .ed-undo {
+  margin-left: auto; flex: 0 0 auto; padding: 5px 9px; font-size: 10.5px; font-weight: 600;
+}
+#editor-bar .ed-undo small { font-family: var(--mono); font-size: 9px; opacity: 0.7; }
+
+.ed-body { flex: 1; min-height: 0; overflow-y: auto; padding: 10px; }
+.ed-glabel {
+  margin: 12px 0 6px; font-size: 9.5px; letter-spacing: 0.9px; text-transform: uppercase;
+  color: #a8987a; font-weight: 700;
+}
+.ed-body > .ed-glabel:first-child { margin-top: 0; }
+/* Each palette entry shows the footprint it will drop, at the 3x3 Large Grid the
+   board works in, so the shape and its rotation are visible before the click.
+   Two across rather than three: the preview needs the room more than the row
+   needs the density. */
+.ed-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+#editor-bar .ed-piece {
+  display: flex; flex-direction: column; align-items: center; gap: 5px;
+  padding: 9px 6px 8px; text-align: center; line-height: 1.25;
+}
+.ed-shape {
+  display: grid; grid-template-columns: repeat(3, 7px); grid-auto-rows: 7px; gap: 1px;
+}
+.ed-shape i {
+  border-radius: 1px; background: #ffffff14;
+}
+.ed-pname { font-size: 10.5px; font-weight: 600; }
+.ed-pnote { font-size: 9px; opacity: 0.65; font-family: var(--mono); }
+.ed-tools { display: flex; gap: 5px; margin-top: 6px; }
+.ed-tools .ed-tool { flex: 1; }
+/* The same surfaces as every other button in the app, rather than the
+   translucent-white-on-amber the bar used — the panel keeps its amber identity
+   in the head, the foot and the active states, and the controls in between now
+   read as the app's own. */
+#editor-bar button {
+  border: none; background: var(--surface2); color: var(--text2);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.32);
+  border-radius: var(--radius-sm); padding: 7px 8px; font-size: 11.5px; cursor: pointer;
+  font-family: var(--font); transition: background 0.12s, color 0.12s;
+}
+#editor-bar button:hover:not(:disabled) { background: var(--surface3); color: var(--text); }
+#editor-bar button:disabled { box-shadow: none; }
 #editor-bar button:disabled { opacity: 0.4; cursor: default; }
-#editor-bar .ed-piece.active, #editor-bar .ed-tool.active { background: var(--accent); color: var(--on-accent); font-weight: 700; }
-#editor-bar .ed-primary { background: var(--accent); color: var(--on-accent); font-weight: 700; }
+#editor-bar .ed-piece.active, #editor-bar .ed-tool.active {
+  background: var(--accent); color: var(--on-accent); font-weight: 700;
+}
+/* Zones and deployment strips are named things with a count, so they take the
+   same row shape the Setup tab uses. */
+#editor-bar .ed-row {
+  width: 100%; display: flex; align-items: center; gap: 9px; text-align: left;
+  padding: 9px 11px; margin-bottom: 5px; border-radius: var(--radius-sm);
+  background: var(--surface2);
+}
+#editor-bar .ed-row small {
+  margin-left: auto; font-family: var(--mono); font-size: 9.5px; opacity: 0.75;
+}
+#editor-bar .ed-zone { box-shadow: inset 0 0 0 1px #e0175b8c; color: #ff8fb0; }
+#editor-bar .ed-zone.active { background: #e0175b; box-shadow: none; color: #fff; font-weight: 700; }
+#editor-bar .ed-dz-black { box-shadow: inset 0 0 0 1px #8b93a08c; color: #c3cad6; }
+#editor-bar .ed-dz-black.active { background: #6b7280; box-shadow: inset 0 0 0 1px #c3cad6; color: #fff; font-weight: 700; }
+#editor-bar .ed-dz-white { box-shadow: inset 0 0 0 1px #e9edf38c; color: #e9edf3; }
+#editor-bar .ed-dz-white.active { background: #e9edf3; box-shadow: inset 0 0 0 1px #fff; color: #14161a; font-weight: 700; }
+#editor-bar .ed-status {
+  font-size: 10.5px; color: #e8d9b0; line-height: 1.5; margin: 12px 0 0;
+  padding-top: 10px; border-top: 1px solid #ffffff1a;
+}
+.ed-foot { padding: 10px; background: #221d10; display: flex; flex-direction: column; gap: 6px; }
+.ed-footrow { display: flex; gap: 6px; }
+.ed-footrow button { flex: 1; }
+#editor-bar .ed-primary {
+  width: 100%; background: var(--accent); color: var(--on-accent); font-weight: 700;
+  padding: 10px; font-size: 12.5px;
+}
 #editor-bar .ed-primary:hover { filter: brightness(1.08); background: var(--accent); color: var(--on-accent); }
 #editor-bar .dim { font-size: 11px; }
-#editor-bar .ed-status { font-size: 11px; color: #e8d9b0; flex: 1; min-width: 180px; }
-#editor-bar .ed-count { font-size: 11px; color: #e8d9b0; font-family: var(--mono); white-space: nowrap; }
-#editor-bar .ed-count b { color: var(--accent); }
 #replay-bar {
   display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center;
   column-gap: 9px; row-gap: 6px;
@@ -1201,13 +1345,90 @@ body.targeting #hint { color: var(--accent); font-weight: 700; }
   width: var(--left-w); flex-shrink: 0; background: var(--surface); border-right: 1px solid var(--border);
   display: flex; flex-direction: column; min-height: 0;
 }
+/* Real tabs at last. This strip used to hold one button that could not be
+   clicked, which was the most wasted 37px on the page. */
 #left-tabs { display: flex; flex-shrink: 0; }
 #left-tabs button {
   flex: 1; height: var(--chrome-h); box-sizing: border-box;
-  background: var(--surface); color: var(--text); border: none; border-bottom: 2px solid var(--accent);
-  padding: 0; font-size: 12.5px; text-transform: uppercase; letter-spacing: 0.8px; cursor: default;
-  font-weight: 600;
+  background: var(--surface); color: var(--text3); border: none; border-bottom: 2px solid transparent;
+  padding: 0; font-size: 12.5px; text-transform: uppercase; letter-spacing: 0.8px; cursor: pointer;
+  font-weight: 600; transition: color 0.12s;
 }
+#left-tabs button:hover { color: var(--text2); }
+#left-tabs button.active { color: var(--accent); border-bottom-color: var(--accent); }
+.left-tab { display: none; min-height: 0; flex-direction: column; }
+/* `contents` rather than `flex` for the dice tab: it makes the tray a direct
+   child of the rail again, so the tray's own height cap and the pinned-inspect
+   rule keep measuring against the rail exactly as they did before there were
+   tabs at all. */
+#ltab-dice.active { display: contents; }
+
+/* ---------- setup tab ---------- */
+#ltab-setup { padding: 10px; gap: 9px; overflow-y: auto; flex: 1 1 auto; }
+#ltab-setup.active { display: flex; }
+/* The battlefield in one glance, so the tab answers "what is this board?"
+   before you read a single control. Flat rather than framed: the squad-card
+   treatment is for the units, and this is chrome. */
+.brief {
+  background: var(--surface2); border-radius: var(--radius);
+  padding: 9px 11px 10px; flex: 0 0 auto;
+}
+.brief-map {
+  font-size: 13px; font-weight: 700; color: var(--text); letter-spacing: 0.2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.brief-sub { font-size: 10.5px; color: var(--text2); margin-top: 3px; line-height: 1.45; }
+.brief-stat {
+  font-size: 10px; color: var(--text3); margin-top: 6px; padding-top: 6px;
+  border-top: 1px solid var(--border); font-family: var(--mono); letter-spacing: 0.2px;
+}
+#ltab-setup .field { display: flex; flex-direction: column; gap: 4px; flex: 0 0 auto; }
+#ltab-setup .field label {
+  font-size: 9px; letter-spacing: 0.9px; text-transform: uppercase; color: var(--text3);
+}
+#ltab-setup select {
+  width: 100%; max-width: none; background: var(--surface2); color: var(--text);
+  border: none; border-radius: var(--radius-sm); padding: 7px 8px;
+  font-size: 11.5px; font-family: var(--font); cursor: pointer; outline: none;
+  transition: background 0.12s;
+}
+#ltab-setup select:hover, #ltab-setup select:focus { background: var(--surface3); }
+/* The Match Centre's panel language, brought across: a quiet eyebrow naming the
+   group, then full-width rows that say what they do on the left and what they
+   are on the right. A wrapped grid of half-width buttons read as clumped, and
+   there is no reason to cram — the rail has the height. */
+.setup-eyebrow {
+  margin: 4px 0 -3px; font-size: 9.5px; letter-spacing: 0.9px;
+  text-transform: uppercase; color: var(--text3); font-weight: 700; flex: 0 0 auto;
+}
+.setup-row {
+  width: 100%; flex: 0 0 auto; display: flex; align-items: center; gap: 9px;
+  border: none; border-radius: var(--radius-sm); background: var(--surface2);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.32);
+  color: var(--text); padding: 10px 12px; cursor: pointer; text-align: left;
+  font-size: 12px; font-family: var(--font); transition: background 0.12s;
+}
+.setup-row:hover:not(:disabled) { background: var(--surface3); }
+.setup-row .ct {
+  margin-left: auto; font-family: var(--mono); font-size: 9.5px; color: var(--text3);
+  white-space: nowrap;
+}
+.setup-row:disabled { color: var(--text3); cursor: not-allowed; box-shadow: none; }
+.setup-row:disabled .ct { opacity: 0.6; }
+/* Short verbs on one thing, sharing a row as equals rather than each claiming a
+   line — the same split the Match Centre makes with .btnrow. Stacked rows close
+   up to their own gap so Clear and the Save/Load pair read as one group rather
+   than two, which is why the negative margin is exactly the tab's gap less 6px. */
+.setup-btnrow { display: flex; gap: 6px; flex: 0 0 auto; }
+.setup-btnrow + .setup-btnrow { margin-top: -3px; }
+.setup-btnrow button {
+  flex: 1; border: none; border-radius: var(--radius-sm);
+  background: var(--surface2); box-shadow: 0 2px 10px rgba(0, 0, 0, 0.32);
+  color: var(--text2); font-size: 11px; font-weight: 600; padding: 9px 6px;
+  cursor: pointer; font-family: var(--font); transition: background 0.12s, color 0.12s;
+}
+.setup-btnrow button:hover:not(:disabled) { background: var(--surface3); color: var(--text); }
+.setup-btnrow button:disabled { color: var(--text3); cursor: not-allowed; box-shadow: none; }
 
 /* ---------- dice tray ---------- */
 /* The tray takes exactly what its dice need and never gives that space back, so
@@ -1268,7 +1489,7 @@ body.targeting #hint { color: var(--accent); font-weight: 700; }
   box-shadow: inset 0 2px 0 0 var(--accent);
   /* Pinning is a deliberate "keep this open to read it", so a pinned box may
      take space back off the tray, which then scrolls. */
-  flex-shrink: 0; max-height: calc(100% - var(--chrome-h) - 132px);
+  flex-shrink: 0; max-height: calc(100% - 132px);
 }
 #left-panel:has(#inspect-box.pinned) #dice-tray { flex-shrink: 1; min-height: 132px; }
 #inspect-box h4 {

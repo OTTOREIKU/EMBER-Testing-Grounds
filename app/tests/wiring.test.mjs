@@ -53,10 +53,12 @@ for (const [name, src] of [['main.ts', main], ['matchhud.ts', hud], ['playguide.
 
 // state.tasks is the same story one level up: designations and Terminal access
 // decide scoring, and both used to be written in place on the freeplay page.
-// The one survivor is `state.tasks = null` in Clear everything — a sandbox
-// board wipe with no game running, so there is no opponent to tell.
+// The survivors are all `state.tasks = null` — Clear everything and Clear zones,
+// board wipes with no game running, so there is no opponent to tell. Setting up
+// Tasks travels as `configureTable`; the rule is that nothing here may assign a
+// task state, only drop one, so this checks the VALUE rather than the count.
 const taskWrites = [...main.matchAll(/state\.tasks = (\w+)/g)].map((m) => m[1]);
-check('state.tasks is only written by the sandbox wipe', taskWrites, ['null']);
+check('state.tasks is only ever wiped, never assigned', [...new Set(taskWrites)], ['null']);
 
 // ---------- Class 2: every routeAction branch that returns true pays ----------
 //

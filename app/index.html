@@ -7,45 +7,74 @@
 </head>
 <body>
   <div id="app">
+    <!-- The bar keeps only what is NOT about this board: the collection, the
+         account and the companion page. Everything that describes the
+         battlefield moved into the left rail's Setup tab, which had a tab strip
+         holding one dead tab and nothing to put in it. -->
     <header id="toolbar">
       <span id="logo">EMBER <em>Testing Grounds</em></span>
       <div id="tb-controls">
-      <label>Map
-        <select id="map-select">
-          <option value="">Empty board</option>
-        </select>
-      </label>
-      <button id="btn-mapmanage" data-tip-title="Manage maps" data-tip="Delete saved and scenario maps you no longer want in the list.">Manage maps</button>
-      <label>Zones
-        <select id="zone-select" data-tip-title="Zones" data-tip="Chooses which objective and deployment zones are drawn on the board.|Picking a Mission also sets up its Task Items.">
-          <option value="">No zones</option>
-        </select>
-      </label>
-      <button id="btn-missions" data-tip-title="Missions" data-tip="Reads a Main Task card and puts its zones on the board.|Locked once the battlefield is set, because Tasks are chosen before the roll (3.1.1).">Missions</button>
-      <button id="btn-scenarios" data-tip-title="Scenarios" data-tip="Loads a demo scenario complete with squads, terrain and objectives.|Good for trying a mechanic without building a list first.">Scenarios</button>
       <button id="btn-inventory" data-tip-title="Inventory" data-tip="Set which boxes you own.|Card lists can then filter down to just your collection.">Inventory</button>
-      <button id="btn-mapedit" data-tip-title="Map editor" data-tip="Builds a custom map from the official terrain pieces.|Paint zones and deployment strips onto it too.">Map editor</button>
-      <button id="btn-export" title="Download the board state as a JSON file">Save board</button>
-      <button id="btn-import" title="Load a saved board state">Load board</button>
-      <button id="btn-clear" title="Remove all units">Clear</button>
       <button id="btn-multiplayer" data-tip-title="Multiplayer" data-tip="Sign in to your account on embertg.online.|Accounts are invite only while online play is being built.">Multiplayer</button>
       <a id="btn-reference" href="reference.html" target="_blank" rel="noopener"
          data-tip-title="Reference" data-tip="Glossary and card lookup.|Opens a phone-friendly companion page in a new tab.">Reference ↗</a>
       </div>
-      <p id="hint">Drag move · Q/E rotate · M move-range · A arcs · Del remove · hover = range/LOS</p>
       <input type="file" id="import-file" accept=".json" hidden />
       <input type="file" id="import-squad-file" accept=".json,.png" hidden />
     </header>
     <main>
       <aside id="left-panel">
-        <div id="left-tabs"><button class="active">Dice</button></div>
-        <div id="dice-tray"></div>
+        <!-- Setup and Play rather than one tab per panel: the dice tray and the
+             inspect box have to be visible AT THE SAME TIME during combat, so
+             they share the Play tab exactly as they shared the rail before. -->
+        <div id="left-tabs">
+          <button data-ltab="setup">Setup</button>
+          <button data-ltab="dice" class="active">Dice</button>
+        </div>
+        <section id="ltab-setup" class="left-tab">
+          <div id="setup-brief" class="brief"></div>
+          <div class="field">
+            <label for="map-select">Map</label>
+            <select id="map-select">
+              <option value="">Empty board</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="zone-select">Zones &amp; mission</label>
+            <select id="zone-select" data-tip-title="Zones" data-tip="Chooses which objective and deployment zones are drawn on the board.|Picking a Mission also sets up its Task Items.">
+              <option value="">No zones</option>
+            </select>
+          </div>
+          <p class="setup-eyebrow">Battlefield</p>
+          <button class="setup-row" id="btn-missions" data-tip-title="Missions" data-tip="Reads a Main Task card and puts its zones on the board.|Locked once the battlefield is set, because Tasks are chosen before the roll (3.1.1).">Missions<span class="ct">Main Task</span></button>
+          <button class="setup-row" id="btn-mapedit" data-tip-title="Map editor" data-tip="Builds a custom map from the official terrain pieces.|Paint zones and deployment strips onto it too.">Map editor<span class="ct">build a map</span></button>
+          <button class="setup-row" id="btn-scenarios" data-tip-title="Scenarios" data-tip="Loads a demo scenario complete with squads, terrain and objectives.|Good for trying a mechanic without building a list first.">Scenarios<span class="ct">demo boards</span></button>
+          <button class="setup-row" id="btn-mapmanage" data-tip-title="Manage maps" data-tip="Delete saved and scenario maps you no longer want in the list.">Manage maps<span class="ct">saved &amp; scenario</span></button>
+
+          <p class="setup-eyebrow">Board</p>
+          <div class="setup-btnrow">
+            <button id="btn-clear" title="Take units, objectives, terrain or zones off the board">Clear</button>
+          </div>
+          <div class="setup-btnrow">
+            <button id="btn-export" title="Download the board state as a JSON file">Save</button>
+            <button id="btn-import" title="Load a saved board state">Load</button>
+          </div>
+        </section>
+        <section id="ltab-dice" class="left-tab active">
+          <div id="dice-tray"></div>
+        </section>
+        <!-- Outside the tabs on purpose. It is a readout, not a mode: hovering a
+             phase, a unit or a squad entry should answer you whichever tab is
+             open, and leaving it in the Dice tab made Setup a dead end for it. -->
         <div id="inspect-box"><p class="inspect-idle">Hover a phase, a unit on the map, or a squad entry for details.</p></div>
+        <!-- The map editor takes the whole rail while it is open, rather than a
+             bar across the top of the board: it is a mode with a lot of tools,
+             and the board wants its height back. -->
+        <div id="editor-bar" hidden></div>
       </aside>
       <div id="board-col">
         <div id="round-tracker"></div>
         <div id="smoke-prompt" hidden></div>
-        <div id="editor-bar" hidden></div>
         <div id="replay-bar" hidden></div>
         <div id="board-wrap">
           <div class="zone-ctrl">
@@ -55,6 +84,27 @@
             <span id="move-info"></span>
             <button id="move-confirm">Confirm move</button>
             <button id="move-cancel">Cancel</button>
+          </div>
+          <!-- Keyboard help sat in the top bar holding a fixed 200px of the most
+               valuable strip on the page. It belongs to the board, so it sits on
+               the board's own bottom line, centred between the Zones toggle on
+               the left and the zoom controls on the right. #hint keeps its id so
+               setHint still drives it; the keys hide while a guided instruction
+               is showing. -->
+          <div id="hintbar">
+            <p id="hint"></p>
+            <div id="hint-keys">
+              <span><b>drag</b> move</span>
+              <span><b>Q</b>/<b>E</b> rotate</span>
+              <span><b>M</b> move-range</span>
+              <span><b>A</b> arcs</span>
+              <span><b>Del</b> remove</span>
+              <span><b>hover</b> range &amp; LOS</span>
+              <button id="hint-hide" title="Hide the shortcuts" aria-label="Hide the shortcuts">✕</button>
+            </div>
+            <!-- Left behind when the keys are hidden: faint until the pointer is
+                 near it, so it reads as a handle rather than another control. -->
+            <button id="hint-show" title="Show the keyboard shortcuts">⌨</button>
           </div>
         </div>
       </div>
