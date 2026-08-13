@@ -2,12 +2,12 @@ import type { Facing, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stanc
 import { addStatus, ageTokens, newOpportunity, PHASES, statusCount, STATUSES, TIMINGS } from './types';
 import type { GameData } from './data';
 import { unfoldsInto } from './data';
-import { blinkTargets, isPositionSwap, electronicOrigins, loanedParts, unfoldToken, extrasFor, consumesCharge, electronicValue, freehandSlots, interceptCapacity, makeDroneToken, makeMechToken, maxLink, pilotCard, projectileDelivery, tokenCards } from './units';
+import { commandGeneration, blinkTargets, isPositionSwap, electronicOrigins, loanedParts, unfoldToken, extrasFor, consumesCharge, electronicValue, freehandSlots, interceptCapacity, makeDroneToken, makeMechToken, maxLink, pilotCard, projectileDelivery, tokenCards } from './units';
 import { canActivate, canManeuver, canOverload, canPerform, spendAction, spendActivation, spendManeuver, spendOverload } from './ticks';
 import { tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { battlefieldLocked, deploymentComplete, deployTurn, firstPlayerFrom, newSetup, normaliseSetup } from './setup';
 import { applyKill, normaliseTasks, pendingDesignations, settleControl, type Designation } from './tasks';
-import { dialHidden, eligibleUnits, getLocalSeat, isLoopPhase, nextTurn, onExtraOpportunity } from './loop';
+import { alive, dialHidden, eligibleUnits, getLocalSeat, isLoopPhase, nextTurn, onExtraOpportunity } from './loop';
 import { dissipationFor } from './rules';
 
 // ---------- the command layer (multiplayer phase 1) ----------
@@ -1547,6 +1547,12 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
         const hexes = new Set(STATUSES.filter((x) => x.shape === 'hexagon').map((x) => x.id));
         target.expiring = (target.expiring ?? []).filter((x) => !hexes.has(x));
       }
+      // A Command placed by hand is a Command the side may spend, so the pool
+      // follows it. Without this the token and the phase-bar count would be two
+      // separate truths, and the one the rules gate on is the count.
+      if (cmd.statusId === 'command' && target.kind === 'mech') {
+        state.commandTokens[target.side] = (state.commandTokens[target.side] ?? 0) + (cmd.stacks ?? 1);
+      }
       return;
     }
     case 'removeStatus': {
@@ -1562,6 +1568,12 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
       // A token that is gone has no expiry left to track.
       if (!list.includes(cmd.statusId)) {
         target.expiring = (target.expiring ?? []).filter((x) => x !== cmd.statusId);
+      }
+      // Taking a Command off a Mech spends it out of the pool as well. Off a
+      // Drone it does not: that token was already paid for when the Command
+      // was issued, and refunding it would let a side command twice.
+      if (cmd.statusId === 'command' && target.kind === 'mech') {
+        state.commandTokens[target.side] = Math.max(0, (state.commandTokens[target.side] ?? 0) - 1);
       }
       return;
     }
@@ -1670,7 +1682,23 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
         // token stays in the pool for this designation only.
         const free = sc.freeCommand.includes(cmd.uid);
         if (free) sc.freeCommand = sc.freeCommand.filter((x) => x !== cmd.uid);
-        else state.commandTokens[t.side] = Math.max(0, (state.commandTokens[t.side] ?? 0) - 1);
+        else {
+          state.commandTokens[t.side] = Math.max(0, (state.commandTokens[t.side] ?? 0) - 1);
+          // 3.2.2 step 3: the token comes off a Mech and goes onto the Drone
+          // that is about to act. Which Mech is the player's choice in the
+          // physical game and changes nothing, so the fullest one pays - it
+          // keeps a Command Generation 4 Torso from looking spent while a
+          // 1-Command Mech beside it still shows a token.
+          const from = state.tokens
+            .filter((x) => x.side === t.side && x.kind === 'mech' && statusCount(x.statuses, 'command') > 0)
+            .sort((a, b) => statusCount(b.statuses, 'command') - statusCount(a.statuses, 'command'))[0];
+          if (from) {
+            const l = [...(from.statuses ?? [])];
+            l.splice(l.lastIndexOf('command'), 1);
+            from.statuses = l;
+            t.statuses = [...(t.statuses ?? []), 'command'];
+          }
+        }
         if (!sc.commanded.includes(cmd.uid)) sc.commanded.push(cmd.uid);
       } else if (!sc.acted.includes(cmd.uid)) {
         sc.acted.push(cmd.uid);
@@ -1872,6 +1900,39 @@ export function applyRemote(data: GameData, state: GameState, cmd: Command): Che
     applyingRemote = false;
   }
   return verdict;
+}
+
+// The Command Phase begins by putting the tokens ON the Mechs - 3.2.1 has them
+// placed on the Torso Part Card, and 3.2.2 has each one travel from a Mech to
+// the Drone it commands. Seeding them here rather than only counting a pool
+// means the board shows where every Command came from, which is the part of
+// the phase a new player has to see to understand it.
+//
+// It lives in the command layer because it writes `statuses`, a fingerprinted
+// field: both seats have to reach the identical placement, and they do because
+// the count comes from the cards rather than from anything local.
+export function seedCommandTokens(data: GameData, state: GameState): void {
+  clearCommandTokens(state);
+  const pool: Record<Side, number> = { s1: 0, s2: 0 };
+  for (const t of state.tokens) {
+    if (t.kind !== 'mech' || !alive(t)) continue;
+    const n = commandGeneration(data, t);
+    for (let i = 0; i < n; i++) t.statuses = [...(t.statuses ?? []), 'command'];
+    pool[t.side] += n;
+  }
+  state.commandTokens = pool;
+}
+
+// Unspent Commands do not carry over (3.2.3), so walking out of the Command
+// Phase takes every Command Token off the board - the Mechs' leftovers and the
+// one each commanded Drone was still wearing. Without this the pool said zero
+// while the units kept their tokens for the rest of the round, which is the
+// two-truths bug the token rework exists to prevent.
+export function clearCommandTokens(state: GameState): void {
+  for (const t of state.tokens) {
+    if (statusCount(t.statuses, 'command')) t.statuses = (t.statuses ?? []).filter((s) => s !== 'command');
+  }
+  state.commandTokens = { s1: 0, s2: 0 };
 }
 
 // The sandbox and the teaching guide warn rather than block, so they perform

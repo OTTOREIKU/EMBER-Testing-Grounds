@@ -3,10 +3,18 @@ import { readFileSync, writeFileSync } from 'node:fs';
 
 // The pure loop rules live in loop.ts; only its activation-order half needs
 // TIMINGS, which these tests do not touch, so a stub keeps the slice light.
+// commandGeneration is stubbed for the same reason - the real one reads a
+// Mech's Torso card and would drag the whole card model in, and it returns
+// exactly what the fixture's `gen` field says: Command Generation X, or 1.
 const srcUrl = new URL('../src/loop.ts', import.meta.url);
 const src = readFileSync(srcUrl, 'utf8');
 const tmp = new URL('./_loops.slice.ts', import.meta.url);
-writeFileSync(tmp, 'type GameState = any;\ntype Side = any;\ntype Token = any;\ntype Timing = any;\nconst TIMINGS: any[] = [];\n' + src.replace(/^import[^\n]*\n/gm, ''));
+const PRELUDE = [
+  'type GameState = any;', 'type Side = any;', 'type Token = any;', 'type Timing = any;', 'type GameData = any;',
+  'const TIMINGS: any[] = [];',
+  'const commandGeneration = (_d: any, t: any) => t.gen ?? 1;',
+].join('\n') + '\n';
+writeFileSync(tmp, PRELUDE + src.replace(/^import[^\n]*\n/gm, ''));
 const { eligibleUnits, canAct, loopComplete, nextTurn, commandTokensFor } = await import(tmp.href);
 
 let pass = 0, fail = 0;
@@ -16,7 +24,7 @@ const check = (name, got, want) => {
   else { fail++; console.log(`  FAIL ${name}\n       want ${w}, got ${g}`); }
 };
 
-const mech = (uid, side, dead = false) => ({ uid, side, kind: 'mech', label: `M${uid}`, partStates: dead ? { torso: 'destroyed' } : { torso: 'intact', chasis: 'intact' } });
+const mech = (uid, side, dead = false, gen = 1) => ({ uid, side, kind: 'mech', label: `M${uid}`, gen, partStates: dead ? { torso: 'destroyed' } : { torso: 'intact', chasis: 'intact' } });
 const drone = (uid, side, dead = false) => ({ uid, side, kind: 'drone', label: `D${uid}`, partStates: { main: dead ? 'destroyed' : 'intact' } });
 const proj = (uid, side) => ({ uid, side, kind: 'projectile', label: `P${uid}`, partStates: { main: 'intact' } });
 const game = (tokens, script = {}, cmd = { s1: 9, s2: 9 }) => ({
@@ -27,9 +35,13 @@ const ids = (list) => list.map((t) => t.uid).sort((a, b) => a - b);
 
 console.log('Alternating designation loops — rulebook 3.2.2 / 3.5 / 3.6.1\n');
 
-// Command Tokens: 1 per surviving Mech (3.2.1). A destroyed Mech generates none.
-check('one command token per living mech', commandTokensFor(game([mech(1, 's1'), mech(2, 's1'), mech(3, 's2')]), 's1'), 2);
-check('a destroyed mech generates none', commandTokensFor(game([mech(1, 's1'), mech(2, 's1', true)]), 's1'), 1);
+// Command Tokens: 1 per surviving Mech by default (3.2.1). A destroyed Mech
+// generates none, and a Torso with Command Generation X generates X INSTEAD of
+// the default - "a different amount", not an extra one.
+check('one command token per living mech', commandTokensFor(null, game([mech(1, 's1'), mech(2, 's1'), mech(3, 's2')]), 's1'), 2);
+check('a destroyed mech generates none', commandTokensFor(null, game([mech(1, 's1'), mech(2, 's1', true)]), 's1'), 1);
+check('command generation X replaces the default', commandTokensFor(null, game([mech(1, 's1', false, 4), mech(2, 's1')]), 's1'), 5);
+check('a destroyed generator generates none', commandTokensFor(null, game([mech(1, 's1', true, 4), mech(2, 's1')]), 's1'), 1);
 
 // Command Phase targets Drones, and only while the side still holds a token.
 const cmdBoard = [mech(1, 's1'), drone(10, 's1'), drone(11, 's1'), drone(20, 's2')];

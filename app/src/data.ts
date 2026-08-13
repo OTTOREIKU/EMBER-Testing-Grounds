@@ -764,8 +764,23 @@ export const TOKEN_PRINT: Record<string, string[]> = {
   immobilized: ['immobilized-yellow', 'immobilized-red'],
   highlight: ['highlight-yellow', 'highlight-red'],
   lowProfile: ['lowProfile-green', 'lowProfile-red'],
+  targetTracer: ['targetTracer-yellow', 'targetTracer-red'],
   repaired: ['repaired'],
+  // Round tokens: one printed face each. Ammo and Charge are only ever added
+  // and removed here, and a spent Interception is drawn dimmed rather than
+  // flipped, so the back face — solid black on the real token — is never seen.
+  interception: ['interception'],
+  ammo: ['ammo'],
+  charge: ['charge-green'],
+  command: ['command'],
 };
+
+// The four Stance tokens, the Rectangle that sits on a Mech's base. Not in
+// TOKEN_PRINT because a Stance is not a status a unit bears — it is one of four
+// exclusive states — so it is looked up directly by name.
+export function stancePrintUrl(stance: string): string {
+  return tokenPrintUrl(`stance-${stance}`);
+}
 
 // The printed background colours, sampled from the token art itself and matching
 // the rulebook's token anatomy: colour is DURATION, not identity —

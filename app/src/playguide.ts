@@ -7,9 +7,9 @@ import { choiceDialog } from './dialog';
 import { PHASES, PHASE_INFO } from './tracker';
 import { extrasFor, isSilentAction, type ActionWorld, canActivateCamo, type ExtraActivation, extraActivationOf, guidedActions, initiativeFor, maneuverRange, maxLink, SLOT_LABEL, tokenCards } from './units';
 import { canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed } from './ticks';
-import { perform } from './commands';
+import { clearCommandTokens, perform, seedCommandTokens } from './commands';
 import { tacticFitsPhase, tacticSpec } from './tactics';
-import { alive, canAct, getLocalSeat, isLoopPhase, nextTurn, onExtraOpportunity, type LoopPhase, nextActivation, activationOrder, actionPhaseComplete, loopComplete, eligibleUnits, commandTokensFor, type InitLookup, type Activation } from './loop';
+import { alive, canAct, getLocalSeat, isLoopPhase, nextTurn, onExtraOpportunity, type LoopPhase, nextActivation, activationOrder, actionPhaseComplete, loopComplete, eligibleUnits, type InitLookup, type Activation } from './loop';
 import { deployable, deploymentComplete, deployTurn, firstPlayerFrom, newSetup, normaliseSetup, rollTotal, type SetupState } from './setup';
 import { normaliseTasks, scoreMain, scoreSecondary, settleControl, unpaidLines, type ScoreLine, type ScoreResult, type SecondaryScoring, type TaskState } from './tasks';
 
@@ -135,13 +135,15 @@ export class PlayGuide {
     const now = `${s.round.n}:${s.round.phase}`;
     if (sc.stage === now || sc.stage === `${now}:locked`) return false;
     const leaving = sc.stage.split(':')[1];
-    // Unspent Command Tokens do not carry over (3.2.3).
-    if (leaving === '0') s.commandTokens = { s1: 0, s2: 0 };
+    // Unspent Command Tokens do not carry over (3.2.3) - the pool AND the
+    // tokens the units are wearing, or the board keeps showing Commands the
+    // count says are gone.
+    if (leaving === '0') clearCommandTokens(s);
     // Control captures are a judgement of the End Phase itself (5.3.2), so
     // walking out of it must not lose them, Award or no Award.
     if (leaving === '5') this.settleTasks(s);
     if (s.round.phase === 0) {
-      s.commandTokens = { s1: commandTokensFor(s, 's1'), s2: commandTokensFor(s, 's2') };
+      seedCommandTokens(this.data, s);
       sc.commanded = [];
       sc.freeCommand = [];
     }

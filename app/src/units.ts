@@ -146,6 +146,33 @@ export function freehandSlots(data: GameData, t: Token, taken: string[] = [], lo
   return out;
 }
 
+// ---------- Commands (rulebook 3.2.1) ----------
+
+// A Mech generates 1 Command by default. 3.2.1 tells players to check their
+// units for "special cases that generate a different amount", and six Torso
+// cards are exactly that: Command Generation X, worth 2 or 4 rather than 1.
+// It REPLACES the default rather than adding to it - a different amount, not
+// an extra one.
+//
+// The digit is not on the keyword. Every card spells the keyword "指令生成X"
+// with a literal X and prints the real number on a Passive Action instead
+// ("· 指令生成4"), so the Action's own description is the only place it can be
+// read from. Five of the six are GoF, which is why that faction feels like it
+// runs on Drones; the sixth is the TM31Q Wild Cat in the Raid starter.
+const COMMAND_GEN_ZH = /指令生成\s*(\d+)/;
+const COMMAND_GEN_EN = /Command\s+Generation\s*(\d+)/i;
+export function commandGeneration(data: GameData, t: Token): number {
+  if (t.kind !== 'mech') return 0;
+  for (const { slot, card } of tokenCards(data, t)) {
+    if ((t.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
+    for (const a of card.actions ?? []) {
+      const m = COMMAND_GEN_ZH.exec(a.description?.zh ?? '') ?? COMMAND_GEN_EN.exec(a.description?.en ?? '');
+      if (m) return Number(m[1]);
+    }
+  }
+  return 1;
+}
+
 // ---------- Charge (rulebook 4.14) ----------
 
 // Only 5 cards carry machine-readable gameRules for this, and they are a

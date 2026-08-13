@@ -279,6 +279,17 @@ export function statusStacks(statuses: string[] | undefined): { def: StatusDef; 
 
 export const STATUSES: StatusDef[] = [
   {
+    id: 'command',
+    shape: 'round',
+    stacking: true,
+    appliesTo: ['mech'],
+    label: 'Command',
+    icon: 'CMD',
+    tint: '#d8c07a',
+    rule: 'Spend one to issue a Command to an Ally Drone, which then acts (3.2.2).',
+    note: 'Generated on the Mech at the start of the Command Phase - 1 by default, or the printed number if its Torso has Command Generation X. Issuing a Command takes a token from the Mech and puts it on the Drone, which immediately gets an Action Opportunity. Unspent tokens do not carry over (3.2.3). The panel places these itself, so add one by hand only for a card the app does not model yet; the squad pool follows whatever is on the Mechs.',
+  },
+  {
     id: 'fci',
     decay: 'yellow',
     shape: 'square',

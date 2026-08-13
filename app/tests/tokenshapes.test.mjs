@@ -64,7 +64,15 @@ for (const id of ['lowProfile', 'highlight', 'targetTracer']) {
   check(`${id} stays off projectiles`, ids('projectile').includes(id), false);
   check(`${id} still reaches mechs and drones`, ['mech', 'drone'].filter((k) => !ids(k).includes(id)), []);
 }
-check('projectiles keep the squares and smoke', ids('projectile').length, STATUSES.length - 5);
+// Named rather than counted: a bare `STATUSES.length - 5` passed for the wrong
+// reason the moment a new mech-only token was added, and said nothing about
+// which one had moved.
+const OFF_PROJECTILES = ['lowProfile', 'highlight', 'targetTracer', 'camouflage', 'repaired', 'command'];
+check(
+  'projectiles keep everything except the restricted tokens',
+  STATUSES.map((s) => s.id).filter((id) => !ids('projectile').includes(id)).sort(),
+  [...OFF_PROJECTILES].sort(),
+);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -1,4 +1,4 @@
-import { missionZones, taskDesignations, type Command, type CheckResult } from './commands';
+import { clearCommandTokens, missionZones, seedCommandTokens, taskDesignations, type Command, type CheckResult } from './commands';
 import type { GameData } from './data';
 import { actionIconUrl, cardName, isAerial, secondaryImageUrl, squadLabel, unitSize } from './data';
 import { Board, footprint, snapPlacement, type BoardCallbacks } from './board';
@@ -13,7 +13,7 @@ import { iconSvg } from './dice';
 import type { PartSlot, CardAction, CounterRoll, DiceData, DieColor, Facing, GameState, Side, Stance, Timing, Token, ExtraTick, Opportunity } from './types';
 import { statusCount, newOpportunity, newScriptState, PHASES, STATUSES, TIMINGS } from './types';
 import { deployable, deployTurn, deploymentComplete, firstPlayerFrom, normaliseSetup, rollTotal, type SetupState } from './setup';
-import { actionPhaseComplete, activationOrder, alive, canAct, commandTokensFor, eligibleUnits, isLoopPhase, loopComplete, nextActivation, nextTurn, onExtraOpportunity, type InitLookup, type LoopPhase } from './loop';
+import { actionPhaseComplete, activationOrder, alive, canAct, eligibleUnits, isLoopPhase, loopComplete, nextActivation, nextTurn, onExtraOpportunity, type InitLookup, type LoopPhase } from './loop';
 import { actionIdOf, canActivate, canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed, type TickVerdict } from './ticks';
 import { gameResult, normaliseTasks, scoreMain, scoreSecondary, settleControl, unpaidLines, zoneCentreGrid, type Designation, type ScoreLine, type ScoreResult, type SecondaryScoring } from './tasks';
 import { tokenCards } from './units';
@@ -110,12 +110,17 @@ export function ensureScript(state: GameState): NonNullable<GameState['script']>
   return state.script;
 }
 
-export function enterPhase(s: GameState): void {
+export function enterPhase(data: GameData, s: GameState): void {
   const sc = ensureScript(s);
   if (s.round.phase === 0) {
-    s.commandTokens = { s1: commandTokensFor(s, 's1'), s2: commandTokensFor(s, 's2') };
+    seedCommandTokens(data, s);
     sc.commanded = [];
     sc.freeCommand = [];
+  } else {
+    // Unspent Commands do not carry over (3.2.3): entering any later phase
+    // takes the leftover tokens off the units along with the pool, so the
+    // board never shows a Command the count says is spent.
+    clearCommandTokens(s);
   }
   if (s.round.phase === 0 || s.round.phase === 2) sc.acted = [];
   sc.endDone = sc.endDone.filter((k) => k.startsWith(`${s.round.n}:`));
@@ -130,7 +135,7 @@ export function enterPhase(s: GameState): void {
 export function glueAfter(data: GameData, state: GameState, cmd: Command): void {
   if (!normaliseSetup(state.setup) && cmd.kind !== 'startMatch') return;
   if (cmd.kind === 'startMatch' || cmd.kind === 'advancePhase' || cmd.kind === 'setPhase' || cmd.kind === 'finishDeployment') {
-    enterPhase(state);
+    enterPhase(data, state);
   } else if (cmd.kind === 'designate') {
     const sc = ensureScript(state);
     const t = state.tokens.find((x) => x.uid === cmd.uid);

@@ -1,9 +1,9 @@
 import type { GameData } from './data';
-import { actionIconUrl, cardName, FACTION_LABEL, mechPartUrl, missionImageUrl, secondaryImageUrl, setSquadNames, squadLabel, squadName, tabImageUrl, tokenFace, tokenPrintUrl } from './data';
+import { actionIconUrl, cardName, FACTION_LABEL, mechPartUrl, missionImageUrl, secondaryImageUrl, setSquadNames, squadLabel, squadName, stancePrintUrl, tabImageUrl, tokenFace, tokenPrintUrl } from './data';
 import { MECH_LAYER_ORDER } from './board';
 import { inspectOnHover, linkMechanics, type InspectInfo } from './inspector';
 import type { GameState, PartSlot, PartState, Side, Stance, Timing, TimingDef, Token } from './types';
-import { addStatus, SCALES, SHAPE_NOTE, statusCount, statusesFor, STATUSES, TIMINGS } from './types';
+import { SCALES, SHAPE_NOTE, statusCount, statusesFor, statusStacks, STATUSES, TIMINGS } from './types';
 import { normaliseTasks } from './tasks';
 import { normaliseSetup } from './setup';
 import { perform } from './commands';
@@ -624,6 +624,16 @@ export class SquadTracker {
       linkCtrl = link;
     }
 
+    // The printed Stance token beside the control. A <select> cannot carry an
+    // image in its options, so the token sits next to it and follows the
+    // choice — the same trick as the timing dial's icon. Stance is the one
+    // marker every Mech wears every round, so it is worth showing for real.
+    const stanceArt = document.createElement('img');
+    stanceArt.className = 'stance-tok';
+    stanceArt.src = stancePrintUrl(t.stance);
+    stanceArt.alt = '';
+    meta.appendChild(stanceArt);
+
     if (t.kind === 'mech') {
       const stance = document.createElement('select');
       stance.className = `stance stance-${t.stance}`;
@@ -683,6 +693,24 @@ export class SquadTracker {
     };
   }
 
+  // Putting a token on or taking one off, for both the handle row and the
+  // popout. It goes through the command layer rather than writing t.statuses,
+  // because `statuses` is a fingerprinted field: a direct write shows on this
+  // screen and nowhere else, and the next command then trips the drift check.
+  // applyStatus/removeStatus also carry rules the hand-written version never
+  // did - the Hexagon refresh face (FAQ J22) and clearing a removed token's
+  // expiry - so this is the shorter path as well as the only travelling one.
+  private toggleToken(t: Token, id: string, delta: number): void {
+    const def = STATUSES.find((x) => x.id === id);
+    if (delta > 0) {
+      if (!def?.stacking && statusCount(t.statuses, id)) return;
+      perform(this.data, this.state!, { kind: 'applyStatus', seat: t.side, uid: t.uid, targetUid: t.uid, statusId: id });
+    } else {
+      perform(this.data, this.state!, { kind: 'removeStatus', seat: t.side, uid: t.uid, targetUid: t.uid, statusId: id });
+    }
+    this.cb.onChanged();
+  }
+
   // The tokens a unit is wearing, plus a handle. The full grid of every status
   // shouted ten abbreviations at a unit carrying none; this shows what is
   // actually on and puts the rest one click away, reusing the dial's popout so
@@ -690,9 +718,12 @@ export class SquadTracker {
   private tokenHandleRow(t: Token): HTMLElement {
     const wrap = document.createElement('div');
     wrap.className = 'tok-row';
-    const worn = statusesFor(t.kind)
-      .map((s) => ({ s, n: statusCount(t.statuses, s.id) }))
-      .filter((x) => x.n > 0);
+    // Read off what the unit is ACTUALLY wearing, not what its kind may take:
+    // a Drone that has been issued a Command carries a token whose definition
+    // is Mech-only, and filtering through statusesFor here hid it while the
+    // board showed it. The popout keeps the statusesFor filter, because that
+    // list is about what may be PUT ON.
+    const worn = statusStacks(t.statuses).map(({ def, n }) => ({ s: def, n }));
     const list = document.createElement('div');
     list.className = 'tok-worn';
     for (const { s, n } of worn) {
@@ -717,7 +748,30 @@ export class SquadTracker {
       inspectOnHover(chip, {
         title: s.stacking && n > 1 ? `${s.label} ×${n}` : s.label,
         sub: `${s.icon} · on ${t.label}`,
-        lines: [s.rule, SHAPE_NOTE[s.shape]],
+        lines: [
+          s.rule,
+          SHAPE_NOTE[s.shape],
+          s.stacking && n > 1 ? 'Right-click or shift-click to take one off.' : 'Right-click or shift-click to take it off.',
+        ],
+      });
+      // Taking tokens off is the gesture that happens over and over in a turn,
+      // so it lives on the chip itself; putting them ON stays in the popout,
+      // where the rule and the printed art are next to the button. Shift-click
+      // is here for trackpads, where a right-click is two hands.
+      const take = (ev: MouseEvent): void => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        // A popout open against this unit is rebuilt by the render below, so it
+        // is reopened rather than left dangling - clearing a stack of three
+        // should not close the panel twice on the way.
+        const reopen = openDial?.trigger.dataset.tokUid === String(t.uid);
+        this.toggleToken(t, s.id, -1);
+        const again = reopen ? this.root.querySelector<HTMLElement>(`.tok-trig[data-tok-uid="${t.uid}"]`) : null;
+        if (again) this.openTokens(t, again);
+      };
+      chip.addEventListener('contextmenu', take);
+      chip.addEventListener('click', (ev) => {
+        if (ev.shiftKey) take(ev);
       });
       list.appendChild(chip);
     }
@@ -773,23 +827,12 @@ export class SquadTracker {
         b.addEventListener('click', (ev) => {
           ev.stopPropagation();
           const id = (b.closest('[data-s]') as HTMLElement).dataset.s!;
-          const def = STATUSES.find((x) => x.id === id)!;
-          if (Number(b.dataset.d) > 0) {
-            if (!def.stacking && statusCount(t.statuses, id)) return;
-            t.statuses = addStatus(t.statuses, id);
-            if (def.clearsHexagons) t.statuses = (t.statuses ?? []).filter((x) => x === id || STATUSES.find((y) => y.id === x)?.shape !== 'hexagon');
-          } else {
-            const l = [...(t.statuses ?? [])];
-            const at = l.lastIndexOf(id);
-            if (at >= 0) l.splice(at, 1);
-            t.statuses = l;
-          }
-          // The board has to update, but onChanged re-renders this panel and
-          // render() tears every popout down — so the panel is reopened against
-          // the FRESH handle for the same unit. Adding several tokens at once
-          // is the normal case after an Electronic Attack, and closing after
-          // each one would make that four round trips.
-          this.cb.onChanged();
+          // toggleToken re-renders, and render() tears every popout down — so
+          // the panel is reopened against the FRESH handle for the same unit.
+          // Adding several tokens at once is the normal case after an
+          // Electronic Attack, and closing after each one would make that four
+          // round trips.
+          this.toggleToken(t, id, Number(b.dataset.d));
           const again = this.root.querySelector<HTMLElement>(`.tok-trig[data-tok-uid="${t.uid}"]`);
           if (again) this.openTokens(t, again);
         }),
@@ -945,18 +988,7 @@ export class SquadTracker {
               : 'Click to put this token on the unit.',
         ],
       });
-      const change = (delta: number) => {
-        if (delta > 0) {
-          if (!s.stacking && statusCount(t.statuses, s.id)) return;
-          t.statuses = addStatus(t.statuses, s.id);
-        } else {
-          const list = [...(t.statuses ?? [])];
-          const at = list.lastIndexOf(s.id);
-          if (at >= 0) list.splice(at, 1);
-          t.statuses = list;
-        }
-        this.cb.onChanged();
-      };
+      const change = (delta: number) => this.toggleToken(t, s.id, delta);
       b.addEventListener('click', (ev) => {
         if (!s.stacking) {
           change(statusCount(t.statuses, s.id) ? -1 : 1);

@@ -23,6 +23,15 @@ const tasksSrc = readFileSync(new URL('../src/tasks.ts', import.meta.url), 'utf8
 const loopSrc = readFileSync(new URL('../src/loop.ts', import.meta.url), 'utf8');
 const rules = readFileSync(new URL('../src/rules.ts', import.meta.url), 'utf8');
 const smokeRules = rules.slice(rules.indexOf('export function smokeKey'), rules.indexOf('export function smokeBlocks'));
+// Command Generation is sliced in whole rather than stubbed: the stubbed
+// tokenCards below already reads the real card database, so the sim gets the
+// printed numbers off the actual Torso cards and a squad built on a GoF core
+// generates 4 here exactly as it would in a game.
+const unitsSrc = readFileSync(new URL('../src/units.ts', import.meta.url), 'utf8');
+const commandGen = unitsSrc.slice(
+  unitsSrc.indexOf('// ---------- Commands (rulebook 3.2.1) ----------'),
+  unitsSrc.indexOf('// ---------- Charge (rulebook 4.14) ----------'),
+);
 const timings = types.slice(types.indexOf('export const PHASES'), types.indexOf('export type TokenShape'));
 const statuses = types.slice(types.indexOf('export function hexagonIds'), types.indexOf('export interface RoundState'));
 const tmp = new URL('./_simgame.slice.ts', import.meta.url);
@@ -106,6 +115,7 @@ let sliceSrc =
   + smokeRules
   + ticks.replace(/^import[^\n]*\n/gm, '')
   + stubs
+  + commandGen
   + commands.replace(/^import[^\n]*\n/gm, '');
 // The driver builds real script states and opportunities, which live outside
 // the ranges above; pull them (and asSide, which normaliseScript leans on) in
@@ -252,9 +262,16 @@ const init = (t, timing) => {
 function enterPhase(s) {
   const sc = s.script;
   if (s.round.phase === 0) {
-    s.commandTokens = { s1: C.commandTokensFor(s, 's1'), s2: C.commandTokensFor(s, 's2') };
+    // The real seeder, not a reimplementation of it: it places the tokens on
+    // the Mechs as well as setting the pool, and the sim is the only test that
+    // then runs designate against them for real.
+    C.seedCommandTokens(data, s);
     sc.commanded = [];
     sc.freeCommand = [];
+  } else {
+    // Mirrors matchhud's glue: leaving the Command Phase strips the leftover
+    // Command Tokens along with the pool (3.2.3).
+    C.clearCommandTokens(s);
   }
   if (s.round.phase === 0 || s.round.phase === 2) sc.acted = [];
   sc.endDone = sc.endDone.filter((k) => k.startsWith(`${s.round.n}:`));

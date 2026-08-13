@@ -190,17 +190,12 @@ export class RoundTracker {
         s.round.phase === PHASES.length - 1 ? (s.round.n >= limit ? `Extra round ${s.round.n + 1} ▸` : `End round ${s.round.n} ▸`) : 'Next phase ▸'
       }</button>
       <span class="rt-first side-${s.round.firstPlayer}">1st: ${squadLabel(s.round.firstPlayer)}</span>
-      <!-- "CMD" beside a squad name and a bare number read as a scoreboard, so
-           it says what it counts and each number wears the token pip. The pip
-           is the thing that stops it looking like points (3.2). -->
-      <span class="rt-cmd">
-        <span class="rt-cmd-label">Cmd tokens</span>
-        ${(['s1', 's2'] as Side[])
-          .map(
-            (side) => `<span class="cmd-${side}" title="${squadLabel(side)}: Command Tokens. A Mech takes these onto its Torso in the Command Phase, and spending one onto a Drone's card is what lets that Drone act (3.2).">${squadLabel(side)} <button data-cmd="${side}" data-d="-1">−</button><b><i class="cmd-pip" aria-hidden="true"></i>${s.commandTokens[side]}</b><button data-cmd="${side}" data-d="1">+</button></span>`,
-          )
-          .join('')}
-      </span>
+      <!-- The Command Token count used to live here as two numbers with their
+           own +/- buttons. It is gone because the tokens are now physical: they
+           are generated onto each Mech at the start of the Command Phase and
+           travel to the Drone they command (3.2.1/3.2.2), so the board shows
+           both the total and where each one came from. Adjust them from the
+           unit's token popout, which moves the pool with them. -->
       </div>`;
 
     this.root.querySelector<HTMLButtonElement>('#rt-start')!.addEventListener('click', () => this.onStartGame?.());
@@ -285,12 +280,5 @@ export class RoundTracker {
         this.onChanged();
       });
     });
-    this.root.querySelectorAll<HTMLButtonElement>('[data-cmd]').forEach((b) =>
-      b.addEventListener('click', () => {
-        const side = b.dataset.cmd as Side;
-        this.onCommand({ kind: 'adjustCommandTokens', seat: this.seat(), pool: side, delta: Number(b.dataset.d) });
-        this.onChanged();
-      }),
-    );
   }
 }

@@ -1248,9 +1248,13 @@ body.replaying #board .token { cursor: default; }
 .ghost-bad { fill: #ef444455; stroke: #ef4444; stroke-dasharray: 3 2; }
 
 /* ---------- round tracker ---------- */
-#round-tracker button, #round-tracker select, #round-tracker .rt-first, #round-tracker .rt-cmd {
+#round-tracker button, #round-tracker select, #round-tracker .rt-first {
   white-space: nowrap; flex-shrink: 0;
 }
+/* First Player is the last thing on the bar now that the Command Token count
+   has gone, so it inherits the push to the right rather than sitting against
+   the Next Phase button. */
+#round-tracker .rt-first { margin-left: auto; }
 #round-tracker {
   display: flex; align-items: flex-start; gap: 0; padding: 4px var(--board-pad);
   min-height: var(--chrome-h); flex-shrink: 0; box-sizing: border-box;
@@ -1293,27 +1297,6 @@ body.replaying #board .token { cursor: default; }
 .rt-first { font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; }
 .rt-first.side-s1 { color: var(--sq-s1); }
 .rt-first.side-s2 { color: var(--sq-s2); }
-.rt-cmd { display: flex; align-items: center; gap: 6px; color: var(--text2); font-size: 11px; margin-left: auto; }
-.rt-cmd span { display: flex; align-items: center; gap: 3px; }
-.rt-cmd b { min-width: 14px; text-align: center; font-size: 13px; font-family: var(--mono); }
-.cmd-s1 b { color: var(--sq-s1); }
-.cmd-s2 b { color: var(--sq-s2); }
-/* The group says what it counts rather than an abbreviation nobody expands. */
-.rt-cmd-label { text-transform: uppercase; letter-spacing: 0.6px; font-size: 9.5px; color: var(--text3); }
-/* A physical Command Token beside each number: the ring is what separates a
-   COUNT OF TOKENS from a score, which is exactly how the bare number read. It
-   takes the squad's own colour, so the pip and the digit agree. */
-.rt-cmd b { display: inline-flex; align-items: center; gap: 4px; }
-.cmd-pip {
-  width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto;
-  border: 2px solid currentColor; opacity: 0.85;
-}
-.rt-cmd button {
-  width: 18px; height: 18px; border: none; background: var(--surface2); color: var(--text2);
-  border-radius: var(--radius-sm); cursor: pointer; line-height: 1;
-  transition: background 0.12s, color 0.12s;
-}
-.rt-cmd button:hover { background: var(--surface3); color: var(--text); }
 
 /* ---------- board overlays ---------- */
 .reach-cell { fill: #4ade80; stroke: #22c55e; stroke-width: 1; }
@@ -2385,10 +2368,24 @@ p.points { white-space: pre-line; }
 .status-chip.has-art:hover { filter: grayscale(0.3) opacity(0.8); }
 .status-chip.has-art.on { background: none; filter: none; }
 .status-chip.has-art img { width: 26px; height: 26px; object-fit: contain; display: block; }
+/* The printed Stance token, riding beside the stance control. LANDSCAPE, because
+   the Rectangle token is printed wide — a square box just letterboxed it into
+   two thirds of the space and made it look shrunken. */
+.stance-tok { width: 31px; height: 20px; object-fit: contain; flex: 0 0 auto; display: block; }
+
 /* ---------- the squad row: what is worn, then a handle ---------- */
 .tok-row { display: flex; align-items: center; gap: 8px; margin: 5px 0 2px; }
 .tok-worn { display: flex; align-items: center; gap: 3px; flex: 1; min-width: 0; flex-wrap: wrap; }
-.tok-worn-one { position: relative; line-height: 0; display: inline-block; }
+/* A worn chip is a removal target: right-click or shift-click takes one off.
+   Adding stays in the popout, so there is no plain-click action here and the
+   cursor is a context cursor rather than a pointer - a pointer would promise a
+   left-click that does nothing. The hover lift is the only affordance needed. */
+.tok-worn-one {
+  position: relative; line-height: 0; display: inline-block;
+  cursor: context-menu; transition: transform 0.1s, filter 0.1s;
+}
+.tok-worn-one:hover { transform: translateY(-1px); filter: brightness(1.15); }
+.tok-worn-one:active { transform: translateY(0); filter: brightness(0.9); }
 .tok-worn-one img { width: 24px; height: 24px; object-fit: contain; display: block; }
 .tok-worn-one.no-art {
   line-height: 1.6; font-size: 9px; font-weight: 800; color: #0f1216;

@@ -17,6 +17,10 @@ const read = (f) => readFileSync(new URL(`../src/${f}`, import.meta.url), 'utf8'
 const main = read('main.ts');
 const hud = read('matchhud.ts');
 const guide = read('playguide.ts');
+// squads.ts is not a page, but both pages mount it, so a shared field written
+// there desyncs a match exactly as it would from a page. It went uncovered for
+// months and the token popout walked straight into the gap.
+const squads = read('squads.ts');
 const secrecy = read('secrecy.ts');
 
 let pass = 0, fail = 0;
@@ -43,10 +47,11 @@ for (const field of FINGERPRINTED) {
 // editor is a free play tool only"). Counted rather than pattern-matched, so a
 // THIRD one anywhere fails even if it looks like these.
 const ALLOWED = { 'main.ts': { mech: 1, partStates: 1 } };
-for (const [name, src] of [['main.ts', main], ['matchhud.ts', hud], ['playguide.ts', guide]]) {
+for (const [name, src] of [['main.ts', main], ['matchhud.ts', hud], ['playguide.ts', guide], ['squads.ts', squads]]) {
   for (const field of FINGERPRINTED) {
-    // `t.charge = ...` and friends. Reads are fine; assignment is not.
-    const writes = [...src.matchAll(new RegExp(`\\b\\w+\\.${field}\\s*=[^=]`, 'g'))].map((m) => m[0].trim());
+    // `t.charge = ...` and friends. Reads are fine; assignment is not. The
+    // lookahead spares `el.dataset.mech`, which is markup rather than state.
+    const writes = [...src.matchAll(new RegExp(`\\b(?!dataset\\.)\\w+\\.${field}\\s*=[^=]`, 'g'))].map((m) => m[0].trim());
     check(`${name} assigns .${field} only where allowed`, writes.length, ALLOWED[name]?.[field] ?? 0);
   }
 }

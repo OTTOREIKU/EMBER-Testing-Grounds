@@ -1,5 +1,7 @@
+import type { GameData } from './data';
 import type { GameState, Side, Timing, Token } from './types';
 import { TIMINGS } from './types';
+import { commandGeneration } from './units';
 
 // The pure turn-order rules of the guided game, shared by the play guide and
 // the command layer. Nothing here touches the DOM or mutates state.
@@ -18,8 +20,13 @@ export function alive(t: Token): boolean {
   return Object.values(t.partStates).filter((p) => p !== 'destroyed').length > 0;
 }
 
-export function commandTokensFor(state: GameState, side: Side): number {
-  return state.tokens.filter((t) => t.side === side && t.kind === 'mech' && alive(t)).length;
+// What this side's Mechs are about to generate. 3.2.1: 1 each by default, or
+// the printed Command Generation X, which is why this reads the cards rather
+// than counting Mechs as it used to.
+export function commandTokensFor(data: GameData, state: GameState, side: Side): number {
+  return state.tokens
+    .filter((t) => t.side === side && t.kind === 'mech' && alive(t))
+    .reduce((n, t) => n + commandGeneration(data, t), 0);
 }
 
 // Who this side may still designate this phase. A Drone commanded during the
