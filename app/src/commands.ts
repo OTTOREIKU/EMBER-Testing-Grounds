@@ -88,7 +88,16 @@ export type Command =
   | { kind: 'resetRounds'; seat: Side }
   | { kind: 'adjustCommandTokens'; seat: Side; pool: Side; delta: number }
   | { kind: 'endOpportunity'; seat: Side; uid: number }
-  | { kind: 'designate'; seat: Side; uid: number }
+  | { kind: 'designate'; seat: Side; uid: number; fromUid?: number }
+  // Command Coordination (4.15.3): a Mech hands a reserved token to a Drone
+  // outside the Command Phase. `uid` is the issuing Mech, `targetUid` the
+  // Drone. Separate from designate because it is not a turn in a designation
+  // loop - it happens off the back of an Action and alternates with nothing.
+  | { kind: 'coordinateCommand'; seat: Side; uid: number; targetUid: number }
+  // 4.15.4: an Action that consumes a Command flips one of this Mech's own
+  // face-up tokens face-down. The token stays on the card - the End Phase is
+  // what removes it - so this is a flip, never a removal.
+  | { kind: 'spendCommand'; seat: Side; uid: number }
   | { kind: 'passTurn'; seat: Side }
   | { kind: 'grantExtra'; seat: Side; uid: number; linkCost: number }
   | { kind: 'markEndStep'; seat: Side; step: string }
@@ -905,6 +914,30 @@ function checkActed(
       if (!oppOf(state, cmd.uid)) return no('It is not this unit\'s Action Opportunity.');
       return ok;
     }
+    case 'spendCommand': {
+      // 4.15.4 requires the Mech to BEAR a face-up Command Token to perform an
+      // Action that consumes one, which is the whole reason reserving tokens is
+      // a decision rather than a leftover.
+      if (t.kind !== 'mech') return no('Only a Mech bears Command Tokens.');
+      if (readyCommands(t) <= 0) return no(`${t.label} has no face-up Command Token to spend (4.15.4).`);
+      return ok;
+    }
+    case 'coordinateCommand': {
+      // 4.15.3. The issuer must be one of your own Mechs still holding a
+      // face-up Command - a reserved one, since the Command Phase is over.
+      const from = state.tokens.find((x) => x.uid === cmd.uid);
+      if (!from || from.side !== cmd.seat || from.kind !== 'mech') return no('A Command is issued by one of your own Mechs (4.15.3).');
+      if (readyCommands(from) <= 0) return no(`${from.label} has no face-up Command Token to hand out.`);
+      const to = state.tokens.find((x) => x.uid === cmd.targetUid);
+      if (!to || to.kind !== 'drone' || !alive(to)) return no('Command Coordination sends a Command to an Ally Drone.');
+      if (to.side !== cmd.seat) return no('A Command only ever goes to an Ally Drone.');
+      // A Drone bears one Command Token at a time (4.15.2). The Command Phase's
+      // tokens were removed when that phase ended, which is exactly why a Drone
+      // that already acted can take one now (4.15.3) - so this reads the board
+      // rather than the phase's `commanded` list.
+      if (heldCommands(to) > 0) return no(`${to.label} already has a Command Token, so it cannot take another (4.15.2).`);
+      return ok;
+    }
     case 'designate': {
       const phase = PHASES[state.round.phase];
       if (!isLoopPhase(phase)) return no('Designation happens in the Command, Automatic and Delay Phases.');
@@ -912,6 +945,23 @@ function checkActed(
       if (!sc) return no('There is no guided game running.');
       if (sc.turn !== cmd.seat) return no('It is the other squad\'s turn to designate (3.2.2).');
       if (!eligibleUnits(state, phase, cmd.seat).some((x) => x.uid === cmd.uid)) return no(`${t.label} cannot be designated this phase.`);
+      // Step 1 of 4.15.2 is naming the Mech that issues, so a named Mech has to
+      // be one that actually holds a face-up Command. Omitting fromUid is still
+      // legal - the fullest Mech pays - because replays and the Automatic and
+      // Delay Phases send a designate with no issuer at all.
+      // The capacity rule reads the BOARD, not just the phase's `commanded`
+      // list: 4.15.2 caps a Drone at one physical Command Token, and FAQ N8 has
+      // a White Dwarf Bit keep its token through a Stance change and be barred
+      // from a second on exactly those grounds. A free Command (FAQ O14) places
+      // no token, so it is not capped by this.
+      if (phase === 'Command' && !sc.freeCommand.includes(cmd.uid) && heldCommands(t) > 0) {
+        return no(`${t.label} already has a Command Token, so it cannot take another (4.15.2).`);
+      }
+      if (phase === 'Command' && cmd.fromUid !== undefined && !sc.freeCommand.includes(cmd.uid)) {
+        const from = state.tokens.find((x) => x.uid === cmd.fromUid);
+        if (!from || from.side !== cmd.seat || from.kind !== 'mech') return no('A Command is issued by one of your own Mechs (4.15.2).');
+        if (readyCommands(from) <= 0) return no(`${from.label} has no face-up Command Token left to issue.`);
+      }
       return ok;
     }
     case 'grantExtra': {
@@ -1098,10 +1148,14 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
     const sc = state.script;
     if (!sc) return;
     if (cmd.step === 'tokens') {
-      // Yellow tokens flip, red tokens come off (2.5.3), and unspent Command
-      // Tokens never carry over (3.2.3).
+      // Yellow tokens flip, red tokens come off (2.5.3). Command Tokens are
+      // swept here and only here, because 3.7.2 takes ALL of them - the ones a
+      // Mech reserved, the ones it consumed, and any a Drone picked up after
+      // the Command Phase through Command Coordination. ageTokens cannot do it:
+      // a Command Token has no printed decay colour, so it is not a Square
+      // that ages, it is a component the End Phase collects.
       for (const x of state.tokens) ageTokens(x);
-      state.commandTokens = { s1: 0, s2: 0 };
+      clearCommandTokens(state);
     }
     if (cmd.step === 'remove') {
       // Integrity Loss (4.4.4): a Mech down to 2 Parts leaves in the End Phase.
@@ -1548,11 +1602,8 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
         target.expiring = (target.expiring ?? []).filter((x) => !hexes.has(x));
       }
       // A Command placed by hand is a Command the side may spend, so the pool
-      // follows it. Without this the token and the phase-bar count would be two
-      // separate truths, and the one the rules gate on is the count.
-      if (cmd.statusId === 'command' && target.kind === 'mech') {
-        state.commandTokens[target.side] = (state.commandTokens[target.side] ?? 0) + (cmd.stacks ?? 1);
-      }
+      // is recomputed from the board rather than nudged.
+      if (COMMAND_FACES.has(cmd.statusId)) syncCommandPool(state);
       return;
     }
     case 'removeStatus': {
@@ -1569,12 +1620,10 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
       if (!list.includes(cmd.statusId)) {
         target.expiring = (target.expiring ?? []).filter((x) => x !== cmd.statusId);
       }
-      // Taking a Command off a Mech spends it out of the pool as well. Off a
-      // Drone it does not: that token was already paid for when the Command
-      // was issued, and refunding it would let a side command twice.
-      if (cmd.statusId === 'command' && target.kind === 'mech') {
-        state.commandTokens[target.side] = Math.max(0, (state.commandTokens[target.side] ?? 0) - 1);
-      }
+      // Same on the way out. A Drone's face-down token was paid for when the
+      // Command was issued, and the pool only ever counts face-up Mech tokens,
+      // so removing one by hand correctly changes nothing.
+      if (COMMAND_FACES.has(cmd.statusId)) syncCommandPool(state);
       return;
     }
     case 'focus': {
@@ -1674,6 +1723,33 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
       sc.opp = null;
       return;
     }
+    case 'spendCommand': {
+      // Flipped, not removed: 4.15.4 says a consumed token stays on the Torso
+      // face-down and can no longer be issued or used, and the End Phase
+      // collects it with everything else.
+      const l = [...(t.statuses ?? [])];
+      const at = l.lastIndexOf('command');
+      if (at < 0) return;
+      l.splice(at, 1);
+      t.statuses = [...l, 'commandUsed'];
+      syncCommandPool(state);
+      return;
+    }
+    case 'coordinateCommand': {
+      // The token leaves the Mech face-up and lands on the Drone face-down,
+      // the same physical move the Command Phase makes (4.15.3).
+      const from = state.tokens.find((x) => x.uid === cmd.uid);
+      const to = state.tokens.find((x) => x.uid === cmd.targetUid);
+      if (!from || !to) return;
+      const l = [...(from.statuses ?? [])];
+      const at = l.lastIndexOf('command');
+      if (at < 0) return;
+      l.splice(at, 1);
+      from.statuses = l;
+      to.statuses = [...(to.statuses ?? []), 'commandUsed'];
+      syncCommandPool(state);
+      return;
+    }
     case 'designate': {
       const phase = PHASES[state.round.phase];
       if (!sc || !isLoopPhase(phase)) return;
@@ -1683,21 +1759,20 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
         const free = sc.freeCommand.includes(cmd.uid);
         if (free) sc.freeCommand = sc.freeCommand.filter((x) => x !== cmd.uid);
         else {
-          state.commandTokens[t.side] = Math.max(0, (state.commandTokens[t.side] ?? 0) - 1);
-          // 3.2.2 step 3: the token comes off a Mech and goes onto the Drone
-          // that is about to act. Which Mech is the player's choice in the
-          // physical game and changes nothing, so the fullest one pays - it
-          // keeps a Command Generation 4 Torso from looking spent while a
+          // 4.15.2 steps 1-3: the player names the Mech, names the Drone, and
+          // the token moves from that Mech onto the Drone's card FACE-DOWN.
+          // `fromUid` carries the choice; without one — an older replay, or a
+          // driver that has not been taught to ask — the fullest Mech pays, so
+          // a Command Generation 4 Torso does not look spent while a
           // 1-Command Mech beside it still shows a token.
-          const from = state.tokens
-            .filter((x) => x.side === t.side && x.kind === 'mech' && statusCount(x.statuses, 'command') > 0)
-            .sort((a, b) => statusCount(b.statuses, 'command') - statusCount(a.statuses, 'command'))[0];
-          if (from) {
-            const l = [...(from.statuses ?? [])];
+          const issuer = issuingMech(state, t.side, cmd.fromUid);
+          if (issuer) {
+            const l = [...(issuer.statuses ?? [])];
             l.splice(l.lastIndexOf('command'), 1);
-            from.statuses = l;
-            t.statuses = [...(t.statuses ?? []), 'command'];
+            issuer.statuses = l;
+            t.statuses = [...(t.statuses ?? []), 'commandUsed'];
           }
+          syncCommandPool(state);
         }
         if (!sc.commanded.includes(cmd.uid)) sc.commanded.push(cmd.uid);
       } else if (!sc.acted.includes(cmd.uid)) {
@@ -1911,26 +1986,85 @@ export function applyRemote(data: GameData, state: GameState, cmd: Command): Che
 // It lives in the command layer because it writes `statuses`, a fingerprinted
 // field: both seats have to reach the identical placement, and they do because
 // the count comes from the cards rather than from anything local.
-export function seedCommandTokens(data: GameData, state: GameState): void {
-  clearCommandTokens(state);
+// Both faces of the one physical token, for the sweeps and the transfer. A
+// Command Token is removed whichever way up it is lying.
+const COMMAND_FACES = new Set(['command', 'commandUsed']);
+
+// How many Command Tokens this unit is bearing, either way up. 4.15.2's
+// one-per-Drone capacity counts the physical token on the card, so a face-down
+// one it was given still blocks a second.
+export function heldCommands(t: Token): number {
+  return statusCount(t.statuses, 'command') + statusCount(t.statuses, 'commandUsed');
+}
+
+// How many face-up Commands this Mech could still issue or spend. 4.15.4: a
+// face-down token is out of the economy until the End Phase collects it.
+export function readyCommands(t: Token): number {
+  return statusCount(t.statuses, 'command');
+}
+
+// Every Mech on this side that could pay for a Command right now. This is the
+// list step 1 of 4.15.2 asks the player to choose from, so the pickers and the
+// command layer agree on who is eligible by sharing it.
+export function commandIssuers(state: GameState, side: Side): Token[] {
+  return state.tokens.filter((t) => t.side === side && t.kind === 'mech' && alive(t) && readyCommands(t) > 0);
+}
+
+// `state.commandTokens` is a READOUT of the face-up tokens the Mechs are
+// holding, never a second ledger. It is recomputed after anything that moves a
+// Command rather than nudged by ±1, because a count that is incremented
+// separately from the thing it counts is how the two drifted apart before -
+// and this one gates eligibility, so a drift is a rules bug and not a cosmetic
+// one. Cached rather than derived at the call site only because the fingerprint
+// and the saved state both already carry it.
+export function syncCommandPool(state: GameState): void {
   const pool: Record<Side, number> = { s1: 0, s2: 0 };
   for (const t of state.tokens) {
     if (t.kind !== 'mech' || !alive(t)) continue;
-    const n = commandGeneration(data, t);
-    for (let i = 0; i < n; i++) t.statuses = [...(t.statuses ?? []), 'command'];
-    pool[t.side] += n;
+    pool[t.side] += readyCommands(t);
   }
   state.commandTokens = pool;
 }
 
-// Unspent Commands do not carry over (3.2.3), so walking out of the Command
-// Phase takes every Command Token off the board - the Mechs' leftovers and the
-// one each commanded Drone was still wearing. Without this the pool said zero
-// while the units kept their tokens for the rest of the round, which is the
-// two-truths bug the token rework exists to prevent.
+// The Mech that pays: the one named, if it can, else the fullest. Falling back
+// rather than refusing keeps an old replay and an un-taught driver working,
+// while check() is what stops a LIVE player naming a Mech with nothing to give.
+function issuingMech(state: GameState, side: Side, fromUid?: number): Token | undefined {
+  const able = commandIssuers(state, side);
+  const named = fromUid === undefined ? undefined : able.find((x) => x.uid === fromUid);
+  return named ?? [...able].sort((a, b) => readyCommands(b) - readyCommands(a))[0];
+}
+
+export function seedCommandTokens(data: GameData, state: GameState): void {
+  clearCommandTokens(state);
+  for (const t of state.tokens) {
+    if (t.kind !== 'mech' || !alive(t)) continue;
+    const n = commandGeneration(data, t);
+    for (let i = 0; i < n; i++) t.statuses = [...(t.statuses ?? []), 'command'];
+  }
+  syncCommandPool(state);
+}
+
+// End of the Command Phase: 3.2.3 removes the Command Tokens of all DRONES on
+// the board, and only those. A Mech's unissued tokens stay on its Torso, which
+// is the whole point of 4.15.2's "tokens may be reserved" - a Command
+// Generation 4 Torso is meant to hold some back for an Action that consumes
+// one (4.15.4) or hands one out through Command Coordination (4.15.3). They are
+// swept later, by the End Phase (3.7.2). Clearing everything here reads as
+// tidier and silently deletes the GoF economy.
+export function clearDroneCommands(state: GameState): void {
+  for (const t of state.tokens) {
+    if (t.kind === 'mech') continue;
+    t.statuses = (t.statuses ?? []).filter((s) => !COMMAND_FACES.has(s));
+  }
+  syncCommandPool(state);
+}
+
+// End Phase, 3.7.2 / 4.15.4: every Command Token comes off, wherever it sits
+// and whether or not it was consumed.
 export function clearCommandTokens(state: GameState): void {
   for (const t of state.tokens) {
-    if (statusCount(t.statuses, 'command')) t.statuses = (t.statuses ?? []).filter((s) => s !== 'command');
+    t.statuses = (t.statuses ?? []).filter((s) => !COMMAND_FACES.has(s));
   }
   state.commandTokens = { s1: 0, s2: 0 };
 }

@@ -772,7 +772,14 @@ export const TOKEN_PRINT: Record<string, string[]> = {
   interception: ['interception'],
   ammo: ['ammo'],
   charge: ['charge-green'],
+  // Command is the one Round token whose back face IS seen, and often: 4.15
+  // issues it to a Drone face-down and flips a Mech's own one face-down when an
+  // Action consumes it. The two faces are modelled as two statuses rather than
+  // one with a flag, so the strip and the popout draw them without knowing the
+  // rule. `command-used` is the front blacked out, which is how the real backs
+  // are printed.
   command: ['command'],
+  commandUsed: ['command-used'],
 };
 
 // The four Stance tokens, the Rectangle that sits on a Mech's base. Not in

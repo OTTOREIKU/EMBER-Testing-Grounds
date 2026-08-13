@@ -5,9 +5,10 @@ import { cardName, squadLabel } from './data';
 import { bindTips, linkMechanics } from './inspector';
 import { choiceDialog } from './dialog';
 import { PHASES, PHASE_INFO } from './tracker';
-import { extrasFor, isSilentAction, type ActionWorld, canActivateCamo, type ExtraActivation, extraActivationOf, guidedActions, initiativeFor, maneuverRange, maxLink, SLOT_LABEL, tokenCards } from './units';
+import { commandCoordination, extrasFor, isSilentAction, type ActionWorld, canActivateCamo, type ExtraActivation, extraActivationOf, guidedActions, initiativeFor, maneuverRange, maxLink, SLOT_LABEL, tokenCards } from './units';
 import { canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed } from './ticks';
-import { clearCommandTokens, perform, seedCommandTokens } from './commands';
+import { clearDroneCommands, perform, seedCommandTokens } from './commands';
+import { askIssuer, offerCoordination } from './commandpick';
 import { tacticFitsPhase, tacticSpec } from './tactics';
 import { alive, canAct, getLocalSeat, isLoopPhase, nextTurn, onExtraOpportunity, type LoopPhase, nextActivation, activationOrder, actionPhaseComplete, loopComplete, eligibleUnits, type InitLookup, type Activation } from './loop';
 import { deployable, deploymentComplete, deployTurn, firstPlayerFrom, newSetup, normaliseSetup, rollTotal, type SetupState } from './setup';
@@ -135,10 +136,10 @@ export class PlayGuide {
     const now = `${s.round.n}:${s.round.phase}`;
     if (sc.stage === now || sc.stage === `${now}:locked`) return false;
     const leaving = sc.stage.split(':')[1];
-    // Unspent Command Tokens do not carry over (3.2.3) - the pool AND the
-    // tokens the units are wearing, or the board keeps showing Commands the
-    // count says are gone.
-    if (leaving === '0') clearCommandTokens(s);
+    // 3.2.3 clears the DRONES' Command Tokens on the way out, and nothing
+    // else: a Mech's reserved tokens are still spendable in the Action Phase
+    // (4.15.3/4.15.4) and are swept by the End Phase instead.
+    if (leaving === '0') clearDroneCommands(s);
     // Control captures are a judgement of the End Phase itself (5.3.2), so
     // walking out of it must not lose them, Award or no Award.
     if (leaving === '5') this.settleTasks(s);
@@ -1547,8 +1548,26 @@ export class PlayGuide {
         void this.grantExtraOpportunity(s, t, grant);
         return;
       }
+      // Command Coordination X resolves AFTER the Action (4.15.3), so it is
+      // offered here rather than as part of choosing one.
+      const coord = commandCoordination(row.action);
+      if (coord > 0) {
+        void this.offerCoordination(s, t, coord).then(() => this.cb.onChanged());
+        return;
+      }
       this.cb.onChanged();
     });
+  }
+
+  // Command Coordination X (4.15.3). The offer itself lives in commandpick.ts
+  // so the Match Centre asks the identical question; this only supplies the two
+  // things the two pages do differently — how a command reaches the board, and
+  // where a note goes.
+  private offerCoordination(s: GameState, mech: Token, upTo: number): Promise<void> {
+    return offerCoordination(this.data, s, mech, upTo, (uid, targetUid) => {
+      perform(this.data, s, { kind: 'coordinateCommand', seat: mech.side, uid, targetUid });
+      this.cb.onChanged();
+    }, (drone, text) => this.cb.onNote(drone, text));
   }
 
   private endActivation(): void {
@@ -1720,7 +1739,27 @@ export class PlayGuide {
     if (!isLoopPhase(phase)) return;
     const unit = s.tokens.find((t) => t.uid === uid);
     if (!unit) return;
-    perform(this.data, s, { kind: 'designate', seat: unit.side, uid });
+    // Only the Command Phase takes a token off a Mech (4.15.2). The Automatic
+    // and Delay Phases designate a unit that acts under its own steam, so there
+    // is no issuer to ask about.
+    if (phase !== 'Command') {
+      this.issue(unit, undefined);
+      return;
+    }
+    const free = this.script(s).freeCommand.includes(uid);
+    void askIssuer(this.data, s, unit.side, unit, free).then((pick) => {
+      // Backing out of the picker leaves the Drone selected and the Command
+      // unspent, so the player can choose a different Mech or a different
+      // Drone. Issuing anyway would spend a token they never agreed to.
+      if (pick === 'cancelled') return;
+      this.issue(unit, pick.uid || undefined);
+    });
+  }
+
+  private issue(unit: Token, fromUid: number | undefined): void {
+    const s = this.state;
+    if (!s) return;
+    perform(this.data, s, { kind: 'designate', seat: unit.side, uid: unit.uid, fromUid });
     this.picked = null;
     this.warn = null;
     this.cb.onChanged();

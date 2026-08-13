@@ -286,8 +286,22 @@ export const STATUSES: StatusDef[] = [
     label: 'Command',
     icon: 'CMD',
     tint: '#d8c07a',
-    rule: 'Spend one to issue a Command to an Ally Drone, which then acts (3.2.2).',
-    note: 'Generated on the Mech at the start of the Command Phase - 1 by default, or the printed number if its Torso has Command Generation X. Issuing a Command takes a token from the Mech and puts it on the Drone, which immediately gets an Action Opportunity. Unspent tokens do not carry over (3.2.3). The panel places these itself, so add one by hand only for a card the app does not model yet; the squad pool follows whatever is on the Mechs.',
+    rule: 'Face-up and ready. Issue it to an Ally Drone, which then acts, or spend it on an Action that consumes one (4.15).',
+    note: 'Generated face-up on the Mech at the start of the Command Phase - 1 by default, or the printed number if its Torso has Command Generation X. Issuing takes it from this Mech and lays it FACE-DOWN on a Drone, which immediately gets an Action Opportunity. Tokens may also be reserved deliberately: an Action with Command Coordination X hands them out later in the round, and some Actions consume one outright. Every Command Token comes off in the End Phase (3.7.2). The panel places these itself, so add one by hand only for a card the app does not model yet.',
+  },
+  {
+    // The same physical token, turned over. It is a separate status rather than
+    // a flag on the first because everything that draws a token - the board
+    // strip, the squad chips, the popout - then gets the right face for free,
+    // and a Mech holding one of each is two entries in the same multiset.
+    id: 'commandUsed',
+    shape: 'round',
+    stacking: true,
+    label: 'Command (spent)',
+    icon: 'CMD',
+    tint: '#7a7a7a',
+    rule: 'Face-down, so it can no longer be issued or used (4.15.4). It comes off in the End Phase.',
+    note: 'A Command Token lying face-down. On a Drone it is the Command that unit was given: it stays on the card for the rest of the phase and is removed when the Command Phase ends (3.2.3). On a Mech it is one the Mech consumed for an Action, and 4.15.4 is explicit that a face-down token can no longer be issued or used for anything else. Either way the End Phase clears it (3.7.2).',
   },
   {
     id: 'fci',

@@ -173,6 +173,60 @@ export function commandGeneration(data: GameData, t: Token): number {
   return 1;
 }
 
+// Command Coordination X (4.15.3) lets a Mech issue Commands to Drones OUTSIDE
+// the Command Phase, straight after the Action carrying it resolves - up to X
+// of them, to X DIFFERENT Drones, one each, face-down. It spends the tokens the
+// Mech held back, which is the whole reason 4.15.2 lets you reserve them.
+//
+// Same shape as Command Generation: the keyword is written with a literal X and
+// the real number is printed in the Action's own text, so the digit is read
+// from the description.
+const COMMAND_CO_ZH = /指令协调\s*(\d+)/;
+const COMMAND_CO_EN = /(?:Command|Coordinate)\s+Co(?:ordination|mmand)\s*(\d+)/i;
+// 获得 / "gain" means the Action HANDS the keyword to other Actions rather than
+// carrying it: the Warrior Torso's Melee Synergy (172_B) is a Passive reading
+// "this Mech's Melee Actions gain Command Coordination 1". Reading that as a
+// Passive with Coordination 1 would let the Torso issue a Command for free,
+// every round, off an Action nobody performs.
+const COMMAND_CO_GRANT = /获得[^。]{0,6}指令协调|gain[s]?\s+Command Coordination/i;
+export function grantsCommandCoordination(a: CardAction): boolean {
+  return COMMAND_CO_GRANT.test(a.description?.zh ?? '') || COMMAND_CO_GRANT.test(a.description?.en ?? '');
+}
+export function commandCoordination(a: CardAction): number {
+  if (grantsCommandCoordination(a)) return 0;
+  const m = COMMAND_CO_ZH.exec(a.description?.zh ?? '') ?? COMMAND_CO_EN.exec(a.description?.en ?? '');
+  return m ? Number(m[1]) : 0;
+}
+
+// An Action or pilot trait that consumes one of the Mech's own Command Tokens
+// (4.15.4). The Mech must bear a FACE-UP one, and using it flips that token
+// face-down. Distinct from Coordination, which gives a token away rather than
+// spending it on this Mech's own effect.
+//
+// Text, not an action: two of the four live on PILOT cards, which carry no
+// actions at all - Chef and Aster hold theirs in `traitDescription`. So this
+// takes the strings and the callers decide where they came from.
+const COMMAND_SPEND_ZH = /消耗[^。]{0,10}指令标记/;
+const COMMAND_SPEND_EN = /consume\s+\d*\s*C[mo]{1,2}and Token/i;
+export function textConsumesCommand(zh: string | undefined, en: string | undefined): boolean {
+  return COMMAND_SPEND_ZH.test(zh ?? '') || COMMAND_SPEND_EN.test(en ?? '');
+}
+export function consumesCommand(a: CardAction): boolean {
+  return textConsumesCommand(a.description?.zh, a.description?.en);
+}
+// Whether anything this Mech is wearing can spend a Command Token, pilot trait
+// included. That is what decides whether holding one back is worth anything.
+export function canSpendCommand(data: GameData, t: Token): boolean {
+  if (t.kind !== 'mech') return false;
+  const pilot = pilotCard(data, t);
+  if (pilot && textConsumesCommand(pilot.traitDescription?.zh, pilot.traitDescription?.en)) return true;
+  for (const { slot, card } of tokenCards(data, t)) {
+    if ((t.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
+    if ((card.actions ?? []).some(consumesCommand)) return true;
+  }
+  return false;
+}
+
 // ---------- Charge (rulebook 4.14) ----------
 
 // Only 5 cards carry machine-readable gameRules for this, and they are a

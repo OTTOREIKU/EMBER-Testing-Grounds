@@ -1,9 +1,10 @@
-import { clearCommandTokens, missionZones, seedCommandTokens, taskDesignations, type Command, type CheckResult } from './commands';
+import { clearDroneCommands, missionZones, seedCommandTokens, taskDesignations, type Command, type CheckResult } from './commands';
+import { askIssuer, offerCoordination } from './commandpick';
 import type { GameData } from './data';
 import { actionIconUrl, cardName, isAerial, secondaryImageUrl, squadLabel, unitSize } from './data';
 import { Board, footprint, snapPlacement, type BoardCallbacks } from './board';
 import { printedDeployment, resolveZoneSetData } from './overlays';
-import { autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, electronicOrigins, loanedParts, minesLayable, minesOwed, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, isSilentAction, maneuverIsSilent, canActivateCamo, chargeableSlots, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
+import { commandCoordination, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, electronicOrigins, loanedParts, minesLayable, minesOwed, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, isSilentAction, maneuverIsSilent, canActivateCamo, chargeableSlots, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
 import { resolveCounterRoll, tallyCounter } from './combat';
 import { tacticFitsPhase, tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { inContact, canStandIn, attackDirection, crushTargets, dissipationFor, extendPath, knockbackPath, LG, losBetween, losNote, pathCost, protectionFor, rangeBetween, reachableGrids, standingSpot, type LargeGrid } from './rules';
@@ -117,10 +118,10 @@ export function enterPhase(data: GameData, s: GameState): void {
     sc.commanded = [];
     sc.freeCommand = [];
   } else {
-    // Unspent Commands do not carry over (3.2.3): entering any later phase
-    // takes the leftover tokens off the units along with the pool, so the
-    // board never shows a Command the count says is spent.
-    clearCommandTokens(s);
+    // 3.2.3, on the way out of the Command Phase: the Drones' Command Tokens
+    // come off and the Mechs' reserved ones do not. The End Phase takes the
+    // rest (3.7.2), so a Mech can still spend one on an Action.
+    clearDroneCommands(s);
   }
   if (s.round.phase === 0 || s.round.phase === 2) sc.acted = [];
   sc.endDone = sc.endDone.filter((k) => k.startsWith(`${s.round.n}:`));
@@ -2519,7 +2520,31 @@ let pendingAction: Command | null = null;
 function commitAction(ctx: HudCtx): CheckResult {
   const cmd = pendingAction;
   pendingAction = null;
-  return cmd ? ctx.send(cmd) : { ok: true };
+  if (!cmd) return { ok: true };
+  const verdict = ctx.send(cmd);
+  // Command Coordination resolves AFTER the Action (4.15.3), and this is the
+  // one place every Action lands — the direct ones and the ones a tool finishes
+  // — so hanging the offer here is what stops it going missing down one route.
+  if (verdict.ok && cmd.kind === 'performAction') offerCoordinationFor(ctx, cmd.uid, cmd.actionId);
+  return verdict;
+}
+
+// The Mech may hand out up to X of its reserved Command Tokens, to X different
+// Drones. The question itself is shared with the play guide so both pages ask
+// identically; only the send differs.
+function offerCoordinationFor(ctx: HudCtx, uid: number, actionId: string): void {
+  const t = ctx.state.tokens.find((x) => x.uid === uid);
+  if (!t || t.kind !== 'mech') return;
+  const act = tokenCards(ctx.data, t)
+    .flatMap((c) => c.card.actions ?? [])
+    .find((a) => a.id === actionId);
+  if (!act) return;
+  const upTo = commandCoordination(act);
+  if (upTo <= 0) return;
+  void offerCoordination(ctx.data, ctx.state, t, upTo, (mechUid, targetUid) => {
+    ctx.send({ kind: 'coordinateCommand', seat: t.side, uid: mechUid, targetUid });
+    ctx.refresh();
+  }, (_drone, text) => ctx.noteNow(text));
 }
 
 // Backing out. The Extra Action Opportunity an Action would have handed out goes
@@ -3763,8 +3788,22 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
 
   on('[data-designate]', (el) => {
     const t = s.tokens.find((x) => x.uid === Number(el.dataset.designate));
-    if (t) ctx.send({ kind: 'designate', seat: t.side, uid: t.uid });
-    ctx.refresh();
+    if (!t) { ctx.refresh(); return; }
+    // 4.15.2 asks which Mech issues before the token moves, but only in the
+    // Command Phase - the Automatic and Delay Phases designate a unit that acts
+    // on its own. Same picker as the guide, so the two pages ask identically.
+    if (PHASES[s.round.phase] !== 'Command') {
+      ctx.send({ kind: 'designate', seat: t.side, uid: t.uid });
+      ctx.refresh();
+      return;
+    }
+    const free = ensureScript(s).freeCommand.includes(t.uid);
+    void askIssuer(ctx.data, s, t.side, t, free).then((pick) => {
+      // Backing out spends nothing and leaves the phase exactly where it was.
+      if (pick === 'cancelled') { ctx.refresh(); return; }
+      ctx.send({ kind: 'designate', seat: t.side, uid: t.uid, fromUid: pick.uid || undefined });
+      ctx.refresh();
+    });
   });
   on('[data-act="pass"]', () => { ctx.send({ kind: 'passTurn', seat: me() }); ctx.refresh(); });
   on('[data-doact]', (el) => {

@@ -566,7 +566,15 @@ check('an extra opportunity spends the grant instead', [wex.script.acted, wex.sc
 
 const dg = (over = {}) => ({ kind: 'designate', seat: 's1', uid: 2, ...over });
 const wcmd = () => {
-  const w = world([mech(1, 's1'), drone(2, 's1'), drone(3, 's2')], 0);
+  // The pool is a readout of the face-up Command Tokens the Mechs are holding
+  // (4.15), so it is staged by giving Mechs their tokens rather than by setting
+  // the number. Setting the number alone used to "work" and described a board
+  // that cannot exist: two Commands owned by nobody, and a side whose only
+  // unit was a Drone somehow holding one. s2 needs a Mech of its own here or it
+  // can never take its turn in the Command Phase.
+  const w = world([mech(1, 's1'), drone(2, 's1'), drone(3, 's2'), mech(4, 's2')], 0);
+  w.tokens[0].statuses = ['command', 'command'];
+  w.tokens[3].statuses = ['command'];
   w.commandTokens = { s1: 2, s2: 1 };
   return w;
 };

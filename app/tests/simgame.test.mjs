@@ -269,9 +269,10 @@ function enterPhase(s) {
     sc.commanded = [];
     sc.freeCommand = [];
   } else {
-    // Mirrors matchhud's glue: leaving the Command Phase strips the leftover
-    // Command Tokens along with the pool (3.2.3).
-    C.clearCommandTokens(s);
+    // Mirrors matchhud's glue: leaving the Command Phase strips the DRONES'
+    // Command Tokens only (3.2.3). The Mechs keep what they reserved until the
+    // End Phase sweeps everything (3.7.2).
+    C.clearDroneCommands(s);
   }
   if (s.round.phase === 0 || s.round.phase === 2) sc.acted = [];
   sc.endDone = sc.endDone.filter((k) => k.startsWith(`${s.round.n}:`));

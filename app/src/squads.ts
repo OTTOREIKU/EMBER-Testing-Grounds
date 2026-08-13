@@ -1,6 +1,7 @@
 import type { GameData } from './data';
 import { actionIconUrl, cardName, FACTION_LABEL, mechPartUrl, missionImageUrl, secondaryImageUrl, setSquadNames, squadLabel, squadName, stancePrintUrl, tabImageUrl, tokenFace, tokenPrintUrl } from './data';
 import { MECH_LAYER_ORDER } from './board';
+import { canSpendCommand } from './units';
 import { inspectOnHover, linkMechanics, type InspectInfo } from './inspector';
 import type { GameState, PartSlot, PartState, Side, Stance, Timing, TimingDef, Token } from './types';
 import { SCALES, SHAPE_NOTE, statusCount, statusesFor, statusStacks, STATUSES, TIMINGS } from './types';
@@ -816,6 +817,18 @@ export class SquadTracker {
             <span class="tok-po-txt"><b>${esc(s.label)}${s.stacking && n > 1 ? ` ×${n}` : ''}</b>
               <span>${esc(SHAPE_NOTE[s.shape].replace(/\.$/, ''))}</span></span>
             <span class="tok-po-btns">
+              ${
+                // 4.15.4: an Action that consumes a Command needs a FACE-UP one
+                // and flips it face-down. All four such cards trigger from
+                // somewhere else - a Melee roll, an aura, a Command Movement,
+                // the Command Phase - so the app cannot know when it happened;
+                // it offers the flip and the player resolves the effect. Shown
+                // only on a Mech that actually carries one of those cards, or
+                // it is a button with nothing behind it.
+                s.id === 'command' && n && canSpendCommand(this.data, t)
+                  ? `<button data-flip="1" title="Spend one on an Action that consumes a Command (4.15.4): it turns face-down and cannot be issued or used again.">Flip</button>`
+                  : ''
+              }
               ${n ? `<button data-d="-1" title="Take one off">−</button>` : ''}
               <button data-d="1" title="${n && !s.stacking ? 'Already on' : 'Put one on'}"${n && !s.stacking ? ' disabled' : ''}>+</button>
             </span>
@@ -833,6 +846,15 @@ export class SquadTracker {
           // Electronic Attack, and closing after each one would make that four
           // round trips.
           this.toggleToken(t, id, Number(b.dataset.d));
+          const again = this.root.querySelector<HTMLElement>(`.tok-trig[data-tok-uid="${t.uid}"]`);
+          if (again) this.openTokens(t, again);
+        }),
+      );
+      pop.querySelectorAll<HTMLButtonElement>('[data-flip]').forEach((b) =>
+        b.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          perform(this.data, this.state!, { kind: 'spendCommand', seat: t.side, uid: t.uid });
+          this.cb.onChanged();
           const again = this.root.querySelector<HTMLElement>(`.tok-trig[data-tok-uid="${t.uid}"]`);
           if (again) this.openTokens(t, again);
         }),
