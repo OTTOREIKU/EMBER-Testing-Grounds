@@ -1,5 +1,5 @@
 import './reference.css';
-import { actionIconUrl, boxCoverUrl, cardName, TOKEN_PRINT, tokenPrintUrl, factionArtUrl, FACTION_LABEL, isListedBox, loadData, mechPartUrl, missionImageUrl, portraitUrl, secondaryImageUrl, statIconUrl, tabImageUrl, zeroCostReason, type BoxDef, type FactionDef, type GameData, type KeywordDef } from './data';
+import { actionIconUrl, boxCoverUrl, cardName, HELP_CARDS, helpCardUrl, TOKEN_PRINT, tokenPrintUrl, factionArtUrl, FACTION_LABEL, isListedBox, loadData, mechPartUrl, missionImageUrl, portraitUrl, secondaryImageUrl, statIconUrl, tabImageUrl, zeroCostReason, type BoxDef, type FactionDef, type GameData, type KeywordDef } from './data';
 import { mountCardImage, preloadCardImages, warmAllImagesWhenIdle } from './images';
 import { runFirstVisitPreload } from './preload';
 import { watchForUpdates } from './updates';
@@ -1059,12 +1059,19 @@ function render(): void {
         tokenList
           .map((d) => {
             const dur = d.decay ? DURATION[d.decay] : null;
+            // The printed token, when we have it. The drawn badge below is our
+            // own shorthand and was only ever a stand-in: showing both put a
+            // made-up icon next to the real one and taught the wrong shape.
+            // Camouflage and In smoke keep the badge, and should — they are
+            // States (2.5.4), not tokens, and there is no printed piece to show.
+            const print = TOKEN_PRINT[d.id] ?? [];
             return `<article class="card tok-card">
               <div class="card-title">
-                <span class="tok-art">${tokenSvg(d)}${d.decay === 'yellow' ? tokenSvg(d, true) : ''}</span>
-                ${(TOKEN_PRINT[d.id] ?? [])
-                  .map((n) => `<img class="tok-print" src="${tokenPrintUrl(n)}" alt="">`)
-                  .join('')}
+                <span class="tok-art">${
+                  print.length
+                    ? print.map((n) => `<img class="tok-print" src="${tokenPrintUrl(n)}" alt="">`).join('')
+                    : tokenSvg(d) + (d.decay === 'yellow' ? tokenSvg(d, true) : '')
+                }</span>
                 ${esc(d.label)}
                 <span class="tag mono">${esc(d.shape)}</span>
                 ${dur ? `<span class="tag mono tok-${esc(d.decay!)}">${esc(dur.label)}</span>` : ''}
@@ -1091,7 +1098,34 @@ function render(): void {
           .join('')
       : '';
 
+    // The publisher's own quick-reference cards. They answer the questions a
+    // new player asks first - what happens this phase, what may this Mech do -
+    // so they sit at the front of the Rules tab rather than at the bottom.
+    const helpList = HELP_CARDS.filter(
+      (h) => !q || h.name.toLowerCase().includes(q) || h.note.toLowerCase().includes(q),
+    );
+    const helpHtml = helpList.length
+      ? `<p class="ref-count">Quick reference cards</p>` +
+        `<div class="help-grid">${helpList
+          .map(
+            // No loading="lazy": on this page it stopped the fetch starting at
+            // all (complete false, naturalWidth 0, and a zero-height box) even
+            // with the figure in view. Four images that are the point of the
+            // section do not want deferring anyway. width/height are the real
+            // pixel size, so the grid reserves the box before the bytes land.
+            (h) => `<figure class="help-card">
+              <a href="${helpCardUrl(h.id)}" target="_blank" rel="noopener noreferrer"
+                 title="Open ${esc(h.name)} full size">
+                <img src="${helpCardUrl(h.id)}" alt="${esc(h.name)}" width="700" height="954" decoding="async">
+              </a>
+              <figcaption><b>${esc(h.name)}</b><span>${esc(h.note)}</span></figcaption>
+            </figure>`,
+          )
+          .join('')}</div>`
+      : '';
+
     const sections = [
+      { id: 'cards', label: 'Cards', n: helpList.length, html: helpHtml },
       { id: 'phases', label: 'Phases', n: phases.length, html: phaseHtml },
       { id: 'timings', label: 'Timings', n: timings.length, html: timingHtml },
       { id: 'stances', label: 'Stances', n: stances.length, html: stanceHtml },

@@ -826,6 +826,20 @@ export function tokenPrintUrl(name: string): string {
   return assetUrl(`tokens/print/${name}.webp`);
 }
 
+// The publisher's own quick-reference cards, the ones that come in the box and
+// sit beside the board. Kept as a list rather than four loose ids because the
+// Rules tab shows them in printed order.
+export const HELP_CARDS: { id: string; name: string; note: string }[] = [
+  { id: 'game-sequence', name: 'Game Sequence', note: 'The six phases of a round, in order, with what happens in each.' },
+  { id: 'action-opportunity', name: 'Action Opportunity', note: 'What a Mech may do when its Timing comes up, and what each Tick buys.' },
+  { id: 'common-actions', name: 'Common Actions', note: 'The Actions every Mech has without a Part printing them.' },
+  { id: 'action-anatomy', name: 'Anatomy of an Action', note: 'How to read an Action block on a Part Card: type, length, range, keywords.' },
+];
+
+export function helpCardUrl(id: string): string {
+  return assetUrl(`help/${id}.webp`);
+}
+
 export function secondaryImageUrl(id: string): string {
   return assetUrl(`secondary/${id}.webp`);
 }

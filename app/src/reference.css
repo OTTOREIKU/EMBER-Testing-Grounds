@@ -65,6 +65,14 @@ body.ref-locked { overflow: hidden; }
 .ref-title { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
 #ref-logo { font-weight: 700; letter-spacing: 0.5px; font-size: 16px; }
 #ref-logo em { color: var(--accent); font-style: normal; font-weight: 500; }
+/* Pushed to the right of the title row, where the old Tabletop link sat. */
+#ref-pdf {
+  margin-left: auto; flex: 0 0 auto; text-decoration: none; white-space: nowrap;
+  font-size: 11.5px; font-weight: 600; color: var(--text2);
+  padding: 5px 9px; border-radius: var(--radius-sm); background: var(--surface2);
+  transition: background 0.12s, color 0.12s;
+}
+#ref-pdf:hover { background: var(--surface3); color: var(--text); }
 #ref-search {
   width: 100%; font-size: 16px;
   padding: 11px 13px; border-radius: var(--radius); border: none; outline: none;
@@ -559,13 +567,38 @@ body.ref-locked { overflow: hidden; }
 .play-can b { color: var(--green); }
 .play-cant b { color: #ff8b6b; }
 
+/* ---------- the publisher's quick-reference cards ---------- */
+/* Tall portrait cards, so they are sized by a column count rather than a fixed
+   width: on a phone one card fills the width and stays readable, and the grid
+   never squeezes a card so narrow that its printed text stops being legible —
+   which is the only reason to show a picture of a card rather than retype it. */
+/* 320 rather than 240: at four-up on a desktop each card came out 275px wide,
+   which is 39% of the printed size and too small to read the body lines — and
+   a card you cannot read is worse than the text retyped. Three-up leaves each
+   around 390px, and the whole thing is a link to the full-size image for when
+   that still is not enough. */
+.help-grid {
+  display: grid; gap: 12px; grid-column: 1 / -1;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+}
+.help-card { margin: 0; }
+.help-card a { display: block; }
+.help-card img {
+  width: 100%; height: auto; display: block; border-radius: var(--radius);
+  border: 1px solid var(--line); background: var(--surface2);
+  transition: border-color 0.12s;
+}
+.help-card a:hover img { border-color: var(--accent); }
+.help-card figcaption { display: block; padding: 6px 2px 0; font-size: 11.5px; color: var(--text2); }
+.help-card figcaption b { display: block; color: var(--text); font-size: 12.5px; }
+
 /* ---------- token reference ---------- */
 .tok-card .card-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .tok-art { display: inline-flex; align-items: center; gap: 4px; }
-.tok-print {
-  height: 30px; width: auto; vertical-align: middle; margin-left: 3px;
-  border-radius: 4px; background: rgba(255,255,255,0.04);
-}
+/* The printed tokens are the header art now, so they carry the gap themselves
+   rather than a left margin that only made sense beside the drawn badge. Round
+   and Hexagon pieces are cut to their own outline, so no plate behind them. */
+.tok-print { height: 34px; width: auto; vertical-align: middle; }
 .tok-badge { display: block; }
 .tag.tok-green { background: rgba(61, 220, 132, 0.16); color: #2fa968; }
 .tag.tok-yellow { background: rgba(240, 180, 41, 0.18); color: #b07c0d; }

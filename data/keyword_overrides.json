@@ -1,7 +1,7 @@
 {
  "_comment": "Glossary fixes applied on top of the generated keywords.json (which comes from the community builder bundle). Sourced from the verified rulebook digests in ../rules. Keep this file when re-running tools/extract_cards.js — it is merged at load time by the app.",
  "_source": "rules/05_advanced_combat.md §4.17, rules/06_missions_and_appendix.md §6.2",
- "_corrections": "推动X was labelled 'Knock Back X' in the bundle, which collides with 击退X 'Knockback X'; the rulebook names it Push X (it alone reduces Link). 离子武器 was OCR'd as 'lon Weapon' (capital I read as lowercase L). 多目标X shipped a truncated English value in the bundle, cut off mid-list at \"applied at this time;\" while the Chinese ran to the end of the rule; the remainder is translated from the Chinese here.",
+ "_corrections": "推动X was labelled 'Knock Back X' in the bundle, which collides with 击退X 'Knockback X'; the rulebook names it Push X (it alone reduces Link). 离子武器 was OCR'd as 'lon Weapon' (capital I read as lowercase L). 多目标X shipped a truncated English value in the bundle, cut off mid-list at \"applied at this time;\" while the Chinese ran to the end of the rule; the remainder is translated from the Chinese here. Three Command entries were rewritten from rulebook 3.2.1 and 4.15: 指令生成X shipped a stray full stop (\"rather than 1.。\") and did not say the X REPLACES the default; 指令协调X read \"issue 1 Command Token to X Ally Drones\", which loses that the Drones must be DIFFERENT and that it works outside the Command Phase; 遥控武器 was OCR’d with \"Commandn per turn\" and called the phase a \"Command Stage\".",
  "overrides": {
   "空手": {
    "en": {
@@ -187,6 +187,24 @@
    "en": {
     "name": "Moving in Straight Line",
     "value": "Conditional keyword. The effect applies if the entire Movement Path this Action makes runs in a single direction, wholly horizontal or wholly vertical across the board. Printed in traditional characters on at least one card; the simplified 直线移动 is the same keyword."
+   }
+  },
+  "指令生成X": {
+   "en": {
+    "name": "Command Generation X",
+    "value": "At the start of the Command Phase this Mech generates X Command Tokens instead of the default 1, placed face-up on its Torso Part Card. X REPLACES the 1 rather than adding to it (3.2.1). Six Torso cards print it: 4 on the P7 Warrior, P7-A3 Centurion and P22 Hunter, 2 on the P28 Dragoon, P24 Chariot and TM31Q Wild Cat."
+   }
+  },
+  "指令协调X": {
+   "en": {
+    "name": "Command Coordination X",
+    "value": "After performing this Action, this Mech may issue up to X Command Tokens it held back, one each to X DIFFERENT Ally Drones, laid face-down (4.15.3). Each Drone that takes one immediately performs 1 Movement Action or 1 Command Action. It works outside the Command Phase, so a Drone that already acted this round may take one: the token it was given then was removed when that phase ended."
+   }
+  },
+  "遥控武器": {
+   "en": {
+    "name": "RWS",
+    "value": "Remote Weapon Station. During the Command Phase an Ally may send a Command to this Mech to perform this Action, which is the one case where a MECH receives a Command Token rather than a Drone. This Part can only receive one Command per round."
    }
   }
  }
