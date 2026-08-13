@@ -297,6 +297,10 @@ export const STATUSES: StatusDef[] = [
     id: 'commandUsed',
     shape: 'round',
     stacking: true,
+    // A Mech bears one it consumed, a Drone bears the one it was issued.
+    // Projectiles are never commanded, so the popout has no business offering
+    // this row on one.
+    appliesTo: ['mech', 'drone'],
     label: 'Command (spent)',
     icon: 'CMD',
     tint: '#7a7a7a',

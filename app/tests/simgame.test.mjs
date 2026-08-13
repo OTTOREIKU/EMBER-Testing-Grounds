@@ -268,10 +268,11 @@ function enterPhase(s) {
     C.seedCommandTokens(data, s);
     sc.commanded = [];
     sc.freeCommand = [];
-  } else {
-    // Mirrors matchhud's glue: leaving the Command Phase strips the DRONES'
-    // Command Tokens only (3.2.3). The Mechs keep what they reserved until the
-    // End Phase sweeps everything (3.7.2).
+  } else if ((sc.stage ?? '').split(':')[1] === '0') {
+    // Mirrors matchhud's glue: LEAVING the Command Phase strips the DRONES'
+    // Command Tokens only (3.2.3). The Mechs keep what they reserved, and a
+    // token a Drone is handed later through Command Coordination stays until
+    // the End Phase sweeps everything (3.7.2 / 4.15.4).
     C.clearDroneCommands(s);
   }
   if (s.round.phase === 0 || s.round.phase === 2) sc.acted = [];

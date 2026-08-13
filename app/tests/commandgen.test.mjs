@@ -228,5 +228,19 @@ check('heldCommands counts both faces', capacity.includes("'command'") && capaci
 const ready = cmdSrc.slice(cmdSrc.indexOf('export function readyCommands'), cmdSrc.indexOf('export function commandIssuers'));
 check('readyCommands counts only the face-up side', ready.includes("'commandUsed'"), false);
 
+// ---------- WHEN the Drone sweep runs, not just what it does ----------
+//
+// 3.2.3 strips the Drones' tokens on the way OUT of the Command Phase and at no
+// other transition: a token handed over later through Command Coordination
+// stays on the Drone's card until the End Phase (4.15.4). The first cut of
+// matchhud's glue ran the sweep on entering EVERY non-Command phase, which
+// deleted a Coordination token one phase early — so both drivers' guards are
+// pinned at the source level, leaving-check and sweep together.
+const hudSrc = readFileSync(new URL('../src/matchhud.ts', import.meta.url), 'utf8');
+const hudEnter = hudSrc.slice(hudSrc.indexOf('export function enterPhase'), hudSrc.indexOf('export function glueAfter'));
+check('matchhud strips Drones only when LEAVING phase 0', /else if \(sc\.stage\.split\(':'\)\[1\] === '0'\) \{[\s\S]*?clearDroneCommands/.test(hudEnter), true);
+const pgSrc = readFileSync(new URL('../src/playguide.ts', import.meta.url), 'utf8');
+check('the guide keys the same sweep on the phase being left', /if \(leaving === '0'\) clearDroneCommands/.test(pgSrc), true);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exitCode = fail ? 1 : 0;

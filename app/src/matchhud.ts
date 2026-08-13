@@ -117,10 +117,13 @@ export function enterPhase(data: GameData, s: GameState): void {
     seedCommandTokens(data, s);
     sc.commanded = [];
     sc.freeCommand = [];
-  } else {
-    // 3.2.3, on the way out of the Command Phase: the Drones' Command Tokens
-    // come off and the Mechs' reserved ones do not. The End Phase takes the
-    // rest (3.7.2), so a Mech can still spend one on an Action.
+  } else if (sc.stage.split(':')[1] === '0') {
+    // 3.2.3, on the way out of the Command Phase - and ONLY then: the Drones'
+    // Command Tokens come off, the Mechs' reserved ones do not. sc.stage still
+    // names the phase being left at this point, and the leaving check matters:
+    // a token a Drone is handed later through Command Coordination stays on its
+    // card until the End Phase sweep (4.15.4), so stripping Drones on every
+    // phase entry would delete it one phase early.
     clearDroneCommands(s);
   }
   if (s.round.phase === 0 || s.round.phase === 2) sc.acted = [];
