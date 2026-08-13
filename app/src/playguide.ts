@@ -8,7 +8,7 @@ import { PHASES, PHASE_INFO } from './tracker';
 import { pilotCard, coordinationFor, coordinationOnOpportunityEnd, extrasFor, isSilentAction, type ActionWorld, canActivateCamo, type ExtraActivation, extraActivationOf, guidedActions, initiativeFor, maneuverRange, maxLink, SLOT_LABEL, tokenCards } from './units';
 import { canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed } from './ticks';
 import { asterKey, clearDroneCommands, perform, readyCommands, seedCommandTokens } from './commands';
-import { askIssuer, offerCoordination } from './commandpick';
+import { askIssuer, asterBlockers, offerCoordination, runAster } from './commandpick';
 import { tacticFitsPhase, tacticSpec } from './tactics';
 import { alive, canAct, getLocalSeat, isLoopPhase, nextTurn, onExtraOpportunity, type LoopPhase, nextActivation, activationOrder, actionPhaseComplete, loopComplete, eligibleUnits, type InitLookup, type Activation } from './loop';
 import { deployable, deploymentComplete, deployTurn, firstPlayerFrom, newSetup, normaliseSetup, rollTotal, type SetupState } from './setup';
@@ -1672,10 +1672,7 @@ export class PlayGuide {
       .filter((t) => t.kind === 'mech' && alive(t) && pilotCard(this.data, t)?.id === 'ZPA-36')
       .filter((t) => !mine || t.side === mine)
       .map((t) => {
-        const spent = sc.oncePerRound.includes(asterKey(s, t.uid));
-        const why = spent ? 'Aster has already restored Link this round.'
-          : readyCommands(t) <= 0 ? `${t.label} has no face-up Command Token to consume.`
-            : '';
+        const why = asterBlockers(s, t) ?? '';
         return `<button class="pg-act${why ? ' warn' : ''}" data-aster="${t.uid}" title="${esc(why || 'Consume 1 Command Token to restore 1 Link to an Ally Mech.')}">
           <span class="pg-act-name">${esc(t.label)}: restore 1 Link</span>
           <span class="pg-act-note">${esc(why || 'Aster · consumes 1 Command Token')}</span>
@@ -1684,37 +1681,16 @@ export class PlayGuide {
     return rows.length ? `<div class="pg-acts">${rows.join('')}</div>` : '';
   }
 
+  // The dialog half is shared with the Match Centre; only the send differs.
   private async runAster(uid: number): Promise<void> {
     const s = this.state;
     if (!s) return;
     const from = s.tokens.find((x) => x.uid === uid);
     if (!from) return;
-    // Any Ally Mech below full Link, Aster's own included — the card says "an
-    // Ally Mech" and a squad's own Mech is its ally.
-    const able = s.tokens.filter(
-      (t) => t.side === from.side && t.kind === 'mech' && alive(t) && (t.link ?? 0) < maxLink(this.data, t),
-    );
-    if (!able.length) {
-      this.warn = 'Every Mech in the squad is already at full Link.';
-      this.render();
-      return;
-    }
-    const picked = able.length === 1
-      ? String(able[0].uid)
-      : await choiceDialog({
-        title: `${from.label} restores 1 Link`,
-        body: 'Aster consumes 1 Command Token to restore 1 Link to an Ally Mech. Once per round.',
-        stacked: true,
-        choices: [
-          ...able.map((t) => ({ id: String(t.uid), label: `${t.label} · Link ${t.link ?? 0}/${maxLink(this.data, t)}` })),
-          { id: 'cancel', label: 'Back', cancel: true },
-        ],
-      });
-    if (picked === null || picked === 'cancel') return;
-    const to = s.tokens.find((x) => x.uid === Number(picked));
-    perform(this.data, s, { kind: 'asterRestore', seat: from.side, uid, targetUid: Number(picked) });
-    if (to) this.cb.onNote(to, `${from.label} (Aster) consumes a Command Token to restore 1 Link to ${to.label}. Once per round.`);
-    this.cb.onChanged();
+    await runAster(this.data, s, uid, (targetUid) => {
+      perform(this.data, s, { kind: 'asterRestore', seat: from.side, uid, targetUid });
+      this.cb.onChanged();
+    }, (to, text) => this.cb.onNote(to, text));
   }
 
   private loopHtml(s: GameState, phase: string): string {

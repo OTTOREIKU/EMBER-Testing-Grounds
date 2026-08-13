@@ -41,6 +41,7 @@ import { runFirstVisitPreload } from './preload';
 import { watchForUpdates } from './updates';
 import { installTooltip, preloadCards } from './tooltip';
 import { PHASES, RoundTracker } from './tracker';
+import { offerHarpyDrag as sharedHarpyDrag } from './commandpick';
 import { PlayGuide } from './playguide';
 import type { Card, CardAction, DiceData, DieColor, Facing, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, StatusDef, TerrainPiece, Timing, Token } from './types';
 import { addStatus, normaliseScript, SCALES, statusCount, statusesFor, STATUSES } from './types';
@@ -1641,44 +1642,11 @@ async function init() {
     return pick === 'fly';
   }
 
-  // ZHDR-304 Harpy: "When performing a Command Movement, may consume 1
-  // additional Command Token and -2 Movement to drag 1 adjacent Ally Mech or
-  // Ally Drone." (printed English card, which carries a -2 the Chinese in
-  // cards.json omits).
-  //
-  // WHOSE token: the Harpy is a Drone, and 4.15.4 requires a MECH to bear the
-  // face-up token, so "1 additional" is read as one more from the squad's
-  // Mechs — the Harpy is already wearing the face-down one that commanded it,
-  // and 4.15.2 caps a Drone at one. If the publisher rules otherwise this is
-  // the line to change.
-  async function offerHarpyDrag(t: Token, steps: number): Promise<{ allyUid: number; funderUid: number } | null | 'cancelled'> {
-    if (t.cardId !== 'ZHDR-304' || steps <= 2) return null;
-    // "When performing a COMMAND Movement": in a guided game that is the
-    // Command Phase's move — an Automatic Phase move is the Drone acting on
-    // its own and gets no drag. The sandbox with no game running stays
-    // permissive, in the house style.
-    if (state.script && PHASES[state.round.phase] !== 'Command') return null;
-    const funders = state.tokens.filter(
-      (m) => m.side === t.side && m.kind === 'mech' && m.deployed !== false && statusCount(m.statuses, 'command') > 0,
-    );
-    const allies = state.tokens.filter(
-      (o) => o.uid !== t.uid && o.side === t.side && (o.kind === 'mech' || o.kind === 'drone')
-        && o.deployed !== false && inContact(t, o),
-    );
-    if (!funders.length || !allies.length) return null;
-    const picked = await choiceDialog({
-      title: `${t.label} may drag an Ally`,
-      body:
-        `Consume 1 additional Command Token from ${funders[0].label} and -2 Movement (${steps} → ${steps - 2}) `
-        + 'to drag 1 adjacent Ally Mech or Ally Drone along with this move.',
-      stacked: true,
-      choices: [
-        ...allies.map((o) => ({ id: String(o.uid), label: `Drag ${o.label}` })),
-        { id: 'no', label: 'Move normally', cancel: true },
-      ],
-    });
-    if (picked === null || picked === 'no') return null;
-    return { allyUid: Number(picked), funderUid: funders[0].uid };
+  // ZHDR-304 Harpy: the offer itself is shared with the Match Centre in
+  // commandpick.ts — the -2, the phase gate and the whose-token rules call all
+  // live there so the two pages cannot drift apart.
+  function offerHarpyDrag(t: Token, steps: number): Promise<{ allyUid: number; funderUid: number } | null | 'cancelled'> {
+    return sharedHarpyDrag(data, state, t, steps);
   }
 
   async function startMove(uid: number, opts: { range?: number; label: string; maneuver?: boolean; airborne?: boolean }, done: (moved: boolean) => void): Promise<void> {

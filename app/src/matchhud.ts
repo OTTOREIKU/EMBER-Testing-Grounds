@@ -1,10 +1,10 @@
 import { clearDroneCommands, missionZones, readyCommands, seedCommandTokens, taskDesignations, type Command, type CheckResult } from './commands';
-import { askIssuer, offerCoordination } from './commandpick';
+import { askIssuer, asterBlockers, offerCoordination, offerHarpyDrag, runAster } from './commandpick';
 import type { GameData } from './data';
 import { actionIconUrl, cardName, isAerial, secondaryImageUrl, squadLabel, unitSize } from './data';
 import { Board, footprint, snapPlacement, type BoardCallbacks } from './board';
 import { printedDeployment, resolveZoneSetData } from './overlays';
-import { coordinationFor, coordinationOnOpportunityEnd, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, electronicOrigins, loanedParts, minesLayable, minesOwed, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, isSilentAction, maneuverIsSilent, canActivateCamo, chargeableSlots, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
+import { coordinationFor, coordinationOnOpportunityEnd, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, electronicOrigins, loanedParts, minesLayable, minesOwed, pilotCard, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, isSilentAction, maneuverIsSilent, canActivateCamo, chargeableSlots, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
 import { resolveCounterRoll, tallyCounter } from './combat';
 import { tacticFitsPhase, tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { inContact, canStandIn, attackDirection, crushTargets, dissipationFor, extendPath, knockbackPath, LG, losBetween, losNote, pathCost, protectionFor, rangeBetween, reachableGrids, standingSpot, type LargeGrid } from './rules';
@@ -301,6 +301,9 @@ let movePlan: {
   // What is being spent: the Maneuver Tick by default, or a named Movement
   // Action, which carries its own Range and may owe a shove at the end of it.
   label: string;
+  // ZHDR-304 Harpy: the Ally being towed and the Mech whose Command Token pays,
+  // declared before the route was drawn (the -2 already came off `steps`).
+  drag?: { allyUid: number; funderUid: number };
   shoveActionId?: string;
   // A Movement Action has already paid with an Action Tick, so its move must
   // not also spend the Maneuver Tick.
@@ -533,6 +536,7 @@ function commitMove(ctx: HudCtx): void {
   const granted = m.granted;
   const facing = m.turned ? m.facing : undefined;
   const goal = m.path[m.path.length - 1];
+  const drag = m.drag;
   movePlan = null;
   board.clearMovePath();
   board.clearHighlights();
@@ -574,6 +578,29 @@ function commitMove(ctx: HudCtx): void {
   board.animateMove(t.uid, stops, () => {
     // The route travels with the move so the other player watches the same walk.
     ctx.send({ kind: 'maneuver', seat: t.side, uid: t.uid, to: last, free, granted, via: stops, facing });
+    // The Harpy's dragged Ally comes with it — towed BEHIND, into the Grid the
+    // Harpy just vacated, with the final Grid as the small-unit fallback: a
+    // Large Mech fills a whole 3x3 Grid, so a spot beside the Harpy can never
+    // fit one. spendCommand pays the funder's token and forceMove is the same
+    // command Knockback uses, so both travel.
+    if (drag) {
+      const ally = ctx.state.tokens.find((x) => x.uid === drag.allyUid);
+      const goalGrid = m.path[m.path.length - 1];
+      const prevGrid = m.path[m.path.length - 2];
+      const spot = ally
+        ? (prevGrid
+          ? standingSpot(prevGrid.c, prevGrid.r, ally.size, ally.aerial, terrain, ctx.state.tokens, ally.uid)
+          : null)
+          ?? standingSpot(goalGrid.c, goalGrid.r, ally.size, ally.aerial, terrain, ctx.state.tokens, ally.uid)
+        : null;
+      if (ally && spot) {
+        ctx.send({ kind: 'spendCommand', seat: t.side, uid: drag.funderUid });
+        ctx.send({ kind: 'forceMove', seat: t.side, uid: t.uid, targetUid: ally.uid, to: spot });
+        ctx.noteNow(`${t.label} drags ${ally.label} along (-2 Movement, 1 Command Token consumed).`);
+      } else if (ally) {
+        ctx.noteNow(`${ally.label} could not be dragged: nothing free to stand in. The Command Token was not consumed.`);
+      }
+    }
     if (aerialStart) {
       const moved = ctx.state.tokens.find((x) => x.uid === t.uid);
       const owed = moved ? interceptsOwed(ctx.data, ctx.state.tokens, ctx.state.smoke ?? [], aerialStart, [moved]) : [];
@@ -1168,11 +1195,26 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
     ${rows}`;
 }
 
+// ZPA-36 Aster's Command Phase button, for the seats that own one. Hidden
+// entirely when no Aster is fielded; greyed with the reason when it cannot
+// fire, in the same style the guide uses.
+function asterRows(ctx: HudCtx): string {
+  const s = ctx.state;
+  return s.tokens
+    .filter((t) => t.kind === 'mech' && alive(t) && pilotCard(ctx.data, t)?.id === 'ZPA-36' && mine(ctx, t.side))
+    .map((t) => {
+      const why = asterBlockers(s, t) ?? '';
+      return `<button class="rowwide${why ? ' dim' : ''}" data-aster="${t.uid}" title="${esc(why || 'Consume 1 Command Token to restore 1 Link to an Ally Mech.')}">
+        ${esc(t.label)}: restore 1 Link<span class="ct">Aster · 1 Command Token</span></button>`;
+    })
+    .join('');
+}
+
 function loopPanel(ctx: HudCtx, phase: LoopPhase): string {
   const s = ctx.state;
   const sc = ensureScript(s);
   const tokens = phase === 'Command'
-    ? `<p class="tp-note">Command tokens · <b class="s1">${s.commandTokens.s1}</b> · <b class="s2">${s.commandTokens.s2}</b></p>`
+    ? `<p class="tp-note">Command tokens · <b class="s1">${s.commandTokens.s1}</b> · <b class="s2">${s.commandTokens.s2}</b></p>${asterRows(ctx)}`
     : '';
   if (sc.opp) {
     const t = s.tokens.find((x) => x.uid === sc.opp!.uid);
@@ -3814,6 +3856,14 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     });
   });
   on('[data-act="pass"]', () => { ctx.send({ kind: 'passTurn', seat: me() }); ctx.refresh(); });
+  on('[data-aster]', (el) => {
+    const t = s.tokens.find((x) => x.uid === Number(el.dataset.aster));
+    if (!t) return;
+    void runAster(ctx.data, s, t.uid, (targetUid) => {
+      ctx.send({ kind: 'asterRestore', seat: t.side, uid: t.uid, targetUid });
+      ctx.refresh();
+    }, (_to, text) => ctx.noteNow(text));
+  });
   on('[data-doact]', (el) => {
     if (el.dataset.why) { ctx.noteNow(el.dataset.why); ctx.refresh(); return; }
     const sc = ensureScript(s);
@@ -4232,8 +4282,19 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     if (el.dataset.why) { ctx.noteNow(el.dataset.why); ctx.refresh(); return; }
     const sc = ensureScript(s);
     const t = sc.opp ? s.tokens.find((x) => x.uid === sc.opp!.uid) : undefined;
-    if (t) startMovePlan(ctx, t, { label: t.kind === 'mech' ? 'Maneuver' : 'Movement', maneuver: true });
-    ctx.refresh();
+    if (!t) { ctx.refresh(); return; }
+    // The Harpy asks about its drag BEFORE the plan exists, because the -2
+    // comes out of the allowance the overlay is about to show. Same shared
+    // offer as freeplay; anyone else starts the plan straight away.
+    void offerHarpyDrag(ctx.data, s, t, maneuverRange(ctx.data, t)).then((drag) => {
+      if (drag === 'cancelled') { ctx.refresh(); return; }
+      startMovePlan(ctx, t, { label: t.kind === 'mech' ? 'Maneuver' : 'Movement', maneuver: true });
+      if (drag && movePlan) {
+        movePlan.steps -= 2;
+        movePlan.drag = drag;
+      }
+      ctx.refresh();
+    });
   });
   on('[data-act="commitmove"]', () => commitMove(ctx));
   on('[data-act="cancelmove"]', () => cancelMove(ctx));

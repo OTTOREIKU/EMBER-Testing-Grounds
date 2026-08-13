@@ -352,21 +352,31 @@ check('Whistle needs a face-up token on the Mech', /statusCount\(m\.statuses, 'c
 // Harpy: the -2 comes out of the ALLOWANCE, so the drag is declared before the
 // route is drawn. Offering it afterwards would show a reach the player cannot
 // have, which is the whole reason it is not in the post-move chain.
+// The offer itself lives in commandpick.ts, SHARED by freeplay and the Match
+// Centre, so its gates are pinned there and each page is pinned to consume it.
+const pickSrc = readFileSync(new URL('../src/commandpick.ts', import.meta.url), 'utf8');
 check('the Harpy drag is declared before the move', /const drag = await offerHarpyDrag\(t, steps\);[\s\S]{0,400}?steps: drag \? steps - 2 : steps/.test(mainSrc), true);
-check('and it needs a Mech holding a face-up token', /statusCount\(m\.statuses, 'command'\) > 0/.test(mainSrc), true);
-check('the dragged unit must be adjacent', /inContact\(t, o\)/.test(mainSrc), true);
-check('no free spot means no token is spent', /could not be dragged[\s\S]{0,80}not consumed/.test(mainSrc), true);
+check('and it needs a Mech holding a face-up token', /readyCommands\(m\) > 0/.test(pickSrc), true);
+check('the dragged unit must be adjacent', /inContact\(t, o\)/.test(pickSrc), true);
+check('the Match Centre asks the same shared offer', /offerHarpyDrag\(ctx\.data, s, t, maneuverRange\(ctx\.data, t\)\)[\s\S]{0,400}?movePlan\.steps -= 2/.test(hudSrc), true);
+check('and tows into the vacated Grid there too', /drag[\s\S]{0,600}?standingSpot\(prevGrid\.c, prevGrid\.r/.test(hudSrc), true);
+check('no free spot means no token is spent', /could not be dragged[\s\S]{0,80}not consumed/.test(mainSrc) && /could not be dragged[\s\S]{0,80}not consumed/.test(hudSrc), true);
 // Two audit catches, pinned so they stay caught. An Automatic Phase drone move
 // is not a Command Movement, so a guided game only offers the drag in phase 0;
 // and the ally lands in the Grid the Harpy VACATED before falling back to the
 // final one — a Large Mech fills a whole Grid, so the final-Grid spot can never
 // fit one and the card would never be able to drag a Mech at all.
-check('the drag is only offered on a Command Movement', /state\.script && PHASES\[state\.round\.phase\] !== 'Command'/.test(mainSrc), true);
+check('the drag is only offered on a Command Movement', /state\.script && PHASES\[state\.round\.phase\] !== 'Command'/.test(pickSrc), true);
 check('the ally is towed into the vacated Grid first', /prevGrid[\s\S]{0,220}?standingSpot\(prevGrid\.c, prevGrid\.r/.test(mainSrc), true);
 
 // Aster: the only one whose whole effect sits inside a phase we already drive.
 check('Aster is capped by the once-per-round ledger', /oncePerRound\.includes\(asterKey\(state, t\.uid\)\)/.test(cmdSrc), true);
 check('Aster is gated to the Command Phase', /Aster restores Link during the Command Phase/.test(cmdSrc), true);
+// The port half: both pages render the button off the same blockers and drive
+// the same shared dialog, so grey reasons and target lists cannot diverge.
+check('the guide renders Aster off the shared blockers', /asterBlockers\(s, t\)/.test(pgSrc), true);
+check('the Match Centre renders Aster off the same blockers', /asterBlockers\(s, t\)/.test(hudSrc), true);
+check('both pages drive the shared runAster', /runAster\(this\.data, s, uid/.test(pgSrc) && /runAster\(ctx\.data, s, t\.uid/.test(hudSrc), true);
 check('Aster refuses a target already at full Link', /is already at full Link/.test(cmdSrc), true);
 
 console.log(`\n${pass} passed, ${fail} failed`);

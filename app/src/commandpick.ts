@@ -11,13 +11,15 @@
 // here rather than twice. The prompt is skipped when there is nothing to
 // decide: one Mech able to pay, or a free Command from Additional Instructions
 // (FAQ O14), which spends no token at all.
-import { choiceDialog } from './dialog';
-import { commandIssuers, heldCommands, readyCommands } from './commands';
+import { alertDialog, choiceDialog } from './dialog';
+import { asterKey, commandIssuers, heldCommands, readyCommands } from './commands';
 import { cardName } from './data';
 import type { GameData } from './data';
 import { alive } from './loop';
+import { PHASES } from './types';
 import type { GameState, Side, Token } from './types';
-import { tokenCards } from './units';
+import { maxLink, tokenCards } from './units';
+import { inContact } from './rules';
 
 // The Torso is what actually carries the tokens (3.2.1), and naming it is how a
 // player recognises which Mech generates four - the card is the thing with the
@@ -67,6 +69,106 @@ export async function askIssuer(
   // fall through to issuing the Command off whichever Mech the engine likes.
   if (picked === null || picked === 'cancel') return 'cancelled';
   return { uid: Number(picked) };
+}
+
+// ZPA-36 Aster: "Once per round, during the Command Phase, may consume 1
+// Command Token to restore 1 Link to an Ally Mech." The pilot check, the
+// once-per-round ledger and the token spend all live in the asterRestore
+// command; this owns the two questions around it — why the button is grey, and
+// which Ally takes the Link — so the guide and the Match Centre ask them
+// identically.
+export function asterBlockers(state: GameState, t: Token): string | null {
+  const sc = state.script;
+  if (sc?.oncePerRound?.includes(asterKey(state, t.uid))) return 'Aster has already restored Link this round.';
+  if (readyCommands(t) <= 0) return `${t.label} has no face-up Command Token to consume.`;
+  return null;
+}
+
+export async function runAster(
+  data: GameData,
+  state: GameState,
+  mechUid: number,
+  send: (targetUid: number) => void,
+  note: (to: Token, text: string) => void,
+): Promise<void> {
+  const from = state.tokens.find((x) => x.uid === mechUid);
+  if (!from) return;
+  // Any Ally Mech below full Link, Aster's own included — the card says "an
+  // Ally Mech" and a squad's own Mech is its ally.
+  const able = state.tokens.filter(
+    (t) => t.side === from.side && t.kind === 'mech' && alive(t) && (t.link ?? 0) < maxLink(data, t),
+  );
+  if (!able.length) {
+    await alertDialog({
+      title: 'Nothing to restore',
+      body: 'Every Mech in the squad is already at full Link, so consuming the Command Token would do nothing.',
+    });
+    return;
+  }
+  const picked = able.length === 1
+    ? String(able[0].uid)
+    : await choiceDialog({
+      title: `${from.label} restores 1 Link`,
+      body: 'Aster consumes 1 Command Token to restore 1 Link to an Ally Mech. Once per round.',
+      stacked: true,
+      choices: [
+        ...able.map((t) => ({ id: String(t.uid), label: `${t.label} · Link ${t.link ?? 0}/${maxLink(data, t)}` })),
+        { id: 'cancel', label: 'Back', cancel: true },
+      ],
+    });
+  if (picked === null || picked === 'cancel') return;
+  send(Number(picked));
+  const to = state.tokens.find((x) => x.uid === Number(picked));
+  if (to) note(to, `${from.label} (Aster) consumes a Command Token to restore 1 Link to ${to.label}. Once per round.`);
+}
+
+// ZHDR-304 Harpy: "When performing a Command Movement, may consume 1
+// additional Command Token and -2 Movement to drag 1 adjacent Ally Mech or
+// Ally Drone." (printed English card, which carries a -2 the Chinese in
+// cards.json omits).
+//
+// WHOSE token: the Harpy is a Drone, and 4.15.4 requires a MECH to bear the
+// face-up token, so "1 additional" is read as one more from the squad's Mechs —
+// the Harpy is already wearing the face-down one that commanded it, and 4.15.2
+// caps a Drone at one. If the publisher rules otherwise this is the line to
+// change.
+//
+// Asked BEFORE the route is drawn, because the -2 comes out of the Movement
+// allowance — offering it afterwards would show the player a reach they cannot
+// have. The caller subtracts the 2 and executes the drag when the move settles.
+export async function offerHarpyDrag(
+  data: GameData,
+  state: GameState,
+  t: Token,
+  steps: number,
+): Promise<{ allyUid: number; funderUid: number } | null | 'cancelled'> {
+  void data;
+  if (t.cardId !== 'ZHDR-304' || steps <= 2) return null;
+  // "When performing a COMMAND Movement": in a guided game that is the Command
+  // Phase's move — an Automatic Phase move is the Drone acting on its own and
+  // gets no drag. The freeplay sandbox with no game running stays permissive.
+  if (state.script && PHASES[state.round.phase] !== 'Command') return null;
+  const funders = state.tokens.filter(
+    (m) => m.side === t.side && m.kind === 'mech' && m.deployed !== false && readyCommands(m) > 0,
+  );
+  const allies = state.tokens.filter(
+    (o) => o.uid !== t.uid && o.side === t.side && (o.kind === 'mech' || o.kind === 'drone')
+      && o.deployed !== false && inContact(t, o),
+  );
+  if (!funders.length || !allies.length) return null;
+  const picked = await choiceDialog({
+    title: `${t.label} may drag an Ally`,
+    body:
+      `Consume 1 additional Command Token from ${funders[0].label} and -2 Movement (${steps} → ${steps - 2}) `
+      + 'to drag 1 adjacent Ally Mech or Ally Drone along with this move.',
+    stacked: true,
+    choices: [
+      ...allies.map((o) => ({ id: String(o.uid), label: `Drag ${o.label}` })),
+      { id: 'no', label: 'Move normally', cancel: true },
+    ],
+  });
+  if (picked === null || picked === 'no') return null;
+  return { allyUid: Number(picked), funderUid: funders[0].uid };
 }
 
 // Command Coordination X (4.15.3): after the Action carrying the keyword, this

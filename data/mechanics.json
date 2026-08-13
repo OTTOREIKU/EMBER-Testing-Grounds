@@ -298,7 +298,21 @@
     "commanded drone",
     "action speed"
    ],
-   "text": "Every Action on a Drone card is marked with a boxed icon beside its name that says when it happens. {!} is an Automatic Action: it resolves by itself in the Automatic Phase without being told to. {?} is a Command Action: it only happens if you spend a Command Token on that Drone in the Command Phase. An Action with neither box is Passive and is always on. Mechs generate 1 Command Token each and Drones receive them. A commanded Drone acts immediately and either moves or performs one Command Action, so an Automatic Action cannot be taken on a Command. A Drone that acted on a Command does not act again that round, which means spending a token on a Drone whose only weapon is Automatic trades that attack away for a move. Unspent Command Tokens are removed at the end of the phase."
+   "text": "Every Action on a Drone card is marked with a boxed icon beside its name that says when it happens. {!} is an Automatic Action: it resolves by itself in the Automatic Phase without being told to. {?} is a Command Action: it only happens if you spend a Command Token on that Drone in the Command Phase. An Action with neither box is Passive and is always on. Mechs generate Command Tokens (1 each unless the Torso prints Command Generation X) and Drones receive them. A commanded Drone acts immediately and either moves or performs one Command Action, so an Automatic Action cannot be taken on a Command. A Drone that acted on a Command does not act again that round, which means spending a token on a Drone whose only weapon is Automatic trades that attack away for a move. Unspent Command Tokens are removed at the end of the phase."
+  },
+  {
+   "id": "command_tokens",
+   "name": "Command Tokens",
+   "ref": "Rulebook 3.2 and 4.15",
+   "match": [
+    "command token",
+    "command generation",
+    "command coordination",
+    "指令标记",
+    "指令生成",
+    "指令协调"
+   ],
+   "text": "The Command Token is a two-faced coin of the Drone economy. At the start of the Command Phase every Mech generates 1 face-up token on its Torso card, or X if the Torso prints Command Generation X. Issuing a Command takes a token from a Mech of your choice and lays it FACE-DOWN on an Ally Drone, which immediately moves or performs one Command Action; a Drone can hold only one, and the Drones’ tokens come off when the Command Phase ends. A Mech’s unspent tokens stay: they can be held back for an Action with Command Coordination X, which hands up to X of them to X different Drones later in the round — a Drone that already acted in the Command Phase may take one, because its first token is long gone — or consumed by an Action that asks for one, which flips the token face-down where it stays, spent, until the End Phase removes every Command Token wherever it lies. In the app the tokens are placed and moved for you, and the token popout carries a Flip for the cards that consume one."
   },
   {
    "id": "activation_order",
