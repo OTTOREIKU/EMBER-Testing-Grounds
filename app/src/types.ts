@@ -287,7 +287,7 @@ export const STATUSES: StatusDef[] = [
     icon: 'CMD',
     tint: '#d8c07a',
     rule: 'Face-up and ready. Issue it to an Ally Drone, which then acts, or spend it on an Action that consumes one (4.15).',
-    note: 'Generated face-up on the Mech at the start of the Command Phase - 1 by default, or the printed number if its Torso has Command Generation X. Issuing takes it from this Mech and lays it FACE-DOWN on a Drone, which immediately gets an Action Opportunity. Tokens may also be reserved deliberately: an Action with Command Coordination X hands them out later in the round, and some Actions consume one outright. Every Command Token comes off in the End Phase (3.7.2). The panel places these itself, so add one by hand only for a card the app does not model yet.',
+    note: 'Generated face-up on the Mech at the start of the Command Phase - 1 by default, or the printed number if its Torso has Command Generation X. Issuing takes it from this Mech and lays it FACE-DOWN on a Drone, which immediately gets an Action Opportunity. Tokens may also be reserved deliberately: an Action with Command Coordination X hands them out later in the round, and some Actions consume one outright. Every Command Token comes off in the End Phase (3.7.2).',
   },
   {
     // The same physical token, turned over. It is a separate status rather than
@@ -316,7 +316,7 @@ export const STATUSES: StatusDef[] = [
     icon: 'FCI',
     tint: '#c9a6ff',
     rule: 'Cannot perform Firing Actions or Interception (6.3.2).',
-    note: 'A unit bearing this cannot perform Firing Actions or Interception (rulebook 6.3.2). Gained when an enemy Electronic Attack succeeds against it (4.11). A Projectile that has an Electronic Value is destroyed outright the moment it takes one. Firing actions are greyed out in the Details tab while this is on.',
+    note: 'A unit bearing this cannot perform Firing Actions or Interception (rulebook 6.3.2). Gained when an enemy Electronic Attack succeeds against it (4.11). A Projectile that has an Electronic Value is destroyed outright the moment it takes one.',
   },
   {
     id: 'fragile',
@@ -327,7 +327,7 @@ export const STATUSES: StatusDef[] = [
     tint: '#f0916b',
     stacking: true,
     rule: 'Each token costs 1 White die on Defense Rolls, and they stack.',
-    note: 'Each Fragile Token costs this unit 1 White die on its Defense Rolls, and they stack. Laser Weapon grants one on every hit, and Ion Weapon may exchange Lightning for a Heavy Hit against a unit bearing one. A Defense Roll can never drop below 1 White (4.4.1), so on an Armor 0 unit such as most missiles this often changes nothing except the Ion Weapon trigger. Click to add a token, shift-click or right-click to take one off.',
+    note: 'Each Fragile Token costs this unit 1 White die on its Defense Rolls, and they stack. Laser Weapon grants one on every hit, and Ion Weapon may exchange Lightning for a Heavy Hit against a unit bearing one. A Defense Roll can never drop below 1 White (4.4.1), so on an Armor 0 unit such as most missiles this often changes nothing except the Ion Weapon trigger.',
   },
   {
     id: 'immobilized',
@@ -338,7 +338,7 @@ export const STATUSES: StatusDef[] = [
     icon: 'IMB',
     tint: '#8fa0b5',
     rule: 'Cannot perform Movement Actions or Maneuver, including changing facing, and rolls no Blue dice on defence (6.3.2).',
-    note: 'This unit cannot perform Movement Actions or Maneuver, and that includes changing facing on the spot. It also rolls no Blue dice at all on its Defense Rolls, even in Mobility Stance (rulebook 6.3.2). Movement actions are greyed out in the Details tab while this is on. Note that a Projectile has no Movement Actions to lose, since its card only carries Immediate, Delay and Passive actions, so on a missile this mainly strips the Blue dice it would get from a printed Mobility stance.',
+    note: 'This unit cannot perform Movement Actions or Maneuver, and that includes changing facing on the spot. It also rolls no Blue dice at all on its Defense Rolls, even in Mobility Stance (rulebook 6.3.2). A Projectile has no Movement Actions to lose, since its card only carries Immediate, Delay and Passive actions, so on a missile this mainly strips the Blue dice it would get from a printed Mobility stance.',
   },
   {
     id: 'camouflage',
@@ -360,7 +360,7 @@ export const STATUSES: StatusDef[] = [
     icon: 'LP',
     tint: '#9ad9b5',
     rule: 'Against Firing Attacks, every [Eye] in its Defense Roll counts as a [Dodge] (6.3.3).',
-    note: 'Against Firing Attacks this unit counts every [Eye] in its Defense Roll as a [Dodge] (rulebook 6.3.3), which the attack helper applies for you. Maneuvering, including a facing-only change, removes the token; Scanning also strips it.',
+    note: 'Against Firing Attacks this unit counts every [Eye] in its Defense Roll as a [Dodge] (rulebook 6.3.3). Maneuvering, including a facing-only change, removes the token; Scanning also strips it.',
   },
   {
     id: 'highlight',
@@ -401,7 +401,7 @@ export const STATUSES: StatusDef[] = [
     icon: 'SMK',
     tint: '#a6b0bd',
     rule: 'No line of sight for Firing Actions into or out of this Grid; Melee and Projectile ignore it (4.16).',
-    note: 'This unit shares its Grid with a Smoke Screen, so line of sight cannot be established to it or from it for Firing Actions (rulebook 4.16). It cannot be shot at, and it cannot shoot out, in any direction. Melee and Projectile Actions ignore smoke completely, so it can still be hit in melee and it can still launch. Smoke blocks both sides equally no matter who placed it, and Aerial units are no exception. Screens placed on the board apply this for you in the attack helper, so use this chip only to note smoke you are tracking by hand.',
+    note: 'This unit shares its Grid with a Smoke Screen, so line of sight cannot be established to it or from it for Firing Actions (rulebook 4.16). It cannot be shot at, and it cannot shoot out, in any direction. Melee and Projectile Actions ignore smoke completely, so it can still be hit in melee and it can still launch. Smoke blocks both sides equally no matter who placed it, and Aerial units are no exception.',
   },
 ];
 

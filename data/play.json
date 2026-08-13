@@ -76,8 +76,7 @@
    "who": "Projectiles and Deployables only",
    "can": [
     "Projectiles and Deployables carry out their delayed actions, which usually means Detonation.",
-    "Resolve them alternately, starting with the First Player.",
-    "In this app, select the projectile and use Detonate."
+    "Resolve them alternately, starting with the First Player."
    ],
    "cannot": [
     "A projectile is destroyed once it detonates.",

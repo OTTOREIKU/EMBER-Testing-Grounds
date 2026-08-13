@@ -196,14 +196,14 @@
    "name": "Main Task Cards",
    "ref": "Rulebook 5.2.3",
    "match": [],
-   "text": "The Main Task sets the encounter objective and also prints both deployment zones. During setup draw 3 Main Task Cards, each side discards 1, and the remaining card is the mission. A card shows the Tactical Areas in play, both deployment zones (for example Black 3x5 and White 3x5 strips on opposite edges), the task text, the VP values, and which Task Item Tokens are used. All 10 from the core box are listed in the Missions tab."
+   "text": "The Main Task sets the encounter objective and also prints both deployment zones. During setup draw 3 Main Task Cards, each side discards 1, and the remaining card is the mission. A card shows the Tactical Areas in play, both deployment zones (for example Black 3x5 and White 3x5 strips on opposite edges), the task text, the VP values, and which Task Item Tokens are used."
   },
   {
    "id": "secondary_task_cards",
    "name": "Secondary Task Cards",
    "ref": "Rulebook 5.2.3",
    "match": [],
-   "text": "Each player also picks 1 Secondary Task during setup, starting with the First Player, and scores it privately alongside the shared Main Task. The core box has 8 and all of them are in the Missions tab. Three ask you to designate one of your own mechs: Escort scores 3 VP if it survives, Weapons Test scores 1 VP each time it destroys a Part or a Drone, and Disposal Procedure scores 2 VP when it dies. Two target the enemy: Decapitation is worth 5 VP but your opponent picks which of their mechs is the target, while Bounty Hunt is worth 4 VP and you pick. Annihilation scores 2 VP per enemy mech and 1 VP per drone, Mercy scores 2 VP for destroying no enemy mech at all, and Potential Excavation Area scores 2 VP for holding a Tactical Zone you nominate. The card text is our English rendering of the printed Korean, so the physical card wins."
+   "text": "Each player also picks 1 Secondary Task during setup, starting with the First Player, and scores it privately alongside the shared Main Task. The core box has 8. Three ask you to designate one of your own mechs: Escort scores 3 VP if it survives, Weapons Test scores 1 VP each time it destroys a Part or a Drone, and Disposal Procedure scores 2 VP when it dies. Two target the enemy: Decapitation is worth 5 VP but your opponent picks which of their mechs is the target, while Bounty Hunt is worth 4 VP and you pick. Annihilation scores 2 VP per enemy mech and 1 VP per drone, Mercy scores 2 VP for destroying no enemy mech at all, and Potential Excavation Area scores 2 VP for holding a Tactical Zone you nominate. The card text is our English rendering of the printed Korean, so the physical card wins."
   },
   {
    "id": "tactics_cards",
@@ -276,7 +276,7 @@
     "攻击态势",
     "防御态势"
    ],
-   "text": "An Action that names a Stance in brackets only applies that part of its text while the Mech is in that Stance, checked as the Action is performed rather than when the dial was set. The four Stances are set in the Command Phase and last until changed: Offensive converts hollow attack icons to solid, Defensive converts hollow defence icons to solid, Mobility adds Dodge dice and doubles the Maneuver, and Shutdown is the state a Mech falls into at 0 Link, where it may do nothing but Reboot. All four are listed in full under the Rules tab."
+   "text": "An Action that names a Stance in brackets only applies that part of its text while the Mech is in that Stance, checked as the Action is performed rather than when the dial was set. The four Stances are set in the Command Phase and last until changed: Offensive converts hollow attack icons to solid, Defensive converts hollow defence icons to solid, Mobility adds Dodge dice and doubles the Maneuver, and Shutdown is the state a Mech falls into at 0 Link, where it may do nothing but Reboot."
   },
   {
    "id": "low_value_unit",
@@ -312,7 +312,7 @@
     "指令生成",
     "指令协调"
    ],
-   "text": "The Command Token is a two-faced coin of the Drone economy. At the start of the Command Phase every Mech generates 1 face-up token on its Torso card, or X if the Torso prints Command Generation X. Issuing a Command takes a token from a Mech of your choice and lays it FACE-DOWN on an Ally Drone, which immediately moves or performs one Command Action; a Drone can hold only one, and the Drones’ tokens come off when the Command Phase ends. A Mech’s unspent tokens stay: they can be held back for an Action with Command Coordination X, which hands up to X of them to X different Drones later in the round — a Drone that already acted in the Command Phase may take one, because its first token is long gone — or consumed by an Action that asks for one, which flips the token face-down where it stays, spent, until the End Phase removes every Command Token wherever it lies. In the app the tokens are placed and moved for you, and the token popout carries a Flip for the cards that consume one."
+   "text": "The Command Token is a two-faced coin of the Drone economy. At the start of the Command Phase every Mech generates 1 face-up token on its Torso card, or X if the Torso prints Command Generation X. Issuing a Command takes a token from a Mech of your choice and lays it FACE-DOWN on an Ally Drone, which immediately moves or performs one Command Action; a Drone can hold only one, and the Drones’ tokens come off when the Command Phase ends. A Mech’s unspent tokens stay: they can be held back for an Action with Command Coordination X, which hands up to X of them to X different Drones later in the round — a Drone that already acted in the Command Phase may take one, because its first token is long gone — or consumed by an Action that asks for one, which flips the token face-down where it stays, spent, until the End Phase removes every Command Token wherever it lies."
   },
   {
    "id": "activation_order",
@@ -376,7 +376,7 @@
     "single faction",
     "mercenary"
    ],
-   "text": "Agree a points limit first: 600 for a skirmish, 900 for a standard game, 1200 or more for a large one. Every card you take costs its Points Value against that total. Then the faction rule, which works at two levels. A single Mech must be built entirely from one faction's Parts (5.1), and in practice the Pilot counts as one of those Parts too, so an RDL pilot does not sit in a UN mech - the rulebook words rule 2 around Parts only, but tournaments enforce the pilot as well. Across the squad, RDL, UN and GoF cannot mix with each other. Planetring Dynamics and the White Dwarf collaboration are the exception: they are mercenaries, so their whole units may join an RDL, UN or GoF squad. That does not loosen the mech-level rule - a mercenary joins as a complete unit, never as an arm bolted onto someone else's mech. Tactics Cards are the one thing not faction-locked. Note that this tool warns rather than blocks: about 30 Parts have no faction recorded anywhere, so a squad it accepts is not proof of legality."
+   "text": "Agree a points limit first: 600 for a skirmish, 900 for a standard game, 1200 or more for a large one. Every card you take costs its Points Value against that total. Then the faction rule, which works at two levels. A single Mech must be built entirely from one faction's Parts (5.1), and in practice the Pilot counts as one of those Parts too, so an RDL pilot does not sit in a UN mech - the rulebook words rule 2 around Parts only, but tournaments enforce the pilot as well. Across the squad, RDL, UN and GoF cannot mix with each other. Planetring Dynamics and the White Dwarf collaboration are the exception: they are mercenaries, so their whole units may join an RDL, UN or GoF squad. That does not loosen the mech-level rule - a mercenary joins as a complete unit, never as an arm bolted onto someone else's mech. Tactics Cards are the one thing not faction-locked. About 30 Parts have no faction recorded anywhere, so an unflagged squad is not proof of legality."
   },
   {
    "id": "mines",
@@ -395,7 +395,7 @@
     "自行地雷",
     "pholcus"
    ],
-   "text": "The SGM-2 Pholcus is a Mine that moves. It is laid folded and unfolds into its deployed form, at which point it behaves as a Mine. Unfolding into a Grid that already holds a unit detonates it immediately (M18.4) - the moment it shares a Grid is the trigger, since anything arriving later would have Crushed it instead. The folded and unfolded forms are separate cards in the card data with the same stats, which is why the same mine appears twice when browsing."
+   "text": "The SGM-2 Pholcus is a Mine that moves. It is laid folded and unfolds into its deployed form, at which point it behaves as a Mine. Unfolding into a Grid that already holds a unit detonates it immediately (M18.4) - the moment it shares a Grid is the trigger, since anything arriving later would have Crushed it instead. The folded and unfolded forms are printed as separate cards with the same stats."
   },
   {
    "id": "loads",
