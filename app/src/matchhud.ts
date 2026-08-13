@@ -1,10 +1,10 @@
-import { clearDroneCommands, missionZones, seedCommandTokens, taskDesignations, type Command, type CheckResult } from './commands';
+import { clearDroneCommands, missionZones, readyCommands, seedCommandTokens, taskDesignations, type Command, type CheckResult } from './commands';
 import { askIssuer, offerCoordination } from './commandpick';
 import type { GameData } from './data';
 import { actionIconUrl, cardName, isAerial, secondaryImageUrl, squadLabel, unitSize } from './data';
 import { Board, footprint, snapPlacement, type BoardCallbacks } from './board';
 import { printedDeployment, resolveZoneSetData } from './overlays';
-import { commandCoordination, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, electronicOrigins, loanedParts, minesLayable, minesOwed, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, isSilentAction, maneuverIsSilent, canActivateCamo, chargeableSlots, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
+import { coordinationFor, coordinationOnOpportunityEnd, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, electronicOrigins, loanedParts, minesLayable, minesOwed, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, isSilentAction, maneuverIsSilent, canActivateCamo, chargeableSlots, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
 import { resolveCounterRoll, tallyCounter } from './combat';
 import { tacticFitsPhase, tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { inContact, canStandIn, attackDirection, crushTargets, dissipationFor, extendPath, knockbackPath, LG, losBetween, losNote, pathCost, protectionFor, rangeBetween, reachableGrids, standingSpot, type LargeGrid } from './rules';
@@ -128,6 +128,9 @@ export function enterPhase(data: GameData, s: GameState): void {
   }
   if (s.round.phase === 0 || s.round.phase === 2) sc.acted = [];
   sc.endDone = sc.endDone.filter((k) => k.startsWith(`${s.round.n}:`));
+    // Once-per-round abilities are keyed by round for the same reason, so the
+    // ledger is pruned the same way rather than growing all game.
+    sc.oncePerRound = (sc.oncePerRound ?? []).filter((k) => k.startsWith(`${s.round.n}:`));
   sc.opp = null;
   sc.passed = [];
   sc.turn = s.round.firstPlayer;
@@ -2542,7 +2545,9 @@ function offerCoordinationFor(ctx: HudCtx, uid: number, actionId: string): void 
     .flatMap((c) => c.card.actions ?? [])
     .find((a) => a.id === actionId);
   if (!act) return;
-  const upTo = commandCoordination(act);
+  // coordinationFor, not the bare keyword: a Passive can grant Coordination to
+  // a whole Action type of this Mech's, which is what Melee Synergy does.
+  const upTo = coordinationFor(ctx.data, t, act);
   if (upTo <= 0) return;
   void offerCoordination(ctx.data, ctx.state, t, upTo, (mechUid, targetUid) => {
     ctx.send({ kind: 'coordinateCommand', seat: t.side, uid: mechUid, targetUid });
@@ -4275,6 +4280,26 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     const sc = ensureScript(s);
     if (sc.opp) {
       const t = s.tokens.find((x) => x.uid === sc.opp!.uid);
+      // The Integrated Data Link Pod coordinates when the Opportunity ENDS
+      // rather than off an Action, so its offer goes here - a Passive is never
+      // performed and commitAction can never reach it. The Opportunity closes
+      // afterwards either way, so declining costs nothing.
+      const owed = t ? coordinationOnOpportunityEnd(ctx.data, t) : 0;
+      if (t && owed > 0 && readyCommands(t) > 0) {
+        const uid = sc.opp.uid;
+        void offerCoordination(ctx.data, s, t, owed, (mechUid, targetUid) => {
+          ctx.send({ kind: 'coordinateCommand', seat: t.side, uid: mechUid, targetUid });
+        }, (_d, text) => ctx.noteNow(text)).then(() => {
+          ctx.send({ kind: 'endOpportunity', seat: t.side, uid });
+          ctx.refresh();
+        });
+        dropAction();
+        movePlan = null;
+        inspectUid = null;
+        board?.clearMovePath();
+        ctx.refresh();
+        return;
+      }
       ctx.send({ kind: 'endOpportunity', seat: t?.side ?? me(), uid: sc.opp.uid });
     }
     // Walking away from a tool that never resolved leaves its Action unperformed.

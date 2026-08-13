@@ -7,6 +7,8 @@ import { normaliseSetup } from './setup';
 import { isMeleeFiring, lockersOf } from './melee';
 import { inContact, largeGridOf, losBetween, rangeBetween, smokeBlocks } from './rules';
 import { normaliseTasks } from './tasks';
+// ticks.ts imports only from types.ts, so this direction carries no cycle.
+import { timingOf } from './ticks';
 
 export const PART_SLOTS: PartSlot[] = ['torso', 'chasis', 'leftHand', 'rightHand', 'backpack'];
 export const SLOT_LABEL: Record<PartSlot | 'pilot' | 'main', string> = {
@@ -192,10 +194,78 @@ const COMMAND_CO_GRANT = /获得[^。]{0,6}指令协调|gain[s]?\s+Command Coord
 export function grantsCommandCoordination(a: CardAction): boolean {
   return COMMAND_CO_GRANT.test(a.description?.zh ?? '') || COMMAND_CO_GRANT.test(a.description?.en ?? '');
 }
+
+// A Passive whose Coordination fires when the Mech's Action Opportunity ENDS
+// rather than off any one Action: the Integrated Data Link Pod, "at the end of
+// this unit's Action Opportunity, Command Coordination 1". It is the one
+// carrier the performed-Action path can never reach, because a Passive is
+// never performed - the backpack sat inert until this was split out.
+const COMMAND_CO_ON_END = /行动机会结束时|ends? it'?s Action Opportunity|end of (?:this|its) Action Opportunity/i;
+export function endsOpportunityCoordination(a: CardAction): boolean {
+  return COMMAND_CO_ON_END.test(a.description?.zh ?? '') || COMMAND_CO_ON_END.test(a.description?.en ?? '');
+}
+
 export function commandCoordination(a: CardAction): number {
-  if (grantsCommandCoordination(a)) return 0;
+  // A grant describes OTHER Actions, and an end-of-Opportunity Passive fires on
+  // a different trigger; neither is Coordination carried by this Action.
+  if (grantsCommandCoordination(a) || endsOpportunityCoordination(a)) return 0;
   const m = COMMAND_CO_ZH.exec(a.description?.zh ?? '') ?? COMMAND_CO_EN.exec(a.description?.en ?? '');
   return m ? Number(m[1]) : 0;
+}
+
+// How much Coordination this Mech owes when its Action Opportunity ends, summed
+// over its live Parts. Separate from the per-Action number because the trigger
+// is the Opportunity, not the Action.
+export function coordinationOnOpportunityEnd(data: GameData, t: Token): number {
+  if (t.kind !== 'mech') return 0;
+  let n = 0;
+  for (const { slot, card } of tokenCards(data, t)) {
+    if ((t.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
+    for (const a of card.actions ?? []) {
+      if (!endsOpportunityCoordination(a)) continue;
+      const m = COMMAND_CO_ZH.exec(a.description?.zh ?? '') ?? COMMAND_CO_EN.exec(a.description?.en ?? '');
+      if (m) n += Number(m[1]);
+    }
+  }
+  return n;
+}
+
+// A Passive that hands Coordination to a WHOLE ACTION TYPE of this Mech's:
+// the Warrior Torso's Melee Synergy, "this Mech's Melee Actions gain Command
+// Coordination 1". The scope word sits immediately before 动作, so the type is
+// read from there rather than guessed.
+const COMMAND_CO_GRANT_ZH = /本机(\S{1,3})动作获得指令协调\s*(\d+)/;
+const COMMAND_CO_GRANT_EN = /(\w+)\s+Actions by this Unit gain Command Coordination\s*(\d+)/i;
+const TIMING_OF_ZH: Record<string, Timing> = {
+  迅捷: 'swift', 近战: 'melee', 抛射: 'projectile', 射击: 'firing', 移动: 'movement', 战术: 'tactical',
+};
+const TIMING_OF_EN: Record<string, Timing> = {
+  swift: 'swift', melee: 'melee', projectile: 'projectile', firing: 'firing', movement: 'movement', moving: 'movement', tactical: 'tactical', tactic: 'tactical',
+};
+export function coordinationGrant(a: CardAction): { timing: Timing; n: number } | null {
+  const zh = COMMAND_CO_GRANT_ZH.exec(a.description?.zh ?? '');
+  if (zh && TIMING_OF_ZH[zh[1]]) return { timing: TIMING_OF_ZH[zh[1]], n: Number(zh[2]) };
+  const en = COMMAND_CO_GRANT_EN.exec(a.description?.en ?? '');
+  if (en && TIMING_OF_EN[en[1].toLowerCase()]) return { timing: TIMING_OF_EN[en[1].toLowerCase()], n: Number(en[2]) };
+  return null;
+}
+
+// What an Action is actually worth: its own printed Coordination plus anything
+// this Mech's Passives grant to Actions of that Timing. Every offer should ask
+// this rather than commandCoordination(), or a granted keyword never applies.
+export function coordinationFor(data: GameData, t: Token, a: CardAction): number {
+  let n = commandCoordination(a);
+  if (t.kind !== 'mech') return n;
+  const timing = timingOf(a);
+  if (!timing) return n;
+  for (const { slot, card } of tokenCards(data, t)) {
+    if ((t.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
+    for (const other of card.actions ?? []) {
+      const g = coordinationGrant(other);
+      if (g && g.timing === timing) n += g.n;
+    }
+  }
+  return n;
 }
 
 // An Action or pilot trait that consumes one of the Mech's own Command Tokens
@@ -207,7 +277,15 @@ export function commandCoordination(a: CardAction): number {
 // actions at all - Chef and Aster hold theirs in `traitDescription`. So this
 // takes the strings and the callers decide where they came from.
 const COMMAND_SPEND_ZH = /消耗[^。]{0,10}指令标记/;
-const COMMAND_SPEND_EN = /consume\s+\d*\s*C[mo]{1,2}and Token/i;
+// The Chinese side allows words between the verb and the noun, and the English
+// has to as well: the Harpy reads "consume 1 ADDITIONAL Command Token", so a
+// tight `consume \d+ Command Token` misses that one while matching the rest.
+//
+// C[om]{1,3}and, not C[mo]{1,2}and: "Command" has THREE letters between the C
+// and the "and", so the tighter class matched only the "Cmmand" typo printed on
+// Aster's card and never the correct spelling. Every English match was coming
+// from a card that happened to be misspelled; the Chinese carried the rest.
+const COMMAND_SPEND_EN = /consume\s+[^.]{0,24}?C[om]{1,3}and Token/i;
 export function textConsumesCommand(zh: string | undefined, en: string | undefined): boolean {
   return COMMAND_SPEND_ZH.test(zh ?? '') || COMMAND_SPEND_EN.test(en ?? '');
 }
@@ -225,6 +303,26 @@ export function canSpendCommand(data: GameData, t: Token): boolean {
     if ((card.actions ?? []).some(consumesCommand)) return true;
   }
   return false;
+}
+
+// ZYBP-202 "Whistle": Aura, Range 4 — "When an Ally Drone within Range performs
+// a roll, it may consume 1 Command Token from this Mech to re-roll."
+//
+// The token comes off the WHISTLE MECH, not the Drone doing the rolling, which
+// is the only reading that fits 4.15.4's "the Mech must bear a face-up Command
+// Token". So this returns the Mechs that could pay, and the caller spends one.
+const WHISTLE_CARD = 'ZYBP-202';
+const WHISTLE_RANGE = 4;
+export function whistleFunders(data: GameData, tokens: Token[], roller: Token): Token[] {
+  if (roller.kind !== 'drone' || roller.deployed === false) return [];
+  return tokens.filter((m) => {
+    if (m.side !== roller.side || m.kind !== 'mech' || m.deployed === false) return false;
+    if (statusCount(m.statuses, 'command') <= 0) return false;
+    const carries = tokenCards(data, m).some(
+      ({ slot, card }) => card.id === WHISTLE_CARD && (m.partStates[slot as PartSlot | 'main'] ?? 'intact') !== 'destroyed',
+    );
+    return carries && rangeBetween(m, roller).range <= WHISTLE_RANGE;
+  });
 }
 
 // ---------- Charge (rulebook 4.14) ----------

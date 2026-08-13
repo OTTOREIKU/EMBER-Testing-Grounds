@@ -62,11 +62,13 @@ const intercepts = [{ uid: 3, actionId: 'PRDR-101_C', targetUid: 9 }];
 // reload that dropped it would hand out a free reaction or lose one.
 const reactions = [{ uid: 5, actionId: '546_B', count: 2, range: 1 }];
 const endDone = ['2:end:remove', '2:end:tokens'];
+// Abilities capped at once per round, keyed the same way so they prune together.
+const oncePerRound = ['2:aster:7'];
 // Every value here is deliberately NOT the default, so a field that
 // normaliseScript forgets to carry across fails rather than coincidentally
 // matching what it would have defaulted to.
 const counter = { initiatorUid: 7, responderUid: 9, actionId: 'EWA', initRoll: [0, 3], respRoll: null, initFocused: true, respFocused: false };
-const live = { turn: 's2', acted: [7, 8], extraOpps: [8], commanded: [9], freeCommand: [], passed: ['s1'], stage: '2:3', mode: 'hidden', strict: true, commits: { s1: 'deadbeef' }, revealed: ['s2'], seats: { s1: 'local', s2: 'remote' }, opp, oppStack, intercepts, reactions, counter, endDone };
+const live = { turn: 's2', acted: [7, 8], extraOpps: [8], commanded: [9], freeCommand: [], passed: ['s1'], stage: '2:3', mode: 'hidden', strict: true, commits: { s1: 'deadbeef' }, revealed: ['s2'], seats: { s1: 'local', s2: 'remote' }, opp, oppStack, intercepts, reactions, counter, endDone, oncePerRound };
 
 // This fixture has lagged behind ScriptState four times now, each costing a
 // confusing deep-equal diff. Naming the missing field turns that into an
@@ -100,6 +102,9 @@ check('junk faces are filtered out of a roll',
 check('finished end steps survive', normaliseScript(live, 's1').endDone, endDone);
 check('a missing end list reads back empty', normaliseScript({ ...live, endDone: undefined }, 's1').endDone, []);
 check('non-string end steps are dropped', normaliseScript({ ...live, endDone: [1, ...endDone] }, 's1').endDone, endDone);
+check('once-per-round uses survive', normaliseScript(live, 's1').oncePerRound, oncePerRound);
+check('a missing once-per-round list reads back empty', normaliseScript({ ...live, oncePerRound: undefined }, 's1').oncePerRound, []);
+check('non-string once-per-round keys are dropped', normaliseScript({ ...live, oncePerRound: [1, ...oncePerRound] }, 's1').oncePerRound, oncePerRound);
 // The tickable step list was dropped once the guide started driving each phase.
 // A save that still carries it must load without it rather than resurrecting it.
 check('the dropped step list is not carried forward', 'done' in normaliseScript(shapes['slice-3 save (still carries the dropped step list)'], 's1'), false);

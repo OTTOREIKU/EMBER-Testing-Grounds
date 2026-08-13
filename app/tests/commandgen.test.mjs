@@ -157,17 +157,29 @@ const kw = src.slice(
 const tmp3 = new URL('./_commandkw.slice.ts', import.meta.url);
 writeFileSync(
   tmp3,
-  ['type CardAction = any;', 'type GameData = any;', 'type Token = any;', 'type PartSlot = any;',
+  ['type CardAction = any;', 'type GameData = any;', 'type Token = any;', 'type PartSlot = any;', 'type Timing = any;',
    'const pilotCard = (_d: any, t: any) => t.pilot;',
-   'const tokenCards = (_d: any, t: any) => t.cards ?? [];'].join('\n') + '\n' + kw,
+   'const tokenCards = (_d: any, t: any) => t.cards ?? [];',
+   // Sliced from ticks.ts rather than hand-written, so the six Action Types the
+   // grant can be scoped to cannot drift apart from the real map.
+   readFileSync(new URL('../src/ticks.ts', import.meta.url), 'utf8')
+     .slice(
+       readFileSync(new URL('../src/ticks.ts', import.meta.url), 'utf8').indexOf('export const TIMING_OF_TYPE'),
+       readFileSync(new URL('../src/ticks.ts', import.meta.url), 'utf8').indexOf('export const LENGTH_OF_SIZE'),
+     ),
+   'const timingOf = (a: any) => (a.type ? TIMING_OF_TYPE[a.type] : undefined);',
+  ].join('\n') + '\n' + kw,
 );
 const K = await import(tmp3.href);
 
 const actionsOf = (id) => (byId.get(String(id))?.actions ?? []);
 const coOf = (cid, aid) => K.commandCoordination(actionsOf(cid).find((a) => a.id === aid));
 
-check('the Data Link Pod carries Command Coordination 1', coOf('ZYBP-102', 'ZYBP-102_A'), 1);
-check('the Dual Swift Launcher carries it too', coOf('ZHLA-102', 'ZHLA-102_A'), 1);
+// The Data Link Pod's Coordination is NOT per-Action: its Passive fires when
+// the Mech's Action Opportunity ends, so it is counted by
+// coordinationOnOpportunityEnd instead and deliberately reads 0 here.
+check('the Data Link Pod carries no per-Action Coordination', coOf('ZYBP-102', 'ZYBP-102_A'), 0);
+check('the Dual Swift Launcher carries it', coOf('ZHLA-102', 'ZHLA-102_A'), 1);
 check('the MR21 Railgun carries it', coOf('ZHRA-201', 'ZHRA-201_A'), 1);
 // The Warrior Torso's Melee Synergy GRANTS the keyword to the Mech's Melee
 // Actions rather than carrying it. Reading it as a Passive with Coordination 1
@@ -175,12 +187,27 @@ check('the MR21 Railgun carries it', coOf('ZHRA-201', 'ZHRA-201_A'), 1);
 check('Melee Synergy grants rather than carries', coOf('172', '172_B'), 0);
 check('and is recognised as a grant', K.grantsCommandCoordination(actionsOf('172').find((a) => a.id === '172_B')), true);
 
-// Exactly five Actions carry it directly; the sixth match in the data is the grant.
+// Six Actions in the data mention the keyword, and they split three ways. Four
+// carry it per-Action, one fires it when the Opportunity ends, one grants it to
+// a whole Action type. Every one has to land in exactly one bucket, or a card
+// either does nothing or hands out a Command it should not.
 const carriers = [];
-for (const c of list) for (const a of c.actions ?? []) if (K.commandCoordination(a) > 0) carriers.push(`${c.id}/${a.id}`);
-check('five Actions carry Command Coordination', carriers.sort(), [
-  'ZHLA-102/ZHLA-102_A', 'ZHLA-201/ZHLA-201_A', 'ZHRA-201/ZHRA-201_A', 'ZHRA-202/ZHRA-202_A', 'ZYBP-102/ZYBP-102_A',
+const enders = [];
+const granters = [];
+for (const c of list) {
+  for (const a of c.actions ?? []) {
+    const where = `${c.id}/${a.id}`;
+    if (K.commandCoordination(a) > 0) carriers.push(where);
+    if (K.endsOpportunityCoordination(a)) enders.push(where);
+    if (K.coordinationGrant(a)) granters.push(where);
+  }
+}
+check('four Actions carry Command Coordination per-Action', carriers.sort(), [
+  'ZHLA-102/ZHLA-102_A', 'ZHLA-201/ZHLA-201_A', 'ZHRA-201/ZHRA-201_A', 'ZHRA-202/ZHRA-202_A',
 ].sort());
+check('one fires it when the Opportunity ends', enders, ['ZYBP-102/ZYBP-102_A']);
+check('one grants it to an Action type', granters, ['172/172_B']);
+check('the three buckets do not overlap', [...carriers, ...enders, ...granters].length, new Set([...carriers, ...enders, ...granters]).size);
 
 // Consuming. Two live on Actions and two on PILOT cards, which have no actions
 // at all — reading only `actions` finds half of them and looks complete.
@@ -190,6 +217,13 @@ check('two Actions consume a Command', spendActions.sort(), ['ZHDR-304/ZHDR-304_
 const spendPilots = list.filter((c) => c.category === 'pilot' && K.textConsumesCommand(c.traitDescription?.zh, c.traitDescription?.en));
 check('and two pilots do, via traitDescription', spendPilots.map((c) => c.id).sort(), ['ZPA-35', 'ZPA-36']);
 check('Chef is one of them', spendPilots.some((c) => c.name.en === 'Chef'), true);
+// The English side has to survive words between the verb and the noun. The
+// Harpy's printed card reads "consume 1 ADDITIONAL Command Token", which a
+// tight `consume \d+ Command Token` misses while matching the other three —
+// and Aster's card genuinely prints "Cmmand".
+check('English: the Harpy wording matches', K.textConsumesCommand(undefined, 'may consume 1 additional Command Token and -2 Movement to drag 1 adjacent Ally Mech'), true);
+check('English: the printed Cmmand typo matches', K.textConsumesCommand(undefined, 'may consume 1 Cmmand Token to restore 1 Link'), true);
+check('English: an unrelated sentence does not', K.textConsumesCommand(undefined, 'Give 1 Command Token to 1 Ally Drone.'), false);
 
 // canSpendCommand has to see the pilot, or holding a token back looks pointless
 // on the two Mechs where it matters most.
@@ -241,6 +275,99 @@ const hudEnter = hudSrc.slice(hudSrc.indexOf('export function enterPhase'), hudS
 check('matchhud strips Drones only when LEAVING phase 0', /else if \(sc\.stage\.split\(':'\)\[1\] === '0'\) \{[\s\S]*?clearDroneCommands/.test(hudEnter), true);
 const pgSrc = readFileSync(new URL('../src/playguide.ts', import.meta.url), 'utf8');
 check('the guide keys the same sweep on the phase being left', /if \(leaving === '0'\) clearDroneCommands/.test(pgSrc), true);
+
+// ---------- the two Passives that change WHEN or WHETHER Coordination fires ----------
+//
+// Neither carries the keyword for itself, and reading either as if it did hands
+// out a free Command off an Action nobody performs. Both were inert until 82.
+const pod = actionsOf('ZYBP-102').find((a) => a.id === 'ZYBP-102_A');
+check('the Data Link Pod is an end-of-Opportunity trigger', K.endsOpportunityCoordination(pod), true);
+check('so it carries no per-Action Coordination', K.commandCoordination(pod), 0);
+check('and Melee Synergy is not an end-of-Opportunity one', K.endsOpportunityCoordination(actionsOf('172').find((a) => a.id === '172_B')), false);
+// A Firing action with the keyword printed on it stays a per-Action carrier.
+check('a printed carrier is not swept up as a trigger', K.endsOpportunityCoordination(actionsOf('ZHRA-201').find((a) => a.id === 'ZHRA-201_A')), false);
+
+const podMech = { kind: 'mech', partStates: { backpack: 'intact' }, cards: [{ slot: 'backpack', card: byId.get('ZYBP-102') }] };
+check('the Pod owes 1 Coordination when its Opportunity ends', K.coordinationOnOpportunityEnd(null, podMech), 1);
+check('a destroyed Pod owes none', K.coordinationOnOpportunityEnd(null, { ...podMech, partStates: { backpack: 'destroyed' } }), 0);
+check('a Mech without one owes none', K.coordinationOnOpportunityEnd(null, { kind: 'mech', partStates: {}, cards: [] }), 0);
+check('a Drone never owes any', K.coordinationOnOpportunityEnd(null, { kind: 'drone', partStates: {}, cards: [] }), 0);
+
+// Melee Synergy grants Coordination 1 to this Mech's MELEE Actions only.
+const synergy = actionsOf('172').find((a) => a.id === '172_B');
+check('the grant reads its scope off the card', K.coordinationGrant(synergy), { timing: 'melee', n: 1 });
+check('a plain carrier grants nothing', K.coordinationGrant(actionsOf('ZHRA-201').find((a) => a.id === 'ZHRA-201_A')), null);
+
+const warrior = { kind: 'mech', partStates: { torso: 'intact' }, cards: [{ slot: 'torso', card: byId.get('172') }] };
+const meleeAct = { id: 'X', type: 'Melee', description: { zh: '', en: '' } };
+const firingAct = { id: 'Y', type: 'Firing', description: { zh: '', en: '' } };
+check('a Melee Action on the Warrior Torso gains 1', K.coordinationFor(null, warrior, meleeAct), 1);
+check('a Firing Action on it gains nothing', K.coordinationFor(null, warrior, firingAct), 0);
+check('the grant stacks onto a printed carrier', K.coordinationFor(null, warrior, { ...meleeAct, description: { zh: '· 指令协调1', en: '' } }), 2);
+check('a destroyed Torso grants nothing', K.coordinationFor(null, { ...warrior, partStates: { torso: 'destroyed' } }, meleeAct), 0);
+check('another squad’s Mech is unaffected', K.coordinationFor(null, { kind: 'mech', partStates: {}, cards: [] }, meleeAct), 0);
+
+// Both drivers must ask coordinationFor rather than the bare keyword, or a
+// granted Coordination silently never applies.
+check('the guide asks coordinationFor', /const coord = coordinationFor\(this\.data, t, row\.action\)/.test(pgSrc), true);
+check('the Match Centre asks coordinationFor', /const upTo = coordinationFor\(ctx\.data, t, act\)/.test(hudSrc), true);
+check('the guide offers on Opportunity end', /coordinationOnOpportunityEnd\(this\.data, t\)/.test(pgSrc), true);
+check('the Match Centre offers on Opportunity end', /coordinationOnOpportunityEnd\(ctx\.data, t\)/.test(hudSrc), true);
+
+// ---------- the four consuming effects, each hooked where it triggers ----------
+//
+// None of the four is "perform an Action and spend a token", which is why they
+// live in four different places rather than behind one button.
+const combatSrc = readFileSync(new URL('../src/combat.ts', import.meta.url), 'utf8');
+const mainSrc = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
+
+// Chef: the exchange is COUNTED on the combat state, never applied to a
+// rendered total — the attack tally is derived again at the attack step and at
+// resolve, so a total edited in one place would not survive the other.
+check('Chef exchange lives on the combat state', /eyeSwaps: number;/.test(combatSrc), true);
+check('both attack readers go through attackIcons', (combatSrc.match(/this\.attackIcons\(c\)/g) ?? []).length, 2);
+// attackIcons is the ONLY thing allowed to read the raw attack roll; everything
+// else must come through it, or an exchange shows in one place and not another.
+const attackIconsBody = combatSrc.slice(
+  combatSrc.indexOf('private attackIcons(c: Ctx)'),
+  combatSrc.indexOf('private resolve()'),
+);
+check('attackIcons reads the raw roll', /countIcons\(c\.attackRoll/.test(attackIconsBody), true);
+check('and nothing else does', (combatSrc.match(/countIcons\(c\.attackRoll/g) ?? []).length, 1);
+// The clamp is what stops an exchange surviving a reroll that removed the Eyes.
+check('the exchange is clamped to the Eyes actually showing', /Math\.min\(c\.eyeSwaps \?\? 0, counts\.eye \?\? 0\)/.test(combatSrc), true);
+check('a fresh roll clears the exchange', /c\.eyeSwaps = 0;/.test(combatSrc), true);
+check('Chef is gated on a Melee Action', /timingOf\(c\.action\) !== 'melee'/.test(combatSrc), true);
+check('Chef needs a face-up token', /statusCount\(c\.attacker\.statuses, 'command'\)/.test(combatSrc), true);
+
+// Whistle: a SECOND source of rerolls, funded by a nearby Ally Mech's token
+// rather than by Link, so it must not touch the Focus allowance.
+check('Whistle does not consume the Focus reroll', /Whistle reroll[\s\S]{0,900}?c\.rerolls\[which\]\[side\] = true/.test(combatSrc), false);
+check('Whistle spends the FUNDER’s token, not the roller’s', /kind: 'spendCommand', seat: funders\[0\]\.side, uid: funders\[0\]\.uid/.test(combatSrc), true);
+const wf = src.slice(src.indexOf('export function whistleFunders'), src.indexOf('// ---------- Charge (rulebook 4.14) ----------'));
+check('Whistle only funds a Drone roll', /roller\.kind !== 'drone'/.test(wf), true);
+check('Whistle checks Range 4', /WHISTLE_RANGE = 4/.test(src) && /rangeBetween\(m, roller\)\.range <= WHISTLE_RANGE/.test(wf), true);
+check('Whistle needs a face-up token on the Mech', /statusCount\(m\.statuses, 'command'\) <= 0/.test(wf), true);
+
+// Harpy: the -2 comes out of the ALLOWANCE, so the drag is declared before the
+// route is drawn. Offering it afterwards would show a reach the player cannot
+// have, which is the whole reason it is not in the post-move chain.
+check('the Harpy drag is declared before the move', /const drag = await offerHarpyDrag\(t, steps\);[\s\S]{0,400}?steps: drag \? steps - 2 : steps/.test(mainSrc), true);
+check('and it needs a Mech holding a face-up token', /statusCount\(m\.statuses, 'command'\) > 0/.test(mainSrc), true);
+check('the dragged unit must be adjacent', /inContact\(t, o\)/.test(mainSrc), true);
+check('no free spot means no token is spent', /could not be dragged[\s\S]{0,80}not consumed/.test(mainSrc), true);
+// Two audit catches, pinned so they stay caught. An Automatic Phase drone move
+// is not a Command Movement, so a guided game only offers the drag in phase 0;
+// and the ally lands in the Grid the Harpy VACATED before falling back to the
+// final one — a Large Mech fills a whole Grid, so the final-Grid spot can never
+// fit one and the card would never be able to drag a Mech at all.
+check('the drag is only offered on a Command Movement', /state\.script && PHASES\[state\.round\.phase\] !== 'Command'/.test(mainSrc), true);
+check('the ally is towed into the vacated Grid first', /prevGrid[\s\S]{0,220}?standingSpot\(prevGrid\.c, prevGrid\.r/.test(mainSrc), true);
+
+// Aster: the only one whose whole effect sits inside a phase we already drive.
+check('Aster is capped by the once-per-round ledger', /oncePerRound\.includes\(asterKey\(state, t\.uid\)\)/.test(cmdSrc), true);
+check('Aster is gated to the Command Phase', /Aster restores Link during the Command Phase/.test(cmdSrc), true);
+check('Aster refuses a target already at full Link', /is already at full Link/.test(cmdSrc), true);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exitCode = fail ? 1 : 0;

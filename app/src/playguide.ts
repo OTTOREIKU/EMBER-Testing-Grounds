@@ -5,9 +5,9 @@ import { cardName, squadLabel } from './data';
 import { bindTips, linkMechanics } from './inspector';
 import { choiceDialog } from './dialog';
 import { PHASES, PHASE_INFO } from './tracker';
-import { commandCoordination, extrasFor, isSilentAction, type ActionWorld, canActivateCamo, type ExtraActivation, extraActivationOf, guidedActions, initiativeFor, maneuverRange, maxLink, SLOT_LABEL, tokenCards } from './units';
+import { pilotCard, coordinationFor, coordinationOnOpportunityEnd, extrasFor, isSilentAction, type ActionWorld, canActivateCamo, type ExtraActivation, extraActivationOf, guidedActions, initiativeFor, maneuverRange, maxLink, SLOT_LABEL, tokenCards } from './units';
 import { canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed } from './ticks';
-import { clearDroneCommands, perform, seedCommandTokens } from './commands';
+import { asterKey, clearDroneCommands, perform, readyCommands, seedCommandTokens } from './commands';
 import { askIssuer, offerCoordination } from './commandpick';
 import { tacticFitsPhase, tacticSpec } from './tactics';
 import { alive, canAct, getLocalSeat, isLoopPhase, nextTurn, onExtraOpportunity, type LoopPhase, nextActivation, activationOrder, actionPhaseComplete, loopComplete, eligibleUnits, type InitLookup, type Activation } from './loop';
@@ -152,6 +152,9 @@ export class PlayGuide {
     // End Phase ticks are keyed by round, so drop the ones that can never match
     // again rather than letting the list grow for the length of the game.
     sc.endDone = sc.endDone.filter((k) => k.startsWith(`${s.round.n}:`));
+    // Once-per-round abilities are keyed by round for the same reason, so the
+    // ledger is pruned the same way rather than growing all game.
+    sc.oncePerRound = (sc.oncePerRound ?? []).filter((k) => k.startsWith(`${s.round.n}:`));
     // Ticks belong to one Action Opportunity, so none survives a phase change.
     sc.opp = null;
     sc.passed = [];
@@ -520,6 +523,9 @@ export class PlayGuide {
       b.addEventListener('click', () => {
         if (this.picked !== null) this.performUnitAction(this.picked, b.dataset.unitAct!);
       }),
+    );
+    this.root.querySelectorAll<HTMLButtonElement>('[data-aster]').forEach((b) =>
+      b.addEventListener('click', () => void this.runAster(Number(b.dataset.aster))),
     );
     this.root.querySelector('[data-end]')?.addEventListener('click', () => this.endActivation());
     this.root.querySelector('[data-unpick]')?.addEventListener('click', () => {
@@ -1549,8 +1555,10 @@ export class PlayGuide {
         return;
       }
       // Command Coordination X resolves AFTER the Action (4.15.3), so it is
-      // offered here rather than as part of choosing one.
-      const coord = commandCoordination(row.action);
+      // offered here rather than as part of choosing one. coordinationFor, not
+      // the bare keyword: a Passive can grant Coordination to a whole Action
+      // type of this Mech's, and the Warrior Torso does exactly that to Melee.
+      const coord = coordinationFor(this.data, t, row.action);
       if (coord > 0) {
         void this.offerCoordination(s, t, coord).then(() => this.cb.onChanged());
         return;
@@ -1577,7 +1585,20 @@ export class PlayGuide {
     if (!o) return;
     const t = s.tokens.find((x) => x.uid === o.uid);
     if (!t) return;
-    perform(this.data, s, { kind: 'endOpportunity', seat: t.side, uid: o.uid });
+    // The Integrated Data Link Pod coordinates when the Opportunity ENDS, not
+    // off any one Action, so its offer has to come before the Opportunity is
+    // closed - a Passive is never performed and the per-Action path can never
+    // reach it. Asked first, then the Opportunity ends either way.
+    const owed = coordinationOnOpportunityEnd(this.data, t);
+    if (owed > 0 && readyCommands(t) > 0) {
+      void this.offerCoordination(s, t, owed).then(() => this.finishActivation(s, t, o.uid));
+      return;
+    }
+    this.finishActivation(s, t, o.uid);
+  }
+
+  private finishActivation(s: GameState, t: Token, uid: number): void {
+    perform(this.data, s, { kind: 'endOpportunity', seat: t.side, uid });
     this.warn = null;
     this.cb.onChanged();
   }
@@ -1639,6 +1660,63 @@ export class PlayGuide {
     });
   }
 
+  // ZPA-36 Aster: "Once per round, during the Command Phase, may consume 1
+  // Command Token to restore 1 Link to an Ally Mech." It is the only one of the
+  // four consuming cards whose whole effect lives inside the Command Phase, so
+  // it is offered right where the tokens are being spent. Hidden entirely when
+  // no Aster is fielded, rather than shown greyed on every board.
+  private asterHtml(s: GameState): string {
+    const sc = this.script(s);
+    const mine = getLocalSeat();
+    const rows = s.tokens
+      .filter((t) => t.kind === 'mech' && alive(t) && pilotCard(this.data, t)?.id === 'ZPA-36')
+      .filter((t) => !mine || t.side === mine)
+      .map((t) => {
+        const spent = sc.oncePerRound.includes(asterKey(s, t.uid));
+        const why = spent ? 'Aster has already restored Link this round.'
+          : readyCommands(t) <= 0 ? `${t.label} has no face-up Command Token to consume.`
+            : '';
+        return `<button class="pg-act${why ? ' warn' : ''}" data-aster="${t.uid}" title="${esc(why || 'Consume 1 Command Token to restore 1 Link to an Ally Mech.')}">
+          <span class="pg-act-name">${esc(t.label)}: restore 1 Link</span>
+          <span class="pg-act-note">${esc(why || 'Aster · consumes 1 Command Token')}</span>
+        </button>`;
+      });
+    return rows.length ? `<div class="pg-acts">${rows.join('')}</div>` : '';
+  }
+
+  private async runAster(uid: number): Promise<void> {
+    const s = this.state;
+    if (!s) return;
+    const from = s.tokens.find((x) => x.uid === uid);
+    if (!from) return;
+    // Any Ally Mech below full Link, Aster's own included — the card says "an
+    // Ally Mech" and a squad's own Mech is its ally.
+    const able = s.tokens.filter(
+      (t) => t.side === from.side && t.kind === 'mech' && alive(t) && (t.link ?? 0) < maxLink(this.data, t),
+    );
+    if (!able.length) {
+      this.warn = 'Every Mech in the squad is already at full Link.';
+      this.render();
+      return;
+    }
+    const picked = able.length === 1
+      ? String(able[0].uid)
+      : await choiceDialog({
+        title: `${from.label} restores 1 Link`,
+        body: 'Aster consumes 1 Command Token to restore 1 Link to an Ally Mech. Once per round.',
+        stacked: true,
+        choices: [
+          ...able.map((t) => ({ id: String(t.uid), label: `${t.label} · Link ${t.link ?? 0}/${maxLink(this.data, t)}` })),
+          { id: 'cancel', label: 'Back', cancel: true },
+        ],
+      });
+    if (picked === null || picked === 'cancel') return;
+    const to = s.tokens.find((x) => x.uid === Number(picked));
+    perform(this.data, s, { kind: 'asterRestore', seat: from.side, uid, targetUid: Number(picked) });
+    if (to) this.cb.onNote(to, `${from.label} (Aster) consumes a Command Token to restore 1 Link to ${to.label}. Once per round.`);
+    this.cb.onChanged();
+  }
+
   private loopHtml(s: GameState, phase: string): string {
     const sc = this.script(s);
     const fp = `<p class="pg-turn">First player: <b class="side-${s.round.firstPlayer}">${squadLabel(s.round.firstPlayer)}</b></p>`;
@@ -1646,7 +1724,7 @@ export class PlayGuide {
 
     const tokens =
       phase === 'Command'
-        ? `<p class="pg-tokens">Command tokens: <b class="side-s1">${squadLabel('s1')} ${s.commandTokens.s1}</b> · <b class="side-s2">${squadLabel('s2')} ${s.commandTokens.s2}</b></p>`
+        ? `<p class="pg-tokens">Command tokens: <b class="side-s1">${squadLabel('s1')} ${s.commandTokens.s1}</b> · <b class="side-s2">${squadLabel('s2')} ${s.commandTokens.s2}</b></p>${this.asterHtml(s)}`
         : '';
 
     if (loopComplete(s, phase)) {

@@ -1534,6 +1534,10 @@ async function init() {
     path: { c: number; r: number }[];
     locked: boolean;
     label: string;
+    // ZHDR-304 Harpy: an Ally it is dragging along, declared BEFORE the move
+    // because the -2 Movement comes out of the allowance rather than being paid
+    // afterwards. The Mech whose Command Token funds it is recorded with it.
+    drag?: { allyUid: number; funderUid: number };
     done: (moved: boolean) => void;
   } | null = null;
 
@@ -1637,6 +1641,46 @@ async function init() {
     return pick === 'fly';
   }
 
+  // ZHDR-304 Harpy: "When performing a Command Movement, may consume 1
+  // additional Command Token and -2 Movement to drag 1 adjacent Ally Mech or
+  // Ally Drone." (printed English card, which carries a -2 the Chinese in
+  // cards.json omits).
+  //
+  // WHOSE token: the Harpy is a Drone, and 4.15.4 requires a MECH to bear the
+  // face-up token, so "1 additional" is read as one more from the squad's
+  // Mechs — the Harpy is already wearing the face-down one that commanded it,
+  // and 4.15.2 caps a Drone at one. If the publisher rules otherwise this is
+  // the line to change.
+  async function offerHarpyDrag(t: Token, steps: number): Promise<{ allyUid: number; funderUid: number } | null | 'cancelled'> {
+    if (t.cardId !== 'ZHDR-304' || steps <= 2) return null;
+    // "When performing a COMMAND Movement": in a guided game that is the
+    // Command Phase's move — an Automatic Phase move is the Drone acting on
+    // its own and gets no drag. The sandbox with no game running stays
+    // permissive, in the house style.
+    if (state.script && PHASES[state.round.phase] !== 'Command') return null;
+    const funders = state.tokens.filter(
+      (m) => m.side === t.side && m.kind === 'mech' && m.deployed !== false && statusCount(m.statuses, 'command') > 0,
+    );
+    const allies = state.tokens.filter(
+      (o) => o.uid !== t.uid && o.side === t.side && (o.kind === 'mech' || o.kind === 'drone')
+        && o.deployed !== false && inContact(t, o),
+    );
+    if (!funders.length || !allies.length) return null;
+    const picked = await choiceDialog({
+      title: `${t.label} may drag an Ally`,
+      body:
+        `Consume 1 additional Command Token from ${funders[0].label} and -2 Movement (${steps} → ${steps - 2}) `
+        + 'to drag 1 adjacent Ally Mech or Ally Drone along with this move.',
+      stacked: true,
+      choices: [
+        ...allies.map((o) => ({ id: String(o.uid), label: `Drag ${o.label}` })),
+        { id: 'no', label: 'Move normally', cancel: true },
+      ],
+    });
+    if (picked === null || picked === 'no') return null;
+    return { allyUid: Number(picked), funderUid: funders[0].uid };
+  }
+
   async function startMove(uid: number, opts: { range?: number; label: string; maneuver?: boolean; airborne?: boolean }, done: (moved: boolean) => void): Promise<void> {
     const t = state.tokens.find((x) => x.uid === uid);
     if (!t) return done(false);
@@ -1651,10 +1695,16 @@ async function init() {
     const chosen = await flyingChoice(t, !!opts.maneuver, !!opts.airborne);
     if (chosen === null) return done(false);
     const flying = chosen;
+    // The Harpy's drag is offered here rather than after the move: its -2 comes
+    // out of the Movement allowance, so it has to be decided before the route
+    // is drawn or the player would be shown a reach they cannot have.
+    const drag = await offerHarpyDrag(t, steps);
+    if (drag === 'cancelled') return done(false);
     movePlan = {
       uid,
       side: t.side,
-      steps,
+      steps: drag ? steps - 2 : steps,
+      drag: drag ?? undefined,
       flying,
       path: [{ c: Math.floor(t.col / 3), r: Math.floor(t.row / 3) }],
       locked: false,
@@ -1716,6 +1766,31 @@ async function init() {
       t.col = col;
       t.row = row;
       logTo(t, `${t.label} moves ${path.length - 1} grid${path.length - 1 === 1 ? '' : 's'}.`);
+      // The Harpy's dragged Ally comes with it — towed BEHIND, into the Grid
+      // the Harpy just vacated, with the final Grid as the fallback. The
+      // penultimate Grid has to be tried first because a Large Mech fills a
+      // whole 3x3 Grid: a spot in the Grid the Harpy itself ended in can never
+      // fit one, and "drag 1 adjacent Ally Mech" would be printed on a card
+      // that could not drag a Mech. forceMove is the same command Knockback
+      // uses, so the placement is terrain- and occupancy-aware and it travels.
+      if (m.drag) {
+        const ally = state.tokens.find((x) => x.uid === m.drag!.allyUid);
+        const goalGrid = path[path.length - 1];
+        const prevGrid = path[path.length - 2];
+        const spot = ally
+          ? (prevGrid
+            ? standingSpot(prevGrid.c, prevGrid.r, ally.size, ally.aerial, currentTerrain(), state.tokens, ally.uid)
+            : null)
+            ?? standingSpot(goalGrid.c, goalGrid.r, ally.size, ally.aerial, currentTerrain(), state.tokens, ally.uid)
+          : null;
+        if (ally && spot) {
+          perform(data, state, { kind: 'spendCommand', seat: t.side, uid: m.drag.funderUid });
+          perform(data, state, { kind: 'forceMove', seat: t.side, uid: t.uid, targetUid: ally.uid, to: spot });
+          logTo(ally, `${t.label} drags ${ally.label} along (-2 Movement, 1 Command Token consumed).`);
+        } else if (ally) {
+          logTo(t, `${ally.label} could not be dragged: nothing free to stand in. The Command Token was not consumed.`);
+        }
+      }
       onChanged();
       setHint('');
       // Movement is a non-Silence action unless a surviving Part grants

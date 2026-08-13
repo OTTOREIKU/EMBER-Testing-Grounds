@@ -532,6 +532,11 @@ export interface ScriptState {
   // to Focus, and a player may only ever send commands for their own units.
   counter: CounterRoll | null;
   endDone: string[];
+  // Abilities capped at once per round, keyed `${round}:${ability}:${uid}`.
+  // Aster's Link restore is the first; anything else printed "once per round"
+  // belongs here rather than in a flag of its own. Pruned each round the way
+  // endDone is, so it cannot grow for the length of the game.
+  oncePerRound: string[];
 }
 
 export interface CounterRoll {
@@ -566,6 +571,7 @@ export function newScriptState(firstPlayer: Side): ScriptState {
     reactions: [],
     counter: null,
     endDone: [],
+    oncePerRound: [],
   };
 }
 
@@ -619,6 +625,7 @@ export function normaliseScript(raw: unknown, firstPlayer: Side): ScriptState {
       : base.reactions,
     counter: normaliseCounter(s.counter),
     endDone: Array.isArray(s.endDone) ? s.endDone.filter((x) => typeof x === 'string') : base.endDone,
+    oncePerRound: Array.isArray(s.oncePerRound) ? s.oncePerRound.filter((x) => typeof x === 'string') : base.oncePerRound,
   };
 }
 

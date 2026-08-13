@@ -106,6 +106,18 @@
         }
       ],
       "_source": "GoF v1.021 - the Stealth Movement passive is now a Jump: a Short Movement Action, Range 2, with Airborne Movement"
+    },
+    "ZHDR-304_A": {
+      "description": {
+        "en": "· Omni-direction Firing · Melee Firing · {Lightning} may make Target Mech switch into Shutdown Stance immediately."
+      },
+      "_source": "Printed English card scan assets/cards/en/ZHDR-304.webp, read 2026-08-13. The action had NO English at all."
+    },
+    "ZHDR-304_B": {
+      "description": {
+        "en": "· When performing a Command Movement, may consume 1 additional Command Token and -2 Movement to drag 1 adjacent Ally Mech or Ally Drone."
+      },
+      "_source": "Printed English card scan assets/cards/en/ZHDR-304.webp, read 2026-08-13. No English at all, and the Chinese in cards.json is the OLDER variant: it omits the -2 Movement and says 友军单位 (ally unit) where the card says Ally Mech or Ally Drone. The card-level description carries a second, newer Chinese line that does match the print."
     }
   },
   "_notes": {

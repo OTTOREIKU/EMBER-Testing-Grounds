@@ -98,6 +98,10 @@ export type Command =
   // face-up tokens face-down. The token stays on the card - the End Phase is
   // what removes it - so this is a flip, never a removal.
   | { kind: 'spendCommand'; seat: Side; uid: number }
+  // ZPA-36 Aster: once per round, in the Command Phase, consume 1 Command Token
+  // to restore 1 Link to an Ally Mech. `uid` is Aster's Mech (it pays), and
+  // `targetUid` the Mech being repaired - often the same one.
+  | { kind: 'asterRestore'; seat: Side; uid: number; targetUid: number }
   | { kind: 'passTurn'; seat: Side }
   | { kind: 'grantExtra'; seat: Side; uid: number; linkCost: number }
   | { kind: 'markEndStep'; seat: Side; step: string }
@@ -914,6 +918,18 @@ function checkActed(
       if (!oppOf(state, cmd.uid)) return no('It is not this unit\'s Action Opportunity.');
       return ok;
     }
+    case 'asterRestore': {
+      const sc = state.script;
+      if (!sc) return no('There is no guided game running.');
+      if (PHASES[state.round.phase] !== 'Command') return no('Aster restores Link during the Command Phase.');
+      if (t.kind !== 'mech' || pilotCard(data, t)?.id !== 'ZPA-36') return no('That Mech is not piloted by Aster.');
+      if (readyCommands(t) <= 0) return no(`${t.label} has no face-up Command Token to consume.`);
+      if (sc.oncePerRound.includes(asterKey(state, t.uid))) return no(`${t.label} has already used Aster this round.`);
+      const to = state.tokens.find((x) => x.uid === cmd.targetUid);
+      if (!to || to.kind !== 'mech' || to.side !== cmd.seat || !alive(to)) return no('Aster restores Link to an Ally Mech.');
+      if ((to.link ?? 0) >= maxLink(data, to)) return no(`${to.label} is already at full Link.`);
+      return ok;
+    }
     case 'spendCommand': {
       // 4.15.4 requires the Mech to BEAR a face-up Command Token to perform an
       // Action that consumes one, which is the whole reason reserving tokens is
@@ -1723,6 +1739,22 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
       sc.opp = null;
       return;
     }
+    case 'asterRestore': {
+      // One flip and one Link, both here so a half-applied ability cannot exist
+      // on one seat: the token is consumed the same way any 4.15.4 Action
+      // consumes one, and the ledger stops a second use this round.
+      const sc2 = state.script;
+      const l2 = [...(t.statuses ?? [])];
+      const at2 = l2.lastIndexOf('command');
+      if (at2 < 0) return;
+      l2.splice(at2, 1);
+      t.statuses = [...l2, 'commandUsed'];
+      syncCommandPool(state);
+      const to = state.tokens.find((x) => x.uid === cmd.targetUid);
+      if (to) to.link = Math.min(maxLink(data, to), (to.link ?? 0) + 1);
+      if (sc2) sc2.oncePerRound = [...sc2.oncePerRound, asterKey(state, t.uid)];
+      return;
+    }
     case 'spendCommand': {
       // Flipped, not removed: 4.15.4 says a consumed token stays on the Torso
       // face-down and can no longer be issued or used, and the End Phase
@@ -1986,6 +2018,12 @@ export function applyRemote(data: GameData, state: GameState, cmd: Command): Che
 // It lives in the command layer because it writes `statuses`, a fingerprinted
 // field: both seats have to reach the identical placement, and they do because
 // the count comes from the cards rather than from anything local.
+// Aster's once-per-round ledger key. Keyed by ROUND and by the Mech, so two
+// Asters in one squad each get their own use.
+export function asterKey(state: GameState, uid: number): string {
+  return `${state.round.n}:aster:${uid}`;
+}
+
 // Both faces of the one physical token, for the sweeps and the transfer. A
 // Command Token is removed whichever way up it is lying.
 const COMMAND_FACES = new Set(['command', 'commandUsed']);

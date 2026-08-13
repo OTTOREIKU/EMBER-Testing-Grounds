@@ -5,7 +5,8 @@ import { linkMechanics } from './inspector';
 import { SQUAD_ORDER, squadLabel } from './data';
 import type { Card, CardAction, DiceData, DiceIcon, DieColor, GameRuleEffect, PartSlot, Side, SmokeScreen, TerrainPiece, Token } from './types';
 import { statusCount, STATUSES } from './types';
-import { aaRadarCovers, attackReactionsOf, auraEffectsOn, designationsOn, electronicValue, followUpAfterKill, loanedParts, repeatersFor, SLOT_LABEL, tokenCards, type AttackReaction, type MultiTarget } from './units';
+import { aaRadarCovers, attackReactionsOf, auraEffectsOn, designationsOn, electronicValue, followUpAfterKill, loanedParts, pilotCard, repeatersFor, SLOT_LABEL, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
+import { timingOf } from './ticks';
 import { losNote, protectionFor, rangeBetween } from './rules';
 import type { Command } from './commands';
 
@@ -146,6 +147,11 @@ interface Ctx {
   defenseRoll: Rolled[] | null;
   blackResult: string | null;
   rerolls: Record<'attack' | 'defense', Record<Side, boolean>>;
+  // ZPA-35 Chef: each consumed Command Token exchanges one {Eye} on the ATTACK
+  // roll for a {Heavy Hit} (4.15.4). Counted on the state rather than applied to
+  // a rendered total, because the tally is derived again at the attack step and
+  // at resolve, and a total edited in one place would not survive the other.
+  eyeSwaps: number;
   surplusRound: number;
   carried: { heavy: number; light: number };
   surplusKeyword: SurplusEffect | null;
@@ -289,6 +295,7 @@ export class AttackHelper {
       defenseRoll: null,
       blackResult: null,
       rerolls: { attack: { s1: false, s2: false }, defense: { s1: false, s2: false } },
+      eyeSwaps: 0,
       surplusRound: 0,
       carried: { heavy: 0, light: 0 },
       surplusKeyword: null,
@@ -353,6 +360,7 @@ export class AttackHelper {
       defenseRoll: null,
       blackResult: null,
       rerolls: { attack: { s1: false, s2: false }, defense: { s1: false, s2: false } },
+      eyeSwaps: 0,
       surplusRound: 0,
       carried: { heavy: 0, light: 0 },
       surplusKeyword: null,
@@ -478,9 +486,32 @@ export class AttackHelper {
     return counts;
   }
 
+  // The attack tally, with Chef's exchanges applied. Every reader of the attack
+  // roll goes through here so the display and the resolution cannot disagree —
+  // an exchange the player can see in the summary but that does not reach
+  // resolve() is worse than not offering it.
+  // Chef's exchange is offered only when every part of the printed condition
+  // holds: this Mech is piloted by Chef, the Action is a Melee one, an {Eye} is
+  // still showing to exchange, and the Mech still bears a face-up Command Token
+  // to consume (4.15.4).
+  private chefCanSwap(c: Ctx, atk: Record<string, number>): boolean {
+    if (c.attacker.kind !== 'mech') return false;
+    if (pilotCard(this.data, c.attacker)?.id !== 'ZPA-35') return false;
+    if (timingOf(c.action) !== 'melee') return false;
+    if ((atk.eye ?? 0) <= 0) return false;
+    return statusCount(c.attacker.statuses, 'command') > 0;
+  }
+
+  private attackIcons(c: Ctx): Record<string, number> {
+    const counts = this.countIcons(c.attackRoll ?? [], c.attacker.stance === 'offensive');
+    const swaps = Math.min(c.eyeSwaps ?? 0, counts.eye ?? 0);
+    if (!swaps) return counts;
+    return { ...counts, eye: (counts.eye ?? 0) - swaps, heavyHit: (counts.heavyHit ?? 0) + swaps };
+  }
+
   private resolve(): { hits: number; penetrating: number; unoffset: { heavy: number; light: number }; text: string[]; duel: Duel } {
     const c = this.ctx!;
-    const atk = this.countIcons(c.attackRoll ?? [], c.attacker.stance === 'offensive');
+    const atk = this.attackIcons(c);
     const def = this.countIcons(c.defenseRoll ?? [], c.defender.stance === 'defensive');
     // The Token, or the MES Beacon's aura: the aura grants the KEYWORD, so it
     // works exactly like the Token here and Scan cannot strip it (FAQ Q3/J2).
@@ -1085,6 +1116,28 @@ export class AttackHelper {
       });
       rr.appendChild(b);
     }
+    // The Whistle's Aura is a SECOND source of rerolls, not a cheaper Focus: it
+    // is funded by a nearby Ally Mech's Command Token rather than by Link, so it
+    // deliberately does not touch c.rerolls and can be used even after that
+    // side has already Focused.
+    const roller = which === 'attack' ? c.attacker : c.defender;
+    const funders = this.tokens ? whistleFunders(this.data, this.tokens(), roller) : [];
+    if (funders.length) {
+      const w = document.createElement('button');
+      w.textContent = `Whistle reroll (${funders[0].label})`;
+      w.title = `${funders[0].label} is within Range 4 with a face-up Command Token. Consuming it lets ${roller.label} reroll the selected dice; the token turns face-down (4.15.4).`;
+      w.addEventListener('click', () => {
+        if (!roll.some((d) => d.selected)) return;
+        this.onCommand({ kind: 'spendCommand', seat: funders[0].side, uid: funders[0].uid });
+        this.note(`${roller.label} rerolls using a Command Token from ${funders[0].label} (Whistle Aura).`);
+        void (async () => {
+          this.spinFor = which;
+          await this.reroll(roll, 'Whistle reroll');
+          this.render();
+        })();
+      });
+      rr.appendChild(w);
+    }
     div.appendChild(rr);
     return div;
   }
@@ -1127,17 +1180,37 @@ export class AttackHelper {
         void (async () => {
           this.spinFor = 'attack';
           c.attackRoll = await this.rollPool({ red: c.attackPool.red, yellow: c.attackPool.yellow }, 'Attack');
+          // A fresh roll has fresh dice, so any Chef exchange belonged to the old one.
+          c.eyeSwaps = 0;
           this.render();
         })();
       });
       wrap.appendChild(roll);
     } else {
       wrap.appendChild(this.rollView(c.attackRoll, 'attack'));
-      const atk = this.countIcons(c.attackRoll, c.attacker.stance === 'offensive');
+      const atk = this.attackIcons(c);
       const sum = document.createElement('p');
       sum.className = 'ah-sum';
-      sum.textContent = `Effective: ${atk.heavyHit ?? 0}× Heavy, ${atk.lightHit ?? 0}× Light${atk.lightning ? `, ${atk.lightning}× Lightning` : ''}${atk.eye ? `, ${atk.eye}× Eye` : ''}`;
+      sum.textContent = `Effective: ${atk.heavyHit ?? 0}× Heavy, ${atk.lightHit ?? 0}× Light${atk.lightning ? `, ${atk.lightning}× Lightning` : ''}${atk.eye ? `, ${atk.eye}× Eye` : ''}${c.eyeSwaps ? ` · ${c.eyeSwaps} exchanged by Chef` : ''}`;
       wrap.appendChild(sum);
+      // ZPA-35 Chef: on a Melee Action, consume 1 Command Token to exchange one
+      // {Eye} for a {Heavy Hit}. Offered per Eye still showing, so a Mech
+      // holding several tokens can exchange more than one.
+      if (this.chefCanSwap(c, atk)) {
+        const swap = document.createElement('button');
+        swap.className = 'ah-alt';
+        swap.textContent = 'Chef: consume a Command → {Eye} becomes {Heavy Hit}';
+        swap.title = 'Consumes 1 face-up Command Token from this Mech (4.15.4). The token turns face-down and cannot be issued or used again.';
+        swap.addEventListener('click', () => {
+          // spendCommand does the flip and refuses if the Mech has none left,
+          // so the token half travels like every other command; the exchange
+          // itself is combat-local and lives on this state.
+          this.onCommand({ kind: 'spendCommand', seat: c.attacker.side, uid: c.attacker.uid });
+          c.eyeSwaps = (c.eyeSwaps ?? 0) + 1;
+          this.render();
+        });
+        wrap.appendChild(swap);
+      }
       const next = document.createElement('button');
       next.className = 'ah-primary';
       next.textContent = 'Continue to Defense ▸';
@@ -1319,6 +1392,7 @@ export class AttackHelper {
           c.surplusOriginalPart = original;
           c.targetPart = null;
           c.attackRoll = null;
+          c.eyeSwaps = 0;
           c.defenseRoll = null;
           c.rerolls = { attack: { s1: false, s2: false }, defense: { s1: false, s2: false } };
           this.note(
