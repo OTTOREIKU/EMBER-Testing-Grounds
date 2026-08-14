@@ -69,6 +69,12 @@ button { font-family: inherit; }
 .pill.live { background: var(--green-lt); color: var(--green); }
 .pill.bad { background: var(--red-lt); color: var(--red); }
 .pill.code { background: var(--accent-lt); color: var(--accent); letter-spacing: 2px; font-weight: 700; cursor: pointer; }
+/* The connection readout. Almost always the quiet form — a bare mark that says
+   nothing is wrong and gives somewhere to click for the report. It only speaks
+   up when there is something a player could act on. */
+.pill.quiet { background: transparent; color: var(--text3); }
+#mc-health { cursor: pointer; }
+#mc-health:hover { color: var(--accent); }
 .mc-bar .spacer { margin-left: auto; }
 /* Leaving the match is a real destination, so it reads as a real button. */
 .mc-backbtn {

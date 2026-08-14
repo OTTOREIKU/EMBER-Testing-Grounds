@@ -219,31 +219,34 @@ check('a socket that has gone deaf is closed', hb3.ws.readyState, 3);
 check('and closing it asks for a reconnect', hb3.relay.state.status, 'connecting');
 
 // ---------- drift ----------
+//
+// Stamps are `<rev>:<branch>:<hash>` — where the sender was, which branch of
+// history they were on, and the board they held.
 
 const same = () => 'aaaa1111';
 // The sender was at revision 0 and so are we, and the boards agree.
 const d1 = seated('s1', same);
-d1.ws.deliver({ t: 'cmd', rev: 1, seat: 's2', seq: 1, cmd: { kind: 'ok' }, fp: '0:aaaa1111' });
+d1.ws.deliver({ t: 'cmd', rev: 1, seat: 's2', seq: 1, cmd: { kind: 'ok' }, fp: '0:0:aaaa1111' });
 check('a matching fingerprint applies as normal', d1.applied.map((c) => c.kind), ['ok']);
 check('and asks for nothing', d1.ws.kinds(), []);
 
 const d2 = seated('s1', same);
-d2.ws.deliver({ t: 'cmd', rev: 1, seat: 's2', seq: 1, cmd: { kind: 'no' }, fp: '0:bbbb2222' });
+d2.ws.deliver({ t: 'cmd', rev: 1, seat: 's2', seq: 1, cmd: { kind: 'no' }, fp: '0:0:bbbb2222' });
 check('a resync is asked for when the boards disagree', d2.ws.kinds(), ['resync']);
 check('the desync is flagged for the UI', d2.relay.state.desynced, true);
 // Applied anyway: the checkpoint on its way overwrites it, so a fingerprint
 // that is wrong about something costs a resync rather than the whole match.
 check('but the command still lands', d2.applied.map((c) => c.kind), ['no']);
 // And play carries on rather than reading the next revision as a gap.
-d2.ws.deliver({ t: 'cmd', rev: 2, seat: 's2', seq: 2, cmd: { kind: 'next' }, fp: '1:aaaa1111' });
+d2.ws.deliver({ t: 'cmd', rev: 2, seat: 's2', seq: 2, cmd: { kind: 'next' }, fp: '1:0:aaaa1111' });
 check('the next command is not mistaken for a gap', d2.applied.map((c) => c.kind), ['no', 'next']);
 
 // The sender may have been behind when it stamped: it had not yet seen the
 // commands we already applied, so the two hashes describe different moments
 // and comparing them would cry wolf.
 const d3 = seated('s1', same);
-d3.ws.deliver({ t: 'cmd', rev: 1, seat: 's2', seq: 1, cmd: { kind: 'one' }, fp: '0:aaaa1111' });
-d3.ws.deliver({ t: 'cmd', rev: 2, seat: 's2', seq: 2, cmd: { kind: 'two' }, fp: '0:bbbb2222' });
+d3.ws.deliver({ t: 'cmd', rev: 1, seat: 's2', seq: 1, cmd: { kind: 'one' }, fp: '0:0:aaaa1111' });
+d3.ws.deliver({ t: 'cmd', rev: 2, seat: 's2', seq: 2, cmd: { kind: 'two' }, fp: '0:0:bbbb2222' });
 check('a stale fingerprint is ignored rather than trusted', d3.applied.map((c) => c.kind), ['one', 'two']);
 
 // Our own command echoed back carries our own fingerprint; comparing it to
@@ -251,20 +254,106 @@ check('a stale fingerprint is ignored rather than trusted', d3.applied.map((c) =
 const d4 = seated('s1', () => String(Math.random()));
 d4.relay.publish({ kind: 'mine', seat: 's1' });
 d4.ws.sent.length = 0;
-d4.ws.deliver({ t: 'cmd', rev: 1, seat: 's1', seq: 1, cmd: { kind: 'mine' }, fp: '0:whatever' });
+d4.ws.deliver({ t: 'cmd', rev: 1, seat: 's1', seq: 1, cmd: { kind: 'mine' }, fp: '0:0:whatever' });
 check('our own echo is never drift-checked', d4.ws.kinds(), []);
 
 // An app that offers no fingerprint keeps the old behaviour exactly.
 const d5 = seated();
-d5.ws.deliver({ t: 'cmd', rev: 1, seat: 's2', seq: 1, cmd: { kind: 'ok' }, fp: '0:bbbb2222' });
+d5.ws.deliver({ t: 'cmd', rev: 1, seat: 's2', seq: 1, cmd: { kind: 'ok' }, fp: '0:0:bbbb2222' });
 check('no fingerprint hook means no drift checking', d5.applied.map((c) => c.kind), ['ok']);
 
 // And the stamp we send carries the revision we were at.
 const d6 = seated('s1', same);
-d6.ws.deliver({ t: 'cmd', rev: 1, seat: 's2', seq: 1, cmd: { kind: 'one' }, fp: '0:aaaa1111' });
+d6.ws.deliver({ t: 'cmd', rev: 1, seat: 's2', seq: 1, cmd: { kind: 'one' }, fp: '0:0:aaaa1111' });
 d6.ws.sent.length = 0;
 d6.relay.publish({ kind: 'mine', seat: 's1' });
-check('our own stamp names the revision it describes', d6.ws.sent[0].fp, '1:aaaa1111');
+check('our own stamp names the revision it describes', d6.ws.sent[0].fp, '1:0:aaaa1111');
+
+// ---------- branches ----------
+//
+// A rollback abandons one line of history and starts another. Everything the
+// other player had already composed belongs to the line being thrown away, and
+// it CANNOT be caught by the drift check: a stale command's revision is not
+// ours, so the comparison above bails before it ever looks at the hash. Without
+// the branch it lands on the rewound board in silence.
+const b1 = seated('s1', same);
+b1.relay.setBranch(1);
+b1.ws.deliver({ t: 'cmd', rev: 1, seat: 's2', seq: 1, cmd: { kind: 'stale' }, fp: '0:0:aaaa1111' });
+check('a command from the abandoned branch is dropped', b1.applied.map((c) => c.kind), []);
+// The revision still has to move, or the next one reads as a gap and this
+// client resyncs over something that was working exactly as intended.
+b1.ws.deliver({ t: 'cmd', rev: 2, seat: 's2', seq: 2, cmd: { kind: 'fresh' }, fp: '1:1:aaaa1111' });
+check('and the next one is not mistaken for a gap', b1.applied.map((c) => c.kind), ['fresh']);
+check('dropping asks for nothing', b1.ws.kinds(), []);
+
+// Our own stamp names the branch we are on, so the other end can do the same.
+const b2 = seated('s1', same);
+b2.relay.setBranch(1);
+b2.ws.sent.length = 0;
+b2.relay.publish({ kind: 'mine', seat: 's1' });
+check('our stamp names our branch', b2.ws.sent[0].fp, '0:1:aaaa1111');
+
+// A client that rejoins starts at branch 0 while everyone else has moved on. It
+// has to learn where they are from the first command it sees — otherwise it
+// refuses everything they send for the rest of the game AND keeps stamping a
+// branch they refuse right back, which is a mute client that looks connected.
+const b3 = seated('s1', same);
+b3.ws.deliver({ t: 'cmd', rev: 1, seat: 's2', seq: 1, cmd: { kind: 'ahead' }, fp: '0:2:aaaa1111' });
+check('a newer branch is adopted, not refused', b3.applied.map((c) => c.kind), ['ahead']);
+b3.ws.sent.length = 0;
+b3.relay.publish({ kind: 'mine', seat: 's1' });
+check('and we stamp the branch we learned', b3.ws.sent[0].fp, '1:2:aaaa1111');
+
+// Same revision, same branch, different board is still ordinary drift.
+const b4 = seated('s1', same);
+b4.relay.setBranch(1);
+b4.ws.deliver({ t: 'cmd', rev: 1, seat: 's2', seq: 1, cmd: { kind: 'no' }, fp: '0:1:bbbb2222' });
+check('drift on the current branch still reports', b4.ws.kinds(), ['resync']);
+check('and still applies', b4.applied.map((c) => c.kind), ['no']);
+
+// A stale command must not ALSO be reported as drift. It is expected, it is
+// handled, and crying desync over it would turn every rollback into a resync.
+const b5 = seated('s1', same);
+b5.relay.setBranch(1);
+b5.ws.deliver({ t: 'cmd', rev: 1, seat: 's2', seq: 1, cmd: { kind: 'old' }, fp: '0:0:bbbb2222' });
+check('an abandoned branch is not also called drift', b5.ws.kinds(), []);
+check('nor flagged for the UI', b5.relay.state.desynced, false);
+
+// ---------- what the line is doing ----------
+//
+// None of this changes play. It exists because every desync we have been told
+// about arrived as "the boards disagreed" with nothing attached, and because a
+// player staring at a quiet board cannot tell a dead connection from an
+// opponent who has switched tabs.
+const t1 = seated('s1', same);
+check('nothing to report before any beats', t1.relay.health().latencyMs, null);
+check('and no loss is claimed on no evidence', t1.relay.health().lossPct, 0);
+
+beat();
+check('a beat goes out', t1.ws.kinds(), ['ping']);
+t1.ws.deliver({ t: 'pong' });
+check('the pong gives a round trip', typeof t1.relay.health().latencyMs, 'number');
+
+// Loss needs a few beats behind it, or the first unanswered one reads as a
+// connection that has lost everything.
+const t2 = seated('s1', same);
+beat(); beat();
+check('two unanswered beats are not yet a verdict', t2.relay.health().lossPct, 0);
+beat();
+check('three are', t2.relay.health().lossPct, 100);
+
+// The report is the deliverable. It has to name the room and carry the trace,
+// and it must NOT carry the board — a player pasting this into a chat should
+// not be pasting their position with it.
+const t3 = seated('s1', same);
+beat();
+const rep = t3.relay.diagnostics();
+check('the report names the room', rep.room, 'AB2CD');
+check('and the seat', rep.seat, 's1');
+check('and carries the samples', Array.isArray(rep.samples), true);
+check('and the lifecycle trace', Array.isArray(rep.lifecycle), true);
+check('and counts commands dropped as stale', rep.staleDropped, 0);
+check('but never the board', 'state' in rep || 'snapshot' in rep, false);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

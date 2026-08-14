@@ -97,6 +97,11 @@ export class Relay {
   // A board was asked for while this client still had work in flight, so it
   // goes out as soon as the queue drains.
   private checkpointDue = false;
+  // Commands dropped for belonging to a branch a rollback abandoned. Kept as a
+  // count rather than acted on: a handful after a rollback is the mechanism
+  // working, and a number that climbs when nobody has rolled back is the only
+  // sign that a branch has got out of step.
+  private stale = 0;
   private retry = 0;
   private retryTimer: number | undefined;
   // The client half of the liveness check. The server pings every 10s and
@@ -106,6 +111,24 @@ export class Relay {
   // too, and treat a silence longer than a few rounds of it as a dead line.
   private beat: number | undefined;
   private heard = 0;
+  // What the line is doing, sampled off the heartbeat. None of it is pushed
+  // into NetView: a value that changed every fifteen seconds would re-render
+  // the whole HUD on a timer, and the page already redraws on every command.
+  // Read it with health() when something is being drawn anyway.
+  private pings = 0;
+  private pongs = 0;
+  private pingAt: number | null = null;
+  private latencyMs: number | null = null;
+  // How late the heartbeat itself ran. A browser throttles timers in a
+  // backgrounded tab — to once a minute in most — so a drift far past the
+  // interval is a player who has switched away, which is a completely different
+  // thing from a player whose connection has died and worth telling them apart.
+  private driftMs = 0;
+  // The last few of each, so a glance shows a trend rather than one sample.
+  private samples: { at: number; latencyMs: number | null; driftMs: number }[] = [];
+  // Connects, opens, closes and scheduled reconnects, oldest first. This is the
+  // part of a bug report nobody can reconstruct afterwards.
+  private lifecycle: { at: number; what: string; detail?: string | number }[] = [];
   private wanted: { kind: 'create' } | { kind: 'join'; room: string } | null = null;
   // Rolls this client asked for and is still waiting on, by request id.
   private rolls = new Map<string, { resolve: (d: RolledDie[]) => void; reject: (e: Error) => void; timer: number }>();
@@ -171,12 +194,67 @@ export class Relay {
   private static readonly BEAT_MS = 15_000;
   private static readonly DEAF_MS = 45_000;
 
-  // `<rev>:<hash>` — the board this client had applied, and how far it had got.
-  // Null when the app offers no fingerprint, which is how the board page opts
-  // out without a second code path.
+  // Which branch of the game's history this client is playing on. A rollback
+  // abandons one and starts another, and every command already in flight was
+  // composed against the branch that no longer exists.
+  //
+  // Rides inside the fingerprint rather than in a field of its own, because the
+  // fingerprint is already forwarded by the relay verbatim and a new field
+  // would mean a server deploy. Both clients bump it at the same moment — the
+  // accepted rollback, which each of them applies — so no number ever has to
+  // travel for them to agree.
+  private branch = 0;
+
+  // Told, not counted. The number is the game's own tally of agreed rollbacks,
+  // which arrives inside a checkpoint like any other shared fact — so a player
+  // who joins after a rollback is on the right branch before they touch
+  // anything. Monotonic: a stale save must never walk this back.
+  setBranch(n: number): void {
+    if (Number.isSafeInteger(n) && n > this.branch) this.branch = n;
+  }
+
+  // `<rev>:<branch>:<hash>` — the board this client had applied, how far it had
+  // got, and which branch of history it was on. Null when the app offers no
+  // fingerprint, which is how the board page opts out without a second code
+  // path.
   private stamp(): string | null {
     const fp = this.hooks.fingerprint?.();
-    return fp === undefined || fp === null ? null : `${this.lastRev}:${fp}`;
+    return fp === undefined || fp === null ? null : `${this.lastRev}:${this.branch}:${fp}`;
+  }
+
+  // Parsed back out. Anything that does not have all three parts is treated as
+  // no stamp at all rather than guessed at.
+  private readStamp(raw: unknown): { rev: number; branch: number; hash: string } | null {
+    if (typeof raw !== 'string') return null;
+    const a = raw.indexOf(':');
+    if (a < 1) return null;
+    const b = raw.indexOf(':', a + 1);
+    if (b < 0) return null;
+    const rev = Number(raw.slice(0, a));
+    const branch = Number(raw.slice(a + 1, b));
+    if (!Number.isInteger(rev) || !Number.isInteger(branch)) return null;
+    // The remainder, colons and all — the hash's own shape is not this
+    // function's business.
+    return { rev, branch, hash: raw.slice(b + 1) };
+  }
+
+  // A command from a branch we have already left. It was composed against a
+  // board that a rollback threw away, so applying it would write the abandoned
+  // history back onto the rewound one — silently, because its revision is not
+  // ours and the drift check below therefore never fires on it.
+  private staleBranch(raw: unknown): boolean {
+    const s = this.readStamp(raw);
+    return s !== null && s.branch < this.branch;
+  }
+
+  // The reverse: a sender further along than us. A client that has just
+  // rejoined starts at branch 0 and would otherwise refuse everything the
+  // others send for the rest of the game, and — worse — keep stamping a branch
+  // they will refuse right back. Learned from any command, replay included,
+  // which is where a rejoining client picks it up.
+  private learnBranch(raw: unknown): void {
+    const s = this.readStamp(raw);
+    if (s && s.branch > this.branch) this.branch = s.branch;
   }
 
   // A command carries the sender's board as it was before it. If we are at the
@@ -185,30 +263,96 @@ export class Relay {
   // see, because the numbers agree. That is the shape a non-deterministic
   // apply() takes, and it is silent without this.
   private driftedFrom(raw: unknown): boolean {
-    if (typeof raw !== 'string') return false;
-    const at = raw.indexOf(':');
-    if (at < 1) return false;
-    const rev = Number(raw.slice(0, at));
+    const s = this.readStamp(raw);
+    if (!s) return false;
     // Their board was one revision behind this command, ours is too, and only
-    // then do the two describe the same moment.
-    if (!Number.isInteger(rev) || rev !== this.lastRev) return false;
+    // then do the two describe the same moment. Different branches never do.
+    if (s.rev !== this.lastRev || s.branch !== this.branch) return false;
     const mine = this.hooks.fingerprint?.();
     if (mine === undefined || mine === null) return false;
-    return mine !== raw.slice(at + 1);
+    return mine !== s.hash;
+  }
+
+  // Trimmed to a fixed length so a long game does not accumulate a report
+  // nobody can read and a tab nobody can close.
+  private note(what: string, detail?: string | number): void {
+    this.lifecycle.push({ at: Date.now(), what, ...(detail === undefined ? {} : { detail }) });
+    if (this.lifecycle.length > 60) this.lifecycle.shift();
+  }
+
+  // What the connection is doing right now, for the HUD and for the report.
+  health(): {
+    latencyMs: number | null; lossPct: number; driftMs: number;
+    backgrounded: boolean; silentMs: number; rev: number; branch: number; queued: number;
+  } {
+    return {
+      latencyMs: this.latencyMs,
+      // Beats that were never answered. Only meaningful once a few have gone
+      // out, so an early game reads as 0 rather than as 100% loss.
+      lossPct: this.pings < 3 ? 0 : Math.round(((this.pings - this.pongs) / this.pings) * 100),
+      driftMs: this.driftMs,
+      // Half an interval late is far more than scheduling jitter and far less
+      // than the minute a throttled tab gets, so it separates the two without
+      // calling a busy machine backgrounded.
+      backgrounded: this.driftMs > Relay.BEAT_MS / 2,
+      silentMs: this.heard ? Date.now() - this.heard : 0,
+      rev: this.lastRev,
+      branch: this.branch,
+      queued: this.pending.length,
+    };
+  }
+
+  // Everything that would otherwise have to be reconstructed from a player's
+  // memory of what happened. Deliberately NOT including the board: a desync
+  // report is about the wire, and the state is a checkpoint away on the server.
+  diagnostics(): Record<string, unknown> {
+    return {
+      schema: 1,
+      at: new Date().toISOString(),
+      room: this.view.room?.id ?? null,
+      epoch: this.view.room?.epoch ?? null,
+      seat: this.view.seat,
+      host: this.view.host,
+      status: this.view.status,
+      desynced: this.view.desynced,
+      error: this.view.error,
+      health: this.health(),
+      // Commands dropped for belonging to a branch a rollback abandoned. A
+      // handful right after a rollback is the mechanism working; a number that
+      // climbs when nobody has rolled back is a branch out of step, and there
+      // is no other sign of that.
+      staleDropped: this.stale,
+      beats: { sent: this.pings, answered: this.pongs },
+      samples: this.samples.slice(),
+      lifecycle: this.lifecycle.slice(),
+    };
   }
 
   private startBeat(): void {
     window.clearInterval(this.beat);
     this.heard = Date.now();
+    let due = Date.now() + Relay.BEAT_MS;
     this.beat = window.setInterval(() => {
+      const now = Date.now();
+      // Measured before the socket check, because a tab that was asleep is
+      // exactly the case worth recording and it may well have no socket left.
+      this.driftMs = Math.max(0, now - due);
+      due = now + Relay.BEAT_MS;
+      this.samples.push({ at: now, latencyMs: this.latencyMs, driftMs: this.driftMs });
+      if (this.samples.length > 40) this.samples.shift();
       if (this.ws?.readyState !== WebSocket.OPEN) return;
       if (Date.now() - this.heard > Relay.DEAF_MS) {
         // Closing by hand is what makes it recoverable: onclose is the only
         // path that schedules a reconnect, and a black-holed socket will never
         // fire it on its own.
+        this.note('deaf', Date.now() - this.heard);
         this.ws.close();
         return;
       }
+      // One beat is ever in flight, so the pong that comes back is this one's
+      // and the round trip needs nothing carried in the message.
+      this.pings += 1;
+      this.pingAt = now;
       this.send({ t: 'ping' });
     }, Relay.BEAT_MS);
   }
@@ -331,6 +475,7 @@ export class Relay {
     };
 
     ws.onclose = () => {
+      this.note('closed');
       this.ws = null;
       this.stopBeat();
       // A tail cut off halfway must not leave the board waiting to be drawn.
@@ -343,6 +488,7 @@ export class Relay {
       // stays quick for the common case of a laptop lid closing.
       this.retry = Math.min(this.retry + 1, 6);
       const wait = Math.min(1000 * 2 ** (this.retry - 1), 15_000);
+      this.note('reconnect in', wait);
       this.set({ status: 'connecting', error: `Connection lost. Retrying in ${Math.round(wait / 1000)}s.` });
       this.retryTimer = window.setTimeout(() => this.open(), wait);
     };
@@ -362,9 +508,15 @@ export class Relay {
       case 'welcome':
         return;
 
-      // Nothing to do: arriving at all is the whole point, and onmessage has
-      // already stamped it.
+      // Arriving at all is most of the point, and onmessage has already stamped
+      // it. The rest is the round trip, which is the one number a player can
+      // actually act on when a game feels slow.
       case 'pong':
+        if (this.pingAt !== null) {
+          this.latencyMs = Math.max(0, Date.now() - this.pingAt);
+          this.pingAt = null;
+          this.pongs += 1;
+        }
         return;
 
       case 'room': {
@@ -443,7 +595,13 @@ export class Relay {
         // telling both players it would not settle. The checkpoint that follows
         // overwrites whatever this command did, so applying it costs nothing
         // and a false alarm costs one redundant resync instead of the match.
-        if (!this.replaying && seat !== this.view.seat && this.driftedFrom(msg.fp) && !this.view.desynced) {
+        //
+        // Branch first, and from every command including a replayed one: a
+        // client that has just rejoined starts at branch 0 and has to be told
+        // where everyone else is before either check below means anything.
+        this.learnBranch(msg.fp);
+        const stale = this.staleBranch(msg.fp);
+        if (!stale && !this.replaying && seat !== this.view.seat && this.driftedFrom(msg.fp) && !this.view.desynced) {
           this.set({ desynced: true, error: 'The two boards disagree. Catching up…' });
           this.send({ t: 'resync' });
         }
@@ -463,7 +621,15 @@ export class Relay {
         // all — the state came from a checkpoint taken before any of it — so
         // every command in the tail counts, ours included. Skipping them was
         // what sent a rejoining player back to an empty table.
-        if (!mine || this.replaying) this.hooks.onCommand(msg.cmd as Command, seat);
+        // A command from a branch a rollback abandoned is counted and dropped.
+        // The revision still moves — the server's numbering knows nothing about
+        // branches, and holding it back would read as a gap and send this client
+        // into a resync it does not need. ONLY the apply is skipped: the ack
+        // bookkeeping above still has to run so `pending` drains, and the replay
+        // check below still has to run or a tail ending on a stale command
+        // leaves the board in catch-up for the rest of the game.
+        if (stale) this.stale += 1;
+        else if (!mine || this.replaying) this.hooks.onCommand(msg.cmd as Command, seat);
         if (this.replaying && rev >= this.replayTo) this.endReplay();
         return;
       }
