@@ -297,10 +297,14 @@ let movePlan: {
   // pair grants it outright instead, which sets `flying` and leaves this false.
   flightOptional?: boolean;
   path: LargeGrid[];
-  locked: boolean;
   // What is being spent: the Maneuver Tick by default, or a named Movement
   // Action, which carries its own Range and may owe a shove at the end of it.
   label: string;
+  // How long `path` was after each click; marks[0] is the unit's own Grid, so
+  // popping one is Back and there is always a floor.
+  marks: number[];
+  // The candidate under the cursor: drawn dashed, never committed until a click.
+  preview: LargeGrid[] | null;
   // ZHDR-304 Harpy: the Ally being towed and the Mech whose Command Token pays,
   // declared before the route was drawn (the -2 already came off `steps`).
   drag?: { allyUid: number; funderUid: number };
@@ -438,7 +442,8 @@ function startMovePlan(ctx: HudCtx, t: Token, opts: { range?: number; label?: st
     flying: base || !!opts.airborne || grant === 'always',
     flightOptional: optional,
     path: [{ c: Math.floor(t.col / 3), r: Math.floor(t.row / 3) }],
-    locked: false,
+    marks: [1],
+    preview: null,
     label: opts.label ?? 'Maneuver',
     shoveActionId: opts.shoveActionId,
     free: opts.free,
@@ -466,25 +471,39 @@ function rotate(ctx: HudCtx, dir: 1 | 3): boolean {
 
 // Traced by the cursor rather than solved, so a deliberate zigzag is
 // expressible and terrain stops the route where the rules say it stops.
-function traceMove(ctx: HudCtx, c: number, r: number): void {
+// Hovering PREVIEWS, clicking commits — the same split the freeplay board uses.
+// The route used to follow the bare cursor and commit as it went, so moving the
+// mouse rewrote where the unit was going.
+function previewMove(ctx: HudCtx, c: number, r: number): void {
   const m = movePlan;
-  if (!m || m.locked || !board) return;
+  if (!m || !board) return;
   const t = ctx.state.tokens.find((x) => x.uid === m.uid);
   if (!t) return;
-  const next = extendPath(m.path, { c, r }, t, m.steps, terrainOf(ctx), ctx.state.tokens, m.flying, moveOptsFor(ctx, t, m.flying));
-  if (!next) return;
-  m.path = next;
-  board.showMovePath(next, m.side, false);
+  const cand = extendPath(m.path, { c, r }, t, m.steps, terrainOf(ctx), ctx.state.tokens, m.flying, moveOptsFor(ctx, t, m.flying));
+  m.preview = cand;
+  board.showMovePath(cand ?? m.path, m.side, !cand);
   ctx.refresh();
 }
 
-// Clicking freezes the route so the cursor can leave the board for Confirm
-// without dragging the path along behind it.
-function lockMove(ctx: HudCtx): void {
+// A click takes the previewed run; clicking on further chains a waypoint.
+function commitWaypoint(ctx: HudCtx): void {
   const m = movePlan;
-  if (!m || m.path.length < 2 || !board) return;
-  m.locked = !m.locked;
-  board.showMovePath(m.path, m.side, m.locked);
+  if (!m || !m.preview || !board) return;
+  m.path = m.preview;
+  m.marks.push(m.path.length);
+  m.preview = null;
+  board.showMovePath(m.path, m.side, true);
+  ctx.refresh();
+}
+
+// Back: drop the last committed waypoint, never past the starting Grid.
+function undoWaypoint(ctx: HudCtx): void {
+  const m = movePlan;
+  if (!m || m.marks.length < 2 || !board) return;
+  m.marks.pop();
+  m.path = m.path.slice(0, m.marks[m.marks.length - 1]);
+  m.preview = null;
+  board.showMovePath(m.path, m.side, true);
   ctx.refresh();
 }
 
@@ -675,10 +694,10 @@ function boardCallbacks(): BoardCallbacks {
         const snap = snapPlacement(col, row, size) ?? { col, row };
         board.showGhost(footprint({ ...snap, size }), fitsZone(ctx, t.side, snap, size));
       } else if (movePlan) {
-        traceMove(ctx, Math.floor(col / 3), Math.floor(row / 3));
+        previewMove(ctx, Math.floor(col / 3), Math.floor(row / 3));
       }
     },
-    onCellClick(col, row) {
+    onCellClick(col, row, erase) {
       const ctx = hudRef;
       if (!ctx) return;
       const s = ctx.state;
@@ -687,7 +706,9 @@ function boardCallbacks(): BoardCallbacks {
       // arrive landed on an illegal Grid and must do nothing at all.
       if (launchPlan) return;
       if (movePlan) {
-        lockMove(ctx);
+        // Right-click steps back a waypoint, left-click takes the preview.
+        if (erase) undoWaypoint(ctx);
+        else commitWaypoint(ctx);
         return;
       }
       if (placing === null) return;
@@ -1130,8 +1151,14 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
     return `${ticks}
       <div class="moveplan">
         <p class="tp-dim">${esc(movePlan.label)}</p>
-        <p class="tp-note">${drawn ? `${drawn} of ${movePlan.steps} grids${movePlan.locked ? ' · locked' : ''}` : `Draw a route on the board. Up to ${movePlan.steps} grid${movePlan.steps === 1 ? '' : 's'}.`}</p>
-        <p class="tp-dim">Move the cursor across grids to trace it, click to lock, then confirm.</p>
+        <p class="tp-note">${(() => {
+          const p = movePlan!.preview ? Math.max(0, movePlan!.preview.length - 1) : drawn;
+          if (p !== drawn) return `${drawn} → ${p} of ${movePlan!.steps} grids`;
+          return drawn
+            ? `${drawn} of ${movePlan!.steps} grids`
+            : `Click a lit grid to move. Up to ${movePlan!.steps} grid${movePlan!.steps === 1 ? '' : 's'}.`;
+        })()}</p>
+        <p class="tp-dim">Click a lit grid to move there. Click further on to add a waypoint, right-click or Backspace steps back.</p>
         ${
           // The Ojs200's optional Flying Movement. A toggle rather than a
           // question up front, because the reachable grids redraw either way
@@ -3730,6 +3757,13 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
       if (!c || ev.metaKey || ev.ctrlKey || ev.altKey) return;
       const el = document.activeElement as HTMLElement | null;
       if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
+      // Backspace trims the route by one waypoint. Escape still cancels the
+      // whole move, which is a different retreat and stays separate.
+      if (movePlan && (ev.key === 'Backspace' || ev.key === 'Delete')) {
+        ev.preventDefault();
+        undoWaypoint(c);
+        return;
+      }
       const k = ev.key.toLowerCase();
       if ((k === 'q' || k === 'e') && rotate(c, k === 'q' ? 3 : 1)) ev.preventDefault();
     });
@@ -4305,7 +4339,8 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     // a Grid that flying reaches and vice versa — so it goes back to the start
     // rather than being carried over and silently revalidated.
     movePlan.path = movePlan.path.slice(0, 1);
-    movePlan.locked = false;
+    movePlan.marks = [1];
+    movePlan.preview = null;
     ctx.refresh();
   });
   on('[data-turn]', (el) => { rotate(ctx, el.dataset.turn === 'ccw' ? 3 : 1); });

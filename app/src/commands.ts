@@ -1972,6 +1972,17 @@ export function onPerformed(fn: ((cmd: Command) => void) | null): void {
   mirror = fn;
 }
 
+// Called with the board as it stands BEFORE a command changes it, so a page can
+// keep an undo history. Injected the same way as the mirror above rather than
+// called directly from apply(), because apply() is exported and the test slices
+// drive it straight — a hard dependency there would break every one of them.
+// Both perform() and applyRemote() announce, so a networked history contains
+// the other player's moves too, which is what makes a shared rollback possible.
+let historian: ((state: GameState, cmd: Command) => void) | null = null;
+export function onBeforeApply(fn: ((state: GameState, cmd: Command) => void) | null): void {
+  historian = fn;
+}
+
 // Commands that must never leave this client. Setting a Timing Dial is the
 // game's one piece of hidden information (3.3): it travels only inside a
 // revealTimings, once both squads have committed to what they chose. Keeping
@@ -2000,6 +2011,7 @@ let applyingRemote = false;
 export function applyRemote(data: GameData, state: GameState, cmd: Command): CheckResult {
   const verdict = check(data, state, cmd);
   if (!verdict.ok) return verdict;
+  historian?.(state, cmd);
   applyingRemote = true;
   try {
     apply(data, state, cmd);
@@ -2126,6 +2138,7 @@ export function perform(data: GameData, state: GameState, cmd: Command): CheckRe
     refused?.(verdict.why);
     return verdict;
   }
+  historian?.(state, cmd);
   apply(data, state, cmd);
   // Mirrored only after it has actually landed here, so the other player never
   // sees a move this client refused to make — and never if it is secret.

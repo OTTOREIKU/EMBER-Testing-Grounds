@@ -815,6 +815,27 @@ export class PlayGuide {
     if (PHASES[s.round.phase] === 'Planning' && this.script(s).stage !== `${s.round.n}:1:locked`) {
       return 'Confirm the timings';
     }
+    // Nothing guarded the phases where units actually act, so Next Phase would
+    // walk straight past Mechs that had not taken their Action Opportunity and
+    // Drones that had not been offered a Command — losing the rest of the phase
+    // with no warning and no way back. The bookkeeping to know who is left was
+    // already here; it just was not asked.
+    //
+    // "Sit still" is a real answer: End this activation for a Mech and Pass for
+    // a designation loop both count as done, so this asks for a decision rather
+    // than for movement. A Drone with nothing to do in the Command Phase is
+    // never eligible in the first place — it acts in the Automatic Phase — so
+    // it is not something the player has to clear by hand.
+    const phase = PHASES[s.round.phase];
+    if (phase === 'Action' && !actionPhaseComplete(s, (t, timing) => initiativeFor(this.data, t, timing))) {
+      const left = activationOrder(s, (t, timing) => initiativeFor(this.data, t, timing))
+        .filter((a) => !this.script(s).acted.includes(a.uid)).length;
+      return `${left} Mech${left === 1 ? ' has' : 's have'} not acted — end each activation first`;
+    }
+    if (isLoopPhase(phase) && !loopComplete(s, phase)) {
+      const noun = phase === 'Delay' ? 'projectile' : 'drone';
+      return `Activate or pass every ${noun} first`;
+    }
     return null;
   }
 

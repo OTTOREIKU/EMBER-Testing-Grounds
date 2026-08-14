@@ -6,7 +6,7 @@ import { gameResult, isLowValue, newTaskState, normaliseTasks, taskItemsFor, zon
 import { DiceTray } from './dice';
 import { importSquadFile } from './importer';
 import { factionColour, squadColour } from './icons';
-import { applyRemote, onPerformed, onRefused, perform, type Command } from './commands';
+import { applyRemote, onPerformed, onRefused, perform, type Command, onBeforeApply } from './commands';
 import { Relay } from './net';
 import { getLocalSeat, setLocalSeat } from './loop';
 import { ApiError, EmberApi, type SquadEntry } from './api';
@@ -41,6 +41,7 @@ import { runFirstVisitPreload } from './preload';
 import { watchForUpdates } from './updates';
 import { installTooltip, preloadCards } from './tooltip';
 import { PHASES, RoundTracker } from './tracker';
+import { clearHistory, recordSnapshot, undoLast } from './history';
 import { offerHarpyDrag as sharedHarpyDrag } from './commandpick';
 import { PlayGuide } from './playguide';
 import type { Card, CardAction, DiceData, DieColor, Facing, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, StatusDef, TerrainPiece, Timing, Token } from './types';
@@ -260,6 +261,25 @@ async function init() {
   });
 
   roundTracker.blockedReason = (s) => playGuide.blockedReason(s);
+
+  // Undo. Every command snapshots the board it is about to change, so a misclick
+  // is one press away from gone. Registered here rather than inside the command
+  // layer so the Match Centre can keep its own policy — a shared board cannot be
+  // rewound by one player alone.
+  onBeforeApply((s, cmd) => recordSnapshot(s, cmd.kind));
+
+  function undoMove(): void {
+    // A half-drawn route belongs to a board that is about to be replaced.
+    if (movePlan) cancelMove();
+    const snap = undoLast(state);
+    if (!snap) {
+      setHint('Nothing left to undo.');
+      return;
+    }
+    selectToken(null);
+    onChanged();
+    setHint(`Undid ${snap.label} · back to round ${snap.round}, ${PHASES[snap.phase]} Phase.`);
+  }
 
   const panel = new Panel(data, {
     world: () => ({ tokens: state.tokens, terrain: currentTerrain() }),
@@ -601,7 +621,9 @@ async function init() {
     },
     onCellClick(col, row, erase) {
       if (movePlan) {
-        if (!erase) lockMove();
+        // Right-click steps back a waypoint, left-click takes the preview.
+        if (erase) undoWaypoint();
+        else commitWaypoint();
         return;
       }
       if (!editor.active) return;
@@ -624,7 +646,7 @@ async function init() {
     },
     onCellHover(col, row) {
       if (movePlan) {
-        traceMove(Math.floor(col / 3), Math.floor(row / 3));
+        previewMove(Math.floor(col / 3), Math.floor(row / 3));
         return;
       }
       if (!editor.active) return;
@@ -1532,8 +1554,15 @@ async function init() {
     side: Side;
     steps: number;
     flying: boolean;
+    // The route the player has actually committed, drawn solid.
     path: { c: number; r: number }[];
-    locked: boolean;
+    // How long `path` was after each click. The first entry is the unit's own
+    // starting Grid, so popping one is Back and there is always a floor.
+    marks: number[];
+    // The candidate under the cursor: the committed route plus the run that
+    // would reach the hovered Grid. Drawn dashed and thrown away on the next
+    // hover — moving the mouse must never change where the unit is going.
+    preview: { c: number; r: number }[] | null;
     label: string;
     // ZHDR-304 Harpy: an Ally it is dragging along, declared BEFORE the move
     // because the -2 Movement comes out of the allowance rather than being paid
@@ -1542,17 +1571,50 @@ async function init() {
     done: (moved: boolean) => void;
   } | null = null;
 
-  // The route is traced by the cursor rather than solved, so a deliberate zigzag
-  // is expressible.
-  function traceMove(c: number, r: number): void {
+  // Hovering only PREVIEWS. The route used to follow the bare cursor and commit
+  // as it went, which meant moving the mouse rewrote where the unit was going
+  // and a click was needed to freeze it — three ideas for one job, and the
+  // accidental one fired constantly. Now the cursor proposes and a click
+  // decides.
+  //
+  // extendPath solves the run from the committed end to the hovered Grid, so a
+  // distant Grid is one click away; clicking on along the way chains waypoints
+  // and keeps the deliberate zigzag the old freehand trace existed for.
+  function previewMove(c: number, r: number): void {
     const m = movePlan;
-    if (!m || m.locked) return;
+    if (!m) return;
     const t = state.tokens.find((x) => x.uid === m.uid);
     if (!t) return;
-    const next = extendPath(m.path, { c, r }, t, m.steps, currentTerrain(), state.tokens, m.flying, moveOpts(t, m.flying));
-    if (!next) return;
-    m.path = next;
-    board.showMovePath(next, m.side, false);
+    const cand = extendPath(m.path, { c, r }, t, m.steps, currentTerrain(), state.tokens, m.flying, moveOpts(t, m.flying));
+    // Unreachable from here: keep showing what is committed rather than
+    // blanking the board, so the drawn route does not flicker as the cursor
+    // crosses terrain.
+    m.preview = cand;
+    board.showMovePath(cand ?? m.path, m.side, !cand);
+    renderMoveCtrl();
+  }
+
+  // A click takes the previewed run. Nothing else commits, so the route only
+  // ever changes when the player says so.
+  function commitWaypoint(): void {
+    const m = movePlan;
+    if (!m || !m.preview) return;
+    m.path = m.preview;
+    m.marks.push(m.path.length);
+    m.preview = null;
+    board.showMovePath(m.path, m.side, true);
+    renderMoveCtrl();
+  }
+
+  // Back: drop the last committed waypoint. marks[0] is the unit's own Grid, so
+  // this stops at the start rather than emptying the path.
+  function undoWaypoint(): void {
+    const m = movePlan;
+    if (!m || m.marks.length < 2) return;
+    m.marks.pop();
+    m.path = m.path.slice(0, m.marks[m.marks.length - 1]);
+    m.preview = null;
+    board.showMovePath(m.path, m.side, true);
     renderMoveCtrl();
   }
 
@@ -1594,10 +1656,20 @@ async function init() {
     bar.hidden = false;
     const info = document.getElementById('move-info')!;
     const confirm = document.getElementById('move-confirm') as HTMLButtonElement;
+    // The live budget, always shown, committed and previewed distinguished:
+    // a player mid-route wants to know what this next click would cost before
+    // paying for it.
     const n = Math.max(0, m.path.length - 1);
-    info.textContent = n ? `${n} of ${m.steps} grids${m.locked ? ' · locked' : ''}` : `Draw a route (up to ${m.steps})`;
+    const p = m.preview ? Math.max(0, m.preview.length - 1) : n;
+    info.textContent = p !== n
+      ? `${n} → ${p} of ${m.steps} grids`
+      : n
+        ? `${n} of ${m.steps} grids`
+        : `Click a lit grid to move (up to ${m.steps})`;
     confirm.disabled = n === 0;
-    renderGuideMove(m.label, n, m.steps, m.locked);
+    const back = document.getElementById('move-back') as HTMLButtonElement | null;
+    if (back) back.disabled = m.marks.length < 2;
+    renderGuideMove(m.label, n, m.steps, m.marks.length > 1);
   }
 
   // The shared reading, not a local copy of it: Mobility Stance doubles a Mech's
@@ -1675,7 +1747,8 @@ async function init() {
       drag: drag ?? undefined,
       flying,
       path: [{ c: Math.floor(t.col / 3), r: Math.floor(t.row / 3) }],
-      locked: false,
+      marks: [1],
+      preview: null,
       label: opts.label,
       done,
     };
@@ -1687,18 +1760,9 @@ async function init() {
     const breakAway = locked.length
       ? ` Melee Locked by ${locked.map((o) => o.label).join(', ')}, so leaving a Grid costs ${locked.length} extra Movement Range (4.3.5).`
       : '';
-    setHint(`${opts.label} for ${t.label}: drag the cursor across grids to draw the route, click to lock it, then Confirm. Esc cancels.${breakAway}`);
+    setHint(`${opts.label} for ${t.label}: click a lit grid to move there. Click again further on to add a waypoint, Backspace steps back, then Confirm. Esc cancels.${breakAway}`);
   }
 
-  // Clicking freezes the traced route so the cursor can leave the board for the
-  // Confirm button without dragging the path along behind it.
-  function lockMove(): void {
-    const m = movePlan;
-    if (!m || m.path.length < 2) return;
-    m.locked = !m.locked;
-    board.showMovePath(m.path, m.side, m.locked);
-    renderMoveCtrl();
-  }
 
   function commitMove(): void {
     const m = movePlan;
@@ -4233,14 +4297,17 @@ async function init() {
   // them. Sending only `zoneSet` left them sitting there with nothing to score
   // for, and no way to remove them short of clearing the units too. Mission and
   // tasks now travel with the change, exactly as the Missions dialog sends them.
-  function setZoneSet(id: string): void {
+  // Returns whether the change went through, so a caller that has more to do
+  // after it — the Missions dialog switches to the briefing tab and closes —
+  // can stop when the command was refused.
+  function setZoneSet(id: string): boolean {
     const mission = id.startsWith('mission:') ? data.missions.cards.find((m) => m.id === id.slice(8)) : undefined;
     const v = perform(data, state, {
       kind: 'configureTable', seat: 's1', zoneSet: id,
       mission: mission?.id ?? null,
       tasks: mission ? taskItemsFor(data.zoneData.zones, mission) : null,
     });
-    if (!v.ok) return;
+    if (!v.ok) return false;
     state.showZones = !!id;
     save();
     renderZoneOverlay();
@@ -4253,6 +4320,7 @@ async function init() {
     }
     // The guide reports the chosen battlefield, so it has to hear about this.
     onChanged();
+    return true;
   }
 
   zoneSelect.addEventListener('change', () => setZoneSet(zoneSelect.value));
@@ -4319,17 +4387,15 @@ async function init() {
     dlg.querySelectorAll<HTMLButtonElement>('.scn-load').forEach((b) =>
       b.addEventListener('click', () => {
         const m = data.missions.cards[Number(b.dataset.i)];
-        // Mission, Tasks and zones travel as one command, so the guest's
-        // board picks up the whole choice rather than none of it.
-        const v = perform(data, state, {
-          kind: 'configureTable', seat: 's1',
-          mission: m.id, tasks: taskItemsFor(data.zoneData.zones, m), zoneSet: `mission:${m.id}`,
-        });
-        if (!v.ok) return;
-        state.showZones = true;
-        renderZoneOverlay();
-        if (m.family === 'vip') void designateCommanders();
-        document.getElementById('details-body')!.replaceChildren(missionBriefing(m));
+        // Straight through setZoneSet rather than repeating what it does. This
+        // handler used to send the same command itself and then forget both
+        // save() and onChanged(), so the pick landed in state and nothing on
+        // the page moved: the zones stayed off, the toolbar list still named
+        // the old set, the guide still asked for a Main Task, and a reload lost
+        // it — while REOPENING this dialog showed the mission as already in
+        // use, because the state had been written all along. Two paths doing
+        // one job is what let them drift.
+        if (!setZoneSet(`mission:${m.id}`)) return;
         showSideTab('details');
         dlg.remove();
       }),
@@ -4592,6 +4658,8 @@ async function init() {
     replayActive = true;
     const result = instantiateScenario(scn, state, data);
     state.tokens = result.tokens;
+    // A different board: every earlier snapshot belongs to a game that is gone.
+    clearHistory();
     state.markers = result.markers;
     state.smoke = [];
     state.sideNames = result.sideNames;
@@ -5291,6 +5359,8 @@ async function init() {
   });
 
   document.getElementById('move-confirm')!.addEventListener('click', () => commitMove());
+  document.getElementById('move-back')!.addEventListener('click', () => undoWaypoint());
+  document.getElementById('btn-undo')!.addEventListener('click', () => undoMove());
   document.getElementById('move-cancel')!.addEventListener('click', () => cancelMove());
 
   // ---------- keyboard ----------
@@ -5302,6 +5372,21 @@ async function init() {
     if (editor.active && (ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'z') {
       ev.preventDefault();
       undoEdit();
+      return;
+    }
+    // Backspace steps back one waypoint mid-route; Escape still abandons the
+    // whole move. Two different retreats, and conflating them is how a player
+    // loses a route they only wanted to trim.
+    // Ctrl+Z outside the map editor is the board's undo. The editor has its own
+    // above this, and gets first refusal while it is open.
+    if (!editor.active && (ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'z') {
+      ev.preventDefault();
+      undoMove();
+      return;
+    }
+    if (movePlan && (ev.key === 'Backspace' || ev.key === 'Delete')) {
+      ev.preventDefault();
+      undoWaypoint();
       return;
     }
     if (ev.key === 'Escape') {

@@ -1171,6 +1171,18 @@ export class Board {
 
     g.addEventListener('pointerdown', (ev) => {
       if (ev.button !== 0) return;
+      // A unit is not draggable while the board is in a modal interaction —
+      // drawing a movement route, painting the map editor, placing a unit.
+      // Grabbing your own Mech mid-route used to start a token drag that fought
+      // the route being traced under it and left the line drawn from a position
+      // the unit was not in.
+      //
+      // Derived from panEnabled rather than a flag of its own: that is already
+      // false in exactly these states and nowhere else, so there is no second
+      // lifecycle to keep in step. The return comes BEFORE stopPropagation so
+      // the press falls through to the board, and a route can be traced across
+      // the unit's own base instead of stopping dead on it.
+      if (!this.panEnabled) return;
       ev.stopPropagation();
       start = toBoard(ev);
       orig = { col: t.col, row: t.row };

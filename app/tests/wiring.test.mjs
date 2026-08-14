@@ -114,5 +114,27 @@ const seatSensitive = [...attributed.matchAll(/'(\w+)'/g)].map((m) => m[1]).filt
 check('only placeSmoke and designateTask read their seat when applied',
   seatSensitive.sort(), ['designateTask', 'placeSmoke']);
 
+// ---------- Class 4: one job, one path ----------
+//
+// Choosing a Main Task changes the mission, its Task Items and the zone set at
+// once. Two places offer it — the toolbar's Zones list and the Missions dialog
+// — and for a while each sent the configureTable command itself. The dialog's
+// copy forgot save() and onChanged(), so a pick landed in state and NOTHING on
+// the page moved: no zones drawn, no Task Item markers, the toolbar list still
+// naming the old set, the guide still asking for a Main Task, and a reload lost
+// it. Reopening the dialog showed the mission as already in use, because the
+// state had been written the whole time. The dialog now calls setZoneSet, and
+// this pins that it is the only writer.
+const missionSends = [...main.matchAll(/kind: 'configureTable'[^}]*mission:/g)].length;
+check('only one place configures the mission', missionSends, 1);
+check('the Missions dialog goes through setZoneSet', /if \(!setZoneSet\(`mission:\$\{m\.id\}`\)\) return;/.test(main), true);
+// setZoneSet is the shared path, so it owes BOTH the save and the re-render —
+// renderZoneOverlay alone only toggles the overlay, it does not draw the zones,
+// place the Task Items or tell the guide anything.
+const setZone = main.slice(main.indexOf('function setZoneSet('), main.indexOf('zoneSelect.addEventListener'));
+check('setZoneSet was located', setZone.includes('configureTable'), true);
+check('setZoneSet saves', /\bsave\(\);/.test(setZone), true);
+check('setZoneSet re-renders everything', /\bonChanged\(\);/.test(setZone), true);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exitCode = fail ? 1 : 0;

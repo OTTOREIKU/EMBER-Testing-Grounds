@@ -613,9 +613,12 @@ export class SquadTracker {
           maxLink ? `Starting value = pilot’s Link Value (${maxLink}).` : '',
         ],
       });
+      // Spending Link is the `focus` command, not a local subtraction. It did
+      // exactly this by hand — decrement, and Shutdown at 0 — which meant a
+      // Focus never reached the other seat, never appeared in the undo history,
+      // and forced a Stance change on one board only.
       link.querySelector('.lk-minus')!.addEventListener('click', () => {
-        t.link = Math.max(0, (t.link ?? 0) - 1);
-        if (t.link === 0) t.stance = 'shutdown';
+        perform(this.data, this.state!, { kind: 'focus', seat: t.side, uid: t.uid });
         this.cb.onChanged();
       });
       link.querySelector('.lk-plus')!.addEventListener('click', () => {
