@@ -111,8 +111,14 @@ const seatSensitive = [...attributed.matchAll(/'(\w+)'/g)].map((m) => m[1]).filt
   const end = commands.indexOf('\n  }', open);
   return end > open && /cmd\.seat/.test(commands.slice(open, end));
 });
-check('only placeSmoke and designateTask read their seat when applied',
-  seatSensitive.sort(), ['designateTask', 'placeSmoke']);
+// rollbackRequest is the third, and it is safe for a different reason than the
+// other two. They carry an explicit `for` override because one seat can make a
+// choice on the other's behalf. rollbackRequest cannot: nobody ever asks for a
+// rollback in someone else's name, and the seat it records as `by` IS the
+// sender — stamped on the way out, preserved as sent on the way in — so the two
+// clients agree on who asked without an override.
+check('only these three read their seat when applied',
+  seatSensitive.sort(), ['designateTask', 'placeSmoke', 'rollbackRequest']);
 
 // ---------- Class 4: one job, one path ----------
 //
