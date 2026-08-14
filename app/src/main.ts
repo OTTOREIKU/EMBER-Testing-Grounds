@@ -41,7 +41,7 @@ import { runFirstVisitPreload } from './preload';
 import { watchForUpdates } from './updates';
 import { installTooltip, preloadCards } from './tooltip';
 import { PHASES, RoundTracker } from './tracker';
-import { clearHistory, recordSnapshot, undoLast } from './history';
+import { clearHistory, historyList, recordSnapshot, undoLast } from './history';
 import { offerHarpyDrag as sharedHarpyDrag } from './commandpick';
 import { PlayGuide } from './playguide';
 import type { Card, CardAction, DiceData, DieColor, Facing, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, StatusDef, TerrainPiece, Timing, Token } from './types';
@@ -208,6 +208,8 @@ async function init() {
 
   const playGuide = new PlayGuide(document.getElementById('board-wrap')!, data, {
     world: () => ({ tokens: state.tokens, terrain: currentTerrain() }),
+    onUndo: () => undoMove(),
+    undoLabel: () => undoName(),
     onStartGame: () => void startGame(),
     onAdvancePhase: () => roundTracker.advance(),
     onSelectUnit: (uid) => selectToken(uid),
@@ -267,6 +269,37 @@ async function init() {
   // layer so the Match Centre can keep its own policy — a shared board cannot be
   // rewound by one player alone.
   onBeforeApply((s, cmd) => recordSnapshot(s, cmd.kind));
+
+  // What the next undo would take back, in words a player recognises. The ring
+  // labels steps by command kind, which is developer vocabulary; anything not
+  // named here falls back to something honest rather than to jargon.
+  const UNDO_NAMES: Record<string, string> = {
+    advancePhase: 'the phase change',
+    setPhase: 'the phase change',
+    setTiming: 'a Timing Dial',
+    designate: 'a designation',
+    passTurn: 'a pass',
+    maneuver: 'a move',
+    setStance: 'a Stance change',
+    spendTicks: 'an Action',
+    spendAmmo: 'an Ammo spend',
+    spendCommand: 'a Command spend',
+    coordinateCommand: 'a Command Coordination',
+    applyPenetration: 'a Penetration',
+    recordKill: 'a removal',
+    placeSmoke: 'a smoke screen',
+    forceMove: 'a Forced Movement',
+    acceptRoll: 'the First Player roll',
+    markEndStep: 'an End Phase step',
+    award: 'a score award',
+    grantExtra: 'an Extra Opportunity',
+    endActivation: 'an activation end',
+  };
+  function undoName(): string | null {
+    const last = historyList().at(-1);
+    if (!last) return null;
+    return UNDO_NAMES[last.label] ?? 'the last step';
+  }
 
   function undoMove(): void {
     // A half-drawn route belongs to a board that is about to be replaced.

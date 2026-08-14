@@ -634,11 +634,13 @@ main { display: flex; flex: 1; min-height: 0; }
   margin-left: auto; color: var(--accent); font-weight: 700;
   text-transform: uppercase; letter-spacing: 0.5px; font-size: 11px;
 }
-.pg-fold, .pg-close {
+.pg-fold, .pg-close, .pg-undo {
   border: none; background: none; color: var(--text2); cursor: pointer;
   font-size: 11px; line-height: 1; padding: 3px 4px; border-radius: var(--radius-sm);
 }
-.pg-fold:hover, .pg-close:hover { background: var(--surface3); color: var(--text); }
+.pg-fold:hover, .pg-close:hover, .pg-undo:hover:not(:disabled) { background: var(--surface3); color: var(--text); }
+.pg-undo { font-size: 13px; }
+.pg-undo:disabled { color: var(--text3); cursor: default; opacity: 0.5; }
 #play-guide.collapsed .pg-body, #play-guide.collapsed .pg-foot { display: none; }
 .pg-body { padding: 9px 10px 4px; }
 .pg-sub { margin: 0 0 6px; color: var(--text3); font-size: 11px; }

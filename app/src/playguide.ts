@@ -54,6 +54,15 @@ export type { Activation, InitLookup, LoopPhase } from './loop';
 
 export interface GuideCallbacks {
   world(): ActionWorld;
+  // The board-wide undo, surfaced in the guide's own header so stepping back is
+  // one press from anywhere — not just where a tool happens to offer a Back
+  // button. Freeplay only: the callback is optional because a networked game
+  // must not be rewound by one player, and the Match Centre's Panel simply
+  // never provides it.
+  onUndo?(): void;
+  // What the next press would take back, or null when there is nothing left.
+  // Asked at render time so the button can name the step and grey out honestly.
+  undoLabel?(): string | null;
   onAdvancePhase(): void;
   onStartGame(): void;
   onSelectUnit(uid: number): void;
@@ -277,6 +286,7 @@ export class PlayGuide {
         <span class="pg-grip" title="Drag to move">⠿</span>
         <b class="pg-title">Round ${s.round.n}<small>/${limit}${limit && s.round.n > limit ? '+' : ''}</small></b>
         <span class="pg-phase">${phase}<small> ${s.round.phase + 1}/6</small></span>
+        ${this.undoHtml()}
         <button class="pg-fold" title="${this.ui.collapsed ? 'Expand' : 'Collapse'}">${this.ui.collapsed ? '▸' : '▾'}</button>
         <button class="pg-close" title="Hide the play guide">✕</button>
       </div>
@@ -554,6 +564,7 @@ export class PlayGuide {
       this.render();
     });
     this.root.querySelector('.pg-next')!.addEventListener('click', () => this.cb.onAdvancePhase());
+    this.root.querySelector('[data-undo]')?.addEventListener('click', () => this.cb.onUndo?.());
     this.place();
   }
 
@@ -1794,6 +1805,20 @@ export class PlayGuide {
           .join('')}
         <button class="pg-pass" data-pass="1" title="This side is done for the phase">Pass</button>
       </div>`;
+  }
+
+  // The board-wide undo, worn on the guide's own header so it is in reach at
+  // every step of every phase — a player deep in the Action Phase who set a
+  // dial wrong steps back through the phases to it, one press per step, the
+  // way an editor's undo walks its history. The button names what the next
+  // press takes back, because "Undo" alone leaves the player guessing how far
+  // it reaches.
+  private undoHtml(): string {
+    if (!this.cb.onUndo) return '';
+    const label = this.cb.undoLabel?.() ?? null;
+    return label
+      ? `<button class="pg-undo" data-undo="1" title="Undo ${esc(label)} (Ctrl+Z)">↩</button>`
+      : '<button class="pg-undo" disabled title="Nothing to undo yet.">↩</button>';
   }
 
   private designate(uid: number): void {
