@@ -5,7 +5,7 @@ import { unfoldsInto } from './data';
 import { commandGeneration, blinkTargets, isPositionSwap, electronicOrigins, loanedParts, unfoldToken, extrasFor, consumesCharge, electronicValue, freehandSlots, interceptCapacity, makeDroneToken, makeMechToken, maxLink, pilotCard, projectileDelivery, tokenCards } from './units';
 import { canActivate, canManeuver, canOverload, canPerform, spendAction, spendActivation, spendManeuver, spendOverload } from './ticks';
 import { tacticSpec, tacticTargets, type TacticCtx } from './tactics';
-import { battlefieldLocked, deploymentComplete, deployTurn, firstPlayerFrom, newSetup, normaliseSetup } from './setup';
+import { battlefieldLocked, deploymentComplete, deployTurn, firstPlayerFrom, newSetup, normaliseSetup, tasksLocked } from './setup';
 import { applyKill, normaliseTasks, pendingDesignations, settleControl, type Designation } from './tasks';
 import { alive, dialHidden, eligibleUnits, getLocalSeat, isLoopPhase, nextTurn, onExtraOpportunity } from './loop';
 import { dissipationFor } from './rules';
@@ -358,10 +358,20 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       }
       if (cmd.scale !== undefined && !['skirmish', 'standard', 'large'].includes(cmd.scale as string)) return no('That is not a battle scale.');
       if (cmd.roundLimit !== undefined && (!Number.isInteger(cmd.roundLimit) || cmd.roundLimit < 1 || cmd.roundLimit > 12)) return no('That is not a game length.');
-      // The battlefield is fixed once the game starts (3.1.2).
-      if ((cmd.map !== undefined || cmd.zoneSet !== undefined || cmd.mission !== undefined)
-        && battlefieldLocked(normaliseSetup(state.setup))) {
+      // Two locks with two clocks, and the difference is FAQ P1's setup order.
+      // The MAP is agreed first and freezes the moment it is locked in —
+      // everything after the map stage plays on it (3.1.2). The Main Task and
+      // its zones are chosen AFTER the First Player roll, so they must stay
+      // changeable through the roll and the tasks stage and freeze only when
+      // edges are being picked. Gating them on the map's lock is the bug that
+      // made the guide's own "Change the Main Task" button refuse in silence:
+      // the button exists precisely in the window this used to close.
+      const setup = normaliseSetup(state.setup);
+      if (cmd.map !== undefined && battlefieldLocked(setup)) {
         return no('The battlefield is locked once the game starts (3.1.2). End the game to change it.');
+      }
+      if ((cmd.zoneSet !== undefined || cmd.mission !== undefined) && tasksLocked(setup)) {
+        return no('The Tasks are settled once edges are picked (FAQ P1). End the game to change them.');
       }
       return ok;
     }

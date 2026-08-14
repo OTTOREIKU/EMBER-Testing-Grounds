@@ -4300,6 +4300,10 @@ async function init() {
   // Returns whether the change went through, so a caller that has more to do
   // after it — the Missions dialog switches to the briefing tab and closes —
   // can stop when the command was refused.
+  // On refusal the reason is kept here for the caller to show — the Missions
+  // dialog used to swallow it, so a refused pick looked like a button that
+  // simply did nothing.
+  let zoneSetRefusal = '';
   function setZoneSet(id: string): boolean {
     const mission = id.startsWith('mission:') ? data.missions.cards.find((m) => m.id === id.slice(8)) : undefined;
     const v = perform(data, state, {
@@ -4307,6 +4311,7 @@ async function init() {
       mission: mission?.id ?? null,
       tasks: mission ? taskItemsFor(data.zoneData.zones, mission) : null,
     });
+    zoneSetRefusal = v.ok ? '' : v.why ?? 'That change was refused.';
     if (!v.ok) return false;
     state.showZones = !!id;
     save();
@@ -4384,20 +4389,39 @@ async function init() {
       row.addEventListener('focusin', () => show(row));
     });
     dlg.querySelector('.scn-list')!.addEventListener('mouseleave', () => { fig.hidden = true; });
+    // A refused pick says why, in the dialog itself. It used to return in
+    // silence, and a silent refusal is indistinguishable from a broken button —
+    // which is exactly what it got reported as.
+    const note = document.createElement('p');
+    note.className = 'mis-note';
+    note.hidden = true;
+    dlg.querySelector('.scn-list')!.before(note);
     dlg.querySelectorAll<HTMLButtonElement>('.scn-load').forEach((b) =>
       b.addEventListener('click', () => {
         const m = data.missions.cards[Number(b.dataset.i)];
         // Straight through setZoneSet rather than repeating what it does. This
         // handler used to send the same command itself and then forget both
         // save() and onChanged(), so the pick landed in state and nothing on
-        // the page moved: the zones stayed off, the toolbar list still named
-        // the old set, the guide still asked for a Main Task, and a reload lost
-        // it — while REOPENING this dialog showed the mission as already in
-        // use, because the state had been written all along. Two paths doing
-        // one job is what let them drift.
-        if (!setZoneSet(`mission:${m.id}`)) return;
+        // the page moved. Two paths doing one job is what let them drift.
+        if (!setZoneSet(`mission:${m.id}`)) {
+          note.textContent = zoneSetRefusal;
+          note.hidden = false;
+          return;
+        }
+        note.hidden = true;
+        // The dialog stays up and answers for itself: the picked row flips to
+        // "On the board" and the board redraws behind it, so the click is seen
+        // to land rather than taken on faith. Closing it here used to be the
+        // answer, but a dialog that vanishes reads as dismissed, not done.
+        dlg.querySelectorAll<HTMLElement>('.scn-row').forEach((row) => {
+          const live = row.dataset.mis === m.id;
+          row.classList.toggle('current', live);
+          const btn = row.querySelector('.scn-load')!;
+          btn.textContent = live ? 'On the board' : 'Use it';
+        });
+        // The briefing is already in the side panel (setZoneSet put it there);
+        // fronting the tab means it is showing when the player closes this.
         showSideTab('details');
-        dlg.remove();
       }),
     );
     document.body.appendChild(dlg);

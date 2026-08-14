@@ -133,7 +133,10 @@ check('only these three read their seat when applied',
 // this pins that it is the only writer.
 const missionSends = [...main.matchAll(/kind: 'configureTable'[^}]*mission:/g)].length;
 check('only one place configures the mission', missionSends, 1);
-check('the Missions dialog goes through setZoneSet', /if \(!setZoneSet\(`mission:\$\{m\.id\}`\)\) return;/.test(main), true);
+check('the Missions dialog goes through setZoneSet', /if \(!setZoneSet\(`mission:\$\{m\.id\}`\)\) \{/.test(main), true);
+// And a refused pick must SAY so. The silent version of this return was
+// reported as a broken button, twice, because from the outside it was one.
+check('a refused pick is shown, not swallowed', /note\.textContent = zoneSetRefusal;/.test(main), true);
 // setZoneSet is the shared path, so it owes BOTH the save and the re-render —
 // renderZoneOverlay alone only toggles the overlay, it does not draw the zones,
 // place the Task Items or tell the guide anything.

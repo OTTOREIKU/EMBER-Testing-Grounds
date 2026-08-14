@@ -518,6 +518,9 @@ main { display: flex; flex: 1; min-height: 0; }
 
 #scn-dialog, #map-dialog, #mis-dialog, #mp-dialog { position: fixed; inset: 0; z-index: 900; background: rgba(0, 0, 0, 0.62); display: flex; align-items: center; justify-content: center; }
 .scn-row.current { outline: 1px solid var(--accent); background: var(--accent-lt); }
+/* Why a pick was refused, shown above the list. Hidden until it has something
+   to say, so the dialog does not open with an empty red box. */
+.mis-note { font-size: 12px; color: var(--red, #ea6d76); background: var(--red-lt, rgba(234, 109, 118, .14)); border-radius: 6px; padding: 8px 10px; margin: 0 0 10px; }
 .scn-watch {
   border: none; background: var(--blue-lt); color: var(--blue); font-weight: 700;
   border-radius: var(--radius); padding: 6px 10px; font-size: 11.5px; cursor: pointer;
