@@ -537,6 +537,23 @@ export interface ScriptState {
   // belongs here rather than in a flag of its own. Pruned each round the way
   // endDone is, so it cannot grow for the length of the game.
   oncePerRound: string[];
+  // A rollback one player has asked for and the other has not answered yet.
+  // It lives in shared state rather than on one client so both seats see the
+  // same ask, and so a reconnect does not lose it. One at a time: a second
+  // request while one is open is refused rather than queued.
+  rollback: RollbackAsk | null;
+}
+
+// Rollback targets are ROUND/PHASE boundaries, never command indexes. The two
+// clients' undo histories are NOT the same length — setTiming is secret and
+// never travels, so a player who set three dials has three snapshots the
+// opponent does not — but both agree on when a phase began without being told.
+export interface RollbackAsk {
+  by: Side;
+  round: number;
+  phase: number;
+  // Shown to the other player so they know what they are agreeing to.
+  label: string;
 }
 
 export interface CounterRoll {
@@ -572,6 +589,18 @@ export function newScriptState(firstPlayer: Side): ScriptState {
     counter: null,
     endDone: [],
     oncePerRound: [],
+    rollback: null,
+  };
+}
+
+function normaliseRollback(raw: unknown): RollbackAsk | null {
+  const r = raw as Partial<RollbackAsk> | null | undefined;
+  if (!r || typeof r.round !== 'number' || typeof r.phase !== 'number') return null;
+  return {
+    by: asSide(r.by),
+    round: r.round,
+    phase: r.phase,
+    label: typeof r.label === 'string' ? r.label : '',
   };
 }
 
@@ -626,6 +655,7 @@ export function normaliseScript(raw: unknown, firstPlayer: Side): ScriptState {
     counter: normaliseCounter(s.counter),
     endDone: Array.isArray(s.endDone) ? s.endDone.filter((x) => typeof x === 'string') : base.endDone,
     oncePerRound: Array.isArray(s.oncePerRound) ? s.oncePerRound.filter((x) => typeof x === 'string') : base.oncePerRound,
+    rollback: normaliseRollback(s.rollback),
   };
 }
 

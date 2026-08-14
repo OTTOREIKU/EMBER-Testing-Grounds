@@ -1,4 +1,5 @@
 import { clearDroneCommands, missionZones, readyCommands, seedCommandTokens, taskDesignations, type Command, type CheckResult } from './commands';
+import { rollbackPoints } from './history';
 import { askIssuer, asterBlockers, offerCoordination, offerHarpyDrag, runAster } from './commandpick';
 import type { GameData } from './data';
 import { actionIconUrl, cardName, isAerial, secondaryImageUrl, squadLabel, unitSize } from './data';
@@ -1252,7 +1253,7 @@ function loopPanel(ctx: HudCtx, phase: LoopPhase): string {
       }
       return head('Your move', esc(t.label), phase === 'Command' ? 'One Command Action, or move it.' : 'Resolve its action, then end.', true)
         + `<div class="tp-body">${actionButtons(ctx, t, sc.opp)}</div>
-          <div class="tp-foot"><button class="bigbtn" data-act="endopp">End this activation</button></div>`;
+          <div class="tp-foot">${rollbackOffer(ctx)}<button class="bigbtn" data-act="endopp">End this activation</button></div>`;
     }
   }
   if (loopComplete(s, phase)) {
@@ -1268,7 +1269,7 @@ function loopPanel(ctx: HudCtx, phase: LoopPhase): string {
   const rows = units.map((t) => `<button class="rowwide" data-designate="${t.uid}">${esc(t.label)}<span class="ct">${t.kind}</span></button>`).join('');
   return head('Your move', phase === 'Command' ? 'Command a drone' : phase === 'Delay' ? 'Activate a projectile' : 'Activate a drone', 'Or pass for the phase.', true)
     + `<div class="tp-body">${tokens}${rows}</div>
-      <div class="tp-foot"><button class="bigbtn ghost2" data-act="pass">Pass</button></div>`;
+      <div class="tp-foot">${rollbackOffer(ctx)}<button class="bigbtn ghost2" data-act="pass">Pass</button></div>`;
 }
 
 function actionPanel(ctx: HudCtx): string {
@@ -1377,6 +1378,9 @@ function panelHtml(ctx: HudCtx): string {
   // A Tactics Card is played into a moment, so its two questions come before
   // whatever the phase would otherwise be asking.
   if (tacticPlan) return tacticPanel(ctx);
+  // A rollback request pauses the table for both seats: nothing else on this
+  // board is worth doing until it is answered, and the asker is waiting.
+  if (ensureScript(s).rollback) return rollbackPanel(ctx);
   if (launchPlan) return launchPanel(ctx);
   if (launchPick) return launchPickPanel(ctx);
   // A Counter-roll is a live two-player exchange, so it outranks everything
@@ -1422,6 +1426,58 @@ function panelHtml(ctx: HudCtx): string {
   if (s.round.phase === 2) return actionPanel(ctx);
   if (isLoopPhase(phase)) return loopPanel(ctx, phase);
   return endPanel(ctx);
+}
+
+
+
+// The way back. Offers only ROUND/PHASE boundaries — never command indexes,
+// because the two clients' undo rings are not the same length (setTiming is
+// secret and never travels), and both agree on when a phase began.
+//
+// The list is short on purpose after dice: rollbackPoints() stops at the most
+// recent command that acted on a server roll, so a player can never rewind past
+// their own bad roll. That is a rule, not a glitch, so it says so rather than
+// silently offering nothing.
+function rollbackOffer(ctx: HudCtx): string {
+  if (!ctx.networked || ensureScript(ctx.state).rollback) return '';
+  const pts = rollbackPoints();
+  if (!pts.length) return '';
+  // The phase you are standing in is a target like any other, and usually the
+  // one meant — it is the board as this phase BEGAN, not the board now. Named
+  // differently only because "back to round 2, Action Phase" while sitting in
+  // round 2's Action Phase reads like it would do nothing.
+  const here = (p: { round: number; phase: number }) => p.round === ctx.state.round.n && p.phase === ctx.state.round.phase;
+  const opts = pts
+    .slice(-6)
+    .reverse()
+    .map((p) => `<button class="rowwide" data-rb="${p.round}:${p.phase}">${here(p)
+      ? `Back to the start of this ${PHASES[p.phase]} Phase`
+      : `Back to round ${p.round}, ${PHASES[p.phase]} Phase`}</button>`)
+    .join('');
+  return `<details class="tp-rollback"><summary>Ask to roll back</summary>
+    <p class="tp-dim">Both players have to agree. Anything since the point you pick is undone for both of you, and a rollback never reaches past a die roll.</p>
+    ${opts}</details>`;
+}
+
+// The rollback handshake. A shared board cannot be rewound by one player, so
+// one side asks and the other agrees — and the asker gets a waiting screen
+// rather than a silent board.
+function rollbackPanel(ctx: HudCtx): string {
+  const ask = ensureScript(ctx.state).rollback!;
+  const to = `round ${ask.round}, ${PHASES[ask.phase]} Phase`;
+  if (mine(ctx, ask.by)) {
+    return head('Rollback', 'Waiting on an answer', `You asked to go back to ${esc(to)}.`, false)
+      + `<div class="tp-body">${waiting(ask.by === 's1' ? 's2' : 's1', 'answering your rollback request')}</div>
+        <div class="tp-foot"><button class="bigbtn ghost2" data-rb="cancel">Withdraw</button></div>`;
+  }
+  return head('Rollback', `${squadLabel(ask.by)} asks to go back`, `To ${esc(to)}. Everything since then is undone for both of you.`, true)
+    + `<div class="tp-body">
+        <p class="tp-note">Agreeing rewinds both boards. Dice already rolled are not part of this — a rollback never reaches past a roll.</p>
+      </div>
+      <div class="tp-foot">
+        <button class="bigbtn" data-rb="accept">Accept and roll back</button>
+        <button class="bigbtn ghost2" data-rb="decline">Decline</button>
+      </div>`;
 }
 
 // The last roll drawn. Anything newer than this has not been on screen yet and
@@ -3890,6 +3946,27 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     });
   });
   on('[data-act="pass"]', () => { ctx.send({ kind: 'passTurn', seat: me() }); ctx.refresh(); });
+  on('[data-rb]', (el) => {
+    const what = el.dataset.rb;
+    if (what === 'accept' || what === 'decline') {
+      ctx.send({ kind: 'rollbackAnswer', seat: me(), accept: what === 'accept' });
+      if (what === 'decline') ctx.noteNow('Rollback declined. The board stands.');
+      ctx.refresh();
+      return;
+    }
+    if (what === 'cancel') {
+      // Withdrawing is declining your own ask. check() allows exactly that and
+      // still refuses the asker APPROVING it, which is where consent matters.
+      ctx.send({ kind: 'rollbackAnswer', seat: me(), accept: false });
+      ctx.refresh();
+      return;
+    }
+    // Otherwise it names a target: "round:phase".
+    const [r, ph] = (what ?? '').split(':').map(Number);
+    if (!Number.isInteger(r) || !Number.isInteger(ph)) return;
+    ctx.send({ kind: 'rollbackRequest', seat: me(), round: r, phase: ph, label: `round ${r}, ${PHASES[ph]} Phase` });
+    ctx.refresh();
+  });
   on('[data-aster]', (el) => {
     const t = s.tokens.find((x) => x.uid === Number(el.dataset.aster));
     if (!t) return;

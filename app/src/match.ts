@@ -1,6 +1,7 @@
 import { ApiError, EmberApi, type Account, type MyRecord, type SquadEntry } from './api';
 import { Relay, type RollKind } from './net';
-import { applyRemote, check, onPerformed, onRefused, perform, type Command, type CheckResult } from './commands';
+import { applyRemote, check, onBeforeApply, onPerformed, onRefused, perform, type Command, type CheckResult } from './commands';
+import { clearHistory, recordSnapshot, undoToPhase } from './history';
 import { setLocalSeat } from './loop';
 import { cardName, dataUrl, loadData, missionImageUrl, squadLabel, type GameData } from './data';
 import { tacticSpec } from './tactics';
@@ -159,6 +160,7 @@ const relay = new Relay(api.base, {
     }
     glueAfter(data, state, cmd);
     clearFeedAfter(cmd);
+    rewindIfAgreed(cmd);
     // Nothing below this line belongs in a replay: the commitments and reveals
     // are being re-read from history, and answering them again would send this
     // client's reveal a second time.
@@ -190,6 +192,16 @@ const relay = new Relay(api.base, {
     if (!data) return;
     const s = migrateState(raw, data);
     if (s) state = s;
+    // A checkpoint REPLACES the board — note `state = s`, a new reference —
+    // either because we joined late or because we drifted. Every snapshot taken
+    // before it describes a game this client can no longer vouch for, and a
+    // rollback into one would be worse than having none.
+    clearHistory();
+    asked = null;
+    // The board this replaces it with IS the answer to "Rolling back…", so the
+    // note has served its purpose. Left up, it would sit there for the rest of
+    // the game claiming a rewind is still in flight.
+    if (lobbyNote === 'Rolling back…') lobbyNote = null;
     if (!catchingUp) render();
   },
   onCatchUp(active) {
@@ -249,6 +261,19 @@ const relay = new Relay(api.base, {
 // Everything performed on this page mirrors, same as on the board — and a
 // strict refusal is worth a note here rather than silence.
 onPerformed((cmd) => relay.publish(cmd));
+
+// The rollback target, read one moment before apply() clears it. The historian
+// runs before every command, local and remote alike, which is exactly when the
+// pending ask is still on the board — so both clients capture the same target
+// off the same command without either having to be told what it was.
+let asked: { round: number; phase: number } | null = null;
+onBeforeApply((s, cmd) => {
+  if (cmd.kind === 'rollbackAnswer' && cmd.accept) {
+    const r = s.script?.rollback;
+    asked = r ? { round: r.round, phase: r.phase } : null;
+  }
+  recordSnapshot(s, cmd.kind);
+});
 onRefused((why) => {
   lobbyNote = why;
   render();
@@ -296,8 +321,57 @@ function send(cmd: Command): CheckResult {
   if (v.ok) {
     glueAfter(data, state, cmd);
     clearFeedAfter(cmd);
+    rewindIfAgreed(cmd);
   }
   return v;
+}
+
+// A rollback both players agreed to. The rewind is done HERE rather than inside
+// apply(), because a command that rewrote the board from inside apply() would be
+// undoing the history entry it had just created.
+//
+// ONE ring decides the rewound board, and it is the host's.
+//
+// The obvious version has both clients undo their own ring off the same
+// command. It is wrong, because the two rings are not the same length —
+// setTiming is secret and never travels, so a player who set three dials holds
+// three snapshots the opponent does not, and the older end of a 40-deep ring
+// falls off at different moments on each side. A client that no longer holds
+// the target would quietly do nothing while the other rewound: two boards, no
+// complaint, which is the failure this whole layer exists to avoid.
+//
+// So the guest does not rewind at all. The host rewinds from its own ring and
+// publishes a checkpoint; the guest's board is REPLACED by it. Costs the guest
+// one round trip before the board moves, which is nothing against undoing
+// several minutes of play, and it makes disagreement structurally impossible.
+function rewindIfAgreed(cmd: Command): void {
+  if (cmd.kind !== 'rollbackAnswer' || !cmd.accept) return;
+  const to = asked;
+  asked = null;
+  if (!to) return;
+  if (!isHost()) {
+    // Every snapshot here describes a board the checkpoint is about to discard,
+    // and onCheckpoint would drop them anyway. Cleared early so nothing can be
+    // undone into the gap while the rewind is in the air.
+    clearHistory();
+    lobbyNote = 'Rolling back…';
+    render();
+    return;
+  }
+  const snap = undoToPhase(state, to.round, to.phase);
+  if (!snap) {
+    // Only reachable if the asker offered a point the host has already dropped.
+    // Nothing has moved on either board, so this is safe — but it is not silent.
+    lobbyNote = 'That point is too far back to return to. Nothing was undone.';
+    render();
+    return;
+  }
+  // The server still holds every command that has just been undone, so a
+  // resync or a late joiner would replay them straight back. Publishing a
+  // checkpoint truncates its log to the rewound board — relay.ts drops
+  // everything at or before the checkpoint revision.
+  relay.publishCheckpoint();
+  render();
 }
 
 // The faces a roll landed on, read from the same printed data both players

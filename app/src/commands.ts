@@ -177,6 +177,14 @@ export type Command =
   // A seat declaring itself ready in the lobby, so the host cannot start
   // while the other player is still reading the battlefield.
   | { kind: 'setReady'; seat: Side; ready: boolean }
+  // Rolling a shared board back, by consent. These travel as ordinary commands,
+  // so the relay forwards them without needing to know what they mean and no
+  // server change is required. The REWIND itself is not done here — a command
+  // that rewrote the board while inside apply() would be undoing the history
+  // entry it is currently creating. The page watches for the accepted answer
+  // and calls history.undoTo() outside the command layer.
+  | { kind: 'rollbackRequest'; seat: Side; round: number; phase: number; label: string }
+  | { kind: 'rollbackAnswer'; seat: Side; accept: boolean }
   // The two halves of the networked dial reveal (3.3). A seat publishes a
   // hash of its dials first and the dials themselves only once both hashes
   // are in, so neither player can see the other's before fixing their own.
@@ -280,7 +288,8 @@ type TableKind =
   | 'queueReactions'
   | 'clearCounterRoll'
   | 'setMode' | 'handOver' | 'setStrict' | 'commitTimings' | 'revealTimings' | 'importSquad'
-  | 'configureTable' | 'startMatch' | 'endMatch' | 'pickSecondary' | 'setTactics' | 'setReady' | 'designateTask';
+  | 'configureTable' | 'startMatch' | 'endMatch' | 'pickSecondary' | 'setTactics' | 'setReady' | 'designateTask'
+  | 'rollbackRequest' | 'rollbackAnswer';
 const TABLE_KINDS = new Set<Command['kind']>([
   'advancePhase', 'setPhase', 'resetRounds', 'adjustCommandTokens', 'passTurn', 'markEndStep', 'award',
   'lockMap', 'rollSetup', 'acceptRoll', 'finishTasks', 'pickEdge', 'lockDials', 'finishDeployment',
@@ -289,6 +298,7 @@ const TABLE_KINDS = new Set<Command['kind']>([
   'clearCounterRoll',
   'setMode', 'handOver', 'setStrict', 'commitTimings', 'revealTimings', 'importSquad',
   'configureTable', 'startMatch', 'endMatch', 'pickSecondary', 'setTactics', 'setReady', 'designateTask',
+  'rollbackRequest', 'rollbackAnswer',
 ]);
 
 // Table commands whose seat is attribution rather than a choice one squad
@@ -297,6 +307,9 @@ const TABLE_KINDS = new Set<Command['kind']>([
 // phase with a hard-coded 's1' would apply locally and silently never travel.
 const ATTRIBUTED = new Set<Command['kind']>([
   'advancePhase', 'setPhase', 'resetRounds', 'markEndStep', 'award',
+  // Who asked and who answered is the whole record of a rollback, so both are
+  // stamped with the sender's own seat like every other attributed command.
+  'rollbackRequest', 'rollbackAnswer',
   'lockMap', 'acceptRoll', 'lockDials', 'finishDeployment',
   'queueIntercepts', 'clearIntercepts', 'placeSmoke', 'removeSmoke', 'dissipateSmoke',
   // Queued from the ATTACKING client but naming the defender's units, so the
@@ -405,6 +418,30 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       const t = state.tokens.find((x) => x.uid === cmd.uid);
       if (!t || t.kind !== 'mech') return no('That is not a Mech.');
       if (t.side !== want.owner) return no(`${want.label} names one of the other squad's Mechs.`);
+      return ok;
+    }
+    case 'rollbackRequest': {
+      const sc = state.script;
+      if (!sc) return no('There is no game running to roll back.');
+      if (sc.rollback) return no('A rollback request is already waiting on an answer.');
+      // The CURRENT phase is a legal target, and the most useful one: it means
+      // the board as this phase began, which is not the board now. Only a
+      // target genuinely ahead of the present is refused.
+      if (cmd.round > state.round.n || (cmd.round === state.round.n && cmd.phase > state.round.phase)) {
+        return no('A rollback goes backwards.');
+      }
+      return ok;
+    }
+    case 'rollbackAnswer': {
+      const sc = state.script;
+      if (!sc?.rollback) return no('Nothing has been asked.');
+      // The asker cannot APPROVE their own rollback: consent is the whole
+      // point, and a shared board rewound by one player is just a desync. They
+      // may withdraw it, though — declining your own ask harms nobody, and it
+      // is the only way to take a request back.
+      if (sc.rollback.by === cmd.seat && cmd.accept) {
+        return no('The other player has to agree to a rollback.');
+      }
       return ok;
     }
     case 'setReady': {
@@ -1274,6 +1311,21 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
     state.script = undefined;
     // Ready flags belong to the lobby that is now over.
     state.ready = {};
+    return;
+  }
+  if (cmd.kind === 'rollbackRequest') {
+    // check() already refused this without a script, so it exists by here.
+    const sc = state.script;
+    if (sc) sc.rollback = { by: cmd.seat, round: cmd.round, phase: cmd.phase, label: cmd.label };
+    return;
+  }
+  if (cmd.kind === 'rollbackAnswer') {
+    // Only the ASK is cleared here. The rewind happens outside the command
+    // layer: undoing from inside apply() would be rewriting the board while
+    // sitting in the history entry this very command just created. The page
+    // reads the accepted answer and calls history.undoTo() itself.
+    const sc = state.script;
+    if (sc) sc.rollback = null;
     return;
   }
   if (cmd.kind === 'setReady') {

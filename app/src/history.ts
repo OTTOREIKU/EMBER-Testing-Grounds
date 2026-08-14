@@ -73,6 +73,47 @@ export function historyList(): { label: string; round: number; phase: number }[]
   return stack.map(({ label, round, phase }) => ({ label, round, phase }));
 }
 
+// Commands that record what a die already showed. A networked rollback must not
+// reach past one of these: the faces came from the server, both players watched
+// them land, and rewinding to roll again is fishing rather than undoing. The
+// dice themselves are not board state — they arrive through the relay's onRolled
+// hook, not as a command — so this is about the results being ACTED ON, which is
+// exactly what these commands do.
+//
+// Freeplay does not consult this at all. One player, nobody to cheat.
+const SEALED = new Set(['acceptRoll', 'rollSetup', 'applyPenetration', 'recordKill', 'resolveIntercept']);
+
+// The round/phase boundaries a networked rollback may offer: the FIRST snapshot
+// at each round/phase, which is the board as that phase began. Anything at or
+// before a sealed command is dropped, so a target is never on the far side of a
+// roll. Newest last, matching the order they happened.
+export function rollbackPoints(): { round: number; phase: number; index: number }[] {
+  // Walk back from now to the most recent sealed command; only what lies after
+  // it is reachable.
+  let floor = 0;
+  for (let i = stack.length - 1; i >= 0; i--) {
+    if (SEALED.has(stack[i].label)) { floor = i + 1; break; }
+  }
+  const out: { round: number; phase: number; index: number }[] = [];
+  for (let i = floor; i < stack.length; i++) {
+    const { round, phase } = stack[i];
+    const last = out[out.length - 1];
+    if (!last || last.round !== round || last.phase !== phase) out.push({ round, phase, index: i });
+  }
+  return out;
+}
+
+// Rolls back to the start of a named round/phase. Named rather than indexed
+// because the two clients' rings are NOT the same length — setTiming is secret
+// and never travels, so a player who set three dials has three snapshots the
+// opponent does not, and the same index would be a different board on each side.
+// Both agree on when a phase began without being told.
+export function undoToPhase(state: GameState, round: number, phase: number): Snapshot | null {
+  const at = stack.findIndex((s) => s.round === round && s.phase === phase);
+  if (at < 0) return null;
+  return undoTo(state, at);
+}
+
 export function historyDepth(): number {
   return stack.length;
 }
