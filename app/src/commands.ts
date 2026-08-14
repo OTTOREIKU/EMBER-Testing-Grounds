@@ -1,4 +1,4 @@
-import type { Facing, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, Timing, Token } from './types';
+import type { Facing, GameState, MechLoadout, PartSlot, RollbackPoint, Side, SmokeScreen, Stance, Timing, Token } from './types';
 import { addStatus, ageTokens, newOpportunity, PHASES, statusCount, STATUSES, TIMINGS } from './types';
 import type { GameData } from './data';
 import { unfoldsInto } from './data';
@@ -183,6 +183,7 @@ export type Command =
   // that rewrote the board while inside apply() would be undoing the history
   // entry it is currently creating. The page watches for the accepted answer
   // and calls history.undoTo() outside the command layer.
+  | { kind: 'setRollbackCatalog'; seat: Side; entries: RollbackPoint[] }
   | { kind: 'rollbackRequest'; seat: Side; round: number; phase: number; label: string }
   | { kind: 'rollbackAnswer'; seat: Side; accept: boolean }
   // The two halves of the networked dial reveal (3.3). A seat publishes a
@@ -289,7 +290,7 @@ type TableKind =
   | 'clearCounterRoll'
   | 'setMode' | 'handOver' | 'setStrict' | 'commitTimings' | 'revealTimings' | 'importSquad'
   | 'configureTable' | 'startMatch' | 'endMatch' | 'pickSecondary' | 'setTactics' | 'setReady' | 'designateTask'
-  | 'rollbackRequest' | 'rollbackAnswer';
+  | 'setRollbackCatalog' | 'rollbackRequest' | 'rollbackAnswer';
 const TABLE_KINDS = new Set<Command['kind']>([
   'advancePhase', 'setPhase', 'resetRounds', 'adjustCommandTokens', 'passTurn', 'markEndStep', 'award',
   'lockMap', 'rollSetup', 'acceptRoll', 'finishTasks', 'pickEdge', 'lockDials', 'finishDeployment',
@@ -298,7 +299,7 @@ const TABLE_KINDS = new Set<Command['kind']>([
   'clearCounterRoll',
   'setMode', 'handOver', 'setStrict', 'commitTimings', 'revealTimings', 'importSquad',
   'configureTable', 'startMatch', 'endMatch', 'pickSecondary', 'setTactics', 'setReady', 'designateTask',
-  'rollbackRequest', 'rollbackAnswer',
+  'setRollbackCatalog', 'rollbackRequest', 'rollbackAnswer',
 ]);
 
 // Table commands whose seat is attribution rather than a choice one squad
@@ -309,7 +310,7 @@ const ATTRIBUTED = new Set<Command['kind']>([
   'advancePhase', 'setPhase', 'resetRounds', 'markEndStep', 'award',
   // Who asked and who answered is the whole record of a rollback, so both are
   // stamped with the sender's own seat like every other attributed command.
-  'rollbackRequest', 'rollbackAnswer',
+  'setRollbackCatalog', 'rollbackRequest', 'rollbackAnswer',
   'lockMap', 'acceptRoll', 'lockDials', 'finishDeployment',
   'queueIntercepts', 'clearIntercepts', 'placeSmoke', 'removeSmoke', 'dissipateSmoke',
   // Queued from the ATTACKING client but naming the defender's units, so the
@@ -420,6 +421,10 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       if (t.side !== want.owner) return no(`${want.label} names one of the other squad's Mechs.`);
       return ok;
     }
+    case 'setRollbackCatalog': {
+      if (!state.script) return no('There is no game running.');
+      return ok;
+    }
     case 'rollbackRequest': {
       const sc = state.script;
       if (!sc) return no('There is no game running to roll back.');
@@ -430,6 +435,15 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       if (cmd.round > state.round.n || (cmd.round === state.round.n && cmd.phase > state.round.phase)) {
         return no('A rollback goes backwards.');
       }
+      // The target has to be one the HOST published, because the host's ring is
+      // the only one that rewinds. Asking straight from a local undo history
+      // could name a point the host has already dropped — the request would be
+      // accepted, both players would watch it fail, and nothing would move.
+      // Both seats read the same catalog out of the same shared state, so there
+      // is no version to compare and no staler copy to be holding.
+      const at = sc.rollbackCatalog.find((p) => p.round === cmd.round && p.phase === cmd.phase);
+      if (!at) return no('That point is no longer one the table can return to.');
+      if (!at.available) return no('Dice have been rolled since then, and a rollback never reaches past a roll.');
       return ok;
     }
     case 'rollbackAnswer': {
@@ -1313,6 +1327,11 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
     state.ready = {};
     return;
   }
+  if (cmd.kind === 'setRollbackCatalog') {
+    const sc = state.script;
+    if (sc) sc.rollbackCatalog = cmd.entries.map((p) => ({ ...p }));
+    return;
+  }
   if (cmd.kind === 'rollbackRequest') {
     // check() already refused this without a script, so it exists by here.
     const sc = state.script;
@@ -1325,7 +1344,13 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
     // sitting in the history entry this very command just created. The page
     // reads the accepted answer and calls history.undoTo() itself.
     const sc = state.script;
-    if (sc) sc.rollback = null;
+    if (!sc) return;
+    // An ACCEPTED answer leaves one branch of history for another, and the
+    // count is what names the new one. It has to move here, inside the command,
+    // so that it reaches a player who joins later through the checkpoint —
+    // exactly like every other shared fact.
+    if (cmd.accept) sc.rollbacks += 1;
+    sc.rollback = null;
     return;
   }
   if (cmd.kind === 'setReady') {

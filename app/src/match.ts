@@ -1,7 +1,7 @@
 import { ApiError, EmberApi, type Account, type MyRecord, type SquadEntry } from './api';
 import { Relay, type RollKind } from './net';
 import { applyRemote, check, onBeforeApply, onPerformed, onRefused, perform, type Command, type CheckResult } from './commands';
-import { clearHistory, recordSnapshot, undoToPhase } from './history';
+import { clearHistory, recordSnapshot, rollbackCatalog, undoToPhase } from './history';
 import { setLocalSeat } from './loop';
 import { cardName, dataUrl, loadData, missionImageUrl, squadLabel, type GameData } from './data';
 import { tacticSpec } from './tactics';
@@ -161,6 +161,7 @@ const relay = new Relay(api.base, {
     glueAfter(data, state, cmd);
     clearFeedAfter(cmd);
     rewindIfAgreed(cmd);
+    publishCatalog();
     // Nothing below this line belongs in a replay: the commitments and reveals
     // are being re-read from history, and answering them again would send this
     // client's reveal a second time.
@@ -197,7 +198,15 @@ const relay = new Relay(api.base, {
     // before it describes a game this client can no longer vouch for, and a
     // rollback into one would be worse than having none.
     clearHistory();
+    // The ring the catalog described is gone with it, so the next comparison
+    // must not match a list that no longer has anything behind it.
+    publishedCatalog = '';
     asked = null;
+    // Where a player who was not here for a rollback finds out which branch of
+    // history everyone else is on. Without this their very first command is
+    // stamped with branch zero and the host drops it, on a table that looks
+    // perfectly connected from both ends.
+    relay.setBranch(state.script?.rollbacks ?? 0);
     // The board this replaces it with IS the answer to "Rolling back…", so the
     // note has served its purpose. Left up, it would sit there for the rest of
     // the game claiming a rewind is still in flight.
@@ -211,6 +220,11 @@ const relay = new Relay(api.base, {
     // walked past — a commitment made while we were away may be waiting on
     // this client's reveal.
     maybeReveal();
+    // A host that has just caught up rebuilt its snapshot ring from scratch,
+    // so the catalog in shared state may describe a ring that no longer
+    // exists. Republish now rather than waiting for the next command to
+    // notice — publishCatalog itself sends nothing when they already agree.
+    publishCatalog();
     render();
   },
   onNeedCheckpoint() {
@@ -322,6 +336,7 @@ function send(cmd: Command): CheckResult {
     glueAfter(data, state, cmd);
     clearFeedAfter(cmd);
     rewindIfAgreed(cmd);
+    publishCatalog();
   }
   return v;
 }
@@ -330,6 +345,37 @@ function send(cmd: Command): CheckResult {
 // apply(), because a command that rewrote the board from inside apply() would be
 // undoing the history entry it had just created.
 //
+// The host tells the table which points it can actually return to.
+//
+// Only the host rewinds, so only the host's ring decides what is reachable, and
+// a guest offering a menu built from its own would be offering choices that may
+// not exist. Sent as an ordinary command so it lands in shared state and both
+// seats read the same list — which is also why there is no version number to
+// compare: neither side can be holding a staler copy than the other.
+//
+// Cheap despite running after every command, because the answer only CHANGES
+// when a phase begins or a die roll seals one, and it is not sent otherwise. A
+// catalog command records a snapshot of its own, but at the round and phase the
+// table is already in, so it adds no boundary and cannot set itself off again.
+let publishedCatalog = '';
+function publishCatalog(): void {
+  const seat = mySeat();
+  if (!seat || !isHost() || catchingUp || !state.script) return;
+  const entries = rollbackCatalog().map(({ round, phase, available }) => ({ round, phase, available }));
+  const key = JSON.stringify(entries);
+  if (key === publishedCatalog) return;
+  // Latched BEFORE the send, and un-latched on refusal — both halves matter.
+  // The send re-enters this function on its way out, and the catalog command's
+  // own snapshot can begin a new phase's history, so the nested call computes a
+  // different key; the latch is what stops that at one extra round instead of
+  // recursing forever. And send() refuses while the table is paused, so a key
+  // left latched over a refusal would mark this catalog as published when it
+  // never travelled — the guest then keeps a menu of points the host may no
+  // longer hold, which is the very thing this list exists to prevent.
+  publishedCatalog = key;
+  if (!send({ kind: 'setRollbackCatalog', seat, entries }).ok) publishedCatalog = '';
+}
+
 // ONE ring decides the rewound board, and it is the host's.
 //
 // The obvious version has both clients undo their own ring off the same
@@ -349,6 +395,14 @@ function rewindIfAgreed(cmd: Command): void {
   const to = asked;
   asked = null;
   if (!to) return;
+  // Both seats leave the old branch here, at the same command, reading the same
+  // count out of the same shared state. Anything either of them composed before
+  // this moment is stamped with the branch being abandoned and will be dropped
+  // on arrival instead of landing on the rewound board — which is what used to
+  // happen, silently, because a stale command's revision is not ours and the
+  // drift check therefore never fired on it.
+  const branch = state.script?.rollbacks ?? 0;
+  relay.setBranch(branch);
   if (!isHost()) {
     // Every snapshot here describes a board the checkpoint is about to discard,
     // and onCheckpoint would drop them anyway. Cleared early so nothing can be
@@ -366,6 +420,12 @@ function rewindIfAgreed(cmd: Command): void {
     render();
     return;
   }
+  // The snapshot predates the answer that agreed to this rollback, so restoring
+  // it puts the branch count back as well. The count is a tally of what has
+  // HAPPENED to the game rather than part of the position, so it survives the
+  // rewind — and it has to, because the checkpoint below is where a player who
+  // joins later learns which branch everyone is on.
+  if (state.script) state.script.rollbacks = branch;
   // The server still holds every command that has just been undone, so a
   // resync or a late joiner would replay them straight back. Publishing a
   // checkpoint truncates its log to the rewound board — relay.ts drops
@@ -805,10 +865,27 @@ function barHtml(): string {
           ? '<span class="pill live">● both seated</span>'
           : '<span class="pill">● waiting for the other player</span>'
     : '';
+  // The line's own health, beside the seat pill. Quiet when there is nothing to
+  // say: a round trip nobody would notice and no lost beats is not information,
+  // it is noise on a bar a player reads all game.
+  const h = relay.health();
+  const bits: string[] = [];
+  if (h.latencyMs !== null && h.latencyMs >= 250) bits.push(`${h.latencyMs}ms`);
+  if (h.lossPct >= 10) bits.push(`${h.lossPct}% lost`);
+  // Worth its own words rather than a number. A throttled timer means the tab
+  // is in the background, which looks exactly like a dead connection from the
+  // other side of the table and is the thing players most often misread.
+  if (h.backgrounded) bits.push('this tab is in the background');
+  if (h.queued) bits.push(`${h.queued} waiting to send`);
+  const link = bits.length && v.room
+    ? `<span class="pill bad" id="mc-health" title="Click to copy a connection report">${esc(bits.join(' · '))}</span>`
+    : v.room
+      ? `<span class="pill quiet" id="mc-health" title="Click to copy a connection report">⌁</span>`
+      : '';
   return `<div class="mc-bar">
     <a class="mc-logo" href="./index.html">EMBER <em>Testing Grounds</em><small>Match Centre</small></a>
     ${v.room ? `<span class="pill code" id="mc-code" title="Copy the room code">${esc(v.room.id)}${copied ? ' ✓' : ''}</span>` : ''}
-    ${conn}
+    ${conn}${link}
     <span class="spacer"></span>
     <button class="mc-account" id="mc-acct">${account ? esc(account.username) : 'Sign in'}</button>
     <a class="mc-backbtn" href="./index.html">Back to Board</a>
@@ -1447,6 +1524,22 @@ async function attempt(fn: () => Promise<void>, showErr: (m: string) => void): P
   }
 }
 
+// A connection report on the clipboard, ready to paste into a bug report.
+//
+// Every desync we have ever been told about arrived as "the boards disagreed",
+// with nothing attached and nothing anyone could reconstruct afterwards. This
+// is the wire's side of that: what the room was, what the link was doing, and
+// every connect, close and reconnect leading up to it. The board is not in it —
+// that is a checkpoint away on the server, and a player pasting this into
+// Discord should not be pasting their whole position with it.
+function copyDiagnostics(): void {
+  const report = JSON.stringify(relay.diagnostics(), null, 2);
+  void navigator.clipboard?.writeText(report).then(() => {
+    lobbyNote = 'Connection report copied. Paste it wherever you are reporting this.';
+    render();
+  });
+}
+
 function copyCode(): void {
   const room = relay.state.room;
   if (!room) return;
@@ -1479,6 +1572,7 @@ function wire(): void {
   });
   $('mc-code')?.addEventListener('click', copyCode);
   $('mc-code2')?.addEventListener('click', copyCode);
+  $('mc-health')?.addEventListener('click', copyDiagnostics);
 
   $('mc-login')?.addEventListener('click', () => {
     const user = ($('mc-user') as HTMLInputElement | null)?.value.trim() ?? '';

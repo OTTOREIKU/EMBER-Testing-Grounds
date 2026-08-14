@@ -1,5 +1,4 @@
 import { clearDroneCommands, missionZones, readyCommands, seedCommandTokens, taskDesignations, type Command, type CheckResult } from './commands';
-import { rollbackPoints } from './history';
 import { askIssuer, asterBlockers, offerCoordination, offerHarpyDrag, runAster } from './commandpick';
 import type { GameData } from './data';
 import { actionIconUrl, cardName, isAerial, secondaryImageUrl, squadLabel, unitSize } from './data';
@@ -1434,13 +1433,15 @@ function panelHtml(ctx: HudCtx): string {
 // because the two clients' undo rings are not the same length (setTiming is
 // secret and never travels), and both agree on when a phase began.
 //
-// The list is short on purpose after dice: rollbackPoints() stops at the most
-// recent command that acted on a server roll, so a player can never rewind past
-// their own bad roll. That is a rule, not a glitch, so it says so rather than
-// silently offering nothing.
+// Points sealed by dice are listed and disabled rather than left out: a player
+// can never rewind past a roll both of them watched land, and that is a rule
+// rather than a glitch, so the list says so where it bites.
 function rollbackOffer(ctx: HudCtx): string {
   if (!ctx.networked || ensureScript(ctx.state).rollback) return '';
-  const pts = rollbackPoints();
+  // The HOST's list, not this client's: it is the host that rewinds, so it is
+  // the host's ring that decides what can be returned to. Read out of shared
+  // state, so both seats are looking at the same menu.
+  const pts = ensureScript(ctx.state).rollbackCatalog;
   if (!pts.length) return '';
   // The phase you are standing in is a target like any other, and usually the
   // one meant — it is the board as this phase BEGAN, not the board now. Named
@@ -1450,9 +1451,17 @@ function rollbackOffer(ctx: HudCtx): string {
   const opts = pts
     .slice(-6)
     .reverse()
-    .map((p) => `<button class="rowwide" data-rb="${p.round}:${p.phase}">${here(p)
-      ? `Back to the start of this ${PHASES[p.phase]} Phase`
-      : `Back to round ${p.round}, ${PHASES[p.phase]} Phase`}</button>`)
+    .map((p) => {
+      const label = here(p)
+        ? `Back to the start of this ${PHASES[p.phase]} Phase`
+        : `Back to round ${p.round}, ${PHASES[p.phase]} Phase`;
+      // Sealed points stay on the list, disabled. Dropping them made the menu
+      // quietly get shorter after a roll, which reads as the feature breaking
+      // rather than as the rule it is.
+      return p.available
+        ? `<button class="rowwide" data-rb="${p.round}:${p.phase}">${label}</button>`
+        : `<button class="rowwide" disabled title="A rollback never reaches past a die roll.">${label} — dice rolled since</button>`;
+    })
     .join('');
   return `<details class="tp-rollback"><summary>Ask to roll back</summary>
     <p class="tp-dim">Both players have to agree. Anything since the point you pick is undone for both of you, and a rollback never reaches past a die roll.</p>

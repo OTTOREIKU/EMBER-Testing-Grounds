@@ -66,11 +66,13 @@ const endDone = ['2:end:remove', '2:end:tokens'];
 const oncePerRound = ['2:aster:7'];
 // A rollback one seat has asked for and the other has not answered.
 const rollback = { by: 's2', round: 2, phase: 2, label: 'Action Phase' };
+// The points the host says it can return to, one of them sealed by a die roll.
+const rollbackCatalog = [{ round: 1, phase: 0, available: true }, { round: 2, phase: 1, available: false }];
 // Every value here is deliberately NOT the default, so a field that
 // normaliseScript forgets to carry across fails rather than coincidentally
 // matching what it would have defaulted to.
 const counter = { initiatorUid: 7, responderUid: 9, actionId: 'EWA', initRoll: [0, 3], respRoll: null, initFocused: true, respFocused: false };
-const live = { turn: 's2', acted: [7, 8], extraOpps: [8], commanded: [9], freeCommand: [], passed: ['s1'], stage: '2:3', mode: 'hidden', strict: true, commits: { s1: 'deadbeef' }, revealed: ['s2'], seats: { s1: 'local', s2: 'remote' }, opp, oppStack, intercepts, reactions, counter, endDone, oncePerRound, rollback };
+const live = { turn: 's2', acted: [7, 8], extraOpps: [8], commanded: [9], freeCommand: [], passed: ['s1'], stage: '2:3', mode: 'hidden', strict: true, commits: { s1: 'deadbeef' }, revealed: ['s2'], seats: { s1: 'local', s2: 'remote' }, opp, oppStack, intercepts, reactions, counter, endDone, oncePerRound, rollback, rollbacks: 3, rollbackCatalog };
 
 // This fixture has lagged behind ScriptState four times now, each costing a
 // confusing deep-equal diff. Naming the missing field turns that into an
@@ -107,6 +109,18 @@ check('non-string end steps are dropped', normaliseScript({ ...live, endDone: [1
 check('once-per-round uses survive', normaliseScript(live, 's1').oncePerRound, oncePerRound);
 check('a missing once-per-round list reads back empty', normaliseScript({ ...live, oncePerRound: undefined }, 's1').oncePerRound, []);
 check('non-string once-per-round keys are dropped', normaliseScript({ ...live, oncePerRound: [1, ...oncePerRound] }, 's1').oncePerRound, oncePerRound);
+// The branch count is a tally of what has HAPPENED to the game, so it has to
+// survive a reload — a client that reads it back as zero stamps a branch the
+// others left behind, and everything it sends is dropped.
+check('the branch count survives', normaliseScript(live, 's1').rollbacks, 3);
+check('a missing count reads back zero', normaliseScript({ ...live, rollbacks: undefined }, 's1').rollbacks, 0);
+check('a nonsense count reads back zero', normaliseScript({ ...live, rollbacks: -2 }, 's1').rollbacks, 0);
+check('the published catalog survives', normaliseScript(live, 's1').rollbackCatalog, rollbackCatalog);
+check('a missing catalog reads back empty', normaliseScript({ ...live, rollbackCatalog: undefined }, 's1').rollbackCatalog, []);
+// Every entry is a button promising to return the board to a named moment, so
+// a half-written one is dropped rather than offered.
+check('an entry with no phase is dropped',
+  normaliseScript({ ...live, rollbackCatalog: [{ round: 1 }, ...rollbackCatalog] }, 's1').rollbackCatalog, rollbackCatalog);
 check('a pending rollback survives', normaliseScript(live, 's1').rollback, rollback);
 check('no rollback reads back null', normaliseScript({ ...live, rollback: undefined }, 's1').rollback, null);
 // Round and phase are what identify the target; without them there is nothing

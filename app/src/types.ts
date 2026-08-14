@@ -542,6 +542,35 @@ export interface ScriptState {
   // same ask, and so a reconnect does not lose it. One at a time: a second
   // request while one is open is refused rather than queued.
   rollback: RollbackAsk | null;
+  // How many rollbacks this game has agreed to. It names the BRANCH of history
+  // being played: each accepted rollback abandons one and starts another, and
+  // a command composed against an abandoned branch must be dropped rather than
+  // applied to the rewound board.
+  //
+  // It is a count in shared state rather than a counter in the relay because
+  // that is what makes it reach a client which was not here for the rollback.
+  // A player joining afterwards receives it inside the checkpoint like any
+  // other field, so their first command is stamped with the branch everyone
+  // else is on. A transport-side counter starts them at zero and every command
+  // they send is dropped by a host they appear to be connected to.
+  rollbacks: number;
+  // The points the HOST can actually return to, published by it and read by
+  // both. Only the host rewinds, so only the host's ring decides what is
+  // reachable — and offering a menu built from anyone else's is offering
+  // choices that may not exist. Living in shared state rather than travelling
+  // as a private message is what makes the check cheap: `rollbackRequest` can
+  // simply require its target to be in here, and neither side can be holding a
+  // staler copy than the other.
+  rollbackCatalog: RollbackPoint[];
+}
+
+// A boundary a rollback can return to. `available` false means a die roll has
+// sealed it — kept in the list so the offer can grey it out and say why, rather
+// than quietly getting shorter.
+export interface RollbackPoint {
+  round: number;
+  phase: number;
+  available: boolean;
 }
 
 // Rollback targets are ROUND/PHASE boundaries, never command indexes. The two
@@ -590,7 +619,20 @@ export function newScriptState(firstPlayer: Side): ScriptState {
     endDone: [],
     oncePerRound: [],
     rollback: null,
+    rollbacks: 0,
+    rollbackCatalog: [],
   };
+}
+
+// A half-written entry is dropped rather than shown as a choice: every one of
+// these is a button that promises to return the board to a named moment.
+function normaliseCatalog(raw: unknown): RollbackPoint[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((p): p is RollbackPoint => !!p
+      && Number.isSafeInteger((p as RollbackPoint).round)
+      && Number.isSafeInteger((p as RollbackPoint).phase))
+    .map((p) => ({ round: p.round, phase: p.phase, available: p.available === true }));
 }
 
 function normaliseRollback(raw: unknown): RollbackAsk | null {
@@ -656,6 +698,10 @@ export function normaliseScript(raw: unknown, firstPlayer: Side): ScriptState {
     endDone: Array.isArray(s.endDone) ? s.endDone.filter((x) => typeof x === 'string') : base.endDone,
     oncePerRound: Array.isArray(s.oncePerRound) ? s.oncePerRound.filter((x) => typeof x === 'string') : base.oncePerRound,
     rollback: normaliseRollback(s.rollback),
+    // Never allowed to go backwards by a bad save: a branch count that shrinks
+    // would make this client stamp a branch the others have left behind.
+    rollbacks: Number.isSafeInteger(s.rollbacks) && (s.rollbacks as number) > 0 ? (s.rollbacks as number) : base.rollbacks,
+    rollbackCatalog: normaliseCatalog(s.rollbackCatalog),
   };
 }
 

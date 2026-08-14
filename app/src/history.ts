@@ -83,22 +83,28 @@ export function historyList(): { label: string; round: number; phase: number }[]
 // Freeplay does not consult this at all. One player, nobody to cheat.
 const SEALED = new Set(['acceptRoll', 'rollSetup', 'applyPenetration', 'recordKill', 'resolveIntercept']);
 
-// The round/phase boundaries a networked rollback may offer: the FIRST snapshot
-// at each round/phase, which is the board as that phase began. Anything at or
-// before a sealed command is dropped, so a target is never on the far side of a
-// roll. Newest last, matching the order they happened.
-export function rollbackPoints(): { round: number; phase: number; index: number }[] {
+// The round/phase boundaries a rollback could name: the FIRST snapshot at each
+// round/phase, which is the board as that phase began. Newest last, matching
+// the order they happened.
+//
+// Every boundary in the ring is listed, including the ones a die roll has put
+// out of reach — those are MARKED rather than dropped, so the offer can show
+// them greyed. A list that silently shortens after a roll reads as a broken
+// feature, and the rule behind it is worth stating where it bites.
+export function rollbackCatalog(): { round: number; phase: number; index: number; available: boolean }[] {
   // Walk back from now to the most recent sealed command; only what lies after
   // it is reachable.
   let floor = 0;
   for (let i = stack.length - 1; i >= 0; i--) {
     if (SEALED.has(stack[i].label)) { floor = i + 1; break; }
   }
-  const out: { round: number; phase: number; index: number }[] = [];
-  for (let i = floor; i < stack.length; i++) {
+  const out: { round: number; phase: number; index: number; available: boolean }[] = [];
+  for (let i = 0; i < stack.length; i++) {
     const { round, phase } = stack[i];
     const last = out[out.length - 1];
-    if (!last || last.round !== round || last.phase !== phase) out.push({ round, phase, index: i });
+    if (!last || last.round !== round || last.phase !== phase) {
+      out.push({ round, phase, index: i, available: i >= floor });
+    }
   }
   return out;
 }

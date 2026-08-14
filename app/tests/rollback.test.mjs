@@ -69,10 +69,10 @@ H.recordSnapshot(board(1, 1), 'doact');
 H.recordSnapshot(board(1, 1), 'moveToken');
 H.recordSnapshot(board(2, 0), 'advance');
 check('one target per round/phase, at its first snapshot',
-  H.rollbackPoints(), [
-    { round: 1, phase: 0, index: 0 },
-    { round: 1, phase: 1, index: 2 },
-    { round: 2, phase: 0, index: 4 },
+  H.rollbackCatalog(), [
+    { round: 1, phase: 0, index: 0, available: true },
+    { round: 1, phase: 1, index: 2, available: true },
+    { round: 2, phase: 0, index: 4, available: true },
   ]);
 
 // Dice are the line. The faces came from the server and both players watched
@@ -83,21 +83,26 @@ H.recordSnapshot(board(1, 0), 'moveToken');
 H.recordSnapshot(board(1, 0), 'acceptRoll');
 H.recordSnapshot(board(1, 1), 'moveToken');
 H.recordSnapshot(board(1, 1), 'doact');
+// Listed, not dropped — the offer greys them so the rule is visible.
 check('a roll seals everything before it',
-  H.rollbackPoints(), [{ round: 1, phase: 1, index: 2 }]);
+  H.rollbackCatalog(), [
+    { round: 1, phase: 0, index: 0, available: false },
+    { round: 1, phase: 1, index: 2, available: true },
+  ]);
 // And the whole list can be empty, which is the case the UI has to explain
 // rather than show as an empty menu.
 H.clearHistory();
 H.recordSnapshot(board(1, 0), 'moveToken');
 H.recordSnapshot(board(1, 0), 'acceptRoll');
-check('a roll as the last thing leaves nothing to offer', H.rollbackPoints(), []);
+check('a roll as the last thing leaves nothing available',
+  H.rollbackCatalog().filter((p) => p.available), []);
 
 // The current phase IS offerable — "put this phase back" is the common ask, and
 // the board as the phase began is not the board now.
 H.clearHistory();
 H.recordSnapshot(board(3, 2), 'moveToken');
 H.recordSnapshot(board(3, 2), 'doact');
-check('the phase you are in is a target', H.rollbackPoints(), [{ round: 3, phase: 2, index: 0 }]);
+check('the phase you are in is a target', H.rollbackCatalog(), [{ round: 3, phase: 2, index: 0, available: true }]);
 
 // ---------- Rewinding to a named phase ----------
 H.clearHistory();
@@ -144,7 +149,15 @@ ${applyFn}
 `);
 const C = await import(tmp.href);
 
-const running = (rollback = null) => ({ round: { n: 2, phase: 1 }, script: { stage: 'round:1', rollback } });
+// The catalog the HOST published. check() reads its targets out of here rather
+// than out of any client's undo ring, so a point the host cannot reach is never
+// a point anyone can ask for.
+const CATALOG = [
+  { round: 1, phase: 0, available: true },
+  { round: 1, phase: 1, available: false },
+  { round: 2, phase: 1, available: true },
+];
+const running = (rollback = null) => ({ round: { n: 2, phase: 1 }, script: { stage: 'round:1', rollback, rollbacks: 0, rollbackCatalog: CATALOG } });
 const ask = (over = {}) => ({ kind: 'rollbackRequest', seat: 'RAID', round: 1, phase: 0, label: 'Round 1 · Command', ...over });
 
 check('no game, nothing to roll back',
@@ -156,6 +169,17 @@ check('a later phase is refused',
   C.checkRollback(running(), ask({ round: 2, phase: 2 })).why, 'A rollback goes backwards.');
 check('a later round is refused',
   C.checkRollback(running(), ask({ round: 3, phase: 0 })).why, 'A rollback goes backwards.');
+// A point the host never published is not a point the table can return to.
+// Before this, the request was accepted, both players watched it fail, and the
+// board did not move.
+check('a target outside the catalog is refused',
+  C.checkRollback(running(), ask({ round: 1, phase: 3 })).why,
+  'That point is no longer one the table can return to.');
+// Sealed points ARE in the catalog — listed so the offer can grey them and say
+// why — so the rule has to be enforced here rather than by their absence.
+check('a target sealed by dice is refused',
+  C.checkRollback(running(), ask({ round: 1, phase: 1 })).why,
+  'Dice have been rolled since then, and a rollback never reaches past a roll.');
 // One ask at a time, or two rewinds race each other across the wire.
 check('a second request waits its turn',
   C.checkRollback(running({ by: 'UN', round: 1, phase: 0, label: 'x' }), ask()).why,
@@ -181,6 +205,13 @@ C.applyRollback(st, ask());
 check('the ask is recorded against its asker', st.script.rollback, { by: 'RAID', round: 1, phase: 0, label: 'Round 1 · Command' });
 C.applyRollback(st, answer('UN', true));
 check('an answer clears the ask', st.script.rollback, null);
+// The branch count moves inside the COMMAND, not on the page, which is what
+// carries it to a player who joins after the rollback: it rides in the
+// checkpoint like any other shared fact.
+check('accepting leaves the old branch', st.script.rollbacks, 1);
+const declined = running({ by: 'RAID', round: 1, phase: 0, label: 'x' });
+C.applyRollback(declined, answer('UN', false));
+check('declining changes no branch', declined.script.rollbacks, 0);
 // Comments stripped first: the branch EXPLAINS that it does not call undoTo, so
 // a naive search finds the prose that promises the opposite of what it means.
 const applyCode = applyFn.replace(/\/\/[^\n]*/g, '');
@@ -204,6 +235,13 @@ check('a guest drops its ring while it waits', rewind.indexOf('clearHistory()') 
 // A target the host cannot reach must say so. The first version returned in
 // silence, which read as a rollback that simply did not happen.
 check('an unreachable target is reported', /if \(!snap\) \{[\s\S]*?lobbyNote =/.test(rewind), true);
+// Both seats must leave the old branch, and BEFORE the host/guest split — that
+// is what lets the two agree on the number without it ever being sent. Put it
+// inside the host arm and the guest keeps stamping the abandoned branch, and
+// the host drops everything the guest does for the rest of the game.
+check('both seats leave the branch, before the split',
+  rewind.indexOf('setBranch(') < rewind.indexOf('if (!isHost())'), true);
+check('the branch is left exactly once', [...rewind.matchAll(/setBranch\(/g)].length, 1);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exitCode = fail ? 1 : 0;
