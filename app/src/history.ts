@@ -25,16 +25,31 @@ export interface Snapshot {
   // rather than by index.
   round: number;
   phase: number;
+  // Whether the game proper had begun. Setup commands are stamped with round 1,
+  // phase 0 — the track has nowhere else to sit while edges are picked and
+  // units placed — so without this the catalog cannot tell the board at the
+  // START of Round 1's Command Phase from a board with half a squad deployed.
+  // It bit through the seal: a rejoining client replays the First Player roll
+  // into its ring at "1:0", and that sealed Round 1's Command boundary as
+  // "dice rolled since" when the dice came before the phase ever began.
+  inPlay: boolean;
 }
 
 let stack: Snapshot[] = [];
 
 export function recordSnapshot(state: GameState, label: string): void {
+  // The stage is read raw rather than through normaliseSetup, because this
+  // file must import nothing but types: the tests import it directly and run
+  // it as written, which is the property that makes them worth having.
+  const stage = (state.setup as { stage?: unknown } | null | undefined)?.stage;
   stack.push({
     json: JSON.stringify(state),
     label,
     round: state.round?.n ?? 0,
     phase: state.round?.phase ?? 0,
+    // A board with no setup underway at all — freeplay, the tests — counts as
+    // in play; only a setup still in progress is excluded.
+    inPlay: stage === undefined || stage === 'done',
   });
   if (stack.length > LIMIT) stack.shift();
 }
@@ -100,6 +115,10 @@ export function rollbackCatalog(): { round: number; phase: number; index: number
   }
   const out: { round: number; phase: number; index: number; available: boolean }[] = [];
   for (let i = 0; i < stack.length; i++) {
+    // Setup is not a place a rollback can return to: deployment and edges have
+    // their own confirm flow, and a setup snapshot shares "round 1, phase 0"
+    // with the real Command Phase, which is the boundary it would corrupt.
+    if (!stack[i].inPlay) continue;
     const { round, phase } = stack[i];
     const last = out[out.length - 1];
     if (!last || last.round !== round || last.phase !== phase) {

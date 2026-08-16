@@ -104,6 +104,19 @@ H.recordSnapshot(board(3, 2), 'moveToken');
 H.recordSnapshot(board(3, 2), 'doact');
 check('the phase you are in is a target', H.rollbackCatalog(), [{ round: 3, phase: 2, index: 0, available: true }]);
 
+// Setup snapshots share "round 1, phase 0" with the real Command Phase — the
+// round track has nowhere else to sit while units deploy — so they are not
+// boundaries. Found live: a rejoining client replayed the First Player roll
+// into its ring at 1:0 and the seal greyed Round 1's Command Phase as "dice
+// rolled since", when the dice came before the phase ever began.
+H.clearHistory();
+H.recordSnapshot({ ...board(1, 0), setup: { stage: 'roll' } }, 'rollSetup');
+H.recordSnapshot({ ...board(1, 0), setup: { stage: 'roll' } }, 'acceptRoll');
+H.recordSnapshot({ ...board(1, 0), setup: { stage: 'deploy' } }, 'deployUnit');
+H.recordSnapshot({ ...board(1, 0), setup: { stage: 'done' } }, 'designate');
+check('setup is not a boundary, and its dice seal nothing in play',
+  H.rollbackCatalog(), [{ round: 1, phase: 0, index: 3, available: true }]);
+
 // ---------- Rewinding to a named phase ----------
 H.clearHistory();
 const live = board(1, 0, { note: 'start' });

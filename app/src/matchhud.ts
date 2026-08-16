@@ -7,7 +7,7 @@ import { printedDeployment, resolveZoneSetData } from './overlays';
 import { coordinationFor, coordinationOnOpportunityEnd, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, electronicOrigins, loanedParts, minesLayable, minesOwed, pilotCard, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, isSilentAction, maneuverIsSilent, canActivateCamo, chargeableSlots, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
 import { resolveCounterRoll, tallyCounter } from './combat';
 import { tacticFitsPhase, tacticSpec, tacticTargets, type TacticCtx } from './tactics';
-import { inContact, canStandIn, attackDirection, crushTargets, dissipationFor, extendPath, knockbackPath, LG, losBetween, losNote, pathCost, protectionFor, rangeBetween, reachableGrids, standingSpot, type LargeGrid } from './rules';
+import { inContact, canStandIn, attackDirection, crushTargets, dissipationFor, extendPath, knockbackPath, largeGridOf, LG, losBetween, losNote, pathCost, protectionFor, rangeBetween, reachableGrids, standingSpot, type LargeGrid } from './rules';
 import { breakAwayCost, canBeForceMoved } from './melee';
 import { factionColour, linkIcon, squadColour } from './icons';
 import { iconSvg } from './dice';
@@ -1418,6 +1418,7 @@ function panelHtml(ctx: HudCtx): string {
   if (ewPick) return ewPanel(ctx);
   if (crushPlan?.queue.length) return crushPanel(ctx);
   if (resupplyPick) return resupplyPanel(ctx);
+  if (terminalPick) return terminalPanel(ctx);
   if (repairPick) return repairPanel(ctx);
   if (chargePlan) return chargePanel(ctx);
   if (attackPick) return attackPanel(ctx);
@@ -2578,6 +2579,12 @@ function crushPanel(ctx: HudCtx): string {
 // what it started with. Some Actions reach an Ally as well as themselves, so
 // the panel asks which unit gets it.
 
+// Remote Access (5.3.3), mirroring performRemoteAccess in freeplay: which
+// unaccessed Terminal within reach, then how the Electronic Counter-roll
+// against its printed Value of 3 came out. `itemId` set means the Terminal is
+// chosen and the second question is up.
+let terminalPick: { uid: number; actionId: string; reach: number; itemId?: string } | null = null;
+
 let resupplyPick: { uid: number; actionId: string; rule: Resupply } | null = null;
 
 // ---------- SH-15 Damage Control (FAQ D7/J21/J23) ----------
@@ -2615,6 +2622,39 @@ function resupplyHolders(ctx: HudCtx, from: Token, rule: Resupply): Token[] {
     if (!max) return false;
     return (o.ammo?.[rule.actionId] ?? max) < max;
   });
+}
+
+// The two questions freeplay asks, in the same order: which Terminal, then how
+// the roll went. The verdict is the players' own reading of the dice — the
+// same honesty the freeplay confirm asks for, with the tray in the shared feed.
+function terminalPanel(ctx: HudCtx): string {
+  const m = terminalPick!;
+  const s = ctx.state;
+  const t = s.tokens.find((x) => x.uid === m.uid);
+  if (!t) return head('Remote Access', 'That unit is gone', '', true)
+    + '<div class="tp-body"></div><div class="tp-foot"><button class="bigbtn ghost2" data-act="terminalcancel">Close</button></div>';
+  const zoneName = (id: string) => ctx.data.zoneData.zones.find((z) => z.id === id)?.name ?? id;
+  if (m.itemId) {
+    return head('Your move', `Remote Access on ${esc(zoneName(normaliseTasks(s.tasks).items.find((i) => i.id === m.itemId)?.zone ?? ''))}`,
+      'Make the Electronic Counter-roll now, against the Terminal\'s Electronic Value of 3.', true)
+      + `<div class="tp-body"><p class="tp-note">Roll your Electronic dice from the panel — both players see them land in the feed.</p></div>
+         <div class="tp-foot">
+           <button class="bigbtn" data-tverdict="won">It succeeded</button>
+           <button class="bigbtn ghost2" data-tverdict="lost">It failed</button>
+         </div>`;
+  }
+  const from = largeGridOf(t);
+  const open = normaliseTasks(s.tasks).items.filter((i) => {
+    if (i.kind !== 'terminal' || i.accessed) return false;
+    const centre = zoneCentreGrid(ctx.data.zoneData.zones, i.zone);
+    return !!centre && Math.abs(centre.c - from.c) + Math.abs(centre.r - from.r) <= m.reach;
+  });
+  const rows = open
+    .map((i) => `<button class="rowwide" data-terminal="${esc(i.id)}">${esc(zoneName(i.zone))}<span class="ct">Terminal · EV 3</span></button>`)
+    .join('');
+  return head('Your move', 'Remote Access: which Terminal?', `A Terminal within Range ${m.reach} that has not been accessed this round (5.3.3).`, true)
+    + `<div class="tp-body">${rows || '<p class="tp-note">No Terminal is in reach, or every one in reach has already been accessed this round. Each Terminal may only be accessed once per round (5.3.3).</p>'}</div>
+       <div class="tp-foot"><button class="bigbtn ghost2" data-act="terminalcancel">${open.length ? 'Cancel' : 'Close'}</button></div>`;
 }
 
 function resupplyPanel(ctx: HudCtx): string {
@@ -2740,6 +2780,13 @@ function openAttackPick(t: Token, a: CardAction): void {
 // wait in `pendingAction` until that tool succeeds. False means the Action is
 // already done and should be paid for now.
 function routeAction(ctx: HudCtx, t: Token, a: CardAction, ga?: ReturnType<typeof guidedActions>[number]): boolean {
+  // First, as it is in performGuided. Remote Access is typed like card text but
+  // resolves against the board — without this branch it fell through to
+  // "follow the card text" and a Terminals mission could not be scored online.
+  if (a.id === 'COMMON_REMOTE_ACCESS') {
+    terminalPick = { uid: t.uid, actionId: a.id, reach: a.range ?? 4 };
+    return true;
+  }
   if (isChargeAction(a)) {
     chargePlan = { uid: t.uid, on: true };
     return true;
@@ -4219,6 +4266,31 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     ctx.refresh();
   });
   on('[data-act="resupplycancel"]', () => { resupplyPick = null; dropAction(); ctx.refresh(); });
+  on('[data-terminal]', (el) => {
+    if (terminalPick) terminalPick.itemId = el.dataset.terminal;
+    ctx.refresh();
+  });
+  on('[data-tverdict]', (el) => {
+    const m = terminalPick;
+    terminalPick = null;
+    if (m?.itemId) {
+      const t = s.tokens.find((x) => x.uid === m.uid);
+      const zone = normaliseTasks(s.tasks).items.find((i) => i.id === m.itemId)?.zone ?? '';
+      const name = ctx.data.zoneData.zones.find((z) => z.id === zone)?.name ?? zone;
+      // The attempt was made either way, so the Action pays either way —
+      // freeplay's done(true) on a failed roll spends the Tick too.
+      commitAction(ctx);
+      if (el.dataset.tverdict === 'won' && t) {
+        if (ctx.send({ kind: 'accessTerminal', seat: t.side, uid: t.uid, itemId: m.itemId }).ok) {
+          ctx.noteNow(`Remote Access succeeded: the ${name} Terminal is face-down for the rest of the round.`);
+        }
+      } else {
+        ctx.noteNow(`Remote Access on the ${name} Terminal failed.`);
+      }
+    }
+    ctx.refresh();
+  });
+  on('[data-act="terminalcancel"]', () => { terminalPick = null; dropAction(); ctx.refresh(); });
   on('[data-repairgo]', (el) => {
     const m = repairPick;
     repairPick = null;

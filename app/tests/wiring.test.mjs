@@ -76,7 +76,7 @@ check('routeAction was located', route.length > 200, true);
 // Each tool routeAction can hand off to, named either inline or through its
 // opener. A branch that opens something not on this list is a tool nobody has
 // checked pays its Ticks.
-const tools = ['chargePlan', 'resupplyPick', 'repairPick', 'openAttackPick', 'blinkPlan', 'startMovePlan', 'startLaunchPlan'];
+const tools = ['chargePlan', 'resupplyPick', 'repairPick', 'openAttackPick', 'blinkPlan', 'startMovePlan', 'startLaunchPlan', 'terminalPick'];
 for (const plan of tools) {
   check(`${plan} is opened by routeAction`, route.includes(plan), true);
 }
@@ -84,10 +84,12 @@ for (const plan of tools) {
 // nothing later to pay for it.
 check('the Unfold branch pays before it returns',
   /commitAction\(ctx\);\s*\n\s*ctx\.send\(\{ kind: 'unfold'/.test(route), true);
-// The count of commitAction call sites, so deleting one is loud. Nine tools
+// The count of commitAction call sites, so deleting one is loud. Ten tools
 // plus the no-tool path: move (x2 — the plan and the route), launch, blink,
-// attack, EW, charge, resupply, repair, unfold, and doact's own.
-check('every tool has a commitAction', [...hud.matchAll(/commitAction\(ctx\)/g)].length, 11);
+// attack, EW, charge, resupply, repair, unfold, Remote Access (one site for
+// both verdicts — the attempt pays whether the roll succeeded or not), and
+// doact's own.
+check('every tool has a commitAction', [...hud.matchAll(/commitAction\(ctx\)/g)].length, 12);
 
 // ---------- The ATTRIBUTED seat stamp ----------
 //

@@ -7,7 +7,7 @@ import { canActivate, canManeuver, canOverload, canPerform, spendAction, spendAc
 import { tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { battlefieldLocked, deploymentComplete, deployTurn, firstPlayerFrom, newSetup, normaliseSetup, tasksLocked } from './setup';
 import { applyKill, normaliseTasks, pendingDesignations, settleControl, type Designation } from './tasks';
-import { alive, dialHidden, eligibleUnits, getLocalSeat, isLoopPhase, nextTurn, onExtraOpportunity } from './loop';
+import { alive, canAct, dialHidden, eligibleUnits, getLocalSeat, isLoopPhase, nextTurn, onExtraOpportunity } from './loop';
 import { dissipationFor } from './rules';
 
 // ---------- the command layer (multiplayer phase 1) ----------
@@ -1020,7 +1020,15 @@ function checkActed(
       if (!isLoopPhase(phase)) return no('Designation happens in the Command, Automatic and Delay Phases.');
       const sc = state.script;
       if (!sc) return no('There is no guided game running.');
-      if (sc.turn !== cmd.seat) return no('It is the other squad\'s turn to designate (3.2.2).');
+      // Normalised the way both panels already display it, because the raw
+      // pointer can be STUCK: only a designation or a pass ever moves it, so a
+      // First Player with nothing to designate parks it on themselves forever —
+      // their panel says "waiting for the other squad", the other squad's
+      // designate is refused right here, and the phase deadlocks. Found in the
+      // 2026-08-16 mock playtest, on the very first Command Phase driven with
+      // the drones all on the second player's side.
+      const turnNow = canAct(state, phase, sc.turn) ? sc.turn : (nextTurn(state, phase, sc.turn) ?? sc.turn);
+      if (turnNow !== cmd.seat) return no('It is the other squad\'s turn to designate (3.2.2).');
       if (!eligibleUnits(state, phase, cmd.seat).some((x) => x.uid === cmd.uid)) return no(`${t.label} cannot be designated this phase.`);
       // Step 1 of 4.15.2 is naming the Mech that issues, so a named Mech has to
       // be one that actually holds a face-up Command. Omitting fromUid is still
