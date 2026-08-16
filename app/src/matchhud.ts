@@ -663,6 +663,10 @@ function boardCallbacks(): BoardCallbacks {
     onMove(uid, col, row) {
       const ctx = hudRef;
       if (!ctx) return;
+      // A spectator may look at a unit but never take hold of one. Dragging is
+      // the one board gesture that reaches the engine without going through
+      // the turn panel, so hiding the panel is not enough to close it.
+      if (ctx.networked && !ctx.seat) { ctx.refresh(); return; }
       const t = ctx.state.tokens.find((x) => x.uid === uid);
       if (!t) return;
       const snap = snapPlacement(col, row, (t.size ?? 1) as 1 | 2 | 3) ?? { col, row };
@@ -1353,8 +1357,34 @@ function resultPanel(ctx: HudCtx, vp: { s1: number; s2: number }): string {
     + `<div class="tp-body">${rows}<p class="tp-dim">${esc(res.why)}.</p></div><div class="tp-foot">${foot}</div>`;
 }
 
+// Watching, not playing. This owns the whole turn panel and comes before every
+// other branch, because every one of them is a question put to a player who
+// holds a seat — and a spectator holds none.
+//
+// Read-only is not a matter of hiding buttons. `mine()` answers true for a
+// seatless client and `me()` falls back to whoever's turn it is, so without
+// this branch a watcher is handed the CURRENT PLAYER's panel: their clicks
+// would apply to their own board, never travel, and their view would drift
+// away from the game in silence. send() refuses them as well; this is the half
+// that means they are never asked in the first place.
+function watchPanel(ctx: HudCtx): string {
+  const s = ctx.state;
+  const sc = ensureScript(s);
+  const su = normaliseSetup(s.setup);
+  // The round track reads "Round 1 · Command" all through setup, because the
+  // loop has not started yet — echoing it here would tell a watcher a phase is
+  // being played while the players are still placing units.
+  const body = !su || su.stage !== 'done'
+    ? '<p class="tp-note">The players are still setting the table: battlefield, Tasks, then edges and deployment.</p>'
+    : `<p class="tp-note">Round ${s.round.n}, ${esc(PHASES[s.round.phase])} Phase. It is <b class="${sc.turn}">${esc(squadLabel(sc.turn))}</b>'s turn.</p>
+       <p class="tp-dim">Everything both players do lands here as it happens. Nothing on this screen can change their board.</p>`;
+  return head('Watching', 'Spectator', 'You hold no seat at this table.', false)
+    + `<div class="tp-body">${body}</div><div class="tp-foot"></div>`;
+}
+
 function panelHtml(ctx: HudCtx): string {
   const s = ctx.state;
+  if (ctx.networked && !ctx.seat) return watchPanel(ctx);
   // A launch is waiting on a square, and a grant on an Ally: both are questions
   // already asked, so they come before whatever the phase would otherwise show.
   // An attack in the helper owns the screen until it is resolved; the turn
@@ -1437,7 +1467,10 @@ function panelHtml(ctx: HudCtx): string {
 // can never rewind past a roll both of them watched land, and that is a rule
 // rather than a glitch, so the list says so where it bites.
 function rollbackOffer(ctx: HudCtx): string {
-  if (!ctx.networked || ensureScript(ctx.state).rollback) return '';
+  // A rollback is a bargain struck between the two players. A watcher is not a
+  // party to it: they cannot ask, and nobody has to answer them. send() refuses
+  // the request anyway — this is so it is never put in front of them.
+  if (!ctx.networked || !ctx.seat || ensureScript(ctx.state).rollback) return '';
   // The HOST's list, not this client's: it is the host that rewinds, so it is
   // the host's ring that decides what can be returned to. Read out of shared
   // state, so both seats are looking at the same menu.

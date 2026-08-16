@@ -145,5 +145,44 @@ check('setZoneSet was located', setZone.includes('configureTable'), true);
 check('setZoneSet saves', /\bsave\(\);/.test(setZone), true);
 check('setZoneSet re-renders everything', /\bonChanged\(\);/.test(setZone), true);
 
+// ---------- Class 5: a spectator changes nothing ----------
+//
+// A watcher holds no seat. The danger is not that they break the other players'
+// game — the relay refuses a seatless sender — it is that their OWN board
+// drifts: perform() would apply the command locally and relay.publish() drops
+// it for want of a seat, so the watcher ends up looking at a game that never
+// happened, with no error anywhere. Read from the source because there is no
+// runtime signal for it, exactly like the host-ring rule.
+const matchSrc = read('match.ts');
+const sendFn = matchSrc.slice(matchSrc.indexOf('function send(cmd: Command)'), matchSrc.indexOf('\n}', matchSrc.indexOf('function send(cmd: Command)')));
+check('send() was located', sendFn.includes('perform('), true);
+check('send() refuses a seatless client', /if \(relay\.state\.room && !relay\.state\.seat\)[\s\S]*?return \{ ok: false/.test(sendFn), true);
+// And it must come BEFORE the command is performed, or the refusal is a report
+// of something that already happened to this board. Comments stripped first:
+// the guard EXPLAINS itself by naming perform(), so a naive search finds the
+// prose rather than the call.
+const sendCode = sendFn.split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
+check('the refusal precedes perform()',
+  sendCode.indexOf('!relay.state.seat') < sendCode.indexOf('perform('), true);
+// Dragging is the one board gesture that reaches the engine without passing
+// through the turn panel, so hiding the panel does not close it.
+const onMoveFn = hud.slice(hud.indexOf('    onMove(uid, col, row) {'), hud.indexOf('    onCellHover(col, row) {'));
+check('the drag handler was located', onMoveFn.length > 100, true);
+check('a spectator cannot drag a unit', /ctx\.networked && !ctx\.seat/.test(onMoveFn), true);
+// The turn panel is a question put to someone holding a seat. Every branch of
+// it assumes one, and `mine()` answers true for a seatless client, so the watch
+// branch has to come before all of them rather than beside them.
+const panelFn = hud.slice(hud.indexOf('function panelHtml(ctx: HudCtx)'), hud.indexOf('function rollbackOffer'));
+check('panelHtml was located', panelFn.includes('boxDropPanel'), true);
+check('watching is the first branch of the turn panel',
+  panelFn.indexOf('watchPanel(ctx)') < panelFn.indexOf('boxDropPanel(ctx)'), true);
+// A rollback is a bargain between the two players, and a watcher is not a party
+// to it. The branch above already means they never reach the panels that draw
+// the offer — this is the second layer, so reordering the dispatcher some day
+// cannot quietly start asking them.
+const offerFn = hud.slice(hud.indexOf('function rollbackOffer(ctx: HudCtx)'), hud.indexOf('function rollbackPanel'));
+check('rollbackOffer was located', offerFn.includes('rollbackCatalog'), true);
+check('a watcher is never offered a rollback', /if \(!ctx\.networked \|\| !ctx\.seat/.test(offerFn), true);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exitCode = fail ? 1 : 0;

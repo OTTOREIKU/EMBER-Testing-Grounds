@@ -329,6 +329,16 @@ function clearFeedAfter(cmd: Command): void {
 // deterministic guide glue every client runs, ours or theirs.
 function send(cmd: Command): CheckResult {
   if (!data) return { ok: false, why: 'Still loading.' };
+  // A spectator holds no seat, and nothing they do may touch the board. This
+  // has to be a refusal HERE rather than only a hidden button, because the
+  // damage is silent: perform() would apply the command to this client's own
+  // state and relay.publish() drops it for want of a seat, so the watcher's
+  // board would quietly drift away from the game they are watching with no
+  // error anywhere. The server refuses these too — this is the same rule kept
+  // on both sides of the wire rather than trusted to one.
+  if (relay.state.room && !relay.state.seat) {
+    return { ok: false, why: 'You are watching this table, so you cannot change the board.' };
+  }
   const p = paused();
   if (p) return { ok: false, why: `Paused. Waiting for ${squadLabel(p.side)}'s player.` };
   const v = perform(data, state, cmd);
@@ -727,6 +737,29 @@ function syncSide(uid: number | null): void {
   const t = uid !== null ? state.tokens.find((x) => x.uid === uid) : undefined;
   if (t) panel?.showToken(t);
   else panel?.clear();
+  sealSideForWatchers();
+}
+
+// A spectator reads the cards and changes nothing on them.
+//
+// Enforced here rather than inside Panel because it is the Match Centre's
+// policy, not the card's: the same Panel is the freeplay board's, where every
+// one of these buttons is exactly right. Panel has no read-only mode and some
+// thirty button sites, so threading a flag through all of them would be a lot
+// of edits to say one thing. The buttons are disabled AFTER each render — the
+// panel rebuilds its body every time, so this has to run every time with it.
+//
+// This is presentation only. `send()` refuses a seatless client outright, so
+// the board is already safe if any of this is ever missed; what this adds is
+// not offering the player a control that would only tell them no.
+function sealSideForWatchers(): void {
+  if (!relay.state.room || relay.state.seat) return;
+  for (const host of ['#details-body', '#squad-body']) {
+    const el = document.querySelector(host);
+    if (!el) continue;
+    for (const b of el.querySelectorAll('button')) b.disabled = true;
+    el.classList.add('watching');
+  }
 }
 
 // An attack pool: server dice in a room, local otherwise, and the face icons
@@ -856,14 +889,20 @@ function barHtml(): string {
   // Who is actually here, not just who holds a seat. Saying "both seated" over
   // a paused board is the bar contradicting the veil in front of it.
   const away = v.room ? (['s1', 's2'] as Side[]).find((s) => v.room!.seats[s] && !v.room!.online[s]) : undefined;
+  // A watcher's pill says what they are before it says anything about the
+  // seats: "both seated" on a screen you cannot act on reads as a game you are
+  // simply locked out of, rather than one you joined to watch.
+  const watching = !!v.room && !v.seat;
   const conn = v.room
     ? v.status === 'connecting'
       ? '<span class="pill bad">● reconnecting</span>'
-      : away
-        ? `<span class="pill bad">● ${esc(squadLabel(away))} is away</span>`
-        : v.status === 'playing'
-          ? '<span class="pill live">● both seated</span>'
-          : '<span class="pill">● waiting for the other player</span>'
+      : watching
+        ? '<span class="pill" title="Both seats were taken, so you joined as a spectator.">● watching</span>'
+        : away
+          ? `<span class="pill bad">● ${esc(squadLabel(away))} is away</span>`
+          : v.status === 'playing'
+            ? '<span class="pill live">● both seated</span>'
+            : '<span class="pill">● waiting for the other player</span>'
     : '';
   // The line's own health, beside the seat pill. Quiet when there is nothing to
   // say: a round trip nobody would notice and no lost beats is not information,
@@ -1066,7 +1105,15 @@ function railHtml(): string {
   const iAmReady = mine ? !!state.ready?.[mine] : false;
   const foot = running()
     ? `<div class="foot"><b>Match running</b>Round ${state.round.n} · ${PHASES[state.round.phase]} Phase</div>`
-    : isHost()
+    // A watcher is neither the host nor a seated guest, so without this they
+    // are handed the guest's Ready button — a button for a readiness they do
+    // not have and cannot give.
+    : !mine
+      ? `<div class="foot">
+          <b>Watching</b>
+          <span class="quiet">Both seats were taken when you joined, so you are here as a spectator.<br>The table will start without you when the players are ready.</span>
+        </div>`
+      : isHost()
       // The line above the button says what it is waiting on, and it changes
       // as the table fills. Above, because the foot is pinned to the bottom of
       // the rail: text that grows and shrinks then never moves the button.
