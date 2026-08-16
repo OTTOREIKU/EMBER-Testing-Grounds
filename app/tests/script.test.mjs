@@ -68,11 +68,13 @@ const oncePerRound = ['2:aster:7'];
 const rollback = { by: 's2', round: 2, phase: 2, label: 'Action Phase' };
 // The points the host says it can return to, one of them sealed by a die roll.
 const rollbackCatalog = [{ round: 1, phase: 0, available: true }, { round: 2, phase: 1, available: false }];
+// A defence roll in the air: the Wild Cat shot at, 6 White owed, not yet rolled.
+const combat = { attackerUid: 7, targetUid: 9, actionId: '032_A', white: 6, blue: 1, faces: null };
 // Every value here is deliberately NOT the default, so a field that
 // normaliseScript forgets to carry across fails rather than coincidentally
 // matching what it would have defaulted to.
 const counter = { initiatorUid: 7, responderUid: 9, actionId: 'EWA', initRoll: [0, 3], respRoll: null, initFocused: true, respFocused: false };
-const live = { turn: 's2', acted: [7, 8], extraOpps: [8], commanded: [9], freeCommand: [], passed: ['s1'], stage: '2:3', mode: 'hidden', strict: true, commits: { s1: 'deadbeef' }, revealed: ['s2'], seats: { s1: 'local', s2: 'remote' }, opp, oppStack, intercepts, reactions, counter, endDone, oncePerRound, rollback, rollbacks: 3, rollbackCatalog };
+const live = { turn: 's2', acted: [7, 8], extraOpps: [8], commanded: [9], freeCommand: [], passed: ['s1'], stage: '2:3', mode: 'hidden', strict: true, commits: { s1: 'deadbeef' }, revealed: ['s2'], seats: { s1: 'local', s2: 'remote' }, opp, oppStack, intercepts, reactions, counter, endDone, oncePerRound, rollback, rollbacks: 3, rollbackCatalog, combat };
 
 // This fixture has lagged behind ScriptState four times now, each costing a
 // confusing deep-equal diff. Naming the missing field turns that into an
@@ -115,6 +117,12 @@ check('non-string once-per-round keys are dropped', normaliseScript({ ...live, o
 check('the branch count survives', normaliseScript(live, 's1').rollbacks, 3);
 check('a missing count reads back zero', normaliseScript({ ...live, rollbacks: undefined }, 's1').rollbacks, 0);
 check('a nonsense count reads back zero', normaliseScript({ ...live, rollbacks: -2 }, 's1').rollbacks, 0);
+check('an owed defence survives a reload', normaliseScript(live, 's1').combat, combat);
+check('a missing defence call reads back null', normaliseScript({ ...live, combat: undefined }, 's1').combat, null);
+// Half a call is no call: a pool with no target is not a question anyone can
+// answer, so it is dropped rather than shown as a roll button.
+check('a call with no target is dropped', normaliseScript({ ...live, combat: { white: 6, blue: 0 } }, 's1').combat, null);
+check('answered faces survive', normaliseScript({ ...live, combat: { ...combat, faces: [{ color: 'white', face: 2 }] } }, 's1').combat.faces, [{ color: 'white', face: 2 }]);
 check('the published catalog survives', normaliseScript(live, 's1').rollbackCatalog, rollbackCatalog);
 check('a missing catalog reads back empty', normaliseScript({ ...live, rollbackCatalog: undefined }, 's1').rollbackCatalog, []);
 // Every entry is a button promising to return the board to a named moment, so

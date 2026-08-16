@@ -562,6 +562,26 @@ export interface ScriptState {
   // simply require its target to be in here, and neither side can be holding a
   // staler copy than the other.
   rollbackCatalog: RollbackPoint[];
+  // A defence roll owed by the defender. The attack pipeline runs on the
+  // attacker's client, but the defence dice belong to the DEFENDING player —
+  // they press the roll, both watch the same faces land, and the answer comes
+  // back as a command. Living in shared state rather than inside the helper is
+  // also what gives future die-influence effects a home: a Part that removes
+  // or rerolls an opponent's die becomes another command against this record,
+  // gated by check() on whose die it is.
+  combat: DefenseCall | null;
+}
+
+// Who is being attacked, by what, and the pool they owe. `faces` null while
+// the defender is still rolling; the answering command fills it and the
+// attacker's helper consumes it.
+export interface DefenseCall {
+  attackerUid: number;
+  targetUid: number;
+  actionId: string;
+  white: number;
+  blue: number;
+  faces: { color: string; face: number }[] | null;
 }
 
 // A boundary a rollback can return to. `available` false means a die roll has
@@ -621,6 +641,7 @@ export function newScriptState(firstPlayer: Side): ScriptState {
     rollback: null,
     rollbacks: 0,
     rollbackCatalog: [],
+    combat: null,
   };
 }
 
@@ -633,6 +654,19 @@ function normaliseCatalog(raw: unknown): RollbackPoint[] {
       && Number.isSafeInteger((p as RollbackPoint).round)
       && Number.isSafeInteger((p as RollbackPoint).phase))
     .map((p) => ({ round: p.round, phase: p.phase, available: p.available === true }));
+}
+
+// A half-written call is dropped: every field below is something a client acts
+// on, and an owed defence with no pool or no target is not a question anyone
+// can answer.
+function normaliseDefenseCall(raw: unknown): DefenseCall | null {
+  const c = raw as Partial<DefenseCall> | null | undefined;
+  if (!c || typeof c.attackerUid !== 'number' || typeof c.targetUid !== 'number') return null;
+  if (typeof c.actionId !== 'string' || typeof c.white !== 'number' || typeof c.blue !== 'number') return null;
+  const faces = Array.isArray(c.faces)
+    ? c.faces.filter((f) => f && typeof f.color === 'string' && typeof f.face === 'number')
+    : null;
+  return { attackerUid: c.attackerUid, targetUid: c.targetUid, actionId: c.actionId, white: c.white, blue: c.blue, faces };
 }
 
 function normaliseRollback(raw: unknown): RollbackAsk | null {
@@ -702,6 +736,7 @@ export function normaliseScript(raw: unknown, firstPlayer: Side): ScriptState {
     // would make this client stamp a branch the others have left behind.
     rollbacks: Number.isSafeInteger(s.rollbacks) && (s.rollbacks as number) > 0 ? (s.rollbacks as number) : base.rollbacks,
     rollbackCatalog: normaliseCatalog(s.rollbackCatalog),
+    combat: normaliseDefenseCall(s.combat),
   };
 }
 

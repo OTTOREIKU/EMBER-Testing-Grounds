@@ -161,6 +161,7 @@ const relay = new Relay(api.base, {
     glueAfter(data, state, cmd);
     clearFeedAfter(cmd);
     rewindIfAgreed(cmd);
+    settleDefense(cmd);
     publishCatalog();
     // Nothing below this line belongs in a replay: the commitments and reveals
     // are being re-read from history, and answering them again would send this
@@ -346,6 +347,7 @@ function send(cmd: Command): CheckResult {
     glueAfter(data, state, cmd);
     clearFeedAfter(cmd);
     rewindIfAgreed(cmd);
+    settleDefense(cmd);
     publishCatalog();
   }
   return v;
@@ -521,6 +523,46 @@ function combatRoller() {
     : null;
 }
 
+// The attacker's helper, parked on the defence step until the answering
+// command brings the defender's faces. The colours are the helper's DieColor
+// union; the wire carries plain strings, so the cast happens at this seam and
+// nowhere deeper.
+let pendingDefense: ((faces: { color: DieColor; face: number; selected: boolean }[]) => void) | null = null;
+
+// A defence pool as raw faces — server dice in a room so both players watch
+// them land, local otherwise (the solo harness).
+async function rollDefensePool(white: number, blue: number): Promise<{ color: DieColor; face: number; selected: boolean }[]> {
+  const pool: Record<string, number> = {};
+  if (white) pool.white = white;
+  if (blue) pool.blue = blue;
+  if (relay.state.room && relay.state.seat) {
+    const rolled = await relay.rollDice(pool, 'Defence', 'pool');
+    return rolled.map((d) => ({ color: d.color as DieColor, face: d.face, selected: false }));
+  }
+  return Object.entries(pool).flatMap(([c, n]) =>
+    Array.from({ length: n }, () => ({ color: c as DieColor, face: Math.floor(Math.random() * (diceData!.dice[c as DieColor]?.sides ?? 6)), selected: false })),
+  );
+}
+
+// Both halves of the handshake, run off the commands so the order is the wire's
+// order: the ANSWER hands the faces to the waiting helper and closes the shared
+// record; a CLEAR that arrives while we are still waiting is the attacker
+// cancelling the attack (or a rollback tearing it down), so the wait ends.
+function settleDefense(cmd: Command): void {
+  if (cmd.kind === 'answerDefense' && pendingDefense) {
+    const resolve = pendingDefense;
+    pendingDefense = null;
+    resolve(cmd.faces.map((f) => ({ color: f.color as DieColor, face: f.face, selected: false })));
+    // The record served its purpose the moment the faces landed; clearing it
+    // is what lets the next attack ask again, and it is the ATTACKER's to
+    // clear because the attacker's helper is the consumer.
+    send({ kind: 'clearDefense', seat: mySeat() ?? 's1' });
+  }
+  if (cmd.kind === 'clearDefense' && pendingDefense) {
+    pendingDefense = null;
+  }
+}
+
 function startAttack(uid: number, actionId: string, targetUid: number, mode: 'attack' | 'intercept' | 'explosion' = 'attack'): void {
   if (!data || !attackHelper) return;
   const attacker = state.tokens.find((t) => t.uid === uid);
@@ -666,6 +708,13 @@ function mountSide(): void {
       document.getElementById('combat-body')!,
       () => render(),
       () => {
+        // Closing the helper while a defence call is still in the air is the
+        // attacker cancelling the attack: take the question back, or the
+        // defender is left rolling dice for a shot that no longer exists.
+        if (pendingDefense && state.script?.combat) {
+          pendingDefense = null;
+          send({ kind: 'clearDefense', seat: mySeat() ?? 's1' });
+        }
         renderCombatIdle();
         showSideTab(null, 'details');
         render();
@@ -706,6 +755,21 @@ function mountSide(): void {
     attackHelper.tokens = () => state.tokens;
     attackHelper.terrain = () => terrainNow();
     attackHelper.smoke = () => state.smoke ?? [];
+    // The defender's dice belong to the defending player. When the unit being
+    // shot at is the OTHER seat's, the roll is asked for through shared state:
+    // callDefense records what is owed, their client shows the roll button,
+    // and answerDefense brings the faces back. A unit of our own defending —
+    // the solo harness, a detonation on an ally — keeps the direct roll, since
+    // the button would be ours either way.
+    attackHelper.defenseRoller = (pool, attacker, defender, actionId) => new Promise((resolve) => {
+      const seatNow = mySeat();
+      if (!relay.state.room || !seatNow || defender.side === seatNow) {
+        void rollDefensePool(pool.white, pool.blue).then(resolve);
+        return;
+      }
+      pendingDefense = resolve;
+      send({ kind: 'callDefense', seat: attacker.side, uid: attacker.uid, targetUid: defender.uid, actionId, white: pool.white, blue: pool.blue });
+    });
     // The defender's own reaction to being shot at. The helper holds these back
     // until every sequence of a Multi-Target has resolved (FAQ B7), so by the
     // time this fires the Screens are already too late to shield anyone the
@@ -1308,6 +1372,7 @@ function hudCtx(): HudCtx {
     check: (cmd) => (data ? check(data, state, cmd) : { ok: false, why: 'Still loading.' }),
     rollHits,
     rollPool,
+    rollDefense: rollDefensePool,
     diceFeed,
     note: lobbyNote,
     noteNow: (text) => { lobbyNote = text; },

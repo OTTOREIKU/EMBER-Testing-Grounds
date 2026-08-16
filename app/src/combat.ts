@@ -145,6 +145,9 @@ interface Ctx {
   defensePool: { white: number; blue: number };
   attackRoll: Rolled[] | null;
   defenseRoll: Rolled[] | null;
+  // Whether the defender has already been asked for their roll, so the render
+  // loop asks exactly once per attack rather than once per repaint.
+  defenseCalled?: boolean;
   blackResult: string | null;
   rerolls: Record<'attack' | 'defense', Record<Side, boolean>>;
   // ZPA-35 Chef: each consumed Command Token exchanges one {Eye} on the ATTACK
@@ -184,6 +187,13 @@ export class AttackHelper {
   private onCommand: (cmd: Command) => void;
   // Set by the app while a networked game is running; cleared otherwise.
   roller: DiceRoller | null = null;
+  // The defender's own dice. When set — the Match Centre, with the defending
+  // player at another screen — the defence roll is ASKED FOR rather than made:
+  // the hook records what is owed, the DEFENDER presses their own roll button,
+  // and the promise resolves with their faces. The helper shows a waiting line
+  // instead of a roll button while it is out. Null in freeplay, where one
+  // player owns both pools and the button is theirs either way.
+  defenseRoller: ((pool: { white: number; blue: number }, attacker: Token, defender: Token, actionId: string) => Promise<Rolled[]>) | null = null;
   // The whole board, for aura reads (FAQ Q1: judged when the roll happens).
   tokens: (() => Token[]) | null = null;
   // Terrain, for the Hyena Radar's line of sight to the intercepted target.
@@ -1274,17 +1284,41 @@ export class AttackHelper {
       wrap.appendChild(p);
     }
     if (!c.defenseRoll) {
-      const roll = document.createElement('button');
-      roll.className = 'ah-primary';
-      roll.innerHTML = '<i class="btn-ico">🎲</i> Roll defense dice';
-      roll.addEventListener('click', () => {
-        void (async () => {
-          this.spinFor = 'defense';
-          c.defenseRoll = await this.rollPool({ white: c.defensePool.white, blue: c.defensePool.blue }, 'Defence');
-          this.render();
-        })();
-      });
-      wrap.appendChild(roll);
+      // The defender's own dice, when the defending player is at another
+      // screen: the call goes out ONCE (the render runs many times while the
+      // answer is in the air), the defender presses their own roll, and both
+      // players watch the same faces land. The attacker sees a waiting line
+      // where the button would be — the button is not theirs to press.
+      if (this.defenseRoller) {
+        if (!c.defenseCalled) {
+          c.defenseCalled = true;
+          const gen = this.duelGen;
+          void this.defenseRoller({ white: c.defensePool.white, blue: c.defensePool.blue }, c.attacker, c.defender, c.action.id)
+            .then((faces) => {
+              // A cancelled or superseded attack must not receive a roll meant
+              // for the one before it.
+              if (this.ctx !== c || this.duelGen !== gen) return;
+              c.defenseRoll = faces;
+              this.render();
+            });
+        }
+        const wait = document.createElement('p');
+        wait.className = 'ah-note';
+        wait.textContent = `Waiting for ${c.defender.label}'s player to roll their defence: ${c.defensePool.white} White${c.defensePool.blue ? ` + ${c.defensePool.blue} Blue` : ''}.`;
+        wrap.appendChild(wait);
+      } else {
+        const roll = document.createElement('button');
+        roll.className = 'ah-primary';
+        roll.innerHTML = '<i class="btn-ico">🎲</i> Roll defense dice';
+        roll.addEventListener('click', () => {
+          void (async () => {
+            this.spinFor = 'defense';
+            c.defenseRoll = await this.rollPool({ white: c.defensePool.white, blue: c.defensePool.blue }, 'Defence');
+            this.render();
+          })();
+        });
+        wrap.appendChild(roll);
+      }
     } else {
       wrap.appendChild(this.rollView(c.defenseRoll, 'defense'));
       const def = this.countIcons(c.defenseRoll, c.defender.stance === 'defensive');

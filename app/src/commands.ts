@@ -183,6 +183,17 @@ export type Command =
   // that rewrote the board while inside apply() would be undoing the history
   // entry it is currently creating. The page watches for the accepted answer
   // and calls history.undoTo() outside the command layer.
+  // The two halves of a defence roll made by its owner. The attack pipeline
+  // runs on the attacker's client, but the defender presses their own roll:
+  // `callDefense` records what is owed in shared state, the defender's client
+  // rolls (server dice, so both watch the faces land) and answers with
+  // `answerDefense` carrying the faces — the same ride-in-the-command shape the
+  // Electronic Counter-roll and the setup roll use. `clearDefense` closes the
+  // record once the attacker's helper has consumed it, or when the attack is
+  // cancelled out from under it.
+  | { kind: 'callDefense'; seat: Side; uid: number; targetUid: number; actionId: string; white: number; blue: number }
+  | { kind: 'answerDefense'; seat: Side; faces: { color: string; face: number }[] }
+  | { kind: 'clearDefense'; seat: Side }
   | { kind: 'setRollbackCatalog'; seat: Side; entries: RollbackPoint[] }
   | { kind: 'rollbackRequest'; seat: Side; round: number; phase: number; label: string }
   | { kind: 'rollbackAnswer'; seat: Side; accept: boolean }
@@ -290,6 +301,7 @@ type TableKind =
   | 'clearCounterRoll'
   | 'setMode' | 'handOver' | 'setStrict' | 'commitTimings' | 'revealTimings' | 'importSquad'
   | 'configureTable' | 'startMatch' | 'endMatch' | 'pickSecondary' | 'setTactics' | 'setReady' | 'designateTask'
+  | 'callDefense' | 'answerDefense' | 'clearDefense'
   | 'setRollbackCatalog' | 'rollbackRequest' | 'rollbackAnswer';
 const TABLE_KINDS = new Set<Command['kind']>([
   'advancePhase', 'setPhase', 'resetRounds', 'adjustCommandTokens', 'passTurn', 'markEndStep', 'award',
@@ -299,6 +311,7 @@ const TABLE_KINDS = new Set<Command['kind']>([
   'clearCounterRoll',
   'setMode', 'handOver', 'setStrict', 'commitTimings', 'revealTimings', 'importSquad',
   'configureTable', 'startMatch', 'endMatch', 'pickSecondary', 'setTactics', 'setReady', 'designateTask',
+  'callDefense', 'answerDefense', 'clearDefense',
   'setRollbackCatalog', 'rollbackRequest', 'rollbackAnswer',
 ]);
 
@@ -310,6 +323,7 @@ const ATTRIBUTED = new Set<Command['kind']>([
   'advancePhase', 'setPhase', 'resetRounds', 'markEndStep', 'award',
   // Who asked and who answered is the whole record of a rollback, so both are
   // stamped with the sender's own seat like every other attributed command.
+  'callDefense', 'answerDefense', 'clearDefense',
   'setRollbackCatalog', 'rollbackRequest', 'rollbackAnswer',
   'lockMap', 'acceptRoll', 'lockDials', 'finishDeployment',
   'queueIntercepts', 'clearIntercepts', 'placeSmoke', 'removeSmoke', 'dissipateSmoke',
@@ -433,6 +447,35 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
     }
     case 'setRollbackCatalog': {
       if (!state.script) return no('There is no game running.');
+      return ok;
+    }
+    case 'callDefense': {
+      const sc = state.script;
+      if (!sc) return no('There is no game running.');
+      // One defence in the air at a time: a second call while one waits would
+      // leave two clients answering different questions.
+      if (sc.combat) return no('A defence roll is already being waited on.');
+      const at = state.tokens.find((x) => x.uid === cmd.uid);
+      if (!at || at.side !== cmd.seat) return no('The attacker is not one of your units.');
+      if (!state.tokens.some((x) => x.uid === cmd.targetUid)) return no('That target is not on the board.');
+      if (!Number.isInteger(cmd.white) || !Number.isInteger(cmd.blue) || cmd.white < 0 || cmd.blue < 0 || cmd.white + cmd.blue > 40) {
+        return no('That is not a defence pool.');
+      }
+      return ok;
+    }
+    case 'answerDefense': {
+      const sc = state.script;
+      if (!sc?.combat) return no('No defence roll has been asked for.');
+      if (sc.combat.faces) return no('The defence has already been rolled.');
+      // Only the DEFENDING player answers: the dice belong to whoever owns the
+      // unit being shot at, which is the whole point of asking.
+      const t = state.tokens.find((x) => x.uid === sc.combat!.targetUid);
+      if (!t || t.side !== cmd.seat) return no('The defence belongs to the defending squad.');
+      if (!Array.isArray(cmd.faces) || cmd.faces.length > 40) return no('That is not a defence roll.');
+      return ok;
+    }
+    case 'clearDefense': {
+      if (!state.script?.combat) return no('No defence roll is open.');
       return ok;
     }
     case 'rollbackRequest': {
@@ -1348,6 +1391,24 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
   if (cmd.kind === 'setRollbackCatalog') {
     const sc = state.script;
     if (sc) sc.rollbackCatalog = cmd.entries.map((p) => ({ ...p }));
+    return;
+  }
+  if (cmd.kind === 'callDefense') {
+    const sc = state.script;
+    if (sc) sc.combat = { attackerUid: cmd.uid, targetUid: cmd.targetUid, actionId: cmd.actionId, white: cmd.white, blue: cmd.blue, faces: null };
+    return;
+  }
+  if (cmd.kind === 'answerDefense') {
+    // The faces ride in the command, never re-rolled by a receiver — the same
+    // rule as the Counter-roll and the setup roll, so both boards hold the
+    // identical dice whichever side rolled them.
+    const sc = state.script;
+    if (sc?.combat) sc.combat.faces = cmd.faces.map((f) => ({ ...f }));
+    return;
+  }
+  if (cmd.kind === 'clearDefense') {
+    const sc = state.script;
+    if (sc) sc.combat = null;
     return;
   }
   if (cmd.kind === 'rollbackRequest') {

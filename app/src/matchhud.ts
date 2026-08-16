@@ -55,6 +55,10 @@ export interface HudCtx {
   rollHits(n: number, label: string): Promise<{ hits: number[]; dice: { color: string; face: number }[] }>;
   // Rolls an attack pool; the result lands in the shared dice feed.
   rollPool(y: number, r: number, label: string): Promise<void>;
+  // Rolls a defence pool and returns the faces — the defender's own button
+  // behind the answerDefense handshake. Server dice in a room, so the attacker
+  // watches the same faces land.
+  rollDefense(white: number, blue: number): Promise<{ color: string; face: number }[]>;
   diceFeed: DiceLine[];
   note: string | null;
   // Shows a one-off message in the turn panel.
@@ -1382,9 +1386,40 @@ function watchPanel(ctx: HudCtx): string {
     + `<div class="tp-body">${body}</div><div class="tp-foot"></div>`;
 }
 
+// Your unit is being shot at, and the defence dice are yours to roll. Both
+// players watch the same faces land — the roll goes through the server and
+// into the shared feed — and the answer carries them back to the attacker's
+// pipeline. This outranks nearly everything: the attack cannot move until it
+// is answered, and the attacker is waiting.
+function defensePanel(ctx: HudCtx): string {
+  const s = ctx.state;
+  const call = ensureScript(s).combat!;
+  const attacker = s.tokens.find((t) => t.uid === call.attackerUid);
+  const target = s.tokens.find((t) => t.uid === call.targetUid);
+  const a = attacker && actionOn(ctx, attacker, call.actionId);
+  const pool = `${call.white} White${call.blue ? ` + ${call.blue} Blue` : ''}`;
+  return head('Your move', `${esc(target?.label ?? 'Your unit')} is under fire`,
+    `${esc(attacker?.label ?? 'The enemy')} attacks with ${esc(a?.name?.en || call.actionId)}.`, true)
+    + `<div class="tp-body">
+        <p class="tp-note">Roll your defence: <b>${esc(pool)}</b>. Both players see the dice land, and the attack resolves once they do.</p>
+      </div>
+      <div class="tp-foot"><button class="bigbtn" data-act="rolldefense">🎲 Roll ${esc(pool)}</button></div>`;
+}
+
 function panelHtml(ctx: HudCtx): string {
   const s = ctx.state;
   if (ctx.networked && !ctx.seat) return watchPanel(ctx);
+  // The owed defence roll, for the seat that owns the unit being shot at. It
+  // has to come before combatBusy() — the DEFENDER is not combat-busy, their
+  // helper is not running — and before every phase panel, because the whole
+  // table is waiting on this one press.
+  {
+    const call = ensureScript(s).combat;
+    if (call && !call.faces) {
+      const target = s.tokens.find((t) => t.uid === call.targetUid);
+      if (target && mine(ctx, target.side) && ctx.seat) return defensePanel(ctx);
+    }
+  }
   // A launch is waiting on a square, and a grant on an Ally: both are questions
   // already asked, so they come before whatever the phase would otherwise show.
   // An attack in the helper owns the screen until it is resolved; the turn
@@ -4035,6 +4070,17 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     });
   });
   on('[data-act="pass"]', () => { ctx.send({ kind: 'passTurn', seat: me() }); ctx.refresh(); });
+  on('[data-act="rolldefense"]', (el) => {
+    const call = ensureScript(s).combat;
+    if (!call || call.faces) return;
+    // One roll per call: the button dies the moment it is pressed, so a double
+    // click cannot answer twice while the first roll is still in the air.
+    (el as HTMLButtonElement).disabled = true;
+    void ctx.rollDefense(call.white, call.blue).then((faces) => {
+      ctx.send({ kind: 'answerDefense', seat: me(), faces });
+      ctx.refresh();
+    });
+  });
   on('[data-rb]', (el) => {
     const what = el.dataset.rb;
     if (what === 'accept' || what === 'decline') {
