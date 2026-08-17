@@ -649,9 +649,23 @@ export class AttackHelper {
 
   // ---------- UI ----------
 
+  // A checkpoint REPLACES every token object while the helper is open — and
+  // with the defence handshake the helper now waits on a human at another
+  // screen, so that window is minutes, not frames. The uids survive the swap;
+  // the references do not, and a read off the old object misses everything a
+  // command wrote since (a Penetration read back "intact" off a dead object
+  // and never fired the part-kill). Re-resolve before reading. The fallback
+  // keeps a unit that was removed from the board readable for the narration.
+  private rebind(c: Ctx): void {
+    const board = this.tokens ? this.tokens() : [];
+    c.attacker = board.find((x) => x.uid === c.attacker.uid) ?? c.attacker;
+    c.defender = board.find((x) => x.uid === c.defender.uid) ?? c.defender;
+  }
+
   private render(): void {
     const c = this.ctx;
     if (!c) return;
+    this.rebind(c);
     const el = document.createElement('div');
     el.className = 'attack-helper';
     const aName = c.attacker.label;
@@ -1049,6 +1063,8 @@ export class AttackHelper {
 
   private pickPart(slot: string): void {
     const c = this.ctx!;
+    // Reached from the Black Die's settle timer, well after the last render.
+    this.rebind(c);
     // A Repaired Part chosen as the hit location is removed at once - no
     // Penetration, no rewards, no second Link loss - and the whole attack
     // redirects to the Core, rolled as normal (FAQ J23/D7).
@@ -1365,6 +1381,8 @@ export class AttackHelper {
       apply.className = 'ah-primary';
       apply.textContent = `Apply Penetration to ${SLOT_LABEL[c.targetPart as PartSlot | 'main']}`;
       apply.addEventListener('click', () => {
+        // The wait between render and this press is another checkpoint window.
+        this.rebind(c);
         const slot = c.targetPart as PartSlot | 'main';
         const cur = c.defender.partStates[slot] ?? 'intact';
         const wasShut = c.defender.stance === 'shutdown';
@@ -1757,6 +1775,11 @@ export class ElectronicHelper {
   private render(): void {
     const c = this.ctx;
     if (!c) return;
+    // Same rebind as the AttackHelper's: a Counter-roll waits on the other
+    // player's dice, and a checkpoint in that window replaces every token.
+    const board = this.tokens ? this.tokens() : [];
+    c.initiator = board.find((x) => x.uid === c.initiator.uid) ?? c.initiator;
+    c.responder = board.find((x) => x.uid === c.responder.uid) ?? c.responder;
     const el = document.createElement('div');
     el.className = 'attack-helper';
     const what = c.action.name.en || c.action.name.zh || c.action.id;

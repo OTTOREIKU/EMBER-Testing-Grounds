@@ -2956,12 +2956,17 @@ function attackPanel(ctx: HudCtx): string {
     .filter((t) => !autoLegal || !autoLegal.length || autoLegal.some((x) => x.uid === t.uid))
     .map((t) => {
       const note = losNote(by, t, a, terrain, s.tokens, smoke);
-      const bad = note.includes('⚠') || note.includes('✕');
+      // ⚠ is a warning the player may overrule; ✕ is blocked line of sight,
+      // and 4.4.1 makes that attack illegal, not inadvisable. Freeplay warns
+      // for both because a table can house-rule; networked play is strict, so
+      // the row cannot be pressed. Only losNote's LOS readings emit ✕.
+      const blocked = note.includes('✕');
+      const bad = blocked || note.includes('⚠');
       const prot = protectionFor(by, t, a, terrain, s.tokens, smoke);
       // One reading per line. Range, arc and line of sight are three separate
       // judgements and running them together on one line made the list unusable.
       const bits = note.split(' · ').concat(prot.white ? [`+${prot.white} White ${prot.white === 1 ? 'die' : 'dice'} of Protection`] : []);
-      return `<button class="rowwide targrow${bad ? ' warn' : ''}" data-attacktarget="${t.uid}">
+      return `<button class="rowwide targrow${bad ? ' warn' : ''}"${blocked ? ' disabled' : ''} data-attacktarget="${t.uid}">
         <span class="tgname">${esc(t.label)}</span>
         <span class="tgbits">${bits.map((b) => `<span${/[⚠✕]/.test(b) ? ' class="bad"' : ''}>${esc(b)}</span>`).join('')}</span></button>`;
     })
@@ -4191,6 +4196,21 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
   on('[data-act="launchpickcancel"]', () => { launchPick = null; dropAction(); ctx.refresh(); });
   on('[data-attacktarget]', (el) => {
     const m = attackPick;
+    if (m) {
+      // The disabled row is the gate; this re-check is for a stale panel,
+      // where the board changed after the rows were drawn. Recomputed rather
+      // than trusted, and BEFORE commitAction so a refused attack costs
+      // nothing.
+      const s = ctx.state;
+      const by = s.tokens.find((x) => x.uid === m.uid);
+      const t = s.tokens.find((x) => x.uid === Number(el.dataset.attacktarget));
+      const a = by ? actionOn(ctx, by, m.actionId) : undefined;
+      if (by && t && a && losNote(by, t, a, terrainOf(ctx), s.tokens, s.smoke ?? []).includes('✕')) {
+        ctx.noteNow('Line of sight is blocked, so this attack cannot be made (4.4.1).');
+        ctx.refresh();
+        return;
+      }
+    }
     attackPick = null;
     if (m) {
       commitAction(ctx);
