@@ -1962,9 +1962,15 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
           + Math.abs(Math.floor(cmd.to.row / 3) - Math.floor(from.row / 3));
         const rider = t.kind === 'drone' ? riderOnDrone(data, state.tokens, t) : { preMove: 0 };
         const freeGrid = rider.preMove > 0 && !o.preMoved && !o.started && grids <= rider.preMove;
+        // `from` is kept on the Opportunity as well as used above, because a
+        // Movement is judged at the start AND landing grids only (FAQ O11/O15)
+        // and the readers that ask — the Match Centre's Reveal sweep, which
+        // runs at render time — see the board only after it has moved. It is
+        // the same `from` the M2 arithmetic uses, so there is one truth about
+        // where this unit stood.
         sc.opp = freeGrid
-          ? { ...o, moved: true, preMoved: true }
-          : lockStance(t, spendManeuver(o));
+          ? { ...o, moved: true, preMoved: true, movedFrom: from }
+          : { ...lockStance(t, spendManeuver(o)), movedFrom: from };
       }
       return;
     }

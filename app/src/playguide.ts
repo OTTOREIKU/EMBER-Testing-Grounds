@@ -5,7 +5,7 @@ import { cardName, squadLabel } from './data';
 import { bindTips, linkMechanics } from './inspector';
 import { choiceDialog } from './dialog';
 import { PHASES, PHASE_INFO } from './tracker';
-import { hasFlexibleTiming, pilotCard, coordinationFor, coordinationOnOpportunityEnd, extrasFor, isSilentAction, type ActionWorld, canActivateCamo, type ExtraActivation, extraActivationOf, guidedActions, initiativeFor, maneuverRange, maxLink, SLOT_LABEL, tokenCards } from './units';
+import { hasFlexibleTiming, pilotCard, coordinationFor, coordinationOnOpportunityEnd, extrasFor, actionSilenceDenier, isSilentAction, type ActionWorld, canActivateCamo, type ExtraActivation, extraActivationOf, guidedActions, initiativeFor, maneuverRange, maxLink, SLOT_LABEL, tokenCards } from './units';
 import { canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed } from './ticks';
 import { asterKey, clearDroneCommands, perform, readyCommands, seedCommandTokens } from './commands';
 import { askIssuer, asterBlockers, offerCoordination, runAster } from './commandpick';
@@ -1568,14 +1568,21 @@ export class PlayGuide {
       perform(this.data, s, { kind: 'performAction', seat: t.side, uid: t.uid, actionId: row.action.id, partKey: row.partKey });
       // A non-Silence action ends Optical Camouflage (4.12.2, FAQ I5). The
       // strict tracker reveals outright; teaching asks, in the house style.
-      if (statusCount(t.statuses, 'camouflage') > 0 && !isSilentAction(row.action)) {
+      if (statusCount(t.statuses, 'camouflage') > 0 && !isSilentAction(this.data, s.tokens, t, row.action)) {
+        // A printed Silence taken away by an enemy aura (ZHDR-206) is named.
+        // This page teaches, so an unexplained Reveal is worse here than
+        // anywhere: the learner has just read the keyword on the card.
+        const denier = actionSilenceDenier(this.data, s.tokens, t, row.action);
+        const because = denier
+          ? ` — ${denier.source.label} (${denier.label}) denies it Silence`
+          : '';
         if (this.script(s).strict) {
           perform(this.data, s, { kind: 'reveal', seat: t.side, uid: t.uid });
-          this.cb.onNote(t, `${row.action.name?.en || row.action.id} is not Silent, so the Optical Camouflage ends (4.12.2). Reveal movement up to its Stealth value may follow.`);
+          this.cb.onNote(t, `${row.action.name?.en || row.action.id} is not Silent${because}, so the Optical Camouflage ends (4.12.2). Reveal movement up to its Stealth value may follow.`);
         } else {
           void choiceDialog({
             title: `${t.label} breaks camouflage`,
-            body: `${row.action.name?.en || row.action.id} is not a Silent action, so under 4.12.2 the unit Reveals. Reveal movement up to its Stealth value may follow.`,
+            body: `${row.action.name?.en || row.action.id} is not a Silent action${because}, so under 4.12.2 the unit Reveals. Reveal movement up to its Stealth value may follow.`,
             choices: [
               { id: 'reveal', label: 'Reveal it (4.12.2)', primary: true },
               { id: 'keep', label: 'Keep it hidden (house rule)', cancel: true },

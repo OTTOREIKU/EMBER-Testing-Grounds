@@ -4,7 +4,7 @@ import type { GameData } from './data';
 import { actionIconUrl, cardName, isAerial, secondaryImageUrl, squadLabel, unitSize } from './data';
 import { Board, footprint, snapPlacement, type BoardCallbacks } from './board';
 import { printedDeployment, resolveZoneSetData } from './overlays';
-import { ignoresProtectionOnHighlight, ripostePart, martyrdomOwed, targetTracingOn, riderOnDrone, hasFlexibleTiming, coordinationFor, coordinationOnOpportunityEnd, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, electronicOrigins, loanedParts, minesLayable, minesOwed, pilotCard, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, isSilentAction, maneuverIsSilent, canActivateCamo, chargeableSlots, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
+import { ignoresProtectionOnHighlight, ripostePart, martyrdomOwed, targetTracingOn, riderOnDrone, hasFlexibleTiming, coordinationFor, coordinationOnOpportunityEnd, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, electronicOrigins, loanedParts, minesLayable, minesOwed, pilotCard, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, maneuverIsSilent, maneuverSilenceDenier, type AuraSource, canActivateCamo, chargeableSlots, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
 import { resolveCounterRoll, tallyCounter } from './combat';
 import { tacticFitsPhase, tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { inContact, canStandIn, attackDirection, crushTargets, dissipationFor, extendPath, knockbackPath, largeGridOf, LG, losBetween, losNote, pathCost, protectionFor, rangeBetween, reachableGrids, standingSpot, type LargeGrid } from './rules';
@@ -2186,14 +2186,30 @@ function revealsOwed(ctx: HudCtx): { t: Token; key: string; why: string }[] {
     // A non-Silence action or a non-Silent Maneuver during the CURRENT
     // Action Opportunity (FAQ I2/I5), read off the opportunity script.
     if (sc.opp?.uid === t.uid) {
+      // An enemy aura that denies Silence (ZHDR-206) is named in the line, not
+      // just counted: a camouflage that breaks with nothing named reads as a
+      // bug at the table, and the panel below is all the player is shown.
+      let denier: AuraSource | undefined;
       const acted = (sc.opp.performed ?? []).some((key) => {
         const id = actionIdOf(key);
         const a = tokenCards(ctx.data, t).flatMap(({ card }) => card.actions ?? []).find((x) => x.id === id);
-        return a ? !isSilentAction(a) : false;
+        if (!a || isSilentAction(ctx.data, s.tokens, t, a)) return false;
+        denier = denier ?? actionSilenceDenier(ctx.data, s.tokens, t, a);
+        return true;
       });
-      if (acted) out.push({ t, key: `${t.uid}:act:${s.round.n}`, why: 'performed a non-Silence action' });
-      else if (sc.opp.maneuvered && !maneuverIsSilent(ctx.data, t)) {
-        out.push({ t, key: `${t.uid}:mov:${s.round.n}`, why: 'moved without Silence' });
+      // The Movement is judged at the START and landing grids only (FAQ
+      // O11/O15). This sweep runs at render time, long after the token moved,
+      // so the start comes off the Opportunity — without it a unit that walked
+      // OUT of the aura was judged as though it had never been in it.
+      const from = sc.opp.movedFrom
+        ? { ...t, col: sc.opp.movedFrom.col, row: sc.opp.movedFrom.row }
+        : undefined;
+      const moveDenier = maneuverSilenceDenier(ctx.data, s.tokens, t, from);
+      const named = (why: string, src: AuraSource | undefined): string =>
+        (src ? `${why} — ${src.source.label} (${src.label}) denies it Silence` : why);
+      if (acted) out.push({ t, key: `${t.uid}:act:${s.round.n}`, why: named('performed a non-Silence action', denier) });
+      else if (sc.opp.maneuvered && !maneuverIsSilent(ctx.data, s.tokens, t, from)) {
+        out.push({ t, key: `${t.uid}:mov:${s.round.n}`, why: named('moved without Silence', moveDenier) });
       }
     }
     // Contact with an enemy that is neither Aerial nor camouflaged (I4/I7),

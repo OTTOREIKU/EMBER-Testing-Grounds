@@ -215,7 +215,14 @@ check('only the Radar Type carries it',
 // works today only because aaRadarCovers takes terrain and tokens and NEVER a
 // smoke list, so this pin guards the signature: the day someone threads smoke
 // through it, F5 breaks and this says so.
-const radarFn = slice('export function aaRadarCovers', '// ---------- Repeaters (FAQ O19/O20)', 'aaRadarCovers in units.ts');
+//
+// The end marker is the 164 header, NOT the Repeaters one it used to be. 164's
+// Early Warning Observation was written in between the two, and it DOES consult
+// smoke — deliberately, because no FAQ exempts that card the way F5 exempts
+// this one — so the old range swept a neighbour's smoke test into this pin and
+// failed it. Two cards, one rulebook clause, opposite answers: keep the slice
+// tight to the function this ruling is about.
+const radarFn = slice('export function aaRadarCovers', "// ---------- The Raven Scout's Early Warning Observation", 'aaRadarCovers in units.ts');
 check('F5: nothing in aaRadarCovers mentions smoke at all',
   /smoke/i.test(radarFn), false);
 check('and its sight test is the terrain-and-tokens one, which has no smoke to consult',

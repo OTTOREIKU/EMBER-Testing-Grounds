@@ -5,7 +5,7 @@ import { linkMechanics } from './inspector';
 import { SQUAD_ORDER, squadLabel } from './data';
 import type { Card, CardAction, DiceData, DiceIcon, DieColor, GameRuleEffect, PartSlot, Side, SmokeScreen, TerrainPiece, Token } from './types';
 import { statusCount, STATUSES } from './types';
-import { aaRadarCovers, attackReactionsOf, auraEffectsOn, auraValueOn, blueLightningDodges, coolingBonus, denseArmorByText, eyesAreHeavyHits, ignoresLowProfile, ignoresProtectionOnHighlight, noMeleeBackAttack, missileGuidance, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, denseArmorOn, designationsOn, electronicValue, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, loanedParts, pilotCard, repeatersFor, SLOT_LABEL, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
+import { aaRadarCovers, attackReactionsOf, auraEffectsOn, aurasOn, auraValueOn, blueLightningDodges, earlyWarningCover, coolingBonus, denseArmorByText, eyesAreHeavyHits, ignoresLowProfile, ignoresProtectionOnHighlight, noMeleeBackAttack, missileGuidance, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, denseArmorOn, designationsOn, electronicValue, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, loanedParts, pilotCard, repeatersFor, SLOT_LABEL, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
 import { timingOf } from './ticks';
 import { inArc, losNote, protectionFor, rangeBetween } from './rules';
 import type { Command } from './commands';
@@ -536,6 +536,28 @@ export class AttackHelper {
     return cards.find((c) => c.slot === slot)?.card;
   }
 
+  // 164 Early Warning Observation. One home for it because the pool arithmetic
+  // and the line that explains the pool are written in two different places,
+  // and a bonus the player cannot see the reason for reads as a bug.
+  //
+  // `smoke` is fed here as well as `terrain`, and is not optional: the card
+  // asks whether the ATTACKER is visible to the drone, and a Smoke Screen kills
+  // line of sight outright (4.16). Both pages already keep this field live, so
+  // dropping it was purely a missed argument at this seam.
+  private earlyWarning(): Token | undefined {
+    const c = this.ctx;
+    if (!c || !this.tokens) return undefined;
+    return earlyWarningCover(
+      this.data,
+      this.tokens(),
+      this.terrain ? this.terrain() : [],
+      this.smoke ? this.smoke() : [],
+      c.attacker,
+      c.defender,
+      c.action,
+    );
+  }
+
   private suggestedDefensePool(slot: string): { white: number; blue: number } {
     const d = this.ctx!.defender;
     const card = this.defenderPartCard(slot);
@@ -551,6 +573,12 @@ export class AttackHelper {
         .filter(({ slot: s }) => s !== 'pilot' && (d.partStates[s as PartSlot | 'main'] ?? 'intact') !== 'destroyed')
         .reduce((sum, { card: c }) => sum + (c.dodge ?? 0), 0);
     }
+    // 164 ADK60R Raven Scout: an allied Scout that can see the ATTACKER lends
+    // this Mech +1 Blue. It has to sit ABOVE the Immobilized line rather than
+    // below it — an Immobilized unit rolls no Blue at all (types.ts, the
+    // immobilized status), and a bonus added afterwards would survive a status
+    // whose whole job is to delete the pool.
+    if (this.earlyWarning()) blue += 1;
     if (statusCount(d.statuses, 'immobilized') > 0) blue = 0;
     // "Ally Units within Range +1W on hit" (RT-18T Escarpment, Defense
     // optimization). It is a defence-pool bonus, so it rides on top of Armor,
@@ -931,6 +959,15 @@ export class AttackHelper {
       def.defense = (def.defense ?? 0) + kcSwapped;
       def.lightning = 0;
     }
+    // ZHDR-204 Misty Eagle: "when an enemy unit within range performs a Firing
+    // Action, the TARGET counts as having Low Profile". Read off the ATTACKER,
+    // which is the whole difference between this card and 072's Decoy — the
+    // Eagle hinders whoever is shooting near it, wherever the target stands.
+    // It carries its own effect kind for that reason: filed under `low_profile`
+    // it would land on the Eagle's own side and buff the enemy instead.
+    const mistyEagle = this.tokens
+      ? aurasOn(this.data, this.tokens(), c.attacker).find((s) => s.kinds.includes('target_counts_low_profile'))
+      : undefined;
     // The Token, or the MES Beacon's aura: the aura grants the KEYWORD, so it
     // works exactly like the Token here and Scan cannot strip it (FAQ Q3/J2).
     // 094 Multispectral Tracking beats BOTH sources: the card says the
@@ -938,7 +975,8 @@ export class AttackHelper {
     const lowProfile = c.action.type === 'Firing'
       && !ignoresLowProfile(this.data, c.attacker)
       && (statusCount(c.defender.statuses, 'lowProfile') > 0
-        || (this.tokens ? auraEffectsOn(this.data, this.tokens(), c.defender).has('low_profile') : false));
+        || (this.tokens ? auraEffectsOn(this.data, this.tokens(), c.defender).has('low_profile') : false)
+        || !!mistyEagle);
     // Melee Evasion adds a {Dodge} ICON, not a die — the card writes it braced,
     // and the pool was already rolled by now.
     if (c.evadeUsed) def.dodge = (def.dodge ?? 0) + 1;
@@ -972,7 +1010,13 @@ export class AttackHelper {
     const defense = def.defense ?? 0;
     const text: string[] = [];
     if (c.protection && !c.surplusRound) text.push(`🛡 ${c.protectionNote}: defender rolled +${c.protection} White`);
-    if (lowProfile && dodge) text.push(`Low Profile: [Eye] counted as [Dodge] against this Firing Attack`);
+    if (lowProfile && dodge) {
+      text.push(`Low Profile: [Eye] counted as [Dodge] against this Firing Attack${
+        // Named, because this source sits beside the ATTACKER: without it the
+        // shooter watches their Eyes evaporate with nothing on screen to blame.
+        mistyEagle ? ` — ${mistyEagle.source.label} (${mistyEagle.label}) is within range of ${c.attacker.label}` : ''
+      }`);
+    }
     if (radar) text.push(`${radar.label} sees the target: [Eye] counted as 1 Light Hit on this Interception (FAQ O12/O13)`);
     if (c.surplusRound === 0 && c.lightningSwapped) {
       const swapped = c.lightningSwapped;
@@ -1944,6 +1988,15 @@ export class AttackHelper {
         const frg = statusCount(c.defender.statuses, 'fragile');
         return frg
           ? `<p class="ah-fragile"><i class="btn-ico">💥</i> ${c.defender.label} bears ${frg} Fragile Token${frg === 1 ? '' : 's'}, so <b>−${frg} White</b> is already taken off the pool below.</p>`
+          : '';
+      })()}
+      ${(() => {
+        // 164 Early Warning Observation. Said out loud for the same reason the
+        // Fragile line above is: the Blue below is already adjusted, and an
+        // unexplained die is indistinguishable from an arithmetic bug.
+        const scout = statusCount(c.defender.statuses, 'immobilized') > 0 ? undefined : this.earlyWarning();
+        return scout
+          ? `<p class="ah-protect"><i class="btn-ico">📡</i> ${scout.label} has line of sight to ${c.attacker.label}, so Early Warning Observation adds <b>+1 Blue</b> to the pool below. This effect does not stack.</p>`
           : '';
       })()}
       ${c.explosion ? '<p class="dim">Explosion damage allows no Terrain or Unit Protection, so the pool below is Armour and Dodge only.</p>' : ''}

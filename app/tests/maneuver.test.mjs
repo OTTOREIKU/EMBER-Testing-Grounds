@@ -12,8 +12,8 @@ const src = readFileSync(new URL('../src/units.ts', import.meta.url), 'utf8');
 // and its two regexes sit above it and are what maneuverRange now calls.
 const start = src.indexOf('// ---------- Maneuver bonuses from Parts');
 const end = src.indexOf('export function initiativeFor');
-// The Silence classifiers ride in the same slice: they only need tokenCards,
-// which this harness mirrors below.
+// The Silence classifiers ride in the same slice: they need tokenCards and
+// aurasOn, which this harness mirrors below.
 const silStart = src.indexOf('// ---------- Silence');
 const silEnd = src.indexOf('export function canActivateCamo');
 if (start < 0 || end < 0) throw new Error('could not locate maneuverRange in units.ts');
@@ -22,9 +22,14 @@ writeFileSync(tmp, `type GameData = any;
 type Token = any;
 type CardAction = any;
 type PartSlot = any;
+type AuraSource = any;
 const tokenCards = (data, t) => t.kind === 'mech'
   ? Object.entries(t.mech ?? {}).map(([slot, id]) => ({ slot, card: data.byId.get(id) })).filter((x) => x.card)
   : [{ slot: 'main', card: data.byId.get(t.cardId) }].filter((x) => x.card);
+// ZHDR-206's silence-denying aura is pinned in auras.test.mjs against the real
+// cards; this harness has no board at all, so it mirrors an empty projection
+// rather than dragging aurasOn and rangeBetween in behind it.
+const aurasOn = () => [];
 ` + src.slice(silStart, silEnd) + src.slice(start, end));
 const { maneuverRange, maneuverBonus, isSilentAction, maneuverIsSilent } = await import(tmp.href);
 
@@ -87,13 +92,16 @@ check('a damaged chassis still moves', maneuverRange(data, { ...mech('CH2', 'off
 
 
 // ---------- Silence (FAQ I2/I5/I18) ----------
-check('a common-action silence flag is silent', isSilentAction({ id: 'X', silence: true }), true);
-check('the printed keyword is silent', isSilentAction({ id: 'X', keywords: [{ key: '静默' }] }), true);
-check('the zh text alone still counts', isSilentAction({ id: 'X', description: { zh: '静默 action' } }), true);
-check('a plain action is not silent', isSilentAction({ id: 'X', keywords: [], description: { en: 'Silencer-brand ammo' } }), false);
+// The board arguments exist only to answer ZHDR-206's silence-denying aura,
+// stubbed out above; what these six pin is the classifier underneath it.
+const actor = { uid: 1, side: 's1', kind: 'mech', mech: {}, partStates: {} };
+check('a common-action silence flag is silent', isSilentAction(data, [], actor, { id: 'X', silence: true }), true);
+check('the printed keyword is silent', isSilentAction(data, [], actor, { id: 'X', keywords: [{ key: '静默' }] }), true);
+check('the zh text alone still counts', isSilentAction(data, [], actor, { id: 'X', description: { zh: '静默 action' } }), true);
+check('a plain action is not silent', isSilentAction(data, [], actor, { id: 'X', keywords: [], description: { en: 'Silencer-brand ammo' } }), false);
 const stealthData = { byId: new Map([['ST', { id: 'ST', keywords: [{ key: '静默', en: 'Silence' }] }], ['T1', { id: 'T1' }]]) };
-check('a live Silence part makes the maneuver silent (I2)', maneuverIsSilent(stealthData, { kind: 'mech', mech: { chasis: 'ST', torso: 'T1' }, partStates: {} }), true);
-check('a destroyed Silence part does not (I2)', maneuverIsSilent(stealthData, { kind: 'mech', mech: { chasis: 'ST', torso: 'T1' }, partStates: { chasis: 'destroyed' } }), false);
+check('a live Silence part makes the maneuver silent (I2)', maneuverIsSilent(stealthData, [], { kind: 'mech', mech: { chasis: 'ST', torso: 'T1' }, partStates: {} }), true);
+check('a destroyed Silence part does not (I2)', maneuverIsSilent(stealthData, [], { kind: 'mech', mech: { chasis: 'ST', torso: 'T1' }, partStates: { chasis: 'destroyed' } }), false);
 
 // ---------- E23: a transformed core carries its own Movement ----------
 //

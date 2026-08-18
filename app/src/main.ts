@@ -47,7 +47,7 @@ import { PlayGuide } from './playguide';
 import type { Card, CardAction, DiceData, DieColor, Facing, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, StatusDef, TerrainPiece, Timing, Token } from './types';
 import { addStatus, normaliseScript, SCALES, statusCount, statusesFor, STATUSES } from './types';
 import { actionIdOf } from './ticks';
-import { ignoresProtectionOnHighlight, twoHandedUse, electronicValue, martyrdomOwed, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, loanedParts, minesLayable, minesOwed, multiTargetLimit, unfoldsOwed, repairSpec, autoTargetsFor, isSilentAction, maneuverIsSilent, chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, type Resupply, resupplyOf, SLOT_LABEL, stationaryAdjusted, interceptLeft, interceptsOwed, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf, type AttackReaction } from './units';
+import { ignoresProtectionOnHighlight, twoHandedUse, electronicValue, martyrdomOwed, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, loanedParts, minesLayable, minesOwed, multiTargetLimit, unfoldsOwed, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, maneuverIsSilent, maneuverSilenceDenier, chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, type Resupply, resupplyOf, SLOT_LABEL, stationaryAdjusted, interceptLeft, interceptsOwed, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf, type AttackReaction } from './units';
 import { registerOffline } from './offline';
 import { battlefieldLocked, countHits, firstPlayerFrom, newSetup, normaliseSetup, tasksLocked, type SetupState } from './setup';
 import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
@@ -582,8 +582,14 @@ async function init() {
             }
             // Declaring an attack is never Silent, so a camouflaged attacker
             // Reveals with it (4.12.2, FAQ I5/I22 - the Reveal comes first).
-            if (statusCount(attacker.statuses, 'camouflage') > 0 && !isSilentAction(action)) {
-              promptReveal(attacker, `${attacker.label} attacks from camouflage.`);
+            // An Action that WAS Silent until an enemy aura took it away names
+            // the aura: the player is otherwise watching a printed keyword fail
+            // with nothing on screen to blame it on.
+            if (statusCount(attacker.statuses, 'camouflage') > 0 && !isSilentAction(data, state.tokens, attacker, action)) {
+              const denier = actionSilenceDenier(data, state.tokens, attacker, action);
+              promptReveal(attacker, denier
+                ? `${attacker.label} attacks from camouflage: its Silence is denied by ${denier.source.label} (${denier.label}).`
+                : `${attacker.label} attacks from camouflage.`);
             }
           }
           showSideTab('combat');
@@ -1904,8 +1910,16 @@ async function init() {
       // Movement is a non-Silence action unless a surviving Part grants
       // Silence to it (PL29 Stealth Chassis; FAQ I2/I5), so a camouflaged
       // mover Reveals here. The Contact sweep handles the other half.
-      if (statusCount(t.statuses, 'camouflage') > 0 && !maneuverIsSilent(data, t)) {
-        promptReveal(t, `${t.label} moved without Silence.`);
+      //
+      // `startPos` goes in for the same reason interceptsOwed takes it six
+      // lines below: a Movement is judged at the start AND landing grids only
+      // (FAQ O11/O15). Judging the landing alone let a unit walk out of an
+      // enemy Patrol Eagle's aura and retroactively keep its Silence.
+      if (statusCount(t.statuses, 'camouflage') > 0 && !maneuverIsSilent(data, state.tokens, t, startPos)) {
+        const denier = maneuverSilenceDenier(data, state.tokens, t, startPos);
+        promptReveal(t, denier
+          ? `${t.label} would have moved in Silence, but ${denier.source.label} (${denier.label}) denies it.`
+          : `${t.label} moved without Silence.`);
       }
       // An enemy AERIAL unit's Movement triggers Interception, judged at the
       // start and landing grids only (FAQ O11/O15, 4.9).

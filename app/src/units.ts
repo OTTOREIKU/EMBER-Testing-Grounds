@@ -442,7 +442,56 @@ export function needsSightToLanding(a: CardAction): boolean {
 const SILENCE_KEYWORD = (k: { key?: string; en?: string; inline?: string }): boolean =>
   k.key === '静默' || k.en === 'Silence' || (k.inline ?? '').includes('静默');
 
-export function isSilentAction(a: CardAction): boolean {
+// ZHDR-206 N307 "Patrol Eagle", Dynamic Perception: every Action of an enemy
+// unit within its Range loses Silence. Both classifiers below have to ask that
+// question, so it is asked in exactly one place — camoBrokenBy two blocks down
+// records what happened the last time this pair was written out twice.
+//
+// Read off the structured aura, never off printed text. The Eagle's own line is
+// 失去静默, so a scan for 静默 hands the card the keyword it exists to strip.
+// The printed scan still runs for the actions carrying the term nowhere else;
+// it just must not be how the aura itself is found.
+//
+// Answers with the whole AuraSource rather than a boolean. Every Reveal this
+// drives is a unit vanishing from cover for no visible reason, which reads as a
+// bug at the table unless the line can name what took the Silence away —
+// AuraSource.source exists for exactly this, and the first draft threw the
+// Token on the floor. The `label` rides along so the messages can name the
+// ABILITY as well as the unit, the way the Misty Eagle note in combat.ts does,
+// rather than hard-coding "Dynamic Perception" at every call site.
+export function silenceDenied(data: GameData, tokens: Token[], t: Token): AuraSource | undefined {
+  return aurasOn(data, tokens, t).find((s) => s.kinds.includes('silence_denied'));
+}
+
+// ---------- Why only half of Silence can be denied yet ----------
+//
+// ONLY HALF OF 4.12 IS DENIED, and knowingly. Silence is two things: the Action
+// does not break Optical Camouflage, and the unit KEEPS its Low Profile Token
+// while performing it.
+//
+// The second half is a no-op here, but NOT for the reason this comment used to
+// give ("no reader turns a printed 低特征 into a status"), which is false and
+// was checked before being rewritten: `lowProfile` is a fully modelled status —
+// declared in types.ts with green decay, printed token faces in data.ts
+// TOKEN_PRINT, counted by the attack helper for the [Eye]->[Dodge] swap, and
+// listed by the play guide's hidden-unit sweep.
+//
+// The real reason is narrower still, and the second attempt at this comment got
+// it wrong too. Rules DO remove a Low Profile Token today: Stabilize System,
+// Tactics Card 277 System Repair and entering Optical Camouflage all shed one —
+// but every one of those keys on `shape: 'hexagon'`, never on the name, so they
+// are indifferent to Silence and always were.
+//
+// What is missing is the ONE removal Silence exists to prevent: no Movement,
+// facing change or Scan takes the Token off. The status note in types.ts already
+// promises it ("Maneuvering, including a facing-only change, removes the token").
+// Whoever implements THAT is who has to gate it on Silence, and on this aura
+// denying it — the hexagon-shaped removals above are none of Silence's business.
+
+// Silence as the CARD prints it, before any aura has a say. Split out so a
+// Reveal can name the aura as the REASON: an Action that never carried Silence
+// must not blame a bystanding Eagle for taking away what was never there.
+function actionPrintsSilence(a: CardAction): boolean {
   if ((a as { silence?: boolean }).silence === true) return true;
   if ((a.keywords ?? []).some(SILENCE_KEYWORD)) return true;
   // 12 actions carry the term only in their Chinese text. A false positive
@@ -450,14 +499,57 @@ export function isSilentAction(a: CardAction): boolean {
   return (a.description?.zh ?? '').includes('静默');
 }
 
+export function isSilentAction(data: GameData, tokens: Token[], t: Token, a: CardAction): boolean {
+  return actionPrintsSilence(a) && !silenceDenied(data, tokens, t);
+}
+
+// The unit whose aura is WHY this Action is not Silent, for the Reveal line.
+// Undefined when the Action had no Silence to lose, so the ordinary case — a
+// plain non-Silent Action breaking camouflage — still names nobody.
+export function actionSilenceDenier(
+  data: GameData,
+  tokens: Token[],
+  t: Token,
+  a: CardAction,
+): AuraSource | undefined {
+  return actionPrintsSilence(a) ? silenceDenied(data, tokens, t) : undefined;
+}
+
 // A Maneuver is Silent only while a Part granting Silence survives — the PL29
 // Stealth Chassis carries the keyword on the card itself, and FAQ I2 destroys
 // the exemption with the Part: a facing change on a dead Stealth Chassis is a
 // non-Silence action and Reveals.
-export function maneuverIsSilent(data: GameData, t: Token): boolean {
+function maneuverPrintsSilence(data: GameData, t: Token): boolean {
   return tokenCards(data, t).some(({ slot, card }) =>
     (t.partStates[slot as PartSlot | 'main'] ?? 'intact') !== 'destroyed'
     && (card.keywords ?? []).some(SILENCE_KEYWORD));
+}
+
+// Standing in an enemy Patrol Eagle's aura destroys that exemption just as
+// thoroughly, which is why the board is a parameter — and it is judged at BOTH
+// ENDS of the Movement. A Movement "is judged at the start and landing grids
+// only" (FAQ O11/O15); that is the same reading interceptsOwed is given at the
+// freeplay call site, which passes the start position for the identical reason.
+// Landing-square-only was the first draft's bug: a unit that began inside the
+// aura and walked out of it was judged as though it had never been in it, and
+// retroactively got its Silence back.
+//
+// `from` is the mover as it STOOD before the Maneuver. A caller sweeping the
+// board after the fact passes the start position the Opportunity recorded; one
+// with nothing recorded passes none and judges the landing grid alone, which is
+// all such a caller can honestly know.
+export function maneuverSilenceDenier(
+  data: GameData,
+  tokens: Token[],
+  t: Token,
+  from?: Token,
+): AuraSource | undefined {
+  if (!maneuverPrintsSilence(data, t)) return undefined;
+  return silenceDenied(data, tokens, t) ?? (from ? silenceDenied(data, tokens, from) : undefined);
+}
+
+export function maneuverIsSilent(data: GameData, tokens: Token[], t: Token, from?: Token): boolean {
+  return maneuverPrintsSilence(data, t) && !maneuverSilenceDenier(data, tokens, t, from);
 }
 
 // ---------- Who breaks Optical Camouflage by standing next to it ----------
@@ -1207,6 +1299,10 @@ export interface AuraSource {
   // read off the printed text the same way repairSpec and isMeleeFiring do.
   firingOnly: boolean;
   label: string;
+  // The unit projecting it. Carried because a defence pool that changes with no
+  // name attached reads as a bug at the table — ZHDR-204 lands on the ATTACKER,
+  // so the affected player cannot see which unit did it without being told.
+  source: Token;
 }
 
 // Every aura currently reaching this unit, after the three filters the data
@@ -1238,6 +1334,7 @@ export function aurasOn(data: GameData, tokens: Token[], t: Token): AuraSource[]
               value: eff.value ?? 0,
               firingOnly: /Firing Actions?\b/i.test(a.description?.en ?? ''),
               label: a.name?.en || a.name?.zh || eff.label || a.id,
+              source: src,
             });
           }
         }
@@ -1636,6 +1733,72 @@ export function aaRadarCovers(
     });
     if (!radar) return false;
     return losBetween(r, target, terrain, tokens) !== 'blocked';
+  });
+}
+
+// ---------- The Raven Scout's Early Warning Observation (164_A) ----------
+//
+// "When an Ally Mech in Mobility Stance within range is the target of a Firing
+// Action, if the Attacker is visible to this drone, the Defender +1B. This
+// effect does not stack."
+//
+// Deliberately NOT an aura. aurasOn filters on side, Range and unit type only,
+// and this card gates on the defender's STANCE and on the scout's line of sight
+// to a THIRD unit — so the structured machinery would have to grow two gates it
+// has no card asking for, and the blue-die effect kind does not exist there.
+//
+// The sight is measured scout -> ATTACKER, which is the trap: 539 Coordinated
+// Observation measures source -> DEFENDER and reads almost identically in
+// English. Getting them the wrong way round silently swaps which unit has to be
+// exposed. And 'obstructed' still counts as visible here, exactly as it does for
+// the Hyena Radar above — obstruction buys White, it does not hide anything.
+//
+// SMOKE IS PART OF THAT SIGHT. This engine's model for Firing line of sight is
+// `!smokeBlocks(...) && losBetween(...) !== 'blocked'` — rules.ts says it twice,
+// in losNote and protectionFor, because "Smoke removes line of sight outright"
+// (rulebook 4.16). The first draft asked losBetween alone, so a Smoke Screen on
+// the scout's own Grid, on the attacker's, or anywhere on the line between them
+// left the drone "seeing" through it and still lending the Blue. Both legs of
+// the model or neither: a card that requires a unit be VISIBLE cannot use a
+// weaker test for visibility than the shot itself does.
+//
+// AND THAT IS THE OPPOSITE OF ITS NEIGHBOUR ABOVE, on purpose. FAQ F5 asks
+// exactly this question of the Hyena AA Radar — inside Smoke, or Smoke on the
+// line — and answers "Yes, it still works", so aaRadarCovers takes no smoke
+// list at all and loads.test.mjs pins that it never grows one. No FAQ grants
+// 164 the same exemption, so it gets the ordinary 4.16 reading. Two cards, one
+// clause, opposite answers: do not "make them consistent" without a ruling.
+//
+// Returns the covering drone rather than a count, because the card prints
+// 此效果不可叠加: a second scout adds nothing, so there is nothing to sum.
+export function earlyWarningCover(
+  data: GameData,
+  tokens: Token[],
+  terrain: TerrainPiece[],
+  smoke: SmokeScreen[],
+  attacker: Token,
+  defender: Token,
+  action: CardAction,
+): Token | undefined {
+  if (action.type !== 'Firing') return undefined;
+  // "Ally MECH in Mobility Stance" — both halves are printed gates, and both
+  // are read here rather than at the call site so the whole card is one rule.
+  if (defender.kind !== 'mech' || defender.stance !== 'mobility') return undefined;
+  return tokens.find((r) => {
+    if (r.uid === defender.uid || r.side !== defender.side || r.deployed === false) return false;
+    if ((r.partStates[r.kind === 'mech' ? 'torso' : 'main'] ?? 'intact') === 'destroyed') return false;
+    const card = data.byId.get(r.cardId);
+    if (!card) return false;
+    // The Range belongs to the Action that prints the rule, so it is read off
+    // the matching action rather than maxed across the card — the mistake
+    // repeatersFor still carries (it is safe there only because 165 has one).
+    const scout = (card.actions ?? []).some((a) => {
+      const printed = /Attacker is visible to this drone/i.test(a.description?.en ?? '')
+        || /对攻击方有视线/.test(a.description?.zh ?? '');
+      return printed && rangeBetween(r, defender).range <= (a.range ?? 0);
+    });
+    if (!scout) return false;
+    return !smokeBlocks(r, attacker, smoke) && losBetween(r, attacker, terrain, tokens) !== 'blocked';
   });
 }
 

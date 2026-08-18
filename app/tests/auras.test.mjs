@@ -14,6 +14,7 @@ const cut = (s, a, b, what) => {
 // tokenCards and largeGridOf are mirrored; everything under test is sliced.
 const body = `
 type Token = any; type GameData = any; type PartSlot = any; type CardAction = any; type Card = any;
+type SmokeScreen = any;
 function cardName(c: any): string { return c?.name?.en ?? c?.id ?? ''; }
 export function tokenCards(data: any, t: any): any[] {
   const out: any[] = [];
@@ -28,6 +29,12 @@ function largeGridOf(t: any): any { return { c: Math.floor(t.col / 3), r: Math.f
 `
   + cut(rules, 'export function rangeBetween', 'export function inArc', 'rangeBetween')
   + cut(rules, 'export function losBetween', 'export function rangeBetween', 'losBetween')
+  // The REAL smokeBlocks, not a stub: earlyWarningCover asks whether the
+  // attacker is visible to the drone, and 4.16 makes a Smoke Screen part of
+  // that answer. 7-9 and 58-84 today, both well clear of the two cuts above
+  // (losBetween starts at 439), so nothing here is declared twice.
+  + cut(rules, 'export function smokeKey', 'export function smokeAt', 'smokeKey')
+  + cut(rules, 'export function smokeBlocks', 'export interface LargeGrid', 'smokeBlocks')
   + cut(units, 'export interface AuraSource', '// Melee Evasion (ZYBP-302)', 'the aura readers')
   + cut(units, '// Melee Evasion (ZYBP-302)', 'export interface CommandRider', 'meleeEvasionReady')
   + cut(units, 'export interface ParryPart', 'export interface SelfHitPart', 'parryParts')
@@ -37,7 +44,15 @@ function largeGridOf(t: any): any { return { c: Math.floor(t.col / 3), r: Math.f
   + cut(units, '// ---------- [Two-Handed] and the Freehand designation', 'export function attackReactionsOf', 'coolingBonus, ripostePart, defenseReactionOn and targetTracingOn')
   + cut(units, 'function alive(t: Token)', 'function coversGrid', 'the alive helper')
   + cut(units, '// ---------- Martyrdom', 'export function autoDetonationsOwed', 'martyrdomOwed')
-  + cut(units, 'export function explosionScope', 'export function needsSightToLanding', 'explosionScope');
+  + cut(units, 'export function explosionScope', 'export function needsSightToLanding', 'explosionScope')
+  // 1617-1696 today, and inside none of the cuts above — checked before adding,
+  // because a range that overlaps one declares the same function twice.
+  + cut(units, '// ---------- The Hyena', '// ---------- Repeaters', 'aaRadarCovers and earlyWarningCover')
+  // 437-484 today. Same check: the nearest cut above ends at needsSightToLanding
+  // (427) and the nearest below starts at [Two-Handed] (531), so nothing here is
+  // declared twice. Stops short of camoBrokenBy on purpose — that block wants
+  // statusCount, inContact and isBarricade, and camo.test.mjs already owns it.
+  + cut(units, '// ---------- Silence (rulebook 4.12', '// ---------- Who breaks Optical Camouflage', 'the Silence classifiers');
 
 const tmp = new URL('./_auras.slice.ts', import.meta.url);
 writeFileSync(tmp, body);
@@ -660,6 +675,333 @@ check('the Move bonus line is the shape maneuverBonus reads',
   /(?:move\s*属性|机动距离|移动力)[^。\n]{0,20}?\+\s*(\d+)/i.test(jp5.description.zh), true);
 check('and its Load restriction is the shape the Load reader reads',
   /无法作为负载/.test(jp5.description.zh), true);
+
+// ---------- 164 ADK60R Raven Scout, Early Warning Observation ----------
+//
+// Deliberately NOT an aura, so it is driven directly: the card gates on the
+// DEFENDER's stance and on the scout's sight of a THIRD unit, and aurasOn can
+// express neither. Everything else it gates on — Range 3, "Ally Mech",
+// Mobility Stance — is printed data, so the shipped card is the fixture.
+const shooterAt = (uid, side, col, row, stance = 'offensive') => ({
+  uid, side, kind: 'mech', col, row, size: 3, facing: 0, stance,
+  mech: { torso: '002' }, partStates: { torso: 'intact' }, statuses: [], aerial: false,
+});
+const scoutAt = (uid, side, col, row, extra = {}) => ({
+  uid, side, kind: 'drone', col, row, size: 1, facing: 0, cardId: '164',
+  partStates: { main: 'intact' }, statuses: [], aerial: false, ...extra,
+});
+const wall164 = (c, r) => ({
+  id: `w${c}${r}`, type: 'building', height: 3, blocksLos: true, providesProtection: true, isFragile: false,
+  subCells: [0, 1, 2].flatMap((dc) => [0, 1, 2].map((dr) => ({ col: c * 3 + dc, row: r * 3 + dr }))),
+});
+const firingAt = { id: 'x', type: 'Firing', range: 12 };
+const meleeAt = { id: 'y', type: 'Melee', range: 1 };
+
+const gunman = shooterAt(70, 's2', 0, 9);                 // Large Grid (0,3)
+const guarded = shooterAt(71, 's1', 30, 9, 'mobility');   // Large Grid (10,3)
+const raven = scoutAt(72, 's1', 30, 0);                   // (10,0): exactly Range 3
+const board164 = [gunman, guarded, raven];
+// Smoke is the fifth argument and defaults to none, so every check below reads
+// as "no smoke on the table"; the Smoke Screen cases are at the end of the file.
+const covers = (tokens, terrain, defender = guarded, action = firingAt, smoke = []) =>
+  A.earlyWarningCover(data, tokens, terrain, smoke, gunman, defender, action)?.uid ?? null;
+
+check('a Raven Scout in Range with sight of the ATTACKER covers the Mech',
+  covers(board164, []), 72);
+check('and it answers with the drone itself, not a count (此效果不可叠加)',
+  A.earlyWarningCover(data, board164, [], [], gunman, guarded, firingAt)?.kind, 'drone');
+check('a second Scout adds nothing — the effect does not stack',
+  A.earlyWarningCover(data, [...board164, scoutAt(73, 's1', 33, 0)], [], [], gunman, guarded, firingAt)?.kind, 'drone');
+check('the card covers a Firing Action only',
+  covers(board164, [], guarded, meleeAt), null);
+check('and only a Mech in Mobility Stance',
+  covers(board164, [], { ...guarded, stance: 'offensive' }), null);
+check('a Drone is not an "Ally Mech", however well covered',
+  covers([gunman, raven, { ...guarded, kind: 'drone', cardId: '164', partStates: { main: 'intact' } }], [],
+    { ...guarded, kind: 'drone', cardId: '164', partStates: { main: 'intact' } }), null);
+check('an enemy Scout covers nobody',
+  covers([gunman, guarded, { ...raven, side: 's2' }], []), null);
+check('a Scout still in reserve covers nobody',
+  covers([gunman, guarded, { ...raven, deployed: false }], []), null);
+check('nor does a wreck',
+  covers([gunman, guarded, { ...raven, partStates: { main: 'destroyed' } }], []), null);
+check('a Mech with no Scout beside it gets nothing',
+  covers([gunman, guarded], []), null);
+
+// The Range is the ACTION's 3, measured Scout -> defender.
+check('Range 3 is the edge, and the edge is inside it',
+  covers([gunman, guarded, scoutAt(74, 's1', 39, 9)], []), 74);
+check('one Grid further and the cover is gone',
+  covers([gunman, guarded, scoutAt(75, 's1', 42, 9)], []), null);
+// That far Scout is looking at the gunman THROUGH the Mech it is covering.
+check('an obstructed line is still a line — only BLOCKED hides the attacker',
+  covers([gunman, guarded, scoutAt(76, 's1', 39, 9)], []), 76);
+
+// The trap this reader exists to avoid: 539 Coordinated Observation measures
+// source -> DEFENDER and reads almost the same in English. Blocking the wrong
+// leg must change nothing.
+check('sight to the ATTACKER is what matters: blocking it removes the cover',
+  covers(board164, [wall164(5, 1), wall164(5, 2)]), null);
+check('while blocking Scout -> defender changes nothing at all',
+  covers(board164, [wall164(10, 2)]), 72);
+
+// Data pins, so a regenerated cards.json cannot quietly unwire the card.
+const raven164 = data.byId.get('164').actions.find((a) => a.type === 'Passive');
+check('164_A still prints Range 3', raven164.range, 3);
+check('and still prints the line both halves of the reader match',
+  [/Attacker is visible to this drone/i.test(raven164.description.en ?? ''),
+   /对攻击方有视线/.test(raven164.description.zh ?? '')], [true, true]);
+check('and still prints "does not stack"', /此效果不可叠加/.test(raven164.description.zh ?? ''), true);
+// A 'flying' base is NOT Aerial in token terms (isAerial reads 'elevated'), so
+// the sight check is live for this drone rather than short-circuited to clear.
+check('the Raven flies on a square base, which does not make it Aerial',
+  [data.byId.get('164').flyingOrElevated, data.byId.get('164').category], ['flying', 'drone']);
+
+// ---------- ZHDR-204 Misty Eagle, Feature Reduction ----------
+//
+// "When an enemy unit within range performs a Firing Action, the TARGET counts
+// as having Low Profile." The aura is authored in action_overrides.json and is
+// keyed on the SHOOTER, which is why it needs a kind of its own: under
+// `low_profile` it would have landed on the Eagle's own side and buffed the
+// enemy instead of hindering them.
+const eagle = drone(80, 's2', 'ZHDR-204', 0);       // Large Grid (0,3)
+const nearFoe = mech(81, 's1', '002', 15);          // (5,3): Range 5
+const farFoe = mech(82, 's1', '002', 18);           // (6,3): Range 6
+const eagleAlly = mech(83, 's2', '002', 15);
+const marks = (t, world) => A.auraEffectsOn(data, world, t).has('target_counts_low_profile');
+
+check('the Eagle marks an ENEMY shooter at Range 5', marks(nearFoe, [eagle, nearFoe]), true);
+check('and not one a Grid beyond it', marks(farFoe, [eagle, farFoe]), false);
+check('its own side is never marked — the card hinders, it does not help',
+  marks(eagleAlly, [eagle, eagleAlly]), false);
+check('and it grants no plain low_profile to anybody, which is the inversion',
+  [A.auraEffectsOn(data, [eagle, nearFoe], nearFoe).has('low_profile'),
+   A.auraEffectsOn(data, [eagle, eagleAlly], eagleAlly).has('low_profile')], [false, false]);
+// 072 Decoy is the card that legitimately owns the ally-side kind. Both must
+// keep working, or one of them has swallowed the other.
+const decoy = drone(84, 's1', '072', 9);
+const beside = mech(85, 's1', '002', 9);
+check('072 Decoy still carries the ally-side kind',
+  A.auraEffectsOn(data, [decoy, beside], beside).has('low_profile'), true);
+check('and 072 never carries the shooter-side one',
+  marks(beside, [decoy, beside]), false);
+
+// Data pins for the override, since the rule lives outside cards.json.
+const eagleAction = data.byId.get('ZHDR-204').actions.find((a) => a.type === 'Passive');
+// Named for the card. The harness prints only the check name on failure, so
+// two cards sharing a wording leave a CI line that cannot say which regressed.
+check('ZHDR-204: the action_overrides aura reached the shipped action',
+  eagleAction.gameRules?.[0]?.effects?.[0]?.effectTypes, ['target_counts_low_profile']);
+check('ZHDR-204: aimed at the enemy, at any unit type, at the printed Range 5',
+  [eagleAction.gameRules[0].effects[0].targetSide, eagleAction.gameRules[0].effects[0].targetUnitType, eagleAction.range],
+  ['enemy', 'unit', 5]);
+
+// ---------- ZHDR-206 Patrol Eagle, Dynamic Perception ----------
+//
+// "All actions of enemy units within range lose Silence." Enemy side, Range 3,
+// any unit type — nothing but the gates aurasOn already applies — so the card is
+// a structured aura plus a denial at the top of both Silence classifiers.
+//
+// HALF THE KEYWORD, and the checks say so rather than leaving the gap to be
+// rediscovered as a bug. 4.12 Silence also KEEPS the acting unit's Low Profile
+// Token, and that half does nothing here — but NOT because Low Profile is
+// unmodelled, which is what this comment used to claim and is false: it is a
+// full status with green decay in types.ts, printed faces in data.ts, and the
+// attack helper counts it for the [Eye]->[Dodge] swap.
+//
+// Nor is it "nothing ever removes one", which is what the SECOND version of this
+// comment claimed and is also false — Stabilize System, Tactics 277 and entering
+// Optical Camouflage all shed one. Every one of those keys on shape 'hexagon'
+// rather than on the name, so Silence is none of their business.
+// What is genuinely missing is the one removal Silence exists to prevent: no
+// Movement, facing change or Scan takes the Token off. types.ts already promises
+// that removal, and whoever implements it is who must gate it on Silence.
+const patrol = drone(90, 's2', 'ZHDR-206', 0);        // Large Grid (0,3)
+// PL29 Stealth Chassis (180) carries 静默 on the CARD, which is the only way a
+// Maneuver is ever Silent — so it is the only fixture that can show the aura
+// taking Silence away rather than the unit never having had it.
+const stealth = (uid, side, col) => ({
+  uid, side, kind: 'mech', col, row: 9, size: 3, facing: 0,
+  mech: { torso: '002', chasis: '180' }, partStates: { torso: 'intact', chasis: 'intact' },
+});
+const seen = stealth(91, 's1', 9);                    // (3,3): Range 3, the last Grid inside
+const unseen = stealth(92, 's1', 12);                 // (4,3): one Grid clear
+const silentAct = { id: 'X', description: { zh: '静默' } };
+
+check('an enemy inside the Eagle Range loses Silence on a Silent Action',
+  A.isSilentAction(data, [patrol, seen], seen, silentAct), false);
+check('and keeps it one Large Grid further out',
+  A.isSilentAction(data, [patrol, unseen], unseen, silentAct), true);
+check('a live PL29 Maneuver is Silent outside the aura and not inside it (I2)',
+  [A.maneuverIsSilent(data, [patrol, unseen], unseen), A.maneuverIsSilent(data, [patrol, seen], seen)],
+  [true, false]);
+check('with no Eagle on the board nothing is denied',
+  [A.isSilentAction(data, [seen], seen, silentAct), A.maneuverIsSilent(data, [seen], seen)], [true, true]);
+
+// Side, unit type and the source's own survival, one check each.
+const patrolAlly = stealth(93, 's2', 9);
+check('the Eagle never denies its own side',
+  [A.isSilentAction(data, [patrol, patrolAlly], patrolAlly, silentAct),
+   A.maneuverIsSilent(data, [patrol, patrolAlly], patrolAlly)], [true, true]);
+const foeDrone = drone(94, 's1', '072', 9);
+check('an enemy DRONE is denied too — the aura lands on any unit type',
+  A.isSilentAction(data, [patrol, foeDrone], foeDrone, silentAct), false);
+const wreck = { ...patrol, partStates: { main: 'destroyed' } };
+check('a destroyed Eagle projects nothing',
+  A.isSilentAction(data, [wreck, seen], seen, silentAct), true);
+check('and the aura grants no Low Profile of its own: it denies, it does not give',
+  A.auraEffectsOn(data, [patrol, seen], seen).has('low_profile'), false);
+
+// THE TRAP THIS CARD IS BUILT AROUND: isSilentAction matches any Chinese action
+// text containing 静默, and the Eagle's own printed line is 失去静默 — so a
+// text-driven reading hands the card the very keyword it exists to strip. Both
+// halves are pinned, because the day someone "simplifies" the aura back into a
+// text scan these two are what catch it.
+const perception = data.byId.get('ZHDR-206').actions.find((a) => a.id === 'ZHDR-206_A');
+check('the Eagle still prints the phrase that fools a text scan',
+  /失去静默/.test(perception.description.zh ?? ''), true);
+check('and the classifier still reads that text as Silent, which is why the rule is structured',
+  A.isSilentAction(data, [patrol], patrol, perception), true);
+
+// Data pins for the override, since the rule lives outside cards.json.
+check('ZHDR-206: the action_overrides aura reached the shipped action',
+  perception.gameRules?.[0]?.effects?.[0]?.effectTypes, ['silence_denied']);
+check('ZHDR-206: aimed at the enemy, at any unit type, at the printed Range 3',
+  [perception.gameRules[0].effects[0].targetSide, perception.gameRules[0].effects[0].targetUnitType, perception.range],
+  ['enemy', 'unit', 3]);
+const deniers = cards.filter((c) => (c.actions ?? []).some((a) => (a.gameRules ?? [])
+  .some((g) => (g.effects ?? []).some((e) => (e.effectTypes ?? []).includes('silence_denied')))));
+check('and no other card in the set carries the kind, so nothing is swept up with it',
+  deniers.map((c) => c.id), ['ZHDR-206']);
+
+// ---------- 164 and the Smoke Screen (rulebook 4.16) ----------
+//
+// The card asks whether the ATTACKER is visible to the drone, and this engine's
+// answer to "visible" for a Firing line is BOTH legs: `!smokeBlocks(...) &&
+// losBetween(...) !== 'blocked'`. rules.ts writes it that way twice — losNote
+// and protectionFor, the latter commented "Smoke removes line of sight
+// outright". The first draft of earlyWarningCover asked losBetween alone, so a
+// Smoke Screen anywhere on the scout's line left it seeing through the cloud
+// and still lending the Blue. smokeBlocks is sliced in from the real rules.ts
+// for these, so what is under test is the shipped model rather than a stub.
+//
+// The gunman is at Large Grid (0,3), the Raven at (10,0), the covered Mech at
+// (10,3). smokeBlocks fires on either endpoint's own Grid or on the line, so
+// all three placements are worth one check each.
+const puff = (c, r) => ({ col: c, row: r, side: 's2' });
+
+check('a Smoke Screen on the SCOUT\'s Grid blinds it, so the cover is gone',
+  covers(board164, [], guarded, firingAt, [puff(10, 0)]), null);
+check('and one on the ATTACKER\'s Grid does the same',
+  covers(board164, [], guarded, firingAt, [puff(0, 3)]), null);
+check('and one part way along the Scout -> attacker line does too',
+  covers(board164, [], guarded, firingAt, [puff(5, 1)]), null);
+// The whole point of measuring the RIGHT leg: smoke that only sits between the
+// scout and the Mech it is covering is not on the line the card asks about.
+check('while smoke on the Scout -> DEFENDER leg alone changes nothing',
+  covers(board164, [], guarded, firingAt, [puff(10, 2)]), 72);
+check('smoke somewhere else entirely is not the drone\'s problem',
+  covers(board164, [], guarded, firingAt, [puff(3, 9)]), 72);
+// Both legs of the model, not one: terrain still blocks with no smoke at all,
+// and an empty smoke list must leave every check above this section standing.
+check('with no smoke on the table the cover is back',
+  covers(board164, [], guarded, firingAt, []), 72);
+
+// ---------- A Maneuver OUT of the Patrol Eagle aura (FAQ O11/O15) ----------
+//
+// A Movement "is judged at the start and landing grids only", which is the same
+// reading main.ts gives interceptsOwed six lines from the Silence check. Judged
+// at the landing square alone, a unit that STARTED inside the aura and walked
+// out was treated as though it had never been in it and got its Silence back.
+//
+// `seen` stands at Large Grid (3,3), the last Grid inside Range 3 of the Eagle
+// at (0,3); `unseen` at (4,3) is one Grid clear of it. The `from` argument is
+// the SAME unit at its old column, which is what the callers hand in.
+const walkedOut = { ...unseen, col: 9 };    // started at (3,3), landed at (4,3)
+const walkedIn = { ...seen, col: 12 };      // started at (4,3), landed at (3,3)
+const stayedOut = { ...unseen, col: 15 };   // (5,3) -> (4,3), clear throughout
+check('a Maneuver that STARTS inside the aura is denied, wherever it lands',
+  A.maneuverIsSilent(data, [patrol, unseen], unseen, walkedOut), false);
+check('and one that LANDS inside it is denied just as much',
+  A.maneuverIsSilent(data, [patrol, seen], seen, walkedIn), false);
+check('a Maneuver clear of the aura at both ends keeps its Silence',
+  A.maneuverIsSilent(data, [patrol, unseen], unseen, stayedOut), true);
+check('and a caller with no start position still judges the landing grid',
+  [A.maneuverIsSilent(data, [patrol, seen], seen), A.maneuverIsSilent(data, [patrol, unseen], unseen)],
+  [false, true]);
+
+// ---------- The denial names its source ----------
+//
+// A camouflage that breaks with nothing named reads as a bug at the table,
+// which is why AuraSource carries the projecting Token. Both classifiers hand
+// back the whole AuraSource so a message can print unit AND ability.
+const denial = A.silenceDenied(data, [patrol, seen], seen);
+check('silenceDenied answers with the Eagle itself, not a bare boolean',
+  [denial?.source?.uid, denial?.kinds], [90, ['silence_denied']]);
+check('and carries the ability label the Reveal lines print beside it',
+  typeof denial?.label === 'string' && denial.label.length > 0, true);
+check('an Action denier is the same source',
+  A.actionSilenceDenier(data, [patrol, seen], seen, silentAct)?.source?.uid, 90);
+// The narrow half of this: an Action that never printed Silence must name
+// NOBODY, or a plain Reveal blames a bystander for taking away what was never
+// there. Same for a Maneuver by a Mech with no Silence-granting Part.
+const plainAct = { id: 'P', keywords: [], description: { en: 'Silencer-brand ammo' } };
+check('but an Action that never printed Silence blames nobody',
+  A.actionSilenceDenier(data, [patrol, seen], seen, plainAct), undefined);
+const noStealth = mech(95, 's1', '002', 9);
+check('and neither does a Maneuver that had no Silence to lose',
+  A.maneuverSilenceDenier(data, [patrol, noStealth], noStealth), undefined);
+check('while the PL29 Maneuver inside the aura names the Eagle',
+  A.maneuverSilenceDenier(data, [patrol, seen], seen)?.source?.uid, 90);
+check('including when only the START grid was inside it',
+  A.maneuverSilenceDenier(data, [patrol, unseen], unseen, walkedOut)?.source?.uid, 90);
+
+// ---------- The call-site seams, read out of the sources ----------
+//
+// Everything above tests units.ts in isolation, which is exactly where these
+// two cards CANNOT go wrong: both bugs available here are arguments passed at a
+// call site, and no sliced-reader test can see one. Same reason and same shape
+// as dodgedie.test.mjs, which reads the sources for a round trip that spans
+// five files.
+const combatSrc = readFileSync(new URL('../src/combat.ts', import.meta.url), 'utf8');
+const mainSrc = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
+const hudSrc = readFileSync(new URL('../src/matchhud.ts', import.meta.url), 'utf8');
+
+// SEAM 1: ZHDR-204 is read off the ATTACKER. The line immediately below it
+// genuinely does take the DEFENDER — that is the ordinary Low Profile aura,
+// 072 Decoy's — so the two sit one line apart with different arguments, and
+// swapping them silently hands the buff to the player it was meant to hinder.
+// Both halves are pinned, because seeing only one of them is what makes the
+// wrong one look right.
+check('ZHDR-204 asks aurasOn about the ATTACKER',
+  /aurasOn\(this\.data, this\.tokens\(\), c\.attacker\)[\s\S]{0,80}?'target_counts_low_profile'/.test(combatSrc), true);
+check('and the reader on the next line still asks about the DEFENDER, which is the trap',
+  /auraEffectsOn\(this\.data, this\.tokens\(\), c\.defender\)\.has\('low_profile'\)/.test(combatSrc), true);
+check('nothing asks aurasOn about the defender for the ZHDR-204 kind',
+  /aurasOn\(this\.data, this\.tokens\(\), c\.defender\)[\s\S]{0,80}?'target_counts_low_profile'/.test(combatSrc), false);
+
+// SEAM 2: the +1 Blue is added ABOVE the Immobilized line, not below it. An
+// Immobilized unit rolls no Blue at all, and a bonus added afterwards would
+// survive the status whose whole job is to delete the pool. Adjacency is
+// pinned, so moving either line past the other fails here.
+check('the 164 Blue is added BEFORE Immobilized zeroes the pool',
+  /if \(this\.earlyWarning\(\)\) blue \+= 1;\s+if \(statusCount\(d\.statuses, 'immobilized'\) > 0\) blue = 0;/.test(combatSrc), true);
+
+// The three arguments the four reviewed defects were: a missing one each.
+check('combat.ts feeds earlyWarningCover the smoke as well as the terrain (4.16)',
+  /earlyWarningCover\(\s*this\.data,\s*this\.tokens\(\),\s*this\.terrain \? this\.terrain\(\) : \[\],\s*this\.smoke \? this\.smoke\(\) : \[\],/.test(combatSrc), true);
+check('freeplay judges the Maneuver at the START grid as well (FAQ O11/O15)',
+  /maneuverIsSilent\(data, state\.tokens, t, startPos\)/.test(mainSrc), true);
+// The Match Centre sweeps at render time, so it has no start position in scope
+// the way freeplay does. It reads one the maneuver command wrote down; all
+// three links are pinned, because a break in any one of them leaves the rule
+// right on the freeplay page and wrong on this one.
+check('the Match Centre builds the start position from the Opportunity',
+  /const from = sc\.opp\.movedFrom\s*\?\s*\{ \.\.\.t, col: sc\.opp\.movedFrom\.col, row: sc\.opp\.movedFrom\.row \}/.test(hudSrc), true);
+check('and hands it to maneuverIsSilent, having no other copy of where the unit stood',
+  /maneuverIsSilent\(ctx\.data, s\.tokens, t, from\)/.test(hudSrc), true);
+check('and the maneuver command records it, or that sweep reads an empty field forever',
+  (readFileSync(new URL('../src/commands.ts', import.meta.url), 'utf8').match(/movedFrom: from/g) ?? []).length, 2);
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
 if (fail) process.exit(1);
