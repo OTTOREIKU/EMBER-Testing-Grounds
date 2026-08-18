@@ -14,43 +14,50 @@
       }
     },
     "COMBAT_RAID": {
-      "_note": "Rebuilt 2026-08-11 from Queti's own contents list on the Raid product page, which OTTO supplied. That list is printed per slot - 3 Torso, 3 Chassis, 4 Left Arm, 4 Right Arm, 6 Backpack, 3 Drone, 2 Projectiles, 3 Pilots, 28 cards - and every 'A / B' line is ONE physical card with two faces, which is the whole reason the community data was wrong here.",
-      "_faces": "A face that shares its card with another is quantityPerBox 0, the same 'ships with its parent rather than as a counted copy' meaning the Discard Cards and White Dwarf's Cruise Mode use. That is what makes the copy counts add up to the publisher's per-slot numbers instead of double counting. The pattern is always a Raid-exclusive 5xx card paired with a card that also sells in a Core box.",
-      "_removed": "The community data also put ADK15/MAS Porcupine Microwave (161), ADK30F Tarantula Firepower (163) and the KK9 Snake Eye Micro Scout (LHDR-KK9) in this box. None appear on the publisher's list, and dropping exactly those three leaves the six drones it does name.",
-      "_rl08": "The published list writes the chassis as 'RL-08M / RL-08', but our scan of 534 prints RL-08C, RL-08M (249) is a different UNSALE card, and every other pairing is a 5xx Raid card beside a Core card. Read as a typo for RL-08C. Revisit if a physical box says otherwise.",
+      "_note": "Catalogued 2026-08-18 by OTTO from the PHYSICAL box, card by card: 46 individual cards. This replaces the 2026-08-11 reading of Queti's product page, which was wrong in the one way that mattered - see _faces.",
+      "_faces": "THERE ARE NO TWO-FACED CARDS IN THIS BOX. Every entry is its own physical card, so every quantity here is 1. The product page prints pairs as 'A / B' lines and we read that as one card with two faces; OTTO's box says a Discard card is a SEPARATE card that pairs with its weapon, not the back of it. That mistake also hid four cards entirely - the R6, R7, AC-32 and Type 55 + CC-6 Discards - because a face folded into its parent needs no entry of its own. Do not reintroduce quantityPerBox 0 here on the strength of a listing.",
+      "_pilots": "FIVE pilots, not three: both Hammerheads and both Onyxes ship. OTTO read the card-page numbers 304 / 364 (Hammerhead), 323 / 365 (Onyx) and 363 (Scout). 304 and 323 sit exactly where page = 300 + serial puts FPA-04 and LPA-23, so those are the base pilots and the two '-2' variants are 364 and 365. Their real serials are still unknown - FPA-04-2 and LPA-23-2 are OUR ids, the same invention as FPA-63, whose page 363 is how it was sourced.",
+      "_removed": "The community data also put ADK15/MAS Porcupine Microwave (161) and ADK30F Tarantula Firepower (163) in this box; neither is in the physical box. Nor is the KK9 Snake Eye Micro Scout (LHDR-KK9), confirmed by OTTO 2026-08-18.",
+      "_rl08": "The published list writes the chassis as 'RL-08M / RL-08'. The box holds RL-08 and RL-08C as separate cards (534 and 021) and no RL-08M, so the listing's 'M' was a typo and the pairing was two cards all along.",
+      "_projectile": "071 MC-3 'Razor' Missile is left at 2 from the product page's '2 Projectiles'. OTTO's catalogue lists the type once, so this is the one count still taken on the listing rather than the box.",
       "cards": {
-        "533": 1, "012": 0,
+        "533": 1, "012": 1,
         "014": 1,
-        "539": 1, "092": 0,
+        "539": 1, "092": 1,
 
-        "534": 1, "021": 0,
+        "534": 1, "021": 1,
         "020": 1,
         "099": 1,
 
         "535": 1,
-        "023": 1,
+        "023": 1, "024": 1,
         "032": 1,
-        "540": 1, "103": 0,
+        "540": 1, "103": 1,
 
-        "536": 1, "537": 0, "025": 0,
+        "536": 1, "537": 1,
+        "025": 1, "026": 1,
         "033": 1,
-        "541": 1, "542": 0, "104": 0, "109": 0,
+        "541": 1, "542": 1,
+        "104": 1, "105": 1,
+        "109": 1, "110": 1,
         "106": 1,
 
         "001": 1,
-        "532": 1, "002": 0,
+        "532": 1, "002": 1,
         "003": 1,
         "004": 1,
         "538": 1,
         "083": 1,
 
         "162": 1,
-        "164": 1, "165": 0, "166": 0,
-        "160": 1, "543": 0,
+        "164": 1, "165": 1, "166": 1,
+        "160": 1, "543": 1,
 
         "071": 2,
 
+        "FPA-04": 1,
         "FPA-04-2": 1,
+        "LPA-23": 1,
         "LPA-23-2": 1,
         "FPA-63": 1
       }
