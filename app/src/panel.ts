@@ -254,7 +254,10 @@ export class Panel {
       this.body.appendChild(this.loadRow(t));
     }
 
-    const actions = guidedActions(this.data, t, this.cb.world());
+    // A Passive applies itself; it is not something to press. The card blocks
+    // below still print it, which is where a standing rule belongs.
+    const actions = guidedActions(this.data, t, this.cb.world())
+      .filter((g) => g.action.type !== 'Passive' && g.action.speed !== 'passive');
     if (actions.length) {
       const h = document.createElement('h4');
       h.textContent = 'Actions (from this unit’s parts)';

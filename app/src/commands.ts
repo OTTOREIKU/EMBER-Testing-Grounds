@@ -1,4 +1,4 @@
-import type { CombatView, Facing, GameState, MechLoadout, PartSlot, RollbackPoint, Side, SmokeScreen, Stance, Timing, Token } from './types';
+import type { CombatView, Facing, GameState, MechLoadout, Opportunity, PartSlot, RollbackPoint, Side, SmokeScreen, Stance, Timing, Token } from './types';
 import { addStatus, ageTokens, newOpportunity, PHASES, statusCount, STATUSES, TIMINGS } from './types';
 import type { GameData } from './data';
 import { unfoldsInto } from './data';
@@ -902,6 +902,15 @@ function checkActed(
       if (t.stance === 'shutdown' && cmd.stance !== 'shutdown') {
         return no('Leaving Shutdown Stance takes a Reboot, which costs the Action Opportunity (4.1.1).');
       }
+      // 4.1: the Stance is chosen at the START of the Action Opportunity, so it
+      // may be cycled freely until the Mech does something — reading which
+      // Actions each Stance opens up is how the choice gets made. The moment it
+      // moves or acts the dial is set, which is the rule the old version tried
+      // to enforce by refusing to act at all until a Stance was confirmed.
+      const so = oppOf(state, cmd.uid);
+      if (so?.stanceLocked && cmd.stance !== t.stance) {
+        return no('This Mech has already acted this Action Opportunity, so its Stance is set (4.1).');
+      }
       return ok;
     }
     case 'reboot': {
@@ -931,12 +940,6 @@ function checkActed(
         const why = isLoopPhase(ph) ? droneMoveWhy(ph) : null;
         if (why) return no(why);
       }
-      // 4.1: a Mech chooses its Stance each Action Opportunity BEFORE the
-      // choice to Maneuver. Networked play makes the choice explicit — locked
-      // in even to stay put — so a forgotten Stance can never reach the dice.
-      if (t.kind === 'mech' && getLocalSeat() && !o.stanceLocked) {
-        return no('Lock in a Stance first: a Mech chooses its Stance at the start of each Action Opportunity, before the choice to Maneuver (4.1).');
-      }
       // A free move rides on an Action that has already been performed; without
       // one there is nothing that could have moved the unit.
       if (cmd.free) {
@@ -962,11 +965,6 @@ function checkActed(
           if (why) return no(why);
         }
         return fromVerdict(canActivate(o));
-      }
-      // 4.1: the Stance is chosen before anything else the Opportunity does.
-      // Same explicit lock as the maneuver gate above.
-      if (getLocalSeat() && !o.stanceLocked) {
-        return no('Lock in a Stance first: a Mech chooses its Stance at the start of each Action Opportunity, before it does anything else (4.1).');
       }
       // partKey names which Part the Action came from, so the same Action
       // borrowed from two Tarantulas is two Parts, not one repeated (FAQ O7).
@@ -1836,11 +1834,9 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
       t.row = cmd.to.row;
       return;
     case 'setStance': {
+      // Choosing does NOT lock: cycling the dial to compare Stances is free
+      // right up until the Mech acts. lockStance() below is what closes it.
       t.stance = cmd.stance;
-      // Choosing (or re-confirming) a Stance during the Mech's own Opportunity
-      // is the lock the 4.1 gate waits for — nothing else can open it.
-      const o = oppOf(state, cmd.uid);
-      if (o) o.stanceLocked = true;
       return;
     }
     case 'reboot': {
@@ -1869,13 +1865,17 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
       const o = oppOf(state, cmd.uid);
       // A Movement Action already paid with an Action Tick, and one a card
       // handed out was never charged to the Opportunity at all.
-      if (o && sc && !cmd.free && !cmd.granted) sc.opp = spendManeuver(o);
+      if (o && sc && !cmd.free && !cmd.granted) sc.opp = lockStance(t, spendManeuver(o));
       return;
     }
     case 'performAction': {
       const a = findAction(data, state, cmd.uid, cmd.actionId);
       const o = oppOf(state, cmd.uid);
-      if (a && o && sc) sc.opp = t.kind === 'mech' ? spendAction(o, a, cmd.partKey || a.id) : spendActivation(o, a);
+      if (a && o && sc) {
+        sc.opp = t.kind === 'mech'
+          ? lockStance(t, spendAction(o, a, cmd.partKey || a.id))
+          : spendActivation(o, a);
+      }
       return;
     }
     case 'overload': {
@@ -2348,6 +2348,14 @@ export function isSecret(cmd: Command): boolean {
 // which returns early from its switch in dozens of places. Both clients run
 // the same commands, so both build the same roster; it is not in
 // boardFingerprint because no rule reads it.
+// 4.1: once a Mech has moved or acted, the Stance it did it in is the Stance it
+// keeps for the rest of the Opportunity. Called after the spend, because
+// spendAction/spendManeuver return a NEW Opportunity rather than mutating one.
+function lockStance(t: Token, o: Opportunity): Opportunity {
+  if (t.kind !== 'mech' || o.stanceLocked) return o;
+  return { ...o, stanceLocked: true };
+}
+
 export function rememberFielded(data: GameData, state: GameState): void {
   const roster = state.fielded ?? (state.fielded = { s1: {}, s2: {} });
   for (const t of state.tokens) {

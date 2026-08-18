@@ -1110,11 +1110,12 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
   const guided = guidedActions(ctx.data, t, { tokens: ctx.state.tokens, terrain: terrainOf(ctx) });
   const onExtra = onExtraOpportunity(ctx.state, o.uid);
   // 4.1: a Mech chooses its Stance each Action Opportunity, before the choice
-  // to Maneuver. Networked play makes the choice a lock — pressing a Stance
-  // (the current one included) opens the rest of the panel — so a forgotten
-  // Mobility can never again roll a defence with no Blue in it.
-  const needLock = !!ctx.networked && t.kind === 'mech' && t.stance !== 'shutdown' && !o.stanceLocked;
-  const lockWhy = 'Lock in a Stance first: a Mech chooses its Stance at the start of each Action Opportunity, before it does anything else (4.1).';
+  // to Maneuver — and the choice USED to be a lock that refused every Action
+  // until a Stance was pressed. That got in the way of the thing a player
+  // actually does, which is cycle the dial to see what each Stance opens up.
+  // So the dial stays live and the first Move or Action closes it, in
+  // commands.ts lockStance(). The panel only has to say which state it is in.
+  const stanceSet = t.kind === 'mech' && !!o.stanceLocked;
   // Keyed by PART, not by Action: two Carrier Tarantulas lending the same
   // Backpack lend two distinct Parts, and each may be used once (FAQ O7).
   const blockedBy = new Map<string, string | undefined>();
@@ -1124,14 +1125,22 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
   const lentBy = new Map<string, string>();
   for (const g of guided) if (g.lentBy) lentBy.set(g.partKey, g.lentBy.label);
   // Common Actions belong to Mechs (6.1); a Drone plays only what its card prints.
-  const acts: { a: CardAction; key: string }[] = [
-    ...guided.map((g) => ({ a: g.action, key: g.partKey })),
-    ...(t.kind === 'mech' ? ctx.data.commonActions.map((a) => ({ a, key: a.id })) : []),
+  // A Passive is not a choice — it applies itself when its situation arises, so
+  // offering it as a button only invited a press that did nothing but print
+  // "follow the Action text on the card". They are listed further down the
+  // Details tab, where they read as the standing rules they are.
+  const isPassive = (a: CardAction): boolean => a.type === 'Passive' || a.speed === 'passive';
+  // The Part rides along: two R-20 Railguns, one per arm, print the same Action
+  // and used to list as two identical rows with nothing to tell them apart.
+  const acts: { a: CardAction; key: string; slot?: PartSlot | 'pilot' | 'main'; cardId?: string }[] = [
+    ...guided.filter((g) => !isPassive(g.action))
+      .map((g) => ({ a: g.action, key: g.partKey, slot: g.slot, cardId: g.card.id })),
+    ...(t.kind === 'mech' ? ctx.data.commonActions.filter((a) => !isPassive(a)).map((a) => ({ a, key: a.id })) : []),
   ];
   const seen = new Set<string>();
   const rows = acts
     .filter(({ key }) => (seen.has(key) ? false : (seen.add(key), true)))
-    .map(({ a, key }) => {
+    .map(({ a, key, slot, cardId }) => {
       const len = lengthOf(a);
       // Ticks are a Mech's economy. A Drone's Action costs its activation
       // instead — one Action or one Movement, never both — and asking
@@ -1153,7 +1162,7 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
       // in the Automatic Phase its Automatic ones — same rule check() enforces.
       const loopPh = PHASES[ctx.state.round.phase];
       const phased = t.kind === 'drone' && isLoopPhase(loopPh) ? droneActionWhy(loopPh, a) : null;
-      const v: TickVerdict = needLock ? { ok: false, why: lockWhy } : chained ? { ok: false, why: chained } : stopped ? { ok: false, why: stopped } : phased ? { ok: false, why: phased } : ticks;
+      const v: TickVerdict = chained ? { ok: false, why: chained } : stopped ? { ok: false, why: stopped } : phased ? { ok: false, why: phased } : ticks;
       const cost = costOf(a);
       const kind = (a.type ?? '').toLowerCase();
       const pool = `${a.yellowDice ?? 0},${a.redDice ?? 0}`;
@@ -1170,8 +1179,16 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
       // Blocked Actions stay on the list and say why when pressed. A disabled
       // row tells a player nothing, and "the Starting Action must match the
       // dial" is exactly the thing they need told.
-      return `<button class="actrow k-${kind}${v.ok ? '' : ' warn'}" data-doact="${esc(key)}" data-pool="${pool}" data-an="${esc(a.name?.en || a.id)}"${v.ok ? '' : ` data-why="${esc(v.why ?? '')}"`} title="${esc(tip)}">
-        <span class="dotk"></span><span class="an">${esc((a.name?.en || a.id).slice(0, 26))}${lender ? ' (Load)' : ''}${ammoOf.get(key) !== undefined ? ` ×${ammoOf.get(key)}` : ''}</span><span class="ac">${price}</span>
+      // data-tip-card puts the Part's own card up beside the panel, which is
+      // the fastest way to see WHICH arm a duplicated Action belongs to; the
+      // slot chip answers the same question without hovering at all.
+      const where = slot ? SLOT_LABEL[slot] : '';
+      return `<button class="actrow k-${kind}${v.ok ? '' : ' warn'}" data-doact="${esc(key)}" data-pool="${pool}" data-an="${esc(a.name?.en || a.id)}"${
+        cardId ? ` data-tip-card="${esc(cardId)}"` : ''
+      }${v.ok ? '' : ` data-why="${esc(v.why ?? '')}"`} title="${esc(tip)}">
+        <span class="dotk"></span><span class="an">${esc((a.name?.en || a.id).slice(0, 26))}${lender ? ' (Load)' : ''}${ammoOf.get(key) !== undefined ? ` ×${ammoOf.get(key)}` : ''}</span>${
+        where ? `<span class="aw">${esc(where)}</span>` : ''
+      }<span class="ac">${price}</span>
       </button>`;
     })
     .join('');
@@ -1182,7 +1199,7 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
   const dronePh = PHASES[ctx.state.round.phase];
   const droneMoveBlock = t.kind === 'drone' && isLoopPhase(dronePh) ? droneMoveWhy(dronePh) : null;
   const man = t.kind === 'mech'
-    ? needLock ? { ok: false as const, why: lockWhy } : canManeuver(o)
+    ? canManeuver(o)
     : droneMoveBlock ? { ok: false as const, why: droneMoveBlock } : canActivate(o);
   // Ticks are a Mech's Action Opportunity (3.4). A Drone or Projectile gets an
   // activation instead — one Action, no price printed on any of them — so the
@@ -1241,16 +1258,19 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
   const active = ['defensive', 'mobility', 'offensive'] as const;
   // Before the lock the row is the whole panel's front door: the current
   // Stance reads "Keep" so staying put is one press, not a trap.
-  const stanceRow = needLock
-    ? `<p class="tp-note"><b>Choose a Stance first (4.1)</b> — even to stay. Offensive solidifies attack hollows, Defensive solidifies White hollows, Mobility adds Dodge dice and doubles the Maneuver.</p>
-       <div class="stancerow">${active
-        .map((x) => `<button class="stancebtn${t.stance === x ? ' sel' : ''}" data-stance="${x}">${t.stance === x ? 'Keep ' : ''}${x[0].toUpperCase()}${x.slice(1)}</button>`)
-        .join('')}</div>`
-    : !shutdown && !o.maneuvered && !o.started && t.kind === 'mech'
-      ? `<div class="stancerow">${active
-          .map((x) => `<button class="stancebtn${t.stance === x ? ' sel' : ''}" data-stance="${x}">${x[0].toUpperCase()}${x.slice(1)}</button>`)
-          .join('')}</div>`
-      : '';
+  // Its own block with a heading, because a player has to notice it before
+  // reaching for an Action: the dial and the Action list used to run together
+  // as one undifferentiated column of buttons.
+  const stanceRow = !shutdown && t.kind === 'mech'
+    ? `<div class="tp-group stancegroup">
+        <div class="tp-label">Stance${stanceSet ? ' <em>· set for this Opportunity</em>' : ''}</div>
+        <div class="stancerow">${active
+          .map((x) => `<button class="stancebtn${t.stance === x ? ' sel' : ''}"${
+            stanceSet && t.stance !== x ? ' disabled' : ''
+          } data-stance="${x}">${x[0].toUpperCase()}${x.slice(1)}</button>`)
+          .join('')}</div>
+      </div>`
+    : '';
   const rebootRow = shutdown && t.kind === 'mech'
     ? `<p class="tp-note">${esc(t.label)} is in Shutdown Stance, so Reboot is the only thing it may do (4.1.1).</p>
        <div class="stancerow">${active
@@ -1267,10 +1287,13 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
       : 'Draw a route, then confirm. This activation buys a Movement or an Action, not both (2.4.1).'
     : man.why ?? '';
   return `${ticks}${stanceRow}${rebootRow}
-    <button class="actrow k-moving${man.ok ? '' : ' warn'}"${man.ok ? '' : ` data-why="${esc(man.why ?? '')}"`} data-act="maneuver" title="${esc(moveTip)}">
-      <span class="dotk"></span><span class="an">${moveWord}</span><span class="ac">${maneuverRange(ctx.data, t)} ${maneuverRange(ctx.data, t) === 1 ? 'grid' : 'grids'}${t.stance === 'mobility' && t.kind === 'mech' ? ' ×2' : ''}</span></button>
-    ${ovlRow}
-    ${rows}`;
+    <div class="tp-group">
+      <div class="tp-label">Actions</div>
+      <button class="actrow k-moving${man.ok ? '' : ' warn'}"${man.ok ? '' : ` data-why="${esc(man.why ?? '')}"`} data-act="maneuver" title="${esc(moveTip)}">
+        <span class="dotk"></span><span class="an">${moveWord}</span><span class="ac">${maneuverRange(ctx.data, t)} ${maneuverRange(ctx.data, t) === 1 ? 'grid' : 'grids'}${t.stance === 'mobility' && t.kind === 'mech' ? ' ×2' : ''}</span></button>
+      ${ovlRow}
+      ${rows}
+    </div>`;
 }
 
 // ZPA-36 Aster's Command Phase button, for the seats that own one. Hidden

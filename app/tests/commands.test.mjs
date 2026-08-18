@@ -1503,33 +1503,53 @@ check('a Mech Passive spends none of its Opportunity', [wPass.script.opp.action,
 
 // ---------- the Stance lock (4.1) ----------
 //
-// A Mech chooses its Stance each Action Opportunity, before the choice to
-// Maneuver. Online the choice is explicit: nothing moves or acts until a
-// Stance is locked in — re-confirming the current one counts — because a
-// forgotten Mobility rolled a real game's defences with no Blue in them.
+// A Mech chooses its Stance each Action Opportunity, BEFORE the choice to
+// Maneuver — and the dial stays live until it does one of them, because
+// cycling it to see which Actions each Stance opens up is how the choice gets
+// made. An earlier version enforced 4.1 by refusing every Action until a
+// Stance was pressed, which OTTO found got in the way of exactly that reading.
+// So: free to change while nothing has happened, set the moment it acts.
 
 const mAct = { kind: 'performAction', seat: 's1', uid: 1, actionId: 'A1' };
 const mMove = { kind: 'maneuver', seat: 's1', uid: 1, to: { col: 6, row: 3 } };
+const stanceTo = (x) => ({ kind: 'setStance', seat: 's1', uid: 1, stance: x });
 C.setLocalSeat('s1');
+
 const wlock = world([mech(1, 's1')], 2, opp(1));
-check('online, an unlocked Mech may not act', C.check(data, wlock, mAct).ok, false);
-check('and is told to choose a Stance', C.check(data, wlock, mAct).why.includes('Stance'), true);
-check('nor may it Maneuver', C.check(data, wlock, mMove).ok, false);
-C.apply(data, wlock, { kind: 'setStance', seat: 's1', uid: 1, stance: 'offensive' });
-check('re-confirming the current Stance locks it', wlock.script.opp.stanceLocked, true);
-check('and the action is allowed', C.check(data, wlock, mAct).ok, true);
-check('and the Maneuver too', C.check(data, wlock, mMove).ok, true);
-// A stance set while a DIFFERENT unit holds the Opportunity locks nothing.
-const wother = world([mech(1, 's1'), mech(2, 's1', { col: 9, row: 9 })], 2, opp(1));
-C.apply(data, wother, { kind: 'setStance', seat: 's1', uid: 2, stance: 'mobility' });
-check('a bystander stance change locks nothing', wother.script.opp.stanceLocked === true, false);
-// A Reboot IS the stance choice, so its one remaining Tick is not refused.
+check('a Mech may act without pressing a Stance first', C.check(data, wlock, mAct).ok, true);
+check('and may Maneuver', C.check(data, wlock, mMove).ok, true);
+check('the dial is open before it acts', C.check(data, wlock, stanceTo('mobility')).ok, true);
+C.apply(data, wlock, stanceTo('mobility'));
+check('choosing does not lock by itself', wlock.script.opp.stanceLocked === true, false);
+check('so it may still be changed again', C.check(data, wlock, stanceTo('defensive')).ok, true);
+
+// Acting is what closes it.
+const wacted = world([mech(1, 's1')], 2, opp(1));
+C.apply(data, wacted, mAct);
+check('performing an Action sets the Stance', wacted.script.opp.stanceLocked, true);
+check('and a different Stance is then refused', C.check(data, wacted, stanceTo('mobility')).ok, false);
+check('with 4.1 as the reason', (C.check(data, wacted, stanceTo('mobility')).why ?? '').includes('4.1'), true);
+check('re-picking the SAME Stance is not a change, so it passes',
+  C.check(data, wacted, stanceTo(wacted.tokens[0].stance)).ok, true);
+
+// Maneuvering closes it just as an Action does.
+const wmoved = world([mech(1, 's1')], 2, opp(1));
+C.apply(data, wmoved, mMove);
+check('a Maneuver sets the Stance too', wmoved.script.opp.stanceLocked, true);
+
+// A Drone plays the Stance printed on its card, so there is nothing to lock.
+const wdstance = world([drone(1, 's1')], 2, opp(1));
+C.apply(data, wdstance, { kind: 'maneuver', seat: 's1', uid: 1, to: { col: 6, row: 3 } });
+check('a Drone never gains a Stance lock', wdstance.script.opp.stanceLocked === true, false);
+
+// A Reboot IS the stance choice (4.1.1), and consumes the Opportunity but one Tick.
 const wshut = world([mech(1, 's1', { stance: 'shutdown', link: 2 })], 2, opp(1));
 C.apply(data, wshut, { kind: 'reboot', seat: 's1', uid: 1, stance: 'defensive' });
-check('a Reboot locks the Stance for its one Tick', wshut.script.opp.stanceLocked, true);
+check('a Reboot sets the Stance for its one Tick', wshut.script.opp.stanceLocked, true);
+
 C.setLocalSeat(null);
 const wfreeplay = world([mech(1, 's1')], 2, opp(1));
-check('freeplay never demands the lock', C.check(data, wfreeplay, mAct).ok, true);
+check('freeplay acts freely as well', C.check(data, wfreeplay, mAct).ok, true);
 
 // ---------- the Focus handshake (4.4.1-5) ----------
 //

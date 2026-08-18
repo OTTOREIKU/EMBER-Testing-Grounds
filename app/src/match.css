@@ -879,3 +879,28 @@ b.s1 { color: var(--s1); } b.s2 { color: var(--s2); }
 /* .mech-link and .inspect-pinnable are styled once in styles.css, which this
    page also loads — the cue for "this answers a hover" stays identical on both.
    Only the popout itself is new here. */
+
+/* ---------- the turn panel's blocks ---------- */
+/*
+   The Stance dial and the Action list used to run together as one column of
+   buttons, so a player reached for an Action without noticing there was a
+   choice to make first. Each is its own block with a heading now.
+*/
+.tp-group { padding: 4px 0 2px; }
+.tp-group + .tp-group { margin-top: 4px; }
+.tp-label {
+  font-size: 9px; letter-spacing: 0.9px; text-transform: uppercase;
+  color: var(--text3); font-weight: 700; padding: 0 2px 5px;
+}
+.tp-label em { font-style: normal; letter-spacing: 0.4px; text-transform: none; color: var(--text3); font-weight: 400; }
+/* Breathing room around the choice that has to be made first. */
+.stancegroup { padding-bottom: 9px; margin-bottom: 7px; box-shadow: inset 0 -1px 0 var(--surface3); }
+.stancebtn[disabled] { opacity: 0.45; cursor: default; }
+.stancebtn[disabled]:hover { filter: none; }
+/* Which Part an Action came from. Two arms carrying the same Railgun print the
+   same Action, and without this the two rows were indistinguishable. */
+.actrow .aw {
+  margin-left: auto; font-size: 9px; letter-spacing: 0.4px; text-transform: uppercase;
+  color: var(--text3); font-weight: 700; white-space: nowrap;
+}
+.actrow .aw + .ac { margin-left: 8px; }
