@@ -789,6 +789,47 @@ export function auraValueOn(data: GameData, tokens: Token[], t: Token, kind: str
 // text names the keyword are the three aura sources themselves). A unit is its
 // own ally (FAQ Q4), so a Mech carrying Tactical Coordination flexes its own
 // Starting Action as well as its neighbours'.
+export interface CommandRider {
+  // A2 Data Link: the Commanded Drone may perform Automatic Actions, which the
+  // Command Phase otherwise refuses (3.2.2 / 3.5).
+  autoActions: boolean;
+  // M2 Data Link: grids it may move BEFORE acting, on top of the one-or-the-
+  // other activation a Drone normally gets (2.4.1).
+  preMove: number;
+}
+
+// What a Mech's Data Link grants to a Drone it Commands. Both riders are worded
+// "when receiving Command from THIS Mech", so they are read off the ISSUER, not
+// off the Drone — which is why Token.commandedBy has to exist.
+//
+// Matched on the distinctive clause rather than any single word: the English on
+// card 175 misspells "receiving", so anything keyed to that would silently miss.
+export function commandRiderOf(data: GameData, mech: Token | undefined): CommandRider {
+  const out: CommandRider = { autoActions: false, preMove: 0 };
+  if (!mech || mech.kind !== 'mech') return out;
+  for (const { slot, card } of tokenCards(data, mech)) {
+    if ((mech.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
+    for (const a of card.actions ?? []) {
+      const en = a.description?.en ?? '';
+      const zh = a.description?.zh ?? '';
+      if (/Automatic Actions instead of Command Actions/i.test(en) || /执行自动动作/.test(zh)) {
+        out.autoActions = true;
+      }
+      const gridsEn = /may move (\d+) grid/i.exec(en);
+      const gridsZh = /移动(\d+)格/.exec(zh);
+      const n = Number(gridsEn?.[1] ?? gridsZh?.[1] ?? 0);
+      if (n > out.preMove) out.preMove = n;
+    }
+  }
+  return out;
+}
+
+// The rider reaching a Drone right now, via the Mech that Commanded it.
+export function riderOnDrone(data: GameData, tokens: Token[], t: Token): CommandRider {
+  if (t.kind !== 'drone' || t.commandedBy === undefined) return { autoActions: false, preMove: 0 };
+  return commandRiderOf(data, tokens.find((x) => x.uid === t.commandedBy));
+}
+
 export interface ParryPart {
   slot: PartSlot | 'main';
   value: number;

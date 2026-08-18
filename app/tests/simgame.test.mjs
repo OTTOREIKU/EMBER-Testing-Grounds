@@ -39,6 +39,10 @@ const stubs = `
 // Flexible Timing reaches a Mech from an ally's AURA, which needs the whole
 // board. These fixtures have no aura sources, so the honest stub is "never" —
 // the adjacency rule itself is covered properly in ticks.test.mjs.
+// No fixture Mech here carries a Data Link, so the honest stub is "no rider".
+export function riderOnDrone(_data: any, _tokens: any, _t: any): any {
+  return { autoActions: false, preMove: 0 };
+}
 export function hasFlexibleTiming(_data: any, _tokens: any, _t: any): boolean {
   return false;
 }

@@ -2,7 +2,7 @@ import type { CombatView, Facing, GameState, MechLoadout, Opportunity, PartSlot,
 import { addStatus, ageTokens, newOpportunity, PHASES, statusCount, STATUSES, TIMINGS } from './types';
 import type { GameData } from './data';
 import { unfoldsInto } from './data';
-import { hasFlexibleTiming, commandGeneration, blinkTargets, isPositionSwap, electronicOrigins, loanedParts, unfoldToken, extrasFor, consumesCharge, electronicValue, freehandSlots, interceptCapacity, makeDroneToken, makeMechToken, maxLink, pilotCard, projectileDelivery, tokenCards } from './units';
+import { riderOnDrone, hasFlexibleTiming, commandGeneration, blinkTargets, isPositionSwap, electronicOrigins, loanedParts, unfoldToken, extrasFor, consumesCharge, electronicValue, freehandSlots, interceptCapacity, makeDroneToken, makeMechToken, maxLink, pilotCard, projectileDelivery, tokenCards } from './units';
 import { canActivate, canManeuver, canOverload, canPerform, spendAction, spendActivation, spendManeuver, spendOverload } from './ticks';
 import { tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { battlefieldLocked, deploymentComplete, deployTurn, firstPlayerFrom, newSetup, normaliseSetup, tasksLocked } from './setup';
@@ -967,7 +967,9 @@ function checkActed(
         // a Projectile's Delayed Action belongs to the Delay Phase (3.6).
         if (t.kind === 'drone') {
           const ph = PHASES[state.round.phase];
-          const why = isLoopPhase(ph) ? droneActionWhy(ph, a) : null;
+          const why = isLoopPhase(ph)
+            ? droneActionWhy(ph, a, { autoActions: riderOnDrone(data, state.tokens, t).autoActions })
+            : null;
           if (why) return no(why);
         }
         return fromVerdict(canActivate(o));

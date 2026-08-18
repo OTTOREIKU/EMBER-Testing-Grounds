@@ -39,6 +39,14 @@ if (!evReader) throw new Error('could not locate electronicValue in units.ts');
 // takeBlackBox asks freehandSlots which Parts can carry one, so the Freehand
 // keyword test is sliced rather than mirrored. SLOT_LABEL rides along because
 // it is a module-level const the function reads.
+// The Data Link riders are sliced in, not stubbed: the A2 gate is a RULE and
+// commands.test.mjs is where rules are pinned. They read the stubbed tokenCards
+// above, which is enough for these fixtures.
+const riders = unitsSrc.slice(
+  unitsSrc.indexOf('export interface CommandRider'),
+  unitsSrc.indexOf('export interface ParryPart'),
+);
+if (!riders) throw new Error('could not locate the Data Link riders in units.ts');
 const slotLabels = unitsSrc.slice(
   unitsSrc.indexOf('export const SLOT_LABEL'),
   unitsSrc.indexOf('let uidSource'),
@@ -178,7 +186,7 @@ writeFileSync(
     + interceptParser
     + chargeParser
     + evReader
-    + slotLabels
+    + slotLabels + riders
     + freehand
     + delivery
     + grids
@@ -243,6 +251,10 @@ const data = {
     ['BP1', { id: 'BP1', category: 'mech_part', type: 'backpack', electronic: 1, actions: [{ id: 'BP1_A', type: 'Firing', size: 's', range: 4, name: { en: 'Lent Gun' }, storage: 2 }] }],
     // The folded Pholcus and the Drone it is replaced by (FAQ M18).
     ['156', { id: '156', category: 'projectile', unfoldsInto: '167', actions: [{ id: '156_A', type: 'Delay', name: { en: 'Unfold' } }] }],
+    // A Torso whose Data Link carries the A2 rider. The wording is the card's
+    // own, misspelling included, so the matcher is tested against reality.
+    ['A2T', { id: 'A2T', category: 'mech_part', actions: [{ id: 'A2T_A', type: 'Passive', speed: 'passive', name: { en: 'A2 Data Link' },
+      description: { en: '· Command Generation 2 · When recieving Command from this Mech, the Ally Drone may perform Automatic Actions instead of Command Actions.' } }] }],
     ['167', { id: '167', category: 'drone', stance: 'mobility', score: 0, actions: [{ id: '167_A', type: 'Detonation', speed: 'auto', range: 1, yellowDice: 6, name: { en: 'Automatic Attack' } }] }],
   ]),
   commonActions: [{ id: 'COMMON_CHARGE', type: 'Tactic', size: 's', name: { en: 'Charge' } }],
@@ -619,6 +631,38 @@ C.apply(data, wcmdSweep, dg());
 check('the record exists before the sweep', wcmdSweep.tokens[1].commandedBy, 1);
 C.clearCommandTokens(wcmdSweep);
 check('and is gone after it', wcmdSweep.tokens[1].commandedBy, undefined);
+
+// ---------- A2 Data Link: the Commanded Drone may act Automatically ----------
+//
+// The Command Phase normally refuses a Drone's Automatic Action (3.2.2/3.5).
+// "When receiving Command from this Mech, the Ally Drone may perform Automatic
+// Actions instead of Command Actions" relaxes that — but only for a Drone
+// Commanded BY a Mech carrying the rider, which is why commandedBy exists.
+
+const autoAct = { id: '167_A', speed: 'auto', type: 'Detonation' };
+const paAuto = { kind: 'performAction', seat: 's1', uid: 2, actionId: '167_A' };
+const wa2 = (commandedBy) => {
+  const w = world([
+    mech(1, 's1', { mech: { torso: 'A2T', pilot: 'P1' } }),
+    { ...drone(2, 's1', { cardId: '167' }), commandedBy },
+  ], 0, opp(2));
+  return w;
+};
+check('an Automatic Action is refused in the Command Phase',
+  C.check(data, wa2(undefined), paAuto).ok, false);
+check('and the refusal cites the Automatic Phase',
+  (C.check(data, wa2(undefined), paAuto).why ?? '').includes('Automatic Phase'), true);
+check('a Drone Commanded by the A2 Mech may perform it',
+  C.check(data, wa2(1), paAuto).ok, true);
+// The rider is read off the ISSUER, so a Command from a Mech without one
+// changes nothing.
+const wPlain = world([
+  mech(1, 's1', { mech: { torso: 'T1', pilot: 'P1' } }),
+  { ...drone(2, 's1', { cardId: '167' }), commandedBy: 1 },
+], 0, opp(2));
+check('a Command from a Mech with no rider does not',
+  C.check(data, wPlain, paAuto).ok, false);
+
 
 const wfree2 = wcmd();
 wfree2.commandTokens = { s1: 0, s2: 1 };

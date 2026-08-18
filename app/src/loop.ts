@@ -70,10 +70,18 @@ export function droneMoveWhy(phase: LoopPhase): string | null {
   return 'A Drone moves only when Commanded (3.2.2). The Automatic Phase performs its Automatic Actions, and only those (3.5).';
 }
 
-export function droneActionWhy(phase: LoopPhase, a: { speed?: string; type?: string }): string | null {
+export function droneActionWhy(
+  phase: LoopPhase,
+  a: { speed?: string; type?: string },
+  // A2 Data Link: this Drone's Command came from a Mech that lets it perform
+  // Automatic Actions. The caller works it out, because this module is handed
+  // a phase and an Action and never sees the board.
+  opts: { autoActions?: boolean } = {},
+): string | null {
   if (a.speed === 'passive' || a.type === 'Passive') return null;
   if (phase === 'Command') {
     if (a.speed === 'command') return null;
+    if (a.speed === 'auto' && opts.autoActions) return null;
     return a.speed === 'auto'
       ? 'This is an Automatic Action — it is performed in the Automatic Phase without a Command (3.5). A Command lets this Drone MOVE instead, or fire an Action bearing the Command icon (3.2.2).'
       : 'Only an Action bearing the Command icon may be performed with a Command (3.2.2).';
