@@ -32,7 +32,10 @@ function largeGridOf(t: any): any { return { c: Math.floor(t.col / 3), r: Math.f
   + cut(units, 'export interface ParryPart', 'export interface SelfHitPart', 'parryParts')
   + cut(units, 'export interface SelfHitPart', '// A Firing Action', 'selfHitParts')
   + cut(units, '// A Firing Action', 'export function repairSpec', 'actionRange and hasFlexibleTiming')
-  + cut(units, '// ---------- Defense Reaction', 'export function attackReactionsOf', 'defenseReactionOn and targetTracingOn');
+  + cut(units, '// ---------- Defense Reaction', 'export function attackReactionsOf', 'defenseReactionOn and targetTracingOn')
+  + cut(units, 'function alive(t: Token)', 'function coversGrid', 'the alive helper')
+  + cut(units, '// ---------- Martyrdom', 'export function autoDetonationsOwed', 'martyrdomOwed')
+  + cut(units, 'export function explosionScope', 'export function needsSightToLanding', 'explosionScope');
 
 const tmp = new URL('./_auras.slice.ts', import.meta.url);
 writeFileSync(tmp, body);
@@ -322,6 +325,43 @@ check('a Drone never gets it', A.defenseReactionOn(data, { ...shieldMech('ZHLA-1
 check('and it is Defense Reaction that matched, not Shield Up',
   A.defenseReactionOn(data, shieldMech('ZHLA-301'))?.actionId,
   data.byId.get('ZHLA-301').actions.find((x) => /Defense Reaction/.test(x.name?.en ?? '')).id);
+
+// ---------- Martyrdom (ZHDR-302) ----------
+//
+// Derived off the board from a unit that is already DESTROYED, which is exactly
+// the case every other owed-reader filters out.
+const zealot = (over = {}) => ({
+  uid: 20, kind: 'drone', side: 's1', col: 0, row: 0, size: 1, cardId: 'ZHDR-302',
+  partStates: { main: 'destroyed' }, statuses: [], stance: 'defensive', ...over,
+});
+const bystander = (uid, side, col, row) => ({
+  uid, kind: 'drone', side, col, row, size: 1, cardId: '002',
+  partStates: { main: 'intact' }, statuses: [], stance: 'offensive',
+});
+check('a destroyed Zealot owes a Detonation',
+  A.martyrdomOwed(data, [zealot()]).map((x) => x.actionId), ['ZHDR-302_B']);
+check('an intact one owes nothing', A.martyrdomOwed(data, [zealot({ partStates: { main: 'intact' } })]), []);
+check('and one that has left the board owes nothing',
+  A.martyrdomOwed(data, [zealot({ deployed: false })]), []);
+check('a unit without the ability never owes one',
+  A.martyrdomOwed(data, [{ ...zealot(), cardId: '002' }]), []);
+// filter: 'any' -- the blast is not narrowed by side, which is the whole trap.
+const near = [zealot(), bystander(21, 's2', 1, 1), bystander(22, 's1', 2, 2)];
+check('the blast takes the enemy AND the ally',
+  A.martyrdomOwed(data, near)[0].targets, [21, 22]);
+check('and never the corpse itself', A.martyrdomOwed(data, near)[0].targets.includes(20), false);
+check('a unit out of range is not in it',
+  A.martyrdomOwed(data, [zealot(), bystander(21, 's2', 30, 30)])[0].targets, []);
+check('nor is one already destroyed',
+  A.martyrdomOwed(data, [zealot(), { ...bystander(21, 's2', 1, 1), partStates: { main: 'destroyed' } }])[0].targets, []);
+check('the range comes off the card, not a guess',
+  A.martyrdomOwed(data, [zealot()])[0].range, data.byId.get('ZHDR-302').actions.find((x) => x.id === 'ZHDR-302_B').range);
+
+// The Detonation panel's whole copy turns on this: 'all' means every unit in
+// range takes a SEPARATE attack, 'single' means one of them does. Martyrdom
+// prints its scope only in Chinese, so the English matcher cannot carry it.
+check('Martyrdom reads as an all-units blast',
+  A.explosionScope(data.byId.get('ZHDR-302').actions.find((x) => x.id === 'ZHDR-302_B')), 'all');
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
 if (fail) process.exit(1);

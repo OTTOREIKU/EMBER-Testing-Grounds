@@ -4,7 +4,7 @@ import type { GameData } from './data';
 import { actionIconUrl, cardName, isAerial, secondaryImageUrl, squadLabel, unitSize } from './data';
 import { Board, footprint, snapPlacement, type BoardCallbacks } from './board';
 import { printedDeployment, resolveZoneSetData } from './overlays';
-import { targetTracingOn, riderOnDrone, hasFlexibleTiming, coordinationFor, coordinationOnOpportunityEnd, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, electronicOrigins, loanedParts, minesLayable, minesOwed, pilotCard, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, isSilentAction, maneuverIsSilent, canActivateCamo, chargeableSlots, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
+import { martyrdomOwed, targetTracingOn, riderOnDrone, hasFlexibleTiming, coordinationFor, coordinationOnOpportunityEnd, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, electronicOrigins, loanedParts, minesLayable, minesOwed, pilotCard, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, isSilentAction, maneuverIsSilent, canActivateCamo, chargeableSlots, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
 import { resolveCounterRoll, tallyCounter } from './combat';
 import { tacticFitsPhase, tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { inContact, canStandIn, attackDirection, crushTargets, dissipationFor, extendPath, knockbackPath, largeGridOf, LG, losBetween, losNote, pathCost, protectionFor, rangeBetween, reachableGrids, standingSpot, type LargeGrid } from './rules';
@@ -1577,6 +1577,11 @@ function panelHtml(ctx: HudCtx): string {
   // is something drawable. Dead debt, whose Part or target has left the board,
   // must never take the panel over and strand the table.
   if (interceptNow || interceptPick || owedItems(ctx).length) return interceptPanel(ctx);
+  // Martyrdom (ZHDR-302). "When this unit is destroyed, immediately detonate" —
+  // so it outranks the end-of-attack debts below it, which wait for the whole
+  // Action to finish. Derived off the board, like the Mine blast, and shown to
+  // the OWNER because it is their unit that acts.
+  if (martyrdomsOwed(ctx).length) return martyrdomPanel(ctx);
   // A reaction the DEFENDER owes itself for having been shot at — Emergency
   // Smoke. It waits in shared state until their own client answers it, which
   // is why it takes the panel here rather than on the attacker's screen.
@@ -2018,6 +2023,32 @@ function autoBoomsOwed(ctx: HudCtx): { uid: number; actionId: string; targets: n
   return autoDetonationsOwed(ctx.data, ctx.state.tokens)
     .map((x) => ({ ...x, t: ctx.state.tokens.find((o) => o.uid === x.uid) }))
     .filter((x): x is { uid: number; actionId: string; targets: number[]; t: Token } => !!x.t && mine(ctx, x.t.side));
+}
+
+// Martyrdom (ZHDR-302 N52 "Zealot"). Derived rather than queued: onDestroyed
+// records the kill but leaves the token standing, so "owes a Detonation" is a
+// fact both clients read off the board without a command. It clears itself —
+// resolving despawns the unit (`destroyAfter`), and the read stops returning it.
+function martyrdomsOwed(ctx: HudCtx): { uid: number; actionId: string; range: number; targets: number[]; t: Token }[] {
+  return martyrdomOwed(ctx.data, ctx.state.tokens)
+    .map((x) => ({ ...x, t: ctx.state.tokens.find((o) => o.uid === x.uid) }))
+    .filter((x): x is { uid: number; actionId: string; range: number; targets: number[]; t: Token } => !!x.t && mine(ctx, x.t.side));
+}
+
+function martyrdomPanel(ctx: HudCtx): string {
+  const x = martyrdomsOwed(ctx)[0];
+  if (!x) return '';
+  const names = x.targets
+    .map((u) => ctx.state.tokens.find((o) => o.uid === u))
+    .filter((t): t is Token => !!t)
+    .map((t) => `${t.label}${t.side === x.t.side ? ' (ally)' : ''}`);
+  // No skip button: the card says 立刻引爆 — immediately. The only choices are
+  // inside the Detonation flow, which resolves one target at a time.
+  return head('Your move', `${esc(x.t.label)} detonates`,
+    'It was destroyed, so it blows up where it stands. The blast takes every Unit in range — allies included.', true)
+    + `<div class="tp-body"><p class="tp-note">In range: ${esc(names.join(', ') || 'nothing')}</p>
+        <p class="tp-dim">Each one takes a separate Explosion attack. Resolving removes the wreck from the board (4.7.5).</p></div>
+       <div class="tp-foot"><button class="bigbtn" data-minego="${x.t.uid}" data-mineact="${esc(x.actionId)}">Resolve the Detonation</button></div>`;
 }
 
 function autoBoomPanel(ctx: HudCtx): string {

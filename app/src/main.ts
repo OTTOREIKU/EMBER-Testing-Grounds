@@ -47,7 +47,7 @@ import { PlayGuide } from './playguide';
 import type { Card, CardAction, DiceData, DieColor, Facing, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, StatusDef, TerrainPiece, Timing, Token } from './types';
 import { addStatus, normaliseScript, SCALES, statusCount, statusesFor, STATUSES } from './types';
 import { actionIdOf } from './ticks';
-import { electronicValue, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, loanedParts, minesLayable, minesOwed, multiTargetLimit, unfoldsOwed, repairSpec, autoTargetsFor, isSilentAction, maneuverIsSilent, chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, type Resupply, resupplyOf, SLOT_LABEL, stationaryAdjusted, interceptLeft, interceptsOwed, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf, type AttackReaction } from './units';
+import { electronicValue, martyrdomOwed, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, loanedParts, minesLayable, minesOwed, multiTargetLimit, unfoldsOwed, repairSpec, autoTargetsFor, isSilentAction, maneuverIsSilent, chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, type Resupply, resupplyOf, SLOT_LABEL, stationaryAdjusted, interceptLeft, interceptsOwed, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf, type AttackReaction } from './units';
 import { registerOffline } from './offline';
 import { battlefieldLocked, countHits, firstPlayerFrom, newSetup, normaliseSetup, tasksLocked, type SetupState } from './setup';
 import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
@@ -3878,6 +3878,43 @@ async function init() {
   // Which mandatory Detonations have already been offered, so a declined one
   // does not ask again on every render.
   const autoBoomSeen = new Set<number>();
+  // Martyrdom (ZHDR-302). Same guard for the same reason, and a separate set
+  // because the two triggers are unrelated -- one is phase-gated and the other
+  // fires the moment the unit dies.
+  const martyrSeen = new Set<number>();
+
+  // "When this unit is destroyed, immediately detonate" (ZHDR-302). Read off the
+  // board rather than hooked to the kill, because onDestroyed only records it --
+  // the wreck stays standing, which is what makes the read possible. Not
+  // phase-gated: it comes due whenever the unit dies. Resolving despawns it, so
+  // the sweep stops finding it without any state of its own.
+  function sweepMartyrdoms(): void {
+    for (const uid of [...martyrSeen]) {
+      if (!state.tokens.some((t) => t.uid === uid)) martyrSeen.delete(uid);
+    }
+    const next = martyrdomOwed(data, state.tokens).find((x) => !martyrSeen.has(x.uid));
+    if (!next) return;
+    const t = state.tokens.find((x) => x.uid === next.uid);
+    if (!t) return;
+    martyrSeen.add(next.uid);
+    const names = next.targets
+      .map((u) => state.tokens.find((x) => x.uid === u))
+      .filter((x): x is typeof t => !!x)
+      .map((x) => `${x.label}${x.side === t.side ? ' (ally)' : ''}`);
+    const body = `${t.label} was destroyed, so it blows up where it stands. The blast takes every Unit in range `
+      + `- allies included - and each one takes a separate Explosion attack. In range: ${names.join(', ') || 'nothing'}. `
+      + 'Resolving removes the wreck from the board (4.7.5).';
+    void confirmDialog({
+      title: `${t.label} detonates`,
+      body,
+      confirmLabel: 'Resolve the Detonation',
+      cancelLabel: 'Skip it (house rule)',
+    }).then((go) => {
+      if (!go) return;
+      logTo(t, `${t.label} is destroyed and detonates (ZHDR-302).`);
+      startDetonation(t, next.actionId);
+    });
+  }
 
   // FAQ M18.6: an Unfolded Pholcus with an enemy in its attack range MUST
   // Detonate in the Automatic Phase. Read off the board rather than off the
@@ -3946,6 +3983,7 @@ async function init() {
     sweepCamoContacts();
     sweepMines();
     sweepAutoDetonations();
+    sweepMartyrdoms();
     // Redraw the Add tab only when what is on the board actually changed, so
     // dragging a unit or toggling a token does not reset the list underneath you.
     const sig = [...deployedCardCounts(state.tokens)]

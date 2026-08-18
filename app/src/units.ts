@@ -1500,6 +1500,56 @@ export function unfoldsOwed(data: GameData, tokens: Token[]): { uid: number; act
 // built the same way is covered without being remembered.
 //
 // The target is NOT decided here. Where several are tied for nearest the player
+
+// ---------- Martyrdom (ZHDR-302 N52 "Zealot") ----------
+//
+// 本机被摧毁时，立刻引爆 / 引爆时，对范围内所有单位造成爆炸伤害 -- when this
+// unit is destroyed it detonates at once, and the blast takes everything in
+// range. There is no English text on the card; the rule comes from the zh line
+// and from the structured effect, which is the unusual part:
+//
+//   { type: 'detonation', trigger: 'on_destroyed',
+//     target: { selection: 'all', filter: 'any', scope: 'range' },
+//     damage: 'explosion', destroyAfter: true }
+//
+// `filter: 'any'` means ALLIES are in the blast too, so the targets are not
+// narrowed by side the way autoTargetsFor narrows a Detonation ACTION.
+//
+// autoDetonationsOwed cannot be extended to cover it twice over: that reader
+// keys on `a.type === 'Detonation'` and filters on `alive`, and this is a
+// Passive on a unit that is by definition destroyed.
+//
+// DERIVED from the board rather than queued when the kill lands, because
+// onDestroyed only records the kill -- the token stays put with its main Part
+// destroyed. That also makes it self-clearing: `destroyAfter` removes the unit
+// once it blows, so the read stops returning it with no "already fired" flag to
+// keep anywhere.
+export function martyrdomOwed(
+  data: GameData,
+  tokens: Token[],
+): { uid: number; actionId: string; range: number; targets: number[] }[] {
+  const out: { uid: number; actionId: string; range: number; targets: number[] }[] = [];
+  for (const t of tokens) {
+    if (t.deployed === false || alive(t)) continue;
+    for (const { slot, card } of tokenCards(data, t)) {
+      if (slot === 'pilot') continue;
+      for (const a of card.actions ?? []) {
+        const blows = (a.gameRules ?? []).some((g) => (g.effects ?? []).some((e) => {
+          const eff = e as { type?: string; trigger?: string };
+          return eff.type === 'detonation' && eff.trigger === 'on_destroyed';
+        }));
+        if (!blows) continue;
+        const range = a.range ?? 0;
+        const targets = tokens
+          .filter((o) => o.uid !== t.uid && alive(o) && rangeBetween(t, o).range <= range)
+          .map((o) => o.uid);
+        out.push({ uid: t.uid, actionId: a.id, range, targets });
+      }
+    }
+  }
+  return out;
+}
+
 // still picks, because M18.6 makes the Detonation mandatory, not the victim.
 export function autoDetonationsOwed(
   data: GameData,
