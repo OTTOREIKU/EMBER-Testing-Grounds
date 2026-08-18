@@ -71,6 +71,13 @@ export function hideTooltip(): void {
 
 export function installTooltip(): void {
   document.addEventListener('mouseover', (ev) => {
+    // A keyword sitting inside a card row has its own answer — the glossary
+    // text — and the card image would land straight on top of it. The keyword
+    // wins, because it is the more specific thing being pointed at.
+    if ((ev.target as Element).closest?.('[data-no-cardtip]')) {
+      if (currentId) hide();
+      return;
+    }
     const el = (ev.target as Element).closest?.('[data-tip-card],[data-tip-img]');
     if (!el) {
       if (currentId) hide();

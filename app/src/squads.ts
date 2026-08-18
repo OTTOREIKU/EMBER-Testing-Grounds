@@ -2,7 +2,23 @@ import type { GameData } from './data';
 import { actionIconUrl, cardName, FACTION_LABEL, mechPartUrl, missionImageUrl, secondaryImageUrl, setSquadNames, squadLabel, squadName, stancePrintUrl, tabImageUrl, tokenFace, tokenPrintUrl } from './data';
 import { MECH_LAYER_ORDER } from './board';
 import { canSpendCommand } from './units';
-import { inspectOnHover, linkMechanics, type InspectInfo } from './inspector';
+import { inspectOnHover as inspectBase, linkMechanics as linkBase, type InspectInfo } from './inspector';
+
+// The Squads tab is a glance, and it already answers a hover with the card
+// image. On the board page the bottom-left box can carry the words as well and
+// always has; in the Match Centre the popout would land on top of the card, so
+// every binding in this file declines it. Route all of them through here rather
+// than repeating the flag ten times — a new one then cannot forget.
+const inspectOnHover = (
+  node: HTMLElement | SVGElement,
+  info: InspectInfo,
+  opts?: { pinKey?: string },
+): void => inspectBase(node, info, { ...opts, floating: false });
+const linkMechanics = (
+  root: ParentNode,
+  mechanics: Parameters<typeof linkBase>[1],
+  opts?: { pin?: boolean; mark?: boolean },
+): void => linkBase(root, mechanics, { ...opts, floating: false });
 import type { GameState, PartSlot, PartState, Side, Stance, Timing, TimingDef, Token } from './types';
 import { SCALES, SHAPE_NOTE, statusCount, statusesFor, statusStacks, STATUSES, TIMINGS } from './types';
 import { normaliseTasks } from './tasks';

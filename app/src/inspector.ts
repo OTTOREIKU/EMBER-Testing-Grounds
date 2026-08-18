@@ -106,7 +106,7 @@ export interface LinkableMechanic {
 export function linkMechanics(
   root: ParentNode,
   mechanics: LinkableMechanic[],
-  opts?: { pin?: boolean; mark?: boolean },
+  opts?: { pin?: boolean; mark?: boolean; floating?: boolean },
 ): void {
   root.querySelectorAll<HTMLElement>('[data-mech]').forEach((node) => {
     const m = mechanics.find((x) => x.id === node.dataset.mech);
@@ -115,7 +115,7 @@ export function linkMechanics(
     inspectOnHover(
       node,
       { title: m.name, sub: m.ref, lines: [m.text] },
-      opts?.pin === false ? undefined : { pinKey: `mech:${m.id}` },
+      { pinKey: opts?.pin === false ? undefined : `mech:${m.id}`, floating: opts?.floating },
     );
   });
 }
@@ -133,15 +133,26 @@ export function bindTips(root: ParentNode): void {
   });
 }
 
-export function inspectOnHover(node: HTMLElement | SVGElement, info: InspectInfo, opts?: { pinKey?: string }): void {
+// `floating: false` means "the board page's box may have this, the popout may
+// not". Used where a card IMAGE already answers the same hover: two panels
+// stacked on each other is worse than either alone, and in the Match Centre the
+// image is the more useful of the two. The board page has room for both, so
+// nothing is lost there.
+export function inspectOnHover(
+  node: HTMLElement | SVGElement,
+  info: InspectInfo,
+  opts?: { pinKey?: string; floating?: boolean },
+): void {
   const key = opts?.pinKey;
+  const mayFloat = opts?.floating !== false;
   node.addEventListener('pointerenter', () => {
+    if (floating && !mayFloat) return;
     // Remembered so the popout knows what to stand beside. Harmless on the
     // board page, which renders into its fixed box and never reads it.
     anchor = node;
     showInspect(info);
   });
-  node.addEventListener('pointerleave', () => showInspect(null));
+  node.addEventListener('pointerleave', () => { if (!floating || mayFloat) showInspect(null); });
   if (!key) return;
   node.classList.add('inspect-pinnable');
   node.addEventListener('click', () => {

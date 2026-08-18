@@ -439,7 +439,10 @@ export class Panel {
       sub: [SLOT_LABEL[ga.slot], a.type, range, dice.join('+')].filter(Boolean).join(' · '),
       lines,
     };
-    const pin = { pinKey: `action:${t.uid}:${a.id}` };
+    // The action row already answers a hover with the card image, which in the
+    // Match Centre would sit on top of the popout. The board page shows both
+    // without collision, so it keeps them.
+    const pin = { pinKey: `action:${t.uid}:${a.id}`, floating: false };
     inspectOnHover(head, tip, pin);
     inspectOnHover(info, tip, pin);
     const ammoPips = info.querySelector<HTMLElement>('[data-reload]');
@@ -451,7 +454,7 @@ export class Panel {
           'Round Token on the Part Card. One comes off every time the Action is used, and the Action stops working at zero.',
           'The app spends these for you when you use the Action. Click here to put one back if you spent it by mistake.',
         ],
-      });
+      }, { floating: false });
       ammoPips.addEventListener('click', (ev) => {
         ev.stopPropagation();
         this.cb.onRestoreAmmo(t, a.id);
@@ -467,7 +470,7 @@ export class Panel {
           'Each Interception spends one and they are never restored, so once the Part is empty it cannot Intercept again for the rest of the game (rulebook 4.9).',
           'Click here to put one back if you spent it by mistake.',
         ],
-      });
+      }, { floating: false });
       intPips.addEventListener('click', (ev) => {
         ev.stopPropagation();
         this.cb.onRestoreIntercept(t, a.id);
@@ -484,7 +487,7 @@ export class Panel {
           'While it is face-up, performing this Action may consume it to apply the effect its text marks as [Charged].',
           'Click here to flip it by hand.',
         ],
-      });
+      }, { floating: false });
       chgPips.addEventListener('click', (ev) => {
         ev.stopPropagation();
         this.cb.onCharge(t, ga.slot, !charge.charged);
@@ -664,6 +667,9 @@ export class Panel {
       const label = def?.en?.name?.replace(/^[•·\s]+/, '') || shown;
       const num = /(\d+)\s*$/.exec(shown)?.[1];
       chip.className = `kw-chip${def?.en?.value ? '' : ' kw-unknown'}`;
+      // Suppresses the card image for this chip only, so the keyword's rule is
+      // readable instead of being covered by the art of the card it sits on.
+      chip.dataset.noCardtip = '1';
       chip.textContent = !num
         ? label
         : /\bX\b/.test(label)
