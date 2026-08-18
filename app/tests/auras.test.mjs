@@ -589,5 +589,30 @@ check('and their condition really is the one not implemented',
   data.byId.get('TM31RS').actions.find((x) => x.type === 'Passive')
     .gameRules[0].effects[0].requireSourceLosToTarget, true);
 
+// ---------- CQC (017) ----------
+//
+// The same freedom Flexible Timing grants, but from a SELF passive and scoped
+// to Melee SHORT Actions -- so the scope is the whole of the test.
+const cqcMech = (torso, states = {}) => ({
+  uid: 60, kind: 'mech', side: 's1', col: 0, row: 0, stance: 'offensive',
+  mech: { torso }, partStates: { torso: 'intact', ...states }, statuses: [],
+});
+const mShort = { id: 'a', type: 'Melee', size: 's', name: { en: 'Jab' } };
+const mLong = { id: 'b', type: 'Melee', size: 'l', name: { en: 'Cleave' } };
+const fShort = { id: 'c', type: 'Firing', size: 's', name: { en: 'Snap' } };
+check('CQC frees a Melee short Action', A.cqcFlexible(data, cqcMech('017'), mShort), true);
+check('but not a long one', A.cqcFlexible(data, cqcMech('017'), mLong), false);
+check('and not a Firing Action, short or not', A.cqcFlexible(data, cqcMech('017'), fShort), false);
+check('with no Action to judge it answers no, rather than over-granting',
+  A.cqcFlexible(data, cqcMech('017')), false);
+check('a Mech without it is never freed', A.cqcFlexible(data, cqcMech('002'), mShort), false);
+check('a destroyed Part frees nothing', A.cqcFlexible(data, cqcMech('017', { torso: 'destroyed' }), mShort), false);
+check('a Drone never gets it', A.cqcFlexible(data, { ...cqcMech('017'), kind: 'drone' }, mShort), false);
+// It reaches the same gate the auras do, so no caller needed changing.
+check('and it reaches the shared Flexible Timing gate',
+  A.hasFlexibleTiming(data, [cqcMech('017')], cqcMech('017'), mShort), true);
+check('which still says no for the Action it does not cover',
+  A.hasFlexibleTiming(data, [cqcMech('017')], cqcMech('017'), mLong), false);
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 if (fail) process.exit(1);

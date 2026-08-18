@@ -1375,7 +1375,28 @@ export function actionRange(data: GameData, tokens: Token[], t: Token, a: CardAc
   return base + auraValueOn(data, tokens, t, kind);
 }
 
+// 017 CQC (近战对策): "This mech may use Melee Short Action as Starting Action
+// in any timing." Same freedom Flexible Timing grants, but from a SELF passive
+// rather than an ally's aura, and scoped to Melee SHORT Actions alone -- so it
+// cannot answer the action-less question the auras can, and returns false there
+// rather than over-granting.
+export function cqcFlexible(data: GameData, t: Token, a?: CardAction): boolean {
+  if (t.kind !== 'mech') return false;
+  if (a?.type !== 'Melee' || a.size !== 's') return false;
+  for (const { slot, card } of tokenCards(data, t)) {
+    if (slot === 'pilot') continue;
+    if ((t.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
+    for (const act of card.actions ?? []) {
+      const hay = `${act.description?.en ?? ''} ${act.description?.zh ?? ''}`;
+      if (/Melee Short Action as Starting Action in any timing/i.test(hay)
+        || /任何时机以近战短动作为起手动作/.test(hay)) return true;
+    }
+  }
+  return false;
+}
+
 export function hasFlexibleTiming(data: GameData, tokens: Token[], t: Token, a?: CardAction): boolean {
+  if (cqcFlexible(data, t, a)) return true;
   return aurasOn(data, tokens, t).some((src) => {
     if (!src.kinds.includes('flexible_timing')) return false;
     // RT-12T Oasis grants it to FIRING Actions only; RT-07T Dune and the B3/3
