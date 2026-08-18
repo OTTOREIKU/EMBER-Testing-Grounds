@@ -587,6 +587,42 @@ export interface AttackReaction {
   afterDestroyed: boolean;
 }
 
+// ---------- The Freehand Supports (ZHLA-303 +1R, 040 +1Y) ----------
+//
+// "If this part is Designated as Freehand by a [Two-Handed] action, the action
+// +1R" (ZHLA-303) / "+1Y" (040). Both have gameRules -- `modify_dice` under a
+// `part_is_freehand_designated` condition -- and both are BLOCKED on the same
+// thing: the Two-Handed Freehand designation is deliberately not tracked. See
+// MULTI_CONDITION above, which names that condition to the player rather than
+// applying or dropping it silently, for exactly the same reason.
+//
+// So these follow that decision rather than inventing a second answer: the
+// bonus is NAMED on the attack, and the player nudges the pool spinner if the
+// Part really was the designated Freehand. Wiring it silently would be wrong
+// far more often than right, since most Actions are not Two-Handed.
+//
+// If the Two-Handed designation is ever built, this is the reader to replace,
+// and MULTI_CONDITION is the other caller that becomes derivable.
+export function freehandSupportNote(data: GameData, t: Token, a: CardAction): string {
+  if (t.kind !== 'mech') return '';
+  const out: string[] = [];
+  for (const { slot, card } of tokenCards(data, t)) {
+    if (slot === 'pilot') continue;
+    if ((t.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
+    for (const act of card.actions ?? []) {
+      const hay = `${act.description?.en ?? ''} ${act.description?.zh ?? ''}`;
+      if (!/Designated as Freehand|作为空手被/i.test(hay)) continue;
+      // The card says which colour, and the two differ.
+      const red = /\+\s*\{?1R\}?|\+1R/i.test(hay);
+      // ZHLA-303 says Melee; 040 says any Two-Handed action.
+      const meleeOnly = /Melee\s*Action|近战动作/i.test(hay);
+      if (meleeOnly && a.type !== 'Melee') continue;
+      out.push(`${SLOT_LABEL[slot]} adds +1${red ? 'R' : 'Y'} if it is the designated Freehand for this [Two-Handed] Action`);
+    }
+  }
+  return out.join('; ');
+}
+
 // ---------- The Coolers (002, 532, 083) ----------
 //
 // Three Parts that add Attack dice to a Firing Action, none of which carries

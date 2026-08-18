@@ -32,7 +32,8 @@ function largeGridOf(t: any): any { return { c: Math.floor(t.col / 3), r: Math.f
   + cut(units, 'export interface ParryPart', 'export interface SelfHitPart', 'parryParts')
   + cut(units, 'export interface SelfHitPart', '// A Firing Action', 'selfHitParts')
   + cut(units, '// A Firing Action', 'export function repairSpec', 'actionRange and hasFlexibleTiming')
-  + cut(units, '// ---------- The Coolers', 'export function attackReactionsOf', 'coolingBonus, ripostePart, defenseReactionOn and targetTracingOn')
+  + cut(units, 'export const SLOT_LABEL', 'let uidSource', 'SLOT_LABEL')
+  + cut(units, '// ---------- The Freehand Supports', 'export function attackReactionsOf', 'coolingBonus, ripostePart, defenseReactionOn and targetTracingOn')
   + cut(units, 'function alive(t: Token)', 'function coversGrid', 'the alive helper')
   + cut(units, '// ---------- Martyrdom', 'export function autoDetonationsOwed', 'martyrdomOwed')
   + cut(units, 'export function explosionScope', 'export function needsSightToLanding', 'explosionScope');
@@ -420,6 +421,34 @@ check('and nothing to an Action without the keyword',
 check('it does not need Offensive Stance, because its card does not ask for one',
   A.coolingBonus(data, { ...cooled('083', 'defensive'), mech: { torso: '083' }, partStates: { torso: 'intact' } }, laserAct, { red: 0, yellow: 1 }).yellow, 1);
 check('a Drone is never cooled', A.coolingBonus(data, { ...cooled('002'), kind: 'drone' }, coolShot(), { red: 3, yellow: 6 }), { red: 0, yellow: 0 });
+
+// ---------- The Freehand Supports (ZHLA-303, 040) ----------
+//
+// NAMED, not applied: the Two-Handed Freehand designation is not tracked, and
+// these follow MULTI_CONDITION's decision rather than inventing a second one.
+const armed = (slot, id, type = 'Melee', states = {}) => ({
+  uid: 31, kind: 'mech', side: 's1', col: 0, row: 0, stance: 'offensive',
+  mech: { torso: '002', [slot]: id }, partStates: { torso: 'intact', [slot]: 'intact', ...states }, statuses: [],
+});
+const act = (type) => ({ id: 'X', type, name: { en: 'Swing' }, keywords: [] });
+check('the Support Arm names its Red bonus on a Melee Action',
+  /adds \+1R/.test(A.freehandSupportNote(data, armed('leftHand', 'ZHLA-303'), act('Melee'))), true);
+// ZHLA-303 says Melee; 040 does not.
+check('and says nothing on a Firing Action, because its card says Melee',
+  A.freehandSupportNote(data, armed('leftHand', 'ZHLA-303'), act('Firing')), '');
+check('the Supporting Arm names a Yellow bonus',
+  /adds \+1Y/.test(A.freehandSupportNote(data, armed('leftHand', '040'), act('Melee'))), true);
+check('and it is not limited to Melee',
+  /adds \+1Y/.test(A.freehandSupportNote(data, armed('leftHand', '040'), act('Firing'))), true);
+check('a destroyed arm supports nothing',
+  A.freehandSupportNote(data, armed('leftHand', '040', 'Melee', { leftHand: 'destroyed' }), act('Melee')), '');
+check('a Mech with neither says nothing',
+  A.freehandSupportNote(data, armed('leftHand', '002'), act('Melee')), '');
+check('a Drone never supports', A.freehandSupportNote(data, { ...armed('leftHand', '040'), kind: 'drone' }, act('Melee')), '');
+// The two cards really do differ on colour, which is the thing worth pinning.
+check('the two arms name different colours',
+  /\+1R/.test(A.freehandSupportNote(data, armed('leftHand', 'ZHLA-303'), act('Melee')))
+  && /\+1Y/.test(A.freehandSupportNote(data, armed('leftHand', '040'), act('Melee'))), true);
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
 if (fail) process.exit(1);
