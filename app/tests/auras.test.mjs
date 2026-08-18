@@ -650,5 +650,16 @@ check('and a Drone gets none of the Mech-only ones',
   [A.ignoresLowProfile(data, { ...wearing('094'), kind: 'drone' }),
    A.eyesAreHeavyHits(data, { ...wearing('503'), kind: 'drone' })], [false, false]);
 
+// ---------- 538 Skimming is ALREADY wired, and this pins it ----------
+//
+// It was flagged as unwired by two separate audit sweeps and is not: both of
+// its lines are covered. Asserted against the shipped card so a future sweep
+// cannot cost anyone the same hour again.
+const jp5 = data.byId.get('538').actions.find((x) => x.type === 'Passive');
+check('the Move bonus line is the shape maneuverBonus reads',
+  /(?:move\s*属性|机动距离|移动力)[^。\n]{0,20}?\+\s*(\d+)/i.test(jp5.description.zh), true);
+check('and its Load restriction is the shape the Load reader reads',
+  /无法作为负载/.test(jp5.description.zh), true);
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 if (fail) process.exit(1);
