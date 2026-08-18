@@ -1182,7 +1182,9 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
       // data-tip-card puts the Part's own card up beside the panel, which is
       // the fastest way to see WHICH arm a duplicated Action belongs to; the
       // slot chip answers the same question without hovering at all.
-      const where = slot ? SLOT_LABEL[slot] : '';
+      // 'main' is a Drone's own card — every one of its rows would say MAIN,
+      // which tells a player nothing. The chip is for telling two PARTS apart.
+      const where = slot && slot !== 'main' ? SLOT_LABEL[slot] : '';
       return `<button class="actrow k-${kind}${v.ok ? '' : ' warn'}" data-doact="${esc(key)}" data-pool="${pool}" data-an="${esc(a.name?.en || a.id)}"${
         cardId ? ` data-tip-card="${esc(cardId)}"` : ''
       }${v.ok ? '' : ` data-why="${esc(v.why ?? '')}"`} title="${esc(tip)}">

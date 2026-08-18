@@ -255,9 +255,14 @@ export class Panel {
     }
 
     // A Passive applies itself; it is not something to press. The card blocks
-    // below still print it, which is where a standing rule belongs.
+    // below still print it, which is where a standing rule belongs. But a
+    // Passive that CARRIES something — Interception Tokens, a magazine, a
+    // Charge — stays, because this list is where its pips and restore buttons
+    // live; filtering all of them took the Full-auto Interception counter with
+    // it, which is a control, not a choice.
     const actions = guidedActions(this.data, t, this.cb.world())
-      .filter((g) => g.action.type !== 'Passive' && g.action.speed !== 'passive');
+      .filter((g) => (g.action.type !== 'Passive' && g.action.speed !== 'passive')
+        || g.ammoLeft !== undefined || !!g.intercept || !!g.charge);
     if (actions.length) {
       const h = document.createElement('h4');
       h.textContent = 'Actions (from this unit’s parts)';
