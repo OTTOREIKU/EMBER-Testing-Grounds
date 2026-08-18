@@ -5,7 +5,7 @@ import { linkMechanics } from './inspector';
 import { SQUAD_ORDER, squadLabel } from './data';
 import type { Card, CardAction, DiceData, DiceIcon, DieColor, GameRuleEffect, PartSlot, Side, SmokeScreen, TerrainPiece, Token } from './types';
 import { statusCount, STATUSES } from './types';
-import { aaRadarCovers, attackReactionsOf, auraEffectsOn, auraValueOn, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, targetTracingOn, selfHitParts, denseArmorOn, designationsOn, electronicValue, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, loanedParts, pilotCard, repeatersFor, SLOT_LABEL, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
+import { aaRadarCovers, attackReactionsOf, auraEffectsOn, auraValueOn, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, denseArmorOn, designationsOn, electronicValue, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, loanedParts, pilotCard, repeatersFor, SLOT_LABEL, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
 import { timingOf } from './ticks';
 import { inArc, losNote, protectionFor, rangeBetween } from './rules';
 import type { Command } from './commands';
@@ -1244,8 +1244,16 @@ export class AttackHelper {
   // What being attacked owes the DEFENDER. Emergency Smoke answers a Firing
   // Action only; Target Tracing answers Melee or Firing, and only from an enemy
   // MECH -- a Drone or a Projectile sets nothing off (174).
-  private reactionsFor(action: CardAction, defender: Token, attacker: Token | null, penetrated = false): AttackReaction[] {
+  private reactionsFor(
+    action: CardAction, defender: Token, attacker: Token | null,
+    penetrated = false, parried: string | null = null,
+  ): AttackReaction[] {
     const out: AttackReaction[] = [];
+    // Riposte answers a Parry that HELD, and only on the Part that made it.
+    if (parried) {
+      const rip = ripostePart(this.data, defender, parried);
+      if (rip) out.push({ actionId: rip.actionId, name: rip.name, riposte: true, afterDestroyed: false });
+    }
     // Defense Reaction asks nothing of the attack except that it got through,
     // so it is the only one of these gated on Penetration rather than on the
     // Action's type (ZHLA-101 / ZHLA-301).
@@ -2113,7 +2121,13 @@ export class AttackHelper {
   private finish(_wrap: HTMLElement): void {
     const c = this.ctx!;
     c.step = 'resolve';
-    const rider = { attacker: c.attacker, defender: c.defender, action: c.action, hits: c.hits, penetrated: !!c.penetrated };
+    const rider = {
+      attacker: c.attacker, defender: c.defender, action: c.action, hits: c.hits,
+      penetrated: !!c.penetrated,
+      // A Successful Parry: one was really declared, and nothing got through.
+      // The Part matters as much as the outcome, so the slot travels too.
+      parried: !!c.designatedParry && !c.penetrated ? c.targetPart : null,
+    };
     // A card that grants a bonus attack when it destroys a Part — the Katana's
     // Chop offering an immediate Slash. Offered HERE because this is the one
     // place every attack ends, on both pages, so the offer cannot exist on one
@@ -2158,7 +2172,7 @@ export class AttackHelper {
       decline.addEventListener('click', () => {
         settle();
         if (!this.multi) {
-          for (const r of this.reactionsFor(rider.action, rider.defender, rider.attacker, rider.penetrated)) this.onReaction(rider.defender, r, rider.attacker);
+          for (const r of this.reactionsFor(rider.action, rider.defender, rider.attacker, rider.penetrated, rider.parried)) this.onReaction(rider.defender, r, rider.attacker);
         }
         if (!this.advanceMulti()) this.cancel();
       });
@@ -2180,7 +2194,7 @@ export class AttackHelper {
       // else in this Action to hold it back from. B7 is what makes the
       // Multi-Target path defer instead, and advanceMulti owns that.
       if (!this.multi) {
-        for (const r of this.reactionsFor(rider.action, rider.defender, rider.attacker, rider.penetrated)) this.onReaction(rider.defender, r, rider.attacker);
+        for (const r of this.reactionsFor(rider.action, rider.defender, rider.attacker, rider.penetrated, rider.parried)) this.onReaction(rider.defender, r, rider.attacker);
       }
       this.ctx = null;
       if (!this.advanceMulti()) this.cancel();

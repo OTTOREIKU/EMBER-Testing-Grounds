@@ -177,6 +177,8 @@ async function init() {
         ? { uid: defender.uid, actionId: reaction.actionId, count: reaction.smoke.count, range: reaction.smoke.range, kind: 'smoke' as const }
         : reaction.stance
           ? { uid: defender.uid, actionId: reaction.actionId, count: 0, range: 0, kind: 'stance' as const }
+          : reaction.riposte
+            ? { uid: defender.uid, actionId: reaction.actionId, count: 0, range: 0, kind: 'riposte' as const, fromUid: attacker.uid }
           : { uid: defender.uid, actionId: reaction.actionId, count: 0, range: 0, kind: 'trace' as const, fromUid: attacker.uid }],
     });
     renderReactionPrompt();
@@ -2628,6 +2630,50 @@ async function init() {
     const card = data.byId.get(defender.cardId ?? '');
     const act = (card?.actions ?? []).find((a) => a.id === r.actionId);
     const name = act?.name?.en || act?.name?.zh || 'Emergency Smoke';
+    // Riposte / Reposte (050 / ZHLA-202). The play guide's Action list is built
+    // from the current Action Opportunity, and this Melee belongs to no
+    // Opportunity at all, so it is opened here rather than offered as a row.
+    // The target is the attacker: it is the Mech that was just parried, and the
+    // one the card is answering.
+    if (r.kind === 'riposte') {
+      const from = state.tokens.find((x) => x.uid === r.fromUid);
+      const melees = tokenCards(data, defender)
+        .filter((x) => x.slot !== 'pilot' && (defender.partStates[x.slot as PartSlot | 'main'] ?? 'intact') !== 'destroyed')
+        .flatMap(({ card }) => card.actions ?? [])
+        .filter((a) => a.type === 'Melee');
+      const melee = melees[0];
+      void confirmDialog({
+        title: `${defender.label}: ${name}`,
+        body: `${defender.label} parried, so ${from?.label ?? 'the attacker'} must end its Action Opportunity at once - and then ${defender.label} may immediately perform a Melee Action against it. `
+          + `${melee ? `Taking it makes ${melee.name?.en || melee.name?.zh || melee.id}, which costs no Ticks: the Action belongs to the card, not to an Action Opportunity.` : 'No Melee Action is left to make, so only the Opportunity ends.'}`,
+        confirmLabel: 'Riposte',
+        cancelLabel: 'Skip it',
+      }).then((go) => {
+        if (!go) {
+          perform(data, state, { kind: 'resolveReaction', seat: defender.side, uid: defender.uid, actionId: r.actionId });
+          onChanged();
+          renderReactionPrompt();
+          return;
+        }
+        if (state.script?.opp?.uid === r.fromUid) {
+          perform(data, state, { kind: 'riposte', seat: defender.side, uid: defender.uid, fromUid: r.fromUid! });
+          logTo(defender, `${defender.label} parried: the Action Opportunity ends at once (050 / ZHLA-202).`);
+        }
+        if (!melee || !from) {
+          perform(data, state, { kind: 'resolveReaction', seat: defender.side, uid: defender.uid, actionId: r.actionId });
+          onChanged();
+          renderReactionPrompt();
+          return;
+        }
+        // The grant is spent by this Action's own apply, so the debt clears
+        // itself and cannot buy a second Melee.
+        perform(data, state, { kind: 'performAction', seat: defender.side, uid: defender.uid, actionId: melee.id, granted: true });
+        const prot = protectionFor(defender, from, melee);
+        attackHelper.start(defender, melee, from, losNote(defender, from, melee), prot.white, prot.note);
+        onChanged();
+      });
+      return;
+    }
     // Defense Reaction (ZHLA-101 / ZHLA-301). Nothing to place and nothing to
     // spend, so the whole reaction is the one question.
     if (r.kind === 'stance') {

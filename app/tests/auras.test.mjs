@@ -32,7 +32,7 @@ function largeGridOf(t: any): any { return { c: Math.floor(t.col / 3), r: Math.f
   + cut(units, 'export interface ParryPart', 'export interface SelfHitPart', 'parryParts')
   + cut(units, 'export interface SelfHitPart', '// A Firing Action', 'selfHitParts')
   + cut(units, '// A Firing Action', 'export function repairSpec', 'actionRange and hasFlexibleTiming')
-  + cut(units, '// ---------- Defense Reaction', 'export function attackReactionsOf', 'defenseReactionOn and targetTracingOn')
+  + cut(units, '// ---------- Riposte / Reposte', 'export function attackReactionsOf', 'ripostePart, defenseReactionOn and targetTracingOn')
   + cut(units, 'function alive(t: Token)', 'function coversGrid', 'the alive helper')
   + cut(units, '// ---------- Martyrdom', 'export function autoDetonationsOwed', 'martyrdomOwed')
   + cut(units, 'export function explosionScope', 'export function needsSightToLanding', 'explosionScope');
@@ -362,6 +362,27 @@ check('the range comes off the card, not a guess',
 // prints its scope only in Chinese, so the English matcher cannot carry it.
 check('Martyrdom reads as an all-units blast',
   A.explosionScope(data.byId.get('ZHDR-302').actions.find((x) => x.id === 'ZHDR-302_B')), 'all');
+
+// ---------- Riposte / Reposte (050, ZHLA-202) ----------
+//
+// Asked about ONE SLOT, not about the Mech: "with this part" means the Parry
+// has to have been declared on the Part that carries it.
+const clawMech = (slot, id, states = {}) => ({
+  uid: 8, kind: 'mech', side: 's1', col: 0, row: 0, stance: 'offensive',
+  mech: { torso: '002', [slot]: id }, partStates: { torso: 'intact', [slot]: 'intact', ...states }, statuses: [],
+});
+check('the Combat Claw ripostes', A.ripostePart(data, clawMech('leftHand', 'ZHLA-202'), 'leftHand')?.name, 'Reposte');
+// The two cards spell it differently, which is why the matcher reads the
+// sentence and not the ability name.
+check('and so does the Grappler, spelled the other way',
+  A.ripostePart(data, clawMech('rightHand', '050'), 'rightHand')?.name, 'Riposte');
+check('but only for the slot that holds it',
+  A.ripostePart(data, clawMech('leftHand', 'ZHLA-202'), 'rightHand'), null);
+check('a destroyed Part ripostes with nothing',
+  A.ripostePart(data, clawMech('leftHand', 'ZHLA-202', { leftHand: 'destroyed' }), 'leftHand'), null);
+check('a Part without the ability never does',
+  A.ripostePart(data, clawMech('leftHand', '002'), 'leftHand'), null);
+check('a Drone never does', A.ripostePart(data, { ...clawMech('leftHand', 'ZHLA-202'), kind: 'drone' }, 'leftHand'), null);
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
 if (fail) process.exit(1);

@@ -2,7 +2,7 @@ import type { CombatView, Facing, GameState, MechLoadout, Opportunity, PartSlot,
 import { addStatus, ageTokens, newOpportunity, PHASES, statusCount, STATUSES, TIMINGS } from './types';
 import type { GameData } from './data';
 import { unfoldsInto } from './data';
-import { defenseReactionOn, targetTracingOn, riderOnDrone, hasFlexibleTiming, commandGeneration, blinkTargets, isPositionSwap, electronicOrigins, loanedParts, unfoldToken, extrasFor, consumesCharge, electronicValue, freehandSlots, interceptCapacity, makeDroneToken, makeMechToken, maxLink, pilotCard, projectileDelivery, tokenCards } from './units';
+import { ripostePart, defenseReactionOn, targetTracingOn, riderOnDrone, hasFlexibleTiming, commandGeneration, blinkTargets, isPositionSwap, electronicOrigins, loanedParts, unfoldToken, extrasFor, consumesCharge, electronicValue, freehandSlots, interceptCapacity, makeDroneToken, makeMechToken, maxLink, pilotCard, projectileDelivery, tokenCards } from './units';
 import { canActivate, canManeuver, canOverload, canPerform, spendAction, spendActivation, spendManeuver, spendOverload } from './ticks';
 import { tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { battlefieldLocked, deploymentComplete, deployTurn, firstPlayerFrom, newSetup, normaliseSetup, tasksLocked } from './setup';
@@ -51,7 +51,11 @@ export type Command =
   // paid for — Hit and Run (276) moves a Mech as its Opportunity *ends*, when
   // there is no Opportunity left to check or to charge.
   | { kind: 'maneuver'; seat: Side; uid: number; to: { col: number; row: number }; facing?: Facing; free?: boolean; granted?: boolean; via?: { col: number; row: number }[] }
-  | { kind: 'performAction'; seat: Side; uid: number; actionId: string; partKey?: string }
+  // `granted` is an Action a CARD handed out rather than one the Action
+  // Opportunity paid for -- Riposte's immediate Melee. It is never
+  // self-authorising: check() looks for the matching debt in shared state, so a
+  // client cannot act out of turn by asserting the flag.
+  | { kind: 'performAction'; seat: Side; uid: number; actionId: string; partKey?: string; granted?: boolean }
   | { kind: 'overload'; seat: Side; uid: number }
   | { kind: 'playTactic'; seat: Side; uid: number; cardId: string; pick?: string }
   // Nothing in 3.1.4 fixes which way a unit faces as it lands, so the facing is
@@ -149,7 +153,7 @@ export type Command =
       kind: 'queueReactions'; seat: Side;
       // `kind` absent means Emergency Smoke, which is every debt written before
       // Target Tracing existed and every one still on a saved board.
-      items: { uid: number; actionId: string; count: number; range: number; kind?: 'smoke' | 'trace' | 'stance'; fromUid?: number }[];
+      items: { uid: number; actionId: string; count: number; range: number; kind?: 'smoke' | 'trace' | 'stance' | 'riposte'; fromUid?: number }[];
     }
   | { kind: 'resolveReaction'; seat: Side; uid: number; actionId: string }
   // Remote Access turning a Terminal face-down for the rest of the round
@@ -226,6 +230,9 @@ export type Command =
   // a moment 4.1 does not allow -- and a setStance that ignored the lock would
   // hand every Mech the same freedom.
   | { kind: 'defenseReaction'; seat: Side; uid: number }
+  // Riposte's first half. A TABLE_KIND because it ends the OTHER seat's Action
+  // Opportunity, which no seat-scoped command may reach.
+  | { kind: 'riposte'; seat: Side; uid: number; fromUid: number }
   | { kind: 'focusReroll'; seat: Side; indices: number[]; faces: { color: string; face: number }[] }
   // KC Armor (4.10): the remote defender's declare that its consumed Charge
   // Token turns the Defense Roll's Lightning into Defense. The Charge itself
@@ -341,7 +348,7 @@ type TableKind =
   | 'clearCounterRoll'
   | 'setMode' | 'handOver' | 'setStrict' | 'commitTimings' | 'revealTimings' | 'importSquad'
   | 'configureTable' | 'startMatch' | 'endMatch' | 'pickSecondary' | 'setTactics' | 'setReady' | 'designateTask'
-  | 'callDefense' | 'answerDefense' | 'clearDefense' | 'setCombatView' | 'focusAnswer' | 'focusReroll' | 'kcArmor' | 'designateHit' | 'meleeEvade' | 'dodgeEnhance'
+  | 'callDefense' | 'answerDefense' | 'clearDefense' | 'setCombatView' | 'focusAnswer' | 'focusReroll' | 'kcArmor' | 'designateHit' | 'meleeEvade' | 'dodgeEnhance' | 'riposte'
   | 'setRollbackCatalog' | 'rollbackRequest' | 'rollbackAnswer';
 const TABLE_KINDS = new Set<Command['kind']>([
   'advancePhase', 'setPhase', 'resetRounds', 'adjustCommandTokens', 'passTurn', 'markEndStep', 'award',
@@ -351,7 +358,7 @@ const TABLE_KINDS = new Set<Command['kind']>([
   'clearCounterRoll',
   'setMode', 'handOver', 'setStrict', 'commitTimings', 'revealTimings', 'importSquad',
   'configureTable', 'startMatch', 'endMatch', 'pickSecondary', 'setTactics', 'setReady', 'designateTask',
-  'callDefense', 'answerDefense', 'clearDefense', 'setCombatView', 'focusAnswer', 'focusReroll', 'kcArmor', 'designateHit', 'meleeEvade', 'dodgeEnhance',
+  'callDefense', 'answerDefense', 'clearDefense', 'setCombatView', 'focusAnswer', 'focusReroll', 'kcArmor', 'designateHit', 'meleeEvade', 'dodgeEnhance', 'riposte',
   'setRollbackCatalog', 'rollbackRequest', 'rollbackAnswer',
 ]);
 
@@ -363,7 +370,7 @@ const ATTRIBUTED = new Set<Command['kind']>([
   'advancePhase', 'setPhase', 'resetRounds', 'markEndStep', 'award',
   // Who asked and who answered is the whole record of a rollback, so both are
   // stamped with the sender's own seat like every other attributed command.
-  'callDefense', 'answerDefense', 'clearDefense', 'setCombatView', 'focusAnswer', 'focusReroll', 'kcArmor', 'designateHit', 'meleeEvade', 'dodgeEnhance',
+  'callDefense', 'answerDefense', 'clearDefense', 'setCombatView', 'focusAnswer', 'focusReroll', 'kcArmor', 'designateHit', 'meleeEvade', 'dodgeEnhance', 'riposte',
   'setRollbackCatalog', 'rollbackRequest', 'rollbackAnswer',
   'lockMap', 'acceptRoll', 'lockDials', 'finishDeployment',
   'queueIntercepts', 'clearIntercepts', 'placeSmoke', 'removeSmoke', 'dissipateSmoke',
@@ -534,6 +541,20 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
     case 'meleeEvade':
     case 'dodgeEnhance': {
       if (!state.script) return no('There is no game running.');
+      return ok;
+    }
+    case 'riposte': {
+      const sc = state.script;
+      if (!sc) return no('There is no game running.');
+      // The debt is the authority, exactly as it is for the granted Action --
+      // this ends the OTHER seat's Opportunity, so it may not be sendable on a
+      // say-so.
+      if (!(sc.reactions ?? []).some((r) => r.uid === cmd.uid && r.kind === 'riposte')) {
+        return no('Nothing has granted this unit a Riposte.');
+      }
+      if (!sc.opp || sc.opp.uid !== cmd.fromUid) {
+        return no('That Mech is no longer in the Action Opportunity this would end.');
+      }
       return ok;
     }
     case 'kcArmor': {
@@ -990,6 +1011,15 @@ function checkActed(
     case 'performAction': {
       const a = findAction(data, state, cmd.uid, cmd.actionId);
       if (!a) return no('This unit has no such Action.');
+      // Riposte (050 / ZHLA-202) is the one Action performed outside an
+      // Opportunity, and the grant has to be real: a queued riposte debt for
+      // THIS unit is the proof, and it buys a Melee Action and nothing else.
+      if (cmd.granted) {
+        const owed = (state.script?.reactions ?? []).some((r) => r.uid === cmd.uid && r.kind === 'riposte');
+        if (!owed) return no('Nothing has granted this unit an Action outside its Action Opportunity.');
+        if (a.type !== 'Melee') return no('A Riposte grants a Melee Action (050 / ZHLA-202).');
+        return ok;
+      }
       const o = oppOf(state, cmd.uid);
       if (!o) return no('It is not this unit\'s Action Opportunity.');
       // Ticks are a Mech's economy. Everything else gets an activation worth
@@ -1941,6 +1971,15 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
     case 'performAction': {
       const a = findAction(data, state, cmd.uid, cmd.actionId);
       const o = oppOf(state, cmd.uid);
+      // A granted Action spends its grant HERE, so taking the Action and
+      // spending it are one step. Clearing the debt from the panel instead
+      // leaves a window in which one Riposte buys several Melee Actions.
+      if (cmd.granted && sc) {
+        const at = (sc.reactions ?? []).findIndex((r) => r.uid === cmd.uid && r.kind === 'riposte');
+        if (at >= 0) sc.reactions.splice(at, 1);
+        // It belongs to no Opportunity, so there are no Ticks to charge.
+        return;
+      }
       if (a && o && sc) {
         sc.opp = t.kind === 'mech'
           ? lockStance(t, spendAction(o, a, cmd.partKey || a.id, { flexible: hasFlexibleTiming(data, state.tokens, t, a) }))
@@ -2126,6 +2165,25 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
       if (cmd.on) held.add(cmd.slot);
       else held.delete(cmd.slot);
       t.charge = held.size ? [...held] : undefined;
+      return;
+    }
+    case 'riposte': {
+      // Half one of the card: the attacker's Opportunity ends at once. Mirrors
+      // endOpportunity's apply rather than calling it, because the two branches
+      // are the rule -- a nested Extra resumes what it interrupted and never
+      // marks the Mech as acted (K19/K21); a normal one is spent.
+      if (!sc || sc.opp?.uid !== cmd.fromUid) return;
+      if (sc.opp.extra) {
+        sc.opp = sc.oppStack.pop() ?? null;
+        return;
+      }
+      if (onExtraOpportunity(state, cmd.fromUid)) {
+        const at = sc.extraOpps.indexOf(cmd.fromUid);
+        if (at >= 0) sc.extraOpps.splice(at, 1);
+      } else if (!sc.acted.includes(cmd.fromUid)) {
+        sc.acted.push(cmd.fromUid);
+      }
+      sc.opp = null;
       return;
     }
     case 'endOpportunity': {

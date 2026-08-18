@@ -26,7 +26,7 @@ check('the flag is set where the Penetration lands', /c\.penetrated = true;/.tes
 check('and it is the ONLY gate on this reaction, not the Action type',
   /if \(penetrated\) \{[\s\S]{0,120}defenseReactionOn\(this\.data, defender\)/.test(combat), true);
 check('the end of the attack carries it through on the rider',
-  /const rider = \{[^}]*penetrated: !!c\.penetrated \}/.test(combat), true);
+  /const rider = \{[\s\S]{0,300}penetrated: !!c\.penetrated,/.test(combat), true);
 // Under Multi-Target the sequence's ctx is gone by the time debts are written,
 // so the flag is parked on the target entry instead.
 check('a Multi-Target parks the flag on the target that took it',

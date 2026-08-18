@@ -581,9 +581,35 @@ export interface AttackReaction {
   smoke?: { count: number; range: number };
   trace?: boolean;
   stance?: boolean;
+  riposte?: boolean;
   // The card says it works even once the unit is gone. FAQ D10 asks exactly
   // that about the Reaper and answers yes, so a destroyed Part is no bar.
   afterDestroyed: boolean;
+}
+
+// ---------- Riposte / Reposte (050 FCC-12 Grappler, ZHLA-202 M4 Combat Claw) ----------
+//
+// "On a Successful Parry with this part, the Attacker must immediately end the
+// current Action Opportunity, and then the Defender may immediately perform a
+// Melee Action." The two cards spell it differently -- 050 says Riposte and
+// ZHLA-202 says Reposte -- so the match is on the sentence, not the name.
+//
+// Asked about ONE slot, not about the Mech: the Parry has to have been declared
+// on the Part that carries this, so a Mech holding a Riposte claw in one hand
+// and parrying with the other gets nothing.
+export function ripostePart(data: GameData, t: Token, slot: string): { actionId: string; name: string } | null {
+  if (t.kind !== 'mech') return null;
+  const held = tokenCards(data, t).find((x) => x.slot === slot);
+  if (!held) return null;
+  if ((t.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') return null;
+  for (const a of held.card.actions ?? []) {
+    const en = a.description?.en ?? '';
+    const zh = a.description?.zh ?? '';
+    if (/Successful Parry with this part/i.test(en) || /以本部件招架成功时/.test(zh)) {
+      return { actionId: a.id, name: a.name?.en || a.name?.zh || a.id };
+    }
+  }
+  return null;
 }
 
 // ---------- Defense Reaction (ZHLA-101 SS12 Buckler, ZHLA-301 SS30 Heavy Shield) ----------

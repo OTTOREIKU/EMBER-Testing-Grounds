@@ -4,7 +4,7 @@ import type { GameData } from './data';
 import { actionIconUrl, cardName, isAerial, secondaryImageUrl, squadLabel, unitSize } from './data';
 import { Board, footprint, snapPlacement, type BoardCallbacks } from './board';
 import { printedDeployment, resolveZoneSetData } from './overlays';
-import { martyrdomOwed, targetTracingOn, riderOnDrone, hasFlexibleTiming, coordinationFor, coordinationOnOpportunityEnd, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, electronicOrigins, loanedParts, minesLayable, minesOwed, pilotCard, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, isSilentAction, maneuverIsSilent, canActivateCamo, chargeableSlots, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
+import { ripostePart, martyrdomOwed, targetTracingOn, riderOnDrone, hasFlexibleTiming, coordinationFor, coordinationOnOpportunityEnd, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, electronicOrigins, loanedParts, minesLayable, minesOwed, pilotCard, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, isSilentAction, maneuverIsSilent, canActivateCamo, chargeableSlots, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
 import { resolveCounterRoll, tallyCounter } from './combat';
 import { tacticFitsPhase, tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { inContact, canStandIn, attackDirection, crushTargets, dissipationFor, extendPath, knockbackPath, largeGridOf, LG, losBetween, losNote, pathCost, protectionFor, rangeBetween, reachableGrids, standingSpot, type LargeGrid } from './rules';
@@ -2074,7 +2074,7 @@ function autoBoomPanel(ctx: HudCtx): string {
 // The attacker's client queued these into `script.reactions` when the whole
 // Action finished; only the DEFENDER's client may answer one, because placing
 // the Screens and spending the use are commands on their own unit.
-function reactionsOwed(ctx: HudCtx): { t: Token; r: { uid: number; actionId: string; count: number; range: number; kind?: 'smoke' | 'trace' | 'stance'; fromUid?: number } }[] {
+function reactionsOwed(ctx: HudCtx): { t: Token; r: { uid: number; actionId: string; count: number; range: number; kind?: 'smoke' | 'trace' | 'stance' | 'riposte'; fromUid?: number } }[] {
   const owed = ensureScript(ctx.state).reactions ?? [];
   return owed
     .map((r) => ({ t: ctx.state.tokens.find((x) => x.uid === r.uid)!, r }))
@@ -2088,6 +2088,23 @@ function reactionPanel(ctx: HudCtx): string {
   const card = ctx.data.byId.get(t.cardId ?? '');
   const what = (card?.actions ?? []).find((a) => a.id === r.actionId);
   const name = what?.name?.en || what?.name?.zh || 'Emergency Smoke';
+  // Riposte / Reposte (050 / ZHLA-202). Two halves, and the first is not
+  // optional: taking it ENDS the attacker's Action Opportunity. Declining the
+  // whole thing leaves their turn alone, which is why there is a Skip.
+  if (r.kind === 'riposte') {
+    const from = ctx.state.tokens.find((x) => x.uid === r.fromUid);
+    const melees = tokenCards(ctx.data, t)
+      .filter((x) => x.slot !== 'pilot' && (t.partStates[x.slot as PartSlot | 'main'] ?? 'intact') !== 'destroyed')
+      .flatMap(({ card }) => card.actions ?? [])
+      .filter((a) => a.type === 'Melee');
+    return head('Your move', `${esc(t.label)}: ${esc(name)}`,
+      `${esc(t.label)} parried, so ${esc(from?.label ?? 'the attacker')} must end its Action Opportunity at once — and then ${esc(t.label)} may perform a Melee Action immediately.`, true)
+      + `<div class="tp-body"><p class="tp-dim">The Action costs no Ticks: it belongs to the card, not to an Action Opportunity. Pick the one to make.</p>
+         ${melees.map((a) => `<button class="rowwide" data-ripostego="${t.uid}:${esc(a.id)}">${esc(a.name?.en || a.name?.zh || a.id)}<span class="ct">R${a.range ?? 1}</span></button>`).join('')
+           || '<p class="tp-note">No Melee Action is left to make, so only the Opportunity ends.</p>'}</div>
+         <div class="tp-foot"><button class="bigbtn" data-ripostego="${t.uid}:">End the Opportunity only</button>
+         <button class="bigbtn ghost2" data-reactskip="${t.uid}:${esc(r.actionId)}" style="margin-top:6px">Skip it</button></div>`;
+  }
   // Defense Reaction (ZHLA-101 / ZHLA-301). Free -- no Token, no Ammo -- so the
   // only question is whether they want it.
   if (r.kind === 'stance') {
@@ -4642,6 +4659,31 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
   });
   on('[data-act="shovego"]', () => resolveShove(ctx));
   on('[data-act="shovecancel"]', () => { shovePlan = null; flushBoxDrops(); ctx.refresh(); });
+  // Riposte. The `riposte` command ends the attacker's Opportunity; the Melee
+  // then rides the ordinary attack pick with `granted` set, and the debt is
+  // spent by that Action's own apply.
+  on('[data-ripostego]', (el) => {
+    const [uidRaw, actionId] = (el.dataset.ripostego ?? '').split(':');
+    const uid = Number(uidRaw);
+    const t = s.tokens.find((x) => x.uid === uid);
+    const r = (ensureScript(s).reactions ?? []).find((x) => x.uid === uid && x.kind === 'riposte');
+    if (!t || !r) { ctx.refresh(); return; }
+    // Only if that Opportunity is still the open one. Backing out of the target
+    // pick and coming back would otherwise be refused here and strand the debt,
+    // since the first press already ended it.
+    if (ensureScript(s).opp?.uid === r.fromUid) {
+      if (!ctx.send({ kind: 'riposte', seat: t.side, uid, fromUid: r.fromUid! }).ok) { ctx.refresh(); return; }
+      ctx.noteNow(`${t.label} parried: the Action Opportunity ends at once (050 / ZHLA-202).`);
+    }
+    if (!actionId) {
+      ctx.send({ kind: 'resolveReaction', seat: t.side, uid, actionId: r.actionId });
+      ctx.refresh();
+      return;
+    }
+    pendingAction = { kind: 'performAction', seat: t.side, uid, actionId, granted: true };
+    startAttackPick(uid, actionId);
+    ctx.refresh();
+  });
   on('[data-minego]', (el) => {
     startDetonation(Number(el.dataset.minego), el.dataset.mineact ?? '');
     ctx.refresh();

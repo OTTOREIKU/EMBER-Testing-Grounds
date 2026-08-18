@@ -1952,5 +1952,65 @@ const wApply = world([shielded()], 2, opp(1));
 C.apply(data, wApply, drCmd);
 check('applying it puts the Mech in Defensive Stance', wApply.tokens[0].stance, 'defensive');
 
+// ---------- Riposte: the one Action performed outside an Opportunity ----------
+//
+// The `granted` flag must never be self-authorising. Everything below is about
+// that: the debt in shared state is the only thing that lets it through, and it
+// buys a Melee Action and nothing else.
+const clawCard = {
+  id: 'RP1', category: 'part', slot: 'leftHand',
+  actions: [
+    { id: 'RP1_A', name: { en: 'Tear' }, type: 'Melee', size: 's', range: 1 },
+    { id: 'RP1_S', name: { en: 'Shoot' }, type: 'Firing', size: 's', range: 4 },
+    { id: 'RP1_B', name: { en: 'Reposte' }, type: 'Passive',
+      description: { en: '· On a Successful Parry with this part, the Attacker must immediately end the current Action Opportunity, and then the Defender may immediately perform a Melee Action.' } },
+  ],
+};
+data.byId.set('RP1', clawCard);
+const claw = { uid: 1, kind: 'mech', side: 's1', col: 0, row: 0, stance: 'offensive', link: 3, statuses: [],
+  mech: { torso: 'RP1' }, partStates: { torso: 'intact' }, label: 'Claw', ammo: {} };
+const foe = { uid: 2, kind: 'mech', side: 's2', col: 1, row: 0, stance: 'offensive', link: 3, statuses: [],
+  mech: { torso: 'RP1' }, partStates: { torso: 'intact' }, label: 'Foe', ammo: {} };
+const owing = (extra = {}) => {
+  const w = world([claw, foe], 2, opp(2));
+  w.script.reactions = [{ uid: 1, actionId: 'RP1_B', count: 0, range: 0, kind: 'riposte', fromUid: 2, ...extra }];
+  return w;
+};
+const grantedMelee = { kind: 'performAction', seat: 's1', uid: 1, actionId: 'RP1_A', granted: true };
+check('an Action outside an Opportunity is refused without a grant',
+  C.check(data, world([claw, foe], 2, opp(2)), grantedMelee).ok, false);
+check('and allowed with one', C.check(data, owing(), grantedMelee).ok, true);
+check('but the grant buys a MELEE Action, not any Action',
+  C.check(data, owing(), { ...grantedMelee, actionId: 'RP1_S' }).ok, false);
+check('a debt owed to another unit does not authorise this one',
+  C.check(data, owing({ uid: 2 }), grantedMelee).ok, false);
+// Spent by the Action's own apply, so one Riposte can never buy two Melees.
+const wSpend = owing();
+C.apply(data, wSpend, grantedMelee);
+check('taking it spends the grant', wSpend.script.reactions.length, 0);
+check('so a second Melee is refused', C.check(data, wSpend, grantedMelee).ok, false);
+check('and it charges no Ticks, because it belongs to no Opportunity',
+  JSON.stringify(wSpend.script.opp), JSON.stringify(owing().script.opp));
+
+// ---------- and the half that ends the ATTACKER's Opportunity ----------
+const ripCmd = { kind: 'riposte', seat: 's1', uid: 1, fromUid: 2 };
+check('the riposte command needs the debt too',
+  C.check(data, world([claw, foe], 2, opp(2)), ripCmd).ok, false);
+check('and it must name the Opportunity that is actually open',
+  C.check(data, owing(), { ...ripCmd, fromUid: 9 }).ok, false);
+check('with both, it passes', C.check(data, owing(), ripCmd).ok, true);
+const wEnd = owing();
+C.apply(data, wEnd, ripCmd);
+check('applying it ends that Opportunity', wEnd.script.opp, null);
+check('and marks the attacker as having acted', wEnd.script.acted, [2]);
+// K19: a nested Extra Opportunity resumes what it interrupted and never marks
+// the echoed Mech as acted.
+const wNested = owing();
+wNested.script.opp = { ...opp(2), extra: true };
+wNested.script.oppStack = [opp(1)];
+C.apply(data, wNested, ripCmd);
+check('a nested Extra resumes what it interrupted', wNested.script.opp?.uid, 1);
+check('and never records the echoed Mech as having acted', wNested.script.acted, []);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
