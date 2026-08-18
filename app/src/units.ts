@@ -624,6 +624,56 @@ export function freehandSupport(data: GameData, t: Token, slot: string, a: CardA
   return out.red || out.yellow || out.keywords.length || out.targetBlue ? out : null;
 }
 
+// Everything the Two-Handed question comes to, answered in one place so the
+// three call sites that adjust an Action cannot drift.
+//
+// The designation is APPLIED rather than asked. The card says "may", but every
+// printed rider is pure upside -- Range, keywords, a bigger Action -- and the
+// hand costs nothing: a Freehand already carrying a Black Box is not in
+// freehandSlots to begin with, so there is no case where a player wants the
+// spare hand for something else DURING the Action. Same reasoning as
+// lightningExchangeOf, where the "may" is likewise never a real choice.
+//
+// The Part chosen is the one that gives something back if there is one, since
+// which hand is designated is otherwise invisible.
+export interface TwoHandedUse {
+  action: CardAction;
+  slot: string;
+  label: string;
+  support: FreehandSupport | null;
+  note: string;
+}
+
+export function twoHandedUse(
+  data: GameData,
+  t: Token,
+  a: CardAction,
+  taken: string[] = [],
+  loans: LoanedPart[] = [],
+): TwoHandedUse | null {
+  const rider = twoHandedRider(a);
+  if (!rider) return null;
+  const hands = freehandSlots(data, t, taken, loans);
+  if (!hands.length) return null;
+  const best = hands.find((h) => freehandSupport(data, t, h.slot, a)) ?? hands[0];
+  const support = freehandSupport(data, t, best.slot, a);
+  const gains: string[] = [];
+  if (rider.range) gains.push(`+${rider.range} Range`);
+  for (const k of rider.keywords) gains.push(k);
+  if (rider.medium) gains.push('counts as a Medium Action');
+  if (support?.red) gains.push(`+${support.red}R from ${best.label}`);
+  if (support?.yellow) gains.push(`+${support.yellow}Y from ${best.label}`);
+  for (const k of support?.keywords ?? []) gains.push(`${k} from ${best.label}`);
+  if (support?.targetBlue) gains.push(`target -${support.targetBlue} Blue from ${best.label}`);
+  return {
+    action: twoHandedAdjusted(a, true),
+    slot: best.slot,
+    label: best.label,
+    support,
+    note: `[Two-Handed]: ${best.label} supports it — ${gains.join(', ')}`,
+  };
+}
+
 // ---------- Multi-Target (keyword 多目标X, FAQ B7) ----------
 
 export interface MultiTarget {

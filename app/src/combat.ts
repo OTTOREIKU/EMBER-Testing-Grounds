@@ -5,7 +5,7 @@ import { linkMechanics } from './inspector';
 import { SQUAD_ORDER, squadLabel } from './data';
 import type { Card, CardAction, DiceData, DiceIcon, DieColor, GameRuleEffect, PartSlot, Side, SmokeScreen, TerrainPiece, Token } from './types';
 import { statusCount, STATUSES } from './types';
-import { aaRadarCovers, attackReactionsOf, auraEffectsOn, auraValueOn, blueLightningDodges, coolingBonus, missileGuidance, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, denseArmorOn, designationsOn, electronicValue, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, loanedParts, pilotCard, repeatersFor, SLOT_LABEL, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
+import { aaRadarCovers, attackReactionsOf, auraEffectsOn, auraValueOn, blueLightningDodges, coolingBonus, missileGuidance, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, denseArmorOn, designationsOn, electronicValue, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, loanedParts, pilotCard, repeatersFor, SLOT_LABEL, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
 import { timingOf } from './ticks';
 import { inArc, losNote, protectionFor, rangeBetween } from './rules';
 import type { Command } from './commands';
@@ -1143,11 +1143,14 @@ export class AttackHelper {
       <button class="ah-cancel" title="Cancel attack">✕</button>
     </div>
     <p class="ah-los">${c.losNote}</p>${
-      // Named rather than applied: the Two-Handed designation is not tracked,
-      // so the player answers it on the pool spinner (see freehandSupportNote).
+      // The designation is applied before the Action reaches here, so this
+      // reports what the spare hand bought rather than asking about it.
       (() => {
+        const use = twoHandedUse(this.data, c.attacker, c.action);
+        if (use) return `<p class="ah-los">✋ ${use.note}.</p>`;
+        // Only when the Action wants a hand and there is none to give.
         const sup = freehandSupportNote(this.data, c.attacker, c.action);
-        return sup ? `<p class="ah-los">✋ ${sup}. Add it on the Attack pool below if so.</p>` : '';
+        return sup ? `<p class="ah-los">✋ ${sup}.</p>` : '';
       })()
     }`;
 

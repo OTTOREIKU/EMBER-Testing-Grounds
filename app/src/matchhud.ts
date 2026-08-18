@@ -17,7 +17,7 @@ import { deployable, deployTurn, deploymentComplete, firstPlayerFrom, normaliseS
 import { actionPhaseComplete, activationOrder, alive, canAct, droneActionWhy, droneMoveWhy, eligibleUnits, isLoopPhase, loopComplete, nextActivation, nextTurn, onExtraOpportunity, type InitLookup, type LoopPhase } from './loop';
 import { actionIdOf, canActivate, canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed, type TickVerdict } from './ticks';
 import { gameResult, normaliseTasks, scoreMain, scoreSecondary, settleControl, unpaidLines, zoneCentreGrid, type Designation, type ScoreLine, type ScoreResult, type SecondaryScoring } from './tasks';
-import { stationaryAdjusted, tokenCards } from './units';
+import { stationaryAdjusted, twoHandedUse, tokenCards } from './units';
 
 // The in-match HUD (Match Centre part 3a): one question at a time, per seat.
 // Everything here renders from the shared GameState and issues the same
@@ -3166,7 +3166,10 @@ function attackPanel(ctx: HudCtx): string {
   // [Stationary] pays out when the attacker has not moved this Opportunity:
   // the Mire's railguns reach 2 grids further, and nobody could see why not.
   const opp0 = ensureScript(s).opp;
-  const a = raw ? stationaryAdjusted(raw, opp0?.uid === by?.uid ? opp0 : null) : undefined;
+  const steadied = raw ? stationaryAdjusted(raw, opp0?.uid === by?.uid ? opp0 : null) : undefined;
+  // [Two-Handed]: applied, not asked. See twoHandedUse for why the printed
+  // "may" is never a real choice.
+  const a = by && steadied ? (twoHandedUse(ctx.data, by, steadied)?.action ?? steadied) : steadied;
   const stationary = raw && a !== raw;
   if (!by || !a) return head('Attack', 'That unit is gone', '', true)
     + '<div class="tp-body"></div><div class="tp-foot"><button class="bigbtn ghost2" data-act="attackcancel">Close</button></div>';
@@ -4462,7 +4465,10 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
       const t = s.tokens.find((x) => x.uid === Number(el.dataset.attacktarget));
       const raw = by ? actionOn(ctx, by, m.actionId) : undefined;
       const opp0 = ensureScript(s).opp;
-      const a = raw ? stationaryAdjusted(raw, opp0?.uid === by?.uid ? opp0 : null) : undefined;
+      const steadied = raw ? stationaryAdjusted(raw, opp0?.uid === by?.uid ? opp0 : null) : undefined;
+  // [Two-Handed]: applied, not asked. See twoHandedUse for why the printed
+  // "may" is never a real choice.
+      const a = by && steadied ? (twoHandedUse(ctx.data, by, steadied)?.action ?? steadied) : steadied;
       if (by && t && a && losNote(by, t, a, terrainOf(ctx), s.tokens, s.smoke ?? []).includes('✕')) {
         ctx.noteNow('Line of sight is blocked, so this attack cannot be made (4.4.1).');
         ctx.refresh();
