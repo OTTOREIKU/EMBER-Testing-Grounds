@@ -690,6 +690,46 @@ check('integrity loss removes the mech and credits the kill (P4)',
   [wilv.tokens.some((x) => x.uid === 2), (wilv.tasks.kills ?? []).length > 0 || JSON.stringify(wilv.tasks).includes('s1')],
   [false, true]);
 
+// ---------- the fielded roster: a squad is what was BROUGHT ----------
+//
+// Integrity Loss takes the Mech off the board, so a game record read from the
+// tokens at the final bell would be missing it — and the same squad would then
+// record differently depending on who died. rememberFielded runs off every
+// perform/applyRemote so a unit is noted while it is still standing.
+
+const wfld = world([
+  mech(1, 's1'),
+  mech(2, 's2', { mech: { torso: 'T1', chasis: 'C1', pilot: 'P1' }, partStates: { torso: 'intact', chasis: 'intact' }, link: 3 }),
+], 5);
+check('a fresh board has no roster yet', wfld.fielded, undefined);
+C.rememberFielded(data, wfld);
+const s2Before = JSON.stringify(wfld.fielded.s2);
+check('the roster notes each unit under its own uid, so two of a Part stay two',
+  [Object.keys(wfld.fielded.s2), wfld.fielded.s2['2']],
+  [['2'], C.tokenCards(data, wfld.tokens[1]).map((x) => x.card.id)]);
+C.apply(data, wfld, { kind: 'markEndStep', seat: 's1', step: 'remove' });
+check('the Mech leaves the board but stays in the roster',
+  [wfld.tokens.some((x) => x.uid === 2), JSON.stringify(wfld.fielded.s2) === s2Before],
+  [false, true]);
+// Re-noting after the unit is gone must not quietly drop it.
+C.rememberFielded(data, wfld);
+check('a later command does not forget the dead', JSON.stringify(wfld.fielded.s2) === s2Before, true);
+check('a Projectile is never rostered',
+  (() => {
+    const wp = world([{ uid: 9, side: 's1', kind: 'projectile', cardId: 'T1', col: 1, row: 1, facing: 0, size: 1, partStates: {}, ammo: {}, intercept: {} }]);
+    C.rememberFielded(data, wp);
+    return Object.keys(wp.fielded.s1).length;
+  })(), 0);
+
+// Behaviour above proves the function; these prove it is still plumbed in.
+// A roster nobody fills is worse than none, because the recorder trusts it and
+// stops falling back to the board.
+const noBlanks = (s) => s.replace(/\s+/g, ' ');
+check('perform notes the roster straight after applying',
+  noBlanks(commands).includes('apply(data, state, cmd); rememberFielded(data, state);'), true);
+check('applyRemote notes it too, once the remote flag is down',
+  noBlanks(commands).includes('applyingRemote = false; } rememberFielded(data, state);'), true);
+
 // ---------- per-Part Repaired (FAQ D7/J21/J23) ----------
 
 const wrp = world([mech(1, 's1', { mech: { torso: 'T1', chasis: 'C1', pilot: 'P1' }, partStates: { torso: 'intact', chasis: 'destroyed' }, link: 2 })]);

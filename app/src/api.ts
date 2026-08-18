@@ -51,6 +51,31 @@ export interface MyRecord {
 
 export interface CardStat { card: string; uses: number; wins: number }
 export interface FactionStat { faction: string; played: number; wins: number }
+// The table as a whole: how much has been played, by how many, and how it ends.
+export interface StatsSummary { games: number; players: number; avg_rounds: number | null; draws: number }
+
+// Who wins, and what wins. A squad's identity is the set of cards in it, so
+// `key` is the sorted id list — the server groups on it, and `squad` is one
+// recorded copy of the list, kept for putting names to it here.
+export interface LeaderPlayer { username: string; played: number; won: number; drawn: number }
+export interface LeaderSquad {
+  key: string; played: number; won: number;
+  faction: string | null; squad: SquadEntry[];
+}
+
+// Admin-only views. The server refuses these to anyone whose role is not
+// admin, so the client's job is only to not offer them.
+export interface AdminUser {
+  id: number; username: string; display_name: string | null; role: string;
+  is_active: boolean; created_at: string; last_login_at: string | null;
+  last_seen_at: string | null; locked_until: string | null;
+  joined_with: string | null; games: number;
+}
+export interface AdminInvite {
+  id: number; code: string; label: string | null; created_at: string;
+  expires_at: string | null; used_at: string | null; used_by: string | null;
+  revoked: boolean; status: 'open' | 'used' | 'expired' | 'revoked';
+}
 
 export class ApiError extends Error {
   readonly status: number;
@@ -228,6 +253,37 @@ export class EmberApi {
   async factionUsage(): Promise<FactionStat[]> {
     const r = await this.call<{ factions: FactionStat[] }>('/stats/factions');
     return r.factions;
+  }
+
+  async statsSummary(): Promise<StatsSummary> {
+    return this.call<StatsSummary>('/stats/summary');
+  }
+
+  async leaderboard(limit = 10): Promise<{ players: LeaderPlayer[]; squads: LeaderSquad[] }> {
+    return this.call<{ players: LeaderPlayer[]; squads: LeaderSquad[] }>(`/stats/leaderboard?limit=${limit}`);
+  }
+
+  async adminUsers(): Promise<AdminUser[]> {
+    const r = await this.call<{ users: AdminUser[] }>('/admin/users');
+    return r.users;
+  }
+
+  async adminInvites(): Promise<AdminInvite[]> {
+    const r = await this.call<{ invites: AdminInvite[] }>('/admin/invites');
+    return r.invites;
+  }
+
+  async mintInvites(opts: { label?: string; count?: number; days?: number }): Promise<string[]> {
+    const r = await this.call<{ codes: string[] }>('/admin/invites', { method: 'POST', body: opts });
+    return r.codes;
+  }
+
+  async revokeInvite(id: number): Promise<void> {
+    await this.call(`/admin/invites/${id}/revoke`, { method: 'POST' });
+  }
+
+  async setUserActive(id: number, active: boolean): Promise<void> {
+    await this.call(`/admin/users/${id}/active`, { method: 'POST', body: { active } });
   }
 
   async changePassword(currentPassword: string, newPassword: string): Promise<void> {

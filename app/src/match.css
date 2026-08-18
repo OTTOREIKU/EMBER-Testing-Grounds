@@ -569,6 +569,190 @@ b.s1 { color: var(--s1); } b.s2 { color: var(--s2); }
 .acct .row2 { display: flex; gap: 8px; margin-top: 10px; }
 .acct .row2 .btn { flex: 1; }
 
+/* ---------- the door's tabs, and the reading views behind them ---------- */
+.doortabs {
+  display: flex; gap: 4px; justify-content: center; margin: 0 auto 14px;
+  background: var(--surface2); border-radius: var(--radius); padding: 3px; width: max-content;
+}
+.doortab {
+  border: none; background: transparent; color: var(--text3); cursor: pointer;
+  font-family: var(--font); font-size: 12px; font-weight: 600; letter-spacing: 0.3px;
+  padding: 6px 18px; border-radius: var(--radius-sm); transition: background 0.12s, color 0.12s;
+}
+.doortab:hover { color: var(--text2); }
+.doortab.on { background: var(--surface3); color: var(--text); }
+
+/* Stats and Admin are as tall as the window and never taller: the page itself
+   is clamped and each list scrolls inside its own panel. That needs the same
+   unbroken height chain the HUD needs — every level between 100vh and the
+   scrolling box definite, and every level min-height:0. One auto-height div
+   anywhere in it and the page grows again. */
+.mc.capped { height: 100vh; min-height: 0; overflow: hidden; }
+.mc.capped > #mc-bodyhost { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+/* A column, not a row: the tab strip is the stage's first child and the panels
+   are the second, so laying the stage out sideways stands the tabs on end. */
+.mc-stage.capped {
+  display: flex; flex-direction: column; align-items: center;
+  min-height: 0; padding: 22px 20px 18px;
+}
+.mc-stage.capped > .mc-col { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+/* Several panels of lists want far more room than the two-choice door. */
+.mc-col.wide { max-width: 1480px; }
+
+/* Every panel takes the full height of the row whether or not it has the
+   content to fill it: a row of boxes that all end on the same line reads as
+   one thing, and ragged bottoms made the sparser panels look broken. A list
+   long enough to reach that height scrolls inside instead of growing it. */
+.mc-row.fill { flex: 1; min-height: 0; align-items: stretch; flex-wrap: nowrap; }
+.mc-row.fill > .panel { min-height: 0; max-height: 100%; overflow: hidden; }
+.panel.pane { display: flex; flex-direction: column; min-height: 0; }
+.panel.pane h3 { margin: 0 0 6px; }
+.panel.pane > .hint { margin-bottom: 10px; }
+.panel.pane > .quiet { margin: 10px 0 0; }
+/* The one part that scrolls. The gutter is reserved so a list that outgrows
+   its panel does not shove its own rows sideways when the bar appears. */
+.scrollbox {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto;
+  padding-right: 8px; margin-right: -8px;
+}
+
+/* Too narrow for columns: fall back to the plain scrolling page rather than
+   squeeze three lists into a phone. */
+@media (max-width: 900px) {
+  .mc.capped { height: auto; min-height: 100%; overflow: visible; }
+  .mc-stage.capped { display: block; }
+  .mc-stage.capped > .mc-col { display: block; }
+  .mc-row.fill > .panel { max-height: none; }
+  .mc-row.fill { flex-wrap: wrap; }
+  .mc-row.fill > .panel { overflow: visible; }
+  .scrollbox { overflow: visible; padding-right: 0; margin-right: 0; }
+}
+
+/* The record blocks, shared with the account popup's shape but standing on
+   their own here rather than crammed under a password form. */
+.panel .rec { display: flex; gap: 6px; margin: 4px 0 6px; }
+.panel .rec > div {
+  flex: 1; min-width: 0; background: var(--surface3); border-radius: var(--radius-sm);
+  padding: 8px 4px; text-align: center;
+}
+.panel .rec b { display: block; font-family: var(--mono); font-size: 15px; }
+.panel .rec span { font-size: 9px; letter-spacing: 0.4px; text-transform: uppercase; color: var(--text3); }
+.panel .sect {
+  font-size: 9.5px; letter-spacing: 0.8px; text-transform: uppercase; color: var(--text3);
+  font-weight: 700; margin: 14px 0 4px;
+}
+.panel .sect.row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.sect-n { color: var(--text3); font-weight: 600; letter-spacing: 0.4px; font-family: var(--mono); text-transform: none; }
+
+/* Filter rows: a search box and a set of chips, the same shape the board's
+   lists use. Nothing here is ever disabled — an empty result is its own
+   answer, and the count above says so. */
+.chiprow, .filterrow { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; margin: 0 0 8px; }
+.filterrow .f.find { flex: 1 1 130px; min-width: 0; padding: 6px 9px; font-size: 12px; margin: 0; }
+.chipf {
+  border: none; background: var(--surface2); color: var(--text3); cursor: pointer;
+  font-family: var(--font); font-size: 10px; font-weight: 700; letter-spacing: 0.5px;
+  padding: 5px 11px; border-radius: 100px; transition: background 0.12s, color 0.12s;
+}
+.chipf:hover { background: var(--surface3); color: var(--text2); }
+.chipf.on { background: var(--accent-lt); color: var(--accent); }
+
+/* One row per card: rank, name, a bar for how often it is fielded, the count
+   and the share of games won with it. The bar is relative to the top row, so
+   the shape of the list is readable before any number is. */
+.statlist { display: flex; flex-direction: column; gap: 3px; }
+.statrow {
+  display: flex; align-items: center; gap: 8px; font-size: 11.5px;
+  padding: 4px 7px; border-radius: var(--radius-sm); background: var(--surface2);
+  transition: background 0.12s;
+}
+.statrow:hover { background: var(--surface3); }
+.statrow[hidden] { display: none; }
+.sl-rank { flex: 0 0 13px; font-family: var(--mono); font-size: 9.5px; color: var(--text3); text-align: right; }
+.sl-name { flex: 1; min-width: 0; color: var(--text2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.statrow:hover .sl-name { color: var(--text); }
+/* A second line under the name: a squad's faction and size, a player's W/D/L.
+   It carries its own clipping, since the parent's ellipsis stops at the text
+   node above it. */
+.sl-sub {
+  display: block; font-style: normal; font-size: 9px; color: var(--text3);
+  letter-spacing: 0.4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* Your own row on the leaderboard, so it can be found without reading. */
+.statrow.me { background: var(--accent-lt); }
+.statrow.me .sl-name, .statrow.me:hover .sl-name { color: var(--accent); }
+/* A row that opens something says so. */
+.statrow.pick { cursor: pointer; }
+.statrow.pick:hover { background: var(--accent-lt); }
+.statrow.pick:hover .sl-name { color: var(--accent); }
+
+/* One squad, opened: the cards behind the record, each putting its own art up
+   on the right as it is hovered. Taller and wider than the account popup, and
+   it scrolls itself rather than the page. */
+.acct.squadpop {
+  max-width: 440px; max-height: min(760px, calc(100vh - 40px));
+  display: flex; flex-direction: column; overflow-y: auto;
+}
+.acct.squadpop .statrow { background: var(--surface3); }
+.acct.squadpop .statrow:hover { background: var(--bg); }
+.acct.squadpop .statrow:hover .sl-name { color: var(--accent); }
+.acct.squadpop .sl-name { white-space: normal; }
+.sl-bar { flex: 0 0 56px; height: 5px; border-radius: 3px; background: var(--surface3); overflow: hidden; }
+.statrow:hover .sl-bar { background: var(--bg); }
+.sl-bar i { display: block; height: 100%; background: var(--accent); }
+.sl-n { flex: 0 0 26px; text-align: right; font-family: var(--mono); font-size: 11px; color: var(--text); }
+.sl-w { flex: 0 0 34px; text-align: right; font-family: var(--mono); font-size: 10.5px; color: var(--text3); }
+.sl-res { flex: 0 0 40px; text-align: right; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; }
+.sl-res.won { color: var(--green); }
+.sl-res.lost { color: var(--red); }
+.sl-res.draw { color: var(--text3); }
+.sl-date { flex: 0 0 58px; text-align: right; font-family: var(--mono); font-size: 10px; color: var(--text3); }
+
+/* ---------- admin ---------- */
+.mintrow { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; }
+.mintrow > span { flex: 0 0 78px; min-width: 0; }
+.mintrow > span.grow { flex: 1 1 120px; }
+.mintrow label.f { margin-top: 0; }
+.mintrow .btn { flex: 0 0 auto; padding: 9px 15px; }
+.codelist { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 2px; }
+.codelist code {
+  font-family: var(--mono); font-size: 12px; letter-spacing: 0.5px;
+  background: var(--surface3); border-radius: var(--radius-sm); padding: 4px 8px; color: var(--text);
+  user-select: all;
+}
+.sl-code {
+  flex: 0 0 auto; font-family: var(--mono); font-size: 11px; letter-spacing: 0.4px; color: var(--text);
+}
+.sl-status {
+  flex: 0 0 48px; text-align: right; font-size: 9px; text-transform: uppercase;
+  letter-spacing: 0.5px; font-weight: 700;
+}
+.sl-status.open { color: var(--green); }
+.sl-status.used { color: var(--text3); }
+.sl-status.expired, .sl-status.revoked { color: var(--red); }
+.sl-role {
+  font-size: 9px; text-transform: uppercase; letter-spacing: 0.5px;
+  background: var(--accent-lt); color: var(--accent); border-radius: 3px; padding: 1px 5px; margin-left: 4px;
+}
+.sl-role.off { background: var(--red-lt); color: var(--red); }
+
+/* Revoke and Disable say what they do rather than showing a bare cross, and
+   both want a second click — .armed is that second state. The width is fixed
+   so the row does not jump when the label changes under the cursor. */
+.statrow .mini {
+  flex: 0 0 62px; border: none; background: var(--surface3); color: var(--text3);
+  cursor: pointer; font-family: var(--font); font-size: 9px; font-weight: 700;
+  letter-spacing: 0.5px; text-transform: uppercase; padding: 4px 6px;
+  border-radius: 100px; transition: background 0.12s, color 0.12s;
+}
+.statrow .mini:hover, .statrow .mini.armed { background: var(--red-lt); color: var(--red); }
+.statrow .mini.unban:hover, .statrow .mini.unban.armed { background: var(--green-lt); color: var(--green); }
+/* Rows with nothing to press keep the column straight. */
+.sl-pad {
+  flex: 0 0 62px; text-align: center; font-size: 9px; font-weight: 700;
+  letter-spacing: 0.5px; text-transform: uppercase; color: var(--text3);
+}
+
 /* The door's Rejoin row: the table, or the end of it. */
 .rejoinrow { display: flex; gap: 8px; align-items: stretch; }
 .rejoinrow .btn.wide { flex: 1; margin-top: 0; }

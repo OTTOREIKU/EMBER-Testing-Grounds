@@ -2332,6 +2332,33 @@ export function isSecret(cmd: Command): boolean {
   return SECRET_KINDS.has(cmd.kind);
 }
 
+// A squad is what a player BROUGHT, not what was left standing at the end.
+// Integrity Loss takes a Mech off the board in the End Phase (4.4.4) and a
+// destroyed Drone goes the same way, so a record read off the board at the
+// final bell is missing every unit that died — and the same squad then records
+// differently depending on its casualties, which splits one squad into several
+// on the leaderboard and quietly biases "most used" towards whatever survives.
+//
+// So every command notes what is standing right now, keyed by uid: a unit is
+// remembered before anything can remove it, two copies of the same Part stay
+// two entries because their units are separate, and re-noting a unit it has
+// already seen is a no-op.
+//
+// This hangs off perform() and applyRemote() rather than the end of apply(),
+// which returns early from its switch in dozens of places. Both clients run
+// the same commands, so both build the same roster; it is not in
+// boardFingerprint because no rule reads it.
+export function rememberFielded(data: GameData, state: GameState): void {
+  const roster = state.fielded ?? (state.fielded = { s1: {}, s2: {} });
+  for (const t of state.tokens) {
+    if (t.kind === 'projectile') continue;
+    const side = roster[t.side];
+    if (!side) continue;
+    const ids = tokenCards(data, t).map(({ card }) => card.id);
+    if (ids.length) side[t.uid] = ids;
+  }
+}
+
 // True while a command that arrived from the other player is being applied.
 // Without it the mirror would bounce every received command straight back and
 // the two clients would volley forever.
@@ -2356,6 +2383,7 @@ export function applyRemote(data: GameData, state: GameState, cmd: Command): Che
   } finally {
     applyingRemote = false;
   }
+  rememberFielded(data, state);
   return verdict;
 }
 
@@ -2478,6 +2506,7 @@ export function perform(data: GameData, state: GameState, cmd: Command): CheckRe
   }
   historian?.(state, cmd);
   apply(data, state, cmd);
+  rememberFielded(data, state);
   // Mirrored only after it has actually landed here, so the other player never
   // sees a move this client refused to make — and never if it is secret.
   if (!applyingRemote && !isSecret(cmd)) mirror?.(cmd);

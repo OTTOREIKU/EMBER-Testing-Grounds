@@ -842,6 +842,10 @@ export interface GameState {
   boardTheme?: string;
   tactics?: Record<Side, string[]>;
   tacticsPlayed?: Record<Side, string[]>;
+  // Every unit each side has fielded, uid -> its card ids, kept even after the
+  // unit leaves the board. Only the game record reads it; nothing in the rules
+  // does. See rememberFielded in commands.ts for why it has to exist.
+  fielded?: Record<Side, Record<string, string[]>>;
 }
 
 // --- builder-site squad import ---

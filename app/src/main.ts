@@ -1006,10 +1006,20 @@ async function init() {
   // "most used" should count.
   function squadEntriesFor(side: Side): SquadEntry[] {
     const out: SquadEntry[] = [];
-    for (const t of state.tokens) {
-      if (t.side !== side || t.kind === 'projectile') continue;
-      for (const { card } of tokenCards(data, t)) {
-        out.push({ id: card.id, cat: (card.category ?? 'mech_part') as SquadEntry['cat'] });
+    const push = (id: string): void => {
+      const card = data.byId.get(id);
+      if (card) out.push({ id, cat: (card.category ?? 'mech_part') as SquadEntry['cat'] });
+    };
+    // Everything the side FIELDED, so a Mech that died still counts as brought
+    // — see rememberFielded. A board from before the roster existed has none,
+    // and falls back to whatever is still standing.
+    const roster = state.fielded?.[side];
+    if (roster && Object.keys(roster).length) {
+      for (const ids of Object.values(roster)) for (const id of ids) push(id);
+    } else {
+      for (const t of state.tokens) {
+        if (t.side !== side || t.kind === 'projectile') continue;
+        for (const { card } of tokenCards(data, t)) push(card.id);
       }
     }
     for (const id of state.tactics?.[side] ?? []) {
@@ -4905,6 +4915,10 @@ async function init() {
     // them behind and the next squad started holding the last one's cards.
     state.tactics = { s1: [], s2: [] };
     state.tacticsPlayed = { s1: [], s2: [] };
+    // Same trap, one layer down: the fielded roster outlives its units on
+    // purpose, so taking the pieces off the table has to empty it by hand or
+    // the next squad records the last one's cards as its own.
+    state.fielded = { s1: {}, s2: {} };
     selectToken(null);
   }
 

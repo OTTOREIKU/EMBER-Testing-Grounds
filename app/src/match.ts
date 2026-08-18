@@ -1,9 +1,9 @@
-import { ApiError, EmberApi, type Account, type MyRecord, type SquadEntry } from './api';
+import { ApiError, EmberApi, type Account, type AdminInvite, type AdminUser, type CardStat, type FactionStat, type LeaderPlayer, type LeaderSquad, type MyRecord, type SquadEntry, type StatsSummary } from './api';
 import { Relay, type RollKind } from './net';
 import { applyRemote, check, onBeforeApply, onPerformed, onRefused, perform, type Command, type CheckResult } from './commands';
 import { clearHistory, recordSnapshot, rollbackCatalog, undoToPhase } from './history';
 import { setLocalSeat } from './loop';
-import { cardName, dataUrl, loadData, missionImageUrl, setSquadNames, squadLabel, type GameData } from './data';
+import { cardName, FACTION_LABEL, dataUrl, loadData, missionImageUrl, setSquadNames, squadLabel, type GameData } from './data';
 import { tacticSpec } from './tactics';
 import { flushBoxDrops, queueBoxDrop, objectiveCells } from './matchhud';
 import { printedDeployment } from './overlays';
@@ -12,7 +12,7 @@ import { countHits, normaliseSetup } from './setup';
 import { gameResult, normaliseTasks, taskItemsFor } from './tasks';
 import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
 import { loadMechPresets } from './presets';
-import { installTooltip, preloadCards } from './tooltip';
+import { hideTooltip, installTooltip, preloadCards } from './tooltip';
 import { warmAllImagesWhenIdle } from './images';
 import { runFirstVisitPreload } from './preload';
 import { importSquadFile } from './importer';
@@ -69,10 +69,42 @@ const api = new EmberApi();
 let data: GameData | null = null;
 let account: Account | null = null;
 let record: MyRecord | null = null;
+// The table's own numbers, fetched once when the Stats view is first opened.
+// Everything here is an aggregate the server already computes; the client only
+// arranges it and puts names to the card ids.
+let tableStats: {
+  summary: StatsSummary;
+  pilots: CardStat[];
+  parts: CardStat[];
+  drones: CardStat[];
+  tactics: CardStat[];
+  factions: FactionStat[];
+  players: LeaderPlayer[];
+  squads: LeaderSquad[];
+} | null = null;
+let statsLoading = false;
+let statsErr: string | null = null;
+// Which "most used" list is on show. All four are rendered and the rest are
+// hidden, so switching costs neither a fetch nor a re-render.
+type StatCat = 'pilots' | 'parts' | 'drones' | 'tactics';
+let statCat: StatCat = 'pilots';
+type LeadCat = 'players' | 'squads';
+let leadCat: LeadCat = 'players';
+// The admin lists' filters. They live out here because the lists are filtered
+// in the DOM rather than by re-rendering — see applyListFilters.
+let userQ = '';
+let codeQ = '';
+type CodeFilter = 'all' | 'open' | 'used' | 'closed';
+let codeFilter: CodeFilter = 'all';
 let state: GameState = freshBoard();
 
 type Step = 'room' | 'battlefield' | 'squads' | 'rules';
 let step: Step = 'room';
+// The door's two faces: setting a match up, or reading how the table is going.
+// Stats live here rather than in the account popup, which had grown into a
+// record sheet with a password form stapled to it.
+type Door = 'play' | 'stats' | 'admin';
+let door: Door = 'play';
 // ?dev=1 renders the HUD without a room, for building and testing it solo.
 const devSeat: Side | null = new URLSearchParams(location.search).get('dev') ? 's1' : null;
 // The zone overlay is a per-player view preference, held here rather than in
@@ -1166,7 +1198,403 @@ function loginHtml(): string {
   </div>`;
 }
 
+// Names the aggregates rather than printing card ids at a player. An id with
+// no card behind it still prints — a card can leave the data while the games
+// that used it stay on the record.
+function cardLabel(id: string): string {
+  const c = data?.byId.get(id);
+  return c ? cardName(c) : id;
+}
+
+// An id with no card behind it is dropped rather than printed raw. It reads as
+// noise either way — there is nothing to hover and nothing to look up — and in
+// practice they are test fixtures ('P1', 'T3') written into the same database
+// the page reads, not cards that once existed.
+const known = (id: string): boolean => !!data?.byId.get(id);
+
+// One row per card: rank, name, a bar for how often it is fielded, the count
+// and the share of games won with it. The bar is relative to the top row, so
+// the shape of the list reads before any number does. data-tip-card is what
+// puts the card itself on screen when a row is hovered — the same preview the
+// roster and the squad tab use, pinned to the edge of the column.
+function statRows(all: CardStat[], empty: string): string {
+  const rows = all.filter((r) => known(r.card));
+  if (!rows.length) return `<p class="hint">${empty}</p>`;
+  const top = rows[0].uses || 1;
+  return `<div class="statlist">${rows.map((r, i) => {
+    const rate = r.uses ? Math.round((r.wins / r.uses) * 100) : 0;
+    return `<div class="statrow" data-tip-card="${esc(r.card)}">
+      <span class="sl-rank">${i + 1}</span>
+      <span class="sl-name">${esc(cardLabel(r.card))}</span>
+      <span class="sl-bar"><i style="width:${Math.max(4, Math.round((r.uses / top) * 100))}%"></i></span>
+      <span class="sl-n">${r.uses}</span><span class="sl-w">${rate}%</span>
+    </div>`;
+  }).join('')}</div>`;
+}
+
+// A squad has no name, so it is called by its pilots — the part of a list
+// The cards of a squad that this build can actually name, in a stable reading
+// order rather than the order they happened to be recorded in.
+//
+// No Projectiles: a Projectile is never deployed, it arrives when something
+// launches it and is swept off the board afterwards, so neither recorder writes
+// one — what was in flight at the final bell is an accident of timing, not a
+// squad choice. It belongs to the card that launched it.
+const CAT_ORDER: SquadEntry['cat'][] = ['pilot', 'mech_part', 'drone', 'tactics_or_upgrade'];
+// Anything unranked sorts last rather than first, which is what a bare
+// indexOf would do with its -1.
+const catRank = (c: SquadEntry['cat']): number => {
+  const i = CAT_ORDER.indexOf(c);
+  return i < 0 ? CAT_ORDER.length : i;
+};
+
+function squadCards(sq: LeaderSquad): SquadEntry[] {
+  return sq.squad.filter((c) => known(c.id))
+    .sort((a, b) => catRank(a.cat) - catRank(b.cat)
+      || cardLabel(a.id).localeCompare(cardLabel(b.id)));
+}
+
+// A squad has no name, so it is called by its pilots — the part of a list
+// anyone reading it would say out loud.
+function squadName(sq: LeaderSquad): string {
+  const cards = squadCards(sq);
+  const pilots = cards.filter((c) => c.cat === 'pilot');
+  const named = (pilots.length ? pilots : cards.slice(0, 2)).map((c) => cardLabel(c.id));
+  return named.join(', ') || 'Unnamed squad';
+}
+
+function squadRows(rows: LeaderSquad[]): string {
+  if (!rows.length) return '<p class="hint">No squad has been brought twice yet.</p>';
+  const top = rows[0].played || 1;
+  return `<div class="statlist">${rows.map((r, i) => {
+    const cards = squadCards(r);
+    const rate = r.played ? Math.round((r.won / r.played) * 100) : 0;
+    return `<div class="statrow pick" data-squad="${esc(r.key)}">
+      <span class="sl-rank">${i + 1}</span>
+      <span class="sl-name">${esc(squadName(r))}
+        <em class="sl-sub">${r.faction ? esc(FACTION_LABEL[r.faction] ?? r.faction) + ' · ' : ''}${cards.length} card${cards.length === 1 ? '' : 's'}</em></span>
+      <span class="sl-bar"><i style="width:${Math.max(4, Math.round((r.played / top) * 100))}%"></i></span>
+      <span class="sl-n">${r.played}</span><span class="sl-w">${rate}%</span>
+    </div>`;
+  }).join('')}</div>`;
+}
+
+// ---------- one squad, opened ----------
+//
+// Which cards actually won, laid out to be inspected: every card is a row that
+// puts its own art up on the right the moment it is hovered.
+let squadOpen: string | null = null;
+
+const CAT_LABEL: Record<string, string> = {
+  pilot: 'Pilots', mech_part: 'Mech parts', drone: 'Drones',
+  tactics_or_upgrade: 'Tactics and upgrades',
+};
+
+function squadHtml(): string {
+  const sq = tableStats?.squads.find((x) => x.key === squadOpen);
+  if (!sq) return '';
+  const cards = squadCards(sq);
+  const rate = sq.played ? Math.round((sq.won / sq.played) * 100) : 0;
+  let out = '';
+  for (const cat of CAT_ORDER) {
+    const inCat = cards.filter((c) => c.cat === cat);
+    if (!inCat.length) continue;
+    out += `<div class="sect">${CAT_LABEL[cat] ?? cat}</div>
+      <div class="statlist">${inCat.map((c) => `<div class="statrow" data-tip-card="${esc(c.id)}">
+        <span class="sl-name">${esc(cardLabel(c.id))}</span>
+      </div>`).join('')}</div>`;
+  }
+  return `<div class="mc-veil" id="mc-squadveil">
+    <div class="acct squadpop" data-tip-side="right">
+      <button class="x" id="mc-squad-x">✕</button>
+      <h3>${esc(squadName(sq))}</h3>
+      <div class="role">${sq.faction ? esc(FACTION_LABEL[sq.faction] ?? sq.faction) + ' · ' : ''}${cards.length} card${cards.length === 1 ? '' : 's'}</div>
+      <div class="rec">
+        <div><b>${sq.played}</b><span>played</span></div>
+        <div><b>${sq.won}</b><span>won</span></div>
+        <div><b>${rate}%</b><span>win rate</span></div>
+      </div>
+      ${out}
+    </div>
+  </div>`;
+}
+
+function playerRows(rows: LeaderPlayer[]): string {
+  if (!rows.length) return '<p class="hint">No games recorded yet.</p>';
+  const top = rows[0].played || 1;
+  return `<div class="statlist">${rows.map((r, i) => {
+    const rate = r.played ? Math.round((r.won / r.played) * 100) : 0;
+    return `<div class="statrow${r.username === account?.username ? ' me' : ''}">
+      <span class="sl-rank">${i + 1}</span>
+      <span class="sl-name">${esc(r.username)}
+        <em class="sl-sub">${r.won}W ${r.drawn}D ${r.played - r.won - r.drawn}L</em></span>
+      <span class="sl-bar"><i style="width:${Math.max(4, Math.round((r.played / top) * 100))}%"></i></span>
+      <span class="sl-n">${r.won}</span><span class="sl-w">${rate}%</span>
+    </div>`;
+  }).join('')}</div>`;
+}
+
+function statsHtml(): string {
+  const r = record?.record;
+  const recent = record?.recent ?? [];
+  const t = tableStats;
+  const chip = (id: StatCat, label: string): string =>
+    `<button class="chipf${statCat === id ? ' on' : ''}" data-cat="${id}">${label}</button>`;
+  const list = (id: StatCat, rows: CardStat[], empty: string): string =>
+    `<div data-catlist="${id}"${statCat === id ? '' : ' hidden'}>${statRows(rows, empty)}</div>`;
+  const lead = (id: LeadCat, label: string): string =>
+    `<button class="chipf${leadCat === id ? ' on' : ''}" data-lead="${id}">${label}</button>`;
+  return `<div class="mc-col wide" data-tip-side="right">
+    <h1 class="mc-h">Stats</h1>
+    <div class="mc-row fill">
+      <div class="panel pane">
+        <h3>Your record</h3>
+        ${r
+          ? `<div class="rec">
+              <div><b>${r.played}</b><span>played</span></div>
+              <div><b>${r.won}</b><span>won</span></div>
+              <div><b>${r.drawn}</b><span>drawn</span></div>
+              <div><b>${r.lost}</b><span>lost</span></div>
+            </div>
+            <p class="hint">${r.played ? `${Math.round((r.won / r.played) * 100)}% won` : 'No games recorded yet.'}${
+              (record?.reported ?? 0) > r.played ? ` · ${record!.reported} reported from this account, hotseat included.` : ''
+            }</p>`
+          : '<p class="hint">Loading…</p>'}
+        <div class="sect">Recent games</div>
+        <div class="scrollbox">
+          ${recent.length
+            ? `<div class="statlist">${recent.map((g) => `<div class="statrow">
+                <span class="sl-name">${esc(g.mission || 'Free battle')}</span>
+                <span class="sl-date">${esc(shortDate(g.played_at))}</span>
+                <span class="sl-n">${g.vp} VP</span>
+                <span class="sl-res ${g.result}">${g.result}</span>
+              </div>`).join('')}</div>`
+            : '<p class="hint">Games you record from a finished match land here.</p>'}
+        </div>
+      </div>
+      <div class="panel pane">
+        <h3>The table</h3>
+        ${statsErr ? `<div class="mc-err">${esc(statsErr)}</div>` : ''}
+        ${t
+          ? `<div class="rec">
+              <div><b>${t.summary.games}</b><span>games</span></div>
+              <div><b>${t.summary.players}</b><span>players</span></div>
+              <div><b>${t.summary.avg_rounds ?? '—'}</b><span>avg rounds</span></div>
+              <div><b>${t.summary.draws}</b><span>draws</span></div>
+            </div>
+            <div class="sect">Factions</div>
+            <div class="scrollbox">
+              ${t.factions.length
+                ? `<div class="statlist">${t.factions.map((f) => {
+                    const share = t.summary.games ? Math.round((f.played / t.summary.games) * 100) : 0;
+                    return `<div class="statrow">
+                      <span class="sl-name">${esc(FACTION_LABEL[f.faction] ?? f.faction)}</span>
+                      <span class="sl-bar"><i style="width:${Math.max(4, share)}%"></i></span>
+                      <span class="sl-n">${f.played}</span>
+                      <span class="sl-w">${f.played ? Math.round((f.wins / f.played) * 100) : 0}%</span>
+                    </div>`;
+                  }).join('')}</div>`
+                : '<p class="hint">No factions recorded yet.</p>'}
+            </div>
+`
+          : statsLoading ? '<p class="hint">Reading the table…</p>' : '<p class="hint">Nothing recorded yet.</p>'}
+      </div>
+      <div class="panel pane">
+        <h3>Leaderboard</h3>
+        <div class="chiprow">${lead('players', 'Top players')}${lead('squads', 'Top squads')}</div>
+        <div class="scrollbox">
+          ${t
+            ? `<div data-leadlist="players"${leadCat === 'players' ? '' : ' hidden'}>${playerRows(t.players)}</div>
+               <div data-leadlist="squads"${leadCat === 'squads' ? '' : ' hidden'}>${squadRows(t.squads)}</div>`
+            : statsLoading ? '<p class="hint">Reading the table…</p>' : '<p class="hint">Nothing recorded yet.</p>'}
+        </div>
+      </div>
+      <div class="panel pane">
+        <h3>Most used</h3>
+        <div class="chiprow">${chip('pilots', 'Pilots')}${chip('parts', 'Parts')}${chip('drones', 'Drones')}${chip('tactics', 'Tactics')}</div>
+        <div class="scrollbox">
+          ${t
+            ? list('pilots', t.pilots, 'No pilot has been fielded yet.')
+              + list('parts', t.parts, 'No parts recorded yet.')
+              + list('drones', t.drones, 'No drones recorded yet.')
+              + list('tactics', t.tactics, 'No tactics or upgrades recorded yet.')
+            : statsLoading ? '<p class="hint">Reading the table…</p>' : '<p class="hint">Nothing recorded yet.</p>'}
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function doorTabs(): string {
+  const tab = (id: Door, label: string): string =>
+    `<button class="doortab${door === id ? ' on' : ''}" data-door="${id}">${label}</button>`;
+  return `<div class="doortabs">${tab('play', 'Play')}${tab('stats', 'Stats')}${
+    account?.role === 'admin' ? tab('admin', 'Admin') : ''
+  }</div>`;
+}
+
+// ---------- admin ----------
+//
+// Rendered only for an admin account, and every endpoint behind it refuses
+// anyone else regardless — the tab is a convenience, not the gate.
+let admin: { users: AdminUser[]; invites: AdminInvite[] } | null = null;
+let adminLoading = false;
+let adminErr: string | null = null;
+let mintedNote: string[] = [];
+
+function loadAdmin(force = false): void {
+  if (account?.role !== 'admin') return;
+  if ((admin && !force) || adminLoading) return;
+  adminLoading = true;
+  adminErr = null;
+  void Promise.all([api.adminUsers(), api.adminInvites()])
+    .then(([users, invites]) => { admin = { users, invites }; })
+    .catch((e) => { adminErr = e instanceof ApiError ? e.message : 'Could not load the admin view.'; })
+    .finally(() => { adminLoading = false; render(); });
+}
+
+const shortDate = (iso: string | null): string =>
+  iso ? new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: '2-digit' }) : '—';
+
+// Both admin lists filter themselves in the DOM. Re-rendering on every
+// keystroke would take the search box's focus and caret with it, so rows are
+// only hidden and shown — and this runs again after each real render, to put
+// the view back the way the reader left it.
+function applyListFilters(): void {
+  root.querySelectorAll<HTMLElement>('[data-catlist]').forEach((el) => {
+    el.hidden = el.dataset.catlist !== statCat;
+  });
+  root.querySelectorAll<HTMLElement>('[data-cat]').forEach((b) => {
+    b.classList.toggle('on', b.dataset.cat === statCat);
+  });
+  root.querySelectorAll<HTMLElement>('[data-leadlist]').forEach((el) => {
+    el.hidden = el.dataset.leadlist !== leadCat;
+  });
+  root.querySelectorAll<HTMLElement>('[data-lead]').forEach((b) => {
+    b.classList.toggle('on', b.dataset.lead === leadCat);
+  });
+  root.querySelectorAll<HTMLElement>('[data-codefilter]').forEach((b) => {
+    b.classList.toggle('on', b.dataset.codefilter === codeFilter);
+  });
+
+  const uq = userQ.trim().toLowerCase();
+  let users = 0;
+  root.querySelectorAll<HTMLElement>('#mc-userlist > .statrow').forEach((row) => {
+    const hit = !uq || (row.dataset.q ?? '').includes(uq);
+    row.hidden = !hit;
+    if (hit) users++;
+  });
+
+  const cq = codeQ.trim().toLowerCase();
+  let codes = 0;
+  root.querySelectorAll<HTMLElement>('#mc-codelist > .statrow').forEach((row) => {
+    const st = row.dataset.status ?? '';
+    // "Closed" is the two dead ends together: a code that was pulled and one
+    // that ran out are equally unusable, and splitting them would put two
+    // near-empty chips on the row.
+    const byStatus = codeFilter === 'all' ? true
+      : codeFilter === 'closed' ? st === 'revoked' || st === 'expired'
+      : st === codeFilter;
+    const hit = byStatus && (!cq || (row.dataset.q ?? '').includes(cq));
+    row.hidden = !hit;
+    if (hit) codes++;
+  });
+
+  const count = (id: string, shown: number, total: number, what: string): void => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = shown === total ? `${total} ${what}` : `${shown} of ${total} ${what}`;
+  };
+  if (admin) {
+    count('mc-usercount', users, admin.users.length, 'registered');
+    count('mc-codecount', codes, admin.invites.length, 'codes');
+  }
+}
+
+function adminHtml(): string {
+  const a = admin;
+  const chip = (id: CodeFilter, label: string, title: string): string =>
+    `<button class="chipf${codeFilter === id ? ' on' : ''}" data-codefilter="${id}" title="${title}">${label}</button>`;
+  const searchable = (...parts: (string | null)[]): string =>
+    esc(parts.filter(Boolean).join(' ').toLowerCase());
+  return `<div class="mc-col wide">
+    <h1 class="mc-h">Admin</h1>
+    ${adminErr ? `<div class="mc-err">${esc(adminErr)}</div>` : ''}
+    <div class="mc-row fill">
+      <div class="panel pane">
+        <h3>Invite codes</h3>
+        <p class="hint">Registration is invite-only. A code works once, and can be pulled back at any point before it is claimed.</p>
+        <div class="mintrow">
+          <span class="grow"><label class="f" for="mc-mint-label">Label</label>
+            <input class="f" id="mc-mint-label" maxlength="60" placeholder="Who it is for" /></span>
+          <span><label class="f" for="mc-mint-count">How many</label>
+            <input class="f" id="mc-mint-count" type="number" min="1" max="20" value="1" /></span>
+          <span><label class="f" for="mc-mint-days">Expires (days)</label>
+            <input class="f" id="mc-mint-days" type="number" min="0" max="365" value="0" /></span>
+          <button class="btn" id="mc-mint"${busy ? ' disabled' : ''}>Mint</button>
+        </div>
+        <p class="quiet">0 days never expires.</p>
+        ${mintedNote.length
+          ? `<div class="mc-ok">Minted — copy them now:</div>
+             <div class="codelist">${mintedNote.map((c) => `<code>${esc(c)}</code>`).join('')}</div>`
+          : ''}
+        <div class="sect row"><span>All codes</span><span class="sect-n" id="mc-codecount"></span></div>
+        <div class="filterrow">
+          <input class="f find" id="mc-codeq" placeholder="Find a code, label or player" value="${esc(codeQ)}" />
+          ${chip('all', 'All', 'Every code')}${chip('open', 'Open', 'Still claimable')}${chip('used', 'Used', 'Already claimed')}${chip('closed', 'Closed', 'Revoked or expired')}
+        </div>
+        <div class="scrollbox">
+          ${a
+            ? a.invites.length
+              ? `<div class="statlist" id="mc-codelist">${a.invites.map((i) => `<div class="statrow"
+                  data-status="${i.status}" data-q="${searchable(i.code, i.label, i.used_by)}">
+                  <code class="sl-code">${esc(i.code)}</code>
+                  <span class="sl-name">${esc(i.label || '—')}${i.used_by ? ` → ${esc(i.used_by)}` : ''}</span>
+                  <span class="sl-status ${i.status}" title="Minted ${esc(shortDate(i.created_at))}">${i.status}</span>
+                  ${i.status === 'open'
+                    ? `<button class="mini" data-revoke="${i.id}" title="Revoke this code">Revoke</button>`
+                    : '<span class="sl-pad"></span>'}
+                </div>`).join('')}</div>`
+              : '<p class="hint">No codes minted yet.</p>'
+            : adminLoading ? '<p class="hint">Loading…</p>' : ''}
+        </div>
+      </div>
+      <div class="panel pane">
+        <h3>Players</h3>
+        <p class="hint">Disabling an account signs it out everywhere at once, open matches included, and refuses it at the door until you let it back in.</p>
+        <div class="sect row"><span>Registered</span><span class="sect-n" id="mc-usercount"></span></div>
+        <div class="filterrow">
+          <input class="f find" id="mc-userq" placeholder="Find a player" value="${esc(userQ)}" />
+        </div>
+        <div class="scrollbox">
+          ${a
+            ? `<div class="statlist" id="mc-userlist">${a.users.map((u) => `<div class="statrow"
+                data-q="${searchable(u.username, u.display_name, u.joined_with)}">
+                <span class="sl-name">${esc(u.username)}${
+                  u.role !== 'player' ? ` <b class="sl-role">${esc(u.role)}</b>` : ''
+                }${u.is_active ? '' : ' <b class="sl-role off">disabled</b>'}</span>
+                <span class="sl-n" title="Games played">${u.games}</span>
+                <span class="sl-date" title="Joined ${esc(shortDate(u.created_at))}${
+                  u.joined_with ? ` with ${esc(u.joined_with)}` : ''
+                }">${esc(shortDate(u.last_seen_at || u.last_login_at))}</span>
+                ${u.id === account?.id
+                  ? '<span class="sl-pad you">you</span>'
+                  : `<button class="mini${u.is_active ? '' : ' unban'}" data-active="${u.id}" data-to="${
+                      u.is_active ? '0' : '1'
+                    }" title="${u.is_active ? 'Disable this account' : 'Let this account back in'}">${
+                      u.is_active ? 'Disable' : 'Enable'
+                    }</button>`}
+              </div>`).join('')}</div>`
+            : adminLoading ? '<p class="hint">Loading…</p>' : ''}
+        </div>
+        <p class="quiet">The date is when they were last seen. Hover a row for when they joined, and with which code.</p>
+      </div>
+    </div>
+  </div>`;
+}
+
 function doorHtml(): string {
+  if (door === 'stats') return statsHtml();
+  if (door === 'admin') return account?.role === 'admin' ? adminHtml() : statsHtml();
   return `<div class="mc-col">
     <h1 class="mc-h">Start a match</h1>
     <div class="mc-row">
@@ -1481,11 +1909,21 @@ async function recordMatch(): Promise<string | null> {
   // draw where the board settled it would put the wrong result on both accounts.
   const winner = gameResult(tasks, state.tokens).winner;
   const entries = (side: Side) => {
-    const out: { id: string; cat: SquadEntry['cat'] }[] = [];
-    for (const t of state.tokens) {
-      if (t.side !== side || t.kind === 'projectile') continue;
-      for (const { card } of tokenCards(data!, t)) {
-        out.push({ id: card.id, cat: (card.category ?? 'mech_part') as SquadEntry['cat'] });
+    const out: SquadEntry[] = [];
+    const push = (id: string): void => {
+      const card = data!.byId.get(id);
+      if (card) out.push({ id, cat: (card.category ?? 'mech_part') as SquadEntry['cat'] });
+    };
+    // Everything the side FIELDED, so a Mech that died still counts as brought
+    // — see rememberFielded. A board from before the roster existed has none,
+    // and falls back to whatever is still standing.
+    const roster = state.fielded?.[side];
+    if (roster && Object.keys(roster).length) {
+      for (const ids of Object.values(roster)) for (const id of ids) push(id);
+    } else {
+      for (const t of state.tokens) {
+        if (t.side !== side || t.kind === 'projectile') continue;
+        for (const { card } of tokenCards(data!, t)) push(card.id);
       }
     }
     for (const id of state.tactics?.[side] ?? []) if (data!.byId.get(id)) out.push({ id, cat: 'tactics_or_upgrade' });
@@ -1848,6 +2286,10 @@ function render(): void {
   sweepCombatView();
   nameTheSquads();
   const hud = !!data && ((running() && !!relay.state.room) || (!!devSeat && running()));
+  // Stats and Admin are reading views: long lists that must not push the page
+  // taller than the window. Same clamp the HUD uses, and the lists scroll
+  // inside their panels instead.
+  const capped = !hud && !!data && !!account && !relay.state.room && door !== 'play';
   // Three fixed hosts, so the stateful board survives every re-render: the
   // bar and veils redraw freely, the body only redraws outside HUD mode.
   if (!document.getElementById('mc-barhost')) {
@@ -1858,6 +2300,7 @@ function render(): void {
   const veilhost = document.getElementById('mc-veilhost')!;
   // The height chain only clamps in HUD mode; the lobby and door scroll.
   root.classList.toggle('hudmode', hud);
+  root.classList.toggle('capped', capped);
   barhost.innerHTML = barHtml();
   const p = hud ? paused() : null;
   const pauseVeil = p
@@ -1868,7 +2311,8 @@ function render(): void {
         <button class="btn ghost" id="mc-leave" style="margin-top:6px">Leave the table</button>
       </div></div>`
     : '';
-  veilhost.innerHTML = `${acctOpen ? acctHtml() : ''}${pickerOpen ? pickerHtml() : ''}${pauseVeil}`;
+  veilhost.innerHTML = `${acctOpen ? acctHtml() : ''}${pickerOpen ? pickerHtml() : ''}${
+    squadOpen ? squadHtml() : ''}${pauseVeil}`;
   if (hud) {
     const stage = bodyhost.querySelector('.mc-stage.hudmode');
     let host = stage as HTMLElement | null;
@@ -1886,11 +2330,12 @@ function render(): void {
           ? loginHtml()
           : relay.state.room
             ? lobbyHtml()
-            : doorHtml();
+            : doorTabs() + doorHtml();
     const wide = data && account && relay.state.room;
-    bodyhost.innerHTML = `<div class="mc-stage${wide ? ' wide' : ''}">${inner}</div>`;
+    bodyhost.innerHTML = `<div class="mc-stage${wide ? ' wide' : ''}${capped ? ' capped' : ''}">${inner}</div>`;
   }
   wire();
+  applyListFilters();
 }
 
 function acctHtml(): string {
@@ -1901,15 +2346,7 @@ function acctHtml(): string {
       <button class="x" id="mc-acct-x">✕</button>
       <h3>${esc(account.username)}</h3>
       <div class="role">${esc(account.role)}${account.displayName ? ` · ${esc(account.displayName)}` : ''}</div>
-      <div class="sect">Record</div>
-      ${r
-        ? `<div class="rec">
-            <div><b>${r.played}</b><span>played</span></div>
-            <div><b>${r.won}</b><span>won</span></div>
-            <div><b>${r.drawn}</b><span>drawn</span></div>
-            <div><b>${r.lost}</b><span>lost</span></div>
-          </div>`
-        : '<p class="hint">Loading the record…</p>'}
+      ${r ? `<p class="hint">${r.played} played · ${r.won}W ${r.drawn}D ${r.lost}L. The full record is in <b>Stats</b>.</p>` : ''}
       <div class="sect">Change password</div>
       <label class="f" for="mc-cur">Current password</label>
       <input class="f" id="mc-cur" type="password" autocomplete="current-password" />
@@ -1977,6 +2414,16 @@ function wire(): void {
     if (!record) void api.myRecord().then((r) => { record = r; render(); }).catch(() => {});
   });
   $('mc-acct-x')?.addEventListener('click', () => { acctOpen = false; render(); });
+  root.querySelectorAll<HTMLElement>('[data-squad]').forEach((r) =>
+    r.addEventListener('click', () => { squadOpen = r.dataset.squad!; render(); }),
+  );
+  // The preview has to go with the panel it was hovered inside, or it hangs
+  // over the page with nothing behind it.
+  const shutSquad = (): void => { squadOpen = null; hideTooltip(); render(); };
+  $('mc-squad-x')?.addEventListener('click', shutSquad);
+  $('mc-squadveil')?.addEventListener('pointerdown', (ev) => {
+    if ((ev.target as HTMLElement).id === 'mc-squadveil') shutSquad();
+  });
   $('mc-veil')?.addEventListener('pointerdown', (ev) => {
     if ((ev.target as HTMLElement).id === 'mc-veil') { acctOpen = false; render(); }
   });
@@ -1998,6 +2445,88 @@ function wire(): void {
   });
   $('mc-pass')?.addEventListener('keydown', (ev) => {
     if ((ev as KeyboardEvent).key === 'Enter') $('mc-login')?.click();
+  });
+
+  // Play / Stats / Admin. The stats fetch is deferred to the first visit and
+  // then kept, so flipping back and forth costs nothing.
+  root.querySelectorAll<HTMLButtonElement>('[data-door]').forEach((b) =>
+    b.addEventListener('click', () => {
+      door = b.dataset.door as Door;
+      if (door === 'stats') {
+        loadTableStats();
+        if (!record) void api.myRecord().then((r) => { record = r; render(); }).catch(() => {});
+      }
+      if (door === 'admin') loadAdmin();
+      render();
+    }),
+  );
+
+  $('mc-mint')?.addEventListener('click', () => {
+    const label = ($('mc-mint-label') as HTMLInputElement | null)?.value.trim() || undefined;
+    const count = Number(($('mc-mint-count') as HTMLInputElement | null)?.value || 1);
+    const days = Number(($('mc-mint-days') as HTMLInputElement | null)?.value || 0);
+    void attempt(async () => {
+      mintedNote = await api.mintInvites({ label, count, days });
+      // Straight back to the server for the list rather than pushing the new
+      // codes in by hand: the row carries a status the client does not compute.
+      loadAdmin(true);
+    }, (m) => { adminErr = m; });
+  });
+  // Nothing here re-renders: the filters only hide rows, which is what keeps
+  // the caret in the search box between keystrokes.
+  const onFind = (id: string, set: (v: string) => void): void =>
+    $(id)?.addEventListener('input', (ev) => {
+      set((ev.target as HTMLInputElement).value);
+      applyListFilters();
+    });
+  onFind('mc-userq', (v) => { userQ = v; });
+  onFind('mc-codeq', (v) => { codeQ = v; });
+  root.querySelectorAll<HTMLButtonElement>('[data-codefilter]').forEach((b) =>
+    b.addEventListener('click', () => { codeFilter = b.dataset.codefilter as CodeFilter; applyListFilters(); }),
+  );
+  root.querySelectorAll<HTMLButtonElement>('[data-cat]').forEach((b) =>
+    b.addEventListener('click', () => { statCat = b.dataset.cat as StatCat; applyListFilters(); }),
+  );
+  root.querySelectorAll<HTMLButtonElement>('[data-lead]').forEach((b) =>
+    b.addEventListener('click', () => { leadCat = b.dataset.lead as LeadCat; applyListFilters(); }),
+  );
+
+  // Revoking a code and shutting an account out both take a second click on a
+  // button that has changed its mind about what it says. Moving off it puts it
+  // back, so an armed button can never be left lying around to be hit later.
+  const arm = (b: HTMLButtonElement, sure: string, go: () => void): void => {
+    const label = b.textContent ?? '';
+    const rest = (): void => { b.textContent = label; b.classList.remove('armed'); };
+    b.addEventListener('mouseleave', rest);
+    b.addEventListener('click', () => {
+      if (!b.classList.contains('armed')) {
+        b.classList.add('armed');
+        b.textContent = sure;
+        return;
+      }
+      rest();
+      go();
+    });
+  };
+
+  root.querySelectorAll<HTMLButtonElement>('[data-revoke]').forEach((b) =>
+    arm(b, 'Revoke?', () => {
+      const id = Number(b.dataset.revoke);
+      void attempt(async () => {
+        await api.revokeInvite(id);
+        loadAdmin(true);
+      }, (m) => { adminErr = m; });
+    }),
+  );
+  root.querySelectorAll<HTMLButtonElement>('[data-active]').forEach((b) => {
+    const on = b.dataset.to === '1';
+    arm(b, on ? 'Enable?' : 'Disable?', () => {
+      const id = Number(b.dataset.active);
+      void attempt(async () => {
+        await api.setUserActive(id, on);
+        loadAdmin(true);
+      }, (m) => { adminErr = m; });
+    });
   });
 
   $('mc-host')?.addEventListener('click', () => {
@@ -2182,6 +2711,33 @@ function wire(): void {
       acctOpen = false;
     }, (m) => { acctNote = { ok: false, text: m }; });
   });
+}
+
+// The table's aggregates, fetched once the Stats view is actually asked for —
+// queries nobody waiting at the door should pay for.
+function loadTableStats(): void {
+  if (tableStats || statsLoading || !account) return;
+  statsLoading = true;
+  statsErr = null;
+  void Promise.all([
+    api.statsSummary(),
+    api.topCards('pilot', 10),
+    api.topCards('mech_part', 10),
+    api.topCards('drone', 10),
+    api.topCards('tactics_or_upgrade', 10),
+    api.factionUsage(),
+    api.leaderboard(10),
+  ])
+    .then(([summary, pilots, parts, drones, tactics, factions, board]) => {
+      tableStats = { summary, pilots, parts, drones, tactics, factions, ...board };
+    })
+    .catch((e) => {
+      statsErr = e instanceof ApiError ? e.message : 'Could not read the table stats.';
+    })
+    .finally(() => {
+      statsLoading = false;
+      render();
+    });
 }
 
 // The dial lock lives here rather than in the HUD module, because this page

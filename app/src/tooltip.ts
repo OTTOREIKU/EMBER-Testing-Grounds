@@ -5,6 +5,9 @@ let currentId: string | null = null;
 let pinTo: HTMLElement | null = null;
 let lastMove: MouseEvent | null = null;
 
+// What a preview may pin itself beside instead of trailing the cursor.
+const ANCHORS = '[data-tip-side], .dlg-panel, aside';
+
 function ensureTip(): HTMLDivElement {
   if (!tip) {
     tip = document.createElement('div');
@@ -21,12 +24,23 @@ function position(): void {
   const w = tip.offsetWidth || 260;
   const h = tip.offsetHeight || 360;
   const clampY = (y: number) => Math.max(4, Math.min(y, window.innerHeight - h - 4));
-  const anchor = pinTo?.closest('.dlg-panel') ?? pinTo?.closest('aside');
+  const anchor = pinTo?.closest(ANCHORS);
   const panel = anchor?.getBoundingClientRect();
   if (panel) {
-    const outside = panel.left - w - 10 >= 4 ? panel.left - w - 10
-      : panel.right + 10 + w <= window.innerWidth - 4 ? panel.right + 10
-      : null;
+    const right = panel.right + 10 + w <= window.innerWidth - 4 ? panel.right + 10 : null;
+    // A layout that asks for the right keeps it there whether or not the
+    // preview fits beside the panel: on a wide reading view there is no clear
+    // space to find, and the card lying over the edge of it costs nothing —
+    // it is pointer-transparent, and the row it came from stays lit.
+    if ((anchor as HTMLElement).dataset.tipSide === 'right') {
+      tip.style.left = `${right ?? Math.max(4, window.innerWidth - w - 8)}px`;
+      tip.style.top = `${clampY(pinTo!.getBoundingClientRect().top)}px`;
+      return;
+    }
+    // Otherwise beside it, left first: the panels this was built for sit
+    // against the right of the window, so that is where the room is.
+    const left = panel.left - w - 10 >= 4 ? panel.left - w - 10 : null;
+    const outside = left ?? right;
     if (outside !== null) {
       tip.style.left = `${outside}px`;
       tip.style.top = `${clampY(pinTo!.getBoundingClientRect().top)}px`;
@@ -47,6 +61,14 @@ function hide(): void {
   if (tip) tip.classList.remove('visible');
 }
 
+// For a caller that is about to remove the thing being hovered. The preview
+// only ever hides on the next mouseover, so tearing its anchor out of the DOM
+// would otherwise leave a card floating over the page until something else is
+// pointed at.
+export function hideTooltip(): void {
+  hide();
+}
+
 export function installTooltip(): void {
   document.addEventListener('mouseover', (ev) => {
     const el = (ev.target as Element).closest?.('[data-tip-card],[data-tip-img]');
@@ -58,7 +80,7 @@ export function installTooltip(): void {
     if (direct) {
       if (direct === currentId) return;
       currentId = direct;
-      pinTo = (el as HTMLElement).closest('.dlg-panel, aside') ? (el as HTMLElement) : null;
+      pinTo = (el as HTMLElement).closest(ANCHORS) ? (el as HTMLElement) : null;
       const t = ensureTip();
       const shown = t.querySelector('img')!;
       shown.src = direct;
@@ -69,7 +91,7 @@ export function installTooltip(): void {
     const id = (el as HTMLElement).dataset.tipCard!;
     if (id === currentId) return;
     currentId = id;
-    pinTo = (el as HTMLElement).closest('.dlg-panel, aside') ? (el as HTMLElement) : null;
+    pinTo = (el as HTMLElement).closest(ANCHORS) ? (el as HTMLElement) : null;
     const t = ensureTip();
     const shown = t.querySelector('img')!;
     const src = loadCardImage(id);
