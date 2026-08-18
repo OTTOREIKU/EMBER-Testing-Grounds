@@ -113,6 +113,18 @@ export function lightningExchangeOf(a: CardAction): 'pulse' | 'ion' | null {
   return null;
 }
 
+// Concussion and Wrecking SPEND the Attack Roll's Lightning instead of
+// trading it: each icon strips 1 Link from the target Mech, and Wrecking's
+// also count as damage. No printed action carries one of these alongside
+// Pulse or Ion, so the drain and the exchange never fight over an icon.
+export function lightningLinkDrain(a: CardAction): 'concussion' | 'wrecking' | null {
+  const hay = (a.description?.en ?? '') + ' ' + (a.description?.zh ?? '')
+    + ' ' + (a.keywords ?? []).map((k) => k.inline ?? '').join(' ');
+  if (/粉碎|\bWrecking\b/i.test(hay)) return 'wrecking';
+  if (/震撼|\bConcussion\b/i.test(hay)) return 'concussion';
+  return null;
+}
+
 export interface Resupply {
   actionId: string;
   amount: number;
@@ -1577,6 +1589,35 @@ export function tokenCards(data: GameData, t: Token): { slot: PartSlot | 'pilot'
   const bp = t.droneBackpack ? data.byId.get(t.droneBackpack) : undefined;
   if (bp) out.push({ slot: 'backpack', card: bp });
   return out as { slot: PartSlot | 'main'; card: Card }[];
+}
+
+// ---------- defender-side dice keywords (4.10) ----------
+//
+// Dense Armor and KC Armor are printed on PARTS (the GOF armored cores and
+// the UN KC cores), so they are read off the equipped, non-destroyed cards
+// rather than off the Action being resolved.
+
+function partKeyword(data: GameData, t: Token, re: RegExp): { slot: string; card: Card } | null {
+  for (const { slot, card } of tokenCards(data, t)) {
+    if (slot === 'pilot') continue;
+    if ((t.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
+    if ((card.keywords ?? []).some((k) => re.test(`${k.key ?? ''} ${k.en ?? ''}`))) return { slot, card };
+  }
+  return null;
+}
+
+// 致密装甲: {Defense} may offset {Heavy Hit}.
+export function denseArmorOn(data: GameData, t: Token): boolean {
+  return !!partKeyword(data, t, /致密装甲|Dense\s*Armor/i);
+}
+
+// KC装甲: consume a Charge Token to exchange {Lightning} in the Defense Roll
+// for {Defense}. Returns the Part holding a FACE-UP Charge Token, because the
+// consume is a setCharge on that exact slot.
+export function kcArmorReady(data: GameData, t: Token): { slot: string } | null {
+  const kc = partKeyword(data, t, /KC装甲|KC\s*Armor/i);
+  if (!kc) return null;
+  return (t.charge ?? []).includes(kc.slot) ? { slot: kc.slot } : null;
 }
 
 // ---------- Flying Movement granted by a Part ----------

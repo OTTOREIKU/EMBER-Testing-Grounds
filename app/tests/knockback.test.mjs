@@ -143,5 +143,14 @@ check('a word ending in ion is not an ion weapon', lightningExchangeOf({ descrip
 check('a plain action has neither', lightningExchangeOf({ description: { en: '· Concussion' } }), null);
 check('an empty action has neither', lightningExchangeOf({}), null);
 
+// Concussion/Wrecking spend the same Lightning the exchanges trade, one Link
+// per icon — Wrecking's also count as damage.
+const { lightningLinkDrain } = await import(ktmp.href);
+check('concussion is read', lightningLinkDrain({ keywords: [{ inline: '震撼' }] }), 'concussion');
+check('english concussion is read', lightningLinkDrain({ description: { en: '· Concussion' } }), 'concussion');
+check('wrecking is read', lightningLinkDrain({ description: { zh: '· 粉碎' } }), 'wrecking');
+check('a pulse action is not a drain', lightningLinkDrain({ keywords: [{ inline: '频闪武器' }] }), null);
+check('an empty action drains nothing', lightningLinkDrain({}), null);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

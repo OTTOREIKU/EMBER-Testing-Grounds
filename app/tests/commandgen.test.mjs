@@ -325,7 +325,9 @@ const mainSrc = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8')
 // rendered total — the attack tally is derived again at the attack step and at
 // resolve, so a total edited in one place would not survive the other.
 check('Chef exchange lives on the combat state', /eyeSwaps: number;/.test(combatSrc), true);
-check('both attack readers go through attackIcons', (combatSrc.match(/this\.attackIcons\(c\)/g) ?? []).length, 2);
+// Three readers now: the attack-step summary, resolve(), and the
+// Concussion/Wrecking drain — every one through the same tally.
+check('every attack reader goes through attackIcons', (combatSrc.match(/this\.attackIcons\(c\)/g) ?? []).length, 3);
 // attackIcons is the ONLY thing allowed to read the raw attack roll; everything
 // else must come through it, or an exchange shows in one place and not another.
 const attackIconsBody = combatSrc.slice(

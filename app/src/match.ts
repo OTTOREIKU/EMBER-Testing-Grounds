@@ -7,7 +7,7 @@ import { cardName, dataUrl, loadData, missionImageUrl, squadLabel, type GameData
 import { tacticSpec } from './tactics';
 import { flushBoxDrops, queueBoxDrop, objectiveCells } from './matchhud';
 import { printedDeployment } from './overlays';
-import { knockbackOf, migrateState, multiTargetLimit, squadAllegiance, tokenCards, unfoldsOwed, type AttackReaction } from './units';
+import { kcArmorReady, knockbackOf, migrateState, multiTargetLimit, squadAllegiance, tokenCards, unfoldsOwed, type AttackReaction } from './units';
 import { countHits, normaliseSetup } from './setup';
 import { gameResult, normaliseTasks, taskItemsFor } from './tasks';
 import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
@@ -649,6 +649,7 @@ function settleDefense(cmd: Command): void {
   // command is harmless.
   if (cmd.kind === 'focusAnswer') attackHelper?.focusAnswered(cmd.use);
   if (cmd.kind === 'focusReroll') attackHelper?.focusRerolled(cmd.indices, cmd.faces);
+  if (cmd.kind === 'kcArmor') attackHelper?.kcArmed();
 }
 
 function startAttack(uid: number, actionId: string, targetUid: number, mode: 'attack' | 'intercept' | 'explosion' = 'attack'): void {
@@ -1557,6 +1558,13 @@ function combatMirrorHtml(): string | null {
   // reroll renders THEIR defense dice as toggles and rolls server faces for
   // whatever is picked.
   const iAmDefender = !!df && mySeat() === df.side;
+  // KC Armor (4.10): offered to the defending player while their Defense Roll
+  // shows Lightning, until they take it or the attack resolves.
+  const kcReady = iAmDefender && df && !view.kcUsed && df.kind === 'mech' ? kcArmorReady(data!, df) : null;
+  const kcLightning = view.defense?.filter((f) => (diceData!.dice[f.color as DieColor]?.faces[f.face] ?? []).some((ic) => ic.type === 'lightning')).length ?? 0;
+  const kcUi = kcReady && kcLightning > 0
+    ? `<div class="ah-step"><button class="ah-alt" data-act="kcarmor">KC Armor: consume a Charge Token — your [Lightning] become [Defense]</button></div>`
+    : '';
   const focus = view.focus;
   let focusUi = '';
   if (focus && iAmDefender && focus.stage === 'declareD') {
@@ -1581,6 +1589,7 @@ function combatMirrorHtml(): string | null {
     ${view.attack?.length ? `<div class="ah-step"><p>Attack Roll</p>${faceRow(view.attack)}</div>` : ''}
     ${myRoll}
     ${view.defense?.length ? `<div class="ah-step"><p>Defense Roll</p>${faceRow(view.defense)}</div>` : ''}
+    ${kcUi}
     ${focusUi}
     ${view.log.length ? `<div class="ah-log">${view.log.map((l) => `<div>${esc(l)}</div>`).join('')}</div>` : ''}
   </div>`;
@@ -1601,6 +1610,16 @@ function mirrorFocusAct(act: string, dieIndex?: number): void {
   if (act === 'die' && dieIndex !== undefined) {
     if (mirrorFocusSel.has(dieIndex)) mirrorFocusSel.delete(dieIndex);
     else mirrorFocusSel.add(dieIndex);
+    render();
+    return;
+  }
+  if (act === 'kc') {
+    // The Charge spend travels as an ordinary setCharge; the kcArmor command
+    // only tells the attacker's window the trade was declared.
+    const kc = df.kind === 'mech' ? kcArmorReady(data!, df) : null;
+    if (!kc) return;
+    send({ kind: 'setCharge', seat, uid: df.uid, slot: kc.slot, on: false });
+    send({ kind: 'kcArmor', seat });
     render();
     return;
   }

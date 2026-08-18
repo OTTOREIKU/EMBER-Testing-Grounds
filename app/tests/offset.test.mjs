@@ -78,5 +78,13 @@ for (let h = 0; h <= 4; h++) for (let l = 0; l <= 4; l++) for (let d = 0; d <= 4
 }
 check(`sweep 625 combinations — conservation, legality, greediness`, { bad: sweepBad }, { bad: 0 });
 
+// Dense Armor (致密装甲): {Defense} may offset {Heavy Hit} too.
+check('Dense Armor: 1H vs 0 Dodge, 3 Defense -> the Heavy is blocked',
+  offsetIcons(1, 0, 0, 3, true), { dodged: 0, blocked: 1, penetrating: 0, hits: 1, idleDefense: 2 });
+check('Dense Armor off by default keeps the old answer',
+  offsetIcons(1, 0, 0, 3), { blocked: 0, penetrating: 1 });
+check('Dense Armor: 2H+1L vs 1 Dodge, 2 Defense -> everything offset',
+  offsetIcons(2, 1, 1, 2, true), { dodged: 1, blocked: 2, penetrating: 0, hits: 2 });
+
 console.log(`\n${fail === 0 ? 'ALL PASS' : 'FAILURES'} — ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

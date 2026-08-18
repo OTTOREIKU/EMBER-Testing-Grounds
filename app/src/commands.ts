@@ -72,6 +72,9 @@ export type Command =
   // one is a shared fact, so the flip has to travel like Ammo does.
   | { kind: 'setCharge'; seat: Side; uid: number; slot: string; on: boolean }
   | { kind: 'recordKill'; seat: Side; uid: number; targetUid: number; what: 'part' | 'unit' }
+  // Concussion/Wrecking (4.10): the Attack Roll's Lightning strips the target
+  // Mech's Link, sent once by the attacking client as the resolution applies.
+  | { kind: 'drainLink'; seat: Side; uid: number; targetUid: number; n: number }
   | { kind: 'destroyTerrain'; seat: Side; uid: number; pieces: string[] }
   // A Black Box changing hands (5.3.1). Picking one up is optional and happens
   // as a unit's Movement passes through its Grid; the route itself stays with
@@ -200,6 +203,10 @@ export type Command =
   // their own client through an ordinary `focus` command.
   | { kind: 'focusAnswer'; seat: Side; use: boolean }
   | { kind: 'focusReroll'; seat: Side; indices: number[]; faces: { color: string; face: number }[] }
+  // KC Armor (4.10): the remote defender's declare that its consumed Charge
+  // Token turns the Defense Roll's Lightning into Defense. The Charge itself
+  // is spent by the defender's own setCharge; this only reaches the window.
+  | { kind: 'kcArmor'; seat: Side }
   // The attacker's combat window, published so the defender watches the same
   // attack unfold. Null tears the mirror down when the window closes.
   | { kind: 'setCombatView'; seat: Side; view: CombatView | null }
@@ -292,8 +299,8 @@ function oppOf(state: GameState, uid: number) {
 // projectile has left the board, and an owed Interception survives its unit
 // dying. So these carry the actor for attribution, and the on-board gate binds
 // only while it is still standing.
-function actorOptional(cmd: Command): cmd is Command & { kind: 'forceMove' | 'recordKill' | 'destroyTerrain' | 'resolveIntercept' | 'dropBlackBox' } {
-  return cmd.kind === 'forceMove' || cmd.kind === 'recordKill' || cmd.kind === 'destroyTerrain'
+function actorOptional(cmd: Command): cmd is Command & { kind: 'forceMove' | 'recordKill' | 'destroyTerrain' | 'resolveIntercept' | 'dropBlackBox' | 'drainLink' } {
+  return cmd.kind === 'forceMove' || cmd.kind === 'recordKill' || cmd.kind === 'destroyTerrain' || cmd.kind === 'drainLink'
     || cmd.kind === 'resolveIntercept' || cmd.kind === 'dropBlackBox';
 }
 
@@ -310,7 +317,7 @@ type TableKind =
   | 'clearCounterRoll'
   | 'setMode' | 'handOver' | 'setStrict' | 'commitTimings' | 'revealTimings' | 'importSquad'
   | 'configureTable' | 'startMatch' | 'endMatch' | 'pickSecondary' | 'setTactics' | 'setReady' | 'designateTask'
-  | 'callDefense' | 'answerDefense' | 'clearDefense' | 'setCombatView' | 'focusAnswer' | 'focusReroll'
+  | 'callDefense' | 'answerDefense' | 'clearDefense' | 'setCombatView' | 'focusAnswer' | 'focusReroll' | 'kcArmor'
   | 'setRollbackCatalog' | 'rollbackRequest' | 'rollbackAnswer';
 const TABLE_KINDS = new Set<Command['kind']>([
   'advancePhase', 'setPhase', 'resetRounds', 'adjustCommandTokens', 'passTurn', 'markEndStep', 'award',
@@ -320,7 +327,7 @@ const TABLE_KINDS = new Set<Command['kind']>([
   'clearCounterRoll',
   'setMode', 'handOver', 'setStrict', 'commitTimings', 'revealTimings', 'importSquad',
   'configureTable', 'startMatch', 'endMatch', 'pickSecondary', 'setTactics', 'setReady', 'designateTask',
-  'callDefense', 'answerDefense', 'clearDefense', 'setCombatView', 'focusAnswer', 'focusReroll',
+  'callDefense', 'answerDefense', 'clearDefense', 'setCombatView', 'focusAnswer', 'focusReroll', 'kcArmor',
   'setRollbackCatalog', 'rollbackRequest', 'rollbackAnswer',
 ]);
 
@@ -332,7 +339,7 @@ const ATTRIBUTED = new Set<Command['kind']>([
   'advancePhase', 'setPhase', 'resetRounds', 'markEndStep', 'award',
   // Who asked and who answered is the whole record of a rollback, so both are
   // stamped with the sender's own seat like every other attributed command.
-  'callDefense', 'answerDefense', 'clearDefense', 'setCombatView', 'focusAnswer', 'focusReroll',
+  'callDefense', 'answerDefense', 'clearDefense', 'setCombatView', 'focusAnswer', 'focusReroll', 'kcArmor',
   'setRollbackCatalog', 'rollbackRequest', 'rollbackAnswer',
   'lockMap', 'acceptRoll', 'lockDials', 'finishDeployment',
   'queueIntercepts', 'clearIntercepts', 'placeSmoke', 'removeSmoke', 'dissipateSmoke',
@@ -493,6 +500,10 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
     case 'focusAnswer': {
       if (!state.script) return no('There is no game running.');
       if (typeof cmd.use !== 'boolean') return no('That is not a Focus answer.');
+      return ok;
+    }
+    case 'kcArmor': {
+      if (!state.script) return no('There is no game running.');
       return ok;
     }
     case 'focusReroll': {
@@ -804,6 +815,13 @@ export function check(data: GameData, state: GameState, cmd: Command): CheckResu
       if (!state.tokens.some((x) => x.uid === cmd.targetUid)) return no('That target is not on the board.');
       return ok;
     }
+    case 'drainLink': {
+      const target = state.tokens.find((x) => x.uid === cmd.targetUid);
+      if (!target) return no('That target is not on the board.');
+      if (target.kind !== 'mech') return no('Only a Mech has Link to lose.');
+      if (!Number.isInteger(cmd.n) || cmd.n < 1 || cmd.n > 12) return no('That is not a Link drain.');
+      return ok;
+    }
     case 'destroyTerrain': {
       if (!cmd.pieces.length) return no('No terrain named.');
       const gone = new Set(state.removedTerrain ?? []);
@@ -840,7 +858,7 @@ export function check(data: GameData, state: GameState, cmd: Command): CheckResu
 function checkActed(
   data: GameData,
   state: GameState,
-  cmd: Exclude<Command, { kind: 'forceMove' | 'recordKill' | 'destroyTerrain' | 'resolveIntercept' | 'dropBlackBox' | TableKind }>,
+  cmd: Exclude<Command, { kind: 'forceMove' | 'recordKill' | 'destroyTerrain' | 'resolveIntercept' | 'dropBlackBox' | 'drainLink' | TableKind }>,
   t: Token,
 ): CheckResult {
   switch (cmd.kind) {
@@ -1517,10 +1535,11 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
     if (sc) sc.combat = null;
     return;
   }
-  if (cmd.kind === 'focusAnswer' || cmd.kind === 'focusReroll') {
+  if (cmd.kind === 'focusAnswer' || cmd.kind === 'focusReroll' || cmd.kind === 'kcArmor') {
     // Consumed by the attacking client's combat window as the command is
     // observed, the same way answerDefense is — the board itself carries
-    // nothing for them to change.
+    // nothing for them to change (KC Armor's Charge spend travels as its own
+    // setCharge from the defender's client).
     return;
   }
   if (cmd.kind === 'setCombatView') {
@@ -1754,6 +1773,15 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
   if (cmd.kind === 'destroyTerrain') {
     const gone = new Set(state.removedTerrain ?? []);
     state.removedTerrain = [...(state.removedTerrain ?? []), ...cmd.pieces.filter((p) => !gone.has(p))];
+    return;
+  }
+  if (cmd.kind === 'drainLink') {
+    const target = state.tokens.find((x) => x.uid === cmd.targetUid);
+    if (!target || target.kind !== 'mech') return;
+    target.link = Math.max(0, (target.link ?? 0) - cmd.n);
+    // Link at 0 is an immediate Shutdown, the same rule every other Link loss
+    // already enforces.
+    if (target.link === 0 && target.stance !== 'shutdown') target.stance = 'shutdown';
     return;
   }
   // Above the actor lookup: the attacker who chose the Grid may be a Projectile

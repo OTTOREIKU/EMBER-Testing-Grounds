@@ -77,8 +77,10 @@ const combatView = {
   targetPart: 'rightHand', attack: [{ color: 'red', face: 2 }, { color: 'yellow', face: 0 }],
   defense: null, log: ['Black Die: rightArm.'],
   // Non-default on purpose, like everything else here: the Focus flow's place
-  // must survive the trip or the defender's mirror asks at the wrong moment.
+  // must survive the trip or the defender's mirror asks at the wrong moment,
+  // and a spent KC Armor must stay spent.
   focus: { stage: 'declareD', attackerUse: true, defenderUse: false },
+  kcUsed: true,
 };
 // Every value here is deliberately NOT the default, so a field that
 // normaliseScript forgets to carry across fails rather than coincidentally

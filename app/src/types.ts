@@ -610,6 +610,8 @@ export interface CombatView {
   // Where the Focus flow (4.4.1-5) stands, so the defender's mirror can ask
   // their declare and drive their reroll at the right moments.
   focus?: { stage: string; attackerUse: boolean; defenderUse: boolean } | null;
+  // KC Armor already declared this attack, so the mirror stops offering it.
+  kcUsed?: boolean;
 }
 
 // A boundary a rollback can return to. `available` false means a die roll has
@@ -722,6 +724,7 @@ function normaliseCombatView(raw: unknown): CombatView | null {
         ? { stage: f.stage, attackerUse: !!f.attackerUse, defenderUse: !!f.defenderUse }
         : null;
     })(),
+    kcUsed: !!v.kcUsed,
   };
 }
 

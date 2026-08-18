@@ -5,7 +5,7 @@ import { linkMechanics } from './inspector';
 import { SQUAD_ORDER, squadLabel } from './data';
 import type { Card, CardAction, DiceData, DiceIcon, DieColor, GameRuleEffect, PartSlot, Side, SmokeScreen, TerrainPiece, Token } from './types';
 import { statusCount, STATUSES } from './types';
-import { aaRadarCovers, attackReactionsOf, auraEffectsOn, designationsOn, electronicValue, followUpAfterKill, lightningExchangeOf, loanedParts, pilotCard, repeatersFor, SLOT_LABEL, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
+import { aaRadarCovers, attackReactionsOf, auraEffectsOn, denseArmorOn, designationsOn, electronicValue, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, loanedParts, pilotCard, repeatersFor, SLOT_LABEL, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
 import { timingOf } from './ticks';
 import { losNote, protectionFor, rangeBetween } from './rules';
 import type { Command } from './commands';
@@ -60,7 +60,8 @@ interface Duel {
   carried: boolean;
 }
 
-export function offsetIcons(heavy: number, light: number, dodge: number, defense: number): {
+// `dense` is Dense Armor (致密装甲): {Defense} may offset {Heavy Hit} too.
+export function offsetIcons(heavy: number, light: number, dodge: number, defense: number, dense = false): {
   icons: DuelIcon[];
   spareDodge: number;
   idleDefense: number;
@@ -85,7 +86,7 @@ export function offsetIcons(heavy: number, light: number, dodge: number, defense
   let f = defense;
   for (const ic of icons) {
     if (!f) break;
-    if (ic.kind === 'lightHit' && !ic.offset) { ic.offset = 'defense'; f--; }
+    if ((ic.kind === 'lightHit' || (dense && ic.kind === 'heavyHit')) && !ic.offset) { ic.offset = 'defense'; f--; }
   }
   const dodged = icons.filter((i) => i.offset === 'dodge').length;
   const blocked = icons.filter((i) => i.offset === 'defense').length;
@@ -159,6 +160,12 @@ interface Ctx {
     attackerUse: boolean;
     defenderUse: boolean;
   } | null;
+  // KC Armor (4.10): the defender consumed a Charge Token, so the Defense
+  // Roll's Lightning counts as Defense. Derived into the tally by resolve().
+  kcUsed?: boolean;
+  // Concussion/Wrecking's Link drain fires exactly once, when the resolution
+  // is applied — never from resolve(), which redraws many times.
+  drainSent?: boolean;
   // ZPA-35 Chef: each consumed Command Token exchanges one {Eye} on the ATTACK
   // roll for a {Heavy Hit} (4.15.4). Counted on the state rather than applied to
   // a rendered total, because the tally is derived again at the attack step and
@@ -220,6 +227,7 @@ export class AttackHelper {
     defense: { color: string; face: number }[] | null;
     log: string[];
     focus: { stage: string; attackerUse: boolean; defenderUse: boolean } | null;
+    kcUsed: boolean;
   } | null) => void) | null = null;
   // Whether this defender's Focus decisions belong to a player at another
   // screen. Wired by the Match Centre; null in freeplay, where one player
@@ -523,6 +531,33 @@ export class AttackHelper {
     this.render();
   }
 
+  // Concussion/Wrecking's Link drain (4.10), sent once as the resolution is
+  // applied. Clamped to the Link actually left so a big roll cannot push a
+  // Mech below zero on the wire.
+  private sendLightningDrain(): void {
+    const c = this.ctx!;
+    if (c.drainSent || c.surplusRound > 0) return;
+    c.drainSent = true;
+    const kind = lightningLinkDrain(c.action);
+    if (!kind || c.defender.kind !== 'mech') return;
+    const n = Math.min(this.attackIcons(c).lightning ?? 0, c.defender.link ?? 0);
+    if (!n) return;
+    this.onCommand({ kind: 'drainLink', seat: c.attacker.side, uid: c.attacker.uid, targetUid: c.defender.uid, n });
+    this.note(`${c.defender.label} loses ${n} Link (${kind === 'wrecking' ? 'Wrecking' : 'Concussion'}, 4.10)${(c.defender.link ?? 0) - n <= 0 ? ' — at 0 Link it Shuts Down' : ''}.`);
+    this.onChanged();
+  }
+
+  // The remote defender's KC Armor declare, carried by a kcArmor command; the
+  // Charge Token was spent by their own setCharge. Freeplay reaches this
+  // directly from the button.
+  kcArmed(): void {
+    const c = this.ctx;
+    if (!c || c.kcUsed) return;
+    c.kcUsed = true;
+    this.note(`${c.defender.label} consumes a Charge Token: KC Armor turns its Defense Roll's [Lightning] into [Defense] (4.10).`);
+    this.render();
+  }
+
   // The remote defender's declare, carried by a focusAnswer command. Their own
   // client already spent the Link, so this only advances the stage.
   focusAnswered(use: boolean): void {
@@ -712,6 +747,14 @@ export class AttackHelper {
     const c = this.ctx!;
     const atk = this.attackIcons(c);
     const def = this.countIcons(c.defenseRoll ?? [], c.defender.stance === 'defensive');
+    // KC Armor (4.10): the consumed Charge Token turns every {Lightning} in
+    // the Defense Roll into {Defense}. Derived here so the tally and the
+    // resolution can never disagree about the trade.
+    const kcSwapped = c.kcUsed ? def.lightning ?? 0 : 0;
+    if (kcSwapped) {
+      def.defense = (def.defense ?? 0) + kcSwapped;
+      def.lightning = 0;
+    }
     // The Token, or the MES Beacon's aura: the aura grants the KEYWORD, so it
     // works exactly like the Token here and Scan cannot strip it (FAQ Q3/J2).
     const lowProfile = c.action.type === 'Firing' && (statusCount(c.defender.statuses, 'lowProfile') > 0
@@ -732,6 +775,12 @@ export class AttackHelper {
     }
     let heavy = c.surplusRound === 0 ? atk.heavyHit ?? 0 : 0;
     let light = c.surplusRound === 0 ? atk.lightHit ?? 0 : 0;
+    // Wrecking (粉碎): each {Lightning} in the Attack Roll ALSO causes damage,
+    // counted alongside the Light Hits; the Link drain half happens once, when
+    // the resolution is applied. Concussion drains without the damage.
+    const drainKind = c.surplusRound === 0 ? lightningLinkDrain(c.action) : null;
+    const drained = drainKind ? atk.lightning ?? 0 : 0;
+    if (drainKind === 'wrecking') light += drained;
     if (c.surplusRound > 0) {
       heavy = c.carried.heavy;
       light = c.carried.light;
@@ -750,7 +799,20 @@ export class AttackHelper {
     }
     const totalIcons = heavy + light;
 
-    const { icons, spareDodge, idleDefense, dodged, blocked, penetrating, hits, unoffset } = offsetIcons(heavy, light, dodge, defense);
+    // Dense Armor (致密装甲): {Defense} may offset {Heavy Hit}.
+    const dense = denseArmorOn(this.data, c.defender);
+    if (kcSwapped) text.push(`KC Armor: a Charge Token turned ${kcSwapped} [Lightning] in the Defense Roll into ${kcSwapped === 1 ? 'a Defense icon' : 'Defense icons'} (4.10)`);
+    if (drainKind && drained) {
+      if (c.defender.kind === 'mech') {
+        text.push(drainKind === 'wrecking'
+          ? `Wrecking: ${drained} [Lightning] — each strips 1 Link from ${c.defender.label} and counts as damage`
+          : `Concussion: ${drained} [Lightning] — each strips 1 Link from ${c.defender.label}`);
+      } else if (drainKind === 'wrecking') {
+        text.push(`Wrecking: ${drained} [Lightning] count as damage — ${c.defender.label} has no Link to strip`);
+      }
+    }
+    if (dense && heavy) text.push('Dense Armor: [Defense] may offset [Heavy Hit] here (4.10)');
+    const { icons, spareDodge, idleDefense, dodged, blocked, penetrating, hits, unoffset } = offsetIcons(heavy, light, dodge, defense, dense);
     const triggers: DuelIcon[] = [];
     if (c.surplusRound === 0) {
       for (let i = 0; i < (atk.lightning ?? 0); i++) triggers.push({ kind: 'lightning', offset: null });
@@ -875,6 +937,7 @@ export class AttackHelper {
       defense: c.defenseRoll?.map((d) => ({ color: d.color, face: d.face })) ?? null,
       log: c.log.slice(-5).map((l) => l.replace(/<[^>]*>/g, '')),
       focus: c.focus ? { stage: c.focus.stage, attackerUse: c.focus.attackerUse, defenderUse: c.focus.defenderUse } : null,
+      kcUsed: !!c.kcUsed,
     });
     const el = document.createElement('div');
     el.className = 'attack-helper';
@@ -1571,6 +1634,24 @@ export class AttackHelper {
       sum.className = 'ah-sum';
       sum.textContent = `Effective: ${def.defense ?? 0}× Defense, ${def.dodge ?? 0}× Dodge`;
       wrap.appendChild(sum);
+      // KC Armor (4.10): the defender may consume a Charge Token to turn the
+      // Defense Roll's Lightning into Defense. Offered here while the roll is
+      // on the table; the REMOTE defender's copy of this button lives in
+      // their combat mirror.
+      const kc = c.defender.kind === 'mech' && !c.kcUsed ? kcArmorReady(this.data, c.defender) : null;
+      const defLightning = this.countIcons(c.defenseRoll, false).lightning ?? 0;
+      const remoteDefender = !!(this.focusRemote && this.focusRemote(c.defender));
+      if (kc && defLightning > 0 && !remoteDefender) {
+        const b = document.createElement('button');
+        b.className = 'ah-alt';
+        b.textContent = `KC Armor: consume a Charge Token — ${defLightning} [Lightning] become [Defense]`;
+        b.addEventListener('click', () => {
+          this.onCommand({ kind: 'setCharge', seat: c.defender.side, uid: c.defender.uid, slot: kc.slot, on: false });
+          this.onCommand({ kind: 'kcArmor', seat: c.defender.side });
+          this.kcArmed();
+        });
+        wrap.appendChild(b);
+      }
       // 4.4.1 step 5 sits between the rolls and the resolution: the Focus
       // questions are asked in the printed order, and Resolve appears only
       // once the flow has run dry.
@@ -1617,6 +1698,7 @@ export class AttackHelper {
       apply.addEventListener('click', () => {
         // The wait between render and this press is another checkpoint window.
         this.rebind(c);
+        this.sendLightningDrain();
         const slot = c.targetPart as PartSlot | 'main';
         const cur = c.defender.partStates[slot] ?? 'intact';
         const wasShut = c.defender.stance === 'shutdown';
@@ -1713,8 +1795,12 @@ export class AttackHelper {
       done.textContent = 'Done';
       // An Attack with no Penetration still ends through finish(), because icons
       // the defence offset are Hits and on-hit riders such as Knockback fire on
-      // them (4.4 note on Hit versus Penetration).
-      done.addEventListener('click', () => this.finish(wrap));
+      // them (4.4 note on Hit versus Penetration) — and Concussion/Wrecking's
+      // Lightning drains Link whether anything got through or not.
+      done.addEventListener('click', () => {
+        this.sendLightningDrain();
+        this.finish(wrap);
+      });
       wrap.appendChild(done);
     }
     return wrap;

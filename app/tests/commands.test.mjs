@@ -1505,6 +1505,23 @@ check('mismatched lists are refused', C.check(data, wfoc, { kind: 'focusReroll',
 check('an absurd die index is refused', C.check(data, wfoc, { kind: 'focusReroll', seat: 's2', indices: [99], faces: [{ color: 'white', face: 1 }] }).ok, false);
 check('a malformed face is refused', C.check(data, wfoc, { kind: 'focusReroll', seat: 's2', indices: [0], faces: [{ color: 7, face: 'x' }] }).ok, false);
 
+// ---------- Concussion/Wrecking's Link drain (4.10) ----------
+//
+// Each Lightning in the Attack Roll strips 1 Link, sent once by the attacking
+// client as the resolution applies. Actor-optional like recordKill: a spent
+// Projectile's Wrecking still lands.
+
+const wdrain = world([mech(1, 's1'), mech(2, 's2', { link: 2, col: 9, row: 9 })], 2);
+check('a drain on a mech passes', C.check(data, wdrain, { kind: 'drainLink', seat: 's1', uid: 1, targetUid: 2, n: 1 }).ok, true);
+check('a drone has no Link to lose', C.check(data, world([mech(1, 's1'), { uid: 3, side: 's2', kind: 'drone', stance: 'defensive', label: 'D', col: 9, row: 9, cardId: 'D1', partStates: { main: 'intact' } }], 2), { kind: 'drainLink', seat: 's1', uid: 1, targetUid: 3, n: 1 }).ok, false);
+check('a silly count is refused', C.check(data, wdrain, { kind: 'drainLink', seat: 's1', uid: 1, targetUid: 2, n: 0 }).ok, false);
+C.apply(data, wdrain, { kind: 'drainLink', seat: 's1', uid: 1, targetUid: 2, n: 1 });
+check('the Link comes off', wdrain.tokens[1].link, 1);
+C.apply(data, wdrain, { kind: 'drainLink', seat: 's1', uid: 1, targetUid: 2, n: 5 });
+check('it clamps at zero and Shuts Down', [wdrain.tokens[1].link, wdrain.tokens[1].stance], [0, 'shutdown']);
+check('a KC Armor declare needs a running game', C.check(data, { tokens: [], round: { n: 1, phase: 2, firstPlayer: 's1' } }, { kind: 'kcArmor', seat: 's2' }).ok, false);
+check('and passes with one', C.check(data, wdrain, { kind: 'kcArmor', seat: 's2' }).ok, true);
+
 // ---------- the hand of Tactics Cards (5.4) ----------
 //
 // It has to travel: check() for playTactic reads the SENDER's hand, so a hand
