@@ -1869,13 +1869,27 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
       return;
     }
     case 'maneuver': {
+      const from = { col: t.col, row: t.row };
       t.col = cmd.to.col;
       t.row = cmd.to.row;
       if (cmd.facing !== undefined) t.facing = cmd.facing;
       const o = oppOf(state, cmd.uid);
       // A Movement Action already paid with an Action Tick, and one a card
       // handed out was never charged to the Opportunity at all.
-      if (o && sc && !cmd.free && !cmd.granted) sc.opp = lockStance(t, spendManeuver(o));
+      if (o && sc && !cmd.free && !cmd.granted) {
+        // M2 Data Link: "the Ally Drone may move 1 grid before performing
+        // Actions". A move within that allowance leaves the activation open,
+        // so the Drone may still act; anything longer, or a second one, spends
+        // it as normal. Measured from where it STOOD, which is why `from` is
+        // taken before the position is written above.
+        const grids = Math.abs(Math.floor(cmd.to.col / 3) - Math.floor(from.col / 3))
+          + Math.abs(Math.floor(cmd.to.row / 3) - Math.floor(from.row / 3));
+        const rider = t.kind === 'drone' ? riderOnDrone(data, state.tokens, t) : { preMove: 0 };
+        const freeGrid = rider.preMove > 0 && !o.preMoved && !o.started && grids <= rider.preMove;
+        sc.opp = freeGrid
+          ? { ...o, moved: true, preMoved: true }
+          : lockStance(t, spendManeuver(o));
+      }
       return;
     }
     case 'performAction': {

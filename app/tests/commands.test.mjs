@@ -255,6 +255,8 @@ const data = {
     // own, misspelling included, so the matcher is tested against reality.
     ['A2T', { id: 'A2T', category: 'mech_part', actions: [{ id: 'A2T_A', type: 'Passive', speed: 'passive', name: { en: 'A2 Data Link' },
       description: { en: '· Command Generation 2 · When recieving Command from this Mech, the Ally Drone may perform Automatic Actions instead of Command Actions.' } }] }],
+    ['M2T', { id: 'M2T', category: 'mech_part', actions: [{ id: 'M2T_A', type: 'Passive', speed: 'passive', name: { en: 'M2 Data Link' },
+      description: { en: '· Command Generation 2 · When receiving Command from this Mech, the Ally Drone may move 1 grid before performing Actions.' } }] }],
     ['167', { id: '167', category: 'drone', stance: 'mobility', score: 0, actions: [{ id: '167_A', type: 'Detonation', speed: 'auto', range: 1, yellowDice: 6, name: { en: 'Automatic Attack' } }] }],
   ]),
   commonActions: [{ id: 'COMMON_CHARGE', type: 'Tactic', size: 's', name: { en: 'Charge' } }],
@@ -662,6 +664,7 @@ const wPlain = world([
 ], 0, opp(2));
 check('a Command from a Mech with no rider does not',
   C.check(data, wPlain, paAuto).ok, false);
+
 
 
 const wfree2 = wcmd();
@@ -1814,6 +1817,43 @@ const wRelayNone = world([mech(1, 's1'), loadCarrier(2), mech(9, 's2', { col: 33
 check('a target beyond the Action Range is refused', C.check(data, wRelayNone, ewShot()).ok, false);
 const wRelay = world([mech(1, 's1'), loadCarrier(2), relayDrone(3, 21), mech(9, 's2', { col: 33 })], 2, opp(1));
 check('but a Repeater covering the Mech brings it in Range (O19)', C.check(data, wRelay, ewShot()).ok, true);
+
+// ---------- M2 Data Link: a grid before acting ----------
+//
+// A Drone's activation normally buys ONE Action or ONE Movement (2.4.1). "May
+// move 1 grid before performing Actions" leaves the activation open for a move
+// within that allowance, and only that one. canActivate did not change: the
+// free move simply never sets `maneuvered`.
+
+const m2World = (torso) => world([
+  mech(1, 's1', { mech: { torso, pilot: 'P1' } }),
+  { ...drone(2, 's1', { cardId: '167', col: 9, row: 9 }), commandedBy: 1 },
+], 0, opp(2));
+const mvTo = (col, row) => ({ kind: 'maneuver', seat: 's1', uid: 2, to: { col, row } });
+
+// A Large Grid is 3 small cells, so col 9 -> 12 is exactly one grid.
+const wM2 = m2World('M2T');
+C.apply(data, wM2, mvTo(12, 9));
+check('a 1-grid move leaves the activation open', wM2.script.opp.maneuvered, false);
+check('and is recorded as the free grid', wM2.script.opp.preMoved, true);
+C.apply(data, wM2, mvTo(15, 9));
+check('a second move spends the activation', wM2.script.opp.maneuvered, true);
+
+const wM2Far = m2World('M2T');
+C.apply(data, wM2Far, mvTo(21, 9));
+check('a move beyond the allowance spends it outright', wM2Far.script.opp.maneuvered, true);
+check('and is not the free grid', wM2Far.script.opp.preMoved, undefined);
+
+const wNoRider = m2World('T1');
+C.apply(data, wNoRider, mvTo(12, 9));
+check('without the rider even one grid closes it', wNoRider.script.opp.maneuvered, true);
+
+// "BEFORE performing Actions": once it has acted, the grid is gone.
+const wM2Acted = m2World('M2T');
+wM2Acted.script.opp.started = true;
+C.apply(data, wM2Acted, mvTo(12, 9));
+check('and it is not offered after the Drone has acted', wM2Acted.script.opp.preMoved, undefined);
+
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

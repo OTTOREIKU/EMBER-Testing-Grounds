@@ -455,6 +455,11 @@ export interface Opportunity {
   maneuvered: boolean;
   moved: boolean;
   started: boolean;
+  // M2 Data Link: this Drone used the single grid its Commander's rider grants
+  // "before performing Actions", so the move did NOT close its activation. Only
+  // one such move is free; a second, or a longer one, spends the activation the
+  // ordinary way (2.4.1).
+  preMoved?: boolean;
   // A Mech confirms its Stance before it may Maneuver or act (4.1). Set by
   // setStance or reboot while this Opportunity is open; drones never need it,
   // their Stance being printed on the card.
