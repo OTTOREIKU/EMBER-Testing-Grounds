@@ -160,12 +160,16 @@ button { font-family: inherit; }
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35); padding: 6px 12px;
   max-width: 100%; pointer-events: auto;
 }
+/* The guided instruction is its own floating line at the top of the board, so
+   the shortcut strip at the bottom belongs to the player alone: nothing the
+   app has to say can push it out of the way or sit in its place. */
 #hint {
-  margin: 0; font-size: 11.5px; line-height: 1.35; color: var(--text);
-  font-weight: 600; text-align: center;
+  position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+  z-index: 5; margin: 0; font-size: 11.5px; line-height: 1.35;
+  color: var(--text); font-weight: 600; text-align: center;
+  max-width: calc(100% - 300px);
 }
 #hint:not([data-guide]) { display: none; }
-#hintbar:has(#hint[data-guide]) #hint-keys { display: none; }
 #hint-keys {
   display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 13px;
   font-size: 10.5px; line-height: 1.35; color: var(--text3);
@@ -195,7 +199,6 @@ button { font-family: inherit; }
    an Action asking a question outranks the player's tidying. */
 #hintbar.keys-off #hint-keys { display: none; }
 #hintbar.keys-off #hint-show { display: block; }
-#hintbar.keys-off:has(#hint[data-guide]) #hint-show { display: none; }
 /* Targeting already recolours the text; on a floating pill it needs the frame
    to follow, or the emphasis reads as a mistake. */
 body.targeting #hint { background: var(--accent-lt); box-shadow: 0 0 0 1px var(--accent) inset, 0 2px 8px rgba(0, 0, 0, 0.35); }
@@ -1658,6 +1661,28 @@ body.targeting #hint { color: var(--accent); font-weight: 700; }
 /* Deliberately not the red of .squad-illegal: an empty Carrier is legal, just
    almost certainly unintended, so it reads as a note rather than an error. */
 /* The Load row on a Carrier's details, sitting above its actions. */
+/* Where a Small or Medium unit stands inside its own Large Grid. The pad is a
+   little map of that Grid, so it is square and sits beside its label rather
+   than under it. */
+.tok-spot {
+  display: flex; align-items: center; gap: 8px;
+  margin: 0 0 8px; padding: 6px 8px; border-radius: var(--radius);
+  background: var(--surface2); font-size: 11.5px;
+}
+.tok-spot-name { flex: 1; min-width: 0; color: var(--text2); }
+.spot-pad {
+  display: grid; grid-template-columns: repeat(var(--spot-cols, 3), 14px);
+  gap: 2px; flex-shrink: 0;
+}
+.spot-cell {
+  width: 14px; height: 14px; padding: 0; cursor: pointer;
+  border: 1px solid var(--line); border-radius: 2px;
+  background: var(--surface3); transition: background 0.12s, border-color 0.12s;
+}
+.spot-cell:hover:not(:disabled) { background: var(--accent-lt); border-color: var(--accent); }
+.spot-cell.here { background: var(--accent); border-color: var(--accent); }
+.spot-cell:disabled:not(.here) { opacity: 0.3; cursor: default; }
+
 .tok-load {
   display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
   margin: 0 0 8px; padding: 6px 8px; border-radius: var(--radius);

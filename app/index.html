@@ -97,8 +97,12 @@
                the left and the zoom controls on the right. #hint keeps its id so
                setHint still drives it; the keys hide while a guided instruction
                is showing. -->
+          <!-- Guided instructions used to share the bottom bar with the
+               shortcut keys and kept shouldering them aside. The bar is the
+               keys and nothing else now; anything the app has to say floats
+               at the TOP of the board, next to the click it is asking for. -->
+          <p id="hint"></p>
           <div id="hintbar">
-            <p id="hint"></p>
             <div id="hint-keys">
               <span><b>drag</b> move</span>
               <span><b>Q</b>/<b>E</b> rotate</span>

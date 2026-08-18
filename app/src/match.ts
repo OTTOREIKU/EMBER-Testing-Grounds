@@ -3,7 +3,7 @@ import { Relay, type RollKind } from './net';
 import { applyRemote, check, onBeforeApply, onPerformed, onRefused, perform, type Command, type CheckResult } from './commands';
 import { clearHistory, recordSnapshot, rollbackCatalog, undoToPhase } from './history';
 import { setLocalSeat } from './loop';
-import { cardName, dataUrl, loadData, missionImageUrl, squadLabel, type GameData } from './data';
+import { cardName, dataUrl, loadData, missionImageUrl, setSquadNames, squadLabel, type GameData } from './data';
 import { tacticSpec } from './tactics';
 import { flushBoxDrops, queueBoxDrop, objectiveCells } from './matchhud';
 import { printedDeployment } from './overlays';
@@ -19,7 +19,7 @@ import { importSquadFile } from './importer';
 import { boardFingerprint, dialsOf, hashDials, newSalt, type DialEntry } from './secrecy';
 import { animateRemoteMove, clearRangeOverlayFor, ensureHud, glueAfter, showRangeOverlay, showSideTab, startAttackPick, startBoxDrop, startDetonation, startElectronicPick, startInterceptPick, startLaunchPlan, startShove, startSmokePlan, type DiceLine, type HudCtx } from './matchhud';
 import { AttackHelper } from './combat';
-import { losNote, protectionFor } from './rules';
+import { losNote, protectionFor, spotsInGrid } from './rules';
 import { SquadTracker } from './squads';
 import { Panel } from './panel';
 import { iconSvg } from './dice';
@@ -792,6 +792,15 @@ function mountSide(): void {
       render();
       syncSide(t.uid);
     },
+    // Standing spot inside the Grid: your own units only — the other squad's
+    // placement is theirs, and the relay would refuse it anyway.
+    spotsInGrid: (t) => spotsInGrid(t, terrainNow(), state.tokens),
+    onPlaceInGrid: (t, to) => {
+      if (mySeat() && t.side !== mySeat()) return;
+      send({ kind: 'placeInGrid', seat: t.side, uid: t.uid, to });
+      render();
+      syncSide(t.uid);
+    },
     tacticNote: () => null,
   });
   if (diceData) {
@@ -913,6 +922,22 @@ function sweepCombatView(): void {
 function terrainNow() {
   const gone = new Set(state.removedTerrain ?? []);
   return (data?.terrain.layouts[state.map] ?? []).filter((p) => !gone.has(p.id));
+}
+
+// "Squad 1 rolls higher" tells a player nothing about whose squad that is.
+// Across a table the seats have names, so every `squadLabel(side)` in the app —
+// the panels, the dice feed, the combat window, the guide — prints the player
+// holding that seat instead. The account name wins over the imported squad
+// name: a player recognises themselves faster than their list.
+function nameTheSquads(): void {
+  const seats = relay.state.room?.seats;
+  if (!seats) {
+    // Solo or the dev harness: back to whatever the squads called themselves.
+    setSquadNames(state.sideNames);
+    return;
+  }
+  const of = (side: Side): string | undefined => seats[side] || state.sideNames?.[side];
+  setSquadNames({ s1: of('s1'), s2: of('s2') });
 }
 
 function syncSide(uid: number | null): void {
@@ -1821,6 +1846,7 @@ function render(): void {
   // A closed combat window takes the published mirror down with it, whatever
   // way it closed — the sweep sees the helper idle and sends the null.
   sweepCombatView();
+  nameTheSquads();
   const hud = !!data && ((running() && !!relay.state.room) || (!!devSeat && running()));
   // Three fixed hosts, so the stateful board survives every re-render: the
   // bar and veils redraw freely, the body only redraws outside HUD mode.

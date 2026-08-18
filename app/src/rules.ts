@@ -155,6 +155,44 @@ export function standingSpot(
   return null;
 }
 
+// Every legal standing spot for a unit INSIDE the Large Grid it is already in,
+// with the illegal ones kept in the list so a picker can grey them rather than
+// silently offering fewer squares. Which spot a small unit takes is a real
+// choice: Contact is judged at Small-Grid resolution (4.2.3), so the edge it
+// touches decides who it is in Contact with even though the Grid is the same.
+export function spotsInGrid(
+  t: Token,
+  terrain: TerrainPiece[],
+  tokens: Token[],
+): { col: number; row: number; ok: boolean; here: boolean }[] {
+  const c = Math.floor(t.col / 3);
+  const r = Math.floor(t.row / 3);
+  const maxOff = 3 - t.size;
+  const blocked = new Set<string>();
+  if (!t.aerial) {
+    for (const p of terrain) for (const cell of p.subCells) blocked.add(`${cell.col},${cell.row}`);
+    for (const o of tokens) {
+      if (o.uid === t.uid || o.aerial || o.deployed === false) continue;
+      for (let dc = 0; dc < o.size; dc++) for (let dr = 0; dr < o.size; dr++) blocked.add(`${o.col + dc},${o.row + dr}`);
+    }
+  }
+  const out: { col: number; row: number; ok: boolean; here: boolean }[] = [];
+  for (let or = 0; or <= maxOff; or++) {
+    for (let oc = 0; oc <= maxOff; oc++) {
+      const col = c * 3 + oc;
+      const row = r * 3 + or;
+      let ok = true;
+      outer: for (let dc = 0; dc < t.size; dc++) {
+        for (let dr = 0; dr < t.size; dr++) {
+          if (blocked.has(`${col + dc},${row + dr}`)) { ok = false; break outer; }
+        }
+      }
+      out.push({ col, row, ok, here: col === t.col && row === t.row });
+    }
+  }
+  return out;
+}
+
 export function canStandIn(
   c: number,
   r: number,

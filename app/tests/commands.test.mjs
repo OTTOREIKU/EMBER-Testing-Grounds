@@ -64,7 +64,10 @@ if (!delivery) throw new Error('could not locate projectileDelivery in units.ts'
 // so the Manhattan reach the check applies is the real one.
 const dataSrc = readFileSync(new URL('../src/data.ts', import.meta.url), 'utf8');
 const grids = rules.slice(rules.indexOf('export function largeGridOf'), rules.indexOf('// Where inside Large Grid'))
-  + rules.slice(rules.indexOf('export function rangeBetween'), rules.indexOf('export function inArc'));
+  + rules.slice(rules.indexOf('export function rangeBetween'), rules.indexOf('export function inArc'))
+  // placeInGrid's legality is spotsInGrid's, so the real one is sliced in
+  // rather than mirrored — a second copy of the occupancy rule would drift.
+  + rules.slice(rules.indexOf('export function spotsInGrid'), rules.indexOf('interface MoveSearch'));
 const flyingBase = dataSrc.slice(dataSrc.indexOf('export function isFlyingBase'), dataSrc.indexOf('export function isAerial'));
 const ground = unitsSrc.slice(unitsSrc.indexOf('export function isGroundUnit'), unitsSrc.indexOf('export function minesOwed'));
 const blinking = unitsSrc.slice(unitsSrc.indexOf('// Which Moving Actions are a position SWAP'), unitsSrc.indexOf("// ---------- The Hyena"));
@@ -1504,6 +1507,27 @@ check('an empty reroll is the "kept it" answer and passes', C.check(data, wfoc, 
 check('mismatched lists are refused', C.check(data, wfoc, { kind: 'focusReroll', seat: 's2', indices: [0], faces: [] }).ok, false);
 check('an absurd die index is refused', C.check(data, wfoc, { kind: 'focusReroll', seat: 's2', indices: [99], faces: [{ color: 'white', face: 1 }] }).ok, false);
 check('a malformed face is refused', C.check(data, wfoc, { kind: 'focusReroll', seat: 's2', indices: [0], faces: [{ color: 7, face: 'x' }] }).ok, false);
+
+// ---------- standing spot inside a Grid (4.2.3) ----------
+//
+// Costs no Movement Range and never leaves the Grid, but it decides Contact,
+// so it is a real command rather than a drag. A unit at col/row 3,3 is in
+// Large Grid 1,1, whose Small cells run 3..5 on both axes.
+
+const spotAt = (col, row) => ({ kind: 'placeInGrid', seat: 's1', uid: 1, to: { col, row } });
+const wspot = world([mech(1, 's1', { size: 1, col: 4, row: 4 }), mech(2, 's2', { col: 30, row: 30 })], 2);
+check('a spot in the same Grid passes', C.check(data, wspot, spotAt(3, 5)).ok, true);
+check('a spot in the NEXT Grid is refused', C.check(data, wspot, spotAt(6, 4)).ok, false);
+check('and says it is not a Maneuver', C.check(data, wspot, spotAt(6, 4)).why.includes('Maneuver'), true);
+check('off the board is refused', C.check(data, wspot, spotAt(-1, 4)).ok, false);
+C.apply(data, wspot, spotAt(3, 5));
+check('the unit takes the spot', [wspot.tokens[0].col, wspot.tokens[0].row], [3, 5]);
+// A Large unit fills its Grid, so there is nothing to choose.
+const wbig = world([mech(1, 's1', { size: 3, col: 3, row: 3 })], 2);
+check('a Large unit has no spot to pick', C.check(data, wbig, spotAt(4, 4)).ok, false);
+// Another unit standing on the cell blocks it.
+const wblock = world([mech(1, 's1', { size: 1, col: 4, row: 4 }), mech(2, 's2', { size: 1, col: 3, row: 5 })], 2);
+check('an occupied cell is refused', C.check(data, wblock, spotAt(3, 5)).ok, false);
 
 // ---------- Concussion/Wrecking's Link drain (4.10) ----------
 //

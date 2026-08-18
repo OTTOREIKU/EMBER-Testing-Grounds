@@ -31,7 +31,7 @@ import {
 import { Panel } from './panel';
 import { tacticSpec, tacticTargets } from './tactics';
 import { Roster } from './roster';
-import { inContact, canStandIn, attackDirection, crushTargets, type CrushVictims, dissipationFor, extendPath, inArc, knockbackPath, largeGridOf, type LargeGrid, LG, losBetween, losNote as losNoteFor, type MoveOpts, pathCost, protectionFor as protectionForShared, rangeBetween, reachableGrids, smokeBlocks, standingSpot } from './rules';
+import { inContact, canStandIn, attackDirection, crushTargets, type CrushVictims, dissipationFor, extendPath, inArc, knockbackPath, largeGridOf, type LargeGrid, LG, losBetween, losNote as losNoteFor, type MoveOpts, pathCost, protectionFor as protectionForShared, rangeBetween, reachableGrids, smokeBlocks, spotsInGrid, standingSpot } from './rules';
 import { breakAwayCost, canBeForceMoved, lockersOf } from './melee';
 import { instantiateScenario, loadScenarios, type Scenario } from './scenarios';
 import { loadReplays, ReplayPlayer, type ReplayScript, type ReplayStep, type ReplayTally } from './replay';
@@ -397,6 +397,13 @@ async function init() {
       return state.script?.freeCommand.includes(t.uid)
         ? 'Additional Instructions: this Drone has 1 Command Action owed, and taking it spends no Command Token.'
         : null;
+    },
+    // The sandbox may nudge anything; a linked game gates on the seat.
+    spotsInGrid: (t) => spotsInGrid(t, currentTerrain(), state.tokens),
+    onPlaceInGrid(t, to) {
+      perform(data, state, { kind: 'placeInGrid', seat: t.side, uid: t.uid, to });
+      onChanged();
+      panel.showToken(t);
     },
     onCharge(t, slot, on) {
       setCharge(t, slot, on);

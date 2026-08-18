@@ -94,6 +94,11 @@ export interface PanelCallbacks {
   // action - the Load is chosen during list building - so it is offered only in
   // freeplay, where the board is a sandbox.
   onSetLoad?(t: Token, cardId: string | undefined): void;
+  // Where in its own Large Grid the unit stands. Offered only when the page
+  // supplies a handler — the Match Centre gives one for this seat's units and
+  // withholds it for the opponent's.
+  onPlaceInGrid?(t: Token, to: { col: number; row: number }): void;
+  spotsInGrid?(t: Token): { col: number; row: number; ok: boolean; here: boolean }[];
   tacticNote(t: Token): string | null;
 }
 
@@ -125,6 +130,43 @@ export class Panel {
   // A Carrier's Load, changeable on the board. The Load is really chosen during
   // list building, so this is a setup fix rather than a move: a Tarantula that
   // went down empty can be given its Part without deleting and re-adding it.
+  // The 3x3 of Small Grids inside this unit's Large Grid: its own spot marked,
+  // the blocked ones dead. Nothing here is a move — the unit never leaves the
+  // Grid — so it costs no Range and is legal whenever the unit is standing.
+  private gridSpotRow(t: Token): HTMLElement | null {
+    const spots = this.cb.spotsInGrid!(t);
+    if (spots.length < 2 || !spots.some((s) => s.ok && !s.here)) return null;
+    const wrap = document.createElement('div');
+    wrap.className = 'tok-spot';
+    const label = document.createElement('span');
+    label.className = 'tok-spot-name';
+    label.textContent = 'Spot in Grid';
+    wrap.appendChild(label);
+    const pad = document.createElement('div');
+    pad.className = 'spot-pad';
+    const wide = 3 - t.size + 1;
+    pad.style.setProperty('--spot-cols', String(wide));
+    for (const s of spots) {
+      const b = document.createElement('button');
+      b.className = `spot-cell${s.here ? ' here' : ''}`;
+      b.disabled = !s.ok || s.here;
+      b.title = s.here ? 'Standing here' : s.ok ? 'Stand here' : 'Blocked';
+      b.addEventListener('click', () => this.cb.onPlaceInGrid!(t, { col: s.col, row: s.row }));
+      pad.appendChild(b);
+    }
+    wrap.appendChild(pad);
+    inspectOnHover(wrap, {
+      title: 'Spot in Grid',
+      sub: 'inside the Large Grid it already occupies',
+      lines: [
+        'A Small or Medium unit does not fill its Grid, and Contact is judged where the Small Grids actually touch (4.2.3).',
+        'Repositioning inside one Grid costs no Movement Range, so this is free — but it can decide who is in Contact with what.',
+        'Grey squares are blocked by terrain or another unit.',
+      ],
+    });
+    return wrap;
+  }
+
   private loadRow(t: Token): HTMLElement {
     const held = t.droneBackpack ? this.data.byId.get(t.droneBackpack) : undefined;
     const row = document.createElement('div');
@@ -187,6 +229,15 @@ export class Panel {
       flag.className = 'tok-tactic';
       flag.textContent = owed;
       this.body.appendChild(flag);
+    }
+
+    // Where it stands INSIDE its Grid. A Small or Medium unit has room to
+    // spare there, and which corner it takes decides Contact (4.2.3) — the
+    // difference between a Drone merely Adjacent to a wall and one touching
+    // it. Movement lands it on a sensible spot; this is how a player argues.
+    if (this.cb.onPlaceInGrid && this.cb.spotsInGrid && t.size < 3 && t.deployed !== false) {
+      const pad = this.gridSpotRow(t);
+      if (pad) this.body.appendChild(pad);
     }
 
     const carrier = this.data.byId.get(t.cardId);

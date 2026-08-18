@@ -8,7 +8,7 @@ import { tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { battlefieldLocked, deploymentComplete, deployTurn, firstPlayerFrom, newSetup, normaliseSetup, tasksLocked } from './setup';
 import { applyKill, normaliseTasks, pendingDesignations, settleControl, type Designation } from './tasks';
 import { alive, canAct, dialHidden, droneActionWhy, droneMoveWhy, eligibleUnits, getLocalSeat, isLoopPhase, loopComplete, nextTurn, onExtraOpportunity } from './loop';
-import { dissipationFor } from './rules';
+import { dissipationFor, spotsInGrid } from './rules';
 
 // ---------- the command layer (multiplayer phase 1) ----------
 
@@ -32,6 +32,11 @@ import { dissipationFor } from './rules';
 
 export type Command =
   | { kind: 'setTiming'; seat: Side; uid: number; timing?: Timing }
+  // Where inside its own Large Grid a unit stands. Costs no Movement Range and
+  // never leaves the Grid, but it decides Contact, which is judged at
+  // Small-Grid resolution (4.2.3) — so a Drone that lands dead centre may need
+  // shifting to the edge it actually touches.
+  | { kind: 'placeInGrid'; seat: Side; uid: number; to: { col: number; row: number } }
   | { kind: 'setStance'; seat: Side; uid: number; stance: Stance }
   | { kind: 'reboot'; seat: Side; uid: number; stance: Stance }
   // `free` is a Movement Action moving the unit on the Action Tick it has
@@ -868,6 +873,26 @@ function checkActed(
       if (cmd.timing !== undefined && !TIMINGS.some((x) => x.id === cmd.timing)) return no('That is not a Timing the dial can be set to.');
       if (state.round.phase !== 1) return no('Dials are set in the Planning Phase (3.3).');
       if (dialHidden(state, t)) return no('In pass-and-play a squad sets its dials on its own planning turn (3.3).');
+      return ok;
+    }
+    case 'placeInGrid': {
+      const { col, row } = cmd.to;
+      if (!Number.isInteger(col) || !Number.isInteger(row) || col < 0 || row < 0 || col > 35 || row > 35) {
+        return no('That is not a place on the board.');
+      }
+      if (t.size >= 3) return no('A Large unit fills its whole Grid, so there is nowhere else to stand in it.');
+      if (Math.floor(col / 3) !== Math.floor(t.col / 3) || Math.floor(row / 3) !== Math.floor(t.row / 3)) {
+        return no('This only shifts a unit inside the Grid it is already in — moving between Grids is a Maneuver.');
+      }
+      // A custom map's pieces live on the board page, so check() reads the
+      // built-in layout it can see; a custom board still gets the same-Grid
+      // and occupancy checks, which are the ones that keep the two clients
+      // agreeing.
+      const gone = new Set(state.removedTerrain ?? []);
+      const terrain = (data.terrain?.layouts?.[state.map] ?? []).filter((p) => !gone.has(p.id));
+      const spot = spotsInGrid(t, terrain, state.tokens).find((s) => s.col === col && s.row === row);
+      if (!spot) return no('That is not a spot in this Grid.');
+      if (!spot.ok) return no('Something is already standing there.');
       return ok;
     }
     case 'setStance': {
@@ -1805,6 +1830,10 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
   switch (cmd.kind) {
     case 'setTiming':
       t.timing = cmd.timing;
+      return;
+    case 'placeInGrid':
+      t.col = cmd.to.col;
+      t.row = cmd.to.row;
       return;
     case 'setStance': {
       t.stance = cmd.stance;
