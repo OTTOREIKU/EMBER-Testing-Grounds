@@ -1076,7 +1076,11 @@ const wc = planning();
 check('a real commitment passes', C.check(data, wc, commit()).ok, true);
 C.apply(data, wc, commit());
 check('and is recorded against the seat', wc.script.commits.s1, HASH);
-check('committing twice is refused', C.check(data, wc, commit()).ok, false);
+// A reloaded client has lost the dials and salt behind its hash — they are
+// local by design — so a REPLACEMENT commitment is allowed until anyone
+// reveals. This is the way back from the "pick your dials" loop a real game
+// locked into after a mid-Planning refresh.
+check('a replacement commitment is allowed before any reveal', C.check(data, wc, commit()).ok, true);
 
 const reveal = (over = {}) => ({
   kind: 'revealTimings', seat: 's1', salt: 'abc',
@@ -1090,6 +1094,9 @@ C.apply(data, wc, reveal());
 check('the reveal sets that squad\'s dial', wc.tokens[0].timing, 'firing');
 check('and marks the squad revealed', wc.script.revealed, ['s1']);
 check('revealing twice is refused', C.check(data, wc, reveal()).ok, false);
+// The replacement door shuts the moment anyone reveals — from then on a new
+// hash could be chosen with the other squad's dials on the table.
+check('a replacement commitment is refused once a reveal is in', C.check(data, wc, commit()).ok, false);
 
 // A reveal must never be able to write the other player's plan.
 const wx = planning();

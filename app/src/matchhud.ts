@@ -335,6 +335,18 @@ let inspectUid: number | null = null;
 // drawn once, because every refresh clears the highlight layer.
 let rangeOverlay: { uid: number; kind: 'move' | 'range'; n: number } | null = null;
 
+// Drops the ring unless it belongs to the given unit — the selection-change
+// hook, so a ring never outlives the card that asked for it. Says whether it
+// dropped one, because some callers render BEFORE they sync the side panels
+// and owe the board a redraw when the answer is yes.
+export function clearRangeOverlayFor(uid: number | null): boolean {
+  if (rangeOverlay && rangeOverlay.uid !== uid) {
+    rangeOverlay = null;
+    return true;
+  }
+  return false;
+}
+
 export function showRangeOverlay(uid: number, kind: 'move' | 'range', n: number): void {
   rangeOverlay = n > 0 ? { uid, kind, n } : null;
   hudRef?.refresh();

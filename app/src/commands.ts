@@ -716,7 +716,15 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       if (!sc) return no('There is no guided game running.');
       if (state.round.phase !== 1) return no('Dials are committed in the Planning Phase (3.3).');
       if (typeof cmd.hash !== 'string' || cmd.hash.length < 16) return no('That is not a commitment.');
-      if (sc.commits[cmd.seat]) return no('This squad has already committed its dials this round.');
+      // A fresh commitment may REPLACE this seat's own — a reloaded client has
+      // lost the dials and salt behind its old hash (they are local by design)
+      // and re-committing is its only way back. The door closes the moment
+      // anyone reveals: from then on a new hash could be chosen with the other
+      // squad's dials on the table, which is the exact cheat the handshake
+      // exists to prevent.
+      if (sc.commits[cmd.seat] && sc.revealed.length) {
+        return no('The dials are already being revealed, so the commitment cannot change this round.');
+      }
       return ok;
     }
     case 'revealTimings': {

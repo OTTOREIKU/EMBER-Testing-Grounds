@@ -17,7 +17,7 @@ import { warmAllImagesWhenIdle } from './images';
 import { runFirstVisitPreload } from './preload';
 import { importSquadFile } from './importer';
 import { boardFingerprint, dialsOf, hashDials, newSalt, type DialEntry } from './secrecy';
-import { animateRemoteMove, ensureHud, glueAfter, showRangeOverlay, showSideTab, startAttackPick, startBoxDrop, startDetonation, startElectronicPick, startInterceptPick, startLaunchPlan, startShove, startSmokePlan, type DiceLine, type HudCtx } from './matchhud';
+import { animateRemoteMove, clearRangeOverlayFor, ensureHud, glueAfter, showRangeOverlay, showSideTab, startAttackPick, startBoxDrop, startDetonation, startElectronicPick, startInterceptPick, startLaunchPlan, startShove, startSmokePlan, type DiceLine, type HudCtx } from './matchhud';
 import { AttackHelper } from './combat';
 import { losNote, protectionFor } from './rules';
 import { SquadTracker } from './squads';
@@ -80,7 +80,51 @@ const devSeat: Side | null = new URLSearchParams(location.search).get('dev') ? '
 let zonesVisible = true;
 let diceData: DiceData | null = null;
 const diceFeed: DiceLine[] = [];
+// The dials this seat picked and the salt behind its commitment. The dials
+// themselves never enter shared state before the reveal (3.3), so this is the
+// ONLY copy — a page refresh or a relay checkpoint would erase it, leaving a
+// commitment in shared state that this client can no longer re-commit or
+// reveal, which locked a real game in a "pick your dials" loop. Persisted per
+// room, restored on load and after every checkpoint.
 let dialSecret: { round: number; salt: string; dials: DialEntry[] } | null = null;
+
+function dialSecretKey(): string | null {
+  const room = relay.state.room;
+  return room ? `mc-dialsecret-${room.id}` : null;
+}
+
+function persistDialSecret(): void {
+  const key = dialSecretKey();
+  if (!key) return;
+  try {
+    if (dialSecret) localStorage.setItem(key, JSON.stringify(dialSecret));
+    else localStorage.removeItem(key);
+  } catch { /* a full store only costs the reload safety, not the game */ }
+}
+
+// Brings the secret back after a reload or checkpoint, and re-applies this
+// seat's own dials onto the fresh tokens — they were applied locally through a
+// secret command, so no checkpoint can ever carry them.
+function recoverDialSecret(): void {
+  const seat = relay.state.seat;
+  const key = dialSecretKey();
+  if (!seat || !key) return;
+  if (!dialSecret) {
+    try {
+      const raw = localStorage.getItem(key);
+      if (raw) {
+        const p = JSON.parse(raw) as { round: number; salt: string; dials: DialEntry[] };
+        if (p && typeof p.round === 'number' && typeof p.salt === 'string' && Array.isArray(p.dials)) dialSecret = p;
+      }
+    } catch { /* unreadable is the same as absent */ }
+  }
+  if (!dialSecret || dialSecret.round !== state.round.n) return;
+  if (state.round.phase !== 1) return;
+  for (const d of dialSecret.dials) {
+    const t = state.tokens.find((x) => x.uid === d.uid);
+    if (t && t.side === seat) t.timing = d.timing;
+  }
+}
 let acctOpen = false;
 let pickerOpen = false;
 let loginErr: string | null = null;
@@ -218,14 +262,23 @@ const relay = new Relay(api.base, {
     // note has served its purpose. Left up, it would sit there for the rest of
     // the game claiming a rewind is still in flight.
     if (lobbyNote === 'Rolling back…') lobbyNote = null;
-    if (!catchingUp) render();
+    // The checkpoint knows nothing of this seat's unrevealed dials — they are
+    // local by design — so put them back before the panel decides they were
+    // never picked, and answer a reveal the replaced board may be waiting on.
+    recoverDialSecret();
+    if (!catchingUp) {
+      maybeReveal();
+      render();
+    }
   },
   onCatchUp(active) {
     catchingUp = active;
     if (active) return;
     // The board is whole again: draw it, and answer anything the replay
     // walked past — a commitment made while we were away may be waiting on
-    // this client's reveal.
+    // this client's reveal, and a reloaded page holds its half of the dial
+    // secret only after recovery.
+    recoverDialSecret();
     maybeReveal();
     // A host that has just caught up rebuilt its snapshot ring from scratch,
     // so the catalog in shared state may describe a ring that no longer
@@ -855,6 +908,11 @@ function terrainNow() {
 function syncSide(uid: number | null): void {
   squadTracker?.update(state, uid);
   const t = uid !== null ? state.tokens.find((x) => x.uid === uid) : undefined;
+  // A range ring belongs to the unit whose card asked for it. Selecting
+  // another unit (or nothing) is the "something else" that dismisses it — it
+  // used to sit on the board until the next explicit ask. Redrawn here
+  // because several callers render before they sync.
+  if (clearRangeOverlayFor(uid)) render();
   if (t) panel?.showToken(t);
   else panel?.clear();
   sealSideForWatchers();
@@ -908,10 +966,14 @@ function lockDialsNetworked(): void {
   const seat = relay.state.seat;
   if (!seat || !data) return;
   const sc = state.script;
-  if (sc?.commits[seat]) return;
+  // A commitment already made is only honoured while this client still holds
+  // the secret behind it. Lost secret means the reveal can never come, so the
+  // seat commits AFRESH — check() allows the replacement until anyone reveals.
+  if (sc?.commits[seat] && dialSecret?.round === state.round.n) return;
   const dials = dialsOf(state, seat);
   const salt = newSalt();
   dialSecret = { round: state.round.n, salt, dials };
+  persistDialSecret();
   void hashDials(salt, dials).then((hash) => {
     send({ kind: 'commitTimings', seat, hash });
     maybeReveal();

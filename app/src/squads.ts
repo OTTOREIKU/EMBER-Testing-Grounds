@@ -534,12 +534,17 @@ export class SquadTracker {
       head.appendChild(edit);
     }
 
-    const del = document.createElement('button');
-    del.className = 'squad-del';
-    del.textContent = '✕';
-    del.title = 'Remove this unit from the board';
-    del.addEventListener('click', () => this.cb.onDelete(t.uid));
-    head.appendChild(del);
+    // Online the ✕ clears YOUR OWN wrecks only — the other squad's units are
+    // not this player's to remove, and the relay would drop the command while
+    // this board applied it, splitting the two.
+    if (!this.handsOff(t)) {
+      const del = document.createElement('button');
+      del.className = 'squad-del';
+      del.textContent = '✕';
+      del.title = 'Remove this unit from the board';
+      del.addEventListener('click', () => this.cb.onDelete(t.uid));
+      head.appendChild(del);
+    }
 
     const edge = document.createElement('span');
     edge.className = 'su-fac-edge';
@@ -602,7 +607,12 @@ export class SquadTracker {
       link.className = 'link-ctrl';
       // The printed pilot card tints its Link mark to the pilot's faction.
       const bolt = linkIcon(pilotCard ? this.data.factionOf(pilotCard) : null);
-      link.innerHTML = `<button class="lk-minus" title="Spend/lose 1 Link">−</button><b class="lk-val">${bolt}${t.link ?? 0}${maxLink ? `<small>/${maxLink}</small>` : ''}</b><button class="lk-plus" title="Recover 1 Link">+</button>`;
+      // Online: the minus is the Focus COMMAND, so it stays — on your own
+      // units. The plus is a local nudge with no command behind it (the other
+      // board would never hear of it), so it does not render at all there.
+      const minusBtn = this.handsOff(t) ? '' : '<button class="lk-minus" title="Spend/lose 1 Link">−</button>';
+      const plusBtn = this.online() ? '' : '<button class="lk-plus" title="Recover 1 Link">+</button>';
+      link.innerHTML = `${minusBtn}<b class="lk-val">${bolt}${t.link ?? 0}${maxLink ? `<small>/${maxLink}</small>` : ''}</b>${plusBtn}`;
       inspectOnHover(link, {
         title: `${bolt}Link ${t.link ?? 0}${maxLink ? ` / ${maxLink}` : ''}`,
         sub: 'Pilot and machine sync, not hit points',
@@ -617,11 +627,11 @@ export class SquadTracker {
       // exactly this by hand — decrement, and Shutdown at 0 — which meant a
       // Focus never reached the other seat, never appeared in the undo history,
       // and forced a Stance change on one board only.
-      link.querySelector('.lk-minus')!.addEventListener('click', () => {
+      link.querySelector('.lk-minus')?.addEventListener('click', () => {
         perform(this.data, this.state!, { kind: 'focus', seat: t.side, uid: t.uid });
         this.cb.onChanged();
       });
-      link.querySelector('.lk-plus')!.addEventListener('click', () => {
+      link.querySelector('.lk-plus')?.addEventListener('click', () => {
         t.link = (t.link ?? 0) + 1;
         this.cb.onChanged();
       });
@@ -638,7 +648,22 @@ export class SquadTracker {
     stanceArt.alt = '';
     meta.appendChild(stanceArt);
 
-    if (t.kind === 'mech') {
+    if (t.kind === 'mech' && this.online()) {
+      // Online the chip only reports. A Stance is chosen at the start of the
+      // Mech's own Action Opportunity (4.1) through the turn panel's lock, and
+      // this select was also happy to flip the OTHER player's stance — the
+      // relay refused the command, leaving the two boards disagreeing.
+      const stance = document.createElement('span');
+      stance.className = `stance stance-fixed stance-${t.stance}`;
+      stance.textContent = STANCE_SHORT[t.stance];
+      inspectOnHover(stance, {
+        ...this.stanceInfo(t),
+        lines: [this.handsOff(t)
+          ? 'The other squad\'s Stance is theirs to set.'
+          : 'Online, a Stance is locked in at the start of this Mech\'s own Action Opportunity (4.1) — the turn panel asks for it before the Mech may do anything else.'],
+      });
+      meta.appendChild(stance);
+    } else if (t.kind === 'mech') {
       const stance = document.createElement('select');
       stance.className = `stance stance-${t.stance}`;
       for (const s of STANCES) {
@@ -674,6 +699,21 @@ export class SquadTracker {
     row.appendChild(this.tokenHandleRow(t));
     row.appendChild(this.partTable(t));
     return row;
+  }
+
+  // Networked play locks this panel's by-hand overrides. A Part state, a Link
+  // or a token nudged here is a local mutation no command carries, so the
+  // other board never hears of it — and the other squad's units are not this
+  // player's to touch at all, stance included. What survives online is
+  // command-backed and checked: the timing dial (Planning only), Focus, and
+  // the Command flip, each on your own units alone.
+  private online(): boolean {
+    return !!getLocalSeat();
+  }
+
+  private handsOff(t: Token): boolean {
+    const seat = getLocalSeat();
+    return !!seat && t.side !== seat;
   }
 
   private stanceInfo(t: Token): InspectInfo {
@@ -765,6 +805,9 @@ export class SquadTracker {
       const take = (ev: MouseEvent): void => {
         ev.preventDefault();
         ev.stopPropagation();
+        // A token taken off by hand travels through no command; online the
+        // automations that put it on are the ones that take it off.
+        if (this.online()) return;
         // A popout open against this unit is rebuilt by the render below, so it
         // is reopened rather than left dangling - clearing a stack of three
         // should not close the panel twice on the way.
@@ -828,12 +871,19 @@ export class SquadTracker {
                 // it offers the flip and the player resolves the effect. Shown
                 // only on a Mech that actually carries one of those cards, or
                 // it is a button with nothing behind it.
-                s.id === 'command' && n && canSpendCommand(this.data, t)
+                s.id === 'command' && n && canSpendCommand(this.data, t) && !this.handsOff(t)
                   ? `<button data-flip="1" title="Spend one on an Action that consumes a Command (4.15.4): it turns face-down and cannot be issued or used again.">Flip</button>`
                   : ''
               }
-              ${n ? `<button data-d="-1" title="Take one off">−</button>` : ''}
-              <button data-d="1" title="${n && !s.stacking ? 'Already on' : 'Put one on'}"${n && !s.stacking ? ' disabled' : ''}>+</button>
+              ${
+                // Online the popout is a reference, not a lever: token counts
+                // move through commands and automations, never by hand. The
+                // Command flip stays — it IS a command — on your own Mech.
+                this.online()
+                  ? ''
+                  : `${n ? `<button data-d="-1" title="Take one off">−</button>` : ''}
+                     <button data-d="1" title="${n && !s.stacking ? 'Already on' : 'Put one on'}"${n && !s.stacking ? ' disabled' : ''}>+</button>`
+              }
             </span>
           </div>`;
         })
@@ -1085,6 +1135,9 @@ export class SquadTracker {
         ],
       });
       tr.addEventListener('click', () => {
+        // Online, damage arrives through the combat pipeline alone — a state
+        // cycled here would exist on this board and no other.
+        if (this.online()) return;
         let next: typeof st;
         if (st === 'intact') next = hasStructure ? 'damaged' : 'destroyed';
         else if (st === 'damaged') next = 'destroyed';
