@@ -5,7 +5,7 @@ import { linkMechanics } from './inspector';
 import { SQUAD_ORDER, squadLabel } from './data';
 import type { Card, CardAction, DiceData, DiceIcon, DieColor, GameRuleEffect, PartSlot, Side, SmokeScreen, TerrainPiece, Token } from './types';
 import { statusCount, STATUSES } from './types';
-import { aaRadarCovers, attackReactionsOf, auraEffectsOn, auraValueOn, blueLightningDodges, coolingBonus, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, denseArmorOn, designationsOn, electronicValue, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, loanedParts, pilotCard, repeatersFor, SLOT_LABEL, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
+import { aaRadarCovers, attackReactionsOf, auraEffectsOn, auraValueOn, blueLightningDodges, coolingBonus, missileGuidance, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, denseArmorOn, designationsOn, electronicValue, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, loanedParts, pilotCard, repeatersFor, SLOT_LABEL, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
 import { timingOf } from './ticks';
 import { inArc, losNote, protectionFor, rangeBetween } from './rules';
 import type { Command } from './commands';
@@ -215,6 +215,10 @@ interface Ctx {
   kcUsed?: boolean;
   // Melee Evasion (ZYBP-302) declared this attack: +1 {Dodge} for a Command Token.
   evadeUsed?: boolean;
+  // Guidance Support (PDAM-006) already taken this attack. The card sets no
+  // limit in words, but a reroll that costs nothing and never runs out is not a
+  // reading anyone intends, so it is once.
+  guidanceUsed?: boolean;
   // Something got through. Read at the end of the attack, where Defense
   // Reaction's debt is written (ZHLA-101 / ZHLA-301).
   penetrated?: boolean;
@@ -1756,6 +1760,36 @@ export class AttackHelper {
       keep.title = 'End the Focus without rerolling anything.';
       keep.addEventListener('click', () => this.finishFocusReroll(which));
       rr.appendChild(keep);
+    }
+    // Guidance Support (PDAM-006): a friendly Missile shooting at something
+    // inside a Beacon's Range may reroll its {Eye}. Free, so it does not touch
+    // c.rerolls either -- and unlike the Whistle it picks its own dice, because
+    // the card names the face rather than leaving the choice open.
+    if (which === 'attack' && !c.guidanceUsed && this.tokens) {
+      const beacons = missileGuidance(this.data, this.tokens(), c.attacker, c.defender, c.action);
+      const eyes = roll
+        .map((d, i) => ({ d, i }))
+        .filter(({ d }) => this.dice.dice[d.color].faces[d.face].some((ic) => ic.type === 'eye'));
+      if (beacons.length && eyes.length) {
+        const g = document.createElement('button');
+        g.textContent = `Guidance Support: reroll ${eyes.length} [Eye]`;
+        g.title = `${beacons[0].label} covers ${c.defender.label}, so this Missile may reroll every {Eye} it rolled (PDAM-006). It costs nothing and may be taken once.`;
+        g.addEventListener('click', () => {
+          c.guidanceUsed = true;
+          // The card names the face, so the selection is made here rather than
+          // left to the player -- and anything they had picked by hand for a
+          // Focus is put back, so the two reroll sources cannot blur together.
+          for (const d of roll) d.selected = false;
+          for (const { d } of eyes) d.selected = true;
+          this.note(`${c.attacker.label} rerolls ${eyes.length} [Eye] under ${beacons[0].label}'s Guidance Support (PDAM-006).`, [c.attacker]);
+          void (async () => {
+            this.spinFor = which;
+            await this.reroll(roll, 'Guidance Support');
+            this.render();
+          })();
+        });
+        rr.appendChild(g);
+      }
     }
     // The Whistle's Aura is a SECOND source of rerolls, not a cheaper Focus: it
     // is funded by a nearby Ally Mech's Command Token rather than by Link, so it

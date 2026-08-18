@@ -33,7 +33,7 @@ function largeGridOf(t: any): any { return { c: Math.floor(t.col / 3), r: Math.f
   + cut(units, 'export interface SelfHitPart', '// A Firing Action', 'selfHitParts')
   + cut(units, '// A Firing Action', 'export function repairSpec', 'actionRange and hasFlexibleTiming')
   + cut(units, 'export const SLOT_LABEL', 'let uidSource', 'SLOT_LABEL')
-  + cut(units, '// ---------- White Dwarf Thruster', 'export function attackReactionsOf', 'coolingBonus, ripostePart, defenseReactionOn and targetTracingOn')
+  + cut(units, '// ---------- Guidance Support', 'export function attackReactionsOf', 'coolingBonus, ripostePart, defenseReactionOn and targetTracingOn')
   + cut(units, 'function alive(t: Token)', 'function coversGrid', 'the alive helper')
   + cut(units, '// ---------- Martyrdom', 'export function autoDetonationsOwed', 'martyrdomOwed')
   + cut(units, 'export function explosionScope', 'export function needsSightToLanding', 'explosionScope');
@@ -472,6 +472,44 @@ check('a Drone never gets it', A.blueLightningDodges(data, { ...dwarf({ '292_A':
 check('the ammo condition points at the Bit, not at the Passive',
   data.byId.get('292').actions.find((x) => x.type === 'Passive').gameRules[0]
     .conditions.find((c) => c.type === 'action_storage_available').actionId, '292_A');
+
+// ---------- Guidance Support (PDAM-006) ----------
+//
+// Driven with the REAL beacon and a REAL missile, because the whole gate is
+// data-shaped: the Missile keyword lives in `inline` on the projectile's own
+// card, not in key/en, and reading the wrong field matches nothing silently.
+const beacon = (col, row) => ({
+  uid: 40, kind: 'projectile', side: 's1', col, row, size: 1, cardId: 'PDAM-006',
+  partStates: { main: 'intact' }, statuses: [], stance: 'offensive',
+});
+const missile = (side = 's1') => ({
+  uid: 41, kind: 'projectile', side, col: 0, row: 0, size: 1, cardId: 'ZHAM-001A',
+  partStates: { main: 'intact' }, statuses: [], stance: 'offensive',
+});
+const mark = (col, row) => ({
+  uid: 42, kind: 'mech', side: 's2', col, row, size: 1,
+  mech: { torso: '002' }, partStates: { torso: 'intact' }, statuses: [], stance: 'offensive',
+});
+const shot = (type = 'Firing') => ({ id: 'M', type, name: { en: 'Strike' }, keywords: [] });
+const guide = (b, atk, def, a = shot()) => A.missileGuidance(data, [b, atk, def], atk, def, a).map((x) => x.uid);
+check('a Beacon covering the target guides an allied Missile',
+  guide(beacon(0, 0), missile(), mark(0, 0)), [40]);
+// The Range is measured from the BEACON to the TARGET, not to the attacker.
+check('and the Range is measured from the Beacon to the target',
+  guide(beacon(0, 0), missile(), mark(33, 33)), []);
+check('an enemy Beacon guides nothing', guide(beacon(0, 0), missile('s2'), mark(0, 0)), []);
+check('and a Mech is not a Missile',
+  A.missileGuidance(data, [beacon(0, 0), mark(0, 0)], mark(0, 0), mark(0, 0), shot()), []);
+check('a Melee Action is out of scope, since the card names Firing and Tactic',
+  guide(beacon(0, 0), missile(), mark(0, 0), shot('Melee')), []);
+check('a Tactic is in scope', guide(beacon(0, 0), missile(), mark(0, 0), shot('Tactic')).length, 1);
+check('a destroyed Beacon guides nothing',
+  guide({ ...beacon(0, 0), partStates: { main: 'destroyed' } }, missile(), mark(0, 0)), []);
+// The trap this one nearly shipped with.
+check('the Missile keyword really is on the card as inline',
+  (data.byId.get('ZHAM-001A').keywords ?? []).some((k) => k.inline === '导弹'), true);
+check('and a projectile without it is not guided',
+  guide(beacon(0, 0), { ...missile(), cardId: 'PDAM-006' }, mark(0, 0)), []);
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
 if (fail) process.exit(1);

@@ -587,6 +587,64 @@ export interface AttackReaction {
   afterDestroyed: boolean;
 }
 
+// ---------- Guidance Support (PDAM-006 RMA "Rumba" Terminal Guidance Beacon) ----------
+//
+// "When Ally Missile targeting units within range of this beacon, may reroll
+// {Eye}." The beacon is itself a PROJECTILE sitting on the board, and its
+// gameRules carry every part of the gate, so they are read rather than
+// re-derived from the prose:
+//
+//   reroll_attack_dice, faces: ['eye'], actionTypes: ['Firing', 'Tactic'],
+//   attackerSide: 'self_or_ally', attackerUnitTypes: ['projectile'],
+//   attackerKeywords: ['导弹'], requireTargetWithinSourceRange: true
+//
+// The reach is the awkward part: the Range is measured from the BEACON to the
+// TARGET, and the beacon is a third unit that is neither attacker nor defender.
+export function missileGuidance(
+  data: GameData,
+  tokens: Token[],
+  attacker: Token,
+  defender: Token,
+  action: CardAction,
+): Token[] {
+  const out: Token[] = [];
+  for (const b of tokens) {
+    if (b.deployed === false) continue;
+    if ((b.partStates[b.kind === 'mech' ? 'torso' : 'main'] ?? 'intact') === 'destroyed') continue;
+    const card = b.cardId ? data.byId.get(b.cardId) : undefined;
+    if (!card) continue;
+    for (const a of card.actions ?? []) {
+      for (const g of a.gameRules ?? []) {
+        const eff = (g.effects ?? []).find((e) => (e as { type?: string }).type === 'reroll_attack_dice') as {
+          faces?: string[]; actionTypes?: string[]; attackerSide?: string;
+          attackerUnitTypes?: string[]; attackerKeywords?: string[]; requireTargetWithinSourceRange?: boolean;
+        } | undefined;
+        if (!eff || !(eff.faces ?? []).includes('eye')) continue;
+        if (eff.actionTypes && !eff.actionTypes.includes(action.type ?? '')) continue;
+        // 'self_or_ally' is the only side rule any card prints for this.
+        if (eff.attackerSide === 'self_or_ally' && b.side !== attacker.side) continue;
+        if (eff.attackerUnitTypes && !eff.attackerUnitTypes.includes(attacker.kind)) continue;
+        // The Missile keyword sits on the attacking PROJECTILE's own card.
+        if (eff.attackerKeywords?.length) {
+          const ac = attacker.cardId ? data.byId.get(attacker.cardId) : undefined;
+          // A Projectile prints its keywords as `inline` on the CARD, not as
+          // key/en -- {"inline": "抛射物"}, {"inline": "导弹"} -- so reading
+          // key/en alone matches nothing and fails silently.
+          const hay = [
+            ...(ac?.keywords ?? []).map((k) => `${k.inline ?? ''} ${k.key ?? ''} ${k.en ?? ''}`),
+            ...(ac?.actions ?? []).flatMap((x) => (x.keywords ?? []).map((k) => k.inline ?? k.key ?? '')),
+          ].join(' ');
+          if (!eff.attackerKeywords.some((k) => hay.includes(k))) continue;
+        }
+        // Measured from the beacon to the TARGET, not to the attacker.
+        if (eff.requireTargetWithinSourceRange && rangeBetween(b, defender).range > (a.range ?? 0)) continue;
+        out.push(b);
+      }
+    }
+  }
+  return out;
+}
+
 // ---------- White Dwarf Thruster (292 ACE-001 Bit Port) ----------
 //
 // "While this part's Bit action has an Ammo Token, {lightning} on blue dice
