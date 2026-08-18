@@ -602,15 +602,30 @@
   }
  },
  "cards": {
+  "500": {
+   "english": "· Mission",
+   "confidence": "medium",
+   "note": "the card prints the single word 任务; likely a Task-equipment tag"
+  },
   "539": {
    "english": "· Command Generation X: at the start of the Command Phase this Mech generates X Command Tokens.",
    "confidence": "high",
    "note": "keyword name from the card data; wording from rulebook 4.15"
   },
+  "544": {
+   "english": "· Fire in Arc: this Action needs no line of sight to its landing point or its target.\n· Volley X: launch or scatter up to X Projectiles, spending that many Ammo tokens.",
+   "confidence": "high",
+   "note": "keyword names from the card data"
+  },
   "545": {
    "english": "· Suppression: a Mech declared as the target of this Action switches to Defensive Stance immediately. A unit in Shutdown Stance is unaffected.",
    "confidence": "high",
    "note": "keyword name from the card data"
+  },
+  "561": {
+   "english": "· Fire in Arc: this Action needs no line of sight to its landing point or its target.\n· Volley X: launch or scatter up to X Projectiles, spending that many Ammo tokens.",
+   "confidence": "high",
+   "note": "keyword names from the card data"
   },
   "093": {
    "english": "· Fire in Arc: this Action needs no line of sight to its landing point or its target.",
@@ -621,6 +636,51 @@
    "english": "· Silence: performing this Action does not break Optical Camouflage or Low Profile.",
    "confidence": "high",
    "note": "keyword names from the card data"
+  },
+  "ZYDR-108": {
+   "english": "· Low Value",
+   "confidence": "high",
+   "note": "single keyword on the card"
+  },
+  "PRDR-101": {
+   "english": "· Fire in Arc: this Action needs no line of sight to its landing point or its target.\n· Volley X: launch or scatter up to X Projectiles, spending that many Ammo tokens.",
+   "confidence": "high",
+   "note": "keyword names from the card data"
+  },
+  "PRDR-102": {
+   "english": "· Fire in Arc: this Action needs no line of sight to its landing point or its target.\n· Volley X: launch or scatter up to X Projectiles, spending that many Ammo tokens.",
+   "confidence": "high",
+   "note": "keyword names from the card data"
+  },
+  "PRDR-105": {
+   "english": "· Direct Fire: this Action needs line of sight to its landing point or its target.",
+   "confidence": "high",
+   "note": "keyword name from the card data"
+  },
+  "PRDR-201": {
+   "english": "· Omni-direction Firing: this Action has no firing-arc limit.\n· Melee Firing: this Action may still be performed while Melee Locked.\n· Airborne Movement: this Action counts as Flying.",
+   "confidence": "high",
+   "note": "keyword names from the card data"
+  },
+  "PRDR-202": {
+   "english": "· Omni-direction Firing: this Action has no firing-arc limit.\n· Melee Firing: this Action may still be performed while Melee Locked.\n· Airborne Movement: this Action counts as Flying.",
+   "confidence": "high",
+   "note": "keyword names from the card data"
+  },
+  "TM31RS": {
+   "english": "· Silence: performing this Action does not break Optical Camouflage or Low Profile.",
+   "confidence": "high",
+   "note": "same wording as card 095"
+  },
+  "TM35NA": {
+   "english": "· KC Armor: when this Mech is Hit, it may spend this Part’s Charge Token to treat Lightning results in the Hit roll as Defense.\n· Silence: performing this Action does not break Optical Camouflage or Low Profile.",
+   "confidence": "high",
+   "note": "keyword names from the card data"
+  },
+  "TM39D": {
+   "english": "· Silence: performing this Action does not break Optical Camouflage or Low Profile.\n· Overwatch Fire Token: at the end of the Delay Phase, remove this token; this unit may perform 1 Firing Action.",
+   "confidence": "high",
+   "note": "Overwatch per mechanics.json and FAQ K15"
   }
  }
 }
