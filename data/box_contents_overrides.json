@@ -16,10 +16,10 @@
     "COMBAT_RAID": {
       "_note": "Catalogued 2026-08-18 by OTTO from the PHYSICAL box, card by card: 46 individual cards. This replaces the 2026-08-11 reading of Queti's product page, which was wrong in the one way that mattered - see _faces.",
       "_faces": "THERE ARE NO TWO-FACED CARDS IN THIS BOX. Every entry is its own physical card, so every quantity here is 1. The product page prints pairs as 'A / B' lines and we read that as one card with two faces; OTTO's box says a Discard card is a SEPARATE card that pairs with its weapon, not the back of it. That mistake also hid four cards entirely - the R6, R7, AC-32 and Type 55 + CC-6 Discards - because a face folded into its parent needs no entry of its own. Do not reintroduce quantityPerBox 0 here on the strength of a listing.",
-      "_pilots": "FIVE pilots, not three: both Hammerheads and both Onyxes ship. OTTO read the card-page numbers 304 / 364 (Hammerhead), 323 / 365 (Onyx) and 363 (Scout). 304 and 323 sit exactly where page = 300 + serial puts FPA-04 and LPA-23, so those are the base pilots and the two '-2' variants are 364 and 365. Their real serials are still unknown - FPA-04-2 and LPA-23-2 are OUR ids, the same invention as FPA-63, whose page 363 is how it was sourced.",
+      "_pilots": "FIVE pilots, not three: both Hammerheads and both Onyxes ship. OTTO scanned all five QR codes on 2026-08-18 and they open ids 304 / 364 (Hammerhead), 323 / 365 (Onyx) and 363 (Scout) - exactly the mapping qr_ids.json already held for FPA-04 / FPA-04-2 / LPA-23 / LPA-23-2 / FPA-63. So the '-2' ids remain ours, but they are anchored to the right published card, which is the identity that matters.",
       "_removed": "The community data also put ADK15/MAS Porcupine Microwave (161) and ADK30F Tarantula Firepower (163) in this box; neither is in the physical box. Nor is the KK9 Snake Eye Micro Scout (LHDR-KK9), confirmed by OTTO 2026-08-18.",
       "_rl08": "The published list writes the chassis as 'RL-08M / RL-08'. The box holds RL-08 and RL-08C as separate cards (534 and 021) and no RL-08M, so the listing's 'M' was a typo and the pairing was two cards all along.",
-      "_projectile": "071 MC-3 'Razor' Missile is left at 2 from the product page's '2 Projectiles'. OTTO's catalogue lists the type once, so this is the one count still taken on the listing rather than the box.",
+      "_projectile": "071 MC-3 'Razor' Missile is ONE card (OTTO, 2026-08-18). The product page's '2 Projectiles' counts the MINIATURES - the box holds two models and a single card for them. Card counts and model counts are not the same number, and this is the entry that proves it.",
       "cards": {
         "533": 1, "012": 1,
         "014": 1,
@@ -53,7 +53,7 @@
         "164": 1, "165": 1, "166": 1,
         "160": 1, "543": 1,
 
-        "071": 2,
+        "071": 1,
 
         "FPA-04": 1,
         "FPA-04-2": 1,
