@@ -808,6 +808,56 @@ export function missileGuidance(
   return out;
 }
 
+// ---------- Four one-off riders read off printed text ----------
+//
+// None of these carries usable gameRules, so all four come from the print. They
+// are gathered here because each is one line at one hook point in combat.ts.
+//
+// A shared helper: does any live Part on this unit print the given text?
+function partSays(data: GameData, t: Token, re: RegExp): boolean {
+  for (const { slot, card } of tokenCards(data, t)) {
+    if (slot === 'pilot') continue;
+    if ((t.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
+    for (const a of card.actions ?? []) {
+      if (re.test(`${a.description?.en ?? ''} ${a.description?.zh ?? ''}`)) return true;
+    }
+  }
+  return false;
+}
+
+// 094 Multispectral Tracking: this Mech's Firing Actions ignore Low Profile.
+// Read off the ATTACKER, and it beats the defender's Token and the MES Beacon
+// aura alike -- the card says ignore, not "unless granted".
+export function ignoresLowProfile(data: GameData, t: Token): boolean {
+  return t.kind === 'mech' && partSays(data, t, /Firing Actions? ignores? Low.?Profile|射击动作无视低特征/i);
+}
+
+// 095 Responsive Targetting: against a unit bearing a Highlight, this Mech's
+// Firing Actions ignore Terrain Protection and Unit Protection both.
+export function ignoresProtectionOnHighlight(data: GameData, t: Token): boolean {
+  return t.kind === 'mech' && partSays(data, t, /高亮目标[^。]*无视地形保护和单位保护|ignor\w*\s+Terrain\s+Protection\s+and\s+Unit\s+Protection/i);
+}
+
+// 503 Close Assault: firing at a target within range, {Eye} counts as
+// {Heavy Hit}. The same trade ZPA-35 Chef makes with a Command Token, but free
+// and automatic -- so it is applied rather than offered.
+export function eyesAreHeavyHits(data: GameData, t: Token): boolean {
+  return t.kind === 'mech' && partSays(data, t, /\{?眼睛\}?视为\{?重击\}?|\{?Eye\}?\s*(?:is|are|counts?)\s*(?:as\s*)?\{?Heavy\s*Hit\}?/i);
+}
+
+// ZHDR-301 Dense Armor Hand: "when this Part is hit, {Defense} may offset
+// {Heavy Hit}". Dense Armor by another name -- denseArmorOn reads the KEYWORD
+// 致密装甲, and this card prints the effect in prose instead.
+export function denseArmorByText(data: GameData, t: Token): boolean {
+  return partSays(data, t, /本部件被命中时[^。]*\{?防御\}?可抵消\{?重击\}?/);
+}
+
+// 533 Front toward Enemy: this Mech cannot be Back-attacked in Melee. The arc
+// is still whatever it is; what the card removes is the CONSEQUENCE.
+export function noMeleeBackAttack(data: GameData, t: Token): boolean {
+  return t.kind === 'mech' && partSays(data, t, /遭受近战攻击时[^。]*无法被背击|cannot be Back.?attack/i);
+}
+
 // ---------- White Dwarf Thruster (292 ACE-001 Bit Port) ----------
 //
 // "While this part's Bit action has an Ammo Token, {lightning} on blue dice

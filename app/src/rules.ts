@@ -576,8 +576,15 @@ export function protectionFor(
   terrain: TerrainPiece[],
   tokens: Token[],
   smoke: SmokeScreen[],
+  // 095 Responsive Targetting: against a Highlighted target this attacker
+  // ignores Terrain AND Unit Protection. rules.ts has no card data, so the
+  // judgement is made where the data is and handed in.
+  ignored = false,
 ): { white: number; note: string } {
   if (action.type !== 'Firing') return { white: 0, note: '' };
+  if (ignored) {
+    return { white: 0, note: 'Responsive Targetting: the target is Highlighted, so Terrain and Unit Protection are ignored' };
+  }
   // Smoke removes line of sight outright, so there is no protection to add on top.
   if (smokeBlocks(attacker, defender, smoke)) {
     return { white: 0, note: 'No line of sight: a Smoke Screen is in the way (4.16)' };

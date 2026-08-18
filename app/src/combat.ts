@@ -5,7 +5,7 @@ import { linkMechanics } from './inspector';
 import { SQUAD_ORDER, squadLabel } from './data';
 import type { Card, CardAction, DiceData, DiceIcon, DieColor, GameRuleEffect, PartSlot, Side, SmokeScreen, TerrainPiece, Token } from './types';
 import { statusCount, STATUSES } from './types';
-import { aaRadarCovers, attackReactionsOf, auraEffectsOn, auraValueOn, blueLightningDodges, coolingBonus, missileGuidance, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, denseArmorOn, designationsOn, electronicValue, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, loanedParts, pilotCard, repeatersFor, SLOT_LABEL, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
+import { aaRadarCovers, attackReactionsOf, auraEffectsOn, auraValueOn, blueLightningDodges, coolingBonus, denseArmorByText, eyesAreHeavyHits, ignoresLowProfile, ignoresProtectionOnHighlight, noMeleeBackAttack, missileGuidance, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, denseArmorOn, designationsOn, electronicValue, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, loanedParts, pilotCard, repeatersFor, SLOT_LABEL, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
 import { timingOf } from './ticks';
 import { inArc, losNote, protectionFor, rangeBetween } from './rules';
 import type { Command } from './commands';
@@ -883,7 +883,11 @@ export class AttackHelper {
 
   private attackIcons(c: Ctx): Record<string, number> {
     let counts = this.countIcons(c.attackRoll ?? [], c.attacker.stance === 'offensive');
-    const swaps = Math.min(c.eyeSwaps ?? 0, counts.eye ?? 0);
+    // 503 Close Assault trades every {Eye} for a {Heavy Hit} for nothing, so it
+    // is applied rather than offered -- the same trade Chef buys with a Command
+    // Token, riding the same counter so the two cannot double-count one icon.
+    const free = eyesAreHeavyHits(this.data, c.attacker) ? counts.eye ?? 0 : 0;
+    const swaps = Math.min(Math.max(c.eyeSwaps ?? 0, free), counts.eye ?? 0);
     if (swaps) counts = { ...counts, eye: (counts.eye ?? 0) - swaps, heavyHit: (counts.heavyHit ?? 0) + swaps };
     const ex = this.lightningSwap(c);
     c.lightningSwapped = ex ? counts.lightning ?? 0 : 0;
@@ -929,8 +933,12 @@ export class AttackHelper {
     }
     // The Token, or the MES Beacon's aura: the aura grants the KEYWORD, so it
     // works exactly like the Token here and Scan cannot strip it (FAQ Q3/J2).
-    const lowProfile = c.action.type === 'Firing' && (statusCount(c.defender.statuses, 'lowProfile') > 0
-      || (this.tokens ? auraEffectsOn(this.data, this.tokens(), c.defender).has('low_profile') : false));
+    // 094 Multispectral Tracking beats BOTH sources: the card says the
+    // attacker's Firing Actions ignore Low Profile, not "unless it was granted".
+    const lowProfile = c.action.type === 'Firing'
+      && !ignoresLowProfile(this.data, c.attacker)
+      && (statusCount(c.defender.statuses, 'lowProfile') > 0
+        || (this.tokens ? auraEffectsOn(this.data, this.tokens(), c.defender).has('low_profile') : false));
     // Melee Evasion adds a {Dodge} ICON, not a die — the card writes it braced,
     // and the pool was already rolled by now.
     if (c.evadeUsed) def.dodge = (def.dodge ?? 0) + 1;
@@ -975,7 +983,7 @@ export class AttackHelper {
     const totalIcons = heavy + light;
 
     // Dense Armor (致密装甲): {Defense} may offset {Heavy Hit}.
-    const dense = denseArmorOn(this.data, c.defender);
+    const dense = denseArmorOn(this.data, c.defender) || denseArmorByText(this.data, c.defender);
     if (kcSwapped) text.push(`KC Armor: a Charge Token turned ${kcSwapped} [Lightning] in the Defense Roll into ${kcSwapped === 1 ? 'a Defense icon' : 'Defense icons'} (4.10)`);
     if (drainKind && drained) {
       if (c.defender.kind === 'mech') {
@@ -1614,7 +1622,10 @@ export class AttackHelper {
     // in their rear arc is what bars the Parry.
     const parries = parryParts(this.data, c.defender, {
       melee: c.action.type === 'Melee',
-      backAttack: inArc(c.defender, c.attacker, 'rear'),
+      // 533 Front toward Enemy does not change the arc -- it removes what a
+      // rear arc COSTS in Melee, which here is the bar on Parrying.
+      backAttack: inArc(c.defender, c.attacker, 'rear')
+        && !(c.action.type === 'Melee' && noMeleeBackAttack(this.data, c.defender)),
     });
     for (const x of parries) {
       const already = out.find((o) => o.slot === x.slot);

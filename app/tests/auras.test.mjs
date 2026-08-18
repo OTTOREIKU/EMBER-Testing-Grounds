@@ -614,5 +614,31 @@ check('and it reaches the shared Flexible Timing gate',
 check('which still says no for the Action it does not cover',
   A.hasFlexibleTiming(data, [cqcMech('017')], cqcMech('017'), mLong), false);
 
+// ---------- The one-off riders (094, 095, 503, ZHDR-301, 533) ----------
+//
+// All five are read off printed text with no usable gameRules, so all five are
+// driven against the shipped cards.
+const wearing = (torso, states = {}) => ({
+  uid: 61, kind: 'mech', side: 's1', col: 0, row: 0, stance: 'offensive',
+  mech: { torso }, partStates: { torso: 'intact', ...states }, statuses: [],
+});
+check('094 ignores Low Profile', A.ignoresLowProfile(data, wearing('094')), true);
+check('and a Mech without it does not', A.ignoresLowProfile(data, wearing('002')), false);
+check('095 ignores Protection against a Highlight', A.ignoresProtectionOnHighlight(data, wearing('095')), true);
+check('and 094 is not 095', A.ignoresProtectionOnHighlight(data, wearing('094')), false);
+check('503 turns Eyes into Heavy Hits', A.eyesAreHeavyHits(data, wearing('503')), true);
+check('ZHDR-301 has Dense Armor in prose', A.denseArmorByText(data, wearing('ZHDR-301')), true);
+// The keyword-bearing cards must NOT also match the prose reader, or the two
+// would both claim one card and the reasoning would be muddled.
+check('and the keyword cards are left to denseArmorOn', A.denseArmorByText(data, wearing('002')), false);
+check('533 cannot be Back-attacked in Melee', A.noMeleeBackAttack(data, wearing('533')), true);
+check('a destroyed Part grants none of them',
+  [A.ignoresLowProfile(data, wearing('094', { torso: 'destroyed' })),
+   A.eyesAreHeavyHits(data, wearing('503', { torso: 'destroyed' })),
+   A.noMeleeBackAttack(data, wearing('533', { torso: 'destroyed' }))], [false, false, false]);
+check('and a Drone gets none of the Mech-only ones',
+  [A.ignoresLowProfile(data, { ...wearing('094'), kind: 'drone' }),
+   A.eyesAreHeavyHits(data, { ...wearing('503'), kind: 'drone' })], [false, false]);
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 if (fail) process.exit(1);
