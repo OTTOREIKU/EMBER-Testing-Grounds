@@ -1,4 +1,4 @@
-import type { Facing, GameState, MechLoadout, PartSlot, RollbackPoint, Side, SmokeScreen, Stance, Timing, Token } from './types';
+import type { CombatView, Facing, GameState, MechLoadout, PartSlot, RollbackPoint, Side, SmokeScreen, Stance, Timing, Token } from './types';
 import { addStatus, ageTokens, newOpportunity, PHASES, statusCount, STATUSES, TIMINGS } from './types';
 import type { GameData } from './data';
 import { unfoldsInto } from './data';
@@ -7,7 +7,7 @@ import { canActivate, canManeuver, canOverload, canPerform, spendAction, spendAc
 import { tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { battlefieldLocked, deploymentComplete, deployTurn, firstPlayerFrom, newSetup, normaliseSetup, tasksLocked } from './setup';
 import { applyKill, normaliseTasks, pendingDesignations, settleControl, type Designation } from './tasks';
-import { alive, canAct, dialHidden, eligibleUnits, getLocalSeat, isLoopPhase, nextTurn, onExtraOpportunity } from './loop';
+import { alive, canAct, dialHidden, droneActionWhy, droneMoveWhy, eligibleUnits, getLocalSeat, isLoopPhase, loopComplete, nextTurn, onExtraOpportunity } from './loop';
 import { dissipationFor } from './rules';
 
 // ---------- the command layer (multiplayer phase 1) ----------
@@ -194,6 +194,9 @@ export type Command =
   | { kind: 'callDefense'; seat: Side; uid: number; targetUid: number; actionId: string; white: number; blue: number }
   | { kind: 'answerDefense'; seat: Side; faces: { color: string; face: number }[] }
   | { kind: 'clearDefense'; seat: Side }
+  // The attacker's combat window, published so the defender watches the same
+  // attack unfold. Null tears the mirror down when the window closes.
+  | { kind: 'setCombatView'; seat: Side; view: CombatView | null }
   | { kind: 'setRollbackCatalog'; seat: Side; entries: RollbackPoint[] }
   | { kind: 'rollbackRequest'; seat: Side; round: number; phase: number; label: string }
   | { kind: 'rollbackAnswer'; seat: Side; accept: boolean }
@@ -301,7 +304,7 @@ type TableKind =
   | 'clearCounterRoll'
   | 'setMode' | 'handOver' | 'setStrict' | 'commitTimings' | 'revealTimings' | 'importSquad'
   | 'configureTable' | 'startMatch' | 'endMatch' | 'pickSecondary' | 'setTactics' | 'setReady' | 'designateTask'
-  | 'callDefense' | 'answerDefense' | 'clearDefense'
+  | 'callDefense' | 'answerDefense' | 'clearDefense' | 'setCombatView'
   | 'setRollbackCatalog' | 'rollbackRequest' | 'rollbackAnswer';
 const TABLE_KINDS = new Set<Command['kind']>([
   'advancePhase', 'setPhase', 'resetRounds', 'adjustCommandTokens', 'passTurn', 'markEndStep', 'award',
@@ -311,7 +314,7 @@ const TABLE_KINDS = new Set<Command['kind']>([
   'clearCounterRoll',
   'setMode', 'handOver', 'setStrict', 'commitTimings', 'revealTimings', 'importSquad',
   'configureTable', 'startMatch', 'endMatch', 'pickSecondary', 'setTactics', 'setReady', 'designateTask',
-  'callDefense', 'answerDefense', 'clearDefense',
+  'callDefense', 'answerDefense', 'clearDefense', 'setCombatView',
   'setRollbackCatalog', 'rollbackRequest', 'rollbackAnswer',
 ]);
 
@@ -323,7 +326,7 @@ const ATTRIBUTED = new Set<Command['kind']>([
   'advancePhase', 'setPhase', 'resetRounds', 'markEndStep', 'award',
   // Who asked and who answered is the whole record of a rollback, so both are
   // stamped with the sender's own seat like every other attributed command.
-  'callDefense', 'answerDefense', 'clearDefense',
+  'callDefense', 'answerDefense', 'clearDefense', 'setCombatView',
   'setRollbackCatalog', 'rollbackRequest', 'rollbackAnswer',
   'lockMap', 'acceptRoll', 'lockDials', 'finishDeployment',
   'queueIntercepts', 'clearIntercepts', 'placeSmoke', 'removeSmoke', 'dissipateSmoke',
@@ -475,7 +478,22 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       return ok;
     }
     case 'clearDefense': {
-      if (!state.script?.combat) return no('No defence roll is open.');
+      // Idempotent: clearing an already-clear record is a no-op, not a
+      // refusal. The attacker's answer-consumer and its cancel path can both
+      // send one, and refusing the second read as a desync on the other
+      // client — two refusals in six seconds is the resync alarm.
+      return ok;
+    }
+    case 'setCombatView': {
+      if (!state.script) return no('There is no game running.');
+      const view = cmd.view;
+      if (view === null) return ok;
+      const at = state.tokens.find((x) => x.uid === view.attackerUid);
+      // The window belongs to the attacking squad: nobody publishes an attack
+      // for units they do not own.
+      if (!at || at.side !== cmd.seat) return no('The combat window belongs to the attacking squad.');
+      if ((view.attack?.length ?? 0) > 40 || (view.defense?.length ?? 0) > 40) return no('That is not a dice pool.');
+      if ((view.log ?? []).some((l) => typeof l !== 'string' || l.length > 400)) return no('That is not a combat log.');
       return ok;
     }
     case 'rollbackRequest': {
@@ -515,7 +533,9 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       // Two moments wait on a ready signal: the lobby before launch, and the
       // deployment stage, where "Begin Round 1" needs both squads to agree.
       const su = normaliseSetup(state.setup);
-      if (su && su.stage !== 'deploy') return no('Nothing is waiting on a ready signal right now.');
+      // 'done' joined the list when phase turns became a two-player agreement:
+      // mid-game, Continue marks a seat ready and the completed pair advances.
+      if (su && su.stage !== 'deploy' && su.stage !== 'done') return no('Nothing is waiting on a ready signal right now.');
       return ok;
     }
     case 'importSquad': {
@@ -545,6 +565,25 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
     case 'advancePhase': {
       const su = normaliseSetup(state.setup);
       if (su && su.stage !== 'done') return no('Finish the pre-game roll and deployment first (3.1).');
+      // A designation loop ends when neither squad can or will go on (3.2.3).
+      // The rule used to live only in which panel drew a Continue button, and a
+      // stale or racing press skipped a live Command Phase for both players —
+      // OTTO lost Round 1's drone Commands to exactly that. Networked play
+      // refuses; the sandbox and guide still warn through perform().
+      if (getLocalSeat() && state.script) {
+        const ph = PHASES[state.round.phase];
+        if (isLoopPhase(ph) && !loopComplete(state, ph)) {
+          return no(`The ${ph} Phase is not over: a squad can still designate, and a squad done for the phase passes instead (3.2.3).`);
+        }
+        // And even a finished phase turns only when BOTH players have pressed
+        // Continue: one player reading a card is not a player who agreed to
+        // move on, and being kicked out of a picker mid-thought is how it
+        // felt. The flags are consumed by the advance, so every phase asks
+        // afresh — the same agreement deployment already used.
+        if (!(state.ready?.s1 && state.ready?.s2)) {
+          return no('Both players press Continue before the phase turns.');
+        }
+      }
       return ok;
     }
     case 'setPhase': {
@@ -808,6 +847,21 @@ function checkActed(
       if (cmd.granted) return ok;
       const o = oppOf(state, cmd.uid);
       if (!o) return no('It is not this Mech\'s Action Opportunity.');
+      // 3.2.2 ②: a Drone's Movement is the Command Phase's choice. Its
+      // Automatic-Phase activation performs Automatic Actions only (3.5), so a
+      // move there is refused — Projectiles are untouched, their flight is part
+      // of the Delay activation (3.6).
+      if (t.kind === 'drone') {
+        const ph = PHASES[state.round.phase];
+        const why = isLoopPhase(ph) ? droneMoveWhy(ph) : null;
+        if (why) return no(why);
+      }
+      // 4.1: a Mech chooses its Stance each Action Opportunity BEFORE the
+      // choice to Maneuver. Networked play makes the choice explicit — locked
+      // in even to stay put — so a forgotten Stance can never reach the dice.
+      if (t.kind === 'mech' && getLocalSeat() && !o.stanceLocked) {
+        return no('Lock in a Stance first: a Mech chooses its Stance at the start of each Action Opportunity, before the choice to Maneuver (4.1).');
+      }
       // A free move rides on an Action that has already been performed; without
       // one there is nothing that could have moved the unit.
       if (cmd.free) {
@@ -823,7 +877,22 @@ function checkActed(
       // Ticks are a Mech's economy. Everything else gets an activation worth
       // one Action or one Movement, and the unit is the only thing that says
       // which reading applies — a Mech's Passives are length-less too.
-      if (t.kind !== 'mech') return fromVerdict(canActivate(o));
+      if (t.kind !== 'mech') {
+        // The icon lock (3.2.2 ② / 3.5): a Command performs Command-icon
+        // Actions, the Automatic Phase performs Automatic ones. Drones only —
+        // a Projectile's Delayed Action belongs to the Delay Phase (3.6).
+        if (t.kind === 'drone') {
+          const ph = PHASES[state.round.phase];
+          const why = isLoopPhase(ph) ? droneActionWhy(ph, a) : null;
+          if (why) return no(why);
+        }
+        return fromVerdict(canActivate(o));
+      }
+      // 4.1: the Stance is chosen before anything else the Opportunity does.
+      // Same explicit lock as the maneuver gate above.
+      if (getLocalSeat() && !o.stanceLocked) {
+        return no('Lock in a Stance first: a Mech chooses its Stance at the start of each Action Opportunity, before it does anything else (4.1).');
+      }
       // partKey names which Part the Action came from, so the same Action
       // borrowed from two Tarantulas is two Parts, not one repeated (FAQ O7).
       return fromVerdict(canPerform(o, a, cmd.partKey || a.id));
@@ -1221,6 +1290,10 @@ function checkActed(
 
 export function apply(data: GameData, state: GameState, cmd: Command): void {
   if (cmd.kind === 'advancePhase') {
+    // The both-ready agreement is consumed by the turn it authorised, so
+    // every phase asks afresh — and a racing second advance finds the flags
+    // gone and is refused, which is the idempotence.
+    state.ready = {};
     const r = state.round;
     if (r.phase < PHASES.length - 1) {
       r.phase++;
@@ -1243,6 +1316,7 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
     return;
   }
   if (cmd.kind === 'setPhase') {
+    state.ready = {};
     state.round.phase = cmd.phase;
     return;
   }
@@ -1409,6 +1483,11 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
   if (cmd.kind === 'clearDefense') {
     const sc = state.script;
     if (sc) sc.combat = null;
+    return;
+  }
+  if (cmd.kind === 'setCombatView') {
+    const sc = state.script;
+    if (sc) sc.combatView = cmd.view ? { ...cmd.view, attack: cmd.view.attack?.map((f) => ({ ...f })) ?? null, defense: cmd.view.defense?.map((f) => ({ ...f })) ?? null, log: [...cmd.view.log] } : null;
     return;
   }
   if (cmd.kind === 'rollbackRequest') {
@@ -1661,9 +1740,14 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
     case 'setTiming':
       t.timing = cmd.timing;
       return;
-    case 'setStance':
+    case 'setStance': {
       t.stance = cmd.stance;
+      // Choosing (or re-confirming) a Stance during the Mech's own Opportunity
+      // is the lock the 4.1 gate waits for — nothing else can open it.
+      const o = oppOf(state, cmd.uid);
+      if (o) o.stanceLocked = true;
       return;
+    }
     case 'reboot': {
       t.stance = cmd.stance;
       t.link = Math.min(maxLink(data, t), (t.link ?? 0) + 1);
@@ -1677,6 +1761,9 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
         o.action = 1;
         o.started = false;
         o.performed = [...o.performed, 'COMMON_REBOOT'];
+        // A Reboot IS the Stance choice (4.1.1), so the one remaining Action
+        // Tick must not be refused by the 4.1 lock gate.
+        o.stanceLocked = true;
       }
       return;
     }

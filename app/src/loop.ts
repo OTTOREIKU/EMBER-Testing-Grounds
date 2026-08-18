@@ -59,6 +59,31 @@ export function eligibleUnits(state: GameState, phase: LoopPhase, side: Side): T
   return state.tokens.filter((t) => t.side === side && t.kind === 'projectile' && alive(t) && !acted.has(t.uid));
 }
 
+// What a Drone's activation may actually do, per phase. 3.2.2 ②: a Command
+// buys a Move OR one Action bearing the COMMAND icon. 3.5: the Automatic Phase
+// performs the Drone's AUTOMATIC Actions, and only those — Movement does not
+// exist there. One home for the panels of both pages and for check(), because
+// the icon lock lived nowhere and both starter Drones were firing their
+// Automatic Actions off Commands.
+export function droneMoveWhy(phase: LoopPhase): string | null {
+  if (phase === 'Command') return null;
+  return 'A Drone moves only when Commanded (3.2.2). The Automatic Phase performs its Automatic Actions, and only those (3.5).';
+}
+
+export function droneActionWhy(phase: LoopPhase, a: { speed?: string; type?: string }): string | null {
+  if (a.speed === 'passive' || a.type === 'Passive') return null;
+  if (phase === 'Command') {
+    if (a.speed === 'command') return null;
+    return a.speed === 'auto'
+      ? 'This is an Automatic Action — it is performed in the Automatic Phase without a Command (3.5). A Command lets this Drone MOVE instead, or fire an Action bearing the Command icon (3.2.2).'
+      : 'Only an Action bearing the Command icon may be performed with a Command (3.2.2).';
+  }
+  if (phase === 'Automatic') {
+    return a.speed === 'auto' ? null : 'The Automatic Phase performs the Drone\'s Automatic Actions only (3.5).';
+  }
+  return null;
+}
+
 export function canAct(state: GameState, phase: LoopPhase, side: Side): boolean {
   const sc = state.script;
   if (!sc) return false;

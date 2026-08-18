@@ -112,5 +112,36 @@ check('and an empty action has none', knockbackOf({}), undefined);
 // The bare keyword placeholder carries no number, so it must not read as 1.
 check('the bare placeholder alone is not enough', knockbackOf({ keywords: [{ inline: '击退X' }] }), undefined);
 
+// ---------- [Stationary] (same parser home) ----------
+// "No Movement this Action Opportunity" pays the printed bonus. The two
+// machine shapes are Range +N and +NY, exactly as the Mire's railguns and the
+// SMG family print them — the reason a still Mech could never reach.
+const { stationaryBonus, stationaryAdjusted } = await import(ktmp.href);
+const rail = { range: 6, yellowDice: 0, redDice: 3, description: { en: '· [Stationary] Range +2 grids.\n·Armor Piercing 1' } };
+const smg = { range: 4, yellowDice: 3, description: { en: '· Laser Weapon\n· [Stationary] +1Y.' } };
+check('Range +N is read', stationaryBonus(rail), { range: 2, yellow: 0 });
+check('+NY is read', stationaryBonus(smg), { range: 0, yellow: 1 });
+check('no keyword reads nothing', stationaryBonus({ description: { en: 'Suppression' } }), null);
+const still = { maneuvered: false, moved: false };
+const walked = { maneuvered: true, moved: false };
+check('a still Mech gets the range', stationaryAdjusted(rail, still).range, 8);
+check('a still Mech gets the dice', stationaryAdjusted(smg, still).yellowDice, 4);
+check('a Mech that maneuvered gets neither', stationaryAdjusted(rail, walked).range, 6);
+check('no Opportunity means no bonus', stationaryAdjusted(rail, null).range, 6);
+check('an unmarked action passes through untouched', stationaryAdjusted({ range: 5 }, still).range, 5);
+
+// ---------- Pulse and Ion Weapons (same parser home) ----------
+// "May exchange {Lightning} for {Heavy Hit}" — Pulse unconditionally, Ion only
+// against a target bearing a Fragile Token. The condition is checked at the
+// tally, so the parser only names which keyword is present.
+const { lightningExchangeOf } = await import(ktmp.href);
+check('pulse weapon is read', lightningExchangeOf({ description: { en: '· Pulse Weapon' }, keywords: [{ inline: '频闪武器' }] }), 'pulse');
+check('the chinese inline keyword alone is enough', lightningExchangeOf({ keywords: [{ inline: '频闪武器' }] }), 'pulse');
+check('ion weapon is read', lightningExchangeOf({ description: { zh: '· 离子武器' } }), 'ion');
+check('english ion weapon is read', lightningExchangeOf({ description: { en: '· Ion Weapon' } }), 'ion');
+check('a word ending in ion is not an ion weapon', lightningExchangeOf({ description: { en: 'Suppression Weapon' } }), null);
+check('a plain action has neither', lightningExchangeOf({ description: { en: '· Concussion' } }), null);
+check('an empty action has neither', lightningExchangeOf({}), null);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

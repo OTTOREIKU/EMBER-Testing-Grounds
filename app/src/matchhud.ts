@@ -14,10 +14,10 @@ import { iconSvg } from './dice';
 import type { PartSlot, CardAction, CounterRoll, DiceData, DieColor, Facing, GameState, Side, Stance, Timing, Token, ExtraTick, Opportunity } from './types';
 import { statusCount, newOpportunity, newScriptState, PHASES, STATUSES, TIMINGS } from './types';
 import { deployable, deployTurn, deploymentComplete, firstPlayerFrom, normaliseSetup, rollTotal, type SetupState } from './setup';
-import { actionPhaseComplete, activationOrder, alive, canAct, eligibleUnits, isLoopPhase, loopComplete, nextActivation, nextTurn, onExtraOpportunity, type InitLookup, type LoopPhase } from './loop';
+import { actionPhaseComplete, activationOrder, alive, canAct, droneActionWhy, droneMoveWhy, eligibleUnits, isLoopPhase, loopComplete, nextActivation, nextTurn, onExtraOpportunity, type InitLookup, type LoopPhase } from './loop';
 import { actionIdOf, canActivate, canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed, type TickVerdict } from './ticks';
 import { gameResult, normaliseTasks, scoreMain, scoreSecondary, settleControl, unpaidLines, zoneCentreGrid, type Designation, type ScoreLine, type ScoreResult, type SecondaryScoring } from './tasks';
-import { tokenCards } from './units';
+import { stationaryAdjusted, tokenCards } from './units';
 
 // The in-match HUD (Match Centre part 3a): one question at a time, per seat.
 // Everything here renders from the shared GameState and issues the same
@@ -75,6 +75,10 @@ export interface HudCtx {
   // True while the shared AttackHelper is resolving an attack, so the turn
   // panel steps out of the way instead of offering the manual buttons beside it.
   combatBusy(): boolean;
+  // The defender's read-only copy of the attacker's combat window, drawn into
+  // the same floating pop when this client is NOT the one attacking. Null when
+  // no attack is published or the live helper owns the window.
+  combatMirrorHtml(): string | null;
   // Opens the §4.4 pipeline on a target the player has just picked. The mode
   // decides what the defender may claim: an ordinary attack reads Terrain and
   // Unit Protection off the board, an Interception grants none and needs no
@@ -1043,10 +1047,10 @@ function planningPanel(ctx: HudCtx): string {
   const foot = ctx.networked && me
     ? committed
       ? bothRevealed
-        ? '<button class="bigbtn" data-act="advance">Continue to the Action Phase</button>'
+        ? advanceBtn(ctx, 'Continue to the Action Phase')
         : `<p class="tp-note">Committed. Waiting for ${esc(squadLabel(me === 's1' ? 's2' : 's1'))} to lock in…</p>`
       : `<button class="bigbtn" data-act="lockdials"${left ? ' disabled' : ''}>${left ? `Lock in (${left} dial${left === 1 ? '' : 's'} left)` : 'Lock in'}</button>`
-    : `<button class="bigbtn" data-act="advance"${left ? ' disabled' : ''}>${left ? `${left} dial${left === 1 ? '' : 's'} left` : 'Continue to the Action Phase'}</button>`;
+    : advanceBtn(ctx, left ? `${left} dial${left === 1 ? '' : 's'} left` : 'Continue to the Action Phase', !!left);
   return head(me ? 'Your move' : 'Planning', 'Set your Timing Dials', me ? 'Your opponent cannot see these until both squads lock in.' : 'Both squads set dials.', true)
     + `<div class="tp-body">${rows}</div><div class="tp-foot">${foot}</div>`;
 }
@@ -1089,6 +1093,12 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
   // Tick engine, as this panel used to, let every one of those through.
   const guided = guidedActions(ctx.data, t, { tokens: ctx.state.tokens, terrain: terrainOf(ctx) });
   const onExtra = onExtraOpportunity(ctx.state, o.uid);
+  // 4.1: a Mech chooses its Stance each Action Opportunity, before the choice
+  // to Maneuver. Networked play makes the choice a lock — pressing a Stance
+  // (the current one included) opens the rest of the panel — so a forgotten
+  // Mobility can never again roll a defence with no Blue in it.
+  const needLock = !!ctx.networked && t.kind === 'mech' && t.stance !== 'shutdown' && !o.stanceLocked;
+  const lockWhy = 'Lock in a Stance first: a Mech chooses its Stance at the start of each Action Opportunity, before it does anything else (4.1).';
   // Keyed by PART, not by Action: two Carrier Tarantulas lending the same
   // Backpack lend two distinct Parts, and each may be used once (FAQ O7).
   const blockedBy = new Map<string, string | undefined>();
@@ -1123,7 +1133,11 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
       const chained = onExtra && extraActivationOf(a)?.suppressGrants
         ? 'This is already an Extra Action Opportunity, and it cannot grant another one.'
         : undefined;
-      const v: TickVerdict = chained ? { ok: false, why: chained } : stopped ? { ok: false, why: stopped } : ticks;
+      // The icon lock: with a Command a Drone performs Command-icon Actions,
+      // in the Automatic Phase its Automatic ones — same rule check() enforces.
+      const loopPh = PHASES[ctx.state.round.phase];
+      const phased = t.kind === 'drone' && isLoopPhase(loopPh) ? droneActionWhy(loopPh, a) : null;
+      const v: TickVerdict = needLock ? { ok: false, why: lockWhy } : chained ? { ok: false, why: chained } : stopped ? { ok: false, why: stopped } : phased ? { ok: false, why: phased } : ticks;
       const cost = costOf(a);
       const kind = (a.type ?? '').toLowerCase();
       const pool = `${a.yellowDice ?? 0},${a.redDice ?? 0}`;
@@ -1147,7 +1161,13 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
     .join('');
   // A Drone's move is barred by the same one-thing-per-activation rule as its
   // Actions, so it needs that reason rather than the Mech one about Tick order.
-  const man = t.kind === 'mech' ? canManeuver(o) : canActivate(o);
+  // And Movement is the COMMAND Phase's choice (3.2.2 ②): in the Automatic
+  // Phase a Drone performs its Automatic Actions only (3.5), so the row locks.
+  const dronePh = PHASES[ctx.state.round.phase];
+  const droneMoveBlock = t.kind === 'drone' && isLoopPhase(dronePh) ? droneMoveWhy(dronePh) : null;
+  const man = t.kind === 'mech'
+    ? needLock ? { ok: false as const, why: lockWhy } : canManeuver(o)
+    : droneMoveBlock ? { ok: false as const, why: droneMoveBlock } : canActivate(o);
   // Ticks are a Mech's Action Opportunity (3.4). A Drone or Projectile gets an
   // activation instead — one Action, no price printed on any of them — so the
   // pool is left off the way the freeplay guide leaves it off its phase panels.
@@ -1203,11 +1223,18 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
   // spend a Mech's last Link and shut it down.
   const shutdown = t.stance === 'shutdown';
   const active = ['defensive', 'mobility', 'offensive'] as const;
-  const stanceRow = !shutdown && !o.maneuvered && !o.started && t.kind === 'mech'
-    ? `<div class="stancerow">${active
-        .map((x) => `<button class="stancebtn${t.stance === x ? ' sel' : ''}" data-stance="${x}">${x[0].toUpperCase()}${x.slice(1)}</button>`)
+  // Before the lock the row is the whole panel's front door: the current
+  // Stance reads "Keep" so staying put is one press, not a trap.
+  const stanceRow = needLock
+    ? `<p class="tp-note"><b>Choose a Stance first (4.1)</b> — even to stay. Offensive solidifies attack hollows, Defensive solidifies White hollows, Mobility adds Dodge dice and doubles the Maneuver.</p>
+       <div class="stancerow">${active
+        .map((x) => `<button class="stancebtn${t.stance === x ? ' sel' : ''}" data-stance="${x}">${t.stance === x ? 'Keep ' : ''}${x[0].toUpperCase()}${x.slice(1)}</button>`)
         .join('')}</div>`
-    : '';
+    : !shutdown && !o.maneuvered && !o.started && t.kind === 'mech'
+      ? `<div class="stancerow">${active
+          .map((x) => `<button class="stancebtn${t.stance === x ? ' sel' : ''}" data-stance="${x}">${x[0].toUpperCase()}${x.slice(1)}</button>`)
+          .join('')}</div>`
+      : '';
   const rebootRow = shutdown && t.kind === 'mech'
     ? `<p class="tp-note">${esc(t.label)} is in Shutdown Stance, so Reboot is the only thing it may do (4.1.1).</p>
        <div class="stancerow">${active
@@ -1245,6 +1272,24 @@ function asterRows(ctx: HudCtx): string {
     .join('');
 }
 
+// The phase-turning button. Networked, it is a two-player agreement: the
+// first press marks this seat ready and waits, the second player's press
+// completes the pair and the phase turns — so nobody is thrown out of a card
+// or a picker because their opponent was faster. Tapping again withdraws.
+// Solo and in the dev harness it is the plain advance it always was.
+function advanceBtn(ctx: HudCtx, label: string, disabled = false): string {
+  if (!ctx.networked || !ctx.seat) {
+    return `<button class="bigbtn" data-act="advance"${disabled ? ' disabled' : ''}>${label}</button>`;
+  }
+  const r = ctx.state.ready ?? {};
+  if (!r[ctx.seat]) {
+    const other: Side = ctx.seat === 's1' ? 's2' : 's1';
+    return `<button class="bigbtn" data-act="advance"${disabled ? ' disabled' : ''}>${label}${r[other] ? ` · ${squadLabel(other)} is ready` : ''}</button>`;
+  }
+  const other: Side = ctx.seat === 's1' ? 's2' : 's1';
+  return `<button class="bigbtn ghost2" data-act="advance">✓ Waiting for ${squadLabel(other)} — tap to withdraw</button>`;
+}
+
 function loopPanel(ctx: HudCtx, phase: LoopPhase): string {
   const s = ctx.state;
   const sc = ensureScript(s);
@@ -1265,7 +1310,7 @@ function loopPanel(ctx: HudCtx, phase: LoopPhase): string {
   }
   if (loopComplete(s, phase)) {
     return head(phase, `${phase} Phase complete`, '', true)
-      + `<div class="tp-body">${tokens}</div><div class="tp-foot"><button class="bigbtn" data-act="advance">Continue</button></div>`;
+      + `<div class="tp-body">${tokens}</div><div class="tp-foot">${advanceBtn(ctx, 'Continue')}</div>`;
   }
   const turn = canAct(s, phase, sc.turn) ? sc.turn : (nextTurn(s, phase, sc.turn) ?? sc.turn);
   if (!mine(ctx, turn)) {
@@ -1284,7 +1329,7 @@ function actionPanel(ctx: HudCtx): string {
   const o = opportunity(ctx.data, s);
   if (!o) {
     return head('Action Phase', 'Every Mech has acted', '', true)
-      + `<div class="tp-body"></div><div class="tp-foot"><button class="bigbtn" data-act="advance">Continue</button></div>`;
+      + `<div class="tp-body"></div><div class="tp-foot">${advanceBtn(ctx, 'Continue')}</div>`;
   }
   const t = s.tokens.find((x) => x.uid === o.uid);
   if (!t) return head('Action Phase', 'The active Mech is gone', '', true) + `<div class="tp-body"></div><div class="tp-foot"><button class="bigbtn" data-act="endopp">Skip</button></div>`;
@@ -1321,20 +1366,28 @@ function endPanel(ctx: HudCtx): string {
   const vp = normaliseTasks(s.tasks).vp;
   // What the board owes each squad right now, judged rather than typed in.
   const owed = scorePreview(ctx, last);
+  // Networked play scores itself: the Settle Task control step sends the
+  // computed award as one command, so hand-editable +1 buttons would only
+  // invite double-adding what the board already paid. They stay in a local
+  // game, where the players ARE the referee.
+  const settled = sc.endDone.includes(`${s.round.n}:end:tasks`);
+  const plusBtn = (side: Side) => (ctx.networked ? '' : `<button class="rowbtn" data-award="${side}">+1</button>`);
   const score = `<div class="sect2" style="margin-top:10px">Victory Points</div>
-    <div class="dialrow"><span class="nm s1">${squadLabel('s1')} · ${vp.s1} VP</span><button class="rowbtn" data-award="s1">+1</button></div>
-    <div class="dialrow"><span class="nm s2">${squadLabel('s2')} · ${vp.s2} VP</span><button class="rowbtn" data-award="s2">+1</button></div>
+    <div class="dialrow"><span class="nm s1">${squadLabel('s1')} · ${vp.s1} VP</span>${plusBtn('s1')}</div>
+    <div class="dialrow"><span class="nm s2">${squadLabel('s2')} · ${vp.s2} VP</span>${plusBtn('s2')}</div>
     ${owed.lines.length
       ? `<div class="sect2" style="margin-top:10px">This round earns</div>
          ${owed.lines.map((l) => `<div class="dialrow"><span class="nm ${l.side}">${esc(l.why)}</span><span class="pickchip set">+${l.vp}</span></div>`).join('')}
-         <p class="tp-note">Read off the board.<br>The +1 buttons stay for anything you settle by hand.</p>`
-      : '<p class="tp-note">Nothing scores from the board this round.<br>The +1 buttons stay for anything you settle by hand.</p>'}`;
+         <p class="tp-note">${ctx.networked
+           ? 'Read off the board, and added by itself when Settle Task control is pressed — nothing to add by hand.'
+           : 'Read off the board.<br>The +1 buttons stay for anything you settle by hand.'}</p>`
+      : `<p class="tp-note">${settled ? '✓ This round\'s score has been settled.' : 'Nothing scores from the board this round.'}${ctx.networked ? '' : '<br>The +1 buttons stay for anything you settle by hand.'}</p>`}`;
   // The last round ends the game rather than rolling into another one. Without
   // this "Finish the game" started Round 6 and the match never ended at all.
   if (last && all) return resultPanel(ctx, vp);
   return head('End Phase', `Round ${s.round.n} wraps up`, '', true)
     + `<div class="tp-body">${rows}${score}</div>
-      <div class="tp-foot"><button class="bigbtn" data-act="advance"${all ? '' : ' disabled'}>${last ? 'Finish the game' : `Start Round ${s.round.n + 1}`}</button></div>`;
+      <div class="tp-foot">${advanceBtn(ctx, last ? 'Finish the game' : `Start Round ${s.round.n + 1}`, !all)}</div>`;
 }
 
 // What the game came to, and the offer to keep it. Recording is opt-in and
@@ -1398,12 +1451,19 @@ function defensePanel(ctx: HudCtx): string {
   const target = s.tokens.find((t) => t.uid === call.targetUid);
   const a = attacker && actionOn(ctx, attacker, call.actionId);
   const pool = `${call.white} White${call.blue ? ` + ${call.blue} Blue` : ''}`;
+  // When the attacker's window is mirrored on this screen, the roll button
+  // lives in it — everything about the attack in one place. The turn panel
+  // only points there. The button stays HERE when no mirror was published,
+  // so an attacker on an older build still gets an answer.
+  const mirrored = !!ensureScript(s).combatView;
   return head('Your move', `${esc(target?.label ?? 'Your unit')} is under fire`,
     `${esc(attacker?.label ?? 'The enemy')} attacks with ${esc(a?.name?.en || call.actionId)}.`, true)
     + `<div class="tp-body">
-        <p class="tp-note">Roll your defence: <b>${esc(pool)}</b>. Both players see the dice land, and the attack resolves once they do.</p>
+        <p class="tp-note">${mirrored
+          ? `The combat window has the attack — your defence roll (<b>${esc(pool)}</b>) is in it.`
+          : `Roll your defence: <b>${esc(pool)}</b>. Both players see the dice land, and the attack resolves once they do.`}</p>
       </div>
-      <div class="tp-foot"><button class="bigbtn" data-act="rolldefense">🎲 Roll ${esc(pool)}</button></div>`;
+      <div class="tp-foot">${mirrored ? '' : `<button class="bigbtn" data-act="rolldefense">🎲 Roll ${esc(pool)}</button>`}</div>`;
 }
 
 function panelHtml(ctx: HudCtx): string {
@@ -2135,17 +2195,33 @@ function ewPanel(ctx: HudCtx): string {
   // shown is the best of the attacker's own and every Repeater covering it.
   const origins = electronicOrigins(ctx.data, s.tokens, by);
   const relay = origins.slice(1);
-  const rows = s.tokens
+  const enemies = s.tokens
     .filter((t) => t.side !== by.side && t.deployed !== false && alive(t))
     .map((t) => {
       const own = gridsApart(by, t);
       const best = origins.reduce((n, from) => Math.min(n, gridsApart(from, t)), own);
       const via = best < own ? origins.find((from) => gridsApart(from, t) === best) : undefined;
-      const d = best;
+      return { t, d: best, via };
+    });
+  // An AUTOMATIC Electronic Attack targets the nearest enemy in range, ties
+  // chosen by the controller (3.5.2) — an aimed one picks freely.
+  const nearest = a.speed === 'auto'
+    ? enemies.filter((e) => e.d <= reach).reduce((n, e) => Math.min(n, e.d), Infinity)
+    : Infinity;
+  const rows = enemies
+    .map(({ t, d, via }) => {
       const theirs = electronicValue(ctx.data, t);
       const far = d > reach;
-      const bits = [far ? `⚠ Range ${d}, beyond this Action's Range ${reach}` : `Range ${d}${via && via.uid !== by.uid ? ` via ${via.label}` : ''}`, `Electronic Value ${theirs}`];
-      return `<button class="rowwide targrow${far ? ' warn' : ''}" data-ewtarget="${t.uid}"${far ? ` data-why="${esc(`${t.label} is at Range ${d}, beyond this Action's Range ${reach}.`)}"` : ''}>
+      const skipped = !far && a.speed === 'auto' && d > nearest;
+      const bits = [
+        far ? `⚠ Range ${d}, beyond this Action's Range ${reach}` : `Range ${d}${via && via.uid !== by.uid ? ` via ${via.label}` : ''}`,
+        skipped ? '✕ not the nearest enemy (3.5.2)' : '',
+        `Electronic Value ${theirs}`,
+      ].filter(Boolean);
+      const why = far
+        ? `${t.label} is at Range ${d}, beyond this Action's Range ${reach}.`
+        : skipped ? 'An Automatic Action targets the NEAREST enemy in range (3.5.2).' : '';
+      return `<button class="rowwide targrow${far || skipped ? ' warn' : ''}"${skipped ? ' disabled' : ''} data-ewtarget="${t.uid}"${why ? ` data-why="${esc(why)}"` : ''}>
         <span class="tgname">${esc(t.label)}</span>
         <span class="tgbits">${bits.map((b) => `<span${/[⚠✕]/.test(b) ? ' class="bad"' : ''}>${esc(b)}</span>`).join('')}</span></button>`;
     })
@@ -2836,6 +2912,13 @@ function routeAction(ctx: HudCtx, t: Token, a: CardAction, ga?: ReturnType<typeo
     repairPick = { uid: t.uid, actionId: a.id, repair: rep.repair, mend: rep.mend };
     return true;
   }
+  // An Electronic Attack opens the Counter-roll targeting whatever its printed
+  // TYPE says — the Raven's Fire Control Interference is typed Tactic, and
+  // keying on the type let it fall through to "follow the card text" (4.11).
+  if (isElectronicAttack(a)) {
+    openAttackPick(t, a);
+    return true;
+  }
   if (a.type === 'Firing' || a.type === 'Melee') {
     // A [Charged] Part offers to spend its token before the attack, exactly as
     // offerChargeSpend does ahead of the targeting step. Answering that question
@@ -2940,7 +3023,12 @@ function attackPanel(ctx: HudCtx): string {
   const s = ctx.state;
   const m = attackPick!;
   const by = s.tokens.find((x) => x.uid === m.uid);
-  const a = by ? actionOn(ctx, by, m.actionId) : undefined;
+  const raw = by ? actionOn(ctx, by, m.actionId) : undefined;
+  // [Stationary] pays out when the attacker has not moved this Opportunity:
+  // the Mire's railguns reach 2 grids further, and nobody could see why not.
+  const opp0 = ensureScript(s).opp;
+  const a = raw ? stationaryAdjusted(raw, opp0?.uid === by?.uid ? opp0 : null) : undefined;
+  const stationary = raw && a !== raw;
   if (!by || !a) return head('Attack', 'That unit is gone', '', true)
     + '<div class="tp-body"></div><div class="tp-foot"><button class="bigbtn ghost2" data-act="attackcancel">Close</button></div>';
   const terrain = terrainOf(ctx);
@@ -2983,7 +3071,8 @@ function attackPanel(ctx: HudCtx): string {
     ? `<p class="tp-note">No enemy Unit is inside Range ${a.range ?? 0}, so ${esc(by.label)} MAY attack Breakable Terrain instead — and only the nearest, which is
        ${neutral.map((n) => esc(terrainLabel(ctx, n.id))).join(' or ')} (FAQ O9).<br>Click the piece on the board to destroy it. Buildings and Defense walls are never valid targets (O10).</p>`
     : '';
-  return head('Your move', `${esc(a.name?.en || m.actionId)}: which target?`, `${esc(by.label)} · ${a.yellowDice ?? 0}Y ${a.redDice ?? 0}R.`, true)
+  return head('Your move', `${esc(a.name?.en || m.actionId)}: which target?`,
+    `${esc(by.label)} · ${a.yellowDice ?? 0}Y ${a.redDice ?? 0}R.${stationary ? ` Stationary applies: Range ${a.range ?? 0}${(a.yellowDice ?? 0) !== (raw?.yellowDice ?? 0) ? `, ${a.yellowDice}Y` : ''} — no Movement this Opportunity.` : ''}`, true)
     + `<div class="tp-body">${rows || '<p class="tp-note">No enemy unit is on the board.</p>'}${neutralNote}</div>
        <div class="tp-foot"><button class="bigbtn ghost2" data-act="attackcancel">Cancel</button></div>`;
 }
@@ -3855,9 +3944,25 @@ export function ensureHud(host: HTMLElement, ctx: HudCtx): void {
     zb.classList.toggle('on', ctx.zonesOn);
     zb.setAttribute('aria-pressed', ctx.zonesOn ? 'true' : 'false');
   }
-  // The combat window is up exactly while an attack is being resolved.
+  // The combat window is up while an attack is being resolved — the live
+  // helper on the attacking client, and the published mirror everywhere else,
+  // so the defending player watches the same fight instead of a dice feed.
   const pop = host.querySelector<HTMLElement>('#combat-pop');
-  if (pop) pop.hidden = !ctx.combatBusy();
+  if (pop) {
+    const mirror = !ctx.combatBusy() ? ctx.combatMirrorHtml() : null;
+    pop.hidden = !ctx.combatBusy() && !mirror;
+    // Only the mirror is drawn by the re-render: while the live helper is up
+    // it owns #combat-body, and writing into it would tear the attack down.
+    // Compared against what WE wrote, not against innerHTML — the browser
+    // normalises markup on the way in, so that comparison never matches and
+    // the window would redraw on every render.
+    if (mirror && mirror !== lastMirror) {
+      const body = pop.querySelector<HTMLElement>('#combat-body');
+      if (body) body.innerHTML = mirror;
+      lastMirror = mirror;
+    }
+    if (!mirror) lastMirror = '';
+  }
   wireHud(host, ctx);
   renderBoard(ctx);
   // A unit the player clicked wins over the active one, until it leaves the
@@ -3875,6 +3980,8 @@ export function ensureHud(host: HTMLElement, ctx: HudCtx): void {
 
 let combatSpot: { x: number; y: number } | null = null;
 let combatRolled = false;
+// The mirror markup this client last wrote into #combat-body.
+let lastMirror = '';
 
 function attachCombatWindow(host: HTMLElement): void {
   const pop = host.querySelector<HTMLElement>('#combat-pop');
@@ -4204,7 +4311,9 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
       const s = ctx.state;
       const by = s.tokens.find((x) => x.uid === m.uid);
       const t = s.tokens.find((x) => x.uid === Number(el.dataset.attacktarget));
-      const a = by ? actionOn(ctx, by, m.actionId) : undefined;
+      const raw = by ? actionOn(ctx, by, m.actionId) : undefined;
+      const opp0 = ensureScript(s).opp;
+      const a = raw ? stationaryAdjusted(raw, opp0?.uid === by?.uid ? opp0 : null) : undefined;
       if (by && t && a && losNote(by, t, a, terrainOf(ctx), s.tokens, s.smoke ?? []).includes('✕')) {
         ctx.noteNow('Line of sight is blocked, so this attack cannot be made (4.4.1).');
         ctx.refresh();
@@ -4719,7 +4828,18 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     }
     ctx.refresh();
   });
-  on('[data-act="advance"]', () => { ctx.send({ kind: 'advancePhase', seat: me() }); ctx.refresh(); });
+  on('[data-act="advance"]', () => {
+    // Networked, the press is one half of the two-player agreement: mark this
+    // seat ready (or take it back). The completer's client sends the actual
+    // advance — see advanceIfBothReady in match.ts. Solo advances directly.
+    if (ctx.networked && ctx.seat) {
+      const r = ctx.state.ready ?? {};
+      ctx.send({ kind: 'setReady', seat: me(), ready: !r[ctx.seat] });
+    } else {
+      ctx.send({ kind: 'advancePhase', seat: me() });
+    }
+    ctx.refresh();
+  });
   on('[data-act="record"]', () => {
     recording = true;
     recordNote = null;

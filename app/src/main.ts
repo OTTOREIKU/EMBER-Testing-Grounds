@@ -47,7 +47,7 @@ import { PlayGuide } from './playguide';
 import type { Card, CardAction, DiceData, DieColor, Facing, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, StatusDef, TerrainPiece, Timing, Token } from './types';
 import { addStatus, normaliseScript, SCALES, statusCount, statusesFor, STATUSES } from './types';
 import { actionIdOf } from './ticks';
-import { autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, loanedParts, minesLayable, minesOwed, multiTargetLimit, unfoldsOwed, repairSpec, autoTargetsFor, isSilentAction, maneuverIsSilent, chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, type Resupply, resupplyOf, SLOT_LABEL, interceptLeft, interceptsOwed, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf, type AttackReaction } from './units';
+import { autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, loanedParts, minesLayable, minesOwed, multiTargetLimit, unfoldsOwed, repairSpec, autoTargetsFor, isSilentAction, maneuverIsSilent, chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, type Resupply, resupplyOf, SLOT_LABEL, stationaryAdjusted, interceptLeft, interceptsOwed, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf, type AttackReaction } from './units';
 import { registerOffline } from './offline';
 import { battlefieldLocked, countHits, firstPlayerFrom, newSetup, normaliseSetup, tasksLocked, type SetupState } from './setup';
 import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
@@ -788,13 +788,30 @@ async function init() {
       return;
     }
 
-    if (action.type === 'Firing' || action.type === 'Melee') {
-      const electronic = isElectronicAttack(action);
-      void offerChargeSpend(t, actionId);
-      pendingAttack = { attackerUid: uid, actionId, mode: electronic ? 'electronic' : 'attack', action, done };
+    // An Electronic Attack opens the Counter-roll targeting whatever its
+    // printed TYPE says — the Raven's Fire Control Interference is typed
+    // Tactic, and keying on the type let it fall through to "follow the card
+    // text" (4.11). Mirrors routeAction in matchhud.ts.
+    if (isElectronicAttack(action)) {
+      pendingAttack = { attackerUid: uid, actionId, mode: 'electronic', action, done };
       document.body.classList.add('targeting');
       if (action.range) board.showRangeRings(t, action.range);
-      const reach = action.range ? ` Range ${action.range} is shown.` : '';
+      setHint(`${what}: click the target unit on the board.${action.range ? ` Range ${action.range} is shown.` : ''} Terrain and line of sight are ignored (4.11.1)${action.speed === 'auto' ? ', and an Automatic Action targets the NEAREST enemy in range (3.5.2)' : ''}. Esc cancels.`);
+      return;
+    }
+
+    if (action.type === 'Firing' || action.type === 'Melee') {
+      const electronic = isElectronicAttack(action);
+      // [Stationary]: no Movement yet this Opportunity pays the printed bonus
+      // (Range +N or +NY). Judged here so the rings, the hint and the helper
+      // all read the same reach. Mirrors attackPanel in matchhud.ts.
+      const opp0 = state.script?.opp;
+      const adjusted = stationaryAdjusted(action, opp0?.uid === uid ? opp0 : null);
+      void offerChargeSpend(t, actionId);
+      pendingAttack = { attackerUid: uid, actionId, mode: electronic ? 'electronic' : 'attack', action: adjusted, done };
+      document.body.classList.add('targeting');
+      if (adjusted.range) board.showRangeRings(t, adjusted.range);
+      const reach = adjusted.range ? ` Range ${adjusted.range} is shown.${adjusted !== action ? ' Stationary applies.' : ''}` : '';
       // FAQ O9: an Auto Action with no enemy in reach MAY take Breakable Terrain
       // instead, and only the nearest. Said here because it is the half a player
       // cannot deduce - destroying the piece itself is already a click away.

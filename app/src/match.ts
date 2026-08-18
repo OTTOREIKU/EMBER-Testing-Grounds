@@ -23,7 +23,8 @@ import { losNote, protectionFor } from './rules';
 import { SquadTracker } from './squads';
 import { Panel } from './panel';
 import { iconSvg } from './dice';
-import type { DiceData, DieColor, GameState, Side, Token } from './types';
+import type { CombatView, DiceData, DieColor, GameState, Side, Token } from './types';
+import { SLOT_LABEL, stationaryAdjusted } from './units';
 import { PHASES } from './types';
 
 // The Match Centre: a separate page for networked play, so the freeplay board
@@ -154,6 +155,10 @@ const relay = new Relay(api.base, {
     const from = walker ? { col: walker.col ?? 0, row: walker.row ?? 0 } : null;
     const verdict = applyRemote(data, state, cmd);
     if (!verdict.ok) {
+      // The reason a remote command was refused is the whole diagnosis of a
+      // "would not settle", so it goes to the console — the panel note cannot
+      // hold a dozen of them.
+      console.warn(`remote ${cmd.kind} refused: ${verdict.why}`);
       resyncSoon();
       if (!catchingUp) render();
       return;
@@ -167,6 +172,7 @@ const relay = new Relay(api.base, {
     // are being re-read from history, and answering them again would send this
     // client's reveal a second time.
     if (catchingUp) return;
+    advanceIfBothReady(cmd);
     if (from && moving !== null) {
       const now = state.tokens.find((t) => t.uid === moving);
       // A Maneuver carries the route it took; a Forced Movement is a straight
@@ -242,7 +248,13 @@ const relay = new Relay(api.base, {
   // read the same line and watch the same faces. The roller adds nothing of
   // its own; doing so is what left the other player with a number and no dice.
   onRolled(dice, seat, label, _mine, kind) {
-    pushRoll(seat, label, dice, kind);
+    // Attack and defence pools render inside the combat window on BOTH
+    // screens now — the attacker's live helper and the defender's mirror — so
+    // a feed line under them would say the same thing twice, in the corner
+    // OTTO's opponent was left squinting at.
+    const inCombatWindow = (label === 'Attack' || label === 'Defence')
+      && (combatBusy() || !!state.script?.combatView);
+    if (!inCombatWindow) pushRoll(seat, label, dice, kind);
     render();
   },
   onClosed() {
@@ -348,6 +360,7 @@ function send(cmd: Command): CheckResult {
     clearFeedAfter(cmd);
     rewindIfAgreed(cmd);
     settleDefense(cmd);
+    advanceIfBothReady(cmd);
     publishCatalog();
   }
   return v;
@@ -548,6 +561,22 @@ async function rollDefensePool(white: number, blue: number): Promise<{ color: Di
 // order: the ANSWER hands the faces to the waiting helper and closes the shared
 // record; a CLEAR that arrives while we are still waiting is the attacker
 // cancelling the attack (or a rollback tearing it down), so the wait ends.
+// The second half of the phase-turning agreement: when a setReady completes
+// the pair mid-game, the COMPLETER's client sends the advance. Both clients
+// derive the same completer from the same command, so exactly one asks — and
+// check('advancePhase') consumes the flags, so even a duplicate is refused
+// rather than turning the phase twice. Deployment keeps its own ready flow:
+// the setup stage gate below leaves it alone.
+function advanceIfBothReady(cmd: Command): void {
+  if (cmd.kind !== 'setReady' || !cmd.ready) return;
+  if (!relay.state.room || !running()) return;
+  const su = normaliseSetup(state.setup);
+  if (!su || su.stage !== 'done') return;
+  if (!(state.ready?.s1 && state.ready?.s2)) return;
+  if (mySeat() !== cmd.seat) return;
+  send({ kind: 'advancePhase', seat: cmd.seat });
+}
+
 function settleDefense(cmd: Command): void {
   if (cmd.kind === 'answerDefense' && pendingDefense) {
     const resolve = pendingDefense;
@@ -567,9 +596,13 @@ function startAttack(uid: number, actionId: string, targetUid: number, mode: 'at
   if (!data || !attackHelper) return;
   const attacker = state.tokens.find((t) => t.uid === uid);
   const defender = state.tokens.find((t) => t.uid === targetUid);
-  const action = tokenCards(data, attacker ?? ({} as never))
+  const printed = tokenCards(data, attacker ?? ({} as never))
     .flatMap(({ card }) => card.actions ?? [])
     .find((a) => a.id === actionId) ?? data.commonActions.find((a) => a.id === actionId);
+  // [Stationary] rides into the helper too, so the pool and the printed Range
+  // it shows are the ones the condition earned.
+  const oppNow = state.script?.opp;
+  const action = printed ? stationaryAdjusted(printed, oppNow?.uid === uid ? oppNow : null) : printed;
   if (!attacker || !defender || !action) return;
   const terrain = terrainNow();
   const smoke = state.smoke ?? [];
@@ -787,8 +820,31 @@ function mountSide(): void {
       });
       render();
     };
+    // The defender's mirror. Published on change only — the helper redraws
+    // many times per step and each publish is a command on the wire.
+    attackHelper.publishView = (view) => {
+      if (!relay.state.room || !mySeat()) return;
+      const key = JSON.stringify(view);
+      if (key === publishedCombatView) return;
+      publishedCombatView = key;
+      send({ kind: 'setCombatView', seat: mySeat()!, view: view as CombatView | null });
+    };
   }
   renderCombatIdle();
+}
+
+// The last combat view THIS client published, so a repaint sends nothing and a
+// closed window can be told apart from one that never opened. The teardown
+// lives in render()'s sweep rather than an onClose hook: whatever way the
+// helper ends — Done, cancel, a rollback — the next render sees it idle.
+let publishedCombatView = '';
+
+function sweepCombatView(): void {
+  if (!relay.state.room || !mySeat()) return;
+  if (!combatBusy() && publishedCombatView && publishedCombatView !== 'null') {
+    publishedCombatView = 'null';
+    send({ kind: 'setCombatView', seat: mySeat()!, view: null });
+  }
 }
 
 function terrainNow() {
@@ -1385,12 +1441,55 @@ function hudCtx(): HudCtx {
     mountSide,
     syncSide,
     combatBusy,
+    combatMirrorHtml,
     startAttack,
     showTab: (name) => showSideTab(null, name),
     diceData,
     recordMatch,
     refresh: () => render(),
   };
+}
+
+// ---------- the defender's combat mirror ----------
+//
+// The attack runs on the attacker's client; this draws what their window
+// published so the other player watches the same fight — the part chosen, the
+// faces as they land, the narration — instead of a dice feed in the corner.
+// Read-only except for the one thing that IS the defender's: their roll.
+
+function faceRow(faces: { color: string; face: number }[]): string {
+  if (!diceData) return '';
+  return `<div class="ah-roll">${faces.map((f) => {
+    const def = diceData!.dice[f.color as DieColor];
+    const icons = def?.faces[f.face] ?? [];
+    return `<span class="die die-${f.color}">${icons.length ? icons.map((ic) => iconSvg(ic)).join('') : '<span class="blank">·</span>'}</span>`;
+  }).join('')}</div>`;
+}
+
+function combatMirrorHtml(): string | null {
+  const view = state.script?.combatView;
+  // The attacker's own window outranks the mirror — this is for everyone else.
+  if (!view || combatBusy()) return null;
+  const at = state.tokens.find((t) => t.uid === view.attackerUid);
+  const df = state.tokens.find((t) => t.uid === view.targetUid);
+  const action = at ? tokenCards(data!, at).flatMap(({ card }) => card.actions ?? []).find((a) => a.id === view.actionId) : undefined;
+  const name = action?.name?.en || view.actionId;
+  const modeNote = view.mode === 'intercept' ? 'Interception (4.9)' : view.mode === 'explosion' ? 'Explosion damage (4.7.6)' : '';
+  const call = state.script?.combat;
+  const myRoll = call && !call.faces && df && mySeat() === df.side
+    ? `<div class="ah-step"><p>Your defence: <b>${call.white} White${call.blue ? ` + ${call.blue} Blue` : ''}</b>. Both players see the dice land.</p>
+       <button class="ah-primary" data-act="rolldefense">🎲 Roll ${call.white} White${call.blue ? ` + ${call.blue} Blue` : ''}</button></div>`
+    : '';
+  return `<div class="attack-helper">
+    <div class="ah-head"><b>${esc(at?.label ?? '?')}</b> → <b>${esc(df?.label ?? '?')}</b>
+      <span class="dim">${esc(name)}${modeNote ? ` · ${esc(modeNote)}` : ''}</span></div>
+    <p class="ah-los dim">${esc(at?.label ?? 'The attacker')}'s player is resolving this attack. You are seeing their combat window.</p>
+    ${view.targetPart ? `<div class="ah-step"><p>Target Part: <b>${esc(SLOT_LABEL[view.targetPart as keyof typeof SLOT_LABEL] ?? view.targetPart)}</b></p></div>` : ''}
+    ${view.attack?.length ? `<div class="ah-step"><p>Attack Roll</p>${faceRow(view.attack)}</div>` : ''}
+    ${myRoll}
+    ${view.defense?.length ? `<div class="ah-step"><p>Defense Roll</p>${faceRow(view.defense)}</div>` : ''}
+    ${view.log.length ? `<div class="ah-log">${view.log.map((l) => `<div>${esc(l)}</div>`).join('')}</div>` : ''}
+  </div>`;
 }
 
 // A tiny dev harness behind ?dev=1: seeds two demo squads and starts, so the
@@ -1549,6 +1648,9 @@ function bringSquad(name: string, mechs: SavedSquad['mechs'], drones: SavedSquad
 // ---------- render ----------
 
 function render(): void {
+  // A closed combat window takes the published mirror down with it, whatever
+  // way it closed — the sweep sees the helper idle and sends the null.
+  sweepCombatView();
   const hud = !!data && ((running() && !!relay.state.room) || (!!devSeat && running()));
   // Three fixed hosts, so the stateful board survives every re-render: the
   // bar and veils redraw freely, the body only redraws outside HUD mode.

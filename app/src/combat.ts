@@ -5,7 +5,7 @@ import { linkMechanics } from './inspector';
 import { SQUAD_ORDER, squadLabel } from './data';
 import type { Card, CardAction, DiceData, DiceIcon, DieColor, GameRuleEffect, PartSlot, Side, SmokeScreen, TerrainPiece, Token } from './types';
 import { statusCount, STATUSES } from './types';
-import { aaRadarCovers, attackReactionsOf, auraEffectsOn, designationsOn, electronicValue, followUpAfterKill, loanedParts, pilotCard, repeatersFor, SLOT_LABEL, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
+import { aaRadarCovers, attackReactionsOf, auraEffectsOn, designationsOn, electronicValue, followUpAfterKill, lightningExchangeOf, loanedParts, pilotCard, repeatersFor, SLOT_LABEL, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
 import { timingOf } from './ticks';
 import { losNote, protectionFor, rangeBetween } from './rules';
 import type { Command } from './commands';
@@ -155,6 +155,11 @@ interface Ctx {
   // a rendered total, because the tally is derived again at the attack step and
   // at resolve, and a total edited in one place would not survive the other.
   eyeSwaps: number;
+  // How many {Lightning} the Pulse/Ion Weapon exchange turned into Heavy Hits
+  // on the LAST derivation of the tally. Written by attackIcons — the only
+  // reader of the raw roll — so the notes can say what happened without
+  // deriving the roll a second time.
+  lightningSwapped?: number;
   surplusRound: number;
   carried: { heavy: number; light: number };
   surplusKeyword: SurplusEffect | null;
@@ -194,6 +199,18 @@ export class AttackHelper {
   // instead of a roll button while it is out. Null in freeplay, where one
   // player owns both pools and the button is theirs either way.
   defenseRoller: ((pool: { white: number; blue: number }, attacker: Token, defender: Token, actionId: string) => Promise<Rolled[]>) | null = null;
+  // Publishes what this window currently shows, so the DEFENDING player's
+  // client can draw the same attack — the part chosen, the faces, the
+  // resolution — instead of leaving them watching a dice feed. Wired by the
+  // Match Centre; null in freeplay, where one player sees everything anyway.
+  publishView: ((view: {
+    attackerUid: number; targetUid: number; actionId: string;
+    mode: 'attack' | 'intercept' | 'explosion'; step: string;
+    targetPart: string | null;
+    attack: { color: string; face: number }[] | null;
+    defense: { color: string; face: number }[] | null;
+    log: string[];
+  } | null) => void) | null = null;
   // The whole board, for aura reads (FAQ Q1: judged when the roll happens).
   tokens: (() => Token[]) | null = null;
   // Terrain, for the Hyena Radar's line of sight to the intercepted target.
@@ -513,10 +530,25 @@ export class AttackHelper {
   }
 
   private attackIcons(c: Ctx): Record<string, number> {
-    const counts = this.countIcons(c.attackRoll ?? [], c.attacker.stance === 'offensive');
+    let counts = this.countIcons(c.attackRoll ?? [], c.attacker.stance === 'offensive');
     const swaps = Math.min(c.eyeSwaps ?? 0, counts.eye ?? 0);
-    if (!swaps) return counts;
-    return { ...counts, eye: (counts.eye ?? 0) - swaps, heavyHit: (counts.heavyHit ?? 0) + swaps };
+    if (swaps) counts = { ...counts, eye: (counts.eye ?? 0) - swaps, heavyHit: (counts.heavyHit ?? 0) + swaps };
+    const ex = this.lightningSwap(c);
+    c.lightningSwapped = ex ? counts.lightning ?? 0 : 0;
+    if (ex && counts.lightning) {
+      counts = { ...counts, lightning: 0, heavyHit: (counts.heavyHit ?? 0) + counts.lightning };
+    }
+    return counts;
+  }
+
+  // Pulse Weapon trades every Lightning in the Attack Roll for a Heavy Hit;
+  // Ion Weapon makes the same trade only against a target already bearing a
+  // Fragile Token. A Lightning buys nothing else in this pipeline, so the
+  // printed "may" is applied without asking.
+  private lightningSwap(c: Ctx): 'pulse' | 'ion' | null {
+    const ex = lightningExchangeOf(c.action);
+    if (ex === 'ion' && statusCount(c.defender.statuses, 'fragile') <= 0) return null;
+    return ex;
   }
 
   private resolve(): { hits: number; penetrating: number; unoffset: { heavy: number; light: number }; text: string[]; duel: Duel } {
@@ -553,6 +585,12 @@ export class AttackHelper {
     if (c.protection && !c.surplusRound) text.push(`🛡 ${c.protectionNote}: defender rolled +${c.protection} White`);
     if (lowProfile && dodge) text.push(`Low Profile: [Eye] counted as [Dodge] against this Firing Attack`);
     if (radar) text.push(`${radar.label} sees the target: [Eye] counted as 1 Light Hit on this Interception (FAQ O12/O13)`);
+    if (c.surplusRound === 0 && c.lightningSwapped) {
+      const swapped = c.lightningSwapped;
+      text.push(this.lightningSwap(c) === 'pulse'
+        ? `Pulse Weapon: ${swapped} [Lightning] exchanged for ${swapped === 1 ? 'a Heavy Hit' : 'Heavy Hits'}`
+        : `Ion Weapon: the target bears a Fragile Token, so ${swapped} [Lightning] exchanged for ${swapped === 1 ? 'a Heavy Hit' : 'Heavy Hits'}`);
+    }
     const totalIcons = heavy + light;
 
     const { icons, spareDodge, idleDefense, dodged, blocked, penetrating, hits, unoffset } = offsetIcons(heavy, light, dodge, defense);
@@ -666,6 +704,20 @@ export class AttackHelper {
     const c = this.ctx;
     if (!c) return;
     this.rebind(c);
+    // Everything the defender's mirror needs, refreshed whenever this window
+    // redraws. The log tail is stripped of markup: it travels and is drawn
+    // with innerHTML on the far side.
+    this.publishView?.({
+      attackerUid: c.attacker.uid,
+      targetUid: c.defender.uid,
+      actionId: c.action.id,
+      mode: c.explosion ? 'explosion' : c.intercept ? 'intercept' : 'attack',
+      step: c.step,
+      targetPart: c.targetPart ?? null,
+      attack: c.attackRoll?.map((d) => ({ color: d.color, face: d.face })) ?? null,
+      defense: c.defenseRoll?.map((d) => ({ color: d.color, face: d.face })) ?? null,
+      log: c.log.slice(-5).map((l) => l.replace(/<[^>]*>/g, '')),
+    });
     const el = document.createElement('div');
     el.className = 'attack-helper';
     const aName = c.attacker.label;
@@ -1217,7 +1269,10 @@ export class AttackHelper {
       const atk = this.attackIcons(c);
       const sum = document.createElement('p');
       sum.className = 'ah-sum';
-      sum.textContent = `Effective: ${atk.heavyHit ?? 0}× Heavy, ${atk.lightHit ?? 0}× Light${atk.lightning ? `, ${atk.lightning}× Lightning` : ''}${atk.eye ? `, ${atk.eye}× Eye` : ''}${c.eyeSwaps ? ` · ${c.eyeSwaps} exchanged by Chef` : ''}`;
+      const swapNote = c.lightningSwapped
+        ? ` · [Lightning] counted as Heavy (${this.lightningSwap(c) === 'pulse' ? 'Pulse Weapon' : 'Ion Weapon'})`
+        : '';
+      sum.textContent = `Effective: ${atk.heavyHit ?? 0}× Heavy, ${atk.lightHit ?? 0}× Light${atk.lightning ? `, ${atk.lightning}× Lightning` : ''}${atk.eye ? `, ${atk.eye}× Eye` : ''}${c.eyeSwaps ? ` · ${c.eyeSwaps} exchanged by Chef` : ''}${swapNote}`;
       wrap.appendChild(sum);
       // ZPA-35 Chef: on a Melee Action, consume 1 Command Token to exchange one
       // {Eye} for a {Heavy Hit}. Offered per Eye still showing, so a Mech
@@ -1266,6 +1321,11 @@ export class AttackHelper {
         c.protection ? ` + ${c.protection} protection` : ''
       }${c.defender.stance === 'mobility' ? ' · MOB stance: + Blue = Dodge value' : ''}${
         c.defender.stance === 'defensive' ? ' · DEF stance: hollow Defense icons count as solid' : ''
+      }${
+        // 4.1: a Shutdown unit still rolls its Armor, but that is ALL it gets —
+        // said out loud because "it can still defend" reads as a bug at the
+        // table when the losses are silent.
+        c.defender.stance === 'shutdown' ? ' · SHUTDOWN: the Armor still rolls, but hollow icons never count, there are no Dodge dice, and the attacker chose the Part (4.1)' : ''
       }.</p>
       ${c.protection ? `<p class="ah-protect">🛡 ${c.protectionNote}. <b>+${c.protection} White</b> is already added to the pool below.</p>` : ''}
       ${(() => {

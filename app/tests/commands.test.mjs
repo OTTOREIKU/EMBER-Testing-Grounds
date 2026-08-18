@@ -1405,17 +1405,27 @@ check('a drop survives its attacker leaving the board', C.check(data, gone, drop
 // One Action or one Movement, never both. A Mech's Passives are length-less
 // too, so this has to key off the unit rather than off the Action.
 
-const dAct = { id: 'DA', type: 'Firing', name: { en: 'Full-auto' } }; // no size: no Tick price
+// The attack carries the AUTOMATIC icon, like both starter drones' attacks do,
+// so it is legal in the Automatic Phase fixture below (3.5).
+const dAct = { id: 'DA', type: 'Firing', speed: 'auto', name: { en: 'Full-auto' } }; // no size: no Tick price
 const dData = { ...data, byId: new Map([...data.byId, ['DR1', { id: 'DR1', actions: [dAct] }]]) };
-const droneAt = (over = {}) => world(
-  [{ uid: 1, side: 's1', kind: 'drone', stance: 'offensive', label: 'D1', col: 3, row: 3, facing: 0, cardId: 'DR1', partStates: { main: 'intact' }, ammo: {} }],
-  3, opp(1, over),
-);
+const droneTok = () => ({ uid: 1, side: 's1', kind: 'drone', stance: 'offensive', label: 'D1', col: 3, row: 3, facing: 0, cardId: 'DR1', partStates: { main: 'intact' }, ammo: {} });
+const droneAt = (over = {}) => world([droneTok()], 3, opp(1, over));
+// The same Drone activated by a Command instead (phase 0), where the move is.
+const droneCmdAt = (over = {}) => world([droneTok()], 0, opp(1, over));
 const dPerform = { kind: 'performAction', seat: 's1', uid: 1, actionId: 'DA' };
 const dMove = { kind: 'maneuver', seat: 's1', uid: 1, to: { col: 9, row: 9 } };
 
 check('a fresh Drone may act', C.check(dData, droneAt(), dPerform).ok, true);
-check('and may move instead', C.check(dData, droneAt(), dMove).ok, true);
+check('and may move instead', C.check(dData, droneCmdAt(), dMove).ok, true);
+
+// The icon lock (3.2.2 ② / 3.5): the Automatic Action is refused on a Command,
+// and Movement is refused in the Automatic Phase — both were let through in a
+// real game, an Automatic attack firing off a Command and drones walking in
+// the Automatic Phase.
+check('an Automatic Action is refused on a Command', C.check(dData, droneCmdAt(), dPerform).ok, false);
+check('a Drone cannot move in the Automatic Phase', C.check(dData, droneAt(), dMove).ok, false);
+check('and is told why', C.check(dData, droneAt(), dMove).why.includes('Automatic'), true);
 
 // Acting spends the whole activation.
 const dActed = droneAt();
@@ -1440,6 +1450,36 @@ const mData = { ...data, byId: new Map([...data.byId, ['T9', { id: 'T9', actions
 const wPass = world([mech(1, 's1', { mech: { torso: 'T9', pilot: 'P1' } })], 2, opp(1));
 C.apply(mData, wPass, { kind: 'performAction', seat: 's1', uid: 1, actionId: 'P9' });
 check('a Mech Passive spends none of its Opportunity', [wPass.script.opp.action, wPass.script.opp.maneuver, wPass.script.opp.started], [2, 1, false]);
+
+// ---------- the Stance lock (4.1) ----------
+//
+// A Mech chooses its Stance each Action Opportunity, before the choice to
+// Maneuver. Online the choice is explicit: nothing moves or acts until a
+// Stance is locked in — re-confirming the current one counts — because a
+// forgotten Mobility rolled a real game's defences with no Blue in them.
+
+const mAct = { kind: 'performAction', seat: 's1', uid: 1, actionId: 'A1' };
+const mMove = { kind: 'maneuver', seat: 's1', uid: 1, to: { col: 6, row: 3 } };
+C.setLocalSeat('s1');
+const wlock = world([mech(1, 's1')], 2, opp(1));
+check('online, an unlocked Mech may not act', C.check(data, wlock, mAct).ok, false);
+check('and is told to choose a Stance', C.check(data, wlock, mAct).why.includes('Stance'), true);
+check('nor may it Maneuver', C.check(data, wlock, mMove).ok, false);
+C.apply(data, wlock, { kind: 'setStance', seat: 's1', uid: 1, stance: 'offensive' });
+check('re-confirming the current Stance locks it', wlock.script.opp.stanceLocked, true);
+check('and the action is allowed', C.check(data, wlock, mAct).ok, true);
+check('and the Maneuver too', C.check(data, wlock, mMove).ok, true);
+// A stance set while a DIFFERENT unit holds the Opportunity locks nothing.
+const wother = world([mech(1, 's1'), mech(2, 's1', { col: 9, row: 9 })], 2, opp(1));
+C.apply(data, wother, { kind: 'setStance', seat: 's1', uid: 2, stance: 'mobility' });
+check('a bystander stance change locks nothing', wother.script.opp.stanceLocked === true, false);
+// A Reboot IS the stance choice, so its one remaining Tick is not refused.
+const wshut = world([mech(1, 's1', { stance: 'shutdown', link: 2 })], 2, opp(1));
+C.apply(data, wshut, { kind: 'reboot', seat: 's1', uid: 1, stance: 'defensive' });
+check('a Reboot locks the Stance for its one Tick', wshut.script.opp.stanceLocked, true);
+C.setLocalSeat(null);
+const wfreeplay = world([mech(1, 's1')], 2, opp(1));
+check('freeplay never demands the lock', C.check(data, wfreeplay, mAct).ok, true);
 
 // ---------- the hand of Tactics Cards (5.4) ----------
 //

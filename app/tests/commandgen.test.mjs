@@ -334,6 +334,13 @@ const attackIconsBody = combatSrc.slice(
 );
 check('attackIcons reads the raw roll', /countIcons\(c\.attackRoll/.test(attackIconsBody), true);
 check('and nothing else does', (combatSrc.match(/countIcons\(c\.attackRoll/g) ?? []).length, 1);
+// Pulse and Ion Weapons trade {Lightning} for {Heavy Hit} inside the same
+// single reader, so the attack-step summary and resolve() can never disagree
+// about the exchange. Ion only fires against a target bearing a Fragile Token.
+check('the Lightning exchange rides attackIcons', /lightning: 0, heavyHit: \(counts\.heavyHit \?\? 0\) \+ counts\.lightning/.test(attackIconsBody), true);
+check('Ion is gated on the Fragile Token', /ex === 'ion' && statusCount\(c\.defender\.statuses, 'fragile'\) <= 0/.test(combatSrc), true);
+check('the swap count is written for the notes', /c\.lightningSwapped = ex \? counts\.lightning \?\? 0 : 0/.test(attackIconsBody), true);
+
 // The clamp is what stops an exchange surviving a reroll that removed the Eyes.
 check('the exchange is clamped to the Eyes actually showing', /Math\.min\(c\.eyeSwaps \?\? 0, counts\.eye \?\? 0\)/.test(combatSrc), true);
 check('a fresh roll clears the exchange', /c\.eyeSwaps = 0;/.test(combatSrc), true);

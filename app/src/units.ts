@@ -69,6 +69,50 @@ export function knockbackOf(a: CardAction, english?: string): Knockback | undefi
   return undefined;
 }
 
+// [Stationary]: "If the Unit has not performed any Movement during its Action
+// Opportunity before performing this Action, the conditional effects may be
+// applied." The two machine-readable shapes in the card data are "Range +N
+// grids" and "+NY" — Snipe and Extra-Tick riders stay with the card text.
+export function stationaryBonus(a: CardAction): { range: number; yellow: number } | null {
+  const hay = (a.description?.en ?? '') + ' ' + (a.description?.zh ?? '')
+    + ' ' + (a.keywords ?? []).map((k) => k.inline ?? '').join(' ');
+  if (!/Stationary|静止/i.test(hay)) return null;
+  const range = /(?:Stationary|静止)[^·\n]*?Range\s*\+\s*(\d+)/i.exec(hay);
+  const yellow = /(?:Stationary|静止)[^·\n]*?\+\s*(\d+)\s*Y/i.exec(hay);
+  if (!range && !yellow) return null;
+  return { range: range ? Number(range[1]) : 0, yellow: yellow ? Number(yellow[1]) : 0 };
+}
+
+// The Action, with its Stationary bonus applied when the condition holds. The
+// caller hands over the attacker's CURRENT Opportunity (or null): no Movement
+// yet this Opportunity is the whole condition — it is not "stood still since
+// last round", which is how it reads at the table.
+export function stationaryAdjusted(
+  a: CardAction,
+  opp: { maneuvered?: boolean; moved?: boolean } | null | undefined,
+): CardAction {
+  const bonus = stationaryBonus(a);
+  if (!bonus || !opp || opp.maneuvered || opp.moved) return a;
+  return {
+    ...a,
+    range: bonus.range ? (a.range ?? 0) + bonus.range : a.range,
+    yellowDice: bonus.yellow ? (a.yellowDice ?? 0) + bonus.yellow : a.yellowDice,
+  };
+}
+
+// Pulse Weapon: "May exchange {Lightning} for {Heavy Hit}." Ion Weapon is the
+// same trade behind a condition — the target must already bear a Fragile
+// Token. Nothing else in an ordinary Attack Roll spends a Lightning (no action
+// prints these alongside Concussion or Wrecking), so the "may" is never a real
+// choice and the exchange is applied for the player.
+export function lightningExchangeOf(a: CardAction): 'pulse' | 'ion' | null {
+  const hay = (a.description?.en ?? '') + ' ' + (a.description?.zh ?? '')
+    + ' ' + (a.keywords ?? []).map((k) => k.inline ?? '').join(' ');
+  if (/频闪武器|Pulse\s*Weapon/i.test(hay)) return 'pulse';
+  if (/离子武器|\bIon\s*Weapon/i.test(hay)) return 'ion';
+  return null;
+}
+
 export interface Resupply {
   actionId: string;
   amount: number;

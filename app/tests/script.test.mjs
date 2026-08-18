@@ -70,11 +70,18 @@ const rollback = { by: 's2', round: 2, phase: 2, label: 'Action Phase' };
 const rollbackCatalog = [{ round: 1, phase: 0, available: true }, { round: 2, phase: 1, available: false }];
 // A defence roll in the air: the Wild Cat shot at, 6 White owed, not yet rolled.
 const combat = { attackerUid: 7, targetUid: 9, actionId: '032_A', white: 6, blue: 1, faces: null };
+// The attacker's combat window as the defender's mirror draws it: mid-attack,
+// part chosen, attack faces down, defence still owed.
+const combatView = {
+  attackerUid: 7, targetUid: 9, actionId: '032_A', mode: 'attack', step: 'defense',
+  targetPart: 'rightHand', attack: [{ color: 'red', face: 2 }, { color: 'yellow', face: 0 }],
+  defense: null, log: ['Black Die: rightArm.'],
+};
 // Every value here is deliberately NOT the default, so a field that
 // normaliseScript forgets to carry across fails rather than coincidentally
 // matching what it would have defaulted to.
 const counter = { initiatorUid: 7, responderUid: 9, actionId: 'EWA', initRoll: [0, 3], respRoll: null, initFocused: true, respFocused: false };
-const live = { turn: 's2', acted: [7, 8], extraOpps: [8], commanded: [9], freeCommand: [], passed: ['s1'], stage: '2:3', mode: 'hidden', strict: true, commits: { s1: 'deadbeef' }, revealed: ['s2'], seats: { s1: 'local', s2: 'remote' }, opp, oppStack, intercepts, reactions, counter, endDone, oncePerRound, rollback, rollbacks: 3, rollbackCatalog, combat };
+const live = { turn: 's2', acted: [7, 8], extraOpps: [8], commanded: [9], freeCommand: [], passed: ['s1'], stage: '2:3', mode: 'hidden', strict: true, commits: { s1: 'deadbeef' }, revealed: ['s2'], seats: { s1: 'local', s2: 'remote' }, opp, oppStack, intercepts, reactions, counter, endDone, oncePerRound, rollback, rollbacks: 3, rollbackCatalog, combat, combatView };
 
 // This fixture has lagged behind ScriptState four times now, each costing a
 // confusing deep-equal diff. Naming the missing field turns that into an
@@ -123,6 +130,13 @@ check('a missing defence call reads back null', normaliseScript({ ...live, comba
 // answer, so it is dropped rather than shown as a roll button.
 check('a call with no target is dropped', normaliseScript({ ...live, combat: { white: 6, blue: 0 } }, 's1').combat, null);
 check('answered faces survive', normaliseScript({ ...live, combat: { ...combat, faces: [{ color: 'white', face: 2 }] } }, 's1').combat.faces, [{ color: 'white', face: 2 }]);
+// The mirror is display state, but a reload mid-attack must not blank the
+// defender's window — and junk in it must not be drawn as dice.
+check('a published combat window survives', normaliseScript(live, 's1').combatView, combatView);
+check('a missing window reads back null', normaliseScript({ ...live, combatView: undefined }, 's1').combatView, null);
+check('a window with no attacker is dropped', normaliseScript({ ...live, combatView: { step: 'attack' } }, 's1').combatView, null);
+check('junk faces are dropped from the window',
+  normaliseScript({ ...live, combatView: { ...combatView, attack: [{ color: 'red', face: 2 }, { nope: 1 }] } }, 's1').combatView.attack, [{ color: 'red', face: 2 }]);
 check('the published catalog survives', normaliseScript(live, 's1').rollbackCatalog, rollbackCatalog);
 check('a missing catalog reads back empty', normaliseScript({ ...live, rollbackCatalog: undefined }, 's1').rollbackCatalog, []);
 // Every entry is a button promising to return the board to a named moment, so

@@ -15,7 +15,7 @@ const PRELUDE = [
   'const commandGeneration = (_d: any, t: any) => t.gen ?? 1;',
 ].join('\n') + '\n';
 writeFileSync(tmp, PRELUDE + src.replace(/^import[^\n]*\n/gm, ''));
-const { eligibleUnits, canAct, loopComplete, nextTurn, commandTokensFor } = await import(tmp.href);
+const { eligibleUnits, canAct, loopComplete, nextTurn, commandTokensFor, droneActionWhy, droneMoveWhy } = await import(tmp.href);
 
 let pass = 0, fail = 0;
 const check = (name, got, want) => {
@@ -77,6 +77,19 @@ check('nextTurn returns null when the loop is done', nextTurn(game([mech(1, 's1'
 
 // A board with no drones at all must not strand the Command Phase.
 check('a droneless board completes immediately', loopComplete(game([mech(1, 's1'), mech(2, 's2')]), 'Command'), true);
+
+// The icon lock (3.2.2 ② / 3.5): a Command performs COMMAND-icon Actions or a
+// Move; the Automatic Phase performs AUTOMATIC Actions and nothing else. Both
+// starter drones carry only Automatic Actions, and before this lock they were
+// firing them off Commands and moving in the Automatic Phase.
+check('a Command-icon Action is legal on a Command', droneActionWhy('Command', { speed: 'command' }), null);
+check('an Automatic Action is refused on a Command', typeof droneActionWhy('Command', { speed: 'auto' }), 'string');
+check('an unmarked Action is refused on a Command', typeof droneActionWhy('Command', {}), 'string');
+check('an Automatic Action is legal in the Automatic Phase', droneActionWhy('Automatic', { speed: 'auto' }), null);
+check('a Command-icon Action is refused in the Automatic Phase', typeof droneActionWhy('Automatic', { speed: 'command' }), 'string');
+check('a Passive is never the activation\'s business', droneActionWhy('Automatic', { speed: 'passive' }), null);
+check('a Commanded Drone may move', droneMoveWhy('Command'), null);
+check('the Automatic Phase has no Movement in it', typeof droneMoveWhy('Automatic'), 'string');
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

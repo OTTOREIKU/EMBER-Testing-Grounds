@@ -448,6 +448,10 @@ export interface Opportunity {
   maneuvered: boolean;
   moved: boolean;
   started: boolean;
+  // A Mech confirms its Stance before it may Maneuver or act (4.1). Set by
+  // setStance or reboot while this Opportunity is open; drones never need it,
+  // their Stance being printed on the card.
+  stanceLocked?: boolean;
   overload: number;
   performed: string[];
   spentExtras: string[];
@@ -488,6 +492,7 @@ export function normaliseOpportunity(raw: unknown): Opportunity | null {
     maneuvered: !!o.maneuvered,
     moved: !!o.moved,
     started: !!o.started,
+    stanceLocked: o.stanceLocked === true ? true : undefined,
     overload: typeof o.overload === 'number' ? Math.max(0, Math.round(o.overload)) : base.overload,
     performed: list(o.performed),
     spentExtras: list(o.spentExtras),
@@ -570,6 +575,11 @@ export interface ScriptState {
   // or rerolls an opponent's die becomes another command against this record,
   // gated by check() on whose die it is.
   combat: DefenseCall | null;
+  // What the attacker's combat window currently shows, published so the
+  // defending player watches the same attack unfold — the part chosen, the
+  // faces as they land, the resolution — instead of learning about it from
+  // dice-feed lines. Display only: nothing reads it back into the rules.
+  combatView: CombatView | null;
 }
 
 // Who is being attacked, by what, and the pool they owe. `faces` null while
@@ -582,6 +592,21 @@ export interface DefenseCall {
   white: number;
   blue: number;
   faces: { color: string; face: number }[] | null;
+}
+
+// A read-only snapshot of the attacker's combat window, one per open attack.
+// Faces are raw die indexes — the mirror draws them with the same dice data —
+// and `log` is the helper's narration tail with any markup stripped.
+export interface CombatView {
+  attackerUid: number;
+  targetUid: number;
+  actionId: string;
+  mode: 'attack' | 'intercept' | 'explosion';
+  step: string;
+  targetPart: string | null;
+  attack: { color: string; face: number }[] | null;
+  defense: { color: string; face: number }[] | null;
+  log: string[];
 }
 
 // A boundary a rollback can return to. `available` false means a die roll has
@@ -642,6 +667,7 @@ export function newScriptState(firstPlayer: Side): ScriptState {
     rollbacks: 0,
     rollbackCatalog: [],
     combat: null,
+    combatView: null,
   };
 }
 
@@ -667,6 +693,27 @@ function normaliseDefenseCall(raw: unknown): DefenseCall | null {
     ? c.faces.filter((f) => f && typeof f.color === 'string' && typeof f.face === 'number')
     : null;
   return { attackerUid: c.attackerUid, targetUid: c.targetUid, actionId: c.actionId, white: c.white, blue: c.blue, faces };
+}
+
+// Display state, so the bar is lower than the defence call's: uids and a step
+// are enough to draw something honest, and junk faces are simply dropped.
+function normaliseCombatView(raw: unknown): CombatView | null {
+  const v = raw as Partial<CombatView> | null | undefined;
+  if (!v || typeof v.attackerUid !== 'number' || typeof v.targetUid !== 'number') return null;
+  if (typeof v.actionId !== 'string' || typeof v.step !== 'string') return null;
+  const faces = (x: unknown): { color: string; face: number }[] | null =>
+    Array.isArray(x) ? x.filter((f) => f && typeof f.color === 'string' && typeof f.face === 'number').slice(0, 40) : null;
+  return {
+    attackerUid: v.attackerUid,
+    targetUid: v.targetUid,
+    actionId: v.actionId,
+    mode: v.mode === 'intercept' || v.mode === 'explosion' ? v.mode : 'attack',
+    step: v.step,
+    targetPart: typeof v.targetPart === 'string' ? v.targetPart : null,
+    attack: faces(v.attack),
+    defense: faces(v.defense),
+    log: Array.isArray(v.log) ? v.log.filter((l): l is string => typeof l === 'string').slice(0, 6) : [],
+  };
 }
 
 function normaliseRollback(raw: unknown): RollbackAsk | null {
@@ -737,6 +784,7 @@ export function normaliseScript(raw: unknown, firstPlayer: Side): ScriptState {
     rollbacks: Number.isSafeInteger(s.rollbacks) && (s.rollbacks as number) > 0 ? (s.rollbacks as number) : base.rollbacks,
     rollbackCatalog: normaliseCatalog(s.rollbackCatalog),
     combat: normaliseDefenseCall(s.combat),
+    combatView: normaliseCombatView(s.combatView),
   };
 }
 
