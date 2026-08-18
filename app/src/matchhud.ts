@@ -1118,7 +1118,7 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
   const stanceSet = t.kind === 'mech' && !!o.stanceLocked;
   // Read once for the whole panel rather than per row: the aura is a property
   // of where this Mech stands, not of the Action being listed.
-  const flexTiming = hasFlexibleTiming(ctx.data, ctx.state.tokens, t);
+  const flexTiming = (a: CardAction): boolean => hasFlexibleTiming(ctx.data, ctx.state.tokens, t, a);
   // Keyed by PART, not by Action: two Carrier Tarantulas lending the same
   // Backpack lend two distinct Parts, and each may be used once (FAQ O7).
   const blockedBy = new Map<string, string | undefined>();
@@ -1153,7 +1153,7 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
       // unit rather than the Action.
       const ticks: TickVerdict = t.kind !== 'mech'
         ? canActivate(o)
-        : len ? canPerform(o, a, key, { flexible: flexTiming }) : { ok: true };
+        : len ? canPerform(o, a, key, { flexible: flexTiming(a) }) : { ok: true };
       // The board's reason comes first: being out of ammo is a truer answer
       // than "not enough Ticks" when both are true.
       const stopped = blockedBy.get(key);

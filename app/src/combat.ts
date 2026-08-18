@@ -5,7 +5,7 @@ import { linkMechanics } from './inspector';
 import { SQUAD_ORDER, squadLabel } from './data';
 import type { Card, CardAction, DiceData, DiceIcon, DieColor, GameRuleEffect, PartSlot, Side, SmokeScreen, TerrainPiece, Token } from './types';
 import { statusCount, STATUSES } from './types';
-import { aaRadarCovers, attackReactionsOf, auraEffectsOn, denseArmorOn, designationsOn, electronicValue, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, loanedParts, pilotCard, repeatersFor, SLOT_LABEL, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
+import { aaRadarCovers, attackReactionsOf, auraEffectsOn, auraValueOn, denseArmorOn, designationsOn, electronicValue, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, loanedParts, pilotCard, repeatersFor, SLOT_LABEL, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
 import { timingOf } from './ticks';
 import { losNote, protectionFor, rangeBetween } from './rules';
 import type { Command } from './commands';
@@ -468,6 +468,10 @@ export class AttackHelper {
         .reduce((sum, { card: c }) => sum + (c.dodge ?? 0), 0);
     }
     if (statusCount(d.statuses, 'immobilized') > 0) blue = 0;
+    // "Ally Units within Range +1W on hit" (RT-18T Escarpment, Defense
+    // optimization). It is a defence-pool bonus, so it rides on top of Armor,
+    // Structure and Protection rather than replacing any of them.
+    white += auraValueOn(this.data, this.tokens ? this.tokens() : [], d, 'defense_white_dice_bonus');
     return { white, blue };
   }
 
@@ -1989,8 +1993,13 @@ export class ElectronicHelper {
     // Only the Initiator is performing an Action, so only the Initiator counts
     // the Backpacks its Tarantulas are lending (FAQ O5).
     const world = this.tokens ? this.tokens() : [];
-    const initEv = electronicValue(this.data, initiator, loanedParts(this.data, world, initiator));
-    const respEv = electronicValue(this.data, responder);
+    // "Enemy units within range suffer Strength -1 when making Electronic
+    // Counter Rolls" (EW Suppression, Electronic Warfare Weakening). It lands
+    // on whoever is inside the aura, which can be either side of this contest,
+    // and never below zero. The value is negative in the data, so it adds.
+    const ewPenalty = (u: Token): number => auraValueOn(this.data, world, u, 'electronic_contest_strength_penalty');
+    const initEv = Math.max(0, electronicValue(this.data, initiator, loanedParts(this.data, world, initiator)) + ewPenalty(initiator));
+    const respEv = Math.max(0, electronicValue(this.data, responder) + ewPenalty(responder));
     this.ctx = {
       initiator,
       responder,

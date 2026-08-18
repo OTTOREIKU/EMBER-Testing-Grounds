@@ -1142,8 +1142,8 @@ export class PlayGuide {
 
   // The board decides this, not the card: Flexible Timing reaches this Mech
   // from an ally's aura, so it has to be re-read wherever the Tick verdict is.
-  private flexTiming(t: Token): boolean {
-    return hasFlexibleTiming(this.data, this.state?.tokens ?? [], t);
+  private flexTiming(t: Token, a: CardAction): boolean {
+    return hasFlexibleTiming(this.data, this.state?.tokens ?? [], t, a);
   }
 
   private tickActions(t: Token): { action: CardAction; label: string; partKey: string; note?: string; blocked?: string }[] {
@@ -1257,7 +1257,7 @@ export class PlayGuide {
     const range = maneuverRange(this.data, t);
     const rows = this.tickActions(t)
       .map((r) => {
-        const v = canPerform(o, r.action, r.partKey, { flexible: this.flexTiming(t) });
+        const v = canPerform(o, r.action, r.partKey, { flexible: this.flexTiming(t, r.action) });
         const why = r.blocked ?? (v.ok ? undefined : v.why);
         const cost = costOf(r.action)!;
         const len = LENGTH_NAME[lengthOf(r.action)!];
@@ -1550,7 +1550,7 @@ export class PlayGuide {
     // Tarantula is lending the Part (FAQ O7).
     const row = this.tickActions(t).find((r) => r.partKey === actionId) ?? this.tickActions(t).find((r) => r.action.id === actionId);
     if (!row) return;
-    const why = row.blocked ?? (canPerform(o, row.action, row.partKey, { flexible: this.flexTiming(t) }).ok ? undefined : canPerform(o, row.action, row.partKey, { flexible: this.flexTiming(t) }).why);
+    const why = row.blocked ?? (canPerform(o, row.action, row.partKey, { flexible: this.flexTiming(t, row.action) }).ok ? undefined : canPerform(o, row.action, row.partKey, { flexible: this.flexTiming(t, row.action) }).why);
     if (why && this.warn !== why) {
       this.warn = why;
       this.render();

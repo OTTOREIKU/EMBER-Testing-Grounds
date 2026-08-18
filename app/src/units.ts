@@ -713,8 +713,24 @@ export function extrasFor(data: GameData, t: Token): ExtraTick[] {
 // action or roll happens (Q1/Q2), a unit is its own ally (Q4), and what it
 // grants is a KEYWORD, not a Token - Scan cannot remove it (Q3). Deployables
 // and Aerial units are affected like anything else (J2).
-export function auraEffectsOn(data: GameData, tokens: Token[], t: Token): Set<string> {
-  const out = new Set<string>();
+export interface AuraSource {
+  kinds: string[];
+  // Some effects carry a magnitude (+2 Range, +1 White, Strength -1); the rest
+  // simply grant a keyword and leave this 0.
+  value: number;
+  // 558 Firing Coordination grants ONLY to Firing Actions, where 014 and 077
+  // grant to all of them. Nothing in the effect JSON records that, so it is
+  // read off the printed text the same way repairSpec and isMeleeFiring do.
+  firingOnly: boolean;
+  label: string;
+}
+
+// Every aura currently reaching this unit, after the three filters the data
+// carries: which side it helps, how far it reaches, and WHAT it may land on —
+// `targetUnitType` is 'mech', 'drone' or 'unit', so a Drone standing beside a
+// Mech-only aura is untouched by it.
+export function aurasOn(data: GameData, tokens: Token[], t: Token): AuraSource[] {
+  const out: AuraSource[] = [];
   for (const src of tokens) {
     if (src.deployed === false) continue;
     if ((src.partStates[src.kind === 'mech' ? 'torso' : 'main'] ?? 'intact') === 'destroyed') continue;
@@ -723,12 +739,22 @@ export function auraEffectsOn(data: GameData, tokens: Token[], t: Token): Set<st
       for (const a of card.actions ?? []) {
         for (const g of a.gameRules ?? []) {
           for (const e of g.effects ?? []) {
-            const eff = e as { type?: string; effectTypes?: string[]; targetSide?: string };
+            const eff = e as {
+              type?: string; effectTypes?: string[]; targetSide?: string;
+              targetUnitType?: string; value?: number; label?: string;
+            };
             if (eff.type !== 'aura' || !eff.effectTypes?.length) continue;
             const allies = eff.targetSide !== 'enemy';
             if (allies !== (src.side === t.side)) continue;
+            const want = eff.targetUnitType;
+            if (want && want !== 'unit' && want !== t.kind) continue;
             if (rangeBetween(src, t).range > (a.range ?? 0)) continue;
-            for (const kind of eff.effectTypes) out.add(kind);
+            out.push({
+              kinds: [...eff.effectTypes],
+              value: eff.value ?? 0,
+              firingOnly: /Firing Actions?\b/i.test(a.description?.en ?? ''),
+              label: a.name?.en || a.name?.zh || eff.label || a.id,
+            });
           }
         }
       }
@@ -737,13 +763,55 @@ export function auraEffectsOn(data: GameData, tokens: Token[], t: Token): Set<st
   return out;
 }
 
+// An aura is judged at the moment the affected action or roll happens (Q1/Q2),
+// a unit is its own ally (Q4), and what it grants is a KEYWORD, not a Token -
+// Scan cannot remove it (Q3). Deployables and Aerial units are affected like
+// anything else (J2).
+export function auraEffectsOn(data: GameData, tokens: Token[], t: Token): Set<string> {
+  const out = new Set<string>();
+  for (const src of aurasOn(data, tokens, t)) for (const k of src.kinds) out.add(k);
+  return out;
+}
+
+// EVERY one of these auras prints "This effect does not stack", so two sources
+// of the same effect are not added together — the strongest single one applies.
+export function auraValueOn(data: GameData, tokens: Token[], t: Token, kind: string): number {
+  let best = 0;
+  for (const src of aurasOn(data, tokens, t)) {
+    if (!src.kinds.includes(kind)) continue;
+    if (Math.abs(src.value) > Math.abs(best)) best = src.value;
+  }
+  return best;
+}
+
 // Flexible Timing arrives ONLY from an ally's aura — no card prints it for its
 // own Actions (checked across the whole card database: the three cards whose
 // text names the keyword are the three aura sources themselves). A unit is its
 // own ally (FAQ Q4), so a Mech carrying Tactical Coordination flexes its own
 // Starting Action as well as its neighbours'.
-export function hasFlexibleTiming(data: GameData, tokens: Token[], t: Token): boolean {
-  return auraEffectsOn(data, tokens, t).has('flexible_timing');
+// A Firing Action's reach, after the two range auras: RT-12T Oasis gives ally
+// MECHS +1 (Firing Coordination) and the P7-A3 Node Core gives ally DRONES +2
+// (Fire Control Planning). Both say "Firing Actions", so nothing else is
+// lengthened, and both say "does not stack", which auraValueOn honours.
+//
+// Every reach in the app should come through here rather than reading
+// `a.range` directly, so the picker, the overlay and the refusal all agree.
+export function actionRange(data: GameData, tokens: Token[], t: Token, a: CardAction): number {
+  const base = a.range ?? 0;
+  if (a.type !== 'Firing') return base;
+  const kind = t.kind === 'drone' ? 'drone_firing_range_bonus' : 'firing_range_bonus';
+  return base + auraValueOn(data, tokens, t, kind);
+}
+
+export function hasFlexibleTiming(data: GameData, tokens: Token[], t: Token, a?: CardAction): boolean {
+  return aurasOn(data, tokens, t).some((src) => {
+    if (!src.kinds.includes('flexible_timing')) return false;
+    // RT-12T Oasis grants it to FIRING Actions only; RT-07T Dune and the B3/3
+    // Beacon grant it to all of them. Without the action to test, answer for
+    // the unrestricted sources alone rather than over-granting.
+    if (!src.firingOnly) return true;
+    return a?.type === 'Firing';
+  });
 }
 
 // An action that hands out Repaired Tokens or mends Damage, read off the
@@ -767,7 +835,9 @@ export function autoTargetsFor(
   t: Token,
   a: CardAction,
 ): Token[] {
-  const reach = a.range ?? 0;
+  // Through actionRange, so a Firing Action lengthened by an ally's aura can
+  // actually reach the target the picker offers.
+  const reach = actionRange(data, tokens, t, a);
   // An Electronic Attack may be sent through an allied Repeater, and then the
   // Range - and the nearest-target rule with it - is measured from there
   // (FAQ O19/O20): the enemy one Grid from the Raven is nearer than the one two

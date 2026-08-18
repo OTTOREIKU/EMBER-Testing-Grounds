@@ -19,6 +19,12 @@ const loads = slice('// ---------- Tarantula Loads', 'export interface GuidedAct
 const relay = slice('// ---------- Repeaters (FAQ O19/O20)', '// How a Projectile Action delivers', 'the Repeaters block');
 const radar = slice("// ---------- The Hyena's AA Radar", '// ---------- Repeaters (FAQ O19/O20)', 'the AA Radar block');
 const auto = slice('// Auto-attack target selection', "// ---------- The Hyena's AA Radar", 'autoTargetsFor');
+// actionRange is sliced in rather than mirrored, so the reach arithmetic under
+// test is the real one. Only the AURA lookup is stubbed away — these fixtures
+// carry no aura sources, and the aura path has its own coverage.
+const rangeFn = slice("// A Firing Action", "export function hasFlexibleTiming", "actionRange");
+const auraStub = `export function auraValueOn(_d: any, _t: any, _u: any, _k: string): number { return 0; }
+`;
 const ev = slice('export function electronicValue', 'export function defaultUnitLabel', 'electronicValue');
 const freehand = slice('export function freehandSlots', '// ---------- Charge (rulebook 4.14)', 'freehandSlots');
 const slotLabels = slice('export const SLOT_LABEL', 'let uidSource', 'SLOT_LABEL');
@@ -54,7 +60,7 @@ function inContact(a: any, b: any): boolean {
 }
 `
     + `function losBetween(a: any, b: any, terrain: any[], tokens: any[]): string { return terrain.length ? String(terrain[0].sight ?? "clear") : "clear"; }\n`
-    + slotLabels + loads + relay + radar + auto + ev + freehand,
+    + auraStub + rangeFn + slotLabels + loads + relay + radar + auto + ev + freehand,
 );
 const L = await import(tmp.href);
 

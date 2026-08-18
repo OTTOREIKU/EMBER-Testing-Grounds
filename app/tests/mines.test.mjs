@@ -32,6 +32,11 @@ const cardsOf = slice(unitsSrc, 'export function tokenCards', '// ---------- Tar
 // autoTargetsFor runs to the AA Radar block, which sweeps in the O9/O10 Neutral
 // fallback that sits between them — deliberate, they are one rule read together.
 const autoTargets = slice(unitsSrc, 'export function autoTargetsFor', "// ---------- The Hyena's AA Radar", 'autoTargetsFor in units.ts');
+// Same as loads.test.mjs: the real actionRange, with only the aura lookup
+// stubbed, so autoTargetsFor measures reach the way the app does.
+const rangeFn = slice(unitsSrc, "// A Firing Action", "export function hasFlexibleTiming", "actionRange in units.ts");
+const auraStub = `export function auraValueOn(_d: any, _t: any, _u: any, _k: string): number { return 0; }
+`;
 
 const tmp = new URL('./_mines.slice.ts', import.meta.url);
 writeFileSync(
@@ -51,7 +56,7 @@ writeFileSync(
     + slots
     + delivery
     + cardsOf
-    + autoTargets
+    + auraStub + rangeFn + autoTargets
     + predicates
     + mines
     + scope,

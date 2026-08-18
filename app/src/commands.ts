@@ -969,7 +969,7 @@ function checkActed(
       // partKey names which Part the Action came from, so the same Action
       // borrowed from two Tarantulas is two Parts, not one repeated (FAQ O7).
       return fromVerdict(canPerform(o, a, cmd.partKey || a.id, {
-        flexible: hasFlexibleTiming(data, state.tokens, t),
+        flexible: hasFlexibleTiming(data, state.tokens, t, a),
       }));
     }
     case 'overload': {
@@ -1875,7 +1875,7 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
       const o = oppOf(state, cmd.uid);
       if (a && o && sc) {
         sc.opp = t.kind === 'mech'
-          ? lockStance(t, spendAction(o, a, cmd.partKey || a.id, { flexible: hasFlexibleTiming(data, state.tokens, t) }))
+          ? lockStance(t, spendAction(o, a, cmd.partKey || a.id, { flexible: hasFlexibleTiming(data, state.tokens, t, a) }))
           : spendActivation(o, a);
       }
       return;
