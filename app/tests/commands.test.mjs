@@ -1917,5 +1917,40 @@ check('and no Command Token means no reaction at all',
 check('an ally is still not a legal Responder',
   C.check(data, world([tracer(), { ...far, side: 's1', uid: 2 }], 2, opp(1)), traceCmd({ reaction: true })).ok, false);
 
+// ---------- Defense Reaction changes Stance when 4.1 would not ----------
+//
+// Its own command precisely so the Stance lock stays intact for everyone else:
+// a setStance that ignored `stanceLocked` would hand the freedom to every Mech.
+const drCard = {
+  id: 'DR1', category: 'part', slot: 'torso', structure: 2,
+  actions: [{ id: 'DR1_A', name: { en: 'Defense Reaction' }, type: 'Passive',
+    description: { en: '· If Penetration occurs against any Part of this Mech, it may immediately change to Defensive Stance.' } }],
+};
+data.byId.set('DR1', drCard);
+const shielded = (over = {}) => ({
+  uid: 1, kind: 'mech', side: 's1', col: 0, row: 0, stance: 'offensive', link: 3, statuses: [],
+  mech: { torso: 'DR1' }, partStates: { torso: 'intact' }, label: 'Buckler', ammo: {}, ...over,
+});
+const drCmd = { kind: 'defenseReaction', seat: 's1', uid: 1 };
+const wDr = world([shielded()], 2, opp(1));
+check('a Mech carrying it may react', C.check(data, wDr, drCmd).ok, true);
+// The lock is the whole reason this is not a setStance.
+const locked = world([shielded()], 2, { ...opp(1), stanceLocked: true });
+check('and the Stance lock does not stop it',
+  C.check(data, locked, drCmd).ok, true);
+check('while an ordinary Stance change is still locked out',
+  C.check(data, locked, { kind: 'setStance', seat: 's1', uid: 1, stance: 'defensive' }).ok, false);
+check('a Mech without the Part cannot',
+  C.check(data, world([shielded({ mech: { torso: 'BP1' } })], 2, opp(1)), drCmd).ok, false);
+check('nor one already in Defensive Stance',
+  C.check(data, world([shielded({ stance: 'defensive' })], 2, opp(1)), drCmd).ok, false);
+check('nor one that is Shut Down, which takes a Reboot',
+  C.check(data, world([shielded({ stance: 'shutdown' })], 2, opp(1)), drCmd).ok, false);
+check('nor one whose Torso is gone',
+  C.check(data, world([shielded({ partStates: { torso: 'destroyed' } })], 2, opp(1)), drCmd).ok, false);
+const wApply = world([shielded()], 2, opp(1));
+C.apply(data, wApply, drCmd);
+check('applying it puts the Mech in Defensive Stance', wApply.tokens[0].stance, 'defensive');
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

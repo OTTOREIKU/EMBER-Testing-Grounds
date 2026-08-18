@@ -2,7 +2,7 @@ import type { CombatView, Facing, GameState, MechLoadout, Opportunity, PartSlot,
 import { addStatus, ageTokens, newOpportunity, PHASES, statusCount, STATUSES, TIMINGS } from './types';
 import type { GameData } from './data';
 import { unfoldsInto } from './data';
-import { targetTracingOn, riderOnDrone, hasFlexibleTiming, commandGeneration, blinkTargets, isPositionSwap, electronicOrigins, loanedParts, unfoldToken, extrasFor, consumesCharge, electronicValue, freehandSlots, interceptCapacity, makeDroneToken, makeMechToken, maxLink, pilotCard, projectileDelivery, tokenCards } from './units';
+import { defenseReactionOn, targetTracingOn, riderOnDrone, hasFlexibleTiming, commandGeneration, blinkTargets, isPositionSwap, electronicOrigins, loanedParts, unfoldToken, extrasFor, consumesCharge, electronicValue, freehandSlots, interceptCapacity, makeDroneToken, makeMechToken, maxLink, pilotCard, projectileDelivery, tokenCards } from './units';
 import { canActivate, canManeuver, canOverload, canPerform, spendAction, spendActivation, spendManeuver, spendOverload } from './ticks';
 import { tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { battlefieldLocked, deploymentComplete, deployTurn, firstPlayerFrom, newSetup, normaliseSetup, tasksLocked } from './setup';
@@ -149,7 +149,7 @@ export type Command =
       kind: 'queueReactions'; seat: Side;
       // `kind` absent means Emergency Smoke, which is every debt written before
       // Target Tracing existed and every one still on a saved board.
-      items: { uid: number; actionId: string; count: number; range: number; kind?: 'smoke' | 'trace'; fromUid?: number }[];
+      items: { uid: number; actionId: string; count: number; range: number; kind?: 'smoke' | 'trace' | 'stance'; fromUid?: number }[];
     }
   | { kind: 'resolveReaction'; seat: Side; uid: number; actionId: string }
   // Remote Access turning a Terminal face-down for the rest of the round
@@ -221,6 +221,11 @@ export type Command =
   | { kind: 'designateHit'; seat: Side; slot: string }
   | { kind: 'meleeEvade'; seat: Side }
   | { kind: 'dodgeEnhance'; seat: Side }
+  // Defense Reaction (ZHLA-101 / ZHLA-301). Its own command rather than a
+  // setStance, because the whole point of the card is that it changes Stance at
+  // a moment 4.1 does not allow -- and a setStance that ignored the lock would
+  // hand every Mech the same freedom.
+  | { kind: 'defenseReaction'; seat: Side; uid: number }
   | { kind: 'focusReroll'; seat: Side; indices: number[]; faces: { color: string; face: number }[] }
   // KC Armor (4.10): the remote defender's declare that its consumed Charge
   // Token turns the Defense Roll's Lightning into Defense. The Charge itself
@@ -938,6 +943,14 @@ function checkActed(
       if (so?.stanceLocked && cmd.stance !== t.stance) {
         return no('This Mech has already acted this Action Opportunity, so its Stance is set (4.1).');
       }
+      return ok;
+    }
+    case 'defenseReaction': {
+      if (t.kind !== 'mech') return no('Only a Mech chooses a Stance.');
+      if (t.partStates.torso === 'destroyed') return no('A destroyed Mech has no Stance to change.');
+      if (t.stance === 'shutdown') return no('Leaving Shutdown Stance takes a Reboot (4.1.1).');
+      if (t.stance === 'defensive') return no(`${t.label} is already in Defensive Stance.`);
+      if (!defenseReactionOn(data, t)) return no(`${t.label} has no Part that reacts to a Penetration.`);
       return ok;
     }
     case 'reboot': {
@@ -1874,6 +1887,12 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
       // Choosing does NOT lock: cycling the dial to compare Stances is free
       // right up until the Mech acts. lockStance() below is what closes it.
       t.stance = cmd.stance;
+      return;
+    }
+    case 'defenseReaction': {
+      // No Stance lock is consulted: reacting to a Penetration is the exception
+      // the card buys, and check() has already confirmed it carries one.
+      t.stance = 'defensive';
       return;
     }
     case 'reboot': {

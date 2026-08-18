@@ -2043,7 +2043,7 @@ function autoBoomPanel(ctx: HudCtx): string {
 // The attacker's client queued these into `script.reactions` when the whole
 // Action finished; only the DEFENDER's client may answer one, because placing
 // the Screens and spending the use are commands on their own unit.
-function reactionsOwed(ctx: HudCtx): { t: Token; r: { uid: number; actionId: string; count: number; range: number; kind?: 'smoke' | 'trace'; fromUid?: number } }[] {
+function reactionsOwed(ctx: HudCtx): { t: Token; r: { uid: number; actionId: string; count: number; range: number; kind?: 'smoke' | 'trace' | 'stance'; fromUid?: number } }[] {
   const owed = ensureScript(ctx.state).reactions ?? [];
   return owed
     .map((r) => ({ t: ctx.state.tokens.find((x) => x.uid === r.uid)!, r }))
@@ -2057,6 +2057,15 @@ function reactionPanel(ctx: HudCtx): string {
   const card = ctx.data.byId.get(t.cardId ?? '');
   const what = (card?.actions ?? []).find((a) => a.id === r.actionId);
   const name = what?.name?.en || what?.name?.zh || 'Emergency Smoke';
+  // Defense Reaction (ZHLA-101 / ZHLA-301). Free -- no Token, no Ammo -- so the
+  // only question is whether they want it.
+  if (r.kind === 'stance') {
+    return head('Your move', `${esc(t.label)}: ${esc(name)}`,
+      `A Part of ${esc(t.label)} was Penetrated, so it may change to Defensive Stance immediately.`, true)
+      + `<div class="tp-body"><p class="tp-dim">Now in ${esc(t.stance)} Stance. This is the one Stance change 4.1 allows outside the start of an Action Opportunity, and it costs nothing.</p></div>
+         <div class="tp-foot"><button class="bigbtn" data-reactgo="${t.uid}:${esc(r.actionId)}">Change to Defensive</button>
+         <button class="bigbtn ghost2" data-reactskip="${t.uid}:${esc(r.actionId)}" style="margin-top:6px">Stay in ${esc(t.stance)}</button></div>`;
+  }
   // Target Tracing (174). A debt written before this existed carries no kind at
   // all, and those are all Emergency Smoke.
   if (r.kind === 'trace') {
@@ -2087,9 +2096,18 @@ function answerReaction(ctx: HudCtx, key: string, place: boolean): void {
   const r = (ensureScript(ctx.state).reactions ?? []).find((x) => x.uid === uid && x.actionId === actionId);
   if (!t || !r) { ctx.refresh(); return; }
   const trace = r.kind === 'trace';
+  const stance = r.kind === 'stance';
+  const what = trace ? 'Target Tracing' : stance ? 'Defense Reaction' : 'Emergency Smoke';
   if (!ctx.send({ kind: 'resolveReaction', seat: t.side, uid, actionId }).ok) { ctx.refresh(); return; }
   if (!place) {
-    ctx.noteNow(`${t.label} declines its ${trace ? 'Target Tracing' : 'Emergency Smoke'}.`);
+    ctx.noteNow(`${t.label} declines its ${what}.`);
+    ctx.refresh();
+    return;
+  }
+  if (stance) {
+    if (ctx.send({ kind: 'defenseReaction', seat: t.side, uid }).ok) {
+      ctx.noteNow(`${t.label} reacts to the Penetration and changes to Defensive Stance.`);
+    }
     ctx.refresh();
     return;
   }

@@ -32,7 +32,7 @@ function largeGridOf(t: any): any { return { c: Math.floor(t.col / 3), r: Math.f
   + cut(units, 'export interface ParryPart', 'export interface SelfHitPart', 'parryParts')
   + cut(units, 'export interface SelfHitPart', '// A Firing Action', 'selfHitParts')
   + cut(units, '// A Firing Action', 'export function repairSpec', 'actionRange and hasFlexibleTiming')
-  + cut(units, '// ---------- Target Tracing', 'export function attackReactionsOf', 'targetTracingOn');
+  + cut(units, '// ---------- Defense Reaction', 'export function attackReactionsOf', 'defenseReactionOn and targetTracingOn');
 
 const tmp = new URL('./_auras.slice.ts', import.meta.url);
 writeFileSync(tmp, body);
@@ -300,6 +300,28 @@ check('a Drone never gets it', A.targetTracingOn(data, { ...traceMech('174'), ki
 // the printed text -- if that ever changes, this should be revisited.
 check('the card still prints no structured rules for it',
   data.byId.get('174').actions.find((x) => x.id === '174_B').gameRules ?? null, null);
+
+// ---------- Defense Reaction (ZHLA-101, ZHLA-301) ----------
+//
+// ANY Part being Penetrated triggers it, not the Part carrying the shield, and
+// it asks for no Command Token -- the only price is the Stance change happening
+// outside the moment 4.1 allows.
+const shieldMech = (torso, states = {}) => ({
+  uid: 7, kind: 'mech', side: 's1', col: 0, row: 0, stance: 'offensive',
+  mech: { torso }, partStates: { torso: 'intact', ...states }, statuses: [],
+});
+check('the Buckler reacts to a Penetration', A.defenseReactionOn(data, shieldMech('ZHLA-101'))?.name, 'Defense Reaction');
+check('and so does the Heavy Shield', A.defenseReactionOn(data, shieldMech('ZHLA-301'))?.name, 'Defense Reaction');
+check('it needs no Command Token, unlike the ZYBP-302 pair',
+  A.defenseReactionOn(data, { ...shieldMech('ZHLA-101'), statuses: [] })?.actionId, 'ZHLA-101_A');
+check('a destroyed Part offers nothing', A.defenseReactionOn(data, shieldMech('ZHLA-101', { torso: 'destroyed' })), null);
+check('a Mech without the ability is never ready', A.defenseReactionOn(data, shieldMech('002')), null);
+check('a Drone never gets it', A.defenseReactionOn(data, { ...shieldMech('ZHLA-101'), kind: 'drone' }), null);
+// ZHLA-301 carries Shield Up as well, which is a different ability on the same
+// card -- the same confusion Melee Evasion and Dodge Enhancement set up.
+check('and it is Defense Reaction that matched, not Shield Up',
+  A.defenseReactionOn(data, shieldMech('ZHLA-301'))?.actionId,
+  data.byId.get('ZHLA-301').actions.find((x) => /Defense Reaction/.test(x.name?.en ?? '')).id);
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
 if (fail) process.exit(1);

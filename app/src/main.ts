@@ -175,7 +175,9 @@ async function init() {
       kind: 'queueReactions', seat: defender.side,
       items: [reaction.smoke
         ? { uid: defender.uid, actionId: reaction.actionId, count: reaction.smoke.count, range: reaction.smoke.range, kind: 'smoke' as const }
-        : { uid: defender.uid, actionId: reaction.actionId, count: 0, range: 0, kind: 'trace' as const, fromUid: attacker.uid }],
+        : reaction.stance
+          ? { uid: defender.uid, actionId: reaction.actionId, count: 0, range: 0, kind: 'stance' as const }
+          : { uid: defender.uid, actionId: reaction.actionId, count: 0, range: 0, kind: 'trace' as const, fromUid: attacker.uid }],
     });
     renderReactionPrompt();
   };
@@ -2626,6 +2628,22 @@ async function init() {
     const card = data.byId.get(defender.cardId ?? '');
     const act = (card?.actions ?? []).find((a) => a.id === r.actionId);
     const name = act?.name?.en || act?.name?.zh || 'Emergency Smoke';
+    // Defense Reaction (ZHLA-101 / ZHLA-301). Nothing to place and nothing to
+    // spend, so the whole reaction is the one question.
+    if (r.kind === 'stance') {
+      void confirmDialog({
+        title: `${defender.label}: ${name}`,
+        body: `A Part of ${defender.label} was Penetrated, so it may change to Defensive Stance immediately. It is in ${defender.stance} Stance now. This is the one Stance change 4.1 allows outside the start of an Action Opportunity, and it costs nothing.`,
+        confirmLabel: 'Change to Defensive',
+        cancelLabel: `Stay in ${defender.stance}`,
+      }).then((go) => {
+        perform(data, state, { kind: 'resolveReaction', seat: defender.side, uid: defender.uid, actionId: r.actionId });
+        if (go) perform(data, state, { kind: 'defenseReaction', seat: defender.side, uid: defender.uid });
+        onChanged();
+        renderReactionPrompt();
+      });
+      return;
+    }
     // Target Tracing (174) answers with a Counter-roll rather than Screens. On
     // one screen the ElectronicHelper runs it, so there is no owed queue to
     // drain -- the debt is cleared here and the helper takes over.

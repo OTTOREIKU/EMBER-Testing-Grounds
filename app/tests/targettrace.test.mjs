@@ -30,8 +30,8 @@ check('the attacker is threaded through to the reaction',
   /onReaction: \(defender: Token, reaction: AttackReaction, attacker: Token\)/.test(combat), true);
 
 // ---------- The debt ----------
-check('the queue item can say which reaction it is', /kind\?: 'smoke' \| 'trace'; fromUid\?: number/.test(commands), true);
-check('and the saved state carries the same shape', /kind\?: 'smoke' \| 'trace'; fromUid\?: number/.test(types), true);
+check('the queue item can say which reaction it is', /kind\?: 'smoke' \| 'trace'[^;]*; fromUid\?: number/.test(commands), true);
+check('and the saved state carries the same shape', /kind\?: 'smoke' \| 'trace'[^;]*; fromUid\?: number/.test(types), true);
 check('a trace debt must name the attacker to be queued',
   /it\.kind === 'trace' && !state\.tokens\.some\(\(x\) => x\.uid === it\.fromUid\)/.test(commands), true);
 check('a reload drops a trace debt with no attacker, rather than stranding the panel',

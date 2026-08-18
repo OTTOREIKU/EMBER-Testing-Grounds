@@ -580,9 +580,31 @@ export interface AttackReaction {
   // an Electronic Counter-roll back at the attacker.
   smoke?: { count: number; range: number };
   trace?: boolean;
+  stance?: boolean;
   // The card says it works even once the unit is gone. FAQ D10 asks exactly
   // that about the Reaper and answers yes, so a destroyed Part is no bar.
   afterDestroyed: boolean;
+}
+
+// ---------- Defense Reaction (ZHLA-101 SS12 Buckler, ZHLA-301 SS30 Heavy Shield) ----------
+//
+// "If Penetration occurs against any Part of this Mech, it may immediately
+// change to Defensive Stance." ANY Part, not the Part carrying the shield, and
+// it does not ask for a Command Token -- the only price is that the Stance
+// changes outside the moment 4.1 normally allows.
+export function defenseReactionOn(data: GameData, t: Token): { actionId: string; name: string } | null {
+  if (t.kind !== 'mech') return null;
+  for (const { slot, card } of tokenCards(data, t)) {
+    if ((t.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
+    for (const a of card.actions ?? []) {
+      const en = a.description?.en ?? '';
+      const zh = a.description?.zh ?? '';
+      if (/Penetration occurs against any Part/i.test(en) || /任何部件被击穿时[^。]*防御姿态/.test(zh)) {
+        return { actionId: a.id, name: a.name?.en || a.name?.zh || a.id };
+      }
+    }
+  }
+  return null;
 }
 
 // ---------- Target Tracing (174 P22 "Hunter") ----------

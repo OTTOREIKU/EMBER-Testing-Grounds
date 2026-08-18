@@ -5,7 +5,7 @@ import { linkMechanics } from './inspector';
 import { SQUAD_ORDER, squadLabel } from './data';
 import type { Card, CardAction, DiceData, DiceIcon, DieColor, GameRuleEffect, PartSlot, Side, SmokeScreen, TerrainPiece, Token } from './types';
 import { statusCount, STATUSES } from './types';
-import { aaRadarCovers, attackReactionsOf, auraEffectsOn, auraValueOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, targetTracingOn, selfHitParts, denseArmorOn, designationsOn, electronicValue, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, loanedParts, pilotCard, repeatersFor, SLOT_LABEL, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
+import { aaRadarCovers, attackReactionsOf, auraEffectsOn, auraValueOn, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, targetTracingOn, selfHitParts, denseArmorOn, designationsOn, electronicValue, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, loanedParts, pilotCard, repeatersFor, SLOT_LABEL, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
 import { timingOf } from './ticks';
 import { inArc, losNote, protectionFor, rangeBetween } from './rules';
 import type { Command } from './commands';
@@ -35,7 +35,10 @@ interface MultiState {
   cap: MultiTarget;
   action: CardAction;
   attacker: Token;
-  targets: { defender: Token; red: number; yellow: number }[];
+  // `penetrated` is written when a sequence gets through, because Defense
+  // Reaction is owed per TARGET and the debts are not written until B7 lets
+  // them out at the end of the whole Action.
+  targets: { defender: Token; red: number; yellow: number; penetrated?: boolean }[];
   total: { red: number; yellow: number };
   index: number;
   pending: { defender: Token; reaction: AttackReaction }[];
@@ -212,6 +215,9 @@ interface Ctx {
   kcUsed?: boolean;
   // Melee Evasion (ZYBP-302) declared this attack: +1 {Dodge} for a Command Token.
   evadeUsed?: boolean;
+  // Something got through. Read at the end of the attack, where Defense
+  // Reaction's debt is written (ZHLA-101 / ZHLA-301).
+  penetrated?: boolean;
   // Dodge Enhancement (ZYBP-302) declared this attack: each {Dodge} cancels a
   // whole Attack DIE rather than one icon. Read by resolve(), which then feeds
   // offsetIcons the per-die breakdown it otherwise does without.
@@ -1238,8 +1244,15 @@ export class AttackHelper {
   // What being attacked owes the DEFENDER. Emergency Smoke answers a Firing
   // Action only; Target Tracing answers Melee or Firing, and only from an enemy
   // MECH -- a Drone or a Projectile sets nothing off (174).
-  private reactionsFor(action: CardAction, defender: Token, attacker: Token | null): AttackReaction[] {
+  private reactionsFor(action: CardAction, defender: Token, attacker: Token | null, penetrated = false): AttackReaction[] {
     const out: AttackReaction[] = [];
+    // Defense Reaction asks nothing of the attack except that it got through,
+    // so it is the only one of these gated on Penetration rather than on the
+    // Action's type (ZHLA-101 / ZHLA-301).
+    if (penetrated) {
+      const def = defenseReactionOn(this.data, defender);
+      if (def) out.push({ actionId: def.actionId, name: def.name, stance: true, afterDestroyed: false });
+    }
     if (action.type === 'Firing') out.push(...attackReactionsOf(this.data, defender));
     const meleeOrFiring = action.type === 'Firing' || action.type === 'Melee';
     if (meleeOrFiring && attacker && attacker.kind === 'mech' && attacker.side !== defender.side) {
@@ -1257,7 +1270,7 @@ export class AttackHelper {
     // Whatever this target set off by being attacked waits for the end (B7).
     const hit = m.targets[m.index]?.defender;
     if (hit) {
-      for (const r of this.reactionsFor(m.action, hit, m.attacker)) m.pending.push({ defender: hit, reaction: r });
+      for (const r of this.reactionsFor(m.action, hit, m.attacker, m.targets[m.index]?.penetrated)) m.pending.push({ defender: hit, reaction: r });
     }
     m.index++;
     const next = m.targets[m.index];
@@ -1994,6 +2007,10 @@ export class AttackHelper {
         this.onCommand({ kind: 'applyPenetration', seat: c.attacker.side, uid: c.attacker.uid, targetUid: c.defender.uid, slot });
         const next = c.defender.partStates[slot] ?? 'intact';
         this.onPenetrated(c.defender, c.attacker);
+        c.penetrated = true;
+        // Under Multi-Target the debts are held to the end of the Action (B7),
+        // so the flag is parked on the target this sequence belongs to.
+        if (this.multi) { const at = this.multi.targets[this.multi.index]; if (at) at.penetrated = true; }
         if (next === 'destroyed') { c.killedPart = true; this.onDestroyed(c.attacker, c.defender, 'part'); }
         const how = c.explosion ? 'Explosion damage' : 'Penetration';
         this.note(`${how} from ${c.attacker.label}: ${SLOT_LABEL[slot]} goes ${cur} to ${next.toUpperCase()}.`, [c.attacker, c.defender]);
@@ -2096,7 +2113,7 @@ export class AttackHelper {
   private finish(_wrap: HTMLElement): void {
     const c = this.ctx!;
     c.step = 'resolve';
-    const rider = { attacker: c.attacker, defender: c.defender, action: c.action, hits: c.hits };
+    const rider = { attacker: c.attacker, defender: c.defender, action: c.action, hits: c.hits, penetrated: !!c.penetrated };
     // A card that grants a bonus attack when it destroys a Part — the Katana's
     // Chop offering an immediate Slash. Offered HERE because this is the one
     // place every attack ends, on both pages, so the offer cannot exist on one
@@ -2141,7 +2158,7 @@ export class AttackHelper {
       decline.addEventListener('click', () => {
         settle();
         if (!this.multi) {
-          for (const r of this.reactionsFor(rider.action, rider.defender, rider.attacker)) this.onReaction(rider.defender, r, rider.attacker);
+          for (const r of this.reactionsFor(rider.action, rider.defender, rider.attacker, rider.penetrated)) this.onReaction(rider.defender, r, rider.attacker);
         }
         if (!this.advanceMulti()) this.cancel();
       });
@@ -2163,7 +2180,7 @@ export class AttackHelper {
       // else in this Action to hold it back from. B7 is what makes the
       // Multi-Target path defer instead, and advanceMulti owns that.
       if (!this.multi) {
-        for (const r of this.reactionsFor(rider.action, rider.defender, rider.attacker)) this.onReaction(rider.defender, r, rider.attacker);
+        for (const r of this.reactionsFor(rider.action, rider.defender, rider.attacker, rider.penetrated)) this.onReaction(rider.defender, r, rider.attacker);
       }
       this.ctx = null;
       if (!this.advanceMulti()) this.cancel();
