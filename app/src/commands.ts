@@ -194,6 +194,12 @@ export type Command =
   | { kind: 'callDefense'; seat: Side; uid: number; targetUid: number; actionId: string; white: number; blue: number }
   | { kind: 'answerDefense'; seat: Side; faces: { color: string; face: number }[] }
   | { kind: 'clearDefense'; seat: Side }
+  // The remote defender's half of Focus (4.4.1-5): their declare, and their
+  // reroll with the chosen dice and the server faces riding in the command —
+  // the same shape the defence roll itself travels in. The Link is spent by
+  // their own client through an ordinary `focus` command.
+  | { kind: 'focusAnswer'; seat: Side; use: boolean }
+  | { kind: 'focusReroll'; seat: Side; indices: number[]; faces: { color: string; face: number }[] }
   // The attacker's combat window, published so the defender watches the same
   // attack unfold. Null tears the mirror down when the window closes.
   | { kind: 'setCombatView'; seat: Side; view: CombatView | null }
@@ -304,7 +310,7 @@ type TableKind =
   | 'clearCounterRoll'
   | 'setMode' | 'handOver' | 'setStrict' | 'commitTimings' | 'revealTimings' | 'importSquad'
   | 'configureTable' | 'startMatch' | 'endMatch' | 'pickSecondary' | 'setTactics' | 'setReady' | 'designateTask'
-  | 'callDefense' | 'answerDefense' | 'clearDefense' | 'setCombatView'
+  | 'callDefense' | 'answerDefense' | 'clearDefense' | 'setCombatView' | 'focusAnswer' | 'focusReroll'
   | 'setRollbackCatalog' | 'rollbackRequest' | 'rollbackAnswer';
 const TABLE_KINDS = new Set<Command['kind']>([
   'advancePhase', 'setPhase', 'resetRounds', 'adjustCommandTokens', 'passTurn', 'markEndStep', 'award',
@@ -314,7 +320,7 @@ const TABLE_KINDS = new Set<Command['kind']>([
   'clearCounterRoll',
   'setMode', 'handOver', 'setStrict', 'commitTimings', 'revealTimings', 'importSquad',
   'configureTable', 'startMatch', 'endMatch', 'pickSecondary', 'setTactics', 'setReady', 'designateTask',
-  'callDefense', 'answerDefense', 'clearDefense', 'setCombatView',
+  'callDefense', 'answerDefense', 'clearDefense', 'setCombatView', 'focusAnswer', 'focusReroll',
   'setRollbackCatalog', 'rollbackRequest', 'rollbackAnswer',
 ]);
 
@@ -326,7 +332,7 @@ const ATTRIBUTED = new Set<Command['kind']>([
   'advancePhase', 'setPhase', 'resetRounds', 'markEndStep', 'award',
   // Who asked and who answered is the whole record of a rollback, so both are
   // stamped with the sender's own seat like every other attributed command.
-  'callDefense', 'answerDefense', 'clearDefense', 'setCombatView',
+  'callDefense', 'answerDefense', 'clearDefense', 'setCombatView', 'focusAnswer', 'focusReroll',
   'setRollbackCatalog', 'rollbackRequest', 'rollbackAnswer',
   'lockMap', 'acceptRoll', 'lockDials', 'finishDeployment',
   'queueIntercepts', 'clearIntercepts', 'placeSmoke', 'removeSmoke', 'dissipateSmoke',
@@ -482,6 +488,24 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       // refusal. The attacker's answer-consumer and its cancel path can both
       // send one, and refusing the second read as a desync on the other
       // client — two refusals in six seconds is the resync alarm.
+      return ok;
+    }
+    case 'focusAnswer': {
+      if (!state.script) return no('There is no game running.');
+      if (typeof cmd.use !== 'boolean') return no('That is not a Focus answer.');
+      return ok;
+    }
+    case 'focusReroll': {
+      if (!state.script) return no('There is no game running.');
+      if (!Array.isArray(cmd.indices) || !Array.isArray(cmd.faces) || cmd.indices.length !== cmd.faces.length) {
+        return no('That is not a Focus reroll.');
+      }
+      if (cmd.indices.length > 40 || cmd.indices.some((i) => typeof i !== 'number' || i < 0 || i > 40)) {
+        return no('That is not a Focus reroll.');
+      }
+      if (cmd.faces.some((f) => !f || typeof f.color !== 'string' || typeof f.face !== 'number')) {
+        return no('That is not a Focus reroll.');
+      }
       return ok;
     }
     case 'setCombatView': {
@@ -1493,9 +1517,15 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
     if (sc) sc.combat = null;
     return;
   }
+  if (cmd.kind === 'focusAnswer' || cmd.kind === 'focusReroll') {
+    // Consumed by the attacking client's combat window as the command is
+    // observed, the same way answerDefense is — the board itself carries
+    // nothing for them to change.
+    return;
+  }
   if (cmd.kind === 'setCombatView') {
     const sc = state.script;
-    if (sc) sc.combatView = cmd.view ? { ...cmd.view, attack: cmd.view.attack?.map((f) => ({ ...f })) ?? null, defense: cmd.view.defense?.map((f) => ({ ...f })) ?? null, log: [...cmd.view.log] } : null;
+    if (sc) sc.combatView = cmd.view ? { ...cmd.view, attack: cmd.view.attack?.map((f) => ({ ...f })) ?? null, defense: cmd.view.defense?.map((f) => ({ ...f })) ?? null, log: [...cmd.view.log], focus: cmd.view.focus ? { ...cmd.view.focus } : null } : null;
     return;
   }
   if (cmd.kind === 'rollbackRequest') {

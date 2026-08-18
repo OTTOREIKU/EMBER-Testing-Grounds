@@ -1488,6 +1488,23 @@ C.setLocalSeat(null);
 const wfreeplay = world([mech(1, 's1')], 2, opp(1));
 check('freeplay never demands the lock', C.check(data, wfreeplay, mAct).ok, true);
 
+// ---------- the Focus handshake (4.4.1-5) ----------
+//
+// The remote defender's declare and reroll ride in commands the way the
+// defence roll does. The board carries nothing for them to change — the
+// attacking client's combat window consumes them as they are observed — so
+// the checks are about shape, not state.
+
+const wfoc = world([mech(1, 's1')], 2, opp(1));
+check('a Focus answer needs a running game', C.check(data, { tokens: [], round: { n: 1, phase: 2, firstPlayer: 's1' } }, { kind: 'focusAnswer', seat: 's2', use: true }).ok, false);
+check('a boolean answer passes', C.check(data, wfoc, { kind: 'focusAnswer', seat: 's2', use: true }).ok, true);
+check('a non-boolean answer is refused', C.check(data, wfoc, { kind: 'focusAnswer', seat: 's2', use: 'yes' }).ok, false);
+check('a Focus reroll with matching lists passes', C.check(data, wfoc, { kind: 'focusReroll', seat: 's2', indices: [0, 2], faces: [{ color: 'white', face: 1 }, { color: 'blue', face: 3 }] }).ok, true);
+check('an empty reroll is the "kept it" answer and passes', C.check(data, wfoc, { kind: 'focusReroll', seat: 's2', indices: [], faces: [] }).ok, true);
+check('mismatched lists are refused', C.check(data, wfoc, { kind: 'focusReroll', seat: 's2', indices: [0], faces: [] }).ok, false);
+check('an absurd die index is refused', C.check(data, wfoc, { kind: 'focusReroll', seat: 's2', indices: [99], faces: [{ color: 'white', face: 1 }] }).ok, false);
+check('a malformed face is refused', C.check(data, wfoc, { kind: 'focusReroll', seat: 's2', indices: [0], faces: [{ color: 7, face: 'x' }] }).ok, false);
+
 // ---------- the hand of Tactics Cards (5.4) ----------
 //
 // It has to travel: check() for playTactic reads the SENDER's hand, so a hand

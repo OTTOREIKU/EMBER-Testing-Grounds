@@ -607,6 +607,9 @@ export interface CombatView {
   attack: { color: string; face: number }[] | null;
   defense: { color: string; face: number }[] | null;
   log: string[];
+  // Where the Focus flow (4.4.1-5) stands, so the defender's mirror can ask
+  // their declare and drive their reroll at the right moments.
+  focus?: { stage: string; attackerUse: boolean; defenderUse: boolean } | null;
 }
 
 // A boundary a rollback can return to. `available` false means a die roll has
@@ -713,6 +716,12 @@ function normaliseCombatView(raw: unknown): CombatView | null {
     attack: faces(v.attack),
     defense: faces(v.defense),
     log: Array.isArray(v.log) ? v.log.filter((l): l is string => typeof l === 'string').slice(0, 6) : [],
+    focus: (() => {
+      const f = v.focus as { stage?: unknown; attackerUse?: unknown; defenderUse?: unknown } | null | undefined;
+      return f && typeof f.stage === 'string'
+        ? { stage: f.stage, attackerUse: !!f.attackerUse, defenderUse: !!f.defenderUse }
+        : null;
+    })(),
   };
 }
 

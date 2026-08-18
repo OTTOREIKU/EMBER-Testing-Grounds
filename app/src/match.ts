@@ -305,7 +305,7 @@ const relay = new Relay(api.base, {
     // screens now — the attacker's live helper and the defender's mirror — so
     // a feed line under them would say the same thing twice, in the corner
     // OTTO's opponent was left squinting at.
-    const inCombatWindow = (label === 'Attack' || label === 'Defence')
+    const inCombatWindow = (label === 'Attack' || label === 'Defence' || label === 'Focus reroll')
       && (combatBusy() || !!state.script?.combatView);
     if (!inCombatWindow) pushRoll(seat, label, dice, kind);
     render();
@@ -643,6 +643,12 @@ function settleDefense(cmd: Command): void {
   if (cmd.kind === 'clearDefense' && pendingDefense) {
     pendingDefense = null;
   }
+  // The remote defender's half of Focus (4.4.1-5), consumed by the attacking
+  // client's open combat window the same way the defence roll is. The helper
+  // ignores both when it is not mid-Focus, so the defender's own echo of its
+  // command is harmless.
+  if (cmd.kind === 'focusAnswer') attackHelper?.focusAnswered(cmd.use);
+  if (cmd.kind === 'focusReroll') attackHelper?.focusRerolled(cmd.indices, cmd.faces);
 }
 
 function startAttack(uid: number, actionId: string, targetUid: number, mode: 'attack' | 'intercept' | 'explosion' = 'attack'): void {
@@ -856,6 +862,9 @@ function mountSide(): void {
       pendingDefense = resolve;
       send({ kind: 'callDefense', seat: attacker.side, uid: attacker.uid, targetUid: defender.uid, actionId, white: pool.white, blue: pool.blue });
     });
+    // Focus (4.4.1-5): the defender's declare and reroll belong to their own
+    // player when that player is at another screen — the mirror asks them.
+    attackHelper.focusRemote = (defender) => !!relay.state.room && !!mySeat() && defender.side !== mySeat();
     // The defender's own reaction to being shot at. The helper holds these back
     // until every sequence of a Multi-Target has resolved (FAQ B7), so by the
     // time this fires the Screens are already too late to shield anyone the
@@ -1504,6 +1513,7 @@ function hudCtx(): HudCtx {
     syncSide,
     combatBusy,
     combatMirrorHtml,
+    mirrorFocus: mirrorFocusAct,
     startAttack,
     showTab: (name) => showSideTab(null, name),
     diceData,
@@ -1542,6 +1552,27 @@ function combatMirrorHtml(): string | null {
     ? `<div class="ah-step"><p>Your defence: <b>${call.white} White${call.blue ? ` + ${call.blue} Blue` : ''}</b>. Both players see the dice land.</p>
        <button class="ah-primary" data-act="rolldefense">🎲 Roll ${call.white} White${call.blue ? ` + ${call.blue} Blue` : ''}</button></div>`
     : '';
+  // The defending player's half of Focus (4.4.1-5), asked here because the
+  // attacker's window is on the other screen. The declare is two buttons; the
+  // reroll renders THEIR defense dice as toggles and rolls server faces for
+  // whatever is picked.
+  const iAmDefender = !!df && mySeat() === df.side;
+  const focus = view.focus;
+  let focusUi = '';
+  if (focus && iAmDefender && focus.stage === 'declareD') {
+    focusUi = `<div class="ah-step"><p><b>Focus (4.4.1-5)</b>: you may spend 1 Link (${df.link ?? 0} left) to reroll any of your Defense dice.</p>
+      <button class="ah-primary" data-act="focususe">Focus — spend 1 Link</button>
+      <button class="ah-alt" data-act="focuspass">Pass</button></div>`;
+  } else if (focus && iAmDefender && focus.stage === 'rerollD' && focus.defenderUse && view.defense?.length) {
+    focusUi = `<div class="ah-step"><p>Pick the Defense dice to reroll, then roll. The Link is already spent.</p>
+      <div class="ah-roll">${view.defense.map((f, i) => {
+        const dieDef = diceData!.dice[f.color as DieColor];
+        const icons = dieDef?.faces[f.face] ?? [];
+        return `<button class="die die-${f.color}${mirrorFocusSel.has(i) ? ' sel' : ''}" data-fdie="${i}">${icons.length ? icons.map((ic) => iconSvg(ic)).join('') : '<span class="blank">·</span>'}</button>`;
+      }).join('')}</div>
+      <button class="ah-primary" data-act="focusreroll"${mirrorFocusSel.size ? '' : ' disabled'}>🎲 Reroll ${mirrorFocusSel.size || 'the selected'} ${mirrorFocusSel.size === 1 ? 'die' : 'dice'}</button>
+      <button class="ah-alt" data-act="focuskeep">Keep the roll</button></div>`;
+  }
   return `<div class="attack-helper">
     <div class="ah-head"><b>${esc(at?.label ?? '?')}</b> → <b>${esc(df?.label ?? '?')}</b>
       <span class="dim">${esc(name)}${modeNote ? ` · ${esc(modeNote)}` : ''}</span></div>
@@ -1550,8 +1581,66 @@ function combatMirrorHtml(): string | null {
     ${view.attack?.length ? `<div class="ah-step"><p>Attack Roll</p>${faceRow(view.attack)}</div>` : ''}
     ${myRoll}
     ${view.defense?.length ? `<div class="ah-step"><p>Defense Roll</p>${faceRow(view.defense)}</div>` : ''}
+    ${focusUi}
     ${view.log.length ? `<div class="ah-log">${view.log.map((l) => `<div>${esc(l)}</div>`).join('')}</div>` : ''}
   </div>`;
+}
+
+// Which Defense dice the mirror's Focus reroll has picked, by index into the
+// published view. Cleared whenever the flow moves on.
+const mirrorFocusSel = new Set<number>();
+
+// The mirror's Focus buttons, handled here because this page owns the seat,
+// the server dice and the send. Reads the CURRENT view at click time; reached
+// from the HUD through ctx.mirrorFocus.
+function mirrorFocusAct(act: string, dieIndex?: number): void {
+  const seat = mySeat();
+  const view = state.script?.combatView;
+  const df = view ? state.tokens.find((t) => t.uid === view.targetUid) : undefined;
+  if (!seat || !view || !df || df.side !== seat) return;
+  if (act === 'die' && dieIndex !== undefined) {
+    if (mirrorFocusSel.has(dieIndex)) mirrorFocusSel.delete(dieIndex);
+    else mirrorFocusSel.add(dieIndex);
+    render();
+    return;
+  }
+  if (act === 'use') {
+    send({ kind: 'focus', seat, uid: df.uid });
+    send({ kind: 'focusAnswer', seat, use: true });
+    mirrorFocusSel.clear();
+    render();
+    return;
+  }
+  if (act === 'pass') {
+    send({ kind: 'focusAnswer', seat, use: false });
+    mirrorFocusSel.clear();
+    render();
+    return;
+  }
+  if (act === 'keep') {
+    send({ kind: 'focusReroll', seat, indices: [], faces: [] });
+    mirrorFocusSel.clear();
+    render();
+    return;
+  }
+  if (act === 'reroll') {
+    const defense = view.defense ?? [];
+    const indices = [...mirrorFocusSel].filter((i) => defense[i]).sort((a, b) => a - b);
+    if (!indices.length) return;
+    const white = indices.filter((i) => defense[i].color === 'white').length;
+    const blue = indices.filter((i) => defense[i].color === 'blue').length;
+    mirrorFocusSel.clear();
+    void rollDefensePool(white, blue).then((faces) => {
+      // Server faces come back grouped by colour; hand them back to the
+      // chosen dice colour-by-colour so every index gets a face of its own
+      // die's colour.
+      const byColor: Record<string, { color: string; face: number }[]> = {};
+      for (const f of faces) (byColor[f.color] ??= []).push({ color: f.color, face: f.face });
+      const out = indices.map((i) => byColor[defense[i].color]?.shift() ?? { color: defense[i].color, face: 0 });
+      send({ kind: 'focusReroll', seat, indices, faces: out });
+      render();
+    });
+  }
 }
 
 // A tiny dev harness behind ?dev=1: seeds two demo squads and starts, so the

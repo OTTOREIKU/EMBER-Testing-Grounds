@@ -149,7 +149,16 @@ interface Ctx {
   // loop asks exactly once per attack rather than once per repaint.
   defenseCalled?: boolean;
   blackResult: string | null;
-  rerolls: Record<'attack' | 'defense', Record<Side, boolean>>;
+  // 4.4.1 step 5, Focus: after BOTH rolls are made, the attacker declares
+  // whether to spend 1 Link, then the defender declares, then the attacker
+  // rerolls any of its Attack dice, then the defender any of its Defense
+  // dice. One Link buys the whole subset. Mechs with Link only — a Drone or
+  // Projectile side auto-declines. Null until both rolls are in.
+  focus: {
+    stage: 'declareA' | 'declareD' | 'rerollA' | 'rerollD' | 'done';
+    attackerUse: boolean;
+    defenderUse: boolean;
+  } | null;
   // ZPA-35 Chef: each consumed Command Token exchanges one {Eye} on the ATTACK
   // roll for a {Heavy Hit} (4.15.4). Counted on the state rather than applied to
   // a rendered total, because the tally is derived again at the attack step and
@@ -210,7 +219,12 @@ export class AttackHelper {
     attack: { color: string; face: number }[] | null;
     defense: { color: string; face: number }[] | null;
     log: string[];
+    focus: { stage: string; attackerUse: boolean; defenderUse: boolean } | null;
   } | null) => void) | null = null;
+  // Whether this defender's Focus decisions belong to a player at another
+  // screen. Wired by the Match Centre; null in freeplay, where one player
+  // presses both sides' buttons in the printed order.
+  focusRemote: ((defender: Token) => boolean) | null = null;
   // The whole board, for aura reads (FAQ Q1: judged when the roll happens).
   tokens: (() => Token[]) | null = null;
   // Terrain, for the Hyena Radar's line of sight to the intercepted target.
@@ -321,7 +335,7 @@ export class AttackHelper {
       attackRoll: null,
       defenseRoll: null,
       blackResult: null,
-      rerolls: { attack: { s1: false, s2: false }, defense: { s1: false, s2: false } },
+      focus: null,
       eyeSwaps: 0,
       surplusRound: 0,
       carried: { heavy: 0, light: 0 },
@@ -386,7 +400,7 @@ export class AttackHelper {
       attackRoll: null,
       defenseRoll: null,
       blackResult: null,
-      rerolls: { attack: { s1: false, s2: false }, defense: { s1: false, s2: false } },
+      focus: null,
       eyeSwaps: 0,
       surplusRound: 0,
       carried: { heavy: 0, light: 0 },
@@ -447,6 +461,149 @@ export class AttackHelper {
     }
     if (statusCount(d.statuses, 'immobilized') > 0) blue = 0;
     return { white, blue };
+  }
+
+  // ---------- Focus (4.4.1 step 5) ----------
+  //
+  // After both rolls: the attacker declares, the defender declares, the
+  // attacker rerolls, the defender rerolls. 1 Link buys any subset of that
+  // side's OWN roll. Only a Mech with Link left may use it, so a Drone or
+  // Projectile side is walked past without a question.
+
+  private canFocus(side: 'attacker' | 'defender'): boolean {
+    const c = this.ctx!;
+    const t = side === 'attacker' ? c.attacker : c.defender;
+    const roll = side === 'attacker' ? c.attackRoll : c.defenseRoll;
+    // A Surplus round makes no Attack Roll (4.8), so the attacker's half of
+    // step 5 has nothing to act on.
+    if (side === 'attacker' && c.surplusRound > 0) return false;
+    return t.kind === 'mech' && (t.link ?? 0) > 0 && !!roll && roll.length > 0;
+  }
+
+  private beginFocus(): void {
+    const c = this.ctx!;
+    if (c.focus) return;
+    c.focus = { stage: 'declareA', attackerUse: false, defenderUse: false };
+    this.skipFocusStages();
+  }
+
+  // Walks past the declares that have no one eligible to answer them.
+  private skipFocusStages(): void {
+    const f = this.ctx!.focus!;
+    if (f.stage === 'declareA' && !this.canFocus('attacker')) f.stage = 'declareD';
+    if (f.stage === 'declareD' && !this.canFocus('defender')) f.stage = f.attackerUse ? 'rerollA' : 'done';
+  }
+
+  // A declare answered on THIS screen — the attacker always, and the defender
+  // in freeplay. The Link is spent here, through the command, so it travels
+  // and the squad panel keeps up.
+  private focusDeclare(side: 'attacker' | 'defender', use: boolean): void {
+    const c = this.ctx!;
+    const f = c.focus!;
+    const t = side === 'attacker' ? c.attacker : c.defender;
+    if (use) {
+      this.onCommand({ kind: 'focus', seat: t.side, uid: t.uid });
+      this.note(`${t.label} spends 1 Link to Focus (4.4.1): it may reroll any of its ${side === 'attacker' ? 'Attack' : 'Defense'} dice.`);
+    }
+    if (side === 'attacker') {
+      f.attackerUse = use;
+      f.stage = 'declareD';
+      this.skipFocusStages();
+    } else {
+      f.defenderUse = use;
+      f.stage = f.attackerUse ? 'rerollA' : use ? 'rerollD' : 'done';
+    }
+    this.onChanged();
+    this.render();
+  }
+
+  private finishFocusReroll(which: 'attack' | 'defense'): void {
+    const f = this.ctx!.focus!;
+    f.stage = which === 'attack' ? (f.defenderUse ? 'rerollD' : 'done') : 'done';
+    this.render();
+  }
+
+  // The remote defender's declare, carried by a focusAnswer command. Their own
+  // client already spent the Link, so this only advances the stage.
+  focusAnswered(use: boolean): void {
+    const c = this.ctx;
+    if (!c?.focus || c.focus.stage !== 'declareD') return;
+    c.focus.defenderUse = use;
+    this.note(use
+      ? `${c.defender.label} spends 1 Link to Focus (4.4.1): it may reroll any of its Defense dice.`
+      : `${c.defender.label} declines to Focus.`);
+    c.focus.stage = c.focus.attackerUse ? 'rerollA' : use ? 'rerollD' : 'done';
+    this.render();
+  }
+
+  // The remote defender's reroll: the dice they chose and the faces their
+  // server roll produced, riding in a focusReroll command the same way
+  // answerDefense carries the defence roll. Empty means they kept the roll.
+  focusRerolled(indices: number[], faces: { color: string; face: number }[]): void {
+    const c = this.ctx;
+    if (!c?.focus || c.focus.stage !== 'rerollD' || !c.defenseRoll) return;
+    indices.forEach((idx, k) => {
+      const d = c.defenseRoll![idx];
+      const nf = faces[k];
+      if (d && nf && d.color === nf.color) {
+        d.face = nf.face;
+        d.selected = false;
+      }
+    });
+    if (indices.length) this.note(`${c.defender.label} rerolls ${indices.length} ${indices.length === 1 ? 'die' : 'dice'} (Focus).`);
+    c.focus.stage = 'done';
+    this.render();
+  }
+
+  // The question the current Focus stage asks, rendered under the defence
+  // roll. Returns null once the flow is done and the Resolve button may show.
+  private focusBlock(): HTMLElement | null {
+    const c = this.ctx!;
+    const f = c.focus!;
+    if (f.stage === 'done') return null;
+    const wrap = document.createElement('div');
+    wrap.className = 'ah-focus';
+    const remoteD = !!(this.focusRemote && this.focusRemote(c.defender));
+    const declare = (side: 'attacker' | 'defender'): void => {
+      const t = side === 'attacker' ? c.attacker : c.defender;
+      const p = document.createElement('p');
+      p.className = 'ah-note';
+      p.textContent = `Focus (4.4.1-5): ${t.label} may spend 1 Link (${t.link ?? 0} left) to reroll any of its ${side === 'attacker' ? 'Attack' : 'Defense'} dice — ${side === 'attacker' ? 'the attacker declares first' : 'the defender declares second'}.`;
+      wrap.appendChild(p);
+      const use = document.createElement('button');
+      use.className = 'ah-primary';
+      use.textContent = 'Focus — spend 1 Link';
+      use.addEventListener('click', () => this.focusDeclare(side, true));
+      const pass = document.createElement('button');
+      pass.className = 'ah-alt';
+      pass.textContent = 'Pass';
+      pass.addEventListener('click', () => this.focusDeclare(side, false));
+      wrap.appendChild(use);
+      wrap.appendChild(pass);
+    };
+    if (f.stage === 'declareA') declare('attacker');
+    else if (f.stage === 'declareD') {
+      if (remoteD) {
+        const p = document.createElement('p');
+        p.className = 'ah-note';
+        p.textContent = `Focus (4.4.1-5): waiting for ${c.defender.label}'s player — they may spend 1 Link to reroll their Defense dice.`;
+        wrap.appendChild(p);
+      } else declare('defender');
+    } else if (f.stage === 'rerollA') {
+      const p = document.createElement('p');
+      p.className = 'ah-note';
+      p.textContent = `${c.attacker.label} Focused: select any Attack dice below, then reroll them.`;
+      wrap.appendChild(p);
+      wrap.appendChild(this.rollView(c.attackRoll ?? [], 'attack'));
+    } else if (f.stage === 'rerollD') {
+      const p = document.createElement('p');
+      p.className = 'ah-note';
+      p.textContent = remoteD
+        ? `Waiting for ${c.defender.label}'s player to reroll their chosen Defense dice.`
+        : `${c.defender.label} Focused: select any Defense dice above, then reroll them.`;
+      wrap.appendChild(p);
+    }
+    return wrap;
   }
 
   // Every result-deciding roll in this file goes through here. In a local game
@@ -717,6 +874,7 @@ export class AttackHelper {
       attack: c.attackRoll?.map((d) => ({ color: d.color, face: d.face })) ?? null,
       defense: c.defenseRoll?.map((d) => ({ color: d.color, face: d.face })) ?? null,
       log: c.log.slice(-5).map((l) => l.replace(/<[^>]*>/g, '')),
+      focus: c.focus ? { stage: c.focus.stage, attackerUse: c.focus.attackerUse, defenderUse: c.focus.defenderUse } : null,
     });
     const el = document.createElement('div');
     el.className = 'attack-helper';
@@ -1179,20 +1337,31 @@ export class AttackHelper {
     }
     const rr = document.createElement('span');
     rr.className = 'rerolls';
-    for (const side of SQUAD_ORDER) {
-      const b = document.createElement('button');
-      b.textContent = `${squadLabel(side)} reroll`;
-      b.disabled = c.rerolls[which][side];
-      b.addEventListener('click', () => {
+    // The Focus reroll (4.4.1-5) replaces the old free-form squad buttons: it
+    // appears only at that side's reroll stage, after the Link was spent at
+    // the declare step, and rerolls whatever dice are selected above. The
+    // remote defender's copy of these buttons lives in their combat mirror.
+    const f = c.focus;
+    const rerollStage = which === 'attack' ? 'rerollA' : 'rerollD';
+    const drivenHere = which === 'attack' || !(this.focusRemote && this.focusRemote(c.defender));
+    if (f && f.stage === rerollStage && drivenHere) {
+      const go = document.createElement('button');
+      go.textContent = 'Focus: reroll selected';
+      go.title = 'The Link is already spent — reroll every selected die above.';
+      go.addEventListener('click', () => {
         if (!roll.some((d) => d.selected)) return;
-        c.rerolls[which][side] = true;
         void (async () => {
           this.spinFor = which;
           await this.reroll(roll, 'Focus reroll');
-          this.render();
+          this.finishFocusReroll(which);
         })();
       });
-      rr.appendChild(b);
+      rr.appendChild(go);
+      const keep = document.createElement('button');
+      keep.textContent = 'Keep the roll';
+      keep.title = 'End the Focus without rerolling anything.';
+      keep.addEventListener('click', () => this.finishFocusReroll(which));
+      rr.appendChild(keep);
     }
     // The Whistle's Aura is a SECOND source of rerolls, not a cheaper Focus: it
     // is funded by a nearby Ally Mech's Command Token rather than by Link, so it
@@ -1402,14 +1571,22 @@ export class AttackHelper {
       sum.className = 'ah-sum';
       sum.textContent = `Effective: ${def.defense ?? 0}× Defense, ${def.dodge ?? 0}× Dodge`;
       wrap.appendChild(sum);
-      const next = document.createElement('button');
-      next.className = 'ah-primary';
-      next.textContent = 'Resolve ▸';
-      next.addEventListener('click', () => {
-        c.step = 'resolve';
-        this.render();
-      });
-      wrap.appendChild(next);
+      // 4.4.1 step 5 sits between the rolls and the resolution: the Focus
+      // questions are asked in the printed order, and Resolve appears only
+      // once the flow has run dry.
+      if (!c.focus) this.beginFocus();
+      const focusUi = this.focusBlock();
+      if (focusUi) wrap.appendChild(focusUi);
+      else {
+        const next = document.createElement('button');
+        next.className = 'ah-primary';
+        next.textContent = 'Resolve ▸';
+        next.addEventListener('click', () => {
+          c.step = 'resolve';
+          this.render();
+        });
+        wrap.appendChild(next);
+      }
     }
     return wrap;
   }
@@ -1428,10 +1605,7 @@ export class AttackHelper {
     const duelEl = this.duelView(duel);
     wrap.appendChild(duelEl);
     const summary = document.createElement('div');
-    summary.innerHTML = `${text.map((t) => `<p class="ah-sum">${t}</p>`).join('')}
-      <p class="dim">${c.explosion
-        ? 'Focus on an Explosion is defender-only: the defender may spend 1 Link to reroll defence dice. Use the reroll buttons in the previous step, then adjust Link in the Squads tab.'
-        : 'Focus: either side may spend 1 Link to reroll dice, attacker first. Use the reroll buttons in the previous steps, then adjust Link in the Squads tab.'}</p>`;
+    summary.innerHTML = text.map((t) => `<p class="ah-sum">${t}</p>`).join('');
     wrap.appendChild(summary);
     linkMechanics(wrap, this.data.mechanics);
     window.setTimeout(() => this.playDuel(duelEl), 0);
@@ -1506,7 +1680,10 @@ export class AttackHelper {
           c.attackRoll = null;
           c.eyeSwaps = 0;
           c.defenseRoll = null;
-          c.rerolls = { attack: { s1: false, s2: false }, defense: { s1: false, s2: false } };
+          // A fresh Defense Roll re-opens Focus for the DEFENDER alone: the
+          // Surplus round makes no Attack Roll, so the attacker's half of
+          // step 5 has nothing to act on and skips itself.
+          c.focus = null;
           this.note(
             `${surplus} un-offset icon${surplus === 1 ? '' : 's'} carry over as Surplus Damage. No Attack Roll is made, and the defender gets no Protection or Parry dice (4.8).`,
           );
