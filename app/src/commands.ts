@@ -2125,6 +2125,7 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
       l.splice(at, 1);
       from.statuses = l;
       to.statuses = [...(to.statuses ?? []), 'commandUsed'];
+      to.commandedBy = from.uid;
       syncCommandPool(state);
       return;
     }
@@ -2149,6 +2150,9 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
             l.splice(l.lastIndexOf('command'), 1);
             issuer.statuses = l;
             t.statuses = [...(t.statuses ?? []), 'commandUsed'];
+            // Remembered so "when receiving Command from THIS Mech" can be
+            // answered later — the token itself carries no origin.
+            t.commandedBy = issuer.uid;
           }
           syncCommandPool(state);
         }
@@ -2497,6 +2501,9 @@ export function clearDroneCommands(state: GameState): void {
 export function clearCommandTokens(state: GameState): void {
   for (const t of state.tokens) {
     t.statuses = (t.statuses ?? []).filter((s) => !COMMAND_FACES.has(s));
+    // The record of who issued it goes with the token it described. Leaving it
+    // behind would let next round's reads answer from a Command that is gone.
+    delete t.commandedBy;
   }
   state.commandTokens = { s1: 0, s2: 0 };
 }

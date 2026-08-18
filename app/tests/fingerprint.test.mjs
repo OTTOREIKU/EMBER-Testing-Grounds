@@ -60,6 +60,19 @@ const dialled = board();
 dialled.tokens[0].timing = 'firing';
 dialled.tokens[1].timing = 'melee';
 check('a Timing Dial is not part of it', boardFingerprint(dialled), boardFingerprint(board()));
+
+// Who Commanded a Drone MUST be hashed. It is not cosmetic: the A2 Data Link
+// lets a Commanded Drone perform Automatic Actions and the M2 lets it move a
+// grid first, so check() reads it — and a drift would have one client offering
+// an Action the other refuses, which is exactly what this hash is for.
+const commanded = board();
+commanded.tokens[1].commandedBy = 1;
+check('who Commanded a unit IS part of it', boardFingerprint(commanded) !== boardFingerprint(board()), true);
+const commandedElsewhere = board();
+commandedElsewhere.tokens[1].commandedBy = 2;
+check('and a different issuer hashes differently',
+  boardFingerprint(commanded) !== boardFingerprint(commandedElsewhere), true);
+
 // RE-PINNED 2026-08-11, deliberately the other way round. The original pin
 // said a hand of Tactics Cards is never fingerprinted, "never sent to the
 // other client" — which stopped being true when setTactics became a mirrored

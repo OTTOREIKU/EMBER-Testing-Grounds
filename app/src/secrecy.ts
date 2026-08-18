@@ -89,6 +89,10 @@ export function boardFingerprint(state: GameState): string {
       [...(t.charge ?? [])].sort(),
       [...(t.expiring ?? [])].sort(),
       t.droneBackpack ?? null,
+      // Who Commanded this unit. Rules-bearing: the A2/M2 Data Links change
+      // what a Commanded Drone may do, so a drift here would have one client
+      // offering an Action the other refuses.
+      t.commandedBy ?? null,
       t.mech ? keyed(t.mech as unknown as Record<string, unknown>) : null,
       // Repaired Tokens are commanded (repairPart/breakRepaired) and READ BACK
       // by check() on both, so a drift makes one client refuse a repair the

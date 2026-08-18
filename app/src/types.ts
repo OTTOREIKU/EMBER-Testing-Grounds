@@ -148,6 +148,13 @@ export interface Token {
   // while its Actions come back to life, and a hit removes it outright with
   // the attack redirecting to the Core (FAQ J23).
   repairedSlots?: string[];
+  // Which Mech issued the Command this unit is holding. A Command Token records
+  // nothing about where it came from once it is on the Drone, but several cards
+  // are worded "when receiving Command from THIS Mech" — the A2 Data Link lets
+  // the Drone perform Automatic Actions, the M2 lets it move a grid first — so
+  // the issuer has to be remembered. Cleared when the End Phase sweeps the
+  // tokens, and rules-bearing, so boardFingerprint carries it.
+  commandedBy?: number;
   stance: Stance;
   link?: number;
   timing?: Timing;

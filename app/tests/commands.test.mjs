@@ -594,6 +594,32 @@ const wc1 = wcmd();
 C.apply(data, wc1, dg());
 check('a Command designation spends the token', [wc1.commandTokens.s1, wc1.script.commanded], [1, [2]]);
 check('and the turn alternates', wc1.script.turn, 's2');
+
+// ---------- who Commanded this Drone ----------
+//
+// A Command Token on a Drone records nothing about where it came from, but
+// several cards are worded "when receiving Command from THIS Mech" — the A2
+// Data Link (Automatic Actions) and the M2 (a grid of movement first). So the
+// issuer is remembered on the Drone, cleared when the End Phase sweeps the
+// tokens, and carried in the board fingerprint because check() will read it.
+
+check('the Drone remembers which Mech Commanded it', wc1.tokens[1].commandedBy, 1);
+// fromUid names the Mech explicitly; without one the fullest Mech pays.
+const wcmdNamed = wcmd();
+wcmdNamed.tokens.push({ ...wcmdNamed.tokens[0], uid: 5, statuses: ['command'] });
+C.apply(data, wcmdNamed, dg({ fromUid: 5 }));
+check('and it remembers the one that was NAMED', wcmdNamed.tokens.find((t) => t.uid === 2).commandedBy, 5);
+// Command Coordination hands one out mid-round; same record.
+const wcmdCoord = wcmd();
+C.apply(data, wcmdCoord, { kind: 'coordinateCommand', seat: 's1', uid: 1, targetUid: 2 });
+check('a Coordinated Command is remembered too', wcmdCoord.tokens[1].commandedBy, 1);
+// 3.7.2 takes every Command Token in the End Phase, and the record goes with it.
+const wcmdSweep = wcmd();
+C.apply(data, wcmdSweep, dg());
+check('the record exists before the sweep', wcmdSweep.tokens[1].commandedBy, 1);
+C.clearCommandTokens(wcmdSweep);
+check('and is gone after it', wcmdSweep.tokens[1].commandedBy, undefined);
+
 const wfree2 = wcmd();
 wfree2.commandTokens = { s1: 0, s2: 1 };
 wfree2.script.freeCommand = [2];
