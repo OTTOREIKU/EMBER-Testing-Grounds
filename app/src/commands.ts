@@ -2,7 +2,7 @@ import type { CombatView, Facing, GameState, MechLoadout, Opportunity, PartSlot,
 import { addStatus, ageTokens, newOpportunity, PHASES, statusCount, STATUSES, TIMINGS } from './types';
 import type { GameData } from './data';
 import { unfoldsInto } from './data';
-import { commandGeneration, blinkTargets, isPositionSwap, electronicOrigins, loanedParts, unfoldToken, extrasFor, consumesCharge, electronicValue, freehandSlots, interceptCapacity, makeDroneToken, makeMechToken, maxLink, pilotCard, projectileDelivery, tokenCards } from './units';
+import { hasFlexibleTiming, commandGeneration, blinkTargets, isPositionSwap, electronicOrigins, loanedParts, unfoldToken, extrasFor, consumesCharge, electronicValue, freehandSlots, interceptCapacity, makeDroneToken, makeMechToken, maxLink, pilotCard, projectileDelivery, tokenCards } from './units';
 import { canActivate, canManeuver, canOverload, canPerform, spendAction, spendActivation, spendManeuver, spendOverload } from './ticks';
 import { tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { battlefieldLocked, deploymentComplete, deployTurn, firstPlayerFrom, newSetup, normaliseSetup, tasksLocked } from './setup';
@@ -968,7 +968,9 @@ function checkActed(
       }
       // partKey names which Part the Action came from, so the same Action
       // borrowed from two Tarantulas is two Parts, not one repeated (FAQ O7).
-      return fromVerdict(canPerform(o, a, cmd.partKey || a.id));
+      return fromVerdict(canPerform(o, a, cmd.partKey || a.id, {
+        flexible: hasFlexibleTiming(data, state.tokens, t),
+      }));
     }
     case 'overload': {
       const ids = new Set(data.overload.map((g) => g.actionId));
@@ -1873,7 +1875,7 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
       const o = oppOf(state, cmd.uid);
       if (a && o && sc) {
         sc.opp = t.kind === 'mech'
-          ? lockStance(t, spendAction(o, a, cmd.partKey || a.id))
+          ? lockStance(t, spendAction(o, a, cmd.partKey || a.id, { flexible: hasFlexibleTiming(data, state.tokens, t) }))
           : spendActivation(o, a);
       }
       return;

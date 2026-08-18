@@ -79,6 +79,12 @@ const tmp = new URL('./_commands.slice.ts', import.meta.url);
 // units.ts, whose import graph drags in the whole app. The mirrors only feed
 // fixtures these tests control.
 const stubs = `
+// Flexible Timing reaches a Mech from an ally's AURA, which needs the whole
+// board. These fixtures have no aura sources, so the honest stub is "never" —
+// the adjacency rule itself is covered properly in ticks.test.mjs.
+export function hasFlexibleTiming(_data: any, _tokens: any, _t: any): boolean {
+  return false;
+}
 export function tokenCards(data: any, t: any): any[] {
   if (t.kind === 'mech') {
     return Object.entries(t.mech ?? {}).map(([slot, id]) => ({ slot, card: data.byId.get(id) })).filter((x: any) => x.card);

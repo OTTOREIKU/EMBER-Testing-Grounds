@@ -7,7 +7,13 @@ const src = readFileSync(new URL('../src/ticks.ts', import.meta.url), 'utf8');
 const types = readFileSync(new URL('../src/types.ts', import.meta.url), 'utf8');
 const shapes = types.slice(types.indexOf('export function newOpportunity'), types.indexOf('export interface ScriptState'));
 if (!shapes) throw new Error('could not locate the opportunity helpers in types.ts');
-const body = src.replace(/^import[^\n]*\n/m, 'type CardAction = any;\ntype Timing = any;\ntype ExtraTick = any;\ntype Opportunity = any;\n') + shapes;
+// EVERY import goes, not just the first: ticks.ts also pulls TIMINGS in as a
+// real value for the Flexible Timing adjacency, and a surviving import line
+// would try to resolve './types' from the tests directory.
+const timings = types.slice(types.indexOf('export const TIMINGS'), types.indexOf('export type TokenShape'));
+if (!timings) throw new Error('could not locate TIMINGS in types.ts');
+const stubs = 'type CardAction = any;\ntype Timing = any;\ntype ExtraTick = any;\ntype Opportunity = any;\ntype TimingDef = any;\n';
+const body = src.replace(/^import[^\n]*\n/gm, '') + stubs + timings + shapes;
 const tmp = new URL('./_ticks.slice.ts', import.meta.url);
 writeFileSync(tmp, body);
 const T = await import(tmp.href);
@@ -47,6 +53,54 @@ check('a new opportunity has three ticks', T.ticksLeft(fresh()), 3);
 // The Starting Action must match the dial; later Actions are unrestricted.
 check('the starting action must match the dial', T.canPerform(fresh(), melee.s).ok, false);
 check('a matching starting action is fine', T.canPerform(fresh(), fire.s).ok, true);
+
+// ---------- Flexible Timing (keyword 灵活时机) ----------
+//
+// "This Action can be used in ADJACENT timings as a Starting Action. For
+// example, a Movement Action with this Keyword can be used as Starting Action
+// in Firing/Movement/Tactical Timing." The dial order is the printed one —
+// swift, melee, projectile, firing, movement, tactical — and it does not wrap.
+// The grant reaches a Mech from an ally's aura, so ticks.ts is told about it
+// rather than reading a board it never sees.
+
+const flex = { flexible: true };
+const moving = act('mv1', 'Moving', 's');
+const tactic = act('tc1', 'Tactic', 's');
+const swiftAct = act('sw1', 'Swift', 's');
+
+check('adjacency is symmetrical', T.timingsAdjacent('movement', 'firing'), true);
+check('and the glossary example holds both ways', T.timingsAdjacent('movement', 'tactical'), true);
+check('a timing is not adjacent to itself', T.timingsAdjacent('firing', 'firing'), false);
+check('two steps apart is not adjacent', T.timingsAdjacent('firing', 'tactical'), false);
+check('the dial does not wrap round', T.timingsAdjacent('tactical', 'swift'), false);
+
+// The rulebook's own example: dial on Firing, a Movement Action opens.
+check('without the aura a mismatched start is refused',
+  T.canPerform(fresh('firing'), moving).ok, false);
+check('Flexible Timing opens the neighbouring timing',
+  T.canPerform(fresh('firing'), moving, moving.id, flex).ok, true);
+check('and the other neighbour too',
+  T.canPerform(fresh('tactical'), moving, moving.id, flex).ok, true);
+check('but not a timing two steps away',
+  T.canPerform(fresh('firing'), tactic, tactic.id, flex).ok, false);
+check('and it says why rather than repeating the plain refusal',
+  T.canPerform(fresh('firing'), tactic, tactic.id, flex).why.includes('either side'), true);
+check('it never wraps Tactical round to Swift',
+  T.canPerform(fresh('tactical'), swiftAct, swiftAct.id, flex).ok, false);
+check('a matching Action is unaffected by the grant',
+  T.canPerform(fresh('firing'), fire.s, fire.s.id, flex).ok, true);
+
+// It is a STARTING Action rule, so once the Opportunity is under way the dial
+// no longer gates anything and the grant is irrelevant either way.
+const started = T.spendAction(fresh('firing'), fire.s);
+check('after the Starting Action the dial stops mattering',
+  T.canPerform(started, moving).ok, true);
+
+// The spend must agree with the check that allowed it, or an Action let through
+// by the aura would be re-read as needing an Extra Tick.
+const flexStart = T.spendAction(fresh('firing'), moving, moving.id, flex);
+check('a flexed Starting Action spends a real Tick, not an Extra',
+  [flexStart.started, T.ticksLeft(flexStart)], [true, 2]);
 const afterStart = T.spendAction(fresh(), fire.s);
 check('a later action ignores the dial', T.canPerform(afterStart, melee.s).ok, true);
 check('one short action leaves two ticks', T.ticksLeft(afterStart), 2);

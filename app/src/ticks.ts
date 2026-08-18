@@ -1,4 +1,17 @@
 import type { CardAction, ExtraTick, Opportunity, Timing } from './types';
+import { TIMINGS } from './types';
+
+// Flexible Timing (keyword 灵活时机): "This Action can be used in ADJACENT
+// timings as a Starting Action. For example, a Movement Action with this
+// Keyword can be used as Starting Action in Firing/Movement/Tactical Timing."
+// Adjacency is the printed order of the dial, and it does NOT wrap: the
+// example names exactly the two neighbours, and nothing in the glossary joins
+// Tactical back round to Swift.
+export function timingsAdjacent(a: Timing, b: Timing): boolean {
+  const i = TIMINGS.findIndex((x) => x.id === a);
+  const j = TIMINGS.findIndex((x) => x.id === b);
+  return i >= 0 && j >= 0 && Math.abs(i - j) === 1;
+}
 
 // ---------- tick costs (rulebook 3.4.5) ----------
 
@@ -126,7 +139,14 @@ export function actionIdOf(performedKey: string): string {
 // itself. Two Carrier Tarantulas lending the same Backpack lend two distinct
 // Parts, so a Mech may take that Action once from each without it counting as
 // repeated execution (FAQ O7) - the loan's key carries the lender's uid.
-export function canPerform(o: Opportunity, a: CardAction, key: string = a.id): TickVerdict {
+export function canPerform(
+  o: Opportunity,
+  a: CardAction,
+  key: string = a.id,
+  // Granted by an ally's aura (Tactical Coordination and friends), which only
+  // the caller can see — this module is handed an Opportunity, never a board.
+  opts: { flexible?: boolean } = {},
+): TickVerdict {
   const len = lengthOf(a);
   if (!len) return { ok: false, why: 'This is not an Action a Mech performs with Ticks.' };
   const cost = TICK_COST[len];
@@ -151,7 +171,14 @@ export function canPerform(o: Opportunity, a: CardAction, key: string = a.id): T
   // The first Action of an Opportunity is the Starting Action, and its Action
   // Type must match the Timing on the dial (3.4.3).
   if (!o.started && o.timing && timing !== o.timing) {
-    return { ok: false, why: `The Starting Action must match the dial. This Mech is set to ${o.timing}, and this is a ${timing ?? 'typeless'} Action.` };
+    const flexed = opts.flexible && !!timing && timingsAdjacent(timing, o.timing);
+    if (!flexed) {
+      return {
+        ok: false,
+        why: `The Starting Action must match the dial. This Mech is set to ${o.timing}, and this is a ${timing ?? 'typeless'} Action.`
+          + (opts.flexible ? ' Flexible Timing only reaches the timings either side of the dial.' : ''),
+      };
+    }
   }
   // The shared Charge Action is the one exception to once-only: each use
   // Charges a different Part, so they count as separate Actions (FAQ H6/H7).
@@ -230,10 +257,18 @@ export function spendActivation(o: Opportunity, a: CardAction): Opportunity {
   };
 }
 
-export function spendAction(o: Opportunity, a: CardAction, key: string = a.id): Opportunity {
+export function spendAction(
+  o: Opportunity,
+  a: CardAction,
+  key: string = a.id,
+  // Threaded through so the spend agrees with the check that allowed it: an
+  // Action let through by Flexible Timing must not then be read as needing an
+  // Extra Tick it never used.
+  opts: { flexible?: boolean } = {},
+): Opportunity {
   const len = lengthOf(a);
   if (!len) return o;
-  const verdict = canPerform(o, a, key);
+  const verdict = canPerform(o, a, key, opts);
   if (verdict.extra) {
     // A Movement Action is Movement however it is paid for, so the Extra Tick
     // path forfeits Stationary too (the keyword counts any Movement).

@@ -737,6 +737,15 @@ export function auraEffectsOn(data: GameData, tokens: Token[], t: Token): Set<st
   return out;
 }
 
+// Flexible Timing arrives ONLY from an ally's aura — no card prints it for its
+// own Actions (checked across the whole card database: the three cards whose
+// text names the keyword are the three aura sources themselves). A unit is its
+// own ally (FAQ Q4), so a Mech carrying Tactical Coordination flexes its own
+// Starting Action as well as its neighbours'.
+export function hasFlexibleTiming(data: GameData, tokens: Token[], t: Token): boolean {
+  return auraEffectsOn(data, tokens, t).has('flexible_timing');
+}
+
 // An action that hands out Repaired Tokens or mends Damage, read off the
 // printed text (SH-15 Damage Control: "give one destroyed Part of this mech a
 // Repaired marker, or remove one Damaged marker from a Part").

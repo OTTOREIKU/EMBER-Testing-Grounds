@@ -36,6 +36,12 @@ const timings = types.slice(types.indexOf('export const PHASES'), types.indexOf(
 const statuses = types.slice(types.indexOf('export function hexagonIds'), types.indexOf('export interface RoundState'));
 const tmp = new URL('./_simgame.slice.ts', import.meta.url);
 const stubs = `
+// Flexible Timing reaches a Mech from an ally's AURA, which needs the whole
+// board. These fixtures have no aura sources, so the honest stub is "never" —
+// the adjacency rule itself is covered properly in ticks.test.mjs.
+export function hasFlexibleTiming(_data: any, _tokens: any, _t: any): boolean {
+  return false;
+}
 export function tokenCards(data: any, t: any): any[] {
   if (t.kind === 'mech') {
     return Object.entries(t.mech ?? {}).map(([slot, id]) => ({ slot, card: data.byId.get(id) })).filter((x: any) => x.card);

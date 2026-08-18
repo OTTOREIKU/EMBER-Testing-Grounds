@@ -5,7 +5,7 @@ import { cardName, squadLabel } from './data';
 import { bindTips, linkMechanics } from './inspector';
 import { choiceDialog } from './dialog';
 import { PHASES, PHASE_INFO } from './tracker';
-import { pilotCard, coordinationFor, coordinationOnOpportunityEnd, extrasFor, isSilentAction, type ActionWorld, canActivateCamo, type ExtraActivation, extraActivationOf, guidedActions, initiativeFor, maneuverRange, maxLink, SLOT_LABEL, tokenCards } from './units';
+import { hasFlexibleTiming, pilotCard, coordinationFor, coordinationOnOpportunityEnd, extrasFor, isSilentAction, type ActionWorld, canActivateCamo, type ExtraActivation, extraActivationOf, guidedActions, initiativeFor, maneuverRange, maxLink, SLOT_LABEL, tokenCards } from './units';
 import { canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed } from './ticks';
 import { asterKey, clearDroneCommands, perform, readyCommands, seedCommandTokens } from './commands';
 import { askIssuer, asterBlockers, offerCoordination, runAster } from './commandpick';
@@ -1139,6 +1139,13 @@ export class PlayGuide {
 
   // ---------- action phase (rulebook 3.4) ----------
 
+
+  // The board decides this, not the card: Flexible Timing reaches this Mech
+  // from an ally's aura, so it has to be re-read wherever the Tick verdict is.
+  private flexTiming(t: Token): boolean {
+    return hasFlexibleTiming(this.data, this.state?.tokens ?? [], t);
+  }
+
   private tickActions(t: Token): { action: CardAction; label: string; partKey: string; note?: string; blocked?: string }[] {
     const out: { action: CardAction; label: string; partKey: string; note?: string; blocked?: string }[] = [];
     // An Extra Opportunity cannot hand out another one, or two Coordinating
@@ -1250,7 +1257,7 @@ export class PlayGuide {
     const range = maneuverRange(this.data, t);
     const rows = this.tickActions(t)
       .map((r) => {
-        const v = canPerform(o, r.action, r.partKey);
+        const v = canPerform(o, r.action, r.partKey, { flexible: this.flexTiming(t) });
         const why = r.blocked ?? (v.ok ? undefined : v.why);
         const cost = costOf(r.action)!;
         const len = LENGTH_NAME[lengthOf(r.action)!];
@@ -1543,7 +1550,7 @@ export class PlayGuide {
     // Tarantula is lending the Part (FAQ O7).
     const row = this.tickActions(t).find((r) => r.partKey === actionId) ?? this.tickActions(t).find((r) => r.action.id === actionId);
     if (!row) return;
-    const why = row.blocked ?? (canPerform(o, row.action, row.partKey).ok ? undefined : canPerform(o, row.action, row.partKey).why);
+    const why = row.blocked ?? (canPerform(o, row.action, row.partKey, { flexible: this.flexTiming(t) }).ok ? undefined : canPerform(o, row.action, row.partKey, { flexible: this.flexTiming(t) }).why);
     if (why && this.warn !== why) {
       this.warn = why;
       this.render();
