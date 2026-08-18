@@ -1870,5 +1870,18 @@ C.apply(data, wEvade, { kind: 'meleeEvade', seat: 's2' });
 check('apply changes no board state', JSON.stringify(wEvade), beforeEvade);
 
 
+// ---------- Dodge Enhancement travels the same way ----------
+//
+// Its card-mate, and deliberately the same shape: a defender-side declaration
+// the attacker's window consumes, with the Token spent by its own command.
+
+check('a Dodge Enhancement needs a running game',
+  C.check(data, { tokens: [], round: { n: 1, phase: 2, firstPlayer: 's1' } }, { kind: 'dodgeEnhance', seat: 's2' }).ok, false);
+check('and passes with one', C.check(data, wfoc, { kind: 'dodgeEnhance', seat: 's2' }).ok, true);
+const wDodgeDie = world([mech(1, 's1')], 2, opp(1));
+const beforeDodgeDie = JSON.stringify(wDodgeDie);
+C.apply(data, wDodgeDie, { kind: 'dodgeEnhance', seat: 's2' });
+check('apply changes no board state', JSON.stringify(wDodgeDie), beforeDodgeDie);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

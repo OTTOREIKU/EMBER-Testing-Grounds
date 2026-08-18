@@ -85,6 +85,7 @@ export interface HudCtx {
   mirrorFocus(act: 'use' | 'pass' | 'die' | 'reroll' | 'keep' | 'kc', dieIndex?: number): void;
   mirrorDesignate(slot: string): void;
   mirrorMeleeEvade(): void;
+  mirrorDodgeEnhance(): void;
   // Opens the §4.4 pipeline on a target the player has just picked. The mode
   // decides what the defender may claim: an ordinary attack reads Terrain and
   // Unit Protection off the board, an Interception grants none and needs no
@@ -4240,6 +4241,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
   on('[data-act="kcarmor"]', () => ctx.mirrorFocus('kc'));
   on('[data-desslot]', (el) => ctx.mirrorDesignate(el.dataset.desslot!));
   on('[data-act="meleeevade"]', () => ctx.mirrorMeleeEvade());
+  on('[data-act="dodgeenhance"]', () => ctx.mirrorDodgeEnhance());
   on('[data-fdie]', (el) => ctx.mirrorFocus('die', Number(el.dataset.fdie)));
   on('[data-act="rolldefense"]', (el) => {
     const call = ensureScript(s).combat;

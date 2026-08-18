@@ -209,6 +209,7 @@ export type Command =
   | { kind: 'focusAnswer'; seat: Side; use: boolean }
   | { kind: 'designateHit'; seat: Side; slot: string }
   | { kind: 'meleeEvade'; seat: Side }
+  | { kind: 'dodgeEnhance'; seat: Side }
   | { kind: 'focusReroll'; seat: Side; indices: number[]; faces: { color: string; face: number }[] }
   // KC Armor (4.10): the remote defender's declare that its consumed Charge
   // Token turns the Defense Roll's Lightning into Defense. The Charge itself
@@ -324,7 +325,7 @@ type TableKind =
   | 'clearCounterRoll'
   | 'setMode' | 'handOver' | 'setStrict' | 'commitTimings' | 'revealTimings' | 'importSquad'
   | 'configureTable' | 'startMatch' | 'endMatch' | 'pickSecondary' | 'setTactics' | 'setReady' | 'designateTask'
-  | 'callDefense' | 'answerDefense' | 'clearDefense' | 'setCombatView' | 'focusAnswer' | 'focusReroll' | 'kcArmor' | 'designateHit' | 'meleeEvade'
+  | 'callDefense' | 'answerDefense' | 'clearDefense' | 'setCombatView' | 'focusAnswer' | 'focusReroll' | 'kcArmor' | 'designateHit' | 'meleeEvade' | 'dodgeEnhance'
   | 'setRollbackCatalog' | 'rollbackRequest' | 'rollbackAnswer';
 const TABLE_KINDS = new Set<Command['kind']>([
   'advancePhase', 'setPhase', 'resetRounds', 'adjustCommandTokens', 'passTurn', 'markEndStep', 'award',
@@ -334,7 +335,7 @@ const TABLE_KINDS = new Set<Command['kind']>([
   'clearCounterRoll',
   'setMode', 'handOver', 'setStrict', 'commitTimings', 'revealTimings', 'importSquad',
   'configureTable', 'startMatch', 'endMatch', 'pickSecondary', 'setTactics', 'setReady', 'designateTask',
-  'callDefense', 'answerDefense', 'clearDefense', 'setCombatView', 'focusAnswer', 'focusReroll', 'kcArmor', 'designateHit', 'meleeEvade',
+  'callDefense', 'answerDefense', 'clearDefense', 'setCombatView', 'focusAnswer', 'focusReroll', 'kcArmor', 'designateHit', 'meleeEvade', 'dodgeEnhance',
   'setRollbackCatalog', 'rollbackRequest', 'rollbackAnswer',
 ]);
 
@@ -346,7 +347,7 @@ const ATTRIBUTED = new Set<Command['kind']>([
   'advancePhase', 'setPhase', 'resetRounds', 'markEndStep', 'award',
   // Who asked and who answered is the whole record of a rollback, so both are
   // stamped with the sender's own seat like every other attributed command.
-  'callDefense', 'answerDefense', 'clearDefense', 'setCombatView', 'focusAnswer', 'focusReroll', 'kcArmor', 'designateHit', 'meleeEvade',
+  'callDefense', 'answerDefense', 'clearDefense', 'setCombatView', 'focusAnswer', 'focusReroll', 'kcArmor', 'designateHit', 'meleeEvade', 'dodgeEnhance',
   'setRollbackCatalog', 'rollbackRequest', 'rollbackAnswer',
   'lockMap', 'acceptRoll', 'lockDials', 'finishDeployment',
   'queueIntercepts', 'clearIntercepts', 'placeSmoke', 'removeSmoke', 'dissipateSmoke',
@@ -514,7 +515,8 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       if (typeof cmd.slot !== 'string' || !cmd.slot) return no('That is not a Part.');
       return ok;
     }
-    case 'meleeEvade': {
+    case 'meleeEvade':
+    case 'dodgeEnhance': {
       if (!state.script) return no('There is no game running.');
       return ok;
     }
@@ -1573,7 +1575,7 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
     if (sc) sc.combat = null;
     return;
   }
-  if (cmd.kind === 'focusAnswer' || cmd.kind === 'focusReroll' || cmd.kind === 'kcArmor' || cmd.kind === 'designateHit' || cmd.kind === 'meleeEvade') {
+  if (cmd.kind === 'focusAnswer' || cmd.kind === 'focusReroll' || cmd.kind === 'kcArmor' || cmd.kind === 'designateHit' || cmd.kind === 'meleeEvade' || cmd.kind === 'dodgeEnhance') {
     // Consumed by the attacking client's combat window as the command is
     // observed, the same way answerDefense is — the board itself carries
     // nothing for them to change (KC Armor's Charge spend travels as its own

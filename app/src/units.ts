@@ -809,6 +809,27 @@ export function meleeEvasionReady(data: GameData, t: Token): boolean {
   return false;
 }
 
+// 闪避强化 Dodge Enhancement (ZYBP-302): "When this Mech is hit, may
+// spent 1 Command Token, make each {Dodge} offset 1 Attack die." Unlike its
+// card-mate Melee Evasion this carries no Parry condition — any hit will do —
+// so the only gates are the face-up Command Token and a live Part.
+//
+// The zh line drops the trigger entirely ({闪避}可抵消1枚攻击骰), so it is
+// matched on the effect, not on a condition it does not print.
+export function dodgeEnhanceReady(data: GameData, t: Token): boolean {
+  if (t.kind !== 'mech') return false;
+  if (!(t.statuses ?? []).includes('command')) return false;
+  for (const { slot, card } of tokenCards(data, t)) {
+    if ((t.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
+    for (const a of card.actions ?? []) {
+      const en = a.description?.en ?? '';
+      const zh = a.description?.zh ?? '';
+      if (/\{?Dodge\}?\s*offset[s]?\s*1\s*Attack\s*die/i.test(en) || /闪避\}?可抵消1枚攻击骰/.test(zh)) return true;
+    }
+  }
+  return false;
+}
+
 export interface CommandRider {
   // A2 Data Link: the Commanded Drone may perform Automatic Actions, which the
   // Command Phase otherwise refuses (3.2.2 / 3.5).

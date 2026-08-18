@@ -5,7 +5,7 @@ import { linkMechanics } from './inspector';
 import { SQUAD_ORDER, squadLabel } from './data';
 import type { Card, CardAction, DiceData, DiceIcon, DieColor, GameRuleEffect, PartSlot, Side, SmokeScreen, TerrainPiece, Token } from './types';
 import { statusCount, STATUSES } from './types';
-import { aaRadarCovers, attackReactionsOf, auraEffectsOn, auraValueOn, meleeEvasionReady, parryParts, selfHitParts, denseArmorOn, designationsOn, electronicValue, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, loanedParts, pilotCard, repeatersFor, SLOT_LABEL, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
+import { aaRadarCovers, attackReactionsOf, auraEffectsOn, auraValueOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, selfHitParts, denseArmorOn, designationsOn, electronicValue, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, loanedParts, pilotCard, repeatersFor, SLOT_LABEL, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
 import { timingOf } from './ticks';
 import { inArc, losNote, protectionFor, rangeBetween } from './rules';
 import type { Command } from './commands';
@@ -212,6 +212,10 @@ interface Ctx {
   kcUsed?: boolean;
   // Melee Evasion (ZYBP-302) declared this attack: +1 {Dodge} for a Command Token.
   evadeUsed?: boolean;
+  // Dodge Enhancement (ZYBP-302) declared this attack: each {Dodge} cancels a
+  // whole Attack DIE rather than one icon. Read by resolve(), which then feeds
+  // offsetIcons the per-die breakdown it otherwise does without.
+  dodgeDieUsed?: boolean;
   // Concussion/Wrecking's Link drain fires exactly once, when the resolution
   // is applied — never from resolve(), which redraws many times.
   drainSent?: boolean;
@@ -279,6 +283,8 @@ export class AttackHelper {
     kcUsed: boolean;
     evadeUsed: boolean;
     evadeReady: boolean;
+    dodgeDieUsed: boolean;
+    dodgeDieReady: boolean;
     designate: { from: string; slots: { slot: string; label: string }[] } | null;
   } | null) => void) | null = null;
   // Whether this defender's Focus decisions belong to a player at another
@@ -627,6 +633,16 @@ export class AttackHelper {
     this.render();
   }
 
+  // The defender declared Dodge Enhancement. Their Command Token is already
+  // spent; this window is where the offsetting changes shape.
+  dodgeEnhanceDeclared(): void {
+    const c = this.ctx;
+    if (!c || c.dodgeDieUsed) return;
+    c.dodgeDieUsed = true;
+    this.note(`${c.defender.label} spends a Command Token for Dodge Enhancement: each [Dodge] now cancels a whole Attack die (ZYBP-302).`, [c.defender]);
+    this.render();
+  }
+
   kcArmed(): void {
     const c = this.ctx;
     if (!c || c.kcUsed) return;
@@ -798,6 +814,35 @@ export class AttackHelper {
     return statusCount(c.attacker.statuses, 'command') > 0;
   }
 
+  // The same tally as attackIcons, but kept PER DIE, for Dodge Enhancement:
+  // "each {Dodge} offsets 1 Attack die" needs to know which icons shared a die.
+  //
+  // The swaps have to be followed here too, or a Heavy Hit that came from a
+  // traded Lightning would belong to no die and could never be dodged away.
+  // Anything this cannot attribute is simply left out — offsetIcons still
+  // counts it, it just cannot be cancelled as part of a die, which errs
+  // against the defender rather than inventing a cancellation.
+  private attackIconsPerDie(c: Ctx): { heavy: number; light: number }[] {
+    const upgrade = c.attacker.stance === 'offensive';
+    const swapLightning = !!this.lightningSwap(c);
+    let eyesLeft = c.eyeSwaps ?? 0;
+    const out: { heavy: number; light: number }[] = [];
+    for (const d of c.attackRoll ?? []) {
+      let heavy = 0;
+      let light = 0;
+      for (const icon of this.dice.dice[d.color].faces[d.face]) {
+        if (icon.type === 'part') continue;
+        if (icon.hollow && !upgrade) continue;
+        if (icon.type === 'heavyHit') heavy++;
+        else if (icon.type === 'lightHit') light++;
+        else if (icon.type === 'lightning' && swapLightning) heavy++;
+        else if (icon.type === 'eye' && eyesLeft > 0) { heavy++; eyesLeft--; }
+      }
+      out.push({ heavy, light });
+    }
+    return out;
+  }
+
   private attackIcons(c: Ctx): Record<string, number> {
     let counts = this.countIcons(c.attackRoll ?? [], c.attacker.stance === 'offensive');
     const swaps = Math.min(c.eyeSwaps ?? 0, counts.eye ?? 0);
@@ -892,7 +937,8 @@ export class AttackHelper {
       }
     }
     if (dense && heavy) text.push('Dense Armor: [Defense] may offset [Heavy Hit] here (4.10)');
-    const { icons, spareDodge, idleDefense, dodged, blocked, penetrating, hits, unoffset } = offsetIcons(heavy, light, dodge, defense, dense);
+    const { icons, spareDodge, idleDefense, dodged, blocked, penetrating, hits, unoffset } =
+      offsetIcons(heavy, light, dodge, defense, dense, c.dodgeDieUsed ? this.attackIconsPerDie(c) : undefined);
     const triggers: DuelIcon[] = [];
     if (c.surplusRound === 0) {
       for (let i = 0; i < (atk.lightning ?? 0); i++) triggers.push({ kind: 'lightning', offset: null });
@@ -1031,6 +1077,11 @@ export class AttackHelper {
       // the Part carries Melee Evasion, and a face-up Command Token is there
       // to spend.
       evadeReady: !c.evadeUsed && !!c.designatedParry && meleeEvasionReady(this.data, c.defender),
+      dodgeDieUsed: !!c.dodgeDieUsed,
+      // No Parry condition on this one — any hit will do — but the Defense Roll
+      // has to be on the table, because what it buys is decided against dice
+      // that are already showing.
+      dodgeDieReady: !c.dodgeDieUsed && c.step === 'defense' && dodgeEnhanceReady(this.data, c.defender),
     });
     const el = document.createElement('div');
     el.className = 'attack-helper';
@@ -1852,6 +1903,30 @@ export class AttackHelper {
           this.onCommand({ kind: 'setCharge', seat: c.defender.side, uid: c.defender.uid, slot: kc.slot, on: false });
           this.onCommand({ kind: 'kcArmor', seat: c.defender.side });
           this.kcArmed();
+        });
+        wrap.appendChild(b);
+      }
+      // The two ZYBP-302 Command Token spends. The remote defender presses
+      // these in their combat mirror; this is the one-screen copy.
+      if (!remoteDefender && !c.evadeUsed && c.designatedParry && meleeEvasionReady(this.data, c.defender)) {
+        const b = document.createElement('button');
+        b.className = 'ah-alt';
+        b.textContent = 'Melee Evasion: spend a Command Token for +1 [Dodge] on the Parry';
+        b.addEventListener('click', () => {
+          this.onCommand({ kind: 'spendCommand', seat: c.defender.side, uid: c.defender.uid });
+          this.onCommand({ kind: 'meleeEvade', seat: c.defender.side });
+          this.evadeDeclared();
+        });
+        wrap.appendChild(b);
+      }
+      if (!remoteDefender && !c.dodgeDieUsed && dodgeEnhanceReady(this.data, c.defender)) {
+        const b = document.createElement('button');
+        b.className = 'ah-alt';
+        b.textContent = 'Dodge Enhancement: spend a Command Token — each [Dodge] cancels a whole Attack die';
+        b.addEventListener('click', () => {
+          this.onCommand({ kind: 'spendCommand', seat: c.defender.side, uid: c.defender.uid });
+          this.onCommand({ kind: 'dodgeEnhance', seat: c.defender.side });
+          this.dodgeEnhanceDeclared();
         });
         wrap.appendChild(b);
       }

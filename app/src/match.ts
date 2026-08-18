@@ -684,6 +684,7 @@ function settleDefense(cmd: Command): void {
   if (cmd.kind === 'kcArmor') attackHelper?.kcArmed();
   if (cmd.kind === 'designateHit') attackHelper?.designateAnswered(cmd.slot);
   if (cmd.kind === 'meleeEvade') attackHelper?.evadeDeclared();
+  if (cmd.kind === 'dodgeEnhance') attackHelper?.dodgeEnhanceDeclared();
 }
 
 function startAttack(uid: number, actionId: string, targetUid: number, mode: 'attack' | 'intercept' | 'explosion' = 'attack'): void {
@@ -1985,6 +1986,7 @@ function hudCtx(): HudCtx {
     mirrorFocus: mirrorFocusAct,
     mirrorDesignate,
     mirrorMeleeEvade,
+    mirrorDodgeEnhance,
     startAttack,
     showTab: (name) => showSideTab(null, name),
     diceData,
@@ -2053,6 +2055,11 @@ function combatMirrorHtml(): string | null {
   const evadeUi = view.evadeReady && iAmDefender
     ? `<div class="ah-step"><button class="ah-alt" data-act="meleeevade">Melee Evasion: spend a Command Token for +1 [Dodge] on the Parry</button></div>`
     : '';
+  // Dodge Enhancement (ZYBP-302), the same one-screen judgement: the attacker's
+  // window knows whether the Defense Roll is up and the Token is there.
+  const dodgeDieUi = view.dodgeDieReady && iAmDefender
+    ? `<div class="ah-step"><button class="ah-alt" data-act="dodgeenhance">Dodge Enhancement: spend a Command Token — each [Dodge] cancels a whole Attack die</button></div>`
+    : '';
   const focus = view.focus;
   let focusUi = '';
   if (focus && iAmDefender && focus.stage === 'declareD') {
@@ -2078,7 +2085,7 @@ function combatMirrorHtml(): string | null {
     ${myRoll}
     ${view.defense?.length ? `<div class="ah-step"><p>Defense Roll</p>${faceRow(view.defense)}</div>` : ''}
     ${kcUi}
-    ${desUi}${evadeUi}${focusUi}
+    ${desUi}${evadeUi}${dodgeDieUi}${focusUi}
     ${view.log.length ? `<div class="ah-log">${view.log.map((l) => `<div>${esc(l)}</div>`).join('')}</div>` : ''}
   </div>`;
 }
@@ -2102,6 +2109,16 @@ function mirrorMeleeEvade(): void {
   if (!seat || !df) return;
   send({ kind: 'spendCommand', seat, uid: df.uid });
   send({ kind: 'meleeEvade', seat });
+  render();
+}
+
+function mirrorDodgeEnhance(): void {
+  const seat = mySeat();
+  const v = state.script?.combatView;
+  const df = v ? state.tokens.find((t) => t.uid === v.targetUid) : undefined;
+  if (!seat || !df) return;
+  send({ kind: 'spendCommand', seat, uid: df.uid });
+  send({ kind: 'dodgeEnhance', seat });
   render();
 }
 

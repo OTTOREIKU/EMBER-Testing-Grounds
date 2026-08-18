@@ -629,6 +629,8 @@ export interface CombatView {
   // is there to spend. Judged by the attacker's window, which sees the board.
   evadeUsed?: boolean;
   evadeReady?: boolean;
+  dodgeDieUsed?: boolean;
+  dodgeDieReady?: boolean;
   // Shield Up / Mobile Defense: the Parts the DEFENDER may take this hit on
   // instead of the one the Black Die found, and where it landed. Present only
   // while that question is open, because it is the defender's to answer and

@@ -251,5 +251,27 @@ check('and it is Melee Evasion that matched, not Dodge Enhancement',
   data.byId.get('ZYBP-302').actions.some((a) => /Dodge Enhancement/.test(a.name?.en ?? '')), true);
 
 
+// ---------- Dodge Enhancement (ZYBP-302) ----------
+//
+// Same card as Melee Evasion, but no Parry condition: any hit will do. The two
+// matchers are checked against each other because they read the same card.
+check('a Mech with Dodge Enhancement and a Command Token is ready',
+  A.dodgeEnhanceReady(data, evadeMech('ZYBP-302')), true);
+check('Dodge Enhancement without a face-up Command Token is not ready',
+  A.dodgeEnhanceReady(data, evadeMech('ZYBP-302', [])), false);
+check('a spent token does not pay for Dodge Enhancement either',
+  A.dodgeEnhanceReady(data, evadeMech('ZYBP-302', ['commandUsed'])), false);
+check('a Mech without Dodge Enhancement is never ready',
+  A.dodgeEnhanceReady(data, evadeMech('002')), false);
+check('a destroyed Part offers no Dodge Enhancement',
+  A.dodgeEnhanceReady(data, evadeMech('ZYBP-302', ['command'], { torso: 'destroyed' })), false);
+check('a Drone never gets Dodge Enhancement',
+  A.dodgeEnhanceReady(data, { ...evadeMech('ZYBP-302'), kind: 'drone' }), false);
+// The zh line prints only the effect, no trigger, so it is the effect that is
+// matched -- checked against the real card string, not against the English.
+check('the Chinese Dodge Enhancement line is matched on the effect it prints',
+  /闪避\}?可抵消1枚攻击骰/.test(
+    data.byId.get('ZYBP-302').actions.find((a) => /Dodge Enhancement/.test(a.name?.en ?? '')).description.zh), true);
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 if (fail) process.exit(1);
