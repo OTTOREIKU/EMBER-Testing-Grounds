@@ -8,9 +8,43 @@ const IDLE = '<p class="inspect-idle">Hover for details · click to pin so you c
 let box: HTMLElement | null = null;
 let pinnedKey: string | null = null;
 
+// The board page keeps a permanent box in the bottom-left corner. The Match
+// Centre has no room for one — the board fills the middle and the side panel is
+// already full — so there the same InspectInfo lands in a popout beside
+// whatever is being hovered. Every existing call site works unchanged; only
+// where the words appear differs.
+let floating = false;
+let anchor: HTMLElement | SVGElement | null = null;
+
 function el(): HTMLElement | null {
-  if (!box) box = document.getElementById('inspect-box');
+  if (box) return box;
+  box = document.getElementById('inspect-box');
+  if (box) return box;
+  floating = true;
+  box = document.createElement('div');
+  box.id = 'inspect-pop';
+  document.body.appendChild(box);
   return box;
+}
+
+// Beside the panel the hovered thing lives in, never on top of it: the reader
+// is looking at a row and wants the explanation next to it, not over it. Left
+// first, because the panel this was built for sits against the right of the
+// window; the cursor is the last resort.
+function place(): void {
+  const pop = box;
+  if (!pop || !floating || !anchor) return;
+  const panel = (anchor as HTMLElement).closest('.hudside, .dlg-panel, aside, .mc-stagepane');
+  const a = anchor.getBoundingClientRect();
+  const w = pop.offsetWidth || 300;
+  const h = pop.offsetHeight || 200;
+  const r = (panel ?? anchor).getBoundingClientRect();
+  const left = r.left - w - 10 >= 4 ? r.left - w - 10
+    : r.right + 10 + w <= window.innerWidth - 4 ? r.right + 10
+    : Math.max(4, window.innerWidth - w - 8);
+  pop.style.left = `${left}px`;
+  // Top-aligned with the row, pulled back up if that would run off the bottom.
+  pop.style.top = `${Math.max(4, Math.min(a.top, window.innerHeight - h - 4))}px`;
 }
 
 function render(info: InspectInfo | null, pinned: boolean): void {
@@ -18,6 +52,13 @@ function render(info: InspectInfo | null, pinned: boolean): void {
   if (!target) return;
   target.classList.toggle('pinned', pinned);
   if (!info) {
+    // The floating one disappears rather than sitting there reading "hover for
+    // details", which would be a box permanently in the way saying nothing.
+    if (floating) {
+      target.classList.remove('visible');
+      target.innerHTML = '';
+      return;
+    }
     target.innerHTML = IDLE;
     return;
   }
@@ -26,6 +67,10 @@ function render(info: InspectInfo | null, pinned: boolean): void {
     <ul>${info.lines.filter(Boolean).map((l) => `<li>${l}</li>`).join('')}</ul>`;
   target.querySelector('.inspect-unpin')?.addEventListener('click', () => unpinInspect());
   if (pinned) target.scrollTop = 0;
+  if (floating) {
+    target.classList.add('visible');
+    place();
+  }
 }
 
 export function showInspect(info: InspectInfo | null): void {
@@ -90,7 +135,12 @@ export function bindTips(root: ParentNode): void {
 
 export function inspectOnHover(node: HTMLElement | SVGElement, info: InspectInfo, opts?: { pinKey?: string }): void {
   const key = opts?.pinKey;
-  node.addEventListener('pointerenter', () => showInspect(info));
+  node.addEventListener('pointerenter', () => {
+    // Remembered so the popout knows what to stand beside. Harmless on the
+    // board page, which renders into its fixed box and never reads it.
+    anchor = node;
+    showInspect(info);
+  });
   node.addEventListener('pointerleave', () => showInspect(null));
   if (!key) return;
   node.classList.add('inspect-pinnable');

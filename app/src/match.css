@@ -838,3 +838,44 @@ b.s1 { color: var(--s1); } b.s2 { color: var(--s2); }
 }
 .stancebtn:hover { background: #2c3542; color: var(--text); }
 .stancebtn.sel { background: var(--accent-lt); color: var(--accent); }
+
+/* ---------- the hover popout ---------- */
+/*
+   The board page answers a hover in its permanent bottom-left inspect box.
+   This page has no such corner — the board fills the middle and the side panel
+   is full — so inspector.ts creates this instead and stands it beside whatever
+   is hovered. Same InspectInfo, same call sites in panel.ts and combat.ts;
+   only the landing place differs.
+
+   The selectors below deliberately mirror #inspect-box in styles.css rather
+   than sharing with it, because that sheet is not loaded as this page's own
+   idiom — same reason .lk-icon is repeated three times.
+*/
+#inspect-pop {
+  position: fixed; z-index: 1250; width: 300px;
+  max-height: min(440px, calc(100vh - 24px)); overflow-y: auto;
+  background: var(--surface2); border-radius: var(--radius);
+  box-shadow: var(--shadow-lg); padding: 10px 12px;
+  opacity: 0; pointer-events: none; transition: opacity 0.08s;
+}
+#inspect-pop.visible { opacity: 1; }
+/* Pinned means "I want to read this", so it becomes clickable and scrollable
+   and says which it is. */
+#inspect-pop.pinned { pointer-events: auto; box-shadow: var(--shadow-lg), inset 0 2px 0 0 var(--accent); }
+#inspect-pop h4 {
+  margin: 0 0 3px; font-size: 11px; color: var(--accent);
+  text-transform: uppercase; letter-spacing: 0.7px; font-weight: 700;
+  display: flex; align-items: flex-start; gap: 6px;
+}
+#inspect-pop .inspect-sub { margin: 0 0 5px; font-size: 11px; color: var(--text2); }
+#inspect-pop ul { margin: 0; padding-left: 14px; }
+#inspect-pop li { font-size: 11.5px; color: var(--text); line-height: 1.45; margin-bottom: 2px; }
+#inspect-pop .inspect-unpin {
+  margin-left: auto; flex-shrink: 0; border: none; background: var(--surface3);
+  color: var(--text2); border-radius: var(--radius-sm); cursor: pointer; font-size: 10px;
+  line-height: 1; padding: 3px 6px;
+}
+#inspect-pop .inspect-unpin:hover { background: var(--red-lt); color: var(--red); }
+/* .mech-link and .inspect-pinnable are styled once in styles.css, which this
+   page also loads — the cue for "this answers a hover" stays identical on both.
+   Only the popout itself is new here. */
