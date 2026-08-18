@@ -32,7 +32,7 @@ function largeGridOf(t: any): any { return { c: Math.floor(t.col / 3), r: Math.f
   + cut(units, 'export interface ParryPart', 'export interface SelfHitPart', 'parryParts')
   + cut(units, 'export interface SelfHitPart', '// A Firing Action', 'selfHitParts')
   + cut(units, '// A Firing Action', 'export function repairSpec', 'actionRange and hasFlexibleTiming')
-  + cut(units, '// ---------- Riposte / Reposte', 'export function attackReactionsOf', 'ripostePart, defenseReactionOn and targetTracingOn')
+  + cut(units, '// ---------- The Coolers', 'export function attackReactionsOf', 'coolingBonus, ripostePart, defenseReactionOn and targetTracingOn')
   + cut(units, 'function alive(t: Token)', 'function coversGrid', 'the alive helper')
   + cut(units, '// ---------- Martyrdom', 'export function autoDetonationsOwed', 'martyrdomOwed')
   + cut(units, 'export function explosionScope', 'export function needsSightToLanding', 'explosionScope');
@@ -383,6 +383,43 @@ check('a destroyed Part ripostes with nothing',
 check('a Part without the ability never does',
   A.ripostePart(data, clawMech('leftHand', '002'), 'leftHand'), null);
 check('a Drone never does', A.ripostePart(data, { ...clawMech('leftHand', 'ZHLA-202'), kind: 'drone' }, 'leftHand'), null);
+
+// ---------- The Coolers (002 Power, 532 System, 083 Laser) ----------
+//
+// None of the three carries gameRules, so all three are read off printed text
+// and all three are checked against the shipped cards rather than a fixture.
+const cooled = (torso, stance = 'offensive', states = {}) => ({
+  uid: 30, kind: 'mech', side: 's1', col: 0, row: 0, stance,
+  mech: { torso, chasis: '532' }, partStates: { torso: 'intact', chasis: 'intact', ...states }, statuses: [],
+});
+const coolShot = (over = {}) => ({ id: 'X', type: 'Firing', name: { en: 'Shot' }, keywords: [], ...over });
+// A real Laser Weapon action off the board, so the keyword match is not assumed.
+const laserAct = data.byId.get('160').actions.find((x) => x.id === '160_A');
+check('Power Cooling adds a Yellow for every three',
+  A.coolingBonus(data, cooled('002'), coolShot(), { red: 0, yellow: 6 }).yellow, 2);
+check('and rounds down', A.coolingBonus(data, cooled('002'), coolShot(), { red: 0, yellow: 5 }).yellow, 1);
+check('and gives nothing under three', A.coolingBonus(data, cooled('002'), coolShot(), { red: 0, yellow: 2 }).yellow, 0);
+check('System Cooling does the same for Red',
+  A.coolingBonus(data, cooled('002'), coolShot(), { red: 3, yellow: 0 }).red, 1);
+// Both Coolers are on the same Mech above, so this also pins that they do not
+// feed each other: each reads the PRINTED pool.
+check('the two Coolers read the printed pool, not each other',
+  A.coolingBonus(data, cooled('002'), coolShot(), { red: 3, yellow: 3 }), { red: 1, yellow: 1 });
+check('neither works outside Offensive Stance',
+  A.coolingBonus(data, cooled('002', 'defensive'), coolShot(), { red: 3, yellow: 6 }), { red: 0, yellow: 0 });
+check('nor on a Melee Action',
+  A.coolingBonus(data, cooled('002'), coolShot({ type: 'Melee' }), { red: 3, yellow: 6 }), { red: 0, yellow: 0 });
+check('a destroyed Cooler cools nothing',
+  A.coolingBonus(data, cooled('002', 'offensive', { torso: 'destroyed', chasis: 'destroyed' }), coolShot(), { red: 3, yellow: 6 }),
+  { red: 0, yellow: 0 });
+// 083 keys on the ACTION's keyword, which is printed in Chinese only.
+check('the Laser Cooler adds a Yellow to a Laser Weapon Action',
+  A.coolingBonus(data, { ...cooled('083'), mech: { torso: '083' }, partStates: { torso: 'intact' } }, laserAct, { red: 0, yellow: 1 }).yellow, 1);
+check('and nothing to an Action without the keyword',
+  A.coolingBonus(data, { ...cooled('083'), mech: { torso: '083' }, partStates: { torso: 'intact' } }, coolShot(), { red: 0, yellow: 1 }).yellow, 0);
+check('it does not need Offensive Stance, because its card does not ask for one',
+  A.coolingBonus(data, { ...cooled('083', 'defensive'), mech: { torso: '083' }, partStates: { torso: 'intact' } }, laserAct, { red: 0, yellow: 1 }).yellow, 1);
+check('a Drone is never cooled', A.coolingBonus(data, { ...cooled('002'), kind: 'drone' }, coolShot(), { red: 3, yellow: 6 }), { red: 0, yellow: 0 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
 if (fail) process.exit(1);

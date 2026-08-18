@@ -587,6 +587,51 @@ export interface AttackReaction {
   afterDestroyed: boolean;
 }
 
+// ---------- The Coolers (002, 532, 083) ----------
+//
+// Three Parts that add Attack dice to a Firing Action, none of which carries
+// any gameRules, so all three are read off the printed text:
+//
+//   002 Power Cooling  - Offensive Stance, Firing Action: for every {3Y}, +{1Y}
+//   532 System Cooling - Offensive Stance, Firing Action: for every {3R}, +{1R}
+//   083 Cooling        - a Firing Action with the Laser Weapon keyword: +{1Y}
+//
+// The first two are computed off the BASE pool, not off a running total: "for
+// every 3" is read once against the Action's printed dice, so two Coolers
+// cannot feed each other. Summed across Parts rather than taken as the
+// strongest, because none of them prints the "does not stack" line the auras do.
+export function coolingBonus(
+  data: GameData,
+  t: Token,
+  a: CardAction,
+  base: { red: number; yellow: number },
+): { red: number; yellow: number } {
+  const out = { red: 0, yellow: 0 };
+  if (t.kind !== 'mech' || a.type !== 'Firing') return out;
+  // The Laser Weapon keyword is printed in Chinese only, on all 20 of the
+  // Actions that carry it.
+  const laser = (a.keywords ?? []).some((k) => /激光武器|Laser\s*Weapon/i.test(k.inline ?? k.key ?? ''));
+  for (const { slot, card } of tokenCards(data, t)) {
+    if (slot === 'pilot') continue;
+    if ((t.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
+    for (const act of card.actions ?? []) {
+      const en = act.description?.en ?? '';
+      const zh = act.description?.zh ?? '';
+      const hay = `${en} ${zh}`;
+      if (/every\s*\{?3Y\}?\s*,?\s*\+\s*\{?1Y\}?|每\{?3Y\}?，\+\{?1Y\}?/i.test(hay)) {
+        if (t.stance === 'offensive') out.yellow += Math.floor(base.yellow / 3);
+      }
+      if (/every\s*\{?3R\}?\s*,?\s*\+\s*\{?1R\}?|每\{?3R\}?，\+\{?1R\}?/i.test(hay)) {
+        if (t.stance === 'offensive') out.red += Math.floor(base.red / 3);
+      }
+      if (laser && /Laser\s*Weapon,?\s*\+\s*\{?1Y\}?|激光武器关键字的射击动作时，\+\{?1Y\}?/i.test(hay)) {
+        out.yellow += 1;
+      }
+    }
+  }
+  return out;
+}
+
 // ---------- Riposte / Reposte (050 FCC-12 Grappler, ZHLA-202 M4 Combat Claw) ----------
 //
 // "On a Successful Parry with this part, the Attacker must immediately end the

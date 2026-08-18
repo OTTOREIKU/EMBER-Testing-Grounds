@@ -5,7 +5,7 @@ import { linkMechanics } from './inspector';
 import { SQUAD_ORDER, squadLabel } from './data';
 import type { Card, CardAction, DiceData, DiceIcon, DieColor, GameRuleEffect, PartSlot, Side, SmokeScreen, TerrainPiece, Token } from './types';
 import { statusCount, STATUSES } from './types';
-import { aaRadarCovers, attackReactionsOf, auraEffectsOn, auraValueOn, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, denseArmorOn, designationsOn, electronicValue, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, loanedParts, pilotCard, repeatersFor, SLOT_LABEL, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
+import { aaRadarCovers, attackReactionsOf, auraEffectsOn, auraValueOn, coolingBonus, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, denseArmorOn, designationsOn, electronicValue, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, loanedParts, pilotCard, repeatersFor, SLOT_LABEL, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
 import { timingOf } from './ticks';
 import { inArc, losNote, protectionFor, rangeBetween } from './rules';
 import type { Command } from './commands';
@@ -404,7 +404,14 @@ export class AttackHelper {
       targetPart: defender.kind === 'mech' ? null : 'main',
       designateFrom: null,
       designatedParry: null,
-      attackPool: { red: action.redDice ?? 0, yellow: action.yellowDice ?? 0 },
+      // The Coolers add to the pool before it is offered, so the spinner starts
+      // on the number the card actually rolls. They read the PRINTED dice, not
+      // whatever the player then nudges it to.
+      attackPool: (() => {
+        const printed = { red: action.redDice ?? 0, yellow: action.yellowDice ?? 0 };
+        const bonus = coolingBonus(this.data, attacker, action, printed);
+        return { red: printed.red + bonus.red, yellow: printed.yellow + bonus.yellow };
+      })(),
       defensePool: { white: 1, blue: 0 },
       attackRoll: null,
       defenseRoll: null,
@@ -438,12 +445,17 @@ export class AttackHelper {
   // the two cannot drift.
   startMulti(attacker: Token, action: CardAction, primary: Token, cap: MultiTarget): void {
     this.stopBlack();
+    // The Coolers add to the pool the Multi-Target then SPLITS, not to each
+    // sequence: one Firing Action is cooled once, however many targets it takes.
+    const printed = { red: action.redDice ?? 0, yellow: action.yellowDice ?? 0 };
+    const cooled = coolingBonus(this.data, attacker, action, printed);
+    const pooled = { red: printed.red + cooled.red, yellow: printed.yellow + cooled.yellow };
     this.multi = {
       cap,
       action,
       attacker,
-      targets: [{ defender: primary, red: action.redDice ?? 0, yellow: action.yellowDice ?? 0 }],
-      total: { red: action.redDice ?? 0, yellow: action.yellowDice ?? 0 },
+      targets: [{ defender: primary, red: pooled.red, yellow: pooled.yellow }],
+      total: { red: pooled.red, yellow: pooled.yellow },
       index: 0,
       pending: [],
     };
