@@ -796,5 +796,9 @@ export interface ImportedSquad {
   faction?: string;
   mechs: ImportedMech[];
   drones: { cardId: string; backpack?: string }[];
+  // Tactics Cards bought with the squad (5.4). The community builder's files
+  // do not carry these, so the list is usually empty — but our own saved
+  // squads round-trip through the same shape and theirs must survive.
+  tactics: string[];
   unknownIds: string[];
 }

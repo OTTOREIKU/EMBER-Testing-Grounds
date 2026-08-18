@@ -44,11 +44,18 @@ export function parseSquadJson(raw: unknown, byId: Map<string, Card>): ImportedS
     })
     .filter((x): x is { cardId: string; backpack: string | undefined } => !!x);
 
+  // Only real Tactics Cards survive: setTactics refuses anything else, and a
+  // file is the one source a player cannot easily inspect before it applies.
+  const tactics = (Array.isArray(team.tactics) ? team.tactics : [])
+    .map((t) => check(refId(t)))
+    .filter((id): id is string => !!id && byId.get(id)?.category === 'tactics_or_upgrade');
+
   return {
     name: typeof team.name === 'string' ? team.name : 'Imported squad',
     faction: typeof team.faction === 'string' ? team.faction : undefined,
     mechs: importedMechs.filter((m) => m.loadout.torso || m.loadout.chasis),
     drones,
+    tactics,
     unknownIds,
   };
 }

@@ -907,37 +907,38 @@ function sideSummary(side: Side): { mechs: number; drones: number; points: numbe
   return { mechs, drones, points };
 }
 
-// The six Tactics Cards, held in hand rather than deployed (5.4). Chosen here
-// because they are bought with the squad, and they have to travel: check() for
-// playTactic reads the sender's hand, and the other client has to have it.
+// The Tactics Cards held in hand rather than deployed (5.4). No longer picked
+// here: the hand belongs to the SQUAD — built in freeplay, saved with it, and
+// it arrives with whatever list "Bring a squad" brings. This is only the
+// read-out, so a player can see what came with their squad and what it cost.
+// check() for playTactic reads the sender's hand, and the other client has to
+// have it, which is why the hand still travels as setTactics underneath.
 //
-// Folded away by default. Plenty of squads never take one, and six rows of
-// something you are not using is six rows in the way of the units you are.
+// Folded away by default. Plenty of squads never take one, and rows of
+// something you are not using are rows in the way of the units you are.
 let tacticsOpen = false;
 
 function tacticsPicker(side: Side): string {
   if (!data) return '';
   const held = state.tactics?.[side] ?? [];
-  const cards = data.cards
-    .filter((c) => c.category === 'tactics_or_upgrade')
-    .sort((a, b) => cardName(a).localeCompare(cardName(b)));
-  if (!cards.length) return '';
+  if (!held.length) return '';
   const points = held.reduce((n, id) => n + (data?.byId.get(id)?.score ?? 0), 0);
-  const summary = held.length ? `${held.length} in hand · ${points}p` : 'none';
+  const summary = `${held.length} in hand · ${points}p`;
   // `data-tip-card` is all the preview needs: the page installs one delegated
   // listener that shows any card's scan on hover, so a player can read what a
-  // Tactic does before spending points on it.
-  const rows = !tacticsOpen ? '' : cards
-    .map((c) => {
-      const n = held.filter((x) => x === c.id).length;
+  // Tactic in their hand does.
+  const rows = !tacticsOpen ? '' : held
+    .map((id) => {
+      const c = data?.byId.get(id);
+      if (!c) return '';
       const when = tacticSpec(c.id)?.timing ?? '';
-      return `<button class="tacpick${n ? ' on' : ''}" data-tacpick="${esc(c.id)}" data-tip-card="${esc(c.id)}" title="${esc(when)}">
+      return `<div class="tacpick on" data-tip-card="${esc(c.id)}" title="${esc(when)}">
         <span class="tn">${esc(cardName(c))}</span>
         <span class="tw">${esc(when)}</span>
-        <span class="tp">${n ? '✓' : `${c.score ?? 0}p`}</span></button>`;
+        <span class="tp">${c.score ?? 0}p</span></div>`;
     })
     .join('')
-    + '<p class="quiet" style="margin:6px 0 0">Tap to add, tap again to take it back. One copy of each, and only 1 played per round (5.4.2).</p>';
+    + '<p class="quiet" style="margin:6px 0 0">The hand comes with the squad — build it on the freeplay board and save or bring the squad. Only 1 is played per round (5.4.2).</p>';
   return `<div class="tacbox">
     <button class="taclabel" id="mc-tactoggle" aria-expanded="${tacticsOpen}">
       <span class="tcaret">${tacticsOpen ? '▾' : '▸'}</span>Tactics Cards<span class="tsum">${esc(summary)}</span>
@@ -1492,7 +1493,7 @@ function pickerHtml(): string {
     .map(
       (s) => `<button class="pickrow" data-squad="${esc(s.id)}">
         <span class="nm">${esc(s.name)}</span>
-        <span class="ct">${s.mechs.length}M ${s.drones.length}D</span>
+        <span class="ct">${s.mechs.length}M ${s.drones.length}D${s.tactics?.length ? ` ${s.tactics.length}T` : ''}</span>
         ${squadContents(s.mechs, s.drones)}
       </button>`,
     )
@@ -1533,8 +1534,11 @@ function bringSquad(name: string, mechs: SavedSquad['mechs'], drones: SavedSquad
   if (v.ok) {
     // A hand brought with the squad adds to whatever is already held, the same
     // way topping up with another list adds units rather than replacing them.
+    // Merged through a Set: a second list carrying a card already held would
+    // otherwise build a duplicate hand, which check() refuses whole (FAQ P2).
     if (tactics?.length) {
-      perform(data, state, { kind: 'setTactics', seat, cards: [...(state.tactics?.[seat] ?? []), ...tactics] });
+      const merged = [...new Set([...(state.tactics?.[seat] ?? []), ...tactics])];
+      perform(data, state, { kind: 'setTactics', seat, cards: merged });
     }
     pickerOpen = false;
     relay.publishCheckpoint();
@@ -1804,7 +1808,7 @@ function wire(): void {
   for (const el of root.querySelectorAll<HTMLElement>('[data-squad]')) {
     el.addEventListener('click', () => {
       const sq = loadSquads().find((s) => s.id === el.dataset.squad);
-      if (sq) bringSquad(sq.name, sq.mechs, sq.drones);
+      if (sq) bringSquad(sq.name, sq.mechs, sq.drones, sq.tactics);
     });
   }
   for (const el of root.querySelectorAll<HTMLElement>('[data-boardsquad]')) {
@@ -1828,27 +1832,21 @@ function wire(): void {
       const t = state.tokens.find((x) => x.uid === uid);
       if (!t) return;
       send({ kind: 'despawn', seat: t.side, uid, targetUid: uid });
+      // The hand belongs to the squad, and with no picker here there is no
+      // other way to put a mistaken one back. Dropping the LAST unit reads as
+      // swapping squads, so the Tactics Cards leave with it; dropping one
+      // unit of several does not touch the hand.
+      const seat = mySeat();
+      if (seat && t.side === seat
+        && !state.tokens.some((x) => x.side === seat)
+        && (state.tactics?.[seat] ?? []).length) {
+        send({ kind: 'setTactics', seat, cards: [] });
+      }
       relay.publishCheckpoint();
       render();
     });
   }
   $('mc-tactoggle')?.addEventListener('click', () => { tacticsOpen = !tacticsOpen; render(); });
-  // The hand is chosen by tapping: once to take a card, again to put it back.
-  // The whole hand travels each time, so a repeat cannot double it.
-  for (const el of root.querySelectorAll<HTMLElement>('[data-tacpick]')) {
-    el.addEventListener('click', () => {
-      const seat = mySeat();
-      if (!seat) return;
-      const id = el.dataset.tacpick!;
-      const held = [...(state.tactics?.[seat] ?? [])];
-      const at = held.lastIndexOf(id);
-      if (at >= 0) held.splice(at, 1);
-      else held.push(id);
-      send({ kind: 'setTactics', seat, cards: held });
-      relay.publishCheckpoint();
-      render();
-    });
-  }
   $('mc-file')?.addEventListener('click', () => $('mc-fileinput')?.click());
   $('mc-fileinput')?.addEventListener('change', () => {
     const input = $('mc-fileinput') as HTMLInputElement;
@@ -1856,8 +1854,8 @@ function wire(): void {
     if (!file || !data) return;
     void importSquadFile(file, data.byId)
       .then((squad) => {
-        saveSquad(squad.name, squad.mechs, squad.drones, Date.now());
-        bringSquad(squad.name, squad.mechs, squad.drones);
+        saveSquad(squad.name, squad.mechs, squad.drones, Date.now(), squad.tactics);
+        bringSquad(squad.name, squad.mechs, squad.drones, squad.tactics);
       })
       .catch((e: Error) => {
         lobbyNote = `Squad import failed: ${e.message}`;

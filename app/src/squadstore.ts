@@ -12,6 +12,9 @@ export interface SavedSquad {
   name: string;
   mechs: { name?: string; loadout: MechLoadout }[];
   drones: { cardId: string; backpack?: string }[];
+  // The Tactics Cards bought with the squad (5.4): part of the squad the same
+  // way its points are, so saving and loading must carry them.
+  tactics?: string[];
   saved: number;
 }
 
@@ -92,7 +95,12 @@ function clean(raw: unknown): SavedSquad | null {
     drones.push({ cardId: (d as { cardId: string }).cardId, backpack: typeof backpack === 'string' ? backpack : undefined });
   }
   if (!mechs.length && !drones.length) return null;
-  return { id: s.id, name: s.name, mechs, drones, saved: typeof s.saved === 'number' ? s.saved : 0 };
+  const tactics = (Array.isArray(s.tactics) ? s.tactics : []).filter((t): t is string => typeof t === 'string' && !!t);
+  return {
+    id: s.id, name: s.name, mechs, drones,
+    ...(tactics.length ? { tactics } : {}),
+    saved: typeof s.saved === 'number' ? s.saved : 0,
+  };
 }
 
 export function loadSquads(): SavedSquad[] {
@@ -121,6 +129,7 @@ export function saveSquad(
   mechs: SavedSquad['mechs'],
   drones: SavedSquad['drones'],
   now: number,
+  tactics?: string[],
 ): SavedSquad[] {
   const trimmed = name.trim();
   if (!trimmed || (!mechs.length && !drones.length)) return loadSquads();
@@ -129,7 +138,11 @@ export function saveSquad(
   // shipped one in place.
   const saved = loadSquads().filter((s) => !isBuiltInSquad(s.id));
   const at = saved.findIndex((s) => s.name.toLowerCase() === trimmed.toLowerCase());
-  const entry: SavedSquad = { id: at >= 0 ? saved[at].id : `sq${now}`, name: trimmed, mechs, drones, saved: now };
+  const entry: SavedSquad = {
+    id: at >= 0 ? saved[at].id : `sq${now}`, name: trimmed, mechs, drones,
+    ...(tactics?.length ? { tactics: [...tactics] } : {}),
+    saved: now,
+  };
   if (at >= 0) saved[at] = entry;
   else saved.push(entry);
   write(saved);

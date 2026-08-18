@@ -5224,11 +5224,19 @@ async function init() {
     name: string,
     mechs: { name?: string; loadout: MechLoadout }[],
     drones: { cardId: string; backpack?: string }[],
+    tactics?: string[],
   ): boolean {
     const verdict = perform(data, state, { kind: 'importSquad', seat: side, name, mechs, drones });
     if (!verdict.ok) {
       void alertDialog({ title: 'The squad could not join', body: verdict.why });
       return false;
+    }
+    // The hand comes with the squad. Merged through a Set because topping up
+    // with a second list that carries a card already held would otherwise be a
+    // duplicate, and check() refuses a hand with one (FAQ P2).
+    if (tactics?.length) {
+      const merged = [...new Set([...(state.tactics?.[side] ?? []), ...tactics])];
+      perform(data, state, { kind: 'setTactics', seat: side, cards: merged });
     }
     onChanged();
     setHint(`Squad "${name}" joins ${squadLabel(side)}${deployingNow() ? ' — it deploys with everything else (3.1.4)' : ''}.`);
@@ -5282,7 +5290,7 @@ async function init() {
       if (picked !== 's1' && picked !== 's2') return;
       side = picked;
     }
-    sendSquad(side, sq.name, sq.mechs, sq.drones);
+    sendSquad(side, sq.name, sq.mechs, sq.drones, sq.tactics);
   }
 
   // Saving what stands on the board: launched drones and projectiles are
@@ -5319,17 +5327,21 @@ async function init() {
     const drones = units
       .filter((t) => t.kind === 'drone')
       .map((t) => ({ cardId: t.cardId, backpack: t.droneBackpack }));
+    // The hand is part of the squad (5.4): bought from the same points, so a
+    // save that dropped it would reload a squad cheaper than the one built.
+    const tactics = (state.tactics?.[side] ?? []).filter((id) => !!data.byId.get(id));
     const name = await promptDialog({
       title: 'Save this squad',
-      body: `${mechs.length} mech${mechs.length === 1 ? '' : 's'} and ${drones.length} drone${
+      body: `${mechs.length} mech${mechs.length === 1 ? '' : 's'}, ${drones.length} drone${
         drones.length === 1 ? '' : 's'
+      }${tactics.length ? ` and ${tactics.length} Tactics Card${tactics.length === 1 ? '' : 's'}` : ''
       }. Saved squads are kept on this device, load from the Saved Squads row or the multiplayer popup, and reusing a name overwrites it.`,
       value: squadLabel(side),
       placeholder: 'Squad name',
       confirmLabel: 'Save',
     });
     if (!name) return;
-    saveSquad(name, mechs, drones, Date.now());
+    saveSquad(name, mechs, drones, Date.now(), tactics);
     setHint(`Squad "${name}" saved.`);
   }
 
@@ -5346,7 +5358,7 @@ async function init() {
       ].filter(Boolean);
       // Every squad that arrives by file is remembered, which is what the
       // multiplayer "bring a squad" picker chooses from next time.
-      saveSquad(squad.name, squad.mechs, squad.drones, Date.now());
+      saveSquad(squad.name, squad.mechs, squad.drones, Date.now(), squad.tactics);
       // In an online room the squad can only be yours — the relay refuses
       // commands sent as the other seat — so the side question disappears.
       const mySeat = relay.state.room ? relay.state.seat : null;
@@ -5369,7 +5381,7 @@ async function init() {
         }
         side = picked;
       }
-      if (!sendSquad(side, squad.name, squad.mechs, squad.drones)) {
+      if (!sendSquad(side, squad.name, squad.mechs, squad.drones, squad.tactics)) {
         squadFile.value = '';
         return;
       }

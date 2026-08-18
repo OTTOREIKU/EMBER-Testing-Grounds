@@ -761,8 +761,9 @@ export class Roster {
       const list = loadSquads();
       if (this.squadId && !list.some((s) => s.id === this.squadId)) this.squadId = '';
       const chosen = list.find((s) => s.id === this.squadId);
-      const blurb = (s: { mechs: unknown[]; drones: unknown[] }) =>
-        [s.mechs.length ? `${s.mechs.length}M` : '', s.drones.length ? `${s.drones.length}D` : ''].filter(Boolean).join(' ');
+      const blurb = (s: { mechs: unknown[]; drones: unknown[]; tactics?: string[] }) =>
+        [s.mechs.length ? `${s.mechs.length}M` : '', s.drones.length ? `${s.drones.length}D` : '', s.tactics?.length ? `${s.tactics.length}T` : '']
+          .filter(Boolean).join(' ');
       squads.innerHTML = `<select class="preset-pick"><option value="">Saved squads…</option>${savedOptions(
         list,
         this.squadId,
