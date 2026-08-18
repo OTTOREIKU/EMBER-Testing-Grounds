@@ -1819,20 +1819,23 @@ function battlefieldStep(): string {
         <div class="mp-line"><b>VP</b>${esc(String(chosen.vp ?? ''))}${chosen.cadence ? ` · ${esc(chosen.cadence)}` : ''}${chosen.fromRound ? ` · from round ${chosen.fromRound}` : ''}</div>
       </div>`
     : `<div class="mispanel empty"><p class="quiet">Pick a Main Task to read its card here.<br>A free battle plays without one.</p></div>`;
-  return `<div class="steppane">
+  // The one step that could outgrow the window, so it is the one step that
+  // sizes itself to it: maps across the top of their own preview, Main Tasks
+  // in a column beside it, and the chosen card beside that. Nothing below the
+  // fold means the rail's Launch button stays reachable.
+  return `<div class="steppane fit">
     <div class="stephead"><h3>Battlefield</h3></div>
     ${editable ? '' : `<p class="hint">${running() ? 'Locked while the game runs.' : 'Host only.'}</p>`}
     <div class="pickgrid three">
       <div class="mappanel">
+        <div class="maprow">${maps}</div>
         <div class="previewhead"><span class="t">Preview</span><span class="n">${esc(mapName(state.map))}</span></div>
         ${previewSvg(state.map)}
-      </div>
-      ${taskPanel}
-      <div class="maplist">${maps}
         <p class="quiet">Custom maps stay on the board page. A guest may not have them.</p>
       </div>
+      <div class="misslist">${missions}</div>
+      ${taskPanel}
     </div>
-    <div class="missionrow">${missions}</div>
   </div>`;
 }
 
@@ -2289,7 +2292,9 @@ function render(): void {
   // Stats and Admin are reading views: long lists that must not push the page
   // taller than the window. Same clamp the HUD uses, and the lists scroll
   // inside their panels instead.
-  const capped = !hud && !!data && !!account && !relay.state.room && door !== 'play';
+  // In a room too: the lobby rail pins Launch to its own bottom, so the lobby
+  // must never be taller than the window either.
+  const capped = !hud && !!data && !!account && (relay.state.room ? true : door !== 'play');
   // Three fixed hosts, so the stateful board survives every re-render: the
   // bar and veils redraw freely, the body only redraws outside HUD mode.
   if (!document.getElementById('mc-barhost')) {
@@ -2332,7 +2337,9 @@ function render(): void {
             ? lobbyHtml()
             : doorTabs() + doorHtml();
     const wide = data && account && relay.state.room;
-    bodyhost.innerHTML = `<div class="mc-stage${wide ? ' wide' : ''}${capped ? ' capped' : ''}">${inner}</div>`;
+    // `capped` on the stage is the reading views' centred column; the lobby
+    // takes the clamp from the root and lays itself out full width.
+    bodyhost.innerHTML = `<div class="mc-stage${wide ? ' wide' : ''}${capped && !wide ? ' capped' : ''}">${inner}</div>`;
   }
   wire();
   applyListFilters();

@@ -188,11 +188,21 @@ input.f.codebox { font-family: var(--mono); font-size: 16px; letter-spacing: 5px
 
 /* ---------- the lobby: rail + stage ---------- */
 .mc-stage.wide { place-items: stretch; padding: 0; display: block; }
-.mc-lobby { display: flex; min-height: calc(100vh - 46px); }
+/* A definite height, not a minimum. The rail pins Launch to its own bottom
+   with margin-top:auto, so a step tall enough to stretch the lobby used to
+   stretch the rail with it and carry the button off the screen — which is what
+   made Battlefield the one page you had to scroll to start a match. Both
+   columns scroll inside themselves instead.
+   The height comes down the flex chain from .mc.capped rather than from a
+   `100vh - titlebar` guess: the bar is 47px tall, not the 46 such a guess had,
+   and it would drift again the next time its padding changed. */
+.mc-lobby { display: flex; height: 100%; min-height: 0; }
+.mc.capped .mc-stage.wide { flex: 1; min-height: 0; }
 .mc-rail {
   width: 232px; flex: none; background: var(--surface);
   padding: 14px 10px; display: flex; flex-direction: column; gap: 2px;
   box-shadow: 2px 0 12px rgba(0, 0, 0, 0.25);
+  min-height: 0; overflow-y: auto;
 }
 .mc-rail .grouphead { font-size: 9.5px; letter-spacing: 0.9px; text-transform: uppercase; color: var(--text3); padding: 4px 10px 7px; font-weight: 700; }
 .step {
@@ -213,8 +223,10 @@ input.f.codebox { font-family: var(--mono); font-size: 16px; letter-spacing: 5px
 .mc-rail .foot .quiet { display: block; margin-bottom: 7px; }
 .mc-rail .foot b { display: block; color: var(--text2); font-size: 11.5px; font-weight: 600; margin-bottom: 2px; }
 
-.mc-stagepane { flex: 1; min-width: 0; padding: 18px 22px; max-width: 780px; }
+.mc-stagepane { flex: 1; min-width: 0; padding: 18px 22px; max-width: 780px; min-height: 0; overflow-y: auto; }
 .steppane { }
+/* The steps that fit themselves to the pane rather than running off it. */
+.steppane.fit { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .stephead { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; }
 .stephead h3 { margin: 0; font-size: 15px; }
 .stephead span { font-size: 11.5px; color: var(--text3); }
@@ -224,14 +236,22 @@ input.f.codebox { font-family: var(--mono); font-size: 16px; letter-spacing: 5px
 
 /* battlefield picker */
 .pickgrid { display: grid; grid-template-columns: minmax(0, 1fr) 210px; gap: 13px; }
-.mappanel { background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow); padding: 11px; }
+.steppane.fit .pickgrid { flex: 1; min-height: 0; }
+.mappanel {
+  background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow); padding: 11px;
+  display: flex; flex-direction: column; min-height: 0;
+}
+/* The three maps share one row above the board they describe, instead of
+   standing in a column of their own that was mostly empty. */
+.maprow { display: flex; gap: 6px; margin-bottom: 10px; }
+.maprow .opt { flex: 1; min-width: 0; justify-content: center; }
+.maprow .opt .idx { flex: none; }
 .previewhead { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 9px; }
 .previewhead .t { font-size: 9.5px; letter-spacing: 0.9px; text-transform: uppercase; color: var(--text3); font-weight: 700; }
 .previewhead .n { font-family: var(--mono); font-size: 12px; }
 .mapsvg { width: 100%; max-height: 300px; display: block; border-radius: var(--radius-sm); background:
     repeating-linear-gradient(0deg, #151a20 0 8.333%, #12171d 8.333% 16.666%),
     repeating-linear-gradient(90deg, rgba(21, 26, 32, 0.5) 0 8.333%, rgba(18, 23, 29, 0.5) 8.333% 16.666%); }
-.maplist { display: flex; flex-direction: column; gap: 6px; }
 .opt {
   border-radius: var(--radius-sm); background: var(--surface2); box-shadow: var(--shadow);
   padding: 9px 11px; font-size: 11.5px; color: var(--text2); cursor: pointer;
@@ -245,6 +265,17 @@ input.f.codebox { font-family: var(--mono); font-size: 16px; letter-spacing: 5px
 .opt.still:hover { background: var(--surface2); }
 .opt.still.sel:hover { background: var(--accent-lt); }
 .missionrow { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+/* Main Tasks read as a column beside the map now. The list is the only part
+   allowed to scroll — everything else on this step fits by construction. */
+.misslist { display: flex; flex-direction: column; gap: 6px; min-height: 0; overflow-y: auto; padding-right: 4px; }
+/* Every Task card the same height, sharing the column between them, so the
+   list ends level with the map and the card panel either side of it instead of
+   trailing off halfway down. They stop at a readable floor rather than
+   squeezing to nothing, and the list scrolls once they reach it. */
+.misslist .miscard {
+  width: auto; flex: 1 1 0; min-height: 40px;
+  display: flex; flex-direction: column; justify-content: center;
+}
 .chip {
   border-radius: 100px; background: var(--surface2); box-shadow: var(--shadow);
   padding: 6px 12px; font-size: 11px; color: var(--text2); cursor: pointer; transition: background 0.12s;
@@ -255,9 +286,29 @@ input.f.codebox { font-family: var(--mono); font-size: 16px; letter-spacing: 5px
 .chip.still.sel:hover { background: var(--accent-lt); }
 
 /* the mission side panel — the preview gets the room, it is the point */
-.mc-stagepane { max-width: 1180px; }
-.pickgrid.three { grid-template-columns: minmax(0, 1fr) 260px 190px; }
-.mapsvg { max-height: none; }
+/* The lobby uses the width it has: the rail takes 232 and the rest was being
+   left empty at 1180, which is what paid for the bigger Task card below. */
+.mc-stagepane { max-width: 1440px; }
+/* The Main Task card is the thing a player actually has to read, so it gets
+   roughly double the width it had. The map keeps whatever is left and stays
+   square, so it gives up little — it was already limited by the height. */
+.pickgrid.three { grid-template-columns: minmax(0, 1fr) 196px 488px; }
+/* Below this there is no spare width to hand over, and the map would be the
+   one to suffer, so the card goes back to a thumbnail. */
+@media (max-width: 1500px) {
+  .pickgrid.three { grid-template-columns: minmax(0, 1fr) 180px 320px; }
+}
+/* The preview takes whatever is left after the chips and the caption, and
+   stays SQUARE while doing it: the board is 36x36, and letting a flex row
+   stretch the box instead would leave the map drawn small between two dead
+   bands. aspect-ratio plus the two maximums picks the smaller of the space
+   available in each direction. */
+.steppane.fit .mapsvg {
+  flex: 0 1 auto; min-height: 0; width: auto; height: auto;
+  max-width: 100%; max-height: 100%; aspect-ratio: 1 / 1; margin: 0 auto;
+}
+.steppane.fit .mispanel { min-height: 0; overflow-y: auto; }
+.steppane.fit .mappanel .quiet { margin: 9px 0 0; }
 
 /* the HUD's left side panel: freeplay's Squads and Details, moved over */
 .hudside {
