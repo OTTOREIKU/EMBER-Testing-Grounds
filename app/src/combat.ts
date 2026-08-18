@@ -233,6 +233,7 @@ export class AttackHelper {
     log: string[];
     focus: { stage: string; attackerUse: boolean; defenderUse: boolean } | null;
     kcUsed: boolean;
+    designate: { from: string; slots: { slot: string; label: string }[] } | null;
   } | null) => void) | null = null;
   // Whether this defender's Focus decisions belong to a player at another
   // screen. Wired by the Match Centre; null in freeplay, where one player
@@ -948,6 +949,16 @@ export class AttackHelper {
       defense: c.defenseRoll?.map((d) => ({ color: d.color, face: d.face })) ?? null,
       log: c.log.slice(-5).map((l) => l.replace(/<[^>]*>/g, '')),
       focus: c.focus ? { stage: c.focus.stage, attackerUse: c.focus.attackerUse, defenderUse: c.focus.defenderUse } : null,
+      // Only while the question is open, and only ever answered on the
+      // defender's own client — this is what their mirror draws buttons from.
+      designate: c.step === 'designate' && c.designateFrom
+        ? {
+            from: c.designateFrom,
+            slots: selfHitParts(this.data, c.defender)
+              .filter((x) => x.slot !== c.designateFrom)
+              .map((x) => ({ slot: x.slot, label: x.label })),
+          }
+        : null,
       kcUsed: !!c.kcUsed,
     });
     const el = document.createElement('div');
@@ -1364,9 +1375,11 @@ export class AttackHelper {
     // defender take the hit on that Part instead of the one the Black Die
     // found. Offered once, and only when there is a different Part to offer:
     // a shield already hit has nothing to redirect.
+    // Asked of whoever owns the defender. When that is the other player the
+    // step still opens — the attacker's window waits, their mirror answers —
+    // because the choice is the defender's and must never be made for them.
     const offers = selfHitParts(this.data, c.defender).filter((x) => x.slot !== slot);
-    const remoteDefender = !!(this.focusRemote && this.focusRemote(c.defender));
-    if (offers.length && c.designateFrom === null && !remoteDefender) {
+    if (offers.length && c.designateFrom === null) {
       c.designateFrom = slot;
       c.step = 'designate';
       this.render();
@@ -1386,8 +1399,17 @@ export class AttackHelper {
     const wrap = document.createElement('div');
     wrap.className = 'ah-step';
     const rolled = SLOT_LABEL[from as PartSlot | 'main'];
+    const remoteDefender = !!(this.focusRemote && this.focusRemote(c.defender));
     wrap.innerHTML = `<h4><span class="ah-n">2</span>Designate the Part</h4>
-      <p class="ah-note">The hit landed on <b>${rolled}</b>. This Mech may take it on a Part that Designates instead.</p>`;
+      <p class="ah-note">The hit landed on <b>${rolled}</b>. ${
+        remoteDefender
+          ? 'Waiting for the defending player — they may take it on a Part that Designates instead.'
+          : 'This Mech may take it on a Part that Designates instead.'
+      }</p>`;
+    if (remoteDefender) {
+      linkMechanics(wrap, this.data.mechanics);
+      return wrap;
+    }
     for (const opt of selfHitParts(this.data, c.defender).filter((x) => x.slot !== from)) {
       const b = document.createElement('button');
       b.className = 'ah-primary';
@@ -1402,6 +1424,19 @@ export class AttackHelper {
     wrap.appendChild(keep);
     linkMechanics(wrap, this.data.mechanics);
     return wrap;
+  }
+
+  // The remote defender's Designate, carried by a designateHit command. Their
+  // own client sent it; this window is where the hit actually moves.
+  designateAnswered(slot: string): void {
+    const c = this.ctx;
+    if (!c || c.step !== 'designate' || !c.designateFrom) return;
+    const legal = slot === c.designateFrom
+      || selfHitParts(this.data, c.defender).some((x) => x.slot === slot);
+    // A slot that is not on offer is refused rather than applied: the command
+    // arrives from the other player's client, which is not ours to trust.
+    if (!legal) return;
+    this.designateHit(slot, c.designateFrom);
   }
 
   // The defender's answer. Declining keeps the rolled Part, so the same call

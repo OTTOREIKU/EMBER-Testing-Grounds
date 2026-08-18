@@ -682,6 +682,7 @@ function settleDefense(cmd: Command): void {
   if (cmd.kind === 'focusAnswer') attackHelper?.focusAnswered(cmd.use);
   if (cmd.kind === 'focusReroll') attackHelper?.focusRerolled(cmd.indices, cmd.faces);
   if (cmd.kind === 'kcArmor') attackHelper?.kcArmed();
+  if (cmd.kind === 'designateHit') attackHelper?.designateAnswered(cmd.slot);
 }
 
 function startAttack(uid: number, actionId: string, targetUid: number, mode: 'attack' | 'intercept' | 'explosion' = 'attack'): void {
@@ -1981,6 +1982,7 @@ function hudCtx(): HudCtx {
     combatBusy,
     combatMirrorHtml,
     mirrorFocus: mirrorFocusAct,
+    mirrorDesignate,
     startAttack,
     showTab: (name) => showSideTab(null, name),
     diceData,
@@ -2031,6 +2033,18 @@ function combatMirrorHtml(): string | null {
   const kcUi = kcReady && kcLightning > 0
     ? `<div class="ah-step"><button class="ah-alt" data-act="kcarmor">KC Armor: consume a Charge Token — your [Lightning] become [Defense]</button></div>`
     : '';
+  // Shield Up / Mobile Defense (4.x): the hit landed somewhere, and this player
+  // may move it onto a Part that Designates. Asked here for the same reason
+  // Focus is — the attacker's window is on the other screen, and the choice is
+  // this player's to make.
+  const des = view.designate;
+  const slotName = (slot: string): string =>
+    (SLOT_LABEL as Record<string, string>)[slot] ?? slot;
+  const desUi = des && iAmDefender
+    ? `<div class="ah-step"><p><b>Designate the Part</b>: the hit landed on ${esc(slotName(des.from))}. You may take it on a Part that Designates instead.</p>
+        ${des.slots.map((o) => `<button class="ah-primary" data-desslot="${esc(o.slot)}">${esc(slotName(o.slot))} — ${esc(o.label)}</button>`).join('')}
+        <button class="ah-alt" data-desslot="${esc(des.from)}">Keep ${esc(slotName(des.from))}</button></div>`
+    : '';
   const focus = view.focus;
   let focusUi = '';
   if (focus && iAmDefender && focus.stage === 'declareD') {
@@ -2056,7 +2070,7 @@ function combatMirrorHtml(): string | null {
     ${myRoll}
     ${view.defense?.length ? `<div class="ah-step"><p>Defense Roll</p>${faceRow(view.defense)}</div>` : ''}
     ${kcUi}
-    ${focusUi}
+    ${desUi}${focusUi}
     ${view.log.length ? `<div class="ah-log">${view.log.map((l) => `<div>${esc(l)}</div>`).join('')}</div>` : ''}
   </div>`;
 }
@@ -2068,6 +2082,15 @@ const mirrorFocusSel = new Set<number>();
 // The mirror's Focus buttons, handled here because this page owns the seat,
 // the server dice and the send. Reads the CURRENT view at click time; reached
 // from the HUD through ctx.mirrorFocus.
+// The defender's Designate answer. It travels as a command and the ATTACKER's
+// open window is what actually moves the hit, exactly as focusAnswer does.
+function mirrorDesignate(slot: string): void {
+  const seat = mySeat();
+  if (!seat) return;
+  send({ kind: 'designateHit', seat, slot });
+  render();
+}
+
 function mirrorFocusAct(act: string, dieIndex?: number): void {
   const seat = mySeat();
   const view = state.script?.combatView;

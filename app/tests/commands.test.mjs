@@ -1569,6 +1569,27 @@ check('a Focus answer needs a running game', C.check(data, { tokens: [], round: 
 check('a boolean answer passes', C.check(data, wfoc, { kind: 'focusAnswer', seat: 's2', use: true }).ok, true);
 check('a non-boolean answer is refused', C.check(data, wfoc, { kind: 'focusAnswer', seat: 's2', use: 'yes' }).ok, false);
 check('a Focus reroll with matching lists passes', C.check(data, wfoc, { kind: 'focusReroll', seat: 's2', indices: [0, 2], faces: [{ color: 'white', face: 1 }, { color: 'blue', face: 3 }] }).ok, true);
+
+// ---------- Designate the hit Part (Shield Up / Mobile Defense) ----------
+//
+// The defender may take a hit on a Part that Designates instead of the one the
+// Black Die found. Online the choice is THEIRS, so it travels as a command the
+// attacker's open window consumes — the same shape as focusAnswer, and like it
+// the board carries nothing for apply() to change.
+
+check('a Designate needs a running game',
+  C.check(data, { tokens: [], round: { n: 1, phase: 2, firstPlayer: 's1' } }, { kind: 'designateHit', seat: 's2', slot: 'leftHand' }).ok, false);
+check('a slot passes', C.check(data, wfoc, { kind: 'designateHit', seat: 's2', slot: 'leftHand' }).ok, true);
+check('an empty slot is refused', C.check(data, wfoc, { kind: 'designateHit', seat: 's2', slot: '' }).ok, false);
+check('a non-string slot is refused', C.check(data, wfoc, { kind: 'designateHit', seat: 's2', slot: 7 }).ok, false);
+// It is the DEFENDER's answer, so it is not tied to a unit the sender owns.
+check('it is actor-optional, like the rest of the combat handshake',
+  C.check(data, wfoc, { kind: 'designateHit', seat: 's2', slot: 'torso' }).ok, true);
+const wdes = world([mech(1, 's1')], 2, opp(1));
+const beforeDes = JSON.stringify(wdes);
+C.apply(data, wdes, { kind: 'designateHit', seat: 's2', slot: 'leftHand' });
+check('apply changes no board state', JSON.stringify(wdes), beforeDes);
+
 check('an empty reroll is the "kept it" answer and passes', C.check(data, wfoc, { kind: 'focusReroll', seat: 's2', indices: [], faces: [] }).ok, true);
 check('mismatched lists are refused', C.check(data, wfoc, { kind: 'focusReroll', seat: 's2', indices: [0], faces: [] }).ok, false);
 check('an absurd die index is refused', C.check(data, wfoc, { kind: 'focusReroll', seat: 's2', indices: [99], faces: [{ color: 'white', face: 1 }] }).ok, false);

@@ -83,6 +83,7 @@ export interface HudCtx {
   // 'use'/'pass' answer the declare, 'die' toggles a Defense die by index,
   // 'reroll' rolls server faces for the picked dice, 'keep' ends without.
   mirrorFocus(act: 'use' | 'pass' | 'die' | 'reroll' | 'keep' | 'kc', dieIndex?: number): void;
+  mirrorDesignate(slot: string): void;
   // Opens the §4.4 pipeline on a target the player has just picked. The mode
   // decides what the defender may claim: an ordinary attack reads Terrain and
   // Unit Protection off the board, an Interception grants none and needs no
@@ -4234,6 +4235,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
   on('[data-act="focusreroll"]', () => ctx.mirrorFocus('reroll'));
   on('[data-act="focuskeep"]', () => ctx.mirrorFocus('keep'));
   on('[data-act="kcarmor"]', () => ctx.mirrorFocus('kc'));
+  on('[data-desslot]', (el) => ctx.mirrorDesignate(el.dataset.desslot!));
   on('[data-fdie]', (el) => ctx.mirrorFocus('die', Number(el.dataset.fdie)));
   on('[data-act="rolldefense"]', (el) => {
     const call = ensureScript(s).combat;

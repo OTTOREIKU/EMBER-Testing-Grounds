@@ -612,6 +612,11 @@ export interface CombatView {
   focus?: { stage: string; attackerUse: boolean; defenderUse: boolean } | null;
   // KC Armor already declared this attack, so the mirror stops offering it.
   kcUsed?: boolean;
+  // Shield Up / Mobile Defense: the Parts the DEFENDER may take this hit on
+  // instead of the one the Black Die found, and where it landed. Present only
+  // while that question is open, because it is the defender's to answer and
+  // their mirror is the only place the buttons may appear.
+  designate?: { from: string; slots: { slot: string; label: string }[] } | null;
 }
 
 // A boundary a rollback can return to. `available` false means a die roll has
