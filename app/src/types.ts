@@ -460,6 +460,13 @@ export interface Opportunity {
   // one such move is free; a second, or a longer one, spends the activation the
   // ordinary way (2.4.1).
   preMoved?: boolean;
+  // Where the unit STOOD before this Opportunity's Maneuver. A Movement is
+  // judged at the start and landing grids only (FAQ O11/O15), and the Match
+  // Centre judges it from a render-time sweep — long after the board forgot the
+  // start. Without this, a unit that walked out of an enemy aura was judged as
+  // though it had never been in it. Freeplay keeps its own copy in scope and
+  // does not read this; it is recorded for the sweeping readers.
+  movedFrom?: { col: number; row: number };
   // A Mech confirms its Stance before it may Maneuver or act (4.1). Set by
   // setStance or reboot while this Opportunity is open; drones never need it,
   // their Stance being printed on the card.
@@ -505,6 +512,16 @@ export function normaliseOpportunity(raw: unknown): Opportunity | null {
     moved: !!o.moved,
     started: !!o.started,
     stanceLocked: o.stanceLocked === true ? true : undefined,
+    // This function is a WHITELIST: a field it does not name is silently dropped
+    // on every rehydrate, network round trip and rollback. preMoved was added
+    // with the M2 Data Link and missed here, so a Drone that had spent its free
+    // grid got a fresh one back after a rejoin or a replay.
+    preMoved: o.preMoved === true ? true : undefined,
+    // Both halves or neither: half a coordinate would put the mover in a Grid
+    // it never stood in, which is worse than having no start at all.
+    movedFrom: typeof o.movedFrom?.col === 'number' && typeof o.movedFrom?.row === 'number'
+      ? { col: o.movedFrom.col, row: o.movedFrom.row }
+      : undefined,
     overload: typeof o.overload === 'number' ? Math.max(0, Math.round(o.overload)) : base.overload,
     performed: list(o.performed),
     spentExtras: list(o.spentExtras),
