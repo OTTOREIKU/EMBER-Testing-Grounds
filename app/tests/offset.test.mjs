@@ -86,5 +86,41 @@ check('Dense Armor off by default keeps the old answer',
 check('Dense Armor: 2H+1L vs 1 Dodge, 2 Defense -> everything offset',
   offsetIcons(2, 1, 1, 2, true), { dodged: 1, blocked: 2, penetrating: 0, hits: 2 });
 
+
+// ---------- Dodge Enhancement (ZYBP-302): a Dodge cancels a DIE ----------
+//
+// "When this Mech is hit, may spend 1 Command Token, make each {Dodge} offset 1
+// Attack die." Normally one Dodge cancels one ICON; with this, it cancels every
+// hit icon that one attack die produced. Passing the per-die breakdown is what
+// switches the allocator over; without it nothing changes.
+
+// A die showing 2 Heavy is worth far more than one showing 1 Light, and the
+// single Dodge must take the expensive one.
+check('one Dodge cancels the whole of the heaviest die',
+  offsetIcons(2, 1, 1, 0, false, [{ heavy: 2, light: 0 }, { heavy: 0, light: 1 }]),
+  { dodged: 2, penetrating: 1, spareDodge: 0 });
+// The same roll WITHOUT the enhancement: one Dodge, one icon.
+check('and without it the same Dodge cancels only one icon',
+  offsetIcons(2, 1, 1, 0),
+  { dodged: 1, penetrating: 2 });
+check('two Dodges cancel two dice',
+  offsetIcons(2, 2, 2, 0, false, [{ heavy: 1, light: 1 }, { heavy: 1, light: 1 }]),
+  { dodged: 4, penetrating: 0 });
+check('a spare Dodge is still spare when the dice run out',
+  offsetIcons(1, 0, 3, 0, false, [{ heavy: 1, light: 0 }]),
+  { dodged: 1, penetrating: 0, spareDodge: 2 });
+// Defense still only offsets Light Hits, on whatever the Dodges left standing.
+check('Defense mops up the Light Hits the Dodges did not reach',
+  offsetIcons(1, 2, 1, 1, false, [{ heavy: 1, light: 0 }, { heavy: 0, light: 1 }, { heavy: 0, light: 1 }]),
+  { dodged: 1, blocked: 1, penetrating: 1 });
+// A die that rolled no hit icon is not something a Dodge should be spent on.
+check('an empty die is never worth a Dodge',
+  offsetIcons(1, 0, 1, 0, false, [{ heavy: 0, light: 0 }, { heavy: 1, light: 0 }]),
+  { dodged: 1, penetrating: 0, spareDodge: 0 });
+// The totals must survive even if the caller's per-die breakdown is short.
+check('icons the breakdown missed are still counted',
+  offsetIcons(2, 0, 1, 0, false, [{ heavy: 1, light: 0 }]),
+  { dodged: 1, penetrating: 1, hits: 1 });
+
 console.log(`\n${fail === 0 ? 'ALL PASS' : 'FAILURES'} — ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

@@ -61,7 +61,23 @@ interface Duel {
 }
 
 // `dense` is Dense Armor (致密装甲): {Defense} may offset {Heavy Hit} too.
-export function offsetIcons(heavy: number, light: number, dodge: number, defense: number, dense = false): {
+//
+// `perDie` is Dodge Enhancement (ZYBP-302): "make each {Dodge} offset 1 Attack
+// DIE" rather than one icon. When it is supplied, each entry is the hit icons a
+// single attack die produced, and one Dodge cancels a whole entry. The dice are
+// taken in the order that helps the defender most — the heaviest first — which
+// is the same principle the ordinary pass follows by spending Dodges on Heavy
+// Hits before Light ones.
+//
+// Absent, everything below behaves exactly as it always has.
+export function offsetIcons(
+  heavy: number,
+  light: number,
+  dodge: number,
+  defense: number,
+  dense = false,
+  perDie?: { heavy: number; light: number }[],
+): {
   icons: DuelIcon[];
   spareDodge: number;
   idleDefense: number;
@@ -72,16 +88,38 @@ export function offsetIcons(heavy: number, light: number, dodge: number, defense
   unoffset: { heavy: number; light: number };
 } {
   const icons: DuelIcon[] = [];
-  for (let i = 0; i < heavy; i++) icons.push({ kind: 'heavyHit', offset: null });
-  for (let i = 0; i < light; i++) icons.push({ kind: 'lightHit', offset: null });
   let d = dodge;
-  for (const ic of icons) {
-    if (!d) break;
-    if (ic.kind === 'heavyHit') { ic.offset = 'dodge'; d--; }
-  }
-  for (const ic of icons) {
-    if (!d) break;
-    if (ic.kind === 'lightHit' && !ic.offset) { ic.offset = 'dodge'; d--; }
+  if (perDie) {
+    // Grouped by die, best-for-the-defender first, so a Dodge spent on a die
+    // carrying two Heavy Hits is not wasted on one carrying a single Light.
+    const groups = [...perDie]
+      .filter((g) => g.heavy + g.light > 0)
+      .sort((a, b) => (b.heavy - a.heavy) || (b.light - a.light));
+    let spentHeavy = 0;
+    let spentLight = 0;
+    for (const g of groups) {
+      const cancel = d > 0;
+      if (cancel) d--;
+      for (let i = 0; i < g.heavy; i++) icons.push({ kind: 'heavyHit', offset: cancel ? 'dodge' : null });
+      for (let i = 0; i < g.light; i++) icons.push({ kind: 'lightHit', offset: cancel ? 'dodge' : null });
+      spentHeavy += g.heavy;
+      spentLight += g.light;
+    }
+    // Any icons the caller counted but did not attribute to a die still have to
+    // appear, or the tally would quietly shrink.
+    for (let i = spentHeavy; i < heavy; i++) icons.push({ kind: 'heavyHit', offset: null });
+    for (let i = spentLight; i < light; i++) icons.push({ kind: 'lightHit', offset: null });
+  } else {
+    for (let i = 0; i < heavy; i++) icons.push({ kind: 'heavyHit', offset: null });
+    for (let i = 0; i < light; i++) icons.push({ kind: 'lightHit', offset: null });
+    for (const ic of icons) {
+      if (!d) break;
+      if (ic.kind === 'heavyHit') { ic.offset = 'dodge'; d--; }
+    }
+    for (const ic of icons) {
+      if (!d) break;
+      if (ic.kind === 'lightHit' && !ic.offset) { ic.offset = 'dodge'; d--; }
+    }
   }
   let f = defense;
   for (const ic of icons) {
