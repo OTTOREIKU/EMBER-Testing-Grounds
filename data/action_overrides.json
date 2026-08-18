@@ -14,7 +14,8 @@
       "range": 2
     },
     "173_B": {
-      "range": 6
+      "range": 6,
+      "_note": "Fire Control Planning. cards.json says 0; OTTO read 6 off the printed card 2026-08-18 — the scan mistook the 6 for a 0. A 0 would have confined a \"within Range\" aura to its own Large Grid."
     },
     "509_A": {
       "range": 0

@@ -34,7 +34,24 @@ writeFileSync(tmp, body);
 const A = await import(tmp.href);
 
 const raw = JSON.parse(readFileSync(new URL('../../data/cards.json', import.meta.url), 'utf8'));
-const data = { byId: new Map((Array.isArray(raw) ? raw : raw.cards).map((c) => [c.id, c])) };
+const cards = Array.isArray(raw) ? raw : raw.cards;
+// The app patches actions at load from action_overrides.json, and an aura's
+// REACH is one of the things that gets corrected there — card 173 reads 0 in
+// cards.json and 6 on the printed card. Reading the raw file would test a
+// range no player ever sees, so the same patch is applied here.
+const patch = JSON.parse(readFileSync(new URL('../../data/action_overrides.json', import.meta.url), 'utf8')).actions ?? {};
+for (const c of cards) {
+  for (const a of c.actions ?? []) {
+    const fix = patch[a.id];
+    if (!fix) continue;
+    for (const [k, v] of Object.entries(fix)) {
+      if (k.startsWith('_')) continue;
+      if (k === 'name' && v && typeof v === 'object') a.name = { ...a.name, ...v };
+      else a[k] = v;
+    }
+  }
+}
+const data = { byId: new Map(cards.map((c) => [c.id, c])) };
 
 let pass = 0, fail = 0;
 const check = (name, got, want) => {
@@ -97,6 +114,14 @@ check('Fire Control Planning lengthens an ally DRONE by 2',
   A.actionRange(data, [node, dr], dr, firing), 6);
 check('but not an ally Mech, since that aura is drone-only',
   A.actionRange(data, [node, mech(10, 's1', '002', 9)], mech(10, 's1', '002', 9), firing), 4);
+// Card 173's reach is 6 on the printed card and 0 in cards.json; the override
+// is what makes this pass, so this asserts the whole load path, not just the aura.
+const farDrone = drone(16, 's1', '003', 24);   // 5 Large Grids from the Node Core
+check('the Node Core aura reaches across its corrected Range 6',
+  A.actionRange(data, [node, farDrone], farDrone, firing), 6);
+const tooFar = drone(17, 's1', '003', 30);     // 7 away
+check('and stops beyond it',
+  A.actionRange(data, [node, tooFar], tooFar, firing), 4);
 
 // Defence and the electronic contest.
 const escarp = mech(11, 's1', '559', 9);
