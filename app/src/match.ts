@@ -920,10 +920,12 @@ function mountSide(): void {
     // the Screens are the defender's to place and their Ammo is theirs to
     // spend — and a client may only ever command its own units. Same shape as
     // Interception's owed queue, for the same reason.
-    attackHelper.onReaction = (defender, reaction) => {
+    attackHelper.onReaction = (defender, reaction, attacker) => {
       send({
         kind: 'queueReactions', seat: mySeat() ?? defender.side,
-        items: [{ uid: defender.uid, actionId: reaction.actionId, count: reaction.smoke.count, range: reaction.smoke.range }],
+        items: [reaction.smoke
+          ? { uid: defender.uid, actionId: reaction.actionId, count: reaction.smoke.count, range: reaction.smoke.range, kind: 'smoke' as const }
+          : { uid: defender.uid, actionId: reaction.actionId, count: 0, range: 0, kind: 'trace' as const, fromUid: attacker.uid }],
       });
       render();
     };

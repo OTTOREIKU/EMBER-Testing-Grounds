@@ -47,6 +47,9 @@ const riders = unitsSrc.slice(
   unitsSrc.indexOf('export interface ParryPart'),
 );
 if (!riders) throw new Error('could not locate the Data Link riders in units.ts');
+// targetTracingOn needs NO slice of its own: it sits inside the range
+// interceptParser already takes, so adding one declares it twice. Fourth time
+// this trap has bitten -- check every existing slice's range before adding.
 const slotLabels = unitsSrc.slice(
   unitsSrc.indexOf('export const SLOT_LABEL'),
   unitsSrc.indexOf('let uidSource'),
@@ -1882,6 +1885,37 @@ const wDodgeDie = world([mech(1, 's1')], 2, opp(1));
 const beforeDodgeDie = JSON.stringify(wDodgeDie);
 C.apply(data, wDodgeDie, { kind: 'dodgeEnhance', seat: 's2' });
 check('apply changes no board state', JSON.stringify(wDodgeDie), beforeDodgeDie);
+
+// ---------- Target Tracing opens a Counter-roll it has no Range for ----------
+//
+// The reaction flag skips the Range test, so the gate that keeps it honest is
+// "does this Mech actually carry the Passive". That is the whole rule.
+const traceCard = {
+  id: 'TT1', category: 'part', slot: 'torso', electronic: 3,
+  actions: [{ id: 'TT1_A', name: { en: 'Target Tracing' }, type: 'Passive',
+    description: { en: '· When this mech is attacked by an Enemy Mech, it may spend 1 Command Token to perform an Electronic Counter Roll against the Attacker. If successful, the Attacker loses 1 Link.' } }],
+};
+data.byId.set('TT1', traceCard);
+const tracer = (statuses = ['command']) => ({
+  uid: 1, kind: 'mech', side: 's1', col: 0, row: 0, stance: 'offensive', link: 3, statuses,
+  mech: { torso: 'TT1' }, partStates: { torso: 'intact' }, label: 'Hunter', ammo: {},
+});
+const far = { uid: 2, kind: 'mech', side: 's2', col: 30, row: 30, stance: 'offensive', link: 3,
+  mech: { torso: 'TT1' }, partStates: { torso: 'intact' }, label: 'Prey', ammo: {}, statuses: [] };
+const wTrace = world([tracer(), far], 2, opp(1));
+const traceCmd = (over = {}) => ({ kind: 'startCounterRoll', seat: 's1', uid: 1, targetUid: 2, actionId: 'TT1_A', ...over });
+check('a Counter-roll at Range 30 is refused as an Action', C.check(data, wTrace, traceCmd()).ok, false);
+check('and allowed as a reaction, which the attack already paid the Range for',
+  C.check(data, wTrace, traceCmd({ reaction: true })).ok, true);
+check('a Mech without the Passive cannot claim the reaction',
+  C.check(data, world([{ ...tracer(), mech: { torso: 'BP1' } }, far], 2, opp(1)), traceCmd({ reaction: true })).ok, false);
+check('naming a different Action does not open it either',
+  C.check(data, wTrace, traceCmd({ reaction: true, actionId: 'TT1_B' })).ok, false);
+check('and no Command Token means no reaction at all',
+  C.check(data, world([tracer([]), far], 2, opp(1)), traceCmd({ reaction: true })).ok, false);
+// The reaction skips Range, never the other 4.11.2 bars.
+check('an ally is still not a legal Responder',
+  C.check(data, world([tracer(), { ...far, side: 's1', uid: 2 }], 2, opp(1)), traceCmd({ reaction: true })).ok, false);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -2,7 +2,7 @@ import type { CombatView, Facing, GameState, MechLoadout, Opportunity, PartSlot,
 import { addStatus, ageTokens, newOpportunity, PHASES, statusCount, STATUSES, TIMINGS } from './types';
 import type { GameData } from './data';
 import { unfoldsInto } from './data';
-import { riderOnDrone, hasFlexibleTiming, commandGeneration, blinkTargets, isPositionSwap, electronicOrigins, loanedParts, unfoldToken, extrasFor, consumesCharge, electronicValue, freehandSlots, interceptCapacity, makeDroneToken, makeMechToken, maxLink, pilotCard, projectileDelivery, tokenCards } from './units';
+import { targetTracingOn, riderOnDrone, hasFlexibleTiming, commandGeneration, blinkTargets, isPositionSwap, electronicOrigins, loanedParts, unfoldToken, extrasFor, consumesCharge, electronicValue, freehandSlots, interceptCapacity, makeDroneToken, makeMechToken, maxLink, pilotCard, projectileDelivery, tokenCards } from './units';
 import { canActivate, canManeuver, canOverload, canPerform, spendAction, spendActivation, spendManeuver, spendOverload } from './ticks';
 import { tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { battlefieldLocked, deploymentComplete, deployTurn, firstPlayerFrom, newSetup, normaliseSetup, tasksLocked } from './setup';
@@ -128,7 +128,13 @@ export type Command =
   // An Electronic Counter-roll (4.11.2). Both sides roll their own Electronic
   // Value in Yellow dice and either may Focus, so it cannot be driven from one
   // chair: each seat submits its own faces, and both clients derive the verdict.
-  | { kind: 'startCounterRoll'; seat: Side; uid: number; actionId: string; targetUid: number }
+  | {
+      kind: 'startCounterRoll'; seat: Side; uid: number; actionId: string; targetUid: number;
+      // Target Tracing opens this as a REACTION to being attacked rather than
+      // as an Action, so the Action's own Range does not gate it -- whatever
+      // reach the attack had is the reach this answers at (174).
+      reaction?: boolean;
+    }
   | { kind: 'rollCounter'; seat: Side; uid: number; faces: number[]; focused?: boolean }
   | { kind: 'clearCounterRoll'; seat: Side }
   | { kind: 'queueIntercepts'; seat: Side; items: { uid: number; actionId: string; targetUid: number }[] }
@@ -139,7 +145,12 @@ export type Command =
   // resolved by the DEFENDER's, because the Screens are theirs to place. Under
   // Multi-Target the whole batch is queued at once after the last sequence,
   // which is FAQ B7's ordering made structural.
-  | { kind: 'queueReactions'; seat: Side; items: { uid: number; actionId: string; count: number; range: number }[] }
+  | {
+      kind: 'queueReactions'; seat: Side;
+      // `kind` absent means Emergency Smoke, which is every debt written before
+      // Target Tracing existed and every one still on a saved board.
+      items: { uid: number; actionId: string; count: number; range: number; kind?: 'smoke' | 'trace'; fromUid?: number }[];
+    }
   | { kind: 'resolveReaction'; seat: Side; uid: number; actionId: string }
   // Remote Access turning a Terminal face-down for the rest of the round
   // (5.3.3). Worth VP at the End Phase, so it has to travel — freeplay used to
@@ -738,6 +749,9 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       if (!state.script) return no('There is no guided game running.');
       for (const it of cmd.items) {
         if (!state.tokens.some((x) => x.uid === it.uid)) return no('That unit is not on the board.');
+        // A Target Tracing debt has to name the attacker: the Counter-roll it
+        // opens is against them and nobody else.
+        if (it.kind === 'trace' && !state.tokens.some((x) => x.uid === it.fromUid)) return no('That attacker is not on the board.');
       }
       return ok;
     }
@@ -1143,11 +1157,17 @@ function checkActed(
       // entirely (4.11.1), so the arc and sight checks a Firing Action needs
       // have no place here.
       const reach = a.range ?? 0;
+      // A reaction still has to BE one: the Passive has to be live on this Mech
+      // with a Command Token to spend. The rule lives here, not in whoever drew
+      // the button.
+      if (cmd.reaction && targetTracingOn(data, t)?.actionId !== cmd.actionId) {
+        return no(`${t.label} has no Passive that answers an attack with a Counter-roll.`);
+      }
       // An allied Repeater lends its position as the origin, and the Action's
       // own Range is measured from there (FAQ O19). Derived rather than sent,
       // so both seats judge the same shot.
       const origins = electronicOrigins(data, state.tokens, t);
-      if (!origins.some((from) => gridRange(from, target) <= reach)) {
+      if (!cmd.reaction && !origins.some((from) => gridRange(from, target) <= reach)) {
         return no(`${target.label} is beyond Range ${reach}${origins.length > 1 ? ', even through the Repeater' : ''}.`);
       }
       // EV 0 cannot Initiate; EV "-" cannot Respond (4.11.2).

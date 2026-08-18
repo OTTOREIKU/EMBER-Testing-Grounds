@@ -47,7 +47,7 @@ import { PlayGuide } from './playguide';
 import type { Card, CardAction, DiceData, DieColor, Facing, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, StatusDef, TerrainPiece, Timing, Token } from './types';
 import { addStatus, normaliseScript, SCALES, statusCount, statusesFor, STATUSES } from './types';
 import { actionIdOf } from './ticks';
-import { autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, loanedParts, minesLayable, minesOwed, multiTargetLimit, unfoldsOwed, repairSpec, autoTargetsFor, isSilentAction, maneuverIsSilent, chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, type Resupply, resupplyOf, SLOT_LABEL, stationaryAdjusted, interceptLeft, interceptsOwed, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf, type AttackReaction } from './units';
+import { electronicValue, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, loanedParts, minesLayable, minesOwed, multiTargetLimit, unfoldsOwed, repairSpec, autoTargetsFor, isSilentAction, maneuverIsSilent, chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, type Resupply, resupplyOf, SLOT_LABEL, stationaryAdjusted, interceptLeft, interceptsOwed, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf, type AttackReaction } from './units';
 import { registerOffline } from './offline';
 import { battlefieldLocked, countHits, firstPlayerFrom, newSetup, normaliseSetup, tasksLocked, type SetupState } from './setup';
 import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
@@ -164,7 +164,7 @@ async function init() {
   // What a defender set off by being shot at. Queued rather than placed inline,
   // because under Multi-Target the helper holds it back until every attack has
   // resolved (FAQ B7) — by the time this runs, the ordering is already right.
-  attackHelper.onReaction = (defender, reaction) => {
+  attackHelper.onReaction = (defender, reaction, attacker) => {
     // A BRAND-NEW board that has never been saved carries no script yet -
     // every loaded board gets one from migrateState, and every reader already
     // treats "no script" as the default script, but queueReactions' apply
@@ -173,7 +173,9 @@ async function init() {
     state.script ??= normaliseScript(undefined, state.round.firstPlayer);
     perform(data, state, {
       kind: 'queueReactions', seat: defender.side,
-      items: [{ uid: defender.uid, actionId: reaction.actionId, count: reaction.smoke.count, range: reaction.smoke.range }],
+      items: [reaction.smoke
+        ? { uid: defender.uid, actionId: reaction.actionId, count: reaction.smoke.count, range: reaction.smoke.range, kind: 'smoke' as const }
+        : { uid: defender.uid, actionId: reaction.actionId, count: 0, range: 0, kind: 'trace' as const, fromUid: attacker.uid }],
     });
     renderReactionPrompt();
   };
@@ -2624,6 +2626,30 @@ async function init() {
     const card = data.byId.get(defender.cardId ?? '');
     const act = (card?.actions ?? []).find((a) => a.id === r.actionId);
     const name = act?.name?.en || act?.name?.zh || 'Emergency Smoke';
+    // Target Tracing (174) answers with a Counter-roll rather than Screens. On
+    // one screen the ElectronicHelper runs it, so there is no owed queue to
+    // drain -- the debt is cleared here and the helper takes over.
+    if (r.kind === 'trace') {
+      const from = state.tokens.find((x) => x.uid === r.fromUid);
+      const ev = electronicValue(data, defender, loanedParts(data, state.tokens, defender));
+      void confirmDialog({
+        title: `${defender.label}: ${name}`,
+        body: `${defender.label} was attacked by ${from?.label ?? 'the attacker'}, so it may spend 1 Command Token to open an Electronic Counter-roll back at them. If it succeeds they lose 1 Link. Electronic Value ${ev}; Range does not apply, because this answers the attack wherever it came from.`,
+        confirmLabel: from && ev > 0 ? 'Spend a Command Token and roll' : 'Roll',
+        cancelLabel: 'Skip it',
+      }).then((go) => {
+        perform(data, state, { kind: 'resolveReaction', seat: defender.side, uid: defender.uid, actionId: r.actionId });
+        if (!go || !from || ev <= 0 || !act) { onChanged(); renderReactionPrompt(); return; }
+        // The Token first and by its own command, so a Counter-roll that will
+        // not open cannot leave a Mech that paid for nothing.
+        if (!perform(data, state, { kind: 'spendCommand', seat: defender.side, uid: defender.uid }).ok) {
+          onChanged(); renderReactionPrompt(); return;
+        }
+        electronicHelper.start(defender, act, from, { linkLoss: 1 });
+        onChanged();
+      });
+      return;
+    }
     void confirmDialog({
       title: `${defender.label}: ${name}`,
       body: `${defender.label} was attacked, so it may place ${r.count} Smoke Screen${

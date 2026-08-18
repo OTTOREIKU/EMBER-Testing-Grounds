@@ -543,7 +543,10 @@ export interface ScriptState {
   // the Screens are the defender's to place and only their client may send a
   // command for their unit. Under Multi-Target these are flushed together
   // after the LAST sequence, which is the whole of B7.
-  reactions: { uid: number; actionId: string; count: number; range: number }[];
+  // A debt the DEFENDER owes itself after being attacked. `kind` absent means
+  // Emergency Smoke -- every debt written before Target Tracing existed, and
+  // every one on a saved board.
+  reactions: { uid: number; actionId: string; count: number; range: number; kind?: 'smoke' | 'trace'; fromUid?: number }[];
   // An Electronic Counter-roll in progress (4.11.2). It lives in shared state
   // rather than on one client because BOTH sides roll and either may spend Link
   // to Focus, and a player may only ever send commands for their own units.
@@ -808,7 +811,10 @@ export function normaliseScript(raw: unknown, firstPlayer: Side): ScriptState {
     reactions: Array.isArray(s.reactions)
       ? s.reactions.filter(
           (x) => x && typeof x.uid === 'number' && typeof x.actionId === 'string'
-            && typeof x.count === 'number' && typeof x.range === 'number',
+            && typeof x.count === 'number' && typeof x.range === 'number'
+            // A trace debt with no attacker can never be answered, so it is not
+            // carried across a reload as a row that strands the panel.
+            && (x.kind !== 'trace' || typeof x.fromUid === 'number'),
         )
       : base.reactions,
     counter: normaliseCounter(s.counter),

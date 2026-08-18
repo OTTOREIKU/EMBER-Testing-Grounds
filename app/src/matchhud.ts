@@ -4,7 +4,7 @@ import type { GameData } from './data';
 import { actionIconUrl, cardName, isAerial, secondaryImageUrl, squadLabel, unitSize } from './data';
 import { Board, footprint, snapPlacement, type BoardCallbacks } from './board';
 import { printedDeployment, resolveZoneSetData } from './overlays';
-import { riderOnDrone, hasFlexibleTiming, coordinationFor, coordinationOnOpportunityEnd, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, electronicOrigins, loanedParts, minesLayable, minesOwed, pilotCard, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, isSilentAction, maneuverIsSilent, canActivateCamo, chargeableSlots, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
+import { targetTracingOn, riderOnDrone, hasFlexibleTiming, coordinationFor, coordinationOnOpportunityEnd, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, electronicOrigins, loanedParts, minesLayable, minesOwed, pilotCard, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, isSilentAction, maneuverIsSilent, canActivateCamo, chargeableSlots, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
 import { resolveCounterRoll, tallyCounter } from './combat';
 import { tacticFitsPhase, tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { inContact, canStandIn, attackDirection, crushTargets, dissipationFor, extendPath, knockbackPath, largeGridOf, LG, losBetween, losNote, pathCost, protectionFor, rangeBetween, reachableGrids, standingSpot, type LargeGrid } from './rules';
@@ -2043,7 +2043,7 @@ function autoBoomPanel(ctx: HudCtx): string {
 // The attacker's client queued these into `script.reactions` when the whole
 // Action finished; only the DEFENDER's client may answer one, because placing
 // the Screens and spending the use are commands on their own unit.
-function reactionsOwed(ctx: HudCtx): { t: Token; r: { uid: number; actionId: string; count: number; range: number } }[] {
+function reactionsOwed(ctx: HudCtx): { t: Token; r: { uid: number; actionId: string; count: number; range: number; kind?: 'smoke' | 'trace'; fromUid?: number } }[] {
   const owed = ensureScript(ctx.state).reactions ?? [];
   return owed
     .map((r) => ({ t: ctx.state.tokens.find((x) => x.uid === r.uid)!, r }))
@@ -2057,6 +2057,19 @@ function reactionPanel(ctx: HudCtx): string {
   const card = ctx.data.byId.get(t.cardId ?? '');
   const what = (card?.actions ?? []).find((a) => a.id === r.actionId);
   const name = what?.name?.en || what?.name?.zh || 'Emergency Smoke';
+  // Target Tracing (174). A debt written before this existed carries no kind at
+  // all, and those are all Emergency Smoke.
+  if (r.kind === 'trace') {
+    const from = ctx.state.tokens.find((x) => x.uid === r.fromUid);
+    const ev = electronicValue(ctx.data, t, loanedParts(ctx.data, ctx.state.tokens, t));
+    return head('Your move', `${esc(t.label)}: ${esc(name)}`,
+      `${esc(t.label)} was attacked by ${esc(from?.label ?? 'the attacker')}, so it may spend 1 Command Token to open an Electronic Counter-roll back at them. Succeed and they lose 1 Link.`, true)
+      + `<div class="tp-body"><p class="tp-dim">Electronic Value ${ev}. Range does not apply — this answers the attack wherever it came from.</p>
+         ${!from ? '<p class="tp-note">The attacker has left the board, so there is nothing to trace.</p>' : ''}
+         ${ev <= 0 ? '<p class="tp-note">An Electronic Value of 0 cannot Initiate a Counter-roll (4.11.2).</p>' : ''}</div>
+         <div class="tp-foot">${from && ev > 0 ? `<button class="bigbtn" data-reactgo="${t.uid}:${esc(r.actionId)}">Spend a Command Token and roll</button>` : ''}
+         <button class="bigbtn ghost2" data-reactskip="${t.uid}:${esc(r.actionId)}" style="margin-top:6px">Skip it</button></div>`;
+  }
   return head('Your move', `${esc(t.label)}: ${esc(name)}`,
     `${esc(t.label)} was attacked, so it may place ${r.count} Smoke Screen${r.count === 1 ? '' : 's'} within Range ${r.range}. Every attack in that Action has already resolved, so these cannot shield anyone else it shot at (FAQ B7).`, true)
     + `<div class="tp-body"><p class="tp-dim">The card allows this even if the unit did not survive (FAQ D10). Taking it spends its one use.</p></div>
@@ -2073,9 +2086,18 @@ function answerReaction(ctx: HudCtx, key: string, place: boolean): void {
   const t = ctx.state.tokens.find((x) => x.uid === uid);
   const r = (ensureScript(ctx.state).reactions ?? []).find((x) => x.uid === uid && x.actionId === actionId);
   if (!t || !r) { ctx.refresh(); return; }
+  const trace = r.kind === 'trace';
   if (!ctx.send({ kind: 'resolveReaction', seat: t.side, uid, actionId }).ok) { ctx.refresh(); return; }
   if (!place) {
-    ctx.noteNow(`${t.label} declines its Emergency Smoke.`);
+    ctx.noteNow(`${t.label} declines its ${trace ? 'Target Tracing' : 'Emergency Smoke'}.`);
+    ctx.refresh();
+    return;
+  }
+  if (trace) {
+    // The Token first, by its own command, so a refused Counter-roll cannot
+    // leave a Mech that paid for nothing.
+    if (!ctx.send({ kind: 'spendCommand', seat: t.side, uid }).ok) { ctx.refresh(); return; }
+    ctx.send({ kind: 'startCounterRoll', seat: t.side, uid, targetUid: r.fromUid!, actionId, reaction: true });
     ctx.refresh();
     return;
   }
@@ -4432,6 +4454,16 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     const resp = c ? s.tokens.find((x) => x.uid === c.responderUid) : undefined;
     if (c && init && resp) {
       const a = actionOn(ctx, init, c.actionId);
+      // Target Tracing hands out no token at all: the attacker loses 1 Link
+      // (174). Read off the same helper that let the Counter-roll open, so the
+      // two verdicts cannot drift.
+      if (targetTracingOn(ctx.data, init)?.actionId === c.actionId) {
+        ctx.send({ kind: 'drainLink', seat: init.side, uid: init.uid, targetUid: resp.uid, n: 1 });
+        ctx.noteNow(`${init.label} traces ${resp.label}: it loses 1 Link (now ${resp.link}).`);
+        ctx.send({ kind: 'clearCounterRoll', seat: init.side });
+        ctx.refresh();
+        return;
+      }
       // Fire Control Interference is what an Electronic Attack hands out unless
       // the card names another token, which the effect data would carry.
       const named = (a?.gameRules ?? []).flatMap((g) => g.effects ?? [])

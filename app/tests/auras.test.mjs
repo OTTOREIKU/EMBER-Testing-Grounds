@@ -31,7 +31,8 @@ function largeGridOf(t: any): any { return { c: Math.floor(t.col / 3), r: Math.f
   + cut(units, '// Melee Evasion (ZYBP-302)', 'export interface CommandRider', 'meleeEvasionReady')
   + cut(units, 'export interface ParryPart', 'export interface SelfHitPart', 'parryParts')
   + cut(units, 'export interface SelfHitPart', '// A Firing Action', 'selfHitParts')
-  + cut(units, '// A Firing Action', 'export function repairSpec', 'actionRange and hasFlexibleTiming');
+  + cut(units, '// A Firing Action', 'export function repairSpec', 'actionRange and hasFlexibleTiming')
+  + cut(units, '// ---------- Target Tracing', 'export function attackReactionsOf', 'targetTracingOn');
 
 const tmp = new URL('./_auras.slice.ts', import.meta.url);
 writeFileSync(tmp, body);
@@ -272,6 +273,33 @@ check('a Drone never gets Dodge Enhancement',
 check('the Chinese Dodge Enhancement line is matched on the effect it prints',
   /闪避\}?可抵消1枚攻击骰/.test(
     data.byId.get('ZYBP-302').actions.find((a) => /Dodge Enhancement/.test(a.name?.en ?? '')).description.zh), true);
+
+// ---------- Target Tracing (174) ----------
+//
+// The trap this one carries: `targetTracer` in the codebase is the STATUS TOKEN
+// 标靶追踪, which has nothing to do with card 174's 标靶追溯. Grepping the
+// English root finds the wrong thing, so these assertions name the card.
+const traceMech = (torso, statuses = ['command'], states = {}) => ({
+  uid: 9, kind: 'mech', side: 's1', col: 0, row: 0,
+  mech: { torso }, partStates: { torso: 'intact', ...states }, statuses,
+});
+check('a Mech with Target Tracing and a Command Token is ready',
+  A.targetTracingOn(data, traceMech('174'))?.actionId, '174_B');
+check('and it names the ability, not the Data Link on the same card',
+  A.targetTracingOn(data, traceMech('174'))?.name, 'Target Tracing');
+check('without a face-up Command Token it offers nothing',
+  A.targetTracingOn(data, traceMech('174', [])), null);
+check('a spent token does not pay for it',
+  A.targetTracingOn(data, traceMech('174', ['commandUsed'])), null);
+check('a destroyed Part offers nothing',
+  A.targetTracingOn(data, traceMech('174', ['command'], { torso: 'destroyed' })), null);
+check('a Mech without the ability is never ready',
+  A.targetTracingOn(data, traceMech('002')), null);
+check('a Drone never gets it', A.targetTracingOn(data, { ...traceMech('174'), kind: 'drone' }), null);
+// The card carries no gameRules at all, which is why the rule is authored from
+// the printed text -- if that ever changes, this should be revisited.
+check('the card still prints no structured rules for it',
+  data.byId.get('174').actions.find((x) => x.id === '174_B').gameRules ?? null, null);
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
 if (fail) process.exit(1);

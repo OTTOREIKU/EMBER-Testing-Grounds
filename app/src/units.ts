@@ -576,11 +576,41 @@ export function multiTargetLimit(a: CardAction): MultiTarget | undefined {
 export interface AttackReaction {
   actionId: string;
   name: string;
-  smoke: { count: number; range: number };
+  // Exactly one of these. Emergency Smoke places Screens; Target Tracing opens
+  // an Electronic Counter-roll back at the attacker.
+  smoke?: { count: number; range: number };
+  trace?: boolean;
   // The card says it works even once the unit is gone. FAQ D10 asks exactly
   // that about the Reaper and answers yes, so a destroyed Part is no bar.
   afterDestroyed: boolean;
 }
+
+// ---------- Target Tracing (174 P22 "Hunter") ----------
+//
+// "When this mech is attacked by an Enemy Mech's Melee/Firing Action, it may
+// spend 1 Command Token to perform an Electronic Counter Roll against the
+// Attacker. If successful, the Attacker loses 1 Link."
+//
+// NOT the Target Tracer token. The status is 标靶追踪 and this is 标靶追溯 --
+// same English root, unrelated rules, and grepping the English finds the wrong
+// one. The card carries no gameRules, so both the trigger and the Link loss are
+// authored from the printed text.
+export function targetTracingOn(data: GameData, t: Token): { actionId: string; name: string } | null {
+  if (t.kind !== 'mech') return null;
+  if (!(t.statuses ?? []).includes('command')) return null;
+  for (const { slot, card } of tokenCards(data, t)) {
+    if ((t.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
+    for (const a of card.actions ?? []) {
+      const en = a.description?.en ?? '';
+      const zh = a.description?.zh ?? '';
+      if (/Electronic Counter Roll against the Attacker/i.test(en) || /被敌方机甲近战\/射击后[^。]*电子对抗投骰/.test(zh)) {
+        return { actionId: a.id, name: a.name?.en || a.name?.zh || a.id };
+      }
+    }
+  }
+  return null;
+}
+
 
 // Reactions the DEFENDER may take after being shot at. Read off the board so a
 // Part destroyed by the very attack that triggered it is handled by the card's

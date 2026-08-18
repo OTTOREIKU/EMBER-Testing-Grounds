@@ -5,7 +5,7 @@ import { linkMechanics } from './inspector';
 import { SQUAD_ORDER, squadLabel } from './data';
 import type { Card, CardAction, DiceData, DiceIcon, DieColor, GameRuleEffect, PartSlot, Side, SmokeScreen, TerrainPiece, Token } from './types';
 import { statusCount, STATUSES } from './types';
-import { aaRadarCovers, attackReactionsOf, auraEffectsOn, auraValueOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, selfHitParts, denseArmorOn, designationsOn, electronicValue, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, loanedParts, pilotCard, repeatersFor, SLOT_LABEL, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
+import { aaRadarCovers, attackReactionsOf, auraEffectsOn, auraValueOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, targetTracingOn, selfHitParts, denseArmorOn, designationsOn, electronicValue, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, loanedParts, pilotCard, repeatersFor, SLOT_LABEL, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
 import { timingOf } from './ticks';
 import { inArc, losNote, protectionFor, rangeBetween } from './rules';
 import type { Command } from './commands';
@@ -300,7 +300,7 @@ export class AttackHelper {
   smoke: (() => SmokeScreen[]) | null = null;
   // The page places whatever a deferred reaction produces — it owns the board.
   // Called once, after every sequence of a Multi-Target has resolved (FAQ B7).
-  onReaction: (defender: Token, reaction: AttackReaction) => void = () => {};
+  onReaction: (defender: Token, reaction: AttackReaction, attacker: Token) => void = () => {};
   private ctx: Ctx | null = null;
   // Survives across the individual attack sequences, which each replace `ctx`.
   private multi: MultiState | null = null;
@@ -1235,9 +1235,18 @@ export class AttackHelper {
   // What a defender is owed for having been shot at. The card says "after this
   // unit is ATTACKED BY A FIRING ACTION", so a Melee blow, an Explosion or an
   // Interception does not wake it.
-  private reactionsFor(action: CardAction, defender: Token): AttackReaction[] {
-    if (action.type !== 'Firing') return [];
-    return attackReactionsOf(this.data, defender);
+  // What being attacked owes the DEFENDER. Emergency Smoke answers a Firing
+  // Action only; Target Tracing answers Melee or Firing, and only from an enemy
+  // MECH -- a Drone or a Projectile sets nothing off (174).
+  private reactionsFor(action: CardAction, defender: Token, attacker: Token | null): AttackReaction[] {
+    const out: AttackReaction[] = [];
+    if (action.type === 'Firing') out.push(...attackReactionsOf(this.data, defender));
+    const meleeOrFiring = action.type === 'Firing' || action.type === 'Melee';
+    if (meleeOrFiring && attacker && attacker.kind === 'mech' && attacker.side !== defender.side) {
+      const trace = targetTracingOn(this.data, defender);
+      if (trace) out.push({ actionId: trace.actionId, name: trace.name, trace: true, afterDestroyed: false });
+    }
+    return out;
   }
 
   // Called when one sequence of a Multi-Target has finished. Returns true when
@@ -1248,7 +1257,7 @@ export class AttackHelper {
     // Whatever this target set off by being attacked waits for the end (B7).
     const hit = m.targets[m.index]?.defender;
     if (hit) {
-      for (const r of this.reactionsFor(m.action, hit)) m.pending.push({ defender: hit, reaction: r });
+      for (const r of this.reactionsFor(m.action, hit, m.attacker)) m.pending.push({ defender: hit, reaction: r });
     }
     m.index++;
     const next = m.targets[m.index];
@@ -1266,7 +1275,7 @@ export class AttackHelper {
   private flushReactions(): void {
     const m = this.multi;
     if (!m?.pending.length) return;
-    for (const p of m.pending) this.onReaction(p.defender, p.reaction);
+    for (const p of m.pending) this.onReaction(p.defender, p.reaction, m.attacker);
     m.pending = [];
   }
 
@@ -2132,7 +2141,7 @@ export class AttackHelper {
       decline.addEventListener('click', () => {
         settle();
         if (!this.multi) {
-          for (const r of this.reactionsFor(rider.action, rider.defender)) this.onReaction(rider.defender, r);
+          for (const r of this.reactionsFor(rider.action, rider.defender, rider.attacker)) this.onReaction(rider.defender, r, rider.attacker);
         }
         if (!this.advanceMulti()) this.cancel();
       });
@@ -2154,7 +2163,7 @@ export class AttackHelper {
       // else in this Action to hold it back from. B7 is what makes the
       // Multi-Target path defer instead, and advanceMulti owns that.
       if (!this.multi) {
-        for (const r of this.reactionsFor(rider.action, rider.defender)) this.onReaction(rider.defender, r);
+        for (const r of this.reactionsFor(rider.action, rider.defender, rider.attacker)) this.onReaction(rider.defender, r, rider.attacker);
       }
       this.ctx = null;
       if (!this.advanceMulti()) this.cancel();
@@ -2218,6 +2227,10 @@ interface EwCtx {
   initiator: Token;
   responder: Token;
   action: CardAction;
+  // Target Tracing hands out no token: on success the RESPONDER loses this much
+  // Link (174). Carried on the contest rather than read off the card, because
+  // the card has no gameRules to read.
+  linkLoss?: number;
   initEv: number;
   respEv: number;
   initRoll: Rolled[] | null;
@@ -2263,7 +2276,7 @@ export class ElectronicHelper {
     return !!this.ctx;
   }
 
-  start(initiator: Token, action: CardAction, responder: Token): void {
+  start(initiator: Token, action: CardAction, responder: Token, opts: { linkLoss?: number } = {}): void {
     // Only the Initiator is performing an Action, so only the Initiator counts
     // the Backpacks its Tarantulas are lending (FAQ O5).
     const world = this.tokens ? this.tokens() : [];
@@ -2278,6 +2291,7 @@ export class ElectronicHelper {
       initiator,
       responder,
       action,
+      linkLoss: opts.linkLoss,
       initEv,
       respEv,
       initRoll: null,
@@ -2336,6 +2350,10 @@ export class ElectronicHelper {
   private applyEffects(): string[] {
     const c = this.ctx!;
     const done: string[] = [];
+    if (c.linkLoss) {
+      this.onCommand({ kind: 'drainLink', seat: c.initiator.side, uid: c.initiator.uid, targetUid: c.responder.uid, n: c.linkLoss });
+      done.push(`${c.responder.label} loses ${c.linkLoss} Link (now ${c.responder.link})`);
+    }
     const walk = (list: GameRuleEffect[]): void => {
       for (const e of list) {
         if (e.type === 'apply_status') {
