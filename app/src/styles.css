@@ -2865,6 +2865,14 @@ p.points { white-space: pre-line; }
   display: block; margin-top: 6px; padding-top: 6px;
   border-top: 1px solid var(--border); color: var(--text3);
 }
+/* A mechanic that only NAMES itself, with its rule on the hover. It reads as a
+   chip in the flow rather than the bordered paragraph the full text needed —
+   that block was what buried the card's own words under a glossary entry. */
+.pilot-trait .trait-mech.mech-chip, .card-selftext .trait-mech.mech-chip {
+  display: inline-block; margin: 6px 4px 0 0; padding: 2px 9px;
+  border-top: none; border-radius: 100px;
+  background: var(--surface2); color: var(--text2); font-size: 11px;
+}
 .pilot-trait .trait-mech b { display: inline; color: var(--blue); font-size: 12px; margin: 0; }
 .pilot-flavour b { color: var(--text3); }
 .pilot-flavour span { font-style: italic; }

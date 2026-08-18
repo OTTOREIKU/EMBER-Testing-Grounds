@@ -358,6 +358,9 @@ export interface GameData {
   mechanics: MechanicDef[];
   mechanicsFor(...text: (string | undefined)[]): MechanicDef[];
   actionTranslation(actionId: string): { english: string | null; confidence: string; note?: string } | undefined;
+  // The same thing for a card's OWN text, for the handful whose description.en
+  // is a copy of the Chinese rather than a translation of it.
+  cardTranslation(cardId: string): { english: string | null; confidence: string; note?: string } | undefined;
   missions: MissionData;
   secondary: SecondaryTask[];
   zoneData: ZoneData;
@@ -374,6 +377,7 @@ interface KeywordOverrides {
 
 interface ActionTranslations {
   translations?: Record<string, { english: string | null; confidence: string; note?: string }>;
+  cards?: Record<string, { english: string | null; confidence: string; note?: string }>;
 }
 
 interface NameOverrides {
@@ -595,6 +599,8 @@ export async function loadData(): Promise<GameData> {
 
   const translations = xlate.translations ?? {};
   const actionTranslation = (actionId: string) => translations[actionId];
+  const cardXlate = xlate.cards ?? {};
+  const cardTranslation = (cardId: string) => cardXlate[cardId];
 
   const factionIndex = buildFactionIndex(cards, boxes);
   for (const [id, o] of Object.entries(facPatch.cards ?? {})) {
@@ -613,6 +619,7 @@ export async function loadData(): Promise<GameData> {
     mechanics,
     mechanicsFor,
     actionTranslation,
+    cardTranslation,
     missions: { families: missions.families ?? [], cards: missions.cards ?? [] },
     secondary: secondary.cards ?? [],
     zoneData: {

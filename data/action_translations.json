@@ -576,27 +576,51 @@
    "note": "微型侦察机 rendered \"Micro Scout\" per official English of the MD-1 \"Dragonfly\" card; \"Snake Eye\" (蛇眼) has no official English in the card data, so this name is our rendering."
   },
   "154_A": {
-   "english": "· Undergo Detonation immediately.\n· On Detonation, cause Explosion damage to target unit.",
-   "confidence": "printed",
-   "note": "Rules difference between editions. The Chinese says 对所在格的所有单位 (every unit in the grid it occupies); the printed English says target unit. English card text is authoritative."
+   "english": "· Detonates immediately.\n· On detonation, deals Explosion damage to every unit in its own Grid.",
+   "confidence": "high",
+   "note": "translated from the Chinese card text"
   },
   "155_A": {
-   "english": "· Undergo Detonation immediately.\n· On Detonation, all units within range gain 1 Fire Control Interference Token.",
-   "confidence": "printed",
-   "note": "Rules difference between editions. The Chinese restricts this to units that have line of sight to the grenade; the printed English has no line of sight condition at all. English card text is authoritative."
+   "english": "· Detonates immediately.\n· On detonation, every unit in range that has line of sight to this unit gains 1 Fire Control Jamming token.",
+   "confidence": "high",
+   "note": "translated from the Chinese card text"
   },
   "156_A": {
-   "english": "· Replaces this unit with SGM2 \"Pholcus\" Automatic Mine (Unfolded).\n· If the grid is occupied, the replacing unit must undergo Detonation immediately",
-   "confidence": "printed",
-   "note": "The card says Unfolded, matching the Unfold action name; the earlier translation said Deployed."
+   "english": "· Replace this unit with SGM2 \"Pholcus\" Self-Propelled Mine (Unfolded).\n· If its Grid is occupied after the replacement, it detonates at once.",
+   "confidence": "high",
+   "note": "translated from the Chinese card text"
   },
   "157_A": {
-   "english": "· Target 1 Enemy Unit within range, Fly into target grid and undergo Detonation.\n· On Detonation, cause Explosion damage to target.\n· Missile Group 3",
-   "confidence": "printed"
+   "english": "· Target 1 enemy unit in range, fly into the target Grid and detonate.\n· On detonation, deals Explosion damage to the target.\n· Missile Group 3",
+   "confidence": "high",
+   "note": "translated from the Chinese card text"
   },
   "158_A": {
-   "english": "· Barricade\n· This unit cannot be Crushed.",
-   "confidence": "printed"
+   "english": "· Mobile Cover\n· This unit cannot be Crushed.",
+   "confidence": "high",
+   "note": "translated from the Chinese card text"
+  }
+ },
+ "cards": {
+  "539": {
+   "english": "· Command Generation X: at the start of the Command Phase this Mech generates X Command Tokens.",
+   "confidence": "high",
+   "note": "keyword name from the card data; wording from rulebook 4.15"
+  },
+  "545": {
+   "english": "· Suppression: a Mech declared as the target of this Action switches to Defensive Stance immediately. A unit in Shutdown Stance is unaffected.",
+   "confidence": "high",
+   "note": "keyword name from the card data"
+  },
+  "093": {
+   "english": "· Fire in Arc: this Action needs no line of sight to its landing point or its target.",
+   "confidence": "high",
+   "note": "keyword name from the card data"
+  },
+  "095": {
+   "english": "· Silence: performing this Action does not break Optical Camouflage or Low Profile.",
+   "confidence": "high",
+   "note": "keyword names from the card data"
   }
  }
 }

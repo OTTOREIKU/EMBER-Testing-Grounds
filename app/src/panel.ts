@@ -1,6 +1,6 @@
 import type { Card, CardAction, Token } from './types';
 import { cardImageUrl, cardName, isDiscardCard, mechPartUrl, rulesLines, squadLabel, tabImageUrl, type GameData } from './data';
-import { inspectOnHover } from './inspector';
+import { inspectOnHover, linkMechanics } from './inspector';
 import { ICON_BOLT } from './icons';
 import { expandGlyphs } from './glyphs';
 import { groupByFaction, openPartPicker } from './partpicker';
@@ -23,6 +23,13 @@ const ACTION_TINT: Record<string, string> = {
 function pipRow(kind: string, label: string, left: number, max: number, attrs: string): string {
   const dots = Array.from({ length: max }, (_, i) => `<i class="pip${i < left ? '' : ' off'}"></i>`).join('');
   return `<span class="pips pips-${kind}${left ? '' : ' spent'}" ${attrs}><b class="pip-label">${label}</b>${dots}<b class="pip-n">${left}/${max}</b></span>`;
+}
+
+// A mechanic named rather than explained. linkMechanics finds these by their
+// data-mech id and hangs the full glossary text off the hover, so the rule is
+// one pointer away instead of a paragraph in the middle of the card.
+function mechChips(mechs: { id: string; name: string }[]): string {
+  return mechs.map((m) => `<span class="trait-mech mech-chip" data-mech="${m.id}">${m.name}</span>`).join('');
 }
 
 function projectileTag(name: string): string {
@@ -424,6 +431,8 @@ export class Panel {
     } else {
       lines.push('<em>No rules text on this card in the data; the values above come from the card.</em>');
     }
+    // The action's own tip still spells the mechanics out in full: it is
+    // already a hover, so there is nothing further to hover into.
     for (const m of mechs) lines.push(`<b>${m.name}</b>${m.ref ? ` <em>(${m.ref})</em>` : ''}: ${m.text}`);
     const tip = {
       title: actName,
@@ -759,15 +768,23 @@ export class Panel {
     // Rules printed on the card rather than on one of its Actions. A "White
     // Dwarf" Bit reads "· Low Value · High Altitude", and that line is the whole
     // reason it may not take a Task Item, so it cannot be left off the panel.
-    const cardText = card.description?.en?.trim() || card.description?.zh?.trim();
+    // Four cards ship description.en as a straight copy of the Chinese, so an
+    // `en || zh` fallback printed CJK at an English reader. Same guard the
+    // Actions below already use, with the same translation table behind it —
+    // and if there is neither, the keyword chips at the bottom of the card
+    // still name the rule, which is better than a paragraph nobody can read.
+    const rawSelf = card.description?.en?.trim();
+    const selfEn = rawSelf && !/[぀-ヿ一-鿿]/.test(rawSelf) ? rawSelf : undefined;
+    const selfTr = this.data.cardTranslation(card.id)?.english?.trim() || undefined;
+    const cardText = selfEn ?? selfTr;
     if (cardText && card.category !== 'pilot') {
       const note = document.createElement('div');
       note.className = 'card-selftext';
       const lines = rulesLines(cardText);
-      const mechs = this.data
-        .mechanicsFor(card.description?.en, card.description?.zh)
-        .map((m) => `<span class="trait-mech"><b>${m.name}</b>${m.ref ? ` <em>(${m.ref})</em>` : ''}: ${m.text}</span>`)
-        .join('');
+      // A named chip, not the whole glossary entry: the rule reads on hover
+      // (bottom-left box on the board page, popout here) so the card's own text
+      // is not buried under a paragraph explaining a keyword beside it.
+      const mechs = mechChips(this.data.mechanicsFor(card.description?.en, card.description?.zh));
       note.innerHTML = `${lines.length > 1 ? `<ul class="rules-list">${lines.map((l) => `<li>${l}</li>`).join('')}</ul>` : `<span>${lines[0] ?? ''}</span>`}${mechs}`;
       wrap.appendChild(note);
     }
@@ -785,10 +802,7 @@ export class Panel {
           : (bullets[0] ?? '');
       // Same reason as the reference: a trait may name a mechanic rather than a
       // keyword, and Crush on Onyx is unreadable without the rule beside it.
-      const traitMechs = hasTrait ? this.data.mechanicsFor(traitDesc, card.trait) : [];
-      const mechHtml = traitMechs
-        .map((m) => `<span class="trait-mech"><b>${m.name}</b>${m.ref ? ` <em>(${m.ref})</em>` : ''}: ${m.text}</span>`)
-        .join('');
+      const mechHtml = mechChips(hasTrait ? this.data.mechanicsFor(traitDesc, card.trait) : []);
       const body = hasTrait ? text : `${text}<em>This pilot has no trait ability. The line above is card flavour text.</em>`;
       trait.innerHTML = `<b>${head}</b>${traitDesc ? `<span>${body}</span>` : ''}${mechHtml}`;
       wrap.appendChild(trait);
@@ -828,6 +842,10 @@ export class Panel {
     if (card.keywords?.length) {
       wrap.appendChild(this.keywordChips(card.keywords));
     }
+    // Every mechChip in the card, in one pass at the end: the chips are written
+    // as markup in several places above and this is the only thing that gives
+    // them their words.
+    linkMechanics(wrap, this.data.mechanics);
     return wrap;
   }
 }
