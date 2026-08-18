@@ -24,7 +24,37 @@ function el(): HTMLElement | null {
   box = document.createElement('div');
   box.id = 'inspect-pop';
   document.body.appendChild(box);
+  watch();
   return box;
+}
+
+// A binding's guards read `floating`, so the mode must exist BEFORE the first
+// guard runs — resolved lazily by the first render, the first hover of a
+// session slipped past a `floating: false` binding and the leave guard then
+// refused to clear what the enter should never have shown: a stuck box.
+function ensureMode(): void {
+  el();
+}
+
+// The popout stands beside a row inside a scrolling, re-rendering panel. A
+// removed node fires no pointerleave, so without this a re-render mid-hover
+// strands the box on screen; and a panel scrolled under the cursor walks the
+// row away from it.
+let watching = false;
+function watch(): void {
+  if (watching) return;
+  watching = true;
+  const sweep = (): void => {
+    if (!floating || !box?.classList.contains('visible')) return;
+    if (anchor && !(anchor as HTMLElement).isConnected) {
+      pinnedKey = null;
+      render(null, false);
+      return;
+    }
+    place();
+  };
+  document.addEventListener('scroll', sweep, true);
+  document.addEventListener('mouseover', sweep, true);
 }
 
 // Beside the panel the hovered thing lives in, never on top of it: the reader
@@ -34,7 +64,7 @@ function el(): HTMLElement | null {
 function place(): void {
   const pop = box;
   if (!pop || !floating || !anchor) return;
-  const panel = (anchor as HTMLElement).closest('.hudside, .dlg-panel, aside, .mc-stagepane');
+  const panel = (anchor as HTMLElement).closest('.hudside, .combatpop, .dlg-panel, aside, .mc-stagepane');
   const a = anchor.getBoundingClientRect();
   const w = pop.offsetWidth || 300;
   const h = pop.offsetHeight || 200;
@@ -146,16 +176,24 @@ export function inspectOnHover(
   const key = opts?.pinKey;
   const mayFloat = opts?.floating !== false;
   node.addEventListener('pointerenter', () => {
+    ensureMode();
     if (floating && !mayFloat) return;
     // Remembered so the popout knows what to stand beside. Harmless on the
     // board page, which renders into its fixed box and never reads it.
     anchor = node;
     showInspect(info);
   });
-  node.addEventListener('pointerleave', () => { if (!floating || mayFloat) showInspect(null); });
+  node.addEventListener('pointerleave', () => {
+    ensureMode();
+    if (!floating || mayFloat) showInspect(null);
+  });
   if (!key) return;
   node.classList.add('inspect-pinnable');
   node.addEventListener('click', () => {
+    ensureMode();
+    // Pinning is just a hover that stays, so a binding the hover declines is
+    // declined here too.
+    if (floating && !mayFloat) return;
     if (pinnedKey === key) {
       unpinInspect();
     } else {

@@ -29,7 +29,9 @@ function pipRow(kind: string, label: string, left: number, max: number, attrs: s
 // data-mech id and hangs the full glossary text off the hover, so the rule is
 // one pointer away instead of a paragraph in the middle of the card.
 function mechChips(mechs: { id: string; name: string }[]): string {
-  return mechs.map((m) => `<span class="trait-mech mech-chip" data-mech="${m.id}">${m.name}</span>`).join('');
+  // data-no-cardtip for the same reason the keyword chips carry it: the chip's
+  // answer is its rule text, and the card image would land on top of it.
+  return mechs.map((m) => `<span class="trait-mech mech-chip" data-mech="${m.id}" data-no-cardtip="1">${m.name}</span>`).join('');
 }
 
 function projectileTag(name: string): string {
