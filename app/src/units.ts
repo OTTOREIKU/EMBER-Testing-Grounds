@@ -759,6 +759,9 @@ export function missileGuidance(
   attacker: Token,
   defender: Token,
   action: CardAction,
+  // Only Coordinated Observation needs this; a caller with no terrain to hand
+  // simply does not get that half, which fails closed.
+  world?: { terrain: TerrainPiece[] },
 ): Token[] {
   const out: Token[] = [];
   for (const b of tokens) {
@@ -770,7 +773,8 @@ export function missileGuidance(
       for (const g of a.gameRules ?? []) {
         const eff = (g.effects ?? []).find((e) => (e as { type?: string }).type === 'reroll_attack_dice') as {
           faces?: string[]; actionTypes?: string[]; attackerSide?: string;
-          attackerUnitTypes?: string[]; attackerKeywords?: string[]; requireTargetWithinSourceRange?: boolean;
+          attackerUnitTypes?: string[]; attackerKeywords?: string[];
+          requireTargetWithinSourceRange?: boolean; requireSourceLosToTarget?: boolean;
         } | undefined;
         if (!eff || !(eff.faces ?? []).includes('eye')) continue;
         // FAIL CLOSED on a requirement this reader does not implement. TM31RS
@@ -780,7 +784,8 @@ export function missileGuidance(
         // A condition that cannot be checked must REFUSE, never wave through.
         const known = new Set([
           'faces', 'actionTypes', 'attackerSide', 'attackerUnitTypes',
-          'attackerKeywords', 'requireTargetWithinSourceRange', 'type',
+          'attackerKeywords', 'requireTargetWithinSourceRange',
+          'requireSourceLosToTarget', 'type',
         ]);
         if (Object.keys(eff).some((k) => !known.has(k))) continue;
         if (eff.actionTypes && !eff.actionTypes.includes(action.type ?? '')) continue;
@@ -801,6 +806,14 @@ export function missileGuidance(
         }
         // Measured from the beacon to the TARGET, not to the attacker.
         if (eff.requireTargetWithinSourceRange && rangeBetween(b, defender).range > (a.range ?? 0)) continue;
+        // 协同观测 Coordinated Observation (TM31RS, 539) asks for SIGHT rather
+        // than Range: "allies firing at a target THIS unit can see". Terrain and
+        // the other units both block it, so the caller has to supply them --
+        // without a world to look through, the answer is no rather than yes.
+        if (eff.requireSourceLosToTarget) {
+          if (!world) continue;
+          if (losBetween(b, defender, world.terrain, tokens) !== 'clear') continue;
+        }
         out.push(b);
       }
     }

@@ -1780,7 +1780,8 @@ export class AttackHelper {
     // c.rerolls either -- and unlike the Whistle it picks its own dice, because
     // the card names the face rather than leaving the choice open.
     if (which === 'attack' && !c.guidanceUsed && this.tokens) {
-      const beacons = missileGuidance(this.data, this.tokens(), c.attacker, c.defender, c.action);
+      const beacons = missileGuidance(this.data, this.tokens(), c.attacker, c.defender, c.action,
+        { terrain: this.terrain ? this.terrain() : [] });
       const eyes = roll
         .map((d, i) => ({ d, i }))
         .filter(({ d }) => this.dice.dice[d.color].faces[d.face].some((ic) => ic.type === 'eye'));

@@ -27,6 +27,7 @@ export function tokenCards(data: any, t: any): any[] {
 function largeGridOf(t: any): any { return { c: Math.floor(t.col / 3), r: Math.floor(t.row / 3) }; }
 `
   + cut(rules, 'export function rangeBetween', 'export function inArc', 'rangeBetween')
+  + cut(rules, 'export function losBetween', 'export function rangeBetween', 'losBetween')
   + cut(units, 'export interface AuraSource', '// Melee Evasion (ZYBP-302)', 'the aura readers')
   + cut(units, '// Melee Evasion (ZYBP-302)', 'export interface CommandRider', 'meleeEvasionReady')
   + cut(units, 'export interface ParryPart', 'export interface SelfHitPart', 'parryParts')
@@ -579,10 +580,19 @@ const observer = (col, row, cardId) => ({
   uid: 43, kind: 'mech', side: 's1', col, row, size: 1, cardId,
   mech: { torso: '002' }, partStates: { torso: 'intact', main: 'intact' }, statuses: [], stance: 'offensive',
 });
-check('Coordinated Observation is NOT treated as a Beacon',
+// Coordinated Observation is now IMPLEMENTED rather than refused, but only
+// when a world is supplied: without terrain to look through, it still fails
+// closed rather than assuming sight.
+check('Coordinated Observation needs a world to judge sight, and refuses without one',
   A.missileGuidance(data, [observer(0, 0, 'TM31RS'), missile(), mark(0, 0)], missile(), mark(0, 0), shot()), []);
-check('and neither is 539, which carries the same effect',
-  A.missileGuidance(data, [observer(0, 0, '539'), missile(), mark(0, 0)], missile(), mark(0, 0), shot()), []);
+check('given a clear world it does grant the reroll',
+  A.missileGuidance(data, [observer(0, 0, 'TM31RS'), missile(), mark(0, 0)], missile(), mark(0, 0), shot(), { terrain: [] }).map((x) => x.uid), [43]);
+check('and 539 carries the same effect, so it lands too',
+  A.missileGuidance(data, [observer(0, 0, '539'), missile(), mark(0, 0)], missile(), mark(0, 0), shot(), { terrain: [] }).length, 1);
+// It is SIGHT, not Range: an observer far away still guides, where the Beacon
+// would not -- which is the whole difference between the two cards.
+check('sight does not care how far the observer is',
+  A.missileGuidance(data, [observer(30, 30, 'TM31RS'), missile(), mark(0, 0)], missile(), mark(0, 0), shot(), { terrain: [] }).length, 1);
 check('the real Beacon still works, so the guard did not block everything',
   A.missileGuidance(data, [beacon(0, 0), missile(), mark(0, 0)], missile(), mark(0, 0), shot()).length, 1);
 check('and their condition really is the one not implemented',
