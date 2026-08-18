@@ -5,7 +5,7 @@ import { linkMechanics } from './inspector';
 import { SQUAD_ORDER, squadLabel } from './data';
 import type { Card, CardAction, DiceData, DiceIcon, DieColor, GameRuleEffect, PartSlot, Side, SmokeScreen, TerrainPiece, Token } from './types';
 import { statusCount, STATUSES } from './types';
-import { aaRadarCovers, attackReactionsOf, auraEffectsOn, auraValueOn, coolingBonus, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, denseArmorOn, designationsOn, electronicValue, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, loanedParts, pilotCard, repeatersFor, SLOT_LABEL, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
+import { aaRadarCovers, attackReactionsOf, auraEffectsOn, auraValueOn, blueLightningDodges, coolingBonus, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, denseArmorOn, designationsOn, electronicValue, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, loanedParts, pilotCard, repeatersFor, SLOT_LABEL, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
 import { timingOf } from './ticks';
 import { inArc, losNote, protectionFor, rangeBetween } from './rules';
 import type { Command } from './commands';
@@ -816,6 +816,22 @@ export class AttackHelper {
     return counts;
   }
 
+  // countIcons throws every colour into one tally, which is right for almost
+  // everything -- but the White Dwarf Thruster names BLUE dice specifically, so
+  // that one needs the roll read by colour.
+  private iconsOnColour(roll: Rolled[], colour: DieColor, type: string, upgradeHollow: boolean): number {
+    let n = 0;
+    for (const d of roll) {
+      if (d.color !== colour) continue;
+      for (const icon of this.dice.dice[d.color].faces[d.face]) {
+        if (icon.type !== type) continue;
+        if (icon.hollow && !upgradeHollow) continue;
+        n++;
+      }
+    }
+    return n;
+  }
+
   // The attack tally, with Chef's exchanges applied. Every reader of the attack
   // roll goes through here so the display and the resolution cannot disagree —
   // an exchange the player can see in the summary but that does not reach
@@ -887,6 +903,18 @@ export class AttackHelper {
     const c = this.ctx!;
     const atk = this.attackIcons(c);
     const def = this.countIcons(c.defenseRoll ?? [], c.defender.stance === 'defensive');
+    // White Dwarf Thruster (292) FIRST, because it is not a choice: the card
+    // says the Blue {Lightning} "counts as" {Dodge} whenever the Bit is loaded,
+    // where KC Armor is a Charge the player elects to spend. Taking the
+    // automatic one first leaves KC Armor whatever Lightning is left, which is
+    // also the reading that does not silently delete one of the two.
+    const dwarf = c.defenseRoll && blueLightningDodges(this.data, c.defender)
+      ? this.iconsOnColour(c.defenseRoll, 'blue', 'lightning', c.defender.stance === 'defensive')
+      : 0;
+    if (dwarf) {
+      def.dodge = (def.dodge ?? 0) + dwarf;
+      def.lightning = Math.max(0, (def.lightning ?? 0) - dwarf);
+    }
     // KC Armor (4.10): the consumed Charge Token turns every {Lightning} in
     // the Defense Roll into {Defense}. Derived here so the tally and the
     // resolution can never disagree about the trade.

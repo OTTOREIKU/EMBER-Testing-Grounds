@@ -33,7 +33,7 @@ function largeGridOf(t: any): any { return { c: Math.floor(t.col / 3), r: Math.f
   + cut(units, 'export interface SelfHitPart', '// A Firing Action', 'selfHitParts')
   + cut(units, '// A Firing Action', 'export function repairSpec', 'actionRange and hasFlexibleTiming')
   + cut(units, 'export const SLOT_LABEL', 'let uidSource', 'SLOT_LABEL')
-  + cut(units, '// ---------- The Freehand Supports', 'export function attackReactionsOf', 'coolingBonus, ripostePart, defenseReactionOn and targetTracingOn')
+  + cut(units, '// ---------- White Dwarf Thruster', 'export function attackReactionsOf', 'coolingBonus, ripostePart, defenseReactionOn and targetTracingOn')
   + cut(units, 'function alive(t: Token)', 'function coversGrid', 'the alive helper')
   + cut(units, '// ---------- Martyrdom', 'export function autoDetonationsOwed', 'martyrdomOwed')
   + cut(units, 'export function explosionScope', 'export function needsSightToLanding', 'explosionScope');
@@ -449,6 +449,29 @@ check('a Drone never supports', A.freehandSupportNote(data, { ...armed('leftHand
 check('the two arms name different colours',
   /\+1R/.test(A.freehandSupportNote(data, armed('leftHand', 'ZHLA-303'), act('Melee')))
   && /\+1Y/.test(A.freehandSupportNote(data, armed('leftHand', '040'), act('Melee'))), true);
+
+// ---------- White Dwarf Thruster (292) ----------
+//
+// The Ammo is a CONDITION, not a cost: the Bit stays launchable, so this is
+// checked against the ammo bag rather than against anything being spent.
+const dwarf = (ammo, states = {}) => ({
+  uid: 32, kind: 'mech', side: 's1', col: 0, row: 0, stance: 'offensive',
+  mech: { torso: '002', backpack: '292' },
+  partStates: { torso: 'intact', backpack: 'intact', ...states }, statuses: [], ammo,
+});
+check('a loaded Bit turns Blue Lightning into Dodge', A.blueLightningDodges(data, dwarf({ '292_A': 1 })), true);
+check('an empty one does not', A.blueLightningDodges(data, dwarf({ '292_A': 0 })), false);
+check('and neither does a missing ammo bag', A.blueLightningDodges(data, dwarf({})), false);
+check('a destroyed Bit Port offers nothing',
+  A.blueLightningDodges(data, dwarf({ '292_A': 1 }, { backpack: 'destroyed' })), false);
+check('a Mech without the Part never gets it',
+  A.blueLightningDodges(data, { ...dwarf({ '292_A': 1 }), mech: { torso: '002' }, partStates: { torso: 'intact' } }), false);
+check('a Drone never gets it', A.blueLightningDodges(data, { ...dwarf({ '292_A': 1 }), kind: 'drone' }), false);
+// The condition names a DIFFERENT action on the same card -- the Bit, not the
+// Passive that carries the rule.
+check('the ammo condition points at the Bit, not at the Passive',
+  data.byId.get('292').actions.find((x) => x.type === 'Passive').gameRules[0]
+    .conditions.find((c) => c.type === 'action_storage_available').actionId, '292_A');
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
 if (fail) process.exit(1);

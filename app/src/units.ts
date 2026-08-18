@@ -587,6 +587,47 @@ export interface AttackReaction {
   afterDestroyed: boolean;
 }
 
+// ---------- White Dwarf Thruster (292 ACE-001 Bit Port) ----------
+//
+// "While this part's Bit action has an Ammo Token, {lightning} on blue dice
+// counts as {Dodge}." The structured rule agrees and adds the scope the English
+// leaves implicit:
+//
+//   conditions: source_is_target, action_storage_available(backpack, 292_A)
+//   effects:    transform_dice_face lightning -> evade, on: defender
+//
+// `source_is_target` is what makes it a DEFENCE-side transform: it applies when
+// the Mech wearing the Part is the one being shot at, never when it is shooting.
+// The Ammo is not spent by this -- it is a condition, not a cost, so the Bit
+// stays launchable.
+//
+// BLUE dice only, which is the whole difficulty: countIcons aggregates every
+// colour together, so the caller has to count these itself.
+export function blueLightningDodges(data: GameData, t: Token): boolean {
+  if (t.kind !== 'mech') return false;
+  for (const { slot, card } of tokenCards(data, t)) {
+    if (slot === 'pilot') continue;
+    if ((t.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
+    for (const a of card.actions ?? []) {
+      for (const g of a.gameRules ?? []) {
+        const eff = (g.effects ?? []).find((e) => {
+          const x = e as { type?: string; from?: string; to?: string };
+          return x.type === 'transform_dice_face' && x.from === 'lightning' && x.to === 'evade';
+        });
+        if (!eff) continue;
+        // The Ammo condition names the Action that must still be loaded, which
+        // is a DIFFERENT action on the same card (the Bit, not this Passive).
+        const ammoCond = (g.conditions ?? []).find((x) => (x as { type?: string }).type === 'action_storage_available') as
+          { actionId?: string } | undefined;
+        const needs = ammoCond?.actionId;
+        if (needs && (t.ammo?.[needs] ?? 0) <= 0) continue;
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 // ---------- The Freehand Supports (ZHLA-303 +1R, 040 +1Y) ----------
 //
 // "If this part is Designated as Freehand by a [Two-Handed] action, the action
