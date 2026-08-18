@@ -5144,10 +5144,6 @@ async function init() {
 
   const multiplayer = new MultiplayerDialog(
     emberApi,
-    (id) => {
-      const card = data.byId.get(id);
-      return card ? cardName(card) : id;
-    },
     {
       view: () => relay.state,
       host: () => relay.host(),

@@ -1063,14 +1063,6 @@ main { display: flex; flex: 1; min-height: 0; }
 }
 #btn-multiplayer.online { background: var(--green-lt); color: var(--green); }
 
-.mp-stats { display: flex; gap: 6px; }
-.mp-stat {
-  flex: 1; text-align: center; padding: 7px 4px;
-  background: var(--surface3); border-radius: var(--radius);
-}
-.mp-stat b { display: block; font-size: 16px; font-variant-numeric: tabular-nums; }
-.mp-stat span { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text2); }
-
 .mp-games { display: flex; flex-direction: column; gap: 3px; margin-top: 9px; }
 .mp-game {
   display: flex; align-items: center; gap: 8px; font-size: 11.5px;
