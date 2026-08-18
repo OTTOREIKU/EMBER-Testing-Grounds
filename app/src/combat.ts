@@ -5,7 +5,7 @@ import { linkMechanics } from './inspector';
 import { SQUAD_ORDER, squadLabel } from './data';
 import type { Card, CardAction, DiceData, DiceIcon, DieColor, GameRuleEffect, PartSlot, Side, SmokeScreen, TerrainPiece, Token } from './types';
 import { statusCount, STATUSES } from './types';
-import { aaRadarCovers, attackReactionsOf, auraEffectsOn, auraValueOn, denseArmorOn, designationsOn, electronicValue, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, loanedParts, pilotCard, repeatersFor, SLOT_LABEL, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
+import { aaRadarCovers, attackReactionsOf, auraEffectsOn, auraValueOn, selfHitParts, denseArmorOn, designationsOn, electronicValue, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, loanedParts, pilotCard, repeatersFor, SLOT_LABEL, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
 import { timingOf } from './ticks';
 import { losNote, protectionFor, rangeBetween } from './rules';
 import type { Command } from './commands';
@@ -15,7 +15,7 @@ import type { Command } from './commands';
 // its own numbers.
 export type DiceRoller = (pool: Record<string, number>, label?: string) => Promise<{ color: string; face: number }[]>;
 
-type Step = 'split' | 'part' | 'attack' | 'defense' | 'resolve' | 'surplus';
+type Step = 'split' | 'part' | 'designate' | 'attack' | 'defense' | 'resolve' | 'surplus';
 
 // ---------- Multi-Target (keyword 多目标X, FAQ B7) ----------
 //
@@ -142,6 +142,11 @@ interface Ctx {
   protectionNote: string;
   step: Step;
   targetPart: string | null;
+  // Shield Up / Mobile Defense: the Black Die says where the hit LANDED, and
+  // the defender may take it on a shield instead. `designateFrom` remembers the
+  // rolled slot so the note can say what was redirected, and is null once the
+  // question has been answered or was never asked.
+  designateFrom: string | null;
   attackPool: { red: number; yellow: number };
   defensePool: { white: number; blue: number };
   attackRoll: Rolled[] | null;
@@ -338,6 +343,7 @@ export class AttackHelper {
       protectionNote: explosion ? '' : protectionNote,
       step: defender.kind === 'mech' ? 'part' : 'attack',
       targetPart: defender.kind === 'mech' ? null : 'main',
+      designateFrom: null,
       attackPool: { red: action.redDice ?? 0, yellow: action.yellowDice ?? 0 },
       defensePool: { white: 1, blue: 0 },
       attackRoll: null,
@@ -403,6 +409,7 @@ export class AttackHelper {
       protectionNote: prot.note,
       step,
       targetPart: defender.kind === 'mech' ? null : 'main',
+      designateFrom: null,
       attackPool: pool ?? { red: m.total.red, yellow: m.total.yellow },
       defensePool: { white: 1, blue: 0 },
       attackRoll: null,
@@ -957,6 +964,7 @@ export class AttackHelper {
     if (c.step === 'split') el.appendChild(this.stepSplit());
     if (c.step === 'surplus') el.appendChild(this.stepSurplus());
     if (c.step === 'part') el.appendChild(this.stepPart());
+    if (c.step === 'designate') el.appendChild(this.stepDesignate());
     if (c.step === 'attack') el.appendChild(this.stepAttack());
     if (c.step === 'defense') el.appendChild(this.stepDefense());
     if (c.step === 'resolve') el.appendChild(this.stepResolve());
@@ -1352,10 +1360,62 @@ export class AttackHelper {
       this.pickPart('torso');
       return;
     }
+    // Shield Up (Defensive Stance only) and Mobile Defense (always) let the
+    // defender take the hit on that Part instead of the one the Black Die
+    // found. Offered once, and only when there is a different Part to offer:
+    // a shield already hit has nothing to redirect.
+    const offers = selfHitParts(this.data, c.defender).filter((x) => x.slot !== slot);
+    const remoteDefender = !!(this.focusRemote && this.focusRemote(c.defender));
+    if (offers.length && c.designateFrom === null && !remoteDefender) {
+      c.designateFrom = slot;
+      c.step = 'designate';
+      this.render();
+      return;
+    }
     c.targetPart = slot;
     c.defensePool = this.suggestedDefensePool(slot);
     // Surplus Damage makes no Attack Roll: the un-offset icons from the first
     // Penetration ARE the roll (4.8 step 3), so the attack step is skipped.
+    c.step = c.surplusRound > 0 ? 'defense' : 'attack';
+    this.render();
+  }
+
+  private stepDesignate(): HTMLElement {
+    const c = this.ctx!;
+    const from = c.designateFrom!;
+    const wrap = document.createElement('div');
+    wrap.className = 'ah-step';
+    const rolled = SLOT_LABEL[from as PartSlot | 'main'];
+    wrap.innerHTML = `<h4><span class="ah-n">2</span>Designate the Part</h4>
+      <p class="ah-note">The hit landed on <b>${rolled}</b>. This Mech may take it on a Part that Designates instead.</p>`;
+    for (const opt of selfHitParts(this.data, c.defender).filter((x) => x.slot !== from)) {
+      const b = document.createElement('button');
+      b.className = 'ah-primary';
+      b.textContent = `${SLOT_LABEL[opt.slot]} — ${opt.label}`;
+      b.addEventListener('click', () => this.designateHit(opt.slot, from));
+      wrap.appendChild(b);
+    }
+    const keep = document.createElement('button');
+    keep.className = 'ah-alt';
+    keep.textContent = `Keep ${rolled}`;
+    keep.addEventListener('click', () => this.designateHit(from, from));
+    wrap.appendChild(keep);
+    linkMechanics(wrap, this.data.mechanics);
+    return wrap;
+  }
+
+  // The defender's answer. Declining keeps the rolled Part, so the same call
+  // settles both branches — and designateFrom is left set either way, which is
+  // what stops the question being asked twice for one hit.
+  private designateHit(slot: string, from: string): void {
+    const c = this.ctx!;
+    this.rebind(c);
+    if (slot !== from) {
+      const part = SLOT_LABEL[slot as PartSlot | 'main'];
+      this.note(`${c.defender.label} Designates ${part} to resolve the damage, so the hit moves off ${SLOT_LABEL[from as PartSlot | 'main']}.`, [c.defender]);
+    }
+    c.targetPart = slot;
+    c.defensePool = this.suggestedDefensePool(slot);
     c.step = c.surplusRound > 0 ? 'defense' : 'attack';
     this.render();
   }

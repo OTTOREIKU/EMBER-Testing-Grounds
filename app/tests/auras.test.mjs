@@ -13,7 +13,8 @@ const cut = (s, a, b, what) => {
 
 // tokenCards and largeGridOf are mirrored; everything under test is sliced.
 const body = `
-type Token = any; type GameData = any; type PartSlot = any; type CardAction = any;
+type Token = any; type GameData = any; type PartSlot = any; type CardAction = any; type Card = any;
+function cardName(c: any): string { return c?.name?.en ?? c?.id ?? ''; }
 export function tokenCards(data: any, t: any): any[] {
   const out: any[] = [];
   for (const slot of ['torso', 'chasis', 'leftHand', 'rightHand', 'backpack']) {
@@ -26,7 +27,8 @@ export function tokenCards(data: any, t: any): any[] {
 function largeGridOf(t: any): any { return { c: Math.floor(t.col / 3), r: Math.floor(t.row / 3) }; }
 `
   + cut(rules, 'export function rangeBetween', 'export function inArc', 'rangeBetween')
-  + cut(units, 'export interface AuraSource', '// A Firing Action', 'the aura readers')
+  + cut(units, 'export interface AuraSource', 'export interface SelfHitPart', 'the aura readers')
+  + cut(units, 'export interface SelfHitPart', '// A Firing Action', 'selfHitParts')
   + cut(units, '// A Firing Action', 'export function repairSpec', 'actionRange and hasFlexibleTiming');
 
 const tmp = new URL('./_auras.slice.ts', import.meta.url);
@@ -143,6 +145,36 @@ check('two sources of the same aura do not add up',
 const deadNode = { ...mech(15, 's1', '014', 9), partStates: { torso: 'destroyed' } };
 check('a destroyed carrier projects nothing',
   A.hasFlexibleTiming(data, [deadNode, ally], ally, moving), false);
+
+// ---------- Shield Up / Mobile Defense (phase 2) ----------
+//
+// "This Mech may Designate this part to resolve damage [in the Defensive
+// Stance]." The difference between the two is a printed CONDITION in the data,
+// not the name: Shield Up carries a defensive-stance condition, Mobile Defense
+// carries none.
+
+const withPart = (leftHand, stance, states = {}, repaired = []) => ({
+  uid: 20, side: 's1', kind: 'mech', col: 9, row: 9, size: 3, facing: 0, stance,
+  mech: { torso: '002', leftHand }, partStates: { torso: 'intact', ...states }, repairedSlots: repaired,
+});
+const shieldSlots = (t) => A.selfHitParts(data, t).map((x) => x.slot);
+
+check('Shield Up offers the Part in Defensive Stance',
+  shieldSlots(withPart('034', 'defensive')), ['leftHand']);
+check('and offers nothing outside it',
+  shieldSlots(withPart('034', 'offensive')), []);
+check('Mobile Defense has no stance condition, so it always offers',
+  shieldSlots(withPart('107', 'offensive')), ['leftHand']);
+check('a destroyed Part cannot be volunteered',
+  shieldSlots(withPart('034', 'defensive', { leftHand: 'destroyed' })), []);
+// A Repaired Part is removed outright when hit (FAQ J23), which is not
+// "resolving damage", so it must not be offered as a shield.
+check('nor can a Repaired one (J23)',
+  shieldSlots(withPart('034', 'defensive', {}, ['leftHand'])), []);
+check('a Drone has no Parts to designate',
+  A.selfHitParts(data, { uid: 21, side: 's1', kind: 'drone', col: 9, row: 9, cardId: '003', partStates: { main: 'intact' } }), []);
+check('the offer names the ability, not the card',
+  A.selfHitParts(data, withPart('034', 'defensive')).map((x) => x.label), ['Shield Up']);
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
 if (fail) process.exit(1);

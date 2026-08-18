@@ -789,6 +789,43 @@ export function auraValueOn(data: GameData, tokens: Token[], t: Token, kind: str
 // text names the keyword are the three aura sources themselves). A unit is its
 // own ally (FAQ Q4), so a Mech carrying Tactical Coordination flexes its own
 // Starting Action as well as its neighbours'.
+export interface SelfHitPart {
+  slot: PartSlot | 'main';
+  card: Card;
+  label: string;
+}
+
+// Shield Up and Mobile Defense: "This Mech may Designate this part to resolve
+// damage [in the Defensive Stance]." The Black Die still says where the hit
+// LANDED; this is the defender's option to take it on the shield instead.
+//
+// The difference between the two is a printed condition, and it is in the data
+// rather than in the name: Shield Up carries `conditions: [{type:'stance',
+// stance:'defensive'}]`, Mobile Defense carries none and so is always live.
+// A destroyed Part cannot be volunteered, and neither can a Repaired one — it
+// is removed outright when hit (FAQ J23), which is not "resolving damage".
+export function selfHitParts(data: GameData, t: Token): SelfHitPart[] {
+  if (t.kind !== 'mech') return [];
+  const out: SelfHitPart[] = [];
+  for (const { slot, card } of tokenCards(data, t)) {
+    if (slot === 'pilot') continue;
+    const key = slot as PartSlot | 'main';
+    if ((t.partStates[key] ?? 'intact') === 'destroyed') continue;
+    if ((t.repairedSlots ?? []).includes(key)) continue;
+    for (const g of card.actions?.flatMap((a) => a.gameRules ?? []) ?? []) {
+      const effects = (g.effects ?? []) as { type?: string }[];
+      if (!effects.some((e) => e.type === 'defender_designate_self_hit_part')) continue;
+      const conds = (g.conditions ?? []) as { type?: string; stance?: string }[];
+      const met = conds.every((c) => (c.type === 'stance' ? t.stance === c.stance : true));
+      if (!met) continue;
+      const named = card.actions?.find((a) => (a.gameRules ?? []).includes(g));
+      out.push({ slot: key, card, label: named?.name?.en || named?.name?.zh || cardName(card) });
+      break;
+    }
+  }
+  return out;
+}
+
 // A Firing Action's reach, after the two range auras: RT-12T Oasis gives ally
 // MECHS +1 (Firing Coordination) and the P7-A3 Node Core gives ally DRONES +2
 // (Fire Control Planning). Both say "Firing Actions", so nothing else is
