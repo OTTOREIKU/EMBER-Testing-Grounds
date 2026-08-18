@@ -683,6 +683,7 @@ function settleDefense(cmd: Command): void {
   if (cmd.kind === 'focusReroll') attackHelper?.focusRerolled(cmd.indices, cmd.faces);
   if (cmd.kind === 'kcArmor') attackHelper?.kcArmed();
   if (cmd.kind === 'designateHit') attackHelper?.designateAnswered(cmd.slot);
+  if (cmd.kind === 'meleeEvade') attackHelper?.evadeDeclared();
 }
 
 function startAttack(uid: number, actionId: string, targetUid: number, mode: 'attack' | 'intercept' | 'explosion' = 'attack'): void {
@@ -1983,6 +1984,7 @@ function hudCtx(): HudCtx {
     combatMirrorHtml,
     mirrorFocus: mirrorFocusAct,
     mirrorDesignate,
+    mirrorMeleeEvade,
     startAttack,
     showTab: (name) => showSideTab(null, name),
     diceData,
@@ -2045,6 +2047,12 @@ function combatMirrorHtml(): string | null {
         ${des.slots.map((o) => `<button class="ah-primary" data-desslot="${esc(o.slot)}">${esc(slotName(o.slot))} — ${esc(o.label)}</button>`).join('')}
         <button class="ah-alt" data-desslot="${esc(des.from)}">Keep ${esc(slotName(des.from))}</button></div>`
     : '';
+  // Melee Evasion (ZYBP-302). The attacker's window judged whether it is
+  // available — it can see the Parry and the board — so the mirror only draws
+  // what it was told.
+  const evadeUi = view.evadeReady && iAmDefender
+    ? `<div class="ah-step"><button class="ah-alt" data-act="meleeevade">Melee Evasion: spend a Command Token for +1 [Dodge] on the Parry</button></div>`
+    : '';
   const focus = view.focus;
   let focusUi = '';
   if (focus && iAmDefender && focus.stage === 'declareD') {
@@ -2070,7 +2078,7 @@ function combatMirrorHtml(): string | null {
     ${myRoll}
     ${view.defense?.length ? `<div class="ah-step"><p>Defense Roll</p>${faceRow(view.defense)}</div>` : ''}
     ${kcUi}
-    ${desUi}${focusUi}
+    ${desUi}${evadeUi}${focusUi}
     ${view.log.length ? `<div class="ah-log">${view.log.map((l) => `<div>${esc(l)}</div>`).join('')}</div>` : ''}
   </div>`;
 }
@@ -2084,6 +2092,19 @@ const mirrorFocusSel = new Set<number>();
 // from the HUD through ctx.mirrorFocus.
 // The defender's Designate answer. It travels as a command and the ATTACKER's
 // open window is what actually moves the hit, exactly as focusAnswer does.
+// The Command Token is spent by its own command, exactly as KC Armor spends
+// its Charge — the declaration and the cost travel separately so neither seat
+// can end up with a half-applied ability.
+function mirrorMeleeEvade(): void {
+  const seat = mySeat();
+  const v = state.script?.combatView;
+  const df = v ? state.tokens.find((t) => t.uid === v.targetUid) : undefined;
+  if (!seat || !df) return;
+  send({ kind: 'spendCommand', seat, uid: df.uid });
+  send({ kind: 'meleeEvade', seat });
+  render();
+}
+
 function mirrorDesignate(slot: string): void {
   const seat = mySeat();
   if (!seat) return;

@@ -624,6 +624,11 @@ export interface CombatView {
   focus?: { stage: string; attackerUse: boolean; defenderUse: boolean } | null;
   // KC Armor already declared this attack, so the mirror stops offering it.
   kcUsed?: boolean;
+  // Melee Evasion (ZYBP-302): declared already, and whether it may be declared
+  // at all — a Parry is on the table, the Part carries it, and a Command Token
+  // is there to spend. Judged by the attacker's window, which sees the board.
+  evadeUsed?: boolean;
+  evadeReady?: boolean;
   // Shield Up / Mobile Defense: the Parts the DEFENDER may take this hit on
   // instead of the one the Black Die found, and where it landed. Present only
   // while that question is open, because it is the defender's to answer and

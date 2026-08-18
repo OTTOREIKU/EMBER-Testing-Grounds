@@ -5,7 +5,7 @@ import { linkMechanics } from './inspector';
 import { SQUAD_ORDER, squadLabel } from './data';
 import type { Card, CardAction, DiceData, DiceIcon, DieColor, GameRuleEffect, PartSlot, Side, SmokeScreen, TerrainPiece, Token } from './types';
 import { statusCount, STATUSES } from './types';
-import { aaRadarCovers, attackReactionsOf, auraEffectsOn, auraValueOn, parryParts, selfHitParts, denseArmorOn, designationsOn, electronicValue, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, loanedParts, pilotCard, repeatersFor, SLOT_LABEL, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
+import { aaRadarCovers, attackReactionsOf, auraEffectsOn, auraValueOn, meleeEvasionReady, parryParts, selfHitParts, denseArmorOn, designationsOn, electronicValue, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, loanedParts, pilotCard, repeatersFor, SLOT_LABEL, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
 import { timingOf } from './ticks';
 import { inArc, losNote, protectionFor, rangeBetween } from './rules';
 import type { Command } from './commands';
@@ -172,6 +172,8 @@ interface Ctx {
   // KC Armor (4.10): the defender consumed a Charge Token, so the Defense
   // Roll's Lightning counts as Defense. Derived into the tally by resolve().
   kcUsed?: boolean;
+  // Melee Evasion (ZYBP-302) declared this attack: +1 {Dodge} for a Command Token.
+  evadeUsed?: boolean;
   // Concussion/Wrecking's Link drain fires exactly once, when the resolution
   // is applied — never from resolve(), which redraws many times.
   drainSent?: boolean;
@@ -237,6 +239,8 @@ export class AttackHelper {
     log: string[];
     focus: { stage: string; attackerUse: boolean; defenderUse: boolean } | null;
     kcUsed: boolean;
+    evadeUsed: boolean;
+    evadeReady: boolean;
     designate: { from: string; slots: { slot: string; label: string }[] } | null;
   } | null) => void) | null = null;
   // Whether this defender's Focus decisions belong to a player at another
@@ -575,6 +579,16 @@ export class AttackHelper {
   // The remote defender's KC Armor declare, carried by a kcArmor command; the
   // Charge Token was spent by their own setCharge. Freeplay reaches this
   // directly from the button.
+  // The defender declared Melee Evasion. Their client sent it and spent the
+  // Command Token; this window is where the extra {Dodge} lands.
+  evadeDeclared(): void {
+    const c = this.ctx;
+    if (!c || c.evadeUsed) return;
+    c.evadeUsed = true;
+    this.note(`${c.defender.label} spends a Command Token for Melee Evasion: +1 [Dodge] on the Parry (ZYBP-302).`, [c.defender]);
+    this.render();
+  }
+
   kcArmed(): void {
     const c = this.ctx;
     if (!c || c.kcUsed) return;
@@ -784,6 +798,9 @@ export class AttackHelper {
     // works exactly like the Token here and Scan cannot strip it (FAQ Q3/J2).
     const lowProfile = c.action.type === 'Firing' && (statusCount(c.defender.statuses, 'lowProfile') > 0
       || (this.tokens ? auraEffectsOn(this.data, this.tokens(), c.defender).has('low_profile') : false));
+    // Melee Evasion adds a {Dodge} ICON, not a die — the card writes it braced,
+    // and the pool was already rolled by now.
+    if (c.evadeUsed) def.dodge = (def.dodge ?? 0) + 1;
     if (lowProfile && def.eye) {
       def.dodge = (def.dodge ?? 0) + def.eye;
       def.eye = 0;
@@ -971,6 +988,11 @@ export class AttackHelper {
           }
         : null,
       kcUsed: !!c.kcUsed,
+      evadeUsed: !!c.evadeUsed,
+      // Offered only where the rule allows it: a Parry was actually declared,
+      // the Part carries Melee Evasion, and a face-up Command Token is there
+      // to spend.
+      evadeReady: !c.evadeUsed && !!c.designatedParry && meleeEvasionReady(this.data, c.defender),
     });
     const el = document.createElement('div');
     el.className = 'attack-helper';

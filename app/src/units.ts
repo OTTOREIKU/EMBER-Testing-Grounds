@@ -789,6 +789,26 @@ export function auraValueOn(data: GameData, tokens: Token[], t: Token, kind: str
 // text names the keyword are the three aura sources themselves). A unit is its
 // own ally (FAQ Q4), so a Mech carrying Tactical Coordination flexes its own
 // Starting Action as well as its neighbours'.
+// Melee Evasion (ZYBP-302): "On Parry, this mech may spend 1 Command Token to
+// gain 1 additional {Dodge}." Braced {Dodge} is a dice FACE, so this adds an
+// ICON to the defence result rather than a die to the pool — the same kind of
+// adjustment KC Armor and Low Profile already make in AttackHelper.resolve().
+//
+// Read off the Mech's own Parts, and it needs a face-up Command Token to spend.
+export function meleeEvasionReady(data: GameData, t: Token): boolean {
+  if (t.kind !== 'mech') return false;
+  if (!(t.statuses ?? []).includes('command')) return false;
+  for (const { slot, card } of tokenCards(data, t)) {
+    if ((t.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
+    for (const a of card.actions ?? []) {
+      const en = a.description?.en ?? '';
+      const zh = a.description?.zh ?? '';
+      if (/On Parry[^.]*additional\s*\{?Dodge/i.test(en) || /招架[^。]*闪避/.test(zh)) return true;
+    }
+  }
+  return false;
+}
+
 export interface CommandRider {
   // A2 Data Link: the Commanded Drone may perform Automatic Actions, which the
   // Command Phase otherwise refuses (3.2.2 / 3.5).

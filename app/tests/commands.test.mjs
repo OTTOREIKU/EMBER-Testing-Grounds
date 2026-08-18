@@ -1855,5 +1855,20 @@ C.apply(data, wM2Acted, mvTo(12, 9));
 check('and it is not offered after the Drone has acted', wM2Acted.script.opp.preMoved, undefined);
 
 
+// ---------- Melee Evasion travels like KC Armor ----------
+//
+// A defender-side declaration consumed by the attacker's open window. The board
+// carries nothing for apply() to change: the Command Token is spent by its own
+// spendCommand, so neither seat can end up with a half-applied ability.
+
+check('a Melee Evasion needs a running game',
+  C.check(data, { tokens: [], round: { n: 1, phase: 2, firstPlayer: 's1' } }, { kind: 'meleeEvade', seat: 's2' }).ok, false);
+check('and passes with one', C.check(data, wfoc, { kind: 'meleeEvade', seat: 's2' }).ok, true);
+const wEvade = world([mech(1, 's1')], 2, opp(1));
+const beforeEvade = JSON.stringify(wEvade);
+C.apply(data, wEvade, { kind: 'meleeEvade', seat: 's2' });
+check('apply changes no board state', JSON.stringify(wEvade), beforeEvade);
+
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

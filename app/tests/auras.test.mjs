@@ -27,7 +27,8 @@ export function tokenCards(data: any, t: any): any[] {
 function largeGridOf(t: any): any { return { c: Math.floor(t.col / 3), r: Math.floor(t.row / 3) }; }
 `
   + cut(rules, 'export function rangeBetween', 'export function inArc', 'rangeBetween')
-  + cut(units, 'export interface AuraSource', 'export interface ParryPart', 'the aura readers')
+  + cut(units, 'export interface AuraSource', '// Melee Evasion (ZYBP-302)', 'the aura readers')
+  + cut(units, '// Melee Evasion (ZYBP-302)', 'export interface CommandRider', 'meleeEvasionReady')
   + cut(units, 'export interface ParryPart', 'export interface SelfHitPart', 'parryParts')
   + cut(units, 'export interface SelfHitPart', '// A Firing Action', 'selfHitParts')
   + cut(units, '// A Firing Action', 'export function repairSpec', 'actionRange and hasFlexibleTiming');
@@ -221,6 +222,33 @@ check('a Drone never Parries',
 check('the Parry Value comes off the card, not a guess',
   A.parryParts(data, parryMech('ZHLA-202'), melee)[0].value,
   data.byId.get('ZHLA-202').parray);
+
+
+// ---------- Melee Evasion (ZYBP-302) ----------
+//
+// "On Parry, this mech may spend 1 Command Token to gain 1 additional {Dodge}."
+// Read off the Mech's own Parts, and it needs a face-up Command Token. The
+// Chinese says 招架 for Parry, not 格挡 — the first pattern written here used
+// the wrong word and silently never matched.
+
+const evadeMech = (torso, statuses = ['command'], states = {}) => ({
+  uid: 40, side: 's1', kind: 'mech', col: 9, row: 9, size: 3, facing: 0, stance: 'defensive',
+  mech: { torso }, partStates: { torso: 'intact', ...states }, statuses,
+});
+check('a Mech with Melee Evasion and a Command Token is ready',
+  A.meleeEvasionReady(data, evadeMech('ZYBP-302')), true);
+check('without a face-up Command Token it is not',
+  A.meleeEvasionReady(data, evadeMech('ZYBP-302', [])), false);
+check('a spent token does not pay for it',
+  A.meleeEvasionReady(data, evadeMech('ZYBP-302', ['commandUsed'])), false);
+check('a Mech without the ability is never ready',
+  A.meleeEvasionReady(data, evadeMech('002')), false);
+check('a destroyed Part offers nothing',
+  A.meleeEvasionReady(data, evadeMech('ZYBP-302', ['command'], { torso: 'destroyed' })), false);
+// ZYBP-302 also carries Dodge Enhancement, which is a DIFFERENT ability with a
+// different trigger; the matcher must not confuse the two.
+check('and it is Melee Evasion that matched, not Dodge Enhancement',
+  data.byId.get('ZYBP-302').actions.some((a) => /Dodge Enhancement/.test(a.name?.en ?? '')), true);
 
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
