@@ -5,9 +5,9 @@ import { linkMechanics } from './inspector';
 import { SQUAD_ORDER, squadLabel } from './data';
 import type { Card, CardAction, DiceData, DiceIcon, DieColor, GameRuleEffect, PartSlot, Side, SmokeScreen, TerrainPiece, Token } from './types';
 import { statusCount, STATUSES } from './types';
-import { aaRadarCovers, attackReactionsOf, auraEffectsOn, auraValueOn, selfHitParts, denseArmorOn, designationsOn, electronicValue, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, loanedParts, pilotCard, repeatersFor, SLOT_LABEL, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
+import { aaRadarCovers, attackReactionsOf, auraEffectsOn, auraValueOn, parryParts, selfHitParts, denseArmorOn, designationsOn, electronicValue, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, loanedParts, pilotCard, repeatersFor, SLOT_LABEL, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
 import { timingOf } from './ticks';
-import { losNote, protectionFor, rangeBetween } from './rules';
+import { inArc, losNote, protectionFor, rangeBetween } from './rules';
 import type { Command } from './commands';
 
 // Where dice results come from. Absent in a local game, which rolls its own;
@@ -147,6 +147,10 @@ interface Ctx {
   // rolled slot so the note can say what was redirected, and is null once the
   // question has been answered or was never asked.
   designateFrom: string | null;
+  // The Parry Value the designation earned, in White dice (4.6.3). null means
+  // the question has not been put yet, which is also what stops it being asked
+  // twice for one hit; 0 means it was asked and no Parry came of it.
+  designatedParry: number | null;
   attackPool: { red: number; yellow: number };
   defensePool: { white: number; blue: number };
   attackRoll: Rolled[] | null;
@@ -345,6 +349,7 @@ export class AttackHelper {
       step: defender.kind === 'mech' ? 'part' : 'attack',
       targetPart: defender.kind === 'mech' ? null : 'main',
       designateFrom: null,
+      designatedParry: null,
       attackPool: { red: action.redDice ?? 0, yellow: action.yellowDice ?? 0 },
       defensePool: { white: 1, blue: 0 },
       attackRoll: null,
@@ -411,6 +416,7 @@ export class AttackHelper {
       step,
       targetPart: defender.kind === 'mech' ? null : 'main',
       designateFrom: null,
+      designatedParry: null,
       attackPool: pool ?? { red: m.total.red, yellow: m.total.yellow },
       defensePool: { white: 1, blue: 0 },
       attackRoll: null,
@@ -480,6 +486,13 @@ export class AttackHelper {
     // optimization). It is a defence-pool bonus, so it rides on top of Armor,
     // Structure and Protection rather than replacing any of them.
     white += auraValueOn(this.data, this.tokens ? this.tokens() : [], d, 'defense_white_dice_bonus');
+    // Parry (4.6.3), but only for the Part it was declared on: "if a Black Die
+    // still decides the Part, the Parry dice only apply when it matches". And
+    // never during Surplus Damage, which bars Protection and Parry alike (4.8)
+    // — the same rule the surplus notes in this file already state.
+    if (this.ctx?.designatedParry && slot === this.ctx.targetPart && !this.ctx.surplusRound) {
+      white += this.ctx.designatedParry;
+    }
     return { white, blue };
   }
 
@@ -954,9 +967,7 @@ export class AttackHelper {
       designate: c.step === 'designate' && c.designateFrom
         ? {
             from: c.designateFrom,
-            slots: selfHitParts(this.data, c.defender)
-              .filter((x) => x.slot !== c.designateFrom)
-              .map((x) => ({ slot: x.slot, label: x.label })),
+            slots: this.designateOffers(c.designateFrom).map((x) => ({ slot: x.slot, label: x.label })),
           }
         : null,
       kcUsed: !!c.kcUsed,
@@ -1378,8 +1389,8 @@ export class AttackHelper {
     // Asked of whoever owns the defender. When that is the other player the
     // step still opens — the attacker's window waits, their mirror answers —
     // because the choice is the defender's and must never be made for them.
-    const offers = selfHitParts(this.data, c.defender).filter((x) => x.slot !== slot);
-    if (offers.length && c.designateFrom === null) {
+    const offers = this.designateOffers(slot);
+    if (offers.length && c.designatedParry === null) {
       c.designateFrom = slot;
       c.step = 'designate';
       this.render();
@@ -1391,6 +1402,33 @@ export class AttackHelper {
     // Penetration ARE the roll (4.8 step 3), so the attack step is skipped.
     c.step = c.surplusRound > 0 ? 'defense' : 'attack';
     this.render();
+  }
+
+  // Everything the defender may designate for this hit: a Part that says it may
+  // resolve damage (Shield Up, Mobile Defense) and, on a Melee attack, any Part
+  // with a Parry Value (4.6.3). Kept in one place so the attacker's window, the
+  // published offer and the answer check can never disagree about what was on
+  // the table.
+  private designateOffers(from: string): { slot: string; label: string; parry: number }[] {
+    const c = this.ctx!;
+    const out: { slot: string; label: string; parry: number }[] = [];
+    for (const x of selfHitParts(this.data, c.defender)) {
+      if (x.slot !== from) out.push({ slot: x.slot, label: x.label, parry: 0 });
+    }
+    // Back Attack is judged from the DEFENDER's facing: the attacker standing
+    // in their rear arc is what bars the Parry.
+    const parries = parryParts(this.data, c.defender, {
+      melee: c.action.type === 'Melee',
+      backAttack: inArc(c.defender, c.attacker, 'rear'),
+    });
+    for (const x of parries) {
+      const already = out.find((o) => o.slot === x.slot);
+      // A Part can be both a shield and a Parry; the Parry Value is the part
+      // worth saying out loud, so it wins the label.
+      if (already) { already.parry = x.value; already.label = `${x.label} — Parry ${x.value}`; continue; }
+      out.push({ slot: x.slot, label: `${x.label} — Parry ${x.value}`, parry: x.value });
+    }
+    return out;
   }
 
   private stepDesignate(): HTMLElement {
@@ -1410,10 +1448,10 @@ export class AttackHelper {
       linkMechanics(wrap, this.data.mechanics);
       return wrap;
     }
-    for (const opt of selfHitParts(this.data, c.defender).filter((x) => x.slot !== from)) {
+    for (const opt of this.designateOffers(from)) {
       const b = document.createElement('button');
       b.className = 'ah-primary';
-      b.textContent = `${SLOT_LABEL[opt.slot]} — ${opt.label}`;
+      b.textContent = `${SLOT_LABEL[opt.slot as PartSlot | 'main']} — ${opt.label}`;
       b.addEventListener('click', () => this.designateHit(opt.slot, from));
       wrap.appendChild(b);
     }
@@ -1432,7 +1470,7 @@ export class AttackHelper {
     const c = this.ctx;
     if (!c || c.step !== 'designate' || !c.designateFrom) return;
     const legal = slot === c.designateFrom
-      || selfHitParts(this.data, c.defender).some((x) => x.slot === slot);
+      || this.designateOffers(c.designateFrom).some((x) => x.slot === slot);
     // A slot that is not on offer is refused rather than applied: the command
     // arrives from the other player's client, which is not ours to trust.
     if (!legal) return;
@@ -1445,9 +1483,15 @@ export class AttackHelper {
   private designateHit(slot: string, from: string): void {
     const c = this.ctx!;
     this.rebind(c);
+    const chosen = this.designateOffers(from).find((o) => o.slot === slot);
+    // Recorded even when it is 0, because null is what means "not yet asked".
+    c.designatedParry = chosen?.parry ?? 0;
     if (slot !== from) {
       const part = SLOT_LABEL[slot as PartSlot | 'main'];
       this.note(`${c.defender.label} Designates ${part} to resolve the damage, so the hit moves off ${SLOT_LABEL[from as PartSlot | 'main']}.`, [c.defender]);
+    }
+    if (c.designatedParry > 0) {
+      this.note(`Parry (4.6.3): ${SLOT_LABEL[slot as PartSlot | 'main']} adds ${c.designatedParry} White ${c.designatedParry === 1 ? 'die' : 'dice'} to the Defense Roll.`, [c.defender]);
     }
     c.targetPart = slot;
     c.defensePool = this.suggestedDefensePool(slot);

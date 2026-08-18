@@ -789,6 +789,38 @@ export function auraValueOn(data: GameData, tokens: Token[], t: Token, kind: str
 // text names the keyword are the three aura sources themselves). A unit is its
 // own ally (FAQ Q4), so a Mech carrying Tactical Coordination flexes its own
 // Starting Action as well as its neighbours'.
+export interface ParryPart {
+  slot: PartSlot | 'main';
+  value: number;
+  label: string;
+}
+
+// Parry (rulebook 4.6.3). "A melee-only defence. The defender designates a Part
+// with a Parry Value as the target Part and adds that many White dice to the
+// Defense Roll. Not available while in Shutdown or against a Back Attack."
+//
+// The designation half is the same shape as Shield Up, so combat reuses that
+// step; this is only the question of WHICH Parts may be offered and for how
+// many dice. The caller supplies the two gates it alone can judge — whether the
+// Action is Melee, and whether the attacker is in the defender's rear arc.
+export function parryParts(data: GameData, t: Token, opts: { melee: boolean; backAttack: boolean }): ParryPart[] {
+  if (t.kind !== 'mech') return [];
+  if (!opts.melee || opts.backAttack) return [];
+  if (t.stance === 'shutdown') return [];
+  const out: ParryPart[] = [];
+  for (const { slot, card } of tokenCards(data, t)) {
+    if (slot === 'pilot') continue;
+    const key = slot as PartSlot | 'main';
+    if ((t.partStates[key] ?? 'intact') === 'destroyed') continue;
+    // Same reasoning as selfHitParts: a Repaired Part is removed outright when
+    // hit (FAQ J23), so it cannot stand as the Part that resolves the damage.
+    if ((t.repairedSlots ?? []).includes(key)) continue;
+    const value = card.parray ?? 0;
+    if (value > 0) out.push({ slot: key, value, label: cardName(card) });
+  }
+  return out;
+}
+
 export interface SelfHitPart {
   slot: PartSlot | 'main';
   card: Card;

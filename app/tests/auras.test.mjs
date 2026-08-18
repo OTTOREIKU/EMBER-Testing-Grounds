@@ -27,7 +27,8 @@ export function tokenCards(data: any, t: any): any[] {
 function largeGridOf(t: any): any { return { c: Math.floor(t.col / 3), r: Math.floor(t.row / 3) }; }
 `
   + cut(rules, 'export function rangeBetween', 'export function inArc', 'rangeBetween')
-  + cut(units, 'export interface AuraSource', 'export interface SelfHitPart', 'the aura readers')
+  + cut(units, 'export interface AuraSource', 'export interface ParryPart', 'the aura readers')
+  + cut(units, 'export interface ParryPart', 'export interface SelfHitPart', 'parryParts')
   + cut(units, 'export interface SelfHitPart', '// A Firing Action', 'selfHitParts')
   + cut(units, '// A Firing Action', 'export function repairSpec', 'actionRange and hasFlexibleTiming');
 
@@ -175,6 +176,52 @@ check('a Drone has no Parts to designate',
   A.selfHitParts(data, { uid: 21, side: 's1', kind: 'drone', col: 9, row: 9, cardId: '003', partStates: { main: 'intact' } }), []);
 check('the offer names the ability, not the card',
   A.selfHitParts(data, withPart('034', 'defensive')).map((x) => x.label), ['Shield Up']);
+
+// ---------- Parry (rulebook 4.6.3) ----------
+//
+// "A melee-only defence. The defender designates a Part with a Parry Value as
+// the target Part and adds that many White dice to the Defense Roll. Not
+// available while in Shutdown or against a Back Attack."
+//
+// The two gates the CALLER must judge — is the Action Melee, is the attacker in
+// the defender's rear arc — are passed in, because a Part cannot see either.
+
+const parryMech = (leftHand, stance = 'defensive', states = {}, repaired = []) => ({
+  uid: 30, side: 's1', kind: 'mech', col: 9, row: 9, size: 3, facing: 0, stance,
+  mech: { torso: '002', leftHand }, partStates: { torso: 'intact', ...states }, repairedSlots: repaired,
+});
+const melee = { melee: true, backAttack: false };
+// ZHLA-202 carries Parry 3, and is one of the 76 cards whose printed Parry
+// Value did nothing before this.
+const parryOf = (t, o = melee) => A.parryParts(data, t, o).map((x) => x.slot + ':' + x.value);
+
+check('a Part with a Parry Value is offered against a Melee attack',
+  parryOf(parryMech('ZHLA-202')), ['leftHand:3']);
+check('Parry is melee-only',
+  parryOf(parryMech('ZHLA-202'), { melee: false, backAttack: false }), []);
+check('and is barred against a Back Attack',
+  parryOf(parryMech('ZHLA-202'), { melee: true, backAttack: true }), []);
+check('and while Shutdown',
+  parryOf(parryMech('ZHLA-202', 'shutdown')), []);
+check('a destroyed Part cannot Parry',
+  parryOf(parryMech('ZHLA-202', 'defensive', { leftHand: 'destroyed' })), []);
+check('nor can a Repaired one (J23)',
+  parryOf(parryMech('ZHLA-202', 'defensive', {}, ['leftHand'])), []);
+// ZYBP-101 is a Backpack with no Parry Value. 034 is deliberately NOT used
+// here: the Type 77 Bulwark carries Parry 1 as well as Shield Up, and 10 of
+// the 13 Shield Up cards do the same — a Part being both is the NORM, which
+// is why designateOffers merges them into one entry rather than listing it twice.
+check('a Part with no Parry Value is not offered',
+  parryOf(parryMech('ZYBP-101')), []);
+check('a shield that also Parries reports its Parry Value',
+  parryOf(parryMech('034')), ['leftHand:1']);
+check('a Drone never Parries',
+  A.parryParts(data, { uid: 31, side: 's1', kind: 'drone', col: 9, row: 9, cardId: '003', partStates: { main: 'intact' } }, melee), []);
+// The stat is real and widespread: this is why it was worth building.
+check('the Parry Value comes off the card, not a guess',
+  A.parryParts(data, parryMech('ZHLA-202'), melee)[0].value,
+  data.byId.get('ZHLA-202').parray);
+
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
 if (fail) process.exit(1);
