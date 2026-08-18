@@ -571,5 +571,23 @@ check('and neither of those fires on a Melee Action',
 check('a Part that supports nothing gives nothing',
   A.freehandSupport(data, holding('leftHand', '002'), 'leftHand', thSwing), null);
 
+// The bug this reader shipped with for one commit: TM31RS and 539 carry the
+// SAME reroll effect, gated on line of sight instead of the beacon's Range.
+// Unknown keys used to be skipped, which offered those two as beacons for any
+// allied shot anywhere on the board. An unimplemented condition must refuse.
+const observer = (col, row, cardId) => ({
+  uid: 43, kind: 'mech', side: 's1', col, row, size: 1, cardId,
+  mech: { torso: '002' }, partStates: { torso: 'intact', main: 'intact' }, statuses: [], stance: 'offensive',
+});
+check('Coordinated Observation is NOT treated as a Beacon',
+  A.missileGuidance(data, [observer(0, 0, 'TM31RS'), missile(), mark(0, 0)], missile(), mark(0, 0), shot()), []);
+check('and neither is 539, which carries the same effect',
+  A.missileGuidance(data, [observer(0, 0, '539'), missile(), mark(0, 0)], missile(), mark(0, 0), shot()), []);
+check('the real Beacon still works, so the guard did not block everything',
+  A.missileGuidance(data, [beacon(0, 0), missile(), mark(0, 0)], missile(), mark(0, 0), shot()).length, 1);
+check('and their condition really is the one not implemented',
+  data.byId.get('TM31RS').actions.find((x) => x.type === 'Passive')
+    .gameRules[0].effects[0].requireSourceLosToTarget, true);
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 if (fail) process.exit(1);

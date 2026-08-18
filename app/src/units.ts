@@ -773,6 +773,16 @@ export function missileGuidance(
           attackerUnitTypes?: string[]; attackerKeywords?: string[]; requireTargetWithinSourceRange?: boolean;
         } | undefined;
         if (!eff || !(eff.faces ?? []).includes('eye')) continue;
+        // FAIL CLOSED on a requirement this reader does not implement. TM31RS
+        // and 539 carry the same effect gated on `requireSourceLosToTarget`
+        // instead of a Range, and skipping an unknown key silently offered
+        // those two as beacons for any allied shot anywhere on the board.
+        // A condition that cannot be checked must REFUSE, never wave through.
+        const known = new Set([
+          'faces', 'actionTypes', 'attackerSide', 'attackerUnitTypes',
+          'attackerKeywords', 'requireTargetWithinSourceRange', 'type',
+        ]);
+        if (Object.keys(eff).some((k) => !known.has(k))) continue;
         if (eff.actionTypes && !eff.actionTypes.includes(action.type ?? '')) continue;
         // 'self_or_ally' is the only side rule any card prints for this.
         if (eff.attackerSide === 'self_or_ally' && b.side !== attacker.side) continue;
