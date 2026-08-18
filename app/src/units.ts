@@ -528,14 +528,110 @@ export function interceptCapacity(a: CardAction): number | undefined {
   return undefined;
 }
 
+// ---------- [Two-Handed] and the Freehand designation ----------
+//
+// 30 Actions print 【双手】/[双手]. It is not a cost and not a restriction: it
+// is a CONDITIONAL BONUS. Supporting the weapon with a spare hand makes the
+// Action better, and the player may always decline and fire it one-handed.
+//
+// "Designating a Freehand" means naming one Part that carries the 空手
+// (Freehand) keyword and is not otherwise occupied -- freehandSlots already
+// answers which those are, because the Black Box rules needed the same list.
+//
+// Four Parts care about being the designated one and give something back:
+// ZHLA-303 (+1R), 040 (+1Y), 087 (Omnidirectional Fire), 121 (target -2 Blue).
+//
+// The riders, all read off the printed line that follows the marker:
+//   +N射程        -> +N Range
+//   获得X         -> the Action gains keyword X (毁伤 Mutilation, 压制
+//                    Suppression, 狙击 Sniper, 多目标N Multi-Target N,
+//                    全向射击 Omnidirectional)
+//   视为中动作    -> the Action counts as a Medium one
+export interface TwoHanded {
+  range: number;
+  keywords: string[];
+  medium: boolean;
+}
+
+export function twoHandedRider(a: CardAction): TwoHanded | null {
+  const text = `${a.description?.zh ?? ''}\n${a.description?.en ?? ''}`;
+  const lines = text.split(/\r?\n/).filter((l) => /【双手】|\[双手\]|\[Two-Hand(?:ed)?\]/i.test(l));
+  if (!lines.length) return null;
+  const out: TwoHanded = { range: 0, keywords: [], medium: false };
+  for (const line of lines) {
+    const r = /\+\s*(\d+)\s*(?:射程|Range)/i.exec(line);
+    if (r) out.range += Number(r[1]);
+    if (/视为中动作/.test(line)) out.medium = true;
+    // 获得A，B lists more than one on a single line (ZHRA-303 prints
+    // "获得压制，毁伤"), so every term after the verb is taken.
+    const g = /获得([^。\n]*)/.exec(line);
+    if (g) {
+      for (const part of g[1].split(/[，,、和或]/)) {
+        const k = part.trim().replace(/[。\s]/g, '');
+        if (k) out.keywords.push(k);
+      }
+    }
+  }
+  return out.range || out.keywords.length || out.medium ? out : null;
+}
+
+// The Action as it is actually rolled once a Freehand has been designated.
+// Same shape as stationaryAdjusted: hand back a copy, never mutate the card.
+export function twoHandedAdjusted(a: CardAction, designated: boolean): CardAction {
+  if (!designated) return a;
+  const rider = twoHandedRider(a);
+  if (!rider) return a;
+  return {
+    ...a,
+    range: rider.range ? (a.range ?? 0) + rider.range : a.range,
+    size: rider.medium ? 'm' : a.size,
+    // Appended as `inline`, which is how every printed keyword on an Action is
+    // written and therefore how every reader of them already looks.
+    keywords: [...(a.keywords ?? []), ...rider.keywords.map((k) => ({ inline: k }))],
+  };
+}
+
+// What the DESIGNATED Part gives back (ZHLA-303, 040, 087, 121). Asked about
+// one slot, because only the designated Part contributes.
+export interface FreehandSupport {
+  red: number;
+  yellow: number;
+  keywords: string[];
+  targetBlue: number;
+  label: string;
+}
+
+export function freehandSupport(data: GameData, t: Token, slot: string, a: CardAction): FreehandSupport | null {
+  if (t.kind !== 'mech') return null;
+  const held = tokenCards(data, t).find((x) => x.slot === slot);
+  if (!held) return null;
+  if ((t.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') return null;
+  const out: FreehandSupport = { red: 0, yellow: 0, keywords: [], targetBlue: 0, label: '' };
+  for (const act of held.card.actions ?? []) {
+    const hay = `${act.description?.en ?? ''} ${act.description?.zh ?? ''}`;
+    if (!/Designated as Freehand|作为空手被/i.test(hay)) continue;
+    // Each card names the Action type it supports, and they differ: ZHLA-303
+    // says Melee, 087 and 121 say Firing, 040 says any.
+    if (/近战动作|Melee\s*Action/i.test(hay) && a.type !== 'Melee') continue;
+    if (/射击动作|Firing\s*Action/i.test(hay) && a.type !== 'Firing') continue;
+    if (/\+\s*\{?1R\}?/i.test(hay)) out.red += 1;
+    if (/\+\s*\{?1Y\}?/i.test(hay)) out.yellow += 1;
+    if (/获得全向射击/.test(hay)) out.keywords.push('全向射击');
+    const b = /目标\s*-\s*(\d+)\s*\{?B\}?/i.exec(hay);
+    if (b) out.targetBlue += Number(b[1]);
+    out.label = act.name?.en || act.name?.zh || act.id;
+  }
+  return out.red || out.yellow || out.keywords.length || out.targetBlue ? out : null;
+}
+
 // ---------- Multi-Target (keyword 多目标X, FAQ B7) ----------
 
 export interface MultiTarget {
   limit: number;
-  // Two of the four printed cards only GAIN Multi-Target under a condition the
-  // app does not track ([Two-Handed] needs a designated Freehand, [Charged]
-  // needs a Charge Token and is one arm of an either/or). Named rather than
-  // silently applied or silently dropped, so the player can answer it.
+  // Two of the four printed cards only GAIN Multi-Target under a condition.
+  // [Two-Handed] IS tracked now -- pass `designated` and this clears itself.
+  // [Charged] still is not: it costs the Charge Token and is one arm of an
+  // either/or, so it stays named rather than silently applied or dropped.
   condition: string | null;
 }
 
@@ -548,13 +644,17 @@ const MULTI_CONDITION: Record<string, string> = {
 // the count has to come from the structured rule or the printed line. The
 // bundle's gameRules carry it exactly for all four cards that have it; the
 // prose fallback is there for a card added later without them.
-export function multiTargetLimit(a: CardAction): MultiTarget | undefined {
+// `designated` answers the Two-Handed half of the condition: once a Freehand
+// really has been designated, the limit is no longer conditional and the note
+// must stop being shown, or the player is warned about something they did.
+export function multiTargetLimit(a: CardAction, designated = false): MultiTarget | undefined {
   for (const g of a.gameRules ?? []) {
     for (const e of g.effects ?? []) {
       const eff = e as { type?: string; limit?: number };
       if (eff.type !== 'set_multi_target_limit' || !eff.limit) continue;
       const cond = (g.conditions ?? []).map((x) => x.type ?? '').find((x) => MULTI_CONDITION[x]);
-      return { limit: eff.limit, condition: cond ? MULTI_CONDITION[cond] : null };
+      const met = designated && cond === 'freehand_designated';
+      return { limit: eff.limit, condition: cond && !met ? MULTI_CONDITION[cond] : null };
     }
   }
   for (const text of [a.description?.en, a.description?.zh, a.description?.jp]) {
@@ -566,7 +666,10 @@ export function multiTargetLimit(a: CardAction): MultiTarget | undefined {
       : /\[Charged\]|【?充能】?/i.test(line)
         ? MULTI_CONDITION.charge_available
         : null;
-    return { limit: Number(m[1]), condition: cond };
+    return {
+      limit: Number(m[1]),
+      condition: designated && cond === MULTI_CONDITION.freehand_designated ? null : cond,
+    };
   }
   return undefined;
 }

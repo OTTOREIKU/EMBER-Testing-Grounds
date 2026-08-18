@@ -33,7 +33,7 @@ function largeGridOf(t: any): any { return { c: Math.floor(t.col / 3), r: Math.f
   + cut(units, 'export interface SelfHitPart', '// A Firing Action', 'selfHitParts')
   + cut(units, '// A Firing Action', 'export function repairSpec', 'actionRange and hasFlexibleTiming')
   + cut(units, 'export const SLOT_LABEL', 'let uidSource', 'SLOT_LABEL')
-  + cut(units, '// ---------- Guidance Support', 'export function attackReactionsOf', 'coolingBonus, ripostePart, defenseReactionOn and targetTracingOn')
+  + cut(units, '// ---------- [Two-Handed] and the Freehand designation', 'export function attackReactionsOf', 'coolingBonus, ripostePart, defenseReactionOn and targetTracingOn')
   + cut(units, 'function alive(t: Token)', 'function coversGrid', 'the alive helper')
   + cut(units, '// ---------- Martyrdom', 'export function autoDetonationsOwed', 'martyrdomOwed')
   + cut(units, 'export function explosionScope', 'export function needsSightToLanding', 'explosionScope');
@@ -510,6 +510,66 @@ check('the Missile keyword really is on the card as inline',
   (data.byId.get('ZHAM-001A').keywords ?? []).some((k) => k.inline === '导弹'), true);
 check('and a projectile without it is not guided',
   guide(beacon(0, 0), { ...missile(), cardId: 'PDAM-006' }, mark(0, 0)), []);
+
+// ---------- [Two-Handed] and the Freehand designation ----------
+//
+// Driven against every printed card that uses it, because the rider is parsed
+// out of Chinese prose and one missed phrasing is a silently wrong Action.
+const actOf = (cid, aid) => data.byId.get(cid).actions.find((x) => x.id === aid);
+check('+2 Range is read', A.twoHandedRider(actOf('025', '025_A')).range, 2);
+check('Mutilation is read', A.twoHandedRider(actOf('145', '145_B')).keywords, ['毁伤']);
+// ZHRA-303 prints two on one line: "获得压制，毁伤".
+check('and a two-item list is not truncated to the first',
+  A.twoHandedRider(actOf('ZHRA-303', 'ZHRA-303_B')).keywords, ['压制', '毁伤']);
+check('Sniper is read', A.twoHandedRider(actOf('516', '516_A')).keywords, ['狙击']);
+check('Multi-Target 3 is read', A.twoHandedRider(actOf('038', '038_A')).keywords.includes('多目标3'), true);
+check('and the Medium rider is read', A.twoHandedRider(actOf('129', '129_A')).medium, true);
+check('an Action without the marker has no rider', A.twoHandedRider(actOf('002', '002_A') ?? { id: 'x' }), null);
+// Every printed card is walked, so a phrasing none of the cases above covers
+// still cannot slip through as "no rider at all".
+const twoHanded = [...data.byId.values()].flatMap((c) => (c.actions ?? []))
+  .filter((x) => /【双手】|\[双手\]/.test(`${x.description?.zh ?? ''}`))
+  .filter((x) => !/作为空手被/.test(`${x.description?.zh ?? ''}`));
+check('every printed [Two-Handed] Action yields a rider',
+  twoHanded.filter((x) => !A.twoHandedRider(x)).map((x) => x.id), []);
+
+// The adjusted Action, which is what actually gets rolled.
+check('declining leaves the Action untouched',
+  A.twoHandedAdjusted(actOf('025', '025_A'), false).range, actOf('025', '025_A').range);
+check('designating adds the Range',
+  A.twoHandedAdjusted(actOf('025', '025_A'), true).range, (actOf('025', '025_A').range ?? 0) + 2);
+check('and appends the keyword the way every printed one is written',
+  A.twoHandedAdjusted(actOf('145', '145_B'), true).keywords.some((k) => k.inline === '毁伤'), true);
+check('the Medium rider changes the size', A.twoHandedAdjusted(actOf('129', '129_A'), true).size, 'm');
+check('and the original card object is never mutated',
+  (actOf('145', '145_B').keywords ?? []).some((k) => k.inline === '毁伤'), false);
+
+// Multi-Target stops being advisory once the hand is really designated.
+check('Multi-Target names its condition when undesignated',
+  A.multiTargetLimit(actOf('038', '038_A'))?.condition !== null, true);
+check('and drops it once designated', A.multiTargetLimit(actOf('038', '038_A'), true)?.condition, null);
+check('but the limit is the same either way',
+  A.multiTargetLimit(actOf('038', '038_A'), true)?.limit, A.multiTargetLimit(actOf('038', '038_A'))?.limit);
+
+// What the designated Part gives back. Each of the four names a different
+// Action type, and getting that wrong hands a Melee bonus to a rifle.
+const holding = (slot, id) => ({
+  uid: 50, kind: 'mech', side: 's1', col: 0, row: 0, stance: 'offensive',
+  mech: { torso: '002', [slot]: id }, partStates: { torso: 'intact', [slot]: 'intact' }, statuses: [],
+});
+const thSwing = { id: 'M', type: 'Melee', name: { en: 'Swing' }, keywords: [] };
+const thShot = { id: 'F', type: 'Firing', name: { en: 'Shot' }, keywords: [] };
+check('the Support Arm gives +1R on a Melee', A.freehandSupport(data, holding('leftHand', 'ZHLA-303'), 'leftHand', thSwing)?.red, 1);
+check('and nothing on a Firing Action', A.freehandSupport(data, holding('leftHand', 'ZHLA-303'), 'leftHand', thShot), null);
+check('the Supporting Arm gives +1Y on either', A.freehandSupport(data, holding('leftHand', '040'), 'leftHand', thShot)?.yellow, 1);
+check('Dynamic Equilibrium grants Omnidirectional Fire on a Firing Action',
+  A.freehandSupport(data, holding('leftHand', '087'), 'leftHand', thShot)?.keywords, ['全向射击']);
+check('Tracking Assist takes 2 Blue off the target',
+  A.freehandSupport(data, holding('leftHand', '121'), 'leftHand', thShot)?.targetBlue, 2);
+check('and neither of those fires on a Melee Action',
+  A.freehandSupport(data, holding('leftHand', '121'), 'leftHand', thSwing), null);
+check('a Part that supports nothing gives nothing',
+  A.freehandSupport(data, holding('leftHand', '002'), 'leftHand', thSwing), null);
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
 if (fail) process.exit(1);
