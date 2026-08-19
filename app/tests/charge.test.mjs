@@ -83,5 +83,40 @@ check('chinese is read when there is no english', U.explosionScope({ description
 check('a supplied translation counts as english', U.explosionScope({ description: { zh: '所有单位' } }, 'damage to target unit'), 'single');
 check('an action with no text is single', U.explosionScope({}), 'single');
 
+// ---------- Ammo Delivery (086_B RKG70 Ammunition Pack) ----------
+//
+// Driven off the REAL cards, because the whole point of this reader is that the
+// Pack->Pod link is structural (086_A's resupply names 129_A) rather than
+// hardcoded. If the publisher ever renames either action these break, which is
+// the intent.
+const raw = JSON.parse(readFileSync(new URL('../../data/cards.json', import.meta.url), 'utf8'));
+const all = Array.isArray(raw) ? raw : raw.cards;
+const byId = new Map(all.map((c) => [String(c.id), c]));
+const realData = { cardsOf: (t) => Object.entries(t.mech ?? {}).map(([slot, id]) => ({ slot, card: byId.get(id) })).filter((x) => x.card) };
+const gunner = (ammo, states = {}) => ({
+  kind: 'mech', mech: { leftHand: '129', backpack: '086' },
+  partStates: { leftHand: 'intact', backpack: 'intact', ...states }, ammo,
+});
+// The structural link the reader depends on, asserted directly so a rename is
+// caught here rather than as a silently dead passive.
+check('086_A really does name 129_A as the action it refills',
+  U.resupplyOf(byId.get('086').actions.find((x) => x.id === '086_A')).actionId, '129_A');
+check('and 086_B really does print the delivery phrase',
+  /可选择消耗本部件的弹药/.test(byId.get('086').actions.find((x) => x.id === '086_B').description.zh), true);
+
+check('an empty Pod may be paid from the Pack',
+  U.ammoDeliveryPool(realData, gunner({ '129_A': 0, '086_A': 2 }), '129_A'), '086_A');
+check('an empty Pack offers nothing',
+  U.ammoDeliveryPool(realData, gunner({ '129_A': 0, '086_A': 0 }), '129_A'), undefined);
+check('a destroyed Pack delivers nothing',
+  U.ammoDeliveryPool(realData, gunner({ '129_A': 0, '086_A': 2 }, { backpack: 'destroyed' }), '129_A'), undefined);
+check('a Mech without the Pack has no second pool',
+  U.ammoDeliveryPool(realData, { kind: 'mech', mech: { leftHand: '129' }, partStates: { leftHand: 'intact' }, ammo: { '129_A': 0 } }, '129_A'),
+  undefined);
+check('it pays only for the action the Pack actually refills',
+  U.ammoDeliveryPool(realData, gunner({ '129_A': 0, '086_A': 2 }), 'SOMETHING_ELSE'), undefined);
+check('a Drone never delivers',
+  U.ammoDeliveryPool(realData, { ...gunner({ '129_A': 0, '086_A': 2 }), kind: 'drone' }, '129_A'), undefined);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

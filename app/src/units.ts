@@ -148,6 +148,40 @@ export function resupplyOf(a: CardAction): Resupply | undefined {
   return undefined;
 }
 
+// ---------- Ammo Delivery (086_B, RKG70 Ammunition Pack) ----------
+//
+// "When this Mech launches one RKG70 missile group, it may choose to consume
+// THIS Part's ammo instead" — so a launch may be paid out of the Pack's
+// magazine rather than the Pod's own. The Pod prints storage 1 and the Pack
+// storage 2, so together the Pod can fire three times without a resupply.
+//
+// The link is STRUCTURAL, not hardcoded: 086_A's resupply effect already names
+// 129_A as the action it refills, so "the Pack that feeds this Pod" is
+// resupplyOf(supply).actionId === the launching action. A card added later with
+// the same shape works with no change here.
+//
+// AUDIT TRAP recorded on this card: 086_A (Ammo Supply) is FULLY wired and has
+// been for a long time. That is a different action with a different rule, and
+// it is what made 086 look done in two separate sweeps.
+export function ammoDeliveryPool(data: GameData, t: Token, actionId: string): string | undefined {
+  if (t.kind !== 'mech') return undefined;
+  for (const { slot, card } of tokenCards(data, t)) {
+    if (slot === 'pilot') continue;
+    if ((t.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
+    // The Part has to carry the DELIVERY passive; a Pack without it resupplies
+    // between Actions but may not pay for a shot as it happens.
+    const delivers = (card.actions ?? []).some((a) => {
+      const hay = `${a.description?.en ?? ''} ${a.description?.zh ?? ''}`;
+      return /可选择消耗本部件的弹药|consume this (?:Part|part)'?s? Ammo/i.test(hay);
+    });
+    if (!delivers) continue;
+    for (const a of card.actions ?? []) {
+      if (resupplyOf(a)?.actionId === actionId && (t.ammo?.[a.id] ?? 0) > 0) return a.id;
+    }
+  }
+  return undefined;
+}
+
 // ---------- Attack Mode (H2-B "Crisis" II, card 547) ----------
 
 export interface OpportunityBonus {
@@ -2875,7 +2909,14 @@ export function guidedActions(data: GameData, t: Token, world?: ActionWorld): Gu
       }
       // A Load's magazine and Interception Tokens stay on the Drone carrying it.
       const holder = loan ? loan.from : t;
-      const ammoLeft = a.storage && a.storage > 0 ? holder.ammo[a.id] ?? a.storage : undefined;
+      let ammoLeft = a.storage && a.storage > 0 ? holder.ammo[a.id] ?? a.storage : undefined;
+      // 086_B Ammo Delivery: an empty Pod can still fire out of the Ammunition
+      // Pack's magazine, so the pip has to show the pool that would actually
+      // pay or the Action is greyed "out of ammo" while ammo is sitting there.
+      if (ammoLeft === 0) {
+        const lent = ammoDeliveryPool(data, t, a.id);
+        if (lent) ammoLeft = t.ammo?.[lent] ?? 0;
+      }
       if (available && ammoLeft === 0) {
         available = false;
         reason = 'out of ammo';

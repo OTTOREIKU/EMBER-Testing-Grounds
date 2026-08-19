@@ -2,7 +2,7 @@ import type { CombatView, Facing, GameState, MechLoadout, Opportunity, PartSlot,
 import { addStatus, ageTokens, newOpportunity, PHASES, statusCount, STATUSES, TIMINGS } from './types';
 import type { GameData } from './data';
 import { unfoldsInto } from './data';
-import { opportunityBonusOn, ripostePart, defenseReactionOn, targetTracingOn, riderOnDrone, hasFlexibleTiming, commandGeneration, blinkTargets, isPositionSwap, electronicOrigins, loanedParts, unfoldToken, extrasFor, consumesCharge, electronicValue, freehandSlots, interceptCapacity, makeDroneToken, makeMechToken, maxLink, pilotCard, projectileDelivery, tokenCards } from './units';
+import { ammoDeliveryPool, opportunityBonusOn, ripostePart, defenseReactionOn, targetTracingOn, riderOnDrone, hasFlexibleTiming, commandGeneration, blinkTargets, isPositionSwap, electronicOrigins, loanedParts, unfoldToken, extrasFor, consumesCharge, electronicValue, freehandSlots, interceptCapacity, makeDroneToken, makeMechToken, maxLink, pilotCard, projectileDelivery, tokenCards } from './units';
 import { canActivate, canAttackMode, canManeuver, canOverload, canPerform, spendAction, spendActivation, spendAttackMode, spendManeuver, spendOverload } from './ticks';
 import { tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { battlefieldLocked, deploymentComplete, deployTurn, firstPlayerFrom, newSetup, normaliseSetup, tasksLocked } from './setup';
