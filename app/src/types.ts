@@ -12,6 +12,11 @@ export interface GameRuleEffect {
   mode?: string;
   status?: string;
   stacks?: number;
+  // `transform_part`: the Action replaces one of its own Mech's Parts with
+  // another face of the same card. Carried by the White Dwarf's two Mode
+  // Actions (287_B/288_B) and read by transformEffect in units.ts.
+  partType?: string;
+  targetPartId?: string;
   effects?: GameRuleEffect[];
 }
 
@@ -29,6 +34,12 @@ export interface CardAction {
   // 008_A and PRDR-105_B: the unit commits to ONE of the listed Projectiles
   // and carries `quantity` of it. Read by covertCarryLock.
   projectileSelection?: { mode?: string; quantity?: number };
+  // Which unit Mode this Action is available in (287/288). Nothing gates on it
+  // today and nothing needs to: a Mode IS a card, so an Action is only reachable
+  // while the card printing it is the one equipped, and every `allowedUnitModes`
+  // in the data names its own card's `unitMode`. Kept so the field survives a
+  // reader that starts caring — a Part gated on ANOTHER slot's Mode would.
+  allowedUnitModes?: string[];
   keywords?: { key?: string; en?: string; inline?: string }[];
   gameRules?: { id?: string; consumesCharge?: boolean; conditions?: { type?: string }[]; effects?: GameRuleEffect[] }[];
 }
@@ -58,6 +69,17 @@ export interface Card {
   tactic?: number;
   projectile?: number | string[];
   moveAsFlight?: boolean;
+  // The other FACE of this physical card. Overwhelmingly a Discard Card (the
+  // "(D)" face a Part flips to when its hand-held kit is dropped), which is why
+  // pointing at a card is never on its own permission to become it — see
+  // faceOf() in data.ts. PDLH-202 is the one entry whose far face is a runtime
+  // Mode rather than a Discard.
+  throwIndex?: string;
+  // The White Dwarf's two Modes (287 assault / 288 cruise). `unitMode` names
+  // which face this card is; `transformPartIds` lists every face in the set,
+  // itself included.
+  unitMode?: string;
+  transformPartIds?: string[];
   flyingOrElevated?: string;
   moving?: number;
   trait?: string;
@@ -126,6 +148,14 @@ export interface MechLoadout {
   pilot?: string;
 }
 
+// One end of a Tether pair. `uid` is the OTHER end, so the two tokens hold
+// mirror-image entries and either one can be read on its own.
+export interface TetherLink {
+  uid: number;
+  range: number;
+  role: 'initiator' | 'tethered';
+}
+
 export interface Token {
   uid: number;
   side: Side;
@@ -158,6 +188,18 @@ export interface Token {
   // the issuer has to be remembered. Cleared when the End Phase sweeps the
   // tokens, and rules-bearing, so boardFingerprint carries it.
   commandedBy?: number;
+  // Tether X (PDLH-202 Ols1B "Harpoon"). The card places TWO chips — a Tether X
+  // on the initiator and a Tethered X on the target — so both ends carry an
+  // entry naming the other and the leash length. `role` is the asymmetry the
+  // rule turns on: the TETHERED end may not voluntarily move beyond `range`
+  // Grids of the initiator, while the initiator walking out is a REMOVAL
+  // condition and not an illegal move at all.
+  //
+  // A list rather than a single pair because a Mech can hold a Harpoon and be
+  // harpooned at the same time, and the two chips are different chips. Kept in
+  // uid order by tetherTo/settleTethers so the fingerprint is stable.
+  // Rules-bearing, so boardFingerprint carries it and migrateState rebuilds it.
+  tether?: TetherLink[];
   // Which Projectile a lock_one Action committed to, keyed by action id. The
   // card says the choice is made secretly before the game; this app commits it
   // on the FIRST launch instead (see covertCarryLock) and holds it after.

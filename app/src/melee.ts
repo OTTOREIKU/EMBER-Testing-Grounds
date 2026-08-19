@@ -84,3 +84,44 @@ export function breakAwayCost(
     return n;
   };
 }
+
+// ---------- Tether X (PDLH-202 Ols1B "Harpoon") ----------
+
+// Where a Tethered unit is still allowed to stand: "the tethered unit cannot
+// voluntarily move to a position beyond X grids from the initiating unit".
+//
+// Only that end is capped. The initiator walking out is a REMOVAL condition
+// (settleTethers) and not an illegal move at all, so this returns undefined for
+// it and for everything else on the board — a unit with no leash pays nothing.
+//
+// It rides on MoveOpts.allowed rather than beside breakAwayCost on exitCost
+// because a leash is a legality, not a toll: priced as Movement Range, a Sprint
+// 6 would simply buy its way through a Tether 4. And the Grids beyond it are
+// impassable rather than merely un-endable, because Movement is resolved a Grid
+// at a time and every Grid entered is a position (4.3) — there is no slingshot
+// out to Grid 5 and back to Grid 4.
+export function tetherCap(t: Token, tokens: Token[]): ((c: number, r: number) => boolean) | undefined {
+  const anchors = (t.tether ?? [])
+    .filter((x) => x.role === 'tethered')
+    .map((x) => ({ at: tokens.find((o) => o.uid === x.uid), range: x.range }))
+    .filter((x): x is { at: Token; range: number } => !!x.at);
+  if (!anchors.length) return undefined;
+  // Same Large-Grid Manhattan reading rangeBetween uses, so the leash measures
+  // the distance the rest of the app measures.
+  return (c, r) => anchors.every(({ at, range }) => {
+    const g = largeGridOf(at);
+    return Math.abs(g.c - c) + Math.abs(g.r - r) <= range;
+  });
+}
+
+// The one line a player needs when the highlight comes up short. Break Away is
+// the only precedent for an overlay smaller than the printed Movement Range and
+// it announces itself, so this does too — and it is written HERE rather than on
+// each board, so the two cannot end up explaining the same leash differently.
+// Empty for the initiator, which is capped by nothing.
+export function tetherNote(t: Token, tokens: Token[]): string {
+  const link = (t.tether ?? []).find((x) => x.role === 'tethered');
+  if (!link) return '';
+  const anchor = tokens.find((o) => o.uid === link.uid);
+  return `Tethered ${link.range} to ${anchor?.label ?? 'an enemy unit'}: no Grid further than ${link.range} away is lit, and no amount of Movement Range buys past it (PDLH-202).`;
+}

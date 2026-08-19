@@ -102,6 +102,33 @@ const flyingBase = dataSrc.slice(dataSrc.indexOf('export function isFlyingBase')
 const ground = unitsSrc.slice(unitsSrc.indexOf('export function isGroundUnit'), unitsSrc.indexOf('export function minesOwed'));
 const blinking = unitsSrc.slice(unitsSrc.indexOf('// Which Moving Actions are a position SWAP'), unitsSrc.indexOf("// ---------- The Hyena"));
 if (!grids || !flyingBase || !ground || !blinking) throw new Error('could not locate the blink helpers');
+// Tether X (PDLH-202). Sliced, not mirrored, for the usual reason: apply()
+// sweeps the chips after EVERY command and check() refuses a Maneuver that
+// would break the leash, so both are command-layer rules and this is where
+// command-layer rules are pinned. Four small cuts, all checked against every
+// other range this file already takes:
+//   * data.ts isModeFace..zeroCostReason — the face index and what may become
+//     what. Sits between isDiscardCard and unitSize, outside the isFlyingBase
+//     cut below and outside camo/mines' cuts of the same file.
+//   * units.ts PART_SLOTS..SLOT_LABEL — butts up against `slotLabels` above
+//     without overlapping it (that one STARTS at SLOT_LABEL).
+//   * units.ts the Tether block itself, at the bottom of the file above
+//     legacyZoneSet, inside no other range.
+const faces = dataSrc.slice(
+  dataSrc.indexOf('export function isModeFace'),
+  dataSrc.indexOf('export function zeroCostReason'),
+);
+const partSlots = unitsSrc.slice(
+  unitsSrc.indexOf('export const PART_SLOTS'),
+  unitsSrc.indexOf('export const SLOT_LABEL'),
+);
+const tethering = unitsSrc.slice(
+  unitsSrc.indexOf('// ---------- runtime Part faces and Tether X'),
+  unitsSrc.indexOf('function legacyZoneSet'),
+);
+const meleeSrc = readFileSync(new URL('../src/melee.ts', import.meta.url), 'utf8');
+const leash = meleeSrc.slice(meleeSrc.indexOf('// ---------- Tether X'));
+if (!faces || !partSlots || !tethering || !leash) throw new Error('could not locate the Tether machinery');
 const timings = types.slice(types.indexOf('export const PHASES'), types.indexOf('export type TokenShape'));
 const statuses = types.slice(types.indexOf('export function hexagonIds'), types.indexOf('export interface RoundState'));
 const tmp = new URL('./_commands.slice.ts', import.meta.url);
@@ -162,6 +189,13 @@ export function loanedParts(data: any, tokens: any[], t: any): any[] {
     .map((d: any) => ({ slot: 'load:' + d.uid, card: data.byId.get(d.droneBackpack), from: d }))
     .filter((x: any) => !!x.card);
 }
+// The magazine top-up a transformed Part gets. Its own rule — a face arrives
+// full, a spent count stays spent — belongs to ammo.test.mjs; what matters here
+// is that transformPartOn calls it, so the honest stub records the call.
+// Display, not a rule: it only ever reaches a refusal message.
+export function cardName(c: any): string { return c?.name?.en ?? c?.id ?? '?'; }
+export const synced: string[] = [];
+export function syncMagazines(_data: any, t: any): void { synced.push(String(t.uid)); }
 export function unfoldsInto(c: any): any { return c?.unfoldsInto; }
 export function unfoldToken(state: any, data: any, t: any, into: any): void {
   Object.assign(t, {
@@ -216,7 +250,13 @@ writeFileSync(
     + flyingBase
     + ground
     + blinking
+    + faces
+    + partSlots
     + stubs
+    // After the stubs: the Tether block reads the stubbed tokenCards and
+    // syncMagazines, and a function hoists but a `const` stub does not.
+    + tethering
+    + leash
     + commands.replace(/^import[^\n]*\n/gm, ''),
 );
 const C = await import(tmp.href);
@@ -268,6 +308,13 @@ const data = {
     ['274', { id: '274', category: 'tactics_or_upgrade', score: 30, actions: [] }],
     ['275', { id: '275', category: 'tactics_or_upgrade', score: 30, actions: [] }],
     ['P1', { id: 'P1', LV: 4 }],
+    // A Harpoon and its Tether Mode face: ONE physical card, so throwIndex
+    // names the far side and the price tells a derived face from a build
+    // choice. HARP2 fits the same slot and is related to nothing, which is what
+    // separates "same card" from "same shape" in the transform check.
+    ['HARP', { id: 'HARP', category: 'mech_part', type: 'leftHand', score: 54, name: { en: 'Harpoon' }, throwIndex: 'HARP-T', actions: [] }],
+    ['HARP-T', { id: 'HARP-T', category: 'mech_part', type: 'leftHand', score: 0, name: { en: 'Harpoon (Tether Mode)' }, actions: [] }],
+    ['HARP2', { id: 'HARP2', category: 'mech_part', type: 'leftHand', score: 40, name: { en: 'Other Arm' }, actions: [] }],
     // A Carrier Tarantula and the Backpacks it lends (FAQ O3-O8/O16-O18).
     ['CAR', { id: 'CAR', category: 'drone', carrier: true, actions: [] }],
     ['REP', { id: 'REP', category: 'drone', repeater: true, repeaterRange: 6, actions: [] }],
@@ -293,6 +340,9 @@ const data = {
     { id: 'annihilation', name: 'Annihilation', designate: 'none' },
   ],
 };
+// transformFaces builds its index off the whole array, the way data.ts does at
+// runtime, so the fixture has to offer one as well as the id map.
+data.cards = [...data.byId.values()];
 
 console.log('The command layer\n');
 
@@ -2102,6 +2152,78 @@ check('the Attack Mode tick combines with it', C.check(data, wCrisisMed, pa({ ac
 // lives — apply() above was driven past that gate deliberately, to isolate the
 // Tick arithmetic from the window rule tested separately.
 check('though claiming it that late is refused', C.check(data, wCrisis({}, opp(1, { started: true, action: 1 })), am()).ok, false);
+
+// ---------- transformPart and Tether X (PDLH-202, 287/288) ----------
+//
+// The card readers are pinned against the real cards.json in tether.test.mjs.
+// What belongs HERE is the command layer's half: what check() refuses, and what
+// apply() leaves on the board.
+
+const tp = (over = {}) => ({ kind: 'transformPart', seat: 's1', uid: 1, slot: 'leftHand', cardId: 'HARP-T', ...over });
+const wTransform = (over = {}) => world([mech(1, 's1', {
+  mech: { torso: 'T1', leftHand: 'HARP', pilot: 'P1' },
+  partStates: { torso: 'intact', leftHand: 'intact' },
+  col: 3, row: 3, ...over,
+}), mech(2, 's2', {
+  col: 9, row: 3,
+  mech: { torso: 'T1', leftHand: 'T3', pilot: 'P1' },
+  partStates: { torso: 'intact', leftHand: 'intact' },
+})]);
+check('a Part turns over to its own far face', C.check(data, wTransform(), tp()).ok, true);
+// Being the same physical card is the whole permission. A card that merely fits
+// the slot is not a face of it.
+check('but not into an unrelated card of the same type',
+  C.check(data, wTransform(), tp({ cardId: 'HARP2' })).ok, false);
+check('nor into one that does not fit the slot',
+  C.check(data, wTransform(), tp({ cardId: 'T1' })).ok, false);
+check('an empty slot has nothing to turn over', C.check(data, wTransform(), tp({ slot: 'backpack' })).ok, false);
+check('and a destroyed Part has no card left',
+  C.check(data, wTransform({ partStates: { torso: 'intact', leftHand: 'destroyed' } }), tp()).ok, false);
+const wTp = wTransform();
+C.apply(data, wTp, tp());
+check('apply rewrites the slot', wTp.tokens[0].mech.leftHand, 'HARP-T');
+
+// The chips. Placed on a unit the Harpoon just hit, so they always start inside
+// their own leash.
+const th = (over = {}) => ({ kind: 'tether', seat: 's1', uid: 1, targetUid: 2, range: 4, ...over });
+check('a Tether within X is placed', C.check(data, wTransform(), th()).ok, true);
+check('one already beyond X is refused',
+  C.check(data, world([mech(1, 's1', { col: 3, row: 3 }), mech(2, 's2', { col: 33, row: 3 })]), th()).ok, false);
+check('a unit cannot Tether itself', C.check(data, wTransform(), th({ targetUid: 1 })).ok, false);
+const wTether = wTransform();
+C.apply(data, wTether, th());
+check('apply writes a mirrored pair', [wTether.tokens[0].tether, wTether.tokens[1].tether], [
+  [{ uid: 2, range: 4, role: 'initiator' }],
+  [{ uid: 1, range: 4, role: 'tethered' }],
+]);
+
+// The asymmetry, at the command layer. Only the tethered end is capped, and it
+// is capped on the DESTINATION, which needs no pathfinder — so unlike Break
+// Away this one rule does belong in check().
+const leashMove = (uid, col) => ({ kind: 'maneuver', seat: uid === 1 ? 's1' : 's2', uid, to: { col, row: 3 }, granted: true });
+check('the tethered unit is refused a move past the leash', C.check(data, wTether, leashMove(2, 33)).ok, false);
+check('and allowed one inside it', C.check(data, wTether, leashMove(2, 15)).ok, true);
+check('while the INITIATOR may walk out — that is a removal, not an illegal move',
+  C.check(data, wTether, leashMove(1, 33)).ok, true);
+
+// ...and walking out is what removes it, through the sweep apply() runs after
+// every command rather than through anything the mover had to remember.
+const wWalk = wTransform();
+C.apply(data, wWalk, th());
+C.apply(data, wWalk, leashMove(1, 33));
+check('so the sweep takes both chips off afterwards',
+  [wWalk.tokens[0].tether, wWalk.tokens[1].tether], [undefined, undefined]);
+
+// The Penetration break: the INITIATOR only, stamped where the Penetration
+// lands so both pages and a replay get it from the same place.
+const wPen = wTransform();
+C.apply(data, wPen, th());
+C.apply(data, wPen, { kind: 'applyPenetration', seat: 's1', uid: 1, targetUid: 2, slot: 'leftHand' });
+check('Penetrating the tethered unit leaves the chips on',
+  [wPen.tokens[0].tether?.length, wPen.tokens[1].tether?.length], [1, 1]);
+C.apply(data, wPen, { kind: 'applyPenetration', seat: 's2', uid: 2, targetUid: 1, slot: 'leftHand' });
+check('Penetrating the initiator takes them off',
+  [wPen.tokens[0].tether, wPen.tokens[1].tether], [undefined, undefined]);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

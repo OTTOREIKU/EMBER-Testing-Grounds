@@ -5,7 +5,7 @@ import { linkMechanics } from './inspector';
 import { SQUAD_ORDER, squadLabel } from './data';
 import type { Card, CardAction, DiceData, DiceIcon, DieColor, GameRuleEffect, PartSlot, Side, SmokeScreen, TerrainPiece, Token } from './types';
 import { statusCount, STATUSES } from './types';
-import { aaRadarCovers, attackReactionsOf, auraEffectsOn, aurasOn, auraValueOn, blueLightningDodges, earlyWarningCover, coolingBonus, denseArmorByText, eyesAreHeavyHits, ignoresLowProfile, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, noMeleeBackAttack, missileGuidance, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, denseArmorOn, designationsOn, electronicValue, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, loanedParts, pilotCard, repeatersFor, SLOT_LABEL, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
+import { aaRadarCovers, attackReactionsOf, auraEffectsOn, aurasOn, auraValueOn, blueLightningDodges, earlyWarningCover, coolingBonus, denseArmorByText, eyesAreHeavyHits, ignoresLowProfile, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, noMeleeBackAttack, missileGuidance, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, denseArmorOn, designationsOn, electronicValue, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, loanedParts, pilotCard, repeatersFor, SLOT_LABEL, tetherStrike, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
 import { timingOf } from './ticks';
 import { inArc, losNote, protectionFor, rangeBetween } from './rules';
 import type { Command } from './commands';
@@ -2283,6 +2283,36 @@ export class AttackHelper {
   private finish(_wrap: HTMLElement): void {
     const c = this.ctx!;
     c.step = 'resolve';
+    // Tether X (PDLH-202): "[On Hit] Tether 4", and on the same Hit the Part is
+    // replaced by its Tether Mode face. Placed at the one seam every attack
+    // passes through on BOTH pages — freeplay and the Match Centre each build
+    // their own onKnockback and onPenetrated, and a rule hung off those would
+    // exist on one board and not the other. On the Hit, not the Penetration:
+    // 4.4's note is that on-hit riders fire on icons the defence offset too.
+    //
+    // Before the rider, deliberately. A Knockback on the same Action then
+    // shoves against a leash that is already on, and if the shove takes them
+    // beyond X the chip comes off under the card's own third removal condition
+    // rather than by never having been placed.
+    const tether = c.hits > 0 && c.defender.uid !== c.attacker.uid
+      ? tetherStrike(this.data, c.attacker, c.action, this.data.actionTranslation(c.action.id)?.english ?? undefined)
+      : null;
+    if (tether) {
+      this.onCommand({
+        kind: 'tether', seat: c.attacker.side, uid: c.attacker.uid,
+        targetUid: c.defender.uid, range: tether.range,
+      });
+      if (tether.slot && tether.into) {
+        this.onCommand({
+          kind: 'transformPart', seat: c.attacker.side, uid: c.attacker.uid,
+          slot: tether.slot, cardId: tether.into,
+        });
+      }
+      this.note(
+        `Tether ${tether.range}: ${c.defender.label} may not voluntarily move beyond ${tether.range} Grids of ${c.attacker.label} while both chips are on the board (PDLH-202).`,
+        [c.attacker, c.defender],
+      );
+    }
     const rider = {
       attacker: c.attacker, defender: c.defender, action: c.action, hits: c.hits,
       penetrated: !!c.penetrated,

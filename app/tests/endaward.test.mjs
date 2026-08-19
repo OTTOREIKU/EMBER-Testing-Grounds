@@ -55,6 +55,15 @@ type HudCtx = any;
 export function riderOnDrone(_data: any, _tokens: any, _t: any): any {
   return { autoActions: false, preMove: 0 };
 }
+// apply() sweeps the Tether chips after every command. Nothing in these
+// fixtures carries a Harpoon, so the honest stub is a no-op; the removal
+// conditions themselves are pinned in tether.test.mjs against the real card.
+export function settleTethers(_data: any, _state: any): void {}
+export function cutTethersOn(_data: any, _state: any, _t: any, _role: any): void {}
+export function tetherCap(_t: any, _tokens: any[]): any { return undefined; }
+export function tetherTo(_a: any, _b: any, _range: number): void {}
+export function transformPartOn(_data: any, _t: any, _slot: any, _cardId: string): void {}
+export function transformFaces(_data: any, _c: any): string[] { return []; }
 export function hasFlexibleTiming(_data: any, _tokens: any, _t: any): boolean {
   return false;
 }

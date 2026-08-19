@@ -1,5 +1,5 @@
 import type { Card, MechLoadout, Side } from './types';
-import { BASE_FACTIONS, cardName, FACTION_LABEL, isDiscardCard, mechPartUrl, SQUAD_ORDER, squadLabel, squadNumber, tabImageUrl, type GameData } from './data';
+import { BASE_FACTIONS, cardName, FACTION_LABEL, isDiscardCard, isModeFace, mechPartUrl, SQUAD_ORDER, squadLabel, squadNumber, tabImageUrl, type GameData } from './data';
 import { inspectOnHover } from './inspector';
 import { alertDialog, confirmDialog, promptDialog } from './dialog';
 import { deleteMechPreset, isBuiltInPreset, loadMechPresets, saveMechPreset } from './presets';
@@ -389,7 +389,14 @@ export class Roster {
       // A Discard Card is the flipped face of a Part you already own, not a
       // Part you can equip, so it has no business in a build picker. Kept if
       // somehow already selected, so an old save still shows what it holds.
+      //
+      // A zero-cost Mode face is the same story with a different trigger: a
+      // squad cannot begin in Tether Mode, because Tether Mode is a state a
+      // Harpoon shot puts you in and there would be no tether to be in. The two
+      // White Dwarf Modes are NOT caught — both are printed at 72 points, so
+      // either is a real build choice (isModeFace reads the price, not the name).
       .filter((c) => !isDiscardCard(c) || this.mech[slot.key] === c.id)
+      .filter((c) => !isModeFace(c) || this.mech[slot.key] === c.id)
       .filter((c) => (this.cb.cardFilter?.(c) ?? true) || this.mech[slot.key] === c.id)
       .sort((a, b) => cardName(a).localeCompare(cardName(b)));
   }

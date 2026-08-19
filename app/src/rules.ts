@@ -218,6 +218,11 @@ export interface MoveOpts {
   // Large Grids a Large Unit may enter by Crushing what is already there. The
   // Movement Action ends on arrival (4.3.6), so these are never expanded.
   crushable?: (c: number, r: number) => boolean;
+  // Large Grids this unit may occupy at all, whatever it can afford. A Tether
+  // leash (PDLH-202) is the only user today. Deliberately NOT folded into
+  // exitCost: a price is something a rich Movement Range buys past, and the
+  // leash does not care how much Range you have.
+  allowed?: (c: number, r: number) => boolean;
 }
 
 // One search serving both the range overlay and the route a unit will actually
@@ -251,6 +256,11 @@ function searchMoves(
       const n = { c: g.c + dc, r: g.r + dr };
       const nk = `${n.c},${n.r}`;
       if (n.c < 0 || n.r < 0 || n.c >= LG || n.r >= LG) continue;
+      // Off-limits Grids are dropped before anything is priced, and dropped as
+      // impassable rather than merely un-endable, so a leash cannot be stepped
+      // over. The unit's OWN Grid is never tested: it is already standing
+      // there, and a leash that no longer reaches has already been cut.
+      if (opts?.allowed && !opts.allowed(n.c, n.r)) continue;
       const d = g.d + 1 + exit;
       if (d > steps || d >= (dist.get(nk) ?? Infinity)) continue;
       const standable = canStandIn(n.c, n.r, t.size, t.aerial, terrain, tokens, t.uid);

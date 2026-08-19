@@ -1,7 +1,7 @@
 import { DEFAULT_BOARD } from './boards';
 import type { GameData } from './data';
-import { cardName, isAerial, isBarricade, isFlyingBase, isMine, isUnfolded, unfoldsInto, unitSize } from './data';
-import type { ExtraTick, Card, CardAction, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, TerrainPiece, Timing, Token } from './types';
+import { cardName, faceOf, isAerial, isBarricade, isFlyingBase, isMine, isTetherFace, isUnfolded, transformFaces, unfoldsInto, unitSize } from './data';
+import type { ExtraTick, Card, CardAction, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, TerrainPiece, TetherLink, Timing, Token } from './types';
 import { LEGACY_SIDE, normaliseScript, statusCount, TIMINGS } from './types';
 import { normaliseSetup } from './setup';
 import { isMeleeFiring, lockersOf } from './melee';
@@ -3021,6 +3021,192 @@ export function guidedActions(data: GameData, t: Token, world?: ActionWorld): Gu
   return out;
 }
 
+// ---------- runtime Part faces and Tether X (PDLH-202, 287/288) ----------
+//
+// Two mechanics share one piece of machinery. A Part can be REPLACED mid-game
+// by another face of the same physical card: the White Dwarf flips between its
+// Assault and Cruise Modes on a Swift Action, and the Harpoon flips into Tether
+// Mode when its shot connects. Both end in the same place — the loadout slot is
+// rewritten — so the rewrite is written once, and each card supplies only its
+// own trigger.
+
+// The `transform_part` effect on an Action, or null. Structured in the bundle
+// for 287_B/288_B and read nowhere before this; the Harpoon carries no such
+// rule and comes in through tetherStrike instead.
+export function transformEffect(a: CardAction): { partType?: string; targetPartId: string } | null {
+  for (const g of a.gameRules ?? []) {
+    for (const e of g.effects ?? []) {
+      if (e.type === 'transform_part' && e.targetPartId) return { partType: e.partType, targetPartId: e.targetPartId };
+    }
+  }
+  return null;
+}
+
+// The transform an Action offers this unit right now: which slot it rewrites
+// and into what. Returns null when the Action carries no transform, when the
+// Part printing it is not equipped, or when the Part is already destroyed —
+// there is no card left to turn over.
+export function transformOffer(
+  data: GameData,
+  t: Token,
+  a: CardAction,
+): { slot: PartSlot; from: Card; into: Card } | null {
+  const eff = transformEffect(a);
+  if (!eff) return null;
+  const into = data.byId.get(eff.targetPartId);
+  if (!into) return null;
+  for (const { slot, card } of tokenCards(data, t)) {
+    if (slot === 'pilot' || slot === 'main') continue;
+    if (!(card.actions ?? []).some((x) => x.id === a.id)) continue;
+    // `partType` is the slot the effect names; the equipped card has to agree
+    // with it AND with the face it is turning into, or this is another card's
+    // rule that happens to be printed here.
+    if (eff.partType && card.type !== eff.partType) return null;
+    if (into.type !== card.type) return null;
+    if ((t.partStates[slot] ?? 'intact') === 'destroyed') return null;
+    if (!transformFaces(data, card).includes(into.id)) return null;
+    return { slot, from: card, into };
+  }
+  return null;
+}
+
+// The rewrite itself. Everything the NEW face prints comes from the new card;
+// everything the token earned stays. Part damage is deliberately kept: the two
+// Modes are one physical card, and turning it over does not repair it.
+export function transformPartOn(data: GameData, t: Token, slot: PartSlot, cardId: string): void {
+  if (t.kind !== 'mech' || !t.mech) return;
+  t.mech = { ...t.mech, [slot]: cardId };
+  // A Torso IS the token's cardId for a Mech (makeMechToken), so the two must
+  // not be allowed to disagree — every reader that takes the short path through
+  // t.cardId would keep seeing the old Mode.
+  if (slot === 'torso') t.cardId = cardId;
+  // The seeder that already exists for exactly this — "needed after a Part is
+  // swapped in". It tops up rather than replaces, so the new face's magazines
+  // arrive full while anything already spent stays spent; the two faces print
+  // different Action ids, so a flip cannot launder an empty magazine.
+  syncMagazines(data, t);
+}
+
+// "Tether X" off the Action that places it. Read from the print like
+// knockbackOf, because PDLH-202_A carries no gameRules: the English is
+// "[On Hit] Tether 4" and the Chinese "【命中】牵引4". The 牵引 glossary entry
+// has no English (keyword_overrides.json), but the whole rule is printed on the
+// card's own description, so none of this is blocked on data.
+export function tetherOf(a: CardAction, english?: string): number | undefined {
+  const printed = (a.description?.en ?? '').trim() || (english ?? '').trim();
+  const hay = printed || [a.description?.zh ?? '', ...(a.keywords ?? []).map((k) => k.inline ?? '')].join(' ');
+  const m = /(?:牵引|牽引|Tether)\s*(\d+)/i.exec(hay);
+  return m ? Math.max(1, Number(m[1])) : undefined;
+}
+
+// What a Hit with a Tether Action owes: the leash length, and the slot to turn
+// over if the Part printing it has a Tether Mode face. PDLH-202_A prints both
+// halves, and the replacement is found through the card's own throwIndex rather
+// than by id, so a second card written the same way is covered.
+export function tetherStrike(
+  data: GameData,
+  t: Token,
+  a: CardAction,
+  english?: string,
+): { range: number; slot?: PartSlot; into?: string } | null {
+  const range = tetherOf(a, english);
+  if (range === undefined) return null;
+  for (const { slot, card } of tokenCards(data, t)) {
+    if (slot === 'pilot' || slot === 'main') continue;
+    if (!(card.actions ?? []).some((x) => x.id === a.id)) continue;
+    const far = faceOf(data.cards, card.id);
+    const mode = far ? data.byId.get(far) : undefined;
+    return { range, slot, into: mode && isTetherFace(mode) ? mode.id : undefined };
+  }
+  return { range };
+}
+
+// Place the pair. The card puts TWO chips down — a Tether X on the initiator
+// and a Tethered X on the target — so both ends are written together and the
+// list is kept in uid order for a stable fingerprint.
+export function tetherTo(initiator: Token, target: Token, range: number): void {
+  // De-duped on uid AND role, not uid alone. Two Mechs CAN harpoon each other,
+  // and then each one holds two chips naming the same partner — an initiator
+  // link and a tethered link. Matching on uid alone made the second Hit destroy
+  // the first chip and invert whose movement was capped, which is the exact
+  // case the list shape exists for.
+  const add = (t: Token, link: TetherLink) => {
+    const rest = (t.tether ?? []).filter((x) => !(x.uid === link.uid && x.role === link.role));
+    t.tether = [...rest, link].sort((a, b) => a.uid - b.uid || a.role.localeCompare(b.role));
+  };
+  add(initiator, { uid: target.uid, range, role: 'initiator' });
+  add(target, { uid: initiator.uid, range, role: 'tethered' });
+}
+
+// A Mode face that nothing is holding open any more flips back:
+// "When Tether Mode is removed, replace this card with Ols1B Harpoon"
+// (PDLH-202-T_A). That passive is the tail of this mechanic, so it lives with
+// the head rather than on any page's Action list.
+function revertTetherFaces(data: GameData, t: Token): void {
+  if (t.kind !== 'mech' || !t.mech) return;
+  if ((t.tether ?? []).some((x) => x.role === 'initiator')) return;
+  for (const slot of PART_SLOTS) {
+    const id = t.mech[slot];
+    const card = id ? data.byId.get(id) : undefined;
+    if (!card || !isTetherFace(card)) continue;
+    const back = faceOf(data.cards, card.id);
+    if (back && data.byId.get(back)) transformPartOn(data, t, slot, back);
+  }
+}
+
+// Take one chip off and the matching chip off the far end. A Tether is one set
+// of tokens, so it always comes off both units at once.
+function cutLink(data: GameData, state: GameState, t: Token, link: TetherLink): void {
+  t.tether = (t.tether ?? []).filter((x) => x !== link);
+  if (!t.tether.length) t.tether = undefined;
+  const other = state.tokens.find((x) => x.uid === link.uid);
+  if (other && (other.tether ?? []).length) {
+    other.tether = (other.tether ?? []).filter((x) => x.uid !== t.uid);
+    if (!other.tether.length) other.tether = undefined;
+    revertTetherFaces(data, other);
+  }
+  revertTetherFaces(data, t);
+}
+
+// The Penetration break: "The Tether Tokens are removed when the initiating
+// unit is Penetrated." Only the initiator's chips go — being Penetrated while
+// TETHERED does nothing, which is the whole point of the harpoon.
+export function cutTethersOn(data: GameData, state: GameState, t: Token, role: TetherLink['role']): void {
+  for (const link of (t.tether ?? []).filter((x) => x.role === role)) cutLink(data, state, t, link);
+}
+
+// The other removal conditions, and they collapse into one test. The card lists
+// three:
+//   - the initiating unit voluntarily moves beyond X;
+//   - the initiating unit is Penetrated  (cutTethersOn, above);
+//   - either unit is forcibly moved so the distance is greater than X.
+// The first and third are both just "they are further apart than X now", and
+// the fourth case a reader expects — the tethered unit walking out — can never
+// arise, because tetherCap makes those Grids impassable in the first place.
+// A pair whose far end has left the board goes too: a chip needs two units.
+//
+// Called after EVERY command rather than hung off the movement ones, so a
+// teleport, a Crush displacement or a unit destroyed mid-attack cannot leave a
+// leash tied to something that is no longer there.
+export function settleTethers(data: GameData, state: GameState): void {
+  // Genuinely nothing to do on a board with no chips on it, which is almost
+  // every board — this runs after every command, so it earns its early out.
+  if (!state.tokens.some((x) => (x.tether ?? []).length)) return;
+  // Its own standing test rather than the module's `alive`: a chip needs a unit
+  // that is ON the board, so a Mech reduced to two Parts still holds its end
+  // while one whose Torso has gone does not (4.4.4).
+  const standing = (x: Token) => x.deployed !== false
+    && (x.partStates[x.kind === 'mech' ? 'torso' : 'main'] ?? 'intact') !== 'destroyed';
+  const byUid = new Map(state.tokens.map((x) => [x.uid, x]));
+  for (const t of state.tokens) {
+    for (const link of [...(t.tether ?? [])]) {
+      const other = byUid.get(link.uid);
+      if (other && standing(other) && standing(t) && rangeBetween(t, other).range <= link.range) continue;
+      cutLink(data, state, t, link);
+    }
+  }
+}
+
 function legacyZoneSet(s: unknown): string {
   const o = (s ?? {}) as { mission?: string | null; deployLayout?: string | null; map?: string };
   if (o.mission) return `mission:${o.mission}`;
@@ -3103,6 +3289,13 @@ export function migrateState(rawIn: unknown, data: GameData): GameState | null {
       (t.kind === 'mech' && t.mech
         ? Object.fromEntries(PART_SLOTS.filter((sl) => t.mech![sl]).map((sl) => [sl, 'intact']))
         : { main: 'intact' });
+    // Rebuilt entry by entry rather than trusted: a half-written link would cap
+    // movement against a uid that is not on the board.
+    const tether = (Array.isArray(t.tether) ? (t.tether as TetherLink[]) : [])
+      .filter((x) => x && typeof x.uid === 'number' && typeof x.range === 'number'
+        && (x.role === 'initiator' || x.role === 'tethered'))
+      .map((x) => ({ uid: x.uid, range: x.range, role: x.role }))
+      .sort((a, b) => a.uid - b.uid);
     let label = t.label ?? '?';
     if (/[぀-ヿ一-鿿]/.test(label) || label.includes('…')) {
       const nameSource = t.kind === 'mech' && t.mech?.torso ? data.byId.get(t.mech.torso) : card;
@@ -3150,6 +3343,12 @@ export function migrateState(rawIn: unknown, data: GameData): GameState | null {
       // here is dropped on load. Both of these are rules-bearing and both are
       // in boardFingerprint, so losing them silently desyncs a reloaded game.
       commandedBy: typeof t.commandedBy === 'number' ? t.commandedBy : undefined,
+      // Same three reasons as commandedBy, plus one of its own: a Tether chip
+      // is what MoveOpts.allowed reads, so a dropped one hands the tethered
+      // unit a leash-free reload. Validated entry by entry rather than trusted,
+      // because a half-written link would cap movement against a uid that is
+      // not there.
+      tether: tether.length ? tether : undefined,
       lockedProjectile: t.lockedProjectile && typeof t.lockedProjectile === 'object'
         ? { ...(t.lockedProjectile as Record<string, string>) }
         : undefined,

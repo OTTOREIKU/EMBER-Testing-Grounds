@@ -4,11 +4,11 @@ import type { GameData } from './data';
 import { actionIconUrl, cardName, isAerial, secondaryImageUrl, squadLabel, unitSize } from './data';
 import { Board, footprint, snapPlacement, type BoardCallbacks } from './board';
 import { printedDeployment, resolveZoneSetData } from './overlays';
-import { opportunityBonusOn, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, ripostePart, martyrdomOwed, targetTracingOn, riderOnDrone, hasFlexibleTiming, coordinationFor, coordinationOnOpportunityEnd, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, electronicOrigins, loanedParts, minesLayable, minesOwed, pilotCard, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, maneuverIsSilent, maneuverSilenceDenier, type AuraSource, canActivateCamo, chargeableSlots, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
+import { transformOffer, opportunityBonusOn, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, ripostePart, martyrdomOwed, targetTracingOn, riderOnDrone, hasFlexibleTiming, coordinationFor, coordinationOnOpportunityEnd, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, electronicOrigins, loanedParts, minesLayable, minesOwed, pilotCard, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, maneuverIsSilent, maneuverSilenceDenier, type AuraSource, canActivateCamo, chargeableSlots, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
 import { resolveCounterRoll, tallyCounter } from './combat';
 import { tacticFitsPhase, tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { inContact, canStandIn, attackDirection, crushTargets, dissipationFor, extendPath, knockbackPath, largeGridOf, LG, losBetween, losNote, pathCost, protectionFor, rangeBetween, reachableGrids, standingSpot, type LargeGrid } from './rules';
-import { breakAwayCost, canBeForceMoved } from './melee';
+import { breakAwayCost, canBeForceMoved, tetherCap, tetherNote } from './melee';
 import { factionColour, linkIcon, squadColour } from './icons';
 import { iconSvg } from './dice';
 import type { PartSlot, CardAction, CounterRoll, DiceData, DieColor, Facing, GameState, Side, Stance, Timing, Token, ExtraTick, Opportunity } from './types';
@@ -429,6 +429,10 @@ function reachableFor(ctx: HudCtx, t: Token, steps = maneuverRange(ctx.data, t),
   return reachableGrids(t, steps, terrain, ctx.state.tokens, flying, {
     exitCost: flying ? undefined : breakAwayCost(ctx.data, t, ctx.state.tokens, terrain),
     crushable: (c, r) => crushTargets(t, c, r, terrain, ctx.state.tokens) !== null,
+    // The Tether leash, on the overlay as well as on the route: this function
+    // and moveOptsFor below both build their own opts, and a rule added to one
+    // of them only would paint reachable Grids the confirm step then refuses.
+    allowed: tetherCap(t, ctx.state.tokens),
   });
 }
 
@@ -443,6 +447,7 @@ function moveOptsFor(ctx: HudCtx, t: Token, flying: boolean) {
   return {
     exitCost: flying || t.aerial ? undefined : breakAwayCost(ctx.data, t, ctx.state.tokens, terrain),
     crushable: (c: number, r: number) => crushTargets(t, c, r, terrain, ctx.state.tokens) !== null,
+    allowed: tetherCap(t, ctx.state.tokens),
   };
 }
 
@@ -1232,6 +1237,11 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
             : `Click a lit grid to move. Up to ${movePlan!.steps} grid${movePlan!.steps === 1 ? '' : 's'}.`;
         })()}</p>
         <p class="tp-dim">Click a lit grid to move there. Click further on to add a waypoint, right-click or Backspace steps back.</p>
+        ${(() => {
+          // The same sentence the freeplay hint uses, from the same helper.
+          const leash = tetherNote(t, ctx.state.tokens);
+          return leash ? `<p class="tp-note">${esc(leash)}</p>` : '';
+        })()}
         ${
           // The Ojs200's optional Flying Movement. A toggle rather than a
           // question up front, because the reachable grids redraw either way
@@ -3129,6 +3139,17 @@ function routeAction(ctx: HudCtx, t: Token, a: CardAction, ga?: ReturnType<typeo
     }
     if (shot.length === 1) startLaunchPlan(t.uid, a.id, shot[0].id, shot[0].name?.en || shot[0].id);
     else launchPick = { uid: t.uid, actionId: a.id, cardIds: shot.map((c) => c.id) };
+    return true;
+  }
+  // A Mode change (287/288 White Dwarf): the Action turns its own Part over to
+  // the other face of the same physical card. Nothing else about the unit
+  // moves, so like the Unfold below it resolves here and pays here rather than
+  // opening a tool that would pay later. Mirrors the freeplay branch.
+  const mode = transformOffer(ctx.data, t, a);
+  if (mode) {
+    commitAction(ctx);
+    ctx.send({ kind: 'transformPart', seat: t.side, uid: t.uid, slot: mode.slot, cardId: mode.into.id });
+    ctx.noteNow(`${t.label} transforms: ${cardName(mode.from)} becomes ${cardName(mode.into)}.`);
     return true;
   }
   // Pholcus does not resolve a payload: it becomes a Drone in place (FAQ M18).

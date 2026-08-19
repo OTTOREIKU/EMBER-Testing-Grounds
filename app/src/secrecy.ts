@@ -93,6 +93,11 @@ export function boardFingerprint(state: GameState): string {
       // what a Commanded Drone may do, so a drift here would have one client
       // offering an Action the other refuses.
       t.commandedBy ?? null,
+      // The Tether chips (PDLH-202). Rules-bearing twice over: the leash
+      // REFUSES Grids the other client would offer, and the pair is what holds
+      // the Harpoon's Tether Mode face on. Listed in uid order, which tetherTo
+      // and migrateState both keep, so the same board hashes one way.
+      (t.tether ?? []).map((x) => `${x.uid}:${x.range}:${x.role}`),
       // A lock_one commitment: once made it REMOVES options from the launch
       // picker, so a drift would have one client offering a Projectile the
       // other refuses.

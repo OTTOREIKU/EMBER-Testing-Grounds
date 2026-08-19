@@ -80,16 +80,18 @@ const tools = ['chargePlan', 'resupplyPick', 'repairPick', 'openAttackPick', 'bl
 for (const plan of tools) {
   check(`${plan} is opened by routeAction`, route.includes(plan), true);
 }
-// The inline one: a branch that both acts and returns true in place, so it has
-// nothing later to pay for it.
+// The inline ones: branches that both act and return true in place, so they
+// have nothing later to pay for them.
 check('the Unfold branch pays before it returns',
   /commitAction\(ctx\);\s*\n\s*ctx\.send\(\{ kind: 'unfold'/.test(route), true);
-// The count of commitAction call sites, so deleting one is loud. Ten tools
+check('the Mode-change branch pays before it returns',
+  /commitAction\(ctx\);\s*\n\s*ctx\.send\(\{ kind: 'transformPart'/.test(route), true);
+// The count of commitAction call sites, so deleting one is loud. Eleven tools
 // plus the no-tool path: move (x2 — the plan and the route), launch, blink,
-// attack, EW, charge, resupply, repair, unfold, Remote Access (one site for
-// both verdicts — the attempt pays whether the roll succeeded or not), and
-// doact's own.
-check('every tool has a commitAction', [...hud.matchAll(/commitAction\(ctx\)/g)].length, 12);
+// attack, EW, charge, resupply, repair, unfold, transformPart (287/288's Mode
+// change, inline like the Unfold), Remote Access (one site for both verdicts —
+// the attempt pays whether the roll succeeded or not), and doact's own.
+check('every tool has a commitAction', [...hud.matchAll(/commitAction\(ctx\)/g)].length, 13);
 
 // ---------- The ATTRIBUTED seat stamp ----------
 //

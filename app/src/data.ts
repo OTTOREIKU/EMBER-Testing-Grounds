@@ -873,10 +873,77 @@ export function isDiscardCard(c: Card): boolean {
   return /\(D\)|（抛弃卡）|抛弃卡/.test(`${c.name.en ?? ''}${c.name.zh ?? ''}`);
 }
 
+// The far face of a Part that a RULE flips you onto mid-game rather than one you
+// build with: Tether Mode (PDLH-202-T), and any future card written the same
+// way. Told apart from a legal build choice by the price, not by the name — the
+// White Dwarf prints BOTH its Modes at 72 points, so either is a real squad
+// choice, while a face that costs nothing is one you can only arrive at.
+//
+// Optional-chained where isDiscardCard above is not, deliberately: this one is
+// asked about EVERY equipped card after every command, by the Tether sweep, so
+// it has to survive a card the bundle handed us without a name.
+export function isModeFace(c: Card): boolean {
+  return !c.score && /tether mode|cruise mode|\(deployed\)/i.test(c.name?.en ?? '');
+}
+
+// A Mode face a TETHER is holding open (PDLH-202-T). The flip back is triggered
+// by the Tether ending, so the trigger has to name the state it belongs to: a
+// Mode face put on by something else must not come off when a leash is cut.
+export function isTetherFace(c: Card): boolean {
+  return isModeFace(c) && /tether mode|牵引状态|牽引状態/i.test(`${c.name?.en ?? ''}${c.name?.zh ?? ''}`);
+}
+
+// ---------- the two faces of one physical card ----------
+//
+// `throwIndex` is a ONE-WAY edge: the front face names the back, the back names
+// nothing. 62 cards carry one and for 61 of them the far face is a Discard Card,
+// so this index is a LOOKUP and never a permission — knowing PDLH-202 and
+// PDLH-202-T are the same piece of cardboard says nothing about whether a Mech
+// may flip between them. transformFaces() is what answers that, and it asks a
+// rule.
+//
+// Keyed off the card array rather than built into GameData, so the tests that
+// assemble their own arrays get the same index without a loader.
+const faceIndexCache = new WeakMap<Card[], Map<string, string>>();
+
+function faceIndex(cards: Card[]): Map<string, string> {
+  const hit = faceIndexCache.get(cards);
+  if (hit) return hit;
+  const m = new Map<string, string>();
+  // Forward edges first, then the reverse ones the data does not carry, so a
+  // printed edge always wins over an inferred one.
+  for (const c of cards) if (c.throwIndex && c.throwIndex !== c.id) m.set(c.id, c.throwIndex);
+  for (const c of cards) {
+    if (c.throwIndex && c.throwIndex !== c.id && !m.has(c.throwIndex)) m.set(c.throwIndex, c.id);
+  }
+  faceIndexCache.set(cards, m);
+  return m;
+}
+
+export function faceOf(cards: Card[], id: string): string | undefined {
+  return faceIndex(cards).get(id);
+}
+
+// Every other face this card may legally BECOME at the table. Two data shapes
+// feed it and they say different things:
+//   * `transformPartIds` — the White Dwarf's Mode set (287/288), listed on both
+//     faces and including the card itself. A whole-set declaration.
+//   * `throwIndex` — the "other face" pointer, which only counts as a transform
+//     when one of the two faces is a runtime Mode. Taken at face value it would
+//     make all 61 Discard Cards transformable, which is 4.17 backwards.
+export function transformFaces(data: GameData, c: Card): string[] {
+  const out = new Set<string>();
+  for (const id of c.transformPartIds ?? []) if (id !== c.id && data.byId.get(id)) out.add(id);
+  const other = faceOf(data.cards, c.id);
+  const far = other ? data.byId.get(other) : undefined;
+  if (far && (isModeFace(far) || isModeFace(c))) out.add(far.id);
+  return [...out];
+}
+
 export function zeroCostReason(c: Card): string | null {
   if (c.score) return null;
   if (isDiscardCard(c)) return 'discard state of a paid part';
-  if (/tether mode|cruise mode|\(deployed\)/i.test(c.name.en ?? '')) return 'alternate mode of a paid part';
+  if (isModeFace(c)) return 'alternate mode of a paid part';
   if (c.category === 'projectile') return 'Low Value Unit — Projectiles cost 0';
   if (c.category === 'drone') return 'Low Value Unit — costs 0, gives no VP';
   return null;

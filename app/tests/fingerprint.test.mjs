@@ -166,6 +166,21 @@ const slotOrder = board();
 slotOrder.tokens[0].mech = { chasis: 'C1', torso: 'T1' };
 check('but the order of the slots is not', boardFingerprint(slotOrder), boardFingerprint(armed));
 
+// A Tether chip is rules-bearing twice over: the leash REFUSES Grids the other
+// client would otherwise offer, and the pair is what holds a Harpoon's Tether
+// Mode face on. A drift makes one client accept a Maneuver the other rejects.
+const leashed = board();
+leashed.tokens[1].tether = [{ uid: 1, range: 4, role: 'tethered' }];
+check('a Tether chip IS part of it', boardFingerprint(leashed) !== boardFingerprint(board()), true);
+const shorter = board();
+shorter.tokens[1].tether = [{ uid: 1, range: 2, role: 'tethered' }];
+check('and the leash length changes it', boardFingerprint(leashed) !== boardFingerprint(shorter), true);
+// The asymmetry is the rule, so the two ends must not hash alike: swapping who
+// holds whom would otherwise be invisible.
+const flipped = board();
+flipped.tokens[1].tether = [{ uid: 1, range: 4, role: 'initiator' }];
+check('as does which end of it a unit is', boardFingerprint(leashed) !== boardFingerprint(flipped), true);
+
 // ---------- shape ----------
 
 check('it is short enough to ride on every command', boardFingerprint(board()).length <= 8, true);

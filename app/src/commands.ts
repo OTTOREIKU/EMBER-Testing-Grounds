@@ -1,14 +1,15 @@
 import type { CombatView, Facing, GameState, MechLoadout, Opportunity, PartSlot, RollbackPoint, Side, SmokeScreen, Stance, Timing, Token } from './types';
 import { addStatus, ageTokens, newOpportunity, PHASES, statusCount, STATUSES, TIMINGS } from './types';
 import type { GameData } from './data';
-import { unfoldsInto } from './data';
-import { covertCarryLock, ammoDeliveryPool, opportunityBonusOn, ripostePart, defenseReactionOn, targetTracingOn, riderOnDrone, hasFlexibleTiming, commandGeneration, blinkTargets, isPositionSwap, electronicOrigins, loanedParts, unfoldToken, extrasFor, consumesCharge, electronicValue, freehandSlots, interceptCapacity, makeDroneToken, makeMechToken, maxLink, pilotCard, projectileDelivery, tokenCards } from './units';
+import { cardName, transformFaces, unfoldsInto } from './data';
+import { covertCarryLock, ammoDeliveryPool, opportunityBonusOn, ripostePart, defenseReactionOn, targetTracingOn, riderOnDrone, hasFlexibleTiming, commandGeneration, blinkTargets, isPositionSwap, electronicOrigins, loanedParts, unfoldToken, extrasFor, consumesCharge, cutTethersOn, electronicValue, freehandSlots, interceptCapacity, makeDroneToken, makeMechToken, maxLink, pilotCard, projectileDelivery, settleTethers, SLOT_LABEL, tetherTo, tokenCards, transformPartOn } from './units';
+import { tetherCap } from './melee';
 import { canActivate, canAttackMode, canManeuver, canOverload, canPerform, spendAction, spendActivation, spendAttackMode, spendManeuver, spendOverload } from './ticks';
 import { tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { battlefieldLocked, deploymentComplete, deployTurn, firstPlayerFrom, newSetup, normaliseSetup, tasksLocked } from './setup';
 import { applyKill, normaliseTasks, pendingDesignations, recordPartLoss, recordUnitLoss, settleControl, type Designation } from './tasks';
 import { alive, canAct, dialHidden, droneActionWhy, droneMoveWhy, eligibleUnits, getLocalSeat, isLoopPhase, loopComplete, nextTurn, onExtraOpportunity } from './loop';
-import { dissipationFor, spotsInGrid } from './rules';
+import { dissipationFor, rangeBetween, spotsInGrid } from './rules';
 
 // ---------- the command layer (multiplayer phase 1) ----------
 
@@ -170,6 +171,18 @@ export type Command =
   | { kind: 'blink'; seat: Side; uid: number; actionId: string; targetUid: number; facing: Facing; targetFacing: Facing }
   | { kind: 'despawn'; seat: Side; uid: number; targetUid: number }
   | { kind: 'unfold'; seat: Side; uid: number }
+  // Turning a Part over to its other face without changing anything else about
+  // the unit: the White Dwarf's Assault/Cruise Modes (287/288) on a Swift
+  // Action, and the Harpoon flipping into Tether Mode when its shot connects.
+  // Generic on purpose — the command carries the slot and the destination card,
+  // and check() confirms the two faces really are the same physical card.
+  | { kind: 'transformPart'; seat: Side; uid: number; slot: PartSlot; cardId: string }
+  // Tether X (PDLH-202). `uid` is the INITIATING unit and `targetUid` the one
+  // that ends up on a leash; the asymmetry is the whole rule, so it is carried
+  // in the command rather than worked out on arrival. Removal is never
+  // commanded: every one of the printed conditions is derived from the board by
+  // settleTethers, or stamped where the Penetration lands.
+  | { kind: 'tether'; seat: Side; uid: number; targetUid: number; range: number }
   // `for` names the squad the Screen belongs to when it is not the sender's:
   // a defender's Emergency Smoke is driven from the attacking client, whose
   // seat the ATTRIBUTED stamping will overwrite. Ownership decides stacking
@@ -1012,6 +1025,17 @@ function checkActed(
       if (!Number.isInteger(col) || !Number.isInteger(row) || col < 0 || row < 0 || col > 35 || row > 35) {
         return no('That is not a place on the board.');
       }
+      // The Tether leash, and the one piece of path law that does belong here:
+      // it is a test on the DESTINATION, so it needs no pathfinder. Only the
+      // tethered end is capped — the initiator walking out is a removal
+      // condition (PDLH-202), never an illegal move — and only a voluntary
+      // Movement is judged, which is exactly what this command is: Forced
+      // Movement travels as forceMove.
+      const leash = tetherCap(t, state.tokens);
+      if (leash && !leash(Math.floor(col / 3), Math.floor(row / 3))) {
+        const x = (t.tether ?? []).filter((l) => l.role === 'tethered')[0]?.range ?? 0;
+        return no(`${t.label} is Tethered and cannot voluntarily move beyond ${x} Grids of the unit holding it (PDLH-202).`);
+      }
       // A Movement a card handed out belongs to the card, not to an Action
       // Opportunity: Hit and Run moves a Mech as its Opportunity ends, when
       // there is no longer one to check against or to charge.
@@ -1475,10 +1499,55 @@ function checkActed(
       }
       return ok;
     }
+    case 'transformPart': {
+      if (!t) return no('That unit is not on the board.');
+      if (t.kind !== 'mech' || !t.mech) return no('Only a Mech carries Parts that can be turned over.');
+      const held = t.mech[cmd.slot];
+      const from = held ? data.byId.get(held) : undefined;
+      if (!from) return no(`${t.label} has nothing in that slot.`);
+      const into = data.byId.get(cmd.cardId);
+      if (!into) return no('That is not a card the database knows.');
+      // A destroyed Part is off the Mech: there is no card left to turn over.
+      if ((t.partStates[cmd.slot] ?? 'intact') === 'destroyed') {
+        return no(`${t.label}'s ${SLOT_LABEL[cmd.slot]} is destroyed.`);
+      }
+      // The two faces are one physical card, so the slot cannot change with the
+      // flip — and being the SAME card is what makes a transform legal at all.
+      if (into.type !== from.type) return no('That face does not fit the same slot.');
+      if (!transformFaces(data, from).includes(into.id)) {
+        return no(`${cardName(from)} does not turn into ${cardName(into)}.`);
+      }
+      return ok;
+    }
+    case 'tether': {
+      if (!t) return no('That unit is not on the board.');
+      const target = state.tokens.find((x) => x.uid === cmd.targetUid);
+      if (!target) return no('That target is not on the board.');
+      if (target.uid === t.uid) return no('A unit cannot Tether itself.');
+      if (!Number.isInteger(cmd.range) || cmd.range < 1) return no('Tether X needs a leash length.');
+      // The chip is placed on a unit the Harpoon just hit, so it always starts
+      // inside its own leash; one placed outside would come straight back off
+      // under the same rule that removes it.
+      if (rangeBetween(t, target).range > cmd.range) {
+        return no(`${target.label} is already further than ${cmd.range} Grids away.`);
+      }
+      return ok;
+    }
   }
 }
 
+// Every command lands through here, so the board's derived relationships are
+// settled in ONE place afterwards rather than sprinkled over the movement
+// branches. A Tether comes off when the two ends drift apart, and they can
+// drift on a Maneuver, a Knockback, a Push, a Prototype Blink, a Crush
+// displacement or a unit being destroyed mid-attack — six paths, one of which
+// would have been missed. The sweep is a no-op on a board with no chips on it.
 export function apply(data: GameData, state: GameState, cmd: Command): void {
+  applyCommand(data, state, cmd);
+  settleTethers(data, state);
+}
+
+function applyCommand(data: GameData, state: GameState, cmd: Command): void {
   if (cmd.kind === 'advancePhase') {
     // The both-ready agreement is consumed by the turn it authorised, so
     // every phase asks afresh — and a racing second advance finds the flags
@@ -2112,6 +2181,13 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
       const cur = target.partStates[cmd.slot] ?? 'intact';
       const card = tokenCards(data, target).find((x) => x.slot === cmd.slot)?.card;
       target.partStates[cmd.slot] = cur === 'intact' ? ((card?.structure ?? 0) > 0 ? 'damaged' : 'destroyed') : 'destroyed';
+      // "The Tether Tokens are removed when the INITIATING unit is Penetrated"
+      // (PDLH-202). Being Penetrated while tethered does nothing, which is the
+      // point of the harpoon. Stamped here rather than in either page's
+      // onPenetrated callback: this is the one place a Penetration becomes true
+      // on both boards and in a replay, and those callbacks are per-page copies
+      // that would drift the moment one of them was edited alone.
+      cutTethersOn(data, state, target, 'initiator');
       if (target.partStates[cmd.slot] === 'destroyed' && target.kind === 'mech') {
         target.link = Math.max(0, (target.link ?? 0) - 1);
         if (target.link === 0 && target.stance !== 'shutdown') target.stance = 'shutdown';
@@ -2497,6 +2573,16 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
       const into = card ? unfoldsInto(card) : undefined;
       const target = into ? data.byId.get(into) : undefined;
       if (target) unfoldToken(state, data, t, target);
+      return;
+    }
+    case 'transformPart': {
+      transformPartOn(data, t, cmd.slot, cmd.cardId);
+      return;
+    }
+    case 'tether': {
+      const target = state.tokens.find((x) => x.uid === cmd.targetUid);
+      if (!target) return;
+      tetherTo(t, target, cmd.range);
       return;
     }
     case 'despawn': {

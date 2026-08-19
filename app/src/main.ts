@@ -32,7 +32,7 @@ import { Panel } from './panel';
 import { tacticSpec, tacticTargets } from './tactics';
 import { Roster } from './roster';
 import { inContact, canStandIn, attackDirection, crushTargets, type CrushVictims, dissipationFor, extendPath, inArc, knockbackPath, largeGridOf, type LargeGrid, LG, losBetween, losNote as losNoteFor, type MoveOpts, pathCost, protectionFor as protectionForShared, rangeBetween, reachableGrids, smokeBlocks, spotsInGrid, standingSpot } from './rules';
-import { breakAwayCost, canBeForceMoved, lockersOf } from './melee';
+import { breakAwayCost, canBeForceMoved, lockersOf, tetherCap, tetherNote } from './melee';
 import { instantiateScenario, loadScenarios, type Scenario } from './scenarios';
 import { loadReplays, ReplayPlayer, type ReplayScript, type ReplayStep, type ReplayTally } from './replay';
 import { SquadTracker } from './squads';
@@ -47,7 +47,7 @@ import { PlayGuide } from './playguide';
 import type { Card, CardAction, DiceData, DieColor, Facing, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, StatusDef, TerrainPiece, Timing, Token } from './types';
 import { addStatus, normaliseScript, SCALES, statusCount, statusesFor, STATUSES } from './types';
 import { actionIdOf } from './ticks';
-import { ignoresProtectionOnHighlight, providesUnitProtectionToAllies, twoHandedUse, electronicValue, martyrdomOwed, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, loanedParts, minesLayable, minesOwed, multiTargetLimit, unfoldsOwed, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, maneuverIsSilent, maneuverSilenceDenier, chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, type Resupply, resupplyOf, SLOT_LABEL, stationaryAdjusted, interceptLeft, interceptsOwed, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf, type AttackReaction } from './units';
+import { transformOffer, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, twoHandedUse, electronicValue, martyrdomOwed, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, loanedParts, minesLayable, minesOwed, multiTargetLimit, unfoldsOwed, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, maneuverIsSilent, maneuverSilenceDenier, chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, type Resupply, resupplyOf, SLOT_LABEL, stationaryAdjusted, interceptLeft, interceptsOwed, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf, type AttackReaction } from './units';
 import { registerOffline } from './offline';
 import { battlefieldLocked, countHits, firstPlayerFrom, newSetup, normaliseSetup, tasksLocked, type SetupState } from './setup';
 import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
@@ -895,6 +895,18 @@ async function init() {
         else done(false);
       });
       return;
+    }
+
+    // A Mode change (287/288 White Dwarf): the Action turns its own Part over to
+    // the other face of the same physical card. Nothing else about the unit
+    // moves, so it resolves in place rather than opening a tool. Mirrors the
+    // routeAction branch in matchhud.ts.
+    const mode = transformOffer(data, t, action);
+    if (mode) {
+      perform(data, state, { kind: 'transformPart', seat: t.side, uid: t.uid, slot: mode.slot, cardId: mode.into.id });
+      logTo(t, `Transforms: ${cardName(mode.from)} becomes ${cardName(mode.into)}.`);
+      onChanged();
+      return done(true);
     }
 
     // Pholcus does not resolve a payload in the Delay Phase, it becomes a Drone
@@ -1843,7 +1855,8 @@ async function init() {
     const breakAway = locked.length
       ? ` Melee Locked by ${locked.map((o) => o.label).join(', ')}, so leaving a Grid costs ${locked.length} extra Movement Range (4.3.5).`
       : '';
-    setHint(`${opts.label} for ${t.label}: click a lit grid to move there. Click again further on to add a waypoint, Backspace steps back, then Confirm. Esc cancels.${breakAway}`);
+    const leash = tetherNote(t, state.tokens);
+    setHint(`${opts.label} for ${t.label}: click a lit grid to move there. Click again further on to add a waypoint, Backspace steps back, then Confirm. Esc cancels.${breakAway}${leash ? ` ${leash}` : ''}`);
   }
 
 
@@ -3240,6 +3253,10 @@ async function init() {
     return {
       exitCost: flying || t.aerial ? undefined : breakAwayCost(data, t, state.tokens, terrain),
       crushable: (c, r) => crushTargets(t, c, r, terrain, state.tokens) !== null,
+      // A Tether leash is a legality rather than a price, so it goes here and
+      // not on exitCost — and it binds a flyer exactly as hard as a walker,
+      // which is why it sits outside the `flying` guard above.
+      allowed: tetherCap(t, state.tokens),
     };
   }
 
