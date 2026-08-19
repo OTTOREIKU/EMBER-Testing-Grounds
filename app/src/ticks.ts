@@ -145,7 +145,16 @@ export function canPerform(
   key: string = a.id,
   // Granted by an ally's aura (Tactical Coordination and friends), which only
   // the caller can see — this module is handed an Opportunity, never a board.
-  opts: { flexible?: boolean } = {},
+  //
+  // `anyTiming` is FPA-01 Misty's 变招 Feint: "In Tactical Timing, may perform
+  // Starting Action from any timing." It is deliberately NOT folded into
+  // `flexible`, because the two grant different things — flexible reaches the
+  // timings either side of the dial, this opens the dial completely — and
+  // widening one boolean would hand every aura source and card 017 CQC the
+  // full dial. The "in Tactical Timing" half is tested HERE and not in the
+  // reader: `o.timing` lives on the Opportunity, and units.ts is never handed
+  // one.
+  opts: { flexible?: boolean; anyTiming?: boolean } = {},
 ): TickVerdict {
   const len = lengthOf(a);
   if (!len) return { ok: false, why: 'This is not an Action a Mech performs with Ticks.' };
@@ -171,11 +180,17 @@ export function canPerform(
   // The first Action of an Opportunity is the Starting Action, and its Action
   // Type must match the Timing on the dial (3.4.3).
   if (!o.started && o.timing && timing !== o.timing) {
-    const flexed = opts.flexible && !!timing && timingsAdjacent(timing, o.timing);
+    const feint = !!opts.anyTiming && o.timing === 'tactical' && !!timing;
+    const flexed = feint || (opts.flexible && !!timing && timingsAdjacent(timing, o.timing));
     if (!flexed) {
       return {
         ok: false,
+        // The refusal has to name the rule that actually failed. `anyTiming`
+        // set but the dial NOT on Tactical is a different refusal from a
+        // Flexible Timing that could not reach, and blaming the wrong one sends
+        // the player looking at the wrong card.
         why: `The Starting Action must match the dial. This Mech is set to ${o.timing}, and this is a ${timing ?? 'typeless'} Action.`
+          + (opts.anyTiming ? ' Feint only opens the dial in Tactical Timing.' : '')
           + (opts.flexible ? ' Flexible Timing only reaches the timings either side of the dial.' : ''),
       };
     }
@@ -301,9 +316,9 @@ export function spendAction(
   a: CardAction,
   key: string = a.id,
   // Threaded through so the spend agrees with the check that allowed it: an
-  // Action let through by Flexible Timing must not then be read as needing an
-  // Extra Tick it never used.
-  opts: { flexible?: boolean } = {},
+  // Action let through by Flexible Timing — or by FPA-01's Feint — must not
+  // then be read as needing an Extra Tick it never used.
+  opts: { flexible?: boolean; anyTiming?: boolean } = {},
 ): Opportunity {
   const len = lengthOf(a);
   if (!len) return o;

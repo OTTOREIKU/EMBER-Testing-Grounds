@@ -5,7 +5,7 @@ import { cardName, squadLabel } from './data';
 import { bindTips, linkMechanics } from './inspector';
 import { choiceDialog } from './dialog';
 import { PHASES, PHASE_INFO } from './tracker';
-import { vpRiderFor, opportunityBonusOn, hasFlexibleTiming, pilotCard, coordinationFor, coordinationOnOpportunityEnd, extrasFor, actionSilenceDenier, isSilentAction, type ActionWorld, canActivateCamo, type ExtraActivation, extraActivationOf, guidedActions, initiativeFor, maneuverRange, maxLink, SLOT_LABEL, tokenCards } from './units';
+import { vpRiderFor, anyStartTiming, opportunityBonusOn, hasFlexibleTiming, pilotCard, coordinationFor, coordinationOnOpportunityEnd, extrasFor, actionSilenceDenier, isSilentAction, type ActionWorld, canActivateCamo, type ExtraActivation, extraActivationOf, guidedActions, initiativeFor, maneuverRange, maxLink, SLOT_LABEL, tokenCards } from './units';
 import { canAttackMode, canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed } from './ticks';
 import { asterKey, clearDroneCommands, perform, readyCommands, seedCommandTokens } from './commands';
 import { askIssuer, asterBlockers, offerCoordination, runAster } from './commandpick';
@@ -1262,7 +1262,7 @@ export class PlayGuide {
     const range = maneuverRange(this.data, t);
     const rows = this.tickActions(t)
       .map((r) => {
-        const v = canPerform(o, r.action, r.partKey, { flexible: this.flexTiming(t, r.action) });
+        const v = canPerform(o, r.action, r.partKey, { flexible: this.flexTiming(t, r.action), anyTiming: anyStartTiming(this.data, t) });
         const why = r.blocked ?? (v.ok ? undefined : v.why);
         const cost = costOf(r.action)!;
         const len = LENGTH_NAME[lengthOf(r.action)!];
@@ -1620,7 +1620,8 @@ export class PlayGuide {
     // Tarantula is lending the Part (FAQ O7).
     const row = this.tickActions(t).find((r) => r.partKey === actionId) ?? this.tickActions(t).find((r) => r.action.id === actionId);
     if (!row) return;
-    const why = row.blocked ?? (canPerform(o, row.action, row.partKey, { flexible: this.flexTiming(t, row.action) }).ok ? undefined : canPerform(o, row.action, row.partKey, { flexible: this.flexTiming(t, row.action) }).why);
+    const tickOpts = { flexible: this.flexTiming(t, row.action), anyTiming: anyStartTiming(this.data, t) };
+    const why = row.blocked ?? (canPerform(o, row.action, row.partKey, tickOpts).ok ? undefined : canPerform(o, row.action, row.partKey, tickOpts).why);
     if (why && this.warn !== why) {
       this.warn = why;
       this.render();

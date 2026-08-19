@@ -84,6 +84,13 @@ export interface Card {
   moving?: number;
   trait?: string;
   traitDescription?: LangText;
+  // A curator's annotation, NOT a dispatch bus. 16 of the 23 trait-bearing
+  // pilots carry one; all seven GOF pilots and XPA-62 do not, and the entries
+  // that exist are incomplete (FPA-04-2 records maxLink and actionPointsPerLink
+  // but not the printed [Offensive Stance]). Declared so the trait tests can
+  // assert that a hand-written reader agrees with the annotation where there is
+  // one; every rule reader dispatches on the card id instead — see pilotIs().
+  traitEffects?: { type: string; [k: string]: unknown }[];
   description?: LangText;
   keywords: { key?: string; en?: string; inline?: string }[];
   containedIn?: { box: string; quantityPerBox: number }[];

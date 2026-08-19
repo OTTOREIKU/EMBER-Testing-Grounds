@@ -4,7 +4,7 @@ import type { GameData } from './data';
 import { actionIconUrl, cardName, isAerial, secondaryImageUrl, squadLabel, unitSize } from './data';
 import { Board, footprint, snapPlacement, type BoardCallbacks } from './board';
 import { printedDeployment, resolveZoneSetData } from './overlays';
-import { transformOffer, opportunityBonusOn, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, ripostePart, martyrdomOwed, targetTracingOn, riderOnDrone, hasFlexibleTiming, coordinationFor, coordinationOnOpportunityEnd, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, electronicOrigins, loanedParts, minesLayable, minesOwed, pilotCard, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, maneuverIsSilent, maneuverSilenceDenier, type AuraSource, canActivateCamo, chargeableSlots, electronicStrength, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
+import { transformOffer, anyStartTiming, opportunityBonusOn, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, ripostePart, martyrdomOwed, targetTracingOn, riderOnDrone, hasFlexibleTiming, coordinationFor, coordinationOnOpportunityEnd, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, electronicOrigins, loanedParts, phasesThroughUnits, minesLayable, minesOwed, pilotCard, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, maneuverIsSilent, maneuverSilenceDenier, type AuraSource, canActivateCamo, chargeableSlots, electronicStrength, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, projectileReach, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
 import { mountDuel, playDuel, resolveCounterRoll, tallyCounter } from './combat';
 import { tacticFitsPhase, tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { inContact, canStandIn, attackDirection, crushTargets, dissipationFor, extendPath, knockbackPath, largeGridOf, LG, losBetween, losNote, pathCost, protectionFor, rangeBetween, reachableGrids, standingSpot, type LargeGrid } from './rules';
@@ -17,7 +17,7 @@ import { deployable, deployTurn, deploymentComplete, firstPlayerFrom, normaliseS
 import { actionPhaseComplete, activationOrder, alive, canAct, droneActionWhy, droneMoveWhy, eligibleUnits, isLoopPhase, loopComplete, nextActivation, nextTurn, onExtraOpportunity, type InitLookup, type LoopPhase } from './loop';
 import { actionIdOf, canActivate, canAttackMode, canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed, type TickVerdict } from './ticks';
 import { escortTargets, gameResult, normaliseTasks, scoreMain, scoreRiders, scoreSecondary, settleControl, unpaidLines, zoneCentreGrid, type Designation, type ScoreLine, type ScoreResult, type SecondaryScoring } from './tasks';
-import { automaticShieldFor, stationaryAdjusted, twoHandedUse, tokenCards, vpRiderFor } from './units';
+import { automaticShieldFor, canAffordFocus, focusIsFree, stationaryAdjusted, twoHandedUse, tokenCards, vpRiderFor } from './units';
 
 // The in-match HUD (Match Centre part 3a): one question at a time, per seat.
 // Everything here renders from the shared GameState and issues the same
@@ -433,6 +433,10 @@ function reachableFor(ctx: HudCtx, t: Token, steps = maneuverRange(ctx.data, t),
     // and moveOptsFor below both build their own opts, and a rule added to one
     // of them only would paint reachable Grids the confirm step then refuses.
     allowed: tetherCap(t, ctx.state.tokens),
+    // LPA-21 Firefly, on the OVERLAY as well as on the route below — this page
+    // builds MoveOpts twice and a rule added to one paints Grids the other
+    // refuses.
+    phaseThrough: phasesThroughUnits(ctx.data, ctx.state.tokens, t),
   });
 }
 
@@ -448,6 +452,7 @@ function moveOptsFor(ctx: HudCtx, t: Token, flying: boolean) {
     exitCost: flying || t.aerial ? undefined : breakAwayCost(ctx.data, t, ctx.state.tokens, terrain),
     crushable: (c: number, r: number) => crushTargets(t, c, r, terrain, ctx.state.tokens) !== null,
     allowed: tetherCap(t, ctx.state.tokens),
+    phaseThrough: phasesThroughUnits(ctx.data, ctx.state.tokens, t),
   };
 }
 
@@ -1175,7 +1180,7 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
       // unit rather than the Action.
       const ticks: TickVerdict = t.kind !== 'mech'
         ? canActivate(o)
-        : len ? canPerform(o, a, key, { flexible: flexTiming(a) }) : { ok: true };
+        : len ? canPerform(o, a, key, { flexible: flexTiming(a), anyTiming: anyStartTiming(ctx.data, t) }) : { ok: true };
       // The board's reason comes first: being out of ammo is a truer answer
       // than "not enough Ticks" when both are true.
       const stopped = blockedBy.get(key);
@@ -1850,7 +1855,9 @@ function landingCandidates(ctx: HudCtx): { c: number; r: number; ok: boolean }[]
   const a = t ? actionOn(ctx, t, m.actionId) : undefined;
   if (!t || !a) return [];
   const sight = needsSightToLanding(a);
-  const range = a.range ?? 0;
+  // Mirrors landingCandidates in main.ts, including this line: XPA-62's +2 has
+  // to be read here too or the two boards paint different Grids.
+  const range = projectileReach(ctx.data, t, a);
   const terrain = terrainOf(ctx);
   const from = { c: Math.floor(t.col / 3), r: Math.floor(t.row / 3) };
   const out: { c: number; r: number; ok: boolean }[] = [];
@@ -1961,7 +1968,7 @@ function launchPanel(ctx: HudCtx): string {
         <p class="tp-note">${sight
           ? 'Direct Fire: the Landing Point must be a Grid this unit can see, and one terrain does not fill.'
           : 'Fire in arc, so no line of sight to the Landing Point is needed.'} A Landing Point is a Grid, not a unit. Nothing is targeted yet.</p>
-        <p class="tp-dim">${cands.length} legal ${cands.length === 1 ? 'Grid' : 'Grids'} within Range ${a?.range ?? 0}. ${total > 1
+        <p class="tp-dim">${cands.length} legal ${cands.length === 1 ? 'Grid' : 'Grids'} within Range ${t && a ? projectileReach(ctx.data, t, a) : 0}. ${total > 1
           ? `Volley ${total} lets you place up to ${total}, one Ammo Token each, and you may stop early.`
           : 'One Ammo Token is spent.'}</p>
         ${cands.length ? '' : '<p class="tp-note">Nothing is in range and in sight, so there is nowhere legal to put it.</p>'}
@@ -2507,10 +2514,13 @@ function counterPanel(ctx: HudCtx): string {
     : 'Both sides have rolled.';
   // Focus is offered after the verdict is visible, which is when a player
   // actually knows whether they need it (4.10).
-  // The last Link can never be spent voluntarily (4.10, FAQ L1).
-  const canFocus = owed.filter((o) => mine(ctx, o.t.side) && !o.focused && (o.t.link ?? 0) > 1);
+  // The last Link can never be spent voluntarily (4.10, FAQ L1) — but ZPA-39
+  // Cadaver's Focus spends nothing, so canAffordFocus is the one gate all four
+  // Focus surfaces now ask. Asking `link > 1` here would have hidden the row
+  // from a Cadaver the command would have accepted.
+  const canFocus = owed.filter((o) => mine(ctx, o.t.side) && !o.focused && canAffordFocus(ctx.data, o.t));
   const focusRows = canFocus
-    .map((o) => `<button class="rowwide" data-ewfocus="${o.t.uid}">Focus with ${esc(o.t.label)}<span class="ct">1 Link · ${o.t.link} left</span></button>`)
+    .map((o) => `<button class="rowwide" data-ewfocus="${o.t.uid}">Focus with ${esc(o.t.label)}<span class="ct">${focusIsFree(ctx.data, o.t) ? 'free · Will to Survive' : `1 Link · ${o.t.link} left`}</span></button>`)
     .join('');
   const winner = v?.initiatorWins ? init : resp;
   const iOwn = mine(ctx, init.side);
@@ -4734,7 +4744,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     // this exchange is split across the two seats.
     if (!ctx.send({ kind: 'focus', seat: t.side, uid: t.uid }).ok) { ctx.refresh(); return; }
     const ev = counterPool(t);
-    void ctx.rollHits(ev, `spends 1 Link to Focus the Counter-roll`).then((res) => {
+    void ctx.rollHits(ev, focusIsFree(ctx.data, t) ? `Focuses the Counter-roll for free (Will to Survive)` : `spends 1 Link to Focus the Counter-roll`).then((res) => {
       ctx.send({ kind: 'rollCounter', seat: t.side, uid: t.uid, faces: res.dice.map((d) => d.face), focused: true });
       ctx.refresh();
     });

@@ -48,8 +48,21 @@ check('and it publishes AFTER the step is built, not before',
 const canFocus = src.slice(src.indexOf('private canFocus('), src.indexOf('private beginFocus('));
 check('a Surplus round refuses the attacker — the Mutilation case',
   /side === 'attacker' && c\.surplusRound > 0/.test(canFocus), true);
-check('a non-Mech attacker is refused — the Drone case', /t\.kind === 'mech'/.test(canFocus), true);
-check('and a Mech at 0 Link is refused', /\(t\.link \?\? 0\) > 0/.test(canFocus), true);
+// The Mech test and the Link floor moved OUT of canFocus and into units.ts's
+// canAffordFocus, which is now asked by all four Focus surfaces rather than
+// each keeping its own answer (they used to disagree: > 0 here, > 1 in two
+// places and no gate at all on the mirror). Both refusals still hold; this
+// follows them to their new home rather than pinning the old wording.
+check('canFocus asks the one shared affordability reader',
+  /canAffordFocus\(this\.data, t\)/.test(canFocus), true);
+const units = readFileSync(new URL('../src/units.ts', import.meta.url), 'utf8');
+const afford = units.slice(units.indexOf('export function canAffordFocus'), units.indexOf('// LPA-23-2 Onyx Mellow Chord'));
+check('a non-Mech attacker is refused — the Drone case', /t\.kind !== 'mech'/.test(afford), true);
+// > 1, not > 0: a Mech at exactly 1 Link cannot spend it (4.10, FAQ L1), and
+// this gate used to admit it and then watch the command refuse.
+check('and a Mech that cannot spend a Link is refused', /\(t\.link \?\? 0\) > 1/.test(afford), true);
+// ZPA-39 Cadaver is the one exception, because it consumes nothing.
+check('unless the reroll costs nothing at all', /focusIsFree\(data, t\)/.test(afford), true);
 
 // ---------- beginFocus still does not render, which is WHY order matters ----------
 const beginFocus = src.slice(src.indexOf('private beginFocus('), src.indexOf('private focusDeclare('));

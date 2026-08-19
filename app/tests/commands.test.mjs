@@ -148,6 +148,18 @@ const tethering = unitsSrc.slice(
 const meleeSrc = readFileSync(new URL('../src/melee.ts', import.meta.url), 'utf8');
 const leash = meleeSrc.slice(meleeSrc.indexOf('// ---------- Tether X'));
 if (!faces || !partSlots || !tethering || !leash) throw new Error('could not locate the Tether machinery');
+// The phase-7 pilot predicates, sliced rather than mirrored: WHICH pilot a rule
+// answers to is the rule, and a mirror here could agree with a reader that
+// dispatches on the wrong id. The block starts AFTER pilotCard/maxLink (2761-69
+// today), which the stubs below already provide, so nothing is declared twice.
+// Overlap-checked against every other cut in this file: the nearest above ends
+// at defaultUnitLabel (2625) and the nearest below starts at the Tether faces
+// (3211), so this range is clear.
+const pilotTraits = unitsSrc.slice(
+  unitsSrc.indexOf('// ---------- Pilot traits (phase 7) ----------'),
+  unitsSrc.indexOf('// A Mech Maneuvers at the Maneuver Value'),
+);
+if (!pilotTraits) throw new Error('could not locate the phase-7 pilot predicates in units.ts');
 const timings = types.slice(types.indexOf('export const PHASES'), types.indexOf('export type TokenShape'));
 const statuses = types.slice(types.indexOf('export function hexagonIds'), types.indexOf('export interface RoundState'));
 const tmp = new URL('./_commands.slice.ts', import.meta.url);
@@ -272,6 +284,7 @@ writeFileSync(
     + faces
     + partSlots
     + stubs
+    + pilotTraits
     // After the stubs: the Tether block reads the stubbed tokenCards and
     // syncMagazines, and a function hoists but a `const` stub does not.
     + tethering
@@ -2411,6 +2424,244 @@ globalThis.__baseData = data;
   C.apply(data, back, { kind: 'restoreAmmo', seat: 's1', uid: 1, actionId: '129_A' });
   check('restoreAmmo refills the Pod, not the Pack', back.tokens[0].ammo['129_A'], 1);
   check('and leaves the Pack where it was', back.tokens[0].ammo['086_A'], 1);
+}
+
+// ---------- Pilot traits (phase 7), against the REAL pilot cards ----------
+//
+// Every one of these dispatches on a card id, so the assertion that matters is
+// that the id in cards.json is the one the reader answers to. A fixture pilot
+// would pass against a reader keyed on the wrong card, which is precisely the
+// failure this section exists to catch — so the pilots come out of the shipped
+// data, and each rule is asserted BOTH ways: it fires for the pilot who has it
+// and does NOT fire for a pilot who does not.
+{
+  const pilots = JSON.parse(readFileSync(new URL('../../data/cards.json', import.meta.url), 'utf8'));
+  const pool = Array.isArray(pilots) ? pilots : pilots.cards;
+  const pilot = (id) => {
+    const c = pool.find((x) => x.id === id);
+    if (!c) throw new Error(`pilot ${id} is missing from cards.json`);
+    if (c.category !== 'pilot') throw new Error(`${id} is not a pilot card`);
+    data.byId.set(id, c);
+    return c;
+  };
+  const wu = pilot('FPA-03');       // 坚毅 Fortitude: no Link loss on Part destruction
+  const quartz = pilot('LPA-19');   // 沉著 Composure: +1 Link at the end of each round
+  const cadaver = pilot('ZPA-39');  // 求生意志: Focus is free at <= 3 Parts
+  // A pilot from this same cluster with none of the traits under test, used as
+  // the negative control throughout. Anser's trait is a Structure floor, so it
+  // can never mask a Link rule.
+  const anser = pilot('FPA-05');
+  check('the pilots under test are the ones the cards print',
+    [wu.trait, quartz.trait, cadaver.trait, anser.trait], ['坚毅', '沉著', '求生意志', '不竭']);
+
+  // A Part with no Structure Value, so one Penetration destroys it outright and
+  // the Link consequence is reachable in a single command.
+  data.byId.set('PL0', { id: 'PL0', category: 'mech_part', structure: 0, actions: [] });
+
+  const piloted = (uid, pilotId, over = {}) => ({
+    uid, side: 's1', kind: 'mech', stance: 'offensive', label: `M${uid}`, col: 3, row: 3, facing: 0, size: 3,
+    mech: { torso: 'T1', leftHand: 'PL0', rightHand: 'PL0', chasis: 'PL0', pilot: pilotId },
+    partStates: { torso: 'intact', leftHand: 'intact', rightHand: 'intact', chasis: 'intact' },
+    link: 4, ...over,
+  });
+  // applyCommand looks the ACTOR up before the switch and drops the command if
+  // it is not on the board, so the attacker has to be a real token.
+  const shooter = () => ({ ...piloted(9, 'FPA-05'), side: 's2', label: 'Enemy' });
+  const hit = (uid, slot) => ({ kind: 'applyPenetration', seat: 's2', uid: 9, targetUid: uid, slot });
+
+  // ---------- FPA-03 Wu — Fortitude ----------
+
+  {
+    const s = world([piloted(1, 'FPA-03'), piloted(2, 'FPA-05'), shooter()]);
+    C.apply(data, s, hit(1, 'leftHand'));
+    check('FPA-03 Wu keeps his Link when a Part is destroyed', s.tokens[0].link, 4);
+    check('and the Part really did go (the rule is about Link, not Parts)', s.tokens[0].partStates.leftHand, 'destroyed');
+    C.apply(data, s, hit(2, 'leftHand'));
+    check('a pilot without Fortitude still loses 1 Link', s.tokens[1].link, 3);
+
+    // The Integrity-Loss kill is owed either way (FAQ P4) — it is stamped
+    // outside the Link guard, and a reader that moved it inside would hand Wu
+    // an unearned survival at the End Phase.
+    check('and Wu still records who took the Part (FAQ P4)', s.tokens[0].lastDamagedBy, { side: 's2', uid: 9 });
+
+    // Fortitude is not an immortality card: at 1 Link, a Part loss that would
+    // Shut a Mech down leaves Wu awake, but Integrity Loss is untouched.
+    const low = world([piloted(3, 'FPA-03', { link: 1 }), piloted(4, 'FPA-05', { link: 1 }), shooter()]);
+    C.apply(data, low, hit(3, 'leftHand'));
+    C.apply(data, low, hit(4, 'leftHand'));
+    check('at 1 Link Wu does not Shut Down', [low.tokens[0].link, low.tokens[0].stance], [1, 'offensive']);
+    check('while the control Mech does', [low.tokens[1].link, low.tokens[1].stance], [0, 'shutdown']);
+  }
+
+  // ---------- LPA-19 Quartz — Composure ----------
+
+  {
+    const roll = (s) => C.apply(data, s, { kind: 'advancePhase', seat: 's1' });
+    const atEnd = (tokens) => {
+      const s = world(tokens, C.PHASES.length - 1);
+      return s;
+    };
+
+    const s = atEnd([piloted(1, 'LPA-19', { link: 2 }), piloted(2, 'FPA-05', { link: 2 })]);
+    roll(s);
+    check('the round really did roll over', [s.round.n, s.round.phase], [2, 0]);
+    check('LPA-19 Quartz recovers 1 Link at the end of the round', s.tokens[0].link, 3);
+    check('a pilot without Composure recovers nothing', s.tokens[1].link, 2);
+
+    // maxLink is the pilot's printed Link Value, and every other +1 path is
+    // clamped by it — Composure is not an exception.
+    const full = atEnd([piloted(3, 'LPA-19', { link: quartz.LV })]);
+    roll(full);
+    check('and it cannot climb past the pilot\'s Link Value', full.tokens[0].link, quartz.LV);
+
+    // A Shutdown Quartz comes back to 1 Link and stays Shutdown: only reboot
+    // clears the Stance (4.1.1).
+    const out = atEnd([piloted(4, 'LPA-19', { link: 0, stance: 'shutdown' })]);
+    roll(out);
+    check('a Shutdown Quartz gains the Link but stays Shutdown',
+      [out.tokens[0].link, out.tokens[0].stance], [1, 'shutdown']);
+
+    // Mid-round phase advances must not pay it out — five phases a round would
+    // otherwise hand Quartz five Link.
+    const mid = world([piloted(5, 'LPA-19', { link: 2 })], 1);
+    roll(mid);
+    check('an ordinary phase advance recovers nothing', [mid.tokens[0].link, mid.round.n], [2, 1]);
+  }
+
+  // ---------- ZPA-40 Shrike — Elation ----------
+  //
+  // combat.ts decides WHEN (Offensive Stance, Melee, an enemy Part destroyed);
+  // the command is what actually moves the Link, and it carries its own gate so
+  // a replayed or relayed copy cannot mint Link for anyone else.
+
+  {
+    const shrike = pilot('ZPA-40');
+    check('ZPA-40 is the Elation card', shrike.trait, '欢愉');
+
+    const rl = (uid) => ({ kind: 'restoreLink', seat: 's1', uid });
+    const s = world([piloted(1, 'ZPA-40', { link: 2 }), piloted(2, 'FPA-05', { link: 2 })]);
+    check('restoreLink is allowed for Shrike', C.check(data, s, rl(1)).ok, true);
+    C.apply(data, s, rl(1));
+    check('and restores exactly 1 Link', s.tokens[0].link, 3);
+    check('a Mech piloted by anyone else is refused', C.check(data, s, rl(2)).ok, false);
+
+    // The ceiling is the pilot's Link Value, the same clamp every other restore
+    // uses — a Shrike carving through Parts cannot bank Link above it.
+    const full = world([piloted(3, 'ZPA-40', { link: shrike.LV })]);
+    check('and it is refused at the pilot\'s Link Value', C.check(data, full, rl(3)).ok, false);
+    C.apply(data, full, rl(3));
+    check('even applied blind it cannot climb past it', full.tokens[0].link, shrike.LV);
+
+    // The generic actor guard covers the seat: a player cannot restore Link on
+    // the other squad's Shrike.
+    const foe = world([{ ...piloted(4, 'ZPA-40', { link: 1 }), side: 's2' }]);
+    check('and the other squad\'s Shrike is not yours to heal',
+      C.check(data, foe, { kind: 'restoreLink', seat: 's1', uid: 4 }).ok, false);
+  }
+
+  // ---------- ZPA-39 Cadaver — Will to Survive ----------
+  //
+  // The rule is made in the COMMAND, not in the four UIs that send it: all
+  // four keep sending a plain `focus`, so a screen cannot disagree with the
+  // engine about what a reroll costs.
+
+  {
+    check('ZPA-39 prints the <= 3 Parts threshold this reader was written to',
+      /less than or equal to 3 Parts[\s\S]*does not consume Link/.test(cadaver.traitDescription.en), true);
+
+    const foc = (uid) => ({ kind: 'focus', seat: 's1', uid });
+    // piloted() equips four Parts, so one destruction takes it to three.
+    const hurt = (uid, pilotId, link) => ({
+      ...piloted(uid, pilotId, { link }),
+      partStates: { torso: 'intact', leftHand: 'destroyed', rightHand: 'intact', chasis: 'intact' },
+    });
+
+    const whole = world([piloted(1, 'ZPA-39', { link: 3 })]);
+    C.apply(data, whole, foc(1));
+    check('a Cadaver still on 4 Parts pays for its Focus like anyone else', whole.tokens[0].link, 2);
+
+    const s = world([hurt(2, 'ZPA-39', 3), hurt(3, 'FPA-05', 3)]);
+    check('at 3 Parts the Cadaver Focus is allowed', C.check(data, s, foc(2)).ok, true);
+    C.apply(data, s, foc(2));
+    check('and consumes no Link', s.tokens[0].link, 3);
+    C.apply(data, s, foc(3));
+    check('while a pilot without the trait still pays', s.tokens[1].link, 2);
+
+    // 4.10 / FAQ L1 forbids SPENDING the last Link. Cadaver spends nothing, so
+    // there is no spend for the floor to bite on.
+    const last = world([hurt(4, 'ZPA-39', 1), hurt(5, 'FPA-05', 1)]);
+    check('a Cadaver on 1 Link may still Focus', C.check(data, last, foc(4)).ok, true);
+    check('while anyone else on 1 Link is refused (4.10, FAQ L1)', C.check(data, last, foc(5)).ok, false);
+    C.apply(data, last, foc(4));
+    check('and it neither loses the Link nor Shuts Down',
+      [last.tokens[0].link, last.tokens[0].stance], [1, 'offensive']);
+
+    // A Shutdown Cadaver can still DEFEND, so it can still Focus that roll.
+    const out = world([hurt(6, 'ZPA-39', 0, {}), ]);
+    out.tokens[0].link = 0; out.tokens[0].stance = 'shutdown';
+    check('and a Shutdown Cadaver may Focus its Defense Roll', C.check(data, out, foc(6)).ok, true);
+    C.apply(data, out, foc(6));
+    check('with the Link still at 0 rather than going negative', out.tokens[0].link, 0);
+
+    // A Repaired Part stays 'destroyed' by design (FAQ J21/J23), so the count
+    // is unaffected by a repair — right by the rules, and worth pinning.
+    const repaired = world([hurt(7, 'ZPA-39', 3)]);
+    C.apply(data, repaired, { kind: 'repairPart', seat: 's1', uid: 7, slot: 'leftHand', mode: 'repair' });
+    check('a Repaired Part is still a destroyed Part, so the count holds',
+      [repaired.tokens[0].partStates.leftHand !== 'intact', C.check(data, repaired, foc(7)).ok], [true, true]);
+  }
+
+  // ---------- FPA-05 Anser — Inexhaustible ----------
+  //
+  // The DAMAGE LADDER is the rule: a 0-Structure Chassis skips 'damaged' and
+  // one Penetration destroys it. Driven off real chassis cards, because "has no
+  // Structure Value" is a fact about the shipped data, not a fixture.
+
+  {
+    const anserPilot = pilot('FPA-05');
+    check('FPA-05 is the Inexhaustible card', anserPilot.trait, '不竭');
+    check('and the curated effect names the chassis slot the reader keys on',
+      anserPilot.traitEffects?.map((e) => [e.type, e.value]), [['chasis_min_structure', 2]]);
+
+    // 099 LM231 Standard Chassis: armor 4, structure 0 — one of ten in the pool.
+    // 101 LM213B Combat Chassis: structure 1, the control for "already has one".
+    const bare = pool.find((c) => c.id === '099');
+    const solid = pool.find((c) => c.id === '101');
+    if (!bare || !solid) throw new Error('chassis 099 / 101 are missing from cards.json');
+    check('099 really is a 0-Structure Chassis and 101 really is not',
+      [bare.structure ?? 0, solid.structure ?? 0], [0, 1]);
+    data.byId.set('099', bare);
+    data.byId.set('101', solid);
+
+    const chassisMech = (uid, pilotId, chasis = '099') => ({
+      uid, side: 's1', kind: 'mech', stance: 'offensive', label: `M${uid}`, col: 3, row: 3, facing: 0, size: 3,
+      mech: { torso: 'T1', chasis, pilot: pilotId },
+      partStates: { torso: 'intact', chasis: 'intact' }, link: 4,
+    });
+
+    const s = world([chassisMech(1, 'FPA-05'), chassisMech(2, 'LPA-19'), shooter()]);
+    C.apply(data, s, hit(1, 'chasis'));
+    check('with Anser aboard a 0-Structure Chassis goes to DAMAGED, not destroyed',
+      s.tokens[0].partStates.chasis, 'damaged');
+    C.apply(data, s, hit(2, 'chasis'));
+    check('and without him one Penetration still destroys it outright',
+      s.tokens[1].partStates.chasis, 'destroyed');
+    // The second Penetration finishes it, so the granted Structure buys one
+    // extra hit and no more.
+    C.apply(data, s, hit(1, 'chasis'));
+    check('a second Penetration destroys the Anser Chassis', s.tokens[0].partStates.chasis, 'destroyed');
+
+    // Scope: only the Chassis, and only when the printed value is 0.
+    const torsoHit = world([chassisMech(3, 'FPA-05'), shooter()]);
+    torsoHit.tokens[0].mech.leftHand = '099';
+    torsoHit.tokens[0].partStates.leftHand = 'intact';
+    C.apply(data, torsoHit, hit(3, 'leftHand'));
+    check('the same 0-Structure card in another slot gets nothing',
+      torsoHit.tokens[0].partStates.leftHand, 'destroyed');
+    const printed = world([chassisMech(4, 'FPA-05', '101'), shooter()]);
+    C.apply(data, printed, hit(4, 'chasis'));
+    check('and a Chassis that prints a Structure keeps its own', printed.tokens[0].partStates.chasis, 'damaged');
+  }
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

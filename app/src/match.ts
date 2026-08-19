@@ -24,7 +24,7 @@ import { SquadTracker } from './squads';
 import { Panel } from './panel';
 import { iconSvg } from './dice';
 import type { CombatView, DiceData, DieColor, GameState, Side, Token } from './types';
-import { SLOT_LABEL, stationaryAdjusted } from './units';
+import { focusIsFree, SLOT_LABEL, stationaryAdjusted } from './units';
 import { PHASES, statusCount } from './types';
 
 // The Match Centre: a separate page for networked play, so the freeplay board
@@ -2123,8 +2123,16 @@ function combatMirrorHtml(): string | null {
   const focus = view.focus;
   let focusUi = '';
   if (focus && iAmDefender && focus.stage === 'declareD') {
-    focusUi = `<div class="ah-step"><p><b>Focus (4.4.1-5)</b>: you may spend 1 Link (${df.link ?? 0} left) to reroll any of your Defense dice.</p>
-      <button class="ah-primary" data-act="focususe">Focus — spend 1 Link</button>
+    // The mirror derives "is it free" from the board rather than from the
+    // published view: both clients hold the same tokens (t.link and partStates
+    // are both fingerprinted), so the answer is the same on both sides and no
+    // new CombatView field has to survive normaliseCombatView — a whitelist
+    // this codebase has already dropped five fields through.
+    const freeFocus = !!data && focusIsFree(data, df);
+    focusUi = `<div class="ah-step"><p><b>Focus (4.4.1-5)</b>: ${freeFocus
+      ? 'your Mech is down to 3 Parts, so this reroll costs no Link at all (Will to Survive).'
+      : `you may spend 1 Link (${df.link ?? 0} left) to reroll any of your Defense dice.`}</p>
+      <button class="ah-primary" data-act="focususe">${freeFocus ? 'Focus — free' : 'Focus — spend 1 Link'}</button>
       <button class="ah-alt" data-act="focuspass">Pass</button></div>`;
   } else if (focus && iAmDefender && focus.stage === 'rerollD' && focus.defenderUse && view.defense?.length) {
     focusUi = `<div class="ah-step"><p>Pick the Defense dice to reroll, then roll. The Link is already spent.</p>

@@ -32,6 +32,16 @@ const commandGen = unitsSrc.slice(
   unitsSrc.indexOf('// ---------- Commands (rulebook 3.2.1) ----------'),
   unitsSrc.indexOf('// ---------- Charge (rulebook 4.14) ----------'),
 );
+// The phase-7 pilot predicates. commands.ts now asks them inside
+// applyPenetration, advancePhase, focus and restoreLink, so the driver reaches
+// them on every simulated game — sliced rather than mirrored, because WHICH
+// pilot a rule answers to is the rule. The block starts AFTER pilotCard and
+// maxLink, which the stubs below already provide, so nothing is declared twice.
+const pilotTraits = unitsSrc.slice(
+  unitsSrc.indexOf('// ---------- Pilot traits (phase 7) ----------'),
+  unitsSrc.indexOf('// A Mech Maneuvers at the Maneuver Value'),
+);
+if (!pilotTraits) throw new Error('could not locate the phase-7 pilot predicates in units.ts');
 const timings = types.slice(types.indexOf('export const PHASES'), types.indexOf('export type TokenShape'));
 const statuses = types.slice(types.indexOf('export function hexagonIds'), types.indexOf('export interface RoundState'));
 const tmp = new URL('./_simgame.slice.ts', import.meta.url);
@@ -137,6 +147,14 @@ export function makeMechToken(state: any, data: any, loadout: any, side: any, na
     link: pilot?.LV ?? 3, partStates, ammo,
   };
 }
+// Grace Note measures a distance, so the pilot block wants the Large-Grid sum.
+// These fixtures are not about range; the real Manhattan arithmetic is enough.
+export function largeGridOf(t: any): any { return { c: Math.floor(t.col / 3), r: Math.floor(t.row / 3) }; }
+export function rangeBetween(a: any, b: any): any {
+  const ga = largeGridOf(a), gb = largeGridOf(b);
+  const dc = Math.abs(ga.c - gb.c), dr = Math.abs(ga.r - gb.r);
+  return { range: dc + dr, adjacent: dc <= 1 && dr <= 1, sameGrid: dc === 0 && dr === 0 };
+}
 `;
 let sliceSrc =
   'type GameState = any;\ntype Side = any;\ntype Stance = any;\ntype Timing = any;\ntype TimingDef = any;\ntype Facing = any;\ntype GameData = any;\ntype CardAction = any;\ntype ExtraTick = any;\ntype Opportunity = any;\ntype Token = any;\ntype StatusDef = any;\ntype PartSlot = any;\ntype PartState = any;\n'
@@ -149,6 +167,7 @@ let sliceSrc =
   + smokeRules
   + ticks.replace(/^import[^\n]*\n/gm, '')
   + stubs
+  + pilotTraits
   + commandGen
   + commands.replace(/^import[^\n]*\n/gm, '');
 // The driver builds real script states and opportunities, which live outside

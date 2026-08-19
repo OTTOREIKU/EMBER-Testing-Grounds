@@ -47,7 +47,7 @@ import { PlayGuide } from './playguide';
 import type { Card, CardAction, DiceData, DieColor, Facing, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, StatusDef, TerrainPiece, Timing, Token } from './types';
 import { addStatus, normaliseScript, SCALES, statusCount, statusesFor, STATUSES } from './types';
 import { actionIdOf } from './ticks';
-import { transformOffer, automaticShieldFor, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, twoHandedUse, electronicValue, martyrdomOwed, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, loanedParts, minesLayable, minesOwed, multiTargetLimit, unfoldsOwed, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, maneuverIsSilent, maneuverSilenceDenier, chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, type Resupply, resupplyOf, SLOT_LABEL, stationaryAdjusted, interceptLeft, interceptsOwed, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf, type AttackReaction } from './units';
+import { transformOffer, automaticShieldFor, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, twoHandedUse, electronicValue, martyrdomOwed, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, loanedParts, phasesThroughUnits, minesLayable, minesOwed, multiTargetLimit, unfoldsOwed, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, maneuverIsSilent, maneuverSilenceDenier, chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, projectileReach, type Resupply, resupplyOf, SLOT_LABEL, stationaryAdjusted, interceptLeft, interceptsOwed, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf, type AttackReaction } from './units';
 import { registerOffline } from './offline';
 import { battlefieldLocked, countHits, firstPlayerFrom, newSetup, normaliseSetup, tasksLocked, type SetupState } from './setup';
 import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
@@ -1302,7 +1302,11 @@ async function init() {
     const t = state.tokens.find((x) => x.uid === m.uid);
     if (!t) return [];
     const sight = needsSightToLanding(m.action);
-    const range = m.action.range ?? 0;
+    // projectileReach, not a.range: XPA-62 Seagull's Projectile Actions reach
+    // 2 Grids further. This gate and its mirror in matchhud.ts are near-identical
+    // copies, so both are patched or the two pages disagree about where a
+    // grenade may land.
+    const range = projectileReach(data, t, m.action);
     const terrain = currentTerrain();
     const out: { c: number; r: number; ok: boolean }[] = [];
     const from = { c: Math.floor(t.col / 3), r: Math.floor(t.row / 3) };
@@ -1345,7 +1349,7 @@ async function init() {
           ? `<h4>Everything is launched</h4>
         <p class="dim">Take one back with ↺, or stop here to finish the Action.</p>`
           : `<h4>Click a highlighted Grid on the board</h4>
-        <p class="dim">${cands.length} legal ${cands.length === 1 ? 'Grid' : 'Grids'} within Range ${m.action.range ?? 0}.
+        <p class="dim">${cands.length} legal ${cands.length === 1 ? 'Grid' : 'Grids'} within Range ${projectileReach(data, state.tokens.find((x) => x.uid === m.uid) ?? ({} as Token), m.action)}.
           ${total > 1 ? `Volley ${total} lets you place up to ${total}, one Ammo Token each, and you may stop early.` : 'One Ammo Token is spent.'}</p>`
       }</div></div>`;
     const head = body.querySelector('.ah-head')!;
@@ -3282,6 +3286,11 @@ async function init() {
       // not on exitCost — and it binds a flyer exactly as hard as a walker,
       // which is why it sits outside the `flying` guard above.
       allowed: tetherCap(t, state.tokens),
+      // LPA-21 Firefly: a legality, like the leash above, and outside the
+      // `flying` guard for the same reason — a Firefly is not flying, it is
+      // slipping past. The landing still has to be legal and Break Away is
+      // still charged; only the ROUTE opens.
+      phaseThrough: phasesThroughUnits(data, state.tokens, t),
     };
   }
 

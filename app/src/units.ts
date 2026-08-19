@@ -1643,6 +1643,30 @@ export function auraEffectsOn(data: GameData, tokens: Token[], t: Token): Set<st
   return out;
 }
 
+// LPA-21 Firefly, 匿踪 Stealth: "Piloted Mech's movement route may pass through
+// other units when Optical Camouflage is on or in Low Profile."
+//
+// Lives here rather than in the phase-7 predicate block because it needs the
+// BOARD — Low Profile has two sources and one of them is an ally's aura, which
+// is the same pair combat.ts reads for the Low Profile decision. Getting only
+// the Token half would under-grant an MES-Beacon Firefly, and rules/05:218 says
+// the aura kind cannot be Scanned off, so the two genuinely differ.
+//
+// KNOWN OVER-GRANT, and it is not this reader's to fix: nothing in this engine
+// removes a Low Profile Token on Movement or a facing change, even though
+// rules/05_advanced_combat.md:204 and the status note in types.ts both promise
+// it (the long comment above hasLowProfileSource's neighbours records that gap
+// and who has to gate its removal on Silence). Until that ships, a Firefly that
+// ever gains a Low Profile Token phases through units for the rest of the game.
+// The Camouflage half has no such hole: the reveal-on-movement sweeps exist on
+// both boards.
+export function phasesThroughUnits(data: GameData, tokens: Token[], t: Token): boolean {
+  if (!pilotIs(data, t, 'LPA-21')) return false;
+  if (statusCount(t.statuses, 'camouflage') > 0) return true;
+  if (statusCount(t.statuses, 'lowProfile') > 0) return true;
+  return auraEffectsOn(data, tokens, t).has('low_profile');
+}
+
 // EVERY one of these auras prints "This effect does not stack", so two sources
 // of the same effect are not added together — the strongest single one applies.
 export function auraValueOn(data: GameData, tokens: Token[], t: Token, kind: string): number {
@@ -2089,6 +2113,72 @@ export function earlyWarningCover(
     if (!scout) return false;
     return !smokeBlocks(r, attacker, smoke) && losBetween(r, attacker, terrain, tokens) !== 'blocked';
   });
+}
+
+// ---------- ZPA-37 Foxhound's 寻踪 Tracking (phase 7) ----------
+//
+// "If there are 2 or more Ally Drones that have line of sight to the target,
+// Firing Actions of this Mech ignore Low Profile." (以上 is inclusive, so the
+// Chinese and the English agree on "2 or more".)
+//
+// A THRESHOLD, which is why this returns the array where earlyWarningCover
+// returns one drone: 164 prints 此效果不可叠加 and so has nothing to count, and
+// this card has nothing else. Everything else is copied from that neighbour on
+// purpose — the liveness gates, the smoke leg and the 'obstructed still sees'
+// reading — so the two spotting rules answer "can this drone see it?" the same
+// way.
+//
+// THREE READINGS TAKEN HERE, all of them arguable, all of them written down:
+//
+//  1. SMOKE COUNTS. 4.16 says a Smoke Screen removes line of sight, and this
+//     card asks for line of sight in as many words. aaRadarCovers is the one
+//     reader that ignores smoke, and only because FAQ F5 exempts it by name; no
+//     FAQ exempts this one. The comment on earlyWarningCover above ends "do not
+//     make them consistent without a ruling" — this is the third card and it
+//     goes with 164, not with the Radar.
+//  2. 'obstructed' STILL SEES. Obstruction buys the defender White dice; it
+//     does not hide them. Both neighbours read `!== 'blocked'`; only 539
+//     Coordinated Observation demands 'clear', and that card says so.
+//  3. DRONES ONLY. `kind === 'drone'` and not merely "not a mech", or a Missile
+//     in flight would count as a spotter — projectiles are their own kind.
+//
+// AND ONE HOLE THAT IS NOT THIS READER'S TO CLOSE: losBetween returns 'clear'
+// the moment either endpoint is Aerial, and the card prints no Range, so two
+// FLYING ally drones switch this on board-wide. That is the shipped behaviour
+// of losBetween for every card that asks it, and narrowing it here would make
+// this one rule disagree with the Radar and the Scout. It needs a ruling, not
+// a local patch.
+export function trackingSpotters(
+  data: GameData,
+  tokens: Token[],
+  terrain: TerrainPiece[],
+  smoke: SmokeScreen[],
+  shooter: Token,
+  target: Token,
+): Token[] {
+  if (!pilotIs(data, shooter, 'ZPA-37')) return [];
+  return tokens.filter((r) => {
+    if (r.kind !== 'drone' || r.side !== shooter.side || r.deployed === false) return false;
+    if (r.uid === target.uid) return false;
+    if ((r.partStates?.main ?? 'intact') === 'destroyed') return false;
+    return !smokeBlocks(r, target, smoke) && losBetween(r, target, terrain, tokens) !== 'blocked';
+  });
+}
+
+// The threshold itself, so the call site reads as the rule rather than as an
+// arithmetic comparison someone could quietly change to 1.
+export const TRACKING_SPOTTERS_NEEDED = 2;
+
+export function trackingCover(
+  data: GameData,
+  tokens: Token[],
+  terrain: TerrainPiece[],
+  smoke: SmokeScreen[],
+  shooter: Token,
+  target: Token,
+): Token[] {
+  const found = trackingSpotters(data, tokens, terrain, smoke, shooter, target);
+  return found.length >= TRACKING_SPOTTERS_NEEDED ? found : [];
 }
 
 // ---------- Repeaters (FAQ O19/O20) ----------
@@ -2766,6 +2856,158 @@ export function pilotCard(data: GameData, t: Token): Card | undefined {
 // gets no ceiling rather than zero, so sandbox setups without pilots still work.
 export function maxLink(data: GameData, t: Token): number {
   return pilotCard(data, t)?.LV ?? 99;
+}
+
+// ---------- Pilot traits (phase 7) ----------
+//
+// Dispatch on the CARD ID, never on the trait text. Two reasons, both learned
+// the hard way. First, a pilot carries no actions and no gameRules, so the only
+// text a reader could match is `traitDescription` -- and eyesAreHeavyHits's own
+// regex (card 503) already matches LPA-24 Sealock's Chinese wording, so a
+// generic pilotSays would hand Sealock an unconditional always-on {Eye} swap the
+// moment it existed. partSays skips slot === 'pilot' for exactly that reason.
+// Second, the printed English carries publisher typos ("Cmmand Token", ZPA-36)
+// and the trait NAMES collide with part passives (CQC is both ZPA-35 and card
+// 017). 52 pilots is a closed set, so an id is both stable and unambiguous.
+//
+// This is the shipped house pattern, not a new one: ZPA-35 Chef matches
+// `pilotCard(...)?.id === 'ZPA-35'` in combat.ts and ZPA-36 Aster matches
+// 'ZPA-36' in commands.ts. Every phase-7 reader below goes through here.
+export function pilotIs(data: GameData, t: Token, id: string): boolean {
+  return pilotCard(data, t)?.id === id;
+}
+
+// How many Parts a unit still has. `partStates` holds only the equipped slots,
+// so a Mech built without a Backpack starts at FOUR, not five, and a Repaired
+// Part stays 'destroyed' by design (FAQ J21/J23) -- both are the correct
+// reading of "has N Parts" and both are asserted in the trait tests.
+//
+// This idiom was written out longhand at six sites before this helper existed
+// (loop.ts, commands.ts, combat.ts, playguide.ts, main.ts, tasks.ts); those are
+// left alone, but nothing new should add a seventh copy.
+export function partsLeft(t: Token): number {
+  return Object.values(t.partStates ?? {}).filter((p) => p !== 'destroyed').length;
+}
+
+// FPA-03 Wu, 坚毅 Fortitude: "Piloted Mech does not suffer reduced Link when a
+// part is destroyed." Narrow on purpose -- Wu keeps his LINK, not his Parts, so
+// Integrity Loss at <= 2 remaining Parts still removes the Mech in the End
+// Phase, and the other Link drains (Concussion/Wrecking, Target Tracing,
+// Overload, Focus) are untouched. He is not an immortality card.
+export function keepsLinkOnPartLoss(data: GameData, t: Token): boolean {
+  return pilotIs(data, t, 'FPA-03');
+}
+
+// FPA-05 Anser, 不竭 Inexhaustible: "If the Chassis of the piloted mech has no
+// Structure Value, consider as having 2 Structure Value."
+//
+// The Structure Value of a Part, asked in one place instead of read raw off the
+// card in three. It is load-bearing in the DAMAGE LADDER first — a 0-Structure
+// Chassis skips 'damaged' and is destroyed by one Penetration — and only then
+// in the defence pool.
+//
+// RULING, written down rather than left implied: all ten 0-Structure Chassis
+// cards in the pool carry a literal `structure: 0` and none omits the field, so
+// "no Structure Value" means 0 and there is no third state to distinguish.
+//
+// Scope is the CHASSIS only. Several Torsos and Backpacks also ship 0, and the
+// card names 下肢 / the Chassis alone. Note the slot key is `chasis`, one 's',
+// which is also how the card's own traitEffect spells it.
+export function structureOf(data: GameData, t: Token, slot: PartSlot | 'main'): number {
+  const printed = tokenCards(data, t).find((x) => x.slot === slot)?.card?.structure ?? 0;
+  if (slot === 'chasis' && printed <= 0 && pilotIs(data, t, 'FPA-05')) return 2;
+  return printed;
+}
+
+// ZPA-39 Cadaver, 求生意志 Will to Survive: "When this Mech has less than or
+// equal to 3 Parts, this Mech's Focus re-roll does not consume Link."
+//
+// RULING, and it decides the gates as well as the debit: 4.10 / FAQ L1 forbids
+// SPENDING the last Link voluntarily. Cadaver's Focus consumes nothing, so
+// there is no spend for that floor to bite on — a Cadaver on 1 Link, and a
+// Shutdown one on 0, may still Focus. That is why every Focus gate below asks
+// this predicate rather than only `link > 1`.
+//
+// partsLeft counts the equipped slots, so a Mech built without a Backpack
+// starts at FOUR and reaches the threshold one destruction sooner; that is the
+// correct reading of "has <= 3 Parts". A Repaired Part stays 'destroyed' by
+// design (FAQ J21/J23) and so still counts as gone.
+export function focusIsFree(data: GameData, t: Token): boolean {
+  return t.kind === 'mech' && pilotIs(data, t, 'ZPA-39') && partsLeft(t) <= 3;
+}
+
+// Whether this unit may declare a Focus reroll AT ALL. One predicate for four
+// screens: canFocus in the attack window, the freeplay counter-roll, the Match
+// Centre's counter-roll rows and the remote defender's mirror all used to ask
+// their own version — `> 0`, `> 1`, `> 1` and no gate at all — so a defender on
+// exactly 1 Link was offered a Focus the command then refused, and on the
+// mirror was refused and rerolled anyway.
+export function canAffordFocus(data: GameData, t: Token): boolean {
+  if (t.kind !== 'mech') return false;
+  return focusIsFree(data, t) || (t.link ?? 0) > 1;
+}
+
+// XPA-62 海鸥 (Seagull), 高抛发射: "· 本机抛射动作距离+2." — this Mech's
+// Projectile Actions get +2 distance. Chinese only: the card has no English, no
+// Japanese and no traitEffects, so this text alone governs.
+//
+// TRANSLATION CALL, and it is a real one. The card writes 距离 (distance), not
+// the house-standard 射程 (range) that stationaryBonus and the two-handed rider
+// both match on. For a Projectile Action the Landing Point IS the reach, so +2
+// Range is the fair reading — but it is a reading, not a quotation.
+//
+// SCOPE CALL: 抛射动作 is the whole Projectile TIMING, which projectileDelivery
+// splits into launch / deploy / lay. All three are Projectile Actions, so all
+// three get it — a Mine laid 2 Grids further is a real change and is meant.
+//
+// Applied as a REACH rather than by handing back a patched Action, because the
+// Match Centre stores only the actionId in its launch plan and re-resolves the
+// Action on every render, so a patched copy would not survive. One reader, four
+// raw reads replaced: the two mirrored landingCandidates gates and the two
+// "within Range N" labels beside them.
+export function projectileReach(data: GameData, t: Token, a: CardAction): number {
+  const base = a.range ?? 0;
+  if (a.type !== 'Projectile') return base;
+  return pilotIs(data, t, 'XPA-62') ? base + 2 : base;
+}
+
+// FPA-01 Misty, 变招 Feint: "In Tactical Timing, may perform Starting Action
+// from any timing."
+//
+// Deliberately its OWN reader and NOT a term inside hasFlexibleTiming (units.ts, beside cqcFlexible).
+// That function returns one boolean meaning "adjacent on the dial"; widening it
+// to "any" would silently hand the same freedom to every aura source and to
+// card 017 CQC, which print something narrower. The "in Tactical Timing" half
+// is not here either — it lives on the Opportunity, which this module never
+// sees, so canPerform tests it (ticks.ts).
+export function anyStartTiming(data: GameData, t: Token): boolean {
+  return pilotIs(data, t, 'FPA-01');
+}
+
+// LPA-23-2 Onyx Mellow Chord, 装饰音 Grace Note: "When piloted Mech performs a
+// Firing Action, if the target is within 3 grids, this Firing Action +1Y."
+//
+// A sibling of coolingBonus rather than a term inside it: coolingBonus reads
+// PARTS and is handed no defender, so it cannot answer a range question at all.
+// Both are applied where the attack pool is first built, so the spinner starts
+// on the number the card really rolls.
+//
+// "Within 3 grids" is `<= 3` on the Large-Grid Manhattan distance every other
+// range test in this codebase uses, and rangeBetween returns 0 for two units
+// sharing a Large Grid — so point-blank is inside, which is the reading the
+// card supports and every neighbouring rule already takes.
+const GRACE_NOTE_RANGE = 3;
+
+export function pilotDiceBonus(
+  data: GameData,
+  attacker: Token,
+  defender: Token | undefined,
+  a: CardAction,
+): { red: number; yellow: number } {
+  const out = { red: 0, yellow: 0 };
+  if (attacker.kind !== 'mech' || a.type !== 'Firing' || !defender) return out;
+  if (pilotIs(data, attacker, 'LPA-23-2') && rangeBetween(attacker, defender).range <= GRACE_NOTE_RANGE) out.yellow += 1;
+  return out;
 }
 
 // A Mech Maneuvers at the Maneuver Value printed on its Chassis; a Drone moves at

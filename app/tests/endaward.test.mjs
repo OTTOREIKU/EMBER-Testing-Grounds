@@ -42,6 +42,13 @@ const statuses = cut(types, 'export function hexagonIds', 'export interface Roun
 const scriptState = cut(types, 'export function newOpportunity', 'export type BattleScale', 'the script helpers');
 const smokeRules = cut(rules, 'export function smokeKey', 'export function smokeBlocks', 'smokeKey');
 const commandGen = cut(unitsSrc, '// ---------- Commands (rulebook 3.2.1) ----------', '// ---------- Charge (rulebook 4.14) ----------', 'Command Generation');
+// The phase-7 pilot predicates, which commands.ts asks inside applyPenetration,
+// advancePhase, focus and restoreLink — and advancePhase's round rollover is
+// exactly what this file drives. Sliced rather than mirrored, and starting
+// AFTER pilotCard/maxLink so the stubs below are not shadowed. Overlap-checked
+// against every other cut here: the nearest is Command Generation, which ends
+// far above it.
+const pilotTraits = cut(unitsSrc, '// ---------- Pilot traits (phase 7) ----------', '// A Mech Maneuvers at the Maneuver Value', 'the phase-7 pilot predicates');
 // Two cuts out of matchhud.ts, also disjoint: ensureScript 124-129 and
 // settleEndStep, which sits immediately above the wiring section at the bottom.
 const ensureScript = cut(hud, 'export function ensureScript', 'export function enterPhase', 'ensureScript');
@@ -113,6 +120,14 @@ export function makeMechToken(state: any, data: any, loadout: any, side: any, na
 // outside.
 export const scoreStub: { result: any } = { result: { lines: [], s1: 0, s2: 0 } };
 export function scorePreview(_ctx: any, _finalRound: boolean): any { return scoreStub.result; }
+// Grace Note measures a distance, so the pilot block wants the Large-Grid sum.
+// Nothing here is about range; the real Manhattan arithmetic is enough.
+export function largeGridOf(t: any): any { return { c: Math.floor(t.col / 3), r: Math.floor(t.row / 3) }; }
+export function rangeBetween(a: any, b: any): any {
+  const ga = largeGridOf(a), gb = largeGridOf(b);
+  const dc = Math.abs(ga.c - gb.c), dr = Math.abs(ga.r - gb.r);
+  return { range: dc + dr, adjacent: dc <= 1 && dr <= 1, sameGrid: dc === 0 && dr === 0 };
+}
 `;
 
 const tmp = new URL('./_endaward.slice.ts', import.meta.url);
@@ -131,6 +146,7 @@ writeFileSync(
     + ticks.replace(/^import[^\n]*\n/gm, '')
     + commandGen
     + stubs
+    + pilotTraits
     + commands.replace(/^import[^\n]*\n/gm, '')
     + ensureScript
     + settleStep,

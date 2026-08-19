@@ -95,5 +95,50 @@ check('a crush square is reachable', reach(big, 2, crushOpts, [], [big, small]).
 check('and movement does not continue past it', reach(big, 2, crushOpts, [], [big, small]).includes('0,2:2'), false);
 check('while an open route past it still works', reach(big, 2, crushOpts, [], [big, small]).includes('1,1:2'), true);
 
+// ---------- LPA-21 Firefly's 匿踪 Stealth: phaseThrough ----------
+//
+// "Piloted Mech's movement route may pass through other units when Optical
+// Camouflage is on or in Low Profile." WHICH pilot turns the flag on is
+// asserted in pilottraits.test.mjs against the real cards; what is checked here
+// is the movement rule the flag buys, which is where it could go badly wrong.
+{
+  // Size 3, because a Large Grid is 3x3 cells and two SMALL units share one
+  // happily — only a Large unit fills a Grid so that nothing else may enter.
+  const walker = unit(0, 0, 3);
+  const blocker = at(0, 1, 3);
+  const world = [walker, blocker];
+  const phase = { phaseThrough: true };
+
+  // Without it, a unit in the way is a wall: the Grid beyond is unreachable.
+  check('a blocked Grid stops the search',
+    reach(walker, 2, undefined, [], world).includes('0,2:2'), false);
+  check('and the blocked Grid itself is not reachable either',
+    reach(walker, 2, undefined, [], world).includes('0,1:1'), false);
+
+  // With it, the route passes THROUGH and the far side opens up.
+  check('phaseThrough lets the route cross an occupied Grid',
+    reach(walker, 2, phase, [], world).includes('0,2:2'), true);
+  // ROUTE, not destination: the occupied Grid is still not somewhere to stop.
+  check('but the occupied Grid is still not a legal place to stand',
+    reach(walker, 2, phase, [], world).includes('0,1:1'), false);
+
+  // THE TRAP. standingSpot folds terrain and unit footprints into one blocked
+  // set, so a naive `passable = true` walks through buildings. The re-check
+  // against an EMPTY token list is what keeps them solid.
+  const building = rubble(0, 1, false);
+  check('and a BUILDING is still solid, which is the whole point of the empty-token re-check',
+    reach(walker, 2, phase, [building], [walker]).includes('0,2:2'), false);
+  // Both at once: a unit standing in a building's Grid is still not passable.
+  check('a unit inside terrain does not open it either',
+    reach(walker, 2, phase, [building], world).includes('0,2:2'), false);
+
+  // Break Away is still charged: this is pass-through, not flight.
+  const locked = { ...phase, exitCost: (c, r) => (c === 0 && r === 0 ? 1 : 0) };
+  check('Break Away is still paid, so the step out costs 2',
+    reach(walker, 2, locked, [], world).includes('0,2:2'), false);
+  check('and with the Range to afford it, the same route opens — at 3, not 2',
+    reach(walker, 3, locked, [], world).includes('0,2:3'), true);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -311,5 +311,49 @@ check('the flag survives a save round trip',
 check('and an opportunity that never took it stays clean',
   T.normaliseOpportunity(JSON.parse(JSON.stringify(T.newOpportunity(9, 'firing')))).attackMode, undefined);
 
+// ---------- FPA-01 Misty's 变招 Feint ----------
+//
+// "In Tactical Timing, may perform Starting Action from any timing." A separate
+// opts flag from `flexible`, because the two grants are different sizes: this
+// one opens the whole dial and only while the dial reads Tactical. WHICH pilot
+// carries it is asserted in pilottraits.test.mjs against the real cards; what
+// is checked here is the rule ticks.ts actually applies.
+{
+  const feint = { anyTiming: true };
+  const swiftS = act('fs1', 'Swift', 's');
+  const meleeS = act('fm1', 'Melee', 's');
+  const movingS = act('fv1', 'Moving', 's');
+
+  check('on a Tactical dial, Feint opens a Swift Starting Action — three steps away',
+    T.canPerform(fresh('tactical'), swiftS, swiftS.id, feint).ok, true);
+  check('and a Melee one, which Flexible Timing could never reach from Tactical',
+    [T.canPerform(fresh('tactical'), meleeS, meleeS.id, feint).ok,
+      T.canPerform(fresh('tactical'), meleeS, meleeS.id, { flexible: true }).ok], [true, false]);
+  check('without the trait the same Action is refused',
+    T.canPerform(fresh('tactical'), swiftS).ok, false);
+
+  // The other half of the printed rule, and the half a reader keyed on the
+  // effect name alone would drop: it only opens the dial IN Tactical Timing.
+  check('on any other dial it does nothing',
+    [T.canPerform(fresh('firing'), swiftS, swiftS.id, feint).ok,
+      T.canPerform(fresh('melee'), movingS, movingS.id, feint).ok], [false, false]);
+  // Flexible Timing still works on those dials, so the two grants coexist.
+  check('and Flexible Timing is untouched by it',
+    T.canPerform(fresh('firing'), movingS, movingS.id, { flexible: true, anyTiming: true }).ok, true);
+
+  // The refusal has to blame the right card.
+  check('the refusal names Feint when Feint is what failed',
+    /Feint only opens the dial in Tactical Timing/.test(T.canPerform(fresh('firing'), swiftS, swiftS.id, feint).why), true);
+  check('and does not blame Flexible Timing for it',
+    /Flexible Timing only reaches/.test(T.canPerform(fresh('firing'), swiftS, swiftS.id, feint).why), false);
+
+  // It opens the STARTING Action only — it is not a Tick.
+  const started = T.spendAction(fresh('tactical'), swiftS, swiftS.id, feint);
+  check('the spend agrees with the check and marks the Opportunity started',
+    [started.started, started.action], [true, 1]);
+  check('and a second Action still costs its own Ticks',
+    T.canPerform(started, act('fs2', 'Swift', 'm'), 'fs2', feint).ok, false);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

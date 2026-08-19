@@ -2,7 +2,7 @@ import type { CombatView, Facing, GameState, MechLoadout, Opportunity, PartSlot,
 import { addStatus, ageTokens, newOpportunity, PHASES, statusCount, STATUSES, TIMINGS } from './types';
 import type { GameData } from './data';
 import { cardName, transformFaces, unfoldsInto } from './data';
-import { covertCarryLock, ammoDeliveryPool, opportunityBonusOn, ripostePart, defenseReactionOn, targetTracingOn, riderOnDrone, hasFlexibleTiming, commandGeneration, blinkTargets, isPositionSwap, electronicOrigins, loanedParts, unfoldToken, extrasFor, consumesCharge, cutTethersOn, electronicValue, freehandSlots, interceptCapacity, makeDroneToken, makeMechToken, maxLink, pilotCard, projectileDelivery, settleTethers, SLOT_LABEL, tetherTo, tokenCards, transformPartOn } from './units';
+import { covertCarryLock, ammoDeliveryPool, opportunityBonusOn, ripostePart, defenseReactionOn, targetTracingOn, riderOnDrone, hasFlexibleTiming, commandGeneration, blinkTargets, isPositionSwap, electronicOrigins, loanedParts, unfoldToken, extrasFor, consumesCharge, cutTethersOn, electronicValue, freehandSlots, interceptCapacity, anyStartTiming, focusIsFree, keepsLinkOnPartLoss, makeDroneToken, structureOf, makeMechToken, maxLink, partsLeft, pilotCard, pilotIs, projectileDelivery, settleTethers, SLOT_LABEL, tetherTo, tokenCards, transformPartOn } from './units';
 import { tetherCap } from './melee';
 import { canActivate, canAttackMode, canManeuver, canOverload, canPerform, spendAction, spendActivation, spendAttackMode, spendManeuver, spendOverload } from './ticks';
 import { tacticSpec, tacticTargets, type TacticCtx } from './tactics';
@@ -75,6 +75,14 @@ export type Command =
   // matching the chip: a stacked Square loses its most recent entry.
   | { kind: 'removeStatus'; seat: Side; uid: number; targetUid: number; statusId: string }
   | { kind: 'focus'; seat: Side; uid: number }
+  // ZPA-40 Shrike, 欢愉 Elation: "[Offensive Stance] When this Mech Destroys
+  // enemy Parts with Melee Actions, restore 1 Link." Its own command rather
+  // than a field on applyPenetration, whose payload is {seat, uid, targetUid,
+  // slot} and carries neither the Action nor the Stance -- widening that shape
+  // would touch replay compatibility for every Penetration ever recorded.
+  // Emitted from combat.ts, where `c.action` and `c.attacker.stance` are both
+  // in hand, and gated in check() so a client cannot mint Link with it.
+  | { kind: 'restoreLink'; seat: Side; uid: number }
   | { kind: 'forceMove'; seat: Side; uid: number; targetUid: number; to: { col: number; row: number }; push?: boolean; facing?: Facing }
   | { kind: 'spendAmmo'; seat: Side; uid: number; actionId: string }
   | { kind: 'restoreAmmo'; seat: Side; uid: number; actionId: string; amount?: number }
@@ -1172,6 +1180,7 @@ function checkActed(
       // borrowed from two Tarantulas is two Parts, not one repeated (FAQ O7).
       return fromVerdict(canPerform(o, a, cmd.partKey || a.id, {
         flexible: hasFlexibleTiming(data, state.tokens, t, a),
+        anyTiming: anyStartTiming(data, t),
       }));
     }
     case 'overload': {
@@ -1275,8 +1284,21 @@ function checkActed(
       return ok;
     }
     case 'focus': {
+      // ZPA-39 Cadaver's Focus consumes nothing, so 4.10's floor has no spend
+      // to bite on and a Cadaver may Focus at 1 Link — or at 0, Shutdown, where
+      // it can still defend.
+      if (focusIsFree(data, t)) return ok;
       // The last Link can never be spent voluntarily (4.10, FAQ L1).
       if ((t.link ?? 0) < 2) return no('Focus spends 1 Link, and the last Link can never be spent voluntarily (4.10).');
+      return ok;
+    }
+    case 'restoreLink': {
+      // The only source today is ZPA-40 Elation, and the gate is here rather
+      // than at the emit so the rule holds against a replayed or relayed
+      // command as well as against the button that sent it.
+      if (t.kind !== 'mech') return no('Only a Mech has a Link Value.');
+      if (!pilotIs(data, t, 'ZPA-40')) return no('That Mech is not piloted by Shrike.');
+      if ((t.link ?? 0) >= maxLink(data, t)) return no(`${t.label} is already at its pilot's Link Value.`);
       return ok;
     }
     case 'spendAmmo': {
@@ -1662,6 +1684,25 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       // All Terminal Tokens flip back face-up at the End Phase (5.3.3), so the
       // new round starts with every Terminal accessible again.
       for (const i of state.tasks?.items ?? []) if (i.kind === 'terminal') i.accessed = null;
+      // LPA-19 Quartz, 沉著 Composure: "Recover 1 Link at the end of each
+      // round." Hung on the round ROLLOVER rather than on a markEndStep id,
+      // because the two pages' End-Phase step orders genuinely differ (the
+      // guide runs remove/commons/tokens/tasks, the Match Centre runs
+      // tokens/smoke/remove/tasks) and the same id would therefore fire at a
+      // different moment on each. This runs once, from one command, for both.
+      //
+      // Two consequences worth stating rather than discovering:
+      //  - the markEndStep 'remove' sweep has already taken any Mech down to
+      //    <= 2 Parts, so a Quartz leaving on Integrity Loss does not recover;
+      //  - a Shutdown Quartz goes 0 -> 1 and STAYS Shutdown. Every other +1
+      //    Link path in the engine leaves Stance alone (stabilise, Aster) and
+      //    only `reboot` clears it (4.1.1), so Composure is not a
+      //    get-out-of-Shutdown card.
+      for (const x of state.tokens) {
+        if (x.kind !== 'mech' || !pilotIs(data, x, 'LPA-19')) continue;
+        if (x.partStates?.torso === 'destroyed') continue;
+        x.link = Math.min(maxLink(data, x), (x.link ?? 0) + 1);
+      }
     }
     return;
   }
@@ -2225,7 +2266,10 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       }
       if (a && o && sc) {
         sc.opp = t.kind === 'mech'
-          ? lockStance(t, spendAction(o, a, cmd.partKey || a.id, { flexible: hasFlexibleTiming(data, state.tokens, t, a) }))
+          // anyTiming rides along with flexible so the SPEND agrees with the
+          // check that let the Action through -- miss it and a Starting Action
+          // FPA-01 allowed is re-read as needing an Extra Tick it never used.
+          ? lockStance(t, spendAction(o, a, cmd.partKey || a.id, { flexible: hasFlexibleTiming(data, state.tokens, t, a), anyTiming: anyStartTiming(data, t) }))
           : spendActivation(o, a);
       }
       return;
@@ -2295,8 +2339,11 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       const target = state.tokens.find((x) => x.uid === cmd.targetUid);
       if (!target) return;
       const cur = target.partStates[cmd.slot] ?? 'intact';
-      const card = tokenCards(data, target).find((x) => x.slot === cmd.slot)?.card;
-      target.partStates[cmd.slot] = cur === 'intact' ? ((card?.structure ?? 0) > 0 ? 'damaged' : 'destroyed') : 'destroyed';
+      // structureOf, not card.structure: FPA-05 Anser gives a 0-Structure
+      // Chassis 2, and the DAMAGE LADDER is where that matters most — without
+      // it the Chassis still skips 'damaged' and dies to one Penetration, and
+      // the trait does nothing at all.
+      target.partStates[cmd.slot] = cur === 'intact' ? (structureOf(data, target, cmd.slot) > 0 ? 'damaged' : 'destroyed') : 'destroyed';
       // "The Tether Tokens are removed when the INITIATING unit is Penetrated"
       // (PDLH-202). Being Penetrated while tethered does nothing, which is the
       // point of the harpoon. Stamped here rather than in either page's
@@ -2305,8 +2352,13 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       // that would drift the moment one of them was edited alone.
       cutTethersOn(data, state, target, 'initiator');
       if (target.partStates[cmd.slot] === 'destroyed' && target.kind === 'mech') {
-        target.link = Math.max(0, (target.link ?? 0) - 1);
-        if (target.link === 0 && target.stance !== 'shutdown') target.stance = 'shutdown';
+        // FPA-03 Wu keeps his Link when a Part goes. The lastDamagedBy stamp
+        // below is NOT inside the guard: the Integrity-Loss kill (FAQ P4) is
+        // owed whether or not the Link moved.
+        if (!keepsLinkOnPartLoss(data, target)) {
+          target.link = Math.max(0, (target.link ?? 0) - 1);
+          if (target.link === 0 && target.stance !== 'shutdown') target.stance = 'shutdown';
+        }
         // The last unit to reduce the Part count gets the Integrity-Loss kill
         // if the Mech leaves in the End Phase (FAQ P4).
         target.lastDamagedBy = { side: cmd.seat, uid: cmd.uid };
@@ -2362,8 +2414,21 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       return;
     }
     case 'focus': {
+      // Nothing is consumed for a Cadaver at <= 3 Parts, so nothing is debited
+      // and the Shutdown consequence below cannot be reached by this route
+      // either. All four Focus senders keep sending a plain `focus`: the rule
+      // lives in the command, which is the single source of truth the four
+      // disagreeing UI gates used not to have.
+      if (focusIsFree(data, t)) return;
       t.link = Math.max(0, (t.link ?? 0) - 1);
       if (t.link === 0 && t.kind === 'mech' && t.stance !== 'shutdown') t.stance = 'shutdown';
+      return;
+    }
+    case 'restoreLink': {
+      // Clamped by the pilot's Link Value, the same ceiling stabilise, reboot
+      // and Aster's restore all use. Stance is left alone: no +1 Link path in
+      // this engine wakes a Shutdown Mech, only `reboot` does (4.1.1).
+      t.link = Math.min(maxLink(data, t), (t.link ?? 0) + 1);
       return;
     }
     case 'spendAmmo': {

@@ -85,7 +85,13 @@ writeFileSync(
     + 'function statusCount(list: any, id: string): number { return (list ?? []).filter((x: any) => x === id).length; }\n'
     // The real smoke reader, not a stand-in: it is the thing under test.
     + cut(rulesSrc, 'export function smokeKey', 'export function smokeBlocks', 'smokeKey')
-    + cut(rulesSrc, 'export function smokeBlocks', '\n}\n', 'smokeBlocks') + '\n}\n'
+    // Ends on the next DECLARATION, not on a "\n}\n" brace. rules.ts is a CRLF
+    // file, so that marker only ever matched while some stray LF-terminated
+    // lines happened to survive inside this function; normalising the file
+    // silently emptied the cut and aborted this whole test with no FAIL line —
+    // which is the failure mode the exit-code rule exists for. Every other
+    // slice in the suite ends on a declaration; this one now does too.
+    + cut(rulesSrc, 'export function smokeBlocks', 'export interface LargeGrid', 'smokeBlocks')
     + src.slice(src.indexOf('export function interceptCapacity'), src.indexOf('function initIntercept'))
     + src.slice(src.indexOf('export function interceptsOwed'), src.indexOf('function alive(t: Token)'))
     + src.slice(src.indexOf('export function tokenCards'), src.indexOf('// ---------- Tarantula Loads')),

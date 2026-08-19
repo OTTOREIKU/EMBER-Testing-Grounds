@@ -5,7 +5,7 @@ import { linkMechanics } from './inspector';
 import { SQUAD_ORDER, squadLabel } from './data';
 import type { Card, CardAction, DiceData, DiceIcon, DieColor, Duel, DuelIcon, GameRuleEffect, PartSlot, Side, SmokeScreen, TerrainPiece, Token } from './types';
 import { statusCount, STATUSES } from './types';
-import { aaRadarCovers, attackReactionsOf, auraEffectsOn, aurasOn, auraValueOn, automaticShieldFor, blueLightningDodges, earlyWarningCover, coolingBonus, denseArmorByText, eyesAreHeavyHits, ignoresLowProfile, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, noMeleeBackAttack, missileGuidance, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, denseArmorOn, designationsOn, electronicStrength, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, pilotCard, repeatersFor, SLOT_LABEL, tetherStrike, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
+import { aaRadarCovers, attackReactionsOf, auraEffectsOn, aurasOn, auraValueOn, automaticShieldFor, blueLightningDodges, earlyWarningCover, coolingBonus, denseArmorByText, eyesAreHeavyHits, pilotDiceBonus, ignoresLowProfile, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, noMeleeBackAttack, missileGuidance, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, denseArmorOn, designationsOn, electronicStrength, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, canAffordFocus, focusIsFree, keepsLinkOnPartLoss, maxLink, structureOf, trackingCover, TRACKING_SPOTTERS_NEEDED, pilotCard, pilotIs, repeatersFor, SLOT_LABEL, tetherStrike, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
 import { timingOf } from './ticks';
 import { inArc, losNote, protectionFor, rangeBetween } from './rules';
 import type { Command } from './commands';
@@ -380,6 +380,10 @@ interface Ctx {
   // reader of the raw roll — so the notes can say what happened without
   // deriving the roll a second time.
   lightningSwapped?: number;
+  // FPA-04 Hammerhead: how many {Eye} 猛攻 Fierce Assault turned into Light
+  // Hits on the last derivation. Same reason as lightningSwapped — derived, not
+  // stored as a decision, so a re-roll cannot leave a stale count behind.
+  fierceSwapped?: number;
   surplusRound: number;
   carried: { heavy: number; light: number };
   surplusKeyword: SurplusEffect | null;
@@ -660,7 +664,12 @@ export class AttackHelper {
       attackPool: (() => {
         const printed = { red: action.redDice ?? 0, yellow: action.yellowDice ?? 0 };
         const bonus = coolingBonus(this.data, attacker, action, printed);
-        return { red: printed.red + bonus.red, yellow: printed.yellow + bonus.yellow };
+        // LPA-23-2 Grace Note rides beside the Coolers rather than inside them:
+        // the Coolers read Parts and take no defender, and this one is a range
+        // question. Both are a STARTING value — the player can still nudge the
+        // pool in the editor below, exactly as with a Cooler.
+        const pilot = pilotDiceBonus(this.data, attacker, defender, action);
+        return { red: printed.red + bonus.red + pilot.red, yellow: printed.yellow + bonus.yellow + pilot.yellow };
       })(),
       defensePool: { white: 1, blue: 0 },
       attackRoll: null,
@@ -702,7 +711,13 @@ export class AttackHelper {
     // sequence: one Firing Action is cooled once, however many targets it takes.
     const printed = { red: action.redDice ?? 0, yellow: action.yellowDice ?? 0 };
     const cooled = coolingBonus(this.data, attacker, action, printed);
-    const pooled = { red: printed.red + cooled.red, yellow: printed.yellow + cooled.yellow };
+    // LPA-23-2 Grace Note is measured to the PRIMARY, and it has to be: the
+    // pool is settled once here and split, but only the primary target exists
+    // at declaration — the rest are designated afterwards. The card asks about
+    // "the target" and does not say which one under a Multi-Target, so this is
+    // the reading the shape of the Action forces rather than one it chose.
+    const pilot = pilotDiceBonus(this.data, attacker, primary, action);
+    const pooled = { red: printed.red + cooled.red + pilot.red, yellow: printed.yellow + cooled.yellow + pilot.yellow };
     // Automatic Shield fires at DESIGNATION (FAQ A12), which is here and not in
     // openSequence: B7 settles the whole Action at declaration, and the split
     // screen has to name the unit the dice will actually land on before the
@@ -834,7 +849,9 @@ export class AttackHelper {
     const d = this.ctx!.defender;
     const card = this.defenderPartCard(slot);
     const st = d.partStates[slot as PartSlot | 'main'] ?? 'intact';
-    let white = st === 'damaged' ? card?.structure ?? 0 : card?.armor ?? 0;
+    // structureOf so an Anser Chassis rolls the granted 2 rather than falling
+    // through to the min-1 clamp on the next line.
+    let white = st === 'damaged' ? structureOf(this.data, d, slot as PartSlot | 'main') : card?.armor ?? 0;
     if (white < 1) white = 1;
     // Surplus Damage grants the defender no Terrain or Unit Protection (4.8).
     if (!this.ctx!.surplusRound) white += this.ctx!.protection;
@@ -880,7 +897,13 @@ export class AttackHelper {
     // A Surplus round makes no Attack Roll (4.8), so the attacker's half of
     // step 5 has nothing to act on.
     if (side === 'attacker' && c.surplusRound > 0) return false;
-    return t.kind === 'mech' && (t.link ?? 0) > 0 && !!roll && roll.length > 0;
+    // canAffordFocus, not `link > 0`: this gate used to admit a Mech on exactly
+    // 1 Link that the `focus` command then refused (4.10, FAQ L1), and the
+    // window went on to print "spends 1 Link to Focus" and advance the stage —
+    // a free reroll. It also closes the mirror's hole, because skipFocusStages
+    // walks past a declare this refuses, so the remote defender is never
+    // offered a button their own client would send and the host would reject.
+    return canAffordFocus(this.data, t) && !!roll && roll.length > 0;
   }
 
   private beginFocus(): void {
@@ -1018,11 +1041,17 @@ export class AttackHelper {
       const t = side === 'attacker' ? c.attacker : c.defender;
       const p = document.createElement('p');
       p.className = 'ah-note';
-      p.textContent = `Focus (4.4.1-5): ${t.label} may spend 1 Link (${t.link ?? 0} left) to reroll any of its ${side === 'attacker' ? 'Attack' : 'Defense'} dice — ${side === 'attacker' ? 'the attacker declares first' : 'the defender declares second'}.`;
+      p.textContent = focusIsFree(this.data, t)
+        ? `Focus (4.4.1-5): ${t.label} is down to 3 Parts, so its Focus reroll costs no Link at all (Will to Survive) — ${side === 'attacker' ? 'the attacker declares first' : 'the defender declares second'}.`
+        : `Focus (4.4.1-5): ${t.label} may spend 1 Link (${t.link ?? 0} left) to reroll any of its ${side === 'attacker' ? 'Attack' : 'Defense'} dice — ${side === 'attacker' ? 'the attacker declares first' : 'the defender declares second'}.`;
       wrap.appendChild(p);
       const use = document.createElement('button');
       use.className = 'ah-primary';
-      use.textContent = 'Focus — spend 1 Link';
+      // The paragraph above already says whether it is free (ZPA-39 Cadaver's
+      // Will to Survive), so the BUTTON must agree — an unconditional "spend 1
+      // Link" on a reroll the engine no longer charges reads as a bug at the
+      // table. match.ts's mirror button already branched; this one did not.
+      use.textContent = focusIsFree(this.data, t) ? 'Focus — free' : 'Focus — spend 1 Link';
       use.addEventListener('click', () => this.focusDeclare(side, true));
       const pass = document.createElement('button');
       pass.className = 'ah-alt';
@@ -1152,6 +1181,21 @@ export class AttackHelper {
     return statusCount(c.attacker.statuses, 'command') > 0;
   }
 
+  // FPA-04 Hammerhead, 猛攻 Fierce Assault: "[Offensive Stance] Melee Action may
+  // exchange {Eye} for {Light Hit}." The English's "may" governs over the
+  // Chinese, which prints no choice — but a leftover {Eye} buys the attacker
+  // nothing at all in this pipeline (it only shows in the display-only triggers
+  // strip), so the exchange is APPLIED rather than offered, the way Pulse and
+  // Ion apply their own printed "may" for the same reason.
+  private fierceAssault(c: Ctx): boolean {
+    if (c.attacker.kind !== 'mech') return false;
+    if (!pilotIs(this.data, c.attacker, 'FPA-04')) return false;
+    // The same Stance test attackIcons uses for hollow faces; lockStance holds
+    // it still for the whole Opportunity, so it cannot be flipped mid-Action.
+    if (c.attacker.stance !== 'offensive') return false;
+    return timingOf(c.action) === 'melee';
+  }
+
   // The same tally as attackIcons, but kept PER DIE, for Dodge Enhancement:
   // "each {Dodge} offsets 1 Attack die" needs to know which icons shared a die.
   //
@@ -1163,7 +1207,17 @@ export class AttackHelper {
   private attackIconsPerDie(c: Ctx): { heavy: number; light: number }[] {
     const upgrade = c.attacker.stance === 'offensive';
     const swapLightning = !!this.lightningSwap(c);
-    let eyesLeft = c.eyeSwaps ?? 0;
+    // The heavy budget is Math.max(paid, free) exactly as attackIcons computes
+    // it. Reading only c.eyeSwaps here was a live gap: card 503 Close Assault
+    // swaps every {Eye} for free without touching that counter, so a 503
+    // attacker's swapped Heavy Hits belonged to no die and Dodge Enhancement
+    // could never cancel them. Infinity stands for "all of them", which is what
+    // the free arm means.
+    let eyesLeft = eyesAreHeavyHits(this.data, c.attacker) ? Number.POSITIVE_INFINITY : c.eyeSwaps ?? 0;
+    // FPA-04 Fierce Assault, replayed here for the same reason and in the same
+    // order: the heavy budget above is offered each {Eye} first, and only what
+    // it leaves becomes a Light Hit.
+    const fierce = this.fierceAssault(c);
     const out: { heavy: number; light: number }[] = [];
     for (const d of c.attackRoll ?? []) {
       let heavy = 0;
@@ -1175,6 +1229,7 @@ export class AttackHelper {
         else if (icon.type === 'lightHit') light++;
         else if (icon.type === 'lightning' && swapLightning) heavy++;
         else if (icon.type === 'eye' && eyesLeft > 0) { heavy++; eyesLeft--; }
+        else if (icon.type === 'eye' && fierce) light++;
       }
       out.push({ heavy, light });
     }
@@ -1189,6 +1244,15 @@ export class AttackHelper {
     const free = eyesAreHeavyHits(this.data, c.attacker) ? counts.eye ?? 0 : 0;
     const swaps = Math.min(Math.max(c.eyeSwaps ?? 0, free), counts.eye ?? 0);
     if (swaps) counts = { ...counts, eye: (counts.eye ?? 0) - swaps, heavyHit: (counts.heavyHit ?? 0) + swaps };
+    // FPA-04 Fierce Assault is applied LAST, to the {Eye} no HEAVY source has
+    // already taken. {Eye}->{Heavy Hit} is strictly better than {Eye}->{Light
+    // Hit}, so when one Mech holds both this trait and card 503 Close Assault
+    // (or spends a Chef token) the heavy source must win the race for a given
+    // {Eye}. Ordering it after the line above is the whole of that decision —
+    // it is a ruling, not an accident of where the code was written.
+    const fierce = this.fierceAssault(c) ? counts.eye ?? 0 : 0;
+    c.fierceSwapped = fierce;
+    if (fierce) counts = { ...counts, eye: 0, lightHit: (counts.lightHit ?? 0) + fierce };
     const ex = this.lightningSwap(c);
     c.lightningSwapped = ex ? counts.lightning ?? 0 : 0;
     if (ex && counts.lightning) {
@@ -1244,8 +1308,17 @@ export class AttackHelper {
     // works exactly like the Token here and Scan cannot strip it (FAQ Q3/J2).
     // 094 Multispectral Tracking beats BOTH sources: the card says the
     // attacker's Firing Actions ignore Low Profile, not "unless it was granted".
+    // ZPA-37 Foxhound: two or more ally Drones with line of sight to the target
+    // make this Mech's Firing Actions ignore Low Profile — the same consequence
+    // 094 has, off a board condition instead of a Part, so it joins the same
+    // `&&` rather than growing a second branch. Computed before the disjunction
+    // so the drones can be named in the notes below.
+    const tracking = c.action.type === 'Firing' && this.tokens
+      ? trackingCover(this.data, this.tokens(), this.terrain ? this.terrain() : [], this.smoke ? this.smoke() : [], c.attacker, c.defender)
+      : [];
     const lowProfile = c.action.type === 'Firing'
       && !ignoresLowProfile(this.data, c.attacker)
+      && !tracking.length
       && (statusCount(c.defender.statuses, 'lowProfile') > 0
         || (this.tokens ? auraEffectsOn(this.data, this.tokens(), c.defender).has('low_profile') : false)
         || !!mistyEagle);
@@ -1289,7 +1362,16 @@ export class AttackHelper {
         mistyEagle ? ` — ${mistyEagle.source.label} (${mistyEagle.label}) is within range of ${c.attacker.label}` : ''
       }`);
     }
+    // Named for the same reason the Misty Eagle is: without this the shooter
+    // sees Eyes that DIDN'T evaporate and has nothing on screen to credit.
+    if (tracking.length) {
+      text.push(`Tracking: ${tracking.slice(0, TRACKING_SPOTTERS_NEEDED).map((d) => d.label).join(' and ')} have line of sight to ${c.defender.label}, so ${c.attacker.label} ignores Low Profile`);
+    }
     if (radar) text.push(`${radar.label} sees the target: [Eye] counted as 1 Light Hit on this Interception (FAQ O12/O13)`);
+    if (c.surplusRound === 0 && c.fierceSwapped) {
+      const n = c.fierceSwapped;
+      text.push(`Fierce Assault: ${c.attacker.label} is in Offensive Stance, so ${n} [Eye] counted as ${n === 1 ? 'a Light Hit' : 'Light Hits'} on this Melee Action`);
+    }
     if (c.surplusRound === 0 && c.lightningSwapped) {
       const swapped = c.lightningSwapped;
       text.push(this.lightningSwap(c) === 'pulse'
@@ -2183,7 +2265,7 @@ export class AttackHelper {
       const swapNote = c.lightningSwapped
         ? ` · [Lightning] counted as Heavy (${this.lightningSwap(c) === 'pulse' ? 'Pulse Weapon' : 'Ion Weapon'})`
         : '';
-      sum.textContent = `Effective: ${atk.heavyHit ?? 0}× Heavy, ${atk.lightHit ?? 0}× Light${atk.lightning ? `, ${atk.lightning}× Lightning` : ''}${atk.eye ? `, ${atk.eye}× Eye` : ''}${c.eyeSwaps ? ` · ${c.eyeSwaps} exchanged by Chef` : ''}${swapNote}`;
+      sum.textContent = `Effective: ${atk.heavyHit ?? 0}× Heavy, ${atk.lightHit ?? 0}× Light${atk.lightning ? `, ${atk.lightning}× Lightning` : ''}${atk.eye ? `, ${atk.eye}× Eye` : ''}${c.eyeSwaps ? ` · ${c.eyeSwaps} exchanged by Chef` : ''}${c.fierceSwapped ? ` · ${c.fierceSwapped} [Eye] counted as Light (Fierce Assault)` : ''}${swapNote}`;
       wrap.appendChild(sum);
       // ZPA-35 Chef: on a Melee Action, consume 1 Command Token to exchange one
       // {Eye} for a {Heavy Hit}. Offered per Eye still showing, so a Mech
@@ -2434,14 +2516,49 @@ export class AttackHelper {
         // Under Multi-Target the debts are held to the end of the Action (B7),
         // so the flag is parked on the target this sequence belongs to.
         if (this.multi) { const at = this.multi.targets[this.multi.index]; if (at) at.penetrated = true; }
-        if (next === 'destroyed') { c.killedPart = true; this.onDestroyed(c.attacker, c.defender, 'part'); }
+        if (next === 'destroyed') {
+          c.killedPart = true;
+          this.onDestroyed(c.attacker, c.defender, 'part');
+          // ZPA-40 Shrike, 欢愉 Elation. Emitted HERE and not from either page's
+          // onDestroyed callback: those are written twice (main.ts and
+          // match.ts) and duplicated per-page callbacks are how four bugs have
+          // shipped in this codebase. This is the one place a Penetration
+          // becomes a destruction for both pages and for a replay.
+          //
+          // Read as one Link PER PART destroyed, which is what both the English
+          // ("Destroys enemy Parts") and the Chinese (部件) most naturally say —
+          // so Surplus Damage taking a second Part, and each sequence of a
+          // Multi-Target, pays again. The alternative reading is one Link per
+          // ACTION; if that is ruled, cap it on the Ctx, not here.
+          if (
+            c.attacker.kind === 'mech'
+            && pilotIs(this.data, c.attacker, 'ZPA-40')
+            && c.attacker.stance === 'offensive'
+            && timingOf(c.action) === 'melee'
+            && c.defender.side !== c.attacker.side
+            && (c.attacker.link ?? 0) < maxLink(this.data, c.attacker)
+          ) {
+            this.onCommand({ kind: 'restoreLink', seat: c.attacker.side, uid: c.attacker.uid });
+            this.note(`Elation: ${c.attacker.label} destroyed an enemy Part in Melee, so it restores 1 Link (now ${c.attacker.link}).`, [c.attacker]);
+          }
+        }
         const how = c.explosion ? 'Explosion damage' : 'Penetration';
         this.note(`${how} from ${c.attacker.label}: ${SLOT_LABEL[slot]} goes ${cur} to ${next.toUpperCase()}.`, [c.attacker, c.defender]);
         if (next === 'destroyed' && c.defender.kind !== 'mech') this.onDestroyed(c.attacker, c.defender, 'unit');
         if (next === 'destroyed' && c.defender.kind === 'mech') {
-          this.note(`Part destroyed, so ${c.defender.label} loses 1 Link (now ${c.defender.link}).`, [c.defender]);
-          if (!wasShut && c.defender.stance === 'shutdown') {
-            this.note(`Link has reached 0, so ${c.defender.label} SHUTS DOWN.`, [c.defender]);
+          // The narration is a SECOND reader of the same rule: it reads the
+          // token back AFTER applyPenetration, so with FPA-03 Wu aboard an
+          // unguarded line would announce "loses 1 Link (now 4)" while the
+          // Link never moved. Ask the same predicate the command asks.
+          // Only the LINK half is skipped. Torso destruction and Integrity Loss
+          // below still apply -- Fortitude keeps the Link, not the Parts.
+          if (keepsLinkOnPartLoss(this.data, c.defender)) {
+            this.note(`Part destroyed, but ${c.defender.label}'s pilot keeps their Link (Fortitude). Link stays at ${c.defender.link}.`, [c.defender]);
+          } else {
+            this.note(`Part destroyed, so ${c.defender.label} loses 1 Link (now ${c.defender.link}).`, [c.defender]);
+            if (!wasShut && c.defender.stance === 'shutdown') {
+              this.note(`Link has reached 0, so ${c.defender.label} SHUTS DOWN.`, [c.defender]);
+            }
           }
           if (slot === 'torso') {
             this.onDestroyed(c.attacker, c.defender, 'unit');
@@ -2944,11 +3061,13 @@ export class ElectronicHelper {
       sum.innerHTML = `Lightning <b>${n.lightning}</b> · Light Hit <b>${n.light}</b>`;
       wrap.appendChild(sum);
       const spent = who === 'init' ? c.rerolled.init : c.rerolled.resp;
-      // Voluntary spends stop above the last Link (4.10, FAQ L1).
-      if (!spent && (t.link ?? 0) > 1) {
+      // Voluntary spends stop above the last Link (4.10, FAQ L1) — unless the
+      // reroll costs nothing at all, which is ZPA-39 Cadaver's whole trait.
+      const freeFocus = focusIsFree(this.data, t);
+      if (!spent && canAffordFocus(this.data, t)) {
         const rr = document.createElement('button');
         rr.className = 'ah-cancel';
-        rr.textContent = 'Focus reroll (1 Link)';
+        rr.textContent = freeFocus ? 'Focus reroll (free — Will to Survive)' : 'Focus reroll (1 Link)';
         rr.addEventListener('click', () => {
           const sel = roll.filter((d) => d.selected);
           if (!sel.length) return;
@@ -2956,7 +3075,9 @@ export class ElectronicHelper {
           this.onCommand({ kind: 'focus', seat: t.side, uid: t.uid });
           if (who === 'init') c.rerolled.init = true;
           else c.rerolled.resp = true;
-          this.note(`${t.label} spends 1 Link to Focus, rerolling ${sel.length} die.`);
+          this.note(freeFocus
+            ? `${t.label} Focuses for free (Will to Survive: 3 Parts or fewer), rerolling ${sel.length} die.`
+            : `${t.label} spends 1 Link to Focus, rerolling ${sel.length} die.`);
           if (!wasShut && t.stance === 'shutdown') this.note(`Link has reached 0, so ${t.label} SHUTS DOWN.`);
           void (async () => {
             await this.rerollYellow(roll, 'Focus reroll');

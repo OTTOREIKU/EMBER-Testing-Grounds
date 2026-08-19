@@ -223,6 +223,12 @@ export interface MoveOpts {
   // exitCost: a price is something a rich Movement Range buys past, and the
   // leash does not care how much Range you have.
   allowed?: (c: number, r: number) => boolean;
+  // LPA-21 Firefly, 匿踪 Stealth: while Optically Camouflaged or in Low Profile,
+  // this unit's movement ROUTE may pass through other units. A legality like
+  // `allowed`, not a price like `exitCost` -- and route-only: the landing still
+  // has to be legal, and Break Away is still charged, because this is
+  // pass-through, not flight.
+  phaseThrough?: boolean;
 }
 
 // One search serving both the range overlay and the route a unit will actually
@@ -265,7 +271,15 @@ function searchMoves(
       if (d > steps || d >= (dist.get(nk) ?? Infinity)) continue;
       const standable = canStandIn(n.c, n.r, t.size, t.aerial, terrain, tokens, t.uid);
       const crush = !standable && !flying && !t.aerial && (opts?.crushable?.(n.c, n.r) ?? false);
-      const passable = flying || t.aerial ? true : standable || crush;
+      // The empty token list is the whole trick, and the only thing standing
+      // between this and a Mech walking through a building: standingSpot folds
+      // terrain subCells and unit footprints into ONE blocked set, so a naive
+      // `passable = true` would open both. Re-asking canStandIn against TERRAIN
+      // ONLY answers "is it just units in the way?", which is exactly what the
+      // card grants.
+      const phase = !standable && !flying && !t.aerial && !!opts?.phaseThrough
+        && canStandIn(n.c, n.r, t.size, t.aerial, terrain, [], t.uid);
+      const passable = flying || t.aerial ? true : standable || crush || phase;
       if (!passable) continue;
       dist.set(nk, d);
       parent.set(nk, key);

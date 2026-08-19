@@ -25,7 +25,7 @@ import { normaliseTasks } from './tasks';
 import { normaliseSetup } from './setup';
 import { perform } from './commands';
 import { dialHidden, getLocalSeat } from './loop';
-import { defaultUnitLabel, emptyCarriers, factionProblems, initiativeFor, pilotCard, squadAllegiance, SLOT_LABEL, tidyUnitLabel, tokenCards, tokenFactions } from './units';
+import { defaultUnitLabel, emptyCarriers, factionProblems, initiativeFor, pilotCard, squadAllegiance, SLOT_LABEL, structureOf, tidyUnitLabel, tokenCards, tokenFactions } from './units';
 import { alertDialog, promptDialog } from './dialog';
 import { factionColour, ICON_EDIT, linkIcon, squadColour } from './icons';
 
@@ -1128,7 +1128,13 @@ export class SquadTracker {
 
       const st = t.partStates[slot as PartSlot | 'main'] ?? 'intact';
       const armor = card.armor ?? 0;
-      const structure = card.structure ?? 0;
+      // The third reader of the same number, and the one that would have gone
+      // quietly wrong: the click handler below cycles the damage state by hand
+      // in freeplay, so without structureOf the inspector would step an Anser
+      // Chassis intact -> destroyed while the engine steps it intact ->
+      // damaged, on the same board. It is `if (this.online()) return`-guarded,
+      // which means it only diverges in freeplay -- which is where we play.
+      const structure = structureOf(this.data, t, slot as PartSlot | 'main');
       const hasStructure = structure > 0;
       const defVal = st === 'damaged' ? structure : armor;
       tr.className = `pt-${st}`;
