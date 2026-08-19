@@ -47,6 +47,25 @@ const riders = unitsSrc.slice(
   unitsSrc.indexOf('export interface ParryPart'),
 );
 if (!riders) throw new Error('could not locate the Data Link riders in units.ts');
+// Sliced, not stubbed: WHICH magazine pays for a launch is a rule, and
+// spendAmmo's check()/apply() are where it is enforced. A stub would have let
+// the wiring test pass against a stub instead of against the rule — which is
+// exactly how this shipped half-done the first time. Checked first that no
+// existing cut in this file spans it (the seventh time that trap was checked).
+const ammoDelivery = unitsSrc.slice(
+  unitsSrc.indexOf('// ---------- Ammo Delivery'),
+  unitsSrc.indexOf('export interface OpportunityBonus'),
+);
+if (!ammoDelivery) throw new Error('could not locate ammoDeliveryPool in units.ts');
+// ammoDeliveryPool leans on resupplyOf — the Pack->Pod link is STRUCTURAL
+// (086_A's resupply names 129_A), so the real reader comes too. Stubbing it
+// would have made the wiring test assert against a stub of the very link the
+// feature depends on. Overlap-checked against every cut in this file.
+const resupply = unitsSrc.slice(
+  unitsSrc.indexOf('export interface Resupply'),
+  unitsSrc.indexOf('// ---------- Covert carry'),
+);
+if (!resupply) throw new Error('could not locate resupplyOf in units.ts');
 // Sliced, not stubbed: whether a launch COMMITS a lock_one Action is a rule and
 // commands.ts's apply is where it is enforced. Checked first that no existing
 // cut in this file already spans it — the sixth time that trap was considered.
@@ -242,7 +261,7 @@ writeFileSync(
     + interceptParser
     + chargeParser
     + evReader
-    + slotLabels + riders + covert
+    + slotLabels + riders + resupply + ammoDelivery + covert
     + freehand
     + attackMode
     + delivery
@@ -2333,6 +2352,65 @@ check('and it really does move', [wNotShell.tokens[1].col, wNotShell.tokens[1].r
   // SHAPE is refused here, not every value.
   check('an unknown offset is tolerated, since the renderer normalises it',
     send([{ kind: 'heavyHit', offset: 'nonsense' }]), true);
+}
+
+globalThis.__baseData = data;
+
+// ---------- 086_B Ammo Delivery: the WIRING, not just the reader ----------
+//
+// Group E shipped the reader and the UI gate but NOT the payment routing — the
+// edit that added it threw before the file was written. The result was the
+// worst shape: guidedActions OFFERED an empty Pod's shot because the Pack had
+// ammo, and check() then refused it. Reader tests all passed the whole time.
+// These drive spendAmmo itself, which is the assertion whose absence let it go.
+{
+  // Fixture cards mirroring the real 129 Pod / 086 Pack pair. The reader keys
+  // on 086_A's resupply naming 129_A and on 086_B's printed delivery line, so
+  // both are reproduced verbatim rather than approximated — a fixture that
+  // matched a looser shape would pass while the shipped cards did not.
+  const pod = { id: '129', actions: [{ id: '129_A', name: { en: 'Missile' }, type: 'Projectile', storage: 1 }] };
+  const pack = { id: '086', actions: [
+    { id: '086_A', name: { en: 'Ammo Supply' }, type: 'Tactic', storage: 2,
+      gameRules: [{ effects: [{ type: 'resupply_action_ammo', actionId: '129_A', amount: 1, range: 1, targetSide: 'self_or_ally' }] }] },
+    { id: '086_B', name: { en: 'Ammo Delivery' }, type: 'Passive',
+      description: { zh: '· 当本机发射1个RKG70导弹组时，可选择消耗本部件的弹药。' } },
+  ] };
+  const data = { ...globalThis.__baseData, byId: new Map([...globalThis.__baseData.byId, ['129', pod], ['086', pack]]) };
+  const podPack = () => ({
+    uid: 1, kind: 'mech', side: 's1', col: 0, row: 0, size: 3, facing: 0, stance: 'offensive',
+    label: 'Gunner', link: 3, statuses: [],
+    mech: { torso: '002', leftHand: '129', backpack: '086' },
+    partStates: { torso: 'intact', leftHand: 'intact', backpack: 'intact' },
+    ammo: { '129_A': 0, '086_A': 2 },
+  });
+  const spend = { kind: 'spendAmmo', seat: 's1', uid: 1, actionId: '129_A' };
+
+  const w = world([podPack()], 2, opp(1));
+  check('an empty Pod may still fire, paid from the Pack', C.check(data, w, spend).ok, true);
+  C.apply(data, w, spend);
+  check('and it is the PACK that is debited', w.tokens[0].ammo['086_A'], 1);
+  check('while the Pod stays empty rather than going negative', w.tokens[0].ammo['129_A'], 0);
+
+  // The printed pool goes FIRST — the Pack is a fallback, not a preference.
+  const loaded = world([{ ...podPack(), ammo: { '129_A': 1, '086_A': 2 } }], 2, opp(1));
+  C.apply(data, loaded, spend);
+  check('a loaded Pod spends its own magazine first', loaded.tokens[0].ammo['129_A'], 0);
+  check('and the Pack is untouched', loaded.tokens[0].ammo['086_A'], 2);
+
+  // Both empty: still refused, so the fallback cannot invent ammo.
+  const dry = world([{ ...podPack(), ammo: { '129_A': 0, '086_A': 0 } }], 2, opp(1));
+  check('both empty is still refused', C.check(data, dry, spend).ok, false);
+
+  // A Mech with no delivery Pack is unaffected by any of this.
+  const plain = world([{ ...podPack(), mech: { torso: '002', leftHand: '129' },
+    partStates: { torso: 'intact', leftHand: 'intact' }, ammo: { '129_A': 0 } }], 2, opp(1));
+  check('and a Pod with no Pack behind it is refused as before', C.check(data, plain, spend).ok, false);
+
+  // A resupply refills the Part it NAMES, never whichever pool paid last.
+  const back = world([{ ...podPack(), ammo: { '129_A': 0, '086_A': 1 } }], 2, opp(1));
+  C.apply(data, back, { kind: 'restoreAmmo', seat: 's1', uid: 1, actionId: '129_A' });
+  check('restoreAmmo refills the Pod, not the Pack', back.tokens[0].ammo['129_A'], 1);
+  check('and leaves the Pack where it was', back.tokens[0].ammo['086_A'], 1);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

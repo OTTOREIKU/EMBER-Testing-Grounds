@@ -328,6 +328,28 @@ export function ammoHolder(data: GameData, state: GameState, t: Token, actionId:
   return loan && loan.from.ammo?.[actionId] !== undefined ? loan.from : t;
 }
 
+// WHICH POOL pays, one axis over from ammoHolder's "whose TOKEN pays".
+// 086_B Ammo Delivery lets a launch come out of the RKG70 Ammunition Pack's
+// magazine instead of the Pod's own, so the Pod fires three times rather than
+// one before a resupply.
+//
+// The printed pool always goes first and the Pack is a FALLBACK, never a
+// prompt. The card says "may", but both magazines hold the same missiles and
+// the Pack's only other use is refilling the Pod, so which one empties first
+// changes nothing a player would want to decide — the same reading
+// lightningExchangeOf records for its own printed "may".
+export function ammoPay(
+  data: GameData,
+  state: GameState,
+  t: Token,
+  actionId: string,
+): { from: Token; poolId: string } {
+  const own = ammoHolder(data, state, t, actionId);
+  if ((own.ammo?.[actionId] ?? 0) > 0) return { from: own, poolId: actionId };
+  const lent = ammoDeliveryPool(data, t, actionId);
+  return lent ? { from: t, poolId: lent } : { from: own, poolId: actionId };
+}
+
 function findAction(data: GameData, state: GameState, uid: number, actionId: string) {
   const t = state.tokens.find((x) => x.uid === uid);
   if (!t) return undefined;
@@ -1258,8 +1280,12 @@ function checkActed(
       return ok;
     }
     case 'spendAmmo': {
-      const from = ammoHolder(data, state, t, cmd.actionId);
-      const held = from.ammo[cmd.actionId];
+      // ammoPay, not ammoHolder: an empty Pod may still be paid for out of an
+      // Ammunition Pack carrying 086_B. guidedActions already OFFERS the shot
+      // on that basis, so checking the printed pool alone made the row appear
+      // and then refuse when pressed.
+      const { from, poolId } = ammoPay(data, state, t, cmd.actionId);
+      const held = from.ammo[poolId];
       if (held === undefined) return no('That Action does not track Ammo.');
       if (held < 1) return no('No Ammo left for that Action (4.12).');
       return ok;
@@ -2341,8 +2367,11 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       return;
     }
     case 'spendAmmo': {
-      const from = ammoHolder(data, state, t, cmd.actionId);
-      if (from.ammo[cmd.actionId] !== undefined) from.ammo[cmd.actionId] = Math.max(0, from.ammo[cmd.actionId] - 1);
+      // Debits whichever magazine check() said would pay. restoreAmmo below
+      // deliberately does NOT go through ammoPay: a resupply refills the Part
+      // it names, never whichever pool happened to pay last.
+      const { from, poolId } = ammoPay(data, state, t, cmd.actionId);
+      if (from.ammo[poolId] !== undefined) from.ammo[poolId] = Math.max(0, from.ammo[poolId] - 1);
       return;
     }
     case 'restoreAmmo': {

@@ -47,6 +47,12 @@ export function riderOnDrone(_data: any, _tokens: any, _t: any): any {
 // and PRDR-105 do), so the honest stub is "never commits" — the rule itself is
 // pinned against the real cards in charge.test.mjs and in commands.test.mjs,
 // which slices the real reader.
+// No fixture here carries an Ammunition Pack (only cards 086 + 129 pair up), so
+// "never lends a magazine" is the honest stub. The rule itself is pinned in
+// commands.test.mjs, which slices the REAL reader.
+export function ammoDeliveryPool(_data: any, _t: any, _actionId: string): string | undefined {
+  return undefined;
+}
 export function covertCarryLock(_a: any): boolean {
   return false;
 }
