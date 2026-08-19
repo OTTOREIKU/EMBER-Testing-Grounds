@@ -632,7 +632,19 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       const spare = (n: unknown) =>
         n !== undefined && n !== null && (typeof n !== 'number' || !Number.isSafeInteger(n) || n < 0 || n > 40);
       const list = (v: unknown) => !Array.isArray(v) || v.length > 40;
-      if (res && (!res.duel || list(res.duel.icons) || list(res.duel.triggers)
+      // The ELEMENTS, not just the list lengths. Every icon lands in a class
+      // name and a title attribute on the far screen, so a peer sending
+      // `icons: [null]` or a 50KB `kind` costs the defender their whole HUD
+      // render rather than just the box. Bounding the lists alone left that
+      // open. `offset` is normalised by the renderer, so an unknown value is
+      // survivable and only the shape is refused here.
+      const icon = (v: unknown): boolean => {
+        if (!v || typeof v !== 'object') return true;
+        const k = (v as { kind?: unknown }).kind;
+        return typeof k !== 'string' || k.length > 40;
+      };
+      const badIcons = (v: unknown) => list(v) || (v as unknown[]).some(icon);
+      if (res && (!res.duel || badIcons(res.duel.icons) || badIcons(res.duel.triggers)
         || spare(res.duel.spareDodge) || spare(res.duel.idleDefense)
         || !Array.isArray(res.text)
         || res.text.some((l) => typeof l !== 'string' || l.length > 400))) {

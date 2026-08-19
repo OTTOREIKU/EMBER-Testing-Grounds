@@ -2307,5 +2307,33 @@ check('an ordinary Deployable in the same spot is shoved normally', C.check(data
 C.apply(data, wNotShell, shove());
 check('and it really does move', [wNotShell.tokens[1].col, wNotShell.tokens[1].row], [9, 12]);
 
+// The resolution strip crosses the wire and every icon `kind` lands in a class
+// name and a title attribute on the far screen. Bounding only the LIST lengths
+// left the ELEMENTS open, so a peer sending `icons: [null]` or a huge `kind`
+// cost the defender their whole HUD render rather than just the box.
+{
+  const view = (icons) => ({
+    attackerUid: 1, targetUid: 2, actionId: 'A', mode: 'attack', step: 'resolve',
+    targetPart: 'torso', attack: null, defense: null, log: [], focus: null,
+    resolution: { duel: { icons, triggers: [], spareDodge: 0, idleDefense: 0, carried: false }, text: [] },
+  });
+  const send = (icons) => C.check(data, wfoc, { kind: 'setCombatView', seat: 's1', view: view(icons) }).ok;
+  check('a well-formed strip is accepted', send([{ kind: 'heavyHit', offset: 'dodge' }]), true);
+  check('a null icon is refused, not rendered', send([null]), false);
+  check('and a non-object one', send(['heavyHit']), false);
+  check('an icon with no kind is refused', send([{ offset: 'dodge' }]), false);
+  check('a non-string kind is refused', send([{ kind: 42 }]), false);
+  // The far side puts this in a class attribute, so length is the attack.
+  check('an absurdly long kind is refused', send([{ kind: 'x'.repeat(200) }]), false);
+  check('and the triggers list is bounded the same way',
+    C.check(data, wfoc, { kind: 'setCombatView', seat: 's1', view: {
+      ...view([]), resolution: { duel: { icons: [], triggers: [null], spareDodge: 0, idleDefense: 0, carried: false }, text: [] },
+    } }).ok, false);
+  // An unknown offset is survivable — the renderer normalises it — so only the
+  // SHAPE is refused here, not every value.
+  check('an unknown offset is tolerated, since the renderer normalises it',
+    send([{ kind: 'heavyHit', offset: 'nonsense' }]), true);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
