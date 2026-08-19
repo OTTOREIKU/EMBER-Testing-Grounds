@@ -148,6 +148,71 @@ export function resupplyOf(a: CardAction): Resupply | undefined {
   return undefined;
 }
 
+// ---------- Attack Mode (H2-B "Crisis" II, card 547) ----------
+
+export interface OpportunityBonus {
+  label: string;
+  // Ordinary Action Ticks, added to the base pool. NEVER Extra Ticks — see the
+  // reader below for why the distinction is the whole ruling.
+  actionPoints: number;
+  // The Stance the Mech must be in to claim it, or undefined for a bonus the
+  // card grants unconditionally.
+  stance?: Stance;
+  optional: boolean;
+}
+
+// 547_B "Attack Mode": "[Offensive Stance] when this mech gains an Action
+// Opportunity, may gains another 1 Action Tick."
+//
+// Read off the STRUCTURED effect, never off the printed text. The bare Chinese
+// says 时点, which names no class of Tick, and reading it as an Extra Tick is a
+// silent rules bug: an Extra Tick pays for one SHORT Action on its own and may
+// not combine with base Ticks (3.4.5), so a Medium Action would be refused. The
+// English "another 1 Action Tick" and the effect's own `actionPoints: 1` both
+// say ORDINARY, which per FAQ K14 combines with the base pool — and which does
+// NOT unlock repeating an Action already performed, a licence K2/K12 confine to
+// Extra Ticks.
+//
+// Exactly one card of the 401 carries `action_opportunity_bonus`, so this reader
+// picks up nothing else by accident; it is keyed on the effect rather than on
+// the card id so a reprint under another number still lands.
+export function opportunityBonusOf(a: CardAction): OpportunityBonus | undefined {
+  for (const g of a.gameRules ?? []) {
+    for (const e of g.effects ?? []) {
+      const eff = e as { type?: string; actionPoints?: number; requiredStance?: string; optional?: boolean };
+      if (eff.type !== 'action_opportunity_bonus') continue;
+      return {
+        label: a.name?.en ?? a.id,
+        actionPoints: Math.max(1, Math.round(eff.actionPoints ?? 1)),
+        // The effect also carries `sources: ["normal", "echo"]`, and those two
+        // are every Action Opportunity this app mints — an ordinary one and the
+        // Extra one an Echoes Support grants (card 009). Nothing is gated on it
+        // because there is no third kind to exclude.
+        stance: eff.requiredStance as Stance | undefined,
+        // The card prints "may" and the effect says so too, so this is always
+        // OFFERED. An unwanted Tick is a real thing once the dial is set: it
+        // cannot be handed back, and taking it locks the Stance.
+        optional: eff.optional !== false,
+      };
+    }
+  }
+  return undefined;
+}
+
+// Which of a unit's Parts, if any, offers that bonus. tokenCards lists every
+// equipped card including the wrecked ones, so the destroyed test is made here
+// the same way partKeyword makes it — a blown Torso prints no rules any more.
+export function opportunityBonusOn(data: GameData, t: Token): OpportunityBonus | undefined {
+  for (const { slot, card } of tokenCards(data, t)) {
+    if ((t.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
+    for (const a of card.actions ?? []) {
+      const bonus = opportunityBonusOf(a);
+      if (bonus) return bonus;
+    }
+  }
+  return undefined;
+}
+
 export interface ExtraActivation {
   range: number;
   minimumLink: number;

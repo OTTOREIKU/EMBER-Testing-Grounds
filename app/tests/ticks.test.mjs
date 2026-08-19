@@ -12,7 +12,7 @@ if (!shapes) throw new Error('could not locate the opportunity helpers in types.
 // would try to resolve './types' from the tests directory.
 const timings = types.slice(types.indexOf('export const TIMINGS'), types.indexOf('export type TokenShape'));
 if (!timings) throw new Error('could not locate TIMINGS in types.ts');
-const stubs = 'type CardAction = any;\ntype Timing = any;\ntype ExtraTick = any;\ntype Opportunity = any;\ntype TimingDef = any;\n';
+const stubs = 'type CardAction = any;\ntype Timing = any;\ntype ExtraTick = any;\ntype Opportunity = any;\ntype TimingDef = any;\ntype Stance = any;\n';
 const body = src.replace(/^import[^\n]*\n/gm, '') + stubs + timings + shapes;
 const tmp = new URL('./_ticks.slice.ts', import.meta.url);
 writeFileSync(tmp, body);
@@ -262,6 +262,54 @@ const round = T.normaliseOpportunity(JSON.parse(JSON.stringify(two)));
 check('an opportunity round-trips', [round.maneuver, round.action, round.performed.length], [0, 0, 2]);
 check('junk is refused rather than half-restored', T.normaliseOpportunity({ nope: 1 }), null);
 check('a partial save is filled in', T.normaliseOpportunity({ uid: 4 }).action, 2);
+
+// ---------- Attack Mode (H2-B "Crisis" II, card 547) ----------
+//
+// "[Offensive Stance] when this mech gains an Action Opportunity, may gains
+// another 1 Action Tick." The whole ruling is which CLASS of Tick that is. The
+// English and the structured `actionPoints: 1` say ordinary, so it behaves
+// exactly like an Overloaded Tick and nothing like an Extra one.
+
+const armed = T.spendAttackMode(T.newOpportunity(9, 'firing'));
+check('the tick lands in the base pool, not the extras', [armed.action, armed.extras.length], [3, 0]);
+// FAQ K14: an ordinary Tick combines with the base Ticks. This is the case an
+// Extra Tick fails, and reading 时点 as an Extra Tick would have failed it too.
+const oneLeft = T.spendAction(T.newOpportunity(9, 'firing'), fire.s);
+check('a lone base tick cannot pay for a medium action', T.canPerform(oneLeft, fire.m).ok, false);
+check('and it can once Attack Mode has added one', T.canPerform(T.spendAttackMode(oneLeft), fire.m).ok, true);
+// K2/K12 give the repeat licence to Extra Ticks only. An ordinary Tick buys a
+// DIFFERENT action, never the same one twice.
+const repeated = T.spendAttackMode(T.spendAction(T.newOpportunity(9, 'firing'), fire.s));
+check('it does not unlock repeating an action already performed', T.canPerform(repeated, fire.s).ok, false);
+check('but it does pay for another one', T.canPerform(repeated, melee.s).ok, true);
+
+// The declaration window is Overload's: before anything is performed.
+check('a fresh opportunity in offensive stance may claim it',
+  T.canAttackMode(T.newOpportunity(9, 'firing'), 'offensive', 'offensive').ok, true);
+check('after an action it is too late',
+  T.canAttackMode(T.spendAction(T.newOpportunity(9, 'firing'), fire.s), 'offensive', 'offensive').ok, false);
+check('after a maneuver it is too late',
+  T.canAttackMode(T.spendManeuver(T.newOpportunity(9, 'firing')), 'offensive', 'offensive').ok, false);
+// The Stance is judged when the player declares, not when the Opportunity was
+// minted — 4.1 lets the dial be cycled right up until the Mech does something.
+check('another stance is refused',
+  T.canAttackMode(T.newOpportunity(9, 'firing'), 'mobility', 'offensive').ok, false);
+check('and the refusal names the stance the card wants',
+  /offensive Stance/.test(T.canAttackMode(T.newOpportunity(9, 'firing'), 'mobility', 'offensive').why), true);
+// A bonus whose card names no Stance is unconditional; the reader only reports
+// what the effect prints.
+check('a bonus with no printed stance is unconditional',
+  T.canAttackMode(T.newOpportunity(9, 'firing'), 'defensive').ok, true);
+
+// Banked, never re-checked. Twice is the abuse the flag exists to refuse.
+check('it can only be taken once', T.canAttackMode(armed, 'offensive', 'offensive').ok, false);
+// The whitelist trap, which has already shipped one bug in this project
+// (preMoved). Dropped here, every rehydrate, rejoin and rollback hands the
+// Tick back and the pool grows without limit.
+check('the flag survives a save round trip',
+  T.normaliseOpportunity(JSON.parse(JSON.stringify(armed))).attackMode, true);
+check('and an opportunity that never took it stays clean',
+  T.normaliseOpportunity(JSON.parse(JSON.stringify(T.newOpportunity(9, 'firing')))).attackMode, undefined);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

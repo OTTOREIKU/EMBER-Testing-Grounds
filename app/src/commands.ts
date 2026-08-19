@@ -2,8 +2,8 @@ import type { CombatView, Facing, GameState, MechLoadout, Opportunity, PartSlot,
 import { addStatus, ageTokens, newOpportunity, PHASES, statusCount, STATUSES, TIMINGS } from './types';
 import type { GameData } from './data';
 import { unfoldsInto } from './data';
-import { ripostePart, defenseReactionOn, targetTracingOn, riderOnDrone, hasFlexibleTiming, commandGeneration, blinkTargets, isPositionSwap, electronicOrigins, loanedParts, unfoldToken, extrasFor, consumesCharge, electronicValue, freehandSlots, interceptCapacity, makeDroneToken, makeMechToken, maxLink, pilotCard, projectileDelivery, tokenCards } from './units';
-import { canActivate, canManeuver, canOverload, canPerform, spendAction, spendActivation, spendManeuver, spendOverload } from './ticks';
+import { opportunityBonusOn, ripostePart, defenseReactionOn, targetTracingOn, riderOnDrone, hasFlexibleTiming, commandGeneration, blinkTargets, isPositionSwap, electronicOrigins, loanedParts, unfoldToken, extrasFor, consumesCharge, electronicValue, freehandSlots, interceptCapacity, makeDroneToken, makeMechToken, maxLink, pilotCard, projectileDelivery, tokenCards } from './units';
+import { canActivate, canAttackMode, canManeuver, canOverload, canPerform, spendAction, spendActivation, spendAttackMode, spendManeuver, spendOverload } from './ticks';
 import { tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { battlefieldLocked, deploymentComplete, deployTurn, firstPlayerFrom, newSetup, normaliseSetup, tasksLocked } from './setup';
 import { applyKill, normaliseTasks, pendingDesignations, settleControl, type Designation } from './tasks';
@@ -57,6 +57,11 @@ export type Command =
   // client cannot act out of turn by asserting the flag.
   | { kind: 'performAction'; seat: Side; uid: number; actionId: string; partKey?: string; granted?: boolean }
   | { kind: 'overload'; seat: Side; uid: number }
+  // Card 547's Attack Mode. A DECLARED command rather than a bonus minted with
+  // the Opportunity, because the Stance it depends on is chosen during the
+  // Opportunity (4.1) — newOpportunity still holds the previous round's Stance
+  // and cannot judge it. The card prints "may", so it is never automatic.
+  | { kind: 'attackMode'; seat: Side; uid: number }
   | { kind: 'playTactic'; seat: Side; uid: number; cardId: string; pick?: string }
   // Nothing in 3.1.4 fixes which way a unit faces as it lands, so the facing is
   // the player's to choose while the placement is still theirs to take back.
@@ -1052,6 +1057,17 @@ function checkActed(
       if (!o) return no('It is not this Mech\'s Action Opportunity.');
       return fromVerdict(canOverload(o, t.link ?? 0));
     }
+    case 'attackMode': {
+      // A Torso Part, so the holder is always a Mech — but say so, because the
+      // lock apply() takes is lockStance(), which silently does nothing for a
+      // Drone and would leave the bonus with no Stance gate at all.
+      if (t.kind !== 'mech') return no('Only a Mech claims this: a Drone plays the Stance printed on its card.');
+      const bonus = opportunityBonusOn(data, t);
+      if (!bonus) return no('This Mech has no Part that adds an Action Tick to its Action Opportunity.');
+      const o = oppOf(state, cmd.uid);
+      if (!o) return no('It is not this Mech\'s Action Opportunity.');
+      return fromVerdict(canAttackMode(o, t.stance, bonus.stance));
+    }
     case 'playTactic': {
       const spec = tacticSpec(cmd.cardId);
       if (!spec) return no('That card is not a Tactics Card the guide can resolve.');
@@ -2000,6 +2016,19 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
       // Spending the last Link is a Shutdown like any other: the consequence
       // lives inside the command so a mirrored seat reaches the same state.
       if (t.link === 0 && t.stance !== 'shutdown') t.stance = 'shutdown';
+      return;
+    }
+    case 'attackMode': {
+      const o = oppOf(state, cmd.uid);
+      if (!o || !sc) return;
+      const points = opportunityBonusOn(data, t)?.actionPoints ?? 1;
+      // Taking the Tick IS the Stance choice, the same reasoning a Reboot runs
+      // on (4.1.1): the Mech has committed to Offensive to earn it. That lock
+      // is the ENTIRE anti-abuse mechanism. Without it a Mech could bank the
+      // Tick in Offensive Stance and flip to Mobility before spending it; with
+      // it, setStance's existing 4.1 gate refuses the flip, so nothing here or
+      // anywhere else has to re-check the Stance or hand the Tick back.
+      sc.opp = lockStance(t, spendAttackMode(o, points));
       return;
     }
     case 'playTactic': {

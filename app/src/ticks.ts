@@ -1,4 +1,4 @@
-import type { CardAction, ExtraTick, Opportunity, Timing } from './types';
+import type { CardAction, ExtraTick, Opportunity, Stance, Timing } from './types';
 import { TIMINGS } from './types';
 
 // Flexible Timing (keyword 灵活时机): "This Action can be used in ADJACENT
@@ -220,6 +220,45 @@ export function canOverload(o: Opportunity, link: number): TickVerdict {
 
 export function spendOverload(o: Opportunity): Opportunity {
   return { ...o, action: o.action + 1, overload: o.overload + 1 };
+}
+
+// ---------- Attack Mode (H2-B "Crisis" II, card 547) ----------
+
+// "[Offensive Stance] when this mech gains an Action Opportunity, may gains
+// another 1 Action Tick." It sits here beside Overload rather than with the
+// Extra Tick grants because it is the SAME class of Tick: an ordinary Action
+// Tick joining the base pool, which combines with the base Ticks to pay for a
+// Medium Action (FAQ K14) and which does not license repeating an Action
+// already performed — a licence K2/K12 give only to Extra Ticks.
+//
+// The Stance arrives as an argument. This module is handed an Opportunity and
+// never a board, exactly as canOverload is handed the Link it may spend.
+export function canAttackMode(o: Opportunity, stance: Stance, requires?: Stance): TickVerdict {
+  // Banked once and never re-checked, exactly like Overload. The flag lives on
+  // the Opportunity, so it must be in the normaliseOpportunity whitelist or a
+  // rehydrate hands the Tick back.
+  if (o.attackMode) {
+    return { ok: false, why: 'This Mech has already taken its extra Action Tick this Action Opportunity.' };
+  }
+  // Same window Overload is declared in (FAQ K10): the Tick is claimed as the
+  // Opportunity opens, before the Mech has committed to anything with it.
+  if (o.started || o.maneuvered) {
+    return { ok: false, why: 'The extra Action Tick is claimed at the beginning of the Action Opportunity, before anything is performed.' };
+  }
+  // The card names Offensive Stance, and the Stance is chosen DURING the
+  // Opportunity — so this is asked when the player declares, not when the
+  // Opportunity was minted, at which point the Mech still held last round's
+  // Stance. A bonus whose card names no Stance is unconditional.
+  if (requires && stance !== requires) {
+    return { ok: false, why: `That Part only adds an Action Tick in ${requires} Stance, and this Mech is in ${stance} Stance.` };
+  }
+  return { ok: true };
+}
+
+// Ordinary Action Ticks, into the base pool. The Stance lock that pays for this
+// is applied by the command, beside every other place the 4.1 lock is set.
+export function spendAttackMode(o: Opportunity, points = 1): Opportunity {
+  return { ...o, action: o.action + points, attackMode: true };
 }
 
 // Maneuvering is Movement, and the Stationary keyword counts a change of facing

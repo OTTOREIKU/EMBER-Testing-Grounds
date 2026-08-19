@@ -60,6 +60,17 @@ const freehand = unitsSrc.slice(
   unitsSrc.indexOf('// ---------- Charge (rulebook 4.14) ----------'),
 );
 if (!freehand) throw new Error('could not locate freehandSlots in units.ts');
+// Card 547's Attack Mode reader. Sliced rather than mirrored so the gate the
+// command applies is driven by the card's OWN structured effect, read by the
+// real function — a mirror could invent a requiredStance the data never had.
+// It sits between resupplyOf and ExtraActivation, which is outside every other
+// range cut from units.ts in this file; check that before moving it, because a
+// function landing inside an existing range gets declared twice.
+const attackMode = unitsSrc.slice(
+  unitsSrc.indexOf('// ---------- Attack Mode (H2-B "Crisis" II, card 547) ----------'),
+  unitsSrc.indexOf('export interface ExtraActivation'),
+);
+if (!attackMode) throw new Error('could not locate the Attack Mode reader in units.ts');
 // layMine's check asks whether the Action really Lays, and that reading is a
 // regex over the card's own wording — mirroring it here could drift from the
 // one the app applies, which is the whole point of the check.
@@ -191,6 +202,7 @@ writeFileSync(
     + evReader
     + slotLabels + riders
     + freehand
+    + attackMode
     + delivery
     + grids
     + flyingBase
@@ -2011,6 +2023,67 @@ wNested.script.oppStack = [opp(1)];
 C.apply(data, wNested, ripCmd);
 check('a nested Extra resumes what it interrupted', wNested.script.opp?.uid, 1);
 check('and never records the echoed Mech as having acted', wNested.script.acted, []);
+
+// ---------- Attack Mode (H2-B "Crisis" II, card 547) ----------
+//
+// The REAL card, not a fixture: the gate is driven by the structured
+// `action_opportunity_bonus` effect the publisher's data actually carries, so a
+// regenerated cards.json that drops `requiredStance` or `actionPoints` fails
+// here rather than quietly loosening the rule in a game.
+const realCards = JSON.parse(readFileSync(new URL('../../data/cards.json', import.meta.url), 'utf8'));
+const crisis = (Array.isArray(realCards) ? realCards : realCards.cards ?? []).find((c) => String(c.id) === '547');
+if (!crisis) throw new Error('card 547 is missing from cards.json');
+data.byId.set('547', crisis);
+
+const am = (over = {}) => ({ kind: 'attackMode', seat: 's1', uid: 1, ...over });
+// The Crisis torso, plus the fixture gun in a hand so there is a Short Action
+// to open with — card 547's own Full-auto is Medium, and the point below is
+// what a Short Action leaves behind.
+const crisisMech = (over = {}) => mech(1, 's1', {
+  mech: { torso: '547', rightHand: 'T1', pilot: 'P1' },
+  partStates: { torso: 'intact', rightHand: 'intact' },
+  ...over,
+});
+const wCrisis = (over = {}, o = opp(1)) => world([crisisMech(over)], 2, o);
+check('a Mech with no such Part is refused', C.check(data, world([mech(1, 's1')], 2, opp(1)), am()).ok, false);
+check('the Crisis torso in Offensive Stance passes', C.check(data, wCrisis(), am()).ok, true);
+// 4.1 lets the dial be cycled until the Mech acts, so the Stance is judged
+// HERE rather than when the Opportunity was minted — which is the whole reason
+// this is a declared command instead of a bonus newOpportunity hands out.
+check('the same Mech in Mobility Stance is refused', C.check(data, wCrisis({ stance: 'mobility' }), am()).ok, false);
+check('and once it has acted the window has closed',
+  C.check(data, wCrisis({}, opp(1, { started: true, action: 1, performed: ['A1'] })), am()).ok, false);
+check('outside its own Action Opportunity it is refused', C.check(data, wCrisis({}, null), am()).ok, false);
+
+const wCrisisGo = wCrisis();
+C.apply(data, wCrisisGo, am());
+check('it adds an ORDINARY action tick and banks the flag',
+  [wCrisisGo.script.opp.action, wCrisisGo.script.opp.attackMode, wCrisisGo.script.opp.extras.length], [3, true, 0]);
+check('taking it twice is refused', C.check(data, wCrisisGo, am()).ok, false);
+// THE anti-abuse mechanism. Taking the Tick IS the Stance choice, exactly as a
+// Reboot is (4.1.1), so "flip to Offensive, bank the Tick, flip to Mobility,
+// act" is refused by setStance's existing 4.1 gate and nothing has to revoke
+// the Tick or re-check the Stance anywhere.
+check('taking it sets the Stance for the Opportunity', wCrisisGo.script.opp.stanceLocked, true);
+check('so flipping out of Offensive afterwards is refused',
+  C.check(data, wCrisisGo, { kind: 'setStance', seat: 's1', uid: 1, stance: 'mobility' }).ok, false);
+check('while staying in Offensive is still fine',
+  C.check(data, wCrisisGo, { kind: 'setStance', seat: 's1', uid: 1, stance: 'offensive' }).ok, true);
+// FAQ K14, end to end, and against the card's OWN Medium Action: the bought
+// Tick joins the base pool, so one base Tick plus this one pays for Full-auto.
+// An Extra Tick could not — it pays for a Short Action alone and never
+// combines (3.4.5), which is the reading this ruling threw out.
+const wCrisisMed = wCrisis();
+C.apply(data, wCrisisMed, pa({ actionId: 'A1' }));
+check('one base tick is left after a Short Action', wCrisisMed.script.opp.action, 1);
+check('and it cannot pay for the card\'s Medium Full-auto',
+  C.check(data, wCrisisMed, pa({ actionId: '547_A' })).ok, false);
+C.apply(data, wCrisisMed, am());
+check('the Attack Mode tick combines with it', C.check(data, wCrisisMed, pa({ actionId: '547_A' })).ok, true);
+// Claiming it mid-Opportunity is refused by check(), which is where the rule
+// lives — apply() above was driven past that gate deliberately, to isolate the
+// Tick arithmetic from the window rule tested separately.
+check('though claiming it that late is refused', C.check(data, wCrisis({}, opp(1, { started: true, action: 1 })), am()).ok, false);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

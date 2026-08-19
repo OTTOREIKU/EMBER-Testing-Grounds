@@ -471,6 +471,11 @@ export interface Opportunity {
   // setStance or reboot while this Opportunity is open; drones never need it,
   // their Stance being printed on the card.
   stanceLocked?: boolean;
+  // Card 547's Attack Mode has already been claimed this Opportunity. Banked
+  // and never re-checked, exactly as Overload is: the Stance lock taken in the
+  // same command is what stops the Mech flipping out of Offensive afterwards,
+  // so there is nothing left to revoke.
+  attackMode?: boolean;
   overload: number;
   performed: string[];
   spentExtras: string[];
@@ -517,6 +522,10 @@ export function normaliseOpportunity(raw: unknown): Opportunity | null {
     // with the M2 Data Link and missed here, so a Drone that had spent its free
     // grid got a fresh one back after a rejoin or a replay.
     preMoved: o.preMoved === true ? true : undefined,
+    // Card 547's Attack Mode, for the same reason: dropped here it would be
+    // re-takeable after every rejoin, replay and rollback, and each retake
+    // would add another ordinary Action Tick to the pool.
+    attackMode: o.attackMode === true ? true : undefined,
     // Both halves or neither: half a coordinate would put the mover in a Grid
     // it never stood in, which is worse than having no start at all.
     movedFrom: typeof o.movedFrom?.col === 'number' && typeof o.movedFrom?.row === 'number'
