@@ -1247,44 +1247,64 @@ export class AttackHelper {
     c.defender = board.find((x) => x.uid === c.defender.uid) ?? c.defender;
   }
 
+  // The mirror is published from the END of render(), never the start, and the
+  // ordering is the whole point. stepDefense() calls beginFocus() while the DOM
+  // is being built, and beginFocus -> skipFocusStages mutates focus.stage
+  // WITHOUT rendering again. Publishing first therefore sent focus: null and
+  // the defender never learned it was their turn to declare.
+  //
+  // It only bit when the ATTACKER got no Focus prompt of their own, because an
+  // attacker who does gets buttons whose click calls focusDeclare() -> render(),
+  // and THAT render was the accidental flush that made ordinary Mech-vs-Mech
+  // combat work. canFocus refuses the attacker in three cases, and all three
+  // deadlocked: a DRONE attacker, a Mech at 0 Link, and any Surplus round —
+  // which is why a Mutilation follow-up hung a fight that had just resolved.
+  //
+  // publishView is deduped by JSON equality on the far side, so publishing once
+  // more per render costs nothing when nothing changed.
+  private publishMirror(): void {
+    const c = this.ctx;
+    if (!c) return;
+      // Everything the defender's mirror needs, refreshed whenever this window
+      // redraws. The log tail is stripped of markup: it travels and is drawn
+      // with innerHTML on the far side.
+      this.publishView?.({
+        attackerUid: c.attacker.uid,
+        targetUid: c.defender.uid,
+        actionId: c.action.id,
+        mode: c.explosion ? 'explosion' : c.intercept ? 'intercept' : 'attack',
+        step: c.step,
+        targetPart: c.targetPart ?? null,
+        attack: c.attackRoll?.map((d) => ({ color: d.color, face: d.face })) ?? null,
+        defense: c.defenseRoll?.map((d) => ({ color: d.color, face: d.face })) ?? null,
+        log: c.log.slice(-5).map((l) => l.replace(/<[^>]*>/g, '')),
+        focus: c.focus ? { stage: c.focus.stage, attackerUse: c.focus.attackerUse, defenderUse: c.focus.defenderUse } : null,
+        // Only while the question is open, and only ever answered on the
+        // defender's own client — this is what their mirror draws buttons from.
+        designate: c.step === 'designate' && c.designateFrom
+          ? {
+              from: c.designateFrom,
+              slots: this.designateOffers(c.designateFrom).map((x) => ({ slot: x.slot, label: x.label })),
+            }
+          : null,
+        kcUsed: !!c.kcUsed,
+        evadeUsed: !!c.evadeUsed,
+        // Offered only where the rule allows it: a Parry was actually declared,
+        // the Part carries Melee Evasion, and a face-up Command Token is there
+        // to spend.
+        evadeReady: !c.evadeUsed && !!c.designatedParry && meleeEvasionReady(this.data, c.defender),
+        dodgeDieUsed: !!c.dodgeDieUsed,
+        // No Parry condition on this one — any hit will do — but the Defense Roll
+        // has to be on the table, because what it buys is decided against dice
+        // that are already showing.
+        dodgeDieReady: !c.dodgeDieUsed && c.step === 'defense' && dodgeEnhanceReady(this.data, c.defender),
+      });
+  }
+
   private render(): void {
     const c = this.ctx;
     if (!c) return;
     this.rebind(c);
-    // Everything the defender's mirror needs, refreshed whenever this window
-    // redraws. The log tail is stripped of markup: it travels and is drawn
-    // with innerHTML on the far side.
-    this.publishView?.({
-      attackerUid: c.attacker.uid,
-      targetUid: c.defender.uid,
-      actionId: c.action.id,
-      mode: c.explosion ? 'explosion' : c.intercept ? 'intercept' : 'attack',
-      step: c.step,
-      targetPart: c.targetPart ?? null,
-      attack: c.attackRoll?.map((d) => ({ color: d.color, face: d.face })) ?? null,
-      defense: c.defenseRoll?.map((d) => ({ color: d.color, face: d.face })) ?? null,
-      log: c.log.slice(-5).map((l) => l.replace(/<[^>]*>/g, '')),
-      focus: c.focus ? { stage: c.focus.stage, attackerUse: c.focus.attackerUse, defenderUse: c.focus.defenderUse } : null,
-      // Only while the question is open, and only ever answered on the
-      // defender's own client — this is what their mirror draws buttons from.
-      designate: c.step === 'designate' && c.designateFrom
-        ? {
-            from: c.designateFrom,
-            slots: this.designateOffers(c.designateFrom).map((x) => ({ slot: x.slot, label: x.label })),
-          }
-        : null,
-      kcUsed: !!c.kcUsed,
-      evadeUsed: !!c.evadeUsed,
-      // Offered only where the rule allows it: a Parry was actually declared,
-      // the Part carries Melee Evasion, and a face-up Command Token is there
-      // to spend.
-      evadeReady: !c.evadeUsed && !!c.designatedParry && meleeEvasionReady(this.data, c.defender),
-      dodgeDieUsed: !!c.dodgeDieUsed,
-      // No Parry condition on this one — any hit will do — but the Defense Roll
-      // has to be on the table, because what it buys is decided against dice
-      // that are already showing.
-      dodgeDieReady: !c.dodgeDieUsed && c.step === 'defense' && dodgeEnhanceReady(this.data, c.defender),
-    });
     const el = document.createElement('div');
     el.className = 'attack-helper';
     const aName = c.attacker.label;
@@ -1323,6 +1343,9 @@ export class AttackHelper {
 
     el.querySelector('.ah-cancel')!.addEventListener('click', () => this.cancel());
     this.root.replaceChildren(el);
+    // AFTER the step is built, so a stage beginFocus() settled during the build
+    // is in the view the defender receives.
+    this.publishMirror();
   }
 
   // ---------- Multi-Target: pick the targets, then split the pool ----------
