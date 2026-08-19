@@ -335,7 +335,10 @@ interface Ctx {
   attackRoll: Rolled[] | null;
   defenseRoll: Rolled[] | null;
   // Whether the defender has already been asked for their roll, so the render
-  // loop asks exactly once per attack rather than once per repaint.
+  // loop asks exactly once per DEFENCE ROUND rather than once per repaint. An
+  // attack can hold two of them — 4.8's Surplus round is a second Defense Roll
+  // on this same context — so the round that opens one re-arms this beside the
+  // roll it clears.
   defenseCalled?: boolean;
   blackResult: string | null;
   // 4.4.1 step 5, Focus: after BOTH rolls are made, the attacker declares
@@ -496,6 +499,24 @@ export class AttackHelper {
 
   get active(): boolean {
     return !!this.ctx;
+  }
+
+  // Re-points the window at a new element, keeping the attack.
+  //
+  // The Match Centre rebuilds its whole HUD shell whenever the page leaves HUD
+  // mode and comes back — leaving the table and rejoining does exactly that —
+  // and the rebuild destroys #combat-body along with every other id in it. An
+  // attack in progress lives in THIS object's memory and nowhere on the wire,
+  // so building a second helper over the new element threw the attack away: the
+  // returning player was shown "No attack in progress", and a returning
+  // ATTACKER was worse, because their now-idle helper made the next render
+  // sweep the shared mirror and delete the fight for both players. The page
+  // hands over the new element instead, and the step is drawn again where it
+  // lives now. An idle helper just takes the element; the page paints its own
+  // empty state.
+  remount(root: HTMLElement): void {
+    this.root = root;
+    if (this.ctx) this.render();
   }
 
   private stopBlack(): void {
@@ -2468,6 +2489,16 @@ export class AttackHelper {
           c.attackRoll = null;
           c.eyeSwaps = 0;
           c.defenseRoll = null;
+          // 4.8's Surplus round is a SECOND Defense Roll on the SAME context,
+          // so the ask has to be re-armed with the roll it gates. Left set, the
+          // render loop below skips the call outright: `defenseRoller` is the
+          // only thing that sends `callDefense`, and `callDefense` is the only
+          // thing that puts `script.combat` on the board — which is the sole
+          // gate for the defending player's roll button. Every Surplus round in
+          // the Match Centre hung here, with the defender looking at nothing.
+          // The generation is deliberately NOT bumped: the round keeps this
+          // context, and a new `rollGen` would discard the answer on arrival.
+          c.defenseCalled = false;
           // A fresh Defense Roll re-opens Focus for the DEFENDER alone: the
           // Surplus round makes no Attack Roll, so the attacker's half of
           // step 5 has nothing to act on and skips itself.

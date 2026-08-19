@@ -11,6 +11,9 @@ Thumbs.db
 # Test slices. Each suite writes its subject module to one of these and imports
 # it, so they are build output and are rewritten on every run.
 app/tests/_*.ts
+# Generated harness output too: the surplus/rejoin tests esbuild-bundle the
+# real modules to drive them, and those bundles are build artefacts, not source.
+app/tests/_*.mjs
 
 # Cached responses from the publisher's card API (tools/sync_official.mjs).
 .cache/

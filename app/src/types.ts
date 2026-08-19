@@ -882,6 +882,32 @@ function normaliseCombatView(raw: unknown): CombatView | null {
         : null;
     })(),
     kcUsed: !!v.kcUsed,
+    // Every one of these is a QUESTION only the defender's mirror asks, and this
+    // whitelist used to drop all five — so a checkpoint round-trip erased an
+    // open Shield Up / Mobile Defense choice and both of ZYBP-302's offers, and
+    // the attack they belong to sat waiting on a button nobody could see. Not
+    // just the rejoin path: the host is asked for a checkpoint every 40
+    // revisions, and a resync takes one too. It matters more now that a
+    // returning player's mirror is repainted from what comes back.
+    evadeUsed: !!v.evadeUsed,
+    evadeReady: !!v.evadeReady,
+    dodgeDieUsed: !!v.dodgeDieUsed,
+    dodgeDieReady: !!v.dodgeDieReady,
+    // Bounded the way the pools and the log above are: the slots land in class
+    // names and button labels on the far screen, and the count is a Mech's
+    // Parts, never a list worth trusting from the wire.
+    designate: (() => {
+      const d = v.designate as { from?: unknown; slots?: unknown } | null | undefined;
+      if (!d || typeof d.from !== 'string' || !Array.isArray(d.slots)) return null;
+      return {
+        from: d.from.slice(0, 40),
+        slots: (d.slots as unknown[])
+          .filter((o): o is { slot: string; label: string } =>
+            !!o && typeof (o as { slot?: unknown }).slot === 'string' && typeof (o as { label?: unknown }).label === 'string')
+          .slice(0, 8)
+          .map((o) => ({ slot: o.slot.slice(0, 40), label: o.label.slice(0, 120) })),
+      };
+    })(),
     resolution: normaliseDuel(v.resolution),
   };
 }

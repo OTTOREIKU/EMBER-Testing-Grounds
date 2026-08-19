@@ -4130,6 +4130,14 @@ export function showSideTab(host: HTMLElement | null, name: 'squad' | 'details')
 export function ensureHud(host: HTMLElement, ctx: HudCtx): void {
   hudRef = ctx;
   if (!host.querySelector('#hud-shell')) {
+    // The shell is about to be written from scratch, so #combat-body will be a
+    // NEW and empty element. These two caches are module state and outlive the
+    // DOM they describe: a player who left the table and came back mid-attack
+    // found the cached markup equal to the markup the unchanged view produces,
+    // skipped the write, and was left reading an empty Combat window. What the
+    // last DOM was told is not what this one knows.
+    lastMirror = '';
+    lastMirrorDuel = '';
     // The freeplay side panel moves to the LEFT here and keeps its own tabs,
     // so a player can read either squad and any card mid-match. The ids are
     // the ones SquadTracker and Panel bind to.

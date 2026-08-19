@@ -868,7 +868,17 @@ function mountSide(): void {
     },
     tacticNote: () => null,
   });
-  if (diceData) {
+  // This runs again every time the HUD shell is rebuilt — ensureHud calls it
+  // from the one-time block, and the shell is written from scratch whenever the
+  // page leaves HUD mode and returns, which leaving the table and rejoining
+  // does. The tracker and the panel are views over shared state and are happy
+  // to be rebuilt around the new ids; the combat helper is NOT, because the
+  // attack it is running exists only in its memory. It keeps its instance and
+  // takes the new element instead. Its hooks below close over module state, so
+  // they stay correct across the rebuild and are wired once, with the helper.
+  if (diceData && attackHelper) {
+    attackHelper.remount(document.getElementById('combat-body')!);
+  } else if (diceData) {
     attackHelper = new AttackHelper(
       data,
       diceData,
@@ -973,7 +983,10 @@ function mountSide(): void {
       send({ kind: 'setCombatView', seat: mySeat()!, view: view as CombatView | null });
     };
   }
-  renderCombatIdle();
+  // The empty state, and only when the window really is empty: a helper the
+  // remount above has just redrawn owns those pixels, and writing the idle line
+  // over a live attack is the whole of what a rejoin used to do to it.
+  if (!combatBusy()) renderCombatIdle();
 }
 
 // The last combat view THIS client published, so a repaint sends nothing and a
@@ -983,11 +996,22 @@ function mountSide(): void {
 let publishedCombatView = '';
 
 function sweepCombatView(): void {
-  if (!relay.state.room || !mySeat()) return;
-  if (!combatBusy() && publishedCombatView && publishedCombatView !== 'null') {
-    publishedCombatView = 'null';
-    send({ kind: 'setCombatView', seat: mySeat()!, view: null });
-  }
+  const seat = mySeat();
+  if (!relay.state.room || !seat) return;
+  if (combatBusy() || !publishedCombatView || publishedCombatView === 'null') return;
+  // WHOSE attack is on the board, not merely whether our own window is shut.
+  // `view: null` is the only thing in the app that clears the shared mirror and
+  // check() accepts it from either seat, so a client whose helper went idle for
+  // a reason of its own — a rebuilt HUD, a rollback — could delete an attack
+  // the OTHER player was still resolving. A published view always names an
+  // attacker of the publishing squad (check() refuses any other), so one naming
+  // the other seat's unit is never ours to take down. Our stale key is dropped
+  // either way, or the question is asked again on every render.
+  const shared = state.script?.combatView;
+  const at = shared ? state.tokens.find((t) => t.uid === shared.attackerUid) : null;
+  const mine = !at || at.side === seat;
+  publishedCombatView = 'null';
+  if (mine) send({ kind: 'setCombatView', seat, view: null });
 }
 
 function terrainNow() {

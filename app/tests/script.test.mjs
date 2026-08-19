@@ -81,6 +81,18 @@ const combatView = {
   // and a spent KC Armor must stay spent.
   focus: { stage: 'declareD', attackerUse: true, defenderUse: false },
   kcUsed: true,
+  // ZYBP-302's two offers, and Shield Up / Mobile Defense. All three are
+  // questions only the DEFENDER's mirror asks — the buttons exist nowhere else
+  // — so a checkpoint that dropped them stranded the attack they belong to.
+  // This whitelist dropped all five for months. Coherent rather than uniformly
+  // non-default, because "used AND still on offer" is not a state the attacker's
+  // window can produce; the two left at their defaults are checked one at a
+  // time below.
+  evadeUsed: true,
+  evadeReady: false,
+  dodgeDieUsed: false,
+  dodgeDieReady: true,
+  designate: { from: 'rightArm', slots: [{ slot: 'leftHand', label: 'Shield Up' }] },
   // The settled offsetting the defender's mirror draws (4.4 step 6): a Heavy
   // Hit dodged, a Light Hit blocked by Defense, a Lightning left over as a
   // trigger icon, and the two ways a defence icon goes unused — a spare Dodge
@@ -215,6 +227,30 @@ check('a nonsense spare count reads back zero',
 check('non-string summary lines are dropped',
   normaliseScript({ ...live, combatView: { ...combatView, resolution: { ...resolution, text: [1, 'Hits: 1'] } } }, 's1')
     .combatView.resolution.text, ['Hits: 1']);
+
+// ---------- the defender's own questions, which used to be dropped ----------
+//
+// A rejoin, a resync and the routine checkpoint the host is asked for every 40
+// revisions all come through here. Losing one of these leaves the attacker
+// waiting on a button that has gone off the defender's screen.
+check('a live Melee Evasion offer survives',
+  normaliseScript({ ...live, combatView: { ...combatView, evadeUsed: false, evadeReady: true } }, 's1').combatView.evadeReady, true);
+check('and a spent Dodge Enhancement stays spent',
+  normaliseScript({ ...live, combatView: { ...combatView, dodgeDieUsed: true } }, 's1').combatView.dodgeDieUsed, true);
+check('an open Designate question survives whole',
+  normaliseScript(live, 's1').combatView.designate, { from: 'rightArm', slots: [{ slot: 'leftHand', label: 'Shield Up' }] });
+check('no Designate question reads back null',
+  normaliseScript({ ...live, combatView: { ...combatView, designate: undefined } }, 's1').combatView.designate, null);
+// Same bar the pools and the log are held to: these land in class names and
+// button labels on the far screen, and the far screen did not write them.
+check('a Designate with no Part is dropped',
+  normaliseScript({ ...live, combatView: { ...combatView, designate: { slots: [] } } }, 's1').combatView.designate, null);
+check('junk slots are dropped from a Designate',
+  normaliseScript({ ...live, combatView: { ...combatView, designate: { from: 'torso', slots: [{ slot: 'leftHand', label: 'Shield Up' }, { nope: 1 }] } } }, 's1')
+    .combatView.designate.slots, [{ slot: 'leftHand', label: 'Shield Up' }]);
+check('and the list is capped at a Mech\'s worth of Parts',
+  normaliseScript({ ...live, combatView: { ...combatView, designate: { from: 'torso', slots: Array.from({ length: 30 }, () => ({ slot: 'leftHand', label: 'Shield Up' })) } } }, 's1')
+    .combatView.designate.slots.length, 8);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
