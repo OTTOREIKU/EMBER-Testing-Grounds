@@ -16,8 +16,8 @@ import { statusCount, newOpportunity, newScriptState, PHASES, STATUSES, TIMINGS 
 import { deployable, deployTurn, deploymentComplete, firstPlayerFrom, normaliseSetup, rollTotal, type SetupState } from './setup';
 import { actionPhaseComplete, activationOrder, alive, canAct, droneActionWhy, droneMoveWhy, eligibleUnits, isLoopPhase, loopComplete, nextActivation, nextTurn, onExtraOpportunity, type InitLookup, type LoopPhase } from './loop';
 import { actionIdOf, canActivate, canAttackMode, canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed, type TickVerdict } from './ticks';
-import { gameResult, normaliseTasks, scoreMain, scoreSecondary, settleControl, unpaidLines, zoneCentreGrid, type Designation, type ScoreLine, type ScoreResult, type SecondaryScoring } from './tasks';
-import { stationaryAdjusted, twoHandedUse, tokenCards } from './units';
+import { escortTargets, gameResult, normaliseTasks, scoreMain, scoreRiders, scoreSecondary, settleControl, unpaidLines, zoneCentreGrid, type Designation, type ScoreLine, type ScoreResult, type SecondaryScoring } from './tasks';
+import { stationaryAdjusted, twoHandedUse, tokenCards, vpRiderFor } from './units';
 
 // The in-match HUD (Match Centre part 3a): one question at a time, per seat.
 // Everything here renders from the shared GameState and issues the same
@@ -3813,20 +3813,26 @@ export function scorePreview(ctx: HudCtx, finalRound: boolean): ScoreResult {
   // Control is judged as part of the same reading of the board that scores it.
   settleControl(tasks, cells, s.tokens, low);
   const mission = s.mission ? ctx.data.missions.cards.find((c) => c.id === s.mission) : undefined;
+  const scoring = mission
+    ? {
+      family: mission.family as 'blackbox' | 'control' | 'terminal' | 'vip',
+      vp: mission.vp ?? 0,
+      zones: mission.zones ?? [],
+      fromRound: mission.fromRound ?? 1,
+      cadence: mission.cadence ?? 'per-round',
+      scoringZone: mission.scoringZone,
+    }
+    : undefined;
   const all: ScoreLine[] = [];
-  if (mission) {
-    all.push(...scoreMain(
-      {
-        family: mission.family as 'blackbox' | 'control' | 'terminal' | 'vip',
-        vp: mission.vp ?? 0,
-        zones: mission.zones ?? [],
-        fromRound: mission.fromRound ?? 1,
-        cadence: mission.cadence ?? 'per-round',
-        scoringZone: mission.scoringZone,
-      },
-      tasks, s.tokens, s.round.n, finalRound, cells,
-    ).lines);
-  }
+  if (scoring) all.push(...scoreMain(scoring, tasks, s.tokens, s.round.n, finalRound, cells).lines);
+  // Printed VP riders on a Part (300, 500). Its twin lives in playguide.ts —
+  // the two pages keep separate copies of this glue, and wiring only one is how
+  // a rule ends up live on half the app.
+  all.push(...scoreRiders(
+    scoring, tasks, s.tokens, finalRound, cells,
+    escortTargets(tasks, (id) => ctx.data.secondary.find((c) => c.id === id)?.kind as SecondaryScoring['kind'] | undefined),
+    (cardId) => vpRiderFor(ctx.data, cardId),
+  ).lines);
   for (const side of ['s1', 's2'] as Side[]) {
     const id = tasks.secondary[side];
     const card = id ? ctx.data.secondary.find((c) => c.id === id) : undefined;
@@ -4248,6 +4254,10 @@ export function settleEndStep(ctx: HudCtx, seat: Side, step: string): void {
         ctx.refresh();
         return;
       }
+      // An allowed Award can still have something to say: a rider penalty that
+      // would take a squad below zero is paid but floored (5.2.4), and the
+      // score sheet would otherwise disagree with the lines above it.
+      if (paid.note) ctx.noteNow(paid.note);
     }
   }
   // The command does the work; this reads the board first so it can say what

@@ -6,7 +6,7 @@ import { opportunityBonusOn, ripostePart, defenseReactionOn, targetTracingOn, ri
 import { canActivate, canAttackMode, canManeuver, canOverload, canPerform, spendAction, spendActivation, spendAttackMode, spendManeuver, spendOverload } from './ticks';
 import { tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { battlefieldLocked, deploymentComplete, deployTurn, firstPlayerFrom, newSetup, normaliseSetup, tasksLocked } from './setup';
-import { applyKill, normaliseTasks, pendingDesignations, settleControl, type Designation } from './tasks';
+import { applyKill, normaliseTasks, pendingDesignations, recordPartLoss, recordUnitLoss, settleControl, type Designation } from './tasks';
 import { alive, canAct, dialHidden, droneActionWhy, droneMoveWhy, eligibleUnits, getLocalSeat, isLoopPhase, loopComplete, nextTurn, onExtraOpportunity } from './loop';
 import { dissipationFor, spotsInGrid } from './rules';
 
@@ -255,7 +255,11 @@ export type Command =
   | { kind: 'commitTimings'; seat: Side; hash: string }
   | { kind: 'revealTimings'; seat: Side; salt: string; dials: { uid: number; timing?: Timing }[] };
 
-export type CheckResult = { ok: true } | { ok: false; why: string };
+// `note` is an allowed command that still has something to say — the award of a
+// negative rider is the first of them. Warn, don't block: the rules have an
+// answer (the total floors at zero), and refusing would lose the whole round's
+// Victory Points for BOTH squads over one card.
+export type CheckResult = { ok: true; note?: string } | { ok: false; why: string };
 
 const STANCES: Stance[] = ['offensive', 'defensive', 'mobility', 'shutdown'];
 const ok: CheckResult = { ok: true };
@@ -704,7 +708,24 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       return ok;
     }
     case 'award': {
-      if (!Number.isFinite(cmd.vp.s1) || !Number.isFinite(cmd.vp.s2) || cmd.vp.s1 < 0 || cmd.vp.s2 < 0) return no('That is not a score.');
+      // A side's award can legitimately be NEGATIVE: cards 300 and 500 both
+      // print "-1 Victory Point if this Part is destroyed", the penalty settles
+      // once at the end of the game, and there is no matching + in the same
+      // award to net it against. A lone -1 is the base case, so the contract
+      // has to accept it — the FLOOR lives on the running total in apply(),
+      // never on the delta, because clamping the delta makes the -1 vanish.
+      //
+      // Bounded rather than merely finite while the line is open: a whole game
+      // is worth well under 60 VP and no rider stack reaches -10, so anything
+      // outside that is a bug in the caller rather than a score.
+      if (!Number.isInteger(cmd.vp.s1) || !Number.isInteger(cmd.vp.s2)) return no('That is not a score.');
+      const wild = (n: number): boolean => n < -10 || n > 60;
+      if (wild(cmd.vp.s1) || wild(cmd.vp.s2)) return no('That is not a score.');
+      // Warn, do not block: the award still lands, floored at zero (5.2.4).
+      const banked = normaliseTasks(state.tasks).vp;
+      if (banked.s1 + cmd.vp.s1 < 0 || banked.s2 + cmd.vp.s2 < 0) {
+        return { ok: true, note: 'A squad cannot finish below zero Victory Points, so the penalty is floored at 0.' };
+      }
       return ok;
     }
     case 'lockMap': {
@@ -1537,6 +1558,10 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
         const tasks = normaliseTasks(state.tasks);
         for (const v of dying) {
           if (v.lastDamagedBy) applyKill(tasks, v.lastDamagedBy, { side: v.side, kind: v.kind, lowValue: lowValueUnit(data, v) }, 'unit');
+          // Everything still bolted to it leaves with it. A Mech can withdraw
+          // on Integrity Loss with a live backpack, and the -1 riders are owed
+          // all the same — nothing on the board records that after this line.
+          recordUnitLoss(tasks, v);
         }
         state.tasks = tasks;
       }
@@ -1556,8 +1581,14 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
     // The Award judges control as part of the same reading of the board that
     // it scores (5.3.2), so the settlement happens here too.
     settleControl(tasks, zoneCells(data), state.tokens, (x) => lowValueUnit(data, x));
-    tasks.vp.s1 += cmd.vp.s1;
-    tasks.vp.s2 += cmd.vp.s2;
+    // The ONE place a Victory Point total is floored. A printed rider can send
+    // a delta negative (300, 500), and 5.2.4 knows no score below zero — but
+    // the clamp belongs on the running TOTAL, never on the delta: a side on 6
+    // taking a lone -1 finishes on 5, and clamping the delta would leave them
+    // on 6. Here it covers the guide, the Match Centre, the hand-edit buttons,
+    // replay and rollback identically.
+    tasks.vp.s1 = Math.max(0, tasks.vp.s1 + cmd.vp.s1);
+    tasks.vp.s2 = Math.max(0, tasks.vp.s2 + cmd.vp.s2);
     for (const k of cmd.keys) if (!tasks.scored.includes(k)) tasks.scored.push(k);
     tasks.paidKills = { s1: { ...tasks.kills.s1 }, s2: { ...tasks.kills.s2 } };
     tasks.paidTestKills = { ...tasks.testKills };
@@ -1883,6 +1914,11 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
     if (!victim) return;
     const tasks = normaliseTasks(state.tasks);
     applyKill(tasks, { side: cmd.seat, uid: cmd.uid }, { side: victim.side, kind: victim.kind, lowValue: lowValueUnit(data, victim) }, cmd.what);
+    // The payload carries no slot, so nothing here can say WHICH Part died —
+    // but a removed Unit loses all of them, and that much is readable from the
+    // victim while it is still in hand. The per-Part case is stamped in
+    // applyPenetration instead.
+    if (cmd.what === 'unit') recordUnitLoss(tasks, victim);
     state.tasks = tasks;
     // A destroyed Unit leaves the board (4.4.4); the tally above is all that
     // is left of it.
@@ -2082,6 +2118,15 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
         // The last unit to reduce the Part count gets the Integrity-Loss kill
         // if the Mech leaves in the End Phase (FAQ P4).
         target.lastDamagedBy = { side: cmd.seat, uid: cmd.uid };
+      }
+      if (target.partStates[cmd.slot] === 'destroyed') {
+        // Same site, same reason as lastDamagedBy: cards 300 and 500 dock a
+        // Victory Point at the end of the game "if this Part is destroyed", and
+        // by then the unit may have left the board entirely. The board stops
+        // being able to answer, so the answer is stamped as it happens.
+        const tasks = normaliseTasks(state.tasks);
+        recordPartLoss(tasks, target, cmd.slot);
+        state.tasks = tasks;
       }
       return;
     }

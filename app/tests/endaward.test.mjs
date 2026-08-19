@@ -181,11 +181,19 @@ C.setLocalSeat('s1');
 // DIFFERENTLY: the Award weighs the numbers, the step mark never looks at them.
 // That gap is exactly what a call site which ignores the Award's verdict falls
 // into, so it is pinned rather than assumed.
+// The refusable fixture used to be a NEGATIVE award. It is not one any more:
+// cards 300 and 500 print "-1 Victory Point if this Part is destroyed", so a
+// negative delta is a real score now and the total floors at zero instead
+// (vprider.test.mjs owns that half). A fraction is still not a score, and it is
+// what this file needs — something check() genuinely refuses, so the ordering
+// defect below can be reproduced at all.
 const stA = board();
 check('check() refuses an Award that is not a score',
-  C.check(data, stA, { kind: 'award', seat: 's1', vp: { s1: -2, s2: 0 }, keys: [] }).ok, false);
+  C.check(data, stA, { kind: 'award', seat: 's1', vp: { s1: 1.5, s2: 0 }, keys: [] }).ok, false);
 check('and the reason is one a player can read',
-  C.check(data, stA, { kind: 'award', seat: 's1', vp: { s1: -2, s2: 0 }, keys: [] }).why, 'That is not a score.');
+  C.check(data, stA, { kind: 'award', seat: 's1', vp: { s1: 1.5, s2: 0 }, keys: [] }).why, 'That is not a score.');
+check('while a negative one is now allowed through',
+  C.check(data, stA, { kind: 'award', seat: 's1', vp: { s1: -2, s2: 0 }, keys: [] }).ok, true);
 check('but the step mark passes regardless of what the round was worth',
   C.check(data, stA, { kind: 'markEndStep', seat: 's1', step: 'tasks' }).ok, true);
 
@@ -212,7 +220,7 @@ const makeCtx = (state) => ({
 // THE REGRESSION. The board owes a score the command layer will refuse.
 const st = board();
 const ctx = makeCtx(st);
-C.scoreStub.result = { lines: [{ side: 's1', vp: -2, why: 'a Task that takes points away', key: '2:main' }], s1: -2, s2: 0 };
+C.scoreStub.result = { lines: [{ side: 's1', vp: 1.5, why: 'a score the command layer cannot take', key: '2:main' }], s1: 1.5, s2: 0 };
 C.settleEndStep(ctx, 's1', 'tasks');
 check('a refused Award is NOT followed by the step mark', ctx.sent.map((c) => c.kind), ['award']);
 check('so the End Phase checklist stays open', st.script.endDone, []);

@@ -22,6 +22,19 @@ export interface Kills {
   partsAndDrones: number;
 }
 
+// One Part that has left the board, remembered by the CARD that was in the
+// slot. A destroyed Unit is removed outright (4.4.4) and a destroyed Part on a
+// removed Unit is never written to partStates at all — a Torso kill never
+// touches the backpack — so a Part that pays out at game end for "if this Part
+// is destroyed" has nothing left to read. The fact has to be stamped when it
+// happens, which is why this is a ledger and not a board reading.
+export interface PartLoss {
+  side: Side;
+  uid: number;
+  slot: string;
+  cardId: string;
+}
+
 export interface TaskState {
   main?: string;
   secondary: { s1?: string; s2?: string };
@@ -34,6 +47,7 @@ export interface TaskState {
   testKills: { s1: number; s2: number };
   paidKills: { s1: Kills; s2: Kills };
   paidTestKills: { s1: number; s2: number };
+  partsLost: PartLoss[];
   scored: string[];
 }
 
@@ -45,7 +59,8 @@ export function newTaskState(): TaskState {
   return {
     secondary: {}, items: [], vp: { s1: 0, s2: 0 }, leader: {}, secTarget: {}, zone: {},
     kills: { s1: newKills(), s2: newKills() }, testKills: { s1: 0, s2: 0 },
-    paidKills: { s1: newKills(), s2: newKills() }, paidTestKills: { s1: 0, s2: 0 }, scored: [],
+    paidKills: { s1: newKills(), s2: newKills() }, paidTestKills: { s1: 0, s2: 0 },
+    partsLost: [], scored: [],
   };
 }
 
@@ -211,6 +226,14 @@ export function normaliseTasks(raw: unknown): TaskState {
     testKills: { s1: num(t.testKills?.s1), s2: num(t.testKills?.s2) },
     paidKills: { s1: kills(t.paidKills?.s1), s2: kills(t.paidKills?.s2) },
     paidTestKills: { s1: num(t.paidTestKills?.s1), s2: num(t.paidTestKills?.s2) },
+    // This is a WHITELIST: a field left out here is silently dropped on every
+    // rehydrate, network round-trip and rollback, and the -1 riders would come
+    // back to life on a reload. Listed the day it was added, deliberately.
+    partsLost: Array.isArray(t.partsLost)
+      ? t.partsLost
+          .filter((p): p is PartLoss => !!p && typeof p.uid === 'number' && typeof p.slot === 'string' && typeof p.cardId === 'string')
+          .map((p) => ({ side: side(p.side) ?? 's1', uid: p.uid, slot: p.slot, cardId: p.cardId }))
+      : [],
     scored: Array.isArray(t.scored) ? t.scored.filter((x): x is string => typeof x === 'string') : [],
   };
 
@@ -344,20 +367,9 @@ export function scoreMain(
   if (m.cadence === 'at-end' && !finalRound) return { lines: [], s1: 0, s2: 0 };
 
   if (m.family === 'blackbox') {
-    // Asset Preservation pays only for Boxes carried into one named zone. With
-    // no lookup to read it with, the zone cannot be judged, and scoring every
-    // held Box would be the wrong answer in the safer direction for the holder
-    // — so nothing scores rather than everything.
-    const wants = m.scoringZone;
-    const cells = wants && zoneCells ? zoneCells(wants) : null;
     for (const side of ['s1', 's2'] as Side[]) {
-      const held = st.items.filter((i) => {
-        if (i.kind !== 'blackbox' || i.bearerUid === undefined) return false;
-        const bearer = byUid.get(i.bearerUid);
-        if (!bearer || bearer.side !== side) return false;
-        if (!wants) return true;
-        return !!cells?.length && inZone(bearer, cells);
-      });
+      const wants = m.scoringZone;
+      const held = heldBoxes(m, st, byUid, side, zoneCells);
       if (held.length) {
         lines.push({
           side,
@@ -399,6 +411,34 @@ export function scoreMain(
   }
 
   return tally(lines);
+}
+
+// The Boxes one side is holding that the Main Task will actually pay for.
+//
+// Asset Preservation pays only for Boxes carried into one named zone. With no
+// lookup to read it with, the zone cannot be judged, and scoring every held Box
+// would be the wrong answer in the safer direction for the holder — so nothing
+// scores rather than everything.
+//
+// It is a shared helper rather than an inline filter because card 300's VP
+// rider rides on exactly this list: a Box outside the scoringZone scores 0 base
+// and must earn no rider either, and two copies of the filter would drift.
+function heldBoxes(
+  m: MissionScoring,
+  st: TaskState,
+  byUid: Map<number, Token>,
+  side: Side,
+  zoneCells?: (zone: string) => string[],
+): TaskItem[] {
+  const wants = m.scoringZone;
+  const cells = wants && zoneCells ? zoneCells(wants) : null;
+  return st.items.filter((i) => {
+    if (i.kind !== 'blackbox' || i.bearerUid === undefined) return false;
+    const bearer = byUid.get(i.bearerUid);
+    if (!bearer || bearer.side !== side) return false;
+    if (!wants) return true;
+    return !!cells?.length && inZone(bearer, cells);
+  });
 }
 
 function tally(lines: ScoreLine[]): ScoreResult {
@@ -485,6 +525,126 @@ export function scoreSecondary(
   return tally(lines);
 }
 
+// ---------- printed Victory Point riders on a Part (cards 300 and 500) ----------
+//
+// Two backpacks print their own VP line: a bonus settled at the end of the game
+// and a matching penalty if the Part itself is gone. Neither is a Secondary
+// Task, so neither belongs in scoreSecondary — they settle alongside the Main
+// Task, once, in the final round, which is why this is its own producer.
+//
+// SCOPE IS THE PART, NOT THE MECH. All three printings say 本部件 / "this
+// Part", so a Mech that walks away with a blown backpack still takes the -1,
+// and a Mech that dies with the backpack intact takes it too.
+export interface VpRider {
+  cardId: string;
+  name: string;
+  // 300 OCS85 Black Box Carrying Pack: "the Black Box carried by this unit
+  // provides 1 additional Victory Point". PER BOX — FAQ P7 allows one Box per
+  // Freehand, so carrying more than one is legal — and on top of the Main Task
+  // award, not instead of it.
+  perBlackBox?: number;
+  // 500 HD-2 Data Backpack: +1 at the end of the game if this Mech is the
+  // Escort Target of a Secondary Task and the Part is still there.
+  escortSurvives?: number;
+  // Both: -1 if this Part is destroyed. FLAT, once per card instance, however
+  // many Boxes were being carried.
+  penalty?: number;
+}
+
+// Which unit each side has designated as an ESCORT Target specifically.
+// st.secTarget is one slot shared by every designation a Secondary Task can
+// make — the Behead victim and the Weapons Test unit live there too — so "this
+// Mech is the Escort Target" cannot be read off the uid alone. Shared rather
+// than re-derived at each scoring page, because that is exactly how the two
+// pages drift apart.
+export function escortTargets(
+  st: TaskState,
+  kindOf: (cardId: string) => SecondaryScoring['kind'] | undefined,
+): { s1?: number; s2?: number } {
+  const out: { s1?: number; s2?: number } = {};
+  for (const side of ['s1', 's2'] as Side[]) {
+    const card = st.secondary[side];
+    if (card && kindOf(card) === 'survive-designated') out[side] = st.secTarget[side];
+  }
+  return out;
+}
+
+// MechLoadout's own keys minus the pilot. Read off the token rather than
+// importing PART_SLOTS, because tasks.ts holds no units.ts dependency by design
+// — the same reason the card readers arrive as a callback.
+function partSlotsOf(t: Token): string[] {
+  return Object.keys(t.mech ?? {}).filter((k) => k !== 'pilot');
+}
+
+// `riderOf` is the trailing optional callback, the house style already used for
+// `lowValue`: the card text lives in GameData and this module never sees it.
+// Without it nothing scores, which is what freeplay wants — main.ts runs no
+// Task scoring at all.
+export function scoreRiders(
+  m: MissionScoring | undefined,
+  st: TaskState,
+  tokens: Token[],
+  finalRound: boolean,
+  zoneCells?: (zone: string) => string[],
+  escort?: { s1?: number; s2?: number },
+  riderOf?: (cardId: string) => VpRider | undefined,
+): ScoreResult {
+  const lines: ScoreLine[] = [];
+  // Both cards pay at the end of the game, so nothing is owed before it.
+  if (!finalRound || !riderOf) return tally(lines);
+  const byUid = new Map(tokens.map((t) => [t.uid, t]));
+
+  // The bonus halves read a live Part on a live Mech, which needs no ledger.
+  for (const t of tokens) {
+    if (t.kind !== 'mech' || !t.mech || t.deployed === false) continue;
+    for (const slot of partSlotsOf(t)) {
+      const cardId = (t.mech as Record<string, string | undefined>)[slot];
+      if (!cardId) continue;
+      if ((t.partStates[slot as keyof typeof t.partStates] ?? 'intact') === 'destroyed') continue;
+      const r = riderOf(cardId);
+      if (!r) continue;
+      const key = `rider:${t.side}:${cardId}:${t.uid}`;
+      // 300 is gated on the Black Box Main task being the one in play, and it
+      // counts through heldBoxes so the scoringZone filter it inherits is the
+      // very same one the Task award used.
+      if (r.perBlackBox && m?.family === 'blackbox') {
+        const n = heldBoxes(m, st, byUid, t.side, zoneCells).filter((i) => i.bearerUid === t.uid).length;
+        if (n) {
+          lines.push({
+            side: t.side,
+            vp: n * r.perBlackBox,
+            why: `${r.name}: ${n} Black Box${n === 1 ? '' : 'es'} carried at ${r.perBlackBox} extra VP each`,
+            key,
+          });
+        }
+      }
+      if (r.escortSurvives && escort?.[t.side] === t.uid) {
+        lines.push({ side: t.side, vp: r.escortSurvives, why: `${r.name}: the Escort Target still carries it`, key });
+      }
+    }
+  }
+
+  // The penalty halves read the ledger instead: the Mech may be off the board
+  // entirely, and either way the -1 is owed.
+  for (const loss of st.partsLost) {
+    const r = riderOf(loss.cardId);
+    if (!r?.penalty) continue;
+    // FAQ P22: with no designation there is no bonus AND no penalty. The same
+    // reading gates 300 on the Task it names — a Black Box card in a Control
+    // Zone game prints a rule about a Task that is not being played.
+    if (r.perBlackBox && m?.family !== 'blackbox') continue;
+    if (r.escortSurvives && escort?.[loss.side] !== loss.uid) continue;
+    lines.push({
+      side: loss.side,
+      vp: -r.penalty,
+      why: `${r.name}: the Part was destroyed`,
+      key: `riderlost:${loss.side}:${loss.cardId}:${loss.uid}`,
+    });
+  }
+
+  return tally(lines);
+}
+
 // One destruction, entering the ledger. Combat reports a destroyed Part and a
 // destroyed Unit as separate events, and a Drone death arrives as both, so each
 // event type only counts what belongs to it: 'part' counts Mech Parts, 'unit'
@@ -511,6 +671,26 @@ export function applyKill(
       if (test) st.testKills[killer.side] += 1;
     }
   }
+}
+
+// One Part leaving the board, entering the loss ledger. Written where
+// lastDamagedBy is written, for the same reason: the board stops being able to
+// answer the question the moment the unit is removed. Idempotent on
+// (uid, slot), because a second Penetration into an already-destroyed Part
+// re-runs the same line.
+export function recordPartLoss(st: TaskState, t: Token, slot: string): void {
+  const cardId = (t.mech as Record<string, string | undefined> | undefined)?.[slot];
+  if (!cardId) return;
+  if (st.partsLost.some((p) => p.uid === t.uid && p.slot === slot)) return;
+  st.partsLost.push({ side: t.side, uid: t.uid, slot, cardId });
+}
+
+// A whole Unit leaving takes every Part still on it. A Torso kill never touches
+// the backpack slot, so without this the rider Part reads 'intact' on a Mech
+// that is no longer on the table.
+export function recordUnitLoss(st: TaskState, t: Token): void {
+  if (t.kind !== 'mech' || !t.mech) return;
+  for (const slot of partSlotsOf(t)) recordPartLoss(st, t, slot);
 }
 
 // ---------- end of game (5.2.4) ----------

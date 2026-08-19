@@ -5,14 +5,14 @@ import { cardName, squadLabel } from './data';
 import { bindTips, linkMechanics } from './inspector';
 import { choiceDialog } from './dialog';
 import { PHASES, PHASE_INFO } from './tracker';
-import { opportunityBonusOn, hasFlexibleTiming, pilotCard, coordinationFor, coordinationOnOpportunityEnd, extrasFor, actionSilenceDenier, isSilentAction, type ActionWorld, canActivateCamo, type ExtraActivation, extraActivationOf, guidedActions, initiativeFor, maneuverRange, maxLink, SLOT_LABEL, tokenCards } from './units';
+import { vpRiderFor, opportunityBonusOn, hasFlexibleTiming, pilotCard, coordinationFor, coordinationOnOpportunityEnd, extrasFor, actionSilenceDenier, isSilentAction, type ActionWorld, canActivateCamo, type ExtraActivation, extraActivationOf, guidedActions, initiativeFor, maneuverRange, maxLink, SLOT_LABEL, tokenCards } from './units';
 import { canAttackMode, canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed } from './ticks';
 import { asterKey, clearDroneCommands, perform, readyCommands, seedCommandTokens } from './commands';
 import { askIssuer, asterBlockers, offerCoordination, runAster } from './commandpick';
 import { tacticFitsPhase, tacticSpec } from './tactics';
 import { alive, canAct, getLocalSeat, isLoopPhase, nextTurn, onExtraOpportunity, type LoopPhase, nextActivation, activationOrder, actionPhaseComplete, loopComplete, eligibleUnits, type InitLookup, type Activation } from './loop';
 import { deployable, deploymentComplete, deployTurn, firstPlayerFrom, newSetup, normaliseSetup, rollTotal, type SetupState } from './setup';
-import { normaliseTasks, scoreMain, scoreSecondary, settleControl, unpaidLines, type ScoreLine, type ScoreResult, type SecondaryScoring, type TaskState } from './tasks';
+import { escortTargets, normaliseTasks, scoreMain, scoreRiders, scoreSecondary, settleControl, unpaidLines, type MissionScoring, type ScoreLine, type ScoreResult, type SecondaryScoring, type TaskState } from './tasks';
 
 function phaseDone(text: string): string {
   return `<p class="pg-complete"><i>✓</i><span>${text}</span></p>`;
@@ -1327,6 +1327,15 @@ export class PlayGuide {
     const cells = (zone: string) => this.data.zoneData.zones.find((z) => z.id === zone)?.cells ?? [];
     const all: ScoreLine[] = [];
     if (mission) all.push(...this.mainScore(s, tasks, mission, finalRound).lines);
+    // Printed VP riders on a Part (300, 500). Its twin lives in matchhud.ts's
+    // scorePreview — the two pages keep separate copies of this glue, and
+    // wiring only one is how a rule ends up live on half the app.
+    all.push(...scoreRiders(
+      mission ? this.missionScoring(mission) : undefined,
+      tasks, s.tokens, finalRound, cells,
+      escortTargets(tasks, (id) => this.data.secondary.find((c) => c.id === id)?.kind as SecondaryScoring['kind'] | undefined),
+      (cardId) => vpRiderFor(this.data, cardId),
+    ).lines);
     for (const side of ['s1', 's2'] as Side[]) {
       const id = tasks.secondary[side];
       const card = id ? this.data.secondary.find((c) => c.id === id) : undefined;
@@ -1346,16 +1355,22 @@ export class PlayGuide {
     return { lines: open, s1, s2 };
   }
 
+  // The Main Task read as scoring terms. Shared with the rider producer, which
+  // gates card 300 on the Task family and reuses its scoringZone.
+  private missionScoring(mission: MissionCard): MissionScoring {
+    return {
+      family: (mission.family as 'blackbox' | 'control' | 'terminal' | 'vip'),
+      vp: mission.vp ?? 0,
+      zones: mission.zones ?? [],
+      fromRound: mission.fromRound ?? 1,
+      cadence: mission.cadence ?? 'per-round',
+      scoringZone: mission.scoringZone,
+    };
+  }
+
   private mainScore(s: GameState, tasks: TaskState, mission: MissionCard, finalRound: boolean): ScoreResult {
     return scoreMain(
-      {
-        family: (mission.family as 'blackbox' | 'control' | 'terminal' | 'vip'),
-        vp: mission.vp ?? 0,
-        zones: mission.zones ?? [],
-        fromRound: mission.fromRound ?? 1,
-        cadence: mission.cadence ?? 'per-round',
-        scoringZone: mission.scoringZone,
-      },
+      this.missionScoring(mission),
       tasks,
       s.tokens,
       s.round.n,
@@ -1393,8 +1408,11 @@ export class PlayGuide {
     // round is still open is read off the checklist rather than off the
     // verdict: only an Award that really did not land may promise a retry.
     const settled = this.script(s).endDone.includes(`${s.round.n}:end:tasks`);
+    // An allowed Award can still have something to say — a rider penalty that
+    // would take a squad below zero is paid but floored (5.2.4), and the player
+    // should see the difference between what was scored and what was banked.
     this.warn = paid.ok
-      ? null
+      ? paid.note ?? null
       : `${paid.why}${settled ? '' : ' Nothing has been paid, so the Tasks step stays open — press Award again once that is dealt with.'}`;
     this.cb.onChanged();
   }

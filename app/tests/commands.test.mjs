@@ -755,7 +755,17 @@ wts.tasks = { items: [] };
 C.apply(data, wts, me('tasks'));
 check('the tasks step ticks the checklist', wts.script.endDone, ['1:end:tasks']);
 
-check('a negative Award is refused', C.check(data, world([], 5), { kind: 'award', seat: 's1', vp: { s1: -1, s2: 0 }, keys: [] }).ok, false);
+// A negative Award used to be refused outright. It is ACCEPTED now: cards 300
+// and 500 print "-1 Victory Point if this Part is destroyed", that penalty
+// settles once at the end of the game, and there is no matching + in the same
+// award to net it against — so a lone -1 is the base case, not an error. The
+// floor lives on the running total in apply(); the full rider arithmetic is in
+// vprider.test.mjs.
+check('a negative Award is accepted', C.check(data, world([], 5), { kind: 'award', seat: 's1', vp: { s1: -1, s2: 0 }, keys: [] }).ok, true);
+check('and it says so, because the total will floor at zero',
+  C.check(data, world([], 5), { kind: 'award', seat: 's1', vp: { s1: -1, s2: 0 }, keys: [] }).note?.includes('floored at 0'), true);
+check('a fractional score is still not a score', C.check(data, world([], 5), { kind: 'award', seat: 's1', vp: { s1: 1.5, s2: 0 }, keys: [] }).ok, false);
+check('and neither is a wild one', C.check(data, world([], 5), { kind: 'award', seat: 's1', vp: { s1: 0, s2: 999 }, keys: [] }).ok, false);
 const waw = world([], 5);
 const aw = { kind: 'award', seat: 's1', vp: { s1: 3, s2: 1 }, keys: ['1:main'] };
 C.apply(data, waw, aw);

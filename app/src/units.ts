@@ -6,7 +6,7 @@ import { LEGACY_SIDE, normaliseScript, statusCount, TIMINGS } from './types';
 import { normaliseSetup } from './setup';
 import { isMeleeFiring, lockersOf } from './melee';
 import { inContact, largeGridOf, losBetween, rangeBetween, smokeBlocks } from './rules';
-import { normaliseTasks } from './tasks';
+import { normaliseTasks, type VpRider } from './tasks';
 // ticks.ts imports only from types.ts, so this direction carries no cycle.
 import { timingOf } from './ticks';
 
@@ -1026,6 +1026,41 @@ export function denseArmorByText(data: GameData, t: Token): boolean {
 // is still whatever it is; what the card removes is the CONSEQUENCE.
 export function noMeleeBackAttack(data: GameData, t: Token): boolean {
   return t.kind === 'mech' && partSays(data, t, /遭受近战攻击时[^。]*无法被背击|cannot be Back.?attack/i);
+}
+
+// ---------- printed Victory Point riders (300, 500) ----------
+//
+// Two backpacks award and dock Victory Points in their own text. Neither
+// carries gameRules, so like the four riders above they come off the print —
+// but keyed on the CARD ID rather than a Token, because the -1 has to be
+// readable for a Part whose Mech is no longer on the board.
+//
+// Read the numbers rather than hardcoding 1: the Chinese and the English agree
+// on 1/1 today, and a reprint that moves them should move the app with it.
+// The English on 500 is typo'd in the shipped data ("lose lose 1 Victroy
+// Point"), so both languages are tried for every clause.
+export function vpRiderFor(data: GameData, cardId: string): VpRider | undefined {
+  const card = data.byId.get(cardId);
+  if (!card) return undefined;
+  const rider: VpRider = { cardId, name: cardName(card) };
+  for (const a of card.actions ?? []) {
+    const text = `${a.description?.en ?? ''}\n${a.description?.zh ?? ''}`;
+    // 300: "在黑箱争夺任务中，本机携带的黑箱额外提供1胜利点"
+    const box = /本机携带的黑箱额外提供(\d+)胜利点/.exec(text)
+      ?? /Black Box carried by this unit provides (\d+) additional Victory Point/i.exec(text);
+    if (box) rider.perBlackBox = Number(box[1]);
+    // 500: "本机作为次要任务的护送目标时…本部件额外提供1胜利点"
+    const escort = /作为次要任务的护送目标时[^。]*本部件额外提供(\d+)胜利点/.exec(text)
+      ?? /Escort Target of a Secondary Task[\s\S]*?gain (\d+) Victory Point/i.exec(text);
+    if (escort) rider.escortSurvives = Number(escort[1]);
+    // The shared -1, printed by both: 如果本部件被摧毁则减1胜利点.
+    const pen = /本部件被摧毁则减(\d+)胜利点/.exec(text)
+      ?? /this [Pp]art is [Dd]estroyed, reduce Victory Points by (\d+)/.exec(text)
+      ?? /lose (?:lose )?(\d+) Vict\w+ Point[^.]*?if this part is Destroyed/i.exec(text);
+    if (pen) rider.penalty = Number(pen[1]);
+  }
+  if (!rider.perBlackBox && !rider.escortSurvives && !rider.penalty) return undefined;
+  return rider;
 }
 
 // ---------- White Dwarf Thruster (292 ACE-001 Bit Port) ----------
