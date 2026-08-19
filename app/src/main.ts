@@ -32,7 +32,7 @@ import { Panel } from './panel';
 import { tacticSpec, tacticTargets } from './tactics';
 import { Roster } from './roster';
 import { inContact, canStandIn, attackDirection, crushTargets, type CrushVictims, dissipationFor, extendPath, inArc, knockbackPath, largeGridOf, type LargeGrid, LG, losBetween, losNote as losNoteFor, type MoveOpts, pathCost, protectionFor as protectionForShared, rangeBetween, reachableGrids, smokeBlocks, spotsInGrid, standingSpot } from './rules';
-import { breakAwayCost, canBeForceMoved, lockersOf, tetherCap, tetherNote } from './melee';
+import { breakAwayCost, breakAwayNote, canBeForceMoved, lockersOf, tetherCap, tetherNote } from './melee';
 import { instantiateScenario, loadScenarios, type Scenario } from './scenarios';
 import { loadReplays, ReplayPlayer, type ReplayScript, type ReplayStep, type ReplayTally } from './replay';
 import { SquadTracker } from './squads';
@@ -1880,10 +1880,10 @@ async function init() {
     board.showReachable(reachableGrids(t, range, currentTerrain(), state.tokens, flying, moveOpts(t, flying)), range);
     board.panEnabled = false;
     renderMoveCtrl();
-    const locked = flying || t.aerial ? [] : lockersOf(data, t, state.tokens, currentTerrain());
-    const breakAway = locked.length
-      ? ` Melee Locked by ${locked.map((o) => o.label).join(', ')}, so leaving a Grid costs ${locked.length} extra Movement Range (4.3.5).`
-      : '';
+    // Off breakAwayNote rather than a locker COUNT, so the sentence and the
+    // price come from one place: a Panzer's Obstruct makes a locker worth 2, and
+    // counting heads here would have quoted a number the search does not charge.
+    const breakAway = flying || t.aerial ? '' : breakAwayNote(data, t, state.tokens, currentTerrain());
     const leash = tetherNote(t, state.tokens);
     setHint(`${opts.label} for ${t.label}: click a lit grid to move there. Click again further on to add a waypoint, Backspace steps back, then Confirm. Esc cancels.${breakAway}${leash ? ` ${leash}` : ''}`);
   }
@@ -2501,6 +2501,14 @@ async function init() {
         .filter((g) => !(g.c === goal.c && g.r === goal.r))
         .filter((g) => standingSpot(g.c, g.r, v.size, v.aerial, currentTerrain(), state.tokens, v.uid) !== null);
       if (!spots.length) {
+        // KNOWN GAP, pre-existing and NOT introduced by LPA-23, and the Match
+        // Centre's advanceCrush carries the same one: state.tokens still holds
+        // the crusher, and standingSpot ignores only ONE uid, so the crusher's
+        // own 3x3 footprint blocks every spot in its Grid and this swap never
+        // finds one. The Crush then resolves as a no-op. LPA-23 Onyx makes it
+        // far more reachable — a LARGE victim needs a whole free 3x3 to escape
+        // into — so it is recorded here rather than fixed inside a pilot-trait
+        // pass, which would change how every existing Crush resolves.
         const swap = standingSpot(largeGridOf(t).c, largeGridOf(t).r, v.size, v.aerial, currentTerrain(), state.tokens, v.uid);
         if (swap) {
           perform(data, state, { kind: 'forceMove', seat: t.side, uid: t.uid, targetUid: v.uid, to: { col: swap.col, row: swap.row } });

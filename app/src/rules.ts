@@ -354,6 +354,27 @@ export interface CrushVictims {
   terrain: TerrainPiece[];
 }
 
+// LPA-23 Onyx, 不屈 Indomitable: "Piloted mech may Crush large units."
+//
+// The one pilot trait that reaches this far down the stack, and it is read
+// STRAIGHT off the loadout rather than through pilotIs: rules.ts sits UNDER
+// units.ts and melee.ts in the import graph (both import this file), so
+// importing the helper back would close a cycle.
+//
+// It is still card-id dispatch, spelled without the database: `t.mech.pilot` IS
+// the key pilotCard looks the pilot up by, and a card's own id is that key, so
+// this asks exactly the question `pilotIs(data, t, 'LPA-23')` asks.
+//
+// DEPARTURE FROM THE PLAN, and the reason matters. The plan called for a
+// derived `crushesLarge` flag stamped in makeMechToken and re-derived in
+// migrateState, the way `barricade` is, to keep all six crushTargets call sites
+// untouched. That flag would go STALE: main.ts's onSaveMech rewrites `t.mech`
+// wholesale — pilot included — when a loadout is edited in freeplay, and
+// nothing there re-stamps a derived flag. Reading the live field cannot drift,
+// adds no Token field, needs no migrateState entry and no boardFingerprint
+// thought, and leaves the six call sites alone anyway.
+const INDOMITABLE_PILOT = 'LPA-23';
+
 // What a Large Unit would Crush by entering Large Grid (c,r), or null when the
 // Grid holds something it cannot Crush (4.3.6). Only Large Units Crush, and only
 // Units smaller than themselves; Destructible Terrain in the way is destroyed.
@@ -369,6 +390,12 @@ export function crushTargets(
   // is what Crushing would mean, and the ruling simply forbids it.
   if ((t.statuses ?? []).filter((s) => s === 'camouflage').length > 0) return null;
   if (c < 0 || r < 0 || c >= LG || r >= LG) return null;
+  // RULING, taken literally: the Onyx adds a TARGET class and nothing else. The
+  // size gate above — only a Large Unit Crushes at all — stands, because "may
+  // Crush large units" names what may be crushed, not who may crush. Relaxing
+  // both would let a Medium chassis Crush anything, which nothing printed
+  // supports.
+  const indomitable = t.kind === 'mech' && t.mech?.pilot === INDOMITABLE_PILOT;
   const covers = (cells: { col: number; row: number }[]) =>
     cells.some((cell) => Math.floor(cell.col / 3) === c && Math.floor(cell.row / 3) === r);
 
@@ -384,9 +411,12 @@ export function crushTargets(
     const cells: { col: number; row: number }[] = [];
     for (let dc = 0; dc < o.size; dc++) for (let dr = 0; dr < o.size; dr++) cells.push({ col: o.col + dc, row: o.row + dr });
     if (!covers(cells)) continue;
-    if (o.size >= t.size) return null;
+    if (indomitable ? o.size > t.size : o.size >= t.size) return null;
     // A Barricade can neither move nor be Crushed (FAQ E6), so a grid holding
-    // one cannot be entered at all.
+    // one cannot be entered at all. NEWLY REACHABLE for a Large Barricade: the
+    // size test above used to short-circuit before this line whenever the two
+    // were the same size, so an Onyx is the first thing that can get here with
+    // one. It still returns null, which is right — E6 has no size clause.
     if (o.barricade) return null;
     units.push(o);
   }

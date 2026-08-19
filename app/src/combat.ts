@@ -5,7 +5,7 @@ import { linkMechanics } from './inspector';
 import { SQUAD_ORDER, squadLabel } from './data';
 import type { Card, CardAction, DiceData, DiceIcon, DieColor, Duel, DuelIcon, GameRuleEffect, PartSlot, Side, SmokeScreen, TerrainPiece, Token } from './types';
 import { statusCount, STATUSES } from './types';
-import { aaRadarCovers, attackReactionsOf, auraEffectsOn, aurasOn, auraValueOn, automaticShieldFor, blueLightningDodges, earlyWarningCover, coolingBonus, denseArmorByText, eyesAreHeavyHits, pilotDiceBonus, ignoresLowProfile, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, noMeleeBackAttack, missileGuidance, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, denseArmorOn, designationsOn, electronicStrength, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, canAffordFocus, focusIsFree, keepsLinkOnPartLoss, maxLink, structureOf, trackingCover, TRACKING_SPOTTERS_NEEDED, pilotCard, pilotIs, repeatersFor, SLOT_LABEL, tetherStrike, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
+import { aaRadarCovers, attackReactionsOf, auraEffectsOn, aurasOn, auraValueOn, automaticShieldFor, blueLightningDodges, earlyWarningCover, coolingBonus, denseArmorByText, eyesAreHeavyHits, pilotDiceBonus, ignoresLowProfile, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, noMeleeBackAttack, missileGuidance, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, denseArmorOn, designationsOn, electronicStrength, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, canAffordFocus, focusIsFree, hiddenByAlliedAura, keepsLinkOnPartLoss, maxLink, pursuesFragile, structureOf, trackingCover, TRACKING_SPOTTERS_NEEDED, pilotCard, pilotIs, repeatersFor, SLOT_LABEL, tetherStrike, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
 import { timingOf } from './ticks';
 import { inArc, losNote, protectionFor, rangeBetween } from './rules';
 import type { Command } from './commands';
@@ -384,6 +384,11 @@ interface Ctx {
   // Hits on the last derivation. Same reason as lightningSwapped — derived, not
   // stored as a decision, so a re-roll cannot leave a stale count behind.
   fierceSwapped?: number;
+  // LPA-24 Sealock: how many {Eye} 追击 Pursuit turned into Heavy Hits on the
+  // last derivation. Derived for the same reason as the two above, and needed
+  // at all only so the note can name the Fragile Token — the swap itself rides
+  // the shared eyeSwaps clamp and is not counted separately.
+  pursuitSwapped?: number;
   surplusRound: number;
   carried: { heavy: number; light: number };
   surplusKeyword: SurplusEffect | null;
@@ -1213,7 +1218,13 @@ export class AttackHelper {
     // attacker's swapped Heavy Hits belonged to no die and Dodge Enhancement
     // could never cancel them. Infinity stands for "all of them", which is what
     // the free arm means.
-    let eyesLeft = eyesAreHeavyHits(this.data, c.attacker) ? Number.POSITIVE_INFINITY : c.eyeSwaps ?? 0;
+    // LPA-24 Pursuit joins that same free arm here as well as in the totals: it
+    // is a free {Eye}->{Heavy Hit} like 503's, so leaving it out here would put
+    // its Heavy Hits on no die at all and Dodge Enhancement could never cancel
+    // them — the exact bug the comment above records for 503.
+    let eyesLeft = eyesAreHeavyHits(this.data, c.attacker) || pursuesFragile(this.data, c.attacker, c.defender)
+      ? Number.POSITIVE_INFINITY
+      : c.eyeSwaps ?? 0;
     // FPA-04 Fierce Assault, replayed here for the same reason and in the same
     // order: the heavy budget above is offered each {Eye} first, and only what
     // it leaves becomes a Light Hit.
@@ -1241,8 +1252,14 @@ export class AttackHelper {
     // 503 Close Assault trades every {Eye} for a {Heavy Hit} for nothing, so it
     // is applied rather than offered -- the same trade Chef buys with a Command
     // Token, riding the same counter so the two cannot double-count one icon.
-    const free = eyesAreHeavyHits(this.data, c.attacker) ? counts.eye ?? 0 : 0;
+    // LPA-24 Sealock, 追击 Pursuit: the same free trade, conditioned on a
+    // Fragile Token on the DEFENDER rather than on a Part of the attacker. It
+    // widens the free arm instead of growing an arm of its own, so the clamp
+    // below keeps a Chef token and this trait from spending one {Eye} twice.
+    const pursuit = pursuesFragile(this.data, c.attacker, c.defender);
+    const free = eyesAreHeavyHits(this.data, c.attacker) || pursuit ? counts.eye ?? 0 : 0;
     const swaps = Math.min(Math.max(c.eyeSwaps ?? 0, free), counts.eye ?? 0);
+    c.pursuitSwapped = pursuit ? swaps : 0;
     if (swaps) counts = { ...counts, eye: (counts.eye ?? 0) - swaps, heavyHit: (counts.heavyHit ?? 0) + swaps };
     // FPA-04 Fierce Assault is applied LAST, to the {Eye} no HEAVY source has
     // already taken. {Eye}->{Heavy Hit} is strictly better than {Eye}->{Light
@@ -1316,11 +1333,22 @@ export class AttackHelper {
     const tracking = c.action.type === 'Firing' && this.tokens
       ? trackingCover(this.data, this.tokens(), this.terrain ? this.terrain() : [], this.smoke ? this.smoke() : [], c.attacker, c.defender)
       : [];
+    // FPA-06-2 KeyHole, 功率隐匿 Power Concealment: a FOURTH source, and the only
+    // one that comes off the defender's PILOT rather than off a Token, a Part or
+    // an aura keyword. Any friendly aura reaching the defender is enough — the
+    // aura need not grant low_profile itself, which is the whole difference
+    // from the arm above it.
+    const concealed = this.tokens ? hiddenByAlliedAura(this.data, this.tokens(), c.defender) : undefined;
+    // Hoisted out of the disjunction because the note below has to know WHICH
+    // arm fired. A Token is the one source the shooter can actually see sitting
+    // on the target, so the invisible sources must never be credited over it.
+    const lpToken = statusCount(c.defender.statuses, 'lowProfile') > 0;
     const lowProfile = c.action.type === 'Firing'
       && !ignoresLowProfile(this.data, c.attacker)
       && !tracking.length
-      && (statusCount(c.defender.statuses, 'lowProfile') > 0
+      && (lpToken
         || (this.tokens ? auraEffectsOn(this.data, this.tokens(), c.defender).has('low_profile') : false)
+        || !!concealed
         || !!mistyEagle);
     // Melee Evasion adds a {Dodge} ICON, not a die — the card writes it braced,
     // and the pool was already rolled by now.
@@ -1356,11 +1384,24 @@ export class AttackHelper {
     const text: string[] = [];
     if (c.protection && !c.surplusRound) text.push(`🛡 ${c.protectionNote}: defender rolled +${c.protection} White`);
     if (lowProfile && dodge) {
-      text.push(`Low Profile: [Eye] counted as [Dodge] against this Firing Attack${
-        // Named, because this source sits beside the ATTACKER: without it the
-        // shooter watches their Eyes evaporate with nothing on screen to blame.
-        mistyEagle ? ` — ${mistyEagle.source.label} (${mistyEagle.label}) is within range of ${c.attacker.label}` : ''
-      }`);
+      // Named, because neither of these sources is a Token the shooter can see
+      // on the target: without a line the attacker watches their Eyes evaporate
+      // with nothing on screen to blame. The Misty Eagle sits beside the
+      // ATTACKER, and Power Concealment is a pilot trait plus an aura several
+      // Grids away on the defender's side.
+      // ...and named ONLY when nothing VISIBLE already explains it. A defender
+      // already wearing a Low Profile Token needs no attribution, and crediting
+      // Power Concealment over it names a cause that was not load-bearing.
+      // (An aura granting the keyword outright is invisible too — FAQ Q3 — and
+      // has never been named here; that gap is older than this line.)
+      const why = lpToken
+        ? ''
+        : mistyEagle
+          ? ` — ${mistyEagle.source.label} (${mistyEagle.label}) is within range of ${c.attacker.label}`
+          : concealed
+            ? ` — Power Concealment: ${c.defender.label} is inside ${concealed.source.label}'s ${concealed.label}`
+            : '';
+      text.push(`Low Profile: [Eye] counted as [Dodge] against this Firing Attack${why}`);
     }
     // Named for the same reason the Misty Eagle is: without this the shooter
     // sees Eyes that DIDN'T evaporate and has nothing on screen to credit.
@@ -1368,6 +1409,14 @@ export class AttackHelper {
       text.push(`Tracking: ${tracking.slice(0, TRACKING_SPOTTERS_NEEDED).map((d) => d.label).join(' and ')} have line of sight to ${c.defender.label}, so ${c.attacker.label} ignores Low Profile`);
     }
     if (radar) text.push(`${radar.label} sees the target: [Eye] counted as 1 Light Hit on this Interception (FAQ O12/O13)`);
+    // Named for the same reason the Ion Weapon note below is: the trade is free
+    // and automatic, so without a line the attacker watches Eyes become Heavy
+    // Hits with nothing on screen to credit — and the CONDITION is on the
+    // target, which is the half a player is least likely to guess.
+    if (c.surplusRound === 0 && c.pursuitSwapped) {
+      const n = c.pursuitSwapped;
+      text.push(`Pursuit: ${c.defender.label} bears a Fragile Token, so ${n} [Eye] counted as ${n === 1 ? 'a Heavy Hit' : 'Heavy Hits'}`);
+    }
     if (c.surplusRound === 0 && c.fierceSwapped) {
       const n = c.fierceSwapped;
       text.push(`Fierce Assault: ${c.attacker.label} is in Offensive Stance, so ${n} [Eye] counted as ${n === 1 ? 'a Light Hit' : 'Light Hits'} on this Melee Action`);

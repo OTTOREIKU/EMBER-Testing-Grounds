@@ -8,7 +8,7 @@ import { transformOffer, anyStartTiming, opportunityBonusOn, ignoresProtectionOn
 import { mountDuel, playDuel, resolveCounterRoll, tallyCounter } from './combat';
 import { tacticFitsPhase, tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { inContact, canStandIn, attackDirection, crushTargets, dissipationFor, extendPath, knockbackPath, largeGridOf, LG, losBetween, losNote, pathCost, protectionFor, rangeBetween, reachableGrids, standingSpot, type LargeGrid } from './rules';
-import { breakAwayCost, canBeForceMoved, tetherCap, tetherNote } from './melee';
+import { breakAwayCost, breakAwayNote, canBeForceMoved, tetherCap, tetherNote } from './melee';
 import { factionColour, linkIcon, squadColour } from './icons';
 import { iconSvg } from './dice';
 import type { PartSlot, CardAction, CounterRoll, DiceData, DieColor, Facing, GameState, Side, Stance, Timing, Token, ExtraTick, Opportunity } from './types';
@@ -1260,6 +1260,15 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
           // The same sentence the freeplay hint uses, from the same helper.
           const leash = tetherNote(t, ctx.state.tokens);
           return leash ? `<p class="tp-note">${esc(leash)}</p>` : '';
+        })()}
+        ${(() => {
+          // Break Away, likewise from the one helper that also prices it. This
+          // board never explained a short overlay from a Melee Lock at all;
+          // LPA-20's Obstruct is the first lock that costs something a player
+          // cannot count off the board, and the "or 1 Link" alternative is only
+          // usable if the app says it exists.
+          const lock = movePlan.flying || t.aerial ? '' : breakAwayNote(ctx.data, t, ctx.state.tokens, terrainOf(ctx));
+          return lock ? `<p class="tp-note">${esc(lock)}</p>` : '';
         })()}
         ${
           // The Ojs200's optional Flying Movement. A toggle rather than a
@@ -2814,6 +2823,15 @@ function advanceCrush(ctx: HudCtx): void {
     if (!out.length) {
       // Nowhere to go: the two swap, which is the crusher's Grid as it stands
       // now — it has not moved yet.
+      //
+      // KNOWN GAP, pre-existing and NOT introduced by LPA-23: `s.tokens` still
+      // holds the crusher, and standingSpot ignores only ONE uid, so the
+      // crusher's own 3x3 footprint blocks every spot in its Grid and this
+      // swap can never find one. The branch is effectively dead on both pages
+      // and the crush becomes a no-op. LPA-23 Onyx makes it far more reachable,
+      // because a LARGE victim needs a whole free 3x3 to escape into — so it is
+      // recorded here rather than fixed inside a pilot-trait pass, which would
+      // change how every existing Crush resolves on both boards.
       const swap = standingSpot(Math.floor(crusher.col / 3), Math.floor(crusher.row / 3), v.size, v.aerial, terrainOf(ctx), s.tokens, v.uid);
       if (swap) {
         ctx.send({ kind: 'forceMove', seat: crusher.side, uid: crusher.uid, targetUid: v.uid, to: swap });

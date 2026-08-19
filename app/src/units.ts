@@ -1667,6 +1667,49 @@ export function phasesThroughUnits(data: GameData, tokens: Token[], t: Token): b
   return auraEffectsOn(data, tokens, t).has('low_profile');
 }
 
+// FPA-06-2 KeyHole, 功率隐匿 Power Concealment: "When piloted Mech is within
+// range of allied Aura, gains Low Profile."
+//
+// The publisher calls this trait "Hidden in Plain Sight" and files the card as
+// FPA-19 / QR 362. It is a genuinely DIFFERENT card from FPA-06, whose trait is
+// the Amplify range bonus, and traits.test.mjs pins the pair apart as a known
+// false positive -- do not merge them.
+//
+// Lives here rather than in the phase-7 predicate block because it needs the
+// BOARD, which is the same reason phasesThroughUnits sits above it.
+//
+// THE READING, and it is a ruling rather than a quotation: "within range of an
+// allied Aura" is answered as "AFFECTED BY an allied Aura". aurasOn filters
+// targetUnitType as well as reach, so a Mech standing 3 Grids from a drone-only
+// aura (ZYBP-202, ZHDR-303, 173_B) is inside the printed ring and still gets
+// nothing here. That is the call: aurasOn is this app's single answer to "which
+// auras reach this unit", and a second, looser walker would mean two different
+// answers to the same question about the same board, with the looser one live
+// in exactly one rule. FAQ Q1/Q2 judge an aura at the moment it matters, which
+// is what aurasOn already does.
+//
+// ALLY MEANS ALLY, and the filter is not decoration: aurasOn deliberately hands
+// back ENEMY-sourced auras too (an EW Suppression field is an aura that reaches
+// you), so without the side test this Mech would gain Low Profile for standing
+// inside an enemy jammer.
+//
+// A UNIT IS ITS OWN ALLY (FAQ Q4) -- aurasOn implements that and
+// hasFlexibleTiming already leans on it. Consequence, written down rather than
+// left to be discovered: a KeyHole whose own Mech carries an aura Part has Low
+// Profile against Firing permanently. Nothing printed carves that out, and a
+// self-exclusion here would contradict Q4 in the one place it is inconvenient.
+//
+// Answers with the whole AuraSource rather than a boolean, the way silenceDenied
+// does: a defence that changes with no name attached reads as a bug at the
+// table, and the attacker is the one whose Eyes evaporate.
+//
+// What this grants is the KEYWORD, not a Token, so Scan cannot strip it (FAQ
+// Q3/J2) and it must NOT be added to either page's Scan picker.
+export function hiddenByAlliedAura(data: GameData, tokens: Token[], t: Token): AuraSource | undefined {
+  if (!pilotIs(data, t, 'FPA-06-2')) return undefined;
+  return aurasOn(data, tokens, t).find((src) => src.source.side === t.side);
+}
+
 // EVERY one of these auras prints "This effect does not stack", so two sources
 // of the same effect are not added together — the strongest single one applies.
 export function auraValueOn(data: GameData, tokens: Token[], t: Token, kind: string): number {
@@ -3008,6 +3051,40 @@ export function pilotDiceBonus(
   if (attacker.kind !== 'mech' || a.type !== 'Firing' || !defender) return out;
   if (pilotIs(data, attacker, 'LPA-23-2') && rangeBetween(attacker, defender).range <= GRACE_NOTE_RANGE) out.yellow += 1;
   return out;
+}
+
+// LPA-24 Sealock, 追击 Pursuit: "When attacking a target with a Fragile Token,
+// may exchange {Eye} as {Heavy Hit}." (zh: 攻击有脆弱标记的目标时，{眼睛}视为
+// {重击}, which prints no choice at all.)
+//
+// THIS READER IS WHY THE WHOLE PHASE DISPATCHES ON THE CARD ID. Sealock's own
+// Chinese wording is matched, character for character, by eyesAreHeavyHits's
+// regex above -- so any pilot-aware TEXT reader hands this Mech an
+// unconditional, always-on {Eye}->{Heavy Hit} against every target on the
+// board. THE REAL PROTECTION IS THAT THIS ASKS FOR THE ID. Two nearby things
+// are easy to confuse with it and neither would save us here: partSays skips
+// slot === 'pilot', which matters only for a card that HAS actions (a drone
+// card wrongly seated as a pilot -- autoshield.test.mjs drives exactly that);
+// and a pilot's TRAIT text is out of partSays's reach regardless, because no
+// pilot card in cards.json carries an actions array at all.
+//
+// FREE, and that is the difference from Chef: no Command Token, no Link, no
+// button. It therefore joins the FREE arm of the eyeSwaps clamp in combat.ts
+// beside card 503 rather than the paid one, so `Math.max(paid, free)` keeps a
+// Chef token and this trait from spending the same {Eye} twice.
+//
+// SCOPE: the card says "attacking", not Firing or Melee, so this covers every
+// attack that runs through the AttackHelper -- Firing, Melee, Interceptions
+// and Explosions alike. Narrowing it would be inventing a clause.
+//
+// The printed "may" is applied rather than offered, the way Pulse, Ion and
+// Fierce Assault already are: a leftover {Eye} buys the attacker nothing in
+// this pipeline except a line in the display-only triggers strip, so there is
+// no decision to hand the player.
+export function pursuesFragile(data: GameData, attacker: Token, defender: Token | undefined): boolean {
+  if (attacker.kind !== 'mech' || !defender) return false;
+  if (!pilotIs(data, attacker, 'LPA-24')) return false;
+  return statusCount(defender.statuses, 'fragile') > 0;
 }
 
 // A Mech Maneuvers at the Maneuver Value printed on its Chassis; a Drone moves at

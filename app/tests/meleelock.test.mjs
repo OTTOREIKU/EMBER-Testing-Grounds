@@ -136,5 +136,56 @@ check('a deployable that cannot move cannot be', M.canBeForceMoved(data, drone(3
   check('a Firing Action without the keyword is still barred while locked', M.isMeleeFiring(plain), false);
 }
 
+// ---------- LPA-20 Panzer's 阻拦 Obstruct ----------
+//
+// "When Breaking Away from the piloted mech, the Enemy Unit needs to consume 1
+// additional Move Range or 1 Link." breakAwayCost lives in this file's slice,
+// so the price is driven here — with the PILOT taken from the shipped
+// cards.json, because which pilot is the whole rule and a fixture id would pass
+// against a reader keyed on the wrong card.
+{
+  const raw = JSON.parse(readFileSync(new URL('../../data/cards.json', import.meta.url), 'utf8'));
+  const all = Array.isArray(raw) ? raw : raw.cards;
+  const byId = new Map(all.map((c) => [String(c.id), c]));
+  const panzer = byId.get('LPA-20');
+  // The negative control is a real UN LV4 pilot whose trait is a dice exchange,
+  // so it can never bend a movement price.
+  const sealock = byId.get('LPA-24');
+  if (!panzer || !sealock) throw new Error('LPA-20 or LPA-24 is missing from cards.json');
+  check('LPA-20 is the Obstruct card and LPA-24 is not',
+    [panzer.trait, sealock.trait], ['阻拦', '追击']);
+  check('and its curated effect names the surcharge',
+    panzer.traitEffects?.map((e) => [e.type, e.value]), [['breakaway_extra_cost_or_link', 1]]);
+
+  const flees = mech(1, 's1', 2, 2);
+  const piloted = (uid, c, r, id) => mech(uid, 's2', c, r, { mech: { torso: '002', pilot: id } });
+  const ordinary = M.breakAwayCost(data, flees, [flees, piloted(2, 2, 3, sealock.id)], []);
+  check('an ordinary locker still charges 1 to leave a Grid', ordinary(2, 2), 1);
+  const held = M.breakAwayCost(data, flees, [flees, piloted(2, 2, 3, panzer.id)], []);
+  check('a Panzer charges 2', held(2, 2), 2);
+  const both = M.breakAwayCost(data, flees, [flees, piloted(2, 2, 3, panzer.id), piloted(3, 3, 3, sealock.id)], []);
+  check('and the surcharge is PER LOCKER, so one of each costs 3', both(2, 2), 3);
+  check('a Grid the Panzer cannot reach is still free', held(2, 0), 0);
+
+  // The trait sits on the LOCKER, never on the unit leaving: a Panzer running
+  // away from somebody else pays the ordinary price.
+  const panzerFlees = mech(1, 's1', 2, 2, { mech: { torso: '002', pilot: panzer.id } });
+  const away = M.breakAwayCost(data, panzerFlees, [panzerFlees, piloted(2, 2, 3, sealock.id)], []);
+  check('a Panzer BREAKING AWAY pays the ordinary 1, because the trait is the locker\'s', away(2, 2), 1);
+
+  // The sentence and the price come off one helper, or a board quotes a number
+  // the search does not charge.
+  const note = M.breakAwayNote(data, flees, [flees, piloted(2, 2, 3, panzer.id)], []);
+  check('the note reports the real cost, not the locker count', /costs 2 extra Movement Range/.test(note), true);
+  check('and names the Panzer as the reason', /m2 charges 1 more \(Obstruct, LPA-20\)/.test(note), true);
+  // The "or 1 Link" alternative is a live open ruling, so it is DISCLOSED
+  // rather than priced — warn, do not hide.
+  check('and discloses the Link alternative the app does not price',
+    /may instead be paid as 1 Link/.test(note), true);
+  const plainNote = M.breakAwayNote(data, flees, [flees, piloted(2, 2, 3, sealock.id)], []);
+  check('an ordinary lock says none of that', [/costs 1 extra/.test(plainNote), /Obstruct/.test(plainNote)], [true, false]);
+  check('and an unlocked unit gets no note at all', M.breakAwayNote(data, flees, [flees], []), '');
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

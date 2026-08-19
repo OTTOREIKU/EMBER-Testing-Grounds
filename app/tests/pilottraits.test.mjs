@@ -38,6 +38,16 @@ export function tokenCards(data: any, t: any): any[] {
     const id = t.mech?.[slot]; const c = id ? data.byId.get(id) : undefined;
     if (c) out.push({ slot, card: c });
   }
+  // The PILOT slot is emitted here exactly as the real tokenCards emits it,
+  // purely for FIDELITY with the shipped shape. It pins nothing on its own, and
+  // an earlier version of this comment claimed otherwise: partSays reads only
+  // \`card.actions[].description\`, and NO pilot card in cards.json carries an
+  // actions array, so a pilot slot can never match a Part regex whether or not
+  // partSays guards it. The guard is still load-bearing -- but what drives it is
+  // autoshield.test.mjs, which seats an actions-bearing DRONE card in the pilot
+  // slot. That file fails when the guard is deleted; this one does not.
+  const p = t.mech?.pilot ? data.byId.get(t.mech.pilot) : undefined;
+  if (p) out.push({ slot: 'pilot', card: p });
   if (t.kind !== 'mech') { const c = data.byId.get(t.cardId); if (c) out.push({ slot: 'main', card: c }); }
   return out;
 }
@@ -562,6 +572,271 @@ console.log('\nPilot traits, against the shipped cards and dice\n');
     /focusIsFree\(this\.data, t\) \? .Focus — free./.test(src), true);
   check('and the mirror button still agrees with it',
     /freeFocus \? .Focus — free./.test(mt), true);
+}
+
+// ---------- LPA-24 Sealock — 追击 Pursuit ----------
+//
+// "When attacking a target with a Fragile Token, may exchange {Eye} as
+// {Heavy Hit}." Free — no Command Token, no Link — so it joins the FREE arm of
+// the shared eyeSwaps clamp beside card 503 rather than growing an arm of its
+// own.
+{
+  const sealock = pilot('LPA-24');
+  // The negative control is a real UN LV4 pilot whose trait is a movement
+  // legality, so it can never satisfy an icon rule by accident.
+  const firefly = pilot('LPA-21');
+  check('LPA-24 is the Pursuit card', sealock.trait, '追击');
+  check('and the printed English is the one this reader was written against',
+    /Fragile Token[\s\S]*\{Eye\}[\s\S]*\{Heavy Hit\}/.test(sealock.traitDescription.en), true);
+  check('and the curated effect agrees with that reading',
+    sealock.traitEffects?.map((e) => e.type), ['fragile_target_eye_to_heavy_optional']);
+
+  // ---------- the landmine, pinned ----------
+  //
+  // Card 503's regex matches Sealock's own Chinese trait text. If it were ever
+  // read as a Part, this Mech would gain an unconditional always-on
+  // {Eye}->{Heavy Hit} against every target on the board — no Fragile Token
+  // needed. Two assertions, because the guard has two halves.
+  check("503's regex really does match Sealock's printed trait text",
+    /\{?眼睛\}?视为\{?重击\}?/.test(sealock.traitDescription.zh), true);
+  // This pins the OUTCOME -- a Sealock gains no always-on swap -- and NOT the
+  // mechanism. It still passes with partSays's pilot guard deleted, because a
+  // pilot card has no actions for that regex to reach in the first place.
+  const wearingSealock = { kind: 'mech', mech: { torso: '002', pilot: 'LPA-24' }, partStates: { torso: 'intact' } };
+  check('a Sealock gains no unconditional swap from its own trait text',
+    A.eyesAreHeavyHits(data, wearingSealock), false);
+
+  const helper = new A.Helper(data, dice);
+  const mech = (uid, pilotId, over = {}) => ({
+    uid, side: uid === 1 ? 's1' : 's2', kind: 'mech', label: `M${uid}`, col: 3, row: 3, size: 3, facing: 0,
+    stance: 'offensive', mech: { torso: '002', pilot: pilotId }, partStates: { torso: 'intact' }, statuses: [], ...over,
+  });
+  const melee = { id: 'X_A', type: 'Melee', size: 'm', name: { en: 'Punch' } };
+  const firing = { id: 'X_B', type: 'Firing', size: 'm', name: { en: 'Shot' } };
+  // red face 7 and yellow face 6 are both a solid {Eye} in the shipped dice.
+  const eyes = [{ color: 'red', face: 7 }, { color: 'yellow', face: 6 }];
+  const ctx = (attackerPilot, action, defenderStatuses, over = {}) => ({
+    attacker: mech(1, attackerPilot),
+    defender: mech(2, 'LPA-21', { statuses: defenderStatuses }),
+    action, attackRoll: eyes, eyeSwaps: 0, surplusRound: 0, ...over,
+  });
+
+  const fragile = helper.attackIcons(ctx('LPA-24', firing, ['fragile']));
+  check('LPA-24 turns every {Eye} into a Heavy Hit against a Fragile target',
+    [fragile.eye ?? 0, fragile.heavyHit ?? 0], [0, 2]);
+  const healthy = helper.attackIcons(ctx('LPA-24', firing, []));
+  check('and does nothing at all when the target bears no Fragile Token',
+    [healthy.eye ?? 0, healthy.heavyHit ?? 0], [2, 0]);
+  const other = helper.attackIcons(ctx('LPA-21', firing, ['fragile']));
+  check('a pilot without the trait leaves a Fragile target\'s Eyes alone',
+    [other.eye ?? 0, other.heavyHit ?? 0], [2, 0]);
+
+  // "When ATTACKING" — not Firing, not Melee. The card names no attack type,
+  // so every attack that runs through this helper is covered.
+  const punch = helper.attackIcons(ctx('LPA-24', melee, ['fragile']));
+  check('and the trade covers a Melee Action too, because the card says "attacking"',
+    [punch.eye ?? 0, punch.heavyHit ?? 0], [0, 2]);
+
+  // The note has to be able to name the condition, or the attacker watches
+  // Eyes become Heavy Hits with nothing on screen to credit.
+  const noted = ctx('LPA-24', firing, ['fragile']);
+  helper.attackIcons(noted);
+  check('the tally records how many Eyes Pursuit took, for the note', noted.pursuitSwapped, 2);
+  const quiet = ctx('LPA-24', firing, []);
+  helper.attackIcons(quiet);
+  check('and records none when the trait did not apply', quiet.pursuitSwapped, 0);
+  check('resolve() prints that count as a named line',
+    /Pursuit: \$\{c\.defender\.label\} bears a Fragile Token/.test(combat), true);
+
+  // ---------- the shared counter ----------
+  //
+  // Chef's paid swap and this free one ride ONE clamp, so a Command Token and
+  // a Fragile Token can never spend the same {Eye} twice.
+  const paid = helper.attackIcons(ctx('LPA-24', firing, ['fragile'], { eyeSwaps: 2 }));
+  check('a Chef token and Pursuit cannot double-count one {Eye}',
+    [paid.eye ?? 0, paid.heavyHit ?? 0], [0, 2]);
+
+  // ---------- the audit's Trap #1: the per-die replay ----------
+  //
+  // Dodge Enhancement offsets whole DICE. A free swap left out of the per-die
+  // tally puts its Heavy Hits on no die at all, which is exactly the bug card
+  // 503 shipped with.
+  check('the per-die tally replays Pursuit, so Dodge Enhancement can reach it',
+    helper.attackIconsPerDie(ctx('LPA-24', firing, ['fragile'])), [{ heavy: 1, light: 0 }, { heavy: 1, light: 0 }]);
+  check('and leaves the dice alone against a target with no Fragile Token',
+    helper.attackIconsPerDie(ctx('LPA-24', firing, [])), [{ heavy: 0, light: 0 }, { heavy: 0, light: 0 }]);
+  check('nor does a pilot without the trait get a per-die claim',
+    helper.attackIconsPerDie(ctx('LPA-21', firing, ['fragile'])), [{ heavy: 0, light: 0 }, { heavy: 0, light: 0 }]);
+}
+
+// ---------- FPA-06-2 KeyHole — 功率隐匿 Power Concealment ----------
+//
+// "When piloted Mech is within range of allied Aura, gains Low Profile."
+// Publisher name "Hidden in Plain Sight", id FPA-19 / QR 362, and a genuinely
+// different card from FPA-06 — traits.test.mjs pins that apart, so this file
+// checks the RULE and takes the identity from there.
+//
+// Driven against real aura cards, because every question this trait raises —
+// whose aura, reaching what, at what distance — lives in the shipped data and
+// no fixture aura could ask it.
+{
+  const keyhole = pilot('FPA-06-2');
+  const amplify = pilot('FPA-06');
+  check('FPA-06-2 is the Power Concealment card', keyhole.trait, '功率隐匿');
+  check('and FPA-06 is still the OTHER KeyHole, not this one', amplify.trait, '功率加大');
+  check('and the printed English is the one this reader was written against',
+    /within range of allied Aura[\s\S]*Low Profile/.test(keyhole.traitDescription.en), true);
+  check('and the curated effect agrees with that reading',
+    keyhole.traitEffects?.map((e) => e.type), ['low_profile_when_in_allied_aura']);
+
+  // col 3 is Large Grid (1,1); col 12 is (4,1) — three Grids apart.
+  const at = (uid, side, col, torso, pilotId) => ({
+    uid, side, kind: 'mech', label: `M${uid}`, col, row: 3, size: 3, facing: 0, stance: 'offensive',
+    mech: { torso, pilot: pilotId }, partStates: { torso: 'intact' }, statuses: [],
+  });
+  const drone = (uid, side, col, cardId) => ({
+    uid, side, kind: 'drone', label: `D${uid}`, col, row: 3, size: 1, facing: 0, stance: 'offensive',
+    cardId, partStates: { main: 'intact' }, statuses: [],
+  });
+  const hidden = at(1, 's1', 12, '002', 'FPA-06-2');
+
+  check('a KeyHole with no aura anywhere near it is not concealed',
+    !!A.hiddenByAlliedAura(data, [hidden], hidden), false);
+
+  // 559 RT-18T is an ALLY aura at Range 6 that grants a Defense bonus, NOT Low
+  // Profile — which is the point: the trait asks for an aura, not for the
+  // low_profile keyword the arm beside it already reads.
+  const escarpment = at(2, 's1', 3, '559');
+  const board = [hidden, escarpment];
+  check('559 still projects an ally aura that is not low_profile',
+    A.aurasOn(data, board, hidden).map((s) => s.kinds).flat(), ['defense_white_dice_bonus']);
+  check('so a KeyHole standing in ANY friendly aura is concealed',
+    A.hiddenByAlliedAura(data, board, hidden)?.source.uid, 2);
+  const plain = at(3, 's1', 12, '002', 'FPA-06');
+  check('and the other KeyHole, in the same aura, is not',
+    !!A.hiddenByAlliedAura(data, [plain, escarpment], plain), false);
+  const far = at(4, 's1', 33, '002', 'FPA-06-2');
+  check('nor is a KeyHole outside the aura reach',
+    !!A.hiddenByAlliedAura(data, [far, escarpment], far), false);
+
+  // ALLY MEANS ALLY. aurasOn deliberately hands back enemy-sourced auras, so
+  // without the side filter an enemy EW Suppression field would conceal this
+  // Mech — the opposite of what the card says.
+  const watchdog = drone(5, 's2', 3, 'ZHDR-202');
+  check('the enemy Watchdog aura really does reach this Mech',
+    A.aurasOn(data, [hidden, watchdog], hidden).length, 1);
+  check('but standing in an ENEMY aura conceals nobody',
+    !!A.hiddenByAlliedAura(data, [hidden, watchdog], hidden), false);
+
+  // THE RULING, pinned so it cannot drift silently: "within range" is answered
+  // as "affected by". ZYBP-202 is an ally aura at Range 4 that only touches
+  // DRONES, so a Mech three Grids away is inside the printed ring and still
+  // gets nothing here.
+  const whistle = at(6, 's1', 3, 'ZYBP-202');
+  check('a drone-only ally aura leaves a Mech unaffected, so it does not conceal',
+    [A.aurasOn(data, [hidden, whistle], hidden).length, !!A.hiddenByAlliedAura(data, [hidden, whistle], hidden)],
+    [0, false]);
+
+  // FAQ Q4: a unit is its own ally, which aurasOn already implements. The
+  // consequence is a permanent Low Profile, and it is a decision, not an
+  // oversight.
+  const selfAura = at(7, 's1', 12, '559', 'FPA-06-2');
+  check('a KeyHole carrying its OWN aura Part conceals itself (FAQ Q4)',
+    A.hiddenByAlliedAura(data, [selfAura], selfAura)?.source.uid, 7);
+
+  // THE WIRING. The decision lives in resolve(), which is outside this file's
+  // slice, so the arm is pinned at the source — a reader test is not a wiring
+  // test, and that gap has shipped here before.
+  check('resolve() reads the trait as a fourth Low Profile source',
+    /const concealed = this\.tokens \? hiddenByAlliedAura\(this\.data, this\.tokens\(\), c\.defender\) : undefined;/.test(combat), true);
+  check('and ORs it into the one Low Profile disjunction',
+    // `\s*` rather than `\n\s*`: this tree is CRLF, and a slice keyed on a bare
+    // \n silently matched nothing the last time one was written that way.
+    /\|\| !!concealed\s*\|\| !!mistyEagle\);/.test(combat), true);
+  // Low Profile is a Firing-only consequence in this engine, and the trait
+  // inherits that gate rather than carrying one of its own.
+  check('which is still gated on a Firing Action',
+    /const lowProfile = c\.action\.type === 'Firing'/.test(combat), true);
+  // It grants the KEYWORD, not a Token: Scan cannot strip it (FAQ Q3), so the
+  // Scan picker must keep listing Tokens only.
+  check('and the Scan picker still offers Tokens only',
+    /statusCount\(t\.statuses, 'camouflage'\) > 0 \|\| statusCount\(t\.statuses, 'lowProfile'\) > 0/
+      .test(src('playguide.ts')), true);
+}
+
+// ---------- LPA-23 Onyx — 不屈 Indomitable ----------
+//
+// "Piloted mech may Crush large units." The rule itself is driven in
+// breakaway.test.mjs, which owns crushTargets and already builds size-3
+// fixtures. What is checked here is the card, the ruling and the SHAPE of the
+// wiring — because the shape is the reason six call sites needed no edit.
+{
+  const onyx = pilot('LPA-23');
+  const chord = pilot('LPA-23-2');
+  check('LPA-23 is the Indomitable card', onyx.trait, '不屈');
+  check('and LPA-23-2 Mellow Chord is still a different card', chord.trait, '装饰音');
+  check('and the printed English is the one this reader was written against',
+    /Piloted mech may Crush large units/i.test(onyx.traitDescription.en), true);
+
+  // rules.ts sits UNDER units.ts and melee.ts in the import graph, so it cannot
+  // ask pilotIs without closing a cycle. It reads the same card id off the live
+  // loadout instead — and reading the LIVE field is what keeps freeplay's
+  // onSaveMech, which rewrites t.mech wholesale including the pilot, from
+  // leaving a stale answer behind.
+  check('rules.ts dispatches on the card id, off the live loadout',
+    /const INDOMITABLE_PILOT = 'LPA-23';/.test(rules)
+      && /t\.kind === 'mech' && t\.mech\?\.pilot === INDOMITABLE_PILOT/.test(rules), true);
+  check('and rules.ts still imports nothing from units.ts',
+    /from '\.\/units'/.test(rules), false);
+  // The signature is the wiring: six call sites across main.ts and matchhud.ts
+  // read this function, and none of them had to learn about the trait.
+  check('crushTargets still takes exactly its five original arguments',
+    /export function crushTargets\(\s*t: Token,\s*c: number,\s*r: number,\s*terrain: TerrainPiece\[\],\s*tokens: Token\[\],\s*\): CrushVictims \| null/.test(rules), true);
+  check('so all six call sites are unchanged and cannot disagree',
+    ((src('main.ts') + src('matchhud.ts')).match(/crushTargets\(t, /g) ?? []).length, 6);
+  // The RULING, pinned: the trait adds a target class, not a crusher class.
+  check('the "only a Large Unit Crushes" gate is untouched',
+    /if \(t\.size !== 3 \|\| t\.aerial\) return null;/.test(rules), true);
+}
+
+// ---------- LPA-20 Panzer — 阻拦 Obstruct ----------
+//
+// "When Breaking Away from the piloted mech, the Enemy Unit needs to consume 1
+// additional Move Range or 1 Link." The price is driven in meleelock.test.mjs,
+// which owns breakAwayCost. What is checked here is the card and the CROSS-PAGE
+// wiring — commands.ts's `maneuver` deliberately does not re-price the path
+// (it leaves that to the caller), so a board that missed this would let the
+// enemy walk out a Grid cheap with nothing behind it to refuse.
+{
+  const panzer = pilot('LPA-20');
+  check('LPA-20 is the Obstruct card', panzer.trait, '阻拦');
+  check('and the printed English is the one this reader was written against',
+    /Breaking Away[\s\S]*1 additional Move Range or 1 Link/i.test(panzer.traitDescription.en), true);
+
+  const melee = src('melee.ts'), mainSrc = src('main.ts'), hud = src('matchhud.ts');
+  check('melee.ts dispatches on the card id, off the live loadout',
+    /const OBSTRUCT_PILOT = 'LPA-20';/.test(melee)
+      && /o\.kind === 'mech' && o\.mech\?\.pilot === OBSTRUCT_PILOT/.test(melee), true);
+  // The slice trap that has bitten here before: meleelock.test.mjs hand-stubs
+  // every import melee.ts has, so a new one is a ReferenceError inside it.
+  check('and melee.ts still imports only what its test slice stubs',
+    (melee.match(/^import .*$/gm) ?? []).length, 6);
+
+  // The price reaches BOTH boards because both build exitCost from the one
+  // function — three construction sites, one in main.ts and two in matchhud.ts,
+  // whose own comment warns that a rule added to one paints Grids the other
+  // refuses.
+  check('the freeplay board prices Break Away through breakAwayCost',
+    (mainSrc.match(/exitCost: flying \|\| t\.aerial \? undefined : breakAwayCost\(/g) ?? []).length, 1);
+  check('and the Match Centre does it in BOTH of its builders',
+    (hud.match(/breakAwayCost\(ctx\.data, t, ctx\.state\.tokens, terrain\)/g) ?? []).length, 2);
+  // The disclosure has to reach both too, or the "or 1 Link" alternative exists
+  // on one page only — which for this rule is the same as not existing.
+  check('and both boards print the same Break Away sentence from the same helper',
+    [/breakAwayNote\(data, t, state\.tokens, currentTerrain\(\)\)/.test(mainSrc),
+      /breakAwayNote\(ctx\.data, t, ctx\.state\.tokens, terrainOf\(ctx\)\)/.test(hud)], [true, true]);
+  check('and neither counts lockers by hand any more',
+    /costs \$\{locked\.length\} extra Movement Range/.test(mainSrc), false);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

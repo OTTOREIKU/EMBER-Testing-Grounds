@@ -140,5 +140,55 @@ check('while an open route past it still works', reach(big, 2, crushOpts, [], [b
     reach(walker, 3, locked, [], world).includes('0,2:3'), true);
 }
 
+// ---------- LPA-23 Onyx's 不屈 Indomitable: crushing equals and larger ----------
+//
+// "Piloted mech may Crush large units." crushTargets lives in this file's slice,
+// so the rule is driven here — but the PILOT is taken from the shipped
+// cards.json rather than invented, because "which pilot" is the whole rule and
+// a fixture id would pass against a reader keyed on the wrong card.
+{
+  const raw = JSON.parse(readFileSync(new URL('../../data/cards.json', import.meta.url), 'utf8'));
+  const cards = Array.isArray(raw) ? raw : raw.cards;
+  const byId = new Map(cards.map((c) => [String(c.id), c]));
+  const onyx = byId.get('LPA-23');
+  // The negative control is a real UN LV4 pilot from the same faction whose
+  // trait is a dice exchange, so it can never bend a movement legality.
+  const sealock = byId.get('LPA-24');
+  if (!onyx || !sealock) throw new Error('LPA-23 or LPA-24 is missing from cards.json');
+  check('LPA-23 is the Indomitable card and LPA-24 is not',
+    [onyx.trait, sealock.trait], ['不屈', '追击']);
+  check('and its curated effect names the target class it adds',
+    onyx.traitEffects?.map((e) => e.type), ['can_overrun_large_units']);
+
+  const piloted = (id) => unit(0, 0, 3, { kind: 'mech', mech: { torso: '002', pilot: id } });
+  const equal = at(0, 1, 3);
+  const onyxMech = piloted(onyx.id);
+  check('an Onyx Crushes a unit of its own size',
+    crushTargets(onyxMech, 0, 1, [], [onyxMech, equal])?.units.map((u) => u.uid), [2]);
+  const otherMech = piloted(sealock.id);
+  check('and a Mech with any other pilot still cannot',
+    crushTargets(otherMech, 0, 1, [], [otherMech, equal]), null);
+  const pilotless = unit(0, 0, 3, { kind: 'mech', mech: { torso: '002' } });
+  check('nor can a pilotless Mech', crushTargets(pilotless, 0, 1, [], [pilotless, equal]), null);
+
+  // The trait adds a TARGET class, not a crusher class: a Medium Onyx still
+  // Crushes nothing, because 4.3.6's "only Large Units Crush" is untouched.
+  const medium = unit(0, 0, 2, { kind: 'mech', mech: { torso: '002', pilot: onyx.id } });
+  check('a Medium chassis carrying the trait still Crushes nothing',
+    crushTargets(medium, 0, 1, [], [medium, at(0, 1, 1)]), null);
+
+  // Everything else the function refuses, it still refuses.
+  check('an Onyx still cannot Crush a Barricade of any size (FAQ E6)',
+    crushTargets(onyxMech, 0, 1, [], [onyxMech, { ...equal, barricade: true }]), null);
+  check('nor an Aerial unit',
+    crushTargets(onyxMech, 0, 1, [], [onyxMech, { ...equal, aerial: true }]), null);
+  check('nor anything at all while Optically Camouflaged (FAQ I3/I9)',
+    crushTargets({ ...onyxMech, statuses: ['camouflage'] }, 0, 1, [], [onyxMech, equal]), null);
+  check('and a Large victim is still a route-ending Crush square, not a through-route',
+    [reach(onyxMech, 2, { crushable: (c, r) => crushTargets(onyxMech, c, r, [], [onyxMech, equal]) !== null }, [], [onyxMech, equal]).includes('0,1:1'),
+      reach(onyxMech, 2, { crushable: (c, r) => crushTargets(onyxMech, c, r, [], [onyxMech, equal]) !== null }, [], [onyxMech, equal]).includes('0,2:2')],
+    [true, false]);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
