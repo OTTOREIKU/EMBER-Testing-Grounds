@@ -162,6 +162,28 @@ let pickerOpen = false;
 let loginErr: string | null = null;
 let doorErr: string | null = null;
 let lobbyNote: string | null = null;
+
+// What the OTHER player just did, said out loud on this screen.
+//
+// Most commands announce themselves: a roll reaches the shared dice feed, a
+// move animates, an attack opens the combat mirror. A few change the board
+// silently, and the opponent's turn then simply passes with nothing to show
+// for it — Charging a weapon was reported exactly that way, the other player
+// having no idea what had happened.
+//
+// noteNow is LOCAL to whoever pressed the button, so the acting client's own
+// note never travels. This is the seam where a remote command has just been
+// applied, past the replay guard, so it is the one place a line can be said
+// once and only on the watching screen.
+function announceRemote(cmd: Command): void {
+  const unit = (uid: number): string => state.tokens.find((t) => t.uid === uid)?.label ?? 'a unit';
+  if (cmd.kind === 'setCharge') {
+    lobbyNote = cmd.on
+      ? `${squadLabel(cmd.seat)}: ${unit(cmd.uid)} Charges its ${SLOT_LABEL[cmd.slot as keyof typeof SLOT_LABEL] ?? cmd.slot}.`
+      : `${squadLabel(cmd.seat)}: ${unit(cmd.uid)} spends the Charge on its ${SLOT_LABEL[cmd.slot as keyof typeof SLOT_LABEL] ?? cmd.slot}.`;
+  }
+}
+
 let acctNote: { ok: boolean; text: string } | null = null;
 let busy = false;
 let copied = false;
@@ -248,6 +270,7 @@ const relay = new Relay(api.base, {
     // are being re-read from history, and answering them again would send this
     // client's reveal a second time.
     if (catchingUp) return;
+    announceRemote(cmd);
     advanceIfBothReady(cmd);
     if (from && moving !== null) {
       const now = state.tokens.find((t) => t.uid === moving);
