@@ -43,6 +43,13 @@ const stubs = `
 export function riderOnDrone(_data: any, _tokens: any, _t: any): any {
   return { autoActions: false, preMove: 0 };
 }
+// No fixture in this simulation carries a lock_one Projectile (only cards 008
+// and PRDR-105 do), so the honest stub is "never commits" — the rule itself is
+// pinned against the real cards in charge.test.mjs and in commands.test.mjs,
+// which slices the real reader.
+export function covertCarryLock(_a: any): boolean {
+  return false;
+}
 export function hasFlexibleTiming(_data: any, _tokens: any, _t: any): boolean {
   return false;
 }

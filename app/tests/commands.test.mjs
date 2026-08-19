@@ -47,6 +47,14 @@ const riders = unitsSrc.slice(
   unitsSrc.indexOf('export interface ParryPart'),
 );
 if (!riders) throw new Error('could not locate the Data Link riders in units.ts');
+// Sliced, not stubbed: whether a launch COMMITS a lock_one Action is a rule and
+// commands.ts's apply is where it is enforced. Checked first that no existing
+// cut in this file already spans it — the sixth time that trap was considered.
+const covert = unitsSrc.slice(
+  unitsSrc.indexOf('export function covertCarryLock'),
+  unitsSrc.indexOf('// The launch list a lock_one Action'),
+);
+if (!covert) throw new Error('could not locate covertCarryLock in units.ts');
 // targetTracingOn needs NO slice of its own: it sits inside the range
 // interceptParser already takes, so adding one declares it twice. Fourth time
 // this trap has bitten -- check every existing slice's range before adding.
@@ -200,7 +208,7 @@ writeFileSync(
     + interceptParser
     + chargeParser
     + evReader
-    + slotLabels + riders
+    + slotLabels + riders + covert
     + freehand
     + attackMode
     + delivery

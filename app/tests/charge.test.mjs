@@ -118,5 +118,24 @@ check('it pays only for the action the Pack actually refills',
 check('a Drone never delivers',
   U.ammoDeliveryPool(realData, { ...gunner({ '129_A': 0, '086_A': 2 }), kind: 'drone' }, '129_A'), undefined);
 
+// ---------- Covert carry: lock_one (008_A, PRDR-105_B) ----------
+//
+// Exactly two actions in the shipped set carry it, and the reader is asserted
+// against both rather than a fixture.
+const lockCards = all.filter((c) => (c.actions ?? []).some((a) => a.projectileSelection?.mode === 'lock_one'));
+check('exactly two cards lock a Projectile choice', lockCards.map((c) => String(c.id)).sort(), ['008', 'PRDR-105']);
+check('008_A locks', U.covertCarryLock(byId.get('008').actions.find((x) => x.id === '008_A')), true);
+check('PRDR-105_B locks', U.covertCarryLock(byId.get('PRDR-105').actions.find((x) => x.id === 'PRDR-105_B')), true);
+check('an ordinary Projectile action does not',
+  U.covertCarryLock(byId.get('129').actions.find((x) => x.id === '129_A')), false);
+// The printed-text arm, so a card the generator missed still locks.
+check('the printed phrase alone is enough',
+  U.covertCarryLock({ description: { zh: '本机在游戏开始前，秘密携带1枚B3系列信标。' } }), true);
+check('and an unrelated action is untouched', U.covertCarryLock({ description: { zh: '发射1个导弹组。' } }), false);
+// 008 really does print three options and PRDR-105 two, which is what makes the
+// lock worth anything.
+check('008 offers three beacons before it commits', byId.get('008').projectile.length, 3);
+check('PRDR-105 offers two walls', byId.get('PRDR-105').projectile.length, 2);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

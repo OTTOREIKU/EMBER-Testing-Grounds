@@ -148,6 +148,42 @@ export function resupplyOf(a: CardAction): Resupply | undefined {
   return undefined;
 }
 
+// ---------- Covert carry: lock_one (008_A Beacon, PRDR-105_B Wall) ----------
+//
+// "Before the game, this unit secretly carries 1 of the 3 B3 beacons" (008) /
+// "2 identical AS3 walls" (PRDR-105). The point of the rule is that you get ONE
+// TYPE for the whole game, not a fresh pick every time you launch.
+//
+// SCOPE, said out loud: the choice is committed on the FIRST launch and held
+// after, not chosen secretly before deployment. That delivers the rule's actual
+// consequence — one type, locked — without a second commit/reveal protocol;
+// secrecy.ts only implements the Timing Dial hash today. What it does NOT model
+// is the secrecy, and it lets the choice be made later than the card says.
+// Deployment-time selection is the follow-up, and it needs a picker on both
+// pages plus a Match Centre drone Load picker that does not exist yet.
+//
+// It also fixes a real annoyance on the way: the launch picker used to re-ask
+// which Projectile on EVERY launch.
+export function covertCarryLock(a: CardAction): boolean {
+  if (a.projectileSelection?.mode === 'lock_one') return true;
+  // Printed-text arm first, so a card the generator missed still locks.
+  const hay = `${a.description?.en ?? ''} ${a.description?.zh ?? ''}`;
+  return /秘密携带|Covert\s*Carry/i.test(hay);
+}
+
+// The launch list a lock_one Action may still offer. Before it commits, every
+// printed option; after, only the one it took.
+function lockedDown(t: Token, a: CardAction, all: Card[]): Card[] {
+  if (!covertCarryLock(a)) return all;
+  const picked = t.lockedProjectile?.[a.id];
+  if (!picked) return all;
+  const only = all.filter((c) => c.id === picked);
+  // A committed card that is somehow no longer on the list (a data change under
+  // a saved game) falls back to the full list rather than to nothing, which
+  // would brick the Action.
+  return only.length ? only : all;
+}
+
 // ---------- Ammo Delivery (086_B, RKG70 Ammunition Pack) ----------
 //
 // "When this Mech launches one RKG70 missile group, it may choose to consume
@@ -2952,7 +2988,10 @@ export function guidedActions(data: GameData, t: Token, world?: ActionWorld): Gu
       const charge = consumesCharge(a) ? { charged: isCharged(loan ? loan.from : t, slot) } : undefined;
       out.push({
         action: a, card, slot, available, reason, ammoLeft, intercept, charge,
-        projectiles: a.type === 'Projectile' ? projectiles : [],
+        // A lock_one Action that has already committed offers ONLY what it
+        // committed to. Filtered here so both pages inherit it: neither launch
+        // picker computes this list, they both read it.
+        projectiles: a.type === 'Projectile' ? lockedDown(t, a, projectiles) : [],
         lentBy: loan?.from,
         partKey: loan ? `${a.id}@${loan.from.uid}` : a.id,
       });
@@ -3086,6 +3125,13 @@ export function migrateState(rawIn: unknown, data: GameData): GameState | null {
       intercept: { ...initIntercept(cards), ...(t.intercept ?? {}) },
       charge: Array.isArray(t.charge) && t.charge.length ? t.charge.filter((x: unknown) => typeof x === 'string') : undefined,
       log: t.log ?? [],
+      // migrateState rebuilds a token FIELD BY FIELD, so anything not named
+      // here is dropped on load. Both of these are rules-bearing and both are
+      // in boardFingerprint, so losing them silently desyncs a reloaded game.
+      commandedBy: typeof t.commandedBy === 'number' ? t.commandedBy : undefined,
+      lockedProjectile: t.lockedProjectile && typeof t.lockedProjectile === 'object'
+        ? { ...(t.lockedProjectile as Record<string, string>) }
+        : undefined,
       statuses: (t.statuses ?? []).filter((s: string) => s !== 'interception'),
     });
   }

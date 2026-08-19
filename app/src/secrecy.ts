@@ -93,6 +93,10 @@ export function boardFingerprint(state: GameState): string {
       // what a Commanded Drone may do, so a drift here would have one client
       // offering an Action the other refuses.
       t.commandedBy ?? null,
+      // A lock_one commitment: once made it REMOVES options from the launch
+      // picker, so a drift would have one client offering a Projectile the
+      // other refuses.
+      t.lockedProjectile ? keyed(t.lockedProjectile as unknown as Record<string, unknown>) : null,
       t.mech ? keyed(t.mech as unknown as Record<string, unknown>) : null,
       // Repaired Tokens are commanded (repairPart/breakRepaired) and READ BACK
       // by check() on both, so a drift makes one client refuse a repair the

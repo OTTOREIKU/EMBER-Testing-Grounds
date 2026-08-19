@@ -26,6 +26,9 @@ export interface CardAction {
   storage?: number;
   yellowDice?: number;
   redDice?: number;
+  // 008_A and PRDR-105_B: the unit commits to ONE of the listed Projectiles
+  // and carries `quantity` of it. Read by covertCarryLock.
+  projectileSelection?: { mode?: string; quantity?: number };
   keywords?: { key?: string; en?: string; inline?: string }[];
   gameRules?: { id?: string; consumesCharge?: boolean; conditions?: { type?: string }[]; effects?: GameRuleEffect[] }[];
 }
@@ -155,6 +158,11 @@ export interface Token {
   // the issuer has to be remembered. Cleared when the End Phase sweeps the
   // tokens, and rules-bearing, so boardFingerprint carries it.
   commandedBy?: number;
+  // Which Projectile a lock_one Action committed to, keyed by action id. The
+  // card says the choice is made secretly before the game; this app commits it
+  // on the FIRST launch instead (see covertCarryLock) and holds it after.
+  // Rules-bearing, so boardFingerprint carries it.
+  lockedProjectile?: Record<string, string>;
   stance: Stance;
   link?: number;
   timing?: Timing;
