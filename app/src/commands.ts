@@ -317,7 +317,11 @@ function chargeable(data: GameData, t: Token, slot: string): boolean {
 // carrying it - so a Mech firing a borrowed Missile Rack spends the DRONE's
 // magazine (FAQ O3/O16). Resolved here rather than in the drivers, so every
 // path that spends Ammo lands on the same unit on both seats.
-function ammoHolder(data: GameData, state: GameState, t: Token, actionId: string): Token {
+//
+// Exported for the two launch UIs alone. A Volley is capped by whichever runs
+// out first, the keyword or the magazine, and a page that sized that cap off
+// its own `t.ammo` offered shots this file then refused.
+export function ammoHolder(data: GameData, state: GameState, t: Token, actionId: string): Token {
   if (t.ammo?.[actionId] !== undefined) return t;
   const loan = loanedParts(data, state.tokens, t)
     .find(({ card }) => (card.actions ?? []).some((a) => a.id === actionId));
@@ -614,6 +618,26 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       if (!at || at.side !== cmd.seat) return no('The combat window belongs to the attacking squad.');
       if ((view.attack?.length ?? 0) > 40 || (view.defense?.length ?? 0) > 40) return no('That is not a dice pool.');
       if ((view.log ?? []).some((l) => typeof l !== 'string' || l.length > 400)) return no('That is not a combat log.');
+      // The resolution strip is drawn into the OTHER player's window, so it is
+      // bounded here the way the pools and the log are. No legal attack makes
+      // forty damage icons, and the summary is three lines plus its notes. The
+      // two spare counts are bounded for a sharper reason than tidiness: they
+      // are loop lengths on the receiving client, and the number comes from the
+      // sending one.
+      //
+      // The lists are required to BE lists, not merely short: the renderer maps
+      // over them, and a strip that throws mid-render takes the whole mirror
+      // down with it rather than just being wrong.
+      const res = view.resolution;
+      const spare = (n: unknown) =>
+        n !== undefined && n !== null && (typeof n !== 'number' || !Number.isSafeInteger(n) || n < 0 || n > 40);
+      const list = (v: unknown) => !Array.isArray(v) || v.length > 40;
+      if (res && (!res.duel || list(res.duel.icons) || list(res.duel.triggers)
+        || spare(res.duel.spareDodge) || spare(res.duel.idleDefense)
+        || !Array.isArray(res.text)
+        || res.text.some((l) => typeof l !== 'string' || l.length > 400))) {
+        return no('That is not a combat resolution.');
+      }
       return ok;
     }
     case 'rollbackRequest': {
@@ -913,6 +937,20 @@ export function check(data: GameData, state: GameState, cmd: Command): CheckResu
       const { col, row } = cmd.to;
       if (!Number.isInteger(col) || !Number.isInteger(row) || col < 0 || row < 0 || col > 35 || row > 35) {
         return no('That is not a place on the board.');
+      }
+      // A Barricade "can neither move, be moved, nor be Crushed" (FAQ E6/M13,
+      // Rules Supplement 1.1.3). Knockback, Push, the Crush shuffle and the
+      // Harpy's tow all travel as this one command, so the exemption is stated
+      // once here instead of at each of the eight senders. rules.ts
+      // knockbackPath and crushTargets are the halves that stop the UI offering
+      // it; this is the belt to those braces, and the only one that holds in a
+      // networked game where a stale client could still send the shove.
+      //
+      // Only a change of PLACE is refused: 3.4.4 lets the forcing player turn a
+      // victim that could not be moved at all, and this command carries that
+      // turn as `facing` with the position left where it stands.
+      if (target.barricade && (col !== target.col || row !== target.row)) {
+        return no(`${target.label} is a Barricade: it can neither move nor be moved (FAQ E6/M13).`);
       }
       return ok;
     }
@@ -1431,7 +1469,14 @@ function checkActed(
       // Every launch costs one Ammo Token (4.13), and apply clamps the count at
       // zero - so without this line an empty magazine fired forever, in a
       // strict game as much as the sandbox, because nothing ever said no.
-      if (t && t.ammo[cmd.actionId] !== undefined && t.ammo[cmd.actionId] <= 0) {
+      //
+      // ammoHolder, which answers WHOSE TOKEN pays, not the pool question: a
+      // launcher lent by a Carrier Tarantula keeps its magazine on the DRONE
+      // (FAQ O3/O16), and the Mech has no entry for the borrowed Action at all.
+      // Reading t.ammo raw therefore found undefined, said nothing, and a
+      // borrowed Missile Pod fired for free all game.
+      const mag = ammoHolder(data, state, t, cmd.actionId);
+      if (mag.ammo[cmd.actionId] !== undefined && mag.ammo[cmd.actionId] <= 0) {
         return no('No Ammo Tokens left for this Action (4.13).');
       }
       const { col, row } = cmd.to;
@@ -1771,7 +1816,32 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
   }
   if (cmd.kind === 'setCombatView') {
     const sc = state.script;
-    if (sc) sc.combatView = cmd.view ? { ...cmd.view, attack: cmd.view.attack?.map((f) => ({ ...f })) ?? null, defense: cmd.view.defense?.map((f) => ({ ...f })) ?? null, log: [...cmd.view.log], focus: cmd.view.focus ? { ...cmd.view.focus } : null } : null;
+    // The resolution is copied out too, not carried by the spread alone: on the
+    // ATTACKER's own client this command is applied locally, and that object is
+    // the one their open helper is holding. Shared, the board would keep a live
+    // reference into the wizard's context.
+    const res = cmd.view?.resolution;
+    if (sc) {
+      sc.combatView = cmd.view
+        ? {
+            ...cmd.view,
+            attack: cmd.view.attack?.map((f) => ({ ...f })) ?? null,
+            defense: cmd.view.defense?.map((f) => ({ ...f })) ?? null,
+            log: [...cmd.view.log],
+            focus: cmd.view.focus ? { ...cmd.view.focus } : null,
+            resolution: res
+              ? {
+                  duel: {
+                    ...res.duel,
+                    icons: res.duel.icons.map((i) => ({ ...i })),
+                    triggers: res.duel.triggers.map((i) => ({ ...i })),
+                  },
+                  text: [...res.text],
+                }
+              : null,
+          }
+        : null;
+    }
     return;
   }
   if (cmd.kind === 'rollbackRequest') {
@@ -2516,9 +2586,16 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       if (!card) return;
       // The uid counter lives in the state, so a mirrored seat mints the same
       // one. The Ammo that paid for the shot is spent in the same breath.
+      //
+      // The magazine is read BEFORE the Projectile joins the board, and through
+      // ammoHolder rather than off `t`: a lent launcher is paid out of the
+      // Carrier Tarantula's tokens (FAQ O3/O16), the same unit spendAmmo and
+      // restoreAmmo already debit, so a launch and its undo cannot land on two
+      // different Drones.
+      const mag = ammoHolder(data, state, t, cmd.actionId);
       const tok = makeDroneToken(state, data, card, t.side);
       state.tokens.push({ ...tok, parentUid: t.uid, col: cmd.to.col, row: cmd.to.row, facing: cmd.facing });
-      if (t.ammo[cmd.actionId] !== undefined) t.ammo[cmd.actionId] = Math.max(0, t.ammo[cmd.actionId] - 1);
+      if (mag.ammo[cmd.actionId] !== undefined) mag.ammo[cmd.actionId] = Math.max(0, mag.ammo[cmd.actionId] - 1);
       // A lock_one Action commits to what it first launched and is held to it
       // for the rest of the game (008_A, PRDR-105_B). Recorded here rather than
       // in the picker so both pages commit identically and a replay agrees.
@@ -2545,6 +2622,11 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       // The use is spent in the SAME command as the debt is cleared, so a
       // dropped connection between the two cannot leave a free Emergency
       // Smoke. The card prints storage 1, which syncMagazines seeded as Ammo.
+      //
+      // `t` and not ammoHolder, deliberately: attackReactionsOf (units.ts) reads
+      // tokenCards ALONE and never loanedParts, so a borrowed Part can never owe
+      // a reaction and there is no lender's magazine to find. Flagged as a
+      // launch path by the phase-6 sweep; it is not one.
       if (t.ammo?.[cmd.actionId] !== undefined) {
         t.ammo[cmd.actionId] = Math.max(0, t.ammo[cmd.actionId] - 1);
       }

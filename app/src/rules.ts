@@ -316,6 +316,14 @@ export function knockbackPath(
   tokens: Token[],
 ): LargeGrid[] {
   const path: LargeGrid[] = [];
+  // A Barricade "can neither move, be moved, nor be Crushed" (FAQ E6/M13, Rules
+  // Supplement 1.1.3), so a Knockback or a Push aimed at one travels nowhere.
+  // It belongs here rather than at the two callers: main.ts and matchhud.ts each
+  // build their own shove UI on this one path, and both already read an empty
+  // path as "blocked, but you may still turn it" - which is the right answer,
+  // since 3.4.4's facing choice survives a victim that could not be moved.
+  // The sibling half of the rule is already in crushTargets below.
+  if (victim.barricade) return path;
   let at = largeGridOf(victim);
   for (let i = 0; i < grids; i++) {
     const next = { c: at.c + dir.dc, r: at.r + dir.dr };

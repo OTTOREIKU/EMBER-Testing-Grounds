@@ -2105,6 +2105,30 @@ export function isRepeater(c: Card): boolean {
   return (c.keywords ?? []).some((k) => k.key === REPEATER_KEYWORD || k.en === 'Repeater' || (k.inline ?? '') === REPEATER_KEYWORD);
 }
 
+// The keyword as it is printed on the ACTION, which is where the relay's Range
+// actually lives. 165_A carries it inline; the card-level keyword above is the
+// index entry for the same thing.
+export function isRepeaterAction(a: CardAction): boolean {
+  return (a.keywords ?? []).some((k) => k.key === REPEATER_KEYWORD || k.en === 'Repeater' || (k.inline ?? '') === REPEATER_KEYWORD);
+}
+
+// How far a Repeater relays. The Range belongs to the Action carrying the
+// keyword, not to the card, so it is read off the Actions that carry it —
+// `.filter((a) => isRepeater(card))` tested the CARD for every Action, which
+// made `reach` the widest Range on the sheet whether or not that Action had
+// anything to do with relaying. Latent while 165 is the only Repeater in the
+// box and has exactly one Action; a second Action with a longer Range, or a
+// second Repeater card, would have turned it into a live bug.
+//
+// The fallback keeps a card that prints the keyword at card level ONLY working
+// exactly as it does today: with no Action to read, the widest Range is the
+// only answer there is, and silently relaying nothing would be worse.
+function repeaterReach(card: Card): number {
+  const own = (card.actions ?? []).filter(isRepeaterAction);
+  const from = own.length ? own : (card.actions ?? []);
+  return Math.max(0, ...from.map((a) => a.range ?? 0));
+}
+
 // The allied Repeaters covering this unit right now.
 export function repeatersFor(data: GameData, tokens: Token[], t: Token): Token[] {
   const out: Token[] = [];
@@ -2113,8 +2137,7 @@ export function repeatersFor(data: GameData, tokens: Token[], t: Token): Token[]
     if ((r.partStates[r.kind === 'mech' ? 'torso' : 'main'] ?? 'intact') === 'destroyed') continue;
     const card = data.byId.get(r.cardId);
     if (!card || !isRepeater(card)) continue;
-    const reach = Math.max(0, ...(card.actions ?? []).filter((a) => isRepeater(card)).map((a) => a.range ?? 0));
-    if (rangeBetween(t, r).range > reach) continue;
+    if (rangeBetween(t, r).range > repeaterReach(card)) continue;
     out.push(r);
   }
   return out;
@@ -2571,6 +2594,32 @@ export function electronicValue(data: GameData, t: Token, loans: LoanedPart[] = 
     .filter(({ slot }) => (t.partStates[slot as PartSlot | 'main'] ?? 'intact') !== 'destroyed')
     .reduce((sum, { card }) => sum + (card.electronic ?? 0), 0);
   return own + loans.reduce((sum, { card }) => sum + (card.electronic ?? 0), 0);
+}
+
+// The pool a unit actually ROLLS in an Electronic Counter-roll, as opposed to
+// the Electronic Value printed on its Parts. Two riders sit on top of the stat:
+// the Loads a Tarantula lends the INITIATOR (FAQ O5 - the Responder rolls
+// passively and gains none, which is why the role is asked for rather than
+// guessed), and the "Strength -1" aura of ZHDR-202_B / PDTR-202_B, whose text
+// is "enemy units within range suffer Strength -1 when making Electronic
+// Counter Rolls". The aura value is negative in the data, so it adds.
+//
+// The aura touches the ROLL, not the stat, so 4.11.2's "an Electronic Value of
+// 0 cannot Initiate" gate in commands.ts still reads electronicValue(): a Mech
+// standing in the aura may still open a Counter-roll, it just rolls one die
+// fewer. Clamped at zero, because a Strength of -1 is not a thing to roll.
+//
+// One home for both boards. Freeplay's ElectronicHelper and the Match Centre's
+// counter-roll each did this arithmetic themselves and only freeplay had the
+// aura, so ZHDR-202 and PDTR-202 were dead in every match.
+export function electronicStrength(
+  data: GameData,
+  tokens: Token[],
+  t: Token,
+  role: 'initiator' | 'responder',
+): number {
+  const base = electronicValue(data, t, role === 'initiator' ? loanedParts(data, tokens, t) : []);
+  return Math.max(0, base + auraValueOn(data, tokens, t, 'electronic_contest_strength_penalty'));
 }
 
 export function defaultUnitLabel(data: GameData, t: Token): string {

@@ -319,6 +319,10 @@ const data = {
     ['CAR', { id: 'CAR', category: 'drone', carrier: true, actions: [] }],
     ['REP', { id: 'REP', category: 'drone', repeater: true, repeaterRange: 6, actions: [] }],
     ['BP1', { id: 'BP1', category: 'mech_part', type: 'backpack', electronic: 1, actions: [{ id: 'BP1_A', type: 'Firing', size: 's', range: 4, name: { en: 'Lent Gun' }, storage: 2 }] }],
+    // A second lendable Backpack, this one a LAUNCHER. Separate from BP1 rather
+    // than a second Action on it, because BP1 doubles as an inert Torso in two
+    // later fixtures and giving it another Action couples them to this one.
+    ['BP2', { id: 'BP2', category: 'mech_part', type: 'backpack', actions: [{ id: 'BP2_L', type: 'Projectile', size: 'm', range: 4, name: { en: 'Lent Launcher' }, storage: 2 }] }],
     // The folded Pholcus and the Drone it is replaced by (FAQ M18).
     ['156', { id: '156', category: 'projectile', unfoldsInto: '167', actions: [{ id: '156_A', type: 'Delay', name: { en: 'Unfold' } }] }],
     // A Torso whose Data Link carries the A2 rider. The wording is the card's
@@ -2224,6 +2228,84 @@ check('Penetrating the tethered unit leaves the chips on',
 C.apply(data, wPen, { kind: 'applyPenetration', seat: 's2', uid: 2, targetUid: 1, slot: 'leftHand' });
 check('Penetrating the initiator takes them off',
   [wPen.tokens[0].tether, wPen.tokens[1].tether], [undefined, undefined]);
+
+// ---------- Launching a BORROWED launcher (FAQ O3/O16) ----------
+//
+// Regression guard for BUG-4. spendAmmo and restoreAmmo already went through
+// ammoHolder; `launch` read t.ammo raw. The Mech has no entry for a borrowed
+// Action at all, so the raw read found undefined, check() said nothing and
+// apply() debited nothing — a lent Missile Pod fired all game for free. The
+// same shape one slot over from the "firing a Load spends the Tarantula Ammo"
+// case above, which is what made this one easy to miss.
+const launcherCarrier = (uid, over = {}) => ({
+  uid, side: 's1', kind: 'drone', cardId: 'CAR', droneBackpack: 'BP2', label: `T${uid}`,
+  col: 6, row: 3, facing: 0, size: 1, aerial: false, stance: 'mobility',
+  partStates: { main: 'intact', backpack: 'intact' }, ammo: { BP2_L: 2 }, ...over,
+});
+const lentShot = { kind: 'launch', seat: 's1', uid: 1, actionId: 'BP2_L', cardId: 'D1', to: { col: 9, row: 9 }, facing: 0 };
+const wLent = world([mech(1, 's1', { ammo: {} }), launcherCarrier(2)], 2, opp(1, { timing: 'firing' }));
+wLent.nextUid = 60;
+check('a borrowed launcher with Ammo left may fire', C.check(data, wLent, lentShot).ok, true);
+C.apply(data, wLent, lentShot);
+check('and the Projectile is spawned', [wLent.tokens[2]?.uid, wLent.tokens[2]?.parentUid], [60, 1]);
+// The whole bug in one line: the count has to come off the DRONE.
+check('the Tarantula pays for it, and the Mech magazine is untouched',
+  [wLent.tokens[1].ammo.BP2_L, wLent.tokens[0].ammo?.BP2_L], [1, undefined]);
+// An empty lender must refuse, exactly as an empty magazine of the Mech's own
+// does. Before the fix this returned ok and the launch was free.
+const wLentDry = world([mech(1, 's1', { ammo: {} }), launcherCarrier(2, { ammo: { BP2_L: 0 } })], 2, opp(1, { timing: 'firing' }));
+check('an empty Tarantula magazine refuses the launch (4.13)', C.check(data, wLentDry, lentShot).ok, false);
+C.apply(data, wLentDry, lentShot);
+check('and a sandbox apply cannot drive it below zero', wLentDry.tokens[1].ammo.BP2_L, 0);
+// The undo path was already correct; pinned so the pair cannot drift apart —
+// a launch and its take-back must land on the same unit.
+const wLentBack = world([mech(1, 's1', { ammo: {} }), launcherCarrier(2)], 2, opp(1, { timing: 'firing' }));
+C.apply(data, wLentBack, lentShot);
+C.apply(data, wLentBack, { kind: 'restoreAmmo', seat: 's1', uid: 1, actionId: 'BP2_L' });
+check('taking it back credits the same Tarantula', wLentBack.tokens[1].ammo.BP2_L, 2);
+// Out of Contact there is no loan at all, so the refusal comes one line earlier
+// than the magazine — findAction never finds the Action. Pinned with the reason,
+// not just the verdict: an ammoHolder that fell back to the Mech would also
+// return ok:false here, and the two failures mean opposite things.
+const wLentFar = world([mech(1, 's1', { ammo: {} }), launcherCarrier(2, { col: 30 })], 2, opp(1, { timing: 'firing' }));
+const farVerdict = C.check(data, wLentFar, lentShot);
+check('with no Tarantula in Contact the Action is not this Mech\'s at all',
+  [farVerdict.ok, /no such Action/.test(farVerdict.why ?? '')], [false, true]);
+// And the Mech's OWN magazine still behaves exactly as it did: ammoHolder
+// returns the unit itself the moment it has an entry of its own.
+const wOwn = world([mech(1, 's1', { mech: { torso: 'T4', pilot: 'P1' }, ammo: { L1: 1 } }), launcherCarrier(2)], 2);
+wOwn.nextUid = 70;
+const ownShot = { kind: 'launch', seat: 's1', uid: 1, actionId: 'L1', cardId: 'D1', to: { col: 9, row: 9 }, facing: 0 };
+C.apply(data, wOwn, ownShot);
+check('a Mech firing its own launcher still pays from its own magazine',
+  [wOwn.tokens[0].ammo.L1, wOwn.tokens[1].ammo.BP2_L], [0, 2]);
+check('and is refused once that magazine is empty', C.check(data, wOwn, ownShot).ok, false);
+
+// ---------- Barricades are exempt from Forced Movement (FAQ E6/M13) ----------
+//
+// Regression guard for BUG-6. Knockback, Push, the Crush shuffle and the
+// Harpy's tow all travel as one forceMove, so the exemption is stated once in
+// check() rather than at each sender. rules.ts stops the UI offering the shove;
+// this is what holds when a stale networked client sends it anyway.
+const shellTok = (over = {}) => ({
+  uid: 5, side: 's2', kind: 'projectile', cardId: '158', label: 'Turtle Shell',
+  col: 9, row: 9, facing: 0, size: 1, aerial: false, stance: 'offensive',
+  partStates: { main: 'intact' }, ammo: {}, barricade: true, ...over,
+});
+const wShell = () => world([mech(1, 's1', { ammo: {} }), shellTok()], 2);
+const shove = (over = {}) => ({ kind: 'forceMove', seat: 's1', uid: 1, targetUid: 5, to: { col: 9, row: 12 }, ...over });
+check('a Barricade cannot be shoved to another Grid', C.check(data, wShell(), shove()).ok, false);
+check('and a Push is refused just the same', C.check(data, wShell(), shove({ push: true })).ok, false);
+// 3.4.4 lets the forcing player turn a victim that could not be moved at all,
+// and that turn rides on the SAME command with the position unchanged. Refusing
+// it would take away a choice the rules give.
+check('but turning it where it stands is still allowed',
+  C.check(data, wShell(), shove({ to: { col: 9, row: 9 }, facing: 2 })).ok, true);
+// The control: the identical command against the identical token minus the flag.
+const wNotShell = world([mech(1, 's1', { ammo: {} }), shellTok({ barricade: undefined })], 2);
+check('an ordinary Deployable in the same spot is shoved normally', C.check(data, wNotShell, shove()).ok, true);
+C.apply(data, wNotShell, shove());
+check('and it really does move', [wNotShell.tokens[1].col, wNotShell.tokens[1].row], [9, 12]);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

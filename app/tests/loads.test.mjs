@@ -188,6 +188,39 @@ check('the nearest target is measured from the Repeater (O20)',
 check('and without it the attacker measures for itself',
   L.autoTargetsFor(data, [alli, foe(3, 18, 3), foe(4, 9, 3)], alli, ewAction).map((o) => o.uid), [4]);
 
+// BUG-7. The reach used to be the widest Range on the CARD: the filter tested
+// `isRepeater(card)` for every Action rather than testing the Action, so any
+// other Action's Range could stretch the relay. 165 has exactly one Action, so
+// the shipped data can never show it — which is precisely why it sat unnoticed
+// for so long. A second Action with a longer Range is the smallest board on
+// which the two readings differ, so the fixture adds one to the real card.
+const ecRaven = byId.get('165');
+byId.set('EC-WIDE', {
+  ...ecRaven,
+  id: 'EC-WIDE',
+  actions: [...(ecRaven.actions ?? []), { id: 'EC-WIDE_B', type: 'Firing', range: 9, name: { en: 'Long Gun' } }],
+});
+const wide = (uid, col, row) => ({ ...raven(uid, col, row), cardId: 'EC-WIDE' });
+check('a Firing Range 9 on the same card does not stretch the relay',
+  L.repeatersFor(data, [alli, wide(2, 27, 3)], alli), []);
+check('while inside the Repeater Action\'s own Range it still covers',
+  L.repeatersFor(data, [alli, wide(2, 18, 3)], alli).map((r) => r.uid), [2]);
+// The control: the un-extended card at the same distance is out of reach too,
+// so the check above cannot pass on a reach that simply broke.
+check('and the real 165 is equally out of reach there',
+  L.repeatersFor(data, [alli, raven(2, 27, 3)], alli), []);
+// The fallback. A card that prints Repeater at card level and on no Action has
+// nothing per-Action to read, so it keeps the old widest-Range answer rather
+// than silently relaying nothing.
+byId.set('EC-LOOSE', {
+  ...ecRaven,
+  id: 'EC-LOOSE',
+  actions: (ecRaven.actions ?? []).map((a) => ({ ...a, keywords: [] })),
+});
+const loose = (uid, col, row) => ({ ...raven(uid, col, row), cardId: 'EC-LOOSE' });
+check('a card-level-only Repeater still relays at its widest Range',
+  L.repeatersFor(data, [alli, loose(2, 18, 3)], alli).map((r) => r.uid), [2]);
+
 // ---------- the Hyena's AA Radar (FAQ O12/O13) ----------
 
 const hyena = (uid, col, row) => ({

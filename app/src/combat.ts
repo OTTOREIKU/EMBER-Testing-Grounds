@@ -3,9 +3,9 @@ import { cardName } from './data';
 import { iconSvg } from './dice';
 import { linkMechanics } from './inspector';
 import { SQUAD_ORDER, squadLabel } from './data';
-import type { Card, CardAction, DiceData, DiceIcon, DieColor, GameRuleEffect, PartSlot, Side, SmokeScreen, TerrainPiece, Token } from './types';
+import type { Card, CardAction, DiceData, DiceIcon, DieColor, Duel, DuelIcon, GameRuleEffect, PartSlot, Side, SmokeScreen, TerrainPiece, Token } from './types';
 import { statusCount, STATUSES } from './types';
-import { aaRadarCovers, attackReactionsOf, auraEffectsOn, aurasOn, auraValueOn, automaticShieldFor, blueLightningDodges, earlyWarningCover, coolingBonus, denseArmorByText, eyesAreHeavyHits, ignoresLowProfile, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, noMeleeBackAttack, missileGuidance, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, denseArmorOn, designationsOn, electronicValue, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, loanedParts, pilotCard, repeatersFor, SLOT_LABEL, tetherStrike, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
+import { aaRadarCovers, attackReactionsOf, auraEffectsOn, aurasOn, auraValueOn, automaticShieldFor, blueLightningDodges, earlyWarningCover, coolingBonus, denseArmorByText, eyesAreHeavyHits, ignoresLowProfile, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, noMeleeBackAttack, missileGuidance, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, denseArmorOn, designationsOn, electronicStrength, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, pilotCard, repeatersFor, SLOT_LABEL, tetherStrike, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
 import { timingOf } from './ticks';
 import { inArc, losNote, protectionFor, rangeBetween } from './rules';
 import type { Command } from './commands';
@@ -54,19 +54,6 @@ interface Rolled {
   color: DieColor;
   face: number;
   selected: boolean;
-}
-
-interface DuelIcon {
-  kind: string;
-  offset: 'dodge' | 'defense' | null;
-}
-
-interface Duel {
-  icons: DuelIcon[];
-  triggers: DuelIcon[];
-  spareDodge: number;
-  idleDefense: number;
-  carried: boolean;
 }
 
 // `dense` is Dense Armor (致密装甲): {Defense} may offset {Heavy Hit} too.
@@ -177,6 +164,151 @@ const ICON_LABEL: Record<string, string> = {
   eye: 'Eye',
 };
 
+function esc(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// ---------- the resolution box, drawn for BOTH players ----------
+//
+// Otto, playing online 2026-08-19: "sometimes as a defender I don't see this
+// animated resolution box". He never did — the duel was computed and drawn
+// straight into the attacker's own window and nothing about it was published,
+// so the defender's mirror had nothing to draw it from.
+//
+// Markup rather than nodes, because the two screens build their windows
+// differently: the attacker's helper appends elements to a step, and the
+// defender's mirror (combatMirrorHtml in match.ts) is assembling one string.
+// ONE renderer on purpose — a strip that said "dodged" on one screen and
+// "blocked" on the other would be worse than the defender seeing nothing.
+function duelHtml(duel: Duel): string {
+  const glyph = (kind: string, size = 22) => iconSvg({ type: kind } as DiceIcon, size);
+  const label = (t: string) => `<span class="duel-side">${t}</span>`;
+  // `kind` reaches this function from the OTHER player's client, and it lands
+  // in a class and a title attribute. iconSvg already draws nothing for a kind
+  // it does not know, so an unrecognised one costs a blank chip and not a hole
+  // in the window. Everything below goes through here for that reason.
+  const kindOf = (k: string) => esc(k);
+  const nameOf = (k: string) => esc(ICON_LABEL[k] ?? k);
+  const verdict = (o: DuelIcon['offset']) =>
+    o === 'dodge' ? '<span class="duel-v dodged">dodged</span>'
+      : o === 'defense' ? '<span class="duel-v blocked">blocked<small>still a Hit</small></span>'
+        : '<span class="duel-v through">through</span>';
+
+  // Born SETTLED — every column already `shown resolved`. playDuel animates by
+  // taking those classes away and handing them back, never the other way round,
+  // so a strip whose animation never runs (a backgrounded tab, reduced motion,
+  // a mirror that was redrawn for some other reason) is still a correct and
+  // readable box rather than an empty one waiting for a timer.
+  // Drawing an empty grid beats throwing: this runs inside the mirror's render,
+  // and a strip that came across the wire malformed must cost the defender the
+  // box, never the whole window. check() refuses those commands first; this is
+  // what makes the renderer safe to call without having been through it.
+  const icons = Array.isArray(duel.icons) ? duel.icons : [];
+  const triggers = Array.isArray(duel.triggers) ? duel.triggers : [];
+  const cols = icons
+    .map((ic, i) => {
+      // An offset this build does not recognise is drawn as un-offset, which is
+      // the reading that never invents a cancellation nobody rolled — and it
+      // keeps the chip, the strike-through and the verdict telling one story.
+      const off = ic.offset === 'dodge' || ic.offset === 'defense' ? ic.offset : null;
+      return `
+        <div class="duel-col shown resolved" data-i="${i}" data-offset="${off ?? 'none'}">
+          <span class="duel-icon k-${kindOf(ic.kind)}" title="${nameOf(ic.kind)}">${glyph(ic.kind)}</span>
+          <span class="duel-link"></span>
+          <span class="duel-block">${off ? `<span class="duel-icon k-${off}">${glyph(off, 18)}</span>` : ''}</span>
+          ${verdict(off)}
+        </div>`;
+    })
+    .join('');
+
+  // These two are LOOP LENGTHS, and on the defender's screen the number was
+  // chosen by the other client. Clamped where the loop is rather than only at
+  // the command gate, so the renderer is safe to call on anything shaped like a
+  // duel. No attack in the game rolls more than a handful.
+  const many = (n: number) => (Number.isSafeInteger(n) && n > 0 ? Math.min(n, 40) : 0);
+  const spare = [
+    ...Array.from({ length: many(duel.spareDodge) }, () => ({ kind: 'dodge', why: 'there was nothing left to offset' })),
+    ...Array.from({ length: many(duel.idleDefense) }, () => ({ kind: 'defense', why: 'Defense can only offset a Light Hit' })),
+  ];
+
+  return `<div class="duel">
+      <div class="duel-head">
+        ${label(duel.carried ? 'Carried damage' : 'Attack icons')}
+        <span class="duel-vs">vs</span>
+        ${label('Defence roll')}
+        <button class="duel-replay" type="button" title="Play the offsetting again">▶ Replay</button>
+      </div>
+      <div class="duel-grid">${cols || '<p class="dim">No damage icons in the attack roll.</p>'}</div>
+      ${spare.length ? `<div class="duel-spare">${spare
+        .map((s) => `<span class="duel-icon k-${s.kind} unused shown" title="${s.why}">${glyph(s.kind, 18)}</span>`)
+        .join('')}<small>unused, because ${spare[0].why}</small></div>` : ''}
+      ${triggers.length ? `<div class="duel-trig">${triggers
+        .map((t) => `<span class="duel-icon k-${kindOf(t.kind)}" title="${nameOf(t.kind)}">${glyph(t.kind, 18)}</span>`)
+        .join('')}<small>trigger icons: these fire "on ${triggers.map((t) => nameOf(t.kind)).filter((v, i, a) => a.indexOf(v) === i).join('/')}" card effects unless a Dodge offsets them</small></div>` : ''}
+    </div>`;
+}
+
+// The strip plus the summary lines printed under it — the whole box the
+// attacker sees, and now the whole box the defender sees.
+//
+// The lines are ESCAPED, which the attacker's window did not bother with while
+// it was the only reader: they are written from card labels and unit names on
+// one client and land in another client's innerHTML, and a peer is not a
+// trusted author of markup.
+export function resolutionHtml(res: { duel: Duel; text: string[] }): string {
+  const text = Array.isArray(res.text) ? res.text : [];
+  return duelHtml(res.duel) + text.map((t) => `<p class="ah-sum">${esc(String(t))}</p>`).join('');
+}
+
+// Bumped by every play, so the timers of a strip that has been replayed — or of
+// one whose window was rebuilt under it — do nothing when they come due.
+let duelGen = 0;
+
+// requestAnimationFrame does NOT fire while the page is not compositing, which
+// is why this is driven by setTimeout and why callers kick it with a timeout of
+// its own rather than inside the render that built the markup. A hidden tab
+// skips the animation outright and keeps the settled box it was born with.
+export function playDuel(wrap: HTMLElement): void {
+  const gen = ++duelGen;
+  const cols = [...wrap.querySelectorAll<HTMLElement>('.duel-col')];
+  const spares = [...wrap.querySelectorAll<HTMLElement>('.duel-spare .duel-icon')];
+  const done = () => {
+    wrap.classList.add('duel-done');
+    cols.forEach((c) => c.classList.add('shown', 'resolved'));
+    spares.forEach((s) => s.classList.add('shown'));
+  };
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches || document.hidden) return done();
+
+  wrap.classList.remove('duel-done');
+  cols.forEach((c) => c.classList.remove('shown', 'resolved'));
+  spares.forEach((s) => s.classList.remove('shown'));
+
+  const step = (fn: () => void, at: number) =>
+    window.setTimeout(() => {
+      if (gen !== duelGen || !wrap.isConnected) return;
+      fn();
+    }, at);
+
+  let t = 60;
+  cols.forEach((col) => { step(() => col.classList.add('shown'), t); t += 90; });
+  t += 160;
+  cols.forEach((col) => { step(() => col.classList.add('resolved'), t); t += 220; });
+  spares.forEach((s) => { step(() => s.classList.add('shown'), t); t += 120; });
+  step(() => wrap.classList.add('duel-done'), t + 120);
+}
+
+// Find the strip inside markup that was just pasted in and wire its Replay
+// button. Whether to PLAY it is the caller's call: the attacker's window plays
+// on every build of the resolution step, while the defender's mirror is rebuilt
+// whenever any part of the view changes — a log line arriving is enough — and
+// restarting the strip mid-flight would make them watch the same icons twice.
+export function mountDuel(root: ParentNode): HTMLElement | null {
+  const wrap = root.querySelector<HTMLElement>('.duel');
+  if (!wrap) return null;
+  wrap.querySelector('.duel-replay')?.addEventListener('click', () => playDuel(wrap));
+  return wrap;
+}
+
 interface Ctx {
   attacker: Token;
   defender: Token;
@@ -260,6 +392,13 @@ interface Ctx {
   log: string[];
   explosion: boolean;
   hits: number;
+  // The duel and summary the resolution step LAST DREW. Held so publishMirror
+  // sends the strip that is on the attacker's screen rather than deriving a
+  // second one of its own: two derivations of one thing are two things that can
+  // drift, and a strip reading "dodged" on one screen and "blocked" on the
+  // other would be worse than the defender seeing none. Written by stepResolve,
+  // which render() builds before it publishes.
+  resolution?: { duel: Duel; text: string[] } | null;
 }
 
 export class AttackHelper {
@@ -302,6 +441,7 @@ export class AttackHelper {
     dodgeDieUsed: boolean;
     dodgeDieReady: boolean;
     designate: { from: string; slots: { slot: string; label: string }[] } | null;
+    resolution: { duel: Duel; text: string[] } | null;
   } | null) => void) | null = null;
   // Whether this defender's Focus decisions belong to a player at another
   // screen. Wired by the Match Centre; null in freeplay, where one player
@@ -320,7 +460,12 @@ export class AttackHelper {
   private ctx: Ctx | null = null;
   // Survives across the individual attack sequences, which each replace `ctx`.
   private multi: MultiState | null = null;
-  private duelGen = 0;
+  // Stamped on every attack sequence, so a defence roll that comes back late
+  // can be told apart from the one the CURRENT sequence is waiting on. It used
+  // to be the duel animation's counter, which moved for reasons that had
+  // nothing to do with whose roll was in the air; the animation now keeps its
+  // own at module scope, where the mirror can reach it too.
+  private rollGen = 0;
   private blackTimer: number | undefined;
   private spinTimer: number | undefined;
   private spinFor: 'attack' | 'defense' | null = null;
@@ -474,6 +619,8 @@ export class AttackHelper {
       protection = rb.protection;
       protectionNote = rb.protectionNote;
     }
+    // A new attack: any defence roll still in the air belongs to the last one.
+    this.rollGen++;
     this.ctx = {
       attacker,
       defender,
@@ -572,6 +719,10 @@ export class AttackHelper {
     const prot = protectionFor(m.attacker, defender, m.action, terrain, board, smoke,
       ignoresProtectionOnHighlight(this.data, m.attacker) && statusCount(defender.statuses, 'highlight') > 0,
       (t) => providesUnitProtectionToAllies(this.data, t));
+    // A Multi-Target opens one sequence per target and each waits on its own
+    // defence roll, so a roll answered late lands on the sequence that asked
+    // for it or on nothing at all.
+    this.rollGen++;
     this.ctx = {
       attacker: m.attacker,
       defender,
@@ -1158,80 +1309,6 @@ export class AttackHelper {
     };
   }
 
-  private duelView(duel: Duel): HTMLElement {
-    const glyph = (kind: string, size = 22) => iconSvg({ type: kind } as DiceIcon, size);
-    const wrap = document.createElement('div');
-    wrap.className = 'duel';
-
-    const label = (t: string) => `<span class="duel-side">${t}</span>`;
-    const verdict = (o: DuelIcon['offset']) =>
-      o === 'dodge' ? '<span class="duel-v dodged">dodged</span>'
-        : o === 'defense' ? '<span class="duel-v blocked">blocked<small>still a Hit</small></span>'
-          : '<span class="duel-v through">through</span>';
-
-    const cols = duel.icons
-      .map((ic, i) => `
-        <div class="duel-col shown resolved" data-i="${i}" data-offset="${ic.offset ?? 'none'}">
-          <span class="duel-icon k-${ic.kind}" title="${ICON_LABEL[ic.kind] ?? ic.kind}">${glyph(ic.kind)}</span>
-          <span class="duel-link"></span>
-          <span class="duel-block">${ic.offset ? `<span class="duel-icon k-${ic.offset}">${glyph(ic.offset, 18)}</span>` : ''}</span>
-          ${verdict(ic.offset)}
-        </div>`)
-      .join('');
-
-    const spare = [
-      ...Array.from({ length: duel.spareDodge }, () => ({ kind: 'dodge', why: 'there was nothing left to offset' })),
-      ...Array.from({ length: duel.idleDefense }, () => ({ kind: 'defense', why: 'Defense can only offset a Light Hit' })),
-    ];
-
-    wrap.innerHTML = `
-      <div class="duel-head">
-        ${label(duel.carried ? 'Carried damage' : 'Attack icons')}
-        <span class="duel-vs">vs</span>
-        ${label('Defence roll')}
-        <button class="duel-replay" type="button" title="Play the offsetting again">▶ Replay</button>
-      </div>
-      <div class="duel-grid">${cols || '<p class="dim">No damage icons in the attack roll.</p>'}</div>
-      ${spare.length ? `<div class="duel-spare">${spare
-        .map((s) => `<span class="duel-icon k-${s.kind} unused shown" title="${s.why}">${glyph(s.kind, 18)}</span>`)
-        .join('')}<small>unused, because ${spare[0].why}</small></div>` : ''}
-      ${duel.triggers.length ? `<div class="duel-trig">${duel.triggers
-        .map((t) => `<span class="duel-icon k-${t.kind}" title="${ICON_LABEL[t.kind]}">${glyph(t.kind, 18)}</span>`)
-        .join('')}<small>trigger icons: these fire "on ${duel.triggers.map((t) => ICON_LABEL[t.kind]).filter((v, i, a) => a.indexOf(v) === i).join('/')}" card effects unless a Dodge offsets them</small></div>` : ''}`;
-
-    wrap.querySelector('.duel-replay')!.addEventListener('click', () => this.playDuel(wrap));
-    return wrap;
-  }
-
-  private playDuel(wrap: HTMLElement): void {
-    const gen = ++this.duelGen;
-    const cols = [...wrap.querySelectorAll<HTMLElement>('.duel-col')];
-    const spares = [...wrap.querySelectorAll<HTMLElement>('.duel-spare .duel-icon')];
-    const done = () => {
-      wrap.classList.add('duel-done');
-      cols.forEach((c) => c.classList.add('shown', 'resolved'));
-      spares.forEach((s) => s.classList.add('shown'));
-    };
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches || document.hidden) return done();
-
-    wrap.classList.remove('duel-done');
-    cols.forEach((c) => c.classList.remove('shown', 'resolved'));
-    spares.forEach((s) => s.classList.remove('shown'));
-
-    const step = (fn: () => void, at: number) =>
-      window.setTimeout(() => {
-        if (gen !== this.duelGen || !wrap.isConnected) return;
-        fn();
-      }, at);
-
-    let t = 60;
-    cols.forEach((col) => { step(() => col.classList.add('shown'), t); t += 90; });
-    t += 160;
-    cols.forEach((col) => { step(() => col.classList.add('resolved'), t); t += 220; });
-    spares.forEach((s) => { step(() => s.classList.add('shown'), t); t += 120; });
-    step(() => wrap.classList.add('duel-done'), t + 120);
-  }
-
   // ---------- UI ----------
 
   // A checkpoint REPLACES every token object while the helper is open — and
@@ -1298,6 +1375,13 @@ export class AttackHelper {
         // has to be on the table, because what it buys is decided against dice
         // that are already showing.
         dodgeDieReady: !c.dodgeDieUsed && c.step === 'defense' && dodgeEnhanceReady(this.data, c.defender),
+        // The resolution box, so the defending player watches the same icons
+        // get dodged and blocked instead of learning the outcome from a line in
+        // the dice feed (Otto, playing online 2026-08-19). ONLY on the
+        // resolution step: stepResolve wrote it during this very render, and a
+        // strip left over from the round before a Surplus would be a lie about
+        // dice that have not been rolled yet.
+        resolution: c.step === 'resolve' ? c.resolution ?? null : null,
       });
   }
 
@@ -2191,12 +2275,12 @@ export class AttackHelper {
       if (this.defenseRoller) {
         if (!c.defenseCalled) {
           c.defenseCalled = true;
-          const gen = this.duelGen;
+          const gen = this.rollGen;
           void this.defenseRoller({ white: c.defensePool.white, blue: c.defensePool.blue }, c.attacker, c.defender, c.action.id)
             .then((faces) => {
               // A cancelled or superseded attack must not receive a roll meant
               // for the one before it.
-              if (this.ctx !== c || this.duelGen !== gen) return;
+              if (this.ctx !== c || this.rollGen !== gen) return;
               c.defenseRoll = faces;
               this.render();
             });
@@ -2293,18 +2377,21 @@ export class AttackHelper {
     wrap.className = 'ah-step';
     const { hits, penetrating, unoffset, text, duel } = this.resolve();
     c.hits = hits;
+    // Kept for publishMirror, which runs at the end of the render that built
+    // this and sends the defender THIS strip rather than deriving another.
+    c.resolution = { duel, text };
     wrap.innerHTML = `<h4><span class="ah-n">4</span><span data-mech="penetration">Resolution</span>${
       c.surplusRound
         ? ` (<span data-mech="surplus_damage">${c.surplusKeyword?.name ?? 'Surplus'} Damage, no Attack Roll</span>)`
         : ''
-    }</h4>`;
-    const duelEl = this.duelView(duel);
-    wrap.appendChild(duelEl);
-    const summary = document.createElement('div');
-    summary.innerHTML = text.map((t) => `<p class="ah-sum">${t}</p>`).join('');
-    wrap.appendChild(summary);
+    }</h4>${resolutionHtml({ duel, text })}`;
     linkMechanics(wrap, this.data.mechanics);
-    window.setTimeout(() => this.playDuel(duelEl), 0);
+    // Played on every build of this step, as it always has been. The timeout is
+    // not decoration: requestAnimationFrame does not fire while the page is not
+    // compositing, so the strip is driven by timers and kicked off outside the
+    // render that made its markup.
+    const duelEl = mountDuel(wrap);
+    if (duelEl) window.setTimeout(() => playDuel(duelEl), 0);
 
     if (penetrating > 0 && c.targetPart) {
       const apply = document.createElement('button');
@@ -2649,16 +2736,13 @@ export class ElectronicHelper {
   }
 
   start(initiator: Token, action: CardAction, responder: Token, opts: { linkLoss?: number } = {}): void {
-    // Only the Initiator is performing an Action, so only the Initiator counts
-    // the Backpacks its Tarantulas are lending (FAQ O5).
     const world = this.tokens ? this.tokens() : [];
-    // "Enemy units within range suffer Strength -1 when making Electronic
-    // Counter Rolls" (EW Suppression, Electronic Warfare Weakening). It lands
-    // on whoever is inside the aura, which can be either side of this contest,
-    // and never below zero. The value is negative in the data, so it adds.
-    const ewPenalty = (u: Token): number => auraValueOn(this.data, world, u, 'electronic_contest_strength_penalty');
-    const initEv = Math.max(0, electronicValue(this.data, initiator, loanedParts(this.data, world, initiator)) + ewPenalty(initiator));
-    const respEv = Math.max(0, electronicValue(this.data, responder) + ewPenalty(responder));
+    // Both riders on the rolled pool - the Tarantula Loads only the Initiator
+    // counts (FAQ O5) and the EW Suppression aura (ZHDR-202_B / PDTR-202_B) -
+    // now live in units.ts, because the Match Centre's counter-roll had grown
+    // its own copy of this arithmetic with only half of it.
+    const initEv = electronicStrength(this.data, world, initiator, 'initiator');
+    const respEv = electronicStrength(this.data, world, responder, 'responder');
     this.ctx = {
       initiator,
       responder,

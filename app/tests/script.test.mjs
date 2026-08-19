@@ -81,6 +81,22 @@ const combatView = {
   // and a spent KC Armor must stay spent.
   focus: { stage: 'declareD', attackerUse: true, defenderUse: false },
   kcUsed: true,
+  // The settled offsetting the defender's mirror draws (4.4 step 6): a Heavy
+  // Hit dodged, a Light Hit blocked by Defense, a Lightning left over as a
+  // trigger icon, and the two ways a defence icon goes unused — a spare Dodge
+  // with nothing left to offset, and a Defense that may only offset a Light
+  // Hit when none remain. Lose it on a reload and the box goes off the
+  // defending player's screen for the rest of the attack.
+  resolution: {
+    duel: {
+      icons: [{ kind: 'heavyHit', offset: 'dodge' }, { kind: 'lightHit', offset: 'defense' }],
+      triggers: [{ kind: 'lightning', offset: null }],
+      spareDodge: 1,
+      idleDefense: 1,
+      carried: false,
+    },
+    text: ['2 damage icons → 1 dodged, 1 blocked by Defense'],
+  },
 };
 // Every value here is deliberately NOT the default, so a field that
 // normaliseScript forgets to carry across fails rather than coincidentally
@@ -164,6 +180,41 @@ check('a bad turn falls back to the first player', normaliseScript({ turn: 'purp
 check('an unknown mode falls back to hotseat', normaliseScript({ mode: 'weird' }, 's1').mode, 'hotseat');
 check('hidden mode is honoured', normaliseScript({ mode: 'hidden' }, 's1').mode, 'hidden');
 check('a partial seats map is filled in', normaliseScript({ seats: { s1: 'remote' } }, 's1').seats, { s1: 'remote', s2: 'local' });
+
+// ---------- the resolution box the defender is shown ----------
+//
+// A checkpoint can land in the middle of an attack, and the attacker's window
+// may never render again before they press Apply — so a resolution that did not
+// survive normalising would take the box off the defender's screen for good.
+const resolution = combatView.resolution;
+check('the published resolution survives', normaliseScript(live, 's1').combatView.resolution, resolution);
+check('a window with no resolution reads back null',
+  normaliseScript({ ...live, combatView: { ...combatView, resolution: undefined } }, 's1').combatView.resolution, null);
+// Half a strip is not a strip: without the icon list there is nothing to draw,
+// so it is dropped rather than rendered as an empty duel.
+check('a resolution with no duel is dropped',
+  normaliseScript({ ...live, combatView: { ...combatView, resolution: { text: ['boom'] } } }, 's1').combatView.resolution, null);
+check('junk icons are dropped from the strip',
+  normaliseScript({ ...live, combatView: { ...combatView, resolution: { ...resolution, duel: { ...resolution.duel, icons: [{ kind: 'heavyHit', offset: 'dodge' }, { nope: 1 }] } } } }, 's1')
+    .combatView.resolution.duel.icons, [{ kind: 'heavyHit', offset: 'dodge' }]);
+// An offset this app does not know about is drawn as "through", which is the
+// reading that never invents a cancellation nobody rolled.
+check('an unknown offset reads back as un-offset',
+  normaliseScript({ ...live, combatView: { ...combatView, resolution: { ...resolution, duel: { ...resolution.duel, icons: [{ kind: 'lightHit', offset: 'parry' }] } } } }, 's1')
+    .combatView.resolution.duel.icons, [{ kind: 'lightHit', offset: null }]);
+// Surplus Damage (4.8) makes no Attack Roll, and the strip says so in its own
+// heading — "Carried damage" rather than "Attack icons".
+check('a Surplus strip keeps its carried flag',
+  normaliseScript({ ...live, combatView: { ...combatView, resolution: { ...resolution, duel: { ...resolution.duel, carried: true } } } }, 's1')
+    .combatView.resolution.duel.carried, true);
+// Counts are drawn as that many unused icons, so a negative or junk one would
+// be a loop this client runs on a number the other client chose.
+check('a nonsense spare count reads back zero',
+  normaliseScript({ ...live, combatView: { ...combatView, resolution: { ...resolution, duel: { ...resolution.duel, spareDodge: -3 } } } }, 's1')
+    .combatView.resolution.duel.spareDodge, 0);
+check('non-string summary lines are dropped',
+  normaliseScript({ ...live, combatView: { ...combatView, resolution: { ...resolution, text: [1, 'Hits: 1'] } } }, 's1')
+    .combatView.resolution.text, ['Hits: 1']);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

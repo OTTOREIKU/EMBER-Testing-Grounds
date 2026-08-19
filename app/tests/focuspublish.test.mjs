@@ -58,5 +58,51 @@ check('beginFocus still settles the stage without rendering',
 check('so the publish must come after it — the reason is recorded on publishMirror',
   /beginFocus\(\) while the DOM|beginFocus -> skipFocusStages/.test(src), true);
 
+// ---------- the resolution box reaches the defender, drawn ONCE ----------
+//
+// Otto, playing online 2026-08-19: "sometimes as a defender I don't see this
+// animated resolution box". The duel was computed by resolve() and rendered
+// only into the attacker's window, so the mirror had nothing to draw from.
+//
+// Checked by source shape for the same reason the ordering above is: driving
+// AttackHelper needs a DOM shim no test here carries. What is being defended is
+// that there stays exactly ONE renderer — this app has drifted every time the
+// same thing was drawn twice, and a strip reading "dodged" on one screen and
+// "blocked" on the other is worse than the nothing the defender used to get.
+const matchSrc = readFileSync(new URL('../src/match.ts', import.meta.url), 'utf8');
+const hudSrc = readFileSync(new URL('../src/matchhud.ts', import.meta.url), 'utf8');
+
+check('the strip is published on the view', /resolution: c\.step === 'resolve'/.test(src), true);
+// Only at the resolution step: before it nothing is settled, and a strip left
+// over from the round before a Surplus would describe dice about to be rerolled.
+check('and only from the resolution step', /c\.step === 'resolve' \? c\.resolution \?\? null : null/.test(src), true);
+// The published strip is the one that was DRAWN, not a second derivation of it.
+const stepResolve = src.slice(src.indexOf('private stepResolve()'), src.indexOf('private finish('));
+check('stepResolve hands the drawn duel to the view', /c\.resolution = \{ duel, text \}/.test(stepResolve), true);
+check('and draws it through the shared renderer', /resolutionHtml\(\{ duel, text \}\)/.test(stepResolve), true);
+
+// One producer of the markup, one player of the animation.
+const producers = (src.match(/<div class="duel">/g) ?? []).length;
+check('combat.ts builds the strip markup in exactly one place', producers, 1);
+check('the mirror imports that renderer rather than owning one',
+  /import \{[^}]*resolutionHtml[^}]*\} from '\.\/combat'/.test(matchSrc), true);
+check('and the mirror never builds duel markup itself', /class="duel-col|class="duel-grid"/.test(matchSrc), false);
+check('the HUD plays the shared animation', /import \{[^}]*playDuel[^}]*\} from '\.\/combat'/.test(hudSrc), true);
+
+// The strip is written settled and the animation only ever TAKES those classes
+// away, so a defender on a backgrounded tab — where nothing composites and
+// playDuel bails out early — still ends up with a readable box.
+check('every column is born shown and resolved', /duel-col shown resolved/.test(src), true);
+check('a hidden tab skips the animation and settles instead',
+  /document\.hidden\) return done\(\)/.test(src), true);
+// requestAnimationFrame does not fire on a page that is not compositing, which
+// is why both callers kick the strip with a timeout instead.
+check('the attacker kicks it with a timeout', /window\.setTimeout\(\(\) => playDuel\(duelEl\), 0\)/.test(src), true);
+check('and so does the mirror', /window\.setTimeout\(\(\) => playDuel\(duel\), 0\)/.test(hudSrc), true);
+// The mirror's body is rewritten whenever ANY part of the view changes — a log
+// line is enough — so the replay is keyed on the strip rather than the rewrite.
+check('the mirror replays only when the strip itself changed',
+  /key !== lastMirrorDuel/.test(hudSrc), true);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

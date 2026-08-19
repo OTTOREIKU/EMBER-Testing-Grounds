@@ -1,11 +1,11 @@
-import { clearDroneCommands, missionZones, readyCommands, seedCommandTokens, taskDesignations, type Command, type CheckResult } from './commands';
+import { ammoHolder, clearDroneCommands, missionZones, readyCommands, seedCommandTokens, taskDesignations, type Command, type CheckResult } from './commands';
 import { askIssuer, asterBlockers, offerCoordination, offerHarpyDrag, runAster } from './commandpick';
 import type { GameData } from './data';
 import { actionIconUrl, cardName, isAerial, secondaryImageUrl, squadLabel, unitSize } from './data';
 import { Board, footprint, snapPlacement, type BoardCallbacks } from './board';
 import { printedDeployment, resolveZoneSetData } from './overlays';
-import { transformOffer, opportunityBonusOn, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, ripostePart, martyrdomOwed, targetTracingOn, riderOnDrone, hasFlexibleTiming, coordinationFor, coordinationOnOpportunityEnd, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, electronicOrigins, loanedParts, minesLayable, minesOwed, pilotCard, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, maneuverIsSilent, maneuverSilenceDenier, type AuraSource, canActivateCamo, chargeableSlots, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
-import { resolveCounterRoll, tallyCounter } from './combat';
+import { transformOffer, opportunityBonusOn, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, ripostePart, martyrdomOwed, targetTracingOn, riderOnDrone, hasFlexibleTiming, coordinationFor, coordinationOnOpportunityEnd, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, electronicOrigins, loanedParts, minesLayable, minesOwed, pilotCard, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, maneuverIsSilent, maneuverSilenceDenier, type AuraSource, canActivateCamo, chargeableSlots, electronicStrength, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
+import { mountDuel, playDuel, resolveCounterRoll, tallyCounter } from './combat';
 import { tacticFitsPhase, tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { inContact, canStandIn, attackDirection, crushTargets, dissipationFor, extendPath, knockbackPath, largeGridOf, LG, losBetween, losNote, pathCost, protectionFor, rangeBetween, reachableGrids, standingSpot, type LargeGrid } from './rules';
 import { breakAwayCost, canBeForceMoved, tetherCap, tetherNote } from './melee';
@@ -549,6 +549,39 @@ function cancelMove(ctx: HudCtx): void {
   ctx.refresh();
 }
 
+// ZHDR-304 Harpy "Air Transport". The dragged Ally comes with it — towed
+// BEHIND, into the Grid the Harpy just vacated, with the final Grid as the
+// small-unit fallback: a Large Mech fills a whole 3x3 Grid, so a spot beside
+// the Harpy can never fit one. spendCommand pays the funder's token and
+// forceMove is the same command Knockback uses, so both travel.
+//
+// One home, called from BOTH endings of a Movement. A move that ends in a Crush
+// leaves through finishCrush rather than the plain settle, and the tow lived
+// only in the latter — so a Harpy that dragged an ally and then Crushed paid
+// the -2 Movement, spent nothing, and left the ally standing where it was.
+// Freeplay never had it: main.ts routes the crush back into the same settle
+// closure, which already closed over the drag.
+function towDraggedAlly(ctx: HudCtx, t: Token, path: LargeGrid[], drag: { allyUid: number; funderUid: number }): void {
+  const ally = ctx.state.tokens.find((x) => x.uid === drag.allyUid);
+  if (!ally) return;
+  const terrain = terrainOf(ctx);
+  const goalGrid = path[path.length - 1];
+  const prevGrid = path[path.length - 2];
+  const spot = (prevGrid
+    ? standingSpot(prevGrid.c, prevGrid.r, ally.size, ally.aerial, terrain, ctx.state.tokens, ally.uid)
+    : null)
+    ?? (goalGrid
+      ? standingSpot(goalGrid.c, goalGrid.r, ally.size, ally.aerial, terrain, ctx.state.tokens, ally.uid)
+      : null);
+  if (!spot) {
+    ctx.noteNow(`${ally.label} could not be dragged: nothing free to stand in. The Command Token was not consumed.`);
+    return;
+  }
+  ctx.send({ kind: 'spendCommand', seat: t.side, uid: drag.funderUid });
+  ctx.send({ kind: 'forceMove', seat: t.side, uid: t.uid, targetUid: ally.uid, to: spot });
+  ctx.noteNow(`${t.label} drags ${ally.label} along (-2 Movement, 1 Command Token consumed).`);
+}
+
 // Each stop takes the free part of its Grid rather than the middle, so a unit
 // crossing a Grid holding a low wall walks past it instead of onto it. Only
 // the destination goes to the engine; the walk is local animation.
@@ -616,6 +649,9 @@ function commitMove(ctx: HudCtx): void {
       path: m.path,
       steps: m.steps,
       flying: m.flying,
+      // The tow rides through the Crush with everything else. Without this line
+      // the plan lost it and finishCrush had nothing to run (BUG-1).
+      drag,
     };
     advanceCrush(ctx);
     ctx.refresh();
@@ -629,29 +665,7 @@ function commitMove(ctx: HudCtx): void {
   board.animateMove(t.uid, stops, () => {
     // The route travels with the move so the other player watches the same walk.
     ctx.send({ kind: 'maneuver', seat: t.side, uid: t.uid, to: last, free, granted, via: stops, facing });
-    // The Harpy's dragged Ally comes with it — towed BEHIND, into the Grid the
-    // Harpy just vacated, with the final Grid as the small-unit fallback: a
-    // Large Mech fills a whole 3x3 Grid, so a spot beside the Harpy can never
-    // fit one. spendCommand pays the funder's token and forceMove is the same
-    // command Knockback uses, so both travel.
-    if (drag) {
-      const ally = ctx.state.tokens.find((x) => x.uid === drag.allyUid);
-      const goalGrid = m.path[m.path.length - 1];
-      const prevGrid = m.path[m.path.length - 2];
-      const spot = ally
-        ? (prevGrid
-          ? standingSpot(prevGrid.c, prevGrid.r, ally.size, ally.aerial, terrain, ctx.state.tokens, ally.uid)
-          : null)
-          ?? standingSpot(goalGrid.c, goalGrid.r, ally.size, ally.aerial, terrain, ctx.state.tokens, ally.uid)
-        : null;
-      if (ally && spot) {
-        ctx.send({ kind: 'spendCommand', seat: t.side, uid: drag.funderUid });
-        ctx.send({ kind: 'forceMove', seat: t.side, uid: t.uid, targetUid: ally.uid, to: spot });
-        ctx.noteNow(`${t.label} drags ${ally.label} along (-2 Movement, 1 Command Token consumed).`);
-      } else if (ally) {
-        ctx.noteNow(`${ally.label} could not be dragged: nothing free to stand in. The Command Token was not consumed.`);
-      }
-    }
+    if (drag) towDraggedAlly(ctx, t, walked, drag);
     if (aerialStart) {
       const moved = ctx.state.tokens.find((x) => x.uid === t.uid);
       const owed = moved ? interceptsOwed(ctx.data, ctx.state.tokens, ctx.state.smoke ?? [], aerialStart, [moved]) : [];
@@ -1812,8 +1826,10 @@ export function startLaunchPlan(uid: number, actionId: string, cardId: string, l
   const a = t ? actionOn(ctx, t, actionId) : undefined;
   if (!t || !a) return;
   // Volley X caps the shots per Action and each one spends an Ammo Token, so
-  // the real cap is whichever runs out first.
-  const ammo = t.ammo?.[actionId];
+  // the real cap is whichever runs out first. Off ammoHolder, not off `t`: a
+  // launcher lent by a Carrier Tarantula keeps its magazine on the Drone (FAQ
+  // O3/O16), and reading the Mech found undefined and offered the full Volley.
+  const ammo = ammoHolder(ctx.data, ctx.state, t, actionId).ammo?.[actionId];
   const shots = Math.min(volleyOf(a), ammo === undefined ? volleyOf(a) : ammo);
   if (shots <= 0) {
     ctx.noteNow(`${a.name?.en || actionId} has no Ammo Tokens left, so it cannot be performed (4.13).`);
@@ -2141,6 +2157,10 @@ function reactionPanel(ctx: HudCtx): string {
   // all, and those are all Emergency Smoke.
   if (r.kind === 'trace') {
     const from = ctx.state.tokens.find((x) => x.uid === r.fromUid);
+    // The printed value, NOT electronicStrength: this number is the 4.11.2 gate
+    // ("an Electronic Value of 0 cannot Initiate"), which reads the stat. The EW
+    // Suppression aura reduces the ROLL, so it belongs to the pool the
+    // Counter-roll panel offers, not to the question of whether one may open.
     const ev = electronicValue(ctx.data, t, loanedParts(ctx.data, ctx.state.tokens, t));
     return head('Your move', `${esc(t.label)}: ${esc(name)}`,
       `${esc(t.label)} was attacked by ${esc(from?.label ?? 'the attacker')}, so it may spend 1 Command Token to open an Electronic Counter-roll back at them. Succeed and they lose 1 Link.`, true)
@@ -2367,8 +2387,12 @@ function ewPanel(ctx: HudCtx): string {
     + '<div class="tp-body"></div><div class="tp-foot"><button class="bigbtn ghost2" data-act="ewcancel">Close</button></div>';
   const reach = a.range ?? 0;
   // The unit PERFORMING the Electronic Attack counts the Loads it is borrowing
-  // (FAQ O5/O6); the target, rolling passively, counts only its own Parts.
-  const ev = electronicValue(ctx.data, by, loanedParts(ctx.data, s.tokens, by));
+  // (FAQ O5/O6); the target, rolling passively, counts only its own Parts. Both
+  // numbers on this screen are the pool that will be ROLLED, so they carry the
+  // EW Suppression aura too (ZHDR-202_B / PDTR-202_B) - showing the printed
+  // stat here and a smaller pool one panel later reads as a bug.
+  const ev = electronicStrength(ctx.data, s.tokens, by, 'initiator');
+  const evPrinted = electronicValue(ctx.data, by, loanedParts(ctx.data, s.tokens, by));
   // An allied Repeater lends its position to the shot (FAQ O19), so the Range
   // shown is the best of the attacker's own and every Repeater covering it.
   const origins = electronicOrigins(ctx.data, s.tokens, by);
@@ -2388,7 +2412,7 @@ function ewPanel(ctx: HudCtx): string {
     : Infinity;
   const rows = enemies
     .map(({ t, d, via }) => {
-      const theirs = electronicValue(ctx.data, t);
+      const theirs = electronicStrength(ctx.data, s.tokens, t, 'responder');
       const far = d > reach;
       const skipped = !far && a.speed === 'auto' && d > nearest;
       const bits = [
@@ -2405,7 +2429,7 @@ function ewPanel(ctx: HudCtx): string {
     })
     .join('');
   return head('Your move', `${esc(a.name?.en || m.actionId)}: which enemy?`,
-    `${esc(by.label)} · Electronic Value ${ev}, Range ${reach}.${relay.length ? ` Range may be measured from ${esc(relay.map((r) => r.label).join(' or '))} instead (Repeater, FAQ O19).` : ''}`, true)
+    `${esc(by.label)} · Electronic Value ${ev}${ev < evPrinted ? ` (${evPrinted} − ${evPrinted - ev}, an enemy EW Suppression aura)` : ''}, Range ${reach}.${relay.length ? ` Range may be measured from ${esc(relay.map((r) => r.label).join(' or '))} instead (Repeater, FAQ O19).` : ''}`, true)
     + `<div class="tp-body">${rows || '<p class="tp-note">No enemy unit is on the board.</p>'}
         <p class="tp-dim">Only Range matters. Terrain and line of sight are ignored (4.11.1).<br>Both units roll Yellow dice equal to their Electronic Value.</p></div>
        <div class="tp-foot"><button class="bigbtn ghost2" data-act="ewcancel">Cancel</button></div>`;
@@ -2418,12 +2442,15 @@ function counterStep(ctx: HudCtx, c: CounterRoll) {
   const resp = s.tokens.find((x) => x.uid === c.responderUid);
   if (!init || !resp) return null;
   const both = c.initRoll !== null && c.respRoll !== null;
+  // electronicStrength, not electronicValue: the Loads only the Initiator
+  // counts (FAQ O5) AND the EW Suppression aura of ZHDR-202_B / PDTR-202_B,
+  // which this panel used to ignore, so the two cards did nothing in a match.
   return {
     init,
     resp,
     both,
-    initEv: electronicValue(ctx.data, init, loanedParts(ctx.data, s.tokens, init)),
-    respEv: electronicValue(ctx.data, resp),
+    initEv: electronicStrength(ctx.data, s.tokens, init, 'initiator'),
+    respEv: electronicStrength(ctx.data, s.tokens, resp, 'responder'),
   };
 }
 
@@ -2734,6 +2761,10 @@ let crushPlan: {
   path: LargeGrid[];
   steps: number;
   flying: boolean;
+  // ZHDR-304's tow, carried across the Crush. A Movement that ends in one
+  // leaves through finishCrush instead of the plain settle, so without a home
+  // on the plan the drag was simply dropped.
+  drag?: { allyUid: number; funderUid: number };
 } | null = null;
 
 // Where a crushed Unit may be pushed: an orthogonal neighbour that is on the
@@ -2801,6 +2832,9 @@ function finishCrush(ctx: HudCtx): void {
   board?.animateMove(t.uid, stops, () => {
     ctx.send({ kind: 'maneuver', seat: t.side, uid: t.uid, to: spot, free: m.free, granted: m.granted, via: stops, facing: m.facing });
     ctx.noteNow(`${t.label} crushes into ${gridName(m.goal.c, m.goal.r)}, and its Movement ends there (4.3.6).`);
+    // After the crusher has landed, exactly as on the plain settle: the Grid it
+    // vacated is only free once it has actually left it.
+    if (m.drag) towDraggedAlly(ctx, t, m.path, m.drag);
     offerMinesOn(ctx, t, m.path, m.steps, m.flying);
     offerBoxesOn(ctx, t.uid, m.path);
     if (m.shoveActionId) startShove(t.uid, m.shoveActionId);
@@ -4171,10 +4205,23 @@ export function ensureHud(host: HTMLElement, ctx: HudCtx): void {
     // the window would redraw on every render.
     if (mirror && mirror !== lastMirror) {
       const body = pop.querySelector<HTMLElement>('#combat-body');
-      if (body) body.innerHTML = mirror;
+      if (body) {
+        body.innerHTML = mirror;
+        // The resolution strip, once it arrives. It is written SETTLED, so a
+        // defender whose tab is in the background — where nothing composites
+        // and the animation is skipped outright — still reads a correct box.
+        // Played only when the strip itself is new: this body is rewritten
+        // whenever any part of the view changes, a log line is enough, and
+        // restarting the offsetting mid-flight would make the defending player
+        // watch the same icons resolve twice.
+        const duel = mountDuel(body);
+        const key = duel?.innerHTML ?? '';
+        if (duel && key !== lastMirrorDuel) window.setTimeout(() => playDuel(duel), 0);
+        lastMirrorDuel = key;
+      }
       lastMirror = mirror;
     }
-    if (!mirror) lastMirror = '';
+    if (!mirror) { lastMirror = ''; lastMirrorDuel = ''; }
   }
   wireHud(host, ctx);
   renderBoard(ctx);
@@ -4195,6 +4242,9 @@ let combatSpot: { x: number; y: number } | null = null;
 let combatRolled = false;
 // The mirror markup this client last wrote into #combat-body.
 let lastMirror = '';
+// The duel strip inside it that was last ANIMATED, so a mirror rewritten for
+// some other reason redraws the box without replaying the offsetting.
+let lastMirrorDuel = '';
 
 function attachCombatWindow(host: HTMLElement): void {
   const pop = host.querySelector<HTMLElement>('#combat-pop');
@@ -4649,10 +4699,21 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
   on('[data-act="ewcancel"]', () => { ewPick = null; dropAction(); ctx.refresh(); });
   // Each seat rolls its OWN unit's dice and sends them as faces. The receiver
   // never re-rolls them, so both clients read the same Counter-roll.
+  //
+  // The pool comes from counterStep, the reader that drew the button, so the
+  // offer and the dice cannot drift. Rolling electronicValue() raw here dropped
+  // BOTH riders on the Strength: the Initiator's Tarantula Loads (FAQ O5) and
+  // the EW Suppression aura of ZHDR-202_B / PDTR-202_B.
+  const counterPool = (t: Token): number => {
+    const c = ensureScript(s).counter;
+    const step = c ? counterStep(ctx, c) : null;
+    if (!step) return 0;
+    return t.uid === step.init.uid ? step.initEv : step.respEv;
+  };
   on('[data-ewroll]', (el) => {
     const t = s.tokens.find((x) => x.uid === Number(el.dataset.ewroll));
     if (!t) return;
-    const ev = electronicValue(ctx.data, t);
+    const ev = counterPool(t);
     void ctx.rollHits(ev, `rolls ${ev} for the Electronic Counter-roll`).then((res) => {
       ctx.send({ kind: 'rollCounter', seat: t.side, uid: t.uid, faces: res.dice.map((d) => d.face) });
       ctx.refresh();
@@ -4664,7 +4725,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     // The Link is spent by the unit's own player, which is the whole reason
     // this exchange is split across the two seats.
     if (!ctx.send({ kind: 'focus', seat: t.side, uid: t.uid }).ok) { ctx.refresh(); return; }
-    const ev = electronicValue(ctx.data, t);
+    const ev = counterPool(t);
     void ctx.rollHits(ev, `spends 1 Link to Focus the Counter-roll`).then((res) => {
       ctx.send({ kind: 'rollCounter', seat: t.side, uid: t.uid, faces: res.dice.map((d) => d.face), focused: true });
       ctx.refresh();

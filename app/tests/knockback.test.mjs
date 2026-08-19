@@ -152,5 +152,35 @@ check('wrecking is read', lightningLinkDrain({ description: { zh: '· 粉碎' } 
 check('a pulse action is not a drain', lightningLinkDrain({ keywords: [{ inline: '频闪武器' }] }), null);
 check('an empty action drains nothing', lightningLinkDrain({}), null);
 
+// ---------- Barricades are exempt from Forced Movement (FAQ E6/M13) ----------
+//
+// "Neutral Unit - Deployables - Barricade ... can neither move, be moved, nor
+// be Crushed" (Rules Supplement 1.1.3, via FAQ A3/E6/M13/M14). The Crush half
+// was implemented; the FORCED MOVEMENT half was written into two comments
+// (types.ts, data.ts) and nowhere else, so a Knockback or a Push shoved a
+// Turtle Shell across the board. Regression guard for BUG-6.
+//
+// One empty path covers both boards: main.ts and matchhud.ts each build their
+// own shove UI on this function and both already read an empty path as
+// "blocked, it does not move", so neither ever sends the forceMove.
+const shell = unit(2, 5, 5, { barricade: true });
+check('a Knockback does not move a Barricade', cells(knockbackPath(shell, south, 3, [], [shell])), []);
+check('nor does a 1-Grid one', cells(knockbackPath(shell, south, 1, [], [shell])), []);
+check('and no direction is different', cells(knockbackPath(shell, { dc: -1, dr: 0 }, 3, [], [shell])), []);
+// The control: the same unit in the same clear line, minus the flag. Without
+// this the check above would pass on a function that had stopped working.
+check('while an ordinary victim in that line still travels',
+  cells(knockbackPath(unit(2, 5, 5), south, 3, [], [unit(2, 5, 5)])), ['5,6', '5,7', '5,8']);
+// The sibling half, already correct before BUG-6 and pinned here so the pair
+// cannot drift: a Grid holding a Barricade cannot be entered at all, which is
+// stronger than "the Barricade survives".
+const { crushTargets } = await import(tmp.href);
+const stomper = { uid: 9, size: 3, aerial: false, facing: 0, col: 0, row: 0, partStates: {} };
+const shellAt = { uid: 2, size: 1, aerial: false, facing: 0, col: 4, row: 4, partStates: {}, barricade: true };
+check('a Large Unit cannot Crush a Barricade, or enter its Grid',
+  crushTargets(stomper, 1, 1, [], [stomper, shellAt]), null);
+check('and the same Grid without the flag is a Crush',
+  crushTargets(stomper, 1, 1, [], [stomper, { ...shellAt, barricade: undefined }])?.units.map((u) => u.uid), [2]);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

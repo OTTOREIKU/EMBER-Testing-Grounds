@@ -18,7 +18,7 @@ import { runFirstVisitPreload } from './preload';
 import { importSquadFile } from './importer';
 import { boardFingerprint, dialsOf, hashDials, newSalt, type DialEntry } from './secrecy';
 import { animateRemoteMove, clearRangeOverlayFor, ensureHud, glueAfter, showRangeOverlay, showSideTab, startAttackPick, startBoxDrop, startDetonation, startElectronicPick, startInterceptPick, startLaunchPlan, startShove, startSmokePlan, type DiceLine, type HudCtx } from './matchhud';
-import { AttackHelper } from './combat';
+import { AttackHelper, resolutionHtml } from './combat';
 import { losNote, protectionFor, spotsInGrid } from './rules';
 import { SquadTracker } from './squads';
 import { Panel } from './panel';
@@ -2112,6 +2112,15 @@ function combatMirrorHtml(): string | null {
       <button class="ah-primary" data-act="focusreroll"${mirrorFocusSel.size ? '' : ' disabled'}>🎲 Reroll ${mirrorFocusSel.size || 'the selected'} ${mirrorFocusSel.size === 1 ? 'die' : 'dice'}</button>
       <button class="ah-alt" data-act="focuskeep">Keep the roll</button></div>`;
   }
+  // The resolution box, drawn by the ATTACKER'S OWN renderer (combat.ts) from
+  // the duel their window published. Not a second implementation on purpose:
+  // this app has drifted every time the same thing was drawn twice, and a strip
+  // that said "dodged" here and "blocked" over there would be worse than the
+  // nothing the defender used to get. It arrives settled and readable; the HUD
+  // plays the animation once, when it first appears.
+  const resUi = view.resolution
+    ? `<div class="ah-step"><h4>Resolution</h4>${resolutionHtml(view.resolution)}</div>`
+    : '';
   return `<div class="attack-helper">
     <div class="ah-head"><b>${esc(at?.label ?? '?')}</b> → <b>${esc(df?.label ?? '?')}</b>
       <span class="dim">${esc(name)}${modeNote ? ` · ${esc(modeNote)}` : ''}</span></div>
@@ -2122,6 +2131,7 @@ function combatMirrorHtml(): string | null {
     ${view.defense?.length ? `<div class="ah-step"><p>Defense Roll</p>${faceRow(view.defense)}</div>` : ''}
     ${kcUi}
     ${desUi}${evadeUi}${dodgeDieUi}${focusUi}
+    ${resUi}
     ${view.log.length ? `<div class="ah-log">${view.log.map((l) => `<div>${esc(l)}</div>`).join('')}</div>` : ''}
   </div>`;
 }

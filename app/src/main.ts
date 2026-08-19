@@ -6,7 +6,7 @@ import { gameResult, isLowValue, newTaskState, normaliseTasks, taskItemsFor, zon
 import { DiceTray } from './dice';
 import { importSquadFile } from './importer';
 import { factionColour, squadColour } from './icons';
-import { applyRemote, onPerformed, onRefused, perform, type Command, onBeforeApply } from './commands';
+import { ammoHolder, applyRemote, onPerformed, onRefused, perform, type Command, onBeforeApply } from './commands';
 import { Relay } from './net';
 import { getLocalSeat, setLocalSeat } from './loop';
 import { ApiError, EmberApi, type SquadEntry } from './api';
@@ -1406,11 +1406,14 @@ async function init() {
     m.placedUids.push(placed.uid);
     m.placed++;
     m.left--;
-    logTo(t, `Launched ${cardName(m.card)} to ${gridRef(c, r)}${t.ammo[id] !== undefined ? ` (Ammo ${t.ammo[id]} left)` : ''}.`);
+    // The same magazine the command just debited, so the count in the log is
+    // the Tarantula's when the launcher was borrowed from one (FAQ O3/O16).
+    const mag = ammoHolder(data, state, t, id).ammo[id];
+    logTo(t, `Launched ${cardName(m.card)} to ${gridRef(c, r)}${mag !== undefined ? ` (Ammo ${mag} left)` : ''}.`);
     onChanged();
     // A single shot closes on its own, but a Volley stays open once it is spent
     // so the last projectile can still be taken back before it counts.
-    const spent = m.left <= 0 || (t.ammo[id] !== undefined && t.ammo[id] <= 0);
+    const spent = m.left <= 0 || (mag !== undefined && mag <= 0);
     if (spent && m.placed + m.left <= 1) finishLaunch();
     else renderLaunchStep();
   }
@@ -1431,7 +1434,10 @@ async function init() {
     }
     m.placed--;
     m.left++;
-    if (t) logTo(t, `Took back a ${cardName(m.card)}${t.ammo[id] !== undefined ? ` (Ammo ${t.ammo[id]} left)` : ''}.`);
+    if (t) {
+      const back = ammoHolder(data, state, t, id).ammo[id];
+      logTo(t, `Took back a ${cardName(m.card)}${back !== undefined ? ` (Ammo ${back} left)` : ''}.`);
+    }
     if (selectedUid === uid) selectToken(m.uid);
     onChanged();
     renderLaunchStep();
@@ -1472,7 +1478,11 @@ async function init() {
   }
 
   function startLaunch(t: Token, action: CardAction, card: Card, done: (performed: boolean) => void): void {
-    const ammo = t.ammo[action.id];
+    // Read off ammoHolder, not off `t`: a launcher lent by a Carrier Tarantula
+    // keeps its magazine on the Drone (FAQ O3/O16), and sizing the volley off
+    // the Mech found undefined and offered the full Volley X out of a magazine
+    // that was not there.
+    const ammo = ammoHolder(data, state, t, action.id).ammo[action.id];
     const shots = Math.min(volleyOf(action), ammo === undefined ? volleyOf(action) : ammo);
     if (shots <= 0) {
       void alertDialog({
@@ -1844,10 +1854,16 @@ async function init() {
     // is drawn or the player would be shown a reach they cannot have.
     const drag = await offerHarpyDrag(t, steps);
     if (drag === 'cancelled') return done(false);
+    // The allowance the whole move is judged against, taken once. The paint
+    // below used the un-reduced `steps` while the plan carried the reduced one,
+    // so a Harpy that took the drag was shown two Grids of reach it could not
+    // use — the route itself was capped correctly, which is what made the lie
+    // hard to spot. The Match Centre paints off movePlan.steps and was right.
+    const range = drag ? steps - 2 : steps;
     movePlan = {
       uid,
       side: t.side,
-      steps: drag ? steps - 2 : steps,
+      steps: range,
       drag: drag ?? undefined,
       flying,
       path: [{ c: Math.floor(t.col / 3), r: Math.floor(t.row / 3) }],
@@ -1857,7 +1873,7 @@ async function init() {
       done,
     };
     selectToken(uid);
-    board.showReachable(reachableGrids(t, steps, currentTerrain(), state.tokens, flying, moveOpts(t, flying)), steps);
+    board.showReachable(reachableGrids(t, range, currentTerrain(), state.tokens, flying, moveOpts(t, flying)), range);
     board.panEnabled = false;
     renderMoveCtrl();
     const locked = flying || t.aerial ? [] : lockersOf(data, t, state.tokens, currentTerrain());

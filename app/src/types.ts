@@ -685,6 +685,26 @@ export interface DefenseCall {
   faces: { color: string; face: number }[] | null;
 }
 
+// One damage icon and what offset it (4.4 step 6). `offset` null means nothing
+// did, so it penetrates. Lives here rather than in combat.ts because it is now
+// part of the published view: the defender's mirror draws the same strip.
+export interface DuelIcon {
+  kind: string;
+  offset: 'dodge' | 'defense' | null;
+}
+
+// The settled offsetting, as the resolution box draws it: every damage icon
+// paired with what cancelled it, the trigger icons beside them, and what the
+// defence rolled but could not spend. `carried` marks a Surplus round, which
+// has no Attack Roll behind it (4.8).
+export interface Duel {
+  icons: DuelIcon[];
+  triggers: DuelIcon[];
+  spareDodge: number;
+  idleDefense: number;
+  carried: boolean;
+}
+
 // A read-only snapshot of the attacker's combat window, one per open attack.
 // Faces are raw die indexes — the mirror draws them with the same dice data —
 // and `log` is the helper's narration tail with any markup stripped.
@@ -715,6 +735,13 @@ export interface CombatView {
   // while that question is open, because it is the defender's to answer and
   // their mirror is the only place the buttons may appear.
   designate?: { from: string; slots: { slot: string; label: string }[] } | null;
+  // The settled resolution (4.4 step 6): the duel strip and the summary lines
+  // printed under it. Present only while the attacker's window is ON the
+  // resolution step, because before that there is nothing settled to draw and a
+  // strip that guesses would be worse than no strip. Both screens render it
+  // through combat.ts's resolutionHtml, so they cannot disagree about which
+  // icon was dodged.
+  resolution?: { duel: Duel; text: string[] } | null;
 }
 
 // A boundary a rollback can return to. `available` false means a die roll has
@@ -803,6 +830,33 @@ function normaliseDefenseCall(raw: unknown): DefenseCall | null {
   return { attackerUid: c.attackerUid, targetUid: c.targetUid, actionId: c.actionId, white: c.white, blue: c.blue, faces };
 }
 
+// The resolution box as published. A checkpoint can land in the middle of an
+// attack — a late joiner, or a client that drifted — and the attacker's window
+// may never render again before the player presses Apply, so a view that came
+// back without its duel would take the box off the defender's screen for good.
+// Bounded like the dice pools are: this is display state, and a strip longer
+// than any legal attack could produce is junk rather than something to draw.
+function normaliseDuel(raw: unknown): { duel: Duel; text: string[] } | null {
+  const r = raw as { duel?: Partial<Duel>; text?: unknown } | null | undefined;
+  const d = r?.duel;
+  if (!d || !Array.isArray(d.icons) || !Array.isArray(d.triggers)) return null;
+  const icons = (x: unknown[]): DuelIcon[] =>
+    x.filter((i): i is DuelIcon => !!i && typeof (i as DuelIcon).kind === 'string')
+      .slice(0, 40)
+      .map((i) => ({ kind: i.kind, offset: i.offset === 'dodge' || i.offset === 'defense' ? i.offset : null }));
+  const count = (v: unknown): number => (Number.isSafeInteger(v) && (v as number) > 0 ? Math.min(v as number, 40) : 0);
+  return {
+    duel: {
+      icons: icons(d.icons),
+      triggers: icons(d.triggers),
+      spareDodge: count(d.spareDodge),
+      idleDefense: count(d.idleDefense),
+      carried: !!d.carried,
+    },
+    text: Array.isArray(r!.text) ? (r!.text as unknown[]).filter((t): t is string => typeof t === 'string').slice(0, 12) : [],
+  };
+}
+
 // Display state, so the bar is lower than the defence call's: uids and a step
 // are enough to draw something honest, and junk faces are simply dropped.
 function normaliseCombatView(raw: unknown): CombatView | null {
@@ -828,6 +882,7 @@ function normaliseCombatView(raw: unknown): CombatView | null {
         : null;
     })(),
     kcUsed: !!v.kcUsed,
+    resolution: normaliseDuel(v.resolution),
   };
 }
 

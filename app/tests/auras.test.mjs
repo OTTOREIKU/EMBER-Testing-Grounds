@@ -14,7 +14,12 @@ const cut = (s, a, b, what) => {
 // tokenCards and largeGridOf are mirrored; everything under test is sliced.
 const body = `
 type Token = any; type GameData = any; type PartSlot = any; type CardAction = any; type Card = any;
-type SmokeScreen = any;
+type SmokeScreen = any; type LoanedPart = any;
+// electronicStrength asks loanedParts what a Tarantula is lending the Initiator.
+// Stubbed empty: no fixture here carries a Carrier, and loads.test.mjs owns that
+// half. What this file is for is the OTHER rider on the same number, the EW
+// Suppression aura, which no fixture can fake because the reach lives in the data.
+export function loanedParts(_d: any, _t: any[], _u: any): any[] { return []; }
 function cardName(c: any): string { return c?.name?.en ?? c?.id ?? ''; }
 export function tokenCards(data: any, t: any): any[] {
   const out: any[] = [];
@@ -52,7 +57,12 @@ function largeGridOf(t: any): any { return { c: Math.floor(t.col / 3), r: Math.f
   // (427) and the nearest below starts at [Two-Handed] (531), so nothing here is
   // declared twice. Stops short of camoBrokenBy on purpose — that block wants
   // statusCount, inContact and isBarricade, and camo.test.mjs already owns it.
-  + cut(units, '// ---------- Silence (rulebook 4.12', '// ---------- Who breaks Optical Camouflage', 'the Silence classifiers');
+  + cut(units, '// ---------- Silence (rulebook 4.12', '// ---------- Who breaks Optical Camouflage', 'the Silence classifiers')
+  // 2568-2602 today. Checked against every cut above before adding, as the
+  // header at the top of this list demands: the nearest one ends at
+  // autoDetonationsOwed (2459) and the nearest below starts nowhere — this is
+  // the last cut in the file — so nothing here is declared twice.
+  + cut(units, 'export function electronicValue', 'export function defaultUnitLabel', 'electronicValue and electronicStrength');
 
 const tmp = new URL('./_auras.slice.ts', import.meta.url);
 writeFileSync(tmp, body);
@@ -1029,6 +1039,59 @@ check('a destroyed Part provides nothing', A.providesUnitProtectionToAllies(data
 // whole database is swept: exactly one card may claim this.
 check('and exactly one card in the shipped data provides it',
   cards.filter((c) => A.providesUnitProtectionToAllies(data, droneOf(c.id))).map((c) => c.id), ['ZHDR-101']);
+
+// ---------- EW Suppression, the Strength -1 on a Counter-roll ----------
+//
+// PDTR-202_B: "Enemy units within range suffer Strength -1 when making
+// Electronic Counter Rolls. This effect does not stack." ZHDR-202_B prints the
+// same rule in Chinese and Japanese only. This is the pool a unit ROLLS, not
+// the Electronic Value printed on its Parts, which is why electronicStrength
+// exists beside electronicValue rather than inside it: 4.11.2's "an Electronic
+// Value of 0 cannot Initiate" gate reads the STAT and must not see the aura.
+//
+// Regression guard for BUG-3. The Match Centre's counter-roll had its own copy
+// of this arithmetic with the aura missing, so both cards were dead in every
+// match while freeplay honoured them.
+const ewMech = mech(70, 's1', '174', 9);           // P22 "Hunter" EW Core, Electronic 4
+const watchdog = drone(71, 's2', 'ZHDR-202', 12);  // aura Range 4, 1 Large Grid away
+const chanceII = mech(72, 's2', 'PDTR-202', 12);   // the same aura on a torso
+const ewWorld = [ewMech, watchdog];
+
+check('the printed Electronic Value is untouched by the aura',
+  A.electronicValue(data, ewMech), 4);
+check('but the pool it ROLLS is one lower inside an enemy EW Suppression aura',
+  A.electronicStrength(data, ewWorld, ewMech, 'responder'), 3);
+check('and the Initiator is hit by it just the same — the aura names units, not roles',
+  A.electronicStrength(data, ewWorld, ewMech, 'initiator'), 3);
+// Range 4 aura: col 9 is Large Grid 3, col 27 is Grid 9, so six apart.
+check('out of the aura Range it rolls the printed value',
+  A.electronicStrength(data, [ewMech, drone(71, 's2', 'ZHDR-202', 27)], ewMech, 'responder'), 4);
+check('the same aura printed on a Mech torso reaches just as far',
+  A.electronicStrength(data, [ewMech, chanceII], ewMech, 'responder'), 3);
+// "This effect does not stack" — two sources are still -1, never -2.
+check('two sources do not stack',
+  A.electronicStrength(data, [ewMech, watchdog, chanceII], ewMech, 'responder'), 3);
+// targetSide is "enemy", so a Watchdog never weakens its own side.
+const ewAlly = mech(73, 's2', '174', 9);
+check('an ally standing in it is untouched',
+  A.electronicStrength(data, [ewAlly, watchdog], ewAlly, 'responder'), 4);
+// The clamp. ZYBP-101 is a Backpack worth 1, so a Mech wearing only that would
+// otherwise be asked to roll -1 dice.
+const thinMech = { uid: 74, side: 's1', kind: 'mech', col: 9, row: 9, size: 3, facing: 0,
+  mech: { backpack: 'ZYBP-101' }, partStates: { backpack: 'intact' } };
+check('an Electronic Value of 1 is dropped to 0, never below it',
+  A.electronicStrength(data, [thinMech, watchdog], thinMech, 'responder'), 0);
+// A destroyed Part carries no aura, which aurasOn already enforces — pinned
+// here because it is the difference between a live rule and a dead drone.
+const deadWatchdog = { ...watchdog, partStates: { main: 'destroyed' } };
+check('a destroyed Watchdog suppresses nothing',
+  A.electronicStrength(data, [ewMech, deadWatchdog], ewMech, 'responder'), 4);
+// The whole database is swept, so a data edit that spreads this aura to a third
+// card has to come back through this test rather than silently changing pools.
+const suppressors = cards.filter((c) => (c.actions ?? []).some((a) => (a.gameRules ?? [])
+  .some((g) => (g.effects ?? []).some((e) => (e.effectTypes ?? []).includes('electronic_contest_strength_penalty')))));
+check('exactly two cards in the shipped data carry EW Suppression',
+  suppressors.map((c) => c.id).sort(), ['PDTR-202', 'ZHDR-202']);
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
 if (fail) process.exit(1);

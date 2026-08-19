@@ -188,5 +188,105 @@ const offerFn = hud.slice(hud.indexOf('function rollbackOffer(ctx: HudCtx)'), hu
 check('rollbackOffer was located', offerFn.includes('rollbackCatalog'), true);
 check('a watcher is never offered a rollback', /if \(!ctx\.networked \|\| !ctx\.seat/.test(offerFn), true);
 
+// ---------- Class 3: a rule that exists on one board only ----------
+//
+// This project's signature defect, and the reason the sweep that found BUG-3
+// was worth running: freeplay and the Match Centre each grew their own copy of
+// the Electronic Counter-roll, and only freeplay's applied the EW Suppression
+// aura (ZHDR-202_B / PDTR-202_B). The pool is arithmetic, not a command, so no
+// fingerprint and no behavioural test of either page could see the difference.
+//
+// The rule now lives once, in units.ts electronicStrength. What is guarded here
+// is that neither board goes back to reading electronicValue() for a pool.
+const units = read('units.ts');
+check('electronicStrength is the one home for the rolled pool',
+  units.includes('export function electronicStrength'), true);
+check('and it is the only place the EW Suppression aura is read',
+  [main, hud, guide, read('combat.ts'), read('commands.ts'), units]
+    .reduce((n, src) => n + (src.match(/electronic_contest_strength_penalty/g) ?? []).length, 0), 1);
+// The Match Centre's three seams: the panel that offers the roll, the reader
+// that sizes it, and the handler that actually rolls the dice.
+const counterFn = hud.slice(hud.indexOf('function counterStep(ctx: HudCtx'), hud.indexOf('function counterVerdict'));
+check('counterStep was located', counterFn.includes('initEv'), true);
+check('counterStep sizes both pools with electronicStrength',
+  (counterFn.match(/electronicStrength\(/g) ?? []).length, 2);
+check('and no longer reads the printed value for a pool',
+  counterFn.includes('electronicValue('), false);
+const ewRollFn = hud.slice(hud.indexOf("on('[data-ewroll]'"), hud.indexOf("on('[data-ewapply]'"));
+check('the roll handlers were located', ewRollFn.includes('rollCounter'), true);
+// Both the first roll and the Focus reroll. Rolling electronicValue() raw here
+// dropped the aura AND the Initiator's Tarantula Loads, so the button offered
+// one number and the dice came up another.
+check('the roll and the Focus reroll both take the pool the panel offered',
+  (ewRollFn.match(/counterPool\(t\)/g) ?? []).length, 2);
+check('and neither rolls the printed value', ewRollFn.includes('electronicValue('), false);
+// Freeplay's helper reads the same function, so the two boards cannot drift again.
+const combat = read('combat.ts');
+check('freeplay ElectronicHelper reads the same helper',
+  (combat.match(/electronicStrength\(this\.data/g) ?? []).length, 2);
+
+// Same class, the Ammo edition (BUG-4). A Volley is capped by the magazine, and
+// a launcher lent by a Carrier Tarantula keeps its magazine on the DRONE (FAQ
+// O3/O16). Both launch UIs sized that cap off their own `t.ammo`, found nothing
+// there, and offered shots commands.ts now refuses. playguide.ts has no launch
+// flow, so these two are the whole set.
+for (const [name, src] of [['main.ts', main], ['matchhud.ts', hud]]) {
+  check(`${name} imports ammoHolder from the command layer`,
+    /import \{[^}]*\bammoHolder\b[^}]*\} from '\.\/commands'/.test(src), true);
+}
+const startLaunch = main.slice(main.indexOf('function startLaunch(t: Token'), main.indexOf('function endTargeting'));
+check('freeplay startLaunch was located', startLaunch.includes('volleyOf'), true);
+check('and sizes the volley off the magazine that pays',
+  startLaunch.includes('ammoHolder(data, state, t, action.id).ammo[action.id]'), true);
+const startPlan = hud.slice(hud.indexOf('export function startLaunchPlan'), hud.indexOf('// A Landing Point is a Grid'));
+check('the Match Centre launch plan was located', startPlan.includes('volleyOf'), true);
+check('and sizes its volley off the same one',
+  startPlan.includes('ammoHolder(ctx.data, ctx.state, t, actionId)'), true);
+
+// ---------- Class 4: a Movement has two endings, and both owe the same riders ----------
+//
+// BUG-1. A Match Centre Movement leaves through the plain settle OR, when it
+// ends in an occupied Grid, through finishCrush — and everything the settle
+// does has to be done again there. ZHDR-304's tow was written into the settle
+// alone, so a Harpy that dragged an Ally and then Crushed paid the -2 Movement
+// and left the Ally behind. Freeplay is immune: main.ts routes its crush back
+// into the same settle closure, so there is only one ending to maintain.
+check('the tow has exactly one home', (hud.match(/function towDraggedAlly\(/g) ?? []).length, 1);
+check('and nothing else re-implements the spendCommand/forceMove pair',
+  (hud.match(/drags \$\{ally\.label\} along/g) ?? []).length, 1);
+const settleFn = hud.slice(hud.indexOf('function commitMove(ctx: HudCtx)'), hud.indexOf('// A snapped footprint counts only'));
+check('commitMove was located', settleFn.includes('crushTargets'), true);
+check('the plain settle tows', /if \(drag\) towDraggedAlly\(/.test(settleFn), true);
+// The plan is the only thing that survives between the two endings, so the tow
+// has to be ON it — a field, and a value written into it.
+const crushType = hud.slice(hud.indexOf('let crushPlan: {'), hud.indexOf('function crushEscapes'));
+check('the crushPlan type was located', crushType.includes('pendingSpot'), true);
+check('and it carries the drag across the Crush', /drag\?: \{ allyUid: number; funderUid: number \}/.test(crushType), true);
+const planBuild = settleFn.slice(settleFn.indexOf('crushPlan = {'), settleFn.indexOf('advanceCrush(ctx);'));
+check('the crushPlan literal was located', planBuild.includes('queue:'), true);
+check('and the plan is built with the drag on it', /^\s*drag,\s*$/m.test(planBuild), true);
+// BUG-2, the same card one page over. The Harpy's drag costs -2 Movement, and
+// freeplay painted the reachable overlay with the UN-reduced allowance while
+// the plan and the route cap both used the reduced one. Cosmetic, but it showed
+// the player Grids the unit could not enter, which reads as an engine bug.
+// A single `range` is the fix: one number, used by the plan and the paint.
+const startMoveFn = main.slice(main.indexOf('async function startMove(uid: number'), main.indexOf('function commitMove(): void'));
+check('freeplay startMove was located', startMoveFn.includes('offerHarpyDrag'), true);
+check('the reduced allowance is taken once', /const range = drag \? steps - 2 : steps;/.test(startMoveFn), true);
+check('the plan carries it', /steps: range,/.test(startMoveFn), true);
+check('and the overlay is solved with the same number',
+  startMoveFn.includes('showReachable(reachableGrids(t, range,'), true);
+check('and labelled with it too', /showReachable\([^;]*, range\);/.test(startMoveFn), true);
+check('nothing in startMove still paints the un-reduced steps',
+  /showReachable\([^;]*\bsteps\b/.test(startMoveFn), false);
+
+const finishFn = hud.slice(hud.indexOf('function finishCrush(ctx: HudCtx)'), hud.indexOf('function placeCrushed'));
+check('finishCrush was located', finishFn.includes('offerBoxesOn'), true);
+check('and the crush ending tows too', /if \(m\.drag\) towDraggedAlly\(/.test(finishFn), true);
+// Order matters: the Grid the Harpy vacated is only free once the maneuver that
+// left it has been sent, so the tow follows it in both endings.
+check('the tow follows the maneuver that vacated the Grid',
+  finishFn.indexOf("kind: 'maneuver'") < finishFn.indexOf('towDraggedAlly('), true);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exitCode = fail ? 1 : 0;
