@@ -5,7 +5,7 @@ import { linkMechanics } from './inspector';
 import { SQUAD_ORDER, squadLabel } from './data';
 import type { Card, CardAction, DiceData, DiceIcon, DieColor, GameRuleEffect, PartSlot, Side, SmokeScreen, TerrainPiece, Token } from './types';
 import { statusCount, STATUSES } from './types';
-import { aaRadarCovers, attackReactionsOf, auraEffectsOn, aurasOn, auraValueOn, blueLightningDodges, earlyWarningCover, coolingBonus, denseArmorByText, eyesAreHeavyHits, ignoresLowProfile, ignoresProtectionOnHighlight, noMeleeBackAttack, missileGuidance, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, denseArmorOn, designationsOn, electronicValue, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, loanedParts, pilotCard, repeatersFor, SLOT_LABEL, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
+import { aaRadarCovers, attackReactionsOf, auraEffectsOn, aurasOn, auraValueOn, blueLightningDodges, earlyWarningCover, coolingBonus, denseArmorByText, eyesAreHeavyHits, ignoresLowProfile, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, noMeleeBackAttack, missileGuidance, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, denseArmorOn, designationsOn, electronicValue, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, loanedParts, pilotCard, repeatersFor, SLOT_LABEL, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
 import { timingOf } from './ticks';
 import { inArc, losNote, protectionFor, rangeBetween } from './rules';
 import type { Command } from './commands';
@@ -474,7 +474,12 @@ export class AttackHelper {
     const board = this.tokens ? this.tokens() : [];
     const terrain = this.terrain ? this.terrain() : [];
     const smoke = this.smoke ? this.smoke() : [];
-    const prot = protectionFor(m.attacker, defender, m.action, terrain, board, smoke);
+    // Both card-data arguments are supplied here, and both were missing: this
+    // door dropped them, so 095 Responsive Targetting was silently dead on
+    // every Multi-Target shot the moment the queue opened one.
+    const prot = protectionFor(m.attacker, defender, m.action, terrain, board, smoke,
+      ignoresProtectionOnHighlight(this.data, m.attacker) && statusCount(defender.statuses, 'highlight') > 0,
+      (t) => providesUnitProtectionToAllies(this.data, t));
     this.ctx = {
       attacker: m.attacker,
       defender,
@@ -2000,7 +2005,15 @@ export class AttackHelper {
           : '';
       })()}
       ${c.explosion ? '<p class="dim">Explosion damage allows no Terrain or Unit Protection, so the pool below is Armour and Dodge only.</p>' : ''}
-      ${!c.protection && !c.explosion && c.action.type === 'Firing' ? '<p class="dim">Line of sight is clear, so there is no Terrain or Unit Protection. Obstructed firing would add +2 White.</p>' : ''}`;
+      ${
+        // A zero is not always a clear line: Smoke, 095 and a medium unit in
+        // the way all read zero for different reasons, and protectionFor says
+        // which. Claiming "line of sight is clear" over an obstructed board is
+        // worse guidance than the missing dice it was explaining.
+        !c.protection && !c.explosion && c.action.type === 'Firing'
+          ? `<p class="dim">${c.protectionNote || 'No Terrain or Unit Protection applies here. Obstructed firing by a Large unit or 3" terrain would add +2 White.'}</p>`
+          : ''
+      }`;
     wrap.appendChild(
       this.poolEditor(
         [['White', 'white'], ['Blue', 'blue']],

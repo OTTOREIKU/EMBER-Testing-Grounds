@@ -1048,10 +1048,12 @@ export function missileGuidance(
   return out;
 }
 
-// ---------- Four one-off riders read off printed text ----------
+// ---------- One-off riders read off printed text ----------
 //
-// None of these carries usable gameRules, so all four come from the print. They
-// are gathered here because each is one line at one hook point in combat.ts.
+// None of these carries usable gameRules, so all of them come from the print.
+// They are gathered here because each is one line at its hook point, and
+// because rules.ts and combat.ts hold no card data: the judgement is made where
+// the data is and handed to the caller.
 //
 // A shared helper: does any live Part on this unit print the given text?
 function partSays(data: GameData, t: Token, re: RegExp): boolean {
@@ -1076,6 +1078,25 @@ export function ignoresLowProfile(data: GameData, t: Token): boolean {
 // Firing Actions ignore Terrain Protection and Unit Protection both.
 export function ignoresProtectionOnHighlight(data: GameData, t: Token): boolean {
   return t.kind === 'mech' && partSays(data, t, /高亮目标[^。]*无视地形保护和单位保护|ignor\w*\s+Terrain\s+Protection\s+and\s+Unit\s+Protection/i);
+}
+
+// ZHDR-101 N11 Vanguard I "Scutum", Mobile Bunker: "本机可以为友军提供单位保护"
+// — this unit may provide Unit Protection to Ally Units. It is an exception to
+// 4.5.3, which gives Unit Protection to LARGE units only; the Scutum is a
+// medium Drone, so without this it stands in the line and hands its own side
+// nothing. Asked about the unit STANDING IN THE WAY, never the defender.
+//
+// Who counts as an Ally is left to rules.ts: sides are board state, not card
+// text, and this file is the only one allowed to read the print.
+//
+// Applied rather than offered. The printed "may" only ever adds White dice to
+// an ally's Defense Roll and costs the Scutum nothing, so there is no board
+// where a player declines — the same reading twoHandedUse takes of its "may".
+//
+// No `kind === 'mech'` gate, unlike 094/095: this text is printed on a Drone's
+// own card, which tokenCards returns as its 'main' slot.
+export function providesUnitProtectionToAllies(data: GameData, t: Token): boolean {
+  return partSays(data, t, /本机可以为友军提供单位保护|provides?\s+Unit\s+Protection\s+to\s+Ally/i);
 }
 
 // 503 Close Assault: firing at a target within range, {Eye} counts as

@@ -7,7 +7,7 @@ import { cardName, FACTION_LABEL, dataUrl, loadData, missionImageUrl, setSquadNa
 import { tacticSpec } from './tactics';
 import { flushBoxDrops, queueBoxDrop, objectiveCells } from './matchhud';
 import { printedDeployment } from './overlays';
-import { kcArmorReady, knockbackOf, migrateState, multiTargetLimit, squadAllegiance, tokenCards, unfoldsOwed, type AttackReaction } from './units';
+import { ignoresProtectionOnHighlight, kcArmorReady, knockbackOf, migrateState, multiTargetLimit, providesUnitProtectionToAllies, squadAllegiance, tokenCards, unfoldsOwed, type AttackReaction } from './units';
 import { countHits, normaliseSetup } from './setup';
 import { gameResult, normaliseTasks, taskItemsFor } from './tasks';
 import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
@@ -25,7 +25,7 @@ import { Panel } from './panel';
 import { iconSvg } from './dice';
 import type { CombatView, DiceData, DieColor, GameState, Side, Token } from './types';
 import { SLOT_LABEL, stationaryAdjusted } from './units';
-import { PHASES } from './types';
+import { PHASES, statusCount } from './types';
 
 // The Match Centre: a separate page for networked play, so the freeplay board
 // never has to hide or lock anything — its controls simply are not here.
@@ -709,8 +709,15 @@ function startAttack(uid: number, actionId: string, targetUid: number, mode: 'at
     : mode === 'explosion'
       ? 'Explosion damage ignores line of sight and facing, and the defender claims no Terrain or Unit Protection (4.7.6).'
       : losNote(attacker, defender, action, terrain, state.tokens, smoke);
+  // Both card-data arguments, both previously dropped here: the Match Centre
+  // rolled Protection with no knowledge of 095 Responsive Targetting at all.
+  // `gd` because the module-level `data` is nullable and the narrowing above
+  // does not survive into a closure.
+  const gd = data;
   const prot = mode === 'attack'
-    ? protectionFor(attacker, defender, action, terrain, state.tokens, smoke)
+    ? protectionFor(attacker, defender, action, terrain, state.tokens, smoke,
+        ignoresProtectionOnHighlight(gd, attacker) && statusCount(defender.statuses, 'highlight') > 0,
+        (t) => providesUnitProtectionToAllies(gd, t))
     : { white: 0, note: '' };
   attackHelper.roller = combatRoller();
   // Multi-Target opens on the helper's own split step: the extra targets, the

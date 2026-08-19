@@ -4,7 +4,7 @@ import type { GameData } from './data';
 import { actionIconUrl, cardName, isAerial, secondaryImageUrl, squadLabel, unitSize } from './data';
 import { Board, footprint, snapPlacement, type BoardCallbacks } from './board';
 import { printedDeployment, resolveZoneSetData } from './overlays';
-import { opportunityBonusOn, ignoresProtectionOnHighlight, ripostePart, martyrdomOwed, targetTracingOn, riderOnDrone, hasFlexibleTiming, coordinationFor, coordinationOnOpportunityEnd, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, electronicOrigins, loanedParts, minesLayable, minesOwed, pilotCard, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, maneuverIsSilent, maneuverSilenceDenier, type AuraSource, canActivateCamo, chargeableSlots, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
+import { opportunityBonusOn, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, ripostePart, martyrdomOwed, targetTracingOn, riderOnDrone, hasFlexibleTiming, coordinationFor, coordinationOnOpportunityEnd, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, electronicOrigins, loanedParts, minesLayable, minesOwed, pilotCard, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, maneuverIsSilent, maneuverSilenceDenier, type AuraSource, canActivateCamo, chargeableSlots, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
 import { resolveCounterRoll, tallyCounter } from './combat';
 import { tacticFitsPhase, tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { inContact, canStandIn, attackDirection, crushTargets, dissipationFor, extendPath, knockbackPath, largeGridOf, LG, losBetween, losNote, pathCost, protectionFor, rangeBetween, reachableGrids, standingSpot, type LargeGrid } from './rules';
@@ -3222,10 +3222,17 @@ function attackPanel(ctx: HudCtx): string {
       const blocked = note.includes('✕');
       const bad = blocked || note.includes('⚠');
       const prot = protectionFor(by, t, a, terrain, s.tokens, smoke,
-        ignoresProtectionOnHighlight(ctx.data, by) && statusCount(t.statuses, 'highlight') > 0);
+        ignoresProtectionOnHighlight(ctx.data, by) && statusCount(t.statuses, 'highlight') > 0,
+        (u) => providesUnitProtectionToAllies(ctx.data, u));
       // One reading per line. Range, arc and line of sight are three separate
       // judgements and running them together on one line made the list unusable.
-      const bits = note.split(' · ').concat(prot.white ? [`+${prot.white} White ${prot.white === 1 ? 'die' : 'dice'} of Protection`] : []);
+      // A zero carries its reason when there is one — the line above says
+      // "obstructed" for a medium unit in the way, and 4.5.3 pays nothing for
+      // it, so the row would otherwise look like the dice went missing. Not
+      // repeated when the row is already ✕, where the note only echoes it.
+      const bits = note.split(' · ').concat(
+        prot.white ? [`+${prot.white} White ${prot.white === 1 ? 'die' : 'dice'} of Protection`]
+          : prot.note && !blocked ? [prot.note] : []);
       return `<button class="rowwide targrow${bad ? ' warn' : ''}"${blocked ? ' disabled' : ''} data-attacktarget="${t.uid}">
         <span class="tgname">${esc(t.label)}</span>
         <span class="tgbits">${bits.map((b) => `<span${/[⚠✕]/.test(b) ? ' class="bad"' : ''}>${esc(b)}</span>`).join('')}</span></button>`;

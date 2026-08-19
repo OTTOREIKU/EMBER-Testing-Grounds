@@ -890,8 +890,11 @@ export function unitSize(c: Card): 1 | 2 | 3 {
 
 // The three deployable barricades. The Rules Supplement (1.1.3, via FAQ A3/E6/
 // M13/M14) classes them "Neutral Unit - Deployables - Barricade": they stand on
-// the ground, block movement, give and receive Protection like any unit, and
-// can neither move, be moved, nor be Crushed. Everything else projectile-shaped
+// the ground, block movement, RECEIVE Protection like any unit, and can neither
+// move, be moved, nor be Crushed. They no longer GIVE Unit Protection: 4.5.3
+// grants that to Large Units only and unitSize() reads these as size 1. The
+// printed "counts as 3-inch terrain" bullet on the AS3 walls is what ought to
+// pay them, and nothing models it yet — see PHASE6-PLAN D-9. Everything else projectile-shaped
 // really is Aerial (missiles, grenades, beacons, mines).
 export const BARRICADE_CARDS = new Set(['PDAM-003', 'PDAM-004', '158']);
 

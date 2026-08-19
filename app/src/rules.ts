@@ -562,7 +562,10 @@ export function losNote(
   bits.push(omni ? 'Omni-direction Firing: no arc check ✓' : fwd ? 'in forward arc ✓' : '⚠ NOT in forward arc');
   if (action.type === 'Firing') {
     if (smokeBlocks(attacker, defender, smoke)) bits.push('✕ LOS blocked by a Smoke Screen (4.16)');
-    else bits.push(los === 'clear' ? 'LOS clear ✓' : los === 'obstructed' ? '⚠ obstructed, so consider +2 White protection' : '✕ LOS blocked (3" terrain)');
+    // "may claim", not "does": obstruction is only the trigger. A medium unit
+    // in the way obstructs and pays nothing (4.5.3), as does terrain under 2"
+    // (4.5.2), so the number is protectionFor's to say and not this line's.
+    else bits.push(los === 'clear' ? 'LOS clear ✓' : los === 'obstructed' ? '⚠ obstructed, so the defender may claim +2 White protection' : '✕ LOS blocked (3" terrain)');
   }
   return bits.join(' · ');
 }
@@ -580,6 +583,10 @@ export function protectionFor(
   // ignores Terrain AND Unit Protection. rules.ts has no card data, so the
   // judgement is made where the data is and handed in.
   ignored = false,
+  // ZHDR-101 Mobile Bunker: does this unit in the way provide Unit Protection
+  // to its own side despite not being Large? Handed in for the same reason
+  // `ignored` is — the print lives in units.ts. Absent, only 4.5.3 applies.
+  mayProtectAllies: (t: Token) => boolean = () => false,
 ): { white: number; note: string } {
   if (action.type !== 'Firing') return { white: 0, note: '' };
   if (ignored) {
@@ -600,9 +607,33 @@ export function protectionFor(
       return Math.max(dc, 0) + Math.max(dr, 0) <= 1;
     });
   const cover = terrain.filter((p) => !touching(p));
-  if (losBetween(attacker, defender, cover, tokens) === 'clear') return { white: 0, note: '' };
+  // 4.5.3: standing in the line is not the same as protecting. Only LARGE
+  // Units provide Unit Protection — "medium Units do not" — while Ally and
+  // Enemy alike count among the Large ones. Every Mech in this app is size 3
+  // (makeMechToken), so what this filter takes out is Drones, which used to
+  // hand out +2 White to both sides just by being on the board.
+  //
+  // ZHDR-101 Mobile Bunker is the printed exception, and only towards its own
+  // side: it protects Ally Units, so the defender has to be one of them.
+  //
+  // The deployed Barricades (data.ts BARRICADE_CARDS) are size 1, so they lose
+  // the +2 they were being handed here as well. That is right by 4.5.3 and
+  // still wrong at the table: the AS3 walls are printed "counts as 3-inch
+  // terrain", which is what ought to be paying them, and no code models that
+  // bullet yet. Fixing it belongs with the terrain reading, not here.
+  const protectors = tokens.filter((t) => t.size === 3 || (t.side === defender.side && mayProtectAllies(t)));
+  const unitsOnly = losBetween(attacker, defender, [], protectors);
+  // A unit that obstructs and pays nothing is the whole of what changed here,
+  // so it is said out loud wherever it happens: as the entire answer when it is
+  // the only thing in the line, and as a footnote when Terrain Protection alone
+  // is the number. A player counting bodies on the table reads the board as +4
+  // and the app as broken otherwise.
+  const idle = unitsOnly === 'clear' && losBetween(attacker, defender, [], tokens) !== 'clear';
+  const IDLE = 'the unit in the way is not Large, so there is no Unit Protection (4.5.3)';
+  if (losBetween(attacker, defender, cover, protectors) === 'clear') {
+    return { white: 0, note: idle ? `Obstructed, but ${IDLE}` : '' };
+  }
   const terrainOnly = losBetween(attacker, defender, cover, []);
-  const unitsOnly = losBetween(attacker, defender, [], tokens);
   let white = 0;
   const parts: string[] = [];
   if (terrainOnly !== 'clear') {
@@ -610,8 +641,16 @@ export function protectionFor(
     parts.push('Terrain Protection (obstructed by terrain ≥2")');
   }
   if (unitsOnly !== 'clear') {
+    // Neither Protection stacks with a second obstruction of its own kind
+    // (4.5.2/4.5.3), which is why each is a flat +2 rather than a count. Which
+    // sentence to print is decided by asking the Large units alone: if they do
+    // not obstruct on their own, the +2 came from the Mobile Bunker, and
+    // naming a "Large unit" there would be a lie about the board.
     white += 2;
-    parts.push('Unit Protection (obstructed by a Large unit)');
+    parts.push(losBetween(attacker, defender, [], protectors.filter((t) => t.size === 3)) !== 'clear'
+      ? 'Unit Protection (obstructed by a Large unit)'
+      : 'Unit Protection (an Ally unit in the way provides it — ZHDR-101 Mobile Bunker)');
   }
-  return { white, note: parts.join(' + ') || 'Obstructed line of sight' };
+  const note = parts.join(' + ') || 'Obstructed line of sight';
+  return { white, note: idle ? `${note} — ${IDLE}` : note };
 }

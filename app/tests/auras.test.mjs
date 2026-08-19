@@ -1003,5 +1003,32 @@ check('and hands it to maneuverIsSilent, having no other copy of where the unit 
 check('and the maneuver command records it, or that sweep reads an empty field forever',
   (readFileSync(new URL('../src/commands.ts', import.meta.url), 'utf8').match(/movedFrom: from/g) ?? []).length, 2);
 
+// ---------- ZHDR-101 Mobile Bunker, read off the shipped card ----------
+//
+// The exception to "only Large Units provide Unit Protection" (4.5.3). The text
+// has no English in cards.json — action_translations.json carries the printed
+// "May provide Unit Protection to Ally Units" — so the reader has to match the
+// Chinese, which is why it is driven against the real database rather than a
+// fixture with convenient prose in it.
+const droneOf = (cardId, states = {}) => ({
+  uid: 62, kind: 'drone', side: 's1', col: 0, row: 0, stance: 'defensive',
+  cardId, partStates: { main: 'intact', ...states }, statuses: [],
+});
+check('ZHDR-101 provides Unit Protection to Allies', A.providesUnitProtectionToAllies(data, droneOf('ZHDR-101')), true);
+// Without this the card is worth nothing: a Large Drone would already provide
+// Unit Protection under the baseline, and only a medium one needs the printed
+// exception. If the shipped stats ever say otherwise, the wiring is pointless.
+check('and it is a medium Drone, which is the only reason the card does anything',
+  data.byId.get('ZHDR-101').type, 'medium');
+check('its sibling Vanguard does not provide it', A.providesUnitProtectionToAllies(data, droneOf('ZHDR-102')), false);
+// 095 is the trap: its text names 单位保护 too, and says the opposite.
+check('095 talks about Unit Protection and must not be read as providing it',
+  A.providesUnitProtectionToAllies(data, wearing('095')), false);
+check('a destroyed Part provides nothing', A.providesUnitProtectionToAllies(data, droneOf('ZHDR-101', { main: 'destroyed' })), false);
+// A text reader over 400 cards is only as good as its false positives, so the
+// whole database is swept: exactly one card may claim this.
+check('and exactly one card in the shipped data provides it',
+  cards.filter((c) => A.providesUnitProtectionToAllies(data, droneOf(c.id))).map((c) => c.id), ['ZHDR-101']);
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 if (fail) process.exit(1);
