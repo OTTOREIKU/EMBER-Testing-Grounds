@@ -1099,6 +1099,104 @@ export function providesUnitProtectionToAllies(data: GameData, t: Token): boolea
   return partSays(data, t, /本机可以为友军提供单位保护|provides?\s+Unit\s+Protection\s+to\s+Ally/i);
 }
 
+// ---------- 自动盾牌 Automatic Shield (FAQ A2/A12) ----------
+//
+// ZHDR-101's SECOND clause, and it sits here beside the first because the two
+// print on one card and divide the same geometry between them: "When Adjacent
+// Ally Units are the target of Firing Actions and Line of Sight also passes
+// through this Unit, the target of the Attack WILL BE this Unit."
+//
+// "will be", not "may" — this is the one keyword in the game that changes the
+// DEFENDER of a declared attack, and it is mandatory. FAQ A12 keys it on
+// DESIGNATION ("if an adjacent allied Unit B is designated"), which is why the
+// swap is made once when the Action is declared and never re-asked; FAQ B7
+// settles a whole Multi-Target pool at declaration for the same reason.
+//
+// Five cards carry it: ZHDR-101 Scutum, ZHDR-301 Apologist, 295 "White Dwarf"
+// Bit — whose entire rules text this is — and the 552/553 Mech arms, which
+// print it GATED: 【防御姿态】获得自动盾牌, gained in Defensive Stance only.
+const AUTO_SHIELD = /自动盾牌|Automatic\s*Shield/i;
+// 552/553 carry the keyword in their card-level `keywords` array
+// UNCONDITIONALLY, while the print gates it: 【防御姿态】获得自动盾牌.
+const AUTO_SHIELD_DEFENSIVE_ONLY = /【防御姿态】[^。\n]*获得[^。\n]*自动盾牌|Defensive\s*Stance[^.\n]*gains?[^.\n]*Automatic\s*Shield/i;
+
+// Does this unit carry Automatic Shield RIGHT NOW? Written as partKeyword's
+// loop rather than a call to it, because partKeyword returns only the first
+// match and a Mech can be holding a 552 in one hand and a 553 in the other:
+// with the left arm blown off the right one must still shield.
+//
+// The three Drones need no Stance gate of their own — ZHDR-101/ZHDR-301/295 all
+// print `stance: "defensive"`, makeDroneToken copies it onto the token, and
+// setStance refuses anything that is not a Mech.
+export function automaticShieldOn(data: GameData, t: Token): boolean {
+  for (const { slot, card } of tokenCards(data, t)) {
+    if (slot === 'pilot') continue;
+    // A blown-off 552 arm stops shielding: the shield is the PART, not the Mech.
+    if ((t.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
+    if (!(card.keywords ?? []).some((k) => AUTO_SHIELD.test(`${k.key ?? ''} ${k.en ?? ''}`))) continue;
+    // The gate is read off THIS card's own actions, so one gated arm never
+    // switches off an ungated Drone body and vice versa.
+    const gated = (card.actions ?? []).some((a) =>
+      AUTO_SHIELD_DEFENSIVE_ONLY.test(`${a.description?.zh ?? ''} ${a.description?.en ?? ''}`));
+    if (gated && t.stance !== 'defensive') continue;
+    return true;
+  }
+  return false;
+}
+
+// Who actually eats this shot. Returns the shield that takes the target's place
+// and, when more than one qualifies, the others it beat — they are named in the
+// combat log so the players can override the pick by hand (see explicitlyOut 3:
+// nothing printed says WHO chooses when two shields both qualify).
+//
+// The geometry is A12's, word for word, and needs no new function: `losBetween`
+// asked about a ONE-element token list and no terrain answers "does the line
+// pass through this unit", which is exactly the idiom protectionFor already
+// uses four times. Terrain and Smoke are a different clause and are re-read by
+// the caller once the defender has changed.
+export function automaticShieldFor(
+  data: GameData,
+  tokens: Token[],
+  attacker: Token,
+  target: Token,
+  action: CardAction,
+): { shield: Token; others: Token[] } | null {
+  // "the target of Firing Actions" — Melee, Electronic and Detonation are
+  // excluded by the printed rule, and a Firing-typed Electronic Attack is not a
+  // Firing Action for this purpose either.
+  if (action.type !== 'Firing') return null;
+  if (isElectronicAttack(action)) return null;
+  // "Adjacent ALLY Units": a shield is by definition the target's ally, so a
+  // shot at your own unit — which freeplay lets through past a warning — has
+  // nothing to redirect. Deliberate.
+  if (target.side === attacker.side) return null;
+  // Cheapest gate first, then the card read, then the sampled line. This runs
+  // once per enemy row in the Match Centre's target list and once per hover in
+  // freeplay, and losBetween samples 9x9 point pairs — the ordering is what
+  // keeps that off a full board. All three are pure, so it changes nothing but
+  // the cost.
+  const found = tokens.filter((s) => {
+    if (s.side !== target.side || s.uid === target.uid || s.uid === attacker.uid) return false;
+    if (!alive(s)) return false;
+    // "Adjacent Ally Units" — 4.2.2's eight surrounding Large Grids plus the
+    // one they share.
+    if (!rangeBetween(s, target).adjacent) return false;
+    if (!automaticShieldOn(data, s)) return false;
+    // "Line of Sight also passes through this Unit". Empty terrain and a
+    // one-element token list: the question is this unit, not the board.
+    return losBetween(attacker, target, [], [s]) !== 'clear';
+  });
+  if (!found.length) return null;
+  // Deterministic while the choice is unruled: nearest to the attacker, then
+  // lowest uid. Both clients run the same sort off the same board, but only the
+  // attacker's ever publishes it.
+  found.sort((a, b) => rangeBetween(attacker, a).range - rangeBetween(attacker, b).range || a.uid - b.uid);
+  // No second Range or Forward Arc check against the shield. The geometry that
+  // made it a shield already puts it between attacker and target, and A12 is
+  // mandatory — refusing here would invent a veto the card does not print.
+  return { shield: found[0], others: found.slice(1) };
+}
+
 // 503 Close Assault: firing at a target within range, {Eye} counts as
 // {Heavy Hit}. The same trade ZPA-35 Chef makes with a Command Token, but free
 // and automatic -- so it is applied rather than offered.

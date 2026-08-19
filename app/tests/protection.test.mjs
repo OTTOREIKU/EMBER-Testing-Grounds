@@ -175,6 +175,14 @@ check('a deployed Barricade is size 1, so it no longer pays as a unit',
 // Units. The Scutum is a medium Drone, so the card is only worth anything on
 // top of the baseline above. rules.ts is handed the predicate rather than
 // reading the card, and it decides who is an Ally itself.
+//
+// Clause 2 of the same card is Automatic Shield, and it now takes the shot
+// outright when the Scutum is ADJACENT to the target and in the line (FAQ A12).
+// Every case below sits deliberately on the clause-1 side of that divide: the
+// bunker is at Large Grid (3,1) against a target at (5,1), so Range 2 and not
+// Adjacent. Nothing here changed and nothing here should — a reader who sees
+// the +2 vanish in the adjacent case is looking at A12 replacing the target,
+// not at a regression. autoshield.test.mjs pins both sides of the divide.
 const isBunker = (t) => t.uid === 14;
 const bunkerFor = (side) => mediumAt(14, 10, side);
 

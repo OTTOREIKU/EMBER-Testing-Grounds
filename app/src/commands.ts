@@ -526,6 +526,11 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       if (sc.combat) return no('A defence roll is already being waited on.');
       const at = state.tokens.find((x) => x.uid === cmd.uid);
       if (!at || at.side !== cmd.seat) return no('The attacker is not one of your units.');
+      // "On the board" is the whole test, and deliberately so: Automatic Shield
+      // moves the defender of a declared attack (FAQ A12), so the unit being
+      // defended may legitimately not be the one the Action was designated
+      // against. A future pass that tightened this into "must be the designated
+      // target" would break the keyword with no test failing.
       if (!state.tokens.some((x) => x.uid === cmd.targetUid)) return no('That target is not on the board.');
       if (!Number.isInteger(cmd.white) || !Number.isInteger(cmd.blue) || cmd.white < 0 || cmd.blue < 0 || cmd.white + cmd.blue > 40) {
         return no('That is not a defence pool.');
@@ -602,7 +607,10 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       if (view === null) return ok;
       const at = state.tokens.find((x) => x.uid === view.attackerUid);
       // The window belongs to the attacking squad: nobody publishes an attack
-      // for units they do not own.
+      // for units they do not own. `view.targetUid` is NOT checked against the
+      // designated target on purpose — Automatic Shield may have moved it (FAQ
+      // A12), and only the attacker's client computes that swap. Ownership never
+      // moves with it, because the shield is always the target's own ally.
       if (!at || at.side !== cmd.seat) return no('The combat window belongs to the attacking squad.');
       if ((view.attack?.length ?? 0) > 40 || (view.defense?.length ?? 0) > 40) return no('That is not a dice pool.');
       if ((view.log ?? []).some((l) => typeof l !== 'string' || l.length > 400)) return no('That is not a combat log.');

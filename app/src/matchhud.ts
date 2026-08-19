@@ -17,7 +17,7 @@ import { deployable, deployTurn, deploymentComplete, firstPlayerFrom, normaliseS
 import { actionPhaseComplete, activationOrder, alive, canAct, droneActionWhy, droneMoveWhy, eligibleUnits, isLoopPhase, loopComplete, nextActivation, nextTurn, onExtraOpportunity, type InitLookup, type LoopPhase } from './loop';
 import { actionIdOf, canActivate, canAttackMode, canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed, type TickVerdict } from './ticks';
 import { escortTargets, gameResult, normaliseTasks, scoreMain, scoreRiders, scoreSecondary, settleControl, unpaidLines, zoneCentreGrid, type Designation, type ScoreLine, type ScoreResult, type SecondaryScoring } from './tasks';
-import { stationaryAdjusted, twoHandedUse, tokenCards, vpRiderFor } from './units';
+import { automaticShieldFor, stationaryAdjusted, twoHandedUse, tokenCards, vpRiderFor } from './units';
 
 // The in-match HUD (Match Centre part 3a): one question at a time, per seat.
 // Everything here renders from the shared GameState and issues the same
@@ -3251,9 +3251,16 @@ function attackPanel(ctx: HudCtx): string {
       // "obstructed" for a medium unit in the way, and 4.5.3 pays nothing for
       // it, so the row would otherwise look like the dice went missing. Not
       // repeated when the row is already ✕, where the note only echoes it.
+      // 自动盾牌 Automatic Shield: read-only disclosure, and the row stays
+      // pressable. The redirect is mandatory (FAQ A12), so this is not a veto to
+      // offer — the attacker's real choice is a DIFFERENT target, and that
+      // choice is this list. Rows are only ever disabled on ✕ blocked line of
+      // sight, and a unit in the way obstructs without blocking.
+      const shield = automaticShieldFor(ctx.data, s.tokens, by, t, a);
       const bits = note.split(' · ').concat(
         prot.white ? [`+${prot.white} White ${prot.white === 1 ? 'die' : 'dice'} of Protection`]
-          : prot.note && !blocked ? [prot.note] : []);
+          : prot.note && !blocked ? [prot.note] : [],
+        shield ? [`⤳ Automatic Shield: ${shield.shield.label} takes this shot (FAQ A12)`] : []);
       return `<button class="rowwide targrow${bad ? ' warn' : ''}"${blocked ? ' disabled' : ''} data-attacktarget="${t.uid}">
         <span class="tgname">${esc(t.label)}</span>
         <span class="tgbits">${bits.map((b) => `<span${/[⚠✕]/.test(b) ? ' class="bad"' : ''}>${esc(b)}</span>`).join('')}</span></button>`;

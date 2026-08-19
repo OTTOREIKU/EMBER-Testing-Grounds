@@ -5,7 +5,7 @@ import { linkMechanics } from './inspector';
 import { SQUAD_ORDER, squadLabel } from './data';
 import type { Card, CardAction, DiceData, DiceIcon, DieColor, GameRuleEffect, PartSlot, Side, SmokeScreen, TerrainPiece, Token } from './types';
 import { statusCount, STATUSES } from './types';
-import { aaRadarCovers, attackReactionsOf, auraEffectsOn, aurasOn, auraValueOn, blueLightningDodges, earlyWarningCover, coolingBonus, denseArmorByText, eyesAreHeavyHits, ignoresLowProfile, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, noMeleeBackAttack, missileGuidance, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, denseArmorOn, designationsOn, electronicValue, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, loanedParts, pilotCard, repeatersFor, SLOT_LABEL, tetherStrike, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
+import { aaRadarCovers, attackReactionsOf, auraEffectsOn, aurasOn, auraValueOn, automaticShieldFor, blueLightningDodges, earlyWarningCover, coolingBonus, denseArmorByText, eyesAreHeavyHits, ignoresLowProfile, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, noMeleeBackAttack, missileGuidance, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, denseArmorOn, designationsOn, electronicValue, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, loanedParts, pilotCard, repeatersFor, SLOT_LABEL, tetherStrike, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
 import { timingOf } from './ticks';
 import { inArc, losNote, protectionFor, rangeBetween } from './rules';
 import type { Command } from './commands';
@@ -38,7 +38,13 @@ interface MultiState {
   // `penetrated` is written when a sequence gets through, because Defense
   // Reaction is owed per TARGET and the debts are not written until B7 lets
   // them out at the end of the whole Action.
-  targets: { defender: Token; red: number; yellow: number; penetrated?: boolean }[];
+  //
+  // `defender` is who actually gets shot; `declared` is the unit the attacker
+  // DESIGNATED, and is present only where Automatic Shield redirected the shot
+  // (FAQ A12). Keeping both is what lets the split screen name the unit the
+  // dice will really land on while still saying which designation it came from
+  // — and it is why the pool the player allots is honest.
+  targets: { defender: Token; declared?: Token; red: number; yellow: number; penetrated?: boolean }[];
   total: { red: number; yellow: number };
   index: number;
   pending: { defender: Token; reaction: AttackReaction }[];
@@ -385,6 +391,61 @@ export class AttackHelper {
     }, 55);
   }
 
+  // ---------- 自动盾牌 Automatic Shield (FAQ A2/A12) ----------
+  //
+  // The one keyword that changes the DEFENDER of a declared attack, so the swap
+  // lives here rather than on either page: `start`, `startMulti` and the split
+  // screen's `+` button are the three doors an attack is DESIGNATED through, and
+  // both pages already go through all three. A page that never learns about the
+  // keyword still gets it right.
+  //
+  // RESOLVE ONCE, never chain. The caller replaces the defender and does not ask
+  // again — two Bits standing in each other's lines would otherwise ping-pong.
+  // That is a DECISION, not a reading: nothing printed forbids shield B from
+  // shielding shield A, and the choice is recorded rather than assumed.
+  private shieldSwap(
+    attacker: Token, defender: Token, action: CardAction,
+  ): { shield: Token; declared: Token; others: Token[] } | null {
+    const found = automaticShieldFor(this.data, this.tokens ? this.tokens() : [], attacker, defender, action);
+    return found ? { shield: found.shield, declared: defender, others: found.others } : null;
+  }
+
+  // The board reading `start` is handed by its caller, made again — needed only
+  // where the defender has just changed under the caller's feet, because the
+  // losNote and Protection it computed describe the unit that is no longer
+  // being shot at.
+  private readBoard(
+    attacker: Token, defender: Token, action: CardAction,
+  ): { losNote: string; protection: number; protectionNote: string } {
+    const board = this.tokens ? this.tokens() : [];
+    const terrain = this.terrain ? this.terrain() : [];
+    const smoke = this.smoke ? this.smoke() : [];
+    const prot = protectionFor(attacker, defender, action, terrain, board, smoke,
+      ignoresProtectionOnHighlight(this.data, attacker) && statusCount(defender.statuses, 'highlight') > 0,
+      (t) => providesUnitProtectionToAllies(this.data, t));
+    return {
+      losNote: losNote(attacker, defender, action, terrain, board, smoke),
+      protection: prot.white,
+      protectionNote: prot.note,
+    };
+  }
+
+  // The sentence the players read when a shot moves. Both the log and the
+  // `others` it beat, because the pick between two qualifying shields is not
+  // ruled and the table may want to overrule it by hand.
+  private shieldNote(swap: { shield: Token; declared: Token; others: Token[] }): string {
+    return `Automatic Shield: ${swap.shield.label} is Adjacent to ${swap.declared.label} and the line of sight`
+      + ` passes through it, so the attack targets ${swap.shield.label} instead — mandatory, "will be", not "may"`
+      + ` (FAQ A2/A12). The Suppression and other on-hit effects transfer with the target.`
+      + (swap.others.length
+        ? ` ${swap.others.map((t) => t.label).join(' and ')} also qualif${swap.others.length > 1 ? 'y' : 'ies'};`
+          + ` nothing printed says who picks, so the nearest was taken — move the shot by hand if the table rules otherwise.`
+        : '');
+  }
+
+  // `redirect` is false at exactly one call site: the FAQ B8 bonus attack, whose
+  // target is not a choice and whose defender is ALREADY the shield. Without it
+  // the swap re-runs on a defender it has already moved and chains.
   start(
     attacker: Token,
     action: CardAction,
@@ -394,8 +455,25 @@ export class AttackHelper {
     protectionNote = '',
     explosion = false,
     intercept = false,
+    redirect = true,
   ): void {
     this.stopBlack();
+    // Explosion and Interception are excluded by their own flags, and both hand
+    // `start` a carefully-worded fixed note that a recompute would throw away.
+    // Interception could not fire on the geometry in any case: its target is by
+    // definition an Aerial Unit, and losBetween returns 'clear' the moment
+    // either endpoint is Aerial (rules.ts) — the flag says so out loud rather
+    // than leaving it to be rediscovered.
+    const swap = (redirect && !explosion && !intercept) ? this.shieldSwap(attacker, defender, action) : null;
+    if (swap) {
+      defender = swap.shield;
+      // Only on the swap branch, so an attack on a board with no Automatic
+      // Shield on it is byte-identical to what it was before this existed.
+      const rb = this.readBoard(attacker, defender, action);
+      losNote = rb.losNote;
+      protection = rb.protection;
+      protectionNote = rb.protectionNote;
+    }
     this.ctx = {
       attacker,
       defender,
@@ -434,6 +512,9 @@ export class AttackHelper {
     };
     if (defender.kind !== 'mech') this.ctx.defensePool = this.suggestedDefensePool('main');
     const what = action.name.en || action.name.zh || action.id;
+    // Ahead of the declaration line, so the log explains why the name in it is
+    // not the unit the player clicked.
+    if (swap) this.note(this.shieldNote(swap), [attacker, swap.declared, swap.shield]);
     this.note(
       explosion
         ? `${attacker.label} detonates ${what} against ${defender.label}.`
@@ -454,16 +535,27 @@ export class AttackHelper {
     const printed = { red: action.redDice ?? 0, yellow: action.yellowDice ?? 0 };
     const cooled = coolingBonus(this.data, attacker, action, printed);
     const pooled = { red: printed.red + cooled.red, yellow: printed.yellow + cooled.yellow };
+    // Automatic Shield fires at DESIGNATION (FAQ A12), which is here and not in
+    // openSequence: B7 settles the whole Action at declaration, and the split
+    // screen has to name the unit the dice will actually land on before the
+    // player allots any. It also makes m.targets carry the shield, so the
+    // reaction crediting in advanceMulti and the `penetrated` flag are right
+    // with no write-back. The visible cost is deliberate: a shield knocked out
+    // of the line between sequences still eats the later ones.
+    const swap = this.shieldSwap(attacker, primary, action);
+    const first = swap?.shield ?? primary;
     this.multi = {
       cap,
       action,
       attacker,
-      targets: [{ defender: primary, red: pooled.red, yellow: pooled.yellow }],
+      targets: [{ defender: first, declared: swap ? primary : undefined, red: pooled.red, yellow: pooled.yellow }],
       total: { red: pooled.red, yellow: pooled.yellow },
       index: 0,
       pending: [],
     };
-    this.openSequence(primary, 'split');
+    this.openSequence(first, 'split');
+    // After the sequence opens, because `note` writes into the ctx it creates.
+    if (swap) this.note(this.shieldNote(swap), [attacker, swap.declared, swap.shield]);
   }
 
   // Opens one attack sequence. `start` is the single-target front door and this
@@ -518,7 +610,10 @@ export class AttackHelper {
   // cleaveTargets, because it is the same question — who else is reachable.
   private multiCandidates(): Token[] {
     const m = this.multi!;
-    const chosen = new Set(m.targets.map((t) => t.defender.uid));
+    // Keyed on what was DESIGNATED, not on who ends up being shot: with
+    // Automatic Shield in play two designations can collapse onto one shield,
+    // and a uid-keyed set would then hide the second designation from the list.
+    const chosen = new Set(m.targets.map((t) => (t.declared ?? t.defender).uid));
     return (this.tokens ? this.tokens() : []).filter((u) => {
       if (u.side === m.attacker.side || chosen.has(u.uid) || u.deployed === false) return false;
       if ((u.partStates[u.kind === 'mech' ? 'torso' : 'main'] ?? 'intact') === 'destroyed') return false;
@@ -1261,7 +1356,10 @@ export class AttackHelper {
       box.className = 'ah-mt-row';
       const name = document.createElement('p');
       name.className = 'ah-sum';
-      name.textContent = row.defender.label;
+      // "designated → actually shot" where Automatic Shield moved it, because
+      // dice allotted against a Mech that will land on a Bit are dice allotted
+      // blind (FAQ A12).
+      name.textContent = row.declared ? `${row.declared.label} → ${row.defender.label}` : row.defender.label;
       box.appendChild(name);
       box.appendChild(
         this.poolEditor(
@@ -1275,12 +1373,16 @@ export class AttackHelper {
       );
       // The first target is the one the player clicked on the board, so
       // dropping it would leave the attack with nothing declared.
-      if (row.defender.uid !== m.targets[0].defender.uid) {
+      //
+      // Compared by IDENTITY rather than by uid: two designations can now
+      // collapse onto one shield (FAQ A12), and a uid test would hide the Drop
+      // button on the duplicate and then drop both rows at once.
+      if (row !== m.targets[0]) {
         const drop = document.createElement('button');
         drop.className = 'ah-ghost';
-        drop.textContent = `Drop ${row.defender.label}`;
+        drop.textContent = `Drop ${row.declared?.label ?? row.defender.label}`;
         drop.addEventListener('click', () => {
-          m.targets = m.targets.filter((t) => t.defender.uid !== row.defender.uid);
+          m.targets = m.targets.filter((t) => t !== row);
           this.render();
         });
         box.appendChild(drop);
@@ -1296,11 +1398,15 @@ export class AttackHelper {
         : 'No other enemy is in range to add.';
       wrap.appendChild(add);
       for (const u of more) {
+        // Targets 2..N are designated HERE, so the swap has to run here too —
+        // this is the third and last door an attack is declared through.
+        const swap = this.shieldSwap(m.attacker, u, m.action);
         const b = document.createElement('button');
         b.className = 'ah-ghost';
-        b.textContent = `+ ${u.label}`;
+        b.textContent = `+ ${u.label}${swap ? ` → ${swap.shield.label}` : ''}`;
         b.addEventListener('click', () => {
-          m.targets.push({ defender: u, red: 0, yellow: 0 });
+          m.targets.push({ defender: swap?.shield ?? u, declared: swap ? u : undefined, red: 0, yellow: 0 });
+          if (swap) this.note(this.shieldNote(swap), [m.attacker, swap.declared, swap.shield]);
           this.render();
         });
         wrap.appendChild(b);
@@ -1328,7 +1434,11 @@ export class AttackHelper {
     }
     const go = document.createElement('button');
     go.className = 'ah-primary';
-    go.textContent = `Begin the attack on ${m.targets[0].defender.label} ▸`;
+    // Same reading as the row label: the button names the unit the dice will
+    // land on, with the designation it came from beside it.
+    go.textContent = `Begin the attack on ${
+      m.targets[0].declared ? `${m.targets[0].declared.label} → ${m.targets[0].defender.label}` : m.targets[0].defender.label
+    } ▸`;
     go.addEventListener('click', () => {
       m.index = 0;
       const first = m.targets[0];
@@ -1337,9 +1447,12 @@ export class AttackHelper {
       // is about to read rather than the split screen they have just left.
       // The simultaneity clause only means something with more than one target,
       // and "All 1 attacks resolve simultaneously" reads like a bug.
+      // A redirected row is named "designated → actually shot", because the
+      // sequence ctx the player is about to read is a fresh log and would
+      // otherwise report dice landing on a unit nobody clicked (FAQ A12).
       this.note(
         `${m.attacker.label} attacks with ${m.action.name.en || m.action.name.zh}: ${
-          m.targets.map((t) => `${t.defender.label} (${t.red}R ${t.yellow}Y)`).join(', ')
+          m.targets.map((t) => `${t.declared ? `${t.declared.label} → ` : ''}${t.defender.label} (${t.red}R ${t.yellow}Y)`).join(', ')
         }.${m.targets.length > 1 ? ` All ${m.targets.length} attacks resolve simultaneously (FAQ B7).` : ''}`,
         [m.attacker, ...m.targets.map((t) => t.defender)],
       );
@@ -1407,7 +1520,16 @@ export class AttackHelper {
   private flushReactions(): void {
     const m = this.multi;
     if (!m?.pending.length) return;
-    for (const p of m.pending) this.onReaction(p.defender, p.reaction, m.attacker);
+    // One Action, one debt per unit per reaction. Automatic Shield can put the
+    // same shield on the end of two sequences of one Multi-Target (FAQ A12), and
+    // B7 does not owe its Emergency Smoke twice for that.
+    const seen = new Set<string>();
+    for (const p of m.pending) {
+      const key = `${p.defender.uid}|${p.reaction.actionId}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      this.onReaction(p.defender, p.reaction, m.attacker);
+    }
     m.pending = [];
   }
 
@@ -2354,8 +2476,12 @@ export class AttackHelper {
       go.addEventListener('click', () => {
         settle();
         // Same defender, by construction — the bonus target is not a choice.
+        // Which is also why Automatic Shield is switched off for it: this
+        // defender has ALREADY been through the swap, and re-running it would
+        // chain onto a second shield and make "resolve once" a lie (FAQ A12).
         this.start(rider.attacker, bonus.action, rider.defender,
-          'Bonus attack: it must take the same target as the attack that granted it (FAQ B8).');
+          'Bonus attack: it must take the same target as the attack that granted it (FAQ B8).',
+          0, '', false, false, false);
       });
       const decline = document.createElement('button');
       decline.className = 'ah-ghost';
