@@ -117,6 +117,25 @@ const grids = rules.slice(rules.indexOf('export function largeGridOf'), rules.in
   // placeInGrid's legality is spotsInGrid's, so the real one is sliced in
   // rather than mirrored — a second copy of the occupancy rule would drift.
   + rules.slice(rules.indexOf('export function spotsInGrid'), rules.indexOf('interface MoveSearch'));
+// The Crush geometry (4.3.6). Sliced, not mirrored, for the reason every other
+// cut in this file is: WHERE the two Units land in an exchange is the rule, and
+// a second copy of standingSpot's occupancy walk here could pass while the app
+// puts a Mech on top of a Drone — which is exactly the bug this pins.
+//
+// Three cuts, all overlap-checked against every range this file already takes
+// out of rules.ts (smokeKey..smokeBlocks, largeGridOf..'// Where inside Large
+// Grid', spotsInGrid..'interface MoveSearch', rangeBetween..inArc):
+//   * LG..smokeKey — the board size, lines above every other cut.
+//   * '// Where inside Large Grid'..spotsInGrid — standingSpot alone. It butts
+//     up against the largeGridOf cut, which ENDS on that comment, and against
+//     the spotsInGrid cut, which STARTS on that declaration.
+//   * CrushVictims..reachableGrids — crushTargets, the INDOMITABLE_PILOT const
+//     it reads, and crushExchange. Sits below 'interface MoveSearch' and above
+//     rangeBetween, so it is clear of both.
+const boardSize = rules.slice(rules.indexOf('export const LG'), rules.indexOf('export function smokeKey'));
+const standing = rules.slice(rules.indexOf('// Where inside Large Grid'), rules.indexOf('export function spotsInGrid'));
+const crushing = rules.slice(rules.indexOf('export interface CrushVictims'), rules.indexOf('export function reachableGrids'));
+if (!boardSize || !standing || !crushing) throw new Error('could not locate the Crush geometry in rules.ts');
 const flyingBase = dataSrc.slice(dataSrc.indexOf('export function isFlyingBase'), dataSrc.indexOf('export function isAerial'));
 const ground = unitsSrc.slice(unitsSrc.indexOf('export function isGroundUnit'), unitsSrc.indexOf('export function minesOwed'));
 const blinking = unitsSrc.slice(unitsSrc.indexOf('// Which Moving Actions are a position SWAP'), unitsSrc.indexOf("// ---------- The Hyena"));
@@ -160,6 +179,51 @@ const pilotTraits = unitsSrc.slice(
   unitsSrc.indexOf('// A Mech Maneuvers at the Maneuver Value'),
 );
 if (!pilotTraits) throw new Error('could not locate the phase-7 pilot predicates in units.ts');
+// The Maneuver Value, and the Part bonuses that raise it (3.4.3, 4.1, FAQ
+// E21/E23). Sliced rather than stubbed for the reason every other cut here is:
+// HOW FAR a Unit can move is the rule the crushSwap reach bound is measured
+// against, and a mirror of it here could accept a Grid the app refuses — a
+// Mobility Stance that failed to double, or a destroyed Chassis that still
+// walked, would each pass this file while the two pages disagreed.
+//
+// Overlap-checked against all 18 ranges this file already takes out of units.ts
+// (lines 13-14, 14-24, 128-151, 167-174, 187-223, 221-286, 324-519, 525-533,
+// 572-710, 766-1628, 1687-1760, 1887-1928, 2155-2182, 2407-2450, 2531-2544,
+// 2841-2875, 3021-3286, 3686-3872): this one is 3286-3367, which butts onto the
+// end of the Pilot traits cut above — that one ENDS on this comment — and sits
+// well above the Tether block. It carries MOVE_BONUS_EN/ZH, which are
+// module-level consts maneuverBonus reads, so the cut starts at the comment
+// above them rather than at the export.
+const maneuvering = unitsSrc.slice(
+  unitsSrc.indexOf('// A Mech Maneuvers at the Maneuver Value'),
+  unitsSrc.indexOf('export function initiativeFor'),
+);
+if (!maneuvering) throw new Error('could not locate maneuverRange in units.ts');
+// Silence (4.12), and the auras that deny it. Sliced rather than stubbed for
+// the reason every other cut here is: WHICH Actions keep a Low Profile Token is
+// the rule, apply() is where it is enforced, and a stub of isSilentAction would
+// let the wiring test pass against a mirror of the very question the feature
+// turns on — the exact mistake the Ammo Delivery note above records.
+//
+// TWO cuts, both overlap-checked against every range this file already takes
+// out of units.ts (13-14, 14-24, 128-151, 167-174, 187-223, 221-286, 324-519,
+// 525-533, 746-1514, 1770-1811, 2038-2065, 2290-2333, 2414-2427, 2724-2758,
+// 2904-3169, 3569-3755):
+//   * 572-700, the Silence block. Sits between the Charge cut (ends 533) and
+//     interceptCapacity (starts 746), inside nothing.
+//   * 1583-1656, the Aura walker silenceDenied reads. Sits between
+//     interceptCapacity (ends 1514) and the Data Link riders (start 1770).
+// It reads the stubbed tokenCards and the REAL rangeBetween already sliced from
+// rules.ts, so the reach an aura has here is the reach the app gives it.
+const silence = unitsSrc.slice(
+  unitsSrc.indexOf('// ---------- Silence (rulebook'),
+  unitsSrc.indexOf('// ---------- Who breaks Optical Camouflage'),
+);
+const auras = unitsSrc.slice(
+  unitsSrc.indexOf('// ---------- Auras (FAQ Q1-Q4, J2) ----------'),
+  unitsSrc.indexOf('// LPA-21 Firefly'),
+);
+if (!silence || !auras) throw new Error('could not locate the Silence readers in units.ts');
 const timings = types.slice(types.indexOf('export const PHASES'), types.indexOf('export type TokenShape'));
 const statuses = types.slice(types.indexOf('export function hexagonIds'), types.indexOf('export interface RoundState'));
 const tmp = new URL('./_commands.slice.ts', import.meta.url);
@@ -278,6 +342,9 @@ writeFileSync(
     + attackMode
     + delivery
     + grids
+    + boardSize
+    + standing
+    + crushing
     + flyingBase
     + ground
     + blinking
@@ -285,6 +352,15 @@ writeFileSync(
     + partSlots
     + stubs
     + pilotTraits
+    // After the stubs, like the Tether block below: maneuverBonus walks the
+    // stubbed tokenCards, and a function declaration hoists where a `const`
+    // stub does not.
+    + maneuvering
+    // After the stubs, like the Tether block below: aurasOn calls the stubbed
+    // tokenCards, and a function declaration hoists where a `const` stub does
+    // not. Auras first, since silenceDenied reads aurasOn.
+    + auras
+    + silence
     // After the stubs: the Tether block reads the stubbed tokenCards and
     // syncMagazines, and a function hoists but a `const` stub does not.
     + tethering
@@ -1974,6 +2050,122 @@ C.apply(data, wM2Acted, mvTo(12, 9));
 check('and it is not offered after the Drone has acted', wM2Acted.script.opp.preMoved, undefined);
 
 
+// ---------- `maneuver.from`: the sender's word, measured against the board ----------
+//
+// `from` says where the Movement STARTED, and apply() spends the Maneuver Tick
+// off it (the M2 Data Link pre-move above) and writes it to the Opportunity's
+// movedFrom, which is what the start-and-landing readers are handed as "where it
+// stood" (FAQ O11/O15). check() never looked at it, so both of those were the
+// sender's to choose.
+//
+// DRIVEN (round-4 reviewer, 2026-08-19), and reproduced by every fixture below:
+// the honest command and the spoof differ in nothing but the presence of `from`.
+//
+// WHY THIS IS THE SHAPE THE crushSwap ROUND ALREADY REFUSED. That round declined
+// to have the pages send the step-out Grid because it would make check() trust a
+// number the sender supplies, and the sender is the thing this reader exists to
+// distrust. The same shape arrived on `maneuver` instead, so it is bounded the
+// same way: by asking the BOARD whether the placement `from` claims has already
+// happened really did.
+{
+  // The M2 world above, unchanged: a Drone in Grid(3,3) commanded by a Mech whose
+  // Torso carries the pre-move rider, and a walk to Grid(7,3), four Grids off and
+  // well past the one grid the rider pays for.
+  const landing = { col: 21, row: 9 };
+  const walk = () => ({ kind: 'maneuver', seat: 's1', uid: 2, to: { ...landing } });
+  const spoof = () => ({ ...walk(), from: { ...landing } });
+
+  // THE CONTROL, first, because every refusal below has to be the field's doing
+  // and not the fixture's. The identical command without `from` is accepted, and
+  // it pays: the walk is four Grids, so the Maneuver Tick goes.
+  const honest = m2World('M2T');
+  check('the honest four-Grid Maneuver, no `from`, is accepted', C.check(data, honest, walk()).ok, true);
+  C.apply(data, honest, walk());
+  check('and it spends the Maneuver Tick', honest.script.opp.maneuvered, true);
+  check('and takes no free grid', honest.script.opp.preMoved, undefined);
+  check('recording the Grid it really started in', honest.script.opp.movedFrom, { col: 9, row: 9 });
+
+  // THE SPOOF, byte for byte the same command with `from` set to the LANDING
+  // Grid. Nothing on the board has placed the Drone there, so the claim is a
+  // lie about a placement rather than about a distance.
+  const spoofed = m2World('M2T');
+  check('the SPOOF, same `to` with `from` set to the Grid it is landing in, is refused',
+    C.check(data, spoofed, spoof()).ok, false);
+  // The REASON, so a refusal arriving later from some other line cannot quietly
+  // satisfy the assertion above while this guard is gone.
+  check('and it is refused for the PLACEMENT it claims, not for anything else',
+    /is not standing where this Movement ends/.test(C.check(data, spoofed, spoof()).why ?? ''), true);
+  // The premise, measured on the board the refusal prevents: apply() is a
+  // deterministic mutation with no opinion of its own, so it hands a four-Grid
+  // walk the M2 free grid and leaves the Drone open.
+  C.apply(data, spoofed, spoof());
+  check('because apply() has no opinion: the Maneuver Tick is NOT spent',
+    [spoofed.script.opp.maneuvered, spoofed.script.opp.preMoved], [false, true]);
+  check('and the Drone is recorded as having started where it landed',
+    spoofed.script.opp.movedFrom, { col: 21, row: 9 });
+
+  // OFF THE BOARD ENTIRELY, which is the other half of the report: movedFrom is
+  // handed to readers that measure auras and Interception from it, so a start
+  // position that is nowhere is a Reveal sweep judging a unit that is nowhere.
+  const off = m2World('M2T');
+  const offboard = { ...walk(), from: { col: 99, row: 99 } };
+  check('an OFF-BOARD `from` is refused', C.check(data, off, offboard).ok, false);
+  // ISOLATED from the placement line above, because on the plain board both
+  // would fire and this one would be pinned by nothing. Here the Drone HAS been
+  // put on its landing spot, so the placement clause passes and the only line
+  // left that can refuse is the bounds test.
+  const offPlaced = m2World('M2T');
+  offPlaced.tokens[1].col = landing.col;
+  offPlaced.tokens[1].row = landing.row;
+  check('and refused even on the follow-up board, where nothing else objects',
+    C.check(data, offPlaced, offboard).ok, false);
+  check('naming it as a place that is not on the board',
+    /not a place on the board/.test(C.check(data, offPlaced, offboard).why ?? ''), true);
+  // ...and the control for THAT board: the same follow-up shape with a real
+  // Grid in `from` is accepted, so the line above refuses the co-ordinates and
+  // not the shape.
+  check('while a real Grid in `from` on the same board is accepted',
+    C.check(data, offPlaced, { ...walk(), from: { col: 9, row: 9 } }).ok, true);
+
+  // A `granted` Movement is the one that would have slipped past a guard written
+  // lower down: Hit and Run (276) moves a Mech as its Opportunity ENDS, so the
+  // maneuver case returns ok before it ever reaches the Opportunity gates, and
+  // finishCrush passes the plan's own `granted` straight through.
+  check('and a GRANTED Movement carrying the same spoof is refused too',
+    C.check(data, m2World('M2T'), { ...spoof(), granted: true }).ok, false);
+  check('while the same granted Movement without `from` is accepted',
+    C.check(data, m2World('M2T'), { ...walk(), granted: true }).ok, true);
+}
+
+// THE HONEST FOLLOW-UP, driven through the real crushSwap rather than staged.
+// This is the one sender of `from` in the app (matchhud finishCrush), and the
+// thing the guard above must never refuse: the exchange has ALREADY placed the
+// crusher, so the maneuver that RECORDS the Movement arrives with the token
+// standing on its landing spot and has to say where the walk began.
+{
+  const g = (c, r, size) => ({ col: c * 3 + (size === 3 ? 0 : 1), row: r * 3 + (size === 3 ? 0 : 1) });
+  const crusher = { uid: 1, side: 's1', kind: 'mech', stance: 'offensive', label: 'M1', facing: 0, size: 3,
+    aerial: false, mech: { torso: 'T1', pilot: 'P1' }, partStates: { torso: 'intact' }, ...g(1, 1, 3) };
+  const boxed = { uid: 2, side: 's2', kind: 'drone', stance: 'offensive', label: 'D2', facing: 0, size: 1,
+    aerial: false, cardId: 'D1', partStates: { main: 'intact' }, ammo: {}, ...g(1, 2, 1) };
+  const w = world([crusher, boxed], 2, opp(1));
+  const began = { col: w.tokens[0].col, row: w.tokens[0].row };
+  const swap = { kind: 'crushSwap', seat: 's1', uid: 1, to: g(1, 2, 3), swaps: [{ uid: 2, to: g(1, 1, 1) }] };
+  check('the 4.3.6 exchange itself is accepted', C.check(data, w, swap).ok, true);
+  C.apply(data, w, swap);
+  check('and it has already put the crusher on its landing spot',
+    [w.tokens[0].col, w.tokens[0].row], [swap.to.col, swap.to.row]);
+  const record = { kind: 'maneuver', seat: 's1', uid: 1, to: swap.to, from: began };
+  check('so the follow-up that records the Movement is accepted, `from` and all',
+    C.check(data, w, record).ok, true);
+  C.apply(data, w, record);
+  check('and the Movement is recorded from the Grid it really began in',
+    w.script.opp.movedFrom, began);
+  check('with the Maneuver Tick spent by the maneuver, as it always was',
+    w.script.opp.maneuvered, true);
+}
+
+
 // ---------- Melee Evasion travels like KC Armor ----------
 //
 // A defender-side declaration consumed by the attacker's open window. The board
@@ -2662,6 +2854,882 @@ globalThis.__baseData = data;
     C.apply(data, printed, hit(4, 'chasis'));
     check('and a Chassis that prints a Structure keeps its own', printed.tokens[0].partStates.chasis, 'damaged');
   }
+}
+
+// ---------- Crush with no escape square: the 4.3.6 EXCHANGE ----------
+//
+// rules/03_stance_los_movement_attacks.md:170 (rulebook 4.3.6, book p.47): "The
+// crushed Unit undergoes Forced Movement of 1 Grid ... If NONE of the Grids
+// within Range of that Forced Movement can be entered, the crushed Unit instead
+// EXCHANGES POSITIONS with the Crushing Unit." Worked example (C) at :173 says
+// it again, and adds that the crusher's Movement ends there.
+//
+// WHAT THIS PINS. Both pages used to ask standingSpot for a spot in the
+// crusher's own Grid while the crusher was still standing in it. standingSpot
+// ignores exactly ONE uid, so a Large crusher's 3x3 footprint blocked every cell
+// and the answer was always null — measured at 0 hits across 1584 crusher x
+// victim-size placements. The log line sat inside `if (swap)`, so the Crush then
+// resolved in complete silence, and the crusher's own placement fell through to
+// snapPlacement, which does no occupancy and no terrain test at all. Net: the
+// victim never moved, the crusher landed on its cells, and nothing was printed.
+{
+  const grid = (c, r, size) => ({ col: c * 3 + (size === 3 ? 0 : 1), row: r * 3 + (size === 3 ? 0 : 1) });
+  const big = (uid, side, c, r, over = {}) => ({
+    uid, side, kind: 'mech', stance: 'offensive', label: `M${uid}`, facing: 0, size: 3,
+    aerial: false, mech: { torso: 'T1', pilot: 'P1' }, partStates: { torso: 'intact' },
+    ...grid(c, r, 3), ...over,
+  });
+  const small = (uid, side, c, r, over = {}) => ({
+    uid, side, kind: 'drone', stance: 'offensive', label: `D${uid}`, facing: 0, size: 1,
+    aerial: false, cardId: 'D1', partStates: { main: 'intact' }, ammo: {},
+    ...grid(c, r, 1), ...over,
+  });
+  // The crusher stands in Grid (1,1) and is entering Grid (1,2). The victim's
+  // three other neighbours are walled off by enemy Mechs, so it has nowhere to
+  // be Force-Moved to and 4.3.6's exchange is the answer.
+  const goal = { c: 1, r: 2 };
+  const boxed = () => [
+    big(1, 's1', 1, 1),
+    small(2, 's2', 1, 2),
+    big(3, 's2', 0, 2), big(4, 's2', 2, 2), big(5, 's2', 1, 3),
+  ];
+  // The filter both pages use to list escape Grids, spelled here against the
+  // real standingSpot so the fixture is proved boxed in rather than assumed to be.
+  const escapes = (tokens, v) => ([[0, -1], [1, 0], [0, 1], [-1, 0]])
+    .map(([dc, dr]) => ({ c: Math.floor(v.col / 3) + dc, r: Math.floor(v.row / 3) + dr }))
+    .filter((g) => g.c >= 0 && g.r >= 0 && g.c < 12 && g.r < 12)
+    .filter((g) => !(g.c === goal.c && g.r === goal.r))
+    .filter((g) => C.standingSpot(g.c, g.r, v.size, v.aerial, [], tokens, v.uid) !== null);
+
+  const tk = boxed();
+  check('the fixture really is boxed in: no escape Grid at all', escapes(tk, tk[1]), []);
+  // The dead expression, kept as a regression pin: it is what BOTH pages ran,
+  // and it is why the exchange never happened.
+  check('the old one-uid lookup can never find the swap',
+    C.standingSpot(1, 1, tk[1].size, tk[1].aerial, [], tk, tk[1].uid), null);
+
+  // The fourth argument is the Grid the crusher STEPS OUT OF as it enters the
+  // goal. Here the route is one step long, so it is the crusher's own Grid —
+  // which is what makes this fixture blind to the wrong-Grid bug and why the
+  // routed fixture at the bottom of this file exists.
+  const pair = C.crushExchange(tk[0], [tk[1]], goal, { c: 1, r: 1 }, [], tk);
+  check('crushExchange lands the crusher in the Grid it was entering',
+    pair && [Math.floor(pair.crusher.col / 3), Math.floor(pair.crusher.row / 3)], [1, 2]);
+  check('and puts the crushed Unit in the Grid the crusher vacated',
+    pair && pair.victims.map((v) => [v.uid, Math.floor(v.to.col / 3), Math.floor(v.to.row / 3)]), [[2, 1, 1]]);
+
+  const swapCmd = (over = {}) => ({
+    kind: 'crushSwap', seat: 's1', uid: 1, to: pair.crusher,
+    swaps: [{ uid: 2, to: pair.victims[0].to }], ...over,
+  });
+  const wswap = world(boxed(), 2, opp(1));
+  check('check accepts the exchange', C.check(data, wswap, swapCmd()).ok, true);
+  C.apply(data, wswap, swapCmd({ swaps: [{ uid: 2, to: pair.victims[0].to, facing: 2 }] }));
+  // BOTH tokens move, and they move in ONE command: split into a maneuver and a
+  // nudge, a snapshot between the two lands a board with the crusher standing on
+  // the unit it is trading places with.
+  check('apply moves the crusher into the crushed Grid',
+    [Math.floor(wswap.tokens[0].col / 3), Math.floor(wswap.tokens[0].row / 3)], [1, 2]);
+  check('and moves the crushed Unit into the vacated Grid, in the same command',
+    [Math.floor(wswap.tokens[1].col / 3), Math.floor(wswap.tokens[1].row / 3)], [1, 1]);
+  // 3.4.4, and FAQ E17 for the precedent: the player who CAUSES the Forced
+  // Movement decides the moved Unit's Facing. Nothing turns the Crushing Unit.
+  check('the crushing player sets the crushed Unit\'s Facing (3.4.4, FAQ E17)', wswap.tokens[1].facing, 2);
+  check('and nothing turns the Crushing Unit', wswap.tokens[0].facing, 0);
+  // The exchange charges no Ticks on purpose: a Crush ends a Movement Action
+  // just as readily as a Maneuver, and the Movement's own `maneuver` is where
+  // that is settled. Charging it twice would refuse the command that ends it.
+  check('the exchange spends no Maneuver Tick', wswap.script.opp.maneuvered, false);
+  check('so the Movement can still be recorded afterwards',
+    C.check(data, wswap, { kind: 'maneuver', seat: 's1', uid: 1, to: pair.crusher }).ok, true);
+
+  // FAQ E6/M13, Rules Supplement 1.1.3: the Turtle Shell Barricade and the AS3
+  // Inflatable Wall can neither move nor be moved, and cannot be Crushed at all.
+  // rules.ts refuses the Grid outright; check() is the belt to that brace.
+  const wallTokens = [big(1, 's1', 1, 1), small(9, 's2', 1, 2, { cardId: '158', label: 'Turtle Shell', barricade: true })];
+  check('a Grid holding a Barricade cannot be Crushed at all (FAQ E6)',
+    C.crushTargets(wallTokens[0], goal.c, goal.r, [], wallTokens), null);
+  const wwall = world(wallTokens, 2, opp(1));
+  check('and check refuses an exchange that names one anyway',
+    C.check(data, wwall, { kind: 'crushSwap', seat: 's1', uid: 1, to: grid(1, 2, 3), swaps: [{ uid: 9, to: grid(1, 1, 1) }] }).ok, false);
+
+  // The occupancy test `maneuver` never had. This is the shape of the corrupt
+  // board the old code produced, sent as a command.
+  const wthird = world([...boxed(), small(6, 's2', 1, 1)], 2, opp(1));
+  wthird.tokens[5].col = pair.crusher.col;
+  wthird.tokens[5].row = pair.crusher.row;
+  check('an exchange that would land the crusher on a third unit is refused',
+    C.check(data, wthird, swapCmd()).ok, false);
+  // A FRESH board, not `wswap`: the apply above has already traded the two over,
+  // so on that board the Drone no longer stands in the Grid the crusher is
+  // entering and the "is this Unit actually being crushed?" line would refuse it
+  // first — leaving the occupancy reader below unpinned while the assertion
+  // still read false.
+  const wsame = world(boxed(), 2, opp(1));
+  check('and one that would drop two Units on the same cell is refused too',
+    C.check(data, wsame, { kind: 'crushSwap', seat: 's1', uid: 1, to: grid(1, 2, 3), swaps: [{ uid: 2, to: grid(1, 2, 1) }] }).ok, false);
+
+  // No room to exchange into is a real answer, not a licence to overlap: the
+  // caller stops the Crush short and says so.
+  const packed = [...boxed(), big(7, 's2', 1, 0)];
+  packed[5].col = grid(1, 1, 3).col;
+  packed[5].row = grid(1, 1, 3).row;
+  check('with the vacated Grid already filled the exchange answers null',
+    C.crushExchange(packed[0], [packed[1]], goal, { c: 1, r: 1 }, [], packed), null);
+
+  // The control, and the thing that must NOT have changed: a Crush whose victim
+  // has somewhere to go still resolves as an ordinary Forced Movement of 1 Grid.
+  const openTokens = [big(1, 's1', 1, 1), small(2, 's2', 1, 2), big(3, 's2', 0, 2), big(4, 's2', 2, 2)];
+  check('with one neighbour free the victim still has an escape Grid',
+    escapes(openTokens, openTokens[1]).map((g) => [g.c, g.r]), [[1, 3]]);
+  check('and the Grid is still a legal Crush',
+    C.crushTargets(openTokens[0], goal.c, goal.r, [], openTokens).units.map((u) => u.uid), [2]);
+  const wopen = world(openTokens.map((x) => ({ ...x })), 2, opp(1));
+  C.apply(data, wopen, { kind: 'forceMove', seat: 's1', uid: 1, targetUid: 2, to: grid(1, 3, 1) });
+  check('the ordinary shove still moves the victim one Grid',
+    [Math.floor(wopen.tokens[1].col / 3), Math.floor(wopen.tokens[1].row / 3)], [1, 3]);
+  check('and leaves the crusher exactly where it stood',
+    [wopen.tokens[0].col, wopen.tokens[0].row], [grid(1, 1, 3).col, grid(1, 1, 3).row]);
+
+  // `from` on a maneuver: only the exchange sends it, and only because the
+  // crusher has already been placed by the crushSwap before it. Without it the
+  // Movement would be recorded as having started where it finished.
+  const wfrom = world([big(1, 's1', 1, 2)], 2, opp(1));
+  C.apply(data, wfrom, { kind: 'maneuver', seat: 's1', uid: 1, to: grid(1, 2, 3), from: grid(1, 1, 3) });
+  check('maneuver records where the Movement STARTED when the sender says so',
+    wfrom.script.opp.movedFrom, grid(1, 1, 3));
+  const wnofrom = world([big(1, 's1', 1, 1)], 2, opp(1));
+  C.apply(data, wnofrom, { kind: 'maneuver', seat: 's1', uid: 1, to: grid(1, 2, 3) });
+  check('and without it the token\'s own position is the start, as before',
+    wnofrom.script.opp.movedFrom, grid(1, 1, 3));
+}
+
+// ---------- LPA-22 Yoyu's 挑衅 Provoke: the WIRING, not just the reader ----------
+//
+// "When Electronic Counter Roll is successful, may switch the Responder mech to
+// Offensive Stance." OTTO's ruling (2026-08-19) reads Yoyu as the RESPONDER and
+// the switched Mech as the INITIATOR; the reasoning lives over provokeWhy in
+// units.ts and the reader itself is driven in pilottraits.test.mjs.
+//
+// What is driven HERE is check() and apply(), because a reader test is not a
+// wiring test — 086_B shipped its reader and its UI gate with no payment
+// routing behind them and every reader test passed the whole way. NO new slice
+// is taken for this: `pilotTraits` above already spans provokeWhy, which is
+// what commands.ts calls.
+{
+  // The PILOTS are the shipped cards, lifted out of cards.json rather than
+  // invented, because WHICH card answers to the rule IS the rule — a fixture
+  // pilot would pass against a reader keyed on the wrong id. The torsos stay
+  // fixture cards; an Electronic Value and a Range are all this exchange needs.
+  const rawCards = JSON.parse(readFileSync(new URL('../../data/cards.json', import.meta.url), 'utf8'));
+  const list = Array.isArray(rawCards) ? rawCards : rawCards.cards;
+  const realPilot = (id) => {
+    const c = list.find((x) => String(x.id) === id);
+    if (!c || c.category !== 'pilot') throw new Error(`${id} is not a pilot in cards.json`);
+    return c;
+  };
+  const data = {
+    ...globalThis.__baseData,
+    byId: new Map([...globalThis.__baseData.byId, ['LPA-22', realPilot('LPA-22')], ['ZPA-38', realPilot('ZPA-38')]]),
+  };
+  // uid 1 opened the Electronic Attack; uid 2 is Yoyu, the Responder that held.
+  const pv = (uid, side, torso, pilotId, over = {}) => ({
+    uid, side, kind: 'mech', stance: 'defensive', label: `E${uid}`, col: 3, row: 3, facing: 0, size: 3,
+    mech: { torso, pilot: pilotId }, partStates: { torso: 'intact' }, ...over,
+  });
+  const settled = { initiatorUid: 1, responderUid: 2, actionId: 'EWA', initRoll: [0], respRoll: [0], initFocused: false, respFocused: false, provoke: null };
+  const pvWorld = (over = {}, counter = settled) => {
+    const w = world([pv(1, 's1', 'EW1', 'ZPA-38', over.init), pv(2, 's2', 'EW2', 'LPA-22', over.resp)], 2, over.opp ?? opp(1));
+    w.script.counter = counter && { ...counter };
+    return w;
+  };
+  const answer = (over = {}) => ({ kind: 'provoke', seat: 's2', uid: 2, targetUid: 1, take: true, ...over });
+
+  check('Yoyu may answer its own won Counter-roll', C.check(data, pvWorld(), answer()).ok, true);
+  // The actor gate, inherited free by naming YOYU as `uid`: the Initiator's
+  // player cannot answer for the other squad's pilot.
+  check('and the Initiator\'s seat cannot answer for it',
+    C.check(data, pvWorld(), answer({ seat: 's1' })).ok, false);
+  // The whole point of the ruling: the INITIATOR is turned, never Yoyu.
+  check('Yoyu cannot switch ITSELF, which is what the printed English reads as',
+    C.check(data, pvWorld(), answer({ targetUid: 2 })).ok, false);
+  check('and a pilot who is not Yoyu carries no such answer',
+    C.check(data, pvWorld({ resp: { mech: { torso: 'EW2', pilot: 'ZPA-38' } } }), answer()).ok, false);
+  check('the answer must name the Counter-roll it belongs to',
+    C.check(data, pvWorld({}, { ...settled, initiatorUid: 9 }), answer()).ok, false);
+  // THE OTHER HALF of that binding, and the half a real squad can reach: a
+  // SECOND LPA-22 on the Responder's own side, party to nothing. It clears the
+  // actor gate (it is that seat's own unit) and it clears provokeWhy outright
+  // — Yoyu, an enemy Mech, torso intact, not already Offensive — and the
+  // Initiator it names really did open the contest, so `c.initiatorUid ===
+  // cmd.targetUid` still matches too. `c.responderUid !== cmd.uid` is the ONLY
+  // line that refuses it. 4.11.2 gives an "on successful Counter-roll" Passive
+  // to the Unit that WINS the counter-roll, and that is the one Yoyu that
+  // rolled; a squadmate watching from across the board won nothing.
+  const wpair = world([
+    pv(1, 's1', 'EW1', 'ZPA-38'), pv(2, 's2', 'EW2', 'LPA-22'), pv(3, 's2', 'EW2', 'LPA-22'),
+  ], 2, opp(1));
+  wpair.script.counter = { ...settled };
+  const bystander = C.check(data, wpair, answer({ uid: 3 }));
+  check('a second Yoyu that was not in the Counter-roll cannot answer it', bystander.ok, false);
+  check('and it is refused for being the wrong Responder, not for being the wrong pilot',
+    /is not the Responder of this Counter-roll/.test(bystander.why ?? ''), true);
+  // The control that proves the refusal is the binding rather than something
+  // in the shared reader: the same board says yes to the Yoyu that DID roll.
+  check('while the Yoyu that DID roll still answers on that same board',
+    C.check(data, wpair, answer()).ok, true);
+  check('and an unsettled Counter-roll has nothing to answer',
+    C.check(data, pvWorld({}, { ...settled, respRoll: null }), answer()).ok, false);
+
+  // THE MUTATION. One command, and the Stance is written by it and nothing else
+  // — `stance` is a fingerprinted token field, so a page turning it directly is
+  // the desync this command exists to prevent.
+  const wtake = pvWorld();
+  C.apply(data, wtake, answer());
+  check('taking it turns the INITIATOR to Offensive Stance', wtake.tokens[0].stance, 'offensive');
+  check('and leaves Yoyu\'s own Stance alone', wtake.tokens[1].stance, 'defensive');
+  check('and records the answer on the shared Counter-roll', wtake.script.counter.provoke, 'taken');
+  check('so it cannot be answered twice', C.check(data, wtake, answer()).ok, false);
+  // 4.1: the Initiator performed an Electronic Attack, so lockStance already
+  // ran on its Opportunity — it cannot simply turn back this Opportunity.
+  const wlocked = pvWorld({ opp: opp(1, { stanceLocked: true }) });
+  C.apply(data, wlocked, answer());
+  check('and the Initiator cannot turn back while its Stance is locked (4.1)',
+    C.check(data, wlocked, { kind: 'setStance', seat: 's1', uid: 1, stance: 'defensive' }).ok, false);
+
+  // THE DECLINE, which is a real command and not a no-op: the far seat has to
+  // watch the question close, and the Stance must NOT move.
+  const wpass = pvWorld();
+  C.apply(data, wpass, answer({ take: false }));
+  check('declining leaves the Stance exactly as it stood', wpass.tokens[0].stance, 'defensive');
+  check('but still closes the question', wpass.script.counter.provoke, 'passed');
+  check('and a declined offer cannot then be taken', C.check(data, wpass, answer()).ok, false);
+
+  // ---------- what may be turned ----------
+  check('a Mech already in Offensive Stance has nothing to switch',
+    C.check(data, pvWorld({ init: { stance: 'offensive' } }), answer()).ok, false);
+  // 4.1.1: leaving Shutdown Stance takes a Reboot, and this card buys none.
+  check('and a Shut Down Mech is not woken by Provoke (4.1.1)',
+    C.check(data, pvWorld({ init: { stance: 'shutdown' } }), answer()).ok, false);
+  // 对方机甲 is a MECH. A Drone plays the Stance printed on its card.
+  const wdrone = pvWorld();
+  wdrone.tokens[0] = { uid: 1, side: 's1', kind: 'drone', label: 'D1', cardId: 'D1', col: 3, row: 3, size: 1, facing: 0, stance: 'defensive', partStates: { main: 'intact' } };
+  check('a Drone has no Stance to switch', C.check(data, wdrone, answer()).ok, false);
+
+  // FREEPLAY. Its ElectronicHelper runs the whole contest in one panel and never
+  // opens a shared `counter`, so a board without one is the ordinary freeplay
+  // case rather than a stale client — and the command has to land there too, or
+  // the trait is live on one page, which is this codebase's signature bug.
+  const wfree = pvWorld({}, null);
+  check('the same command lands on a freeplay board with no shared Counter-roll',
+    C.check(data, wfree, answer()).ok, true);
+  C.apply(data, wfree, answer());
+  check('and turns the same Mech there', wfree.tokens[0].stance, 'offensive');
+}
+
+// ---------- the Crush exchange trades places across ONE Grid (4.3.6) ----------
+//
+// rules/03_stance_los_movement_attacks.md:170 (rulebook 4.3.6, book p.47): the
+// Crush is resolved as a Unit is "about to enter a Grid occupied by another
+// Unit", the crushed Unit "undergoes Forced Movement of 1 Grid", and where none
+// of the Grids within Range of that Forced Movement can be entered it "instead
+// EXCHANGES POSITIONS with the Crushing Unit". Worked example (C) at :173 has
+// the two Grids side by side. So the crusher is standing NEXT TO the Grid it is
+// entering, the crushed Unit takes exactly that Grid, and an exchange can never
+// move a Unit further than one Grid.
+//
+// WHAT THIS PINS, measured by two reviewers driving the app independently.
+// crushExchange used to derive the vacated Grid from the crusher's own token,
+// and NOTHING has moved that token when it runs: board.ts animateMove is SVG
+// only, and settle() and the commands are the only writers of col/row, all of
+// which come afterwards. A crusher routed Grid(1,0)->(1,1)->(1,2) therefore
+// sent its victim to Grid(1,0) — two Grids away, adjacent to nothing. Freeplay's
+// drag-drop made it gross, because a drop has no route at all: a Large Mech
+// dragged from Grid(0,0) onto a boxed-in Drone in Grid(8,8) teleported the
+// Drone SIXTEEN Grids.
+{
+  const grid = (c, r, size) => ({ col: c * 3 + (size === 3 ? 0 : 1), row: r * 3 + (size === 3 ? 0 : 1) });
+  const big = (uid, side, c, r) => ({
+    uid, side, kind: 'mech', stance: 'offensive', label: `M${uid}`, facing: 0, size: 3,
+    aerial: false, mech: { torso: 'T1', pilot: 'P1' }, partStates: { torso: 'intact' }, ...grid(c, r, 3),
+  });
+  const small = (uid, side, c, r) => ({
+    uid, side, kind: 'drone', stance: 'offensive', label: `D${uid}`, facing: 0, size: 1,
+    aerial: false, cardId: 'D1', partStates: { main: 'intact' }, ammo: {}, ...grid(c, r, 1),
+  });
+  const gridOf = (p) => [Math.floor(p.col / 3), Math.floor(p.row / 3)];
+
+  // THE ROUTED FIXTURE, and the whole point of it: the token still stands where
+  // the Movement began, because nothing has written col/row yet. The Grid the
+  // crusher steps OUT OF is (1,1) and the Grid it is entering is (1,2), and the
+  // only way this function can know that is to be told.
+  const routed = [big(1, 's1', 1, 0), small(2, 's2', 1, 2)];
+  const pair = C.crushExchange(routed[0], [routed[1]], { c: 1, r: 2 }, { c: 1, r: 1 }, [], routed);
+  check('the exchange puts the crushed Unit in the Grid the crusher STEPS OUT OF',
+    pair && gridOf(pair.victims[0].to), [1, 1]);
+  check('and lands the crusher in the Grid it was entering',
+    pair && gridOf(pair.crusher), [1, 2]);
+  // The invariant itself, stated as the rule states it.
+  const apart = (a, b) => Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]);
+  check('so the pair end up exactly one Grid apart (4.3.6)',
+    pair && apart(gridOf(pair.victims[0].to), gridOf(pair.crusher)), 1);
+
+  // A drag-drop has no route, so there is no Grid to hand over — and nothing may
+  // be invented in its place. This is the drop the reviewers measured.
+  const dragged = [big(1, 's1', 0, 0), small(2, 's2', 8, 8)];
+  check('a step-out Grid sixteen Grids from the goal is refused outright',
+    C.crushExchange(dragged[0], [dragged[1]], { c: 8, r: 8 }, { c: 0, r: 0 }, [], dragged), null);
+
+  // check() is the reader all three pages are measured against, and the only one
+  // a stale networked client cannot talk past, so the invariant lives there too.
+  // Both pages could agree with each other and still be wrong; this cannot.
+  const wswap = world([big(1, 's1', 1, 1), small(2, 's2', 1, 2)], 2, opp(1));
+  const swap = (to) => ({ kind: 'crushSwap', seat: 's1', uid: 1, to: grid(1, 2, 3), swaps: [{ uid: 2, to }] });
+  check('check accepts an exchange into the neighbouring Grid',
+    C.check(data, wswap, swap(grid(1, 1, 1))).ok, true);
+  check('and refuses one that would leave the crushed Unit two Grids off',
+    C.check(data, wswap, swap(grid(1, 0, 1))).ok, false);
+  const wfar = world([big(1, 's1', 0, 0), small(2, 's2', 8, 8)], 2, opp(1));
+  check('and refuses the sixteen-Grid teleport the drag produced',
+    C.check(data, wfar, { kind: 'crushSwap', seat: 's1', uid: 1, to: grid(8, 8, 3), swaps: [{ uid: 2, to: grid(0, 0, 1) }] }).ok, false);
+
+  // THE OTHER END OF THE SAME INVARIANT, and the one the adjacency line above
+  // does NOT cover. Adjacency measures where the crushed Unit LANDS; it says
+  // nothing about where it started, so a command naming a Unit that is nowhere
+  // near the Crush passed straight through as long as the destination happened
+  // to sit beside the crusher's landing Grid.
+  //
+  // DRIVEN against the real check(): a Large Mech in Grid(1,1) entering
+  // Grid(1,2), naming a Drone standing sixteen Grids away in Grid(8,8) and
+  // sending it to Grid(1,1). check() returned ok and apply() moved the Drone
+  // fourteen Grids. Neither page can build that command today — both hand the
+  // victim list straight out of crushTargets(goal) — which is exactly why the
+  // reader a stale or hostile peer talks to has to hold it.
+  const wstranger = world([big(1, 's1', 1, 1), small(2, 's2', 8, 8)], 2, opp(1));
+  const stranger = { kind: 'crushSwap', seat: 's1', uid: 1, to: grid(1, 2, 3), swaps: [{ uid: 2, to: grid(1, 1, 1) }] };
+  check('the exchanged Unit has to be STANDING in the Grid the crusher is entering',
+    C.check(data, wstranger, stranger).ok, false);
+  // The premise, so the line above is measured against the board it prevents:
+  // apply() is a deterministic mutation with no opinion of its own, and this is
+  // the fourteen-Grid drag it performs when nothing upstream refuses.
+  C.apply(data, wstranger, stranger);
+  check('because apply() has no opinion: it drags the far-off Unit fourteen Grids',
+    gridOf(wstranger.tokens[1]), [1, 1]);
+  // The control: the SAME command with the Drone actually in the crushed Grid is
+  // accepted, so the refusal above is the origin line and not the geometry.
+  const wnear = world([big(1, 's1', 1, 1), small(2, 's2', 1, 2)], 2, opp(1));
+  check('while the Unit really being crushed exchanges normally',
+    C.check(data, wnear, stranger).ok, true);
+
+  // WHY THE PAGES MUST REFUSE AT THE CALL SITE RATHER THAN LEAN ON perform().
+  // script.strict defaults to false (types.ts) and perform() only blocks on a
+  // refusal when strict or networked, so an ordinary freeplay board APPLIES a
+  // crushSwap check() said no to. A log written from that verdict then narrates
+  // a board nobody is looking at. This is the premise, not the fix: the fix is
+  // main.ts asking check() first, which wiring.test.mjs pins.
+  const wwarn = world([big(1, 's1', 1, 1), small(2, 's2', 1, 2)], 2, opp(1));
+  check('an ordinary freeplay board is not strict', !!wwarn.script.strict, false);
+  check('perform() refuses the two-Grid exchange', C.perform(data, wwarn, swap(grid(1, 0, 1))).ok, false);
+  check('and moves the Unit anyway, because freeplay warns rather than blocks',
+    gridOf(wwarn.tokens[1]), [1, 0]);
+}
+
+// ---------- the four crushSwap gates the geometry tests never reach (4.3.6) ----------
+//
+// rules/03_stance_los_movement_attacks.md:170 (rulebook 4.3.6, book p.47), FAQ
+// E14, PDLH-202. The two blocks above drive the GEOMETRY of the exchange — how
+// far the pair end up apart, and whether a third Unit is standing where one of
+// them lands. These are the other four lines of the same case, and every one of
+// them could be deleted with the whole suite still exit 0. Each is pinned here
+// by a fixture in which it is the ONLY line that can refuse: the control
+// exchange directly below is accepted, and each variation changes one thing.
+{
+  const grid = (c, r, size) => ({ col: c * 3 + (size === 3 ? 0 : 1), row: r * 3 + (size === 3 ? 0 : 1) });
+  const unit = (uid, side, c, r, size, over = {}) => ({
+    uid, side, stance: 'offensive', label: `U${uid}`, facing: 0, size, aerial: false,
+    ...(size === 3
+      ? { kind: 'mech', mech: { torso: 'T1', pilot: 'P1' }, partStates: { torso: 'intact' } }
+      : { kind: 'drone', cardId: 'D1', partStates: { main: 'intact' }, ammo: {} }),
+    ...grid(c, r, size), ...over,
+  });
+  // ONE exchange, reused: the crusher stands in Grid (1,1), enters Grid (1,2),
+  // and the Unit it Crushes takes the Grid it vacates. Adjacent, unoccupied,
+  // unTethered and clear of Terrain — so a refusal below can only have come
+  // from the one line that fixture changed.
+  const swapCmd = (over = {}) => ({
+    kind: 'crushSwap', seat: 's1', uid: 1, to: grid(1, 2, 3), swaps: [{ uid: 2, to: grid(1, 1, 1) }], ...over,
+  });
+  const board = (crusher, victim, rest = []) => world([crusher, victim, ...rest], 2, opp(1));
+
+  check('the control exchange is accepted, so each refusal below is the gate named',
+    C.check(data, board(unit(1, 's1', 1, 1, 3), unit(2, 's2', 1, 2, 1)), swapCmd()).ok, true);
+
+  // (a) WHO CRUSHES. 4.3.6 gives the Crush to a Large GROUND Unit; FAQ E14
+  // refuses it to a Flying one, and an Aerial Unit passes over the Grid rather
+  // than entering it, so it never reaches the moment the Crush is resolved at.
+  // Both halves of the one gate, each otherwise the control exchange.
+  check('a Medium Unit cannot Crush at all (4.3.6)',
+    C.check(data, board(unit(1, 's1', 1, 1, 2), unit(2, 's2', 1, 2, 1)), swapCmd({ to: grid(1, 2, 2) })).ok, false);
+  check('and an Aerial Large Unit passes overhead rather than Crushing (FAQ E14)',
+    C.check(data, board(unit(1, 's1', 1, 1, 3, { aerial: true }), unit(2, 's2', 1, 2, 1)), swapCmd()).ok, false);
+
+  // (b) WHAT MAY BE CRUSHED: Units "no larger than itself". LARGER, not merely
+  // equal — LPA-23 Onyx Crushes Units of its own size, so the equal case has to
+  // stay legal and that is half of what is pinned here.
+  // TWO assertions, because one was hiding a bug. This previously read "a Large
+  // Unit Crushing another Large Unit stays legal (LPA-23 Onyx)" against a
+  // fixture whose pilot is the placeholder P1, so what it actually pinned was
+  // check() letting ANY Large Mech Crush an equal-size Unit. rules.ts
+  // crushTargets asked the right question all along, which made the
+  // AUTHORITATIVE reader the more permissive of the two.
+  check('an ordinary Large Mech cannot Crush a Unit of its own size (4.3.6)',
+    C.check(data, board(unit(1, 's1', 1, 1, 3), unit(2, 's2', 1, 2, 3)),
+      swapCmd({ swaps: [{ uid: 2, to: grid(1, 1, 3) }] })).ok, false);
+  check('but LPA-23 Onyx may, which is the one printed relaxation',
+    C.check(data, board(unit(1, 's1', 1, 1, 3, { mech: { torso: 'T1', pilot: 'LPA-23' } }), unit(2, 's2', 1, 2, 3)),
+      swapCmd({ swaps: [{ uid: 2, to: grid(1, 1, 3) }] })).ok, true);
+  // The other half needs a size the box does not print, and the reason check()
+  // still asks for it is that migrateState copies the field through unvalidated
+  // (`size: t.size ?? 1`, units.ts), so a save or a peer's payload carrying one
+  // arrives on the board intact. Placed so nothing ELSE in this command can
+  // object: the oversized Unit STANDS in the Grid the crusher is entering (1,2)
+  // and is sent to the neighbouring Grid (1,3), so the origin and adjacency
+  // lines both pass and the 4x4 and 3x3 footprints share no cell — which is what
+  // makes the size line the only refusal left.
+  check('and a Unit LARGER than the crusher cannot be Crushed (4.3.6)',
+    C.check(data, board(unit(1, 's1', 1, 1, 3), unit(2, 's2', 1, 2, 4, { col: 3, row: 6 })),
+      swapCmd({ to: grid(1, 2, 3), swaps: [{ uid: 2, to: { col: 3, row: 9 } }] })).ok, false);
+
+  // (c) THE TETHER LEASH (PDLH-202). The crusher's half of the trade is a
+  // VOLUNTARY Movement and this command is the one carrying it, so the cap that
+  // bounds a Maneuver has to bound this too — otherwise the two boards disagree
+  // about a Grid one of them refuses. The anchor stands in Grid (0,0), three
+  // Grids from the landing Grid and clear of every footprint in the exchange,
+  // so the leash is the only thing it can change.
+  const anchor = unit(9, 's2', 0, 0, 3);
+  const tethered = (range) => unit(1, 's1', 1, 1, 3, { tether: [{ uid: 9, role: 'tethered', range }] });
+  check('a Tethered crusher cannot exchange past its leash (PDLH-202)',
+    C.check(data, board(tethered(1), unit(2, 's2', 1, 2, 1), [anchor]), swapCmd()).ok, false);
+  check('and the same exchange inside the leash is allowed',
+    C.check(data, board(tethered(3), unit(2, 's2', 1, 2, 1), [anchor]), swapCmd()).ok, true);
+
+  // (d) TERRAIN. The unit-occupancy half of exchangeRoomWhy is driven by the
+  // block above; this is the other half of the same reader, and it is the half
+  // `maneuver` never had either — a Crush whose placement fell through to
+  // snapPlacement did no Terrain test at all.
+  const piece = (id, cells) => ({
+    id, type: 'building', subCells: cells, height: 3, blocksLos: true, providesProtection: true, isFragile: false,
+  });
+  // Two layouts rather than two pieces on one, so the crusher's landing spot and
+  // the Grid the crushed Unit is sent to are refused separately — with both on
+  // the board the crusher is tested first and the second half never runs.
+  const terrainData = {
+    ...data,
+    terrain: {
+      maps: [{ id: 'LAND', name: { en: 'Landing' } }, { id: 'VAC', name: { en: 'Vacated' } }],
+      layouts: {
+        LAND: [piece('w-land', [{ col: 3, row: 6 }])],
+        VAC: [piece('w-vac', [{ col: 4, row: 4 }])],
+      },
+    },
+  };
+  const mapped = (map, victimOver = {}, gone) => {
+    const w = board(unit(1, 's1', 1, 1, 3), unit(2, 's2', 1, 2, 1, victimOver));
+    w.map = map;
+    if (gone) w.removedTerrain = gone;
+    return w;
+  };
+  check('Terrain under the crusher\'s landing spot refuses the exchange',
+    C.check(terrainData, mapped('LAND'), swapCmd()).ok, false);
+  check('and Terrain in the Grid the crushed Unit is sent to refuses it too',
+    C.check(terrainData, mapped('VAC'), swapCmd()).ok, false);
+  // The `gone` filter in the same reader, and the control that proves the two
+  // refusals above came from the Terrain and not from the map being set.
+  check('a piece already destroyed no longer blocks it',
+    C.check(terrainData, mapped('LAND', {}, ['w-land']), swapCmd()).ok, true);
+  // Why the test reads `!unit.aerial` and not the piece alone: standingSpot
+  // answers `spots[0]` for an Aerial Unit without consulting Terrain at all, so
+  // a reader here that blocked on the piece would refuse Grids the geometry had
+  // just handed it.
+  check('but an Aerial Unit is exchanged over the Terrain rather than into it',
+    C.check(terrainData, mapped('VAC', { aerial: true }), swapCmd()).ok, true);
+}
+
+// ---------- how far the crusher may have come (4.3.6) ----------
+//
+// THE TELEPORT, and the half of the case none of the blocks above can reach.
+// Every line up there constrains the two Units against EACH OTHER: the victim
+// stands in the Grid the crusher enters, the pair end up one Grid apart, neither
+// lands on a third Unit or on Terrain. A command satisfying all of it is merely
+// SELF-CONSISTENT, and one built from anywhere on the board sailed through.
+//
+// DRIVEN against the real check() (round-3 reviewer, 2026-08-19): round 2, no
+// Action Opportunity open, a Large Mech standing in Grid(0,0) naming a Drone
+// that really is standing in Grid(8,8) and sending it next door to Grid(8,7).
+// The origin and adjacency lines both pass, so check() returned ok and apply()
+// walked the Mech sixteen Grids for no Movement, no Tick and no Action
+// Opportunity, while the identical `maneuver` to the same Grid was refused. Not
+// reachable from either page, but applyRemote() gates purely on check(), so a
+// stale or hostile peer is exactly who this reader exists for.
+//
+// PINNED HERE BECAUSE NOTHING ELSE PINNED IT. The sixteen-Grid command in the
+// geometry block above sends its victim to Grid(0,0), which the ADJACENCY line
+// refuses before any distance is measured, so deleting the reach bound outright
+// left the whole suite at exit 0. Every fixture below is one where the bound is
+// the ONLY line left that can refuse, and each is paired with a control.
+{
+  const grid = (c, r, size) => ({ col: c * 3 + (size === 3 ? 0 : 1), row: r * 3 + (size === 3 ? 0 : 1) });
+  const crusher = (c, r, mech = { torso: 'T1', pilot: 'P1' }, over = {}) => ({
+    uid: 1, side: 's1', kind: 'mech', stance: 'offensive', label: 'M1', facing: 0, size: 3,
+    aerial: false, mech, partStates: { torso: 'intact' }, ...grid(c, r, 3), ...over,
+  });
+  const victim = (uid, side, c, r) => ({
+    uid, side, kind: 'drone', stance: 'offensive', label: `D${uid}`, facing: 0, size: 1,
+    aerial: false, cardId: 'D1', partStates: { main: 'intact' }, ammo: {}, ...grid(c, r, 1),
+  });
+  const gridOf = (p) => [Math.floor(p.col / 3), Math.floor(p.row / 3)];
+
+  // THE REVIEWER'S FIXTURE, verbatim. The victim really is standing in Grid(8,8)
+  // and really does end up orthogonally adjacent in Grid(8,7), so this command
+  // is internally consistent and only the distance is wrong.
+  const teleport = { kind: 'crushSwap', seat: 's1', uid: 1, to: grid(8, 8, 3), swaps: [{ uid: 2, to: grid(8, 7, 1) }] };
+  const far = world([crusher(0, 0), victim(2, 's2', 8, 8)], 2, null);
+  far.script.strict = true;
+  check('a crusher sixteen Grids from the Grid it is Crushing is refused (4.3.6)',
+    C.check(data, far, teleport).ok, false);
+  // The REASON, so a refusal arriving later from some other line cannot quietly
+  // satisfy the assertion above while the distance bound is gone.
+  check('and it is refused for the DISTANCE, naming both numbers',
+    /stands 16 Grids from the Grid it is Crushing, and no Movement of its reaches further than 1/
+      .test(C.check(data, far, teleport).why ?? ''), true);
+  // THE CONTROL, and the reason it is the right one: the command is byte for
+  // byte the same and only the crusher's own Grid moves. So the refusal above
+  // cannot have come from the geometry, the occupancy or the leash.
+  const next = world([crusher(8, 7), victim(2, 's2', 8, 8)], 2, null);
+  next.script.strict = true;
+  check('while the IDENTICAL command sent from the Grid next door is accepted',
+    C.check(data, next, teleport).ok, true);
+  // The premise, so the line above is measured against the board it prevents:
+  // apply() is a deterministic mutation with no opinion of its own.
+  C.apply(data, far, teleport);
+  check('because apply() has no opinion: it walks the Large Mech sixteen Grids',
+    gridOf(far.tokens[0]), [8, 8]);
+  // No enemy is needed, which is the other half of the report. A sender can
+  // point this at a Drone of its own and move it just as far.
+  const mine = world([crusher(0, 0), victim(2, 's1', 8, 3)], 2, null);
+  mine.script.strict = true;
+  check('and the sender\'s OWN Drone is no safer, eleven Grids off',
+    C.check(data, mine, { kind: 'crushSwap', seat: 's1', uid: 1, to: grid(8, 3, 3), swaps: [{ uid: 2, to: grid(8, 2, 1) }] }).ok, false);
+
+  // THE FREEPLAY DRAG, which is the floor this bound must never rise above and
+  // the reason the report's other suggestion (an oppOf() gate) could not be
+  // taken. main.ts onMove offers the exchange only when the token was picked up
+  // in the Grid NEXT DOOR, so the crusher is always exactly one Grid out; and a
+  // sandbox board will happily drag a Mech with no Maneuver Value at all, which
+  // is what the Math.max(1, ...) floor is for (3.4.4, FAQ E4).
+  const sandbox = world([crusher(1, 1), victim(2, 's2', 1, 2)], 2, null);
+  const drag = { kind: 'crushSwap', seat: 's1', uid: 1, to: grid(1, 2, 3), swaps: [{ uid: 2, to: grid(1, 1, 1) }] };
+  check('the dragged crusher really does have a Maneuver Value of 0',
+    C.maneuverRange(data, sandbox.tokens[0]), 0);
+  check('and no Action Opportunity is open, which is what the drag-drop path sends',
+    sandbox.script.opp, null);
+  check('so the one-Grid freeplay drag is still accepted',
+    C.check(data, sandbox, drag).ok, true);
+
+  // A LEGITIMATE MULTI-GRID ROUTE, which is the thing this bound must not
+  // refuse. Nothing has written the crusher's col/row when either page sends
+  // this (main.ts settle and matchhud.ts finishCrush both send the crushSwap
+  // BEFORE the maneuver that records the Movement), so the token still stands
+  // where the whole Movement began and is legitimately several Grids out.
+  const roomy = {
+    ...data,
+    byId: new Map([...data.byId,
+      ['CH4', { id: 'CH4', move: 4, actions: [] }],
+      ['CH2', { id: 'CH2', move: 2, actions: [] }],
+      ['SPR', { id: 'SPR', actions: [{ id: 'SPR_A', type: 'Moving', size: 'm', range: 4, name: { en: 'Sprint' } }] }],
+    ]),
+  };
+  const routed = (mech, over) => world([crusher(1, 2, mech, over), victim(2, 's2', 4, 2)], 2, null);
+  const acrossThree = { kind: 'crushSwap', seat: 's1', uid: 1, to: grid(4, 2, 3), swaps: [{ uid: 2, to: grid(4, 1, 1) }] };
+  check('a three-Grid route is refused to a Mech that can only step one Grid',
+    C.check(data, routed({ torso: 'T1', pilot: 'P1' }), acrossThree).ok, false);
+  check('but allowed once its Chassis prints a Maneuver Value of 4 (3.4.3)',
+    C.check(roomy, routed({ torso: 'T1', pilot: 'P1', chasis: 'CH4' }), acrossThree).ok, true);
+  // THE SECOND SOURCE in the same bound, and an unrelated number: a Chassis
+  // prints a Maneuver Value of 1 to 2 Grids while a Sprint-style Moving Action
+  // prints 4, and both pages route on `action.range || maneuverRange`. A bound
+  // reading only the Chassis would refuse the very Movement the Action paid for.
+  check('and allowed to a Mech whose Moving ACTION prints Range 4 instead',
+    C.check(roomy, routed({ torso: 'SPR', pilot: 'P1' }), acrossThree).ok, true);
+
+  // MOBILITY STANCE, which doubles the Maneuver Value (3.4.3, FAQ E21). Pinned
+  // because a bound that read the undoubled number would refuse a routine
+  // four-Grid Maneuver, and that is a false refusal on both pages at once.
+  const stanced = (stance) => world(
+    [crusher(0, 2, { torso: 'T1', pilot: 'P1', chasis: 'CH2' }, { stance }), victim(2, 's2', 4, 2)], 2, null);
+  check('a four-Grid route is refused to a Chassis that Maneuvers 2',
+    C.check(roomy, stanced('offensive'), acrossThree).ok, false);
+  check('and allowed in Mobility Stance, which doubles it to 4',
+    C.check(roomy, stanced('mobility'), acrossThree).ok, true);
+
+  // A WRECKED PART DECLARES NOTHING, which is the half of this ceiling that
+  // shipped undefended. movementReach took the widest Range printed on any Part
+  // the Mech was carrying with no partStates test at all, while maneuverRange
+  // right beside it returns 0 outright for a destroyed Chassis (3.4.4, FAQ E4)
+  // and maneuverBonus already drops a destroyed Part. So the two halves of one
+  // number disagreed about the same wreck.
+  //
+  // DRIVEN (round-5 reviewer, 2026-08-19) with the real cards this is named
+  // after: Chassis 179 PL1 Standard prints Move 1 and a Sprint of Range 0,
+  // Backpack 088 JP1 Jetpack prints Long Jump Range 8. With BOTH destroyed the
+  // Mech reads Maneuver Value 0 and still bought an 8-Grid crushSwap off the
+  // dead Jetpack.
+  const wrecked = {
+    ...data,
+    byId: new Map([...data.byId,
+      // Shaped on the real 179/088 rather than invented: the Chassis carries
+      // BOTH a Move value and a Moving Action, which is what makes it the card
+      // that can tell the two sources of this ceiling apart.
+      ['179', { id: '179', type: 'chasis', move: 1, actions: [{ id: '179_A', type: 'Moving', size: 'm', range: 0, name: { en: 'Sprint' } }] }],
+      ['088', { id: '088', type: 'backpack', actions: [{ id: '088_A', type: 'Moving', size: 'm', range: 8, name: { en: 'Long Jump' } }] }],
+      // A Carrier's LOAN of the same Jetpack. Its slot key names the LENDER,
+      // so it is deliberately outside the partStates filter and needs its own
+      // control below.
+      ['CARJ', { id: 'CARJ', category: 'drone', carrier: true, actions: [] }],
+    ]),
+  };
+  const jetted = (partStates, extra = []) => world([
+    crusher(0, 2, { torso: 'T1', pilot: 'P1', chasis: '179', backpack: '088' }, { partStates }),
+    victim(2, 's2', 8, 2), ...extra,
+  ], 2, null);
+  const acrossEight = { kind: 'crushSwap', seat: 's1', uid: 1, to: grid(8, 2, 3), swaps: [{ uid: 2, to: grid(8, 1, 1) }] };
+  const allIntact = { torso: 'intact', chasis: 'intact', backpack: 'intact' };
+  // The premise: with everything intact the Jetpack really does buy the eight
+  // Grids, so every refusal below is the wreck and nothing else.
+  check('an eight-Grid Crush is allowed off an intact Jetpack\'s Long Jump (Range 8)',
+    C.check(wrecked, jetted(allIntact), acrossEight).ok, true);
+  // THE PIN. Byte for byte the same command and the same board; only the
+  // Backpack's state moves.
+  check('and refused once that Backpack is DESTROYED, because a wreck declares nothing',
+    C.check(wrecked, jetted({ ...allIntact, backpack: 'destroyed' }), acrossEight).ok, false);
+  check('...naming the Chassis\'s own Maneuver Value of 1 as all that is left',
+    /no Movement of its reaches further than 1/
+      .test(C.check(wrecked, jetted({ ...allIntact, backpack: 'destroyed' }), acrossEight).why ?? ''), true);
+  // THE REVIEWER'S FIXTURE, verbatim: both Parts gone, so even the Chassis's
+  // Move 1 is off and only the Math.max(1, ...) freeplay-drag floor remains.
+  const bothGone = { torso: 'intact', chasis: 'destroyed', backpack: 'destroyed' };
+  check('a Mech with Chassis AND Backpack destroyed has a Maneuver Value of 0',
+    C.maneuverRange(wrecked, jetted(bothGone).tokens[0]), 0);
+  check('and its eight-Grid Crush is refused, floored at the one Grid the drag needs',
+    C.check(wrecked, jetted(bothGone), acrossEight).ok, false);
+  // The floor is a floor and not a silent zero: the one-Grid exchange the
+  // freeplay drag sends still lands with every Part wrecked.
+  check('...while the one-Grid exchange that same wreck can be DRAGGED into still lands',
+    C.check(wrecked, world([
+      crusher(1, 1, { torso: 'T1', pilot: 'P1', chasis: '179', backpack: '088' }, { partStates: bothGone }),
+      victim(2, 's2', 1, 2),
+    ], 2, null), { kind: 'crushSwap', seat: 's1', uid: 1, to: grid(1, 2, 3), swaps: [{ uid: 2, to: grid(1, 1, 1) }] }).ok, true);
+  // THE LOANED HALF, which the filter must NOT reach. A Carrier Tarantula in
+  // Contact lends its Backpack's Actions to this Mech (FAQ O3/O16); the loan is
+  // keyed `load:<uid>` and belongs to the LENDER, whose own destroyed states
+  // loanedParts already tests. Pinned with the crusher's own Backpack slot
+  // wrecked, so the eight Grids can only have come from the loan.
+  // Standing in Contact along the crusher's right edge: the Mech fills cells
+  // 0-2 x 6-8, so a 1-cell Drone at (3,6) touches it and stands on nothing.
+  const tarantula = {
+    uid: 9, side: 's1', kind: 'drone', label: 'Tarantula', cardId: 'CARJ', droneBackpack: '088',
+    col: 3, row: 6, size: 1, facing: 0, aerial: false, stance: 'offensive',
+    partStates: { main: 'intact', backpack: 'intact' }, ammo: {}, statuses: [],
+  };
+  check('a Carrier lending a Jetpack still buys the eight Grids with the Mech\'s own Backpack wrecked',
+    C.check(wrecked, jetted({ ...allIntact, backpack: 'destroyed' }, [tarantula]), acrossEight).ok, true);
+  check('...and stops lending it once the Carrier\'s OWN Backpack is destroyed (FAQ O3/O16)',
+    C.check(wrecked, jetted({ ...allIntact, backpack: 'destroyed' },
+      [{ ...tarantula, partStates: { main: 'intact', backpack: 'destroyed' } }]), acrossEight).ok, false);
+
+  // ---------- RECORDED, NOT FIXED: nothing bounds REPETITION ----------
+  //
+  // The second half of the round-5 report, written down here so the decision is
+  // visible rather than implied by silence. Each hop respects the ceiling above;
+  // the COUNT does not, because check() is handed one command at a time and the
+  // engine keeps no record that a Movement has happened at all.
+  //
+  // The reasoning for leaving it is at the code, under "NOTHING BOUNDS
+  // REPETITION" in commands.ts: an Opportunity gate is refused for two named
+  // senders (the freeplay drag opens none, and Hit and Run's granted Maneuver
+  // arrives after its Opportunity has ended), a Tick gate fails for the same
+  // reason, and the real close needs the engine to REMEMBER a Movement, which
+  // is new fingerprinted state.
+  //
+  // Asserted rather than merely commented so the day someone does build the
+  // gate, this line fails and the record gets updated with it.
+  {
+    let board = world([crusher(0, 0), victim(2, 's2', 0, 1)], 2, null);
+    board.script.strict = true;
+    let hops = 0;
+    for (let r = 1; r <= 7; r++) {
+      const hop = { kind: 'crushSwap', seat: 's1', uid: 1, to: grid(0, r, 3), swaps: [{ uid: 2, to: grid(0, r - 1, 1) }] };
+      if (!C.check(data, board, hop).ok) break;
+      C.apply(data, board, hop);
+      hops++;
+      // The victim is dragged back in front of the crusher for the next hop,
+      // which is what a hostile peer would send: the exchange itself leaves it
+      // behind, and nothing about that is what this records.
+      board.tokens[1].col = grid(0, r + 1, 1).col;
+      board.tokens[1].row = grid(0, r + 1, 1).row;
+    }
+    check('every one of seven chained one-Grid Crushes is accepted on its own', hops, 7);
+    check('...so the crusher ends seven Grids on', gridOf(board.tokens[0]), [0, 7]);
+    check('...with no Action Opportunity ever opened', board.script.opp, null);
+  }
+}
+
+// ---------- 4.12.3: the Low Profile Token comes off a non-Silence Action ----------
+//
+// "Performing any Action that does not have the Silence Keyword causes Units in
+// the Optical Camouflage State to be Revealed AND Low Profile Tokens to be
+// removed" (rules/05_advanced_combat.md 4.12.3, book p.73). The Reveal half
+// shipped on every surface; the Token half shipped nowhere, so a unit that
+// gained one kept it for the whole game.
+//
+// These drive apply() rather than reading commands.ts, because the bug this
+// closes was precisely a rule that existed as a reader and never as a mutation.
+{
+  // A plain Torso with the three Actions the rule distinguishes, and nothing
+  // else: one ordinary Firing Action, one that PRINTS Silence, and a Passive.
+  // The Silence is a printed keyword rather than the JSON `silence` flag, since
+  // that is how every one of the 31 silent card Actions in the real data carries
+  // it — only Common Actions use the flag.
+  data.byId.set('LPT', { id: 'LPT', actions: [
+    { id: 'LP_FIRE', type: 'Firing', size: 's', range: 4, name: { en: 'Shot' } },
+    { id: 'LP_HUSH', type: 'Firing', size: 's', range: 4, name: { en: 'Silent Single Shot' }, keywords: [{ key: '静默', en: 'Silence' }] },
+    { id: 'LP_PASS', type: 'Passive', speed: 'passive', name: { en: 'Always On' } },
+  ] });
+  // A Stealth Chassis, shaped after card 100 LM210S. The keyword is on the
+  // CARD, which is what maneuverPrintsSilence reads — a Part grants Silence to
+  // MANEUVER, where an Action has to print its own. Deliberately NOT modelled
+  // on PL29: card 180 lost Silence in the publisher's v1.021 redesign, and
+  // tests/lowprofile.test.mjs pins which Chassis still carry it.
+  data.byId.set('STL', { id: 'STL', type: 'chasis', keywords: [{ key: '静默', en: 'Silence' }], actions: [] });
+  // ZHDR-206 "Patrol Eagle", Dynamic Perception: every Action of an enemy unit
+  // within Range 3 loses Silence. Shaped exactly like the structured aura in
+  // data/action_overrides.json, because reading the card's PRINTED text would
+  // hand the Eagle the keyword it exists to strip (its own line is 失去静默).
+  data.byId.set('EYE', { id: 'EYE', category: 'drone', actions: [{
+    id: 'EYE_A', type: 'Passive', speed: 'passive', range: 3, name: { en: 'Dynamic Perception' },
+    gameRules: [{ effects: [{ type: 'aura', effectTypes: ['silence_denied'], targetSide: 'enemy', targetUnitType: 'unit', label: '动态感知' }] }],
+  }] });
+
+  // col/row are small cells; a Large Grid is 3 of them. Grid (1,1) and Grid
+  // (4,1) are 3 Grids apart, which is the edge of the Eagle's Range 3.
+  const lp = (over = {}) => mech(1, 's1', {
+    col: 3, row: 3, statuses: ['lowProfile'], mech: { torso: 'LPT', pilot: 'P1' },
+    partStates: { torso: 'intact' }, ...over,
+  });
+  const stealthy = (over = {}) => lp({
+    mech: { torso: 'LPT', chasis: 'STL', pilot: 'P1' },
+    partStates: { torso: 'intact', chasis: 'intact' }, ...over,
+  });
+  const eagle = (col, row) => ({
+    uid: 7, side: 's2', kind: 'drone', label: 'Patrol Eagle', cardId: 'EYE',
+    col, row, size: 1, stance: 'mobility', partStates: { main: 'intact' }, statuses: [],
+  });
+  // apply() is the mutation under test, so each case gets its own board and the
+  // answer is read straight off the token afterwards.
+  const after = (tokens, cmd) => {
+    const w = world(tokens, 1, null);
+    C.apply(data, w, cmd);
+    return w.tokens[0].statuses;
+  };
+  const moved = (tokens, over = {}) => after(tokens, { kind: 'maneuver', seat: 's1', uid: 1, to: { col: 6, row: 3 }, ...over });
+  const acted = (tokens, actionId, over = {}) => after(tokens, { kind: 'performAction', seat: 's1', uid: 1, actionId, ...over });
+
+  // (a) MANEUVER. 4.12.3: "Maneuver does not benefit from Silence unless
+  // otherwise specified", and that expressly includes a facing change with no
+  // Movement at all.
+  check('a non-Silence Maneuver removes the Low Profile Token (4.12.3)',
+    moved([lp()]), []);
+  check('and a facing-only change removes it too, with no Movement (4.12.3)',
+    after([lp()], { kind: 'maneuver', seat: 's1', uid: 1, to: { col: 3, row: 3 }, facing: 2 }), []);
+  // The carve-out that makes Silence worth printing.
+  check('but a live Stealth Chassis keeps the Token through the Maneuver (card 100 LM210S)',
+    moved([stealthy()]), ['lowProfile']);
+  // FAQ I2: the exemption dies with the Part.
+  check('and a DESTROYED Stealth Chassis does not keep it (FAQ I2)',
+    moved([stealthy({ partStates: { torso: 'intact', chasis: 'destroyed' } })]), []);
+
+  // (b) ACTIONS, which is the wider half and the one 4.12.3 actually names.
+  check('a non-Silence Action removes the Token',
+    acted([lp()], 'LP_FIRE'), []);
+  check('a Silent Action does NOT (the printed keyword)',
+    acted([lp()], 'LP_HUSH'), ['lowProfile']);
+  // 4.12.3 exempts Passive Actions BY NAME. Tested explicitly rather than left
+  // to the senders: no page sends a Passive through performAction today, but
+  // "no caller does that" is a habit and the next caller would break it in
+  // silence. LP_PASS prints no Silence at all, so the passive guard is the only
+  // thing that can be keeping the Token here.
+  check('a PASSIVE Action does NOT, though it prints no Silence (4.12.3)',
+    acted([lp()], 'LP_PASS'), ['lowProfile']);
+  // A Riposte's free Melee is still an Action performed; nothing in 4.12.3 asks
+  // who paid the Tick. This also pins the shed as being ABOVE the early return
+  // the granted branch takes.
+  check('a GRANTED Action sheds it as well — 4.12.3 does not ask who paid',
+    acted([lp()], 'LP_FIRE', { granted: true }), []);
+
+  // (c) INTERCEPTION, the other named carve-out. Driven rather than asserted:
+  // an Interception spends its Token and clears its debt through its own pair
+  // of commands and never reaches performAction, so the exemption holds by
+  // construction — which is only worth anything if something checks it stays
+  // that way. Any future routing of Interception through performAction breaks
+  // this line.
+  {
+    const w = world([lp({ intercept: { LP_FIRE: 2 } }), mech(2, 's2', { col: 9, row: 3 })], 1, null);
+    w.script.intercepts = [{ uid: 1, actionId: 'LP_FIRE', targetUid: 2 }];
+    C.apply(data, w, { kind: 'spendIntercept', seat: 's1', uid: 1, actionId: 'LP_FIRE' });
+    C.apply(data, w, { kind: 'resolveIntercept', seat: 's1', uid: 1, actionId: 'LP_FIRE', targetUid: 2 });
+    check('an Interception keeps the Token (4.12.3 exempts it)', w.tokens[0].statuses, ['lowProfile']);
+    // The control: the Interception really did happen, so the line above is not
+    // passing because nothing ran.
+    check('...and the Interception really resolved', [w.tokens[0].intercept.LP_FIRE, w.script.intercepts.length], [1, 0]);
+  }
+
+  // (d) THE AURA THAT DENIES SILENCE. ZHDR-206 strips the keyword the Chassis
+  // prints, so the same Maneuver that kept the Token above now loses it.
+  check('an enemy Patrol Eagle in range denies the Silence, so the Token comes off',
+    moved([stealthy(), eagle(6, 3)]), []);
+  check('and out of its Range the Chassis keeps the Token',
+    moved([stealthy(), eagle(33, 33)]), ['lowProfile']);
+  // Judged at the START grid as well as the landing (FAQ O11/O15) — the same
+  // reading the Reveal half is given. Without `from` a unit could walk out of
+  // the aura and retroactively get its Silence back. The Eagle sits beside the
+  // START square and 10 Grids from the landing one, so the landing test alone
+  // would answer "silent" and keep the Token.
+  check('a Maneuver OUT of the aura is still judged at the grid it left (FAQ O11/O15)',
+    moved([stealthy({ col: 3, row: 3 }), eagle(6, 3)], { to: { col: 33, row: 3 }, from: { col: 3, row: 3 } }), []);
+
+  // (e) THE DECAY MARKER. Low Profile decays green, so a Token on its red face
+  // is listed in `expiring`. The removal goes through removeStatus's own apply
+  // for exactly this: a hand-rolled `statuses.filter` here would leave a stale
+  // red-face entry naming a Token the unit no longer carries, and ageTokens
+  // would then try to age it off a second time.
+  check('the red-face marker goes with the Token, not just the Token',
+    (() => {
+      const w = world([lp({ expiring: ['lowProfile'] })], 1, null);
+      C.apply(data, w, { kind: 'maneuver', seat: 's1', uid: 1, to: { col: 6, row: 3 } });
+      return [w.tokens[0].statuses, w.tokens[0].expiring];
+    })(), [[], []]);
+
+  // (f) The ordinary board, where none of this should fire. A unit with no
+  // Token must come through untouched rather than through a refusal path.
+  check('a unit with no Low Profile Token is untouched by either command',
+    [after([mech(1, 's1', { statuses: [] })], { kind: 'maneuver', seat: 's1', uid: 1, to: { col: 6, row: 3 } }),
+      after([mech(1, 's1', { statuses: ['highlight'] })], { kind: 'performAction', seat: 's1', uid: 1, actionId: 'A1' })],
+    [[], ['highlight']]);
+  // Other Hexagon Tokens are none of 4.12.3's business: it names Low Profile
+  // and nothing else. Pinned because the removals that DO key on shape
+  // ('hexagon') sit two commands away in the same file.
+  check('a Highlight Token survives the same non-Silence Maneuver',
+    after([lp({ statuses: ['highlight'] })], { kind: 'maneuver', seat: 's1', uid: 1, to: { col: 6, row: 3 } }), ['highlight']);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

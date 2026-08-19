@@ -6,7 +6,7 @@ import { gameResult, isLowValue, newTaskState, normaliseTasks, taskItemsFor, zon
 import { DiceTray } from './dice';
 import { importSquadFile } from './importer';
 import { factionColour, squadColour } from './icons';
-import { ammoHolder, applyRemote, onPerformed, onRefused, perform, type Command, onBeforeApply } from './commands';
+import { ammoHolder, applyRemote, check, onPerformed, onRefused, perform, type Command, onBeforeApply } from './commands';
 import { Relay } from './net';
 import { getLocalSeat, setLocalSeat } from './loop';
 import { ApiError, EmberApi, type SquadEntry } from './api';
@@ -31,7 +31,7 @@ import {
 import { Panel } from './panel';
 import { tacticSpec, tacticTargets } from './tactics';
 import { Roster } from './roster';
-import { inContact, canStandIn, attackDirection, crushTargets, type CrushVictims, dissipationFor, extendPath, inArc, knockbackPath, largeGridOf, type LargeGrid, LG, losBetween, losNote as losNoteFor, type MoveOpts, pathCost, protectionFor as protectionForShared, rangeBetween, reachableGrids, smokeBlocks, spotsInGrid, standingSpot } from './rules';
+import { inContact, canStandIn, attackDirection, crushExchange, crushExchangeSpots, crushTargets, type CrushVictims, dissipationFor, extendPath, inArc, knockbackPath, largeGridOf, type LargeGrid, LG, losBetween, losNote as losNoteFor, type MoveOpts, pathCost, protectionFor as protectionForShared, rangeBetween, reachableGrids, smokeBlocks, spotsInGrid, standingSpot } from './rules';
 import { breakAwayCost, breakAwayNote, canBeForceMoved, lockersOf, tetherCap, tetherNote } from './melee';
 import { instantiateScenario, loadScenarios, type Scenario } from './scenarios';
 import { loadReplays, ReplayPlayer, type ReplayScript, type ReplayStep, type ReplayTally } from './replay';
@@ -643,13 +643,35 @@ async function init() {
       if (victims) {
         board.renderTokens(state);
         board.setSelected(uid);
-        resolveCrush(t, goal, victims, () => {
-          const spot = standingSpot(goal.c, goal.r, t.size, t.aerial, currentTerrain(), state.tokens, t.uid);
-          if (spot) {
-            t.col = spot.col;
-            t.row = spot.row;
+        // WHAT "the Grid it steps out of" MEANS FOR A DRAG, ruled here because
+        // there is no route to read it off. 4.3.6 fires as a Unit is "about to
+        // enter" the Grid, so it is standing next door, and the exchange stands
+        // in for Forced Movement of ONE Grid — the crushed Unit takes the Grid
+        // the crusher was just in. A drop lands from wherever the token was
+        // picked up, which is no distance at all in rules terms.
+        //
+        // So: a drop from the NEXT Grid is that same single step and exchanges
+        // normally. A drop from further off cannot, and the honest answer is to
+        // refuse the exchange and say so rather than invent a Grid — reading
+        // the crusher's own position here is exactly what teleported a boxed-in
+        // Drone sixteen Grids across the board. The ordinary shove is unaffected:
+        // it moves the victim out of its OWN Grid and never asks where the
+        // crusher came from.
+        const at = largeGridOf(t);
+        const from = Math.abs(at.c - goal.c) + Math.abs(at.r - goal.r) === 1 ? at : null;
+        resolveCrush(t, goal, victims, from, (placed) => {
+          // `placed` means the 4.3.6 exchange put the crusher down itself, so
+          // moving it again here would undo that.
+          if (!placed) {
+            const spot = standingSpot(goal.c, goal.r, t.size, t.aerial, currentTerrain(), state.tokens, t.uid);
+            if (spot) {
+              t.col = spot.col;
+              t.row = spot.row;
+              logTo(t, `${t.label} Crushes into ${gridRef(goal.c, goal.r)}, and its Movement ends there.`);
+            } else {
+              logTo(t, `${t.label} cannot fit into ${gridRef(goal.c, goal.r)} even now the Crush is done, so it stays where it stands (4.3.6).`);
+            }
           }
-          logTo(t, `${t.label} Crushes into ${gridRef(goal.c, goal.r)}, and its Movement ends there.`);
           onChanged();
           setHint('');
         });
@@ -789,9 +811,37 @@ async function init() {
   // The guide is meant to play the turn, not just tally it, so each Action Type
   // opens the tool that actually resolves it. The Tick is only spent if the
   // action goes through, so backing out costs nothing.
-  function performGuided(uid: number, actionId: string, done: (performed: boolean) => void): void {
+  function performGuided(uid: number, actionId: string, report: (performed: boolean) => void): void {
     const t = state.tokens.find((x) => x.uid === uid);
     const action = t && findAction(t, actionId);
+    // 4.12.3: any Action without the Silence Keyword removes the Low Profile
+    // Token. Wrapped around the caller's callback rather than repeated down the
+    // twenty-odd branches below, so it cannot be forgotten by whichever one a
+    // new Action routes through — and it fires only on `true`, so backing out
+    // of a target pick keeps the Token exactly as it keeps the Tick.
+    //
+    // THE COMMAND LAYER IS STILL THE AUTHORITY (commands.ts shedLowProfile, on
+    // performAction). This wrapper exists because this page reaches that
+    // command down only ONE of its two paths: the guide's Mech action row sends
+    // `performAction`, but its Drone row — every Command-Phase and Automatic-
+    // Phase action — goes through performUnitAction, which designates and never
+    // sends it. performGuided is where both paths meet, so it is the one place
+    // on this page that sees every Action a unit takes. Double-shedding with
+    // the command is harmless: the second call finds no Token left.
+    //
+    // Passive is carved out for the same reason it is in the command (4.12.3
+    // exempts it by name); Interception never arrives here, it has its own
+    // spendIntercept path.
+    const done = (performed: boolean): void => {
+      const passive = action?.type === 'Passive' || action?.speed === 'passive';
+      if (performed && t && action && !passive
+        && statusCount(t.statuses, 'lowProfile') > 0
+        && !isSilentAction(data, state.tokens, t, action)) {
+        perform(data, state, { kind: 'removeStatus', seat: t.side, uid: t.uid, targetUid: t.uid, statusId: 'lowProfile' });
+        logTo(t, `${action.name.en || action.name.zh || action.id} is not Silent, so ${t.label} loses its Low Profile Token (4.12.3).`);
+      }
+      report(performed);
+    };
     if (!t || !action) return done(false);
     selectToken(uid);
     const what = action.name.en || action.name.zh || action.id;
@@ -1951,7 +2001,7 @@ async function init() {
       onChanged();
       setHint('');
       // Movement is a non-Silence action unless a surviving Part grants
-      // Silence to it (PL29 Stealth Chassis; FAQ I2/I5), so a camouflaged
+      // Silence to it (a Stealth Chassis, card 100 LM210S; FAQ I2/I5), so a camouflaged
       // mover Reveals here. The Contact sweep handles the other half.
       //
       // `startPos` goes in for the same reason interceptsOwed takes it six
@@ -1963,6 +2013,36 @@ async function init() {
         promptReveal(t, denier
           ? `${t.label} would have moved in Silence, but ${denier.source.label} (${denier.label}) denies it.`
           : `${t.label} moved without Silence.`);
+      }
+      // 4.12.3's OTHER consequence, in the same breath and off the same
+      // Silence reading: the non-Silence Maneuver also removes the Low Profile
+      // Token. NOT gated on camouflage — the two are independent, and a unit
+      // with a Token and no camouflage is the ordinary case.
+      //
+      // Unlike the Reveal above this is not offered: 4.12.3 gives no choice, so
+      // there is nothing to prompt and it applies even in the teaching tracker.
+      //
+      // THIS SITE EXISTS BESIDE THE COMMAND-LAYER ONE, not instead of it. The
+      // guided Maneuver sends `maneuver` a moment later and its apply sheds the
+      // Token too (idempotent — the second call finds nothing to remove). But
+      // two of the three callers of startMove send no `maneuver` at all: the
+      // Tactics-card-granted Maneuver, and the designation-stage move. Which
+      // button opened the mover must not decide whether the rule applies.
+      //
+      // Guarded before sending because removeStatus refuses a Token the unit
+      // never had, and an unguarded send would put that refusal on screen after
+      // every ordinary move.
+      //
+      // maneuverIsSilent, not isSilentAction, and the split is the engine's:
+      // a Part grants Silence to MANEUVER (FAQ I2), while an Action has to
+      // print its own. A Movement ACTION reaches this same settle(), so a
+      // Stealth Chassis (card 100 LM210S) would be read as silent here — performGuided's wrapper
+      // then asks the Action's own printed Silence and sheds anyway, which is
+      // the right answer. Unreachable today in any case: no action in the card
+      // data is typed Moving AND prints Silence (checked across all 31).
+      if (statusCount(t.statuses, 'lowProfile') > 0 && !maneuverIsSilent(data, state.tokens, t, startPos)) {
+        perform(data, state, { kind: 'removeStatus', seat: t.side, uid: t.uid, targetUid: t.uid, statusId: 'lowProfile' });
+        logTo(t, `${t.label} Maneuvers without Silence, so its Low Profile Token comes off (4.12.3).`);
       }
       // An enemy AERIAL unit's Movement triggers Interception, judged at the
       // start and landing grids only (FAQ O11/O15, 4.9).
@@ -1981,13 +2061,48 @@ async function init() {
         .then(() => m.done(true));
     };
     if (victims) {
+      // Where the Movement ends if the crusher never gets into the goal Grid:
+      // the last Grid of the route that had room, which is exactly where the
+      // walk below leaves it. The Match Centre's finishCrush ends there too (its
+      // `held`), and the two pages have to agree — otherwise the same Movement
+      // finishes in different Grids depending on which page it was played on.
+      // Reading the token instead recorded the START of the whole Movement while
+      // the animation had walked it forward, and onChanged() snapped it back.
+      const walk = stops.slice(0, -1);
+      const held = walk[walk.length - 1] ?? { col: t.col, row: t.row };
+      // The Grid the crusher steps out of as it enters the goal, handed to the
+      // exchange because nothing has written col/row yet — see resolveCrush.
+      //
+      // NOT called `from`: this function already has a `let from` in the stops
+      // loop above, and a `from`-shadows-`from` pair in this same family is what
+      // left resolveCrush's drag guard dead while tsc stayed clean and a
+      // call-site regex still passed. Different name, no shadow, nothing to
+      // confuse.
+      const stepOut = path.length >= 2 ? path[path.length - 2] : null;
       // The Grid is entered only once whatever was standing there is dealt with,
       // and the Movement Action ends there regardless of Range left (4.3.6).
-      board.animateMove(m.uid, stops.slice(0, -1), () =>
-        resolveCrush(t, goal, victims, () => {
-          const spot = standingSpot(goal.c, goal.r, t.size, t.aerial, currentTerrain(), state.tokens, t.uid)
-            ?? snapPlacement(goal.c * 3 + 1, goal.r * 3 + 1, t.size);
-          board.animateMove(m.uid, spot ? [spot] : [], () => settle(spot?.col ?? last.col, spot?.row ?? last.row));
+      board.animateMove(m.uid, walk, () =>
+        resolveCrush(t, goal, victims, stepOut, (placed) => {
+          // A 4.3.6 exchange has already placed the crusher — resolveCrush drew
+          // the board on the way out — so there is nothing left to walk and
+          // settle() only records where it ended up.
+          if (placed) {
+            settle(t.col, t.row);
+            return;
+          }
+          // No snapPlacement fallback any more: it does no occupancy and no
+          // terrain test, so for a Large unit it always answered with a spot
+          // inside the goal Grid — which is precisely how the crusher used to
+          // land on a victim that had never moved. An exchange that was refused
+          // or would not fit arrives here too, with the crushed Unit still
+          // standing in the goal Grid, and gets the same answer: no room.
+          const spot = standingSpot(goal.c, goal.r, t.size, t.aerial, currentTerrain(), state.tokens, t.uid);
+          if (!spot) {
+            logTo(t, `${t.label} cannot fit into ${gridRef(goal.c, goal.r)} even now the Crush is done, so it stops short and its Movement ends in ${gridRef(Math.floor(held.col / 3), Math.floor(held.row / 3))} (4.3.6).`);
+            settle(held.col, held.row);
+            return;
+          }
+          board.animateMove(m.uid, [spot], () => settle(spot.col, spot.row));
         }));
       return;
     }
@@ -2472,19 +2587,37 @@ async function init() {
 
   // Crush resolution (4.3.6). Destructible Terrain in the way is destroyed, then
   // each smaller Unit takes Forced Movement of 1 Grid with the crushing player
-  // picking where. A Unit with nowhere to go swaps places with the crusher, and
-  // one that cannot be Force-Moved at all is destroyed instead.
-  function resolveCrush(t: Token, goal: LargeGrid, victims: CrushVictims, done: () => void): void {
+  // picking where. A Unit with nowhere to go EXCHANGES POSITIONS with the
+  // crusher, and one that cannot be Force-Moved at all is destroyed instead — a
+  // Barricade being the exception FAQ E6/M13 carves out, which rules.ts
+  // crushTargets refuses long before any of this runs.
+  //
+  // `from` is the Grid the crusher steps out of as it enters `goal` — the
+  // second-to-last Grid of the route. It is handed in because nothing has moved
+  // the token yet, so reading it here would answer with the Grid the Movement
+  // BEGAN in. `null` means the caller has no route at all (the drag-drop), and
+  // then no exchange is possible; see the drop handler for that ruling.
+  //
+  // `done(placed)` is true only when the exchange has ACTUALLY put the crusher
+  // down — one command places both Units — so the caller must not move it
+  // again. A refused or impossible exchange reports false: nothing moved, the
+  // crushed Unit is still standing in the goal Grid, and the caller's own
+  // "is there room?" test will answer no and end the Movement short.
+  function resolveCrush(t: Token, goal: LargeGrid, victims: CrushVictims, from: LargeGrid | null, done: (placed: boolean) => void): void {
     if (victims.terrain.length) {
       perform(data, state, { kind: 'destroyTerrain', seat: t.side, uid: t.uid, pieces: victims.terrain.map((p) => p.id) });
       board.renderTerrain(currentTerrain());
       logTo(t, `Crushed ${victims.terrain.length === 1 ? 'terrain' : `${victims.terrain.length} terrain pieces`} in ${gridRef(goal.c, goal.r)}.`);
     }
     const queue = [...victims.units];
+    // The Units with no escape Grid, held back until the queue is empty: the
+    // exchange places the crusher too, so it must not happen while anything is
+    // still standing in the Grid it is entering.
+    const exchanges: { v: Token; facing?: Facing }[] = [];
     const step = (): void => {
       const v = queue.shift();
       if (!v) {
-        done();
+        settleExchanges();
         return;
       }
       if (!canBeForceMoved(data, v)) {
@@ -2494,28 +2627,52 @@ async function init() {
         step();
         return;
       }
-      const from = largeGridOf(v);
+      // `vAt` and NOT `from`: the parameter five lines below is the Grid the
+      // CRUSHER steps out of, and naming this one `from` shadowed it. The
+      // shadow is typed non-nullable, so `if (!from)` below became dead code
+      // that tsc had no complaint about — a drag from across the board asked
+      // the Facing question it exists to skip and then blamed room for what
+      // was really distance.
+      const vAt = largeGridOf(v);
       const spots = ([[0, -1], [1, 0], [0, 1], [-1, 0]] as const)
-        .map(([dc, dr]) => ({ c: from.c + dc, r: from.r + dr }))
+        .map(([dc, dr]) => ({ c: vAt.c + dc, r: vAt.r + dr }))
         .filter((g) => g.c >= 0 && g.r >= 0 && g.c < LG && g.r < LG)
         .filter((g) => !(g.c === goal.c && g.r === goal.r))
         .filter((g) => standingSpot(g.c, g.r, v.size, v.aerial, currentTerrain(), state.tokens, v.uid) !== null);
       if (!spots.length) {
-        // KNOWN GAP, pre-existing and NOT introduced by LPA-23, and the Match
-        // Centre's advanceCrush carries the same one: state.tokens still holds
-        // the crusher, and standingSpot ignores only ONE uid, so the crusher's
-        // own 3x3 footprint blocks every spot in its Grid and this swap never
-        // finds one. The Crush then resolves as a no-op. LPA-23 Onyx makes it
-        // far more reachable — a LARGE victim needs a whole free 3x3 to escape
-        // into — so it is recorded here rather than fixed inside a pilot-trait
-        // pass, which would change how every existing Crush resolves.
-        const swap = standingSpot(largeGridOf(t).c, largeGridOf(t).r, v.size, v.aerial, currentTerrain(), state.tokens, v.uid);
-        if (swap) {
-          perform(data, state, { kind: 'forceMove', seat: t.side, uid: t.uid, targetUid: v.uid, to: { col: swap.col, row: swap.row } });
-          logTo(t, `Crushed ${v.label}, which had nowhere to go, so the two swap positions.`);
+        // No Grid to step out of means no Grid to hand over, so there is no
+        // exchange to offer and no Facing worth asking about. Said before the
+        // dialog rather than after it: a drop from across the board would
+        // otherwise ask which way the Unit ends up facing and then refuse to
+        // move it at all.
+        if (!from) {
+          logTo(t, `${v.label} has nowhere to go, and ${t.label} was dropped onto ${gridRef(goal.c, goal.r)} from further off than the next Grid. An exchange trades places across a single Grid boundary, so there are no places to trade (4.3.6).`);
+          step();
+          return;
         }
-        board.renderTokens(state);
-        step();
+        // And an exchange the engine has ALREADY decided against must not be
+        // asked about either. crushExchangeSpots is the victim half of the very
+        // reader settleExchanges runs below — is there room in the Grid the
+        // crusher steps out of? — so a `no` here is the same `no` that would
+        // come back after the dialog, only in time to say why instead of asking
+        // a question and then refusing it. The crusher's own half is deliberately
+        // not tested yet: the Units still queued behind this one have not been
+        // shoved clear of the goal Grid, so it would answer no every time.
+        if (!crushExchangeSpots(t, [...exchanges.map((x) => x.v), v], goal, from, currentTerrain(), state.tokens)) {
+          logTo(t, `${v.label} has nowhere to go, and ${gridRef(from.c, from.r)}, the Grid ${t.label} is stepping out of, has no room for it either, so there are no positions to exchange (4.3.6).`);
+          step();
+          return;
+        }
+        // 4.3.6: "If NONE of the Grids within Range of that Forced Movement can
+        // be entered, the crushed Unit instead EXCHANGES POSITIONS with the
+        // Crushing Unit." Only the Facing is a choice — the Grid is the one the
+        // crusher is vacating — so that is all this step asks for, and
+        // settleExchanges below turns the whole set into one command.
+        void (async () => {
+          const facing = await askCrushFacing(v, `${v.label} has nowhere to go, so it exchanges positions with ${t.label} (4.3.6).`);
+          exchanges.push({ v, facing });
+          step();
+        })();
         return;
       }
       setHint(`Crush: click a Grid to Force-Move ${v.label} 1 Grid. You choose, because you caused it (4.3.4).`);
@@ -2526,19 +2683,7 @@ async function init() {
         // The crushing player also decides the victim's facing (3.4.4, FAQ L6),
         // same as any other Forced Movement.
         void (async () => {
-          const id = await choiceDialog({
-            title: `Turn ${v.label}?`,
-            body: `As the crushing player you choose which way ${v.label} ends up facing (3.4.4).`,
-            choices: [
-              ...(['North', 'East', 'South', 'West'] as const).map((label, i) => ({
-                id: String(i),
-                label: i === v.facing ? `${label} (as it stands)` : label,
-              })),
-              { id: '', label: 'Leave its facing alone', cancel: true },
-            ],
-            stacked: true,
-          });
-          const facing = id ? (Number(id) as Facing) : undefined;
+          const facing = await askCrushFacing(v, `As the crushing player you choose which way ${v.label} ends up facing (3.4.4).`);
           perform(data, state, { kind: 'forceMove', seat: t.side, uid: t.uid, targetUid: v.uid, to: { col: spot.col, row: spot.row }, facing });
           logTo(t, `Crushed ${v.label}, Force-Moved to ${gridRef(c, r)}.`);
           board.renderTokens(state);
@@ -2546,7 +2691,75 @@ async function init() {
         })();
       });
     };
+    // The 4.3.6 exchange, once the rest of the Grid has given way. ONE command
+    // carries every token that moves: split into a maneuver and a nudge it would
+    // leave a board on which the crusher stands on the unit it is trading places
+    // with, and the undo ring snapshots between commands.
+    const settleExchanges = (): void => {
+      if (!exchanges.length) {
+        done(false);
+        return;
+      }
+      const names = exchanges.map((x) => x.v.label).join(' and ');
+      // `from` is non-null by construction — nothing is queued for exchange
+      // without one, see the step above — and the ternary is what tells the
+      // compiler so rather than a second opinion about the rule.
+      const pair = from ? crushExchange(t, exchanges.map((x) => x.v), goal, from, currentTerrain(), state.tokens) : null;
+      if (!pair) {
+        // Nothing printed lets two units share a Large Grid, so the Crush stops
+        // short instead of landing on top of one. Said out loud: the silence is
+        // what made the old failure impossible to diagnose at the table.
+        logTo(t, `Crushed ${names}, which had nowhere to go, and there is no room for ${t.label} to exchange places either (4.3.6).`);
+        board.renderTokens(state);
+        done(false);
+        return;
+      }
+      const cmd: Command = {
+        kind: 'crushSwap',
+        seat: t.side,
+        uid: t.uid,
+        to: pair.crusher,
+        swaps: pair.victims.map((x) => ({ uid: x.uid, to: x.to, facing: exchanges.find((e) => e.v.uid === x.uid)?.facing })),
+      };
+      // Asked BEFORE it is performed, and refused here rather than there.
+      // perform() only blocks on a refusal when the script is strict or the game
+      // is networked (types.ts script.strict defaults to false), so in ordinary
+      // freeplay a refused crushSwap is applied anyway — and the log below would
+      // then narrate a swap that had happened while claiming it had not, or the
+      // reverse. One reader, asked once, and the board and the log agree.
+      const verdict = check(data, state, cmd);
+      if (!verdict.ok) {
+        logTo(t, `${t.label} could not exchange places with ${names}: ${verdict.why}`);
+        board.renderTokens(state);
+        done(false);
+        return;
+      }
+      perform(data, state, cmd);
+      logTo(t, `Crushed ${names}, which had nowhere to go, so ${exchanges.length === 1 ? 'it exchanges' : 'they exchange'} positions with ${t.label} (4.3.6). Its Movement ends there.`);
+      board.renderTokens(state);
+      done(true);
+    };
     step();
+  }
+
+  // Who a Forced Movement leaves facing. 3.4.4 gives the choice to the player
+  // who CAUSED it and FAQ E17 says the same for the Taurus Prototype Blink, so
+  // the Crush shove and the 4.3.6 exchange both ask it the same way. Nothing
+  // turns the Crushing Unit: the choice is over the unit being moved by someone.
+  async function askCrushFacing(v: Token, body: string): Promise<Facing | undefined> {
+    const id = await choiceDialog({
+      title: `Turn ${v.label}?`,
+      body,
+      choices: [
+        ...(['North', 'East', 'South', 'West'] as const).map((label, i) => ({
+          id: String(i),
+          label: i === v.facing ? `${label} (as it stands)` : label,
+        })),
+        { id: '', label: 'Leave its facing alone', cancel: true },
+      ],
+      stacked: true,
+    });
+    return id ? (Number(id) as Facing) : undefined;
   }
 
   function cancelMove(): void {

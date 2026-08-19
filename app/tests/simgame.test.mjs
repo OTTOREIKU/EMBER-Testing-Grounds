@@ -42,6 +42,26 @@ const pilotTraits = unitsSrc.slice(
   unitsSrc.indexOf('// A Mech Maneuvers at the Maneuver Value'),
 );
 if (!pilotTraits) throw new Error('could not locate the phase-7 pilot predicates in units.ts');
+// Silence and the auras that deny it. commands.ts asks them inside the apply of
+// `maneuver` and `performAction` to shed a Low Profile Token (4.12.3), so the
+// driver reaches them on every simulated Maneuver and every Action — sliced
+// rather than stubbed, because WHICH Actions keep the Token is the rule, and
+// this sim runs against the real card database, so the real reader gets the
+// printed keywords off the actual cards.
+//
+// Both cuts checked against the two above before adding, the way every cut in
+// this project has to be: commandGen is 342-519 and pilotTraits 2917-3182,
+// while Silence is 572-700 and Auras 1583-1656 — no range overlaps, so nothing
+// is declared twice.
+const silence = unitsSrc.slice(
+  unitsSrc.indexOf('// ---------- Silence (rulebook'),
+  unitsSrc.indexOf('// ---------- Who breaks Optical Camouflage'),
+);
+const auras = unitsSrc.slice(
+  unitsSrc.indexOf('// ---------- Auras (FAQ Q1-Q4, J2) ----------'),
+  unitsSrc.indexOf('// LPA-21 Firefly'),
+);
+if (!silence || !auras) throw new Error('could not locate the Silence readers in units.ts');
 const timings = types.slice(types.indexOf('export const PHASES'), types.indexOf('export type TokenShape'));
 const statuses = types.slice(types.indexOf('export function hexagonIds'), types.indexOf('export interface RoundState'));
 const tmp = new URL('./_simgame.slice.ts', import.meta.url);
@@ -169,6 +189,11 @@ let sliceSrc =
   + stubs
   + pilotTraits
   + commandGen
+  // After the stubs: aurasOn reads the stubbed tokenCards and rangeBetween, and
+  // a function declaration hoists where a `const` stub does not. Auras first,
+  // since silenceDenied reads aurasOn.
+  + auras
+  + silence
   + commands.replace(/^import[^\n]*\n/gm, '');
 // The driver builds real script states and opportunities, which live outside
 // the ranges above; pull them (and asSide, which normaliseScript leans on) in

@@ -2,7 +2,7 @@ import type { CombatView, Facing, GameState, MechLoadout, Opportunity, PartSlot,
 import { addStatus, ageTokens, newOpportunity, PHASES, statusCount, STATUSES, TIMINGS } from './types';
 import type { GameData } from './data';
 import { cardName, transformFaces, unfoldsInto } from './data';
-import { covertCarryLock, ammoDeliveryPool, opportunityBonusOn, ripostePart, defenseReactionOn, targetTracingOn, riderOnDrone, hasFlexibleTiming, commandGeneration, blinkTargets, isPositionSwap, electronicOrigins, loanedParts, unfoldToken, extrasFor, consumesCharge, cutTethersOn, electronicValue, freehandSlots, interceptCapacity, anyStartTiming, focusIsFree, keepsLinkOnPartLoss, makeDroneToken, structureOf, makeMechToken, maxLink, partsLeft, pilotCard, pilotIs, projectileDelivery, settleTethers, SLOT_LABEL, tetherTo, tokenCards, transformPartOn } from './units';
+import { covertCarryLock, ammoDeliveryPool, opportunityBonusOn, ripostePart, defenseReactionOn, targetTracingOn, riderOnDrone, hasFlexibleTiming, commandGeneration, blinkTargets, isPositionSwap, electronicOrigins, isSilentAction, maneuverIsSilent, loanedParts, unfoldToken, extrasFor, consumesCharge, cutTethersOn, electronicValue, freehandSlots, interceptCapacity, anyStartTiming, focusIsFree, keepsLinkOnPartLoss, makeDroneToken, structureOf, makeMechToken, maneuverRange, maxLink, partsLeft, pilotCard, pilotIs, projectileDelivery, provokeWhy, settleTethers, SLOT_LABEL, tetherTo, tokenCards, transformPartOn } from './units';
 import { tetherCap } from './melee';
 import { canActivate, canAttackMode, canManeuver, canOverload, canPerform, spendAction, spendActivation, spendAttackMode, spendManeuver, spendOverload } from './ticks';
 import { tacticSpec, tacticTargets, type TacticCtx } from './tactics';
@@ -51,7 +51,32 @@ export type Command =
   // `granted` is a Movement a card handed out rather than one the Opportunity
   // paid for — Hit and Run (276) moves a Mech as its Opportunity *ends*, when
   // there is no Opportunity left to check or to charge.
-  | { kind: 'maneuver'; seat: Side; uid: number; to: { col: number; row: number }; facing?: Facing; free?: boolean; granted?: boolean; via?: { col: number; row: number }[] }
+  //
+  // `from` is where the Movement STARTED, and it is sent only when the unit has
+  // already been placed by the command before this one: a Crush that ends in a
+  // position exchange (4.3.6) moves both Units in a single crushSwap, so the
+  // maneuver that RECORDS the Movement arrives with the crusher already standing
+  // on its landing Grid. Every other sender leaves it out and the token's own
+  // position is the start, exactly as before — which is what the M2 Data Link
+  // pre-move arithmetic below measures against.
+  //
+  // NOT taken on trust: check() reads the board for the placement this claims
+  // has happened, because the field is rules-bearing and the sender is the
+  // thing that reader distrusts. See the guard in the `maneuver` case.
+  | { kind: 'maneuver'; seat: Side; uid: number; to: { col: number; row: number }; facing?: Facing; free?: boolean; granted?: boolean; via?: { col: number; row: number }[]; from?: { col: number; row: number } }
+  // A Crush with no escape square (4.3.6, book p.47): "If NONE of the Grids
+  // within Range of that Forced Movement can be entered, the crushed Unit
+  // instead exchanges positions with the Crushing Unit."
+  //
+  // ONE command that moves EVERY token involved, and that is the whole point of
+  // it existing rather than being a maneuver plus a nudge: the undo ring and the
+  // networked rollback both snapshot BETWEEN commands, so a two-command exchange
+  // has a window in which the crusher is standing on the unit it is trading
+  // places with. `uid` is the crusher and `to` its landing spot; `swaps` are the
+  // crushed Units and the spots they take in the Grid the crusher vacates.
+  //
+  // Deliberately carries NO Opportunity accounting — see check() for why.
+  | { kind: 'crushSwap'; seat: Side; uid: number; to: { col: number; row: number }; facing?: Facing; swaps: { uid: number; to: { col: number; row: number }; facing?: Facing }[] }
   // `granted` is an Action a CARD handed out rather than one the Action
   // Opportunity paid for -- Riposte's immediate Melee. It is never
   // self-authorising: check() looks for the matching debt in shared state, so a
@@ -154,6 +179,13 @@ export type Command =
       reaction?: boolean;
     }
   | { kind: 'rollCounter'; seat: Side; uid: number; faces: number[]; focused?: boolean }
+  // LPA-22 Yoyu's 挑衅 Provoke, answered. `uid` is YOYU -- the Responder that
+  // won the Counter-roll -- so this rides the actor path and inherits the "your
+  // own units only" gate; `targetUid` is the Initiator whose Stance is being
+  // turned. `take` false is a real command and not a no-op: the far seat has to
+  // watch the question close, or it sits waiting on an answer that already
+  // happened.
+  | { kind: 'provoke'; seat: Side; uid: number; targetUid: number; take: boolean }
   | { kind: 'clearCounterRoll'; seat: Side }
   | { kind: 'queueIntercepts'; seat: Side; items: { uid: number; actionId: string; targetUid: number }[] }
   | { kind: 'resolveIntercept'; seat: Side; uid: number; actionId: string; targetUid: number }
@@ -960,6 +992,110 @@ export function taskDesignations(data: GameData, state: GameState): Designation[
   return pendingDesignations(normaliseTasks(state.tasks), data.secondary ?? [], mission, state.tokens);
 }
 
+// The small cells a unit of this size covers standing at `at`. Mirrors the
+// footprint standingSpot and spotsInGrid walk, kept here because check() must
+// not import the board.
+function cellsUnder(size: number, at: { col: number; row: number }): string[] {
+  const out: string[] = [];
+  for (let dc = 0; dc < size; dc++) for (let dr = 0; dr < size; dr++) out.push(`${at.col + dc},${at.row + dr}`);
+  return out;
+}
+
+// Whether every Unit in a Crush exchange fits where it is being sent: not on
+// each other, not on a third Unit, and not inside Terrain. The one rule the
+// movement commands never enforced, and the whole reason a failed Crush used to
+// leave two units sharing a Large Grid.
+//
+// Aerial Units are ignored on both sides of the test, exactly as standingSpot
+// ignores them: they are above the Grid rather than in it.
+function exchangeRoomWhy(
+  data: GameData,
+  state: GameState,
+  crusher: Token,
+  swapped: Token[],
+  cmd: { to: { col: number; row: number }; swaps: { uid: number; to: { col: number; row: number } }[] },
+): string | null {
+  // A custom map's pieces live on the board page, so this reads the built-in
+  // layout it can see — the same compromise placeInGrid makes. The unit
+  // occupancy below is the half that keeps two clients agreeing either way.
+  const gone = new Set(state.removedTerrain ?? []);
+  const terrain = new Set<string>();
+  for (const p of data.terrain?.layouts?.[state.map] ?? []) {
+    if (gone.has(p.id)) continue;
+    for (const cell of p.subCells) terrain.add(`${cell.col},${cell.row}`);
+  }
+  const leaving = new Set([crusher.uid, ...swapped.map((v) => v.uid)]);
+  const held = new Map<string, string>();
+  for (const o of state.tokens) {
+    if (leaving.has(o.uid) || o.aerial || o.deployed === false) continue;
+    for (const k of cellsUnder(o.size, o)) held.set(k, o.label);
+  }
+  const arriving: [Token, { col: number; row: number }][] = [[crusher, cmd.to]];
+  for (const v of swapped) {
+    const to = cmd.swaps.find((s) => s.uid === v.uid)?.to;
+    if (to) arriving.push([v, to]);
+  }
+  for (const [unit, at] of arriving) {
+    for (const k of cellsUnder(unit.size, at)) {
+      const who = held.get(k);
+      if (who) return `${unit.label} has nowhere to land in that Crush: ${who} is standing there.`;
+      if (!unit.aerial && terrain.has(k)) return `${unit.label} has nowhere to land in that Crush: Terrain is in the way.`;
+      held.set(k, unit.label);
+    }
+  }
+  return null;
+}
+
+// The most Large Grids any one Movement of this Unit could cover, which is the
+// only question check() can honestly ask about how far a Crush travelled — see
+// the call site in `crushSwap` for why the route itself is out of reach here.
+//
+// A CEILING, deliberately, not a price. It is the largest allowance the Unit
+// could have declared the Movement with, and nothing about what that Movement
+// actually spent: Break Away (4.3.5) makes steps dearer, a Harpy's tow takes 2
+// off the top (ZHDR-304), and neither can make a Movement reach FURTHER, so
+// leaving both out only ever makes this more generous. Every step of a route is
+// one orthogonal Grid and costs at least 1 (rules.ts searchMoves), so the Grid
+// distance between the two ends of ANY legal Movement is at most this number.
+//
+// Two sources, because both pages take `action.range || maneuverRange` and the
+// two are unrelated numbers: a Chassis prints a Maneuver Value of 1-2 Grids
+// while a Sprint prints 4 and card 088's Long Jump prints 8. The gather is
+// findAction's — the Unit's own Parts, plus a Backpack lent by a Carrier
+// Tarantula in Contact, whose Actions are this Mech's Actions while it acts
+// (FAQ O3/O16).
+//
+// A WRECKED PART DECLARES NOTHING, which is why the unit's own Parts are
+// filtered on partStates and the ceiling is not simply the widest Range printed
+// on the cards it is carrying. The two halves of this number disagreed without
+// the filter: maneuverRange returns 0 outright for a destroyed Chassis (3.4.4,
+// FAQ E4) and maneuverBonus already drops a destroyed Part, while the loop below
+// read the wreck anyway. Driven by the round-5 reviewer (2026-08-19): a Mech
+// with Chassis 179 and Backpack 088 BOTH destroyed reads Maneuver Value 0 and
+// still bought an 8-Grid crushSwap off the Long Jump printed on the dead
+// Jetpack, an allowance it could not have declared the Movement with.
+//
+// A LOANED Part is a different question and is deliberately not looked up here:
+// its slot key names the LENDER (`load:<uid>`), not a slot of this Mech, so
+// t.partStates could only answer about it by accident. loanedParts already
+// refuses a Carrier whose own Part or Backpack is destroyed (FAQ O3/O16), so
+// the state test for that half lives where the lending is decided.
+function movementReach(data: GameData, state: GameState, t: Token): number {
+  let reach = maneuverRange(data, t);
+  for (const { slot, card } of tokenCards(data, t)) {
+    if ((t.partStates?.[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
+    for (const a of card.actions ?? []) {
+      if (a.type === 'Moving') reach = Math.max(reach, a.range ?? 0);
+    }
+  }
+  for (const { card } of loanedParts(data, state.tokens, t)) {
+    for (const a of card.actions ?? []) {
+      if (a.type === 'Moving') reach = Math.max(reach, a.range ?? 0);
+    }
+  }
+  return reach;
+}
+
 export function check(data: GameData, state: GameState, cmd: Command): CheckResult {
   if (tableLevel(cmd)) return checkTable(data, state, cmd);
   const t = state.tokens.find((x) => x.uid === cmd.uid);
@@ -1113,6 +1249,58 @@ function checkActed(
       if (!Number.isInteger(col) || !Number.isInteger(row) || col < 0 || row < 0 || col > 35 || row > 35) {
         return no('That is not a place on the board.');
       }
+      // WHERE THE MOVEMENT STARTED, and the only rules-bearing number on this
+      // command the SENDER chooses. check() took it on trust, which is the very
+      // mistake the crushSwap round refused to make when it declined to have
+      // the pages send the step-out Grid: it makes this reader trust a number
+      // the sender supplies, and the sender is the thing this reader exists to
+      // distrust.
+      //
+      // DRIVEN before this guard existed (round-4 reviewer, 2026-08-19): a
+      // Drone commanded by a Mech carrying M2 Data Link (card 176, preMove 1)
+      // walked five Grids and sent the honest `to` with `from` set to the
+      // LANDING Grid. apply() measured zero Grids travelled, handed it the M2
+      // free pre-move, and left the Maneuver Tick unspent and the Drone open, a
+      // five-Grid walk laundered into the free grid. `from: { col: 99, row: 99
+      // }` wrote an OFF-BOARD start into the Opportunity's movedFrom, which is
+      // what the start-and-landing readers are handed as "where it stood" (FAQ
+      // O11/O15), so the Reveal sweep judged a unit that was nowhere.
+      //
+      // BOUNDED BY THE BOARD, never by the sender's word about itself. There is
+      // exactly one honest sender, matchhud finishCrush's follow-up to a
+      // crushSwap, and it is recognisable without asking: that command has
+      // ALREADY placed the crusher on its landing spot (4.3.6 moves both Units
+      // at once so no snapshot lands between the halves), so the token is
+      // standing on `to` by the time this arrives. Every other Maneuver either
+      // page sends travels while the token still stands where the Movement
+      // began and leaves the field out, so asking the board whether the
+      // placement really happened refuses nothing legitimate.
+      //
+      // ABOVE the `granted` return below, deliberately: finishCrush passes the
+      // plan's own `granted` straight through, so a Hit and Run (276) Movement
+      // that ends in a Crush carries `from` too, and a guard under that return
+      // would be the one line a spoofer could step around.
+      //
+      // NO DISTANCE CEILING here, and that is a ruling rather than an omission.
+      // The crushSwap guard below bounds a claim that can only be too FAR; the
+      // lie this field buys is one that is too NEAR, and a ceiling cannot see
+      // it. movementReach is not stable across the exchange either: a Carrier
+      // Tarantula's loaned Backpack raises it (FAQ O3/O16) and the Contact that
+      // lends it is broken by the very Movement being recorded, so a reach read
+      // here could refuse the honest follow-up, which is the one thing this
+      // must not do. What is left over, the exact Grid a real Crush started in,
+      // is still the sender's word; closing that needs the engine to REMEMBER
+      // the start in crushSwap rather than be told it, and that is a new piece
+      // of fingerprinted state with its own round of work.
+      if (cmd.from) {
+        const fc = cmd.from.col, fr = cmd.from.row;
+        if (!Number.isInteger(fc) || !Number.isInteger(fr) || fc < 0 || fr < 0 || fc > 35 || fr > 35) {
+          return no('That is not a place on the board.');
+        }
+        if (t.col !== cmd.to.col || t.row !== cmd.to.row) {
+          return no(`${t.label} is not standing where this Movement ends, so nothing has already placed it: a Movement starts from where the Unit stands, and only the 4.3.6 position exchange records one from anywhere else.`);
+        }
+      }
       // The Tether leash, and the one piece of path law that does belong here:
       // it is a test on the DESTINATION, so it needs no pathfinder. Only the
       // tethered end is capped — the initiator walking out is a removal
@@ -1145,6 +1333,226 @@ function checkActed(
         return o.performed.length ? ok : no('No Action has been performed this Opportunity, so there is nothing to move with.');
       }
       return fromVerdict(canManeuver(o));
+    }
+    case 'crushSwap': {
+      // 4.3.6: the crushed Unit with nowhere to go exchanges positions with the
+      // Crushing Unit. The geometry stays with the caller — rules.ts
+      // crushExchange is the one place it is worked out, and both pages call it
+      // — so this covers what a stale networked client could still get wrong.
+      if (!cmd.swaps.length) return no('A Crush exchange has to name the Unit being exchanged.');
+      for (const p of [cmd.to, ...cmd.swaps.map((s) => s.to)]) {
+        if (!Number.isInteger(p.col) || !Number.isInteger(p.row) || p.col < 0 || p.row < 0 || p.col > 35 || p.row > 35) {
+          return no('That is not a place on the board.');
+        }
+      }
+      // Only a Large Ground Unit Crushes, and only Units no larger than itself
+      // (4.3.6; LPA-23 Onyx is the trait that lets the two be equal, so this
+      // refuses LARGER and not merely equal). Flying cannot Crush at all (FAQ
+      // E14) and neither can an Aerial Unit, which passes overhead.
+      if (t.size !== 3 || t.aerial) return no('Only a Large Ground Unit Crushes (4.3.6).');
+      const swapped: Token[] = [];
+      for (const s of cmd.swaps) {
+        const v = state.tokens.find((x) => x.uid === s.uid);
+        if (!v) return no('That target is not on the board.');
+        // 4.3.6 is "Units SMALLER than itself", and LPA-23 Onyx's 不屈 is the one
+        // printed relaxation of it. rules.ts crushTargets asks exactly this, so
+        // asking a looser question here would make the authoritative reader the
+        // PERMISSIVE one: every Large Mech could crush an equal-size Unit through
+        // a hand-built command, while the boards correctly refused to offer it.
+        // Read the live pilot field for the same reason crushTargets does, which
+        // is written out at INDOMITABLE_PILOT in rules.ts.
+        const indomitable = t.kind === 'mech' && t.mech?.pilot === 'LPA-23';
+        if (indomitable ? v.size > t.size : v.size >= t.size) {
+          return no(`${v.label} is not smaller than ${t.label}, so it cannot be Crushed (4.3.6).`);
+        }
+        // A Barricade "can neither move, be moved, nor be Crushed" (FAQ E6/M13,
+        // Rules Supplement 1.1.3). forceMove states this for the shove; the
+        // exchange is a second way a Crush can move something, so it needs its
+        // own line rather than leaning on rules.ts crushTargets alone.
+        if (v.barricade) return no(`${v.label} is a Barricade: it can neither move nor be moved (FAQ E6/M13).`);
+        swapped.push(v);
+      }
+      // The Tether leash, judged exactly as it is for a maneuver: the crusher's
+      // half of the exchange is a VOLUNTARY Movement, and this command carries
+      // it, so the same cap has to hold here or the two boards would disagree
+      // about a Grid one of them refuses.
+      const leash = tetherCap(t, state.tokens);
+      if (leash && !leash(Math.floor(cmd.to.col / 3), Math.floor(cmd.to.row / 3))) {
+        const x = (t.tether ?? []).filter((l) => l.role === 'tethered')[0]?.range ?? 0;
+        return no(`${t.label} is Tethered and cannot voluntarily move beyond ${x} Grids of the unit holding it (PDLH-202).`);
+      }
+      // THE occupancy test, and the reason this is a command rather than two.
+      // `maneuver` validates board bounds and the leash and nothing else, so a
+      // Crush whose placement fell through to snapPlacement — which does no
+      // occupancy and no terrain test at all — is how two units came to share
+      // one Large Grid with nothing printed about it and nothing said to the
+      // player.
+      const why = exchangeRoomWhy(data, state, t, swapped, cmd);
+      if (why) return no(why);
+      // THE GEOMETRY, and the one line that makes the wrong-Grid class of bug
+      // impossible to reintroduce from any caller. 4.3.6 puts the Crush at the
+      // moment a Unit is "about to enter a Grid occupied by another Unit", and
+      // the exchange stands in for "Forced Movement of 1 Grid" — so the pair
+      // trade places across ONE Grid boundary and the crushed Unit always ends
+      // orthogonally adjacent to where the crusher lands. Worked example (C)
+      // has them adjacent.
+      //
+      // Measured before this existed: rules.ts derived the vacated Grid from a
+      // crusher that had not moved yet, so a route (1,0)->(1,1)->(1,2) sent the
+      // victim to (1,0) — two Grids off — and a freeplay drag from (0,0) onto a
+      // Drone in (8,8) sent it sixteen. Neither page could see it; this reader
+      // can, and it is the reader a stale networked client is measured against.
+      //
+      // TWO tests, because they pin the two ENDS of the same move and neither
+      // implies the other. The first is the one the earlier round missed: a
+      // Unit is only exchanging positions if it is STANDING in the Grid the
+      // crusher is entering — that is what "the crushed Unit" means, and both
+      // pages get their victim list from crushTargets(goal), which is exactly
+      // that set. Without it the adjacency test alone accepted a Large Mech in
+      // Grid(1,1) entering Grid(1,2) while naming a Drone sixteen Grids away in
+      // Grid(8,8): the destination was adjacent, so check() said ok and apply()
+      // teleported the Drone fourteen Grids. Not reachable from either page
+      // today — and this is the reader that has to hold when it is.
+      //
+      // The crusher's own Grid is deliberately not tested FOR ADJACENCY, and
+      // that is the trap: nothing has written its col/row when either page sends
+      // this, so it still stands where the whole Movement began, which is the
+      // very reading that caused the bug above. What that position can still
+      // answer honestly is a DISTANCE, and the bound below the loop is that.
+      const landing = { c: Math.floor(cmd.to.col / 3), r: Math.floor(cmd.to.row / 3) };
+      for (const s of cmd.swaps) {
+        // Always found — `swapped` was built from these same entries a few lines
+        // up, and a missing Unit was refused there — but the lookup is what
+        // gives the two tests below a Token to measure, so it is guarded rather
+        // than asserted.
+        const v = swapped.find((x) => x.uid === s.uid);
+        if (!v) return no('That target is not on the board.');
+        // Named for the VICTIM, because the crusher's own Grid is read further
+        // down this same case block under a name of its own. Two bindings called
+        // `at` in one case, meaning two different Units, is the shadow shape that
+        // already left one guard dead in this file while tsc stayed clean.
+        const victimAt = { c: Math.floor(v.col / 3), r: Math.floor(v.row / 3) };
+        if (victimAt.c !== landing.c || victimAt.r !== landing.r) {
+          return no(`${v.label} is not standing in the Grid ${t.label} is entering, so there are no positions for the two of them to exchange (4.3.6).`);
+        }
+        // The other end: the crushed Unit takes the Grid the crusher steps out
+        // of, and the exchange stands in for "Forced Movement of 1 Grid", so it
+        // lands orthogonally adjacent to where the crusher lands. Kept rather
+        // than folded into the test above — that one says WHICH Unit is being
+        // crushed, this one says HOW FAR it may travel, and a sender that got
+        // the victim right can still name a destination across the board.
+        const g = { c: Math.floor(s.to.col / 3), r: Math.floor(s.to.row / 3) };
+        if (Math.abs(g.c - landing.c) + Math.abs(g.r - landing.r) !== 1) {
+          return no(`${v.label} would end up more than one Grid from ${t.label}: an exchange trades places across a single Grid boundary (4.3.6).`);
+        }
+      }
+      // HOW FAR THE CRUSHER MAY HAVE COME, and the line that stops this command
+      // being a teleport. Everything above constrains the two Units against EACH
+      // OTHER — the victim stands in the Grid the crusher enters, the pair end up
+      // one Grid apart, neither lands on a third Unit — so a command that was
+      // merely SELF-CONSISTENT sailed through from anywhere on the board.
+      // DRIVEN before this line existed (round-3 reviewer, 2026-08-19): a Large
+      // Mech standing in Grid(0,0) named a Drone in Grid(8,8) and sent it next
+      // door to Grid(8,7); check() returned ok and apply() put the Mech sixteen
+      // Grids away for no Movement, no Tick and no Action Opportunity, while the
+      // identical `maneuver` to the same Grid was refused. Not reachable from
+      // either page — applyRemote() gates purely on check(), so a stale or
+      // hostile peer is exactly who this reader is for.
+      //
+      // A LEGALITY, the same shape as the Tether leash above rather than a
+      // price. 4.3.6 resolves the Crush as a Unit is "about to enter" the Grid,
+      // so the crusher walked there under its own power, and every step of a
+      // route is one orthogonal Grid costing at least 1 (rules.ts searchMoves) —
+      // so the Grid distance between the two ends of ANY legal Movement is at
+      // most what that Movement was allowed. movementReach is that ceiling.
+      //
+      // It does NOT price the route, and must not try: this reader cannot see
+      // one. The token still stands where the Movement began, the Grids it
+      // walked through have already given way to the Crush, and reachableGrids
+      // run here would be answering about a board that no longer exists. Hence a
+      // bound that holds for every route rather than a test of the route taken.
+      //
+      // WHY IT CANNOT REFUSE A ROUTE EITHER PAGE REALLY DRAWS, which is also why
+      // neither page carries a mirror of this line. rules.ts searchMoves expands
+      // only the four orthogonal neighbours, charges at least 1 a step and
+      // prunes anything dearer than the allowance, and extendPath caps a chained
+      // set of waypoints at `steps - pathCost`. So every Grid either page can
+      // offer as a goal sits at most `steps` Grids from where the Movement
+      // began, and `steps` is `action.range || maneuverRange` on both (main.ts
+      // startMove, matchhud.ts startMovePlan), which is precisely what
+      // movementReach ceilings. Driven against the real reachableGrids over
+      // every allowance from 1 to 8, walking and flying, cluttered and clear,
+      // with the LPA-21 phase-through flag both ways: no goal ever came back
+      // further from the start than the allowance it was drawn with. A copy of
+      // this rule on the pages could only drift away from the one that binds.
+      //
+      // PINNED in commands.test.mjs, "how far the crusher may have come": the
+      // sixteen-Grid command in the geometry block is caught by the ADJACENCY
+      // line before any distance is measured, so this bound was shipped with
+      // nothing defending it and deleting it outright left the suite at exit 0.
+      //
+      // The floor of one Grid is the freeplay DRAG, which is a placement rather
+      // than a Movement: main.ts onMove only offers the exchange when the token
+      // was picked up in the Grid next door, and a sandbox board will happily
+      // drag a Mech whose Chassis is destroyed and whose Maneuver Value is
+      // therefore 0 (3.4.4, FAQ E4). One Grid is also exactly what the exchange
+      // stands in for — "Forced Movement of 1 Grid" — so it can never be too
+      // little.
+      //
+      // NOT an Action Opportunity gate, which was the other half of the report.
+      // Two legitimate senders have no Opportunity to show: the freeplay drag
+      // opens none at all, and a GRANTED Maneuver — Hit and Run (276), which
+      // moves a Mech as its Opportunity ENDS — reaches finishCrush after the
+      // Opportunity is gone, on the networked page where such a gate would bite.
+      // Refusing either is the one thing this reader must not do.
+      const crusherAt = { c: Math.floor(t.col / 3), r: Math.floor(t.row / 3) };
+      const crossed = Math.abs(crusherAt.c - landing.c) + Math.abs(crusherAt.r - landing.r);
+      const reach = Math.max(1, movementReach(data, state, t));
+      if (crossed > reach) {
+        return no(`${t.label} stands ${crossed} Grids from the Grid it is Crushing, and no Movement of its reaches further than ${reach}: a Crush happens as a Unit is about to ENTER the Grid it Crushes (4.3.6).`);
+      }
+      // Deliberately NOT re-checked here: the Action Opportunity and the
+      // Maneuver Tick. A Crush ends a Maneuver *or* a Movement Action (4.3.6),
+      // and only the first spends a Maneuver Tick — the Movement's own
+      // `maneuver` command is where that is settled, on both pages. Charging it
+      // here as well would have check() refuse the very command that ends the
+      // Movement.
+      //
+      // NOTHING BOUNDS REPETITION, and that is RECORDED rather than fixed.
+      // Driven by the round-5 reviewer (2026-08-19): seven chained crushSwaps,
+      // each one Grid and each legal on its own, walked a crusher 10 Grids with
+      // script.opp still null and not a Tick spent. Every hop respects the
+      // ceiling above; the COUNT does not, because this reader is handed one
+      // command at a time and the engine holds no record that a Movement has
+      // happened at all.
+      //
+      // WHY NOT THE OBVIOUS GATE. An Opportunity test is already refused above
+      // for two named senders, and repetition does not rescue it: the freeplay
+      // drag opens no Opportunity to count against, and a Hit and Run (276)
+      // Maneuver arrives after its Opportunity has ended, so a per-Opportunity
+      // counter would read null on exactly the two legitimate cases and bite
+      // nobody else. A per-TICK counter fails for the same reason, since a Crush
+      // that ends a Movement Action spends no Maneuver Tick.
+      //
+      // WHAT WOULD ACTUALLY CLOSE IT is the same missing piece the `from` note
+      // in the `maneuver` case names: the engine has to REMEMBER a Movement
+      // rather than be told about one. A crushSwap would record the Grid the
+      // exchange started in and that a Movement has now ENDED (4.3.6 ends the
+      // Maneuver or the Movement Action outright), the follow-up `maneuver`
+      // would clear it, and a second crushSwap arriving against a live record
+      // would be refused. That is new rules-bearing state, so it owes a
+      // migrateState arm, a normaliseOpportunity arm and a boardFingerprint
+      // field, and it wants its own round of work rather than a line here.
+      //
+      // NOT SHIPPED NOW because the exposure is small and the wrong fix is
+      // expensive: neither page can send a second crushSwap (both send exactly
+      // one, immediately followed by the `maneuver` that records the Movement),
+      // the crusher gains no Action and no Tick by walking, and every hop still
+      // has to find a real victim standing in the Grid it enters with no escape
+      // square, which the occupancy and adjacency lines above already police.
+      // A half-built gate that refused the freeplay drag would be a live
+      // regression traded for a hypothetical one.
+      return ok;
     }
     case 'performAction': {
       const a = findAction(data, state, cmd.uid, cmd.actionId);
@@ -1398,6 +1806,36 @@ function checkActed(
       // is its own command, so this only guards against a free second roll.
       if (mine && !cmd.focused) return no('That unit has already rolled.');
       if (cmd.focused && (!mine || focused)) return no('Focus rerolls a roll that has been made, and only once here.');
+      return ok;
+    }
+    case 'provoke': {
+      // LPA-22 Yoyu, 挑衅 Provoke. `t` is Yoyu, so the actor gate above has
+      // already refused a player answering for the other squad's pilot.
+      const target = state.tokens.find((x) => x.uid === cmd.targetUid);
+      if (!target) return no('That target is not on the board.');
+      const why = provokeWhy(data, t, target);
+      if (why) return no(why);
+      // The VERDICT is not re-judged here, and cannot be: reading the faces
+      // takes dice.json, which the command layer deliberately does not hold --
+      // "Dice ride inside their commands as rolled faces". Exactly the same
+      // line the `applyStatus` that lands a won Electronic Attack sits on. What
+      // IS judged is that the answer belongs to the exchange it claims: the
+      // Counter-roll below, and Yoyu's own seat above.
+      const c = state.script?.counter;
+      if (c) {
+        // Yoyu answers as the RESPONDER (4.11.2, FAQ O5), turning the Mech that
+        // opened the contest. An answer naming any other pair is not this
+        // question.
+        if (c.responderUid !== cmd.uid) return no(`${t.label} is not the Responder of this Counter-roll.`);
+        if (c.initiatorUid !== cmd.targetUid) return no(`${target.label} did not open this Counter-roll.`);
+        if (c.initRoll === null || c.respRoll === null) return no('The Counter-roll is not settled yet.');
+        if (c.provoke) return no('That Counter-roll has already been answered.');
+      }
+      // No `else` refusal: freeplay's ElectronicHelper runs the whole contest
+      // in one panel on one screen and never opens a shared `counter`, so a
+      // board with none is the ordinary freeplay case rather than a stale
+      // client. Its own helper is the gate there, the same way it is the only
+      // gate on the applyStatus that helper sends.
       return ok;
     }
     case 'setCharge': {
@@ -1658,6 +2096,40 @@ function checkActed(
 export function apply(data: GameData, state: GameState, cmd: Command): void {
   applyCommand(data, state, cmd);
   settleTethers(data, state);
+}
+
+// ---------- 4.12.3's second consequence: the Low Profile Token ----------
+//
+// The rule prints TWO consequences in one sentence and this engine shipped only
+// one of them. "Performing any Action that does not have the Silence Keyword
+// causes Units in the Optical Camouflage State to be Revealed AND Low Profile
+// Tokens to be removed" (rules/05_advanced_combat.md 4.12.3, book p.73). Every
+// surface wired the Reveal half; nothing anywhere took the Token off, so a unit
+// that gained one kept it for the rest of the game — an LPA-21 Firefly phased
+// through units forever and every Firing Attack against it counted [Eye] as
+// [Dodge]. units.ts records the gap this closes, above phasesThroughUnits.
+//
+// WHY IT LIVES IN apply() AND NOT BESIDE EITHER PAGE'S REVEAL. The two halves
+// look like one rule but are not the same kind of thing. A Reveal is a PROMPT:
+// the Match Centre's revealsOwed runs at RENDER time and offers a button,
+// freeplay asks in a dialog, and both let a table wave it away as a house rule.
+// This half is automatic, unconditional, and a state mutation — so it belongs
+// in the command every surface already sends, where a mirrored seat replays it
+// from the same command and cannot drift. It also means the Match Centre, the
+// guide and the freeplay board cannot disagree about it, because there is one
+// copy rather than three.
+//
+// THE REMOVAL GOES THROUGH removeStatus's OWN apply rather than filtering
+// `statuses` here. That block also drops the token's `expiring` entry, and a
+// Low Profile Token decays (green, types.ts), so a hand-rolled filter would
+// leave a stale red-face marker behind on a unit no longer carrying the Token.
+// One call is enough: Low Profile is a Hexagon Token and a unit may bear only
+// one (2.5.3), which addStatus enforces on the way in.
+function shedLowProfile(data: GameData, state: GameState, t: Token): void {
+  if (statusCount(t.statuses, 'lowProfile') === 0) return;
+  applyCommand(data, state, {
+    kind: 'removeStatus', seat: t.side, uid: t.uid, targetUid: t.uid, statusId: 'lowProfile',
+  });
 }
 
 function applyCommand(data: GameData, state: GameState, cmd: Command): void {
@@ -2222,11 +2694,55 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       }
       return;
     }
+    case 'crushSwap': {
+      // 4.3.6, and it is ONE mutation on purpose: every token the exchange
+      // touches moves here, so no snapshot the undo ring or the networked
+      // rollback takes can land between the two halves and leave the crusher
+      // standing on the unit it traded places with.
+      for (const s of cmd.swaps) {
+        const v = state.tokens.find((x) => x.uid === s.uid);
+        if (!v) continue;
+        v.col = s.to.col;
+        v.row = s.to.row;
+        // 3.4.4 and FAQ E17: the player who CAUSES a Forced Movement decides the
+        // moved Unit's Facing — E17 settles it for the Taurus Prototype Blink,
+        // and an exchange is Forced Movement like any other, so the crushing
+        // player is asked here exactly as they are for the ordinary Crush shove.
+        if (s.facing !== undefined) v.facing = s.facing;
+      }
+      t.col = cmd.to.col;
+      t.row = cmd.to.row;
+      // The crusher's own Facing is only ever what the player set for the
+      // Movement: 3.4.4 hands out the Facing of the unit being MOVED BY someone,
+      // and nothing turns the Crushing Unit as a consequence of the exchange.
+      if (cmd.facing !== undefined) t.facing = cmd.facing;
+      // No Opportunity accounting, deliberately — see check(). The Movement that
+      // caused this is recorded by its own `maneuver`, which is where the
+      // Maneuver Tick is spent on both pages.
+      return;
+    }
     case 'maneuver': {
-      const from = { col: t.col, row: t.row };
+      const from = cmd.from ?? { col: t.col, row: t.row };
       t.col = cmd.to.col;
       t.row = cmd.to.row;
       if (cmd.facing !== undefined) t.facing = cmd.facing;
+      // 4.12.3: "Maneuver does not benefit from Silence unless otherwise
+      // specified" — Maneuvering, INCLUDING changing facing without Movement,
+      // removes the Low Profile Token. This one command carries both cases: a
+      // pivot arrives with `to` equal to the Grid the unit already stands in,
+      // which is exactly how the Match Centre sends a turn on the spot.
+      //
+      // Judged at the START and the landing grids, the same reading the Reveal
+      // half is given (FAQ O11/O15): an enemy Patrol Eagle's aura strips the
+      // Silence a Stealth Chassis prints (card 100 LM210S — NOT PL29, which
+      // lost the keyword in the v1.021 redesign; see maneuverPrintsSilence in
+      // units.ts), and a unit that walked out of that aura must not
+      // retroactively get its Silence back. `from` is the
+      // pre-move position captured above, spread over the token so the denier
+      // is asked about the unit as it STOOD.
+      if (!maneuverIsSilent(data, state.tokens, t, { ...t, col: from.col, row: from.row })) {
+        shedLowProfile(data, state, t);
+      }
       const o = oppOf(state, cmd.uid);
       // A Movement Action already paid with an Action Tick, and one a card
       // handed out was never charged to the Opportunity at all.
@@ -2235,7 +2751,9 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
         // Actions". A move within that allowance leaves the activation open,
         // so the Drone may still act; anything longer, or a second one, spends
         // it as normal. Measured from where it STOOD, which is why `from` is
-        // taken before the position is written above.
+        // taken before the position is written above — and why a sender that
+        // has already placed the unit, as the Crush exchange has, says so with
+        // `cmd.from` rather than leaving this to measure zero Grids.
         const grids = Math.abs(Math.floor(cmd.to.col / 3) - Math.floor(from.col / 3))
           + Math.abs(Math.floor(cmd.to.row / 3) - Math.floor(from.row / 3));
         const rider = t.kind === 'drone' ? riderOnDrone(data, state.tokens, t) : { preMove: 0 };
@@ -2255,6 +2773,28 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
     case 'performAction': {
       const a = findAction(data, state, cmd.uid, cmd.actionId);
       const o = oppOf(state, cmd.uid);
+      // 4.12.3, the half that is not a Reveal: ANY Action without the Silence
+      // Keyword takes this unit's Low Profile Token off. Deliberately wider
+      // than Maneuver — the rule says Action, and the Firing Attack that makes
+      // the Token worth having is the commonest way to lose it.
+      //
+      // Before the granted return below, because a granted Action is still an
+      // Action performed: a Riposte's free Melee swing is not Silent and the
+      // Token goes with it. Nothing about 4.12.3 asks who paid the Tick.
+      //
+      // PASSIVE AND INTERCEPTION ARE CARVED OUT, and the carve-out is
+      // load-bearing: 4.12.3 exempts both by name, so neither Reveals nor
+      // sheds. Interception needs nothing here — it has its own
+      // spendIntercept/resolveIntercept pair and never reaches this command.
+      // Passive is tested EXPLICITLY rather than left to the senders. No page
+      // sends one today (matchhud filters `isPassive` out of its action list,
+      // the guide's phaseActions skips them, and a Mech's length-less Passive
+      // sends nothing at all), but "no caller does that" is a habit, not a
+      // rule, and the next caller would break the exemption in silence.
+      const passive = a?.type === 'Passive' || a?.speed === 'passive';
+      if (a && !passive && !isSilentAction(data, state.tokens, t, a)) {
+        shedLowProfile(data, state, t);
+      }
       // A granted Action spends its grant HERE, so taking the Action and
       // spending it are one step. Clearing the debt from the panel instead
       // leaves a window in which one Riposte buys several Melee Actions.
@@ -2483,6 +3023,7 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
         respRoll: null,
         initFocused: false,
         respFocused: false,
+        provoke: null,
       };
       return;
     }
@@ -2496,6 +3037,29 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
         c.respRoll = [...cmd.faces];
         if (cmd.focused) c.respFocused = true;
       }
+      return;
+    }
+    case 'provoke': {
+      // The answer is recorded FIRST and whichever way it went, so the far seat
+      // stops waiting on a question that has been answered -- a decline is as
+      // much of an outcome as a switch. Guarded on the pair, because a
+      // Counter-roll that moved on while the answer was in flight is not the
+      // one this answers.
+      const c = sc?.counter;
+      if (c && c.responderUid === cmd.uid && c.initiatorUid === cmd.targetUid && !c.provoke) {
+        c.provoke = cmd.take ? 'taken' : 'passed';
+      }
+      if (!cmd.take) return;
+      const target = state.tokens.find((x) => x.uid === cmd.targetUid);
+      if (!target) return;
+      target.stance = 'offensive';
+      // No Stance lock is written here, and none is needed: 4.1 locks the dial
+      // when a Mech moves or acts, and the Initiator of an Electronic Attack
+      // has already acted -- lockStance ran on its performAction -- so setStance
+      // will refuse to turn it back this Opportunity. Where it has NOT acted
+      // (a Target Tracing Counter-roll opened as a reaction, 174), 4.1 says its
+      // next Opportunity opens with a free choice of Stance anyway, so forcing
+      // a lock here would invent a clause this card does not print.
       return;
     }
     case 'setCharge': {

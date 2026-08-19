@@ -83,6 +83,16 @@ export interface Card {
   flyingOrElevated?: string;
   moving?: number;
   trait?: string;
+  // The publisher's English for that same trait NAME, merged in from
+  // name_overrides.traits at load time. DISPLAY ONLY, and `trait` deliberately
+  // stays the Chinese: mechanicsFor is handed the trait name alongside the
+  // trait text, and swapping the English in there changes what matches.
+  // Measured over all 23 trait-bearing pilots — no Chinese trait name matches a
+  // mechanic on its own, while "Stealth" (LPA-21 匿踪) hits Manifestation
+  // Movement's `stealth` pattern, a rule that card never mentions. So every
+  // reader that PRINTS a name goes through traitName(); every reader that
+  // MATCHES keeps passing `trait`.
+  traitNameEn?: string;
   traitDescription?: LangText;
   // A curator's annotation, NOT a dispatch bus. 16 of the 23 trait-bearing
   // pilots carry one; all seven GOF pilots and XPA-62 do not, and the entries
@@ -424,7 +434,7 @@ export const STATUSES: StatusDef[] = [
     icon: 'LP',
     tint: '#9ad9b5',
     rule: 'Against Firing Attacks, every [Eye] in its Defense Roll counts as a [Dodge] (6.3.3).',
-    note: 'Against Firing Attacks this unit counts every [Eye] in its Defense Roll as a [Dodge] (rulebook 6.3.3). Maneuvering, including a facing-only change, removes the token; Scanning also strips it.',
+    note: 'Against Firing Attacks this unit counts every [Eye] in its Defense Roll as a [Dodge] (rulebook 6.3.3). Performing any Action that does not have the Silence keyword removes the token, and so does Maneuvering, including a facing-only change (4.12.3), so the Firing Attack this protects against is usually the thing that ends it. Passive Actions and Interception do not remove it. A successful Scan strips it too (4.12.4).',
   },
   {
     id: 'highlight',
@@ -782,6 +792,24 @@ export interface CounterRoll {
   respRoll: number[] | null;
   initFocused: boolean;
   respFocused: boolean;
+  // LPA-22 Yoyu's 挑衅 Provoke, and the ONLY answer this exchange holds that is
+  // not a die: null while the offer is still open, then how it was answered.
+  // The printed "may" is a real decision here — forcing an enemy into Offensive
+  // Stance can help them — so it is offered rather than applied, and an offer
+  // needs a place to sit until somebody answers it.
+  //
+  // It lives in shared state rather than in either page's local plan for one
+  // reason: BOTH seats read it. The Initiator's seat must not be able to press
+  // Done and close the Counter-roll while the question is still open on the
+  // other screen, and both must end up printing the same outcome. Whether the
+  // offer is LIVE is derived (see provokeOffer in units.ts) — this records only
+  // the answer, which nothing can derive.
+  //
+  // NOT in boardFingerprint, deliberately, and it is the only field here that
+  // could tempt one: secrecy.ts rule 2 keeps `script` out of the hash whole,
+  // and what this offer actually changes — the Initiator's `stance` — is a
+  // token field that IS hashed. So a drift is caught where it does damage.
+  provoke: 'taken' | 'passed' | null;
 }
 
 export function newScriptState(firstPlayer: Side): ScriptState {
@@ -943,6 +971,15 @@ function normaliseCounter(raw: unknown): CounterRoll | null {
     respRoll: faces(c.respRoll),
     initFocused: !!c.initFocused,
     respFocused: !!c.respFocused,
+    // The FIFTH field of its class, and the fifth whitelist to be taught the
+    // lesson: TOKEN -> migrateState, OPPORTUNITY -> normaliseOpportunity,
+    // COMBAT VIEW -> normaliseCombatView, the defender's own questions inside
+    // it, and now this. A field this rebuild does not name is dropped on every
+    // checkpoint — the host is asked for one every 40 revisions, and a rejoin
+    // or a resync takes one too — so an answered Provoke would come back
+    // unanswered and the offer would reappear on a Counter-roll that had
+    // already settled. Anything but the two written answers reads as open.
+    provoke: c.provoke === 'taken' || c.provoke === 'passed' ? c.provoke : null,
   };
 }
 

@@ -113,7 +113,7 @@ const combatView = {
 // Every value here is deliberately NOT the default, so a field that
 // normaliseScript forgets to carry across fails rather than coincidentally
 // matching what it would have defaulted to.
-const counter = { initiatorUid: 7, responderUid: 9, actionId: 'EWA', initRoll: [0, 3], respRoll: null, initFocused: true, respFocused: false };
+const counter = { initiatorUid: 7, responderUid: 9, actionId: 'EWA', initRoll: [0, 3], respRoll: null, initFocused: true, respFocused: false, provoke: 'taken' };
 const live = { turn: 's2', acted: [7, 8], extraOpps: [8], commanded: [9], freeCommand: [], passed: ['s1'], stage: '2:3', mode: 'hidden', strict: true, commits: { s1: 'deadbeef' }, revealed: ['s2'], seats: { s1: 'local', s2: 'remote' }, opp, oppStack, intercepts, reactions, counter, endDone, oncePerRound, rollback, rollbacks: 3, rollbackCatalog, combat, combatView };
 
 // This fixture has lagged behind ScriptState four times now, each costing a
@@ -144,6 +144,27 @@ check('no counter-roll reads back null', normaliseScript({ ...live, counter: und
 check('a half-formed one is dropped rather than restored', normaliseScript({ ...live, counter: { initiatorUid: 1 } }, 's1').counter, null);
 check('junk faces are filtered out of a roll',
   normaliseScript({ ...live, counter: { ...counter, initRoll: [0, 'x', 3] } }, 's1').counter.initRoll, [0, 3]);
+// ---------- LPA-22 Yoyu's 挑衅 Provoke answer, through a checkpoint ----------
+//
+// THE ASSERTION WHOSE ABSENCE CAUSED ALL FIVE WHITELIST BUGS. normaliseCounter
+// rebuilds this record field by field, and a field it does not name is dropped
+// in silence — on every rejoin, every resync, and the checkpoint the host is
+// asked for every 40 revisions. Dropped, an answered Provoke comes back
+// unanswered: the offer reappears on a Counter-roll that has already settled,
+// and Yoyu's player is asked to turn a Stance they have already turned.
+check('an answered Provoke survives the checkpoint round-trip',
+  normaliseScript(live, 's1').counter.provoke, 'taken');
+check('and a decline survives it too, because a decline closes the question',
+  normaliseScript({ ...live, counter: { ...counter, provoke: 'passed' } }, 's1').counter.provoke, 'passed');
+check('an unanswered offer reads back unanswered',
+  normaliseScript({ ...live, counter: { ...counter, provoke: null } }, 's1').counter.provoke, null);
+// Anything that is not one of the two written answers is an open offer, which
+// is the safe way round: a junk value that read as "answered" would swallow the
+// question rather than ask it twice.
+check('an older save with no Provoke field at all reads back open',
+  normaliseScript({ ...live, counter: { ...counter, provoke: undefined } }, 's1').counter.provoke, null);
+check('and junk in the field reads back open rather than answered',
+  normaliseScript({ ...live, counter: { ...counter, provoke: 'nope' } }, 's1').counter.provoke, null);
 // A half-finished End Phase has to survive a reload, since 3.7 fixes the order.
 check('finished end steps survive', normaliseScript(live, 's1').endDone, endDone);
 check('a missing end list reads back empty', normaliseScript({ ...live, endDone: undefined }, 's1').endDone, []);

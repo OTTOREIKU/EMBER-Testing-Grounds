@@ -35,10 +35,18 @@ const { AttackHelper, data, dice } = await loadCombat('surplusdef');
 console.log('The Surplus round asks the defender again (4.8)\n');
 
 const atk = mech(1, 's1', 'Attacker', 1);
-const def = mech(2, 's2', 'Defender', 3);
+// The defender carries a REAL Torso (172 "Warrior" Battle Core, Armor 5) rather
+// than the harness's bare Mech. It has to: `mech()` equips nothing, so every
+// Part it owns fell through to suggestedDefensePool's min-1 clamp and rolled a
+// single White — and the weapon below carries Armor Piercing 1 (6.2.1), which
+// takes that one die away. The whole flow then answers with an EMPTY roll and
+// every assertion past the first stops meaning anything. Nothing about the
+// Surplus round changed; an unarmoured fixture was simply never a board state.
+const def = { ...mech(2, 's2', 'Defender', 3), mech: { torso: '172' } };
 
 // ZHRA-201 "MR21 Railgun", action _B: Firing, 4 Red, and it carries 毁伤
-// (Mutilation) — one of the three keywords that resolve Surplus Damage.
+// (Mutilation) — one of the three keywords that resolve Surplus Damage. It also
+// carries Armor Piercing 1, which is why the defender above is armoured.
 const card = data.cards.find((c) => c.id === 'ZHRA-201');
 const action = card?.actions?.find((a) => a.id === 'ZHRA-201_B');
 if (!action) throw new Error('ZHRA-201_B is gone from the card data; pick another Mutilation Action');

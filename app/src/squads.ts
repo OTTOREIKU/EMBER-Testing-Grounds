@@ -1,5 +1,5 @@
 import type { GameData } from './data';
-import { actionIconUrl, cardName, FACTION_LABEL, mechPartUrl, missionImageUrl, secondaryImageUrl, setSquadNames, squadLabel, squadName, stancePrintUrl, tabImageUrl, tokenFace, tokenPrintUrl } from './data';
+import { actionIconUrl, cardName, FACTION_LABEL, mechPartUrl, missionImageUrl, secondaryImageUrl, setSquadNames, squadLabel, squadName, stancePrintUrl, tabImageUrl, tokenFace, tokenPrintUrl, traitName } from './data';
 import { MECH_LAYER_ORDER } from './board';
 import { canSpendCommand } from './units';
 import { inspectOnHover as inspectBase, linkMechanics as linkBase, type InspectInfo } from './inspector';
@@ -1117,7 +1117,11 @@ export class SquadTracker {
           sub: `Pilot · ${card.faction ?? ''}`,
           lines: [
             `Link Value ${card.LV ?? 0}: the mech starts with this much Link.`,
-            card.trait ? 'Has a trait ability.' : '',
+            // Named, not just counted. This said "Has a trait ability." while
+            // the only name in the data was Chinese; the publisher's English is
+            // merged in now, so the hover says WHICH one without making the
+            // player open the card to find out.
+            card.trait ? `Trait: ${traitName(card)}.` : '',
             'Click to open this pilot’s card (trait + timing initiative values).',
           ],
         });

@@ -1,1 +1,14 @@
+# Every `_*.ts` in here is GENERATED, with no exceptions, and this file is the
+# one that decides it: a deeper .gitignore overrides a shallower one, so a
+# negation in the repo-root .gitignore would not reach these anyway.
+#
+# `_*.slice.ts` is written by whichever test slices a module in. `_*.entry.ts`
+# is written too — _combatdrive.mjs's loadCombat(name) calls writeFileSync on
+# `_${name}.entry.ts` at the top of EVERY run, before esbuild bundles it. Two
+# lines here used to un-ignore _rejoin.entry.ts and _surplusdef.entry.ts on the
+# grounds that they were hand written and "rewritten by nobody"; both claims
+# were wrong. Measured: delete both, and rejoin.test.mjs still passes 27/27 and
+# surplusdefense.test.mjs 16/16, with both files back on disk afterwards. The
+# only hand-written harness file down here is _combatdrive.mjs itself, which the
+# repo-root .gitignore un-ignores.
 _*.ts

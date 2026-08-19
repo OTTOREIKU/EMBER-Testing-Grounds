@@ -1,5 +1,5 @@
 import './reference.css';
-import { actionIconUrl, boxCoverUrl, cardName, HELP_CARDS, helpCardUrl, TOKEN_PRINT, tokenPrintUrl, factionArtUrl, FACTION_LABEL, isListedBox, loadData, mechPartUrl, missionImageUrl, portraitUrl, secondaryImageUrl, statIconUrl, tabImageUrl, zeroCostReason, type BoxDef, type FactionDef, type GameData, type KeywordDef } from './data';
+import { actionIconUrl, boxCoverUrl, cardName, HELP_CARDS, helpCardUrl, TOKEN_PRINT, tokenPrintUrl, factionArtUrl, FACTION_LABEL, isListedBox, loadData, mechPartUrl, missionImageUrl, portraitUrl, secondaryImageUrl, statIconUrl, tabImageUrl, traitName, zeroCostReason, type BoxDef, type FactionDef, type GameData, type KeywordDef } from './data';
 import { mountCardImage, preloadCardImages, warmAllImagesWhenIdle } from './images';
 import { runFirstVisitPreload } from './preload';
 import { watchForUpdates } from './updates';
@@ -233,8 +233,13 @@ function cardRow(c: Card): string {
   const tacticText = isTactic
     ? ((c.actions ?? []).map((a) => a.description?.en || a.description?.zh || '').find(Boolean) ?? '')
     : '';
+  // The tile NAMES the trait now that there is an English name to print. It
+  // used to say "has a trait ability" and no more, because the only name in the
+  // data was Chinese and a grid of English tiles is the wrong place for it —
+  // and a pilot is picked FOR its trait, so scanning the grid without one meant
+  // opening every card.
   const body = isPilot
-    ? `${c.faction ?? ''}${c.trait ? ' · has a trait ability' : ''}`
+    ? `${c.faction ?? ''}${c.trait ? ` · ${traitName(c)}` : ''}`
     : isTactic
       ? tacticText
       : acts.join(' · ');
@@ -327,18 +332,24 @@ function cardDetail(c: Card): string {
       </div>`;
     })
     .join('');
-  const traitName = c.trait?.trim();
+  // TWO names, and the split is the point. `traitZh` is the card's own Chinese
+  // and is what decides whether there IS a trait and what the mechanics matcher
+  // is fed; `traitShown` is what a reader sees. Merging them would either print
+  // 功率隐匿 in an English detail view or hand "Stealth" to a matcher whose
+  // patterns are Chinese — see Card.traitNameEn.
+  const traitZh = c.trait?.trim();
+  const traitShown = traitZh ? esc(traitName(c)) : '';
   const traitText = c.traitDescription?.en || c.traitDescription?.zh || '';
   // A trait may name a rule rather than a keyword. Onyx says its Mech "may Crush
   // large units", and Crush is a mechanic, so the keyword pass alone left the
   // one word a reader needs unexplained. Actions already spell these out.
-  const traitMechs = mechBlocks(traitText, c.traitDescription?.zh, traitName);
+  const traitMechs = mechBlocks(traitText, c.traitDescription?.zh, traitZh);
   const trait =
-    traitName || traitText
-      ? `<div class="ref-trait${traitName ? '' : ' ref-flavour'}"><b>${
-          traitName ? `Pilot Trait <i>${esc(traitName)}</i>` : 'No trait ability'
+    traitZh || traitText
+      ? `<div class="ref-trait${traitZh ? '' : ' ref-flavour'}"><b>${
+          traitZh ? `Pilot Trait <i>${traitShown}</i>` : 'No trait ability'
         }</b><p>${linkKeywords(traitText).replace(/\n/g, '<br>')}</p>${
-          traitName ? traitMechs : '<p class="ref-note">This pilot has no trait ability. The line above is card flavour text.</p>'
+          traitZh ? traitMechs : '<p class="ref-note">This pilot has no trait ability. The line above is card flavour text.</p>'
         }</div>`
       : '';
   const inBoxes = (c.containedIn ?? [])

@@ -5,7 +5,7 @@ import { linkMechanics } from './inspector';
 import { SQUAD_ORDER, squadLabel } from './data';
 import type { Card, CardAction, DiceData, DiceIcon, DieColor, Duel, DuelIcon, GameRuleEffect, PartSlot, Side, SmokeScreen, TerrainPiece, Token } from './types';
 import { statusCount, STATUSES } from './types';
-import { aaRadarCovers, attackReactionsOf, auraEffectsOn, aurasOn, auraValueOn, automaticShieldFor, blueLightningDodges, earlyWarningCover, coolingBonus, denseArmorByText, eyesAreHeavyHits, pilotDiceBonus, ignoresLowProfile, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, noMeleeBackAttack, missileGuidance, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, denseArmorOn, designationsOn, electronicStrength, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, canAffordFocus, focusIsFree, hiddenByAlliedAura, keepsLinkOnPartLoss, maxLink, pursuesFragile, structureOf, trackingCover, TRACKING_SPOTTERS_NEEDED, pilotCard, pilotIs, repeatersFor, SLOT_LABEL, tetherStrike, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
+import { aaRadarCovers, armorPiercing, armorPiercingNote, attackReactionsOf, auraEffectsOn, aurasOn, auraValueOn, automaticShieldFor, blueLightningDodges, earlyWarningCover, coolingBonus, denseArmorByText, eyesAreHeavyHits, pilotDiceBonus, ignoresLowProfile, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, noMeleeBackAttack, missileGuidance, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, denseArmorOn, designationsOn, electronicStrength, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, canAffordFocus, focusIsFree, hiddenByAlliedAura, keepsLinkOnPartLoss, maxLink, provokeWhy, pursuesFragile, structureOf, trackingCover, TRACKING_SPOTTERS_NEEDED, pilotCard, pilotIs, repeatersFor, SLOT_LABEL, tetherStrike, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
 import { timingOf } from './ticks';
 import { inArc, losNote, protectionFor, rangeBetween } from './rules';
 import type { Command } from './commands';
@@ -703,6 +703,9 @@ export class AttackHelper {
         : `${attacker.label} attacks ${defender.label} with ${what}.`,
       [attacker, defender],
     );
+    // After the declaration, so the removal is read as a consequence of the
+    // shot rather than as a line about nothing.
+    this.noteArmorPiercing();
     this.render();
   }
 
@@ -794,6 +797,9 @@ export class AttackHelper {
       hits: 0,
     };
     if (defender.kind !== 'mech') this.ctx.defensePool = this.suggestedDefensePool('main');
+    // Once per SEQUENCE, not once per Multi-Target declaration: each target
+    // rolls its own defence, so each is told about the removal it is taking.
+    this.noteArmorPiercing();
     this.render();
   }
 
@@ -850,6 +856,25 @@ export class AttackHelper {
     );
   }
 
+  // Armor Piercing, said once as the sequence opens rather than from
+  // suggestedDefensePool -- that runs again on every Designate and every
+  // re-render, and a log that repeated the line four times would read as four
+  // separate removals.
+  //
+  // IT GOES IN THE LOG, not only in the render, and that is the point of it.
+  // The render belongs to the ATTACKER's window; the log is what publishMirror
+  // ships to the defending seat (CombatView.log), so this is the only way the
+  // player whose dice actually shrank is told why. Fragile's note is
+  // render-only and the remote defender never sees its reason -- do not copy
+  // that half of the precedent.
+  private noteArmorPiercing(): void {
+    const c = this.ctx;
+    if (!c) return;
+    const ap = armorPiercing(this.data, c.attacker, c.action);
+    if (ap.total <= 0) return;
+    this.note(armorPiercingNote(ap, c.defender.label), [c.attacker, c.defender]);
+  }
+
   private suggestedDefensePool(slot: string): { white: number; blue: number } {
     const d = this.ctx!.defender;
     const card = this.defenderPartCard(slot);
@@ -861,6 +886,34 @@ export class AttackHelper {
     // Surplus Damage grants the defender no Terrain or Unit Protection (4.8).
     if (!this.ctx!.surplusRound) white += this.ctx!.protection;
     white = Math.max(0, white - statusCount(d.statuses, 'fragile'));
+    // Armor Piercing X (6.2.1): "Target removes X White dice before rolling."
+    // Deliberately the line under Fragile, because it is the SAME operation
+    // from a different source -- a pre-roll removal rather than an attack bonus
+    // -- and the two share their ordering and their floor by sitting together.
+    //
+    // WHAT THE SLOT MEANS, said out loud because it is a ruling and not an
+    // accident: here it pierces Armor-or-Structure and Terrain/Unit Protection,
+    // which are already in `white` above, but NOT the RT-18T defence aura or a
+    // declared Parry, which are added below. The glossary says "removes X dice"
+    // without naming which, so both orderings are readings of it; this one is
+    // Fragile's, which shipped first and is what the Fragile tests pin. The
+    // pool editor below is still live, so a table reading it the other way can
+    // nudge the number -- and the note in the render says what was taken off.
+    //
+    // Clamped at 0 the same way Fragile is: an Action may leave a Part with no
+    // Defense Roll at all.
+    //
+    // AN EARLIER VERSION OF THIS NOTE SAID A ZERO POOL NEEDED FRAGILE IN PLAY AS
+    // WELL. That was wrong and it mattered, because these blocks are the ruling
+    // of record. The min-1 floor is applied to Armor BEFORE this subtraction, so
+    // any Armor Piercing 1 weapon against a Part printing Armor 1 empties the
+    // pool on its own, and 34 cards in the shipped data print Armor 1. A Railgun
+    // shooting a PL1 Standard Chassis is an ordinary board state, not a corner.
+    //
+    // The BEHAVIOUR is right and stays: 6.2.1 says the target removes X White
+    // dice, and removing the only one is what that means. What changes is that
+    // the empty roll is now expected rather than denied, and handled below.
+    white = Math.max(0, white - armorPiercing(this.data, this.ctx!.attacker, this.ctx!.action).total);
     let blue = 0;
     if (d.stance === 'mobility') {
       blue = tokenCards(this.data, d)
@@ -2377,6 +2430,18 @@ export class AttackHelper {
           : '';
       })()}
       ${(() => {
+        // Armor Piercing (6.2.1), said for the same reason Fragile above and
+        // Early Warning below are: the pool has already been adjusted, and a
+        // die that went missing with no explanation is indistinguishable from
+        // an arithmetic bug. The breakdown matters here in a way it does not
+        // for Fragile — a Spike firing a Railgun takes 2 off for two different
+        // reasons, and only one of them is printed on the weapon.
+        const ap = armorPiercing(this.data, c.attacker, c.action);
+        return ap.total
+          ? `<p class="ah-fragile"><i class="btn-ico">🎯</i> ${armorPiercingNote(ap, c.defender.label)} <b>−${ap.total} White</b> is already taken off the pool below.</p>`
+          : '';
+      })()}
+      ${(() => {
         // 164 Early Warning Observation. Said out loud for the same reason the
         // Fragile line above is: the Blue below is already adjusted, and an
         // unexplained die is indistinguishable from an arithmetic bug.
@@ -2894,6 +2959,16 @@ interface EwCtx {
   rerolled: { init: boolean; resp: boolean };
   log: string[];
   done: boolean;
+  // Who took the Counter-roll, kept rather than recomputed: LPA-22 Yoyu's
+  // Provoke offer below hangs off it, and re-tallying in the render would read
+  // dice a Focus reroll has since replaced. Null until Resolve is pressed.
+  initiatorWins: boolean | null;
+  // Yoyu's answer (LPA-22). Local, unlike the Match Centre's, and that is the
+  // whole difference between the two boards here: freeplay runs both sides of
+  // the contest in ONE panel on ONE screen, so there is no second seat that has
+  // to watch the question close. The command it sends is the same one, and
+  // check() in commands.ts is the same gate on both.
+  provoked: 'taken' | 'passed' | null;
 }
 
 export class ElectronicHelper {
@@ -2952,6 +3027,8 @@ export class ElectronicHelper {
       rerolled: { init: false, resp: false },
       log: [],
       done: false,
+      initiatorWins: null,
+      provoked: null,
     };
     const what = action.name.en || action.name.zh || action.id;
     this.note(`${initiator.label} opens ${what} against ${responder.label}.`, [initiator, responder]);
@@ -3188,6 +3265,7 @@ export class ElectronicHelper {
         const b = this.tally(c.respRoll!, c.responder.stance === 'offensive');
         const { initiatorWins: win, why } = resolveCounterRoll(a, b);
         c.done = true;
+        c.initiatorWins = win;
         if (win) {
           const applied = this.applyEffects();
           this.note(
@@ -3201,6 +3279,45 @@ export class ElectronicHelper {
         this.render();
       });
       wrap.appendChild(resolve);
+      return wrap;
+    }
+
+    // LPA-22 Yoyu, 挑衅 Provoke. The Responder's own Counter-roll succeeded, so
+    // Yoyu's player may turn the Mech that opened it into Offensive Stance —
+    // 4.11.2 fires an "on successful Counter-roll" Passive for the Responder
+    // just as readily as for the Initiator.
+    //
+    // OFFERED, not applied, and that is the difference from Pulse, Ion and
+    // Fierce Assault: Offensive Stance is a trade rather than a penalty, so
+    // forcing it on an enemy can HELP them and only their opponent can judge
+    // whether it is worth doing. The panel therefore asks, and both answers
+    // close the question so the row cannot be pressed twice.
+    if (c.initiatorWins === false && c.provoked === null
+      && provokeWhy(this.data, c.responder, c.initiator) === null) {
+      const ask = document.createElement('p');
+      ask.className = 'ah-sum';
+      ask.innerHTML = `<b>${c.responder.label}</b> held the Counter-roll, so Yoyu may switch <b>${c.initiator.label}</b> to Offensive Stance (LPA-22).`;
+      wrap.appendChild(ask);
+      const take = document.createElement('button');
+      take.className = 'ah-primary';
+      take.textContent = `Provoke ${c.initiator.label} into Offensive Stance`;
+      take.addEventListener('click', () => {
+        c.provoked = 'taken';
+        this.onCommand({ kind: 'provoke', seat: c.responder.side, uid: c.responder.uid, targetUid: c.initiator.uid, take: true });
+        this.note(`${c.responder.label} provokes ${c.initiator.label} into Offensive Stance (LPA-22 Yoyu).`, [c.initiator, c.responder]);
+        this.onChanged();
+        this.render();
+      });
+      wrap.appendChild(take);
+      const leave = document.createElement('button');
+      leave.className = 'ah-cancel';
+      leave.textContent = 'Leave its Stance alone';
+      leave.addEventListener('click', () => {
+        c.provoked = 'passed';
+        this.note(`${c.responder.label} leaves ${c.initiator.label}'s Stance alone.`);
+        this.render();
+      });
+      wrap.appendChild(leave);
       return wrap;
     }
 

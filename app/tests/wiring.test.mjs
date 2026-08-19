@@ -36,7 +36,11 @@ console.log('Multiplayer wiring guards\n');
 //
 // Every token field the fingerprint hashes is a shared fact. A page assigning
 // one directly is the bug; the command layer is the only place allowed to.
-const FINGERPRINTED = ['charge', 'intercept', 'ammo', 'partStates', 'statuses', 'mech', 'droneBackpack', 'repairedSlots', 'lastDamagedBy', 'expiring'];
+// `stance` joined the list with LPA-22 Yoyu's 挑衅 Provoke, which is the first
+// rule that lets one squad turn the OTHER squad's dial: both boards now offer
+// that switch, and a page that turned it in place rather than sending the
+// command would desync two clients over which Stance a Mech is defending in.
+const FINGERPRINTED = ['charge', 'intercept', 'ammo', 'partStates', 'statuses', 'mech', 'droneBackpack', 'repairedSlots', 'lastDamagedBy', 'expiring', 'stance'];
 for (const field of FINGERPRINTED) {
   // Confirm the field really is hashed, so this list cannot rot into fiction.
   check(`${field} is in the board fingerprint`, secrecy.includes(field), true);
@@ -287,6 +291,67 @@ check('and the crush ending tows too', /if \(m\.drag\) towDraggedAlly\(/.test(fi
 // left it has been sent, so the tow follows it in both endings.
 check('the tow follows the maneuver that vacated the Grid',
   finishFn.indexOf("kind: 'maneuver'") < finishFn.indexOf('towDraggedAlly('), true);
+
+// ---------- Class 5: the Crush exchange, one rule read the same by both pages ----------
+//
+// 4.3.6 puts the Crush at the moment a Unit is "about to enter a Grid occupied
+// by another Unit", so the crushed Unit takes the Grid the crusher STEPS OUT OF
+// — the second-to-last Grid of the route, one boundary away. Neither page may
+// let rules.ts derive that Grid from the crusher's token: nothing has moved the
+// token yet (animateMove is SVG only, and settle/the commands are the only
+// writers), so it would answer with the Grid the whole Movement BEGAN in. A
+// crusher routed (1,0)->(1,1)->(1,2) sent its victim two Grids off; a freeplay
+// drag sent one sixteen. The geometry itself is pinned in commands.test.mjs;
+// what is pinned HERE is that each page hands the Grid over.
+check('the Match Centre reads the step-out Grid off the route',
+  /const from = m\.path\.length >= 2 \? m\.path\[m\.path\.length - 2\] : null;/.test(finishFn), true);
+check('and hands it to the exchange',
+  /crushExchange\(t, swapped, m\.goal, from,/.test(finishFn), true);
+
+const resolveFn = main.slice(main.indexOf('function resolveCrush(t: Token'), main.indexOf('async function askCrushFacing'));
+check('freeplay resolveCrush was located', resolveFn.includes('settleExchanges'), true);
+check('it is told the step-out Grid rather than deriving one',
+  /function resolveCrush\(t: Token, goal: LargeGrid, victims: CrushVictims, from: LargeGrid \| null,/.test(resolveFn), true);
+check('and hands the same Grid to the exchange',
+  /crushExchange\(t, exchanges\.map\(\(x\) => x\.v\), goal, from,/.test(resolveFn), true);
+const commitFn = main.slice(main.indexOf('function commitMove(): void'), main.indexOf('// Resupply (4.13)'));
+check('freeplay commitMove was located', commitFn.includes('crushTargets'), true);
+// Deliberately NOT pinning the binding's NAME. The first version of this hard-coded
+// `const from = ...`, and it then failed when that binding was renamed to break a
+// shadow — punishing the fix instead of the bug. Capture whatever it is called and
+// assert THAT SAME binding reaches resolveCrush, which is the wiring this is for.
+const stepOutDecl = /const (\w+) = path\.length >= 2 \? path\[path\.length - 2\] : null;/.exec(commitFn);
+check('the guided route reads the step-out Grid off the path', !!stepOutDecl, true);
+check('and hands that same binding to resolveCrush',
+  stepOutDecl ? new RegExp(`resolveCrush\\(t, goal, victims, ${stepOutDecl[1]},`).test(commitFn) : false, true);
+// The drag has no route, so it rules on its own terms: a drop from the next
+// Grid IS the single step 4.3.6 describes, and a drop from further off cannot
+// produce an exchange at all. Nothing is invented either way.
+const dropFn = main.slice(main.indexOf('    onMove(uid, col, row, forced) {'), main.indexOf('    onInspect(info) {'));
+check('freeplay drag-drop was located', dropFn.includes('resolveCrush'), true);
+check('and only exchanges when the drop came from the next Grid',
+  /const from = Math\.abs\(at\.c - goal\.c\) \+ Math\.abs\(at\.r - goal\.r\) === 1 \? at : null;/.test(dropFn), true);
+
+// D2. script.strict defaults to false and perform() only BLOCKS a refusal when
+// strict or networked, so in ordinary freeplay a refused crushSwap is applied
+// anyway — and settleExchanges then narrated a swap the board had made while
+// saying it had not. The refusal is handled here, at the call site, or not at
+// all. One regex on purpose: check, the early return, and only then perform.
+check('freeplay checks the exchange and returns on a refusal BEFORE performing it',
+  /const verdict = check\(data, state, cmd\);[\s\S]*?if \(!verdict\.ok\) \{[\s\S]*?done\(false\);[\s\S]*?\}\s*\n\s*perform\(data, state, cmd\);/.test(resolveFn), true);
+
+// D3. The same Movement must end in the same Grid on both pages. When the
+// crusher cannot fit after all, the Match Centre walks it back to the last Grid
+// of the route that had room; freeplay read the token instead, which recorded
+// the START of the Movement while the animation had walked it forward.
+check('the Match Centre ends a Crush that will not fit at the last Grid with room',
+  /const held = walk\[walk\.length - 1\] \?\? \{ col: t\.col, row: t\.row \};/.test(finishFn), true);
+check('and freeplay now ends it in the same Grid',
+  /const held = walk\[walk\.length - 1\] \?\? \{ col: t\.col, row: t\.row \};[\s\S]*?settle\(held\.col, held\.row\);/.test(commitFn), true);
+// The one settle that may still read the token is the exchange's, and only
+// because the crushSwap has already moved it there.
+check('the crusher\'s own position is settled from the token only after it was placed',
+  /if \(placed\) \{\s*\n\s*settle\(t\.col, t\.row\);/.test(commitFn), true);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exitCode = fail ? 1 : 0;

@@ -302,9 +302,14 @@ const combat = src('combat.ts');
 // declaration. There are exactly three doors an attack is designated through.
 check('the swap fires at exactly three sites',
   (combat.match(/this\.shieldSwap\(/g) ?? []).length, 3);
+// The character budget has to cover openSequence's whole body and no more: the
+// first half proves it reaches multiCandidates, the second proves no shieldSwap
+// call lies between. Widened from 2200 to 2600 when Armor Piercing added its
+// per-sequence note (combat.ts noteArmorPiercing) — measured span 2396, so 2600
+// still stops well short of the next shieldSwap call site.
 check('openSequence gets no swap of its own',
-  /private openSequence\([\s\S]{0,2200}?private multiCandidates/.test(combat)
-    && !/private openSequence\([\s\S]{0,2200}?shieldSwap/.test(combat), true);
+  /private openSequence\([\s\S]{0,2600}?private multiCandidates/.test(combat)
+    && !/private openSequence\([\s\S]{0,2600}?shieldSwap/.test(combat), true);
 check('start() carries the redirect flag',
   /start\(\s*\n\s*attacker: Token,[\s\S]{0,320}?redirect = true,/.test(combat), true);
 check('and it is switched off by Explosion and Interception as well',

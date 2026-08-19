@@ -383,7 +383,11 @@ interface ActionTranslations {
 interface NameOverrides {
   cards?: Record<string, { en: string }>;
   actions?: Record<string, { en: string }>;
-  traits?: Record<string, { en: string }>;
+  // `en` is the trait DESCRIPTION and `name` is the trait NAME, and an entry may
+  // carry either alone: 20 of the 22 publisher names correct nothing but the
+  // name, and XPA-62 corrects nothing but the text. Both optional for that
+  // reason — see the merge below, which is guarded per field.
+  traits?: Record<string, { en?: string; name?: string }>;
   boxes?: Record<string, { en: string }>;
 }
 
@@ -549,7 +553,11 @@ export async function loadData(): Promise<GameData> {
     const cn = names.cards?.[c.id];
     if (cn) c.name = { ...c.name, en: cn.en };
     const tn = names.traits?.[c.id];
-    if (tn) c.traitDescription = { ...c.traitDescription, en: tn.en };
+    // PER FIELD, not per entry. This used to assign `en: tn.en` for any entry
+    // at all, which blanked the English description of every pilot whose
+    // override corrects only the NAME — 20 of the 22 publisher names do.
+    if (tn?.en) c.traitDescription = { ...c.traitDescription, en: tn.en };
+    if (tn?.name) c.traitNameEn = tn.name;
     for (const a of c.actions ?? []) {
       const an = names.actions?.[a.id];
       if (an) a.name = { ...a.name, en: an.en };
@@ -644,6 +652,21 @@ export async function loadData(): Promise<GameData> {
 export function cardName(c: Card | undefined): string {
   if (!c) return '?';
   return c.name.en || c.name.zh || c.id;
+}
+
+// The pilot trait's name AS PRINTED FOR A READER: the publisher's English where
+// we have it, the card's Chinese where we do not, never blank. Written once and
+// beside cardName for the same reason cardName is written once — five surfaces
+// print this (panel, reference summary, reference detail, inventory compare,
+// part picker) and a per-page fallback is how two of them end up disagreeing.
+//
+// XPA-62 is the one trait-bearing pilot with no publisher English, so the
+// Chinese arm is live rather than defensive.
+//
+// NOT for mechanicsFor. See Card.traitNameEn in types.ts: the matcher keys on
+// the Chinese, and it is handed `c.trait` at every call site on purpose.
+export function traitName(c: Card | undefined): string {
+  return (c?.traitNameEn || c?.trait || '').trim();
 }
 
 function cleanName(s: string): string {

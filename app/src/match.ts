@@ -248,7 +248,9 @@ const relay = new Relay(api.base, {
     if (!data) return;
     // Where the unit stood before their command lands, so the board can walk
     // it across rather than teleport it once the move has been applied.
-    const moving = cmd.kind === 'maneuver' || cmd.kind === 'forceMove' ? cmd.uid : null;
+    // crushSwap moves the crushed Units too; only the crusher is walked across,
+    // because the exchange is a swap of places rather than a route anyone took.
+    const moving = cmd.kind === 'maneuver' || cmd.kind === 'forceMove' || cmd.kind === 'crushSwap' ? cmd.uid : null;
     const walker = moving === null ? undefined : state.tokens.find((t) => t.uid === moving);
     const from = walker ? { col: walker.col ?? 0, row: walker.row ?? 0 } : null;
     const verdict = applyRemote(data, state, cmd);
@@ -653,6 +655,16 @@ let pendingDefense: ((faces: { color: DieColor; face: number; selected: boolean 
 // A defence pool as raw faces — server dice in a room so both players watch
 // them land, local otherwise (the solo harness).
 async function rollDefensePool(white: number, blue: number): Promise<{ color: DieColor; face: number; selected: boolean }[]> {
+  // An EMPTY pool is answered here rather than sent. Armor Piercing makes this
+  // ordinary rather than exotic: the min-1 Armor floor is applied before the
+  // subtraction, so any Armor Piercing 1 weapon against a Part printing Armor 1
+  // leaves nothing to roll, and 34 cards in the shipped data print Armor 1.
+  //
+  // Asking the dice server for zero dice is a round trip whose only possible
+  // answer is the empty array, and the defender would sit watching a roll that
+  // cannot land. Answering immediately keeps the handshake identical for every
+  // caller: they still receive faces, there are simply none of them.
+  if (white <= 0 && blue <= 0) return [];
   const pool: Record<string, number> = {};
   if (white) pool.white = white;
   if (blue) pool.blue = blue;

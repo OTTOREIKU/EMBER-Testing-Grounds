@@ -1,5 +1,5 @@
 import type { Card, LangText } from './types';
-import { assetUrl, isListedBox } from './data';
+import { assetUrl, isListedBox, traitName } from './data';
 import { expandGlyphs } from './glyphs';
 
 const KEY = 'ember-inventory-v1';
@@ -135,13 +135,16 @@ export class Inventory {
     return this.facChoice ? all.filter((b) => (b.faction ?? []).includes(this.facChoice)) : all;
   }
 
-  private boxContents(key: string): { id: string; slot: string; name: string; n: number; trait?: string }[] {
-    const out: { id: string; slot: string; name: string; n: number; trait?: string }[] = [];
+  private boxContents(key: string): { id: string; slot: string; name: string; n: number; trait?: string; traitName?: string }[] {
+    const out: { id: string; slot: string; name: string; n: number; trait?: string; traitName?: string }[] = [];
     for (const c of this.cards) {
       const entry = (c.containedIn ?? []).find((e) => e.box === key);
       if (!entry) continue;
-      // Only pilots, and only the English text: the trait NAME is Chinese-only
-      // in the card data, so printing it would put 功率加大 in an English list.
+      // Only pilots, and the NAME now leads the line: it used to be text only,
+      // because the trait name in the card data was Chinese and printing it
+      // would have put 功率加大 in an English list. The publisher's English is
+      // merged in at load time now, so the short label a player actually
+      // compares by is available and traitName() supplies it.
       // The leading bullet is the card's own typography, not part of the rule.
       //
       // A pilot with no trait NAME still carries a traitDescription, but it is
@@ -149,16 +152,15 @@ export class Inventory {
       // generic Scouts and Shock Troops all have one. Printing that as a trait
       // would fill the comparison with lines that are not rules at all, so the
       // name is what decides, exactly as the reference's detail view does.
-      const trait =
-        c.category === 'pilot' && (c.trait ?? '').trim()
-          ? (c.traitDescription?.en ?? '').trim().replace(/^[•·]\s*/, '')
-          : '';
+      const named = c.category === 'pilot' && (c.trait ?? '').trim();
+      const trait = named ? (c.traitDescription?.en ?? '').trim().replace(/^[•·]\s*/, '') : '';
       out.push({
         id: c.id,
         slot: SLOT_SHORT[c.type ?? ''] ?? CATEGORY_SHORT[c.category] ?? '',
         name: c.name.en || c.name.zh || c.id,
         n: entry.quantityPerBox,
         trait: trait || undefined,
+        traitName: named ? traitName(c) || undefined : undefined,
       });
     }
     const rank = (s: string) => {
@@ -287,8 +289,12 @@ export class Inventory {
                       // A pilot is chosen for its trait, so comparing two boxes'
                       // pilots means comparing traits. Printed under the name in
                       // both columns rather than in the hover preview, which
-                      // only ever shows one at a time.
-                      i.trait ? `<span class="ip-trait">${expandGlyphs(esc(i.trait))}</span>` : ''
+                      // only ever shows one at a time. The publisher's trait
+                      // NAME leads it, because that is the handle two columns
+                      // are actually scanned by; the rule follows.
+                      i.trait || i.traitName
+                        ? `<span class="ip-trait">${i.traitName ? `<b>${esc(i.traitName)}</b>${i.trait ? ' ' : ''}` : ''}${expandGlyphs(esc(i.trait ?? ''))}</span>`
+                        : ''
                     }</li>`,
                 )
                 .join('')

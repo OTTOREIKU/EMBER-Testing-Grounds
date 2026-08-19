@@ -103,8 +103,17 @@ function render(info: InspectInfo | null, pinned: boolean): void {
   }
 }
 
-export function showInspect(info: InspectInfo | null): void {
+// `at` is what the FLOATING box positions itself beside, and without it that box
+// renders visible and then `place()` bails on `!anchor`, leaving the words parked
+// whereever the last hover left them. The board page never passes one and never
+// needs to: it has a docked #inspect-box, `floating` stays false, and place()
+// returns early anyway — so this is additive for every existing caller.
+//
+// Board tokens are SVG elements, which is why the type is the union rather than
+// HTMLElement: attachInspect hands over the badge group itself.
+export function showInspect(info: InspectInfo | null, at?: HTMLElement | SVGElement | null): void {
   if (pinnedKey) return;
+  if (at) anchor = at;
   render(info, false);
 }
 

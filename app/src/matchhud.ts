@@ -2,12 +2,13 @@ import { ammoHolder, clearDroneCommands, missionZones, readyCommands, seedComman
 import { askIssuer, asterBlockers, offerCoordination, offerHarpyDrag, runAster } from './commandpick';
 import type { GameData } from './data';
 import { actionIconUrl, cardName, isAerial, secondaryImageUrl, squadLabel, unitSize } from './data';
+import { showInspect } from './inspector';
 import { Board, footprint, snapPlacement, type BoardCallbacks } from './board';
 import { printedDeployment, resolveZoneSetData } from './overlays';
-import { transformOffer, anyStartTiming, opportunityBonusOn, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, ripostePart, martyrdomOwed, targetTracingOn, riderOnDrone, hasFlexibleTiming, coordinationFor, coordinationOnOpportunityEnd, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, electronicOrigins, loanedParts, phasesThroughUnits, minesLayable, minesOwed, pilotCard, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, maneuverIsSilent, maneuverSilenceDenier, type AuraSource, canActivateCamo, chargeableSlots, electronicStrength, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, projectileReach, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
+import { transformOffer, anyStartTiming, opportunityBonusOn, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, ripostePart, martyrdomOwed, targetTracingOn, riderOnDrone, hasFlexibleTiming, coordinationFor, coordinationOnOpportunityEnd, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, electronicOrigins, loanedParts, phasesThroughUnits, minesLayable, minesOwed, pilotCard, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, maneuverIsSilent, maneuverSilenceDenier, type AuraSource, canActivateCamo, chargeableSlots, electronicStrength, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, projectileReach, provokeOffer, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
 import { mountDuel, playDuel, resolveCounterRoll, tallyCounter } from './combat';
 import { tacticFitsPhase, tacticSpec, tacticTargets, type TacticCtx } from './tactics';
-import { inContact, canStandIn, attackDirection, crushTargets, dissipationFor, extendPath, knockbackPath, largeGridOf, LG, losBetween, losNote, pathCost, protectionFor, rangeBetween, reachableGrids, standingSpot, type LargeGrid } from './rules';
+import { inContact, canStandIn, attackDirection, crushExchange, crushExchangeSpots, crushTargets, dissipationFor, extendPath, knockbackPath, largeGridOf, LG, losBetween, losNote, pathCost, protectionFor, rangeBetween, reachableGrids, standingSpot, type LargeGrid } from './rules';
 import { breakAwayCost, breakAwayNote, canBeForceMoved, tetherCap, tetherNote } from './melee';
 import { factionColour, linkIcon, squadColour } from './icons';
 import { iconSvg } from './dice';
@@ -17,7 +18,7 @@ import { deployable, deployTurn, deploymentComplete, firstPlayerFrom, normaliseS
 import { actionPhaseComplete, activationOrder, alive, canAct, droneActionWhy, droneMoveWhy, eligibleUnits, isLoopPhase, loopComplete, nextActivation, nextTurn, onExtraOpportunity, type InitLookup, type LoopPhase } from './loop';
 import { actionIdOf, canActivate, canAttackMode, canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed, type TickVerdict } from './ticks';
 import { escortTargets, gameResult, normaliseTasks, scoreMain, scoreRiders, scoreSecondary, settleControl, unpaidLines, zoneCentreGrid, type Designation, type ScoreLine, type ScoreResult, type SecondaryScoring } from './tasks';
-import { automaticShieldFor, canAffordFocus, focusIsFree, stationaryAdjusted, twoHandedUse, tokenCards, vpRiderFor } from './units';
+import { armorPiercing, armorPiercingNote, automaticShieldFor, canAffordFocus, focusIsFree, stationaryAdjusted, twoHandedUse, tokenCards, vpRiderFor } from './units';
 
 // The in-match HUD (Match Centre part 3a): one question at a time, per seat.
 // Everything here renders from the shared GameState and issues the same
@@ -647,6 +648,7 @@ function commitMove(ctx: HudCtx): void {
       terrain: victims.terrain.map((p) => p.id),
       queue: victims.units.map((v) => v.uid),
       stops,
+      exchanges: [],
       free,
       granted,
       shoveActionId: shoveId,
@@ -699,6 +701,24 @@ function fitsZone(ctx: HudCtx, side: Side, at: { col: number; row: number }, siz
 
 function boardCallbacks(): BoardCallbacks {
   return {
+    // Board hovers had nowhere to go on this page: the Board builds the text for
+    // every token badge and every terrain piece and fires it at onInspect, and
+    // the Match Centre simply never supplied one, so all of it was thrown away.
+    // Freeplay has done this since it was written (main.ts, showInspect).
+    //
+    // No mode flag is needed. inspector.ts picks its own: index.html carries a
+    // docked #inspect-box, match.html does not, so this page gets the floating
+    // popout automatically, the same one the keyword chips use. `at` is the
+    // hovered element, which is what the floating box positions itself beside.
+    //
+    // Text only, deliberately, and it cannot be otherwise: InspectInfo carries
+    // { title, sub, lines } with no image channel at all. A card image stacked
+    // under a text panel is the pairing this app already refuses elsewhere via
+    // `floating: false`, and a status Token is not a card, so there is nothing
+    // here for it to compete with.
+    onInspect(info, at) {
+      showInspect(info, at);
+    },
     onSelect(uid) {
       const ctx = hudRef;
       if (!ctx) return;
@@ -1553,6 +1573,16 @@ function defensePanel(ctx: HudCtx): string {
   const target = s.tokens.find((t) => t.uid === call.targetUid);
   const a = attacker && actionOn(ctx, attacker, call.actionId);
   const pool = `${call.white} White${call.blue ? ` + ${call.blue} Blue` : ''}`;
+  // Armor Piercing (6.2.1) is the one adjustment this panel HAS to explain.
+  // `call.white` arrived over the wire already reduced — combat.ts took the
+  // dice off before callDefense was sent — so without this the defending player
+  // is simply handed a smaller number than their Armor and told to roll it.
+  // Every other term in the pool is either visible on their own card or is a
+  // Token they can see; this one lives on the ENEMY's weapon.
+  const ap = attacker && a ? armorPiercing(ctx.data, attacker, a) : null;
+  const apNote = ap && ap.total
+    ? `<p class="tp-dim">${esc(armorPiercingNote(ap, target?.label ?? 'Your unit'))} Those dice are already off the number above.</p>`
+    : '';
   // When the attacker's window is mirrored on this screen, the roll button
   // lives in it — everything about the attack in one place. The turn panel
   // only points there. The button stays HERE when no mirror was published,
@@ -1564,6 +1594,7 @@ function defensePanel(ctx: HudCtx): string {
         <p class="tp-note">${mirrored
           ? `The combat window has the attack — your defence roll (<b>${esc(pool)}</b>) is in it.`
           : `Roll your defence: <b>${esc(pool)}</b>. Both players see the dice land, and the attack resolves once they do.`}</p>
+        ${apNote}
       </div>
       <div class="tp-foot">${mirrored ? '' : `<button class="bigbtn" data-act="rolldefense">🎲 Roll ${esc(pool)}</button>`}</div>`;
 }
@@ -2532,17 +2563,41 @@ function counterPanel(ctx: HudCtx): string {
     .map((o) => `<button class="rowwide" data-ewfocus="${o.t.uid}">Focus with ${esc(o.t.label)}<span class="ct">${focusIsFree(ctx.data, o.t) ? 'free · Will to Survive' : `1 Link · ${o.t.link} left`}</span></button>`)
     .join('');
   const winner = v?.initiatorWins ? init : resp;
-  const iOwn = mine(ctx, init.side);
+  // LPA-22 Yoyu's 挑衅 Provoke: the Responder held, so Yoyu's player MAY turn
+  // the Mech that opened this into Offensive Stance (4.11.2 — an "on successful
+  // Counter-roll" Passive fires for either role). Offered on the same footing
+  // as the Initiator's own Apply row above, and after the verdict for the same
+  // reason Focus is: a later Focus reroll can still move the verdict, and this
+  // panel treats both answers the same way rather than inventing an order the
+  // card does not print.
+  const provoked = v ? provokeOffer(ctx.data, s.tokens, c, v.initiatorWins) : null;
+  const iProvoke = !!provoked && mine(ctx, resp.side);
+  // The Initiator's seat must not be able to close the Counter-roll out from
+  // under an open question, so while it stands their panel waits like any other
+  // half-answered exchange here.
+  const iOwn = provoked ? iProvoke : mine(ctx, init.side);
+  const provokeNote = c.provoke === 'taken'
+    ? `<p class="tp-note">${esc(resp.label)} provokes ${esc(init.label)} into Offensive Stance (LPA-22 Yoyu).</p>`
+    : c.provoke === 'passed'
+      ? `<p class="tp-dim">${esc(resp.label)} let ${esc(init.label)} keep its Stance (LPA-22 Yoyu).</p>`
+      : provoked
+        ? `<p class="tp-note">Yoyu held: ${esc(resp.label)} may switch ${esc(provoked.label)} to Offensive Stance, or leave it alone. Forcing the Stance can HELP them, so it is a choice, not an effect.</p>`
+        : '';
   return head(iOwn ? 'Your move' : 'Waiting', v?.initiatorWins ? 'The Counter-roll succeeds' : 'The Counter-roll fails', sub, iOwn)
     + `<div class="tp-body">${board}
         <p class="tp-note">${line}</p>
         ${v ? `<p class="tp-dim">Lightning ${v.a.lightning}–${v.b.lightning}, Light Hit ${v.a.light}–${v.b.light}. A tie on both goes to the Initiator (4.11.2).</p>` : ''}
         <p class="tp-dim">${esc(winner.label)} won this Counter-roll, so any "on successful Counter-roll" Passive it carries triggers. That works for the Responder too.</p>
+        ${provokeNote}
         ${focusRows ? `<div class="sect2" style="margin-top:10px">Reroll with Focus</div><p class="tp-dim">1 Link, once each, and the verdict is re-read from the new dice.</p>${focusRows}` : ''}
       </div>
-      <div class="tp-foot">${iOwn && v?.initiatorWins
-        ? `<button class="bigbtn" data-ewapply="1">Apply ${esc(name)} to ${esc(resp.label)}</button><button class="bigbtn ghost2" data-act="ewclose" style="margin-top:6px">Done</button>`
-        : '<button class="bigbtn" data-act="ewclose">Done</button>'}</div>`;
+      <div class="tp-foot">${iProvoke
+        ? `<button class="bigbtn" data-provoke="take">Switch ${esc(provoked!.label)} to Offensive Stance</button><button class="bigbtn ghost2" data-provoke="pass" style="margin-top:6px">Leave its Stance alone</button>`
+        : provoked
+          ? ''
+          : iOwn && v?.initiatorWins
+            ? `<button class="bigbtn" data-ewapply="1">Apply ${esc(name)} to ${esc(resp.label)}</button><button class="bigbtn ghost2" data-act="ewclose" style="margin-top:6px">Done</button>`
+            : '<button class="bigbtn" data-act="ewclose">Done</button>'}</div>`;
 }
 
 // ---------- Black Boxes (rulebook 5.3.1) ----------
@@ -2754,12 +2809,20 @@ function placeDroppedBox(ctx: HudCtx, c: number, r: number): void {
 // A Large Unit may end its Movement in a Grid holding smaller Units and
 // Destructible Terrain, and everything in there gives way: the terrain is
 // destroyed, each Unit is Force-Moved 1 Grid with the CRUSHING player choosing
-// where, one with nowhere to go swaps places with the crusher, and one that
-// cannot be Force-Moved at all is destroyed instead.
+// where, one with nowhere to go EXCHANGES POSITIONS with the crusher, and one
+// that cannot be Force-Moved at all is destroyed instead — unless it is a
+// Barricade, which FAQ E6/M13 puts out of reach of a Crush entirely and
+// rules.ts crushTargets refuses before any of this is offered.
 //
 // The victims are cleared before the crusher lands, which is the order freeplay
 // uses — moving the crusher in first would make the swap case place a unit into
 // the Grid it is being pushed out of.
+//
+// The EXCHANGE is settled last for the same reason. A victim with no escape is
+// noted here and shifted off the queue, and only finishCrush turns the whole set
+// into a single crushSwap: the crusher must not land while anything is still
+// standing in the Grid it is entering, and one command has to carry every token
+// that moves or a snapshot between two of them leaves a half-swapped board.
 
 let crushPlan: {
   uid: number;
@@ -2768,7 +2831,12 @@ let crushPlan: {
   queue: number[];
   stops: { col: number; row: number }[];
   // A picked escape grid waiting on the facing choice (3.4.4, FAQ L6).
-  pendingSpot?: { col: number; row: number; c: number; r: number; facing?: Facing };
+  // `exchange` marks the 4.3.6 swap instead: there is no Grid to pick, because
+  // the crushed Unit takes the one the crusher is vacating, but the crushing
+  // player still chooses its Facing.
+  pendingSpot?: { col: number; row: number; c: number; r: number; facing?: Facing; exchange?: boolean };
+  // The crushed Units that had nowhere to go, with the Facing chosen for each.
+  exchanges: { uid: number; facing?: Facing }[];
   free?: boolean;
   granted?: boolean;
   shoveActionId?: string;
@@ -2821,28 +2889,64 @@ function advanceCrush(ctx: HudCtx): void {
     }
     const out = crushEscapes(ctx, v, m.goal);
     if (!out.length) {
-      // Nowhere to go: the two swap, which is the crusher's Grid as it stands
-      // now — it has not moved yet.
+      // 4.3.6: "If NONE of the Grids within Range of that Forced Movement can
+      // be entered, the crushed Unit instead EXCHANGES POSITIONS with the
+      // Crushing Unit." Only the Facing is a choice here — the Grid is the one
+      // the crusher is vacating — so the panel goes straight to it and the
+      // exchange itself is settled in finishCrush, once the rest of the Grid
+      // has given way and every mover can travel as one command.
       //
-      // KNOWN GAP, pre-existing and NOT introduced by LPA-23: `s.tokens` still
-      // holds the crusher, and standingSpot ignores only ONE uid, so the
-      // crusher's own 3x3 footprint blocks every spot in its Grid and this
-      // swap can never find one. The branch is effectively dead on both pages
-      // and the crush becomes a no-op. LPA-23 Onyx makes it far more reachable,
-      // because a LARGE victim needs a whole free 3x3 to escape into — so it is
-      // recorded here rather than fixed inside a pilot-trait pass, which would
-      // change how every existing Crush resolves on both boards.
-      const swap = standingSpot(Math.floor(crusher.col / 3), Math.floor(crusher.row / 3), v.size, v.aerial, terrainOf(ctx), s.tokens, v.uid);
-      if (swap) {
-        ctx.send({ kind: 'forceMove', seat: crusher.side, uid: crusher.uid, targetUid: v.uid, to: swap });
-        ctx.noteNow(`${v.label} had nowhere to go, so it swaps places with ${crusher.label}.`);
+      // THE GRID NAMED HERE IS THE ONE THE CRUSHER STEPS OUT OF, read exactly
+      // as finishCrush reads it. `Math.floor(crusher.col / 3)` used to stand in
+      // its place — the same expression the round before deleted from rules.ts,
+      // and wrong for the same reason: nothing has written col/row yet, so it
+      // answers with the Grid the whole Movement BEGAN in.
+      //
+      // HONEST ABOUT ITS REACH, because the guard directly below narrows it: an
+      // exchange is only ever opened when the step-out Grid has no room for the
+      // crushed Unit, and the only thing that can be filling it while the route
+      // is still legal is the crusher's own 3x3 body — i.e. a route one Grid
+      // long, where the two expressions agree. Measured by driving this function
+      // over 13,312 routes x walls x blockers x victim sizes: 216 exchanges
+      // opened, 0 of them from a Grid the crusher was not already standing in.
+      // So this is not covering a live wrong-Grid case today; it is here because
+      // it is what the line MEANS, and because the panel and finishCrush must
+      // read the Grid from one place or they will drift apart again.
+      const from = m.path.length >= 2 ? m.path[m.path.length - 2] : null;
+      // AND WHETHER THERE IS AN EXCHANGE TO ASK ABOUT AT ALL. crushExchangeSpots
+      // is the victim half of the reader finishCrush runs, so a `no` here is the
+      // same `no` that would come back after the facing question — and a
+      // question the engine has already decided to refuse is not a question.
+      // On a multi-Grid route this is the common answer rather than the rare
+      // one: the step-out Grid is one of the neighbours crushEscapes just tested
+      // and found full, and the crusher is not standing in it to be the reason.
+      // The Movement itself still happened and still pays, exactly as freeplay
+      // charges it — it stops short one Grid on, which is a Movement, not a
+      // refusal.
+      const room = from && crushExchangeSpots(crusher, [...swappedSoFar(ctx, m), v], m.goal, from, terrainOf(ctx), ctx.state.tokens);
+      if (!from || !room) {
+        ctx.noteNow(from
+          ? `${v.label} has nowhere to go, and ${gridName(from.c, from.r)}, the Grid ${crusher.label} is stepping out of, has no room for it either, so there are no positions to exchange (4.3.6).`
+          : `${v.label} has nowhere to go, and ${crusher.label} has no Grid next door to trade for: an exchange trades places across a single Grid boundary (4.3.6).`);
+        m.queue.shift();
+        continue;
       }
-      m.queue.shift();
-      continue;
+      m.pendingSpot = { col: v.col, row: v.row, c: from.c, r: from.r, exchange: true };
+      board?.clearHighlights();
+      return;
     }
     return; // this one needs the player to choose
   }
   finishCrush(ctx);
+}
+
+// The Units already promised an exchange, in the order they were promised it —
+// the same order finishCrush hands to crushExchange, because each one takes a
+// cell of the step-out Grid and the next is measured around it.
+function swappedSoFar(ctx: HudCtx, m: { exchanges: { uid: number }[] }): Token[] {
+  return m.exchanges
+    .map((x) => ctx.state.tokens.find((y) => y.uid === x.uid))
+    .filter((x): x is Token => !!x);
 }
 
 function finishCrush(ctx: HudCtx): void {
@@ -2853,13 +2957,95 @@ function finishCrush(ctx: HudCtx): void {
   const t = ctx.state.tokens.find((x) => x.uid === m.uid);
   const last = m.stops[m.stops.length - 1];
   if (!t || !last) { ctx.refresh(); return; }
+  const terrain = terrainOf(ctx);
+  // Where the Movement started. Read BEFORE anything is sent, because the
+  // exchange below places the crusher itself and the `maneuver` that records
+  // the Movement would otherwise measure zero Grids travelled.
+  const began = { col: t.col, row: t.row };
+  const swapped = swappedSoFar(ctx, m);
+  // 4.3.6's exchange. crushExchange takes BOTH sides out of the occupancy list,
+  // which is what the old fallback could not do, and answers null only when the
+  // pair genuinely will not fit.
+  //
+  // The Grid the crusher STEPS OUT OF is the second-to-last Grid of the route,
+  // and it is handed over rather than left to be derived: nothing has moved the
+  // token yet — animateMove is SVG only and the maneuver below is what finally
+  // writes col/row — so reading the crusher here answers with the Grid the
+  // whole Movement began in. Routed (1,0)->(1,1)->(1,2) that sent the victim to
+  // (1,0), two Grids away. A route with no second-to-last Grid cannot produce a
+  // legal exchange at all, so it falls to the stops-short branch below.
+  const from = m.path.length >= 2 ? m.path[m.path.length - 2] : null;
+  const pair = swapped.length && from ? crushExchange(t, swapped, m.goal, from, terrain, ctx.state.tokens) : null;
   // The Grid is clear now, so the crusher takes the spot it can actually stand
-  // in rather than the one computed before anything gave way.
-  const spot = standingSpot(m.goal.c, m.goal.r, t.size, t.aerial, terrainOf(ctx), ctx.state.tokens, t.uid) ?? last;
+  // in rather than the one computed before anything gave way. No snapPlacement
+  // fallback: that helper does no occupancy and no terrain test, so falling back
+  // to it is exactly how the crusher used to land on a unit that never moved.
+  const spot = swapped.length
+    ? pair?.crusher
+    : standingSpot(m.goal.c, m.goal.r, t.size, t.aerial, terrain, ctx.state.tokens, t.uid);
+  // Nothing printed lets two units share a Large Grid, so the Crush stops short
+  // of it rather than landing on top of one, and the Movement ends where the
+  // route last had room. Said out loud: the silence is what made the old failure
+  // impossible to diagnose at the table.
+  //
+  // Hoisted out of the `!spot` branch because a crushSwap that check() REFUSES
+  // has to end the same way. It used to return after the send, recording no
+  // maneuver at all, so the Match Centre left the crusher in the Grid the
+  // Movement started in while freeplay left it at `held`, one Grid on — the two
+  // pages disagreeing about where the same Movement finished. Low reach today
+  // (after crushExchange has tested terrain and occupancy the only refusal left
+  // is the PDLH-202 leash, which moveOptsFor already caps), but "cannot fit" and
+  // "was refused" are the same outcome for the player and must read the same.
+  const walk = m.stops.slice(0, -1);
+  const held = walk[walk.length - 1] ?? { col: t.col, row: t.row };
+  const stopShort = (why: string): void => {
+    board?.animateMove(t.uid, walk, () => {
+      ctx.send({ kind: 'maneuver', seat: t.side, uid: t.uid, to: held, free: m.free, granted: m.granted, via: walk, facing: m.facing });
+      ctx.noteNow(why);
+      if (m.drag) towDraggedAlly(ctx, t, m.path, m.drag);
+      offerMinesOn(ctx, t, m.path, m.steps, m.flying);
+      offerBoxesOn(ctx, t.uid, m.path);
+      if (m.shoveActionId) startShove(t.uid, m.shoveActionId);
+      ctx.refresh();
+    });
+  };
+  if (!spot) {
+    stopShort(swapped.length
+      ? `${swapped.map((v) => v.label).join(' and ')} had nowhere to go, and there is no room to exchange places with ${t.label} either, so the Crush stops short of ${gridName(m.goal.c, m.goal.r)} and the Movement ends here (4.3.6).`
+      : `${t.label} still cannot fit into ${gridName(m.goal.c, m.goal.r)} now the Crush is done, so it stops short and its Movement ends here (4.3.6).`);
+    return;
+  }
   const stops = [...m.stops.slice(0, -1), spot];
   board?.animateMove(t.uid, stops, () => {
-    ctx.send({ kind: 'maneuver', seat: t.side, uid: t.uid, to: spot, free: m.free, granted: m.granted, via: stops, facing: m.facing });
-    ctx.noteNow(`${t.label} crushes into ${gridName(m.goal.c, m.goal.r)}, and its Movement ends there (4.3.6).`);
+    if (pair) {
+      // ONE command for every token that moves. Split into a maneuver and a
+      // nudge it would leave a board on which the crusher stands on the unit it
+      // is trading places with, and both the undo ring and the networked
+      // rollback take their snapshots between commands.
+      const verdict = ctx.send({
+        kind: 'crushSwap',
+        seat: t.side,
+        uid: t.uid,
+        to: spot,
+        facing: m.facing,
+        swaps: pair.victims.map((v) => ({ uid: v.uid, to: v.to, facing: m.exchanges.find((x) => x.uid === v.uid)?.facing })),
+      });
+      // A refused exchange leaves everything standing, so the note must not
+      // claim it happened — and the maneuver below must not then walk the
+      // crusher into a Grid that never gave way. It ends where a Crush that
+      // would not fit ends, which is what freeplay does with the same verdict.
+      if (!verdict.ok) {
+        stopShort(`${t.label} could not exchange places with ${swapped.map((v) => v.label).join(' and ')}: ${verdict.why} The Crush stops short of ${gridName(m.goal.c, m.goal.r)} and the Movement ends here (4.3.6).`);
+        return;
+      }
+      ctx.noteNow(`${swapped.map((v) => v.label).join(' and ')} had nowhere to go, so ${swapped.length === 1 ? 'it exchanges' : 'they exchange'} positions with ${t.label} (4.3.6). Its Movement ends there.`);
+    }
+    // The Movement itself is recorded either way, and this is where the Maneuver
+    // Tick is spent — crushSwap deliberately charges nothing, because a Crush
+    // can end a Movement Action just as easily as a Maneuver. `from` is only
+    // sent when the exchange has already placed the unit.
+    ctx.send({ kind: 'maneuver', seat: t.side, uid: t.uid, to: spot, free: m.free, granted: m.granted, via: stops, facing: m.facing, from: pair ? began : undefined });
+    if (!pair) ctx.noteNow(`${t.label} crushes into ${gridName(m.goal.c, m.goal.r)}, and its Movement ends there (4.3.6).`);
     // After the crusher has landed, exactly as on the plain settle: the Grid it
     // vacated is only free once it has actually left it.
     if (m.drag) towDraggedAlly(ctx, t, m.path, m.drag);
@@ -2890,8 +3076,16 @@ function confirmCrushed(ctx: HudCtx): void {
   const crusher = m ? ctx.state.tokens.find((x) => x.uid === m.uid) : undefined;
   const p = m?.pendingSpot;
   if (!m || !v || !crusher || !p) return;
-  ctx.send({ kind: 'forceMove', seat: crusher.side, uid: crusher.uid, targetUid: v.uid, to: { col: p.col, row: p.row }, facing: p.facing });
-  ctx.noteNow(`${crusher.label} crushes ${v.label}, Force-Moved to ${gridName(p.c, p.r)}.`);
+  if (p.exchange) {
+    // The 4.3.6 exchange travels in finishCrush's single crushSwap, so all this
+    // step records is the Facing the crushing player chose (3.4.4, FAQ E17).
+    // Sending it now would move the crushed Unit into a Grid the crusher has not
+    // left yet.
+    m.exchanges = [...m.exchanges, { uid: v.uid, facing: p.facing }];
+  } else {
+    ctx.send({ kind: 'forceMove', seat: crusher.side, uid: crusher.uid, targetUid: v.uid, to: { col: p.col, row: p.row }, facing: p.facing });
+    ctx.noteNow(`${crusher.label} crushes ${v.label}, Force-Moved to ${gridName(p.c, p.r)}.`);
+  }
   m.pendingSpot = undefined;
   m.queue.shift();
   advanceCrush(ctx);
@@ -2909,7 +3103,10 @@ function crushPanel(ctx: HudCtx): string {
     const opts = (['N', 'E', 'S', 'W'] as const)
       .map((lbl, i) => `<button class="rowbtn${p.facing === i ? ' on' : ''}" data-crushface="${i}">${lbl}${v.facing === i ? ' ·' : ''}</button>`)
       .join('');
-    return head('Your move', `Crush: which way does ${esc(v.label)} face?`, `Force-Moved to ${gridName(p.c, p.r)} — you choose the facing too (3.4.4).`, true)
+    const where = p.exchange
+      ? `Nowhere to go, so it exchanges positions with ${esc(crusher.label)} in ${gridName(p.c, p.r)} (4.3.6). You choose the facing (3.4.4).`
+      : `Force-Moved to ${gridName(p.c, p.r)}. You choose the facing too (3.4.4).`;
+    return head('Your move', `Crush: which way does ${esc(v.label)} face?`, where, true)
       + `<div class="tp-body">
           <div class="dialrow"><span class="nm">Facing</span><div class="btnrow">${opts}<button class="rowbtn${p.facing === undefined ? ' on' : ''}" data-crushface="">leave</button></div></div>
         </div>
@@ -3319,9 +3516,17 @@ function attackPanel(ctx: HudCtx): string {
       // choice is this list. Rows are only ever disabled on ✕ blocked line of
       // sight, and a unit in the way obstructs without blocking.
       const shield = automaticShieldFor(ctx.data, s.tokens, by, t, a);
+      // Armor Piercing (6.2.1), on the row rather than only in the combat
+      // window: it is the same class of disclosure the Protection bit above is
+      // — what this shot is worth against THIS target — and a Spike's grant is
+      // the half a player cannot read off the weapon card at all. Constant
+      // across the rows of one Action, but so is Protection when the board is
+      // open, and splitting the two would be the odd choice.
+      const ap = armorPiercing(ctx.data, by, a);
       const bits = note.split(' · ').concat(
         prot.white ? [`+${prot.white} White ${prot.white === 1 ? 'die' : 'dice'} of Protection`]
           : prot.note && !blocked ? [prot.note] : [],
+        ap.total ? [`Armor Piercing ${ap.total}: −${ap.total} White off their roll${ap.granted ? ' (Spike adds 1)' : ''}`] : [],
         shield ? [`⤳ Automatic Shield: ${shield.shield.label} takes this shot (FAQ A12)`] : []);
       return `<button class="rowwide targrow${bad ? ' warn' : ''}"${blocked ? ' disabled' : ''} data-attacktarget="${t.uid}">
         <span class="tgname">${esc(t.label)}</span>
@@ -4576,8 +4781,15 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     // One roll per call: the button dies the moment it is pressed, so a double
     // click cannot answer twice while the first roll is still in the air.
     (el as HTMLButtonElement).disabled = true;
+    // The button was disabled a line above so the click cannot answer twice, so
+    // a rejection here would leave the defender holding a dead button and the
+    // attacker waiting on a roll that is never coming. Re-arm and say so.
     void ctx.rollDefense(call.white, call.blue).then((faces) => {
       ctx.send({ kind: 'answerDefense', seat: me(), faces });
+      ctx.refresh();
+    }).catch(() => {
+      (el as HTMLButtonElement).disabled = false;
+      ctx.noteNow('The dice did not come back. Nothing was recorded, so roll again.');
       ctx.refresh();
     });
   });
@@ -4794,6 +5006,23 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     }
     ctx.refresh();
   });
+  // LPA-22 Yoyu, 挑衅 Provoke. Sent by YOYU's seat, naming the Initiator it
+  // turns — both halves of the answer travel, because a decline has to close
+  // the question on the other screen too.
+  on('[data-provoke]', (el) => {
+    const c = ensureScript(s).counter;
+    const resp = c ? s.tokens.find((x) => x.uid === c.responderUid) : undefined;
+    const init = c ? s.tokens.find((x) => x.uid === c.initiatorUid) : undefined;
+    if (!c || !resp || !init) { ctx.refresh(); return; }
+    const take = el.dataset.provoke === 'take';
+    const verdict = ctx.send({ kind: 'provoke', seat: resp.side, uid: resp.uid, targetUid: init.uid, take });
+    ctx.noteNow(verdict.ok
+      ? take
+        ? `${resp.label} provokes ${init.label} into Offensive Stance (LPA-22 Yoyu).`
+        : `${resp.label} leaves ${init.label}'s Stance alone.`
+      : `${resp.label} cannot provoke ${init.label}: ${verdict.why}`);
+    ctx.refresh();
+  });
   on('[data-act="ewclose"]', () => { ctx.send({ kind: 'clearCounterRoll', seat: me() }); ctx.refresh(); });
   on('[data-tactic]', (el) => {
     const [side, id] = el.dataset.tactic!.split(':');
@@ -4899,8 +5128,10 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     if (!m || !v) { advanceCrush(ctx); ctx.refresh(); return; }
     const out = crushEscapes(ctx, v, m.goal);
     // The auto path completes the whole placement, facing left as it stands.
+    // With no escape Grid there is nothing to pick FOR the player: advanceCrush
+    // opens the 4.3.6 exchange and its facing question instead.
     if (out.length) { placeCrushed(ctx, out[0].c, out[0].r); confirmCrushed(ctx); }
-    else { m.queue.shift(); advanceCrush(ctx); ctx.refresh(); }
+    else { advanceCrush(ctx); ctx.refresh(); }
   });
   on('[data-act="smokestop"]', () => finishSmokePlan(ctx));
   on('[data-reactgo]', (el) => answerReaction(ctx, el.dataset.reactgo!, true));

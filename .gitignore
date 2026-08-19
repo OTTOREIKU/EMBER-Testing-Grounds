@@ -8,12 +8,26 @@ Thumbs.db
 # Editor and tooling config, not part of the released tool.
 .claude/
 
-# Test slices. Each suite writes its subject module to one of these and imports
-# it, so they are build output and are rewritten on every run.
+# Test harness output. Every `_*.ts` under app/tests is generated: the slices a
+# suite writes to drive a module, and the esbuild ENTRY POINTS, which
+# _combatdrive.mjs's loadCombat(name) writes with writeFileSync at the top of
+# every run. There is no exception, and app/tests/.gitignore says the same thing
+# closer to the files.
+#
+# EXACTLY ONE harness file under `_` is hand written — _combatdrive.mjs, the DOM
+# shim and esbuild loader rejoin.test.mjs and surplusdefense.test.mjs import —
+# and it is un-ignored below. An earlier pass here claimed three were, and that
+# the two .entry.ts files "are rewritten by nobody"; both claims were wrong.
+# Measured against a clean `git checkout-index` export: with _combatdrive.mjs
+# present and the two entry files DELETED, rejoin is 27/27 and surplusdefense
+# 16/16 and both entry files are back on disk afterwards; with _combatdrive.mjs
+# deleted, ERR_MODULE_NOT_FOUND before a single assertion runs.
 app/tests/_*.ts
-# Generated harness output too: the surplus/rejoin tests esbuild-bundle the
-# real modules to drive them, and those bundles are build artefacts, not source.
+# The bundles those entry points are built into are build artefacts too.
 app/tests/_*.mjs
+# The one negation that is real. Nothing deeper ignores .mjs, so this is the
+# line that decides it.
+!app/tests/_combatdrive.mjs
 
 # Cached responses from the publisher's card API (tools/sync_official.mjs).
 .cache/

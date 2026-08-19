@@ -1,7 +1,7 @@
 import { DEFAULT_BOARD } from './boards';
 import type { GameData } from './data';
 import { cardName, faceOf, isAerial, isBarricade, isFlyingBase, isMine, isTetherFace, isUnfolded, transformFaces, unfoldsInto, unitSize } from './data';
-import type { ExtraTick, Card, CardAction, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, TerrainPiece, TetherLink, Timing, Token } from './types';
+import type { ExtraTick, Card, CardAction, CounterRoll, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, TerrainPiece, TetherLink, Timing, Token } from './types';
 import { LEGACY_SIDE, normaliseScript, statusCount, TIMINGS } from './types';
 import { normaliseSetup } from './setup';
 import { isMeleeFiring, lockersOf } from './melee';
@@ -598,30 +598,40 @@ export function silenceDenied(data: GameData, tokens: Token[], t: Token): AuraSo
   return aurasOn(data, tokens, t).find((s) => s.kinds.includes('silence_denied'));
 }
 
-// ---------- Why only half of Silence can be denied yet ----------
+// ---------- What Silence denies, and where both halves land ----------
 //
-// ONLY HALF OF 4.12 IS DENIED, and knowingly. Silence is two things: the Action
-// does not break Optical Camouflage, and the unit KEEPS its Low Profile Token
-// while performing it.
+// Silence is TWO things: the Action does not break Optical Camouflage, and the
+// unit KEEPS its Low Profile Token while performing it (4.12.3). Both halves
+// are live now. This comment used to record the second one as unbuilt and is
+// kept, rewritten, because two earlier attempts at it were wrong in ways worth
+// not repeating — the first said "no reader turns a printed 低特征 into a
+// status", which is false (`lowProfile` is fully modelled: declared in types.ts
+// with green decay, printed faces in data.ts TOKEN_PRINT, counted by the attack
+// helper for the [Eye]->[Dodge] swap); the second said the gap was narrower
+// than it was.
 //
-// The second half is a no-op here, but NOT for the reason this comment used to
-// give ("no reader turns a printed 低特征 into a status"), which is false and
-// was checked before being rewritten: `lowProfile` is a fully modelled status —
-// declared in types.ts with green decay, printed token faces in data.ts
-// TOKEN_PRINT, counted by the attack helper for the [Eye]->[Dodge] swap, and
-// listed by the play guide's hidden-unit sweep.
+// WHERE THE TWO HALVES LIVE, because they are not in the same place and the
+// difference is deliberate. The Reveal is a PROMPT — the freeplay board and the
+// Match Centre both ask, and a table may wave it away — so it sits at each
+// page's own call site (main.ts settle/designate, matchhud revealsOwed,
+// playguide performActionRow). The Token removal is automatic and a mutation,
+// so it rides in the command: commands.ts shedLowProfile, called from the apply
+// of `maneuver` and `performAction`. Both halves read THIS block for the
+// Silence question, which is the point — there is one Silence reader.
 //
-// The real reason is narrower still, and the second attempt at this comment got
-// it wrong too. Rules DO remove a Low Profile Token today: Stabilize System,
-// Tactics Card 277 System Repair and entering Optical Camouflage all shed one —
-// but every one of those keys on `shape: 'hexagon'`, never on the name, so they
-// are indifferent to Silence and always were.
+// THE HEXAGON-SHAPED REMOVALS ARE NONE OF SILENCE'S BUSINESS, and never were.
+// Stabilize System, Tactics Card 277 System Repair and entering Optical
+// Camouflage each shed a Low Profile Token, but every one of them keys on
+// `shape: 'hexagon'` rather than on the name, so Silence does not reach them
+// and must not be added to them.
 //
-// What is missing is the ONE removal Silence exists to prevent: no Movement,
-// facing change or Scan takes the Token off. The status note in types.ts already
-// promises it ("Maneuvering, including a facing-only change, removes the token").
-// Whoever implements THAT is who has to gate it on Silence, and on this aura
-// denying it — the hexagon-shaped removals above are none of Silence's business.
+// STILL MISSING, and it is the Scan half rather than this one: 4.12.4 says a
+// successful Scan removes a Low Profile Token, and nothing performs that. The
+// Scan Common Action carries the rule in its printed text (data/common_actions
+// .json COMMON_SCAN) and the play guide reads that text out, but no command
+// applies it — the counter-roll resolves and the Token stays. Whoever builds it
+// needs no Silence gate at all: Scan is itself `silence: true`, which is FAQ
+// I18 keeping the SCANNER hidden, and says nothing about its target.
 
 // Silence as the CARD prints it, before any aura has a say. Split out so a
 // Reveal can name the aura as the REASON: an Action that never carried Silence
@@ -650,10 +660,20 @@ export function actionSilenceDenier(
   return actionPrintsSilence(a) ? silenceDenied(data, tokens, t) : undefined;
 }
 
-// A Maneuver is Silent only while a Part granting Silence survives — the PL29
-// Stealth Chassis carries the keyword on the card itself, and FAQ I2 destroys
-// the exemption with the Part: a facing change on a dead Stealth Chassis is a
-// non-Silence action and Reveals.
+// A Maneuver is Silent only while a Part granting Silence survives — a Stealth
+// Chassis carries the keyword on the card itself, and FAQ I2 destroys the
+// exemption with the Part: a facing change on a dead Stealth Chassis is a
+// non-Silence action, Reveals, and sheds a Low Profile Token.
+//
+// THE CARD TO REACH FOR IS 100 LM210S, NOT PL29, and this comment used to say
+// PL29 — which was true when it was written and is not now. The publisher's GoF
+// parts list v1.021 REDESIGNED card 180 into the PL29 All-terrain Chassis,
+// "losing Silence and gaining a Jump", and data/stat_overrides.json carries
+// that as `keywords: []`. Since applyStats REPLACES the array, a PL29 Mech
+// prints no Silence in the shipped data at all: it Reveals and sheds like any
+// other. Exactly two Chassis still grant it, 100 and its trial model 250, and
+// tests/lowprofile.test.mjs pins that pair so a data refresh that drops the
+// last one cannot quietly make this whole function unreachable.
 function maneuverPrintsSilence(data: GameData, t: Token): boolean {
   return tokenCards(data, t).some(({ slot, card }) =>
     (t.partStates[slot as PartSlot | 'main'] ?? 'intact') !== 'destroyed'
@@ -1374,6 +1394,100 @@ export function coolingBonus(
   return out;
 }
 
+// ---------- Armor Piercing X (rulebook 6.2.1, book p.92) ----------
+//
+// "Target removes X [White] dice before rolling (defense dice removed
+// pre-roll)." That makes it Fragile's twin rather than an attack bonus -- a
+// pre-roll subtraction from the DEFENCE pool -- and it is wired exactly there,
+// one line under Fragile in combat.ts suggestedDefensePool.
+//
+// READ THE PRINTED LINE, NOT THE KEYWORD. This is the trap on this keyword and
+// it is the opposite of Intercept's. Every carrier lists Armor Piercing as a
+// bare placeholder with a LITERAL X in it: Parts print
+// {key:'穿甲X', en:'Armor Piercing X'} and Actions print {inline:'穿甲X'}.
+// There is no number in either, so the shape interceptCapacity uses above --
+// where 拦截3 really is printed on the keyword -- would match the keyword here
+// and read X as nothing at all. The value lives ONLY in the Action's
+// description ("穿甲1" / "Armor Piercing 1").
+//
+// The description is also the only COMPLETE source, and the two cards that
+// prove it fail in opposite directions. ZHRA-202_B (MR24 Power Shot) prints
+// "· 穿甲1 · 狙击 · 静默" and carries an EMPTY action keywords array, so a
+// keyword reader drops it outright; 032 R-20 (L) is the mirror image, carrying
+// {inline:'穿甲X'} on the Action while its Part-level keywords list omits the
+// keyword. Reading the description covers both with no special case.
+//
+// THREE SPELLINGS, all on real cards. 043_A prints "Armor Piercing" and
+// ZHRA-101_B prints "Armour Piercing" -- the same class of publisher
+// inconsistency as the "Cmmand Token" typo recorded above -- and ZHDR-106_A
+// (Ballista Single Shot) carries NO English description at all, only 穿甲1 and
+// 装甲貫通1. English is tried first because printed English outranks the
+// Chinese-derived text where the editions disagree, then Chinese, then
+// Japanese, so a missing translation falls through rather than zeroing X.
+//
+// 徹甲 is deliberately NOT matched. ZHLA-201's Mortar launches a "PK3
+// センサーフューズド徹甲弾1発" and ZHAM-003 is that shell; both would score a
+// phantom Armor Piercing 1 off the DIGIT that follows. Neither card carries the
+// keyword -- they only carry 穿甲 inside the shell's NAME -- and both are pinned
+// as non-carriers in tests/armorpiercing.test.mjs.
+function armorPiercingPrinted(a: CardAction): number {
+  for (const text of [a.description?.en, a.description?.zh, a.description?.jp]) {
+    const m = /(?:Armou?r\s*Piercing|穿甲|装甲貫通)\s*(\d+)/i.exec(text ?? '');
+    if (m) return Number(m[1]);
+  }
+  return 0;
+}
+
+// What an Action pierces, split so the log can say where each die came from --
+// a defender whose White silently shrinks reads it as an arithmetic bug, and
+// "Armor Piercing 2" with no breakdown is barely better when only 1 is printed.
+export interface ArmorPiercing {
+  total: number;
+  // The value printed on the Action's own description line.
+  printed: number;
+  // Added by the pilot's trait rather than by the weapon. 0 for every Mech that
+  // is not carrying FPA-02.
+  granted: number;
+}
+
+// FPA-02 Spike, 鹰眼 Eagle Eye: "When performing Firing Action, gain Armor
+// Piercing 1." (zh 执行射击动作时获得穿甲1; the jp adds 常に, "always".)
+//
+// Dispatched on the CARD ID through pilotIs, the shipped house pattern -- see
+// the long note over pilotIs for why a trait-text regex is never safe here.
+//
+// FIRING ONLY, and the card says so in all three languages: a Spike swinging a
+// Melee weapon, throwing a Part or resolving a Tactic pierces nothing.
+//
+// STACKING RULING, which the printed keyword does not settle: a Spike firing an
+// MR14 gets Armor Piercing 2, not 1. THEY ADD. "Gain Armor Piercing 1" is the
+// language of an addition rather than of a state a unit is either in or not,
+// the 6.2.1 glossary entry carries no non-stacking clause, and the effects in
+// this file that DO cap themselves say so in as many words (164 Early Warning
+// Observation prints "This effect does not stack"). Nothing here prints it, so
+// nothing here caps it. The reading is deliberately said OUT LOUD in the log
+// line combat.ts prints -- "1 printed + 1 from Spike" -- so a table that reads
+// it the other way can see what the app did and nudge the pool by hand.
+export function armorPiercing(data: GameData, attacker: Token, a: CardAction): ArmorPiercing {
+  const printed = armorPiercingPrinted(a);
+  const granted = a.type === 'Firing' && pilotIs(data, attacker, 'FPA-02') ? 1 : 0;
+  return { total: printed + granted, printed, granted };
+}
+
+// The sentence both boards print for it. One home because it is said in three
+// places -- the attacker's combat window, the Match Centre's target picker and
+// the defending seat's turn panel -- and a breakdown that disagreed between
+// them would be worse than the silence this replaced.
+export function armorPiercingNote(ap: ArmorPiercing, defender: string): string {
+  const how = ap.granted && ap.printed
+    ? ` (${ap.printed} printed + ${ap.granted} from FPA-02 Spike's Eagle Eye, which add)`
+    : ap.granted
+      ? " (from FPA-02 Spike's Eagle Eye)"
+      : '';
+  return `Armor Piercing ${ap.total}${how}: ${defender} removes ${ap.total} White `
+    + `${ap.total === 1 ? 'die' : 'dice'} before rolling (6.2.1).`;
+}
+
 // ---------- Riposte / Reposte (050 FCC-12 Grappler, ZHLA-202 M4 Combat Claw) ----------
 //
 // "On a Successful Parry with this part, the Attacker must immediately end the
@@ -1652,14 +1766,17 @@ export function auraEffectsOn(data: GameData, tokens: Token[], t: Token): Set<st
 // the Token half would under-grant an MES-Beacon Firefly, and rules/05:218 says
 // the aura kind cannot be Scanned off, so the two genuinely differ.
 //
-// KNOWN OVER-GRANT, and it is not this reader's to fix: nothing in this engine
-// removes a Low Profile Token on Movement or a facing change, even though
-// rules/05_advanced_combat.md:204 and the status note in types.ts both promise
-// it (the long comment above hasLowProfileSource's neighbours records that gap
-// and who has to gate its removal on Silence). Until that ships, a Firefly that
-// ever gains a Low Profile Token phases through units for the rest of the game.
-// The Camouflage half has no such hole: the reveal-on-movement sweeps exist on
-// both boards.
+// THE OVER-GRANT THIS USED TO CARRY IS FIXED, and the shape of the fix matters
+// to anyone reading this predicate. Until 4.12.3's second consequence was wired
+// (commands.ts shedLowProfile), nothing removed a Low Profile Token on Movement
+// or a facing change, so a Firefly that ever gained one phased through units for
+// the rest of the game. Now a non-Silence Maneuver or Action sheds the Token and
+// this reader stops returning true on the next board it is asked about.
+//
+// The AURA half genuinely never expires and that is correct, not a leftover: an
+// aura grants the KEYWORD rather than a Token (rules/05:218, FAQ Q3/J2), so
+// there is nothing to remove and a Firefly standing in an MES-Beacon's ring
+// phases through units for as long as it stands there.
 export function phasesThroughUnits(data: GameData, tokens: Token[], t: Token): boolean {
   if (!pilotIs(data, t, 'LPA-21')) return false;
   if (statusCount(t.statuses, 'camouflage') > 0) return true;
@@ -3085,6 +3202,85 @@ export function pursuesFragile(data: GameData, attacker: Token, defender: Token 
   if (attacker.kind !== 'mech' || !defender) return false;
   if (!pilotIs(data, attacker, 'LPA-24')) return false;
   return statusCount(defender.statuses, 'fragile') > 0;
+}
+
+// LPA-22 Yoyu, 挑衅 Provoke.
+//   zh " 当本机电子对抗投骰成功时，可使对方机甲切换为攻击姿态。"
+//   en " When Electronic Counter Roll is successful, may switch the Responder
+//       mech to Offensive Stance."
+//   jp "本機が電子戦対抗ロールに成功した場合、対抗ロールを行った敵機甲を攻撃態勢へ変更させられる。"
+//
+// THE RULING (OTTO, 2026-08-19). Yoyu is the RESPONDER, and when Yoyu's own
+// Electronic Counter Roll succeeds the INITIATING enemy Mech may be switched to
+// Offensive Stance.
+//
+// 电子对抗投骰 maps exactly onto "Electronic Counter Roll" -- ZPA-38 Firewatch
+// prints the same phrase in zh against the same phrase in en, which fixes the
+// mapping off a second card rather than off a guess. FAQ O5 then calls it the
+// roll a unit makes "passively ... being targeted by Electronic Warfare", so it
+// is the RESPONDER's roll, and zh's 本机 ("this unit") puts Yoyu there. zh's
+// 对方机甲 -- "the other party's Mech" -- names the attacker as the target, and
+// jp says it again more plainly still: 対抗ロールを行った敵機甲, the enemy Mech
+// that CONDUCTED the counter-roll.
+//
+// The printed English "the Responder mech", read strictly, points back at Yoyu
+// itself: a 21-point pilot flipping ITSELF into Offensive Stance after a
+// successful defence is pure downside, and the opposite of a trait named
+// Provoke. Treated as a translation slip for 对方, "the other party". FAQ I25
+// makes "Responder" a defined term of the game, which is what makes a
+// translator reaching for it plausible in the first place.
+//
+// A Responder-triggered ability is legal in the first place because 4.11.2 says
+// so outright: an "on successful Counter-roll" Passive "triggers whenever that
+// Unit wins a counter-roll, regardless of whether it was Initiator or
+// Responder". FAQ G4 backs it from the other side -- a Responder may spend Link
+// on a Focus Reroll, so it is an active participant and not merely a target.
+//
+// Returns null when Yoyu may switch that Mech, and the reason when it may not,
+// the way droneActionWhy answers. One function so that check() and the two
+// boards cannot drift: the same sentence gates the command and explains a
+// greyed-out row.
+export function provokeWhy(data: GameData, responder: Token, initiator: Token): string | null {
+  if (!pilotIs(data, responder, 'LPA-22')) return `${responder.label} is not piloted by Yoyu.`;
+  // 对方机甲 -- the other party's MECH. A Drone plays the Stance printed on its
+  // card and has no dial to turn, which is the same line setStance holds.
+  if (initiator.kind !== 'mech') return 'Only a Mech has a Stance to switch. A Drone plays the one printed on its card.';
+  if (initiator.side === responder.side) return 'Provoke turns an ENEMY Mech, never an ally.';
+  if ((initiator.partStates?.torso ?? 'intact') === 'destroyed') return 'A destroyed Mech has no Stance to change.';
+  // 4.1.1: leaving Shutdown Stance takes a Reboot, and nothing on this card
+  // buys one. Provoke can push a Mech into Offensive Stance; it cannot wake it.
+  if (initiator.stance === 'shutdown') return `${initiator.label} is Shut Down, and leaving Shutdown Stance takes a Reboot (4.1.1).`;
+  if (initiator.stance === 'offensive') return `${initiator.label} is already in Offensive Stance.`;
+  return null;
+}
+
+// The same trait as an OFFER on an open Counter-roll: the enemy Mech Yoyu may
+// switch, or null when there is nothing to ask.
+//
+// `initiatorWins` is the caller's to supply and is deliberately not derived
+// here. Reading the dice needs dice.json, and the command layer holds only the
+// cards -- "Dice ride inside their commands as rolled faces" is the rule
+// commands.ts opens with. Each surface therefore asks this with the verdict it
+// already computed for its own panel, which is the same verdict on both because
+// both derive it from tallyCounter and resolveCounterRoll over the faces in
+// this very record.
+export function provokeOffer(
+  data: GameData,
+  tokens: Token[],
+  c: CounterRoll,
+  initiatorWins: boolean,
+): Token | null {
+  // Answered once and once only: `provoke` is what a checkpoint carries back,
+  // so a re-offer after a resync would be the same question twice.
+  if (c.provoke) return null;
+  if (c.initRoll === null || c.respRoll === null) return null;
+  // "When Electronic Counter Roll is successful" -- Yoyu's own. The Initiator
+  // taking the tie (4.11.2) is a Yoyu LOSS and offers nothing.
+  if (initiatorWins) return null;
+  const responder = tokens.find((x) => x.uid === c.responderUid);
+  const initiator = tokens.find((x) => x.uid === c.initiatorUid);
+  if (!responder || !initiator) return null;
+  return provokeWhy(data, responder, initiator) === null ? initiator : null;
 }
 
 // A Mech Maneuvers at the Maneuver Value printed on its Chassis; a Drone moves at

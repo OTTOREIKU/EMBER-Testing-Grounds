@@ -1,5 +1,5 @@
 import type { Card } from './types';
-import { BASE_FACTIONS, cardImageUrl, cardName, FACTION_LABEL, type GameData } from './data';
+import { BASE_FACTIONS, cardImageUrl, cardName, FACTION_LABEL, traitName, type GameData } from './data';
 import { factionColour, ICON_COMPARE } from './icons';
 import { expandGlyphs } from './glyphs';
 
@@ -190,14 +190,17 @@ export function openPartPicker(o: PartPickerOpts): void {
       // window is for, and for a pilot the thing being compared is the trait.
       // Only a NAMED trait is a rule: every generic Scout and Shock Troop also
       // carries traitDescription text, but theirs is flavour ("A new Scout from
-      // Test and Evaluation Squadron 066"). The trait name itself is
-      // Chinese-only in the data, so only the English description is shown.
-      const traitText =
-        card.category === 'pilot' && (card.trait ?? '').trim()
-          ? (card.traitDescription?.en ?? '').trim().replace(/^[•·]\s*/, '')
-          : '';
-      s.trait.innerHTML = traitText ? expandGlyphs(esc(traitText)) : '';
-      s.trait.classList.toggle('off', !traitText);
+      // Test and Evaluation Squadron 066").
+      // The name leads the line now that the publisher's English for it is
+      // merged in; it used to be text only, because the only name in the data
+      // was Chinese.
+      const named = card.category === 'pilot' && (card.trait ?? '').trim();
+      const traitLabel = named ? traitName(card) : '';
+      const traitText = named ? (card.traitDescription?.en ?? '').trim().replace(/^[•·]\s*/, '') : '';
+      s.trait.innerHTML = traitLabel || traitText
+        ? `${traitLabel ? `<b>${esc(traitLabel)}</b>${traitText ? ' ' : ''}` : ''}${expandGlyphs(esc(traitText))}`
+        : '';
+      s.trait.classList.toggle('off', !traitLabel && !traitText);
       s.uses.forEach((b, n) => {
         const act = o.actions[n];
         b.dataset.use = id;

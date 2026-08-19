@@ -182,6 +182,21 @@ check('a deployable that cannot move cannot be', M.canBeForceMoved(data, drone(3
   // rather than priced — warn, do not hide.
   check('and discloses the Link alternative the app does not price',
     /may instead be paid as 1 Link/.test(note), true);
+  // TWO Obstruct lockers, which is where the sentence used to part company with
+  // its own number: the verb agreed with the locker count while both prices
+  // stayed hard-coded at 1, so the note quoted a 2-Range surcharge and then
+  // offered to sell it for 1 Link. Both halves come off held.length now, and
+  // this is the case that says so.
+  const twoPanzers = M.breakAwayNote(data, flees, [flees, piloted(2, 2, 3, panzer.id), piloted(3, 3, 3, panzer.id)], []);
+  check('two Panzers cost 4 extra Movement Range between them',
+    /costs 4 extra Movement Range/.test(twoPanzers), true);
+  check('and the Obstruct sentence quotes the SAME number twice',
+    [/m2 and m3 charge 2 more \(Obstruct, LPA-20\)/.test(twoPanzers), /may instead be paid as 2 Link/.test(twoPanzers)],
+    [true, true]);
+  // Two lockers, two separate printed "or 1 Link" offers — the surcharge is not
+  // one lump the mover must buy out in full.
+  check('and says the Link may be taken one locker at a time',
+    /one per Obstruct locker and each choosable on its own/.test(twoPanzers), true);
   const plainNote = M.breakAwayNote(data, flees, [flees, piloted(2, 2, 3, sealock.id)], []);
   check('an ordinary lock says none of that', [/costs 1 extra/.test(plainNote), /Obstruct/.test(plainNote)], [true, false]);
   check('and an unlocked unit gets no note at all', M.breakAwayNote(data, flees, [flees], []), '');

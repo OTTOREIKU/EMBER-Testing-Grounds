@@ -1,5 +1,5 @@
 import type { Card, CardAction, Token } from './types';
-import { cardImageUrl, cardName, isDiscardCard, mechPartUrl, rulesLines, squadLabel, tabImageUrl, type GameData } from './data';
+import { cardImageUrl, cardName, isDiscardCard, mechPartUrl, rulesLines, squadLabel, tabImageUrl, traitName, type GameData } from './data';
 import { inspectOnHover, linkMechanics } from './inspector';
 import { ICON_BOLT } from './icons';
 import { expandGlyphs } from './glyphs';
@@ -810,7 +810,7 @@ export class Panel {
     if (hasTrait || traitDesc) {
       const trait = document.createElement('div');
       trait.className = `pilot-trait${hasTrait ? '' : ' pilot-flavour'}`;
-      const head = hasTrait ? `Pilot Trait <i>${card.trait}</i>` : 'No trait ability';
+      const head = hasTrait ? `Pilot Trait <i>${traitName(card)}</i>` : 'No trait ability';
       const bullets = rulesLines(traitDesc);
       const text =
         bullets.length > 1
@@ -818,6 +818,10 @@ export class Panel {
           : (bullets[0] ?? '');
       // Same reason as the reference: a trait may name a mechanic rather than a
       // keyword, and Crush on Onyx is unreadable without the rule beside it.
+      //
+      // `card.trait`, NOT the English name the heading above now prints: the
+      // match patterns are Chinese and "Stealth" would pull Manifestation
+      // Movement onto LPA-21, a rule that card does not mention.
       const mechHtml = mechChips(hasTrait ? this.data.mechanicsFor(traitDesc, card.trait) : []);
       const body = hasTrait ? text : `${text}<em>This pilot has no trait ability. The line above is card flavour text.</em>`;
       trait.innerHTML = `<b>${head}</b>${traitDesc ? `<span>${body}</span>` : ''}${mechHtml}`;

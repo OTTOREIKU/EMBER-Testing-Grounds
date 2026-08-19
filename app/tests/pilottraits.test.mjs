@@ -31,7 +31,7 @@ const tally = cut(combat, '  private countIcons(roll: Rolled[]', '  private reso
 const body = `
 type Rolled = any; type Ctx = any; type DieColor = any; type Token = any; type GameData = any;
 type Card = any; type CardAction = any; type PartSlot = any; type Timing = any;
-type TerrainPiece = any; type SmokeScreen = any;
+type TerrainPiece = any; type SmokeScreen = any; type CounterRoll = any;
 export function tokenCards(data: any, t: any): any[] {
   const out: any[] = [];
   for (const slot of ['torso', 'chasis', 'leftHand', 'rightHand', 'backpack']) {
@@ -837,6 +837,209 @@ console.log('\nPilot traits, against the shipped cards and dice\n');
       /breakAwayNote\(ctx\.data, t, ctx\.state\.tokens, terrainOf\(ctx\)\)/.test(hud)], [true, true]);
   check('and neither counts lockers by hand any more',
     /costs \$\{locked\.length\} extra Movement Range/.test(mainSrc), false);
+}
+
+// ---------- LPA-22 Yoyu — 挑衅 Provoke ----------
+//
+// " · When Electronic Counter Roll is successful, may switch the Responder mech
+// to Offensive Stance."
+//
+// THE RULING (OTTO, 2026-08-19), and every assertion below is one half of it:
+// Yoyu is the RESPONDER, and the Mech that may be switched is the INITIATOR.
+// The reasoning is written out over provokeWhy in units.ts; what is pinned here
+// is that the shipped cards still say what that reading was built on, and that
+// the reader turns the right way round on the real data.
+{
+  const yoyu = pilot('LPA-22');
+  // The negative control is a real UN pilot whose trait is ALSO about the
+  // Electronic Counter-roll — Firewatch trades {Eye} for {Lightning} inside one
+  // — so a reader keyed on "an EW pilot" rather than on THIS card would pass
+  // the positive case and fail here.
+  const firewatch = pilot('ZPA-38');
+  check('LPA-22 is the Provoke card', yoyu.trait, '挑衅');
+  check('and the printed English is the one this reader was written against',
+    /When Electronic Counter Roll is successful, may switch the Responder mech to Offensive Stance/
+      .test(yoyu.traitDescription.en), true);
+  // The curator's annotation is a second opinion on the reading, never the
+  // dispatcher — see the note on Card.traitEffects.
+  check('and the curated effect agrees with that reading',
+    yoyu.traitEffects?.map((e) => e.type), ['electronic_success_change_responder_stance_optional']);
+  check('and it names the Stance the switch ends in', yoyu.traitEffects?.[0].stance, 'offensive');
+
+  // ---------- the three lines the ruling rests on ----------
+  //
+  // 电子对抗投骰 is fixed as "Electronic Counter Roll" off a SECOND card rather
+  // than a guess: ZPA-38 prints the phrase in zh against the phrase in en.
+  check('ZPA-38 fixes 电子对抗投骰 as the Electronic Counter Roll',
+    [/电子对抗投骰/.test(firewatch.traitDescription.zh), /Electronic Counter Roll/i.test(firewatch.traitDescription.en)],
+    [true, true]);
+  // 本机 — THIS unit — puts Yoyu at that roll, and FAQ O5 calls it the roll a
+  // unit makes passively while being targeted: the RESPONDER's.
+  check('LPA-22 zh puts Yoyu at 本机, the unit making the roll',
+    /当本机电子对抗投骰成功时/.test(yoyu.traitDescription.zh), true);
+  // 对方机甲 — the OTHER party's Mech — is who switches, which is what makes the
+  // printed English "the Responder mech" a slip for 对方 rather than a rule.
+  check('and names 对方机甲, the other party, as the Mech that switches',
+    /可使对方机甲切换为攻击姿态/.test(yoyu.traitDescription.zh), true);
+  // jp says it again and more plainly still: the enemy Mech that CONDUCTED the
+  // counter-roll, which on the responder reading is the Initiator.
+  check('and jp names the enemy Mech that CONDUCTED the counter-roll',
+    /対抗ロールを行った敵機甲/.test(yoyu.traitDescription.jp), true);
+
+  // ---------- the reader, against the real cards ----------
+  const mech = (uid, side, pilotId, over = {}) => ({
+    uid, side, kind: 'mech', label: `M${uid}`, col: 3, row: 3, size: 3, facing: 0,
+    stance: 'defensive', mech: { torso: '002', pilot: pilotId }, partStates: { torso: 'intact' }, ...over,
+  });
+  // uid 1 opens the Electronic Attack; uid 2 is Yoyu, the Responder answering it.
+  const roll = (over = {}) => ({
+    initiatorUid: 1, responderUid: 2, actionId: 'X_A',
+    initRoll: [0], respRoll: [0], initFocused: false, respFocused: false, provoke: null, ...over,
+  });
+  const world = (over = {}) => [mech(1, 's1', 'ZPA-38'), mech(2, 's2', 'LPA-22', over)];
+
+  // THE POSITIVE CASE. Yoyu held the Counter-roll — initiatorWins false — so
+  // the offer stands, and it stands against the INITIATOR.
+  const offer = A.provokeOffer(data, world(), roll(), false);
+  check('Provoke fires for a Yoyu that WINS as Responder', !!offer, true);
+  check('and it targets the INITIATOR', offer?.uid, 1);
+  check('and never Yoyu itself, which is what the printed English reads as',
+    offer?.uid === 2, false);
+
+  // THE PILOT. Swap Yoyu for another real pilot and nothing is offered — the
+  // assertion a reader keyed on the wrong card would fail.
+  check('a Responder with a different pilot is offered nothing',
+    A.provokeOffer(data, [mech(1, 's1', 'ZPA-38'), mech(2, 's2', 'FPA-05')], roll(), false), null);
+  // And the trait does not travel with the SEAT: Yoyu sitting in the Initiator's
+  // chair is not what this reading fires on.
+  check('and Yoyu in the Initiator seat is offered nothing either',
+    A.provokeOffer(data, [mech(1, 's1', 'LPA-22'), mech(2, 's2', 'FPA-05')], roll(), false), null);
+
+  // THE VERDICT. "When Electronic Counter Roll is successful" — Yoyu's own. The
+  // Initiator taking the tie is a Yoyu LOSS (4.11.2) and offers nothing.
+  check('Provoke does NOT fire when Yoyu LOSES', A.provokeOffer(data, world(), roll(), true), null);
+  check('nor before both sides have rolled',
+    A.provokeOffer(data, world(), roll({ respRoll: null }), false), null);
+  check('nor before the Initiator has rolled',
+    A.provokeOffer(data, world(), roll({ initRoll: null }), false), null);
+
+  // ASKED ONCE. `provoke` is what a checkpoint carries back (script.test.mjs
+  // owns that round-trip), and a re-offer after a resync would put the same
+  // question twice.
+  check('an accepted offer is not offered again',
+    A.provokeOffer(data, world(), roll({ provoke: 'taken' }), false), null);
+  check('and neither is a declined one — a decline closes the question',
+    A.provokeOffer(data, world(), roll({ provoke: 'passed' }), false), null);
+
+  // ---------- what may be switched ----------
+  const why = (initiator, over = {}) => A.provokeWhy(data, mech(2, 's2', 'LPA-22', over), initiator);
+  check('an enemy Mech in Defensive Stance may be switched', why(mech(1, 's1', 'ZPA-38')), null);
+  // 对方机甲 is a MECH. A Drone plays the Stance printed on its card and has no
+  // dial to turn, which is the line setStance holds too.
+  check('a Drone has no Stance to switch',
+    /Only a Mech has a Stance to switch/.test(why({ uid: 1, side: 's1', kind: 'drone', label: 'D1', stance: 'offensive', partStates: { main: 'intact' } })), true);
+  check('an ALLY is never the target — 对方 is the other party',
+    /ENEMY Mech/.test(why(mech(1, 's2', 'ZPA-38'))), true);
+  // 4.1.1: leaving Shutdown Stance takes a Reboot, and nothing on this card buys
+  // one. Provoke can push a Mech into Offensive Stance; it cannot wake it.
+  check('a Shut Down Mech is not woken by Provoke (4.1.1)',
+    /Reboot \(4\.1\.1\)/.test(why(mech(1, 's1', 'ZPA-38', { stance: 'shutdown' }))), true);
+  check('and a Mech already in Offensive Stance has nothing to switch',
+    /already in Offensive Stance/.test(why(mech(1, 's1', 'ZPA-38', { stance: 'offensive' }))), true);
+  check('a destroyed Mech has no Stance to change',
+    /destroyed Mech/.test(why(mech(1, 's1', 'ZPA-38', { partStates: { torso: 'destroyed' } }))), true);
+
+  // ---------- the wiring, which is where this class of card dies ----------
+  //
+  // Two Electronic Warfare implementations share NO code — freeplay's
+  // ElectronicHelper runs its own contest in combat.ts, the Match Centre drives
+  // shared `script.counter` from matchhud.ts — so a rule wired to one of them is
+  // live on one page, which is this codebase's signature bug.
+  const cmds = src('commands.ts'), combatSrc = src('combat.ts'), hudSrc = src('matchhud.ts');
+  check('units.ts dispatches on the CARD ID, as every phase-7 reader does',
+    /pilotIs\(data, responder, 'LPA-22'\)/.test(units), true);
+  // NOT a trait-name or trait-text regex, and this is the assertion that keeps
+  // it that way. `traitDescription` is the only field such a helper could match
+  // on, and eyesAreHeavyHits's own regex already matches LPA-24 Sealock's
+  // Chinese trait text — which is why partSays skips slot === 'pilot'. The
+  // names collide too ("CQC" is both ZPA-35 and card 017's part passive).
+  //
+  // ONE rules reader is allowed to match pilot trait text and it is pinned by
+  // name here, because it earns it: 4.15.4's Command-Token spend has to see
+  // FOUR effects and two of them are pilot traits with no Action to read. Every
+  // rule reader added since — this one included — goes through the card id.
+  const rulesReaders = units + cmds + combatSrc + hudSrc + src('main.ts') + src('rules.ts') + src('melee.ts');
+  check('and the only rules reader matching pilot trait TEXT is the 4.15.4 Command sweep',
+    (rulesReaders.match(/traitDescription\?\./g) ?? []).length, 2);
+  check('which is textConsumesCommand, and nothing else reads the field',
+    /textConsumesCommand\(pilot\.traitDescription\?\.zh, pilot\.traitDescription\?\.en\)/.test(units), true);
+
+  check('commands.ts carries the answer as a command',
+    /kind: 'provoke'; seat: Side; uid: number; targetUid: number; take: boolean/.test(cmds), true);
+  check('and check() gates it on the one shared reader',
+    /const why = provokeWhy\(data, t, target\);/.test(cmds), true);
+  // The Stance is written by the COMMAND and by nothing else: it is a
+  // fingerprinted token field, so a page assigning it directly is the desync.
+  check('and apply() is the only place the Stance is turned',
+    (cmds.match(/target\.stance = 'offensive';/g) ?? []).length, 1);
+  check('and no page turns it itself',
+    /stance = 'offensive'/.test(combatSrc + hudSrc + src('main.ts')), false);
+  // Yoyu answers as the Responder of THIS Counter-roll, and check() says so —
+  // the half a stale networked client could otherwise get wrong.
+  check('check() binds the answer to the Counter-roll it claims',
+    /c\.responderUid !== cmd\.uid/.test(cmds) && /c\.initiatorUid !== cmd\.targetUid/.test(cmds), true);
+
+  check('the Match Centre reads the shared offer',
+    /provokeOffer\(ctx\.data, s\.tokens, c, v\.initiatorWins\)/.test(hudSrc), true);
+  // Both answers travel, because a decline has to close the question on the far
+  // screen too — the offer lives in shared state precisely so both seats agree.
+  check('and sends BOTH answers as the same command',
+    /kind: 'provoke', seat: resp\.side, uid: resp\.uid, targetUid: init\.uid, take \}/.test(hudSrc), true);
+  check('and offers it to YOYU\'s seat, not the Initiator\'s',
+    /const iProvoke = !!provoked && mine\(ctx, resp\.side\);/.test(hudSrc), true);
+
+  check('freeplay\'s ElectronicHelper reads the same rule',
+    /provokeWhy\(this\.data, c\.responder, c\.initiator\) === null/.test(combatSrc), true);
+  check('and sends the same command',
+    /kind: 'provoke', seat: c\.responder\.side, uid: c\.responder\.uid, targetUid: c\.initiator\.uid, take: true/.test(combatSrc), true);
+  // The printed "may" is a real decision here, unlike Pulse, Ion, Fierce Assault
+  // and Pursuit: Offensive Stance is a trade, so forcing it can HELP the enemy.
+  // Both boards therefore ASK, and an applied-not-offered wiring would show up
+  // as the second button going missing.
+  check('and offers the decline as well as the switch',
+    /Leave its Stance alone/.test(combatSrc) && /data-provoke="pass"/.test(hudSrc), true);
+}
+
+// ---------- Low Profile: the note credits the arm that actually fired ----------
+//
+// FOUR things grant Low Profile in resolve() — a Token, an aura granting the
+// keyword, FPA-06-2's Power Concealment, and ZHDR-204's Misty Eagle — and the
+// line under the tally names a cause so the shooter is not left watching Eyes
+// evaporate with nothing on screen to blame.
+//
+// The attribution used to be picked independently of the disjunction: whichever
+// of the two invisible sources happened to be present got the credit. A
+// defender already wearing a lowProfile Token AND piloted by a KeyHole inside a
+// friendly aura was reported as "Power Concealment" when the Token alone
+// sufficed. No rules consequence — the dice are identical either way — but it
+// named a cause that was not load-bearing, and the Token is the ONE source the
+// shooter can see sitting on the target.
+//
+// Pinned at the source because resolve() wants the DOM and cannot be sliced,
+// which is the same reason the Power Concealment wiring above is pinned here.
+{
+  check('the Token is hoisted out of the disjunction so the note can read it',
+    /const lpToken = statusCount\(c\.defender\.statuses, 'lowProfile'\) > 0;/.test(combat), true);
+  // lpToken FIRST, and its arm is the empty string: nothing is credited when
+  // something the shooter can already see explains the swap.
+  check('and it leads the attribution, crediting nobody',
+    /const why = lpToken\s*\?\s*''/.test(combat), true);
+  check('with the two invisible sources behind it, never in front',
+    /const why = lpToken[\s\S]{0,40}: mistyEagle[\s\S]{0,400}: concealed/.test(combat), true);
+  // Narrowing the ATTRIBUTION must not narrow the RULE: all four arms still
+  // grant Low Profile, whatever the note ends up saying about it.
+  check('while the rule itself still reads all four sources',
+    /\(lpToken[\s\S]{0,200}'low_profile'\)[\s\S]{0,40}\|\| !!concealed\s*\|\| !!mistyEagle\);/.test(combat), true);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

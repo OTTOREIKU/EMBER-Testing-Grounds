@@ -424,6 +424,98 @@ export function crushTargets(
   return { units, terrain: hitTerrain };
 }
 
+// Where everybody lands when a Crush ends in an EXCHANGE (4.3.6, book p.47):
+// "If NONE of the Grids within Range of that Forced Movement can be entered, the
+// crushed Unit instead exchanges positions with the Crushing Unit." Worked
+// example (C) says it again: C and D swap, and C's Movement ends.
+//
+// THE BUG THIS EXISTS TO KILL. Both pages used to ask standingSpot for a spot in
+// the crusher's own Grid while the crusher was still standing in it, and
+// standingSpot ignores exactly ONE uid — so a Large crusher's 3x3 footprint
+// blocked every cell of the Grid it was about to vacate and the answer was
+// always null. Measured before the fix: 0 spots found across 1584 crusher x
+// victim-size placements. The crush then resolved as a silent no-op and the
+// crusher landed on the victim's cells. TWO units are leaving here, so both come
+// out of the occupancy list rather than one.
+//
+// `from` is the Grid the crusher STEPS OUT OF as it enters `goal`, and it is
+// passed in rather than read off the token because the token has not moved yet:
+// board.ts animateMove is SVG only, and settle() and the commands are the only
+// things that ever write col/row — both of which run AFTER this. Derived from
+// the crusher instead, this answered with the Grid the whole Movement BEGAN in:
+// a crusher routed (1,0)->(1,1)->(1,2) put its victim in (1,0), two Grids away
+// and not even adjacent, and freeplay's drag-drop made it sixteen.
+//
+// Hence the adjacency guard. 4.3.6 puts the Crush at the moment a Unit is
+// "about to enter a Grid occupied by another Unit", so the crusher is standing
+// in a Grid ADJACENT to the goal, and the exchange stands in for "Forced
+// Movement of 1 Grid" — worked example (C) has the two next to each other. An
+// exchange between neighbours can never move a Unit more than one Grid, so a
+// caller with no adjacent Grid to name (freeplay's drag-drop, which teleports)
+// gets null rather than an invented destination.
+//
+// Returns null when the exchange genuinely will not fit, which is a real answer
+// and not a licence to skip it: the caller has to stop the Crush short and say
+// so, because there is nothing printed that lets the crusher share a Grid.
+// The VICTIM half of the same exchange, split out so a page can ask "is there an
+// exchange here at all?" BEFORE it asks the player anything.
+//
+// Why it has to be the victim half alone. Both pages work the crushed Grid one
+// Unit at a time, and the Units still queued behind this one are STILL STANDING
+// in the goal Grid when the question is asked — they have not been shoved clear
+// yet. crushExchange's last line looks for room for the crusher IN that Grid, so
+// asked this early it always answers null and would call every exchange
+// impossible. This half asks only what is already settled: whether the Grid the
+// crusher steps out of has room for the Units taking its place.
+export function crushExchangeSpots(
+  crusher: Token,
+  victims: Token[],
+  goal: LargeGrid,
+  from: LargeGrid,
+  terrain: TerrainPiece[],
+  tokens: Token[],
+): { uid: number; to: { col: number; row: number } }[] | null {
+  if (Math.abs(from.c - goal.c) + Math.abs(from.r - goal.r) !== 1) return null;
+  const leaving = new Set([crusher.uid, ...victims.map((v) => v.uid)]);
+  // Everything that is NOT part of the exchange, at wherever it stands now —
+  // which includes the victims already Force-Moved clear of the Grid, since they
+  // took real spots and may well have taken one in here.
+  const standing = tokens.filter((x) => !leaving.has(x.uid));
+  const placed: { uid: number; to: { col: number; row: number } }[] = [];
+  // One at a time, each put down before the next is asked, so two exchanged
+  // Units cannot be handed the same cell of the Grid the crusher is vacating.
+  for (const v of victims) {
+    const spot = standingSpot(from.c, from.r, v.size, v.aerial, terrain, standing);
+    if (!spot) return null;
+    placed.push({ uid: v.uid, to: spot });
+    standing.push({ ...v, col: spot.col, row: spot.row });
+  }
+  return placed;
+}
+
+export function crushExchange(
+  crusher: Token,
+  victims: Token[],
+  goal: LargeGrid,
+  from: LargeGrid,
+  terrain: TerrainPiece[],
+  tokens: Token[],
+): { crusher: { col: number; row: number }; victims: { uid: number; to: { col: number; row: number } }[] } | null {
+  const placed = crushExchangeSpots(crusher, victims, goal, from, terrain, tokens);
+  if (!placed) return null;
+  // The occupancy list the crusher is measured against: everything that stayed
+  // put, plus the exchanged Units at the spots they were just handed.
+  const leaving = new Set([crusher.uid, ...victims.map((v) => v.uid)]);
+  const standing = tokens.filter((x) => !leaving.has(x.uid));
+  for (const p of placed) {
+    const v = victims.find((x) => x.uid === p.uid)!;
+    standing.push({ ...v, col: p.to.col, row: p.to.row });
+  }
+  const spot = standingSpot(goal.c, goal.r, crusher.size, crusher.aerial, terrain, standing);
+  if (!spot) return null;
+  return { crusher: spot, victims: placed };
+}
+
 export function reachableGrids(
   t: Token,
   steps: number,

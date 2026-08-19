@@ -39,7 +39,9 @@ export interface BoardDeployment {
 
 export interface BoardCallbacks {
   onSelect(uid: number | null): void;
-  onInspect?(info: InspectInfo | null): void;
+  // `at` is the element hovered, handed over so a page with a FLOATING inspect
+  // box can position beside it. The board page ignores it — its box is docked.
+  onInspect?(info: InspectInfo | null, at?: SVGElement): void;
   onMove(uid: number, col: number, row: number, forced?: boolean): void;
   onHover?(uid: number | null): void;
   onCellClick?(col: number, row: number, erase: boolean): void;
@@ -408,7 +410,10 @@ export class Board {
   }
 
   private attachInspect(g: SVGGElement, info: InspectInfo): void {
-    g.addEventListener('pointerenter', () => this.callbacks.onInspect?.(info));
+    // The element goes with the info so a floating box knows where to stand.
+    // Only on ENTER: on leave the box is being hidden, and re-anchoring it to a
+    // node the cursor has just left would move it on its way out.
+    g.addEventListener('pointerenter', () => this.callbacks.onInspect?.(info, g));
     g.addEventListener('pointerleave', () => this.callbacks.onInspect?.(null));
   }
 

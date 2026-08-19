@@ -181,6 +181,25 @@ const flipped = board();
 flipped.tokens[1].tether = [{ uid: 1, range: 4, role: 'initiator' }];
 check('as does which end of it a unit is', boardFingerprint(leashed) !== boardFingerprint(flipped), true);
 
+// A Low Profile Token, which became rules-bearing in BOTH directions when
+// 4.12.3's removal was wired (commands.ts shedLowProfile). It changes the
+// defence pool ([Eye] counts as [Dodge] against Firing, 6.3.3) and it changes
+// MOVEMENT LEGALITY — an LPA-21 Firefly carrying one may route through other
+// units, so a drift here has one client offering a path the other refuses. The
+// removal now rides in `maneuver` and `performAction` rather than in a command
+// of its own, so this hash is the ONLY thing that catches a seat which failed
+// to apply it.
+const hidden = board();
+hidden.tokens[0].statuses = ['lowProfile'];
+check('a Low Profile Token IS part of it — it changes both the defence pool and where a Firefly may walk',
+  boardFingerprint(hidden) !== boardFingerprint(board()), true);
+// The other direction, and the one the shed actually produces: a seat that
+// applied the removal and a seat that did not must not agree.
+const shed = board();
+shed.tokens[0].statuses = [];
+check('and losing it to a non-Silence Action changes the hash back (4.12.3)',
+  boardFingerprint(shed) !== boardFingerprint(hidden), true);
+
 // ---------- shape ----------
 
 check('it is short enough to ride on every command', boardFingerprint(board()).length <= 8, true);

@@ -98,6 +98,13 @@ check('overwatch reaches only the Cobra and its Snake Eye', hitCount('overwatch'
 check('black_box reaches the carrying pack and its three missions', hitCount('black_box'), 4);
 check('extra_action_opportunity reaches only the Echoes backpack', hitCount('extra_action_opportunity'), 1);
 check('smoke_screen reaches the ten smoke cards', hitCount('smoke_screen'), 10);
+// The same pin for Armor Piercing. Nine, not eleven: 穿甲 also appears inside
+// the NAME of the shell ZHLA-201 launches, and the zh match term is 穿甲1 with
+// the digit precisely so the mortar and the shell itself stay out. A count of
+// 10 or 11 here means someone widened it to 穿甲 and handed two cards a rule
+// they do not have. tests/armorpiercing.test.mjs pins the same two out.
+check('armor_piercing reaches the eight weapons and the pilot, and not the mortar',
+  hitCount('armor_piercing'), 9);
 
 // K21 overturned the old reading. The entry used to end by saying the extra
 // Opportunity was taken after every Mech had acted; the engine takes it inline.

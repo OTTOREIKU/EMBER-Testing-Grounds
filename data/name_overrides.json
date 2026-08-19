@@ -1,5 +1,5 @@
 {
-  "_comment": "English names for cards/actions whose `en` field in the community data still holds Chinese/Japanese. \"derived\" entries reuse the official English that the same Chinese name carries on other cards; \"translated\" entries had no precedent and were translated here. Merged over cards.json at load time. \"traits\" holds English for pilot traitDescription text. \"boxes\" renames entries in boxes.json, keyed by box key.",
+  "_comment": "English names for cards/actions whose `en` field in the community data still holds Chinese/Japanese. \"derived\" entries reuse the official English that the same Chinese name carries on other cards; \"translated\" entries had no precedent and were translated here. Merged over cards.json at load time. \"traits\" holds English for pilot trait text (`en`) and for the pilot trait NAME (`name`), either alone or both; `name` is display-only, because the mechanics matcher keys on the Chinese `trait` the card already carries. \"boxes\" renames entries in boxes.json, keyed by box key.",
   "cards": {
     "154": {
       "en": "M7 Grenade",
@@ -317,13 +317,95 @@
     }
   },
   "traits": {
+    "FPA-01": {
+      "name": "Variation",
+      "source": "publisher parts list, RDL Pilots 1.0En sheet (1.02), Trait column, serial FPA-01 / QR 1 'Misty'."
+    },
+    "FPA-02": {
+      "name": "Eagle-eye",
+      "source": "publisher parts list, RDL Pilots 1.0En sheet (1.02), Trait column, serial FPA-02 / QR 2 'Spike'. Hyphenated exactly as the sheet writes it."
+    },
+    "FPA-03": {
+      "name": "Fortitude",
+      "source": "publisher parts list, RDL Pilots 1.0En sheet (1.02), Trait column, serial FPA-03 / QR 3 'Wu'."
+    },
+    "FPA-04": {
+      "name": "Onslaught",
+      "source": "publisher parts list, RDL Pilots 1.0En sheet (1.02), Trait column, serial FPA-04 / QR 4 'Hammerhead'."
+    },
+    "FPA-04-2": {
+      "name": "Pest Control",
+      "source": "publisher parts list, RDL Pilots 1.0En sheet (1.02), Trait column, QR 364 'Hammerhead / Domestic Expert'. Taken by QR, NOT by serial: the sheet reuses serial FPA-04 for this second Hammerhead card, so the serial alone names two different pilots and only the QR tells them apart."
+    },
+    "FPA-05": {
+      "name": "Inexhaustible",
+      "source": "publisher parts list, RDL Pilots 1.0En sheet (1.02), Trait column, serial FPA-05 / QR 5 'Anser'."
+    },
+    "FPA-06": {
+      "name": "Amplify",
+      "source": "publisher parts list, RDL Pilots 1.0En sheet (1.02), Trait column, serial FPA-06 / QR 6 'KeyHole'."
+    },
+    "FPA-06-2": {
+      "name": "Hidden",
+      "source": "publisher parts list, RDL Pilots 1.0En sheet (1.02), Trait column, serial FPA-19 / QR 362, which the sheet ALSO calls 'KeyHole'. Matched on the trait text ('within range of allied Aura, gains Low Profile'), not the codename, for the reason the cards entry for this id already records: two different cards reach us under one name."
+    },
+    "ZPA-35": {
+      "name": "CQC",
+      "source": "publisher parts list, GoF Pilots En sheet (1.02), Trait column, serial ZPA-35 / QR 35. The sheet's English codename for this pilot is 'Chef' (zh 大厨)."
+    },
     "LPA-19": {
+      "name": "Calm",
       "en": "· Recover 1 Link at the end of each round.",
-      "source": "publisher parts list, UN Pilot EN sheet (1.02). Same rule as ours, which was missing the leading bullet and the full stop that every other trait in the data carries."
+      "source": "publisher parts list, UN Pilot EN sheet (1.02), serial LPA-19 / QR 19 'Quartz'. The name comes off the Trait column; the text off Trait Description, and it is the same rule as ours, which was missing the leading bullet and the full stop that every other trait in the data carries."
     },
     "ZPA-36": {
+      "name": "Adjustment",
       "en": "· Once per round, during the Command Phase, the piloted Mech may spend 1 Command Token to restore 1 Link to an Ally Mech.",
       "source": "publisher parts list, GoF Pilots En sheet (1.02), QR 36 'Adjustment'. Fixes the bundle's 'Cmmand Token' typo AND takes the official text's subject with it: ours read 'may consume', naming nobody, where the official names the piloted Mech. Two deliberate departures from the sheet - it writes 'Command Stage', a term that appears NOWHERE in the rulebook (the digests say 'Command Phase' 30 times and 'Command Stage' zero), so the rulebook's term is kept; and 'the' is added before 'piloted Mech' for grammar."
+    },
+    "ZPA-37": {
+      "name": "Trace",
+      "source": "publisher parts list, GoF Pilots En sheet (1.02), Trait column, serial ZPA-37 / QR 37 'Foxhound'."
+    },
+    "ZPA-38": {
+      "name": "Wetware Advantages",
+      "source": "publisher parts list, GoF Pilots En sheet (1.02), Trait column, serial ZPA-38 / QR 38 'Firewatch'. Plural as printed."
+    },
+    "ZPA-39": {
+      "name": "Survival Willing",
+      "source": "publisher parts list, GoF Pilots En sheet (1.02), Trait column, serial ZPA-39 / QR 39 'Zombie'. Kept verbatim although it reads oddly in English - the sheet is the authority on the official name, and a tidied 'Will to Survive' would be ours, not theirs."
+    },
+    "ZPA-40": {
+      "name": "Joy",
+      "source": "publisher parts list, GoF Pilots En sheet (1.02), Trait column, serial ZPA-40 / QR 40 'Shrike'."
+    },
+    "LPA-20": {
+      "name": "Block",
+      "source": "publisher parts list, UN Pilot EN sheet (1.02), Trait column, serial LPA-20 / QR 20 'Panzer'. The engine calls this rule Obstruct after its effect; the publisher's NAME for it is Block, and this is the name, not the rule."
+    },
+    "LPA-21": {
+      "name": "Stealth",
+      "source": "publisher parts list, UN Pilot EN sheet (1.02), Trait column, serial LPA-21 / QR 21 'Firefly'."
+    },
+    "LPA-22": {
+      "name": "Provoke",
+      "source": "publisher parts list, UN Pilot EN sheet (1.02), Trait column, serial LPA-22 / QR 22 'Yoyu'."
+    },
+    "LPA-23": {
+      "name": "Unyielding",
+      "source": "publisher parts list, UN Pilot EN sheet (1.02), Trait column, serial LPA-23 / QR 23 'Onyx'."
+    },
+    "LPA-23-2": {
+      "name": "Ornament",
+      "source": "publisher parts list, UN Pilot EN sheet (1.02), Trait column, QR 365 'Onyx / Mellow Chord'. Taken by QR rather than serial for the same reason as FPA-04-2: the sheet reuses serial LPA-23 for this second Onyx card."
+    },
+    "LPA-24": {
+      "name": "Chase",
+      "source": "publisher parts list, UN Pilot EN sheet (1.02), Trait column, serial LPA-24 / QR 24 'Sealock'."
+    },
+    "ACE-01": {
+      "name": "Synesthesia",
+      "source": "publisher parts list, Collab 1.02 'Ace Strategy' sheet, the pilot block at the foot of the White Dwarf tables - Karl Fried (zh 卡尔·弗里德), Trait column. That sheet carries no QR or serial for the pilot row, so the trait text ('When a \"White Dwarf\" Bit performs a roll, it may consume Link from this Mech to re-roll') is what identifies it; there is exactly one pilot on the sheet."
     },
     "XPA-59": {
       "en": "Every combatant’s combat prosthetic carries an LK-series implant, so the LUKAS system can reach it remotely.",
@@ -335,7 +417,7 @@
     },
     "XPA-62": {
       "en": "· This unit’s Projectile action Range +2.",
-      "source": "translated"
+      "source": "translated. No `name`: XPA-62 Seagull appears in NONE of the five championship-legal parts lists, so there is no publisher English for its trait name (高抛发射) to take. It is the one trait-bearing pilot of 23 that still shows Chinese, and traitName()'s fallback is what keeps that from showing blank."
     }
   },
   "boxes": {

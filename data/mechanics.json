@@ -77,6 +77,17 @@
    "text": "A melee-only defence. The defender designates a Part with a Parry Value as the target Part and adds that many White dice to the Defense Roll. Not available while in Shutdown or against a Back Attack. If a Black Die still decides the Part, the Parry dice only apply when it matches."
   },
   {
+   "id": "armor_piercing",
+   "name": "Armor Piercing X",
+   "ref": "Rulebook 6.2.1 (book p.92)",
+   "match": [
+    "armor piercing",
+    "armour piercing",
+    "穿甲1"
+   ],
+   "text": "The target removes X White dice from its Defense Roll before rolling. A removal rather than a penalty to the result, so it works exactly the way a Fragile Token does and stacks with one; the pool is never taken below zero, and a Part left with none simply makes no Defense Roll. It comes off the Armor or Structure the Part rolls and off any Terrain or Unit Protection added to it. The value is printed on the Action's own line even though the keyword prints a bare X, so a weapon listing Armor Piercing X pierces whatever number that Action states. FPA-02 Spike's Eagle Eye grants Armor Piercing 1 on any Firing Action, and that grant adds to a value already printed on the weapon."
+  },
+  {
    "id": "focus",
    "name": "Focus",
    "ref": "Rulebook 4.10",
