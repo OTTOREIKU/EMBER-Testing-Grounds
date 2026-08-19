@@ -5,8 +5,8 @@ import { cardName, squadLabel } from './data';
 import { bindTips, linkMechanics } from './inspector';
 import { choiceDialog } from './dialog';
 import { PHASES, PHASE_INFO } from './tracker';
-import { hasFlexibleTiming, pilotCard, coordinationFor, coordinationOnOpportunityEnd, extrasFor, actionSilenceDenier, isSilentAction, type ActionWorld, canActivateCamo, type ExtraActivation, extraActivationOf, guidedActions, initiativeFor, maneuverRange, maxLink, SLOT_LABEL, tokenCards } from './units';
-import { canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed } from './ticks';
+import { opportunityBonusOn, hasFlexibleTiming, pilotCard, coordinationFor, coordinationOnOpportunityEnd, extrasFor, actionSilenceDenier, isSilentAction, type ActionWorld, canActivateCamo, type ExtraActivation, extraActivationOf, guidedActions, initiativeFor, maneuverRange, maxLink, SLOT_LABEL, tokenCards } from './units';
+import { canAttackMode, canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed } from './ticks';
 import { asterKey, clearDroneCommands, perform, readyCommands, seedCommandTokens } from './commands';
 import { askIssuer, asterBlockers, offerCoordination, runAster } from './commandpick';
 import { tacticFitsPhase, tacticSpec } from './tactics';
@@ -384,6 +384,7 @@ export class PlayGuide {
     });
     this.root.querySelector('[data-maneuver]')?.addEventListener('click', () => this.tryManeuver());
     this.root.querySelector('[data-overload]')?.addEventListener('click', () => this.tryOverload());
+    this.root.querySelector('[data-attackmode]')?.addEventListener('click', () => this.tryAttackMode());
     for (const b of [...this.root.querySelectorAll<HTMLButtonElement>('[data-tactic]')]) {
       b.addEventListener('click', () => {
         const [side, id] = b.dataset.tactic!.split(':');
@@ -654,7 +655,11 @@ export class PlayGuide {
       </div>`;
     };
 
+    // The End Phase gets its own warn line. The header only draws one during
+    // Planning and setup, and a refused Award had nowhere to say so — which is
+    // how the round's Victory Points came to vanish in silence.
     return `${fp}
+      ${this.warn ? `<p class="pg-warn">${esc(this.warn)}</p>` : ''}
       ${step(
         'remove',
         1,
@@ -1273,11 +1278,20 @@ export class PlayGuide {
     const ovlTip = ovl?.ok
       ? `Consume 1 Link for 1 Action Tick, up to ${OVERLOAD_MAX} an Action Opportunity. These are ordinary Action Ticks, so two of them pay for one Medium Action.`
       : ovl?.why ?? '';
+    // Card 547's Attack Mode, beside Overload because it is the same kind of
+    // offer: an ORDINARY Action Tick added to the base pool. Offered rather
+    // than applied — the card prints "may", and the Tick costs the Stance.
+    const bonus = t.kind === 'mech' ? opportunityBonusOn(this.data, t) : undefined;
+    const bon = bonus ? canAttackMode(o, t.stance, bonus.stance) : null;
+    const bonTip = bon?.ok
+      ? `Take ${bonus!.actionPoints} more Action Tick${bonus!.actionPoints === 1 ? '' : 's'} for this Action Opportunity. Ordinary Ticks, so they combine with the base pool to pay for a Medium Action (FAQ K14). Taking them SETS this Mech's Stance for the rest of the Opportunity (4.1).`
+      : bon?.why ?? '';
     const maneuverRow = shutdown
       ? ''
       : `<div class="pg-units">
         <button class="pg-unit${man.ok ? '' : ' warn'}" data-maneuver="1" data-tip-title="Maneuver" data-tip="${esc(man.ok ? `Move up to ${range} Grid${range === 1 ? '' : 's'}. Maneuver is free once per Action Opportunity.` : man.why ?? '')}">Maneuver ${range}</button>
         ${ovl ? `<button class="pg-unit${ovl.ok ? '' : ' warn'}" data-overload="1" data-tip-title="Overload" data-tip="${esc(ovlTip)}">Overload ${o.overload}/${OVERLOAD_MAX}</button>` : ''}
+        ${bon && bonus ? `<button class="pg-unit${bon.ok ? '' : ' warn'}" data-attackmode="1" data-tip-title="${esc(bonus.label)}" data-tip="${esc(bonTip)}">${esc(bonus.label)} ${o.attackMode ? 'taken' : `+${bonus.actionPoints}`}</button>` : ''}
       </div>`;
     const actionRows = shutdown
       ? ''
@@ -1365,12 +1379,23 @@ export class PlayGuide {
     const mission = this.data.missions.cards.find((c) => c.id === s.mission);
     const last = s.round.n >= (s.roundLimit ?? 5);
     const got = this.previewScore(s, normaliseTasks(s.tasks), mission, last);
-    perform(this.data, s, {
+    const paid = perform(this.data, s, {
       kind: 'award',
       seat: this.script(s).turn,
       vp: { s1: got.s1, s2: got.s2 },
       keys: got.lines.map((l) => l.key).filter((k): k is string => !!k),
     });
+    // The Award's own apply is what writes `${round}:end:tasks`, so a refusal
+    // nobody read looked exactly like a settled round that paid nothing — the
+    // Match Centre lost BOTH squads' Victory Points to that silence, with no
+    // retry and no message (settleEndStep in matchhud.ts is the other half of
+    // this fix). Warn mode applies a refused command anyway, so whether the
+    // round is still open is read off the checklist rather than off the
+    // verdict: only an Award that really did not land may promise a retry.
+    const settled = this.script(s).endDone.includes(`${s.round.n}:end:tasks`);
+    this.warn = paid.ok
+      ? null
+      : `${paid.why}${settled ? '' : ' Nothing has been paid, so the Tasks step stays open — press Award again once that is dealt with.'}`;
     this.cb.onChanged();
   }
 
@@ -1534,6 +1559,33 @@ export class PlayGuide {
     if (!wasShut && t.stance === 'shutdown') {
       this.cb.onNote(t, `Link has reached 0, so ${t.label} SHUTS DOWN.`);
     }
+    this.cb.onChanged();
+  }
+
+  // Card 547's Attack Mode. Everything the rule refuses is refused by
+  // canAttackMode, which is the same verdict the command layer reads — the
+  // button is never the gate. Taking it sets the Stance, so the note says so:
+  // that lock is what stops the Tick being banked in Offensive and spent in
+  // Mobility, and a player who is not told will read it as a bug.
+  private tryAttackMode(): void {
+    const s = this.state;
+    if (!s) return;
+    const o = this.opportunity(s);
+    if (!o) return;
+    const t = s.tokens.find((x) => x.uid === o.uid);
+    if (!t) return;
+    const bonus = opportunityBonusOn(this.data, t);
+    if (!bonus) return;
+    const v = canAttackMode(o, t.stance, bonus.stance);
+    if (!v.ok) {
+      this.warn = v.why ?? null;
+      this.render();
+      return;
+    }
+    this.warn = null;
+    perform(this.data, s, { kind: 'attackMode', seat: t.side, uid: t.uid });
+    const sc = this.script(s);
+    this.cb.onNote(t, `${bonus.label}: +${bonus.actionPoints} ordinary Action Tick${bonus.actionPoints === 1 ? '' : 's'} (${sc.opp?.action ?? '?'} in the pool), and ${t.label}'s Stance is now set for this Action Opportunity (4.1).`);
     this.cb.onChanged();
   }
 

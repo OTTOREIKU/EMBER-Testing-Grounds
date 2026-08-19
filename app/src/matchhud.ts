@@ -4,7 +4,7 @@ import type { GameData } from './data';
 import { actionIconUrl, cardName, isAerial, secondaryImageUrl, squadLabel, unitSize } from './data';
 import { Board, footprint, snapPlacement, type BoardCallbacks } from './board';
 import { printedDeployment, resolveZoneSetData } from './overlays';
-import { ignoresProtectionOnHighlight, ripostePart, martyrdomOwed, targetTracingOn, riderOnDrone, hasFlexibleTiming, coordinationFor, coordinationOnOpportunityEnd, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, electronicOrigins, loanedParts, minesLayable, minesOwed, pilotCard, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, maneuverIsSilent, maneuverSilenceDenier, type AuraSource, canActivateCamo, chargeableSlots, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
+import { opportunityBonusOn, ignoresProtectionOnHighlight, ripostePart, martyrdomOwed, targetTracingOn, riderOnDrone, hasFlexibleTiming, coordinationFor, coordinationOnOpportunityEnd, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, electronicOrigins, loanedParts, minesLayable, minesOwed, pilotCard, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, maneuverIsSilent, maneuverSilenceDenier, type AuraSource, canActivateCamo, chargeableSlots, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
 import { resolveCounterRoll, tallyCounter } from './combat';
 import { tacticFitsPhase, tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { inContact, canStandIn, attackDirection, crushTargets, dissipationFor, extendPath, knockbackPath, largeGridOf, LG, losBetween, losNote, pathCost, protectionFor, rangeBetween, reachableGrids, standingSpot, type LargeGrid } from './rules';
@@ -15,7 +15,7 @@ import type { PartSlot, CardAction, CounterRoll, DiceData, DieColor, Facing, Gam
 import { statusCount, newOpportunity, newScriptState, PHASES, STATUSES, TIMINGS } from './types';
 import { deployable, deployTurn, deploymentComplete, firstPlayerFrom, normaliseSetup, rollTotal, type SetupState } from './setup';
 import { actionPhaseComplete, activationOrder, alive, canAct, droneActionWhy, droneMoveWhy, eligibleUnits, isLoopPhase, loopComplete, nextActivation, nextTurn, onExtraOpportunity, type InitLookup, type LoopPhase } from './loop';
-import { actionIdOf, canActivate, canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed, type TickVerdict } from './ticks';
+import { actionIdOf, canActivate, canAttackMode, canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed, type TickVerdict } from './ticks';
 import { gameResult, normaliseTasks, scoreMain, scoreSecondary, settleControl, unpaidLines, zoneCentreGrid, type Designation, type ScoreLine, type ScoreResult, type SecondaryScoring } from './tasks';
 import { stationaryAdjusted, twoHandedUse, tokenCards } from './units';
 
@@ -1263,6 +1263,18 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
     ? `<button class="actrow k-tactic${ovl.ok ? '' : ' warn'}"${ovl.ok ? '' : ` data-why="${esc(ovl.why ?? '')}"`} data-act="overload" title="${esc(ovl.ok ? `Consume 1 Link for 1 Action Tick, up to ${OVERLOAD_MAX} an Action Opportunity.` : ovl.why ?? '')}">
         <span class="dotk"></span><span class="an">Overload</span><span class="ac">${o.overload}/${OVERLOAD_MAX} · Link ${t.link ?? 0}</span></button>`
     : '';
+  // Card 547's Attack Mode: the same shape one card over. Also an ORDINARY
+  // Action Tick, so it reads as a bigger base pool rather than as an Extra.
+  // Offered, never applied for the player — the card prints "may", and once
+  // the dial is set a Tick nobody wants is a Tick that locks the Stance.
+  const bonus = t.kind === 'mech' ? opportunityBonusOn(ctx.data, t) : undefined;
+  const bon = bonus ? canAttackMode(o, t.stance, bonus.stance) : null;
+  const bonRow = bon && bonus
+    ? `<button class="actrow k-tactic${bon.ok ? '' : ' warn'}"${bon.ok ? '' : ` data-why="${esc(bon.why ?? '')}"`} data-act="attackmode" title="${esc(bon.ok
+        ? `Take ${bonus.actionPoints} more Action Tick${bonus.actionPoints === 1 ? '' : 's'} for this Action Opportunity. Ordinary Ticks, so they combine with the base pool for a Medium Action — and taking them SETS the Stance (4.1).`
+        : bon.why ?? '')}">
+        <span class="dotk"></span><span class="an">${esc(bonus.label)}</span><span class="ac">${o.attackMode ? 'taken' : `+${bonus.actionPoints} Tick · locks Stance`}</span></button>`
+    : '';
   // Stance is chosen before the Mech has done anything, and a Mech in Shutdown
   // may only Reboot (4.1.1) — which matters twice over now that Overload can
   // spend a Mech's last Link and shut it down.
@@ -1304,6 +1316,7 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
       <button class="actrow k-moving${man.ok ? '' : ' warn'}"${man.ok ? '' : ` data-why="${esc(man.why ?? '')}"`} data-act="maneuver" title="${esc(moveTip)}">
         <span class="dotk"></span><span class="an">${moveWord}</span><span class="ac">${maneuverRange(ctx.data, t)} ${maneuverRange(ctx.data, t) === 1 ? 'grid' : 'grids'}${t.stance === 'mobility' && t.kind === 'mech' ? ' ×2' : ''}</span></button>
       ${ovlRow}
+      ${bonRow}
       ${rows}
     </div>`;
 }
@@ -4188,6 +4201,81 @@ function attachCombatWindow(host: HTMLElement): void {
   place();
 }
 
+// ---------- the End Phase checklist (rulebook 3.7) ----------
+
+// One press, one step. It sits out here rather than inside wireHud because the
+// ORDER of the two commands it sends is itself a rule, and a rule buried in a
+// click handler is a rule nothing can drive: the Award and the step mark BOTH
+// write `${round}:end:tasks`, so the sequence has to be testable.
+export function settleEndStep(ctx: HudCtx, seat: Side, step: string): void {
+  // Dissipation takes the isolated screens off both sides at once and then
+  // owes one from each Connected group; glueAfter turns that into the queue
+  // the choice panel walks. Said out loud, because it changes the board.
+  if (step === 'smoke') {
+    const was = (['s1', 's2'] as Side[]).map((side) => ({ side, ...dissipationFor(ctx.state.smoke ?? [], side) }));
+    const iso = was.reduce((n, d) => n + d.isolated.length, 0);
+    const groups = was.reduce((n, d) => n + d.groups.length, 0);
+    ctx.send({ kind: 'dissipateSmoke', seat });
+    ctx.noteNow(iso || groups
+      ? `${iso} isolated Smoke Screen${iso === 1 ? '' : 's'} removed${groups ? `, and ${groups === 1 ? 'one Connected group loses one' : `each of ${groups} Connected groups loses one`}` : ''} (4.16).`
+      : 'Nothing to dissipate.');
+  }
+  // "Settle Task control" is the step that pays: the guide judges the board
+  // and sends the numbers with the Award, so a mirrored seat applies the same
+  // VP rather than working them out again and maybe differently.
+  // Marking the step is idempotent; paying for it is not. Both players can
+  // see this button, so without the guard two near-simultaneous presses
+  // would award the round twice.
+  const alreadySettled = ensureScript(ctx.state).endDone.includes(`${ctx.state.round.n}:end:tasks`);
+  if (step === 'tasks' && !alreadySettled) {
+    const last = ctx.state.round.n >= (ctx.state.roundLimit ?? 5);
+    const got = scorePreview(ctx, last);
+    if (got.lines.length) {
+      const paid = ctx.send({
+        kind: 'award', seat,
+        vp: { s1: got.s1, s2: got.s2 },
+        keys: got.lines.map((l) => l.key).filter((k): k is string => !!k),
+      });
+      // A refused Award must never be followed by the step mark. Award's apply
+      // and markEndStep's apply write the SAME `${round}:end:tasks` key, and
+      // alreadySettled above reads that key to stop a second press — so
+      // marking a step whose payment was refused threw the round's Victory
+      // Points away for BOTH squads, with no retry and nothing said. Found
+      // live. Returning here leaves the step open, which is what makes the
+      // press repeatable once whatever refused it is gone.
+      if (!paid.ok) {
+        ctx.noteNow(`This round's score was NOT settled: ${paid.why} Nothing has been paid, so press Settle Task control again once that is dealt with.`);
+        ctx.refresh();
+        return;
+      }
+    }
+  }
+  // The command does the work; this reads the board first so it can say what
+  // the work was. A step that changes the board silently is the guide's one
+  // habit worth not copying.
+  const before = ctx.state.tokens.map((t) => ({
+    uid: t.uid,
+    label: t.label,
+    expiring: [...(t.expiring ?? [])].filter((id) => (t.statuses ?? []).includes(id)),
+    flipping: [...(t.expiring ?? [])],
+  }));
+  ctx.send({ kind: 'markEndStep', seat, step });
+  if (step === 'tokens') {
+    const names = (ids: string[]) => [...new Set(ids)].map((id) => STATUSES.find((d) => d.id === id)?.label ?? id).join(', ');
+    const said = before
+      .filter((b) => b.expiring.length || b.flipping.length)
+      .map((b) => `${b.label}: ${[b.expiring.length ? `${names(b.expiring)} expired` : '', b.flipping.length ? `${names(b.flipping)} flips to red` : ''].filter(Boolean).join(', ')}`);
+    ctx.noteNow(said.length ? said.join(' · ') : 'Tokens aged and both Command pools cleared.');
+  }
+  if (step === 'remove') {
+    const gone = before.filter((b) => !ctx.state.tokens.some((t) => t.uid === b.uid));
+    ctx.noteNow(gone.length
+      ? `Integrity Loss: ${gone.map((g) => g.label).join(', ')} left the board (4.4.4).`
+      : 'No Mech was down to two Parts, so nothing left the board.');
+  }
+  ctx.refresh();
+}
+
 // ---------- wiring ----------
 
 export function wireHud(root: HTMLElement, ctx: HudCtx): void {
@@ -4885,6 +4973,17 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     }
     ctx.refresh();
   });
+  on('[data-act="attackmode"]', (el) => {
+    if (el.dataset.why) { ctx.noteNow(el.dataset.why); ctx.refresh(); return; }
+    const sc = ensureScript(s);
+    const t = sc.opp ? s.tokens.find((x) => x.uid === sc.opp!.uid) : undefined;
+    if (t && ctx.send({ kind: 'attackMode', seat: t.side, uid: t.uid }).ok) {
+      // The Stance lock is the price, and it is not obvious from the button, so
+      // it is said out loud the moment it is paid.
+      ctx.noteNow(`${t.label} takes its extra Action Tick, and its Stance is now set for this Action Opportunity (4.1).`);
+    }
+    ctx.refresh();
+  });
   on('[data-act="maneuver"]', (el) => {
     if (el.dataset.why) { ctx.noteNow(el.dataset.why); ctx.refresh(); return; }
     const sc = ensureScript(s);
@@ -4978,63 +5077,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     board?.clearMovePath();
     ctx.refresh();
   });
-  on('[data-endstep]', (el) => {
-    const step = el.dataset.endstep!;
-    // Dissipation takes the isolated screens off both sides at once and then
-    // owes one from each Connected group; glueAfter turns that into the queue
-    // the choice panel walks. Said out loud, because it changes the board.
-    if (step === 'smoke') {
-      const before = (['s1', 's2'] as Side[]).map((side) => ({ side, ...dissipationFor(ctx.state.smoke ?? [], side) }));
-      const iso = before.reduce((n, d) => n + d.isolated.length, 0);
-      const groups = before.reduce((n, d) => n + d.groups.length, 0);
-      ctx.send({ kind: 'dissipateSmoke', seat: me() });
-      ctx.noteNow(iso || groups
-        ? `${iso} isolated Smoke Screen${iso === 1 ? '' : 's'} removed${groups ? `, and ${groups === 1 ? 'one Connected group loses one' : `each of ${groups} Connected groups loses one`}` : ''} (4.16).`
-        : 'Nothing to dissipate.');
-    }
-    // "Settle Task control" is the step that pays: the guide judges the board
-    // and sends the numbers with the Award, so a mirrored seat applies the same
-    // VP rather than working them out again and maybe differently.
-    // Marking the step is idempotent; paying for it is not. Both players can
-    // see this button, so without the guard two near-simultaneous presses
-    // would award the round twice.
-    const alreadySettled = ensureScript(ctx.state).endDone.includes(`${ctx.state.round.n}:end:tasks`);
-    if (step === 'tasks' && !alreadySettled) {
-      const last = ctx.state.round.n >= (ctx.state.roundLimit ?? 5);
-      const got = scorePreview(ctx, last);
-      if (got.lines.length) {
-        ctx.send({
-          kind: 'award', seat: me(),
-          vp: { s1: got.s1, s2: got.s2 },
-          keys: got.lines.map((l) => l.key).filter((k): k is string => !!k),
-        });
-      }
-    }
-    // The command does the work; this reads the board first so it can say what
-    // the work was. A step that changes the board silently is the guide's one
-    // habit worth not copying.
-    const before = ctx.state.tokens.map((t) => ({
-      uid: t.uid,
-      label: t.label,
-      expiring: [...(t.expiring ?? [])].filter((id) => (t.statuses ?? []).includes(id)),
-      flipping: [...(t.expiring ?? [])],
-    }));
-    ctx.send({ kind: 'markEndStep', seat: me(), step });
-    if (step === 'tokens') {
-      const names = (ids: string[]) => [...new Set(ids)].map((id) => STATUSES.find((d) => d.id === id)?.label ?? id).join(', ');
-      const said = before
-        .filter((b) => b.expiring.length || b.flipping.length)
-        .map((b) => `${b.label}: ${[b.expiring.length ? `${names(b.expiring)} expired` : '', b.flipping.length ? `${names(b.flipping)} flips to red` : ''].filter(Boolean).join(', ')}`);
-      ctx.noteNow(said.length ? said.join(' · ') : 'Tokens aged and both Command pools cleared.');
-    }
-    if (step === 'remove') {
-      const gone = before.filter((b) => !ctx.state.tokens.some((t) => t.uid === b.uid));
-      ctx.noteNow(gone.length
-        ? `Integrity Loss: ${gone.map((g) => g.label).join(', ')} left the board (4.4.4).`
-        : 'No Mech was down to two Parts, so nothing left the board.');
-    }
-    ctx.refresh();
-  });
+  on('[data-endstep]', (el) => settleEndStep(ctx, me(), el.dataset.endstep!));
   on('[data-act="advance"]', () => {
     // Networked, the press is one half of the two-player agreement: mark this
     // seat ready (or take it back). The completer's client sends the actual
