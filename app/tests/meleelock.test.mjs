@@ -108,5 +108,33 @@ check('a drone that moves can be', M.canBeForceMoved(data, drone(3, 's2', 0, 0, 
 check('so can one with a printed move value', M.canBeForceMoved(data, { kind: 'drone', cards: [{ slot: 'main', card: { move: 2 } }] }), true);
 check('a deployable that cannot move cannot be', M.canBeForceMoved(data, drone(3, 's2', 0, 0, [{ type: 'Firing' }])), false);
 
+// ---------- Melee Firing (近战射击) ----------
+//
+// "This action can still be performed during Melee Lock." Reported from a live
+// game 2026-08-19: card 540 S9 Meteor Shield + IGX106 Ion Shotgun was barred
+// from firing while locked even though its Single Shot prints the keyword.
+//
+// The reader matched on `k.key`, but an Action prints its keywords as `inline`
+// — so it found 0 of the 26 Actions that carry it and EVERY Melee Firing weapon
+// was silently barred. Driven against the real cards, because a fixture would
+// have been written in whichever shape the code already read.
+{
+  const raw = JSON.parse(readFileSync(new URL('../../data/cards.json', import.meta.url), 'utf8'));
+  const all = Array.isArray(raw) ? raw : raw.cards;
+  const acts = all.flatMap((c) => (c.actions ?? []).map((a) => ({ card: String(c.id), a })));
+  const carry = acts.filter(({ a }) => (a.keywords ?? []).some((k) => (k.inline ?? k.key) === '近战射击'));
+  check('the shipped cards really do carry Melee Firing', carry.length > 20, true);
+  check('and none of them stores it as `key`, which is what the reader used to check',
+    acts.filter(({ a }) => (a.keywords ?? []).some((k) => k.key === '近战射击')).length, 0);
+  // The card from the report.
+  const shotgun = acts.find(({ card, a }) => card === '540' && a.id === '540_B').a;
+  check('540_B Ion Shotgun is Melee Firing', M.isMeleeFiring(shotgun), true);
+  check('and every card that prints it now reads as such',
+    carry.filter(({ a }) => !M.isMeleeFiring(a)).map(({ card }) => card), []);
+  // The ban still applies to a gun that does NOT print it.
+  const plain = acts.find(({ a }) => a.type === 'Firing' && !(a.keywords ?? []).some((k) => (k.inline ?? k.key) === '近战射击')).a;
+  check('a Firing Action without the keyword is still barred while locked', M.isMeleeFiring(plain), false);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

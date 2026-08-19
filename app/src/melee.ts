@@ -9,8 +9,16 @@ const MELEE_FIRING = '近战射击';
 
 // ---------- who can lock ----------
 
+// An Action printing 近战射击 may still be fired while Melee Locked, which is
+// otherwise a blanket ban on Firing (4.3.5).
+//
+// `inline` FIRST, and that is the whole bug this once had: an Action prints its
+// keywords as `{ inline: '近战射击' }`, never as `key`. Reading `key` alone
+// matched 0 of the 26 Actions that carry it, so every Melee Firing weapon was
+// wrongly barred while locked — and it looked exactly like the rule working.
+// The same key-vs-inline trap killed the Missile keyword read in missileGuidance.
 export function isMeleeFiring(a: CardAction): boolean {
-  return (a.keywords ?? []).some((k) => k.key === MELEE_FIRING);
+  return (a.keywords ?? []).some((k) => (k.inline ?? k.key) === MELEE_FIRING);
 }
 
 export function meleeCapable(data: GameData, t: Token): boolean {
