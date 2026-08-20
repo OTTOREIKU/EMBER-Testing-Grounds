@@ -17,7 +17,7 @@ import { statusCount, newOpportunity, newScriptState, PHASES, STATUSES, TIMINGS 
 import { deployable, deployTurn, deploymentComplete, firstPlayerFrom, normaliseSetup, rollTotal, type SetupState } from './setup';
 import { actionPhaseComplete, activationOrder, alive, canAct, droneActionWhy, droneMoveWhy, eligibleUnits, isLoopPhase, loopComplete, nextActivation, nextTurn, onExtraOpportunity, type InitLookup, type LoopPhase } from './loop';
 import { actionIdOf, canActivate, canAttackMode, canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed, type TickVerdict } from './ticks';
-import { escortTargets, gameResult, normaliseTasks, scoreMain, scoreRiders, scoreSecondary, settleControl, unpaidLines, zoneCentreGrid, type Designation, type ScoreLine, type ScoreResult, type SecondaryScoring } from './tasks';
+import { escortTargets, gameResult, normaliseTasks, wipedOut, scoreMain, scoreRiders, scoreSecondary, settleControl, unpaidLines, zoneCentreGrid, type Designation, type ScoreLine, type ScoreResult, type SecondaryScoring } from './tasks';
 import { armorPiercing, armorPiercingNote, automaticShieldFor, canAffordFocus, focusIsFree, stationaryAdjusted, twoHandedUse, tokenCards, vpRiderFor } from './units';
 
 // The in-match HUD (Match Centre part 3a): one question at a time, per seat.
@@ -1659,6 +1659,17 @@ function panelHtml(ctx: HudCtx): string {
     return head('Your move', 'Resolving the attack', 'The combat window has the dice.', true)
       + '<div class="tp-body"><p class="tp-note">The combat window has it. Everything it settles is applied for you<br>and reaches the other player on its own.</p></div><div class="tp-foot"></div>';
   }
+  // THE GAME IS OVER THE MOMENT A SQUAD HAS NO MECH LEFT, and this outranks
+  // every question below it because none of them can matter any more. Without
+  // it the match walked out the rest of the End Phase and started another
+  // round, which is what OTTO watched happen after he destroyed the last Mech
+  // on the field.
+  //
+  // Below boxDrop and the combat window on purpose: the Black Box a dying Mech
+  // drops is asked for in the middle of the attack that killed it (5.3.1), and
+  // the helper is still holding the dice that finished the job. Both settle
+  // first, and this is waiting when they do.
+  if (wipedOut(s.tokens)) return resultPanel(ctx, normaliseTasks(s.tasks).vp);
   // A Blink is mid-Action and owes its two facing answers before anything else
   // makes sense, so it takes the panel until it is finished or cancelled.
   if (blinkPlan) return blinkPanel(ctx);

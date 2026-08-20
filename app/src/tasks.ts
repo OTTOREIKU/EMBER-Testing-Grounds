@@ -702,7 +702,33 @@ export interface GameResult {
 
 // Most Victory Points wins. On a tie it is the side with more Mech Parts and
 // Drones left on the board, and only a tie in both is a genuine draw.
+// A squad with no Mech left standing. The game cannot go on without one to
+// activate, so this ends the match THERE rather than walking every remaining
+// phase out and starting another round, which is what OTTO watched it do after
+// he destroyed the last Mech on the field.
+//
+// `deployed !== false` matters: before deployment nobody is on the board, and a
+// squad that has not placed a Mech yet has not lost one. Aliveness is the same
+// test the activation order uses (loop.ts `alive`), written out here so tasks.ts
+// does not have to reach into the loop for it -- a Mech with every Part
+// destroyed is the one that can no longer be activated.
+export function wipedOut(tokens: Token[]): Side | null {
+  for (const side of ['s1', 's2'] as Side[]) {
+    const mechs = tokens.filter((t) => t.side === side && t.kind === 'mech' && t.deployed !== false);
+    if (!mechs.length) continue;
+    if (mechs.every((m) => Object.values(m.partStates).every((p) => p === 'destroyed'))) return side;
+  }
+  return null;
+}
+
 export function gameResult(st: TaskState, tokens: Token[]): GameResult {
+  // BEFORE the Victory Points, because losing every Mech is not a scoreline:
+  // a squad that cannot field a Mech has lost the game whatever the tasks paid.
+  const wiped = wipedOut(tokens);
+  if (wiped) {
+    const winner: Side = wiped === 's1' ? 's2' : 's1';
+    return { winner, why: 'every Mech in the opposing Squad has been destroyed' };
+  }
   if (st.vp.s1 !== st.vp.s2) {
     const winner: Side = st.vp.s1 > st.vp.s2 ? 's1' : 's2';
     return { winner, why: `${st.vp.s1} Victory Points to ${st.vp.s2}` };
