@@ -33,8 +33,17 @@ const unit = (col, row, over = {}) =>
      facing: over.facing ?? 0, aerial: over.aerial ?? false, partStates: {}, ...over });
 // Terrain tall enough to obstruct: losBetween only cares about isFragile for
 // crushing, height is what blocks.
+// `providesProtection` defaults TRUE here because this helper builds 3-inch
+// walls, and in the shipped data every piece carries the flag: 84 of 84, with
+// the 1-inch Containers set false and everything 2-inch or taller set true. A
+// helper that left it undefined was agreeing with a protectionFor that never
+// asked the question.
 const wall = (id, cells, over = {}) =>
-  ({ id, height: 3, isFragile: false, subCells: cells.map(([col, row]) => ({ col, row })), ...over });
+  ({ id, height: 3, isFragile: false, providesProtection: true, subCells: cells.map(([col, row]) => ({ col, row })), ...over });
+// A 1-inch Container: obstructs the line, pays the defender nothing (4.5,
+// rules/04:115). Same shape as a wall, one flag apart, so a test can show the
+// difference is the height and not the geometry.
+const crate = (id, cells) => wall(id, cells, { height: 1, isFragile: true, providesProtection: false });
 const firing = { type: 'Firing' };
 
 // ---------- A1: terrain against your own base is not cover ----------
@@ -224,6 +233,46 @@ for (const [file, callee] of [['combat.ts', 'protectionFor'], ['main.ts', 'prote
     new RegExp(`${callee}\\([\\s\\S]{0,400}?ignoresProtectionOnHighlight`).test(text), true);
   check(`${file} hands protectionFor the ZHDR-101 predicate`,
     new RegExp(`${callee}\\([\\s\\S]{0,400}?providesUnitProtectionToAllies`).test(text), true);
+}
+
+// ---------- HEIGHT DECIDES WHETHER TERRAIN PAYS (4.5, rules/04:115) ----------
+// OTTO from live play: "are the destructible boxes (green 1'') accidentally
+// providing obstructed to line of site? ... the card to pick him says 'obstructed
+// so the defender gets +2 white'".
+//
+// They were. The rule is explicit: "Only Terrain with height 2 inches or more
+// provides Terrain Protection. 1-inch terrain can partially obstruct LoS but
+// grants no protection and no modifiers." The worked example at rules/04:121 is
+// the same board: 1-inch terrain between A and C gives nothing.
+//
+// `providesProtection` already carried the answer and is false for both
+// Container sizes in all 84 shipped terrain pieces. protectionFor simply never
+// asked it, while printing a note that claimed terrain ">=2\"".
+{
+  // One line, one obstructor, twice: the ONLY difference is the height flag.
+  // This file's own helper: small-cell coordinates, size 3 for a Mech.
+  const a = unit(0, 0, { uid: 1, side: 's1', size: 3 });
+  const d = unit(0, 12, { uid: 2, side: 's2', size: 3 });
+
+  const tall = protectionFor(a, d, firing, [wall('w', [[1, 6], [1, 7], [1, 8]])], [], []);
+  check('a 3-inch wall in the line is Terrain Protection', tall.white, 2);
+
+  const low = protectionFor(a, d, firing, [crate('c', [[1, 6], [1, 7], [1, 8]])], [], []);
+  check('but a 1-inch Container in the same line pays nothing', low.white, 0);
+  check('and does not claim to', /Terrain Protection/.test(low.note), false);
+
+  // It still OBSTRUCTS: the rule says 1-inch terrain can obstruct and simply
+  // grants nothing for it, so the geometry must be unchanged and only the
+  // payment different. Asserted so a future fix cannot "solve" this by making
+  // crates invisible to line of sight.
+  check('the crate is still in the way as far as sight is concerned',
+    losBetween(a, d, [crate('c', [[1, 6], [1, 7], [1, 8]])], []), 'obstructed');
+
+  // A wall behind the crate still pays, so the filter drops the crate and not
+  // the whole line.
+  const both = protectionFor(a, d, firing,
+    [crate('c', [[1, 4], [1, 5]]), wall('w', [[1, 6], [1, 7], [1, 8]])], [], []);
+  check('and a real wall behind it is unaffected', both.white, 2);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

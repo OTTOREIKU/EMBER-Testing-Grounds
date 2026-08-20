@@ -955,9 +955,21 @@ function setupPanel(ctx: HudCtx, su: SetupState): string {
       .map((side) => {
         const r = su.rolls[side];
         const isMe = mine(ctx, side);
-        const btn = isMe
-          ? `<button class="rowbtn" data-roll="${side}">${r.length ? 'Re-roll' : 'Roll 2 dice'}</button>`
-          : `<span class="tp-dim">${r.length ? '' : 'rolling…'}</span>`;
+        // A RE-ROLL ONLY EXISTS FOR A TIE, which is what the note under these rows
+        // already tells the player. This used to offer one the moment you had
+        // rolled anything, and kept offering it after a winner was settled, so a
+        // player could press it over and over and keep throwing dice at a decision
+        // that was already made.
+        //
+        // Rolled with no tie is a finished state, so it says so rather than
+        // leaving a live control with nothing legitimate to do.
+        const btn = !isMe
+          ? `<span class="tp-dim">${r.length ? '' : 'rolling…'}</span>`
+          : !r.length
+            ? `<button class="rowbtn" data-roll="${side}">Roll 2 dice</button>`
+            : tie
+              ? `<button class="rowbtn" data-roll="${side}">Re-roll</button>`
+              : '<span class="tp-dim">rolled</span>';
         return `<div class="dialrow"><span class="nm ${side}">${squadLabel(side)}</span>${btn}<span class="pickchip${r.length ? ' set' : ''}">${r.length ? `${rollTotal(r)} Hits` : '—'}</span></div>`;
       })
       .join('');

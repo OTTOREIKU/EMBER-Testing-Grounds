@@ -760,7 +760,17 @@ export function protectionFor(
       const dr = c.row < attacker.row ? attacker.row - c.row : c.row - (attacker.row + attacker.size - 1);
       return Math.max(dc, 0) + Math.max(dr, 0) <= 1;
     });
-  const cover = terrain.filter((p) => !touching(p));
+  // HEIGHT DECIDES WHETHER TERRAIN PAYS, and this filter was missing it. 4.5
+  // (rules/04:115): "Only Terrain with height 2 inches or more provides Terrain
+  // Protection. 1-inch terrain can partially obstruct LoS but grants no
+  // protection and no modifiers." The worked example at :121 is the same
+  // board OTTO hit: 1-inch terrain between A and C gives nothing.
+  //
+  // `providesProtection` already carries the answer and is set false for both
+  // Container sizes wherever terrain is built (mapeditor.ts, scenarios.ts). It
+  // simply was not asked, so the little green boxes were handing the defender
+  // +2 White while the note beside them read "obstructed by terrain >=2\"".
+  const cover = terrain.filter((p) => p.providesProtection && !touching(p));
   // 4.5.3: standing in the line is not the same as protecting. Only LARGE
   // Units provide Unit Protection — "medium Units do not" — while Ally and
   // Enemy alike count among the Large ones. Every Mech in this app is size 3
