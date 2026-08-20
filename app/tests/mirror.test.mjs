@@ -499,6 +499,68 @@ const spinning = (root) => {
   check('but the next attack opens it again', w.h.watching, true);
 }
 
+// ---------- A DISMISSAL MAY NOT DEADLOCK THE ATTACK ----------
+// The close button is keyed to the ATTACK and not the frame (block 3 above),
+// which is right for somebody watching a fight they are not in and was a
+// deadlock for the DEFENDER: every question the mirror puts to them is one only
+// they can answer, and the attacking client is parked on the answer, so a window
+// that stayed shut stopped the game rather than tidying the screen.
+{
+  const b = board();
+  // The defence step with the roll still owed: the shape where the attacking
+  // client is literally parked on pendingDefense.
+  const owed = { ...defended, step: 'defense', defense: null, focus: null, designate: null };
+  // A frame that asks this viewer nothing, so the dismissal should survive it.
+  const quiet = { ...defended, step: 'resolve', focus: null, designate: null };
+  const shut = (role, view) => {
+    const w = watcher(b.all, []);
+    w.h.showMirror(quiet, b.atk, b.def, firing, role);
+    w.h.dismissMirror();
+    w.h.showMirror(view, b.atk, b.def, firing, role);
+    return w;
+  };
+
+  // A SPECTATOR is never asked anything, so their dismissal is absolute. This
+  // is also what pins the role gate: without it the clause below would reopen
+  // every watcher's window on somebody else's defence roll.
+  check('a spectator stays closed even while the defender is being asked',
+    shut('spectator', owed).h.watching, false);
+
+  // A DEFENDER stays closed too, for as long as the attack is not waiting on
+  // them. Without this the X would be a button that does nothing, which is
+  // worse than the deadlock it was meant to fix.
+  check('a defender who closed it is not dragged back by an idle frame',
+    shut('defender', quiet).h.watching, false);
+  // KC Armor, Melee Evasion and the Dodge enhancement are offers a defender may
+  // decline, and declining one by closing the window is a choice. Only BLOCKING
+  // questions reopen it.
+  check('nor by an offer they are free to decline',
+    shut('defender', { ...quiet, evadeReady: true, dodgeDieReady: true }).h.watching, false);
+  // The attacker's own Focus stages are answered on the other client, so they
+  // are not this viewer's question either.
+  check('nor by the ATTACKER taking their half of the Focus',
+    shut('defender', { ...quiet, focus: { stage: 'rerollA', attackerUse: true, defenderUse: false } }).h.watching,
+    false);
+
+  // The blocking questions, each on its own fresh window. Every one of these
+  // parks the attacking client until this player answers.
+  const awaits = [
+    ['the Defense Roll it owes', owed],
+    ['the Focus declare', { ...defended, focus: { stage: 'declareD', attackerUse: false, defenderUse: false } }],
+    ['the Focus reroll', { ...defended, focus: { stage: 'rerollD', attackerUse: false, defenderUse: true } }],
+    ['a hit it must place', { ...defended, step: 'designate', designate: { from: 'torso' } }],
+  ];
+  for (const [what, view] of awaits) {
+    const w = shut('defender', view);
+    check(`but ${what} brings it back`, w.h.watching, true);
+    // Brought back because it was needed, it then STAYS: the dismissal is
+    // cleared rather than suspended, so answering the question does not drop
+    // the player straight back out of the window they just used.
+    w.h.showMirror(quiet, b.atk, b.def, firing, 'defender');
+    check(`and once ${what} is answered it stays open`, w.h.watching, true);
+  }
+}
+
 // ---------- THE LIVE-DIE RING, AND THE EYE ----------
 // OTTO asked for dice that are affecting the action to be ringed, and asked
 // specifically that it be SMART: "ringing an eye for example should only be when

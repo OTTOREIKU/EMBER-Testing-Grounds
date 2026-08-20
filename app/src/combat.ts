@@ -64,6 +64,36 @@ function mirrorKey(v: CombatView): string {
   return `${v.attackerUid}:${v.targetUid}:${v.actionId}:${v.mode ?? ''}`;
 }
 
+// Does this view leave the attack WAITING ON THIS VIEWER?
+//
+// A dismissal may not outlive one. Closing the window is a fair thing to want
+// right up to the moment the fight cannot go on without you: every question the
+// mirror puts to the defender is one only they can answer, and the attacking
+// client is parked on the answer, so a window that stayed shut would stop the
+// game rather than tidy the screen. Keyed to the attack as it is, the X used to
+// do exactly that for the rest of the attack.
+//
+// ONLY BLOCKING QUESTIONS COUNT. KC Armor, Melee Evasion and the Dodge
+// enhancement are offers a defender may decline, and declining one by closing
+// the window is a choice rather than a deadlock, so they do not drag it back.
+// That is what keeps the button worth pressing: it stays shut for the whole
+// fight unless the fight actually stops for you.
+function viewAwaits(v: CombatView, role: CombatRole): boolean {
+  // An attacker's window is not a mirror, and a spectator is never asked.
+  if (role !== 'defender') return false;
+  // THE DEFENSE ROLL. The attacking client parks on pendingDefense until the
+  // faces come back -- the same deadlock the roll button already carries a
+  // warning about, reached a second way.
+  if (v.step === 'defense' && !v.defense) return true;
+  // FOCUS (4.4.1-5). The defender declares, then rerolls if they declared, and
+  // both are answered from this window and nowhere else. The attacker's own two
+  // stages are not listed: those are answered on the other client.
+  if (v.focus && (v.focus.stage === 'declareD' || v.focus.stage === 'rerollD')) return true;
+  // WHERE THE HIT LANDS, when the choice is the defender's to make.
+  if (v.designate) return true;
+  return false;
+}
+
 // What is this viewer's relationship to THIS attack.
 //
 // Asked of the COMBAT, never of the seat. With two seats "not me" safely
@@ -706,7 +736,14 @@ export class AttackHelper {
     // "the attack keeps going" and a watcher who dismissed it does not want it
     // back three times as the sequence advances. The NEXT attack is new
     // information and gets to reopen the window.
-    if (this.dismissed && this.dismissed === mirrorKey(view)) return;
+    //
+    // ... EXCEPT when the attack is waiting on THIS viewer, which the key alone
+    // could not tell and which made a defender's dismissal a deadlock: the
+    // window is the only place they can answer from, so a shut one parks the
+    // attacking client for ever. viewAwaits names the blocking questions.
+    // Falling through clears the dismissal rather than suspending it, so a
+    // window brought back because it was needed then stays.
+    if (this.dismissed && this.dismissed === mirrorKey(view) && !viewAwaits(view, role)) return;
     this.dismissed = null;
     const had = this.mirroring ? this.ctx : null;
     const same = !!had && had.attacker.uid === attacker.uid && had.defender.uid === defender.uid;
