@@ -419,6 +419,141 @@ export function mountDuel(root: ParentNode): HTMLElement | null {
   return wrap;
 }
 
+// THE ELECTRONIC COUNTER-ROLL'S RESOLUTION (4.11.2), on the same skeleton the
+// attack's offsetting uses so playDuel animates it without knowing the
+// difference.
+//
+// It is a genuine offsetting and not a metaphor: "more Lightning wins" is the
+// same statement as "pair them off and see who has one left over", and pairing
+// is the reading a player can check at a glance. Level on Lightning falls
+// through to Light Hits, and level on both is the Initiator's by rule, which is
+// the one outcome with nothing to show, so it says so in words.
+//
+// Its own function rather than a mode on duelHtml: every explanatory string in
+// there names Dodge, Defense and Hits, and a contest that borrowed them would be
+// telling the player something untrue about what just happened.
+export function contestHtml(o: {
+  initLabel: string;
+  respLabel: string;
+  a: { lightning: number; light: number };
+  b: { lightning: number; light: number };
+  why: string;
+}): string {
+  const glyph = (kind: string, size = 22) => iconSvg({ type: kind } as DiceIcon, size);
+  // Loop lengths off another client's numbers, clamped where the loop is for the
+  // same reason duelHtml clamps its own.
+  const many = (n: number) => (Number.isSafeInteger(n) && n > 0 ? Math.min(n, 40) : 0);
+  let i = 0;
+  const pair = (kind: string, mine: number, theirs: number): string => {
+    const n = Math.max(many(mine), many(theirs));
+    return Array.from({ length: n }, (_, k) => {
+      const has = k < mine;
+      const met = k < theirs;
+      const verdict = has && met ? '<span class="duel-v blocked">level</span>'
+        : has ? '<span class="duel-v through">ahead</span>'
+          : '<span class="duel-v through">behind</span>';
+      return `<div class="duel-col shown resolved" data-i="${i++}" data-offset="${has && met ? 'defense' : 'none'}">
+          <span class="duel-icon k-${kind}${has ? '' : ' unused'}" title="${esc(ICON_LABEL[kind] ?? kind)}">${has ? glyph(kind) : ''}</span>
+          <span class="duel-link"></span>
+          <span class="duel-block">${met ? `<span class="duel-icon k-${kind}">${glyph(kind, 18)}</span>` : ''}</span>
+          ${verdict}
+        </div>`;
+    }).join('');
+  };
+  const level = o.a.lightning === o.b.lightning;
+  // Light Hits are only ever looked at when Lightning could not decide it, so
+  // showing them otherwise would invent a tiebreak that never ran.
+  const cols = pair('lightning', o.a.lightning, o.b.lightning)
+    + (level ? pair('light_hit', o.a.light, o.b.light) : '');
+  const tie = level
+    ? `<div class="duel-trig"><small>Level on ${esc(ICON_LABEL.lightning ?? 'Lightning')}, so Light Hits decide it${o.a.light === o.b.light ? ', and those are level too: the Initiator holds it by rule (4.11.2)' : ''}</small></div>`
+    : '';
+  return `<div class="duel">
+      <div class="duel-head">
+        <span class="duel-side">${esc(o.initLabel)}</span>
+        <span class="duel-vs">vs</span>
+        <span class="duel-side">${esc(o.respLabel)}</span>
+        <button class="duel-replay" type="button" title="Play the counter-roll again">▶ Replay</button>
+      </div>
+      <div class="duel-grid">${cols || '<p class="dim">Neither side rolled anything that counts.</p>'}</div>
+      ${tie}
+      <p class="ah-sum">${esc(o.why)}</p>
+    </div>`;
+}
+
+// ---------- the shake, owned in one place ----------
+//
+// Dice CYCLE and LAND. They used to appear already settled, which read as the
+// app deciding rather than a roll happening, and that is the half of the combat
+// window OTTO singled out as worth keeping.
+//
+// Module level and instance-held rather than a private method, because the
+// Electronic Counter-roll is the same roll with different dice and had none of
+// this: it drew its faces straight into the markup. One implementation means
+// the two cannot drift, which is the lesson the retired combat mirror already
+// taught this file once.
+export class DiceSpinner {
+  private dice: DiceData;
+  private timer: number | undefined;
+  // The dice the running spin is shaking, held so `.rolling` can never outlive
+  // the timer meant to take it off again. Leaving it behind is what left OTTO
+  // watching a hand rattle on frozen faces.
+  private els: HTMLElement[] = [];
+
+  constructor(dice: DiceData) {
+    this.dice = dice;
+  }
+
+  get running(): boolean {
+    return this.timer !== undefined;
+  }
+
+  stop(): void {
+    if (this.timer) window.clearInterval(this.timer);
+    this.timer = undefined;
+    for (const el of this.els) el.classList.remove('rolling');
+    this.els = [];
+  }
+
+  // `only` is the indices being thrown, or null for the whole hand. A REROLL
+  // SHAKES ONLY THE DICE BEING REROLLED: cycling the kept ones lands them back
+  // on the faces they already had, which is a convincing impression of a reroll
+  // that changed nothing.
+  //
+  // The class goes on the DICE rather than the row so a partial throw is
+  // possible at all. The row form still exists in the stylesheet because the
+  // Black Die stage shakes a whole stage.
+  spin(container: HTMLElement, roll: { color: DieColor; face: number }[], only?: number[] | null): void {
+    this.stop();
+    const dice = [...container.querySelectorAll<HTMLElement>('.die')];
+    if (!dice.length) return;
+    const which = only?.length ? only.filter((i) => dice[i]) : dice.map((_, i) => i);
+    if (!which.length) return;
+    this.els = which.map((i) => dice[i]);
+    for (const el of this.els) el.classList.add('rolling');
+    let ticks = 0;
+    this.timer = window.setInterval(() => {
+      ticks++;
+      const done = ticks >= 8;
+      for (const i of which) {
+        const d = roll[i];
+        if (!d) continue;
+        const sides = this.dice.dice[d.color]?.sides ?? 6;
+        dice[i].innerHTML = faceHtml(this.dice, d.color, done ? d.face : Math.floor(Math.random() * sides));
+      }
+      if (!done) return;
+      this.stop();
+    }, 55);
+  }
+}
+
+// One die face as markup. Module level so the spinner and both helpers draw a
+// face the same way.
+export function faceHtml(dice: DiceData, color: DieColor, face: number): string {
+  const f = dice.dice[color]?.faces[face] ?? [];
+  return f.length ? f.map((ic: DiceIcon) => iconSvg(ic)).join('') : '<span class="blank">·</span>';
+}
+
 interface Ctx {
   attacker: Token;
   defender: Token;
@@ -639,10 +774,8 @@ export class AttackHelper {
   // own at module scope, where the mirror can reach it too.
   private rollGen = 0;
   private blackTimer: number | undefined;
-  private spinTimer: number | undefined;
-  // The DICE the running spin is shaking. Held so the class can never outlive
-  // the timer that is supposed to take it off again -- see stopSpin.
-  private spinEls: HTMLElement[] = [];
+  // The shake, shared with the Electronic Counter-roll rather than owned here.
+  private spinner: DiceSpinner;
   private spinFor: 'attack' | 'defense' | null = null;
   // WHICH dice, by index into the roll. null means the whole hand, which is a
   // fresh roll; a list means a reroll, and only those were thrown again.
@@ -668,6 +801,7 @@ export class AttackHelper {
   ) {
     this.data = data;
     this.dice = dice;
+    this.spinner = new DiceSpinner(dice);
     this.root = root;
     this.onChanged = onChanged;
     this.onClose = onClose;
@@ -924,72 +1058,15 @@ export class AttackHelper {
     // calls this on every published view, so a defender who rolled and then
     // received one more frame -- the attacker's Focus prompt, say -- had their
     // dice stopped mid-spin and left rattling.
-    this.stopSpin();
+    this.spinner.stop();
     this.spinFor = null;
   }
 
-  private faceHtml(color: DieColor, face: number): string {
-    const f = this.dice.dice[color].faces[face];
-    return f.length ? f.map((ic: DiceIcon) => iconSvg(ic)).join('') : '<span class="blank">·</span>';
-  }
 
   // The attack and defence dice used to appear already settled, which read as
   // the app deciding rather than a roll happening. They cycle faces first and
   // land on the values rollPool already chose. `.rolling .die` supplies the
   // shake, so the class alone is enough.
-  // STOPPING A SPIN MEANS TAKING THE SHAKE OFF, not just killing the timer.
-  //
-  // OTTO from live play: "after the defender rolls their white die and before
-  // the attacker chooses if they want to focus or not, the white die are shaking
-  // constantly. the face of the die doesnt change but the animation has them
-  // shake forever." Frozen faces with a live shake is the signature: `.rolling`
-  // supplies the animation and the interval supplies the faces, so a spin whose
-  // interval was cleared from outside leaves the row shaking on a dead clock.
-  //
-  // Two places did exactly that -- stopBlack(), which showMirror calls on EVERY
-  // published view, and spinDice itself when a second roll started before the
-  // first had finished its eight ticks. Both now come through here, so the class
-  // and the timer are put down together and neither can be left behind.
-  private stopSpin(): void {
-    if (this.spinTimer) window.clearInterval(this.spinTimer);
-    this.spinTimer = undefined;
-    for (const el of this.spinEls) el.classList.remove('rolling');
-    this.spinEls = [];
-  }
-
-  // `only` is the indices being thrown, or null for the whole hand.
-  //
-  // A REROLL SHAKES ONLY THE DICE BEING REROLLED. OTTO: "when I roll the
-  // specific die again but have some that I am not rerolling, it does the
-  // animations of the reroll again for all of my dice ... makes it seem like
-  // those got rerolled as well." The kept dice were being cycled through random
-  // faces and landed back on the values they already had, which is a very
-  // convincing impression of a reroll that changed nothing.
-  //
-  // The class goes on the DICE rather than the row for the same reason. The row
-  // form still exists in the stylesheet because the Black Die stage uses it.
-  private spinDice(container: HTMLElement, roll: Rolled[], only?: number[] | null): void {
-    this.stopSpin();
-    const dice = [...container.querySelectorAll<HTMLElement>('.die')];
-    if (!dice.length) return;
-    const spin = only?.length ? only.filter((i) => dice[i]) : dice.map((_, i) => i);
-    if (!spin.length) return;
-    this.spinEls = spin.map((i) => dice[i]);
-    for (const el of this.spinEls) el.classList.add('rolling');
-    let ticks = 0;
-    this.spinTimer = window.setInterval(() => {
-      ticks++;
-      const done = ticks >= 8;
-      for (const i of spin) {
-        const d = roll[i];
-        if (!d) continue;
-        dice[i].innerHTML = this.faceHtml(d.color, done ? d.face : Math.floor(Math.random() * this.dice.dice[d.color].sides));
-      }
-      if (!done) return;
-      this.stopSpin();
-    }, 55);
-  }
-
   // ---------- 自动盾牌 Automatic Shield (FAQ A2/A12) ----------
   //
   // The one keyword that changes the DEFENDER of a declared attack, so the swap
@@ -2857,8 +2934,11 @@ export class AttackHelper {
     die.className = 'die die-black';
     const caption = document.createElement('span');
     caption.className = 'ah-blackcap';
-    const faceHtml = (i: number) => this.dice.dice.black.faces[i].map((ic) => iconSvg(ic)).join('');
-    const showFace = (i: number) => { die.innerHTML = faceHtml(i); };
+    // Named apart from the module-level faceHtml deliberately: this one takes a
+    // face index and nothing else, and a shadow that differs in signature from
+    // an exported function of the same name is a trap waiting for someone.
+    const blackFace = (i: number) => this.dice.dice.black.faces[i].map((ic) => iconSvg(ic)).join('');
+    const showFace = (i: number) => { die.innerHTML = blackFace(i); };
     showFace(0);
     stage.append(die, caption);
 
@@ -3162,7 +3242,7 @@ export class AttackHelper {
       const only = this.spinOnly;
       this.spinFor = null;
       this.spinOnly = null;
-      window.setTimeout(() => this.spinDice(div, roll, only), 0);
+      window.setTimeout(() => this.spinner.spin(div, roll, only), 0);
     }
     const rr = document.createElement('span');
     rr.className = 'rerolls';
@@ -4086,6 +4166,16 @@ interface EwCtx {
 export class ElectronicHelper {
   private data: GameData;
   private dice: DiceData;
+  // ONE PER SIDE. Freeplay rolls both hands from a single button, and a shared
+  // spinner would stop the first hand in order to start the second -- which is
+  // the shape of the bug that left dice rattling on frozen faces.
+  private spins: { init: DiceSpinner; resp: DiceSpinner };
+  // Which hands owe a shake on the next render, and which dice within them.
+  // A key being PRESENT is the ask; its value is the indices, or null for the
+  // whole hand. Mirrors the attack window's spinFor/spinOnly pair.
+  private pending: { init?: number[] | null; resp?: number[] | null } = {};
+  // The strip that has already animated, so a redraw does not resolve it twice.
+  private duelPlayed = '';
   private root: HTMLElement;
   private onChanged: () => void;
   private onClose: () => void;
@@ -4108,6 +4198,7 @@ export class ElectronicHelper {
   ) {
     this.data = data;
     this.dice = dice;
+    this.spins = { init: new DiceSpinner(dice), resp: new DiceSpinner(dice) };
     this.root = root;
     this.onChanged = onChanged;
     this.onClose = onClose;
@@ -4283,8 +4374,7 @@ export class ElectronicHelper {
       roll.forEach((d) => {
         const b = document.createElement('button');
         b.className = `die die-yellow${d.selected ? ' sel' : ''}`;
-        const face = this.dice.dice.yellow.faces[d.face];
-        b.innerHTML = face.length ? face.map((ic: DiceIcon) => iconSvg(ic)).join('') : '<span class="blank">·</span>';
+        b.innerHTML = faceHtml(this.dice, 'yellow', d.face);
         b.title = 'select for a Focus reroll';
         b.addEventListener('click', () => {
           d.selected = !d.selected;
@@ -4293,6 +4383,15 @@ export class ElectronicHelper {
         row.appendChild(b);
       });
       wrap.appendChild(row);
+      // THE DICE ROLL, they do not appear. This hand had none of that: it drew
+      // its faces straight into the markup while the attack window beside it
+      // shook. Kicked on a timeout for the reason recorded on playDuel -- the
+      // row has to be in the document before the shake can be seen.
+      if (who in this.pending) {
+        const only = this.pending[who];
+        delete this.pending[who];
+        window.setTimeout(() => this.spins[who].spin(row, roll, only), 0);
+      }
       const n = this.tally(roll, t.stance === 'offensive');
       const sum = document.createElement('p');
       sum.className = 'ah-sum';
@@ -4317,6 +4416,10 @@ export class ElectronicHelper {
             ? `${t.label} Focuses for free (Will to Survive: 3 Parts or fewer), rerolling ${sel.length} die.`
             : `${t.label} spends 1 Link to Focus, rerolling ${sel.length} die.`);
           if (!wasShut && t.stance === 'shutdown') this.note(`Link has reached 0, so ${t.label} SHUTS DOWN.`);
+          // Only the picked dice, captured before rerollYellow clears the
+          // selection: the kept ones landing back on the faces they already had
+          // reads as a reroll that changed nothing.
+          this.pending[who] = roll.map((d, i) => (d.selected ? i : -1)).filter((i) => i >= 0);
           void (async () => {
             await this.rerollYellow(roll, 'Focus reroll');
             this.onChanged();
@@ -4361,6 +4464,8 @@ export class ElectronicHelper {
           const both = await this.rollYellow(c.initEv + c.respEv, 'Electronic counter-roll');
           c.initRoll = both.slice(0, c.initEv);
           c.respRoll = both.slice(c.initEv);
+          // Both hands are new, so both shake in full.
+          this.pending = { init: null, resp: null };
           this.render();
         })();
       });
@@ -4392,6 +4497,40 @@ export class ElectronicHelper {
       });
       wrap.appendChild(resolve);
       return wrap;
+    }
+
+    // THE RESOLUTION, on the same strip the attack resolves on. The verdict used
+    // to be a sentence in the log and nothing else, so the one moment worth
+    // watching in an Electronic Counter-roll was the one moment with no
+    // animation at all.
+    //
+    // Keyed on the strip rather than replayed on every render: this panel
+    // redraws whenever anything changes (a Provoke answer, a log line), and
+    // restarting it mid-flight would resolve the same icons twice. Same rule
+    // stepResolve follows for the attack.
+    {
+      const a = this.tally(c.initRoll!, c.initiator.stance === 'offensive');
+      const b = this.tally(c.respRoll!, c.responder.stance === 'offensive');
+      const strip = document.createElement('div');
+      strip.innerHTML = contestHtml({
+        initLabel: c.initiator.label,
+        respLabel: c.responder.label,
+        a, b,
+        why: `${resolveCounterRoll(a, b).why}. ${c.initiatorWins ? `${c.initiator.label} succeeds` : `${c.responder.label} holds`}.`,
+      });
+      wrap.appendChild(strip);
+      const duel = mountDuel(strip);
+      // Keyed on the MARKUP, exactly as the attack's strip is, so a Focus
+      // reroll that moves the tally replays it and a redraw that changes
+      // nothing does not. Recorded only when it really animated: playDuel snaps
+      // straight to settled on a hidden tab, and banking that as played would
+      // lose the animation for anyone who was looking elsewhere.
+      const key = duel?.innerHTML ?? '';
+      if (duel && key !== this.duelPlayed) {
+        window.setTimeout(() => { if (playDuel(duel)) this.duelPlayed = key; }, 0);
+      } else {
+        this.duelPlayed = key;
+      }
     }
 
     // LPA-22 Yoyu, 挑衅 Provoke. The Responder's own Counter-roll succeeded, so

@@ -100,9 +100,31 @@ check('and draws it through the shared renderer', /resolutionHtml\(/.test(stepRe
 check('and a mirror draws the published strip instead of resolving again',
   /this\.mirroring \? null : this\.resolve\(\)/.test(stepResolve), true);
 
-// One producer of the markup, one player of the animation.
+// ONE PRODUCER PER CONTEST, one player of the animation.
+//
+// There are two contests and so two strips: the attack's offsetting
+// (duelHtml) and the Electronic Counter-roll's (contestHtml). The guard is
+// not "only one strip exists" -- it is that neither GREW A SECOND COPY, which
+// is the drift that cost this codebase the hand-written mirror. So each
+// builder is checked to hold exactly one, and the file to hold exactly those.
+const strip = (name) => {
+  // duelHtml is module-private and contestHtml is exported; the guard is about
+  // how many strips each one builds, not about who can call it.
+  const at = src.indexOf(`function ${name}(`);
+  if (at < 0) return -1;
+  // To the next exported function, which is past the end of this one.
+  const end = src.indexOf('export function', at + 20);
+  return (src.slice(at, end < 0 ? undefined : end).match(/<div class="duel">/g) ?? []).length;
+};
+check('the attack builds its strip in exactly one place', strip('duelHtml'), 1);
+check('and the Counter-roll builds its own in exactly one place', strip('contestHtml'), 1);
 const producers = (src.match(/<div class="duel">/g) ?? []).length;
-check('combat.ts builds the strip markup in exactly one place', producers, 1);
+check('and those are the only two in the file', producers, 2);
+// They must stay DIFFERENT functions. Every explanatory string in duelHtml
+// names Dodge, Defense and Hits; a counter-roll borrowing them would be
+// telling the player something untrue about what just happened.
+check('the counter-roll does not borrow the attack builder',
+  /function contestHtml\([\s\S]{0,4000}?duelHtml\(/.test(src), false);
 // The Match Centre no longer draws a combat window AT ALL. It used to hand the
 // published view to a second, hand-written renderer that had drifted from this
 // one in nine measured ways; it hands the view to this one now.
@@ -134,9 +156,20 @@ check('while the animated path reports that it did', /step\(\(\) => wrap\.classL
 // requestAnimationFrame does not fire on a page that is not compositing, which
 // is why both callers kick the strip with a timeout instead.
 check('the attacker kicks it with a timeout', /window\.setTimeout\(\(\) => \{ if \(playDuel\(duelEl\)\)/.test(src), true);
-// ONE kick, in the one renderer, so the mirror gets it by being the same code.
-check('and there is exactly one place that starts the animation',
-  (src.match(/setTimeout\(\(\) => \{ if \(playDuel\(/g) ?? []).length, 1);
+// ONE kick per contest, each in the one renderer for it, so a mirror gets the
+// animation by being the same code rather than by a second implementation.
+check('and there is exactly one kick per contest',
+  (src.match(/setTimeout\(\(\) => \{ if \(playDuel\(/g) ?? []).length, 2);
+// Both contests do the bookkeeping the SAME way: record inside the branch that
+// saw playDuel return true, and bank the key when there was nothing to play.
+// Two assignments each. The Counter-roll panel redraws on a Provoke answer and
+// on every log line, so a strip that restarted mid-flight is not theoretical
+// there, and a Focus reroll can still move the tally after the verdict is up,
+// so keying on the markup rather than on the units is what lets it replay.
+check('both contests record the strip they played',
+  (src.match(/this\.duelPlayed = key/g) ?? []).length, 4);
+check('and both key it on the markup, so a changed strip replays',
+  (src.match(/const key = duel(El)?\?\.innerHTML \?\? ''/g) ?? []).length, 2);
 // The record follows the ANIMATION, not the render. Pinned as behaviour rather
 // than spelling: whatever the caller looks like, `duelPlayed` must be assigned
 // inside the branch that saw playDuel return true.
