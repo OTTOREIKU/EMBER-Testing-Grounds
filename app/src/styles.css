@@ -2350,6 +2350,68 @@ p.points { white-space: pre-line; }
 }
 .ah-fragile b { color: #fff; }
 
+/* ---------- Combat panel redesign, pass 2: one ladder, and room to read ----------
+   SEVENTEEN rendered sizes collapse to SIX, and five of the six are numbers the
+   Match Centre turn panel already uses, so the box moves onto the scale OTTO
+   named as the success rather than onto a new one:
+
+     15px/600   title      the matchup line              (= .tp-title)
+     14px/700   number     the figure being looked for   (= .pool-die b)
+     12px/400   body       the ONE sentence size
+     11.5px     row        pressable labels, and the log trace (= .dialrow .nm)
+     10.5px/400 caption    standing explanation          (= .tp-dim)
+     9.5px/700  eyebrow    uppercase step markers        (= .tp-eyebrow)
+
+   THE DENSITY FIX IS NOT SMALLER TEXT, IT IS FEWER THINGS AT BODY RANK. A step
+   carries two kinds of prose: the RULE that is always true there, and the ASK
+   being made of you right now. They were both 11.5px and indistinguishable, so
+   the question got lost among the footnotes. Standing explanation drops to
+   caption, the ask stays at body, and the gap between them is what makes the
+   question findable without shouting.
+
+   Values only. No class is renamed and no TypeScript is touched, so nothing can
+   half-apply. ---------- */
+
+/* Titles. .ah-head carried the matchup at 13px, a whisker above body, so the
+   thing naming the whole fight read like another sentence. */
+.ah-head { font-size: 15px; font-weight: 600; line-height: 1.25; color: var(--text); }
+.ah-head .dim { font-size: 11.5px; font-weight: 400; color: var(--text2); }
+
+/* Step markers become eyebrows: navigational, not content. They were 11px and
+   competing with the rules text under them. */
+.ah-step h4 { font-size: 9.5px; letter-spacing: 0.9px; color: var(--text3); margin: 16px 0 6px; }
+.ah-step h4 .ah-n { font-size: 9.5px; min-width: 15px; }
+
+/* STANDING EXPLANATION, the rule that is true here whatever you do. Quietest
+   readable rank, because it is reference rather than instruction. */
+.ah-step .dim { font-size: 10.5px; line-height: 1.45; color: var(--text3); margin: 4px 0; }
+
+/* THE ASK, and the line-of-sight strip that qualifies the shot. Body rank, so
+   the two of them are the only prose at full weight in the step. */
+.ah-los { font-size: 12px; line-height: 1.5; padding: 7px 9px; margin: 2px 0; }
+.ah-note { font-size: 12px; }
+
+/* Results and warnings sit at body too: they are consequences, not footnotes. */
+.ah-sum { font-size: 12px; margin: 6px 0; color: var(--text); }
+.ah-sum b { font-size: 14px; font-family: var(--mono); font-weight: 700; }
+.ah-protect, .ah-fragile { font-size: 12px; line-height: 1.5; }
+.ah-blackcap { font-size: 11.5px; }
+
+/* The log is a trace, so it reads below the live step. Scoped to the helper
+   deliberately: the bare `.ah-log` rules sit LOWER in this file and would
+   otherwise win on order, leaving these dead and this comment lying about
+   what actually renders. Specificity beats position and keeps them together. */
+.attack-helper .ah-log { font-size: 11.5px; line-height: 1.5; }
+.attack-helper .ah-log div { margin-bottom: 3px; }
+
+/* ROOM TO READ. OTTO: "so much text on the screen and its all stacked closely
+   on top, inbetween, or bottom of the dice". The dice are the thing being
+   looked at, so they get the whitespace and the prose stops crowding them. */
+.ah-roll { margin: 10px 0; gap: 6px; }
+.ah-pool { margin: 10px 0; }
+.ah-partpick { margin-top: 10px; }
+.attack-helper > * + * { margin-top: 2px; }
+
 /* ---------- Combat panel redesign, pass 1: adopt the sidebar's vocabulary ----------
    These five classes are used at 24 call sites in combat.ts and match.ts and had
    NO CSS at all. `.ah-alt` is the class of every defender choice, so the

@@ -123,13 +123,25 @@ check('and plays no animation of its own', /playDuel\(/.test(hudSrc), false);
 // playDuel bails out early — still ends up with a readable box.
 check('every column is born shown and resolved', /duel-col shown resolved/.test(src), true);
 check('a hidden tab skips the animation and settles instead',
-  /document\.hidden\) return done\(\)/.test(src), true);
+  /document\.hidden\)[\s\S]{0,40}?done\(\)/.test(src), true);
+// ...and SAYS it skipped. The caller records a strip as played so a re-render
+// cannot restart it mid-flight, and recording one that merely snapped to its
+// settled state lost the animation for good: a player whose tab was in the
+// background during a resolution came back to a finished strip that would never
+// replay. That is why the bail-out returns false rather than nothing.
+check('and reports that it did not animate', /document\.hidden\)[\s\S]{0,60}?return false;/.test(src), true);
+check('while the animated path reports that it did', /step\(\(\) => wrap\.classList\.add\('duel-done'\)[\s\S]{0,40}?return true;/.test(src), true);
 // requestAnimationFrame does not fire on a page that is not compositing, which
 // is why both callers kick the strip with a timeout instead.
-check('the attacker kicks it with a timeout', /window\.setTimeout\(\(\) => playDuel\(duelEl\), 0\)/.test(src), true);
+check('the attacker kicks it with a timeout', /window\.setTimeout\(\(\) => \{ if \(playDuel\(duelEl\)\)/.test(src), true);
 // ONE kick, in the one renderer, so the mirror gets it by being the same code.
 check('and there is exactly one place that starts the animation',
-  (src.match(/setTimeout\(\(\) => playDuel\(/g) ?? []).length, 1);
+  (src.match(/setTimeout\(\(\) => \{ if \(playDuel\(/g) ?? []).length, 1);
+// The record follows the ANIMATION, not the render. Pinned as behaviour rather
+// than spelling: whatever the caller looks like, `duelPlayed` must be assigned
+// inside the branch that saw playDuel return true.
+check('and only records a strip once it really animated',
+  /if \(playDuel\(duelEl\)\) this\.duelPlayed = key;/.test(src), true);
 // The resolution step is rebuilt whenever ANY part of the view changes, and a
 // log line is enough, so the replay is keyed on the STRIP rather than on the
 // rebuild: restarting it mid-flight makes the same icons resolve twice.

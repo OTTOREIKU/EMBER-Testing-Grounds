@@ -339,7 +339,12 @@ let duelGen = 0;
 // is why this is driven by setTimeout and why callers kick it with a timeout of
 // its own rather than inside the render that built the markup. A hidden tab
 // skips the animation outright and keeps the settled box it was born with.
-export function playDuel(wrap: HTMLElement): void {
+// Answers whether it ANIMATED. The caller records a strip as played so a
+// re-render does not restart it mid-flight, and recording one that only
+// snapped to its settled state meant the animation was lost for good: a
+// player whose tab was in the background during a resolution came back to a
+// finished strip that would never replay.
+export function playDuel(wrap: HTMLElement): boolean {
   const gen = ++duelGen;
   const cols = [...wrap.querySelectorAll<HTMLElement>('.duel-col')];
   const spares = [...wrap.querySelectorAll<HTMLElement>('.duel-spare .duel-icon')];
@@ -348,7 +353,10 @@ export function playDuel(wrap: HTMLElement): void {
     cols.forEach((c) => c.classList.add('shown', 'resolved'));
     spares.forEach((s) => s.classList.add('shown'));
   };
-  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches || document.hidden) return done();
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches || document.hidden) {
+    done();
+    return false;
+  }
 
   wrap.classList.remove('duel-done');
   cols.forEach((c) => c.classList.remove('shown', 'resolved'));
@@ -366,6 +374,7 @@ export function playDuel(wrap: HTMLElement): void {
   cols.forEach((col) => { step(() => col.classList.add('resolved'), t); t += 220; });
   spares.forEach((s) => { step(() => s.classList.add('shown'), t); t += 120; });
   step(() => wrap.classList.add('duel-done'), t + 120);
+  return true;
 }
 
 // Find the strip inside markup that was just pasted in and wire its Replay
@@ -482,6 +491,29 @@ interface Ctx {
   // other would be worse than the defender seeing none. Written by stepResolve,
   // which render() builds before it publishes.
   resolution?: { duel: Duel; text: string[] } | null;
+  // WHAT THE ATTACK COST, one entry per Penetration applied. A LIST and not a
+  // single record: an Action with Mutilation, Cleaving or Scatter-shot applies
+  // a SECOND Penetration in its Surplus round (4.8), and overwriting would
+  // have reported only the last one. A Torso taken Intact to Damaged and then
+  // Damaged to Destroyed would have summarised as "Damaged to Destroyed",
+  // losing half the attack, and Cleaving lands on a DIFFERENT Part, so a
+  // single record would have named the wrong one entirely.
+  // Recorded at the moment the Penetration is applied
+  // because that is the only point where the Part's state is known on BOTH
+  // sides of the change. Read back by the resolved screen so a player can see
+  // what happened without reading the whole trace to work it out.
+  outcome?: Array<{
+    slot: string;
+    before: string;
+    after: string;
+    // Every damage icon the Attack Roll produced. NOT `hits`, which is
+    // `heavy + light - dodged` and so already excludes what the Dodge
+    // cancelled: summing that against dodged again counts those icons twice.
+    rolled: number;
+    dodged: number;
+    blocked: number;
+    through: number;
+  }> | null;
 }
 
 export class AttackHelper {
@@ -2398,6 +2430,31 @@ export class AttackHelper {
     return wrap;
   }
 
+  // WHO CHOOSES THE TARGET PART (4.4.1 step 2, rules/03:195-201). The Black
+  // Die decides it, and the attacker designates only in the named cases.
+  // Until this existed the chips were gated on "am I the attacker" alone, so
+  // an attacker could skip the die entirely and put every hit on the Torso.
+  //
+  // The cases, in the order the rulebook gives them:
+  //  - Shutdown Stance, or a Back Attack from the rear arc. The rule adds that
+  //    the DEFENDER may then not designate through any ability either.
+  //  - an "Any Part" face on the Black Die, where designating is compulsory
+  //    rather than merely allowed.
+  //  - a Surplus round: Scatter-shot and Cleaving name their own target
+  //    (FAQ D4/D6), and the loop below already excludes the original Part.
+  //
+  // NOT COVERED, and left as a stated gap rather than guessed at: an
+  // ATTACKER-side designation ability such as Snipe. Nothing in this app reads
+  // one today, and matching on printed text here would be inventing a rule.
+  // A card that carries one needs this predicate widened, not a workaround.
+  private mayPickPart(): boolean {
+    const c = this.ctx!;
+    if (c.surplusRound > 0) return true;
+    if (c.blackResult === 'any') return true;
+    if (c.defender.stance === 'shutdown') return true;
+    return inArc(c.defender, c.attacker, 'rear');
+  }
+
   private stepPart(): HTMLElement {
     const c = this.ctx!;
     const wrap = document.createElement('div');
@@ -2405,7 +2462,7 @@ export class AttackHelper {
     wrap.innerHTML = `<h4><span class="ah-n">1</span>Determine target Part</h4>
       <p class="dim">${c.explosion
         ? 'Roll the Black Die, or pick a Part directly if the target is Shutdown. Explosions have no facing, so there is no Back Attack here.'
-        : 'Roll the Black Die, or pick a Part directly. You may choose when the target is Shutdown or you have a Back Attack, and some Actions designate the Part for you.'}</p>`;
+        : 'Roll the Black Die. It decides the Part, and the chips below stay locked unless you may designate it: the target is Shutdown, this is a Back Attack, or the die comes up ANY (4.4.1).'}</p>`;
 
     // The result used to appear as a line of text after the fact, so a new
     // player never saw which Part the die actually chose. The die is shown
@@ -2458,7 +2515,9 @@ export class AttackHelper {
       const b = document.createElement('button');
       b.className = `chip chip-${st}`;
       b.innerHTML = `<b>${SLOT_LABEL[slot]}</b> ${cardName(card)}`;
-      b.disabled = !this.mayDrive('attacker');
+      // Disabled rather than hidden, so the reader still sees WHICH Parts are
+      // on the target and that the die is what picks between them.
+      b.disabled = !this.mayDrive('attacker') || !this.mayPickPart();
       b.addEventListener('click', () => {
         this.note(`Target Part chosen: ${SLOT_LABEL[slot]}.`);
         this.pickPart(slot);
@@ -2997,6 +3056,12 @@ export class AttackHelper {
             // for the one before it.
             if (this.ctx !== c || this.rollGen !== gen) return;
             c.defenseRoll = faces;
+            // The dice SHAKE here too. This is the networked path, where the
+            // faces arrive from the other player rather than being rolled on
+            // this screen, and it was the only roll landing without setting
+            // spinFor: the defence dice simply appeared, already rolled,
+            // while the attack dice beside them shook.
+            this.spinFor = 'defense';
             this.render();
           });
       }
@@ -3175,8 +3240,16 @@ export class AttackHelper {
     // the implementation this replaced.
     const duelEl = mountDuel(wrap);
     const key = duelEl?.innerHTML ?? '';
-    if (duelEl && key !== this.duelPlayed) window.setTimeout(() => playDuel(duelEl), 0);
-    this.duelPlayed = key;
+    // Recorded only when the strip really animated. playDuel snaps straight to
+    // the settled state under prefers-reduced-motion or a hidden tab, and
+    // recording THAT as played meant a watcher who was on another tab when the
+    // attack resolved came back to a finished strip that could never replay.
+    // Left unrecorded, the next render plays it once they are looking.
+    if (duelEl && key !== this.duelPlayed) {
+      window.setTimeout(() => { if (playDuel(duelEl)) this.duelPlayed = key; }, 0);
+    } else {
+      this.duelPlayed = key;
+    }
 
     if (penetrating > 0 && c.targetPart) {
       const apply = document.createElement('button');
@@ -3194,6 +3267,20 @@ export class AttackHelper {
         // off the token and keeps the narration and follow-up flow.
         this.onCommand({ kind: 'applyPenetration', seat: c.attacker.side, uid: c.attacker.uid, targetUid: c.defender.uid, slot });
         const next = c.defender.partStates[slot] ?? 'intact';
+        // The one moment both states are known. offsetting() is re-derived
+        // rather than stashed earlier so the numbers are the ones this press
+        // actually resolved, not a snapshot from a render that a Focus reroll
+        // may since have replaced.
+        const tally = this.resolve();
+        (c.outcome ??= []).push({
+          slot,
+          before: cur,
+          after: next,
+          rolled: tally.duel.icons.length,
+          dodged: tally.duel.icons.filter((i) => i.offset === 'dodge').length,
+          blocked: tally.duel.icons.filter((i) => i.offset === 'defense').length,
+          through: tally.penetrating,
+        });
         this.onPenetrated(c.defender, c.attacker);
         c.penetrated = true;
         // Under Multi-Target the debts are held to the end of the Action (B7),
@@ -3397,7 +3484,40 @@ export class AttackHelper {
       : null;
     const el = document.createElement('div');
     el.className = 'attack-helper';
-    el.innerHTML = `<div class="ah-head"><b>Attack resolved</b></div>
+    // WHAT IT COST, before the trace rather than buried in it. The log says how
+    // the attack happened; this says what it did.
+    //
+    // Summed ACROSS ROUNDS. An Action with Mutilation, Cleaving or Scatter-shot
+    // applies a second Penetration in its Surplus round (4.8), so the tally is
+    // the whole Action rather than whichever round happened to land last.
+    const rounds = c.outcome ?? [];
+    const label = (s: string) => (({ intact: 'Intact', damaged: 'Damaged', destroyed: 'Destroyed' }) as Record<string, string>)[s] ?? s;
+    const sum = (f: (r: typeof rounds[number]) => number) => rounds.reduce((n, r) => n + f(r), 0);
+    const stopped = sum((r) => r.dodged) + sum((r) => r.blocked);
+    // rolled = dodged + blocked + through, exactly. Written as one split rather
+    // than "landed, stopped" because a Dodge cancels an icon BEFORE it counts
+    // as a hit, so the two readings of "landed" disagree and the sentence had
+    // to pick one.
+    const tally = !rounds.length ? '' : `<p class="ah-sum">${sum((r) => r.rolled)} damage icons: `
+      + (stopped ? `${sum((r) => r.dodged)} dodged, ${sum((r) => r.blocked)} blocked, ` : '')
+      + `<b>${sum((r) => r.through)}</b> through.</p>`;
+    // ONE LINE PER PART TOUCHED, first state to last. Cleaving and Scatter-shot
+    // send the Surplus to a DIFFERENT Part (FAQ D4/D6), so a single line would
+    // name the wrong one; and a Part taken Intact to Damaged and then Damaged
+    // to Destroyed reads as one honest Intact to Destroyed rather than two.
+    const byPart = new Map<string, { before: string; after: string }>();
+    for (const r of rounds) {
+      const had = byPart.get(r.slot);
+      byPart.set(r.slot, { before: had?.before ?? r.before, after: r.after });
+    }
+    const partLines = [...byPart].map(([slot, r]) => {
+      const name = SLOT_LABEL[slot as PartSlot | 'main'] ?? slot;
+      return r.before === r.after
+        ? `<p class="ah-sum">${name} holds at <b>${label(r.after)}</b>.</p>`
+        : `<p class="ah-sum">${name}: ${label(r.before)} to <b>${label(r.after)}</b>.</p>`;
+    }).join('');
+    el.innerHTML = `<div class="ah-head"><b>Attack resolved</b> <span class="dim">${c.attacker.label} to ${c.defender.label}, ${c.action.name?.en ?? ''}</span></div>
+      ${tally}${partLines}
       <div class="ah-log">${c.log.map((l) => `<div>${l}</div>`).join('')}</div>`;
     if (bonus) {
       const note = document.createElement('p');

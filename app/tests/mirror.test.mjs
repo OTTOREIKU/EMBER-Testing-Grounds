@@ -118,7 +118,52 @@ press(A.root, 'Pass');
 press(A.root, 'Pass');
 press(A.root, 'Resolve');
 press(A.root, 'Apply Penetration');
+await settle();
 check('the attacker published a view for every step it drew', A.views.length > 4, true);
+
+// ---------- WHAT THE ATTACK COST ----------
+// OTTO asked for a summary after Apply Penetration: what attacked, what got
+// through or was stopped, and what the Part became. The resolved screen renders
+// entirely from `ctx.outcome`, so that is what is pinned here.
+//
+// PINNED: the record. NOT PINNED: the rendered sentences, and the reason is
+// worth stating rather than hiding. This walk's weapon carries Mutilation, so
+// Apply opens a SURPLUS round instead of finishing, and the harness's onCommand
+// is a stub, so the Part never really changes state. Both are properties of the
+// fixture, not of the feature. A walk that reaches `finish()` with a live
+// command layer would pin the text; asserting it here would have meant loosening
+// the assertions until they passed, which is how a test comes to prove nothing.
+{
+  const rounds = A.h.ctx?.outcome;
+  check('applying a Penetration records what it cost', Array.isArray(rounds), true);
+  check('one entry per Penetration, not one per attack', rounds?.length, 1);
+  const o = rounds?.[0];
+  check('naming the Part it landed on', o?.slot, 'torso');
+  check('and both sides of the state change, so the screen can say what CHANGED',
+    typeof o?.before === 'string' && typeof o?.after === 'string', true);
+  // INVARIANTS, not values. This file does not seed Math.random, so the dice
+  // differ every run; asserting `landed === 3` passed by luck once and failed on
+  // the next run. What the summary actually depends on is the RELATIONSHIP: the
+  // numbers come off the settled offsetting, so everything that landed either
+  // got through or was stopped, and nothing is invented on the way to the screen.
+  check('the tally is made of numbers',
+    [o?.rolled, o?.through, o?.dodged, o?.blocked].every((n) => Number.isInteger(n)), true);
+  check('nothing gets through that was never rolled', o.through <= o.rolled, true);
+  // The whole roll splits three ways and nothing is lost or invented on the way
+  // to the screen. Pinned as `rolled` and not `hits` on purpose: `hits` is
+  // already net of dodges, so summing it against dodged counts those icons twice
+  // and the sentence would overstate what the defence stopped.
+  check('and every icon rolled was dodged, blocked, or got through',
+    o.dodged + o.blocked + o.through, o.rolled);
+  // A LIST because a Surplus round applies a SECOND Penetration (4.8). This
+  // fixture's weapon carries Mutilation and is sitting in that round right now,
+  // which is why the walk has not reached the resolved screen. Overwriting would
+  // have reported only the last round: a Torso taken Intact to Damaged and then
+  // Damaged to Destroyed would have read "Damaged to Destroyed", and Cleaving,
+  // which lands on a DIFFERENT Part, would have named the wrong one outright.
+  check('and this attack really is mid-Surplus, which is what needs the list',
+    A.h.ctx?.surplusRound, 1);
+}
 
 const atStep = (step, n = 0) => A.views.filter((v) => v.step === step)[n];
 const rolled = A.views.filter((v) => v.attack?.length && v.step === 'attack').at(-1);
