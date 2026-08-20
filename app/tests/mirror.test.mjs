@@ -671,5 +671,47 @@ const spinning = (root) => {
   check('one per line, as sent', published.logStep.length, published.log.length);
 }
 
+// ---------- WHO MAY CHOOSE THE TARGET PART ----------
+// OTTO hit this twice. First the chips were gated on "am I the attacker" alone,
+// so an attacker could skip the Black Die and put every hit on the Torso. The
+// fix for that then allowed a Surplus round outright, which was worse: every
+// Scatter-shot and Cleaving let the attacker hand-pick the Part, and both
+// keywords say RANDOM.
+//
+// Driven against the real predicate rather than the markup, so the rule is
+// pinned wherever the chips end up living.
+{
+  const bb = board();
+  const w = watcher(bb.all, []);
+  const ctx = (over) => ({
+    attacker: bb.atk,
+    defender: bb.def,
+    action: firing,
+    surplusRound: 0,
+    blackResult: null,
+    ...over,
+  });
+
+  // 4.4.1 step 2. The Black Die decides unless one of the named cases applies.
+  w.h.ctx = ctx({});
+  check('an ordinary attack does not let the attacker pick the Part', w.h.mayPickPart(), false);
+
+  w.h.ctx = ctx({ blackResult: 'any' });
+  check('an ANY face makes designating compulsory', w.h.mayPickPart(), true);
+
+  w.h.ctx = ctx({ defender: { ...bb.def, stance: 'shutdown' } });
+  check('and a Shutdown target may be picked apart', w.h.mayPickPart(), true);
+
+  // 4.8.1 step 2 is NARROWER than 4.4.1: Shutdown and the ANY face only.
+  w.h.ctx = ctx({ surplusRound: 1 });
+  check('a Surplus round does NOT let the attacker pick', w.h.mayPickPart(), false);
+
+  w.h.ctx = ctx({ surplusRound: 1, blackResult: 'any' });
+  check('unless the die came up ANY, which is compulsory anywhere', w.h.mayPickPart(), true);
+
+  w.h.ctx = ctx({ surplusRound: 1, defender: { ...bb.def, stance: 'shutdown' } });
+  check('or the target is Shutdown, which 4.8.1 does name', w.h.mayPickPart(), true);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

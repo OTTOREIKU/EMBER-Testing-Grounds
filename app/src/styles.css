@@ -2368,14 +2368,28 @@ p.points { white-space: pre-line; }
    No DOM change: the felt is placed explicitly and everything else auto
    flows into column one, so render() builds the same tree either way. */
 #combat-body { container-type: inline-size; }
-/* The reading column, built by render() so the grid has exactly two rows.
-   In one-column mode it is an ordinary flex column and nothing below it
-   applies, so the same tree serves both layouts. */
-.ah-main { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+/* The two content columns, built by render() so the grid keeps exactly two
+   rows. In one-column mode both are ordinary flex columns and nothing in the
+   container query applies, so the same tree serves both layouts. */
+.ah-main, .ah-side { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+
+/* THE TRACE, capped. It grows without bound over a long fight, and in the
+   reading column it pushed the dice off the bottom of the panel. Eight lines
+   at 11.5px/1.5 plus their margins, then it scrolls: enough to follow what just
+   happened without the panel growing to fit a whole battle. */
+.attack-helper .ah-log {
+  max-height: 164px; overflow-y: auto;
+  background: rgba(0, 0, 0, 0.16); border-radius: var(--radius);
+  padding: 8px 10px; margin: 0;
+}
+
 @container (min-width: 560px) {
   .attack-helper {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 224px;
+    /* The side column carries the trace AND both hands, so it takes the extra
+       width and the reading column gives it up: the steps and their controls are
+       short lines and were the half with room to spare. */
+    grid-template-columns: minmax(0, 1fr) 262px;
     grid-template-rows: auto auto;
     column-gap: 12px;
     row-gap: 8px;
@@ -2384,18 +2398,18 @@ p.points { white-space: pre-line; }
   /* The matchup names the whole fight, so it spans. */
   .attack-helper > .ah-head { grid-column: 1 / -1; grid-row: 1; }
   .attack-helper > .ah-main { grid-column: 1; grid-row: 2; min-width: 0; }
-  /* Sticky, so both hands stay on screen however far the reading column runs.
-     `align-self: start` matters: stretched, a sticky element has nothing to
-     slide within and never actually sticks. */
-  .attack-helper > .ah-felt {
+  /* Sticky, so the trace and both hands stay on screen however far the reading
+     column runs. `align-self: start` matters: stretched, a sticky element has
+     nothing to slide within and never actually sticks. */
+  .attack-helper > .ah-side {
     grid-column: 2; grid-row: 2;
     align-self: start;
     position: sticky; top: 0;
-    margin: 0;
   }
+  .attack-helper > .ah-side .ah-felt { margin: 0; }
   /* A narrower column wraps the dice sooner, which is fine, but the header
      should not fight them for width. */
-  .attack-helper > .ah-felt .ah-half-h { flex-wrap: wrap; row-gap: 2px; }
+  .attack-helper > .ah-side .ah-half-h { flex-wrap: wrap; row-gap: 2px; }
 }
 
 /* ---------- The felt ----------

@@ -2355,15 +2355,36 @@ export class AttackHelper {
     // stand beside everything, and that created NINETY-NINE implicit rows, each
     // paying the 8px row gap: 185px of content rendered in a 964px panel, and
     // the scrollbar was mostly empty.
+    // TWO COLUMNS OF CONTENT, gathered after the fact so the build order above is
+    // untouched: the reading column (steps and controls) and the side column (the
+    // trace and the dice).
+    //
+    // The log moved out of the reading column because it grows without bound and
+    // was pushing the dice off the bottom of a tall panel. Beside them, capped and
+    // scrolling, it stays readable without ever costing the felt its place.
+    //
+    // Grouped rather than placed individually so the grid keeps exactly TWO rows.
+    // Spanning a sidebar across an unknown number of rows once created ninety-six
+    // implicit ones, each paying the row gap.
     const main = document.createElement('div');
     main.className = 'ah-main';
+    const side = document.createElement('div');
+    side.className = 'ah-side';
+    let feltEl: Element | null = null;
+    let logEl: Element | null = null;
     for (const ch of [...el.children]) {
-      if (ch.classList.contains('ah-head') || ch.classList.contains('ah-felt')) continue;
+      if (ch.classList.contains('ah-head')) continue;
+      const cls = String(ch.className);
+      if (cls.includes('ah-felt')) { feltEl = ch; continue; }
+      if (cls.includes('ah-log')) { logEl = ch; continue; }
       main.appendChild(ch);
     }
-    const feltEl = el.querySelector('.ah-felt');
-    if (feltEl) el.insertBefore(main, feltEl);
-    else el.appendChild(main);
+    // Trace above dice, deliberately: the log is the thing you read, and the dice
+    // are the thing you glance at, so the dice sit closest to where the panel ends.
+    if (logEl) side.appendChild(logEl);
+    if (feltEl) side.appendChild(feltEl);
+    el.appendChild(main);
+    el.appendChild(side);
     this.root.replaceChildren(el);
     // AFTER the step is built, so a stage beginFocus() settled during the build
     // is in the view the defender receives.
@@ -2706,9 +2727,22 @@ export class AttackHelper {
   // A card that carries one needs this predicate widened, not a workaround.
   private mayPickPart(): boolean {
     const c = this.ctx!;
-    if (c.surplusRound > 0) return true;
+    // An ANY face is COMPULSORY designation, in both flows.
     if (c.blackResult === 'any') return true;
     if (c.defender.stance === 'shutdown') return true;
+    // A SURPLUS ROUND STOPS HERE, and an earlier version of this returned
+    // true for one outright, which was worse than the bug it was written to
+    // fix: it let the attacker hand-pick the Part on every Scatter-shot and
+    // Cleaving. All three surplus keywords say RANDOM or say nothing at all:
+    // Cleaving is "another random Part or Unit in Range", Scatter-shot is
+    // "another random Part", and Mutilation names the SAME Part and never
+    // reaches this step because chooseSurplus calls pickPart itself.
+    //
+    // The Back Attack below is deliberately NOT offered here. 4.8.1 step 2
+    // lists Shutdown and the ANY face and nothing else, where 4.4.1 step 2
+    // also grants a rear-arc attack the choice. The Surplus round is a
+    // narrower rule than the attack that produced it.
+    if (c.surplusRound > 0) return false;
     return inArc(c.defender, c.attacker, 'rear');
   }
 
