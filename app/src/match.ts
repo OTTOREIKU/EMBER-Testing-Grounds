@@ -709,16 +709,29 @@ function settleDefense(cmd: Command): void {
   if (cmd.kind === 'clearDefense' && pendingDefense) {
     pendingDefense = null;
   }
-  // The remote defender's half of Focus (4.4.1-5), consumed by the attacking
-  // client's open combat window the same way the defence roll is. The helper
-  // ignores both when it is not mid-Focus, so the defender's own echo of its
-  // command is harmless.
-  if (cmd.kind === 'focusAnswer') attackHelper?.focusAnswered(cmd.use);
-  if (cmd.kind === 'focusReroll') attackHelper?.focusRerolled(cmd.indices, cmd.faces);
-  if (cmd.kind === 'kcArmor') attackHelper?.kcArmed();
-  if (cmd.kind === 'designateHit') attackHelper?.designateAnswered(cmd.slot);
-  if (cmd.kind === 'meleeEvade') attackHelper?.evadeDeclared();
-  if (cmd.kind === 'dodgeEnhance') attackHelper?.dodgeEnhanceDeclared();
+  // The defender's answers, consumed by the ATTACKING client's open combat
+  // window the same way the defence roll is.
+  //
+  // `active` IS LOAD-BEARING, and its absence is a bug OTTO played through. The
+  // note that used to sit here claimed "the defender's own echo of its command
+  // is harmless" because the helper ignores an answer when it is not mid-Focus.
+  // It is not mid-Focus on the attacker; it is on the DEFENDER, whose helper is
+  // a MIRROR sitting at the declare. So the echo advanced their own drawing to
+  // the reroll, painted the buttons, and the very next render rebuilt the
+  // mirror from the published view and took them away again: "I saw the buttons
+  // for the reroll for one second and then they dissapeared."
+  //
+  // A mirror is a DRAWING of somebody else's attack and its state may come from
+  // exactly one place, the published view. `active` is false for a mirror by
+  // construction, which makes it the right gate for all six.
+  if (attackHelper?.active) {
+    if (cmd.kind === 'focusAnswer') attackHelper.focusAnswered(cmd.use);
+    if (cmd.kind === 'focusReroll') attackHelper.focusRerolled(cmd.indices, cmd.faces);
+    if (cmd.kind === 'kcArmor') attackHelper.kcArmed();
+    if (cmd.kind === 'designateHit') attackHelper.designateAnswered(cmd.slot);
+    if (cmd.kind === 'meleeEvade') attackHelper.evadeDeclared();
+    if (cmd.kind === 'dodgeEnhance') attackHelper.dodgeEnhanceDeclared();
+  }
 }
 
 // The Action a unit and an id name, as the combat window needs it: the unit's
@@ -1006,8 +1019,20 @@ function mountSide(): void {
       if (!relay.state.room || !mySeat()) return;
       const key = JSON.stringify(view);
       if (key === publishedCombatView) return;
-      publishedCombatView = key;
-      send({ kind: 'setCombatView', seat: mySeat()!, view: view as CombatView | null });
+      // RECORDED ONLY IF IT ACTUALLY WENT. This used to bank the key first and
+      // send after, so a send that FAILED was remembered as published and the
+      // dedup above then refused every retry for ever.
+      //
+      // send() refuses for reasons that pass on their own: paused() is true
+      // whenever either player is momentarily offline, and a blip is enough.
+      // The frame lost that way is never re-offered, because the helper only
+      // publishes on CHANGE -- and focusAnswered early-returns once the stage
+      // has moved, so nothing re-renders to try again. That is how OTTO's
+      // defender ended up pinned at the Focus declare with the attacker
+      // already waiting at the reroll, unable to answer or to pass.
+      if (send({ kind: 'setCombatView', seat: mySeat()!, view: view as CombatView | null }).ok) {
+        publishedCombatView = key;
+      }
     };
   }
   // The empty state, and only when the window really is empty: a helper the
@@ -1039,8 +1064,12 @@ function sweepCombatView(): void {
   const shared = state.script?.combatView;
   const at = shared ? state.tokens.find((t) => t.uid === shared.attackerUid) : null;
   const mine = !at || at.side === seat;
-  publishedCombatView = 'null';
-  if (mine) send({ kind: 'setCombatView', seat, view: null });
+  // Dropping our stale key when the view is NOT ours is deliberate: it stops
+  // the question being re-asked on every render. But when it IS ours the clear
+  // has to be earned like any other publish, or a refused teardown is
+  // remembered as done and the mirror is never taken down.
+  if (!mine) { publishedCombatView = 'null'; return; }
+  if (send({ kind: 'setCombatView', seat, view: null }).ok) publishedCombatView = 'null';
 }
 
 function terrainNow() {

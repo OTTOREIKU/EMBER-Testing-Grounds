@@ -18,6 +18,7 @@
 //
 // Everything here DRIVES the real renderer through the DOM shim. A source-shape
 // test would have passed against the retired mirror too.
+import { readFileSync } from 'node:fs';
 import { installDom, loadCombat, makeEl, findButtons, label, mech, settle } from './_combatdrive.mjs';
 
 let pass = 0, fail = 0;
@@ -928,6 +929,85 @@ const spinning = (root) => shakingDice(root).length > 0;
     ['Focus: reroll selected', 'Keep the roll']);
   const dead = findButtons(W.root).filter((x) => /reroll selected|keep the roll/i.test(label(x)) && x.disabled);
   check('and neither is dead in their hands, because the dice are theirs', dead.length, 0);
+}
+
+// ---------- THE FOCUS BUTTONS THAT FLASH AND VANISH ----------
+// OTTO, live: "as the defender I went to use focus and I saw the buttons for the
+// reroll for one second and then they dissapeared ... on the attackers side they
+// can see my buttons but I cannot see them ... my focus button is still lit up
+// and I can keep clicking it which removes a link every time (down to 1) but
+// still no buttons. The pass button is visible so I tried clicking pass ... but
+// that button wont work either so now the defender is stuck."
+//
+// Every symptom points one way. The attacker being at rerollD explains BOTH the
+// buttons they can see and the dead Pass: focusAnswered only acts at declareD,
+// so a second answer from a defender who never advanced is ignored. So the
+// defender's window is pinned at declareD while the attacker's has moved on.
+//
+// The flash is the giveaway. `send` applies locally too, so the defender's own
+// client runs focusAnswer against its MIRROR: the stage advances, the buttons
+// draw, and then the very next render rebuilds the mirror from the published
+// view -- which is still declareD until the attacker's reply lands.
+{
+  const b4 = board();
+  const W = watcher(b4.all, []);
+  const stale = A.views.filter((v) => v.focus?.stage === 'declareD').at(-1);
+  check('the walk left a declareD frame to work from', !!stale, true);
+
+  const deliver = (v) => W.h.showMirror(v, b4.atk, b4.def, firing, 'defender');
+  const offered = () => [...new Set(findButtons(W.root).map(label)
+    .filter((l) => /reroll selected|keep the roll/i.test(l)))].length;
+
+  deliver(stale);
+  check('the defender starts at the declare', W.h.ctx.focus?.stage, 'declareD');
+
+  // 1. THE LOCAL APPLY. glueAfter runs focusAnswer on the sending client too,
+  //    and on this one the helper is a mirror.
+  W.h.focusAnswered(true);
+  check('their own window jumps to the reroll', W.h.ctx.focus?.stage, 'rerollD');
+  check('and draws the buttons, which is the one second he saw', offered(), 2);
+
+  // 2. THE VERY NEXT RENDER, still on the stale view: syncCombatMirror calls
+  //    showMirror on EVERY render for as long as a view is published.
+  deliver(stale);
+  check('the next render puts it straight back to the declare', W.h.ctx.focus?.stage, 'declareD');
+  check('and the buttons are gone again', offered(), 0);
+
+  // 3. THE ATTACKER'S REPLY, which is what has to rescue it.
+  A.h.focusAnswered(true);
+  check('the attacking window advances', A.h.ctx.focus?.stage, 'rerollD');
+  const reply = A.views.at(-1);
+  check('and publishes a view that says so', reply?.focus?.stage, 'rerollD');
+
+  deliver(reply);
+  check('so the defender gets the buttons back and keeps them', offered(), 2);
+
+  // THE TWO FAULTS BEHIND IT, both in match.ts, both pinned at source because
+  // they are page wiring rather than helper behaviour.
+  const page = readFileSync(new URL('../src/match.ts', import.meta.url), 'utf8');
+  // 1. The echo above must never reach a MIRROR. `active` is false for one by
+  //    construction, so it is the gate; every one of the six answers is behind
+  //    it, because they are all the same shape of question.
+  check('the page guards the defender answers on owning the attack',
+    /if \(attackHelper\?\.active\) \{/.test(page), true);
+  // Read as a BLOCK rather than by regex: the guard opens at `active` and runs
+  // to the closing brace, and every answer has to sit between the two.
+  const guardAt = page.indexOf('if (attackHelper?.active) {');
+  const block = guardAt < 0 ? '' : page.slice(guardAt, page.indexOf('\n  }', guardAt));
+  for (const call of ['focusAnswered', 'focusRerolled', 'kcArmed', 'designateAnswered', 'evadeDeclared', 'dodgeEnhanceDeclared']) {
+    check(`and ${call} is inside that guard`, block.includes(`attackHelper.${call}(`), true);
+  }
+  check('and none of them is called on a bare helper any more',
+    /attackHelper\?\.(focusAnswered|focusRerolled|kcArmed|designateAnswered|evadeDeclared|dodgeEnhanceDeclared)\(/.test(page), false);
+  // 2. THE PERMANENT HALF. The dedup key must be EARNED. Banking it before the
+  //    send meant a refused publish -- paused() is true whenever either player
+  //    is momentarily offline -- was remembered as published, and the dedup then
+  //    refused every retry for ever. Nothing re-renders to try again either,
+  //    since focusAnswered early-returns once the stage has moved.
+  check('the view is only recorded as published once the send succeeded',
+    /if \(send\(\{ kind: 'setCombatView'[\s\S]{0,120}?\)\.ok\) \{[\s\S]{0,80}?publishedCombatView = key;/.test(page), true);
+  check('and the teardown earns its key the same way',
+    /if \(send\(\{ kind: 'setCombatView', seat, view: null \}\)\.ok\) publishedCombatView = 'null';/.test(page), true);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

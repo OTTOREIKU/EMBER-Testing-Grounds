@@ -27,8 +27,14 @@ check('and is a table command, so a seat may send it for the other side',
   (commands.match(/'designateHit', 'meleeEvade', 'dodgeEnhance',/g) ?? []).length, 2);
 check('applyRemote hands it to the open attack window',
   /cmd\.kind === 'dodgeEnhance'/.test(commands), true);
+// Routed into the helper, but ONLY when that helper owns the attack. It used to
+// be called on a bare `attackHelper?.`, which on the DEFENDER's client is a
+// mirror: their own echo advanced their drawing out from under the published
+// view. See mirror.test.mjs for the flash that caused and the guard that ends it.
 check('match.ts routes it into the helper',
-  /if \(cmd\.kind === 'dodgeEnhance'\) attackHelper\?\.dodgeEnhanceDeclared\(\);/.test(match), true);
+  /if \(cmd\.kind === 'dodgeEnhance'\) attackHelper\.dodgeEnhanceDeclared\(\);/.test(match), true);
+check('and only when this client owns the attack',
+  match.indexOf('if (attackHelper?.active) {') < match.indexOf("cmd.kind === 'dodgeEnhance') attackHelper.dodgeEnhanceDeclared"), true);
 
 // ---------- The button exists on BOTH screens ----------
 //

@@ -124,7 +124,15 @@ const sweep = matchSrc.slice(
 );
 check('the sweep reads WHOSE attack is on the board', /state\.script\?\.combatView/.test(sweep), true);
 check('and refuses to null one belonging to the other seat', /at\.side === seat/.test(sweep), true);
-check('the null only goes out for our own', /if \(mine\) send\(\{ kind: 'setCombatView'/.test(sweep), true);
+// The null only goes out for our own, and the early return for somebody else's
+// is what drops our stale key without touching their attack.
+check('the null only goes out for our own',
+  /if \(!mine\) \{ publishedCombatView = 'null'; return; \}/.test(sweep), true);
+// And the clear is EARNED. Banking the key before the send meant a refused
+// teardown was remembered as done and the mirror never came down; the same
+// mistake on the publish side is what stranded OTTO's defender mid-Focus.
+check('and the key is only banked once the send succeeded',
+  /if \(send\(\{ kind: 'setCombatView', seat, view: null \}\)\.ok\) publishedCombatView = 'null';/.test(sweep), true);
 
 // Whitelists silently drop what they do not name, and these five are questions
 // only the defender's mirror asks. A checkpoint — a rejoin, a resync, or the
