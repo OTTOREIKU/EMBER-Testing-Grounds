@@ -418,7 +418,18 @@ input.f.codebox { font-family: var(--mono); font-size: 16px; letter-spacing: 5px
   /* Wide enough for the two-column layout to engage (the container query in
      styles.css turns on at 560px of BODY width), and still capped so it never
      covers the board it is being played on. */
-  z-index: 40; width: min(690px, calc(100% - 28px)); max-height: calc(100% - 28px);
+  /* A FIXED SIZE, not a maximum. The window used to grow and shrink with
+     whatever step was open, so it jumped every time the attack advanced and the
+     controls were never twice in the same place. A combat box that changes
+     shape under you is the opposite of somewhere you learn to look.
+
+     Both dimensions are pinned and the columns scroll INSIDE, so the panel is
+     the same rectangle from the first Black Die to the last Penetration. Still
+     capped against the viewport so it can never cover the board it is played
+     on. */
+  z-index: 40;
+  width: min(690px, calc(100% - 28px));
+  height: min(780px, calc(100% - 28px));
   display: flex; flex-direction: column;
   background: var(--surface); border-radius: var(--radius-lg);
   box-shadow: 0 18px 44px rgba(0, 0, 0, 0.55);
@@ -440,8 +451,12 @@ input.f.codebox { font-family: var(--mono); font-size: 16px; letter-spacing: 5px
 /* Rolled up: the header stays, so the attack is still obviously running and
    there is something to grab to bring it back. */
 .combatpop.rolled #combat-body { display: none; }
-.combatpop.rolled { width: auto; min-width: 260px; }
-.combatpop #combat-body { overflow: auto; padding: 0 14px 14px; min-height: 0; }
+/* Rolled up it is a title bar, so the fixed height must not apply. */
+.combatpop.rolled { width: auto; min-width: 260px; height: auto; }
+/* The body fills the fixed window and does NOT scroll: each column scrolls
+   itself, so the trace and the dice keep their place while the steps move. */
+.combatpop #combat-body { overflow: hidden; padding: 0 14px 14px; min-height: 0; flex: 1; display: flex; }
+.combatpop #combat-body > .attack-helper { flex: 1; min-height: 0; }
 /* The helper's own markup comes from styles.css; it only needs to stop
    assuming it sits in a full-height sidebar. */
 .combatpop .attack-helper { max-width: none; }

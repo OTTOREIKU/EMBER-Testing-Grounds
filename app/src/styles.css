@@ -2390,21 +2390,28 @@ p.points { white-space: pre-line; }
        width and the reading column gives it up: the steps and their controls are
        short lines and were the half with room to spare. */
     grid-template-columns: minmax(0, 1fr) 262px;
-    grid-template-rows: auto auto;
+    /* The head takes what it needs and the columns take the REST, which is what
+       lets them scroll rather than the window growing. */
+    grid-template-rows: auto minmax(0, 1fr);
     column-gap: 12px;
     row-gap: 8px;
     align-content: start;
   }
   /* The matchup names the whole fight, so it spans. */
   .attack-helper > .ah-head { grid-column: 1 / -1; grid-row: 1; }
-  .attack-helper > .ah-main { grid-column: 1; grid-row: 2; min-width: 0; }
+  /* The reading column is the one that grows without bound, so it is the one
+     that scrolls. The side column is already capped by the log's own height. */
+  .attack-helper > .ah-main { grid-column: 1; grid-row: 2; min-width: 0; min-height: 0; overflow-y: auto; }
   /* Sticky, so the trace and both hands stay on screen however far the reading
      column runs. `align-self: start` matters: stretched, a sticky element has
      nothing to slide within and never actually sticks. */
+  /* No longer sticky, and it does not need to be: in a fixed window it simply
+     occupies its column and cannot be scrolled away from. Sticky positioning
+     with nothing to slide within does nothing anyway. */
   .attack-helper > .ah-side {
     grid-column: 2; grid-row: 2;
     align-self: start;
-    position: sticky; top: 0;
+    min-height: 0;
   }
   .attack-helper > .ah-side .ah-felt { margin: 0; }
   /* A narrower column wraps the dice sooner, which is fine, but the header
