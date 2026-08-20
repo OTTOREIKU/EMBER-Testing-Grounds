@@ -6,7 +6,7 @@ import { showInspect } from './inspector';
 import { Board, footprint, snapPlacement, type BoardCallbacks } from './board';
 import { printedDeployment, resolveZoneSetData } from './overlays';
 import { transformOffer, anyStartTiming, opportunityBonusOn, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, ripostePart, martyrdomOwed, targetTracingOn, riderOnDrone, hasFlexibleTiming, coordinationFor, coordinationOnOpportunityEnd, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, electronicOrigins, loanedParts, phasesThroughUnits, minesLayable, minesOwed, pilotCard, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, maneuverIsSilent, maneuverSilenceDenier, type AuraSource, canActivateCamo, chargeableSlots, electronicStrength, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, projectileReach, provokeOffer, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
-import { mountDuel, playDuel, resolveCounterRoll, tallyCounter } from './combat';
+import { resolveCounterRoll, tallyCounter } from './combat';
 import { tacticFitsPhase, tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { inContact, canStandIn, attackDirection, crushExchange, crushExchangeSpots, crushTargets, dissipationFor, extendPath, knockbackPath, largeGridOf, LG, losBetween, losNote, pathCost, protectionFor, rangeBetween, reachableGrids, standingSpot, type LargeGrid } from './rules';
 import { breakAwayCost, breakAwayNote, canBeForceMoved, tetherCap, tetherNote } from './melee';
@@ -76,17 +76,12 @@ export interface HudCtx {
   // True while the shared AttackHelper is resolving an attack, so the turn
   // panel steps out of the way instead of offering the manual buttons beside it.
   combatBusy(): boolean;
-  // The defender's read-only copy of the attacker's combat window, drawn into
-  // the same floating pop when this client is NOT the one attacking. Null when
-  // no attack is published or the live helper owns the window.
-  combatMirrorHtml(): string | null;
-  // The defending player's Focus buttons inside that mirror (4.4.1-5):
-  // 'use'/'pass' answer the declare, 'die' toggles a Defense die by index,
-  // 'reroll' rolls server faces for the picked dice, 'keep' ends without.
-  mirrorFocus(act: 'use' | 'pass' | 'die' | 'reroll' | 'keep' | 'kc', dieIndex?: number): void;
-  mirrorDesignate(slot: string): void;
-  mirrorMeleeEvade(): void;
-  mirrorDodgeEnhance(): void;
+  // Points the shared AttackHelper at whatever attack is published, so this
+  // client draws the SAME combat window the attacking player is looking at,
+  // with the controls that are not theirs disabled rather than missing. Puts it
+  // away and answers false when nothing is published, when the view names a
+  // unit this client cannot resolve, or when the live helper owns the window.
+  syncCombatMirror(): boolean;
   // Opens the §4.4 pipeline on a target the player has just picked. The mode
   // decides what the defender may claim: an ordinary attack reads Terrain and
   // Unit Protection off the board, an Interception grants none and needs no
@@ -4364,13 +4359,12 @@ export function ensureHud(host: HTMLElement, ctx: HudCtx): void {
   hudRef = ctx;
   if (!host.querySelector('#hud-shell')) {
     // The shell is about to be written from scratch, so #combat-body will be a
-    // NEW and empty element. These two caches are module state and outlive the
-    // DOM they describe: a player who left the table and came back mid-attack
-    // found the cached markup equal to the markup the unchanged view produces,
-    // skipped the write, and was left reading an empty Combat window. What the
-    // last DOM was told is not what this one knows.
-    lastMirror = '';
-    lastMirrorDuel = '';
+    // NEW and empty element. Nothing has to be reset here for the mirror any
+    // more: it used to be two module-level markup caches that outlived the DOM
+    // they described, and a player who left the table and came back mid-attack
+    // found the cache equal to the markup the unchanged view produces, skipped
+    // the write and was left reading an empty Combat window. The helper answers
+    // that question from its own state now and remount() redraws it in place.
     // The freeplay side panel moves to the LEFT here and keeps its own tabs,
     // so a player can read either squad and any card mid-match. The ids are
     // the ones SquadTracker and Panel bind to.
@@ -4432,37 +4426,16 @@ export function ensureHud(host: HTMLElement, ctx: HudCtx): void {
     zb.classList.toggle('on', ctx.zonesOn);
     zb.setAttribute('aria-pressed', ctx.zonesOn ? 'true' : 'false');
   }
-  // The combat window is up while an attack is being resolved — the live
-  // helper on the attacking client, and the published mirror everywhere else,
-  // so the defending player watches the same fight instead of a dice feed.
+  // The combat window is up while an attack is being resolved: the live helper
+  // on the attacking client, and the SAME helper drawing the published view
+  // everywhere else, so every other player watches the same fight instead of a
+  // dice feed. Nothing is written into #combat-body from here any more. The
+  // helper owns those pixels in both cases, which is what makes the dice spin
+  // and the offsetting play on a watching screen for the first time.
   const pop = host.querySelector<HTMLElement>('#combat-pop');
   if (pop) {
-    const mirror = !ctx.combatBusy() ? ctx.combatMirrorHtml() : null;
+    const mirror = ctx.syncCombatMirror();
     pop.hidden = !ctx.combatBusy() && !mirror;
-    // Only the mirror is drawn by the re-render: while the live helper is up
-    // it owns #combat-body, and writing into it would tear the attack down.
-    // Compared against what WE wrote, not against innerHTML — the browser
-    // normalises markup on the way in, so that comparison never matches and
-    // the window would redraw on every render.
-    if (mirror && mirror !== lastMirror) {
-      const body = pop.querySelector<HTMLElement>('#combat-body');
-      if (body) {
-        body.innerHTML = mirror;
-        // The resolution strip, once it arrives. It is written SETTLED, so a
-        // defender whose tab is in the background — where nothing composites
-        // and the animation is skipped outright — still reads a correct box.
-        // Played only when the strip itself is new: this body is rewritten
-        // whenever any part of the view changes, a log line is enough, and
-        // restarting the offsetting mid-flight would make the defending player
-        // watch the same icons resolve twice.
-        const duel = mountDuel(body);
-        const key = duel?.innerHTML ?? '';
-        if (duel && key !== lastMirrorDuel) window.setTimeout(() => playDuel(duel), 0);
-        lastMirrorDuel = key;
-      }
-      lastMirror = mirror;
-    }
-    if (!mirror) { lastMirror = ''; lastMirrorDuel = ''; }
   }
   wireHud(host, ctx);
   renderBoard(ctx);
@@ -4481,11 +4454,6 @@ export function ensureHud(host: HTMLElement, ctx: HudCtx): void {
 
 let combatSpot: { x: number; y: number } | null = null;
 let combatRolled = false;
-// The mirror markup this client last wrote into #combat-body.
-let lastMirror = '';
-// The duel strip inside it that was last ANIMATED, so a mirror rewritten for
-// some other reason redraws the box without replaying the offsetting.
-let lastMirrorDuel = '';
 
 function attachCombatWindow(host: HTMLElement): void {
   const pop = host.querySelector<HTMLElement>('#combat-pop');
@@ -4765,16 +4733,14 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     });
   });
   on('[data-act="pass"]', () => { ctx.send({ kind: 'passTurn', seat: me() }); ctx.refresh(); });
-  // The defending player's Focus flow inside the combat mirror (4.4.1-5).
-  on('[data-act="focususe"]', () => ctx.mirrorFocus('use'));
-  on('[data-act="focuspass"]', () => ctx.mirrorFocus('pass'));
-  on('[data-act="focusreroll"]', () => ctx.mirrorFocus('reroll'));
-  on('[data-act="focuskeep"]', () => ctx.mirrorFocus('keep'));
-  on('[data-act="kcarmor"]', () => ctx.mirrorFocus('kc'));
-  on('[data-desslot]', (el) => ctx.mirrorDesignate(el.dataset.desslot!));
-  on('[data-act="meleeevade"]', () => ctx.mirrorMeleeEvade());
-  on('[data-act="dodgeenhance"]', () => ctx.mirrorDodgeEnhance());
-  on('[data-fdie]', (el) => ctx.mirrorFocus('die', Number(el.dataset.fdie)));
+  // The defender's Focus, Designate, KC Armor, Melee Evasion and Dodge
+  // Enhancement all used to be delegated markup here, because the mirror was
+  // markup. They are real controls inside the one renderer now and they send
+  // themselves through AttackHelper.mirrorAct, so there is nothing to delegate.
+  //
+  // This one stays: it is the TURN PANEL's roll button, which is what a
+  // defender sees when no view was published at all (an attacker on an older
+  // build), and the panel is still markup.
   on('[data-act="rolldefense"]', (el) => {
     const call = ensureScript(s).combat;
     if (!call || call.faces) return;

@@ -735,6 +735,30 @@ export interface CombatView {
   attack: { color: string; face: number }[] | null;
   defense: { color: string; face: number }[] | null;
   log: string[];
+  // The two pools as the attacker's window is holding them, so the same numbers
+  // stand in the same box on every screen BEFORE anything is rolled. Sent
+  // rather than derived on the far side, and it has to be: the pool editor lets
+  // the acting player nudge either pool by hand, and a Parry the defender
+  // declared is already inside the White (4.6.3), so a second derivation would
+  // print a different number for the same dice.
+  attackPool?: { red: number; yellow: number } | null;
+  defensePool?: { white: number; blue: number } | null;
+  // A Surplus round (4.8): which round, the icons carried into it, and the
+  // keyword carrying them. Without it the second Defense Roll is indis-
+  // tinguishable from the first on every screen except the attacker's, and the
+  // "no Attack Roll is made" line that explains it never arrives.
+  surplus?: { round: number; heavy: number; light: number; keyword: string | null } | null;
+  // The Multi-Target split (keyword 多目标X, FAQ B7): the total pool settled
+  // once for the whole Action and how it was allotted between the targets.
+  // `declaredUid` is the unit that was DESIGNATED where Automatic Shield moved
+  // the shot (FAQ A12), so the split reads the same on both screens. The limit
+  // and the condition are not here because both come off the Part's own card,
+  // which every client already holds.
+  multi?: {
+    total: { red: number; yellow: number };
+    index: number;
+    targets: { uid: number; declaredUid?: number | null; red: number; yellow: number }[];
+  } | null;
   // Where the Focus flow (4.4.1-5) stands, so the defender's mirror can ask
   // their declare and drive their reroll at the right moments.
   focus?: { stage: string; attackerUse: boolean; defenderUse: boolean } | null;
@@ -747,11 +771,17 @@ export interface CombatView {
   evadeReady?: boolean;
   dodgeDieUsed?: boolean;
   dodgeDieReady?: boolean;
-  // Shield Up / Mobile Defense: the Parts the DEFENDER may take this hit on
-  // instead of the one the Black Die found, and where it landed. Present only
-  // while that question is open, because it is the defender's to answer and
-  // their mirror is the only place the buttons may appear.
-  designate?: { from: string; slots: { slot: string; label: string }[] } | null;
+  // Shield Up / Mobile Defense: WHERE the hit landed, so the other screens can
+  // ask the defender whether to move it. Present only while that question is
+  // open, because it is the defender's to answer.
+  //
+  // The OFFERS used to travel beside it and no longer do. They are read off the
+  // defender's own equipped Parts and the attacker's facing (designateOffers),
+  // which every client already holds, so a second copy on the wire was a second
+  // answer to a question with one. What travels is only what a client cannot
+  // work out for itself, which for a Designate is which Part the Black Die
+  // found.
+  designate?: { from: string } | null;
   // The settled resolution (4.4 step 6): the duel strip and the summary lines
   // printed under it. Present only while the attacker's window is ON the
   // resolution step, because before that there is nothing settled to draw and a
@@ -892,6 +922,13 @@ function normaliseDuel(raw: unknown): { duel: Duel; text: string[] } | null {
   };
 }
 
+// Every die count on the view goes through here. They are LOOP LENGTHS and
+// printed numbers on the far client's screen, and they arrive from a peer, so
+// anything that is not a small whole number is read as none.
+function dieCount(v: unknown): number {
+  return Number.isSafeInteger(v) && (v as number) > 0 ? Math.min(v as number, 40) : 0;
+}
+
 // Display state, so the bar is lower than the defence call's: uids and a step
 // are enough to draw something honest, and junk faces are simply dropped.
 function normaliseCombatView(raw: unknown): CombatView | null {
@@ -909,7 +946,15 @@ function normaliseCombatView(raw: unknown): CombatView | null {
     targetPart: typeof v.targetPart === 'string' ? v.targetPart : null,
     attack: faces(v.attack),
     defense: faces(v.defense),
-    log: Array.isArray(v.log) ? v.log.filter((l): l is string => typeof l === 'string').slice(0, 6) : [],
+    // THE WHOLE LOG, not a tail. It used to be capped at 6 here and at 5 on the
+    // way out, so a watcher read the last five sentences of a fight the acting
+    // player could scroll in full: the trace is the thing OTTO named as most
+    // important to follow, and half a trace is what the retired mirror gave.
+    // Still bounded, because it lands in another client's markup: 120 lines is
+    // longer than any attack this engine writes, including a Surplus round.
+    log: Array.isArray(v.log)
+      ? v.log.filter((l): l is string => typeof l === 'string').slice(0, 120).map((l) => l.slice(0, 400))
+      : [],
     focus: (() => {
       const f = v.focus as { stage?: unknown; attackerUse?: unknown; defenderUse?: unknown } | null | undefined;
       return f && typeof f.stage === 'string'
@@ -928,19 +973,58 @@ function normaliseCombatView(raw: unknown): CombatView | null {
     evadeReady: !!v.evadeReady,
     dodgeDieUsed: !!v.dodgeDieUsed,
     dodgeDieReady: !!v.dodgeDieReady,
-    // Bounded the way the pools and the log above are: the slots land in class
-    // names and button labels on the far screen, and the count is a Mech's
-    // Parts, never a list worth trusting from the wire.
+    // One slot name, bounded the way every string that crosses the wire is: it
+    // lands in a class name and a button label on the far screen. The list of
+    // OFFERS that used to ride along is gone, because the renderer works them
+    // out from the defender's own Parts.
     designate: (() => {
-      const d = v.designate as { from?: unknown; slots?: unknown } | null | undefined;
-      if (!d || typeof d.from !== 'string' || !Array.isArray(d.slots)) return null;
+      const d = v.designate as { from?: unknown } | null | undefined;
+      return d && typeof d.from === 'string' ? { from: d.from.slice(0, 40) } : null;
+    })(),
+    // Both pools, bounded the way every other count that crosses the wire is.
+    // Absent is not the same as zero: a view published before this field
+    // existed, or a step that never held a pool, comes back null and the
+    // renderer draws nothing rather than an honest-looking 0.
+    attackPool: (() => {
+      const p = v.attackPool as { red?: unknown; yellow?: unknown } | null | undefined;
+      return p ? { red: dieCount(p.red), yellow: dieCount(p.yellow) } : null;
+    })(),
+    defensePool: (() => {
+      const p = v.defensePool as { white?: unknown; blue?: unknown } | null | undefined;
+      return p ? { white: dieCount(p.white), blue: dieCount(p.blue) } : null;
+    })(),
+    surplus: (() => {
+      const s = v.surplus as { round?: unknown; heavy?: unknown; light?: unknown; keyword?: unknown } | null | undefined;
+      if (!s || !Number.isSafeInteger(s.round) || (s.round as number) <= 0) return null;
       return {
-        from: d.from.slice(0, 40),
-        slots: (d.slots as unknown[])
-          .filter((o): o is { slot: string; label: string } =>
-            !!o && typeof (o as { slot?: unknown }).slot === 'string' && typeof (o as { label?: unknown }).label === 'string')
+        round: Math.min(s.round as number, 8),
+        heavy: dieCount(s.heavy),
+        light: dieCount(s.light),
+        keyword: typeof s.keyword === 'string' ? s.keyword.slice(0, 40) : null,
+      };
+    })(),
+    // The split is a LIST OF TARGETS off another client, so it is bounded like
+    // the designate offers above: no printed Multi-Target reaches 8, and the
+    // uids are looked up against this board rather than trusted as units.
+    multi: (() => {
+      const m = v.multi as { total?: unknown; index?: unknown; targets?: unknown } | null | undefined;
+      if (!m || !Array.isArray(m.targets)) return null;
+      const t = m.total as { red?: unknown; yellow?: unknown } | null | undefined;
+      return {
+        total: { red: dieCount(t?.red), yellow: dieCount(t?.yellow) },
+        index: Number.isSafeInteger(m.index) && (m.index as number) > 0 ? Math.min(m.index as number, 8) : 0,
+        targets: (m.targets as unknown[])
+          .filter((o): o is { uid: number } => !!o && typeof (o as { uid?: unknown }).uid === 'number')
           .slice(0, 8)
-          .map((o) => ({ slot: o.slot.slice(0, 40), label: o.label.slice(0, 120) })),
+          .map((o) => {
+            const row = o as { uid: number; declaredUid?: unknown; red?: unknown; yellow?: unknown };
+            return {
+              uid: row.uid,
+              declaredUid: typeof row.declaredUid === 'number' ? row.declaredUid : null,
+              red: dieCount(row.red),
+              yellow: dieCount(row.yellow),
+            };
+          }),
       };
     })(),
     resolution: normaliseDuel(v.resolution),

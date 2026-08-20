@@ -46,10 +46,27 @@ export function makeEl(tag) {
       return (el._q[sel] ||= makeEl('div'));
     },
     // innerHTML is a plain string here, so nothing parses it into children. The
-    // one caller that needs results is the pool editor, which destructures two
-    // buttons out of markup it just wrote; a memoised pair stands in for them so
-    // the listeners it binds have somewhere to live.
+    // one caller that needs results for 'button' is the pool editor, which
+    // destructures two buttons out of markup it just wrote; a memoised pair
+    // stands in for them so the listeners it binds have somewhere to live.
+    //
+    // A SINGLE CLASS selector walks the real children instead, because that is
+    // how spinDice finds the dice it shakes: with a memoised empty array it
+    // returned early and the animation could not be observed at all, which is
+    // exactly the property the mirror slice had to prove.
     querySelectorAll(sel) {
+      if (/^\.[\w-]+$/.test(sel)) {
+        const want = sel.slice(1);
+        const out = [];
+        const walk = (n) => {
+          for (const c of n.children ?? []) {
+            if (String(c.className ?? '').split(/\s+/).includes(want)) out.push(c);
+            walk(c);
+          }
+        };
+        walk(el);
+        return out;
+      }
       el._qa ||= {};
       return (el._qa[sel] ||= sel === 'button' ? [makeEl('button'), makeEl('button')] : []);
     },
@@ -59,7 +76,16 @@ export function makeEl(tag) {
     getAttribute() { return null; },
     removeAttribute() {},
     focus() {}, blur() {}, scrollIntoView() {}, scrollTo() {},
-    classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
+    // Recorded rather than applied: className is what the tests read, and
+    // folding these into it would rewrite the class strings they match on.
+    // `_cls` is the record, so "was this element ever put into the rolling
+    // state" is answerable without a browser.
+    _cls: new Set(),
+    classList: {
+      add(...cs) { for (const c of cs) el._cls.add(c); },
+      remove(...cs) { for (const c of cs) el._cls.delete(c); },
+      toggle() {}, contains(c) { return el._cls.has(c); },
+    },
     getBoundingClientRect: () => ({ top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0 }),
     click() { for (const fn of el._h.click ?? []) fn({ preventDefault() {}, stopPropagation() {} }); },
   };
@@ -97,10 +123,14 @@ export function installDom() {
 
 // Bundles combat.ts (and data.ts, for the real cards) into one ESM file node
 // can import. `name` keeps the artefacts apart when two tests build their own.
-export async function loadCombat(name) {
+// `extra` names further exports of combat.ts to pull through, for a test that
+// needs a plain function beside the class; the whole module comes back as
+// `mod`, so nothing has to be listed twice.
+export async function loadCombat(name, extra = []) {
   const entry = new URL(`./_${name}.entry.ts`, import.meta.url);
   const out = new URL(`./_${name}.bundle.mjs`, import.meta.url);
-  writeFileSync(entry, "export { AttackHelper } from '../src/combat';\nexport { loadData } from '../src/data';\n");
+  writeFileSync(entry, "export { AttackHelper } from '../src/combat';\nexport { loadData } from '../src/data';\n"
+    + (extra.length ? `export { ${extra.join(', ')} } from '../src/combat';\n` : ''));
   await build({
     entryPoints: [fileURLToPath(entry)],
     outfile: fileURLToPath(out),
@@ -111,7 +141,7 @@ export async function loadCombat(name) {
   const mod = await import(`${out.href}?t=${Date.now()}`);
   const data = await mod.loadData();
   const dice = JSON.parse(readFileSync(new URL('dice.json', DATA), 'utf8'));
-  return { AttackHelper: mod.AttackHelper, data, dice };
+  return { AttackHelper: mod.AttackHelper, data, dice, mod };
 }
 
 // ---------- reading what the window drew ----------

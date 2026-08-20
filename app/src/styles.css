@@ -2349,6 +2349,86 @@ p.points { white-space: pre-line; }
   background: rgba(240, 145, 107, 0.14); color: #f6cdb9;
 }
 .ah-fragile b { color: #fff; }
+
+/* ---------- Combat panel redesign, pass 1: adopt the sidebar's vocabulary ----------
+   These five classes are used at 24 call sites in combat.ts and match.ts and had
+   NO CSS at all. `.ah-alt` is the class of every defender choice, so the
+   defending player's whole agency was rendering as raw browser furniture next to
+   fully branded accent buttons.
+   styles.css is loaded by index.html AND match.html, so this covers the freeplay
+   board and the Match Centre together. Deliberately NOT referencing `.rowbtn` or
+   the `.tp-*` classes: those live in match.css and do not exist on the freeplay
+   page, so the values are copied instead and the two pages still agree. */
+
+/* The root cause of "sometimes small, sometimes larger". Nothing here declared a
+   font-size, so every unstyled child fell back to the browser's 16px and became
+   the BIGGEST thing in a box whose real content sits at 10 to 13px. The
+   hierarchy was inverted rather than merely absent. One declaration removes the
+   whole class of problem: anything wanting another size now has to say so. */
+.attack-helper { font-size: 12px; line-height: 1.5; color: var(--text2); }
+
+/* The defender's choices: KC Armor, Designate-keep, Melee Evasion, Dodge
+   Enhancement, Focus pass and keep. These are full sentences that must wrap, not
+   short labels, so this is a ROW rather than a chip. Values copied from
+   match.css .rowbtn so these and the Match Centre's own controls read as one
+   family. They are among the strongest defensive effects in the game and they
+   expire silently when the attacker presses Resolve, so they get a real
+   affordance rather than looking like page scaffolding. */
+.ah-alt {
+  display: block; width: 100%; text-align: left; margin: 5px 0;
+  border: none; border-radius: var(--radius-sm); background: var(--surface3);
+  color: var(--text); font-family: var(--font); font-size: 11.5px; font-weight: 600;
+  line-height: 1.4; padding: 8px 10px; cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.ah-alt:hover { background: #2c3542; }
+.ah-alt:disabled { background: var(--surface2); color: var(--text3); cursor: default; }
+
+/* One rank quieter: "Drop X", "+ Add target". Housekeeping rather than a rules
+   decision, so it recedes instead of competing with the choices above. */
+.ah-ghost {
+  border: none; border-radius: var(--radius-sm); background: transparent;
+  color: var(--text2); font-family: var(--font); font-size: 10.5px; font-weight: 600;
+  padding: 5px 9px; margin: 2px 4px 2px 0; cursor: pointer;
+  box-shadow: inset 0 0 0 1px var(--border);
+  transition: background 0.12s, color 0.12s;
+}
+.ah-ghost:hover { background: var(--surface3); color: var(--text); }
+
+/* The sentence that sets up a choice, for example "The hit landed on X". It
+   explains the buttons under it, so it stays at body rank and the left rule ties
+   it to what it introduces. */
+.ah-note {
+  font-size: 12px; line-height: 1.5; color: var(--text2);
+  margin: 8px 0 4px; padding: 0 0 0 9px;
+  border-left: 2px solid var(--border);
+}
+
+/* Groups the Focus controls so the reroll offer reads as one unit rather than a
+   loose button beside a loose sentence. */
+.ah-focus { margin: 6px 0; }
+
+/* One target inside a Multi-Target split. Without a container these ran together
+   and it was not obvious which pool editor belonged to which target. */
+.ah-mt-row {
+  background: var(--surface); border-radius: var(--radius-sm);
+  padding: 8px 9px; margin: 6px 0;
+}
+
+/* ---------- the role gate, made visible ----------
+   A control the viewer may not press is DISABLED, never removed, so the same
+   box serves the attacker, the defender and a spectator alike (the ratified
+   "ONE renderer with a ROLE"). Without these rules an inert control still looks
+   pressable, which is a worse lie than hiding it was. `.ah-alt:disabled` is
+   already covered above; this is the rest of what the gate can reach. */
+.attack-helper button:disabled { cursor: default; }
+.ah-primary:disabled, .ah-primary:disabled:hover {
+  background: var(--surface3); color: var(--text3); filter: none;
+}
+.ah-ghost:disabled, .ah-ghost:disabled:hover { background: transparent; color: var(--text3); }
+.attack-helper .chip:disabled, .attack-helper .die:disabled { opacity: 0.55; }
+.pool-die button:disabled { opacity: 0.5; }
+.pool-die button:disabled:hover { background: transparent; }
 .range-ring { fill: var(--accent); stroke: #f0b429; stroke-width: 0.75; }
 .range-ring-self { fill: #fff; stroke: #fff; }
 .range-ring-dist { font-size: 10px; fill: #f0b429; font-weight: 700; pointer-events: none; }

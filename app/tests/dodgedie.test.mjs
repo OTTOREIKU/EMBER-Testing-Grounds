@@ -31,12 +31,18 @@ check('match.ts routes it into the helper',
   /if \(cmd\.kind === 'dodgeEnhance'\) attackHelper\?\.dodgeEnhanceDeclared\(\);/.test(match), true);
 
 // ---------- The button exists on BOTH screens ----------
-check('the remote defender is offered it in their mirror',
-  /data-act="dodgeenhance"/.test(match), true);
-check('the mirror button is bound', /data-act="dodgeenhance"\]', \(\) => ctx\.mirrorDodgeEnhance\(\)/.test(hud), true);
-check('the mirror spends the Token by its own command, then declares',
-  /function mirrorDodgeEnhance[\s\S]*?kind: 'spendCommand'[\s\S]*?kind: 'dodgeEnhance'/.test(match), true);
-check('and the one-screen game gets its own button',
+//
+// ONE button now, in the one renderer, drawn on every screen and pressable by
+// whoever owns the defender. It used to be two: this one, and a hand-written
+// copy in the Match Centre's mirror that was offered a frame early, while the
+// Defense Roll it is decided against was still unrolled.
+check('the remote defender is offered it in the same window the attacker sees',
+  /sendAct\('dodgeenhance'\)/.test(combat), true);
+check('the mirror sends it rather than applying it here',
+  /act === 'dodgeenhance'/.test(match), true);
+check('and spends the Token by its own command, then declares',
+  /act === 'dodgeenhance'[\s\S]*?kind: 'spendCommand'[\s\S]*?kind: 'dodgeEnhance'/.test(match), true);
+check('and the one-screen game gets the same button',
   /Dodge Enhancement: spend a Command Token/.test(combat), true);
 check('which also spends the Token before declaring',
   /Dodge Enhancement: spend a Command Token[\s\S]*?kind: 'spendCommand'[\s\S]*?kind: 'dodgeEnhance'[\s\S]*?this\.dodgeEnhanceDeclared\(\)/.test(combat), true);
@@ -48,8 +54,11 @@ check('Melee Evasion has one now too',
 // ---------- What the attacker's window decides ----------
 check('only the attacker judges availability, and publishes it',
   /dodgeDieReady: !c\.dodgeDieUsed && c\.step === 'defense' && dodgeEnhanceReady\(this\.data, c\.defender\)/.test(combat), true);
-check('the mirror draws only what it was told',
-  /view\.dodgeDieReady && iAmDefender/.test(match), true);
+// A mirror cannot judge this for itself: whether the Defense Roll on screen is
+// the live one is the attacking window's context, not the board. So it takes
+// the attacker's judgement off the view, which is what the view is for.
+check('and a mirror draws only what it was told',
+  /const dodgeOffer = m\s*\?\s*!!m\.dodgeDieReady/.test(combat), true);
 check('declaring twice is refused', /if \(!c \|\| c\.dodgeDieUsed\) return;/.test(combat), true);
 
 // ---------- The arithmetic is reached ----------

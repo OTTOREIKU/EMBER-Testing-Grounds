@@ -99,21 +99,22 @@ const mount = matchSrc.slice(
 check('mountSide re-points a live helper at the new element',
   /attackHelper\.remount\(document\.getElementById\('combat-body'\)/.test(mount), true);
 check('and only builds one when there is none', /if \(diceData && attackHelper\)/.test(mount), true);
+// A MIRROR owns those pixels exactly as much as an attack of this client's own
+// does, and it is deliberately not `active`, so the guard names both.
 check('the idle line never paints over a live attack',
-  /if \(!combatBusy\(\)\) renderCombatIdle\(\);/.test(mount), true);
+  /if \(!combatBusy\(\) && !attackHelper\?\.watching\) renderCombatIdle\(\);/.test(mount), true);
 
-// The mirror cache is module state; the DOM it describes is not.
-const ensure = hudSrc.slice(
-  hudSrc.indexOf('export function ensureHud(host: HTMLElement, ctx: HudCtx): void {'),
-  hudSrc.indexOf('// ---------- the combat window ----------'),
-);
-const shellAt = ensure.indexOf("if (!host.querySelector('#hud-shell')) {");
-const resetAt = ensure.indexOf("lastMirror = '';");
-const writeAt = ensure.indexOf('host.innerHTML = `<div class="hud" id="hud-shell">');
-check('the shell rebuild forgets the mirror it wrote into the old DOM',
-  shellAt >= 0 && resetAt > shellAt && resetAt < writeAt, true);
-check('and forgets which duel strip it animated',
-  ensure.indexOf("lastMirrorDuel = '';") > shellAt && ensure.indexOf("lastMirrorDuel = '';") < writeAt, true);
+// The mirror used to be MARKUP the HUD wrote, cached in two module variables
+// that outlived the DOM they described: a player who left the table and came
+// back mid-attack found the cache equal to the markup the unchanged view
+// produces, skipped the write, and was left reading an empty Combat window.
+// There is no cache to go stale now, because there is no markup: the helper
+// draws the mirror and remount() redraws it into the new element. The guard is
+// that the cache stayed gone rather than that it is reset correctly.
+check('the HUD keeps no markup cache of the mirror to go stale',
+  /lastMirror/.test(hudSrc), false);
+check('the mirror is drawn by the same helper a rejoin remounts',
+  /ctx\.syncCombatMirror\(\)/.test(hudSrc), true);
 
 // The sweep is the only thing that clears the shared view, and it used to infer
 // "no attack" from this client's own helper alone.

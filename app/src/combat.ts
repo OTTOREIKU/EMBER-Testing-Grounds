@@ -3,9 +3,9 @@ import { cardName } from './data';
 import { iconSvg } from './dice';
 import { linkMechanics } from './inspector';
 import { SQUAD_ORDER, squadLabel } from './data';
-import type { Card, CardAction, DiceData, DiceIcon, DieColor, Duel, DuelIcon, GameRuleEffect, PartSlot, Side, SmokeScreen, TerrainPiece, Token } from './types';
+import type { Card, CardAction, CombatView, DiceData, DiceIcon, DieColor, Duel, DuelIcon, GameRuleEffect, PartSlot, Side, SmokeScreen, TerrainPiece, Token } from './types';
 import { statusCount, STATUSES } from './types';
-import { aaRadarCovers, armorPiercing, armorPiercingNote, attackReactionsOf, auraEffectsOn, aurasOn, auraValueOn, automaticShieldFor, blueLightningDodges, earlyWarningCover, coolingBonus, denseArmorByText, eyesAreHeavyHits, pilotDiceBonus, ignoresLowProfile, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, noMeleeBackAttack, missileGuidance, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, denseArmorOn, designationsOn, electronicStrength, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, canAffordFocus, focusIsFree, hiddenByAlliedAura, keepsLinkOnPartLoss, maxLink, provokeWhy, pursuesFragile, structureOf, trackingCover, TRACKING_SPOTTERS_NEEDED, pilotCard, pilotIs, repeatersFor, SLOT_LABEL, tetherStrike, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
+import { aaRadarCovers, armorPiercing, armorPiercingNote, attackReactionsOf, auraEffectsOn, aurasOn, auraValueOn, automaticShieldFor, blueLightningDodges, earlyWarningCover, coolingBonus, denseArmorByText, eyesAreHeavyHits, pilotDiceBonus, ignoresLowProfile, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, noMeleeBackAttack, missileGuidance, multiTargetLimit, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, denseArmorOn, designationsOn, electronicStrength, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, canAffordFocus, focusIsFree, hiddenByAlliedAura, keepsLinkOnPartLoss, maxLink, provokeWhy, pursuesFragile, structureOf, trackingCover, TRACKING_SPOTTERS_NEEDED, pilotCard, pilotIs, repeatersFor, SLOT_LABEL, tetherStrike, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
 import { timingOf } from './ticks';
 import { inArc, losNote, protectionFor, rangeBetween } from './rules';
 import type { Command } from './commands';
@@ -16,6 +16,77 @@ import type { Command } from './commands';
 export type DiceRoller = (pool: Record<string, number>, label?: string) => Promise<{ color: string; face: number }[]>;
 
 type Step = 'split' | 'part' | 'designate' | 'attack' | 'defense' | 'resolve' | 'surplus';
+
+// The step arrives from another client as a plain string, so it is matched
+// against the list rather than cast. An unknown one falls back to the defence
+// step, which draws the rolls and asks nothing.
+const STEPS: readonly string[] = ['split', 'part', 'designate', 'attack', 'defense', 'resolve', 'surplus'];
+
+// The Focus stages (4.4.1-5), matched the same way and for the same reason.
+const FOCUS_STAGES: readonly string[] = ['declareA', 'declareD', 'rerollA', 'rerollD', 'done'];
+
+// Every press a MIRROR window can make. Each one is a question the defending
+// player owns and the attacking client is parked waiting on, so the answer
+// travels as a command; there is deliberately no member for anything the
+// attacker decides, because a mirror is never the attacker's window.
+export type MirrorAct =
+  | 'rolldefense' | 'focususe' | 'focuspass' | 'focusreroll' | 'focuskeep'
+  | 'kcarmor' | 'meleeevade' | 'dodgeenhance' | 'designate';
+
+// ---------- the viewer's role in one attack ----------
+//
+// Ratified 2026-08-19 (Project-Documents/COMBAT-PANEL-REDESIGN.md, "Ratified:
+// ONE renderer with a ROLE"). THIS IS A PERMISSION MODEL, NOT A DISPLAY FLAG.
+// One renderer draws the combat for everybody and the role decides which
+// controls are live; it never decides which parts of the box exist. OTTO: the
+// renderer "also needs to be visible to a spectator (they just cant click any
+// buttons)".
+//
+// SPECTATOR IS THE BASE CASE, not the leftover. With the four players this is
+// being shaped for, two are in combat and two are watching, so read-only is
+// what most players see most of the time. The old Match Centre mirror was built
+// the other way up, as a degraded copy for whoever was not the attacker, and
+// that is exactly why it drifted.
+//
+// THERE IS DELIBERATELY NO `ally` MEMBER. Team membership is a SEPARATE axis
+// arriving with 2 vs 2: an ally watching a teammate's attack is still a
+// spectator for button purposes and may only ever SEE more (a teammate's
+// pre-commit Timing Dial, which is a secrecy.ts question). A player is an
+// allied spectator in one combat and an opposing spectator in the next, so
+// folding it in here is the thing that would have to be unpicked later.
+export type CombatRole = 'attacker' | 'defender' | 'spectator';
+
+// Identifies the ATTACK a mirror is drawing, not the frame. The step and the
+// faces deliberately do not appear: a watcher who closed the window wants it
+// to stay closed while that attack plays out, and every step publishes a new
+// view.
+function mirrorKey(v: CombatView): string {
+  return `${v.attackerUid}:${v.targetUid}:${v.actionId}:${v.mode ?? ''}`;
+}
+
+// What is this viewer's relationship to THIS attack.
+//
+// Asked of the COMBAT, never of the seat. With two seats "not me" safely
+// implies "the other player", and with four it does not: a viewer is attacker,
+// defender or neither FOR THIS ATTACK, and any code that infers the role from
+// seat identity works today and breaks silently at four players. So both
+// participants are matched POSITIVELY and everything unmatched falls through to
+// the base case, which includes a viewer holding no seat at all (a real
+// spectator today, in the dev harness and at a shared screen).
+//
+// The attacker is tested first, so a player shooting one of their own units
+// (an ally caught by an Explosion, or the solo harness walking both sides) is
+// the attacker: the acting side holds the initiative and presses the buttons
+// that move the sequence on.
+export function combatRoleFor(
+  viewer: Side | null | undefined,
+  combat: { attacker?: { side: Side } | null; defender?: { side: Side } | null } | null | undefined,
+): CombatRole {
+  if (!viewer || !combat) return 'spectator';
+  if (combat.attacker?.side === viewer) return 'attacker';
+  if (combat.defender?.side === viewer) return 'defender';
+  return 'spectator';
+}
 
 // ---------- Multi-Target (keyword 多目标X, FAQ B7) ----------
 //
@@ -175,11 +246,11 @@ function esc(s: string): string {
 // straight into the attacker's own window and nothing about it was published,
 // so the defender's mirror had nothing to draw it from.
 //
-// Markup rather than nodes, because the two screens build their windows
-// differently: the attacker's helper appends elements to a step, and the
-// defender's mirror (combatMirrorHtml in match.ts) is assembling one string.
-// ONE renderer on purpose — a strip that said "dodged" on one screen and
-// "blocked" on the other would be worse than the defender seeing nothing.
+// Markup rather than nodes, because it is written into a step that is being
+// assembled as a string. It was already the one thing both windows shared back
+// when there were two of them, and the reason still holds now that there is
+// one: a strip that said "dodged" on one screen and "blocked" on the other
+// would be worse than the defender seeing nothing.
 function duelHtml(duel: Duel): string {
   const glyph = (kind: string, size = 22) => iconSvg({ type: kind } as DiceIcon, size);
   const label = (t: string) => `<span class="duel-side">${t}</span>`;
@@ -298,10 +369,10 @@ export function playDuel(wrap: HTMLElement): void {
 }
 
 // Find the strip inside markup that was just pasted in and wire its Replay
-// button. Whether to PLAY it is the caller's call: the attacker's window plays
-// on every build of the resolution step, while the defender's mirror is rebuilt
-// whenever any part of the view changes — a log line arriving is enough — and
-// restarting the strip mid-flight would make them watch the same icons twice.
+// button. Whether to PLAY it is the caller's call, because a mirror window is
+// rebuilt whenever any part of the view changes (a log line arriving is enough)
+// and restarting the strip mid-flight would make the watching player see the
+// same icons resolve twice. stepResolve keys the play on the strip itself.
 export function mountDuel(root: ParentNode): HTMLElement | null {
   const wrap = root.querySelector<HTMLElement>('.duel');
   if (!wrap) return null;
@@ -439,22 +510,36 @@ export class AttackHelper {
   // client can draw the same attack — the part chosen, the faces, the
   // resolution — instead of leaving them watching a dice feed. Wired by the
   // Match Centre; null in freeplay, where one player sees everything anyway.
-  publishView: ((view: {
-    attackerUid: number; targetUid: number; actionId: string;
-    mode: 'attack' | 'intercept' | 'explosion'; step: string;
-    targetPart: string | null;
-    attack: { color: string; face: number }[] | null;
-    defense: { color: string; face: number }[] | null;
-    log: string[];
-    focus: { stage: string; attackerUse: boolean; defenderUse: boolean } | null;
-    kcUsed: boolean;
-    evadeUsed: boolean;
-    evadeReady: boolean;
-    dodgeDieUsed: boolean;
-    dodgeDieReady: boolean;
-    designate: { from: string; slots: { slot: string; label: string }[] } | null;
-    resolution: { duel: Duel; text: string[] } | null;
-  } | null) => void) | null = null;
+  //
+  // Typed as the published CombatView itself rather than a second copy of its
+  // shape. The copy was the same drift this slice removes from the renderer, a
+  // step smaller: it went stale the moment a field was added at one end.
+  publishView: ((view: CombatView | null) => void) | null = null;
+  // Set while this window is a MIRROR: the published snapshot of an attack that
+  // is running on somebody else's client. Null on the window actually resolving
+  // the attack, which is the freeplay board and the attacking seat.
+  //
+  // It is the view itself rather than a boolean because two questions can only
+  // be answered by the window that can see the board it is attacking across:
+  // whether a Parry was declared (evadeReady) and whether the Defense Roll is
+  // still up (dodgeDieReady). Everything else the mirror needs it derives.
+  private mirroring: CombatView | null = null;
+  // The mirror a watcher explicitly closed, keyed by mirrorKey(). Held on the
+  // helper rather than in the page because syncCombatMirror is the caller and
+  // it has no memory of its own: it recomputes from the published view every
+  // render and would happily redraw what was just dismissed.
+  private dismissed: string | null = null;
+  // How a mirror window MOVES the attack: by sending the command the attacking
+  // client is waiting for, never by editing this copy of the sequence. Wired by
+  // the Match Centre; null in freeplay, where no window is ever a mirror.
+  mirrorAct: ((act: MirrorAct, arg?: string | number[]) => void) | null = null;
+  // What this window's viewer is TO THIS ATTACK, from combatRoleFor above.
+  //
+  // The default is `attacker` because that is the freeplay board: one player
+  // presses every button there and is always the one attacking, so that page
+  // never sets this and comes out exactly as it did before roles existed. A
+  // page serving other viewers sets it per attack, never per seat.
+  role: CombatRole = 'attacker';
   // Whether this defender's Focus decisions belong to a player at another
   // screen. Wired by the Match Centre; null in freeplay, where one player
   // presses both sides' buttons in the printed order.
@@ -481,6 +566,12 @@ export class AttackHelper {
   private blackTimer: number | undefined;
   private spinTimer: number | undefined;
   private spinFor: 'attack' | 'defense' | null = null;
+  // The duel markup this window last ANIMATED. The resolution step is built
+  // again for reasons that have nothing to do with the offsetting (a log line
+  // arriving on a mirror is enough), and replaying the strip mid-flight makes
+  // the same icons resolve twice on screen. Cleared at every sequence boundary,
+  // so a second resolution that happens to look identical still plays.
+  private duelPlayed = '';
 
   constructor(
     data: GameData,
@@ -506,8 +597,22 @@ export class AttackHelper {
     this.onCommand = onCommand;
   }
 
+  // Whether this window is RESOLVING an attack of its own.
+  //
+  // A mirror is deliberately not active. Everything that asks this question is
+  // asking "is this client in the middle of a fight it owns": the Match Centre
+  // turn panel steps aside for it, the shared-view sweep refuses to delete a
+  // fight while it runs, and the mirror itself is only ever drawn when this is
+  // false. A mirror answers none of those the same way, so it answers no.
   get active(): boolean {
-    return !!this.ctx;
+    return !!this.ctx && !this.mirroring;
+  }
+
+  // Whether this window is DRAWING somebody else's attack. The other half of
+  // `active`, and the one the page needs before it paints an empty state over
+  // the window: idle and mirroring look identical from outside otherwise.
+  get watching(): boolean {
+    return !!this.mirroring;
   }
 
   // Re-points the window at a new element, keeping the attack.
@@ -526,6 +631,188 @@ export class AttackHelper {
   remount(root: HTMLElement): void {
     this.root = root;
     if (this.ctx) this.render();
+  }
+
+  // ---------- the mirror: this attack, as somebody else's client is running it ----------
+  //
+  // The Match Centre used to draw a SECOND combat window by hand for everyone
+  // who was not the attacker, and it had drifted from this one in eight
+  // separate ways, the worst being that the defender never saw a die roll: the
+  // faces simply appeared (COMBAT-PANEL-REDESIGN.md, "Ratified: ONE renderer
+  // with a ROLE"). This is the replacement. Same class, same steps, same
+  // animations, fed from the published view instead of from a live sequence.
+  //
+  // WHAT IS DERIVED HERE AND WHAT IS TAKEN OFF THE WIRE IS THE WHOLE DESIGN.
+  // Anything both clients can work out from the board they already share is
+  // worked out here (line of sight, Terrain and Unit Protection, the Part
+  // cards, whether a Whistle is in range), because deriving it is what makes
+  // this the same box rather than a summary of one. Anything that is a RESULT
+  // the attacker's window settled (the faces, the narration, the offsetting) is
+  // taken from the view and never recomputed, because two derivations of one
+  // result are two things that can drift, which is the lesson resolutionHtml
+  // already records at the top of this file.
+  showMirror(view: CombatView, attacker: Token, defender: Token, action: CardAction, role: CombatRole): void {
+    // A watcher who put this window away stays put away, and without this the
+    // close button could not work at all: syncCombatMirror calls this on EVERY
+    // render for as long as a view is published, so closing merely bought one
+    // frame before the next render drew it back.
+    //
+    // Keyed to the ATTACK rather than the step, because the tooltip promises
+    // "the attack keeps going" and a watcher who dismissed it does not want it
+    // back three times as the sequence advances. The NEXT attack is new
+    // information and gets to reopen the window.
+    if (this.dismissed && this.dismissed === mirrorKey(view)) return;
+    this.dismissed = null;
+    const had = this.mirroring ? this.ctx : null;
+    const same = !!had && had.attacker.uid === attacker.uid && had.defender.uid === defender.uid;
+    const attack = this.mirrorFaces(view.attack, same ? had!.attackRoll : null);
+    const defense = this.mirrorFaces(view.defense, same ? had!.defenseRoll : null);
+    const board = this.readBoard(attacker, defender, action);
+    const explosion = view.mode === 'explosion';
+    this.stopBlack();
+    if (!same) this.duelPlayed = '';
+    this.mirroring = view;
+    this.role = role;
+    this.ctx = {
+      attacker,
+      defender,
+      intercept: view.mode === 'intercept',
+      action,
+      losNote: board.losNote,
+      // Explosion damage allows no Protection at all (4.7.6), the same
+      // exclusion start() makes on the attacking client.
+      protection: explosion ? 0 : board.protection,
+      protectionNote: explosion ? '' : board.protectionNote,
+      // An unknown step falls back to the defence step, which draws the rolls
+      // and asks nothing. So does a SPLIT with no split in it: stepSplit reads
+      // `this.multi` without a guard because a live window cannot reach that
+      // step without one, and a view from a client that does not send the
+      // field (an older build) or one whose `multi` the whitelist dropped would
+      // otherwise take the whole window down on the watching screen. Found by
+      // breaking the publish and watching this throw instead of fail.
+      step: (STEPS.includes(view.step) && !(view.step === 'split' && !view.multi)
+        ? view.step
+        : 'defense') as Step,
+      targetPart: view.targetPart,
+      designateFrom: view.designate?.from ?? null,
+      // Read by suggestedDefensePool and by resolve(), neither of which a
+      // mirror calls: both pools arrive settled and the offsetting arrives
+      // drawn. Melee Evasion asks its own question through view.evadeReady.
+      designatedParry: null,
+      attackPool: view.attackPool ?? { red: 0, yellow: 0 },
+      defensePool: view.defensePool ?? { white: 0, blue: 0 },
+      attackRoll: attack.roll,
+      defenseRoll: defense.roll,
+      // The ask for the defender's dice belongs to the attacking client, which
+      // is the only one that knows the sequence reached the step. Left unset
+      // this window would send a second callDefense from the wrong seat.
+      defenseCalled: true,
+      blackResult: null,
+      focus: view.focus && FOCUS_STAGES.includes(view.focus.stage)
+        ? {
+            stage: view.focus.stage as 'declareA' | 'declareD' | 'rerollA' | 'rerollD' | 'done',
+            attackerUse: view.focus.attackerUse,
+            defenderUse: view.focus.defenderUse,
+          }
+        : null,
+      kcUsed: !!view.kcUsed,
+      evadeUsed: !!view.evadeUsed,
+      dodgeDieUsed: !!view.dodgeDieUsed,
+      eyeSwaps: 0,
+      surplusRound: view.surplus?.round ?? 0,
+      carried: { heavy: view.surplus?.heavy ?? 0, light: view.surplus?.light ?? 0 },
+      // Only the name survives the wire, which is all the resolution heading
+      // prints. The key and the target sentence stay on the attacking client,
+      // where the keyword is actually chosen (FAQ D1).
+      surplusKeyword: view.surplus?.keyword ? { key: '', name: view.surplus.keyword, targets: '' } : null,
+      surplusOriginalPart: null,
+      killedPart: false,
+      surplusSetup: null,
+      log: view.log.slice(),
+      explosion,
+      hits: 0,
+      resolution: view.resolution ?? null,
+    };
+    // The Multi-Target split screen, which the retired mirror did not draw at
+    // all: a defender watching a three-target Action saw nothing of the pool
+    // being allotted against them. The limit comes off the attacker's own Part,
+    // which this client holds, so only the split itself has to travel.
+    this.multi = view.multi
+      ? {
+          cap: multiTargetLimit(action) ?? { limit: Math.max(1, view.multi.targets.length), condition: null },
+          action,
+          attacker,
+          total: { red: view.multi.total.red, yellow: view.multi.total.yellow },
+          index: view.multi.index,
+          pending: [],
+          targets: view.multi.targets.map((t) => ({
+            defender: this.unitByUid(t.uid) ?? defender,
+            declared: t.declaredUid ? this.unitByUid(t.declaredUid) : undefined,
+            red: t.red,
+            yellow: t.yellow,
+          })),
+        }
+      : null;
+    // THE WIN THIS SLICE EXISTS FOR. spinDice lives in this file and the
+    // retired mirror never called it, so on the defending player's screen the
+    // dice did not roll, they appeared. Faces that CHANGED since the last frame
+    // are a roll that just happened, so the same shake runs on every screen and
+    // both players watch the same dice land (OTTO: the shared table).
+    if (defense.rolled) this.spinFor = 'defense';
+    else if (attack.rolled) this.spinFor = 'attack';
+    this.render();
+  }
+
+  // Puts a mirror window away. The attack is untouched: it is running somewhere
+  // else, and this window was only ever a drawing of it.
+  closeMirror(): void {
+    if (!this.mirroring) return;
+    this.stopBlack();
+    this.mirroring = null;
+    this.ctx = null;
+    this.multi = null;
+    this.duelPlayed = '';
+    this.role = 'attacker';
+  }
+
+  // Faces off the wire, matched against what this window already had. An
+  // IDENTICAL list keeps its selection, because the defending player picks
+  // their Focus dice on this screen and every repaint would otherwise clear the
+  // choice out from under them. A list that changed is a fresh roll, which is
+  // what earns the spin.
+  // What the mirror's close button DOES, as a method rather than a closure so
+  // it can be driven. The test shim memoises querySelector per selector, so a
+  // test cannot reach the node the handler is bound to; the retired version of
+  // this test called closeMirror() directly for that reason and therefore
+  // proved nothing about the close at all.
+  //
+  // Recording the key BEFORE standing down matters: closeMirror() clears
+  // `mirroring`, and the key is what stops syncCombatMirror redrawing this
+  // same attack on the very next render.
+  dismissMirror(): void {
+    if (this.mirroring) this.dismissed = mirrorKey(this.mirroring);
+    this.closeMirror();
+  }
+
+  private mirrorFaces(
+    faces: { color: string; face: number }[] | null | undefined,
+    had: Rolled[] | null,
+  ): { roll: Rolled[] | null; rolled: boolean } {
+    if (!faces) return { roll: null, rolled: false };
+    const same = !!had && had.length === faces.length
+      && faces.every((f, i) => had[i].color === f.color && had[i].face === f.face);
+    return {
+      roll: faces.map((f, i) => ({
+        color: f.color as DieColor,
+        face: f.face,
+        selected: same ? had![i].selected : false,
+      })),
+      rolled: !same && faces.length > 0,
+    };
+  }
+
+  private unitByUid(uid: number): Token | undefined {
+    return (this.tokens ? this.tokens() : []).find((t) => t.uid === uid);
   }
 
   private stopBlack(): void {
@@ -651,6 +938,16 @@ export class AttackHelper {
     }
     // A new attack: any defence roll still in the air belongs to the last one.
     this.rollGen++;
+    this.duelPlayed = '';
+    // Starting an attack ENDS any mirroring, and its absence stranded a player
+    // permanently. `active` is `!!ctx && !mirroring`, so a helper that kept
+    // `mirroring` set stayed inactive, combatBusy() stayed false,
+    // syncCombatMirror never stood down, and showMirror overwrote the fresh
+    // ctx on the very next render. Reachable by refreshing mid-attack: the
+    // reloaded attacker's own view is still published, so they were handed a
+    // mirror of their OWN attack with every control dead, and publishView was
+    // never called again. HEAD recovered because `active` was just `!!ctx`.
+    this.mirroring = null;
     this.ctx = {
       attacker,
       defender,
@@ -767,6 +1064,16 @@ export class AttackHelper {
     // defence roll, so a roll answered late lands on the sequence that asked
     // for it or on nothing at all.
     this.rollGen++;
+    this.duelPlayed = '';
+    // Starting an attack ENDS any mirroring, and its absence stranded a player
+    // permanently. `active` is `!!ctx && !mirroring`, so a helper that kept
+    // `mirroring` set stayed inactive, combatBusy() stayed false,
+    // syncCombatMirror never stood down, and showMirror overwrote the fresh
+    // ctx on the very next render. Reachable by refreshing mid-attack: the
+    // reloaded attacker's own view is still published, so they were handed a
+    // mirror of their OWN attack with every control dead, and publishView was
+    // never called again. HEAD recovered because `active` was just `!!ctx`.
+    this.mirroring = null;
     this.ctx = {
       attacker: m.attacker,
       defender,
@@ -1090,16 +1397,26 @@ export class AttackHelper {
   // roll. Returns null once the flow is done and the Resolve button may show.
   private focusBlock(): HTMLElement | null {
     const c = this.ctx!;
-    const f = c.focus!;
-    if (f.stage === 'done') return null;
+    // Absent, not merely done: a MIRROR is handed whatever stage the attacking
+    // window had published, and null is what a view carries in the frame before
+    // beginFocus settles one.
+    const f = c.focus;
+    if (!f || f.stage === 'done') return null;
     const wrap = document.createElement('div');
     wrap.className = 'ah-focus';
     const remoteD = !!(this.focusRemote && this.focusRemote(c.defender));
     const declare = (side: 'attacker' | 'defender'): void => {
       const t = side === 'attacker' ? c.attacker : c.defender;
+      // The declare is now BUILT for every viewer and only pressable by the
+      // side it belongs to, so a watcher can see the question being put rather
+      // than only that somebody is thinking. Ratified: the Ask band shows the
+      // other side's pending decision (COMBAT-PANEL-REDESIGN.md).
+      const mine = this.mayPress(side);
       const p = document.createElement('p');
       p.className = 'ah-note';
-      p.textContent = focusIsFree(this.data, t)
+      p.textContent = !mine
+        ? `Focus (4.4.1-5): waiting for ${t.label}'s player, who may spend 1 Link to reroll their ${side === 'attacker' ? 'Attack' : 'Defense'} dice.`
+        : focusIsFree(this.data, t)
         ? `Focus (4.4.1-5): ${t.label} is down to 3 Parts, so its Focus reroll costs no Link at all (Will to Survive) — ${side === 'attacker' ? 'the attacker declares first' : 'the defender declares second'}.`
         : `Focus (4.4.1-5): ${t.label} may spend 1 Link (${t.link ?? 0} left) to reroll any of its ${side === 'attacker' ? 'Attack' : 'Defense'} dice — ${side === 'attacker' ? 'the attacker declares first' : 'the defender declares second'}.`;
       wrap.appendChild(p);
@@ -1110,23 +1427,32 @@ export class AttackHelper {
       // Link" on a reroll the engine no longer charges reads as a bug at the
       // table. match.ts's mirror button already branched; this one did not.
       use.textContent = focusIsFree(this.data, t) ? 'Focus — free' : 'Focus — spend 1 Link';
-      use.addEventListener('click', () => this.focusDeclare(side, true));
+      use.disabled = !mine;
+      // On a mirror only the DEFENDER's half is ever answerable, and it travels
+      // as focusAnswer: the Link is spent by this client's own command and the
+      // attacking window advances the stage when it lands.
+      const declared = (use2: boolean): void => {
+        if (this.mirroring) {
+          if (side === 'defender') this.mirrorAct?.(use2 ? 'focususe' : 'focuspass');
+          return;
+        }
+        this.focusDeclare(side, use2);
+      };
+      use.addEventListener('click', () => declared(true));
       const pass = document.createElement('button');
       pass.className = 'ah-alt';
       pass.textContent = 'Pass';
-      pass.addEventListener('click', () => this.focusDeclare(side, false));
+      pass.disabled = !mine;
+      pass.addEventListener('click', () => declared(false));
       wrap.appendChild(use);
       wrap.appendChild(pass);
     };
     if (f.stage === 'declareA') declare('attacker');
-    else if (f.stage === 'declareD') {
-      if (remoteD) {
-        const p = document.createElement('p');
-        p.className = 'ah-note';
-        p.textContent = `Focus (4.4.1-5): waiting for ${c.defender.label}'s player — they may spend 1 Link to reroll their Defense dice.`;
-        wrap.appendChild(p);
-      } else declare('defender');
-    } else if (f.stage === 'rerollA') {
+    // One call for both, because declare() now carries the waiting sentence
+    // itself. The old fork drew a sentence INSTEAD of the buttons, which is the
+    // degraded-copy shape the role model exists to remove.
+    else if (f.stage === 'declareD') declare('defender');
+    else if (f.stage === 'rerollA') {
       const p = document.createElement('p');
       p.className = 'ah-note';
       p.textContent = `${c.attacker.label} Focused: select any Attack dice below, then reroll them.`;
@@ -1529,6 +1855,56 @@ export class AttackHelper {
     c.defender = board.find((x) => x.uid === c.defender.uid) ?? c.defender;
   }
 
+  // Whether the controls belonging to one side of this attack are THIS window's
+  // to press. The single gate every control in the box goes through, so the
+  // permission model has one implementation rather than one per step.
+  //
+  // DISABLED, NEVER ABSENT. Every control is built whatever this answers, and a
+  // viewer who may not press it still sees what the acting player is being
+  // asked to decide. That is what makes this the same box for everybody instead
+  // of a degraded copy, and it is the ratified reason the Match Centre mirror
+  // is being retired (COMBAT-PANEL-REDESIGN.md).
+  //
+  // The defender's half needs one thing the role cannot know: whether there is
+  // another player behind the defender at all. focusRemote is that reader
+  // already, and it answers false in freeplay (null) and false on a defending
+  // player's own screen, so the one-screen board keeps pressing both sides'
+  // buttons exactly as it always has.
+  private mayPress(owner: 'attacker' | 'defender'): boolean {
+    if (this.role === 'spectator') return false;
+    if (owner === 'attacker') return this.role === 'attacker';
+    if (this.role === 'defender') return true;
+    const d = this.ctx?.defender;
+    return !(d && this.focusRemote && this.focusRemote(d));
+  }
+
+  // Whether a control may edit THIS COPY of the sequence. On a live window that
+  // is exactly mayPress; on a MIRROR it is never, because the attack lives on
+  // another client and a button that moved this drawing of it would put the two
+  // screens into different fights.
+  //
+  // Every attacker-owned control goes through here rather than mayPress, and
+  // the reason is a real board state, not tidiness: a player who RELOADS while
+  // their own attack is on the wire comes back with no helper, mirrors their
+  // own attack, and combatRoleFor answers `attacker`. Their buttons would be
+  // live against a context that is a picture rather than the fight.
+  //
+  // The defender's controls do NOT use this: each of them has a command that
+  // travels (mirrorAct), so they stay pressable on the mirror where they
+  // belong. The two that have no such command, the pool steppers and the
+  // Whistle reroll, come back through here.
+  private mayDrive(owner: 'attacker' | 'defender'): boolean {
+    return !this.mirroring && this.mayPress(owner);
+  }
+
+  // A press on a mirror window, sent instead of applied. Returns true when it
+  // was sent, so the caller stops before touching the local context.
+  private sendAct(act: MirrorAct, arg?: string | number[]): boolean {
+    if (!this.mirroring) return false;
+    this.mirrorAct?.(act, arg);
+    return true;
+  }
+
   // The mirror is published from the END of render(), never the start, and the
   // ordering is the whole point. stepDefense() calls beginFocus() while the DOM
   // is being built, and beginFocus -> skipFocusStages mutates focus.stage
@@ -1547,6 +1923,12 @@ export class AttackHelper {
   private publishMirror(): void {
     const c = this.ctx;
     if (!c) return;
+    // A MIRROR has nothing of its own to publish: it is a drawing of an attack
+    // another client owns, and check() refuses a view naming another squad's
+    // attacker in any case. Guarded here rather than at the call so render()
+    // keeps one shape, and so the ordering below stays the only thing that
+    // decides WHEN the publish happens.
+    if (this.mirroring) return;
       // Everything the defender's mirror needs, refreshed whenever this window
       // redraws. The log tail is stripped of markup: it travels and is drawn
       // with innerHTML on the far side.
@@ -1559,16 +1941,43 @@ export class AttackHelper {
         targetPart: c.targetPart ?? null,
         attack: c.attackRoll?.map((d) => ({ color: d.color, face: d.face })) ?? null,
         defense: c.defenseRoll?.map((d) => ({ color: d.color, face: d.face })) ?? null,
-        log: c.log.slice(-5).map((l) => l.replace(/<[^>]*>/g, '')),
-        focus: c.focus ? { stage: c.focus.stage, attackerUse: c.focus.attackerUse, defenderUse: c.focus.defenderUse } : null,
-        // Only while the question is open, and only ever answered on the
-        // defender's own client — this is what their mirror draws buttons from.
-        designate: c.step === 'designate' && c.designateFrom
+        // THE WHOLE LOG. It used to be the last five lines, so a watcher read
+        // the tail of a fight the acting player could read in full, and the
+        // trace is the part OTTO named as mattering most for following what
+        // happened. The markup is stripped because it lands in another client's
+        // innerHTML and a peer is not a trusted author of it.
+        log: c.log.map((l) => l.replace(/<[^>]*>/g, '')),
+        // The pools, so the same numbers stand in the box on every screen from
+        // the moment the step opens. Nudged by hand in the editor and already
+        // carrying a declared Parry, so they cannot be derived on the far side.
+        attackPool: { red: c.attackPool.red, yellow: c.attackPool.yellow },
+        defensePool: { white: c.defensePool.white, blue: c.defensePool.blue },
+        // A Surplus round (4.8), which is a SECOND Defense Roll on the same
+        // attack. Without this the other screens read it as the first one.
+        surplus: c.surplusRound > 0
+          ? { round: c.surplusRound, heavy: c.carried.heavy, light: c.carried.light, keyword: c.surplusKeyword?.name ?? null }
+          : null,
+        // The Multi-Target split (FAQ B7). The limit and the condition are not
+        // sent: both come off the Part's own card, which every client holds.
+        multi: this.multi
           ? {
-              from: c.designateFrom,
-              slots: this.designateOffers(c.designateFrom).map((x) => ({ slot: x.slot, label: x.label })),
+              total: { red: this.multi.total.red, yellow: this.multi.total.yellow },
+              index: this.multi.index,
+              targets: this.multi.targets.map((t) => ({
+                uid: t.defender.uid, declaredUid: t.declared?.uid ?? null, red: t.red, yellow: t.yellow,
+              })),
             }
           : null,
+        focus: c.focus ? { stage: c.focus.stage, attackerUse: c.focus.attackerUse, defenderUse: c.focus.defenderUse } : null,
+        // Only while the question is open, and only ever answered on the
+        // defender's own client, which is what draws their buttons from it.
+        // WHERE the hit landed, and nothing else. The offers themselves are not
+        // sent: designateOffers reads the defender's equipped Parts and the
+        // attacker's facing, which every client holds, so working them out on
+        // the far side is what makes the box the same box rather than a summary
+        // of one. Sending them would have been a second answer to a question
+        // that has one.
+        designate: c.step === 'designate' && c.designateFrom ? { from: c.designateFrom } : null,
         kcUsed: !!c.kcUsed,
         evadeUsed: !!c.evadeUsed,
         // Offered only where the rule allows it: a Parry was actually declared,
@@ -1598,11 +2007,29 @@ export class AttackHelper {
     el.className = 'attack-helper';
     const aName = c.attacker.label;
     const dName = c.defender.label;
+    // The mode, which the retired mirror printed and this window never did.
+    // Unified in the mirror's favour: an Interception and an Explosion follow
+    // rules of their own (4.9, 4.7.6) and the box otherwise looks exactly like
+    // an ordinary shot. It is the same header on every screen now, which is the
+    // point of the slice.
+    const modeNote = c.intercept ? 'Interception (4.9)' : c.explosion ? 'Explosion damage (4.7.6)' : '';
+    // A mirror window is a drawing of an attack somebody else is resolving, so
+    // its X puts the drawing away rather than aborting the fight. The retired
+    // mirror had no close at all, which left a watcher unable to see their own
+    // board until the attacker finished.
+    const watching = !!this.mirroring;
     el.innerHTML = `<div class="ah-head">
       <b>${aName}</b> → <b>${dName}</b>
-      <span class="dim">${c.action.name.en || c.action.name.zh} (${c.action.type ?? ''})</span>
-      <button class="ah-cancel" title="Cancel attack">✕</button>
+      <span class="dim">${c.action.name.en || c.action.name.zh} (${c.action.type ?? ''})${modeNote ? ` · ${modeNote}` : ''}</span>
+      <button class="ah-cancel" title="${watching ? 'Put this window away. The attack keeps going.' : 'Cancel attack'}">✕</button>
     </div>
+    ${
+      // Whose attack this is, said once, for everybody who is not running it.
+      // The line of sight detail below is now shown to them too: the mirror
+      // used to replace it with this sentence, so the player being shot at was
+      // the one player who could not see why the shot was clear.
+      this.role === 'attacker' ? '' : `<p class="ah-los dim">${esc(c.attacker.label)}'s player is resolving this attack. You are watching their combat window.</p>`
+    }
     <p class="ah-los">${c.losNote}</p>${
       // The designation is applied before the Action reaches here, so this
       // reports what the spare hand bought rather than asking about it.
@@ -1630,7 +2057,24 @@ export class AttackHelper {
       el.appendChild(log);
     }
 
-    el.querySelector('.ah-cancel')!.addEventListener('click', () => this.cancel());
+    // On a live window this X ABORTS the attack, so it belongs to the attacker
+    // and to nobody else. On a mirror it is the close the retired implementation
+    // never had, and it closes nothing but this drawing: the sequence is running
+    // on another client and cannot be cancelled from here.
+    const cancel = el.querySelector<HTMLButtonElement>('.ah-cancel')!;
+    cancel.disabled = !watching && !this.mayDrive('attacker');
+    // closeMirror() FIRST on a watcher, and without it this button did nothing.
+    // onClose() ends in the page's render(), which reaches syncCombatMirror();
+    // the view is still published and combatBusy() is still false, so showMirror
+    // redrew the window in the same synchronous turn. The watcher got a flicker
+    // and the window back, which is the opposite of what the tooltip promises.
+    // Standing the drawing down before the render is what makes the close real;
+    // the sequence itself keeps running on the client that owns it.
+    cancel.addEventListener('click', () => {
+      if (!watching) { this.cancel(); return; }
+      this.dismissMirror();
+      this.onClose();
+    });
     this.root.replaceChildren(el);
     // AFTER the step is built, so a stage beginFocus() settled during the build
     // is in the view the defender receives.
@@ -1693,6 +2137,7 @@ export class AttackHelper {
         const drop = document.createElement('button');
         drop.className = 'ah-ghost';
         drop.textContent = `Drop ${row.declared?.label ?? row.defender.label}`;
+        drop.disabled = !this.mayDrive('attacker');
         drop.addEventListener('click', () => {
           m.targets = m.targets.filter((t) => t !== row);
           this.render();
@@ -1716,6 +2161,7 @@ export class AttackHelper {
         const b = document.createElement('button');
         b.className = 'ah-ghost';
         b.textContent = `+ ${u.label}${swap ? ` → ${swap.shield.label}` : ''}`;
+        b.disabled = !this.mayDrive('attacker');
         b.addEventListener('click', () => {
           m.targets.push({ defender: swap?.shield ?? u, declared: swap ? u : undefined, red: 0, yellow: 0 });
           if (swap) this.note(this.shieldNote(swap), [m.attacker, swap.declared, swap.shield]);
@@ -1751,6 +2197,7 @@ export class AttackHelper {
     go.textContent = `Begin the attack on ${
       m.targets[0].declared ? `${m.targets[0].declared.label} → ${m.targets[0].defender.label}` : m.targets[0].defender.label
     } ▸`;
+    go.disabled = !this.mayDrive('attacker');
     go.addEventListener('click', () => {
       m.index = 0;
       const first = m.targets[0];
@@ -1915,6 +2362,7 @@ export class AttackHelper {
         const b = document.createElement('button');
         b.className = 'chip chip-intact';
         b.innerHTML = `<b>${e.name}</b> ${e.targets}`;
+        b.disabled = !this.mayDrive('attacker');
         b.addEventListener('click', () => this.chooseSurplus(e));
         row.appendChild(b);
       }
@@ -1930,6 +2378,7 @@ export class AttackHelper {
       const b = document.createElement('button');
       b.className = 'chip chip-intact';
       b.innerHTML = `<b>Another Part</b> of ${c.defender.label}`;
+      b.disabled = !this.mayDrive('attacker');
       b.addEventListener('click', () => {
         const cc = this.ctx!;
         cc.step = 'part';
@@ -1941,6 +2390,7 @@ export class AttackHelper {
       const b = document.createElement('button');
       b.className = 'chip chip-intact';
       b.innerHTML = `<b>${u.label}</b> ${u.kind}`;
+      b.disabled = !this.mayDrive('attacker');
       b.addEventListener('click', () => this.cleaveInto(u.uid));
       row.appendChild(b);
     }
@@ -1974,6 +2424,7 @@ export class AttackHelper {
     const rollBtn = document.createElement('button');
     rollBtn.className = 'ah-primary';
     rollBtn.innerHTML = '<i class="btn-ico">🎲</i> Roll Black Die';
+    rollBtn.disabled = !this.mayDrive('attacker');
     rollBtn.addEventListener('click', () => {
       if (this.blackTimer) return;
       rollBtn.disabled = true;
@@ -2007,6 +2458,7 @@ export class AttackHelper {
       const b = document.createElement('button');
       b.className = `chip chip-${st}`;
       b.innerHTML = `<b>${SLOT_LABEL[slot]}</b> ${cardName(card)}`;
+      b.disabled = !this.mayDrive('attacker');
       b.addEventListener('click', () => {
         this.note(`Target Part chosen: ${SLOT_LABEL[slot]}.`);
         this.pickPart(slot);
@@ -2126,28 +2578,39 @@ export class AttackHelper {
     const wrap = document.createElement('div');
     wrap.className = 'ah-step';
     const rolled = SLOT_LABEL[from as PartSlot | 'main'];
-    const remoteDefender = !!(this.focusRemote && this.focusRemote(c.defender));
+    // The offers are drawn for everyone and live only for whoever owns the
+    // defender. They used to be skipped entirely when the choice belonged to
+    // another screen, which left a watcher told that somebody was deciding
+    // something without ever seeing WHAT.
+    const mine = this.mayPress('defender');
     wrap.innerHTML = `<h4><span class="ah-n">2</span>Designate the Part</h4>
       <p class="ah-note">The hit landed on <b>${rolled}</b>. ${
-        remoteDefender
-          ? 'Waiting for the defending player — they may take it on a Part that Designates instead.'
-          : 'This Mech may take it on a Part that Designates instead.'
+        mine
+          ? 'This Mech may take it on a Part that Designates instead.'
+          : 'Waiting for the defending player, who may take it on a Part that Designates instead.'
       }</p>`;
-    if (remoteDefender) {
-      linkMechanics(wrap, this.data.mechanics);
-      return wrap;
-    }
     for (const opt of this.designateOffers(from)) {
       const b = document.createElement('button');
       b.className = 'ah-primary';
       b.textContent = `${SLOT_LABEL[opt.slot as PartSlot | 'main']} — ${opt.label}`;
-      b.addEventListener('click', () => this.designateHit(opt.slot, from));
+      b.disabled = !mine;
+      // The answer travels as designateHit and the ATTACKER's window is what
+      // actually moves the hit, which is the same shape focusAnswer has: the
+      // choice is the defender's, the sequence is not.
+      b.addEventListener('click', () => {
+        if (this.sendAct('designate', opt.slot)) return;
+        this.designateHit(opt.slot, from);
+      });
       wrap.appendChild(b);
     }
     const keep = document.createElement('button');
     keep.className = 'ah-alt';
     keep.textContent = `Keep ${rolled}`;
-    keep.addEventListener('click', () => this.designateHit(from, from));
+    keep.disabled = !mine;
+    keep.addEventListener('click', () => {
+      if (this.sendAct('designate', from)) return;
+      this.designateHit(from, from);
+    });
     wrap.appendChild(keep);
     linkMechanics(wrap, this.data.mechanics);
     return wrap;
@@ -2188,14 +2651,23 @@ export class AttackHelper {
     this.render();
   }
 
-  private poolEditor(pools: [string, DieColor][], get: (c: DieColor) => number, set: (c: DieColor, n: number) => void): HTMLElement {
+  // `owner` is whose pool this is, for the role gate. The attack pool is the
+  // attacker's; the defence pool is the defender's, and on a one-screen board
+  // that is the same person.
+  private poolEditor(pools: [string, DieColor][], get: (c: DieColor) => number, set: (c: DieColor, n: number) => void, owner: 'attacker' | 'defender' = 'attacker'): HTMLElement {
     const div = document.createElement('div');
     div.className = 'ah-pool';
+    // mayDrive: a stepper edits the pool in this window's own memory and there
+    // is no command that carries the edit, so it is inert on a mirror for both
+    // sides. The numbers themselves travel, which is what matters.
+    const live = this.mayDrive(owner);
     for (const [label, color] of pools) {
       const item = document.createElement('span');
       item.className = `pool-die die-${color}`;
       item.innerHTML = `<button>−</button><b>${get(color)}</b><button>+</button> <small>${label}</small>`;
       const [minus, plus] = item.querySelectorAll('button');
+      minus.disabled = !live;
+      plus.disabled = !live;
       minus.addEventListener('click', () => {
         set(color, Math.max(0, get(color) - 1));
         this.render();
@@ -2213,12 +2685,16 @@ export class AttackHelper {
     const c = this.ctx!;
     const div = document.createElement('div');
     div.className = 'ah-roll';
+    // Dice belong to whoever rolled them, so the selection toggles and every
+    // reroll offer under them follow the same owner.
+    const mine = this.mayPress(which === 'attack' ? 'attacker' : 'defender');
     roll.forEach((d, i) => {
       const b = document.createElement('button');
       b.className = `die die-${d.color}${d.selected ? ' sel' : ''}`;
       const face = this.dice.dice[d.color].faces[d.face];
       b.innerHTML = face.length ? face.map((ic: DiceIcon) => iconSvg(ic)).join('') : '<span class="blank">·</span>';
       b.title = 'select for reroll';
+      b.disabled = !mine;
       b.addEventListener('click', () => {
         d.selected = !d.selected;
         this.render();
@@ -2238,13 +2714,21 @@ export class AttackHelper {
     // remote defender's copy of these buttons lives in their combat mirror.
     const f = c.focus;
     const rerollStage = which === 'attack' ? 'rerollA' : 'rerollD';
-    const drivenHere = which === 'attack' || !(this.focusRemote && this.focusRemote(c.defender));
-    if (f && f.stage === rerollStage && drivenHere) {
+    // Built at the stage that owns it whoever is watching, and live only for
+    // the player whose dice these are. The gate used to be "is this reroll
+    // driven from this screen", which HID the defender's offer from everyone
+    // else; the box now shows the same question to all of them.
+    if (f && f.stage === rerollStage) {
       const go = document.createElement('button');
       go.textContent = 'Focus: reroll selected';
       go.title = 'The Link is already spent — reroll every selected die above.';
+      go.disabled = !mine;
       go.addEventListener('click', () => {
         if (!roll.some((d) => d.selected)) return;
+        // The dice are picked on THIS screen either way: the selection is local
+        // state and the mirror holds it across repaints. Only the reroll itself
+        // has to travel, carrying the indexes that were picked.
+        if (this.sendAct('focusreroll', roll.map((d, i) => (d.selected ? i : -1)).filter((i) => i >= 0))) return;
         void (async () => {
           this.spinFor = which;
           await this.reroll(roll, 'Focus reroll');
@@ -2255,7 +2739,11 @@ export class AttackHelper {
       const keep = document.createElement('button');
       keep.textContent = 'Keep the roll';
       keep.title = 'End the Focus without rerolling anything.';
-      keep.addEventListener('click', () => this.finishFocusReroll(which));
+      keep.disabled = !mine;
+      keep.addEventListener('click', () => {
+        if (this.sendAct('focuskeep')) return;
+        this.finishFocusReroll(which);
+      });
       rr.appendChild(keep);
     }
     // Guidance Support (PDAM-006): a friendly Missile shooting at something
@@ -2272,6 +2760,7 @@ export class AttackHelper {
         const g = document.createElement('button');
         g.textContent = `Guidance Support: reroll ${eyes.length} [Eye]`;
         g.title = `${beacons[0].label} covers ${c.defender.label}, so this Missile may reroll every {Eye} it rolled (PDAM-006). It costs nothing and may be taken once.`;
+        g.disabled = !this.mayDrive('attacker');
         g.addEventListener('click', () => {
           c.guidanceUsed = true;
           // The card names the face, so the selection is made here rather than
@@ -2299,6 +2788,12 @@ export class AttackHelper {
       const w = document.createElement('button');
       w.textContent = `Whistle reroll (${funders[0].label})`;
       w.title = `${funders[0].label} is within Range 4 with a face-up Command Token. Consuming it lets ${roller.label} reroll the selected dice; the token turns face-down (4.15.4).`;
+      // mayDrive, not mayPress: the Whistle is the one reroll with no command
+      // of its own, so a mirror has no way to send it and the button stays
+      // inert there. Recorded as a gap rather than hidden, because the retired
+      // mirror did not offer it either and a defender at another screen has
+      // never been able to spend an Ally's Command Token on their own dice.
+      w.disabled = !this.mayDrive(which === 'attack' ? 'attacker' : 'defender');
       w.addEventListener('click', () => {
         if (!roll.some((d) => d.selected)) return;
         this.onCommand({ kind: 'spendCommand', seat: funders[0].side, uid: funders[0].uid });
@@ -2349,6 +2844,7 @@ export class AttackHelper {
       const roll = document.createElement('button');
       roll.className = 'ah-primary';
       roll.innerHTML = '<i class="btn-ico">🎲</i> Roll attack dice';
+      roll.disabled = !this.mayDrive('attacker');
       roll.addEventListener('click', () => {
         void (async () => {
           this.spinFor = 'attack';
@@ -2377,6 +2873,7 @@ export class AttackHelper {
         swap.className = 'ah-alt';
         swap.textContent = 'Chef: consume a Command → {Eye} becomes {Heavy Hit}';
         swap.title = 'Consumes 1 face-up Command Token from this Mech (4.15.4). The token turns face-down and cannot be issued or used again.';
+        swap.disabled = !this.mayDrive('attacker');
         swap.addEventListener('click', () => {
           // spendCommand does the flip and refuses if the Mech has none left,
           // so the token half travels like every other command; the exchange
@@ -2390,6 +2887,7 @@ export class AttackHelper {
       const next = document.createElement('button');
       next.className = 'ah-primary';
       next.textContent = 'Continue to Defense ▸';
+      next.disabled = !this.mayDrive('attacker');
       next.addEventListener('click', () => {
         c.step = 'defense';
         this.render();
@@ -2465,6 +2963,7 @@ export class AttackHelper {
         [['White', 'white'], ['Blue', 'blue']],
         (col) => (col === 'white' ? c.defensePool.white : c.defensePool.blue),
         (col, n) => (col === 'white' ? (c.defensePool.white = n) : (c.defensePool.blue = n)),
+        'defender',
       ),
     );
     // FAQ A25 asks exactly when the Volcano's Armor Countermeasures resolves,
@@ -2489,36 +2988,60 @@ export class AttackHelper {
       // answer is in the air), the defender presses their own roll, and both
       // players watch the same faces land. The attacker sees a waiting line
       // where the button would be — the button is not theirs to press.
-      if (this.defenseRoller) {
-        if (!c.defenseCalled) {
-          c.defenseCalled = true;
-          const gen = this.rollGen;
-          void this.defenseRoller({ white: c.defensePool.white, blue: c.defensePool.blue }, c.attacker, c.defender, c.action.id)
-            .then((faces) => {
-              // A cancelled or superseded attack must not receive a roll meant
-              // for the one before it.
-              if (this.ctx !== c || this.rollGen !== gen) return;
-              c.defenseRoll = faces;
-              this.render();
-            });
-        }
+      if (this.defenseRoller && !c.defenseCalled) {
+        c.defenseCalled = true;
+        const gen = this.rollGen;
+        void this.defenseRoller({ white: c.defensePool.white, blue: c.defensePool.blue }, c.attacker, c.defender, c.action.id)
+          .then((faces) => {
+            // A cancelled or superseded attack must not receive a roll meant
+            // for the one before it.
+            if (this.ctx !== c || this.rollGen !== gen) return;
+            c.defenseRoll = faces;
+            this.render();
+          });
+      }
+      // ONE button, on every screen, live only where the dice belong. It used
+      // to be a button on the roller's screen and a waiting SENTENCE on the
+      // attacker's, so a watcher could not tell a defender who was thinking
+      // from a step that had nothing in it. Now the sentence sits beside the
+      // control it is waiting on rather than instead of it.
+      // A roll already asked for through defenseRoller is in the air, so the
+      // button is inert wherever that ask was made: pressing it would roll the
+      // pool a second time. This is the only place `defenseCalled` gates a
+      // control rather than the ask itself.
+      // `!this.mirroring` is load-bearing and its absence made the networked
+      // defence roll UNREACHABLE. defenseCalled guards against the window that
+      // MADE the ask rolling the pool a second time, and a mirror never made
+      // one: showMirror sets defenseCalled true unconditionally, and
+      // defenseRoller is wired on every Match Centre client rather than only the
+      // attacker's, so without this clause the defending player's only button is
+      // permanently disabled. The turn panel does not save them either, because
+      // matchhud suppresses its own rolldefense control whenever a view is
+      // published. The attacker then parks on pendingDefense for ever, which is
+      // the deadlock shape task #5 already cost us once.
+      const mine = this.mayPress('defender') && !(!this.mirroring && this.defenseRoller && c.defenseCalled);
+      if (!mine) {
         const wait = document.createElement('p');
         wait.className = 'ah-note';
         wait.textContent = `Waiting for ${c.defender.label}'s player to roll their defence: ${c.defensePool.white} White${c.defensePool.blue ? ` + ${c.defensePool.blue} Blue` : ''}.`;
         wrap.appendChild(wait);
-      } else {
-        const roll = document.createElement('button');
-        roll.className = 'ah-primary';
-        roll.innerHTML = '<i class="btn-ico">🎲</i> Roll defense dice';
-        roll.addEventListener('click', () => {
-          void (async () => {
-            this.spinFor = 'defense';
-            c.defenseRoll = await this.rollPool({ white: c.defensePool.white, blue: c.defensePool.blue }, 'Defence');
-            this.render();
-          })();
-        });
-        wrap.appendChild(roll);
       }
+      const roll = document.createElement('button');
+      roll.className = 'ah-primary';
+      roll.innerHTML = '<i class="btn-ico">🎲</i> Roll defense dice';
+      roll.disabled = !mine;
+      roll.addEventListener('click', () => {
+        // On a mirror the faces come from the defending player's own client and
+        // travel back as answerDefense, which is the handshake the attacking
+        // window is already parked on.
+        if (this.sendAct('rolldefense')) return;
+        void (async () => {
+          this.spinFor = 'defense';
+          c.defenseRoll = await this.rollPool({ white: c.defensePool.white, blue: c.defensePool.blue }, 'Defence');
+          this.render();
+        })();
+      });
+      wrap.appendChild(roll);
     } else {
       wrap.appendChild(this.rollView(c.defenseRoll, 'defense'));
       const def = this.countIcons(c.defenseRoll, c.defender.stance === 'defensive');
@@ -2532,36 +3055,58 @@ export class AttackHelper {
       // their combat mirror.
       const kc = c.defender.kind === 'mech' && !c.kcUsed ? kcArmorReady(this.data, c.defender) : null;
       const defLightning = this.countIcons(c.defenseRoll, false).lightning ?? 0;
-      const remoteDefender = !!(this.focusRemote && this.focusRemote(c.defender));
-      if (kc && defLightning > 0 && !remoteDefender) {
+      // The two ZYBP-302 offers are the one pair of questions a mirror cannot
+      // answer for itself: Melee Evasion needs to know a Parry was declared and
+      // Dodge Enhancement that the Defense Roll is the live one, and both live
+      // on the attacking window's context rather than on the board. So the
+      // mirror takes the attacker's judgement, which is what it is published
+      // for, and a live window judges as it always has.
+      const m = this.mirroring;
+      const evadeOffer = m
+        ? !!m.evadeReady
+        : !c.evadeUsed && !!c.designatedParry && meleeEvasionReady(this.data, c.defender);
+      const dodgeOffer = m
+        ? !!m.dodgeDieReady
+        : !c.dodgeDieUsed && dodgeEnhanceReady(this.data, c.defender);
+      // The defender's three declares. Drawn whoever is watching, live only for
+      // the player who owns the defender: they used to be skipped altogether
+      // when that player sat at another screen, so nobody else could tell a
+      // defender who was thinking from one with nothing to think about.
+      const defMine = this.mayPress('defender');
+      if (kc && defLightning > 0) {
         const b = document.createElement('button');
         b.className = 'ah-alt';
         b.textContent = `KC Armor: consume a Charge Token — ${defLightning} [Lightning] become [Defense]`;
+        b.disabled = !defMine;
         b.addEventListener('click', () => {
+          if (this.sendAct('kcarmor')) return;
           this.onCommand({ kind: 'setCharge', seat: c.defender.side, uid: c.defender.uid, slot: kc.slot, on: false });
           this.onCommand({ kind: 'kcArmor', seat: c.defender.side });
           this.kcArmed();
         });
         wrap.appendChild(b);
       }
-      // The two ZYBP-302 Command Token spends. The remote defender presses
-      // these in their combat mirror; this is the one-screen copy.
-      if (!remoteDefender && !c.evadeUsed && c.designatedParry && meleeEvasionReady(this.data, c.defender)) {
+      // The two ZYBP-302 Command Token spends.
+      if (evadeOffer) {
         const b = document.createElement('button');
         b.className = 'ah-alt';
         b.textContent = 'Melee Evasion: spend a Command Token for +1 [Dodge] on the Parry';
+        b.disabled = !defMine;
         b.addEventListener('click', () => {
+          if (this.sendAct('meleeevade')) return;
           this.onCommand({ kind: 'spendCommand', seat: c.defender.side, uid: c.defender.uid });
           this.onCommand({ kind: 'meleeEvade', seat: c.defender.side });
           this.evadeDeclared();
         });
         wrap.appendChild(b);
       }
-      if (!remoteDefender && !c.dodgeDieUsed && dodgeEnhanceReady(this.data, c.defender)) {
+      if (dodgeOffer) {
         const b = document.createElement('button');
         b.className = 'ah-alt';
         b.textContent = 'Dodge Enhancement: spend a Command Token — each [Dodge] cancels a whole Attack die';
+        b.disabled = !defMine;
         b.addEventListener('click', () => {
+          if (this.sendAct('dodgeenhance')) return;
           this.onCommand({ kind: 'spendCommand', seat: c.defender.side, uid: c.defender.uid });
           this.onCommand({ kind: 'dodgeEnhance', seat: c.defender.side });
           this.dodgeEnhanceDeclared();
@@ -2571,13 +3116,18 @@ export class AttackHelper {
       // 4.4.1 step 5 sits between the rolls and the resolution: the Focus
       // questions are asked in the printed order, and Resolve appears only
       // once the flow has run dry.
-      if (!c.focus) this.beginFocus();
+      //
+      // Never opened on a mirror: the stage is settled by the window running
+      // the attack and travels on the view, and a second beginFocus here would
+      // invent a declare the attacking client is not waiting for.
+      if (!c.focus && !this.mirroring) this.beginFocus();
       const focusUi = this.focusBlock();
       if (focusUi) wrap.appendChild(focusUi);
       else {
         const next = document.createElement('button');
         next.className = 'ah-primary';
         next.textContent = 'Resolve ▸';
+        next.disabled = !this.mayDrive('attacker');
         next.addEventListener('click', () => {
           c.step = 'resolve';
           this.render();
@@ -2592,28 +3142,47 @@ export class AttackHelper {
     const c = this.ctx!;
     const wrap = document.createElement('div');
     wrap.className = 'ah-step';
-    const { hits, penetrating, unoffset, text, duel } = this.resolve();
-    c.hits = hits;
-    // Kept for publishMirror, which runs at the end of the render that built
-    // this and sends the defender THIS strip rather than deriving another.
-    c.resolution = { duel, text };
+    // A MIRROR never re-derives this. resolve() reads Chef's exchanges, the
+    // declared Parry, the carried Surplus and half a dozen board auras, none of
+    // which travel, so a second derivation here is exactly how one screen ends
+    // up saying "dodged" and the other "blocked". The strip is published for
+    // that reason and arrives settled (types.ts, CombatView.resolution).
+    const settled = this.mirroring ? null : this.resolve();
+    if (settled) {
+      c.hits = settled.hits;
+      // Kept for publishMirror, which runs at the end of the render that built
+      // this and sends the defender THIS strip rather than deriving another.
+      c.resolution = { duel: settled.duel, text: settled.text };
+    }
+    const res = c.resolution ?? null;
+    // Read off the SHARED strip rather than worked out again: every damage icon
+    // that nothing offset is a Penetration, which is what offsetIcons counted.
+    const penetrating = settled ? settled.penetrating : (res?.duel.icons ?? []).filter((i) => !i.offset).length;
     wrap.innerHTML = `<h4><span class="ah-n">4</span><span data-mech="penetration">Resolution</span>${
       c.surplusRound
         ? ` (<span data-mech="surplus_damage">${c.surplusKeyword?.name ?? 'Surplus'} Damage, no Attack Roll</span>)`
         : ''
-    }</h4>${resolutionHtml({ duel, text })}`;
+    }</h4>${res ? resolutionHtml(res) : '<p class="dim">Waiting for the attacking player to settle the damage.</p>'}`;
     linkMechanics(wrap, this.data.mechanics);
-    // Played on every build of this step, as it always has been. The timeout is
-    // not decoration: requestAnimationFrame does not fire while the page is not
-    // compositing, so the strip is driven by timers and kicked off outside the
-    // render that made its markup.
+    // The timeout is not decoration: requestAnimationFrame does not fire while
+    // the page is not compositing, so the strip is driven by timers and kicked
+    // off outside the render that made its markup.
+    //
+    // Played only when the strip ITSELF is new. A mirror is rebuilt whenever
+    // any part of the view changes, a log line is enough, and restarting the
+    // offsetting mid-flight would make the watching player see the same icons
+    // resolve twice. That guard used to live in the Match Centre's HUD, beside
+    // the implementation this replaced.
     const duelEl = mountDuel(wrap);
-    if (duelEl) window.setTimeout(() => playDuel(duelEl), 0);
+    const key = duelEl?.innerHTML ?? '';
+    if (duelEl && key !== this.duelPlayed) window.setTimeout(() => playDuel(duelEl), 0);
+    this.duelPlayed = key;
 
     if (penetrating > 0 && c.targetPart) {
       const apply = document.createElement('button');
       apply.className = 'ah-primary';
       apply.textContent = `Apply Penetration to ${SLOT_LABEL[c.targetPart as PartSlot | 'main']}`;
+      apply.disabled = !this.mayDrive('attacker');
       apply.addEventListener('click', () => {
         // The wait between render and this press is another checkpoint window.
         this.rebind(c);
@@ -2693,7 +3262,9 @@ export class AttackHelper {
         // against a second target when the Action carries a keyword that says so
         // (4.8), and it never chains past a second Penetration.
         const effects = surplusEffects(c.action);
-        const carried = unoffset;
+        // Only ever reached from a live window: the button above is inert on a
+        // mirror, where `settled` is null because nothing was re-derived.
+        const carried = settled?.unoffset ?? { heavy: 0, light: 0 };
         const surplus = carried.heavy + carried.light;
         // A destroyed Unit ends the attack outright (4.4.4), so Surplus Damage
         // never carries on against a Mech whose Torso just went.
@@ -2765,6 +3336,7 @@ export class AttackHelper {
       // the defence offset are Hits and on-hit riders such as Knockback fire on
       // them (4.4 note on Hit versus Penetration) — and Concussion/Wrecking's
       // Lightning drains Link whether anything got through or not.
+      done.disabled = !this.mayDrive('attacker');
       done.addEventListener('click', () => {
         this.sendLightningDrain();
         this.finish(wrap);
@@ -2845,6 +3417,7 @@ export class AttackHelper {
       const go = document.createElement('button');
       go.className = 'ah-primary';
       go.textContent = `Take the bonus ${bonus.action.name?.en ?? 'attack'}`;
+      go.disabled = !this.mayDrive('attacker');
       go.addEventListener('click', () => {
         settle();
         // Same defender, by construction — the bonus target is not a choice.
@@ -2858,6 +3431,7 @@ export class AttackHelper {
       const decline = document.createElement('button');
       decline.className = 'ah-ghost';
       decline.textContent = 'Decline it';
+      decline.disabled = !this.mayDrive('attacker');
       // Declining inside a Multi-Target ends this sequence, not the Action.
       decline.addEventListener('click', () => {
         settle();
@@ -2879,6 +3453,7 @@ export class AttackHelper {
     const done = document.createElement('button');
     done.className = 'ah-primary';
     done.textContent = more ? `Next target: ${m!.targets[m!.index + 1].defender.label} ▸` : 'Done';
+    done.disabled = !this.mayDrive('attacker');
     done.addEventListener('click', () => {
       // An ordinary attack owes the reaction straight away — there is nothing
       // else in this Action to hold it back from. B7 is what makes the

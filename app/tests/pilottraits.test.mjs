@@ -299,8 +299,14 @@ console.log('\nPilot traits, against the shipped cards and dice\n');
     /if \(!spent && canAffordFocus\(this\.data, t\)\)/.test(combat), true);
   check('surface 3 — the Match Centre counter-roll rows ask it',
     /!o\.focused && canAffordFocus\(ctx\.data, o\.t\)/.test(hud), true);
-  check('surface 4 — the remote defender\'s mirror knows when it is free',
-    /const freeFocus = !!data && focusIsFree\(data, df\)/.test(mirror), true);
+  // Surface 4 was the remote defender's hand-written mirror, and it is GONE.
+  // The Match Centre draws the same window the attacker is looking at now, so
+  // the defending player presses surface 1: a page that asks the question in no
+  // place of its own cannot answer it differently from the renderer.
+  check('surface 4 is gone, because the mirror IS surface 1 now',
+    /focusIsFree\(/.test(mirror), false);
+  check('and the defender reaches surface 1 by sending their declare',
+    /act === 'focususe'/.test(mirror), true);
 
   // The old gates are gone rather than merely joined by a new one.
   check('no surface still asks the wrong question',
@@ -562,16 +568,21 @@ console.log('\nPilot traits, against the shipped cards and dice\n');
     /if \(standable \|\| crush\) reachable\.push/.test(rules), true);
 }
 
-// ZPA-39's free reroll must be said the same way on BOTH buttons. combat.ts's
+// ZPA-39's free reroll must be said the same way on every screen. combat.ts's
 // own button was unconditional while match.ts's mirror already branched, so the
-// attacker was told to spend a Link the engine had stopped charging.
+// attacker was told to spend a Link the engine had stopped charging. There is
+// one button now, which is the strongest form of "they agree": the two labels
+// cannot disagree if there is only one label.
 {
   const src = readFileSync(new URL('../src/combat.ts', import.meta.url), 'utf8');
   const mt  = readFileSync(new URL('../src/match.ts', import.meta.url), 'utf8');
-  check('the attacker button says free when it is free',
+  check('the Focus button says free when it is free',
     /focusIsFree\(this\.data, t\) \? .Focus — free./.test(src), true);
-  check('and the mirror button still agrees with it',
-    /freeFocus \? .Focus — free./.test(mt), true);
+  // Deliberately LOOSER than the label itself: this is an absence check, so it
+  // should catch any reintroduced way of saying the same thing, not only the
+  // exact string the retired one used.
+  check('and there is no second one left to disagree with it',
+    /Focus[^'"\n]*free/i.test(mt), false);
 }
 
 // ---------- LPA-24 Sealock — 追击 Pursuit ----------

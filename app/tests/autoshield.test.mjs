@@ -302,14 +302,19 @@ const combat = src('combat.ts');
 // declaration. There are exactly three doors an attack is designated through.
 check('the swap fires at exactly three sites',
   (combat.match(/this\.shieldSwap\(/g) ?? []).length, 3);
-// The character budget has to cover openSequence's whole body and no more: the
-// first half proves it reaches multiCandidates, the second proves no shieldSwap
-// call lies between. Widened from 2200 to 2600 when Armor Piercing added its
-// per-sequence note (combat.ts noteArmorPiercing) — measured span 2396, so 2600
-// still stops well short of the next shieldSwap call site.
-check('openSequence gets no swap of its own',
-  /private openSequence\([\s\S]{0,2600}?private multiCandidates/.test(combat)
-    && !/private openSequence\([\s\S]{0,2600}?shieldSwap/.test(combat), true);
+// SLICE the body rather than budgeting characters for it. This was a character
+// window (2200, then 2600) and it had to be re-tuned every time openSequence
+// grew, most recently when Armor Piercing added its per-sequence note and again
+// when the single renderer landed. A budget that needs maintenance fails on
+// growth rather than on the thing it guards, which is a test that cries wolf.
+// Cutting from the declaration to the next one says exactly what is meant: no
+// shieldSwap call lives inside this method.
+const openSeq = combat.slice(
+  combat.indexOf('private openSequence('),
+  combat.indexOf('private multiCandidates'),
+);
+check('openSequence was located and is the whole body', openSeq.length > 500, true);
+check('openSequence gets no swap of its own', openSeq.includes('shieldSwap'), false);
 check('start() carries the redirect flag',
   /start\(\s*\n\s*attacker: Token,[\s\S]{0,320}?redirect = true,/.test(combat), true);
 check('and it is switched off by Explosion and Interception as well',

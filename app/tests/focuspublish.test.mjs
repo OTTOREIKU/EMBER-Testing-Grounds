@@ -91,16 +91,32 @@ check('the strip is published on the view', /resolution: c\.step === 'resolve'/.
 check('and only from the resolution step', /c\.step === 'resolve' \? c\.resolution \?\? null : null/.test(src), true);
 // The published strip is the one that was DRAWN, not a second derivation of it.
 const stepResolve = src.slice(src.indexOf('private stepResolve()'), src.indexOf('private finish('));
-check('stepResolve hands the drawn duel to the view', /c\.resolution = \{ duel, text \}/.test(stepResolve), true);
-check('and draws it through the shared renderer', /resolutionHtml\(\{ duel, text \}\)/.test(stepResolve), true);
+check('stepResolve hands the drawn duel to the view', /c\.resolution = \{ duel:/.test(stepResolve), true);
+check('and draws it through the shared renderer', /resolutionHtml\(/.test(stepResolve), true);
+// A MIRROR never re-derives the offsetting: resolve() reads Chef's exchanges,
+// the declared Parry, the carried Surplus and half a dozen board auras, none of
+// which travel, so a second derivation there is exactly how one screen ends up
+// saying "dodged" and the other "blocked".
+check('and a mirror draws the published strip instead of resolving again',
+  /this\.mirroring \? null : this\.resolve\(\)/.test(stepResolve), true);
 
 // One producer of the markup, one player of the animation.
 const producers = (src.match(/<div class="duel">/g) ?? []).length;
 check('combat.ts builds the strip markup in exactly one place', producers, 1);
-check('the mirror imports that renderer rather than owning one',
-  /import \{[^}]*resolutionHtml[^}]*\} from '\.\/combat'/.test(matchSrc), true);
+// The Match Centre no longer draws a combat window AT ALL. It used to hand the
+// published view to a second, hand-written renderer that had drifted from this
+// one in nine measured ways; it hands the view to this one now.
+check('the Match Centre draws no combat window of its own',
+  /class="attack-helper"|class="ah-step"|class="ah-roll"/.test(matchSrc), false);
 check('and the mirror never builds duel markup itself', /class="duel-col|class="duel-grid"/.test(matchSrc), false);
-check('the HUD plays the shared animation', /import \{[^}]*playDuel[^}]*\} from '\.\/combat'/.test(hudSrc), true);
+check('it points the one renderer at the published view instead',
+  /\.showMirror\(/.test(matchSrc), true);
+check('and puts it away when there is nothing published', /\.closeMirror\(\)/.test(matchSrc), true);
+// The HUD wrote the mirror's markup and played its animation by hand. Both are
+// the renderer's now, which is what makes the dice spin on a watching screen.
+check('the HUD writes nothing into the combat window',
+  /combat-body'\)[^\n]*\)\.innerHTML|body\.innerHTML = mirror/.test(hudSrc), false);
+check('and plays no animation of its own', /playDuel\(/.test(hudSrc), false);
 
 // The strip is written settled and the animation only ever TAKES those classes
 // away, so a defender on a backgrounded tab — where nothing composites and
@@ -111,11 +127,15 @@ check('a hidden tab skips the animation and settles instead',
 // requestAnimationFrame does not fire on a page that is not compositing, which
 // is why both callers kick the strip with a timeout instead.
 check('the attacker kicks it with a timeout', /window\.setTimeout\(\(\) => playDuel\(duelEl\), 0\)/.test(src), true);
-check('and so does the mirror', /window\.setTimeout\(\(\) => playDuel\(duel\), 0\)/.test(hudSrc), true);
-// The mirror's body is rewritten whenever ANY part of the view changes — a log
-// line is enough — so the replay is keyed on the strip rather than the rewrite.
-check('the mirror replays only when the strip itself changed',
-  /key !== lastMirrorDuel/.test(hudSrc), true);
+// ONE kick, in the one renderer, so the mirror gets it by being the same code.
+check('and there is exactly one place that starts the animation',
+  (src.match(/setTimeout\(\(\) => playDuel\(/g) ?? []).length, 1);
+// The resolution step is rebuilt whenever ANY part of the view changes, and a
+// log line is enough, so the replay is keyed on the STRIP rather than on the
+// rebuild: restarting it mid-flight makes the same icons resolve twice.
+const resolveStep = src.slice(src.indexOf('private stepResolve()'), src.indexOf('private finish('));
+check('and it replays only when the strip itself changed',
+  /key !== this\.duelPlayed/.test(resolveStep), true);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -92,8 +92,26 @@ const combatView = {
   evadeReady: false,
   dodgeDieUsed: false,
   dodgeDieReady: true,
-  designate: { from: 'rightArm', slots: [{ slot: 'leftHand', label: 'Shield Up' }] },
-  // The settled offsetting the defender's mirror draws (4.4 step 6): a Heavy
+  designate: { from: 'rightArm' },
+  // What the ONE renderer needs to draw the same box on every screen. The
+  // pools cannot be re-derived on the far side (the acting player nudges them
+  // by hand and a declared Parry is already inside the White, 4.6.3), the
+  // Surplus round is what tells a second Defense Roll apart from the first
+  // (4.8), and the Multi-Target split is settled once for the whole Action
+  // (FAQ B7). Drop any of them on a reload and the watching player's window
+  // reopens as a different fight from the attacker's.
+  attackPool: { red: 4, yellow: 1 },
+  defensePool: { white: 6, blue: 1 },
+  surplus: { round: 1, heavy: 2, light: 1, keyword: 'Mutilation' },
+  multi: {
+    total: { red: 6, yellow: 2 },
+    index: 1,
+    targets: [
+      { uid: 9, declaredUid: 11, red: 4, yellow: 1 },
+      { uid: 10, declaredUid: null, red: 2, yellow: 1 },
+    ],
+  },
+  // The settled offsetting every screen draws (4.4 step 6): a Heavy
   // Hit dodged, a Light Hit blocked by Defense, a Lightning left over as a
   // trigger icon, and the two ways a defence icon goes unused — a spare Dodge
   // with nothing left to offset, and a Defense that may only offset a Light
@@ -259,19 +277,20 @@ check('a live Melee Evasion offer survives',
 check('and a spent Dodge Enhancement stays spent',
   normaliseScript({ ...live, combatView: { ...combatView, dodgeDieUsed: true } }, 's1').combatView.dodgeDieUsed, true);
 check('an open Designate question survives whole',
-  normaliseScript(live, 's1').combatView.designate, { from: 'rightArm', slots: [{ slot: 'leftHand', label: 'Shield Up' }] });
+  normaliseScript(live, 's1').combatView.designate, { from: 'rightArm' });
 check('no Designate question reads back null',
   normaliseScript({ ...live, combatView: { ...combatView, designate: undefined } }, 's1').combatView.designate, null);
-// Same bar the pools and the log are held to: these land in class names and
-// button labels on the far screen, and the far screen did not write them.
+// Same bar the pools and the log are held to: this lands in a class name and a
+// button label on the far screen, and the far screen did not write it.
 check('a Designate with no Part is dropped',
-  normaliseScript({ ...live, combatView: { ...combatView, designate: { slots: [] } } }, 's1').combatView.designate, null);
-check('junk slots are dropped from a Designate',
-  normaliseScript({ ...live, combatView: { ...combatView, designate: { from: 'torso', slots: [{ slot: 'leftHand', label: 'Shield Up' }, { nope: 1 }] } } }, 's1')
-    .combatView.designate.slots, [{ slot: 'leftHand', label: 'Shield Up' }]);
-check('and the list is capped at a Mech\'s worth of Parts',
-  normaliseScript({ ...live, combatView: { ...combatView, designate: { from: 'torso', slots: Array.from({ length: 30 }, () => ({ slot: 'leftHand', label: 'Shield Up' })) } } }, 's1')
-    .combatView.designate.slots.length, 8);
+  normaliseScript({ ...live, combatView: { ...combatView, designate: {} } }, 's1').combatView.designate, null);
+check('and a junk Part is dropped rather than half-restored',
+  normaliseScript({ ...live, combatView: { ...combatView, designate: { from: 7 } } }, 's1').combatView.designate, null);
+// The OFFERS are worked out from the defender's own Parts on whatever screen is
+// asking, so they never cross the wire and a peer cannot name one.
+check('offers sent by a peer are ignored rather than trusted',
+  normaliseScript({ ...live, combatView: { ...combatView, designate: { from: 'torso', slots: [{ slot: 'leftHand', label: 'Free win' }] } } }, 's1')
+    .combatView.designate, { from: 'torso' });
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

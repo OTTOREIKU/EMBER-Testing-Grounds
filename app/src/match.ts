@@ -18,13 +18,12 @@ import { runFirstVisitPreload } from './preload';
 import { importSquadFile } from './importer';
 import { boardFingerprint, dialsOf, hashDials, newSalt, type DialEntry } from './secrecy';
 import { animateRemoteMove, clearRangeOverlayFor, ensureHud, glueAfter, showRangeOverlay, showSideTab, startAttackPick, startBoxDrop, startDetonation, startElectronicPick, startInterceptPick, startLaunchPlan, startShove, startSmokePlan, type DiceLine, type HudCtx } from './matchhud';
-import { AttackHelper, resolutionHtml } from './combat';
+import { AttackHelper, combatRoleFor, type MirrorAct } from './combat';
 import { losNote, protectionFor, spotsInGrid } from './rules';
 import { SquadTracker } from './squads';
 import { Panel } from './panel';
-import { iconSvg } from './dice';
-import type { CombatView, DiceData, DieColor, GameState, Side, Token } from './types';
-import { focusIsFree, SLOT_LABEL, stationaryAdjusted } from './units';
+import type { CardAction, CombatView, DiceData, DieColor, GameState, Side, Token } from './types';
+import { SLOT_LABEL, stationaryAdjusted } from './units';
 import { PHASES, statusCount } from './types';
 
 // The Match Centre: a separate page for networked play, so the freeplay board
@@ -722,17 +721,29 @@ function settleDefense(cmd: Command): void {
   if (cmd.kind === 'dodgeEnhance') attackHelper?.dodgeEnhanceDeclared();
 }
 
+// The Action a unit and an id name, as the combat window needs it: the unit's
+// own equipped Parts first, then the common Actions every unit has, with
+// [Stationary] applied from shared state so the printed Range and pool are the
+// ones the condition earned.
+//
+// ONE lookup, used by the window that RESOLVES the attack and by the window
+// that mirrors it. Two lookups would be two answers to "which card is this",
+// and the whole point of the single renderer is that both screens are reading
+// the same card.
+function attackActionOf(t: Token | undefined, actionId: string): CardAction | undefined {
+  if (!data || !t) return undefined;
+  const printed = tokenCards(data, t)
+    .flatMap(({ card }) => card.actions ?? [])
+    .find((a) => a.id === actionId) ?? data.commonActions.find((a) => a.id === actionId);
+  const oppNow = state.script?.opp;
+  return printed ? stationaryAdjusted(printed, oppNow?.uid === t.uid ? oppNow : null) : printed;
+}
+
 function startAttack(uid: number, actionId: string, targetUid: number, mode: 'attack' | 'intercept' | 'explosion' = 'attack'): void {
   if (!data || !attackHelper) return;
   const attacker = state.tokens.find((t) => t.uid === uid);
   const defender = state.tokens.find((t) => t.uid === targetUid);
-  const printed = tokenCards(data, attacker ?? ({} as never))
-    .flatMap(({ card }) => card.actions ?? [])
-    .find((a) => a.id === actionId) ?? data.commonActions.find((a) => a.id === actionId);
-  // [Stationary] rides into the helper too, so the pool and the printed Range
-  // it shows are the ones the condition earned.
-  const oppNow = state.script?.opp;
-  const action = printed ? stationaryAdjusted(printed, oppNow?.uid === uid ? oppNow : null) : printed;
+  const action = attackActionOf(attacker, actionId);
   if (!attacker || !defender || !action) return;
   const terrain = terrainNow();
   const smoke = state.smoke ?? [];
@@ -944,6 +955,10 @@ function mountSide(): void {
     attackHelper.tokens = () => state.tokens;
     attackHelper.terrain = () => terrainNow();
     attackHelper.smoke = () => state.smoke ?? [];
+    // How the same window MOVES an attack it is only watching: by sending the
+    // command the attacking client is waiting for. Wired once, with the helper,
+    // because it closes over this page's seat and send.
+    attackHelper.mirrorAct = mirrorAct;
     // The defender's dice belong to the defending player. When the unit being
     // shot at is the OTHER seat's, the roll is asked for through shared state:
     // callDefense records what is owed, their client shows the roll button,
@@ -997,8 +1012,10 @@ function mountSide(): void {
   }
   // The empty state, and only when the window really is empty: a helper the
   // remount above has just redrawn owns those pixels, and writing the idle line
-  // over a live attack is the whole of what a rejoin used to do to it.
-  if (!combatBusy()) renderCombatIdle();
+  // over a live attack is the whole of what a rejoin used to do to it. A MIRROR
+  // owns them just as much, and it is not `active` on purpose (that word means
+  // "resolving an attack of its own", which is what the turn panel asks about).
+  if (!combatBusy() && !attackHelper?.watching) renderCombatIdle();
 }
 
 // The last combat view THIS client published, so a repaint sends nothing and a
@@ -2054,11 +2071,7 @@ function hudCtx(): HudCtx {
     mountSide,
     syncSide,
     combatBusy,
-    combatMirrorHtml,
-    mirrorFocus: mirrorFocusAct,
-    mirrorDesignate,
-    mirrorMeleeEvade,
-    mirrorDodgeEnhance,
+    syncCombatMirror,
     startAttack,
     showTab: (name) => showSideTab(null, name),
     diceData,
@@ -2067,170 +2080,89 @@ function hudCtx(): HudCtx {
   };
 }
 
-// ---------- the defender's combat mirror ----------
+// ---------- the combat mirror, drawn by the ONE renderer ----------
 //
-// The attack runs on the attacker's client; this draws what their window
-// published so the other player watches the same fight — the part chosen, the
-// faces as they land, the narration — instead of a dice feed in the corner.
-// Read-only except for the one thing that IS the defender's: their roll.
+// The attack runs on the attacker's client; this hands their published view to
+// the same AttackHelper this page already uses for attacks of its own, so every
+// other player watches the same window rather than a second implementation of
+// it. THE SECOND IMPLEMENTATION IS WHAT THIS REPLACED (COMBAT-PANEL-REDESIGN.md,
+// "Ratified: ONE renderer with a ROLE"): it had drifted in nine measured ways,
+// the worst being that the dice never rolled on the watching screen, they
+// appeared, because spinDice only ever lived in combat.ts.
+//
+// Returns whether a mirror is up, which is all the HUD needs to know to decide
+// whether the floating window is open.
+//
+// REDRAWN ON EVERY RENDER, deliberately, with no markup cache in front of it.
+// Half of what the window shows is DERIVED from the board rather than sent
+// (line of sight, Protection, the Part cards, whether a Whistle is in range),
+// so a cache keyed on the published view alone would go stale the moment a
+// Command Token was spent without the view changing. The page already rewrites
+// the turn panel, the timeline and the order strip on every render for the same
+// reason. The one thing that must survive a repaint does: AttackHelper.
+// mirrorFaces keeps a die SELECTED when the faces came back identical, so the
+// defending player's Focus picks are not cleared out from under them.
 
-function faceRow(faces: { color: string; face: number }[]): string {
-  if (!diceData) return '';
-  return `<div class="ah-roll">${faces.map((f) => {
-    const def = diceData!.dice[f.color as DieColor];
-    const icons = def?.faces[f.face] ?? [];
-    return `<span class="die die-${f.color}">${icons.length ? icons.map((ic) => iconSvg(ic)).join('') : '<span class="blank">·</span>'}</span>`;
-  }).join('')}</div>`;
-}
-
-function combatMirrorHtml(): string | null {
+function syncCombatMirror(): boolean {
   const view = state.script?.combatView;
-  // The attacker's own window outranks the mirror — this is for everyone else.
-  if (!view || combatBusy()) return null;
+  // The attacker's own window outranks the mirror: on that client the helper IS
+  // the attack, and this would be a drawing of it.
+  if (!attackHelper || !view || combatBusy()) {
+    attackHelper?.closeMirror();
+    return false;
+  }
   const at = state.tokens.find((t) => t.uid === view.attackerUid);
   const df = state.tokens.find((t) => t.uid === view.targetUid);
-  const action = at ? tokenCards(data!, at).flatMap(({ card }) => card.actions ?? []).find((a) => a.id === view.actionId) : undefined;
-  const name = action?.name?.en || view.actionId;
-  const modeNote = view.mode === 'intercept' ? 'Interception (4.9)' : view.mode === 'explosion' ? 'Explosion damage (4.7.6)' : '';
-  const call = state.script?.combat;
-  const myRoll = call && !call.faces && df && mySeat() === df.side
-    ? `<div class="ah-step"><p>Your defence: <b>${call.white} White${call.blue ? ` + ${call.blue} Blue` : ''}</b>. Both players see the dice land.</p>
-       <button class="ah-primary" data-act="rolldefense">🎲 Roll ${call.white} White${call.blue ? ` + ${call.blue} Blue` : ''}</button></div>`
-    : '';
-  // The defending player's half of Focus (4.4.1-5), asked here because the
-  // attacker's window is on the other screen. The declare is two buttons; the
-  // reroll renders THEIR defense dice as toggles and rolls server faces for
-  // whatever is picked.
-  const iAmDefender = !!df && mySeat() === df.side;
-  // KC Armor (4.10): offered to the defending player while their Defense Roll
-  // shows Lightning, until they take it or the attack resolves.
-  const kcReady = iAmDefender && df && !view.kcUsed && df.kind === 'mech' ? kcArmorReady(data!, df) : null;
-  const kcLightning = view.defense?.filter((f) => (diceData!.dice[f.color as DieColor]?.faces[f.face] ?? []).some((ic) => ic.type === 'lightning')).length ?? 0;
-  const kcUi = kcReady && kcLightning > 0
-    ? `<div class="ah-step"><button class="ah-alt" data-act="kcarmor">KC Armor: consume a Charge Token — your [Lightning] become [Defense]</button></div>`
-    : '';
-  // Shield Up / Mobile Defense (4.x): the hit landed somewhere, and this player
-  // may move it onto a Part that Designates. Asked here for the same reason
-  // Focus is — the attacker's window is on the other screen, and the choice is
-  // this player's to make.
-  const des = view.designate;
-  const slotName = (slot: string): string =>
-    (SLOT_LABEL as Record<string, string>)[slot] ?? slot;
-  const desUi = des && iAmDefender
-    ? `<div class="ah-step"><p><b>Designate the Part</b>: the hit landed on ${esc(slotName(des.from))}. You may take it on a Part that Designates instead.</p>
-        ${des.slots.map((o) => `<button class="ah-primary" data-desslot="${esc(o.slot)}">${esc(slotName(o.slot))} — ${esc(o.label)}</button>`).join('')}
-        <button class="ah-alt" data-desslot="${esc(des.from)}">Keep ${esc(slotName(des.from))}</button></div>`
-    : '';
-  // Melee Evasion (ZYBP-302). The attacker's window judged whether it is
-  // available — it can see the Parry and the board — so the mirror only draws
-  // what it was told.
-  const evadeUi = view.evadeReady && iAmDefender
-    ? `<div class="ah-step"><button class="ah-alt" data-act="meleeevade">Melee Evasion: spend a Command Token for +1 [Dodge] on the Parry</button></div>`
-    : '';
-  // Dodge Enhancement (ZYBP-302), the same one-screen judgement: the attacker's
-  // window knows whether the Defense Roll is up and the Token is there.
-  const dodgeDieUi = view.dodgeDieReady && iAmDefender
-    ? `<div class="ah-step"><button class="ah-alt" data-act="dodgeenhance">Dodge Enhancement: spend a Command Token — each [Dodge] cancels a whole Attack die</button></div>`
-    : '';
-  const focus = view.focus;
-  let focusUi = '';
-  if (focus && iAmDefender && focus.stage === 'declareD') {
-    // The mirror derives "is it free" from the board rather than from the
-    // published view: both clients hold the same tokens (t.link and partStates
-    // are both fingerprinted), so the answer is the same on both sides and no
-    // new CombatView field has to survive normaliseCombatView — a whitelist
-    // this codebase has already dropped five fields through.
-    const freeFocus = !!data && focusIsFree(data, df);
-    focusUi = `<div class="ah-step"><p><b>Focus (4.4.1-5)</b>: ${freeFocus
-      ? 'your Mech is down to 3 Parts, so this reroll costs no Link at all (Will to Survive).'
-      : `you may spend 1 Link (${df.link ?? 0} left) to reroll any of your Defense dice.`}</p>
-      <button class="ah-primary" data-act="focususe">${freeFocus ? 'Focus — free' : 'Focus — spend 1 Link'}</button>
-      <button class="ah-alt" data-act="focuspass">Pass</button></div>`;
-  } else if (focus && iAmDefender && focus.stage === 'rerollD' && focus.defenderUse && view.defense?.length) {
-    focusUi = `<div class="ah-step"><p>Pick the Defense dice to reroll, then roll. The Link is already spent.</p>
-      <div class="ah-roll">${view.defense.map((f, i) => {
-        const dieDef = diceData!.dice[f.color as DieColor];
-        const icons = dieDef?.faces[f.face] ?? [];
-        return `<button class="die die-${f.color}${mirrorFocusSel.has(i) ? ' sel' : ''}" data-fdie="${i}">${icons.length ? icons.map((ic) => iconSvg(ic)).join('') : '<span class="blank">·</span>'}</button>`;
-      }).join('')}</div>
-      <button class="ah-primary" data-act="focusreroll"${mirrorFocusSel.size ? '' : ' disabled'}>🎲 Reroll ${mirrorFocusSel.size || 'the selected'} ${mirrorFocusSel.size === 1 ? 'die' : 'dice'}</button>
-      <button class="ah-alt" data-act="focuskeep">Keep the roll</button></div>`;
+  const action = attackActionOf(at, view.actionId);
+  // A view naming a unit or a card this client cannot resolve draws nothing
+  // rather than half a window. It is reachable: a rollback can take the
+  // attacker off the board while their view is still on the wire.
+  if (!at || !df || !action) {
+    attackHelper.closeMirror();
+    return false;
   }
-  // The resolution box, drawn by the ATTACKER'S OWN renderer (combat.ts) from
-  // the duel their window published. Not a second implementation on purpose:
-  // this app has drifted every time the same thing was drawn twice, and a strip
-  // that said "dodged" here and "blocked" over there would be worse than the
-  // nothing the defender used to get. It arrives settled and readable; the HUD
-  // plays the animation once, when it first appears.
-  const resUi = view.resolution
-    ? `<div class="ah-step"><h4>Resolution</h4>${resolutionHtml(view.resolution)}</div>`
-    : '';
-  return `<div class="attack-helper">
-    <div class="ah-head"><b>${esc(at?.label ?? '?')}</b> → <b>${esc(df?.label ?? '?')}</b>
-      <span class="dim">${esc(name)}${modeNote ? ` · ${esc(modeNote)}` : ''}</span></div>
-    <p class="ah-los dim">${esc(at?.label ?? 'The attacker')}'s player is resolving this attack. You are seeing their combat window.</p>
-    ${view.targetPart ? `<div class="ah-step"><p>Target Part: <b>${esc(SLOT_LABEL[view.targetPart as keyof typeof SLOT_LABEL] ?? view.targetPart)}</b></p></div>` : ''}
-    ${view.attack?.length ? `<div class="ah-step"><p>Attack Roll</p>${faceRow(view.attack)}</div>` : ''}
-    ${myRoll}
-    ${view.defense?.length ? `<div class="ah-step"><p>Defense Roll</p>${faceRow(view.defense)}</div>` : ''}
-    ${kcUi}
-    ${desUi}${evadeUi}${dodgeDieUi}${focusUi}
-    ${resUi}
-    ${view.log.length ? `<div class="ah-log">${view.log.map((l) => `<div>${esc(l)}</div>`).join('')}</div>` : ''}
-  </div>`;
+  // What this viewer is TO THIS ATTACK, asked of the combat rather than of the
+  // seat. It reads the same as the old "am I the target's side" test at two
+  // seats and keeps reading correctly at four, where "not me" stops implying
+  // "the other player" (COMBAT-PANEL-REDESIGN.md). A viewer with no seat, which
+  // is the dev harness and anyone watching, comes out a spectator.
+  attackHelper.showMirror(view, at, df, action, combatRoleFor(mySeat(), { attacker: at, defender: df }));
+  return true;
 }
 
-// Which Defense dice the mirror's Focus reroll has picked, by index into the
-// published view. Cleared whenever the flow moves on.
-const mirrorFocusSel = new Set<number>();
-
-// The mirror's Focus buttons, handled here because this page owns the seat,
-// the server dice and the send. Reads the CURRENT view at click time; reached
-// from the HUD through ctx.mirrorFocus.
-// The defender's Designate answer. It travels as a command and the ATTACKER's
-// open window is what actually moves the hit, exactly as focusAnswer does.
-// The Command Token is spent by its own command, exactly as KC Armor spends
-// its Charge — the declaration and the cost travel separately so neither seat
-// can end up with a half-applied ability.
-function mirrorMeleeEvade(): void {
-  const seat = mySeat();
-  const v = state.script?.combatView;
-  const df = v ? state.tokens.find((t) => t.uid === v.targetUid) : undefined;
-  if (!seat || !df) return;
-  send({ kind: 'spendCommand', seat, uid: df.uid });
-  send({ kind: 'meleeEvade', seat });
-  render();
-}
-
-function mirrorDodgeEnhance(): void {
-  const seat = mySeat();
-  const v = state.script?.combatView;
-  const df = v ? state.tokens.find((t) => t.uid === v.targetUid) : undefined;
-  if (!seat || !df) return;
-  send({ kind: 'spendCommand', seat, uid: df.uid });
-  send({ kind: 'dodgeEnhance', seat });
-  render();
-}
-
-function mirrorDesignate(slot: string): void {
-  const seat = mySeat();
-  if (!seat) return;
-  send({ kind: 'designateHit', seat, slot });
-  render();
-}
-
-function mirrorFocusAct(act: string, dieIndex?: number): void {
+// A press inside the mirror, sent rather than applied.
+//
+// Every act here is a question the DEFENDING player owns and the attacking
+// client is parked waiting on, so the answer travels as a command and this
+// window never edits its own copy of the fight. One dispatcher rather than the
+// five entry points the retired mirror needed: the renderer names the act, and
+// this page owns the seat, the server dice and the send.
+//
+// The Command Token or the Charge is spent by its OWN command in every case,
+// exactly as KC Armor already did: the declaration and the cost travel
+// separately so neither seat can end up with a half-applied ability.
+function mirrorAct(act: MirrorAct, arg?: string | number[]): void {
   const seat = mySeat();
   const view = state.script?.combatView;
   const df = view ? state.tokens.find((t) => t.uid === view.targetUid) : undefined;
+  // Only the defending player answers any of these. check() refuses them from
+  // anywhere else in any case, so this is about not sending, not about safety.
   if (!seat || !view || !df || df.side !== seat) return;
-  if (act === 'die' && dieIndex !== undefined) {
-    if (mirrorFocusSel.has(dieIndex)) mirrorFocusSel.delete(dieIndex);
-    else mirrorFocusSel.add(dieIndex);
-    render();
+  if (act === 'rolldefense') {
+    const call = state.script?.combat;
+    // One roll per call: the ask is cleared by answerDefense, so a second press
+    // while the first is in the air finds no call and does nothing.
+    if (!call || call.faces) return;
+    void rollDefensePool(call.white, call.blue).then((faces) => {
+      send({ kind: 'answerDefense', seat, faces });
+      render();
+    }).catch(() => {
+      lobbyNote = 'The dice did not come back. Nothing was recorded, so roll again.';
+      render();
+    });
     return;
   }
-  if (act === 'kc') {
+  if (act === 'kcarmor') {
     // The Charge spend travels as an ordinary setCharge; the kcArmor command
     // only tells the attacker's window the trade was declared.
     const kc = df.kind === 'mech' ? kcArmorReady(data!, df) : null;
@@ -2240,32 +2172,50 @@ function mirrorFocusAct(act: string, dieIndex?: number): void {
     render();
     return;
   }
-  if (act === 'use') {
+  if (act === 'meleeevade') {
+    send({ kind: 'spendCommand', seat, uid: df.uid });
+    send({ kind: 'meleeEvade', seat });
+    render();
+    return;
+  }
+  if (act === 'dodgeenhance') {
+    send({ kind: 'spendCommand', seat, uid: df.uid });
+    send({ kind: 'dodgeEnhance', seat });
+    render();
+    return;
+  }
+  if (act === 'designate') {
+    // The choice is the defender's; the ATTACKER's open window is what actually
+    // moves the hit, which is the same shape focusAnswer has.
+    if (typeof arg !== 'string') return;
+    send({ kind: 'designateHit', seat, slot: arg });
+    render();
+    return;
+  }
+  if (act === 'focususe') {
     send({ kind: 'focus', seat, uid: df.uid });
     send({ kind: 'focusAnswer', seat, use: true });
-    mirrorFocusSel.clear();
     render();
     return;
   }
-  if (act === 'pass') {
+  if (act === 'focuspass') {
     send({ kind: 'focusAnswer', seat, use: false });
-    mirrorFocusSel.clear();
     render();
     return;
   }
-  if (act === 'keep') {
+  if (act === 'focuskeep') {
     send({ kind: 'focusReroll', seat, indices: [], faces: [] });
-    mirrorFocusSel.clear();
     render();
     return;
   }
-  if (act === 'reroll') {
+  if (act === 'focusreroll') {
+    // The dice were picked in the mirror window, which holds the selection
+    // across its own repaints; only the indexes travel.
     const defense = view.defense ?? [];
-    const indices = [...mirrorFocusSel].filter((i) => defense[i]).sort((a, b) => a - b);
+    const indices = (Array.isArray(arg) ? arg : []).filter((i) => defense[i]).sort((a, b) => a - b);
     if (!indices.length) return;
     const white = indices.filter((i) => defense[i].color === 'white').length;
     const blue = indices.filter((i) => defense[i].color === 'blue').length;
-    mirrorFocusSel.clear();
     void rollDefensePool(white, blue).then((faces) => {
       // Server faces come back grouped by colour; hand them back to the
       // chosen dice colour-by-colour so every index gets a face of its own
