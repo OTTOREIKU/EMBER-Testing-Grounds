@@ -766,8 +766,15 @@ console.log('\nPilot traits, against the shipped cards and dice\n');
     /\|\| !!concealed\s*\|\| !!mistyEagle\);/.test(combat), true);
   // Low Profile is a Firing-only consequence in this engine, and the trait
   // inherits that gate rather than carrying one of its own.
+  // Located by SLICING the method rather than by matching the binding's name.
+  // This previously pinned `const lowProfile = c.action.type === 'Firing'` and
+  // broke when that answer was extracted into lowProfileOn() so the live-die
+  // ring could share it, which punished the refactor rather than a bug. What
+  // matters is that the verdict is Firing-gated, wherever it is computed.
+  const lpFn = combat.slice(combat.indexOf('private lowProfileOn('), combat.indexOf('private defenseIconsPerDie('));
+  check('the Low Profile verdict has one home', lpFn.length > 400, true);
   check('which is still gated on a Firing Action',
-    /const lowProfile = c\.action\.type === 'Firing'/.test(combat), true);
+    /c\.action\.type === 'Firing'/.test(lpFn), true);
   // It grants the KEYWORD, not a Token: Scan cannot strip it (FAQ Q3), so the
   // Scan picker must keep listing Tokens only.
   check('and the Scan picker still offers Tokens only',

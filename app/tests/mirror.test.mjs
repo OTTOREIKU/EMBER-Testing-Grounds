@@ -488,5 +488,52 @@ const spinning = (root) => {
   check('but the next attack opens it again', w.h.watching, true);
 }
 
+// ---------- THE LIVE-DIE RING, AND THE EYE ----------
+// OTTO asked for dice that are affecting the action to be ringed, and asked
+// specifically that it be SMART: "ringing an eye for example should only be when
+// a correct keyword or ability affects it."
+//
+// The attack half inherits every reader free from attackIconsPerDie. The DEFENCE
+// half is new logic, and its Eye rule is the one that can quietly go wrong: an
+// {Eye} is inert on a defence roll UNLESS Low Profile is on, which turns every
+// one of them into {Dodge} against a Firing Action. Removing that condition
+// still compiles and still passes the rest of the suite, so it is pinned here.
+{
+  const b = board();
+  const w = watcher(b.all, []);
+  // white 6 is a lone {Eye}, white 3 a lone {Dodge}, white 7 blank. Read off
+  // data/dice.json rather than assumed.
+  const roll = [{ color: 'white', face: 6 }, { color: 'white', face: 3 }, { color: 'white', face: 7 }];
+  const ctxFor = (statuses) => ({
+    attacker: b.atk,
+    defender: { ...b.def, statuses },
+    action: firing,
+    defenseRoll: roll,
+    surplusRound: 0,
+  });
+
+  const plain = w.h.defenseIconsPerDie(ctxFor([]));
+  check('a lone Dodge is live on the defence', plain[1].dodge > 0, true);
+  check('a blank is not', plain[2].dodge + plain[2].defense, 0);
+  check('and an Eye is INERT when nothing reads it', plain[0].dodge + plain[0].defense, 0);
+
+  // The Token is the plainest Low Profile source, so it is the one that proves
+  // the condition rather than the disjunction around it.
+  const hidden = w.h.defenseIconsPerDie(ctxFor(['lowProfile']));
+  check('but the SAME Eye is live under Low Profile, which reads it as Dodge',
+    hidden[0].dodge > 0, true);
+  check('and the Dodge beside it is unchanged', hidden[1].dodge, plain[1].dodge);
+
+  // ...and the VIEW has to use it. Ringing everything passes every assertion
+  // above, because those test the reader and not the wiring: the exact shape of
+  // gap that let a whole feature be revertible earlier today.
+  w.h.ctx = ctxFor([]);
+  const row = w.h.rollView(roll, 'defense');
+  const cls = [...(row.children ?? [])].map((el) => String(el.className));
+  check('the view rings the Dodge', /\blive\b/.test(cls[1] ?? ''), true);
+  check('and leaves the blank alone', /\blive\b/.test(cls[2] ?? ''), false);
+  check('and leaves an unread Eye alone', /\blive\b/.test(cls[0] ?? ''), false);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

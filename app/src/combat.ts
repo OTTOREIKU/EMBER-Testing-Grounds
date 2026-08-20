@@ -1489,7 +1489,6 @@ export class AttackHelper {
       p.className = 'ah-note';
       p.textContent = `${c.attacker.label} Focused: select any Attack dice below, then reroll them.`;
       wrap.appendChild(p);
-      wrap.appendChild(this.rollView(c.attackRoll ?? [], 'attack'));
     } else if (f.stage === 'rerollD') {
       const p = document.createElement('p');
       p.className = 'ah-note';
@@ -1699,6 +1698,70 @@ export class AttackHelper {
     return ex;
   }
 
+  // IS LOW PROFILE ON, answered ONCE and shared. resolve() needs the arms
+  // separately so its note can name which fired; the live-die ring needs only
+  // the verdict. Two derivations of this would be two things that can drift,
+  // which is the lesson resolutionHtml already records at the top of this file.
+  private lowProfileOn(c: Ctx): {
+    on: boolean;
+    lpToken: boolean;
+    tracking: ReturnType<typeof trackingCover>;
+    concealed: ReturnType<typeof hiddenByAlliedAura>;
+    mistyEagle: ReturnType<typeof aurasOn>[number] | undefined;
+  } {
+    const mistyEagle = this.tokens
+      ? aurasOn(this.data, this.tokens(), c.attacker).find((s) => s.kinds.includes('target_counts_low_profile'))
+      : undefined;
+    const tracking = c.action.type === 'Firing' && this.tokens
+      ? trackingCover(this.data, this.tokens(), this.terrain ? this.terrain() : [], this.smoke ? this.smoke() : [], c.attacker, c.defender)
+      : [];
+    const concealed = this.tokens ? hiddenByAlliedAura(this.data, this.tokens(), c.defender) : undefined;
+    const lpToken = statusCount(c.defender.statuses, 'lowProfile') > 0;
+    const on = c.action.type === 'Firing'
+      && !ignoresLowProfile(this.data, c.attacker)
+      && !tracking.length
+      && (lpToken
+        || (this.tokens ? auraEffectsOn(this.data, this.tokens(), c.defender).has('low_profile') : false)
+        || !!concealed
+        || !!mistyEagle);
+    return { on, lpToken, tracking, concealed, mistyEagle };
+  }
+
+  // WHICH DEFENCE DICE ARE DOING SOMETHING, one entry per die. The attack half
+  // gets this free from attackIconsPerDie; the defence had no per-die reader at
+  // all, because countIcons tallies the whole roll at once.
+  //
+  // NOT simply "is it a Dodge or a Defense". Live here means the same sources
+  // resolve() actually spends:
+  //  - {Dodge} and {Defense}, always.
+  //  - a BLUE {Lightning} while the White Dwarf Thruster is loaded (292),
+  //    which counts as {Dodge} and is not a choice.
+  //  - an {Eye} when Low Profile is on, because that turns every one of them
+  //    into {Dodge} against a Firing Attack. This is the case OTTO named: an
+  //    Eye must ring only when something actually reads it.
+  // KC Armor is deliberately absent: it is a Charge the player ELECTS to spend,
+  // so its {Lightning} is not doing anything until they do.
+  private defenseIconsPerDie(c: Ctx): { dodge: number; defense: number }[] {
+    const upgrade = c.defender.stance === 'defensive';
+    const dwarf = blueLightningDodges(this.data, c.defender);
+    const lowProfile = this.lowProfileOn(c).on;
+    const out: { dodge: number; defense: number }[] = [];
+    for (const d of c.defenseRoll ?? []) {
+      let dodge = 0;
+      let defense = 0;
+      for (const icon of this.dice.dice[d.color].faces[d.face]) {
+        if (icon.type === 'part') continue;
+        if (icon.hollow && !upgrade) continue;
+        if (icon.type === 'dodge') dodge++;
+        else if (icon.type === 'defense') defense++;
+        else if (icon.type === 'lightning' && dwarf && d.color === 'blue') dodge++;
+        else if (icon.type === 'eye' && lowProfile) dodge++;
+      }
+      out.push({ dodge, defense });
+    }
+    return out;
+  }
+
   private resolve(): { hits: number; penetrating: number; unoffset: { heavy: number; light: number }; text: string[]; duel: Duel } {
     const c = this.ctx!;
     const atk = this.attackIcons(c);
@@ -1727,40 +1790,11 @@ export class AttackHelper {
     // Action, the TARGET counts as having Low Profile". Read off the ATTACKER,
     // which is the whole difference between this card and 072's Decoy — the
     // Eagle hinders whoever is shooting near it, wherever the target stands.
-    // It carries its own effect kind for that reason: filed under `low_profile`
-    // it would land on the Eagle's own side and buff the enemy instead.
-    const mistyEagle = this.tokens
-      ? aurasOn(this.data, this.tokens(), c.attacker).find((s) => s.kinds.includes('target_counts_low_profile'))
-      : undefined;
-    // The Token, or the MES Beacon's aura: the aura grants the KEYWORD, so it
-    // works exactly like the Token here and Scan cannot strip it (FAQ Q3/J2).
-    // 094 Multispectral Tracking beats BOTH sources: the card says the
-    // attacker's Firing Actions ignore Low Profile, not "unless it was granted".
-    // ZPA-37 Foxhound: two or more ally Drones with line of sight to the target
-    // make this Mech's Firing Actions ignore Low Profile — the same consequence
-    // 094 has, off a board condition instead of a Part, so it joins the same
-    // `&&` rather than growing a second branch. Computed before the disjunction
-    // so the drones can be named in the notes below.
-    const tracking = c.action.type === 'Firing' && this.tokens
-      ? trackingCover(this.data, this.tokens(), this.terrain ? this.terrain() : [], this.smoke ? this.smoke() : [], c.attacker, c.defender)
-      : [];
-    // FPA-06-2 KeyHole, 功率隐匿 Power Concealment: a FOURTH source, and the only
-    // one that comes off the defender's PILOT rather than off a Token, a Part or
-    // an aura keyword. Any friendly aura reaching the defender is enough — the
-    // aura need not grant low_profile itself, which is the whole difference
-    // from the arm above it.
-    const concealed = this.tokens ? hiddenByAlliedAura(this.data, this.tokens(), c.defender) : undefined;
-    // Hoisted out of the disjunction because the note below has to know WHICH
-    // arm fired. A Token is the one source the shooter can actually see sitting
-    // on the target, so the invisible sources must never be credited over it.
-    const lpToken = statusCount(c.defender.statuses, 'lowProfile') > 0;
-    const lowProfile = c.action.type === 'Firing'
-      && !ignoresLowProfile(this.data, c.attacker)
-      && !tracking.length
-      && (lpToken
-        || (this.tokens ? auraEffectsOn(this.data, this.tokens(), c.defender).has('low_profile') : false)
-        || !!concealed
-        || !!mistyEagle);
+    // ONE answer, shared with the live-die ring below. The arms come back too,
+    // because the note further down has to name WHICH one fired: a Token is the
+    // only source the shooter can see sitting on the target, so an invisible one
+    // must never be credited over it.
+    const { on: lowProfile, lpToken, tracking, concealed, mistyEagle } = this.lowProfileOn(c);
     // Melee Evasion adds a {Dodge} ICON, not a die — the card writes it braced,
     // and the pool was already rolled by now.
     if (c.evadeUsed) def.dodge = (def.dodge ?? 0) + 1;
@@ -2031,6 +2065,113 @@ export class AttackHelper {
       });
   }
 
+  // THE STEP STACK. Every step of this attack as a card: finished ones collapse
+  // to a single line carrying their RESULT, the current one is open, and the
+  // ones still to come sit greyed below. Reading the whole attack back should
+  // not require reading the log.
+  //
+  // DERIVED, not stored. Every answer here already exists on the context, so
+  // there is no second record of the attack's progress to fall out of step with
+  // the first. A step is finished when the thing it produces is present.
+  //
+  // DYNAMIC: the list is built from what THIS attack will actually do. A
+  // Surplus round only appears when the Action carries Mutilation, Cleaving or
+  // Scatter-shot, and it names the keyword that caused it, because an extra
+  // beat nobody asked for should say where it came from.
+  private stepCards(c: Ctx): { key: string; title: string; result: string; extra?: string }[] {
+    const out: { key: string; title: string; result: string; extra?: string }[] = [];
+    if (this.multi) out.push({ key: 'split', title: 'Split the pool', result: `${this.multi.targets.length} targets` });
+    if (c.defender.kind === 'mech') {
+      out.push({
+        key: 'part',
+        title: 'Target Part',
+        result: c.targetPart ? (SLOT_LABEL[c.targetPart as PartSlot | 'main'] ?? c.targetPart) : '',
+      });
+    }
+    const atk = c.attackRoll ? this.attackIcons(c) : null;
+    out.push({
+      key: 'attack',
+      title: c.surplusRound > 0 ? 'Carried over' : 'Attack Roll',
+      result: atk ? this.tallyText([['Heavy', atk.heavyHit], ['Light', atk.lightHit], ['Eye', atk.eye]]) : '',
+    });
+    const def = c.defenseRoll ? this.countIcons(c.defenseRoll, c.defender.stance === 'defensive') : null;
+    out.push({
+      key: 'defense',
+      title: 'Defense Roll',
+      result: def ? this.tallyText([['Dodge', def.dodge], ['Defense', def.defense]]) : '',
+    });
+    out.push({
+      key: 'resolve',
+      title: 'Resolution',
+      result: c.penetrated ? 'applied' : '',
+    });
+    // The extra beat, and it is the reason this list cannot be a constant.
+    const sur = surplusEffects(c.action)[0];
+    if (sur) {
+      out.push({
+        key: 'surplus',
+        title: 'Surplus round',
+        extra: sur.name,
+        result: c.surplusRound > 0 ? 'resolving' : 'if it penetrates',
+      });
+    }
+    return out;
+  }
+
+  // "2 Heavy, 1 Eye". Zeroes are dropped rather than printed, because a
+  // collapsed card has one line and every character of it should be carrying
+  // something.
+  private tallyText(parts: [string, number | undefined][]): string {
+    const said = parts.filter(([, n]) => (n ?? 0) > 0).map(([k, n]) => `${n} ${k}`);
+    return said.length ? said.join(', ') : 'nothing';
+  }
+
+  // THE FELT. Both hands on screen at once, in halves that never swap: the
+  // viewer's own dice BELOW and the other side's ABOVE, the way the two of them
+  // would sit across a real table.
+  //
+  // It replaces three separate grids that each lived inside whichever step was
+  // open, so the dice used to appear, vanish and reappear as the attack moved
+  // on, and the Focus reroll drew a SECOND copy of the attack dice underneath
+  // the defence step. One fixed region removes both by construction.
+  //
+  // Sides are read from the ROLE, not from who is attacking: a defender's own
+  // dice are the defence roll and belong at the bottom of THEIR screen. A
+  // spectator has no dice of their own, so it falls back to attacker above and
+  // defender below, which at least never moves.
+  private felt(c: Ctx): HTMLElement | null {
+    if (!c.attackRoll && !c.defenseRoll) return null;
+    const mineIsDefence = this.role === 'defender';
+    const half = (which: 'attack' | 'defense', mine: boolean): HTMLElement | null => {
+      const roll = which === 'attack' ? c.attackRoll : c.defenseRoll;
+      if (!roll) return null;
+      const side = document.createElement('div');
+      side.className = `ah-half ah-half-${mine ? 'mine' : 'theirs'}`;
+      const who = which === 'attack' ? c.attacker : c.defender;
+      // The count that matters mid-combat is what these dice are DOING, not how
+      // many were thrown, so it reads off the same per-die readers the ring uses
+      // rather than deriving a second answer.
+      const per = which === 'attack' ? this.attackIconsPerDie(c) : this.defenseIconsPerDie(c);
+      const doing = per.reduce((n, x) => n + Object.values(x).reduce((a, b) => a + b, 0), 0);
+      const head = document.createElement('div');
+      head.className = 'ah-half-h';
+      head.innerHTML = `<span class="eyebrow">${which === 'attack' ? 'Attack' : 'Defence'}</span>`
+        + `<span class="nm ${who.side}">${esc(who.label)}</span>`
+        + `<span class="tot">${doing}<small>${which === 'attack' ? 'hitting' : 'stopping'}</small></span>`;
+      side.appendChild(head);
+      side.appendChild(this.rollView(roll, which));
+      return side;
+    };
+    const top = mineIsDefence ? half('attack', false) : half('defense', false);
+    const bottom = mineIsDefence ? half('defense', true) : half('attack', true);
+    if (!top && !bottom) return null;
+    const wrap = document.createElement('div');
+    wrap.className = 'ah-felt';
+    if (top) wrap.appendChild(top);
+    if (bottom) wrap.appendChild(bottom);
+    return wrap;
+  }
+
   private render(): void {
     const c = this.ctx;
     if (!c) return;
@@ -2074,13 +2215,58 @@ export class AttackHelper {
       })()
     }`;
 
-    if (c.step === 'split') el.appendChild(this.stepSplit());
-    if (c.step === 'surplus') el.appendChild(this.stepSurplus());
-    if (c.step === 'part') el.appendChild(this.stepPart());
-    if (c.step === 'designate') el.appendChild(this.stepDesignate());
-    if (c.step === 'attack') el.appendChild(this.stepAttack());
-    if (c.step === 'defense') el.appendChild(this.stepDefense());
-    if (c.step === 'resolve') el.appendChild(this.stepResolve());
+    // The current step's own content, built once and then placed INSIDE its
+    // card below, so the open card and the step it belongs to are one thing
+    // rather than two stacked panels.
+    let body: HTMLElement | null = null;
+    if (c.step === 'split') body = this.stepSplit();
+    if (c.step === 'surplus') body = this.stepSurplus();
+    if (c.step === 'part') body = this.stepPart();
+    if (c.step === 'designate') body = this.stepDesignate();
+    if (c.step === 'attack') body = this.stepAttack();
+    if (c.step === 'defense') body = this.stepDefense();
+    if (c.step === 'resolve') body = this.stepResolve();
+
+    // THE STACK. Cards above and below the open one, so the attack reads as a
+    // sequence rather than as whichever screen happens to be showing.
+    // `designate` has no card of its own on purpose: it is a fork inside
+    // choosing the Part, not a beat of the attack, so it rides in the Part
+    // card and the stack does not grow a step that sometimes exists.
+    const here = c.step === 'designate' ? 'part' : c.step;
+    const cards = this.stepCards(c);
+    const at = cards.findIndex((s) => s.key === here);
+    const stack = document.createElement('div');
+    stack.className = 'ah-stack';
+    cards.forEach((s, i) => {
+      const now = i === at;
+      // Finished means the thing this step produces is present, which is why
+      // the index rather than a flag decides it: a Surplus round re-opens the
+      // defence, and the cards behind it are still done.
+      const done = at >= 0 && i < at;
+      const card = document.createElement('div');
+      card.className = `ah-card${now ? ' now' : done ? ' done' : ''}${s.extra ? ' extra' : ''}`;
+      const head = document.createElement('div');
+      head.className = 'ah-card-h';
+      head.innerHTML = `<span class="n">${s.extra ? 'S' : String(i + 1)}</span>`
+        + `<span class="t">${esc(s.title)}${s.extra ? `<em>${esc(s.extra)}</em>` : ''}</span>`
+        + `<span class="r">${esc(s.result)}</span>`;
+      card.appendChild(head);
+      if (now && body) {
+        const b = document.createElement('div');
+        b.className = 'ah-card-b';
+        b.appendChild(body);
+        card.appendChild(b);
+      }
+      stack.appendChild(card);
+    });
+    el.appendChild(stack);
+    // The felt sits BELOW the stack and above the log, so the dice keep one
+    // place on screen for the whole attack while the cards above them move.
+    const felt = this.felt(c);
+    if (felt) el.appendChild(felt);
+    // A step the stack does not model (there is none today, but a new one
+    // would arrive here) still gets drawn rather than vanishing.
+    if (body && at < 0) el.appendChild(body);
 
     if (c.log.length) {
       const log = document.createElement('div');
@@ -2747,9 +2933,22 @@ export class AttackHelper {
     // Dice belong to whoever rolled them, so the selection toggles and every
     // reroll offer under them follow the same owner.
     const mine = this.mayPress(which === 'attack' ? 'attacker' : 'defender');
+    // WHICH DICE ARE ACTUALLY DOING SOMETHING TO THIS ACTION. A ring on those,
+    // nothing on the rest, so a hand of five reads at a glance instead of being
+    // counted.
+    //
+    // Derived from the readers the engine RESOLVES with rather than from a
+    // second "is this a damage icon" test. attackIconsPerDie already replays
+    // every swap per die, so hollow icons outside Offensive Stance, Pulse, Chef,
+    // card 503, Sealock's Pursuit and Fierce Assault are all inherited for free.
+    // That matters because a ring that is sometimes wrong is worse than no ring:
+    // it teaches the player to stop trusting it. An {Eye} stays plain unless
+    // something can genuinely read it.
+    const per = which === 'attack' ? this.attackIconsPerDie(c) : this.defenseIconsPerDie(c);
+    const live = per.map((x) => Object.values(x).reduce((a, b) => a + b, 0) > 0);
     roll.forEach((d, i) => {
       const b = document.createElement('button');
-      b.className = `die die-${d.color}${d.selected ? ' sel' : ''}`;
+      b.className = `die die-${d.color}${d.selected ? ' sel' : ''}${live[i] ? ' live' : ''}`;
       const face = this.dice.dice[d.color].faces[d.face];
       b.innerHTML = face.length ? face.map((ic: DiceIcon) => iconSvg(ic)).join('') : '<span class="blank">·</span>';
       b.title = 'select for reroll';
@@ -2915,7 +3114,6 @@ export class AttackHelper {
       });
       wrap.appendChild(roll);
     } else {
-      wrap.appendChild(this.rollView(c.attackRoll, 'attack'));
       const atk = this.attackIcons(c);
       const sum = document.createElement('p');
       sum.className = 'ah-sum';
@@ -3108,7 +3306,6 @@ export class AttackHelper {
       });
       wrap.appendChild(roll);
     } else {
-      wrap.appendChild(this.rollView(c.defenseRoll, 'defense'));
       const def = this.countIcons(c.defenseRoll, c.defender.stance === 'defensive');
       const sum = document.createElement('p');
       sum.className = 'ah-sum';

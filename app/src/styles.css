@@ -2350,6 +2350,87 @@ p.points { white-space: pre-line; }
 }
 .ah-fragile b { color: #fff; }
 
+/* ---------- The felt ----------
+   Both hands on screen at once, in halves that never swap: the viewer's own
+   dice BELOW, the other side's ABOVE. This is the shared table made literal,
+   and it is also the density fix: the dice used to be sandwiched between
+   paragraphs inside whichever step was open, appearing and vanishing as the
+   attack moved on. */
+.ah-felt {
+  margin: 10px 0 8px; border-radius: var(--radius); overflow: hidden;
+  background: var(--surface); box-shadow: inset 0 0 0 1px var(--border);
+}
+.ah-half { padding: 9px 11px 11px; }
+/* A hairline between the hands rather than a heavy rule: the two halves are
+   one table, not two panels. This is also where the resolution animation
+   will sit once it moves in, which is why the gap is kept clear. */
+.ah-half + .ah-half { border-top: 1px solid var(--border); }
+/* Each side tinted toward its own colour, strongest at its own edge, so the
+   halves are told apart by more than position. */
+.ah-half-theirs { background: linear-gradient(180deg, rgba(234, 109, 118, 0.08), transparent 84%); }
+.ah-half-mine { background: linear-gradient(0deg, rgba(101, 162, 216, 0.08), transparent 84%); }
+.ah-half-h { display: flex; align-items: center; gap: 7px; margin-bottom: 7px; }
+.ah-half-h .eyebrow { font-size: 9.5px; letter-spacing: 0.9px; text-transform: uppercase; color: var(--text3); font-weight: 700; }
+.ah-half-h .nm { font-size: 11.5px; font-weight: 600; }
+.ah-half-h .nm.s1 { color: var(--s1); }
+.ah-half-h .nm.s2 { color: var(--s2); }
+/* What the dice are DOING, which is the number wanted mid-combat. */
+.ah-half-h .tot { margin-left: auto; font-family: var(--mono); font-size: 14px; font-weight: 700; color: var(--text); }
+.ah-half-h .tot small { font-family: var(--font); font-size: 9.5px; font-weight: 400; color: var(--text3); margin-left: 4px; }
+.ah-half .ah-roll { margin: 0; }
+
+/* ---------- The step stack ----------
+   Every step of the attack is a card. Finished ones collapse to one line
+   carrying their result, so the whole attack traces at a glance instead of
+   being reconstructed from the log.
+
+   NO LEFT-EDGE BORDERS, in any state. The active card is signalled by being
+   LIFTED: a lighter surface, a deeper shadow, an amber step number. Finished
+   cards recede by dropping their background rather than gaining a rule. */
+.ah-stack { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; }
+.ah-card { background: var(--surface2); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
+.ah-card.done { background: rgba(30, 36, 44, 0.55); }
+.ah-card-h { display: flex; align-items: center; gap: 9px; padding: 7px 10px; }
+.ah-card-h .n {
+  width: 19px; height: 19px; flex: none; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 9.5px; font-weight: 700;
+  background: var(--surface3); color: var(--text3);
+}
+.ah-card.done .ah-card-h .n { background: var(--green-lt); color: var(--green); }
+.ah-card-h .t { font-size: 11.5px; font-weight: 600; flex: 1; min-width: 0; color: var(--text2); }
+.ah-card-h .r { font-family: var(--mono); font-size: 10.5px; color: var(--text2); white-space: nowrap; }
+/* The open card, lifted rather than outlined. */
+.ah-card.now { background: var(--surface3); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.42); }
+.ah-card.now .ah-card-h .n { background: var(--accent); color: var(--on-accent); box-shadow: 0 0 0 3px var(--accent-lt); }
+.ah-card.now .ah-card-h .t { color: var(--text); }
+.ah-card.now .ah-card-h .r { color: var(--accent); font-weight: 700; }
+.ah-card-b { padding: 0 10px 10px; }
+/* The step's own content already carries its heading, and inside a card
+   that heading is the card's title said twice. */
+.ah-card-b .ah-step h4 { display: none; }
+.ah-card-b .ah-step { margin: 0; }
+/* An extra beat this weapon caused, not a normal step: tinted and named. */
+.ah-card.extra .ah-card-h .n { background: var(--red-lt); color: var(--red); }
+.ah-card.extra .ah-card-h .t em {
+  font-style: normal; color: var(--red); font-size: 9.5px;
+  letter-spacing: 0.6px; text-transform: uppercase; margin-left: 6px;
+}
+
+/* THE LIVE DIE. A die whose face is actually doing something to this action
+   wears an amber ring; blanks and icons nothing reads stay plain. Drawn as a
+   box-shadow rather than a border so the die does not change size when it
+   lights up, which would jostle the whole row on every reroll.
+   Scoped to .attack-helper so the board's own dice are untouched. */
+.attack-helper .die.live {
+  box-shadow: 0 0 0 2px var(--accent), 0 0 0 5px var(--accent-lt);
+}
+/* A selected die already carries its own outline, so the two are combined
+   rather than fighting: selection reads outside the live ring. */
+.attack-helper .die.live.sel {
+  box-shadow: 0 0 0 2px var(--accent), 0 0 0 5px var(--accent-lt), 0 0 0 7px var(--text);
+}
+
 /* ---------- Combat panel redesign, pass 2: one ladder, and room to read ----------
    SEVENTEEN rendered sizes collapse to SIX, and five of the six are numbers the
    Match Centre turn panel already uses, so the box moves onto the scale OTTO
