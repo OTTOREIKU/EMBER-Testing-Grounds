@@ -640,6 +640,9 @@ export class AttackHelper {
   private rollGen = 0;
   private blackTimer: number | undefined;
   private spinTimer: number | undefined;
+  // The row the running spin is shaking. Held so the class can never outlive
+  // the timer that is supposed to take it off again -- see stopSpin.
+  private spinEl: HTMLElement | undefined;
   private spinFor: 'attack' | 'defense' | null = null;
   // The duel markup this window last ANIMATED. The resolution step is built
   // again for reasons that have nothing to do with the offsetting (a log line
@@ -903,8 +906,11 @@ export class AttackHelper {
   private stopBlack(): void {
     if (this.blackTimer) window.clearInterval(this.blackTimer);
     this.blackTimer = undefined;
-    if (this.spinTimer) window.clearInterval(this.spinTimer);
-    this.spinTimer = undefined;
+    // Through stopSpin, or the row keeps the shake it was given. showMirror
+    // calls this on every published view, so a defender who rolled and then
+    // received one more frame -- the attacker's Focus prompt, say -- had their
+    // dice stopped mid-spin and left rattling.
+    this.stopSpin();
     this.spinFor = null;
   }
 
@@ -917,10 +923,31 @@ export class AttackHelper {
   // the app deciding rather than a roll happening. They cycle faces first and
   // land on the values rollPool already chose. `.rolling .die` supplies the
   // shake, so the class alone is enough.
-  private spinDice(container: HTMLElement, roll: Rolled[]): void {
+  // STOPPING A SPIN MEANS TAKING THE SHAKE OFF, not just killing the timer.
+  //
+  // OTTO from live play: "after the defender rolls their white die and before
+  // the attacker chooses if they want to focus or not, the white die are shaking
+  // constantly. the face of the die doesnt change but the animation has them
+  // shake forever." Frozen faces with a live shake is the signature: `.rolling`
+  // supplies the animation and the interval supplies the faces, so a spin whose
+  // interval was cleared from outside leaves the row shaking on a dead clock.
+  //
+  // Two places did exactly that -- stopBlack(), which showMirror calls on EVERY
+  // published view, and spinDice itself when a second roll started before the
+  // first had finished its eight ticks. Both now come through here, so the class
+  // and the timer are put down together and neither can be left behind.
+  private stopSpin(): void {
     if (this.spinTimer) window.clearInterval(this.spinTimer);
+    this.spinTimer = undefined;
+    this.spinEl?.classList.remove('rolling');
+    this.spinEl = undefined;
+  }
+
+  private spinDice(container: HTMLElement, roll: Rolled[]): void {
+    this.stopSpin();
     const dice = [...container.querySelectorAll<HTMLElement>('.die')];
     if (!dice.length) return;
+    this.spinEl = container;
     container.classList.add('rolling');
     let ticks = 0;
     this.spinTimer = window.setInterval(() => {
@@ -932,9 +959,7 @@ export class AttackHelper {
         el.innerHTML = this.faceHtml(d.color, done ? d.face : Math.floor(Math.random() * this.dice.dice[d.color].sides));
       });
       if (!done) return;
-      window.clearInterval(this.spinTimer);
-      this.spinTimer = undefined;
-      container.classList.remove('rolling');
+      this.stopSpin();
     }, 55);
   }
 

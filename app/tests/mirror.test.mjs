@@ -499,6 +499,52 @@ const spinning = (root) => {
   check('but the next attack opens it again', w.h.watching, true);
 }
 
+// ---------- THE SHAKE MAY NOT OUTLIVE ITS CLOCK ----------
+// OTTO from live play: "after the defender rolls their white die and before the
+// attacker chooses if they want to focus or not, the white die are shaking
+// constantly. the face of the die doesnt change but the animation has them shake
+// forever until the attacker chooses focus or to pass."
+//
+// Frozen faces with a live shake is the signature of the two halves coming
+// apart: `.rolling` supplies the animation and the interval supplies the faces,
+// so a spin whose interval is cleared FROM OUTSIDE leaves the row rattling on a
+// dead clock. stopBlack() did exactly that and showMirror calls it on every
+// published view, so one more frame while the dice were still landing was all it
+// took -- and the attacker's Focus prompt is one more frame.
+//
+// Asserted on the ROW ITSELF rather than by searching the tree, because the
+// window is rebuilt between frames and a detached node with the class still on
+// it is invisible to a search while being exactly the bug.
+{
+  const b2 = board();
+  const w = watcher(b2.all, []);
+  const rowsWith = (root, out = []) => {
+    const walk = (el) => {
+      if (String(el.className ?? '') === 'ah-roll') out.push(el);
+      for (const c of el.children ?? []) walk(c);
+    };
+    walk(root);
+    return out;
+  };
+
+  // The frame the defence faces land on, which is what earns the shake.
+  w.h.showMirror(atStep('attack'), b2.atk, b2.def, firing, 'defender');
+  w.h.showMirror(defended, b2.atk, b2.def, firing, 'defender');
+  await settle();
+  const shaking = rowsWith(w.root).filter((r) => r._cls?.has('rolling'));
+  check('the dice do shake when they land', shaking.length > 0, true);
+
+  // One more published frame, the way the attacker opening their half of the
+  // Focus republishes without touching the dice.
+  w.h.showMirror({ ...defended, focus: { stage: 'declareA', attackerUse: false, defenderUse: false } },
+    b2.atk, b2.def, firing, 'defender');
+  await settle();
+  // THE ACTUAL QUESTION. Every row that was shaking has to have been let go of,
+  // whether or not it is still on screen.
+  check('and every row that was shaking has been let go of',
+    shaking.filter((r) => r._cls?.has('rolling')).length, 0);
+}
+
 // ---------- A DISMISSAL MAY NOT DEADLOCK THE ATTACK ----------
 // The close button is keyed to the ATTACK and not the frame (block 3 above),
 // which is right for somebody watching a fight they are not in and was a

@@ -5,7 +5,7 @@ import { actionIconUrl, cardName, isAerial, secondaryImageUrl, squadLabel, unitS
 import { showInspect } from './inspector';
 import { Board, footprint, snapPlacement, type BoardCallbacks } from './board';
 import { printedDeployment, resolveZoneSetData } from './overlays';
-import { transformOffer, anyStartTiming, opportunityBonusOn, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, ripostePart, martyrdomOwed, targetTracingOn, riderOnDrone, hasFlexibleTiming, coordinationFor, coordinationOnOpportunityEnd, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, electronicOrigins, loanedParts, phasesThroughUnits, minesLayable, minesOwed, pilotCard, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, maneuverIsSilent, maneuverSilenceDenier, type AuraSource, canActivateCamo, chargeableSlots, electronicStrength, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, projectileReach, provokeOffer, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
+import { actionRange, transformOffer, anyStartTiming, opportunityBonusOn, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, ripostePart, martyrdomOwed, targetTracingOn, riderOnDrone, hasFlexibleTiming, coordinationFor, coordinationOnOpportunityEnd, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, electronicOrigins, loanedParts, phasesThroughUnits, minesLayable, minesOwed, pilotCard, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, maneuverIsSilent, maneuverSilenceDenier, type AuraSource, canActivateCamo, chargeableSlots, electronicStrength, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, projectileReach, provokeOffer, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
 import { resolveCounterRoll, tallyCounter } from './combat';
 import { tacticFitsPhase, tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { inContact, canStandIn, attackDirection, crushExchange, crushExchangeSpots, crushTargets, dissipationFor, extendPath, knockbackPath, largeGridOf, LG, losBetween, losNote, pathCost, protectionFor, rangeBetween, reachableGrids, standingSpot, type LargeGrid } from './rules';
@@ -372,7 +372,17 @@ function timelineHtml(s: GameState): string {
   return `<div class="timeline"><div class="roundchip">R${s.round.n}/${s.roundLimit ?? 5}</div>${cells}</div>`;
 }
 
-function orderStripHtml(ctx: HudCtx): string {
+// THE ACTIVATION ORDER, floating in the board's top-right corner (OTTO,
+// 2026-08-20). It used to be in two places at once: this strip along the bottom
+// of the board, which pushed the map up when it appeared, and the Activation
+// order card above the squads list. The card is now hidden online (squads.ts)
+// and this is the single copy, in the same corner freeplay puts its Guide panel
+// so the two pages read as one app.
+//
+// It carries what the CARD had and the strip did not: the initiative number, and
+// a tie marker. A tie is the one case where the printed order is not the whole
+// answer, so losing it with the card would have cost a real rules warning.
+function orderFloatHtml(ctx: HudCtx): string {
   const s = ctx.state;
   if (s.round.phase < 1 || s.round.phase > 2) return '';
   const sc = ensureScript(s);
@@ -380,16 +390,33 @@ function orderStripHtml(ctx: HudCtx): string {
   const order = activationOrder(s, makeInit(ctx.data));
   if (!order.length) return '';
   const cur = s.round.phase === 2 ? nextActivation(s, makeInit(ctx.data)) : null;
+  // Two Mechs in the same Timing on the same initiative: 3.4.1 leaves that
+  // order to the First Player. Counted here rather than read off
+  // activationOrder, which has ALREADY broken the tie by alternating sides and
+  // so no longer shows that there was one to break.
+  const tally = new Map<string, number>();
+  for (const a of order) {
+    if (a.init === undefined) continue;
+    const k = `${a.timing}:${a.init}`;
+    tally.set(k, (tally.get(k) ?? 0) + 1);
+  }
   const chips = order
     .map((a) => {
       const t = s.tokens.find((x) => x.uid === a.uid);
       if (!t) return '';
       const short = TIMINGS.find((x) => x.id === a.timing)?.short ?? '';
       const cls = cur && cur.uid === a.uid && !acted.has(a.uid) ? ' now' : acted.has(a.uid) ? ' past' : '';
-      return `<span class="ord ${t.side}${cls}"><span class="sw"></span>${esc(t.label)} · ${short}</span>`;
+      const tie = a.init !== undefined && (tally.get(`${a.timing}:${a.init}`) ?? 0) > 1;
+      // A button, because the card's rows were clickable and moving them here
+      // must not quietly cost that: this is the fastest way to a unit's card.
+      return `<button class="ord ${t.side}${cls}" data-orderchip="${t.uid}" title="${esc(t.label)}: ${short}, initiative ${a.init ?? '?'}">
+        <span class="sw"></span><span class="ord-nm">${esc(t.label)}</span>
+        <span class="ord-t">${short}</span><span class="ord-i">${a.init ?? '?'}</span>
+        ${tie ? '<span class="ord-tie" title="Tied initiative: the First Player picks the order">tie</span>' : ''}
+      </button>`;
     })
     .join('');
-  return `<div class="orderstrip">${chips}</div>`;
+  return `<div class="ordercol">${chips}</div>`;
 }
 
 // ---------- the real board, shared with the freeplay page ----------
@@ -3492,20 +3519,30 @@ function attackPanel(ctx: HudCtx): string {
   const terrain = terrainOf(ctx);
   const smoke = s.smoke ?? [];
   // Every enemy on the board is offered, with the reading of the line beside
-  // it: out of range or out of arc is a warning the player may still overrule,
-  // the same way the guide warns rather than blocks. An Automatic Action is
-  // the exception: it takes the nearest legal target, Highlighted first
-  // (3.5.2, FAQ O21), and networked play is strict, so only those show.
+  // it: out of arc is a warning the player may still overrule, the same way the
+  // guide warns rather than blocks. An Automatic Action is the exception: it
+  // takes the nearest legal target, Highlighted first (3.5.2, FAQ O21), and
+  // networked play is strict, so only those show.
   const autoLegal = a.speed === 'auto' ? autoTargetsFor(ctx.data, s.tokens, by, a) : null;
+  // THE EFFECTIVE REACH, not the printed one. actionRange folds in an ally's
+  // firing-range aura, and passing the raw card number here would refuse a shot
+  // the aura legitimately extends. Electronic Attacks never reach this picker
+  // (they take ewPick at the ⌖ press), so the Repeater origins autoTargetsFor
+  // has to consider do not arise on this path.
+  const reach = actionRange(ctx.data, s.tokens, by, a);
   const rows = s.tokens
     .filter((t) => t.side !== by.side && t.deployed !== false && alive(t))
     .filter((t) => !autoLegal || !autoLegal.length || autoLegal.some((x) => x.uid === t.uid))
     .map((t) => {
-      const note = losNote(by, t, a, terrain, s.tokens, smoke);
-      // ⚠ is a warning the player may overrule; ✕ is blocked line of sight,
-      // and 4.4.1 makes that attack illegal, not inadvisable. Freeplay warns
-      // for both because a table can house-rule; networked play is strict, so
-      // the row cannot be pressed. Only losNote's LOS readings emit ✕.
+      // STRICT, so the Range reading comes back as ✕ rather than ⚠ and the row
+      // below disables itself on it. OTTO shot a Mech ten Grids away with a
+      // Range 6 weapon and the game let him roll: range was a warning nobody
+      // was stopped by, on the one page that is supposed to stop them.
+      const note = losNote(by, t, { ...a, range: reach }, terrain, s.tokens, smoke, true);
+      // ⚠ is a warning the player may overrule; ✕ is an attack the rules do not
+      // allow at all, and both Range (4.4.1) and blocked line of sight are that.
+      // Freeplay warns for both because a table can house-rule; networked play
+      // is strict, so the row cannot be pressed.
       const blocked = note.includes('✕');
       const bad = blocked || note.includes('⚠');
       const prot = protectionFor(by, t, a, terrain, s.tokens, smoke,
@@ -4386,8 +4423,13 @@ export function ensureHud(host: HTMLElement, ctx: HudCtx): void {
       <div class="turnpanel" id="hud-panel"></div>
       <div class="hudmain">
         <div id="hud-tl"></div>
-        <div id="mc-board" class="hudboardhost"></div>
-        <div id="hud-strip"></div>
+        <!-- The activation order floats INSIDE the board host, which is already
+             positioned and already the place freeplay hangs its Guide panel.
+             Board appends its own scroll wrapper after this one and never
+             replaces the host's children, so the overlay survives every redraw.
+             It used to be a strip below the board, which took a slice of the
+             map's height the moment the dials were set. -->
+        <div id="mc-board" class="hudboardhost"><div id="hud-order" class="orderfloat"></div></div>
       </div>
       <div class="hudside">
         <div class="hudtabs">
@@ -4429,7 +4471,7 @@ export function ensureHud(host: HTMLElement, ctx: HudCtx): void {
     sideTabHost = host;
   }
   (host.querySelector('#hud-tl') as HTMLElement).innerHTML = timelineHtml(ctx.state);
-  (host.querySelector('#hud-strip') as HTMLElement).innerHTML = orderStripHtml(ctx);
+  (host.querySelector('#hud-order') as HTMLElement).innerHTML = orderFloatHtml(ctx);
   (host.querySelector('#hud-panel') as HTMLElement).innerHTML =
     `${ctx.note ? `<div class="mc-err" style="margin:10px 12px 0">${esc(ctx.note)}</div>` : ''}${panelHtml(ctx)}${tacticsHtml(ctx)}${feedHtml(ctx)}`;
   (host.querySelector('#hud-veils') as HTMLElement).innerHTML = secOverlay(ctx);
@@ -4895,8 +4937,18 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
   // [Two-Handed]: applied, not asked. See twoHandedUse for why the printed
   // "may" is never a real choice.
       const a = by && steadied ? (twoHandedUse(ctx.data, by, steadied)?.action ?? steadied) : steadied;
-      if (by && t && a && losNote(by, t, a, terrainOf(ctx), s.tokens, s.smoke ?? []).includes('✕')) {
-        ctx.noteNow('Line of sight is blocked, so this attack cannot be made (4.4.1).');
+      // Same reading the row was drawn from, strict and through the effective
+      // reach, so the re-check cannot disagree with the gate it is backing up.
+      const note = by && t && a
+        ? losNote(by, t, { ...a, range: actionRange(ctx.data, s.tokens, by, a) },
+            terrainOf(ctx), s.tokens, s.smoke ?? [], true)
+        : '';
+      if (note.includes('✕')) {
+        // Which of the two it was, because "cannot be made" with no reason is
+        // the kind of refusal a player argues with.
+        ctx.noteNow(note.includes('range') || note.includes('adjacent')
+          ? `${t?.label ?? 'That target'} is outside this Action's Range, so the attack cannot be made (4.4.1).`
+          : 'Line of sight is blocked, so this attack cannot be made (4.4.1).');
         ctx.refresh();
         return;
       }
@@ -4909,6 +4961,14 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     ctx.refresh();
   });
   on('[data-act="attackcancel"]', () => { attackPick = null; dropAction(); ctx.refresh(); });
+  // The order chips open a unit's card, which is what the Activation order rows
+  // in the squads panel did before they moved onto the board. Selection only:
+  // a chip is a way to LOOK at a unit, never a way to act out of turn.
+  on('[data-orderchip]', (el) => {
+    const t = ctx.state.tokens.find((x) => x.uid === Number(el.dataset.orderchip));
+    inspectUid = t ? t.uid : null;
+    ctx.refresh();
+  });
 
   // ---------- Electronic Warfare (4.11) ----------
   on('[data-ewtarget]', (el) => {

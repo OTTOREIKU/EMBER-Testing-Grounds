@@ -16,7 +16,7 @@ const start = src.indexOf('export const LG');
 if (start < 0) throw new Error('could not locate the sight rules in rules.ts');
 const tmp = new URL('./_protection.slice.ts', import.meta.url);
 writeFileSync(tmp, 'type TerrainPiece = any;\ntype Token = any;\ntype Side = any;\ntype SmokeScreen = any;\n' + src.slice(start));
-const { inArc, losBetween, protectionFor, rangeBetween } = await import(tmp.href);
+const { inArc, losBetween, losNote, protectionFor, rangeBetween } = await import(tmp.href);
 
 let pass = 0, fail = 0;
 const check = (name, got, want) => {
@@ -273,6 +273,81 @@ for (const [file, callee] of [['combat.ts', 'protectionFor'], ['main.ts', 'prote
   const both = protectionFor(a, d, firing,
     [crate('c', [[1, 4], [1, 5]]), wall('w', [[1, 6], [1, 7], [1, 8]])], [], []);
   check('and a real wall behind it is unaffected', both.white, 2);
+}
+
+// ---------- RANGE IS A REFUSAL ONLINE AND A WARNING AT THE TABLE ----------
+// OTTO from live play: "I just tried to shoot at another mech from across the
+// map, it was way out of my range (10 spaces away and my range is only 6)
+// however the game let me still pick the mech and then roll combat like usual."
+//
+// He was right, and the record says why: the 2026-08-16 ruling that made the
+// Match Centre strict blocked LOS and left "range, arc ... overridable warnings
+// on both pages". Only losNote's LOS readings emitted the marker the picker
+// disables rows on, so Range was a warning nobody was stopped by on the one page
+// that is supposed to stop them. OTTO reversed that for Range on 2026-08-20.
+//
+// Arc stays a warning on both pages, which is the part of the old ruling that
+// did not change, and freeplay keeps the whole thing overridable.
+{
+  const shooter = unit(4, 4, { uid: 1 });
+  // Twelve small cells is four Large Grids; well outside a Range 2 action and
+  // comfortably inside a Range 6 one.
+  const away = unit(16, 4, { uid: 2, side: 's2' });
+  const gap = rangeBetween(shooter, away).range;
+  check('the fixture really is out of reach of a short weapon', gap > 2, true);
+  check('and inside a long one', gap <= 6, true);
+
+  const short = { type: 'Firing', range: 2 };
+  const long = { type: 'Firing', range: 6 };
+
+  // FREEPLAY, which is every caller that does not ask for strict.
+  const warned = losNote(shooter, away, short, [], [], []);
+  check('freeplay still only warns about range', warned.includes('⚠ beyond action range'), true);
+  check('and does not block it', warned.includes('✕'), false);
+
+  // THE MATCH CENTRE.
+  const refused = losNote(shooter, away, short, [], [], [], true);
+  check('the Match Centre refuses it instead', refused.includes('✕ beyond action range'), true);
+  check('and the row it draws has the marker it disables on', refused.includes('✕'), true);
+
+  // In range is in range, on either page.
+  check('a target inside the reach is refused by neither',
+    [losNote(shooter, away, long, [], [], []), losNote(shooter, away, long, [], [], [], true)]
+      .map((n) => n.includes('beyond action range')), [false, false]);
+
+  // THE ARC IS NOT PART OF THIS. It was an overridable warning before the
+  // reversal and stays one, so strict must not quietly promote it: the shooter
+  // faces along +col here, so a target behind them is out of the forward arc and
+  // in range at the same time.
+  {
+    const behind = unit(1, 4, { uid: 3, side: 's2' });
+    const n = losNote(shooter, behind, long, [], [], [], true);
+    check('an out-of-arc target still only warns, even strict', n.includes('⚠ NOT in forward arc'), true);
+    check('and is not refused for it', n.includes('✕'), false);
+  }
+
+  // RANGE 0 means adjacent-only ("--" on the card), and a non-adjacent target is
+  // just as illegal as one past a printed number.
+  {
+    const melee = { type: 'Melee', range: 0 };
+    check('a melee action reaching across the board warns at the table',
+      losNote(shooter, away, melee, [], [], []).includes('⚠ target not adjacent'), true);
+    check('and is refused online', losNote(shooter, away, melee, [], [], [], true).includes('✕ target not adjacent'), true);
+  }
+
+  // THE REACH IS THE CALLER'S TO SUPPLY, which is the whole reason the Match
+  // Centre passes `{ ...a, range: actionRange(...) }` rather than the action as
+  // it comes off the card: an ally's firing-range aura lengthens the shot, and
+  // refusing it on the printed number would break a legal attack. Pinned as the
+  // SHAPE the caller uses, since actionRange itself lives in units.ts.
+  {
+    const printed = { type: 'Firing', range: 2 };
+    const extended = { ...printed, range: 6 };
+    check('the printed number alone would refuse this shot',
+      losNote(shooter, away, printed, [], [], [], true).includes('✕'), true);
+    check('and the effective reach lets it through',
+      losNote(shooter, away, extended, [], [], [], true).includes('✕'), false);
+  }
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

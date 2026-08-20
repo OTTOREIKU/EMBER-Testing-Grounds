@@ -500,12 +500,51 @@ input.f.codebox { font-family: var(--mono); font-size: 16px; letter-spacing: 5px
 }
 .hudsvg.placing { cursor: crosshair; }
 .hudsvg .cellhit:hover { fill: rgba(240, 180, 41, 0.25); }
-.orderstrip { display: flex; gap: 5px; padding: 9px 12px; background: var(--surface2); overflow-x: auto; }
-.ord { display: flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 100px; background: var(--surface); font-size: 10.5px; color: var(--text2); white-space: nowrap; flex: none; }
-.ord .sw { width: 6px; height: 6px; border-radius: 50%; }
+/* THE ACTIVATION ORDER, floating in the board's top-right corner.
+   Same corner and the same 12px inset freeplay gives its Guide panel, so a
+   player moving between the two pages finds it in the place they already know.
+   It used to be a strip along the bottom of the board, which took a slice of
+   the map's height the moment the dials were set, and the same order was ALSO
+   listed above the squads.
+
+   pointer-events is handed back on the chips alone: the column reserves a
+   corner of the map and must not swallow clicks meant for the board under the
+   gaps between them. */
+.orderfloat {
+  position: absolute; right: 12px; top: 12px; z-index: 6;
+  max-height: calc(100% - 24px); max-width: 46%;
+  overflow-y: auto; pointer-events: none;
+}
+/* Right-aligned so the pills hang off the edge and ragged names grow INWARDS,
+   which keeps the straight side against the board's corner. */
+.ordercol { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.ord {
+  display: flex; align-items: center; gap: 6px; padding: 5px 10px;
+  border: none; border-radius: 100px; background: var(--surface2);
+  font-family: var(--font); font-size: 10.5px; color: var(--text2);
+  white-space: nowrap; flex: none; cursor: pointer; pointer-events: auto;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+.ord:hover { background: var(--surface3); color: var(--text); }
+.ord .sw { width: 6px; height: 6px; border-radius: 50%; flex: none; }
 .ord.s1 .sw { background: var(--s1); }
 .ord.s2 .sw { background: var(--s2); }
+/* The name is the part allowed to run out of room; the readings after it are
+   short and must never be the thing that gets clipped. */
+.ord-nm { overflow: hidden; text-overflow: ellipsis; }
+.ord-t { color: var(--text3); }
+/* The initiative number, which the strip never carried: it came off the card
+   above the squads and would have been lost with it. Monospaced so a column of
+   them lines up. */
+.ord-i { font-family: var(--mono); font-weight: 700; color: var(--text); }
+/* A tie is a rules situation the player has to act on (3.4.1 gives the order to
+   the First Player), so it is tinted rather than dimmed like the rest. */
+.ord-tie {
+  font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px;
+  padding: 1px 5px; border-radius: 100px; background: var(--accent-lt); color: var(--accent);
+}
 .ord.now { background: var(--accent-lt); color: var(--text); font-weight: 600; }
+.ord.now .ord-t { color: var(--accent); }
 .ord.past { opacity: 0.4; }
 
 .turnpanel { width: 300px; flex: none; background: var(--surface); display: flex; flex-direction: column; min-height: 0; box-shadow: 2px 0 12px rgba(0, 0, 0, 0.25); }

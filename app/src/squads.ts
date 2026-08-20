@@ -132,6 +132,14 @@ export class SquadTracker {
       return wrap;
     }
 
+    // ONLINE THE ORDER LIVES ON THE BOARD (OTTO, 2026-08-20). The Match Centre
+    // floats the same order as chips in the board's top-right corner, and
+    // carrying it here as well put one list in two places at once. Only the
+    // Activation order half goes: the Planning prompt above is a different
+    // question ("how many dials are still unset") and stays on both pages.
+    // Freeplay has no board overlay, so it keeps the card as it is.
+    if (this.online()) return null;
+
     const rows: string[] = [];
     let n = 0;
     for (const def of TIMINGS) {

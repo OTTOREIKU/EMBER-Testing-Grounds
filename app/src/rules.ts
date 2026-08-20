@@ -699,6 +699,16 @@ export function losNote(
   terrain: TerrainPiece[],
   tokens: Token[],
   smoke: SmokeScreen[],
+  // STRICT turns the Range readings from a warning into a refusal, which is the
+  // freeplay/Match Centre split the LOS reading already makes: a table may
+  // house-rule a shot from just outside Range, a networked game may not. The
+  // caller decides, because only it knows which page it is on.
+  //
+  // `action.range` must already be the EFFECTIVE reach when it matters. It is
+  // the printed number as it arrives off the card, so a Firing Action lengthened
+  // by an ally's aura reads as out of range here unless the caller passes
+  // actionRange()'s answer in. That was wrong even as a warning.
+  strict = false,
 ): string {
   const r = rangeBetween(attacker, defender);
   const los = losBetween(attacker, defender, terrain, tokens);
@@ -708,10 +718,11 @@ export function losNote(
   const omni = (action.keywords ?? []).some((k) => /全向|omni/i.test(JSON.stringify(k)));
   const bits: string[] = [];
   bits.push(r.sameGrid ? 'same grid' : r.adjacent ? 'adjacent (R1)' : `Range ${r.range}`);
+  const rangeMark = strict ? '✕' : '⚠';
   if (action.range === 0) {
-    if (!r.adjacent && !r.sameGrid) bits.push('⚠ target not adjacent (action range is “--”)');
+    if (!r.adjacent && !r.sameGrid) bits.push(`${rangeMark} target not adjacent (action range is “--”)`);
   } else if (action.range && r.range > action.range) {
-    bits.push(`⚠ beyond action range (R${action.range})`);
+    bits.push(`${rangeMark} beyond action range (R${action.range})`);
   }
   bits.push(omni ? 'Omni-direction Firing: no arc check ✓' : fwd ? 'in forward arc ✓' : '⚠ NOT in forward arc');
   if (action.type === 'Firing') {
