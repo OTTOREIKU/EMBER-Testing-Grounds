@@ -535,5 +535,76 @@ const spinning = (root) => {
   check('and leaves an unread Eye alone', /\blive\b/.test(cls[0] ?? ''), false);
 }
 
+// ---------- NO DEADLOCK: SOMEBODY CAN ALWAYS ACT ----------
+// The combat deadlock (task #5) cost a live game, and today's first cut of the
+// single renderer reintroduced a second one where the defending player's only
+// button was permanently disabled. Both had the same signature: a frame in which
+// NOBODY could press anything, so the attack could never advance.
+//
+// This drives a whole attack and, at every frame, asks each role in turn whether
+// it has an enabled control. That is the general property, not a list of the two
+// failures already known: any future step that forgets to enable someone fails
+// here rather than in a game.
+//
+// The felt made this worth re-checking. Removing the three step-local dice grids
+// moved the Focus reroll's dice out of the step and into the fixed region, so a
+// prompt saying "select any Attack dice below" now depends on a DIFFERENT part of
+// the panel drawing them.
+{
+  const roles = ['attacker', 'defender', 'spectator'];
+  const stalled = [];
+  const seen = [];
+
+  // A fresh window per role, driven to the same frame, so the question is "could
+  // this role act HERE" rather than "did the attacker leave something enabled".
+  const frameAt = (upto) => {
+    const out = {};
+    for (const role of roles) {
+      const bb = board();
+      const w = watcher(bb.all, []);
+      w.h.role = role;
+      // The attacker's own window: it drives, the others watch the same ctx.
+      w.h.start(bb.atk, firing, bb.def, 'Line of sight is clear.');
+      w.h.pickPart('torso');
+      for (const step of upto) {
+        const btn = findButtons(w.root).find((x) => label(x).includes(step) && !x.disabled);
+        if (btn) btn.click();
+      }
+      out[role] = findButtons(w.root).filter((x) => !x.disabled).map(label);
+    }
+    return out;
+  };
+
+  const stages = [
+    [],
+    ['Roll attack dice'],
+    ['Roll attack dice', 'Continue to Defense'],
+  ];
+  for (const upto of stages) {
+    const at = frameAt(upto);
+    const anyone = roles.some((r) => at[r].length > 0);
+    seen.push({ after: upto.join(' > ') || 'the opening frame', anyone });
+    if (!anyone) stalled.push(upto.join(' > ') || 'the opening frame');
+  }
+
+  check('every frame of an attack leaves somebody able to act', stalled, []);
+  check('and all three stages were actually reached', seen.length, 3);
+
+  // The specific regression today's felt could have caused: the Focus prompt
+  // tells the attacker to select dice, and the dice are no longer inside that
+  // step. If the felt failed to draw them the prompt would point at nothing.
+  const bb = board();
+  const w2 = watcher(bb.all, []);
+  w2.h.role = 'attacker';
+  w2.h.start(bb.atk, firing, bb.def, 'Line of sight is clear.');
+  w2.h.pickPart('torso');
+  const rollBtn = findButtons(w2.root).find((x) => label(x).includes('Roll attack dice'));
+  if (rollBtn) rollBtn.click();
+  await settle();
+  const felt = w2.root.querySelector('.ah-felt');
+  check('the felt draws the dice once a roll exists', !!felt, true);
+  check('and the attacker can still select them', w2.h.ctx?.attackRoll?.length > 0, true);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -3120,7 +3120,27 @@ export class AttackHelper {
       const swapNote = c.lightningSwapped
         ? ` · [Lightning] counted as Heavy (${this.lightningSwap(c) === 'pulse' ? 'Pulse Weapon' : 'Ion Weapon'})`
         : '';
-      sum.textContent = `Effective: ${atk.heavyHit ?? 0}× Heavy, ${atk.lightHit ?? 0}× Light${atk.lightning ? `, ${atk.lightning}× Lightning` : ''}${atk.eye ? `, ${atk.eye}× Eye` : ''}${c.eyeSwaps ? ` · ${c.eyeSwaps} exchanged by Chef` : ''}${c.fierceSwapped ? ` · ${c.fierceSwapped} [Eye] counted as Light (Fierce Assault)` : ''}${swapNote}`;
+      // AN ICON IS ONLY WORTH NAMING WHEN SOMETHING READS IT. This used to print
+      // "1× Eye" on every roll that showed one, which is a line of text saying
+      // that nothing happened: with no Chef, no Pursuit, no card 503 and no
+      // Fierce Assault in play, an {Eye} is inert and the reader is left
+      // wondering what they were supposed to do about it. Same for a
+      // {Lightning} with no Pulse or Ion weapon behind it.
+      //
+      // "Reads it" is asked of the same per-die readers the live ring uses, so
+      // this sentence and the amber-or-not on the dice can never disagree.
+      const perDie = this.attackIconsPerDie(c);
+      const swapped = perDie.reduce((n, x) => n + x.heavy + x.light, 0)
+        - ((atk.heavyHit ?? 0) + (atk.lightHit ?? 0));
+      const readsEye = (c.eyeSwaps ?? 0) > 0 || (c.fierceSwapped ?? 0) > 0 || (c.pursuitSwapped ?? 0) > 0 || swapped > 0;
+      const readsLightning = !!c.lightningSwapped || !!this.lightningSwap(c);
+      sum.textContent = `Effective: ${atk.heavyHit ?? 0}× Heavy, ${atk.lightHit ?? 0}× Light`
+        + (atk.lightning && readsLightning ? `, ${atk.lightning}× Lightning` : '')
+        + (atk.eye && readsEye ? `, ${atk.eye}× Eye` : '')
+        + (c.eyeSwaps ? ` · ${c.eyeSwaps} exchanged by Chef` : '')
+        + (c.fierceSwapped ? ` · ${c.fierceSwapped} [Eye] counted as Light (Fierce Assault)` : '')
+        + swapNote;
+
       wrap.appendChild(sum);
       // ZPA-35 Chef: on a Melee Action, consume 1 Command Token to exchange one
       // {Eye} for a {Heavy Hit}. Offered per Eye still showing, so a Mech

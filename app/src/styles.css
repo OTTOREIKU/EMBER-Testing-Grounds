@@ -2350,6 +2350,47 @@ p.points { white-space: pre-line; }
 }
 .ah-fragile b { color: #fff; }
 
+/* ---------- TWO COLUMNS, so nothing important scrolls away ----------
+   OTTO: the single column got tall enough that the dice and the log were
+   both below the fold, and the two things you most want during a fight were
+   the two you had to scroll for.
+
+   The steps, the current controls and the log keep the main column; the felt
+   moves to a narrow one on the right and STICKS, so both hands stay on
+   screen however far the left side runs on.
+
+   A CONTAINER query, not a media query or a page-specific rule: the same
+   panel is a floating window in the Match Centre and a narrow sidebar tab in
+   freeplay, so the layout has to answer to the space it is actually given
+   rather than to the size of the screen. Below the threshold it collapses
+   back to one column with no special case.
+
+   No DOM change: the felt is placed explicitly and everything else auto
+   flows into column one, so render() builds the same tree either way. */
+#combat-body { container-type: inline-size; }
+@container (min-width: 560px) {
+  .attack-helper {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 224px;
+    column-gap: 12px;
+    align-content: start;
+  }
+  /* Everything not placed by hand belongs to the reading column. */
+  .attack-helper > * { grid-column: 1; min-width: 0; }
+  /* The matchup names the whole fight, so it spans. */
+  .attack-helper > .ah-head { grid-column: 1 / -1; }
+  .attack-helper > .ah-felt {
+    grid-column: 2;
+    grid-row: 2 / span 99;
+    align-self: start;
+    position: sticky; top: 0;
+    margin: 0;
+  }
+  /* A narrower column wraps the dice sooner, which is fine, but the row
+     should not also fight the header for width. */
+  .attack-helper > .ah-felt .ah-half-h { flex-wrap: wrap; row-gap: 2px; }
+}
+
 /* ---------- The felt ----------
    Both hands on screen at once, in halves that never swap: the viewer's own
    dice BELOW, the other side's ABOVE. This is the shared table made literal,
@@ -2418,17 +2459,24 @@ p.points { white-space: pre-line; }
 }
 
 /* THE LIVE DIE. A die whose face is actually doing something to this action
-   wears an amber ring; blanks and icons nothing reads stay plain. Drawn as a
-   box-shadow rather than a border so the die does not change size when it
-   lights up, which would jostle the whole row on every reroll.
+   wears a GREEN ring; blanks and icons nothing reads stay plain.
+
+   Green rather than the usual accent amber, and the reason is not taste: the
+   yellow attack die is itself #f0b429, so an amber ring on a yellow die was
+   very nearly invisible and gave no answer on exactly the dice a player most
+   wants read. Green is the one semantic colour already in the palette that no
+   die uses, and it means the same thing here as everywhere else in the app.
+
+   Drawn as a box-shadow rather than a border so the die does not change size
+   when it lights up, which would jostle the whole row on every reroll.
    Scoped to .attack-helper so the board's own dice are untouched. */
 .attack-helper .die.live {
-  box-shadow: 0 0 0 2px var(--accent), 0 0 0 5px var(--accent-lt);
+  box-shadow: 0 0 0 2px var(--green), 0 0 0 5px var(--green-lt);
 }
-/* A selected die already carries its own outline, so the two are combined
+/* A selected die already carries its own outline, so the two are stacked
    rather than fighting: selection reads outside the live ring. */
 .attack-helper .die.live.sel {
-  box-shadow: 0 0 0 2px var(--accent), 0 0 0 5px var(--accent-lt), 0 0 0 7px var(--text);
+  box-shadow: 0 0 0 2px var(--green), 0 0 0 5px var(--green-lt), 0 0 0 7px var(--text);
 }
 
 /* ---------- Combat panel redesign, pass 2: one ladder, and room to read ----------
