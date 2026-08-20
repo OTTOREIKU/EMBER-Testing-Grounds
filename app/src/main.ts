@@ -76,6 +76,11 @@ async function init() {
     mode: 'attack' | 'electronic';
     action?: CardAction;
     done?: (fired: boolean) => void;
+    // A Charge Token already spent to open this targeting, so cancelling can
+    // put it back. Filled in by offerChargeSpend AFTER its dialog answers,
+    // which is later than this object is built: the offer is fire-and-forget
+    // so the targeting can open while the question is still on screen.
+    refund?: { slot: string };
   } | null = null;
   const editor: {
     active: boolean;
@@ -1553,6 +1558,17 @@ async function init() {
 
   function endTargeting(cancelled = false): void {
     if (cancelled) pendingAttack?.done?.(false);
+    // THE CHARGE COMES BACK. Spending one is the run-up to an attack, so an
+    // attack that never happens must not cost the token: OTTO spent one for
+    // Mutilation, found the target out of range and cancelled, and was left
+    // down a Charge for a shot he never fired.
+    const back = cancelled ? pendingAttack?.refund : null;
+    const owner = back ? state.tokens.find((x) => x.uid === pendingAttack!.attackerUid) : undefined;
+    if (back && owner) {
+      setCharge(owner, back.slot, true);
+      logTo(owner, `The attack was cancelled, so the Charge on ${SLOT_LABEL[back.slot as PartSlot | 'main']} goes back face-up.`);
+      onChanged();
+    }
     pendingAttack = null;
     pendingIntercept = null;
     board.clearHighlights();
@@ -2439,6 +2455,12 @@ async function init() {
     if (!spend) return;
     setCharge(t, found.slot, false);
     logTo(t, `Consumed the Charge on ${SLOT_LABEL[found.slot]} for ${what}.`);
+    // Recorded on the targeting this paid for, so cancelling refunds it. The
+    // guard matters: this dialog is not awaited, so by the time it answers the
+    // player may already have moved on to a different Action entirely.
+    if (pendingAttack?.attackerUid === t.uid && pendingAttack.actionId === actionId) {
+      pendingAttack.refund = { slot: found.slot };
+    }
     onChanged();
   }
 

@@ -2452,7 +2452,7 @@ function interceptPanel(ctx: HudCtx): string {
 // the only reach test — Electronic Warfare ignores Terrain and line of sight
 // outright (4.11.1) — so the target list deliberately says nothing about arcs.
 
-let ewPick: { uid: number; actionId: string } | null = null;
+let ewPick: { uid: number; actionId: string; refund?: { uid: number; slot: string } } | null = null;
 
 export function startElectronicPick(uid: number, actionId: string): void {
   ewPick = { uid, actionId };
@@ -3353,9 +3353,27 @@ function dropAction(): void {
 
 // Targeting. An Electronic Attack is answered by the defender rather than rolled
 // against, so it opens the Counter-roll handshake instead (4.11).
-function openAttackPick(t: Token, a: CardAction): void {
-  if (isElectronicAttack(a)) ewPick = { uid: t.uid, actionId: a.id };
-  else attackPick = { uid: t.uid, actionId: a.id };
+//
+// `refund` is a Charge Token already spent to open this targeting. It rides on
+// the pick so that CANCELLING gives it back: OTTO spent one for Mutilation,
+// found the target out of range, cancelled, and was simply down a token for an
+// attack that never happened. The spend has to land before the targeting (the
+// Charge is what the Action is being performed WITH, and the panel offers it
+// first), so the only honest fix is to undo it when the attack is abandoned.
+function openAttackPick(t: Token, a: CardAction, refund?: { uid: number; slot: string }): void {
+  if (isElectronicAttack(a)) ewPick = { uid: t.uid, actionId: a.id, refund };
+  else attackPick = { uid: t.uid, actionId: a.id, refund };
+}
+
+// Put a spent Charge Token back, face-up, and say so. Called from every path
+// that abandons an attack the token was spent for.
+function refundCharge(ctx: HudCtx, refund?: { uid: number; slot: string } | null): void {
+  if (!refund) return;
+  const t = ctx.state.tokens.find((x) => x.uid === refund.uid);
+  if (!t) return;
+  if (ctx.send({ kind: 'setCharge', seat: t.side, uid: t.uid, slot: refund.slot, on: true }).ok) {
+    ctx.noteNow(`${t.label}: the attack was cancelled, so the Charge Token on ${refund.slot} goes back face-up.`);
+  }
 }
 
 // Returns true when it has opened a tool that will report back — the Ticks then
@@ -3494,7 +3512,7 @@ function launchPickPanel(ctx: HudCtx): string {
 // command, so the other seat sees the damage even though the dice tray itself
 // is the attacker's screen.
 
-let attackPick: { uid: number; actionId: string } | null = null;
+let attackPick: { uid: number; actionId: string; refund?: { uid: number; slot: string } } | null = null;
 
 export function startAttackPick(uid: number, actionId: string): void {
   attackPick = { uid, actionId };
@@ -4960,7 +4978,12 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     }
     ctx.refresh();
   });
-  on('[data-act="attackcancel"]', () => { attackPick = null; dropAction(); ctx.refresh(); });
+  on('[data-act="attackcancel"]', () => {
+    refundCharge(ctx, attackPick?.refund);
+    attackPick = null;
+    dropAction();
+    ctx.refresh();
+  });
   // The order chips open a unit's card, which is what the Activation order rows
   // in the squads panel did before they moved onto the board. Selection only:
   // a chip is a way to LOOK at a unit, never a way to act out of turn.
@@ -4982,7 +5005,12 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     }
     ctx.refresh();
   });
-  on('[data-act="ewcancel"]', () => { ewPick = null; dropAction(); ctx.refresh(); });
+  on('[data-act="ewcancel"]', () => {
+    refundCharge(ctx, ewPick?.refund);
+    ewPick = null;
+    dropAction();
+    ctx.refresh();
+  });
   // Each seat rolls its OWN unit's dice and sends them as faces. The receiver
   // never re-rolls them, so both clients read the same Counter-roll.
   //
@@ -5089,7 +5117,9 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
           : `${t.label}: the Charge Token on ${slot} is spent.`);
       }
       const next = m.actionId ? actionOn(ctx, t, m.actionId) : undefined;
-      if (next) openAttackPick(t, next);
+      // A SPEND (`!m.on`) is refundable if the attack it paid for is abandoned;
+      // charging a Part face-up is an Action in its own right and is not.
+      if (next) openAttackPick(t, next, m.on ? undefined : { uid: t.uid, slot });
     }
     ctx.refresh();
   });

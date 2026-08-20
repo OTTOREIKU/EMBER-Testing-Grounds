@@ -137,5 +137,61 @@ check('and an unrelated action is untouched', U.covertCarryLock({ description: {
 check('008 offers three beacons before it commits', byId.get('008').projectile.length, 3);
 check('PRDR-105 offers two walls', byId.get('PRDR-105').projectile.length, 2);
 
+// ---------- A CANCELLED ATTACK GIVES THE CHARGE BACK (4.14) ----------
+// OTTO from live play: "I am attacking a mech and my weapon gains mutilation if
+// I use a charge token. I choose the attack action, it prompts me to use a
+// charge token, I say yes, then when choosing the unit to attack I realize they
+// are out of range. So I hit cancel and then my charge token never gets
+// refunded so I am without a charge token now even though I didnt go through
+// with the attack."
+//
+// The spend HAS to land before the targeting -- the Charge is what the Action is
+// being performed with, and both pages offer it first -- so the only honest fix
+// is to undo it when the attack is abandoned. Both pages carry the spent slot on
+// the pending targeting and hand it back at the cancel.
+//
+// Source-level, because this is handler wiring in matchhud.ts and main.ts rather
+// than a helper the harness can slice and call.
+{
+  const hud = readFileSync(new URL('../src/matchhud.ts', import.meta.url), 'utf8');
+  const app = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
+
+  // --- the Match Centre ---
+  check('the targeting can be opened with a Charge to refund',
+    /function openAttackPick\(t: Token, a: CardAction, refund\?: \{ uid: number; slot: string \}\)/.test(hud), true);
+  check('and both kinds of targeting carry it',
+    (hud.match(/(attackPick|ewPick) = \{ uid: t\.uid, actionId: a\.id, refund \}/g) ?? []).length, 2);
+  // Only a SPEND is refundable. Charging a Part face-up is an Action in its own
+  // right, and handing that back on a cancel would be inventing a token.
+  check('only a spend is recorded as refundable',
+    /openAttackPick\(t, next, m\.on \? undefined : \{ uid: t\.uid, slot \}\)/.test(hud), true);
+  const cancels = hud.match(/refundCharge\(ctx, (attackPick|ewPick)\?\.refund\)/g) ?? [];
+  check('and both cancels give it back', cancels.length, 2);
+  check('the refund puts the token FACE-UP again',
+    /kind: 'setCharge'[^\n]*slot: refund\.slot, on: true/.test(hud), true);
+
+  // THE GUARD THAT MATTERS MOST. Refunding a token that was legitimately spent
+  // is worse than failing to refund one, because it hands back a resource the
+  // rules already took. The success path must never call it.
+  const commit = hud.slice(hud.indexOf("on('[data-attacktarget]'"), hud.indexOf("on('[data-act=\"attackcancel\"]'"));
+  check('and pressing a TARGET refunds nothing', /refundCharge\(/.test(commit), false);
+
+  // --- freeplay ---
+  check('freeplay records the spend on the targeting it paid for',
+    /pendingAttack\.refund = \{ slot: found\.slot \}/.test(app), true);
+  // The offer is fire-and-forget, so by the time it answers the player may have
+  // moved on to a different Action entirely.
+  check('and only when the targeting is still the one that asked',
+    /pendingAttack\?\.attackerUid === t\.uid && pendingAttack\.actionId === actionId/.test(app), true);
+  check('freeplay refunds when the targeting is CANCELLED',
+    /const back = cancelled \? pendingAttack\?\.refund : null/.test(app), true);
+  check('and puts it back face-up', /setCharge\(owner, back\.slot, true\)/.test(app), true);
+  // endTargeting runs on the successful path too, which is exactly why the
+  // refund is gated on `cancelled` rather than on the token being present.
+  const ends = app.slice(app.indexOf('function endTargeting('), app.indexOf('function endTargeting(') + 900);
+  check('the refund is inside the cancelled branch and nowhere else',
+    (ends.match(/setCharge\(owner, back\.slot, true\)/g) ?? []).length, 1);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
