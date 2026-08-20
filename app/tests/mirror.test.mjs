@@ -713,5 +713,72 @@ const spinning = (root) => {
   check('or the target is Shutdown, which 4.8.1 does name', w.h.mayPickPart(), true);
 }
 
+// ---------- THE SURPLUS FOCUS DEADLOCK ----------
+// OTTO from live play: as the DEFENDER in a Surplus round he spent 1 Link to
+// Focus and the "Focus: reroll selected" / "Keep the roll" buttons never
+// appeared on his screen, while the ATTACKER's window showed those same buttons
+// in the defence die area. The attack could not go on: the attacking client was
+// parked waiting for a reroll only the defender could send.
+//
+// Driven the way the two clients really run it, which is what the first attempt
+// at this test got wrong. A real defender keeps ONE window open for the whole
+// attack and is handed each published view as it lands; building a fresh
+// watcher per view hides anything that depends on what that window was already
+// showing, and showMirror carries state across repaints on purpose.
+{
+  const c = A.h.ctx;
+  check('the walk really is in a Surplus round', c.surplusRound, 1);
+  check('and back at the defence step', c.step, 'defense');
+
+  // The defender's window, opened once and kept, with every act it tries to
+  // send recorded rather than delivered.
+  const bb = board();
+  const acts = [];
+  const W = watcher(bb.all, acts);
+  // One published frame, handed over the way syncCombatMirror hands it over on
+  // every render of the far client.
+  const deliver = () => W.h.showMirror(A.views.at(-1), bb.atk, bb.def, firing, 'defender');
+  // Counted as a SET: the shim's appendChild does not detach, so a node moved
+  // into a wrapper is listed under both parents and every control appears twice.
+  const onMirror = (re) => [...new Set(findButtons(W.root).map(label).filter((l) => re.test(l)))].sort();
+
+  deliver();
+
+  // The defence roll for the Surplus round.
+  const rollBtn = findButtons(A.root).find((x) => /roll defense/i.test(label(x)) && !x.disabled);
+  check('the Surplus round asks for a defence roll', !!rollBtn, true);
+  if (rollBtn) rollBtn.click();
+  await settle();
+  deliver();
+
+  // A Surplus round makes no Attack Roll, so the attacker's half of Focus has
+  // nothing to act on and the defender declares alone.
+  check('so Focus opens on the DEFENDER', A.h.ctx.focus?.stage, 'declareD');
+  check('and the view the defender is looking at says the same',
+    A.views.at(-1)?.focus?.stage, 'declareD');
+
+  // THE PRESS OTTO MADE, on his own window rather than simulated on the
+  // attacker's.
+  const useBtn = findButtons(W.root).find((x) => /^Focus/.test(label(x)) && !/reroll/i.test(label(x)));
+  check('the defender is offered the Focus', !!useBtn, true);
+  check('and it is live in their hands', useBtn ? !!useBtn.disabled : true, false);
+  if (useBtn) useBtn.click();
+  check('so their client sends the declare', acts.map((a) => a[0]).includes('focususe'), true);
+
+  // ... which lands on the attacking window as focusAnswer.
+  A.h.focusAnswered(true);
+  check('the attacking window advances to the reroll', A.h.ctx.focus?.stage, 'rerollD');
+  check('and publishes that stage', A.views.at(-1)?.focus?.stage, 'rerollD');
+
+  // THE ACTUAL QUESTION: the new view reaches the window that has been open all
+  // along, and that window has to offer the reroll.
+  deliver();
+  check('the defender is offered the reroll on their own screen',
+    onMirror(/reroll selected|keep the roll/i),
+    ['Focus: reroll selected', 'Keep the roll']);
+  const dead = findButtons(W.root).filter((x) => /reroll selected|keep the roll/i.test(label(x)) && x.disabled);
+  check('and neither is dead in their hands, because the dice are theirs', dead.length, 0);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

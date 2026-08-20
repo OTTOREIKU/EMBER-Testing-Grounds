@@ -2371,7 +2371,20 @@ p.points { white-space: pre-line; }
 /* The two content columns, built by render() so the grid keeps exactly two
    rows. In one-column mode both are ordinary flex columns and nothing in the
    container query applies, so the same tree serves both layouts. */
-.ah-main, .ah-side { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.ah-main, .ah-side { display: flex; flex-direction: column; gap: 8px; min-width: 0; min-height: 0; }
+
+/* THE FELT NEVER GIVES UP HEIGHT, AND THE TRACE ALWAYS DOES.
+   .ah-felt clips its own content -- `overflow: hidden` is what rounds its
+   corners -- so a felt squeezed by a short panel does not scroll, it cuts the
+   bottom off a hand. And the bottom of a hand is exactly where that hand's
+   reroll controls live.
+   Because felt() puts the VIEWER'S OWN dice last, the half that gets cut is
+   always the one whose buttons that viewer is the only person who can press,
+   while the other player -- who has the same hand at the TOP of their own felt
+   -- keeps seeing them. That asymmetry is what made this read as the two
+   clients disagreeing rather than as a layout fault. */
+.ah-side > .ah-log { flex: 0 1 auto; }
+.ah-side > .ah-felt { flex: none; }
 
 /* THE TRACE, capped. It grows without bound over a long fight, and in the
    reading column it pushed the dice off the bottom of the panel. Eight lines
@@ -2399,19 +2412,21 @@ p.points { white-space: pre-line; }
   }
   /* The matchup names the whole fight, so it spans. */
   .attack-helper > .ah-head { grid-column: 1 / -1; grid-row: 1; }
-  /* The reading column is the one that grows without bound, so it is the one
-     that scrolls. The side column is already capped by the log's own height. */
+  /* BOTH columns scroll. The reading column grows without bound with the step
+     stack, and the side column grows with the dice: a wide pool wraps to three
+     or four rows in a 262px column, and there are two hands of it.
+     This used to say the side column "is already capped by the log's own
+     height", which was simply wrong -- the log is capped, the FELT under it is
+     not -- and it was `align-self: start` with no overflow, so the column was
+     sized to its content and the surplus ran straight out of the bottom of the
+     window. #combat-body clips with `overflow: hidden`, so what ran out was
+     unreachable rather than merely off screen: no scrollbar appears on a hidden
+     overflow. See the felt/log flex rules above for which part yields. */
   .attack-helper > .ah-main { grid-column: 1; grid-row: 2; min-width: 0; min-height: 0; overflow-y: auto; }
-  /* Sticky, so the trace and both hands stay on screen however far the reading
-     column runs. `align-self: start` matters: stretched, a sticky element has
-     nothing to slide within and never actually sticks. */
-  /* No longer sticky, and it does not need to be: in a fixed window it simply
-     occupies its column and cannot be scrolled away from. Sticky positioning
-     with nothing to slide within does nothing anyway. */
   .attack-helper > .ah-side {
     grid-column: 2; grid-row: 2;
-    align-self: start;
     min-height: 0;
+    overflow-y: auto;
   }
   .attack-helper > .ah-side .ah-felt { margin: 0; }
   /* A narrower column wraps the dice sooner, which is fine, but the header
