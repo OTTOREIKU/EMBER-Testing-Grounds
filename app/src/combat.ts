@@ -640,10 +640,13 @@ export class AttackHelper {
   private rollGen = 0;
   private blackTimer: number | undefined;
   private spinTimer: number | undefined;
-  // The row the running spin is shaking. Held so the class can never outlive
+  // The DICE the running spin is shaking. Held so the class can never outlive
   // the timer that is supposed to take it off again -- see stopSpin.
-  private spinEl: HTMLElement | undefined;
+  private spinEls: HTMLElement[] = [];
   private spinFor: 'attack' | 'defense' | null = null;
+  // WHICH dice, by index into the roll. null means the whole hand, which is a
+  // fresh roll; a list means a reroll, and only those were thrown again.
+  private spinOnly: number[] | null = null;
   // The duel markup this window last ANIMATED. The resolution step is built
   // again for reasons that have nothing to do with the offsetting (a log line
   // arriving on a mirror is enough), and replaying the strip mid-flight makes
@@ -846,8 +849,10 @@ export class AttackHelper {
     // dice did not roll, they appeared. Faces that CHANGED since the last frame
     // are a roll that just happened, so the same shake runs on every screen and
     // both players watch the same dice land (OTTO: the shared table).
-    if (defense.rolled) this.spinFor = 'defense';
-    else if (attack.rolled) this.spinFor = 'attack';
+    // ... and only the dice that moved, so a watcher sees a reroll as a reroll
+    // rather than as the whole hand being thrown again.
+    if (defense.rolled) { this.spinFor = 'defense'; this.spinOnly = defense.changed; }
+    else if (attack.rolled) { this.spinFor = 'attack'; this.spinOnly = attack.changed; }
     this.render();
   }
 
@@ -885,10 +890,18 @@ export class AttackHelper {
   private mirrorFaces(
     faces: { color: string; face: number }[] | null | undefined,
     had: Rolled[] | null,
-  ): { roll: Rolled[] | null; rolled: boolean } {
-    if (!faces) return { roll: null, rolled: false };
-    const same = !!had && had.length === faces.length
-      && faces.every((f, i) => had[i].color === f.color && had[i].face === f.face);
+  ): { roll: Rolled[] | null; rolled: boolean; changed: number[] | null } {
+    if (!faces) return { roll: null, rolled: false, changed: null };
+    const lineUp = !!had && had.length === faces.length;
+    // WHICH DICE MOVED between the two frames. A watching screen has no idea
+    // whether a reroll happened, but it can see which faces are different, and
+    // that is the same answer: on a reroll only the thrown dice differ, so only
+    // those shake. null means the hands do not line up at all, which is a fresh
+    // roll and shakes everything.
+    const changed = lineUp
+      ? faces.map((f, i) => (had![i].color !== f.color || had![i].face !== f.face ? i : -1)).filter((i) => i >= 0)
+      : null;
+    const same = lineUp && changed!.length === 0;
     return {
       roll: faces.map((f, i) => ({
         color: f.color as DieColor,
@@ -896,6 +909,7 @@ export class AttackHelper {
         selected: same ? had![i].selected : false,
       })),
       rolled: !same && faces.length > 0,
+      changed,
     };
   }
 
@@ -939,25 +953,38 @@ export class AttackHelper {
   private stopSpin(): void {
     if (this.spinTimer) window.clearInterval(this.spinTimer);
     this.spinTimer = undefined;
-    this.spinEl?.classList.remove('rolling');
-    this.spinEl = undefined;
+    for (const el of this.spinEls) el.classList.remove('rolling');
+    this.spinEls = [];
   }
 
-  private spinDice(container: HTMLElement, roll: Rolled[]): void {
+  // `only` is the indices being thrown, or null for the whole hand.
+  //
+  // A REROLL SHAKES ONLY THE DICE BEING REROLLED. OTTO: "when I roll the
+  // specific die again but have some that I am not rerolling, it does the
+  // animations of the reroll again for all of my dice ... makes it seem like
+  // those got rerolled as well." The kept dice were being cycled through random
+  // faces and landed back on the values they already had, which is a very
+  // convincing impression of a reroll that changed nothing.
+  //
+  // The class goes on the DICE rather than the row for the same reason. The row
+  // form still exists in the stylesheet because the Black Die stage uses it.
+  private spinDice(container: HTMLElement, roll: Rolled[], only?: number[] | null): void {
     this.stopSpin();
     const dice = [...container.querySelectorAll<HTMLElement>('.die')];
     if (!dice.length) return;
-    this.spinEl = container;
-    container.classList.add('rolling');
+    const spin = only?.length ? only.filter((i) => dice[i]) : dice.map((_, i) => i);
+    if (!spin.length) return;
+    this.spinEls = spin.map((i) => dice[i]);
+    for (const el of this.spinEls) el.classList.add('rolling');
     let ticks = 0;
     this.spinTimer = window.setInterval(() => {
       ticks++;
       const done = ticks >= 8;
-      dice.forEach((el, i) => {
+      for (const i of spin) {
         const d = roll[i];
-        if (!d) return;
-        el.innerHTML = this.faceHtml(d.color, done ? d.face : Math.floor(Math.random() * this.dice.dice[d.color].sides));
-      });
+        if (!d) continue;
+        dice[i].innerHTML = this.faceHtml(d.color, done ? d.face : Math.floor(Math.random() * this.dice.dice[d.color].sides));
+      }
       if (!done) return;
       this.stopSpin();
     }, 55);
@@ -1608,6 +1635,10 @@ export class AttackHelper {
   private async reroll(roll: Rolled[], label: string): Promise<void> {
     const sel = roll.filter((d) => d.selected);
     if (!sel.length) return;
+    // Recorded HERE because the selection is cleared below and the shake does
+    // not run until the next render, by which time nothing on the roll says
+    // which dice were thrown. Every caller of reroll() gets this for free.
+    this.spinOnly = roll.map((d, i) => (d.selected ? i : -1)).filter((i) => i >= 0);
     const pool: Partial<Record<DieColor, number>> = {};
     for (const d of sel) pool[d.color] = (pool[d.color] ?? 0) + 1;
     const fresh = await this.rollPool(pool, label);
@@ -3128,8 +3159,10 @@ export class AttackHelper {
     });
     // Runs after this element is in the document, so the shake is visible.
     if (this.spinFor === which) {
+      const only = this.spinOnly;
       this.spinFor = null;
-      window.setTimeout(() => this.spinDice(div, roll), 0);
+      this.spinOnly = null;
+      window.setTimeout(() => this.spinDice(div, roll, only), 0);
     }
     const rr = document.createElement('span');
     rr.className = 'rerolls';

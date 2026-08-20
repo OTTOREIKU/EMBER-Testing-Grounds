@@ -192,15 +192,21 @@ const resolved = A.views.filter((v) => v.step === 'resolve').at(-1);
 // animating, which is the class the stylesheet hangs the shake on. The shim
 // records classList rather than applying it, so "did the dice roll on this
 // screen" is answerable without a browser.
-const spinning = (root) => {
-  let found = false;
+// The class moved from the ROW to the individual DICE when the reroll learned
+// to shake only what it threw, so this counts shaking dice rather than looking
+// for a marked row. Returning the COUNT keeps the old yes/no readable while
+// letting the reroll tests ask how many.
+const shakingDice = (root, out = []) => {
   const walk = (el) => {
-    if (String(el.className ?? '') === 'ah-roll' && el._cls?.has('rolling')) found = true;
+    if (/^die die-/.test(String(el.className ?? '')) && el._cls?.has('rolling')) out.push(el);
     for (const c of el.children ?? []) walk(c);
   };
   walk(root);
-  return found;
+  // The shim's appendChild does not detach, so one die can be listed under two
+  // parents. Counted as a set, or every number here is doubled.
+  return [...new Set(out)];
 };
+const spinning = (root) => shakingDice(root).length > 0;
 {
   const acts = [];
   const w = watcher(b.all, acts);
@@ -518,20 +524,12 @@ const spinning = (root) => {
 {
   const b2 = board();
   const w = watcher(b2.all, []);
-  const rowsWith = (root, out = []) => {
-    const walk = (el) => {
-      if (String(el.className ?? '') === 'ah-roll') out.push(el);
-      for (const c of el.children ?? []) walk(c);
-    };
-    walk(root);
-    return out;
-  };
 
   // The frame the defence faces land on, which is what earns the shake.
   w.h.showMirror(atStep('attack'), b2.atk, b2.def, firing, 'defender');
   w.h.showMirror(defended, b2.atk, b2.def, firing, 'defender');
   await settle();
-  const shaking = rowsWith(w.root).filter((r) => r._cls?.has('rolling'));
+  const shaking = shakingDice(w.root);
   check('the dice do shake when they land', shaking.length > 0, true);
 
   // One more published frame, the way the attacker opening their half of the
@@ -543,6 +541,50 @@ const spinning = (root) => {
   // whether or not it is still on screen.
   check('and every row that was shaking has been let go of',
     shaking.filter((r) => r._cls?.has('rolling')).length, 0);
+}
+
+// ---------- A REROLL SHAKES ONLY WHAT IT THREW ----------
+// OTTO from live play: "when I roll the specific die again but have some that I
+// am not rerolling, it does the animations of the reroll again for all of my
+// dice, even the ones I am not rerolling. It appears that their values dont
+// change but having them go through the animation is confusing and makes it
+// seem like those got rerolled as well."
+//
+// He is describing the kept dice being cycled through random faces and landing
+// back on the values they already had, which is an extremely convincing
+// impression of a reroll that changed nothing. spinDice took the whole row.
+//
+// Driven through the MIRROR, which is where the answer is derived rather than
+// remembered: a watching screen cannot know a reroll happened, it can only see
+// which faces differ between two frames, and that is the same set.
+{
+  const b3 = board();
+  const w = watcher(b3.all, []);
+  const base = A.views.filter((v) => v.defense?.length > 2).at(0);
+  check('the fixture has a defence hand worth rerolling', (base?.defense?.length ?? 0) > 2, true);
+
+  // The hand lands: every die is new, so every die shakes.
+  w.h.showMirror({ ...base, defense: null }, b3.atk, b3.def, firing, 'defender');
+  w.h.showMirror(base, b3.atk, b3.def, firing, 'defender');
+  await settle();
+  const all = shakingDice(w.root).length;
+  check('a fresh roll shakes the whole hand', all, base.defense.length);
+
+  // THE REROLL. One die comes back different and the rest are untouched, which
+  // is exactly the frame a Focus reroll of one die publishes.
+  const moved = base.defense.map((d, i) => (i === 1 ? { ...d, face: (d.face + 3) % 6 } : d));
+  check('and the fixture really only moved one of them',
+    moved.filter((d, i) => d.face !== base.defense[i].face).length, 1);
+  w.h.showMirror({ ...base, defense: moved }, b3.atk, b3.def, firing, 'defender');
+  await settle();
+  check('but a reroll shakes only the die that was thrown', shakingDice(w.root).length, 1);
+
+  // A frame that changes nothing shakes nothing, or every repaint would look
+  // like a roll. This is the same test the live-die ring's `same` short-circuit
+  // rests on, asserted from the animation side.
+  w.h.showMirror({ ...base, defense: moved }, b3.atk, b3.def, firing, 'defender');
+  await settle();
+  check('and a frame where nothing moved shakes nothing at all', shakingDice(w.root).length, 0);
 }
 
 // ---------- A DISMISSAL MAY NOT DEADLOCK THE ATTACK ----------

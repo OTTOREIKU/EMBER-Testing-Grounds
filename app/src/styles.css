@@ -1561,7 +1561,11 @@ body.targeting #hint { color: var(--accent); font-weight: 700; }
   display: inline-flex; align-items: center; justify-content: center; gap: 1px;
   transition: transform 0.05s;
 }
-.rolling .die { animation: die-shake 0.11s infinite; }
+/* Two forms, and the difference matters. The ROW form shakes every die inside
+   it and is what the Black Die stage uses. The DIE form shakes one die on its
+   own, which is what a reroll needs: only the dice actually thrown again may
+   move, or the kept ones look like they were rerolled too. */
+.rolling .die, .die.rolling { animation: die-shake 0.11s infinite; }
 @keyframes die-shake {
   0% { transform: rotate(-6deg); }
   50% { transform: rotate(6deg); }
@@ -1596,17 +1600,34 @@ body.targeting #hint { color: var(--accent); font-weight: 700; }
   align-self: center; font-family: var(--mono); font-size: 10px; font-weight: 700;
   color: var(--accent); letter-spacing: 1px; margin: 1px 0;
 }
-.rerolls { display: flex; gap: 6px; }
+.rerolls { display: flex; gap: 6px; margin-top: 6px; }
+/* THESE READ AS BUTTONS, ALWAYS. OTTO: "I sometimes don't see them after I am
+   doing a focus reroll because they are just tiny text under the dice." They
+   were --surface2 on --surface, which is barely a step, and the Focus reroll is
+   a decision the attack STOPS for: the other player is parked until it is
+   pressed. A border and a background that carries its own weight, so the thing
+   the game is waiting on cannot be mistaken for a caption. */
 .rerolls button {
-  flex: 1; border-radius: var(--radius); border: none; background: var(--surface2);
-  color: var(--text2); font-size: 11.5px; padding: 5px 6px; cursor: pointer;
+  flex: 1; border-radius: var(--radius); border: 1px solid var(--accent);
+  background: var(--accent-lt); color: var(--accent); font-weight: 600;
+  font-size: 11.5px; padding: 6px; cursor: pointer;
   white-space: nowrap; text-transform: capitalize;
-  transition: background 0.12s, color 0.12s;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
 }
-.rerolls button:hover:not(:disabled) { background: var(--surface3); color: var(--text); }
-.rerolls button:disabled { opacity: 0.35; cursor: default; }
-#rr-blue { background: var(--blue-lt); color: var(--blue); }
-#rr-red { background: var(--red-lt); color: var(--red); }
+/* The OUTLINE is what does the work. A fill alone measured 1.26:1 against the
+   felt it sits on, which is why these read as a caption: --surface3 on
+   --surface is not a step a player's eye takes. */
+.rerolls button:hover:not(:disabled) { background: var(--accent); color: var(--on-accent); }
+/* Still visible when it is not yours to press. It says "not now", not "nothing
+   here" -- both players can see the offer exists, which is the same reason the
+   Focus reroll is drawn on every screen rather than only the one that owns it. */
+.rerolls button:disabled { opacity: 0.45; cursor: default; }
+/* The squad reroll pots keep their own colour and take the same outline, so the
+   whole family reads as one control rather than two designs. */
+#rr-blue { background: var(--blue-lt); color: var(--blue); border-color: var(--blue); }
+#rr-blue:hover:not(:disabled) { background: var(--blue); color: var(--on-accent); }
+#rr-red { background: var(--red-lt); color: var(--red); border-color: var(--red); }
+#rr-red:hover:not(:disabled) { background: var(--red); color: var(--on-accent); }
 
 /* ---------- sidebar ---------- */
 #sidebar {
