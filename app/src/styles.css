@@ -2368,26 +2368,33 @@ p.points { white-space: pre-line; }
    No DOM change: the felt is placed explicitly and everything else auto
    flows into column one, so render() builds the same tree either way. */
 #combat-body { container-type: inline-size; }
+/* The reading column, built by render() so the grid has exactly two rows.
+   In one-column mode it is an ordinary flex column and nothing below it
+   applies, so the same tree serves both layouts. */
+.ah-main { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 @container (min-width: 560px) {
   .attack-helper {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 224px;
+    grid-template-rows: auto auto;
     column-gap: 12px;
+    row-gap: 8px;
     align-content: start;
   }
-  /* Everything not placed by hand belongs to the reading column. */
-  .attack-helper > * { grid-column: 1; min-width: 0; }
   /* The matchup names the whole fight, so it spans. */
-  .attack-helper > .ah-head { grid-column: 1 / -1; }
+  .attack-helper > .ah-head { grid-column: 1 / -1; grid-row: 1; }
+  .attack-helper > .ah-main { grid-column: 1; grid-row: 2; min-width: 0; }
+  /* Sticky, so both hands stay on screen however far the reading column runs.
+     `align-self: start` matters: stretched, a sticky element has nothing to
+     slide within and never actually sticks. */
   .attack-helper > .ah-felt {
-    grid-column: 2;
-    grid-row: 2 / span 99;
+    grid-column: 2; grid-row: 2;
     align-self: start;
     position: sticky; top: 0;
     margin: 0;
   }
-  /* A narrower column wraps the dice sooner, which is fine, but the row
-     should not also fight the header for width. */
+  /* A narrower column wraps the dice sooner, which is fine, but the header
+     should not fight them for width. */
   .attack-helper > .ah-felt .ah-half-h { flex-wrap: wrap; row-gap: 2px; }
 }
 
@@ -2447,6 +2454,20 @@ p.points { white-space: pre-line; }
 .ah-card.now .ah-card-h .t { color: var(--text); }
 .ah-card.now .ah-card-h .r { color: var(--accent); font-weight: 700; }
 .ah-card-b { padding: 0 10px 10px; }
+/* A finished card that has lines to show says so, and opens on click. The
+   chevron turns rather than the row changing colour, so a card that can be
+   opened is not confusable with the one that is active. */
+.ah-card.can-open .ah-card-h { cursor: pointer; }
+.ah-card.can-open .ah-card-h:hover { background: rgba(255, 255, 255, 0.03); }
+.ah-card.can-open .ah-card-h::after {
+  content: '›'; margin-left: 2px; color: var(--text3); font-size: 13px;
+  transition: transform 0.14s; display: inline-block;
+}
+.ah-card.can-open.open .ah-card-h::after { transform: rotate(90deg); }
+/* The past lines read as a trace, not as live content. */
+.ah-card-past { font-size: 11px; line-height: 1.5; color: var(--text3); }
+.ah-card-past div { margin-bottom: 3px; }
+
 /* The step's own content already carries its heading, and inside a card
    that heading is the card's title said twice. */
 .ah-card-b .ah-step h4 { display: none; }

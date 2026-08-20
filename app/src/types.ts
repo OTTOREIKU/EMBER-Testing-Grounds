@@ -735,6 +735,10 @@ export interface CombatView {
   attack: { color: string; face: number }[] | null;
   defense: { color: string; face: number }[] | null;
   log: string[];
+  // The step each log line belongs to, same length as `log`. Sent so a watcher's
+  // step cards open on the same lines the attacker's do. Optional because a view
+  // published before this existed carries none, and an empty card beats a crash.
+  logStep?: string[];
   // The two pools as the attacker's window is holding them, so the same numbers
   // stand in the same box on every screen BEFORE anything is rolled. Sent
   // rather than derived on the far side, and it has to be: the pool editor lets
@@ -955,6 +959,12 @@ function normaliseCombatView(raw: unknown): CombatView | null {
     log: Array.isArray(v.log)
       ? v.log.filter((l): l is string => typeof l === 'string').slice(0, 120).map((l) => l.slice(0, 400))
       : [],
+    // WHITELISTED, or it is dropped on every checkpoint: this normaliser rebuilds
+    // the view field by field, and that has cost this codebase five shipped bugs.
+    // Capped at the same 120 as `log` so the two cannot drift apart in length.
+    logStep: Array.isArray(v.logStep)
+      ? v.logStep.filter((x): x is string => typeof x === 'string').slice(0, 120)
+      : undefined,
     focus: (() => {
       const f = v.focus as { stage?: unknown; attackerUse?: unknown; defenderUse?: unknown } | null | undefined;
       return f && typeof f.stage === 'string'

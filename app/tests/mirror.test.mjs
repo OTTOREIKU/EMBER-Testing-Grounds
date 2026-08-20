@@ -103,6 +103,17 @@ const texts = (root, out = []) => {
   return out.join(' ');
 };
 
+// DETERMINISTIC DICE. This file used to run on the real Math.random, so a walk
+// that expects a Penetration to happen was relying on luck: 'no control
+// matching Apply Penetration' appeared on roughly one run in three, which
+// reads as a broken build rather than as an unlucky roll.
+//
+// The same mistake in miniature was made in this file's own assertions, which
+// pinned `landed === 3` and passed once by chance. Seeded here so a failure
+// always means something changed.
+let __seed = 20260820;
+Math.random = () => { __seed = (__seed * 1103515245 + 12345) % 2147483648; return __seed / 2147483648; };
+
 // ---------- one recorded attack, published frame by frame ----------
 const b = board();
 const A = attacker(b.all);
@@ -604,6 +615,60 @@ const spinning = (root) => {
   const felt = w2.root.querySelector('.ah-felt');
   check('the felt draws the dice once a roll exists', !!felt, true);
   check('and the attacker can still select them', w2.h.ctx?.attackRoll?.length > 0, true);
+}
+
+// ---------- FINISHED STEPS OPEN ----------
+// OTTO: "none of the collapsed cards can be opened to view past actions.
+// Clicking on them does nothing so I can only ever see the current card."
+//
+// A card opens on its OWN lines, matched by the tag note() wrote at the time.
+// That tag has to survive the wire as well, or a watcher's cards would open
+// empty while the attacker's opened full, which is the mirror drift this whole
+// slice existed to end.
+{
+  const cards = [...(A.root.querySelectorAll('.ah-card') ?? [])];
+  check('the attack drew a stack of step cards', cards.length > 1, true);
+
+  // classList and className are SEPARATE in the shim: classList.add writes to a
+  // private set. Ask the list, not the string, or nothing added at runtime is
+  // visible here.
+  const openable = cards.filter((el) => el.classList.contains('can-open'));
+  check('and a finished step with lines can be opened', openable.length > 0, true);
+
+  const first = openable[0];
+  check('which starts closed', first.classList.contains('open'), false);
+  // children[0], NOT querySelector: the shim memoises a fresh placeholder per
+  // selector, so querySelector('.ah-card-h') returns a node the handler was never
+  // bound to. The same trap made the mirror's close button untestable.
+  first.children[0].click();
+  const after = [...A.root.querySelectorAll('.ah-card')].filter((el) => el.classList.contains('can-open'))[0];
+  check('clicking its head opens it', after.classList.contains('open'), true);
+  // Same reason: reach the opened body through children rather than a selector.
+  // And match on className here, not classList: the shim keeps the two in
+  // SEPARATE stores, so a class set with `el.className = ...` is invisible to
+  // classList.contains, while one added with classList.add is invisible to
+  // className. Which to ask depends on how the source set it.
+  const past = [...(after.children ?? [])].find((el) => String(el.className).includes('ah-card-past'));
+  check('and it shows lines from that step', !!past && String(past.innerHTML).length > 0, true);
+
+  // The tag is per-line, so an opened card must NOT be the whole log wearing a
+  // different hat. This is the assertion that would fail if the filter were
+  // dropped and every card showed everything.
+  const shown = String(past.innerHTML).split('</div>').filter(Boolean).length;
+  check('but not the entire log', shown < A.h.ctx.log.length, true);
+
+  // The tags and the lines are written together, so they can never come apart.
+  check('every log line carries a step tag', A.h.ctx.logStep.length, A.h.ctx.log.length);
+}
+
+// The tag crosses the wire, or a watcher's cards would open empty while the
+// attacker's opened full: exactly the mirror drift this slice existed to end.
+// The normaliseCombatView round trip is pinned in script.test.mjs, which
+// already slices types.ts; this half checks it is actually SENT.
+{
+  const published = A.views.at(-1);
+  check('the published view carries the step tags', Array.isArray(published.logStep), true);
+  check('one per line, as sent', published.logStep.length, published.log.length);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

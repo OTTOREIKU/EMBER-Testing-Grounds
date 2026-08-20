@@ -482,6 +482,15 @@ interface Ctx {
   // carries several (FAQ D1), and Cleaving's part-or-other-unit fork (D4).
   surplusSetup: { effects: SurplusEffect[]; chosen: SurplusEffect | null } | null;
   log: string[];
+  // Which STEP each log line was written during, one entry per line of `log`.
+  // A collapsed step card opens on its OWN lines, and without this every card
+  // would have to show the whole log, which is the flat list the cards exist to
+  // replace.
+  //
+  // Parallel to `log` rather than folded into it: `log` crosses the wire as
+  // string[] and is read in several places, so changing its shape would touch
+  // all of them for no gain.
+  logStep: string[];
   explosion: boolean;
   hits: number;
   // The duel and summary the resolution step LAST DREW. Held so publishMirror
@@ -561,6 +570,10 @@ export class AttackHelper {
   // it has no memory of its own: it recomputes from the published view every
   // render and would happily redraw what was just dismissed.
   private dismissed: string | null = null;
+  // Which finished step cards the reader has opened. A VIEW preference, held on
+  // the helper and never published: which cards you have unfolded is nobody
+  // else's business and must not travel in a checkpoint.
+  private openCards = new Set<string>();
   // How a mirror window MOVES the attack: by sending the command the attacking
   // client is waiting for, never by editing this copy of the sequence. Wired by
   // the Match Centre; null in freeplay, where no window is ever a mirror.
@@ -761,6 +774,9 @@ export class AttackHelper {
       killedPart: false,
       surplusSetup: null,
       log: view.log.slice(),
+      // A mirror is handed the tags with the lines. An older view that predates
+      // the field arrives without them and its cards simply open empty.
+      logStep: (view.logStep ?? []).slice(),
       explosion,
       hits: 0,
       resolution: view.resolution ?? null,
@@ -1018,6 +1034,7 @@ export class AttackHelper {
       killedPart: false,
       surplusSetup: null,
       log: [],
+      logStep: [],
       explosion,
       hits: 0,
     };
@@ -1132,6 +1149,7 @@ export class AttackHelper {
       killedPart: false,
       surplusSetup: null,
       log: [],
+      logStep: [],
       explosion: false,
       hits: 0,
     };
@@ -1547,7 +1565,12 @@ export class AttackHelper {
   }
 
   private note(text: string, who: Token[] = []): void {
-    if (this.ctx) this.ctx.log.push(text);
+    if (this.ctx) {
+      this.ctx.log.push(text);
+      // Tagged as it is written, because the step is only knowable now: by
+      // the time a card is drawn the attack has moved on.
+      this.ctx.logStep.push(this.ctx.step);
+    }
     for (const t of who) this.onLog(t, text);
   }
 
@@ -2013,6 +2036,7 @@ export class AttackHelper {
         // happened. The markup is stripped because it lands in another client's
         // innerHTML and a peer is not a trusted author of it.
         log: c.log.map((l) => l.replace(/<[^>]*>/g, '')),
+        logStep: c.logStep.slice(),
         // The pools, so the same numbers stand in the box on every screen from
         // the moment the step opens. Nudged by hand in the editor and already
         // carrying a declared Parry, so they cannot be derived on the far side.
@@ -2251,6 +2275,36 @@ export class AttackHelper {
         + `<span class="t">${esc(s.title)}${s.extra ? `<em>${esc(s.extra)}</em>` : ''}</span>`
         + `<span class="r">${esc(s.result)}</span>`;
       card.appendChild(head);
+      // A FINISHED CARD OPENS. Clicking one was doing nothing at all, so the
+      // only step you could ever read was the one you were standing on.
+      //
+      // It opens on its OWN log lines, matched by the tag `note()` wrote when
+      // each was recorded. `designate` folds into `part` here for the same
+      // reason it has no card: it is a fork inside choosing the Part.
+      const mine = c.log.filter((_, n) => {
+        const at = c.logStep[n];
+        return at === s.key || (s.key === 'part' && at === 'designate');
+      });
+      if (!now && mine.length) {
+        const open = this.openCards.has(s.key);
+        // add/remove rather than toggle(name, force): the two-argument form is
+        // a no-op in the test shim, so the open state would have looked right
+        // in a browser and been invisible to every test.
+        card.classList.add('can-open');
+        if (open) card.classList.add('open');
+        else card.classList.remove('open');
+        head.addEventListener('click', () => {
+          if (this.openCards.has(s.key)) this.openCards.delete(s.key);
+          else this.openCards.add(s.key);
+          this.render();
+        });
+        if (open) {
+          const past = document.createElement('div');
+          past.className = 'ah-card-b ah-card-past';
+          past.innerHTML = mine.map((l) => `<div>${l}</div>`).join('');
+          card.appendChild(past);
+        }
+      }
       if (now && body) {
         const b = document.createElement('div');
         b.className = 'ah-card-b';
@@ -2293,6 +2347,23 @@ export class AttackHelper {
       this.dismissMirror();
       this.onClose();
     });
+    // ONE READING COLUMN, gathered after the fact so the build order above is
+    // untouched. The two-column layout needs the grid to have exactly TWO rows:
+    // the head across the top, then the reading column beside the felt.
+    //
+    // Without this the felt was placed with `grid-row: 2 / span 99` so it could
+    // stand beside everything, and that created NINETY-NINE implicit rows, each
+    // paying the 8px row gap: 185px of content rendered in a 964px panel, and
+    // the scrollbar was mostly empty.
+    const main = document.createElement('div');
+    main.className = 'ah-main';
+    for (const ch of [...el.children]) {
+      if (ch.classList.contains('ah-head') || ch.classList.contains('ah-felt')) continue;
+      main.appendChild(ch);
+    }
+    const feltEl = el.querySelector('.ah-felt');
+    if (feltEl) el.insertBefore(main, feltEl);
+    else el.appendChild(main);
     this.root.replaceChildren(el);
     // AFTER the step is built, so a stage beginFocus() settled during the build
     // is in the view the defender receives.
