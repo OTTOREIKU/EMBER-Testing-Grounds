@@ -1152,5 +1152,85 @@ const spinning = (root) => shakingDice(root).length > 0;
   check('while still closing the Focus', A2.h.ctx.focus?.stage, 'done');
 }
 
+// ---------- THE BLACK DIE MAY BE FOCUSED (4.10) ----------
+// "Black Dice used to determine target Parts when attacking can also be
+// rerolled with Focus." Ratified by OTTO 2026-08-23. The die lands, and before
+// the result is applied the ATTACKER may spend 1 Link to throw it again --
+// once, and the rerolled result stands with no second offer.
+//
+// Driven through the real spin, which runs on real timers: eight ticks at 55ms,
+// then the settle's own 700ms pause, so the waits here are honest rather than
+// settle()'s 20ms.
+const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+{
+  const bb = board();
+  const A3 = attacker(bb.all);
+  const cmds = [];
+  A3.h.onCommand = (cmd) => cmds.push(cmd);
+  A3.h.start(bb.atk, firing, bb.def, 'clear');
+  // The attacker needs Link to afford the Focus; the fixture mech carries none
+  // by default.
+  bb.atk.link = 4;
+
+  // Roll the Black Die for real.
+  press(A3.root, 'Roll Black Die');
+  await tick(600);
+  const offerBtn = () => findButtons(A3.root).find((x) => /Focus: reroll the Black Die/.test(label(x)));
+  const keepBtn = () => findButtons(A3.root).find((x) => label(x) === 'Keep it');
+  check('the landed die is offered a Focus instead of settling itself', !!offerBtn(), true);
+  check('beside a way to keep it', !!keepBtn(), true);
+  check('and nothing is applied while the question stands', A3.h.ctx.targetPart ?? null, null);
+
+  // FOCUS IT. The Link travels as the same plain `focus` every surface sends,
+  // the die spins again, and the new result stands.
+  offerBtn().click();
+  check('the Focus travels as the one command', cmds.filter((c) => c.kind === 'focus').length, 1);
+  check('and is recorded as this roll\'s one use', A3.h.ctx.blackFocusUsed, true);
+  await tick(600);
+  // Counted as a SET of identities, not absence-checked: the shim's remove()
+  // is a no-op so the first offer never leaves this tree, and its non-detaching
+  // appendChild lists every step child under two parents. What must be true is
+  // that the reroll appended no SECOND offer.
+  check('the reroll settles with no second offer',
+    new Set(findButtons(A3.root).filter((x) => /Focus: reroll the Black Die/.test(label(x)))).size, 1);
+  await tick(800);
+  const landedPart = A3.h.ctx.targetPart ?? A3.h.ctx.blackResult;
+  check('and the rerolled result is applied', landedPart !== null, true);
+}
+
+// A second window KEEPS the roll: no spend, and the result applies unchanged.
+{
+  const bb = board();
+  const A4 = attacker(bb.all);
+  const cmds = [];
+  A4.h.onCommand = (cmd) => cmds.push(cmd);
+  A4.h.start(bb.atk, firing, bb.def, 'clear');
+  bb.atk.link = 4;
+  press(A4.root, 'Roll Black Die');
+  await tick(600);
+  const keep = findButtons(A4.root).find((x) => label(x) === 'Keep it');
+  check('the second window is offered the same choice', !!keep, true);
+  keep.click();
+  await tick(800);
+  check('keeping it spends nothing', cmds.filter((c) => c.kind === 'focus').length, 0);
+  check('and the result applies', (A4.h.ctx.targetPart ?? A4.h.ctx.blackResult) !== null, true);
+}
+
+// A window whose attacker CANNOT afford the Focus settles straight through,
+// exactly as before the feature existed: no offer, no pause beyond the
+// settle's own.
+{
+  const bb = board();
+  const A5 = attacker(bb.all);
+  A5.h.start(bb.atk, firing, bb.def, 'clear');
+  bb.atk.link = 1;
+  press(A5.root, 'Roll Black Die');
+  await tick(600);
+  check('at 1 Link there is no offer to decline',
+    !!findButtons(A5.root).find((x) => /Focus: reroll the Black Die/.test(label(x))), false);
+  await tick(800);
+  check('and the roll settles on its own', (A5.h.ctx.targetPart ?? A5.h.ctx.blackResult) !== null, true);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

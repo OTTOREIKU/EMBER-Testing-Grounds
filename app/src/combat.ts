@@ -25,6 +25,10 @@ const STEPS: readonly string[] = ['split', 'part', 'designate', 'attack', 'defen
 // The Focus stages (4.4.1-5), matched the same way and for the same reason.
 const FOCUS_STAGES: readonly string[] = ['declareA', 'declareD', 'rerollA', 'rerollD', 'done'];
 
+// The Black Die's printed part names, mapped to Token slots. Shared by the
+// settle and by the Focus offer, which must agree on where a face lands.
+const BLACK_SLOT: Record<string, string> = { torso: 'torso', chassis: 'chasis', leftArm: 'leftHand', rightArm: 'rightHand', backpack: 'backpack' };
+
 // Every press a MIRROR window can make. Each one is a question the defending
 // player owns and the attacking client is parked waiting on, so the answer
 // travels as a command; there is deliberately no member for anything the
@@ -586,6 +590,11 @@ interface Ctx {
   // roll it clears.
   defenseCalled?: boolean;
   blackResult: string | null;
+  // The one Focus the Black Die itself may take (4.10: "Black Dice used to
+  // determine target Parts when attacking can also be rerolled with Focus").
+  // Its own flag, not the attack roll's: the Black Die is a separate roll, so
+  // Focusing it does not use up the attacker's step-5 Focus, and vice versa.
+  blackFocusUsed: boolean;
   // 4.4.1 step 5, Focus: after BOTH rolls are made, the attacker declares
   // whether to spend 1 Link, then the defender declares, then the attacker
   // rerolls any of its Attack dice, then the defender any of its Defense
@@ -930,6 +939,7 @@ export class AttackHelper {
       // this window would send a second callDefense from the wrong seat.
       defenseCalled: true,
       blackResult: null,
+      blackFocusUsed: false,
       focus: view.focus && FOCUS_STAGES.includes(view.focus.stage)
         ? {
             stage: view.focus.stage as 'declareA' | 'declareD' | 'rerollA' | 'rerollD' | 'done',
@@ -1191,6 +1201,7 @@ export class AttackHelper {
       attackRoll: null,
       defenseRoll: null,
       blackResult: null,
+      blackFocusUsed: false,
       focus: null,
       eyeSwaps: 0,
       surplusRound: 0,
@@ -1306,6 +1317,7 @@ export class AttackHelper {
       attackRoll: null,
       defenseRoll: null,
       blackResult: null,
+      blackFocusUsed: false,
       focus: null,
       eyeSwaps: 0,
       surplusRound: 0,
@@ -3012,19 +3024,7 @@ export class AttackHelper {
       if (this.blackTimer) return;
       rollBtn.disabled = true;
       pickWrap.querySelectorAll('button').forEach((b) => { b.disabled = true; });
-      const landed = Math.floor(Math.random() * 6);
-      stage.classList.add('rolling');
-      caption.textContent = '';
-      let ticks = 0;
-      this.blackTimer = window.setInterval(() => {
-        ticks++;
-        showFace(ticks >= 8 ? landed : Math.floor(Math.random() * 6));
-        if (ticks < 8) return;
-        window.clearInterval(this.blackTimer);
-        this.blackTimer = undefined;
-        stage.classList.remove('rolling');
-        this.settleBlack(landed, caption);
-      }, 55);
+      this.spinBlack(stage, caption, showFace, (landed) => this.maybeBlackFocus(landed, caption, stage, showFace));
     });
     wrap.appendChild(rollBtn);
     wrap.appendChild(stage);
@@ -3054,6 +3054,76 @@ export class AttackHelper {
     return wrap;
   }
 
+  // The Black Die's spin, extracted so the roll and a Focus reroll share one
+  // implementation of the shake.
+  private spinBlack(stage: HTMLElement, caption: HTMLElement, showFace: (i: number) => void, done: (landed: number) => void): void {
+    const landed = Math.floor(Math.random() * 6);
+    stage.classList.add('rolling');
+    caption.textContent = '';
+    let ticks = 0;
+    this.blackTimer = window.setInterval(() => {
+      ticks++;
+      showFace(ticks >= 8 ? landed : Math.floor(Math.random() * 6));
+      if (ticks < 8) return;
+      window.clearInterval(this.blackTimer);
+      this.blackTimer = undefined;
+      stage.classList.remove('rolling');
+      done(landed);
+    }, 55);
+  }
+
+  // 4.10's note: "Black Dice used to determine target Parts when attacking can
+  // also be rerolled with Focus." So between the die landing and the result
+  // being applied, the ATTACKER may spend 1 Link to throw it again -- once,
+  // because Focus is once per roll, and the rerolled result stands.
+  //
+  // The offer is skipped when the result would be force-rerolled anyway (a
+  // Surplus die landing on the original Part, FAQ D4): paying a Link to reroll
+  // a die the rules are about to reroll for free is not a choice, it is a trap.
+  // And it never appears on a mirror -- the roll button that leads here is the
+  // attacker's alone.
+  private maybeBlackFocus(landed: number, caption: HTMLElement, stage: HTMLElement, showFace: (i: number) => void): void {
+    const c = this.ctx!;
+    const part = this.dice.dice.black.faces[landed][0]?.part ?? 'any';
+    // Where this face would land, redirect included, so the D4 forced-reroll
+    // test below asks the same question settleBlack will.
+    const mapped = part === 'any' ? null : (BLACK_SLOT[part] ?? 'torso');
+    const lands = mapped !== null && (c.defender.partStates[mapped as PartSlot] === undefined || c.defender.partStates[mapped as PartSlot] === 'destroyed') ? 'torso' : mapped;
+    const forced = c.surplusRound > 0 && lands !== null && lands === c.surplusOriginalPart;
+    if (this.mirroring || c.blackFocusUsed || forced
+      || c.attacker.kind !== 'mech' || !canAffordFocus(this.data, c.attacker)) {
+      this.settleBlack(landed, caption);
+      return;
+    }
+    const free = focusIsFree(this.data, c.attacker);
+    caption.textContent = `${part === 'any' ? 'ANY' : SLOT_LABEL[lands as PartSlot | 'main'] ?? part} — keep it, or Focus to reroll?`;
+    const offer = document.createElement('span');
+    offer.className = 'rerolls';
+    const go = document.createElement('button');
+    go.textContent = free ? 'Focus: reroll the Black Die (free — Will to Survive)' : 'Focus: reroll the Black Die (1 Link)';
+    go.title = 'The Part Die is a roll like any other, so Focus may reroll it (4.10). Once, and the new result stands.';
+    go.addEventListener('click', () => {
+      offer.remove();
+      c.blackFocusUsed = true;
+      this.onCommand({ kind: 'focus', seat: c.attacker.side, uid: c.attacker.uid });
+      this.note(free
+        ? `${c.attacker.label} Focuses for free (Will to Survive): the Black Die is rerolled (4.10).`
+        : `${c.attacker.label} spends 1 Link to Focus: the Black Die is rerolled (4.10).`);
+      this.onChanged();
+      // The rerolled result stands: Focus is once per roll, so this lands
+      // straight in the settle with no second offer.
+      this.spinBlack(stage, caption, showFace, (again) => this.settleBlack(again, caption));
+    });
+    const keep = document.createElement('button');
+    keep.textContent = 'Keep it';
+    keep.addEventListener('click', () => {
+      offer.remove();
+      this.settleBlack(landed, caption);
+    });
+    offer.append(go, keep);
+    stage.appendChild(offer);
+  }
+
   // Reads the landed face, says what it means, then hands on. A pause lets the
   // player see the settled die before the panel changes under them.
   private settleBlack(face: number, caption: HTMLElement): void {
@@ -3067,8 +3137,7 @@ export class AttackHelper {
       window.setTimeout(() => { if (this.ctx === c) this.render(); }, 700);
       return;
     }
-    const slotMap: Record<string, string> = { torso: 'torso', chassis: 'chasis', leftArm: 'leftHand', rightArm: 'rightHand', backpack: 'backpack' };
-    let slot = slotMap[part] ?? 'torso';
+    let slot = BLACK_SLOT[part] ?? 'torso';
     const state = c.defender.partStates[slot as PartSlot];
     if (state === undefined || state === 'destroyed') {
       caption.textContent = `${SLOT_LABEL[slot as PartSlot] ?? part} is gone, so the hit redirects to the Torso.`;
@@ -3951,6 +4020,9 @@ export class AttackHelper {
           // Surplus round makes no Attack Roll, so the attacker's half of
           // step 5 has nothing to act on and skips itself.
           c.focus = null;
+          // ... and Scatter-shot's Part Die is a NEW roll of the Black Die,
+          // so it carries a fresh Focus of its own (4.10 is per roll).
+          c.blackFocusUsed = false;
           this.note(
             `${surplus} un-offset icon${surplus === 1 ? '' : 's'} carry over as Surplus Damage. No Attack Roll is made, and the defender gets no Protection or Parry dice (4.8).`,
           );

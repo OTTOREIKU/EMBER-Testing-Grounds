@@ -319,11 +319,14 @@ console.log('\nPilot traits, against the shipped cards and dice\n');
     [/\(t\.link \?\? 0\) > 0 && !!roll/.test(combat), /!spent && \(t\.link \?\? 0\) > 1/.test(combat),
       /!o\.focused && \(o\.t\.link \?\? 0\) > 1/.test(hud)], [false, false, false]);
 
-  // And the debit stays in ONE place: all four keep sending a plain `focus`.
+  // And the debit stays in ONE place: all FIVE keep sending a plain `focus`.
+  // The fifth is the Black Die's own Focus (4.10's note: the Part Die can be
+  // rerolled too), which OTTO ratified on 2026-08-23 -- a separate roll, so a
+  // separate spend through the same command.
   check('every surface still sends the same plain focus command',
     (combat.match(/kind: 'focus'/g) ?? []).length
     + (hud.match(/kind: 'focus'/g) ?? []).length
-    + (mirror.match(/kind: 'focus'/g) ?? []).length, 4);
+    + (mirror.match(/kind: 'focus'/g) ?? []).length, 5);
   check('and nothing outside the command decides what a Focus costs',
     /focusIsFree\(data, t\)/.test(src('commands.ts')), true);
 }
