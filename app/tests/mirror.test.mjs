@@ -1010,5 +1010,103 @@ const spinning = (root) => shakingDice(root).length > 0;
     /if \(send\(\{ kind: 'setCombatView', seat, view: null \}\)\.ok\) publishedCombatView = 'null';/.test(page), true);
 }
 
+// ---------- A PAID QUESTION TAKES ONE PRESS ----------
+// OTTO from live play: "my focus button is still lit up and I can keep clicking
+// it which removes a link every time (down to 1)". The publish fix ended the
+// stale view that HELD it lit, but the latency window remains: between a press
+// and the attacker's republished view, the button is drawn from the old frame,
+// still live, still asking -- and every press was a fresh `focus` command the
+// host legally accepts while the Link lasts. The same window sat under KC Armor
+// (a Charge per press) and both ZYBP-302 spends (a Command Token per press).
+{
+  // 1. THE FOCUS DECLARE. One press sends; the second is dead until the view
+  //    answers, and the note says why instead of leaving a greyed mystery.
+  const b5 = board();
+  const acts = [];
+  const W = watcher(b5.all, acts);
+  const asking = { ...defended, focus: { stage: 'declareD', attackerUse: false, defenderUse: false } };
+  W.h.showMirror(asking, b5.atk, b5.def, firing, 'defender');
+  const focusBtn = () => findButtons(W.root).find((x) => /^Focus/.test(label(x)) && !/reroll/i.test(label(x)));
+  check('the declare starts live', focusBtn()?.disabled, false);
+  focusBtn().click();
+  check('the first press sends the declare', acts.filter((a) => a[0] === 'focususe').length, 1);
+  // The latch re-rendered; the SAME stale frame is what the next render still
+  // draws from, which is exactly the window the bug lived in.
+  W.h.showMirror(asking, b5.atk, b5.def, firing, 'defender');
+  check('and the button is dead while the answer is in the air', focusBtn()?.disabled, true);
+  const pass = findButtons(W.root).find((x) => label(x) === 'Pass');
+  check('so is Pass, because either answer settles the question', pass?.disabled, true);
+  focusBtn().click();
+  pass.click();
+  check('so pressing again sends nothing', acts.filter((a) => /^focus/.test(a[0])).length, 1);
+  check('and the panel says the answer is in the air', /Focus answered/.test(texts(W.root)), true);
+
+  // 2. A SURPLUS ROUND RE-OPENS FOCUS (c.focus = null on entry), so the main
+  //    round's latch must not deaden the fresh declare. The key carries the
+  //    round for exactly this reason.
+  const surplusAsk = { ...asking, surplus: { round: 1, heavy: 1, light: 0, keyword: 'Mutilation' } };
+  W.h.showMirror(surplusAsk, b5.atk, b5.def, firing, 'defender');
+  check('the surplus round asks its own fresh Focus', focusBtn()?.disabled, false);
+  focusBtn().click();
+  check('and takes its own single press', acts.filter((a) => a[0] === 'focususe').length, 2);
+
+  // 3. THE PAID ROWS share the same latch through sendAct.
+  const evAsk = { ...defended, evadeReady: true };
+  const b6 = board();
+  const acts2 = [];
+  const W2 = watcher(b6.all, acts2);
+  W2.h.showMirror(evAsk, b6.atk, b6.def, firing, 'defender');
+  const evBtn = () => findButtons(W2.root).find((x) => /Melee Evasion/.test(label(x)));
+  check('the evade offer starts live', evBtn()?.disabled, false);
+  evBtn().click();
+  W2.h.showMirror(evAsk, b6.atk, b6.def, firing, 'defender');
+  check('one press, then dead until the view answers', evBtn()?.disabled, true);
+  evBtn().click();
+  check('a Command Token cannot be spent twice by clicking twice',
+    acts2.filter((a) => a[0] === 'meleeevade').length, 1);
+
+  // 4. A REFUSED SEND DOES NOT LATCH: retry is the only path a refused press
+  //    has (a paused table, the last Link), so the button must stay live.
+  const b7 = board();
+  const tried = [];
+  const W3 = watcher(b7.all, []);
+  W3.h.mirrorAct = (act) => { tried.push(act); return false; };
+  W3.h.showMirror(asking, b7.atk, b7.def, firing, 'defender');
+  const fb = () => findButtons(W3.root).find((x) => /^Focus/.test(label(x)) && !/reroll/i.test(label(x)));
+  fb().click();
+  W3.h.showMirror(asking, b7.atk, b7.def, firing, 'defender');
+  check('a refused press leaves the button live', fb()?.disabled, false);
+  fb().click();
+  check('so the player can try again', tried.length, 2);
+}
+
+// ---------- THE COST GATES THE DECLARE, and a failed roll says so ----------
+// Source pins on match.ts, because this is page wiring. The cost command and
+// the declare used to travel unconditionally paired, so a refused spend still
+// sent the declare and the attacker's window granted the effect UNPAID: a free
+// KC Armor, a free Melee Evasion, a free Focus advance.
+{
+  const page = readFileSync(new URL('../src/match.ts', import.meta.url), 'utf8');
+  for (const [what, cost] of [
+    ['focususe', "kind: 'focus'"],
+    ['kcarmor', "kind: 'setCharge'"],
+    ['meleeevade', "kind: 'spendCommand'"],
+    ['dodgeenhance', "kind: 'spendCommand'"],
+  ]) {
+    const at = page.indexOf(`if (act === '${what}')`);
+    const seg = page.slice(at, page.indexOf('if (act ===', at + 10));
+    check(`${what} pays first and only declares on ok`,
+      seg.includes(cost) && /if \(!paid\.ok\) \{ lobbyNote = paid\.why; render\(\); return false; \}/.test(seg), true);
+  }
+  // The reroll's server dice can fail like any other request, and the Link is
+  // already spent by then. rolldefense beside it has carried a catch all along.
+  const rr = page.slice(page.indexOf("if (act === 'focusreroll')"));
+  check('a failed Focus reroll is told to the player, not swallowed',
+    /\.catch\(\(\) => \{[\s\S]{0,500}?reroll again/.test(rr), true);
+  // And the callback reports what it did, because the helper latches on it.
+  check('mirrorAct answers whether the press went',
+    /function mirrorAct\(act: MirrorAct, arg\?: string \| number\[\]\): boolean \{/.test(page), true);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

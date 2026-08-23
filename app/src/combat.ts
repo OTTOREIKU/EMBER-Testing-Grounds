@@ -742,7 +742,7 @@ export class AttackHelper {
   // How a mirror window MOVES the attack: by sending the command the attacking
   // client is waiting for, never by editing this copy of the sequence. Wired by
   // the Match Centre; null in freeplay, where no window is ever a mirror.
-  mirrorAct: ((act: MirrorAct, arg?: string | number[]) => void) | null = null;
+  mirrorAct: ((act: MirrorAct, arg?: string | number[]) => boolean | void) | null = null;
   // What this window's viewer is TO THIS ATTACK, from combatRoleFor above.
   //
   // The default is `attacker` because that is the freeplay board: one player
@@ -1628,9 +1628,15 @@ export class AttackHelper {
       // than only that somebody is thinking. Ratified: the Ask band shows the
       // other side's pending decision (COMBAT-PANEL-REDESIGN.md).
       const mine = this.mayPress(side);
+      // The answer is in the air: pressed, sent, not yet consumed by the
+      // attacker's window. Said in words, because a button that greys with no
+      // explanation is what teaches a player to keep clicking.
+      const sent = this.mirroring !== null && side === 'defender' && this.askSent('focusask');
       const p = document.createElement('p');
       p.className = 'ah-note';
-      p.textContent = !mine
+      p.textContent = sent
+        ? `Focus answered — waiting for ${c.attacker.label}'s window to take it.`
+        : !mine
         ? `Focus (4.4.1-5): waiting for ${t.label}'s player, who may spend 1 Link to reroll their ${side === 'attacker' ? 'Attack' : 'Defense'} dice.`
         : focusIsFree(this.data, t)
         ? `Focus (4.4.1-5): ${t.label} is down to 3 Parts, so its Focus reroll costs no Link at all (Will to Survive) — ${side === 'attacker' ? 'the attacker declares first' : 'the defender declares second'}.`
@@ -1649,16 +1655,25 @@ export class AttackHelper {
       // attacking window advances the stage when it lands.
       const declared = (use2: boolean): void => {
         if (this.mirroring) {
-          if (side === 'defender') this.mirrorAct?.(use2 ? 'focususe' : 'focuspass');
+          // One key for use AND pass: either answer settles the question, so
+          // both buttons retire together and a use-then-pass cannot send two
+          // answers into the same declare.
+          if (side === 'defender' && !this.askSent('focusask')) {
+            if (this.mirrorAct?.(use2 ? 'focususe' : 'focuspass')) {
+              this.asked = this.askKey('focusask');
+              this.render();
+            }
+          }
           return;
         }
         this.focusDeclare(side, use2);
       };
+      use.disabled = use.disabled || sent;
       use.addEventListener('click', () => declared(true));
       const pass = document.createElement('button');
       pass.className = 'ah-alt';
       pass.textContent = 'Pass';
-      pass.disabled = !mine;
+      pass.disabled = !mine || sent;
       pass.addEventListener('click', () => declared(false));
       wrap.appendChild(use);
       wrap.appendChild(pass);
@@ -2156,11 +2171,46 @@ export class AttackHelper {
     return !this.mirroring && this.mayPress(owner);
   }
 
+  // ONE PRESS PER PAID QUESTION. Between a press and the attacker's republished
+  // view there is a whole network round trip, and for that window the button is
+  // still drawn from the OLD view -- still live, still asking. OTTO pressed
+  // Focus four times in that state and paid 1 Link for every press: the
+  // consumers are idempotent (kcUsed, evadeUsed, the Focus stage guard), so the
+  // EFFECT landed once, but each press was a fresh `focus`/`spendCommand` the
+  // command layer legally accepts while the resource lasts.
+  //
+  // The key carries the SURPLUS ROUND because a Surplus round re-opens Focus
+  // for the defender (c.focus = null on entry): latched on the attack alone,
+  // the main round's declare would deaden the surplus round's fresh one.
+  //
+  // Latched only when the callback reports the send actually WENT. A refusal
+  // (paused table, the last Link) leaves the button live, because retry is the
+  // only path a refused press has.
+  private asked: string | null = null;
+  private askKey(act: string): string | null {
+    const v = this.mirroring;
+    return v ? `${mirrorKey(v)}:${v.surplus?.round ?? 0}:${act}` : null;
+  }
+  private askSent(act: string): boolean {
+    return this.asked !== null && this.asked === this.askKey(act);
+  }
+
   // A press on a mirror window, sent instead of applied. Returns true when it
   // was sent, so the caller stops before touching the local context.
   private sendAct(act: MirrorAct, arg?: string | number[]): boolean {
     if (!this.mirroring) return false;
-    this.mirrorAct?.(act, arg);
+    const paid = act === 'kcarmor' || act === 'meleeevade' || act === 'dodgeenhance';
+    // Guarded HERE as well as at the disabled attribute, because the guard is
+    // the rule and the attribute is only its costume: a keyboard-focused
+    // button still fires on Enter in some browsers' quirks, and the test
+    // shim's click() ignores disabled entirely -- which is how this line was
+    // proven load-bearing.
+    if (paid && this.askSent(act)) return true;
+    const went = this.mirrorAct?.(act, arg);
+    if (went && paid) {
+      this.asked = this.askKey(act);
+      this.render();
+    }
     return true;
   }
 
@@ -3639,7 +3689,7 @@ export class AttackHelper {
         const b = document.createElement('button');
         b.className = 'ah-alt';
         b.textContent = `KC Armor: consume a Charge Token — ${defLightning} [Lightning] become [Defense]`;
-        b.disabled = !defMine;
+        b.disabled = !defMine || this.askSent('kcarmor');
         b.addEventListener('click', () => {
           if (this.sendAct('kcarmor')) return;
           this.onCommand({ kind: 'setCharge', seat: c.defender.side, uid: c.defender.uid, slot: kc.slot, on: false });
@@ -3653,7 +3703,7 @@ export class AttackHelper {
         const b = document.createElement('button');
         b.className = 'ah-alt';
         b.textContent = 'Melee Evasion: spend a Command Token for +1 [Dodge] on the Parry';
-        b.disabled = !defMine;
+        b.disabled = !defMine || this.askSent('meleeevade');
         b.addEventListener('click', () => {
           if (this.sendAct('meleeevade')) return;
           this.onCommand({ kind: 'spendCommand', seat: c.defender.side, uid: c.defender.uid });
@@ -3666,7 +3716,7 @@ export class AttackHelper {
         const b = document.createElement('button');
         b.className = 'ah-alt';
         b.textContent = 'Dodge Enhancement: spend a Command Token — each [Dodge] cancels a whole Attack die';
-        b.disabled = !defMine;
+        b.disabled = !defMine || this.askSent('dodgeenhance');
         b.addEventListener('click', () => {
           if (this.sendAct('dodgeenhance')) return;
           this.onCommand({ kind: 'spendCommand', seat: c.defender.side, uid: c.defender.uid });

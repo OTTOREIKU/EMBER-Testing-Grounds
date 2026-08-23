@@ -2170,18 +2170,22 @@ function syncCombatMirror(): boolean {
 // The Command Token or the Charge is spent by its OWN command in every case,
 // exactly as KC Armor already did: the declaration and the cost travel
 // separately so neither seat can end up with a half-applied ability.
-function mirrorAct(act: MirrorAct, arg?: string | number[]): void {
+// Returns whether the press actually WENT. The helper latches the paid
+// buttons on true, so a refused send (a paused table, the last Link) leaves
+// the button live -- retry is the only path a refused press has -- while a
+// sent one goes quiet until the attacker's republished view answers it.
+function mirrorAct(act: MirrorAct, arg?: string | number[]): boolean {
   const seat = mySeat();
   const view = state.script?.combatView;
   const df = view ? state.tokens.find((t) => t.uid === view.targetUid) : undefined;
   // Only the defending player answers any of these. check() refuses them from
   // anywhere else in any case, so this is about not sending, not about safety.
-  if (!seat || !view || !df || df.side !== seat) return;
+  if (!seat || !view || !df || df.side !== seat) return false;
   if (act === 'rolldefense') {
     const call = state.script?.combat;
     // One roll per call: the ask is cleared by answerDefense, so a second press
     // while the first is in the air finds no call and does nothing.
-    if (!call || call.faces) return;
+    if (!call || call.faces) return false;
     void rollDefensePool(call.white, call.blue).then((faces) => {
       send({ kind: 'answerDefense', seat, faces });
       render();
@@ -2189,60 +2193,72 @@ function mirrorAct(act: MirrorAct, arg?: string | number[]): void {
       lobbyNote = 'The dice did not come back. Nothing was recorded, so roll again.';
       render();
     });
-    return;
+    return true;
   }
   if (act === 'kcarmor') {
     // The Charge spend travels as an ordinary setCharge; the kcArmor command
     // only tells the attacker's window the trade was declared.
     const kc = df.kind === 'mech' ? kcArmorReady(data!, df) : null;
-    if (!kc) return;
-    send({ kind: 'setCharge', seat, uid: df.uid, slot: kc.slot, on: false });
+    if (!kc) return false;
+    // THE COST GATES THE DECLARE, here and in every paid ask below. These
+    // used to travel unconditionally paired, so a refused spend still sent
+    // the declare and the attacker's window granted the effect unpaid.
+    const paid = send({ kind: 'setCharge', seat, uid: df.uid, slot: kc.slot, on: false });
+    if (!paid.ok) { lobbyNote = paid.why; render(); return false; }
     send({ kind: 'kcArmor', seat });
     render();
-    return;
+    return true;
   }
   if (act === 'meleeevade') {
-    send({ kind: 'spendCommand', seat, uid: df.uid });
+    const paid = send({ kind: 'spendCommand', seat, uid: df.uid });
+    if (!paid.ok) { lobbyNote = paid.why; render(); return false; }
     send({ kind: 'meleeEvade', seat });
     render();
-    return;
+    return true;
   }
   if (act === 'dodgeenhance') {
-    send({ kind: 'spendCommand', seat, uid: df.uid });
+    const paid = send({ kind: 'spendCommand', seat, uid: df.uid });
+    if (!paid.ok) { lobbyNote = paid.why; render(); return false; }
     send({ kind: 'dodgeEnhance', seat });
     render();
-    return;
+    return true;
   }
   if (act === 'designate') {
     // The choice is the defender's; the ATTACKER's open window is what actually
     // moves the hit, which is the same shape focusAnswer has.
-    if (typeof arg !== 'string') return;
+    if (typeof arg !== 'string') return false;
     send({ kind: 'designateHit', seat, slot: arg });
     render();
-    return;
+    return true;
   }
   if (act === 'focususe') {
-    send({ kind: 'focus', seat, uid: df.uid });
+    // The Link spend gates the answer: a refused `focus` with the answer
+    // still sent would advance the attacker's stage to a reroll nobody paid
+    // for. And the refusal is SAID -- 4.10's last-Link floor is a real rule a
+    // player can hit, and a button that eats the press in silence is what
+    // teaches them to keep clicking.
+    const paid = send({ kind: 'focus', seat, uid: df.uid });
+    if (!paid.ok) { lobbyNote = paid.why; render(); return false; }
     send({ kind: 'focusAnswer', seat, use: true });
     render();
-    return;
+    return true;
   }
   if (act === 'focuspass') {
-    send({ kind: 'focusAnswer', seat, use: false });
+    const went = send({ kind: 'focusAnswer', seat, use: false });
     render();
-    return;
+    return went.ok;
   }
   if (act === 'focuskeep') {
     send({ kind: 'focusReroll', seat, indices: [], faces: [] });
     render();
-    return;
+    return true;
   }
   if (act === 'focusreroll') {
     // The dice were picked in the mirror window, which holds the selection
     // across its own repaints; only the indexes travel.
     const defense = view.defense ?? [];
     const indices = (Array.isArray(arg) ? arg : []).filter((i) => defense[i]).sort((a, b) => a - b);
-    if (!indices.length) return;
+    if (!indices.length) return false;
     const white = indices.filter((i) => defense[i].color === 'white').length;
     const blue = indices.filter((i) => defense[i].color === 'blue').length;
     void rollDefensePool(white, blue).then((faces) => {
@@ -2254,8 +2270,17 @@ function mirrorAct(act: MirrorAct, arg?: string | number[]): void {
       const out = indices.map((i) => byColor[defense[i].color]?.shift() ?? { color: defense[i].color, face: 0 });
       send({ kind: 'focusReroll', seat, indices, faces: out });
       render();
+    }).catch(() => {
+      // The Link is already spent by the declare, so a roll that never came
+      // back has to SAY so: the buttons are still on screen and pressing again
+      // is the retry. rolldefense beside this has carried the same catch all
+      // along; this path just never got one.
+      lobbyNote = 'The reroll dice did not come back. Nothing was recorded, so reroll again.';
+      render();
     });
+    return true;
   }
+  return false;
 }
 
 // A tiny dev harness behind ?dev=1: seeds two demo squads and starts, so the
