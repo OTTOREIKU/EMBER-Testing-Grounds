@@ -31,8 +31,11 @@ const chargeParser = unitsSrc.slice(
 if (!chargeParser) throw new Error('could not locate consumesCharge in units.ts');
 // electronicValue reads the stubbed tokenCards, so slicing it in keeps the
 // Electronic Value rule (Parts only, destroyed Parts excluded) in one place.
+// electronicDash rides along with it: 4.11.2's dash is the SAME reading of the
+// same field, and stubbing one while slicing the other is how the two would
+// come to disagree about what a printed -1 means.
 const evReader = unitsSrc.slice(
-  unitsSrc.indexOf('export function electronicValue'),
+  unitsSrc.indexOf('export function electronicDash'),
   unitsSrc.indexOf('export function defaultUnitLabel'),
 );
 if (!evReader) throw new Error('could not locate electronicValue in units.ts');

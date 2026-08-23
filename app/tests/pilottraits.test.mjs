@@ -297,8 +297,14 @@ console.log('\nPilot traits, against the shipped cards and dice\n');
     /canAffordFocus\(this\.data, t\) && !!roll/.test(combat), true);
   check('surface 2 — the freeplay counter-roll asks it too',
     /if \(!spent && canAffordFocus\(this\.data, t\)\)/.test(combat), true);
-  check('surface 3 — the Match Centre counter-roll rows ask it',
-    /!o\.focused && canAffordFocus\(ctx\.data, o\.t\)/.test(hud), true);
+  // Surface 3 was the Match Centre's own counter-roll rows. Those are GONE the
+  // same way surface 4 went: Electronic Warfare is resolved in the combat
+  // window now, so the networked player presses SURFACE 2, the same reader the
+  // freeplay counter-roll uses. Three surfaces, one question.
+  check('the Match Centre no longer asks it a third way',
+    /canAffordFocus\(ctx\.data/.test(hud), false);
+  check('because its counter-roll rows are gone entirely',
+    /data-ewfocus|data-ewroll/.test(hud), false);
   // Surface 4 was the remote defender's hand-written mirror, and it is GONE.
   // The Match Centre draws the same window the attacker is looking at now, so
   // the defending player presses surface 1: a page that asks the question in no
@@ -1007,14 +1013,17 @@ console.log('\nPilot traits, against the shipped cards and dice\n');
   check('check() binds the answer to the Counter-roll it claims',
     /c\.responderUid !== cmd\.uid/.test(cmds) && /c\.initiatorUid !== cmd\.targetUid/.test(cmds), true);
 
-  check('the Match Centre reads the shared offer',
-    /provokeOffer\(ctx\.data, s\.tokens, c, v\.initiatorWins\)/.test(hudSrc), true);
+  // The Match Centre no longer reads the offer itself. Electronic Warfare is
+  // resolved in the COMBAT WINDOW now, so the one renderer asks the question on
+  // both screens and the page only carries the answer.
+  check('the Match Centre reads no offer of its own',
+    /provokeOffer\(/.test(hudSrc), false);
   // Both answers travel, because a decline has to close the question on the far
   // screen too — the offer lives in shared state precisely so both seats agree.
   check('and sends BOTH answers as the same command',
     /kind: 'provoke', seat: resp\.side, uid: resp\.uid, targetUid: init\.uid, take \}/.test(hudSrc), true);
   check('and offers it to YOYU\'s seat, not the Initiator\'s',
-    /const iProvoke = !!provoked && mine\(ctx, resp\.side\);/.test(hudSrc), true);
+    /take\.disabled = !this\.mayPress\('resp'\);/.test(combatSrc), true);
 
   check('freeplay\'s ElectronicHelper reads the same rule',
     /provokeWhy\(this\.data, c\.responder, c\.initiator\) === null/.test(combatSrc), true);
@@ -1025,7 +1034,7 @@ console.log('\nPilot traits, against the shipped cards and dice\n');
   // Both boards therefore ASK, and an applied-not-offered wiring would show up
   // as the second button going missing.
   check('and offers the decline as well as the switch',
-    /Leave its Stance alone/.test(combatSrc) && /data-provoke="pass"/.test(hudSrc), true);
+    /Leave its Stance alone/.test(combatSrc) && /leave\.disabled = !this\.mayPress\('resp'\);/.test(combatSrc), true);
 }
 
 // ---------- Low Profile: the note credits the arm that actually fired ----------

@@ -5,8 +5,8 @@ import { actionIconUrl, cardName, isAerial, secondaryImageUrl, squadLabel, unitS
 import { showInspect } from './inspector';
 import { Board, footprint, snapPlacement, type BoardCallbacks } from './board';
 import { printedDeployment, resolveZoneSetData } from './overlays';
-import { actionRange, transformOffer, anyStartTiming, opportunityBonusOn, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, ripostePart, martyrdomOwed, targetTracingOn, riderOnDrone, hasFlexibleTiming, coordinationFor, coordinationOnOpportunityEnd, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, electronicOrigins, loanedParts, phasesThroughUnits, minesLayable, minesOwed, pilotCard, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, maneuverIsSilent, maneuverSilenceDenier, type AuraSource, canActivateCamo, chargeableSlots, electronicStrength, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, projectileReach, provokeOffer, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
-import { resolveCounterRoll, tallyCounter } from './combat';
+import { actionRange, transformOffer, anyStartTiming, opportunityBonusOn, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, ripostePart, martyrdomOwed, targetTracingOn, riderOnDrone, hasFlexibleTiming, coordinationFor, coordinationOnOpportunityEnd, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, electronicOrigins, loanedParts, phasesThroughUnits, minesLayable, minesOwed, pilotCard, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, maneuverIsSilent, maneuverSilenceDenier, type AuraSource, canActivateCamo, chargeableSlots, electronicDash, electronicStrength, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, projectileReach, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
+import { ElectronicHelper, type EwAct } from './combat';
 import { tacticFitsPhase, tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { inContact, canStandIn, attackDirection, crushExchange, crushExchangeSpots, crushTargets, dissipationFor, extendPath, knockbackPath, largeGridOf, LG, losBetween, losNote, pathCost, protectionFor, rangeBetween, reachableGrids, standingSpot, type LargeGrid } from './rules';
 import { breakAwayCost, breakAwayNote, canBeForceMoved, tetherCap, tetherNote } from './melee';
@@ -1686,8 +1686,14 @@ function panelHtml(ctx: HudCtx): string {
   if (launchPlan) return launchPanel(ctx);
   if (launchPick) return launchPickPanel(ctx);
   // A Counter-roll is a live two-player exchange, so it outranks everything
-  // else on both screens until it is closed.
-  if (ensureScript(s).counter) return counterPanel(ctx);
+  // else on both screens until it is closed -- and it is resolved in the COMBAT
+  // WINDOW now, beside the attack it is a sibling of, so the turn panel hands
+  // off to it exactly as it does for an attack rather than drawing a second set
+  // of dice beside it.
+  if (ensureScript(s).counter) {
+    return head('Your move', 'Electronic Counter-roll', 'The combat window has the dice.', true)
+      + '<div class="tp-body"><p class="tp-note">The combat window has it. Everything it settles is applied for you<br>and reaches the other player on its own.</p></div><div class="tp-foot"></div>';
+  }
   if (ewPick) return ewPanel(ctx);
   if (crushPlan?.queue.length) return crushPanel(ctx);
   if (resupplyPick) return resupplyPanel(ctx);
@@ -2490,7 +2496,9 @@ function ewPanel(ctx: HudCtx): string {
   const origins = electronicOrigins(ctx.data, s.tokens, by);
   const relay = origins.slice(1);
   const enemies = s.tokens
-    .filter((t) => t.side !== by.side && t.deployed !== false && alive(t))
+    // Electronic Value "-" cannot be a Responder at all (4.11.2), so those are
+    // not offered rather than offered and then refused at the command.
+    .filter((t) => t.side !== by.side && t.deployed !== false && alive(t) && !electronicDash(ctx.data, t))
     .map((t) => {
       const own = gridsApart(by, t);
       const best = origins.reduce((n, from) => Math.min(n, gridsApart(from, t)), own);
@@ -2527,122 +2535,128 @@ function ewPanel(ctx: HudCtx): string {
        <div class="tp-foot"><button class="bigbtn ghost2" data-act="ewcancel">Cancel</button></div>`;
 }
 
-// Whose turn it is to act inside an open Counter-roll, and what they owe.
-function counterStep(ctx: HudCtx, c: CounterRoll) {
+// The Counter-roll's readers used to live here as well, so the turn panel could
+// draw its own version of the exchange. They are the combat window's now:
+// electronicStrength for the pools, resolveCounterRoll for the verdict, both
+// read straight off the shared record by whichever client is drawing it.
+// THE COUNTER-ROLL'S WINDOW. Electronic Warfare used to be a turn-panel string,
+// which is why it could never animate: spinDice needs elements it can hold
+// across ticks and a string is replaced wholesale on every render. It runs in
+// the combat window now, on the same renderer the attack uses, so the dice roll
+// and the verdict resolves the way they do for an attack.
+//
+// No mirror protocol, unlike the attack: a CounterRoll is already shared state
+// and both clients derive the verdict from it, so each simply draws the record.
+let ewHelper: ElectronicHelper | null = null;
+
+// The seat this client holds, falling back to whose turn it is the same way the
+// rest of the HUD's senders do.
+function seatOf(ctx: HudCtx): Side { return ctx.seat ?? ensureScript(ctx.state).turn ?? 's1'; }
+
+// Every press the window can make, answered in one place. Each is a question
+// one of the two seats owns, so it travels as a command.
+function contestAct(ctx: HudCtx, act: EwAct, arg?: { uid?: number; indices?: number[] }): void {
   const s = ctx.state;
+  const c = ensureScript(s).counter;
+  if (!c) return;
   const init = s.tokens.find((x) => x.uid === c.initiatorUid);
   const resp = s.tokens.find((x) => x.uid === c.responderUid);
-  if (!init || !resp) return null;
-  const both = c.initRoll !== null && c.respRoll !== null;
-  // electronicStrength, not electronicValue: the Loads only the Initiator
-  // counts (FAQ O5) AND the EW Suppression aura of ZHDR-202_B / PDTR-202_B,
-  // which this panel used to ignore, so the two cards did nothing in a match.
-  return {
-    init,
-    resp,
-    both,
-    initEv: electronicStrength(ctx.data, s.tokens, init, 'initiator'),
-    respEv: electronicStrength(ctx.data, s.tokens, resp, 'responder'),
-  };
+  if (!init || !resp) { ctx.send({ kind: 'clearCounterRoll', seat: seatOf(ctx) }); ctx.refresh(); return; }
+  const unit = arg?.uid !== undefined ? s.tokens.find((x) => x.uid === arg.uid) : undefined;
+  if (act === 'roll' && unit) {
+    // electronicStrength, not electronicValue: the Initiator's Tarantula Loads
+    // (FAQ O5) and the EW Suppression aura of ZHDR-202_B / PDTR-202_B both ride
+    // on the pool, and rolling the printed stat drops them.
+    const ev = electronicStrength(ctx.data, s.tokens, unit, unit.uid === init.uid ? 'initiator' : 'responder');
+    void ctx.rollHits(ev, `rolls ${ev} for the Electronic Counter-roll`).then((res) => {
+      ctx.send({ kind: 'rollCounter', seat: unit.side, uid: unit.uid, faces: res.dice.map((d) => d.face) });
+      ctx.refresh();
+    });
+    return;
+  }
+  if (act === 'focus' && unit) {
+    // THE PLAYER'S CHOICE OF WHICH DICE (4.10: "reroll any Dice in that roll").
+    // The old panel rerolled the whole pool, which is a different and more
+    // generous rule than the one printed.
+    const had = unit.uid === init.uid ? c.initRoll : c.respRoll;
+    const idx = (arg?.indices ?? []).filter((i) => had && i >= 0 && i < had.length);
+    if (!had || !idx.length) return;
+    // The Link is spent by the unit's own player, which is the whole reason this
+    // exchange is split across the two seats.
+    if (!ctx.send({ kind: 'focus', seat: unit.side, uid: unit.uid }).ok) { ctx.refresh(); return; }
+    void ctx.rollHits(idx.length, focusIsFree(ctx.data, unit)
+      ? 'Focuses the Counter-roll for free (Will to Survive)'
+      : 'spends 1 Link to Focus the Counter-roll').then((res) => {
+      const faces = had.slice();
+      idx.forEach((at, k) => { const f = res.dice[k]?.face; if (f !== undefined) faces[at] = f; });
+      ctx.send({ kind: 'rollCounter', seat: unit.side, uid: unit.uid, faces, focused: true });
+      ctx.refresh();
+    });
+    return;
+  }
+  if (act === 'provoke' || act === 'provokepass') {
+    const take = act === 'provoke';
+    const verdict = ctx.send({ kind: 'provoke', seat: resp.side, uid: resp.uid, targetUid: init.uid, take });
+    ctx.noteNow(verdict.ok
+      ? take
+        ? `${resp.label} provokes ${init.label} into Offensive Stance (LPA-22 Yoyu).`
+        : `${resp.label} leaves ${init.label}'s Stance alone.`
+      : `${resp.label} cannot provoke ${init.label}: ${verdict.why}`);
+    ctx.refresh();
+    return;
+  }
+  if (act === 'apply') {
+    const a = actionOn(ctx, init, c.actionId);
+    // Target Tracing hands out no token at all: the target loses 1 Link (174).
+    // Read off the same helper that let the Counter-roll open, so the two
+    // verdicts cannot drift.
+    if (targetTracingOn(ctx.data, init)?.actionId === c.actionId) {
+      ctx.send({ kind: 'drainLink', seat: init.side, uid: init.uid, targetUid: resp.uid, n: 1 });
+      ctx.noteNow(`${init.label} traces ${resp.label}: it loses 1 Link (now ${resp.link}).`);
+    } else {
+      // Fire Control Interference is what an Electronic Attack hands out unless
+      // the card names another token, which the effect data would carry.
+      const named = (a?.gameRules ?? []).flatMap((g) => g.effects ?? [])
+        .find((e) => (e as { type?: string }).type === 'apply_status') as { status?: string; stacks?: number } | undefined;
+      const def = STATUSES.find((x) => x.label === named?.status || x.id === named?.status) ?? STATUSES.find((x) => x.id === 'fci')!;
+      ctx.send({ kind: 'applyStatus', seat: init.side, uid: init.uid, targetUid: resp.uid, statusId: def.id, stacks: named?.stacks ?? 1 });
+      ctx.noteNow(`${init.label} succeeds: ${resp.label} gains ${def.label} (4.11.3).`);
+    }
+    ctx.send({ kind: 'clearCounterRoll', seat: init.side });
+    ctx.refresh();
+    return;
+  }
+  if (act === 'close') {
+    ctx.send({ kind: 'clearCounterRoll', seat: seatOf(ctx) });
+    ctx.refresh();
+  }
 }
 
-function counterVerdict(ctx: HudCtx, c: CounterRoll, init: Token, resp: Token) {
-  const dice = ctx.diceData;
-  if (!dice || !c.initRoll || !c.respRoll) return null;
-  // Hollow faces count for a roller in Offensive Stance, so each side's dice
-  // are read under its own stance (4.11.3).
-  const a = tallyCounter(dice, c.initRoll, init.stance === 'offensive');
-  const b = tallyCounter(dice, c.respRoll, resp.stance === 'offensive');
-  return { a, b, ...resolveCounterRoll(a, b) };
-}
-
-function counterPanel(ctx: HudCtx): string {
+// Points the window at the shared record, building it the first time. Returns
+// whether a Counter-roll is on screen, which is what decides the pop's hidden.
+function syncContest(ctx: HudCtx, host: HTMLElement): boolean {
   const s = ctx.state;
-  const c = ensureScript(s).counter!;
-  const step = counterStep(ctx, c);
-  if (!step) {
-    return head('Electronic Warfare', 'A unit in the Counter-roll is gone', '', true)
-      + '<div class="tp-body"></div><div class="tp-foot"><button class="bigbtn" data-act="ewclose">Close it</button></div>';
+  const c = ensureScript(s).counter;
+  const body = host.querySelector<HTMLElement>('#combat-body');
+  if (!c || !body || !ctx.diceData) { ewHelper?.closeContest(); return false; }
+  const init = s.tokens.find((x) => x.uid === c.initiatorUid);
+  const resp = s.tokens.find((x) => x.uid === c.responderUid);
+  const action = init ? actionOn(ctx, init, c.actionId) : undefined;
+  // A record naming a unit or a card this client cannot resolve draws nothing
+  // rather than half a window, the same rule the attack mirror follows.
+  if (!init || !resp || !action) { ewHelper?.closeContest(); return false; }
+  if (!ewHelper) {
+    ewHelper = new ElectronicHelper(ctx.data, ctx.diceData, body, () => ctx.refresh(), () => ctx.refresh());
   }
-  const { init, resp, initEv, respEv } = step;
-  const a = actionOn(ctx, init, c.actionId);
-  const name = a?.name?.en || c.actionId;
-  const sub = `${esc(init.label)} EV ${initEv} vs ${esc(resp.label)} EV ${respEv}.`;
-  const rolled = (t: Token, faces: number[] | null) => faces
-    ? `<span class="rolldice">${faces.map((f) => dieHtml(ctx, { color: 'yellow', face: f })).join('')}</span>`
-    : `<span class="tp-dim">not rolled</span>`;
-  const board = `<div class="dialrow"><span class="nm ${init.side}">${esc(init.label)}</span>${rolled(init, c.initRoll)}</div>
-    <div class="dialrow"><span class="nm ${resp.side}">${esc(resp.label)}</span>${rolled(resp, c.respRoll)}</div>`;
-
-  // Each seat is asked only about its own unit, which is what makes the whole
-  // thing sendable: a player never issues a command for the other's Mech.
-  const owed: { t: Token; ev: number; faces: number[] | null; focused: boolean }[] = [
-    { t: init, ev: initEv, faces: c.initRoll, focused: c.initFocused },
-    { t: resp, ev: respEv, faces: c.respRoll, focused: c.respFocused },
-  ];
-  const mineNow = owed.find((o) => mine(ctx, o.t.side) && o.faces === null);
-  if (mineNow) {
-    return head('Your move', `${esc(name)}: roll the Counter-roll`, sub, true)
-      + `<div class="tp-body">${board}
-          <p class="tp-note">${esc(mineNow.t.label)} rolls ${mineNow.ev} Yellow ${mineNow.ev === 1 ? 'die' : 'dice'}${mineNow.t.stance === 'offensive' ? ', and Offensive Stance makes hollow faces count' : ''}.</p></div>
-         <div class="tp-foot"><button class="bigbtn" data-ewroll="${mineNow.t.uid}">🎲 Roll ${mineNow.ev} ${mineNow.ev === 1 ? 'die' : 'dice'}</button></div>`;
-  }
-  if (!step.both) {
-    const waitOn = owed.find((o) => o.faces === null)!;
-    return head('Waiting', `${squadLabel(waitOn.t.side)} is rolling`, sub, false)
-      + `<div class="tp-body">${board}</div><div class="tp-foot"></div>`;
-  }
-
-  const v = counterVerdict(ctx, c, init, resp);
-  const line = v
-    ? `${esc(init.label)} ${v.initiatorWins ? 'succeeds' : 'fails'}. ${esc(v.why)}.`
-    : 'Both sides have rolled.';
-  // Focus is offered after the verdict is visible, which is when a player
-  // actually knows whether they need it (4.10).
-  // The last Link can never be spent voluntarily (4.10, FAQ L1) — but ZPA-39
-  // Cadaver's Focus spends nothing, so canAffordFocus is the one gate all four
-  // Focus surfaces now ask. Asking `link > 1` here would have hidden the row
-  // from a Cadaver the command would have accepted.
-  const canFocus = owed.filter((o) => mine(ctx, o.t.side) && !o.focused && canAffordFocus(ctx.data, o.t));
-  const focusRows = canFocus
-    .map((o) => `<button class="rowwide" data-ewfocus="${o.t.uid}">Focus with ${esc(o.t.label)}<span class="ct">${focusIsFree(ctx.data, o.t) ? 'free · Will to Survive' : `1 Link · ${o.t.link} left`}</span></button>`)
-    .join('');
-  const winner = v?.initiatorWins ? init : resp;
-  // LPA-22 Yoyu's 挑衅 Provoke: the Responder held, so Yoyu's player MAY turn
-  // the Mech that opened this into Offensive Stance (4.11.2 — an "on successful
-  // Counter-roll" Passive fires for either role). Offered on the same footing
-  // as the Initiator's own Apply row above, and after the verdict for the same
-  // reason Focus is: a later Focus reroll can still move the verdict, and this
-  // panel treats both answers the same way rather than inventing an order the
-  // card does not print.
-  const provoked = v ? provokeOffer(ctx.data, s.tokens, c, v.initiatorWins) : null;
-  const iProvoke = !!provoked && mine(ctx, resp.side);
-  // The Initiator's seat must not be able to close the Counter-roll out from
-  // under an open question, so while it stands their panel waits like any other
-  // half-answered exchange here.
-  const iOwn = provoked ? iProvoke : mine(ctx, init.side);
-  const provokeNote = c.provoke === 'taken'
-    ? `<p class="tp-note">${esc(resp.label)} provokes ${esc(init.label)} into Offensive Stance (LPA-22 Yoyu).</p>`
-    : c.provoke === 'passed'
-      ? `<p class="tp-dim">${esc(resp.label)} let ${esc(init.label)} keep its Stance (LPA-22 Yoyu).</p>`
-      : provoked
-        ? `<p class="tp-note">Yoyu held: ${esc(resp.label)} may switch ${esc(provoked.label)} to Offensive Stance, or leave it alone. Forcing the Stance can HELP them, so it is a choice, not an effect.</p>`
-        : '';
-  return head(iOwn ? 'Your move' : 'Waiting', v?.initiatorWins ? 'The Counter-roll succeeds' : 'The Counter-roll fails', sub, iOwn)
-    + `<div class="tp-body">${board}
-        <p class="tp-note">${line}</p>
-        ${v ? `<p class="tp-dim">Lightning ${v.a.lightning}–${v.b.lightning}, Light Hit ${v.a.light}–${v.b.light}. A tie on both goes to the Initiator (4.11.2).</p>` : ''}
-        <p class="tp-dim">${esc(winner.label)} won this Counter-roll, so any "on successful Counter-roll" Passive it carries triggers. That works for the Responder too.</p>
-        ${provokeNote}
-        ${focusRows ? `<div class="sect2" style="margin-top:10px">Reroll with Focus</div><p class="tp-dim">1 Link, once each, and the verdict is re-read from the new dice.</p>${focusRows}` : ''}
-      </div>
-      <div class="tp-foot">${iProvoke
-        ? `<button class="bigbtn" data-provoke="take">Switch ${esc(provoked!.label)} to Offensive Stance</button><button class="bigbtn ghost2" data-provoke="pass" style="margin-top:6px">Leave its Stance alone</button>`
-        : provoked
-          ? ''
-          : iOwn && v?.initiatorWins
-            ? `<button class="bigbtn" data-ewapply="1">Apply ${esc(name)} to ${esc(resp.label)}</button><button class="bigbtn ghost2" data-act="ewclose" style="margin-top:6px">Done</button>`
-            : '<button class="bigbtn" data-act="ewclose">Done</button>'}</div>`;
+  ewHelper.remount(body);
+  ewHelper.tokens = () => ctx.state.tokens;
+  ewHelper.contestAct = (act, arg) => contestAct(ctx, act, arg);
+  const seat = ctx.seat;
+  // The role is asked of the CONTEST, not of the seat, so a watcher with no seat
+  // comes out a spectator rather than accidentally owning a hand.
+  const role = seat === init.side ? 'initiator' : seat === resp.side ? 'responder' : 'spectator';
+  ewHelper.showContest(c, init, resp, action, role);
+  return true;
 }
 
 // ---------- Black Boxes (rulebook 5.3.1) ----------
@@ -4517,8 +4531,12 @@ export function ensureHud(host: HTMLElement, ctx: HudCtx): void {
   // and the offsetting play on a watching screen for the first time.
   const pop = host.querySelector<HTMLElement>('#combat-pop');
   if (pop) {
-    const mirror = ctx.syncCombatMirror();
-    pop.hidden = !ctx.combatBusy() && !mirror;
+    // A COUNTER-ROLL OWNS THE WINDOW when there is one. The two cannot be live
+    // at once -- an Electronic Attack IS the Action -- and the record on the
+    // wire is what both clients draw, so the attack mirror stands down for it.
+    const contest = syncContest(ctx, host);
+    const mirror = contest ? false : ctx.syncCombatMirror();
+    pop.hidden = !contest && !ctx.combatBusy() && !mirror;
   }
   wireHud(host, ctx);
   renderBoard(ctx);
@@ -5022,85 +5040,10 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     dropAction();
     ctx.refresh();
   });
-  // Each seat rolls its OWN unit's dice and sends them as faces. The receiver
-  // never re-rolls them, so both clients read the same Counter-roll.
-  //
-  // The pool comes from counterStep, the reader that drew the button, so the
-  // offer and the dice cannot drift. Rolling electronicValue() raw here dropped
-  // BOTH riders on the Strength: the Initiator's Tarantula Loads (FAQ O5) and
-  // the EW Suppression aura of ZHDR-202_B / PDTR-202_B.
-  const counterPool = (t: Token): number => {
-    const c = ensureScript(s).counter;
-    const step = c ? counterStep(ctx, c) : null;
-    if (!step) return 0;
-    return t.uid === step.init.uid ? step.initEv : step.respEv;
-  };
-  on('[data-ewroll]', (el) => {
-    const t = s.tokens.find((x) => x.uid === Number(el.dataset.ewroll));
-    if (!t) return;
-    const ev = counterPool(t);
-    void ctx.rollHits(ev, `rolls ${ev} for the Electronic Counter-roll`).then((res) => {
-      ctx.send({ kind: 'rollCounter', seat: t.side, uid: t.uid, faces: res.dice.map((d) => d.face) });
-      ctx.refresh();
-    });
-  });
-  on('[data-ewfocus]', (el) => {
-    const t = s.tokens.find((x) => x.uid === Number(el.dataset.ewfocus));
-    if (!t) return;
-    // The Link is spent by the unit's own player, which is the whole reason
-    // this exchange is split across the two seats.
-    if (!ctx.send({ kind: 'focus', seat: t.side, uid: t.uid }).ok) { ctx.refresh(); return; }
-    const ev = counterPool(t);
-    void ctx.rollHits(ev, focusIsFree(ctx.data, t) ? `Focuses the Counter-roll for free (Will to Survive)` : `spends 1 Link to Focus the Counter-roll`).then((res) => {
-      ctx.send({ kind: 'rollCounter', seat: t.side, uid: t.uid, faces: res.dice.map((d) => d.face), focused: true });
-      ctx.refresh();
-    });
-  });
-  on('[data-ewapply]', () => {
-    const c = ensureScript(s).counter;
-    const init = c ? s.tokens.find((x) => x.uid === c.initiatorUid) : undefined;
-    const resp = c ? s.tokens.find((x) => x.uid === c.responderUid) : undefined;
-    if (c && init && resp) {
-      const a = actionOn(ctx, init, c.actionId);
-      // Target Tracing hands out no token at all: the attacker loses 1 Link
-      // (174). Read off the same helper that let the Counter-roll open, so the
-      // two verdicts cannot drift.
-      if (targetTracingOn(ctx.data, init)?.actionId === c.actionId) {
-        ctx.send({ kind: 'drainLink', seat: init.side, uid: init.uid, targetUid: resp.uid, n: 1 });
-        ctx.noteNow(`${init.label} traces ${resp.label}: it loses 1 Link (now ${resp.link}).`);
-        ctx.send({ kind: 'clearCounterRoll', seat: init.side });
-        ctx.refresh();
-        return;
-      }
-      // Fire Control Interference is what an Electronic Attack hands out unless
-      // the card names another token, which the effect data would carry.
-      const named = (a?.gameRules ?? []).flatMap((g) => g.effects ?? [])
-        .find((e) => (e as { type?: string }).type === 'apply_status') as { status?: string; stacks?: number } | undefined;
-      const def = STATUSES.find((x) => x.label === named?.status || x.id === named?.status) ?? STATUSES.find((x) => x.id === 'fci')!;
-      ctx.send({ kind: 'applyStatus', seat: init.side, uid: init.uid, targetUid: resp.uid, statusId: def.id, stacks: named?.stacks ?? 1 });
-      ctx.noteNow(`${init.label} succeeds: ${resp.label} gains ${def.label} (4.11.3).`);
-      ctx.send({ kind: 'clearCounterRoll', seat: init.side });
-    }
-    ctx.refresh();
-  });
-  // LPA-22 Yoyu, 挑衅 Provoke. Sent by YOYU's seat, naming the Initiator it
-  // turns — both halves of the answer travel, because a decline has to close
-  // the question on the other screen too.
-  on('[data-provoke]', (el) => {
-    const c = ensureScript(s).counter;
-    const resp = c ? s.tokens.find((x) => x.uid === c.responderUid) : undefined;
-    const init = c ? s.tokens.find((x) => x.uid === c.initiatorUid) : undefined;
-    if (!c || !resp || !init) { ctx.refresh(); return; }
-    const take = el.dataset.provoke === 'take';
-    const verdict = ctx.send({ kind: 'provoke', seat: resp.side, uid: resp.uid, targetUid: init.uid, take });
-    ctx.noteNow(verdict.ok
-      ? take
-        ? `${resp.label} provokes ${init.label} into Offensive Stance (LPA-22 Yoyu).`
-        : `${resp.label} leaves ${init.label}'s Stance alone.`
-      : `${resp.label} cannot provoke ${init.label}: ${verdict.why}`);
-    ctx.refresh();
-  });
-  on('[data-act="ewclose"]', () => { ctx.send({ kind: 'clearCounterRoll', seat: me() }); ctx.refresh(); });
+  // The Counter-roll's own presses are NOT wired here any more. They live in
+  // the combat window with the dice they belong to, and contestAct answers all
+  // of them in one place -- see syncContest. A second set here is how the two
+  // surfaces would come to disagree about what a Focus costs.
   on('[data-tactic]', (el) => {
     const [side, id] = el.dataset.tactic!.split(':');
     startTactic(ctx, side as Side, id);

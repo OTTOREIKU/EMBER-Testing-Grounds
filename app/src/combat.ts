@@ -3,7 +3,7 @@ import { cardName } from './data';
 import { iconSvg } from './dice';
 import { linkMechanics } from './inspector';
 import { SQUAD_ORDER, squadLabel } from './data';
-import type { Card, CardAction, CombatView, DiceData, DiceIcon, DieColor, Duel, DuelIcon, GameRuleEffect, PartSlot, Side, SmokeScreen, TerrainPiece, Token } from './types';
+import type { Card, CardAction, CombatView, CounterRoll, DiceData, DiceIcon, DieColor, Duel, DuelIcon, GameRuleEffect, PartSlot, Side, SmokeScreen, TerrainPiece, Token } from './types';
 import { statusCount, STATUSES } from './types';
 import { aaRadarCovers, armorPiercing, armorPiercingNote, attackReactionsOf, auraEffectsOn, aurasOn, auraValueOn, automaticShieldFor, blueLightningDodges, earlyWarningCover, coolingBonus, denseArmorByText, eyesAreHeavyHits, pilotDiceBonus, ignoresLowProfile, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, noMeleeBackAttack, missileGuidance, multiTargetLimit, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, denseArmorOn, designationsOn, electronicStrength, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, canAffordFocus, focusIsFree, hiddenByAlliedAura, keepsLinkOnPartLoss, maxLink, provokeWhy, pursuesFragile, structureOf, trackingCover, TRACKING_SPOTTERS_NEEDED, pilotCard, pilotIs, repeatersFor, SLOT_LABEL, tetherStrike, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
 import { timingOf } from './ticks';
@@ -4136,6 +4136,11 @@ export function resolveCounterRoll(
   return { initiatorWins: true, why: 'level on both counts, so the tie goes to the Initiator' };
 }
 
+// Every press a SHARED Counter-roll window can make. Each is a question one of
+// the two seats owns, so the answer travels as a command and this window never
+// edits the record itself.
+export type EwAct = 'roll' | 'focus' | 'apply' | 'provoke' | 'provokepass' | 'close';
+
 interface EwCtx {
   initiator: Token;
   responder: Token;
@@ -4176,6 +4181,19 @@ export class ElectronicHelper {
   private pending: { init?: number[] | null; resp?: number[] | null } = {};
   // The strip that has already animated, so a redraw does not resolve it twice.
   private duelPlayed = '';
+  // SHARED MODE. Set when this window is drawing a Counter-roll that lives in
+  // the game state rather than one it is running itself, which is how the Match
+  // Centre uses it: the exchange is on the wire, both clients draw the same
+  // thing from the same record, and every press travels as a command.
+  //
+  // No publish/mirror protocol is needed here, unlike the attack window. A
+  // CounterRoll is already shared state and both clients derive the verdict
+  // from it, so there is no second copy to keep in step.
+  private shared = false;
+  // Which side of THIS contest the viewer is, asked of the contest and not of
+  // the seat, the same way the attack window asks it.
+  private role: 'initiator' | 'responder' | 'spectator' = 'spectator';
+  contestAct: ((act: EwAct, arg?: { uid?: number; indices?: number[] }) => void) | null = null;
   private root: HTMLElement;
   private onChanged: () => void;
   private onClose: () => void;
@@ -4208,6 +4226,97 @@ export class ElectronicHelper {
 
   get active(): boolean {
     return !!this.ctx;
+  }
+
+  // Whether this window is drawing a contest somebody else owns the state of.
+  get watching(): boolean {
+    return this.shared;
+  }
+
+  // The shared Counter-roll, drawn from the record both clients hold. Rebuilt
+  // from scratch on every call for the same reason the attack mirror is: the
+  // record is the truth and this window keeps nothing of its own.
+  showContest(c: CounterRoll, init: Token, resp: Token, action: CardAction, role: 'initiator' | 'responder' | 'spectator'): void {
+    const yellow = (faces: number[] | null): Rolled[] | null =>
+      faces ? faces.map((f) => ({ color: 'yellow' as DieColor, face: f, selected: false })) : null;
+    // Selections are LOCAL and survive a repaint, or picking dice for a Focus
+    // would be undone by the next frame to arrive.
+    const keep = (was: Rolled[] | null, now: Rolled[] | null): Rolled[] | null => {
+      if (!now) return null;
+      const same = !!was && was.length === now.length && was.every((d, i) => d.face === now[i].face);
+      return now.map((d, i) => ({ ...d, selected: same ? was![i].selected : false }));
+    };
+    const had = this.shared ? this.ctx : null;
+    const sameFight = !!had && had.initiator.uid === init.uid && had.responder.uid === resp.uid;
+    const initRoll = keep(sameFight ? had!.initRoll : null, yellow(c.initRoll));
+    const respRoll = keep(sameFight ? had!.respRoll : null, yellow(c.respRoll));
+    // A hand that CHANGED shakes, so both players watch the same dice land.
+    if (sameFight) {
+      const moved = (was: Rolled[] | null, now: Rolled[] | null): number[] | null | false => {
+        if (!now) return false;
+        if (!was || was.length !== now.length) return null;
+        const idx = now.map((d, i) => (was[i].face === d.face ? -1 : i)).filter((i) => i >= 0);
+        return idx.length ? idx : false;
+      };
+      const mi = moved(had!.initRoll, initRoll);
+      if (mi !== false) this.pending.init = mi;
+      const mr = moved(had!.respRoll, respRoll);
+      if (mr !== false) this.pending.resp = mr;
+    } else {
+      if (initRoll) this.pending.init = null;
+      if (respRoll) this.pending.resp = null;
+    }
+    this.shared = true;
+    this.role = role;
+    const world = this.tokens ? this.tokens() : [];
+    const done = !!c.initRoll && !!c.respRoll;
+    const a = initRoll ? this.tally(initRoll, init.stance === 'offensive') : null;
+    const b = respRoll ? this.tally(respRoll, resp.stance === 'offensive') : null;
+    this.ctx = {
+      initiator: init,
+      responder: resp,
+      action,
+      initEv: electronicStrength(this.data, world, init, 'initiator'),
+      respEv: electronicStrength(this.data, world, resp, 'responder'),
+      initRoll,
+      respRoll,
+      rerolled: { init: c.initFocused, resp: c.respFocused },
+      log: this.ctx && sameFight ? this.ctx.log : [],
+      done,
+      initiatorWins: done && a && b ? resolveCounterRoll(a, b).initiatorWins : null,
+      provoked: c.provoke ?? null,
+    };
+  }
+
+  // Re-points the window at a new element. The Match Centre rebuilds its whole
+  // HUD shell whenever the page leaves HUD mode and comes back, which destroys
+  // #combat-body, and a helper still holding the old node draws into nothing.
+  remount(root: HTMLElement): void {
+    if (this.root === root) return;
+    this.root = root;
+    if (this.ctx) this.render();
+  }
+
+  closeContest(): void {
+    if (!this.shared) return;
+    this.shared = false;
+    this.ctx = null;
+    this.root.replaceChildren();
+  }
+
+  // Whose dice these are, and whether this viewer may touch them. Freeplay runs
+  // both sides on one screen, so it always may.
+  private mayPress(who: 'init' | 'resp'): boolean {
+    if (!this.shared) return true;
+    return this.role === (who === 'init' ? 'initiator' : 'responder');
+  }
+
+  // A press that TRAVELS. True means it was sent and the caller must not also
+  // apply it here, which is the same contract the attack window's sendAct has.
+  private sendAct(act: EwAct, arg?: { uid?: number; indices?: number[] }): boolean {
+    if (!this.shared) return false;
+    this.contestAct?.(act, arg);
+    return true;
   }
 
   start(initiator: Token, action: CardAction, responder: Token, opts: { linkLoss?: number } = {}): void {
@@ -4354,7 +4463,10 @@ export class ElectronicHelper {
       log.innerHTML = c.log.map((l) => `<div>${l}</div>`).join('');
       el.appendChild(log);
     }
-    el.querySelector('.ah-cancel')!.addEventListener('click', () => this.cancel());
+    // The X ends the exchange for BOTH players on a shared table: the record is
+    // what either screen draws, so closing only this one would leave the other
+    // looking at a contest nobody is answering.
+    el.querySelector('.ah-cancel')!.addEventListener('click', () => { if (!this.sendAct('close')) this.cancel(); });
     linkMechanics(el, this.data.mechanics);
     this.root.replaceChildren(el);
   }
@@ -4376,6 +4488,9 @@ export class ElectronicHelper {
         b.className = `die die-yellow${d.selected ? ' sel' : ''}`;
         b.innerHTML = faceHtml(this.dice, 'yellow', d.face);
         b.title = 'select for a Focus reroll';
+        // Dice belong to whoever rolled them. On a shared table the other
+        // seat's hand is there to be read, not picked at.
+        b.disabled = !this.mayPress(who);
         b.addEventListener('click', () => {
           d.selected = !d.selected;
           this.render();
@@ -4405,9 +4520,16 @@ export class ElectronicHelper {
         const rr = document.createElement('button');
         rr.className = 'ah-cancel';
         rr.textContent = freeFocus ? 'Focus reroll (free — Will to Survive)' : 'Focus reroll (1 Link)';
+        // Built for both players so each can see the other's offer standing,
+        // live only for the one whose Link pays for it.
+        rr.disabled = !this.mayPress(who);
         rr.addEventListener('click', () => {
           const sel = roll.filter((d) => d.selected);
           if (!sel.length) return;
+          // THE PLAYER'S CHOICE OF WHICH DICE (4.10), which is the rule the
+          // Match Centre's own panel used to get wrong: it rerolled the whole
+          // pool. Only the picked indexes travel; the far side splices them.
+          if (this.sendAct('focus', { uid: t.uid, indices: roll.map((d, i) => (d.selected ? i : -1)).filter((i) => i >= 0) })) return;
           const wasShut = t.stance === 'shutdown';
           this.onCommand({ kind: 'focus', seat: t.side, uid: t.uid });
           if (who === 'init') c.rerolled.init = true;
@@ -4454,6 +4576,29 @@ export class ElectronicHelper {
     wrap.appendChild(this.side('resp'));
 
     if (!c.initRoll || !c.respRoll) {
+      // ON A SHARED TABLE EACH SEAT ROLLS ITS OWN, which is what makes the
+      // exchange sendable at all: a player never throws dice for the other's
+      // Mech. Freeplay is one screen running both sides, so it throws both from
+      // one button and neither player sees a hand before their own is fixed.
+      if (this.shared) {
+        const owed = ([['init', c.initiator, c.initEv, c.initRoll], ['resp', c.responder, c.respEv, c.respRoll]] as const)
+          .filter(([, , , r]) => !r);
+        const mineNow = owed.find(([who]) => this.mayPress(who));
+        const note = document.createElement('p');
+        note.className = mineNow ? 'ah-note' : 'ah-sum';
+        note.textContent = mineNow
+          ? `${mineNow[1].label} rolls ${mineNow[2]} Yellow ${mineNow[2] === 1 ? 'die' : 'dice'}${mineNow[1].stance === 'offensive' ? ', and Offensive Stance makes hollow faces count' : ''}.`
+          : `Waiting for ${owed.map(([, u]) => u.label).join(' and ')} to roll.`;
+        wrap.appendChild(note);
+        if (mineNow) {
+          const roll = document.createElement('button');
+          roll.className = 'ah-primary';
+          roll.innerHTML = `<i class="btn-ico">🎲</i> Roll ${mineNow[2]} Yellow ${mineNow[2] === 1 ? 'die' : 'dice'}`;
+          roll.addEventListener('click', () => { this.sendAct('roll', { uid: mineNow[1].uid }); });
+          wrap.appendChild(roll);
+        }
+        return wrap;
+      }
       const roll = document.createElement('button');
       roll.className = 'ah-primary';
       roll.innerHTML = `<i class="btn-ico">🎲</i> Roll ${c.initEv}Y vs ${c.respEv}Y`;
@@ -4473,7 +4618,11 @@ export class ElectronicHelper {
       return wrap;
     }
 
-    if (!c.done) {
+    // On a shared table there is nothing to PRESS here: both hands are in, and
+    // both clients derive the same verdict from the same record (the CounterRoll
+    // comment in types.ts says so). A Resolve button would be a second answer,
+    // and two answers is how the two screens come to disagree.
+    if (!c.done && !this.shared) {
       const resolve = document.createElement('button');
       resolve.className = 'ah-primary';
       resolve.textContent = 'Resolve ▸';
@@ -4552,7 +4701,11 @@ export class ElectronicHelper {
       const take = document.createElement('button');
       take.className = 'ah-primary';
       take.textContent = `Provoke ${c.initiator.label} into Offensive Stance`;
+      // The question belongs to the RESPONDER's seat, and both screens draw it
+      // so the Initiator can see what is being decided about their Mech.
+      take.disabled = !this.mayPress('resp');
       take.addEventListener('click', () => {
+        if (this.sendAct('provoke')) return;
         c.provoked = 'taken';
         this.onCommand({ kind: 'provoke', seat: c.responder.side, uid: c.responder.uid, targetUid: c.initiator.uid, take: true });
         this.note(`${c.responder.label} provokes ${c.initiator.label} into Offensive Stance (LPA-22 Yoyu).`, [c.initiator, c.responder]);
@@ -4563,7 +4716,9 @@ export class ElectronicHelper {
       const leave = document.createElement('button');
       leave.className = 'ah-cancel';
       leave.textContent = 'Leave its Stance alone';
+      leave.disabled = !this.mayPress('resp');
       leave.addEventListener('click', () => {
+        if (this.sendAct('provokepass')) return;
         c.provoked = 'passed';
         this.note(`${c.responder.label} leaves ${c.initiator.label}'s Stance alone.`);
         this.render();
@@ -4572,10 +4727,22 @@ export class ElectronicHelper {
       return wrap;
     }
 
+    // APPLYING THE EFFECT. Freeplay already did it at the Resolve press, where
+    // one screen owns both sides. On a shared table nobody pressed Resolve --
+    // the verdict is derived -- so the Initiator's seat sends the effect, and
+    // only that seat, because it is their Action doing it.
+    if (this.shared && c.initiatorWins) {
+      const apply = document.createElement('button');
+      apply.className = 'ah-primary';
+      apply.textContent = `Apply ${c.action.name.en || c.action.name.zh || c.action.id} to ${c.responder.label}`;
+      apply.disabled = !this.mayPress('init');
+      apply.addEventListener('click', () => { this.sendAct('apply'); });
+      wrap.appendChild(apply);
+    }
     const done = document.createElement('button');
-    done.className = 'ah-primary';
+    done.className = this.shared && c.initiatorWins ? 'ah-cancel' : 'ah-primary';
     done.textContent = 'Done';
-    done.addEventListener('click', () => this.cancel());
+    done.addEventListener('click', () => { if (!this.sendAct('close')) this.cancel(); });
     wrap.appendChild(done);
     return wrap;
   }

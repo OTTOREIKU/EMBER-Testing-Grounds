@@ -2838,11 +2838,29 @@ export function isElectronicAttack(a: CardAction): boolean {
 // `loans` is passed ONLY where the unit is performing the action. A Responder
 // making a passive Electronic Counter Roll gains nothing from a Tarantula's
 // Load (FAQ O5), and a Carrier never counts its own Load at all (O4).
+// ELECTRONIC VALUE "-" (4.11.2): a Unit printed with a dash rather than a
+// number CANNOT BE THE RESPONDER of an Electronic Counter-roll, which is not the
+// same as an Electronic Value of 0 -- a 0 may still be targeted and simply rolls
+// nothing. The dash is carried in the data as -1, and only two cards have it:
+// 074 GM-35 Anti-Armor Mine and 158 the Turtle Shell mobile cover, both
+// deployables rather than crewed machines, which is exactly the sort of thing
+// with no electronics to attack.
+//
+// It was being SUMMED as a number, so instead of being untargetable those two
+// merely rolled one die fewer.
+export function electronicDash(data: GameData, t: Token): boolean {
+  return tokenCards(data, t)
+    .filter(({ slot }) => slot !== 'pilot')
+    .some(({ card }) => (card.electronic ?? 0) < 0);
+}
+
 export function electronicValue(data: GameData, t: Token, loans: LoanedPart[] = []): number {
   const own = tokenCards(data, t)
     .filter(({ slot }) => slot !== 'pilot')
     .filter(({ slot }) => (t.partStates[slot as PartSlot | 'main'] ?? 'intact') !== 'destroyed')
-    .reduce((sum, { card }) => sum + (card.electronic ?? 0), 0);
+    // A dash is not a negative number, so it contributes nothing to the sum.
+    // electronicDash reads it as the rule it actually is.
+    .reduce((sum, { card }) => sum + Math.max(0, card.electronic ?? 0), 0);
   return own + loans.reduce((sum, { card }) => sum + (card.electronic ?? 0), 0);
 }
 

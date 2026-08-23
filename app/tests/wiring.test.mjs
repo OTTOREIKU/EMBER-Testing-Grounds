@@ -208,27 +208,35 @@ check('electronicStrength is the one home for the rolled pool',
 check('and it is the only place the EW Suppression aura is read',
   [main, hud, guide, read('combat.ts'), read('commands.ts'), units]
     .reduce((n, src) => n + (src.match(/electronic_contest_strength_penalty/g) ?? []).length, 0), 1);
-// The Match Centre's three seams: the panel that offers the roll, the reader
-// that sizes it, and the handler that actually rolls the dice.
-const counterFn = hud.slice(hud.indexOf('function counterStep(ctx: HudCtx'), hud.indexOf('function counterVerdict'));
-check('counterStep was located', counterFn.includes('initEv'), true);
-check('counterStep sizes both pools with electronicStrength',
-  (counterFn.match(/electronicStrength\(/g) ?? []).length, 2);
-check('and no longer reads the printed value for a pool',
-  counterFn.includes('electronicValue('), false);
-const ewRollFn = hud.slice(hud.indexOf("on('[data-ewroll]'"), hud.indexOf("on('[data-ewapply]'"));
-check('the roll handlers were located', ewRollFn.includes('rollCounter'), true);
-// Both the first roll and the Focus reroll. Rolling electronicValue() raw here
-// dropped the aura AND the Initiator's Tarantula Loads, so the button offered
-// one number and the dice came up another.
-check('the roll and the Focus reroll both take the pool the panel offered',
-  (ewRollFn.match(/counterPool\(t\)/g) ?? []).length, 2);
-check('and neither rolls the printed value', ewRollFn.includes('electronicValue('), false);
-// Freeplay's helper reads the same function, so the two boards cannot drift again.
+// The Match Centre's seams MOVED: Electronic Warfare is resolved in the combat
+// window now, so the pool is sized by the one renderer (showContest, both
+// hands) and the page only rolls what it is asked for (contestAct).
 const combat = read('combat.ts');
+const contestFn = hud.slice(hud.indexOf('function contestAct(ctx: HudCtx'), hud.indexOf('function syncContest('));
+check('contestAct was located', contestFn.includes('rollCounter'), true);
+check('and sizes the roll with electronicStrength',
+  (contestFn.match(/electronicStrength\(/g) ?? []).length, 1);
+check('and never rolls the printed value', contestFn.includes('electronicValue('), false);
+// THE FOCUS REROLL IS NOT A POOL. 4.10 is 'reroll any Dice in that roll',
+// player's choice, and the retired panel rerolled the whole hand instead --
+// a different and more generous rule than the one printed. Only the chosen
+// indexes are thrown, and they are spliced back into the hand that was kept.
+check('the Focus reroll throws only the dice that were picked',
+  /rollHits\(idx\.length/.test(contestFn), true);
+check('and splices them back into the hand',
+  /const faces = had\.slice\(\);/.test(contestFn), true);
+// Both hands, sized by the renderer that draws them.
+const showFn = combat.slice(combat.indexOf('  showContest('), combat.indexOf('  closeContest()'));
+check('showContest sizes both pools with electronicStrength',
+  (showFn.match(/electronicStrength\(this\.data/g) ?? []).length, 2);
+check('and reads no printed value for a pool', showFn.includes('electronicValue('), false);
+// Freeplay's own entry reads the same function, so the two boards cannot drift.
 check('freeplay ElectronicHelper reads the same helper',
-  (combat.match(/electronicStrength\(this\.data/g) ?? []).length, 2);
-
+  (combat.match(/electronicStrength\(this\.data/g) ?? []).length, 4);
+// The printed value still gates who may INITIATE (4.11.2: EV 0 cannot start
+// one, but may respond), which is a different question from the pool size.
+check('the printed value is still what gates initiating',
+  (hud.match(/electronicValue\(ctx\.data/g) ?? []).length, 2);
 // Same class, the Ammo edition (BUG-4). A Volley is capped by the magazine, and
 // a launcher lent by a Carrier Tarantula keeps its magazine on the DRONE (FAQ
 // O3/O16). Both launch UIs sized that cap off their own `t.ammo`, found nothing
@@ -353,5 +361,30 @@ check('and freeplay now ends it in the same Grid',
 check('the crusher\'s own position is settled from the token only after it was placed',
   /if \(placed\) \{\s*\n\s*settle\(t\.col, t\.row\);/.test(commitFn), true);
 
+// ---------- Electronic Value "-" cannot be a Responder (4.11.2) ----------
+// Found re-reading 4.11 against the engine. The rule distinguishes two things
+// the code was treating as one: an Electronic Value of 0 CANNOT INITIATE but
+// may be targeted and simply rolls nothing, while a DASH cannot be the
+// Responder at all. The dash is carried in the data as -1, and electronicValue
+// summed it as a plain number -- so instead of being untargetable, the two
+// cards that have it merely rolled one die fewer.
+{
+  const u = read('units.ts');
+  check('the dash has a reader of its own',
+    /export function electronicDash\(/.test(u), true);
+  check('and it asks for a NEGATIVE printed value, not a zero',
+    /\(card\.electronic \?\? 0\) < 0/.test(u), true);
+  // The sum must not drag on it either, or a dash reads as -1 Electronic Value.
+  check('a dash contributes nothing to the pool',
+    /Math\.max\(0, card\.electronic \?\? 0\)/.test(u), true);
+  // The gate lives at the COMMAND, so a relayed one obeys it too, and the
+  // picker merely declines to offer what the command would refuse.
+  const cmds = read('commands.ts');
+  const start = cmds.slice(cmds.indexOf("case 'startCounterRoll': {"), cmds.indexOf("case 'rollCounter'"));
+  check('startCounterRoll refuses a dash as the Responder',
+    /electronicDash\(data, target\)/.test(start), true);
+  check('and the Match Centre does not offer one',
+    /alive\(t\) && !electronicDash\(ctx\.data, t\)/.test(read('matchhud.ts')), true);
+}
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exitCode = fail ? 1 : 0;
