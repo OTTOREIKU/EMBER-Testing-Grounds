@@ -325,5 +325,43 @@ const TOKEN_B = { title: 'D7 Tarantula', sub: 'UN · Carrier Drone', lines: ['Ca
     /id="inspect-box"/.test(html('match.html')), false);
 }
 
+// ---------- the measuring line, now on both boards ----------
+// OTTO: "Lets add the freeplay board feature for distance and LOS when
+// selecting a unit and hovering over another in multiplayer. In freeplay it
+// draws a yellow dashed line and says something like 'range 3 - clear'."
+//
+// The Board already fired onHover on both pages; the Match Centre simply never
+// supplied one, so every hover was thrown away. Same shape as the onInspect
+// gap this file was written for.
+{
+  const hud = readFileSync(new URL('../src/matchhud.ts', import.meta.url), 'utf8');
+  const app = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
+  check('the Match Centre now answers board hovers', /^    onHover\(uid\) \{/m.test(hud), true);
+  check('and draws the same line freeplay draws', /board\.showRange\(sel, hov,/.test(hud), true);
+  check('clearing it when there is nothing to measure',
+    /if \(!sel \|\| !hov \|\| sel\.uid === hov\.uid\) \{ board\.clearRange\(\); return; \}/.test(hud), true);
+  // Smoke beats the geometry (4.6), so it is asked FIRST on both boards. Asking
+  // losBetween first would report 'clear' through a Screen.
+  for (const [name, src] of [['freeplay', app], ['the Match Centre', hud]]) {
+    check(`${name} asks smoke before line of sight`,
+      /smokeBlocks\([^)]*\) \? 'smoked' : losBetween\(/.test(src), true);
+  }
+  // The reading itself is written once per board but must AGREE, so the same
+  // three cases are spelled the same way in both.
+  for (const [name, src] of [['freeplay', app], ['the Match Centre', hud]]) {
+    check(`${name} names the same three readings`,
+      [/'same grid'/.test(src), /'adjacent \u00b7 R1'/.test(src), /Range \$\{dc \+ dr\}/.test(src)],
+      [true, true, true]);
+  }
+  // WHICH unit measures FROM. A live targeting is the question being asked, so
+  // it outranks the opened card, which outranks whoever holds the Opportunity.
+  // Getting this order wrong makes the line jump to the active unit mid-aim.
+  check('a live targeting owns the line before anything else',
+    /attackPick\?\.uid \?\? ewPick\?\.uid \?\? inspectUid \?\? ensureScript\(s\)\.opp\?\.uid/.test(hud), true);
+  // The shield readout belongs to a real attack targeting only: nothing can
+  // redirect a hover that is not aiming anything.
+  check('and the Automatic Shield note is read only while aiming',
+    /const aimed = attackPick \? actionOn\(ctx, sel, attackPick\.actionId\) : undefined;/.test(hud), true);
+}
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

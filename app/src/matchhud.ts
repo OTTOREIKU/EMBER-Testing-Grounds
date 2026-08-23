@@ -8,7 +8,7 @@ import { printedDeployment, resolveZoneSetData } from './overlays';
 import { actionRange, transformOffer, anyStartTiming, opportunityBonusOn, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, ripostePart, martyrdomOwed, targetTracingOn, riderOnDrone, hasFlexibleTiming, coordinationFor, coordinationOnOpportunityEnd, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, electronicOrigins, loanedParts, phasesThroughUnits, minesLayable, minesOwed, pilotCard, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, maneuverIsSilent, maneuverSilenceDenier, type AuraSource, canActivateCamo, chargeableSlots, electronicDash, electronicStrength, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, projectileReach, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
 import { ElectronicHelper, type EwAct } from './combat';
 import { tacticFitsPhase, tacticSpec, tacticTargets, type TacticCtx } from './tactics';
-import { inContact, canStandIn, attackDirection, crushExchange, crushExchangeSpots, crushTargets, dissipationFor, extendPath, knockbackPath, largeGridOf, LG, losBetween, losNote, pathCost, protectionFor, rangeBetween, reachableGrids, standingSpot, type LargeGrid } from './rules';
+import { inContact, canStandIn, attackDirection, crushExchange, crushExchangeSpots, crushTargets, dissipationFor, extendPath, knockbackPath, largeGridOf, LG, losBetween, losNote, smokeBlocks, pathCost, protectionFor, rangeBetween, reachableGrids, standingSpot, type LargeGrid } from './rules';
 import { breakAwayCost, breakAwayNote, canBeForceMoved, tetherCap, tetherNote } from './melee';
 import { factionColour, linkIcon, squadColour } from './icons';
 import { iconSvg } from './dice';
@@ -721,6 +721,25 @@ function fitsZone(ctx: HudCtx, side: Side, at: { col: number; row: number }, siz
   return footprint({ ...at, size }).every((c) => zone.has(`${c.col},${c.row}`));
 }
 
+// How far apart two units are, in the words a player uses at the table. Same
+// reading freeplay prints, kept identical on purpose: a measurement that says
+// one thing on one board and another on the other is worse than none.
+function rangeText(a: Token, b: Token): string {
+  const ga = { c: Math.floor(a.col / 3), r: Math.floor(a.row / 3) };
+  const gb = { c: Math.floor(b.col / 3), r: Math.floor(b.row / 3) };
+  const dc = Math.abs(ga.c - gb.c);
+  const dr = Math.abs(ga.r - gb.r);
+  if (dc === 0 && dr === 0) return 'same grid';
+  if (dc <= 1 && dr <= 1) return 'adjacent · R1';
+  return `Range ${dc + dr}`;
+}
+
+// The terrain as it stands now, with anything destroyed taken out of it.
+function terrainNow(ctx: HudCtx) {
+  const gone = new Set(ctx.state.removedTerrain ?? []);
+  return (ctx.data.terrain.layouts[ctx.state.map] ?? []).filter((piece) => !gone.has(piece.id));
+}
+
 function boardCallbacks(): BoardCallbacks {
   return {
     // Board hovers had nowhere to go on this page: the Board builds the text for
@@ -740,6 +759,35 @@ function boardCallbacks(): BoardCallbacks {
     // here for it to compete with.
     onInspect(info, at) {
       showInspect(info, at);
+    },
+    // THE MEASURING LINE, the same one freeplay has always drawn: pick a unit,
+    // hover another, and the board says how far apart they are and whether the
+    // shot would see it. The Board already fired onHover on both pages and the
+    // Match Centre simply never supplied one, so every hover was thrown away.
+    //
+    // WHICH unit is measuring FROM matters more here than in freeplay, because
+    // this page has several ways to have a unit in hand. A live targeting wins
+    // (that IS the question being asked), then the card the player opened, then
+    // whoever holds the Opportunity -- so the line follows what you are doing
+    // rather than jumping to whoever is active.
+    onHover(uid) {
+      const ctx = hudRef;
+      if (!ctx || !board) return;
+      const s = ctx.state;
+      const fromUid = attackPick?.uid ?? ewPick?.uid ?? inspectUid ?? ensureScript(s).opp?.uid ?? null;
+      const sel = fromUid !== null ? s.tokens.find((x) => x.uid === fromUid) : undefined;
+      const hov = uid !== null ? s.tokens.find((x) => x.uid === uid) : undefined;
+      if (!sel || !hov || sel.uid === hov.uid) { board.clearRange(); return; }
+      // Smoke is asked FIRST because it beats the geometry: a Screen blocks the
+      // line whatever the terrain says (4.6).
+      const los = smokeBlocks(sel, hov, s.smoke ?? []) ? 'smoked' : losBetween(sel, hov, terrainNow(ctx), s.tokens);
+      // Automatic Shield, said while the player is still choosing rather than
+      // after the click: the redirect is mandatory (FAQ A12), so there is
+      // nothing to veto and the only out is a different target. Read only for a
+      // real attack targeting, since that is the only time a shield can move.
+      const aimed = attackPick ? actionOn(ctx, sel, attackPick.actionId) : undefined;
+      const shield = aimed ? automaticShieldFor(ctx.data, s.tokens, sel, hov, aimed) : null;
+      board.showRange(sel, hov, `${rangeText(sel, hov)} · ${los}${shield ? ` · ⤳ ${shield.shield.label} shields it` : ''}`);
     },
     onSelect(uid) {
       const ctx = hudRef;
