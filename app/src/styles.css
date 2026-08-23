@@ -2453,6 +2453,13 @@ p.points { white-space: pre-line; }
   /* A narrower column wraps the dice sooner, which is fine, but the header
      should not fight them for width. */
   .attack-helper > .ah-side .ah-half-h { flex-wrap: wrap; row-gap: 2px; }
+  /* The Electronic Counter-roll's window is a single column BY DESIGN: it
+     builds no .ah-main/.ah-side pair, so the grid above would auto-flow its
+     children into tracks meant for the attack window. It keeps the flex
+     column at every width, and scrolls itself because #combat-body clips
+     with overflow: hidden -- anything past the bottom edge of that box is
+     not off screen, it is unreachable (see the felt rules above). */
+  .attack-helper.ew-contest { display: flex; flex-direction: column; overflow-y: auto; min-height: 0; }
 }
 
 /* ---------- The felt ----------

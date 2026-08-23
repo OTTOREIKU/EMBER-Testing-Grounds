@@ -1596,16 +1596,28 @@ export class AttackHelper {
   focusRerolled(indices: number[], faces: { color: string; face: number }[]): void {
     const c = this.ctx;
     if (!c?.focus || c.focus.stage !== 'rerollD' || !c.defenseRoll) return;
+    const applied: number[] = [];
     indices.forEach((idx, k) => {
       const d = c.defenseRoll![idx];
       const nf = faces[k];
       if (d && nf && d.color === nf.color) {
         d.face = nf.face;
         d.selected = false;
+        applied.push(idx);
       }
     });
     if (indices.length) this.note(`${c.defender.label} rerolls ${indices.length} ${indices.length === 1 ? 'die' : 'dice'} (Focus).`);
     c.focus.stage = 'done';
+    // THE DICE SHAKE HERE TOO. This was the last arrival that mutated faces
+    // without asking for the spin: every other landing shakes -- the attack
+    // roll, both defence paths, the mirror's diffs -- so the defender's Focus
+    // reroll appearing pre-settled on the attacker's screen read as the
+    // window deciding rather than the dice landing. Only the APPLIED indices,
+    // for the same reason a reroll never shakes the dice that were kept.
+    if (applied.length) {
+      this.spinFor = 'defense';
+      this.spinOnly = applied;
+    }
     this.render();
   }
 
@@ -4497,7 +4509,13 @@ export class ElectronicHelper {
     c.initiator = board.find((x) => x.uid === c.initiator.uid) ?? c.initiator;
     c.responder = board.find((x) => x.uid === c.responder.uid) ?? c.responder;
     const el = document.createElement('div');
-    el.className = 'attack-helper';
+    // `ew-contest` opts this window OUT of the two-column grid the container
+    // query gives .attack-helper at >=560px. The grid places .ah-main and
+    // .ah-side, and this window builds neither, so inside the Match Centre's
+    // 690px combat pop its children were auto-flowed into the wrong tracks --
+    // the roll step squeezed into the 262px side column. Freeplay never showed
+    // it because its sidebar sits under the query's threshold.
+    el.className = 'attack-helper ew-contest';
     const what = c.action.name.en || c.action.name.zh || c.action.id;
     el.innerHTML = `<div class="ah-head">
       <b>${c.initiator.label}</b> ⚡ <b>${c.responder.label}</b>

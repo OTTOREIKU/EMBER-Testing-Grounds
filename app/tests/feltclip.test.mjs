@@ -110,5 +110,27 @@ const rule = (css, selector) => {
     /overflow:\s*hidden/.test(rule(styles, '.ah-felt') ?? ''), true);
 }
 
+// The Electronic Counter-roll's window rides in the same fixed pop under the
+// same clipping body, and its root carries .attack-helper for the sizing --
+// which means the >=560px container query would hand it the two-column GRID.
+// It builds no .ah-main/.ah-side, so the grid auto-flowed its children into
+// tracks meant for the attack window: the roll step squeezed into the 262px
+// side column. Freeplay never showed it because its sidebar sits under the
+// query's threshold; the Match Centre's 690px pop is what crossed it.
+{
+  const ew = rule(styles, '.attack-helper.ew-contest');
+  check('the Counter-roll window opts out of the grid', !!ew, true);
+  check('and stays a column at every width', /display:\s*flex/.test(ew ?? '') && /flex-direction:\s*column/.test(ew ?? ''), true);
+  // #combat-body clips with overflow: hidden, so a window that cannot scroll
+  // itself loses whatever runs past the bottom edge -- the felt lesson again.
+  check('and scrolls itself inside the clipping body', /overflow-y:\s*auto/.test(ew ?? ''), true);
+  // Inside the container query, where the grid it overrides lives.
+  const q = styles.slice(styles.indexOf('@container (min-width: 560px)'));
+  check('the exemption lives inside the query it overrides', q.includes('.attack-helper.ew-contest'), true);
+  // And the window actually WEARS the class, or the rule is decoration.
+  const combat = readFileSync(new URL('../src/combat.ts', import.meta.url), 'utf8');
+  check('the Counter-roll window wears the class',
+    combat.includes("el.className = 'attack-helper ew-contest';"), true);
+}
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -1108,5 +1108,49 @@ const spinning = (root) => shakingDice(root).length > 0;
     /function mirrorAct\(act: MirrorAct, arg\?: string \| number\[\]\): boolean \{/.test(page), true);
 }
 
+// ---------- EVERY LANDING SHAKES, including the defender's reroll ----------
+// The broad animation sweep found exactly one dice-mutating arrival that never
+// asked for the spin: focusRerolled, the defender's Focus reroll landing on the
+// attacker's window. Their rerolled dice appeared pre-settled while every other
+// landing shakes, which reads as the window deciding rather than dice landing.
+{
+  // The walk above left the attacking window at rerollD (its surplus round's
+  // Focus was declared and never rerolled). Asserted rather than assumed, so a
+  // change to the walk cannot silently turn this block into a no-op.
+  check('the walk is still parked at the defender reroll', A.h.ctx.focus?.stage, 'rerollD');
+  const roll = A.h.ctx.defenseRoll;
+  check('with a defence hand on the table', (roll?.length ?? 0) > 1, true);
+  const idx = 1;
+  A.h.focusRerolled([idx], [{ color: roll[idx].color, face: (roll[idx].face + 2) % 6 }]);
+  await settle();
+  check('the reroll advances the stage', A.h.ctx.focus?.stage, 'done');
+  check('and the landed die SHAKES on the attacking screen', shakingDice(A.root).length, 1);
+}
+
+// ---------- keeping the roll shakes nothing ----------
+// focuskeep travels as an empty focusReroll: nothing moved, so nothing may
+// pretend to. Driven on a fresh window because the walk above consumed its own.
+{
+  const bb = board();
+  const A2 = attacker(bb.all);
+  A2.h.start(bb.atk, firing, bb.def, 'clear');
+  A2.h.pickPart('torso');
+  press(A2.root, 'Roll attack dice');
+  await settle();
+  press(A2.root, 'Continue to Defense');
+  press(A2.root, 'Roll defense dice');
+  await settle();
+  if (A2.h.ctx.focus?.stage === 'declareA') A2.h.ctx.focus.stage = 'declareD';
+  A2.h.focusAnswered(true);
+  check('the fresh window reaches the reroll', A2.h.ctx.focus?.stage, 'rerollD');
+  await settle();
+  const before = A2.h.ctx.defenseRoll.map((d) => d.face);
+  A2.h.focusRerolled([], []);
+  await settle();
+  check('keeping the roll changes no faces', A2.h.ctx.defenseRoll.map((d) => d.face), before);
+  check('and shakes nothing', shakingDice(A2.root).length, 0);
+  check('while still closing the Focus', A2.h.ctx.focus?.stage, 'done');
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
