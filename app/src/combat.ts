@@ -3,11 +3,11 @@ import { cardName, discardFaceOf } from './data';
 import { iconSvg } from './dice';
 import { linkMechanics } from './inspector';
 import { SQUAD_ORDER, squadLabel } from './data';
-import type { Card, CardAction, CombatView, CounterRoll, DiceData, DiceIcon, DieColor, Duel, DuelIcon, GameRuleEffect, PartSlot, Side, SmokeScreen, TerrainPiece, Token } from './types';
+import type { Card, CardAction, CombatView, CounterRoll, DiceData, DiceIcon, DieColor, Duel, DuelIcon, GameRuleEffect, PartSlot, Side, SmokeScreen, TerrainPiece, Token, Facing } from './types';
 import { statusCount, STATUSES } from './types';
 import { aaRadarCovers, armorPiercing, armorPiercingNote, attackReactionsOf, auraEffectsOn, aurasOn, auraValueOn, automaticShieldFor, blueLightningDodges, earlyWarningCover, coolingBonus, denseArmorByText, eyesAreHeavyHits, pilotDiceBonus, ignoresLowProfile, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, noMeleeBackAttack, onHitRiders, STATUS_BY_ZH, missileGuidance, multiTargetLimit, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, snipeOn, suppressionOn, disarmOn, dragPrinted, denseArmorOn, designationsOn, electronicStrength, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, canAffordFocus, focusIsFree, hiddenByAlliedAura, keepsLinkOnPartLoss, maxLink, provokeWhy, pursuesFragile, structureOf, trackingCover, TRACKING_SPOTTERS_NEEDED, pilotCard, pilotIs, repeatersFor, SLOT_LABEL, tetherStrike, treatedAsOffensive, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
 import { timingOf } from './ticks';
-import { inArc, losNote, protectionFor, rangeBetween } from './rules';
+import { inArc, largeGridOf, losNote, protectionFor, rangeBetween, standingSpot } from './rules';
 import type { Command } from './commands';
 
 // Where dice results come from. Absent in a local game, which rolls its own;
@@ -4281,52 +4281,128 @@ export class AttackHelper {
       this.root.replaceChildren(el);
       return;
     }
-    // DISARM 缴械 (050): "[On Hit] Causes Drag or Disarm", an on-hit CHOICE the
-    // attacker makes. Offered on the terminal screen rather than auto-applied,
-    // because a choice auto-taken stops being one -- and offered as a button
-    // that survives ctx going null below, so EVERYTHING it needs is captured
-    // here. The command carries the slot and derives the face, so the flip is
-    // the command layer's and both boards get it identically.
-    //
-    // The Drag half is PRINTED BUT NOT YET MODELLED, and the offer says so
-    // rather than hiding the option: an honest gap reads as a roadmap, a
-    // hidden one reads as the card being wrong.
+    // THE ON-HIT CHOICE RIDERS: Drag 拖拽 and Disarm 缴械. 050 prints them as an
+    // OR the attacker picks; ZHRA-303_A prints Drag alone. Offered on the
+    // terminal screen rather than auto-applied - a choice auto-taken stops
+    // being one - and offered as buttons that survive ctx going null below, so
+    // EVERYTHING they need is captured here. One latch across both: the card
+    // prints OR, so taking either retires the pair.
     if (c.hits > 0 && c.defender.kind === 'mech' && c.defender.uid !== c.attacker.uid
-      && disarmOn(c.action) && c.targetPart && c.targetPart !== 'main') {
-      const slot = c.targetPart;
-      const heldId = c.defender.mech?.[slot as PartSlot];
-      const held = heldId ? this.data.byId.get(heldId) : undefined;
-      const far = held ? discardFaceOf(this.data, held) : null;
+      && (disarmOn(c.action) || dragPrinted(c.action))) {
       const seat = c.attacker.side;
       const atkUid = c.attacker.uid;
       const defUid = c.defender.uid;
       const defLabel = c.defender.label;
-      const wrap = document.createElement('p');
-      wrap.className = 'ah-note';
-      wrap.textContent = far
-        ? `The hit causes Drag or Disarm (050). Disarm flips ${defLabel}'s ${SLOT_LABEL[slot as PartSlot] ?? slot} to ${cardName(far)}.${dragPrinted(c.action) ? ' Drag is not modelled yet — move the target by hand if the table picks it.' : ''}`
-        : `The hit causes Drag or Disarm (050), but ${SLOT_LABEL[slot as PartSlot] ?? slot} has no Discard Card, so there is no Discard State to change to (4.17). Drag is not modelled yet — move the target by hand if the table picks it.`;
-      el.appendChild(wrap);
-      if (far) {
-        const go = document.createElement('button');
-        go.className = 'ah-alt';
-        go.textContent = `Disarm: flip ${SLOT_LABEL[slot as PartSlot] ?? slot} to its Discard Card`;
-        go.disabled = !this.mayDrive('attacker');
-        let flipped = false;
-        go.addEventListener('click', () => {
-          // ctx is null by the time this is pressed; the click runs on the
-          // locals above and touches nothing else. The local latch is the
-          // rule and the disabled attribute its costume, the same split the
-          // mirror's paid asks settled on: the test shim's click() ignores
-          // disabled, which is exactly how this line was proven load-bearing.
-          if (flipped) return;
-          flipped = true;
-          this.onCommand({ kind: 'disarm', seat, uid: atkUid, targetUid: defUid, slot });
-          this.onChanged();
-          go.disabled = true;
-          go.textContent = `Disarmed — ${defLabel}'s ${SLOT_LABEL[slot as PartSlot] ?? slot} is on its Discard Card`;
-        });
-        el.appendChild(go);
+      const defSize = c.defender.size;
+      const both = disarmOn(c.action) && dragPrinted(c.action);
+      let choiceTaken = false;
+      const buttons: HTMLButtonElement[] = [];
+      const retire = (winner: HTMLButtonElement, text: string): void => {
+        choiceTaken = true;
+        for (const b of buttons) b.disabled = true;
+        winner.textContent = text;
+      };
+
+      const head = document.createElement('p');
+      head.className = 'ah-note';
+      head.textContent = both
+        ? `The hit causes Drag or Disarm (050) — the attacker picks one.`
+        : disarmOn(c.action) ? 'The hit causes Disarm.' : 'The hit causes Drag.';
+      el.appendChild(head);
+
+      // ---- Disarm: the hit Part flips to its Discard Card (4.17) ----
+      if (disarmOn(c.action) && c.targetPart && c.targetPart !== 'main') {
+        const slot = c.targetPart;
+        const heldId = c.defender.mech?.[slot as PartSlot];
+        const held = heldId ? this.data.byId.get(heldId) : undefined;
+        const far = held ? discardFaceOf(this.data, held) : null;
+        if (far) {
+          const go = document.createElement('button');
+          go.className = 'ah-alt';
+          go.textContent = `Disarm: flip ${SLOT_LABEL[slot as PartSlot] ?? slot} to its Discard Card`;
+          go.disabled = !this.mayDrive('attacker');
+          go.addEventListener('click', () => {
+            // ctx is null by the time this is pressed; the click runs on the
+            // locals above and touches nothing else. The local latch is the
+            // rule and the disabled attribute its costume, the same split the
+            // mirror's paid asks settled on: the test shim's click() ignores
+            // disabled, which is exactly how this line was proven load-bearing.
+            if (choiceTaken) return;
+            this.onCommand({ kind: 'disarm', seat, uid: atkUid, targetUid: defUid, slot });
+            this.onChanged();
+            retire(go, `Disarmed — ${defLabel}'s ${SLOT_LABEL[slot as PartSlot] ?? slot} is on its Discard Card`);
+          });
+          el.appendChild(go);
+          buttons.push(go);
+        } else {
+          const why = document.createElement('p');
+          why.className = 'ah-note';
+          why.textContent = `${SLOT_LABEL[slot as PartSlot] ?? slot} has no Discard Card, so there is no Discard State to change to (4.17).`;
+          el.appendChild(why);
+        }
+      }
+
+      // ---- Drag: pull the target to a grid adjacent to this Mech and set its
+      // facing (glossary :344). Treated as Flying Movement, which is why the
+      // landing spot is found with `aerial` true - the pull crosses whatever is
+      // between them. Two picks, grid then facing, built by DOM append because
+      // the terminal screen never re-renders.
+      if (dragPrinted(c.action)) {
+        const ag = largeGridOf(c.attacker);
+        const terrain = this.terrain ? this.terrain() : [];
+        const world = this.tokens ? this.tokens() : [];
+        const dirs: [string, number, number][] = [
+          ['NW', -1, -1], ['N', 0, -1], ['NE', 1, -1], ['W', -1, 0],
+          ['E', 1, 0], ['SW', -1, 1], ['S', 0, 1], ['SE', 1, 1],
+        ];
+        const spots = dirs
+          .map(([label, dc, dr]) => ({ label, spot: standingSpot(ag.c + dc, ag.r + dr, defSize as 1 | 2 | 3, true, terrain, world, defUid) }))
+          .filter((x): x is { label: string; spot: { col: number; row: number } } => !!x.spot);
+        if (spots.length) {
+          const row = document.createElement('div');
+          row.className = 'ah-partpick';
+          const faceRow = document.createElement('div');
+          faceRow.className = 'ah-partpick';
+          let picked: { col: number; row: number } | null = null;
+          for (const s of spots) {
+            const b = document.createElement('button');
+            b.className = 'chip chip-intact';
+            b.textContent = `Drag ${s.label}`;
+            b.disabled = !this.mayDrive('attacker');
+            b.addEventListener('click', () => {
+              if (choiceTaken) return;
+              picked = s.spot;
+              for (const other of row.querySelectorAll('button')) other.classList.remove('sel');
+              b.classList.add('sel');
+              faceRow.hidden = false;
+            });
+            row.appendChild(b);
+            buttons.push(b);
+          }
+          const FACINGS: [string, number][] = [['North', 0], ['East', 1], ['South', 2], ['West', 3]];
+          for (const [name, f] of FACINGS) {
+            const b = document.createElement('button');
+            b.className = 'chip chip-intact';
+            b.textContent = `Face ${name}`;
+            b.disabled = !this.mayDrive('attacker');
+            b.addEventListener('click', () => {
+              if (choiceTaken || !picked) return;
+              this.onCommand({ kind: 'forceMove', seat, uid: atkUid, targetUid: defUid, to: picked, facing: f as Facing });
+              this.note(`Drag: ${defLabel} is pulled adjacent and turned to face ${name} — treated as Flying Movement (glossary).`);
+              this.onChanged();
+              retire(b, `Dragged — ${defLabel} lands beside the attacker, facing ${name}`);
+            });
+            faceRow.appendChild(b);
+            buttons.push(b);
+          }
+          faceRow.hidden = true;
+          const hint = document.createElement('p');
+          hint.className = 'ah-note';
+          hint.textContent = 'Drag: pick the grid beside the attacker, then the facing the target is turned to.';
+          el.appendChild(hint);
+          el.appendChild(row);
+          el.appendChild(faceRow);
+        }
       }
     }
     // Mid-Multi-Target, "Done" means "on to the next target" rather than

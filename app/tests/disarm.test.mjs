@@ -110,6 +110,37 @@ async function grapple(slot, defLeft) {
   check('and the note explains the 4.17 reason', /no Discard Card/.test(texts.join(' ')), true);
 }
 
+// ---------- Drag, the other half of the printed OR ----------
+// Glossary :344: force the target to a grid adjacent to this Mech and set its
+// facing, treated as Flying Movement. It travels as the forceMove command the
+// engine already trusts for Knockback, with the landing spot computed by the
+// caller exactly as forceMove's own comment demands.
+{
+  const { cmds, root } = await grapple('leftHand', shield.id);
+  const grids = findButtons(root).filter((x) => /^Drag [NSEW]/.test(label(x)));
+  check('the terminal screen offers the adjacent grids', grids.length > 0, true);
+  const faceBtn = () => findButtons(root).find((x) => /^Face East/.test(label(x)));
+  check('but no facing until a grid is picked - the pull needs a destination first',
+    (() => { faceBtn().click(); return cmds.filter((c) => c.kind === 'forceMove').length; })(), 0);
+  grids[0].click();
+  faceBtn().click();
+  const fm = cmds.filter((c) => c.kind === 'forceMove');
+  check('grid then facing sends the pull', fm.length, 1);
+  check('as a forceMove naming the defender', fm[0]?.targetUid, 2);
+  check('with the chosen facing riding along', fm[0]?.facing, 1);
+  check('and the landing spot beside the attacker',
+    Math.abs(Math.floor(fm[0].to.col / 3) - 0) <= 1 && Math.abs(Math.floor(fm[0].to.row / 3) - 0) <= 1, true);
+  // The printed OR: taking Drag retires Disarm, and the latch is the rule
+  // rather than the disabled attribute (the shim's click() ignores disabled).
+  const disarmBtn = findButtons(root).find((x) => /^Disarm: flip/.test(label(x)));
+  disarmBtn.click();
+  check('taking Drag retires the Disarm half', cmds.filter((c) => c.kind === 'disarm').length, 0);
+  // Not faceBtn() again: retire() renamed the pressed chip to its confirmation
+  // text, so the honest re-press is a DIFFERENT facing chip that kept its label.
+  findButtons(root).find((x) => /^Face North/.test(label(x))).click();
+  check('and a second pull is not sent either', cmds.filter((c) => c.kind === 'forceMove').length, 1);
+}
+
 // ---------- where the rule lives ----------
 {
   const dataSrc = readFileSync(new URL('../src/data.ts', import.meta.url), 'utf8');
