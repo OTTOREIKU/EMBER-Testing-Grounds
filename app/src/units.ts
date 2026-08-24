@@ -76,6 +76,41 @@ export function snipeOn(a: CardAction): boolean {
     .some((l) => l.includes('狙击') && !/获得|【|\[/.test(l));
 }
 
+// ---------- LASER SUPPRESSION'S OTHER HALF, and 139's two riders ----------
+
+// 不造成伤害 "does not cause damage" (PRDR-102_C, PRDR-104_C, 552_B). The FCI
+// grant on these actions already rides the on-hit seam; THIS is the half that
+// was left: the attack scores Hits (the rider needs them) but the un-offset
+// icons never become a Penetration, so no damage, no Part roll, no Surplus.
+export function preventsDamage(a: CardAction): boolean {
+  if ((a.gameRules ?? []).some((g) => (g.effects ?? []).some((e) => (e as { type?: string })?.type === 'prevent_damage'))) return true;
+  return /不造成伤害/.test(a.description?.zh ?? '') || /does not cause damage/i.test(a.description?.en ?? '');
+}
+
+// 139_A: "[On Hit] may Drag the target, or give the target 1 Immobilized
+// Token." The Drag half already rides dragPrinted; this reads whether the
+// IMMOBILIZE alternative is on offer, structurally first and printed second.
+export function immobilizeChoiceOn(a: CardAction): boolean {
+  if ((a.gameRules ?? []).some((g) => (g.effects ?? []).some((e) => {
+    const eff = e as { type?: string; choices?: string[] };
+    return eff.type === 'hit_effect_choice' && (eff.choices ?? []).includes('immobilize');
+  }))) return true;
+  return /或使目标获得\d*个?禁足标记/.test(a.description?.zh ?? '')
+    || /or give the target \d+ Immobilized Token/i.test(a.description?.en ?? '');
+}
+
+// 139_B: "[On Hit] may set the Facing of the target" -- and the zh is
+// STRICTER than the English: 可强迫目标背对本机, the target is forced to face
+// AWAY from this Mech. The structured rule agrees (direction:
+// 'away_from_attacker'), so this is one specific facing, not a free pick.
+export function faceAwayOnHit(a: CardAction): boolean {
+  if ((a.gameRules ?? []).some((g) => (g.effects ?? []).some((e) => {
+    const eff = e as { type?: string; direction?: string };
+    return eff.type === 'set_facing' && eff.direction === 'away_from_attacker';
+  }))) return true;
+  return /背对本机/.test(a.description?.zh ?? '');
+}
+
 // ---------- TARGET TRACER 追击标记 (glossary, 06_missions_and_appendix.md:522) ----------
 //
 // The RULEBOOK GLOSSARY overrides keywords.json here, and the difference is

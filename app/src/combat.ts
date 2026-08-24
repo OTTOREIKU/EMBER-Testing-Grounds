@@ -5,7 +5,7 @@ import { linkMechanics } from './inspector';
 import { SQUAD_ORDER, squadLabel } from './data';
 import type { Card, CardAction, CombatView, CounterRoll, DiceData, DiceIcon, DieColor, Duel, DuelIcon, GameRuleEffect, PartSlot, Side, SmokeScreen, TerrainPiece, Token, Facing } from './types';
 import { statusCount, STATUSES } from './types';
-import { aaRadarCovers, armorPiercing, armorPiercingNote, attackReactionsOf, auraEffectsOn, aurasOn, auraValueOn, automaticShieldFor, blueLightningDodges, earlyWarningCover, coolingBonus, denseArmorByText, eyesAreHeavyHits, pilotDiceBonus, ignoresLowProfile, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, noMeleeBackAttack, onHitRiders, STATUS_BY_ZH, missileGuidance, multiTargetLimit, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, snipeOn, suppressionOn, disarmOn, dragPrinted, denseArmorOn, designationsOn, electronicStrength, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, canAffordFocus, focusIsFree, hiddenByAlliedAura, keepsLinkOnPartLoss, maxLink, provokeWhy, pursuesFragile, structureOf, trackingCover, TRACKING_SPOTTERS_NEEDED, pilotCard, pilotIs, repeatersFor, SLOT_LABEL, tetherStrike, treatedAsOffensive, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
+import { aaRadarCovers, armorPiercing, armorPiercingNote, attackReactionsOf, auraEffectsOn, aurasOn, auraValueOn, automaticShieldFor, blueLightningDodges, earlyWarningCover, coolingBonus, denseArmorByText, eyesAreHeavyHits, pilotDiceBonus, ignoresLowProfile, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, noMeleeBackAttack, onHitRiders, STATUS_BY_ZH, missileGuidance, multiTargetLimit, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, snipeOn, suppressionOn, disarmOn, dragPrinted, denseArmorOn, designationsOn, electronicStrength, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, canAffordFocus, focusIsFree, hiddenByAlliedAura, keepsLinkOnPartLoss, maxLink, provokeWhy, preventsDamage, immobilizeChoiceOn, faceAwayOnHit, pursuesFragile, structureOf, trackingCover, TRACKING_SPOTTERS_NEEDED, pilotCard, pilotIs, repeatersFor, SLOT_LABEL, tetherStrike, treatedAsOffensive, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
 import { timingOf } from './ticks';
 import { inArc, largeGridOf, losNote, protectionFor, rangeBetween, standingSpot } from './rules';
 import type { Command } from './commands';
@@ -2154,11 +2154,22 @@ export class AttackHelper {
     }
     text.push(`${totalIcons} damage icon${totalIcons === 1 ? '' : 's'} → ${dodged} dodged, ${blocked} blocked by Defense`);
     text.push(`Hits: ${hits} (defense-blocked icons still count as Hits for on-hit effects)`);
-    text.push(`Un-offset icons: ${penetrating} ${penetrating ? '→ PENETRATION' : '→ no damage'}`);
+    // 不造成伤害 (PRDR-102_C, PRDR-104_C, 552_B): the un-offset icons never
+    // become a Penetration. HITS ARE KEPT -- the FCI grant riding the on-hit
+    // seam is the whole point of these actions, and 4.4's Hit-vs-Penetration
+    // split is exactly what lets one half survive without the other. Zeroing
+    // `unoffset` too is what keeps a Surplus keyword from ever seeing icons
+    // to carry.
+    const noDamage = preventsDamage(c.action);
+    if (noDamage) {
+      text.push(`Un-offset icons: ${penetrating} — but this Action causes no damage (不造成伤害): only its on-hit effects apply.`);
+    } else {
+      text.push(`Un-offset icons: ${penetrating} ${penetrating ? '→ PENETRATION' : '→ no damage'}`);
+    }
     return {
       hits,
-      penetrating,
-      unoffset,
+      penetrating: noDamage ? 0 : penetrating,
+      unoffset: noDamage ? { heavy: 0, light: 0 } : unoffset,
       text,
       duel: { icons, triggers, spareDodge, idleDefense, carried: c.surplusRound > 0 },
     };
@@ -3885,7 +3896,12 @@ export class AttackHelper {
     const res = c.resolution ?? null;
     // Read off the SHARED strip rather than worked out again: every damage icon
     // that nothing offset is a Penetration, which is what offsetIcons counted.
-    const penetrating = settled ? settled.penetrating : (res?.duel.icons ?? []).filter((i) => !i.offset).length;
+    // The same no-damage gate the attacker's resolve() applies, asked here
+    // too because a MIRROR derives this count from the strip's icons and
+    // would otherwise draw a disabled Apply button for a Penetration that
+    // can never happen.
+    const penetrating = preventsDamage(c.action) ? 0
+      : settled ? settled.penetrating : (res?.duel.icons ?? []).filter((i) => !i.offset).length;
     wrap.innerHTML = `<h4><span class="ah-n">4</span><span data-mech="penetration">Resolution</span>${
       c.surplusRound
         ? ` (<span data-mech="surplus_damage">${c.surplusKeyword?.name ?? 'Surplus'} Damage, no Attack Roll</span>)`
@@ -4288,7 +4304,7 @@ export class AttackHelper {
     // EVERYTHING they need is captured here. One latch across both: the card
     // prints OR, so taking either retires the pair.
     if (c.hits > 0 && c.defender.kind === 'mech' && c.defender.uid !== c.attacker.uid
-      && (disarmOn(c.action) || dragPrinted(c.action))) {
+      && (disarmOn(c.action) || dragPrinted(c.action) || immobilizeChoiceOn(c.action) || faceAwayOnHit(c.action))) {
       const seat = c.attacker.side;
       const atkUid = c.attacker.uid;
       const defUid = c.defender.uid;
@@ -4307,6 +4323,8 @@ export class AttackHelper {
       head.className = 'ah-note';
       head.textContent = both
         ? `The hit causes Drag or Disarm (050) — the attacker picks one.`
+        : immobilizeChoiceOn(c.action) ? 'The hit MAY Drag the target, or give it an Immobilized Token — the attacker picks, or skips (139).'
+        : faceAwayOnHit(c.action) ? 'The hit MAY force the target to face away from this Mech (139).'
         : disarmOn(c.action) ? 'The hit causes Disarm.' : 'The hit causes Drag.';
       el.appendChild(head);
 
@@ -4340,6 +4358,56 @@ export class AttackHelper {
           why.textContent = `${SLOT_LABEL[slot as PartSlot] ?? slot} has no Discard Card, so there is no Discard State to change to (4.17).`;
           el.appendChild(why);
         }
+      }
+
+      // ---- 139_A's alternative: give the target an Immobilized Token. In the
+      // same latch group as Drag, because the card prints OR — and the whole
+      // rider is a MAY, which skipping any button already honours.
+      if (immobilizeChoiceOn(c.action)) {
+        const go = document.createElement('button');
+        go.className = 'ah-alt';
+        go.textContent = `Immobilize: ${defLabel} gains 1 Immobilized Token`;
+        go.disabled = !this.mayDrive('attacker');
+        go.addEventListener('click', () => {
+          if (choiceTaken) return;
+          this.onCommand({ kind: 'applyStatus', seat, uid: atkUid, targetUid: defUid, statusId: 'immobilized', stacks: 1 });
+          this.onChanged();
+          retire(go, `Immobilized — ${defLabel} bears the Token`);
+        });
+        el.appendChild(go);
+        buttons.push(go);
+      }
+
+      // ---- 139_B: force the target to face AWAY from this Mech. The zh is
+      // stricter than the English ('may set the Facing') and the structured
+      // rule agrees: away_from_attacker, one specific facing, not a free pick.
+      // It travels as a forceMove to the target's OWN square — a facing-only
+      // Forced Movement, which is also why an Immobilized target still turns:
+      // being displaced by somebody else is not its own Movement.
+      if (faceAwayOnHit(c.action)) {
+        const ga = largeGridOf(c.attacker);
+        const gd = largeGridOf(c.defender);
+        const dx = gd.c - ga.c;
+        const dy = gd.r - ga.r;
+        // The dominant axis of the line between them, read from the DEFENDER's
+        // side: facing 0=N 1=E 2=S 3=W, and 'away' points along that line. A
+        // pure diagonal takes the horizontal, said in the note so a table that
+        // reads it the other way can turn the token by hand.
+        const away = (Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? 1 : 3) : (dy >= 0 ? 2 : 0)) as Facing;
+        const to = { col: c.defender.col, row: c.defender.row };
+        const go = document.createElement('button');
+        go.className = 'ah-alt';
+        go.textContent = `Turn ${defLabel} to face away from the attacker`;
+        go.disabled = !this.mayDrive('attacker');
+        go.addEventListener('click', () => {
+          if (choiceTaken) return;
+          this.onCommand({ kind: 'forceMove', seat, uid: atkUid, targetUid: defUid, to, facing: away });
+          this.note(`${defLabel} is forced to face away from the attacker (139_B). On a pure diagonal the horizontal was taken — turn it by hand if the table reads it otherwise.`);
+          this.onChanged();
+          retire(go, `Turned — ${defLabel} faces away`);
+        });
+        el.appendChild(go);
+        buttons.push(go);
       }
 
       // ---- Drag: pull the target to a grid adjacent to this Mech and set its

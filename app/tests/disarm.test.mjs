@@ -141,6 +141,105 @@ async function grapple(slot, defLeft) {
   check('and a second pull is not sent either', cmds.filter((c) => c.kind === 'forceMove').length, 1);
 }
 
+// ---------- a generic strike, for the rest of the choice family ----------
+async function strike(cardId, actionId, slot, boost) {
+  const card = data.cards.find((c) => c.id === cardId);
+  const act = card?.actions?.find((a) => a.id === actionId);
+  const atk = kit(mech(1, 's1', 'Attacker', 1), card.id);
+  const def = kit(mech(2, 's2', 'Defender', 3), '');
+  const cmds = [];
+  const root = makeEl('div');
+  const h = new AttackHelper(
+    data, dice, root,
+    () => {}, () => {}, () => {}, () => {}, () => {}, () => {},
+    (cmd) => cmds.push(cmd),
+  );
+  h.tokens = () => [atk, def];
+  h.terrain = () => [];
+  h.smoke = () => [];
+  h.start(atk, act, def, 'clear');
+  h.pickPart(slot);
+  // A healthy pool, so the seeded walk reliably lands the Hit the riders need.
+  if (boost && h.ctx) h.ctx.attackPool = boost;
+  for (const want of [/roll attack dice/i, /continue to defense/i, /roll defense dice/i]) {
+    const b = findButtons(root).find((x) => want.test(label(x)));
+    if (b) b.click();
+    await settle();
+  }
+  for (let i = 0; i < 2; i++) {
+    const b = findButtons(root).find((x) => label(x) === 'Pass' && !x.disabled);
+    if (b) b.click();
+  }
+  const res = findButtons(root).find((x) => /^Resolve/.test(label(x)));
+  if (res) res.click();
+  await settle();
+  const hits = h.ctx?.hits ?? 0;
+  // The RESOLVE step's text, captured before Done sweeps to the terminal
+  // screen: the no-damage explanation lives on the strip, not in the log.
+  const resolveTexts = [];
+  const grab = (el) => { if (el.textContent) resolveTexts.push(String(el.textContent)); if (el.innerHTML) resolveTexts.push(String(el.innerHTML)); for (const ch of el.children ?? []) grab(ch); };
+  grab(root);
+  const applyBtn = findButtons(root).find((x) => /^Apply Penetration/.test(label(x)));
+  const end = findButtons(root).find((x) => /apply penetration|^Done$/i.test(label(x)) && !x.disabled);
+  if (end) end.click();
+  await settle();
+  return { cmds, root, hits, hadApply: !!applyBtn, def, resolveText: resolveTexts.join(' ') };
+}
+
+// ---------- 139_A: Drag OR Immobilize, the attacker picks ----------
+{
+  const { cmds, root, hits } = await strike('139', '139_A', 'torso', { red: 4, yellow: 4 });
+  check('the whip landed a Hit', hits > 0, true);
+  const imm = findButtons(root).find((x) => /^Immobilize:/.test(label(x)));
+  check('the Immobilize alternative is offered beside the Drag chips', !!imm, true);
+  check('with the Drag chips there too - it is an OR',
+    findButtons(root).some((x) => /^Drag [NSEW]/.test(label(x))), true);
+  imm.click();
+  const st = cmds.filter((c) => c.kind === 'applyStatus');
+  check('taking it applies the Immobilized Token', st[0]?.statusId, 'immobilized');
+  check('to the defender', st[0]?.targetUid, 2);
+  // The shared latch: the OR is spent.
+  const grid = findButtons(root).find((x) => /^Drag [NSEW]/.test(label(x)));
+  grid.click();
+  findButtons(root).filter((x) => /^Face /.test(label(x))).forEach((b) => b.click());
+  check('and the Drag half is retired with it', cmds.filter((c) => c.kind === 'forceMove').length, 0);
+}
+
+// ---------- 139_B: forced to face AWAY, one specific facing ----------
+// The zh is stricter than the English ("may set the Facing"): 可强迫目标背对本机,
+// and the structured rule agrees - away_from_attacker. Not a free pick.
+{
+  const { cmds, root, hits, def } = await strike('139', '139_B', 'torso', { red: 4, yellow: 4 });
+  check('the flat of the whip landed too', hits > 0, true);
+  const turn = findButtons(root).find((x) => /face away from the attacker/.test(label(x)));
+  check('the face-away offer is there', !!turn, true);
+  turn.click();
+  const fm = cmds.filter((c) => c.kind === 'forceMove');
+  check('it travels as a facing-only forceMove', fm.length, 1);
+  check('to the defender\'s OWN square - nobody moves', fm[0]?.to, { col: def.col, row: def.row });
+  // The harness places the defender EAST of the attacker (the 4th mech()
+  // argument is the COLUMN - misread as the row in this test's first draft),
+  // so away points East, facing 1.
+  check('and the facing points away along the line between them', fm[0]?.facing, 1);
+  check('a forceMove, so an Immobilized target still turns - displacement is not its own Movement',
+    fm[0]?.kind, 'forceMove');
+}
+
+// ---------- Laser Suppression: the hit lands its token and nothing else ----------
+// 不造成伤害 (552_B, PRDR-102_C/104_C): Hits are kept - the FCI grant rides the
+// on-hit seam and needs them - but the un-offset icons never become a
+// Penetration, so no damage, no Part state change, no Surplus.
+{
+  const { cmds, hits, hadApply, resolveText } = await strike('552', '552_B', 'torso', { red: 3, yellow: 4 });
+  check('the suppression laser landed a Hit', hits > 0, true);
+  check('and granted Fire Control Interference through the rider seam',
+    cmds.filter((c) => c.kind === 'applyStatus' && c.statusId === 'fci').length, 1);
+  check('but offered NO Apply Penetration - the action causes no damage', hadApply, false);
+  check('and no Penetration was ever applied',
+    cmds.filter((c) => c.kind === 'applyPenetration').length, 0);
+  check('and the resolution says why in words', /causes no damage/.test(resolveText), true);
+}
+
 // ---------- where the rule lives ----------
 {
   const dataSrc = readFileSync(new URL('../src/data.ts', import.meta.url), 'utf8');
