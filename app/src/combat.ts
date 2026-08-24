@@ -1,11 +1,11 @@
 import type { GameData } from './data';
-import { cardName } from './data';
+import { cardName, discardFaceOf } from './data';
 import { iconSvg } from './dice';
 import { linkMechanics } from './inspector';
 import { SQUAD_ORDER, squadLabel } from './data';
 import type { Card, CardAction, CombatView, CounterRoll, DiceData, DiceIcon, DieColor, Duel, DuelIcon, GameRuleEffect, PartSlot, Side, SmokeScreen, TerrainPiece, Token } from './types';
 import { statusCount, STATUSES } from './types';
-import { aaRadarCovers, armorPiercing, armorPiercingNote, attackReactionsOf, auraEffectsOn, aurasOn, auraValueOn, automaticShieldFor, blueLightningDodges, earlyWarningCover, coolingBonus, denseArmorByText, eyesAreHeavyHits, pilotDiceBonus, ignoresLowProfile, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, noMeleeBackAttack, onHitRiders, STATUS_BY_ZH, missileGuidance, multiTargetLimit, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, snipeOn, suppressionOn, denseArmorOn, designationsOn, electronicStrength, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, canAffordFocus, focusIsFree, hiddenByAlliedAura, keepsLinkOnPartLoss, maxLink, provokeWhy, pursuesFragile, structureOf, trackingCover, TRACKING_SPOTTERS_NEEDED, pilotCard, pilotIs, repeatersFor, SLOT_LABEL, tetherStrike, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
+import { aaRadarCovers, armorPiercing, armorPiercingNote, attackReactionsOf, auraEffectsOn, aurasOn, auraValueOn, automaticShieldFor, blueLightningDodges, earlyWarningCover, coolingBonus, denseArmorByText, eyesAreHeavyHits, pilotDiceBonus, ignoresLowProfile, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, noMeleeBackAttack, onHitRiders, STATUS_BY_ZH, missileGuidance, multiTargetLimit, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, snipeOn, suppressionOn, disarmOn, dragPrinted, denseArmorOn, designationsOn, electronicStrength, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, canAffordFocus, focusIsFree, hiddenByAlliedAura, keepsLinkOnPartLoss, maxLink, provokeWhy, pursuesFragile, structureOf, trackingCover, TRACKING_SPOTTERS_NEEDED, pilotCard, pilotIs, repeatersFor, SLOT_LABEL, tetherStrike, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
 import { timingOf } from './ticks';
 import { inArc, losNote, protectionFor, rangeBetween } from './rules';
 import type { Command } from './commands';
@@ -4280,6 +4280,54 @@ export class AttackHelper {
       el.append(go, decline);
       this.root.replaceChildren(el);
       return;
+    }
+    // DISARM 缴械 (050): "[On Hit] Causes Drag or Disarm", an on-hit CHOICE the
+    // attacker makes. Offered on the terminal screen rather than auto-applied,
+    // because a choice auto-taken stops being one -- and offered as a button
+    // that survives ctx going null below, so EVERYTHING it needs is captured
+    // here. The command carries the slot and derives the face, so the flip is
+    // the command layer's and both boards get it identically.
+    //
+    // The Drag half is PRINTED BUT NOT YET MODELLED, and the offer says so
+    // rather than hiding the option: an honest gap reads as a roadmap, a
+    // hidden one reads as the card being wrong.
+    if (c.hits > 0 && c.defender.kind === 'mech' && c.defender.uid !== c.attacker.uid
+      && disarmOn(c.action) && c.targetPart && c.targetPart !== 'main') {
+      const slot = c.targetPart;
+      const heldId = c.defender.mech?.[slot as PartSlot];
+      const held = heldId ? this.data.byId.get(heldId) : undefined;
+      const far = held ? discardFaceOf(this.data, held) : null;
+      const seat = c.attacker.side;
+      const atkUid = c.attacker.uid;
+      const defUid = c.defender.uid;
+      const defLabel = c.defender.label;
+      const wrap = document.createElement('p');
+      wrap.className = 'ah-note';
+      wrap.textContent = far
+        ? `The hit causes Drag or Disarm (050). Disarm flips ${defLabel}'s ${SLOT_LABEL[slot as PartSlot] ?? slot} to ${cardName(far)}.${dragPrinted(c.action) ? ' Drag is not modelled yet — move the target by hand if the table picks it.' : ''}`
+        : `The hit causes Drag or Disarm (050), but ${SLOT_LABEL[slot as PartSlot] ?? slot} has no Discard Card, so there is no Discard State to change to (4.17). Drag is not modelled yet — move the target by hand if the table picks it.`;
+      el.appendChild(wrap);
+      if (far) {
+        const go = document.createElement('button');
+        go.className = 'ah-alt';
+        go.textContent = `Disarm: flip ${SLOT_LABEL[slot as PartSlot] ?? slot} to its Discard Card`;
+        go.disabled = !this.mayDrive('attacker');
+        let flipped = false;
+        go.addEventListener('click', () => {
+          // ctx is null by the time this is pressed; the click runs on the
+          // locals above and touches nothing else. The local latch is the
+          // rule and the disabled attribute its costume, the same split the
+          // mirror's paid asks settled on: the test shim's click() ignores
+          // disabled, which is exactly how this line was proven load-bearing.
+          if (flipped) return;
+          flipped = true;
+          this.onCommand({ kind: 'disarm', seat, uid: atkUid, targetUid: defUid, slot });
+          this.onChanged();
+          go.disabled = true;
+          go.textContent = `Disarmed — ${defLabel}'s ${SLOT_LABEL[slot as PartSlot] ?? slot} is on its Discard Card`;
+        });
+        el.appendChild(go);
+      }
     }
     // Mid-Multi-Target, "Done" means "on to the next target" rather than
     // "close": the Action is one declaration and is not finished until every

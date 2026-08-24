@@ -963,6 +963,23 @@ export function transformFaces(data: GameData, c: Card): string[] {
   return [...out];
 }
 
+// The Discard Card a Part flips to when its handheld equipment is dropped
+// (4.17), reached through the same throwIndex pointer transformFaces uses --
+// but as its OWN lookup, because transformFaces deliberately EXCLUDES discard
+// faces (its comment: taking throwIndex at face value "would make all 61
+// Discard Cards transformable, which is 4.17 backwards"). Disarm 缴械 is the
+// one rule that flips onto a discard face mid-game, and it needs the pointer
+// without widening what a player may transform by hand.
+//
+// Sits INSIDE the isModeFace..zeroCostReason range on purpose: the commands
+// test slices exactly that range, and a helper outside it breaks the slice
+// the way immobilizedStop once did.
+export function discardFaceOf(data: GameData, c: Card): Card | null {
+  const other = faceOf(data.cards, c.id);
+  const far = other ? data.byId.get(other) : undefined;
+  return far && isDiscardCard(far) ? far : null;
+}
+
 export function zeroCostReason(c: Card): string | null {
   if (c.score) return null;
   if (isDiscardCard(c)) return 'discard state of a paid part';

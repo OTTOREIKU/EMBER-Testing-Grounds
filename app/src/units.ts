@@ -76,6 +76,33 @@ export function snipeOn(a: CardAction): boolean {
     .some((l) => l.includes('狙击') && !/获得|【|\[/.test(l));
 }
 
+// ---------- DISARM 缴械 (glossary, 06_missions_and_appendix.md:343) ----------
+//
+// "Change target Part to Discard State" -- zh: the HIT part (命中部件). One
+// card carries it, 050 the Big Hand Grappler, and it prints a CHOICE:
+// "[On Hit] Causes Drag or Disarm". The Disarm half flips the hit Part to its
+// Discard Card via the 4.17 pointer; a Part with no Discard Card (a torso, a
+// chassis) has no discard state and cannot be disarmed.
+export function disarmOn(a: CardAction): boolean {
+  const hay = [
+    a.description?.zh ?? '',
+    a.description?.en ?? '',
+    ...(a.keywords ?? []).map((k) => k.inline ?? k.key ?? ''),
+  ].join(' ');
+  return /缴械|Disarm/i.test(hay);
+}
+
+// The other half of 050's choice, read separately so the offer can say
+// honestly that Drag is printed but not yet modelled.
+export function dragPrinted(a: CardAction): boolean {
+  const hay = [
+    a.description?.zh ?? '',
+    a.description?.en ?? '',
+    ...(a.keywords ?? []).map((k) => k.inline ?? k.key ?? ''),
+  ].join(' ');
+  return /拖拽|Drag\b/i.test(hay);
+}
+
 // ---------- SUPPRESSION (glossary, 06_missions_and_appendix.md:437) ----------
 //
 // The zh print is more precise than the English: a Mech DECLARED AS A TARGET of

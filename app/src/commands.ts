@@ -1,7 +1,7 @@
 import type { CombatView, Facing, GameState, MechLoadout, Opportunity, PartSlot, RollbackPoint, Side, SmokeScreen, Stance, Timing, Token } from './types';
 import { addStatus, ageTokens, newOpportunity, PHASES, statusCount, STATUSES, TIMINGS } from './types';
 import type { GameData } from './data';
-import { cardName, transformFaces, unfoldsInto } from './data';
+import { cardName, transformFaces, unfoldsInto, discardFaceOf } from './data';
 import { covertCarryLock, ammoDeliveryPool, opportunityBonusOn, ripostePart, defenseReactionOn, targetTracingOn, riderOnDrone, hasFlexibleTiming, commandGeneration, blinkTargets, isPositionSwap, electronicOrigins, isSilentAction, maneuverIsSilent, loanedParts, unfoldToken, extrasFor, consumesCharge, cutTethersOn, electronicDash, electronicValue, immobilizedStop, freehandSlots, interceptCapacity, anyStartTiming, focusIsFree, keepsLinkOnPartLoss, makeDroneToken, structureOf, makeMechToken, maneuverRange, maxLink, partsLeft, pilotCard, pilotIs, projectileDelivery, provokeWhy, settleTethers, SLOT_LABEL, tetherTo, tokenCards, transformPartOn } from './units';
 import { tetherCap } from './melee';
 import { canActivate, canAttackMode, canManeuver, canOverload, canPerform, spendAction, spendActivation, spendAttackMode, spendManeuver, spendOverload } from './ticks';
@@ -194,6 +194,11 @@ export type Command =
   // Mech to Defensive Stance. `uid` is the ATTACKER, so the actor gate holds;
   // the stance that changes is the TARGET's, the same shape provoke has.
   | { kind: 'suppress'; seat: Side; uid: number; targetUid: number }
+  // Disarm 缴械: the attacker's hit flips the target's hit Part to its Discard
+  // Card. `uid` is the ATTACKER for the actor gate; the flip lands on the
+  // target -- transformPart could not carry this, because it is owner-gated
+  // and was built for the White Dwarf flipping its OWN modes.
+  | { kind: 'disarm'; seat: Side; uid: number; targetUid: number; slot: string }
   | { kind: 'clearCounterRoll'; seat: Side }
   | { kind: 'queueIntercepts'; seat: Side; items: { uid: number; actionId: string; targetUid: number }[] }
   | { kind: 'resolveIntercept'; seat: Side; uid: number; actionId: string; targetUid: number }
@@ -1832,6 +1837,21 @@ function checkActed(
       if (cmd.focused && (!mine || focused)) return no('Focus rerolls a roll that has been made, and only once here.');
       return ok;
     }
+    case 'disarm': {
+      const target = state.tokens.find((x) => x.uid === cmd.targetUid);
+      if (!target) return no('That target is not on the board.');
+      if (target.kind !== 'mech' || !target.mech) return no('Disarm flips a Part Card, and only a Mech carries them.');
+      const held = target.mech[cmd.slot as PartSlot];
+      const from = held ? data.byId.get(held) : undefined;
+      if (!from) return no(`${target.label} has nothing in that slot.`);
+      if ((target.partStates[cmd.slot as PartSlot] ?? 'intact') === 'destroyed') {
+        return no(`${target.label}'s ${SLOT_LABEL[cmd.slot as PartSlot]} is destroyed — there is no card left to flip.`);
+      }
+      // The legality IS the pointer: a Part with no Discard Card has no
+      // discard state (4.17), so a torso or a chassis cannot be disarmed.
+      if (!discardFaceOf(data, from)) return no(`${cardName(from)} has no Discard Card, so it has no Discard State to change to.`);
+      return ok;
+    }
     case 'suppress': {
       const target = state.tokens.find((x) => x.uid === cmd.targetUid);
       if (!target) return no('That target is not on the board.');
@@ -3068,6 +3088,18 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
         c.respRoll = [...cmd.faces];
         if (cmd.focused) c.respFocused = true;
       }
+      return;
+    }
+    case 'disarm': {
+      const target = state.tokens.find((x) => x.uid === cmd.targetUid);
+      if (!target || target.kind !== 'mech' || !target.mech) return;
+      const held = target.mech[cmd.slot as PartSlot];
+      const from = held ? data.byId.get(held) : undefined;
+      const far = from ? discardFaceOf(data, from) : null;
+      // Derived here rather than carried on the command, so the wire cannot
+      // name a face the pointer does not: the same single-source rule the
+      // crushSwap step-out grid follows.
+      if (far) transformPartOn(data, target, cmd.slot as PartSlot, far.id);
       return;
     }
     case 'suppress': {
