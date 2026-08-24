@@ -3033,6 +3033,50 @@ export function electronicValue(data: GameData, t: Token, loans: LoanedPart[] = 
     .reduce((sum, { card }) => sum + Math.max(0, card.electronic ?? 0), 0);
   return own + loans.reduce((sum, { card }) => sum + (card.electronic ?? 0), 0);
 }
+// ---------- WARFARE NODE X 电战节点X (glossary, 06_missions_and_appendix.md:451) ----------
+//
+// "Allies within the range may use the Electronic value of this Mech + X when
+// making Electronic Counter-rolls", with the printed note that it does NOT
+// change the initiator or responder, and FAQ Q4's edge: allies INCLUDE the unit
+// itself, so the Aurora's own Mech rolls its own EV + X.
+//
+// This entry sat recorded as "BLOCKED - defined nowhere, needs the Rules
+// Supplement" for months while the glossary specified it completely - the
+// registry, a memory file and the task list all repeated the stale claim.
+// Pass 45's rule: grep the glossary before writing "undefined".
+//
+// A MAY, so the best of own-and-node is used, never a forced substitution: a
+// node weaker than the ally's own EV changes nothing. The node's value is the
+// BEARER Mech's printed Electronic Value (all Parts, electronicValue) plus X.
+// Inside the shared electronicStrength rather than beside it, so both EW
+// surfaces - freeplay's window and the Match Centre's shared-record one - get
+// it from the one reader they already call.
+//
+// DELIBERATELY NOT TOUCHED: 4.11.2's "an Electronic Value of 0 cannot
+// Initiate" gate reads the printed STAT, exactly as it does under the
+// Suppression aura, and nothing in the glossary or Q4 says a nearby node
+// lifts it.
+export function warfareNodeBoost(data: GameData, tokens: Token[], t: Token): { ev: number; label: string } | null {
+  let best: { ev: number; label: string } | null = null;
+  for (const src of tokens) {
+    if (src.side !== t.side || src.kind !== 'mech' || src.deployed === false) continue;
+    if ((src.partStates.torso ?? 'intact') === 'destroyed') continue;
+    for (const { slot, card } of tokenCards(data, src)) {
+      if ((src.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
+      for (const a of card.actions ?? []) {
+        if (a.type !== 'Passive') continue;
+        const hay = [a.description?.zh ?? '', a.description?.en ?? '',
+          ...(a.keywords ?? []).map((k) => k.inline ?? k.key ?? '')].join(' ');
+        const m = /(?:电战节点|Warfare Node)\s*(\d+)/i.exec(hay);
+        if (!m) continue;
+        if (rangeBetween(src, t).range > (a.range ?? 0)) continue;
+        const ev = electronicValue(data, src) + Number(m[1]);
+        if (!best || ev > best.ev) best = { ev, label: src.label ?? String(src.uid) };
+      }
+    }
+  }
+  return best;
+}
 
 // The pool a unit actually ROLLS in an Electronic Counter-roll, as opposed to
 // the Electronic Value printed on its Parts. Two riders sit on top of the stat:
@@ -3057,7 +3101,12 @@ export function electronicStrength(
   role: 'initiator' | 'responder',
 ): number {
   const base = electronicValue(data, t, role === 'initiator' ? loanedParts(data, tokens, t) : []);
-  return Math.max(0, base + auraValueOn(data, tokens, t, 'electronic_contest_strength_penalty'));
+  // Warfare Node substitutes the BASE, then the Suppression aura lands on
+  // whatever is rolled - a node does not shelter the roll from the penalty,
+  // because the aura's text names the roll and not the stat.
+  const node = warfareNodeBoost(data, tokens, t);
+  const used = node && node.ev > base ? node.ev : base;
+  return Math.max(0, used + auraValueOn(data, tokens, t, 'electronic_contest_strength_penalty'));
 }
 
 export function defaultUnitLabel(data: GameData, t: Token): string {

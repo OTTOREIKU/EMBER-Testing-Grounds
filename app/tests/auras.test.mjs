@@ -1093,5 +1093,45 @@ const suppressors = cards.filter((c) => (c.actions ?? []).some((a) => (a.gameRul
 check('exactly two cards in the shipped data carry EW Suppression',
   suppressors.map((c) => c.id).sort(), ['PDTR-202', 'ZHDR-202']);
 
+// ---------- Warfare Node X, no longer "blocked" ----------
+// This rule sat recorded as "defined nowhere, needs the Rules Supplement" for
+// months while the glossary specified it completely (06_missions_and_appendix
+// :451): allies within range MAY use the node Mech's Electronic value + X on
+// their Counter-rolls; it never changes initiator or responder; and FAQ Q4 adds
+// that allies include the node itself. Card 018 Aurora: EV 3, Warfare Node 1,
+// Passive range 4.
+{
+  const aurora = mech(80, 's1', '018', 9);
+  const weak = mech(81, 's1', '172', 12);   // torso 172, printed EV lower than the node offers
+  const own = A.electronicValue(data, weak);
+  check('the fixture ally really is weaker than the node', own < 4, true);
+  check('inside the range it rolls the node EV + X',
+    A.electronicStrength(data, [aurora, weak], weak, 'responder'), 4);
+  check('the printed stat is untouched, so the 4.11.2 initiate gate still reads it',
+    A.electronicValue(data, weak), own);
+  // FAQ Q4: allies include the unit itself.
+  check('the Aurora itself rolls its own EV + 1',
+    A.electronicStrength(data, [aurora], aurora, 'responder'), 4);
+  // A MAY: a node weaker than the ally changes nothing.
+  const strong = mech(82, 's1', '174', 12); // EV 4, the node offers 4 - no worse, no better
+  check('a node never lowers a stronger ally',
+    A.electronicStrength(data, [aurora, strong], strong, 'responder'), 4);
+  // Out of the Passive's range 4 the ally is on its own. col 27 is six Grids off.
+  check('out of range the ally rolls its own value',
+    A.electronicStrength(data, [aurora, mech(81, 's1', '172', 27)], mech(81, 's1', '172', 27), 'responder'), own);
+  // An enemy node offers nothing.
+  check('an enemy node is not yours to borrow',
+    A.electronicStrength(data, [mech(80, 's2', '018', 9), weak], weak, 'responder'), own);
+  // The Suppression aura lands on whatever is rolled: the node substitutes the
+  // BASE and the -1 still applies, because the aura names the roll, not the stat.
+  const watchdogHere = drone(83, 's2', 'ZHDR-202', 12);
+  check('an enemy Suppression aura still lands on a node-boosted roll',
+    A.electronicStrength(data, [aurora, weak, watchdogHere], weak, 'responder'), 3);
+  // A destroyed Aurora torso is a dead node.
+  const deadAurora = { ...mech(80, 's1', '018', 9), partStates: { torso: 'destroyed' } };
+  check('a destroyed node Part offers nothing',
+    A.electronicStrength(data, [deadAurora, weak], weak, 'responder'), own);
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 if (fail) process.exit(1);
