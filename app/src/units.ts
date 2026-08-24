@@ -52,6 +52,48 @@ export function volleyOf(a: CardAction): number {
   return m ? Math.max(1, Number(m[1])) : 1;
 }
 
+// ---------- SNIPE 狙击 (keywords.json) ----------
+//
+// "The Attacker may designate the part of Defender to resolve Damage." A MAY:
+// the Black Die stays on the table and the pick chips open beside it.
+//
+// TWO ROUTES, because the data prints it two ways. ZHRA-201_B and ZHRA-202_B
+// print it as a BARE LINE in the description with an EMPTY keyword array -- the
+// exact trap units.ts already documents for these cards ("· 穿甲1 · 狙击 ·
+// 静默" with nothing in a.keywords). 516_A and 122_A gain it from their own
+// [Two-Handed] rider, which twoHandedAdjusted folds into the adjusted action's
+// inline keywords, so the keyword read sees those.
+//
+// The bare-line match EXCLUDES grant and gate lines (获得 / 【..】 / [..]),
+// or R33S_A and 106_A's "[静止] 获得狙击" would fire for a Mech that moved:
+// stationaryAdjusted folds only Range and +NY, never keyword grants, so the
+// Stationary-gated Snipe stays out until that rider learns keywords. PARKED,
+// and stated here so the next audit finds a decision rather than a hole.
+export function snipeOn(a: CardAction): boolean {
+  if ((a.keywords ?? []).some((k) => /狙击|Snipe/i.test(k.inline ?? k.key ?? ''))) return true;
+  return (a.description?.zh ?? '')
+    .split(/\n/)
+    .some((l) => l.includes('狙击') && !/获得|【|\[/.test(l));
+}
+
+// ---------- SUPPRESSION (glossary, 06_missions_and_appendix.md:437) ----------
+//
+// The zh print is more precise than the English: a Mech DECLARED AS A TARGET of
+// this action immediately switches to Defensive Stance, Shutdown alone immune.
+// It fires at DESIGNATION, not on a hit -- which is why it is not an on-hit
+// rider and lives at combat.ts's designation doors instead.
+//
+// A KEYWORD-ARRAY READ, deliberately. The data prints it three ways: 8 actions
+// carry it inline; ZHRA-303_B and 038_A gain it from their own [Two-Handed]
+// rider, which twoHandedAdjusted already folds into the ADJUSTED action's
+// inline keywords, so this reader sees those for free; and 556_A gains it
+// behind a [Charged] gate with an OR choice, which this deliberately does NOT
+// match -- a description regex would grant it without the Charge, the exact
+// over-application surplusEffects is already known to suffer.
+export function suppressionOn(a: CardAction): boolean {
+  return (a.keywords ?? []).some((k) => /压制|Suppression/i.test(k.inline ?? k.key ?? ''));
+}
+
 // ---------- IMMOBILIZED, AND THE ONE KEYWORD THAT IGNORES IT ----------
 //
 // 6.3.2 gives the Immobilized Token two clauses. The no-Blue-dice clause has

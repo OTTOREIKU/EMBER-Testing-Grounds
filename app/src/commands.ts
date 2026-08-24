@@ -190,6 +190,10 @@ export type Command =
   // watch the question close, or it sits waiting on an answer that already
   // happened.
   | { kind: 'provoke'; seat: Side; uid: number; targetUid: number; take: boolean }
+  // Suppression (glossary): the attacker's declaration switches the targeted
+  // Mech to Defensive Stance. `uid` is the ATTACKER, so the actor gate holds;
+  // the stance that changes is the TARGET's, the same shape provoke has.
+  | { kind: 'suppress'; seat: Side; uid: number; targetUid: number }
   | { kind: 'clearCounterRoll'; seat: Side }
   | { kind: 'queueIntercepts'; seat: Side; items: { uid: number; actionId: string; targetUid: number }[] }
   | { kind: 'resolveIntercept'; seat: Side; uid: number; actionId: string; targetUid: number }
@@ -1828,6 +1832,13 @@ function checkActed(
       if (cmd.focused && (!mine || focused)) return no('Focus rerolls a roll that has been made, and only once here.');
       return ok;
     }
+    case 'suppress': {
+      const target = state.tokens.find((x) => x.uid === cmd.targetUid);
+      if (!target) return no('That target is not on the board.');
+      if (target.kind !== 'mech') return no('Suppression only moves a Mech: other units have no Stance dial to switch.');
+      if (target.stance === 'shutdown') return no('A Shutdown Mech is immune to Suppression (glossary).');
+      return ok;
+    }
     case 'provoke': {
       // LPA-22 Yoyu, 挑衅 Provoke. `t` is Yoyu, so the actor gate above has
       // already refused a player answering for the other squad's pilot.
@@ -3057,6 +3068,16 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
         c.respRoll = [...cmd.faces];
         if (cmd.focused) c.respFocused = true;
       }
+      return;
+    }
+    case 'suppress': {
+      const target = state.tokens.find((x) => x.uid === cmd.targetUid);
+      if (!target || target.stance === 'shutdown') return;
+      // "Switches", so an already-Defensive Mech simply stays put. No Stance
+      // lock is written, for the same reasons provoke writes none below: 4.1
+      // owns the locking, and inventing one here would add a clause the
+      // keyword does not print.
+      target.stance = 'defensive';
       return;
     }
     case 'provoke': {

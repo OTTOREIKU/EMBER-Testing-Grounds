@@ -844,7 +844,11 @@ const spinning = (root) => shakingDice(root).length > 0;
   });
 
   // 4.4.1 step 2. The Black Die decides unless one of the named cases applies.
-  w.h.ctx = ctx({});
+  // NOT the walk's own `firing` fixture: that is ZHRA-201_B, the sniper rifle,
+  // and it only ever read as 'ordinary' while Snipe was unwired. Its sibling
+  // ZHRA-201_A prints Armor Piercing and no Snipe, so it is the plain case.
+  const plainAct = data.cards.find((c) => c.id === 'ZHRA-201')?.actions?.find((a) => a.id === 'ZHRA-201_A');
+  w.h.ctx = ctx({ action: plainAct });
   check('an ordinary attack does not let the attacker pick the Part', w.h.mayPickPart(), false);
 
   w.h.ctx = ctx({ blackResult: 'any' });
@@ -1230,6 +1234,43 @@ const tick = (ms) => new Promise((r) => setTimeout(r, ms));
     !!findButtons(A5.root).find((x) => /Focus: reroll the Black Die/.test(label(x))), false);
   await tick(800);
   check('and the roll settles on its own', (A5.h.ctx.targetPart ?? A5.h.ctx.blackResult) !== null, true);
+}
+
+// ---------- SNIPE: the attacker-side designation, no longer a stated gap ----------
+// mayPickPart used to carry a comment naming Snipe as "NOT COVERED ... a card
+// that carries one needs this predicate widened, not a workaround". Widened
+// now, and pinned through the same door the other part-choice rules use.
+{
+  const bb = board();
+  const w = watcher(bb.all, []);
+  const sniper = data.cards.find((c) => c.id === 'ZHRA-201')?.actions?.find((a) => a.id === 'ZHRA-201_B');
+  // THE TRAP THIS CARD DOCUMENTS: the keyword lives in the description as a
+  // bare line while the keywords array is EMPTY. A keyword-array read alone
+  // would miss the two cards that print Snipe most plainly.
+  check('the fixture still prints Snipe as a bare description line',
+    /狙击/.test(sniper?.description?.zh ?? ''), true);
+  check('while its keyword array does NOT carry it, which is the trap',
+    (sniper?.keywords ?? []).some((k) => /狙击/.test(k.inline ?? k.key ?? '')), false);
+
+  const ctx = (over) => ({
+    attacker: bb.atk, defender: bb.def, action: sniper,
+    surplusRound: 0, blackResult: null, ...over,
+  });
+  w.h.ctx = ctx({});
+  check('a Snipe action lets the attacker pick the Part', w.h.mayPickPart(), true);
+  // A MAY, below the surplus guard: the weapon being a sniper's does not grow
+  // 4.8.1 step 2's list, and Scatter-shot stays random.
+  w.h.ctx = ctx({ surplusRound: 1 });
+  check('but a Surplus round still refuses it', w.h.mayPickPart(), false);
+  // The granted shape: 516_A/122_A gain Snipe from their own [Two-Handed]
+  // rider, which arrives as ADJUSTED inline keywords.
+  w.h.ctx = ctx({ action: { ...sniper, description: { zh: '', en: '' }, keywords: [{ inline: '狙击' }] } });
+  check('a rider-granted Snipe reads the same', w.h.mayPickPart(), true);
+  // And the gate exclusion: a Stationary-gated grant must NOT fire off the raw
+  // text, because stationaryAdjusted folds only Range and +NY - firing here
+  // would hand a moved Mech a rule its condition refuses. PARKED, on purpose.
+  w.h.ctx = ctx({ action: { ...sniper, description: { zh: '· 激光武器\n· [静止] 获得狙击。', en: '' }, keywords: [] } });
+  check('a [Stationary]-gated grant stays out until its rider learns keywords', w.h.mayPickPart(), false);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

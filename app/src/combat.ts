@@ -5,7 +5,7 @@ import { linkMechanics } from './inspector';
 import { SQUAD_ORDER, squadLabel } from './data';
 import type { Card, CardAction, CombatView, CounterRoll, DiceData, DiceIcon, DieColor, Duel, DuelIcon, GameRuleEffect, PartSlot, Side, SmokeScreen, TerrainPiece, Token } from './types';
 import { statusCount, STATUSES } from './types';
-import { aaRadarCovers, armorPiercing, armorPiercingNote, attackReactionsOf, auraEffectsOn, aurasOn, auraValueOn, automaticShieldFor, blueLightningDodges, earlyWarningCover, coolingBonus, denseArmorByText, eyesAreHeavyHits, pilotDiceBonus, ignoresLowProfile, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, noMeleeBackAttack, onHitRiders, STATUS_BY_ZH, missileGuidance, multiTargetLimit, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, denseArmorOn, designationsOn, electronicStrength, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, canAffordFocus, focusIsFree, hiddenByAlliedAura, keepsLinkOnPartLoss, maxLink, provokeWhy, pursuesFragile, structureOf, trackingCover, TRACKING_SPOTTERS_NEEDED, pilotCard, pilotIs, repeatersFor, SLOT_LABEL, tetherStrike, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
+import { aaRadarCovers, armorPiercing, armorPiercingNote, attackReactionsOf, auraEffectsOn, aurasOn, auraValueOn, automaticShieldFor, blueLightningDodges, earlyWarningCover, coolingBonus, denseArmorByText, eyesAreHeavyHits, pilotDiceBonus, ignoresLowProfile, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, noMeleeBackAttack, onHitRiders, STATUS_BY_ZH, missileGuidance, multiTargetLimit, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, snipeOn, suppressionOn, denseArmorOn, designationsOn, electronicStrength, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, canAffordFocus, focusIsFree, hiddenByAlliedAura, keepsLinkOnPartLoss, maxLink, provokeWhy, pursuesFragile, structureOf, trackingCover, TRACKING_SPOTTERS_NEEDED, pilotCard, pilotIs, repeatersFor, SLOT_LABEL, tetherStrike, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
 import { timingOf } from './ticks';
 import { inArc, losNote, protectionFor, rangeBetween } from './rules';
 import type { Command } from './commands';
@@ -1129,6 +1129,30 @@ export class AttackHelper {
         : '');
   }
 
+  // SUPPRESSION (glossary): fires at DESIGNATION, which the zh print states
+  // outright -- a Mech declared as a target switches to Defensive Stance
+  // immediately, Shutdown alone immune. So it lives at the same four doors an
+  // attack designates a target through (start, startMulti, the Multi-Target +
+  // button, and Cleaving's carry into a new unit), never at finish(): by the
+  // time the defence pool is suggested, the stance it reads must already have
+  // moved. On an Automatic Shield swap the SHIELD is the declared target, which
+  // is what shieldNote has promised all along.
+  //
+  // Skips: a mirror (the attacking client owns the declaration), the attacker
+  // itself (a self-hit is not a declaration against an enemy), non-Mechs, and
+  // a Mech already Defensive -- 'switches' has nowhere to move it, and the
+  // skip is also what keeps Cleaving from re-announcing on the same unit.
+  private suppressDeclared(target: Token): void {
+    const c = this.ctx;
+    if (!c || this.mirroring) return;
+    if (!suppressionOn(c.action)) return;
+    if (target.kind !== 'mech' || target.uid === c.attacker.uid) return;
+    if (target.stance === 'shutdown' || target.stance === 'defensive') return;
+    this.onCommand({ kind: 'suppress', seat: c.attacker.side, uid: c.attacker.uid, targetUid: target.uid });
+    this.note(`Suppression: ${target.label} is declared a target, so it immediately switches to Defensive Stance (Shutdown alone is immune).`, [target]);
+    this.onChanged();
+  }
+
   // `redirect` is false at exactly one call site: the FAQ B8 bonus attack, whose
   // target is not a choice and whose defender is ALREADY the shield. Without it
   // the swap re-runs on a defender it has already moved and chains.
@@ -1229,6 +1253,7 @@ export class AttackHelper {
     // After the declaration, so the removal is read as a consequence of the
     // shot rather than as a line about nothing.
     this.noteArmorPiercing();
+    this.suppressDeclared(defender);
     this.render();
   }
 
@@ -1270,6 +1295,7 @@ export class AttackHelper {
     this.openSequence(first, 'split');
     // After the sequence opens, because `note` writes into the ctx it creates.
     if (swap) this.note(this.shieldNote(swap), [attacker, swap.declared, swap.shield]);
+    this.suppressDeclared(first);
   }
 
   // Opens one attack sequence. `start` is the single-target front door and this
@@ -2719,6 +2745,7 @@ export class AttackHelper {
         b.addEventListener('click', () => {
           m.targets.push({ defender: swap?.shield ?? u, declared: swap ? u : undefined, red: 0, yellow: 0 });
           if (swap) this.note(this.shieldNote(swap), [m.attacker, swap.declared, swap.shield]);
+          this.suppressDeclared(swap?.shield ?? u);
           this.render();
         });
         wrap.appendChild(b);
@@ -2894,6 +2921,11 @@ export class AttackHelper {
     c.defender = u;
     c.surplusOriginalPart = null;
     this.note(`Cleaving carries the Surplus into ${u.label}.`);
+    // A cleaved-into unit is newly declared a target of this action, so the
+    // keyword reads it the same as the first declaration did. The
+    // already-Defensive skip inside is what stops a re-announcement when the
+    // Surplus lands back on a Part of the original target.
+    this.suppressDeclared(u);
     if (u.kind === 'mech') {
       c.step = 'part';
       this.render();
@@ -2965,10 +2997,9 @@ export class AttackHelper {
   //  - a Surplus round: Scatter-shot and Cleaving name their own target
   //    (FAQ D4/D6), and the loop below already excludes the original Part.
   //
-  // NOT COVERED, and left as a stated gap rather than guessed at: an
-  // ATTACKER-side designation ability such as Snipe. Nothing in this app reads
-  // one today, and matching on printed text here would be inventing a rule.
-  // A card that carries one needs this predicate widened, not a workaround.
+  // Snipe 狙击 is the attacker-side designation ability, and this predicate
+  // was widened for it exactly as the stated gap that used to sit here asked.
+  // A "may": the Black Die stays rollable and the chips open beside it.
   private mayPickPart(): boolean {
     const c = this.ctx!;
     // An ANY face is COMPULSORY designation, in both flows.
@@ -2987,6 +3018,10 @@ export class AttackHelper {
     // also grants a rear-arc attack the choice. The Surplus round is a
     // narrower rule than the attack that produced it.
     if (c.surplusRound > 0) return false;
+    // BELOW the surplus guard on purpose: Scatter-shot and Cleaving say
+    // RANDOM, and 4.8.1 step 2's list does not grow because the weapon that
+    // caused the Surplus was a sniper's.
+    if (snipeOn(c.action)) return true;
     return inArc(c.defender, c.attacker, 'rear');
   }
 
@@ -2997,7 +3032,7 @@ export class AttackHelper {
     wrap.innerHTML = `<h4><span class="ah-n">1</span>Determine target Part</h4>
       <p class="dim">${c.explosion
         ? 'Roll the Black Die, or pick a Part directly if the target is Shutdown. Explosions have no facing, so there is no Back Attack here.'
-        : 'Roll the Black Die. It decides the Part, and the chips below stay locked unless you may designate it: the target is Shutdown, this is a Back Attack, or the die comes up ANY (4.4.1).'}</p>`;
+        : `Roll the Black Die. It decides the Part, and the chips below stay locked unless you may designate it: the target is Shutdown, this is a Back Attack, the die comes up ANY (4.4.1)${snipeOn(c.action) ? ', or — as here — the Action carries Snipe, which lets the attacker pick' : ''}.`}</p>`;
 
     // The result used to appear as a line of text after the fact, so a new
     // player never saw which Part the die actually chose. The die is shown
