@@ -2,7 +2,7 @@ import type { CombatView, Facing, GameState, MechLoadout, Opportunity, PartSlot,
 import { addStatus, ageTokens, newOpportunity, PHASES, statusCount, STATUSES, TIMINGS } from './types';
 import type { GameData } from './data';
 import { cardName, transformFaces, unfoldsInto, discardFaceOf } from './data';
-import { covertCarryLock, ammoDeliveryPool, opportunityBonusOn, ripostePart, defenseReactionOn, targetTracingOn, riderOnDrone, hasFlexibleTiming, commandGeneration, blinkTargets, isPositionSwap, electronicOrigins, isSilentAction, maneuverIsSilent, loanedParts, unfoldToken, extrasFor, consumesCharge, cutTethersOn, electronicDash, electronicValue, immobilizedStop, freehandSlots, interceptCapacity, anyStartTiming, focusIsFree, keepsLinkOnPartLoss, makeDroneToken, structureOf, makeMechToken, maneuverRange, maxLink, partsLeft, pilotCard, pilotIs, projectileDelivery, provokeWhy, settleTethers, SLOT_LABEL, tetherTo, tokenCards, transformPartOn } from './units';
+import { covertCarryLock, ammoDeliveryPool, opportunityBonusOn, ripostePart, defenseReactionOn, targetTracingOn, riderOnDrone, hasFlexibleTiming, commandGeneration, blinkTargets, isPositionSwap, electronicOrigins, isSilentAction, maneuverIsSilent, loanedParts, unfoldToken, extrasFor, consumesCharge, cutTethersOn, electronicDash, electronicValue, immobilizedStop, nonHumanoidCost, nonHumanoidStop, freehandSlots, interceptCapacity, anyStartTiming, focusIsFree, keepsLinkOnPartLoss, makeDroneToken, structureOf, makeMechToken, maneuverRange, maxLink, partsLeft, pilotCard, pilotIs, projectileDelivery, provokeWhy, settleTethers, SLOT_LABEL, tetherTo, tokenCards, transformPartOn } from './units';
 import { tetherCap } from './melee';
 import { canActivate, canAttackMode, canManeuver, canOverload, canPerform, spendAction, spendActivation, spendAttackMode, spendManeuver, spendOverload } from './ticks';
 import { tacticSpec, tacticTargets, type TacticCtx } from './tactics';
@@ -1267,8 +1267,14 @@ function checkActed(
       // Only VOLUNTARY movement. `forceMove` is somebody else displacing this
       // unit and stays legal, which is the whole reason the two are separate
       // commands.
-      const stopped = immobilizedStop(t, cmd.actionId ? findAction(data, state, cmd.uid, cmd.actionId) : null);
+      const moveAction = cmd.actionId ? findAction(data, state, cmd.uid, cmd.actionId) : null;
+      const stopped = immobilizedStop(t, moveAction);
       if (stopped) return no(stopped);
+      // NON-HUMANOID X (card 181's Run is Non-humanoid 1): the Link is a COST of
+      // performing the Action, so a unit that cannot pay may not perform it. A
+      // bare Maneuver carries no Action and can never owe this.
+      const shortLink = nonHumanoidStop(t, moveAction);
+      if (shortLink) return no(shortLink);
       const { col, row } = cmd.to;
       if (!Number.isInteger(col) || !Number.isInteger(row) || col < 0 || row < 0 || col > 35 || row > 35) {
         return no('That is not a place on the board.');
@@ -2777,6 +2783,13 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       t.col = cmd.to.col;
       t.row = cmd.to.row;
       if (cmd.facing !== undefined) t.facing = cmd.facing;
+      // NON-HUMANOID X: the Link is spent for PERFORMING the Action, so it is
+      // paid on the Movement Action itself and never on a bare Maneuver. check()
+      // has already refused a unit that cannot afford it; the clamp is here
+      // because apply() is also the rollback replayer's road and must not push a
+      // Link negative if it ever arrives without its check.
+      const cost = nonHumanoidCost(cmd.actionId ? findAction(data, state, cmd.uid, cmd.actionId) : null);
+      if (cost > 0) t.link = Math.max(0, (t.link ?? 0) - cost);
       // 4.12.3: "Maneuver does not benefit from Silence unless otherwise
       // specified" — Maneuvering, INCLUDING changing facing without Movement,
       // removes the Low Profile Token. This one command carries both cases: a

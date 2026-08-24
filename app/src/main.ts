@@ -47,7 +47,7 @@ import { PlayGuide } from './playguide';
 import type { Card, CardAction, DiceData, DieColor, Facing, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, StatusDef, TerrainPiece, Timing, Token } from './types';
 import { addStatus, normaliseScript, SCALES, statusCount, statusesFor, STATUSES } from './types';
 import { actionIdOf } from './ticks';
-import { transformOffer, automaticShieldFor, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, twoHandedUse, electronicValue, martyrdomOwed, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, loanedParts, phasesThroughUnits, minesLayable, minesOwed, multiTargetLimit, unfoldsOwed, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, immobilizedStop, maneuverIsSilent, maneuverSilenceDenier, chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, projectileReach, type Resupply, resupplyOf, SLOT_LABEL, stationaryAdjusted, interceptLeft, interceptsOwed, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf, type AttackReaction } from './units';
+import { transformOffer, automaticShieldFor, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, twoHandedUse, electronicValue, martyrdomOwed, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, loanedParts, phasesThroughUnits, minesLayable, minesOwed, multiTargetLimit, unfoldsOwed, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, immobilizedStop, nonHumanoidCost, nonHumanoidStop, maneuverIsSilent, maneuverSilenceDenier, chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, projectileReach, type Resupply, resupplyOf, SLOT_LABEL, stationaryAdjusted, interceptLeft, interceptsOwed, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf, type AttackReaction } from './units';
 import { registerOffline } from './offline';
 import { battlefieldLocked, countHits, firstPlayerFrom, newSetup, normaliseSetup, tasksLocked, type SetupState } from './setup';
 import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
@@ -1752,6 +1752,12 @@ async function init() {
     // because the -2 Movement comes out of the allowance rather than being paid
     // afterwards. The Mech whose Command Token funds it is recorded with it.
     drag?: { allyUid: number; funderUid: number };
+    // The Movement ACTION being performed, when there is one; a bare Maneuver
+    // has none. Carried because the costs and riders that belong to the Action
+    // are paid in commitMove, which is a different function from the one that
+    // was handed the Action, and reading it off the card there would be
+    // guessing which of several Movement Actions the player picked.
+    action?: CardAction | null;
     done: (moved: boolean) => void;
   } | null = null;
 
@@ -1917,6 +1923,15 @@ async function init() {
       void alertDialog({ title: 'Immobilized', body: stopped });
       return done(false);
     }
+    // NON-HUMANOID X (card 181's Run is Non-humanoid 1), asked here for the same
+    // reason the Immobilized ban is: this is the one door a Movement Action
+    // comes through in freeplay, and the cost has to be refused before the
+    // planner opens or the player draws a route they cannot pay for.
+    const shortLink = nonHumanoidStop(t, opts.action ?? null);
+    if (shortLink) {
+      void alertDialog({ title: 'Not enough Link', body: shortLink });
+      return done(false);
+    }
     const steps = opts.range ?? moveRangeFor(t);
     if (steps <= 0) {
       void alertDialog({
@@ -1949,6 +1964,7 @@ async function init() {
       marks: [1],
       preview: null,
       label: opts.label,
+      action: opts.action ?? null,
       done,
     };
     selectToken(uid);
@@ -1998,6 +2014,16 @@ async function init() {
       t.col = col;
       t.row = row;
       logTo(t, `${t.label} moves ${path.length - 1} grid${path.length - 1 === 1 ? '' : 's'}.`);
+      // NON-HUMANOID X: paid once the Movement actually happens. Freeplay sends
+      // no `maneuver` command for a move (the comment further down says so in
+      // its own words), so the command layer's spend never runs here and this
+      // is the only place the Link comes off on this board. Charged off
+      // opts.action, so a bare Maneuver through the same planner owes nothing.
+      const linkCost = nonHumanoidCost(m.action ?? null);
+      if (linkCost > 0) {
+        t.link = Math.max(0, (t.link ?? 0) - linkCost);
+        logTo(t, `${t.label} spends ${linkCost} Link to perform this Action (Non-humanoid ${linkCost}), leaving ${t.link}.`);
+      }
       // The Harpy's dragged Ally comes with it — towed BEHIND, into the Grid
       // the Harpy just vacated, with the final Grid as the fallback. The
       // penultimate Grid has to be tried first because a Large Mech fills a

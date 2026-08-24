@@ -3,6 +3,32 @@
   "_scope": "Only stats confirmed wrong against a scan are listed. No systematic sweep of every card has been done, so absence from this file does not mean a stat is correct.",
   "_shape": "cards maps a card id to the stat fields to overwrite.",
   "cards": {
+    "182": {
+      "description": {
+        "en": "· Knock Back X: After this action ends, the target is forced to move X grids along the attack direction.\n· Command Coordination: After this action is resolved, this Mech may immediately issue 1 Command to a Ally Drone.",
+        "zh": "·击退X：本动作结束后，将目标沿攻击方向，强制移动X格。"
+      }
+    },
+    "093": {
+      "description": {
+        "en": "· Fire in arc: This action does not require visual to the landing point or the target."
+      }
+    },
+    "095": {
+      "description": {
+        "en": "· Silence: Optical Camouflage and Low Profile will not be removed when this action is performed."
+      }
+    },
+    "539": {
+      "description": {
+        "en": "· Command Generation X: This Unit generates X Command Tokens in the Command Phase."
+      }
+    },
+    "545": {
+      "description": {
+        "en": "· Suppression: If Target is a Mech, it immediately switches to Defensive Stance unless in Shutdown Stance."
+      }
+    },
     "078": {
       "stance": "defensive"
     },
@@ -53,16 +79,28 @@
     },
     "179": {
       "score": 42,
-      "_source": "publisher GoF parts list v1.021 - the newest revision from the company, which supersedes the v1.02 championship xlsx the earlier sweeps used. 1.021 reprices the whole GoF line and marks every change in red; read it by rendering the pages, its text layer cannot be parsed."
+      "description": {
+        "en": "· Command Coordination: After this action is resolved, this Mech may immediately issue 1 Command to a Ally Drone.",
+        "zh": "·指令协调X：本动作执行结束后，可以立即向X台己方无人机发送1枚指令标记。"
+      },
+      "_source": "publisher GoF parts list v1.021 - the newest revision from the company, which supersedes the v1.02 championship xlsx the earlier sweeps used. 1.021 reprices the whole GoF line and marks every change in red."
     },
     "180": {
       "score": 70,
-      "_source": "publisher GoF parts list v1.021 - the newest revision from the company, which supersedes the v1.02 championship xlsx the earlier sweeps used. 1.021 reprices the whole GoF line and marks every change in red; read it by rendering the pages, its text layer cannot be parsed. Card 180 is a REDESIGN: PL29 Stealth Chassis became PL29 All-terrain Chassis, losing Silence and gaining a Jump.",
-      "keywords": []
+      "_source": "publisher GoF parts list v1.021 - the newest revision from the company, which supersedes the v1.02 championship xlsx the earlier sweeps used. 1.021 reprices the whole GoF line and marks every change in red. Card 180 is a REDESIGN: PL29 Stealth Chassis became PL29 All-terrain Chassis, losing Silence and gaining a Jump. (This note used to say the text layer cannot be parsed and to read it by rendering the pages. That is true of the plain text layer, which comes out in jumbled reading order, but NOT of the table: pdfplumber's extract_tables() resolves the page into 29 named columns cleanly, and every value it gives agrees with what the rendered reading had already banked - the four ranges, the two Small sizes, both point totals and this whole redesign. Use extract_tables.)",
+      "keywords": [],
+      "description": {
+        "en": "· Airborne Movement: This action is considered as Flying.\n· Command Coordination: After this action is resolved, this Mech may immediately issue 1 Command to a Ally Drone.",
+        "zh": ""
+      }
     },
     "181": {
       "score": 80,
-      "_source": "publisher GoF parts list v1.021 - the newest revision from the company, which supersedes the v1.02 championship xlsx the earlier sweeps used. 1.021 reprices the whole GoF line and marks every change in red; read it by rendering the pages, its text layer cannot be parsed."
+      "description": {
+        "en": "·Unstoppable: Movement Actions with this Keyword can still be performed when Immobilized.\n·Non-humanoid X: When performing this Action, -X Link Value.\n·Push X: The target is forced to move X grids in any direction and -1 Link.\n· Command Coordination: After this action is resolved, this Mech may immediately issue 1 Command to a Ally Drone.",
+        "zh": "·不可阻挡：本动作在禁足状态下也可以移动。\n·异形X：执行本动作时，需要消耗X点链接值。\n·推动X：将目标沿任意直线方向，强制移动X格。被推动方如果是机甲，-1链接值。\n·指令协调X：本动作执行结束后，可以立即向X台己方无人机发送1枚指令标记。"
+      },
+      "_source": "publisher GoF parts list v1.021 - the newest revision from the company, which supersedes the v1.02 championship xlsx the earlier sweeps used. 1.021 reprices the whole GoF line and marks every change in red."
     },
     "ZHLA-202": {
       "score": 59,
@@ -122,6 +160,14 @@
     }
   },
   "_notes": {
+    "181": "PLK400 \"Centaur\" High-mobility Chassis. THE PDF SUPERSEDES THE SCAN - OTTO's ruling, 2026-08-24: the card scans in our data are old and the publisher's 1.02x parts lists are the current information, so where they disagree the list wins and a clause the list does not carry does not belong. Our reminder line said Push X moves the target \"in straight line in the direction this unit is facing, then this unit performs the same movement\", and the Chinese agreed (然后本单位执行同样的移动), so the two were consistent with each other and with nothing else: NEITHER the rulebook glossary NOR the publisher's GoF 1.021 Extra Info for this exact row has any follow-up move by the attacker. The engine never implemented one either - offerShove moves only the victim - so the app was already right and the card text was the thing lying. Replaced with the list's block verbatim, which also supplies the Command Coordination reminder we were missing. The Chinese is assembled from our own glossary's zh values for the four keywords, not translated by hand; note that the glossary's 推动X already read 沿任意直线方向 with -1链接值 and no follow-up, agreeing with the list all along.",
+    "179": "PL1 Standard Chassis. Description was empty; the list's Extra Info for row 179 is the Command Coordination reminder. Same sourcing as 181.",
+    "182": "PL35 Armored Chassis. The card's own reminder line DEFINED THE WRONG KEYWORD: it spelled out Push X, in both languages, on a card whose keyword field is 击退X Knockback X and whose Kick the publisher prints as Knock Back 1. Those are different rules - Push X also takes 1 Link from a target Mech, and a Mech driven to 0 Link Shuts Down - so the page was teaching a cost this card cannot impose. Display-only (knockbackOf reads ACTIONS, never the card body), but it is the half a player actually reads. Replaced with the Extra Info the publisher's GoF 1.021 EN list prints for row 182, which is Knock Back X plus Command Coordination. The Chinese is the glossary's own 击退X value rather than anything invented. Completes the 182_B correction in action_overrides.json.",
+    "180": "PL29 All-terrain Chassis. Stripping `keywords` was not enough: the card's own description was still the SILENCE reminder line, in both languages, so the reference printed \"· Silence: Optical Camouflage and Low Profile will not be removed\" on a card the v1.021 redesign took Silence away from. The keyword chip was gone and the sentence explaining it stayed. Replaced with the Extra Info column the list actually prints for this row, Airborne Movement and Command Coordination. The zh is cleared for the same reason as action 180_B's: the bundle's Chinese is the superseded design, and we do not hold the v1.021 Chinese to put in its place. Display-only, unlike 180_B - maneuverPrintsSilence() reads card.keywords, which the empty array had already fixed.",
+    "093": "TM31KC \"Gray Wolf\" KC Experimental Core. These four cards (093, 095, 539, 545) were the last card-level description fields whose `en` held Chinese: each is a keyword reminder line the community bundle never translated. The reference already suppressed them rather than print Chinese (englishOnly in reference.ts), so nothing was visibly broken, but an `en` field holding Chinese is wrong data and the English was sitting in the publisher's lists all along. This one is the Fire in arc reminder, verbatim from Part Data UN 1.02 EN, row 93 / TM31KC.",
+    "095": "TM39B \"Viper II\" Low Profile Core. The Silence reminder, verbatim from Part Data UN 1.02 EN, row 95 / TM39B.",
+    "539": "TM31Q \"Wild Cat\" Battle Core. The Command Generation X reminder, from Part Data UN 1.02 EN, row 539 / TM31Q. The list prints a full-width colon; written here with an ASCII one, which is what cleanRulesText would produce anyway.",
+    "545": "Ls297 Dual Autocannon. The Suppression reminder, from Part Data PD 1.02 EN, serial PDBP-102. That list files the card under QR 555 where ours is 545; the serial and the full name both match, and the reminder text is the generic keyword definition rather than anything card-specific, so the id difference does not bear on it. It matches our 压制 glossary entry word for word.",
     "078": "DTG-30M \"Hyena\" MG Type. Database says offensive; the printed stance strip reads DEF. All three Hyenas (078, 079, 080) print DEF, and the database only has 080 right.",
     "079": "DTG-30S \"Hyena\" Missile Type. Same as 078: database offensive, card prints DEF.",
     "159": "AMDS210 \"Delphinium\" Automatic Defense System. Database says mobility; the printed strip reads OFF · ✗ in red. Its Move box is printed blank, so the recorded Move 0 is correct and is not patched.",

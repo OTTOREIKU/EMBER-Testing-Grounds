@@ -21,23 +21,39 @@
       "range": 0
     },
     "179_A": {
-      "range": 4
+      "range": 4,
+      "description": {
+        "en": "· Command Coordination"
+      }
     },
     "180_A": {
       "range": 4,
+      "description": {
+        "en": "· Command Coordination"
+      },
       "_source": "GoF v1.021 (was 3 in v1.02)"
     },
     "181_A": {
-      "range": 5
+      "range": 5,
+      "description": {
+        "en": "· Non-humanoid 1\n· Unstoppable\n· If there is an Enemy Ground Unit in the adjacent grid in front of the Mech after performing this Action, may cause Push 1.\n· Command Coordination"
+      }
     },
     "182_A": {
-      "range": 4
+      "range": 4,
+      "description": {
+        "en": "· Command Coordination"
+      }
     },
     "181_B": {
       "size": "s"
     },
     "182_B": {
-      "size": "s"
+      "size": "s",
+      "description": {
+        "en": "· [On Hit] Knock Back 1.\n· Command Coordination",
+        "zh": "·【命中】造成击退1。"
+      }
     },
     "045_B": {
       "type": "Swift"
@@ -106,7 +122,12 @@
           "en": "Airborne Movement"
         }
       ],
-      "_source": "GoF v1.021 - the Stealth Movement passive is now a Jump: a Short Movement Action, Range 2, with Airborne Movement"
+      "description": {
+        "en": "· Airborne Movement\n· Command Coordination",
+        "zh": ""
+      },
+      "_source": "GoF v1.021 - the Stealth Movement passive is now a Jump: a Short Movement Action, Range 2, with Airborne Movement",
+      "_note": "THE zh IS CLEARED ON PURPOSE, and it is the load-bearing half of this entry. The community bundle's text for this action is the SUPERSEDED Stealth Movement passive, 本部件的移动动作/调整移动，均为静默 - and actionPrintsSilence() in units.ts matches any action whose description.zh contains 静默. So the redesigned Jump was still being treated as a Silence Action: a PL29 that Jumped kept its Optical Camouflage and its Low Profile Token, which is exactly the rule v1.021 took away from this card. Renaming the action to Jump and stripping the card-level keyword did not reach it, because the Silence reader never looks at either. We do not hold the v1.021 Chinese for this action, and inventing one would put made-up text where a reader expects the printed card, so it is empty and the English carries the rule."
     },
     "ZHDR-304_A": {
       "description": {
@@ -153,9 +174,39 @@
         }
       ],
       "_note": "The aura is Dynamic Perception. The community data gave this Passive no gameRules, so the rule was only in the printed line 范围内敌军单位的所有动作失去静默. Written here and not in cards.json, which is regenerated from the community bundle and would lose the edit (see data/cards_extra.json). Shaped after ZHDR-202_B and 072_A; like ZHDR-204_A it prints no 光环/Aura bullet, which is why no generator ever produced it. The structured effect is what makes the card readable at all: units.ts matches any Chinese action text containing 静默, and this action's own text contains 失去静默, so a text-driven reading would hand the Eagle the keyword it exists to strip. Range needs no correction — cards.json already prints 3. BOTH HALVES OF 4.12 NOW BITE, which an earlier version of this note recorded as still to come. Silence is two things: the Action does not break Optical Camouflage, and the unit KEEPS its Low Profile Token while performing it. The Reveal half was always wired; the Token half shipped 2026-08-19 in commands.ts shedLowProfile, called from the apply of `maneuver` and `performAction`, so this aura now costs an enemy inside Range 3 its Low Profile Token as well as its cover. Driven by tests/commands.test.mjs and tests/lowprofile.test.mjs, both of which build this exact effect shape as a fixture — change the effectTypes, targetSide or targetUnitType here and those fixtures stop matching the data. The hexagon-shaped removals (Stabilize System, Tactics 277, entering Optical Camouflage) remain none of Silence's business: every one keys on shape:'hexagon' rather than on the name. Still unbuilt, and unrelated to this aura: 4.12.4's Scan removal, which needs no Silence gate at all because Scan is itself silence:true (FAQ I18 keeps the SCANNER hidden and says nothing about its target)."
+    },
+    "154_A": {
+      "description": {
+        "en": "· Undergo Detonation immediately.\n· On Detonation, cause Explosion damage to all units within this grid."
+      }
+    },
+    "155_A": {
+      "description": {
+        "en": "· Undergo Detonation immediately.\n· On Detonation, all units within range gain 1 Fire Control Interference Token."
+      }
+    },
+    "156_A": {
+      "description": {
+        "en": "· Replaces this unit with SGM2 \"Pholcus\" Automatic Mine (Unfolded).\n· If the grid is occupied, the replacing unit must undergo Detonation immediately."
+      }
+    },
+    "157_A": {
+      "description": {
+        "en": "· Target 1 Enemy Unit within range, Fly into target grid and undergo Detonation.\n· On Detonation, cause Explosion damage to target.\n· Missile Group 3"
+      }
+    },
+    "158_A": {
+      "description": {
+        "en": "· Barricade\n· This unit cannot be Crushed."
+      }
     }
   },
   "_notes": {
+    "154_A": "M7 Grenade, Detonation. The five UN munition cards (154-158) were the last actions in the database whose English description field held Chinese. Text taken verbatim from the publisher's Part Data UN 1.02 EN list, rows LHAM-001 to LHAM-006, which prints all five in English. The Chinese is preserved beside it: several readers in units.ts match on the zh, and the reference shows both.",
+    "155_A": "M9 Stun Grenade, Detonation. Same source. Note the list names it Stun Grenade, not Flash Grenade.",
+    "156_A": "SGM2 \"Pholcus\" Automatic Mine, Unfold. Same source, and the source is where the name Pholcus comes from rather than a translation of 幽灵蛛.",
+    "157_A": "RKG70 Missile Group, Guided Attack. Same source. Missile Group 3 is printed on the action; the list defines Missile Group X in its Extra Info column.",
+    "158_A": "DBP \"Turtle Shell\" Barricade, Barricade. Same source. The list calls this a Barricade throughout, which is also the subtype it files it under.",
     "547_A": "H2-B \"Crisis\" II, Full-auto. A Firing action recorded with no range; the list gives 8.",
     "550_A": "Ls197R Autocannon (L), Single Shot. Firing with no range; the list gives 6.",
     "551_A": "Ls197R Autocannon (R), Single Shot. Same card mirrored, same correction.",
@@ -163,11 +214,12 @@
     "173_B": "P7-A3 \"Centurion\" Node Core, Fire Control Planning. Passive with no range; the list gives 6. Passives do carry ranges in our data already, so 0 here was missing data rather than 'not applicable'.",
     "509_A": "Type 55 Shield + PC-9K Shotgun (R) (D), Shield Bash. We had 1; the list prints Melee, which is range 0. Everything else on the action matches.",
     "179_A": "PL1 Standard Chassis, Sprint. Movement action recorded with no range; the GoF Chasis sheet gives 4. Found 2026-08-05: these four GoF chassis were the only Moving actions in the whole database at range 0, and with nothing printed the app fell back to the Maneuver Value, so a PL1 Sprint offered 1 Grid instead of 4.",
-    "180_A": "PL29 Stealth Chassis, Sprint. Same gap; the list gives 3.",
+    "180_A": "PL29 All-terrain Chassis, Sprint. Same gap; the list gives 3, corrected to 4 by v1.021.",
+    "_gof_command_coordination": "All four GoF chassis (179, 180, 181, 182) print · Command Coordination in the publisher's GoF 1.021 EN list and carried it NOWHERE in our data - the community bundle left every one of those action descriptions empty. Read off the list with pdfplumber's extract_tables(), which resolves it cleanly into 29 named columns; the plain text layer comes out in jumbled reading order, which is what an earlier sweep meant by 'its text layer cannot be parsed'. The parse is trustworthy because it agrees with every value an earlier RENDERED reading had already banked: ranges 4/4/5/4, 182_B and 181_B Small, card 180 at 70 points and 181 at 80, and the whole PL29 redesign. The control for the Centaur is its own SK variant, which sits in the same table with the same Run and NO Command Coordination bullet, and whose Extra Info column omits the definition to match - so the bullet on 181 is a real cell rather than a column-alignment artifact. Note the keyword is 指令协调, not 指令协同; searching the wrong character reports zero carriers on cards that have it. The list writes the keyword BARE, with no number, and defines it in its own Extra Info as 'may immediately issue 1 Command to a Ally Drone', so bare means 1 - commandCoordination() in units.ts now reads a digitless occurrence as 1, having previously scored these four as 0. Every card in the community bundle writes 指令协调1, so nothing already shipped changes. Only 181 is in a released box (LAB-CENTAUR SK); 179, 180 and 182 are GoF-only and unreleased.",
     "181_A": "PLK400 \"Centaur\" High-mobility Chassis, Run. Same gap; the list gives 5. Its Action B was already corrected above.",
     "182_A": "PL35 Armored Chassis, Sprint. Same gap; the list gives 4.",
     "181_B": "PLK400 \"Centaur\" High-mobility Chassis, Sprint. We had a Medium action; the list says Small, which fits a high-mobility chassis.",
-    "182_B": "PL35 Armored Chassis, Kick. We had Medium; the list says Small.",
+    "182_B": "PL35 Armored Chassis, Kick. We had Medium; the list says Small. PUSH CORRECTED TO KNOCKBACK 2026-08-24 on OTTO's call. The bundle had 造成推动1 (Push 1), and the two are different rules: Push X also reduces the target's Link by 1, Knock Back X does not. The decisive evidence is that THE BUNDLE CONTRADICTS ITSELF - card 182's own keyword field, from the same source as the text, reads 击退X Knockback X. So this is the documented 推动/击退 transcription collision (see keyword_overrides.json _corrections) rather than the Chinese and English editions genuinely differing, which is why the zh is corrected rather than left to stand beside an English that overrules it. The publisher's GoF 1.021 EN list agrees: · [On Hit] Knock Back 1. House phrasing 造成击退1 taken from 510_A, 508_A and 015_B. NOTE the mechanical half was already fixed by the English above, because knockbackOf prefers description.en over description.zh - this entry makes the Chinese stop saying the opposite. One latent gap recorded and deliberately not patched: knockbackOf's on-hit test is /命中时|命中時|\\[?on hit\\]?/, which does NOT match the bracketed 【命中】 or [命中] forms, so a zh-only reading of this action would report onHit:false. Every card in the data that needs that flag carries English, so no card is currently wrong and widening the regex would be a change with no case behind it.",
     "045_B": "Type 79 Combat Shield, Barricade. We had the generic Tactic timing; the list says Swift.",
     "PDAM-001_A": "FGM25 \"Piranha\" Missile, Guided Attack. Tactic in our data, Delayed on the list. Our vocabulary spells that timing 'Delay'.",
     "PDAM-002_A": "FGM46 \"Exocet\" Missile, Guided Attack. Same correction.",

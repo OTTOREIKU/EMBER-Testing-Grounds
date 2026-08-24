@@ -213,6 +213,40 @@ export function immobilizedStop(t: Token, action?: CardAction | null): string | 
   return `${t.label} bears an Immobilized Token, so it cannot perform Movement Actions or Maneuver, and that includes changing facing on the spot (6.3.2).`;
 }
 
+// NON-HUMANOID X 异形X: "When performing this Action, -X Link Value." Printed in
+// English on ZHLT-301 PLK400 "Centaur" High-mobility Chassis (card 181) and on
+// its SK variant, and confirmed by the publisher's own Part Data GoF 1.021 EN
+// list, which is the highest authority we hold for a Part.
+//
+// The KEYWORD CHIP carries the generic 异形X with no number -- the actual X is
+// printed in the Action's own text ("· 异形1"), exactly as Knockback X and Push
+// X are read. So the digit is required here: the bare chip must not match, or
+// every Centaur Action would charge 0 and look wired while doing nothing.
+//
+// English is tried first and Chinese second, the same order knockbackOf uses,
+// so this keeps working as English text is filled in behind it.
+export function nonHumanoidCost(a?: CardAction | null): number {
+  if (!a) return 0;
+  const hay = [
+    a.description?.en ?? '',
+    a.description?.zh ?? '',
+    ...(a.keywords ?? []).map((k) => k.inline ?? k.key ?? ''),
+  ].join(' ');
+  const m = /(?:异形|異形|Non[-\s]?humanoid)\s*(\d+)/i.exec(hay);
+  return m ? Math.max(0, Number(m[1])) : 0;
+}
+
+// Why this unit may not perform that Movement Action for want of Link, or null
+// if it may. Separate from immobilizedStop because they are different rules
+// with different exceptions, and a unit can fail either one alone.
+export function nonHumanoidStop(t: Token, action?: CardAction | null): string | null {
+  const cost = nonHumanoidCost(action);
+  if (cost <= 0) return null;
+  const have = t.link ?? 0;
+  if (have >= cost) return null;
+  return `${t.label} needs ${cost} Link to perform this Action (Non-humanoid ${cost}), and has ${have}.`;
+}
+
 // ---------- ON-HIT RIDERS (4.4.2/4.4.3) ----------
 //
 // THE SEAM THAT WAS MISSING. `applyStatus` was emitted from exactly five places
@@ -654,12 +688,23 @@ export function endsOpportunityCoordination(a: CardAction): boolean {
   return COMMAND_CO_ON_END.test(a.description?.zh ?? '') || COMMAND_CO_ON_END.test(a.description?.en ?? '');
 }
 
+// The BARE keyword, printed with no number at all. Every card in the community
+// bundle writes 指令协调1, so the digit readers above covered everything we had
+// -- but the publisher's GoF 1.021 list prints a plain "· Command Coordination"
+// on all four GoF chassis and defines it in its own Extra Info column as "may
+// immediately issue 1 Command to a Ally Drone". So bare means 1, and a reader
+// that demanded a digit scored those four as 0 while looking wired.
+const COMMAND_CO_BARE = /指令协调|Command Coordination/i;
+
 export function commandCoordination(a: CardAction): number {
   // A grant describes OTHER Actions, and an end-of-Opportunity Passive fires on
-  // a different trigger; neither is Coordination carried by this Action.
+  // a different trigger; neither is Coordination carried by this Action. Both
+  // are asked BEFORE the bare check as well as before the digit one, or a grant
+  // would fall through to the bare reader and hand the carrier a free 1.
   if (grantsCommandCoordination(a) || endsOpportunityCoordination(a)) return 0;
   const m = COMMAND_CO_ZH.exec(a.description?.zh ?? '') ?? COMMAND_CO_EN.exec(a.description?.en ?? '');
-  return m ? Number(m[1]) : 0;
+  if (m) return Number(m[1]);
+  return COMMAND_CO_BARE.test(a.description?.zh ?? '') || COMMAND_CO_BARE.test(a.description?.en ?? '') ? 1 : 0;
 }
 
 // How much Coordination this Mech owes when its Action Opportunity ends, summed

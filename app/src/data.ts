@@ -310,9 +310,12 @@ function applyActionFixes(cards: Card[], patch: ActionOverrides): void {
       if (!fix) continue;
       for (const [k, v] of Object.entries(fix)) {
         if (k.startsWith('_')) continue;
-        // A name patch only ever supplies `en`; replacing the object outright
-        // would throw away the Chinese the card already has.
+        // A name or description patch only ever supplies `en`; replacing the
+        // object outright would throw away the Chinese the card already has,
+        // which several readers still match on (the zh regexes in units.ts) and
+        // which the reference shows beside the English.
         if (k === 'name' && v && typeof v === 'object') a.name = { ...a.name, ...v };
+        else if (k === 'description' && v && typeof v === 'object') a.description = { ...a.description, ...v };
         else (a as unknown as Record<string, unknown>)[k] = v;
       }
     }
@@ -329,7 +332,15 @@ function applyStats(cards: Card[], patch: StatOverrides): void {
   const byId = patch.cards ?? {};
   for (const c of cards) {
     const fix = byId[c.id];
-    if (fix) Object.assign(c, fix);
+    if (!fix) continue;
+    // `name` and `description` are per-language objects, and a patch only ever
+    // supplies `en`. Object.assign would drop the Chinese with them, which
+    // several readers in units.ts still match on and which mechBlocks is fed
+    // separately, so those two merge and everything else replaces.
+    const { name, description, ...rest } = fix;
+    Object.assign(c, rest);
+    if (name) c.name = { ...c.name, ...name };
+    if (description) c.description = { ...c.description, ...description };
   }
 }
 
