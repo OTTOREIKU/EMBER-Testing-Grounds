@@ -52,6 +52,44 @@ export function volleyOf(a: CardAction): number {
   return m ? Math.max(1, Number(m[1])) : 1;
 }
 
+// ---------- IMMOBILIZED, AND THE ONE KEYWORD THAT IGNORES IT ----------
+//
+// 6.3.2 gives the Immobilized Token two clauses. The no-Blue-dice clause has
+// always been in combat.ts, shared and correct on both boards. THE MOVEMENT BAN
+// WAS FREEPLAY UI ONLY: two handlers in main.ts, and zero references in the
+// command layer, the Match Centre, or the rules geometry - so an Immobilized
+// unit moved freely online, and even in freeplay only the DRAG was blocked
+// while the move planner opened happily.
+//
+// Being DISPLACED by somebody else stays legal, which is why this is asked only
+// of a unit's own voluntary movement (`maneuver`) and never of `forceMove`.
+
+// Unstoppable: "Movement Actions with this Keyword can still be performed when
+// Immobilized" (glossary, 06_missions_and_appendix.md:444).
+//
+// PER ACTION, NEVER PER CARD. Card 181 the Centaur carries the keyword at card
+// level, but only its Run (181_A) prints it inline - its Sprint (181_B) has an
+// empty keyword array. Reading the card would exempt both and hand the Sprint a
+// rule it does not have.
+export function isUnstoppable(a?: CardAction | null): boolean {
+  if (!a) return false;
+  const hay = [
+    a.description?.zh ?? '',
+    a.description?.en ?? '',
+    ...(a.keywords ?? []).map((k) => k.inline ?? k.key ?? ''),
+  ].join(' ');
+  return /不可阻挡|Unstoppable/i.test(hay);
+}
+
+// Why this unit may not move of its own accord, or null if it may. `action` is
+// the Movement Action being performed, when there is one; a bare Maneuver has
+// none and can never be Unstoppable.
+export function immobilizedStop(t: Token, action?: CardAction | null): string | null {
+  if (statusCount(t.statuses, 'immobilized') <= 0) return null;
+  if (isUnstoppable(action)) return null;
+  return `${t.label} bears an Immobilized Token, so it cannot perform Movement Actions or Maneuver, and that includes changing facing on the spot (6.3.2).`;
+}
+
 // ---------- ON-HIT RIDERS (4.4.2/4.4.3) ----------
 //
 // THE SEAM THAT WAS MISSING. `applyStatus` was emitted from exactly five places

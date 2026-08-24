@@ -5,7 +5,7 @@ import { actionIconUrl, cardName, isAerial, secondaryImageUrl, squadLabel, unitS
 import { showInspect } from './inspector';
 import { Board, footprint, snapPlacement, type BoardCallbacks } from './board';
 import { printedDeployment, resolveZoneSetData } from './overlays';
-import { actionRange, transformOffer, anyStartTiming, opportunityBonusOn, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, ripostePart, martyrdomOwed, targetTracingOn, riderOnDrone, hasFlexibleTiming, coordinationFor, coordinationOnOpportunityEnd, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, electronicOrigins, loanedParts, phasesThroughUnits, minesLayable, minesOwed, pilotCard, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, maneuverIsSilent, maneuverSilenceDenier, type AuraSource, canActivateCamo, chargeableSlots, electronicDash, electronicStrength, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, projectileReach, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
+import { actionRange, transformOffer, anyStartTiming, opportunityBonusOn, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, ripostePart, martyrdomOwed, targetTracingOn, riderOnDrone, hasFlexibleTiming, immobilizedStop, coordinationFor, coordinationOnOpportunityEnd, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, electronicOrigins, loanedParts, phasesThroughUnits, minesLayable, minesOwed, pilotCard, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, maneuverIsSilent, maneuverSilenceDenier, type AuraSource, canActivateCamo, chargeableSlots, electronicDash, electronicStrength, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, projectileReach, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
 import { ElectronicHelper, type EwAct } from './combat';
 import { tacticFitsPhase, tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { inContact, canStandIn, attackDirection, crushExchange, crushExchangeSpots, crushTargets, dissipationFor, extendPath, knockbackPath, largeGridOf, LG, losBetween, losNote, smokeBlocks, pathCost, protectionFor, rangeBetween, reachableGrids, standingSpot, type LargeGrid } from './rules';
@@ -320,6 +320,9 @@ let movePlan: {
   // declared before the route was drawn (the -2 already came off `steps`).
   drag?: { allyUid: number; funderUid: number };
   shoveActionId?: string;
+  // The Movement Action this plan is spending, carried so the `maneuver` it
+  // sends can name it and the command layer can judge Unstoppable itself.
+  actionId?: string;
   // A Movement Action has already paid with an Action Tick, so its move must
   // not also spend the Maneuver Tick.
   free?: boolean;
@@ -482,7 +485,15 @@ function moveOptsFor(ctx: HudCtx, t: Token, flying: boolean) {
 // A Maneuver by default. A Movement Action passes its own Range instead: the
 // chassis `move` is the Maneuver Value (1–2 Grids) and has nothing to do with a
 // Sprint-style Action's printed range, which is usually 4.
-function startMovePlan(ctx: HudCtx, t: Token, opts: { range?: number; label?: string; shoveActionId?: string; free?: boolean; granted?: boolean; maneuver?: boolean; airborne?: boolean } = {}): void {
+function startMovePlan(ctx: HudCtx, t: Token, opts: { range?: number; label?: string; shoveActionId?: string; actionId?: string; free?: boolean; granted?: boolean; maneuver?: boolean; airborne?: boolean } = {}): void {
+  // IMMOBILIZED (6.3.2), asked before the planner opens. This board had NO
+  // enforcement of the movement ban at all - the token simply moved - so this
+  // and the command gate behind it are the whole of the rule online.
+  const stopped = immobilizedStop(t, opts.actionId ? actionOn(ctx, t, opts.actionId) : null);
+  if (stopped) {
+    ctx.noteNow(stopped);
+    return;
+  }
   const steps = opts.range || maneuverRange(ctx.data, t);
   if (steps <= 0) {
     ctx.noteNow(`${t.label} has no Movement Range on its card.`);
@@ -498,6 +509,7 @@ function startMovePlan(ctx: HudCtx, t: Token, opts: { range?: number; label?: st
   movePlan = {
     uid: t.uid,
     side: t.side,
+    actionId: opts.actionId,
     steps,
     flying: base || !!opts.airborne || grant === 'always',
     flightOptional: optional,
@@ -626,7 +638,7 @@ function commitMove(ctx: HudCtx): void {
     board.clearMovePath();
     board.clearHighlights();
     commitAction(ctx);
-    ctx.send({ kind: 'maneuver', seat: t.side, uid: t.uid, to: { col: t.col, row: t.row }, facing: m.facing, free: m.free, granted: m.granted });
+    ctx.send({ kind: 'maneuver', seat: t.side, uid: t.uid, to: { col: t.col, row: t.row }, facing: m.facing, free: m.free, granted: m.granted, actionId: m.actionId });
     ctx.noteNow(`${t.label} turns on the spot. A pivot spends no Movement Range, but it is Movement.`);
     ctx.refresh();
     return;
@@ -693,7 +705,7 @@ function commitMove(ctx: HudCtx): void {
   const aerialStart = t.aerial ? { ...t } : null;
   board.animateMove(t.uid, stops, () => {
     // The route travels with the move so the other player watches the same walk.
-    ctx.send({ kind: 'maneuver', seat: t.side, uid: t.uid, to: last, free, granted, via: stops, facing });
+    ctx.send({ kind: 'maneuver', seat: t.side, uid: t.uid, to: last, free, granted, via: stops, facing, actionId: m.actionId });
     if (drag) towDraggedAlly(ctx, t, walked, drag);
     if (aerialStart) {
       const moved = ctx.state.tokens.find((x) => x.uid === t.uid);
@@ -3502,6 +3514,7 @@ function routeAction(ctx: HudCtx, t: Token, a: CardAction, ga?: ReturnType<typeo
   }
   if (a.type === 'Moving') {
     startMovePlan(ctx, t, {
+      actionId: a.id,
       range: a.range || undefined,
       label: `${a.name?.en || a.id} · Range ${a.range || maneuverRange(ctx.data, t)}`,
       shoveActionId: knockbackOf(a, ctx.data.actionTranslation(a.id)?.english ?? undefined) ? a.id : undefined,

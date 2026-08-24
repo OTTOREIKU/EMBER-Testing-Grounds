@@ -2,7 +2,7 @@ import type { CombatView, Facing, GameState, MechLoadout, Opportunity, PartSlot,
 import { addStatus, ageTokens, newOpportunity, PHASES, statusCount, STATUSES, TIMINGS } from './types';
 import type { GameData } from './data';
 import { cardName, transformFaces, unfoldsInto } from './data';
-import { covertCarryLock, ammoDeliveryPool, opportunityBonusOn, ripostePart, defenseReactionOn, targetTracingOn, riderOnDrone, hasFlexibleTiming, commandGeneration, blinkTargets, isPositionSwap, electronicOrigins, isSilentAction, maneuverIsSilent, loanedParts, unfoldToken, extrasFor, consumesCharge, cutTethersOn, electronicDash, electronicValue, freehandSlots, interceptCapacity, anyStartTiming, focusIsFree, keepsLinkOnPartLoss, makeDroneToken, structureOf, makeMechToken, maneuverRange, maxLink, partsLeft, pilotCard, pilotIs, projectileDelivery, provokeWhy, settleTethers, SLOT_LABEL, tetherTo, tokenCards, transformPartOn } from './units';
+import { covertCarryLock, ammoDeliveryPool, opportunityBonusOn, ripostePart, defenseReactionOn, targetTracingOn, riderOnDrone, hasFlexibleTiming, commandGeneration, blinkTargets, isPositionSwap, electronicOrigins, isSilentAction, maneuverIsSilent, loanedParts, unfoldToken, extrasFor, consumesCharge, cutTethersOn, electronicDash, electronicValue, immobilizedStop, freehandSlots, interceptCapacity, anyStartTiming, focusIsFree, keepsLinkOnPartLoss, makeDroneToken, structureOf, makeMechToken, maneuverRange, maxLink, partsLeft, pilotCard, pilotIs, projectileDelivery, provokeWhy, settleTethers, SLOT_LABEL, tetherTo, tokenCards, transformPartOn } from './units';
 import { tetherCap } from './melee';
 import { canActivate, canAttackMode, canManeuver, canOverload, canPerform, spendAction, spendActivation, spendAttackMode, spendManeuver, spendOverload } from './ticks';
 import { tacticSpec, tacticTargets, type TacticCtx } from './tactics';
@@ -63,7 +63,11 @@ export type Command =
   // NOT taken on trust: check() reads the board for the placement this claims
   // has happened, because the field is rules-bearing and the sender is the
   // thing that reader distrusts. See the guard in the `maneuver` case.
-  | { kind: 'maneuver'; seat: Side; uid: number; to: { col: number; row: number }; facing?: Facing; free?: boolean; granted?: boolean; via?: { col: number; row: number }[]; from?: { col: number; row: number } }
+  // `actionId` is the Movement Action being performed, when there is one. It
+  // exists so the Immobilized ban can judge Unstoppable AT THE COMMAND rather
+  // than trusting whichever UI sent the move: the exception is per ACTION (181's
+  // Run has it, its Sprint does not), so the action has to travel.
+  | { kind: 'maneuver'; seat: Side; uid: number; to: { col: number; row: number }; facing?: Facing; free?: boolean; granted?: boolean; via?: { col: number; row: number }[]; from?: { col: number; row: number }; actionId?: string }
   // A Crush with no escape square (4.3.6, book p.47): "If NONE of the Grids
   // within Range of that Forced Movement can be entered, the crushed Unit
   // instead exchanges positions with the Crushing Unit."
@@ -1245,6 +1249,17 @@ function checkActed(
       return ok;
     }
     case 'maneuver': {
+      // IMMOBILIZED (6.3.2). Refused HERE rather than only in the two boards'
+      // movers, because this is the rule and those were a courtesy: the ban
+      // lived in two freeplay UI handlers and nowhere else, so it did not exist
+      // online at all. Unstoppable is the printed exception and is read off the
+      // Action that travelled, never off the card.
+      //
+      // Only VOLUNTARY movement. `forceMove` is somebody else displacing this
+      // unit and stays legal, which is the whole reason the two are separate
+      // commands.
+      const stopped = immobilizedStop(t, cmd.actionId ? findAction(data, state, cmd.uid, cmd.actionId) : null);
+      if (stopped) return no(stopped);
       const { col, row } = cmd.to;
       if (!Number.isInteger(col) || !Number.isInteger(row) || col < 0 || row < 0 || col > 35 || row > 35) {
         return no('That is not a place on the board.');

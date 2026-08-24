@@ -61,7 +61,14 @@ const auras = unitsSrc.slice(
   unitsSrc.indexOf('// ---------- Auras (FAQ Q1-Q4, J2) ----------'),
   unitsSrc.indexOf('// LPA-21 Firefly'),
 );
-if (!silence || !auras) throw new Error('could not locate the Silence readers in units.ts');
+// The Immobilized ban and its Unstoppable exception, SLICED rather than stubbed:
+// a simulated game moves units constantly, so a stub that refuses nothing would
+// hide the rule breaking exactly where this file is meant to catch it.
+const immob = unitsSrc.slice(
+  unitsSrc.indexOf('export function isUnstoppable('),
+  unitsSrc.indexOf('// ---------- ON-HIT RIDERS'),
+);
+if (!silence || !auras || !immob) throw new Error('could not locate the Silence readers in units.ts');
 const timings = types.slice(types.indexOf('export const PHASES'), types.indexOf('export type TokenShape'));
 const statuses = types.slice(types.indexOf('export function hexagonIds'), types.indexOf('export interface RoundState'));
 const tmp = new URL('./_simgame.slice.ts', import.meta.url);
@@ -193,6 +200,7 @@ let sliceSrc =
   // a function declaration hoists where a `const` stub does not. Auras first,
   // since silenceDenied reads aurasOn.
   + auras
+  + immob
   + silence
   + commands.replace(/^import[^\n]*\n/gm, '');
 // The driver builds real script states and opportunities, which live outside

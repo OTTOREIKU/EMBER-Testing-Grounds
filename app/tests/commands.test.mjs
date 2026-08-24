@@ -39,6 +39,15 @@ const evReader = unitsSrc.slice(
   unitsSrc.indexOf('export function defaultUnitLabel'),
 );
 if (!evReader) throw new Error('could not locate electronicValue in units.ts');
+// The Immobilized readers, SLICED rather than stubbed: 6.3.2's movement ban is
+// a RULE the command layer now enforces, and a stub would let the test pass
+// against a gate that refuses nothing. Unstoppable rides along because the ban
+// and its exception are one rule.
+const immobReader = unitsSrc.slice(
+  unitsSrc.indexOf('export function isUnstoppable('),
+  unitsSrc.indexOf('// ---------- ON-HIT RIDERS'),
+);
+if (!immobReader) throw new Error('could not locate the Immobilized readers in units.ts');
 // takeBlackBox asks freehandSlots which Parts can carry one, so the Freehand
 // keyword test is sliced rather than mirrored. SLOT_LABEL rides along because
 // it is a module-level const the function reads.
@@ -340,6 +349,7 @@ writeFileSync(
     + interceptParser
     + chargeParser
     + evReader
+    + immobReader
     + slotLabels + riders + resupply + ammoDelivery + covert
     + freehand
     + attackMode

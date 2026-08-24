@@ -47,7 +47,7 @@ import { PlayGuide } from './playguide';
 import type { Card, CardAction, DiceData, DieColor, Facing, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, StatusDef, TerrainPiece, Timing, Token } from './types';
 import { addStatus, normaliseScript, SCALES, statusCount, statusesFor, STATUSES } from './types';
 import { actionIdOf } from './ticks';
-import { transformOffer, automaticShieldFor, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, twoHandedUse, electronicValue, martyrdomOwed, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, loanedParts, phasesThroughUnits, minesLayable, minesOwed, multiTargetLimit, unfoldsOwed, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, maneuverIsSilent, maneuverSilenceDenier, chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, projectileReach, type Resupply, resupplyOf, SLOT_LABEL, stationaryAdjusted, interceptLeft, interceptsOwed, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf, type AttackReaction } from './units';
+import { transformOffer, automaticShieldFor, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, twoHandedUse, electronicValue, martyrdomOwed, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, loanedParts, phasesThroughUnits, minesLayable, minesOwed, multiTargetLimit, unfoldsOwed, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, immobilizedStop, maneuverIsSilent, maneuverSilenceDenier, chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, projectileReach, type Resupply, resupplyOf, SLOT_LABEL, stationaryAdjusted, interceptLeft, interceptsOwed, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf, type AttackReaction } from './units';
 import { registerOffline } from './offline';
 import { battlefieldLocked, countHits, firstPlayerFrom, newSetup, normaliseSetup, tasksLocked, type SetupState } from './setup';
 import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
@@ -928,7 +928,7 @@ async function init() {
       const range = action.range || maneuverRange(data, t);
       // A shove rides on the Movement rather than replacing it, so the push is
       // offered once the Mech has finished moving.
-      void startMove(uid, { range, label: what, airborne: isAirborneAction(action) }, (moved) => {
+      void startMove(uid, { range, label: what, airborne: isAirborneAction(action), action }, (moved) => {
         if (!moved || !knockbackOf(action, data.actionTranslation(actionId)?.english ?? undefined)) return done(moved);
         void offerShove(t, action).then(() => done(true));
       });
@@ -1905,9 +1905,18 @@ async function init() {
     return sharedHarpyDrag(data, state, t, steps);
   }
 
-  async function startMove(uid: number, opts: { range?: number; label: string; maneuver?: boolean; airborne?: boolean }, done: (moved: boolean) => void): Promise<void> {
+  async function startMove(uid: number, opts: { range?: number; label: string; maneuver?: boolean; airborne?: boolean; action?: CardAction | null }, done: (moved: boolean) => void): Promise<void> {
     const t = state.tokens.find((x) => x.uid === uid);
     if (!t) return done(false);
+    // IMMOBILIZED (6.3.2), asked BEFORE the planner opens. The drag handler has
+    // always refused, but the move planner did not, so the ban was avoidable in
+    // freeplay by using the other door. `opts.action` carries the Movement
+    // Action when there is one, because Unstoppable is the printed exception.
+    const stopped = immobilizedStop(t, opts.action ?? null);
+    if (stopped) {
+      void alertDialog({ title: 'Immobilized', body: stopped });
+      return done(false);
+    }
     const steps = opts.range ?? moveRangeFor(t);
     if (steps <= 0) {
       void alertDialog({
