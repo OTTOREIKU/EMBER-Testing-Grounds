@@ -105,6 +105,34 @@
       "en": "TM35NA “Nile” Electronic Warfare Core",
       "source": "UN 1.02 parts list - the publisher shortens the codename to Nile; our translated name spelled out the full crocodile"
     },
+    "ZHLA-304": {
+      "en": "MHK1 Heat Broadsword (L)",
+      "source": "publisher GoF parts list v1.021, serial ZHLA-304 - a RENAME, not a new card: the list calls it MHK1 Heat Broadsword where the community bundle had MH-K1 Heat Heavy Sword. Found by name-searching every 1.021 row against our data before concluding anything was missing, which is what separated the renames from the genuine additions"
+    },
+    "ZHLA-304-T": {
+      "en": "MHK1 Heat Broadsword (L)(D)",
+      "source": "publisher GoF parts list v1.021, same serial, discard face. See ZHLA-304"
+    },
+    "ZHRA-304": {
+      "en": "MHK1 Heat Broadsword (R)",
+      "source": "publisher GoF parts list v1.021, serial ZHRA-304. See ZHLA-304"
+    },
+    "ZHRA-304-T": {
+      "en": "MHK1 Heat Broadsword (R)(D)",
+      "source": "publisher GoF parts list v1.021, same serial, discard face. See ZHLA-304"
+    },
+    "ZYBP-101": {
+      "en": "DLSP-1 Nest Guardian Swarm Control Pack",
+      "source": "publisher GoF parts list v1.021, serial ZYBP-101 - renamed from the bundle's DLSP Swarm Control Backpack. The -1 matters: 1.021 also adds a DLSP-2 Killer Swarm Control Pack, so the bare name is now ambiguous"
+    },
+    "ZYBP-202": {
+      "en": "ECP9 “Eagle Whistle” Drone Command System",
+      "source": "publisher GoF parts list v1.021, serial ZYBP-202. Our English had dropped the Eagle while our own Chinese kept it (鹰哨), so this restores what the card always said - and 1.021 adds an ECP10 \"Dog Whistle\", which makes the distinction load-bearing"
+    },
+    "ZYBP-302": {
+      "en": "“HALO” Melee Cooperation System",
+      "source": "publisher GoF parts list v1.021, serial ZYBP-302 - the list capitalises HALO and prints Cooperation where the bundle had Collaboration"
+    },
     "115": {
       "en": "S100 Shield + R6SS SMG (R)",
       "source": "UN 1.02 parts list, row 115 (serial LHRA-105O), whose Keyword 2 is R·右. The bundle name says neither hand, which is unreadable next to the (L) variant we also hold - and the two are different cards, not duplicates: this one is 51 points in UN_CORE, the (L) is 54 in UNSALE"

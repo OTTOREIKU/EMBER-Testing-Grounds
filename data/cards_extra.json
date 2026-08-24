@@ -1,34 +1,631 @@
 {
-  "_comment": "Cards the community bundle does not have. cards.json is regenerated from that bundle, so anything added by hand has to live here or it would be wiped on the next regeneration - the same reason stat_overrides and name_overrides exist. Merged at load; an id here must NOT already exist in cards.json.",
-  "_rule": "Nothing goes in this file that is not sourced. Record where every value came from in `_source` on the card itself. A card invented to fill a gap is worse than a gap, because the gap is visible and the invention is not.",
-  "cards": [
+ "_comment": "Cards the community bundle does not have. cards.json is regenerated from that bundle, so anything added by hand has to live here or it would be wiped on the next regeneration - the same reason stat_overrides and name_overrides exist. Merged at load; an id here must NOT already exist in cards.json.",
+ "_rule": "Nothing goes in this file that is not sourced. Record where every value came from in `_source` on the card itself. A card invented to fill a gap is worse than a gap, because the gap is visible and the invention is not.",
+ "cards": [
+  {
+   "id": "FPA-63",
+   "_source": "The Raid 2-Player Starter ships three pilots and this is the third; the publisher's product page lists it as '63 Scout' alongside Onyx (Mellow Chord) and Hammerhead (Domestic Expert). Points 9 from the publisher's RDL pilot list (QR 63), and every dial read from the publisher's own card page at obsidianprotocol.net id 363: Swift 5, Melee 6, Projectile 7, Firing 4, Move 7, Tactical 3, Link 4. Those are identical to Scout-14 through Scout-18, which is what a generic Scout should be - the number is the only thing that differs.",
+   "_id_note": "OUR id, not the publisher's. The pilot sheets leave the Serial column empty, so no printed serial exists to copy; FPA-63 follows the FPA-14=Scout-14 pattern the other Scouts use. The authoritative link is the QR id in qr_ids.json.",
+   "name": {
+    "zh": "侦察兵-63",
+    "en": "Scout-63",
+    "jp": "斥候-63"
+   },
+   "score": 9,
+   "LV": 4,
+   "faction": "RDL",
+   "swift": 5,
+   "melee": 6,
+   "projectile": 7,
+   "firing": 4,
+   "moving": 7,
+   "tactic": 3,
+   "trait": "",
+   "traitDescription": {
+    "zh": "066测试中队的新晋侦察兵。",
+    "en": "A new Scout from Test and Evaluation Squadron 066",
+    "jp": "試験評価隊066の新米スカウト"
+   },
+   "_flavour_note": "Flavour text copied from the other Scouts rather than read off this card, which we have no scan of. It is flavour, not a rule, and the trait NAME is empty exactly as theirs is, so nothing mechanical rests on it.",
+   "category": "pilot",
+   "keywords": []
+  },
+  {
+   "id": "YP23",
+   "_source": "Publisher Part Data GoF 1.021 EN list, read with pdfplumber extract_tables. Every value here is that row; nothing is inferred.",
+   "name": {
+    "en": "YP23 “Wanderer” Electronic Warfare Core"
+   },
+   "type": "torso",
+   "category": "mech_part",
+   "faction": "GOF",
+   "armor": 5,
+   "structure": 4,
+   "parray": 0,
+   "dodge": 0,
+   "electronic": 4,
+   "move": 0,
+   "keywords": [],
+   "actions": [
     {
-      "id": "FPA-63",
-      "_source": "The Raid 2-Player Starter ships three pilots and this is the third; the publisher's product page lists it as '63 Scout' alongside Onyx (Mellow Chord) and Hammerhead (Domestic Expert). Points 9 from the publisher's RDL pilot list (QR 63), and every dial read from the publisher's own card page at obsidianprotocol.net id 363: Swift 5, Melee 6, Projectile 7, Firing 4, Move 7, Tactical 3, Link 4. Those are identical to Scout-14 through Scout-18, which is what a generic Scout should be - the number is the only thing that differs.",
-      "_id_note": "OUR id, not the publisher's. The pilot sheets leave the Serial column empty, so no printed serial exists to copy; FPA-63 follows the FPA-14=Scout-14 pattern the other Scouts use. The authoritative link is the QR id in qr_ids.json.",
-      "name": {
-        "zh": "侦察兵-63",
-        "en": "Scout-63",
-        "jp": "斥候-63"
-      },
-      "score": 9,
-      "LV": 4,
-      "faction": "RDL",
-      "swift": 5,
-      "melee": 6,
-      "projectile": 7,
-      "firing": 4,
-      "moving": 7,
-      "tactic": 3,
-      "trait": "",
-      "traitDescription": {
-        "zh": "066测试中队的新晋侦察兵。",
-        "en": "A new Scout from Test and Evaluation Squadron 066",
-        "jp": "試験評価隊066の新米スカウト"
-      },
-      "_flavour_note": "Flavour text copied from the other Scouts rather than read off this card, which we have no scan of. It is flavour, not a rule, and the trait NAME is empty exactly as theirs is, so nothing mechanical rests on it.",
-      "category": "pilot",
-      "keywords": []
+     "id": "YP23_A",
+     "name": {
+      "en": "N4M Data Link"
+     },
+     "description": {
+      "en": "· Command Generation 4\n· When a Ally Drone receives a Command from this Mech, may perform a 2 grid Move before performing its Action. This Move uses the same movement type as its normal Move"
+     },
+     "type": "Passive",
+     "range": 0,
+     "storage": 0,
+     "yellowDice": 0,
+     "redDice": 0,
+     "keywords": []
     }
-  ]
+   ],
+   "score": 85,
+   "_id_note": "OUR id, not the publisher's: the 1.021 row carries NO Serial Number and NO QR ID, which is what the kit-exclusive variants look like on that list. Swap it when a real serial appears.",
+   "_box_note": "Box membership UNKNOWN and deliberately absent. The parts lists carry no box column and neither does the publisher API, so which product ships this card has only a physical answer. faction_overrides.json carries the faction, which box membership would otherwise have derived."
+  },
+  {
+   "id": "P7A3-SK",
+   "_source": "Publisher Part Data GoF 1.021 EN list, read with pdfplumber extract_tables. Every value here is that row; nothing is inferred.",
+   "name": {
+    "en": "P7A3 SK “Centurion SK” Node Core"
+   },
+   "type": "torso",
+   "category": "mech_part",
+   "faction": "GOF",
+   "armor": 5,
+   "structure": 3,
+   "parray": 0,
+   "dodge": 0,
+   "electronic": 3,
+   "move": 0,
+   "keywords": [],
+   "actions": [
+    {
+     "id": "P7A3-SK_A",
+     "name": {
+      "en": "N4 Data Link"
+     },
+     "description": {
+      "en": "· Command Generation 4"
+     },
+     "type": "Passive",
+     "range": 0,
+     "storage": 0,
+     "yellowDice": 0,
+     "redDice": 0,
+     "keywords": []
+    },
+    {
+     "id": "P7A3-SK_B",
+     "name": {
+      "en": "FCS Control"
+     },
+     "description": {
+      "en": "· Aura\n· Ally Drones within Range performing Firing Actions gain Range + 2 grids.\nThis effect does not stack."
+     },
+     "type": "Passive",
+     "range": 6,
+     "storage": 0,
+     "yellowDice": 0,
+     "redDice": 0,
+     "keywords": []
+    }
+   ],
+   "score": 80,
+   "_id_note": "OUR id, not the publisher's: the 1.021 row carries NO Serial Number and NO QR ID, which is what the kit-exclusive variants look like on that list. Swap it when a real serial appears.",
+   "_box_note": "Box membership UNKNOWN and deliberately absent. The parts lists carry no box column and neither does the publisher API, so which product ships this card has only a physical answer. faction_overrides.json carries the faction, which box membership would otherwise have derived."
+  },
+  {
+   "id": "PLK400-SK",
+   "_source": "Publisher Part Data GoF 1.021 EN list, read with pdfplumber extract_tables. Every value here is that row; nothing is inferred.",
+   "name": {
+    "en": "PLK400 SK “Centaur SK” High-mobility Chassis"
+   },
+   "type": "chasis",
+   "category": "mech_part",
+   "faction": "GOF",
+   "armor": 5,
+   "structure": 3,
+   "parray": 0,
+   "dodge": 3,
+   "electronic": 0,
+   "move": 2,
+   "keywords": [
+    {
+     "key": "异形X",
+     "en": "Non-humanoid X"
+    },
+    {
+     "key": "不可阻挡",
+     "en": "Unstoppable"
+    },
+    {
+     "key": "推动X",
+     "en": "Push X"
+    }
+   ],
+   "actions": [
+    {
+     "id": "PLK400-SK_A",
+     "name": {
+      "en": "Run"
+     },
+     "description": {
+      "en": "· Non-humanoid 1\n· Unstoppable\n· If there is an Enemy Ground Unit in the adjacent grid in front of the Mech after performing this Action, may cause Push 1."
+     },
+     "type": "Moving",
+     "range": 5,
+     "storage": 0,
+     "yellowDice": 0,
+     "redDice": 0,
+     "keywords": [
+      {
+       "inline": "异形X"
+      },
+      {
+       "inline": "不可阻挡"
+      }
+     ],
+     "size": "m"
+    },
+    {
+     "id": "PLK400-SK_B",
+     "name": {
+      "en": "Sprint"
+     },
+     "description": {
+      "en": ""
+     },
+     "type": "Moving",
+     "range": 2,
+     "storage": 0,
+     "yellowDice": 0,
+     "redDice": 0,
+     "keywords": [],
+     "size": "s"
+    }
+   ],
+   "score": 75,
+   "description": {
+    "en": "·Unstoppable: Movement Actions with this Keyword can still be performed when Immobilized.\n·Non-humanoid X: When performing this Action, -X Link Value.\n·Push X: The target is forced to move X grids in any direction and -1 Link."
+   },
+   "_id_note": "OUR id, not the publisher's: the 1.021 row carries NO Serial Number and NO QR ID, which is what the kit-exclusive variants look like on that list. Swap it when a real serial appears.",
+   "_box_note": "Box membership UNKNOWN and deliberately absent. The parts lists carry no box column and neither does the publisher API, so which product ships this card has only a physical answer. faction_overrides.json carries the faction, which box membership would otherwise have derived. NOTE the released kit is named LAB-CENTAUR SK, and this is the SK chassis; whether that kit ships this card or the base 181 is an open question for OTTO, recorded in the open-tasks memory.",
+   "_maneuver_note": "Keyword 1 on the list reads \"Maneuver 2\", which is the Maneuver Value our data carries as `move`."
+  },
+  {
+   "id": "SS13",
+   "_source": "Publisher Part Data GoF 1.021 EN list, read with pdfplumber extract_tables. Every value here is that row; nothing is inferred.",
+   "name": {
+    "en": "SS13 Medium Shield"
+   },
+   "type": "leftHand",
+   "category": "mech_part",
+   "faction": "GOF",
+   "armor": 4,
+   "structure": 5,
+   "parray": 3,
+   "dodge": 0,
+   "electronic": 0,
+   "move": 0,
+   "keywords": [
+    {
+     "key": "空手",
+     "en": "Freehand"
+    }
+   ],
+   "actions": [
+    {
+     "id": "SS13_A",
+     "name": {
+      "en": "Defense Reaction"
+     },
+     "description": {
+      "en": "· If Penetration occurs against any Part of this Mech, it may immediately change to Defensive Stance."
+     },
+     "type": "Passive",
+     "range": 0,
+     "storage": 0,
+     "yellowDice": 0,
+     "redDice": 0,
+     "keywords": []
+    },
+    {
+     "id": "SS13_B",
+     "name": {
+      "en": "Shield Up"
+     },
+     "description": {
+      "en": "· This Mech may Designate this part to resolve damage in the Defensive Stance."
+     },
+     "type": "Passive",
+     "range": 0,
+     "storage": 0,
+     "yellowDice": 0,
+     "redDice": 0,
+     "keywords": []
+    }
+   ],
+   "score": 56,
+   "_id_note": "OUR id, not the publisher's: the 1.021 row carries NO Serial Number and NO QR ID, which is what the kit-exclusive variants look like on that list. Swap it when a real serial appears.",
+   "_box_note": "Box membership UNKNOWN and deliberately absent. The parts lists carry no box column and neither does the publisher API, so which product ships this card has only a physical answer. faction_overrides.json carries the faction, which box membership would otherwise have derived."
+  },
+  {
+   "id": "MHKX-L",
+   "_source": "Publisher Part Data GoF 1.021 EN list, read with pdfplumber extract_tables. Every value here is that row; nothing is inferred.",
+   "name": {
+    "en": "MHKX Experimental Heat Broadsword (L)"
+   },
+   "type": "leftHand",
+   "category": "mech_part",
+   "faction": "GOF",
+   "armor": 1,
+   "structure": 5,
+   "parray": 2,
+   "dodge": 0,
+   "electronic": 0,
+   "move": 0,
+   "keywords": [
+    {
+     "key": "顺劈",
+     "en": "Cleaving"
+    },
+    {
+     "key": "毁伤",
+     "en": "Mutilation"
+    }
+   ],
+   "actions": [
+    {
+     "id": "MHKX-L_A",
+     "name": {
+      "en": "Chop"
+     },
+     "description": {
+      "en": "· Cleaving"
+     },
+     "type": "Melee",
+     "range": 0,
+     "storage": 0,
+     "yellowDice": 5,
+     "redDice": 0,
+     "keywords": [
+      {
+       "inline": "顺劈"
+      }
+     ],
+     "size": "s"
+    },
+    {
+     "id": "MHKX-L_B",
+     "name": {
+      "en": "Slash"
+     },
+     "description": {
+      "en": "· [Two-Handed] Gains Mutilation."
+     },
+     "type": "Melee",
+     "range": 1,
+     "storage": 0,
+     "yellowDice": 2,
+     "redDice": 5,
+     "keywords": [],
+     "size": "l"
+    }
+   ],
+   "score": 51,
+   "throwIndex": "MHKX-L-T",
+   "_id_note": "OUR id, not the publisher's: the 1.021 row carries NO Serial Number and NO QR ID, which is what the kit-exclusive variants look like on that list. Swap it when a real serial appears.",
+   "_box_note": "Box membership UNKNOWN and deliberately absent. The parts lists carry no box column and neither does the publisher API, so which product ships this card has only a physical answer. faction_overrides.json carries the faction, which box membership would otherwise have derived.",
+   "_hand_note": "The list marks this row L·左."
+  },
+  {
+   "id": "MHKX-L-T",
+   "_source": "Publisher Part Data GoF 1.021 EN list, read with pdfplumber extract_tables. Every value here is that row; nothing is inferred.",
+   "name": {
+    "en": "MHKX Experimental Heat Broadsword (L)(D)"
+   },
+   "type": "leftHand",
+   "category": "mech_part",
+   "faction": "GOF",
+   "armor": 1,
+   "structure": 5,
+   "parray": 1,
+   "dodge": 0,
+   "electronic": 0,
+   "move": 0,
+   "keywords": [
+    {
+     "key": "空手",
+     "en": "Freehand"
+    }
+   ],
+   "actions": [],
+   "score": 0,
+   "_id_note": "OUR id, not the publisher's: the 1.021 row carries NO Serial Number and NO QR ID, which is what the kit-exclusive variants look like on that list. Swap it when a real serial appears.",
+   "_box_note": "Box membership UNKNOWN and deliberately absent. The parts lists carry no box column and neither does the publisher API, so which product ships this card has only a physical answer. faction_overrides.json carries the faction, which box membership would otherwise have derived.",
+   "_face_note": "The discard face. The 1.021 row carries stats and the Freehand keyword and NO actions, which is what the printed discard card is."
+  },
+  {
+   "id": "MHKX-R",
+   "_source": "Publisher Part Data GoF 1.021 EN list, read with pdfplumber extract_tables. Every value here is that row; nothing is inferred.",
+   "name": {
+    "en": "MHKX Experimental Heat Broadsword (R)"
+   },
+   "type": "rightHand",
+   "category": "mech_part",
+   "faction": "GOF",
+   "armor": 1,
+   "structure": 5,
+   "parray": 2,
+   "dodge": 0,
+   "electronic": 0,
+   "move": 0,
+   "keywords": [
+    {
+     "key": "顺劈",
+     "en": "Cleaving"
+    },
+    {
+     "key": "毁伤",
+     "en": "Mutilation"
+    }
+   ],
+   "actions": [
+    {
+     "id": "MHKX-R_A",
+     "name": {
+      "en": "Chop"
+     },
+     "description": {
+      "en": "· Cleaving"
+     },
+     "type": "Melee",
+     "range": 0,
+     "storage": 0,
+     "yellowDice": 5,
+     "redDice": 0,
+     "keywords": [
+      {
+       "inline": "顺劈"
+      }
+     ],
+     "size": "s"
+    },
+    {
+     "id": "MHKX-R_B",
+     "name": {
+      "en": "Slash"
+     },
+     "description": {
+      "en": "· [Two-Handed] Gains Mutilation."
+     },
+     "type": "Melee",
+     "range": 1,
+     "storage": 0,
+     "yellowDice": 2,
+     "redDice": 5,
+     "keywords": [],
+     "size": "l"
+    }
+   ],
+   "score": 51,
+   "throwIndex": "MHKX-R-T",
+   "_id_note": "OUR id, not the publisher's: the 1.021 row carries NO Serial Number and NO QR ID, which is what the kit-exclusive variants look like on that list. Swap it when a real serial appears.",
+   "_box_note": "Box membership UNKNOWN and deliberately absent. The parts lists carry no box column and neither does the publisher API, so which product ships this card has only a physical answer. faction_overrides.json carries the faction, which box membership would otherwise have derived.",
+   "_hand_note": "The list marks this row R·右."
+  },
+  {
+   "id": "MHKX-R-T",
+   "_source": "Publisher Part Data GoF 1.021 EN list, read with pdfplumber extract_tables. Every value here is that row; nothing is inferred.",
+   "name": {
+    "en": "MHKX Experimental Heat Broadsword (R)(D)"
+   },
+   "type": "rightHand",
+   "category": "mech_part",
+   "faction": "GOF",
+   "armor": 1,
+   "structure": 5,
+   "parray": 1,
+   "dodge": 0,
+   "electronic": 0,
+   "move": 0,
+   "keywords": [
+    {
+     "key": "空手",
+     "en": "Freehand"
+    }
+   ],
+   "actions": [],
+   "score": 0,
+   "_id_note": "OUR id, not the publisher's: the 1.021 row carries NO Serial Number and NO QR ID, which is what the kit-exclusive variants look like on that list. Swap it when a real serial appears.",
+   "_box_note": "Box membership UNKNOWN and deliberately absent. The parts lists carry no box column and neither does the publisher API, so which product ships this card has only a physical answer. faction_overrides.json carries the faction, which box membership would otherwise have derived.",
+   "_face_note": "The discard face. The 1.021 row carries stats and the Freehand keyword and NO actions, which is what the printed discard card is."
+  },
+  {
+   "id": "DLSP-2",
+   "_source": "Publisher Part Data GoF 1.021 EN list, read with pdfplumber extract_tables. Every value here is that row; nothing is inferred.",
+   "name": {
+    "en": "DLSP-2 Killer Swarm Control Pack"
+   },
+   "type": "backpack",
+   "category": "mech_part",
+   "faction": "GOF",
+   "armor": 3,
+   "structure": 0,
+   "parray": 0,
+   "dodge": 1,
+   "electronic": 1,
+   "move": 0,
+   "keywords": [],
+   "actions": [
+    {
+     "id": "DLSP-2_A",
+     "name": {
+      "en": "Killer Swarm"
+     },
+     "description": {
+      "en": "· Fire in arc · Volley 2\n· Launch 1 Killer Swarm."
+     },
+     "type": "Projectile",
+     "range": 8,
+     "storage": 2,
+     "yellowDice": 0,
+     "redDice": 0,
+     "keywords": [],
+     "size": "s"
+    }
+   ],
+   "score": 30,
+   "_id_note": "OUR id, not the publisher's: the 1.021 row carries NO Serial Number and NO QR ID, which is what the kit-exclusive variants look like on that list. Swap it when a real serial appears.",
+   "_box_note": "Box membership UNKNOWN and deliberately absent. The parts lists carry no box column and neither does the publisher API, so which product ships this card has only a physical answer. faction_overrides.json carries the faction, which box membership would otherwise have derived.",
+   "_launch_note": "The Projectile it launches is SU2 “Killer Swarm”, added alongside it. No structured launch rule is written here: the existing launchers carry theirs in cards.json and this file does not model wiring."
+  },
+  {
+   "id": "ECP10",
+   "_source": "Publisher Part Data GoF 1.021 EN list, read with pdfplumber extract_tables. Every value here is that row; nothing is inferred.",
+   "name": {
+    "en": "ECP10 “Dog Whistle” Drone Command System"
+   },
+   "type": "backpack",
+   "category": "mech_part",
+   "faction": "GOF",
+   "armor": 3,
+   "structure": 0,
+   "parray": 0,
+   "dodge": 1,
+   "electronic": 1,
+   "move": 0,
+   "keywords": [],
+   "actions": [
+    {
+     "id": "ECP10_A",
+     "name": {
+      "en": "Charge Order"
+     },
+     "description": {
+      "en": "· Aura\n· Ally Drones within Range may be considerd as in Offensive Stance when performing Firing, Melee or Elctronic Counter Roll."
+     },
+     "type": "Passive",
+     "range": 4,
+     "storage": 0,
+     "yellowDice": 0,
+     "redDice": 0,
+     "keywords": []
+    }
+   ],
+   "score": 48,
+   "_id_note": "OUR id, not the publisher's: the 1.021 row carries NO Serial Number and NO QR ID, which is what the kit-exclusive variants look like on that list. Swap it when a real serial appears.",
+   "_box_note": "Box membership UNKNOWN and deliberately absent. The parts lists carry no box column and neither does the publisher API, so which product ships this card has only a physical answer. faction_overrides.json carries the faction, which box membership would otherwise have derived.",
+   "_typo_note": "The list's own spellings are kept verbatim (\"considerd\", \"Elctronic\"), as the publisher typos are elsewhere in this data."
+  },
+  {
+   "id": "ZYBP-302-MP",
+   "_source": "Publisher Part Data GoF 1.021 EN list, read with pdfplumber extract_tables. Every value here is that row; nothing is inferred.",
+   "name": {
+    "en": "“HALO” Melee Cooperation System - Mass-production type"
+   },
+   "type": "backpack",
+   "category": "mech_part",
+   "faction": "GOF",
+   "armor": 3,
+   "structure": 0,
+   "parray": 0,
+   "dodge": 1,
+   "electronic": 0,
+   "move": 0,
+   "keywords": [],
+   "actions": [
+    {
+     "id": "ZYBP-302-MP_A",
+     "name": {
+      "en": "Dodge Enhancement"
+     },
+     "description": {
+      "en": "· When this Mech is hit, may make each {Dodge} offset 1 Attack die."
+     },
+     "type": "Passive",
+     "range": 0,
+     "storage": 0,
+     "yellowDice": 0,
+     "redDice": 0,
+     "keywords": []
+    },
+    {
+     "id": "ZYBP-302-MP_B",
+     "name": {
+      "en": "Melee Evasion"
+     },
+     "description": {
+      "en": "· On Parry, this mech may spent 1 Command Token to gain 1 additional {Dodge}."
+     },
+     "type": "Passive",
+     "range": 0,
+     "storage": 0,
+     "yellowDice": 0,
+     "redDice": 0,
+     "keywords": []
+    }
+   ],
+   "score": 39,
+   "_id_note": "OUR id: the mass-production variant carries no serial of its own on the list, so it is filed under the base card's serial with -MP.",
+   "_box_note": "Box membership UNKNOWN and deliberately absent. The parts lists carry no box column and neither does the publisher API, so which product ships this card has only a physical answer. faction_overrides.json carries the faction, which box membership would otherwise have derived."
+  },
+  {
+   "id": "SU2",
+   "_source": "Publisher Part Data GoF 1.021 EN list, read with pdfplumber extract_tables. Every value here is that row; nothing is inferred.",
+   "name": {
+    "en": "SU2 “Killer Swarm”"
+   },
+   "type": "small",
+   "category": "drone",
+   "faction": "GOF",
+   "score": 0,
+   "armor": 1,
+   "structure": 0,
+   "parray": 0,
+   "dodge": 2,
+   "electronic": 1,
+   "move": 5,
+   "stance": "mobility",
+   "valueLess": true,
+   "flyingOrElevated": "aerial",
+   "keywords": [
+    {
+     "key": "全向射击",
+     "en": "Omni-direction Firing"
+    }
+   ],
+   "actions": [
+    {
+     "id": "SU2_A",
+     "name": {
+      "en": "Single Shot"
+     },
+     "description": {
+      "en": "· Omni-direction Firing"
+     },
+     "type": "Firing",
+     "range": 2,
+     "storage": 0,
+     "yellowDice": 3,
+     "redDice": 0,
+     "keywords": [
+      {
+       "inline": "全向射击"
+      }
+     ],
+     "speed": "auto"
+    }
+   ],
+   "_id_note": "OUR id, not the publisher's: the 1.021 row carries NO Serial Number and NO QR ID, which is what the kit-exclusive variants look like on that list. Swap it when a real serial appears.",
+   "_box_note": "Box membership UNKNOWN and deliberately absent. The parts lists carry no box column and neither does the publisher API, so which product ships this card has only a physical answer. faction_overrides.json carries the faction, which box membership would otherwise have derived.",
+   "_keyword_note": "The list's Keyword 1 reads \"Arial 5\" (its own typo for Aerial), which is the flight value our data carries as flyingOrElevated + move. Keywords 2-4 read Small, Low Value and Mobility, which are our type, valueLess and stance fields rather than keywords.",
+   "score_note": "Low Value Units cost 0 points."
+  }
+ ]
 }
