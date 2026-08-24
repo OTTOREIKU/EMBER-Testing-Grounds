@@ -96,6 +96,17 @@ check('so does a spaced spelling', knockbackOf(act('', 'Knock Back 2')), { grids
 check('printed english beats the chinese', knockbackOf(act('推动2', 'Knock Back 2')), { grids: 2, push: false, onHit: false });
 check('and the real card 182 case', knockbackOf(act('·【命中】造成推动1。', '· [On Hit] Knock Back 1.')), { grids: 1, push: false, onHit: true });
 check('chinese is read only when no english exists', knockbackOf(act('推动2', '')), { grids: 2, push: true, onHit: false });
+// D1: THE BRACKETED TAG IS HOW THE DATA ACTUALLY WRITES THE CONDITION -- 22
+// actions carry 【命中】 or [命中] and only a handful use the prose 命中时 the
+// test above covers. The case above passes through the ENGLISH, so it never
+// exercised the Chinese reader; these do, and they failed before the widening.
+check('a bracketed on-hit tag is read from the chinese', knockbackOf(act('·【命中】造成击退1。')), { grids: 1, push: false, onHit: true });
+check('the square-bracket spelling too', knockbackOf(act('·[命中]造成击退1。')), { grids: 1, push: false, onHit: true });
+check('and with the spacing the data uses', knockbackOf(act('· [命中] 造成推动2')), { grids: 2, push: true, onHit: true });
+// The counter-case that keeps the widening honest: bare 命中 in ordinary prose
+// is NOT the condition tag, so matching it would flag an unconditional shove as
+// on-hit and suppress it on a miss. PDLH-202_A is the live example of the form.
+check('bare prose 命中 is not a condition tag', knockbackOf(act('· 击退1。命中后将本卡替换。')), { grids: 1, push: false, onHit: false });
 // Both English spellings of Knock Back mean the plain version, so a loose string
 // match can never silently drain a Mech's Link. Only "Push" carries that cost.
 check('ambiguous english knock back is not a push', knockbackOf(act('', 'On Hit, Knock Back 1')), { grids: 1, push: false, onHit: true });

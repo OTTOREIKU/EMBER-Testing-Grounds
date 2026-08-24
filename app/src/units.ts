@@ -358,7 +358,15 @@ export interface Knockback {
 export function knockbackOf(a: CardAction, english?: string): Knockback | undefined {
   const printed = (a.description?.en ?? '').trim() || (english ?? '').trim();
   const hay = printed || [a.description?.zh ?? '', ...(a.keywords ?? []).map((k) => k.inline ?? '')].join(' ');
-  const onHit = /命中时|命中時|\[?on hit\]?/i.test(hay);
+  // THE BRACKETED TAG IS THE CANONICAL FORM AND THIS USED TO MISS IT. The card
+  // data writes the on-hit condition as 【命中】 or [命中] on 22 actions; the
+  // prose form 命中时 this originally matched is the RARER one. No card was ever
+  // wrong, because knockbackOf prefers printed English and every Knockback
+  // action carries some -- but that made the gap invisible rather than absent,
+  // and the next Chinese-only Knockback would have shoved on a miss.
+  // Bracket-wrapped only, deliberately: bare 命中 appears in ordinary prose
+  // ("命中后将本卡替换为...") where it is not the condition tag.
+  const onHit = /[【[]\s*命中\s*[】\]]|命中[时時]|\[?on hit\]?/i.test(hay);
   const m = /(击退|擊退|推动|推動|Knock ?back|Push)\s*(\d+)/i.exec(hay);
   if (m) return { grids: Math.max(1, Number(m[2])), push: /推动|推動|Push/i.test(m[1]), onHit };
   const shove = /(?:Shove|推挤|推擠)[^.。]*?(\d+)\s*(?:Grid|格)/i.exec(hay);

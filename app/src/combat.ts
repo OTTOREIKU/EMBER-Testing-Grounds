@@ -98,6 +98,140 @@ function viewAwaits(v: CombatView, role: CombatRole): boolean {
   return false;
 }
 
+// ---------- THE ASK BAND (region 3 of the agreed design) ----------
+//
+// ONE PLACE A DEMAND CAN APPEAR. Prompts today are drawn wherever the rule that
+// fired happens to live, so there is nowhere to learn to look; with a single
+// band the current demand is unmissable BY CONSTRUCTION rather than by
+// shouting.
+//
+// NEVER EMPTY, which is the same property that makes the opponent's pending
+// decision visible: when the demand is not yours the band names whose it is and
+// what they are weighing. OTTO asked for exactly that ("if I'm like hmm why is
+// he taking so long, I can then see my opponent is deciding if they are going
+// to focus or not"). Checked rather than assumed, and the check is recorded in
+// the redesign doc: this leaks nothing, because secrecy.ts hides only the
+// Timing Dials and Link is face up in the physical game.
+//
+// Derived from the CTX, which the live window and a mirror both build, so one
+// function answers for every screen and the two readings cannot drift.
+export interface CombatAsk {
+  who: 'attacker' | 'defender';
+  // Phrased as the ACTIVITY ("Rolling the Attack Dice") rather than as an
+  // instruction, because the same string is read by the player it belongs to
+  // and by everyone watching them. The band supplies "You are" or the actor's
+  // name in front of it, so one string serves both without a second wording.
+  what: string;
+  // Blocking questions stop the sequence dead. Offers a player may decline (KC
+  // Armor, Melee Evasion, the Dodge enhancement) let the attack go on, so they
+  // do not earn the attention treatment. Same line viewAwaits draws, for the
+  // same reason.
+  blocking: boolean;
+  // Identity of the DEMAND, never of the frame. The band animates when this
+  // changes and holds still through a repaint, which is what keeps a highlight
+  // from becoming the annoying thing OTTO warned it could be. The surplus round
+  // is in the key because 4.8 re-opens the same questions for a second round
+  // and those are genuinely new asks.
+  key: string;
+}
+
+type AskCtx = Pick<Ctx, 'step' | 'attackRoll' | 'defenseRoll' | 'focus' | 'surplusRound'>;
+
+export function askOf(c: AskCtx): CombatAsk {
+  const r = c.surplusRound;
+  // FOCUS IS TESTED FIRST because its four stages run INSIDE the defence step:
+  // stepDefense calls beginFocus. Reading the step before the stage would
+  // report "rolling the Defense Dice" while the roll has long since landed and
+  // a Link is being weighed over it.
+  if (c.focus && c.focus.stage !== 'done') {
+    if (c.focus.stage === 'declareA') return { who: 'attacker', what: 'deciding whether to spend a Link to Focus', blocking: true, key: `focus:declareA:${r}` };
+    if (c.focus.stage === 'rerollA') return { who: 'attacker', what: 'choosing which Attack Dice to reroll', blocking: true, key: `focus:rerollA:${r}` };
+    if (c.focus.stage === 'declareD') return { who: 'defender', what: 'deciding whether to spend a Link to Focus', blocking: true, key: `focus:declareD:${r}` };
+    if (c.focus.stage === 'rerollD') return { who: 'defender', what: 'choosing which Defense Dice to reroll', blocking: true, key: `focus:rerollD:${r}` };
+  }
+  switch (c.step) {
+    case 'split':
+      return { who: 'attacker', what: 'splitting the Attack Dice between the targets', blocking: true, key: 'split' };
+    case 'part':
+      return { who: 'attacker', what: 'finding the Part the hit lands on', blocking: true, key: `part:${r}` };
+    case 'designate':
+      // The one question inside the attacker's half of the sequence that
+      // belongs to the other player: Shield Up and Mobile Defense let the
+      // DEFENDER move the hit off the Part the Black Die named.
+      return { who: 'defender', what: 'choosing which Part takes the hit', blocking: true, key: `designate:${r}` };
+    case 'attack':
+      return c.attackRoll
+        ? { who: 'attacker', what: 'reading the Attack Roll', blocking: true, key: `attack:read:${r}` }
+        : { who: 'attacker', what: 'rolling the Attack Dice', blocking: true, key: `attack:roll:${r}` };
+    case 'defense':
+      // Once the defence dice are down the step is still 'defense' but the
+      // sequence is the attacker's again, so the band hands the floor back
+      // rather than leaving the defender named while they wait.
+      return c.defenseRoll
+        ? { who: 'attacker', what: 'working through the Defense Roll', blocking: true, key: `defense:read:${r}` }
+        : { who: 'defender', what: 'rolling the Defense Dice', blocking: true, key: `defense:roll:${r}` };
+    case 'surplus':
+      return { who: 'attacker', what: 'choosing what the Surplus does', blocking: true, key: `surplus:${r}` };
+    case 'resolve':
+    default:
+      // Not blocking, deliberately: the result is on screen and both players
+      // are reading it. A band pulsing for attention over a finished attack is
+      // the noise that teaches people to ignore the band.
+      return { who: 'attacker', what: 'applying the result', blocking: false, key: `resolve:${r}` };
+  }
+}
+
+// ---------- THE TRACE, GROUPED BY STEP (region 4 of the agreed design) ----------
+//
+// The log was a flat run of equal-weight sentences, so "a roll happened" and "a
+// rule explains why it counted" read identically and the difference was a
+// matter of reading carefully. One row per step with the rules that fired
+// INDENTED UNDER it makes that difference structural instead.
+//
+// Grouped by CONTIGUOUS RUN rather than by step name, because 4.8's Surplus
+// round genuinely revisits the attack and defence steps and those are separate
+// beats of the fight, not more lines belonging to the first one.
+const TRACE_TITLE: Record<string, string> = {
+  split: 'Split the pool',
+  part: 'Target Part',
+  attack: 'Attack Roll',
+  defense: 'Defense Roll',
+  resolve: 'Resolution',
+  surplus: 'Surplus round',
+};
+
+export interface TraceGroup {
+  // Step key plus its position, so a step revisited in a Surplus round is its
+  // own row with its own open state rather than reopening the earlier one.
+  id: string;
+  title: string;
+  lines: string[];
+}
+
+export function traceGroups(log: string[], logStep: string[]): TraceGroup[] {
+  const out: TraceGroup[] = [];
+  for (let i = 0; i < log.length; i++) {
+    // `designate` folds into `part` for the same reason it has no card of its
+    // own: it is a fork inside choosing the Part, not a beat of the attack.
+    const raw = logStep[i] ?? '';
+    const key = raw === 'designate' ? 'part' : raw;
+    const last = out[out.length - 1];
+    if (last && last.id.startsWith(`${key}#`)) {
+      last.lines.push(log[i]);
+      continue;
+    }
+    out.push({
+      id: `${key}#${out.length}`,
+      // A view published before logStep existed arrives with no tags at all.
+      // Those lines still belong somewhere, so they collect under a plain
+      // heading rather than vanishing or crashing the lookup.
+      title: TRACE_TITLE[key] ?? 'Trace',
+      lines: [log[i]],
+    });
+  }
+  return out;
+}
+
 // What is this viewer's relationship to THIS attack.
 //
 // Asked of the COMBAT, never of the seat. With two seats "not me" safely
@@ -2483,6 +2617,41 @@ export class AttackHelper {
     return wrap;
   }
 
+  // The last ask this window DREW, so motion fires on a new demand and never on
+  // a repaint. render() runs many times per step (a Provoke answer, a log line,
+  // an arriving frame all redraw it), and an animation that replayed each time
+  // is exactly the annoyance OTTO flagged when he asked for the highlight to
+  // start light.
+  private lastAsk: string | null = null;
+
+  // Trace groups the player has flipped AWAY from their default state. Not the
+  // open set: the default moves as the attack advances, and storing the state
+  // itself would need rewriting every time it moved.
+  private traceFlip = new Set<string>();
+
+  private askBand(c: Ctx): HTMLElement {
+    const ask = askOf(c);
+    const band = document.createElement('div');
+    const mine = ask.who === this.role;
+    // THE WHOLE CLASS IN ONE ASSIGNMENT, never `className =` followed by
+    // `classList.add`. The two are one store in a browser and TWO in the test
+    // shim, so the mixed form produces an element whose class differs between
+    // the two and a guard that reads either one is right in only half the
+    // places it runs.
+    const fresh = this.lastAsk !== ask.key;
+    if (fresh) this.lastAsk = ask.key;
+    band.className = `ah-ask${mine ? ' mine' : ''}${ask.blocking ? ' blocking' : ''}${fresh ? ' fresh' : ''}`;
+    const actor = ask.who === 'attacker' ? c.attacker : c.defender;
+    // The eyebrow says WHOSE, the line says WHAT. A watcher gets the actor's
+    // name; the player being asked gets "You", which is the shortest way to
+    // make a demand read as a demand.
+    const eyebrow = mine ? 'Your move' : `${actor.label}`;
+    const line = mine ? `You are ${ask.what}.` : `${actor.label} is ${ask.what}.`;
+    band.innerHTML = `<span class="ah-ask-w">${esc(eyebrow)}</span>`
+      + `<span class="ah-ask-t">${esc(line)}</span>`;
+    return band;
+  }
+
   private render(): void {
     const c = this.ctx;
     if (!c) return;
@@ -2525,6 +2694,10 @@ export class AttackHelper {
         return sup ? `<p class="ah-los">✋ ${sup}.</p>` : '';
       })()
     }`;
+
+    // THE ASK BAND, directly under the matchup and above both columns, so it is
+    // the first thing under the header on every screen and at every step.
+    el.appendChild(this.askBand(c));
 
     // The current step's own content, built once and then placed INSIDE its
     // card below, so the open card and the step it belongs to are one thing
@@ -2609,10 +2782,43 @@ export class AttackHelper {
     // would arrive here) still gets drawn rather than vanishing.
     if (body && at < 0) el.appendChild(body);
 
+    // THE TRACE, grouped by step. The Counter-roll window below keeps its flat
+    // list on purpose: its ctx carries no logStep, and a three beat exchange is
+    // not the thing "one row per step" was invented to fix.
     if (c.log.length) {
       const log = document.createElement('div');
       log.className = 'ah-log';
-      log.innerHTML = c.log.map((l) => `<div>${l}</div>`).join('');
+      const groups = traceGroups(c.log, c.logStep);
+      // RATIFIED: the current step and the last two open by default. OTTO's
+      // framing was that a full sequence is roll, choose Part, roll, damage and
+      // "the last two things open", so collapsed-by-default is wrong: recent
+      // history stays readable without a click, and older steps open on demand.
+      const autoFrom = Math.max(0, groups.length - 3);
+      groups.forEach((g, i) => {
+        const open = this.traceFlip.has(g.id) ? i < autoFrom : i >= autoFrom;
+        const row = document.createElement('div');
+        row.className = `ah-tg${open ? ' open' : ''}`;
+        const head = document.createElement('div');
+        head.className = 'ah-tg-h';
+        head.innerHTML = `<span class="t">${esc(g.title)}</span><span class="n">${g.lines.length}</span>`;
+        // Flipping records a DEPARTURE from the default rather than the state
+        // itself. Without that, a step that auto-opens as it becomes current
+        // would need its entry rewritten every time the default moved on, and
+        // the set would fight the auto-expand instead of overriding it.
+        head.addEventListener('click', () => {
+          if (this.traceFlip.has(g.id)) this.traceFlip.delete(g.id);
+          else this.traceFlip.add(g.id);
+          this.render();
+        });
+        row.appendChild(head);
+        if (open) {
+          const body2 = document.createElement('div');
+          body2.className = 'ah-tg-b';
+          body2.innerHTML = g.lines.map((l) => `<div>${l}</div>`).join('');
+          row.appendChild(body2);
+        }
+        log.appendChild(row);
+      });
       el.appendChild(log);
     }
 
@@ -2662,6 +2868,16 @@ export class AttackHelper {
     for (const ch of [...el.children]) {
       if (ch.classList.contains('ah-head')) continue;
       const cls = String(ch.className);
+      // The ask band spans both columns and stays where it was put. Swept into
+      // the reading column it would sit below the stack on a wide panel, which
+      // is the "prompts appear wherever" problem it exists to end.
+      //
+      // Read off className, like the two lines below it and NOT like the
+      // classList test above: the test shim keeps className and classList in
+      // two separate stores, so a classList check on an element whose class was
+      // set with `className =` is false there and true in a browser. A guard
+      // that only works in one of them is worse than no guard.
+      if (cls.includes('ah-ask')) continue;
       if (cls.includes('ah-felt')) { feltEl = ch; continue; }
       if (cls.includes('ah-log')) { logEl = ch; continue; }
       main.appendChild(ch);
