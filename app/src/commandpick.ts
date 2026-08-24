@@ -123,9 +123,10 @@ export async function runAster(
 }
 
 // ZHDR-304 Harpy: "When performing a Command Movement, may consume 1
-// additional Command Token and -2 Movement to drag 1 adjacent Ally Mech or
-// Ally Drone." (printed English card, which carries a -2 the Chinese in
-// cards.json omits).
+// additional Command Token and -1 Movement to drag 1 adjacent Ally Unit."
+// (GoF 1.021 parts list. This used to read -2 and "Ally Mech or Ally Drone"
+// from an English card scan; the list is the newer authority and it prints -1
+// and the broader Unit, so any adjacent ally the Harpy touches can be towed.)
 //
 // WHOSE token: the Harpy is a Drone, and 4.15.4 requires a MECH to bear the
 // face-up token, so "1 additional" is read as one more from the squad's Mechs —
@@ -133,9 +134,9 @@ export async function runAster(
 // caps a Drone at one. If the publisher rules otherwise this is the line to
 // change.
 //
-// Asked BEFORE the route is drawn, because the -2 comes out of the Movement
+// Asked BEFORE the route is drawn, because the -1 comes out of the Movement
 // allowance — offering it afterwards would show the player a reach they cannot
-// have. The caller subtracts the 2 and executes the drag when the move settles.
+// have. The caller subtracts the 1 and executes the drag when the move settles.
 export async function offerHarpyDrag(
   data: GameData,
   state: GameState,
@@ -143,7 +144,7 @@ export async function offerHarpyDrag(
   steps: number,
 ): Promise<{ allyUid: number; funderUid: number } | null | 'cancelled'> {
   void data;
-  if (t.cardId !== 'ZHDR-304' || steps <= 2) return null;
+  if (t.cardId !== 'ZHDR-304' || steps <= 1) return null;
   // "When performing a COMMAND Movement": in a guided game that is the Command
   // Phase's move — an Automatic Phase move is the Drone acting on its own and
   // gets no drag. The freeplay sandbox with no game running stays permissive.
@@ -151,16 +152,18 @@ export async function offerHarpyDrag(
   const funders = state.tokens.filter(
     (m) => m.side === t.side && m.kind === 'mech' && m.deployed !== false && readyCommands(m) > 0,
   );
+  // "1 adjacent Ally Unit" — the list does not narrow it to Mechs and Drones,
+  // so a deployed Projectile or Deployable in Contact can be towed as well.
   const allies = state.tokens.filter(
-    (o) => o.uid !== t.uid && o.side === t.side && (o.kind === 'mech' || o.kind === 'drone')
+    (o) => o.uid !== t.uid && o.side === t.side
       && o.deployed !== false && inContact(t, o),
   );
   if (!funders.length || !allies.length) return null;
   const picked = await choiceDialog({
     title: `${t.label} may drag an Ally`,
     body:
-      `Consume 1 additional Command Token from ${funders[0].label} and -2 Movement (${steps} → ${steps - 2}) `
-      + 'to drag 1 adjacent Ally Mech or Ally Drone along with this move.',
+      `Consume 1 additional Command Token from ${funders[0].label} and -1 Movement (${steps} → ${steps - 1}) `
+      + 'to drag 1 adjacent Ally Unit along with this move.',
     stacked: true,
     choices: [
       ...allies.map((o) => ({ id: String(o.uid), label: `Drag ${o.label}` })),

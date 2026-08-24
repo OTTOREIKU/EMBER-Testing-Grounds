@@ -39,7 +39,8 @@ check('Target Tracer is yellow', decayOf('targetTracer'), 'yellow');
 // Every Square and Hexagon Token now has a colour, so nothing is left to guess.
 const shaped = T.STATUSES.filter((d) => d.shape === 'square' || d.shape === 'hexagon');
 check('every square and hexagon token has a colour', shaped.filter((d) => !d.decay).map((d) => d.id), []);
-check('and there are six of them', shaped.length, 6);
+check('and there are seven of them', shaped.length, 7);
+check('Hindered is yellow, the ordinary round token', decayOf('hindered'), 'yellow');
 
 // A yellow token flips on its first End Phase and leaves on the second.
 const t = unit(['immobilized']);

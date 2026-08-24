@@ -47,7 +47,7 @@ import { PlayGuide } from './playguide';
 import type { Card, CardAction, DiceData, DieColor, Facing, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, StatusDef, TerrainPiece, Timing, Token } from './types';
 import { addStatus, normaliseScript, SCALES, statusCount, statusesFor, STATUSES } from './types';
 import { actionIdOf } from './ticks';
-import { transformOffer, automaticShieldFor, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, twoHandedUse, electronicValue, martyrdomOwed, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, loanedParts, phasesThroughUnits, minesLayable, minesOwed, multiTargetLimit, unfoldsOwed, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, immobilizedStop, nonHumanoidCost, nonHumanoidStop, maneuverIsSilent, maneuverSilenceDenier, chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, projectileReach, type Resupply, resupplyOf, SLOT_LABEL, stationaryAdjusted, interceptLeft, interceptsOwed, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf, type AttackReaction } from './units';
+import { transformOffer, automaticShieldFor, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, twoHandedUse, electronicValue, martyrdomOwed, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, loanedParts, phasesThroughUnits, minesLayable, minesOwed, multiTargetLimit, unfoldsOwed, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, immobilizedStop, activatesCamo, stealthValue, manifestationRange, manifestTargets, nonHumanoidCost, nonHumanoidStop, maneuverIsSilent, maneuverSilenceDenier, chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, projectileReach, type Resupply, resupplyOf, SLOT_LABEL, stationaryAdjusted, interceptLeft, interceptsOwed, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf, type AttackReaction } from './units';
 import { registerOffline } from './offline';
 import { battlefieldLocked, countHits, firstPlayerFrom, newSetup, normaliseSetup, tasksLocked, type SetupState } from './setup';
 import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
@@ -870,6 +870,16 @@ async function init() {
     const supply = resupplyOf(action);
     if (supply) {
       void performResupply(t, action, supply, done);
+      return;
+    }
+
+    // "Activate Optical Camouflage, Stealth X" (096, 247, ZYBP-201). Until this
+    // branch the ONLY way into the state was deploying already in it, so a Mech
+    // whose whole reason for existing is to vanish mid-game could not - the
+    // player had to add the Token by hand from the status picker. Everything
+    // downstream of the state was already built; this is the door into it.
+    if (activatesCamo(action)) {
+      void performCamo(t, action, done);
       return;
     }
 
@@ -1749,7 +1759,7 @@ async function init() {
     preview: { c: number; r: number }[] | null;
     label: string;
     // ZHDR-304 Harpy: an Ally it is dragging along, declared BEFORE the move
-    // because the -2 Movement comes out of the allowance rather than being paid
+    // because the -1 Movement comes out of the allowance rather than being paid
     // afterwards. The Mech whose Command Token funds it is recorded with it.
     drag?: { allyUid: number; funderUid: number };
     // The Movement ACTION being performed, when there is one; a bare Maneuver
@@ -1943,7 +1953,7 @@ async function init() {
     const chosen = await flyingChoice(t, !!opts.maneuver, !!opts.airborne);
     if (chosen === null) return done(false);
     const flying = chosen;
-    // The Harpy's drag is offered here rather than after the move: its -2 comes
+    // The Harpy's drag is offered here rather than after the move: its -1 comes
     // out of the Movement allowance, so it has to be decided before the route
     // is drawn or the player would be shown a reach they cannot have.
     const drag = await offerHarpyDrag(t, steps);
@@ -1953,7 +1963,7 @@ async function init() {
     // so a Harpy that took the drag was shown two Grids of reach it could not
     // use — the route itself was capped correctly, which is what made the lie
     // hard to spot. The Match Centre paints off movePlan.steps and was right.
-    const range = drag ? steps - 2 : steps;
+    const range = drag ? steps - 1 : steps;
     movePlan = {
       uid,
       side: t.side,
@@ -2044,7 +2054,7 @@ async function init() {
         if (ally && spot) {
           perform(data, state, { kind: 'spendCommand', seat: t.side, uid: m.drag.funderUid });
           perform(data, state, { kind: 'forceMove', seat: t.side, uid: t.uid, targetUid: ally.uid, to: spot });
-          logTo(ally, `${t.label} drags ${ally.label} along (-2 Movement, 1 Command Token consumed).`);
+          logTo(ally, `${t.label} drags ${ally.label} along (-1 Movement, 1 Command Token consumed).`);
         } else if (ally) {
           logTo(t, `${ally.label} could not be dragged: nothing free to stand in. The Command Token was not consumed.`);
         }
@@ -4168,28 +4178,86 @@ async function init() {
   const camoContactSeen = new Set<number>();
   let prevCamo = new Set<number>();
 
+  // "Activate Optical Camouflage, Stealth X". Applying the State also strips
+  // every Hexagon Token, which the applyStatus apply already does off the
+  // StatusDef's clearsHexagons - so this stays a single command.
+  async function performCamo(t: Token, action: CardAction, done: (ok: boolean) => void): Promise<void> {
+    const what = action.name.en || action.name.zh || action.id;
+    if (statusCount(t.statuses, 'camouflage') > 0) {
+      await alertDialog({
+        title: 'Already hidden',
+        body: `${t.label} is already in the Optical Camouflage State.`,
+      });
+      return done(false);
+    }
+    const stealth = stealthValue(action) ?? 0;
+    const v = perform(data, state, {
+      kind: 'applyStatus', seat: t.side, uid: t.uid, targetUid: t.uid, statusId: 'camouflage',
+    });
+    if (!v.ok) {
+      await alertDialog({ title: 'Cannot activate', body: v.why ?? 'The camouflage was refused.' });
+      return done(false);
+    }
+    logTo(t, `${what}: Optical Camouflage activated${stealth ? `, Stealth ${stealth}` : ''} (4.12.2). Every Hexagon Token comes off, and the marked Grid is only a suspected position.`);
+    onChanged();
+    done(true);
+  }
+
+  // MANIFESTATION MOVEMENT (4.12.2): on Reveal the unit may appear within its
+  // Stealth value in Grids. Teleportation, so nothing in between is consulted.
+  // Offered as a list rather than a route for exactly that reason - there is no
+  // path to draw, and the grids it can reach are simply the ones it fits in.
+  //
+  // The hop rides the SAME `reveal` command as the Reveal itself, because
+  // 4.12.2 makes them one event; sending a second command would let a mirror
+  // see the unit standing revealed on its marker for a frame.
+  async function offerManifestation(t: Token, why: string): Promise<boolean> {
+    const range = manifestationRange(data, t);
+    const spots = range > 0 ? manifestTargets(data, state.tokens, currentTerrain(), t) : [];
+    if (!spots.length) {
+      const v = perform(data, state, { kind: 'reveal', seat: t.side, uid: t.uid });
+      if (v.ok) logTo(t, `${why} Optical Camouflage ends (4.12.2).${range > 0 ? ' Manifestation Movement had nowhere to go.' : ''}`);
+      return v.ok;
+    }
+    const here = largeGridOf(t);
+    const pick = await choiceDialog({
+      title: `${t.label} Manifests`,
+      body: `${why} The camouflage model marked a SUSPECTED position; the unit may now appear within ${range} Grid${range === 1 ? '' : 's'} of ${gridRef(here.c, here.r)} (Stealth ${range}). This is Teleportation, so terrain and units in between do not matter.`,
+      stacked: true,
+      choices: [
+        ...spots
+          .slice()
+          .sort((a, b) => (a.r - b.r) || (a.c - b.c))
+          .map((s) => ({ id: `${s.col},${s.row}`, label: `Appear at ${gridRef(s.c, s.r)}` })),
+        { id: '', label: `Stay at ${gridRef(here.c, here.r)}`, cancel: true },
+      ],
+    });
+    const to = pick ? { col: Number(pick.split(',')[0]), row: Number(pick.split(',')[1]) } : undefined;
+    const v = perform(data, state, { kind: 'reveal', seat: t.side, uid: t.uid, to });
+    if (!v.ok) return false;
+    logTo(t, to
+      ? `${why} Optical Camouflage ends and ${t.label} Manifests to ${gridRef(Math.floor(to.col / 3), Math.floor(to.row / 3))} (4.12.2).`
+      : `${why} Optical Camouflage ends (4.12.2). It stayed where its marker stood.`);
+    return true;
+  }
+
   function promptReveal(t: Token, why: string): void {
     if (statusCount(t.statuses, 'camouflage') === 0) return;
     if (state.script?.strict) {
-      perform(data, state, { kind: 'reveal', seat: t.side, uid: t.uid });
-      logTo(t, `${why} Optical Camouflage ends (4.12.2).`);
-      void alertDialog({
-        title: `${t.label} is Revealed`,
-        body: `${why} A camouflaged unit Reveals here (4.12.2). Reveal movement up to its Stealth value may follow — move it by hand if the card grants any.`,
-      });
-      onChanged();
+      void offerManifestation(t, why).then(() => onChanged());
       return;
     }
     void confirmDialog({
       title: `${t.label} breaks camouflage`,
-      body: `${why} Under 4.12.2 the Optical Camouflage ends and the unit Reveals. Reveal movement up to its Stealth value may follow.`,
+      body: `${why} Under 4.12.2 the Optical Camouflage ends and the unit Reveals${(() => {
+        const r = manifestationRange(data, t);
+        return r > 0 ? `, with Manifestation Movement up to ${r} Grid${r === 1 ? '' : 's'} (Stealth ${r})` : '';
+      })()}.`,
       confirmLabel: 'Reveal it (4.12.2)',
       cancelLabel: 'Keep it hidden (house rule)',
     }).then((go) => {
       if (!go) return;
-      perform(data, state, { kind: 'reveal', seat: t.side, uid: t.uid });
-      logTo(t, `${why} Optical Camouflage ends (4.12.2).`);
-      onChanged();
+      void offerManifestation(t, why).then(() => onChanged());
     });
   }
 

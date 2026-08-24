@@ -5,7 +5,7 @@ import type { ExtraTick, Card, CardAction, CounterRoll, GameState, MechLoadout, 
 import { LEGACY_SIDE, normaliseScript, statusCount, TIMINGS } from './types';
 import { normaliseSetup } from './setup';
 import { isMeleeFiring, lockersOf } from './melee';
-import { inContact, largeGridOf, losBetween, rangeBetween, smokeBlocks } from './rules';
+import { inContact, largeGridOf, losBetween, rangeBetween, smokeBlocks, standingSpot } from './rules';
 import { normaliseTasks, type VpRider } from './tasks';
 // ticks.ts imports only from types.ts, so this direction carries no cycle.
 import { timingOf } from './ticks';
@@ -337,6 +337,11 @@ export function onHitRiders(a: CardAction, cardKeywords: { key?: string; inline?
   // glossary's two effects are both unit-level, which is what our token is.
   const trace = /\[On Hit\][^.]*gains? (\d+) (?:Pursuit|Target Tracer) Token/i.exec(printed);
   if (trace) add({ kind: 'status', statusId: 'targetTracer', amount: Math.max(1, Number(trace[1])), why: 'the printed [On Hit] rider' });
+  // ZHDR-103 Claymore (GoF 1.021): '[On hit], target gains 1 Hindered Token.'
+  // The list prints the marker lowercase with a trailing comma, so the bracket
+  // match is looser than Target Tracer's -- but the Token name is not.
+  const hinder = /\[On Hit\],?[^.]*gains? (\d+) Hindered Token/i.exec(printed);
+  if (hinder) add({ kind: 'status', statusId: 'hindered', amount: Math.max(1, Number(hinder[1])), why: 'the printed [On Hit] rider' });
   if (/\[On Hit\][^.]*reduces? target Link by (\d+)/i.test(printed)) {
     const m = /\[On Hit\][^.]*reduces? target Link by (\d+)/i.exec(printed)!;
     add({ kind: 'link', amount: Math.max(1, Number(m[1])), why: 'the printed [On Hit] rider' });
@@ -1056,14 +1061,88 @@ export function camoBrokenBy(data: GameData, tokens: Token[], t: Token): Token |
     && breaksCamoByContact(data, o) && inContact(t, o));
 }
 
+const CAMO_ACTIVATES = /开启光学迷彩|Activate Optical Camouflage/i;
+
 export function canActivateCamo(data: GameData, t: Token): boolean {
   for (const { card } of tokenCards(data, t)) {
     for (const a of card.actions ?? []) {
       const text = `${a.description?.zh ?? ''} ${a.description?.en ?? ''}`;
-      if (/开启光学迷彩|Activate Optical Camouflage/i.test(text)) return true;
+      if (CAMO_ACTIVATES.test(text)) return true;
     }
   }
   return false;
+}
+
+// ---------- STEALTH X and Manifestation Movement (4.12.2, p.72) ----------
+//
+// "Stealth X: When the Optical Camouflage is revealed, the Mech may appear
+// within X Grids." The camouflage model marks only a SUSPECTED position; on
+// Reveal the unit may appear elsewhere, and that hop is Manifestation Movement:
+// **Teleportation**, range = the Stealth Value of the Action that activated the
+// camouflage. Nothing in between matters, which is why this cannot go through
+// reachableGrids -- that pathfinds, and a teleport has no path.
+//
+// The value is read off the ACTIVATING Action, never off the card: the same
+// Action carries both halves ("Activate Optical Camouflage, Stealth 2").
+export function activatesCamo(a: CardAction): boolean {
+  return CAMO_ACTIVATES.test(`${a.description?.zh ?? ''} ${a.description?.en ?? ''}`);
+}
+
+export function stealthValue(a: CardAction): number | undefined {
+  if (!activatesCamo(a)) return undefined;
+  const text = `${a.description?.zh ?? ''} ${a.description?.en ?? ''}`;
+  const m = /(?:隐秘|Stealth)\s*(\d+)/i.exec(text);
+  return m ? Math.max(0, Number(m[1])) : undefined;
+}
+
+// How far this unit may manifest, read from the Parts it still has.
+//
+// The rulebook says to store the value at activation time, and DERIVING it is
+// equivalent for every unit that can be built: the two Stealth 2 carriers (096
+// and 247) are both TORSOS, so a Mech can hold only one, and the only other
+// carrier is a GoF backpack at Stealth 0 that no UN Mech may take (parts are
+// faction-locked). If a future card breaks that, the highest is taken and the
+// note says so -- "may appear within X" is a ceiling the player can decline.
+//
+// A destroyed Part grants nothing, as everywhere else here. That also covers
+// the rulebook's fifth Reveal trigger from the other side: losing the Part that
+// activated the camouflage reveals the unit IN PLACE, with no Manifestation.
+export function manifestationRange(data: GameData, t: Token): number {
+  let best = 0;
+  for (const { slot, card } of tokenCards(data, t)) {
+    if ((t.partStates?.[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
+    for (const a of card.actions ?? []) {
+      const x = stealthValue(a);
+      if (x !== undefined && x > best) best = x;
+    }
+  }
+  return best;
+}
+
+// Every Large Grid the unit may manifest into: within X of where its marker
+// stands, measured in Large Grids, and somewhere it actually fits. Distance is
+// Chebyshev because a Grid diagonally adjacent is one Grid away, the same
+// measure Adjacent uses -- and nothing between is consulted at all, which IS
+// the teleport.
+export function manifestTargets(
+  data: GameData,
+  tokens: Token[],
+  terrain: TerrainPiece[],
+  t: Token,
+): { c: number; r: number; col: number; row: number }[] {
+  void data;
+  const range = manifestationRange(data, t);
+  const here = largeGridOf(t);
+  const out: { c: number; r: number; col: number; row: number }[] = [];
+  for (let c = here.c - range; c <= here.c + range; c++) {
+    for (let r = here.r - range; r <= here.r + range; r++) {
+      if (c < 0 || r < 0 || c > 11 || r > 11) continue;
+      if (c === here.c && r === here.r) continue;
+      const spot = standingSpot(c, r, t.size, !!t.aerial, terrain, tokens, t.uid);
+      if (spot) out.push({ c, r, col: spot.col, row: spot.row });
+    }
+  }
+  return out;
 }
 
 export function interceptCapacity(a: CardAction): number | undefined {

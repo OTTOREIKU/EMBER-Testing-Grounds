@@ -82,6 +82,7 @@ for (const c of cards) {
     for (const [k, v] of Object.entries(fix)) {
       if (k.startsWith('_')) continue;
       if (k === 'name' && v && typeof v === 'object') a.name = { ...a.name, ...v };
+      else if (k === 'description' && v && typeof v === 'object') a.description = { ...a.description, ...v };
       else a[k] = v;
     }
   }
@@ -992,10 +993,11 @@ check('nothing asks aurasOn about the defender for the ZHDR-204 kind',
 
 // SEAM 2: the +1 Blue is added ABOVE the Immobilized line, not below it. An
 // Immobilized unit rolls no Blue at all, and a bonus added afterwards would
-// survive the status whose whole job is to delete the pool. Adjacency is
-// pinned, so moving either line past the other fails here.
-check('the 164 Blue is added BEFORE Immobilized zeroes the pool',
-  /if \(this\.earlyWarning\(\)\) blue \+= 1;\s+if \(statusCount\(d\.statuses, 'immobilized'\) > 0\) blue = 0;/.test(combatSrc), true);
+// survive the status whose whole job is to delete the pool. The ORDER of the
+// whole trio is pinned: the 164 bonus, then Hindered's per-token subtraction
+// (which has to see the finished pool), then Immobilized deleting everything.
+check('the 164 Blue is added BEFORE Hindered subtracts and Immobilized zeroes',
+  /if \(this\.earlyWarning\(\)\) blue \+= 1;[\s\S]{0,500}?blue = Math\.max\(0, blue - statusCount\(d\.statuses, 'hindered'\)\);\s+if \(statusCount\(d\.statuses, 'immobilized'\) > 0\) blue = 0;/.test(combatSrc), true);
 
 // The three arguments the four reviewed defects were: a missing one each.
 check('combat.ts feeds earlyWarningCover the smoke as well as the terrain (4.16)',

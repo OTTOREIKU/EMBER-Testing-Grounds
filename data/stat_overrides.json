@@ -3,6 +3,124 @@
   "_scope": "Only stats confirmed wrong against a scan are listed. No systematic sweep of every card has been done, so absence from this file does not mean a stat is correct.",
   "_shape": "cards maps a card id to the stat fields to overwrite.",
   "cards": {
+    "ZHDR-101": {
+      "score": 42,
+      "armor": 1,
+      "structure": 4,
+      "actions": [
+        {
+          "id": "ZHDR-101_A",
+          "name": {
+            "zh": "移动掩体",
+            "en": "Mobile Bunker",
+            "jp": "機動バリケード"
+          },
+          "description": {
+            "zh": "· 本机可以为友军提供单位保护。\n· 自动盾牌",
+            "en": "· May provide Unit Protection to Ally Units.\n· Automatic Shield",
+            "jp": "· このユニットは味方へユニット保護を提供できる。\n· 自動シールド"
+          },
+          "type": "Passive",
+          "speed": "passive",
+          "range": 0,
+          "storage": 0,
+          "yellowDice": 0,
+          "redDice": 0,
+          "keywords": [
+            {
+              "inline": "自动盾牌"
+            }
+          ]
+        },
+        {
+          "id": "ZHDR-101_B",
+          "name": {
+            "en": "Single Shot"
+          },
+          "description": {
+            "en": "· Omni-direction Firing\n· Melee Firing"
+          },
+          "type": "Firing",
+          "speed": "auto",
+          "range": 3,
+          "storage": 0,
+          "yellowDice": 3,
+          "redDice": 1,
+          "keywords": [
+            {
+              "inline": "全向射击"
+            },
+            {
+              "inline": "近战射击"
+            }
+          ]
+        }
+      ]
+    },
+    "116": {
+      "keywords": [
+        {
+          "key": "空手",
+          "en": "Freehand"
+        }
+      ]
+    },
+    "118": {
+      "keywords": [
+        {
+          "key": "空手",
+          "en": "Freehand"
+        }
+      ],
+      "actions": [
+        {
+          "id": "118_B",
+          "name": {
+            "zh": "推进器",
+            "en": "Thruster"
+          },
+          "description": {
+            "zh": "· 当本机同时装备了MDXS\"精灵\"系统 + R6冲锋枪（右），则本机的移动动作/调整移动视为飞行。",
+            "en": "· If the mech is equipped with this part and MDXS \"Fairy\" System + R6 SMG (R), it's movement will be considered as Flying."
+          },
+          "type": "Passive",
+          "size": "m",
+          "range": 0,
+          "storage": 0,
+          "yellowDice": 0,
+          "redDice": 0,
+          "keywords": []
+        }
+      ]
+    },
+    "120": {
+      "keywords": [
+        {
+          "key": "空手",
+          "en": "Freehand"
+        }
+      ],
+      "actions": [
+        {
+          "id": "120_B",
+          "name": {
+            "zh": "推进器",
+            "en": "Thruster"
+          },
+          "description": {
+            "zh": "· 当本机同时装备了MDXS\"精灵\"系统 + R6冲锋枪（左），则本机的移动动作/调整移动视为飞行。",
+            "en": "· If the mech is equipped with this part and MDXS \"Fairy\" System + R6 SMG (L), it's movement will be considered as Flying."
+          },
+          "type": "Passive",
+          "size": "m",
+          "range": 0,
+          "storage": 0,
+          "yellowDice": 0,
+          "redDice": 0,
+          "keywords": []
+        }
+      ]
+    },
     "182": {
       "description": {
         "en": "· Knock Back X: After this action ends, the target is forced to move X grids along the attack direction.\n· Command Coordination: After this action is resolved, this Mech may immediately issue 1 Command to a Ally Drone.",
@@ -126,17 +244,21 @@
       "score": 48,
       "_source": "publisher GoF parts list v1.021 - the newest revision from the company, which supersedes the v1.02 championship xlsx the earlier sweeps used. 1.021 reprices the whole GoF line and marks every change in red; read it by rendering the pages, its text layer cannot be parsed."
     },
-    "ZHDR-101": {
-      "score": 42,
-      "armor": 1,
-      "structure": 4,
-      "_source": "publisher GoF parts list v1.021 - the newest revision from the company, which supersedes the v1.02 championship xlsx the earlier sweeps used. 1.021 reprices the whole GoF line and marks every change in red; read it by rendering the pages, its text layer cannot be parsed."
-    },
     "ZHDR-102": {
       "score": 48,
       "armor": 1,
       "structure": 4,
-      "_source": "publisher GoF parts list v1.021 - the newest revision from the company, which supersedes the v1.02 championship xlsx the earlier sweeps used. 1.021 reprices the whole GoF line and marks every change in red; read it by rendering the pages, its text layer cannot be parsed."
+      "keywords": [
+        {
+          "key": "全向射击",
+          "en": "Omni-direction Firing"
+        },
+        {
+          "key": "近战射击",
+          "en": "Melee Firing"
+        }
+      ],
+      "_source": "publisher GoF parts list v1.021 - the newest revision from the company, which supersedes the v1.02 championship xlsx the earlier sweeps used. 1.021 reprices the whole GoF line and marks every change in red."
     },
     "ZHDR-103": {
       "score": 48,
@@ -160,6 +282,11 @@
     }
   },
   "_notes": {
+    "ZHDR-101": "N11 Vanguard I \"Scutum\". The 1.021 regunning gave the shield drone a gun the community bundle never had: Action B Single Shot, Firing, Auto, 3Y1R, Range 3, Omni-direction Firing and Melee Firing (list row ZHDR-101). Supplying a NEW action needs this file's wholesale `actions` replacement, so the array carries the final _A too - including its list English, which cannot live in action_overrides because applyStats runs after applyActionFixes and would discard it. The _A content is otherwise the bundle's own, zh and jp included; _B is English-only because no 1.021 Chinese exists to copy.",
+    "ZHDR-102": "N12 Vanguard II \"Crossbow\". The 1.021 regunning removed Interception 1 from its action (see action_overrides ZHDR-102_A, which drops the load-bearing inline keyword); this entry removes the CARD-level 拦截X chip that would otherwise keep advertising a rule the drone no longer has. The other two keywords are kept, with the stray bullet the bundle put in front of Omni-direction Firing dropped.",
+    "116": "S100 Shield + R6SS SMG (D), the RIGHT-hand discard face. Same gap as 118/120 and found the same way: the UN 1.02 list gives row 116 the Freehand keyword and our card had an empty array, so a Mech that Disarmed this shield offered no free hand. Unlike the Fairy pair this card is RELEASED (UN_CORE). Its action text comes through action_overrides 116_A rather than here, the action already existing.",
+    "118": "MDXS \"Fairy\" System + R6 SMG (L) (D). The bundle gave the two Fairy discard faces NO actions and NO keywords at all, where the publisher's Part Data UN 1.02 EN rows 118 and 120 print the Thruster passive and the Freehand keyword on both. That was a LIVE bug, not a display one: disarm rewrites the equipped card id to the discard face, flightGrant() counts Thruster halves off the equipped cards, and the pair needs two - so a Mech whose Fairy arm was Disarmed lost flight the publisher says it keeps. The action text is copied verbatim from the FRONT face 117_B, which the list's own row 118 matches word for word (typo included, \"it's\"), so the zh is the printed sibling text rather than a translation. jp is omitted on purpose: the bundle's 119_B jp fields are corrupted (they hold the gun action's text), so nothing unverified is carried over. These entries are the first use of applyStats supplying `actions` - action_overrides.json cannot do this, being keyed by an action id that must already exist.",
+    "120": "MDXS \"Fairy\" System + R6 SMG (R) (D). Mirror of 118: text from front face 119_B, referencing the (L) arm.",
     "181": "PLK400 \"Centaur\" High-mobility Chassis. THE PDF SUPERSEDES THE SCAN - OTTO's ruling, 2026-08-24: the card scans in our data are old and the publisher's 1.02x parts lists are the current information, so where they disagree the list wins and a clause the list does not carry does not belong. Our reminder line said Push X moves the target \"in straight line in the direction this unit is facing, then this unit performs the same movement\", and the Chinese agreed (然后本单位执行同样的移动), so the two were consistent with each other and with nothing else: NEITHER the rulebook glossary NOR the publisher's GoF 1.021 Extra Info for this exact row has any follow-up move by the attacker. The engine never implemented one either - offerShove moves only the victim - so the app was already right and the card text was the thing lying. Replaced with the list's block verbatim, which also supplies the Command Coordination reminder we were missing. The Chinese is assembled from our own glossary's zh values for the four keywords, not translated by hand; note that the glossary's 推动X already read 沿任意直线方向 with -1链接值 and no follow-up, agreeing with the list all along.",
     "179": "PL1 Standard Chassis. Description was empty; the list's Extra Info for row 179 is the Command Coordination reminder. Same sourcing as 181.",
     "182": "PL35 Armored Chassis. The card's own reminder line DEFINED THE WRONG KEYWORD: it spelled out Push X, in both languages, on a card whose keyword field is 击退X Knockback X and whose Kick the publisher prints as Knock Back 1. Those are different rules - Push X also takes 1 Link from a target Mech, and a Mech driven to 0 Link Shuts Down - so the page was teaching a cost this card cannot impose. Display-only (knockbackOf reads ACTIONS, never the card body), but it is the half a player actually reads. Replaced with the Extra Info the publisher's GoF 1.021 EN list prints for row 182, which is Knock Back X plus Command Coordination. The Chinese is the glossary's own 击退X value rather than anything invented. Completes the 182_B correction in action_overrides.json.",

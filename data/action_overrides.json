@@ -133,13 +133,140 @@
       "description": {
         "en": "· Omni-direction Firing · Melee Firing · {Lightning} may make Target Mech switch into Shutdown Stance immediately."
       },
-      "_source": "Printed English card scan assets/cards/en/ZHDR-304.webp, read 2026-08-13. The action had NO English at all."
+      "_source": "Printed English card scan assets/cards/en/ZHDR-304.webp, read 2026-08-13; confirmed word for word by the GoF 1.021 list."
     },
     "ZHDR-304_B": {
       "description": {
-        "en": "· When performing a Command Movement, may consume 1 additional Command Token and -2 Movement to drag 1 adjacent Ally Mech or Ally Drone."
+        "en": "· When performing a Command Movement, may consume 1 additional Command Token and -1 Movement to drag 1 adjacent Ally Unit.",
+        "zh": ""
       },
-      "_source": "Printed English card scan assets/cards/en/ZHDR-304.webp, read 2026-08-13. No English at all, and the Chinese in cards.json is the OLDER variant: it omits the -2 Movement and says 友军单位 (ally unit) where the card says Ally Mech or Ally Drone. The card-level description carries a second, newer Chinese line that does match the print."
+      "_source": "GoF 1.021 list, row ZHDR-304 Action B. THIS SUPERSEDES THE CARD SCAN this entry used to be read from: the scan printed -2 Movement and 'Ally Mech or Ally Drone', the list prints -1 Movement and the broader 'Ally Unit', and the lists outrank the scans (OTTO 2026-08-24). The engine numbers moved with it: commandpick.ts offerHarpyDrag and both boards' allowance subtraction now take 1. The zh is cleared because the bundle's Chinese is an older variant carrying no Movement penalty at all - it was already recorded here as the odd one out when the scan was the source."
+    },
+    "ZHDR-102_A": {
+      "name": {
+        "en": "Single Shot"
+      },
+      "yellowDice": 0,
+      "redDice": 3,
+      "description": {
+        "en": "· Omni-direction Firing\n· Melee Firing",
+        "zh": ""
+      },
+      "keywords": [
+        {
+          "inline": "全向射击"
+        },
+        {
+          "inline": "近战射击"
+        }
+      ],
+      "_note": "The 1.021 REGUNNING, which the stats adoption never reached: the Crossbow's action is renamed Full-auto to Single Shot, rolls 3R instead of 2Y1R, and NO LONGER PRINTS Interception 1. Losing the Interception is load-bearing two ways, which is why this entry replaces the keywords array as well as the text: interceptCapacity() reads the inline keyword 拦截1 first and the printed text second, so the old keyword or the old zh alone would keep the drone intercepting. The zh is cleared because we hold no 1.021 Chinese; the two zh terms the engine still needs (全向射击 for the Omni grant reader, 近战射击 for melee.ts isMeleeFiring) ride in the keywords, which is where both readers look."
+    },
+    "ZHDR-103_A": {
+      "description": {
+        "en": "· Omni-direction Firing\n· Melee Firing\n· [On hit], target gains 1 Hindered Token.",
+        "zh": ""
+      },
+      "_note": "1.021 regunning: the Claymore's Full-auto gains the Hindered rider (a NEW status - '-1 Blue Dice in their Defense Roll', defined in the list's own Back Text, truncated mid-sentence in the source PDF after the comma). Dice 4Y and range 4 already matched. The rider reaches the engine through onHitRiders route C, which reads this exact printed English; the zh is cleared as superseded (it lacks the rider), and the two keyword terms ride in the keywords array as on ZHDR-102_A."
+    },
+    "ZHDR-104_A": {
+      "storage": 2,
+      "description": {
+        "en": "· Fire in arc\n· Fire 1 M707 \"Swift\" Missile."
+      },
+      "_note": "1.021: the Javelin's Missile action carries Ammo 2, which the community data recorded as 0 - storage is the capacity field, matching how ZHLA-102 holds its 2. The zh matches the list's content and stays."
+    },
+    "ZHDR-301_A": {
+      "description": {
+        "en": "· Scatter-shot · Melee Firing\n· Knock Back 1"
+      },
+      "keywords": [
+        {
+          "inline": "击退X"
+        },
+        {
+          "inline": "近战射击"
+        }
+      ],
+      "_note": "1.021 row ZHDR-301 Action A; speed, dice and range already matched, zh matches and stays. The keywords gain 近战射击: the card prints Melee Firing on this action and carries the term only at CARD level in the bundle, but melee.ts isMeleeFiring reads the ACTION's keywords - the documented key-vs-inline class - so the Apologist's gun was wrongly barred during Melee Lock. 击退X was already there; Scatter-shot needs no keyword because surplusEffects reads the zh text, which keeps it."
+    },
+    "116_A": {
+      "description": {
+        "en": "· Laser Weapon\n· [Stationary] +1Y."
+      },
+      "_source": "UN 1.02 list, row 116 - the discard face keeps the gun and its text, which our card carried in Chinese only. Identical to 115_A above it, as the list prints them."
+    },
+    "S100+R6SS-L_A": {
+      "description": {
+        "en": "· Laser Weapon\n· [Stationary] +1Y."
+      },
+      "_source": "UN 1.02 list, the S100 Shield + R6SS SMG (L) rows. Same weapon as the R-hand 115, which the list prints identically."
+    },
+    "S100+R6SS-L_B": {
+      "description": {
+        "en": "· This Mech may Designate this part to resolve damage."
+      },
+      "_source": "UN 1.02 list. Mobile Defense, same text as 115_B."
+    },
+    "S100+R6SS-L-T_A": {
+      "description": {
+        "en": "· Laser Weapon\n· [Stationary] +1Y."
+      },
+      "_source": "UN 1.02 list, the (L) (D) row."
+    },
+    "XTC_A": {
+      "description": {
+        "en": "· Electronic Attack · Silence\n· Conduct Electronic Counter Roll against 1 enemy Drone/Projectile within range, if successful, it will be Destroyed immediately."
+      },
+      "_source": "UN 1.02 list, XTC Right Arm. Replaces our translation with the publisher's English; the zh stays."
+    },
+    "R33S_A": {
+      "description": {
+        "en": "· Laser Weapon\n· [Stationary] gains Snipe.\n· Silence"
+      },
+      "_source": "UN 1.02 list. The Stationary-gated Snipe stays deliberately unwired either way: snipeOn's English route reads keywords only, and its zh route excludes gate lines - see the PARKED note in units.ts."
+    },
+    "LHDR-KK9_A": {
+      "description": {
+        "en": "· When Ally Units perform Firing actions against targets within range, target -1B."
+      },
+      "_source": "UN 1.02 list, KK9 row. Publisher English for a card that had only our translation. The -1 Blue aura itself is not wired; the card ships in no released box."
+    },
+    "LHDR-KK9_B": {
+      "description": {
+        "en": "· Designate 1 Enemy Unit within range as the target, allow 1 Ally Mech to immediately perform 1 Firing Action against it. Then remove this Drone."
+      },
+      "_source": "UN 1.02 list, KK9 row."
+    },
+    "TM35NA_A": {
+      "description": {
+        "en": "· KC Armor"
+      },
+      "_source": "UN 1.02 list, TM35NA row."
+    },
+    "TM35NA_B": {
+      "description": {
+        "en": "· Electronic Attack · Silence\n· Conduct Electronic Counter Rolls with 1 Enemy Mech/Drone within range, if successful, take control of it to perform a Maneuver or Move action."
+      },
+      "_source": "UN 1.02 list, TM35NA row - which also names this action The Red Shoes, adopted in name_overrides."
+    },
+    "247_A": {
+      "description": {
+        "en": "· This mech gains a Low Profile Token.\n· Silence"
+      },
+      "_source": "UN 1.02 list, row 247."
+    },
+    "247_B": {
+      "description": {
+        "en": "· Activate Optical Camouflage, Stealth 2."
+      },
+      "_source": "UN 1.02 list, row 247. Stealth X (appear within X grids on release) is not modelled; recorded in the open-tasks memory rather than invented here."
+    },
+    "538_A": {
+      "description": {
+        "en": "· The Maneuver distance of this mech +1.\n· This part cannot be used as a Load."
+      },
+      "_source": "UN 1.02 list, row 538, replacing the bundle's 'Move attribute of this mech's lower limbs +1' wording. Display-only: maneuverBonus() in units.ts already matches BOTH wordings, precisely because the FAQ paraphrases this card with the list's phrasing. The zh stays - the reader takes en ?? zh, so only one fires."
     },
     "ZHDR-204_A": {
       "gameRules": [

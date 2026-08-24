@@ -116,5 +116,43 @@ check('an Action with no keywords at all is not Flying', isAirborneAction({ type
 check('the keyword on a Firing Action grants nothing', isAirborneAction({ type: 'Firing', keywords: [{ inline: '空中移动' }] }), false);
 check('the keyword on a Passive grants nothing', isAirborneAction({ type: 'Passive', keywords: [{ inline: '空中移动' }] }), false);
 
+// ---------- the DATA carries the pair, not just the fixtures ----------
+//
+// The reader was never the bug: the bundle gave the two Fairy (D) faces NO
+// actions and NO keywords, so a Mech whose Fairy arm was Disarmed pointed at a
+// card with no Thruster and lost flight. The fix lives in stat_overrides.json
+// (the one override file able to supply whole actions), so this section merges
+// the data the way data.ts applyStats does and asks the same regexes the
+// fixtures above ask. A cards.json regeneration that loses the override, or an
+// applyStats change that stops merging `actions`, fails here by name.
+{
+  const rawCards = JSON.parse(readFileSync(new URL('../../data/cards.json', import.meta.url), 'utf8'));
+  const cardList = Array.isArray(rawCards) ? rawCards : rawCards.cards;
+  const statFix = JSON.parse(readFileSync(new URL('../../data/stat_overrides.json', import.meta.url), 'utf8')).cards ?? {};
+  for (const c of cardList) {
+    const f = statFix[c.id];
+    if (!f) continue;
+    const { name, description, ...rest } = f;
+    Object.assign(c, rest);
+  }
+  const real = new Map(cardList.map((c) => [c.id, c]));
+  const byId = { byId: real };
+  // Real torso and chassis (539 Wild Cat, 179 PL1) so nothing but the arms can
+  // contribute a half -- 117 in those slots would count its own Thruster and
+  // pass every case below trivially.
+  const halves = (l, r) => flightGrant(byId, { kind: 'mech', mech: { torso: '539', chasis: '179', leftHand: l, rightHand: r }, partStates: {} });
+
+  check('the real torso and chassis grant nothing by themselves', halves(undefined, undefined), 'none');
+  check('the real 117+119 pair flies', halves('117', '119'), 'always');
+  check('a Disarmed left arm (118) still flies', halves('118', '119'), 'always');
+  check('a Disarmed right arm (120) still flies', halves('117', '120'), 'always');
+  check('both arms Disarmed still fly', halves('118', '120'), 'always');
+  check('one real arm alone does not', halves('117', undefined), 'none');
+  check('one Disarmed arm alone does not either', halves('118', undefined), 'none');
+  const freehand = (id) => (real.get(id)?.keywords ?? []).some((k) => k.en === 'Freehand' || k.key === '空手');
+  check('the (D) faces carry Freehand in the data', [freehand('118'), freehand('120')], [true, true]);
+  check('and the front faces do not', [freehand('117'), freehand('119')], [false, false]);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

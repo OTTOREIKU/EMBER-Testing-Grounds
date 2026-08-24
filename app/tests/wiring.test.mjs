@@ -94,8 +94,10 @@ check('the Mode-change branch pays before it returns',
 // plus the no-tool path: move (x2 — the plan and the route), launch, blink,
 // attack, EW, charge, resupply, repair, unfold, transformPart (287/288's Mode
 // change, inline like the Unfold), Remote Access (one site for both verdicts —
-// the attempt pays whether the roll succeeded or not), and doact's own.
-check('every tool has a commitAction', [...hud.matchAll(/commitAction\(ctx\)/g)].length, 13);
+// the attempt pays whether the roll succeeded or not), doact's own, and the
+// camouflage activation — routeAction's one IMMEDIATE branch, which opens no
+// tool and so must pay for the Action itself.
+check('every tool has a commitAction', [...hud.matchAll(/commitAction\(ctx\)/g)].length, 14);
 
 // ---------- The ATTRIBUTED seat stamp ----------
 //
@@ -260,7 +262,7 @@ check('and sizes its volley off the same one',
 // BUG-1. A Match Centre Movement leaves through the plain settle OR, when it
 // ends in an occupied Grid, through finishCrush — and everything the settle
 // does has to be done again there. ZHDR-304's tow was written into the settle
-// alone, so a Harpy that dragged an Ally and then Crushed paid the -2 Movement
+// alone, so a Harpy that dragged an Ally and then Crushed paid the -1 Movement
 // and left the Ally behind. Freeplay is immune: main.ts routes its crush back
 // into the same settle closure, so there is only one ending to maintain.
 check('the tow has exactly one home', (hud.match(/function towDraggedAlly\(/g) ?? []).length, 1);
@@ -277,14 +279,14 @@ check('and it carries the drag across the Crush', /drag\?: \{ allyUid: number; f
 const planBuild = settleFn.slice(settleFn.indexOf('crushPlan = {'), settleFn.indexOf('advanceCrush(ctx);'));
 check('the crushPlan literal was located', planBuild.includes('queue:'), true);
 check('and the plan is built with the drag on it', /^\s*drag,\s*$/m.test(planBuild), true);
-// BUG-2, the same card one page over. The Harpy's drag costs -2 Movement, and
+// BUG-2, the same card one page over. The Harpy's drag costs -1 Movement, and
 // freeplay painted the reachable overlay with the UN-reduced allowance while
 // the plan and the route cap both used the reduced one. Cosmetic, but it showed
 // the player Grids the unit could not enter, which reads as an engine bug.
 // A single `range` is the fix: one number, used by the plan and the paint.
 const startMoveFn = main.slice(main.indexOf('async function startMove(uid: number'), main.indexOf('function commitMove(): void'));
 check('freeplay startMove was located', startMoveFn.includes('offerHarpyDrag'), true);
-check('the reduced allowance is taken once', /const range = drag \? steps - 2 : steps;/.test(startMoveFn), true);
+check('the reduced allowance is taken once', /const range = drag \? steps - 1 : steps;/.test(startMoveFn), true);
 check('the plan carries it', /steps: range,/.test(startMoveFn), true);
 check('and the overlay is solved with the same number',
   startMoveFn.includes('showReachable(reachableGrids(t, range,'), true);

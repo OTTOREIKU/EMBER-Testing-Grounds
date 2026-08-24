@@ -377,14 +377,15 @@ const pickSrc = readFileSync(new URL('../src/commandpick.ts', import.meta.url), 
 // one value. Before that the highlight showed two Grids the unit could not use,
 // while the route itself was capped correctly — which is what made the lie hard
 // to spot (BUG-2). The ordering pinned here is unchanged: declare, then set the
-// allowance, because the -2 comes out of the allowance.
+// allowance, because the -1 comes out of the allowance (GoF 1.021; was -2
+// when this pin was written from the card scan).
 check('the Harpy drag is declared before the move',
-  /const drag = await offerHarpyDrag\(t, steps\);[\s\S]{0,600}?const range = drag \? steps - 2 : steps/.test(mainSrc), true);
+  /const drag = await offerHarpyDrag\(t, steps\);[\s\S]{0,600}?const range = drag \? steps - 1 : steps/.test(mainSrc), true);
 check('and the plan and the paint both take that one allowance',
   /steps: range/.test(mainSrc) && /showReachable\([^)]*range/.test(mainSrc), true);
 check('and it needs a Mech holding a face-up token', /readyCommands\(m\) > 0/.test(pickSrc), true);
 check('the dragged unit must be adjacent', /inContact\(t, o\)/.test(pickSrc), true);
-check('the Match Centre asks the same shared offer', /offerHarpyDrag\(ctx\.data, s, t, maneuverRange\(ctx\.data, t\)\)[\s\S]{0,400}?movePlan\.steps -= 2/.test(hudSrc), true);
+check('the Match Centre asks the same shared offer', /offerHarpyDrag\(ctx\.data, s, t, maneuverRange\(ctx\.data, t\)\)[\s\S]{0,400}?movePlan\.steps -= 1/.test(hudSrc), true);
 check('and tows into the vacated Grid there too', /drag[\s\S]{0,600}?standingSpot\(prevGrid\.c, prevGrid\.r/.test(hudSrc), true);
 check('no free spot means no token is spent', /could not be dragged[\s\S]{0,80}not consumed/.test(mainSrc) && /could not be dragged[\s\S]{0,80}not consumed/.test(hudSrc), true);
 // Two audit catches, pinned so they stay caught. An Automatic Phase drone move

@@ -1487,6 +1487,12 @@ export class AttackHelper {
     // immobilized status), and a bonus added afterwards would survive a status
     // whose whole job is to delete the pool.
     if (this.earlyWarning()) blue += 1;
+    // Hindered (GoF 1.021, the Claymore's on-hit rider): -1 Blue per token,
+    // clamped at 0 the way Fragile clamps White. Below the Raven Scout's +1 for
+    // the same reason that bonus sits above Immobilized: the subtraction has to
+    // see the finished pool, and Immobilized deleting everything afterwards
+    // still wins.
+    blue = Math.max(0, blue - statusCount(d.statuses, 'hindered'));
     if (statusCount(d.statuses, 'immobilized') > 0) blue = 0;
     // "Ally Units within Range +1W on hit" (RT-18T Escarpment, Defense
     // optimization). It is a defence-pool bonus, so it rides on top of Armor,

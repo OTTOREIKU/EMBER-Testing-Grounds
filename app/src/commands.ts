@@ -2,7 +2,7 @@ import type { CombatView, Facing, GameState, MechLoadout, Opportunity, PartSlot,
 import { addStatus, ageTokens, newOpportunity, PHASES, statusCount, STATUSES, TIMINGS } from './types';
 import type { GameData } from './data';
 import { cardName, transformFaces, unfoldsInto, discardFaceOf } from './data';
-import { covertCarryLock, ammoDeliveryPool, opportunityBonusOn, ripostePart, defenseReactionOn, targetTracingOn, riderOnDrone, hasFlexibleTiming, commandGeneration, blinkTargets, isPositionSwap, electronicOrigins, isSilentAction, maneuverIsSilent, loanedParts, unfoldToken, extrasFor, consumesCharge, cutTethersOn, electronicDash, electronicValue, immobilizedStop, nonHumanoidCost, nonHumanoidStop, freehandSlots, interceptCapacity, anyStartTiming, focusIsFree, keepsLinkOnPartLoss, makeDroneToken, structureOf, makeMechToken, maneuverRange, maxLink, partsLeft, pilotCard, pilotIs, projectileDelivery, provokeWhy, settleTethers, SLOT_LABEL, tetherTo, tokenCards, transformPartOn } from './units';
+import { covertCarryLock, ammoDeliveryPool, opportunityBonusOn, ripostePart, defenseReactionOn, targetTracingOn, riderOnDrone, hasFlexibleTiming, commandGeneration, blinkTargets, isPositionSwap, electronicOrigins, isSilentAction, maneuverIsSilent, loanedParts, unfoldToken, extrasFor, consumesCharge, cutTethersOn, electronicDash, electronicValue, immobilizedStop, manifestationRange, nonHumanoidCost, nonHumanoidStop, freehandSlots, interceptCapacity, anyStartTiming, focusIsFree, keepsLinkOnPartLoss, makeDroneToken, structureOf, makeMechToken, maneuverRange, maxLink, partsLeft, pilotCard, pilotIs, projectileDelivery, provokeWhy, settleTethers, SLOT_LABEL, tetherTo, tokenCards, transformPartOn } from './units';
 import { tetherCap } from './melee';
 import { canActivate, canAttackMode, canManeuver, canOverload, canPerform, spendAction, spendActivation, spendAttackMode, spendManeuver, spendOverload } from './ticks';
 import { tacticSpec, tacticTargets, type TacticCtx } from './tactics';
@@ -164,7 +164,10 @@ export type Command =
   | { kind: 'stabilise'; seat: Side; uid: number; keepTokens?: boolean }
   | { kind: 'repairPart'; seat: Side; uid: number; slot: string; mode: 'repaired' | 'mend' }
   | { kind: 'breakRepaired'; seat: Side; uid: number; targetUid: number; slot: string }
-  | { kind: 'reveal'; seat: Side; uid: number }
+  // `to` is Manifestation Movement, which 4.12.2 makes part of the same event
+  // as the Reveal rather than a move that follows it - so it rides here rather
+  // than in a second command a mirror could see arrive on its own.
+  | { kind: 'reveal'; seat: Side; uid: number; to?: { col: number; row: number }; facing?: Facing }
   | { kind: 'lockMap'; seat: Side }
   | { kind: 'finishTasks'; seat: Side }
   | { kind: 'rollSetup'; seat: Side; hits: number[] }
@@ -1996,6 +1999,29 @@ function checkActed(
     }
     case 'reveal': {
       if (!(t.statuses ?? []).includes('camouflage')) return no('This unit is not in the Optical Camouflage State.');
+      // MANIFESTATION MOVEMENT (4.12.2): "the Mech may appear within X Grids".
+      // Teleportation, so nothing between the two Grids is consulted - only the
+      // distance and whether the unit fits. The destination is judged HERE
+      // rather than trusted, the same reason every other destination on the
+      // wire is: the sender chooses it.
+      if (cmd.to) {
+        const range = manifestationRange(data, t);
+        if (range <= 0) return no(`${t.label} has no Stealth value, so it Reveals where it stands.`);
+        // Chebyshev on Large Grids: a Grid diagonally over is one Grid away,
+        // the same measure Adjacent uses.
+        const away = Math.max(
+          Math.abs(Math.floor(cmd.to.col / 3) - Math.floor(t.col / 3)),
+          Math.abs(Math.floor(cmd.to.row / 3) - Math.floor(t.row / 3)),
+        );
+        if (away > range) {
+          return no(`Manifestation Movement reaches ${range} Grid${range === 1 ? '' : 's'}, and that is ${away} away.`);
+        }
+        const gone = new Set(state.removedTerrain ?? []);
+        const terrain = (data.terrain?.layouts?.[state.map] ?? []).filter((p) => !gone.has(p.id));
+        const at = { ...t, col: cmd.to.col, row: cmd.to.row };
+        const spot = spotsInGrid(at, terrain, state.tokens).find((s) => s.col === cmd.to!.col && s.row === cmd.to!.row);
+        if (!spot || !spot.ok) return no(`${t.label} does not fit there.`);
+      }
       return ok;
     }
     case 'repairPart': {
@@ -3335,6 +3361,14 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
     }
     case 'reveal': {
       t.statuses = (t.statuses ?? []).filter((id) => id !== 'camouflage');
+      // Manifestation Movement rides the same command, so the unit never sits
+      // revealed at the marker position for a frame - the two halves are one
+      // event (4.12.2) and a mirror replaying this sees one hop.
+      if (cmd.to) {
+        t.col = cmd.to.col;
+        t.row = cmd.to.row;
+        if (cmd.facing !== undefined) t.facing = cmd.facing;
+      }
       return;
     }
     case 'launch': {

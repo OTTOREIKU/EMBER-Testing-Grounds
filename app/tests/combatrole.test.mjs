@@ -122,7 +122,14 @@ async function walk({ role, remoteDefender }) {
 
   const frames = [];
   const missed = [];
-  const shot = (name) => frames.push({ name, tree: ser(root), buttons: findButtons(root).map((b) => ({ label: label(b), dis: b.disabled === true })) });
+  // A die chip mid-spin shows the blank face '·' until its wall-clock
+  // setTimeout chain lands, and settle() waits a fixed 20ms — so under machine
+  // load a snapshot can catch one walk's chips settled and the other's still
+  // blank, and the two frames differ by pure timing. The pins here are about
+  // CONTROLS, not die faces, so the blank glyph is normalised away; a die that
+  // settled reads '' (its face is SVG) and now so does one that has not.
+  const chip = (b) => { const l = label(b); return l === '·' ? '' : l; };
+  const shot = (name) => frames.push({ name, tree: ser(root), buttons: findButtons(root).map((b) => ({ label: chip(b), dis: b.disabled === true })) });
   const press = (want) => {
     const b = findButtons(root).find((x) => label(x).includes(want));
     // A control that is not there AT ALL is recorded rather than thrown, so a

@@ -5,7 +5,7 @@ import { actionIconUrl, cardName, isAerial, secondaryImageUrl, squadLabel, unitS
 import { showInspect } from './inspector';
 import { Board, footprint, snapPlacement, type BoardCallbacks } from './board';
 import { printedDeployment, resolveZoneSetData } from './overlays';
-import { actionRange, transformOffer, anyStartTiming, opportunityBonusOn, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, ripostePart, martyrdomOwed, targetTracingOn, riderOnDrone, hasFlexibleTiming, immobilizedStop, nonHumanoidStop, coordinationFor, coordinationOnOpportunityEnd, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, electronicOrigins, loanedParts, phasesThroughUnits, minesLayable, minesOwed, pilotCard, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, maneuverIsSilent, maneuverSilenceDenier, type AuraSource, canActivateCamo, chargeableSlots, electronicDash, electronicStrength, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, projectileReach, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
+import { actionRange, transformOffer, anyStartTiming, opportunityBonusOn, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, ripostePart, martyrdomOwed, targetTracingOn, riderOnDrone, hasFlexibleTiming, immobilizedStop, activatesCamo, stealthValue, manifestationRange, manifestTargets, nonHumanoidStop, coordinationFor, coordinationOnOpportunityEnd, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, electronicOrigins, loanedParts, phasesThroughUnits, minesLayable, minesOwed, pilotCard, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, maneuverIsSilent, maneuverSilenceDenier, type AuraSource, canActivateCamo, chargeableSlots, electronicDash, electronicStrength, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, projectileReach, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
 import { ElectronicHelper, type EwAct } from './combat';
 import { tacticFitsPhase, tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { inContact, canStandIn, attackDirection, crushExchange, crushExchangeSpots, crushTargets, dissipationFor, extendPath, knockbackPath, largeGridOf, LG, losBetween, losNote, smokeBlocks, pathCost, protectionFor, rangeBetween, reachableGrids, standingSpot, type LargeGrid } from './rules';
@@ -606,7 +606,7 @@ function cancelMove(ctx: HudCtx): void {
 // One home, called from BOTH endings of a Movement. A move that ends in a Crush
 // leaves through finishCrush rather than the plain settle, and the tow lived
 // only in the latter — so a Harpy that dragged an ally and then Crushed paid
-// the -2 Movement, spent nothing, and left the ally standing where it was.
+// the -1 Movement, spent nothing, and left the ally standing where it was.
 // Freeplay never had it: main.ts routes the crush back into the same settle
 // closure, which already closed over the drag.
 function towDraggedAlly(ctx: HudCtx, t: Token, path: LargeGrid[], drag: { allyUid: number; funderUid: number }): void {
@@ -627,7 +627,7 @@ function towDraggedAlly(ctx: HudCtx, t: Token, path: LargeGrid[], drag: { allyUi
   }
   ctx.send({ kind: 'spendCommand', seat: t.side, uid: drag.funderUid });
   ctx.send({ kind: 'forceMove', seat: t.side, uid: t.uid, targetUid: ally.uid, to: spot });
-  ctx.noteNow(`${t.label} drags ${ally.label} along (-2 Movement, 1 Command Token consumed).`);
+  ctx.noteNow(`${t.label} drags ${ally.label} along (-1 Movement, 1 Command Token consumed).`);
 }
 
 // Each stop takes the free part of its Grid rather than the middle, so a unit
@@ -1766,6 +1766,7 @@ function panelHtml(ctx: HudCtx): string {
   if (crushPlan?.queue.length) return crushPanel(ctx);
   if (resupplyPick) return resupplyPanel(ctx);
   if (terminalPick) return terminalPanel(ctx);
+  if (manifestPick) return manifestPanel(ctx);
   if (repairPick) return repairPanel(ctx);
   if (chargePlan) return chargePanel(ctx);
   if (attackPick) return attackPanel(ctx);
@@ -2402,7 +2403,11 @@ function revealsOwed(ctx: HudCtx): { t: Token; key: string; why: string }[] {
       const acted = (sc.opp.performed ?? []).some((key) => {
         const id = actionIdOf(key);
         const a = tokenCards(ctx.data, t).flatMap(({ card }) => card.actions ?? []).find((x) => x.id === id);
-        if (!a || isSilentAction(ctx.data, s.tokens, t, a)) return false;
+        // The ACTIVATING Action is exempt: 4.12.2's trigger is for Actions
+        // performed while IN the state, and the activation is what put the unit
+        // there. Without this the sweep prompted a Reveal the instant the
+        // camouflage went on, because the activation itself prints no Silence.
+        if (!a || activatesCamo(a) || isSilentAction(ctx.data, s.tokens, t, a)) return false;
         denier = denier ?? actionSilenceDenier(ctx.data, s.tokens, t, a);
         return true;
       });
@@ -2437,8 +2442,11 @@ function revealPanel(ctx: HudCtx): string {
   const owed = revealsOwed(ctx).filter((x) => mine(ctx, x.t.side));
   const x = owed[0];
   if (!x) return '';
+  const range = manifestationRange(ctx.data, x.t);
   return head('Your move', `${esc(x.t.label)} breaks camouflage`,
-    `It ${esc(x.why)}, so under 4.12.2 the Optical Camouflage ends. Reveal movement up to its Stealth value may follow - move it by hand. If the camouflage was activated after this began (FAQ I14), stay hidden.`, true)
+    `It ${esc(x.why)}, so under 4.12.2 the Optical Camouflage ends.${
+      range > 0 ? ` Revealing offers Manifestation Movement up to ${range} Grid${range === 1 ? '' : 's'} (Stealth ${range}).` : ''
+    } If the camouflage was activated after this began (FAQ I14), stay hidden.`, true)
     + `<div class="tp-body"></div>
       <div class="tp-foot"><button class="bigbtn" data-revealgo="${x.t.uid}" data-revealkey="${esc(x.key)}">Reveal it (4.12.2)</button>
       <button class="bigbtn ghost2" data-revealskip="${esc(x.key)}" style="margin-top:6px">Stay hidden (house rule)</button></div>`;
@@ -3263,6 +3271,44 @@ let terminalPick: { uid: number; actionId: string; reach: number; itemId?: strin
 let resupplyPick: { uid: number; actionId: string; rule: Resupply } | null = null;
 
 // ---------- SH-15 Damage Control (FAQ D7/J21/J23) ----------
+// MANIFESTATION MOVEMENT (4.12.2). The Reveal has been decided; what is open
+// is where the unit really was. Offered as a list of Grids rather than a route
+// because it is Teleportation - there is no path to draw, and every Grid within
+// the Stealth value that the unit fits in is equally reachable.
+let manifestPick: { uid: number; why: string } | null = null;
+
+// Opens the Manifestation choice, or sends the plain Reveal when there is no
+// choice to make - a Stealth 0 unit, or one with nowhere in range that fits.
+function openManifest(ctx: HudCtx, t: Token, why: string): void {
+  const range = manifestationRange(ctx.data, t);
+  const spots = range > 0 ? manifestTargets(ctx.data, ctx.state.tokens, terrainOf(ctx), t) : [];
+  if (!spots.length) {
+    if (ctx.send({ kind: 'reveal', seat: t.side, uid: t.uid }).ok) {
+      ctx.noteNow(`${why} ${t.label} leaves the Optical Camouflage State${range > 0 ? ', with nowhere in range to Manifest into' : ''} (4.12.2).`);
+    }
+    return;
+  }
+  manifestPick = { uid: t.uid, why };
+}
+
+function manifestPanel(ctx: HudCtx): string {
+  const m = manifestPick!;
+  const t = ctx.state.tokens.find((x) => x.uid === m.uid);
+  if (!t) return head('Reveal', 'That unit is gone', '', true)
+    + '<div class="tp-body"></div><div class="tp-foot"><button class="bigbtn ghost2" data-act="manifeststay">Close</button></div>';
+  const range = manifestationRange(ctx.data, t);
+  const here = largeGridOf(t);
+  const spots = manifestTargets(ctx.data, ctx.state.tokens, terrainOf(ctx), t)
+    .slice()
+    .sort((a, b) => (a.r - b.r) || (a.c - b.c));
+  const rows = spots.map((s) =>
+    `<button class="rowwide" data-manifest="${s.col},${s.row}">Appear at ${gridName(s.c, s.r)}<span class="ct">${Math.max(Math.abs(s.c - here.c), Math.abs(s.r - here.r))} Grid away</span></button>`).join('');
+  return head('Your move', `${esc(t.label)} Manifests`,
+    `${m.why} The camouflage model marked only a SUSPECTED position. This unit may appear within ${range} Grid${range === 1 ? '' : 's'} of ${gridName(here.c, here.r)} (Stealth ${range}) - Teleportation, so terrain and units in between do not matter.`, true)
+    + `<div class="tp-body">${rows || '<p class="tp-note">Nowhere within range has room for it, so it Reveals where it stands.</p>'}</div>
+       <div class="tp-foot"><button class="bigbtn ghost2" data-act="manifeststay">Stay at ${gridName(here.c, here.r)}</button></div>`;
+}
+
 let repairPick: { uid: number; actionId: string; repair: boolean; mend: boolean } | null = null;
 
 function repairPanel(ctx: HudCtx): string {
@@ -3492,6 +3538,30 @@ function routeAction(ctx: HudCtx, t: Token, a: CardAction, ga?: ReturnType<typeo
   const rep = repairSpec(a);
   if (rep) {
     repairPick = { uid: t.uid, actionId: a.id, repair: rep.repair, mend: rep.mend };
+    return true;
+  }
+  // "Activate Optical Camouflage, Stealth X". Mirrors performCamo in main.ts:
+  // before this the only door into the state was deploying already in it, so
+  // the Octopus could not vanish mid-game on either board.
+  //
+  // Every other routeAction branch opens a TOOL and lets that tool commit; this
+  // one is immediate, so it pays the Action itself. Returning true without the
+  // commitAction was the first draft's bug: the Tick was never spent and the
+  // latched pendingAction rode along to whatever tool ran next.
+  if (activatesCamo(a)) {
+    const stealth = stealthValue(a) ?? 0;
+    if (statusCount(t.statuses, 'camouflage') > 0) {
+      ctx.noteNow(`${t.label} is already in the Optical Camouflage State.`);
+      dropAction();
+      return true;
+    }
+    const paid = commitAction(ctx);
+    if (paid.ok) {
+      ctx.send({ kind: 'applyStatus', seat: t.side, uid: t.uid, targetUid: t.uid, statusId: 'camouflage' });
+      ctx.noteNow(`${t.label}: Optical Camouflage activated${stealth ? `, Stealth ${stealth}` : ''} (4.12.2). Every Hexagon Token comes off, and the Grid it stands on is now only a SUSPECTED position - on Reveal it may Manifest up to ${stealth} Grid${stealth === 1 ? '' : 's'} away.`);
+    } else if (paid.why) {
+      ctx.noteNow(paid.why);
+    }
     return true;
   }
   // An Electronic Attack opens the Counter-roll targeting whatever its printed
@@ -5008,8 +5078,10 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
           }
         }
         if (paid.ok && el.dataset.doact === 'COMMON_REVEAL') {
-          ctx.send({ kind: 'reveal', seat: t.side, uid: t.uid });
-          ctx.noteNow('Reveal: out of the Optical Camouflage State. Now make Manifestation Movement, up to this unit\'s Stealth value, to where it really is.');
+          // The Reveal itself is only sent once Manifestation is settled: the
+          // two are one event under 4.12.2, so the destination rides the same
+          // command rather than following it.
+          openManifest(ctx, t, 'Reveal:');
         }
       }
     }
@@ -5213,6 +5285,28 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     ctx.refresh();
   });
   on('[data-act="repaircancel"]', () => { repairPick = null; dropAction(); ctx.refresh(); });
+  on('[data-manifest]', (el) => {
+    const m = manifestPick;
+    manifestPick = null;
+    const t = m ? s.tokens.find((x) => x.uid === m.uid) : undefined;
+    if (!m || !t) { ctx.refresh(); return; }
+    const [col, row] = (el.dataset.manifest ?? '').split(',').map(Number);
+    const g = { c: Math.floor(col / 3), r: Math.floor(row / 3) };
+    if (ctx.send({ kind: 'reveal', seat: t.side, uid: t.uid, to: { col, row } }).ok) {
+      ctx.noteNow(`${m.why} ${t.label} leaves the Optical Camouflage State and Manifests to ${gridName(g.c, g.r)} (4.12.2).`);
+    }
+    ctx.refresh();
+  });
+  on('[data-act="manifeststay"]', () => {
+    const m = manifestPick;
+    manifestPick = null;
+    const t = m ? s.tokens.find((x) => x.uid === m.uid) : undefined;
+    if (!m || !t) { ctx.refresh(); return; }
+    if (ctx.send({ kind: 'reveal', seat: t.side, uid: t.uid }).ok) {
+      ctx.noteNow(`${m.why} ${t.label} leaves the Optical Camouflage State where its marker stood (4.12.2).`);
+    }
+    ctx.refresh();
+  });
   on('[data-act="crushauto"]', () => {
     const m = crushPlan;
     const v = m ? s.tokens.find((x) => x.uid === m.queue[0]) : undefined;
@@ -5267,9 +5361,11 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     const uid = Number(el.dataset.revealgo);
     const t = ctx.state.tokens.find((x) => x.uid === uid);
     if (!t) return;
+    // Dismissed up front: openManifest always ends in a reveal (the panel's
+    // only exit is a destination or "stay", both of which send it), so the
+    // prompt must not linger behind the picker.
     revealDismissed.add(el.dataset.revealkey ?? '');
-    ctx.send({ kind: 'reveal', seat: t.side, uid });
-    ctx.noteNow(`${t.label} is Revealed (4.12.2).`);
+    openManifest(ctx, t, 'Revealed:');
     ctx.refresh();
   });
   on('[data-revealskip]', (el) => {
@@ -5453,14 +5549,14 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     const sc = ensureScript(s);
     const t = sc.opp ? s.tokens.find((x) => x.uid === sc.opp!.uid) : undefined;
     if (!t) { ctx.refresh(); return; }
-    // The Harpy asks about its drag BEFORE the plan exists, because the -2
+    // The Harpy asks about its drag BEFORE the plan exists, because the -1
     // comes out of the allowance the overlay is about to show. Same shared
     // offer as freeplay; anyone else starts the plan straight away.
     void offerHarpyDrag(ctx.data, s, t, maneuverRange(ctx.data, t)).then((drag) => {
       if (drag === 'cancelled') { ctx.refresh(); return; }
       startMovePlan(ctx, t, { label: t.kind === 'mech' ? 'Maneuver' : 'Movement', maneuver: true });
       if (drag && movePlan) {
-        movePlan.steps -= 2;
+        movePlan.steps -= 1;
         movePlan.drag = drag;
       }
       ctx.refresh();

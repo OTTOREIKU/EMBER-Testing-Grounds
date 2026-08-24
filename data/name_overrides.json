@@ -70,8 +70,8 @@
       "source": "translated"
     },
     "LHDR-KK9": {
-      "en": "KK9 \"Snake Eye\" Micro Scout",
-      "source": "translated"
+      "en": "KK9 Snake Eyes Micro Drone",
+      "source": "UN 1.02 parts list, Drones sheet - replaces our translated Snake Eye Micro Scout; the publisher prints Snake Eyes, plural, no quotes, and calls it a Drone"
     },
     "S100+R6SS-L": {
       "en": "S100 Shield + R6SS SMG (L)",
@@ -82,8 +82,8 @@
       "source": "derived from 1 official card name(s)"
     },
     "R33S": {
-      "en": "R33S Silent Sniper Rifle",
-      "source": "translated"
+      "en": "R33S Sniper Rifle",
+      "source": "UN 1.02 parts list - our translated name added Silent; the publisher's is plain Sniper Rifle (the Silence lives on the action, not in the name)"
     },
     "K21": {
       "en": "K21 Heavy Nail Gun",
@@ -102,8 +102,28 @@
       "source": "translated"
     },
     "TM35NA": {
-      "en": "TM35NA \"Nile Crocodile\" Electronic Warfare Core",
-      "source": "translated"
+      "en": "TM35NA “Nile” Electronic Warfare Core",
+      "source": "UN 1.02 parts list - the publisher shortens the codename to Nile; our translated name spelled out the full crocodile"
+    },
+    "115": {
+      "en": "S100 Shield + R6SS SMG (R)",
+      "source": "UN 1.02 parts list, row 115 (serial LHRA-105O), whose Keyword 2 is R·右. The bundle name says neither hand, which is unreadable next to the (L) variant we also hold - and the two are different cards, not duplicates: this one is 51 points in UN_CORE, the (L) is 54 in UNSALE"
+    },
+    "116": {
+      "en": "S100 Shield + R6SS SMG (R) (D)",
+      "source": "UN 1.02 parts list, row 116, same R·右 marker. See 115"
+    },
+    "247": {
+      "en": "TM641O “Octopus” Stealth Core Trial Model",
+      "source": "UN 1.02 parts list, row 247 - the bundle dropped the O from the serial (TM641)"
+    },
+    "250": {
+      "en": "LM210SO Stealth Chassis -Trial Model",
+      "source": "UN 1.02 parts list, row 250, verbatim including the publisher's own '-Trial Model' hyphen - the bundle had LM210S without the O and 'Mode' for 'Model'"
+    },
+    "300": {
+      "en": "OCS85 Black Box Carrying Rack",
+      "source": "UN 1.02 parts list, row 300 - Rack, not the bundle's Pack"
     },
     "TM39D": {
       "en": "TM39D \"Cobra\" Tactical Core",
@@ -212,8 +232,8 @@
       "source": "derived from 1 official action name(s)"
     },
     "LHDR-KK9_B": {
-      "en": "Surveillance Strike",
-      "source": "translated"
+      "en": "Overwatch Strike",
+      "source": "UN 1.02 parts list, KK9 row - was our translation Surveillance Strike"
     },
     "S100+R6SS-L_A": {
       "en": "Full-auto",
@@ -240,16 +260,16 @@
       "source": "read off the English card scan"
     },
     "156_A": {
-      "en": "Deploy",
-      "source": "translated"
+      "en": "Unfold",
+      "source": "UN 1.02 parts list, row 156 - was our translation Deploy"
     },
     "157_A": {
       "en": "Guided Attack",
       "source": "derived from 7 official action name(s)"
     },
     "158_A": {
-      "en": "Mobile Cover",
-      "source": "translated"
+      "en": "Barricade",
+      "source": "UN 1.02 parts list, row 158 - was our translation Mobile Cover"
     },
     "R33S_A": {
       "en": "Single Shot",
@@ -264,8 +284,8 @@
       "source": "derived from 3 official action name(s)"
     },
     "XTC_A": {
-      "en": "Overload Injection",
-      "source": "translated"
+      "en": "Overload Inject",
+      "source": "UN 1.02 parts list - was our translation Overload Injection"
     },
     "116_A": {
       "en": "Full-auto",
@@ -292,8 +312,8 @@
       "source": "derived from 6 official action name(s)"
     },
     "TM35NA_B": {
-      "en": "Red Shoes",
-      "source": "translated"
+      "en": "The Red Shoes",
+      "source": "UN 1.02 parts list, TM35NA row - the publisher's full title; our translation had dropped the article"
     },
     "TM39D_A": {
       "en": "Ambush",

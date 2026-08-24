@@ -5,7 +5,7 @@ import { cardName, squadLabel } from './data';
 import { bindTips, linkMechanics } from './inspector';
 import { choiceDialog } from './dialog';
 import { PHASES, PHASE_INFO } from './tracker';
-import { vpRiderFor, anyStartTiming, opportunityBonusOn, hasFlexibleTiming, pilotCard, coordinationFor, coordinationOnOpportunityEnd, extrasFor, actionSilenceDenier, isSilentAction, type ActionWorld, canActivateCamo, type ExtraActivation, extraActivationOf, guidedActions, initiativeFor, maneuverRange, maxLink, SLOT_LABEL, tokenCards } from './units';
+import { vpRiderFor, anyStartTiming, opportunityBonusOn, hasFlexibleTiming, pilotCard, coordinationFor, coordinationOnOpportunityEnd, extrasFor, actionSilenceDenier, isSilentAction, type ActionWorld, canActivateCamo, manifestationRange, type ExtraActivation, extraActivationOf, guidedActions, initiativeFor, maneuverRange, maxLink, SLOT_LABEL, tokenCards } from './units';
 import { canAttackMode, canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed } from './ticks';
 import { asterKey, clearDroneCommands, perform, readyCommands, seedCommandTokens } from './commands';
 import { askIssuer, asterBlockers, offerCoordination, runAster } from './commandpick';
@@ -1456,14 +1456,20 @@ export class PlayGuide {
   }
 
   // Reveal (6.1): leave the Optical Camouflage State, then make Manifestation
-  // Movement, which the player performs by hand up to the unit's Stealth value.
+  // Movement. The guide TEACHES the move rather than offering it - the board
+  // behind it owns unit placement, and this panel has no Grid picker - but it
+  // names the actual number rather than sending the reader to the card, which
+  // is the whole difference between a rule and a reminder.
   private revealUnit(uid: number): void {
     const s = this.state;
     const t = s?.tokens.find((x) => x.uid === uid);
     if (!s || !t) return;
+    const range = manifestationRange(this.data, t);
     perform(this.data, s, { kind: 'reveal', seat: t.side, uid });
     this.cb.onSelectUnit(t.uid);
-    this.cb.onNote(t, `Reveal: out of the Optical Camouflage State. Now make Manifestation Movement, up to this unit's Stealth value, to where it really is.`);
+    this.cb.onNote(t, range > 0
+      ? `Reveal: out of the Optical Camouflage State. Its marker was only a SUSPECTED position, so it now Manifests up to ${range} Grid${range === 1 ? '' : 's'} away (Stealth ${range}) - Teleportation, so terrain and units in between do not matter (4.12.2).`
+      : `Reveal: out of the Optical Camouflage State. This unit has no Stealth value, so it appears where its marker stood (4.12.2).`);
     this.cb.onChanged();
   }
 
@@ -1647,13 +1653,17 @@ export class PlayGuide {
         const because = denier
           ? ` — ${denier.source.label} (${denier.label}) denies it Silence`
           : '';
+        const range = manifestationRange(this.data, t);
+        const hop = range > 0
+          ? ` It may then Manifest up to ${range} Grid${range === 1 ? '' : 's'} away (Stealth ${range}) - Teleportation, so terrain and units in between do not matter.`
+          : '';
         if (this.script(s).strict) {
           perform(this.data, s, { kind: 'reveal', seat: t.side, uid: t.uid });
-          this.cb.onNote(t, `${row.action.name?.en || row.action.id} is not Silent${because}, so the Optical Camouflage ends (4.12.2). Reveal movement up to its Stealth value may follow.`);
+          this.cb.onNote(t, `${row.action.name?.en || row.action.id} is not Silent${because}, so the Optical Camouflage ends (4.12.2).${hop}`);
         } else {
           void choiceDialog({
             title: `${t.label} breaks camouflage`,
-            body: `${row.action.name?.en || row.action.id} is not a Silent action${because}, so under 4.12.2 the unit Reveals. Reveal movement up to its Stealth value may follow.`,
+            body: `${row.action.name?.en || row.action.id} is not a Silent action${because}, so under 4.12.2 the unit Reveals.${hop}`,
             choices: [
               { id: 'reveal', label: 'Reveal it (4.12.2)', primary: true },
               { id: 'keep', label: 'Keep it hidden (house rule)', cancel: true },

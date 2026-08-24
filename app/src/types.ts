@@ -404,6 +404,17 @@ export const STATUSES: StatusDef[] = [
     note: 'Each Fragile Token costs this unit 1 White die on its Defense Rolls, and they stack. Laser Weapon grants one on every hit, and Ion Weapon may exchange Lightning for a Heavy Hit against a unit bearing one. A Defense Roll can never drop below 1 White (4.4.1), so on an Armor 0 unit such as most missiles this often changes nothing except the Ion Weapon trigger.',
   },
   {
+    id: 'hindered',
+    decay: 'yellow',
+    shape: 'square',
+    label: 'Hindered',
+    icon: 'HND',
+    tint: '#6b9bd0',
+    stacking: true,
+    rule: 'Each token costs 1 Blue die on Defense Rolls, and they stack.',
+    note: 'Each Hindered Token costs this unit 1 Blue die on its Defense Rolls, and they stack. Printed on the N13 Vanguard III "Claymore", whose Full-auto grants one on every hit (GoF parts list 1.021). The list\'s own definition ends mid-sentence after "-1 Blue Dice in their Defense Roll," so any clause past that is unknown; a unit rolling no Blue dice loses nothing to it.',
+  },
+  {
     id: 'immobilized',
     decay: 'yellow',
     shape: 'square',
