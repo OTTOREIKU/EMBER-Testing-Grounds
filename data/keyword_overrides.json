@@ -24,25 +24,25 @@
   "抛射物": {
    "en": {
     "name": "Projectile",
-    "value": "Archetype tag on the card banner — this Unit is a Projectile (launched, then resolves in the Delay Phase). Not a special rule; see Ch. 4.7 and the card's own actions."
+    "value": "Archetype tag on the card banner: this Unit is a Projectile (launched, then resolves in the Delay Phase). Not a special rule; see Ch. 4.7 and the card's own actions."
    }
   },
   "设置物": {
    "en": {
     "name": "Deployable",
-    "value": "Archetype tag on the card banner — this Unit is a Deployable placed on the ground (mines, walls, beacons). Not a special rule; see Ch. 4.7 and the card's own actions."
+    "value": "Archetype tag on the card banner: this Unit is a Deployable placed on the ground (mines, walls, beacons). Not a special rule; see Ch. 4.7 and the card's own actions."
    }
   },
   "导弹": {
    "en": {
     "name": "Missile",
-    "value": "Projectile subtype tag on the card banner. Not a special rule — the card's actions carry its behaviour."
+    "value": "Projectile subtype tag on the card banner. Not a special rule; the card's actions carry its behaviour."
    }
   },
   "火箭": {
    "en": {
     "name": "Rocket",
-    "value": "Projectile subtype tag on the card banner. Not a special rule — the card's actions carry its behaviour."
+    "value": "Projectile subtype tag on the card banner. Not a special rule; the card's actions carry its behaviour."
    }
   },
   "巡航": {
@@ -54,19 +54,19 @@
   "榴弹": {
    "en": {
     "name": "Grenade",
-    "value": "Projectile subtype tag on the card banner. Not a special rule — the card's actions carry its behaviour."
+    "value": "Projectile subtype tag on the card banner. Not a special rule; the card's actions carry its behaviour."
    }
   },
   "智能榴弹": {
    "en": {
     "name": "Smart Grenade",
-    "value": "Projectile subtype tag on the card banner. Not a special rule — the card's actions carry its behaviour."
+    "value": "Projectile subtype tag on the card banner. Not a special rule; the card's actions carry its behaviour."
    }
   },
   "烟幕弹": {
    "en": {
     "name": "Smoke Grenade",
-    "value": "Projectile subtype tag on the card banner. On Detonation these place Smoke Screens — see Ch. 4.16 and the card's actions."
+    "value": "Projectile subtype tag on the card banner. On Detonation these place Smoke Screens; see Ch. 4.16 and the card's actions."
    }
   },
   "地雷": {
@@ -78,37 +78,37 @@
   "自行地雷": {
    "en": {
     "name": "Self-propelled Mine",
-    "value": "Deployable subtype tag on the card banner — a mine able to move. See the card's own actions."
+    "value": "Deployable subtype tag on the card banner: a mine able to move. See the card's own actions."
    }
   },
   "墙": {
    "en": {
     "name": "Wall",
-    "value": "Deployable subtype tag on the card banner — a placed barrier. See the card for its height and whether it blocks line of sight."
+    "value": "Deployable subtype tag on the card banner: a placed barrier. See the card for its height and whether it blocks line of sight."
    }
   },
   "信标": {
    "en": {
     "name": "Beacon",
-    "value": "Deployable subtype tag on the card banner — a placed marker providing support effects. See the card's own actions."
+    "value": "Deployable subtype tag on the card banner: a placed marker providing support effects. See the card's own actions."
    }
   },
   "机动掩体": {
    "en": {
     "name": "Mobile Cover",
-    "value": "Deployable subtype tag on the card banner — deployable cover that can reposition. See the card's own actions."
+    "value": "Deployable subtype tag on the card banner: deployable cover that can reposition. See the card's own actions."
    }
   },
   "电子对抗": {
    "en": {
     "name": "Electronic Countermeasures",
-    "value": "Deployable subtype tag on the card banner — electronic-warfare support. See the card's own actions and Ch. 4.11."
+    "value": "Deployable subtype tag on the card banner: electronic-warfare support. See the card's own actions and Ch. 4.11."
    }
   },
   "牵引X": {
    "en": {
-    "name": "Traction X",
-    "value": "Keyword printed on some cards; the English glossary text for it is not present in the extracted data. Check the physical card or rulebook Ch. 6.2 for the exact wording."
+    "name": "Tether X",
+    "value": "Place a Tether X Token on this unit (the initiating unit) and a Tethered X Token on the target, putting the two units in a Tether state. While it lasts, the tethered unit cannot voluntarily move to a position beyond X grids from the initiating unit. Note the leash binds only that end: the initiating unit may move where it likes, but doing so can break the Tether. Both Tokens are removed when any of three things happens: the initiating unit voluntarily moves beyond X grids from the tethered unit; the initiating unit is Penetrated; or either unit is forcibly moved so that the distance between them ends up greater than X. (Printed in full on the Ols1B \"Harpoon\" Emergency Recovery System card, PDLH-202, which is also where the English name Tether comes from; the keyword has no entry in the rulebook appendix.)"
    }
   },
   "离子武器": {
@@ -126,7 +126,7 @@
   "异形X": {
    "en": {
     "name": "Non-humanoid X",
-    "value": "When performing this Action, consume X Link. (Name read off the English card scan of PLK400 \"Centaur-Light\" Mobility Chassis; this keyword has no entry in the rulebook appendix, and the rules text is translated from the Chinese.)"
+    "value": "When performing this Action, -X Link Value. The only card carrying it is the PLK400 \"Centaur\" High-mobility Chassis (ZHLT-301), whose Run is Non-humanoid 1, and its SK variant. (Name and wording both printed in English on the card and in the publisher's Part Data GoF 1.021 EN list; the keyword has no entry in the rulebook appendix.)"
    }
   },
   "电子攻击": {
@@ -183,10 +183,10 @@
     "value": "Movement Actions with this Keyword can still be performed while the unit is Immobilized."
    }
   },
-  "直線移動": {
+  "直线移动": {
    "en": {
     "name": "Moving in Straight Line",
-    "value": "Conditional keyword. The effect applies if the entire Movement Path this Action makes runs in a single direction, wholly horizontal or wholly vertical across the board. Printed in traditional characters on at least one card; the simplified 直线移动 is the same keyword."
+    "value": "Conditional keyword. The effect applies if the entire Movement Path this Action makes runs in a single direction, wholly horizontal or wholly vertical across the board. (The traditional form 直線移動 also appears in the card data; it is the same keyword.)"
    }
   },
   "指令生成X": {

@@ -309,7 +309,7 @@ function cardDetail(c: Card): string {
       const tr = data.actionTranslation(a.id);
       let text = '';
       if (en) text = linkKeywords(en);
-      else if (tr?.english) text = `${linkKeywords(tr.english)}<em class="ref-note"> — translated from the Chinese card text</em>`;
+      else if (tr?.english) text = `${linkKeywords(tr.english)}<em class="ref-note"> (translated from the Chinese card text)</em>`;
       else text = '<em class="ref-note">No rules text on this card.</em>';
       // The Chinese DESCRIPTION has to be fed in as well as the Chinese name.
       // Several mechanics can only be matched on it - Loads is `负载`, Mines is
@@ -421,7 +421,7 @@ function cardDetail(c: Card): string {
       <div class="ref-cardimg-slot" data-img="${esc(c.id)}"></div>
       <figcaption class="ref-scan-note">Older scan. If it differs from the stats below, the stats are current.</figcaption>
     </figure>
-    ${free ? `<p class="ref-free">Costs 0 points — ${esc(free)}.</p>` : ''}
+    ${free ? `<p class="ref-free">Costs 0 points: ${esc(free)}.</p>` : ''}
     ${stats || pilotStats ? `<div class="ref-stats">${stats}${pilotStats}</div>` : ''}
     ${kws ? `<div class="ref-kwlinks">${kws}</div>` : ''}
     ${cardBlock}
@@ -534,7 +534,7 @@ function boxDetail(key: string): string | null {
                 // rather than asserting a physical claim we cannot always
                 // check: in the curated boxes these are confirmed second
                 // faces, in the leftovers bucket a couple are just unknowns.
-                ? '<span class="tag bp-tag" title="In the box, but not counted as a separate copy — usually the other face of a double-sided card, or an alternate mode of the card above it.">same card</span>'
+                ? '<span class="tag bp-tag" title="In the box, but not counted as a separate copy: usually the other face of a double-sided card, or an alternate mode of the card above it.">same card</span>'
                 : ''
             }</span>
             <span class="mono bp-pts">${!kid && i.card.score ? `${i.card.score}p` : ''}</span>
@@ -1433,7 +1433,7 @@ function keywordDetail(name: string): string | null {
     )
     .slice(0, 40);
   return `<h2>${esc(label)}</h2>
-    <p class="ref-meta">Keyword — rulebook glossary</p>
+    <p class="ref-meta">Keyword: rulebook glossary</p>
     <p>${def.en?.value ? linkKeywords(def.en.value) : '<em>No English glossary text.</em>'}</p>
     ${users.length ? `<h3 class="ref-sub">Appears on ${users.length}${users.length === 40 ? '+' : ''} card(s)</h3>
       <div class="ref-userlist">${users.map((c) => `<a class="ref-userlink" data-card="${esc(c.id)}">${esc(cardName(c))}</a>`).join('')}</div>` : ''}`;

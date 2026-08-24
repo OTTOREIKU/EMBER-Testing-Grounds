@@ -323,7 +323,7 @@
     "指令生成",
     "指令协调"
    ],
-   "text": "The Command Token is a two-faced coin of the Drone economy. At the start of the Command Phase every Mech generates 1 face-up token on its Torso card, or X if the Torso prints Command Generation X. Issuing a Command takes a token from a Mech of your choice and lays it FACE-DOWN on an Ally Drone, which immediately moves or performs one Command Action; a Drone can hold only one, and the Drones’ tokens come off when the Command Phase ends. A Mech’s unspent tokens stay: they can be held back for an Action with Command Coordination X, which hands up to X of them to X different Drones later in the round — a Drone that already acted in the Command Phase may take one, because its first token is long gone — or consumed by an Action that asks for one, which flips the token face-down where it stays, spent, until the End Phase removes every Command Token wherever it lies."
+   "text": "The Command Token is a two-faced coin of the Drone economy. At the start of the Command Phase every Mech generates 1 face-up token on its Torso card, or X if the Torso prints Command Generation X. Issuing a Command takes a token from a Mech of your choice and lays it FACE-DOWN on an Ally Drone, which immediately moves or performs one Command Action; a Drone can hold only one, and the Drones’ tokens come off when the Command Phase ends. A Mech’s unspent tokens stay: they can be held back for an Action with Command Coordination X, which hands up to X of them to X different Drones later in the round (a Drone that already acted in the Command Phase may take one, because its first token is long gone), or consumed by an Action that asks for one, which flips the token face-down where it stays, spent, until the End Phase removes every Command Token wherever it lies."
   },
   {
    "id": "activation_order",
@@ -490,6 +490,16 @@
     "相邻格"
    ],
    "text": "The eight Large Grids surrounding the one a Unit stands in are its Adjacent Grids, diagonals included, and a Unit standing in any of them is Adjacent to it. Small and Medium Units may share a Large Grid, and two Units sharing one are Adjacent as well. A Range of \"--\" on an Action means it can only target Adjacent Units. Adjacent is the looser of the game's two proximity terms: it is measured in whole Large Grids and counts diagonals, where Contact is measured on the Small Grid edges and does not."
+  },
+  {
+   "id": "tether",
+   "name": "Tether",
+   "ref": "Card text: PDLH-202 and PDRH-202 (the keyword has no rulebook appendix entry)",
+   "match": [
+    "tether",
+    "牵引"
+   ],
+   "text": "Tether X binds two Units: a Tether X Token on the unit that landed it, a Tethered X Token on the target. The leash is one-directional, which is the part most often misread. Only the tethered end is restrained, and only against its own Movement: it cannot voluntarily move further than X grids from the initiating unit. The initiating unit is free to move wherever it likes. The Tether is not a cost and never blocks an Action outright; it narrows which destinations the tethered unit may choose. Three things remove both Tokens: the initiating unit voluntarily moving beyond X grids, the initiating unit being Penetrated, or either unit being forcibly moved so the distance ends up greater than X. That last one matters, because Forced Movement is not the moved unit's own Movement, so a Knockback or a Drag can break a Tether that the tethered unit could not have walked out of. Distance is rechecked after anything that moves either unit, not only on the tethered unit's turn. A Tether also changes what the initiating card can do: the Ols1B \"Harpoon\" swaps to its Tether Mode face while the Tether holds and swaps back when it drops, and the Ot130L's Link Shock can only be used on a unit this Mech has Tethered, ignoring distance and Line of Sight, with the target unable to Parry, unable to choose the hit location, and unable to roll Blue Dice."
   }
  ]
 }
