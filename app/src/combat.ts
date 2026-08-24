@@ -5,7 +5,7 @@ import { linkMechanics } from './inspector';
 import { SQUAD_ORDER, squadLabel } from './data';
 import type { Card, CardAction, CombatView, CounterRoll, DiceData, DiceIcon, DieColor, Duel, DuelIcon, GameRuleEffect, PartSlot, Side, SmokeScreen, TerrainPiece, Token } from './types';
 import { statusCount, STATUSES } from './types';
-import { aaRadarCovers, armorPiercing, armorPiercingNote, attackReactionsOf, auraEffectsOn, aurasOn, auraValueOn, automaticShieldFor, blueLightningDodges, earlyWarningCover, coolingBonus, denseArmorByText, eyesAreHeavyHits, pilotDiceBonus, ignoresLowProfile, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, noMeleeBackAttack, missileGuidance, multiTargetLimit, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, denseArmorOn, designationsOn, electronicStrength, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, canAffordFocus, focusIsFree, hiddenByAlliedAura, keepsLinkOnPartLoss, maxLink, provokeWhy, pursuesFragile, structureOf, trackingCover, TRACKING_SPOTTERS_NEEDED, pilotCard, pilotIs, repeatersFor, SLOT_LABEL, tetherStrike, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
+import { aaRadarCovers, armorPiercing, armorPiercingNote, attackReactionsOf, auraEffectsOn, aurasOn, auraValueOn, automaticShieldFor, blueLightningDodges, earlyWarningCover, coolingBonus, denseArmorByText, eyesAreHeavyHits, pilotDiceBonus, ignoresLowProfile, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, noMeleeBackAttack, onHitRiders, STATUS_BY_ZH, missileGuidance, multiTargetLimit, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, denseArmorOn, designationsOn, electronicStrength, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, canAffordFocus, focusIsFree, hiddenByAlliedAura, keepsLinkOnPartLoss, maxLink, provokeWhy, pursuesFragile, structureOf, trackingCover, TRACKING_SPOTTERS_NEEDED, pilotCard, pilotIs, repeatersFor, SLOT_LABEL, tetherStrike, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
 import { timingOf } from './ticks';
 import { inArc, losNote, protectionFor, rangeBetween } from './rules';
 import type { Command } from './commands';
@@ -4097,6 +4097,57 @@ export class AttackHelper {
         [c.attacker, c.defender],
       );
     }
+    // ON-HIT RIDERS (4.4.2/4.4.3), beside Tether and for the same reasons: this
+    // is the one seam every attack passes through on BOTH pages, and an on-hit
+    // rule fires on the HIT rather than the Penetration because 4.4's note is
+    // that icons the defence offset still count as Hits.
+    //
+    // Before this existed, `applyStatus` was never emitted from an attack at
+    // all: 17 Laser Weapon cards granted no Fragile Token, and the structured
+    // `on_hit` condition sat in the data on 23 actions read by nothing.
+    //
+    // Not on a self-hit, matching Tether's guard above -- a Part that hits its
+    // own bearer (selfHitParts) is not an attacker tagging an enemy.
+    if (c.hits > 0 && c.defender.uid !== c.attacker.uid) {
+      const riders = onHitRiders(
+        c.action,
+        tokenCards(this.data, c.attacker).flatMap(({ card }) => card.keywords ?? []),
+        this.data.actionTranslation(c.action.id)?.english ?? undefined,
+      );
+      for (const r of riders) {
+        if (r.kind === 'status') {
+          const def = STATUSES.find((x) => x.id === r.statusId);
+          // A status this build does not know is DROPPED rather than guessed at.
+          // The Pursuit Token (ZHLA-302) is the live example: the card grants one
+          // and no `pursuit` StatusDef exists yet, so it must not silently become
+          // some other token -- which is exactly what the Electronic Attack path
+          // does today by falling back to 'fci'.
+          if (!def) continue;
+          this.onCommand({
+            kind: 'applyStatus', seat: c.attacker.side, uid: c.attacker.uid,
+            targetUid: c.defender.uid, statusId: def.id, stacks: r.amount,
+          });
+          this.note(
+            `${c.defender.label} gains ${r.amount} ${def.label} Token${r.amount === 1 ? '' : 's'} (${r.why}).`,
+            [c.attacker, c.defender],
+          );
+        } else if (r.kind === 'link' && c.defender.kind === 'mech') {
+          // Clamped to the Link actually left, the same rule sendLightningDrain
+          // follows, so a rider can never push a Mech below zero on the wire.
+          const n = Math.min(r.amount, c.defender.link ?? 0);
+          if (!n) continue;
+          this.onCommand({
+            kind: 'drainLink', seat: c.attacker.side, uid: c.attacker.uid,
+            targetUid: c.defender.uid, n,
+          });
+          this.note(
+            `${c.defender.label} loses ${n} Link (${r.why})${(c.defender.link ?? 0) - n <= 0 ? ' — at 0 Link it Shuts Down' : ''}.`,
+            [c.attacker, c.defender],
+          );
+        }
+      }
+      if (riders.length) this.onChanged();
+    }
     const rider = {
       attacker: c.attacker, defender: c.defender, action: c.action, hits: c.hits,
       penetrated: !!c.penetrated,
@@ -4533,7 +4584,14 @@ export class ElectronicHelper {
     const walk = (list: GameRuleEffect[]): void => {
       for (const e of list) {
         if (e.type === 'apply_status') {
-          const def = STATUSES.find((s) => s.label === e.status || s.id === e.status) ?? STATUSES.find((s) => s.id === 'fci');
+          // THROUGH THE SHARED MAP. This read `label === e.status` and fell back
+          // to 'fci', which can never match: the card data names statuses in
+          // CHINESE and StatusDef carries no Chinese field, so every zh-named
+          // status silently became Fire Control Interference. Harmless while
+          // every Electronic Attack in the data really did grant FCI, and a
+          // silent mis-grant the moment one did not.
+          const wanted = STATUS_BY_ZH[e.status ?? ''] ?? e.status;
+          const def = STATUSES.find((s) => s.id === wanted || s.label === wanted) ?? STATUSES.find((s) => s.id === 'fci');
           if (def) {
             const n = e.stacks ?? 1;
             const before = c.responder.statuses ?? [];

@@ -52,6 +52,96 @@ export function volleyOf(a: CardAction): number {
   return m ? Math.max(1, Number(m[1])) : 1;
 }
 
+// ---------- ON-HIT RIDERS (4.4.2/4.4.3) ----------
+//
+// THE SEAM THAT WAS MISSING. `applyStatus` was emitted from exactly five places
+// in this app -- the two Electronic Attack paths, the two detonation pickers and
+// scenario seeding -- and NOT ONE of them sat on the attack-hit path. So no
+// ordinary Firing or Melee attack could apply a status token at all, while 28
+// actions print an on-hit rider. Knockback and Tether were each built as
+// one-offs; everything else was inert, most visibly the 17 cards carrying Laser
+// Weapon, whose Fragile Token types.ts even describes to the player in help text
+// that no code backed.
+//
+// Read from BOTH routes, because the data uses both and they are disjoint:
+//   - the printed KEYWORD (Laser Weapon -> Fragile), which is how 17 cards carry it
+//   - the STRUCTURED gameRule, conditions [{type:'on_hit'}] + an apply_status or
+//     modify_link effect, which is how the other 10 carry it
+// One reader means a card gains the rule whichever way its data spells it, and
+// one emitter in combat.ts finish() means both boards get it at once.
+
+// The Chinese status names the card data uses, mapped to our StatusDef ids.
+// THIS MAP HAS TO EXIST: StatusDef carries no Chinese field, so the lookup the
+// Electronic Attack path uses (`label === status`) can never match a zh name and
+// silently falls back to 'fci'. Anything reading a status out of card data
+// should come through here.
+export const STATUS_BY_ZH: Record<string, string> = {
+  '脆弱': 'fragile',
+  '禁足': 'immobilized',
+  '火控干扰': 'fci',
+};
+
+export interface OnHitRider {
+  kind: 'status' | 'link';
+  // For kind 'status': the StatusDef id to apply. For 'link': unused.
+  statusId?: string;
+  // Stacks for a status, or the SIZE of the Link loss (always positive here;
+  // the sign lives in the command).
+  amount: number;
+  // What granted it, for the log line the player reads.
+  why: string;
+}
+
+export function onHitRiders(a: CardAction, cardKeywords: { key?: string; inline?: string; en?: string }[] = [], english?: string): OnHitRider[] {
+  const out: OnHitRider[] = [];
+  const seen = new Set<string>();
+  const add = (r: OnHitRider): void => {
+    const key = r.kind + ':' + (r.statusId ?? '');
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(r);
+  };
+
+  // ROUTE A: the printed keyword. Laser Weapon's whole rule is the rider, and
+  // it is carried at CARD level on every one of the 17, never on the action.
+  const kw = [...cardKeywords, ...(a.keywords ?? [])]
+    .map((k) => k.inline ?? k.key ?? k.en ?? '')
+    .join(' ');
+  if (/激光武器|Laser\s*Weapon/i.test(kw)) {
+    add({ kind: 'status', statusId: 'fragile', amount: 1, why: 'Laser Weapon' });
+  }
+
+  // ROUTE B: the structured rule. `on_hit` is the condition type that sat in the
+  // data on 23 actions and was read by nothing.
+  for (const g of a.gameRules ?? []) {
+    const onHit = (g.conditions ?? []).some((k) => (k as { type?: string })?.type === 'on_hit')
+      || (g as { hookPoint?: string }).hookPoint === 'on_hit';
+    if (!onHit) continue;
+    for (const e of g.effects ?? []) {
+      const eff = e as { type?: string; status?: string; stacks?: number; delta?: number; target?: string };
+      // Riders land on the TARGET. An effect naming anyone else is a different
+      // rule and is left to whoever owns it rather than guessed at here.
+      if (eff.target && eff.target !== 'target') continue;
+      if (eff.type === 'apply_status') {
+        const id = STATUS_BY_ZH[eff.status ?? ''] ?? (eff.status ?? '');
+        if (id) add({ kind: 'status', statusId: id, amount: Math.max(1, eff.stacks ?? 1), why: 'the printed [On Hit] rider' });
+      } else if (eff.type === 'modify_link' && typeof eff.delta === 'number' && eff.delta < 0) {
+        add({ kind: 'link', amount: Math.abs(eff.delta), why: 'the printed [On Hit] rider' });
+      }
+    }
+  }
+
+  // ROUTE C: the printed English, for cards whose rider is prose with no
+  // structured rule behind it. Deliberately narrow -- only the phrasing the data
+  // actually uses -- because a loose regex here would fire on flavour text.
+  const printed = (a.description?.en ?? '').trim() || (english ?? '').trim();
+  if (/\[On Hit\][^.]*reduces? target Link by (\d+)/i.test(printed)) {
+    const m = /\[On Hit\][^.]*reduces? target Link by (\d+)/i.exec(printed)!;
+    add({ kind: 'link', amount: Math.max(1, Number(m[1])), why: 'the printed [On Hit] rider' });
+  }
+  return out;
+}
+
 export interface Knockback {
   grids: number;
   push: boolean;
