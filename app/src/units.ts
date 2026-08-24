@@ -5,7 +5,7 @@ import type { ExtraTick, Card, CardAction, CounterRoll, GameState, MechLoadout, 
 import { LEGACY_SIDE, normaliseScript, statusCount, TIMINGS } from './types';
 import { normaliseSetup } from './setup';
 import { isMeleeFiring, lockersOf } from './melee';
-import { inContact, largeGridOf, losBetween, rangeBetween, smokeBlocks, standingSpot } from './rules';
+import { inContact, largeGridOf, lineCrossesUnit, losBetween, rangeBetween, smokeBlocks, standingSpot } from './rules';
 import { normaliseTasks, type VpRider } from './tasks';
 // ticks.ts imports only from types.ts, so this direction carries no cycle.
 import { timingOf } from './ticks';
@@ -1073,6 +1073,10 @@ export function canActivateCamo(data: GameData, t: Token): boolean {
   return false;
 }
 
+export function activatesCamo(a: CardAction): boolean {
+  return CAMO_ACTIVATES.test(`${a.description?.zh ?? ''} ${a.description?.en ?? ''}`);
+}
+
 // ---------- STEALTH X and Manifestation Movement (4.12.2, p.72) ----------
 //
 // "Stealth X: When the Optical Camouflage is revealed, the Mech may appear
@@ -1084,9 +1088,6 @@ export function canActivateCamo(data: GameData, t: Token): boolean {
 //
 // The value is read off the ACTIVATING Action, never off the card: the same
 // Action carries both halves ("Activate Optical Camouflage, Stealth 2").
-export function activatesCamo(a: CardAction): boolean {
-  return CAMO_ACTIVATES.test(`${a.description?.zh ?? ''} ${a.description?.en ?? ''}`);
-}
 
 export function stealthValue(a: CardAction): number | undefined {
   if (!activatesCamo(a)) return undefined;
@@ -1143,6 +1144,43 @@ export function manifestTargets(
     }
   }
   return out;
+}
+
+// ---------- SCANNING (4.12.4) ----------
+//
+// "Designate an Enemy Unit in the Optical Camouflage State or bearing a Low
+// Profile Token. Perform an Electronic Counter-roll against it (scanner =
+// Initiator). If successful: camouflaged targets are Revealed, and targets
+// bearing Low Profile Tokens remove them."
+//
+// DELIBERATELY NOT isElectronicAttack. Scan uses the Counter-roll of 4.11.2 but
+// is not an Electronic ATTACK, and the difference is load-bearing: a card that
+// modifies "Electronic Attacks" must not reach a Scan. It opens the same window
+// through its own door instead.
+//
+// COMMON_SCAN is the Common Action every Mech has; the id is checked first so
+// the reader does not depend on prose, and the prose is checked second so a
+// printed card Action that scans is covered too (the Hyena Radar's Scan
+// Battlefield is the example the rulebook names).
+export function isScanAction(a: CardAction): boolean {
+  if (a.id === 'COMMON_SCAN') return true;
+  const text = `${a.description?.en ?? ''} ${a.description?.zh ?? ''}`;
+  return /\bScan\b[^.]*Optical Camouflage|扫描[^。]*光学迷彩/i.test(text);
+}
+
+// Only TOKEN-borne Low Profile can be Scanned away; an aura granting it is
+// untouchable (4.12.4's own note, and implementation note 9). Our Low Profile
+// is a Token by construction -- the aura kind is a separate effect that never
+// puts one on -- so this counts Tokens and nothing else.
+export function scanStrips(t: Token): number {
+  return statusCount(t.statuses, 'lowProfile');
+}
+
+// A legal Scan target: an enemy either hiding or wearing a Token to strip.
+// Scanning a unit with neither would spend the Action for nothing, which 6.1
+// forbids in the same words the Stabilize refusal uses.
+export function scannable(t: Token): boolean {
+  return statusCount(t.statuses, 'camouflage') > 0 || scanStrips(t) > 0;
 }
 
 export function interceptCapacity(a: CardAction): number | undefined {
@@ -1572,6 +1610,14 @@ export function automaticShieldFor(
   // shot at your own unit — which freeplay lets through past a warning — has
   // nothing to redirect. Deliberate.
   if (target.side === attacker.side) return null;
+  // THE ENDPOINT RULE, kept explicit now that the crossing test no longer
+  // implies it. 4.2.4: "LOS between Aerial Units and any type of Unit or Object
+  // is never Obstructed" — twice stated, both times about the ENDPOINTS. A shot
+  // at an Aerial target, or from an Aerial attacker, has a line nothing stands
+  // in, so there is nothing to interpose. This used to fall out of losBetween
+  // returning 'clear'; lineCrossesUnit asks pure geometry and would answer yes,
+  // so the rule is written here rather than lost.
+  if (attacker.aerial || target.aerial) return null;
   // Cheapest gate first, then the card read, then the sampled line. This runs
   // once per enemy row in the Match Centre's target list and once per hover in
   // freeplay, and losBetween samples 9x9 point pairs — the ordering is what
@@ -1584,9 +1630,13 @@ export function automaticShieldFor(
     // one they share.
     if (!rangeBetween(s, target).adjacent) return false;
     if (!automaticShieldOn(data, s)) return false;
-    // "Line of Sight also passes through this Unit". Empty terrain and a
-    // one-element token list: the question is this unit, not the board.
-    return losBetween(attacker, target, [], [s]) !== 'clear';
+    // "Line of Sight also passes through this Unit" — the card's own words,
+    // asked as geometry. This was `losBetween(...) !== 'clear'`, which is the
+    // OBSTRUCTION question and only a proxy for this one: the two agree for
+    // every ground shield and part company for an Aerial one, because
+    // losBetween skips Aerial tokens as obstructors. That proxy left card 295,
+    // whose whole rules text is this keyword, unable to fire at all.
+    return lineCrossesUnit(attacker, target, s);
   });
   if (!found.length) return null;
   // Deterministic while the choice is unruled: nearest to the attacker, then
@@ -3036,6 +3086,44 @@ export function minesLayable(
 export function unfoldToken(state: GameState, data: GameData, t: Token, into: Card): void {
   const fresh = makeDroneToken(state, data, into, t.side);
   Object.assign(t, fresh, { uid: t.uid, col: t.col, row: t.row, facing: t.facing, deployed: t.deployed });
+}
+
+// ---------- FORM SWITCH: the "White Dwarf" Bit (293/294/295) ----------
+//
+// The Bit is ONE Drone printed on three cards, one per Stance, and its Swift
+// "Stance Change" swaps which card is face up: "Switch the Stance and perform
+// one movement." The set is declared in the data as `formIds` on every member,
+// with the switching Action carrying `switch_linked_drone_form_and_move` -- and
+// NOTHING read either, so a Bit fielded as 293 could never become 295, which is
+// the only form carrying Automatic Shield.
+//
+// The forms this Action can turn into, or undefined if it is not a form switch.
+export function formSwitch(a: CardAction): string[] | undefined {
+  for (const g of a.gameRules ?? []) {
+    for (const e of (g.effects ?? []) as { type?: string; formIds?: string[] }[]) {
+      if (e.type === 'switch_linked_drone_form_and_move' && (e.formIds ?? []).length) return e.formIds;
+    }
+  }
+  return undefined;
+}
+
+// DELIBERATELY NOT unfoldToken, and the difference is the whole point: an
+// Unfold makes a DIFFERENT unit, so rebuilding from the card is right. A form
+// switch is the SAME Drone turning its card over, so anything it has collected
+// has to survive -- Ammo, Interception Tokens, Statuses, its damage, whatever
+// Command Token it holds. Rebuilding would hand the player a free repair every
+// time they changed Stance, once per round, for nothing.
+//
+// What the card actually decides is changed and nothing else.
+export function switchFormTo(data: GameData, t: Token, cardId: string): void {
+  const into = data.byId.get(cardId);
+  if (!into) return;
+  t.cardId = cardId;
+  t.label = shortName(into);
+  t.size = unitSize(into);
+  t.aerial = isAerial(into);
+  t.barricade = isBarricade(into) || undefined;
+  t.stance = (into.stance as Stance) || t.stance;
 }
 
 // A folded Pholcus is owed its replacement in the Delay Phase (M18.3), which

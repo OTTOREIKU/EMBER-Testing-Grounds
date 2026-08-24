@@ -47,7 +47,7 @@ import { PlayGuide } from './playguide';
 import type { Card, CardAction, DiceData, DieColor, Facing, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, StatusDef, TerrainPiece, Timing, Token } from './types';
 import { addStatus, normaliseScript, SCALES, statusCount, statusesFor, STATUSES } from './types';
 import { actionIdOf } from './ticks';
-import { transformOffer, automaticShieldFor, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, twoHandedUse, electronicValue, martyrdomOwed, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, loanedParts, phasesThroughUnits, minesLayable, minesOwed, multiTargetLimit, unfoldsOwed, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, immobilizedStop, activatesCamo, stealthValue, manifestationRange, manifestTargets, nonHumanoidCost, nonHumanoidStop, maneuverIsSilent, maneuverSilenceDenier, chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, projectileReach, type Resupply, resupplyOf, SLOT_LABEL, stationaryAdjusted, interceptLeft, interceptsOwed, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf, type AttackReaction } from './units';
+import { transformOffer, automaticShieldFor, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, twoHandedUse, electronicValue, martyrdomOwed, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, loanedParts, phasesThroughUnits, minesLayable, minesOwed, multiTargetLimit, unfoldsOwed, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, immobilizedStop, activatesCamo, isScanAction, scannable, formSwitch, stealthValue, manifestationRange, manifestTargets, nonHumanoidCost, nonHumanoidStop, maneuverIsSilent, maneuverSilenceDenier, chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, projectileReach, type Resupply, resupplyOf, SLOT_LABEL, stationaryAdjusted, interceptLeft, interceptsOwed, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf, type AttackReaction } from './units';
 import { registerOffline } from './offline';
 import { battlefieldLocked, countHits, firstPlayerFrom, newSetup, normaliseSetup, tasksLocked, type SetupState } from './setup';
 import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
@@ -500,6 +500,19 @@ async function init() {
         pendingIntercept = null;
         if (attacker && defender && action) {
           if (mode === 'electronic') {
+            // A Scan designates "an Enemy Unit in the Optical Camouflage State
+            // or bearing a Low Profile Token" (4.12.4). Freeplay opens the
+            // helper directly rather than through startCounterRoll, so the
+            // command-layer gate never runs here and the rule has to be asked
+            // at the click - against anything else the Scan could change
+            // nothing, which 6.1 forbids.
+            if (isScanAction(action) && !scannable(defender)) {
+              void alertDialog({
+                title: 'Nothing to Scan',
+                body: `${defender.label} is neither in the Optical Camouflage State nor bearing a Low Profile Token, so a Scan could not change anything (4.12.4). Pick another target, or Esc to cancel.`,
+              });
+              return;
+            }
             electronicHelper.start(attacker, action, defender);
           } else if (intercepting) {
             spendIntercept(attacker, intercepting.actionId, action.name.en || action.name.zh || action.id);
@@ -873,6 +886,15 @@ async function init() {
       return;
     }
 
+    // The "White Dwarf" Bit's Stance Change: "Switch the Stance and perform one
+    // movement." The set of forms comes off the Action, and the movement that
+    // follows is the ordinary planner - it is one Movement, so it uses the
+    // Bit's own Move value like any other.
+    if (formSwitch(action)) {
+      void performFormSwitch(t, action, done);
+      return;
+    }
+
     // "Activate Optical Camouflage, Stealth X" (096, 247, ZYBP-201). Until this
     // branch the ONLY way into the state was deploying already in it, so a Mech
     // whose whole reason for existing is to vanish mid-game could not - the
@@ -887,11 +909,17 @@ async function init() {
     // printed TYPE says — the Raven's Fire Control Interference is typed
     // Tactic, and keying on the type let it fall through to "follow the card
     // text" (4.11). Mirrors routeAction in matchhud.ts.
-    if (isElectronicAttack(action)) {
+    // A Scan opens the SAME Counter-roll window without being an Electronic
+    // Attack (4.12.4 vs 4.11.1): a card that modifies Electronic Attacks must
+    // not reach it, so it gets its own door rather than widening that reader.
+    if (isElectronicAttack(action) || isScanAction(action)) {
       pendingAttack = { attackerUid: uid, actionId, mode: 'electronic', action, done };
       document.body.classList.add('targeting');
       if (action.range) board.showRangeRings(t, action.range);
-      setHint(`${what}: click the target unit on the board.${action.range ? ` Range ${action.range} is shown.` : ''} Terrain and line of sight are ignored (4.11.1)${action.speed === 'auto' ? ', and an Automatic Action targets the NEAREST enemy in range (3.5.2)' : ''}. Esc cancels.`);
+      const scanHint = isScanAction(action)
+        ? ' A Scan targets an enemy in the Optical Camouflage State or bearing a Low Profile Token (4.12.4).'
+        : '';
+      setHint(`${what}: click the target unit on the board.${action.range ? ` Range ${action.range} is shown.` : ''}${scanHint} Terrain and line of sight are ignored (4.11.1)${action.speed === 'auto' ? ', and an Automatic Action targets the NEAREST enemy in range (3.5.2)' : ''}. Esc cancels.`);
       return;
     }
 
@@ -3038,6 +3066,18 @@ async function init() {
       });
       return;
     }
+    // Scanned (4.12.4): the enemy's Scan succeeded, so this unit Reveals and
+    // its own player chooses where it Manifests. The debt is cleared first so
+    // the prompt cannot re-fire, then the same picker every other Reveal uses
+    // takes over - there is no decline, only a destination.
+    if (r.kind === 'manifest') {
+      perform(data, state, { kind: 'resolveReaction', seat: defender.side, uid: defender.uid, actionId: r.actionId });
+      void offerManifestation(defender, 'Scanned:').then(() => {
+        onChanged();
+        renderReactionPrompt();
+      });
+      return;
+    }
     // Target Tracing (174) answers with a Counter-roll rather than Screens. On
     // one screen the ElectronicHelper runs it, so there is no owed queue to
     // drain -- the debt is cleared here and the helper takes over.
@@ -4177,6 +4217,47 @@ async function init() {
   // is not "ending Movement in Contact" and does not Reveal (FAQ I14).
   const camoContactSeen = new Set<number>();
   let prevCamo = new Set<number>();
+
+  // The Bit turns its card over, then makes its one Movement. The Stance the
+  // player picks IS the choice; the move afterwards is the ordinary planner, so
+  // Break Away, terrain and Interception all apply to it as they would to any
+  // Movement — which is why it is not special-cased into a teleport.
+  async function performFormSwitch(t: Token, action: CardAction, done: (ok: boolean) => void): Promise<void> {
+    const forms = formSwitch(action) ?? [];
+    const what = action.name.en || action.name.zh || action.id;
+    const others = forms.filter((id) => id !== t.cardId && data.byId.get(id));
+    if (!others.length) {
+      await alertDialog({
+        title: 'Nothing to switch to',
+        body: `${t.label} has no other form on the table. ${what} needs a second card in its set.`,
+      });
+      return done(false);
+    }
+    const pick = await choiceDialog({
+      title: `${what}: which Stance?`,
+      body: `${t.label} turns its card over, then makes ONE Movement. Everything it carries — Ammo, Tokens, damage — comes with it; only the card changes.`,
+      stacked: true,
+      choices: [
+        ...others.map((id) => {
+          const c = data.byId.get(id)!;
+          return { id, label: cardName(c), note: `${c.stance ?? 'no'} stance` };
+        }),
+        { id: '', label: 'Cancel', cancel: true },
+      ],
+    });
+    if (!pick) return done(false);
+    const v = perform(data, state, { kind: 'switchForm', seat: t.side, uid: t.uid, actionId: action.id, cardId: pick });
+    if (!v.ok) {
+      await alertDialog({ title: 'Cannot switch', body: v.why ?? 'The Stance change was refused.' });
+      return done(false);
+    }
+    logTo(t, `${what}: now ${cardName(data.byId.get(pick)!)}. One Movement follows.`);
+    onChanged();
+    // The Movement is part of the same Action, so a cancelled walk still leaves
+    // the Stance changed — the card is already turned over and 6.1 does not
+    // hand it back.
+    void startMove(t.uid, { range: moveRangeFor(t), label: `${what}: Movement`, action }, () => done(true));
+  }
 
   // "Activate Optical Camouflage, Stealth X". Applying the State also strips
   // every Hexagon Token, which the applyStatus apply already does off the

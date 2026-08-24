@@ -5,7 +5,7 @@ import { linkMechanics } from './inspector';
 import { SQUAD_ORDER, squadLabel } from './data';
 import type { Card, CardAction, CombatView, CounterRoll, DiceData, DiceIcon, DieColor, Duel, DuelIcon, GameRuleEffect, PartSlot, Side, SmokeScreen, TerrainPiece, Token, Facing } from './types';
 import { statusCount, STATUSES } from './types';
-import { aaRadarCovers, armorPiercing, armorPiercingNote, attackReactionsOf, auraEffectsOn, aurasOn, auraValueOn, automaticShieldFor, blueLightningDodges, earlyWarningCover, coolingBonus, denseArmorByText, eyesAreHeavyHits, pilotDiceBonus, ignoresLowProfile, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, noMeleeBackAttack, onHitRiders, STATUS_BY_ZH, missileGuidance, multiTargetLimit, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, snipeOn, suppressionOn, disarmOn, dragPrinted, denseArmorOn, designationsOn, electronicStrength, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, canAffordFocus, focusIsFree, hiddenByAlliedAura, keepsLinkOnPartLoss, maxLink, provokeWhy, preventsDamage, immobilizeChoiceOn, faceAwayOnHit, pursuesFragile, structureOf, trackingCover, TRACKING_SPOTTERS_NEEDED, pilotCard, pilotIs, repeatersFor, SLOT_LABEL, tetherStrike, treatedAsOffensive, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
+import { aaRadarCovers, armorPiercing, armorPiercingNote, attackReactionsOf, auraEffectsOn, aurasOn, auraValueOn, automaticShieldFor, blueLightningDodges, earlyWarningCover, coolingBonus, denseArmorByText, eyesAreHeavyHits, pilotDiceBonus, ignoresLowProfile, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, noMeleeBackAttack, onHitRiders, STATUS_BY_ZH, missileGuidance, multiTargetLimit, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, snipeOn, isScanAction, scanStrips, suppressionOn, disarmOn, dragPrinted, denseArmorOn, designationsOn, electronicStrength, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, canAffordFocus, focusIsFree, hiddenByAlliedAura, keepsLinkOnPartLoss, maxLink, provokeWhy, preventsDamage, immobilizeChoiceOn, faceAwayOnHit, pursuesFragile, structureOf, trackingCover, TRACKING_SPOTTERS_NEEDED, pilotCard, pilotIs, repeatersFor, SLOT_LABEL, tetherStrike, treatedAsOffensive, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
 import { timingOf } from './ticks';
 import { inArc, largeGridOf, losNote, protectionFor, rangeBetween, standingSpot } from './rules';
 import type { Command } from './commands';
@@ -4846,6 +4846,40 @@ export class ElectronicHelper {
       }
     };
     for (const g of c.action.gameRules ?? []) walk(g.effects ?? []);
+
+    // SCANNING (4.12.4). The Scan carries no gameRules -- it is a Common Action
+    // whose effect is the rulebook's, not a card's -- so it lands here beside
+    // the data-driven ones rather than being expressed as data it does not have.
+    //
+    // Two halves, and they are NOT the same kind of thing:
+    //   * Low Profile Tokens come off NOW. There is no choice in it, and only
+    //     TOKENS can be Scanned away -- an aura granting Low Profile is
+    //     untouchable, which our data models by never putting a Token on for it.
+    //   * A camouflaged target is Revealed, and 4.12.2 gives it Manifestation
+    //     Movement -- a choice belonging to its OWNER, not to the scanner whose
+    //     client is running this. So the camouflage is left ON and the debt is
+    //     queued as a reaction, exactly as Emergency Smoke queues the
+    //     defender's answer to an attack. The owner's client offers the Reveal
+    //     and the hop together, as one command, on its own screen.
+    if (isScanAction(c.action)) {
+      const strip = scanStrips(c.responder);
+      for (let i = 0; i < strip; i++) {
+        this.onCommand({
+          kind: 'removeStatus', seat: c.initiator.side, uid: c.initiator.uid,
+          targetUid: c.responder.uid, statusId: 'lowProfile',
+        });
+      }
+      if (strip > 0) {
+        done.push(`${c.responder.label} loses ${strip} Low Profile Token${strip === 1 ? '' : 's'} (4.12.4)`);
+      }
+      if (statusCount(c.responder.statuses, 'camouflage') > 0) {
+        this.onCommand({
+          kind: 'queueReactions', seat: c.initiator.side,
+          items: [{ uid: c.responder.uid, actionId: c.action.id, count: 1, range: 0, kind: 'manifest', fromUid: c.initiator.uid }],
+        });
+        done.push(`${c.responder.label} is Revealed, and its own player now makes its Manifestation Movement (4.12.2)`);
+      }
+    }
     return done;
   }
 

@@ -5,7 +5,7 @@ import { actionIconUrl, cardName, isAerial, secondaryImageUrl, squadLabel, unitS
 import { showInspect } from './inspector';
 import { Board, footprint, snapPlacement, type BoardCallbacks } from './board';
 import { printedDeployment, resolveZoneSetData } from './overlays';
-import { actionRange, transformOffer, anyStartTiming, opportunityBonusOn, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, ripostePart, martyrdomOwed, targetTracingOn, riderOnDrone, hasFlexibleTiming, immobilizedStop, activatesCamo, stealthValue, manifestationRange, manifestTargets, nonHumanoidStop, coordinationFor, coordinationOnOpportunityEnd, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, electronicOrigins, loanedParts, phasesThroughUnits, minesLayable, minesOwed, pilotCard, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, maneuverIsSilent, maneuverSilenceDenier, type AuraSource, canActivateCamo, chargeableSlots, electronicDash, electronicStrength, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, projectileReach, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
+import { actionRange, transformOffer, anyStartTiming, opportunityBonusOn, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, ripostePart, martyrdomOwed, targetTracingOn, riderOnDrone, hasFlexibleTiming, immobilizedStop, activatesCamo, isScanAction, scanStrips, formSwitch, stealthValue, manifestationRange, manifestTargets, nonHumanoidStop, coordinationFor, coordinationOnOpportunityEnd, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, electronicOrigins, loanedParts, phasesThroughUnits, minesLayable, minesOwed, pilotCard, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, maneuverIsSilent, maneuverSilenceDenier, type AuraSource, canActivateCamo, chargeableSlots, electronicDash, electronicStrength, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, projectileReach, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
 import { ElectronicHelper, type EwAct } from './combat';
 import { tacticFitsPhase, tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { inContact, canStandIn, attackDirection, crushExchange, crushExchangeSpots, crushTargets, dissipationFor, extendPath, knockbackPath, largeGridOf, LG, losBetween, losNote, smokeBlocks, pathCost, protectionFor, rangeBetween, reachableGrids, standingSpot, type LargeGrid } from './rules';
@@ -1767,6 +1767,7 @@ function panelHtml(ctx: HudCtx): string {
   if (resupplyPick) return resupplyPanel(ctx);
   if (terminalPick) return terminalPanel(ctx);
   if (manifestPick) return manifestPanel(ctx);
+  if (formPick) return formPanel(ctx);
   if (repairPick) return repairPanel(ctx);
   if (chargePlan) return chargePanel(ctx);
   if (attackPick) return attackPanel(ctx);
@@ -2280,7 +2281,7 @@ function autoBoomPanel(ctx: HudCtx): string {
 // The attacker's client queued these into `script.reactions` when the whole
 // Action finished; only the DEFENDER's client may answer one, because placing
 // the Screens and spending the use are commands on their own unit.
-function reactionsOwed(ctx: HudCtx): { t: Token; r: { uid: number; actionId: string; count: number; range: number; kind?: 'smoke' | 'trace' | 'stance' | 'riposte'; fromUid?: number } }[] {
+function reactionsOwed(ctx: HudCtx): { t: Token; r: { uid: number; actionId: string; count: number; range: number; kind?: 'smoke' | 'trace' | 'stance' | 'riposte' | 'manifest'; fromUid?: number } }[] {
   const owed = ensureScript(ctx.state).reactions ?? [];
   return owed
     .map((r) => ({ t: ctx.state.tokens.find((x) => x.uid === r.uid)!, r }))
@@ -2294,6 +2295,22 @@ function reactionPanel(ctx: HudCtx): string {
   const card = ctx.data.byId.get(t.cardId ?? '');
   const what = (card?.actions ?? []).find((a) => a.id === r.actionId);
   const name = what?.name?.en || what?.name?.zh || 'Emergency Smoke';
+  // SCANNED (4.12.4 into 4.12.2). An enemy Scan succeeded against this unit, so
+  // it is Revealed - but the Manifestation Movement that comes with the Reveal
+  // is ITS player's choice, not the scanner's, which is the whole reason this
+  // is a reaction rather than something the scanner's client applied outright.
+  // Both halves travel as the one `reveal` command the picker already sends.
+  if (r.kind === 'manifest') {
+    const range = manifestationRange(ctx.data, t);
+    return head('Your move', `${esc(t.label)} has been Scanned`,
+      `An enemy Scan succeeded, so ${esc(t.label)} leaves the Optical Camouflage State (4.12.4).${
+        range > 0
+          ? ` Its marker was only a SUSPECTED position: choose where it really is, up to ${range} Grid${range === 1 ? '' : 's'} away (Stealth ${range}).`
+          : ' It has no Stealth value, so it appears where its marker stood.'
+      }`, true)
+      + `<div class="tp-body"></div>
+         <div class="tp-foot"><button class="bigbtn" data-reactgo="${t.uid}:${esc(r.actionId)}">${range > 0 ? 'Reveal and Manifest' : 'Reveal it'}</button></div>`;
+  }
   // Riposte / Reposte (050 / ZHLA-202). Two halves, and the first is not
   // optional: taking it ENDS the attacker's Action Opportunity. Declining the
   // whole thing leaves their turn alone, which is why there is a Skip.
@@ -2357,6 +2374,14 @@ function answerReaction(ctx: HudCtx, key: string, place: boolean): void {
   const stance = r.kind === 'stance';
   const what = trace ? 'Target Tracing' : stance ? 'Defense Reaction' : 'Emergency Smoke';
   if (!ctx.send({ kind: 'resolveReaction', seat: t.side, uid, actionId }).ok) { ctx.refresh(); return; }
+  // The Scan debt has no decline: 4.12.4 Reveals the target on a success and
+  // the only open question is WHERE it appears, which openManifest asks. Its
+  // panel offers no Skip for the same reason.
+  if (r.kind === 'manifest') {
+    openManifest(ctx, t, 'Scanned:');
+    ctx.refresh();
+    return;
+  }
   if (!place) {
     ctx.noteNow(`${t.label} declines its ${what}.`);
     ctx.refresh();
@@ -2683,6 +2708,32 @@ function contestAct(ctx: HudCtx, act: EwAct, arg?: { uid?: number; indices?: num
   }
   if (act === 'apply') {
     const a = actionOn(ctx, init, c.actionId);
+    // SCANNING (4.12.4), before everything else: on a shared table the combat
+    // window's applyEffects NEVER RUNS (the verdict is derived, nobody presses
+    // Resolve), so the effects live here, sent by the Initiator's seat like the
+    // rest of this branch. Without this a Scan fell through to the Electronic
+    // Attack default below and granted the target Fire Control Interference.
+    // Low Profile Tokens come off now; a camouflaged target is owed a
+    // `manifest` reaction instead, because the Manifestation is ITS player's
+    // choice - the same split applyEffects makes for freeplay.
+    if (a && isScanAction(a)) {
+      const strip = scanStrips(resp);
+      for (let i = 0; i < strip; i++) {
+        ctx.send({ kind: 'removeStatus', seat: init.side, uid: init.uid, targetUid: resp.uid, statusId: 'lowProfile' });
+      }
+      if (statusCount(resp.statuses, 'camouflage') > 0) {
+        ctx.send({
+          kind: 'queueReactions', seat: init.side,
+          items: [{ uid: resp.uid, actionId: a.id, count: 1, range: 0, kind: 'manifest', fromUid: init.uid }],
+        });
+        ctx.noteNow(`${init.label} Scans ${resp.label}: it is Revealed, and its own player now makes its Manifestation Movement (4.12.4).`);
+      } else if (strip > 0) {
+        ctx.noteNow(`${init.label} Scans ${resp.label}: ${strip} Low Profile Token${strip === 1 ? '' : 's'} removed (4.12.4).`);
+      }
+      ctx.send({ kind: 'clearCounterRoll', seat: init.side });
+      ctx.refresh();
+      return;
+    }
     // Target Tracing hands out no token at all: the target loses 1 Link (174).
     // Read off the same helper that let the Counter-roll open, so the two
     // verdicts cannot drift.
@@ -3309,6 +3360,30 @@ function manifestPanel(ctx: HudCtx): string {
        <div class="tp-foot"><button class="bigbtn ghost2" data-act="manifeststay">Stay at ${gridName(here.c, here.r)}</button></div>`;
 }
 
+// The "White Dwarf" Bit's Stance Change (293/294/295): pick the form, then make
+// the one Movement the Action grants. Two steps, so it is a pick like the
+// others rather than something routeAction can finish inline.
+let formPick: { uid: number; actionId: string } | null = null;
+
+function formPanel(ctx: HudCtx): string {
+  const m = formPick!;
+  const t = ctx.state.tokens.find((x) => x.uid === m.uid);
+  const a = t ? actionOn(ctx, t, m.actionId) : undefined;
+  if (!t || !a) return head('Stance Change', 'That unit is gone', '', true)
+    + '<div class="tp-body"></div><div class="tp-foot"><button class="bigbtn ghost2" data-act="formcancel">Close</button></div>';
+  const rows = (formSwitch(a) ?? [])
+    .filter((id) => id !== t.cardId && ctx.data.byId.get(id))
+    .map((id) => {
+      const c = ctx.data.byId.get(id)!;
+      return `<button class="rowwide" data-formgo="${esc(id)}">${esc(cardName(c))}<span class="ct">${esc(String(c.stance ?? 'no'))} stance</span></button>`;
+    })
+    .join('');
+  return head('Your move', `${esc(a.name?.en || m.actionId)}: which Stance?`,
+    `${esc(t.label)} turns its card over, then makes ONE Movement. Everything it carries - Ammo, Tokens, damage - comes with it; only the card changes.`, true)
+    + `<div class="tp-body">${rows || '<p class="tp-note">No other form of this unit is in the card data.</p>'}</div>
+       <div class="tp-foot"><button class="bigbtn ghost2" data-act="formcancel">${rows ? 'Cancel' : 'Close'}</button></div>`;
+}
+
 let repairPick: { uid: number; actionId: string; repair: boolean; mend: boolean } | null = null;
 
 function repairPanel(ctx: HudCtx): string {
@@ -3540,6 +3615,11 @@ function routeAction(ctx: HudCtx, t: Token, a: CardAction, ga?: ReturnType<typeo
     repairPick = { uid: t.uid, actionId: a.id, repair: rep.repair, mend: rep.mend };
     return true;
   }
+  // The Bit's Stance Change: pick a form, then take the Movement it grants.
+  if (formSwitch(a)) {
+    formPick = { uid: t.uid, actionId: a.id };
+    return true;
+  }
   // "Activate Optical Camouflage, Stealth X". Mirrors performCamo in main.ts:
   // before this the only door into the state was deploying already in it, so
   // the Octopus could not vanish mid-game on either board.
@@ -3567,7 +3647,10 @@ function routeAction(ctx: HudCtx, t: Token, a: CardAction, ga?: ReturnType<typeo
   // An Electronic Attack opens the Counter-roll targeting whatever its printed
   // TYPE says — the Raven's Fire Control Interference is typed Tactic, and
   // keying on the type let it fall through to "follow the card text" (4.11).
-  if (isElectronicAttack(a)) {
+  // A Scan opens the same Counter-roll window through its own door, for the
+  // reason units.ts isScanAction spells out: it is not an Electronic Attack and
+  // must not be caught by anything that modifies one.
+  if (isElectronicAttack(a) || isScanAction(a)) {
     openAttackPick(t, a);
     return true;
   }
@@ -5285,6 +5368,28 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     ctx.refresh();
   });
   on('[data-act="repaircancel"]', () => { repairPick = null; dropAction(); ctx.refresh(); });
+  on('[data-formgo]', (el) => {
+    const m = formPick;
+    formPick = null;
+    const t = m ? s.tokens.find((x) => x.uid === m.uid) : undefined;
+    if (!m || !t) { ctx.refresh(); return; }
+    const cardId = el.dataset.formgo ?? '';
+    // The Action is paid before the switch, the same order every other tool
+    // uses - and the Movement that follows belongs to the same Action, so it
+    // opens the planner rather than costing a second Tick.
+    const paid = commitAction(ctx);
+    if (!paid.ok) {
+      if (paid.why) ctx.noteNow(paid.why);
+      ctx.refresh();
+      return;
+    }
+    if (ctx.send({ kind: 'switchForm', seat: t.side, uid: t.uid, actionId: m.actionId, cardId }).ok) {
+      ctx.noteNow(`${t.label} switches to ${cardName(ctx.data.byId.get(cardId))}. One Movement follows.`);
+      startMovePlan(ctx, t, { label: 'Stance Change: Movement', actionId: m.actionId, free: true });
+    }
+    ctx.refresh();
+  });
+  on('[data-act="formcancel"]', () => { formPick = null; dropAction(); ctx.refresh(); });
   on('[data-manifest]', (el) => {
     const m = manifestPick;
     manifestPick = null;

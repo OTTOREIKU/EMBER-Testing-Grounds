@@ -43,7 +43,7 @@ const body = 'type TerrainPiece = any;\ntype Token = any;\ntype Side = any;\ntyp
   + cut(units, '// ---------- 自动盾牌 Automatic Shield', '// 503 Close Assault', 'the Automatic Shield block');
 const tmp = new URL('./_autoshield.slice.ts', import.meta.url);
 writeFileSync(tmp, body);
-const { automaticShieldFor, automaticShieldOn, losBetween, protectionFor, rangeBetween } = await import(tmp.href);
+const { automaticShieldFor, automaticShieldOn, lineCrossesUnit, losBetween, protectionFor, rangeBetween } = await import(tmp.href);
 
 const raw = JSON.parse(readFileSync(new URL('../../data/cards.json', import.meta.url), 'utf8'));
 const cards = Array.isArray(raw) ? raw : raw.cards ?? [];
@@ -107,25 +107,37 @@ check('a shield Adjacent but off the line does not fire',
 check('nor does one standing behind the target',
   automaticShieldFor(data, board(scutum(3, 19, 5)), attacker, target, firing), null);
 
-// ---------- the pinned 295 gap: Aerial and 'elevated' ----------
+// ---------- 295 and Aerial: RULED AND BUILT 2026-08-24 ----------
 //
-// FAILING BY DESIGN, and recorded rather than fixed. All three "White Dwarf" Bit
-// faces are flyingOrElevated: 'elevated', and isAerial treats elevated as Aerial
-// by FAQ E1. losBetween returns 'clear' the moment EITHER endpoint is Aerial
-// (4.5.3, FAQ A1) and skips Aerial tokens as obstructors, so the one card whose
-// entire rules text is this keyword can never trigger, and no Aerial ally can be
-// shielded by anything.
+// This block used to fail BY DESIGN. All three "White Dwarf" Bit faces are
+// flyingOrElevated: 'elevated', which isAerial reads as Aerial (FAQ E1), and the
+// shield test was `losBetween(...) !== 'clear'` — the OBSTRUCTION question,
+// which skips Aerial tokens as obstructors. So the one card whose entire rules
+// text is this keyword could never fire.
 //
-// That is a RULING question — does a High Altitude unit interpose? — not a
-// wiring one, and the fix does NOT belong in the geometry: any exception written
-// for the shield would also have to answer whether a shot at an Aerial TARGET
-// can be redirected, which 4.5.3/A1 answers with a flat no. See explicitlyOut 1.
-check('PINNED (295): an Aerial shield in a perfect blocking position reads clear',
-  losBetween(attacker, target, [], [scutum(3, 13, 5, { aerial: true })]), 'clear');
-check('PINNED (295): so an Aerial shield never fires',
-  automaticShieldFor(data, board(scutum(3, 13, 5, { aerial: true })), attacker, target, firing), null);
-check('PINNED: 295 is elevated on every face, which isAerial reads as Aerial (E1)',
+// OTTO's ruling: implement what the card SAYS. The rulebook glossary and the
+// GoF 1.021 list both print "Line of Sight also passes through this Unit", not
+// "obstructs" — and those two questions coincide for every ground shield and
+// part company only for an Aerial one. `lineCrossesUnit` asks the printed
+// question as pure geometry, so no exception had to be invented.
+//
+// The scope was measured before the change: ZERO Aerial units are size 3, so
+// Unit Protection (4.5.3, Large only) cannot be reached by this even though it
+// calls the same losBetween. Card 295 is the only carrier affected.
+check('the crossing test sees an Aerial unit the obstruction test skips',
+  [losBetween(attacker, target, [], [scutum(3, 13, 5, { aerial: true })]),
+    lineCrossesUnit(attacker, target, scutum(3, 13, 5, { aerial: true }))],
+  ['clear', true]);
+check('so an Aerial shield in a blocking position now fires',
+  automaticShieldFor(data, board(scutum(3, 13, 5, { aerial: true })), attacker, target, firing)?.shield?.uid, 3);
+check('295 is elevated on every face, which isAerial reads as Aerial (E1)',
   ['293', '294', '295'].map((id) => byId.get(id)?.flyingOrElevated), ['elevated', 'elevated', 'elevated']);
+// And the ground case is UNCHANGED, which is what makes the swap safe: the two
+// questions have the same answer whenever nothing Aerial is involved.
+check('a ground shield still fires exactly as before',
+  automaticShieldFor(data, board(scutum(3, 13, 5)), attacker, target, firing)?.shield?.uid, 3);
+check('and a ground unit off the line still does not',
+  automaticShieldFor(data, board(scutum(3, 19, 5)), attacker, target, firing), null);
 check('an Aerial TARGET cannot be shielded either, because the line is never obstructed',
   automaticShieldFor(data, [attacker, { ...target, aerial: true }, inLine], attacker, { ...target, aerial: true }, firing), null);
 check('and neither can a shot from an Aerial attacker be redirected',

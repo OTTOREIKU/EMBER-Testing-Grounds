@@ -650,7 +650,7 @@ export interface ScriptState {
   // A debt the DEFENDER owes itself after being attacked. `kind` absent means
   // Emergency Smoke -- every debt written before Target Tracing existed, and
   // every one on a saved board.
-  reactions: { uid: number; actionId: string; count: number; range: number; kind?: 'smoke' | 'trace' | 'stance' | 'riposte'; fromUid?: number }[];
+  reactions: { uid: number; actionId: string; count: number; range: number; kind?: 'smoke' | 'trace' | 'stance' | 'riposte' | 'manifest'; fromUid?: number }[];
   // An Electronic Counter-roll in progress (4.11.2). It lives in shared state
   // rather than on one client because BOTH sides roll and either may spend Link
   // to Focus, and a player may only ever send commands for their own units.

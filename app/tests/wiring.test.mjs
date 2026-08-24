@@ -96,8 +96,10 @@ check('the Mode-change branch pays before it returns',
 // change, inline like the Unfold), Remote Access (one site for both verdicts —
 // the attempt pays whether the roll succeeded or not), doact's own, and the
 // camouflage activation — routeAction's one IMMEDIATE branch, which opens no
-// tool and so must pay for the Action itself.
-check('every tool has a commitAction', [...hud.matchAll(/commitAction\(ctx\)/g)].length, 14);
+// tool and so must pay for the Action itself — and the Bit's Stance Change,
+// which pays before switching so the Movement that follows belongs to the same
+// Action rather than costing a second Tick.
+check('every tool has a commitAction', [...hud.matchAll(/commitAction\(ctx\)/g)].length, 15);
 
 // ---------- The ATTRIBUTED seat stamp ----------
 //

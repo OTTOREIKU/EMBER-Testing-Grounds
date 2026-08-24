@@ -2,7 +2,7 @@ import type { CombatView, Facing, GameState, MechLoadout, Opportunity, PartSlot,
 import { addStatus, ageTokens, newOpportunity, PHASES, statusCount, STATUSES, TIMINGS } from './types';
 import type { GameData } from './data';
 import { cardName, transformFaces, unfoldsInto, discardFaceOf } from './data';
-import { covertCarryLock, ammoDeliveryPool, opportunityBonusOn, ripostePart, defenseReactionOn, targetTracingOn, riderOnDrone, hasFlexibleTiming, commandGeneration, blinkTargets, isPositionSwap, electronicOrigins, isSilentAction, maneuverIsSilent, loanedParts, unfoldToken, extrasFor, consumesCharge, cutTethersOn, electronicDash, electronicValue, immobilizedStop, manifestationRange, nonHumanoidCost, nonHumanoidStop, freehandSlots, interceptCapacity, anyStartTiming, focusIsFree, keepsLinkOnPartLoss, makeDroneToken, structureOf, makeMechToken, maneuverRange, maxLink, partsLeft, pilotCard, pilotIs, projectileDelivery, provokeWhy, settleTethers, SLOT_LABEL, tetherTo, tokenCards, transformPartOn } from './units';
+import { covertCarryLock, ammoDeliveryPool, opportunityBonusOn, ripostePart, defenseReactionOn, targetTracingOn, riderOnDrone, hasFlexibleTiming, commandGeneration, blinkTargets, isPositionSwap, electronicOrigins, isSilentAction, maneuverIsSilent, loanedParts, unfoldToken, formSwitch, switchFormTo, extrasFor, consumesCharge, cutTethersOn, electronicDash, electronicValue, immobilizedStop, isScanAction, scannable, manifestationRange, nonHumanoidCost, nonHumanoidStop, freehandSlots, interceptCapacity, anyStartTiming, focusIsFree, keepsLinkOnPartLoss, makeDroneToken, structureOf, makeMechToken, maneuverRange, maxLink, partsLeft, pilotCard, pilotIs, projectileDelivery, provokeWhy, settleTethers, SLOT_LABEL, tetherTo, tokenCards, transformPartOn } from './units';
 import { tetherCap } from './melee';
 import { canActivate, canAttackMode, canManeuver, canOverload, canPerform, spendAction, spendActivation, spendAttackMode, spendManeuver, spendOverload } from './ticks';
 import { tacticSpec, tacticTargets, type TacticCtx } from './tactics';
@@ -215,9 +215,13 @@ export type Command =
       kind: 'queueReactions'; seat: Side;
       // `kind` absent means Emergency Smoke, which is every debt written before
       // Target Tracing existed and every one still on a saved board.
-      items: { uid: number; actionId: string; count: number; range: number; kind?: 'smoke' | 'trace' | 'stance' | 'riposte'; fromUid?: number }[];
+      items: { uid: number; actionId: string; count: number; range: number; kind?: 'smoke' | 'trace' | 'stance' | 'riposte' | 'manifest'; fromUid?: number }[];
     }
   | { kind: 'resolveReaction'; seat: Side; uid: number; actionId: string }
+  // The "White Dwarf" Bit turning its card over (293/294/295). The set is read
+  // from the ACTION rather than trusted from the wire, the same single-source
+  // rule the Disarm face and the crushSwap step-out grid follow.
+  | { kind: 'switchForm'; seat: Side; uid: number; actionId: string; cardId: string }
   // Remote Access turning a Terminal face-down for the rest of the round
   // (5.3.3). Worth VP at the End Phase, so it has to travel — freeplay used to
   // set `item.accessed` in place and the other client scored a different board.
@@ -1819,6 +1823,14 @@ function checkActed(
       if (cmd.reaction && targetTracingOn(data, t)?.actionId !== cmd.actionId) {
         return no(`${t.label} has no Passive that answers an attack with a Counter-roll.`);
       }
+      // SCAN (4.12.4) designates "an Enemy Unit in the Optical Camouflage State
+      // or bearing a Low Profile Token". Against anything else it could change
+      // nothing at all, which 6.1 forbids in the same words the Stabilize
+      // refusal uses - and a Scan spent on a unit with nothing to strip is a
+      // Tick and an End Phase gone.
+      if (isScanAction(a) && !scannable(target)) {
+        return no(`${target.label} is neither in the Optical Camouflage State nor bearing a Low Profile Token, so a Scan could not change anything (4.12.4).`);
+      }
       // An allied Repeater lends its position as the origin, and the Action's
       // own Range is measured from there (FAQ O19). Derived rather than sent,
       // so both seats judge the same shot.
@@ -2117,6 +2129,21 @@ function checkActed(
     }
     case 'despawn': {
       if (!state.tokens.some((x) => x.uid === cmd.targetUid)) return no('That unit is not on the board.');
+      return ok;
+    }
+    case 'switchForm': {
+      if (!t) return no('That unit is not on the board.');
+      const a = findAction(data, state, cmd.uid, cmd.actionId);
+      if (!a) return no('This unit has no such Action.');
+      const forms = formSwitch(a);
+      if (!forms) return no(`${t.label} has no Action that changes its form.`);
+      // Both ends checked against the ACTION's own list: the card it is now has
+      // to be in the set, and so does the one asked for. A sender naming a card
+      // outside the group would otherwise turn a Bit into anything at all.
+      if (!forms.includes(t.cardId)) return no(`${t.label} is not one of that Action's forms.`);
+      if (!forms.includes(cmd.cardId)) return no('That is not a form this unit can take.');
+      if (cmd.cardId === t.cardId) return no(`${t.label} is already in that Stance.`);
+      if (!data.byId.get(cmd.cardId)) return no('That form is missing from the card data.');
       return ok;
     }
     case 'unfold': {
@@ -3446,6 +3473,10 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       // route. Facing is the layer's own so a mirrored seat draws it identically.
       const tok = makeDroneToken(state, data, card, t.side);
       state.tokens.push({ ...tok, parentUid: t.uid, col: cmd.to.col, row: cmd.to.row, facing: t.facing });
+      return;
+    }
+    case 'switchForm': {
+      switchFormTo(data, t, cmd.cardId);
       return;
     }
     case 'unfold': {

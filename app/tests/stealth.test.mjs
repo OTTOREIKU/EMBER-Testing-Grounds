@@ -13,8 +13,12 @@
 // what that value was or enforcing it.
 import { readFileSync, writeFileSync } from 'node:fs';
 
+// From activatesCamo (the door into the State) through the SCANNING block, so
+// this test drives the real readers for both halves of the rule. Both offsets
+// asserted rather than assumed: an end marker that precedes its start slices
+// nothing, and every assertion below would then pass against an empty module.
 const unitsSrc = readFileSync(new URL('../src/units.ts', import.meta.url), 'utf8');
-const start = unitsSrc.indexOf('// ---------- STEALTH X and Manifestation Movement');
+const start = unitsSrc.indexOf('export function activatesCamo(');
 const end = unitsSrc.indexOf('export function interceptCapacity');
 if (start < 0 || end < 0 || end <= start) throw new Error('could not slice the Stealth readers out of units.ts');
 const tmp = new URL('./_stealth.slice.ts', import.meta.url);
@@ -24,6 +28,7 @@ type CardAction = any;
 type PartSlot = any;
 type TerrainPiece = any;
 const CAMO_ACTIVATES = /开启光学迷彩|Activate Optical Camouflage/i;
+const statusCount = (list, id) => (list ?? []).filter((s) => s === id).length;
 const largeGridOf = (t) => ({ c: Math.floor(t.col / 3), r: Math.floor(t.row / 3) });
 // Every Grid has room unless a token already sits in it: enough to prove the
 // range arithmetic and the fit filter, without importing the real geometry.
@@ -104,6 +109,36 @@ check('a damaged one still does', U.manifestationRange(data, mech({ torso: 'OCTO
   check('a unit in the corner Grid gets the quarter-block', U.manifestTargets(data, [corner], [], corner).length, 8);
 }
 
+// ---------- SCANNING (4.12.4) ----------
+//
+// The Scan was a Common Action every Mech has, printed with its whole rule, and
+// COMPLETELY INERT: `COMMON_SCAN` appeared nowhere in app/src. Performing it
+// spent an End Phase and a Tick and did nothing at all.
+{
+  check('the Common Action is recognised by id', U.isScanAction({ id: 'COMMON_SCAN' }), true);
+  check('and a printed card Scan by its text',
+    U.isScanAction(act('· Scan all Enemy Targets in the Optical Camouflage State within range.')), true);
+  check('an ordinary Action is not a Scan', U.isScanAction(act('· Laser Weapon')), false);
+  // The guard that matters: a Scan is NOT an Electronic Attack. 4.12.4 borrows
+  // 4.11.2's Counter-roll, but a card that modifies "Electronic Attacks" must
+  // not reach it - so the two readers stay separate and this pins that they do.
+  check('and a Scan does not read as an Electronic Attack',
+    /electronic attack|电子攻击/i.test('Scan an enemy in the Optical Camouflage State'), false);
+
+  const hidden = { statuses: ['camouflage'] };
+  const marked = { statuses: ['lowProfile', 'lowProfile'] };
+  const plain = { statuses: [] };
+  check('a camouflaged enemy is scannable', U.scannable(hidden), true);
+  check('one bearing a Low Profile Token is too', U.scannable(marked), true);
+  check('a unit with neither is not', U.scannable(plain), false);
+  check('the strip counts every Token', U.scanStrips(marked), 2);
+  check('and nothing on a clean unit', U.scanStrips(plain), 0);
+  // Only TOKEN-borne Low Profile can be Scanned away (4.12.4's own note): an
+  // aura granting it is untouchable, which our data models by never putting a
+  // Token on for one - so counting Tokens IS the rule.
+  check('a camouflaged unit with no Token strips nothing', U.scanStrips(hidden), 0);
+}
+
 // ---------- where the rule LIVES ----------
 {
   const cmds = readFileSync(new URL('../src/commands.ts', import.meta.url), 'utf8');
@@ -163,6 +198,58 @@ check('a damaged one still does', U.manifestationRange(data, mech({ torso: 'OCTO
     /data-revealgo[\s\S]{0,500}?openManifest\(ctx, t/.test(hud), true);
   check('and no bare reveal send is left on that button',
     /revealDismissed\.add\(el\.dataset\.revealkey[\s\S]{0,300}?kind: 'reveal'/.test(hud), false);
+
+  // ---------- the Scan's two halves ----------
+  const cbt = readFileSync(new URL('../src/combat.ts', import.meta.url), 'utf8');
+  // Both land in applyEffects, the ONE seam a successful Counter-roll passes
+  // through - the same shape as the on-hit rider seam in finish().
+  const eff = cbt.slice(cbt.indexOf('private applyEffects()'), cbt.indexOf('private relayNote('));
+  check('the effect seam handles a Scan', /isScanAction\(c\.action\)/.test(eff), true);
+  check('stripping every Low Profile Token', /statusId: 'lowProfile'/.test(eff), true);
+  // The camouflage half is a REACTION, not something the scanner applies: the
+  // Manifestation belongs to the target's own player, so the scanner's client
+  // queues the debt and the owner's client answers it.
+  check('and queueing the Reveal as the target player\'s own decision',
+    /kind: 'manifest'[\s\S]{0,80}?fromUid: c\.initiator\.uid/.test(eff), true);
+  check('the scanner never reveals the target itself', /kind: 'reveal'/.test(eff), false);
+
+  // The debt is answerable: a panel for it, and an answer that opens the picker.
+  check('the Match Centre draws a panel for the Scan debt', /r\.kind === 'manifest'/.test(hud), true);
+  check('whose answer opens the same Manifestation picker',
+    /r\.kind === 'manifest'\) \{\s*\n\s*openManifest\(ctx, t, 'Scanned:'\)/.test(hud), true);
+
+  // Targeting is a rule, so the COMMAND refuses a pointless Scan rather than
+  // the button merely not being drawn.
+  const scanGate = cmds.slice(cmds.indexOf("case 'startCounterRoll': {"), cmds.indexOf("case 'startCounterRoll': {") + 3000);
+  check('the counter-roll command refuses a Scan with nothing to do',
+    /isScanAction\(a\) && !scannable\(target\)/.test(scanGate), true);
+
+  // Both boards can reach the window without Scan being an Electronic Attack.
+  check('freeplay opens the Counter-roll for a Scan',
+    /isElectronicAttack\(action\) \|\| isScanAction\(action\)/.test(main), true);
+  check('and the Match Centre does too',
+    /isElectronicAttack\(a\) \|\| isScanAction\(a\)/.test(hud), true);
+
+  // ---------- the three holes the second fresh-eyes pass found ----------
+  // 1. ON A SHARED TABLE applyEffects NEVER RUNS: the verdict is derived, no
+  //    one presses Resolve, and the effects go through contestAct('apply') in
+  //    matchhud - whose fallback grants FCI. Without its own branch there, a
+  //    successful online Scan handed the target Fire Control Interference.
+  check('the Match Centre apply branch handles a Scan before the FCI fallback',
+    /act === 'apply'\) \{[\s\S]{0,1400}?isScanAction\(a\)[\s\S]{0,1600}?targetTracingOn/.test(hud), true);
+  check('stripping the Tokens there too', /isScanAction\(a\)[\s\S]{0,600}?statusId: 'lowProfile'/.test(hud), true);
+  check('and queueing the manifest debt for the target player',
+    /isScanAction\(a\)[\s\S]{0,900}?kind: 'manifest', fromUid: init\.uid/.test(hud), true);
+  // 2. Freeplay consumes reactions per-kind and had no manifest branch, so a
+  //    Scan debt fell through toward the Emergency Smoke default.
+  check('freeplay answers a manifest debt with the picker',
+    /r\.kind === 'manifest'\) \{[\s\S]{0,400}?offerManifestation\(defender, 'Scanned:'\)/.test(main), true);
+  check('clearing the debt before the picker so it cannot re-fire',
+    /r\.kind === 'manifest'\) \{\s*\n\s*perform\(data, state, \{ kind: 'resolveReaction'/.test(main), true);
+  // 3. Freeplay opens the helper directly, never sending startCounterRoll, so
+  //    the command-layer target gate cannot fire there - the click asks it.
+  check('the freeplay click refuses a pointless Scan',
+    /isScanAction\(action\) && !scannable\(defender\)/.test(main), true);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -48,6 +48,16 @@ const immobReader = unitsSrc.slice(
   unitsSrc.indexOf('// ---------- ON-HIT RIDERS'),
 );
 if (!immobReader) throw new Error('could not locate the Immobilized readers in units.ts');
+// The Scan readers, sliced for the same reason: startCounterRoll refuses a Scan
+// against a unit with nothing to reveal or strip (4.12.4), and that is a RULE.
+// Self-contained apart from statusCount, which the Immobilized cut above brings.
+// Both offsets asserted, not assumed: an end marker that PRECEDES its start
+// silently slices nothing and every assertion downstream then passes against an
+// empty module. That is exactly what happened on the first draft of this cut.
+const scanFrom = unitsSrc.indexOf('// ---------- SCANNING (4.12.4) ----------');
+const scanTo = unitsSrc.indexOf('export function interceptCapacity(');
+if (scanFrom < 0 || scanTo <= scanFrom) throw new Error('could not locate the Scan readers in units.ts');
+const scanReaders = unitsSrc.slice(scanFrom, scanTo);
 // takeBlackBox asks freehandSlots which Parts can carry one, so the Freehand
 // keyword test is sliced rather than mirrored. SLOT_LABEL rides along because
 // it is a module-level const the function reads.
@@ -350,6 +360,7 @@ writeFileSync(
     + chargeParser
     + evReader
     + immobReader
+    + scanReaders
     + slotLabels + riders + resupply + ammoDelivery + covert
     + freehand
     + attackMode

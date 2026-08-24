@@ -18,6 +18,16 @@ const check = (name, got, want) => {
 installDom();
 const { AttackHelper, data, dice } = await loadCombat('hindered');
 
+// SEEDED. The strike below drives the real dice, and "did it land a Hit" was
+// left to chance: the boosted pool makes a Hit overwhelmingly likely, so this
+// passed run after run and then failed once inside a full-suite pass. A test
+// that is usually right is not a pin. The generator is combatrole's.
+const seeded = () => {
+  let seed = 12345;
+  return () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
+};
+Math.random = seeded();
+
 console.log('Hindered: the Claymore rider, and the Blue dice it eats\n');
 
 // ---------- the data carries the rider ----------

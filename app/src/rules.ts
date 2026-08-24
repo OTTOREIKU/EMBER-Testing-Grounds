@@ -646,6 +646,57 @@ export function losBetween(
   return anyObstruct ? 'obstructed' : 'clear';
 }
 
+// Does the line between two Bases PASS THROUGH this third unit's footprint?
+//
+// This is not `losBetween`, and the difference is the whole reason it exists.
+// Automatic Shield is printed as "Line of Sight also passes through this Unit"
+// (rulebook glossary, and the GoF 1.021 list word for word) -- it does NOT say
+// "obstructs". For every ground shield the two coincide, which is why the
+// obstruction test served as a proxy for years. They diverge for exactly one
+// case: an AERIAL unit standing in the line. `losBetween` skips Aerial tokens
+// as obstructors, so it answers "not obstructed" -- which is right for
+// Protection and wrong for this keyword, and left card 295, whose entire rules
+// text is Automatic Shield, unable to ever fire.
+//
+// So this asks the card's own question and nothing more: geometry only, no
+// Aerial skip, no terrain, no blocked/obstructed distinction. The ENDPOINT rule
+// is still the caller's business -- 4.2.4 says LoS to or from an Aerial Unit is
+// never Obstructed, and automaticShieldFor keeps honouring that.
+//
+// Sampling is `losBetween`'s, deliberately: the same 9x9 base points, the same
+// step count, and the same exemption for the endpoints' own footprints. A
+// second, subtly different line-walk would be two answers to one question.
+export function lineCrossesUnit(a: Token, b: Token, unit: Token): boolean {
+  if (unit.uid === a.uid || unit.uid === b.uid) return false;
+  const cells = new Set<string>();
+  for (let dc = 0; dc < unit.size; dc++) {
+    for (let dr = 0; dr < unit.size; dr++) cells.add(`${unit.col + dc},${unit.row + dr}`);
+  }
+  const basePoints = (t: Token): { x: number; y: number }[] => {
+    const pts: { x: number; y: number }[] = [];
+    for (let i = 0; i <= 2; i++) {
+      for (let j = 0; j <= 2; j++) {
+        pts.push({ x: t.col + 0.08 + (i * (t.size - 0.16)) / 2, y: t.row + 0.08 + (j * (t.size - 0.16)) / 2 });
+      }
+    }
+    return pts;
+  };
+  const inBase = (x: number, y: number, t: Token) => x >= t.col && x < t.col + t.size && y >= t.row && y < t.row + t.size;
+  for (const pa of basePoints(a)) {
+    for (const pb of basePoints(b)) {
+      const len = Math.hypot(pb.x - pa.x, pb.y - pa.y);
+      const n = Math.max(2, Math.ceil(len * 3));
+      for (let i = 1; i < n; i++) {
+        const x = pa.x + ((pb.x - pa.x) * i) / n;
+        const y = pa.y + ((pb.y - pa.y) * i) / n;
+        if (inBase(x, y, a) || inBase(x, y, b)) continue;
+        if (cells.has(`${Math.floor(x)},${Math.floor(y)}`)) return true;
+      }
+    }
+  }
+  return false;
+}
+
 export function rangeBetween(a: Token, b: Token): { range: number; adjacent: boolean; sameGrid: boolean } {
   const ga = largeGridOf(a);
   const gb = largeGridOf(b);
