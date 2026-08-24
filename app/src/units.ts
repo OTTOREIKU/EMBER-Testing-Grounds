@@ -76,6 +76,25 @@ export function snipeOn(a: CardAction): boolean {
     .some((l) => l.includes('狙击') && !/获得|【|\[/.test(l));
 }
 
+// ---------- TARGET TRACER 追击标记 (glossary, 06_missions_and_appendix.md:522) ----------
+//
+// The RULEBOOK GLOSSARY overrides keywords.json here, and the difference is
+// the whole model: keywords.json's zh line reads like a part-scoped
+// hit-priority token, while the glossary defines a UNIT-level Hexagon Token
+// with two effects, both Drone-related. English-over-derived-Chinese is this
+// project's standing rule, and it saved a part-scoped token model here.
+//
+// Effect 2: a Drone performing any Attack or Electronic Attack against the
+// bearer is TREATED AS BEING IN THE OFFENSIVE STANCE. This helper is that
+// treatment, asked wherever the attack pipeline asks 'offensive?' about dice.
+// The two PILOT abilities keyed on Offensive Stance (FPA-04 Fierce Assault,
+// ZPA-40 Elation) are untouched on purpose: both are mech-gated, and a Drone
+// has no pilot for the treatment to reach.
+export function treatedAsOffensive(attacker: Token, defender: Token | null | undefined): boolean {
+  if (attacker.stance === 'offensive') return true;
+  return attacker.kind === 'drone' && !!defender && statusCount(defender.statuses ?? [], 'targetTracer') > 0;
+}
+
 // ---------- DISARM 缴械 (glossary, 06_missions_and_appendix.md:343) ----------
 //
 // "Change target Part to Discard State" -- zh: the HIT part (命中部件). One
@@ -242,6 +261,13 @@ export function onHitRiders(a: CardAction, cardKeywords: { key?: string; inline?
   // structured rule behind it. Deliberately narrow -- only the phrasing the data
   // actually uses -- because a loose regex here would fire on flavour text.
   const printed = (a.description?.en ?? '').trim() || (english ?? '').trim();
+  // ZHLA-302 Marking Shot: '[On Hit] The hit part gains 1 Pursuit Token' --
+  // 'Pursuit Token' is the card's loose English for the Target Tracer Token,
+  // and its zh description does not carry the rider at all, so the printed
+  // English is the only route. The print says the PART gains it; the
+  // glossary's two effects are both unit-level, which is what our token is.
+  const trace = /\[On Hit\][^.]*gains? (\d+) (?:Pursuit|Target Tracer) Token/i.exec(printed);
+  if (trace) add({ kind: 'status', statusId: 'targetTracer', amount: Math.max(1, Number(trace[1])), why: 'the printed [On Hit] rider' });
   if (/\[On Hit\][^.]*reduces? target Link by (\d+)/i.test(printed)) {
     const m = /\[On Hit\][^.]*reduces? target Link by (\d+)/i.exec(printed)!;
     add({ kind: 'link', amount: Math.max(1, Number(m[1])), why: 'the printed [On Hit] rider' });
@@ -2275,7 +2301,14 @@ export function autoTargetsFor(
   });
   if (!candidates.length) return [];
   const lit = candidates.filter((o) => statusCount(o.statuses, 'highlight') > 0);
-  const pool = lit.length ? lit : candidates;
+  // Target Tracer, effect 1 (glossary): a DRONE's Automatic Action designates
+  // a bearer 'even if it is not the closest Enemy Unit' -- the distance rule
+  // is waived, so the tracered pool is taken whole and nearest-within-it
+  // still breaks the tie. Highlight stays ABOVE it: its own glossary line is
+  // 'must target that Unit', a stronger verb than designates-may, and nothing
+  // printed ranks the two -- recorded here so a ruling can flip one line.
+  const traced = t.kind === 'drone' ? candidates.filter((o) => statusCount(o.statuses, 'targetTracer') > 0) : [];
+  const pool = lit.length ? lit : traced.length ? traced : candidates;
   const best = Math.min(...pool.map(reachOf));
   return pool.filter((o) => reachOf(o) === best);
 }

@@ -61,6 +61,10 @@ export function tokenCards(data: any, t: any): any[] {
   // where rangeBetween begins).
   + cut(rules, 'export function losBetween', 'export function rangeBetween', 'losBetween')
   + cut(types, 'export function statusCount', 'export const STATUSES', 'statusCount')
+  // The tracer's Offensive-Stance treatment, SLICED rather than stubbed: the
+  // attack-icon math this file drives now asks it, and a stub answering
+  // stance-only would quietly test a pipeline the shipped one no longer is.
+  + cut(units, 'export function treatedAsOffensive', '// ---------- DISARM', 'treatedAsOffensive')
   + cut(ticks, 'export const TIMING_OF_TYPE', 'export const LENGTH_OF_SIZE', 'TIMING_OF_TYPE')
   + cut(ticks, 'export function timingOf', '// An Action only costs Ticks', 'timingOf')
   // The REAL partSays, because its `if (slot === 'pilot') continue;` is the one

@@ -5,7 +5,7 @@ import { linkMechanics } from './inspector';
 import { SQUAD_ORDER, squadLabel } from './data';
 import type { Card, CardAction, CombatView, CounterRoll, DiceData, DiceIcon, DieColor, Duel, DuelIcon, GameRuleEffect, PartSlot, Side, SmokeScreen, TerrainPiece, Token } from './types';
 import { statusCount, STATUSES } from './types';
-import { aaRadarCovers, armorPiercing, armorPiercingNote, attackReactionsOf, auraEffectsOn, aurasOn, auraValueOn, automaticShieldFor, blueLightningDodges, earlyWarningCover, coolingBonus, denseArmorByText, eyesAreHeavyHits, pilotDiceBonus, ignoresLowProfile, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, noMeleeBackAttack, onHitRiders, STATUS_BY_ZH, missileGuidance, multiTargetLimit, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, snipeOn, suppressionOn, disarmOn, dragPrinted, denseArmorOn, designationsOn, electronicStrength, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, canAffordFocus, focusIsFree, hiddenByAlliedAura, keepsLinkOnPartLoss, maxLink, provokeWhy, pursuesFragile, structureOf, trackingCover, TRACKING_SPOTTERS_NEEDED, pilotCard, pilotIs, repeatersFor, SLOT_LABEL, tetherStrike, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
+import { aaRadarCovers, armorPiercing, armorPiercingNote, attackReactionsOf, auraEffectsOn, aurasOn, auraValueOn, automaticShieldFor, blueLightningDodges, earlyWarningCover, coolingBonus, denseArmorByText, eyesAreHeavyHits, pilotDiceBonus, ignoresLowProfile, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, noMeleeBackAttack, onHitRiders, STATUS_BY_ZH, missileGuidance, multiTargetLimit, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, snipeOn, suppressionOn, disarmOn, dragPrinted, denseArmorOn, designationsOn, electronicStrength, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, canAffordFocus, focusIsFree, hiddenByAlliedAura, keepsLinkOnPartLoss, maxLink, provokeWhy, pursuesFragile, structureOf, trackingCover, TRACKING_SPOTTERS_NEEDED, pilotCard, pilotIs, repeatersFor, SLOT_LABEL, tetherStrike, treatedAsOffensive, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
 import { timingOf } from './ticks';
 import { inArc, losNote, protectionFor, rangeBetween } from './rules';
 import type { Command } from './commands';
@@ -1878,7 +1878,7 @@ export class AttackHelper {
   // counts it, it just cannot be cancelled as part of a die, which errs
   // against the defender rather than inventing a cancellation.
   private attackIconsPerDie(c: Ctx): { heavy: number; light: number }[] {
-    const upgrade = c.attacker.stance === 'offensive';
+    const upgrade = treatedAsOffensive(c.attacker, c.defender);
     const swapLightning = !!this.lightningSwap(c);
     // The heavy budget is Math.max(paid, free) exactly as attackIcons computes
     // it. Reading only c.eyeSwaps here was a live gap: card 503 Close Assault
@@ -1916,7 +1916,7 @@ export class AttackHelper {
   }
 
   private attackIcons(c: Ctx): Record<string, number> {
-    let counts = this.countIcons(c.attackRoll ?? [], c.attacker.stance === 'offensive');
+    let counts = this.countIcons(c.attackRoll ?? [], treatedAsOffensive(c.attacker, c.defender));
     // 503 Close Assault trades every {Eye} for a {Heavy Hit} for nothing, so it
     // is applied rather than offered -- the same trade Chef buys with a Command
     // Token, riding the same counter so the two cannot double-count one icon.
@@ -3520,7 +3520,7 @@ export class AttackHelper {
     wrap.className = 'ah-step';
     const partCard = c.targetPart ? this.defenderPartCard(c.targetPart) : undefined;
     wrap.innerHTML = `<h4><span class="ah-n">2</span>Attack Roll ${c.targetPart ? `vs <b>${SLOT_LABEL[c.targetPart as PartSlot | 'main']}</b> (${partCard ? cardName(partCard) : ''})` : ''}</h4>
-      ${c.attacker.stance === 'offensive' ? '<p class="dim">OFF stance: hollow attack icons count as solid.</p>' : ''}`;
+      ${treatedAsOffensive(c.attacker, c.defender) ? `<p class="dim">${c.attacker.stance === 'offensive' ? 'OFF stance: hollow attack icons count as solid.' : `Target Tracer on ${c.defender.label}: this Drone attacks as if in Offensive Stance, so hollow icons count (glossary).`}</p>` : ''}`;
     wrap.appendChild(
       this.poolEditor(
         [['Red', 'red'], ['Yellow', 'yellow']],
@@ -4538,7 +4538,7 @@ export class ElectronicHelper {
     this.role = role;
     const world = this.tokens ? this.tokens() : [];
     const done = !!c.initRoll && !!c.respRoll;
-    const a = initRoll ? this.tally(initRoll, init.stance === 'offensive') : null;
+    const a = initRoll ? this.tally(initRoll, treatedAsOffensive(init, resp)) : null;
     const b = respRoll ? this.tally(respRoll, resp.stance === 'offensive') : null;
     this.ctx = {
       initiator: init,
@@ -4760,7 +4760,7 @@ export class ElectronicHelper {
     const wrap = document.createElement('div');
     wrap.className = 'ew-side';
     wrap.innerHTML = `<h5>${who === 'init' ? 'Initiator' : 'Responder'} · ${t.label}
-      <span class="ew-ev">EV ${ev}</span>${t.stance === 'offensive' ? '<span class="ew-off">OFF: hollow counts</span>' : ''}</h5>`;
+      <span class="ew-ev">EV ${ev}</span>${(who === 'init' ? treatedAsOffensive(t, c.responder) : t.stance === 'offensive') ? '<span class="ew-off">OFF: hollow counts</span>' : ''}</h5>`;
     if (roll) {
       const row = document.createElement('div');
       row.className = 'ah-roll';
@@ -4788,7 +4788,7 @@ export class ElectronicHelper {
         delete this.pending[who];
         window.setTimeout(() => this.spins[who].spin(row, roll, only), 0);
       }
-      const n = this.tally(roll, t.stance === 'offensive');
+      const n = this.tally(roll, who === 'init' ? treatedAsOffensive(t, c.responder) : t.stance === 'offensive');
       const sum = document.createElement('p');
       sum.className = 'ah-sum';
       sum.innerHTML = `Lightning <b>${n.lightning}</b> · Light Hit <b>${n.light}</b>`;
@@ -4908,7 +4908,7 @@ export class ElectronicHelper {
       resolve.className = 'ah-primary';
       resolve.textContent = 'Resolve ▸';
       resolve.addEventListener('click', () => {
-        const a = this.tally(c.initRoll!, c.initiator.stance === 'offensive');
+        const a = this.tally(c.initRoll!, treatedAsOffensive(c.initiator, c.responder));
         const b = this.tally(c.respRoll!, c.responder.stance === 'offensive');
         const { initiatorWins: win, why } = resolveCounterRoll(a, b);
         c.done = true;
@@ -4939,7 +4939,7 @@ export class ElectronicHelper {
     // restarting it mid-flight would resolve the same icons twice. Same rule
     // stepResolve follows for the attack.
     {
-      const a = this.tally(c.initRoll!, c.initiator.stance === 'offensive');
+      const a = this.tally(c.initRoll!, treatedAsOffensive(c.initiator, c.responder));
       const b = this.tally(c.respRoll!, c.responder.stance === 'offensive');
       const strip = document.createElement('div');
       strip.innerHTML = contestHtml({
