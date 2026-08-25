@@ -799,6 +799,32 @@ export function statIconUrl(field: string): string | null {
   return name ? assetUrl(`tokens/tab/icon_${name}.webp`) : null;
 }
 
+// ---------- WHICH ICONS CAN BE MASKED, AND WHY IT MATTERS ----------
+//
+// Measured off the files, not assumed. Every icon here is RGBA, but the ALPHA
+// CHANNEL splits them into two kinds:
+//
+//   armor, dodge, electronic, parray  ->  alpha fills 97-98% of its own
+//       bounding box. The artwork has the printed BOX baked into it, and the
+//       glyph is drawn on that box in ink. Masking one paints a solid square,
+//       which is exactly what it did: four stat cells showed as blank plates.
+//       These are drawn as IMAGES. They need no plate of ours because they
+//       already carry the card's own, and they already match the print.
+//
+//   everything else  ->  alpha is the glyph silhouette (33-65% of its box), so
+//       masking gives the shape and it can take any colour at any size.
+//
+// The measurement that misled an earlier pass: reading the mean luminance of
+// the OPAQUE pixels averages the baked plate in with the ink, so a dark glyph
+// on a white plate reads as "near-white artwork". Judge the alpha, not the
+// colour.
+export const PLATED_ICONS = new Set(['armor', 'dodge', 'electronic', 'parray']);
+
+export function statIconIsPlated(field: string): boolean {
+  const name = STAT_ICONS[field];
+  return !!name && PLATED_ICONS.has(name);
+}
+
 export const TOKEN_PRINT: Record<string, string[]> = {
   fci: ['fci-yellow', 'fci-red'],
   fragile: ['fragile-yellow', 'fragile-red'],

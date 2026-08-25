@@ -354,12 +354,11 @@ body.ref-locked { overflow: hidden; }
 }
 .ref-cardimg { display: block; width: 100%; max-width: 320px; border-radius: 8px; margin: 12px 0; }
 
-.ref-stats { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
-.ref-stats span {
-  background: var(--surface2); border-radius: var(--radius); padding: 5px 9px;
-  font-size: 10.5px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.4px;
-}
-.ref-stats b { font-family: var(--mono); font-size: 13px; color: var(--text); margin-right: 4px; font-weight: 600; }
+/* The stat PILLS lived here. They are the strip further down this file now, and
+   the old rules had to go rather than be left dormant: `.ref-stats span` is
+   more specific than `.stat-mark`, so the retired pill styling was still
+   winning against the new masked icon and painting it surface2 on text3. A
+   superseded rule that still matches is not dead code, it is a live override. */
 .ref-kwlinks { display: flex; flex-wrap: wrap; gap: 10px; margin: 10px 0; font-size: 13px; }
 
 .ref-trait, .ref-action {
@@ -376,11 +375,37 @@ body.ref-locked { overflow: hidden; }
 }
 .ref-action h4 { margin: 0; font-size: 14px; font-weight: 600; color: var(--text); }
 .ref-action .ref-meta { margin: 3px 0 6px; }
+/* THE RULEBOOK DEFINITION PANEL, closed by default. Collapsed it is one line
+   naming the rule; open it reads exactly as the old block did. */
 .ref-mech {
   background: var(--blue-lt); border-radius: var(--radius);
   padding: 9px 11px; margin-top: 9px !important; font-size: 12.5px !important; color: #cfe3f7;
 }
 .ref-mech b { color: var(--blue); }
+.ref-mech > summary {
+  cursor: pointer; list-style: none; user-select: none;
+  display: flex; align-items: baseline; gap: 6px;
+}
+/* Both spellings: WebKit still wants the pseudo-element to drop the default
+   triangle, and everything else honours list-style above. */
+.ref-mech > summary::-webkit-details-marker { display: none; }
+/* Our own marker, so it can sit at the END and rotate. A caret pointing down on
+   a closed panel is the affordance the default triangle provides and the reason
+   this cannot simply be a bold line of text. */
+.ref-mech > summary::after {
+  content: '▾'; margin-left: auto; color: var(--blue);
+  font-size: 10px; line-height: 1; transition: transform 140ms ease;
+}
+.ref-mech[open] > summary::after { transform: rotate(180deg); }
+.ref-mech > summary:hover b,
+.ref-mech > summary:focus-visible b { text-decoration: underline; }
+.ref-mech > summary em { color: #9db9d6; font-style: normal; font-size: 11.5px; }
+/* The wording, once opened. The rule above it is the summary, so this needs the
+   separation a paragraph break would have given it. */
+.ref-mech > .ref-mech-b { margin-top: 7px; }
+@media (prefers-reduced-motion: reduce) {
+  .ref-mech > summary::after { transition: none; }
+}
 .ref-note { color: var(--text3); font-size: 11.5px; }
 .ref-boxes { color: var(--text2); font-size: 11.5px; margin-top: 16px; }
 
@@ -577,9 +602,23 @@ body.ref-locked { overflow: hidden; }
    a card you cannot read is worse than the text retyped. Three-up leaves each
    around 390px, and the whole thing is a link to the full-size image for when
    that still is not enough. */
+/* FOUR ACROSS, ALWAYS. There are four quick-reference cards and the grid used
+   to size itself with `auto-fill minmax(320px, 1fr)`, which inside the body's
+   1136px span works out to three columns and drops the fourth onto a row of its
+   own. A fixed count is right here precisely because the count is fixed: these
+   are four printed cards, not a list that grows.
+
+   They span the same total width as the three-column layout below, so the
+   section reads as one block with the rest of the page rather than a wider
+   thing sitting on top of it. That makes each card narrower than a card in the
+   3-column grid, which is fine: they are read by opening them full size, and
+   the row is a contact sheet. */
 .help-grid {
   display: grid; gap: 12px; grid-column: 1 / -1;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  grid-template-columns: repeat(2, 1fr);
+}
+@media (min-width: 720px) {
+  .help-grid { grid-template-columns: repeat(4, 1fr); }
 }
 .help-card { margin: 0; }
 .help-card a { display: block; }
@@ -589,8 +628,8 @@ body.ref-locked { overflow: hidden; }
   transition: border-color 0.12s;
 }
 .help-card a:hover img { border-color: var(--accent); }
-.help-card figcaption { display: block; padding: 6px 2px 0; font-size: 11.5px; color: var(--text2); }
-.help-card figcaption b { display: block; color: var(--text); font-size: 12.5px; }
+/* The captions are gone: four printed cards name themselves, and the titles
+   and notes said less than the images they sat under. */
 
 /* ---------- token reference ---------- */
 .tok-card .card-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -600,8 +639,10 @@ body.ref-locked { overflow: hidden; }
    and Hexagon pieces are cut to their own outline, so no plate behind them. */
 .tok-print { height: 34px; width: auto; vertical-align: middle; }
 .tok-badge { display: block; }
-.tag.tok-green { background: rgba(61, 220, 132, 0.16); color: #2fa968; }
-.tag.tok-yellow { background: rgba(240, 180, 41, 0.18); color: #b07c0d; }
+/* The decay chips these tinted are gone: beside a photograph of the printed
+   token, a chip reading "Yellow" labelled what the picture already showed. The
+   duration is still written out in the card body, where it reads as the rule it
+   is. Rules removed rather than left dormant, per the stat-pill lesson. */
 
 /* Set inline in glossary prose as well as ahead of an action name, so the base
    carries no margin: the sentence already supplies its own space. */
@@ -616,8 +657,17 @@ body.ref-locked { overflow: hidden; }
   cursor: help; vertical-align: middle;
 }
 .act-icons .act-speed:last-child { margin-right: 0; }
-.act-speed.sp-auto { background: rgba(240, 180, 41, 0.2); color: #f0b429; }
-.act-speed.sp-command { background: rgba(101, 162, 216, 0.2); color: #65a2d8; }
+/* THE PRINTED MARKS. ZHDR-201 draws both as a light box with a heavy dark
+   outline and a dark glyph, the same family as the tick capsule. Ours were
+   amber and blue, which is our palette rather than the print's, and the blue
+   one landed on the blue Movement bar and disappeared into it. Kept identical
+   to the reference's copy of this rule so one mark means one thing on both
+   pages. */
+.act-speed.sp-auto,
+.act-speed.sp-command {
+  background: #eaeaf5; color: #14171c;
+  border: 1.5px solid #14171c; border-radius: 4px; text-shadow: none;
+}
 
 /* Dice symbols written into card and glossary text as {Eye}, {Heavy Hit}, {B}. */
 .glyph-run { display: inline; white-space: nowrap; }
@@ -638,3 +688,206 @@ body.ref-locked { overflow: hidden; }
 .glyph-die.die-white { background: #ececec; }
 
 .ref-speed { margin: 2px 0 4px; font-size: 11.5px; color: var(--text2); }
+
+/* ---------- THE ACTION LENGTH CAPSULE (printed iconography) ----------
+   Measured off the printed cards: a vertical rounded capsule, heavy dark
+   outline, pale interior, THREE slots, filled BOTTOM UP in dark slate.
+   Short 1, Medium 2, Long 3. Kept light on our dark UI on purpose: it is a
+   piece of the printed card lifted onto the screen, and a player should
+   recognise it from the table without translating. Same reason the die glyphs
+   keep their printed colours. */
+.tick-cap {
+  display: inline-flex; flex-direction: column; justify-content: flex-end; gap: 1px;
+  width: 13px; height: 30px; flex: 0 0 13px; padding: 2px;
+  background: #eaeaf5; border: 1.5px solid #14171c; border-radius: 4px;
+  vertical-align: -8px; box-sizing: border-box;
+}
+.tick-cap i { display: block; flex: 1; border-radius: 1px; background: transparent; }
+.tick-cap i.on { background: #39424f; }
+/* An action that costs no Ticks (a Passive) shows no capsule at all rather than
+   an empty one, which would read as "free" instead of "not a choice". */
+.tick-cap.none { display: none; }
+
+/* ---------- DETAIL TABS (Card / Photo / Boxes) ----------
+   The photo and the data used to sit on top of each other, so the popup opened
+   on a picture and every number was below the fold. Three tabs mean nothing is
+   ever shown twice and the card's own rules are what you land on. */
+.dtabs { display: flex; gap: 3px; margin: 12px 0 0; }
+.dtabs button {
+  background: var(--surface2); border: 1px solid var(--border); border-bottom-color: transparent;
+  color: var(--text3); font: 600 11.5px var(--font); padding: 6px 14px;
+  border-radius: var(--radius) var(--radius) 0 0; cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.dtabs button:hover { color: var(--text2); }
+.dtabs button.on { background: var(--surface); color: var(--text); border-color: var(--border); border-bottom-color: var(--surface); }
+.dtabs button[hidden] { display: none; }
+.dpanel { border: 1px solid var(--border); border-radius: 0 var(--radius) var(--radius); padding: 14px; margin-top: -1px; }
+
+/* ---------- THE STAT STRIP ----------
+   One row across the full width instead of a column of pills, which is where
+   the empty space beside the old left-justified image went. */
+.ref-stats {
+  display: flex; flex-wrap: wrap; gap: 0; margin: 0 0 12px;
+  background: var(--surface2); border-radius: var(--radius); overflow: hidden;
+}
+.ref-stats .ds {
+  /* Sized from CONTENT, never an even division of the row: eight cells sharing
+     `flex: 1 1 0` off a fixed floor squeezed the long labels (PROJECTILE,
+     ELECTRONIC) into their neighbours. A cell is now never narrower than the
+     word inside it, and the row wraps instead of overlapping. */
+  flex: 1 1 auto; min-width: fit-content; display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px; border-right: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+.ref-stats .ds:last-child { border-right: 0; }
+.ref-stats .dsv { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.ref-stats .dsv b { font-family: var(--mono); font-size: 15px; font-weight: 600; line-height: 1; color: var(--text); }
+.ref-stats .dsv b.zero { color: var(--text3); font-weight: 400; }
+.ref-stats .dsv i {
+  font-style: normal; font-size: 8.5px; letter-spacing: 0.5px; line-height: 1.1;
+  color: var(--text3); text-transform: uppercase; white-space: nowrap;
+}
+/* MASKED, never plated. Every stat icon is monochrome art on transparency and
+   half of them are near white, which measured 1.16:1 against the white plate
+   this replaced. Taking currentColor works on any surface at any size. */
+.stat-mark {
+  display: inline-block; width: 19px; height: 19px; flex: 0 0 19px;
+  background: currentColor; color: var(--text2);
+  -webkit-mask: var(--src) center / contain no-repeat;
+  mask: var(--src) center / contain no-repeat;
+}
+
+/* ---------- THE ACTION ROW, as the card prints it ----------
+   Type icon on a light plate, tick capsule, then the name on a bar in the
+   TIMING colour, then the rules text underneath. */
+.ref-action { background: var(--surface2); border-radius: var(--radius); padding: 0; overflow: hidden; margin-bottom: 9px; }
+.ra-h { display: flex; align-items: stretch; gap: 0; --tint: var(--text3); }
+.ref-action.t-swift .ra-h { --tint: var(--t-swift); }
+.ref-action.t-melee .ra-h { --tint: var(--t-melee); }
+.ref-action.t-projectile .ra-h { --tint: var(--t-projectile); }
+.ref-action.t-firing .ra-h { --tint: var(--t-firing); }
+.ref-action.t-movement .ra-h { --tint: var(--t-movement); }
+.ref-action.t-tactical .ra-h { --tint: var(--t-tactical); }
+/* The icon keeps its ARTWORK: its colour is the timing, and masking would
+   throw that away. It sits on a light plate because that is what the printed
+   card does with it, which settles the contrast question by deference. */
+.ra-type { display: flex; align-items: center; justify-content: center; flex: 0 0 34px; background: #eaeaf5; padding: 5px; }
+.ra-type img { width: 22px; height: 22px; object-fit: contain; display: block; }
+.ra-h .tick-cap { align-self: center; margin: 0 6px; }
+.ra-name {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; padding: 7px 11px;
+  background: linear-gradient(100deg, var(--tint), color-mix(in srgb, var(--tint) 52%, #ffffff));
+  color: #1b1a17; font-weight: 800; font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+.ra-name .ra-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.ra-name em {
+  margin-left: auto; font-style: normal; font-size: 9.5px; font-weight: 700;
+  opacity: 0.66; text-transform: none; letter-spacing: 0; white-space: nowrap;
+}
+.ra-b { padding: 9px 12px; }
+.ra-b > p:first-child { margin-top: 0; }
+.ref-action h4 { margin: 0; }
+
+/* ---------- fixes from the first look at option F ---------- */
+
+/* 1. THE POPUP KEEPS ITS HEIGHT ACROSS TABS. Each panel is a different length,
+   so switching tabs made the whole sheet jump. The panel holds the height of
+   the TALLEST it has shown (set per card in JS) and scrolls inside itself, so
+   the frame stays put and only the content moves. */
+.dpanel { min-height: var(--dpanel-h, auto); }
+
+/* 2. The stat marks that carry their own printed box. These are drawn as
+   images, never masked: their alpha is the BOX, so masking paints a blank
+   square, which is what four of the cells were doing. */
+.stat-plate {
+  width: 21px; height: 21px; flex: 0 0 21px; object-fit: contain; display: block;
+  border-radius: 3px;
+}
+/* Structure prints as a bare dark box holding the number, with no glyph beside
+   it, so the numeral IS the mark. */
+.ref-stats .dsv b.boxed {
+  display: inline-block; background: #14171c; color: #fff;
+  border-radius: 3px; padding: 1px 6px; line-height: 1.25;
+}
+.ref-stats .dsv b.boxed.zero { color: var(--text3); background: #1b1f26; }
+
+/* 3. The tick capsule, sized against the print: on the card it stands TALLER
+   than the type icon (about 1.45x), and at 30px it was shorter than ours. */
+.ra-h .tick-cap { width: 15px; height: 40px; flex: 0 0 15px; }
+
+/* 4. The name bar. The gradient used to run to near-white at the right, which
+   is exactly where the type label sits, so the label faded out. It now stops
+   at a tint that still carries the colour, and the label gets its own darker
+   ink rather than relying on opacity. */
+.ra-name { background: linear-gradient(100deg, var(--tint), color-mix(in srgb, var(--tint) 72%, #ffffff)); }
+.ra-name em { opacity: 1; color: rgba(20, 18, 14, 0.66); }
+
+/* 5. The thumbnail on the Card tab: the printed card at a glance, and a button
+   that opens the Photo tab. */
+.dtop { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 12px; }
+.dtop-b { flex: 1; min-width: 0; }
+.dtop-b > :first-child { margin-top: 0; }
+.dthumb {
+  flex: 0 0 76px; width: 76px; padding: 0; border: 1px solid var(--border);
+  border-radius: 5px; overflow: hidden; background: var(--surface2); cursor: pointer; display: block;
+  transition: border-color 0.12s;
+}
+.dthumb:hover { border-color: var(--accent); }
+.dthumb-img { display: block; width: 100%; height: auto; }
+/* The thumbnail moved to the title row, so the strip has the full width and
+   needs no narrower cells beside it. */
+
+/* 6. The box cards on the Boxes tab, the same ones the Boxes tab of the
+   reference lists. */
+.dboxcards { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+.dboxcards .box-card { margin-bottom: 0; }
+
+/* ---------- the printed speed marks, and the black bar they sit on ----------
+   ZHDR-201 prints |TEAR| and |MISSILE| on BLACK bars: a Command or Automatic
+   action is not taken on the Timing Dial, so it gets no timing colour. Ours
+   were tinted by type, which also put the Command mark's blue on the blue
+   Movement bar, where it disappeared. */
+.ref-action.t-dialless .ra-h { --tint: #14171c; }
+.ref-action.t-dialless .ra-name { color: #f4f5f7; text-shadow: none; }
+.ref-action.t-dialless .ra-name em { color: rgba(244, 245, 247, 0.6); }
+
+/* The ! and ? marks as the card draws them: a white box with a heavy dark
+   outline and a dark glyph, the same family as the tick capsule beside them.
+   They were amber and blue, which is our palette rather than the print's. */
+.ra-h .act-speed,
+.ref-action .act-speed.sp-auto,
+.ref-action .act-speed.sp-command {
+  background: #eaeaf5; color: #14171c;
+  border: 1.5px solid #14171c; border-radius: 4px;
+  font-weight: 800; text-shadow: none;
+}
+
+/* The card's own keywords and rules, at the foot of the panel. */
+.dfoot { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+.dfoot .ref-sub { margin-top: 0; }
+
+/* ---------- the title row carries the thumbnail ---------- */
+.dhead { display: flex; gap: 12px; align-items: flex-start; }
+.dhead-t { flex: 1; min-width: 0; }
+.dhead-t h2 { margin-top: 0; }
+.dhead .dthumb { flex: 0 0 58px; width: 58px; margin-top: 2px; }
+/* The old spot above the strip is gone; these keep any stragglers honest. */
+.dtop { display: flex; gap: 12px; align-items: flex-start; }
+.dtop-b { flex: 1; min-width: 0; }
+
+.ref-stats .dsv i { font-size: 9px; letter-spacing: 0.4px; }
+
+/* ---------- the Photo tab fills the space it is given ----------
+   The tab exists to look at the card, so the card takes the panel rather than
+   sitting at 320px in the corner of it. Bounded by the panel's own height
+   floor so the two cannot chase each other: the floor is set from the tallest
+   panel seen, the image fits inside it, and the next measurement agrees. */
+[data-dpanel="photo"] { display: flex; align-items: flex-start; justify-content: center; }
+[data-dpanel="photo"] .ref-scan { margin: 0; max-width: 100%; }
+[data-dpanel="photo"] .ref-cardimg {
+  display: block; width: auto; height: auto; margin: 0 auto;
+  max-width: 100%; max-height: calc(var(--dpanel-h, 70vh) - 30px);
+  border-radius: 8px;
+}

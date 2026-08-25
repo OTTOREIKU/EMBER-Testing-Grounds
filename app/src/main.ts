@@ -5231,7 +5231,7 @@ async function init() {
     box.innerHTML = `<div class="mis-lightbox-inner">
         <button class="dlg-close" title="Close">✕</button>
         <img src="${missionImageUrl(m.id)}" alt="${m.name} card">
-        <p>${m.name}${m.nameKo ? ` · ${m.nameKo}` : ''}</p>
+        <p>${m.name}</p>
       </div>`;
     const close = () => {
       box.remove();
@@ -5254,7 +5254,6 @@ async function init() {
     const div = document.createElement('div');
     div.className = 'scn-brief';
     div.innerHTML = `<h3>${m.name}</h3>
-      ${m.nameKo ? `<p class="dim">${m.nameKo}</p>` : ''}
       <button class="mis-card-thumb" title="Tap for the full card">
         <img src="${missionImageUrl(m.id)}" alt="${m.name} card" loading="lazy">
         <span>Tap to enlarge</span>

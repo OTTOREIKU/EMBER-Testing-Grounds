@@ -1,12 +1,12 @@
 import './reference.css';
-import { actionIconUrl, boxCoverUrl, cardName, HELP_CARDS, helpCardUrl, TOKEN_PRINT, tokenPrintUrl, factionArtUrl, FACTION_LABEL, isListedBox, loadData, mechPartUrl, missionImageUrl, portraitUrl, secondaryImageUrl, statIconUrl, tabImageUrl, traitName, zeroCostReason, type BoxDef, type FactionDef, type GameData, type KeywordDef } from './data';
-import { mountCardImage, preloadCardImages, warmAllImagesWhenIdle } from './images';
+import { actionIconUrl, boxCoverUrl, cardName, HELP_CARDS, helpCardUrl, TOKEN_PRINT, tokenPrintUrl, factionArtUrl, FACTION_LABEL, isListedBox, loadData, mechPartUrl, missionImageUrl, portraitUrl, secondaryImageUrl, statIconIsPlated, statIconUrl, tabImageUrl, traitName, zeroCostReason, type BoxDef, type FactionDef, type GameData, type KeywordDef } from './data';
+import { mountCardImage, mountCardImageCopy, preloadCardImages, warmAllImagesWhenIdle } from './images';
 import { runFirstVisitPreload } from './preload';
 import { watchForUpdates } from './updates';
 import { SHAPE_NOTE, STATUSES, TIMINGS, type Card, type StatusDef } from './types';
 import { registerOffline } from './offline';
-import { costLabel, LENGTH_NAME, lengthOf, TICK_COST } from './ticks';
-import { maskGlyphs } from './glyphs';
+import { costLabel, LENGTH_NAME, lengthOf, TICK_COST, timingOf } from './ticks';
+import { diePips, maskGlyphs, tickCapsule } from './glyphs';
 import { linkIcon } from './icons';
 
 type Tab = 'keywords' | 'parts' | 'units' | 'pilots' | 'tactics' | 'boxes' | 'factions' | 'missions' | 'rules';
@@ -170,10 +170,42 @@ function linkKeywords(text: string): string {
 // Value are mechanics rather than keywords, so they get spelled out beneath the
 // text that names them. Anything not mentioned matches nothing and prints
 // nothing, so this stays quiet wherever it is not wanted.
+// THE RULEBOOK DEFINITIONS, FOLDED AWAY. Printing every glossary entry in full
+// under every card that mentions it buried the card's own text: a Main Task is
+// three lines of its own rules followed by a paragraph of Black Box, and the
+// paragraph is the same paragraph on all three Black Box missions.
+//
+// `details`/`summary` rather than a button and a class: it opens with the
+// keyboard, it is announced as expandable without any ARIA of ours, and
+// crucially it needs NO click handler, so it cannot collide with the
+// document-level delegation that turns [data-kw] and [data-mission] into
+// navigation. Closed by default; the summary still names the rule and its
+// rulebook reference, so what is hidden is only the wording.
+// Names already drawn somewhere in this detail. A rulebook definition is worth
+// repeating under each ACTION that needs it, because a reader looking at one
+// action should not have to hunt; it is not worth repeating at CARD level under
+// a definition an action already carries, which is how "Pulse Weapon" came to
+// appear twice in one popup.
+let mechSeen: Set<string> | null = null;
+
 function mechBlocks(...text: (string | undefined)[]): string {
   return data
     .mechanicsFor(...text)
-    .map((m) => `<p class="ref-mech"><b>${esc(m.name)}</b>${m.ref ? ` <em>(${esc(m.ref)})</em>` : ''}: ${linkKeywords(m.text)}</p>`)
+    .filter((m) => {
+      if (!mechSeen) return true;
+      if (mechSeen.has(m.name)) return false;
+      mechSeen.add(m.name);
+      return true;
+    })
+    .map(
+      (m) => `<details class="ref-mech">`
+        + `<summary><b>${esc(m.name)}</b>${m.ref ? ` <em>(${esc(m.ref)})</em>` : ''}</summary>`
+        // linkKeywords runs on the BODY only. In the summary its [data-kw]
+        // anchors would sit inside the toggle, so one tap would both open the
+        // panel and navigate away from it.
+        + `<div class="ref-mech-b">${linkKeywords(m.text)}</div>`
+        + `</details>`,
+    )
     .join('');
 }
 
@@ -279,10 +311,43 @@ function cardDetail(c: Card): string {
   // Link is the one stat the printed card colours, tinting its mark to the
   // pilot's faction, so it is drawn through the mask rather than as one more
   // white tile.
+  // THE STAT CELL. The mark is MASKED rather than plated: every stat icon is
+  // monochrome artwork on transparency, and half of them are near white
+  // (Dodge, Parry and Electronic measure 1.16:1 to 1.32:1 against the white
+  // plate this used to draw, which is why they were all but invisible). Masked,
+  // the icon takes the surrounding text colour and works on any surface at any
+  // size. Only the ACTION icons keep their artwork, because their colour is the
+  // timing and masking would throw that away; those are plated below, on a
+  // light plate, exactly as the printed card plates them.
+  // THE STAT CELL, following what the card prints.
+  //
+  // Armor, Dodge, Parry and Electronic each ship as artwork with the printed
+  // BOX baked in, so they are drawn as images and need no plate of ours: what
+  // you see is the mark off the card. Masking them was a mistake and drew four
+  // blank squares, because their alpha is the box rather than the glyph.
+  //
+  // STRUCTURE HAS NO GLYPH ON THE CARD. The print gives it a plain dark box
+  // holding the number, next to Armor's, and our data was borrowing Armor's
+  // icon for it, so the two sat side by side looking identical. It gets the
+  // printed treatment instead.
+  //
+  // The Link mark stays masked on purpose: it is a true silhouette and it takes
+  // the pilot's faction colour the way the printed card does.
   const chip = (field: string, value: unknown, label: string) => {
-    if (field === 'LV') return `<span>${linkIcon(data.factionOf(c), 'lk-stat')}<b>${value}</b>${label}</span>`;
-    const ic = statIconUrl(field);
-    return `<span>${ic ? `<img class="stat-icon" src="${ic}" alt="">` : ''}<b>${value}</b>${label}</span>`;
+    const zero = Number(value) === 0 ? ' zero' : '';
+    if (field === 'structure') {
+      return `<div class="ds"><span class="dsv"><b class="boxed${zero}">${value}</b><i>${esc(label)}</i></span></div>`;
+    }
+    const ic = field === 'LV' ? '' : statIconUrl(field);
+    const mark =
+      field === 'LV'
+        ? linkIcon(data.factionOf(c), 'lk-stat')
+        : ic
+          ? statIconIsPlated(field)
+            ? `<img class="stat-plate" src="${ic}" alt="">`
+            : `<span class="stat-mark" style="--src:url(${ic})"></span>`
+          : '';
+    return `<div class="ds">${mark}<span class="dsv"><b class="${zero.trim()}">${value}</b><i>${esc(label)}</i></span></div>`;
   };
   const stats = STAT_FIELDS.filter(([f]) => typeof c[f] === 'number')
     .map(([f, label]) => chip(f as string, c[f], label))
@@ -297,14 +362,15 @@ function cardDetail(c: Card): string {
   const kws = [...new Set((c.keywords ?? []).map(kwLabel).filter(Boolean))]
     .map((label) => `<a class="kw-link" data-kw="${esc(label)}">${esc(label)}</a>`)
     .join('');
+  // Dedupe from HERE, so the actions each keep the definitions they need and
+  // only the CARD level block below drops what they already showed. Reset per
+  // card detail rather than left standing, or the second card opened would
+  // silently lose every definition the first one used.
+  mechSeen = new Set<string>();
   const actions = (c.actions ?? [])
     .map((a) => {
-      const dice = [a.redDice ? `${a.redDice}R` : '', a.yellowDice ? `${a.yellowDice}Y` : ''].filter(Boolean).join('+');
       const len = lengthOf(a);
       const cost = len ? `${LENGTH_NAME[len]} (${costLabel(TICK_COST[len])})` : '';
-      const meta = [a.type, cost, a.range === 0 ? 'R --' : a.range ? `R ${a.range}` : '', dice, a.storage ? `Ammo ${a.storage}` : '']
-        .filter(Boolean)
-        .join(' · ');
       const en = englishOnly(a.description?.en);
       const tr = data.actionTranslation(a.id);
       let text = '';
@@ -319,16 +385,54 @@ function cardDetail(c: Card): string {
       // displayed on the card that needed them.
       const mechHtml = mechBlocks(a.name.en, a.name.zh, en, a.description?.zh, tr?.english ?? undefined);
       const icon = actionIconUrl(a.type);
-      return `<div class="ref-action">
-        <h4>${icon ? `<img class="act-icon" src="${icon}" alt="" title="${esc(a.type ?? '')}">` : ''}${
-          SPEED_MARK[a.speed ?? ''] ? `<span class="act-speed sp-${esc(a.speed!)}" title="${esc(SPEED_MARK[a.speed!].title)}">${SPEED_MARK[a.speed!].glyph}</span>` : ''
-        }${esc(a.name.en || a.name.zh || a.id)}</h4>
-        ${a.speed && SPEED_MARK[a.speed]
-          ? `<p class="ref-speed"><a class="kw-link" data-kw="${esc(SPEED_MARK[a.speed].label)}">${esc(SPEED_MARK[a.speed].label)}</a></p>`
-          : ''}
-        <p class="ref-meta">${esc(meta)}</p>
-        <p>${text.replace(/\n/g, '<br>')}</p>
-        ${mechHtml}
+      // THE PRINTED TICK CAPSULE. It counts TOTAL Ticks the way the card draws
+      // them: Short 1, Medium 2, Long 3. The card's three slots are identical,
+      // so the Maneuver Tick a Long action also costs is named in the title
+      // rather than shown in a second colour, which would be our invention
+      // painted onto a mark players already know from the table.
+      const ticks = len ? TICK_COST[len].maneuver + TICK_COST[len].action : 0;
+      // THE ROW, laid out the way the card prints it: the type icon on a light
+      // plate, then the tick capsule, then the name on a bar in the TIMING
+      // colour, then the rules text underneath. Timings the dial can be set to
+      // get their tint; a Passive, Immediate, Delay or Detonation is not a
+      // timing at all and takes the neutral bar the cards give it.
+      // A Command or Automatic action is NOT taken on the Timing Dial, and the
+      // printed card says so by giving it a BLACK bar instead of a timing
+      // colour (ZHDR-201's |TEAR| and |MISSILE| are both black). Following that
+      // also removes a collision our own tints created: the Command mark's blue
+      // sat on the blue Movement bar and vanished into it.
+      const dialless = a.speed === 'auto' || a.speed === 'command';
+      const timing = dialless ? undefined : timingOf(a);
+      // The meta line drops the length, which the capsule beside the name now
+      // says better than the words did. What is left is the numbers, and the
+      // Range is SPELLED OUT: "R 6" reads as a die code beside "3R", and the
+      // two mean entirely different things.
+      const numbers = [
+        a.range === 0 ? esc('Range --') : a.range ? esc(`Range ${a.range}`) : '',
+        diePips(a.redDice, 'R'),
+        diePips(a.yellowDice, 'Y'),
+        a.storage ? esc(`Ammo ${a.storage}`) : '',
+      ]
+        .filter(Boolean)
+        .join(' · ');
+      return `<div class="ref-action${timing ? ` t-${timing}` : dialless ? ' t-dialless' : ''}">
+        <div class="ra-h">
+          ${icon ? `<span class="ra-type"><img src="${icon}" alt="" title="${esc(a.type ?? '')}"></span>` : ''}
+          ${tickCapsule(ticks, cost)}
+          <span class="ra-name">${
+            SPEED_MARK[a.speed ?? ''] ? `<span class="act-speed sp-${esc(a.speed!)}" title="${esc(SPEED_MARK[a.speed!].title)}">${SPEED_MARK[a.speed!].glyph}</span>` : ''
+          }<span class="ra-t">${esc(a.name.en || a.name.zh || a.id)}</span>${
+            a.type ? `<em>${esc(a.type)}</em>` : ''
+          }</span>
+        </div>
+        <div class="ra-b">
+          ${a.speed && SPEED_MARK[a.speed]
+            ? `<p class="ref-speed"><a class="kw-link" data-kw="${esc(SPEED_MARK[a.speed].label)}">${esc(SPEED_MARK[a.speed].label)}</a></p>`
+            : ''}
+          ${numbers ? `<p class="ref-meta">${numbers}</p>` : ''}
+          <p>${text.replace(/\n/g, '<br>')}</p>
+          ${mechHtml}
+        </div>
       </div>`;
     })
     .join('');
@@ -392,6 +496,10 @@ function cardDetail(c: Card): string {
   // who cannot read the card most needs.
   const cardText = englishOnly(c.description?.en) ?? '';
   const cardMechs = mechBlocks(c.description?.en, c.description?.zh);
+  // Closed again the moment this card is built. It is module state so that one
+  // detail's actions can inform its own card block, and leaving it open would
+  // carry that answer into every list and mission rendered afterwards.
+  mechSeen = null;
   // Pilots are left out: their card line is flavour, and the trait block below
   // already labels it as such.
   const cardBlock = (cardText || cardMechs) && c.category !== 'pilot'
@@ -405,29 +513,79 @@ function cardDetail(c: Card): string {
   // box membership. The list rows are already tinted by it, so the detail naming
   // only the pilots' was the odd one out.
   const detailFac = data.factionOf(c);
-  return `<h2>${esc(cardName(c))}</h2>
-    <p class="ref-meta">${esc(
-      [
-        CATEGORY_LABEL[c.category] ?? c.category,
-        c.type ? SLOT_LABEL[c.type] ?? TYPE_LABEL[c.type] ?? c.type : '',
-        detailFac ? FACTION_LABEL[detailFac] ?? detailFac : '',
-      ]
-        .filter(Boolean)
-        .join(' · '),
-    )}</p>
-    ${officialLink(c)}
-    ${c.category === 'pilot' ? `<div class="ref-portrait" data-portrait="${esc(c.id)}"></div>` : ''}
-    <figure class="ref-scan">
-      <div class="ref-cardimg-slot" data-img="${esc(c.id)}"></div>
-      <figcaption class="ref-scan-note">Older scan. If it differs from the stats below, the stats are current.</figcaption>
-    </figure>
-    ${free ? `<p class="ref-free">Costs 0 points: ${esc(free)}.</p>` : ''}
-    ${stats || pilotStats ? `<div class="ref-stats">${stats}${pilotStats}</div>` : ''}
-    ${kws ? `<div class="ref-kwlinks">${kws}</div>` : ''}
-    ${cardBlock}
-    ${trait}
-    ${actions ? `<h3 class="ref-sub">Actions</h3>${actions}` : ''}
-    ${boxes ? `<p class="ref-boxes">${listsBoxes ? 'In: ' : ''}${boxes}</p>` : ''}`;
+  // THE THUMBNAIL RIDES THE TITLE. It sat above the stat strip, which cost the
+  // strip a third of its width and squeezed the longer labels (PROJECTILE,
+  // ELECTRONIC) into their neighbours. Up here it costs the strip nothing, and
+  // it is the first thing on the panel either way.
+  //
+  // NOT FOR PILOTS: their portrait is already a headshot of the same person in
+  // the same place, so a card thumbnail beside it is the same picture twice.
+  const wantsThumb = c.category !== 'pilot';
+  return `<div class="dhead">
+    ${wantsThumb ? `<button class="dthumb" data-dtab="photo" title="See the printed card"><span class="ref-cardimg-slot" data-img="${esc(c.id)}"></span></button>` : ''}
+    <div class="dhead-t">
+      <h2>${esc(cardName(c))}</h2>
+      <p class="ref-meta">${esc(
+        [
+          CATEGORY_LABEL[c.category] ?? c.category,
+          c.type ? SLOT_LABEL[c.type] ?? TYPE_LABEL[c.type] ?? c.type : '',
+          detailFac ? FACTION_LABEL[detailFac] ?? detailFac : '',
+        ]
+          .filter(Boolean)
+          .join(' · '),
+      )}</p>
+      ${officialLink(c)}
+    </div>
+  </div>
+    <div class="dtabs" role="tablist">
+      <button data-dtab="card" class="on" role="tab" aria-selected="true">Card</button>
+      <button data-dtab="photo" role="tab" aria-selected="false">Photo</button>
+      <button data-dtab="boxes" role="tab" aria-selected="false">Boxes</button>
+    </div>
+    <div class="dpanel" data-dpanel="card">
+      ${c.category === 'pilot' ? `<div class="ref-portrait" data-portrait="${esc(c.id)}"></div>` : ''}
+      ${free ? `<p class="ref-free">Costs 0 points: ${esc(free)}.</p>` : ''}
+      ${stats || pilotStats ? `<div class="ref-stats">${stats}${pilotStats}</div>` : ''}
+      ${trait}
+      ${actions ? `<h3 class="ref-sub">Actions</h3>${actions}` : ''}
+      ${
+        // THE CARD'S OWN KEYWORDS AND RULES, at the FOOT of the panel.
+        //
+        // They used to sit between the stats and the actions, which put a
+        // paragraph of rulebook definition in front of the thing a reader
+        // opened the card to read. Worse, the card banner repeats keywords the
+        // actions print for themselves, so the top of every weapon led with a
+        // list the actions were about to give again in context.
+        //
+        // Below the actions they read as what they are: the card-level notes,
+        // for anyone who wants them after the actions have been read.
+        kws || cardBlock
+          ? `<div class="dfoot">
+              ${kws ? `<h3 class="ref-sub">Keywords on this card</h3><div class="ref-kwlinks">${kws}</div>` : ''}
+              ${cardBlock}
+            </div>`
+          : ''
+      }
+    </div>
+    <div class="dpanel" data-dpanel="photo" hidden>
+      <figure class="ref-scan">
+        <div class="ref-cardimg-slot" data-img="${esc(c.id)}"></div>
+      </figure>
+    </div>
+    <div class="dpanel" data-dpanel="boxes" hidden>
+      ${boxes ? `<p class="ref-boxes">${listsBoxes ? 'In: ' : ''}${boxes}</p>` : ''}
+      ${
+        // The same box cards the Boxes tab lists, art and all. The panel had a
+        // sentence in it and nothing else, and the sentence names boxes a
+        // reader then has to go and find; these open straight to them.
+        listsBoxes
+          ? `<div class="dboxcards">${inBoxes
+              .filter((x) => x.def!.key !== 'UNSALE')
+              .map((x) => boxRow(x.def!))
+              .join('')}</div>`
+          : ''
+      }
+    </div>`;
 }
 
 // ---------- boxes ----------
@@ -895,7 +1053,6 @@ function render(): void {
           const f = fam.get(m.family);
           return `<article class="card">
             <div class="card-title">${esc(m.name)}</div>
-            ${m.nameKo ? `<div class="ref-note">${esc(m.nameKo)}</div>` : ''}
             <button class="mis-thumb" data-mission="${esc(m.id)}" title="Tap for the full card, including where the terrain and objectives sit">
               <img src="${missionImageUrl(m.id)}" alt="${esc(m.name)} card" loading="lazy">
               <span>Tap to enlarge</span>
@@ -919,7 +1076,7 @@ function render(): void {
       fams
         .map(
           (f) => `<article class="card">
-            <div class="card-title">${esc(f.name)}${f.nameKo ? ` <span class="ref-note">${esc(f.nameKo)}</span>` : ''}</div>
+            <div class="card-title">${esc(f.name)}</div>
             <div class="card-body">${linkKeywords(f.text).replace(/\n/g, '<br>')}</div>
             ${mechBlocks(f.text, ...(f.faq ?? []).map((x) => x.a))}
             ${(f.faq ?? []).length
@@ -936,7 +1093,6 @@ function render(): void {
             .map(
               (s) => `<article class="card">
             <div class="card-title">${esc(s.name)}</div>
-            ${s.nameKo ? `<div class="ref-note">${esc(s.nameKo)}</div>` : ''}
             <button class="mis-thumb" data-secondary="${esc(s.id)}" title="Tap for the full card">
               <img src="${secondaryImageUrl(s.id)}" alt="${esc(s.name)} card" loading="lazy">
               <span>Tap to enlarge</span>
@@ -1084,8 +1240,23 @@ function render(): void {
                     : tokenSvg(d) + (d.decay === 'yellow' ? tokenSvg(d, true) : '')
                 }</span>
                 ${esc(d.label)}
-                <span class="tag mono">${esc(d.shape)}</span>
-                ${dur ? `<span class="tag mono tok-${esc(d.decay!)}">${esc(dur.label)}</span>` : ''}
+                ${
+                  // THE SHAPE AND COLOUR CHIPS ARE GONE. Beside the printed
+                  // token they were labelling what the picture already shows,
+                  // and doing it worse: "square" and "Yellow" next to a
+                  // photograph of a square yellow Fragile token is noise that
+                  // reads as extra rules.
+                  //
+                  // `state` STAYS, because it is the one shape value that is
+                  // not a shape: Camouflage and In smoke are States (2.5.4)
+                  // with no printed piece at all, so the chip is the only thing
+                  // saying which kind of thing this is.
+                  //
+                  // Nothing is lost with the other two: the body below still
+                  // carries SHAPE_NOTE and the duration in prose, where they
+                  // read as the rules they are.
+                  d.shape === 'state' ? `<span class="tag mono">${esc(d.shape)}</span>` : ''
+                }
               </div>
               <div class="card-body">
                 <p>${linkKeywords(d.note)}</p>
@@ -1129,7 +1300,6 @@ function render(): void {
                  title="Open ${esc(h.name)} full size">
                 <img src="${helpCardUrl(h.id)}" alt="${esc(h.name)}" width="700" height="954" decoding="async">
               </a>
-              <figcaption><b>${esc(h.name)}</b><span>${esc(h.note)}</span></figcaption>
             </figure>`,
           )
           .join('')}</div>`
@@ -1357,25 +1527,113 @@ function backDetail(): void {
   paintDetail(html, prev.scroll ?? 0);
 }
 
+// Switching tabs is pure DOM and never a re-render: repainting would remount
+// the card image, restart its load and throw away the scroll position, for a
+// change that only decides which of three panels is visible.
+function showDetailTab(root: HTMLElement, which: string): void {
+  root.querySelectorAll<HTMLElement>('[data-dtab]').forEach((b) => {
+    const on = b.dataset.dtab === which;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-selected', String(on));
+  });
+  root.querySelectorAll<HTMLElement>('[data-dpanel]').forEach((p) => {
+    p.hidden = p.dataset.dpanel !== which;
+  });
+  holdDetailHeight(root);
+}
+
+// THE SHEET KEEPS ITS SIZE ACROSS TABS. The three panels are different lengths,
+// so switching threw the whole popup up and down the screen and moved the tab
+// strip out from under the pointer that had just used it.
+//
+// The floor is the TALLEST panel seen so far rather than the tallest possible:
+// measuring the hidden ones would mean unhiding, reading and rehiding all three
+// on every switch, which is three forced reflows for a number that only ever
+// grows. So it settles after the reader has visited the long tab once, and
+// never shrinks back within a card.
+function holdDetailHeight(root: HTMLElement): void {
+  const open = root.querySelector<HTMLElement>('[data-dpanel]:not([hidden])');
+  if (!open) return;
+  // Read the CONTENT height with the floor lifted, or every measurement after
+  // the first would just report the floor back to itself.
+  root.style.setProperty('--dpanel-h', 'auto');
+  const natural = open.scrollHeight;
+  // THE RAW MAX IS STORED, THE CAP IS APPLIED ON THE WAY OUT. Storing the
+  // capped value instead makes the floor ratchet DOWNWARD: each visit clamps
+  // the previous clamp, so the tallest panel's height is forgotten and the
+  // sheet ends up sized to whichever tab was seen last. That is the opposite of
+  // what the floor is for.
+  const raw = Math.max(natural, Number(root.dataset.panelMax ?? 0));
+  root.dataset.panelMax = String(raw);
+
+  // The cap is what stops the floor pushing the sheet past the window and
+  // putting a scrollbar on a card that would otherwise fit. Measured from
+  // `offsetTop` and the sheet's own max-height, both of which are independent
+  // of the floor being set, so this cannot chase itself the way a measurement
+  // off the live rect would.
+  const scroller = root.closest('.ref-detail-inner') as HTMLElement | null;
+  let cap = Infinity;
+  if (scroller) {
+    const cs = getComputedStyle(scroller);
+    const maxH = parseFloat(cs.maxHeight);
+    const padBottom = parseFloat(cs.paddingBottom) || 0;
+    if (Number.isFinite(maxH)) cap = Math.max(200, maxH - open.offsetTop - padBottom);
+  }
+  root.style.setProperty('--dpanel-h', `${Math.min(raw, cap)}px`);
+}
+
 function paintDetail(html: string, scrollTop: number): void {
   const content = document.getElementById('ref-detail-content')!;
   content.innerHTML = html;
   content.querySelectorAll<HTMLElement>('[data-img]').forEach((slot) => {
-    mountCardImage(slot, slot.dataset.img!, 'ref-cardimg');
+    // Two slots hold the same scan now: the thumbnail on the Card tab and the
+    // full one on the Photo tab. They take different classes because
+    // `ref-cardimg` caps at 320px, which is the full view's size and eight
+    // times the thumbnail's.
+    const isThumb = !!slot.closest('.dthumb');
+    // The thumbnail takes a COPY: the image cache holds one element per id, so
+    // two slots sharing it would leave whichever mounted first empty.
+    (isThumb ? mountCardImageCopy : mountCardImage)(slot, slot.dataset.img!, isThumb ? 'dthumb-img' : 'ref-cardimg');
     // 25 cards have no scan. mountCardImage drops the broken image but not the
     // caption beside it, which left those cards captioning a scan that is not
     // there. Cached images have already failed by now and fire no fresh event,
     // so the completed-but-empty case has to be tested directly.
     const img = slot.querySelector('img');
-    if (!img) return;
-    const drop = () => slot.closest('.ref-scan')?.remove();
+    // 25 cards have no scan. With the photo behind a tab, dropping the figure
+    // is no longer enough: the TAB would still be there, promising a picture
+    // and opening an empty panel. So the tab goes with it, and if the reader is
+    // standing on that tab when the image fails they are put back on the Card.
+    const drop = () => {
+      slot.closest('.ref-scan')?.remove();
+      // The thumbnail is a BUTTON that opens the Photo tab, so it has to go
+      // with the tab it opens; left behind it would be a picture-shaped hole
+      // leading nowhere.
+      content.querySelector('.dthumb')?.remove();
+      const tab = content.querySelector<HTMLElement>('[data-dtab="photo"]');
+      const panel = content.querySelector<HTMLElement>('[data-dpanel="photo"]');
+      if (tab) tab.hidden = true;
+      if (panel && !panel.hidden) showDetailTab(content, 'card');
+    };
+    if (!img) { drop(); return; }
     if (img.complete && !img.naturalWidth) drop();
     else img.addEventListener('error', drop, { once: true });
   });
+  // A card in no box at all still has a Boxes tab saying so in a sentence, but
+  // an EMPTY panel would be a dead end, so that one is dropped outright.
+  if (!content.querySelector('[data-dpanel="boxes"]')?.textContent?.trim()) {
+    const t = content.querySelector<HTMLElement>('[data-dtab="boxes"]');
+    if (t) t.hidden = true;
+  }
   fillPortraits(content, false);
   sheet().hidden = false;
   document.body.classList.add('ref-locked');
   sheetScroller().scrollTop = scrollTop;
+  // A fresh card starts with no floor: the previous card's tallest panel has
+  // nothing to do with this one, and inheriting it would open a one-action
+  // Part into the empty height of a six-action one.
+  content.style.removeProperty('--dpanel-h');
+  delete content.dataset.panelMax;
+  holdDetailHeight(content);
 
   const back = document.getElementById('ref-detail-back') as HTMLButtonElement;
   const prev = navStack.length >= 2 ? navStack[navStack.length - 2] : null;
@@ -1401,7 +1659,7 @@ function showMissionImage(id: string, kind: 'main' | 'secondary' = 'main'): void
   box.innerHTML = `<div class="mis-lightbox-inner">
       <button class="mis-close" title="Close">✕</button>
       <img src="${src}" alt="${esc(card?.name ?? id)} card">
-      <p>${esc(card?.name ?? id)}${card?.nameKo ? ` · ${esc(card.nameKo)}` : ''}</p>
+      <p>${esc(card?.name ?? id)}</p>
     </div>`;
   const close = () => {
     box.remove();
@@ -1468,6 +1726,14 @@ async function init(): Promise<void> {
 
   document.addEventListener('click', (ev) => {
     const t = ev.target as HTMLElement;
+    // The detail's own tabs, answered before anything else: they are buttons
+    // inside a panel full of keyword links, and they navigate nowhere.
+    const dtab = t.closest<HTMLElement>('[data-dtab]');
+    if (dtab) {
+      const root = document.getElementById('ref-detail-content');
+      if (root) showDetailTab(root, dtab.dataset.dtab!);
+      return;
+    }
     const kw = t.closest<HTMLElement>('[data-kw]');
     if (kw) {
       ev.preventDefault();
@@ -1508,6 +1774,19 @@ async function init(): Promise<void> {
     if (card) navigateDetail('card', card.dataset.card!);
   });
 
+  // The clamp is measured against the window, so it has to be taken again when
+  // the window changes. Recomputed rather than merely cleared: an orientation
+  // change on a phone can halve the height, and a floor measured for the old
+  // one would go on forcing a scrollbar that no longer needs to exist.
+  window.addEventListener('resize', () => {
+    const content = document.getElementById('ref-detail-content');
+    if (!content || sheet().hidden) return;
+    // The cap moved, so the remembered max is re-measured against the new
+    // window rather than carried over from the old one.
+    content.style.removeProperty('--dpanel-h');
+    delete content.dataset.panelMax;
+    holdDetailHeight(content);
+  });
   document.getElementById('ref-detail-back')!.addEventListener('click', backDetail);
   document.getElementById('ref-detail-close')!.addEventListener('click', closeDetail);
   document.getElementById('ref-detail')!.addEventListener('click', (ev) => {

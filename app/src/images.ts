@@ -137,6 +137,25 @@ export function mountCardImage(slot: HTMLElement, id: string, className: string)
   slot.replaceChildren(img);
 }
 
+// THE CACHE HOLDS ONE ELEMENT PER ID, which is the whole point of it: the
+// element IS the cache entry, so it keeps its decoded bitmap. That also means
+// TWO slots showing the same card cannot both use `mountCardImage` - the second
+// `replaceChildren` moves the one element out of the first slot, and the first
+// silently empties. The card detail hit exactly that when a thumbnail joined
+// the full scan.
+//
+// So a second view of an already-shown card mounts its own element. The bytes
+// are already in the browser's HTTP cache, so this costs a decode and not a
+// download, and it is the ONLY safe way to show one card twice at once.
+export function mountCardImageCopy(slot: HTMLElement, id: string, className: string): void {
+  const img = new Image();
+  img.src = cardImageUrl(id);
+  img.className = className;
+  img.alt = '';
+  img.onerror = () => img.remove();
+  slot.replaceChildren(img);
+}
+
 export function preloadCardImages(ids: string[]): void {
   if (!warmDecision().warm) return;
   const queue = ids.slice(0, CARD_CACHE_MAX);
