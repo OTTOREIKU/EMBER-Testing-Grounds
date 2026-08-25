@@ -18,7 +18,7 @@ import { deployable, deployTurn, deploymentComplete, firstPlayerFrom, normaliseS
 import { actionPhaseComplete, activationOrder, alive, canAct, droneActionWhy, droneMoveWhy, eligibleUnits, isLoopPhase, loopComplete, nextActivation, nextTurn, onExtraOpportunity, type InitLookup, type LoopPhase } from './loop';
 import { actionIdOf, canActivate, canAttackMode, canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed, type TickVerdict } from './ticks';
 import { escortTargets, gameResult, normaliseTasks, wipedOut, scoreMain, scoreRiders, scoreSecondary, settleControl, unpaidLines, zoneCentreGrid, type Designation, type ScoreLine, type ScoreResult, type SecondaryScoring } from './tasks';
-import { armorPiercing, armorPiercingNote, automaticShieldFor, canAffordFocus, focusIsFree, stationaryAdjusted, twoHandedUse, tokenCards, vpRiderFor } from './units';
+import { armorPiercing, armorPiercingNote, automaticShieldFor, canAffordFocus, focusIsFree, grantAdjusted, shockAttackOf, shockMoveAllowed, stationaryAdjusted, twoHandedUse, tokenCards, vpRiderFor } from './units';
 
 // The in-match HUD (Match Centre part 3a): one question at a time, per seat.
 // Everything here renders from the shared GameState and issues the same
@@ -320,6 +320,10 @@ let movePlan: {
   // declared before the route was drawn (the -2 already came off `steps`).
   drag?: { allyUid: number; funderUid: number };
   shoveActionId?: string;
+  // Shock Attack: the walk happens BEFORE the strike, so once this move lands
+  // the attack targeting for the named Action reopens. Rides the plan the way
+  // shoveActionId does, and through a Crush the same way.
+  attackAfter?: { actionId: string; refund?: { uid: number; slot: string } };
   // The Movement Action this plan is spending, carried so the `maneuver` it
   // sends can name it and the command layer can judge Unstoppable itself.
   actionId?: string;
@@ -485,7 +489,7 @@ function moveOptsFor(ctx: HudCtx, t: Token, flying: boolean) {
 // A Maneuver by default. A Movement Action passes its own Range instead: the
 // chassis `move` is the Maneuver Value (1–2 Grids) and has nothing to do with a
 // Sprint-style Action's printed range, which is usually 4.
-function startMovePlan(ctx: HudCtx, t: Token, opts: { range?: number; label?: string; shoveActionId?: string; actionId?: string; free?: boolean; granted?: boolean; maneuver?: boolean; airborne?: boolean } = {}): void {
+function startMovePlan(ctx: HudCtx, t: Token, opts: { range?: number; label?: string; shoveActionId?: string; attackAfter?: { actionId: string; refund?: { uid: number; slot: string } }; actionId?: string; free?: boolean; granted?: boolean; maneuver?: boolean; airborne?: boolean } = {}): void {
   // IMMOBILIZED (6.3.2), asked before the planner opens. This board had NO
   // enforcement of the movement ban at all - the token simply moved - so this
   // and the command gate behind it are the whole of the rule online.
@@ -526,6 +530,7 @@ function startMovePlan(ctx: HudCtx, t: Token, opts: { range?: number; label?: st
     preview: null,
     label: opts.label ?? 'Maneuver',
     shoveActionId: opts.shoveActionId,
+    attackAfter: opts.attackAfter,
     free: opts.free,
     granted: opts.granted,
     facing: t.facing,
@@ -588,12 +593,18 @@ function undoWaypoint(ctx: HudCtx): void {
 }
 
 function cancelMove(ctx: HudCtx): void {
+  const after = movePlan?.attackAfter;
+  const uid = movePlan?.uid;
   movePlan = null;
   // A Maneuver has nothing pending; a Movement Action backing out gives its
   // Ticks back.
   dropAction();
   board?.clearMovePath();
   board?.clearHighlights();
+  // A Shock Attack walk is OPTIONAL and its Action is already paid, so backing
+  // out of the move still owes the attack targeting - dropping it here would
+  // spend the Tick on nothing.
+  if (after && uid !== undefined) resumeShockAttack(ctx, uid, after);
   ctx.refresh();
 }
 
@@ -648,6 +659,7 @@ function commitMove(ctx: HudCtx): void {
     commitAction(ctx);
     ctx.send({ kind: 'maneuver', seat: t.side, uid: t.uid, to: { col: t.col, row: t.row }, facing: m.facing, free: m.free, granted: m.granted, actionId: m.actionId });
     ctx.noteNow(`${t.label} turns on the spot. A pivot spends no Movement Range, but it is Movement.`);
+    if (m.attackAfter) resumeShockAttack(ctx, t.uid, m.attackAfter);
     ctx.refresh();
     return;
   }
@@ -664,6 +676,7 @@ function commitMove(ctx: HudCtx): void {
   }
   const last = stops[stops.length - 1];
   const shoveId = m.shoveActionId;
+  const after = m.attackAfter;
   const free = m.free;
   const granted = m.granted;
   const facing = m.turned ? m.facing : undefined;
@@ -694,6 +707,7 @@ function commitMove(ctx: HudCtx): void {
       free,
       granted,
       shoveActionId: shoveId,
+      attackAfter: after,
       facing,
       path: m.path,
       steps: m.steps,
@@ -731,6 +745,7 @@ function commitMove(ctx: HudCtx): void {
     // A shove rides on the Movement rather than replacing it, so it is offered
     // once the Mech has finished moving and is facing whatever it ended beside.
     if (shoveId) startShove(t.uid, shoveId);
+    if (after) resumeShockAttack(ctx, t.uid, after);
     ctx.refresh();
   });
 }
@@ -1770,6 +1785,7 @@ function panelHtml(ctx: HudCtx): string {
   if (formPick) return formPanel(ctx);
   if (repairPick) return repairPanel(ctx);
   if (chargePlan) return chargePanel(ctx);
+  if (shockPick) return shockPanel(ctx);
   if (attackPick) return attackPanel(ctx);
   if (smokePlan) return smokePanel(ctx);
   if (smokeOwed?.length) return smokeChoicePanel(ctx);
@@ -3026,6 +3042,7 @@ let crushPlan: {
   free?: boolean;
   granted?: boolean;
   shoveActionId?: string;
+  attackAfter?: { actionId: string; refund?: { uid: number; slot: string } };
   facing?: Facing;
   // The route, kept so the Boxes it walked over are still offered once the
   // crush has been worked through — and with it the budget it was drawn
@@ -3192,6 +3209,7 @@ function finishCrush(ctx: HudCtx): void {
       offerMinesOn(ctx, t, m.path, m.steps, m.flying);
       offerBoxesOn(ctx, t.uid, m.path);
       if (m.shoveActionId) startShove(t.uid, m.shoveActionId);
+      if (m.attackAfter) resumeShockAttack(ctx, t.uid, m.attackAfter);
       ctx.refresh();
     });
   };
@@ -3238,6 +3256,7 @@ function finishCrush(ctx: HudCtx): void {
     offerMinesOn(ctx, t, m.path, m.steps, m.flying);
     offerBoxesOn(ctx, t.uid, m.path);
     if (m.shoveActionId) startShove(t.uid, m.shoveActionId);
+    if (m.attackAfter) resumeShockAttack(ctx, t.uid, m.attackAfter);
     ctx.refresh();
   });
 }
@@ -3382,6 +3401,33 @@ function formPanel(ctx: HudCtx): string {
     `${esc(t.label)} turns its card over, then makes ONE Movement. Everything it carries - Ammo, Tokens, damage - comes with it; only the card changes.`, true)
     + `<div class="tp-body">${rows || '<p class="tp-note">No other form of this unit is in the card data.</p>'}</div>
        <div class="tp-foot"><button class="bigbtn ghost2" data-act="formcancel">${rows ? 'Cancel' : 'Close'}</button></div>`;
+}
+
+let shockPick: { uid: number; actionId: string; x: number; refund?: { uid: number; slot: string } } | null = null;
+
+function shockPanel(ctx: HudCtx): string {
+  const m = shockPick!;
+  const t = ctx.state.tokens.find((x) => x.uid === m.uid);
+  const a = t ? actionOn(ctx, t, m.actionId) : undefined;
+  if (!t || !a) return head('Shock Attack', 'That unit is gone', '', true)
+    + '<div class="tp-body"></div><div class="tp-foot"><button class="bigbtn ghost2" data-act="shockcancel">Close</button></div>';
+  return head('Your move', `${esc(a.name?.en || m.actionId)}: Shock Attack ${m.x}`,
+    `${esc(t.label)} may move up to ${m.x} Grid${m.x === 1 ? '' : 's'} before striking - Offensive Stance grants it. Taking the walk spends the Action, so the attack follows it either way.`, true)
+    + `<div class="tp-body">
+        <button class="rowwide" data-act="shockmove">Move first<span class="ct">up to ${m.x} Grid${m.x === 1 ? '' : 's'}, free</span></button>
+        <button class="rowwide" data-act="shockskip">Straight to the attack</button>
+      </div>
+      <div class="tp-foot"><button class="bigbtn ghost2" data-act="shockcancel">Cancel</button></div>`;
+}
+
+// After the Shock walk lands - or is backed out of - the attack it belongs to
+// reopens. shockAsked=true, or the door would put the same question again.
+function resumeShockAttack(ctx: HudCtx, uid: number, after: { actionId: string; refund?: { uid: number; slot: string } }): void {
+  const t = ctx.state.tokens.find((x) => x.uid === uid);
+  if (!t) return;
+  const a = actionOn(ctx, t, after.actionId);
+  if (!a) return;
+  openAttackPick(t, a, after.refund, true);
 }
 
 let repairPick: { uid: number; actionId: string; repair: boolean; mend: boolean } | null = null;
@@ -3574,9 +3620,25 @@ function dropAction(): void {
 // attack that never happened. The spend has to land before the targeting (the
 // Charge is what the Action is being performed WITH, and the panel offers it
 // first), so the only honest fix is to undo it when the attack is abandoned.
-function openAttackPick(t: Token, a: CardAction, refund?: { uid: number; slot: string }): void {
-  if (isElectronicAttack(a)) ewPick = { uid: t.uid, actionId: a.id, refund };
-  else attackPick = { uid: t.uid, actionId: a.id, refund };
+function openAttackPick(t: Token, a: CardAction, refund?: { uid: number; slot: string }, shockAsked = false): void {
+  if (isElectronicAttack(a)) { ewPick = { uid: t.uid, actionId: a.id, refund }; return; }
+  // Shock Attack X (冲锋X): "Before performing this Action, may move X grids."
+  // Asked HERE because every attack door funnels through this function - the
+  // plain route and the [Charged] question's continuation both - so no door
+  // can forget the offer. The grant chain runs first: all three carriers only
+  // gain the keyword in Offensive Stance, so the offer appears exactly when
+  // the printed condition holds. An Immobilized Mech is not offered a walk it
+  // cannot take (6.3.2), and the chassis gate is the keyword's own line.
+  if (!shockAsked && hudRef) {
+    const opp0 = ensureScript(hudRef.state).opp;
+    const opp = opp0?.uid === t.uid ? opp0 : null;
+    const x = shockAttackOf(grantAdjusted(stationaryAdjusted(a, opp), t, opp));
+    if (x > 0 && shockMoveAllowed(t) && !immobilizedStop(t, null)) {
+      shockPick = { uid: t.uid, actionId: a.id, x, refund };
+      return;
+    }
+  }
+  attackPick = { uid: t.uid, actionId: a.id, refund };
 }
 
 // Put a spent Charge Token back, face-up, and say so. Called from every path
@@ -3775,9 +3837,11 @@ function attackPanel(ctx: HudCtx): string {
   // the Mire's railguns reach 2 grids further, and nobody could see why not.
   const opp0 = ensureScript(s).opp;
   const steadied = raw ? stationaryAdjusted(raw, opp0?.uid === by?.uid ? opp0 : null) : undefined;
+  // [condition] 获得X, folded in so a granted keyword reads as a printed one.
+  const granted = by && steadied ? grantAdjusted(steadied, by, opp0?.uid === by.uid ? opp0 : null) : steadied;
   // [Two-Handed]: applied, not asked. See twoHandedUse for why the printed
   // "may" is never a real choice.
-  const a = by && steadied ? (twoHandedUse(ctx.data, by, steadied)?.action ?? steadied) : steadied;
+  const a = by && granted ? (twoHandedUse(ctx.data, by, granted)?.action ?? granted) : granted;
   const stationary = raw && a !== raw;
   if (!by || !a) return head('Attack', 'That unit is gone', '', true)
     + '<div class="tp-body"></div><div class="tp-foot"><button class="bigbtn ghost2" data-act="attackcancel">Close</button></div>';
@@ -5205,9 +5269,10 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
       const raw = by ? actionOn(ctx, by, m.actionId) : undefined;
       const opp0 = ensureScript(s).opp;
       const steadied = raw ? stationaryAdjusted(raw, opp0?.uid === by?.uid ? opp0 : null) : undefined;
+      const granted = by && steadied ? grantAdjusted(steadied, by, opp0?.uid === by.uid ? opp0 : null) : steadied;
   // [Two-Handed]: applied, not asked. See twoHandedUse for why the printed
   // "may" is never a real choice.
-      const a = by && steadied ? (twoHandedUse(ctx.data, by, steadied)?.action ?? steadied) : steadied;
+      const a = by && granted ? (twoHandedUse(ctx.data, by, granted)?.action ?? granted) : granted;
       // Same reading the row was drawn from, strict and through the effective
       // reach, so the re-check cannot disagree with the gate it is backing up.
       const note = by && t && a
@@ -5390,6 +5455,50 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     ctx.refresh();
   });
   on('[data-act="formcancel"]', () => { formPick = null; dropAction(); ctx.refresh(); });
+  on('[data-act="shockmove"]', () => {
+    const m = shockPick;
+    shockPick = null;
+    const t = m ? s.tokens.find((x) => x.uid === m.uid) : undefined;
+    if (!m || !t) { ctx.refresh(); return; }
+    // The walk belongs to the Action, and the command layer only allows a free
+    // move once its Action has been PERFORMED this Opportunity - so the Action
+    // pays here, before the maneuver travels. Same order the Stance Change
+    // uses, and the reason cancelling the later targeting cannot refund it.
+    const paid = commitAction(ctx);
+    if (!paid.ok) {
+      if (paid.why) ctx.noteNow(paid.why);
+      refundCharge(ctx, m.refund);
+      ctx.refresh();
+      return;
+    }
+    startMovePlan(ctx, t, {
+      label: `Shock Attack: up to ${m.x}`,
+      actionId: m.actionId,
+      range: m.x,
+      free: true,
+      attackAfter: { actionId: m.actionId, refund: m.refund },
+    });
+    // If the planner refused to open (a gate it checks itself), the paid attack
+    // must still happen - fall straight through to the targeting.
+    if (!movePlan) resumeShockAttack(ctx, t.uid, { actionId: m.actionId, refund: m.refund });
+    ctx.refresh();
+  });
+  on('[data-act="shockskip"]', () => {
+    const m = shockPick;
+    shockPick = null;
+    const t = m ? s.tokens.find((x) => x.uid === m.uid) : undefined;
+    if (m && t) {
+      const a = actionOn(ctx, t, m.actionId);
+      if (a) openAttackPick(t, a, m.refund, true);
+    }
+    ctx.refresh();
+  });
+  on('[data-act="shockcancel"]', () => {
+    refundCharge(ctx, shockPick?.refund);
+    shockPick = null;
+    dropAction();
+    ctx.refresh();
+  });
   on('[data-manifest]', (el) => {
     const m = manifestPick;
     manifestPick = null;

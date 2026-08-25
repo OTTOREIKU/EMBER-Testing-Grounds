@@ -18,12 +18,14 @@ console.log('Two-Handed designation\n');
 const units = src('units.ts'), combat = src('combat.ts'), hud = src('matchhud.ts'), main = src('main.ts');
 
 // ---------- One helper, three call sites ----------
+// `granted`, not `steadied`, since the conditional keyword grants slid in
+// between the two (shockattack.test.mjs): stationary -> grants -> two-handed.
 check('the Match Centre applies it in both places it adjusts an Action',
-  (hud.match(/twoHandedUse\(ctx\.data, by, steadied\)\?\.action \?\? steadied/g) ?? []).length, 2);
-check('and freeplay in its one', /twoHandedUse\(data, t, steadied\)\?\.action \?\? steadied/.test(main), true);
-check('both sit AFTER the Stationary adjustment, so the two riders compound',
-  /const steadied = raw \? stationaryAdjusted[\s\S]{0,300}twoHandedUse/.test(hud)
-  && /const steadied = stationaryAdjusted[\s\S]{0,200}twoHandedUse/.test(main), true);
+  (hud.match(/twoHandedUse\(ctx\.data, by, granted\)\?\.action \?\? granted/g) ?? []).length, 2);
+check('and freeplay in its one', /twoHandedUse\(data, t, granted\)\?\.action \?\? granted/.test(main), true);
+check('both sit AFTER the Stationary adjustment, so the riders compound',
+  /const steadied = raw \? stationaryAdjusted[\s\S]{0,500}twoHandedUse/.test(hud)
+  && /const steadied = stationaryAdjusted[\s\S]{0,500}twoHandedUse/.test(main), true);
 
 // ---------- Applied, not asked ----------
 check('the choice is made for the player, with the reasoning recorded',

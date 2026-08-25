@@ -47,7 +47,7 @@ import { PlayGuide } from './playguide';
 import type { Card, CardAction, DiceData, DieColor, Facing, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, StatusDef, TerrainPiece, Timing, Token } from './types';
 import { addStatus, normaliseScript, SCALES, statusCount, statusesFor, STATUSES } from './types';
 import { actionIdOf } from './ticks';
-import { transformOffer, automaticShieldFor, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, twoHandedUse, electronicValue, martyrdomOwed, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, loanedParts, phasesThroughUnits, minesLayable, minesOwed, multiTargetLimit, unfoldsOwed, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, immobilizedStop, activatesCamo, isScanAction, scannable, formSwitch, stealthValue, manifestationRange, manifestTargets, nonHumanoidCost, nonHumanoidStop, maneuverIsSilent, maneuverSilenceDenier, chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, projectileReach, type Resupply, resupplyOf, SLOT_LABEL, stationaryAdjusted, interceptLeft, interceptsOwed, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf, type AttackReaction } from './units';
+import { transformOffer, automaticShieldFor, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, twoHandedUse, electronicValue, martyrdomOwed, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, loanedParts, phasesThroughUnits, minesLayable, minesOwed, multiTargetLimit, unfoldsOwed, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, immobilizedStop, activatesCamo, isScanAction, scannable, formSwitch, grantAdjusted, shockAttackOf, shockMoveAllowed, stealthValue, manifestationRange, manifestTargets, nonHumanoidCost, nonHumanoidStop, maneuverIsSilent, maneuverSilenceDenier, chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, projectileReach, type Resupply, resupplyOf, SLOT_LABEL, stationaryAdjusted, interceptLeft, interceptsOwed, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf, type AttackReaction } from './units';
 import { registerOffline } from './offline';
 import { battlefieldLocked, countHits, firstPlayerFrom, newSetup, normaliseSetup, tasksLocked, type SetupState } from './setup';
 import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
@@ -359,22 +359,48 @@ async function init() {
       startLaunch(t, action, projectile, () => {});
     },
     onStartAttack(t, actionId) {
-      pendingAttack = { attackerUid: t.uid, actionId, mode: 'attack' };
-      document.body.classList.add('targeting');
       // The card's own Attack button is a second way in, beside the guide's
-      // performGuided - so the O9 Neutral fallback has to be said here too, or
-      // it only reaches players who are following the guide. Through setHint,
-      // not a bare textContent write - that is what hides the shortcut keys
-      // while the instruction is up.
+      // performGuided - so everything the guide door does to the Action has to
+      // happen here too, or the two doors resolve different attacks. This door
+      // used to pass the RAW action: no Stationary bonus, no Two-Handed, and
+      // when the grants arrived, no Shock Attack offer either - the guide
+      // offered the walk and the card button silently skipped it.
       const act = tokenCards(data, t).flatMap(({ card }) => card.actions ?? []).find((a) => a.id === actionId);
-      const neutral = act?.speed === 'auto'
-        ? autoNeutralTargets(data, state.tokens, currentTerrain(), t, act)
-        : [];
-      setHint(neutral.length
-        ? `⌖ No enemy is in range, so this Automatic Action MAY take the nearest Breakable Terrain instead — ${
-          neutral.map((n) => gridOfTerrain(n.id)).join(' or ')
-        } — destroyed by clicking the piece (FAQ O9). Esc cancels.`
-        : '⌖ Click the TARGET unit on the board (Esc cancels)');
+      const opp0 = state.script?.opp;
+      const opp = opp0?.uid === t.uid ? opp0 : null;
+      const steadied = act ? stationaryAdjusted(act, opp) : undefined;
+      const granted = steadied ? grantAdjusted(steadied, t, opp) : undefined;
+      const adjusted = granted ? (twoHandedUse(data, t, granted)?.action ?? granted) : undefined;
+      const proceed = (): void => {
+        pendingAttack = { attackerUid: t.uid, actionId, mode: 'attack', action: adjusted };
+        document.body.classList.add('targeting');
+        // The O9 Neutral fallback has to be said here too, or it only reaches
+        // players who are following the guide. Through setHint, not a bare
+        // textContent write - that is what hides the shortcut keys while the
+        // instruction is up.
+        const neutral = act?.speed === 'auto'
+          ? autoNeutralTargets(data, state.tokens, currentTerrain(), t, act)
+          : [];
+        setHint(neutral.length
+          ? `⌖ No enemy is in range, so this Automatic Action MAY take the nearest Breakable Terrain instead — ${
+            neutral.map((n) => gridOfTerrain(n.id)).join(' or ')
+          } — destroyed by clicking the piece (FAQ O9). Esc cancels.`
+          : '⌖ Click the TARGET unit on the board (Esc cancels)');
+      };
+      const shock = adjusted ? shockAttackOf(adjusted) : 0;
+      if (shock > 0 && shockMoveAllowed(t)) {
+        void confirmDialog({
+          title: `${act?.name?.en || actionId}: Shock Attack ${shock}`,
+          body: `${t.label} may move up to ${shock} Grid${shock === 1 ? '' : 's'} before performing this Action (Shock Attack ${shock}). Move first?`,
+          confirmLabel: 'Move first',
+          cancelLabel: 'Straight to the attack',
+        }).then((go) => {
+          if (!go) return proceed();
+          void startMove(t.uid, { range: shock, label: `Shock Attack ${shock}`, action: act }, () => proceed());
+        });
+        return;
+      }
+      proceed();
     },
     onStartElectronic(t, actionId) {
       pendingAttack = { attackerUid: t.uid, actionId, mode: 'electronic' };
@@ -930,25 +956,51 @@ async function init() {
       // all read the same reach. Mirrors attackPanel in matchhud.ts.
       const opp0 = state.script?.opp;
       const steadied = stationaryAdjusted(action, opp0?.uid === uid ? opp0 : null);
+      // [condition] 获得X: stance- and Stationary-granted keywords, folded in
+      // as inline keywords so every reader downstream — the Snipe designation
+      // included — sees a granted keyword exactly as it sees a printed one.
+      const granted = grantAdjusted(steadied, t, opp0?.uid === uid ? opp0 : null);
       // [Two-Handed]: applied, not asked, and the same helper both pages use.
-      const adjusted = twoHandedUse(data, t, steadied)?.action ?? steadied;
-      void offerChargeSpend(t, actionId);
-      pendingAttack = { attackerUid: uid, actionId, mode: electronic ? 'electronic' : 'attack', action: adjusted, done };
-      document.body.classList.add('targeting');
-      if (adjusted.range) board.showRangeRings(t, adjusted.range);
-      const reach = adjusted.range ? ` Range ${adjusted.range} is shown.${adjusted !== action ? ' Stationary applies.' : ''}` : '';
-      // FAQ O9: an Auto Action with no enemy in reach MAY take Breakable Terrain
-      // instead, and only the nearest. Said here because it is the half a player
-      // cannot deduce - destroying the piece itself is already a click away.
-      const neutral = action.speed === 'auto'
-        ? autoNeutralTargets(data, state.tokens, currentTerrain(), t, action)
-        : [];
-      const fallback = neutral.length
-        ? ` No enemy is in range, so this MAY instead hit the nearest Breakable Terrain - ${
-          neutral.map((n) => gridOfTerrain(n.id)).join(' or ')
-        } - which you destroy by clicking the piece (FAQ O9). Buildings and Defense walls never count (O10).`
-        : '';
-      setHint(`${what}: click the target unit on the board.${reach}${fallback} Esc cancels and keeps the Tick.`);
+      const adjusted = twoHandedUse(data, t, granted)?.action ?? granted;
+      const proceed = (): void => {
+        void offerChargeSpend(t, actionId);
+        pendingAttack = { attackerUid: uid, actionId, mode: electronic ? 'electronic' : 'attack', action: adjusted, done };
+        document.body.classList.add('targeting');
+        if (adjusted.range) board.showRangeRings(t, adjusted.range);
+        const reach = adjusted.range ? ` Range ${adjusted.range} is shown.${adjusted !== action ? ' Stationary applies.' : ''}` : '';
+        // FAQ O9: an Auto Action with no enemy in reach MAY take Breakable Terrain
+        // instead, and only the nearest. Said here because it is the half a player
+        // cannot deduce - destroying the piece itself is already a click away.
+        const neutral = action.speed === 'auto'
+          ? autoNeutralTargets(data, state.tokens, currentTerrain(), t, action)
+          : [];
+        const fallback = neutral.length
+          ? ` No enemy is in range, so this MAY instead hit the nearest Breakable Terrain - ${
+            neutral.map((n) => gridOfTerrain(n.id)).join(' or ')
+          } - which you destroy by clicking the piece (FAQ O9). Buildings and Defense walls never count (O10).`
+          : '';
+        setHint(`${what}: click the target unit on the board.${reach}${fallback} Esc cancels and keeps the Tick.`);
+      };
+      // Shock Attack X (冲锋X): "Before performing this Action, may move X
+      // grids." Granted by [Offensive Stance] on all three carriers, so the
+      // offer only appears when the adjusted copy actually carries it. The
+      // move is optional and free — declining, or walking zero, still goes
+      // straight to the targeting; the Tick is paid by done(true) at the end
+      // as for any other attack. The chassis gate is the keyword's own line.
+      const shock = shockAttackOf(adjusted);
+      if (shock > 0 && shockMoveAllowed(t)) {
+        void confirmDialog({
+          title: `${what}: Shock Attack ${shock}`,
+          body: `${t.label} may move up to ${shock} Grid${shock === 1 ? '' : 's'} before performing this Action (Shock Attack ${shock}). Move first?`,
+          confirmLabel: 'Move first',
+          cancelLabel: 'Straight to the attack',
+        }).then((go) => {
+          if (!go) return proceed();
+          void startMove(uid, { range: shock, label: `Shock Attack ${shock}`, action }, () => proceed());
+        });
+        return;
+      }
+      proceed();
       return;
     }
 

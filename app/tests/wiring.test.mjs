@@ -98,8 +98,11 @@ check('the Mode-change branch pays before it returns',
 // camouflage activation — routeAction's one IMMEDIATE branch, which opens no
 // tool and so must pay for the Action itself — and the Bit's Stance Change,
 // which pays before switching so the Movement that follows belongs to the same
-// Action rather than costing a second Tick.
-check('every tool has a commitAction', [...hud.matchAll(/commitAction\(ctx\)/g)].length, 15);
+// Action rather than costing a second Tick. Sixteen: the Shock Attack walk
+// pays before its free maneuver travels, for the same reason the Stance Change
+// does - the command layer only allows a free move once its Action has been
+// performed (shockattack.test.mjs pins the ordering).
+check('every tool has a commitAction', [...hud.matchAll(/commitAction\(ctx\)/g)].length, 16);
 
 // ---------- The ATTRIBUTED seat stamp ----------
 //

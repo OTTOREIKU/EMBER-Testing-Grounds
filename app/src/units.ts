@@ -405,6 +405,108 @@ export function stationaryAdjusted(
   };
 }
 
+// ---------- [condition] 获得X: keywords GRANTED by a printed condition ----------
+//
+// Five actions print the grammar `[condition]获得X` / `[Condition] gains X`:
+// three GoF polearms grant 冲锋1 Shock Attack 1 in Offensive Stance
+// (ZHRA-103_A, ZHRA-301_A, ZHRA-303_A), and two laser rifles grant 狙击 Snipe
+// while Stationary (R33S_A, 106_A). The keyword is NOT on the Action until the
+// condition holds — which is exactly why snipeOn's bare-line read has always
+// excluded grant lines: reading the description alone would arm the keyword
+// for a Mech that moved.
+//
+// The condition vocabulary is CLOSED: the three stances and Stationary.
+// [On Hit], [Charged] and [Two-Handed] share the bracket grammar but are
+// different machines with readers of their own (onHitRiders, consumesCharge,
+// twoHandedRider), so this matches only what it can evaluate and leaves the
+// rest alone rather than guessing.
+export interface ConditionalGrant {
+  when: 'offensive' | 'defensive' | 'mobility' | 'stationary';
+  keywords: string[];
+}
+
+const GRANT_WHEN: [RegExp, ConditionalGrant['when']][] = [
+  [/攻击姿态|Offensive\s*Stance/i, 'offensive'],
+  [/防御姿态|Defensive\s*Stance/i, 'defensive'],
+  [/机动姿态|Mobility\s*Stance/i, 'mobility'],
+  [/静止|Stationary/i, 'stationary'],
+];
+
+export function conditionalGrants(a: CardAction): ConditionalGrant[] {
+  const out: ConditionalGrant[] = [];
+  // Both languages are parsed: ZHRA-103 prints the grant in zh AND en, R33S in
+  // zh alone. A grant present twice pushes its keyword twice, which every
+  // reader tolerates (they ask "is it there", never "how many") and which is
+  // truer to the card than picking one language here would be.
+  for (const line of `${a.description?.zh ?? ''}\n${a.description?.en ?? ''}`.split(/\r?\n/)) {
+    const m = /[[【]([^\]】]+)[\]】]\s*(?:获得|gains?)\s*([^。.\n]+)/i.exec(line);
+    if (!m) continue;
+    const when = GRANT_WHEN.find(([re]) => re.test(m[1]))?.[1];
+    if (!when) continue;
+    const keywords = m[2]
+      .split(/[，,、和]/)
+      .map((s) => s.trim().replace(/[。.\s]+$/g, ''))
+      .filter(Boolean);
+    if (keywords.length) out.push({ when, keywords });
+  }
+  return out;
+}
+
+// The Action with its satisfied grants folded in as inline keywords — the form
+// every printed keyword already takes, so every downstream reader (snipeOn,
+// shockAttackOf, the glossary chips) sees a granted keyword exactly as it sees
+// a printed one. Same copy-never-mutate shape as stationaryAdjusted, and the
+// same judgement of "stationary": no Movement yet THIS Opportunity.
+export function grantAdjusted(
+  a: CardAction,
+  t: { stance?: string } | null | undefined,
+  opp: { maneuvered?: boolean; moved?: boolean } | null | undefined,
+): CardAction {
+  const grants = conditionalGrants(a);
+  if (!grants.length) return a;
+  const held: string[] = [];
+  for (const g of grants) {
+    const ok = g.when === 'stationary'
+      ? !!opp && !opp.maneuvered && !opp.moved
+      : t?.stance === g.when;
+    if (ok) held.push(...g.keywords);
+  }
+  if (!held.length) return a;
+  return { ...a, keywords: [...(a.keywords ?? []), ...held.map((k) => ({ inline: k }))] };
+}
+
+// ---------- Shock Attack X (冲锋X) ----------
+//
+// "Before performing this Action, may move X grids. Mechs require a chasis to
+// perform this Action." Today the keyword reaches an Action only through the
+// grant above, so this reads the INLINE keywords an adjusted copy carries,
+// plus any unconditional bare line — excluding grant and gate lines the way
+// snipeOn does, or the reader would arm off the very description that says
+// "only in Offensive Stance".
+//
+// NOT isChargeAction. 充能 Charge Tokens are an unrelated mechanic that merely
+// shares the English word; 冲锋 is a pre-attack move.
+export function shockAttackOf(a: CardAction): number {
+  for (const k of a.keywords ?? []) {
+    const m = /(?:冲锋|Shock\s*Attack)\s*(\d+)/i.exec(k.inline ?? k.key ?? '');
+    if (m) return Number(m[1]);
+  }
+  for (const line of `${a.description?.zh ?? ''}\n${a.description?.en ?? ''}`.split(/\r?\n/)) {
+    if (/获得|gains?|[[【]/i.test(line)) continue;
+    const m = /(?:冲锋|Shock\s*Attack)\s*(\d+)/i.exec(line);
+    if (m) return Number(m[1]);
+  }
+  return 0;
+}
+
+// The chassis the keyword demands. Only the MOVE is gated on it: the glossary
+// line reads on the movement half, and refusing the whole attack over a
+// destroyed chassis would be an enforcement the printed card does not clearly
+// ask for — warn-don't-block keeps that half a table call.
+export function shockMoveAllowed(t: Token): boolean {
+  return t.kind === 'mech' && (t.partStates['chasis'] ?? 'intact') !== 'destroyed';
+}
+
 // Pulse Weapon: "May exchange {Lightning} for {Heavy Hit}." Ion Weapon is the
 // same trade behind a condition — the target must already bear a Fragile
 // Token. Nothing else in an ordinary Attack Roll spends a Lightning (no action

@@ -157,8 +157,10 @@ check('PRDR-105 offers two walls', byId.get('PRDR-105').projectile.length, 2);
   const app = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
 
   // --- the Match Centre ---
+  // The signature grew a shockAsked flag when Shock Attack joined the door
+  // (shockattack.test.mjs); the refund parameter is the part this pins.
   check('the targeting can be opened with a Charge to refund',
-    /function openAttackPick\(t: Token, a: CardAction, refund\?: \{ uid: number; slot: string \}\)/.test(hud), true);
+    /function openAttackPick\(t: Token, a: CardAction, refund\?: \{ uid: number; slot: string \}, shockAsked = false\)/.test(hud), true);
   check('and both kinds of targeting carry it',
     (hud.match(/(attackPick|ewPick) = \{ uid: t\.uid, actionId: a\.id, refund \}/g) ?? []).length, 2);
   // Only a SPEND is refundable. Charging a Part face-up is an Action in its own

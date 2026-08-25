@@ -23,7 +23,7 @@ import { losNote, protectionFor, spotsInGrid } from './rules';
 import { SquadTracker } from './squads';
 import { Panel } from './panel';
 import type { CardAction, CombatView, DiceData, DieColor, GameState, Side, Token } from './types';
-import { SLOT_LABEL, stationaryAdjusted } from './units';
+import { grantAdjusted, SLOT_LABEL, stationaryAdjusted } from './units';
 import { PHASES, statusCount } from './types';
 
 // The Match Centre: a separate page for networked play, so the freeplay board
@@ -749,7 +749,11 @@ function attackActionOf(t: Token | undefined, actionId: string): CardAction | un
     .flatMap(({ card }) => card.actions ?? [])
     .find((a) => a.id === actionId) ?? data.commonActions.find((a) => a.id === actionId);
   const oppNow = state.script?.opp;
-  return printed ? stationaryAdjusted(printed, oppNow?.uid === t.uid ? oppNow : null) : printed;
+  // The stationary bonus AND the [condition] grants, in that order, so the
+  // AttackHelper's ctx.action carries a granted keyword (Stationary Snipe,
+  // stance-granted Shock) the same way it carries a printed one.
+  const opp = oppNow?.uid === t.uid ? oppNow : null;
+  return printed ? grantAdjusted(stationaryAdjusted(printed, opp), t, opp) : printed;
 }
 
 function startAttack(uid: number, actionId: string, targetUid: number, mode: 'attack' | 'intercept' | 'explosion' = 'attack'): void {
