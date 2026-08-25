@@ -365,9 +365,12 @@ export class Panel {
 
     row.appendChild(this.actionArt(ga.card.id));
 
+    // YELLOW BEFORE RED, the order the cards print (CC-100 Hercules lays out
+    // two yellow then five red). This list feeds the Roll button and the hover
+    // tip as text; the drawn pips below follow the same order.
     const dice: string[] = [];
-    if (a.redDice) dice.push(`${a.redDice}R`);
     if (a.yellowDice) dice.push(`${a.yellowDice}Y`);
+    if (a.redDice) dice.push(`${a.redDice}R`);
 
     // Only Mechs spend Ticks, so only their Actions carry a length worth showing.
     const len = lengthOf(a);
@@ -416,7 +419,7 @@ export class Panel {
     // The pool as DICE here, because this line is innerHTML. The tip below and
     // the Roll button keep the plain "3R+1Y": one is a text field and the other
     // a button label, and neither can render markup.
-    const pips = [diePips(a.redDice, 'R'), diePips(a.yellowDice, 'Y')].filter(Boolean).join(' ');
+    const pips = [diePips(a.yellowDice, 'Y'), diePips(a.redDice, 'R')].filter(Boolean).join(' ');
     info.innerHTML = `<span class="dim"><span class="act-slot">${SLOT_LABEL[ga.slot]}</span>${[range, pips]
       .filter(Boolean)
       .map((s) => ` · ${s}`)
@@ -840,7 +843,7 @@ export class Panel {
       const tr = this.data.actionTranslation(a.id);
       const text = en ?? tr?.english ?? a.description?.zh?.trim();
       if (!text) continue;
-      const dice = [diePips(a.redDice, 'R'), diePips(a.yellowDice, 'Y')].filter(Boolean).join(' ');
+      const dice = [diePips(a.yellowDice, 'Y'), diePips(a.redDice, 'R')].filter(Boolean).join(' ');
       const alen = lengthOf(a);
       const acost = alen ? `${LENGTH_NAME[alen]} (${costLabel(TICK_COST[alen])})` : '';
       const meta = [a.type, acost, a.range ? `Range ${a.range}` : '', dice].filter(Boolean).join(' · ');

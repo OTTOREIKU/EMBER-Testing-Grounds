@@ -301,5 +301,42 @@ check('mapping off the LAST character, not one past the end',
 }
 
 
+// ---------- YELLOW BEFORE RED, the order the cards print ----------
+// CC-100 Hercules Meteor Hammer lays its pool out as two yellow then five red
+// (checked against assets/cards/en/055.webp). We had red first everywhere.
+const panelSrc = readFileSync(new URL('../src/panel.ts', import.meta.url), 'utf8');
+// Takes a real regex literal, never a source string: passing the pattern as a
+// string means every backslash has to survive JS string escaping too, which is
+// how an earlier draft of this ended up matching /[sS]/ instead of /[\s\S]/.
+const yellowFirst = (s, re) => {
+  const m = re.exec(s);
+  return m ? m[0].indexOf("'Y'") < m[0].indexOf("'R'") : null;
+};
+check('the reference draws yellow first',
+  yellowFirst(ref, /diePips\(a\.yellowDice[\s\S]{0,120}?diePips\(a\.redDice, 'R'\)/), true);
+check('the board action row too', yellowFirst(panelSrc, /const pips = \[[^\]]*\]/), true);
+check('and the board card list', yellowFirst(panelSrc, /const dice = \[diePips[^\]]*\]/), true);
+// The Roll button and the hover tip are plain text but must not disagree with
+// the pips beside them.
+check('the plain-text pool agrees',
+  /if \(a\.yellowDice\) dice\.push[\s\S]{0,90}?if \(a\.redDice\) dice\.push/.test(panelSrc), true);
+
+// ---------- COMES FROM: the part that puts this on the board ----------
+// A projectile or drone card says nothing about what deploys it - the
+// relationship is printed on the PART - so it is read back out of the action
+// text rather than stored, and cannot go stale against that text.
+check('the reverse index exists', /function deployedBy/.test(ref), true);
+check('built from the action English, not a stored field',
+  /deployIndex[\s\S]{0,700}?bareName\(actionEnglish\(a\)\)/.test(ref), true);
+check('and cached, or every detail rescans every action',
+  /if \(!deployIndex\) \{/.test(ref), true);
+// A card naming itself is not a source: the Pholcus (Unfolded) face prints its
+// own name and would send the reader in a circle.
+check('a card is never its own source', /t\.id === p\.id \|\| !hay\.includes/.test(ref), true);
+// Same guards as the linker, for the same reasons.
+check('short names cannot match prose', /bare\.length < 8 \|\| CJK\.test\(bare\)/.test(ref), true);
+check('and it renders at the foot', /ref-sub">Comes from<\/h3>/.test(ref), true);
+
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -121,6 +121,61 @@ const englishOnly = (s: string | undefined): string | undefined => {
   return t && !CJK.test(t) ? t : undefined;
 };
 
+// The English an Action actually shows, from wherever it comes: the card's own
+// field when that really is English, and the publisher text filed in
+// action_translations when it is not. Written once here because three separate
+// readers were deriving it, and a fourth would have drifted.
+function actionEnglish(a: { id: string; description?: { en?: string } }): string {
+  return englishOnly(a.description?.en) ?? data.actionTranslation(a.id)?.english ?? '';
+}
+
+// ---------- WHICH PART PUTS THIS THING ON THE BOARD ----------
+//
+// The inverse of the card links below: a reader looking at SGM-2 Pholcus
+// Automatic Mine wants to know what deploys it, and the mine's own card says
+// nothing about the rack. The relationship only exists in the PART's action
+// text ("Launch 1 SGM2 Pholcus Automatic Mine"), so it is read back out of
+// there rather than stored, which means it cannot go stale against the text.
+//
+// Built once and cached: without that this is a full scan of every action on
+// every card for each detail opened.
+let deployIndex: Map<string, Card[]> | null = null;
+
+function bareName(s: string): string {
+  return stripQuotes(s).text.replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+function deployedBy(c: Card): Card[] {
+  if (!deployIndex) {
+    deployIndex = new Map();
+    const targets: { id: string; bare: string }[] = [];
+    for (const t of data.cards) {
+      if (t.category !== 'projectile' && t.category !== 'drone') continue;
+      const bare = bareName(t.name?.en ?? '');
+      // Same floor as the linker, and for the same reason: a short name matches
+      // ordinary prose. CJK is out because an `en` field is not proof of English.
+      if (bare.length < 8 || CJK.test(bare)) continue;
+      targets.push({ id: t.id, bare });
+    }
+    for (const p of data.cards) {
+      for (const a of p.actions ?? []) {
+        const hay = bareName(actionEnglish(a));
+        if (!hay) continue;
+        for (const t of targets) {
+          // A card naming itself is not a source: the Pholcus (Unfolded) face
+          // prints its own name, and listing it under "comes from" would send
+          // the reader in a circle.
+          if (t.id === p.id || !hay.includes(t.bare)) continue;
+          const list = deployIndex.get(t.id) ?? [];
+          if (!list.some((x) => x.id === p.id)) list.push(p);
+          deployIndex.set(t.id, list);
+        }
+      }
+    }
+  }
+  return deployIndex.get(c.id) ?? [];
+}
+
 let linkPatterns: { name: string; re: RegExp; len: number; card?: boolean }[] | null = null;
 
 // THE QUOTES DO NOT AGREE, in three different ways at once:
@@ -506,8 +561,11 @@ function cardDetail(c: Card): string {
       // two mean entirely different things.
       const numbers = [
         a.range === 0 ? esc('Range --') : a.range ? esc(`Range ${a.range}`) : '',
-        diePips(a.redDice, 'R'),
+        // YELLOW BEFORE RED, which is the order the cards print. CC-100
+        // Hercules Meteor Hammer lays its pool out as two yellow then five red;
+        // we had it the other way round on every action.
         diePips(a.yellowDice, 'Y'),
+        diePips(a.redDice, 'R'),
         a.storage ? esc(`Ammo ${a.storage}`) : '',
       ]
         .filter(Boolean)
@@ -656,12 +714,25 @@ function cardDetail(c: Card): string {
         //
         // Below the actions they read as what they are: the card-level notes,
         // for anyone who wants them after the actions have been read.
-        kws || cardBlock
-          ? `<div class="dfoot">
-              ${kws ? `<h3 class="ref-sub">Keywords on this card</h3><div class="ref-kwlinks">${kws}</div>` : ''}
-              ${cardBlock}
-            </div>`
-          : ''
+        (() => {
+          // WHAT PUTS THIS ON THE BOARD. A projectile or drone card says
+          // nothing about the Part that deploys it: the relationship is printed
+          // on the PART, so without this a reader who opened the mine from a
+          // search has no way back to the rack that lays it.
+          const from = deployedBy(c);
+          const fromHtml = from.length
+            ? `<h3 class="ref-sub">Comes from</h3><div class="ref-kwlinks">${from
+                .map((p) => `<a class="kw-link" data-card="${esc(p.id)}">${esc(cardName(p))}</a>`)
+                .join('')}</div>`
+            : '';
+          return kws || cardBlock || fromHtml
+            ? `<div class="dfoot">
+                ${kws ? `<h3 class="ref-sub">Keywords on this card</h3><div class="ref-kwlinks">${kws}</div>` : ''}
+                ${cardBlock}
+                ${fromHtml}
+              </div>`
+            : '';
+        })()
       }
     </div>
     <div class="dpanel" data-dpanel="photo" hidden>
