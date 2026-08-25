@@ -118,6 +118,36 @@ export function diePips(n: number | undefined, colour: 'R' | 'Y'): string {
   return out.includes('{') ? `${n}${colour}` : out;
 }
 
+// THE POOL'S ORDER IS THE FACTION'S, and this is not a guess: five cards with
+// mixed pools were read off the scans.
+//
+//   ZHDR-102 Vanguard II "Crossbow"  GoF  drone  data 2Y 1R  printed R Y Y
+//   ZHLA-302 MR870 Shotgun           GoF  part   data 2Y 1R  printed R Y Y
+//   ZHRA-202 MR24 Railgun            GoF  part   data 1Y 2R  printed R R Y
+//   126 K9 Nail Gun                  UN   part   data 1Y 2R  printed Y R R
+//   055 CC-100 Hercules              RDL  part   data 2Y 5R  printed Y Y R
+//
+// GoF prints RED first; everyone else prints yellow first. It holds on a GoF
+// drone and on GoF parts alike, so it is the faction's card template rather
+// than a card-type quirk. The order carries no rules meaning at all - it is
+// pure fidelity to the printed card, so a player comparing screen to table
+// sees the same row.
+export function diceRow(yellow: number | undefined, red: number | undefined, faction?: string | null): string {
+  const parts = faction === 'GOF'
+    ? [diePips(red, 'R'), diePips(yellow, 'Y')]
+    : [diePips(yellow, 'Y'), diePips(red, 'R')];
+  return parts.filter(Boolean).join(' ');
+}
+
+// The same order as plain text, for the two places that cannot render markup:
+// the Roll button's label and the hover tip. They sit beside the pips, so a
+// different order in one of them would contradict the other on one screen.
+export function diceText(yellow: number | undefined, red: number | undefined, faction?: string | null): string[] {
+  const y = yellow ? `${yellow}Y` : '';
+  const r = red ? `${red}R` : '';
+  return (faction === 'GOF' ? [r, y] : [y, r]).filter(Boolean);
+}
+
 // ---------- THE ACTION LENGTH CAPSULE, as the cards print it ----------
 //
 // Measured off the printed cards rather than invented (ZHRA-201 Power Shot and

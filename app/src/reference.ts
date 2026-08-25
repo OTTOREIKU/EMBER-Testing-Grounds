@@ -6,7 +6,7 @@ import { watchForUpdates } from './updates';
 import { SHAPE_NOTE, STATUSES, TIMINGS, type Card, type StatusDef } from './types';
 import { registerOffline } from './offline';
 import { costLabel, LENGTH_NAME, lengthOf, TICK_COST, timingOf } from './ticks';
-import { diePips, maskGlyphs, tickCapsule } from './glyphs';
+import { diceRow, maskGlyphs, tickCapsule } from './glyphs';
 import { linkIcon } from './icons';
 
 type Tab = 'keywords' | 'parts' | 'units' | 'pilots' | 'tactics' | 'boxes' | 'factions' | 'missions' | 'rules';
@@ -561,11 +561,9 @@ function cardDetail(c: Card): string {
       // two mean entirely different things.
       const numbers = [
         a.range === 0 ? esc('Range --') : a.range ? esc(`Range ${a.range}`) : '',
-        // YELLOW BEFORE RED, which is the order the cards print. CC-100
-        // Hercules Meteor Hammer lays its pool out as two yellow then five red;
-        // we had it the other way round on every action.
-        diePips(a.yellowDice, 'Y'),
-        diePips(a.redDice, 'R'),
+        // The pool in the FACTION'S printed order: GoF leads with red, RDL
+        // and UN with yellow. diceRow carries the evidence.
+        diceRow(a.yellowDice, a.redDice, data.factionOf(c)),
         a.storage ? esc(`Ammo ${a.storage}`) : '',
       ]
         .filter(Boolean)

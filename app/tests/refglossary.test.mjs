@@ -305,21 +305,22 @@ check('mapping off the LAST character, not one past the end',
 // CC-100 Hercules Meteor Hammer lays its pool out as two yellow then five red
 // (checked against assets/cards/en/055.webp). We had red first everywhere.
 const panelSrc = readFileSync(new URL('../src/panel.ts', import.meta.url), 'utf8');
-// Takes a real regex literal, never a source string: passing the pattern as a
-// string means every backslash has to survive JS string escaping too, which is
-// how an earlier draft of this ended up matching /[sS]/ instead of /[\s\S]/.
-const yellowFirst = (s, re) => {
-  const m = re.exec(s);
-  return m ? m[0].indexOf("'Y'") < m[0].indexOf("'R'") : null;
-};
-check('the reference draws yellow first',
-  yellowFirst(ref, /diePips\(a\.yellowDice[\s\S]{0,120}?diePips\(a\.redDice, 'R'\)/), true);
-check('the board action row too', yellowFirst(panelSrc, /const pips = \[[^\]]*\]/), true);
-check('and the board card list', yellowFirst(panelSrc, /const dice = \[diePips[^\]]*\]/), true);
-// The Roll button and the hover tip are plain text but must not disagree with
-// the pips beside them.
-check('the plain-text pool agrees',
-  /if \(a\.yellowDice\) dice\.push[\s\S]{0,90}?if \(a\.redDice\) dice\.push/.test(panelSrc), true);
+// ---------- THE POOL IS DRAWN IN THE FACTION'S PRINTED ORDER ----------
+// GoF prints red first, RDL and UN yellow first - read off five scans, see the
+// evidence table on diceRow in glyphs.ts. The behaviour is tested there where
+// the function lives; here we only pin that every renderer goes THROUGH it,
+// because an inline `[diePips(y), diePips(r)]` anywhere would silently opt that
+// one screen out of the rule.
+check('the reference orders through the shared helper',
+  /diceRow\(a\.yellowDice, a\.redDice, data\.factionOf\(c\)\)/.test(ref), true);
+check('the board action row too', /const pips = diceRow\(a\.yellowDice, a\.redDice, dfac\)/.test(panelSrc), true);
+check('and the board card list', /diceRow\(a\.yellowDice, a\.redDice, this\.data\.factionOf\(card\)\)/.test(panelSrc), true);
+// The Roll button and the hover tip cannot render markup, so they take the same
+// order as TEXT from the same place.
+check('the plain-text pool comes from the same helper',
+  /const dice: string\[\] = diceText\(a\.yellowDice, a\.redDice, dfac\)/.test(panelSrc), true);
+check('and nothing orders the pool by hand any more',
+  /\[diePips\([^)]*\), diePips\(/.test(ref + panelSrc), false);
 
 // ---------- COMES FROM: the part that puts this on the board ----------
 // A projectile or drone card says nothing about what deploys it - the

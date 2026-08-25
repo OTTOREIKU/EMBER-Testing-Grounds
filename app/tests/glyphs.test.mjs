@@ -145,5 +145,35 @@ check('an out-of-range count falls back to text', G.diePips(12, 'R'), '12R');
 check('rather than leaking the placeholder', /[{}]/.test(G.diePips(12, 'R')), false);
 
 
+// ---------- THE POOL IS DRAWN IN THE FACTION'S PRINTED ORDER ----------
+// Not a guess. Five cards with mixed pools, read off the scans:
+//   ZHDR-102 "Crossbow"   GoF drone  data 2Y 1R  printed R Y Y
+//   ZHLA-302 MR870        GoF part   data 2Y 1R  printed R Y Y
+//   ZHRA-202 MR24 Railgun GoF part   data 1Y 2R  printed R R Y
+//   126 K9 Nail Gun       UN  part   data 1Y 2R  printed Y R R
+//   055 CC-100 Hercules   RDL part   data 2Y 5R  printed Y Y R
+// GoF leads with red, everyone else with yellow, on a drone and on parts alike.
+const colours = (h) => [...h.matchAll(/die-(red|yellow)/g)].map((m) => m[1]);
+
+check('RDL leads with yellow', colours(G.diceRow(2, 1, 'RDL')), ['yellow', 'yellow', 'red']);
+check('UN too', colours(G.diceRow(1, 2, 'UN')), ['yellow', 'red', 'red']);
+check('GoF leads with RED', colours(G.diceRow(2, 1, 'GOF')), ['red', 'yellow', 'yellow']);
+check('and keeps the counts right', colours(G.diceRow(1, 2, 'GOF')), ['red', 'red', 'yellow']);
+// An unknown or missing faction falls to the majority order rather than to
+// nothing: most cards are not GoF, and a blank pool would be a worse failure
+// than a pool in the wrong order.
+check('an unknown faction takes the common order', colours(G.diceRow(1, 1, null)), ['yellow', 'red']);
+check('and so does no faction at all', colours(G.diceRow(1, 1)), ['yellow', 'red']);
+// A single colour has no order to get wrong, but must not gain a phantom pip.
+check('one colour draws only itself', colours(G.diceRow(0, 3, 'GOF')), ['red', 'red', 'red']);
+check('and an empty pool draws nothing', G.diceRow(0, 0, 'GOF'), '');
+
+// The TEXT form feeds the Roll button and the hover tip, which cannot render
+// markup. It has to agree with the pips beside it.
+check('the text form follows the same order', G.diceText(2, 1, 'GOF'), ['1R', '2Y']);
+check('and the common one', G.diceText(2, 1, 'RDL'), ['2Y', '1R']);
+check('dropping a colour with no dice', G.diceText(0, 3, 'UN'), ['3R']);
+
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

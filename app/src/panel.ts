@@ -2,7 +2,7 @@ import type { Card, CardAction, Token } from './types';
 import { cardImageUrl, cardName, isDiscardCard, mechPartUrl, rulesLines, squadLabel, tabImageUrl, traitName, type GameData } from './data';
 import { inspectOnHover, linkMechanics } from './inspector';
 import { ICON_BOLT } from './icons';
-import { diePips, expandGlyphs } from './glyphs';
+import { diceRow, diceText, expandGlyphs } from './glyphs';
 import { groupByFaction, openPartPicker } from './partpicker';
 import { type ActionWorld, canBeLoad, guidedActions, isCarrier, isElectronicAttack, knockbackOf, SLOT_LABEL, tokenCards } from './units';
 import { costLabel, LENGTH_NAME, lengthOf, TICK_COST } from './ticks';
@@ -365,12 +365,12 @@ export class Panel {
 
     row.appendChild(this.actionArt(ga.card.id));
 
-    // YELLOW BEFORE RED, the order the cards print (CC-100 Hercules lays out
-    // two yellow then five red). This list feeds the Roll button and the hover
-    // tip as text; the drawn pips below follow the same order.
-    const dice: string[] = [];
-    if (a.yellowDice) dice.push(`${a.yellowDice}Y`);
-    if (a.redDice) dice.push(`${a.redDice}R`);
+    // The pool in the FACTION'S printed order: GoF leads with red, everyone
+    // else with yellow. This list is the TEXT form, feeding the Roll button and
+    // the hover tip; the pips below take the same order from the same helper so
+    // the two cannot contradict each other on one screen.
+    const dfac = this.data.factionOf(ga.card);
+    const dice: string[] = diceText(a.yellowDice, a.redDice, dfac);
 
     // Only Mechs spend Ticks, so only their Actions carry a length worth showing.
     const len = lengthOf(a);
@@ -419,7 +419,7 @@ export class Panel {
     // The pool as DICE here, because this line is innerHTML. The tip below and
     // the Roll button keep the plain "3R+1Y": one is a text field and the other
     // a button label, and neither can render markup.
-    const pips = [diePips(a.yellowDice, 'Y'), diePips(a.redDice, 'R')].filter(Boolean).join(' ');
+    const pips = diceRow(a.yellowDice, a.redDice, dfac);
     info.innerHTML = `<span class="dim"><span class="act-slot">${SLOT_LABEL[ga.slot]}</span>${[range, pips]
       .filter(Boolean)
       .map((s) => ` · ${s}`)
@@ -843,7 +843,7 @@ export class Panel {
       const tr = this.data.actionTranslation(a.id);
       const text = en ?? tr?.english ?? a.description?.zh?.trim();
       if (!text) continue;
-      const dice = [diePips(a.yellowDice, 'Y'), diePips(a.redDice, 'R')].filter(Boolean).join(' ');
+      const dice = diceRow(a.yellowDice, a.redDice, this.data.factionOf(card));
       const alen = lengthOf(a);
       const acost = alen ? `${LENGTH_NAME[alen]} (${costLabel(TICK_COST[alen])})` : '';
       const meta = [a.type, acost, a.range ? `Range ${a.range}` : '', dice].filter(Boolean).join(' · ');

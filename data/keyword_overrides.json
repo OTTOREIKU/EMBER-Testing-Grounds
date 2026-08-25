@@ -206,6 +206,13 @@
     "name": "RWS",
     "value": "Remote Weapon Station. During the Command Phase an Ally may send a Command to this Mech to perform this Action, which is the one case where a MECH receives a Command Token rather than a Drone. This Part can only receive one Command per round."
    }
+  },
+  "冲锋X": {
+   "en": {
+    "name": "Shock Attack X",
+    "value": "Before performing this Action, may move X grids. Mechs require a chasis to perform this Action."
+   },
+   "_note": "Typo fix only: keywords.json reads \"Actioin\". The rule is unchanged, and the [Offensive Stance] condition the three carriers print (M115 Spear, M100 Lance, M105 Halberd) is deliberately NOT folded in here - it is a per-card condition in the same bracketed form as [Stationary] and [On Hit], not part of the keyword."
   }
  }
 }
