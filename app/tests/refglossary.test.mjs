@@ -224,5 +224,68 @@ check('bounded by the same floor the panel holds, so the two cannot chase each o
   /\[data-dpanel="photo"\] \.ref-cardimg \{[^}]*max-width: 100%/.test(css), true);
 
 
+// ---------- THE "TRANSLATED" NOTE KEYS ON PROVENANCE ----------
+// 61 actions printed "(translated from the Chinese card text)" and 55 of them
+// were marked `printed` in action_translations.json: read off the ENGLISH card.
+// The note was not merely noise there, it was false. The data had recorded the
+// answer in `confidence` all along and the renderer ignored it.
+const xlate = JSON.parse(readFileSync(new URL('../../data/action_translations.json', import.meta.url), 'utf8'));
+const conf = Object.values(xlate.translations).filter((v) => v.english).map((v) => String(v.confidence));
+check('the file records provenance per entry', conf.length > 0, true);
+check('and marks most of them as printed', conf.filter((c) => c.startsWith('printed')).length > 0, true);
+
+check('the renderer reads the confidence', /const conf = String\(tr\.confidence/.test(ref), true);
+check('a printed entry gets NO note', /conf === 'printed'\s*\?\s*''/.test(ref), true);
+// printed-truncated IS printed, just cut off, so it earns a note but not that
+// note: the tail is completed from the Chinese, the whole line is not a
+// translation.
+check('a truncated one says what actually happened',
+  /conf\.startsWith\('printed'\)[\s\S]{0,200}?runs off the card/.test(ref), true);
+check('and only a real translation still claims to be one',
+  /translated from the Chinese card text/.test(ref), true);
+check('the entry\'s own note rides along as a tooltip', /tr\.note \? ` title="\$\{esc\(tr\.note\)\}"/.test(ref), true);
+
+// ---------- LINK THE THING, NOT THE WORD FOR IT ----------
+// "Launch 1 MC-3 "Razor" Missile" linked `Missile`, the keyword, when the
+// reader wants the projectile the sentence names and that we hold a card for.
+check('projectiles and drones join the link patterns',
+  /c\.category !== 'projectile' && c\.category !== 'drone'/.test(ref), true);
+check('and emit a card link rather than a keyword one',
+  /h\.card[\s\S]{0,120}?data-card="\$\{esc\(h\.label\)\}"/.test(ref), true);
+// Longest-first is what lets the card beat the keyword for the same span.
+check('patterns sort by the matched NAME length', /sort\(\(a, b\) => b\.len - a\.len\)/.test(ref), true);
+check('never by the pattern source, which quoteLoose inflates',
+  /sort\(\(a, b\) => b\.re\.source\.length/.test(ref), false);
+
+// THE QUOTE HAZARD, and it is not hypothetical: card 071 is `MC-3 "Razor"
+// Missile` with straight quotes and ZHAM-002 is `M60 “Boomerang” Missile` with
+// curly ones, while the action text naming both uses straight. A literal
+// pattern links Razor and silently misses Boomerang, which reads as broken.
+check('quotes match loosely', /function quoteLoose/.test(ref), true);
+check('covering both curly forms', /\["“”\]/.test(ref) && /\['‘’\]/.test(ref), true);
+{
+  const raw = JSON.parse(readFileSync(new URL('../../data/cards.json', import.meta.url), 'utf8'));
+  const list = Array.isArray(raw) ? raw : raw.cards;
+  // THE MERGE, and leaving it out is what made an earlier draft of this check
+  // fail: cards 154 and 155 read `M7手雷` / `M9闪光弹` in cards.json and become
+  // "M7 Grenade" / "M9 Stun Grenade" through name_overrides, which is what the
+  // app actually links against.
+  const nameOv = JSON.parse(readFileSync(new URL('../../data/name_overrides.json', import.meta.url), 'utf8')).cards ?? {};
+  const nameOf = (c) => (nameOv[c.id]?.en ?? c.name?.en ?? '').trim();
+  const named = list.filter((c) => c.category === 'projectile' || c.category === 'drone');
+  check('there are projectiles and drones to link', named.length > 20, true);
+  // The guard that keeps this from linking ordinary words: every real name is
+  // long. If one ever ships shorter than the floor, this fails rather than the
+  // reference quietly linking a common word mid-sentence.
+  const CJK = /[぀-ヿ一-鿿]/;
+  const short = named.map(nameOf).filter((n) => n && !CJK.test(n) && n.length < 8);
+  check('and none is short enough to collide with prose', short, []);
+  // Both quote styles really are in use, which is why quoteLoose exists.
+  const all = named.map(nameOf).join(' ');
+  check('the data really does mix quote styles', /"/.test(all) && /[“”]/.test(all), true);
+  check('and the linker skips any name that is not English', /CJK\.test\(n\)/.test(ref), true);
+}
+
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

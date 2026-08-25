@@ -121,7 +121,17 @@ const englishOnly = (s: string | undefined): string | undefined => {
   return t && !CJK.test(t) ? t : undefined;
 };
 
-let linkPatterns: { name: string; re: RegExp }[] | null = null;
+let linkPatterns: { name: string; re: RegExp; len: number; card?: boolean }[] | null = null;
+
+// THE CARD DATA MIXES STRAIGHT AND CURLY QUOTES, on both sides of this match.
+// Card 071 is `MC-3 "Razor" Missile` and ZHAM-002 is `M60 “Boomerang” Missile`,
+// while the action text that names them uses straight quotes for both. A
+// literal pattern would link Razor and silently miss Boomerang, which is worse
+// than linking neither: half a feature reads as a broken one. So every quote
+// and apostrophe in a name becomes a class matching any of its variants.
+function quoteLoose(escaped: string): string {
+  return escaped.replace(/["“”]/g, '["“”]').replace(/['‘’]/g, "['‘’]");
+}
 
 function linkKeywords(text: string): string {
   // Glyph placeholders are masked out before the keyword pass, because several
@@ -136,21 +146,53 @@ function linkKeywords(text: string): string {
       seen.add(n.toLowerCase());
       const body = n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\bX\b/g, '\\d+');
       try {
-        linkPatterns.push({ name: n, re: new RegExp(`\\b${body}\\b`, 'gi') });
+        linkPatterns.push({ name: n, re: new RegExp(`\\b${body}\\b`, 'gi'), len: n.length });
       } catch {
       }
     }
-    linkPatterns.sort((a, b) => b.name.length - a.name.length);
+    // THE THING ITSELF, not the word for it. "Launch 1 MC-3 "Razor" Missile"
+    // used to link `Missile`, the keyword, when the reader almost certainly
+    // wants the projectile the sentence names and which we hold a card for.
+    // Projectiles and drones only: those are what an Action launches, deploys
+    // or fires by name, and both are cards a reader can open.
+    //
+    // Sorting longest-first below is what makes this win: `MC-3 "Razor"
+    // Missile` is 20 characters against `Missile`'s 7, so the card claims the
+    // span and the keyword cannot overlap it. Where the text says only
+    // "Missile", the keyword still links, which is the right answer there.
+    for (const c of data.cards) {
+      if (c.category !== 'projectile' && c.category !== 'drone') continue;
+      const n = (c.name?.en ?? '').trim();
+      // Short names are the ones that collide with ordinary words; every real
+      // projectile and drone name is ten characters or more.
+      //
+      // CJK is rejected for the usual reason: an `en` field is not proof of
+      // English here. name_overrides fixes 154 and 155 at load, so this is
+      // belt and braces rather than a live case, but a Chinese name could only
+      // ever match Chinese text and the length floor does not catch one - a
+      // four-character Chinese name is a long phrase.
+      if (n.length < 8 || CJK.test(n) || seen.has(n.toLowerCase())) continue;
+      seen.add(n.toLowerCase());
+      const body = quoteLoose(n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+      try {
+        linkPatterns.push({ name: c.id, re: new RegExp(body, 'gi'), len: n.length, card: true });
+      } catch {
+      }
+    }
+    // Sorted on the matched NAME length, never the pattern source: quoteLoose
+    // inflates a card pattern by four characters per quote, so source length
+    // would rank by punctuation rather than by how much text is claimed.
+    linkPatterns.sort((a, b) => b.len - a.len);
   }
 
-  const hits: { start: number; end: number; label: string }[] = [];
-  for (const { name, re } of linkPatterns) {
+  const hits: { start: number; end: number; label: string; card?: boolean }[] = [];
+  for (const { name, re, card } of linkPatterns) {
     re.lastIndex = 0;
     let m: RegExpExecArray | null;
     while ((m = re.exec(src))) {
       const start = m.index;
       const end = start + m[0].length;
-      if (!hits.some((h) => start < h.end && end > h.start)) hits.push({ start, end, label: name });
+      if (!hits.some((h) => start < h.end && end > h.start)) hits.push({ start, end, label: name, card });
     }
   }
   if (!hits.length) return restore(src);
@@ -160,7 +202,12 @@ function linkKeywords(text: string): string {
   let at = 0;
   for (const h of hits) {
     out += src.slice(at, h.start);
-    out += `<a class="kw-link" data-kw="${esc(h.label)}">${src.slice(h.start, h.end)}</a>`;
+    // A card hit opens the card, a keyword hit opens the glossary. Both are
+    // already answered by the document-level delegation, so neither needs a
+    // handler of its own.
+    out += h.card
+      ? `<a class="kw-link" data-card="${esc(h.label)}">${src.slice(h.start, h.end)}</a>`
+      : `<a class="kw-link" data-kw="${esc(h.label)}">${src.slice(h.start, h.end)}</a>`;
     at = h.end;
   }
   return restore(out + src.slice(at));
@@ -375,7 +422,32 @@ function cardDetail(c: Card): string {
       const tr = data.actionTranslation(a.id);
       let text = '';
       if (en) text = linkKeywords(en);
-      else if (tr?.english) text = `${linkKeywords(tr.english)}<em class="ref-note"> (translated from the Chinese card text)</em>`;
+      else if (tr?.english) {
+        // THE NOTE KEYS ON PROVENANCE, which the data has recorded all along
+        // and this ignored. `action_translations.json` marks every entry with a
+        // `confidence`, and 55 of the 61 actions that were printing "translated
+        // from the Chinese card text" are marked `printed`: they were read off
+        // the English card, so the note was not merely noise, it was false. The
+        // file is named for the machine-translated entries it started as, and
+        // the printed ones were filed into it later as corrections.
+        //
+        //   printed            the English card says this. No note.
+        //   printed-truncated  the English card says this but overflows its box,
+        //                      so the tail is completed from the Chinese. Worth
+        //                      a note, but not THAT note.
+        //   anything else      genuinely our translation. 6 actions.
+        const conf = String(tr.confidence ?? '');
+        // The entry's own note explains the individual case; it is too long for
+        // the line but exactly right as a tooltip.
+        const why = tr.note ? ` title="${esc(tr.note)}"` : '';
+        const flag =
+          conf === 'printed'
+            ? ''
+            : conf.startsWith('printed')
+              ? `<em class="ref-note"${why}> (the printed English runs off the card; the end is completed from the Chinese)</em>`
+              : `<em class="ref-note"${why}> (translated from the Chinese card text)</em>`;
+        text = `${linkKeywords(tr.english)}${flag}`;
+      }
       else text = '<em class="ref-note">No rules text on this card.</em>';
       // The Chinese DESCRIPTION has to be fed in as well as the Chinese name.
       // Several mechanics can only be matched on it - Loads is `负载`, Mines is
