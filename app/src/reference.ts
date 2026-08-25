@@ -123,14 +123,29 @@ const englishOnly = (s: string | undefined): string | undefined => {
 
 let linkPatterns: { name: string; re: RegExp; len: number; card?: boolean }[] | null = null;
 
-// THE CARD DATA MIXES STRAIGHT AND CURLY QUOTES, on both sides of this match.
-// Card 071 is `MC-3 "Razor" Missile` and ZHAM-002 is `M60 “Boomerang” Missile`,
-// while the action text that names them uses straight quotes for both. A
-// literal pattern would link Razor and silently miss Boomerang, which is worse
-// than linking neither: half a feature reads as a broken one. So every quote
-// and apostrophe in a name becomes a class matching any of its variants.
-function quoteLoose(escaped: string): string {
-  return escaped.replace(/["“”]/g, '["“”]').replace(/['‘’]/g, "['‘’]");
+// THE QUOTES DO NOT AGREE, in three different ways at once:
+//   card 071  `MC-3 "Razor" Missile`      text: straight quotes    -> same
+//   ZHAM-002  `M60 “Boomerang” Missile`   text: straight quotes    -> differ
+//   card 159  `AMDS210 Delphinium ...`    text: "Delphinium"       -> card has NONE
+// Matching quote VARIANTS handles the second and not the third, which is how
+// Delphinium stayed unlinked after the first attempt at this. So quotes are
+// removed from BOTH sides instead of reconciled, and the match runs on the
+// stripped text.
+//
+// `map` carries each stripped character back to where it came from, because the
+// span that gets wrapped in the anchor has to be the ORIGINAL one, quotes and
+// all: rebuilding the text from the stripped copy would silently delete every
+// quotation mark on the page.
+const QUOTE = /["“”'‘’]/;
+function stripQuotes(s: string): { text: string; map: number[] } {
+  let text = '';
+  const map: number[] = [];
+  for (let i = 0; i < s.length; i++) {
+    if (QUOTE.test(s[i])) continue;
+    text += s[i];
+    map.push(i);
+  }
+  return { text, map };
 }
 
 function linkKeywords(text: string): string {
@@ -162,7 +177,7 @@ function linkKeywords(text: string): string {
     // "Missile", the keyword still links, which is the right answer there.
     for (const c of data.cards) {
       if (c.category !== 'projectile' && c.category !== 'drone') continue;
-      const n = (c.name?.en ?? '').trim();
+      const n = stripQuotes((c.name?.en ?? '').trim()).text.replace(/\s+/g, ' ').trim();
       // Short names are the ones that collide with ordinary words; every real
       // projectile and drone name is ten characters or more.
       //
@@ -173,7 +188,7 @@ function linkKeywords(text: string): string {
       // four-character Chinese name is a long phrase.
       if (n.length < 8 || CJK.test(n) || seen.has(n.toLowerCase())) continue;
       seen.add(n.toLowerCase());
-      const body = quoteLoose(n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+      const body = n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       try {
         linkPatterns.push({ name: c.id, re: new RegExp(body, 'gi'), len: n.length, card: true });
       } catch {
@@ -186,12 +201,22 @@ function linkKeywords(text: string): string {
   }
 
   const hits: { start: number; end: number; label: string; card?: boolean }[] = [];
+  // The quote-stripped copy, built once. Cards match against it; keywords match
+  // the original, because a keyword name never contains a quote.
+  const bare = stripQuotes(src);
   for (const { name, re, card } of linkPatterns) {
+    const hay = card ? bare.text : src;
     re.lastIndex = 0;
     let m: RegExpExecArray | null;
-    while ((m = re.exec(src))) {
-      const start = m.index;
-      const end = start + m[0].length;
+    while ((m = re.exec(hay))) {
+      // A card hit is in stripped coordinates and has to come back to real
+      // ones before anything slices the source with it. `end` maps off the LAST
+      // character rather than the one past it, which would run off the array on
+      // a match that ends the string.
+      const start = card ? bare.map[m.index] : m.index;
+      const last = card ? bare.map[m.index + m[0].length - 1] : m.index + m[0].length - 1;
+      if (start === undefined || last === undefined) continue;
+      const end = last + 1;
       if (!hits.some((h) => start < h.end && end > h.start)) hits.push({ start, end, label: name, card });
     }
   }

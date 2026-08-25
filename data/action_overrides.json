@@ -326,6 +326,12 @@
       "description": {
         "en": "· Barricade\n· This unit cannot be Crushed."
       }
+    },
+    "006_B": {
+      "description": {
+        "en": "· Direct Fire · Silence\n· Deploy 1 GM-35 Anti-Armor Mine."
+      },
+      "_note": "OUR transcription error, not a publisher typo: cards.json carries \"Anti-Aromor\". The printed English card 006 reads \"Deploy 1 GM-35 Anti-Armor Mine\", checked against the scan in assets/cards/en/006.webp. The misspelling also kept the deployable from linking to card 074."
     }
   },
   "_notes": {

@@ -261,8 +261,22 @@ check('never by the pattern source, which quoteLoose inflates',
 // Missile` with straight quotes and ZHAM-002 is `M60 “Boomerang” Missile` with
 // curly ones, while the action text naming both uses straight. A literal
 // pattern links Razor and silently misses Boomerang, which reads as broken.
-check('quotes match loosely', /function quoteLoose/.test(ref), true);
-check('covering both curly forms', /\["“”\]/.test(ref) && /\['‘’\]/.test(ref), true);
+// THE QUOTES DISAGREE THREE WAYS, and matching variants only covered two:
+//   card 071  `MC-3 "Razor" Missile`     text straight   -> same
+//   ZHAM-002  `M60 “Boomerang” Missile`  text straight   -> differ
+//   card 159  `AMDS210 Delphinium ...`   text "Delphinium" -> card has NONE
+// The third is why Delphinium stayed unlinked after the first attempt. Quotes
+// are now REMOVED from both sides rather than reconciled.
+check('quotes are stripped, not merely varied', /function stripQuotes/.test(ref), true);
+check('and the old variant matcher is gone', /function quoteLoose/.test(ref), false);
+check('card names are stripped when the pattern is built',
+  /stripQuotes\(\(c\.name\?\.en \?\? ''\)\.trim\(\)\)\.text/.test(ref), true);
+check('and cards match against the stripped copy', /const hay = card \? bare\.text : src/.test(ref), true);
+// The span that gets wrapped has to be the ORIGINAL one, quotes and all, or
+// every quotation mark on the page would silently vanish.
+check('spans map back to real coordinates', /bare\.map\[m\.index\]/.test(ref), true);
+check('mapping off the LAST character, not one past the end',
+  /m\.index \+ m\[0\]\.length - 1/.test(ref), true);
 {
   const raw = JSON.parse(readFileSync(new URL('../../data/cards.json', import.meta.url), 'utf8'));
   const list = Array.isArray(raw) ? raw : raw.cards;
