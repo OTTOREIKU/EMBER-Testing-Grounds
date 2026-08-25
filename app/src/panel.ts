@@ -2,7 +2,7 @@ import type { Card, CardAction, Token } from './types';
 import { cardImageUrl, cardName, isDiscardCard, mechPartUrl, rulesLines, squadLabel, tabImageUrl, traitName, type GameData } from './data';
 import { inspectOnHover, linkMechanics } from './inspector';
 import { ICON_BOLT } from './icons';
-import { expandGlyphs } from './glyphs';
+import { diePips, expandGlyphs } from './glyphs';
 import { groupByFaction, openPartPicker } from './partpicker';
 import { type ActionWorld, canBeLoad, guidedActions, isCarrier, isElectronicAttack, knockbackOf, SLOT_LABEL, tokenCards } from './units';
 import { costLabel, LENGTH_NAME, lengthOf, TICK_COST } from './ticks';
@@ -410,8 +410,14 @@ export class Panel {
 
     const info = document.createElement('div');
     info.className = 'action-info';
-    const range = a.range === 0 ? 'R --' : a.range ? `R ${a.range}` : '';
-    info.innerHTML = `<span class="dim"><span class="act-slot">${SLOT_LABEL[ga.slot]}</span>${[range, dice.join('+')]
+    // Spelled out: "R 6" reads as a die code beside "3R", and they mean
+    // entirely different things.
+    const range = a.range === 0 ? 'Range --' : a.range ? `Range ${a.range}` : '';
+    // The pool as DICE here, because this line is innerHTML. The tip below and
+    // the Roll button keep the plain "3R+1Y": one is a text field and the other
+    // a button label, and neither can render markup.
+    const pips = [diePips(a.redDice, 'R'), diePips(a.yellowDice, 'Y')].filter(Boolean).join(' ');
+    info.innerHTML = `<span class="dim"><span class="act-slot">${SLOT_LABEL[ga.slot]}</span>${[range, pips]
       .filter(Boolean)
       .map((s) => ` · ${s}`)
       .join('')}</span>
@@ -834,12 +840,10 @@ export class Panel {
       const tr = this.data.actionTranslation(a.id);
       const text = en ?? tr?.english ?? a.description?.zh?.trim();
       if (!text) continue;
-      const dice = [a.redDice ? `${a.redDice}R` : '', a.yellowDice ? `${a.yellowDice}Y` : '']
-        .filter(Boolean)
-        .join('+');
+      const dice = [diePips(a.redDice, 'R'), diePips(a.yellowDice, 'Y')].filter(Boolean).join(' ');
       const alen = lengthOf(a);
       const acost = alen ? `${LENGTH_NAME[alen]} (${costLabel(TICK_COST[alen])})` : '';
-      const meta = [a.type, acost, a.range ? `R ${a.range}` : '', dice].filter(Boolean).join(' · ');
+      const meta = [a.type, acost, a.range ? `Range ${a.range}` : '', dice].filter(Boolean).join(' · ');
       const row = document.createElement('div');
       row.className = 'card-action';
       const bullets = rulesLines(text);

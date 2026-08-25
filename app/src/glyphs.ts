@@ -16,10 +16,19 @@ const ICONS: Record<string, string> = {
   lighthit: 'lightHit',
 };
 
+// The colour is a CLASS SUFFIX: `die-blue` picks up `.glyph-die.die-blue`, and
+// the same four names are styled in styles.css and reference.css.
+//
+// These used to read `s1` and `s2`, which are the SEAT colours (player one and
+// player two), not die colours. Nothing styles `.die-s1`, so every Blue and Red
+// die in card text rendered as an empty bordered box - "for every {3R}, +{1R}"
+// came out as four blank squares. Yellow and White were unaffected only because
+// their names happen to be the same in both vocabularies, which is what let it
+// sit unnoticed.
 const DICE: Record<string, { colour: string; label: string }> = {
-  b: { colour: 's1', label: 'Blue die' },
+  b: { colour: 'blue', label: 'Blue die' },
   y: { colour: 'yellow', label: 'Yellow die' },
-  r: { colour: 's2', label: 'Red die' },
+  r: { colour: 'red', label: 'Red die' },
   w: { colour: 'white', label: 'White die' },
 };
 
@@ -90,4 +99,52 @@ export function maskGlyphs(escaped: string): { masked: string; restore: (html: s
   if (!held.length) return { masked, restore: (html) => html };
   const re = new RegExp(`${MARK}(\\d+)${MARK}`, 'g');
   return { masked, restore: (html) => html.replace(re, (_m, i: string) => held[Number(i)] ?? '') };
+}
+
+// THE ATTACK POOL DRAWN AS DICE. The card prints a pool as a row of coloured
+// squares, never as "3Y 1R". This goes back through expandGlyphs rather than
+// writing its own row, so there is ONE drawing of a die in the app: a second
+// one would be free to drift from the one the rules text renders, on the same
+// screen and often in the same paragraph.
+//
+// Shared by the reference and the board for the same reason.
+export function diePips(n: number | undefined, colour: 'R' | 'Y'): string {
+  if (!n || n < 0) return '';
+  const out = expandGlyphs(`{${n}${colour}}`);
+  // expandGlyphs draws 1 to 9 and leaves anything else with its braces on. A
+  // literal "{12R}" on screen would be worse than the plain text it replaced,
+  // so an out-of-range count falls back to that text. No escaping needed: the
+  // fallback is a number and one letter.
+  return out.includes('{') ? `${n}${colour}` : out;
+}
+
+// ---------- THE ACTION LENGTH CAPSULE, as the cards print it ----------
+//
+// Measured off the printed cards rather than invented (ZHRA-201 Power Shot and
+// ZHLA-102 Command Coordination, upscaled): a vertical rounded capsule with a
+// heavy dark outline and a pale interior, holding THREE slots, of which the
+// cost is filled in dark slate. The fill is BOTTOM ANCHORED, so a Short action
+// is one segment sitting at the foot of an otherwise empty capsule rather than
+// a short capsule.
+//
+//   Short   1 segment    (1 Action Tick)
+//   Medium  2 segments   (2 Action Ticks)
+//   Long    3 segments   (1 Maneuver Tick + 2 Action Ticks)
+//
+// The three slots are DELIBERATELY UNDIFFERENTIATED, exactly as printed: the
+// card does not distinguish the Maneuver Tick a Long action also costs. Our
+// split lives in the title instead, which adds what we know without changing
+// what a player recognises from the table.
+//
+// Shared rather than written per page, because the same capsule has to appear
+// on the reference, the board and the Match Centre for the familiarity to be
+// worth anything.
+export const TICK_SLOTS = 3;
+
+export function tickCapsule(filled: number, title = ''): string {
+  const n = Math.max(0, Math.min(TICK_SLOTS, Math.round(filled)));
+  // Rendered top-down so the markup reads in visual order; the empties come
+  // first, which is what puts the filled ones at the bottom.
+  const slots = Array.from({ length: TICK_SLOTS }, (_, i) => (i < TICK_SLOTS - n ? '<i></i>' : '<i class="on"></i>')).join('');
+  return `<span class="tick-cap${n ? '' : ' none'}"${title ? ` title="${title}"` : ''} aria-hidden="true">${slots}</span>`;
 }

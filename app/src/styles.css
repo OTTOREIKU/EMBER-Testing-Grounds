@@ -2192,8 +2192,17 @@ p.points { white-space: pre-line; }
 /* Keeps a glyph and the punctuation after it on one line. Display is stated so a
    container rule cannot promote it to a block and strand the punctuation. */
 .glyph-run { display: inline; white-space: nowrap; }
-.act-speed.sp-auto { background: rgba(240, 180, 41, 0.2); color: #f0b429; }
-.act-speed.sp-command { background: rgba(101, 162, 216, 0.2); color: #65a2d8; }
+/* THE PRINTED MARKS. ZHDR-201 draws both as a light box with a heavy dark
+   outline and a dark glyph, the same family as the tick capsule. Ours were
+   amber and blue, which is our palette rather than the print's, and the blue
+   one landed on the blue Movement bar and disappeared into it. Kept identical
+   to the reference's copy of this rule so one mark means one thing on both
+   pages. */
+.act-speed.sp-auto,
+.act-speed.sp-command {
+  background: #eaeaf5; color: #14171c;
+  border: 1.5px solid #14171c; border-radius: 4px; text-shadow: none;
+}
 
 /* Dice symbols written into card and glossary text as {Eye}, {Heavy Hit}, {B}. */
 .glyph-ico {
@@ -3365,3 +3374,22 @@ p.points { white-space: pre-line; }
 .task-item.side-s2 .task-icon { fill: var(--sq-s2); }
 .task-item.carried { opacity: 0.35; }
 .task-item.task-control circle { stroke-dasharray: 3 2; }
+
+/* ---------- THE ACTION LENGTH CAPSULE (printed iconography) ----------
+   Measured off the printed cards: a vertical rounded capsule, heavy dark
+   outline, pale interior, THREE slots, filled BOTTOM UP in dark slate.
+   Short 1, Medium 2, Long 3. Kept light on our dark UI on purpose: it is a
+   piece of the printed card lifted onto the screen, and a player should
+   recognise it from the table without translating. Same reason the die glyphs
+   keep their printed colours. */
+.tick-cap {
+  display: inline-flex; flex-direction: column; justify-content: flex-end; gap: 1px;
+  width: 13px; height: 30px; flex: 0 0 13px; padding: 2px;
+  background: #eaeaf5; border: 1.5px solid #14171c; border-radius: 4px;
+  vertical-align: -8px; box-sizing: border-box;
+}
+.tick-cap i { display: block; flex: 1; border-radius: 1px; background: transparent; }
+.tick-cap i.on { background: #39424f; }
+/* An action that costs no Ticks (a Passive) shows no capsule at all rather than
+   an empty one, which would read as "free" instead of "not a choice". */
+.tick-cap.none { display: none; }
