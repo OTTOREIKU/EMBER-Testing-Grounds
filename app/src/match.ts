@@ -1,7 +1,8 @@
 import { ApiError, EmberApi, type Account, type AdminInvite, type AdminUser, type CardStat, type FactionStat, type LeaderPlayer, type LeaderSquad, type MyRecord, type SquadEntry, type StatsSummary } from './api';
-import { Relay, type RollKind } from './net';
+import { Relay, type RolledDie, type RollKind } from './net';
 import { applyRemote, check, onBeforeApply, onPerformed, onRefused, perform, type Command, type CheckResult } from './commands';
-import { clearHistory, recordSnapshot, rollbackCatalog, undoToPhase } from './history';
+import { clearHistory, historyEntries, recordSnapshot, rollbackCatalog, undoToPhase, undoToSeq } from './history';
+import { groupLedger, labelFor, namesFrom, SEALED_KINDS, type LedgerNames } from './ledger';
 import { setLocalSeat } from './loop';
 import { cardName, FACTION_LABEL, dataUrl, loadData, missionImageUrl, setSquadNames, squadLabel, type GameData } from './data';
 import { tacticSpec } from './tactics';
@@ -402,13 +403,25 @@ onPerformed((cmd) => relay.publish(cmd));
 // runs before every command, local and remote alike, which is exactly when the
 // pending ask is still on the board — so both clients capture the same target
 // off the same command without either having to be told what it was.
-let asked: { round: number; phase: number } | null = null;
+let asked: { round: number; phase: number; seq?: number } | null = null;
+// The ledger's names resolver, built once data exists and cached: labelFor is
+// called for EVERY command and must not rescan the card list each time.
+let ledgerNames: LedgerNames | undefined;
 onBeforeApply((s, cmd) => {
   if (cmd.kind === 'rollbackAnswer' && cmd.accept) {
     const r = s.script?.rollback;
-    asked = r ? { round: r.round, phase: r.phase } : null;
+    // The seq rides along when the ask named a UNIT (U4). Captured here, one
+    // moment before apply() clears the pending ask, for the same reason the
+    // round and phase are: both clients read the same target off the same
+    // command, and by rewind time the ask is gone from state.
+    asked = r ? { round: r.round, phase: r.phase, seq: r.seq } : null;
   }
-  recordSnapshot(s, cmd.kind);
+  // U1 (Undo v2): the same snapshot now carries the human reading, written
+  // HERE because only the moment before apply() still has the board the words
+  // refer to. The kind stays the label - the sealed floor matches on it.
+  if (!ledgerNames && data) ledgerNames = namesFrom(data);
+  const meta = labelFor(cmd, s, ledgerNames);
+  recordSnapshot(s, cmd.kind, { human: meta.label, seat: meta.seat, role: meta.role });
 });
 onRefused((why) => {
   lobbyNote = why;
@@ -487,15 +500,57 @@ function send(cmd: Command): CheckResult {
 // seats read the same list — which is also why there is no version number to
 // compare: neither side can be holding a staler copy than the other.
 //
-// Cheap despite running after every command, because the answer only CHANGES
-// when a phase begins or a die roll seals one, and it is not sent otherwise. A
-// catalog command records a snapshot of its own, but at the round and phase the
-// table is already in, so it adds no boundary and cannot set itself off again.
+// Runs after every command; sent only when the ANSWER changes. Since U3 the
+// answer includes the last few UNITS, so it changes as actions land - still
+// one command per real change, never a timer. Two properties keep it from
+// feeding back on itself: the catalog command's own snapshot is a QUIET ledger
+// entry (it rides the open unit or is skipped below, so it never appears in
+// its own list), and unit targets are named by SEQ, which is stable under the
+// ring's evictions where an index would shift every time. The one decay case
+// - the ring evicting a unit's opening command, leaving a fragment whose
+// label would misread - is skipped explicitly, so an eviction changes the key
+// at most once, when the whole unit drops out.
 let publishedCatalog = '';
 function publishCatalog(): void {
   const seat = mySeat();
   if (!seat || !isHost() || catchingUp || !state.script) return;
-  const entries = rollbackCatalog().map(({ round, phase, available }) => ({ round, phase, available }));
+  const phases = rollbackCatalog();
+  const raw = historyEntries();
+  // The same floor rollbackCatalog draws: nothing at or before the most recent
+  // die-result command is reachable, units included.
+  let floor = 0;
+  for (let i = raw.length - 1; i >= 0; i--) {
+    if (SEALED_KINDS.has(raw[i].kind)) { floor = i + 1; break; }
+  }
+  const units = groupLedger(raw)
+    .filter((u) => !u.quiet && u.inPlay)
+    // Phase machinery ("Next phase", "Set ready", the dial handshake) is not a
+    // player action, and the v1 phase entries below already offer every phase
+    // boundary as a target — listing both read as clutter beside the real
+    // actions (U7, 2026-08-25).
+    .filter((u) => u.role !== 'boundary')
+    // A fragment: the ring evicted this unit's opening command, so its label
+    // is whichever follower survived. Listing it would promise the wrong step.
+    .filter((u) => !(u.start === 0 && (raw[0]?.role === 'follow' || raw[0]?.role === 'quiet')))
+    .slice(-10)
+    .map((u) => ({
+      round: u.round,
+      phase: u.phase,
+      available: u.start >= floor,
+      seq: raw[u.start].seq,
+      label: u.label,
+      ...(u.sealed ? { sealed: true } : {}),
+      index: u.start,
+    }));
+  // One list, oldest first, phases and units merged by where they sit in the
+  // ring - the phase boundary at a given snapshot comes before a unit starting
+  // on it, because the boundary IS that board and the unit is what happened
+  // next. Phase entries keep the exact v1 wire shape; only units carry seq.
+  const merged = [
+    ...phases.map((p) => ({ round: p.round, phase: p.phase, available: p.available, index: p.index, phase0: true })),
+    ...units.map((u) => ({ ...u, phase0: false })),
+  ].sort((a, b) => a.index - b.index || (a.phase0 ? -1 : 1));
+  const entries = merged.map(({ index: _i, phase0, ...e }) => (phase0 ? { round: e.round, phase: e.phase, available: e.available } : e));
   const key = JSON.stringify(entries);
   if (key === publishedCatalog) return;
   // Latched BEFORE the send, and un-latched on refusal — both halves matter.
@@ -546,7 +601,9 @@ function rewindIfAgreed(cmd: Command): void {
     render();
     return;
   }
-  const snap = undoToPhase(state, to.round, to.phase);
+  // A unit ask rewinds to its exact snapshot by seq; a phase ask to the
+  // board as the phase began, exactly as v1 did. Same pipeline after either.
+  const snap = to.seq !== undefined ? undoToSeq(state, to.seq) : undoToPhase(state, to.round, to.phase);
   if (!snap) {
     // Only reachable if the asker offered a point the host has already dropped.
     // Nothing has moved on either board, so this is safe — but it is not silent.
@@ -565,6 +622,12 @@ function rewindIfAgreed(cmd: Command): void {
   // checkpoint truncates its log to the rewound board — relay.ts drops
   // everything at or before the checkpoint revision.
   relay.publishCheckpoint();
+  // The host's ring was just truncated, so the catalog in shared state
+  // describes targets that no longer exist behind it. Republish NOW rather
+  // than waiting for the next command to notice - the guest's menu is only as
+  // honest as this list. (The guest's own copy is fixed by the checkpoint
+  // path, which clears its latch and republishes on catch-up.)
+  publishCatalog();
   render();
 }
 
@@ -595,6 +658,20 @@ function pushRoll(seat: Side, label: string | null, dice: { color: string; face:
   diceFeed.push({ seat, label: label ?? 'rolled', result, kind, dice, n: feedSeq });
 }
 
+// EVERY die the room's server rolls seals the shared timeline the moment it
+// lands (OTTO's ruling: a rollback never reaches past a roll). The consequence
+// kinds (applyPenetration, recordKill...) only enter the ring when a roll
+// carried consequences — a MISSED attack fired none of them and its dice could
+// be walked back (U7 finding, 2026-08-25). This is the one chokepoint all four
+// server-dice callers share, so the seal cannot be forgotten by a new roll
+// site. Solo dev dice stay local and seal nothing: no room, no bargain.
+async function sealedRoll(pool: Record<string, number>, tag?: string, kind: RollKind = 'pool'): Promise<RolledDie[]> {
+  const rolled = await relay.rollDice(pool, tag, kind);
+  const seat = mySeat();
+  if (seat) send({ kind: 'noteRoll', seat, what: tag ?? 'dice' });
+  return rolled;
+}
+
 // Server dice in a room; honest local dice in dev. Either way the Hits per
 // die come from the same printed faces, and the faces come back so the feed
 // can show what landed. In a room the feed line is added when the server
@@ -604,7 +681,7 @@ async function rollHits(n: number, label: string): Promise<{ hits: number[]; dic
   const faces = diceData.dice.yellow;
   let idx: number[];
   if (relay.state.room && relay.state.seat) {
-    const rolled = await relay.rollDice({ yellow: n }, label, 'hits');
+    const rolled = await sealedRoll({ yellow: n }, label, 'hits');
     idx = rolled.map((d) => d.face);
   } else {
     idx = Array.from({ length: n }, () => Math.floor(Math.random() * faces.sides));
@@ -641,7 +718,7 @@ function renderCombatIdle(): void {
 // solo. Same rule the freeplay board follows.
 function combatRoller() {
   return relay.state.room && relay.state.seat
-    ? (pool: Record<string, number>, tag?: string) => relay.rollDice(pool, tag)
+    ? (pool: Record<string, number>, tag?: string) => sealedRoll(pool, tag)
     : null;
 }
 
@@ -668,7 +745,7 @@ async function rollDefensePool(white: number, blue: number): Promise<{ color: Di
   if (white) pool.white = white;
   if (blue) pool.blue = blue;
   if (relay.state.room && relay.state.seat) {
-    const rolled = await relay.rollDice(pool, 'Defence', 'pool');
+    const rolled = await sealedRoll(pool, 'Defence', 'pool');
     return rolled.map((d) => ({ color: d.color as DieColor, face: d.face, selected: false }));
   }
   return Object.entries(pool).flatMap(([c, n]) =>
@@ -1141,7 +1218,7 @@ async function rollPool(y: number, r: number, label: string): Promise<void> {
   if (r) pool.red = r;
   let rolled: { color: string; face: number }[];
   if (relay.state.room && relay.state.seat) {
-    rolled = await relay.rollDice(pool, label, 'pool');
+    rolled = await sealedRoll(pool, label, 'pool');
   } else {
     rolled = Object.entries(pool).flatMap(([c, n]) =>
       Array.from({ length: n }, () => ({ color: c, face: Math.floor(Math.random() * (diceData!.dice[c as DieColor]?.sides ?? 6)) })),

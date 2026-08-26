@@ -187,16 +187,17 @@ check('a spectator cannot drag a unit', /ctx\.networked && !ctx\.seat/.test(onMo
 // The turn panel is a question put to someone holding a seat. Every branch of
 // it assumes one, and `mine()` answers true for a seatless client, so the watch
 // branch has to come before all of them rather than beside them.
-const panelFn = hud.slice(hud.indexOf('function panelHtml(ctx: HudCtx)'), hud.indexOf('function rollbackOffer'));
+const panelFn = hud.slice(hud.indexOf('function panelHtml(ctx: HudCtx)'), hud.indexOf('let undoOpen'));
 check('panelHtml was located', panelFn.includes('boxDropPanel'), true);
 check('watching is the first branch of the turn panel',
   panelFn.indexOf('watchPanel(ctx)') < panelFn.indexOf('boxDropPanel(ctx)'), true);
 // A rollback is a bargain between the two players, and a watcher is not a party
 // to it. The branch above already means they never reach the panels that draw
 // the offer — this is the second layer, so reordering the dispatcher some day
-// cannot quietly start asking them.
-const offerFn = hud.slice(hud.indexOf('function rollbackOffer(ctx: HudCtx)'), hud.indexOf('function rollbackPanel'));
-check('rollbackOffer was located', offerFn.includes('rollbackCatalog'), true);
+// cannot quietly start asking them. U5 moved the offer from the panel feet to
+// the undo chrome; the watcher rule moved with it and is pinned on the chrome.
+const offerFn = hud.slice(hud.indexOf('function undoChrome(ctx: HudCtx)'), hud.indexOf('function rollbackPanel'));
+check('undoChrome was located', offerFn.includes('rollbackCatalog'), true);
 check('a watcher is never offered a rollback', /if \(!ctx\.networked \|\| !ctx\.seat/.test(offerFn), true);
 
 // ---------- Class 3: a rule that exists on one board only ----------

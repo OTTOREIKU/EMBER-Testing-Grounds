@@ -172,6 +172,12 @@ export type Command =
   | { kind: 'finishTasks'; seat: Side }
   | { kind: 'rollSetup'; seat: Side; hits: number[] }
   | { kind: 'acceptRoll'; seat: Side }
+  // A die landed on the shared table (U7 finding, 2026-08-25): the room's dice
+  // server rolled and both players watched. State-wise a no-op — its whole job
+  // is to sit in the snapshot ring as a SEALED kind, because applyPenetration
+  // and friends only mark rolls that carried consequences, and a MISSED attack
+  // must seal the rollback timeline exactly like a hit.
+  | { kind: 'noteRoll'; seat: Side; what: string }
   | { kind: 'pickEdge'; seat: Side; edge: 'black' | 'white' }
   | { kind: 'lockDials'; seat: Side }
   | { kind: 'finishDeployment'; seat: Side }
@@ -320,7 +326,7 @@ export type Command =
   // attack unfold. Null tears the mirror down when the window closes.
   | { kind: 'setCombatView'; seat: Side; view: CombatView | null }
   | { kind: 'setRollbackCatalog'; seat: Side; entries: RollbackPoint[] }
-  | { kind: 'rollbackRequest'; seat: Side; round: number; phase: number; label: string }
+  | { kind: 'rollbackRequest'; seat: Side; round: number; phase: number; label: string; seq?: number }
   | { kind: 'rollbackAnswer'; seat: Side; accept: boolean }
   // The two halves of the networked dial reveal (3.3). A seat publishes a
   // hash of its dials first and the dials themselves only once both hashes
@@ -448,7 +454,7 @@ function actorOptional(cmd: Command): cmd is Command & { kind: 'forceMove' | 're
 // to a unit, so these carry a seat and nothing else.
 type TableKind =
   | 'advancePhase' | 'setPhase' | 'resetRounds' | 'adjustCommandTokens' | 'passTurn' | 'markEndStep' | 'award'
-  | 'lockMap' | 'rollSetup' | 'acceptRoll' | 'finishTasks' | 'pickEdge' | 'lockDials' | 'finishDeployment'
+  | 'lockMap' | 'rollSetup' | 'acceptRoll' | 'noteRoll' | 'finishTasks' | 'pickEdge' | 'lockDials' | 'finishDeployment'
   | 'queueIntercepts' | 'clearIntercepts' | 'placeSmoke' | 'removeSmoke' | 'dissipateSmoke'
   // queueReactions only: `resolveReaction` names the defender's own unit, so it
   // goes through the actor path and gets the "your units only" check free.
@@ -460,7 +466,7 @@ type TableKind =
   | 'setRollbackCatalog' | 'rollbackRequest' | 'rollbackAnswer';
 const TABLE_KINDS = new Set<Command['kind']>([
   'advancePhase', 'setPhase', 'resetRounds', 'adjustCommandTokens', 'passTurn', 'markEndStep', 'award',
-  'lockMap', 'rollSetup', 'acceptRoll', 'finishTasks', 'pickEdge', 'lockDials', 'finishDeployment',
+  'lockMap', 'rollSetup', 'acceptRoll', 'noteRoll', 'finishTasks', 'pickEdge', 'lockDials', 'finishDeployment',
   'queueIntercepts', 'clearIntercepts', 'placeSmoke', 'removeSmoke', 'dissipateSmoke',
   'queueReactions',
   'clearCounterRoll',
@@ -480,7 +486,7 @@ const ATTRIBUTED = new Set<Command['kind']>([
   // stamped with the sender's own seat like every other attributed command.
   'callDefense', 'answerDefense', 'clearDefense', 'setCombatView', 'focusAnswer', 'focusReroll', 'kcArmor', 'designateHit', 'meleeEvade', 'dodgeEnhance', 'riposte',
   'setRollbackCatalog', 'rollbackRequest', 'rollbackAnswer',
-  'lockMap', 'acceptRoll', 'lockDials', 'finishDeployment',
+  'lockMap', 'acceptRoll', 'noteRoll', 'lockDials', 'finishDeployment',
   'queueIntercepts', 'clearIntercepts', 'placeSmoke', 'removeSmoke', 'dissipateSmoke',
   // Queued from the ATTACKING client but naming the defender's units, so the
   // seat is pure attribution and gets stamped like any other table command.
@@ -750,8 +756,14 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       // accepted, both players would watch it fail, and nothing would move.
       // Both seats read the same catalog out of the same shared state, so there
       // is no version to compare and no staler copy to be holding.
-      const at = sc.rollbackCatalog.find((p) => p.round === cmd.round && p.phase === cmd.phase);
+      // A UNIT ask (v2) names the exact catalog entry by seq; a phase ask (v1)
+      // still matches on round and phase alone. Both go through the same gate:
+      // the entry must exist in the HOST's published list and be reachable.
+      const at = cmd.seq !== undefined
+        ? sc.rollbackCatalog.find((p) => p.seq === cmd.seq)
+        : sc.rollbackCatalog.find((p) => p.round === cmd.round && p.phase === cmd.phase && p.seq === undefined);
       if (!at) return no('That point is no longer one the table can return to.');
+      if (at.sealed) return no('Dice were rolled inside that action, and a rollback never reaches past a roll.');
       if (!at.available) return no('Dice have been rolled since then, and a rollback never reaches past a roll.');
       return ok;
     }
@@ -886,6 +898,12 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
     case 'acceptRoll': {
       const su = normaliseSetup(state.setup);
       if (!su || !firstPlayerFrom(su)) return no('The roll is tied, so it must be made again (3.1.2).');
+      return ok;
+    }
+    // Dice already landed on the shared table; recording that fact can never
+    // be the thing that is refused.
+    case 'noteRoll': {
+      if (typeof cmd.what !== 'string') return no('That is not a roll record.');
       return ok;
     }
     case 'finishTasks': {
@@ -2508,7 +2526,7 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
   if (cmd.kind === 'rollbackRequest') {
     // check() already refused this without a script, so it exists by here.
     const sc = state.script;
-    if (sc) sc.rollback = { by: cmd.seat, round: cmd.round, phase: cmd.phase, label: cmd.label };
+    if (sc) sc.rollback = { by: cmd.seat, round: cmd.round, phase: cmd.phase, label: cmd.label, ...(cmd.seq !== undefined ? { seq: cmd.seq } : {}) };
     return;
   }
   if (cmd.kind === 'rollbackAnswer') {
@@ -2586,6 +2604,9 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
     state.setup = su;
     return;
   }
+  // Applies nothing: the command exists to be SNAPSHOTTED, not to change the
+  // board. The ring records it and the rollback floor stops at it.
+  if (cmd.kind === 'noteRoll') return;
   if (cmd.kind === 'acceptRoll') {
     const su = normaliseSetup(state.setup) ?? newSetup();
     const winner = firstPlayerFrom(su);

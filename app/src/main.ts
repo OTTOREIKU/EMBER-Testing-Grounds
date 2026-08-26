@@ -42,6 +42,7 @@ import { watchForUpdates } from './updates';
 import { installTooltip, preloadCards } from './tooltip';
 import { PHASES, RoundTracker } from './tracker';
 import { clearHistory, historyList, recordSnapshot, undoLast } from './history';
+import { labelFor, namesFrom } from './ledger';
 import { offerHarpyDrag as sharedHarpyDrag } from './commandpick';
 import { PlayGuide } from './playguide';
 import type { Card, CardAction, DiceData, DieColor, Facing, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, StatusDef, TerrainPiece, Timing, Token } from './types';
@@ -279,37 +280,22 @@ async function init() {
   // is one press away from gone. Registered here rather than inside the command
   // layer so the Match Centre can keep its own policy — a shared board cannot be
   // rewound by one player alone.
-  onBeforeApply((s, cmd) => recordSnapshot(s, cmd.kind));
+  //
+  // The words come from the ONE ledger vocabulary (ledger.labelFor) that Undo
+  // v2 shares between both boards. This used to keep its own coarse table
+  // ("a move", "an Action"); two label tables for the same commands is the
+  // drift this codebase keeps refusing, so the table went when the ledger
+  // arrived (U1).
+  const ledgerNames = namesFrom(data);
+  onBeforeApply((s, cmd) => {
+    const meta = labelFor(cmd, s, ledgerNames);
+    recordSnapshot(s, cmd.kind, { human: meta.label, seat: meta.seat, role: meta.role });
+  });
 
-  // What the next undo would take back, in words a player recognises. The ring
-  // labels steps by command kind, which is developer vocabulary; anything not
-  // named here falls back to something honest rather than to jargon.
-  const UNDO_NAMES: Record<string, string> = {
-    advancePhase: 'the phase change',
-    setPhase: 'the phase change',
-    setTiming: 'a Timing Dial',
-    designate: 'a designation',
-    passTurn: 'a pass',
-    maneuver: 'a move',
-    setStance: 'a Stance change',
-    spendTicks: 'an Action',
-    spendAmmo: 'an Ammo spend',
-    spendCommand: 'a Command spend',
-    coordinateCommand: 'a Command Coordination',
-    applyPenetration: 'a Penetration',
-    recordKill: 'a removal',
-    placeSmoke: 'a smoke screen',
-    forceMove: 'a Forced Movement',
-    acceptRoll: 'the First Player roll',
-    markEndStep: 'an End Phase step',
-    award: 'a score award',
-    grantExtra: 'an Extra Opportunity',
-    endActivation: 'an activation end',
-  };
   function undoName(): string | null {
     const last = historyList().at(-1);
     if (!last) return null;
-    return UNDO_NAMES[last.label] ?? 'the last step';
+    return last.human ?? 'the last step';
   }
 
   function undoMove(): void {
@@ -322,7 +308,7 @@ async function init() {
     }
     selectToken(null);
     onChanged();
-    setHint(`Undid ${snap.label} · back to round ${snap.round}, ${PHASES[snap.phase]} Phase.`);
+    setHint(`Undid: ${snap.human ?? snap.label} · back to round ${snap.round}, ${PHASES[snap.phase]} Phase.`);
   }
 
   const panel = new Panel(data, {

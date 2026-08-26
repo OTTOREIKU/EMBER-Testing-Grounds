@@ -12,7 +12,7 @@ import { inContact, canStandIn, attackDirection, crushExchange, crushExchangeSpo
 import { breakAwayCost, breakAwayNote, canBeForceMoved, tetherCap, tetherNote } from './melee';
 import { factionColour, linkIcon, squadColour } from './icons';
 import { iconSvg } from './dice';
-import type { PartSlot, CardAction, CounterRoll, DiceData, DieColor, Facing, GameState, Side, Stance, Timing, Token, ExtraTick, Opportunity } from './types';
+import type { PartSlot, CardAction, CounterRoll, DiceData, DieColor, Facing, GameState, RollbackPoint, Side, Stance, Timing, Token, ExtraTick, Opportunity } from './types';
 import { statusCount, newOpportunity, newScriptState, PHASES, STATUSES, TIMINGS } from './types';
 import { deployable, deployTurn, deploymentComplete, firstPlayerFrom, normaliseSetup, rollTotal, type SetupState } from './setup';
 import { actionPhaseComplete, activationOrder, alive, canAct, droneActionWhy, droneMoveWhy, eligibleUnits, isLoopPhase, loopComplete, nextActivation, nextTurn, onExtraOpportunity, type InitLookup, type LoopPhase } from './loop';
@@ -1544,7 +1544,7 @@ function loopPanel(ctx: HudCtx, phase: LoopPhase): string {
       }
       return head('Your move', esc(t.label), phase === 'Command' ? 'One Command Action, or move it.' : 'Resolve its action, then end.', true)
         + `<div class="tp-body">${actionButtons(ctx, t, sc.opp)}</div>
-          <div class="tp-foot">${rollbackOffer(ctx)}<button class="bigbtn" data-act="endopp">End this activation</button></div>`;
+          <div class="tp-foot"><button class="bigbtn" data-act="endopp">End this activation</button></div>`;
     }
   }
   if (loopComplete(s, phase)) {
@@ -1560,7 +1560,7 @@ function loopPanel(ctx: HudCtx, phase: LoopPhase): string {
   const rows = units.map((t) => `<button class="rowwide" data-designate="${t.uid}">${esc(t.label)}<span class="ct">${t.kind}</span></button>`).join('');
   return head('Your move', phase === 'Command' ? 'Command a drone' : phase === 'Delay' ? 'Activate a projectile' : 'Activate a drone', 'Or pass for the phase.', true)
     + `<div class="tp-body">${tokens}${rows}</div>
-      <div class="tp-foot">${rollbackOffer(ctx)}<button class="bigbtn ghost2" data-act="pass">Pass</button></div>`;
+      <div class="tp-foot"><button class="bigbtn ghost2" data-act="pass">Pass</button></div>`;
 }
 
 function actionPanel(ctx: HudCtx): string {
@@ -1837,39 +1837,63 @@ function panelHtml(ctx: HudCtx): string {
 // Points sealed by dice are listed and disabled rather than left out: a player
 // can never rewind past a roll both of them watched land, and that is a rule
 // rather than a glitch, so the list says so where it bites.
-function rollbackOffer(ctx: HudCtx): string {
+// THE QUIET FIXED HOME (U5; OTTO: "easy to find but not something that is in
+// your face all the time"). One small icon at the end of the round strip - the
+// same spot on every screen - and everything else behind the press: the
+// one-press last-action request, the unit timeline, the phase starts. This
+// REPLACED two panel-foot offers that were both halves of his complaint at
+// once: in the face on those two screens, invisible everywhere else. A pending
+// ask still pauses the whole table through rollbackPanel - the quietness is
+// only the entry point, never an ask in flight.
+let undoOpen = false;
+
+function undoChrome(ctx: HudCtx): string {
   // A rollback is a bargain struck between the two players. A watcher is not a
   // party to it: they cannot ask, and nobody has to answer them. send() refuses
   // the request anyway — this is so it is never put in front of them.
-  if (!ctx.networked || !ctx.seat || ensureScript(ctx.state).rollback) return '';
+  if (!ctx.networked || !ctx.seat) return '';
+  const sc = ensureScript(ctx.state);
+  const trig = `<button class="undo-trig${undoOpen ? ' on' : ''}" data-act="undomenu" title="Walk the table back…" aria-label="Walk the table back">↩</button>`;
+  if (!undoOpen || sc.rollback) return trig;
   // The HOST's list, not this client's: it is the host that rewinds, so it is
   // the host's ring that decides what can be returned to. Read out of shared
   // state, so both seats are looking at the same menu.
-  const pts = ensureScript(ctx.state).rollbackCatalog;
-  if (!pts.length) return '';
-  // The phase you are standing in is a target like any other, and usually the
-  // one meant — it is the board as this phase BEGAN, not the board now. Named
-  // differently only because "back to round 2, Action Phase" while sitting in
-  // round 2's Action Phase reads like it would do nothing.
+  const pts = sc.rollbackCatalog;
+  const list = pts.slice().reverse();
+  const units = list.filter((p) => p.seq !== undefined);
+  const phases = list.filter((p) => p.seq === undefined).slice(0, 6);
+  // Sealed and passed-over targets stay on the list, disabled with the reason.
+  // Dropping them made the v1 menu quietly get shorter after a roll, which
+  // reads as the feature breaking rather than as the rule it is - and OTTO's
+  // ruling wants the line VISIBLE so players learn where it sits.
+  const unitRow = (p: RollbackPoint, primary: boolean): string => {
+    const why = p.sealed
+      ? 'Dice were rolled inside this action — a rollback never reaches past a roll.'
+      : !p.available
+        ? 'Dice have been rolled since this — a rollback never reaches past a roll.'
+        : '';
+    const name = esc(p.label ?? 'an action');
+    if (why) return `<button class="undo-row" disabled title="${esc(why)}">${name}<span class="ct">dice rolled</span></button>`;
+    return `<button class="undo-row${primary ? ' primary' : ''}" data-rb="u" data-seq="${p.seq}" data-round="${p.round}" data-phase="${p.phase}" data-label="${name}">${primary ? `Undo last action<span class="ct">${name}</span>` : name}</button>`;
+  };
+  const first = units.find((p) => p.available && !p.sealed);
+  const rest = units.filter((p) => p !== first).slice(0, 8);
   const here = (p: { round: number; phase: number }) => p.round === ctx.state.round.n && p.phase === ctx.state.round.phase;
-  const opts = pts
-    .slice(-6)
-    .reverse()
-    .map((p) => {
-      const label = here(p)
-        ? `Back to the start of this ${PHASES[p.phase]} Phase`
-        : `Back to round ${p.round}, ${PHASES[p.phase]} Phase`;
-      // Sealed points stay on the list, disabled. Dropping them made the menu
-      // quietly get shorter after a roll, which reads as the feature breaking
-      // rather than as the rule it is.
-      return p.available
-        ? `<button class="rowwide" data-rb="${p.round}:${p.phase}">${label}</button>`
-        : `<button class="rowwide" disabled title="A rollback never reaches past a die roll.">${label} — dice rolled since</button>`;
-    })
-    .join('');
-  return `<details class="tp-rollback"><summary>Ask to roll back</summary>
-    <p class="tp-dim">Both players have to agree. Anything since the point you pick is undone for both of you, and a rollback never reaches past a die roll.</p>
-    ${opts}</details>`;
+  const phaseRows = phases.map((p) => {
+    const label = here(p)
+      ? `Start of this ${PHASES[p.phase]} Phase`
+      : `Round ${p.round}, ${PHASES[p.phase]} Phase`;
+    return p.available
+      ? `<button class="undo-row" data-rb="${p.round}:${p.phase}">${label}</button>`
+      : `<button class="undo-row" disabled title="A rollback never reaches past a die roll.">${label}<span class="ct">dice rolled</span></button>`;
+  }).join('');
+  const body = !units.length && !phases.length
+    ? '<p class="undo-note">Nothing to return to yet.</p>'
+    : `${first ? unitRow(first, true) : ''}
+       ${rest.length ? `<div class="undo-h">Recent actions</div>${rest.map((p) => unitRow(p, false)).join('')}` : ''}
+       ${phaseRows ? `<div class="undo-h">Phase starts</div>${phaseRows}` : ''}
+       <p class="undo-note">Both players have to agree — the other side answers before anything moves.</p>`;
+  return `${trig}<div class="undo-pop">${body}</div>`;
 }
 
 // The rollback handshake. A shared board cannot be rewound by one player, so
@@ -1877,7 +1901,10 @@ function rollbackOffer(ctx: HudCtx): string {
 // rather than a silent board.
 function rollbackPanel(ctx: HudCtx): string {
   const ask = ensureScript(ctx.state).rollback!;
-  const to = `round ${ask.round}, ${PHASES[ask.phase]} Phase`;
+  // A unit ask is named by what it undoes; a phase ask by where it returns to.
+  const to = ask.seq !== undefined
+    ? `before “${ask.label}”`
+    : `round ${ask.round}, ${PHASES[ask.phase]} Phase`;
   if (mine(ctx, ask.by)) {
     return head('Rollback', 'Waiting on an answer', `You asked to go back to ${esc(to)}.`, false)
       + `<div class="tp-body">${waiting(ask.by === 's1' ? 's2' : 's1', 'answering your rollback request')}</div>
@@ -4799,7 +4826,7 @@ export function ensureHud(host: HTMLElement, ctx: HudCtx): void {
     }
     sideTabHost = host;
   }
-  (host.querySelector('#hud-tl') as HTMLElement).innerHTML = timelineHtml(ctx.state);
+  (host.querySelector('#hud-tl') as HTMLElement).innerHTML = timelineHtml(ctx.state) + undoChrome(ctx);
   (host.querySelector('#hud-order') as HTMLElement).innerHTML = orderFloatHtml(ctx);
   (host.querySelector('#hud-panel') as HTMLElement).innerHTML =
     `${ctx.note ? `<div class="mc-err" style="margin:10px 12px 0">${esc(ctx.note)}</div>` : ''}${panelHtml(ctx)}${tacticsHtml(ctx)}${feedHtml(ctx)}`;
@@ -5146,7 +5173,15 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
       ctx.refresh();
     });
   });
+  on('[data-act="undomenu"]', () => {
+    undoOpen = !undoOpen;
+    ctx.refresh();
+  });
   on('[data-rb]', (el) => {
+    // Any press on the machinery puts the menu away: the next screen is either
+    // the waiting panel or the board, and a pop left open over either is
+    // clutter the quiet design exists to avoid.
+    undoOpen = false;
     const what = el.dataset.rb;
     if (what === 'accept' || what === 'decline') {
       ctx.send({ kind: 'rollbackAnswer', seat: me(), accept: what === 'accept' });
@@ -5158,6 +5193,17 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
       // Withdrawing is declining your own ask. check() allows exactly that and
       // still refuses the asker APPROVING it, which is where consent matters.
       ctx.send({ kind: 'rollbackAnswer', seat: me(), accept: false });
+      ctx.refresh();
+      return;
+    }
+    // A UNIT ask (v2): the seq names the exact catalog entry, and the label
+    // rides along so the other player's consent screen can say what it undoes.
+    if (what === 'u') {
+      const seq = Number(el.dataset.seq);
+      const r = Number(el.dataset.round);
+      const ph = Number(el.dataset.phase);
+      if (!Number.isInteger(seq) || !Number.isInteger(r) || !Number.isInteger(ph)) return;
+      ctx.send({ kind: 'rollbackRequest', seat: me(), round: r, phase: ph, seq, label: el.dataset.label || 'the last action' });
       ctx.refresh();
       return;
     }

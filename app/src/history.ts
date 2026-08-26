@@ -12,9 +12,13 @@
 // would preserve and JSON would not is already being lost on every save.
 import type { GameState } from './types';
 
-// Deep enough to undo a misclick and the two things after it, shallow enough
-// that a long game does not sit on tens of megabytes of dead boards.
-const LIMIT = 40;
+// Deep enough that the Undo v2 catalog can list a whole round of per-action
+// targets, shallow enough that a long game does not sit on tens of megabytes
+// of dead boards. MEASURED before raising (U1, 2026-08-24): a two-unit
+// mid-game state serialises to ~2KB, so even a crowded board's snapshot is
+// tens of KB and 160 of them stay in single-digit megabytes - inside the
+// budget the old comment set for 40.
+const LIMIT = 160;
 
 export interface Snapshot {
   // What the board looked like BEFORE the command ran.
@@ -33,11 +37,31 @@ export interface Snapshot {
   // into its ring at "1:0", and that sealed Round 1's Command boundary as
   // "dice rolled since" when the dice came before the phase ever began.
   inPlay: boolean;
+  // U1 (Undo v2): the human reading of the same command, written by
+  // ledger.labelFor at record time because only the moment BEFORE apply()
+  // still has the board the words refer to ("Maneuver to F4" needs the unit's
+  // old grid gone by the time anyone reads the timeline). `label` above stays
+  // the raw command KIND - rollbackCatalog's sealed floor matches on it - so
+  // the words ride beside it rather than replacing it.
+  human?: string;
+  // Whose command it was, for a timeline that can say which player acted.
+  seat?: string;
+  // A monotonically increasing stamp, unique for the life of this history (U3).
+  // The catalog names UNIT targets by seq because a RING INDEX goes stale the
+  // moment the ring shifts at its limit - an index published in the catalog
+  // would point one entry late after every eviction. A seq is stable, opaque
+  // to the guest (who only echoes it back), and dereferenced only by the host.
+  seq: number;
+  // How the command sits in a player-sized unit (ledger.LedgerRole). Stored so
+  // the catalog can group old entries without re-deriving context the command
+  // alone no longer carries (a free maneuver's flag is gone by then).
+  role?: string;
 }
 
 let stack: Snapshot[] = [];
+let nextSeq = 1;
 
-export function recordSnapshot(state: GameState, label: string): void {
+export function recordSnapshot(state: GameState, label: string, meta?: { human?: string; seat?: string; role?: string }): void {
   // The stage is read raw rather than through normaliseSetup, because this
   // file must import nothing but types: the tests import it directly and run
   // it as written, which is the property that makes them worth having.
@@ -47,6 +71,10 @@ export function recordSnapshot(state: GameState, label: string): void {
     label,
     round: state.round?.n ?? 0,
     phase: state.round?.phase ?? 0,
+    human: meta?.human,
+    seat: meta?.seat,
+    role: meta?.role,
+    seq: nextSeq++,
     // A board with no setup underway at all — freeplay, the tests — counts as
     // in play; only a setup still in progress is excluded.
     inPlay: stage === undefined || stage === 'done',
@@ -84,8 +112,8 @@ export function undoTo(state: GameState, index: number): Snapshot | null {
   return snap;
 }
 
-export function historyList(): { label: string; round: number; phase: number }[] {
-  return stack.map(({ label, round, phase }) => ({ label, round, phase }));
+export function historyList(): { label: string; round: number; phase: number; human?: string }[] {
+  return stack.map(({ label, round, phase, human }) => ({ label, round, phase, human }));
 }
 
 // Commands that record what a die already showed. A networked rollback must not
@@ -96,7 +124,7 @@ export function historyList(): { label: string; round: number; phase: number }[]
 // exactly what these commands do.
 //
 // Freeplay does not consult this at all. One player, nobody to cheat.
-const SEALED = new Set(['acceptRoll', 'rollSetup', 'applyPenetration', 'recordKill', 'resolveIntercept']);
+const SEALED = new Set(['acceptRoll', 'rollSetup', 'noteRoll', 'applyPenetration', 'recordKill', 'resolveIntercept']);
 
 // The round/phase boundaries a rollback could name: the FIRST snapshot at each
 // round/phase, which is the board as that phase began. Newest last, matching
@@ -141,6 +169,25 @@ export function undoToPhase(state: GameState, round: number, phase: number): Sna
 
 export function historyDepth(): number {
   return stack.length;
+}
+
+// The raw entries in ring order, for the page to fold into player-sized units
+// (ledger.groupLedger). This file cannot do the folding itself: ledger.ts is a
+// VALUE import, and this file may import nothing but types so the tests can
+// run it as written under node's type stripping - an extensionless value
+// import would not resolve there.
+export function historyEntries(): { kind: string; human?: string; seat?: string; role?: string; round: number; phase: number; inPlay: boolean; seq: number }[] {
+  return stack.map(({ label, human, seat, role, round, phase, inPlay, seq }) => ({ kind: label, human, seat, role, round, phase, inPlay, seq }));
+}
+
+// Rolls back to the snapshot with the given seq - the UNIT targets the v2
+// catalog names. Null when the ring has already evicted it, which the caller
+// reports rather than swallows: the host saying "too far back" beats two
+// boards quietly disagreeing.
+export function undoToSeq(state: GameState, seq: number): Snapshot | null {
+  const at = stack.findIndex((s) => s.seq === seq);
+  if (at < 0) return null;
+  return undoTo(state, at);
 }
 
 // A new game, a loaded board or a resync makes every earlier snapshot a board

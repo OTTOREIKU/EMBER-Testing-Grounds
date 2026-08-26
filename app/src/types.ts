@@ -813,6 +813,16 @@ export interface RollbackPoint {
   round: number;
   phase: number;
   available: boolean;
+  // ---- v2 (Undo v2, U3): a per-ACTION unit target. All four optional, and
+  // their ABSENCE is the wire compatibility rule: an entry without them IS a
+  // v1 phase boundary, so an old client parses a v2 catalog as the list it has
+  // always known. `seq` is a host-history stamp only the host dereferences -
+  // never a ring index, which goes stale on every eviction.
+  seq?: number;
+  // What the unit did, in the ledger's words ("Thrust - P7-A3 Centurion").
+  label?: string;
+  // Dice were acted on inside this unit; listed greyed, never requestable.
+  sealed?: boolean;
 }
 
 // Rollback targets are ROUND/PHASE boundaries, never command indexes. The two
@@ -825,6 +835,8 @@ export interface RollbackAsk {
   phase: number;
   // Shown to the other player so they know what they are agreeing to.
   label: string;
+  // v2: present when the ask names a UNIT rather than a phase boundary.
+  seq?: number;
 }
 
 export interface CounterRoll {
@@ -894,7 +906,16 @@ function normaliseCatalog(raw: unknown): RollbackPoint[] {
     .filter((p): p is RollbackPoint => !!p
       && Number.isSafeInteger((p as RollbackPoint).round)
       && Number.isSafeInteger((p as RollbackPoint).phase))
-    .map((p) => ({ round: p.round, phase: p.phase, available: p.available === true }));
+    .map((p) => ({
+      round: p.round,
+      phase: p.phase,
+      available: p.available === true,
+      // v2 fields ride only when well-formed; anything half-written falls back
+      // to the v1 reading of the same entry rather than breaking the list.
+      ...(Number.isSafeInteger(p.seq) ? { seq: p.seq } : {}),
+      ...(typeof p.label === 'string' && p.label ? { label: p.label } : {}),
+      ...(p.sealed === true ? { sealed: true } : {}),
+    }));
 }
 
 // A half-written call is dropped: every field below is something a client acts
@@ -1060,6 +1081,7 @@ function normaliseRollback(raw: unknown): RollbackAsk | null {
     round: r.round,
     phase: r.phase,
     label: typeof r.label === 'string' ? r.label : '',
+    ...(Number.isSafeInteger(r.seq) ? { seq: r.seq } : {}),
   };
 }
 

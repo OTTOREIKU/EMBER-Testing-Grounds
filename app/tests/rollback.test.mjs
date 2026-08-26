@@ -52,8 +52,12 @@ check('undo drops keys the command added', 'carried' in grew, false);
 
 // The ring is bounded, so a long game does not sit on dead boards.
 H.clearHistory();
-for (let i = 0; i < 45; i++) H.recordSnapshot(board(1, 0), `cmd${i}`);
-check('the ring stops at 40', H.historyDepth(), 40);
+// The property is the RING - capped, oldest falls off - not the number. The
+// limit is read off the source so a measured depth change (40 -> 160 at U1)
+// does not break a behaviour test; ledger.test.mjs pins the value itself.
+const LIMIT = Number(/const LIMIT = (\d+);/.exec(readFileSync(new URL('../src/history.ts', import.meta.url), 'utf8'))[1]);
+for (let i = 0; i < LIMIT + 5; i++) H.recordSnapshot(board(1, 0), `cmd${i}`);
+check('the ring stops at its limit', H.historyDepth(), LIMIT);
 check('it is the OLDEST that fall off', H.historyList()[0].label, 'cmd5');
 
 // ---------- Rollback targets ----------
@@ -255,6 +259,175 @@ check('an unreachable target is reported', /if \(!snap\) \{[\s\S]*?lobbyNote =/.
 check('both seats leave the branch, before the split',
   rewind.indexOf('setBranch(') < rewind.indexOf('if (!isHost())'), true);
 check('the branch is left exactly once', [...rewind.matchAll(/setBranch\(/g)].length, 1);
+
+// ---------- U3: the catalog learns UNITS ----------
+// A unit target is named by SEQ - a monotonic stamp on every snapshot - and
+// never by ring index, which goes stale on every eviction at the limit. The
+// guest never interprets a seq; it echoes the host's number back.
+H.clearHistory();
+for (let r = 0; r < 3; r++) H.recordSnapshot(board(1, 1, { note: `s${r}` }), 'performAction', { human: `act ${r}`, role: 'begin' });
+{
+  const es = H.historyEntries();
+  check('entries expose kind, words, role and seq', 
+    es.map((e) => `${e.kind}:${e.human}:${e.role}`),
+    ['performAction:act 0:begin', 'performAction:act 1:begin', 'performAction:act 2:begin']);
+  check('seq is strictly increasing', es[0].seq < es[1].seq && es[1].seq < es[2].seq, true);
+  const target = es[1].seq;
+  const s2 = board(1, 1, { note: 'now' });
+  const snap = H.undoToSeq(s2, target);
+  check('undoToSeq restores the named board', s2.note, 's1');
+  check('and truncates everything after it', H.historyDepth(), 1);
+  check('a seq the ring no longer holds says so', H.undoToSeq(s2, target), null);
+}
+// Seq stays valid across the ring shifting at its limit - the exact failure a
+// ring INDEX would have.
+{
+  H.clearHistory();
+  for (let r = 0; r < LIMIT + 3; r++) H.recordSnapshot(board(1, 1, { note: `n${r}` }), 'maneuver', { role: 'begin' });
+  const es = H.historyEntries();
+  const live = es[1].seq;
+  const s3 = board(1, 1, { note: 'now' });
+  check('a live seq still resolves after eviction', H.undoToSeq(s3, live)?.label, 'maneuver');
+  check('to the RIGHT board', s3.note, `n${4}`);
+}
+
+// ---------- normalising the v2 wire shape ----------
+// The compatibility rule is ABSENCE: an entry without the v2 fields IS a v1
+// phase boundary, so an old client parses a v2 catalog as the list it knows.
+const T = await import('../src/types.ts');
+{
+  const sc = T.normaliseScript({ rollbackCatalog: [
+    { round: 1, phase: 2, available: true },
+    { round: 1, phase: 2, available: true, seq: 7, label: 'Thrust - Centurion', sealed: true },
+    { round: 1, phase: 2, available: false, seq: 'junk', label: 42 },
+    { round: 'x', phase: 2 },
+  ] }, 's1');
+  const cat = sc.rollbackCatalog;
+  check('a v1 entry passes untouched', cat[0], { round: 1, phase: 2, available: true });
+  check('a v2 entry keeps seq, label and seal', cat[1], { round: 1, phase: 2, available: true, seq: 7, label: 'Thrust - Centurion', sealed: true });
+  check('half-written v2 fields fall back to the v1 reading', cat[2], { round: 1, phase: 2, available: false });
+  check('a broken entry is dropped entirely', cat.length, 3);
+}
+
+// ---------- asking for a unit ----------
+{
+  const CAT2 = [
+    { round: 1, phase: 2, available: true },
+    { round: 1, phase: 2, available: true, seq: 11, label: 'Maneuver to F4' },
+    { round: 1, phase: 2, available: false, seq: 12, label: 'Thrust', sealed: true },
+    { round: 1, phase: 2, available: false, seq: 13, label: 'old move' },
+  ];
+  const st = (extra = {}) => ({ round: { n: 1, phase: 2 }, script: { rollback: null, rollbackCatalog: CAT2, ...extra } });
+  check('a unit ask by seq is accepted',
+    C.checkRollback(st(), { kind: 'rollbackRequest', seat: 's1', round: 1, phase: 2, seq: 11, label: 'x' }).ok, true);
+  check('an unknown seq is refused',
+    C.checkRollback(st(), { kind: 'rollbackRequest', seat: 's1', round: 1, phase: 2, seq: 99, label: 'x' }).ok, false);
+  check('a SEALED unit is refused with the dice reason',
+    /roll/.test(C.checkRollback(st(), { kind: 'rollbackRequest', seat: 's1', round: 1, phase: 2, seq: 12, label: 'x' }).why), true);
+  check('an unavailable unit is refused',
+    C.checkRollback(st(), { kind: 'rollbackRequest', seat: 's1', round: 1, phase: 2, seq: 13, label: 'x' }).ok, false);
+  // A v1 phase ask must never accidentally match a UNIT that shares its round
+  // and phase - it matches only entries with no seq at all.
+  check('a phase ask matches only phase entries',
+    C.checkRollback(st(), { kind: 'rollbackRequest', seat: 's1', round: 1, phase: 2, label: 'x' }).ok, true);
+  const st2 = st();
+  C.applyRollback(st2, { kind: 'rollbackRequest', seat: 's1', round: 1, phase: 2, seq: 11, label: 'Maneuver to F4' });
+  check('the pending ask carries the seq', st2.script.rollback.seq, 11);
+  check('and a phase ask carries none',
+    (() => { const s3 = st(); C.applyRollback(s3, { kind: 'rollbackRequest', seat: 's1', round: 1, phase: 2, label: 'p' }); return s3.script.rollback.seq; })(), undefined);
+}
+
+// ---------- the host publishes units ----------
+// Source-shape: the publish path folds the ring through the ONE grouper, draws
+// the same sealed floor, skips decayed fragments, and keeps phase entries in
+// the exact v1 wire shape so an old client still parses the list.
+{
+  const pub = matchSrc.slice(matchSrc.indexOf('function publishCatalog'), matchSrc.indexOf('\n}', matchSrc.indexOf('function publishCatalog')));
+  check('units come from groupLedger over historyEntries', /groupLedger\(raw\)/.test(pub) && /historyEntries\(\)/.test(pub), true);
+  check('the floor is drawn with the canonical sealed set', /SEALED_KINDS\.has\(raw\[i\]\.kind\)/.test(pub), true);
+  check('quiet units never publish', /!u\.quiet/.test(pub), true);
+  check('decayed fragments are skipped', /u\.start === 0 && \(raw\[0\]\?\.role === 'follow'/.test(pub), true);
+  check('the list is capped', /\.slice\(-10\)/.test(pub), true);
+  check('units are named by seq off their start entry', /seq: raw\[u\.start\]\.seq/.test(pub), true);
+  check('phase entries keep the v1 shape', /\{ round: e\.round, phase: e\.phase, available: e\.available \}/.test(pub), true);
+  // U7: phase machinery is not a player action. "Next phase" and "Set ready"
+  // rows read as clutter beside the real actions, and the v1 phase entries
+  // already offer every phase boundary as a target.
+  check('boundary units never publish', /u\.role !== 'boundary'/.test(pub), true);
+}
+
+// ---------- U7: every server die seals the timeline ----------
+// A MISSED attack fires none of the consequence kinds (applyPenetration,
+// recordKill), so before this the whole attack - dice included - stayed
+// undoable. sealedRoll is the one chokepoint every server-dice caller shares:
+// the roll lands, then a noteRoll command travels to both rings and the
+// catalog floor stops at it.
+{
+  const historySrc = readFileSync(new URL('../src/history.ts', import.meta.url), 'utf8');
+  check('noteRoll is a sealed kind in history.ts', /const SEALED = new Set\(\[[^\]]*'noteRoll'/.test(historySrc), true);
+  check('sealedRoll notes the roll on the shared record',
+    /const rolled = await relay\.rollDice\(pool, tag, kind\);[\s\S]{0,200}?send\(\{ kind: 'noteRoll', seat, what: tag \?\? 'dice' \}\)/.test(matchSrc), true);
+  // Every relay.rollDice in match.ts goes through the chokepoint - a new roll
+  // site that bypasses it would quietly reopen the hole.
+  check('match.ts rolls server dice only through sealedRoll',
+    [...matchSrc.matchAll(/relay\.rollDice\(/g)].length, 1);
+  check('noteRoll applies nothing to the board', /if \(cmd\.kind === 'noteRoll'\) return;/.test(commands), true);
+}
+
+
+// ---------- U4: the rewind honours the seq ----------
+// Source-shape over match.ts, like the host-only rule above: two boards that
+// disagree raise nothing, so the wiring is what gets pinned.
+{
+  const rew = matchSrc.slice(matchSrc.indexOf('function rewindIfAgreed'), matchSrc.indexOf('\n}', matchSrc.indexOf('function rewindIfAgreed')) + 2);
+  check('the accepted ask carries the seq to the rewind',
+    /asked = r \? \{ round: r\.round, phase: r\.phase, seq: r\.seq \} : null/.test(matchSrc), true);
+  check('a unit ask rewinds by seq, a phase ask as before',
+    /to\.seq !== undefined \? undoToSeq\(state, to\.seq\) : undoToPhase\(state, to\.round, to\.phase\)/.test(rew), true);
+  // The ring was just truncated; a catalog describing the old ring is a menu
+  // of lies. The republish must come AFTER the checkpoint publish, on the
+  // same path.
+  check('the host republishes its catalog after rewinding',
+    /relay\.publishCheckpoint\(\);[\s\S]{0,500}?publishCatalog\(\);/.test(rew), true);
+  // An evicted seq reports rather than half-working - the same visible-failure
+  // rule the host-only fix established.
+  check('an unreachable target still says so out loud', /too far back to return to/.test(rew), true);
+}
+
+
+// ---------- U5: the quiet fixed home ----------
+// OTTO: "easy to find but not something that is in your face all the time."
+// One icon in one constant spot, everything behind the press - and the two
+// panel-foot offers are GONE, because they were both halves of his complaint
+// at once: in the face on those two screens, invisible everywhere else.
+{
+  const hudSrc = readFileSync(new URL('../src/matchhud.ts', import.meta.url), 'utf8');
+  check('the panel-foot offers are gone', /rollbackOffer/.test(hudSrc), false);
+  check('the chrome renders beside the round strip on every refresh',
+    /timelineHtml\(ctx\.state\) \+ undoChrome\(ctx\)/.test(hudSrc), true);
+  const chrome = hudSrc.slice(hudSrc.indexOf('function undoChrome'), hudSrc.indexOf('function rollbackPanel'));
+  check('the trigger is drawn even while the pop is closed', /return trig;/.test(chrome), true);
+  check('a pending ask closes the pop but keeps the icon', /if \(!undoOpen \|\| sc\.rollback\) return trig;/.test(chrome), true);
+  // U6's presentation, already carried by the rows: sealed and passed-over
+  // targets stay LISTED, disabled, each with the dice reason - the ruling
+  // wants the line visible so players learn where it sits.
+  check('a sealed unit is listed disabled with the dice reason',
+    /p\.sealed[\s\S]{0,200}?Dice were rolled inside this action/.test(chrome), true);
+  check('a passed-over unit says dice have been rolled since',
+    /Dice have been rolled since this/.test(chrome), true);
+  check('the one-press row asks for the newest clean unit',
+    /units\.find\(\(p\) => p\.available && !p\.sealed\)/.test(chrome), true);
+  // The unit ask carries seq AND the label, so the consent screen can say what
+  // it undoes; the consent panel reads it.
+  check('a unit row sends the seq and label',
+    /data-rb="u" data-seq="\$\{p\.seq\}"/.test(chrome), true);
+  check('the consent panel names the unit ask by what it undoes',
+    /ask\.seq !== undefined/.test(hudSrc), true);
+  // Any press on the machinery closes the pop - the next screen is either the
+  // waiting panel or the board.
+  check('every rb press puts the menu away', /undoOpen = false;\s*\r?\n\s*const what = el\.dataset\.rb;/.test(hudSrc), true);
+}
+
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exitCode = fail ? 1 : 0;
