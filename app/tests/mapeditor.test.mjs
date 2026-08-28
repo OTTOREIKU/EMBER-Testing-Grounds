@@ -498,6 +498,13 @@ export { stashLayer, loadLayer, stashedLayer };
   // so ghosting all of them made every Task look identical - the ghost appeared
   // but never changed, which reads as more broken than showing nothing.
   ok('and the ghost is filtered to the Task the editor has open', /taskZoneNames\(editor\.task\)/.test(oz));
+  // NOTHING ON THE BASE. The Base holds the terrain and the deployment every
+  // Task shares; it names no zones of its own, so a blank map opened there is
+  // blank. Ghosting all nine there put nine zones on a map nobody had asked for.
+  ok('and the Base ghosts nothing at all', /if \(!named\.length\) return painted;/.test(oz));
+  // Painted work is returned either way - the Base must still show what the map
+  // actually authors.
+  ok('while painted zones still show on the Base', /return painted;/.test(oz));
 
   const od = main.slice(main.indexOf('function overlayDeployment()'), main.indexOf('function overlayDeployment()') + 1600);
   // printedDeployment takes a SHAPE id ('corners' / 'strips'); missionDeployment
@@ -507,6 +514,9 @@ export { stashLayer, loadLayer, stashedLayer };
     /data\.zoneData\.missionDeployment\[editor\.task\]/.test(od));
   ok('an unauthored deployment ghosts the printed shape', /printedDeployment\(data, shape\)/.test(od));
   ok('and an authored one is never ghosted', /if \(painted\) return own;/.test(od));
+  // Same rule as the zones: deployment is per-mission, so there is no Base
+  // shape to draw and the Base shows none.
+  ok('the Base ghosts no deployment either', /if \(!editor\.task\) return own;/.test(od));
 }
 
 // ---------- the board size selector ----------

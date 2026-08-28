@@ -5774,16 +5774,20 @@ async function init() {
       // the wrong source - it answers "which overlay is being displayed", which
       // is empty until someone picks one.
       //
-      // FILTERED TO THE OPEN TASK. A Main Task names a SUBSET ("This Task names
-      // Bravo, Echo, Hotel"), so ghosting all nine made every Task look
-      // identical - the ghost was there but never changed, which is worse than
-      // it being absent. On the Base, where no Task is open, all nine stand:
-      // any of them may be used by some Task.
+      // ONLY WHAT THE OPEN TASK NAMES, and nothing at all on the Base.
+      //
+      // A Main Task names a SUBSET ("This Task names Bravo, Echo, Hotel"), so
+      // ghosting all nine made every Task look identical. And the Base names
+      // none: it holds the terrain and the deployment every Task shares, so a
+      // blank map opened there should be blank rather than showing nine zones
+      // nobody asked for. A Task that names no zones shows none either, which
+      // is the same rule and not a special case.
       const named = taskZoneNames(editor.task);
-      const wanted = named.length ? new Set(named.map((n) => n.toLowerCase())) : null;
+      if (!named.length) return painted;
+      const wanted = new Set(named.map((n) => n.toLowerCase()));
       const have = new Set(painted.map((z) => z.name));
       const ghosts = data.zoneData.zones
-        .filter((z) => !have.has(z.name) && (!wanted || wanted.has(z.name.toLowerCase())))
+        .filter((z) => !have.has(z.name) && wanted.has(z.name.toLowerCase()))
         .map((z) => ({
           name: z.name,
           cells: z.cells.map(parseGridRef).filter(Boolean) as { col: number; row: number }[],
@@ -5816,19 +5820,18 @@ async function init() {
       const own = paintedShapes({ pieces: [], zones: [], deploy: editor.deploy }).deploy;
       const painted = !!(editor.deploy.black.length || editor.deploy.white.length);
       if (painted) return own;
-      // Same reasoning as the zones above, and the same keying mistake to
-      // avoid: printedDeployment takes a SHAPE id ('corners' / 'strips'), not a
-      // mission id. missionDeployment is the map between them. Passing the
-      // mission id straight in matched nothing, so the ghost never appeared -
-      // and it read state.mission rather than the open Task, so it could not
-      // have changed with the selector either.
-      const shape = (editor.task && data.zoneData.missionDeployment[editor.task])
-        || (state.mission && data.zoneData.missionDeployment[state.mission])
-        || 'strips';
-      const fallback = centreDeploy(
-        printedDeployment(data, shape) ?? resolveZoneSet(state.zoneSet ?? '').deploy,
-        printedOffset(),
-      );
+      // Same rule as the zones: a ghost belongs to a TASK, so the Base shows
+      // none. Deployment is per-mission anyway - there is no such thing as the
+      // Base's deployment shape to draw.
+      //
+      // And the same keying mistake to avoid: printedDeployment takes a SHAPE
+      // id ('corners' / 'strips'), not a mission id. missionDeployment is the
+      // map between them; passing the mission id straight in matched nothing,
+      // so the ghost never appeared at all.
+      if (!editor.task) return own;
+      const shape = data.zoneData.missionDeployment[editor.task];
+      if (!shape) return own;
+      const fallback = centreDeploy(printedDeployment(data, shape), printedOffset());
       if (!fallback) return own;
       return {
         black: fallback.black ? { ...fallback.black, ghost: true } : fallback.black,
