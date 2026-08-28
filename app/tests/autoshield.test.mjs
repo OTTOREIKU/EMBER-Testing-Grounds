@@ -31,7 +31,7 @@ const cut = (s, from, to, what) => {
 // 2552-2559 (isElectronicAttack) and 2806-2825 (tokenCards) as the file stands.
 // Checked against every other slice range in this suite before adding: none of
 // the four overlaps another cut in this file.
-const rStart = rules.indexOf('export const LG');
+const rStart = rules.indexOf('let GRIDS');
 if (rStart < 0) throw new Error('could not locate the sight rules in rules.ts');
 const body = 'type TerrainPiece = any;\ntype Token = any;\ntype Side = any;\ntype SmokeScreen = any;\n'
   + 'type Card = any;\ntype CardAction = any;\ntype GameData = any;\ntype PartSlot = any;\n'

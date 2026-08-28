@@ -1,5 +1,5 @@
 import type { CardAction, ExtraTick, GameState, Opportunity, ScriptState, Side, Stance, Timing, Token } from './types';
-import { newOpportunity, normaliseScript, statusCount, STATUSES, TIMINGS } from './types';
+import { newOpportunity, normaliseScript, statusCount, STATUSES, TIMINGS, zonesOf } from './types';
 import type { GameData, MissionCard } from './data';
 import { cardName, squadLabel } from './data';
 import { bindTips, linkMechanics } from './inspector';
@@ -12,7 +12,8 @@ import { askIssuer, asterBlockers, offerCoordination, runAster } from './command
 import { tacticFitsPhase, tacticSpec } from './tactics';
 import { alive, canAct, getLocalSeat, isLoopPhase, nextTurn, onExtraOpportunity, type LoopPhase, nextActivation, activationOrder, actionPhaseComplete, loopComplete, eligibleUnits, type InitLookup, type Activation } from './loop';
 import { deployable, deploymentComplete, deployTurn, firstPlayerFrom, newSetup, normaliseSetup, rollTotal, type SetupState } from './setup';
-import { escortTargets, normaliseTasks, scoreMain, scoreRiders, scoreSecondary, settleControl, unpaidLines, type MissionScoring, type ScoreLine, type ScoreResult, type SecondaryScoring, type TaskState } from './tasks';
+import { normaliseTasks, settleControl, type ScoreResult, type TaskState } from './tasks';
+import { previewScore } from './scoring';
 
 function phaseDone(text: string): string {
   return `<p class="pg-complete"><i>✓</i><span>${text}</span></p>`;
@@ -744,7 +745,7 @@ export class PlayGuide {
         const tasks = normaliseTasks(s.tasks);
         const mission = this.data.missions.cards.find((c) => c.id === s.mission);
         const last = s.round.n >= (s.roundLimit ?? 5);
-        const preview = this.previewScore(s, tasks, mission, last);
+        const preview = this.previewScore(s, tasks, last);
         const total = `<p class="pg-vp"><b>Victory Points</b>
           <span class="side-s1">${squadLabel('s1')} ${tasks.vp.s1}</span> ·
           <span class="side-s2">${squadLabel('s2')} ${tasks.vp.s2}</span></p>`;
@@ -1319,64 +1320,14 @@ export class PlayGuide {
     t.kind === 'projectile' || (t.kind === 'drone' && (this.data.byId.get(t.cardId)?.score ?? 0) === 0);
 
   private refreshControl(s: GameState, tasks: TaskState): void {
-    settleControl(tasks, (zone) => this.data.zoneData.zones.find((z) => z.id === zone)?.cells ?? [], s.tokens, this.lowValue);
+    settleControl(tasks, (zone) => zonesOf(this.data.zoneData.zones, s).find((z) => z.id === zone)?.cells ?? [], s.tokens, this.lowValue);
   }
 
-  private previewScore(s: GameState, tasks: TaskState, mission: MissionCard | undefined, finalRound: boolean): ScoreResult {
-    this.refreshControl(s, tasks);
-    const cells = (zone: string) => this.data.zoneData.zones.find((z) => z.id === zone)?.cells ?? [];
-    const all: ScoreLine[] = [];
-    if (mission) all.push(...this.mainScore(s, tasks, mission, finalRound).lines);
-    // Printed VP riders on a Part (300, 500). Its twin lives in matchhud.ts's
-    // scorePreview — the two pages keep separate copies of this glue, and
-    // wiring only one is how a rule ends up live on half the app.
-    all.push(...scoreRiders(
-      mission ? this.missionScoring(mission) : undefined,
-      tasks, s.tokens, finalRound, cells,
-      escortTargets(tasks, (id) => this.data.secondary.find((c) => c.id === id)?.kind as SecondaryScoring['kind'] | undefined),
-      (cardId) => vpRiderFor(this.data, cardId),
-    ).lines);
-    for (const side of ['s1', 's2'] as Side[]) {
-      const id = tasks.secondary[side];
-      const card = id ? this.data.secondary.find((c) => c.id === id) : undefined;
-      if (!card?.kind) continue;
-      all.push(...scoreSecondary(
-        { id: card.id, name: card.name, vp: card.vp ?? 0, kind: card.kind as SecondaryScoring['kind'] },
-        side, tasks, s.tokens, cells, finalRound, this.lowValue,
-      ).lines);
-    }
-    const open = unpaidLines(all, tasks.scored);
-    let s1 = 0;
-    let s2 = 0;
-    for (const l of open) {
-      if (l.side === 's1') s1 += l.vp;
-      else s2 += l.vp;
-    }
-    return { lines: open, s1, s2 };
-  }
-
-  // The Main Task read as scoring terms. Shared with the rider producer, which
-  // gates card 300 on the Task family and reuses its scoringZone.
-  private missionScoring(mission: MissionCard): MissionScoring {
-    return {
-      family: (mission.family as 'blackbox' | 'control' | 'terminal' | 'vip'),
-      vp: mission.vp ?? 0,
-      zones: mission.zones ?? [],
-      fromRound: mission.fromRound ?? 1,
-      cadence: mission.cadence ?? 'per-round',
-      scoringZone: mission.scoringZone,
-    };
-  }
-
-  private mainScore(s: GameState, tasks: TaskState, mission: MissionCard, finalRound: boolean): ScoreResult {
-    return scoreMain(
-      this.missionScoring(mission),
-      tasks,
-      s.tokens,
-      s.round.n,
-      finalRound,
-      (zone) => this.data.zoneData.zones.find((z) => z.id === zone)?.cells ?? [],
-    );
+  // The glue moved to scoring.ts when the pad became a third page showing a
+  // score - missionScoring and mainScore went with it. Control is still settled
+  // first, in there: this page has a board to settle it from.
+  private previewScore(s: GameState, tasks: TaskState, finalRound: boolean): ScoreResult {
+    return previewScore(this.data, s, finalRound, { tasks });
   }
 
   private settleTasks(s: GameState): void {
@@ -1391,9 +1342,8 @@ export class PlayGuide {
   private awardScore(): void {
     const s = this.state;
     if (!s) return;
-    const mission = this.data.missions.cards.find((c) => c.id === s.mission);
     const last = s.round.n >= (s.roundLimit ?? 5);
-    const got = this.previewScore(s, normaliseTasks(s.tasks), mission, last);
+    const got = this.previewScore(s, normaliseTasks(s.tasks), last);
     const paid = perform(this.data, s, {
       kind: 'award',
       seat: this.script(s).turn,

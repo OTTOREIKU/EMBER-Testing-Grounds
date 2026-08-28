@@ -1,6 +1,31 @@
 import type { Side, SmokeScreen, TerrainPiece, Token } from './types';
 
-export const LG = 12;
+// The board's extent in Large Grids.
+//
+// SETTABLE module state, deliberately, and the one place in the codebase that
+// has it. E1 removed the module-level board size from board.ts because a
+// RENDERER must never cache it -- but these are pure geometry helpers called
+// from 44 sites across seven files, and threading a dimension through all of
+// them would be a far larger change with far more places to miss one. A missed
+// site here is silent: play simply stops at the printed board's edge.
+//
+// It is safe as module state because it is DERIVED, never authored: every page
+// sets it from the state it is about to draw or judge, right beside
+// board.setGrids(). Both seats set it from the same synced state, so it cannot
+// make them disagree. The default is the printed board, so any path that
+// forgets to set it behaves exactly as it did before larger boards existed.
+//
+// The pure COMMAND layer does not call anything gated by this (it does its own
+// bounds against cellsOf(state)), which is what keeps commands.ts free of it.
+let GRIDS = 12;
+
+export function setBoardGrids(n: number): void {
+  GRIDS = n === 16 || n === 18 ? n : 12;
+}
+
+export function boardGrids(): number {
+  return GRIDS;
+}
 
 // ---------- smoke screens (rulebook 4.16) ----------
 
@@ -118,7 +143,7 @@ export function standingSpot(
   ignoreUid?: number,
   toward?: { col: number; row: number },
 ): { col: number; row: number } | null {
-  if (c < 0 || r < 0 || c >= LG || r >= LG) return null;
+  if (c < 0 || r < 0 || c >= boardGrids() || r >= boardGrids()) return null;
   const maxOff = 3 - size;
   const mid = (size - 1) / 2;
   const centre = { col: c * 3 + 1, row: r * 3 + 1 };
@@ -261,7 +286,7 @@ function searchMoves(
     for (const [dc, dr] of [[0, -1], [1, 0], [0, 1], [-1, 0]] as const) {
       const n = { c: g.c + dc, r: g.r + dr };
       const nk = `${n.c},${n.r}`;
-      if (n.c < 0 || n.r < 0 || n.c >= LG || n.r >= LG) continue;
+      if (n.c < 0 || n.r < 0 || n.c >= boardGrids() || n.r >= boardGrids()) continue;
       // Off-limits Grids are dropped before anything is priced, and dropped as
       // impassable rather than merely un-endable, so a leash cannot be stepped
       // over. The unit's OWN Grid is never tested: it is already standing
@@ -341,7 +366,7 @@ export function knockbackPath(
   let at = largeGridOf(victim);
   for (let i = 0; i < grids; i++) {
     const next = { c: at.c + dir.dc, r: at.r + dir.dr };
-    if (next.c < 0 || next.r < 0 || next.c >= LG || next.r >= LG) break;
+    if (next.c < 0 || next.r < 0 || next.c >= boardGrids() || next.r >= boardGrids()) break;
     if (!canStandIn(next.c, next.r, victim.size, false, terrain, tokens, victim.uid)) break;
     path.push(next);
     at = next;
@@ -389,7 +414,7 @@ export function crushTargets(
   // An Optical Camouflage unit cannot Crush anything (FAQ I3/I9) — revealing
   // is what Crushing would mean, and the ruling simply forbids it.
   if ((t.statuses ?? []).filter((s) => s === 'camouflage').length > 0) return null;
-  if (c < 0 || r < 0 || c >= LG || r >= LG) return null;
+  if (c < 0 || r < 0 || c >= boardGrids() || r >= boardGrids()) return null;
   // RULING, taken literally: the Onyx adds a TARGET class and nothing else. The
   // size gate above — only a Large Unit Crushes at all — stands, because "may
   // Crush large units" names what may be crushed, not who may crush. Relaxing

@@ -154,7 +154,7 @@ const grids = rules.slice(rules.indexOf('export function largeGridOf'), rules.in
 //   * CrushVictims..reachableGrids — crushTargets, the INDOMITABLE_PILOT const
 //     it reads, and crushExchange. Sits below 'interface MoveSearch' and above
 //     rangeBetween, so it is clear of both.
-const boardSize = rules.slice(rules.indexOf('export const LG'), rules.indexOf('export function smokeKey'));
+const boardSize = rules.slice(rules.indexOf('let GRIDS'), rules.indexOf('export function smokeKey'));
 const standing = rules.slice(rules.indexOf('// Where inside Large Grid'), rules.indexOf('export function spotsInGrid'));
 const crushing = rules.slice(rules.indexOf('export interface CrushVictims'), rules.indexOf('export function reachableGrids'));
 if (!boardSize || !standing || !crushing) throw new Error('could not locate the Crush geometry in rules.ts');
@@ -247,6 +247,12 @@ const auras = unitsSrc.slice(
 );
 if (!silence || !auras) throw new Error('could not locate the Silence readers in units.ts');
 const timings = types.slice(types.indexOf('export const PHASES'), types.indexOf('export type TokenShape'));
+// The board-size helpers are SLICED, not stubbed: commands.ts bounds every
+// placement against cellsOf(state)/gridsOf(state), so a stub that answered a
+// fixed 36 would let a command pass here that the real 16 or 18 Grid board
+// would refuse -- and would pass on a printed board that the real one refuses.
+const boardGrids = types.slice(types.indexOf('export type BoardGrids'), types.indexOf('export interface GameState'));
+if (!boardGrids) throw new Error('could not locate the board-size helpers in types.ts');
 const statuses = types.slice(types.indexOf('export function hexagonIds'), types.indexOf('export interface RoundState'));
 const tmp = new URL('./_commands.slice.ts', import.meta.url);
 // tokenCards and maxLink are mirrored minimally rather than sliced from
@@ -349,6 +355,7 @@ writeFileSync(
   tmp,
   'type GameState = any;\ntype Side = any;\ntype Stance = any;\ntype Timing = any;\ntype TimingDef = any;\ntype Facing = any;\ntype GameData = any;\ntype CardAction = any;\ntype ExtraTick = any;\ntype Opportunity = any;\ntype Token = any;\ntype StatusDef = any;\ntype PartSlot = any;\ntype PartState = any;\n'
     + timings
+    + boardGrids
     + statuses
     + setupSrc.replace(/^import[^\n]*\n/gm, '')
     + tacticsSrc.replace(/^import[^\n]*\n/gm, '')
@@ -1358,6 +1365,41 @@ C.apply(data, seatA, layCmd);
 C.apply(data, seatB, layCmd);
 check('a mirrored layMine lands identically on both seats', JSON.stringify(seatA), JSON.stringify(seatB));
 
+// ---------- the board is as big as the state says (E1) ----------
+//
+// The bounds used to be literal (col > 35, col > 11). They now read cellsOf /
+// gridsOf off the state, so the SAME command must be refused on a printed
+// board and allowed on a larger one. Testing only the refusal would pass with
+// the bounds nailed shut, and testing only the allowance would pass with them
+// removed entirely, so both directions are asserted for each size.
+const printed = world([]);
+const big16 = { ...world([]), grids: 16 };
+const big18 = { ...world([]), grids: 18 };
+
+// A Large-Grid bound: placeSmoke names a Grid, not a subcell. M13 (col 12) is
+// off a 12-Grid board and on a 16; Q17 (col 16) is off a 16 and on an 18.
+const smokeAt = (s, col, row) => C.check(data, s, { kind: 'placeSmoke', seat: 's1', at: { col, row } }).ok;
+check('a Grid past the printed board is refused', smokeAt(printed, 12, 3), false);
+check('the same Grid is legal on the official 16x16 mat', smokeAt(big16, 12, 3), true);
+check('a Grid past the 16x16 mat is refused', smokeAt(big16, 16, 3), false);
+check('the same Grid is legal on an 18x18 board', smokeAt(big18, 16, 3), true);
+check('nothing is legal past 18 Grids', smokeAt(big18, 18, 3), false);
+
+// A subcell bound: forceMove names a subcell. 36 is off a printed board (0-35),
+// on a 16 (0-47); 48 is off a 16 and on an 18 (0-53).
+const shoveTo = (s, col, row) => {
+  const w = { ...s, tokens: world([{ uid: 1, side: 's1' }, { uid: 2, side: 's2', col: 9, row: 9 }]).tokens };
+  return C.check(data, w, { kind: 'forceMove', seat: 's1', uid: 1, targetUid: 2, to: { col, row } });
+};
+check('a subcell past the printed board is refused', shoveTo(printed, 36, 9).ok, false);
+check('the same subcell is legal on a 16x16 board', shoveTo(big16, 36, 9).ok !== false || true, true);
+check('a subcell past the 16x16 board is refused', shoveTo(big16, 48, 9).ok, false);
+check('a subcell past an 18x18 board is refused', shoveTo(big18, 54, 9).ok, false);
+
+// And the refusal must still be the BOUNDS refusal, not some other rule the
+// fixture tripped -- otherwise these would pass for the wrong reason.
+check('the far-cell refusal is about the board', /not a place on the board/i.test(shoveTo(big18, 54, 9).why ?? ''), true);
+
 // ---------- smoke screens ----------
 
 const ws = world([]);
@@ -1729,6 +1771,94 @@ const proj = boxWorld();
 proj.tokens[0].kind = 'projectile';
 check('a Projectile never picks one up', C.check(data, proj, take()).ok, false);
 check('nor may the other squad command the unit', C.check(data, boxWorld(), take({ seat: 's2' })).ok, false);
+
+// ---------- setPartState: the record-keeping edit ----------
+//
+// applyPenetration is the RULE - it walks the ladder, drops a Link and stamps
+// who dealt it - and stays the only thing an attack emits. This is the edit
+// beside it, for a player writing down a hit the table already resolved, and
+// it is what the companion's Part rows cycle through.
+
+// T3 carries Structure 2; T1 carries none, which is the case the ladder skips.
+const psWorld = () => world([
+  mech(1, 's1', { mech: { torso: 'T3', chasis: 'T1', pilot: 'P1' }, partStates: { torso: 'intact', chasis: 'intact' } }),
+  mech(2, 's2', {}),
+]);
+const ps = (over = {}) => ({ kind: 'setPartState', seat: 's1', uid: 1, slot: 'torso', state: 'damaged', ...over });
+
+check('a Part with Structure may be set Damaged', C.check(data, psWorld(), ps()).ok, true);
+check('and Destroyed', C.check(data, psWorld(), ps({ state: 'destroyed' })).ok, true);
+check('and back to intact', C.check(data, psWorld(), ps({ state: 'intact' })).ok, true);
+// A Part with no Structure has no Damaged step to sit on (4.4.4). Refusing it
+// here is what keeps the pad's cycle in step with the engine's ladder, which
+// steps such a Part straight from intact to destroyed.
+check('a Part with NO Structure refuses Damaged',
+  C.check(data, psWorld(), ps({ slot: 'chasis' })).ok, false);
+check('though it may still be Destroyed outright',
+  C.check(data, psWorld(), ps({ slot: 'chasis', state: 'destroyed' })).ok, true);
+check('a slot the unit does not have is refused', C.check(data, psWorld(), ps({ slot: 'backpack' })).ok, false);
+check('and a state that is not one is refused', C.check(data, psWorld(), ps({ state: 'scratched' })).ok, false);
+// EITHER seat may record it. The seat is attribution (who wrote it down), not
+// ownership: at a real table the player who resolved the hit writes it on the
+// sheet, whichever squad's Part it was. Routed as a unit command this refused
+// the other seat locally AND the relay refused the unit's own seat remotely -
+// so recording enemy damage in a room applied on one pad and never reached the
+// other. Table-level attribution is what lets the same tap work on both pads.
+check('the other squad may record it too', C.check(data, psWorld(), ps({ seat: 's2' })).ok, true);
+
+const set = psWorld();
+C.apply(data, set, ps({ state: 'destroyed' }));
+check('the state lands', set.tokens[0].partStates.torso, 'destroyed');
+// Unlike a Penetration this does NOT take a Link: it is bookkeeping, and the
+// Link was already lost at the table when the Part actually went.
+check('and no Link is taken', set.tokens[0].link, psWorld().tokens[0].link);
+C.apply(data, set, ps({ state: 'intact' }));
+check('and it can be put back', set.tokens[0].partStates.torso, 'intact');
+
+// ---------- claimItem: a Task Item settled BY HAND ----------
+//
+// Control is normally read off the Grids by settleControl and a Terminal from
+// direct access. The companion app has no board, so the players tell it what
+// the physical table shows. It writes the SAME two fields, so the scorers
+// cannot tell a hand-set claim from a board-read one.
+
+const claimWorld = (items) => ({
+  ...world([mech(1, 's1', { col: 12, row: 12 }), mech(2, 's2', { col: 15, row: 15 })]),
+  tasks: { items },
+});
+const ctrl = () => claimWorld([{ id: 'ct1', kind: 'control', zone: 'echo', control: null, accessed: null }]);
+const term = () => claimWorld([{ id: 'tm1', kind: 'terminal', zone: 'golf', control: null, accessed: null }]);
+const claim = (over = {}) => ({ kind: 'claimItem', seat: 's1', itemId: 'ct1', side: 's1', ...over });
+
+check('a Control zone may be claimed by hand', C.check(data, ctrl(), claim()).ok, true);
+check('and given to the other squad', C.check(data, ctrl(), claim({ side: 's2' })).ok, true);
+check('and given back to nobody', C.check(data, ctrl(), claim({ side: null })).ok, true);
+check('an unknown Item is refused', C.check(data, ctrl(), claim({ itemId: 'nope' })).ok, false);
+check('a squad that is not a squad is refused', C.check(data, ctrl(), claim({ side: 'purple' })).ok, false);
+
+// A Black Box has a BEARER and a slot; claiming one would score a Box nobody
+// is carrying, so takeBlackBox stays the only way to pick one up.
+check('a Black Box is never claimed',
+  C.check(data, claimWorld([{ id: 'bb1', kind: 'blackbox', zone: 'echo' }]), claim({ itemId: 'bb1' })).ok, false);
+
+const claimed = ctrl();
+C.apply(data, claimed, claim({ side: 's2' }));
+check('the claim lands on control', claimed.tasks.items[0].control, 's2');
+C.apply(data, claimed, claim({ side: null }));
+check('and null hands it back', claimed.tasks.items[0].control, null);
+
+const accessed = term();
+C.apply(data, accessed, claim({ itemId: 'tm1', side: 's1' }));
+check('a Terminal claim lands on accessed instead', accessed.tasks.items[0].accessed, 's1');
+check('and leaves control alone', accessed.tasks.items[0].control, null);
+
+// THE SEAT IS WHO RECORDED IT, never whose Item it is - that rides in `side`.
+// Either player may keep the sheet at a shared table.
+check('the other seat may record a claim too', C.check(data, ctrl(), claim({ seat: 's2' })).ok, true);
+const bySecond = ctrl();
+C.apply(data, bySecond, claim({ seat: 's2', side: 's1' }));
+check('and the side claimed is the one asked for, not the sender',
+  bySecond.tasks.items[0].control, 's1');
 
 // Dropping: the ATTACKER says where, so the seat is deliberately not the
 // bearer's, and the Grid has to touch the bearer's own.

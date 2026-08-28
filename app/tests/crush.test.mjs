@@ -43,7 +43,7 @@ const cut = (s, a, b, what) => {
 // carries crushTargets, crushExchangeSpots and crushExchange. Mirroring
 // standingSpot's occupancy walk here instead would let this file agree with a
 // copy while the app puts a Mech on top of a Drone.
-const geometry = cut(rules, 'export const LG', 'export function smokeKey', 'the board size')
+const geometry = cut(rules, 'let GRIDS', 'export function smokeKey', 'the board size')
   + cut(rules, 'export function largeGridOf', '// Where inside Large Grid', 'largeGridOf')
   + cut(rules, '// Where inside Large Grid', 'export function spotsInGrid', 'standingSpot')
   + cut(rules, 'export interface CrushVictims', 'export function reachableGrids', 'the Crush geometry');
@@ -208,6 +208,7 @@ type Facing = any;
 type HudCtx = any;
 type Side = any;
 type TerrainPiece = any;
+type GameData = any;
 export const rec: any = { notes: [], sent: [], tow: 0, mines: 0, boxes: 0, shove: 0 };
 export function reset(): void { rec.notes = []; rec.sent = []; rec.tow = 0; rec.mines = 0; rec.boxes = 0; rec.shove = 0; }
 export function setPlan(p: any): void { crushPlan = p; }
@@ -225,6 +226,10 @@ const board: any = { clearHighlights() {}, showSmokeTargets() {}, animateMove(_u
 `
   + geometry
   + cut(hudSrc, 'function esc(s: string): string {', '// ---------- the guide glue', 'esc')
+  // mapPieces is SLICED, not stubbed: terrainOf reads it, and a stub that only
+  // knew about terrain layouts would hide an authored map's own pieces -- the
+  // exact thing E4 added.
+  + cut(hudSrc, 'function mapPieces(data: GameData, map: string)', '// ---------- zones & deployment geometry', 'mapPieces')
   + cut(hudSrc, 'function terrainOf(ctx: HudCtx) {', '// `steps` is how far this particular Movement reaches', 'terrainOf')
   + cut(hudSrc, 'function head(eyebrow: string', 'function waiting(side: Side', 'head')
   + cut(hudSrc, 'function gridName(c: number, r: number): string {', '// What the Forced Movement would do, or why it does nothing.', 'gridName')

@@ -1,6 +1,6 @@
 import type { TaskItem } from './tasks';
-import type { Facing, GameState, Marker, Side, SmokeScreen, StatusDef, TerrainPiece, Token, TokenShape } from './types';
-import { INTERCEPT_DEF, SHAPE_NOTE, statusCount, statusStacks } from './types';
+import type { BoardGrids, Facing, GameState, Marker, Side, SmokeScreen, StatusDef, TerrainPiece, Token, TokenShape } from './types';
+import { DEFAULT_GRIDS, INTERCEPT_DEF, SHAPE_NOTE, statusCount, statusStacks } from './types';
 import { mechPartUrl, squadLabel, squadNumber, tabImageUrl, tokenFace, tokenPrintUrl } from './data';
 import { type BoardTheme, boardArtUrl, boardTheme, DEFAULT_BOARD } from './boards';
 import type { InspectInfo } from './inspector';
@@ -8,8 +8,13 @@ import type { InspectInfo } from './inspector';
 export const MECH_LAYER_ORDER = ['chasis', 'backpack', 'torso', 'leftHand', 'rightHand'] as const;
 
 export const CELL = 30;
-export const CELLS = 36;
-const SIZE = CELL * CELLS;
+// Subcells per side for a board of `grids` Large Grids. This REPLACED the old
+// `CELLS = 36` constant: the board is no longer one size, so nothing may cache
+// its dimension at module load. A Board instance answers `this.cells`; code
+// holding a GameState uses `cellsOf(state)` from types.ts.
+export function cellsFor(grids: number): number {
+  return grids * 3;
+}
 const M = 26;
 
 const TERRAIN_FILL: Record<TerrainPiece['type'], string> = {
@@ -24,9 +29,15 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 export interface BoardZone {
   name: string;
   cells: { col: number; row: number }[];
+  // Drawn dimmed and dashed: this is what the TABLE would play here, shown in
+  // the editor for a zone the map does not author, so an empty canvas does not
+  // read as "this Task has no zones" when play would give it several.
+  ghost?: boolean;
 }
 
 export interface DeployShape {
+  // As BoardZone.ghost: the printed shape an unauthored map would deploy into.
+  ghost?: boolean;
   rect?: { col: number; row: number; cols: number; rows: number };
   cells?: { col: number; row: number }[];
   label?: string;
@@ -184,6 +195,46 @@ export class Board {
   private resizeObserver!: ResizeObserver;
   panEnabled = true;
   editing = false;
+  // How many Large Grids this board is drawn at. Set by setGrids() when a map
+  // is loaded; the printed 12 until then, so a page that never calls it keeps
+  // the board it always had.
+  private grids: BoardGrids = DEFAULT_GRIDS;
+
+  // Subcells per side, and the world-space edge length in px. Getters rather
+  // than fields because they must never go stale behind a resize: the old
+  // module-level SIZE was computed once at load, which is exactly the bug this
+  // slice removes.
+  get cells(): number {
+    return cellsFor(this.grids);
+  }
+
+  private get size(): number {
+    return CELL * this.cells;
+  }
+
+  // Which board this is drawn at, for callers that have to do their own
+  // geometry (snapPlacement and the free-spot scans).
+  get gridCount(): BoardGrids {
+    return this.grids;
+  }
+
+  // Change the board's dimension. Everything measured in world space has to be
+  // rebuilt: the viewBox, the grid, the flip transform's centre and the zoom
+  // fit. Cheap and rare (a map load), so it redraws rather than patching.
+  setGrids(grids: BoardGrids): void {
+    if (this.grids === grids) return;
+    this.grids = grids;
+    this.svg.setAttribute('viewBox', `${-M} ${-M} ${this.size + 2 * M} ${this.size + 2 * M}`);
+    // The flip pivots on the board's centre, which just moved.
+    this.gWorld.setAttribute('transform', this.flipped ? `rotate(180 ${this.size / 2} ${this.size / 2})` : '');
+    // Swapped directly rather than through setTheme(), which early-returns when
+    // the theme id is unchanged -- and it IS unchanged here, since only the
+    // size moved. Going through it would leave the old board's grid painted.
+    const fresh = this.buildGrid();
+    this.gGrid.replaceWith(fresh);
+    this.gGrid = fresh;
+    this.fit();
+  }
 
   // Screen to board. Deliberately the WORLD group's matrix and not the svg's:
   // the world carries the half-turn that puts a player's own Deployment Zone at
@@ -203,7 +254,7 @@ export class Board {
     const p = this.toWorld(ev);
     const col = Math.floor(p.x / CELL);
     const row = Math.floor(p.y / CELL);
-    if (col < 0 || row < 0 || col >= CELLS || row >= CELLS) return null;
+    if (col < 0 || row < 0 || col >= this.cells || row >= this.cells) return null;
     return { col, row };
   }
 
@@ -213,7 +264,7 @@ export class Board {
   setFlipped(on: boolean): void {
     if (this.flipped === on) return;
     this.flipped = on;
-    this.gWorld.setAttribute('transform', on ? `rotate(180 ${SIZE / 2} ${SIZE / 2})` : '');
+    this.gWorld.setAttribute('transform', on ? `rotate(180 ${this.size / 2} ${this.size / 2})` : '');
     // Text and unit art turn back the right way up from a stylesheet rule; a
     // facing arrow, an arc and a drawn route all correctly turn with the board.
     this.svg.classList.toggle('flipped', on);
@@ -222,7 +273,7 @@ export class Board {
   constructor(container: HTMLElement, callbacks: BoardCallbacks) {
     this.callbacks = callbacks;
     this.svg = el('svg', {
-      viewBox: `${-M} ${-M} ${SIZE + 2 * M} ${SIZE + 2 * M}`,
+      viewBox: `${-M} ${-M} ${this.size + 2 * M} ${this.size + 2 * M}`,
       id: 'board',
     });
     this.svg.appendChild(smokeHatchDefs());
@@ -379,23 +430,23 @@ export class Board {
   private buildGrid(): SVGGElement {
     const t = this.theme;
     const g = el('g', { id: 'grid' });
-    g.appendChild(el('rect', { x: 0, y: 0, width: SIZE, height: SIZE, fill: t.base }));
-    const art = boardArtUrl(t, SIZE);
+    g.appendChild(el('rect', { x: 0, y: 0, width: this.size, height: this.size, fill: t.base }));
+    const art = boardArtUrl(t, this.size);
     if (art) {
-      const img = el('image', { x: 0, y: 0, width: SIZE, height: SIZE, 'pointer-events': 'none' });
+      const img = el('image', { x: 0, y: 0, width: this.size, height: this.size, 'pointer-events': 'none' });
       img.setAttribute('href', art);
       g.appendChild(img);
     }
     this.svg.style.setProperty('--grid-label', t.label);
-    for (let i = 0; i <= CELLS; i++) {
+    for (let i = 0; i <= this.cells; i++) {
       const large = i % 3 === 0;
       const p = i * CELL;
       const stroke = large ? t.major : t.minor;
       const w = large ? 1.6 : 0.6;
-      g.appendChild(el('line', { x1: p, y1: 0, x2: p, y2: SIZE, stroke, 'stroke-width': w }));
-      g.appendChild(el('line', { x1: 0, y1: p, x2: SIZE, y2: p, stroke, 'stroke-width': w }));
+      g.appendChild(el('line', { x1: p, y1: 0, x2: p, y2: this.size, stroke, 'stroke-width': w }));
+      g.appendChild(el('line', { x1: 0, y1: p, x2: this.size, y2: p, stroke, 'stroke-width': w }));
     }
-    for (let i = 0; i < 12; i++) {
+    for (let i = 0; i < this.grids; i++) {
       const c = i * 3 * CELL + 1.5 * CELL;
       const col = el('text', { x: c, y: -8, 'text-anchor': 'middle', class: 'grid-label' });
       col.textContent = String.fromCharCode(65 + i);
@@ -404,7 +455,7 @@ export class Board {
       g.appendChild(col);
       g.appendChild(row);
     }
-    const border = el('rect', { x: 0, y: 0, width: SIZE, height: SIZE, fill: 'none', stroke: t.border, 'stroke-width': 2.5 });
+    const border = el('rect', { x: 0, y: 0, width: this.size, height: this.size, fill: 'none', stroke: t.border, 'stroke-width': 2.5 });
     g.appendChild(border);
     return g;
   }
@@ -488,7 +539,7 @@ export class Board {
       for (const side of ['black', 'white'] as const) {
         const shape = deploy[side];
         if (!shape) continue;
-        const g = el('g', { class: `dz dz-${side}` });
+        const g = el('g', { class: `dz dz-${side}${shape.ghost ? ' dz-ghost' : ''}` });
         let lx = 0;
         let ly = 0;
         if (shape.rect) {
@@ -502,21 +553,41 @@ export class Board {
             g.appendChild(el('rect', { x: c.col * LG, y: c.row * LG, width: LG, height: LG, class: 'zone-fill' }));
           }
           g.appendChild(el('path', { d: outlinePath(shape.cells, LG), class: 'zone-edge' }));
-          const top = [...shape.cells].sort((a, b) => a.row - b.row || a.col - b.col)[0];
-          lx = top.col * LG + LG / 2;
-          ly = top.row * LG + LG / 2 + 6;
+          // CENTRED ON THE WHOLE SHAPE, as the rect branch above is.
+          //
+          // This used to centre on the single topmost Grid. The label is around
+          // 190px of 14px bold and a Grid is 90px, so it hung ~50px off each
+          // side of that one Grid -- and when the Grid was at column 0 the left
+          // half fell off the board and was clipped, leaving "CK DEPLOYMENT
+          // ZONE". Only AUTHORED deployment reaches this branch (the printed
+          // shapes are rects), which is why it survived until a painted map was
+          // played on.
+          const cols = shape.cells.map((c) => c.col);
+          const rows = shape.cells.map((c) => c.row);
+          lx = ((Math.min(...cols) + Math.max(...cols) + 1) / 2) * LG;
+          ly = ((Math.min(...rows) + Math.max(...rows) + 1) / 2) * LG + 6;
         } else {
           continue;
         }
         const label = el('text', { x: lx, y: ly, 'text-anchor': 'middle', class: 'dz-label' });
         label.textContent = shape.label ?? `${side === 'black' ? 'BLACK' : 'WHITE'} DEPLOYMENT ZONE`;
+        // KEPT ON THE BOARD. A zone narrower than its own label still overflows
+        // it, which is fine over the battlefield and not fine over the edge:
+        // anything outside the viewBox is simply cut off. Estimated rather than
+        // measured because getComputedTextLength needs the element laid out,
+        // and this runs while the tree is still being built.
+        const half = (label.textContent.length * 9.5) / 2;
+        const boardPx = this.grids * LG;
+        if (boardPx > half * 2) {
+          label.setAttribute('x', String(Math.min(Math.max(lx, half), boardPx - half)));
+        }
         g.appendChild(label);
         this.gZones.appendChild(g);
       }
     }
 
     for (const z of zones) {
-      const g = el('g', { class: 'tz' });
+      const g = el('g', { class: z.ghost ? 'tz tz-ghost' : 'tz' });
       for (const c of z.cells) {
         g.appendChild(el('rect', { x: c.col * LG, y: c.row * LG, width: LG, height: LG, class: 'zone-fill' }));
       }
@@ -592,7 +663,11 @@ export class Board {
     for (const it of items) {
       let cx: number;
       let cy: number;
-      if (it.kind === 'blackbox' && it.col !== undefined && it.row !== undefined) {
+      // An EXPLICIT spot wins for any kind, not just a Black Box. Only Boxes
+      // carried one before, because only Boxes could be placed; an authored map
+      // can now say where a Terminal or a Control marker sits too, and the
+      // zone-centre below stays the fallback for everything unplaced.
+      if (it.col !== undefined && it.row !== undefined) {
         cx = it.col * CELL + CELL / 2;
         cy = it.row * CELL + CELL / 2;
       } else {
@@ -1029,7 +1104,7 @@ export class Board {
     const g = el('g', { class: 'range-overlay', 'pointer-events': 'none' });
     const gc = Math.floor(from.col / 3);
     const gr = Math.floor(from.row / 3);
-    const cells = Math.ceil(CELLS / 3);
+    const cells = this.grids;
     for (let c = 0; c < cells; c++) {
       for (let r = 0; r < cells; r++) {
         const d = Math.abs(c - gc) + Math.abs(r - gr);
@@ -1059,7 +1134,7 @@ export class Board {
     this.clearHighlights();
     const cx = (t.col + t.size / 2) * CELL;
     const cy = (t.row + t.size / 2) * CELL;
-    const R = SIZE * 1.6;
+    const R = this.size * 1.6;
     const mk = (rotDeg: number, cls: string) => {
       const p = el('path', {
         d: `M ${cx} ${cy} L ${cx - R} ${cy - R} L ${cx + R} ${cy - R} Z`,
@@ -1072,7 +1147,7 @@ export class Board {
     const clipId = 'board-clip';
     if (!this.svg.querySelector(`#${clipId}`)) {
       const clip = el('clipPath', { id: clipId });
-      clip.appendChild(el('rect', { x: 0, y: 0, width: SIZE, height: SIZE }));
+      clip.appendChild(el('rect', { x: 0, y: 0, width: this.size, height: this.size }));
       this.svg.appendChild(clip);
     }
     g.setAttribute('clip-path', `url(#${clipId})`);
@@ -1203,22 +1278,28 @@ export class Board {
   }
 }
 
-export function snapPlacement(col: number, row: number, size: 1 | 2 | 3): { col: number; row: number } | null {
-  col = Math.max(0, Math.min(CELLS - size, col));
-  row = Math.max(0, Math.min(CELLS - size, row));
+// `grids` defaults to the printed 12 so an un-migrated caller keeps the exact
+// behaviour it had. Every caller that can see the state should pass
+// gridsOf(state): on a 16 or 18 board the old default would clamp a legal
+// placement back onto the printed board's last Grid, silently.
+export function snapPlacement(col: number, row: number, size: 1 | 2 | 3, grids: number = DEFAULT_GRIDS): { col: number; row: number } | null {
+  const cells = cellsFor(grids);
+  const last = grids - 1;
+  col = Math.max(0, Math.min(cells - size, col));
+  row = Math.max(0, Math.min(cells - size, row));
   if (size === 3) {
     return { col: Math.round(col / 3) * 3, row: Math.round(row / 3) * 3 };
   }
   if (size === 2) {
     const lg = { c: Math.floor((col + 1) / 3), r: Math.floor((row + 1) / 3) };
-    const c = Math.min(11, Math.max(0, lg.c));
-    const r = Math.min(11, Math.max(0, lg.r));
+    const c = Math.min(last, Math.max(0, lg.c));
+    const r = Math.min(last, Math.max(0, lg.r));
     const offC = Math.min(1, Math.max(0, col - c * 3));
     const offR = Math.min(1, Math.max(0, row - r * 3));
     return { col: c * 3 + offC, row: r * 3 + offR };
   }
-  const c = Math.min(11, Math.max(0, Math.floor(col / 3)));
-  const r = Math.min(11, Math.max(0, Math.floor(row / 3)));
+  const c = Math.min(last, Math.max(0, Math.floor(col / 3)));
+  const r = Math.min(last, Math.max(0, Math.floor(row / 3)));
   return { col: c * 3 + 1, row: r * 3 + 1 };
 }
 

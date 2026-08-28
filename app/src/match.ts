@@ -4,7 +4,8 @@ import { applyRemote, check, onBeforeApply, onPerformed, onRefused, perform, typ
 import { clearHistory, historyEntries, recordSnapshot, rollbackCatalog, undoToPhase, undoToSeq } from './history';
 import { groupLedger, labelFor, namesFrom, SEALED_KINDS, type LedgerNames } from './ledger';
 import { setLocalSeat } from './loop';
-import { cardName, FACTION_LABEL, dataUrl, loadData, missionImageUrl, setSquadNames, squadLabel, type GameData } from './data';
+import { resolveLayer, tableDeployFor, tableZonesFor } from './mapeditor';
+import { cardName, FACTION_LABEL, dataUrl, loadData, missionImageUrl, parseGridRef, setSquadNames, squadLabel, type GameData } from './data';
 import { tacticSpec } from './tactics';
 import { flushBoxDrops, queueBoxDrop, objectiveCells } from './matchhud';
 import { printedDeployment } from './overlays';
@@ -25,7 +26,7 @@ import { SquadTracker } from './squads';
 import { Panel } from './panel';
 import type { CardAction, CombatView, DiceData, DieColor, GameState, Side, Token } from './types';
 import { grantAdjusted, SLOT_LABEL, stationaryAdjusted } from './units';
-import { PHASES, statusCount } from './types';
+import { gridsOf, PHASES, statusCount } from './types';
 
 // The Match Centre: a separate page for networked play, so the freeplay board
 // never has to hide or lock anything — its controls simply are not here.
@@ -1155,7 +1156,7 @@ function sweepCombatView(): void {
 
 function terrainNow() {
   const gone = new Set(state.removedTerrain ?? []);
-  return (data?.terrain.layouts[state.map] ?? []).filter((p) => !gone.has(p.id));
+  return (data ? (data.boardMaps?.find((m) => m.id === state.map)?.pieces ?? data.terrain.layouts[state.map] ?? []) : []).filter((p) => !gone.has(p.id));
 }
 
 // "Squad 1 rolls higher" tells a player nothing about whose squad that is.
@@ -1845,7 +1846,12 @@ function seatHtml(side: Side): string {
 // visible before any setup exists, because edges are decided later.
 function previewSvg(mapId: string): string {
   if (!data) return '';
-  const pieces = data.terrain.layouts[mapId] ?? [];
+  const doc = data.boardMaps?.find((m) => m.id === mapId) ?? null;
+  const pieces = doc?.pieces ?? data.terrain.layouts[mapId] ?? [];
+  // The preview is drawn in SMALL GRID units, so an authored map's own size has
+  // to set the extent -- otherwise a 16 or 18 Grid map is previewed as the
+  // top-left 12x12 of itself, which is a lie about what you are picking.
+  const span = gridsOf(doc) * 3;
   // One shape per piece, not one per Small Grid. Drawn from the same bounding
   // box and the same fills the board itself uses, so a 3x1 wall reads as a wall
   // here rather than as three tiles that happen to be touching, and what a
@@ -1868,17 +1874,30 @@ function previewSvg(mapId: string): string {
     .join('');
   // Large-Grid lines every 3 cells, like the board, plus a faint fine grid.
   let lines = '';
-  for (let i = 0; i <= 36; i += 3) {
+  for (let i = 0; i <= span; i += 3) {
     const w = i % 9 === 0 ? 0.1 : 0.06;
-    lines += `<line x1="${i}" y1="0" x2="${i}" y2="36" stroke="rgba(255,255,255,.09)" stroke-width="${w}"/>`;
-    lines += `<line x1="0" y1="${i}" x2="36" y2="${i}" stroke="rgba(255,255,255,.09)" stroke-width="${w}"/>`;
+    lines += `<line x1="${i}" y1="0" x2="${i}" y2="${span}" stroke="rgba(255,255,255,.09)" stroke-width="${w}"/>`;
+    lines += `<line x1="0" y1="${i}" x2="${span}" y2="${i}" stroke="rgba(255,255,255,.09)" stroke-width="${w}"/>`;
   }
   const zones = objectiveCells(data, state)
     .map((z) => `<rect x="${z.c}" y="${z.r}" width="1" height="1" fill="rgba(240,180,41,.18)"/>`)
     .join('');
-  // The printed shape straight from the data, independent of any setup.
+  // An AUTHORED map draws its own Deployment Zones; only a printed board falls
+  // back to the printed shape. Drawing the printed one over a 16 or 18 Grid map
+  // put the White strip two-thirds down the board and covered 12 of its columns,
+  // which is a lie about the battlefield you are picking.
+  const ownDep = tableDeployFor(doc, state.mission ?? null);
   const shapeId = (state.mission && data.zoneData.missionDeployment[state.mission]) || 'strips';
   const dep = printedDeployment(data, shapeId);
+  // Authored zones are cell lists, not rects, so they draw as their own cells.
+  const depCells = (refs: string[] | undefined, light: boolean): string =>
+    (refs ?? [])
+      .map((ref) => {
+        const g = parseGridRef(ref);
+        if (!g) return '';
+        return `<rect x="${g.col * 3}" y="${g.row * 3}" width="3" height="3" fill="${light ? 'rgba(238,241,245,.10)' : 'rgba(15,18,22,.45)'}" stroke="${light ? 'rgba(238,241,245,.30)' : 'rgba(120,130,145,.45)'}" stroke-width="0.08"/>`;
+      })
+      .join('');
   const depRect = (shape: { rect?: { col: number; row: number; cols: number; rows: number }; label?: string } | undefined, light: boolean) => {
     if (!shape?.rect) return '';
     const { col, row, cols, rows } = shape.rect;
@@ -1887,9 +1906,12 @@ function previewSvg(mapId: string): string {
     return `<rect x="${x}" y="${y}" width="${cols * 3}" height="${rows * 3}" fill="${light ? 'rgba(238,241,245,.10)' : 'rgba(15,18,22,.45)'}" stroke="${light ? 'rgba(238,241,245,.45)' : 'rgba(120,130,145,.6)'}" stroke-width="0.12" stroke-dasharray="0.7 0.4"/>
       <text x="${x + (cols * 3) / 2}" y="${y + (rows * 3) / 2 + 0.4}" text-anchor="middle" font-size="1.1" fill="${light ? 'rgba(238,241,245,.75)' : 'rgba(160,170,185,.85)'}" font-family="var(--mono)">${esc(shape.label ?? '')}</text>`;
   };
-  return `<svg class="mapsvg flatmap" viewBox="0 0 36 36" aria-hidden="true">
-    <rect x="0" y="0" width="36" height="36" fill="#12161b"/>
-    ${lines}${depRect(dep?.black, false)}${depRect(dep?.white, true)}${zones}${cells}</svg>`;
+  const deployment = ownDep
+    ? depCells(ownDep.black, false) + depCells(ownDep.white, true)
+    : depRect(dep?.black, false) + depRect(dep?.white, true);
+  return `<svg class="mapsvg flatmap" viewBox="0 0 ${span} ${span}" aria-hidden="true">
+    <rect x="0" y="0" width="${span}" height="${span}" fill="#12161b"/>
+    ${lines}${deployment}${zones}${cells}</svg>`;
 }
 
 // ---------- lobby ----------
@@ -1995,10 +2017,21 @@ function roomStep(): string {
 
 function battlefieldStep(): string {
   const editable = isHost() && !running();
-  const maps = (data?.terrain.maps ?? [])
+  // Terrain-only layouts, then the shipped AUTHORED maps (E4): the ones that
+  // carry their own zones, objective spots and Task layers. Only shipped maps
+  // are offered here on purpose -- a `custom:` map lives in one browser's
+  // localStorage, so the other seat could not resolve it.
+  const mapList: { id: string; label: string }[] = [
+    ...(data?.terrain.maps ?? []).map((m) => ({ id: m.id, label: m.name.en || m.id })),
+    ...(data?.boardMaps ?? []).map((m) => {
+      const g = gridsOf(m);
+      return { id: m.id, label: `${m.name?.en || m.id}${g === 12 ? '' : ` (${g}x${g})`}` };
+    }),
+  ];
+  const maps = mapList
     .map(
       (m, i) => `<div class="opt${state.map === m.id ? ' sel' : ''}${editable ? '' : ' still'}" ${editable ? `data-map="${m.id}"` : ''}>
-        <span class="idx">${String(i + 1).padStart(2, '0')}</span>${esc(m.name.en || m.id)}
+        <span class="idx">${String(i + 1).padStart(2, '0')}</span>${esc(m.label)}
       </div>`,
     )
     .join('');
@@ -2820,7 +2853,20 @@ function wire(): void {
   }
   for (const el of root.querySelectorAll<HTMLElement>('[data-map]')) {
     el.addEventListener('click', () => {
-      if (data) perform(data, state, { kind: 'configureTable', seat: mySeat() ?? 's1', map: el.dataset.map! });
+      if (!data) return;
+      const id = el.dataset.map!;
+      const doc = data.boardMaps?.find((m) => m.id === id) ?? null;
+      const m = state.mission ? data.missions.cards.find((x) => x.id === state.mission) : undefined;
+      // The zones ride with the map: a Task already chosen has to be
+      // re-resolved against the new battlefield, or it would keep scoring the
+      // old one's areas. Both seats read the same shipped document, so both
+      // land on the identical answer.
+      perform(data, state, {
+        kind: 'configureTable', seat: mySeat() ?? 's1', map: id, grids: gridsOf(doc),
+        zones: m ? tableZonesFor(doc, m.id) : null,
+        deployZones: tableDeployFor(doc, m?.id ?? null),
+        ...(m ? { tasks: taskItemsFor(tableZonesFor(doc, m.id) ?? data.zoneData.zones, m, resolveLayer(doc, m.id).objectives) } : {}),
+      });
       render();
     });
   }
@@ -2829,10 +2875,20 @@ function wire(): void {
       if (!data) return;
       const id = el.dataset.mission!;
       const m = id ? data.missions.cards.find((x) => x.id === id) : undefined;
+      // Resolved against the SHIPPED document for the chosen map, so an
+      // authored map's own zones and objective spots are what this table plays
+      // with. A `custom:` map is never offered here, so there is no storage to
+      // read and both seats compute the identical set.
+      const doc = data.boardMaps?.find((x) => x.id === state.map) ?? null;
+      const zones = m ? tableZonesFor(doc, m.id) : null;
       perform(data, state, {
         kind: 'configureTable', seat: mySeat() ?? 's1',
         mission: m ? m.id : null,
-        tasks: m ? taskItemsFor(data.zoneData.zones, m) : null,
+        zones,
+        // See the note in main.ts: the Deployment Zones survive a Task being
+        // cleared, because they belong to the battlefield rather than the Task.
+        deployZones: tableDeployFor(doc, m?.id ?? null),
+        tasks: m ? taskItemsFor(zones ?? data.zoneData.zones, m, resolveLayer(doc, m.id).objectives) : null,
         zoneSet: m ? `mission:${m.id}` : '',
       });
       render();

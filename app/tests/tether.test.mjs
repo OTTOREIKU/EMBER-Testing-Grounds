@@ -49,7 +49,7 @@ export function tokenCards(data: any, t: any): any[] {
 export const synced: any[] = [];
 export function syncMagazines(_data: any, t: any): void { synced.push(t.uid); }
 `
-  + cut(rules, 'export const LG', 'export function losBetween', 'the movement search')
+  + cut(rules, 'let GRIDS', 'export function losBetween', 'the movement search')
   + cut(rules, 'export function rangeBetween', 'export function inArc', 'rangeBetween')
   + cut(dataSrc, 'export function isModeFace', 'export function zeroCostReason', 'the face index')
   + cut(unitsSrc, 'export const PART_SLOTS', 'export const SLOT_LABEL', 'PART_SLOTS')

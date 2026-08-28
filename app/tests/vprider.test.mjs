@@ -258,20 +258,33 @@ check('the End Phase Integrity-Loss removal stamps the whole unit',
 check('and recordKill stamps from the victim before removing it',
   /recordUnitLoss\(tasks, victim\);[\s\S]{0,400}state\.tokens = state\.tokens\.filter\(\(x\) => x\.uid !== cmd\.targetUid\)/.test(commands), true);
 
-// ---------- BOTH scoring pages, because there are two copies of this glue ----------
+// ---------- ONE copy of this glue, and every page reaching it ----------
+//
+// There used to be two - matchhud and playguide each carried it - and these
+// assertions checked both, because wiring only one is how a rule ends up live
+// on half the app. The pad would have been a third, so the glue moved to
+// scoring.ts. The invariant is stronger now and the last check is the one that
+// keeps it: no page may grow its own copy back.
 
-check('the Match Centre preview runs the riders', /all\.push\(\.\.\.scoreRiders\(/.test(hud), true);
-check('and hands it the real card reader', /\(cardId\) => vpRiderFor\(ctx\.data, cardId\)/.test(hud), true);
-check('and the Escort designation', /escortTargets\(tasks, \(id\) => ctx\.data\.secondary/.test(hud), true);
-check('the play guide preview runs them too', /all\.push\(\.\.\.scoreRiders\(/.test(guide), true);
-check('with its own reader', /\(cardId\) => vpRiderFor\(this\.data, cardId\)/.test(guide), true);
-check('and its own designation lookup', /escortTargets\(tasks, \(id\) => this\.data\.secondary/.test(guide), true);
-// Both pages must hand the rider producer the SAME mission terms the Main Task
-// scorer got, or card 300's gate and its scoringZone come from nowhere.
-check('the Match Centre builds the mission terms once and shares them',
-  /if \(scoring\) all\.push\(\.\.\.scoreMain\(scoring, tasks/.test(hud), true);
-check('and the guide shares its own through missionScoring',
-  /mission \? this\.missionScoring\(mission\) : undefined/.test(guide), true);
+const scoring = src('scoring.ts');
+
+check('the shared preview runs the riders', /all\.push\(\.\.\.scoreRiders\(/.test(scoring), true);
+check('and hands it the real card reader', /\(cardId\) => vpRiderFor\(data, cardId\)/.test(scoring), true);
+check('and the Escort designation', /escortTargets\(tasks, \(id\) => data\.secondary/.test(scoring), true);
+// The rider producer must get the SAME mission terms the Main Task scorer got,
+// or card 300's gate and its scoringZone come from nowhere.
+check('the mission terms are built once and shared',
+  /if \(scoring\) all\.push\(\.\.\.scoreMain\(scoring, tasks/.test(scoring), true);
+check('and both scorers read that one reading',
+  /const scoring = mission \? missionScoring\(mission\) : undefined;/.test(scoring), true);
+
+check('the Match Centre reaches it', /previewScore\(ctx\.data, ctx\.state, finalRound\)/.test(hud), true);
+check('and the play guide reaches it', /previewScore\(this\.data, s, finalRound, \{ tasks \}\)/.test(guide), true);
+
+// THE GUARD. A page that grows its own scoreRiders call is a second copy, and
+// the drift starts there.
+check('the Match Centre keeps no copy of its own', /scoreRiders/.test(hud), false);
+check('nor does the play guide', /scoreRiders/.test(guide), false);
 // Freeplay scores no Tasks at all, so it stays out of this.
 check('freeplay is left alone', /scoreRiders/.test(src('main.ts')), false);
 

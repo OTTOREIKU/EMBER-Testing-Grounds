@@ -1,11 +1,11 @@
 import { DEFAULT_BOARD } from './boards';
 import type { GameData } from './data';
 import { cardName, faceOf, isAerial, isBarricade, isFlyingBase, isMine, isTetherFace, isUnfolded, transformFaces, unfoldsInto, unitSize } from './data';
-import type { ExtraTick, Card, CardAction, CounterRoll, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, TerrainPiece, TetherLink, Timing, Token } from './types';
-import { LEGACY_SIDE, normaliseScript, statusCount, TIMINGS } from './types';
+import type { ExtraTick, Card, CardAction, CounterRoll, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, TableZone, TerrainPiece, TetherLink, Timing, Token } from './types';
+import { DEFAULT_GRIDS, gridsOf, LEGACY_SIDE, normaliseScript, statusCount, TIMINGS } from './types';
 import { normaliseSetup } from './setup';
 import { isMeleeFiring, lockersOf } from './melee';
-import { inContact, largeGridOf, lineCrossesUnit, losBetween, rangeBetween, smokeBlocks, standingSpot } from './rules';
+import { boardGrids, inContact, largeGridOf, lineCrossesUnit, losBetween, rangeBetween, smokeBlocks, standingSpot } from './rules';
 import { normaliseTasks, type VpRider } from './tasks';
 // ticks.ts imports only from types.ts, so this direction carries no cycle.
 import { timingOf } from './ticks';
@@ -1247,7 +1247,10 @@ export function manifestTargets(
   const out: { c: number; r: number; col: number; row: number }[] = [];
   for (let c = here.c - range; c <= here.c + range; c++) {
     for (let r = here.r - range; r <= here.r + range; r++) {
-      if (c < 0 || r < 0 || c > 11 || r > 11) continue;
+      // The board's own extent, not the printed 12: a camouflaged unit near the
+      // far corner of a 16 or 18 Grid board must be able to Manifest into the
+      // Grids that actually exist around it.
+      if (c < 0 || r < 0 || c >= boardGrids() || r >= boardGrids()) continue;
       if (c === here.c && r === here.r) continue;
       const spot = standingSpot(c, r, t.size, !!t.aerial, terrain, tokens, t.uid);
       if (spot) out.push({ c, r, col: spot.col, row: spot.row });
@@ -4577,6 +4580,31 @@ export function migrateState(rawIn: unknown, data: GameData): GameState | null {
     markers: (s as { markers?: GameState['markers'] }).markers ?? [],
     smoke: (s as { smoke?: GameState['smoke'] }).smoke ?? [],
     script: normaliseScript((s as { script?: unknown }).script, (s.round ?? { firstPlayer: 's1' }).firstPlayer ?? 's1'),
+    // The board size, and it is written ONLY when it is a larger board.
+    // migrateState rebuilds the state from a whitelist, so a field missing from
+    // here is silently dropped on every load -- which is exactly how a saved
+    // 16x16 game came back as a printed board. Spread conditionally rather than
+    // defaulted, so `grids` stays absent for a printed board and gridsOf's
+    // absence-is-12 rule keeps meaning what it says.
+    ...(gridsOf(s as { grids?: number }) === DEFAULT_GRIDS ? {} : { grids: gridsOf(s as { grids?: number }) }),
+    // The table's own Tactical Zones (E3), on the same whitelist rule as grids:
+    // a field missing from here is dropped on every load. Absent stays absent,
+    // so a game on the shipped nine never grows a copy of them in its save.
+    ...(Array.isArray((s as { zones?: unknown }).zones) && ((s as { zones: unknown[] }).zones).length
+      ? { zones: ((s as { zones: TableZone[] }).zones)
+          .filter((z) => z && typeof z.id === 'string' && typeof z.name === 'string' && Array.isArray(z.cells))
+          .map((z) => ({ id: z.id, name: z.name, cells: z.cells.filter((c: unknown) => typeof c === 'string') })) }
+      : {}),
+    // Same whitelist rule as zones and grids: missing here means dropped on
+    // every load, which on a large board would silently restore the printed
+    // deployment shapes and put a squad in the middle of the table.
+    ...(() => {
+      const d = (s as { deployZones?: { black?: unknown; white?: unknown } }).deployZones;
+      const side = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
+      const black = side(d?.black);
+      const white = side(d?.white);
+      return black.length || white.length ? { deployZones: { black, white } } : {};
+    })(),
     removedTerrain: (s as { removedTerrain?: string[] }).removedTerrain ?? [],
     scale: (s as { scale?: GameState['scale'] }).scale ?? 'standard',
     roundLimit: (s as { roundLimit?: number }).roundLimit ?? 5,

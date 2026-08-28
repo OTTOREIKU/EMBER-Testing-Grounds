@@ -3,7 +3,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 
 const rules = readFileSync(new URL('../src/rules.ts', import.meta.url), 'utf8');
-const rStart = rules.indexOf('export const LG');
+const rStart = rules.indexOf('let GRIDS');
 const rEnd = rules.indexOf('export function losBetween');
 const tmp = new URL('./_knockback.slice.ts', import.meta.url);
 writeFileSync(tmp, 'type TerrainPiece = any;\ntype Token = any;\ntype Side = any;\ntype SmokeScreen = any;\n' + rules.slice(rStart, rEnd));

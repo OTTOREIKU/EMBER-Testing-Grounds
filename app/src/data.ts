@@ -1,3 +1,4 @@
+import type { CustomMap } from './mapeditor';
 import type { Card, CardAction, ExtraTickCheck, LangText, Side, TerrainData } from './types';
 
 // A squad is numbered, not factioned. The internal id stays a colour word so
@@ -95,7 +96,22 @@ function buildFactionIndex(cards: Card[], boxes: BoxDef[]): Map<string, string |
   return out;
 }
 
-const BASE = import.meta.env.BASE_URL;
+// Where this deployment keeps /data and /assets, as a prefix.
+//
+// The build uses `base: './'`, so BASE_URL compiles to the literal "./" - right
+// for a page at the site root, wrong for one served from a FOLDER (the pad at
+// /pad/), which would look for /pad/data/... and 404. Such a page declares its
+// own way back up before loading any module; everything else keeps the exact
+// behaviour it always had.
+//
+// Deliberately NOT `new URL('../', import.meta.url)`: Vite REWRITES that at
+// build AND dev time into an absolute /@fs/... path, which is worse than the
+// problem it solves.
+declare global {
+  // eslint-disable-next-line no-var
+  var __EMBER_BASE__: string | undefined;
+}
+const BASE = globalThis.__EMBER_BASE__ ?? import.meta.env.BASE_URL;
 
 export function assetUrl(path: string): string {
   return `${BASE}assets/${path}`;
@@ -245,12 +261,17 @@ export interface ZoneData {
 
 const NO_ZONES: ZoneData = { zones: [], deployments: [], missionDeployment: {} };
 
+// Grid refs reach A-R / 1-18: 18 Large Grids is the largest board we ship, so
+// the parser accepts any ref that could name a Grid on ANY board and leaves
+// "is that Grid on THIS board" to the caller, which is the only place that
+// knows the board's size. Parsing to the maximum keeps a map's authored zones
+// readable whatever size it was drawn at.
 export function parseGridRef(ref: string): { col: number; row: number } | null {
-  const m = /^([A-La-l])(\d{1,2})$/.exec(ref.trim());
+  const m = /^([A-Ra-r])(\d{1,2})$/.exec(ref.trim());
   if (!m) return null;
   const col = m[1].toUpperCase().charCodeAt(0) - 65;
   const row = Number(m[2]) - 1;
-  if (col < 0 || col > 11 || row < 0 || row > 11) return null;
+  if (col < 0 || col > 17 || row < 0 || row > 17) return null;
   return { col, row };
 }
 
@@ -358,10 +379,22 @@ interface CommonActionData {
 
 const NO_COMMON: CommonActionData = { actions: [], extraTicks: [], overload: [] };
 
+// A SHIPPED authored map: the editor's own document plus an id and a name. It
+// carries its own board size, zones, objective spots and per-Task layers, which
+// is what lets a map reach multiplayer at all -- it lives in data/ rather than
+// in one browser's localStorage, so every client resolves the identical board.
+export interface BoardMapDef extends CustomMap {
+  id: string;
+  name: LangText;
+}
+
 export interface GameData {
   cards: Card[];
   byId: Map<string, Card>;
   terrain: TerrainData;
+  // Authored maps shipped with the app. Terrain-only layouts stay in
+  // `terrain.maps`; these are the ones with zones and Task layers.
+  boardMaps: BoardMapDef[];
   boxes: BoxDef[];
   factionOf(card: Card): string | null;
   keywords: KeywordDef[];
@@ -461,9 +494,14 @@ function applyTactics(cards: Card[], table: Record<string, TacticEntry>): void {
 }
 
 export async function loadData(): Promise<GameData> {
-  const [cards, terrain, boxes, rawKeywords, patch, boxStatus, qrIds, mech, xlate, names, missions, tactics, play, secondary, zoneData, facPatch, boxPatch, common, ammoPatch, statPatch, actionPatch, factionData, extraCards] = await Promise.all([
+  const [cards, terrain, boardMaps, boxes, rawKeywords, patch, boxStatus, qrIds, mech, xlate, names, missions, tactics, play, secondary, zoneData, facPatch, boxPatch, common, ammoPatch, statPatch, actionPatch, factionData, extraCards] = await Promise.all([
     fetch(dataUrl('cards.json')).then((r) => r.json() as Promise<Card[]>),
     fetch(dataUrl('terrain_layouts.json')).then((r) => r.json() as Promise<TerrainData>),
+    // Optional, and empty until a map is authored and committed: a missing or
+    // malformed file must never stop the app loading.
+    fetch(dataUrl('board_maps.json'))
+      .then((r) => (r.ok ? (r.json() as Promise<{ maps?: BoardMapDef[] }>) : { maps: [] }))
+      .catch(() => ({ maps: [] as BoardMapDef[] })),
     fetch(dataUrl('boxes.json')).then((r) => r.json() as Promise<BoxDef[]>),
     fetch(dataUrl('keywords.json')).then((r) => r.json() as Promise<KeywordDef[]>),
     fetch(dataUrl('keyword_overrides.json'))
@@ -631,6 +669,9 @@ export async function loadData(): Promise<GameData> {
     cards,
     byId,
     terrain,
+    // Only well-formed entries survive: a hand-edited file must not be able to
+    // put a nameless or idless map in the picker.
+    boardMaps: (boardMaps.maps ?? []).filter((m) => m && typeof m.id === 'string' && m.id),
     boxes,
     factionOf,
     keywords,

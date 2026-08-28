@@ -3,7 +3,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 
 const rules = readFileSync(new URL('../src/rules.ts', import.meta.url), 'utf8');
-const rStart = rules.indexOf('export const LG');
+const rStart = rules.indexOf('let GRIDS');
 const rEnd = rules.indexOf('export function rangeBetween');
 writeFileSync(
   new URL('./_meleelock.rules.ts', import.meta.url),

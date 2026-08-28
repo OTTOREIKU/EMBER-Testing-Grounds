@@ -88,7 +88,15 @@ check('no override merely restates the bundle',
 // that only compared the JSON against a list would pass against a merge that
 // throws half of it away — which is exactly what trap 1 does.
 const dataSrc = readFileSync(new URL('../src/data.ts', import.meta.url), 'utf8');
-const src = (f) => readFileSync(new URL(`../src/${f}`, import.meta.url), 'utf8');
+// THE REFERENCE PAGE IS TWO FILES. Its card and keyword renderers moved into
+// refcards.ts when the pad started drawing the same cards - one copy, imported
+// by both, because a second linkKeywords would let the glossary drift. Asking
+// for 'reference.ts' here gets the pair, so the cuts below go on finding what
+// they are looking for wherever it ended up.
+const readSrc = (f) => readFileSync(new URL(`../src/${f}`, import.meta.url), 'utf8');
+const src = (f) => (f === 'reference.ts'
+  ? `${readSrc('reference.ts')}\n${readSrc('refcards.ts')}`
+  : readSrc(f));
 const mechList = JSON.parse(readFileSync(new URL('../../data/mechanics.json', import.meta.url), 'utf8')).mechanics ?? [];
 // `for (const a of c.actions ?? []) {` occurs four times in data.ts, so the
 // terminator is searched from the START of the cut rather than from 0 — a bare
@@ -140,11 +148,10 @@ const data: any = {
 const actionIconUrl = (_t: string | undefined) => null;
 const zeroCostReason = (_c: Card) => '';
 const cardName = (c: Card) => c.name?.en || c.name?.zh || c.id;
-export { cardRow };
 `
   + refCut('const SLOT_LABEL: Record<string, string> = {', '// The detail header used to print', 'SLOT_LABEL')
-  + refCut('const SPEED_MARK: Record<string,', 'const norm = ', 'SPEED_MARK and esc')
-  + refCut('function kwLabel(', 'function cardDetail(', 'kwLabel, pointsChip and cardRow'));
+  + refCut('const SPEED_MARK: Record<string,', 'const CJK = ', 'SPEED_MARK and esc')
+  + refCut('function kwLabel(', 'export function cardDetail(', 'kwLabel, pointsChip and cardRow'));
 const { mergeTraits, traitName, mechanicsFor, cardRow } = await import(nameSlice.href);
 
 {

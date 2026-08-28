@@ -11,7 +11,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 
 const src = readFileSync(new URL('../src/rules.ts', import.meta.url), 'utf8');
-const start = src.indexOf('export const LG');
+const start = src.indexOf('let GRIDS');
 // protectionFor is the last thing in the file, so the slice runs to the end.
 if (start < 0) throw new Error('could not locate the sight rules in rules.ts');
 const tmp = new URL('./_protection.slice.ts', import.meta.url);

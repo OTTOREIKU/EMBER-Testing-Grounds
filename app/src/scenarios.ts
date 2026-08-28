@@ -54,12 +54,14 @@ export async function loadScenarios(): Promise<Scenario[]> {
   }
 }
 
+// One of FIVE copies of the grid-ref parser; gridref.test.mjs pins them in
+// step. A-R / 1-18, the largest board we ship: see the note in data.ts.
 export function parseGrid(ref: string): { c: number; r: number } | null {
-  const m = /^([A-La-l])\s*(\d{1,2})$/.exec(ref.trim());
+  const m = /^([A-Ra-r])\s*(\d{1,2})$/.exec(ref.trim());
   if (!m) return null;
   const c = m[1].toUpperCase().charCodeAt(0) - 65;
   const r = Number(m[2]) - 1;
-  if (c < 0 || c > 11 || r < 0 || r > 11) return null;
+  if (c < 0 || c > 17 || r < 0 || r > 17) return null;
   return { c, r };
 }
 

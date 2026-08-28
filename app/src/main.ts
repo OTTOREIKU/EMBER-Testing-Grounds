@@ -1,5 +1,5 @@
 import './styles.css';
-import { Board, CELLS, footprint, snapPlacement, type BoardDeployment, type BoardZone, type DeployShape } from './board';
+import { Board, footprint, snapPlacement, type BoardDeployment, type BoardZone, type DeployShape } from './board';
 import { AttackHelper, ElectronicHelper } from './combat';
 import { alertDialog, choiceDialog, confirmDialog, promptDialog } from './dialog';
 import { gameResult, isLowValue, newTaskState, normaliseTasks, taskItemsFor, zoneCentreGrid, type GameResult, type TaskItem, type TaskState } from './tasks';
@@ -21,17 +21,24 @@ import {
   loadCustomMap,
   loadCustomMaps,
   makePiece,
+  OBJECTIVE_KINDS,
   PALETTE,
   pieceCells,
+  resolveLayer,
   saveCustomMap,
+  tableDeployFor,
+  tableZonesFor,
   type CustomMap,
   type CustomZone,
+  type MapObjective,
+  type ObjectiveKind,
   type PaletteItem,
+  type TaskLayer,
 } from './mapeditor';
 import { Panel } from './panel';
 import { tacticSpec, tacticTargets } from './tactics';
 import { Roster } from './roster';
-import { inContact, canStandIn, attackDirection, crushExchange, crushExchangeSpots, crushTargets, type CrushVictims, dissipationFor, extendPath, inArc, knockbackPath, largeGridOf, type LargeGrid, LG, losBetween, losNote as losNoteFor, type MoveOpts, pathCost, protectionFor as protectionForShared, rangeBetween, reachableGrids, smokeBlocks, spotsInGrid, standingSpot } from './rules';
+import { inContact, canStandIn, attackDirection, crushExchange, crushExchangeSpots, crushTargets, type CrushVictims, dissipationFor, extendPath, inArc, knockbackPath, largeGridOf, type LargeGrid, boardGrids, setBoardGrids, losBetween, losNote as losNoteFor, type MoveOpts, pathCost, protectionFor as protectionForShared, rangeBetween, reachableGrids, smokeBlocks, spotsInGrid, standingSpot } from './rules';
 import { breakAwayCost, breakAwayNote, canBeForceMoved, lockersOf, tetherCap, tetherNote } from './melee';
 import { instantiateScenario, loadScenarios, type Scenario } from './scenarios';
 import { loadReplays, ReplayPlayer, type ReplayScript, type ReplayStep, type ReplayTally } from './replay';
@@ -45,15 +52,15 @@ import { clearHistory, historyList, recordSnapshot, undoLast } from './history';
 import { labelFor, namesFrom } from './ledger';
 import { offerHarpyDrag as sharedHarpyDrag } from './commandpick';
 import { PlayGuide } from './playguide';
-import type { Card, CardAction, DiceData, DieColor, Facing, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, StatusDef, TerrainPiece, Timing, Token } from './types';
-import { addStatus, normaliseScript, SCALES, statusCount, statusesFor, STATUSES } from './types';
+import type { BoardGrids, Card, CardAction, DiceData, DieColor, Facing, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, StatusDef, TerrainPiece, Timing, Token } from './types';
+import { addStatus, cellsOf, DEFAULT_GRIDS, gridsOf, normaliseScript, SCALES, statusCount, statusesFor, STATUSES, zonesOf } from './types';
 import { actionIdOf } from './ticks';
 import { transformOffer, automaticShieldFor, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, twoHandedUse, electronicValue, martyrdomOwed, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, loanedParts, phasesThroughUnits, minesLayable, minesOwed, multiTargetLimit, unfoldsOwed, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, immobilizedStop, activatesCamo, isScanAction, scannable, formSwitch, grantAdjusted, shockAttackOf, shockMoveAllowed, stealthValue, manifestationRange, manifestTargets, nonHumanoidCost, nonHumanoidStop, maneuverIsSilent, maneuverSilenceDenier, chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, projectileReach, type Resupply, resupplyOf, SLOT_LABEL, stationaryAdjusted, interceptLeft, interceptsOwed, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf, type AttackReaction } from './units';
 import { registerOffline } from './offline';
 import { battlefieldLocked, countHits, firstPlayerFrom, newSetup, normaliseSetup, tasksLocked, type SetupState } from './setup';
 import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
 import { dialsOf, hashDials, newSalt } from './secrecy';
-import { resolveZoneSetData } from './overlays';
+import { printedDeployment, resolveZoneSetData } from './overlays';
 
 const SAVE_KEY = 'ember-testing-grounds-v1';
 
@@ -90,10 +97,32 @@ async function init() {
     vertical: boolean;
     working: TerrainPiece[];
     baseline: string;
-    paint: null | { kind: 'zone'; zoneId: string } | { kind: 'deploy'; side: 'black' | 'white' };
+    paint:
+      | null
+      | { kind: 'zone'; zoneId: string }
+      | { kind: 'deploy'; side: 'black' | 'white' }
+      // Arming an objective: the next click DROPS one rather than painting a
+      // Grid, so it carries the zone NAME it will belong to.
+      | { kind: 'objective'; objective: ObjectiveKind; zone: string };
     drag: null | { from: { col: number; row: number }; to: { col: number; row: number }; erase: boolean };
     zones: CustomZone[];
     deploy: { black: { col: number; row: number }[]; white: { col: number; row: number }[] };
+    // ---- task layers (E2) ----
+    //
+    // `zones`/`deploy`/`objectives` above are always the ACTIVE working set,
+    // so every painting path below stayed exactly as it was. Switching tasks
+    // STASHES the working set back into whichever layer it came from and loads
+    // the next one. That is why the layer store never holds the layer being
+    // edited: it would be a second, stale copy of the same thing.
+    task: string | null;
+    objectives: MapObjective[];
+    baseZones: CustomZone[];
+    baseDeploy: { black: { col: number; row: number }[]; white: { col: number; row: number }[] };
+    baseObjectives: MapObjective[];
+    // Which fields the OPEN layer defines, as opposed to fall-through copies
+    // of the base loadLayer cloned in. Read by stashedLayer().
+    layerOwned: { zones: boolean; deploy: boolean; objectives: boolean };
+    layers: Record<string, TaskLayer>;
   } = {
     active: false,
     item: null,
@@ -105,7 +134,19 @@ async function init() {
     drag: null,
     zones: [],
     deploy: { black: [], white: [] },
+    task: null,
+    objectives: [],
+    baseZones: [],
+    baseDeploy: { black: [], white: [] },
+    baseObjectives: [],
+    layerOwned: { zones: false, deploy: false, objectives: false },
+    layers: {},
   };
+
+  // A one-off editor message (an objective dropped outside its zone, and
+  // similar). Cleared by the next successful action rather than on a timer, so
+  // it stays readable while the author works out what happened.
+  let editorNote: string | null = null;
 
   installTooltip();
   bindTips(document);
@@ -650,7 +691,7 @@ async function init() {
         });
         return;
       }
-      const snapped = snapPlacement(col, row, t.size);
+      const snapped = snapPlacement(col, row, t.size, gridsOf(state));
       if (snapped && isFree(snapped.col, snapped.row, t.size, t.aerial, t.uid)) {
         if (t.size === 3) {
           const crushed = destructibleAt(snapped.col, snapped.row, t.size);
@@ -740,6 +781,21 @@ async function init() {
         return;
       }
       if (!editor.active) return;
+      // A right-click lifts an authored objective wherever one is, whatever is
+      // armed -- otherwise removing one would mean first arming the same kind.
+      if ((erase || editor.erase) && removeObjectiveAt(col, row)) return;
+      if (editor.paint?.kind === 'objective') {
+        // It must land inside the zone it belongs to, or the resolver would
+        // hand the engine a spot outside the area the Task card names.
+        if (zoneNameAt(col, row) !== editor.paint.zone) {
+          editorNote = `A ${OBJECTIVE_LABEL[editor.paint.objective]} has to sit inside ${editor.paint.zone}. Paint that zone first, then drop it there.`;
+          renderEditorBar();
+          return;
+        }
+        editorNote = null;
+        dropObjective(col, row);
+        return;
+      }
       if (editor.paint) {
         const at = { col: Math.floor(col / 3), row: Math.floor(row / 3) };
         editor.drag = { from: at, to: at, erase: erase || editor.erase };
@@ -763,6 +819,10 @@ async function init() {
         return;
       }
       if (!editor.active) return;
+      if (editor.paint?.kind === 'objective') {
+        board.showGhost([{ col, row }], zoneNameAt(col, row) === editor.paint.zone);
+        return;
+      }
       if (editor.paint) {
         if (editor.drag) {
           editor.drag.to = { col: Math.floor(col / 3), row: Math.floor(row / 3) };
@@ -809,7 +869,8 @@ async function init() {
       if (t.aerial) continue;
       for (const c of footprint(t)) occupied.add(`${c.col},${c.row}`);
     }
-    return cells.every((c) => c.col >= 0 && c.row >= 0 && c.col < CELLS && c.row < CELLS && !occupied.has(`${c.col},${c.row}`));
+    const cells_ = cellsOf(state);
+    return cells.every((c) => c.col >= 0 && c.row >= 0 && c.col < cells_ && c.row < cells_ && !occupied.has(`${c.col},${c.row}`));
   }
 
   // Both now live in rules.ts so the Match Centre reads the board the same way.
@@ -1441,8 +1502,8 @@ async function init() {
     const terrain = currentTerrain();
     const out: { c: number; r: number; ok: boolean }[] = [];
     const from = { c: Math.floor(t.col / 3), r: Math.floor(t.row / 3) };
-    for (let c = 0; c < LG; c++) {
-      for (let r = 0; r < LG; r++) {
+    for (let c = 0; c < boardGrids(); c++) {
+      for (let r = 0; r < boardGrids(); r++) {
         if (Math.abs(c - from.c) + Math.abs(r - from.r) > range) continue;
         if (sight) {
           const probe = { ...t, col: c * 3 + 1, row: r * 3 + 1, size: 1 as const };
@@ -2071,7 +2132,7 @@ async function init() {
     for (const g of path) {
       const spot =
         standingSpot(g.c, g.r, t.size, m.flying || t.aerial, terrain, state.tokens, t.uid, from) ??
-        snapPlacement(g.c * 3 + 1, g.r * 3 + 1, t.size);
+        snapPlacement(g.c * 3 + 1, g.r * 3 + 1, t.size, gridsOf(state));
       if (!spot) continue;
       stops.push(spot);
       from = spot;
@@ -2429,7 +2490,7 @@ async function init() {
     for (const [dc, dr] of [[0, 0], [0, -1], [1, 0], [0, 1], [-1, 0], [1, -1], [1, 1], [-1, 1], [-1, -1]] as const) {
       const c = g.c + dc;
       const r = g.r + dr;
-      if (c < 0 || r < 0 || c >= LG || r >= LG) continue;
+      if (c < 0 || r < 0 || c >= boardGrids() || r >= boardGrids()) continue;
       // Ground level only (FAQ P9): a Box cannot land on a building. Units do
       // not block it — a Box may overlap one (P8) — so terrain is the test.
       if (!canStandIn(c, r, 1, false, currentTerrain(), [], undefined)) continue;
@@ -2471,7 +2532,7 @@ async function init() {
       });
       return done(false);
     }
-    const zoneName = (id: string) => data.zoneData.zones.find((z) => z.id === id)?.name ?? id;
+    const zoneName = (id: string) => zonesOf(data.zoneData.zones, state).find((z) => z.id === id)?.name ?? id;
     let pick = open[0];
     if (open.length > 1) {
       const id = await choiceDialog({
@@ -2769,7 +2830,7 @@ async function init() {
       const vAt = largeGridOf(v);
       const spots = ([[0, -1], [1, 0], [0, 1], [-1, 0]] as const)
         .map(([dc, dr]) => ({ c: vAt.c + dc, r: vAt.r + dr }))
-        .filter((g) => g.c >= 0 && g.r >= 0 && g.c < LG && g.r < LG)
+        .filter((g) => g.c >= 0 && g.r >= 0 && g.c < boardGrids() && g.r < boardGrids())
         .filter((g) => !(g.c === goal.c && g.r === goal.r))
         .filter((g) => standingSpot(g.c, g.r, v.size, v.aerial, currentTerrain(), state.tokens, v.uid) !== null);
       if (!spots.length) {
@@ -2940,8 +3001,8 @@ async function init() {
     const m = smokePlacing!;
     const out: { c: number; r: number; ok: boolean }[] = [];
     const mine = (state.smoke ?? []).filter((s) => s.side === m.side);
-    for (let c = 0; c < LG; c++) {
-      for (let r = 0; r < LG; r++) {
+    for (let c = 0; c < boardGrids(); c++) {
+      for (let r = 0; r < boardGrids(); r++) {
         if (m.range && Math.abs(c - m.range.c) + Math.abs(r - m.range.r) > m.range.max) continue;
         // The same player may not stack two screens in one Grid; the enemy may.
         if (mine.some((s) => s.col === c && s.row === r)) continue;
@@ -3605,7 +3666,7 @@ async function init() {
   }
 
   function isFree(col: number, row: number, size: number, aerial: boolean, ignoreUid?: number): boolean {
-    if (col < 0 || row < 0 || col + size > CELLS || row + size > CELLS) return false;
+    if (col < 0 || row < 0 || col + size > cellsOf(state) || row + size > cellsOf(state)) return false;
     if (aerial) return true;
     const cells = new Set(footprint({ col, row, size }).map((c) => `${c.col},${c.row}`));
     for (const p of currentTerrain()) {
@@ -3629,11 +3690,12 @@ async function init() {
   }
 
   function findFreeSpot(size: 1 | 2 | 3, side: Side, aerial: boolean): { col: number; row: number } | null {
-    const rows = [...Array(CELLS - size + 1).keys()];
+    const cells = cellsOf(state);
+    const rows = [...Array(cells - size + 1).keys()];
     if (side === 's2') rows.reverse();
     for (const row of rows) {
-      for (let col = 0; col <= CELLS - size; col++) {
-        const s = snapPlacement(col, row, size);
+      for (let col = 0; col <= cells - size; col++) {
+        const s = snapPlacement(col, row, size, gridsOf(state));
         if (s && s.row === row && s.col === col && isFree(col, row, size, aerial)) return { col, row };
       }
     }
@@ -3660,10 +3722,52 @@ async function init() {
     };
   }
 
+  // THE ONE MAP RESOLVER. A map id is either `custom:Name` (this browser's
+  // storage) or a shipped id, and a shipped id is either an authored map from
+  // board_maps.json or a terrain-only layout. Everything that needs a map's
+  // zones, size, objectives or terrain comes through here, so the four places
+  // that used to test `custom:` themselves cannot drift apart.
+  function mapDoc(id: string): CustomMap | null {
+    if (!id) return null;
+    if (id.startsWith('custom:')) return loadCustomMap(id.slice(7));
+    return data.boardMaps?.find((m) => m.id === id) ?? null;
+  }
+
+  // What board size a map is drawn at. Authored maps (shipped or local) carry
+  // it; a terrain-only layout is the printed 12.
+  function mapGrids(id: string): BoardGrids {
+    return gridsOf(mapDoc(id));
+  }
+
+  // The zones this table plays with: an authored map's own, resolved for the
+  // chosen Main Task, else the shipped nine. Sent with configureTable so the
+  // command layer and any second seat hold the identical set -- they cannot
+  // read this browser's custom-map storage themselves.
+  function tableZones(mapId: string, missionId: string | null): ReturnType<typeof tableZonesFor> {
+    return tableZonesFor(mapDoc(mapId), missionId);
+  }
+
+  // The author's explicit Task Item spots for the same pair.
+  function tableObjectives(mapId: string, missionId: string | null): MapObjective[] {
+    return resolveLayer(mapDoc(mapId), missionId).objectives;
+  }
+
+  // What taskItemsFor should be handed for a given Main Task on the current map.
+  // `mapId` defaults to the table's map, but save/import pass the map that was
+  // JUST written: resolving against state.map there would read the old one at
+  // exactly the moment the two differ.
+  function tasksForMission(mission: { id: string; family: string; zones?: string[] } | undefined | null, mapId: string = state.map) {
+    if (!mission) return null;
+    const zones = tableZones(mapId, mission.id);
+    return taskItemsFor(zones ?? data.zoneData.zones, mission, tableObjectives(mapId, mission.id));
+  }
+
   function currentTerrain(): TerrainPiece[] {
     if (editor.active) return editor.working;
     if (!state.map) return [];
-    const base = state.map.startsWith('custom:') ? loadCustomMap(state.map.slice(7)).pieces : data.terrain.layouts[state.map] ?? [];
+    // An authored map brings its own terrain; a terrain-only layout is looked
+    // up by id as before.
+    const base = mapDoc(state.map)?.pieces ?? data.terrain.layouts[state.map] ?? [];
     const removed = state.removedTerrain;
     return removed?.length ? base.filter((p) => !removed.includes(p.id)) : base;
   }
@@ -3701,16 +3805,126 @@ async function init() {
     return dragGrids(d).flatMap((g) => largeGridCells(g.col * 3, g.row * 3));
   }
 
+  // ---------- one zone, one area ----------
+  //
+  // A Tactical Zone is a PLACE on the battlefield: Bravo is somewhere, not
+  // several somewheres. Nothing stopped a second, unattached Bravo being
+  // painted across the table, and a mission that scores "the squad controlling
+  // Bravo" has no answer when Bravo is two islands.
+  //
+  // DIAGONALS COUNT AS TOUCHING, and that is not a preference - it is what the
+  // printed board does. Alpha is B2+C3, Charlie is C10+B11, Golf K2+J3, India
+  // J10+K11: four of the nine printed zones are diagonal pairs. An
+  // orthogonal-only rule calls the real game board broken, which is exactly
+  // what it did - it refused every edit on the shipped maps and left those four
+  // zones unrepairable.
+  const cellKey = (c: { col: number; row: number }) => `${c.col},${c.row}`;
+
+  const TOUCHING = [
+    [0, -1], [1, 0], [0, 1], [-1, 0],
+    [1, 1], [1, -1], [-1, 1], [-1, -1],
+  ] as const;
+
+  // How many separate pieces these Grids fall into. A COUNT rather than a
+  // yes/no, because the rule below is "do not make it worse": data that already
+  // holds a broken zone must still be editable, or the only way to fix it would
+  // be to delete it.
+  function areaCount(cells: { col: number; row: number }[]): number {
+    const all = new Set(cells.map(cellKey));
+    const seen = new Set<string>();
+    let n = 0;
+    for (const start of cells) {
+      if (seen.has(cellKey(start))) continue;
+      n += 1;
+      const queue = [start];
+      seen.add(cellKey(start));
+      while (queue.length) {
+        const c = queue.pop()!;
+        for (const [dc, dr] of TOUCHING) {
+          const k = cellKey({ col: c.col + dc, row: c.row + dr });
+          if (all.has(k) && !seen.has(k)) {
+            seen.add(k);
+            queue.push({ col: c.col + dc, row: c.row + dr });
+          }
+        }
+      }
+    }
+    return n;
+  }
+
+  // What every zone would hold after this gesture. The block is a solid
+  // rectangle and so connected in itself, which is why touching the existing
+  // area anywhere is enough to keep the union one area.
+  function zonesAfter(block: { col: number; row: number }[], erase: boolean, zoneId: string) {
+    const gone = new Set(block.map(cellKey));
+    return editor.zones.map((z) => {
+      if (z.id === zoneId) {
+        const kept = z.cells.filter((c) => !gone.has(cellKey(c)));
+        return { zone: z, cells: erase ? kept : [...kept, ...block] };
+      }
+      // Painting over another zone's Grid takes it from them, which can cut
+      // THEIR area in two just as surely.
+      return { zone: z, cells: erase ? z.cells : z.cells.filter((c) => !gone.has(cellKey(c))) };
+    });
+  }
+
+  // THE RULE, in one place. A gesture is refused when it would leave any zone
+  // in MORE pieces than it found it - "do not make it worse" rather than "must
+  // be perfect", because four of the printed zones are diagonal pairs and a map
+  // may already hold a split one, which must stay repairable.
+  //
+  // An EMPTY zone is exempt: its first Grid takes it from 0 pieces to 1, and a
+  // bare count comparison would call that a break and refuse every first
+  // placement. The rule only means anything once there is something to keep
+  // whole.
+  function zonesBrokenBy(
+    block: { col: number; row: number }[],
+    erase: boolean,
+    zoneId: string,
+  ): { zone: CustomZone; cells: { col: number; row: number }[] }[] {
+    return zonesAfter(block, erase, zoneId)
+      .filter((a) => a.zone.cells.length && areaCount(a.cells) > areaCount(a.zone.cells));
+  }
+
   function commitDrag(): void {
     const d = editor.drag;
     const p = editor.paint;
     editor.drag = null;
     board.clearGhost();
     if (!d || !p) return;
+    // An armed objective is DROPPED by a click, never dragged across Grids:
+    // dropObjective already ran on the press, so there is nothing to paint.
+    if (p.kind === 'objective') return;
     const grids = dragGrids(d);
     const held = p.kind === 'deploy' ? editor.deploy[p.side] : (editor.zones.find((z) => z.id === p.zoneId)?.cells ?? []);
     const single = grids.length === 1;
     const untoggle = single && !d.erase && held.some((c) => c.col === grids[0].col && c.row === grids[0].row);
+    // REFUSED AS ONE GESTURE, before anything is written or an Undo pushed: a
+    // drag is one thing the player did, so half of it landing would be worse
+    // than none of it.
+    if (p.kind === 'zone') {
+      const erasing = d.erase || untoggle;
+      // JUDGED AGAINST WHAT WAS THERE, zone by zone. Judging the result on its
+      // own condemned zones this gesture never touched - and since four of the
+      // printed zones are diagonal pairs, that was every gesture on every
+      // shipped map. A zone only has to come out no more broken than it went
+      // in, so a map that already holds a split zone stays editable and can be
+      // mended by painting the Grid between its halves.
+      const worse = zonesBrokenBy(grids, erasing, p.zoneId)[0];
+      if (worse) {
+        const mine = worse.zone.id === p.zoneId;
+        editorNote = mine
+          ? (erasing
+            ? `Erasing there would split ${worse.zone.name}. Erase from an edge.`
+            : `Painting must touch existing zone. Remove zone fully to move.`)
+          : `That would split ${worse.zone.name}.`;
+        renderEditorBar();
+        return;
+      }
+    }
+    // A refusal that stayed on screen after the next good paint would read as
+    // a rule still being broken.
+    editorNote = null;
     // One snapshot for the whole gesture: a drag across twelve Grids is one
     // thing the player did, so one Undo should put all twelve back.
     pushUndo();
@@ -3735,7 +3949,7 @@ async function init() {
         if (clash >= 0) editor.deploy[other].splice(clash, 1);
         list.push(cell);
       }
-    } else {
+    } else if (p.kind === 'zone') {
       const zone = editor.zones.find((z) => z.id === p.zoneId);
       if (!zone) return;
       const at = zone.cells.findIndex(same);
@@ -3775,6 +3989,51 @@ async function init() {
     return `${out}</span>`;
   }
 
+  // The Zones list. With a Task selected the mission's OWN zone names lead, each
+  // showing whether it has been bound to a painted area yet; anything the author
+  // added beyond them follows. In Base it is simply the map's zones.
+  function zoneRows(): string {
+    const wanted = taskZoneNames(editor.task);
+    const armed = (z: CustomZone) => editor.paint?.kind === 'zone' && editor.paint.zoneId === z.id;
+    const row = (z: CustomZone, need: boolean) =>
+      `<button class="ed-row ed-zone${armed(z) ? ' active' : ''}${need && !z.cells.length ? ' ed-unbound' : ''}" data-zone="${z.id}" data-tip-title="Paint ${escapeHtml(z.name)}" data-tip-sub="Large grids, 3x3 cells each" data-tip="Drag to fill a block of grids.|Right-click a painted grid to remove it.|A single click on a painted grid removes it too.">${escapeHtml(z.name)}<small>${z.cells.length ? `${z.cells.length} grid${z.cells.length === 1 ? '' : 's'}` : 'not painted'}</small></button>`;
+    const byName = (n: string) => editor.zones.find((z) => z.name.toLowerCase() === n.toLowerCase());
+    const out: string[] = [];
+    for (const name of wanted) {
+      const z = byName(name);
+      // A name the Task wants but the map has no zone for at all: offered as a
+      // one-press create, so binding a variable is never a two-step detour
+      // through the + Zone dialog with the spelling retyped by hand.
+      out.push(z
+        ? row(z, true)
+        : `<button class="ed-row ed-zone ed-unbound" data-makezone="${escapeHtml(name)}" title="Create ${escapeHtml(name)} on this map and start painting it">${escapeHtml(name)}<small>add</small></button>`);
+    }
+    for (const z of editor.zones) {
+      if (wanted.some((n) => n.toLowerCase() === z.name.toLowerCase())) continue;
+      out.push(row(z, false));
+    }
+    return out.join('');
+  }
+
+  // The objective palette. Only shown with a Task selected, because an
+  // objective belongs to a Task: a Black Box with no Task to place it for has
+  // nothing to resolve against.
+  function objectiveBlock(): string {
+    if (!editor.task) return '';
+    const kind = objectiveForTask(editor.task);
+    if (!kind) return '<p class="ed-glabel">Objectives</p><p class="ed-tasknote">This Task places nothing on the board.</p>';
+    const names = taskZoneNames(editor.task);
+    const rows = names.map((name) => {
+      const placed = editor.objectives.find((o) => o.kind === kind && o.zone === name);
+      const on = editor.paint?.kind === 'objective' && editor.paint.zone === name;
+      const where = placed ? gridRef(Math.floor(placed.col / 3), Math.floor(placed.row / 3)) : 'auto';
+      return `<button class="ed-row ed-obj${on ? ' active' : ''}${placed ? '' : ' ed-unbound'}" data-obj="${escapeHtml(name)}" title="Drop the ${OBJECTIVE_LABEL[kind]} for ${escapeHtml(name)} exactly where you click inside that zone">${escapeHtml(name)}<small>${escapeHtml(where)}</small></button>`;
+    }).join('');
+    return `<p class="ed-glabel">${escapeHtml(OBJECTIVE_LABEL[kind])}s</p>
+      <p class="ed-tasknote">Unplaced ones fall back to the centre of the zone's first Grid, which is what the game does today.</p>
+      ${rows}`;
+  }
+
   function renderEditorBar(): void {
     if (!editor.active) {
       editorBar.hidden = true;
@@ -3797,7 +4056,8 @@ async function init() {
         </div>
       </div>
       <div class="ed-body">
-        <p class="ed-glabel">Terrain</p>
+        ${editorNote ? `<p class="ed-warn">${escapeHtml(editorNote)}</p>` : ''}
+        <p class="ed-glabel">Terrain${editor.task ? ' <small>(Base)</small>' : ''}</p>
         <div class="ed-grid">
           ${PALETTE.map((p) => `<button class="ed-piece${editor.item?.id === p.id ? ' active' : ''}" data-piece="${p.id}" title="${p.label}">
             ${piecePreview(p)}
@@ -3810,17 +4070,28 @@ async function init() {
           <button id="ed-erase" class="ed-tool${editor.erase ? ' active' : ''}" title="Erase tool. Right-click erases too.">⌫ Erase</button>
         </div>
 
+        <p class="ed-glabel">Board size</p>
+        <select id="ed-grids" class="ed-select" title="How many Large Grids across. The map carries this, so a table loading it gets the right board.">
+          ${([12, 16, 18] as const).map((n) => `<option value="${n}"${gridsOf(state) === n ? ' selected' : ''}>${n} × ${n}${n === 12 ? ' (printed)' : n === 16 ? ' (large mat)' : ' (custom)'}</option>`).join('')}
+        </select>
+        ${gridsOf(state) !== DEFAULT_GRIDS && editor.working.length ? '<p class="ed-tasknote">Terrain outside the new edge is dropped when the board shrinks.</p>' : ''}
+
+        <p class="ed-glabel">Main Task</p>
+        <select id="ed-task" class="ed-select" title="Author this map for one Main Task. Base is the map everything falls back to.">
+          <option value=""${editor.task === null ? ' selected' : ''}>Base map</option>
+          ${editorTasks().map((m) => `<option value="${escapeHtml(m.id)}"${editor.task === m.id ? ' selected' : ''}>${escapeHtml(m.name)}${editor.layers[m.id] ? ' \u2713' : ''}</option>`).join('')}
+        </select>
+        ${editor.task ? `<p class="ed-tasknote">${escapeHtml(taskZoneNames(editor.task).length
+            ? `This Task names ${taskZoneNames(editor.task).join(', ')}.`
+            : 'This Task names no tactical zones.')}</p>` : '<p class="ed-tasknote">Terrain and deployment belong to the Base and are shared by every Task.</p>'}
+
         <p class="ed-glabel">Zones</p>
-        ${editor.zones
-          .map(
-            (z) =>
-              `<button class="ed-row ed-zone${editor.paint?.kind === 'zone' && editor.paint.zoneId === z.id ? ' active' : ''}" data-zone="${z.id}" data-tip-title="Paint ${z.name}" data-tip-sub="Large grids, 3x3 cells each" data-tip="Drag to fill a block of grids.|Right-click a painted grid to remove it.|A single click on a painted grid removes it too.">${escapeHtml(z.name)}<small>${z.cells.length} grid${z.cells.length === 1 ? '' : 's'}</small></button>`,
-          )
-          .join('')}
+        ${zoneRows()}
         <div class="ed-tools">
           <button id="ed-addzone" class="ed-tool" title="Create a named objective zone">+ Zone</button>
-          ${editor.paint?.kind === 'zone' ? '<button id="ed-zone-rename" class="ed-tool" title="Rename or delete the selected zone">Rename…</button>' : ''}
+          ${editor.paint?.kind === 'zone' ? '<button id="ed-zone-rename" class="ed-tool" title="Rename or delete the selected zone">Rename\u2026</button>' : ''}
         </div>
+        ${objectiveBlock()}
 
         <p class="ed-glabel">Deployment</p>
         <button id="ed-dz-black" class="ed-row ed-dz-black${editor.paint?.kind === 'deploy' && editor.paint.side === 'black' ? ' active' : ''}" title="Paint the Black deployment zone. Drag to fill a block.">Black<small>${editor.deploy.black.length} grid${editor.deploy.black.length === 1 ? '' : 's'}</small></button>
@@ -3830,6 +4101,10 @@ async function init() {
       </div>
       <div class="ed-foot">
         <button id="ed-save" class="ed-primary">Save map…</button>
+        <div class="ed-footrow">
+          <button id="ed-export" title="Download this map as one file: base, every Task layer and the board size">Export</button>
+          <button id="ed-import" title="Load a map file someone exported">Import</button>
+        </div>
         <div class="ed-footrow">
           <button id="ed-exit">${dirty ? 'Discard' : 'Close'}</button>
           <button id="ed-clear"${empty ? ' disabled' : ''}>Clear all</button>
@@ -3849,13 +4124,52 @@ async function init() {
         renderEditorBar();
       }),
     );
+    editorBar.querySelector<HTMLSelectElement>('#ed-grids')?.addEventListener('change', (ev) => {
+      const want = Number((ev.target as HTMLSelectElement).value) as BoardGrids;
+      void setEditorGrids(want);
+    });
+    editorBar.querySelector<HTMLSelectElement>('#ed-task')?.addEventListener('change', (ev) => {
+      const v = (ev.target as HTMLSelectElement).value;
+      editorNote = null;
+      selectEditorTask(v || null);
+    });
     editorBar.querySelectorAll<HTMLButtonElement>('.ed-zone').forEach((b) =>
       b.addEventListener('click', () => {
+        // A Task's own zone name with no zone behind it yet: create it and arm
+        // it in one press, spelled exactly as the mission card spells it, so a
+        // typo can never break the name match the resolver depends on.
+        const make = b.dataset.makezone;
+        if (make) {
+          pushUndo();
+          const id = `z${Date.now().toString(36)}${Math.floor(Math.random() * 1e4).toString(36)}`;
+          editor.zones.push({ id, name: make, cells: [] });
+          editor.paint = { kind: 'zone', zoneId: id };
+          editor.item = null;
+          editor.erase = false;
+          editorNote = null;
+          afterEdit();
+          return;
+        }
         const id = b.dataset.zone!;
         const on = editor.paint?.kind === 'zone' && editor.paint.zoneId === id;
         editor.paint = on ? null : { kind: 'zone', zoneId: id };
         editor.item = null;
         editor.erase = false;
+        editorNote = null;
+        board.clearGhost();
+        renderEditorBar();
+      }),
+    );
+    editorBar.querySelectorAll<HTMLButtonElement>('.ed-obj').forEach((b) =>
+      b.addEventListener('click', () => {
+        const zone = b.dataset.obj!;
+        const kind = objectiveForTask(editor.task);
+        if (!kind) return;
+        const on = editor.paint?.kind === 'objective' && editor.paint.zone === zone;
+        editor.paint = on ? null : { kind: 'objective', objective: kind, zone };
+        editor.item = null;
+        editor.erase = false;
+        editorNote = null;
         board.clearGhost();
         renderEditorBar();
       }),
@@ -3870,6 +4184,19 @@ async function init() {
         renderEditorBar();
       });
     }
+    editorBar.querySelector('#ed-export')!.addEventListener('click', () => exportMapFile());
+    editorBar.querySelector('#ed-import')!.addEventListener('click', () => {
+      // A file input made on demand: kept out of the template so the editor bar
+      // can be rebuilt on every edit without orphaning a live picker.
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'application/json,.json';
+      input.addEventListener('change', () => {
+        const f = input.files?.[0];
+        if (f) void importMapFile(f);
+      });
+      input.click();
+    });
     editorBar.querySelector('#ed-addzone')!.addEventListener('click', () => {
       void (async () => {
         const name = await promptDialog({
@@ -3939,6 +4266,14 @@ async function init() {
         editor.working = [];
         editor.zones = [];
         editor.deploy = { black: [], white: [] };
+        editor.objectives = [];
+        // "Clear all" means the MAP, not the layer that happens to be open:
+        // leaving the base or the other Tasks behind made an emptied map come
+        // back full the moment the Task selector moved.
+        editor.baseZones = [];
+        editor.baseDeploy = { black: [], white: [] };
+        editor.baseObjectives = [];
+        editor.layers = {};
         editor.paint = null;
         afterEdit();
       }
@@ -3955,6 +4290,13 @@ async function init() {
       if (!ok) return;
       deleteCustomMap(name);
       state.map = '';
+      // The derived board goes with the map that defined it: a deleted 18x18
+      // map must not leave an 18-Grid table with its authored zones standing
+      // on an empty board. Same family as the migrateState whitelist - a field
+      // added later that a reset path never learned about.
+      delete state.grids;
+      delete state.zones;
+      delete state.deployZones;
       if (state.zoneSet === `custom:${name}`) state.zoneSet = '';
       exitEditor();
     });
@@ -3967,7 +4309,12 @@ async function init() {
       const what =
         p.kind === 'deploy'
           ? `the ${p.side === 'black' ? 'Black' : 'White'} deployment zone`
-          : (editor.zones.find((z) => z.id === p.zoneId)?.name ?? 'a zone');
+          : p.kind === 'objective'
+            ? `a ${OBJECTIVE_LABEL[p.objective]} in ${p.zone}`
+            : (editor.zones.find((z) => z.id === p.zoneId)?.name ?? 'a zone');
+      if (p.kind === 'objective') {
+        return `Click inside ${p.zone} to drop the ${OBJECTIVE_LABEL[p.objective]}. Right-click one to remove it.`;
+      }
       return `Painting ${what}. Click a large grid or drag across several; right-click removes.`;
     }
     if (editor.erase) return 'Erase: click a piece to remove it.';
@@ -3976,8 +4323,391 @@ async function init() {
     return `Placing ${editor.item.label.split(' (')[0]}. Click the board; right-click erases${rot}.`;
   }
 
+  // What each Task Item is called on the cards. Drives the palette, the status
+  // line and the board tooltip, so all three always agree.
+  const OBJECTIVE_LABEL: Record<ObjectiveKind, string> = {
+    blackbox: 'Black Box',
+    terminal: 'Terminal',
+    control: 'Control marker',
+  };
+
+  // Which objective a Task needs, from the mission's FAMILY -- the same mapping
+  // taskItemsFor uses to decide what a Main Task puts on the board, so the
+  // editor offers exactly the piece the engine will later place.
+  function objectiveForTask(id: string | null): ObjectiveKind | null {
+    if (!id) return null;
+    const fam = (data.missions.cards ?? []).find((m) => m.id === id)?.family;
+    return fam === 'blackbox' ? 'blackbox' : fam === 'terminal' ? 'terminal' : fam === 'control' ? 'control' : null;
+  }
+
+  // Drop an armed objective at a SUBCELL. The spot is kept exactly where it was
+  // clicked rather than snapped to a Grid centre: the whole point of an explicit
+  // placement is that the author can say precisely where the Box sits, and the
+  // derived centre is what it already falls back to when nothing is placed.
+  //
+  // One objective per (kind, zone): a Task places one item per named zone, so a
+  // second drop MOVES the existing one instead of quietly making a duplicate
+  // that the resolver would have to pick between.
+  function dropObjective(col: number, row: number): void {
+    const p = editor.paint;
+    if (p?.kind !== 'objective') return;
+    pushUndo();
+    const at = editor.objectives.findIndex((o) => o.kind === p.objective && o.zone === p.zone);
+    const spot: MapObjective = { kind: p.objective, zone: p.zone, col, row };
+    if (at >= 0) editor.objectives[at] = spot;
+    else editor.objectives.push(spot);
+    afterEdit();
+  }
+
+  function removeObjectiveAt(col: number, row: number): boolean {
+    // The click lands on a subcell; an objective is claimed by the Grid it sits
+    // in, so a right-click anywhere in its Grid removes it. Hunting the exact
+    // subcell would make an authored spot nearly impossible to delete.
+    const g = { c: Math.floor(col / 3), r: Math.floor(row / 3) };
+    const at = editor.objectives.findIndex((o) => Math.floor(o.col / 3) === g.c && Math.floor(o.row / 3) === g.r);
+    if (at < 0) return false;
+    pushUndo();
+    editor.objectives.splice(at, 1);
+    afterEdit();
+    return true;
+  }
+
+  // ---------- task layers (E2) ----------
+  //
+  // The Main Tasks a map can be authored for. Read from the mission data, so a
+  // new Task card appears here with no editor change.
+  function editorTasks(): { id: string; name: string; zones: string[] }[] {
+    return (data.missions.cards ?? []).map((m) => ({
+      id: m.id,
+      name: m.name,
+      zones: (m.zones ?? []).slice(),
+    }));
+  }
+
+  function editorTaskName(id: string | null): string {
+    if (!id) return 'Base map';
+    return editorTasks().find((m) => m.id === id)?.name ?? id;
+  }
+
+  // The zone NAMES this task needs bound, straight off the mission card. These
+  // are OTTO's "variables": the card says Bravo/Charlie/Delta and the author
+  // paints an area for each.
+  function taskZoneNames(id: string | null): string[] {
+    if (!id) return [];
+    return editorTasks().find((m) => m.id === id)?.zones ?? [];
+  }
+
+  // Push the active working set back into whatever layer it belongs to. Called
+  // before every task switch and before saving, so the store is never stale.
+  function stashLayer(): void {
+    if (editor.task === null) {
+      editor.baseZones = editor.zones;
+      editor.baseDeploy = editor.deploy;
+      editor.baseObjectives = editor.objectives;
+      return;
+    }
+    const kept = stashedLayer();
+    // An all-fall-through visit stashes NOTHING, so the layer keeps following
+    // the base - and a layer that never existed does not spring into being.
+    if (Object.keys(kept).length) editor.layers[editor.task] = kept;
+    else delete editor.layers[editor.task];
+  }
+
+  // Load a task's layer into the working set. An UNCONFIGURED task starts from
+  // a COPY of the base rather than empty: OTTO's stated intent is that a task
+  // layout sits close to the base with the objective spots added, and starting
+  // empty would make every task a from-scratch repaint. The copy is deep, so
+  // editing the layer never reaches back into the base.
+  function loadLayer(id: string | null): void {
+    if (id === null) {
+      editor.zones = editor.baseZones;
+      editor.deploy = editor.baseDeploy;
+      editor.objectives = editor.baseObjectives;
+      editor.task = null;
+      return;
+    }
+    const held = editor.layers[id];
+    const clone = <T,>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
+    editor.zones = held?.zones ? clone(held.zones) : clone(editor.baseZones);
+    editor.deploy = held?.deploy ? clone(held.deploy) : clone(editor.baseDeploy);
+    editor.objectives = held?.objectives ? clone(held.objectives) : clone(editor.baseObjectives);
+    // Which fields the layer DEFINES, as opposed to fall-through copies of the
+    // base just cloned in. stashedLayer() reads this to write back only what
+    // is really the layer's own - see the note there.
+    editor.layerOwned = { zones: !!held?.zones, deploy: !!held?.deploy, objectives: !!held?.objectives };
+    editor.task = id;
+  }
+
+  // The MINIMAL layer the open Task amounts to right now.
+  //
+  // loadLayer fills any field the layer does not define with a COPY of the
+  // base, so the working set alone cannot say which fields are the layer's own.
+  // Writing all three back - which stashLayer used to do - materialised those
+  // copies: merely VISITING a Task froze the base's zones into it, the dirty
+  // check tripped on a map nobody had edited, and a save after the visit cut
+  // that Task off from every later base edit. E6 fixed the READ side of this
+  // with editorDoc's virtual overlay; this is the same fix on the WRITE side.
+  //
+  // A field is kept when the layer defined it, or when it no longer matches
+  // the base it was cloned from - the user edited it, which is what makes it
+  // task-specific. Comparing against the base is sound here because the base
+  // cannot change while a Task is open: its fields are only editable when the
+  // Base itself is the working set.
+  function stashedLayer(): TaskLayer {
+    const eq = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+    const out: TaskLayer = {};
+    if (editor.layerOwned.zones || !eq(editor.zones, editor.baseZones)) out.zones = editor.zones;
+    if (editor.layerOwned.objectives || !eq(editor.objectives, editor.baseObjectives)) out.objectives = editor.objectives;
+    if (editor.layerOwned.deploy || !eq(editor.deploy, editor.baseDeploy)) out.deploy = editor.deploy;
+    return out;
+  }
+
+  // Resize the board being authored.
+  //
+  // The size lives on the TABLE (state.grids) rather than in the editor's own
+  // state, because everything that draws or judges the board reads it from
+  // there -- board.setGrids, setBoardGrids and every bounds check. editorDoc
+  // then writes it into the saved map, so the map carries the size it was drawn
+  // at. Sent as a command like every other table change, so a second seat gets
+  // the same battlefield and the locks apply.
+  async function setEditorGrids(want: BoardGrids): Promise<void> {
+    const now = gridsOf(state);
+    if (want === now) return;
+    // SHRINKING DISCARDS. Terrain, zone cells, deployment and objectives can all
+    // sit outside the smaller board, and anything left out there is unreachable
+    // and unpaintable -- so it is cut, and the author is told how much first.
+    const cells = want * 3;
+    const outside = editor.working.filter((p) => p.subCells.some((c) => c.col >= cells || c.row >= cells));
+    const zoneCut = editor.zones.reduce((n, z) => n + z.cells.filter((c) => c.col >= want || c.row >= want).length, 0)
+      + editor.baseZones.reduce((n, z) => n + z.cells.filter((c) => c.col >= want || c.row >= want).length, 0);
+    const depCut = [...editor.deploy.black, ...editor.deploy.white].filter((c) => c.col >= want || c.row >= want).length;
+    if (outside.length || zoneCut || depCut) {
+      const bits = [
+        outside.length ? `${outside.length} terrain piece${outside.length === 1 ? '' : 's'}` : '',
+        zoneCut ? `${zoneCut} zone grid${zoneCut === 1 ? '' : 's'}` : '',
+        depCut ? `${depCut} deployment grid${depCut === 1 ? '' : 's'}` : '',
+      ].filter(Boolean);
+      const sure = await confirmDialog({
+        title: `Shrink to ${want} × ${want}?`,
+        body: `${bits.join(', ')} sit outside the smaller board and will be removed.`,
+        confirmLabel: 'Shrink it',
+        danger: true,
+      });
+      if (!sure) {
+        renderEditorBar();
+        return;
+      }
+    }
+    pushUndo();
+    // RECENTRE, so a map does not sit in a corner of the board it just grew
+    // into. The shift is half the change in size, which is a whole number of
+    // Grids for every pair of sizes we ship, and it happens BEFORE the trim so
+    // a shrink drops what falls outside the recentred position rather than the
+    // old one.
+    const shift = Math.floor((want - now) / 2);
+    if (shift) {
+      const moveGrid = (c: { col: number; row: number }) => ({ col: c.col + shift, row: c.row + shift });
+      const moveCell = (c: { col: number; row: number }) => ({ col: c.col + shift * 3, row: c.row + shift * 3 });
+      const moveZones = (zs: CustomZone[]) => zs.map((z) => ({ ...z, cells: z.cells.map(moveGrid) }));
+      const moveDep = (d: CustomMap['deploy']) => ({ black: d.black.map(moveGrid), white: d.white.map(moveGrid) });
+      const moveObjs = (os: MapObjective[]) => os.map((o) => ({ ...o, ...moveCell(o) }));
+      // A piece IS its subCells - there is no separate origin to move.
+      editor.working = editor.working.map((p) => ({ ...p, subCells: p.subCells.map(moveCell) }));
+      editor.zones = moveZones(editor.zones);
+      editor.baseZones = moveZones(editor.baseZones);
+      editor.deploy = moveDep(editor.deploy);
+      editor.baseDeploy = moveDep(editor.baseDeploy);
+      editor.objectives = moveObjs(editor.objectives);
+      editor.baseObjectives = moveObjs(editor.baseObjectives);
+      for (const [id, layer] of Object.entries(editor.layers)) {
+        editor.layers[id] = {
+          ...(layer.zones ? { zones: moveZones(layer.zones) } : {}),
+          ...(layer.objectives ? { objectives: moveObjs(layer.objectives) } : {}),
+          ...(layer.deploy ? { deploy: moveDep(layer.deploy) } : {}),
+        };
+      }
+    }
+    const inside = (c: { col: number; row: number }) => c.col < want && c.row < want;
+    editor.working = editor.working.filter((p) => p.subCells.every((c) => c.col < cells && c.row < cells));
+    // Every layer, not just the open one: a Grid left outside on a Task nobody
+    // has open would come back the moment that Task was selected.
+    const trimZones = (zs: CustomZone[]) => zs.map((z) => ({ ...z, cells: z.cells.filter(inside) }));
+    const trimDep = (d: CustomMap['deploy']) => ({ black: d.black.filter(inside), white: d.white.filter(inside) });
+    const trimObjs = (os: MapObjective[]) => os.filter((o) => o.col < cells && o.row < cells);
+    editor.zones = trimZones(editor.zones);
+    editor.baseZones = trimZones(editor.baseZones);
+    editor.deploy = trimDep(editor.deploy);
+    editor.baseDeploy = trimDep(editor.baseDeploy);
+    editor.objectives = trimObjs(editor.objectives);
+    editor.baseObjectives = trimObjs(editor.baseObjectives);
+    for (const [id, layer] of Object.entries(editor.layers)) {
+      editor.layers[id] = {
+        ...(layer.zones ? { zones: trimZones(layer.zones) } : {}),
+        ...(layer.objectives ? { objectives: trimObjs(layer.objectives) } : {}),
+        ...(layer.deploy ? { deploy: trimDep(layer.deploy) } : {}),
+      };
+    }
+    const done = perform(data, state, { kind: 'configureTable', seat: 's1', grids: want });
+    if (!done.ok) {
+      editorNote = done.why ?? 'The board size cannot change right now.';
+      renderEditorBar();
+      return;
+    }
+    // The renderer and the geometry gates both read the new size from state.
+    board.setGrids(gridsOf(state));
+    setBoardGrids(gridsOf(state));
+    board.refit();
+    editor.paint = null;
+    afterEdit();
+  }
+
+  function selectEditorTask(id: string | null): void {
+    if (editor.task === id) return;
+    stashLayer();
+    loadLayer(id);
+    editor.paint = null;
+    editor.item = null;
+    editor.erase = false;
+    board.clearGhost();
+    afterEdit();
+  }
+
+  // The whole document, base plus every layer, as it would be saved. Also the
+  // dirty-check snapshot, so a change inside ANY layer counts as unsaved -- an
+  // earlier version compared only the active set and quietly lost task work.
+  // The document as it would be saved. `stash` is deliberate rather than
+  // automatic: editorSnapshot() calls this on every render for the dirty check,
+  // and stashing there would WRITE the working set into the open Task's layer
+  // just for looking at it -- turning "I opened Fragment Recovery to see it"
+  // into "Fragment Recovery now has its own frozen copy of the base".
+  function editorDoc(stash = true): CustomMap {
+    if (stash) stashLayer();
+    // A read-only call still has to SEE the live working set. Two ways the
+    // stored fields go stale under it: with a Task open, the store holds only
+    // the last STASH of that layer; and after an editor undo, undoEdit rebinds
+    // editor.zones to a fresh array, so the base fields stop aliasing the
+    // working ones. Either way the dirty check would compare against old work
+    // and let unsaved edits be discarded without a prompt. So the ACTIVE set is
+    // overlaid virtually — read, never written back — and a stashing call and
+    // a read-only call produce the identical document.
+    const base = editor.task === null
+      ? { zones: editor.zones, deploy: editor.deploy, objectives: editor.objectives }
+      : { zones: editor.baseZones, deploy: editor.baseDeploy, objectives: editor.baseObjectives };
+    const live: Record<string, TaskLayer> = { ...editor.layers };
+    if (editor.task !== null) {
+      // The same minimal form stashLayer writes, or the overlay itself would
+      // materialise the fall-through copies it exists to avoid.
+      const kept = stashedLayer();
+      if (Object.keys(kept).length) live[editor.task] = kept;
+      else delete live[editor.task];
+    }
+    const doc: CustomMap = {
+      ...(gridsOf(state) === DEFAULT_GRIDS ? {} : { grids: gridsOf(state) }),
+      pieces: editor.working,
+      zones: base.zones,
+      deploy: base.deploy,
+    };
+    if (base.objectives.length) doc.objectives = base.objectives;
+    const layers: Record<string, TaskLayer> = {};
+    for (const [id, layer] of Object.entries(live)) {
+      const empty = !(layer.zones?.length || layer.objectives?.length
+        || layer.deploy?.black.length || layer.deploy?.white.length);
+      if (!empty) layers[id] = layer;
+    }
+    if (Object.keys(layers).length) doc.tasks = layers;
+    return doc;
+  }
+
   function editorSnapshot(): string {
-    return JSON.stringify({ pieces: editor.working, zones: editor.zones, deploy: editor.deploy });
+    // Read-only: never stash. See editorDoc.
+    return JSON.stringify(editorDoc(false));
+  }
+
+  // ---------- export / import (E4) ----------
+  //
+  // The WHOLE document travels: base, every Task layer, the board size. One
+  // file hands a finished map to another player or into the repo, and dropping
+  // it into data/board_maps.json (with an id and a name) is the entire
+  // multiplayer wiring -- shipped maps live in `data`, so both seats resolve
+  // the identical board without either reading the other's storage.
+  function exportMapFile(): void {
+    const name = state.map.startsWith('custom:') ? state.map.slice(7) : 'map';
+    // Shaped ready to paste into board_maps.json rather than as a bare
+    // CustomMap: the id and name are what a shipped entry needs, and asking a
+    // human to add them by hand is where a broken entry would come from.
+    const doc = { id: slugOf(name), name: { en: name }, ...editorDoc() };
+    const blob = new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${slugOf(name)}.json`;
+    a.click();
+    // Revoked on the next tick rather than immediately: Safari has not started
+    // the download yet when click() returns.
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  function slugOf(s: string): string {
+    return s.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'map';
+  }
+
+  // Accepts either a bare editor document or a shipped-map entry (which is the
+  // same thing with an id and a name in front), so an exported file can be
+  // re-imported without being edited back down.
+  async function importMapFile(file: File): Promise<void> {
+    let raw: unknown;
+    try {
+      raw = JSON.parse(await file.text());
+    } catch {
+      await alertDialog({ title: 'That file is not a map', body: 'It could not be read as JSON.' });
+      return;
+    }
+    const doc = raw as { id?: string; name?: { en?: string }; pieces?: unknown };
+    if (!doc || typeof doc !== 'object' || !Array.isArray(doc.pieces)) {
+      await alertDialog({ title: 'That file is not a map', body: 'A map file has a `pieces` list. Export one from this editor to see the shape.' });
+      return;
+    }
+    const suggested = doc.name?.en || doc.id || file.name.replace(/\.json$/i, '');
+    const name = await promptDialog({
+      title: 'Import this map',
+      body: 'It is saved as one of your maps in this browser. An existing map with the same name is replaced.',
+      value: suggested,
+      placeholder: 'Map name',
+      confirmLabel: 'Import map',
+    });
+    if (!name?.trim()) return;
+    // saveCustomMap normalises, so a hand-edited or foreign file cannot put a
+    // malformed layer into storage -- unknown fields are dropped rather than
+    // trusted.
+    saveCustomMap(name.trim(), raw as CustomMap);
+    populateMapSelect();
+    const imported = `custom:${name.trim()}`;
+    const v = perform(data, state, {
+      kind: 'configureTable', seat: 's1', map: imported, grids: mapGrids(imported),
+      // Resolved from the map that just arrived. `zones: null` alone left the
+      // PREVIOUS map's Deployment Zones on the table, which on a size change is
+      // a zone drawn off the new board.
+      zones: tableZones(imported, state.mission ?? null),
+      deployZones: tableDeployFor(mapDoc(imported), state.mission ?? null),
+      ...(state.mission
+        ? { tasks: tasksForMission(data.missions.cards.find((m) => m.id === state.mission), imported) }
+        : {}),
+    });
+    if (!v.ok) {
+      await alertDialog({ title: 'Imported, but not loaded', body: v.why ?? 'The battlefield is locked for this game.' });
+      return;
+    }
+    mapSelect.value = state.map;
+    if (editor.active) enterEditor();
+    save();
+    renderAll();
+  }
+
+  // Which zone a subcell falls inside, by NAME, or null. Used to refuse an
+  // objective dropped outside the zone it is supposed to belong to.
+  function zoneNameAt(col: number, row: number): string | null {
+    const g = { col: Math.floor(col / 3), row: Math.floor(row / 3) };
+    return editor.zones.find((z) => z.cells.some((c) => c.col === g.col && c.row === g.row))?.name ?? null;
   }
 
   function editorDirty(): boolean {
@@ -3987,6 +4717,20 @@ async function init() {
   function afterEdit(): void {
     board.renderTerrain(editor.working, true);
     board.renderZones(overlayZones(), overlayDeployment(), claimedZones());
+    // Authored objectives are drawn with the SAME renderer play uses, so what
+    // the author positions is literally what the table will show.
+    board.renderTaskItems(
+      editor.objectives.map((o) => ({
+        id: `${o.kind}-${o.zone}`,
+        kind: o.kind,
+        zone: o.zone,
+        control: null,
+        accessed: null,
+        col: o.col,
+        row: o.row,
+      })),
+      () => null,
+    );
     renderEditorBar();
   }
 
@@ -4000,6 +4744,11 @@ async function init() {
     working: TerrainPiece[];
     zones: CustomZone[];
     deploy: CustomMap['deploy'];
+    // Which LAYER the snapshot belongs to, and its objectives. Undo must put
+    // the edit back where it was made: without the task, undoing after a task
+    // switch would paste one Task's zones over another's.
+    objectives: MapObjective[];
+    task: string | null;
   }
   const editorHistory: EditorSnapshot[] = [];
   const UNDO_LIMIT = 80;
@@ -4009,6 +4758,8 @@ async function init() {
       working: JSON.parse(JSON.stringify(editor.working)) as TerrainPiece[],
       zones: JSON.parse(JSON.stringify(editor.zones)) as CustomZone[],
       deploy: JSON.parse(JSON.stringify(editor.deploy)) as CustomMap['deploy'],
+      objectives: JSON.parse(JSON.stringify(editor.objectives)) as MapObjective[],
+      task: editor.task,
     });
     if (editorHistory.length > UNDO_LIMIT) editorHistory.shift();
   }
@@ -4016,9 +4767,16 @@ async function init() {
   function undoEdit(): void {
     const snap = editorHistory.pop();
     if (!snap) return;
+    // Back to the layer the edit was made in first, or the restore below would
+    // write one Task's work into whichever layer happens to be open.
+    if (snap.task !== editor.task) {
+      stashLayer();
+      loadLayer(snap.task);
+    }
     editor.working = snap.working;
     editor.zones = snap.zones;
     editor.deploy = snap.deploy;
+    editor.objectives = snap.objectives;
     // Undoing the creation of a zone leaves the paint tool armed at a zone that
     // no longer exists, and every later click would then land nowhere.
     const paint = editor.paint;
@@ -4046,8 +4804,34 @@ async function init() {
       confirmLabel: 'Save map',
     });
     if (!name) return false;
-    saveCustomMap(name, { pieces: editor.working, zones: editor.zones, deploy: editor.deploy });
-    state.map = `custom:${name}`;
+    saveCustomMap(name, editorDoc());
+    // Re-resolve the TABLE against what was just saved, rather than mutating
+    // state.map by hand: the size, the Tactical Zones and the Deployment Zones
+    // are all derived from the map document, and editing a map you are playing
+    // on must move the board with it. Sent as a command so a second seat gets
+    // the identical battlefield.
+    const mapId = `custom:${name}`;
+    const missionCard = state.mission ? data.missions.cards.find((m) => m.id === state.mission) : undefined;
+    const saved = perform(data, state, {
+      kind: 'configureTable', seat: 's1', map: mapId, grids: mapGrids(mapId),
+      zones: tableZones(mapId, state.mission ?? null),
+      deployZones: tableDeployFor(mapDoc(mapId), state.mission ?? null),
+      // The Task Items re-resolve with the zones, or a Box would keep standing
+      // on a zone id the new document no longer has. Included only while a Main
+      // Task is chosen; check() still refuses the whole change once the tasks
+      // stage has locked, which is the same moment the map itself locks.
+      ...(missionCard ? { tasks: tasksForMission(missionCard, mapId) } : {}),
+    });
+    if (!saved.ok) {
+      // A locked battlefield refuses the map change. The FILE is saved either
+      // way; what must NOT happen is state.map being written around the lock,
+      // which would swap the terrain under standing units mid-game. (A save
+      // over the SAME name still reaches the board live, because the terrain is
+      // read from the map document on every render.)
+      setHint(`Map saved. ${saved.why ?? 'The battlefield is locked,'} so the table keeps its current map until a new game.`);
+      exitEditor();
+      return true;
+    }
     adoptMapZones();
     if (editor.zones.some((z) => z.cells.length) || editor.deploy.black.length || editor.deploy.white.length) {
       state.zoneSet = `custom:${name}`;
@@ -4083,10 +4867,17 @@ async function init() {
   }
 
   function enterEditor(): void {
+    editor.layerOwned = { zones: false, deploy: false, objectives: false };
     const existing = currentCustomMap();
     editor.working = JSON.parse(JSON.stringify(currentTerrain())) as TerrainPiece[];
-    editor.zones = JSON.parse(JSON.stringify(existing?.zones ?? [])) as CustomZone[];
-    editor.deploy = JSON.parse(JSON.stringify(existing?.deploy ?? emptyCustomMap().deploy)) as CustomMap['deploy'];
+    // The BASE is loaded into the base fields, then made active through
+    // loadLayer(null) -- rather than assigned twice -- so there is exactly one
+    // path that decides what "the working set" currently is.
+    editor.baseZones = JSON.parse(JSON.stringify(existing?.zones ?? [])) as CustomZone[];
+    editor.baseDeploy = JSON.parse(JSON.stringify(existing?.deploy ?? emptyCustomMap().deploy)) as CustomMap['deploy'];
+    editor.baseObjectives = JSON.parse(JSON.stringify(existing?.objectives ?? [])) as MapObjective[];
+    editor.layers = JSON.parse(JSON.stringify(existing?.tasks ?? {})) as Record<string, TaskLayer>;
+    loadLayer(null);
     editor.active = true;
     editor.item = null;
     editor.erase = false;
@@ -4546,6 +5337,14 @@ async function init() {
   }
 
   function onChanged(): void {
+    // Before anything measures the board: a no-op unless the size actually
+    // changed, so this is the one place that has to know and every map path
+    // redraws through here.
+    board.setGrids(gridsOf(state));
+    // The pure geometry helpers in rules.ts read a module-level extent;
+    // set it from the same state, in the same breath, so movement, crush and
+    // deployment stop at THIS board's edge and not the printed one's.
+    setBoardGrids(gridsOf(state));
     setSquadNames(state.sideNames);
     syncSquadTints();
     save();
@@ -4690,24 +5489,57 @@ async function init() {
     board.setBoardTheme(id);
   }
 
+  // The size sections the map list is divided into, in board order. The point
+  // values are the game sizes each board is FOR, which is what a player is
+  // actually choosing between when they pick a map.
+  const MAP_SIZE_GROUPS: { grids: BoardGrids; label: string }[] = [
+    { grids: 12, label: '12x12 (900pt)' },
+    { grids: 16, label: '16x16 (1200pt)' },
+    { grids: 18, label: '18x18' },
+  ];
+
   function populateMapSelect(): void {
     mapSelect.replaceChildren();
+    // Empty board stays loose at the top: it is not a map and belongs to no
+    // size until something is drawn on it.
     const empty = document.createElement('option');
     empty.value = '';
     empty.textContent = 'Empty board';
     mapSelect.appendChild(empty);
+
+    // Every map with the size it plays at, so the groups below are filled from
+    // one reading rather than three.
+    const entries: { value: string; label: string; grids: BoardGrids }[] = [];
     for (const m of data.terrain.maps) {
-      const o = document.createElement('option');
-      o.value = m.id;
-      o.textContent = m.name.en || m.id;
-      mapSelect.appendChild(o);
+      // A terrain-only layout carries no size of its own and is drawn on the
+      // printed board.
+      entries.push({ value: m.id, label: m.name.en || m.id, grids: DEFAULT_GRIDS });
+    }
+    // Shipped AUTHORED maps: the ones that carry zones and Task layers, and the
+    // only ones a networked table can play, since both seats hold them.
+    for (const m of data.boardMaps ?? []) {
+      entries.push({ value: m.id, label: m.name?.en || m.id, grids: gridsOf(m) });
     }
     for (const name of Object.keys(loadCustomMaps()).sort()) {
-      const o = document.createElement('option');
-      o.value = `custom:${name}`;
-      o.textContent = `★ ${name}`;
-      mapSelect.appendChild(o);
+      entries.push({ value: `custom:${name}`, label: `\u2605 ${name}`, grids: mapGrids(`custom:${name}`) });
     }
+
+    for (const g of MAP_SIZE_GROUPS) {
+      const mine = entries.filter((e) => e.grids === g.grids);
+      // An empty section is not drawn: a lone "18x18" header over nothing reads
+      // as a list that failed to load.
+      if (!mine.length) continue;
+      const grp = document.createElement('optgroup');
+      grp.label = g.label;
+      for (const e of mine) {
+        const o = document.createElement('option');
+        o.value = e.value;
+        o.textContent = e.label;
+        grp.appendChild(o);
+      }
+      mapSelect.appendChild(grp);
+    }
+
     mapSelect.value = state.map;
     if (mapSelect.value !== state.map) {
       state.map = '';
@@ -4716,7 +5548,19 @@ async function init() {
   }
   populateMapSelect();
   mapSelect.addEventListener('change', () => {
-    const v = perform(data, state, { kind: 'configureTable', seat: 's1', map: mapSelect.value });
+    // The size is a property of the MAP, resolved here because the command
+    // layer cannot read map storage, and sent so it travels to a second seat.
+    // The zones ride with the map: a Task already chosen has to be re-resolved
+    // against the new battlefield, or it would keep scoring the old one's areas.
+    const nextMission = state.mission ? data.missions.cards.find((m) => m.id === state.mission) : undefined;
+    const v = perform(data, state, {
+      kind: 'configureTable', seat: 's1', map: mapSelect.value, grids: mapGrids(mapSelect.value),
+      zones: nextMission ? tableZones(mapSelect.value, nextMission.id) : null,
+      deployZones: tableDeployFor(mapDoc(mapSelect.value), nextMission?.id ?? null),
+      ...(nextMission
+        ? { tasks: taskItemsFor(tableZones(mapSelect.value, nextMission.id) ?? data.zoneData.zones, nextMission, tableObjectives(mapSelect.value, nextMission.id)) }
+        : {}),
+    });
     if (!v.ok) {
       mapSelect.value = state.map;
       return;
@@ -4849,7 +5693,7 @@ async function init() {
   }
 
   function currentCustomMap(): CustomMap | null {
-    return state.map.startsWith('custom:') ? loadCustomMap(state.map.slice(7)) : null;
+    return mapDoc(state.map);
   }
 
   // printedZones and printedDeployment moved to overlays.ts, shared with the
@@ -4876,20 +5720,136 @@ async function init() {
       const id = zone[side];
       if (!id) continue;
       // Designations are stored by zone id; the board draws zones by name.
-      const name = data.zoneData.zones.find((z) => z.id === id)?.name ?? id;
+      const name = zonesOf(data.zoneData.zones, state).find((z) => z.id === id)?.name ?? id;
       (out[name] ??= []).push(side);
     }
     return out;
   }
 
+  // How far the PRINTED 12x12 geometry has to move to sit in the middle of the
+  // board actually in play.
+  //
+  // The shipped zones and the printed deployment shapes are authored as A1-L12,
+  // so on a 16 or 18 Grid board they hug one corner and leave the rest of the
+  // table empty - which is where OTTO found them. The real large mat puts the
+  // same play area in the CENTRE with a margin around it, so that is where they
+  // are drawn. (16-12)/2 and (18-12)/2 are both whole Grids, so nothing lands
+  // on a half-Grid.
+  function printedOffset(): number {
+    return Math.floor((gridsOf(state) - DEFAULT_GRIDS) / 2);
+  }
+
+  function centreZones(zones: BoardZone[], by: number): BoardZone[] {
+    if (!by) return zones;
+    return zones.map((z) => ({ ...z, cells: z.cells.map((c) => ({ col: c.col + by, row: c.row + by })) }));
+  }
+
+  function centreDeploy(dep: BoardDeployment | null, by: number): BoardDeployment | null {
+    if (!dep || !by) return dep;
+    const shift = (s: DeployShape | undefined): DeployShape | undefined => {
+      if (!s) return s;
+      return {
+        ...s,
+        ...(s.rect ? { rect: { ...s.rect, col: s.rect.col + by, row: s.rect.row + by } } : {}),
+        ...(s.cells ? { cells: s.cells.map((c) => ({ col: c.col + by, row: c.row + by })) } : {}),
+      };
+    };
+    return { ...dep, black: shift(dep.black), white: shift(dep.white) };
+  }
+
   function overlayZones(): BoardZone[] {
-    if (editor.active) return editor.zones.filter((z) => z.cells.length).map((z) => ({ name: z.name, cells: z.cells }));
-    return state.showZones === false ? [] : resolveZoneSet(state.zoneSet ?? '').zones;
+    if (editor.active) {
+      const painted = editor.zones.filter((z) => z.cells.length).map((z) => ({ name: z.name, cells: z.cells }));
+      // WHAT PLAY WOULD USE, for anything this map does not author.
+      //
+      // The editor used to draw ONLY what was painted, so opening it on any map
+      // without authored zones showed an empty board - for every Main Task -
+      // while the table on that same map plays the shipped nine. Switching Task
+      // then appeared to do nothing at all. The unpainted zones are drawn as
+      // ghosts instead: dimmed and dashed, clearly not yours, and replaced the
+      // moment you paint one of the same name.
+      // The SHIPPED zone data, not the chosen overlay: taskItemsFor matches a
+      // mission's printed zone names against these when the map authors none,
+      // so this is literally what the Task would play here. resolveZoneSet was
+      // the wrong source - it answers "which overlay is being displayed", which
+      // is empty until someone picks one.
+      //
+      // FILTERED TO THE OPEN TASK. A Main Task names a SUBSET ("This Task names
+      // Bravo, Echo, Hotel"), so ghosting all nine made every Task look
+      // identical - the ghost was there but never changed, which is worse than
+      // it being absent. On the Base, where no Task is open, all nine stand:
+      // any of them may be used by some Task.
+      const named = taskZoneNames(editor.task);
+      const wanted = named.length ? new Set(named.map((n) => n.toLowerCase())) : null;
+      const have = new Set(painted.map((z) => z.name));
+      const ghosts = data.zoneData.zones
+        .filter((z) => !have.has(z.name) && (!wanted || wanted.has(z.name.toLowerCase())))
+        .map((z) => ({
+          name: z.name,
+          cells: z.cells.map(parseGridRef).filter(Boolean) as { col: number; row: number }[],
+          ghost: true,
+        }))
+        .filter((z) => z.cells.length);
+      return [...centreZones(ghosts, printedOffset()), ...painted];
+    }
+    if (state.showZones === false) return [];
+    // WHAT IS DRAWN IS WHAT SCORES. Before E3 the overlay came from the zone
+    // SET (a map's base painting) while the Main Task scored the shipped nine,
+    // so an authored map could show one Bravo and score another. When the table
+    // has resolved zones, they are the only truth for both.
+    if (state.zones?.length) {
+      // An AUTHORED set is already drawn at the board's own size, so it is never
+      // shifted - only the printed 12x12 geometry below is.
+      return state.zones
+        .map((z) => ({ name: z.name, cells: z.cells.map(parseGridRef).filter(Boolean) as { col: number; row: number }[] }))
+        .filter((z) => z.cells.length);
+    }
+    // NOT centred, deliberately. Scoring reads the shipped refs unshifted
+    // through zonesOf(), and a drawn zone that scores somewhere else is the
+    // exact defect the note above this function describes. The editor's GHOST
+    // is centred because it scores nothing; this is the real overlay.
+    return resolveZoneSet(state.zoneSet ?? '').zones;
   }
 
   function overlayDeployment(): BoardDeployment | null {
-    if (editor.active) return paintedShapes({ pieces: [], zones: [], deploy: editor.deploy }).deploy;
-    return state.showZones === false ? null : resolveZoneSet(state.zoneSet ?? '').deploy;
+    if (editor.active) {
+      const own = paintedShapes({ pieces: [], zones: [], deploy: editor.deploy }).deploy;
+      const painted = !!(editor.deploy.black.length || editor.deploy.white.length);
+      if (painted) return own;
+      // Same reasoning as the zones above, and the same keying mistake to
+      // avoid: printedDeployment takes a SHAPE id ('corners' / 'strips'), not a
+      // mission id. missionDeployment is the map between them. Passing the
+      // mission id straight in matched nothing, so the ghost never appeared -
+      // and it read state.mission rather than the open Task, so it could not
+      // have changed with the selector either.
+      const shape = (editor.task && data.zoneData.missionDeployment[editor.task])
+        || (state.mission && data.zoneData.missionDeployment[state.mission])
+        || 'strips';
+      const fallback = centreDeploy(
+        printedDeployment(data, shape) ?? resolveZoneSet(state.zoneSet ?? '').deploy,
+        printedOffset(),
+      );
+      if (!fallback) return own;
+      return {
+        black: fallback.black ? { ...fallback.black, ghost: true } : fallback.black,
+        white: fallback.white ? { ...fallback.white, ghost: true } : fallback.white,
+      };
+    }
+    if (state.showZones === false) return null;
+    // The authored map's own Deployment Zones win. This function is also what
+    // startDeployPlacement gates on, so an authored deployment is what a unit
+    // may actually be placed into -- not just what is drawn. The printed
+    // shapes are A1-L12, which on a larger board would put the White zone in
+    // the middle of the table.
+    const dz = state.deployZones;
+    if (dz && (dz.black.length || dz.white.length)) {
+      const cells = (refs: string[]) => refs.map(parseGridRef).filter(Boolean) as { col: number; row: number }[];
+      return { black: { cells: cells(dz.black) }, white: { cells: cells(dz.white) } };
+    }
+    // Not centred, for the reason above and one more: this function is what
+    // startDeployPlacement gates on, so moving it would move where units may
+    // legally be placed.
+    return resolveZoneSet(state.zoneSet ?? '').deploy;
   }
 
   const BOARD_SETS = [
@@ -5038,7 +5998,13 @@ async function init() {
     const v = perform(data, state, {
       kind: 'configureTable', seat: 's1', zoneSet: id,
       mission: mission?.id ?? null,
-      tasks: mission ? taskItemsFor(data.zoneData.zones, mission) : null,
+      zones: mission ? tableZones(state.map, mission.id) : null,
+      // `?? null` and NOT `mission ? ... : null`: with no Main Task the map's
+      // BASE Deployment Zones are still the right answer. Throwing them away
+      // dropped a 16/18 Grid board back onto the printed A1-L12 shapes, which
+      // put the White zone in the middle of the table -- the exact E5 bug.
+      deployZones: tableDeployFor(mapDoc(state.map), mission?.id ?? null),
+      tasks: tasksForMission(mission),
     });
     zoneSetRefusal = v.ok ? '' : v.why ?? 'That change was refused.';
     if (!v.ok) return false;
@@ -5197,7 +6163,7 @@ async function init() {
       // would be designating somewhere the players cannot see.
       const mission = state.mission ? data.missions.cards.find((m) => m.id === state.mission) : undefined;
       const placed = new Set(mission?.zones ?? []);
-      const zones = data.zoneData.zones.filter((z) => placed.has(z.name) || placed.has(z.id));
+      const zones = zonesOf(data.zoneData.zones, state).filter((z) => placed.has(z.name) || placed.has(z.id));
       const id = await choiceDialog({
         title: `${card.name}: which Tactical Zone?`,
         body: card.setup,
@@ -5256,7 +6222,7 @@ async function init() {
   // Control dial where it reads as covering the whole Zone.
   // Shared with the Match Centre, so an Item cannot land in one place here and
   // another place there.
-  const zoneCentre = (zoneId: string) => zoneCentreGrid(data.zoneData.zones, zoneId);
+  const zoneCentre = (zoneId: string) => zoneCentreGrid(zonesOf(data.zoneData.zones, state), zoneId);
 
   // Task Setup (5.3): the Main Task names the Tactical Zones its Items go in, so
   // Moved to tasks.ts so the Match Centre derives the identical items; the
@@ -5416,6 +6382,12 @@ async function init() {
     state.smoke = [];
     state.sideNames = result.sideNames;
     state.map = result.mapKey;
+    // Scenarios are authored on the printed board: any larger size or authored
+    // zones left over from the previous map would put the demo on the wrong
+    // battlefield entirely.
+    delete state.grids;
+    delete state.zones;
+    delete state.deployZones;
     state.removedTerrain = [];
     state.scenario = scn.id;
     state.round = { n: 1, phase: 0, firstPlayer: 's1' };
@@ -5544,6 +6516,12 @@ async function init() {
         state.smoke = [];
         state.sideNames = result.sideNames;
         state.map = result.mapKey;
+        // Scenarios are authored on the printed board: any larger size or authored
+        // zones left over from the previous map would put the demo on the wrong
+        // battlefield entirely.
+        delete state.grids;
+        delete state.zones;
+        delete state.deployZones;
         state.removedTerrain = [];
         state.scenario = scn.id;
         state.round = { n: 1, phase: 0, firstPlayer: 's1' };
@@ -5595,6 +6573,12 @@ async function init() {
   function clearTerrain(): void {
     state.map = '';
     state.removedTerrain = [];
+    // The map owns the board size and authored a zone geometry with it; an
+    // emptied battlefield returns to the printed board rather than keeping an
+    // 18-Grid table with authored zones floating on nothing.
+    delete state.grids;
+    delete state.zones;
+    delete state.deployZones;
     populateMapSelect();
   }
 
@@ -5605,6 +6589,10 @@ async function init() {
     state.showZones = false;
     state.mission = undefined;
     state.tasks = null;
+    // The table's RESOLVED zones are the same choice: leaving them made the
+    // authored zones keep drawing and scoring after the player cleared zones.
+    delete state.zones;
+    delete state.deployZones;
   }
 
   // Multiplayer lives entirely behind this button. The tool has always worked
@@ -5662,10 +6650,23 @@ async function init() {
       const keep = seat && !state.script?.revealed.includes(seat)
         ? state.tokens.filter((t) => t.side === seat).map((t) => ({ uid: t.uid, timing: t.timing }))
         : [];
-      // migrateState rebuilds every field, so assigning over the live object
-      // keeps every closure and component pointing at the same state.
+      // The whole board is REPLACED, not merged. Object.assign could only ever
+      // add or overwrite, so a field the arriving board does not carry survived
+      // from whatever was here before -- and the board-level fields are absent
+      // by design on a printed table (grids, zones, deployZones all mean "the
+      // printed default" when missing). Merging therefore left a 16 or 18 Grid
+      // board's geometry sitting under a 12x12 one, gating movement and
+      // deployment against a board the other player is not looking at.
+      //
+      // Assigned INTO the existing object rather than rebound, because every
+      // page holds `state` in a module-level const and hands that same
+      // reference to the board, guide and trackers.
       try {
-        Object.assign(state, migrateState(raw, data));
+        const next = migrateState(raw, data);
+        if (!next) throw new Error('unreadable');
+        const live = state as unknown as Record<string, unknown>;
+        for (const k of Object.keys(live)) if (!(k in next)) delete live[k];
+        Object.assign(state, next);
       } catch {
         setHint('⛔ The board that arrived could not be read.');
         return;

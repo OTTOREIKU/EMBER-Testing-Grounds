@@ -27,7 +27,15 @@ const check = (name, got, want) => {
 
 console.log('Reference readability: folded definitions, English only\n');
 
-const ref = readFileSync(new URL('../src/reference.ts', import.meta.url), 'utf8');
+// THE REFERENCE PAGE IS TWO FILES. The card and keyword renderers moved into
+// refcards.ts when the pad started drawing cards too - one copy, imported by
+// both, because a second linkKeywords would let the glossary drift apart. The
+// assertions below are about what the reference RENDERS, so they read the pair
+// as one body of source rather than caring which file a line ended up in.
+const ref = [
+  readFileSync(new URL('../src/reference.ts', import.meta.url), 'utf8'),
+  readFileSync(new URL('../src/refcards.ts', import.meta.url), 'utf8'),
+].join('\n');
 const main = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
 const css = readFileSync(new URL('../src/reference.css', import.meta.url), 'utf8');
 const missions = JSON.parse(readFileSync(new URL('../../data/missions.json', import.meta.url), 'utf8'));

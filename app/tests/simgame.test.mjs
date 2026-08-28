@@ -212,6 +212,13 @@ if (!/export function asSide/.test(sliceSrc)) {
 if (!/export function newScriptState/.test(sliceSrc)) {
   sliceSrc += types.slice(types.indexOf('export function newOpportunity'), types.indexOf('export type BattleScale'));
 }
+// The board-size helpers, on the same only-if-missing footing as the two
+// above. commands.ts bounds every placement against them, so the simulated
+// games would refuse legal moves (or allow illegal ones) without the real
+// implementations.
+if (!/export function cellsOf/.test(sliceSrc)) {
+  sliceSrc += types.slice(types.indexOf('export type BoardGrids'), types.indexOf('export interface GameState'));
+}
 writeFileSync(tmp, sliceSrc);
 const C = await import(tmp.href);
 

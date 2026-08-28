@@ -1,23 +1,24 @@
 import { ammoHolder, clearDroneCommands, missionZones, readyCommands, seedCommandTokens, taskDesignations, type Command, type CheckResult } from './commands';
 import { askIssuer, asterBlockers, offerCoordination, offerHarpyDrag, runAster } from './commandpick';
 import type { GameData } from './data';
-import { actionIconUrl, cardName, isAerial, secondaryImageUrl, squadLabel, unitSize } from './data';
+import { actionIconUrl, cardName, isAerial, parseGridRef, secondaryImageUrl, squadLabel, unitSize } from './data';
 import { showInspect } from './inspector';
 import { Board, footprint, snapPlacement, type BoardCallbacks } from './board';
 import { printedDeployment, resolveZoneSetData } from './overlays';
 import { actionRange, transformOffer, anyStartTiming, opportunityBonusOn, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, ripostePart, martyrdomOwed, targetTracingOn, riderOnDrone, hasFlexibleTiming, immobilizedStop, activatesCamo, isScanAction, scanStrips, formSwitch, stealthValue, manifestationRange, manifestTargets, nonHumanoidStop, coordinationFor, coordinationOnOpportunityEnd, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, electronicOrigins, loanedParts, phasesThroughUnits, minesLayable, minesOwed, pilotCard, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, maneuverIsSilent, maneuverSilenceDenier, type AuraSource, canActivateCamo, chargeableSlots, electronicDash, electronicStrength, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, projectileReach, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
 import { ElectronicHelper, type EwAct } from './combat';
 import { tacticFitsPhase, tacticSpec, tacticTargets, type TacticCtx } from './tactics';
-import { inContact, canStandIn, attackDirection, crushExchange, crushExchangeSpots, crushTargets, dissipationFor, extendPath, knockbackPath, largeGridOf, LG, losBetween, losNote, smokeBlocks, pathCost, protectionFor, rangeBetween, reachableGrids, standingSpot, type LargeGrid } from './rules';
+import { inContact, canStandIn, attackDirection, crushExchange, crushExchangeSpots, crushTargets, dissipationFor, extendPath, knockbackPath, largeGridOf, boardGrids, setBoardGrids, losBetween, losNote, smokeBlocks, pathCost, protectionFor, rangeBetween, reachableGrids, standingSpot, type LargeGrid } from './rules';
 import { breakAwayCost, breakAwayNote, canBeForceMoved, tetherCap, tetherNote } from './melee';
 import { factionColour, linkIcon, squadColour } from './icons';
 import { iconSvg } from './dice';
-import type { PartSlot, CardAction, CounterRoll, DiceData, DieColor, Facing, GameState, RollbackPoint, Side, Stance, Timing, Token, ExtraTick, Opportunity } from './types';
-import { statusCount, newOpportunity, newScriptState, PHASES, STATUSES, TIMINGS } from './types';
+import type { PartSlot, CardAction, CounterRoll, DiceData, DieColor, Facing, GameState, RollbackPoint, Side, Stance, TerrainPiece, Timing, Token, ExtraTick, Opportunity } from './types';
+import { statusCount, gridsOf, newOpportunity, newScriptState, PHASES, STATUSES, TIMINGS, zonesOf } from './types';
 import { deployable, deployTurn, deploymentComplete, firstPlayerFrom, normaliseSetup, rollTotal, type SetupState } from './setup';
 import { actionPhaseComplete, activationOrder, alive, canAct, droneActionWhy, droneMoveWhy, eligibleUnits, isLoopPhase, loopComplete, nextActivation, nextTurn, onExtraOpportunity, type InitLookup, type LoopPhase } from './loop';
 import { actionIdOf, canActivate, canAttackMode, canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed, type TickVerdict } from './ticks';
-import { escortTargets, gameResult, normaliseTasks, wipedOut, scoreMain, scoreRiders, scoreSecondary, settleControl, unpaidLines, zoneCentreGrid, type Designation, type ScoreLine, type ScoreResult, type SecondaryScoring } from './tasks';
+import { gameResult, normaliseTasks, wipedOut, zoneCentreGrid, type Designation, type ScoreResult } from './tasks';
+import { previewScore } from './scoring';
 import { armorPiercing, armorPiercingNote, automaticShieldFor, canAffordFocus, focusIsFree, grantAdjusted, shockAttackOf, shockMoveAllowed, stationaryAdjusted, twoHandedUse, tokenCards, vpRiderFor } from './units';
 
 // The in-match HUD (Match Centre part 3a): one question at a time, per seat.
@@ -213,10 +214,22 @@ function opportunity(data: GameData, s: GameState): Opportunity | null {
   return fresh;
 }
 
+// The terrain on the table. A SHIPPED AUTHORED map (E4) brings its own pieces;
+// a terrain-only layout is looked up by id as before. One place, because three
+// call sites read this and a disagreement between them would draw one board and
+// shoot through another.
+function mapPieces(data: GameData, map: string): TerrainPiece[] {
+  // Optional-chained: test fixtures build partial GameData objects, and a
+  // missing boardMaps must read as "no authored maps", never throw.
+  return data.boardMaps?.find((m) => m.id === map)?.pieces ?? data.terrain.layouts[map] ?? [];
+}
+
 // ---------- zones & deployment geometry ----------
 
+// One of FIVE copies of the grid-ref parser; gridref.test.mjs pins them in
+// step. A-R / 1-18, the largest board we ship: see the note in data.ts.
 function zref(ref: string): { col: number; row: number } | null {
-  const m = /^([A-La-l])(\d{1,2})$/.exec(ref.trim());
+  const m = /^([A-Ra-r])(\d{1,2})$/.exec(ref.trim());
   if (!m) return null;
   return { col: m[1].toUpperCase().charCodeAt(0) - 65, row: Number(m[2]) - 1 };
 }
@@ -226,7 +239,7 @@ export function objectiveCells(data: GameData, s: GameState): { c: number; r: nu
   const tasks = normaliseTasks(s.tasks);
   const out: { c: number; r: number }[] = [];
   for (const item of tasks.items) {
-    const zone = data.zoneData.zones.find((z) => z.id === item.zone);
+    const zone = zonesOf(data.zoneData.zones, s).find((z) => z.id === item.zone);
     for (const cell of zone?.cells ?? []) {
       const p = zref(cell);
       if (p) for (let dc = 0; dc < 3; dc++) for (let dr = 0; dr < 3; dr++) out.push({ c: p.col * 3 + dc, r: p.row * 3 + dr });
@@ -241,6 +254,19 @@ export function deployCellsFor(data: GameData, s: GameState, side: Side): Set<st
   const su = normaliseSetup(s.setup);
   const out = new Set<string>();
   if (!su) return out;
+  // An authored map's own Deployment Zones win over the printed shape. They
+  // arrive already resolved in the state, so a guest needs no map storage --
+  // and without them a 16 or 18 Grid board would deploy into A1-L12, putting
+  // the White zone in the middle of the table.
+  const own = s.deployZones?.[su.edge[side]];
+  if (own?.length) {
+    for (const ref of own) {
+      const g = zref(ref);
+      if (!g) continue;
+      for (let dc = 0; dc < 3; dc++) for (let dr = 0; dr < 3; dr++) out.add(`${g.col * 3 + dc},${g.row * 3 + dr}`);
+    }
+    return out;
+  }
   const shapeId = (s.mission && data.zoneData.missionDeployment[s.mission]) || 'strips';
   const def = data.zoneData.deployments.find((d) => d.id === shapeId);
   const area = def?.[su.edge[side]];
@@ -440,7 +466,7 @@ let animatingUid: number | null = null;
 // maneuver trusts the move it is handed.
 function terrainOf(ctx: HudCtx) {
   const gone = new Set(ctx.state.removedTerrain ?? []);
-  return (ctx.data.terrain.layouts[ctx.state.map] ?? []).filter((p) => !gone.has(p.id));
+  return mapPieces(ctx.data, ctx.state.map).filter((p) => !gone.has(p.id));
 }
 
 // `steps` is how far this particular Movement reaches — a Maneuver uses the
@@ -669,7 +695,7 @@ function commitMove(ctx: HudCtx): void {
   for (const g of m.path) {
     const spot =
       standingSpot(g.c, g.r, t.size, m.flying || t.aerial, terrain, ctx.state.tokens, t.uid, from)
-      ?? snapPlacement(g.c * 3 + 1, g.r * 3 + 1, t.size as 1 | 2 | 3);
+      ?? snapPlacement(g.c * 3 + 1, g.r * 3 + 1, t.size as 1 | 2 | 3, gridsOf(ctx.state));
     if (!spot) continue;
     stops.push(spot);
     from = spot;
@@ -772,7 +798,7 @@ function rangeText(a: Token, b: Token): string {
 // The terrain as it stands now, with anything destroyed taken out of it.
 function terrainNow(ctx: HudCtx) {
   const gone = new Set(ctx.state.removedTerrain ?? []);
-  return (ctx.data.terrain.layouts[ctx.state.map] ?? []).filter((piece) => !gone.has(piece.id));
+  return mapPieces(ctx.data, ctx.state.map).filter((piece) => !gone.has(piece.id));
 }
 
 function boardCallbacks(): BoardCallbacks {
@@ -845,7 +871,7 @@ function boardCallbacks(): BoardCallbacks {
       if (ctx.networked && !ctx.seat) { ctx.refresh(); return; }
       const t = ctx.state.tokens.find((x) => x.uid === uid);
       if (!t) return;
-      const snap = snapPlacement(col, row, (t.size ?? 1) as 1 | 2 | 3) ?? { col, row };
+      const snap = snapPlacement(col, row, (t.size ?? 1) as 1 | 2 | 3, gridsOf(ctx.state)) ?? { col, row };
       // During deployment a drag nudges the unit inside its zone; in play it
       // is a Maneuver attempt the engine judges.
       const su = normaliseSetup(ctx.state.setup);
@@ -871,7 +897,7 @@ function boardCallbacks(): BoardCallbacks {
         const t = s.tokens.find((x) => x.uid === placing);
         if (!t) return;
         const size = (t.size ?? 1) as 1 | 2 | 3;
-        const snap = snapPlacement(col, row, size) ?? { col, row };
+        const snap = snapPlacement(col, row, size, gridsOf(ctx.state)) ?? { col, row };
         board.showGhost(footprint({ ...snap, size }), fitsZone(ctx, t.side, snap, size));
       } else if (movePlan) {
         previewMove(ctx, Math.floor(col / 3), Math.floor(row / 3));
@@ -895,7 +921,7 @@ function boardCallbacks(): BoardCallbacks {
       const t = s.tokens.find((x) => x.uid === placing);
       if (!t) return;
       const size = (t.size ?? 1) as 1 | 2 | 3;
-      const snap = snapPlacement(col, row, size) ?? { col, row };
+      const snap = snapPlacement(col, row, size, gridsOf(ctx.state)) ?? { col, row };
       // Strict placement: your whole footprint inside your own Deployment
       // Zone, aligned to the grid, or nothing lands (3.1.4). The seat is the
       // unit's side — a nudge stays legal after the alternation moves on.
@@ -996,11 +1022,34 @@ function renderBoard(ctx: HudCtx): void {
     else if (placing === null) board.clearGhost();
   }
   const gone = new Set(s.removedTerrain ?? []);
-  board.renderTerrain((ctx.data.terrain.layouts[s.map] ?? []).filter((p) => !gone.has(p.id)));
+  board.renderTerrain(mapPieces(ctx.data, s.map).filter((p) => !gone.has(p.id)));
   // The Zones toggle is a local preference — a clean board to look at, not a
   // rule change — so it only suppresses the overlay and never crosses the wire.
   const showZones = ctx.zonesOn;
-  const ov = showZones ? resolveZoneSetData(ctx.data, s.zoneSet ?? '') : { zones: [], deploy: null };
+  // WHAT IS DRAWN IS WHAT SCORES: when the table resolved its own zones from an
+  // authored map, those are the only truth. Otherwise the printed zone set.
+  // Zones and Deployment Zones are INDEPENDENT decisions, the same split the
+  // freeplay board makes: a map may author its deployment and no tactical
+  // zones, or the reverse. Coupling them (authored deploy only shown when
+  // zones are authored too) drew the printed shape over a board whose
+  // placement gate was using the authored cells -- drawn and gated
+  // disagreeing, which is the bug class this whole file just got swept for.
+  const printedOv = showZones ? resolveZoneSetData(ctx.data, s.zoneSet ?? '') : { zones: [], deploy: null };
+  const ov = !showZones
+    ? { zones: [], deploy: null }
+    : {
+        zones: s.zones?.length
+          ? s.zones
+              .map((z) => ({ name: z.name, cells: z.cells.map(parseGridRef).filter(Boolean) as { col: number; row: number }[] }))
+              .filter((z) => z.cells.length)
+          : printedOv.zones,
+        deploy: s.deployZones && (s.deployZones.black.length || s.deployZones.white.length)
+          ? {
+              black: { cells: s.deployZones.black.map(parseGridRef).filter(Boolean) as { col: number; row: number }[] },
+              white: { cells: s.deployZones.white.map(parseGridRef).filter(Boolean) as { col: number; row: number }[] },
+            }
+          : printedOv.deploy,
+      };
   // While setup runs, the printed Deployment Zones are always on the table,
   // whatever the zone overlay says (3.1.4).
   const su = normaliseSetup(s.setup);
@@ -1017,11 +1066,16 @@ function renderBoard(ctx: HudCtx): void {
   for (const side of ['s1', 's2'] as Side[]) {
     const id = tasks.zone[side];
     if (!id) continue;
-    const name = ctx.data.zoneData.zones.find((z) => z.id === id)?.name ?? id;
+    const name = zonesOf(ctx.data.zoneData.zones, ctx.state).find((z) => z.id === id)?.name ?? id;
     (claimed[name] ??= []).push(side);
   }
+  // The size arrives with the map through configureTable, so a guest joining a
+  // large table draws it correctly from the first frame. No-op when unchanged.
+  board.setGrids(gridsOf(s));
+  // Same as the freeplay board: rules.ts geometry is bounded by this.
+  setBoardGrids(gridsOf(s));
   board.renderZones(ov.zones, deploy, claimed);
-  board.renderTaskItems(tasks.items, (zone) => zoneCentreGrid(ctx.data.zoneData.zones, zone));
+  board.renderTaskItems(tasks.items, (zone) => zoneCentreGrid(zonesOf(ctx.data.zoneData.zones, ctx.state), zone));
   // Everything else on the board still redraws while a unit is walking; only
   // the token layer waits, because rebuilding it would cut the animation short.
   // A pivot inside an open Movement shows before it is confirmed, the same way
@@ -2065,8 +2119,8 @@ function landingCandidates(ctx: HudCtx): { c: number; r: number; ok: boolean }[]
   const terrain = terrainOf(ctx);
   const from = { c: Math.floor(t.col / 3), r: Math.floor(t.row / 3) };
   const out: { c: number; r: number; ok: boolean }[] = [];
-  for (let c = 0; c < LG; c++) {
-    for (let r = 0; r < LG; r++) {
+  for (let c = 0; c < boardGrids(); c++) {
+    for (let r = 0; r < boardGrids(); r++) {
       if (Math.abs(c - from.c) + Math.abs(r - from.r) > range) continue;
       if (sight) {
         const probe = { ...t, col: c * 3 + 1, row: r * 3 + 1, size: 1 as const };
@@ -2963,7 +3017,7 @@ function dropGrids(ctx: HudCtx, bearer: Token): LargeGrid[] {
   for (const [dc, dr] of [[0, 0], [0, -1], [1, 0], [0, 1], [-1, 0], [1, -1], [1, 1], [-1, 1], [-1, -1]] as const) {
     const c = g.c + dc;
     const r = g.r + dr;
-    if (c < 0 || r < 0 || c >= LG || r >= LG) continue;
+    if (c < 0 || r < 0 || c >= boardGrids() || r >= boardGrids()) continue;
     // A dropped Box sits at ground level and cannot go on top of a building
     // (FAQ P9). Units do not block it — a Box may overlap one (P8) — so the
     // test is against terrain alone.
@@ -3090,7 +3144,7 @@ function crushEscapes(ctx: HudCtx, v: Token, goal: LargeGrid): LargeGrid[] {
   const from = { c: Math.floor(v.col / 3), r: Math.floor(v.row / 3) };
   return ([[0, -1], [1, 0], [0, 1], [-1, 0]] as const)
     .map(([dc, dr]) => ({ c: from.c + dc, r: from.r + dr }))
-    .filter((g) => g.c >= 0 && g.r >= 0 && g.c < LG && g.r < LG)
+    .filter((g) => g.c >= 0 && g.r >= 0 && g.c < boardGrids() && g.r < boardGrids())
     .filter((g) => !(g.c === goal.c && g.r === goal.r))
     .filter((g) => standingSpot(g.c, g.r, v.size, v.aerial, terrainOf(ctx), ctx.state.tokens, v.uid) !== null);
 }
@@ -3502,7 +3556,7 @@ function terminalPanel(ctx: HudCtx): string {
   const t = s.tokens.find((x) => x.uid === m.uid);
   if (!t) return head('Remote Access', 'That unit is gone', '', true)
     + '<div class="tp-body"></div><div class="tp-foot"><button class="bigbtn ghost2" data-act="terminalcancel">Close</button></div>';
-  const zoneName = (id: string) => ctx.data.zoneData.zones.find((z) => z.id === id)?.name ?? id;
+  const zoneName = (id: string) => zonesOf(ctx.data.zoneData.zones, ctx.state).find((z) => z.id === id)?.name ?? id;
   if (m.itemId) {
     return head('Your move', `Remote Access on ${esc(zoneName(normaliseTasks(s.tasks).items.find((i) => i.id === m.itemId)?.zone ?? ''))}`,
       'Make the Electronic Counter-roll now, against the Terminal\'s Electronic Value of 3.', true)
@@ -3515,7 +3569,7 @@ function terminalPanel(ctx: HudCtx): string {
   const from = largeGridOf(t);
   const open = normaliseTasks(s.tasks).items.filter((i) => {
     if (i.kind !== 'terminal' || i.accessed) return false;
-    const centre = zoneCentreGrid(ctx.data.zoneData.zones, i.zone);
+    const centre = zoneCentreGrid(zonesOf(ctx.data.zoneData.zones, ctx.state), i.zone);
     return !!centre && Math.abs(centre.c - from.c) + Math.abs(centre.r - from.r) <= m.reach;
   });
   const rows = open
@@ -4111,7 +4165,7 @@ function shovePanel(ctx: HudCtx): string {
     const ahead = gridAhead(by);
     // A Mech on the edge facing outward has no Grid in front at all, and
     // naming one that is not on the board reads as a bug.
-    const offBoard = ahead.c < 0 || ahead.r < 0 || ahead.c >= LG || ahead.r >= LG;
+    const offBoard = ahead.c < 0 || ahead.r < 0 || ahead.c >= boardGrids() || ahead.r >= boardGrids();
     const where = offBoard ? 'off the board' : gridName(ahead.c, ahead.r);
     const victims = offBoard ? [] : shoveVictims(ctx, by);
     const rows = victims
@@ -4357,8 +4411,8 @@ function smokeCandidates(ctx: HudCtx): { c: number; r: number; ok: boolean }[] {
   if (!m) return [];
   const mine = (ctx.state.smoke ?? []).filter((s) => s.side === m.side);
   const out: { c: number; r: number; ok: boolean }[] = [];
-  for (let c = 0; c < LG; c++) {
-    for (let r = 0; r < LG; r++) {
+  for (let c = 0; c < boardGrids(); c++) {
+    for (let r = 0; r < boardGrids(); r++) {
       if (m.range && Math.abs(c - m.range.c) + Math.abs(r - m.range.r) > m.range.max) continue;
       // The same player may not stack two screens in one Grid; the enemy may.
       if (mine.some((s) => s.col === c && s.row === r)) continue;
@@ -4495,62 +4549,11 @@ function grantPanel(ctx: HudCtx): string {
 // the same VP without re-deriving them. Scoring by hand was the last place the
 // Match Centre guessed where the guide knew.
 
-// A Drone printed at 0 points carries the Low Value tag; Projectiles are Low
-// Value by default (p.82). Shared between control and the Secondary Tasks so a
-// unit cannot be Low Value for one and not the other.
-function lowValueOf(ctx: HudCtx) {
-  return (t: Token): boolean =>
-    t.kind === 'projectile' || (t.kind === 'drone' && (ctx.data.byId.get(t.cardId)?.score ?? 0) === 0);
-}
-
-function zoneCellsOf(ctx: HudCtx) {
-  return (zone: string) => ctx.data.zoneData.zones.find((z) => z.id === zone)?.cells ?? [];
-}
-
 export function scorePreview(ctx: HudCtx, finalRound: boolean): ScoreResult {
-  const s = ctx.state;
-  const tasks = normaliseTasks(s.tasks);
-  const low = lowValueOf(ctx);
-  const cells = zoneCellsOf(ctx);
-  // Control is judged as part of the same reading of the board that scores it.
-  settleControl(tasks, cells, s.tokens, low);
-  const mission = s.mission ? ctx.data.missions.cards.find((c) => c.id === s.mission) : undefined;
-  const scoring = mission
-    ? {
-      family: mission.family as 'blackbox' | 'control' | 'terminal' | 'vip',
-      vp: mission.vp ?? 0,
-      zones: mission.zones ?? [],
-      fromRound: mission.fromRound ?? 1,
-      cadence: mission.cadence ?? 'per-round',
-      scoringZone: mission.scoringZone,
-    }
-    : undefined;
-  const all: ScoreLine[] = [];
-  if (scoring) all.push(...scoreMain(scoring, tasks, s.tokens, s.round.n, finalRound, cells).lines);
-  // Printed VP riders on a Part (300, 500). Its twin lives in playguide.ts —
-  // the two pages keep separate copies of this glue, and wiring only one is how
-  // a rule ends up live on half the app.
-  all.push(...scoreRiders(
-    scoring, tasks, s.tokens, finalRound, cells,
-    escortTargets(tasks, (id) => ctx.data.secondary.find((c) => c.id === id)?.kind as SecondaryScoring['kind'] | undefined),
-    (cardId) => vpRiderFor(ctx.data, cardId),
-  ).lines);
-  for (const side of ['s1', 's2'] as Side[]) {
-    const id = tasks.secondary[side];
-    const card = id ? ctx.data.secondary.find((c) => c.id === id) : undefined;
-    if (!card?.kind) continue;
-    all.push(...scoreSecondary(
-      { id: card.id, name: card.name, vp: card.vp ?? 0, kind: card.kind as SecondaryScoring['kind'] },
-      side, tasks, s.tokens, cells, finalRound, low,
-    ).lines);
-  }
-  // Anything already paid stays paid: a Task does not score twice for the same
-  // reason in a later round.
-  const open = unpaidLines(all, tasks.scored);
-  let s1 = 0;
-  let s2 = 0;
-  for (const l of open) (l.side === 's1' ? (s1 += l.vp) : (s2 += l.vp));
-  return { lines: open, s1, s2 };
+  // The glue moved to scoring.ts when the pad became a third page showing a
+  // score. Control is settled in there, as it always was here: this page has a
+  // board to settle it from.
+  return previewScore(ctx.data, ctx.state, finalRound);
 }
 
 // One row per squad: the Task they have taken, or the way to take one. Shown
@@ -5449,7 +5452,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     if (m?.itemId) {
       const t = s.tokens.find((x) => x.uid === m.uid);
       const zone = normaliseTasks(s.tasks).items.find((i) => i.id === m.itemId)?.zone ?? '';
-      const name = ctx.data.zoneData.zones.find((z) => z.id === zone)?.name ?? zone;
+      const name = zonesOf(ctx.data.zoneData.zones, ctx.state).find((z) => z.id === zone)?.name ?? zone;
       // The attempt was made either way, so the Action pays either way —
       // freeplay's done(true) on a failed roll spends the Tick too.
       commitAction(ctx);

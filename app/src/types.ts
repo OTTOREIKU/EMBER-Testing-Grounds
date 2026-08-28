@@ -1174,9 +1174,79 @@ export const SCALES: ScaleDef[] = [
   { id: 'large', name: 'Large', points: 1200, openEnded: true, note: 'A big game. Squads start at 1200 points and there is no printed ceiling, so agree one with your opponent.' },
 ];
 
+// ---------- board size (E1) ----------
+//
+// The printed mat is 12x12 Large Grids (900x900mm, rules digest 01) and stays
+// the default. The official large mat is 16x16 -- the publisher sells it for
+// 1200-point games and possibly an extra player -- and 18x18 is ours, for
+// four-player tables where 12x12 would sit four squads in each other's laps.
+//
+// ABSENCE IS THE PRINTED BOARD. Every save, checkpoint and scenario written
+// before this field existed has no `grids` and must keep playing as a 12x12
+// board forever, so `gridsOf` treats anything that is not exactly 16 or 18 as
+// 12 rather than trusting the number. That also makes it safe against a
+// hand-edited save and against a future size we have not shipped yet.
+//
+// It lives on the STATE and not only in the map data because it has to
+// TRAVEL: a mirrored seat must resolve identical geometry, and configureTable
+// already carries the map to both ends. The map is where a size is authored;
+// this is where it is played.
+export type BoardGrids = 12 | 16 | 18;
+export const BOARD_GRID_SIZES: BoardGrids[] = [12, 16, 18];
+export const DEFAULT_GRIDS: BoardGrids = 12;
+
+export function gridsOf(s: { grids?: number } | null | undefined): BoardGrids {
+  const g = s?.grids;
+  return g === 16 || g === 18 ? g : DEFAULT_GRIDS;
+}
+
+// Small Grids (subcells) per side: every position in the game is a subcell,
+// and a Large Grid is 3x3 of them (1.2). This is the number that replaced the
+// old `CELLS = 36` constant.
+export function cellsOf(s: { grids?: number } | null | undefined): number {
+  return gridsOf(s) * 3;
+}
+
+// A Tactical Zone as the TABLE plays it. Cells are grid REFS ("B2"), the same
+// shape zones.json ships, so nothing downstream had to learn a second spelling.
+export interface TableZone {
+  id: string;
+  name: string;
+  cells: string[];
+}
+
+// The zones in play. `state.zones` is written at configure time when the chosen
+// MAP authors its own (E3); absent means the shipped nine, which is every game
+// played before authored maps existed.
+//
+// It lives on the STATE and not in a lookup because the command layer is pure
+// over state and a custom map lives in ONE browser's localStorage: a guest
+// resolving the host's map name would find nothing. Pre-resolved here, both
+// seats score the identical board.
+export function zonesOf<T extends { id: string; name: string; cells: string[] }>(
+  shipped: T[],
+  state: { zones?: TableZone[] } | null | undefined,
+): (T | TableZone)[] {
+  const own = state?.zones;
+  return own && own.length ? own : shipped;
+}
+
 export interface GameState {
   v: 3;
   map: string;
+  // Board size in Large Grids. Absent means the printed 12x12; see gridsOf.
+  grids?: BoardGrids;
+  // The Tactical Zones this table plays with, resolved from the map and Main
+  // Task when the map authors its own. Absent means the shipped nine.
+  zones?: TableZone[];
+  // The Deployment Zones, same rule. Grid REFS, keyed by the printed side names
+  // the setup uses. Absent means the mission's printed shape.
+  //
+  // This has to travel for a reason the zones only shared halfway: the printed
+  // shapes are drawn in A1-L12 coordinates, so on a 16 or 18 Grid board the
+  // White corner would land in the MIDDLE of the table rather than in its own
+  // corner. A larger board is unplayable without this.
+  deployZones?: { black: string[]; white: string[] };
   tokens: Token[];
   nextUid: number;
   round: RoundState;

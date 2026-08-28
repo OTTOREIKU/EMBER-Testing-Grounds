@@ -141,7 +141,7 @@ export function zoneCentreGrid(
 }
 
 function gridRef(ref: string): { col: number; row: number } | null {
-  const m = /^([A-La-l])(\d{1,2})$/.exec(ref.trim());
+  const m = /^([A-Ra-r])(\d{1,2})$/.exec(ref.trim());
   if (!m) return null;
   return { col: m[1].toUpperCase().charCodeAt(0) - 65, row: Number(m[2]) - 1 };
 }
@@ -151,20 +151,32 @@ function gridRef(ref: string): { col: number; row: number } | null {
 export interface MissionLike { family: string; zones?: string[] }
 export interface ZoneLike { id: string; name: string; cells: string[] }
 
-// A ref ("C7") on the 12x12 zone overlay. A private copy of the parser in
-// data.ts, because this module is compiled standalone by the test slices.
+// A ref ("C7") on the zone overlay. A private copy of the parser in data.ts,
+// because this module is compiled standalone by the test slices -- do NOT
+// replace it with an import, and DO keep it in step: gridref.test.mjs reads
+// both files and fails if the regex or the bound drifts apart.
+// Grid refs reach A-R / 1-18: 18 Large Grids is the largest board we ship, so
+// the parser accepts any ref that could name a Grid on ANY board and leaves
+// "is that Grid on THIS board" to the caller, which is the only place that
+// knows the board's size. Parsing to the maximum keeps a map's authored zones
+// readable whatever size it was drawn at.
 function zoneRef(ref: string): { col: number; row: number } | null {
-  const m = /^([A-La-l])(\d{1,2})$/.exec(ref.trim());
+  const m = /^([A-Ra-r])(\d{1,2})$/.exec(ref.trim());
   if (!m) return null;
   const col = m[1].toUpperCase().charCodeAt(0) - 65;
   const row = Number(m[2]) - 1;
-  if (col < 0 || col > 11 || row < 0 || row > 11) return null;
+  if (col < 0 || col > 17 || row < 0 || row > 17) return null;
   return { col, row };
 }
 
 // The Task Items a Main Task puts on the board, derived from its zones. Rides
 // inside configureTable pre-computed, so both seats hold the identical set.
-export function taskItemsFor(zones: ZoneLike[], m: MissionLike): TaskState {
+// `objectives` are the map author's EXPLICIT spots (E2), matched on the zone
+// NAME the mission card prints. Structurally typed rather than imported so this
+// module keeps standing alone for the test slices.
+export interface ObjectiveLike { kind: string; zone: string; col: number; row: number }
+
+export function taskItemsFor(zones: ZoneLike[], m: MissionLike, objectives: ObjectiveLike[] = []): TaskState {
   const st = newTaskState();
   const kind = m.family === 'blackbox' ? 'blackbox' : m.family === 'terminal' ? 'terminal' : m.family === 'control' ? 'control' : null;
   if (!kind) return st;
@@ -172,7 +184,17 @@ export function taskItemsFor(zones: ZoneLike[], m: MissionLike): TaskState {
     const zone = zones.find((z) => z.name.toLowerCase() === name.toLowerCase());
     if (!zone) continue;
     const item: TaskItem = { id: `${kind}-${zone.id}`, kind, zone: zone.id, control: null, accessed: null };
-    if (kind === 'blackbox') {
+    // PREFER what the author placed, fall back to what we always derived. The
+    // explicit spot is matched on the zone's NAME, which is what the mission
+    // card prints and what the editor binds -- an id would break the moment a
+    // zone was deleted and repainted.
+    const placed = objectives.find((o) => o.kind === kind && o.zone.toLowerCase() === zone.name.toLowerCase());
+    if (placed) {
+      item.col = placed.col;
+      item.row = placed.row;
+    } else if (kind === 'blackbox') {
+      // The pre-E3 rule, kept exactly: the centre of the zone's FIRST Grid.
+      // Every existing mission on the printed board still lands here.
       const first = zone.cells[0] && zoneRef(zone.cells[0]);
       if (first) {
         item.col = first.col * 3 + 1;

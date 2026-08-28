@@ -12,7 +12,13 @@ const mech = JSON.parse(readFileSync(new URL('../../data/mechanics.json', import
 const list = mech.mechanics ?? [];
 const cards = JSON.parse(readFileSync(new URL('../../data/cards.json', import.meta.url), 'utf8'));
 const cardList = Array.isArray(cards) ? cards : cards.cards ?? [];
-const refSrc = readFileSync(new URL('../src/reference.ts', import.meta.url), 'utf8');
+// The reference page is TWO files: the card and keyword renderers live in
+// refcards.ts so the pad can draw the same cards without a second copy. The
+// gate asserted below sits in cardDetail, which is over there now.
+const refSrc = [
+  readFileSync(new URL('../src/reference.ts', import.meta.url), 'utf8'),
+  readFileSync(new URL('../src/refcards.ts', import.meta.url), 'utf8'),
+].join('\n');
 
 let pass = 0, fail = 0;
 const check = (name, got, want) => {

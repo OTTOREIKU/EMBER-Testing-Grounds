@@ -1,5 +1,5 @@
-import type { CombatView, Facing, GameState, MechLoadout, Opportunity, PartSlot, RollbackPoint, Side, SmokeScreen, Stance, Timing, Token } from './types';
-import { addStatus, ageTokens, newOpportunity, PHASES, statusCount, STATUSES, TIMINGS } from './types';
+import type { BoardGrids, CombatView, Facing, GameState, MechLoadout, Opportunity, PartSlot, PartState, RollbackPoint, Side, SmokeScreen, Stance, Timing, Token } from './types';
+import { addStatus, ageTokens, cellsOf, gridsOf, newOpportunity, PHASES, statusCount, STATUSES, TIMINGS } from './types';
 import type { GameData } from './data';
 import { cardName, transformFaces, unfoldsInto, discardFaceOf } from './data';
 import { covertCarryLock, ammoDeliveryPool, opportunityBonusOn, ripostePart, defenseReactionOn, targetTracingOn, riderOnDrone, hasFlexibleTiming, commandGeneration, blinkTargets, isPositionSwap, electronicOrigins, isSilentAction, maneuverIsSilent, loanedParts, unfoldToken, formSwitch, switchFormTo, extrasFor, consumesCharge, cutTethersOn, electronicDash, electronicValue, immobilizedStop, isScanAction, scannable, manifestationRange, nonHumanoidCost, nonHumanoidStop, freehandSlots, interceptCapacity, anyStartTiming, focusIsFree, keepsLinkOnPartLoss, makeDroneToken, structureOf, makeMechToken, maneuverRange, maxLink, partsLeft, pilotCard, pilotIs, projectileDelivery, provokeWhy, settleTethers, SLOT_LABEL, tetherTo, tokenCards, transformPartOn } from './units';
@@ -232,6 +232,17 @@ export type Command =
   // (5.3.3). Worth VP at the End Phase, so it has to travel — freeplay used to
   // set `item.accessed` in place and the other client scored a different board.
   | { kind: 'accessTerminal'; seat: Side; uid: number; itemId: string }
+  // A Task Item claimed BY HAND, for a table with no board to read it off.
+  // Control is normally settled from the Grids (settleControl) and a Terminal
+  // from direct access; the companion app has neither, so the players tell it
+  // what the physical table shows. `side: null` gives the Item back to nobody.
+  | { kind: 'claimItem'; seat: Side; itemId: string; side: Side | null }
+  // A Part's damage state set OUTRIGHT, the way freeplay's inspector lets a
+  // player cycle it by hand. applyPenetration is the RULE - it walks the ladder,
+  // drops a Link, stamps who dealt it - and stays the only thing an attack
+  // emits. This is the record-keeping edit beside it: a player fixing the sheet
+  // to match a table that has already resolved the hit.
+  | { kind: 'setPartState'; seat: Side; uid: number; slot: PartSlot | 'main'; state: PartState }
   | { kind: 'launch'; seat: Side; uid: number; actionId: string; cardId: string; to: { col: number; row: number }; facing: Facing }
   | { kind: 'layMine'; seat: Side; uid: number; actionId: string; cardId: string; to: { col: number; row: number } }
   | { kind: 'blink'; seat: Side; uid: number; actionId: string; targetUid: number; facing: Facing; targetFacing: Facing }
@@ -265,7 +276,7 @@ export type Command =
   // The table itself: map, zones, mission and scale used to be local
   // mutations, which is why a host's picks never reached the guest. Tasks
   // ride in the command pre-derived, like dials ride in a reveal.
-  | { kind: 'configureTable'; seat: Side; map?: string; zoneSet?: string; mission?: string | null; tasks?: GameState['tasks']; scale?: GameState['scale']; roundLimit?: number }
+  | { kind: 'configureTable'; seat: Side; map?: string; grids?: BoardGrids; zones?: GameState['zones'] | null; deployZones?: GameState['deployZones'] | null; zoneSet?: string; mission?: string | null; tasks?: GameState['tasks']; scale?: GameState['scale']; roundLimit?: number }
   | { kind: 'startMatch'; seat: Side }
   | { kind: 'endMatch'; seat: Side }
   // A squad's open-information Secondary Task pick (3.1.3). The seat is the
@@ -463,7 +474,8 @@ type TableKind =
   | 'setMode' | 'handOver' | 'setStrict' | 'commitTimings' | 'revealTimings' | 'importSquad'
   | 'configureTable' | 'startMatch' | 'endMatch' | 'pickSecondary' | 'setTactics' | 'setReady' | 'designateTask'
   | 'callDefense' | 'answerDefense' | 'clearDefense' | 'setCombatView' | 'focusAnswer' | 'focusReroll' | 'kcArmor' | 'designateHit' | 'meleeEvade' | 'dodgeEnhance' | 'riposte'
-  | 'setRollbackCatalog' | 'rollbackRequest' | 'rollbackAnswer';
+  | 'setRollbackCatalog' | 'rollbackRequest' | 'rollbackAnswer'
+  | 'claimItem' | 'setPartState';
 const TABLE_KINDS = new Set<Command['kind']>([
   'advancePhase', 'setPhase', 'resetRounds', 'adjustCommandTokens', 'passTurn', 'markEndStep', 'award',
   'lockMap', 'rollSetup', 'acceptRoll', 'noteRoll', 'finishTasks', 'pickEdge', 'lockDials', 'finishDeployment',
@@ -474,6 +486,7 @@ const TABLE_KINDS = new Set<Command['kind']>([
   'configureTable', 'startMatch', 'endMatch', 'pickSecondary', 'setTactics', 'setReady', 'designateTask',
   'callDefense', 'answerDefense', 'clearDefense', 'setCombatView', 'focusAnswer', 'focusReroll', 'kcArmor', 'designateHit', 'meleeEvade', 'dodgeEnhance', 'riposte',
   'setRollbackCatalog', 'rollbackRequest', 'rollbackAnswer',
+  'claimItem', 'setPartState',
 ]);
 
 // Table commands whose seat is attribution rather than a choice one squad
@@ -493,24 +506,52 @@ const ATTRIBUTED = new Set<Command['kind']>([
   'queueReactions',
   'setMode', 'setStrict', 'adjustCommandTokens', 'designateTask', 'clearCounterRoll',
   'configureTable', 'startMatch', 'endMatch',
+  // The seat on a hand-made claim is WHO RECORDED IT, never whose Item it is -
+  // that rides in `side`. Stamped like any other table command so either player
+  // may keep the sheet without the server refusing it as the other squad's.
+  'claimItem',
+  // Same reasoning: a damage state written down off the physical table is
+  // BOOKKEEPING, and either player may keep the book. Routed as a unit command
+  // it carried the unit's own side as its seat, and the relay refuses any
+  // command sent as the other squad - so recording a hit on the enemy applied
+  // locally, was refused by the server, and the two pads drifted apart in
+  // silence. The unit it names rides in `uid`; the seat is who recorded it.
+  'setPartState',
 ]);
 function tableLevel(cmd: Command): cmd is Command & { kind: TableKind } {
   return TABLE_KINDS.has(cmd.kind);
 }
 
 // The lookup the zone-control judgement reads its Grids from.
-const zoneCells = (data: GameData) => (zone: string): string[] => data.zoneData.zones.find((z) => z.id === zone)?.cells ?? [];
+// Zone cells for scoring. Reads the TABLE's zones (an authored map's, when it
+// has them) rather than the shipped nine, so Control is settled on the area the
+// map actually painted.
+//
+// The fallback is spelled out here rather than imported from types.ts's
+// zonesOf, for the SAME reason tasks.ts keeps a private grid-ref parser: this
+// module is compiled standalone by two dozen test slices, which strip its
+// imports, and a value import would break every one of them. It is one line and
+// it is pinned against the canonical helper by mapeditor.test.mjs -- if the
+// rule for "which zones is this table playing with" ever changes, both move.
+const zoneCells = (data: GameData, state: GameState) => (zone: string): string[] => {
+  const own = state.zones;
+  const list = own && own.length ? own : data.zoneData.zones;
+  return list.find((z) => z.id === zone)?.cells ?? [];
+};
 
 // The first clear square for a newly arrived unit, scanning row by row from
 // the squad's own edge — Squad 1 from the top of the board, Squad 2 from the
 // bottom, the same orientation the interactive spot-finder uses. Pure function
 // of the state, because a mirrored seat must land the unit on the same Grid.
-const CELLS = 36;
 function freeSpot(state: GameState, size: number, side: Side, aerial: boolean): { col: number; row: number } | null {
-  const rows = [...Array(CELLS - size + 1).keys()];
+  // Read off the STATE, never a module constant: the same command replayed on
+  // a 16 or 18 Grid board has to scan that board, and a mirrored seat must
+  // land the unit on the identical Grid.
+  const cells = cellsOf(state);
+  const rows = [...Array(cells - size + 1).keys()];
   if (side === 's2') rows.reverse();
   for (const row of rows) {
-    for (let col = 0; col <= CELLS - size; col++) {
+    for (let col = 0; col <= cells - size; col++) {
       const clash = state.tokens.some(
         (t) =>
           t.deployed !== false
@@ -526,11 +567,39 @@ function freeSpot(state: GameState, size: number, side: Side, aerial: boolean): 
 
 function checkTable(data: GameData, state: GameState, cmd: Command & { kind: TableKind }): CheckResult {
   switch (cmd.kind) {
+    case 'setPartState': {
+      const target = state.tokens.find((x) => x.uid === cmd.uid);
+      if (!target) return no('That unit is not on the board.');
+      const card = tokenCards(data, target).find((x) => x.slot === cmd.slot)?.card;
+      if (!card) return no('That unit has no such Part.');
+      if (!['intact', 'damaged', 'destroyed'].includes(cmd.state)) return no('That is not a damage state.');
+      // A Part with no Structure has no Damaged step to sit on (4.4.4), and
+      // letting one be set there would show a state the printed card cannot.
+      if (cmd.state === 'damaged' && structureOf(data, target, cmd.slot) <= 0) {
+        return no('That Part has no Structure, so it is either intact or destroyed.');
+      }
+      return ok;
+    }
+    case 'claimItem': {
+      const item = normaliseTasks(state.tasks).items.find((i) => i.id === cmd.itemId);
+      if (!item) return no('There is no such Task Item.');
+      // A Black Box is CARRIED, not claimed: it has a bearer and a slot, and
+      // takeBlackBox is the command that says so. Letting this set one would
+      // score a Box nobody is holding.
+      if (item.kind === 'blackbox') return no('A Black Box is picked up, not claimed.');
+      if (cmd.side !== null && cmd.side !== 's1' && cmd.side !== 's2') return no('That is not a squad.');
+      return ok;
+    }
     case 'configureTable': {
-      if (cmd.map === undefined && cmd.zoneSet === undefined && cmd.mission === undefined
-        && cmd.tasks === undefined && cmd.scale === undefined && cmd.roundLimit === undefined) {
+      if (cmd.map === undefined && cmd.grids === undefined && cmd.zones === undefined && cmd.deployZones === undefined
+        && cmd.zoneSet === undefined && cmd.mission === undefined && cmd.tasks === undefined && cmd.scale === undefined
+        && cmd.roundLimit === undefined) {
         return no('Nothing to configure.');
       }
+      // The board size rides with the map it was authored at, so both seats
+      // resolve identical geometry without either reading the other's map
+      // storage. Only the sizes we ship are accepted.
+      if (cmd.grids !== undefined && cmd.grids !== 12 && cmd.grids !== 16 && cmd.grids !== 18) return no('That is not a board size.');
       if (cmd.scale !== undefined && !['skirmish', 'standard', 'large'].includes(cmd.scale as string)) return no('That is not a battle scale.');
       if (cmd.roundLimit !== undefined && (!Number.isInteger(cmd.roundLimit) || cmd.roundLimit < 1 || cmd.roundLimit > 12)) return no('That is not a game length.');
       // Two locks with two clocks, and the difference is FAQ P1's setup order.
@@ -951,7 +1020,7 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
     }
     case 'placeSmoke': {
       const { col, row } = cmd.at;
-      if (!Number.isInteger(col) || !Number.isInteger(row) || col < 0 || row < 0 || col > 11 || row > 11) return no('That is not a Grid.');
+      if (!Number.isInteger(col) || !Number.isInteger(row) || col < 0 || row < 0 || col >= gridsOf(state) || row >= gridsOf(state)) return no('That is not a Grid.');
       return ok;
     }
     case 'queueReactions': {
@@ -1021,7 +1090,14 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
 export function missionZones(data: GameData, state: GameState): { id: string; name: string }[] {
   const mission = state.mission ? data.missions.cards.find((m) => m.id === state.mission) : undefined;
   const placed = new Set(mission?.zones ?? []);
-  return (data.zoneData?.zones ?? []).filter((z) => placed.has(z.name) || placed.has(z.id));
+  // The TABLE's zones, exactly as zoneCells reads them a few lines above: an
+  // authored map's zones carry its own ids, and offering the shipped ones here
+  // made a designation name a zone that neither scoring nor the board can find.
+  // Spelled out rather than importing zonesOf for the same reason zoneCells is:
+  // ~25 test slices compile this module standalone and strip its imports.
+  const own = state.zones;
+  const list = own && own.length ? own : (data.zoneData?.zones ?? []);
+  return list.filter((z) => placed.has(z.name) || placed.has(z.id));
 }
 
 // Everything Task Setup is still waiting to have named, and who names it.
@@ -1151,7 +1227,7 @@ export function check(data: GameData, state: GameState, cmd: Command): CheckResu
       const target = state.tokens.find((x) => x.uid === cmd.targetUid);
       if (!target) return no('That target is not on the board.');
       const { col, row } = cmd.to;
-      if (!Number.isInteger(col) || !Number.isInteger(row) || col < 0 || row < 0 || col > 35 || row > 35) {
+      if (!Number.isInteger(col) || !Number.isInteger(row) || col < 0 || row < 0 || col >= cellsOf(state) || row >= cellsOf(state)) {
         return no('That is not a place on the board.');
       }
       // A Barricade "can neither move, be moved, nor be Crushed" (FAQ E6/M13,
@@ -1202,7 +1278,7 @@ export function check(data: GameData, state: GameState, cmd: Command): CheckResu
       const bearer = state.tokens.find((x) => x.uid === box.bearerUid);
       if (!bearer) return no('Whatever was carrying that Black Box has left the board.');
       const { col, row } = cmd.to;
-      if (!Number.isInteger(col) || !Number.isInteger(row) || col < 0 || row < 0 || col > 35 || row > 35) {
+      if (!Number.isInteger(col) || !Number.isInteger(row) || col < 0 || row < 0 || col >= cellsOf(state) || row >= cellsOf(state)) {
         return no('That is not a place on the board.');
       }
       // "In contact with the bearer's base" is the Grid it stands in or one
@@ -1231,7 +1307,7 @@ function checkActed(
     }
     case 'placeInGrid': {
       const { col, row } = cmd.to;
-      if (!Number.isInteger(col) || !Number.isInteger(row) || col < 0 || row < 0 || col > 35 || row > 35) {
+      if (!Number.isInteger(col) || !Number.isInteger(row) || col < 0 || row < 0 || col >= cellsOf(state) || row >= cellsOf(state)) {
         return no('That is not a place on the board.');
       }
       if (t.size >= 3) return no('A Large unit fills its whole Grid, so there is nowhere else to stand in it.');
@@ -1301,7 +1377,7 @@ function checkActed(
       const shortLink = nonHumanoidStop(t, moveAction);
       if (shortLink) return no(shortLink);
       const { col, row } = cmd.to;
-      if (!Number.isInteger(col) || !Number.isInteger(row) || col < 0 || row < 0 || col > 35 || row > 35) {
+      if (!Number.isInteger(col) || !Number.isInteger(row) || col < 0 || row < 0 || col >= cellsOf(state) || row >= cellsOf(state)) {
         return no('That is not a place on the board.');
       }
       // WHERE THE MOVEMENT STARTED, and the only rules-bearing number on this
@@ -1349,7 +1425,7 @@ function checkActed(
       // of fingerprinted state with its own round of work.
       if (cmd.from) {
         const fc = cmd.from.col, fr = cmd.from.row;
-        if (!Number.isInteger(fc) || !Number.isInteger(fr) || fc < 0 || fr < 0 || fc > 35 || fr > 35) {
+        if (!Number.isInteger(fc) || !Number.isInteger(fr) || fc < 0 || fr < 0 || fc >= cellsOf(state) || fr >= cellsOf(state)) {
           return no('That is not a place on the board.');
         }
         if (t.col !== cmd.to.col || t.row !== cmd.to.row) {
@@ -1396,7 +1472,7 @@ function checkActed(
       // — so this covers what a stale networked client could still get wrong.
       if (!cmd.swaps.length) return no('A Crush exchange has to name the Unit being exchanged.');
       for (const p of [cmd.to, ...cmd.swaps.map((s) => s.to)]) {
-        if (!Number.isInteger(p.col) || !Number.isInteger(p.row) || p.col < 0 || p.row < 0 || p.col > 35 || p.row > 35) {
+        if (!Number.isInteger(p.col) || !Number.isInteger(p.row) || p.col < 0 || p.row < 0 || p.col >= cellsOf(state) || p.row >= cellsOf(state)) {
           return no('That is not a place on the board.');
         }
       }
@@ -1708,7 +1784,7 @@ function checkActed(
         }
       }
       const { col, row } = cmd.to;
-      if (!Number.isInteger(col) || !Number.isInteger(row) || col < 0 || row < 0 || col > 35 || row > 35) {
+      if (!Number.isInteger(col) || !Number.isInteger(row) || col < 0 || row < 0 || col >= cellsOf(state) || row >= cellsOf(state)) {
         return no('That is not a place on the board.');
       }
       if (cmd.stance !== undefined && !STANCES.includes(cmd.stance)) return no('That is not a Stance.');
@@ -2035,6 +2111,14 @@ function checkActed(
       // rather than trusted, the same reason every other destination on the
       // wire is: the sender chooses it.
       if (cmd.to) {
+        // The one bounds check this destination gets: the UIs only offer
+        // manifestTargets (already clamped to the board), so only a modified
+        // client can name an off-board Grid - and distance + fit below never
+        // ask whether the Grid exists. cellsOf, so a 16 or 18 Grid table
+        // measures its own edge rather than the printed board's.
+        if (cmd.to.col < 0 || cmd.to.row < 0 || cmd.to.col >= cellsOf(state) || cmd.to.row >= cellsOf(state)) {
+          return no('That Grid is not on the board.');
+        }
         const range = manifestationRange(data, t);
         if (range <= 0) return no(`${t.label} has no Stealth value, so it Reveals where it stands.`);
         // Chebyshev on Large Grids: a Grid diagonally over is one Grid away,
@@ -2091,7 +2175,7 @@ function checkActed(
         return no('No Ammo Tokens left for this Action (4.13).');
       }
       const { col, row } = cmd.to;
-      if (!Number.isInteger(col) || !Number.isInteger(row) || col < 0 || row < 0 || col > 35 || row > 35) {
+      if (!Number.isInteger(col) || !Number.isInteger(row) || col < 0 || row < 0 || col >= cellsOf(state) || row >= cellsOf(state)) {
         return no('That is not a place on the board.');
       }
       return ok;
@@ -2136,7 +2220,7 @@ function checkActed(
       if (!a) return no('This unit has no such Action.');
       if (projectileDelivery(a) !== 'lay') return no('That Action does not Lay anything.');
       const { col, row } = cmd.to;
-      if (!Number.isInteger(col) || !Number.isInteger(row) || col < 0 || row < 0 || col > 35 || row > 35) {
+      if (!Number.isInteger(col) || !Number.isInteger(row) || col < 0 || row < 0 || col >= cellsOf(state) || row >= cellsOf(state)) {
         return no('That is not a place on the board.');
       }
       // Which Grids are legal and what the Move Range paid for is the route's
@@ -2370,7 +2454,7 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
     }
     if (cmd.step === 'tasks') {
       const tasks = normaliseTasks(state.tasks);
-      settleControl(tasks, zoneCells(data), state.tokens, (x) => lowValueUnit(data, x));
+      settleControl(tasks, zoneCells(data, state), state.tokens, (x) => lowValueUnit(data, x));
       state.tasks = tasks;
     }
     const key = `${state.round.n}:end:${cmd.step}`;
@@ -2381,7 +2465,7 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
     const tasks = normaliseTasks(state.tasks);
     // The Award judges control as part of the same reading of the board that
     // it scores (5.3.2), so the settlement happens here too.
-    settleControl(tasks, zoneCells(data), state.tokens, (x) => lowValueUnit(data, x));
+    settleControl(tasks, zoneCells(data, state), state.tokens, (x) => lowValueUnit(data, x));
     // The ONE place a Victory Point total is floored. A printed rider can send
     // a delta negative (300, 500), and 5.2.4 knows no score below zero — but
     // the clamp belongs on the running TOTAL, never on the delta: a side on 6
@@ -2441,6 +2525,35 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
     if (cmd.map !== undefined) {
       state.map = cmd.map;
       state.removedTerrain = [];
+    }
+    // Written even when it is 12, and DELETED rather than stored, so a state
+    // that went back to a printed map does not keep a stale larger size.
+    if (cmd.grids !== undefined) {
+      if (cmd.grids === 12) delete state.grids;
+      else state.grids = cmd.grids;
+    }
+    // The zones this table plays with, already resolved from the map and Task
+    // by whoever sent this (only they can read a custom map's storage). NULL
+    // clears back to the shipped nine; absent leaves them alone.
+    //
+    // NORMALISED, never stored raw — the same treatment cmd.tasks gets below.
+    // This command arrives over the wire, and a malformed payload that threw
+    // inside apply() would stop the receiving seat's command stream dead. A
+    // row that does not parse is dropped; a payload with nothing usable in it
+    // reads as a clear, which is the shipped-default in both cases.
+    if (cmd.zones !== undefined) {
+      const zs = (Array.isArray(cmd.zones) ? cmd.zones : [])
+        .filter((z) => z && typeof z.id === 'string' && typeof z.name === 'string' && Array.isArray(z.cells))
+        .map((z) => ({ id: z.id, name: z.name, cells: z.cells.filter((c): c is string => typeof c === 'string') }));
+      if (zs.length) state.zones = zs;
+      else delete state.zones;
+    }
+    if (cmd.deployZones !== undefined) {
+      const refs = (v: unknown): string[] =>
+        (Array.isArray(v) ? v : []).filter((c): c is string => typeof c === 'string');
+      const dz = { black: refs(cmd.deployZones?.black), white: refs(cmd.deployZones?.white) };
+      if (dz.black.length || dz.white.length) state.deployZones = dz;
+      else delete state.deployZones;
     }
     if (cmd.zoneSet !== undefined) state.zoneSet = cmd.zoneSet;
     if (cmd.mission !== undefined) state.mission = cmd.mission;
@@ -2778,6 +2891,23 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
     box.bearerSlot = undefined;
     box.col = cmd.to.col;
     box.row = cmd.to.row;
+    state.tasks = tasks;
+    return;
+  }
+
+  if (cmd.kind === 'setPartState') {
+    const target = state.tokens.find((x) => x.uid === cmd.uid);
+    if (target) target.partStates[cmd.slot] = cmd.state;
+    return;
+  }
+  if (cmd.kind === 'claimItem') {
+    const tasks = normaliseTasks(state.tasks);
+    const item = tasks.items.find((i) => i.id === cmd.itemId);
+    if (!item) return;
+    // The same two fields settleControl writes, so the scorers cannot tell a
+    // hand-set claim from a board-read one - which is the point of it.
+    if (item.kind === 'control') item.control = cmd.side;
+    else item.accessed = cmd.side;
     state.tasks = tasks;
     return;
   }
@@ -3451,6 +3581,7 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       state.tasks = tasks;
       return;
     }
+
     case 'resolveReaction': {
       const sc = state.script;
       if (sc) {

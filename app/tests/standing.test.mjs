@@ -2,7 +2,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 
 const src = readFileSync(new URL('../src/rules.ts', import.meta.url), 'utf8');
-const start = src.indexOf('export const LG');
+const start = src.indexOf('let GRIDS');
 const end = src.indexOf('export function losBetween');
 if (start < 0 || end < 0) throw new Error('could not locate the placement helpers in rules.ts');
 const tmp = new URL('./_standing.slice.ts', import.meta.url);
