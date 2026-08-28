@@ -1268,6 +1268,14 @@ export interface GameState {
   deployLayout?: string | null;
   zoneSet?: string;
   boardTheme?: string;
+  // How strongly the board's art is painted, 0.2 to 1. A display setting like
+  // boardTheme: it rides in the state so it survives a reload and a shared
+  // scenario, and no rule reads it.
+  boardArt?: number;
+  // The one colour the grid lines, letters and numbers are drawn in, #rrggbb.
+  gridColour?: string;
+  // Draw the grid over art that has its own printed on it.
+  alwaysGrid?: boolean;
   tactics?: Record<Side, string[]>;
   tacticsPlayed?: Record<Side, string[]>;
   // Every unit each side has fielded, uid -> its card ids, kept even after the

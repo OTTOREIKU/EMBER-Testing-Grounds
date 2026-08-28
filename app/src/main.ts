@@ -12,7 +12,10 @@ import { getLocalSeat, setLocalSeat } from './loop';
 import { ApiError, EmberApi, type SquadEntry } from './api';
 import { MultiplayerDialog } from './multiplayer';
 import { Inventory } from './inventory';
-import { BOARD_THEMES, boardTheme } from './boards';
+import {
+  boardTheme, clampBoardArt, clampGridColour, DEFAULT_GRID_COLOUR, themeHasArt, themesFor,
+} from './boards';
+import { openColourPicker } from './colourpicker';
 import { bindTips, inspectOnHover, isInspectPinned, showInspect, unpinInspect } from './inspector';
 import { cardName, dataUrl, isAerial, loadData, missionImageUrl, parseGridRef, rulesLines, secondaryImageUrl, type SecondaryTask, setSquadNames, SQUAD_ORDER, squadLabel, unitSize } from './data';
 import {
@@ -5486,7 +5489,17 @@ async function init() {
   function applyBoardTheme(): void {
     const id = boardTheme(state.boardTheme).id;
     state.boardTheme = id;
+    state.boardArt = clampBoardArt(state.boardArt);
+    state.gridColour = clampGridColour(state.gridColour);
+    state.alwaysGrid = !!state.alwaysGrid;
+    // The grid settings go in FIRST: setBoardTheme rebuilds the grid, and
+    // buildGrid paints the new one from whatever the board is already holding.
+    board.setGridColour(state.gridColour);
+    board.setAlwaysGrid(state.alwaysGrid);
     board.setBoardTheme(id);
+    // The art node, by contrast, is created by that rebuild, so it can only be
+    // dimmed afterwards.
+    board.setBoardArt(state.boardArt);
   }
 
   // The size sections the map list is divided into, in board order. The point
@@ -5619,8 +5632,30 @@ async function init() {
       <button id="map-close" class="dlg-close" title="Close">✕</button>
       <div class="inv-head"><b>Map settings</b></div>
       <div class="map-board">
-        <label for="board-select">Board style</label>
-        <select id="board-select">${BOARD_THEMES.map((t) => `<option value="${t.id}">${t.name}</option>`).join('')}</select>
+        <div class="map-board-row">
+          <label for="board-select">Board style</label>
+          <select id="board-select">${
+            themesFor(gridsOf(state), state.boardTheme)
+              .map((t) => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join('')
+          }</select>
+        </div>
+        <div class="map-board-row">
+          <label for="board-art">Board opacity</label>
+          <input id="board-art" type="range" min="20" max="100" step="5">
+          <span id="board-art-val" class="map-board-val"></span>
+        </div>
+        <div class="map-board-row">
+          <label for="grid-colour">Grid colour</label>
+          <button id="grid-colour" type="button" class="cp-trigger">
+            <span class="cp-trigger-dot"></span><span class="cp-trigger-hex"></span>
+          </button>
+          <button id="grid-colour-reset" class="map-board-reset">Reset</button>
+        </div>
+        <div class="map-board-row">
+          <label for="grid-always">Always show grid</label>
+          <input id="grid-always" type="checkbox">
+          <span class="map-board-hint">Draws the grid over a board that has one printed on it.</span>
+        </div>
       </div>
       ${
         names.length
@@ -5636,10 +5671,83 @@ async function init() {
     dlg.querySelector('#map-close')!.addEventListener('click', () => dlg.remove());
 
     const boardSelect = dlg.querySelector<HTMLSelectElement>('#board-select')!;
+    const artRange = dlg.querySelector<HTMLInputElement>('#board-art')!;
+    const artVal = dlg.querySelector<HTMLSpanElement>('#board-art-val')!;
+
+    // Slate and Classic are a colour and a grid with nothing over them, so
+    // there is nothing to fade. The control stays where it is and goes dead
+    // rather than vanishing, which would make the row jump on every change.
+    const showArt = (): void => {
+      const has = themeHasArt(boardTheme(state.boardTheme));
+      artRange.value = String(Math.round(clampBoardArt(state.boardArt) * 100));
+      artVal.textContent = has ? `${artRange.value}%` : 'no art';
+      artRange.disabled = !has;
+      artRange.closest('.map-board-row')!.classList.toggle('is-off', !has);
+    };
+
     boardSelect.value = boardTheme(state.boardTheme).id;
     boardSelect.addEventListener('change', () => {
       state.boardTheme = boardSelect.value;
       board.setBoardTheme(boardSelect.value);
+      board.setBoardArt(clampBoardArt(state.boardArt));
+      showArt();
+      save();
+    });
+
+    // 'input' and not 'change': the whole point of a dimmer is watching the
+    // board while you drag it.
+    artRange.addEventListener('input', () => {
+      state.boardArt = clampBoardArt(Number(artRange.value) / 100);
+      board.setBoardArt(state.boardArt);
+      artVal.textContent = `${artRange.value}%`;
+    });
+    artRange.addEventListener('change', () => save());
+    showArt();
+
+    const gridColour = dlg.querySelector<HTMLButtonElement>('#grid-colour')!;
+    const gridDot = gridColour.querySelector<HTMLElement>('.cp-trigger-dot')!;
+    const gridHex = gridColour.querySelector<HTMLElement>('.cp-trigger-hex')!;
+    const gridAlways = dlg.querySelector<HTMLInputElement>('#grid-always')!;
+
+    // The trigger IS the readout: it shows the colour and its hex, so the
+    // setting is legible without opening anything.
+    const showColour = (): void => {
+      gridDot.style.background = state.gridColour!;
+      gridHex.textContent = state.gridColour!;
+    };
+
+    // Same split as the opacity slider: paint on every tick, save once when the
+    // drag ends. A save per shade would write a hundred times across one drag.
+    let closePicker: (() => void) | null = null;
+    gridColour.addEventListener('click', () => {
+      if (closePicker) { closePicker(); closePicker = null; return; }
+      closePicker = openColourPicker({
+        anchor: gridColour,
+        value: clampGridColour(state.gridColour),
+        onInput: (hex) => {
+          state.gridColour = clampGridColour(hex);
+          board.setGridColour(state.gridColour);
+          showColour();
+        },
+        onDone: () => save(),
+        // Or the handle above goes stale the moment the picker closes itself,
+        // and the next click on the trigger is spent re-closing nothing.
+        onClose: () => { closePicker = null; },
+      });
+    });
+
+    dlg.querySelector('#grid-colour-reset')!.addEventListener('click', () => {
+      state.gridColour = DEFAULT_GRID_COLOUR;
+      board.setGridColour(DEFAULT_GRID_COLOUR);
+      showColour();
+      save();
+    });
+    showColour();
+
+    gridAlways.checked = !!state.alwaysGrid;
+    gridAlways.addEventListener('change', () => {
+      state.alwaysGrid = gridAlways.checked;
+      board.setAlwaysGrid(state.alwaysGrid);
       save();
     });
 

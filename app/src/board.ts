@@ -2,7 +2,10 @@ import type { TaskItem } from './tasks';
 import type { BoardGrids, Facing, GameState, Marker, Side, SmokeScreen, StatusDef, TerrainPiece, Token, TokenShape } from './types';
 import { DEFAULT_GRIDS, INTERCEPT_DEF, SHAPE_NOTE, statusCount, statusStacks } from './types';
 import { mechPartUrl, squadLabel, squadNumber, tabImageUrl, tokenFace, tokenPrintUrl } from './data';
-import { type BoardTheme, boardArtUrl, boardTheme, DEFAULT_BOARD } from './boards';
+import {
+  type BoardTheme, BOARD_FADE_BASE, boardArtUrl, boardTheme, clampBoardArt,
+  clampGridColour, DEFAULT_BOARD, DEFAULT_GRID_COLOUR, gridPalette,
+} from './boards';
 import type { InspectInfo } from './inspector';
 
 export const MECH_LAYER_ORDER = ['chasis', 'backpack', 'torso', 'leftHand', 'rightHand'] as const;
@@ -172,6 +175,13 @@ export class Board {
   private flipped = false;
   private gGrid!: SVGGElement;
   private theme: BoardTheme = boardTheme(DEFAULT_BOARD);
+  // Held rather than read back off the node, because buildGrid throws the node
+  // away on every theme and size change and has to paint the new one dimmed.
+  private artOpacity = 1;
+  private artImg: SVGImageElement | null = null;
+  private gridColour = DEFAULT_GRID_COLOUR;
+  private alwaysGrid = false;
+  private gridBorder: SVGRectElement | null = null;
   private gZones!: SVGGElement;
   private gTerrain: SVGGElement;
   private gTokens: SVGGElement;
@@ -427,24 +437,74 @@ export class Board {
     this.gGrid = fresh;
   }
 
+  // Fades the art toward the board's base colour. Lives beside setBoardTheme
+  // rather than inside it: the theme setter early-returns when the id has not
+  // changed, which is exactly the case here.
+  setBoardArt(v: number): void {
+    this.artOpacity = clampBoardArt(v);
+    if (this.artImg) this.artImg.setAttribute('opacity', String(this.artOpacity));
+  }
+
+  setGridColour(c: string): void {
+    this.gridColour = clampGridColour(c);
+    if (this.gGrid) this.paintGrid(this.gGrid);
+  }
+
+  // Draws our grid over art that already has one printed on it. The official
+  // boards are the reason: their printed grid goes faint under a mech.
+  setAlwaysGrid(on: boolean): void {
+    this.alwaysGrid = !!on;
+    if (this.gGrid) this.paintGrid(this.gGrid);
+  }
+
+  // Colours a grid group. Takes the group rather than reading this.gGrid,
+  // because buildGrid has to paint the one it is still assembling -- its
+  // callers only swap it in afterwards.
+  //
+  // NOT a rebuild: buildGrid re-encodes a generated theme's art into a fresh
+  // data URI, which is thousands of polygons, and this runs on every tick of a
+  // colour picker being dragged.
+  private paintGrid(g: SVGGElement): void {
+    const pal = gridPalette(this.gridColour);
+    // A board whose art draws its own grid keeps ours hidden unless asked.
+    const show = this.alwaysGrid || !this.theme.printsOwnGrid;
+    for (const ln of g.querySelectorAll('line')) {
+      const major = ln.classList.contains('g-major');
+      ln.setAttribute('stroke', show ? (major ? pal.major : pal.minor) : 'transparent');
+    }
+    // The letters and numbers sit OUTSIDE the board, so art never hides them
+    // and they are not part of the toggle.
+    this.svg.style.setProperty('--grid-label', pal.label);
+    this.gridBorder?.setAttribute('stroke', pal.border);
+  }
+
   private buildGrid(): SVGGElement {
     const t = this.theme;
     const g = el('g', { id: 'grid' });
-    g.appendChild(el('rect', { x: 0, y: 0, width: this.size, height: this.size, fill: t.base }));
     const art = boardArtUrl(t, this.size);
+    // Neutral under art, the theme's own colour when there is none: dimming a
+    // board should fade it toward the dark the whole app is built on rather
+    // than toward whatever tint that particular board happens to be.
+    g.appendChild(el('rect', {
+      x: 0, y: 0, width: this.size, height: this.size, fill: art ? BOARD_FADE_BASE : t.base,
+    }));
+    this.artImg = null;
     if (art) {
       const img = el('image', { x: 0, y: 0, width: this.size, height: this.size, 'pointer-events': 'none' });
       img.setAttribute('href', art);
+      img.setAttribute('opacity', String(this.artOpacity));
       g.appendChild(img);
+      this.artImg = img;
     }
-    this.svg.style.setProperty('--grid-label', t.label);
+    // Appended AFTER the art, so the lines already sit over it. Their colour is
+    // left to paintGrid at the end, which is also what the pickers call.
     for (let i = 0; i <= this.cells; i++) {
       const large = i % 3 === 0;
       const p = i * CELL;
-      const stroke = large ? t.major : t.minor;
+      const cls = large ? 'g-major' : 'g-minor';
       const w = large ? 1.6 : 0.6;
-      g.appendChild(el('line', { x1: p, y1: 0, x2: p, y2: this.size, stroke, 'stroke-width': w }));
-      g.appendChild(el('line', { x1: 0, y1: p, x2: this.size, y2: p, stroke, 'stroke-width': w }));
+      g.appendChild(el('line', { x1: p, y1: 0, x2: p, y2: this.size, class: cls, 'stroke-width': w }));
+      g.appendChild(el('line', { x1: 0, y1: p, x2: this.size, y2: p, class: cls, 'stroke-width': w }));
     }
     for (let i = 0; i < this.grids; i++) {
       const c = i * 3 * CELL + 1.5 * CELL;
@@ -455,8 +515,10 @@ export class Board {
       g.appendChild(col);
       g.appendChild(row);
     }
-    const border = el('rect', { x: 0, y: 0, width: this.size, height: this.size, fill: 'none', stroke: t.border, 'stroke-width': 2.5 });
+    const border = el('rect', { x: 0, y: 0, width: this.size, height: this.size, fill: 'none', 'stroke-width': 2.5 });
     g.appendChild(border);
+    this.gridBorder = border as SVGRectElement;
+    this.paintGrid(g);
     return g;
   }
 

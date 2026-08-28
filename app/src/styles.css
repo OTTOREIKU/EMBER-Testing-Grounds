@@ -1,4 +1,5 @@
 @import './partpicker.css';
+@import './colourpicker.css';
 :root {
   --bg: #0f1216;
   --surface: #171b21;
@@ -766,12 +767,60 @@ main { display: flex; flex: 1; min-height: 0; }
 
 /* ---------- board style picker, inside the map manager ---------- */
 .map-board {
-  display: flex; align-items: center; flex-wrap: wrap; gap: 10px;
+  display: flex; flex-direction: column; gap: 9px;
   margin: 10px 0 14px; padding: 11px 13px;
   background: var(--surface2); border-radius: var(--radius-sm);
 }
+.map-board-row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
 .map-board label { font-size: 12px; font-weight: 600; color: var(--text); }
+/* The rows line up under one another, so the label column is fixed rather than
+   sized by whichever word happens to be longer. Wide enough for the longest of
+   them on one line: at 84px "Always show grid" wrapped to two and sat ragged
+   beside three single-line labels. */
+.map-board-row > label { flex: 0 0 112px; }
 .map-board select { min-width: 190px; white-space: nowrap; }
+.map-board-val {
+  min-width: 42px; font-size: 12px; font-weight: 700;
+  color: var(--text2); font-variant-numeric: tabular-nums;
+}
+.map-board-row.is-off > label, .map-board-row.is-off .map-board-val { color: var(--text3); }
+
+/* The app's only slider. Styled by hand because the native control ignores the
+   page's colours entirely and would arrive as a stray strip of system blue. */
+.map-board input[type=range] {
+  flex: 1 1 150px; min-width: 130px; height: 18px;
+  margin: 0; padding: 0; background: none; border: 0;
+  -webkit-appearance: none; appearance: none; cursor: pointer;
+}
+.map-board input[type=range]:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.map-board input[type=range]::-webkit-slider-runnable-track {
+  height: 4px; border-radius: 2px; background: var(--surface3);
+}
+.map-board input[type=range]::-moz-range-track {
+  height: 4px; border-radius: 2px; background: var(--surface3);
+}
+.map-board input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 14px; height: 14px; margin-top: -5px; border: 0;
+  border-radius: 50%; background: var(--accent);
+}
+.map-board input[type=range]::-moz-range-thumb {
+  width: 14px; height: 14px; border: 0; border-radius: 50%; background: var(--accent);
+}
+.map-board input[type=range]:disabled { cursor: default; opacity: 0.4; }
+.map-board input[type=range]:disabled::-webkit-slider-thumb { background: var(--text3); }
+.map-board input[type=range]:disabled::-moz-range-thumb { background: var(--text3); }
+
+.map-board-reset {
+  padding: 5px 11px; font-size: 12px; font-weight: 600;
+  background: var(--surface3); color: var(--text2); border-radius: var(--radius-sm);
+}
+.map-board-reset:hover { background: var(--border); color: var(--text); }
+
+.map-board input[type=checkbox] {
+  width: 16px; height: 16px; margin: 0; accent-color: var(--accent); cursor: pointer;
+}
+.map-board-hint { flex: 1 1 160px; font-size: 11px; color: var(--text3); }
 
 /* ---------- squad builder link ---------- */
 #btn-builder {

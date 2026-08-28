@@ -1,0 +1,78 @@
+/* The app's own colour picker. See colourpicker.ts for why it exists and why it
+   sits on the body rather than inside the dialog that opens it. */
+
+.cp {
+  position: fixed; z-index: 1200; width: 212px; padding: 10px;
+  display: flex; flex-direction: column; gap: 9px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); box-shadow: 0 14px 34px rgba(0, 0, 0, 0.55);
+}
+
+/* Saturation left to right over the hue, brightness top to bottom over black.
+   Stacked as two children rather than layered backgrounds so the hue can be
+   swapped through one custom property without rewriting the gradients. */
+.cp-sv {
+  position: relative; height: 132px; border-radius: 4px; cursor: crosshair;
+  background: var(--cp-hue, #ff0000); overflow: hidden; touch-action: none;
+}
+.cp-sv-white, .cp-sv-black { position: absolute; inset: 0; }
+.cp-sv-white { background: linear-gradient(to right, #fff, rgba(255, 255, 255, 0)); }
+.cp-sv-black { background: linear-gradient(to top, #000, rgba(0, 0, 0, 0)); }
+
+.cp-hue {
+  position: relative; height: 12px; border-radius: 6px; cursor: ew-resize; touch-action: none;
+  background: linear-gradient(to right,
+    #f00 0%, #ff0 16.66%, #0f0 33.33%, #0ff 50%, #00f 66.66%, #f0f 83.33%, #f00 100%);
+}
+
+/* One cursor for both surfaces. Translated by half its own size so it centres
+   on the point rather than hanging below and right of it. */
+.cp-dot {
+  position: absolute; width: 12px; height: 12px; border-radius: 50%;
+  border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
+  pointer-events: none; transform: translate(-50%, -50%);
+}
+.cp-hue-dot { top: 50%; background: transparent; }
+
+.cp-sv:focus-visible, .cp-hue:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.cp-foot { display: flex; align-items: center; gap: 8px; }
+.cp-now {
+  width: 26px; height: 26px; flex: 0 0 26px;
+  border: 1px solid var(--border); border-radius: 4px;
+}
+.cp-hex {
+  flex: 1 1 auto; min-width: 0; padding: 5px 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px; text-transform: lowercase;
+  background: var(--surface2); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+}
+.cp-hex:focus { outline: none; border-color: var(--accent); }
+
+.cp-presets { display: grid; grid-template-columns: repeat(6, 1fr); gap: 5px; }
+.cp-chip {
+  height: 20px; padding: 0; border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 4px; cursor: pointer;
+  transition: transform 0.1s, border-color 0.1s;
+}
+.cp-chip:hover { transform: scale(1.12); border-color: var(--text); }
+.cp-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* ---------- the button that opens it ---------- */
+
+.cp-trigger {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 4px 9px 4px 5px;
+  background: var(--surface3); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); cursor: pointer;
+}
+.cp-trigger:hover { border-color: var(--text3); }
+.cp-trigger-dot {
+  width: 18px; height: 18px; border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+.cp-trigger-hex {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px; color: var(--text2);
+}

@@ -1,4 +1,4 @@
-import { DEFAULT_BOARD } from './boards';
+import { clampBoardArt, clampGridColour, DEFAULT_BOARD } from './boards';
 import type { GameData } from './data';
 import { cardName, faceOf, isAerial, isBarricade, isFlyingBase, isMine, isTetherFace, isUnfolded, transformFaces, unfoldsInto, unitSize } from './data';
 import type { ExtraTick, Card, CardAction, CounterRoll, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, TableZone, TerrainPiece, TetherLink, Timing, Token } from './types';
@@ -4618,6 +4618,9 @@ export function migrateState(rawIn: unknown, data: GameData): GameState | null {
     deployLayout: (s as { deployLayout?: string | null }).deployLayout ?? null,
     zoneSet: (s as { zoneSet?: string }).zoneSet ?? legacyZoneSet(s),
     boardTheme: (s as { boardTheme?: string }).boardTheme ?? DEFAULT_BOARD,
+    boardArt: clampBoardArt((s as { boardArt?: number }).boardArt),
+    gridColour: clampGridColour((s as { gridColour?: string }).gridColour),
+    alwaysGrid: !!(s as { alwaysGrid?: boolean }).alwaysGrid,
     tactics: normaliseTactics((s as { tactics?: unknown }).tactics),
     tacticsPlayed: normaliseTactics((s as { tacticsPlayed?: unknown }).tacticsPlayed),
   };
