@@ -180,6 +180,18 @@ export function historyEntries(): { kind: string; human?: string; seat?: string;
   return stack.map(({ label, human, seat, role, round, phase, inPlay, seq }) => ({ kind: label, human, seat, role, round, phase, inPlay, seq }));
 }
 
+// The board as it stood BEFORE the nth command back, without touching it.
+// undoTo() and friends all APPLY what they find; a bug report needs to read a
+// position and leave the game where it is.
+//
+// snapshotBack(0) is the board before the most recent command, so
+// snapshotBack(4) is the board five commands ago. Null once the ring is
+// shallower than that, which is normal early in a game and not an error.
+export function snapshotBack(n: number): Snapshot | null {
+  const at = stack.length - 1 - n;
+  return at >= 0 ? stack[at] : null;
+}
+
 // Rolls back to the snapshot with the given seq - the UNIT targets the v2
 // catalog names. Null when the ring has already evicted it, which the caller
 // reports rather than swallows: the host saying "too far back" beats two

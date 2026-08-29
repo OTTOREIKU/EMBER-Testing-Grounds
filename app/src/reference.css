@@ -73,6 +73,16 @@ body.ref-locked { overflow: hidden; }
   transition: background 0.12s, color 0.12s;
 }
 #ref-pdf:hover { background: var(--surface3); color: var(--text); }
+/* Beside the rulebook link, not pushed right on its own: both are "the printed
+   thing is the authority", and they belong together. margin-left is on the PDF
+   link, so this one inherits the gap. */
+#ref-report {
+  flex: 0 0 auto; white-space: nowrap;
+  font-size: 11.5px; font-weight: 600; color: var(--text3);
+  padding: 5px 9px; border-radius: var(--radius-sm); background: var(--surface2);
+  transition: background 0.12s, color 0.12s;
+}
+#ref-report:hover { background: var(--surface3); color: var(--text); }
 #ref-search {
   width: 100%; font-size: 16px;
   padding: 11px 13px; border-radius: var(--radius); border: none; outline: none;
@@ -337,15 +347,21 @@ body.ref-locked { overflow: hidden; }
   position: sticky; top: 0; z-index: 1; float: right; margin-left: 10px;
   display: flex; gap: 6px;
 }
-#ref-detail-close, #ref-detail-back {
+#ref-detail-close, #ref-detail-back, #ref-detail-report {
   width: 34px; height: 34px; border-radius: 50%; cursor: pointer;
   background: var(--surface2); border: none; color: var(--text); font-size: 15px; line-height: 1;
   display: inline-flex; align-items: center; justify-content: center;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
   transition: background 0.12s, color 0.12s;
 }
-#ref-detail-close:hover, #ref-detail-back:hover { background: var(--accent); color: #0f1216; }
+#ref-detail-close:hover, #ref-detail-back:hover, #ref-detail-report:hover {
+  background: var(--accent); color: #0f1216;
+}
 #ref-detail-back svg { width: 16px; height: 16px; }
+/* Quieter than its neighbours until hovered: reporting a card is the rare
+   thing to want, and it should not compete with Back and Close. */
+#ref-detail-report { color: var(--text3); }
+#ref-detail-report svg { width: 15px; height: 15px; }
 #ref-detail h2 { margin: 0 8px 5px 0; font-size: 19px; font-weight: 700; line-height: 1.25; }
 .ref-meta { color: var(--text3); font-size: 12px; margin: 0 0 10px; }
 .ref-sub {

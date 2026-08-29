@@ -9,6 +9,12 @@ import { costLabel, LENGTH_NAME, lengthOf, TICK_COST, timingOf } from './ticks';
 import { diceRow, maskGlyphs, tickCapsule } from './glyphs';
 import { linkIcon } from './icons';
 import { cardDetail, cardRow, esc, keywordCard, kwLabel, linkKeywords, mechBlocks, SLOT_LABEL, SPEED_MARK, useCardData } from './refcards';
+import { installDiagnostics } from './diagnostics';
+import type { ReportCategory } from './report';
+import { openReferenceReport } from './reportui';
+// FIRST, before anything else in this module runs. A net that is installed
+// after the thing it is meant to catch is not a net.
+installDiagnostics(window);
 
 type Tab = 'keywords' | 'parts' | 'units' | 'pilots' | 'tactics' | 'boxes' | 'factions' | 'missions' | 'rules';
 
@@ -971,6 +977,43 @@ function viewHtml(v: DetailView): string | null {
   return keywordDetail(v.key);
 }
 
+// The scalar fields exactly as we hold them, so a "this is wrong" report can be
+// diffed against the printed thing without a second round trip asking what we
+// show. Nested objects are flattened one level, because a keyword keeps its
+// text under en/zh/jp and that text is the whole point of reporting one.
+function flatten(src: unknown, prefix = ''): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!src || typeof src !== 'object') return out;
+  for (const [k, v] of Object.entries(src as Record<string, unknown>)) {
+    if (v === null || v === undefined) continue;
+    if (typeof v === 'object') {
+      if (prefix) continue;
+      Object.assign(out, flatten(v, `${k}.`));
+      continue;
+    }
+    out[prefix + k] = String(v);
+  }
+  return out;
+}
+
+// WHATEVER IS OPEN, not just a card. The sheet shows cards, keywords, Boxes and
+// factions, and for a long time this read only the card case -- so opening a
+// keyword and reporting it produced a report that named nothing.
+function shownFor(v: DetailView | undefined): Record<string, string> {
+  if (!v) return {};
+  if (v.kind === 'card') return flatten(data.byId.get(v.key));
+  if (v.kind === 'keyword') return flatten(data.keyword(v.key));
+  if (v.kind === 'box') return flatten(data.boxes.find((b) => b.key === v.key));
+  return flatten(data.factions.find((f) => f.key === v.key));
+}
+
+// The sheet's vocabulary is already the report's, bar the tab-only categories
+// the sheet has no view for.
+const TAB_CATEGORY: Record<string, ReportCategory> = {
+  keywords: 'keyword', parts: 'card', units: 'card', pilots: 'card', tactics: 'card',
+  boxes: 'box', factions: 'faction', missions: 'mission', rules: 'rules',
+};
+
 function viewLabel(v: DetailView): string {
   if (v.kind === 'card') return cardName(data.byId.get(v.key));
   if (v.kind === 'box') {
@@ -1275,6 +1318,29 @@ async function init(): Promise<void> {
   });
   document.getElementById('ref-detail-back')!.addEventListener('click', backDetail);
   document.getElementById('ref-detail-close')!.addEventListener('click', closeDetail);
+
+  // Opens knowing which card is on screen, because navStack already does. A
+  // report that has to ask "which card?" gets answered with a description, and
+  // a description does not find a row in the data.
+  const reportOpenCard = (): void => {
+    const open = sheet().hidden ? undefined : navStack[navStack.length - 1];
+    openReferenceReport({
+      subject: open ? { kind: open.kind, key: open.key, name: viewLabel(open) } : null,
+      // What is open decides it; failing that, the tab does. Rules never open a
+      // sheet at all, so the tab is the only signal there -- which is exactly
+      // the case that had no way to be reported before.
+      category: open ? (open.kind as ReportCategory) : (TAB_CATEGORY[tab] ?? 'other'),
+      looking: { tab, search: query.trim() },
+      shown: shownFor(open),
+    });
+  };
+  // TWO DOORS, one room. The header button is the only one reachable with no
+  // card open, and the card's own flag is the only one reachable WITH one --
+  // the detail sheet is a modal, so it covers the header the whole time it is
+  // up. Wiring only the header meant the card report could never actually name
+  // a card.
+  document.getElementById('ref-report')!.addEventListener('click', reportOpenCard);
+  document.getElementById('ref-detail-report')!.addEventListener('click', reportOpenCard);
   document.getElementById('ref-detail')!.addEventListener('click', (ev) => {
     if (ev.target === ev.currentTarget) closeDetail();
   });

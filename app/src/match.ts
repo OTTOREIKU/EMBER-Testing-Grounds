@@ -1,6 +1,8 @@
 import { ApiError, EmberApi, type Account, type AdminInvite, type AdminUser, type CardStat, type FactionStat, type LeaderPlayer, type LeaderSquad, type MyRecord, type SquadEntry, type StatsSummary } from './api';
 import { Relay, type RolledDie, type RollKind } from './net';
 import { applyRemote, check, onBeforeApply, onPerformed, onRefused, perform, type Command, type CheckResult } from './commands';
+import { installDiagnostics, noteCommand, noteRefusal } from './diagnostics';
+import { openBoardReport } from './reportui';
 import { clearHistory, historyEntries, recordSnapshot, rollbackCatalog, undoToPhase, undoToSeq } from './history';
 import { groupLedger, labelFor, namesFrom, SEALED_KINDS, type LedgerNames } from './ledger';
 import { setLocalSeat } from './loop';
@@ -27,6 +29,9 @@ import { Panel } from './panel';
 import type { CardAction, CombatView, DiceData, DieColor, GameState, Side, Token } from './types';
 import { grantAdjusted, SLOT_LABEL, stationaryAdjusted } from './units';
 import { gridsOf, PHASES, statusCount } from './types';
+// FIRST, before anything else in this module runs. A net that is installed
+// after the thing it is meant to catch is not a net.
+installDiagnostics(window);
 
 // The Match Centre: a separate page for networked play, so the freeplay board
 // never has to hide or lock anything — its controls simply are not here.
@@ -409,6 +414,7 @@ let asked: { round: number; phase: number; seq?: number } | null = null;
 // called for EVERY command and must not rescan the card list each time.
 let ledgerNames: LedgerNames | undefined;
 onBeforeApply((s, cmd) => {
+  noteCommand(cmd.kind);
   if (cmd.kind === 'rollbackAnswer' && cmd.accept) {
     const r = s.script?.rollback;
     // The seq rides along when the ask named a UNIT (U4). Captured here, one
@@ -425,6 +431,7 @@ onBeforeApply((s, cmd) => {
   recordSnapshot(s, cmd.kind, { human: meta.label, seat: meta.seat, role: meta.role });
 });
 onRefused((why) => {
+  noteRefusal(why);
   lobbyNote = why;
   render();
 });
@@ -1379,6 +1386,7 @@ function barHtml(): string {
     ${v.room ? `<span class="pill code" id="mc-code" title="Copy the room code">${esc(v.room.id)}${copied ? ' ✓' : ''}</span>` : ''}
     ${conn}${link}
     <span class="spacer"></span>
+    <button class="mc-backbtn ghostbtn" id="mc-report" title="Report a problem with this game">Report</button>
     <button class="mc-account" id="mc-acct">${account ? esc(account.username) : 'Sign in'}</button>
     <a class="mc-backbtn" href="./index.html">Back to Board</a>
     ${v.room ? '<button class="mc-backbtn ghostbtn" id="mc-door" title="Leave this table and go back to the Match Centre">Match Centre</button>' : ''}
@@ -2710,6 +2718,27 @@ function wire(): void {
   $('mc-code')?.addEventListener('click', copyCode);
   $('mc-code2')?.addEventListener('click', copyCode);
   $('mc-health')?.addEventListener('click', copyDiagnostics);
+  $('mc-report')?.addEventListener('click', () => {
+    const v = relay.state;
+    openBoardReport({
+      lead: v.room
+        ? `Round ${state.round?.n ?? 1} · ${PHASES[state.round?.phase ?? 0]} Phase · room ${v.room.id}`
+        : 'Match Centre · not in a room',
+      state,
+      seat: v.seat,
+      // The relay already assembles exactly this, for the health pill's
+      // "copy a connection report". A second version of it would be a second
+      // thing to keep true.
+      net: relay.diagnostics(),
+      // Read off the DOM rather than reaching into matchhud for its Board, and
+      // omitted entirely when there is no board mounted -- a report from the
+      // lobby is perfectly valid, but offering to attach a picture of a board
+      // that is not on screen is a checkbox that quietly does nothing.
+      boardSvg: document.querySelector('#mc-board svg')
+        ? () => new XMLSerializer().serializeToString(document.querySelector('#mc-board svg')!)
+        : undefined,
+    });
+  });
 
   $('mc-login')?.addEventListener('click', () => {
     const user = ($('mc-user') as HTMLInputElement | null)?.value.trim() ?? '';

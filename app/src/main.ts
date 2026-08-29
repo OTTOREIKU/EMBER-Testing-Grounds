@@ -7,6 +7,8 @@ import { DiceTray } from './dice';
 import { importSquadFile } from './importer';
 import { factionColour, squadColour } from './icons';
 import { ammoHolder, applyRemote, check, onPerformed, onRefused, perform, type Command, onBeforeApply } from './commands';
+import { installDiagnostics, noteCommand, noteRefusal } from './diagnostics';
+import { openBoardReport } from './reportui';
 import { Relay } from './net';
 import { getLocalSeat, setLocalSeat } from './loop';
 import { ApiError, EmberApi, type SquadEntry } from './api';
@@ -64,6 +66,9 @@ import { battlefieldLocked, countHits, firstPlayerFrom, newSetup, normaliseSetup
 import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
 import { dialsOf, hashDials, newSalt } from './secrecy';
 import { printedDeployment, resolveZoneSetData } from './overlays';
+// FIRST, before anything else in this module runs. A net that is installed
+// after the thing it is meant to catch is not a net.
+installDiagnostics(window);
 
 const SAVE_KEY = 'ember-testing-grounds-v1';
 
@@ -332,6 +337,10 @@ async function init() {
   // arrived (U1).
   const ledgerNames = namesFrom(data);
   onBeforeApply((s, cmd) => {
+    // Names the command for the black box before it runs, so anything that
+    // throws inside apply() is reported against the move that caused it
+    // rather than against nothing at all.
+    noteCommand(cmd.kind);
     const meta = labelFor(cmd, s, ledgerNames);
     recordSnapshot(s, cmd.kind, { human: meta.label, seat: meta.seat, role: meta.role });
   });
@@ -2974,7 +2983,13 @@ async function init() {
   // The strict tracker refuses illegal commands inside perform; the reason
   // lands in the hint bar rather than a modal, because a refusal should never
   // interrupt more than the click that caused it.
-  onRefused((why) => setHint(`⛔ ${why}`));
+  onRefused((why) => {
+    // Both, and in this order: the player is told, and the black box remembers.
+    // A refusal the player thinks is wrong IS the bug report, so the reason
+    // text the engine chose has to survive past the hint that shows it.
+    noteRefusal(why);
+    setHint(`⛔ ${why}`);
+  });
 
   // The keyboard help is static markup in #hint-keys now, so an empty hint means
   // "show the keys" rather than "write the keys out again": the CSS swaps the two
@@ -5794,6 +5809,18 @@ async function init() {
 
   document.getElementById('btn-mapmanage')!.addEventListener('click', openMapManager);
 
+  document.getElementById('btn-report')!.addEventListener('click', () => {
+    openBoardReport({
+      lead: `Round ${state.round?.n ?? 1} · ${PHASES[state.round?.phase ?? 0]} Phase · freeplay`,
+      state,
+      seat: getLocalSeat(),
+      // Serialised on demand, not up front: it is the largest thing in the
+      // report and the box that asks for it starts checked, so building it
+      // eagerly would cost that every time the dialog merely opens.
+      boardSvg: () => new XMLSerializer().serializeToString(board.svg),
+    });
+  });
+
   // ---------- zone sets ----------
 
   function activeMission(): (typeof data.missions.cards)[number] | undefined {
@@ -7007,7 +7034,35 @@ async function init() {
     const file = importFile.files?.[0];
     if (!file) return;
     try {
-      const s = migrateState(JSON.parse(await file.text()), data);
+      const raw = JSON.parse(await file.text()) as Record<string, unknown> | null;
+      // A bug report is a board wrapped in an envelope, and Load is how the
+      // board inside gets looked at -- refusing the very file "Save report"
+      // writes would make the reports folder a dead end. A stuck report also
+      // carries the board from a few moves before, which is usually the more
+      // useful one: load it and step forward, watching it break.
+      let picked: unknown = raw;
+      if (raw && typeof raw === 'object' && raw.v === 1 && typeof raw.type === 'string') {
+        if (raw.type !== 'board') throw new Error('That is a reference report, which carries no board');
+        const wrap = raw as { state?: unknown; before?: { movesBack?: number; state?: unknown } | null };
+        picked = wrap.state;
+        if (wrap.before?.state) {
+          const at = await choiceDialog({
+            title: 'A bug report holds two boards',
+            body: 'The board as reported, and the board from a few moves before it went wrong.',
+            choices: [
+              { id: 'now', label: 'As reported', primary: true },
+              { id: 'before', label: `${wrap.before.movesBack ?? 5} moves before`, note: 'Step forward from here to watch it happen.' },
+              { id: 'skip', label: 'Cancel', cancel: true },
+            ],
+          });
+          if (at !== 'now' && at !== 'before') {
+            importFile.value = '';
+            return;
+          }
+          if (at === 'before') picked = wrap.before.state;
+        }
+      }
+      const s = migrateState(picked, data);
       if (!s) throw new Error('not a board file');
       state = s;
       selectToken(null);

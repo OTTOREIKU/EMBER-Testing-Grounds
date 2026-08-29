@@ -31,3 +31,7 @@ app/tests/_*.mjs
 
 # Cached responses from the publisher's card API (tools/sync_official.mjs).
 .cache/
+
+# Bug reports players hand over. Local only — the app saves them, nothing
+# uploads them, and none of them belong in the history.
+reports/
