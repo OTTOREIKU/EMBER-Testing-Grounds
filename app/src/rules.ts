@@ -900,8 +900,8 @@ export function protectionFor(
     white += 2;
     parts.push(losBetween(attacker, defender, [], protectors.filter((t) => t.size === 3)) !== 'clear'
       ? 'Unit Protection (obstructed by a Large unit)'
-      : 'Unit Protection (an Ally unit in the way provides it — ZHDR-101 Mobile Bunker)');
+      : 'Unit Protection (an Ally unit in the way provides it, ZHDR-101 Mobile Bunker)');
   }
   const note = parts.join(' + ') || 'Obstructed line of sight';
-  return { white, note: idle ? `${note} — ${IDLE}` : note };
+  return { white, note: idle ? `${note}, but ${IDLE}` : note };
 }

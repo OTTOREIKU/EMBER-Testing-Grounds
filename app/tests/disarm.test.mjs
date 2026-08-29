@@ -253,7 +253,7 @@ async function strike(cardId, actionId, slot, boost) {
     at > dataSrc.indexOf('export function isModeFace') && at < dataSrc.indexOf('export function zeroCostReason'), true);
   const chk = cmdsSrc.slice(cmdsSrc.indexOf("case 'disarm': {"), cmdsSrc.indexOf("case 'disarm': {") + 1300);
   check('the command refuses a Part with no Discard Card', /has no Discard Card/.test(chk), true);
-  check('and a destroyed Part', /destroyed — there is no card left to flip/.test(chk), true);
+  check('and a destroyed Part', /destroyed, so there is no card left to flip/.test(chk), true);
   const apply = cmdsSrc.slice(cmdsSrc.lastIndexOf("case 'disarm': {"), cmdsSrc.lastIndexOf("case 'disarm': {") + 700);
   check('the face is DERIVED in apply, never carried on the wire',
     /discardFaceOf\(data, from\)/.test(apply) && /far\.id/.test(apply), true);

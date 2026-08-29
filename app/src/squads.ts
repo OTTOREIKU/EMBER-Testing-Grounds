@@ -684,7 +684,7 @@ export class SquadTracker {
         ...this.stanceInfo(t),
         lines: [this.handsOff(t)
           ? 'The other squad\'s Stance is theirs to set.'
-          : 'Online, a Stance is locked in at the start of this Mech\'s own Action Opportunity (4.1) — the turn panel asks for it before the Mech may do anything else.'],
+          : 'Online, a Stance is locked in at the start of this Mech\'s own Action Opportunity (4.1). The turn panel asks for it before the Mech may do anything else.'],
       });
       meta.appendChild(stance);
     } else if (t.kind === 'mech') {

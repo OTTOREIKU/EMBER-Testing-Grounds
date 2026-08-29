@@ -573,7 +573,7 @@ export class Board {
         lines: [
           p.blocksLos ? 'Blocks line of sight' : 'Does not block line of sight',
           p.providesProtection ? 'Gives Terrain Protection (+2 White when fired through)' : 'No protection dice',
-          p.isFragile ? 'Destructible — click to destroy; a Large unit moving in Crushes it' : 'Cannot be destroyed',
+          p.isFragile ? 'Destructible. Click to destroy; a Large unit moving in Crushes it' : 'Cannot be destroyed',
         ],
       });
       if (editable) {
@@ -711,7 +711,7 @@ export class Board {
       this.attachInspect(g, {
         title: `${m.kind.charAt(0).toUpperCase()}${m.kind.slice(1)} marker`,
         sub: `Grid ${String.fromCharCode(65 + m.col)}${m.row + 1}`,
-        lines: ['Scenario objective — see the scenario briefing for how it scores.'],
+        lines: ['Scenario objective. The scenario briefing says how it scores.'],
       });
       this.gMarkers.appendChild(g);
     }

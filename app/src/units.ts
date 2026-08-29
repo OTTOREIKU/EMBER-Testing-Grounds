@@ -1450,7 +1450,7 @@ export function twoHandedUse(
     slot: best.slot,
     label: best.label,
     support,
-    note: `[Two-Handed]: ${best.label} supports it — ${gains.join(', ')}`,
+    note: `[Two-Handed]: ${best.label} supports it, ${gains.join(', ')}`,
   };
 }
 
@@ -1466,8 +1466,8 @@ export interface MultiTarget {
 }
 
 const MULTI_CONDITION: Record<string, string> = {
-  freehand_designated: 'Two-Handed — a Freehand must be designated to support this Part',
-  charge_available: 'Charged — it costs the Charge Token, and Suppression is the other choice',
+  freehand_designated: 'Two-Handed: a Freehand must be designated to support this Part',
+  charge_available: 'Charged: it costs the Charge Token, and Suppression is the other choice',
 };
 
 // The inline keyword is the literal string 多目标X — an X, never a number — so

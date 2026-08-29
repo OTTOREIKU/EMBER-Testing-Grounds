@@ -149,7 +149,7 @@ export function breakAwayNote(
   // same unit — the Movement half was right and the sentence under it was not.
   const surcharge = held.length;
   const obstruct = surcharge
-    ? ` ${held.map((o) => o.label).join(' and ')} ${surcharge === 1 ? 'charges' : 'charge'} ${surcharge} more (Obstruct, LPA-20). That surcharge may instead be paid as ${surcharge} Link${surcharge > 1 ? ', one per Obstruct locker and each choosable on its own' : ''} — this app does not price it, so take it by hand.`
+    ? ` ${held.map((o) => o.label).join(' and ')} ${surcharge === 1 ? 'charges' : 'charge'} ${surcharge} more (Obstruct, LPA-20). That surcharge may instead be paid as ${surcharge} Link${surcharge > 1 ? ', one per Obstruct locker and each choosable on its own' : ''}. This app does not price it, so take it by hand.`
     : '';
   return ` Melee Locked by ${locked.map((o) => o.label).join(', ')}, so leaving a Grid costs ${cost} extra Movement Range (4.3.5).${obstruct}`;
 }

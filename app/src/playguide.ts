@@ -847,7 +847,7 @@ export class PlayGuide {
     if (phase === 'Action' && !actionPhaseComplete(s, (t, timing) => initiativeFor(this.data, t, timing))) {
       const left = activationOrder(s, (t, timing) => initiativeFor(this.data, t, timing))
         .filter((a) => !this.script(s).acted.includes(a.uid)).length;
-      return `${left} Mech${left === 1 ? ' has' : 's have'} not acted — end each activation first`;
+      return `${left} Mech${left === 1 ? ' has' : 's have'} not acted. End each activation first`;
     }
     if (isLoopPhase(phase) && !loopComplete(s, phase)) {
       const noun = phase === 'Delay' ? 'projectile' : 'drone';
@@ -1363,7 +1363,7 @@ export class PlayGuide {
     // should see the difference between what was scored and what was banked.
     this.warn = paid.ok
       ? paid.note ?? null
-      : `${paid.why}${settled ? '' : ' Nothing has been paid, so the Tasks step stays open — press Award again once that is dealt with.'}`;
+      : `${paid.why}${settled ? '' : ' Nothing has been paid, so the Tasks step stays open. Press Award again once that is dealt with.'}`;
     this.cb.onChanged();
   }
 
@@ -1478,7 +1478,7 @@ export class PlayGuide {
     // shown and disabled rather than hidden: a player needs to see why.
     const choices = targets.map((t) => ({
       id: String(t.uid),
-      label: `${t.label} — Link ${t.link ?? 0}${(t.link ?? 0) < g.minimumLink ? ` (needs ${g.minimumLink})` : ''}`,
+      label: `${t.label}, Link ${t.link ?? 0}${(t.link ?? 0) < g.minimumLink ? ` (needs ${g.minimumLink})` : ''}`,
       disabled: (t.link ?? 0) < g.minimumLink,
       note: `This Mech needs at least ${g.minimumLink} Link to be chosen.`,
     }));
@@ -1601,7 +1601,7 @@ export class PlayGuide {
         // anywhere: the learner has just read the keyword on the card.
         const denier = actionSilenceDenier(this.data, s.tokens, t, row.action);
         const because = denier
-          ? ` — ${denier.source.label} (${denier.label}) denies it Silence`
+          ? `, but ${denier.source.label} (${denier.label}) denies it Silence`
           : '';
         const range = manifestationRange(this.data, t);
         const hop = range > 0

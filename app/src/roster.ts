@@ -833,7 +833,7 @@ export class Roster {
       const limit = `${cap.points}${cap.openEnded ? '+' : ''}`;
       const worst = squads ? Math.max(squads.s1, squads.s2) : total;
       const over = !cap.openEnded && worst > cap.points;
-      lines.push(`Battle size: ${cap.name}, ${limit} points${over ? ' — over the cap' : ''}`);
+      lines.push(`Battle size: ${cap.name}, ${limit} points${over ? ', over the cap' : ''}`);
     }
     return lines.join('\n');
   }

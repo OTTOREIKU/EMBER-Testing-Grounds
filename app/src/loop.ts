@@ -83,7 +83,7 @@ export function droneActionWhy(
     if (a.speed === 'command') return null;
     if (a.speed === 'auto' && opts.autoActions) return null;
     return a.speed === 'auto'
-      ? 'This is an Automatic Action — it is performed in the Automatic Phase without a Command (3.5). A Command lets this Drone MOVE instead, or fire an Action bearing the Command icon (3.2.2).'
+      ? 'This is an Automatic Action, performed in the Automatic Phase without a Command (3.5). A Command lets this Drone MOVE instead, or fire an Action bearing the Command icon (3.2.2).'
       : 'Only an Action bearing the Command icon may be performed with a Command (3.2.2).';
   }
   if (phase === 'Automatic') {

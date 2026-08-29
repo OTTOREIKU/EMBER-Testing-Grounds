@@ -124,7 +124,7 @@ export class MultiplayerDialog {
     const both = !!v.room.seats.s1 && !!v.room.seats.s2;
     const status = v.status === 'connecting' ? 'Reconnecting…'
       : !both ? 'Waiting for the other player'
-      : 'Both seats filled — play as normal, your moves are being sent';
+      : 'Both seats filled. Play as normal, your moves are being sent';
 
     return `<div class="mp-section">
         <h4>Online game</h4>
@@ -132,7 +132,7 @@ export class MultiplayerDialog {
         <p class="dim">${esc(status)}${v.seat ? '' : ' · you are spectating'}</p>
         <div class="mp-games">${seatLine('s1')}${seatLine('s2')}</div>
         ${v.desynced
-          ? `<p class="mp-notice error">Fell behind — fetching the board from the server. This should clear on its own.</p>`
+          ? `<p class="mp-notice error">Fell behind, so the board is being fetched from the server. This should clear on its own.</p>`
           : v.error ? `<p class="mp-notice error">${esc(v.error)}</p>` : ''}
         <div class="mp-actions">
           <button class="mp-btn ghost" id="mp-leave">Leave</button>

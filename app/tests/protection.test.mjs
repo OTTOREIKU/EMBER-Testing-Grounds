@@ -163,7 +163,7 @@ check('but it does stack with Terrain Protection, for +4',
 // beside it does not, and the player sees +2 where the table said +4.
 check('a Terrain-only +2 says why the unit beside it added nothing',
   protectionFor(me, far, firing, [midway], board(midBlocker), []),
-  { white: 2, note: 'Terrain Protection (obstructed by terrain ≥2") — the unit in the way is not Large, so there is no Unit Protection (4.5.3)' });
+  { white: 2, note: 'Terrain Protection (obstructed by terrain ≥2"), but the unit in the way is not Large, so there is no Unit Protection (4.5.3)' });
 // An Aerial unit is not in the line at all (4.5.3), so it neither protects nor
 // leaves the defender an explanation to read.
 check('an Aerial Large unit in the way is not in the way',
@@ -199,7 +199,7 @@ check('the Mobile Bunker protects an Ally despite being medium',
   protectionFor(me, far, firing, [], board(bunkerFor('s2')), [], false, isBunker).white, 2);
 check('and the note credits the card rather than claiming a Large unit',
   protectionFor(me, far, firing, [], board(bunkerFor('s2')), [], false, isBunker).note,
-  'Unit Protection (an Ally unit in the way provides it — ZHDR-101 Mobile Bunker)');
+  'Unit Protection (an Ally unit in the way provides it, ZHDR-101 Mobile Bunker)');
 // "to Ally Units", so the side of the DEFENDER is what it turns on — the same
 // Scutum standing in front of an enemy is just a medium unit.
 check('it does nothing for a unit that is not its Ally',

@@ -1255,11 +1255,11 @@ export class AttackHelper {
   // ruled and the table may want to overrule it by hand.
   private shieldNote(swap: { shield: Token; declared: Token; others: Token[] }): string {
     return `Automatic Shield: ${swap.shield.label} is Adjacent to ${swap.declared.label} and the line of sight`
-      + ` passes through it, so the attack targets ${swap.shield.label} instead — mandatory, "will be", not "may"`
+      + ` passes through it, so the attack targets ${swap.shield.label} instead: mandatory, "will be", not "may"`
       + ` (FAQ A2/A12). The Suppression and other on-hit effects transfer with the target.`
       + (swap.others.length
         ? ` ${swap.others.map((t) => t.label).join(' and ')} also qualif${swap.others.length > 1 ? 'y' : 'ies'};`
-          + ` nothing printed says who picks, so the nearest was taken — move the shot by hand if the table rules otherwise.`
+          + ` nothing printed says who picks, so the nearest was taken. Move the shot by hand if the table rules otherwise.`
         : '');
   }
 
@@ -1720,7 +1720,7 @@ export class AttackHelper {
     const n = Math.min(this.attackIcons(c).lightning ?? 0, c.defender.link ?? 0);
     if (!n) return;
     this.onCommand({ kind: 'drainLink', seat: c.attacker.side, uid: c.attacker.uid, targetUid: c.defender.uid, n });
-    this.note(`${c.defender.label} loses ${n} Link (${kind === 'wrecking' ? 'Wrecking' : 'Concussion'}, 4.10)${(c.defender.link ?? 0) - n <= 0 ? ' — at 0 Link it Shuts Down' : ''}.`);
+    this.note(`${c.defender.label} loses ${n} Link (${kind === 'wrecking' ? 'Wrecking' : 'Concussion'}, 4.10)${(c.defender.link ?? 0) - n <= 0 ? ', and at 0 Link it Shuts Down' : ''}.`);
     this.onChanged();
   }
 
@@ -1825,12 +1825,12 @@ export class AttackHelper {
       const p = document.createElement('p');
       p.className = 'ah-note';
       p.textContent = sent
-        ? `Focus answered — waiting for ${c.attacker.label}'s window to take it.`
+        ? `Focus answered. Waiting for ${c.attacker.label}'s window to take it.`
         : !mine
         ? `Focus (4.4.1-5): waiting for ${t.label}'s player, who may spend 1 Link to reroll their ${side === 'attacker' ? 'Attack' : 'Defense'} dice.`
         : focusIsFree(this.data, t)
-        ? `Focus (4.4.1-5): ${t.label} is down to 3 Parts, so its Focus reroll costs no Link at all (Will to Survive) — ${side === 'attacker' ? 'the attacker declares first' : 'the defender declares second'}.`
-        : `Focus (4.4.1-5): ${t.label} may spend 1 Link (${t.link ?? 0} left) to reroll any of its ${side === 'attacker' ? 'Attack' : 'Defense'} dice — ${side === 'attacker' ? 'the attacker declares first' : 'the defender declares second'}.`;
+        ? `Focus (4.4.1-5): ${t.label} is down to 3 Parts, so its Focus reroll costs no Link at all (Will to Survive). ${side === 'attacker' ? 'The attacker declares first' : 'The defender declares second'}.`
+        : `Focus (4.4.1-5): ${t.label} may spend 1 Link (${t.link ?? 0} left) to reroll any of its ${side === 'attacker' ? 'Attack' : 'Defense'} dice. ${side === 'attacker' ? 'The attacker declares first' : 'The defender declares second'}.`;
       wrap.appendChild(p);
       const use = document.createElement('button');
       use.className = 'ah-primary';
@@ -1838,7 +1838,7 @@ export class AttackHelper {
       // Will to Survive), so the BUTTON must agree — an unconditional "spend 1
       // Link" on a reroll the engine no longer charges reads as a bug at the
       // table. match.ts's mirror button already branched; this one did not.
-      use.textContent = focusIsFree(this.data, t) ? 'Focus — free' : 'Focus — spend 1 Link';
+      use.textContent = focusIsFree(this.data, t) ? 'Focus: free' : 'Focus: spend 1 Link';
       use.disabled = !mine;
       // On a mirror only the DEFENDER's half is ever answerable, and it travels
       // as focusAnswer: the Link is spent by this client's own command and the
@@ -2240,9 +2240,9 @@ export class AttackHelper {
       const why = lpToken
         ? ''
         : mistyEagle
-          ? ` — ${mistyEagle.source.label} (${mistyEagle.label}) is within range of ${c.attacker.label}`
+          ? `, because ${mistyEagle.source.label} (${mistyEagle.label}) is within range of ${c.attacker.label}`
           : concealed
-            ? ` — Power Concealment: ${c.defender.label} is inside ${concealed.source.label}'s ${concealed.label}`
+            ? `, because of Power Concealment: ${c.defender.label} is inside ${concealed.source.label}'s ${concealed.label}`
             : '';
       text.push(`Low Profile: [Eye] counted as [Dodge] against this Firing Attack${why}`);
     }
@@ -2278,10 +2278,10 @@ export class AttackHelper {
     if (drainKind && drained) {
       if (c.defender.kind === 'mech') {
         text.push(drainKind === 'wrecking'
-          ? `Wrecking: ${drained} [Lightning] — each strips 1 Link from ${c.defender.label} and counts as damage`
-          : `Concussion: ${drained} [Lightning] — each strips 1 Link from ${c.defender.label}`);
+          ? `Wrecking: ${drained} [Lightning]. Each strips 1 Link from ${c.defender.label} and counts as damage`
+          : `Concussion: ${drained} [Lightning]. Each strips 1 Link from ${c.defender.label}`);
       } else if (drainKind === 'wrecking') {
-        text.push(`Wrecking: ${drained} [Lightning] count as damage — ${c.defender.label} has no Link to strip`);
+        text.push(`Wrecking: ${drained} [Lightning] count as damage. ${c.defender.label} has no Link to strip`);
       }
     }
     if (dense && heavy) text.push('Dense Armor: [Defense] may offset [Heavy Hit] here (4.10)');
@@ -2302,7 +2302,7 @@ export class AttackHelper {
     // to carry.
     const noDamage = preventsDamage(c.action);
     if (noDamage) {
-      text.push(`Un-offset icons: ${penetrating} — but this Action causes no damage (不造成伤害): only its on-hit effects apply.`);
+      text.push(`Un-offset icons: ${penetrating}, but this Action causes no damage (不造成伤害): only its on-hit effects apply.`);
     } else {
       text.push(`Un-offset icons: ${penetrating} ${penetrating ? '→ PENETRATION' : '→ no damage'}`);
     }
@@ -2903,9 +2903,9 @@ export class AttackHelper {
     const spent = m.targets.reduce((s, t) => ({ red: s.red + t.red, yellow: s.yellow + t.yellow }), { red: 0, yellow: 0 });
     const left = { red: m.total.red - spent.red, yellow: m.total.yellow - spent.yellow };
     wrap.innerHTML = `<h4><span class="ah-n">1</span>Multi-Target ${m.cap.limit}</h4>
-      <p class="dim">Up to ${m.cap.limit} targets at once. Settle the <b>total</b> pool first — every effect that adds dice applies to it now, once — then split those dice between the targets however you like. Each target then gets its own full attack sequence, and a Mech may Focus on each one separately.</p>
+      <p class="dim">Up to ${m.cap.limit} targets at once. Settle the <b>total</b> pool first: every effect that adds dice applies to it now, once. Then split those dice between the targets however you like. Each target then gets its own full attack sequence, and a Mech may Focus on each one separately.</p>
       ${m.cap.condition ? `<p class="ah-protect">This Part only <b>gains</b> Multi-Target under a condition the app does not track: <b>${m.cap.condition}</b>. Check it holds before splitting.</p>` : ''}
-      <p class="ah-protect">All the attacks count as resolved <b>at the same time</b> (FAQ B7), so anything a target sets off by being shot at — Emergency Smoke, for one — is placed only after the last sequence and cannot shield the targets still to come.</p>`;
+      <p class="ah-protect">All the attacks count as resolved <b>at the same time</b> (FAQ B7), so anything a target sets off by being shot at, Emergency Smoke for one, is placed only after the last sequence and cannot shield the targets still to come.</p>`;
     const totalLabel = document.createElement('p');
     totalLabel.className = 'dim';
     totalLabel.textContent = 'Total Attack Dice for the whole Action:';
@@ -3265,7 +3265,7 @@ export class AttackHelper {
     wrap.innerHTML = `<h4><span class="ah-n">1</span>Determine target Part</h4>
       <p class="dim">${c.explosion
         ? 'Roll the Black Die, or pick a Part directly if the target is Shutdown. Explosions have no facing, so there is no Back Attack here.'
-        : `Roll the Black Die. It decides the Part, and the chips below stay locked unless you may designate it: the target is Shutdown, this is a Back Attack, the die comes up ANY (4.4.1)${snipeOn(c.action) ? ', or — as here — the Action carries Snipe, which lets the attacker pick' : ''}.`}</p>`;
+        : `Roll the Black Die. It decides the Part, and the chips below stay locked unless you may designate it: the target is Shutdown, this is a Back Attack, the die comes up ANY (4.4.1)${snipeOn(c.action) ? ', or (as here) the Action carries Snipe, which lets the attacker pick' : ''}.`}</p>`;
 
     // The result used to appear as a line of text after the fact, so a new
     // player never saw which Part the die actually chose. The die is shown
@@ -3364,11 +3364,11 @@ export class AttackHelper {
       return;
     }
     const free = focusIsFree(this.data, c.attacker);
-    caption.textContent = `${part === 'any' ? 'ANY' : SLOT_LABEL[lands as PartSlot | 'main'] ?? part} — keep it, or Focus to reroll?`;
+    caption.textContent = `${part === 'any' ? 'ANY' : SLOT_LABEL[lands as PartSlot | 'main'] ?? part}. Keep it, or Focus to reroll?`;
     const offer = document.createElement('span');
     offer.className = 'rerolls';
     const go = document.createElement('button');
-    go.textContent = free ? 'Focus: reroll the Black Die (free — Will to Survive)' : 'Focus: reroll the Black Die (1 Link)';
+    go.textContent = free ? 'Focus: reroll the Black Die (free, Will to Survive)' : 'Focus: reroll the Black Die (1 Link)';
     go.title = 'The Part Die is a roll like any other, so Focus may reroll it (4.10). Once, and the new result stands.';
     go.addEventListener('click', () => {
       offer.remove();
@@ -3399,7 +3399,7 @@ export class AttackHelper {
     const part = this.dice.dice.black.faces[face][0]?.part ?? 'any';
     c.blackResult = part;
     if (part === 'any') {
-      caption.textContent = 'ANY — the attacker picks the Part.';
+      caption.textContent = 'ANY. The attacker picks the Part.';
       this.note('Black Die: ANY, so the attacker picks the Part.');
       // The panel can be closed during the pause, so nothing here assumes ctx.
       window.setTimeout(() => { if (this.ctx === c) this.render(); }, 700);
@@ -3419,7 +3419,7 @@ export class AttackHelper {
     // Die "must be rerolled" on a repeat (FAQ D4), and the redirect above can
     // funnel into it too, so the check comes after the redirect.
     if (c.surplusRound > 0 && slot === c.surplusOriginalPart) {
-      caption.textContent = `${SLOT_LABEL[slot as PartSlot] ?? part} was the original hit — reroll the Black Die.`;
+      caption.textContent = `${SLOT_LABEL[slot as PartSlot] ?? part} was the original hit, so reroll the Black Die.`;
       this.note(`Black Die: ${part}, the Part the original hit landed on. Surplus Damage must go elsewhere, so the die is rerolled (FAQ D4).`);
       window.setTimeout(() => { if (this.ctx === c) this.render(); }, 900);
       return;
@@ -3488,8 +3488,8 @@ export class AttackHelper {
       const already = out.find((o) => o.slot === x.slot);
       // A Part can be both a shield and a Parry; the Parry Value is the part
       // worth saying out loud, so it wins the label.
-      if (already) { already.parry = x.value; already.label = `${x.label} — Parry ${x.value}`; continue; }
-      out.push({ slot: x.slot, label: `${x.label} — Parry ${x.value}`, parry: x.value });
+      if (already) { already.parry = x.value; already.label = `${x.label}, Parry ${x.value}`; continue; }
+      out.push({ slot: x.slot, label: `${x.label}, Parry ${x.value}`, parry: x.value });
     }
     return out;
   }
@@ -3514,7 +3514,7 @@ export class AttackHelper {
     for (const opt of this.designateOffers(from)) {
       const b = document.createElement('button');
       b.className = 'ah-primary';
-      b.textContent = `${SLOT_LABEL[opt.slot as PartSlot | 'main']} — ${opt.label}`;
+      b.textContent = `${SLOT_LABEL[opt.slot as PartSlot | 'main']}: ${opt.label}`;
       b.disabled = !mine;
       // The answer travels as designateHit and the ATTACKER's window is what
       // actually moves the hit, which is the same shape focusAnswer has: the
@@ -3658,7 +3658,7 @@ export class AttackHelper {
     if (f && f.stage === rerollStage) {
       const go = document.createElement('button');
       go.textContent = 'Focus: reroll selected';
-      go.title = 'The Link is already spent — reroll every selected die above.';
+      go.title = 'The Link is already spent, so reroll every selected die above.';
       go.disabled = !mine;
       go.addEventListener('click', () => {
         if (!roll.some((d) => d.selected)) return;
@@ -3935,7 +3935,7 @@ export class AttackHelper {
         d.count === 1 ? 'its face' : 'their faces'
       } now, before anything is rolled (FAQ A25). Take ${d.count} off the White above, roll the rest, and count the Designated ${
         d.count === 1 ? 'die' : 'dice'
-      } alongside the result.${c.surplusRound ? ' It applies here too — it triggered when the unit was attacked (FAQ D11).' : ''}`;
+      } alongside the result.${c.surplusRound ? ' It applies here too, because it triggered when the unit was attacked (FAQ D11).' : ''}`;
       wrap.appendChild(p);
     }
     if (!c.defenseRoll) {
@@ -4037,7 +4037,7 @@ export class AttackHelper {
       if (kc && defLightning > 0) {
         const b = document.createElement('button');
         b.className = 'ah-alt';
-        b.textContent = `KC Armor: consume a Charge Token — ${defLightning} [Lightning] become [Defense]`;
+        b.textContent = `KC Armor: consume a Charge Token so ${defLightning} [Lightning] become [Defense]`;
         b.disabled = !defMine || this.askSent('kcarmor');
         b.addEventListener('click', () => {
           if (this.sendAct('kcarmor')) return;
@@ -4064,7 +4064,7 @@ export class AttackHelper {
       if (dodgeOffer) {
         const b = document.createElement('button');
         b.className = 'ah-alt';
-        b.textContent = 'Dodge Enhancement: spend a Command Token — each [Dodge] cancels a whole Attack die';
+        b.textContent = 'Dodge Enhancement: spend a Command Token so each [Dodge] cancels a whole Attack die';
         b.disabled = !defMine || this.askSent('dodgeenhance');
         b.addEventListener('click', () => {
           if (this.sendAct('dodgeenhance')) return;
@@ -4414,7 +4414,7 @@ export class AttackHelper {
             targetUid: c.defender.uid, n,
           });
           this.note(
-            `${c.defender.label} loses ${n} Link (${r.why})${(c.defender.link ?? 0) - n <= 0 ? ' — at 0 Link it Shuts Down' : ''}.`,
+            `${c.defender.label} loses ${n} Link (${r.why})${(c.defender.link ?? 0) - n <= 0 ? ', and at 0 Link it Shuts Down' : ''}.`,
             [c.attacker, c.defender],
           );
         }
@@ -4479,7 +4479,7 @@ export class AttackHelper {
       note.className = 'ah-note';
       // FAQ B8 is the whole point of naming the defender in the label: the
       // bonus may not wander to a fresher target.
-      note.textContent = `${cardName(bonus.card)} destroyed a Part, so it may perform ${bonus.action.name?.en ?? 'its bonus attack'} immediately — against ${c.defender.label} and no one else (FAQ B8).`;
+      note.textContent = `${cardName(bonus.card)} destroyed a Part, so it may perform ${bonus.action.name?.en ?? 'its bonus attack'} immediately, against ${c.defender.label} and no one else (FAQ B8).`;
       el.appendChild(note);
       // The rider carries Forced Movement, the Black Box drop flush and the
       // spent-Projectile cleanup, so it must fire EXACTLY once whichever way
@@ -4544,8 +4544,8 @@ export class AttackHelper {
       const head = document.createElement('p');
       head.className = 'ah-note';
       head.textContent = both
-        ? `The hit causes Drag or Disarm (050) — the attacker picks one.`
-        : immobilizeChoiceOn(c.action) ? 'The hit MAY Drag the target, or give it an Immobilized Token — the attacker picks, or skips (139).'
+        ? `The hit causes Drag or Disarm (050). The attacker picks one.`
+        : immobilizeChoiceOn(c.action) ? 'The hit MAY Drag the target, or give it an Immobilized Token. The attacker picks, or skips (139).'
         : faceAwayOnHit(c.action) ? 'The hit MAY force the target to face away from this Mech (139).'
         : disarmOn(c.action) ? 'The hit causes Disarm.' : 'The hit causes Drag.';
       el.appendChild(head);
@@ -4570,7 +4570,7 @@ export class AttackHelper {
             if (choiceTaken) return;
             this.onCommand({ kind: 'disarm', seat, uid: atkUid, targetUid: defUid, slot });
             this.onChanged();
-            retire(go, `Disarmed — ${defLabel}'s ${SLOT_LABEL[slot as PartSlot] ?? slot} is on its Discard Card`);
+            retire(go, `Disarmed: ${defLabel}'s ${SLOT_LABEL[slot as PartSlot] ?? slot} is on its Discard Card`);
           });
           el.appendChild(go);
           buttons.push(go);
@@ -4594,7 +4594,7 @@ export class AttackHelper {
           if (choiceTaken) return;
           this.onCommand({ kind: 'applyStatus', seat, uid: atkUid, targetUid: defUid, statusId: 'immobilized', stacks: 1 });
           this.onChanged();
-          retire(go, `Immobilized — ${defLabel} bears the Token`);
+          retire(go, `Immobilized: ${defLabel} bears the Token`);
         });
         el.appendChild(go);
         buttons.push(go);
@@ -4624,9 +4624,9 @@ export class AttackHelper {
         go.addEventListener('click', () => {
           if (choiceTaken) return;
           this.onCommand({ kind: 'forceMove', seat, uid: atkUid, targetUid: defUid, to, facing: away });
-          this.note(`${defLabel} is forced to face away from the attacker (139_B). On a pure diagonal the horizontal was taken — turn it by hand if the table reads it otherwise.`);
+          this.note(`${defLabel} is forced to face away from the attacker (139_B). On a pure diagonal the horizontal was taken. Turn it by hand if the table reads it otherwise.`);
           this.onChanged();
-          retire(go, `Turned — ${defLabel} faces away`);
+          retire(go, `Turned: ${defLabel} faces away`);
         });
         el.appendChild(go);
         buttons.push(go);
@@ -4678,9 +4678,9 @@ export class AttackHelper {
             b.addEventListener('click', () => {
               if (choiceTaken || !picked) return;
               this.onCommand({ kind: 'forceMove', seat, uid: atkUid, targetUid: defUid, to: picked, facing: f as Facing });
-              this.note(`Drag: ${defLabel} is pulled adjacent and turned to face ${name} — treated as Flying Movement (glossary).`);
+              this.note(`Drag: ${defLabel} is pulled adjacent and turned to face ${name}, treated as Flying Movement (glossary).`);
               this.onChanged();
-              retire(b, `Dragged — ${defLabel} lands beside the attacker, facing ${name}`);
+              retire(b, `Dragged: ${defLabel} lands beside the attacker, facing ${name}`);
             });
             faceRow.appendChild(b);
             buttons.push(b);
@@ -5200,7 +5200,7 @@ export class ElectronicHelper {
       if (!spent && canAffordFocus(this.data, t)) {
         const rr = document.createElement('button');
         rr.className = 'ah-cancel';
-        rr.textContent = freeFocus ? 'Focus reroll (free — Will to Survive)' : 'Focus reroll (1 Link)';
+        rr.textContent = freeFocus ? 'Focus reroll (free, Will to Survive)' : 'Focus reroll (1 Link)';
         // Built for both players so each can see the other's offer standing,
         // live only for the one whose Link pays for it.
         rr.disabled = !this.mayPress(who);

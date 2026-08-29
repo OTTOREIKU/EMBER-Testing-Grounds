@@ -1500,7 +1500,7 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
   const bon = bonus ? canAttackMode(o, t.stance, bonus.stance) : null;
   const bonRow = bon && bonus
     ? `<button class="actrow k-tactic${bon.ok ? '' : ' warn'}"${bon.ok ? '' : ` data-why="${esc(bon.why ?? '')}"`} data-act="attackmode" title="${esc(bon.ok
-        ? `Take ${bonus.actionPoints} more Action Tick${bonus.actionPoints === 1 ? '' : 's'} for this Action Opportunity. Ordinary Ticks, so they combine with the base pool for a Medium Action — and taking them SETS the Stance (4.1).`
+        ? `Take ${bonus.actionPoints} more Action Tick${bonus.actionPoints === 1 ? '' : 's'} for this Action Opportunity. Ordinary Ticks, so they combine with the base pool for a Medium Action, and taking them SETS the Stance (4.1).`
         : bon.why ?? '')}">
         <span class="dotk"></span><span class="an">${esc(bonus.label)}</span><span class="ac">${o.attackMode ? 'taken' : `+${bonus.actionPoints} Tick · locks Stance`}</span></button>`
     : '';
@@ -1580,7 +1580,7 @@ function advanceBtn(ctx: HudCtx, label: string, disabled = false): string {
     return `<button class="bigbtn" data-act="advance"${disabled ? ' disabled' : ''}>${label}${r[other] ? ` · ${squadLabel(other)} is ready` : ''}</button>`;
   }
   const other: Side = ctx.seat === 's1' ? 's2' : 's1';
-  return `<button class="bigbtn ghost2" data-act="advance">✓ Waiting for ${squadLabel(other)} — tap to withdraw</button>`;
+  return `<button class="bigbtn ghost2" data-act="advance">✓ Waiting for ${squadLabel(other)}, tap to withdraw</button>`;
 }
 
 function loopPanel(ctx: HudCtx, phase: LoopPhase): string {
@@ -1672,7 +1672,7 @@ function endPanel(ctx: HudCtx): string {
       ? `<div class="sect2" style="margin-top:10px">This round earns</div>
          ${owed.lines.map((l) => `<div class="dialrow"><span class="nm ${l.side}">${esc(l.why)}</span><span class="pickchip set">+${l.vp}</span></div>`).join('')}
          <p class="tp-note">${ctx.networked
-           ? 'Read off the board, and added by itself when Settle Task control is pressed — nothing to add by hand.'
+           ? 'Read off the board, and added by itself when Settle Task control is pressed, so there is nothing to add by hand.'
            : 'Read off the board.<br>The +1 buttons stay for anything you settle by hand.'}</p>`
       : `<p class="tp-note">${settled ? '✓ This round\'s score has been settled.' : 'Nothing scores from the board this round.'}${ctx.networked ? '' : '<br>The +1 buttons stay for anything you settle by hand.'}</p>`}`;
   // The last round ends the game rather than rolling into another one. Without
@@ -1763,7 +1763,7 @@ function defensePanel(ctx: HudCtx): string {
     `${esc(attacker?.label ?? 'The enemy')} attacks with ${esc(a?.name?.en || call.actionId)}.`, true)
     + `<div class="tp-body">
         <p class="tp-note">${mirrored
-          ? `The combat window has the attack — your defence roll (<b>${esc(pool)}</b>) is in it.`
+          ? `The combat window has the attack, and your defence roll (<b>${esc(pool)}</b>) is in it.`
           : `Roll your defence: <b>${esc(pool)}</b>. Both players see the dice land, and the attack resolves once they do.`}</p>
         ${apNote}
       </div>
@@ -1922,9 +1922,9 @@ function undoChrome(ctx: HudCtx): string {
   // ruling wants the line VISIBLE so players learn where it sits.
   const unitRow = (p: RollbackPoint, primary: boolean): string => {
     const why = p.sealed
-      ? 'Dice were rolled inside this action — a rollback never reaches past a roll.'
+      ? 'Dice were rolled inside this action. A rollback never reaches past a roll.'
       : !p.available
-        ? 'Dice have been rolled since this — a rollback never reaches past a roll.'
+        ? 'Dice have been rolled since this. A rollback never reaches past a roll.'
         : '';
     const name = esc(p.label ?? 'an action');
     if (why) return `<button class="undo-row" disabled title="${esc(why)}">${name}<span class="ct">dice rolled</span></button>`;
@@ -1946,7 +1946,7 @@ function undoChrome(ctx: HudCtx): string {
     : `${first ? unitRow(first, true) : ''}
        ${rest.length ? `<div class="undo-h">Recent actions</div>${rest.map((p) => unitRow(p, false)).join('')}` : ''}
        ${phaseRows ? `<div class="undo-h">Phase starts</div>${phaseRows}` : ''}
-       <p class="undo-note">Both players have to agree — the other side answers before anything moves.</p>`;
+       <p class="undo-note">Both players have to agree: the other side answers before anything moves.</p>`;
   return `${trig}<div class="undo-pop">${body}</div>`;
 }
 
@@ -1966,7 +1966,7 @@ function rollbackPanel(ctx: HudCtx): string {
   }
   return head('Rollback', `${squadLabel(ask.by)} asks to go back`, `To ${esc(to)}. Everything since then is undone for both of you.`, true)
     + `<div class="tp-body">
-        <p class="tp-note">Agreeing rewinds both boards. Dice already rolled are not part of this — a rollback never reaches past a roll.</p>
+        <p class="tp-note">Agreeing rewinds both boards. Dice already rolled are not part of this. A rollback never reaches past a roll.</p>
       </div>
       <div class="tp-foot">
         <button class="bigbtn" data-rb="accept">Accept and roll back</button>
@@ -2349,7 +2349,7 @@ function martyrdomPanel(ctx: HudCtx): string {
   // No skip button: the card says 立刻引爆 — immediately. The only choices are
   // inside the Detonation flow, which resolves one target at a time.
   return head('Your move', `${esc(x.t.label)} detonates`,
-    'It was destroyed, so it blows up where it stands. The blast takes every Unit in range — allies included.', true)
+    'It was destroyed, so it blows up where it stands. The blast takes every Unit in range, allies included.', true)
     + `<div class="tp-body"><p class="tp-note">In range: ${esc(names.join(', ') || 'nothing')}</p>
         <p class="tp-dim">Each one takes a separate Explosion attack. Resolving removes the wreck from the board (4.7.5).</p></div>
        <div class="tp-foot"><button class="bigbtn" data-minego="${x.t.uid}" data-mineact="${esc(x.actionId)}">Resolve the Detonation</button></div>`;
@@ -2418,7 +2418,7 @@ function reactionPanel(ctx: HudCtx): string {
       .flatMap(({ card }) => card.actions ?? [])
       .filter((a) => a.type === 'Melee');
     return head('Your move', `${esc(t.label)}: ${esc(name)}`,
-      `${esc(t.label)} parried, so ${esc(from?.label ?? 'the attacker')} must end its Action Opportunity at once — and then ${esc(t.label)} may perform a Melee Action immediately.`, true)
+      `${esc(t.label)} parried, so ${esc(from?.label ?? 'the attacker')} must end its Action Opportunity at once, and then ${esc(t.label)} may perform a Melee Action immediately.`, true)
       + `<div class="tp-body"><p class="tp-dim">The Action costs no Ticks: it belongs to the card, not to an Action Opportunity. Pick the one to make.</p>
          ${melees.map((a) => `<button class="rowwide" data-ripostego="${t.uid}:${esc(a.id)}">${esc(a.name?.en || a.name?.zh || a.id)}<span class="ct">R${a.range ?? 1}</span></button>`).join('')
            || '<p class="tp-note">No Melee Action is left to make, so only the Opportunity ends.</p>'}</div>
@@ -2445,7 +2445,7 @@ function reactionPanel(ctx: HudCtx): string {
     const ev = electronicValue(ctx.data, t, loanedParts(ctx.data, ctx.state.tokens, t));
     return head('Your move', `${esc(t.label)}: ${esc(name)}`,
       `${esc(t.label)} was attacked by ${esc(from?.label ?? 'the attacker')}, so it may spend 1 Command Token to open an Electronic Counter-roll back at them. Succeed and they lose 1 Link.`, true)
-      + `<div class="tp-body"><p class="tp-dim">Electronic Value ${ev}. Range does not apply — this answers the attack wherever it came from.</p>
+      + `<div class="tp-body"><p class="tp-dim">Electronic Value ${ev}. Range does not apply: this answers the attack wherever it came from.</p>
          ${!from ? '<p class="tp-note">The attacker has left the board, so there is nothing to trace.</p>' : ''}
          ${ev <= 0 ? '<p class="tp-note">An Electronic Value of 0 cannot Initiate a Counter-roll (4.11.2).</p>' : ''}</div>
          <div class="tp-foot">${from && ev > 0 ? `<button class="bigbtn" data-reactgo="${t.uid}:${esc(r.actionId)}">Spend a Command Token and roll</button>` : ''}
@@ -2542,7 +2542,7 @@ function revealsOwed(ctx: HudCtx): { t: Token; key: string; why: string }[] {
         : undefined;
       const moveDenier = maneuverSilenceDenier(ctx.data, s.tokens, t, from);
       const named = (why: string, src: AuraSource | undefined): string =>
-        (src ? `${why} — ${src.source.label} (${src.label}) denies it Silence` : why);
+        (src ? `${why}, but ${src.source.label} (${src.label}) denies it Silence` : why);
       if (acted) out.push({ t, key: `${t.uid}:act:${s.round.n}`, why: named('performed a non-Silence action', denier) });
       else if (sc.opp.maneuvered && !maneuverIsSilent(ctx.data, s.tokens, t, from)) {
         out.push({ t, key: `${t.uid}:mov:${s.round.n}`, why: named('moved without Silence', moveDenier) });
@@ -3560,7 +3560,7 @@ function terminalPanel(ctx: HudCtx): string {
   if (m.itemId) {
     return head('Your move', `Remote Access on ${esc(zoneName(normaliseTasks(s.tasks).items.find((i) => i.id === m.itemId)?.zone ?? ''))}`,
       'Make the Electronic Counter-roll now, against the Terminal\'s Electronic Value of 3.', true)
-      + `<div class="tp-body"><p class="tp-note">Roll your Electronic dice from the panel — both players see them land in the feed.</p></div>
+      + `<div class="tp-body"><p class="tp-note">Roll your Electronic dice from the panel. Both players see them land in the feed.</p></div>
          <div class="tp-foot">
            <button class="bigbtn" data-tverdict="won">It succeeded</button>
            <button class="bigbtn ghost2" data-tverdict="lost">It failed</button>
@@ -3996,11 +3996,11 @@ function attackPanel(ctx: HudCtx): string {
     ? autoNeutralTargets(ctx.data, s.tokens, terrain, by, a)
     : [];
   const neutralNote = neutral.length
-    ? `<p class="tp-note">No enemy Unit is inside Range ${a.range ?? 0}, so ${esc(by.label)} MAY attack Breakable Terrain instead — and only the nearest, which is
+    ? `<p class="tp-note">No enemy Unit is inside Range ${a.range ?? 0}, so ${esc(by.label)} MAY attack Breakable Terrain instead, and only the nearest, which is
        ${neutral.map((n) => esc(terrainLabel(ctx, n.id))).join(' or ')} (FAQ O9).<br>Click the piece on the board to destroy it. Buildings and Defense walls are never valid targets (O10).</p>`
     : '';
   return head('Your move', `${esc(a.name?.en || m.actionId)}: which target?`,
-    `${esc(by.label)} · ${a.yellowDice ?? 0}Y ${a.redDice ?? 0}R.${stationary ? ` Stationary applies: Range ${a.range ?? 0}${(a.yellowDice ?? 0) !== (raw?.yellowDice ?? 0) ? `, ${a.yellowDice}Y` : ''} — no Movement this Opportunity.` : ''}`, true)
+    `${esc(by.label)} · ${a.yellowDice ?? 0}Y ${a.redDice ?? 0}R.${stationary ? ` Stationary applies: Range ${a.range ?? 0}${(a.yellowDice ?? 0) !== (raw?.yellowDice ?? 0) ? `, ${a.yellowDice}Y` : ''}, so no Movement this Opportunity.` : ''}`, true)
     + `<div class="tp-body">${rows || '<p class="tp-note">No enemy unit is on the board.</p>'}${neutralNote}</div>
        <div class="tp-foot"><button class="bigbtn ghost2" data-act="attackcancel">Cancel</button></div>`;
 }
@@ -4058,7 +4058,7 @@ function blinkPanel(ctx: HudCtx): string {
   return head('Your move', `Which way does ${esc(naming?.label ?? 'it')} face?`,
     'Prototype Blink is Forced Movement, so you set the facing of BOTH units (FAQ E17).', true)
     + `<div class="tp-body">${rows}<p class="tp-dim">${
-        m.facing === null ? 'Then you will set the other one.' : 'Last question — the swap goes through after this.'
+        m.facing === null ? 'Then you will set the other one.' : 'Last question. The swap goes through after this.'
       }</p></div>
        <div class="tp-foot"><button class="bigbtn ghost2" data-act="blinkcancel">Cancel</button></div>`;
 }

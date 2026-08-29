@@ -169,7 +169,7 @@ export class Panel {
       sub: 'inside the Large Grid it already occupies',
       lines: [
         'A Small or Medium unit does not fill its Grid, and Contact is judged where the Small Grids actually touch (4.2.3).',
-        'Repositioning inside one Grid costs no Movement Range, so this is free — but it can decide who is in Contact with what.',
+        'Repositioning inside one Grid costs no Movement Range, so this is free, but it can decide who is in Contact with what.',
         'Grey squares are blocked by terrain or another unit.',
       ],
     });

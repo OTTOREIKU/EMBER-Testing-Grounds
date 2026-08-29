@@ -1312,7 +1312,7 @@ function checkActed(
       }
       if (t.size >= 3) return no('A Large unit fills its whole Grid, so there is nowhere else to stand in it.');
       if (Math.floor(col / 3) !== Math.floor(t.col / 3) || Math.floor(row / 3) !== Math.floor(t.row / 3)) {
-        return no('This only shifts a unit inside the Grid it is already in — moving between Grids is a Maneuver.');
+        return no('This only shifts a unit inside the Grid it is already in. Moving between Grids is a Maneuver.');
       }
       // A custom map's pieces live on the board page, so check() reads the
       // built-in layout it can see; a custom board still gets the same-Grid
@@ -1960,7 +1960,7 @@ function checkActed(
       const from = held ? data.byId.get(held) : undefined;
       if (!from) return no(`${target.label} has nothing in that slot.`);
       if ((target.partStates[cmd.slot as PartSlot] ?? 'intact') === 'destroyed') {
-        return no(`${target.label}'s ${SLOT_LABEL[cmd.slot as PartSlot]} is destroyed — there is no card left to flip.`);
+        return no(`${target.label}'s ${SLOT_LABEL[cmd.slot as PartSlot]} is destroyed, so there is no card left to flip.`);
       }
       // The legality IS the pointer: a Part with no Discard Card has no
       // discard state (4.17), so a torso or a chassis cannot be disarmed.

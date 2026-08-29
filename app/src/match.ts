@@ -1333,7 +1333,7 @@ function tacticsPicker(side: Side): string {
         <span class="tp">${c.score ?? 0}p</span></div>`;
     })
     .join('')
-    + '<p class="quiet" style="margin:6px 0 0">The hand comes with the squad — build it on the freeplay board and save or bring the squad. Only 1 is played per round (5.4.2).</p>';
+    + '<p class="quiet" style="margin:6px 0 0">The hand comes with the squad. Build it on the freeplay board and save or bring the squad. Only 1 is played per round (5.4.2).</p>';
   return `<div class="tacbox">
     <button class="taclabel" id="mc-tactoggle" aria-expanded="${tacticsOpen}">
       <span class="tcaret">${tacticsOpen ? '▾' : '▸'}</span>Tactics Cards<span class="tsum">${esc(summary)}</span>
@@ -1745,7 +1745,7 @@ function adminHtml(): string {
         </div>
         <p class="quiet">0 days never expires.</p>
         ${mintedNote.length
-          ? `<div class="mc-ok">Minted — copy them now:</div>
+          ? `<div class="mc-ok">Minted. Copy them now:</div>
              <div class="codelist">${mintedNote.map((c) => `<code>${esc(c)}</code>`).join('')}</div>`
           : ''}
         <div class="sect row"><span>All codes</span><span class="sect-n" id="mc-codecount"></span></div>

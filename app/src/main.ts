@@ -421,9 +421,9 @@ async function init() {
           ? autoNeutralTargets(data, state.tokens, currentTerrain(), t, act)
           : [];
         setHint(neutral.length
-          ? `⌖ No enemy is in range, so this Automatic Action MAY take the nearest Breakable Terrain instead — ${
+          ? `⌖ No enemy is in range, so this Automatic Action MAY take the nearest Breakable Terrain instead: ${
             neutral.map((n) => gridOfTerrain(n.id)).join(' or ')
-          } — destroyed by clicking the piece (FAQ O9). Esc cancels.`
+          }, destroyed by clicking the piece (FAQ O9). Esc cancels.`
           : '⌖ Click the TARGET unit on the board (Esc cancels)');
       };
       const shock = adjusted ? shockAttackOf(adjusted) : 0;
@@ -2041,10 +2041,10 @@ async function init() {
     ];
     const pick = await choiceDialog({
       title: 'Fly this Maneuver?',
-      body: `${t.label} may treat its Maneuver as Flying Movement. Flying lets it ${gains.join(' and ')} — but a Flying Movement can never Crush (FAQ E14).`,
+      body: `${t.label} may treat its Maneuver as Flying Movement. Flying lets it ${gains.join(' and ')}, but a Flying Movement can never Crush (FAQ E14).`,
       stacked: true,
       choices: [
-        { id: 'fly', label: 'Fly it', note: 'Flying Movement — cannot Crush' },
+        { id: 'fly', label: 'Fly it', note: 'Flying Movement, cannot Crush' },
         { id: 'walk', label: 'Move normally', note: 'May Crush, pays Melee Lock' },
         { id: 'cancel', label: 'Cancel', cancel: true },
       ],
@@ -2356,7 +2356,7 @@ async function init() {
     if (!targets.length) {
       await alertDialog({
         title: 'Nothing to exchange with',
-        body: `${what} takes one GROUND MECH of the same size as ${t.label}, within Range ${action.range ?? 0} — enemy or allied. Drones, Terrain and anything a different size cannot be chosen (FAQ E20).`,
+        body: `${what} takes one GROUND MECH of the same size as ${t.label}, within Range ${action.range ?? 0}, enemy or allied. Drones, Terrain and anything a different size cannot be chosen (FAQ E20).`,
       });
       return done(false);
     }
@@ -2370,7 +2370,7 @@ async function init() {
       choices: [
         ...targets.map((o) => ({
           id: String(o.uid),
-          label: `${o.label}${o.side === t.side ? ' (ally)' : ''} — ${gridRef(Math.floor(o.col / 3), Math.floor(o.row / 3))}`,
+          label: `${o.label}${o.side === t.side ? ' (ally)' : ''}: ${gridRef(Math.floor(o.col / 3), Math.floor(o.row / 3))}`,
         })),
         { id: '', label: 'Cancel', cancel: true },
       ],
@@ -5082,7 +5082,7 @@ async function init() {
     }
     const pick = await choiceDialog({
       title: `${what}: which Stance?`,
-      body: `${t.label} turns its card over, then makes ONE Movement. Everything it carries — Ammo, Tokens, damage — comes with it; only the card changes.`,
+      body: `${t.label} turns its card over, then makes ONE Movement. Everything it carries (Ammo, Tokens, damage) comes with it; only the card changes.`,
       stacked: true,
       choices: [
         ...others.map((id) => {
@@ -7101,7 +7101,7 @@ async function init() {
       perform(data, state, { kind: 'setTactics', seat: side, cards: merged });
     }
     onChanged();
-    setHint(`Squad "${name}" joins ${squadLabel(side)}${deployingNow() ? ' — it deploys with everything else (3.1.4)' : ''}.`);
+    setHint(`Squad "${name}" joins ${squadLabel(side)}${deployingNow() ? ', and it deploys with everything else (3.1.4)' : ''}.`);
     return true;
   }
 

@@ -1062,8 +1062,8 @@ export function zeroCostReason(c: Card): string | null {
   if (c.score) return null;
   if (isDiscardCard(c)) return 'discard state of a paid part';
   if (isModeFace(c)) return 'alternate mode of a paid part';
-  if (c.category === 'projectile') return 'Low Value Unit — Projectiles cost 0';
-  if (c.category === 'drone') return 'Low Value Unit — costs 0, gives no VP';
+  if (c.category === 'projectile') return 'Low Value Unit: Projectiles cost 0';
+  if (c.category === 'drone') return 'Low Value Unit: costs 0, gives no VP';
   return null;
 }
 

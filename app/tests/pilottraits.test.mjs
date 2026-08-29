@@ -590,7 +590,7 @@ console.log('\nPilot traits, against the shipped cards and dice\n');
   const src = readFileSync(new URL('../src/combat.ts', import.meta.url), 'utf8');
   const mt  = readFileSync(new URL('../src/match.ts', import.meta.url), 'utf8');
   check('the Focus button says free when it is free',
-    /focusIsFree\(this\.data, t\) \? .Focus — free./.test(src), true);
+    /focusIsFree\(this\.data, t\) \? .Focus: free./.test(src), true);
   // Deliberately LOOSER than the label itself: this is an absence check, so it
   // should catch any reintroduced way of saying the same thing, not only the
   // exact string the retired one used.
