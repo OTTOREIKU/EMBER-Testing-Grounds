@@ -277,13 +277,19 @@ export class Inventory {
       return `<div class="inv-cmp-col">
         <div class="inv-cmp-head">${picker(side)}${sold}</div>
         ${box?.hasImage ? `<div class="inv-cmp-cover"><img src="${boxCoverUrl(box.id)}" alt="" loading="lazy" onerror="this.closest('.inv-cmp-cover').remove()"></div>` : ''}
-        <div class="inv-cmp-tally">${all.length} card${all.length === 1 ? '' : 's'} · ${uniq} in no other box · you own ${this.owned[key] ?? 0}</div>
+        <div class="inv-cmp-tally">${all.length} card${all.length === 1 ? '' : 's'} · ${all.reduce((s, i) => s + i.n, 0)} pieces · ${uniq} in no other box · you own ${this.owned[key] ?? 0}</div>
         <ul class="inv-parts inv-cmp-list">${
           rows.length
             ? rows
                 .map(
                   (i) =>
                     `<li data-tip-card="${i.id}"${i.inOther ? ' class="shared"' : ''}><span class="ip-slot">${i.slot}</span><span class="ip-name">${esc(i.name)}</span>${
+                      // HOW MANY COPIES, same rule as the contents panel beside
+                      // it. Without this a box holding four Mire Cores read as
+                      // holding one, and the two panels disagreed about the
+                      // same box - which is how OTTO found it.
+                      i.n > 1 ? `<span class="ip-n">×${i.n}</span>` : ''
+                    }${
                       i.inOther ? '<span class="ip-both">both</span>' : i.elsewhere.length ? `<span class="ip-else">+${i.elsewhere.length}</span>` : ''
                     }${
                       // A pilot is chosen for its trait, so comparing two boxes'

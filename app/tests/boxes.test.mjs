@@ -115,5 +115,21 @@ for (const [key, def] of Object.entries(patched)) {
   check(`${key} ships 2 copies`, Object.values(def.cards ?? {}), [2]);
 }
 
+// ---------- the two inventory panels must agree ----------
+//
+// The contents panel and the Compare panel list the same box from the same
+// boxContents(), but Compare printed only the NAME. A box holding four Mire
+// Cores therefore read as holding one, and the two panels quietly disagreed
+// about the same box. OTTO found it by comparing two boxes and counting.
+{
+  const inv = readFileSync(new URL('../src/inventory.ts', import.meta.url), 'utf8');
+  check('both panels print the copy count, by the same rule',
+    (inv.match(/i\.n > 1 \?/g) ?? []).length, 2);
+  // A tally that counts rows but not copies says "30 cards" for a box holding
+  // 60 pieces, which is the same misreading one line up.
+  check('and both tallies count pieces, not just rows',
+    (inv.match(/reduce\(\(s, i\) => s \+ i\.n, 0\)/g) ?? []).length, 2);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
