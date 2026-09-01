@@ -421,10 +421,10 @@ async function init() {
           ? autoNeutralTargets(data, state.tokens, currentTerrain(), t, act)
           : [];
         setHint(neutral.length
-          ? `⌖ No enemy is in range, so this Automatic Action MAY take the nearest Breakable Terrain instead: ${
+          ? `No enemy is in range, so this Automatic Action MAY take the nearest Breakable Terrain instead: ${
             neutral.map((n) => gridOfTerrain(n.id)).join(' or ')
           }, destroyed by clicking the piece (FAQ O9). Esc cancels.`
-          : '⌖ Click the TARGET unit on the board (Esc cancels)');
+          : 'Click the TARGET unit on the board (Esc cancels)');
       };
       const shock = adjusted ? shockAttackOf(adjusted) : 0;
       if (shock > 0 && shockMoveAllowed(t)) {
@@ -444,7 +444,7 @@ async function init() {
     onStartElectronic(t, actionId) {
       pendingAttack = { attackerUid: t.uid, actionId, mode: 'electronic' };
       document.body.classList.add('targeting');
-      setHint('⚡ Click the TARGET of the Electronic Attack (Esc cancels)');
+      setHint('Click the TARGET of the Electronic Attack (Esc cancels)');
     },
     onShowMoveRange(t, steps) {
       const flying = !!data.byId.get(t.cardId)?.moveAsFlight || envFlightFrom(data, state, t);
@@ -810,7 +810,7 @@ async function init() {
         // it, exactly as it does everywhere else. Saving and redrawing has to
         // happen either way, or the board and the state drift apart. The Match
         // Centre is strict and the allowance really does hold there.
-        setHint(v.ok ? '' : `⛔ ${v.why}`);
+        setHint(v.ok ? '' : v.why);
         save();
         renderAll();
         refreshEnvDialog();
@@ -3056,7 +3056,7 @@ async function init() {
     // A refusal the player thinks is wrong IS the bug report, so the reason
     // text the engine chose has to survive past the hint that shows it.
     noteRefusal(why);
-    setHint(`⛔ ${why}`);
+    setHint(why);
   });
 
   // The keyboard help is static markup in #hint-keys now, so an empty hint means
@@ -5990,11 +5990,14 @@ async function init() {
       board.editing = envArmed !== null;
       const armedDef = data.environments.cards.find((c) => c.id === envArmed);
       if (armedDef) {
-        // Collapsed to a bar along the bottom: it says what is being placed and
-        // offers a way out, and the board above it is clickable again.
+        // Collapsed to a bar along the bottom, so the board above it is
+        // clickable again. JUST THE CARD AND A WAY OUT: the floating hint above
+        // the board says what to do with it AND carries the refusals, so
+        // spelling the same instruction out down here was the second of two
+        // answers to one question - and the wider bar covered more of the board
+        // it was asking the player to click.
         dlg.innerHTML = `<div class="scn-panel env-arming">
           <b>${escapeHtml(armedDef.name)}</b>
-          <span>Click the Grid it covers · right-click clears one</span>
           <button id="env-cancel">Done</button>
         </div>`;
         dlg.querySelector('#env-cancel')!.addEventListener('click', () => {
@@ -6022,7 +6025,7 @@ async function init() {
             const def = data.environments.cards.find((c) => c.id === e.card);
             return `<li><span>${escapeHtml(def?.name ?? e.card)}</span>
               <b>Grid ${ref(e.col, e.row)}</b>
-              <button data-lift="${e.col},${e.row}" title="Take this card off">✕</button></li>`;
+              <button class="ui-x" data-lift="${e.col},${e.row}" title="Take this card off">✕</button></li>`;
           }).join('')}</ul>` : ''}
       </div>`;
 
@@ -6030,7 +6033,7 @@ async function init() {
       dlg.querySelectorAll<HTMLElement>('[data-env]').forEach((b) =>
         b.addEventListener('click', () => {
           envArmed = envArmed === b.dataset.env ? null : b.dataset.env!;
-          setHint(envArmed ? '⌖ Click the Grid this card covers. Right-click clears one.' : '');
+          setHint(envArmed ? 'Click the Grid this card covers. Right-click clears one.' : '');
           draw();
         }));
       dlg.querySelectorAll<HTMLElement>('[data-lift]').forEach((b) =>
@@ -6947,6 +6950,15 @@ async function init() {
     if (state.tasks) state.tasks.items = [];
   }
 
+  // Absent rather than empty, the same tail setEnvironment's apply keeps, so a
+  // cleared board serialises the way one that never had a card on it does. The
+  // entry markers go with them: a marker naming a Grid whose card is gone would
+  // eat the first entry after a card came back there.
+  function clearEnvironments(): void {
+    delete state.environments;
+    for (const t of state.tokens) delete t.envSeen;
+  }
+
   function clearTerrain(): void {
     state.map = '';
     state.removedTerrain = [];
@@ -6994,7 +7006,7 @@ async function init() {
       // quietly applied or quietly dropped.
       const verdict = applyRemote(data, state, cmd);
       if (!verdict.ok) {
-        setHint(`⛔ Refused a move from the other player: ${verdict.why}`);
+        setHint(`Refused a move from the other player: ${verdict.why}`);
         relay.requestResync();
         return;
       }
@@ -7045,7 +7057,7 @@ async function init() {
         for (const k of Object.keys(live)) if (!(k in next)) delete live[k];
         Object.assign(state, next);
       } catch {
-        setHint('⛔ The board that arrived could not be read.');
+        setHint('The board that arrived could not be read.');
         return;
       }
       for (const d of keep) {
@@ -7208,7 +7220,8 @@ async function init() {
     const markers = (state.markers?.length ?? 0) + (state.tasks?.items.length ?? 0);
     const terrain = currentTerrain().length;
     const zones = state.zoneSet || state.mission || state.tasks ? 1 : 0;
-    if (!units && !markers && !terrain && !zones) {
+    const envs = (state.environments ?? []).length;
+    if (!units && !markers && !terrain && !zones && !envs) {
       void alertDialog({ title: 'Nothing to clear', body: 'The board is already empty.' });
       return;
     }
@@ -7222,6 +7235,7 @@ async function init() {
         ...(markers ? [{ id: 'markers', label: `Objectives (${count(markers, 'marker')})` }] : []),
         ...(terrain ? [{ id: 'terrain', label: `Terrain (${count(terrain, 'piece')})` }] : []),
         ...(zones ? [{ id: 'zones', label: `Zones (${state.zoneSet ? zoneSetLabel(state.zoneSet) : 'mission setup'})` }] : []),
+        ...(envs ? [{ id: 'environments', label: `Environments (${count(envs, 'card')})` }] : []),
         { id: 'all', label: 'Everything', danger: true },
         { id: 'cancel', label: 'Cancel', cancel: true },
       ],
@@ -7231,7 +7245,7 @@ async function init() {
     if (pick === 'all') {
       const ok = await confirmDialog({
         title: 'Clear everything?',
-        body: 'Units, objectives, terrain and zones all go, and the round track returns to Round 1. Saved maps and mech presets are untouched.',
+        body: 'Units, objectives, terrain, zones and Environment Cards all go, and the round track returns to Round 1. Saved maps and mech presets are untouched.',
         confirmLabel: 'Clear everything',
         danger: true,
       });
@@ -7240,6 +7254,7 @@ async function init() {
       clearObjectives();
       clearTerrain();
       clearZones();
+      clearEnvironments();
       state.tasks = null;
       state.round = { n: 1, phase: 0, firstPlayer: 's1' };
       state.roundLimit = 5;
@@ -7254,6 +7269,8 @@ async function init() {
       clearTerrain();
     } else if (pick === 'zones') {
       clearZones();
+    } else if (pick === 'environments') {
+      clearEnvironments();
     }
     renderAll();
   });

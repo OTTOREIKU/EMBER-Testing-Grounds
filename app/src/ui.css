@@ -1,0 +1,73 @@
+/* THE MASTER UI FILE. Read this before adding a button, a panel or a close
+ * control anywhere in EMBER Testing Grounds.
+ *
+ * It exists because the same chrome kept getting re-invented a few pixels off:
+ * a close button that was a square, a row that grew an outline, a popover whose
+ * circle was 22px next to the app's 34px. None of those are bugs a test catches
+ * and every one of them reads as the app losing its shape.
+ *
+ * Imported by partpicker.css, which styles.css (the board) and the pad both
+ * import, so the board and the pad get everything here from one line. The
+ * REFERENCE page loads reference.css alone and does not get this file: its
+ * sheet close (#ref-detail-close) and lightbox close (.mis-close) are its own
+ * 34px circles, written to the same rules. If the reference ever needs a class
+ * from here, import this file there rather than copying the rule.
+ *
+ * ---------------------------------------------------------------------------
+ * THE RULES, in the order they get broken
+ * ---------------------------------------------------------------------------
+ *
+ * 1. FLAT. Surfaces are separated by BACKGROUND, never by an outline. The
+ *    ladder is --surface (panel) -> --surface2 (a control on it) -> --surface3
+ *    (that control hovered). A `border: 1px solid var(--border)` on a row or a
+ *    button is the single most common regression; `.setup-row` is the pattern
+ *    to copy, not `.scn-row`, which predates the convention.
+ *
+ * 2. SELECTED IS COLOUR, NOT AN EDGE. An active or armed control takes
+ *    `background: var(--accent-lt); color: var(--accent)`. Reach for an
+ *    `outline` only where the thing selected is ARTWORK and a tint would hide
+ *    it (the part picker's pinned card does this deliberately).
+ *
+ * 3. ONE CLOSE CONTROL. Anything that closes a dialog, popover or sheet is
+ *    `.dlg-close` - a 34px circle, no border. Anything that removes ONE ROW
+ *    from a list inside a panel is `.ui-x` - a 22px circle that only colours up
+ *    on hover, because a list of ten of them must not read as ten buttons.
+ *    A bare `<button>✕</button>` is always wrong.
+ *
+ * 4. RADII AND MOTION come from the tokens: --radius-sm on a control, --radius
+ *    on a group, --radius-lg on a panel; CSS transitions are 0.12s on background
+ *    and color only. Chrome never slides or grows - the one thing that moves is
+ *    a token walking the board, and that is the board's SVG animation, not CSS.
+ *
+ * 5. COLOUR IS A TOKEN. No hex literal outside :root in styles.css. Faction
+ *    tints are --rdl/--un/--gof/--pd and their -lt pairs; state colours are
+ *    --accent, --green, --red and their -lt pairs.
+ *
+ * Everything here is used by real markup. If a rule stops being used, delete
+ * it rather than leaving a catalogue entry nothing renders.
+ */
+
+/* The close control for a dialog, popover or sheet. Sits over the panel's own
+ * corner, which is why it is absolutely positioned and carries a shadow. */
+.dlg-close {
+  position: absolute; top: -6px; right: -6px; z-index: 2;
+  width: 34px; height: 34px; border-radius: 50%; border: none; cursor: pointer;
+  background: var(--surface2); color: var(--text); font-size: 15px; line-height: 1;
+  display: inline-flex; align-items: center; justify-content: center;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+  transition: background 0.12s, color 0.12s;
+}
+.dlg-close:hover { background: var(--accent); color: var(--on-accent); }
+
+/* Takes ONE row out of a list: an Environment Card off its Grid, a unit out of
+ * a squad. Quiet until hovered on purpose - a column of these is a list, not a
+ * row of controls - and never absolutely positioned, because it belongs to the
+ * row it sits in rather than to the panel. */
+.ui-x {
+  flex: 0 0 auto;
+  width: 22px; height: 22px; border: none; border-radius: 50%; cursor: pointer;
+  background: none; color: var(--text3); font-size: 11px; line-height: 1;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: background 0.12s, color 0.12s;
+}
+.ui-x:hover { background: var(--surface3); color: var(--text); }

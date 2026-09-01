@@ -285,6 +285,26 @@ const cellClick = mainSrc.slice(mainSrc.indexOf('if (envArmed !== null) {'), mai
 ok('a refused placement still redraws and saves', /setHint\(v\.ok \? '' :/.test(cellClick)
   && cellClick.indexOf('save();') > cellClick.indexOf('setHint(v.ok'));
 
+console.log('\ntaking them off again');
+
+const mainSrc2 = src('main.ts');
+
+// Clear offers them their own line and Everything means everything. Both halves
+// are pinned because the FIRST draft shipped the menu entry with no branch to
+// handle it: the option was there, listed the right count, and did nothing.
+const clearSrc = mainSrc2.slice(mainSrc2.indexOf("document.getElementById('btn-clear')"));
+ok('Clear offers Environments as its own option', /id: 'environments', label: `Environments/.test(clearSrc));
+ok('and the option actually clears them', /pick === 'environments'\) \{\s*\n\s*clearEnvironments\(\);/.test(clearSrc));
+ok('Everything takes them too', /clearZones\(\);\s*\n\s*clearEnvironments\(\);/.test(clearSrc));
+ok('and says so before it does it', /zones and Environment Cards all go/.test(clearSrc));
+// An empty board must not offer the option, or Clear opens on a menu of things
+// that are already gone.
+ok('an empty board does not offer it', /!units && !markers && !terrain && !zones && !envs/.test(mainSrc2));
+// The entry markers go with the cards. A marker naming a Grid whose card has
+// been lifted would eat the first entry after another card was laid there.
+ok('clearing takes the entry markers with it',
+  /delete state\.environments;\s*\n\s*for \(const t of state\.tokens\) delete t\.envSeen;/.test(mainSrc2));
+
 console.log('\nplacing them in a match');
 
 // The Match Centre lays them out too, because a real game never passes through
@@ -490,7 +510,6 @@ console.log('\nwired into both boards');
 // The Non-humanoid lesson, applied: movement does not share a road between the
 // boards, so every rule above has to be COUNTED at its sites or it is true on
 // one page and absent on the other.
-const mainSrc2 = src('main.ts');
 check('freeplay flies the Anti-Gravity start in all three derivations',
   (mainSrc2.match(/envFlightFrom\(data, state, t\)/g) ?? []).length, 3);
 check('the Match Centre in both of its own',
@@ -529,6 +548,62 @@ check('the maneuver carries its movement mode for the same reason',
   /flying: m\.flying \|\| undefined/.test(src('matchhud.ts')), true);
 check('and the abyss catch-all sweep is registered',
   /sweepAbyss\(\);/.test(mainSrc2), true);
+
+console.log('\nthe house UI style');
+
+// These are the regressions nothing else catches: they are not bugs, they just
+// read as the app losing its shape. ui.css is the master file and says why.
+const uiCss = src('ui.css');
+ok('there is a master UI file and it says so', /THE MASTER UI FILE/.test(uiCss));
+ok('it is imported once, where every page already reaches',
+  /@import '\.\/ui\.css';/.test(src('partpicker.css')));
+ok('and it owns the one close control', /^\.dlg-close \{/m.test(uiCss)
+  && !/^\.dlg-close \{/m.test(src('partpicker.css')));
+ok('plus the row-remove control beside it', /^\.ui-x \{/m.test(uiCss));
+
+// FLAT: surfaces separate by background, never by an outline. The Environment
+// picker had grown a border that brightened on hover, on both boards.
+const styles = src('styles.css');
+ok('the freeplay picker carries no outline',
+  /\.env-pick \{[^}]*border: none/.test(styles) && !/\.env-pick:hover \{ border-color/.test(styles));
+ok('nor does the Match Centre one',
+  /\.envpick-card \{[^}]*border: none/.test(styles) && !/\.envpick-card\.armed \{ border-color/.test(styles));
+ok('armed is a colour, not an edge',
+  /\.env-pick\.armed \{ background: var\(--accent-lt\); \}/.test(styles));
+
+// EVERY close in the Environment UI is one of the two shared controls, never a
+// bare button. Both boards, because they were written a week apart.
+ok('freeplay closes with the shared circle', /id="env-close" class="dlg-close"/.test(mainSrc2));
+ok('and removes a row with the shared small one', /class="ui-x" data-lift=/.test(mainSrc2));
+const hudSrc2 = src('matchhud.ts');
+ok('so does the Match Centre picker', /class="dlg-close" data-envclose/.test(hudSrc2)
+  && /class="ui-x" data-envlift=/.test(hudSrc2));
+
+// ONE answer to one question. The floating hint above the board carries the
+// instruction AND the refusals, so the arming bar repeating it was the second
+// of two - and the wider bar covered more of the board it was asking you to
+// click.
+const arming = mainSrc2.slice(mainSrc2.indexOf('class="scn-panel env-arming"'), mainSrc2.indexOf('#env-cancel'));
+ok('the arming bar names the card and offers a way out, nothing else',
+  !/Click the Grid it covers/.test(arming));
+ok('while the floating hint still says what to do',
+  /Click the Grid this card covers\. Right-click clears one\./.test(mainSrc2));
+// No icons in text a player reads. Same rule as the em dash sweep: a glyph
+// standing in for a word is not the house voice. The four that were in use are
+// named outright rather than matched by range - a range wide enough to catch an
+// emoji also catches the middot and the ellipsis, which ARE house typography,
+// and the first draft of this line failed on exactly those.
+const ICONS = ['\u26D4', '\u2316', '\u26A1', '\uD83D\uDCA5'];
+// The whole argument, to the closing paren, not just a call that OPENS with a
+// quote: the ternary at the Automatic-Action prompt begins `setHint(neutral`,
+// and the first draft of this line let a glyph through in its other branch.
+const hints = [...mainSrc2.matchAll(/setHint\(([^;]|\n){0,400}?\);/g)].map((m) => m[0]);
+check('no hint is prefixed with an icon',
+  hints.filter((h) => ICONS.some((i) => h.includes(i))), []);
+// And the separators that ARE ours survived the sweep, so this is not just an
+// assertion that nothing anywhere is non-ASCII.
+ok('while the middot and the ellipsis are untouched',
+  hints.some((h) => h.includes('\u00b7')) && hints.some((h) => h.includes('\u2026')));
 
 console.log(`\n  ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

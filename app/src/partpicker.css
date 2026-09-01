@@ -1,4 +1,9 @@
+@import './ui.css';
+
 /* The app dialogs and the PART PICKER, shared by the board and the pad.
+ *
+ * The shared PRIMITIVES moved to ui.css, which this imports so the pad still
+ * gets them from one line. Read ui.css before adding anything here.
  *
  * These lived in styles.css, which is 3400 lines of desktop board layout that a
  * phone must not download to open one picker. They are self-contained - they
@@ -9,16 +14,6 @@
  *
  * styles.css imports this, so the board is unaffected. pad.css imports it too.
  */
-
-.dlg-close {
-  position: absolute; top: -6px; right: -6px; z-index: 2;
-  width: 34px; height: 34px; border-radius: 50%; border: none; cursor: pointer;
-  background: var(--surface2); color: var(--text); font-size: 15px; line-height: 1;
-  display: inline-flex; align-items: center; justify-content: center;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
-  transition: background 0.12s, color 0.12s;
-}
-.dlg-close:hover { background: var(--accent); color: #0f1216; }
 
 /* ---------- app dialogs (replace native confirm/prompt/alert) ---------- */
 .dlg-back {

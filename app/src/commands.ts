@@ -1052,11 +1052,12 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       if (cmd.card !== null && su && su.stage === 'done') {
         return no('Environment Cards are placed while the battlefield is set up (5.4.1), and this game is already running.');
       }
-      // The box holds ONE of each Environment Card, so a copy already on the
-      // table refuses a second - unless the second is going where the first
-      // stands, which is a no-op placement rather than a duplicate.
-      const dup = (state.environments ?? []).some((e) => e.card === cmd.card && !(e.col === col && e.row === row));
-      if (dup) return no('There is only one of each Environment Card, and that one is already on the table.');
+      // NO PER-CARD LIMIT. A "one of each" refusal used to live here and it was
+      // INVENTED: nothing in 5.4.1, on the cards, or in the component lists says
+      // how many copies of an Environment Card the box holds, and a scan folder
+      // holding one picture of each is a scan folder, not a component count.
+      // The only limit anyone can cite is the number printed on the Battlefield
+      // Card, which is the cap checked below.
       const here = (state.environments ?? []).some((e) => e.col === col && e.row === row);
       // Clearing a Grid, and replacing the card on one, are both always legal:
       // neither puts another card on the table.

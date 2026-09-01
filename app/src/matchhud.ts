@@ -1012,7 +1012,7 @@ function renderEnvPicker(ctx: HudCtx): void {
   const ref = (c: number, r: number) => `${String.fromCharCode(65 + c)}${r + 1}`;
   pop.innerHTML = `<div class="envpick-head"><b>Environment Cards</b>
       <span>${placed.length} of ${cap}</span>
-      <button data-envclose title="Close">✕</button></div>
+      <button class="dlg-close" data-envclose title="Close">✕</button></div>
     <p class="envpick-note">${envArm
       ? 'Click the Grid this card covers. Right-click a Grid to clear it.'
       : 'Pick a card, then click the Grid it covers. Both players place them alternately (5.4.1).'}</p>
@@ -1022,7 +1022,7 @@ function renderEnvPicker(ctx: HudCtx): void {
     ${placed.length ? `<div class="envpick-placed">${placed.map((e) => {
       const def = ctx.data.environments.cards.find((c) => c.id === e.card);
       return `<span class="envpick-chip">${esc(def?.name ?? e.card)} · ${ref(e.col, e.row)}
-        <button data-envlift="${e.col},${e.row}" title="Take this card off">✕</button></span>`;
+        <button class="ui-x" data-envlift="${e.col},${e.row}" title="Take this card off">✕</button></span>`;
     }).join('')}</div>` : ''}`;
   pop.querySelector('[data-envclose]')!.addEventListener('click', () => toggleEnvPicker(ctx));
   for (const b of pop.querySelectorAll<HTMLElement>('[data-envpick]')) {
@@ -4446,7 +4446,13 @@ function detonatePanel(ctx: HudCtx): string {
   const targets = unitsWithin(ctx, proj, range);
   const terrain = fragileTerrainWithin(ctx, proj, range);
   const damaging = !!(a && ((a.yellowDice ?? 0) || (a.redDice ?? 0)));
-  const scope = a ? explosionScope(a) : 'single';
+  // The translation fallback, the same one freeplay passes. explosionScope
+  // reads the printed English first and drops to the CHINESE when there is
+  // none; 63 damaging actions have no English in cards.json, and for those this
+  // page was reading the zh while freeplay read the English translation. They
+  // agree on every card today, which is precisely why the day they stop would
+  // have been a scope that differed between the two boards and nothing to say so.
+  const scope = a ? explosionScope(a, ctx.data.actionTranslation(a.id)?.english ?? undefined) : 'single';
   const rows = targets
     .map(({ t, dist }) => `<button class="rowwide" data-dettarget="${t.uid}"><span class="${t.side}">${t.side === proj.side ? 'ALLY' : 'ENEMY'}</span> ${esc(t.label)}<span class="ct">R${dist}</span></button>`)
     .join('');

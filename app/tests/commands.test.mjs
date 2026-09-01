@@ -1479,11 +1479,26 @@ check('the third card fills an alley', we.environments.length, 3);
 check('a fourth is refused', envAt(we, 4, 4, 'anti-gravity').ok, false);
 check('the refusal quotes the printed allowance', /takes 3 Environment Cards/.test(envAt(we, 4, 4, 'anti-gravity').why ?? ''), true);
 check('replacing at the cap is still legal', envAt(we, 3, 3, 'anti-gravity').ok, true);
-// The box holds one of each, which a live sandbox proved we never checked:
-// two Anti-Gravity Grids went down on one battlefield.
-check('a card already on the table refuses a second copy', envAt(we, 4, 4, 'abyss').ok, false);
-check('and the refusal says why', /only one of each/.test(envAt(we, 4, 4, 'abyss').why ?? ''), true);
-check('re-placing it on its own Grid is a no-op, not a duplicate', envAt(we, 1, 1, 'high-temperature').ok, true);
+// NO PER-CARD LIMIT, and this pin is here because there briefly was one. A
+// "one of each" refusal shipped in 0ab775d on nothing but my own surprise at
+// seeing two Anti-Gravity Grids: 5.4.1 does not say it, the cards do not say
+// it, no component list says it, and a folder holding one scan of each card is
+// a scan folder rather than a component count. The only limit anyone can cite
+// is the number printed on the Battlefield Card.
+// On a board with ROOM, or the allowance answers first and the probe proves
+// nothing - which is exactly what the first draft of this line did.
+{
+  const room = { ...world([]), map: 'alley' };
+  put(room, 1, 1, 'abyss');
+  check('a second copy of the same card is placed, not refused', envAt(room, 2, 2, 'abyss').ok, true);
+  C.apply(envData, room, { kind: 'setEnvironment', seat: 's1', at: { col: 2, row: 2 }, card: 'abyss' });
+  check('and both are on the table', room.environments.map((e) => e.card), ['abyss', 'abyss']);
+  // The printed allowance is still the one limit there is.
+  put(room, 3, 3, 'rugged');
+  check('the allowance still stops the fourth', envAt(room, 4, 4, 'high-temperature').ok, false);
+}
+check('and no refusal anywhere claims a per-card limit',
+  /only one of each/.test(commands), false);
 check('clearing at the cap is still legal', envAt(we, 3, 3, null).ok, true);
 
 // Clearing, and the absence-is-default tail.

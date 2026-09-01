@@ -330,5 +330,58 @@ check('a diagonal piece is range 2, so Range 1 misses it',
   M.autoNeutralTargets(data, [drone(1, 4, 4)], [box('t1', 5, 5)], drone(1, 4, 4), autoAct), []);
 check('an empty board offers nothing', M.autoNeutralTargets(data, [drone(1, 4, 4)], [], drone(1, 4, 4), autoAct), []);
 
+// ---------- THE PHOLCUS EDITION SPLIT (asked at a table, 2026-09-01) ----------
+//
+// Card 167's Automatic Attack says DIFFERENT THINGS in the two printings, and
+// the difference is a rule:
+//
+//   EN  "On Detonation, cause Explosion damage to target unit."
+//   ZH  "引爆时，对格内所有单位造成爆炸伤害"  - all units in the Grid.
+//
+// We follow the ENGLISH, and not merely by policy: the publisher's own
+// championship-legal parts list (Part Data UN 1.02 [EN Public], "UN Drones EN",
+// row 167 / LHDR-401) prints the English wording verbatim. That is the company's
+// own English, not a community translation, so this is a real edition
+// difference rather than a bad rendering of one original.
+//
+// The GM-35 Mine is the contrast that proves the reader is not just defaulting:
+// its English DOES say all, and it comes back 'all'.
+console.log('\nthe Pholcus, and what its two printings say');
+
+const blast = (byId.get('167').actions ?? []).find((a) => a.type === 'Detonation');
+check('the English still says a single target',
+  /Explosion damage to target unit/i.test(blast.description.en), true);
+check('while the Chinese still says every unit in the Grid',
+  /所有单位/.test(blast.description.zh), true);
+check('reading only the Chinese would give the other answer',
+  M.explosionScope({ description: { zh: blast.description.zh } }), 'all');
+
+// BOTH BOARDS, computed rather than grepped. explosionScope reads the printed
+// English and drops to the CHINESE when a card has none - 63 damaging actions
+// are in that state - so a page that fed it a translation and a page that did
+// not could disagree about how many units an explosion hits. They pass the same
+// thing now; this asserts the ANSWERS match for every damaging action in the
+// box, which stays true even if the call signature changes again.
+const readJson = (rel) => JSON.parse(readFileSync(new URL(rel, import.meta.url), 'utf8'));
+const xlate = readJson('../../data/action_translations.json').translations ?? {};
+const overrides = readJson('../../data/action_overrides.json').actions ?? {};
+const disagree = [];
+for (const c of cards) {
+  for (const a of c.actions ?? []) {
+    if (((a.redDice ?? 0) + (a.yellowDice ?? 0)) === 0) continue;
+    const merged = { ...a, description: { ...a.description, ...(overrides[a.id] ?? {}).description } };
+    const withXlate = M.explosionScope(merged, (xlate[a.id] ?? {}).english ?? undefined);
+    const without = M.explosionScope(merged);
+    if (withXlate !== without) disagree.push(`${c.id} ${a.id}`);
+  }
+}
+check('no damaging action reads differently with the translation than without', disagree, []);
+check('and both boards hand explosionScope the same translation', [
+  /explosionScope\(action, data\.actionTranslation\(action\.id\)\?\.english/
+    .test(readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8')),
+  /explosionScope\(a, ctx\.data\.actionTranslation\(a\.id\)\?\.english/
+    .test(readFileSync(new URL('../src/matchhud.ts', import.meta.url), 'utf8')),
+], [true, true]);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
