@@ -118,5 +118,135 @@ check('no override key silently appended a new entry', surprises, []);
 const stale = INTENTIONAL.filter((k) => !appended.includes(k));
 check('every pinned new-entry key is still a new entry', stale, []);
 
+// ---------- the reverse link: what NAMES a keyword, not just what prints it ----------
+//
+// A keyword sheet used to answer one question - which cards print this chip -
+// and for a keyword that is a Token rather than a weapon trait that is nobody
+// useful. Fragile is printed by exactly one card, while Laser Weapon hands one
+// out on every hit and Ion Weapon cares whether the target has one. Both of
+// those already LINK to Fragile in their own glossary text; Fragile could not
+// see either of them.
+//
+// The relationships are pinned HERE, against the merged data, because they are
+// what makes the feature worth having: if the glossary text is ever reworded so
+// Laser Weapon stops naming Fragile, the sheet quietly loses the link and only
+// this notices.
+console.log('\nthe reverse link');
+
+const glossText = (k) => (k.en?.value ?? '');
+const named = (n) => keywords.find((k) => (k.en?.name ?? '').replace(/^[•·\s]+/, '') === n);
+
+const laser = named('Laser Weapon');
+const ion = named('Ion Weapon');
+const fragile = named('Fragile');
+check('the three keywords the report named are all in the glossary',
+  [!!laser, !!ion, !!fragile], [true, true, true]);
+check('Laser Weapon still hands out a Fragile Token', /\bFragile\b/.test(glossText(laser)), true);
+check('Ion Weapon still cares about one', /\bFragile\b/.test(glossText(ion)), true);
+// The half that makes it matter: nothing PRINTS Fragile as a chip worth
+// speaking of, so without the reverse link the sheet is a dead end.
+const printsFragile = cards.filter((c) =>
+  [...(c.keywords ?? []), ...((c.actions ?? []).flatMap((a) => a.keywords ?? []))]
+    .some((k) => keyword(k.key || k.inline || k.en || '')?.key === fragile.key));
+check('and barely any card prints Fragile itself', printsFragile.length <= 1, true);
+
+// The index is built from linksIn, which is linkKeywords' OWN hit finder. That
+// is the guarantee worth pinning: "referenced by" lists a keyword exactly when
+// a reader can see the link in its text and click it. A mirror could drift,
+// and the drift would show as an index naming a keyword whose text has no link.
+const refcards = readFileSync(new URL('../src/refcards.ts', import.meta.url), 'utf8');
+const ref = readFileSync(new URL('../src/reference.ts', import.meta.url), 'utf8');
+check('the hit finder is shared, not duplicated', /function linkHits\(src: string\)/.test(refcards), true);
+check('linkKeywords paints those hits', /const hits = linkHits\(src\);/.test(refcards), true);
+check('and linksIn reports the same ones', /export function linksIn\(text: string\)/.test(refcards), true);
+check('the index reads keyword text through it', /linksIn\(k\.en\?\.value \?\? ''\)\.keywords/.test(ref), true);
+check('and card text through it too', /linksIn\(text\)\.keywords/.test(ref), true);
+// Built once for the whole glossary: it is a pass over every keyword and every
+// card, and opening a second keyword must not pay for it again.
+check('the index is cached rather than rebuilt per sheet', /if \(xref\) return xref;/.test(ref), true);
+// A keyword naming itself is not a cross-reference, and several do.
+check('self-references are dropped', /hit\.key !== k\.key/.test(ref), true);
+// A card in the "Appears on" list is not news in the "named in the text of" one.
+check('a printed chip is not also reported as a mention', /!printed\.has\(hit\.key\)/.test(ref), true);
+// ONE card list, not two. A card that prints the chip and a card whose rules
+// text merely says the word are both "cards this keyword is on" to a reader;
+// two headings made them look like different kinds of answer. Printed ones
+// lead, because that is the stronger claim, but nothing labels them apart.
+check('the sheet renders two sections, not three', [
+  /Related keywords/.test(ref), /Appears on \$\{users\.length\} card/.test(ref),
+], [true, true]);
+check('the printed and the merely-named cards are one list',
+  /const users = \[\.\.\.prints, \.\.\.says\];/.test(ref), true);
+check('and the printed ones lead it', ref.indexOf('const prints') < ref.indexOf('const says'), true);
+check('no section carries an explanatory line any more', /class="ref-hint"/.test(ref), false);
+// The two lists that REMAIN open different things, so they must not look alike.
+const refcss = readFileSync(new URL('../src/reference.css', import.meta.url), 'utf8');
+check('a related keyword reads apart from a card link', /\.ref-userlink\.kw \{/.test(refcss), true);
+
+// ---------- what a search puts first ----------
+//
+// Every predicate tests one haystack of name PLUS body text, and every list
+// used to come out in data order -- so typing "Proje" listed the six keywords
+// that TALK about Projectiles above Projectile itself.
+console.log('\nwhat a search puts first');
+
+const rankSrc = ref.slice(ref.indexOf('function rank(name: string, q: string)'), ref.indexOf('function found<T>'));
+if (!rankSrc) throw new Error('could not locate rank() in reference.ts');
+const rankFn = new Function('norm', `${rankSrc.replace(/: string|: number/g, '')} return rank;`)((s) => s.toLowerCase());
+
+check('an exact name is first', rankFn('Projectile', 'projectile'), 0);
+check('a name the query starts is next', rankFn('Projectile', 'proje'), 1);
+check('then a word inside the name', rankFn('Smoke Grenade', 'grenade'), 2);
+check('then a match buried mid-word', rankFn('Anti-Gravity', 'gravity') <= 2, true);
+check('and a body-only match comes last', rankFn('Volley X', 'proje'), 4);
+// The ordering that fixes the reported case, in the order a reader sees it.
+const order = ['Projectile', 'Volley X', 'Missile', 'Rocket'].map((n) => rankFn(n, 'proje'));
+check('so Projectile outranks everything that mentions it', order, [1, 4, 4, 4]);
+
+// AND THE RANK IS ACTUALLY APPLIED. found() is run here, not just rank(),
+// because a ranker that nothing sorts by is precisely the bug: every pool was
+// already matching Projectile, and every pool still listed it fourth. Pinning
+// rank() alone passed happily with the sort removed.
+const foundSrc = ref.slice(ref.indexOf('function found<T>'), ref.indexOf('// The name each pool'));
+if (!foundSrc) throw new Error('could not locate found() in reference.ts');
+const foundFn = new Function('norm', 'rank',
+  `${foundSrc.replace(/function found<T>\([\s\S]*?\): T\[\] \{/, 'function found(list, q, match, nameOf, cmp) {')} return found;`,
+)((s) => s.toLowerCase(), rankFn);
+
+const pool = [{ n: 'Volley X' }, { n: 'Projectile' }, { n: 'Missile' }, { n: 'Smoke Grenade' }];
+const names = (list) => list.map((x) => x.n);
+const all = () => true;
+const nOf = (x) => x.n;
+check('found() lifts the name match to the top',
+  names(foundFn(pool, 'proje', all, nOf)), ['Projectile', 'Volley X', 'Missile', 'Smoke Grenade']);
+// Data order is the tiebreak inside a rank, so equally-relevant rows do not
+// shuffle: Volley X, Missile and Smoke Grenade all rank 4 and stay as given.
+check('and leaves everything below it in the order it came',
+  names(foundFn(pool, 'proje', all, nOf)).slice(1), ['Volley X', 'Missile', 'Smoke Grenade']);
+check('with no query it is the plain filtered list',
+  names(foundFn(pool, '', all, nOf)), ['Volley X', 'Projectile', 'Missile', 'Smoke Grenade']);
+// A tab's resting order still applies when nothing is typed...
+const alpha = (a, b) => a.n.localeCompare(b.n);
+check('a resting sort is honoured with no query',
+  names(foundFn(pool, '', all, nOf, alpha)), ['Missile', 'Projectile', 'Smoke Grenade', 'Volley X']);
+// ...and becomes the tiebreak once something is.
+check('and becomes the tiebreak under a query',
+  names(foundFn(pool, 'e', all, nOf, alpha))[0], 'Missile');
+check('the filter still filters', names(foundFn(pool, 'proje', (x) => x.n !== 'Missile', nOf)).includes('Missile'), false);
+// Bullet prefixes are stripped before ranking, or "•Omni-direction Firing"
+// could never match a query starting "omni".
+check('a printed bullet does not block a name match', rankFn('•Omni-direction Firing', 'omni'), 1);
+
+// EVERY pool that is RENDERED goes through the ranker, or a tab quietly keeps
+// data order. Counted rather than spot-checked: a new list added with a bare
+// .filter is the failure this catches. The badge counts are exempt and say so
+// by taking .length straight off the filter -- a badge shows a number, and a
+// number has no order to get wrong.
+check('no rendered pool is filtered without being ranked',
+  (ref.match(/\.filter\(\((\w+)\) => match[A-Z]\w*\(\1, q\)\)(?!\.length)/g) ?? []).length, 0);
+check('while the badge counts stay plain filters',
+  (ref.match(/\.filter\(\((\w+)\) => match[A-Z]\w*\(\1, q\)\)\.length/g) ?? []).length, 18);
+check('and they all go through found()', (ref.match(/= found\(/g) ?? []).length >= 20, true);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exitCode = fail ? 1 : 0;

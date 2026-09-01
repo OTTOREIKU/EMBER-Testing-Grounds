@@ -177,10 +177,13 @@ function stripQuotes(s: string): { text: string; map: number[] } {
   return { text, map };
 }
 
-export function linkKeywords(text: string): string {
-  // Glyph placeholders are masked out before the keyword pass, because several
-  // of them ({Heavy Hit}, {Dodge}) are keyword names in their own right.
-  const { masked: src, restore } = maskGlyphs(esc(text));
+// Every link linkKeywords would paint in this text, in source order. Split out
+// of the renderer rather than mirrored beside it, because the reference builds
+// its "referenced by" index from the same answer: a keyword is listed as
+// referencing this one exactly when a reader can SEE the link in its text and
+// click it. A mirror could drift, and the drift would be invisible - the index
+// would name a keyword whose text shows no link, or miss one it does.
+function linkHits(src: string): { start: number; end: number; label: string; card?: boolean }[] {
   if (!linkPatterns) {
     const seen = new Set<string>();
     linkPatterns = [];
@@ -249,9 +252,27 @@ export function linkKeywords(text: string): string {
       if (!hits.some((h) => start < h.end && end > h.start)) hits.push({ start, end, label: name, card });
     }
   }
+  hits.sort((a, b) => a.start - b.start);
+  return hits;
+}
+
+// The keyword names and card ids this text links to. `linkKeywords` paints
+// them; this reports them, off the same hits.
+export function linksIn(text: string): { keywords: string[]; cards: string[] } {
+  const hits = linkHits(maskGlyphs(esc(text)).masked);
+  return {
+    keywords: [...new Set(hits.filter((h) => !h.card).map((h) => h.label))],
+    cards: [...new Set(hits.filter((h) => h.card).map((h) => h.label))],
+  };
+}
+
+export function linkKeywords(text: string): string {
+  // Glyph placeholders are masked out before the keyword pass, because several
+  // of them ({Heavy Hit}, {Dodge}) are keyword names in their own right.
+  const { masked: src, restore } = maskGlyphs(esc(text));
+  const hits = linkHits(src);
   if (!hits.length) return restore(src);
 
-  hits.sort((a, b) => a.start - b.start);
   let out = '';
   let at = 0;
   for (const h of hits) {

@@ -8,7 +8,7 @@ import { registerOffline } from './offline';
 import { costLabel, LENGTH_NAME, lengthOf, TICK_COST, timingOf } from './ticks';
 import { diceRow, maskGlyphs, tickCapsule } from './glyphs';
 import { linkIcon } from './icons';
-import { cardDetail, cardRow, esc, keywordCard, kwLabel, linkKeywords, mechBlocks, SLOT_LABEL, SPEED_MARK, useCardData } from './refcards';
+import { cardDetail, cardRow, esc, keywordCard, kwLabel, linkKeywords, linksIn, mechBlocks, SLOT_LABEL, SPEED_MARK, useCardData } from './refcards';
 import { installDiagnostics } from './diagnostics';
 import type { ReportCategory } from './report';
 import { openReferenceReport } from './reportui';
@@ -295,6 +295,58 @@ function boxRow(b: BoxDef): string {
   </article>`;
 }
 
+// WHERE A QUERY LANDED DECIDES THE ORDER.
+//
+// Every predicate below tests one haystack of name PLUS body text, and every
+// list came out in data order -- so typing "Proje" listed the six keywords that
+// talk about Projectiles above Projectile itself. The thing whose NAME matches
+// is what the reader typed; everything else is context and belongs under it.
+function rank(name: string, q: string): number {
+  const n = norm(name.replace(/^[•·\s]+/, '').trim());
+  if (n === q) return 0;
+  if (n.startsWith(q)) return 1;
+  // A word inside the name: "Smoke Grenade" for "grenade". Below a prefix of
+  // the whole name, above a match buried mid-word.
+  if (n.split(/[^a-z0-9]+/).some((w) => w.startsWith(q))) return 2;
+  if (n.includes(q)) return 3;
+  return 4;
+}
+
+// Filter and rank together, so no pool can be filtered without being ordered.
+// `cmp` is the resting order a tab wants when nothing is typed (alphabetical,
+// or by box number); with a query it becomes the tiebreak inside a rank, which
+// is what keeps equally-relevant rows in a sensible order rather than whatever
+// the data file happened to hold.
+function found<T>(
+  list: readonly T[],
+  q: string,
+  match: (x: T, q: string) => boolean,
+  nameOf: (x: T) => string,
+  cmp?: (a: T, b: T) => number,
+): T[] {
+  const hits = list.filter((x) => match(x, q));
+  const base = cmp ? [...hits].sort(cmp) : hits;
+  if (!q) return base;
+  return base
+    .map((x, i) => ({ x, i, r: rank(nameOf(x), q) }))
+    .sort((a, b) => a.r - b.r || a.i - b.i)
+    .map((e) => e.x);
+}
+
+// The name each pool is known by, which is the half of the haystack that ranks.
+const nmKeyword = (k: KeywordDef) => k.en?.name ?? k.key;
+const nmCard = (c: Card) => cardName(c);
+const nmMission = (m: (typeof data.missions.cards)[number]) => m.name;
+const nmFamily = (f: (typeof data.missions.families)[number]) => f.name;
+const nmSecondary = (s: (typeof data.secondary)[number]) => s.name;
+const nmMap = (m: TerrainMap) => m.name.en || m.id;
+const nmEnv = (e: EnvironmentCard) => e.name;
+const nmFaction = (f: (typeof data.factions)[number]) => f.name;
+const nmBox = (b: (typeof data.boxes)[number]) => b.name.en || b.name.zh || b.key;
+const nmMechanic = (m: (typeof data.mechanics)[number]) => m.name;
+const nmPlay = (x: { name: string }) => x.name;
+const nmStatus = (d: (typeof STATUSES)[number]) => d.label;
+
 // ---------- one predicate per pool, shared by the tab lists AND the badges ----------
 //
 // The counts painted onto the tab strip and the rows a tab then shows have to
@@ -470,7 +522,7 @@ function renderEverywhere(el: HTMLElement, q: string): void {
   type Group = { t: Tab; total: number; rows: string[] };
   const groups: Group[] = [];
 
-  const kws = data.keywords.filter((k) => matchKeyword(k, q));
+  const kws = found(data.keywords, q, matchKeyword, nmKeyword);
   if (kws.length) {
     groups.push({
       t: 'keywords', total: kws.length,
@@ -482,8 +534,8 @@ function renderEverywhere(el: HTMLElement, q: string): void {
   }
 
   for (const t of ['parts', 'units', 'pilots', 'tactics'] as Tab[]) {
-    const pool = data.cards.filter(wantFor(t)).filter((c) => matchCard(c, q))
-      .sort((a, b) => cardName(a).localeCompare(cardName(b)));
+    const pool = found(data.cards.filter(wantFor(t)), q, matchCard, nmCard,
+      (a, b) => cardName(a).localeCompare(cardName(b)));
     if (pool.length) {
       groups.push({
         t, total: pool.length,
@@ -496,9 +548,9 @@ function renderEverywhere(el: HTMLElement, q: string): void {
     }
   }
 
-  const mains = data.missions.cards.filter((m) => matchMission(m, q));
-  const fams = data.missions.families.filter((f) => matchFamily(f, q));
-  const secs = data.secondary.filter((s) => matchSecondary(s, q));
+  const mains = found(data.missions.cards, q, matchMission, nmMission);
+  const fams = found(data.missions.families, q, matchFamily, nmFamily);
+  const secs = found(data.secondary, q, matchSecondary, nmSecondary);
   if (mains.length + fams.length + secs.length) {
     const rows = [
       ...mains.map((m) => chip(`data-mission="${esc(m.id)}"`, m.name, 'Main Task')),
@@ -510,8 +562,8 @@ function renderEverywhere(el: HTMLElement, q: string): void {
   // The tab strip already counted these, so leaving them out of the results
   // showed a count with nothing behind it. There is no detail sheet for an
   // Environment Card, so the row opens the tab rather than a card.
-  const bmaps = data.terrain.maps.filter((m) => matchMap(m, q));
-  const envs = data.environments.cards.filter((e) => matchEnvironment(e, q));
+  const bmaps = found(data.terrain.maps, q, matchMap, nmMap);
+  const envs = found(data.environments.cards, q, matchEnvironment, nmEnv);
   if (bmaps.length + envs.length) {
     groups.push({
       t: 'battlefield',
@@ -523,7 +575,7 @@ function renderEverywhere(el: HTMLElement, q: string): void {
     });
   }
 
-  const facs = data.factions.filter((f) => matchFaction(f, q));
+  const facs = found(data.factions, q, matchFaction, nmFaction);
   if (facs.length) {
     groups.push({
       t: 'factions', total: facs.length,
@@ -531,7 +583,7 @@ function renderEverywhere(el: HTMLElement, q: string): void {
     });
   }
 
-  const boxes = data.boxes.filter(isListedBox).filter((b) => matchBox(b, q)).sort((a, b) => a.id - b.id);
+  const boxes = found(data.boxes.filter(isListedBox), q, matchBox, nmBox, (a, b) => a.id - b.id);
   if (boxes.length) {
     groups.push({
       t: 'boxes', total: boxes.length,
@@ -539,7 +591,7 @@ function renderEverywhere(el: HTMLElement, q: string): void {
     });
   }
 
-  const mechs = data.mechanics.filter((m) => matchMechanic(m, q));
+  const mechs = found(data.mechanics, q, matchMechanic, nmMechanic);
   const playBits =
     data.play.phases.filter((x) => matchPhase(x, q)).length +
     data.play.timings.filter((x) => matchTiming(x, q)).length +
@@ -593,9 +645,8 @@ function render(): void {
   }
 
   if (tab === 'keywords') {
-    const list = data.keywords
-      .filter((k) => matchKeyword(k, q))
-      .sort((a, b) => (a.en?.name || a.key).localeCompare(b.en?.name || b.key));
+    const list = found(data.keywords, q, matchKeyword, nmKeyword,
+      (a, b) => (a.en?.name || a.key).localeCompare(b.en?.name || b.key));
     el.innerHTML = list.length
       ? `<p class="ref-count">${list.length} keyword${list.length === 1 ? '' : 's'}</p>${list.map(keywordCard).join('')}`
       : '<p class="ref-count">No matches</p>';
@@ -604,9 +655,9 @@ function render(): void {
 
   if (tab === 'missions') {
     const fam = new Map(data.missions.families.map((f) => [f.id, f]));
-    const cards = data.missions.cards.filter((m) => matchMission(m, q));
-    const fams = data.missions.families.filter((f) => matchFamily(f, q));
-    const secs = data.secondary.filter((s) => matchSecondary(s, q));
+    const cards = found(data.missions.cards, q, matchMission, nmMission);
+    const fams = found(data.missions.families, q, matchFamily, nmFamily);
+    const secs = found(data.secondary, q, matchSecondary, nmSecondary);
     if (!cards.length && !fams.length && !secs.length) {
       el.innerHTML = '<p class="ref-count">No matches</p>';
       return;
@@ -680,8 +731,8 @@ function render(): void {
   }
 
   if (tab === 'battlefield') {
-    const maps = data.terrain.maps.filter((m) => matchMap(m, q));
-    const list = data.environments.cards.filter((e) => matchEnvironment(e, q));
+    const maps = found(data.terrain.maps, q, matchMap, nmMap);
+    const list = found(data.environments.cards, q, matchEnvironment, nmEnv);
     // The placement rules are the half that is NOT on the cards, so they lead:
     // somebody reading this tab wants to know how many they may lay down at
     // least as much as they want the five effects.
@@ -715,10 +766,10 @@ function render(): void {
 
   if (tab === 'rules') {
     const p = data.play;
-    const phases = p.phases.filter((x) => matchPhase(x, q));
-    const timings = p.timings.filter((x) => matchTiming(x, q));
-    const stances = p.stances.filter((x) => matchStance(x, q));
-    const filtered = data.mechanics.filter((m) => matchMechanic(m, q));
+    const phases = found(p.phases, q, matchPhase, nmPlay);
+    const timings = found(p.timings, q, matchTiming, nmPlay);
+    const stances = found(p.stances, q, matchStance, nmPlay);
+    const filtered = found(data.mechanics, q, matchMechanic, nmMechanic);
 
     const phaseHtml = phases.length
       ? `<p class="ref-count">Round phases</p>` +
@@ -819,7 +870,7 @@ function render(): void {
       return `<svg class="tok-badge" viewBox="0 0 ${w} 26" width="${w}" height="26" aria-hidden="true">${body}
         <text x="${w / 2}" y="17" text-anchor="middle" font-size="9" font-weight="700" fill="#0f1216">${esc(def.icon)}</text></svg>`;
     };
-    const tokenList = STATUSES.filter((d) => matchStatus(d, q));
+    const tokenList = found(STATUSES, q, matchStatus, nmStatus);
     const tokenHtml = tokenList.length
       ? `<p class="ref-count">Tokens and states</p>` +
         tokenList
@@ -940,7 +991,7 @@ function render(): void {
   }
 
   if (tab === 'factions') {
-    const list = data.factions.filter((f) => matchFaction(f, q));
+    const list = found(data.factions, q, matchFaction, nmFaction);
     el.innerHTML = list.length
       ? `<p class="ref-count">${list.length} faction${list.length === 1 ? '' : 's'} · tap one for its story</p>${list.map(factionRow).join('')}`
       : '<p class="ref-count">No matches</p>';
@@ -949,7 +1000,7 @@ function render(): void {
 
   if (tab === 'boxes') {
     const sellable = data.boxes.filter(isListedBox);
-    const pool = sellable.filter((b) => matchBox(b, q));
+    const pool = found(sellable, q, matchBox, nmBox);
     const facs = FACTION_ORDER.filter((f) => sellable.some((b) => (b.faction ?? []).includes(f)));
     const choice = factionChoice.boxes;
     const list = pool
@@ -980,7 +1031,7 @@ function render(): void {
     return;
   }
 
-  const pool = data.cards.filter(wantFor(tab)).filter((c) => matchCard(c, q));
+  const pool = found(data.cards.filter(wantFor(tab)), q, matchCard, nmCard);
 
   const kinds = facetsFor(tab);
   const factions = factionFacets(pool);
@@ -1064,6 +1115,28 @@ function fillPortraits(root: HTMLElement, lazy: boolean): void {
     advance();
     slot.appendChild(img);
   });
+}
+
+// The same pinning the report dialog uses, and here for the same reason: this
+// page is the one that scrolls, `overflow: hidden` alone does not hold it on
+// iOS, and a sheet opened from halfway down must come back to halfway down.
+// Two locks can be live at once -- a report opens over the detail sheet -- so
+// whoever pinned FIRST owns the offset and the restore.
+let refLockedAt = 0;
+
+function lockRefPage(): void {
+  if (document.body.classList.contains('ref-locked') || document.body.classList.contains('rp-locked')) return;
+  if (document.documentElement.scrollHeight <= window.innerHeight) return;
+  refLockedAt = window.scrollY;
+  document.body.style.top = `-${refLockedAt}px`;
+  document.body.classList.add('ref-locked');
+}
+
+function unlockRefPage(): void {
+  if (!document.body.classList.contains('ref-locked')) return;
+  document.body.classList.remove('ref-locked');
+  document.body.style.top = '';
+  window.scrollTo(0, refLockedAt);
 }
 
 interface DetailView {
@@ -1263,7 +1336,7 @@ function paintDetail(html: string, scrollTop: number): void {
   }
   fillPortraits(content, false);
   sheet().hidden = false;
-  document.body.classList.add('ref-locked');
+  lockRefPage();
   sheetScroller().scrollTop = scrollTop;
   // A fresh card starts with no floor: the previous card's tallest panel has
   // nothing to do with this one, and inheriting it would open a one-action
@@ -1282,7 +1355,7 @@ function paintDetail(html: string, scrollTop: number): void {
 
 function closeDetail(): void {
   sheet().hidden = true;
-  document.body.classList.remove('ref-locked');
+  unlockRefPage();
   navStack = [];
 }
 
@@ -1307,7 +1380,11 @@ function showCardImage(src: string, label: string): void {
   const close = () => {
     box.remove();
     document.removeEventListener('keydown', onKey, true);
-    document.body.classList.remove('ref-locked');
+    // Only if the sheet is not still up: the lock is the SHEET's whenever both
+    // are open, and lockRefPage above will have declined to take it. Today the
+    // thumbs that open this all live in tab content, so the two are never up
+    // together - this is the guard for the day one is added to a card.
+    if (sheet().hidden) unlockRefPage();
   };
   const onKey = (ev: KeyboardEvent) => {
     if (ev.key !== 'Escape') return;
@@ -1319,25 +1396,87 @@ function showCardImage(src: string, label: string): void {
   });
   document.addEventListener('keydown', onKey, true);
   document.body.appendChild(box);
-  document.body.classList.add('ref-locked');
+  lockRefPage();
+}
+
+// WHICH KEYWORDS AND CARDS NAME EACH KEYWORD, built once for the whole
+// glossary rather than per sheet: it is one pass over every keyword's text and
+// every card's rule text, and reading one keyword should not pay for it again.
+// Never invalidated, and deliberately so: `data` is assigned exactly once, in
+// init(), so there is no reload for this to go stale against.
+let xref: { kw: Map<string, string[]>; cards: Map<string, string[]> } | null = null;
+
+function crossRefs(): { kw: Map<string, string[]>; cards: Map<string, string[]> } {
+  if (xref) return xref;
+  const kw = new Map<string, string[]>();
+  const cards = new Map<string, string[]>();
+  const push = (m: Map<string, string[]>, key: string, v: string) => {
+    const at = m.get(key);
+    if (at) { if (!at.includes(v)) at.push(v); } else m.set(key, [v]);
+  };
+  // A keyword naming ITSELF is not a cross-reference, and several do: the
+  // glossary entry for Throw opens by saying "Throw".
+  for (const k of data.keywords) {
+    for (const named of linksIn(k.en?.value ?? '').keywords) {
+      const hit = data.keyword(named);
+      if (hit && hit.key !== k.key) push(kw, hit.key, k.key);
+    }
+  }
+  for (const c of data.cards) {
+    // The chips this card already prints. A card in the "Appears on" list is
+    // not news in the "named in the text of" one.
+    const printed = new Set<string>();
+    for (const k of [...(c.keywords ?? []), ...((c.actions ?? []).flatMap((a) => a.keywords ?? []))]) {
+      const hit = data.keyword(k.key || k.inline || k.en || '');
+      if (hit) printed.add(hit.key);
+    }
+    const text = [
+      c.description?.en ?? '',
+      ...(c.actions ?? []).map((a) => a.description?.en ?? ''),
+    ].filter(Boolean).join(' \u00b7 ');
+    if (!text) continue;
+    for (const named of linksIn(text).keywords) {
+      const hit = data.keyword(named);
+      if (hit && !printed.has(hit.key)) push(cards, hit.key, c.id);
+    }
+  }
+  xref = { kw, cards };
+  return xref;
 }
 
 function keywordDetail(name: string): string | null {
   const def = data.keyword(name);
   if (!def) return null;
   const label = def.en?.name?.replace(/^[•·\s]+/, '') || def.key;
-  const users = data.cards
-    .filter((c) =>
-      [...(c.keywords ?? []), ...((c.actions ?? []).flatMap((a) => a.keywords ?? []))].some(
-        (k) => data.keyword(k.key || k.inline || k.en || '')?.key === def.key,
-      ),
-    )
-    .slice(0, 40);
+  const refs = crossRefs();
+  const related = (refs.kw.get(def.key) ?? [])
+    .map((k) => data.keyword(k))
+    .filter((k): k is NonNullable<typeof k> => !!k);
+  // ONE list. A card that prints the chip and a card whose rules text merely
+  // says the word are both "cards this keyword is on" to a reader, and two
+  // headings made them look like different kinds of answer. The printed ones
+  // lead because that is the stronger claim, but nothing labels them apart.
+  const prints = data.cards.filter((c) =>
+    [...(c.keywords ?? []), ...((c.actions ?? []).flatMap((a) => a.keywords ?? []))].some(
+      (k) => data.keyword(k.key || k.inline || k.en || '')?.key === def.key,
+    ));
+  const says = (refs.cards.get(def.key) ?? [])
+    .map((id) => data.byId.get(id))
+    .filter((c): c is NonNullable<typeof c> => !!c);
+  const users = [...prints, ...says];
+  const shown = users.slice(0, 40);
+  const cardLink = (c: { id: string }) =>
+    `<a class="ref-userlink" data-card="${esc(c.id)}">${esc(cardName(data.byId.get(c.id)))}</a>`;
+  const kwName = (k: KeywordDef) => k.en?.name?.replace(/^[•·\s]+/, '') || k.key;
   return `<h2>${esc(label)}</h2>
     <p class="ref-meta">Keyword: rulebook glossary</p>
     <p>${def.en?.value ? linkKeywords(def.en.value) : '<em>No English glossary text.</em>'}</p>
-    ${users.length ? `<h3 class="ref-sub">Appears on ${users.length}${users.length === 40 ? '+' : ''} card(s)</h3>
-      <div class="ref-userlist">${users.map((c) => `<a class="ref-userlink" data-card="${esc(c.id)}">${esc(cardName(c))}</a>`).join('')}</div>` : ''}`;
+    ${related.length ? `<h3 class="ref-sub">Related keywords</h3>
+      <div class="ref-userlist">${related
+        .map((k) => `<a class="ref-userlink kw" data-kw="${esc(kwName(k))}">${esc(kwName(k))}</a>`)
+        .join('')}</div>` : ''}
+    ${users.length ? `<h3 class="ref-sub">Appears on ${users.length} card(s)</h3>
+      <div class="ref-userlist">${shown.map(cardLink).join('')}</div>` : ''}`;
 }
 
 async function init(): Promise<void> {

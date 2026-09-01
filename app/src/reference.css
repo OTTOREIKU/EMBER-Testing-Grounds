@@ -54,7 +54,11 @@ body.ref-body {
   margin: 0; background: var(--bg); color: var(--text);
   font-size: 14px; -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: 100%;
 }
-body.ref-locked { overflow: hidden; }
+/* PINNED, not merely `overflow: hidden`: iOS Safari scrolls the document
+   behind an overflow-hidden body, which is how a modal sheet came to have the
+   page sliding around underneath it. reference.ts carries the offset on `top`
+   and puts the reader back where they were. */
+body.ref-locked { position: fixed; left: 0; right: 0; width: 100%; overflow: hidden; }
 .mono { font-family: var(--mono); }
 
 #ref-head {
@@ -515,6 +519,11 @@ body.ref-locked { overflow: hidden; }
   transition: background 0.12s, color 0.12s;
 }
 .ref-userlink:hover { background: var(--surface3); color: var(--text); }
+/* A related KEYWORD, not a card. Tinted so the two lists on a keyword sheet
+   read apart at a glance: one opens another glossary entry, the other opens a
+   card. */
+.ref-userlink.kw { background: var(--accent-lt); color: var(--accent); }
+.ref-userlink.kw:hover { background: var(--accent); color: var(--bg); }
 
 @media (max-width: 719px) {
   #ref-tabs button {
