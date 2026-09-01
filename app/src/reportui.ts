@@ -33,7 +33,39 @@ const EDITIONS = ['Not sure', 'English printing', 'Chinese printing'];
 const esc = (s: string): string =>
   s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
+// FREEZING THE PAGE BEHIND THE DIALOG.
+//
+// `overflow: hidden` on <body> is the usual one-liner and it is NOT enough:
+// iOS Safari scrolls the document anyway, which is the platform this was
+// reported on. Pinning the body instead collapses the document to the
+// viewport, so there is genuinely nothing left to scroll -- and the offset has
+// to be carried on `top`, or opening a report from halfway down the reference
+// would jump the page to the top behind it.
+let lockedAt = 0;
+
+function lockPage(): void {
+  // Already pinned by something else -- the reference page locks for its own
+  // detail sheet, and a report can be opened from inside one. Whoever locked
+  // first owns the restore.
+  if (document.body.classList.contains('rp-locked')) return;
+  if (document.documentElement.scrollHeight <= window.innerHeight) return;
+  lockedAt = window.scrollY;
+  document.body.style.top = `-${lockedAt}px`;
+  document.body.classList.add('rp-locked');
+}
+
+function unlockPage(): void {
+  if (!document.body.classList.contains('rp-locked')) return;
+  document.body.classList.remove('rp-locked');
+  document.body.style.top = '';
+  window.scrollTo(0, lockedAt);
+}
+
 function shell(title: string, lead: string, body: string): HTMLElement {
+  // One at a time: the id is the handle close() reads to decide whether the
+  // page may scroll again, so a second dialog must replace the first rather
+  // than sit beside it sharing its id.
+  document.getElementById('report-dialog')?.remove();
   const dlg = document.createElement('div');
   dlg.id = 'report-dialog';
   dlg.innerHTML = `<div class="rp-panel">
@@ -50,6 +82,12 @@ function shell(title: string, lead: string, body: string): HTMLElement {
     </div>
   </div>`;
   document.body.appendChild(dlg);
+  // The dialog is a fixed sheet over the whole screen, so on a phone a drag
+  // that missed the panel scrolled the reference list underneath it: the
+  // report stayed put while the page it was about slid away. Its own class
+  // rather than the reference page's `ref-locked`, because this dialog is on
+  // all three pages and report.css is the only stylesheet all three load.
+  lockPage();
   return dlg;
 }
 
@@ -68,7 +106,10 @@ function manifestHtml(r: BoardReport | ReferenceReport): string {
 function wire(dlg: HTMLElement, make: () => BoardReport | ReferenceReport): void {
   const man = dlg.querySelector<HTMLElement>('.rp-manifest')!;
   const said = dlg.querySelector<HTMLElement>('[data-rp="said"]')!;
-  const close = (): void => dlg.remove();
+  const close = (): void => {
+    dlg.remove();
+    unlockPage();
+  };
 
   const refresh = (): void => { man.innerHTML = manifestHtml(make()); };
 

@@ -4,6 +4,26 @@ const ASSET_CACHE = 'ember-assets-v1';
 const RUNTIME_CACHE = 'ember-runtime-v1';
 const KEEP = [ASSET_CACHE, RUNTIME_CACHE];
 
+// Paths whose FILES were replaced at the same URL. The asset cache used to be
+// cache-first with no revalidation, so every device that had already warmed one
+// of these is holding the old picture and would never ask for it again;
+// stale-while-revalidate below repairs that, but only on the NEXT view. These
+// are dropped outright on activate so the very next load is right.
+//
+// Add a prefix here when an image is CORRECTED rather than added, and it can be
+// removed again a release later once the caches have turned over.
+const REPLACED = ['/assets/battlefield/'];
+
+async function dropReplaced() {
+  const cache = await caches.open(ASSET_CACHE);
+  const keys = await cache.keys();
+  await Promise.all(
+    keys
+      .filter((req) => REPLACED.some((p) => new URL(req.url).pathname.includes(p)))
+      .map((req) => cache.delete(req)),
+  );
+}
+
 const SHELL_PAGES = ['index.html', 'reference.html'];
 
 async function precacheShell() {
@@ -63,6 +83,7 @@ self.addEventListener('activate', (e) => {
     (async () => {
       const names = await caches.keys();
       await Promise.all(names.filter((n) => !KEEP.includes(n)).map((n) => caches.delete(n)));
+      await dropReplaced();
       await self.clients.claim();
     })(),
   );
@@ -72,6 +93,9 @@ function isAsset(url) {
   return url.pathname.includes('/assets/') && /\.(webp|png|jpe?g|svg|avif)$/i.test(url.pathname);
 }
 
+// Kept for nothing today, but the shape a truly immutable asset would want.
+// Images are NOT that: a card scan gets replaced by a better one at the same
+// path, which is why they go through the pair below instead.
 async function cacheFirst(req, cacheName) {
   const cache = await caches.open(cacheName);
   const hit = await cache.match(req, { ignoreSearch: true, ignoreVary: true });
@@ -79,6 +103,40 @@ async function cacheFirst(req, cacheName) {
   const res = await fetch(req);
   if (res && res.ok) cache.put(req, res.clone());
   return res;
+}
+
+// STALE-WHILE-REVALIDATE, in two halves so the refresh can be handed to
+// waitUntil SYNCHRONOUSLY from the fetch handler. Starting it inside an async
+// responder would hand waitUntil a promise after the event stopped
+// dispatching, and the worker could be killed with the cache.put half done.
+//
+// The refresh is cheap where it matters: Pages answers a conditional request
+// with a 304 and no body, and its own max-age keeps most of these off the
+// network entirely.
+async function refreshAsset(req) {
+  try {
+    const res = await fetch(req);
+    if (res && res.ok) {
+      const cache = await caches.open(ASSET_CACHE);
+      await cache.put(req, res.clone());
+    }
+    return res;
+  } catch (err) {
+    void err;
+    return null;
+  }
+}
+
+// The cached copy paints at once if there is one; the refresh lands underneath
+// it for next time. Only a miss waits for the network, which is the same deal
+// a first visit always had.
+async function assetResponse(req, refresh) {
+  const cache = await caches.open(ASSET_CACHE);
+  const hit = await cache.match(req, { ignoreSearch: true, ignoreVary: true });
+  if (hit) return hit;
+  const res = await refresh;
+  if (res) return res;
+  return fetch(req);
 }
 
 async function networkFirst(req, cacheName) {
@@ -103,7 +161,10 @@ self.addEventListener('fetch', (e) => {
   if (url.pathname.endsWith('version.json')) return;
 
   if (isAsset(url)) {
-    e.respondWith(cacheFirst(req, ASSET_CACHE));
+    // waitUntil FIRST and synchronously: see refreshAsset.
+    const refresh = refreshAsset(req);
+    e.waitUntil(refresh);
+    e.respondWith(assetResponse(req, refresh));
     return;
   }
   e.respondWith(networkFirst(req, RUNTIME_CACHE));

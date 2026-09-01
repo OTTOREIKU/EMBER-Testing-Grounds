@@ -367,5 +367,92 @@ ok('and so does the match centre', /noteRefusal\(why\);/.test(src('match.ts')));
 ok('both name the command in flight', /noteCommand\(cmd\.kind\)/.test(src('main.ts'))
   && /noteCommand\(cmd\.kind\)/.test(src('match.ts')));
 
+// ---------- the page behind the dialog ----------
+//
+// The dialog is a fixed sheet over the whole screen, and the page behind it
+// used to scroll: on a phone a drag that missed the panel slid the reference
+// list away underneath the report that was about it.
+//
+// `overflow: hidden` on <body> is the usual one-liner and it is NOT enough --
+// iOS Safari scrolls the document anyway. Pinning the body collapses the
+// document to the viewport, so there is nothing left to scroll at all. Both
+// halves are pinned because either alone is broken: the CSS without the offset
+// jumps the page to the top behind the dialog, and the offset without the CSS
+// does nothing.
+console.log('\nfreezing the page behind the dialog');
+
+ok('the lock pins the body rather than only hiding overflow',
+  /body\.rp-locked \{[^}]*position: fixed/.test(rcss));
+ok('and still hides overflow with it', /body\.rp-locked \{[^}]*overflow: hidden/.test(rcss));
+ok('opening a report locks', /lockPage\(\);/.test(ui));
+ok('and closing it releases', /unlockPage\(\);/.test(ui));
+ok('the scroll offset is carried on top', /document\.body\.style\.top = `-\$\{lockedAt\}px`/.test(ui));
+ok('and the reader is put back where they were', /window\.scrollTo\(0, lockedAt\)/.test(ui));
+// A page that does not scroll must not be pinned: freeplay and the Match Centre
+// are full-height layouts whose body never scrolls, and pinning those would
+// move furniture to fix a problem they do not have.
+ok('a page that cannot scroll is left alone',
+  /scrollHeight <= window\.innerHeight\) return;/.test(ui));
+// A report can be opened from inside the reference's own detail sheet, which
+// has already pinned the body. Whoever locked first owns the restore, or the
+// second unlock would drop the reader somewhere they never were.
+ok('a second lock over an existing one is a no-op',
+  /classList\.contains\('rp-locked'\)\) return;/.test(ui));
+ok('one dialog at a time, so the handle stays unambiguous',
+  /getElementById\('report-dialog'\)\?\.remove\(\);/.test(ui));
+
+// The SAME weakness was in the reference page's own sheet lock, which is where
+// this was found: it had shipped as bare `overflow: hidden` since the sheet was
+// built. Fixed together, because a reader meets both on the same page.
+const refSrc = src('reference.ts');
+const refCss = src('reference.css');
+ok('the reference sheet pins the body too',
+  /body\.ref-locked \{[^}]*position: fixed/.test(refCss));
+ok('through the same lock helper shape', /function lockRefPage\(\)/.test(refSrc)
+  && /function unlockRefPage\(\)/.test(refSrc));
+ok('and it defers to a report that has already pinned',
+  /classList\.contains\('rp-locked'\)\) return;/.test(refSrc));
+// Exactly one add and one remove on each page, both inside the helper pair. A
+// second `classList.add` anywhere is a lock that skips the offset, which looks
+// fine until a reader opens a sheet from halfway down the page.
+check('ref-locked is toggled in one place only', [
+  (refSrc.match(/classList\.add\('ref-locked'\)/g) ?? []).length,
+  (refSrc.match(/classList\.remove\('ref-locked'\)/g) ?? []).length,
+], [1, 1]);
+check('and so is rp-locked', [
+  (ui.match(/classList\.add\('rp-locked'\)/g) ?? []).length,
+  (ui.match(/classList\.remove\('rp-locked'\)/g) ?? []).length,
+], [1, 1]);
+
+// ---------- the offline cache must not freeze CORRECTED artwork ----------
+//
+// The asset cache was cache-first with no revalidation, and the preloader warms
+// EVERY image in the manifest -- so a phone held copies of files no page had
+// ever shown it. When the English battlefield cards replaced the Korean ones at
+// the same paths, every device that had visited kept serving the Korean ones,
+// and nothing would ever ask again. Reported from a phone, exactly so.
+console.log('\nthe offline cache and replaced artwork');
+
+const sw = readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8');
+ok('images are no longer served cache-first', !/isAsset\(url\)[\s\S]{0,120}cacheFirst\(/.test(sw));
+ok('they are served from cache AND refreshed behind it',
+  /const refresh = refreshAsset\(req\);/.test(sw) && /assetResponse\(req, refresh\)/.test(sw));
+// waitUntil has to be called while the event is still dispatching. Handing it a
+// promise from inside an async responder can leave the worker killed with the
+// cache.put half done, which looks exactly like the bug this replaces.
+ok('the refresh is handed to waitUntil synchronously',
+  sw.indexOf('e.waitUntil(refresh)') < sw.indexOf('e.respondWith(assetResponse'));
+ok('a cached copy still paints without waiting for the network',
+  /const hit = await cache\.match\(req[^)]*\);\s*\n\s*if \(hit\) return hit;/.test(sw));
+// Stale-while-revalidate only repairs a bad image on the NEXT view. The paths
+// already known to be wrong are dropped outright so the very next load is right.
+ok('paths whose files were replaced are purged on activate',
+  /const REPLACED = \[/.test(sw) && /await dropReplaced\(\);/.test(sw));
+ok('and the battlefield cards are named there', /'\/assets\/battlefield\/'/.test(sw));
+// The purge must not take the whole cache with it: 39MB over a phone connection
+// is not a bug fix.
+ok('the purge is by path, not a cache wipe',
+  /keys\s*\n?\s*\.filter\(\(req\) => REPLACED\.some/.test(sw));
+
 console.log(`\n  ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

@@ -14,6 +14,20 @@
   display: flex; align-items: center; justify-content: center;
   padding: 16px;
   background: rgba(0, 0, 0, 0.62);
+  /* A drag that reaches the backdrop stops there rather than chaining to the
+     page behind it. */
+  overscroll-behavior: contain;
+}
+
+/* Set on <body> for as long as a report is open. PINNED rather than merely
+   `overflow: hidden`, which iOS Safari ignores: with the body fixed the
+   document is the height of the viewport and there is nothing left to scroll.
+   reportui.ts carries the scroll offset on `top` and restores it on close. */
+body.rp-locked {
+  position: fixed;
+  left: 0; right: 0;
+  width: 100%;
+  overflow: hidden;
 }
 
 .rp-panel {
@@ -47,7 +61,7 @@
   margin: 0 0 12px; font-size: 11.5px; color: var(--text3, #6d7885);
 }
 
-.rp-body { overflow-y: auto; }
+.rp-body { overflow-y: auto; overscroll-behavior: contain; }
 
 .rp-label {
   display: block; font-size: 11px; font-weight: 700; color: var(--text2, #a6b0bd);
