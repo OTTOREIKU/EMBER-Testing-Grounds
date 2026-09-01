@@ -4,24 +4,64 @@
    "id": "alley",
    "name": {
     "zh": "小巷",
-    "en": "The Alley",
+    "en": "Alley",
     "jp": "路地"
+   },
+   "envCards": 4,
+   "legend": {
+    "building": 6,
+    "high_wall": 6,
+    "low_wall": 6,
+    "large_container": 6,
+    "small_container": 6
    }
   },
   {
    "id": "crossroads",
    "name": {
     "zh": "十字路口",
-    "en": "Crossroads",
+    "en": "Intersection",
     "jp": "交差点"
+   },
+   "envCards": 4,
+   "legend": {
+    "building": 6,
+    "high_wall": 6,
+    "low_wall": 6,
+    "large_container": 4,
+    "small_container": 2
    }
   },
   {
    "id": "hotspot",
    "name": {
     "zh": "热点",
-    "en": "Hotspot",
+    "en": "Hot Zone",
     "jp": "ホットスポット"
+   },
+   "envCards": 4,
+   "legend": {
+    "building": 6,
+    "high_wall": 6,
+    "low_wall": 4,
+    "large_container": 6,
+    "small_container": 6
+   }
+  },
+  {
+   "id": "steelworks",
+   "name": {
+    "zh": "钢铁厂",
+    "en": "Steelworks",
+    "jp": "製鉄所"
+   },
+   "envCards": 4,
+   "legend": {
+    "building": 6,
+    "high_wall": 6,
+    "low_wall": 6,
+    "large_container": 6,
+    "small_container": 6
    }
   }
  ],
@@ -2185,8 +2225,773 @@
     "isFragile": true,
     "displayName": "集装箱"
    }
+  ],
+  "steelworks": [
+   {
+    "id": "terrain_0",
+    "type": "low_wall",
+    "subCells": [
+     {
+      "col": 30,
+      "row": 6
+     },
+     {
+      "col": 31,
+      "row": 6
+     },
+     {
+      "col": 32,
+      "row": 6
+     }
+    ],
+    "height": 2,
+    "blocksLos": false,
+    "providesProtection": true,
+    "isFragile": false,
+    "displayName": "防线墙（矮）"
+   },
+   {
+    "id": "terrain_1",
+    "type": "low_wall",
+    "subCells": [
+     {
+      "col": 21,
+      "row": 9
+     },
+     {
+      "col": 21,
+      "row": 10
+     },
+     {
+      "col": 21,
+      "row": 11
+     }
+    ],
+    "height": 2,
+    "blocksLos": false,
+    "providesProtection": true,
+    "isFragile": false,
+    "displayName": "防线墙（矮）"
+   },
+   {
+    "id": "terrain_2",
+    "type": "low_wall",
+    "subCells": [
+     {
+      "col": 21,
+      "row": 12
+     },
+     {
+      "col": 21,
+      "row": 13
+     },
+     {
+      "col": 21,
+      "row": 14
+     }
+    ],
+    "height": 2,
+    "blocksLos": false,
+    "providesProtection": true,
+    "isFragile": false,
+    "displayName": "防线墙（矮）"
+   },
+   {
+    "id": "terrain_3",
+    "type": "low_wall",
+    "subCells": [
+     {
+      "col": 14,
+      "row": 21
+     },
+     {
+      "col": 14,
+      "row": 22
+     },
+     {
+      "col": 14,
+      "row": 23
+     }
+    ],
+    "height": 2,
+    "blocksLos": false,
+    "providesProtection": true,
+    "isFragile": false,
+    "displayName": "防线墙（矮）"
+   },
+   {
+    "id": "terrain_4",
+    "type": "low_wall",
+    "subCells": [
+     {
+      "col": 14,
+      "row": 24
+     },
+     {
+      "col": 14,
+      "row": 25
+     },
+     {
+      "col": 14,
+      "row": 26
+     }
+    ],
+    "height": 2,
+    "blocksLos": false,
+    "providesProtection": true,
+    "isFragile": false,
+    "displayName": "防线墙（矮）"
+   },
+   {
+    "id": "terrain_5",
+    "type": "low_wall",
+    "subCells": [
+     {
+      "col": 3,
+      "row": 29
+     },
+     {
+      "col": 4,
+      "row": 29
+     },
+     {
+      "col": 5,
+      "row": 29
+     }
+    ],
+    "height": 2,
+    "blocksLos": false,
+    "providesProtection": true,
+    "isFragile": false,
+    "displayName": "防线墙（矮）"
+   },
+   {
+    "id": "terrain_6",
+    "type": "high_wall",
+    "subCells": [
+     {
+      "col": 15,
+      "row": 12
+     },
+     {
+      "col": 16,
+      "row": 12
+     },
+     {
+      "col": 17,
+      "row": 12
+     }
+    ],
+    "height": 3,
+    "blocksLos": true,
+    "providesProtection": true,
+    "isFragile": false,
+    "displayName": "防线墙（高）"
+   },
+   {
+    "id": "terrain_7",
+    "type": "high_wall",
+    "subCells": [
+     {
+      "col": 27,
+      "row": 14
+     },
+     {
+      "col": 28,
+      "row": 14
+     },
+     {
+      "col": 29,
+      "row": 14
+     }
+    ],
+    "height": 3,
+    "blocksLos": true,
+    "providesProtection": true,
+    "isFragile": false,
+    "displayName": "防线墙（高）"
+   },
+   {
+    "id": "terrain_8",
+    "type": "high_wall",
+    "subCells": [
+     {
+      "col": 9,
+      "row": 15
+     },
+     {
+      "col": 9,
+      "row": 16
+     },
+     {
+      "col": 9,
+      "row": 17
+     }
+    ],
+    "height": 3,
+    "blocksLos": true,
+    "providesProtection": true,
+    "isFragile": false,
+    "displayName": "防线墙（高）"
+   },
+   {
+    "id": "terrain_9",
+    "type": "high_wall",
+    "subCells": [
+     {
+      "col": 26,
+      "row": 18
+     },
+     {
+      "col": 26,
+      "row": 19
+     },
+     {
+      "col": 26,
+      "row": 20
+     }
+    ],
+    "height": 3,
+    "blocksLos": true,
+    "providesProtection": true,
+    "isFragile": false,
+    "displayName": "防线墙（高）"
+   },
+   {
+    "id": "terrain_10",
+    "type": "high_wall",
+    "subCells": [
+     {
+      "col": 6,
+      "row": 21
+     },
+     {
+      "col": 7,
+      "row": 21
+     },
+     {
+      "col": 8,
+      "row": 21
+     }
+    ],
+    "height": 3,
+    "blocksLos": true,
+    "providesProtection": true,
+    "isFragile": false,
+    "displayName": "防线墙（高）"
+   },
+   {
+    "id": "terrain_11",
+    "type": "high_wall",
+    "subCells": [
+     {
+      "col": 18,
+      "row": 23
+     },
+     {
+      "col": 19,
+      "row": 23
+     },
+     {
+      "col": 20,
+      "row": 23
+     }
+    ],
+    "height": 3,
+    "blocksLos": true,
+    "providesProtection": true,
+    "isFragile": false,
+    "displayName": "防线墙（高）"
+   },
+   {
+    "id": "terrain_12",
+    "type": "container",
+    "subCells": [
+     {
+      "col": 17,
+      "row": 3
+     }
+    ],
+    "height": 1,
+    "blocksLos": false,
+    "providesProtection": false,
+    "isFragile": true,
+    "displayName": "集装箱"
+   },
+   {
+    "id": "terrain_13",
+    "type": "container",
+    "subCells": [
+     {
+      "col": 27,
+      "row": 9
+     },
+     {
+      "col": 28,
+      "row": 9
+     }
+    ],
+    "height": 1,
+    "blocksLos": false,
+    "providesProtection": false,
+    "isFragile": true,
+    "displayName": "集装箱"
+   },
+   {
+    "id": "terrain_14",
+    "type": "container",
+    "subCells": [
+     {
+      "col": 15,
+      "row": 11
+     }
+    ],
+    "height": 1,
+    "blocksLos": false,
+    "providesProtection": false,
+    "isFragile": true,
+    "displayName": "集装箱"
+   },
+   {
+    "id": "terrain_15",
+    "type": "container",
+    "subCells": [
+     {
+      "col": 8,
+      "row": 15
+     }
+    ],
+    "height": 1,
+    "blocksLos": false,
+    "providesProtection": false,
+    "isFragile": true,
+    "displayName": "集装箱"
+   },
+   {
+    "id": "terrain_16",
+    "type": "container",
+    "subCells": [
+     {
+      "col": 15,
+      "row": 15
+     },
+     {
+      "col": 16,
+      "row": 15
+     }
+    ],
+    "height": 1,
+    "blocksLos": false,
+    "providesProtection": false,
+    "isFragile": true,
+    "displayName": "集装箱"
+   },
+   {
+    "id": "terrain_17",
+    "type": "container",
+    "subCells": [
+     {
+      "col": 33,
+      "row": 16
+     },
+     {
+      "col": 33,
+      "row": 17
+     }
+    ],
+    "height": 1,
+    "blocksLos": false,
+    "providesProtection": false,
+    "isFragile": true,
+    "displayName": "集装箱"
+   },
+   {
+    "id": "terrain_18",
+    "type": "container",
+    "subCells": [
+     {
+      "col": 2,
+      "row": 19
+     },
+     {
+      "col": 2,
+      "row": 20
+     }
+    ],
+    "height": 1,
+    "blocksLos": false,
+    "providesProtection": false,
+    "isFragile": true,
+    "displayName": "集装箱"
+   },
+   {
+    "id": "terrain_19",
+    "type": "container",
+    "subCells": [
+     {
+      "col": 19,
+      "row": 20
+     },
+     {
+      "col": 20,
+      "row": 20
+     }
+    ],
+    "height": 1,
+    "blocksLos": false,
+    "providesProtection": false,
+    "isFragile": true,
+    "displayName": "集装箱"
+   },
+   {
+    "id": "terrain_20",
+    "type": "container",
+    "subCells": [
+     {
+      "col": 27,
+      "row": 20
+     }
+    ],
+    "height": 1,
+    "blocksLos": false,
+    "providesProtection": false,
+    "isFragile": true,
+    "displayName": "集装箱"
+   },
+   {
+    "id": "terrain_21",
+    "type": "container",
+    "subCells": [
+     {
+      "col": 20,
+      "row": 24
+     }
+    ],
+    "height": 1,
+    "blocksLos": false,
+    "providesProtection": false,
+    "isFragile": true,
+    "displayName": "集装箱"
+   },
+   {
+    "id": "terrain_22",
+    "type": "container",
+    "subCells": [
+     {
+      "col": 7,
+      "row": 26
+     },
+     {
+      "col": 8,
+      "row": 26
+     }
+    ],
+    "height": 1,
+    "blocksLos": false,
+    "providesProtection": false,
+    "isFragile": true,
+    "displayName": "集装箱"
+   },
+   {
+    "id": "terrain_23",
+    "type": "container",
+    "subCells": [
+     {
+      "col": 18,
+      "row": 32
+     }
+    ],
+    "height": 1,
+    "blocksLos": false,
+    "providesProtection": false,
+    "isFragile": true,
+    "displayName": "集装箱"
+   },
+   {
+    "id": "terrain_24",
+    "type": "building",
+    "subCells": [
+     {
+      "col": 21,
+      "row": 6
+     },
+     {
+      "col": 22,
+      "row": 6
+     },
+     {
+      "col": 23,
+      "row": 6
+     },
+     {
+      "col": 21,
+      "row": 7
+     },
+     {
+      "col": 22,
+      "row": 7
+     },
+     {
+      "col": 23,
+      "row": 7
+     },
+     {
+      "col": 21,
+      "row": 8
+     },
+     {
+      "col": 22,
+      "row": 8
+     },
+     {
+      "col": 23,
+      "row": 8
+     }
+    ],
+    "height": 3,
+    "blocksLos": true,
+    "providesProtection": true,
+    "isFragile": false,
+    "displayName": "建筑物"
+   },
+   {
+    "id": "terrain_25",
+    "type": "building",
+    "subCells": [
+     {
+      "col": 12,
+      "row": 9
+     },
+     {
+      "col": 13,
+      "row": 9
+     },
+     {
+      "col": 14,
+      "row": 9
+     },
+     {
+      "col": 12,
+      "row": 10
+     },
+     {
+      "col": 13,
+      "row": 10
+     },
+     {
+      "col": 14,
+      "row": 10
+     },
+     {
+      "col": 12,
+      "row": 11
+     },
+     {
+      "col": 13,
+      "row": 11
+     },
+     {
+      "col": 14,
+      "row": 11
+     }
+    ],
+    "height": 3,
+    "blocksLos": true,
+    "providesProtection": true,
+    "isFragile": false,
+    "displayName": "建筑物"
+   },
+   {
+    "id": "terrain_26",
+    "type": "building",
+    "subCells": [
+     {
+      "col": 6,
+      "row": 12
+     },
+     {
+      "col": 7,
+      "row": 12
+     },
+     {
+      "col": 8,
+      "row": 12
+     },
+     {
+      "col": 6,
+      "row": 13
+     },
+     {
+      "col": 7,
+      "row": 13
+     },
+     {
+      "col": 8,
+      "row": 13
+     },
+     {
+      "col": 6,
+      "row": 14
+     },
+     {
+      "col": 7,
+      "row": 14
+     },
+     {
+      "col": 8,
+      "row": 14
+     }
+    ],
+    "height": 3,
+    "blocksLos": true,
+    "providesProtection": true,
+    "isFragile": false,
+    "displayName": "建筑物"
+   },
+   {
+    "id": "terrain_27",
+    "type": "building",
+    "subCells": [
+     {
+      "col": 27,
+      "row": 21
+     },
+     {
+      "col": 28,
+      "row": 21
+     },
+     {
+      "col": 29,
+      "row": 21
+     },
+     {
+      "col": 27,
+      "row": 22
+     },
+     {
+      "col": 28,
+      "row": 22
+     },
+     {
+      "col": 29,
+      "row": 22
+     },
+     {
+      "col": 27,
+      "row": 23
+     },
+     {
+      "col": 28,
+      "row": 23
+     },
+     {
+      "col": 29,
+      "row": 23
+     }
+    ],
+    "height": 3,
+    "blocksLos": true,
+    "providesProtection": true,
+    "isFragile": false,
+    "displayName": "建筑物"
+   },
+   {
+    "id": "terrain_28",
+    "type": "building",
+    "subCells": [
+     {
+      "col": 21,
+      "row": 24
+     },
+     {
+      "col": 22,
+      "row": 24
+     },
+     {
+      "col": 23,
+      "row": 24
+     },
+     {
+      "col": 21,
+      "row": 25
+     },
+     {
+      "col": 22,
+      "row": 25
+     },
+     {
+      "col": 23,
+      "row": 25
+     },
+     {
+      "col": 21,
+      "row": 26
+     },
+     {
+      "col": 22,
+      "row": 26
+     },
+     {
+      "col": 23,
+      "row": 26
+     }
+    ],
+    "height": 3,
+    "blocksLos": true,
+    "providesProtection": true,
+    "isFragile": false,
+    "displayName": "建筑物"
+   },
+   {
+    "id": "terrain_29",
+    "type": "building",
+    "subCells": [
+     {
+      "col": 12,
+      "row": 27
+     },
+     {
+      "col": 13,
+      "row": 27
+     },
+     {
+      "col": 14,
+      "row": 27
+     },
+     {
+      "col": 12,
+      "row": 28
+     },
+     {
+      "col": 13,
+      "row": 28
+     },
+     {
+      "col": 14,
+      "row": 28
+     },
+     {
+      "col": 12,
+      "row": 29
+     },
+     {
+      "col": 13,
+      "row": 29
+     },
+     {
+      "col": 14,
+      "row": 29
+     }
+    ],
+    "height": 3,
+    "blocksLos": true,
+    "providesProtection": true,
+    "isFragile": false,
+    "displayName": "建筑物"
+   }
   ]
  },
  "_hotspot_note": "Hotspot was transcribed with four merged pieces: two pairs of stacked buildings stored as single 18-cell blocks, and two pairs of adjacent 1x2 containers stored as single 4-cell blocks, which is not a legal piece. Split against the card art in assets/battlefield/hotspot.webp by overlaying a fitted 12x12 grid.",
- "_card_vs_art": "Where the Battlefield card legends disagree with their own printed maps, the maps win, because that is what you lay out. Crossroads: the map draws 6 containers 1x2, the legend lists 4. Hotspot: the map draws 4 low walls, the legend lists 6. Alley agrees with itself at 6/6/6/6/6."
+ "_card_vs_art": "Where the Battlefield card legends disagree with their own printed maps, the maps win, because that is what you lay out. Crossroads: the map draws 6 containers 1x2, the legend lists 4. Hotspot: the map draws 4 low walls, the legend lists 6. Alley agrees with itself at 6/6/6/6/6.",
+ "_card_note": "envCards is the Environment Card allowance printed on the Battlefield Card (rulebook 5.4.1); it is 4 on every 12x12 layout. legend is the terrain list as PRINTED, which _card_vs_art records disagreeing with the printed map in two places - the map wins there, because that is what you lay out. The en names are the ones printed on the cards; the IDS are the older names (alley, crossroads, hotspot) and are kept because saved boards carry them."
 }

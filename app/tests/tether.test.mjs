@@ -294,9 +294,14 @@ const board = (tokens) => ({ tokens, nextUid: 99, round: { n: 1, phase: 2, first
 // Source checks, because these are the "wired on one page only" failures this
 // codebase keeps producing, and there is no way to catch them from a fixture.
 
-// THREE construction sites, not two: matchhud builds its own opts twice.
+// THREE construction sites, not two: matchhud builds its own opts twice. The
+// leash is now COMPOSED with the Abyss ban at each site - both are legalities
+// on the same hook and both must pass - so the count moves to the compose
+// line, and a site that dropped either half fails one of the two.
 check('every MoveOpts site carries the leash',
-  (mainSrc + hudSrc).match(/allowed: tetherCap\(/g)?.length, 3);
+  (mainSrc + hudSrc).match(/const leash = tetherCap\(/g)?.length, 3);
+check('and every site composes it with the Abyss ban',
+  (mainSrc + hudSrc).match(/allowed: leash && env\.allowed/g)?.length, 3);
 check('and each page imports it', [
   /import \{[^}]*tetherCap[^}]*\} from '\.\/melee'/.test(mainSrc),
   /import \{[^}]*tetherCap[^}]*\} from '\.\/melee'/.test(hudSrc),

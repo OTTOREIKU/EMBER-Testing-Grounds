@@ -1,9 +1,9 @@
 import './reference.css';
-import { actionIconUrl, boxCoverUrl, cardName, HELP_CARDS, helpCardUrl, TOKEN_PRINT, tokenPrintUrl, factionArtUrl, FACTION_LABEL, isListedBox, loadData, mechPartUrl, missionImageUrl, portraitUrl, secondaryImageUrl, statIconIsPlated, statIconUrl, tabImageUrl, traitName, zeroCostReason, type BoxDef, type FactionDef, type GameData, type KeywordDef } from './data';
+import { actionIconUrl, battlefieldCardUrl, boxCoverUrl, cardName, environmentImageUrl, HELP_CARDS, helpCardUrl, TOKEN_PRINT, tokenPrintUrl, factionArtUrl, FACTION_LABEL, isListedBox, loadData, mechPartUrl, missionImageUrl, portraitUrl, secondaryImageUrl, statIconIsPlated, statIconUrl, tabImageUrl, traitName, zeroCostReason, type BoxDef, type EnvironmentCard, type FactionDef, type GameData, type KeywordDef } from './data';
 import { mountCardImage, mountCardImageCopy, preloadCardImages, warmAllImagesWhenIdle } from './images';
 import { runFirstVisitPreload } from './preload';
 import { watchForUpdates } from './updates';
-import { SHAPE_NOTE, STATUSES, TIMINGS, type Card, type StatusDef } from './types';
+import { SHAPE_NOTE, STATUSES, TIMINGS, type Card, type StatusDef, type TerrainMap } from './types';
 import { registerOffline } from './offline';
 import { costLabel, LENGTH_NAME, lengthOf, TICK_COST, timingOf } from './ticks';
 import { diceRow, maskGlyphs, tickCapsule } from './glyphs';
@@ -16,7 +16,7 @@ import { openReferenceReport } from './reportui';
 // after the thing it is meant to catch is not a net.
 installDiagnostics(window);
 
-type Tab = 'keywords' | 'parts' | 'units' | 'pilots' | 'tactics' | 'boxes' | 'factions' | 'missions' | 'rules';
+type Tab = 'keywords' | 'parts' | 'units' | 'pilots' | 'tactics' | 'boxes' | 'factions' | 'missions' | 'battlefield' | 'rules';
 
 interface Facet {
   id: string;
@@ -342,6 +342,62 @@ const wantFor = (t: Tab): ((c: Card) => boolean) =>
         ? (c) => c.category === 'tactics_or_upgrade'
         : (c) => c.category === 'pilot';
 
+// Name and rule text both, so searching "Fragile" finds High Temperature by
+// the Token it hands out as well as Fragile Platform by its name.
+function matchEnvironment(e: EnvironmentCard, q: string): boolean {
+  if (!q) return true;
+  return norm(`${e.name} ${e.text}`).includes(q);
+}
+
+// The id is searched as well as the name, and that is what keeps the OLD names
+// working: the ids are still alley, crossroads and hotspot, so somebody who
+// knows the map as Hotspot still finds it now the card name Hot Zone is shown.
+function matchMap(m: TerrainMap, q: string): boolean {
+  if (!q) return true;
+  return norm(`${m.name.en ?? ''} ${m.name.zh ?? ''} ${m.id}`).includes(q);
+}
+
+const LEGEND_LABEL: Record<string, string> = {
+  building: 'Buildings', high_wall: 'High Walls', low_wall: 'Low Walls',
+  large_container: 'Large Containers', small_container: 'Small Containers',
+};
+
+// The map as its own Battlefield Card presents it: the printed picture, the
+// terrain it calls for, and the Environment Card allowance that is printed
+// here and in no other place (5.4.1).
+function battlefieldCard(m: TerrainMap, laid: number): string {
+  const legend = Object.entries(m.legend ?? {})
+    .map(([k, n]) => `<span class="tag">${n} ${esc(LEGEND_LABEL[k] ?? k)}</span>`)
+    .join('');
+  return `<article class="card">
+    <div class="card-title">${esc(m.name.en || m.id)}</div>
+    <button class="mis-thumb" data-battlefield="${esc(m.id)}" title="Tap for the full card, including the terrain legend">
+      <img src="${battlefieldCardUrl(m.id)}" alt="${esc(m.name.en || m.id)} battlefield card" loading="lazy">
+      <span>Tap to enlarge</span>
+    </button>
+    <div class="card-badges">
+      ${m.envCards ? `<span class="tag tag-kw">${m.envCards} Environment Cards</span>` : ''}
+      ${legend}
+    </div>
+    <div class="card-body"><p class="dim">${laid} terrain pieces are laid out for this map on the board.</p></div>
+  </article>`;
+}
+
+function environmentCard(e: EnvironmentCard): string {
+  return `<article class="card">
+    <div class="card-title">${esc(e.name)}</div>
+    <button class="mis-thumb" data-envcard="${esc(e.id)}" title="Tap for the full card">
+      <img src="${environmentImageUrl(e.id)}" alt="${esc(e.name)} card" loading="lazy">
+      <span>Tap to enlarge</span>
+    </button>
+    <div class="card-body"><p>${linkKeywords(e.text)}</p></div>
+    <div class="card-badges">
+      <span class="tag">${e.affects === 'all' ? 'Every Unit' : 'Ground Units'}</span>
+      ${e.oneShot ? '<span class="tag tag-kw">Removed when it fires</span>' : ''}
+    </div>
+  </article>`;
+}
+
 function tabCounts(q: string): Record<Tab, number> {
   const cardsIn = (t: Tab): number => data.cards.filter(wantFor(t)).filter((c) => matchCard(c, q)).length;
   return {
@@ -354,6 +410,9 @@ function tabCounts(q: string): Record<Tab, number> {
       data.missions.cards.filter((m) => matchMission(m, q)).length +
       data.missions.families.filter((f) => matchFamily(f, q)).length +
       data.secondary.filter((s) => matchSecondary(s, q)).length,
+    battlefield:
+      data.terrain.maps.filter((m) => matchMap(m, q)).length +
+      data.environments.cards.filter((e) => matchEnvironment(e, q)).length,
     factions: data.factions.filter((f) => matchFaction(f, q)).length,
     boxes: data.boxes.filter(isListedBox).filter((b) => matchBox(b, q)).length,
     rules:
@@ -399,7 +458,8 @@ function paintTabs(q: string, everywhere: boolean): void {
 function renderEverywhere(el: HTMLElement, q: string): void {
   const label: Record<Tab, string> = {
     keywords: 'Keywords', parts: 'Parts', units: 'Units', pilots: 'Pilots', tactics: 'Tactics',
-    missions: 'Missions', factions: 'Factions', boxes: 'Boxes', rules: 'Rules',
+    missions: 'Missions', battlefield: 'Battlefield', factions: 'Factions',
+    boxes: 'Boxes', rules: 'Rules',
   };
   // Result rows, forum-style: one per line, name on the left and its kind on
   // the right, scanned top to bottom. Ten per group before the "all" link,
@@ -445,6 +505,22 @@ function renderEverywhere(el: HTMLElement, q: string): void {
       ...secs.map((s) => chip(`data-secondary="${esc(s.id)}"`, s.name, 'Secondary Task')),
     ];
     groups.push({ t: 'missions', total: mains.length + fams.length + secs.length, rows: rows.slice(0, CAP) });
+  }
+
+  // The tab strip already counted these, so leaving them out of the results
+  // showed a count with nothing behind it. There is no detail sheet for an
+  // Environment Card, so the row opens the tab rather than a card.
+  const bmaps = data.terrain.maps.filter((m) => matchMap(m, q));
+  const envs = data.environments.cards.filter((e) => matchEnvironment(e, q));
+  if (bmaps.length + envs.length) {
+    groups.push({
+      t: 'battlefield',
+      total: bmaps.length + envs.length,
+      rows: [
+        ...bmaps.map((m) => chip('data-goto="battlefield"', m.name.en || m.id, 'Battlefield')),
+        ...envs.map((e) => chip('data-goto="battlefield"', e.name, 'Environment')),
+      ].slice(0, CAP),
+    });
   }
 
   const facs = data.factions.filter((f) => matchFaction(f, q));
@@ -599,6 +675,40 @@ function render(): void {
           </article>`,
             )
             .join('')
+        : '');
+    return;
+  }
+
+  if (tab === 'battlefield') {
+    const maps = data.terrain.maps.filter((m) => matchMap(m, q));
+    const list = data.environments.cards.filter((e) => matchEnvironment(e, q));
+    // The placement rules are the half that is NOT on the cards, so they lead:
+    // somebody reading this tab wants to know how many they may lay down at
+    // least as much as they want the five effects.
+    const intro = `<article class="card env-intro">
+      <div class="card-title">Using Environment Cards</div>
+      <div class="card-body">
+        <p>An Environment Card is the size of one Large Grid and is placed on the board to give
+        that Grid a special effect.</p>
+        <p>If they are used, the two players place them <b>alternately</b> while setting up the
+        battlefield. The total may not exceed the number printed on the Battlefield Card, which is
+        <b>4</b> on every 12x12 layout. They generally cannot be placed on Tactical Zones.</p>
+      </div>
+      <div class="card-badges"><span class="tag mono">${esc(data.environments.rule)}</span></div>
+    </article>`;
+    if (!maps.length && !list.length) {
+      el.innerHTML = '<p class="ref-count">No matches</p>';
+      return;
+    }
+    el.innerHTML =
+      (maps.length
+        ? `<p class="ref-count">${maps.length} map${maps.length === 1 ? '' : 's'}</p>`
+          + maps.map((m) => battlefieldCard(m, (data.terrain.layouts[m.id] ?? []).length)).join('')
+        : '')
+      + (list.length
+        ? `<p class="ref-count">${list.length} environment card${list.length === 1 ? '' : 's'}</p>`
+          + (q ? '' : intro)
+          + list.map(environmentCard).join('')
         : '');
     return;
   }
@@ -1012,6 +1122,7 @@ function shownFor(v: DetailView | undefined): Record<string, string> {
 const TAB_CATEGORY: Record<string, ReportCategory> = {
   keywords: 'keyword', parts: 'card', units: 'card', pilots: 'card', tactics: 'card',
   boxes: 'box', factions: 'faction', missions: 'mission', rules: 'rules',
+  battlefield: 'other',
 };
 
 function viewLabel(v: DetailView): string {
@@ -1178,14 +1289,20 @@ function closeDetail(): void {
 function showMissionImage(id: string, kind: 'main' | 'secondary' = 'main'): void {
   const card =
     kind === 'secondary' ? data.secondary.find((s) => s.id === id) : data.missions.cards.find((m) => m.id === id);
-  const src = kind === 'secondary' ? secondaryImageUrl(id) : missionImageUrl(id);
+  showCardImage(kind === 'secondary' ? secondaryImageUrl(id) : missionImageUrl(id), card?.name ?? id);
+}
+
+// Any card worth reading at full size. The reference column is narrow enough
+// that a battlefield card's terrain legend and an environment card's rule are
+// both too small to read in place.
+function showCardImage(src: string, label: string): void {
   document.querySelector('.mis-lightbox')?.remove();
   const box = document.createElement('div');
   box.className = 'mis-lightbox';
   box.innerHTML = `<div class="mis-lightbox-inner">
       <button class="mis-close" title="Close">✕</button>
-      <img src="${src}" alt="${esc(card?.name ?? id)} card">
-      <p>${esc(card?.name ?? id)}</p>
+      <img src="${src}" alt="${esc(label)} card">
+      <p>${esc(label)}</p>
     </div>`;
   const close = () => {
     box.remove();
@@ -1279,6 +1396,20 @@ async function init(): Promise<void> {
     if (mis) {
       ev.preventDefault();
       showMissionImage(mis.dataset.mission!);
+      return;
+    }
+    const bf = t.closest<HTMLElement>('[data-battlefield]');
+    if (bf) {
+      ev.preventDefault();
+      const m = data.terrain.maps.find((x) => x.id === bf.dataset.battlefield);
+      showCardImage(battlefieldCardUrl(bf.dataset.battlefield!), m?.name.en || bf.dataset.battlefield!);
+      return;
+    }
+    const envc = t.closest<HTMLElement>('[data-envcard]');
+    if (envc) {
+      ev.preventDefault();
+      const e = data.environments.cards.find((x) => x.id === envc.dataset.envcard);
+      showCardImage(environmentImageUrl(envc.dataset.envcard!), e?.name ?? envc.dataset.envcard!);
       return;
     }
     const sec = t.closest<HTMLElement>('[data-secondary]');

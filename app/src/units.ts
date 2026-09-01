@@ -2,7 +2,7 @@ import { clampBoardArt, clampGridColour, DEFAULT_BOARD } from './boards';
 import type { GameData } from './data';
 import { cardName, faceOf, isAerial, isBarricade, isFlyingBase, isMine, isTetherFace, isUnfolded, transformFaces, unfoldsInto, unitSize } from './data';
 import type { ExtraTick, Card, CardAction, CounterRoll, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, TableZone, TerrainPiece, TetherLink, Timing, Token } from './types';
-import { DEFAULT_GRIDS, gridsOf, LEGACY_SIDE, normaliseScript, statusCount, TIMINGS } from './types';
+import { addStatus, DEFAULT_GRIDS, gridsOf, LEGACY_SIDE, normaliseScript, statusCount, TIMINGS } from './types';
 import { normaliseSetup } from './setup';
 import { isMeleeFiring, lockersOf } from './melee';
 import { boardGrids, inContact, largeGridOf, lineCrossesUnit, losBetween, rangeBetween, smokeBlocks, standingSpot } from './rules';
@@ -3077,6 +3077,151 @@ function coversGrid(t: Token, g: { c: number; r: number }): boolean {
   return false;
 }
 
+// ---------- ENVIRONMENT CARDS (5.4.1) ----------
+//
+// Five cards, identified by the ids data/environments.json gives them. Their
+// text is on the cards; what belongs here is which MECHANISM each one rides:
+//
+//   abyss            - a legality. Walks may not enter (MoveOpts.allowed);
+//                      flights may not LAND (MoveOpts.landing), because a
+//                      flight enters only its landing Grid. Forced Movement in
+//                      is a death the drivers resolve, since only they know
+//                      who forced it and owns the kill.
+//   rugged           - an exit cost, Break Away's own hook, and like Break
+//                      Away it is not charged to a flight.
+//   fragile-platform - a stop Grid on the way in (Crush's never-expanded
+//                      shape), and a collapse settleEnvironments derives.
+//   high-temperature - an entry token. Pass-throughs come from whoever holds
+//                      the path; endpoints come from the settle sweep's
+//                      marker, so every road onto a Grid is one of the two.
+//   anti-gravity     - the movement mode, forced at the start grid.
+
+export function envCardAt(
+  state: { environments?: { card: string; col: number; row: number }[] },
+  c: number,
+  r: number,
+): string | undefined {
+  return (state.environments ?? []).find((e) => e.col === c && e.row === r)?.card;
+}
+
+export interface EnvMoveRules {
+  allowed?: (c: number, r: number) => boolean;
+  landing?: (c: number, r: number) => boolean;
+  exitCost?: (c: number, r: number) => number;
+  stop?: (c: number, r: number) => boolean;
+}
+
+// The movement-shaping half. Every fragment is spread conditionally, so a
+// board without that card hands the search the same undefined it always got.
+// High Temperature is absent on purpose: heat does not bend a route.
+export function envMoveRules(
+  data: GameData,
+  state: GameState,
+  t: Token,
+  flying: boolean,
+): EnvMoveRules {
+  const placed = state.environments ?? [];
+  // Every one of these cards names Ground Units; a flying base or an Aerial
+  // unit walks (or rather floats) past all of them.
+  if (!placed.length || !isGroundUnit(data, t)) return {};
+  const has = (id: string) => placed.some((e) => e.card === id);
+  if (flying) {
+    return has('abyss') ? { landing: (c, r) => envCardAt(state, c, r) !== 'abyss' } : {};
+  }
+  return {
+    ...(has('abyss') ? { allowed: (c, r) => envCardAt(state, c, r) !== 'abyss' } : {}),
+    ...(has('rugged') ? { exitCost: (c, r) => (envCardAt(state, c, r) === 'rugged' ? 1 : 0) } : {}),
+    ...(has('fragile-platform') ? { stop: (c, r) => envCardAt(state, c, r) === 'fragile-platform' } : {}),
+  };
+}
+
+// Anti-Gravity: "When a Ground Unit performs Movement originating in this
+// Grid, the Movement Type is Flying." Automatic, like a Fairy pair and unlike
+// an Ojs200 - the card leaves no choice to ask about.
+export function envFlightFrom(data: GameData, state: GameState, t: Token): boolean {
+  if (!isGroundUnit(data, t)) return false;
+  const g = largeGridOf(t);
+  return envCardAt(state, g.c, g.r) === 'anti-gravity';
+}
+
+// Where a Forced Movement line ends early: an Abyss (the victim falls in) or a
+// Fragile Platform (the floor goes). Handed to knockbackPath by both drivers.
+export function envForcedStop(
+  data: GameData,
+  state: GameState,
+  victim: Token,
+): ((c: number, r: number) => boolean) | undefined {
+  if (!(state.environments ?? []).length || !isGroundUnit(data, victim)) return undefined;
+  return (c, r) => {
+    const card = envCardAt(state, c, r);
+    return card === 'abyss' || card === 'fragile-platform';
+  };
+}
+
+// Which of these Grids cook. The caller owns the entry list - the walked path
+// minus its start and landing for a ground move, nothing for a flight - and
+// EVERY unit is fair game: the card says Unit, not Ground Unit.
+export function envHotEntries(
+  state: GameState,
+  grids: { c: number; r: number }[],
+): { c: number; r: number }[] {
+  return grids.filter((g) => envCardAt(state, g.c, g.r) === 'high-temperature');
+}
+
+export interface EnvEvent {
+  what: 'hot' | 'collapse';
+  uid: number;
+  c: number;
+  r: number;
+}
+
+// The derived half, run after every command beside settleTethers, and by the
+// freeplay board for the mutations that never become commands. Two rules:
+//
+//   high-temperature - a unit STANDING in the Grid that was not standing there
+//     a moment ago has entered it, whatever road it took: a landing, a
+//     knockback, a Crush displacement, a Blink, a deployment, a sandbox drag.
+//     The envSeen marker is what separates "entered" from "still there", which
+//     is the difference between one Fragile Token and one per command.
+//
+//   fragile-platform - a Ground Unit standing on it means it has already
+//     entered, so the Card comes off. Same absence-is-default tail as the
+//     setEnvironment command, so the sweep never leaves an empty array behind.
+//
+// The Abyss is deliberately NOT settled here: its consequence is a Destruction
+// with an owner, and only the driver that forced the move knows who.
+export function settleEnvironments(data: GameData, state: GameState): EnvEvent[] {
+  const events: EnvEvent[] = [];
+  const placed = state.environments ?? [];
+  if (!placed.length) {
+    // No cards, no marks: a stale marker would eat the first entry after the
+    // card comes back in a later setup.
+    for (const t of state.tokens) if (t.envSeen) delete t.envSeen;
+    return events;
+  }
+  for (const t of state.tokens.filter(alive)) {
+    const g = largeGridOf(t);
+    const card = envCardAt(state, g.c, g.r);
+    if (card === 'high-temperature') {
+      const key = `${g.c},${g.r}`;
+      if (t.envSeen !== key) {
+        t.statuses = addStatus(t.statuses, 'fragile');
+        t.envSeen = key;
+        events.push({ what: 'hot', uid: t.uid, c: g.c, r: g.r });
+      }
+    } else if (t.envSeen) {
+      delete t.envSeen;
+    }
+    if (card === 'fragile-platform' && isGroundUnit(data, t)) {
+      const rest = (state.environments ?? []).filter((e) => !(e.col === g.c && e.row === g.r));
+      if (rest.length) state.environments = rest;
+      else delete state.environments;
+      events.push({ what: 'collapse', uid: t.uid, c: g.c, r: g.r });
+    }
+  }
+  return events;
+}
+
 // A Mine's trigger asks for a GROUND Unit. Anything Aerial is above it, and a
 // transparent-base Flying Unit lands ON the Mine without setting it off
 // (FAQ M3/M24). A Mech carries no flight class, so it is always ground.
@@ -4557,6 +4702,21 @@ function migrateSideIds(v: unknown): unknown {
   return out;
 }
 
+// Environment Cards survive a load only if this names them: migrateState
+// rebuilds GameState field by field and silently drops anything it does not.
+// A placement with no card id, or off any sane board, is dropped rather than
+// carried as a card nobody can see.
+function normaliseEnvironments(raw: unknown): GameState['environments'] {
+  if (!Array.isArray(raw)) return undefined;
+  const out = raw
+    .map((e) => e as { card?: unknown; col?: unknown; row?: unknown })
+    .filter((e) => typeof e.card === 'string' && e.card
+      && Number.isInteger(e.col) && Number.isInteger(e.row)
+      && (e.col as number) >= 0 && (e.row as number) >= 0)
+    .map((e) => ({ card: e.card as string, col: e.col as number, row: e.row as number }));
+  return out.length ? out : undefined;
+}
+
 export function migrateState(rawIn: unknown, data: GameData): GameState | null {
   const raw = migrateSideIds(rawIn);
   if (!raw || typeof raw !== 'object') return null;
@@ -4617,6 +4777,7 @@ export function migrateState(rawIn: unknown, data: GameData): GameState | null {
     showZones: (s as { showZones?: boolean }).showZones ?? false,
     deployLayout: (s as { deployLayout?: string | null }).deployLayout ?? null,
     zoneSet: (s as { zoneSet?: string }).zoneSet ?? legacyZoneSet(s),
+    environments: normaliseEnvironments((s as { environments?: unknown }).environments),
     boardTheme: (s as { boardTheme?: string }).boardTheme ?? DEFAULT_BOARD,
     boardArt: clampBoardArt((s as { boardArt?: number }).boardArt),
     gridColour: clampGridColour((s as { gridColour?: string }).gridColour),
@@ -4690,6 +4851,10 @@ export function migrateState(rawIn: unknown, data: GameData): GameState | null {
       // here is dropped on load. Both of these are rules-bearing and both are
       // in boardFingerprint, so losing them silently desyncs a reloaded game.
       commandedBy: typeof t.commandedBy === 'number' ? t.commandedBy : undefined,
+      // The High Temperature entry marker. Rules-bearing: a dropped one has
+      // settleEnvironments cook the unit again on the first command after a
+      // load, and it is in boardFingerprint for the same reason.
+      envSeen: typeof t.envSeen === 'string' ? t.envSeen : undefined,
       // Same three reasons as commandedBy, plus one of its own: a Tether chip
       // is what MoveOpts.allowed reads, so a dropped one hands the tethered
       // unit a leash-free reload. Validated entry by entry rather than trusted,

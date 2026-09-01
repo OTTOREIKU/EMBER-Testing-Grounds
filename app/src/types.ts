@@ -117,8 +117,22 @@ export interface TerrainPiece {
   isFragile: boolean;
 }
 
+// What the Battlefield (Layout) Card says about a map. `envCards` is the
+// Environment Card allowance, which rulebook 5.4.1 puts on this card and
+// nowhere else. The map NAMES are the ones printed on these cards; the ids are
+// the older names we used before the English scans arrived.
+export interface TerrainMap {
+  id: string;
+  name: LangText;
+  envCards?: number;
+  // The terrain list as PRINTED. It disagrees with the printed MAP on two of
+  // them, and the map wins, because the map is what you lay out; see
+  // _card_vs_art in terrain_layouts.json.
+  legend?: Record<string, number>;
+}
+
 export interface TerrainData {
-  maps: { id: string; name: LangText }[];
+  maps: TerrainMap[];
   layouts: Record<string, TerrainPiece[]>;
 }
 
@@ -233,6 +247,10 @@ export interface Token {
   charge?: string[];
   log?: LogEntry[];
   statuses?: string[];
+  // The High Temperature Grid this unit was last seen standing in, as
+  // "col,row". settleEnvironments grants the entry token only when this
+  // changes, so a unit that stays put is not cooked again on every command.
+  envSeen?: string;
 }
 
 export interface LogEntry {
@@ -1209,6 +1227,13 @@ export function cellsOf(s: { grids?: number } | null | undefined): number {
 
 // A Tactical Zone as the TABLE plays it. Cells are grid REFS ("B2"), the same
 // shape zones.json ships, so nothing downstream had to learn a second spelling.
+export interface EnvPlacement {
+  // The Environment Card's id, as data/environments.json names it.
+  card: string;
+  col: number;
+  row: number;
+}
+
 export interface TableZone {
   id: string;
   name: string;
@@ -1247,6 +1272,10 @@ export interface GameState {
   // White corner would land in the MIDDLE of the table rather than in its own
   // corner. A larger board is unplayable without this.
   deployZones?: { black: string[]; white: string[] };
+  // Environment Cards laid on the table (5.4.1). Each covers one LARGE Grid, so
+  // `col`/`row` are Grid coordinates, not cells, and a Grid holds at most one --
+  // which is what a card the size of a Grid enforces on a real table.
+  environments?: EnvPlacement[];
   tokens: Token[];
   nextUid: number;
   round: RoundState;

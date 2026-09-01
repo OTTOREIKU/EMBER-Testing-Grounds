@@ -78,7 +78,7 @@ check('and unrelated text does not trip it',
   // by omitting it - and cannot lose it by the UI forgetting to pass it.
   check('and judges Unstoppable off the action on the wire',
     /cmd\.actionId \? findAction\(data, state, cmd\.actionId\)|cmd\.actionId \? findAction\(data, state, cmd\.uid, cmd\.actionId\)/.test(man), true);
-  check('the command carries the action id at all', /actionId\?: string \}/.test(cmds), true);
+  check('the command carries the action id at all', /actionId\?: string; flying\?: boolean \}/.test(cmds), true);
 
   // FORCED MOVEMENT STAYS LEGAL. Being displaced by somebody else is not a
   // Movement Action, which is the whole reason the two are separate commands.

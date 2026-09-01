@@ -1,0 +1,40 @@
+{
+  "_comment": "Environment Cards (rulebook 5.4.1). Each is the size of one Large Grid and is placed ON the board to give that Grid a special effect. Text transcribed from the publisher's own English card scans, which is why there is no zh here: these were read off the English printing directly rather than translated from Chinese.",
+  "_source": "English card scans, 'Obsidian Protocol/Cards/Environment Cards'. Rules text from the rulebook's own 5.4.1.",
+  "_placement": "If Environment Cards are used, the two players place them alternately while setting up the battlefield. The total may not exceed the number printed on the Battlefield (Layout) Card, which is 4 on every 12x12 layout scanned so far: Alley, Hot Zone, Steelworks. They generally cannot be placed on Tactical Zones.",
+  "_unmodelled": "Nothing here is wired into the board yet. This is reference data only.",
+  "rule": "5.4.1",
+  "cards": [
+    {
+      "id": "abyss",
+      "name": "Abyss",
+      "text": "Ground Units cannot voluntarily enter this Grid. If a Ground Unit enters this Grid due to Forced Movement, the Unit is immediately Destroyed.",
+      "affects": "ground"
+    },
+    {
+      "id": "anti-gravity",
+      "name": "Anti-gravity",
+      "text": "When a Ground Unit performs Movement originating in this Grid, the Movement Type is Flying.",
+      "affects": "ground"
+    },
+    {
+      "id": "fragile-platform",
+      "name": "Fragile Platform",
+      "text": "When a Ground Unit enters this Grid, its Movement ends immediately and this Card is removed.",
+      "affects": "ground",
+      "oneShot": true
+    },
+    {
+      "id": "high-temperature",
+      "name": "High Temperature",
+      "text": "When a Unit enters this Grid, it gains 1 Fragile Token.",
+      "affects": "all"
+    },
+    {
+      "id": "rugged",
+      "name": "Rugged",
+      "text": "Ground Units require 1 additional Movement Range to exit this Grid.",
+      "affects": "ground"
+    }
+  ]
+}

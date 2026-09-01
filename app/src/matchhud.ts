@@ -1,11 +1,11 @@
 import { ammoHolder, clearDroneCommands, missionZones, readyCommands, seedCommandTokens, taskDesignations, type Command, type CheckResult } from './commands';
 import { askIssuer, asterBlockers, offerCoordination, offerHarpyDrag, runAster } from './commandpick';
 import type { GameData } from './data';
-import { actionIconUrl, cardName, isAerial, parseGridRef, secondaryImageUrl, squadLabel, unitSize } from './data';
+import { actionIconUrl, cardName, isAerial, parseGridRef, secondaryImageUrl, squadLabel, unitSize, environmentLookup, environmentAllowance } from './data';
 import { showInspect } from './inspector';
 import { Board, footprint, snapPlacement, type BoardCallbacks } from './board';
 import { printedDeployment, resolveZoneSetData } from './overlays';
-import { actionRange, transformOffer, anyStartTiming, opportunityBonusOn, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, ripostePart, martyrdomOwed, targetTracingOn, riderOnDrone, hasFlexibleTiming, immobilizedStop, activatesCamo, isScanAction, scanStrips, formSwitch, stealthValue, manifestationRange, manifestTargets, nonHumanoidStop, coordinationFor, coordinationOnOpportunityEnd, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, electronicOrigins, loanedParts, phasesThroughUnits, minesLayable, minesOwed, pilotCard, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, maneuverIsSilent, maneuverSilenceDenier, type AuraSource, canActivateCamo, chargeableSlots, electronicDash, electronicStrength, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, projectileReach, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
+import { actionRange, transformOffer, anyStartTiming, opportunityBonusOn, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, ripostePart, martyrdomOwed, targetTracingOn, riderOnDrone, hasFlexibleTiming, immobilizedStop, activatesCamo, isScanAction, scanStrips, formSwitch, envCardAt, envFlightFrom, envForcedStop, envMoveRules, isGroundUnit, stealthValue, manifestationRange, manifestTargets, nonHumanoidStop, coordinationFor, coordinationOnOpportunityEnd, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, electronicOrigins, loanedParts, phasesThroughUnits, minesLayable, minesOwed, pilotCard, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, maneuverIsSilent, maneuverSilenceDenier, type AuraSource, canActivateCamo, chargeableSlots, electronicDash, electronicStrength, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, projectileReach, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
 import { ElectronicHelper, type EwAct } from './combat';
 import { tacticFitsPhase, tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { inContact, canStandIn, attackDirection, crushExchange, crushExchangeSpots, crushTargets, dissipationFor, extendPath, knockbackPath, largeGridOf, boardGrids, setBoardGrids, losBetween, losNote, smokeBlocks, pathCost, protectionFor, rangeBetween, reachableGrids, standingSpot, type LargeGrid } from './rules';
@@ -314,6 +314,9 @@ export function deployFacing(data: GameData, s: GameState, side: Side, at?: { co
 // ---------- module UI state ----------
 
 let placing: number | null = null; // uid being deployed via board clicks
+// The Environment Card waiting for a Grid, or null. Only ever set while setup
+// is running: the battlefield is settled before Round 1 and stays settled.
+let envArm: string | null = null;
 // Where this player has put a unit but not yet confirmed it. Nothing is sent
 // and nothing lands on the board until they do, so the turn stays theirs.
 let pending: { uid: number; col: number; row: number; size: 1 | 2 | 3; facing: Facing } | null = null;
@@ -481,14 +484,22 @@ function reachableFor(ctx: HudCtx, t: Token, steps = maneuverRange(ctx.data, t),
   // Same derivation as the freeplay board: a square-base flyer (moveAsFlight)
   // crosses terrain even though it is not Aerial. Reading only `aerial` here
   // grounded the Ravens on this page while the guide let them fly.
-  const flying = asFlight ?? (!!ctx.data.byId.get(t.cardId)?.moveAsFlight || !!t.aerial);
+  const flying = asFlight ?? (!!ctx.data.byId.get(t.cardId)?.moveAsFlight || !!t.aerial || envFlightFrom(ctx.data, ctx.state, t));
+  // The Environment Cards, on the overlay as well as on the route, for the
+  // same reason as the leash below: this page builds MoveOpts twice.
+  const env = envMoveRules(ctx.data, ctx.state, t, flying);
+  const away = flying ? undefined : breakAwayCost(ctx.data, t, ctx.state.tokens, terrain);
+  const leash = tetherCap(t, ctx.state.tokens);
   return reachableGrids(t, steps, terrain, ctx.state.tokens, flying, {
-    exitCost: flying ? undefined : breakAwayCost(ctx.data, t, ctx.state.tokens, terrain),
+    exitCost: away && env.exitCost ? (c, r) => away(c, r) + env.exitCost!(c, r) : away ?? env.exitCost,
     crushable: (c, r) => crushTargets(t, c, r, terrain, ctx.state.tokens) !== null,
     // The Tether leash, on the overlay as well as on the route: this function
     // and moveOptsFor below both build their own opts, and a rule added to one
     // of them only would paint reachable Grids the confirm step then refuses.
-    allowed: tetherCap(t, ctx.state.tokens),
+    // The Abyss ban rides the same hook, and BOTH must pass.
+    allowed: leash && env.allowed ? (c, r) => leash(c, r) && env.allowed!(c, r) : leash ?? env.allowed,
+    stop: env.stop,
+    landing: env.landing,
     // LPA-21 Firefly, on the OVERLAY as well as on the route below — this page
     // builds MoveOpts twice and a rule added to one paints Grids the other
     // refuses.
@@ -504,10 +515,15 @@ function canReach(ctx: HudCtx, t: Token, col: number, row: number): boolean {
 
 function moveOptsFor(ctx: HudCtx, t: Token, flying: boolean) {
   const terrain = terrainOf(ctx);
+  const env = envMoveRules(ctx.data, ctx.state, t, flying || !!t.aerial);
+  const away = flying || t.aerial ? undefined : breakAwayCost(ctx.data, t, ctx.state.tokens, terrain);
+  const leash = tetherCap(t, ctx.state.tokens);
   return {
-    exitCost: flying || t.aerial ? undefined : breakAwayCost(ctx.data, t, ctx.state.tokens, terrain),
+    exitCost: away && env.exitCost ? (c: number, r: number) => away(c, r) + env.exitCost!(c, r) : away ?? env.exitCost,
     crushable: (c: number, r: number) => crushTargets(t, c, r, terrain, ctx.state.tokens) !== null,
-    allowed: tetherCap(t, ctx.state.tokens),
+    allowed: leash && env.allowed ? (c: number, r: number) => leash(c, r) && env.allowed!(c, r) : leash ?? env.allowed,
+    stop: env.stop,
+    landing: env.landing,
     phaseThrough: phasesThroughUnits(ctx.data, ctx.state.tokens, t),
   };
 }
@@ -543,13 +559,16 @@ function startMovePlan(ctx: HudCtx, t: Token, opts: { range?: number; label?: st
   // Airborne Movement Action outranks all of it: that Jump simply IS Flying.
   const base = !!ctx.data.byId.get(t.cardId)?.moveAsFlight;
   const grant = base ? 'none' : flightGrant(ctx.data, t, loanedParts(ctx.data, ctx.state.tokens, t));
-  const optional = !opts.airborne && grant === 'maneuver' && !!opts.maneuver;
+  // Anti-Gravity: a Ground Unit whose Movement originates in that Grid flies
+  // it, with no choice in it - so the Ojs200's walk/fly switch is pinned off.
+  const envFly = envFlightFrom(ctx.data, ctx.state, t);
+  const optional = !opts.airborne && grant === 'maneuver' && !!opts.maneuver && !envFly;
   movePlan = {
     uid: t.uid,
     side: t.side,
     actionId: opts.actionId,
     steps,
-    flying: base || !!opts.airborne || grant === 'always',
+    flying: base || !!opts.airborne || grant === 'always' || envFly,
     flightOptional: optional,
     path: [{ c: Math.floor(t.col / 3), r: Math.floor(t.row / 3) }],
     marks: [1],
@@ -753,7 +772,7 @@ function commitMove(ctx: HudCtx): void {
   const aerialStart = t.aerial ? { ...t } : null;
   board.animateMove(t.uid, stops, () => {
     // The route travels with the move so the other player watches the same walk.
-    ctx.send({ kind: 'maneuver', seat: t.side, uid: t.uid, to: last, free, granted, via: stops, facing, actionId: m.actionId });
+    ctx.send({ kind: 'maneuver', seat: t.side, uid: t.uid, to: last, free, granted, via: stops, facing, actionId: m.actionId, flying: m.flying || undefined });
     if (drag) towDraggedAlly(ctx, t, walked, drag);
     if (aerialStart) {
       const moved = ctx.state.tokens.find((x) => x.uid === t.uid);
@@ -917,6 +936,15 @@ function boardCallbacks(): BoardCallbacks {
         else commitWaypoint(ctx);
         return;
       }
+      // An armed Environment Card lands on the LARGE Grid the clicked cell
+      // belongs to, because the card is the size of a Grid. Right-click clears
+      // that Grid, which is also how one already down gets moved.
+      if (envArm !== null) {
+        const at = { col: Math.floor(col / 3), row: Math.floor(row / 3) };
+        ctx.send({ kind: 'setEnvironment', seat: ctx.seat ?? 's1', at, card: erase ? null : envArm });
+        ctx.refresh();
+        return;
+      }
       if (placing === null) return;
       const t = s.tokens.find((x) => x.uid === placing);
       if (!t) return;
@@ -948,6 +976,70 @@ function boardCallbacks(): BoardCallbacks {
   };
 }
 
+// Open while a card is being chosen. Kept out of the turn panel because that
+// panel is rebuilt on every render and belongs to whoever's move it is, and
+// laying out the battlefield is neither player's move in particular.
+let envPickerOpen = false;
+
+function toggleEnvPicker(ctx: HudCtx): void {
+  envPickerOpen = !envPickerOpen;
+  if (!envPickerOpen) envArm = null;
+  ctx.refresh();
+}
+
+// Setup is everything before Round 1. After that the battlefield is settled and
+// the control is gone, which is also why nothing here has to ask whether the
+// game has started.
+function envStage(ctx: HudCtx): boolean {
+  const su = normaliseSetup(ctx.state.setup);
+  return !!su && su.stage !== 'done';
+}
+
+function renderEnvPicker(ctx: HudCtx): void {
+  const host = document.getElementById('mc-board');
+  if (!host) return;
+  const open = envPickerOpen && envStage(ctx);
+  let pop = host.querySelector<HTMLElement>('#mc-envpick');
+  if (!open) { pop?.remove(); return; }
+  if (!pop) {
+    pop = document.createElement('div');
+    pop.id = 'mc-envpick';
+    pop.className = 'envpick';
+    host.appendChild(pop);
+  }
+  const placed = ctx.state.environments ?? [];
+  const cap = environmentAllowance(ctx.data, ctx.state);
+  const ref = (c: number, r: number) => `${String.fromCharCode(65 + c)}${r + 1}`;
+  pop.innerHTML = `<div class="envpick-head"><b>Environment Cards</b>
+      <span>${placed.length} of ${cap}</span>
+      <button data-envclose title="Close">✕</button></div>
+    <p class="envpick-note">${envArm
+      ? 'Click the Grid this card covers. Right-click a Grid to clear it.'
+      : 'Pick a card, then click the Grid it covers. Both players place them alternately (5.4.1).'}</p>
+    <div class="envpick-list">${ctx.data.environments.cards.map((c) => `<button
+      class="envpick-card${envArm === c.id ? ' armed' : ''}" data-envpick="${esc(c.id)}">
+      <b>${esc(c.name)}</b><span>${esc(c.text)}</span></button>`).join('')}</div>
+    ${placed.length ? `<div class="envpick-placed">${placed.map((e) => {
+      const def = ctx.data.environments.cards.find((c) => c.id === e.card);
+      return `<span class="envpick-chip">${esc(def?.name ?? e.card)} · ${ref(e.col, e.row)}
+        <button data-envlift="${e.col},${e.row}" title="Take this card off">✕</button></span>`;
+    }).join('')}</div>` : ''}`;
+  pop.querySelector('[data-envclose]')!.addEventListener('click', () => toggleEnvPicker(ctx));
+  for (const b of pop.querySelectorAll<HTMLElement>('[data-envpick]')) {
+    b.addEventListener('click', () => {
+      envArm = envArm === b.dataset.envpick ? null : b.dataset.envpick!;
+      ctx.refresh();
+    });
+  }
+  for (const b of pop.querySelectorAll<HTMLElement>('[data-envlift]')) {
+    b.addEventListener('click', () => {
+      const [c, r] = b.dataset.envlift!.split(',').map(Number);
+      ctx.send({ kind: 'setEnvironment', seat: ctx.seat ?? 's1', at: { col: c, row: r }, card: null });
+      ctx.refresh();
+    });
+  }
+}
+
 function renderBoard(ctx: HudCtx): void {
   if (!board) return;
   const s = ctx.state;
@@ -965,7 +1057,7 @@ function renderBoard(ctx: HudCtx): void {
     document.documentElement.style.setProperty(`--sq-${side}`, squadColour(f));
   }
   // Panning is the default; a placement or a route needs the cell instead.
-  board.panEnabled = placing === null && !movePlan && !launchPlan && !smokePlan && !smokeOwed?.length && !crushPlan?.queue.length && !boxDrop;
+  board.panEnabled = placing === null && envArm === null && !movePlan && !launchPlan && !smokePlan && !smokeOwed?.length && !crushPlan?.queue.length && !boxDrop;
   // Lit for the attacker choosing where a dropped Box lands. It outranks the
   // rest because it is asked mid-attack and nothing else can be open.
   if (boxDrop && mine(ctx, boxDrop.bySide)) {
@@ -1082,6 +1174,18 @@ function renderBoard(ctx: HudCtx): void {
   // an unconfirmed placement does.
   const preview = pending ?? (movePlan?.turned ? { uid: movePlan.uid, facing: movePlan.facing } : undefined);
   if (animatingUid === null) board.renderTokens(s, preview);
+  // The control, and with it any armed card, only exists while the battlefield
+  // is being laid out. Disarming here rather than only on close means a game
+  // that starts with a card armed cannot leave a click primed on the board.
+  const setting = envStage(ctx);
+  if (!setting) { envArm = null; envPickerOpen = false; }
+  const envBtn = document.getElementById('btn-envs');
+  if (envBtn) {
+    envBtn.hidden = !setting;
+    envBtn.classList.toggle('on', envPickerOpen);
+  }
+  renderEnvPicker(ctx);
+  board.renderEnvironments(s.environments ?? [], environmentLookup(ctx.data));
   board.renderSmoke(s.smoke ?? []);
   board.renderMarkers(s.markers ?? []);
   board.setSelected(ensureScript(s).opp?.uid ?? null);
@@ -3146,6 +3250,10 @@ function crushEscapes(ctx: HudCtx, v: Token, goal: LargeGrid): LargeGrid[] {
     .map(([dc, dr]) => ({ c: from.c + dc, r: from.r + dr }))
     .filter((g) => g.c >= 0 && g.r >= 0 && g.c < boardGrids() && g.r < boardGrids())
     .filter((g) => !(g.c === goal.c && g.r === goal.r))
+    // Not into an Abyss: whether a Crush may drop a Ground Unit down one is a
+    // ruling we do not have, so the conservative table is the one where the
+    // crusher cannot pick that Grid at all. Freeplay filters the same spots.
+    .filter((g) => !(isGroundUnit(ctx.data, v) && envCardAt(ctx.state, g.c, g.r) === 'abyss'))
     .filter((g) => standingSpot(g.c, g.r, v.size, v.aerial, terrainOf(ctx), ctx.state.tokens, v.uid) !== null);
 }
 
@@ -4145,7 +4253,10 @@ function shoveOutcome(ctx: HudCtx, by: Token, victim: Token, a: CardAction) {
   const kb = knockbackOf(a);
   if (!kb) return null;
   const dir = attackDirection(by, victim);
-  const path = knockbackPath(victim, dir, kb.grids, terrainOf(ctx), ctx.state.tokens);
+  // The line ends early in an Abyss (the victim falls, resolveShove below
+  // resolves the death) or on a Fragile Platform (the settle sweep removes
+  // the Card once the victim stands on it).
+  const path = knockbackPath(victim, dir, kb.grids, terrainOf(ctx), ctx.state.tokens, envForcedStop(ctx.data, ctx.state, victim));
   const heading = ['north', 'east', 'south', 'west'][dir.dr < 0 ? 0 : dir.dc > 0 ? 1 : dir.dr > 0 ? 2 : 3];
   const end = path[path.length - 1];
   return { kb, path, heading, end, short: path.length < kb.grids };
@@ -4219,8 +4330,23 @@ function resolveShove(ctx: HudCtx): void {
   const spot = standingSpot(out.end.c, out.end.r, victim.size, victim.aerial, terrainOf(ctx), s.tokens, victim.uid, { col: victim.col, row: victim.row })
     ?? { col: victim.col, row: victim.row };
   const wasShut = victim.stance === 'shutdown';
-  ctx.send({ kind: 'forceMove', seat: by.side, uid: by.uid, targetUid: victim.uid, to: spot, push: out.kb.push, facing: m?.facing });
+  const fatal = isGroundUnit(ctx.data, victim) && envCardAt(ctx.state, out.end.c, out.end.r) === 'abyss';
+  ctx.send({ kind: 'forceMove', seat: by.side, uid: by.uid, targetUid: victim.uid, to: spot, push: out.kb.push, facing: m?.facing, via: out.path.map((g) => ({ col: g.c * 3 + 1, row: g.r * 3 + 1 })) });
   const shut = out.kb.push && victim.kind === 'mech' && !wasShut && victim.stance === 'shutdown';
+  // The Abyss: a Ground Unit forced in is immediately Destroyed, and the kill
+  // is the forcing player's - which is this seat, so it is resolved here with
+  // no panel. A carried Black Box is left where the bearer fell, because the
+  // falling is nobody's placement choice.
+  if (fatal) {
+    for (const box of normaliseTasks(s.tasks).items.filter((i) => i.kind === 'blackbox' && i.bearerUid === victim.uid)) {
+      ctx.send({ kind: 'dropBlackBox', seat: by.side, uid: by.uid, itemId: box.id, to: { col: out.end.c * 3 + 1, row: out.end.r * 3 + 1 } });
+    }
+    ctx.send({ kind: 'recordKill', seat: by.side, uid: by.uid, targetUid: victim.uid, what: 'unit' });
+    ctx.noteNow(`${victim.label} is forced ${out.path.length} Grid${out.path.length === 1 ? '' : 's'} ${out.heading} into the Abyss Grid ${gridName(out.end.c, out.end.r)} and is immediately Destroyed.`);
+    flushBoxDrops();
+    ctx.refresh();
+    return;
+  }
   ctx.noteNow(`${victim.label} is forced ${out.path.length} Grid${out.path.length === 1 ? '' : 's'} ${out.heading} to ${gridName(out.end.c, out.end.r)}.${
     out.kb.push && victim.kind === 'mech' ? ` Push costs 1 Link (now ${victim.link}).` : ''}${shut ? ' Link has reached 0, so it shuts down.' : ''}`);
   // The Forced Movement has settled, so a Penetrated bearer's Box question can
@@ -4819,9 +4945,16 @@ export function ensureHud(host: HTMLElement, ctx: HudCtx): void {
     // freeplay page keeps it — same markup, same .zone-ctrl styling.
     const zc = document.createElement('div');
     zc.className = 'zone-ctrl';
-    zc.innerHTML = '<button id="btn-zones" title="Shows or hides the tactical zone and deployment overlay drawn on the board." aria-pressed="true">Zones</button>';
+    // Environment Cards ride the same rail: they are laid on the battlefield
+    // while it is being set up, so the control lives on the board rather than
+    // in the turn panel, and it goes away once Round 1 starts.
+    zc.innerHTML = '<button id="btn-zones" title="Shows or hides the tactical zone and deployment overlay drawn on the board." aria-pressed="true">Zones</button>'
+      + '<button id="btn-envs" title="Lays Environment Cards on the battlefield. Both players place them alternately while setting up (5.4.1)." hidden>Environments</button>';
     host.querySelector('#mc-board')!.appendChild(zc);
     zc.querySelector('#btn-zones')!.addEventListener('click', () => hudRef?.toggleZones());
+    zc.querySelector('#btn-envs')!.addEventListener('click', () => {
+      if (hudRef) toggleEnvPicker(hudRef);
+    });
     attachCombatWindow(host);
     ctx.mountSide();
     for (const b of host.querySelectorAll<HTMLElement>('[data-sidetab]')) {

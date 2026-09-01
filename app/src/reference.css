@@ -92,7 +92,14 @@ body.ref-locked { overflow: hidden; }
 #ref-search::placeholder { color: var(--text3); }
 #ref-search:focus { background: var(--surface3); }
 
-#ref-tabs { display: flex; gap: 6px; margin-top: 10px; overflow-x: auto; padding-bottom: 2px; }
+/* A GRID on a phone, a row on the desktop.
+   The ten tabs are 731px of content in a 347px strip, so scrolling left six of
+   them -- Battlefield and Rules among them -- off the right edge with nothing
+   to say they were there. Wrapping fixed that but landed the labels wherever
+   they happened to fall, with a short second line. Five even columns instead:
+   two tidy rows, and every label in a slot it never leaves, which is what turns
+   a tab into muscle memory. */
+#ref-tabs { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 10px; }
 #ref-tabs button {
   flex: 0 0 auto; background: var(--surface2); color: var(--text2); border: none;
   border-radius: var(--radius); padding: 8px 14px; font-size: 12.5px; font-weight: 600;
@@ -509,7 +516,33 @@ body.ref-locked { overflow: hidden; }
 }
 .ref-userlink:hover { background: var(--surface3); color: var(--text); }
 
+@media (max-width: 719px) {
+  #ref-tabs button {
+    position: relative; padding: 8px 4px; font-size: 11.5px;
+    display: flex; align-items: center; justify-content: center; text-align: center;
+    min-width: 0;
+  }
+  /* The search count moves OUT of the line and into the corner. Inline it took
+     10px of a 61px column, which is what pushed "Battlefield" over the edge on
+     a small phone -- and the label is the thing the column exists for. */
+  #ref-tabs button .tab-n {
+    position: absolute; top: 1px; right: 4px; margin-left: 0;
+    font-size: 9px; line-height: 1; opacity: 0.9;
+  }
+}
+
+/* Below 360px -- the older small phones -- the label alone is wider than its
+   share of the strip, so the type steps down rather than the grid breaking into
+   an uneven third row. */
+@media (max-width: 359px) {
+  #ref-tabs { gap: 5px; }
+  #ref-tabs button { font-size: 10px; padding: 8px 3px; }
+}
+
 @media (min-width: 720px) {
+  /* Ten tabs fit one line in the 1136px column, so the grid is a phone shape
+     only -- five columns on a desktop would stack them for no reason. */
+  #ref-tabs { display: flex; flex-wrap: wrap; }
   #ref-head { padding: 14px max(22px, calc((100% - 1136px) / 2)) 12px; }
   .ref-facets {
     flex-wrap: nowrap; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none;
@@ -907,3 +940,11 @@ body.ref-locked { overflow: hidden; }
   max-width: 100%; max-height: calc(var(--dpanel-h, 70vh) - 30px);
   border-radius: 8px;
 }
+
+/* Environment Cards (5.4.1). The printed card is square and doubled, so the
+   shipped art is its upright half: a wide strip that wants the full column. */
+.env-art {
+  display: block; width: 100%; height: auto; margin: 10px 0 4px;
+  border-radius: 6px;
+}
+.env-intro .card-body p:last-child { margin-bottom: 0; }

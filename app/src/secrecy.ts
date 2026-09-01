@@ -112,6 +112,10 @@ export function boardFingerprint(state: GameState): string {
       // the kill (P4) — so a drift here does not just desync, it awards the VP
       // to different sides on the two boards.
       t.lastDamagedBy ? `${t.lastDamagedBy.side}:${t.lastDamagedBy.uid}` : null,
+      // The High Temperature entry marker. Rules-bearing: it decides whether
+      // the NEXT settleEnvironments grants a Fragile Token, so a drift cooks
+      // a unit on one board and not the other.
+      t.envSeen ?? null,
       // NOT hashed, deliberately: `label` and `log` are display, `timing` is
       // secret until the reveal, and `aerial`/`barricade` are re-derived from
       // the card by migrateState so they cannot drift while cardId agrees.
@@ -129,6 +133,12 @@ export function boardFingerprint(state: GameState): string {
     tokens,
     [...(s.removedTerrain ?? [])].sort(),
     [...(s.smoke ?? [])].map((x) => keyed(x as unknown as Record<string, unknown>)),
+    // The Environment Cards on the table. Rules-bearing four ways over: an
+    // Abyss refuses Grids, Rugged prices exits, a Fragile Platform ends
+    // movement, High Temperature hands out tokens - so a drift has one client
+    // offering a route the other refuses.
+    [...((s.environments ?? []) as { card: string; col: number; row: number }[])]
+      .map((e) => `${e.card}:${e.col}:${e.row}`).sort(),
     tasks?.vp ?? null, items,
     // Hands stopped being local information when they became a command: both
     // seats are told both hands, and playTactic's once-per-round check READS

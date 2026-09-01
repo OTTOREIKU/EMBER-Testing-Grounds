@@ -66,6 +66,7 @@ export function riderOnDrone(_data: any, _tokens: any, _t: any): any {
 // fixtures carries a Harpoon, so the honest stub is a no-op; the removal
 // conditions themselves are pinned in tether.test.mjs against the real card.
 export function settleTethers(_data: any, _state: any): void {}
+export function settleEnvironments(_data: any, _state: any): any[] { return []; }
 export function cutTethersOn(_data: any, _state: any, _t: any, _role: any): void {}
 export function tetherCap(_t: any, _tokens: any[]): any { return undefined; }
 export function tetherTo(_a: any, _b: any, _range: number): void {}

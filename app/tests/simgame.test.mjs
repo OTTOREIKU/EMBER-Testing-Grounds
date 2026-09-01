@@ -99,6 +99,7 @@ export function covertCarryLock(_a: any): boolean {
 // card in tether.test.mjs, and the command layer's half in commands.test.mjs,
 // which slices the real functions.
 export function settleTethers(_data: any, _state: any): void {}
+export function settleEnvironments(_data: any, _state: any): any[] { return []; }
 export function cutTethersOn(_data: any, _state: any, _t: any, _role: any): void {}
 export function tetherCap(_t: any, _tokens: any[]): any { return undefined; }
 export function tetherTo(_a: any, _b: any, _range: number): void {}

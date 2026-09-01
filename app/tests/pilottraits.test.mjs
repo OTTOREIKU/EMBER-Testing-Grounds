@@ -578,7 +578,7 @@ console.log('\nPilot traits, against the shipped cards and dice\n');
   // Route only: the landing test is untouched, so a phased Grid is crossable
   // but never a place to stop.
   check('and the landing test still demands a legal spot',
-    /if \(standable \|\| crush\) reachable\.push/.test(rules), true);
+    /if \(\(standable \|\| crush\) && \(opts\?\.landing\?\.\(n\.c, n\.r\) \?\? true\)\) reachable\.push/.test(rules), true);
 }
 
 // ZPA-39's free reroll must be said the same way on every screen. combat.ts's
@@ -858,7 +858,7 @@ console.log('\nPilot traits, against the shipped cards and dice\n');
   // whose own comment warns that a rule added to one paints Grids the other
   // refuses.
   check('the freeplay board prices Break Away through breakAwayCost',
-    (mainSrc.match(/exitCost: flying \|\| t\.aerial \? undefined : breakAwayCost\(/g) ?? []).length, 1);
+    (mainSrc.match(/const away = flying \|\| t\.aerial \? undefined : breakAwayCost\(/g) ?? []).length, 1);
   check('and the Match Centre does it in BOTH of its builders',
     (hud.match(/breakAwayCost\(ctx\.data, t, ctx\.state\.tokens, terrain\)/g) ?? []).length, 2);
   // The disclosure has to reach both too, or the "or 1 Link" alternative exists

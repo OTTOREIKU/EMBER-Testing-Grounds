@@ -224,6 +224,24 @@ export interface StanceDef {
   cost: string;
 }
 
+// Rulebook 5.4.1. A Card the size of one Large Grid, laid on the board to give
+// that Grid an effect. Reference data only: nothing on the board reads it yet.
+export interface EnvironmentCard {
+  id: string;
+  name: string;
+  text: string;
+  // Who the effect reaches. Every card but High Temperature is written to catch
+  // GROUND Units only, which is the whole point of most of them.
+  affects: 'ground' | 'all';
+  // Fragile Platform removes itself the moment it fires.
+  oneShot?: boolean;
+}
+
+export interface EnvironmentData {
+  rule: string;
+  cards: EnvironmentCard[];
+}
+
 export interface SecondaryTask {
   id: string;
   name: string;
@@ -406,6 +424,7 @@ export interface GameData {
   // is a copy of the Chinese rather than a translation of it.
   cardTranslation(cardId: string): { english: string | null; confidence: string; note?: string } | undefined;
   missions: MissionData;
+  environments: EnvironmentData;
   secondary: SecondaryTask[];
   zoneData: ZoneData;
   play: PlayData;
@@ -465,6 +484,7 @@ function applyBoxContents(cards: Card[], patch: BoxContentsOverrides): void {
 }
 
 const NO_MISSIONS: MissionData = { families: [], cards: [] };
+const NO_ENVIRONMENTS: EnvironmentData = { rule: '5.4.1', cards: [] };
 const NO_PLAY: PlayData = { phases: [], timings: [], stances: [] };
 
 interface TacticEntry {
@@ -494,7 +514,7 @@ function applyTactics(cards: Card[], table: Record<string, TacticEntry>): void {
 }
 
 export async function loadData(): Promise<GameData> {
-  const [cards, terrain, boardMaps, boxes, rawKeywords, patch, boxStatus, qrIds, mech, xlate, names, missions, tactics, play, secondary, zoneData, facPatch, boxPatch, common, ammoPatch, statPatch, actionPatch, factionData, extraCards] = await Promise.all([
+  const [cards, terrain, boardMaps, boxes, rawKeywords, patch, boxStatus, qrIds, mech, xlate, names, missions, environments, tactics, play, secondary, zoneData, facPatch, boxPatch, common, ammoPatch, statPatch, actionPatch, factionData, extraCards] = await Promise.all([
     fetch(dataUrl('cards.json')).then((r) => r.json() as Promise<Card[]>),
     fetch(dataUrl('terrain_layouts.json')).then((r) => r.json() as Promise<TerrainData>),
     // Optional, and empty until a map is authored and committed: a missing or
@@ -525,6 +545,9 @@ export async function loadData(): Promise<GameData> {
     fetch(dataUrl('missions.json'))
       .then((r) => (r.ok ? (r.json() as Promise<MissionData>) : NO_MISSIONS))
       .catch(() => NO_MISSIONS),
+    fetch(dataUrl('environments.json'))
+      .then((r) => (r.ok ? (r.json() as Promise<EnvironmentData>) : NO_ENVIRONMENTS))
+      .catch(() => NO_ENVIRONMENTS),
     fetch(dataUrl('tactics.json'))
       .then((r) => (r.ok ? (r.json() as Promise<{ tactics?: Record<string, TacticEntry> }>) : { tactics: {} }))
       .catch(() => ({ tactics: {} })),
@@ -681,6 +704,7 @@ export async function loadData(): Promise<GameData> {
     actionTranslation,
     cardTranslation,
     missions: { families: missions.families ?? [], cards: missions.cards ?? [] },
+    environments: { rule: environments.rule ?? '5.4.1', cards: environments.cards ?? [] },
     secondary: secondary.cards ?? [],
     zoneData: {
       zones: zoneData.zones ?? [],
@@ -954,6 +978,40 @@ export function secondaryImageUrl(id: string): string {
 
 export function missionImageUrl(id: string): string {
   return assetUrl(`missions/${id}.webp`);
+}
+
+// The printed card is square and carries its text TWICE, mirrored, so players
+// on opposite sides of the table can both read it. The shipped art is the
+// upright half only.
+// The Battlefield (Layout) Card: the printed map, its terrain legend, and the
+// Environment Card allowance in the corner.
+// How many Environment Cards this battlefield takes. Rulebook 5.4.1 puts the
+// number on the Battlefield Card and nowhere else, and it is 4 on every 12x12
+// layout the publisher prints. A custom or scaled map has no card, so it
+// inherits that 4 rather than being left uncapped.
+export function environmentAllowance(
+  data: { terrain: { maps: { id: string; envCards?: number }[] } },
+  state: { map?: string },
+): number {
+  return data.terrain.maps.find((m) => m.id === state.map)?.envCards ?? 4;
+}
+
+// The board draws Environment Cards but holds no card data, so it is handed a
+// lookup rather than the whole GameData.
+export function environmentLookup(
+  data: { environments: { cards: { id: string; name: string; text: string }[] } },
+): Record<string, { name: string; text: string }> {
+  const out: Record<string, { name: string; text: string }> = {};
+  for (const c of data.environments.cards) out[c.id] = { name: c.name, text: c.text };
+  return out;
+}
+
+export function battlefieldCardUrl(id: string): string {
+  return assetUrl(`battlefield/${id}.webp`);
+}
+
+export function environmentImageUrl(id: string): string {
+  return assetUrl(`environments/${id}.webp`);
 }
 
 export function tabImageUrl(id: string): string {

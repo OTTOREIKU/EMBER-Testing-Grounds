@@ -183,6 +183,7 @@ export class Board {
   private alwaysGrid = false;
   private gridBorder: SVGRectElement | null = null;
   private gZones!: SVGGElement;
+  private gEnv!: SVGGElement;
   private gTerrain: SVGGElement;
   private gTokens: SVGGElement;
   // Everything currently standing, staged by renderTokens so a unit's token
@@ -297,6 +298,10 @@ export class Board {
     this.gWorld.appendChild(this.gGrid);
     this.gZones = el('g', { class: 'zones', 'pointer-events': 'none' });
     this.gWorld.appendChild(this.gZones);
+    // Directly on the mat: an Environment Card is laid on the board, and the
+    // terrain, markers and units that follow all stand on top of it.
+    this.gEnv = el('g', { class: 'env-layer' });
+    this.gWorld.appendChild(this.gEnv);
     this.gTerrain = el('g');
     this.gMarkers = el('g', { class: 'markers' });
     this.gTaskItems = el('g', { class: 'task-items', 'pointer-events': 'none' });
@@ -1021,6 +1026,40 @@ export class Board {
 
     this.attachDrag(g, t);
     return g;
+  }
+
+  // `cards` carries the name and rule for each placement, because the board
+  // has no card data of its own and the hover box should read the rule rather
+  // than an id.
+  renderEnvironments(
+    placed: { card: string; col: number; row: number }[],
+    cards: Record<string, { name: string; text: string }>,
+  ): void {
+    this.gEnv.replaceChildren();
+    for (const e of placed) {
+      const x = e.col * 3 * CELL;
+      const y = e.row * 3 * CELL;
+      const def = cards[e.card];
+      const g = el('g', { class: 'env', 'data-env': `${e.col},${e.row}` });
+      g.appendChild(el('rect', {
+        x: x + 2, y: y + 2, width: 3 * CELL - 4, height: 3 * CELL - 4,
+        rx: 7, class: 'env-body',
+      }));
+      const label = el('text', {
+        x: x + 1.5 * CELL, y: y + 3 * CELL - 9, 'text-anchor': 'middle', class: 'env-name',
+      });
+      label.textContent = (def?.name ?? e.card).toUpperCase();
+      g.appendChild(label);
+      this.attachInspect(g, {
+        title: def?.name ?? e.card,
+        sub: `Environment Card · Grid ${String.fromCharCode(65 + e.col)}${e.row + 1}`,
+        lines: [
+          def?.text ?? 'This Grid has an environmental effect.',
+          'Environment Cards are placed as the battlefield is set up, and the number allowed is printed on the Battlefield Card (5.4.1).',
+        ],
+      });
+      this.gEnv.appendChild(g);
+    }
   }
 
   renderSmoke(smoke: SmokeScreen[]): void {

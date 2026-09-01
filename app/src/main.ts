@@ -19,7 +19,7 @@ import {
 } from './boards';
 import { openColourPicker } from './colourpicker';
 import { bindTips, inspectOnHover, isInspectPinned, showInspect, unpinInspect } from './inspector';
-import { cardName, dataUrl, isAerial, loadData, missionImageUrl, parseGridRef, rulesLines, secondaryImageUrl, type SecondaryTask, setSquadNames, SQUAD_ORDER, squadLabel, unitSize } from './data';
+import { cardName, dataUrl, environmentAllowance, environmentLookup, isAerial, loadData, missionImageUrl, parseGridRef, rulesLines, secondaryImageUrl, type SecondaryTask, setSquadNames, SQUAD_ORDER, squadLabel, unitSize } from './data';
 import {
   deleteCustomMap,
   emptyCustomMap,
@@ -60,7 +60,7 @@ import { PlayGuide } from './playguide';
 import type { BoardGrids, Card, CardAction, DiceData, DieColor, Facing, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, StatusDef, TerrainPiece, Timing, Token } from './types';
 import { addStatus, cellsOf, DEFAULT_GRIDS, gridsOf, normaliseScript, SCALES, statusCount, statusesFor, STATUSES, zonesOf } from './types';
 import { actionIdOf } from './ticks';
-import { transformOffer, automaticShieldFor, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, twoHandedUse, electronicValue, martyrdomOwed, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, loanedParts, phasesThroughUnits, minesLayable, minesOwed, multiTargetLimit, unfoldsOwed, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, immobilizedStop, activatesCamo, isScanAction, scannable, formSwitch, grantAdjusted, shockAttackOf, shockMoveAllowed, stealthValue, manifestationRange, manifestTargets, nonHumanoidCost, nonHumanoidStop, maneuverIsSilent, maneuverSilenceDenier, chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, projectileReach, type Resupply, resupplyOf, SLOT_LABEL, stationaryAdjusted, interceptLeft, interceptsOwed, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf, type AttackReaction } from './units';
+import { transformOffer, automaticShieldFor, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, twoHandedUse, electronicValue, martyrdomOwed, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, loanedParts, phasesThroughUnits, minesLayable, minesOwed, multiTargetLimit, unfoldsOwed, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, immobilizedStop, activatesCamo, isScanAction, scannable, formSwitch, grantAdjusted, shockAttackOf, shockMoveAllowed, stealthValue, manifestationRange, manifestTargets, nonHumanoidCost, nonHumanoidStop, maneuverIsSilent, maneuverSilenceDenier, envCardAt, envFlightFrom, envForcedStop, envHotEntries, envMoveRules, isGroundUnit, settleEnvironments, chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, projectileReach, type Resupply, resupplyOf, SLOT_LABEL, stationaryAdjusted, interceptLeft, interceptsOwed, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf, type AttackReaction } from './units';
 import { registerOffline } from './offline';
 import { battlefieldLocked, countHits, firstPlayerFrom, newSetup, normaliseSetup, tasksLocked, type SetupState } from './setup';
 import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
@@ -447,7 +447,7 @@ async function init() {
       setHint('⚡ Click the TARGET of the Electronic Attack (Esc cancels)');
     },
     onShowMoveRange(t, steps) {
-      const flying = !!data.byId.get(t.cardId)?.moveAsFlight;
+      const flying = !!data.byId.get(t.cardId)?.moveAsFlight || envFlightFrom(data, state, t);
       const grids = reachableGrids(t, steps, currentTerrain(), state.tokens, flying, moveOpts(t, flying));
       board.showReachable(grids, steps);
     },
@@ -714,9 +714,14 @@ async function init() {
         }
         t.col = snapped.col;
         t.row = snapped.row;
+        // A drag is a road that never becomes a command AND never reaches
+        // renderAll, so the Environment settle runs here or not at all.
+        settleEnvNow();
         save();
         board.renderTokens(state);
+        board.renderEnvironments(state.environments ?? [], environmentLookup(data));
         board.setSelected(uid);
+        sweepAbyss();
         return;
       }
       // Dragging a Large Unit onto something smaller is a Crush, not an illegal
@@ -790,6 +795,25 @@ async function init() {
         // Right-click steps back a waypoint, left-click takes the preview.
         if (erase) undoWaypoint();
         else commitWaypoint();
+        return;
+      }
+      // An armed Environment Card lands on the LARGE Grid the clicked cell
+      // belongs to, because the card is the size of a Grid. Right-click clears
+      // that Grid, which is also how a card already down gets moved.
+      if (envArmed !== null) {
+        const at = { col: Math.floor(col / 3), row: Math.floor(row / 3) };
+        const v = perform(data, state, {
+          kind: 'setEnvironment', seat: 's1', at, card: erase ? null : envArmed,
+        });
+        // Freeplay is not strict, so perform() APPLIES a refused command and
+        // reports why -- the sandbox explains the rule rather than enforcing
+        // it, exactly as it does everywhere else. Saving and redrawing has to
+        // happen either way, or the board and the state drift apart. The Match
+        // Centre is strict and the allowance really does hold there.
+        setHint(v.ok ? '' : `⛔ ${v.why}`);
+        save();
+        renderAll();
+        refreshEnvDialog();
         return;
       }
       if (!editor.active) return;
@@ -2031,6 +2055,10 @@ async function init() {
     // in it, so it never reaches the question below.
     if (forced) return true;
     if (data.byId.get(t.cardId)?.moveAsFlight) return true;
+    // Anti-Gravity: a Ground Unit whose Movement ORIGINATES in that Grid flies
+    // it, with no more choice in it than a Fairy pair leaves - so it answers
+    // before the Ojs200's question is ever reached.
+    if (envFlightFrom(data, state, t)) return true;
     const grant = flightGrant(data, t, loanedParts(data, state.tokens, t));
     if (grant === 'always') return true;
     if (grant !== 'maneuver' || !isManeuver) return false;
@@ -2172,6 +2200,19 @@ async function init() {
       if (linkCost > 0) {
         t.link = Math.max(0, (t.link ?? 0) - linkCost);
         logTo(t, `${t.label} spends ${linkCost} Link to perform this Action (Non-humanoid ${linkCost}), leaving ${t.link}.`);
+      }
+      // High Temperature, the pass-through half: every Grid the walk entered
+      // short of the landing. The landing is the settle sweep's - renderAll
+      // runs it right after this - and a flight enters only its landing, so a
+      // flight leaves nothing here. Freeplay sends no maneuver command for a
+      // move, so this is the same grant the command layer makes on its road -
+      // and it goes through applyStatus, because a page never writes .statuses
+      // itself (the wiring guard counts).
+      if (!m.flying && !t.aerial) {
+        for (const g of envHotEntries(state, path.slice(1, -1))) {
+          perform(data, state, { kind: 'applyStatus', seat: t.side, uid: t.uid, targetUid: t.uid, statusId: 'fragile' });
+          logTo(t, `${t.label} passes through the High Temperature Grid ${gridRef(g.c, g.r)} and gains 1 Fragile Token.`);
+        }
       }
       // The Harpy's dragged Ally comes with it — towed BEHIND, into the Grid
       // the Harpy just vacated, with the final Grid as the fallback. The
@@ -2736,7 +2777,10 @@ async function init() {
       return;
     }
     const dir = attackDirection(attacker, victim);
-    const path = knockbackPath(victim, dir, kb.grids, currentTerrain(), state.tokens);
+    // The line ends early in an Abyss (the victim falls) or on a Fragile
+    // Platform (the floor goes) - entered, then resolved below and by the
+    // settle sweep respectively.
+    const path = knockbackPath(victim, dir, kb.grids, currentTerrain(), state.tokens, envForcedStop(data, state, victim));
     const heading = ['north', 'east', 'south', 'west'][dir.dr < 0 ? 0 : dir.dc > 0 ? 1 : dir.dr > 0 ? 2 : 3];
     // The player causing a Forced Movement picks the victim's facing, and a
     // victim that cannot move may still be turned — or left alone, since the
@@ -2781,12 +2825,32 @@ async function init() {
     const spot = standingSpot(end.c, end.r, victim.size, victim.aerial, currentTerrain(), state.tokens, victim.uid, { col: victim.col, row: victim.row })
       ?? { col: victim.col, row: victim.row };
     const wasShut = victim.stance === 'shutdown';
-    const facing = await askFacing(`${victim.label} is forced ${heading} to ${gridRef(end.c, end.r)}.`);
-    perform(data, state, { kind: 'forceMove', seat: attacker.side, uid: attacker.uid, targetUid: victim.uid, to: { col: spot.col, row: spot.row }, push: kb.push, facing });
+    const fatal = isGroundUnit(data, victim) && envCardAt(state, end.c, end.r) === 'abyss';
+    // A victim about to fall is not asked which way it faces at the bottom.
+    const facing = fatal ? undefined : await askFacing(`${victim.label} is forced ${heading} to ${gridRef(end.c, end.r)}.`);
+    perform(data, state, { kind: 'forceMove', seat: attacker.side, uid: attacker.uid, targetUid: victim.uid, to: { col: spot.col, row: spot.row }, push: kb.push, facing, via: path.map((g) => ({ col: g.c * 3 + 1, row: g.r * 3 + 1 })) });
     logTo(victim, `${name} from ${attacker.label}: forced ${path.length} Grid${path.length === 1 ? '' : 's'} ${heading} to ${gridRef(end.c, end.r)}.`);
     if (kb.push && victim.kind === 'mech') {
       logTo(victim, `Push costs 1 Link (now ${victim.link}).`);
       if (!wasShut && victim.stance === 'shutdown') logTo(victim, `Link has reached 0, so ${victim.label} SHUTS DOWN.`);
+    }
+    // The Abyss: "If a Ground Unit enters this Grid due to Forced Movement,
+    // the Unit is immediately Destroyed." Resolved HERE and not in a sweep,
+    // because the kill has an owner - the player who forced the move - and
+    // only this site still knows who that is. A carried Black Box drops where
+    // the bearer fell: the falling is nobody's placement choice.
+    if (fatal) {
+      for (const box of normaliseTasks(state.tasks).items.filter((i) => i.kind === 'blackbox' && i.bearerUid === victim.uid)) {
+        perform(data, state, { kind: 'dropBlackBox', seat: attacker.side, uid: attacker.uid, itemId: box.id, to: { col: end.c * 3 + 1, row: end.r * 3 + 1 } });
+        logTo(victim, `The Black Box it carried is left in ${gridRef(end.c, end.r)}.`);
+      }
+      logTo(victim, `${victim.label} is forced into the Abyss Grid ${gridRef(end.c, end.r)} and is immediately Destroyed.`);
+      await alertDialog({
+        title: `${victim.label} falls into the Abyss`,
+        body: `A Ground Unit that enters an Abyss Grid due to Forced Movement is immediately Destroyed. ${victim.label} is removed from the board, and the kill is ${attacker.label}'s.`,
+      });
+      perform(data, state, { kind: 'recordKill', seat: attacker.side, uid: attacker.uid, targetUid: victim.uid, what: 'unit' });
+      if (selectedUid === victim.uid) selectToken(null);
     }
     onChanged();
   }
@@ -2844,6 +2908,10 @@ async function init() {
         .map(([dc, dr]) => ({ c: vAt.c + dc, r: vAt.r + dr }))
         .filter((g) => g.c >= 0 && g.r >= 0 && g.c < boardGrids() && g.r < boardGrids())
         .filter((g) => !(g.c === goal.c && g.r === goal.r))
+        // Not into an Abyss: whether a Crush may drop a Ground Unit down one
+        // is a ruling we do not have, so the conservative table is the one
+        // where the crusher cannot pick that Grid at all.
+        .filter((g) => !(isGroundUnit(data, v) && envCardAt(state, g.c, g.r) === 'abyss'))
         .filter((g) => standingSpot(g.c, g.r, v.size, v.aerial, currentTerrain(), state.tokens, v.uid) !== null);
       if (!spots.length) {
         // No Grid to step out of means no Grid to hand over, so there is no
@@ -3725,13 +3793,24 @@ async function init() {
   // promises a move the confirm step will refuse.
   function moveOpts(t: Token, flying: boolean): MoveOpts {
     const terrain = currentTerrain();
+    // The Environment Cards' movement half: an Abyss ban, a Rugged exit
+    // price, a Fragile Platform stop - each fragment absent unless the card
+    // is on the table and this unit is Ground.
+    const env = envMoveRules(data, state, t, flying || !!t.aerial);
+    const away = flying || t.aerial ? undefined : breakAwayCost(data, t, state.tokens, terrain);
+    const leash = tetherCap(t, state.tokens);
     return {
-      exitCost: flying || t.aerial ? undefined : breakAwayCost(data, t, state.tokens, terrain),
+      // Break Away and Rugged ADD: both are prices for leaving a Grid, and a
+      // Mech backing out of a locked Rugged Grid owes both of them.
+      exitCost: away && env.exitCost ? (c, r) => away(c, r) + env.exitCost!(c, r) : away ?? env.exitCost,
       crushable: (c, r) => crushTargets(t, c, r, terrain, state.tokens) !== null,
       // A Tether leash is a legality rather than a price, so it goes here and
       // not on exitCost — and it binds a flyer exactly as hard as a walker,
-      // which is why it sits outside the `flying` guard above.
-      allowed: tetherCap(t, state.tokens),
+      // which is why it sits outside the `flying` guard above. The Abyss ban
+      // rides the same hook, and BOTH must pass.
+      allowed: leash && env.allowed ? (c, r) => leash(c, r) && env.allowed!(c, r) : leash ?? env.allowed,
+      stop: env.stop,
+      landing: env.landing,
       // LPA-21 Firefly: a legality, like the leash above, and outside the
       // `flying` guard for the same reason — a Firefly is not flying, it is
       // slipping past. The landing still has to be legal and Break Away is
@@ -5264,6 +5343,62 @@ async function init() {
     });
   }
 
+  // The settle sweep with freeplay's narration on it. renderAll runs it, and
+  // so does the drag handler's happy path, which saves and redraws WITHOUT a
+  // renderAll - the exact road on which a dragged unit entered a High
+  // Temperature Grid, was saved, and was never cooked.
+  function settleEnvNow(): void {
+    for (const ev of settleEnvironments(data, state)) {
+      const who = state.tokens.find((x) => x.uid === ev.uid);
+      if (!who) continue;
+      if (ev.what === 'hot') logTo(who, `${who.label} enters the High Temperature Grid ${gridRef(ev.c, ev.r)} and gains 1 Fragile Token.`);
+      else logTo(who, `${who.label} enters the Fragile Platform Grid ${gridRef(ev.c, ev.r)}: its Movement ends and the Card is removed.`);
+    }
+  }
+
+  // A Ground Unit standing in an Abyss Grid, however it got there. The
+  // knockback resolver handles its own case with the kill credited to the
+  // forcing player; what this catches is every other road - a sandbox drag,
+  // a scenario built over the card - where there is nobody to credit, so the
+  // destruction goes through despawn rather than recordKill. Same offered-once
+  // guard as the mine sweep, for the same reason.
+  const abyssSeen = new Set<number>();
+  function sweepAbyss(): void {
+    for (const uid of [...abyssSeen]) {
+      if (!state.tokens.some((t) => t.uid === uid)) abyssSeen.delete(uid);
+    }
+    const fallen = state.tokens.find((t) => {
+      if (abyssSeen.has(t.uid) || !isGroundUnit(data, t)) return false;
+      const g = largeGridOf(t);
+      return envCardAt(state, g.c, g.r) === 'abyss';
+    });
+    if (!fallen) return;
+    abyssSeen.add(fallen.uid);
+    const g = largeGridOf(fallen);
+    const body = `${fallen.label} is a Ground Unit in the Abyss Grid ${gridRef(g.c, g.r)}. `
+      + 'Ground Units cannot voluntarily enter an Abyss Grid, and one forced in is immediately Destroyed (Environment Card, 5.4.1).';
+    const fall = (): void => {
+      const still = state.tokens.find((t) => t.uid === fallen.uid);
+      if (!still) return;
+      logTo(still, `${still.label} is in the Abyss Grid ${gridRef(g.c, g.r)} and is Destroyed.`);
+      perform(data, state, { kind: 'despawn', seat: still.side, uid: still.uid, targetUid: still.uid });
+      if (selectedUid === fallen.uid) selectToken(null);
+      onChanged();
+    };
+    if (state.script?.strict) {
+      void alertDialog({ title: `${fallen.label} falls into the Abyss`, body }).then(fall);
+      return;
+    }
+    void confirmDialog({
+      title: `${fallen.label} is in an Abyss Grid`,
+      body,
+      confirmLabel: 'It is Destroyed',
+      cancelLabel: 'Leave it (house rule)',
+    }).then((go) => {
+      if (go) fall();
+    });
+  }
+
   // Which mandatory Detonations have already been offered, so a declined one
   // does not ask again on every render.
   const autoBoomSeen = new Set<number>();
@@ -5365,10 +5500,19 @@ async function init() {
     setBoardGrids(gridsOf(state));
     setSquadNames(state.sideNames);
     syncSquadTints();
+    // The derived Environment rules, run before save() because unlike the
+    // dialog-driven sweeps below this one mutates SYNCHRONOUSLY - the entry
+    // token and the platform collapse have to be in the state this save
+    // writes. It is the same settle apply() runs, so a perform()-driven change
+    // has already settled and this call is a no-op for it; what it exists for
+    // are the roads that never become commands: commitMove's landing, a
+    // sandbox drag, a deployment.
+    settleEnvNow();
     save();
     board.renderZones(overlayZones(), overlayDeployment(), claimedZones());
     board.renderTokens(state);
     board.renderTaskItems(normaliseTasks(state.tasks).items, zoneCentre);
+    board.renderEnvironments(state.environments ?? [], environmentLookup(data));
     board.renderSmoke(state.smoke ?? []);
     board.setSelected(selectedUid);
     squadTracker.update(state, selectedUid);
@@ -5379,6 +5523,7 @@ async function init() {
     renderSmokePrompt();
     sweepCamoContacts();
     sweepMines();
+    sweepAbyss();
     sweepAutoDetonations();
     sweepMartyrdoms();
     // Redraw the Add tab only when what is on the board actually changed, so
@@ -5499,6 +5644,11 @@ async function init() {
   }
 
   // ---------- toolbar ----------
+
+  // The Environment Card waiting for a Grid, or null. Cleared when its dialog
+  // closes, so an armed card never outlives the thing that armed it.
+  let envArmed: string | null = null;
+  let refreshEnvDialog: () => void = () => {};
 
   const mapSelect = document.getElementById('map-select') as HTMLSelectElement;
   function applyBoardTheme(): void {
@@ -5808,6 +5958,95 @@ async function init() {
   }
 
   document.getElementById('btn-mapmanage')!.addEventListener('click', openMapManager);
+
+  document.getElementById('btn-environments')!.addEventListener('click', openEnvironments);
+
+  // Pick a card, then click the Grid it covers. The count comes from the
+  // Battlefield Card (5.4.1), which is the only place it is printed and so the
+  // only way a player here would know it.
+  function openEnvironments(): void {
+    document.getElementById('env-dialog')?.remove();
+    const dlg = document.createElement('div');
+    dlg.id = 'env-dialog';
+    document.body.appendChild(dlg);
+
+    const close = (): void => {
+      envArmed = null;
+      refreshEnvDialog = () => {};
+      board.panEnabled = true;
+      board.editing = false;
+      setHint('');
+      dlg.remove();
+    };
+
+    const draw = (): void => {
+      const placed = state.environments ?? [];
+      const cap = environmentAllowance(data, state);
+      const ref = (c: number, r: number) => `${String.fromCharCode(65 + c)}${r + 1}`;
+      dlg.classList.toggle('arming', envArmed !== null);
+      // The board only reports cell clicks while panning is off, which is how
+      // the map editor gets them. A card in hand borrows the same mode.
+      board.panEnabled = envArmed === null;
+      board.editing = envArmed !== null;
+      const armedDef = data.environments.cards.find((c) => c.id === envArmed);
+      if (armedDef) {
+        // Collapsed to a bar along the bottom: it says what is being placed and
+        // offers a way out, and the board above it is clickable again.
+        dlg.innerHTML = `<div class="scn-panel env-arming">
+          <b>${escapeHtml(armedDef.name)}</b>
+          <span>Click the Grid it covers · right-click clears one</span>
+          <button id="env-cancel">Done</button>
+        </div>`;
+        dlg.querySelector('#env-cancel')!.addEventListener('click', () => {
+          envArmed = null;
+          setHint('');
+          draw();
+        });
+        return;
+      }
+      dlg.innerHTML = `<div class="scn-panel">
+        <button id="env-close" class="dlg-close" title="Close">✕</button>
+        <div class="inv-head"><b>Environment Cards</b>
+          <span class="inv-contents-sub">${placed.length} of ${cap} placed</span></div>
+        <p class="dim">Pick a card, then click the Grid it covers. Right-click a Grid to take its
+          card off. The number you may place is printed on the Battlefield Card (5.4.1), and they
+          generally do not go on the Tactical Zones.</p>
+        <ul class="env-list">${
+          data.environments.cards.map((c) => `<li>
+            <button class="env-pick${envArmed === c.id ? ' armed' : ''}" data-env="${escapeHtml(c.id)}">
+              <b>${escapeHtml(c.name)}</b><span>${escapeHtml(c.text)}</span>
+            </button></li>`).join('')
+        }</ul>
+        ${placed.length ? `<p class="setup-eyebrow">On the table</p>
+          <ul class="env-placed">${placed.map((e) => {
+            const def = data.environments.cards.find((c) => c.id === e.card);
+            return `<li><span>${escapeHtml(def?.name ?? e.card)}</span>
+              <b>Grid ${ref(e.col, e.row)}</b>
+              <button data-lift="${e.col},${e.row}" title="Take this card off">✕</button></li>`;
+          }).join('')}</ul>` : ''}
+      </div>`;
+
+      dlg.querySelector('#env-close')!.addEventListener('click', close);
+      dlg.querySelectorAll<HTMLElement>('[data-env]').forEach((b) =>
+        b.addEventListener('click', () => {
+          envArmed = envArmed === b.dataset.env ? null : b.dataset.env!;
+          setHint(envArmed ? '⌖ Click the Grid this card covers. Right-click clears one.' : '');
+          draw();
+        }));
+      dlg.querySelectorAll<HTMLElement>('[data-lift]').forEach((b) =>
+        b.addEventListener('click', () => {
+          const [c, r] = b.dataset.lift!.split(',').map(Number);
+          perform(data, state, { kind: 'setEnvironment', seat: 's1', at: { col: c, row: r }, card: null });
+          save();
+          renderAll();
+          draw();
+        }));
+    };
+
+    dlg.addEventListener('click', (ev) => { if (ev.target === dlg) close(); });
+    refreshEnvDialog = draw;
+    draw();
+  }
 
   document.getElementById('btn-report')!.addEventListener('click', () => {
     openBoardReport({
@@ -7378,7 +7617,7 @@ async function init() {
     } else if (k === 'm') {
       const base = moveRangeFor(t);
       if (base > 0) {
-        const flying = !!data.byId.get(t.cardId)?.moveAsFlight;
+        const flying = !!data.byId.get(t.cardId)?.moveAsFlight || envFlightFrom(data, state, t);
         board.showReachable(reachableGrids(t, base, currentTerrain(), state.tokens, flying, moveOpts(t, flying)), base);
       }
     } else if (k === 'a') {

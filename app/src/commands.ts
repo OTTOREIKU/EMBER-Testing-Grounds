@@ -1,8 +1,8 @@
 import type { BoardGrids, CombatView, Facing, GameState, MechLoadout, Opportunity, PartSlot, PartState, RollbackPoint, Side, SmokeScreen, Stance, Timing, Token } from './types';
 import { addStatus, ageTokens, cellsOf, gridsOf, newOpportunity, PHASES, statusCount, STATUSES, TIMINGS } from './types';
 import type { GameData } from './data';
-import { cardName, transformFaces, unfoldsInto, discardFaceOf } from './data';
-import { covertCarryLock, ammoDeliveryPool, opportunityBonusOn, ripostePart, defenseReactionOn, targetTracingOn, riderOnDrone, hasFlexibleTiming, commandGeneration, blinkTargets, isPositionSwap, electronicOrigins, isSilentAction, maneuverIsSilent, loanedParts, unfoldToken, formSwitch, switchFormTo, extrasFor, consumesCharge, cutTethersOn, electronicDash, electronicValue, immobilizedStop, isScanAction, scannable, manifestationRange, nonHumanoidCost, nonHumanoidStop, freehandSlots, interceptCapacity, anyStartTiming, focusIsFree, keepsLinkOnPartLoss, makeDroneToken, structureOf, makeMechToken, maneuverRange, maxLink, partsLeft, pilotCard, pilotIs, projectileDelivery, provokeWhy, settleTethers, SLOT_LABEL, tetherTo, tokenCards, transformPartOn } from './units';
+import { cardName, transformFaces, unfoldsInto, discardFaceOf, environmentAllowance } from './data';
+import { covertCarryLock, ammoDeliveryPool, opportunityBonusOn, ripostePart, defenseReactionOn, targetTracingOn, riderOnDrone, hasFlexibleTiming, commandGeneration, blinkTargets, isPositionSwap, electronicOrigins, isSilentAction, maneuverIsSilent, loanedParts, unfoldToken, formSwitch, switchFormTo, extrasFor, consumesCharge, cutTethersOn, electronicDash, electronicValue, immobilizedStop, isScanAction, scannable, manifestationRange, nonHumanoidCost, nonHumanoidStop, envHotEntries, settleEnvironments, freehandSlots, interceptCapacity, anyStartTiming, focusIsFree, keepsLinkOnPartLoss, makeDroneToken, structureOf, makeMechToken, maneuverRange, maxLink, partsLeft, pilotCard, pilotIs, projectileDelivery, provokeWhy, settleTethers, SLOT_LABEL, tetherTo, tokenCards, transformPartOn } from './units';
 import { tetherCap } from './melee';
 import { canActivate, canAttackMode, canManeuver, canOverload, canPerform, spendAction, spendActivation, spendAttackMode, spendManeuver, spendOverload } from './ticks';
 import { tacticSpec, tacticTargets, type TacticCtx } from './tactics';
@@ -67,7 +67,10 @@ export type Command =
   // exists so the Immobilized ban can judge Unstoppable AT THE COMMAND rather
   // than trusting whichever UI sent the move: the exception is per ACTION (181's
   // Run has it, its Sprint does not), so the action has to travel.
-  | { kind: 'maneuver'; seat: Side; uid: number; to: { col: number; row: number }; facing?: Facing; free?: boolean; granted?: boolean; via?: { col: number; row: number }[]; from?: { col: number; row: number }; actionId?: string }
+  // `flying` rides along for the Environment Cards: a flight enters only its
+  // landing Grid, so a High Temperature Grid under the route must know whether
+  // the unit walked through it or flew over it. Absent means walked.
+  | { kind: 'maneuver'; seat: Side; uid: number; to: { col: number; row: number }; facing?: Facing; free?: boolean; granted?: boolean; via?: { col: number; row: number }[]; from?: { col: number; row: number }; actionId?: string; flying?: boolean }
   // A Crush with no escape square (4.3.6, book p.47): "If NONE of the Grids
   // within Range of that Forced Movement can be entered, the crushed Unit
   // instead exchanges positions with the Crushing Unit."
@@ -112,7 +115,11 @@ export type Command =
   // Emitted from combat.ts, where `c.action` and `c.attacker.stance` are both
   // in hand, and gated in check() so a client cannot mint Link with it.
   | { kind: 'restoreLink'; seat: Side; uid: number }
-  | { kind: 'forceMove'; seat: Side; uid: number; targetUid: number; to: { col: number; row: number }; push?: boolean; facing?: Facing }
+  // `via` is the pushed line as cells, one entry per Grid, for the same
+  // reason maneuver carries it plus one of this command's own: a victim
+  // knocked THROUGH a High Temperature Grid enters it, and by the time apply()
+  // runs, only the payload remembers the line.
+  | { kind: 'forceMove'; seat: Side; uid: number; targetUid: number; to: { col: number; row: number }; push?: boolean; facing?: Facing; via?: { col: number; row: number }[] }
   | { kind: 'spendAmmo'; seat: Side; uid: number; actionId: string }
   | { kind: 'restoreAmmo'; seat: Side; uid: number; actionId: string; amount?: number }
   // The Round Tokens an Intercept X Part carries (4.9). They are spent, never
@@ -265,6 +272,10 @@ export type Command =
   // seat the ATTRIBUTED stamping will overwrite. Ownership decides stacking
   // and who dissipates it, so it has to survive the stamp.
   | { kind: 'placeSmoke'; seat: Side; at: { col: number; row: number }; for?: Side }
+  // Lay an Environment Card on a Grid, or clear that Grid with card: null.
+  // Table-level: the cards belong to the battlefield, not to either squad, and
+  // 5.4.1 has the two players placing them alternately as they set it up.
+  | { kind: 'setEnvironment'; seat: Side; at: { col: number; row: number }; card: string | null }
   | { kind: 'removeSmoke'; seat: Side; at: { col: number; row: number } }
   | { kind: 'dissipateSmoke'; seat: Side }
   | { kind: 'setMode'; seat: Side; mode: 'hotseat' | 'hidden' }
@@ -467,6 +478,7 @@ type TableKind =
   | 'advancePhase' | 'setPhase' | 'resetRounds' | 'adjustCommandTokens' | 'passTurn' | 'markEndStep' | 'award'
   | 'lockMap' | 'rollSetup' | 'acceptRoll' | 'noteRoll' | 'finishTasks' | 'pickEdge' | 'lockDials' | 'finishDeployment'
   | 'queueIntercepts' | 'clearIntercepts' | 'placeSmoke' | 'removeSmoke' | 'dissipateSmoke'
+  | 'setEnvironment'
   // queueReactions only: `resolveReaction` names the defender's own unit, so it
   // goes through the actor path and gets the "your units only" check free.
   | 'queueReactions'
@@ -480,6 +492,7 @@ const TABLE_KINDS = new Set<Command['kind']>([
   'advancePhase', 'setPhase', 'resetRounds', 'adjustCommandTokens', 'passTurn', 'markEndStep', 'award',
   'lockMap', 'rollSetup', 'acceptRoll', 'noteRoll', 'finishTasks', 'pickEdge', 'lockDials', 'finishDeployment',
   'queueIntercepts', 'clearIntercepts', 'placeSmoke', 'removeSmoke', 'dissipateSmoke',
+  'setEnvironment',
   'queueReactions',
   'clearCounterRoll',
   'setMode', 'handOver', 'setStrict', 'commitTimings', 'revealTimings', 'importSquad',
@@ -501,6 +514,7 @@ const ATTRIBUTED = new Set<Command['kind']>([
   'setRollbackCatalog', 'rollbackRequest', 'rollbackAnswer',
   'lockMap', 'acceptRoll', 'noteRoll', 'lockDials', 'finishDeployment',
   'queueIntercepts', 'clearIntercepts', 'placeSmoke', 'removeSmoke', 'dissipateSmoke',
+  'setEnvironment',
   // Queued from the ATTACKING client but naming the defender's units, so the
   // seat is pure attribution and gets stamped like any other table command.
   'queueReactions',
@@ -1021,6 +1035,36 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
     case 'placeSmoke': {
       const { col, row } = cmd.at;
       if (!Number.isInteger(col) || !Number.isInteger(row) || col < 0 || row < 0 || col >= gridsOf(state) || row >= gridsOf(state)) return no('That is not a Grid.');
+      return ok;
+    }
+    case 'setEnvironment': {
+      const { col, row } = cmd.at;
+      if (!Number.isInteger(col) || !Number.isInteger(row) || col < 0 || row < 0
+        || col >= gridsOf(state) || row >= gridsOf(state)) return no('That is not a Grid.');
+      if (cmd.card !== null && !data.environments.cards.some((e) => e.id === cmd.card)) {
+        return no('That is not an Environment Card.');
+      }
+      // 5.4.1 places them while the battlefield is set up, so a game already
+      // past its setup refuses new cards. Clearing stays legal at any time:
+      // the Fragile Platform takes itself off mid-game, and a table mirroring
+      // that by hand must not be told no.
+      const su = normaliseSetup(state.setup);
+      if (cmd.card !== null && su && su.stage === 'done') {
+        return no('Environment Cards are placed while the battlefield is set up (5.4.1), and this game is already running.');
+      }
+      // The box holds ONE of each Environment Card, so a copy already on the
+      // table refuses a second - unless the second is going where the first
+      // stands, which is a no-op placement rather than a duplicate.
+      const dup = (state.environments ?? []).some((e) => e.card === cmd.card && !(e.col === col && e.row === row));
+      if (dup) return no('There is only one of each Environment Card, and that one is already on the table.');
+      const here = (state.environments ?? []).some((e) => e.col === col && e.row === row);
+      // Clearing a Grid, and replacing the card on one, are both always legal:
+      // neither puts another card on the table.
+      if (cmd.card === null || here) return ok;
+      const cap = environmentAllowance(data, state);
+      if ((state.environments ?? []).length >= cap) {
+        return no(`This battlefield takes ${cap} Environment Cards and already has ${cap}.`);
+      }
       return ok;
     }
     case 'queueReactions': {
@@ -2308,6 +2352,13 @@ function checkActed(
 export function apply(data: GameData, state: GameState, cmd: Command): void {
   applyCommand(data, state, cmd);
   settleTethers(data, state);
+  // Same shape, next card down: the High Temperature entry token and the
+  // Fragile Platform collapse are derived from where things now STAND, so
+  // every road onto a Grid - landing, knockback, Crush displacement, Blink,
+  // deployment - settles identically on both seats. Events are dropped here;
+  // the freeplay board narrates from its own call, and the Match Centre lets
+  // the board redraw speak.
+  settleEnvironments(data, state);
 }
 
 // ---------- 4.12.3's second consequence: the Low Profile Token ----------
@@ -2780,6 +2831,29 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
     state.smoke = [...(state.smoke ?? []), { col: cmd.at.col, row: cmd.at.row, side: cmd.for ?? cmd.seat }];
     return;
   }
+  if (cmd.kind === 'setEnvironment') {
+    const rest = (state.environments ?? []).filter((e) => !(e.col === cmd.at.col && e.row === cmd.at.row));
+    const next = cmd.card === null
+      ? rest
+      : [...rest, { card: cmd.card, col: cmd.at.col, row: cmd.at.row }];
+    // Absent rather than empty, so a board with no cards on it serialises the
+    // way every board did before Environment Cards existed.
+    if (next.length) state.environments = next;
+    else delete state.environments;
+    // A High Temperature card laid UNDER a standing unit is not that unit
+    // entering the Grid, but the settle sweep about to run cannot tell "the
+    // card appeared beneath me" from "I appeared beneath the card" - both read
+    // as standing there unmarked. Pre-marking the bystanders keeps the token
+    // for actual entries.
+    if (cmd.card === 'high-temperature') {
+      for (const t of state.tokens) {
+        if (Math.floor(t.col / 3) === cmd.at.col && Math.floor(t.row / 3) === cmd.at.row) {
+          t.envSeen = `${cmd.at.col},${cmd.at.row}`;
+        }
+      }
+    }
+    return;
+  }
   if (cmd.kind === 'queueReactions') {
     if (!state.script) return;
     // Appended rather than replaced: a second attack can land while an earlier
@@ -2838,6 +2912,23 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
   if (cmd.kind === 'forceMove') {
     const target = state.tokens.find((x) => x.uid === cmd.targetUid);
     if (!target) return;
+    // High Temperature along the pushed line, landing excluded for the same
+    // reason the maneuver excludes it: settleEnvironments owns endpoints.
+    // Forced Movement is never a flight, so every Grid on the line is entered.
+    if (cmd.via?.length) {
+      const landing = { c: Math.floor(cmd.to.col / 3), r: Math.floor(cmd.to.row / 3) };
+      const begin = { c: Math.floor(target.col / 3), r: Math.floor(target.row / 3) };
+      const line: { c: number; r: number }[] = [];
+      for (const p of cmd.via) {
+        const g = { c: Math.floor(p.col / 3), r: Math.floor(p.row / 3) };
+        if ((g.c === begin.c && g.r === begin.r) || (g.c === landing.c && g.r === landing.r)) continue;
+        if (!line.some((w) => w.c === g.c && w.r === g.r)) line.push(g);
+      }
+      for (const g of envHotEntries(state, line)) {
+        void g;
+        target.statuses = addStatus(target.statuses, 'fragile');
+      }
+    }
     target.col = cmd.to.col;
     target.row = cmd.to.row;
     // The player causing a Forced Movement decides the victim's facing (3.4.4),
@@ -3010,6 +3101,25 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       // is asked about the unit as it STOOD.
       if (!maneuverIsSilent(data, state.tokens, t, { ...t, col: from.col, row: from.row })) {
         shedLowProfile(data, state, t);
+      }
+      // High Temperature, the pass-through half: every Grid the walk entered
+      // short of the landing. The landing is settleEnvironments' turf - it
+      // runs right after this in apply() and owns endpoint entries from every
+      // command, so granting it here too would cook the unit twice. A flight
+      // enters only its landing Grid, so it leaves nothing for this half.
+      if (!cmd.flying && !t.aerial && cmd.via?.length) {
+        const landing = { c: Math.floor(cmd.to.col / 3), r: Math.floor(cmd.to.row / 3) };
+        const start = { c: Math.floor(from.col / 3), r: Math.floor(from.row / 3) };
+        const walked: { c: number; r: number }[] = [];
+        for (const p of cmd.via) {
+          const g = { c: Math.floor(p.col / 3), r: Math.floor(p.row / 3) };
+          if ((g.c === start.c && g.r === start.r) || (g.c === landing.c && g.r === landing.r)) continue;
+          if (!walked.some((w) => w.c === g.c && w.r === g.r)) walked.push(g);
+        }
+        for (const g of envHotEntries(state, walked)) {
+          void g;
+          t.statuses = addStatus(t.statuses, 'fragile');
+        }
       }
       const o = oppOf(state, cmd.uid);
       // A Movement Action already paid with an Action Tick, and one a card

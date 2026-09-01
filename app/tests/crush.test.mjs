@@ -106,6 +106,11 @@ function setHint(msg: string): void { rec.hints.push(msg); }
 // meleelock.test.mjs's business. What is driven here is what the Crush loop does
 // with the answer.
 function canBeForceMoved(_data: any, t: any): boolean { return t.forceMovable !== false; }
+// The Environment pair the Abyss filter reads. envCardAt keeps its real
+// one-line body so a fixture CAN put a card down; isGroundUnit is the crush
+// fixtures' truth (nothing here has a flying base).
+function envCardAt(s: any, c: number, r: number): string | undefined { return (s.environments ?? []).find((e: any) => e.col === c && e.row === r)?.card; }
+function isGroundUnit(_data: any, t: any): boolean { return !t.aerial; }
 function perform(_d: any, _s: any, cmd: any): void { rec.sent.push(cmd); }
 function check(_d: any, _s: any, _cmd: any): any { return verdict; }
 const board: any = {
@@ -216,6 +221,8 @@ export function readPlan(): any { return crushPlan; }
 // Stubbed for the same reason freeplay's is: whose rule it is decides where it
 // is pinned, and this file is about the crush LOOP.
 function canBeForceMoved(_data: any, t: any): boolean { return t.forceMovable !== false; }
+function envCardAt(s: any, c: number, r: number): string | undefined { return (s.environments ?? []).find((e: any) => e.col === c && e.row === r)?.card; }
+function isGroundUnit(_data: any, t: any): boolean { return !t.aerial; }
 function towDraggedAlly(): void { rec.tow++; }
 function offerMinesOn(): void { rec.mines++; }
 function offerBoxesOn(): void { rec.boxes++; }

@@ -134,6 +134,15 @@ if (!delivery) throw new Error('could not locate projectileDelivery in units.ts'
 // isFlyingBase comes from data.ts and rangeBetween/largeGridOf from rules.ts,
 // so the Manhattan reach the check applies is the real one.
 const dataSrc = readFileSync(new URL('../src/data.ts', import.meta.url), 'utf8');
+
+// environmentAllowance, SLICED not stubbed, for the reason the cuts above give:
+// the Environment Card cap is printed on the Battlefield Card, so the number
+// lives in terrain_layouts.json and a mirror of that lookup here could quietly
+// disagree with the one checkTable really calls.
+const allowFrom = dataSrc.indexOf('export function environmentAllowance(');
+const allowTo = dataSrc.indexOf('export function environmentLookup(');
+if (allowFrom < 0 || allowTo <= allowFrom) throw new Error('could not locate environmentAllowance in data.ts');
+const allowanceReader = dataSrc.slice(allowFrom, allowTo);
 const grids = rules.slice(rules.indexOf('export function largeGridOf'), rules.indexOf('// Where inside Large Grid'))
   + rules.slice(rules.indexOf('export function rangeBetween'), rules.indexOf('export function inArc'))
   // placeInGrid's legality is spotsInGrid's, so the real one is sliced in
@@ -160,6 +169,14 @@ const crushing = rules.slice(rules.indexOf('export interface CrushVictims'), rul
 if (!boardSize || !standing || !crushing) throw new Error('could not locate the Crush geometry in rules.ts');
 const flyingBase = dataSrc.slice(dataSrc.indexOf('export function isFlyingBase'), dataSrc.indexOf('export function isAerial'));
 const ground = unitsSrc.slice(unitsSrc.indexOf('export function isGroundUnit'), unitsSrc.indexOf('export function minesOwed'));
+// The Environment Card readers, SLICED because apply() now runs
+// settleEnvironments after every command: a stub that settles nothing would
+// let a maneuver land in a High Temperature Grid here and cook nobody, while
+// the real engine cooks everyone. Starts AFTER `alive`, which another cut
+// already declares, and ends where the `ground` cut begins, so isGroundUnit
+// is declared exactly once.
+const environs = unitsSrc.slice(unitsSrc.indexOf('// ---------- ENVIRONMENT CARDS (5.4.1) ----------'), unitsSrc.indexOf("// A Mine's trigger asks for a GROUND Unit"));
+if (!environs) throw new Error('could not locate the Environment readers in units.ts');
 const blinking = unitsSrc.slice(unitsSrc.indexOf('// Which Moving Actions are a position SWAP'), unitsSrc.indexOf("// ---------- The Hyena"));
 if (!grids || !flyingBase || !ground || !blinking) throw new Error('could not locate the blink helpers');
 // Tether X (PDLH-202). Sliced, not mirrored, for the usual reason: apply()
@@ -378,6 +395,7 @@ writeFileSync(
     + crushing
     + flyingBase
     + ground
+    + environs
     + blinking
     + faces
     + partSlots
@@ -396,6 +414,7 @@ writeFileSync(
     // syncMagazines, and a function hoists but a `const` stub does not.
     + tethering
     + leash
+    + allowanceReader
     + commands.replace(/^import[^\n]*\n/gm, ''),
 );
 const C = await import(tmp.href);
@@ -1418,6 +1437,148 @@ check('dissipation removes only the isolated screen', ws.smoke.map((x) => `${x.c
 C.apply(data, ws, { kind: 'removeSmoke', seat: 's1', at: { col: 3, row: 3 } });
 check('a group pick removes one screen', ws.smoke.map((x) => `${x.col},${x.row}`), ['4,3']);
 check('removing missing smoke is refused', C.check(data, ws, { kind: 'removeSmoke', seat: 's1', at: { col: 9, row: 9 } }).ok, false);
+
+// ---------- Environment Cards (5.4.1) ----------
+
+// A card covers one LARGE Grid, so this shares the smoke bound above. The
+// allowance comes off the Battlefield Card, so the fixture has to carry maps:
+// `alley` prints 3, and a board on no named map falls back to 4.
+const envData = {
+  ...data,
+  environments: { rule: '5.4.1', cards: [{ id: 'abyss' }, { id: 'rugged' }, { id: 'high-temperature' }, { id: 'anti-gravity' }] },
+  terrain: { maps: [{ id: 'alley', envCards: 3 }, { id: 'nocount' }] },
+};
+const we = { ...world([]), map: 'alley' };
+const envAt = (s, col, row, card = 'abyss') =>
+  C.check(envData, s, { kind: 'setEnvironment', seat: 's1', at: { col, row }, card });
+const put = (s, col, row, card = 'abyss') =>
+  C.apply(envData, s, { kind: 'setEnvironment', seat: 's1', at: { col, row }, card });
+
+check('a card lands on a Grid', envAt(we, 3, 3).ok, true);
+check('a Grid off the board is refused', envAt(we, 20, 3).ok, false);
+check('a subcell coordinate is not a Grid', envAt(we, 3.5, 3).ok, false);
+check('an unknown card is refused', envAt(we, 3, 3, 'lava').ok, false);
+check('the unknown-card refusal names the card', /not an Environment Card/i.test(envAt(we, 3, 3, 'lava').why ?? ''), true);
+
+put(we, 1, 1);
+put(we, 2, 2, 'rugged');
+check('placements are recorded as Grid coordinates', we.environments, [
+  { card: 'abyss', col: 1, row: 1 }, { card: 'rugged', col: 2, row: 2 },
+]);
+
+// One card to a Grid, which a card the size of a Grid enforces by itself.
+put(we, 1, 1, 'high-temperature');
+check('a second card on a Grid replaces the first', we.environments.length, 2);
+check('and the replacement is the card named', we.environments.find((e) => e.col === 1 && e.row === 1).card, 'high-temperature');
+
+// The cap is the Battlefield Card's number, and REPLACING at the cap is still
+// legal: it puts no extra card on the table. Each probe is a card not yet
+// down, because the singleton rule below would otherwise answer first.
+put(we, 3, 3);
+check('the third card fills an alley', we.environments.length, 3);
+check('a fourth is refused', envAt(we, 4, 4, 'anti-gravity').ok, false);
+check('the refusal quotes the printed allowance', /takes 3 Environment Cards/.test(envAt(we, 4, 4, 'anti-gravity').why ?? ''), true);
+check('replacing at the cap is still legal', envAt(we, 3, 3, 'anti-gravity').ok, true);
+// The box holds one of each, which a live sandbox proved we never checked:
+// two Anti-Gravity Grids went down on one battlefield.
+check('a card already on the table refuses a second copy', envAt(we, 4, 4, 'abyss').ok, false);
+check('and the refusal says why', /only one of each/.test(envAt(we, 4, 4, 'abyss').why ?? ''), true);
+check('re-placing it on its own Grid is a no-op, not a duplicate', envAt(we, 1, 1, 'high-temperature').ok, true);
+check('clearing at the cap is still legal', envAt(we, 3, 3, null).ok, true);
+
+// Clearing, and the absence-is-default tail.
+C.apply(envData, we, { kind: 'setEnvironment', seat: 's1', at: { col: 3, row: 3 }, card: null });
+check('clearing a Grid takes its card off', we.environments.map((e) => `${e.col},${e.row}`), ['2,2', '1,1']);
+check('room opens up again once one is lifted', envAt(we, 4, 4).ok, true);
+C.apply(envData, we, { kind: 'setEnvironment', seat: 's1', at: { col: 2, row: 2 }, card: null });
+C.apply(envData, we, { kind: 'setEnvironment', seat: 's1', at: { col: 1, row: 1 }, card: null });
+check('an empty table drops the field entirely', 'environments' in we, false);
+check('clearing an empty Grid is harmless', envAt(we, 7, 7, null).ok, true);
+
+// A board on no map at all still gets a number, so the dialog never reads NaN.
+const wn = { ...world([]), map: 'nocount' };
+for (let i = 0; i < 4; i++) put(wn, i, 0);
+check('a map printing no count falls back to four', wn.environments.length, 4);
+check('and the fallback caps at four', envAt(wn, 5, 0).ok, false);
+
+// 5.4.1 places the cards while the battlefield is set up: a running game
+// refuses a new one, teaches why, and still lets a Grid be CLEARED, because
+// the Fragile Platform takes itself off mid-game.
+{
+  const running = { ...world([]), map: 'alley', setup: { stage: 'done', rolls: { s1: [], s2: [] }, edge: { s1: 'black', s2: 'white' }, placed: { s1: 0, s2: 0 } } };
+  check('a running game refuses a new Environment Card', envAt(running, 3, 3).ok, false);
+  check('and the refusal teaches the rule', /battlefield is set up/.test(envAt(running, 3, 3).why ?? ''), true);
+  check('while clearing a Grid stays legal', envAt(running, 3, 3, null).ok, true);
+  const settingUp = { ...world([]), map: 'alley', setup: { stage: 'deploy', rolls: { s1: [], s2: [] }, edge: { s1: 'black', s2: 'white' }, placed: { s1: 0, s2: 0 } } };
+  check('deployment still accepts one', envAt(settingUp, 3, 3).ok, true);
+}
+
+// ---------- the effects on the wire ----------
+//
+// Movement does not share a road between the boards: freeplay mutates in
+// commitMove, the Match Centre sends `maneuver`. These drive the COMMAND road
+// through the real apply(), whose settle sweep runs after every command.
+{
+  const frg = (t) => (t.statuses ?? []).filter((x) => x === 'fragile').length;
+  const hot = () => {
+    const w = { ...world([]), environments: [{ card: 'high-temperature', col: 2, row: 3 }] };
+    w.tokens = [mech(1, 's1', { col: 3, row: 9 })];
+    return w;
+  };
+  // Walking THROUGH the hot Grid: from (1,3) via (2,3) to (3,3), cells 3..9.
+  const through = { kind: 'maneuver', seat: 's1', uid: 1, to: { col: 9, row: 9 },
+    via: [{ col: 3, row: 9 }, { col: 6, row: 9 }, { col: 9, row: 9 }] };
+  const w1 = hot();
+  C.apply(envData, w1, through);
+  check('walking through a High Temperature Grid costs 1 Fragile Token', frg(w1.tokens[0]), 1);
+  check('and no marker is left on a unit that kept going', w1.tokens[0].envSeen ?? null, null);
+
+  // Flying the same route: only the landing counts, and it is not hot.
+  const w2 = hot();
+  C.apply(envData, w2, { ...through, flying: true });
+  check('flying the same route costs nothing', frg(w2.tokens[0]), 0);
+
+  // ENDING in the hot Grid: the settle sweep's half.
+  const w3 = hot();
+  C.apply(envData, w3, { kind: 'maneuver', seat: 's1', uid: 1, to: { col: 6, row: 9 }, via: [{ col: 3, row: 9 }, { col: 6, row: 9 }] });
+  check('landing in it costs 1, from the settle sweep', frg(w3.tokens[0]), 1);
+  check('which marks the unit so it is not cooked again', w3.tokens[0].envSeen, '2,3');
+  C.apply(envData, w3, { kind: 'passTurn', seat: 's1' });
+  check('and any later command leaves it at 1', frg(w3.tokens[0]), 1);
+
+  // A knockback through it: forceMove carries the line the same way.
+  const w4 = hot();
+  C.apply(envData, w4, { kind: 'forceMove', seat: 's2', uid: 2, targetUid: 1, to: { col: 9, row: 9 },
+    via: [{ col: 6, row: 9 }, { col: 9, row: 9 }] });
+  check('a knockback through it cooks the victim too', frg(w4.tokens[0]), 1);
+
+  // The placement pre-mark: a card laid UNDER a unit is not that unit entering.
+  const w5 = { ...world([]) };
+  w5.tokens = [mech(1, 's1', { col: 6, row: 9 })];
+  C.apply(envData, w5, { kind: 'setEnvironment', seat: 's1', at: { col: 2, row: 3 }, card: 'high-temperature' });
+  check('a card laid under a standing unit cooks nobody', frg(w5.tokens[0]), 0);
+  C.apply(envData, w5, { kind: 'maneuver', seat: 's1', uid: 1, to: { col: 3, row: 9 }, via: [{ col: 6, row: 9 }, { col: 3, row: 9 }] });
+  C.apply(envData, w5, { kind: 'maneuver', seat: 's1', uid: 1, to: { col: 6, row: 9 }, via: [{ col: 3, row: 9 }, { col: 6, row: 9 }] });
+  check('but walking off and back in is an entry', frg(w5.tokens[0]), 1);
+
+  // The collapse, on the wire: any command that leaves a Ground Unit standing
+  // on the platform takes the Card off.
+  const w6 = { ...world([]), environments: [{ card: 'fragile-platform', col: 2, row: 3 }] };
+  w6.tokens = [mech(1, 's1', { col: 3, row: 9 })];
+  C.apply(envData, w6, { kind: 'maneuver', seat: 's1', uid: 1, to: { col: 6, row: 9 }, via: [{ col: 3, row: 9 }, { col: 6, row: 9 }] });
+  check('entering the Fragile Platform removes the Card', 'environments' in w6, false);
+}
+
+// The cards belong to the battlefield, not to a squad, so the command has to
+// be table-level in ALL THREE registries -- the set, the attribution list and
+// the TableKind union checkTable is typed on. Missing the union is not a type
+// error at the call site; it just makes the case unreachable.
+check('setEnvironment is table-level', /'setEnvironment'/.test(commands.slice(
+  commands.indexOf('const TABLE_KINDS'), commands.indexOf('const ATTRIBUTED'))), true);
+check('setEnvironment is seat-stamped', /'setEnvironment'/.test(commands.slice(
+  commands.indexOf('const ATTRIBUTED'), commands.indexOf('const ATTRIBUTED') + 900)), true);
+check('setEnvironment is in the TableKind union', /setEnvironment/.test(commands.slice(
+  commands.indexOf('type TableKind'), commands.indexOf('type TableKind') + 700)), true);
 
 // ---------- pass-and-play (rulebook 3.3) ----------
 

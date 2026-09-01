@@ -248,6 +248,14 @@ export interface MoveOpts {
   // exitCost: a price is something a rich Movement Range buys past, and the
   // leash does not care how much Range you have.
   allowed?: (c: number, r: number) => boolean;
+  // A Grid that ENDS the movement the moment it is entered - the Fragile
+  // Platform Environment Card. Enterable and a legal landing, but never
+  // expanded, which is exactly the shape a Crush already has.
+  stop?: (c: number, r: number) => boolean;
+  // A Grid this unit may pass over but not END in. The Abyss ban for a FLYING
+  // move: a flight enters only its landing Grid (M29's reading), so the walk
+  // ban in `allowed` would wrongly close the air above it.
+  landing?: (c: number, r: number) => boolean;
   // LPA-21 Firefly, 匿踪 Stealth: while Optically Camouflaged or in Low Profile,
   // this unit's movement ROUTE may pass through other units. A legality like
   // `allowed`, not a price like `exitCost` -- and route-only: the landing still
@@ -309,8 +317,10 @@ function searchMoves(
       dist.set(nk, d);
       parent.set(nk, key);
       queue.push({ ...n, d });
-      if (crush) crushed.add(nk);
-      if (standable || crush) reachable.push({ ...n, dist: d });
+      // A stop Grid rides the crushed set: same rule, different card - the
+      // movement ends the moment the Grid is entered, so it is never expanded.
+      if (crush || (opts?.stop?.(n.c, n.r) ?? false)) crushed.add(nk);
+      if ((standable || crush) && (opts?.landing?.(n.c, n.r) ?? true)) reachable.push({ ...n, dist: d });
     }
   }
   const seen = new Set<string>();
@@ -353,6 +363,10 @@ export function knockbackPath(
   grids: number,
   terrain: TerrainPiece[],
   tokens: Token[],
+  // Grids that end the Forced Movement the moment the victim is pushed in: an
+  // Abyss (it falls) or a Fragile Platform (the floor goes). The line still
+  // ENTERS the grid - what happens there is the caller's to resolve.
+  stopAt?: (c: number, r: number) => boolean,
 ): LargeGrid[] {
   const path: LargeGrid[] = [];
   // A Barricade "can neither move, be moved, nor be Crushed" (FAQ E6/M13, Rules
@@ -370,6 +384,7 @@ export function knockbackPath(
     if (!canStandIn(next.c, next.r, victim.size, false, terrain, tokens, victim.uid)) break;
     path.push(next);
     at = next;
+    if (stopAt?.(next.c, next.r)) break;
   }
   return path;
 }
@@ -566,6 +581,9 @@ export function movePath(
   const { dist, parent } = searchMoves(t, steps, terrain, tokens, flying, opts);
   const goal = `${to.c},${to.r}`;
   if (!dist.has(goal)) return [];
+  // A landing ban closes the ROUTE'S END, not the route: the grid may sit in
+  // `dist` because a flight passed over it, and a path may not finish there.
+  if (opts?.landing && !opts.landing(to.c, to.r)) return [];
   const path: LargeGrid[] = [];
   let at: string | undefined = goal;
   while (at) {
@@ -602,6 +620,9 @@ export function extendPath(
 ): LargeGrid[] | null {
   if (!path.length) return null;
   const last = path[path.length - 1];
+  // A route that has entered a stop Grid is finished: the Fragile Platform
+  // ends the movement, so there is nothing to chain a waypoint onto.
+  if (opts?.stop?.(last.c, last.r)) return null;
   if (last.c === to.c && last.r === to.r) return null;
   const prev = path[path.length - 2];
   if (prev && prev.c === to.c && prev.r === to.r) return path.slice(0, -1);
