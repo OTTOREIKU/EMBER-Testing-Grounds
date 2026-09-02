@@ -253,7 +253,7 @@
    "match": [
     "overload"
    ],
-   "text": "The OCSP Overloading Pack lets a Mech consume up to 2 Link during its Action Opportunity, gaining 1 Action Tick for each point spent. These are ordinary Action Ticks rather than Extra Ticks, which is the whole point of the Part: two of them pay for one Medium Action, something no pair of Extra Ticks can do, and they are spent before any Extra Tick in the usual order. The Link is gone either way, and a Mech reduced to 0 Link Shuts Down, so the Pack is a real trade rather than free tempo. This Part cannot be used as a Load."
+   "text": "The OCSP Overloading Pack lets a Mech consume up to 2 Link during its Action Opportunity, gaining 1 Action Tick for each point spent. These are ordinary Action Ticks rather than Extra Ticks: two of them pay for one Medium Action, which no pair of Extra Ticks can do, and they are spent before any Extra Tick in the usual order. The Link is spent whether or not the Ticks are used, and a Mech reduced to 0 Link Shuts Down. This Part cannot be used as a Load."
   },
   {
    "id": "extra_action_opportunity",

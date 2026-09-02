@@ -27,7 +27,17 @@ const PART_SHORT: Record<string, string> = {
 
 export function iconSvg(icon: DiceIcon, size = 20): string {
   const s = size;
-  const fillStyle = icon.hollow ? 'fill="none" stroke="currentColor" stroke-width="1.6"' : 'fill="currentColor"';
+  // HOLLOW is a rules-bearing face, not decoration: seven of them (2 red Heavy,
+  // 1 yellow Light, 4 white Defense) count only when a Stance upgrades them, so
+  // a player has to be able to tell one from a solid at a glance. Drawn the way
+  // the die prints it - the outline only, with the face showing through.
+  //
+  // 2.0 rather than 1.6 because these are read at 17px inline, where the
+  // thinner stroke greyed out; `round` because the Heavy Hit star has sixteen
+  // sharp corners and miter joins throw a spike off every one of them.
+  const fillStyle = icon.hollow
+    ? 'fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"'
+    : 'fill="currentColor"';
   let body = '';
   switch (icon.type) {
     case 'heavyHit': {
@@ -53,7 +63,12 @@ export function iconSvg(icon: DiceIcon, size = 20): string {
       body = `<polygon points="11.5,1 4.5,11 9,11 7.5,19 15.5,8.5 10.7,8.5" ${fillStyle}/>`;
       break;
     case 'eye':
-      body = `<path d="M2 10 C5 5 15 5 18 10 C15 15 5 15 2 10 Z" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="10" cy="10" r="2.6" ${icon.hollow ? 'fill="none" stroke="currentColor" stroke-width="1.5"' : 'fill="currentColor"'}/>`;
+      // HOODED: a straight top lid with the lower lid swooping under it, which
+      // is what the printed die draws. The symmetric almond this replaces read
+      // as the generic eye emoji rather than as the die face.
+      body = `<path d="M2.5 7.7 H17.5 C16.2 12.9 12.9 16.1 9.4 16.1 C6.1 16.1 3.7 12.8 2.5 7.7 Z" `
+        + `fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>`
+        + `<circle cx="9.4" cy="10.4" r="2.3" ${icon.hollow ? 'fill="none" stroke="currentColor" stroke-width="1.4"' : 'fill="currentColor"'}/>`;
       break;
     case 'part': {
       const part = icon.part ?? 'any';

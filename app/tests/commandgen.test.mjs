@@ -338,7 +338,13 @@ const attackIconsBody = combatSrc.slice(
   combatSrc.indexOf('private resolve()'),
 );
 check('attackIcons reads the raw roll', /countIcons\(c\.attackRoll/.test(attackIconsBody), true);
-check('and nothing else does', (combatSrc.match(/countIcons\(c\.attackRoll/g) ?? []).length, 1);
+// TWO readers now, not one. eyeContest is the second, and it is not a competing
+// total: it derives the {Eye} SPLIT that attackIcons and attackIconsPerDie both
+// consume, so it sits upstream of both rather than beside them. Still pinned to
+// a hard number, because the rule this guards is unchanged -- a THIRD reader
+// deriving its own total is exactly what must not happen, and would fail here.
+check('and only attackIcons and the contest derivation do',
+  (combatSrc.match(/countIcons\(c\.attackRoll/g) ?? []).length, 2);
 // Pulse and Ion Weapons trade {Lightning} for {Heavy Hit} inside the same
 // single reader, so the attack-step summary and resolve() can never disagree
 // about the exchange. Ion only fires against a target bearing a Fragile Token.
@@ -350,10 +356,25 @@ check('the swap count is written for the notes', /c\.lightningSwapped = ex \? co
 // 503 Close Assault later folded a FREE swap in beside the Command-Token one
 // (Math.max of the two, so neither double-counts an icon). The outer clamp is
 // the guarantee and still has to hold: no exchange may outlive the Eyes.
+// Both now live in eyeContest, and are matched INSIDE it rather than anywhere in
+// the file -- a tighter assertion than the one this replaces, which would have
+// been satisfied by the arithmetic sitting anywhere at all.
+const eyeContestBody = (() => {
+  const a = combatSrc.indexOf('private eyeContest(c: Ctx)');
+  const b = combatSrc.indexOf('private attackIconsPerDie');
+  if (a < 0 || b <= a) throw new Error('eyeContest slice runs backwards or is missing');
+  return combatSrc.slice(a, b);
+})();
 check('the exchange is clamped to the Eyes actually showing',
-  /Math\.min\([^;]{0,80}counts\.eye \?\? 0\)/.test(combatSrc), true);
+  /Math\.min\(Math\.max\(paid, free\), eyes\)/.test(eyeContestBody), true);
+check('and "eyes" is the roll\'s own Eye count, so the clamp means what it says',
+  /const eyes = counts\.eye \?\? 0;/.test(eyeContestBody), true);
 check('and the free swap cannot double-count with the paid one',
-  /Math\.max\(c\.eyeSwaps \?\? 0, free\)/.test(combatSrc), true);
+  /Math\.max\(paid, free\)/.test(eyeContestBody), true);
+// The attacker's assignment is clamped to the contest for the same reason the
+// exchange is clamped to the Eyes: a Focus reroll can shrink it underneath.
+check('and the attacker\'s assignment is clamped to what is contested',
+  /Math\.min\(Math\.max\(c\.eyeToLight \?\? 0, 0\), contested\)/.test(eyeContestBody), true);
 check('a fresh roll clears the exchange', /c\.eyeSwaps = 0;/.test(combatSrc), true);
 check('Chef is gated on a Melee Action', /timingOf\(c\.action\) !== 'melee'/.test(combatSrc), true);
 check('Chef needs a face-up token', /statusCount\(c\.attacker\.statuses, 'command'\)/.test(combatSrc), true);

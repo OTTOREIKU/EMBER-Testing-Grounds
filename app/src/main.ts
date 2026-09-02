@@ -5,7 +5,7 @@ import { alertDialog, choiceDialog, confirmDialog, promptDialog } from './dialog
 import { gameResult, isLowValue, newTaskState, normaliseTasks, taskItemsFor, zoneCentreGrid, type GameResult, type TaskItem, type TaskState } from './tasks';
 import { DiceTray } from './dice';
 import { importSquadFile } from './importer';
-import { factionColour, squadColour } from './icons';
+import { factionColour, ICON_BURST, squadColour } from './icons';
 import { ammoHolder, applyRemote, check, onPerformed, onRefused, perform, type Command, onBeforeApply } from './commands';
 import { installDiagnostics, noteCommand, noteRefusal } from './diagnostics';
 import { openBoardReport } from './reportui';
@@ -3512,7 +3512,7 @@ async function init() {
     }
     const scope = explosionScope(action, data.actionTranslation(action.id)?.english ?? undefined);
     body.innerHTML = `<div class="attack-helper">
-      <div class="ah-head"><b><i class="btn-ico">💥</i> ${escapeHtml(detonateHeading(name, proj.label))}</b>
+      <div class="ah-head"><b>${ICON_BURST} ${escapeHtml(detonateHeading(name, proj.label))}</b>
         <span class="dim">R${range} from ${escapeHtml(proj.label)}</span></div>
       <p class="ah-los">Explosion damage ignores line of sight and facing, and the defender gets
         no Terrain or Unit Protection. Only the defender may spend Link to Focus.</p>
@@ -3621,7 +3621,7 @@ async function init() {
 
     const draw = (): void => {
       body.innerHTML = `<div class="attack-helper">
-        <div class="ah-head"><b><i class="btn-ico">💥</i> ${escapeHtml(detonateHeading(name, proj.label))}</b>
+        <div class="ah-head"><b>${ICON_BURST} ${escapeHtml(detonateHeading(name, proj.label))}</b>
           <span class="dim">${range === 0 ? 'this grid' : `R${range}`} from ${escapeHtml(proj.label)}</span></div>
         <p class="ah-los">${escapeHtml(text)}</p>
         <div class="ah-step">
@@ -5101,7 +5101,7 @@ async function init() {
       void startMove(target.uid, { range: maneuverRange(data, target), label: 'Maneuver', maneuver: true }, () => onChanged());
       return;
     }
-    await alertDialog({ title: spec.name, body: verdict.ok ? log : `${log}\n\n⚠ ${verdict.why}` });
+    await alertDialog({ title: spec.name, body: verdict.ok ? log : `${log}\n\n${verdict.why}` });
   }
 
   async function removeUnit(uid: number): Promise<void> {
@@ -5613,7 +5613,7 @@ async function init() {
   function renderCombatIdle(): void {
     const body = document.getElementById('combat-body')!;
     body.innerHTML = `<p class="dim combat-idle">No attack in progress. Pick a unit, then use
-      <b>⌖ Attack…</b> or <b>💥 Detonate…</b> on one of its actions in the Details tab.</p>`;
+      <b>Attack…</b> or <b>Detonate…</b> on one of its actions in the Details tab.</p>`;
   }
 
   function renderUnitLog(): void {

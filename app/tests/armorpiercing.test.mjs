@@ -379,10 +379,15 @@ function defenceStepHtml(p) {
 }
 // The rendered PARAGRAPH, not the whole step: the step also draws the running
 // log, and a plain search over it would pass on the log line alone and claim
-// the pool was explained when nothing sat next to it. Keyed on the paragraph's
-// own icon, which nothing else in the step uses.
+// the pool was explained when nothing sat next to it.
+//
+// Keyed on the paragraph's own CLASS. It used to key on the 🎯 emoji that
+// opened the line, which stopped existing when the emoji were swept out for
+// flat SVG - so the line got a class of its own, which is a better handle than
+// a character anyway: `ah-fragile` is shared with the Fragile Token line and
+// the two say different things.
 const apLine = (html) => {
-  const i = html.indexOf('🎯');
+  const i = html.indexOf('ah-pierce');
   return i < 0 ? '' : html.slice(i, html.indexOf('</p>', i));
 };
 {
@@ -462,6 +467,11 @@ function head(eyebrow: string, title: string, sub: string, _mine: boolean): stri
   return \`<head>\${eyebrow}|\${title}|\${sub}</head>\`;
 }
 function ensureScript(s: any): any { return s.script ?? (s.script = {}); }
+// The roll button carries an inline SVG from icons.ts now, where it used to
+// carry a dice emoji. Stubbed rather than sliced: what this file is about is
+// what the panel SAYS, and a real 300-character <svg> in every assertion's
+// haystack would only make a failure harder to read.
+const ICON_DICE = '<svg data-icon="dice"></svg>';
 // The real one also walks loanedParts; the fixture holds its weapons itself.
 function actionOn(ctx: any, t: any, actionId: string): any {
   for (const id of Object.values(t.mech ?? {})) {

@@ -406,6 +406,14 @@ export interface BoardMapDef extends CustomMap {
   name: LangText;
 }
 
+// dice.json's own shape, plus the offset rules it carries alongside the faces.
+// `DiceData` in types.ts covers the faces for the board's tray; this adds the
+// prose the reference needs and that nothing else reads.
+export interface DiceReference {
+  dice: Record<string, { sides: number; color: string; role: string; faces: { type: string; hollow?: boolean; part?: string }[][] }>;
+  offsetRules: Record<string, string>;
+}
+
 export interface GameData {
   cards: Card[];
   byId: Map<string, Card>;
@@ -428,6 +436,11 @@ export interface GameData {
   secondary: SecondaryTask[];
   zoneData: ZoneData;
   play: PlayData;
+  // The physical dice: five colours, 38 faces between them, and the three rules
+  // that say what an icon does once it is rolled. Null only if the file failed
+  // to load, which the Dice section treats as "nothing to show" rather than an
+  // error - the rest of the reference must still open.
+  dice: DiceReference | null;
   commonActions: CommonAction[];
   extraTicks: ExtraTickGrant[];
   overload: OverloadGrant[];
@@ -514,7 +527,7 @@ function applyTactics(cards: Card[], table: Record<string, TacticEntry>): void {
 }
 
 export async function loadData(): Promise<GameData> {
-  const [cards, terrain, boardMaps, boxes, rawKeywords, patch, boxStatus, qrIds, mech, xlate, names, missions, environments, tactics, play, secondary, zoneData, facPatch, boxPatch, common, ammoPatch, statPatch, actionPatch, factionData, extraCards] = await Promise.all([
+  const [cards, terrain, boardMaps, boxes, rawKeywords, patch, boxStatus, qrIds, mech, diceRef, xlate, names, missions, environments, tactics, play, secondary, zoneData, facPatch, boxPatch, common, ammoPatch, statPatch, actionPatch, factionData, extraCards] = await Promise.all([
     fetch(dataUrl('cards.json')).then((r) => r.json() as Promise<Card[]>),
     fetch(dataUrl('terrain_layouts.json')).then((r) => r.json() as Promise<TerrainData>),
     // Optional, and empty until a map is authored and committed: a missing or
@@ -536,6 +549,9 @@ export async function loadData(): Promise<GameData> {
     fetch(dataUrl('mechanics.json'))
       .then((r) => (r.ok ? (r.json() as Promise<{ mechanics: MechanicDef[] }>) : { mechanics: [] }))
       .catch(() => ({ mechanics: [] as MechanicDef[] })),
+    fetch(dataUrl('dice.json'))
+      .then((r) => (r.ok ? (r.json() as Promise<DiceReference>) : null))
+      .catch(() => null),
     fetch(dataUrl('action_translations.json'))
       .then((r) => (r.ok ? (r.json() as Promise<ActionTranslations>) : { translations: {} }))
       .catch(() => ({ translations: {} }) as ActionTranslations),
@@ -711,6 +727,7 @@ export async function loadData(): Promise<GameData> {
       deployments: zoneData.deployments ?? [],
       missionDeployment: zoneData.missionDeployment ?? {},
     },
+    dice: diceRef && diceRef.dice ? diceRef : null,
     play: {
       phases: play.phases ?? [],
       timings: play.timings ?? [],

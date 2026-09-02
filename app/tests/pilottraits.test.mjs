@@ -207,6 +207,135 @@ console.log('\nPilot traits, against the shipped cards and dice\n');
   if (!closeAssault) throw new Error('card 503 is missing from cards.json');
 }
 
+// ---------- 027 AC-32M Marksman Rifle — 点射 Single Shot ----------
+//
+// "{Eye} counts as {2 Light Hit}" (zh: {眼睛}视为{2轻击}) — the only exchange in
+// the box that pays MORE than one icon for a die, and the last of the eleven
+// {Eye} cards to get a reader at all.
+//
+// A Part, not a pilot, so it does not belong to this file by subject. It lives
+// here because this is where the attack-icon harness is, and the block above
+// already drives card 503 off the real cards.json for exactly that reason.
+{
+  const helper = new A.Helper(data, dice);
+  const rifle = byId.get('027');
+  if (!rifle) throw new Error('card 027 is missing from cards.json');
+  const single = (rifle.actions ?? [])[0];
+
+  check('027 is the Marksman Rifle, and Single Shot is the Action that prints the clause',
+    [rifle.name.en, single.id, single.type], ['AC-32M Marksman Rifle', '027_A', 'Firing']);
+  check('and the printed text is the one this reader was written against',
+    [/\{眼睛\}视为\{2轻击\}/.test(single.description.zh),
+      /\{Eye\}[^.]*2 \{Light Hit\}/.test(single.description.en)], [true, true]);
+
+  // The RATE is the whole point of the reader: a boolean could not say "2".
+  check('the reader returns the rate, not a verdict', A.eyeLightExchangeOf(single), 2);
+  check('and 0 for an Action that prints no exchange',
+    A.eyeLightExchangeOf({ id: 'X_B', type: 'Firing', description: { en: 'Shoot it.', zh: '射击。' } }), 0);
+  // A rate-1 sentence must buy nothing here: FPA-04 prints the same wording
+  // without a digit, and a reader that took it would put two claims on one
+  // {Eye}. This does NOT pin the \d+ spelling -- \d* returns 0 too, since the
+  // capture would be '' and Number('') is 0. What it pins is that a bare match
+  // is not defaulted to 1, which is the mutation that would actually break it.
+  check('a rate-1 sentence buys no exchange from this reader',
+    A.eyeLightExchangeOf({ id: 'X_C', type: 'Melee', description: { zh: '·【攻击姿态】近战动作{眼睛}视为{轻击}。', en: '' } }), 0);
+
+  const mech027 = (uid, over = {}) => ({
+    uid, side: uid === 1 ? 's1' : 's2', kind: 'mech', label: `M${uid}`, col: 3, row: 3, size: 3, facing: 0,
+    stance: 'offensive', mech: { torso: '002', rightHand: '027', pilot: 'FPA-05' },
+    partStates: { torso: 'intact', rightHand: 'intact' }, ...over,
+  });
+  const eyes = [{ color: 'red', face: 7 }, { color: 'yellow', face: 6 }];
+  const shot = (over = {}) => ({
+    attacker: mech027(1), defender: mech027(2), action: single, attackRoll: eyes, eyeSwaps: 0, ...over,
+  });
+
+  const fired = helper.attackIcons(shot());
+  check('Single Shot pays TWO Light Hits for every {Eye}',
+    [fired.eye ?? 0, fired.lightHit ?? 0, fired.heavyHit ?? 0], [0, 4, 0]);
+
+  const plain = helper.attackIcons(shot({ action: { id: 'X_B', type: 'Firing', size: 'm', name: { en: 'Shot' } } }));
+  check('and another Firing Action off the same Mech leaves the Eyes alone',
+    [plain.eye ?? 0, plain.lightHit ?? 0], [2, 0]);
+
+  // ---------- the ordering: an INTERIM DEFAULT, pinned as one ----------
+  //
+  // A heavy source still takes its {Eye} first. At rate 1 that was because a
+  // Heavy Hit is strictly better; at rate 2 it is NOT, and the rulebook does not
+  // back it either: 4.4.1 step 6 (p51) runs the Exchange AFTER both rolls and
+  // says "Each Dice may only be Exchanged once", which makes this a conflict the
+  // FAQ resolves the same way three times over (A5, A6, D1) -- only one may be
+  // CHOSEN, by the attacker, who can see the Defence Roll by then.
+  //
+  // So these two assertions are a CHANGE DETECTOR, not an endorsement. When the
+  // attacker is offered the choice the way ZPA-35 Chef already is, they are the
+  // ones that should fail, and they should be rewritten rather than deleted.
+  const paid = helper.attackIcons(shot({ eyeSwaps: 1 }));
+  check('a heavy claim takes its {Eye} first, and the rifle pays 2 for the rest',
+    [paid.heavyHit ?? 0, paid.lightHit ?? 0, paid.eye ?? 0], [1, 2, 0]);
+  const bothPaid = helper.attackIcons(shot({ eyeSwaps: 2 }));
+  check('and with enough heavy claims the rifle gets nothing',
+    [bothPaid.heavyHit ?? 0, bothPaid.lightHit ?? 0], [2, 0]);
+
+  // ---------- the per-die replay ----------
+  //
+  // Both Light Hits ride the ONE die that rolled the {Eye}, which is what makes
+  // a single Dodge cancel the pair — correct, because a Dodge offsets the die.
+  check('the per-die tally replays the rifle, both Hits on the one die',
+    helper.attackIconsPerDie(shot()), [{ heavy: 0, light: 2 }, { heavy: 0, light: 2 }]);
+  check('and the per-die heavy claim wins the same race the totals do',
+    helper.attackIconsPerDie(shot({ eyeSwaps: 1 })), [{ heavy: 1, light: 0 }, { heavy: 0, light: 2 }]);
+
+  // ---------- the contest, and the attacker's answer to it ----------
+  //
+  // Rulebook 4.4.1 step 6 (p51): the Exchange runs after both rolls and before
+  // offsetting, and "Each Dice may only be Exchanged once". Card 503 Close
+  // Assault reads every {Eye} as a Heavy Hit; this rifle reads the same {Eye}
+  // as 2 Light Hits. Both are printed 视为 -- automatic -- so they genuinely
+  // collide, and the FAQ answers that shape three times over (A5, A6, D1):
+  // only one may be CHOSEN. c.eyeToLight is the attacker's answer.
+  //
+  // Driven off the real 503, not a fixture, for the reason the block above
+  // gives: a fixture would pass against a reader keyed on the wrong card.
+  const armed = (over = {}) => shot({
+    attacker: mech027(1, { mech: { torso: '503', rightHand: '027', pilot: 'FPA-05' } }),
+    ...over,
+  });
+
+  check('503 and the rifle both read the same {Eye}, so 2 are contested',
+    (({ claim, contested, rate }) => [claim, contested, rate])(helper.eyeContest(armed())),
+    [2, 2, 2]);
+
+  check('unassigned, the contested {Eye} default to the conservative heavy arm',
+    [helper.attackIcons(armed()).heavyHit ?? 0, helper.attackIcons(armed()).lightHit ?? 0], [2, 0]);
+
+  const one = armed({ eyeToLight: 1 });
+  check('assigning one hands it to the rifle and leaves the other a Heavy Hit',
+    [helper.attackIcons(one).heavyHit ?? 0, helper.attackIcons(one).lightHit ?? 0, helper.attackIcons(one).eye ?? 0],
+    [1, 2, 0]);
+  check('and the per-die replay splits it the same way, so Dodge Enhancement still reaches both',
+    helper.attackIconsPerDie(one), [{ heavy: 1, light: 0 }, { heavy: 0, light: 2 }]);
+
+  const both = armed({ eyeToLight: 2 });
+  check('assigning both gives the rifle everything',
+    [helper.attackIcons(both).heavyHit ?? 0, helper.attackIcons(both).lightHit ?? 0], [0, 4]);
+  check('and the per-die replay agrees', helper.attackIconsPerDie(both),
+    [{ heavy: 0, light: 2 }, { heavy: 0, light: 2 }]);
+
+  // A Focus reroll can shrink the {Eye} count under an assignment already made,
+  // so the split is clamped rather than trusted.
+  check('an over-large assignment is clamped to what is actually contested',
+    [helper.attackIcons(armed({ eyeToLight: 99 })).lightHit ?? 0,
+      helper.attackIcons(armed({ eyeToLight: -5 })).heavyHit ?? 0], [4, 2]);
+
+  // A PAID Chef token bought its {Eye}; the rifle may not steal it back.
+  check('a paid swap is excluded from the contest, so its token is never wasted',
+    helper.eyeContest(armed({ eyeSwaps: 1 })).contested, 1);
+
+  check('with no rifle in the Action there is nothing to contest, and nothing is asked',
+    helper.eyeContest(armed({ action: { id: 'X_B', type: 'Firing', size: 'm', name: { en: 'Shot' } } })).contested, 0);
+}
+
 // ---------- LPA-23-2 Onyx Mellow Chord — 装饰音 Grace Note ----------
 //
 // "When piloted Mech performs a Firing Action, if the target is within 3 grids,

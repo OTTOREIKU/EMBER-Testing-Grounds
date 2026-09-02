@@ -40,7 +40,11 @@ check('the free hands come from the same reader the Black Box rules use',
   /const hands = freehandSlots\(data, t, taken, loans\);/.test(units), true);
 
 // ---------- It is reported, not silent ----------
-check('the attack panel says what the hand bought', /✋ \$\{use\.note\}/.test(combat), true);
+// Keyed on the note itself, not on the icon that precedes it: this read `✋`
+// until the emoji sweep replaced it with ICON_BLOCKED, and the icon is the part
+// most likely to change again.
+check('the attack panel says what the hand bought',
+  /<p class="ah-los">\$\{ICON_BLOCKED\} \$\{use\.note\}\.<\/p>/.test(combat), true);
 check('and still names the bonus when no hand can be spared',
   /const sup = freehandSupportNote\(this\.data, c\.attacker, c\.action\);/.test(combat), true);
 

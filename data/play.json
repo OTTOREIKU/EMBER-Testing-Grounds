@@ -31,7 +31,7 @@
    ],
    "cannot": [
     "Nothing moves or attacks in this phase.",
-    "You cannot change a dial once the phase ends, so commit carefully."
+    "You cannot change a dial once the phase ends."
    ]
   },
   {
@@ -64,7 +64,7 @@
     "Players alternate choosing which drone resolves next, starting with the First Player."
    ],
    "cannot": [
-    "You do not choose their targets. Automatic Actions are forced onto the nearest enemy, so positioning is the only control you have.",
+    "You do not choose their targets. Automatic Actions are forced onto the nearest enemy.",
     "Drones that already acted on a Command this round do not act again."
    ]
   },
@@ -106,37 +106,37 @@
    "id": "swift",
    "name": "Swift",
    "order": 1,
-   "text": "The first Timing to resolve. A Mech set to Swift acts before everything else, which is how you win a race to an objective or strike before a slower enemy can answer."
+   "text": "Resolves first, before every other Timing. A Mech set here performs its Swift Actions."
   },
   {
    "id": "melee",
    "name": "Melee",
    "order": 2,
-   "text": "Resolves second. Set this to use Melee actions, which is also how you create a Melee Lock on an adjacent enemy."
+   "text": "Resolves second. A Mech set here performs its Melee Actions. Melee Lock is a separate rule and does not depend on this Timing: it needs a Melee Action, Adjacency and Line of Sight, and every Mech not in Shutdown Stance has the common Punch/Kick Action (4.3.5)."
   },
   {
    "id": "projectile",
    "name": "Projectile",
    "order": 3,
-   "text": "Resolves third. Set this to launch Projectiles. What you launch this round does not resolve now, it waits for the Delay Phase."
+   "text": "Resolves third. A Mech set here performs its Projectile Actions. What it launches does not resolve in this phase: Projectiles and Deployables perform their Delayed Actions in the Delay Phase (3.6)."
   },
   {
    "id": "firing",
    "name": "Firing",
    "order": 4,
-   "text": "Resolves fourth. Set this for ranged attacks, which are the bulk of most squads' damage."
+   "text": "Resolves fourth. A Mech set here performs its Firing Actions."
   },
   {
    "id": "movement",
    "name": "Movement",
    "order": 5,
-   "text": "Resolves fifth. Set this for Movement actions such as Sprint, when repositioning matters more than shooting."
+   "text": "Resolves fifth. A Mech set here performs its Movement Actions, such as Sprint."
   },
   {
    "id": "tactical",
    "name": "Tactical",
    "order": 6,
-   "text": "Resolves last. Set this for Tactical actions such as repairs, scans and electronic warfare. Acting last means you already know what everyone else did."
+   "text": "Resolves last. A Mech set here performs its Tactical Actions, such as repairs, scans and electronic warfare."
   }
  ],
  "timingNotes": {
@@ -147,6 +147,7 @@
    "The order above never changes. Swift always resolves before Melee, Melee before Projectile, and so on.",
    "If two Mechs picked the same Timing, the Pilot with the LOWEST Initiative Value at that Timing acts first. That number is printed under the Timing icon on the dial and differs per pilot.",
    "If Timing and Initiative are both tied, the First Player's Mech goes first, then the sides alternate.",
+   "There are seven Action Types but only six Timings: Passive is an Action Type and cannot be chosen on the dial.",
    "Timings are not Stances. A Timing says when you act and what you may do; a Stance says how you are posturing and changes your dice."
   ]
  },

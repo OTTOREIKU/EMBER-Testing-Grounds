@@ -520,6 +520,31 @@ export function lightningExchangeOf(a: CardAction): 'pulse' | 'ion' | null {
   return null;
 }
 
+// 027 AC-32M Marksman Rifle, 点射 Single Shot: "{Eye} counts as {2 Light Hit}"
+// (zh: {眼睛}视为{2轻击}). Returns the RATE -- how many Light Hits one {Eye}
+// buys -- because this is the only exchange in the box that pays more than one
+// icon for a single die, and a bare boolean could not say so.
+//
+// Read off the ACTION, not the unit. Every other Eye reader here is unit-wide
+// (partSays), which is right for 503 and LPA-24 because those cards condition on
+// the Mech. This clause is printed on action 027_A alone, so a unit-wide reader
+// would hand the exchange to the Mech's punches and its other weapons too.
+//
+// A rate-1 sentence must yield NO exchange here. FPA-04 Hammerhead prints the
+// same wording without a digit ({眼睛}视为{轻击}), and although a pilot trait can
+// never arrive as a CardAction, reading it would put two claims on one {Eye}.
+// Note what does NOT carry that guarantee: spelling \d+ as \d* would still
+// return 0, because the capture would be '' and Number('') is 0. What holds the
+// line is returning Number(m[1]) rather than defaulting a bare match to 1 --
+// which is the mutation pilottraits.test.mjs actually pins.
+export function eyeLightExchangeOf(a: CardAction): number {
+  const zh = a.description?.zh ?? '';
+  const en = a.description?.en ?? '';
+  const m = /\{?眼睛\}?视为\{?(\d+)\s*轻击\}?/.exec(zh)
+    ?? /\{?Eye\}?[^.。]{0,24}?(\d+)\s*\{?Light\s*Hit\}?/i.exec(en);
+  return m ? Number(m[1]) : 0;
+}
+
 // Concussion and Wrecking SPEND the Attack Roll's Lightning instead of
 // trading it: each icon strips 1 Link from the target Mech, and Wrecking's
 // also count as damage. No printed action carries one of these alongside

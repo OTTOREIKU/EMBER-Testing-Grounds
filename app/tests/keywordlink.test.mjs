@@ -118,6 +118,52 @@ check('no override key silently appended a new entry', surprises, []);
 const stale = INTENTIONAL.filter((k) => !appended.includes(k));
 check('every pinned new-entry key is still a new entry', stale, []);
 
+// ---------- the word that carries the rule ----------
+//
+// OTTO read Concussion in the reference and asked what "reduces target by 1"
+// meant - 1 what? It meant Link, and the sentence never said so: the community
+// bundle our keywords.json is generated from had dropped the word. Three of
+// these lost exactly one load-bearing word each, and in every case the CHINESE,
+// the JAPANESE and the publisher's championship-legal English parts lists all
+// agreed on what it should be.
+//
+// The engine was right throughout - Armor Piercing really does take WHITE dice
+// off, Concussion really does drain Link - so nothing played wrong. Only the
+// sentence a player answers a rules question from was wrong, which is worse in
+// its own way: the board did the right thing and the glossary could not say why.
+console.log('\nthe word that carries the rule');
+
+const byEnName = (n) => keywords.find((k) => (k.en?.name ?? '').replace(/^[•·\s]+/, '') === n);
+const glossOf = (n) => (byEnName(n)?.en?.value ?? '');
+check('Concussion says WHICH value it reduces', /reduces target Link by 1/.test(glossOf('Concussion')), true);
+check('Armor Piercing says WHICH dice come off', /X white dice/.test(glossOf('Armor Piercing X')), true);
+check('Disarm names the HIT Part, not any target Part', /hit Part/.test(glossOf('Disarm')), true);
+
+// A different failure with the same result: the glyph never rendered, so the
+// reader saw literal text where a symbol belongs. `(Eye}` opens with a
+// PARENTHESIS, which no glyph pass matches.
+const GLYPHS = ['Eye', 'Dodge', 'Lightning', 'Defense', 'Heavy Hit', 'Light Hit'];
+const malformed = [];
+for (const k of keywords) {
+  const v = k.en?.value ?? '';
+  for (const g of GLYPHS) {
+    // an opening paren or bracket where a brace belongs, closed by a brace
+    if (new RegExp(`[(\\[]${g}\\}`, 'i').test(v)) malformed.push(`${k.en?.name ?? k.key}: ${g}`);
+  }
+}
+check('no glossary glyph is opened with the wrong bracket', malformed, []);
+// And the same sweep over card text, since the bundle produces both.
+const cardMalformed = [];
+for (const c of cards) {
+  const texts = [c.description?.en ?? '', ...(c.actions ?? []).map((a) => a.description?.en ?? '')];
+  for (const v of texts) {
+    for (const g of GLYPHS) {
+      if (new RegExp(`[(\\[]${g}\\}`, 'i').test(v)) cardMalformed.push(`${c.id}: ${g}`);
+    }
+  }
+}
+check('nor is one on a card', cardMalformed, []);
+
 // ---------- the reverse link: what NAMES a keyword, not just what prints it ----------
 //
 // A keyword sheet used to answer one question - which cards print this chip -
@@ -244,8 +290,11 @@ check('a printed bullet does not block a name match', rankFn('•Omni-direction 
 // number has no order to get wrong.
 check('no rendered pool is filtered without being ranked',
   (ref.match(/\.filter\(\((\w+)\) => match[A-Z]\w*\(\1, q\)\)(?!\.length)/g) ?? []).length, 0);
+// 19 since the Rules tab's badge learned to count the DICE as well. Pinned to a
+// number rather than "> 0" so the two assertions work as a pair: adding a pool
+// without ranking its RENDER still trips the one above.
 check('while the badge counts stay plain filters',
-  (ref.match(/\.filter\(\((\w+)\) => match[A-Z]\w*\(\1, q\)\)\.length/g) ?? []).length, 18);
+  (ref.match(/\.filter\(\((\w+)\) => match[A-Z]\w*\(\1, q\)\)\.length/g) ?? []).length, 19);
 check('and they all go through found()', (ref.match(/= found\(/g) ?? []).length >= 20, true);
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -10,7 +10,7 @@ import { ElectronicHelper, type EwAct } from './combat';
 import { tacticFitsPhase, tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { inContact, canStandIn, attackDirection, crushExchange, crushExchangeSpots, crushTargets, dissipationFor, extendPath, knockbackPath, largeGridOf, boardGrids, setBoardGrids, losBetween, losNote, smokeBlocks, pathCost, protectionFor, rangeBetween, reachableGrids, standingSpot, type LargeGrid } from './rules';
 import { breakAwayCost, breakAwayNote, canBeForceMoved, tetherCap, tetherNote } from './melee';
-import { factionColour, linkIcon, squadColour } from './icons';
+import { factionColour, ICON_DICE, linkIcon, squadColour } from './icons';
 import { iconSvg } from './dice';
 import type { PartSlot, CardAction, CounterRoll, DiceData, DieColor, Facing, GameState, RollbackPoint, Side, Stance, TerrainPiece, Timing, Token, ExtraTick, Opportunity } from './types';
 import { statusCount, gridsOf, newOpportunity, newScriptState, PHASES, STATUSES, TIMINGS, zonesOf } from './types';
@@ -1871,7 +1871,7 @@ function defensePanel(ctx: HudCtx): string {
           : `Roll your defence: <b>${esc(pool)}</b>. Both players see the dice land, and the attack resolves once they do.`}</p>
         ${apNote}
       </div>
-      <div class="tp-foot">${mirrored ? '' : `<button class="bigbtn" data-act="rolldefense">🎲 Roll ${esc(pool)}</button>`}</div>`;
+      <div class="tp-foot">${mirrored ? '' : `<button class="bigbtn" data-act="rolldefense">${ICON_DICE} Roll ${esc(pool)}</button>`}</div>`;
 }
 
 function panelHtml(ctx: HudCtx): string {

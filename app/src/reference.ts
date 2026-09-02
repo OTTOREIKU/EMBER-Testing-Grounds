@@ -7,6 +7,7 @@ import { SHAPE_NOTE, STATUSES, TIMINGS, type Card, type StatusDef, type TerrainM
 import { registerOffline } from './offline';
 import { costLabel, LENGTH_NAME, lengthOf, TICK_COST, timingOf } from './ticks';
 import { diceRow, maskGlyphs, tickCapsule } from './glyphs';
+import { iconSvg } from './dice';
 import { linkIcon } from './icons';
 import { cardDetail, cardRow, esc, keywordCard, kwLabel, linkKeywords, linksIn, mechBlocks, SLOT_LABEL, SPEED_MARK, useCardData } from './refcards';
 import { installDiagnostics } from './diagnostics';
@@ -344,8 +345,73 @@ const nmEnv = (e: EnvironmentCard) => e.name;
 const nmFaction = (f: (typeof data.factions)[number]) => f.name;
 const nmBox = (b: (typeof data.boxes)[number]) => b.name.en || b.name.zh || b.key;
 const nmMechanic = (m: (typeof data.mechanics)[number]) => m.name;
+const nmDie = (d: DieEntry) => `${d.colour} die`;
 const nmPlay = (x: { name: string }) => x.name;
 const nmStatus = (d: (typeof STATUSES)[number]) => d.label;
+
+// ---------- the dice (rulebook 2.4, and the offset rules with them) ----------
+//
+// The board has fetched dice.json since it was built; the REFERENCE never had
+// it, so five dice, 38 faces and the three offset rules were modelled in data
+// and shown nowhere - on the page whose whole job is making the game's
+// information findable.
+//
+// Drawn with the app's own glyphs rather than photographs of the dice. The
+// symbols are already flat SVG on currentColor, so a face costs nothing to
+// render and reads at any size; the die's own colour carries which die it is.
+
+interface DieEntry {
+  colour: string;
+  sides: number;
+  color: string;
+  role: string;
+  faces: { type: string; hollow?: boolean; part?: string }[][];
+}
+
+// White and yellow dice print their symbols DARK; the others print them light.
+const DARK_FACE = new Set(['white', 'yellow']);
+
+const SYMBOL_NAME: Record<string, string> = {
+  heavyHit: 'Heavy Hit', lightHit: 'Light Hit', defense: 'Defense',
+  dodge: 'Dodge', lightning: 'Lightning', eye: 'Eye', part: 'Part',
+};
+
+// The black die names its Parts in the data the way the code spells them, which
+// is not how a player reads them: `leftArm` is a field name, "Left Arm" is a
+// Part. Searching for either finds the die, because the raw key stays in the
+// haystack matchDie builds.
+const PART_NAME: Record<string, string> = {
+  torso: 'Torso', chassis: 'Chassis', leftArm: 'Left Arm',
+  rightArm: 'Right Arm', backpack: 'Backpack', any: 'Any Part',
+};
+
+function dieEntries(): DieEntry[] {
+  const d = data.dice;
+  if (!d) return [];
+  return Object.entries(d.dice).map(([colour, spec]) => ({ colour, ...spec }));
+}
+
+// What a face is called, so a search for "hollow heavy hit" or "blank" lands.
+function faceLabel(icons: DieEntry['faces'][number]): string {
+  if (!icons.length) return 'Blank';
+  const bits = icons.map((i) => {
+    const name = i.part ? PART_NAME[i.part] ?? `${i.part} Part` : SYMBOL_NAME[i.type] ?? i.type;
+    return i.hollow ? `hollow ${name}` : name;
+  });
+  // "double Light Hit" rather than "Light Hit x2": these labels are counted in
+  // the tally below, and "2 Light Hit x2" reads as an arithmetic mistake.
+  return bits.length === 2 && bits[0] === bits[1] ? `double ${bits[0]}` : bits.join(' + ');
+}
+
+// A tally of the whole die: "4 Heavy Hit - 2 hollow Heavy Hit - 1 Lightning".
+function dieTally(die: DieEntry): string {
+  const seen = new Map<string, number>();
+  for (const f of die.faces) {
+    const k = faceLabel(f);
+    seen.set(k, (seen.get(k) ?? 0) + 1);
+  }
+  return [...seen].map(([k, n]) => `${n} ${k}`).join(' · ');
+}
 
 // ---------- one predicate per pool, shared by the tab lists AND the badges ----------
 //
@@ -374,6 +440,13 @@ const matchCard = (c: Card, q: string): boolean => {
   const acts = (c.actions ?? []).map((a) => `${a.name.en ?? ''} ${a.description?.en ?? ''}`).join(' ');
   return norm(`${cardName(c)} ${c.id} ${c.type ?? ''} ${kw} ${acts}`).includes(q);
 };
+// Everything a reader might type at a die: its colour, what it is for, and
+// every symbol on it including the hollow ones. "dice" is in the haystack by
+// name because it is the word a player actually types, and the singular in
+// the entry's own label did not contain it - the Dice facet read 0 for "dice".
+const matchDie = (die: DieEntry, q: string): boolean =>
+  !q || norm(`${die.colour} die dice ${die.role} ${die.faces.map(faceLabel).join(' ')} ${
+    die.faces.flat().map((i) => `${i.part ?? ''} ${i.type}`).join(' ')}`).includes(q);
 const matchMechanic = (m: (typeof data.mechanics)[number], q: string): boolean =>
   !q || norm(`${m.name} ${m.text} ${m.ref ?? ''}`).includes(q);
 const matchPhase = (x: (typeof data.play.phases)[number], q: string): boolean =>
@@ -472,6 +545,8 @@ function tabCounts(q: string): Record<Tab, number> {
       data.play.timings.filter((x) => matchTiming(x, q)).length +
       data.play.stances.filter((x) => matchStance(x, q)).length +
       data.mechanics.filter((m) => matchMechanic(m, q)).length +
+      dieEntries().filter((d) => matchDie(d, q)).length +
+      Object.entries(data.dice?.offsetRules ?? {}).filter(([k, v]) => !q || norm(`${k} ${v}`).includes(q)).length +
       STATUSES.filter((d) => matchStatus(d, q)).length,
   };
 }
@@ -870,6 +945,56 @@ function render(): void {
       return `<svg class="tok-badge" viewBox="0 0 ${w} 26" width="${w}" height="26" aria-hidden="true">${body}
         <text x="${w / 2}" y="17" text-anchor="middle" font-size="9" font-weight="700" fill="#0f1216">${esc(def.icon)}</text></svg>`;
     };
+    // ---------- the dice ----------
+    const dice = found(dieEntries(), q, matchDie, nmDie);
+    const rules = data.dice?.offsetRules ?? {};
+    // The offset rules are searchable in their OWN right, not only as a footer
+    // under a die that happened to match: "penetration" is exactly what a reader
+    // types, and it appears in no die's face list, so before this it found
+    // nothing at all.
+    const matchedRules = Object.entries(rules).filter(
+      ([k, v]) => !q || norm(`${k} ${v}`).includes(q),
+    );
+    // The offset rules ride WITH the dice rather than sitting in Mechanics:
+    // they are the answer to "I rolled this, now what", and a reader looking at
+    // a Defense icon is one scroll from the sentence that says what it offsets.
+    // So they are shown whenever any die is shown, whether or not the query
+    // touched them - a search for "dice" showed the five dice and no rules,
+    // because none of the three sentences contains that word. A query that
+    // matches a rule and no die still shows the rule on its own. Only the
+    // MATCHED rules count towards the facet, because tabCounts counts them that
+    // way and the badge and the tab have to agree.
+    const shownRules = matchedRules.length ? matchedRules : dice.length ? Object.entries(rules) : [];
+    const offsetHtml = shownRules.length
+      ? `<article class="card die-rules">
+          <div class="card-title">Offsetting, and what a Hit still counts as</div>
+          <div class="card-body"><ul class="die-rulelist">${shownRules
+            .map(([k, v]) => `<li><b>${esc(k[0].toUpperCase() + k.slice(1))}</b> ${linkKeywords(v)}</li>`)
+            .join('')}</ul></div>
+        </article>`
+      : '';
+    const diceHtml = dice.length || shownRules.length
+      ? (dice.length ? `<p class="ref-count">${dice.length} ${dice.length === 1 ? 'die' : 'dice'}</p>` : '')
+        + dice.map((die) => {
+          const dark = DARK_FACE.has(die.colour);
+          const faces = die.faces
+            .map((icons) => `<span class="die-face${dark ? ' on-light' : ''}" style="background:${esc(die.color)}"
+                title="${esc(faceLabel(icons))}">${
+              icons.length ? icons.map((i) => iconSvg(i, 17)).join('') : '<i class="die-blank"></i>'
+            }</span>`)
+            .join('');
+          return `<article class="card die-card">
+            <div class="card-title"><span class="die-dot" style="background:${esc(die.color)}"></span>
+              ${esc(die.colour[0].toUpperCase() + die.colour.slice(1))} die
+              <span class="die-sides">d${die.sides}</span></div>
+            <div class="card-body">${esc(die.role)}</div>
+            <div class="die-faces">${faces}</div>
+            <div class="die-tally">${esc(dieTally(die))}</div>
+          </article>`;
+        }).join('')
+        + offsetHtml
+      : '';
+
     const tokenList = found(STATUSES, q, matchStatus, nmStatus);
     const tokenHtml = tokenList.length
       ? `<p class="ref-count">Tokens and states</p>` +
@@ -960,6 +1085,7 @@ function render(): void {
       { id: 'phases', label: 'Phases', n: phases.length, html: phaseHtml },
       { id: 'timings', label: 'Timings', n: timings.length, html: timingHtml },
       { id: 'stances', label: 'Stances', n: stances.length, html: stanceHtml },
+      { id: 'dice', label: 'Dice', n: dice.length + matchedRules.length, html: diceHtml },
       { id: 'tokens', label: 'Tokens', n: tokenList.length, html: tokenHtml },
       { id: 'mechanics', label: 'Mechanics', n: filtered.length, html: mechanicHtml },
     ];

@@ -718,7 +718,7 @@ function renderCombatIdle(): void {
   if (!body) return;
   body.innerHTML = attackHelper
     ? `<p class="dim combat-idle">No attack in progress. Open a unit's card in the Details tab and use
-       <b>⌖ Attack…</b> or <b>💥 Detonate…</b> on one of its Actions.</p>`
+       <b>Attack…</b> or <b>Detonate…</b> on one of its Actions.</p>`
     : '<p class="dim combat-idle">The dice data did not load, so attacks cannot be resolved here. Reload the page to try again.</p>';
 }
 

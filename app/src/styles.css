@@ -2024,7 +2024,9 @@ select.stance {
   border-radius: var(--radius-sm); font-size: 11px; padding: 3px 6px 3px 4px;
   font-weight: 700; letter-spacing: 0.3px; cursor: default;
 }
-.stance-lock { font-size: 8px; font-style: normal; opacity: 0.5; filter: grayscale(1); }
+/* Same story as .btn-ico: this muted a padlock emoji. It holds an SVG now. */
+.stance-lock { display: inline-flex; align-items: center; opacity: 0.55; margin-right: 2px; }
+.stance-lock svg { width: 9px; height: 9px; }
 .stance-offensive { color: #ff9d9d; }
 .stance-defensive { color: #9dc4ff; }
 .stance-mobility { color: #9dffb0; }
@@ -2483,7 +2485,30 @@ p.points { white-space: pre-line; }
   transition: filter 0.12s;
 }
 .ah-primary:hover { filter: brightness(1.08); }
-.btn-ico { font-style: normal; filter: grayscale(1); opacity: 0.7; }
+/* WAS an emoji muted with `filter: grayscale(1)`, which is what a desaturated
+   emoji looks like: muddy, differently shaped on every platform, and unable to
+   take an accent colour. The icons are inline SVG on currentColor now, so the
+   filter is gone and only the sizing is left. Kept as a class because the
+   combat window still wraps a couple of icons in it. */
+.btn-ico { font-style: normal; display: inline-flex; align-items: center; }
+.btn-ico svg { width: 13px; height: 13px; }
+
+/* The swept icons sit inline in a sentence or a button label, so they align to
+   the text rather than to the line box. */
+.ah-los > svg, .ah-protect > svg, .ah-fragile > svg {
+  width: 13px; height: 13px; vertical-align: -2px; margin-right: 3px;
+}
+/* SCOPED to the buttons that carry an icon beside a label. This was `button >
+   svg` for a day, and that also reached every icon-ONLY button that sizes its
+   svg but never pins its margin (.pp-cmp, .slot-pop, #btn-builder) - 5px of
+   right margin on a lone centred icon is the icon sitting visibly off. */
+.ah-primary > svg, .ah-alt > svg, .bigbtn > svg, .detonate-btn > svg {
+  width: 14px; height: 14px; vertical-align: -2px; margin-right: 5px;
+}
+/* The counter-roll's versus mark, which is the same bolt electronic warfare
+   uses. Gold, because it separates two squad names rather than labelling one. */
+.vs-bolt { display: inline-flex; align-items: center; color: var(--accent); margin: 0 4px; }
+.vs-bolt svg { width: 13px; height: 13px; }
 .ah-pool { display: flex; gap: 8px; margin: 6px 0; flex-wrap: wrap; }
 .ah-pool small { color: var(--text2); }
 .ah-roll { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; margin: 6px 0; }

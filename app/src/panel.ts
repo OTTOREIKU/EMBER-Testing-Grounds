@@ -1,7 +1,7 @@
 import type { Card, CardAction, Token } from './types';
 import { cardImageUrl, cardName, isDiscardCard, mechPartUrl, rulesLines, squadLabel, tabImageUrl, traitName, type GameData } from './data';
 import { inspectOnHover, linkMechanics } from './inspector';
-import { ICON_BOLT } from './icons';
+import { ICON_BOLT, ICON_BURST } from './icons';
 import { diceRow, diceText, expandGlyphs } from './glyphs';
 import { groupByFaction, openPartPicker } from './partpicker';
 import { type ActionWorld, canBeLoad, guidedActions, isCarrier, isElectronicAttack, knockbackOf, SLOT_LABEL, tokenCards } from './units';
@@ -628,7 +628,7 @@ export class Panel {
     if (available && t.kind === 'projectile' && a.type !== 'Passive') {
       const det = document.createElement('button');
       det.className = 'detonate-btn';
-      det.innerHTML = '<i class="btn-ico">💥</i> Detonate…';
+      det.innerHTML = `${ICON_BURST} Detonate…`;
       det.title = (a.redDice || a.yellowDice)
         ? 'Resolve this projectile: pick a unit in range and deal Explosion damage'
         : 'Resolve this projectile: apply its effect to the units in range';

@@ -1,11 +1,12 @@
 import type { GameData } from './data';
 import { cardName, discardFaceOf } from './data';
 import { iconSvg } from './dice';
+import { ICON_BLOCKED, ICON_BOLT, ICON_BURST, ICON_DICE, ICON_PIERCE, ICON_SHIELD, ICON_SIGNAL } from './icons';
 import { linkMechanics } from './inspector';
 import { SQUAD_ORDER, squadLabel } from './data';
 import type { Card, CardAction, CombatView, CounterRoll, DiceData, DiceIcon, DieColor, Duel, DuelIcon, GameRuleEffect, PartSlot, Side, SmokeScreen, TerrainPiece, Token, Facing } from './types';
 import { statusCount, STATUSES } from './types';
-import { aaRadarCovers, armorPiercing, armorPiercingNote, attackReactionsOf, auraEffectsOn, aurasOn, auraValueOn, automaticShieldFor, blueLightningDodges, earlyWarningCover, coolingBonus, denseArmorByText, eyesAreHeavyHits, pilotDiceBonus, ignoresLowProfile, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, noMeleeBackAttack, onHitRiders, STATUS_BY_ZH, missileGuidance, multiTargetLimit, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, snipeOn, isScanAction, scanStrips, suppressionOn, disarmOn, dragPrinted, denseArmorOn, designationsOn, electronicStrength, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, canAffordFocus, focusIsFree, hiddenByAlliedAura, keepsLinkOnPartLoss, maxLink, provokeWhy, preventsDamage, immobilizeChoiceOn, faceAwayOnHit, pursuesFragile, structureOf, trackingCover, TRACKING_SPOTTERS_NEEDED, pilotCard, pilotIs, repeatersFor, SLOT_LABEL, tetherStrike, treatedAsOffensive, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
+import { aaRadarCovers, armorPiercing, armorPiercingNote, attackReactionsOf, auraEffectsOn, aurasOn, auraValueOn, automaticShieldFor, blueLightningDodges, earlyWarningCover, coolingBonus, denseArmorByText, eyeLightExchangeOf, eyesAreHeavyHits, pilotDiceBonus, ignoresLowProfile, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, noMeleeBackAttack, onHitRiders, STATUS_BY_ZH, missileGuidance, multiTargetLimit, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, snipeOn, isScanAction, scanStrips, suppressionOn, disarmOn, dragPrinted, denseArmorOn, designationsOn, electronicStrength, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, canAffordFocus, focusIsFree, hiddenByAlliedAura, keepsLinkOnPartLoss, maxLink, provokeWhy, preventsDamage, immobilizeChoiceOn, faceAwayOnHit, pursuesFragile, structureOf, trackingCover, TRACKING_SPOTTERS_NEEDED, pilotCard, pilotIs, repeatersFor, SLOT_LABEL, tetherStrike, treatedAsOffensive, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
 import { timingOf } from './ticks';
 import { inArc, largeGridOf, losNote, protectionFor, rangeBetween, standingSpot } from './rules';
 import type { Command } from './commands';
@@ -772,6 +773,17 @@ interface Ctx {
   // Hits on the last derivation. Same reason as lightningSwapped — derived, not
   // stored as a decision, so a re-roll cannot leave a stale count behind.
   fierceSwapped?: number;
+  // 027 Marksman Rifle: how many {Eye} 点射 Single Shot traded for Light Hits on
+  // the last derivation. Counts EYES, not the Light Hits they bought -- the rate
+  // is re-read from the action where it is needed, so one number cannot drift
+  // out of step with the other.
+  marksmanSwapped?: number;
+  // How many CONTESTED {Eye} the attacker handed to the rifle instead of the
+  // free heavy arm (rulebook 4.4.1 step 6, "Each Dice may only be Exchanged
+  // once"). Absent means none, which is the conservative arm. Combat-local and
+  // never mirrored, exactly like eyeSwaps: a watching client is sent the
+  // settled resolution, not the inputs that produced it.
+  eyeToLight?: number;
   // LPA-24 Sealock: how many {Eye} 追击 Pursuit turned into Heavy Hits on the
   // last derivation. Derived for the same reason as the two above, and needed
   // at all only so the note can name the Fragile Token — the swap itself rides
@@ -2017,6 +2029,33 @@ export class AttackHelper {
   // Anything this cannot attribute is simply left out — offsetIcons still
   // counts it, it just cannot be cancelled as part of a die, which errs
   // against the defender rather than inventing a cancellation.
+  // THE CONTESTED {Eye}, answered ONCE and shared. attackIcons, the per-die
+  // replay and the offer button all ask this, because three derivations of the
+  // same split would be three things that can drift -- the lesson lowProfileOn
+  // already records further down.
+  //
+  // `claim` is how many {Eye} the heavy arms take before any assignment;
+  // `contested` is how many of those the rifle could take instead. A PAID Chef
+  // token is deliberately excluded from the contest: it bought that {Eye}, and
+  // letting the rifle steal it would waste a Command Token the player already
+  // spent. (Moot in the shipped box -- Chef is Melee-only and 027_A is a Firing
+  // Action -- but the clamp costs nothing and states the intent.)
+  private eyeContest(c: Ctx): { claim: number; contested: number; toLight: number; rate: number } {
+    const counts = this.countIcons(c.attackRoll ?? [], treatedAsOffensive(c.attacker, c.defender));
+    const eyes = counts.eye ?? 0;
+    const free = eyesAreHeavyHits(this.data, c.attacker) || pursuesFragile(this.data, c.attacker, c.defender)
+      ? eyes
+      : 0;
+    const paid = c.eyeSwaps ?? 0;
+    const claim = Math.min(Math.max(paid, free), eyes);
+    const rate = eyeLightExchangeOf(c.action);
+    const contested = rate ? Math.max(0, claim - paid) : 0;
+    // Clamped rather than trusted: a Focus reroll can shrink the {Eye} count
+    // under an assignment made before it.
+    const toLight = Math.min(Math.max(c.eyeToLight ?? 0, 0), contested);
+    return { claim, contested, toLight, rate };
+  }
+
   private attackIconsPerDie(c: Ctx): { heavy: number; light: number }[] {
     const upgrade = treatedAsOffensive(c.attacker, c.defender);
     const swapLightning = !!this.lightningSwap(c);
@@ -2030,13 +2069,25 @@ export class AttackHelper {
     // is a free {Eye}->{Heavy Hit} like 503's, so leaving it out here would put
     // its Heavy Hits on no die at all and Dodge Enhancement could never cancel
     // them — the exact bug the comment above records for 503.
-    let eyesLeft = eyesAreHeavyHits(this.data, c.attacker) || pursuesFragile(this.data, c.attacker, c.defender)
-      ? Number.POSITIVE_INFINITY
-      : c.eyeSwaps ?? 0;
+    //
+    // This used to be POSITIVE_INFINITY for the free arm. It cannot be any
+    // more: an {Eye} the attacker assigned to the rifle is no longer the heavy
+    // arm's to take, so the budget has to be the real number.
+    const contest = this.eyeContest(c);
+    let eyesLeft = contest.claim - contest.toLight;
     // FPA-04 Fierce Assault, replayed here for the same reason and in the same
     // order: the heavy budget above is offered each {Eye} first, and only what
     // it leaves becomes a Light Hit.
     const fierce = this.fierceAssault(c);
+    // 027 Marksman Rifle, replayed here for the reason the block above records
+    // for 503 and FPA-04: Light Hits that belonged to no die could never be
+    // cancelled by Dodge Enhancement. Both of this Eye's Light Hits ride the one
+    // die that rolled it, so ONE Dodge Enhancement die cancels the pair.
+    // That is a property of Dodge Enhancement, NOT of a plain {Dodge}: this
+    // grouping only reaches offsetIcons when c.dodgeDieUsed is set. Under the
+    // base rule a {Dodge} offsets one ICON, and p51 is explicit that 2 Light
+    // Hits are two separate Icons -- so ordinarily the pair costs two offsets.
+    const rifle = eyeLightExchangeOf(c.action);
     const out: { heavy: number; light: number }[] = [];
     for (const d of c.attackRoll ?? []) {
       let heavy = 0;
@@ -2049,6 +2100,7 @@ export class AttackHelper {
         else if (icon.type === 'lightning' && swapLightning) heavy++;
         else if (icon.type === 'eye' && eyesLeft > 0) { heavy++; eyesLeft--; }
         else if (icon.type === 'eye' && fierce) light++;
+        else if (icon.type === 'eye' && rifle) light += rifle;
       }
       out.push({ heavy, light });
     }
@@ -2065,8 +2117,10 @@ export class AttackHelper {
     // widens the free arm instead of growing an arm of its own, so the clamp
     // below keeps a Chef token and this trait from spending one {Eye} twice.
     const pursuit = pursuesFragile(this.data, c.attacker, c.defender);
-    const free = eyesAreHeavyHits(this.data, c.attacker) || pursuit ? counts.eye ?? 0 : 0;
-    const swaps = Math.min(Math.max(c.eyeSwaps ?? 0, free), counts.eye ?? 0);
+    // The heavy arms take their claim MINUS whatever the attacker assigned to
+    // the rifle. eyeContest is the one place that split is worked out.
+    const contest = this.eyeContest(c);
+    const swaps = contest.claim - contest.toLight;
     c.pursuitSwapped = pursuit ? swaps : 0;
     if (swaps) counts = { ...counts, eye: (counts.eye ?? 0) - swaps, heavyHit: (counts.heavyHit ?? 0) + swaps };
     // FPA-04 Fierce Assault is applied LAST, to the {Eye} no HEAVY source has
@@ -2078,6 +2132,46 @@ export class AttackHelper {
     const fierce = this.fierceAssault(c) ? counts.eye ?? 0 : 0;
     c.fierceSwapped = fierce;
     if (fierce) counts = { ...counts, eye: 0, lightHit: (counts.lightHit ?? 0) + fierce };
+    // 027 AC-32M Marksman Rifle, 点射 Single Shot: "{Eye} counts as {2 Light
+    // Hit}". Applied rather than offered, on the same grounds Fierce Assault and
+    // the Pulse/Ion trades are: a leftover {Eye} buys the attacker nothing in
+    // this pipeline.
+    //
+    // Its PLACE, after the heavy sources, is an INTERIM DEFAULT -- not a ruling,
+    // and not what the rulebook says. Recorded here so nobody mistakes it for
+    // settled.
+    //
+    // What the rulebook actually says (4.4.1 step 6 Damage Resolution, p51):
+    // the Exchange runs AFTER both rolls and the Focus rerolls, BEFORE
+    // offsetting, and "Each Dice may only be Exchanged once". So when this card
+    // and a heavy source both claim one {Eye}, that is a real conflict over one
+    // die -- and the FAQ answers this shape identically three times (A5 two
+    // Freehand effects, A6 two rerolls of the same {Eye}, D1 two Surplus
+    // effects): only ONE may be CHOSEN. The chooser is the attacker, who by
+    // then can see the Defence Roll.
+    //
+    // It is a real choice, not a solvable one. p51 also says 2 Light Hits are
+    // TWO separate Icons and each {Dodge}/{Defense} offsets only one, so the
+    // rifle's pair costs the defender two offsets where a Heavy costs one --
+    // but a Heavy cannot be touched by {Defense} at all. Worse, "when Damage is
+    // offset by {Defense}, any Hit effect will take effect even if no
+    // Penetration occurs", so an attacker carrying on-hit riders can rationally
+    // WANT the soakable Lights. There is no single objective to maximise, which
+    // is exactly why the rules hand it to the player.
+    //
+    // So the attacker is ASKED. stepDefense offers the contested {Eye} once the
+    // Focus flow has run dry -- which is where 4.4.1 puts the Exchange, and the
+    // earliest point at which the choice can be made on information the rules
+    // actually give the player. Unassigned {Eye} default to the heavy arm, the
+    // conservative one, so a build that predates this card resolves as it did.
+    // The contest needs 027 alongside 503 or LPA-24; on every other Mech the
+    // rifle takes all of them uncontested and nothing is asked.
+    const rifle = eyeLightExchangeOf(c.action);
+    const marksman = rifle ? counts.eye ?? 0 : 0;
+    c.marksmanSwapped = marksman;
+    if (marksman) {
+      counts = { ...counts, eye: 0, lightHit: (counts.lightHit ?? 0) + marksman * rifle };
+    }
     const ex = this.lightningSwap(c);
     c.lightningSwapped = ex ? counts.lightning ?? 0 : 0;
     if (ex && counts.lightning) {
@@ -2225,7 +2319,7 @@ export class AttackHelper {
     const dodge = def.dodge ?? 0;
     const defense = def.defense ?? 0;
     const text: string[] = [];
-    if (c.protection && !c.surplusRound) text.push(`🛡 ${c.protectionNote}: defender rolled +${c.protection} White`);
+    if (c.protection && !c.surplusRound) text.push(`${c.protectionNote}: defender rolled +${c.protection} White`);
     if (lowProfile && dodge) {
       // Named, because neither of these sources is a Token the shooter can see
       // on the target: without a line the attacker watches their Eyes evaporate
@@ -2263,6 +2357,14 @@ export class AttackHelper {
     if (c.surplusRound === 0 && c.fierceSwapped) {
       const n = c.fierceSwapped;
       text.push(`Fierce Assault: ${c.attacker.label} is in Offensive Stance, so ${n} [Eye] counted as ${n === 1 ? 'a Light Hit' : 'Light Hits'} on this Melee Action`);
+    }
+    if (c.surplusRound === 0 && c.marksmanSwapped) {
+      const n = c.marksmanSwapped;
+      const got = n * eyeLightExchangeOf(c.action);
+      const contest = this.eyeContest(c);
+      const held = contest.contested - contest.toLight;
+      text.push(`Single Shot: ${n} [Eye] counted as ${got} ${got === 1 ? 'Light Hit' : 'Light Hits'}`
+        + (held ? `, and ${held} kept as ${held === 1 ? 'a Heavy Hit' : 'Heavy Hits'} instead (4.4.1: each die Exchanges once)` : ''));
     }
     if (c.surplusRound === 0 && c.lightningSwapped) {
       const swapped = c.lightningSwapped;
@@ -2688,10 +2790,10 @@ export class AttackHelper {
       // reports what the spare hand bought rather than asking about it.
       (() => {
         const use = twoHandedUse(this.data, c.attacker, c.action);
-        if (use) return `<p class="ah-los">✋ ${use.note}.</p>`;
+        if (use) return `<p class="ah-los">${ICON_BLOCKED} ${use.note}.</p>`;
         // Only when the Action wants a hand and there is none to give.
         const sup = freehandSupportNote(this.data, c.attacker, c.action);
-        return sup ? `<p class="ah-los">✋ ${sup}.</p>` : '';
+        return sup ? `<p class="ah-los">${ICON_BLOCKED} ${sup}.</p>` : '';
       })()
     }`;
 
@@ -3286,7 +3388,7 @@ export class AttackHelper {
 
     const rollBtn = document.createElement('button');
     rollBtn.className = 'ah-primary';
-    rollBtn.innerHTML = '<i class="btn-ico">🎲</i> Roll Black Die';
+    rollBtn.innerHTML = `${ICON_DICE} Roll Black Die`;
     rollBtn.disabled = !this.mayDrive('attacker');
     rollBtn.addEventListener('click', () => {
       if (this.blackTimer) return;
@@ -3780,7 +3882,7 @@ export class AttackHelper {
     if (!c.attackRoll) {
       const roll = document.createElement('button');
       roll.className = 'ah-primary';
-      roll.innerHTML = '<i class="btn-ico">🎲</i> Roll attack dice';
+      roll.innerHTML = `${ICON_DICE} Roll attack dice`;
       roll.disabled = !this.mayDrive('attacker');
       roll.addEventListener('click', () => {
         void (async () => {
@@ -3788,6 +3890,7 @@ export class AttackHelper {
           c.attackRoll = await this.rollPool({ red: c.attackPool.red, yellow: c.attackPool.yellow }, 'Attack');
           // A fresh roll has fresh dice, so any Chef exchange belonged to the old one.
           c.eyeSwaps = 0;
+          c.eyeToLight = 0;
           this.render();
         })();
       });
@@ -3811,13 +3914,17 @@ export class AttackHelper {
       const perDie = this.attackIconsPerDie(c);
       const swapped = perDie.reduce((n, x) => n + x.heavy + x.light, 0)
         - ((atk.heavyHit ?? 0) + (atk.lightHit ?? 0));
-      const readsEye = (c.eyeSwaps ?? 0) > 0 || (c.fierceSwapped ?? 0) > 0 || (c.pursuitSwapped ?? 0) > 0 || swapped > 0;
+      const readsEye = (c.eyeSwaps ?? 0) > 0 || (c.fierceSwapped ?? 0) > 0 || (c.pursuitSwapped ?? 0) > 0
+        || (c.marksmanSwapped ?? 0) > 0 || swapped > 0;
       const readsLightning = !!c.lightningSwapped || !!this.lightningSwap(c);
       sum.textContent = `Effective: ${atk.heavyHit ?? 0}× Heavy, ${atk.lightHit ?? 0}× Light`
         + (atk.lightning && readsLightning ? `, ${atk.lightning}× Lightning` : '')
         + (atk.eye && readsEye ? `, ${atk.eye}× Eye` : '')
         + (c.eyeSwaps ? ` · ${c.eyeSwaps} exchanged by Chef` : '')
         + (c.fierceSwapped ? ` · ${c.fierceSwapped} [Eye] counted as Light (Fierce Assault)` : '')
+        + (c.marksmanSwapped
+          ? ` · ${c.marksmanSwapped} [Eye] counted as ${c.marksmanSwapped * eyeLightExchangeOf(c.action)} Light (Single Shot)`
+          : '')
         + swapNote;
 
       wrap.appendChild(sum);
@@ -3876,11 +3983,11 @@ export class AttackHelper {
         // table when the losses are silent.
         c.defender.stance === 'shutdown' ? ' · SHUTDOWN: the Armor still rolls, but hollow icons never count, there are no Dodge dice, and the attacker chose the Part (4.1)' : ''
       }.</p>
-      ${c.protection ? `<p class="ah-protect">🛡 ${c.protectionNote}. <b>+${c.protection} White</b> is already added to the pool below.</p>` : ''}
+      ${c.protection ? `<p class="ah-protect">${ICON_SHIELD} ${c.protectionNote}. <b>+${c.protection} White</b> is already added to the pool below.</p>` : ''}
       ${(() => {
         const frg = statusCount(c.defender.statuses, 'fragile');
         return frg
-          ? `<p class="ah-fragile"><i class="btn-ico">💥</i> ${c.defender.label} bears ${frg} Fragile Token${frg === 1 ? '' : 's'}, so <b>−${frg} White</b> is already taken off the pool below.</p>`
+          ? `<p class="ah-fragile">${ICON_BURST} ${c.defender.label} bears ${frg} Fragile Token${frg === 1 ? '' : 's'}, so <b>−${frg} White</b> is already taken off the pool below.</p>`
           : '';
       })()}
       ${(() => {
@@ -3892,7 +3999,7 @@ export class AttackHelper {
         // reasons, and only one of them is printed on the weapon.
         const ap = armorPiercing(this.data, c.attacker, c.action);
         return ap.total
-          ? `<p class="ah-fragile"><i class="btn-ico">🎯</i> ${armorPiercingNote(ap, c.defender.label)} <b>−${ap.total} White</b> is already taken off the pool below.</p>`
+          ? `<p class="ah-fragile ah-pierce">${ICON_PIERCE} ${armorPiercingNote(ap, c.defender.label)} <b>−${ap.total} White</b> is already taken off the pool below.</p>`
           : '';
       })()}
       ${(() => {
@@ -3901,7 +4008,7 @@ export class AttackHelper {
         // unexplained die is indistinguishable from an arithmetic bug.
         const scout = statusCount(c.defender.statuses, 'immobilized') > 0 ? undefined : this.earlyWarning();
         return scout
-          ? `<p class="ah-protect"><i class="btn-ico">📡</i> ${scout.label} has line of sight to ${c.attacker.label}, so Early Warning Observation adds <b>+1 Blue</b> to the pool below. This effect does not stack.</p>`
+          ? `<p class="ah-protect">${ICON_SIGNAL} ${scout.label} has line of sight to ${c.attacker.label}, so Early Warning Observation adds <b>+1 Blue</b> to the pool below. This effect does not stack.</p>`
           : '';
       })()}
       ${c.explosion ? '<p class="dim">Explosion damage allows no Terrain or Unit Protection, so the pool below is Armour and Dodge only.</p>' : ''}
@@ -3990,7 +4097,7 @@ export class AttackHelper {
       }
       const roll = document.createElement('button');
       roll.className = 'ah-primary';
-      roll.innerHTML = '<i class="btn-ico">🎲</i> Roll defense dice';
+      roll.innerHTML = `${ICON_DICE} Roll defense dice`;
       roll.disabled = !mine;
       roll.addEventListener('click', () => {
         // On a mirror the faces come from the defending player's own client and
@@ -4085,6 +4192,52 @@ export class AttackHelper {
       const focusUi = this.focusBlock();
       if (focusUi) wrap.appendChild(focusUi);
       else {
+        // 4.4.1 step 6: the Exchange runs here, after both rolls and the Focus
+        // rerolls and before any offsetting, and "Each Dice may only be
+        // Exchanged once". When a free heavy source and card 027's Single Shot
+        // both read one {Eye}, only one of them may have it -- the shape the
+        // FAQ answers three times over (A5 two Freehand effects, A6 two rerolls
+        // of one {Eye}, D1 two Surplus effects): only one may be CHOSEN.
+        //
+        // Asked HERE rather than in the attack step because the choice needs
+        // the Defence Roll, and it is not solvable even with it: 2 Light Hits
+        // are two Icons costing two offsets but {Defense} can eat them, a Heavy
+        // costs one offset that {Defense} cannot make, and a {Defense}-offset
+        // Hit still fires on-hit riders. So it is offered, never computed.
+        //
+        // Driver-only, like beginFocus above: a mirror is sent eyeSwaps 0 and
+        // the settled resolution, so deriving a split there would print numbers
+        // the attacker never chose.
+        const contest = this.eyeContest(c);
+        if (contest.contested > 0 && !this.mirroring) {
+          const state = document.createElement('p');
+          state.className = 'ah-sum';
+          const heavyEyes = contest.contested - contest.toLight;
+          state.textContent = `Single Shot contests ${contest.contested} [Eye]: `
+            + `${contest.toLight} as ${contest.rate} Light Hits each, ${heavyEyes} as a Heavy Hit`;
+          wrap.appendChild(state);
+          const move = (delta: number, label: string, why: string) => {
+            const b = document.createElement('button');
+            b.className = 'ah-alt';
+            b.textContent = label;
+            b.title = why;
+            b.disabled = !this.mayDrive('attacker');
+            b.addEventListener('click', () => {
+              c.eyeToLight = Math.min(Math.max((c.eyeToLight ?? 0) + delta, 0), contest.contested);
+              this.render();
+            });
+            wrap.appendChild(b);
+          };
+          if (contest.toLight < contest.contested) {
+            move(1, `Single Shot: take an [Eye] as ${contest.rate} Light Hits`,
+              'Rulebook 4.4.1 step 6: each die may only be Exchanged once, so this [Eye] cannot also become a Heavy Hit. '
+              + `${contest.rate} Light Hits are ${contest.rate} separate Icons and [Defense] can offset each of them.`);
+          }
+          if (contest.toLight > 0) {
+            move(-1, 'Take an [Eye] back as a Heavy Hit',
+              'A Heavy Hit is 1 Icon that [Defense] cannot offset at all: only [Dodge] can.');
+          }
+        }
         const next = document.createElement('button');
         next.className = 'ah-primary';
         next.textContent = 'Resolve ▸';
@@ -4233,13 +4386,13 @@ export class AttackHelper {
           }
           if (slot === 'torso') {
             this.onDestroyed(c.attacker, c.defender, 'unit');
-            this.note(`⚠ Torso destroyed, so the unit is destroyed. Remove it from the board.`, [c.defender]);
+            this.note(`Torso destroyed, so the unit is destroyed. Remove it from the board.`, [c.defender]);
           }
           else {
             const left = Object.entries(c.defender.partStates).filter(([, s]) => s !== 'destroyed').length;
             if (left <= 2) {
               this.note(
-                `⚠ Integrity Loss: ${c.defender.label} has ${left} Part${left === 1 ? '' : 's'} left. It acts as normal for the rest of this round, then is removed in the End Phase.`,
+                `Integrity Loss: ${c.defender.label} has ${left} Part${left === 1 ? '' : 's'} left. It acts as normal for the rest of this round, then is removed in the End Phase.`,
                 [c.attacker, c.defender],
               );
             }
@@ -5131,7 +5284,7 @@ export class ElectronicHelper {
     el.className = 'attack-helper ew-contest';
     const what = c.action.name.en || c.action.name.zh || c.action.id;
     el.innerHTML = `<div class="ah-head">
-      <b>${c.initiator.label}</b> ⚡ <b>${c.responder.label}</b>
+      <b>${c.initiator.label}</b> <span class="vs-bolt">${ICON_BOLT}</span> <b>${c.responder.label}</b>
       <span class="dim">${what}</span>
       <button class="ah-cancel" title="Cancel">✕</button>
     </div>
@@ -5274,7 +5427,7 @@ export class ElectronicHelper {
         if (mineNow) {
           const roll = document.createElement('button');
           roll.className = 'ah-primary';
-          roll.innerHTML = `<i class="btn-ico">🎲</i> Roll ${mineNow[2]} Yellow ${mineNow[2] === 1 ? 'die' : 'dice'}`;
+          roll.innerHTML = `${ICON_DICE} Roll ${mineNow[2]} Yellow ${mineNow[2] === 1 ? 'die' : 'dice'}`;
           roll.addEventListener('click', () => { this.sendAct('roll', { uid: mineNow[1].uid }); });
           wrap.appendChild(roll);
         }
@@ -5282,7 +5435,7 @@ export class ElectronicHelper {
       }
       const roll = document.createElement('button');
       roll.className = 'ah-primary';
-      roll.innerHTML = `<i class="btn-ico">🎲</i> Roll ${c.initEv}Y vs ${c.respEv}Y`;
+      roll.innerHTML = `${ICON_DICE} Roll ${c.initEv}Y vs ${c.respEv}Y`;
       roll.addEventListener('click', () => {
         void (async () => {
           // Both sides of the counter-roll come from one request, so neither

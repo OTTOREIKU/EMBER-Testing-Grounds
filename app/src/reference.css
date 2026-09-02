@@ -525,6 +525,33 @@ body.ref-locked { position: fixed; left: 0; right: 0; width: 100%; overflow: hid
 .ref-userlink.kw { background: var(--accent-lt); color: var(--accent); }
 .ref-userlink.kw:hover { background: var(--accent); color: var(--bg); }
 
+/* ---------- the dice (Rules tab) ---------- */
+.die-card .card-title { display: flex; align-items: center; gap: 8px; }
+.die-dot { width: 12px; height: 12px; border-radius: 3px; flex: 0 0 auto; }
+.die-sides { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--text3); }
+/* One chip per face, in the die's own colour: which die a face belongs to is
+   the thing a photograph would carry, so the colour does that job instead. */
+.die-faces { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; }
+.die-face {
+  width: 34px; height: 34px; border-radius: var(--radius-sm);
+  display: inline-flex; align-items: center; justify-content: center; gap: 1px;
+  color: #f7f7f7;
+}
+.die-face.on-light { color: #1a1d22; }
+.die-face svg { width: 17px; height: 17px; }
+/* The black die's faces are PART icons, which iconSvg returns as an <img>
+   rather than a path - they are photographs of a printed symbol, not something
+   we draw. Sized here or they render at their natural width and burst the chip. */
+.die-face img { width: 22px; height: 22px; object-fit: contain; display: block; }
+/* ...and that die is nearly black, so its chip needs an edge to sit on. */
+.die-face[style*="#222"] { outline: 1px solid var(--border); outline-offset: -1px; }
+/* A blank face is a real face and has to look deliberate rather than broken. */
+.die-blank { width: 9px; height: 9px; border-radius: 50%; background: currentColor; opacity: 0.22; }
+.die-tally { margin-top: 8px; font-size: 11.5px; color: var(--text3); line-height: 1.5; }
+.die-rules .card-body { padding-top: 2px; }
+.die-rulelist { margin: 0; padding-left: 16px; display: flex; flex-direction: column; gap: 5px; }
+.die-rulelist b { color: var(--text); }
+
 @media (max-width: 719px) {
   #ref-tabs button {
     position: relative; padding: 8px 4px; font-size: 11.5px;

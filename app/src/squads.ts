@@ -27,7 +27,7 @@ import { perform } from './commands';
 import { dialHidden, getLocalSeat } from './loop';
 import { defaultUnitLabel, emptyCarriers, factionProblems, initiativeFor, pilotCard, squadAllegiance, SLOT_LABEL, structureOf, tidyUnitLabel, tokenCards, tokenFactions } from './units';
 import { alertDialog, promptDialog } from './dialog';
-import { factionColour, ICON_EDIT, linkIcon, squadColour } from './icons';
+import { factionColour, ICON_EDIT, ICON_LOCK, linkIcon, squadColour } from './icons';
 
 const esc = (s: string): string => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!);
 
@@ -706,7 +706,7 @@ export class SquadTracker {
     } else {
       const stance = document.createElement('span');
       stance.className = `stance stance-fixed stance-${t.stance}`;
-      stance.innerHTML = `<i class="stance-lock" aria-hidden="true">🔒</i>${STANCE_SHORT[t.stance]}`;
+      stance.innerHTML = `<i class="stance-lock" aria-hidden="true">${ICON_LOCK}</i>${STANCE_SHORT[t.stance]}`;
       inspectOnHover(stance, this.stanceInfo(t));
       meta.appendChild(stance);
     }

@@ -1,8 +1,32 @@
 {
  "_comment": "Glossary fixes applied on top of the generated keywords.json (which comes from the community builder bundle). Sourced from the verified rulebook digests in ../rules. Keep this file when re-running tools/extract_cards.js — it is merged at load time by the app.",
  "_source": "rules/05_advanced_combat.md §4.17, rules/06_missions_and_appendix.md §6.2",
- "_corrections": "推动X was labelled 'Knock Back X' in the bundle, which collides with 击退X 'Knockback X'; the rulebook names it Push X (it alone reduces Link). 离子武器 was OCR'd as 'lon Weapon' (capital I read as lowercase L). 多目标X shipped a truncated English value in the bundle, cut off mid-list at \"applied at this time;\" while the Chinese ran to the end of the rule; the remainder is translated from the Chinese here. Three Command entries were rewritten from rulebook 3.2.1 and 4.15: 指令生成X shipped a stray full stop (\"rather than 1.。\") and did not say the X REPLACES the default; 指令协调X read \"issue 1 Command Token to X Ally Drones\", which loses that the Drones must be DIFFERENT and that it works outside the Command Phase; 遥控武器 was OCR’d with \"Commandn per turn\" and called the phase a \"Command Stage\".",
+ "_corrections": "震撼 Concussion, 穿甲X Armor Piercing and 缴械 Disarm each lost a WORD in the community bundle, and the missing word was the load-bearing one: 'reduces target by 1' never says Link, 'removes X dice' never says WHITE, and 'target Part' should be the HIT Part. The Chinese, the Japanese and the publisher's championship-legal English parts lists all agree, and the engine was already correct in all three - only the sentence a player reads was wrong. 低特征 Low Profile had (Eye} and (Dodge} with an opening PARENTHESIS, so neither rendered as a glyph and readers saw the literal text. Its \"may\" is kept as printed but noted as applied automatically: the parts lists print \"may exchange\" on all nine {Eye} cards that carry English, including 027, 503, FPA-04 and LPA-24, whose Chinese reads 视为 (\"is regarded as\") with no choice in it - so \"may\" there renders 视为 rather than granting an option, and cannot be evidence that any one exchange is optional. Where the Chinese DOES print a choice (可以) the card charges for it: ZPA-35 spends a Command Token, ZPA-38 spends a Link. Low Profile charges nothing, rulebook 6.3.3 words it as automatic, and no card reads an {Eye} in a Defense Roll. 推动X was labelled 'Knock Back X' in the bundle, which collides with 击退X 'Knockback X'; the rulebook names it Push X (it alone reduces Link). 离子武器 was OCR'd as 'lon Weapon' (capital I read as lowercase L). 多目标X shipped a truncated English value in the bundle, cut off mid-list at \"applied at this time;\" while the Chinese ran to the end of the rule; the remainder is translated from the Chinese here. Three Command entries were rewritten from rulebook 3.2.1 and 4.15: 指令生成X shipped a stray full stop (\"rather than 1.。\") and did not say the X REPLACES the default; 指令协调X read \"issue 1 Command Token to X Ally Drones\", which loses that the Drones must be DIFFERENT and that it works outside the Command Phase; 遥控武器 was OCR’d with \"Commandn per turn\" and called the phase a \"Command Stage\".",
  "overrides": {
+  "震撼": {
+   "en": {
+    "name": "Concussion",
+    "value": "Each {Lightning} in the attack roll reduces target Link by 1. The effect stacks, and a target driven to 0 Link Shuts Down."
+   }
+  },
+  "穿甲X": {
+   "en": {
+    "name": "Armor Piercing X",
+    "value": "Target removes X white dice before rolling."
+   }
+  },
+  "缴械": {
+   "en": {
+    "name": "Disarm",
+    "value": "Change the hit Part to Discard State."
+   }
+  },
+  "低特征": {
+   "en": {
+    "name": "Low Profile",
+    "value": "When this unit is the target of a Firing Action, may exchange {Eye} for {Dodge} in defense roll. Rulebook 6.3.3 words this as automatic - {Eye} results are regarded as {Dodge} - and nothing else in a Defense Roll reads an {Eye}, so the exchange is never against the defender and the app applies it for you."
+   }
+  },
   "空手": {
    "en": {
     "name": "Freehand",
