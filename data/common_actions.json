@@ -1,6 +1,6 @@
 {
   "_comment": "The seven Common Actions from rulebook 6.1 (book p.91), plus the Remote Access Universal Action every Mech gains from 5.3.3. Every Mech has these in addition to the Actions printed on its Parts, so a squad's real options are its Part Actions plus whichever of these its surviving Parts can initiate. They are not in cards.json because they are not printed on any card, so they are transcribed here by hand. The printed rulebook always wins over this file.",
-  "_shape": "Each entry mirrors a CardAction closely enough to be merged into the guided action list: id, name, type (the Action Type, matching the card data's spelling), size (s = Short = 1 Action Tick, m = Medium = 2 Action Ticks), and the Part slots that can initiate it. `phase` marks the three that resolve in the End Phase rather than during an Action Opportunity.",
+  "_shape": "Each entry mirrors a CardAction closely enough to be merged into the guided action list: id, name, type (the Action Type, matching the card data's spelling), size (s = Short = 1 Action Tick, m = Medium = 2 Action Ticks), and the Part slots that can initiate it. Every one of them is performed in an Action Opportunity: the book prints Reveal, Stabilize System and Scan with the Tactical (hourglass) Short Action icon on p.91, so none is an End Phase action.",
   "_source": "rules/06_missions_and_appendix.md section 6.1, transcribed from book p.91",
   "actions": [
     {
@@ -54,10 +54,9 @@
       "name": { "en": "Reveal" },
       "type": "Tactic",
       "size": "s",
-      "phase": "End",
       "slots": ["torso", "chasis", "backpack", "leftHand", "rightHand"],
       "description": {
-        "en": "· End Phase action.\n· Become Revealed and perform Manifestation Movement."
+        "en": "· Tactical Short Action (6.1).\n· Become Revealed and perform Manifestation Movement."
       }
     },
     {
@@ -65,11 +64,10 @@
       "name": { "en": "Stabilize System" },
       "type": "Tactic",
       "size": "s",
-      "phase": "End",
       "slots": ["torso"],
       "silence": true,
       "description": {
-        "en": "· End Phase action. Silence.\n· Remove 1 Square Token or 1 Hexagon Token from this Unit, then Restore 1 Link."
+        "en": "· Tactical Short Action (6.1). Silence.\n· Remove 1 Square Token or 1 Hexagon Token from this Unit, then Restore 1 Link."
       }
     },
     {
@@ -89,11 +87,10 @@
       "type": "Tactic",
       "size": "s",
       "range": 6,
-      "phase": "End",
       "slots": ["torso"],
       "silence": true,
       "description": {
-        "en": "· End Phase action.\n· Target an enemy in the Optical Camouflage State or bearing a Low Profile Token, then make an Electronic-counter Roll.\n· On a success, a camouflaged target is Revealed and a Low Profile Token is removed.\n· Silent, so a camouflaged scanner is not Revealed by using it (FAQ I18)."
+        "en": "· Tactical Short Action (6.1).\n· Target an enemy in the Optical Camouflage State or bearing a Low Profile Token, then make an Electronic-counter Roll.\n· On a success, a camouflaged target is Revealed and a Low Profile Token is removed.\n· Silent, so a camouflaged scanner is not Revealed by using it (FAQ I18)."
       }
     }
   ],

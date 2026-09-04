@@ -237,6 +237,30 @@
     "value": "Before performing this Action, may move X grids. Mechs require a chasis to perform this Action."
    },
    "_note": "Typo fix only: keywords.json reads \"Actioin\". The rule is unchanged, and the [Offensive Stance] condition the three carriers print (M115 Spear, M100 Lance, M105 Halberd) is deliberately NOT folded in here - it is a per-card condition in the same bracketed form as [Stationary] and [On Hit], not part of the keyword."
+  },
+  "拖拽": {
+   "en": {
+    "name": "Drag",
+    "value": "Force the target to an adjacent grid of this Mech, and set the facing of the target. Dragging is treated as Flying Movement."
+   }
+  },
+  "击退X": {
+   "en": {
+    "name": "Knockback X",
+    "value": "After this action ends, the target is forced to move X grids along the attack direction. The target is subject to Forced Movement in a straight line, usually the direction the attacker is facing; if the path is blocked by Units or Terrain it stops early, and a Flying Unit is blocked by Units and Terrain the same way."
+   }
+  },
+  "电战节点X": {
+   "en": {
+    "name": "Warfare Node X",
+    "value": "Allies within the range may use the Electronic value of this Mech + X when making Electronic Counter-rolls. This does not change who is the Initiator and who is the Responder of the Counter-roll."
+   }
+  },
+  "Automatic Action": {
+   "en": {
+    "name": "Automatic Action:",
+    "value": "Printed on a Drone card as {!} beside the action name. The action resolves by itself in the Automatic Phase without being told to, and a Command taken in the Command Phase does not use it up: every Drone still on the board performs its Automatic Actions (3.5)."
+   }
   }
  }
 }

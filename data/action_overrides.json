@@ -53,7 +53,9 @@
       "description": {
         "en": "· [On Hit] Knock Back 1.\n· Command Coordination",
         "zh": "·【命中】造成击退1。"
-      }
+      },
+      "type": "Melee",
+      "_note": "Publisher parts sheet (audit 2026-09-03): the shove is a Melee Action."
     },
     "045_B": {
       "type": "Swift"
@@ -70,7 +72,9 @@
     "546_A": {
       "name": {
         "en": "Full-auto"
-      }
+      },
+      "range": 8,
+      "_note": "Publisher parts sheet (audit 2026-09-03): range 8."
     },
     "546_B": {
       "name": {
@@ -186,21 +190,32 @@
         },
         {
           "inline": "近战射击"
+        },
+        {
+          "inline": "霰射"
         }
       ],
-      "_note": "1.021 row ZHDR-301 Action A; speed, dice and range already matched, zh matches and stays. The keywords gain 近战射击: the card prints Melee Firing on this action and carries the term only at CARD level in the bundle, but melee.ts isMeleeFiring reads the ACTION's keywords - the documented key-vs-inline class - so the Apologist's gun was wrongly barred during Melee Lock. 击退X was already there; Scatter-shot needs no keyword because surplusEffects reads the zh text, which keeps it."
+      "_note": "1.021 row ZHDR-301 Action A; speed, dice and range already matched, zh matches and stays. The keywords gain 近战射击: the card prints Melee Firing on this action and carries the term only at CARD level in the bundle, but melee.ts isMeleeFiring reads the ACTION's keywords - the documented key-vs-inline class - so the Apologist's gun was wrongly barred during Melee Lock. 击退X was already there; Scatter-shot needs no keyword because surplusEffects reads the zh text, which keeps it. Publisher parts sheet (audit 2026-09-03): keyword line Scatter-shot."
     },
     "116_A": {
       "description": {
         "en": "· Laser Weapon\n· [Stationary] +1Y."
       },
-      "_source": "UN 1.02 list, row 116 - the discard face keeps the gun and its text, which our card carried in Chinese only. Identical to 115_A above it, as the list prints them."
+      "_source": "UN 1.02 list, row 116 - the discard face keeps the gun and its text, which our card carried in Chinese only. Identical to 115_A above it, as the list prints them.",
+      "keywords": [
+        {
+          "inline": "激光武器"
+        }
+      ],
+      "_note": "Publisher parts sheet (audit 2026-09-03): keyword line Laser Weapon."
     },
     "S100+R6SS-L_A": {
       "description": {
         "en": "· Laser Weapon\n· [Stationary] +1Y."
       },
-      "_source": "UN 1.02 list, the S100 Shield + R6SS SMG (L) rows. Same weapon as the R-hand 115, which the list prints identically."
+      "_source": "UN 1.02 list, the S100 Shield + R6SS SMG (L) rows. Same weapon as the R-hand 115, which the list prints identically.",
+      "range": 4,
+      "_note": "Publisher parts sheet (audit 2026-09-03): range 4."
     },
     "S100+R6SS-L_B": {
       "description": {
@@ -212,19 +227,25 @@
       "description": {
         "en": "· Laser Weapon\n· [Stationary] +1Y."
       },
-      "_source": "UN 1.02 list, the (L) (D) row."
+      "_source": "UN 1.02 list, the (L) (D) row.",
+      "range": 4,
+      "_note": "Publisher parts sheet (audit 2026-09-03): range 4."
     },
     "XTC_A": {
       "description": {
         "en": "· Electronic Attack · Silence\n· Conduct Electronic Counter Roll against 1 enemy Drone/Projectile within range, if successful, it will be Destroyed immediately."
       },
-      "_source": "UN 1.02 list, XTC Right Arm. Replaces our translation with the publisher's English; the zh stays."
+      "_source": "UN 1.02 list, XTC Right Arm. Replaces our translation with the publisher's English; the zh stays.",
+      "range": 6,
+      "_note": "Publisher parts sheet (audit 2026-09-03): range 6."
     },
     "R33S_A": {
       "description": {
         "en": "· Laser Weapon\n· [Stationary] gains Snipe.\n· Silence"
       },
-      "_source": "UN 1.02 list. The Stationary-gated Snipe stays deliberately unwired either way: snipeOn's English route reads keywords only, and its zh route excludes gate lines - see the PARKED note in units.ts."
+      "_source": "UN 1.02 list. The Stationary-gated Snipe stays deliberately unwired either way: snipeOn's English route reads keywords only, and its zh route excludes gate lines - see the PARKED note in units.ts.",
+      "range": 12,
+      "_note": "Publisher parts sheet (audit 2026-09-03): range 12."
     },
     "LHDR-KK9_A": {
       "description": {
@@ -331,7 +352,553 @@
       "description": {
         "en": "· Direct Fire · Silence\n· Deploy 1 GM-35 Anti-Armor Mine."
       },
-      "_note": "OUR transcription error, not a publisher typo: cards.json carries \"Anti-Aromor\". The printed English card 006 reads \"Deploy 1 GM-35 Anti-Armor Mine\", checked against the scan in assets/cards/en/006.webp. The misspelling also kept the deployable from linking to card 074."
+      "_note": "OUR transcription error, not a publisher typo: cards.json carries \"Anti-Aromor\". The printed English card 006 reads \"Deploy 1 GM-35 Anti-Armor Mine\", checked against the scan in assets/cards/en/006.webp. The misspelling also kept the deployable from linking to card 074. Publisher parts sheet (audit 2026-09-03): keyword line Direct Fire, Silence.",
+      "keywords": [
+        {
+          "inline": "直射"
+        },
+        {
+          "inline": "静默"
+        }
+      ]
+    },
+    "ZHLA-102_A": {
+      "range": 4,
+      "_note": "Publisher parts sheet (audit 2026-09-03): range 4."
+    },
+    "ZHLA-201_A": {
+      "range": 8,
+      "_note": "Publisher parts sheet (audit 2026-09-03): range 8."
+    },
+    "ZHLA-302_A": {
+      "range": 4,
+      "_note": "Publisher parts sheet (audit 2026-09-03): range 4. Publisher parts sheet (audit 2026-09-03): keyword line Melee Firing. Publisher parts sheet (audit 2026-09-03): 1.021 prints Command Coordination inside this Action.",
+      "keywords": [
+        {
+          "inline": "近战射击"
+        },
+        {
+          "inline": "指令协调X"
+        }
+      ],
+      "description": {
+        "zh": "· 霰射 · 近战射击",
+        "en": "· Melee Firing\n· [On Hit] The hit part gains 1 Pursuit Token.\n· Command Coordination",
+        "jp": "· 近接射撃\n· 【命中】命中パーツは追撃トークンを得る。"
+      }
+    },
+    "ZHRA-101_A": {
+      "range": 8,
+      "_note": "Publisher parts sheet (audit 2026-09-03): range 8. Publisher parts sheet (audit 2026-09-03): 1.021 prints 4R. Publisher parts sheet (audit 2026-09-03): 1.021 prints Command Coordination inside this Action.",
+      "yellowDice": 0,
+      "redDice": 4,
+      "keywords": [
+        {
+          "inline": "穿甲X"
+        },
+        {
+          "inline": "指令协调X"
+        }
+      ],
+      "description": {
+        "zh": "· 穿甲1",
+        "en": "· Armor Piercing 1\n· Command Coordination",
+        "jp": "· 装甲貫通1"
+      }
+    },
+    "ZHRA-102_A": {
+      "range": 6,
+      "_note": "Publisher parts sheet (audit 2026-09-03): range 6. Publisher parts sheet (audit 2026-09-03): 1.021 prints Command Coordination inside this Action.",
+      "keywords": [
+        {
+          "inline": "穿甲X"
+        },
+        {
+          "inline": "指令协调X"
+        }
+      ],
+      "description": {
+        "zh": "· 穿甲1\n· [攻击姿态]本动作视为短动作。",
+        "en": "· Armor Piercing 1\n· [Offensive Stance] This action is considerd a Short Action.\n· Command Coordination",
+        "jp": "· 装甲貫通1\n· [攻撃態勢]このアクションは短アクションと見なす。"
+      }
+    },
+    "ZHRA-201_A": {
+      "range": 12,
+      "_note": "Publisher parts sheet (audit 2026-09-03): range 12."
+    },
+    "ZHRA-202_A": {
+      "range": 8,
+      "_note": "Publisher parts sheet (audit 2026-09-03): range 8. Publisher parts sheet (audit 2026-09-03): 1.021 Short, 0Y. Publisher parts sheet (audit 2026-09-03): Command Coordination chip.",
+      "size": "s",
+      "yellowDice": 0,
+      "keywords": [
+        {
+          "inline": "穿甲X"
+        },
+        {
+          "inline": "指令协调X"
+        }
+      ]
+    },
+    "ZHRA-103_A": {
+      "range": 2,
+      "_note": "Publisher parts sheet (audit 2026-09-03): range 2. Publisher parts sheet (audit 2026-09-03): 1.021 prints Command Coordination inside this Action.",
+      "keywords": [
+        {
+          "inline": "指令协调X"
+        }
+      ],
+      "description": {
+        "zh": "· [攻击姿态]获得冲锋1。",
+        "en": "· [Offensive Stance] gains Shock Attack 1.\n· Command Coordination",
+        "jp": "· [攻撃態勢]突撃1を得る。"
+      }
+    },
+    "ZHRA-301_A": {
+      "range": 2,
+      "_note": "Publisher parts sheet (audit 2026-09-03): range 2. Publisher parts sheet (audit 2026-09-03): 1.021 prints Command Coordination inside this Action.",
+      "keywords": [
+        {
+          "inline": "指令协调X"
+        }
+      ],
+      "description": {
+        "zh": "· [攻击姿态]获得冲锋1。",
+        "en": "· [Offensive Stance] gains Shock Attack 1.\n· Command Coordination",
+        "jp": "· [攻撃態勢]突撃1を得る。"
+      }
+    },
+    "ZHRA-303_A": {
+      "range": 2,
+      "_note": "Publisher parts sheet (audit 2026-09-03): range 2. Publisher parts sheet (audit 2026-09-03): 1.021 prints Command Coordination inside this Action.",
+      "keywords": [
+        {
+          "inline": "指令协调X"
+        }
+      ],
+      "description": {
+        "zh": "· [攻击姿态]获得冲锋1。\n· [命中]造成拖拽。",
+        "en": "· [Offensive Stance] gains Shock Attack 1.\n· [On Hit] Causes Drag.\n· Command Coordination",
+        "jp": "· [攻撃態勢]突撃1を得る。\n· [命中]引寄せ。"
+      }
+    },
+    "ZHRA-103_B": {
+      "range": 2,
+      "_note": "Publisher parts sheet (audit 2026-09-03): range 2."
+    },
+    "ZHRA-303_B": {
+      "range": 2,
+      "_note": "Publisher parts sheet (audit 2026-09-03): range 2. Publisher parts sheet (audit 2026-09-03): 1.021 5Y 2R. Publisher parts sheet (audit 2026-09-03): 1.021 prints Command Coordination inside this Action.",
+      "yellowDice": 5,
+      "redDice": 2,
+      "keywords": [
+        {
+          "inline": "指令协调X"
+        }
+      ],
+      "description": {
+        "zh": "· [双手] 获得压制，毁伤。",
+        "en": "· [Two-Handed] Gains Suppression.\n· Command Coordination",
+        "jp": "· [両手] 制圧を得る。"
+      }
+    },
+    "ZHRA-202_B": {
+      "keywords": [
+        {
+          "inline": "狙击"
+        },
+        {
+          "inline": "毁伤"
+        },
+        {
+          "inline": "穿甲X"
+        },
+        {
+          "inline": "指令协调X"
+        }
+      ],
+      "size": "s",
+      "redDice": 3,
+      "range": 8,
+      "_note": "Publisher parts sheet (audit 2026-09-03): 1.021 Short, 3R, range 8, Snipe + Mutilation + Armor Piercing. Publisher parts sheet (audit 2026-09-03): 1.021 prints Command Coordination inside this Action.",
+      "description": {
+        "zh": "· 穿甲1 · 狙击 · 静默\n· [双手]获得毁伤。",
+        "en": "· Armor Piercing 1 · Snipe\n· [Two-Handed] Gains Mutilation.\n· Command Coordination",
+        "jp": "· 装甲貫通1 · 狙撃 · サイレンス\n· [両手] 切断を得る。"
+      }
+    },
+    "ZHLA-202_A": {
+      "yellowDice": 3,
+      "redDice": 1,
+      "_note": "Publisher parts sheet (audit 2026-09-03): 1.021 3Y 1R."
+    },
+    "ZHRA-301_B": {
+      "size": "s",
+      "storage": 1,
+      "_note": "Publisher parts sheet (audit 2026-09-03): 1.021 Short with 1 Ammo. Publisher parts sheet (audit 2026-09-03): 1.021 prints Command Coordination inside this Action.",
+      "keywords": [
+        {
+          "inline": "近战射击"
+        },
+        {
+          "inline": "指令协调X"
+        }
+      ],
+      "description": {
+        "zh": "· 近战射击",
+        "en": "· Melee Firing\n· Command Coordination",
+        "jp": "· 近接射撃"
+      }
+    },
+    "ZHDR-201_B": {
+      "range": 2,
+      "_note": "Publisher parts sheet (audit 2026-09-03): range 2."
+    },
+    "ZYBP-101_A": {
+      "range": 8,
+      "_note": "Publisher parts sheet (audit 2026-09-03): range 8. The GoF 1.021 sheet defines Command Coordination for this card in Extra Info while its text cell omits the line; OTTO's ruling 2026-09-03: the card prints its Command Coordination as the separate ZYBP-101_B action and the parts list does not list it, so the action is KEPT and no keyword line is added until the printed GoF cards are in hand. Same call for ZYBP-202_B, ZHLA-102_B and ZHLA-201_B."
+    },
+    "ZYBP-301_A": {
+      "range": 2,
+      "_note": "Publisher parts sheet (audit 2026-09-03): range 2. Publisher parts sheet (audit 2026-09-03): 1.021 prints Command Coordination inside this Action.",
+      "keywords": [
+        {
+          "inline": "曲射"
+        },
+        {
+          "inline": "齐射2"
+        },
+        {
+          "inline": "指令协调X"
+        }
+      ],
+      "description": {
+        "zh": "· 曲射 · 齐射2\n· 发射1枚M60“回旋镖”导弹。",
+        "en": "· Fire in arc · Volley 2 \n· Launch 1 M60 “Boomerang” Missile.\n· Command Coordination",
+        "jp": "· 曲射 · 斉射2\n· M60「ブーメラン」ミサイルを1つ発射する。"
+      }
+    },
+    "ZHAM-001A_A": {
+      "range": 8,
+      "type": "Delay",
+      "_note": "Publisher parts sheet (audit 2026-09-03): range 8; Delayed Action like PDAM-001/002."
+    },
+    "ZHAM-002_A": {
+      "range": 4,
+      "type": "Delay",
+      "_note": "Publisher parts sheet (audit 2026-09-03): range 4; Delayed Action."
+    },
+    "ZHAM-003_A": {
+      "type": "Delay",
+      "_note": "Publisher parts sheet (audit 2026-09-03): Delayed Action."
+    },
+    "ZHAM-004_A": {
+      "type": "Delay",
+      "_note": "Publisher parts sheet (audit 2026-09-03): Delayed Action."
+    },
+    "TM31RS_B": {
+      "keywords": [
+        {
+          "inline": "电子支援"
+        },
+        {
+          "inline": "静默"
+        }
+      ],
+      "type": "Swift",
+      "_note": "Publisher parts sheet (audit 2026-09-03): Swift; Electronic Support + Silence."
+    },
+    "008_A": {
+      "keywords": [
+        {
+          "inline": "直射"
+        },
+        {
+          "inline": "静默"
+        },
+        {
+          "inline": "投掷"
+        }
+      ],
+      "_note": "Publisher parts sheet (audit 2026-09-03): keyword line Silence, Throw."
+    },
+    "056_A": {
+      "keywords": [
+        {
+          "inline": "直射"
+        }
+      ],
+      "_note": "Publisher parts sheet (audit 2026-09-03): keyword line Direct Fire."
+    },
+    "082_A": {
+      "keywords": [
+        {
+          "inline": "曲射"
+        },
+        {
+          "inline": "静默"
+        },
+        {
+          "inline": "投掷"
+        }
+      ],
+      "_note": "Publisher parts sheet (audit 2026-09-03): keyword line Fire in arc, Silence, Throw."
+    },
+    "299_B": {
+      "keywords": [
+        {
+          "inline": "曲射"
+        }
+      ],
+      "_note": "Publisher parts sheet (audit 2026-09-03): keyword line Fire in arc."
+    },
+    "502_A": {
+      "keywords": [
+        {
+          "inline": "直射"
+        },
+        {
+          "inline": "曲射"
+        },
+        {
+          "inline": "静默"
+        },
+        {
+          "inline": "投掷"
+        }
+      ],
+      "_note": "Publisher parts sheet (audit 2026-09-03): keyword line Fire in arc, Silence, Throw."
+    },
+    "512_A": {
+      "keywords": [
+        {
+          "inline": "全向射击"
+        }
+      ],
+      "_note": "Publisher parts sheet (audit 2026-09-03): keyword line Omni-direction Firing."
+    },
+    "514_A": {
+      "keywords": [
+        {
+          "inline": "全向射击"
+        }
+      ],
+      "_note": "Publisher parts sheet (audit 2026-09-03): keyword line Omni-direction Firing."
+    },
+    "TM39D_B": {
+      "keywords": [
+        {
+          "inline": "曲射"
+        },
+        {
+          "inline": "静默"
+        }
+      ],
+      "_note": "Publisher parts sheet (audit 2026-09-03): keyword line Fire in arc, Silence."
+    },
+    "DLSP-2_A": {
+      "keywords": [
+        {
+          "inline": "曲射"
+        },
+        {
+          "inline": "齐射X"
+        }
+      ],
+      "_note": "Publisher parts sheet (audit 2026-09-03): keyword line Fire in arc, Volley X."
+    },
+    "ECP10_A": {
+      "keywords": [
+        {
+          "inline": "光环"
+        }
+      ],
+      "_note": "Publisher parts sheet (audit 2026-09-03): keyword line Aura."
+    },
+    "P7A3-SK_A": {
+      "keywords": [
+        {
+          "inline": "指令生成X"
+        }
+      ],
+      "_note": "Publisher parts sheet (audit 2026-09-03): keyword line Command Generation X."
+    },
+    "P7A3-SK_B": {
+      "keywords": [
+        {
+          "inline": "光环"
+        }
+      ],
+      "_note": "Publisher parts sheet (audit 2026-09-03): keyword line Aura."
+    },
+    "YP23_A": {
+      "keywords": [
+        {
+          "inline": "指令生成X"
+        }
+      ],
+      "_note": "Publisher parts sheet (audit 2026-09-03): keyword line Command Generation X."
+    },
+    "ZYBP-102_A": {
+      "keywords": [
+        {
+          "inline": "指令生成X"
+        }
+      ],
+      "_note": "Publisher parts sheet (audit 2026-09-03): keyword line Command Generation X."
+    },
+    "ZHDR-302_A": {
+      "keywords": [
+        {
+          "inline": "压制"
+        }
+      ],
+      "_note": "Publisher parts sheet (audit 2026-09-03): keyword line Suppression."
+    },
+    "ZHLA-302_B": {
+      "keywords": [
+        {
+          "inline": "近战射击"
+        },
+        {
+          "inline": "霰射"
+        },
+        {
+          "inline": "指令协调X"
+        }
+      ],
+      "_note": "Publisher parts sheet (audit 2026-09-03): keyword line Melee Firing, Scatter-shot. Publisher parts sheet (audit 2026-09-03): 1.021 prints Command Coordination inside this Action.",
+      "description": {
+        "zh": "· 霰射 · 近战射击",
+        "en": "· Scatter-shot · Melee Firing\n· Command Coordination",
+        "jp": "· 散弾ショット · 近接射撃"
+      }
+    },
+    "ZHRA-201_B": {
+      "keywords": [
+        {
+          "inline": "穿甲X"
+        },
+        {
+          "inline": "狙击"
+        },
+        {
+          "inline": "指令协调X"
+        }
+      ],
+      "_note": "Publisher parts sheet (audit 2026-09-03): keyword line Snipe. Publisher parts sheet (audit 2026-09-03): 1.021 prints Command Coordination inside this Action.",
+      "description": {
+        "zh": "· 穿甲1 · 狙击\n· [双手]获得毁伤。\n· [攻击姿态]+{1R}。",
+        "en": "· Armor Piercing 1 · Snipe\n· [Two-Handed] Gains Mutilation.\n· [Offensive Stance]+{1R}.\n· Command Coordination",
+        "jp": "· 装甲貫通1 · 狙撃\n·[両手] 切断を得る。\n· [攻撃態勢]+{1R}。"
+      }
+    },
+    "ZHLA-304_A": {
+      "keywords": [
+        {
+          "inline": "顺劈"
+        },
+        {
+          "inline": "指令协调X"
+        }
+      ],
+      "description": {
+        "zh": "· 顺劈",
+        "en": "· Cleaving\n· Command Coordination",
+        "jp": "· クリーヴ"
+      },
+      "_note": "Publisher parts sheet (audit 2026-09-03): 1.021 prints Command Coordination inside this Action."
+    },
+    "ZHLA-304_B": {
+      "keywords": [
+        {
+          "inline": "指令协调X"
+        }
+      ],
+      "description": {
+        "zh": "· [双手] 获得毁伤。",
+        "en": "· [Two-Handed] Gains Mutilation.\n· Command Coordination",
+        "jp": "·[両手]切断を得る。"
+      },
+      "_note": "Publisher parts sheet (audit 2026-09-03): 1.021 prints Command Coordination inside this Action."
+    },
+    "ZHRA-101_B": {
+      "keywords": [
+        {
+          "inline": "穿甲X"
+        },
+        {
+          "inline": "指令协调X"
+        }
+      ],
+      "description": {
+        "zh": "· 穿甲1\n· [双手] +2射程。",
+        "en": "· Armour Piercing 1\n· [Two-Handed] Range +2 grids.\n· Command Coordination",
+        "jp": "· 装甲貫通1\n· [両手] +2範囲。"
+      },
+      "_note": "Publisher parts sheet (audit 2026-09-03): 1.021 prints Command Coordination inside this Action."
+    },
+    "ZHRA-102_B": {
+      "keywords": [
+        {
+          "inline": "穿甲X"
+        },
+        {
+          "inline": "指令协调X"
+        }
+      ],
+      "description": {
+        "zh": "· 穿甲1",
+        "en": "· Armor Piercing 1\n· Command Coordination",
+        "jp": "· 装甲貫通1"
+      },
+      "_note": "Publisher parts sheet (audit 2026-09-03): 1.021 prints Command Coordination inside this Action."
+    },
+    "ZHRA-304_A": {
+      "keywords": [
+        {
+          "inline": "顺劈"
+        },
+        {
+          "inline": "指令协调X"
+        }
+      ],
+      "description": {
+        "zh": "· 顺劈",
+        "en": "· Cleaving\n· Command Coordination",
+        "jp": "· クリーヴ"
+      },
+      "_note": "Publisher parts sheet (audit 2026-09-03): 1.021 prints Command Coordination inside this Action."
+    },
+    "ZHRA-304_B": {
+      "keywords": [
+        {
+          "inline": "指令协调X"
+        }
+      ],
+      "description": {
+        "zh": "· [双手] 获得毁伤。",
+        "en": "· [Two-Handed] Gains Mutilation.\n· Command Coordination",
+        "jp": "·[両手]切断を得る。"
+      },
+      "_note": "Publisher parts sheet (audit 2026-09-03): 1.021 prints Command Coordination inside this Action."
+    },
+    "ZHLA-101_B": {
+      "keywords": [
+        {
+          "inline": "震撼"
+        },
+        {
+          "inline": "指令协调X"
+        }
+      ],
+      "description": {
+        "zh": "· 震撼",
+        "en": "· Concussion\n· Command Coordination",
+        "jp": "· 衝撃"
+      },
+      "_note": "Publisher parts sheet (audit 2026-09-03): 1.021 prints Command Coordination inside this Action."
     }
   },
   "_notes": {

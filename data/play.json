@@ -65,7 +65,7 @@
    ],
    "cannot": [
     "You do not choose their targets. Automatic Actions are forced onto the nearest enemy.",
-    "Drones that already acted on a Command this round do not act again."
+    "A Command taken earlier this round does not use up a Drone's Automatic Actions: every Drone still on the board performs them here (3.5)."
    ]
   },
   {

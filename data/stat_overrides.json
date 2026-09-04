@@ -234,15 +234,18 @@
     },
     "ZHDR-201": {
       "score": 51,
-      "_source": "publisher GoF parts list v1.021 - the newest revision from the company, which supersedes the v1.02 championship xlsx the earlier sweeps used. 1.021 reprices the whole GoF line and marks every change in red; read it by rendering the pages, its text layer cannot be parsed."
+      "_source": "publisher GoF parts list v1.021 - the newest revision from the company, which supersedes the v1.02 championship xlsx the earlier sweeps used. 1.021 reprices the whole GoF line and marks every change in red; read it by rendering the pages, its text layer cannot be parsed.",
+      "move": 4
     },
     "ZHDR-202": {
       "score": 48,
-      "_source": "publisher GoF parts list v1.021 - the newest revision from the company, which supersedes the v1.02 championship xlsx the earlier sweeps used. 1.021 reprices the whole GoF line and marks every change in red; read it by rendering the pages, its text layer cannot be parsed."
+      "_source": "publisher GoF parts list v1.021 - the newest revision from the company, which supersedes the v1.02 championship xlsx the earlier sweeps used. 1.021 reprices the whole GoF line and marks every change in red; read it by rendering the pages, its text layer cannot be parsed.",
+      "move": 4
     },
     "ZHDR-203": {
       "score": 48,
-      "_source": "publisher GoF parts list v1.021 - the newest revision from the company, which supersedes the v1.02 championship xlsx the earlier sweeps used. 1.021 reprices the whole GoF line and marks every change in red; read it by rendering the pages, its text layer cannot be parsed."
+      "_source": "publisher GoF parts list v1.021 - the newest revision from the company, which supersedes the v1.02 championship xlsx the earlier sweeps used. 1.021 reprices the whole GoF line and marks every change in red; read it by rendering the pages, its text layer cannot be parsed.",
+      "move": 4
     },
     "ZHDR-102": {
       "score": 48,
@@ -279,6 +282,370 @@
     "ZHDR-107": {
       "score": 70,
       "_source": "publisher GoF parts list v1.021 - the newest revision from the company, which supersedes the v1.02 championship xlsx the earlier sweeps used. 1.021 reprices the whole GoF line and marks every change in red; read it by rendering the pages, its text layer cannot be parsed."
+    },
+    "024": {
+      "keywords": [
+        {
+          "key": "空手",
+          "en": "Freehand"
+        }
+      ]
+    },
+    "026": {
+      "keywords": [
+        {
+          "key": "空手",
+          "en": "Freehand"
+        }
+      ]
+    },
+    "031": {
+      "keywords": [
+        {
+          "key": "空手",
+          "en": "Freehand"
+        }
+      ]
+    },
+    "035": {
+      "keywords": [
+        {
+          "key": "空手",
+          "en": "Freehand"
+        }
+      ]
+    },
+    "039": {
+      "keywords": [
+        {
+          "key": "空手",
+          "en": "Freehand"
+        }
+      ]
+    },
+    "042": {
+      "keywords": [
+        {
+          "key": "空手",
+          "en": "Freehand"
+        }
+      ]
+    },
+    "044": {
+      "keywords": [
+        {
+          "key": "空手",
+          "en": "Freehand"
+        }
+      ]
+    },
+    "047": {
+      "keywords": [
+        {
+          "key": "空手",
+          "en": "Freehand"
+        }
+      ]
+    },
+    "049": {
+      "keywords": [
+        {
+          "key": "空手",
+          "en": "Freehand"
+        }
+      ]
+    },
+    "052": {
+      "keywords": [
+        {
+          "key": "空手",
+          "en": "Freehand"
+        }
+      ]
+    },
+    "054": {
+      "keywords": [
+        {
+          "key": "空手",
+          "en": "Freehand"
+        }
+      ]
+    },
+    "057": {
+      "keywords": [
+        {
+          "key": "空手",
+          "en": "Freehand"
+        }
+      ]
+    },
+    "059": {
+      "keywords": [
+        {
+          "key": "空手",
+          "en": "Freehand"
+        }
+      ]
+    },
+    "065": {
+      "keywords": [
+        {
+          "key": "空手",
+          "en": "Freehand"
+        }
+      ]
+    },
+    "069": {
+      "keywords": [
+        {
+          "key": "空手",
+          "en": "Freehand"
+        }
+      ]
+    },
+    "105": {
+      "keywords": [
+        {
+          "key": "空手",
+          "en": "Freehand"
+        }
+      ]
+    },
+    "108": {
+      "keywords": [
+        {
+          "key": "空手",
+          "en": "Freehand"
+        }
+      ]
+    },
+    "110": {
+      "keywords": [
+        {
+          "key": "空手",
+          "en": "Freehand"
+        }
+      ]
+    },
+    "112": {
+      "keywords": [
+        {
+          "key": "空手",
+          "en": "Freehand"
+        }
+      ]
+    },
+    "114": {
+      "keywords": [
+        {
+          "key": "空手",
+          "en": "Freehand"
+        }
+      ]
+    },
+    "123": {
+      "keywords": [
+        {
+          "key": "空手",
+          "en": "Freehand"
+        }
+      ]
+    },
+    "125": {
+      "keywords": [
+        {
+          "key": "空手",
+          "en": "Freehand"
+        }
+      ]
+    },
+    "128": {
+      "keywords": [
+        {
+          "key": "空手",
+          "en": "Freehand"
+        }
+      ]
+    },
+    "130": {
+      "keywords": [
+        {
+          "key": "空手",
+          "en": "Freehand"
+        }
+      ]
+    },
+    "141": {
+      "keywords": [
+        {
+          "key": "空手",
+          "en": "Freehand"
+        }
+      ]
+    },
+    "143": {
+      "keywords": [
+        {
+          "key": "空手",
+          "en": "Freehand"
+        }
+      ]
+    },
+    "147": {
+      "keywords": [
+        {
+          "key": "空手",
+          "en": "Freehand"
+        }
+      ]
+    },
+    "149": {
+      "keywords": [
+        {
+          "key": "空手",
+          "en": "Freehand"
+        }
+      ]
+    },
+    "151": {
+      "keywords": [
+        {
+          "key": "空手",
+          "en": "Freehand"
+        }
+      ]
+    },
+    "153": {
+      "keywords": [
+        {
+          "key": "空手",
+          "en": "Freehand"
+        }
+      ]
+    },
+    "253": {
+      "keywords": [
+        {
+          "key": "空手",
+          "en": "Freehand"
+        }
+      ]
+    },
+    "255": {
+      "keywords": [
+        {
+          "key": "空手",
+          "en": "Freehand"
+        }
+      ]
+    },
+    "283": {
+      "keywords": [
+        {
+          "key": "空手",
+          "en": "Freehand"
+        }
+      ]
+    },
+    "285": {
+      "keywords": [
+        {
+          "key": "空手",
+          "en": "Freehand"
+        }
+      ]
+    },
+    "509": {
+      "keywords": [
+        {
+          "key": "空手",
+          "en": "Freehand"
+        }
+      ]
+    },
+    "511": {
+      "keywords": [
+        {
+          "key": "空手",
+          "en": "Freehand"
+        }
+      ]
+    },
+    "513": {
+      "keywords": [
+        {
+          "key": "空手",
+          "en": "Freehand"
+        }
+      ]
+    },
+    "515": {
+      "keywords": [
+        {
+          "key": "空手",
+          "en": "Freehand"
+        }
+      ]
+    },
+    "517": {
+      "keywords": [
+        {
+          "key": "空手",
+          "en": "Freehand"
+        }
+      ]
+    },
+    "519": {
+      "keywords": [
+        {
+          "key": "空手",
+          "en": "Freehand"
+        }
+      ]
+    },
+    "557": {
+      "keywords": [
+        {
+          "key": "空手",
+          "en": "Freehand"
+        }
+      ]
+    },
+    "546": {
+      "keywords": [
+        {
+          "key": "多目标X",
+          "en": "Multi-Target X"
+        },
+        {
+          "key": "空手",
+          "en": "Freehand"
+        }
+      ]
+    },
+    "547": {
+      "keywords": [
+        {
+          "key": "多目标X",
+          "en": "Multi-Target X"
+        },
+        {
+          "key": "空手",
+          "en": "Freehand"
+        }
+      ]
+    },
+    "164": {
+      "move": 9
+    },
+    "165": {
+      "move": 9
+    },
+    "166": {
+      "move": 9
+    },
+    "ZHRA-301": {
+      "parray": 0
     }
   },
   "_notes": {
