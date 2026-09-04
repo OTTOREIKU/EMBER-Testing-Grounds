@@ -131,7 +131,9 @@ const combatView = {
 // Every value here is deliberately NOT the default, so a field that
 // normaliseScript forgets to carry across fails rather than coincidentally
 // matching what it would have defaulted to.
-const counter = { initiatorUid: 7, responderUid: 9, actionId: 'EWA', initRoll: [0, 3], respRoll: null, initFocused: true, respFocused: false, provoke: 'taken' };
+// thenAttack: the attack waiting behind a free Scan (FAQ I12); null when the
+// Scan was opened as an Action of its own, which is what an older save reads as.
+const counter = { initiatorUid: 7, responderUid: 9, actionId: 'EWA', initRoll: [0, 3], respRoll: null, initFocused: true, respFocused: false, provoke: 'taken', thenAttack: null };
 const live = { turn: 's2', acted: [7, 8], extraOpps: [8], commanded: [9], freeCommand: [], passed: ['s1'], stage: '2:3', mode: 'hidden', strict: true, commits: { s1: 'deadbeef' }, revealed: ['s2'], seats: { s1: 'local', s2: 'remote' }, opp, oppStack, intercepts, reactions, counter, endDone, oncePerRound, rollback, rollbacks: 3, rollbackCatalog, combat, combatView };
 
 // This fixture has lagged behind ScriptState four times now, each costing a

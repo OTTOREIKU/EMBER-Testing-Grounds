@@ -2,7 +2,7 @@ import type { BoardGrids, CombatView, Facing, GameState, MechLoadout, Opportunit
 import { addStatus, ageTokens, cellsOf, gridsOf, newOpportunity, PHASES, statusCount, STATUSES, TIMINGS } from './types';
 import type { GameData } from './data';
 import { cardName, transformFaces, unfoldsInto, discardFaceOf, environmentAllowance } from './data';
-import { covertCarryLock, ammoDeliveryPool, opportunityBonusOn, ripostePart, defenseReactionOn, targetTracingOn, riderOnDrone, hasFlexibleTiming, commandGeneration, blinkTargets, isPositionSwap, electronicOrigins, isSilentAction, maneuverIsSilent, loanedParts, unfoldToken, formSwitch, switchFormTo, extrasFor, consumesCharge, cutTethersOn, electronicDash, electronicValue, immobilizedStop, isScanAction, scannable, manifestationRange, nonHumanoidCost, nonHumanoidStop, envHotEntries, settleEnvironments, freehandSlots, interceptCapacity, anyStartTiming, focusIsFree, keepsLinkOnPartLoss, makeDroneToken, structureOf, makeMechToken, maneuverRange, maxLink, partsLeft, pilotCard, pilotIs, projectileDelivery, provokeWhy, settleTethers, SLOT_LABEL, tetherTo, tokenCards, transformPartOn } from './units';
+import { covertCarryLock, ammoDeliveryPool, opportunityBonusOn, ripostePart, defenseReactionOn, targetTracingOn, riderOnDrone, hasFlexibleTiming, commandGeneration, blinkTargets, isPositionSwap, electronicOrigins, isSilentAction, maneuverIsSilent, loanedParts, unfoldToken, formSwitch, switchFormTo, extrasFor, consumesCharge, cutTethersOn, electronicDash, electronicValue, immobilizedStop, isScanAction, scannable, manifestationRange, nonHumanoidCost, nonHumanoidStop, envHotEntries, settleEnvironments, freehandSlots, interceptCapacity, anyStartTiming, focusIsFree, keepsLinkOnPartLoss, makeDroneToken, structureOf, makeMechToken, maneuverRange, maxLink, partsLeft, pilotCard, pilotIs, projectileDelivery, provokeWhy, settleTethers, SLOT_LABEL, tetherTo, tokenCards, transformPartOn, actionRange, isRwsAction, rwsCommandKey, rwsFiredKey, selfStatusGrant, selfGrantWhy, straightLineBonus, linkTickTraitOn } from './units';
 import { tetherCap } from './melee';
 import { canActivate, canAttackMode, canManeuver, canOverload, canPerform, spendAction, spendActivation, spendAttackMode, spendManeuver, spendOverload } from './ticks';
 import { tacticSpec, tacticTargets, type TacticCtx } from './tactics';
@@ -90,6 +90,9 @@ export type Command =
   // client cannot act out of turn by asserting the flag.
   | { kind: 'performAction'; seat: Side; uid: number; actionId: string; partKey?: string; granted?: boolean }
   | { kind: 'overload'; seat: Side; uid: number }
+  // A pilot trait trading Link for an ordinary Action Tick (FPA-04-2 Domestic
+  // Expert, FAQ L2). Same class of spend as overload, gated by the trait.
+  | { kind: 'linkTick'; seat: Side; uid: number }
   // Card 547's Attack Mode. A DECLARED command rather than a bonus minted with
   // the Opportunity, because the Stance it depends on is chosen during the
   // Opportunity (4.1) — newOpportunity still holds the previous round's Stance
@@ -197,6 +200,9 @@ export type Command =
       // as an Action, so the Action's own Range does not gate it -- whatever
       // reach the attack had is the reach this answers at (174).
       reaction?: boolean;
+      // The free Scan a Firing or Melee designation of a camouflaged unit earns
+      // (4.12.2, FAQ I12): the attack that waits behind this Counter-roll.
+      thenAttack?: { actionId: string };
     }
   | { kind: 'rollCounter'; seat: Side; uid: number; faces: number[]; focused?: boolean }
   // LPA-22 Yoyu's 挑衅 Provoke, answered. `uid` is YOYU -- the Responder that
@@ -228,7 +234,7 @@ export type Command =
       kind: 'queueReactions'; seat: Side;
       // `kind` absent means Emergency Smoke, which is every debt written before
       // Target Tracing existed and every one still on a saved board.
-      items: { uid: number; actionId: string; count: number; range: number; kind?: 'smoke' | 'trace' | 'stance' | 'riposte' | 'manifest'; fromUid?: number }[];
+      items: { uid: number; actionId: string; count: number; range: number; kind?: 'smoke' | 'trace' | 'stance' | 'riposte' | 'manifest' | 'scanAttack'; fromUid?: number }[];
     }
   | { kind: 'resolveReaction'; seat: Side; uid: number; actionId: string }
   // The "White Dwarf" Bit turning its card over (293/294/295). The set is read
@@ -905,7 +911,7 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       // refuses; the sandbox and guide still warn through perform().
       if (getLocalSeat() && state.script) {
         const ph = PHASES[state.round.phase];
-        if (isLoopPhase(ph) && !loopComplete(state, ph)) {
+        if (isLoopPhase(ph) && !loopComplete(state, ph, data)) {
           return no(`The ${ph} Phase is not over: a squad can still designate, and a squad done for the phase passes instead (3.2.3).`);
         }
         // And even a finished phase turns only when BOTH players have pressed
@@ -1244,12 +1250,12 @@ function movementReach(data: GameData, state: GameState, t: Token): number {
   for (const { slot, card } of tokenCards(data, t)) {
     if ((t.partStates?.[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
     for (const a of card.actions ?? []) {
-      if (a.type === 'Moving') reach = Math.max(reach, a.range ?? 0);
+      if (a.type === 'Moving') reach = Math.max(reach, (a.range ?? 0) + straightLineBonus(a));
     }
   }
   for (const { card } of loanedParts(data, state.tokens, t)) {
     for (const a of card.actions ?? []) {
-      if (a.type === 'Moving') reach = Math.max(reach, a.range ?? 0);
+      if (a.type === 'Moving') reach = Math.max(reach, (a.range ?? 0) + straightLineBonus(a));
     }
   }
   return reach;
@@ -1386,6 +1392,14 @@ function checkActed(
       if (so?.stanceLocked && cmd.stance !== t.stance) {
         return no('This Mech has already acted this Action Opportunity, so its Stance is set (4.1).');
       }
+      // Online, a Mech that does not hold the open Opportunity has no Stance
+      // choice to make once the game is running (4.1): deployment sets it
+      // through deployUnit, and Suppression, Provoke and the Tactics Cards
+      // carry their own commands. The squad panel is read-only online, so
+      // this is the gate for a stale or modified client.
+      if (getLocalSeat() && state.script && normaliseSetup(state.setup)?.stage === 'done' && !so && cmd.stance !== t.stance) {
+        return no('A Mech chooses its Stance at the start of its own Action Opportunity (4.1).');
+      }
       return ok;
     }
     case 'defenseReaction': {
@@ -1404,6 +1418,15 @@ function checkActed(
       return ok;
     }
     case 'maneuver': {
+      // SHUTDOWN (4.1.1): "it cannot Maneuver or perform any Actions other than
+      // Reboot." Both panels used to draw the Maneuver row live for a Shutdown
+      // Mech, and nothing here refused the walk.
+      if (t.kind === 'mech' && t.stance === 'shutdown') return no('A Mech in Shutdown Stance cannot Maneuver or perform any Action other than Reboot (4.1.1).');
+      // RWS: a Command sent to a Mech buys the autocannon's shot and nothing
+      // else (遥控武器) - a Mech's Movement belongs to its Action Opportunity.
+      if (t.kind === 'mech' && PHASES[state.round.phase] === 'Command' && oppOf(state, cmd.uid)) {
+        return no('A Mech commanded through RWS fires that Part and does not move (遥控武器); it Maneuvers in its own Action Opportunity.');
+      }
       // IMMOBILIZED (6.3.2). Refused HERE rather than only in the two boards'
       // movers, because this is the rule and those were a courtesy: the ban
       // lived in two freeplay UI handlers and nowhere else, so it did not exist
@@ -1733,6 +1756,28 @@ function checkActed(
     case 'performAction': {
       const a = findAction(data, state, cmd.uid, cmd.actionId);
       if (!a) return no('This unit has no such Action.');
+      if (t.kind === 'mech' && t.stance === 'shutdown') return no('A Mech in Shutdown Stance cannot Maneuver or perform any Action other than Reboot (4.1.1).');
+      // A self-applied Token (Ambush, Amplify Profile) the unit already wears
+      // is a change the Action cannot make (6.1; FAQ J1 for a second Ambush).
+      const selfGrant = selfStatusGrant(a);
+      if (selfGrant) {
+        const why = selfGrantWhy(t, selfGrant);
+        if (why) return no(why);
+      }
+      // RWS (遥控武器, FAQ A20/A22): the only Action a Mech performs in the
+      // Command Phase is the autocannon a Command was sent for. It costs the
+      // activation the Command bought, not Ticks - there is no Opportunity of
+      // Ticks in this phase - and each Part fires once per round.
+      if (t.kind === 'mech' && PHASES[state.round.phase] === 'Command' && state.script) {
+        const o = oppOf(state, cmd.uid);
+        if (!o) return no('It is not this Mech\'s activation.');
+        if (!isRwsAction(a)) return no('In the Command Phase a Mech performs only the RWS Action a Command was sent for (遥控武器); its own Action Opportunity comes in the Action Phase.');
+        if ((state.script.oncePerRound ?? []).includes(rwsFiredKey(state.round.n, cmd.uid, a.id))) {
+          return no('That Part has already fired on a Command this round: an RWS Part receives one Command per round (遥控武器).');
+        }
+        return fromVerdict(canActivate(o));
+      }
+
       // Riposte (050 / ZHLA-202) is the one Action performed outside an
       // Opportunity, and the grant has to be real: a queued riposte debt for
       // THIS unit is the proof, and it buys a Melee Action and nothing else.
@@ -1768,6 +1813,7 @@ function checkActed(
       }));
     }
     case 'overload': {
+      if (t.kind === 'mech' && t.stance === 'shutdown') return no('A Mech in Shutdown Stance cannot Maneuver or perform any Action other than Reboot (4.1.1).');
       const ids = new Set(data.overload.map((g) => g.actionId));
       const has = tokenCards(data, t).some(({ card }) => (card.actions ?? []).some((a) => ids.has(a.id)));
       if (!has) return no('This Mech has no Overloading Pack.');
@@ -1775,7 +1821,25 @@ function checkActed(
       if (!o) return no('It is not this Mech\'s Action Opportunity.');
       return fromVerdict(canOverload(o, t.link ?? 0));
     }
+    case 'linkTick': {
+      if (t.kind !== 'mech') return no('Only a Mech has a pilot to spend Link.');
+      if (t.stance === 'shutdown') return no('A Mech in Shutdown Stance cannot Maneuver or perform any Action other than Reboot (4.1.1).');
+      const trait = linkTickTraitOn(data, t);
+      if (!trait) return no('This Mech\'s pilot has no trait that trades Link for an Action Tick.');
+      const o = oppOf(state, cmd.uid);
+      if (!o) return no('It is not this Mech\'s Action Opportunity.');
+      // FAQ L2: the Stance comes first, then the declaration.
+      if (trait.stance && t.stance !== trait.stance) {
+        return no(`${trait.label} works in ${trait.stance.charAt(0).toUpperCase()}${trait.stance.slice(1)} Stance: switch Stance first, then declare it (FAQ L2).`);
+      }
+      if ((o.linkTicks ?? 0) >= trait.maxLink) return no(`${trait.label} trades at most ${trait.maxLink} Link per Action Opportunity, and it has been spent.`);
+      // A voluntary spend, so the last Link stays (4.10, FAQ L1).
+      if ((t.link ?? 0) < 2) return no('This consumes Link, and the last Link can never be spent voluntarily (4.10).');
+      return ok;
+    }
     case 'attackMode': {
+      if (t.kind === 'mech' && t.stance === 'shutdown') return no('A Mech in Shutdown Stance cannot Maneuver or perform any Action other than Reboot (4.1.1).');
+
       // A Torso Part, so the holder is always a Mech — but say so, because the
       // lock apply() takes is lockStance(), which silently does nothing for a
       // Drone and would leave the bonus with no Stance gate at all.
@@ -1954,8 +2018,9 @@ function checkActed(
       if (!a) return no('This unit has no such Action.');
       // Range only: Electronic Warfare ignores Terrain and line of sight
       // entirely (4.11.1), so the arc and sight checks a Firing Action needs
-      // have no place here.
-      const reach = a.range ?? 0;
+      // have no place here. The effective reach: FPA-06 Amplify adds a Grid to
+      // an Electronic Attack, and reading the printed number refused it.
+      const reach = actionRange(data, state.tokens, t, a);
       // A reaction still has to BE one: the Passive has to be live on this Mech
       // with a Command Token to spend. The rule lives here, not in whoever drew
       // the button.
@@ -1969,6 +2034,15 @@ function checkActed(
       // Tick and an End Phase gone.
       if (isScanAction(a) && !scannable(target)) {
         return no(`${target.label} is neither in the Optical Camouflage State nor bearing a Low Profile Token, so a Scan could not change anything (4.12.4).`);
+      }
+      // The free Scan on designation (4.12.2, FAQ I12): only a Scan may carry
+      // an attack behind it, only against a camouflaged target, and the attack
+      // has to be a Firing or Melee Action this unit can declare.
+      if (cmd.thenAttack) {
+        if (!isScanAction(a)) return no('Only a Scan carries an attack behind it (FAQ I12).');
+        if (statusCount(target.statuses, 'camouflage') === 0) return no(`${target.label} is not in the Optical Camouflage State, so no free Scan is owed: attack it directly.`);
+        const atk = findAction(data, state, cmd.uid, cmd.thenAttack.actionId);
+        if (!atk || (atk.type !== 'Firing' && atk.type !== 'Melee')) return no('The free Scan precedes a Firing or Melee Action that designates the camouflaged unit (FAQ I12).');
       }
       // An allied Repeater lends its position as the origin, and the Action's
       // own Range is measured from there (FAQ O19). Derived rather than sent,
@@ -2108,9 +2182,9 @@ function checkActed(
       // designate is refused right here, and the phase deadlocks. Found in the
       // 2026-08-16 mock playtest, on the very first Command Phase driven with
       // the drones all on the second player's side.
-      const turnNow = canAct(state, phase, sc.turn) ? sc.turn : (nextTurn(state, phase, sc.turn) ?? sc.turn);
+      const turnNow = canAct(state, phase, sc.turn, data) ? sc.turn : (nextTurn(state, phase, sc.turn, data) ?? sc.turn);
       if (turnNow !== cmd.seat) return no('It is the other squad\'s turn to designate (3.2.2).');
-      if (!eligibleUnits(state, phase, cmd.seat).some((x) => x.uid === cmd.uid)) return no(`${t.label} cannot be designated this phase.`);
+      if (!eligibleUnits(state, phase, cmd.seat, data).some((x) => x.uid === cmd.uid)) return no(`${t.label} cannot be designated this phase.`);
       // Step 1 of 4.15.2 is naming the Mech that issues, so a named Mech has to
       // be one that actually holds a face-up Command. Omitting fromUid is still
       // legal - the fullest Mech pays - because replays and the Automatic and
@@ -2120,7 +2194,10 @@ function checkActed(
       // a White Dwarf Bit keep its token through a Stance change and be barred
       // from a second on exactly those grounds. A free Command (FAQ O14) places
       // no token, so it is not capped by this.
-      if (phase === 'Command' && !sc.freeCommand.includes(cmd.uid) && heldCommands(t) > 0) {
+      // Drones only: a Mech designated here is taking an RWS Command
+      // (遥控武器), and its own face-up tokens are not a Command it received.
+      // Its cap is per Part, judged by eligibleUnits through the ledger.
+      if (phase === 'Command' && t.kind === 'drone' && !sc.freeCommand.includes(cmd.uid) && heldCommands(t) > 0) {
         return no(`${t.label} already has a Command Token, so it cannot take another (4.15.2).`);
       }
       if (phase === 'Command' && cmd.fromUid !== undefined && !sc.freeCommand.includes(cmd.uid)) {
@@ -2136,6 +2213,9 @@ function checkActed(
       return ok;
     }
     case 'stabilise': {
+      // Stabilize System is an Action (6.1, a Tactical Short Action), and a
+      // Shutdown Mech performs none but Reboot (4.1.1).
+      if (t.stance === 'shutdown') return no('A Mech in Shutdown Stance cannot Stabilize; it may only Reboot (4.1.1).');
       // Either half of the action justifies it on its own (FAQ J4/J6/J7):
       // remove a Token, restore a Link, or both. Only a Mech with neither a
       // removable Token nor a missing Link has nothing to change (J8).
@@ -2166,6 +2246,9 @@ function checkActed(
         }
         const range = manifestationRange(data, t);
         if (range <= 0) return no(`${t.label} has no Stealth value, so it Reveals where it stands.`);
+        // Manifestation Movement is a Movement, and an Immobilized unit makes
+        // none: it Reveals where it stands (FAQ I20).
+        if (immobilizedStop(t)) return no(`${t.label} bears an Immobilized Token, so it Reveals where it stands rather than Manifesting away (FAQ I20).`);
         // Chebyshev on Large Grids: a Grid diagonally over is one Grid away,
         // the same measure Adjacent uses.
         const away = Math.max(
@@ -2398,6 +2481,14 @@ function shedLowProfile(data: GameData, state: GameState, t: Token): void {
 
 function applyCommand(data: GameData, state: GameState, cmd: Command): void {
   if (cmd.kind === 'advancePhase') {
+    // No attack survives a phase turn. The defence handshake and the published
+    // combat view are per-attack state; left standing, an attacker who
+    // reloaded mid-attack could never clear them and every later callDefense
+    // was refused for the rest of the game.
+    if (state.script) {
+      state.script.combat = null;
+      state.script.combatView = null;
+    }
     // The both-ready agreement is consumed by the turn it authorised, so
     // every phase asks afresh — and a racing second advance finds the flags
     // gone and is refused, which is the idempotence.
@@ -2470,7 +2561,7 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
     const phase = PHASES[state.round.phase];
     if (!sc || !isLoopPhase(phase)) return;
     if (!sc.passed.includes(cmd.seat)) sc.passed.push(cmd.seat);
-    sc.turn = nextTurn(state, phase, cmd.seat) ?? cmd.seat;
+    sc.turn = nextTurn(state, phase, cmd.seat, data) ?? cmd.seat;
     return;
   }
   if (cmd.kind === 'markEndStep') {
@@ -3044,6 +3135,9 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
         // A Reboot IS the Stance choice (4.1.1), so the one remaining Action
         // Tick must not be refused by the 4.1 lock gate.
         o.stanceLocked = true;
+        // "will only have 1 Action Tick" (4.1.1, FAQ L8): the Extra Ticks a
+        // Part granted at the start of the Opportunity go with the rest.
+        o.extras = [];
       }
       return;
     }
@@ -3183,6 +3277,13 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
         // It belongs to no Opportunity, so there are no Ticks to charge.
         return;
       }
+      // RWS in the Command Phase spends the activation the Command bought and
+      // marks the Part fired (遥控武器: once per round).
+      if (a && sc && t.kind === 'mech' && PHASES[state.round.phase] === 'Command' && isRwsAction(a)) {
+        sc.oncePerRound.push(rwsFiredKey(state.round.n, t.uid, a.id));
+        if (o) sc.opp = spendActivation(o, a);
+        return;
+      }
       if (a && o && sc) {
         sc.opp = t.kind === 'mech'
           // anyTiming rides along with flexible so the SPEND agrees with the
@@ -3199,6 +3300,18 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       if (o && sc) sc.opp = spendOverload(o);
       // Spending the last Link is a Shutdown like any other: the consequence
       // lives inside the command so a mirrored seat reaches the same state.
+      if (t.link === 0 && t.stance !== 'shutdown') t.stance = 'shutdown';
+      return;
+    }
+    case 'linkTick': {
+      const trait = linkTickTraitOn(data, t);
+      const o = oppOf(state, cmd.uid);
+      if (!trait || !o || !sc) return;
+      t.link = Math.max(0, (t.link ?? 0) - 1);
+      // The Tick IS the Stance choice, as Attack Mode's is: taking it locks the
+      // Stance the trait asked for (FAQ L2), so the Mech cannot bank the Tick
+      // and flip Stance before spending it.
+      sc.opp = lockStance(t, { ...o, action: o.action + trait.perLink, linkTicks: (o.linkTicks ?? 0) + 1 });
       if (t.link === 0 && t.stance !== 'shutdown') t.stance = 'shutdown';
       return;
     }
@@ -3403,6 +3516,7 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
         initFocused: false,
         respFocused: false,
         provoke: null,
+        thenAttack: cmd.thenAttack ? { actionId: cmd.thenAttack.actionId } : null,
       };
       return;
     }
@@ -3581,11 +3695,15 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
           }
           syncCommandPool(state);
         }
-        if (!sc.commanded.includes(cmd.uid)) sc.commanded.push(cmd.uid);
+        // A Mech is only ever designated here for RWS (遥控武器): the ledger
+        // counts the Command against its Parts, once each per round. Drones
+        // keep the `commanded` list, which is what excludes them from a second.
+        if (t.kind === 'mech') sc.oncePerRound.push(rwsCommandKey(state.round.n, t.uid));
+        else if (!sc.commanded.includes(cmd.uid)) sc.commanded.push(cmd.uid);
       } else if (!sc.acted.includes(cmd.uid)) {
         sc.acted.push(cmd.uid);
       }
-      sc.turn = nextTurn(state, phase, t.side) ?? t.side;
+      sc.turn = nextTurn(state, phase, t.side, data) ?? t.side;
       return;
     }
     case 'grantExtra': {

@@ -33,6 +33,10 @@ const tmp = new URL('./_loads.slice.ts', import.meta.url);
 writeFileSync(
   tmp,
   'type Card = any;\ntype CardAction = any;\ntype GameData = any;\ntype Token = any;\ntype PartSlot = any;\ntype Side = any;\n'
+    // actionRange branches on Electronic Attacks and Support (FPA-06 Amplify);
+    // neither reader is inside a cut this file takes and no fixture here fields
+    // a KeyHole, so both are stubbed neutral. amplify.test.mjs owns them.
+    + 'function amplifyBonus(_d: any, _t: any): number { return 0; }\nfunction isElectronicSupport(_a: any): boolean { return false; }\n'
     // Mirrored rather than sliced: the real ones drag in the whole app.
     + `function cardName(c: any): string { return c?.name?.en ?? c?.id ?? ''; }
 function tokenCards(data: any, t: any): any[] {

@@ -52,6 +52,8 @@ writeFileSync(
     + 'function rangeBetween(a: any, b: any): any { const p = largeGridOf(a), q = largeGridOf(b);\n'
     + '  return { range: Math.abs(p.c - q.c) + Math.abs(p.r - q.r) }; }\n'
     + 'function isElectronicAttack(_a: any): boolean { return false; }\n'
+    // The Amplify half of actionRange, likewise neutral here (amplify.test.mjs).
+    + 'function isElectronicSupport(_a: any): boolean { return false; }\nfunction amplifyBonus(_d: any, _t: any): number { return 0; }\n'
     + 'function statusCount(list: any, id: string): number { return (list ?? []).filter((x: any) => x === id).length; }\n'
     + slots
     + delivery

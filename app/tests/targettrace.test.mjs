@@ -64,7 +64,8 @@ check('the Match Centre drains a Link instead of applying Fire Control Interfere
 check('and freeplay drains it from the contest itself',
   /if \(c\.linkLoss\) \{[\s\S]{0,200}kind: 'drainLink'/.test(combat), true);
 check('the helper carries the loss rather than reading a card that has no rules',
-  /start\(initiator: Token, action: CardAction, responder: Token, opts: \{ linkLoss\?: number \} = \{\}\)/.test(combat), true);
+  // `then` beside it is the free Scan's callback (FAQ I12), not a card rule.
+  /start\(initiator: Token, action: CardAction, responder: Token, opts: \{ linkLoss\?: number; then\?: \(initiatorWins: boolean\) => void \} = \{\}\)/.test(combat), true);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

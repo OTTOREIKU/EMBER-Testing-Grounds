@@ -15,21 +15,37 @@ const src = (f) => readFileSync(new URL(`../src/${f}`, import.meta.url), 'utf8')
 
 console.log('Two-Handed designation\n');
 
-const units = src('units.ts'), combat = src('combat.ts'), hud = src('matchhud.ts'), main = src('main.ts');
+const units = src('units.ts'), combat = src('combat.ts'), hud = src('matchhud.ts'), main = src('main.ts'), match = src('match.ts');
 
-// ---------- One helper, three call sites ----------
+// ---------- One helper, every call site ----------
 // `granted`, not `steadied`, since the conditional keyword grants slid in
 // between the two (shockattack.test.mjs): stationary -> grants -> two-handed.
-check('the Match Centre applies it in both places it adjusts an Action',
-  (hud.match(/twoHandedUse\(ctx\.data, by, granted\)\?\.action \?\? granted/g) ?? []).length, 2);
-check('and freeplay in its one', /twoHandedUse\(data, t, granted\)\?\.action \?\? granted/.test(main), true);
+// FAQ A16 turned the application into an OFFER: the Match Centre reads it
+// through handsFor at both of its sites, freeplay asks askTwoHanded at both of
+// its doors, and match.ts applies it where the attack actually starts - which
+// it used to skip, so the Match Centre rolled a Two-Handed weapon without the
+// rider its own picker had promised.
+check('the Match Centre reads it in both places it adjusts an Action',
+  (hud.match(/handsFor\(ctx, by, granted, m\.twoHanded\)/g) ?? []).length, 2);
+check('and freeplay asks it at both of its doors',
+  (main.match(/askTwoHanded\(t, granted\)/g) ?? []).length, 2);
+check('and the Match Centre applies it where the attack starts',
+  /twoHandedUse\(data, t, granted\)\?\.action \?\? granted/.test(match), true);
 check('both sit AFTER the Stationary adjustment, so the riders compound',
-  /const steadied = raw \? stationaryAdjusted[\s\S]{0,500}twoHandedUse/.test(hud)
-  && /const steadied = stationaryAdjusted[\s\S]{0,500}twoHandedUse/.test(main), true);
+  /const steadied = raw \? stationaryAdjusted[\s\S]{0,900}handsFor/.test(hud)
+  && /const steadied = stationaryAdjusted[\s\S]{0,900}askTwoHanded/.test(main), true);
 
-// ---------- Applied, not asked ----------
-check('the choice is made for the player, with the reasoning recorded',
-  /The designation is APPLIED rather than asked/.test(units), true);
+// ---------- Offered, not applied (FAQ A16) ----------
+check('the helper applies and the pages offer, with the reasoning recorded',
+  /the pages OFFER it \(FAQ A16/.test(units), true);
+check('a declined designation is a marked one-handed copy on every page',
+  /twoHandedDeclined: true/.test(hud) && /twoHandedDeclined: true/.test(main) && /twoHandedDeclined: true/.test(match), true);
+check('and the combat window reports the decline instead of re-deriving the bonus',
+  /if \(c\.action\.twoHandedDeclined\) return/.test(combat), true);
+check('and the mirror rebuilds the same one-handed Action',
+  /attackActionOf\(at, view\.actionId, !!view\.twoHandedDeclined\)/.test(match), true);
+check('which travels on the published view',
+  /twoHandedDeclined: c\.action\.twoHandedDeclined \|\| undefined/.test(combat), true);
 check('and the Part picked is one that gives something back, when there is one',
   /hands\.find\(\(h\) => freehandSupport\(data, t, h\.slot, a\)\) \?\? hands\[0\]/.test(units), true);
 check('no hand free means no designation, rather than a free upgrade',

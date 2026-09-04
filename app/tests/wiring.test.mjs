@@ -102,7 +102,14 @@ check('the Mode-change branch pays before it returns',
 // pays before its free maneuver travels, for the same reason the Stance Change
 // does - the command layer only allows a free move once its Action has been
 // performed (shockattack.test.mjs pins the ordering).
-check('every tool has a commitAction', [...hud.matchAll(/commitAction\(ctx\)/g)].length, 16);
+// Seventeen since 2026-09-03: the Details card's Attack button goes through
+// startActionFromCard, the same door as [data-doact], with its own no-tool
+// path - it used to open the target list directly and never paid.
+// Nineteen since the 2026-09-03 rulings batch: the self-applied Token branch
+// of routeAction (Ambush, Amplify Profile) is immediate and pays itself, and
+// the free Scan on a camouflaged target (FAQ I12) pays the attack's Tick at
+// the designation before the Counter-roll opens.
+check('every tool has a commitAction', [...hud.matchAll(/commitAction\(ctx\)/g)].length, 19);
 
 // ---------- The ATTRIBUTED seat stamp ----------
 //

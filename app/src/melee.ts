@@ -23,6 +23,11 @@ export function isMeleeFiring(a: CardAction): boolean {
 
 export function meleeCapable(data: GameData, t: Token): boolean {
   if (t.stance === 'shutdown' || !isDeployed(t)) return false;
+  // A Transformable Mech in Cruise Mode creates no Melee Lock unless a Melee
+  // Action is printed as usable in that mode, and none is (FAQ N3). The
+  // transformed core is the torso printing its own Move value - the same test
+  // maneuverRange uses.
+  if (t.kind === 'mech' && t.mech?.torso && data.byId?.get(t.mech.torso)?.move) return false;
   const intact = (slot: PartSlot | 'pilot' | 'main') => (t.partStates[slot as PartSlot | 'main'] ?? 'intact') !== 'destroyed';
   if (t.kind === 'mech') {
     const punch = data.commonActions.find((a) => a.id === 'COMMON_PUNCH_MELEE');

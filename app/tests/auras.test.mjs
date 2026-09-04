@@ -31,6 +31,10 @@ export function tokenCards(data: any, t: any): any[] {
   return out;
 }
 function largeGridOf(t: any): any { return { c: Math.floor(t.col / 3), r: Math.floor(t.row / 3) }; }
+// actionRange now branches on Electronic Attacks (FPA-06 Amplify) and the real
+// reader sits far outside every cut this file takes. Stubbed false: nothing
+// here fires an Electronic Attack, and amplify.test.mjs owns that half.
+export function isElectronicAttack(_a: any): boolean { return false; }
 `
   + cut(rules, 'export function rangeBetween', 'export function inArc', 'rangeBetween')
   + cut(rules, 'export function losBetween', 'export function rangeBetween', 'losBetween')

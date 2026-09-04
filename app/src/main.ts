@@ -60,7 +60,7 @@ import { PlayGuide } from './playguide';
 import type { BoardGrids, Card, CardAction, DiceData, DieColor, Facing, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, StatusDef, TerrainPiece, Timing, Token } from './types';
 import { addStatus, cellsOf, DEFAULT_GRIDS, gridsOf, normaliseScript, SCALES, statusCount, statusesFor, STATUSES, zonesOf } from './types';
 import { actionIdOf } from './ticks';
-import { transformOffer, automaticShieldFor, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, twoHandedUse, electronicValue, martyrdomOwed, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, loanedParts, phasesThroughUnits, minesLayable, minesOwed, multiTargetLimit, unfoldsOwed, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, immobilizedStop, activatesCamo, isScanAction, scannable, formSwitch, grantAdjusted, shockAttackOf, shockMoveAllowed, stealthValue, manifestationRange, manifestTargets, nonHumanoidCost, nonHumanoidStop, maneuverIsSilent, maneuverSilenceDenier, envCardAt, envFlightFrom, envForcedStop, envHotEntries, envMoveRules, isGroundUnit, settleEnvironments, chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, projectileReach, type Resupply, resupplyOf, SLOT_LABEL, stationaryAdjusted, interceptLeft, interceptsOwed, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf, type AttackReaction } from './units';
+import { actionRange, straightLineBonus, selfStatusGrant, selfGrantWhy, transformOffer, automaticShieldFor, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, twoHandedUse, electronicValue, martyrdomOwed, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, loanedParts, phasesThroughUnits, minesLayable, minesOwed, multiTargetLimit, unfoldsOwed, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, immobilizedStop, activatesCamo, isScanAction, scannable, formSwitch, grantAdjusted, shockAttackOf, shockMoveAllowed, stealthValue, manifestationRange, manifestTargets, nonHumanoidCost, nonHumanoidStop, maneuverIsSilent, maneuverSilenceDenier, envCardAt, envFlightFrom, envForcedStop, envHotEntries, envMoveRules, isGroundUnit, settleEnvironments, chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, projectileReach, type Resupply, resupplyOf, SLOT_LABEL, stationaryAdjusted, interceptLeft, interceptsOwed, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf, type AttackReaction } from './units';
 import { registerOffline } from './offline';
 import { battlefieldLocked, countHits, firstPlayerFrom, newSetup, normaliseSetup, tasksLocked, type SetupState } from './setup';
 import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
@@ -197,7 +197,7 @@ async function init() {
         // Penetrated bearer drops its Black Box — the Box lands around the
         // NEW position (FAQ E19), which is why the drops queue until here.
         await resolveKnockback(attacker, defender, action, hits);
-        for (const q of pendingBoxDrops.splice(0)) dropBlackBoxes(q.victim, q.attacker);
+        drainBoxDrops();
         if (attacker.kind === 'projectile') {
           state.tokens = state.tokens.filter((x) => x.uid !== attacker.uid);
           if (selectedUid === attacker.uid) selectToken(null);
@@ -390,7 +390,9 @@ async function init() {
       const max = act ? interceptCapacity(act) : undefined;
       const left = t.intercept?.[actionId];
       if (left === undefined || max === undefined || left >= max) return;
-      t.intercept![actionId] = left + 1;
+      // Through the command the Match Centre already sends, so the token comes
+      // back on both boards; `intercept` is a fingerprinted field.
+      perform(data, state, { kind: 'restoreIntercept', seat: t.side, uid: t.uid, actionId });
       onChanged();
       if (!combatBusy()) panel.showToken(t);
     },
@@ -409,7 +411,8 @@ async function init() {
       const opp = opp0?.uid === t.uid ? opp0 : null;
       const steadied = act ? stationaryAdjusted(act, opp) : undefined;
       const granted = steadied ? grantAdjusted(steadied, t, opp) : undefined;
-      const adjusted = granted ? (twoHandedUse(data, t, granted)?.action ?? granted) : undefined;
+      // [Two-Handed] is OFFERED (FAQ A16), the same question performGuided asks.
+      void (granted ? askTwoHanded(t, granted) : Promise.resolve(undefined)).then((adjusted) => {
       const proceed = (): void => {
         pendingAttack = { attackerUid: t.uid, actionId, mode: 'attack', action: adjusted };
         document.body.classList.add('targeting');
@@ -440,6 +443,7 @@ async function init() {
         return;
       }
       proceed();
+      });
     },
     onStartElectronic(t, actionId) {
       pendingAttack = { attackerUid: t.uid, actionId, mode: 'electronic' };
@@ -651,6 +655,13 @@ async function init() {
               body: 'A squad cannot designate its own unit as the target of a Firing or Melee Action (Rules Supplement 1.4.1). The strict tracker refuses it; use area damage instead.',
             });
             done?.(false);
+            return;
+          } else if (statusCount(defender.statuses, 'camouflage') > 0) {
+            // 4.12.2 (FAQ I11/I12): designating a unit in the Optical
+            // Camouflage State earns one FREE Scan first. A success Reveals it
+            // - its player chooses where it appears - and the attack resumes;
+            // a failure ends the attack with the Tick spent (I11).
+            freeScanThenAttack(attacker, defender, action, done);
             return;
           } else {
             // Multi-Target opens on its split step instead: one declaration,
@@ -892,7 +903,9 @@ async function init() {
         danger: true,
       });
       if (!ok) return;
-      state.removedTerrain = [...(state.removedTerrain ?? []), id];
+      // The same command a Crush or a hit sends, so a linked board loses the
+      // piece too. destroyTerrain is actor-optional; the seat is attribution.
+      perform(data, state, { kind: 'destroyTerrain', seat: state.round.firstPlayer, uid: -1, pieces: [id] });
       board.renderTerrain(currentTerrain());
       save();
     },
@@ -911,7 +924,11 @@ async function init() {
 
   // Both now live in rules.ts so the Match Centre reads the board the same way.
   function losNote(attacker: Token, defender: Token, action: { type?: string; range?: number; keywords?: unknown[] }): string {
-    return losNoteFor(attacker, defender, action, currentTerrain(), state.tokens, state.smoke ?? []);
+    // The EFFECTIVE Range, aura bonuses included - the Match Centre already
+    // judged on actionRange, so an aura-lengthened shot read as in range on
+    // one page and "beyond range" on the other.
+    const reach = actionRange(data, state.tokens, attacker, action as CardAction);
+    return losNoteFor(attacker, defender, { ...action, range: reach }, currentTerrain(), state.tokens, state.smoke ?? []);
   }
 
   function protectionFor(attacker: Token, defender: Token, action: { type?: string }): { white: number; note: string } {
@@ -978,6 +995,19 @@ async function init() {
       return;
     }
 
+    // Stabilize System and Reveal are Tactical Short Actions (6.1, p91): they
+    // are performed in an Action Opportunity for a Tick, not free in the End
+    // Phase, which is where the guide used to put them. Mirrors the Match
+    // Centre's [data-doact] branches for the same two ids.
+    if (action.id === 'COMMON_STABILIZE') {
+      void performStabilize(t, done);
+      return;
+    }
+    if (action.id === 'COMMON_REVEAL') {
+      void (async () => done(await offerManifestation(t, 'Reveal (6.1):')))();
+      return;
+    }
+
     if (isChargeAction(action)) {
       void performCharge(t, action, done);
       return;
@@ -1024,11 +1054,13 @@ async function init() {
     if (isElectronicAttack(action) || isScanAction(action)) {
       pendingAttack = { attackerUid: uid, actionId, mode: 'electronic', action, done };
       document.body.classList.add('targeting');
-      if (action.range) board.showRangeRings(t, action.range);
+      // The effective reach: FPA-06 Amplify adds a Grid to an Electronic Attack.
+      const ewReach = actionRange(data, state.tokens, t, action);
+      if (ewReach) board.showRangeRings(t, ewReach);
       const scanHint = isScanAction(action)
         ? ' A Scan targets an enemy in the Optical Camouflage State or bearing a Low Profile Token (4.12.4).'
         : '';
-      setHint(`${what}: click the target unit on the board.${action.range ? ` Range ${action.range} is shown.` : ''}${scanHint} Terrain and line of sight are ignored (4.11.1)${action.speed === 'auto' ? ', and an Automatic Action targets the NEAREST enemy in range (3.5.2)' : ''}. Esc cancels.`);
+      setHint(`${what}: click the target unit on the board.${ewReach ? ` Range ${ewReach} is shown.` : ''}${scanHint} Terrain and line of sight are ignored (4.11.1)${action.speed === 'auto' ? ', and an Automatic Action targets the NEAREST enemy in range (3.5.2)' : ''}. Esc cancels.`);
       return;
     }
 
@@ -1043,8 +1075,9 @@ async function init() {
       // as inline keywords so every reader downstream — the Snipe designation
       // included — sees a granted keyword exactly as it sees a printed one.
       const granted = grantAdjusted(steadied, t, opp0?.uid === uid ? opp0 : null);
-      // [Two-Handed]: applied, not asked, and the same helper both pages use.
-      const adjusted = twoHandedUse(data, t, granted)?.action ?? granted;
+      // [Two-Handed]: OFFERED (FAQ A16), through the one question both doors
+      // on this page ask; the Match Centre asks it as a switch on its picker.
+      void askTwoHanded(t, granted).then((adjusted) => {
       const proceed = (): void => {
         void offerChargeSpend(t, actionId);
         pendingAttack = { attackerUid: uid, actionId, mode: electronic ? 'electronic' : 'attack', action: adjusted, done };
@@ -1084,6 +1117,7 @@ async function init() {
         return;
       }
       proceed();
+      });
       return;
     }
 
@@ -1101,7 +1135,7 @@ async function init() {
       const range = action.range || maneuverRange(data, t);
       // A shove rides on the Movement rather than replacing it, so the push is
       // offered once the Mech has finished moving.
-      void startMove(uid, { range, label: what, airborne: isAirborneAction(action), action }, (moved) => {
+      void startMove(uid, { range, label: `${what}${straightLineBonus(action) ? ` (Range ${range}, +${straightLineBonus(action)} in a straight line)` : ''}`, airborne: isAirborneAction(action), action }, (moved) => {
         if (!moved || !knockbackOf(action, data.actionTranslation(actionId)?.english ?? undefined)) return done(moved);
         void offerShove(t, action).then(() => done(true));
       });
@@ -1160,6 +1194,27 @@ async function init() {
     // action opens the same Detonation resolver the Details tab uses (3.6.2).
     if (t.kind === 'projectile' && action.type !== 'Passive') {
       startDetonation(t, actionId);
+      return done(true);
+    }
+
+    // A self-applied Token (Ambush: Low Profile; Amplify Profile: Highlight).
+    // Placed by the app rather than left to "follow the card text", and refused
+    // when the unit already wears it (6.1, FAQ J1). Mirrors routeAction.
+    const grant = selfStatusGrant(action);
+    if (grant) {
+      const why = selfGrantWhy(t, grant);
+      if (why) {
+        void alertDialog({ title: 'Nothing to gain', body: why });
+        return done(false);
+      }
+      const v = perform(data, state, { kind: 'applyStatus', seat: t.side, uid: t.uid, targetUid: t.uid, statusId: grant.statusId, stacks: grant.stacks });
+      if (!v.ok) {
+        void alertDialog({ title: 'Refused', body: v.why ?? 'The Token was refused.' });
+        return done(false);
+      }
+      const label = STATUSES.find((x) => x.id === grant.statusId)?.label ?? grant.statusId;
+      logTo(t, `${what}: ${t.label} gains ${grant.stacks > 1 ? `${grant.stacks} ` : 'a '}${label} Token${grant.stacks > 1 ? 's' : ''}.`);
+      onChanged();
       return done(true);
     }
 
@@ -1948,7 +2003,7 @@ async function init() {
     if (!m) return;
     const t = state.tokens.find((x) => x.uid === m.uid);
     if (!t) return;
-    const cand = extendPath(m.path, { c, r }, t, m.steps, currentTerrain(), state.tokens, m.flying, moveOpts(t, m.flying));
+    const cand = extendPath(m.path, { c, r }, t, m.steps, currentTerrain(), state.tokens, m.flying, moveOpts(t, m.flying, m.action));
     // Unreachable from here: keep showing what is committed rather than
     // blanking the board, so the drawn route does not flicker as the cursor
     // crosses terrain.
@@ -2145,7 +2200,7 @@ async function init() {
       done,
     };
     selectToken(uid);
-    board.showReachable(reachableGrids(t, range, currentTerrain(), state.tokens, flying, moveOpts(t, flying)), range);
+    board.showReachable(reachableGrids(t, range, currentTerrain(), state.tokens, flying, moveOpts(t, flying, opts.action)), range);
     board.panEnabled = false;
     renderMoveCtrl();
     // Off breakAwayNote rather than a locker COUNT, so the sentence and the
@@ -2153,7 +2208,11 @@ async function init() {
     // counting heads here would have quoted a number the search does not charge.
     const breakAway = flying || t.aerial ? '' : breakAwayNote(data, t, state.tokens, currentTerrain());
     const leash = tetherNote(t, state.tokens);
-    setHint(`${opts.label} for ${t.label}: click a lit grid to move there. Click again further on to add a waypoint, Backspace steps back, then Confirm. Esc cancels.${breakAway}${leash ? ` ${leash}` : ''}`);
+    const straightBonus = straightLineBonus(opts.action);
+    const straight = straightBonus
+      ? ` [Moving in Straight Line]: a route that runs one way the whole time reaches ${range + straightBonus} Grids (+${straightBonus}); turn a corner and ${range} is the limit.`
+      : '';
+    setHint(`${opts.label} for ${t.label}:${straight} click a lit grid to move there. Click again further on to add a waypoint, Backspace steps back, then Confirm. Esc cancels.${breakAway}${leash ? ` ${leash}` : ''}`);
   }
 
 
@@ -2533,11 +2592,21 @@ async function init() {
     onChanged();
   }
 
+  // One bearer at a time. Each picker is drawn with board.showSmokeTargets,
+  // which clears the previous one, so draining the queue in a loop left only
+  // the LAST Penetrated bearer with a picker and the others' Boxes never asked
+  // for (a Multi-Target that Penetrated two carriers). The next bearer is
+  // started from the pick callback, once this one has nothing left to drop.
+  function drainBoxDrops(): void {
+    const next = pendingBoxDrops.shift();
+    if (next) dropBlackBoxes(next.victim, next.attacker);
+  }
+
   // When a Unit bearing a Black Box is Penetrated, the Box goes on the board and
   // the ATTACKER says where, in contact with the bearer's base (5.3.1).
   function dropBlackBoxes(victim: Token, attacker: Token): void {
     const held = normaliseTasks(state.tasks).items.filter((i) => i.kind === 'blackbox' && i.bearerUid === victim.uid);
-    if (!held.length) return;
+    if (!held.length) { drainBoxDrops(); return; }
     const g = largeGridOf(victim);
     const spots: { c: number; r: number; ok: boolean }[] = [];
     for (const [dc, dr] of [[0, 0], [0, -1], [1, 0], [0, 1], [-1, 0], [1, -1], [1, 1], [-1, 1], [-1, -1]] as const) {
@@ -2564,6 +2633,47 @@ async function init() {
       // More than one Box can be carried, so keep going until they are all down.
       dropBlackBoxes(victim, attacker);
     });
+  }
+
+  // Stabilize System (6.1): Torso removes 1 Square or Hexagon Token, then
+  // restores 1 Link. Removing the Token is the player's choice (FAQ J4), and
+  // the Link alone is enough reason to perform it (J6). Checked before it is
+  // performed, because the sandbox applies a refused command and would then
+  // report a failure the board had already accepted.
+  async function performStabilize(t: Token, done: (performed: boolean) => void): Promise<void> {
+    const shed = (t.statuses ?? []).find((id) => {
+      const d = STATUSES.find((x) => x.id === id);
+      return d?.shape === 'square' || d?.shape === 'hexagon';
+    });
+    let keepTokens = false;
+    if (shed) {
+      const label = STATUSES.find((x) => x.id === shed)?.label ?? shed;
+      const id = await choiceDialog({
+        title: `Stabilize ${t.label}`,
+        body: 'Stabilize System removes 1 Square or Hexagon Token and restores 1 Link. Removing the Token is optional (FAQ J4).',
+        choices: [
+          { id: 'both', label: `Remove ${label} and restore 1 Link`, primary: true },
+          { id: 'link', label: 'Keep the Tokens, restore 1 Link only' },
+          { id: 'cancel', label: 'Cancel', cancel: true },
+        ],
+        stacked: true,
+      });
+      if (id === null || id === 'cancel') return done(false);
+      keepTokens = id === 'link';
+    }
+    const cmd = { kind: 'stabilise' as const, seat: t.side, uid: t.uid, keepTokens };
+    const v = check(data, state, cmd);
+    if (!v.ok) {
+      await alertDialog({ title: 'Cannot Stabilize', body: v.why ?? 'The action was refused.' });
+      return done(false);
+    }
+    perform(data, state, cmd);
+    const label = shed && !keepTokens ? STATUSES.find((x) => x.id === shed)?.label ?? shed : null;
+    logTo(t, label
+      ? `Stabilize System: ${label} removed and Link restored to ${t.link}.`
+      : `Stabilize System: Link restored to ${t.link}.`);
+    onChanged();
+    done(true);
   }
 
   // Remote Access (5.3.3): an Electronic Counter-roll against a Terminal within
@@ -2611,7 +2721,10 @@ async function init() {
     // Through the command: a Terminal turned face-down is worth VP at the End
     // Phase, so setting `accessed` in place scored a different board on the
     // other client.
-    if (!perform(data, state, { kind: 'accessTerminal', seat: t.side, uid: t.uid, itemId: pick.id }).ok) return done(false);
+    // Same order for the same reason: a refused access must not be applied.
+    const access = { kind: 'accessTerminal' as const, seat: t.side, uid: t.uid, itemId: pick.id };
+    if (!check(data, state, access).ok) return done(false);
+    perform(data, state, access);
     logTo(t, `Remote Access succeeded on the ${zoneName(pick.zone)} Terminal, which is now face-down for the rest of the round.`);
     onChanged();
     done(true);
@@ -3260,6 +3373,9 @@ async function init() {
       void offerManifestation(defender, 'Scanned:').then(() => {
         onChanged();
         renderReactionPrompt();
+        // The attack behind a free Scan (FAQ I12) resumes now that the target
+        // has appeared.
+        resumeScanAttack();
       });
       return;
     }
@@ -3791,7 +3907,7 @@ async function init() {
   // Break Away and Crush both bend the movement search, and every caller that
   // draws a route or a range overlay has to bend it the same way or the overlay
   // promises a move the confirm step will refuse.
-  function moveOpts(t: Token, flying: boolean): MoveOpts {
+  function moveOpts(t: Token, flying: boolean, action?: CardAction | null): MoveOpts {
     const terrain = currentTerrain();
     // The Environment Cards' movement half: an Abyss ban, a Rugged exit
     // price, a Fragile Platform stop - each fragment absent unless the card
@@ -3816,6 +3932,9 @@ async function init() {
       // slipping past. The landing still has to be legal and Break Away is
       // still charged; only the ROUTE opens.
       phaseThrough: phasesThroughUnits(data, state.tokens, t),
+      // [Moving in Straight Line] +N (直线移动), read off the Movement Action
+      // this plan is spending; a bare Maneuver carries none.
+      straightBonus: straightLineBonus(action),
     };
   }
 
@@ -5172,11 +5291,15 @@ async function init() {
       ],
     });
     if (!pick) return done(false);
-    const v = perform(data, state, { kind: 'switchForm', seat: t.side, uid: t.uid, actionId: action.id, cardId: pick });
+    // Checked first: the sandbox applies a refused command, so checking the
+    // verdict afterwards reported a failure on a card that had already turned.
+    const swap = { kind: 'switchForm' as const, seat: t.side, uid: t.uid, actionId: action.id, cardId: pick };
+    const v = check(data, state, swap);
     if (!v.ok) {
       await alertDialog({ title: 'Cannot switch', body: v.why ?? 'The Stance change was refused.' });
       return done(false);
     }
+    perform(data, state, swap);
     logTo(t, `${what}: now ${cardName(data.byId.get(pick)!)}. One Movement follows.`);
     onChanged();
     // The Movement is part of the same Action, so a cancelled walk still leaves
@@ -5246,6 +5369,82 @@ async function init() {
       ? `${why} Optical Camouflage ends and ${t.label} Manifests to ${gridRef(Math.floor(to.col / 3), Math.floor(to.row / 3))} (4.12.2).`
       : `${why} Optical Camouflage ends (4.12.2). It stayed where its marker stood.`);
     return true;
+  }
+
+  // [Two-Handed] is a CHOICE (FAQ A16): the player may decline the designation
+  // and perform the Action one-handed. Every rider is upside, so the default
+  // button takes it; the declined copy is marked so the combat window says so.
+  async function askTwoHanded(t: Token, granted: CardAction): Promise<CardAction> {
+    const use = twoHandedUse(data, t, granted);
+    if (!use) return granted;
+    const go = await confirmDialog({
+      title: `[Two-Handed]: ${use.label}`,
+      body: `${t.label} may designate ${use.label} as the supporting Freehand for this Action: ${use.note.replace(/^\[Two-Handed\]: /, '')}. The player may decline and perform it one-handed instead (FAQ A16).`,
+      confirmLabel: 'Use both hands',
+      cancelLabel: 'One-handed',
+    });
+    return go ? use.action : { ...granted, twoHandedDeclined: true };
+  }
+
+  // The attack waiting behind a free Scan (4.12.2, FAQ I12): who declared it,
+  // what with, and the done() that pays the Tick when it ends either way.
+  let scanAttack: { attackerUid: number; targetUid: number; action: CardAction; done?: (performed: boolean) => void } | null = null;
+
+  // Designating a unit in the Optical Camouflage State earns one FREE Scan
+  // (FAQ I12). It is the ordinary Counter-roll in the ordinary window; only the
+  // ending differs. Success: the Reveal is queued to the target's player as a
+  // `manifest` debt (their choice of where it appears) and the attack resumes
+  // when that is answered. Failure: the attack ends, the Tick is spent, and the
+  // remaining Ticks are still the attacker's (I11). A Mech that cannot Scan at
+  // all (Electronic Value 0, 4.11.2) cannot attack a camouflaged unit.
+  function freeScanThenAttack(attacker: Token, defender: Token, action: CardAction, done?: (performed: boolean) => void): void {
+    const scan = data.commonActions.find((a) => a.id === 'COMMON_SCAN');
+    if (!scan) { done?.(false); return; }
+    if (electronicValue(data, attacker, loanedParts(data, state.tokens, attacker)) <= 0) {
+      void alertDialog({
+        title: `${attacker.label} cannot Scan`,
+        body: `${defender.label} is in the Optical Camouflage State, so the attack needs a Scan first (4.12.2) - and ${attacker.label} has an Electronic Value of 0, which cannot Initiate a Counter-roll (4.11.2). Pick another target, or Esc to cancel.`,
+      });
+      done?.(false);
+      return;
+    }
+    logTo(attacker, `${attacker.label} designates ${defender.label}, which is in Optical Camouflage: one free Scan first (4.12.2, FAQ I12).`);
+    showSideTab('combat');
+    electronicHelper.start(attacker, scan, defender, {
+      then: (win) => {
+        if (!win) {
+          logTo(attacker, `The Scan failed, so the attack on ${defender.label} ends. The Action Tick is spent; any remaining Ticks may still be used (FAQ I11).`);
+          done?.(true);
+          return;
+        }
+        scanAttack = { attackerUid: attacker.uid, targetUid: defender.uid, action, done };
+        renderReactionPrompt();
+      },
+    });
+  }
+
+  function resumeScanAttack(): void {
+    const s = scanAttack;
+    if (!s) return;
+    const defender = state.tokens.find((x) => x.uid === s.targetUid);
+    if (!defender || statusCount(defender.statuses, 'camouflage') > 0) return;
+    scanAttack = null;
+    const attacker = state.tokens.find((x) => x.uid === s.attackerUid);
+    if (!attacker) { s.done?.(true); return; }
+    const note = losNote(attacker, defender, s.action);
+    if (note.includes('✕')) {
+      logTo(attacker, `${defender.label} appeared where ${s.action.name.en || s.action.id} cannot reach it (${note}), so the attack ends. The Action Tick is spent (FAQ I11).`);
+      s.done?.(true);
+      return;
+    }
+    const multi = multiTargetLimit(s.action);
+    if (multi) attackHelper.startMulti(attacker, s.action, defender, multi);
+    else {
+      const prot = protectionFor(attacker, defender, s.action);
+      attackHelper.start(attacker, s.action, defender, note, prot.white, prot.note);
+    }
+    showSideTab('combat');
+    s.done?.(true);
   }
 
   function promptReveal(t: Token, why: string): void {
@@ -7514,8 +7713,8 @@ async function init() {
       const problems = state.scenario ? [] : factionProblems(data, state.tokens.filter((t) => t.side === side));
       if (problems.length) {
         void alertDialog({
-          title: 'That squad breaks the faction rule',
-          body: `${squadLabel(side)} was imported, but rulebook 5.1 says a squad may only contain units from a single faction, and a mech may only use parts from one faction.`,
+          title: 'That squad breaks a squad-building rule',
+          body: `${squadLabel(side)} was imported, but rulebook 5.1 says a squad may only contain units from a single faction, a mech may only use parts from one faction, and the same Pilot may not be seated twice.`,
           list: problems.map((p) => p.detail),
           closeLabel: 'Got it',
         });

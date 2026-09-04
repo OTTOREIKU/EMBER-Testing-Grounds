@@ -105,7 +105,7 @@ check('the Bit Port is not a form switch',
   // grants rather than leaving the player to find it.
   check('freeplay routes the Action', /if \(formSwitch\(action\)\) \{[\s\S]{0,140}?performFormSwitch/.test(main), true);
   check('and follows the switch with a Movement',
-    /performFormSwitch[\s\S]{0,2000}?kind: 'switchForm'[\s\S]{0,600}?startMove\(/.test(main), true);
+    /performFormSwitch[\s\S]{0,2000}?kind: 'switchForm'[\s\S]{0,1200}?startMove\(/.test(main), true);
   check('the Match Centre routes it', /if \(formSwitch\(a\)\) \{\s*\n\s*formPick =/.test(hud), true);
   check('and follows with its own move plan',
     /data-formgo[\s\S]{0,700}?kind: 'switchForm'[\s\S]{0,300}?startMovePlan\(/.test(hud), true);

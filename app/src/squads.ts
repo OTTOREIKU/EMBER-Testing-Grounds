@@ -267,15 +267,22 @@ export class SquadTracker {
       for (const p of this.state.scenario ? [] : factionProblems(this.data, tokens)) {
         const bad = document.createElement('p');
         bad.className = 'squad-illegal';
-        bad.innerHTML = `<b>Illegal: ${p.kind === 'mixed-squad' ? 'mixed factions' : `${p.label} mixes factions`}</b><br>${p.detail}`;
+        const headline = p.kind === 'mixed-squad' ? 'mixed factions'
+          : p.kind === 'duplicate-pilot' ? `${p.label} seated twice`
+            : `${p.label} mixes factions`;
+        bad.innerHTML = `<b>Illegal: ${headline}</b><br>${p.detail}`;
         inspectOnHover(bad, {
-          title: p.kind === 'mixed-squad' ? 'Squad mixes factions' : `${p.label} mixes factions`,
+          title: p.kind === 'mixed-squad' ? 'Squad mixes factions'
+            : p.kind === 'duplicate-pilot' ? 'The same Pilot twice'
+              : `${p.label} mixes factions`,
           sub: 'Rulebook 5.1, squad composition',
           lines: [
             p.detail,
             p.kind === 'mixed-squad'
               ? 'A Squad may only contain Units from a single faction. The three base factions are RDL, UN and GoF.'
-              : 'A Mech can only be composed of Parts from a single faction. The rulebook prints a mixed RDL and UN mech as an example of what is not allowed.',
+              : p.kind === 'duplicate-pilot'
+                ? 'Each Mech must be assigned a Pilot, and Pilots with the same ID cannot appear in the same Squad.'
+                : 'A Mech can only be composed of Parts from a single faction. The rulebook prints a mixed RDL and UN mech as an example of what is not allowed.',
             'A card that may be used by more than one faction says so in its own rules text.',
             'Parts whose faction we cannot determine are not counted here, so this only fires on a confirmed clash.',
           ],

@@ -177,6 +177,22 @@ export function makeMechToken(state: any, data: any, loadout: any, side: any, na
 }
 // Grace Note measures a distance, so the pilot block wants the Large-Grid sum.
 // These fixtures are not about range; the real Manhattan arithmetic is enough.
+// eligibleUnits lists a Mech in the Command Phase when it carries an RWS Part
+// with a Command left (遥控武器). No squad in this simulation fields the Ls197R,
+// so the honest stub is none; rws.test.mjs drives the real reader.
+// The 2026-09-03 rulings batch taught the command layer seven more readers
+// (self-applied Tokens, RWS, Jet Dash, Domestic Expert, Amplify). None of
+// them fires in this simulation, so each is stubbed neutral; their own test
+// files drive the real ones.
+export function selfStatusGrant(_a: any): any { return null; }
+export function selfGrantWhy(_t: any, _g: any): any { return null; }
+export function isRwsAction(_a: any): boolean { return false; }
+export function rwsCommandKey(round: number, uid: number): string { return round + ':rwscmd:' + uid; }
+export function rwsFiredKey(round: number, uid: number, id: string): string { return round + ':rws:' + uid + ':' + id; }
+export function straightLineBonus(_a: any): number { return 0; }
+export function linkTickTraitOn(_d: any, _t: any): any { return null; }
+export function actionRange(_d: any, _tk: any, _t: any, a: any): number { return a.range ?? 0; }
+export function rwsCommandsLeft(_d: any, _s: any, _t: any): number { return 0; }
 export function largeGridOf(t: any): any { return { c: Math.floor(t.col / 3), r: Math.floor(t.row / 3) }; }
 export function rangeBetween(a: any, b: any): any {
   const ga = largeGridOf(a), gb = largeGridOf(b);

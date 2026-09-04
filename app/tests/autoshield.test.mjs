@@ -410,7 +410,9 @@ check('the Match Centre target list discloses the redirect',
 // veto. Only ✕ blocked line of sight disables a row, and a unit in the way
 // obstructs without blocking.
 check('and the row is still pressable, because the redirect is not a veto',
-  /const blocked = note\.includes\('✕'\);/.test(hud) && !/shield[\s\S]{0,80}?disabled/.test(hud), true);
+  // Only ✕ line of sight disables a row - a camouflaged target is pressable
+  // since the free Scan on designation (FAQ I12) - and the shield never does.
+  /const blocked = !hidden && note\.includes\('✕'\);/.test(hud) && !/shield[\s\S]{0,80}?disabled/.test(hud), true);
 check('freeplay discloses it on hover, before the click and before the Tick',
   /automaticShieldFor\(data, state\.tokens, sel, hov, aimed\)/.test(main)
     && /⤳ \$\{shield\.shield\.label\} shields it/.test(main), true);

@@ -42,6 +42,10 @@ export interface CardAction {
   allowedUnitModes?: string[];
   keywords?: { key?: string; en?: string; inline?: string }[];
   gameRules?: { id?: string; consumesCharge?: boolean; conditions?: { type?: string }[]; effects?: GameRuleEffect[] }[];
+  // [Two-Handed] declined at declaration (FAQ A16). The copy the attack rolls
+  // carries the mark so the combat window reports the choice instead of
+  // re-deriving a designation the player turned down.
+  twoHandedDeclined?: boolean;
 }
 
 export interface Card {
@@ -573,6 +577,10 @@ export interface Opportunity {
   // so there is nothing left to revoke.
   attackMode?: boolean;
   overload: number;
+  // Link traded for Action Ticks by a pilot trait (FPA-04-2 Domestic Expert,
+  // FAQ L2): how many this Opportunity, capped by the trait. Same class of
+  // Tick as Overload, so it joins the base pool rather than the Extras.
+  linkTicks?: number;
   performed: string[];
   spentExtras: string[];
 }
@@ -622,6 +630,9 @@ export function normaliseOpportunity(raw: unknown): Opportunity | null {
     // re-takeable after every rejoin, replay and rollback, and each retake
     // would add another ordinary Action Tick to the pool.
     attackMode: o.attackMode === true ? true : undefined,
+    // And the Link-for-Tick trade, for the same reason: dropped here it would
+    // be re-takeable after every rejoin, replay and rollback.
+    linkTicks: typeof o.linkTicks === 'number' && o.linkTicks > 0 ? o.linkTicks : undefined,
     // Both halves or neither: half a coordinate would put the mover in a Grid
     // it never stood in, which is worse than having no start at all.
     movedFrom: typeof o.movedFrom?.col === 'number' && typeof o.movedFrom?.row === 'number'
@@ -668,7 +679,7 @@ export interface ScriptState {
   // A debt the DEFENDER owes itself after being attacked. `kind` absent means
   // Emergency Smoke -- every debt written before Target Tracing existed, and
   // every one on a saved board.
-  reactions: { uid: number; actionId: string; count: number; range: number; kind?: 'smoke' | 'trace' | 'stance' | 'riposte' | 'manifest'; fromUid?: number }[];
+  reactions: { uid: number; actionId: string; count: number; range: number; kind?: 'smoke' | 'trace' | 'stance' | 'riposte' | 'manifest' | 'scanAttack'; fromUid?: number }[];
   // An Electronic Counter-roll in progress (4.11.2). It lives in shared state
   // rather than on one client because BOTH sides roll and either may spend Link
   // to Focus, and a player may only ever send commands for their own units.
@@ -761,6 +772,9 @@ export interface CombatView {
   mode: 'attack' | 'intercept' | 'explosion';
   step: string;
   targetPart: string | null;
+  // [Two-Handed] declined by the attacker (FAQ A16), so the mirror rebuilds
+  // the same one-handed Action rather than applying the designation itself.
+  twoHandedDeclined?: boolean;
   attack: { color: string; face: number }[] | null;
   defense: { color: string; face: number }[] | null;
   log: string[];
@@ -885,6 +899,11 @@ export interface CounterRoll {
   // and what this offer actually changes — the Initiator's `stance` — is a
   // token field that IS hashed. So a drift is caught where it does damage.
   provoke: 'taken' | 'passed' | null;
+  // The free Scan a Firing or Melee designation of a camouflaged unit earns
+  // (4.12.2, FAQ I12): the attack waiting behind this Counter-roll. On a
+  // success the attacker is owed a `scanAttack` reaction once the target has
+  // Revealed; on a failure the attack ends (I11) and this is simply dropped.
+  thenAttack?: { actionId: string } | null;
 }
 
 export function newScriptState(firstPlayer: Side): ScriptState {
@@ -998,6 +1017,7 @@ function normaliseCombatView(raw: unknown): CombatView | null {
     mode: v.mode === 'intercept' || v.mode === 'explosion' ? v.mode : 'attack',
     step: v.step,
     targetPart: typeof v.targetPart === 'string' ? v.targetPart : null,
+    twoHandedDeclined: v.twoHandedDeclined === true ? true : undefined,
     attack: faces(v.attack),
     defense: faces(v.defense),
     // THE WHOLE LOG, not a tail. It used to be capped at 6 here and at 5 on the
@@ -1125,6 +1145,7 @@ function normaliseCounter(raw: unknown): CounterRoll | null {
     // unanswered and the offer would reappear on a Counter-roll that had
     // already settled. Anything but the two written answers reads as open.
     provoke: c.provoke === 'taken' || c.provoke === 'passed' ? c.provoke : null,
+    thenAttack: c.thenAttack && typeof c.thenAttack.actionId === 'string' ? { actionId: c.thenAttack.actionId } : null,
   };
 }
 

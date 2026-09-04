@@ -50,8 +50,11 @@ check('command offers nothing with no tokens', ids(eligibleUnits(game(cmdBoard, 
 check('an already commanded drone is not offered again', ids(eligibleUnits(game(cmdBoard, { commanded: [10] }), 'Command', 's1')), [11]);
 check('a destroyed drone is not offered', ids(eligibleUnits(game([mech(1, 's1'), drone(10, 's1', true), drone(11, 's1')]), 'Command', 's1')), [11]);
 
-// A Drone commanded this round does not act again in the Automatic Phase (3.5).
-check('automatic skips drones commanded this round', ids(eligibleUnits(game(cmdBoard, { commanded: [10] }), 'Automatic', 's1')), [11]);
+// ALL Drones perform their Automatic Actions in the Automatic Phase (3.5, 2.4.1):
+// a Command in the Command Phase is a separate activation and spends nothing
+// here. FAQ M18.5-6 has a commanded Pholcus obliged to detonate the same round.
+check('automatic still offers a drone commanded this round', ids(eligibleUnits(game(cmdBoard, { commanded: [10] }), 'Automatic', 's1')), [10, 11]);
+check('but not one that already acted in the Automatic Phase', ids(eligibleUnits(game(cmdBoard, { commanded: [10], acted: [10] }), 'Automatic', 's1')), [11]);
 check('automatic ignores the command token pool', ids(eligibleUnits(game(cmdBoard, {}, { s1: 0, s2: 0 }), 'Automatic', 's1')), [10, 11]);
 check('automatic skips drones that already acted', ids(eligibleUnits(game(cmdBoard, { acted: [11] }), 'Automatic', 's1')), [10]);
 

@@ -1055,7 +1055,9 @@ const spinning = (root) => shakingDice(root).length > 0;
   check('and takes its own single press', acts.filter((a) => a[0] === 'focususe').length, 2);
 
   // 3. THE PAID ROWS share the same latch through sendAct.
-  const evAsk = { ...defended, evadeReady: true };
+  // BEFORE the Defense Roll: both HALO spends are declared before any dice
+  // (FAQ A18), so the offer is drawn on the pre-roll frame and not after.
+  const evAsk = { ...defended, step: 'defense', defense: null, evadeReady: true };
   const b6 = board();
   const acts2 = [];
   const W2 = watcher(b6.all, acts2);
@@ -1243,13 +1245,17 @@ const tick = (ms) => new Promise((r) => setTimeout(r, ms));
 {
   const bb = board();
   const w = watcher(bb.all, []);
-  const sniper = data.cards.find((c) => c.id === 'ZHRA-201')?.actions?.find((a) => a.id === 'ZHRA-201_B');
-  // THE TRAP THIS CARD DOCUMENTS: the keyword lives in the description as a
-  // bare line while the keywords array is EMPTY. A keyword-array read alone
-  // would miss the two cards that print Snipe most plainly.
+  const printed = data.cards.find((c) => c.id === 'ZHRA-201')?.actions?.find((a) => a.id === 'ZHRA-201_B');
+  // THE TRAP THIS CARD DOCUMENTED: the keyword lived in the description as a
+  // bare line while the keywords array was EMPTY, so a keyword-array read alone
+  // missed the two cards that print Snipe most plainly. The publisher's sheet
+  // prints the keyword line, and the 2026-09-03 data pass added the chip - so
+  // the trap is reconstructed here by stripping it, and the description route
+  // is what this block still proves.
+  const sniper = printed ? { ...printed, keywords: [] } : undefined;
   check('the fixture still prints Snipe as a bare description line',
     /狙击/.test(sniper?.description?.zh ?? ''), true);
-  check('while its keyword array does NOT carry it, which is the trap',
+  check('while the trap fixture carries no keyword chip',
     (sniper?.keywords ?? []).some((k) => /狙击/.test(k.inline ?? k.key ?? '')), false);
 
   const ctx = (over) => ({

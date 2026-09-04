@@ -262,6 +262,25 @@ export interface MoveOpts {
   // has to be legal, and Break Away is still charged, because this is
   // pass-through, not flight.
   phaseThrough?: boolean;
+  // [Moving in Straight Line] +N (直线移动): Grids past `steps` may be entered
+  // only while the route has run one way from where it began, and never past
+  // `steps + straightBonus`. `straightDir` ('dc,dr') fixes the direction when
+  // the route being extended is already under way; '' or absent means it has
+  // not stepped yet. FAQ E16 needs nothing extra: a Crush still ends the walk.
+  straightBonus?: number;
+  straightDir?: string;
+}
+
+// The one direction a route runs in, '' for a route that has not stepped yet,
+// or null once it has turned. What [Moving in Straight Line] reads.
+export function pathDirection(path: LargeGrid[]): string | null {
+  let dir = '';
+  for (let i = 1; i < path.length; i++) {
+    const d = `${Math.sign(path[i].c - path[i - 1].c)},${Math.sign(path[i].r - path[i - 1].r)}`;
+    if (dir && d !== dir) return null;
+    dir = d;
+  }
+  return dir;
 }
 
 // One search serving both the range overlay and the route a unit will actually
@@ -281,6 +300,11 @@ function searchMoves(
   const parent = new Map<string, string>();
   const reachable: (LargeGrid & { dist: number })[] = [];
   const crushed = new Set<string>();
+  // Straight-line bookkeeping: the direction each settled Grid was reached
+  // along, or null once the route has turned. The start carries whatever
+  // direction the route already has ('' when it has not stepped yet).
+  const bonus = opts?.straightBonus ?? 0;
+  const straight = new Map<string, string | null>([[`${start.c},${start.r}`, opts?.straightDir ?? '']]);
   const queue: (LargeGrid & { d: number })[] = [{ ...start, d: 0 }];
   while (queue.length) {
     let best = 0;
@@ -301,7 +325,14 @@ function searchMoves(
       // there, and a leash that no longer reaches has already been cut.
       if (opts?.allowed && !opts.allowed(n.c, n.r)) continue;
       const d = g.d + 1 + exit;
-      if (d > steps || d >= (dist.get(nk) ?? Infinity)) continue;
+      // A Grid past the printed allowance is only reachable along the one
+      // straight run the bonus pays for; anything that has turned is capped at
+      // `steps` like every other route.
+      const dir = `${dc},${dr}`;
+      const was = straight.get(key) ?? null;
+      const still = was === null ? null : (was === '' || was === dir ? dir : null);
+      const limit = still !== null && bonus > 0 ? steps + bonus : steps;
+      if (d > limit || d >= (dist.get(nk) ?? Infinity)) continue;
       const standable = canStandIn(n.c, n.r, t.size, t.aerial, terrain, tokens, t.uid);
       const crush = !standable && !flying && !t.aerial && (opts?.crushable?.(n.c, n.r) ?? false);
       // The empty token list is the whole trick, and the only thing standing
@@ -316,6 +347,7 @@ function searchMoves(
       if (!passable) continue;
       dist.set(nk, d);
       parent.set(nk, key);
+      straight.set(nk, still);
       queue.push({ ...n, d });
       // A stop Grid rides the crushed set: same rule, different card - the
       // movement ends the moment the Grid is entered, so it is never expanded.
@@ -627,10 +659,20 @@ export function extendPath(
   const prev = path[path.length - 2];
   if (prev && prev.c === to.c && prev.r === to.r) return path.slice(0, -1);
   if (path.some((g) => g.c === to.c && g.r === to.r)) return null;
-  const budget = steps - pathCost(path, flying || t.aerial, opts);
+  const cost = pathCost(path, flying || t.aerial, opts);
+  const base = steps - cost;
+  // [Moving in Straight Line]: a route still running one way may spend the
+  // bonus past the printed allowance, and only in that same direction. Once it
+  // has turned, the bonus is gone for good and the base allowance is all there is.
+  const bonus = opts?.straightBonus ?? 0;
+  const dir = bonus > 0 ? pathDirection(path) : null;
+  const budget = dir !== null ? steps + bonus - cost : base;
   if (budget <= 0) return null;
   const from = { ...t, col: last.c * 3 + 1, row: last.r * 3 + 1 };
-  const run = movePath(from, to, budget, terrain, tokens, flying, opts).slice(1);
+  const sub: MoveOpts | undefined = bonus > 0
+    ? { ...opts, straightBonus: dir !== null ? budget - Math.max(0, base) : 0, straightDir: dir ?? undefined }
+    : opts;
+  const run = movePath(from, to, Math.max(0, base), terrain, tokens, flying, sub).slice(1);
   if (!run.length) return null;
   if (run.some((g) => path.some((p) => p.c === g.c && p.r === g.r))) return null;
   return [...path, ...run];

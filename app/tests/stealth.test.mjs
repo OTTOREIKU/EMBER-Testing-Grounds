@@ -154,7 +154,7 @@ check('a damaged one still does', U.manifestationRange(data, mech({ torso: 'OCTO
   // Manifestation a single event, so a mirror replaying it sees one hop rather
   // than a unit standing revealed on its marker for a frame.
   check('the reveal command can carry a destination', /kind: 'reveal';[^\n]*to\?: \{ col: number; row: number \}/.test(cmds), true);
-  const rev = cmds.slice(cmds.indexOf("case 'reveal': {"), cmds.indexOf("case 'reveal': {") + 2400);
+  const rev = cmds.slice(cmds.indexOf("case 'reveal': {"), cmds.indexOf("case 'reveal': {") + 2800);
   check('and the command judges the distance itself', /manifestationRange\(data, t\)/.test(rev), true);
   check('refusing anything beyond the Stealth value', /if \(away > range\)/.test(rev), true);
   check('and anywhere the unit does not fit', /does not fit there/.test(rev), true);

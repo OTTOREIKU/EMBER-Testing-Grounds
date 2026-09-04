@@ -282,6 +282,15 @@ const stubs = `
 export function hasFlexibleTiming(_data: any, _tokens: any, _t: any): boolean {
   return false;
 }
+// startCounterRoll judges the EFFECTIVE reach (FPA-06 Amplify adds a Grid to an
+// Electronic Attack). No fixture here fields a KeyHole, so the printed number is
+// the honest stub; amplify.test.mjs drives the real reader.
+export function actionRange(_data: any, _tokens: any, _t: any, a: any): number {
+  return a.range ?? 0;
+}
+// movementReach adds the straight-line bonus of a Movement Action (Jet Dash);
+// no fixture here prints one. straightline.test.mjs drives the real reader.
+export function straightLineBonus(_a: any): number { return 0; }
 export function tokenCards(data: any, t: any): any[] {
   if (t.kind === 'mech') {
     return Object.entries(t.mech ?? {}).map(([slot, id]) => ({ slot, card: data.byId.get(id) })).filter((x: any) => x.card);
@@ -554,6 +563,17 @@ check('and re-arms the starting action rule', wr.script.opp.started, false);
 const wcap = world([mech(1, 's1', { stance: 'shutdown', link: 4 })], 2, opp(1));
 C.apply(data, wcap, rb());
 check('link is capped at the pilot value', wcap.tokens[0].link, 4);
+// 4.1.1: "it cannot Maneuver or perform any Actions other than Reboot."
+const shutOpp = () => world([mech(1, 's1', { stance: 'shutdown', link: 0 })], 2, opp(1));
+const shutMove = { kind: 'maneuver', seat: 's1', uid: 1, to: { col: 6, row: 3 }, facing: 1 };
+check('a shutdown mech cannot maneuver', C.check(data, shutOpp(), shutMove).ok, false);
+check('and the reason names the Reboot', /Reboot/.test(C.check(data, shutOpp(), shutMove).why), true);
+check('nor perform an action', C.check(data, shutOpp(), { kind: 'performAction', seat: 's1', uid: 1, actionId: 'A1', partKey: 'A1' }).ok, false);
+check('nor Stabilize', C.check(data, shutOpp(), { kind: 'stabilise', seat: 's1', uid: 1 }).ok, false);
+// "will only have 1 Action Tick" (4.1.1, FAQ L8): the Extra Ticks go too.
+const wxr = world([mech(1, 's1', { stance: 'shutdown', link: 0 })], 2, opp(1, { extras: [{ id: 'x', timing: 'firing' }] }));
+C.apply(data, wxr, rb());
+check('reboot drops the Extra Ticks as well', wxr.script.opp.extras, []);
 
 // ---------- maneuver ----------
 

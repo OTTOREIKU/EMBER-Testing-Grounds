@@ -1,7 +1,7 @@
 import type { GameData } from './data';
 import type { GameState, Side, Timing, Token } from './types';
 import { TIMINGS } from './types';
-import { commandGeneration } from './units';
+import { commandGeneration, rwsCommandsLeft } from './units';
 
 // The pure turn-order rules of the guided game, shared by the play guide and
 // the command layer. Nothing here touches the DOM or mutates state.
@@ -30,8 +30,12 @@ export function commandTokensFor(data: GameData, state: GameState, side: Side): 
 }
 
 // Who this side may still designate this phase. A Drone commanded during the
-// Command Phase does not act again in the Automatic Phase (3.5).
-export function eligibleUnits(state: GameState, phase: LoopPhase, side: Side): Token[] {
+// Command Phase STILL performs its Automatic Actions in the Automatic Phase:
+// 3.5 has "all Drones operating normally on the Game Board" attempt them, and
+// 2.4.1 ties the [Automatic] icon to the phase, not to whether a Command was
+// taken. The old exclusion here was ours and appeared in no rule; FAQ M18.5-6
+// has a commanded Pholcus obliged to detonate the same round.
+export function eligibleUnits(state: GameState, phase: LoopPhase, side: Side, data?: GameData): Token[] {
   const sc = state.script;
   if (!sc) return [];
   const acted = new Set(sc.acted);
@@ -42,7 +46,7 @@ export function eligibleUnits(state: GameState, phase: LoopPhase, side: Side): T
     const free = new Set(sc.freeCommand);
     const broke = (state.commandTokens[side] ?? 0) <= 0;
     if (broke && !free.size) return [];
-    return state.tokens.filter(
+    const drones = state.tokens.filter(
       (t) =>
         t.side === side
         && t.kind === 'drone'
@@ -50,10 +54,21 @@ export function eligibleUnits(state: GameState, phase: LoopPhase, side: Side): T
         && !commanded.has(t.uid)
         && (!broke || free.has(t.uid)),
     );
+    // RWS (遥控武器, FAQ A20/A22): a Mech carrying an Ls197R Autocannon may be
+    // sent a Command to fire it, once per Part per round - the one case where a
+    // Mech is designated here. It needs the cards, so a caller without `data`
+    // sees the Drones alone; a Shutdown Mech performs nothing (4.1.1).
+    const mechs = data
+      ? state.tokens.filter(
+          (t) => t.side === side && t.kind === 'mech' && alive(t) && t.stance !== 'shutdown'
+            && (!broke || free.has(t.uid)) && rwsCommandsLeft(data, state, t) > 0,
+        )
+      : [];
+    return [...drones, ...mechs];
   }
   if (phase === 'Automatic') {
     return state.tokens.filter(
-      (t) => t.side === side && t.kind === 'drone' && alive(t) && !commanded.has(t.uid) && !acted.has(t.uid),
+      (t) => t.side === side && t.kind === 'drone' && alive(t) && !acted.has(t.uid),
     );
   }
   return state.tokens.filter((t) => t.side === side && t.kind === 'projectile' && alive(t) && !acted.has(t.uid));
@@ -92,23 +107,23 @@ export function droneActionWhy(
   return null;
 }
 
-export function canAct(state: GameState, phase: LoopPhase, side: Side): boolean {
+export function canAct(state: GameState, phase: LoopPhase, side: Side, data?: GameData): boolean {
   const sc = state.script;
   if (!sc) return false;
   if (sc.passed.includes(side)) return false;
-  return eligibleUnits(state, phase, side).length > 0;
+  return eligibleUnits(state, phase, side, data).length > 0;
 }
 
-export function loopComplete(state: GameState, phase: LoopPhase): boolean {
-  return !canAct(state, phase, 's1') && !canAct(state, phase, 's2');
+export function loopComplete(state: GameState, phase: LoopPhase, data?: GameData): boolean {
+  return !canAct(state, phase, 's1', data) && !canAct(state, phase, 's2', data);
 }
 
 // A player who passes is out for the phase, but the opponent may keep going, so
 // the turn only alternates to a side that can still do something (3.2.2).
-export function nextTurn(state: GameState, phase: LoopPhase, from: Side): Side | null {
+export function nextTurn(state: GameState, phase: LoopPhase, from: Side, data?: GameData): Side | null {
   const other: Side = from === 's1' ? 's2' : 's1';
-  if (canAct(state, phase, other)) return other;
-  if (canAct(state, phase, from)) return from;
+  if (canAct(state, phase, other, data)) return other;
+  if (canAct(state, phase, from, data)) return from;
   return null;
 }
 

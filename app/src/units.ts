@@ -715,6 +715,41 @@ export function opportunityBonusOn(data: GameData, t: Token): OpportunityBonus |
   return undefined;
 }
 
+// ---------- Link for a Tick: FPA-04-2 Hammerhead Domestic Expert (FAQ L2) ----------
+//
+// "[Offensive Stance] During piloted Mech's Action Opportunity, piloted Mech
+// may consume up to 1 Link and gain 1 Action Tick." The same class of Tick as
+// Overload and Attack Mode - an ORDINARY Action Tick joining the base pool -
+// bought with Link instead of a Part. Read off the pilot card's structured
+// effect, so a second pilot printing the trait is covered without a name list.
+// L2 pins the order: the Mech is in Offensive Stance FIRST, then declares.
+export interface LinkTickTrait {
+  maxLink: number;
+  perLink: number;
+  stance: Stance | null;
+  label: string;
+}
+
+export function linkTickTraitOn(data: GameData, t: Token): LinkTickTrait | null {
+  if (t.kind !== 'mech') return null;
+  const pilot = pilotCard(data, t);
+  const eff = (pilot?.traitEffects ?? []).find((e) => e.type === 'action_opportunity_link_to_action_point') as
+    { maxLink?: number; actionPointsPerLink?: number; stance?: string } | undefined;
+  if (!eff) return null;
+  // The Stance comes off the structured effect when it carries one, and
+  // otherwise it is Offensive: the one card printing this effect (FPA-04-2)
+  // prints [Offensive Stance] before it, and pilot trait TEXT is deliberately
+  // not read here (pilottraits.test.mjs allows exactly one reader to).
+  const asked = (eff as { stance?: string }).stance;
+  const stance: Stance | null = asked === 'offensive' || asked === 'defensive' || asked === 'mobility' ? asked : 'offensive';
+  return {
+    maxLink: Number(eff.maxLink ?? 1),
+    perLink: Number(eff.actionPointsPerLink ?? 1),
+    stance,
+    label: pilot?.name?.en || pilot?.name?.zh || 'Pilot trait',
+  };
+}
+
 export interface ExtraActivation {
   range: number;
   minimumLink: number;
@@ -788,6 +823,10 @@ const COMMAND_GEN_ZH = /指令生成\s*(\d+)/;
 const COMMAND_GEN_EN = /Command\s+Generation\s*(\d+)/i;
 export function commandGeneration(data: GameData, t: Token): number {
   if (t.kind !== 'mech') return 0;
+  // Command Generation X is a Passive on the Torso, and a Shutdown Mech
+  // "cannot activate any Passive effects" (4.1, FAQ L4). It still generates
+  // the default 1 of 3.2.1, which is the rule and not a Part.
+  if (t.stance === 'shutdown') return 1;
   for (const { slot, card } of tokenCards(data, t)) {
     if ((t.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
     for (const a of card.actions ?? []) {
@@ -1321,6 +1360,82 @@ export function scannable(t: Token): boolean {
   return statusCount(t.statuses, 'camouflage') > 0 || scanStrips(t) > 0;
 }
 
+// ---------- Self-applied Tokens (Ambush 094/095/096/247, Amplify Profile 007/098) ----------
+//
+// A Swift Action whose whole text is "this mech gains a <Token>". The bundle
+// records it as a structured apply_status effect aimed at `self`, and both
+// pages used to fall through to "follow the card text" - the Token was never
+// placed by the app. The names are the bundle's Chinese; the ids are ours.
+const SELF_STATUS_IDS: Record<string, string> = {
+  '低特征': 'lowProfile', 'Low Profile': 'lowProfile', lowProfile: 'lowProfile',
+  '高亮目标': 'highlight', Highlight: 'highlight', highlight: 'highlight',
+};
+
+export function selfStatusGrant(a: CardAction): { statusId: string; stacks: number } | null {
+  for (const g of a.gameRules ?? []) {
+    for (const e of g.effects ?? []) {
+      const eff = e as { type?: string; status?: string; stacks?: number; target?: string };
+      if (eff.type !== 'apply_status' || eff.target !== 'self' || !eff.status) continue;
+      const statusId = SELF_STATUS_IDS[eff.status];
+      if (statusId) return { statusId, stacks: eff.stacks ?? 1 };
+    }
+  }
+  return null;
+}
+
+// Why the grant may not be taken, or null. FAQ J1: Octopus and Viper cannot
+// Ambush again while already bearing a Low Profile Token - and the reading
+// generalises through 6.1, because a Hexagon Token a unit already wears is a
+// change the Action cannot make. J19 is the other half and needs no code:
+// Contact never removes a Low Profile Token, so Ambush in Contact is legal.
+export function selfGrantWhy(t: Token, grant: { statusId: string; stacks: number }): string | null {
+  if (statusCount(t.statuses, grant.statusId) > 0) {
+    const what = grant.statusId === 'lowProfile' ? 'a Low Profile Token' : grant.statusId === 'highlight' ? 'a Highlight Token' : 'that Token';
+    return `${t.label} already bears ${what}, so this Action could change nothing and cannot be performed (6.1${grant.statusId === 'lowProfile' ? ', FAQ J1' : ''}).`;
+  }
+  return null;
+}
+
+// ---------- RWS 遥控武器 (Ls197R Autocannon 550/551; FAQ A20/A22) ----------
+//
+// "During the Command Phase an Ally may send a Command to this Mech to perform
+// this Action. This Part can only receive one Command per round." The one case
+// where a MECH receives a Command Token. A22: it is still the Mech performing
+// a Firing Action, so every modifier of a Mech's Firing Action applies; A20:
+// the Focus Link is the autocannon Mech's pilot's, which the attack window
+// already charges to the attacker.
+const RWS_KEYWORD = '遥控武器';
+
+export function isRwsAction(a: CardAction): boolean {
+  if (a.type !== 'Firing') return false;
+  return (a.keywords ?? []).some((k) => k.key === RWS_KEYWORD || (k.inline ?? '') === RWS_KEYWORD || k.en === 'RWS');
+}
+
+export function rwsActionsOf(data: GameData, t: Token): { action: CardAction; slot: string }[] {
+  if (t.kind !== 'mech') return [];
+  const out: { action: CardAction; slot: string }[] = [];
+  for (const { slot, card } of tokenCards(data, t)) {
+    if ((t.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
+    for (const a of card.actions ?? []) if (isRwsAction(a)) out.push({ action: a, slot });
+  }
+  return out;
+}
+
+// The ledger keys, on script.oncePerRound so a rejoin or a rollback carries
+// them: one per Command the Mech took this round, and one per Part that fired.
+export function rwsCommandKey(round: number, uid: number): string { return `${round}:rwscmd:${uid}`; }
+export function rwsFiredKey(round: number, uid: number, actionId: string): string { return `${round}:rws:${uid}:${actionId}`; }
+
+// How many more Commands this Mech may take this round: one per RWS Part it
+// still has, less the Commands already sent to it.
+export function rwsCommandsLeft(data: GameData, state: GameState, t: Token): number {
+  const parts = rwsActionsOf(data, t).length;
+  if (!parts) return 0;
+  const ledger = state.script?.oncePerRound ?? [];
+  const key = rwsCommandKey(state.round.n, t.uid);
+  return parts - ledger.filter((k) => k === key).length;
+}
+
 export function interceptCapacity(a: CardAction): number | undefined {
   for (const k of a.keywords ?? []) {
     const m = /^拦截\s*(\d+)$/.exec((k.inline ?? '').trim());
@@ -1432,12 +1547,12 @@ export function freehandSupport(data: GameData, t: Token, slot: string, a: CardA
 // Everything the Two-Handed question comes to, answered in one place so the
 // three call sites that adjust an Action cannot drift.
 //
-// The designation is APPLIED rather than asked. The card says "may", but every
-// printed rider is pure upside -- Range, keywords, a bigger Action -- and the
-// hand costs nothing: a Freehand already carrying a Black Box is not in
-// freehandSlots to begin with, so there is no case where a player wants the
-// spare hand for something else DURING the Action. Same reasoning as
-// lightningExchangeOf, where the "may" is likewise never a real choice.
+// This helper APPLIES the designation; the pages OFFER it (FAQ A16: a Mech
+// about to perform a Two-Handed-enhanced Action may choose not to use the
+// effect). Every printed rider is pure upside -- Range, keywords, a bigger
+// Action -- and the hand costs nothing, so the pages default to taking it and
+// mark the declined copy (CardAction.twoHandedDeclined) rather than re-derive
+// it. freeplay asks in askTwoHanded, the Match Centre reads handsFor.
 //
 // The Part chosen is the one that gives something back if there is one, since
 // which hand is designated is otherwise invisible.
@@ -2278,6 +2393,30 @@ export interface AuraSource {
   source: Token;
 }
 
+// FPA-06 KeyHole, 功率加大 Amplify: "Range of Aura, Electronic Attack and
+// Electronic Support of the piloted mech +1 grid." Read off the pilot card's
+// structured effect through tokenCards, and only while the Mech can trigger
+// anything at all: a Shutdown Mech's Passives are off (4.1, FAQ L4). A Beacon
+// it has deployed is its own unit from that moment (L4), which falls out of
+// asking the SOURCE of each aura rather than the Mech that placed it.
+export function amplifyBonus(data: GameData, t: Token): number {
+  if (t.kind !== 'mech' || t.stance === 'shutdown') return 0;
+  const pilot = tokenCards(data, t).find((x) => x.slot === 'pilot')?.card;
+  const eff = (pilot?.traitEffects ?? []).find((e) => e.type === 'aura_electronic_range_bonus') as { value?: number } | undefined;
+  return eff ? Number(eff.value ?? 1) : 0;
+}
+
+// An aura's reach from its source: the printed Range plus Amplify.
+export function auraReach(data: GameData, src: Token, a: CardAction): number {
+  return (a.range ?? 0) + amplifyBonus(data, src);
+}
+
+// Electronic Support (ES): the card says so in its own text ("This Action is
+// Electronic Support (ES)"), and nothing else in the data marks it.
+export function isElectronicSupport(a: CardAction): boolean {
+  return /Electronic Support|电子支援/i.test(`${a.description?.en ?? ''} ${a.description?.zh ?? ''}`);
+}
+
 // Every aura currently reaching this unit, after the three filters the data
 // carries: which side it helps, how far it reaches, and WHAT it may land on —
 // `targetUnitType` is 'mech', 'drone' or 'unit', so a Drone standing beside a
@@ -2287,6 +2426,10 @@ export function aurasOn(data: GameData, tokens: Token[], t: Token): AuraSource[]
   for (const src of tokens) {
     if (src.deployed === false) continue;
     if ((src.partStates[src.kind === 'mech' ? 'torso' : 'main'] ?? 'intact') === 'destroyed') continue;
+    // "A unit in Shutdown cannot trigger any effects on its own, including
+    // passive skills" (FAQ L4; 4.1 "cannot activate any Passive effects"). An
+    // aura is a Passive of its source, so a Shutdown Mech projects none.
+    if (src.kind === 'mech' && src.stance === 'shutdown') continue;
     for (const { slot, card } of tokenCards(data, src)) {
       if ((src.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
       for (const a of card.actions ?? []) {
@@ -2301,7 +2444,7 @@ export function aurasOn(data: GameData, tokens: Token[], t: Token): AuraSource[]
             if (allies !== (src.side === t.side)) continue;
             const want = eff.targetUnitType;
             if (want && want !== 'unit' && want !== t.kind) continue;
-            if (rangeBetween(src, t).range > (a.range ?? 0)) continue;
+            if (rangeBetween(src, t).range > auraReach(data, src, a)) continue;
             out.push({
               kinds: [...eff.effectTypes],
               value: eff.value ?? 0,
@@ -2573,9 +2716,14 @@ export function selfHitParts(data: GameData, t: Token): SelfHitPart[] {
 // `a.range` directly, so the picker, the overlay and the refusal all agree.
 export function actionRange(data: GameData, tokens: Token[], t: Token, a: CardAction): number {
   const base = a.range ?? 0;
-  if (a.type !== 'Firing') return base;
-  const kind = t.kind === 'drone' ? 'drone_firing_range_bonus' : 'firing_range_bonus';
-  return base + auraValueOn(data, tokens, t, kind);
+  if (a.type === 'Firing') {
+    const kind = t.kind === 'drone' ? 'drone_firing_range_bonus' : 'firing_range_bonus';
+    return base + auraValueOn(data, tokens, t, kind);
+  }
+  // FPA-06 Amplify: Electronic Attacks and Electronic Support reach one Grid
+  // further. A Scan is deliberately neither (isScanAction), so it is untouched.
+  if (isElectronicAttack(a) || isElectronicSupport(a)) return base + amplifyBonus(data, t);
+  return base;
 }
 
 // 017 CQC (近战对策): "This mech may use Melee Short Action as Starting Action
@@ -3739,7 +3887,7 @@ export function mechCards(data: GameData, loadout: MechLoadout): Card[] {
 // ---------- faction legality ----------
 
 export interface FactionProblem {
-  kind: 'mixed-mech' | 'mixed-squad';
+  kind: 'mixed-mech' | 'mixed-squad' | 'duplicate-pilot';
   label: string;
   detail: string;
 }
@@ -3830,6 +3978,25 @@ export function factionProblems(data: GameData, tokens: Token[]): FactionProblem
       kind: 'mixed-squad',
       label: 'Squad',
       detail: `This squad mixes ${allegiance.join(' and ')}. A squad may only contain units from a single faction, though mercenaries may join any of them.`,
+    });
+  }
+  // 5.1's third rule: "Pilots with the same ID cannot appear in the same
+  // Squad." The ID is the pilot card, so two Mechs seated with the same card
+  // are the case. A pilotless sandbox Mech seats nobody and cannot collide.
+  const seated = new Map<string, string[]>();
+  for (const t of tokens) {
+    const pid = t.kind === 'mech' ? t.mech?.pilot : undefined;
+    if (!pid) continue;
+    seated.set(pid, [...(seated.get(pid) ?? []), t.label]);
+  }
+  for (const [pid, labels] of seated) {
+    if (labels.length < 2) continue;
+    const card = data.byId?.get(pid);
+    const name = card ? cardName(card) : pid;
+    out.push({
+      kind: 'duplicate-pilot',
+      label: name,
+      detail: `${name} is piloting ${labels.join(' and ')}. Pilots with the same ID cannot appear in the same squad (5.1).`,
     });
   }
   return out;
@@ -4331,6 +4498,18 @@ export function isAirborneAction(a: CardAction): boolean {
   return (a.keywords ?? []).some(
     (k) => k.key === AIRBORNE_KEYWORD || (k.inline ?? '') === AIRBORNE_KEYWORD || k.en === 'Airborne Movement',
   );
+}
+
+// [Moving in Straight Line] +N grids (直线移动): the RL-08 family's Jet Dash
+// (021/249/281) and the "Chance" Chassis (PDCH-202). A CONDITIONAL reach: the
+// printed Range is what the Action always has, and the bonus is only paid while
+// the whole route runs one way along the board. FAQ E16 is the other half and
+// lives in the movement search: a Crush ends the Movement whatever is left.
+export function straightLineBonus(a: CardAction | null | undefined): number {
+  if (!a || a.type !== 'Moving') return 0;
+  const text = `${a.description?.en ?? ''}\n${a.description?.zh ?? ''}`;
+  const m = /(?:\[Moving in Straight Line\]|【直线移动】|\[直线移动\])\s*\+\s*(\d+)/i.exec(text);
+  return m ? Number(m[1]) : 0;
 }
 
 // ---------- Tarantula Loads (FAQ O3-O8, O16-O18) ----------

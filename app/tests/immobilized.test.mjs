@@ -71,7 +71,9 @@ check('and unrelated text does not trip it',
 
   // THE COMMAND IS THE RULE. Both boards' movers are courtesies on top of it;
   // this is the one that holds against a relayed command from a stale client.
-  const man = cmds.slice(cmds.indexOf("case 'maneuver': {"), cmds.indexOf("case 'maneuver': {") + 1400);
+  // 2000, not 1400: the RWS gate (a Mech commanded in the Command Phase does
+  // not move) sits between the Shutdown line and the Immobilized one now.
+  const man = cmds.slice(cmds.indexOf("case 'maneuver': {"), cmds.indexOf("case 'maneuver': {") + 2000);
   check('the maneuver command refuses an Immobilized unit',
     /immobilizedStop\(t,/.test(man), true);
   // Judged off the Action that TRAVELLED, so a sender cannot claim Unstoppable
@@ -94,7 +96,9 @@ check('and unrelated text does not trip it',
   // And the Movement Action reaches the gate on both boards, or Unstoppable
   // could never fire and card 181 would lose the rule it exists for.
   check('freeplay hands the Movement Action to the planner',
-    /startMove\(uid, \{ range, label: what, airborne: isAirborneAction\(action\), action \}/.test(main), true);
+    // The label names the straight-line bonus when the Action prints one
+    // (Jet Dash), so it is a template now; the Action still rides along.
+    /startMove\(uid, \{ range, label: `\$\{what\}[\s\S]{0,200}?, airborne: isAirborneAction\(action\), action \}/.test(main), true);
   check('the Match Centre hands over the action id', /actionId: a\.id,/.test(hud), true);
   check('and the plan carries it onto the command it sends', /actionId: m\.actionId/.test(hud), true);
 }

@@ -91,7 +91,9 @@ check('and Immobilized does not care about Link', U.immobilizedStop(broke, run),
   const first = cmds.indexOf("case 'maneuver': {");
   const second = cmds.indexOf("case 'maneuver': {", first + 1);
   if (first < 0 || second < 0) throw new Error('could not find both maneuver arms in commands.ts');
-  const manCheck = cmds.slice(first, first + 1600);
+  // 2200, not 1600: the RWS gate now sits above the Immobilized and
+  // Non-humanoid lines in the maneuver case.
+  const manCheck = cmds.slice(first, first + 2200);
   const manApply = cmds.slice(second, second + 1600);
 
   check('the maneuver command refuses a unit that cannot pay',

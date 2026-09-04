@@ -334,7 +334,11 @@ function applyAmmo(cards: Card[], patch: AmmoOverrides): void {
 }
 
 interface ActionOverrides {
-  actions?: Record<string, Partial<CardAction>>;
+  // `remove: true` takes the action off its card. The publisher's GoF 1.021
+  // list folded the four Command Coordination actions into a keyword on the
+  // weapon, and carrying both let a player pay a Tick for what the keyword
+  // gives free.
+  actions?: Record<string, Partial<CardAction> & { remove?: boolean }>;
 }
 
 // Per-action corrections keyed by action id, for fields the community database
@@ -344,9 +348,13 @@ interface ActionOverrides {
 function applyActionFixes(cards: Card[], patch: ActionOverrides): void {
   const byId = patch.actions ?? {};
   for (const c of cards) {
-    for (const a of c.actions ?? []) {
+    for (const a of [...(c.actions ?? [])]) {
       const fix = byId[a.id];
       if (!fix) continue;
+      if (fix.remove === true) {
+        c.actions = (c.actions ?? []).filter((x) => x !== a);
+        continue;
+      }
       for (const [k, v] of Object.entries(fix)) {
         if (k.startsWith('_')) continue;
         // A name or description patch only ever supplies `en`; replacing the

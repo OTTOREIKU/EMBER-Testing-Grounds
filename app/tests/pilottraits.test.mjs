@@ -919,9 +919,12 @@ console.log('\nPilot traits, against the shipped cards and dice\n');
     /c\.action\.type === 'Firing'/.test(lpFn), true);
   // It grants the KEYWORD, not a Token: Scan cannot strip it (FAQ Q3), so the
   // Scan picker must keep listing Tokens only.
-  check('and the Scan picker still offers Tokens only',
-    /statusCount\(t\.statuses, 'camouflage'\) > 0 \|\| statusCount\(t\.statuses, 'lowProfile'\) > 0/
-      .test(src('playguide.ts')), true);
+  // Scan is a Tactical Action on both pages now (6.1), and its target gate is
+  // units.ts scannable: Optical Camouflage, or a Low Profile TOKEN via
+  // scanStrips - never the keyword.
+  check('and the Scan target gate still reads Tokens only',
+    /statusCount\(t\.statuses, 'camouflage'\) > 0 \|\| scanStrips\(t\) > 0/
+      .test(src('units.ts')), true);
 }
 
 // ---------- LPA-23 Onyx — 不屈 Indomitable ----------

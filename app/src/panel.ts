@@ -55,7 +55,7 @@ const SPEED_MARK: Record<string, { glyph: string; label: string; lines: string[]
     lines: [
       `Printed on the card as ${SPEED_GLYPH.auto} beside the action name.`,
       'It resolves by itself in the Automatic Phase, without being told to.',
-      'A Drone that acted on a Command this round does not act again, so spending a Command Token on this unit gives up this action.',
+      'A Command in the Command Phase does not spend it: the Drone still performs this Action in the Automatic Phase (3.5).',
     ],
   },
   command: {

@@ -74,5 +74,19 @@ check('a mercenary drone cannot', kinds([unit('a', ['RDL']), unit('d', ['PD'], '
 // A part with no determinable faction is ignored rather than treated as a clash.
 check('unknown factions are ignored', kinds([unit('a', ['RDL', null]), unit('b', ['RDL'])]), []);
 
+// ---------- 5.1's third rule: the same Pilot cannot be seated twice ----------
+//
+// The ID is the pilot CARD, so two Mechs carrying the same t.mech.pilot are
+// the case. Read off the token's live pilot field, the same key pilotCard uses.
+console.log('\nPilot IDs');
+const piloted = (label, pilot) => ({ ...unit(label, ['RDL']), mech: { pilot } });
+check('two different pilots are legal', kinds([piloted('a', 'FPA-05'), piloted('b', 'FPA-04')]), []);
+check('the same pilot twice is illegal', kinds([piloted('a', 'FPA-05'), piloted('b', 'FPA-05')]), ['duplicate-pilot']);
+check('and the report names both Mechs',
+  factionProblems(data, [piloted('a', 'FPA-05'), piloted('b', 'FPA-05')])[0].detail.includes('a and b'), true);
+check('a pilotless sandbox Mech collides with nobody', kinds([piloted('a', ''), piloted('b', ''), unit('c', ['RDL'])]), []);
+check('three seats of one pilot are still one problem', kinds([piloted('a', 'X'), piloted('b', 'X'), piloted('c', 'X')]), ['duplicate-pilot']);
+check('a drone does not seat a pilot', kinds([piloted('a', 'X'), { ...unit('d', ['RDL'], 'drone'), mech: { pilot: 'X' } }]), []);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

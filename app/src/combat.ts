@@ -769,6 +769,10 @@ interface Ctx {
   // reader of the raw roll — so the notes can say what happened without
   // deriving the roll a second time.
   lightningSwapped?: number;
+  // Concussion/Wrecking Lightning that survived the defender's spare {Dodge}
+  // on the last resolution (FAQ D2). Read by sendLightningDrain, so a
+  // dodged Lightning strips no Link.
+  lightningThrough?: number;
   // FPA-04 Hammerhead: how many {Eye} 猛攻 Fierce Assault turned into Light
   // Hits on the last derivation. Same reason as lightningSwapped — derived, not
   // stored as a decision, so a re-roll cannot leave a stale count behind.
@@ -1674,6 +1678,9 @@ export class AttackHelper {
     // a free reroll. It also closes the mirror's hole, because skipFocusStages
     // walks past a declare this refuses, so the remote defender is never
     // offered a button their own client would send and the host would reject.
+    // FAQ A6: "after completing one reroll, another reroll effect cannot be
+    // chosen" - a Guidance Support reroll uses up the attacker's Focus.
+    if (side === 'attacker' && c.guidanceUsed) return false;
     return canAffordFocus(this.data, t) && !!roll && roll.length > 0;
   }
 
@@ -1729,7 +1736,7 @@ export class AttackHelper {
     c.drainSent = true;
     const kind = lightningLinkDrain(c.action);
     if (!kind || c.defender.kind !== 'mech') return;
-    const n = Math.min(this.attackIcons(c).lightning ?? 0, c.defender.link ?? 0);
+    const n = Math.min(c.lightningThrough ?? (this.attackIcons(c).lightning ?? 0), c.defender.link ?? 0);
     if (!n) return;
     this.onCommand({ kind: 'drainLink', seat: c.attacker.side, uid: c.attacker.uid, targetUid: c.defender.uid, n });
     this.note(`${c.defender.label} loses ${n} Link (${kind === 'wrecking' ? 'Wrecking' : 'Concussion'}, 4.10)${(c.defender.link ?? 0) - n <= 0 ? ', and at 0 Link it Shuts Down' : ''}.`);
@@ -2311,7 +2318,9 @@ export class AttackHelper {
     // the resolution is applied. Concussion drains without the damage.
     const drainKind = c.surplusRound === 0 ? lightningLinkDrain(c.action) : null;
     const drained = drainKind ? atk.lightning ?? 0 : 0;
-    if (drainKind === 'wrecking') light += drained;
+    // Wrecking's Lightning is damage, but NOT a Light Hit: {Defense} cannot
+    // soak it, only a {Dodge} can (FAQ D2), and it never rides into a Surplus
+    // round (D3). It used to be folded into `light` here, which did both.
     if (c.surplusRound > 0) {
       heavy = c.carried.heavy;
       light = c.carried.light;
@@ -2387,8 +2396,22 @@ export class AttackHelper {
       }
     }
     if (dense && heavy) text.push('Dense Armor: [Defense] may offset [Heavy Hit] here (4.10)');
-    const { icons, spareDodge, idleDefense, dodged, blocked, penetrating, hits, unoffset } =
-      offsetIcons(heavy, light, dodge, defense, dense, c.dodgeDieUsed ? this.attackIconsPerDie(c) : undefined);
+    const offsets = offsetIcons(heavy, light, dodge, defense, dense, c.dodgeDieUsed ? this.attackIconsPerDie(c) : undefined);
+    const { icons, idleDefense, dodged, blocked, unoffset } = offsets;
+    // Concussion / Wrecking: a {Dodge} left over after the damage icons may
+    // cancel a Lightning (FAQ D2; 4.4.2's example fires Concussion on the
+    // Lightning "that has not been Offset"). What gets through drains Link -
+    // sendLightningDrain reads it - and for Wrecking is a Hit and a
+    // Penetration as well, kept out of `unoffset` so a Surplus keyword never
+    // carries it (D3).
+    const lightningCancelled = drainKind ? Math.min(drained, offsets.spareDodge) : 0;
+    const lightningThrough = drainKind ? drained - lightningCancelled : 0;
+    c.lightningThrough = lightningThrough;
+    const wreckHits = drainKind === 'wrecking' ? lightningThrough : 0;
+    const spareDodge = offsets.spareDodge - lightningCancelled;
+    const hits = offsets.hits + wreckHits;
+    const penetrating = offsets.penetrating + wreckHits;
+    if (lightningCancelled) text.push(`${lightningCancelled} [Lightning] cancelled by spare Dodge (FAQ D2)`);
     const triggers: DuelIcon[] = [];
     if (c.surplusRound === 0) {
       for (let i = 0; i < (atk.lightning ?? 0); i++) triggers.push({ kind: 'lightning', offset: null });
@@ -2548,6 +2571,9 @@ export class AttackHelper {
         attackerUid: c.attacker.uid,
         targetUid: c.defender.uid,
         actionId: c.action.id,
+        // So the mirror rebuilds the same one-handed Action (FAQ A16) rather
+        // than applying the designation this attacker turned down.
+        twoHandedDeclined: c.action.twoHandedDeclined || undefined,
         mode: c.explosion ? 'explosion' : c.intercept ? 'intercept' : 'attack',
         step: c.step,
         targetPart: c.targetPart ?? null,
@@ -2789,6 +2815,10 @@ export class AttackHelper {
       // The designation is applied before the Action reaches here, so this
       // reports what the spare hand bought rather than asking about it.
       (() => {
+        // Declined at the declaration (FAQ A16): the copy being rolled is the
+        // one-handed one, and re-deriving the designation here would report a
+        // bonus the dice are not getting.
+        if (c.action.twoHandedDeclined) return `<p class="ah-los">${ICON_BLOCKED} [Two-Handed] declined: performed one-handed, with none of the rider (FAQ A16).</p>`;
         const use = twoHandedUse(this.data, c.attacker, c.action);
         if (use) return `<p class="ah-los">${ICON_BLOCKED} ${use.note}.</p>`;
         // Only when the Action wants a hand and there is none to give.
@@ -3357,7 +3387,11 @@ export class AttackHelper {
     // RANDOM, and 4.8.1 step 2's list does not grow because the weapon that
     // caused the Surplus was a sniper's.
     if (snipeOn(c.action)) return true;
-    return inArc(c.defender, c.attacker, 'rear');
+    // 533 Front toward Enemy: "cannot be Back-attacked in Melee" removes the
+    // attacker's designation too, not only the bar on the Parry (FAQ A14).
+    // Snipe, above, still designates.
+    return inArc(c.defender, c.attacker, 'rear')
+      && !(c.action.type === 'Melee' && noMeleeBackAttack(this.data, c.defender));
   }
 
   private stepPart(): HTMLElement {
@@ -3789,7 +3823,9 @@ export class AttackHelper {
     // inside a Beacon's Range may reroll its {Eye}. Free, so it does not touch
     // c.rerolls either -- and unlike the Whistle it picks its own dice, because
     // the card names the face rather than leaving the choice open.
-    if (which === 'attack' && !c.guidanceUsed && this.tokens) {
+    // FAQ A6: one reroll effect per roll. An attacker who Focused has chosen
+    // theirs, so the Guidance offer is gone; canFocus refuses the reverse.
+    if (which === 'attack' && !c.guidanceUsed && !c.focus?.attackerUse && this.tokens) {
       const beacons = missileGuidance(this.data, this.tokens(), c.attacker, c.defender, c.action,
         { terrain: this.terrain ? this.terrain() : [] });
       const eyes = roll
@@ -4095,34 +4131,14 @@ export class AttackHelper {
         wait.textContent = `Waiting for ${c.defender.label}'s player to roll their defence: ${c.defensePool.white} White${c.defensePool.blue ? ` + ${c.defensePool.blue} Blue` : ''}.`;
         wrap.appendChild(wait);
       }
-      const roll = document.createElement('button');
-      roll.className = 'ah-primary';
-      roll.innerHTML = `${ICON_DICE} Roll defense dice`;
-      roll.disabled = !mine;
-      roll.addEventListener('click', () => {
-        // On a mirror the faces come from the defending player's own client and
-        // travel back as answerDefense, which is the handshake the attacking
-        // window is already parked on.
-        if (this.sendAct('rolldefense')) return;
-        void (async () => {
-          this.spinFor = 'defense';
-          c.defenseRoll = await this.rollPool({ white: c.defensePool.white, blue: c.defensePool.blue }, 'Defence');
-          this.render();
-        })();
-      });
-      wrap.appendChild(roll);
-    } else {
-      const def = this.countIcons(c.defenseRoll, c.defender.stance === 'defensive');
-      const sum = document.createElement('p');
-      sum.className = 'ah-sum';
-      sum.textContent = `Effective: ${def.defense ?? 0}× Defense, ${def.dodge ?? 0}× Dodge`;
-      wrap.appendChild(sum);
-      // KC Armor (4.10): the defender may consume a Charge Token to turn the
-      // Defense Roll's Lightning into Defense. Offered here while the roll is
-      // on the table; the REMOTE defender's copy of this button lives in
-      // their combat mirror.
+      // THE DEFENDER'S THREE DECLARES, BEFORE THE ROLL. KC Armor is declared
+      // after the target is named and before the hit-location die (FAQ H9),
+      // and both HALO spends are declared before any dice (FAQ A18). They
+      // used to be offered with the Defense Roll already showing, which let
+      // the defender pay only when the faces made it worth paying. The
+      // REMOTE defender's copy of each button lives in their combat mirror,
+      // which draws this same branch.
       const kc = c.defender.kind === 'mech' && !c.kcUsed ? kcArmorReady(this.data, c.defender) : null;
-      const defLightning = this.countIcons(c.defenseRoll, false).lightning ?? 0;
       // The two ZYBP-302 offers are the one pair of questions a mirror cannot
       // answer for itself: Melee Evasion needs to know a Parry was declared and
       // Dodge Enhancement that the Defense Roll is the live one, and both live
@@ -4141,10 +4157,10 @@ export class AttackHelper {
       // when that player sat at another screen, so nobody else could tell a
       // defender who was thinking from one with nothing to think about.
       const defMine = this.mayPress('defender');
-      if (kc && defLightning > 0) {
+      if (kc) {
         const b = document.createElement('button');
         b.className = 'ah-alt';
-        b.textContent = `KC Armor: consume a Charge Token so ${defLightning} [Lightning] become [Defense]`;
+        b.textContent = 'KC Armor: consume a Charge Token so every [Lightning] in the Defense Roll becomes [Defense]';
         b.disabled = !defMine || this.askSent('kcarmor');
         b.addEventListener('click', () => {
           if (this.sendAct('kcarmor')) return;
@@ -4181,6 +4197,28 @@ export class AttackHelper {
         });
         wrap.appendChild(b);
       }
+      const roll = document.createElement('button');
+      roll.className = 'ah-primary';
+      roll.innerHTML = `${ICON_DICE} Roll defense dice`;
+      roll.disabled = !mine;
+      roll.addEventListener('click', () => {
+        // On a mirror the faces come from the defending player's own client and
+        // travel back as answerDefense, which is the handshake the attacking
+        // window is already parked on.
+        if (this.sendAct('rolldefense')) return;
+        void (async () => {
+          this.spinFor = 'defense';
+          c.defenseRoll = await this.rollPool({ white: c.defensePool.white, blue: c.defensePool.blue }, 'Defence');
+          this.render();
+        })();
+      });
+      wrap.appendChild(roll);
+    } else {
+      const def = this.countIcons(c.defenseRoll, c.defender.stance === 'defensive');
+      const sum = document.createElement('p');
+      sum.className = 'ah-sum';
+      sum.textContent = `Effective: ${def.defense ?? 0}× Defense, ${def.dodge ?? 0}× Dodge`;
+      wrap.appendChild(sum);
       // 4.4.1 step 5 sits between the rolls and the resolution: the Focus
       // questions are asked in the printed order, and Resolve appears only
       // once the flow has run dry.
@@ -4534,7 +4572,11 @@ export class AttackHelper {
     //
     // Not on a self-hit, matching Tether's guard above -- a Part that hits its
     // own bearer (selfHitParts) is not an attacker tagging an enemy.
-    if (c.hits > 0 && c.defender.uid !== c.attacker.uid) {
+    //
+    // And not when a Parry HELD: "if the Parry is successful, the On Hit
+    // effect of that attack action will not trigger" (FAQ C5, 4.6.3). A Parry
+    // that was declared and then Penetrated did not hold.
+    if (c.hits > 0 && c.defender.uid !== c.attacker.uid && !(c.designatedParry && !c.penetrated)) {
       const riders = onHitRiders(
         c.action,
         tokenCards(this.data, c.attacker).flatMap(({ card }) => card.keywords ?? []),
@@ -4936,6 +4978,10 @@ interface EwCtx {
   // Link (174). Carried on the contest rather than read off the card, because
   // the card has no gameRules to read.
   linkLoss?: number;
+  // The free Scan on designation (FAQ I12) needs to know how the contest went
+  // so the attack behind it can resume or end. Called once, at Resolve, with
+  // the verdict; the shared table derives its verdict and never calls it.
+  then?: (initiatorWins: boolean) => void;
   initEv: number;
   respEv: number;
   initRoll: Rolled[] | null;
@@ -5106,7 +5152,7 @@ export class ElectronicHelper {
     return true;
   }
 
-  start(initiator: Token, action: CardAction, responder: Token, opts: { linkLoss?: number } = {}): void {
+  start(initiator: Token, action: CardAction, responder: Token, opts: { linkLoss?: number; then?: (initiatorWins: boolean) => void } = {}): void {
     const world = this.tokens ? this.tokens() : [];
     // Both riders on the rolled pool - the Tarantula Loads only the Initiator
     // counts (FAQ O5) and the EW Suppression aura (ZHDR-202_B / PDTR-202_B) -
@@ -5119,6 +5165,7 @@ export class ElectronicHelper {
       responder,
       action,
       linkLoss: opts.linkLoss,
+      then: opts.then,
       initEv,
       respEv,
       initRoll: null,
@@ -5475,6 +5522,7 @@ export class ElectronicHelper {
         } else {
           this.note(`Counter-roll: ${why}. ${c.responder.label} holds, so nothing applies.`, [c.initiator, c.responder]);
         }
+        c.then?.(win);
         this.onChanged();
         this.render();
       });

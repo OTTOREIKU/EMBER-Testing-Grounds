@@ -5,9 +5,9 @@ import { cardName, squadLabel } from './data';
 import { bindTips, linkMechanics } from './inspector';
 import { choiceDialog } from './dialog';
 import { PHASES, PHASE_INFO } from './tracker';
-import { vpRiderFor, anyStartTiming, opportunityBonusOn, hasFlexibleTiming, pilotCard, coordinationFor, coordinationOnOpportunityEnd, extrasFor, actionSilenceDenier, isSilentAction, type ActionWorld, canActivateCamo, manifestationRange, type ExtraActivation, extraActivationOf, guidedActions, initiativeFor, maneuverRange, maxLink, SLOT_LABEL, tokenCards } from './units';
+import { linkTickTraitOn, isRwsAction, vpRiderFor, anyStartTiming, opportunityBonusOn, hasFlexibleTiming, pilotCard, coordinationFor, coordinationOnOpportunityEnd, extrasFor, actionSilenceDenier, isSilentAction, type ActionWorld, canActivateCamo, manifestationRange, type ExtraActivation, extraActivationOf, guidedActions, initiativeFor, maneuverRange, maxLink, SLOT_LABEL, tokenCards } from './units';
 import { canAttackMode, canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed } from './ticks';
-import { asterKey, clearDroneCommands, perform, readyCommands, seedCommandTokens } from './commands';
+import { asterKey, check, clearDroneCommands, perform, readyCommands, seedCommandTokens } from './commands';
 import { askIssuer, asterBlockers, offerCoordination, runAster } from './commandpick';
 import { tacticFitsPhase, tacticSpec } from './tactics';
 import { alive, canAct, getLocalSeat, isLoopPhase, nextTurn, onExtraOpportunity, type LoopPhase, nextActivation, activationOrder, actionPhaseComplete, loopComplete, eligibleUnits, type InitLookup, type Activation } from './loop';
@@ -386,6 +386,7 @@ export class PlayGuide {
     this.root.querySelector('[data-maneuver]')?.addEventListener('click', () => this.tryManeuver());
     this.root.querySelector('[data-overload]')?.addEventListener('click', () => this.tryOverload());
     this.root.querySelector('[data-attackmode]')?.addEventListener('click', () => this.tryAttackMode());
+    this.root.querySelector('[data-linktick]')?.addEventListener('click', () => this.tryLinkTick());
     for (const b of [...this.root.querySelectorAll<HTMLButtonElement>('[data-tactic]')]) {
       b.addEventListener('click', () => {
         const [side, id] = b.dataset.tactic!.split(':');
@@ -675,37 +676,6 @@ export class PlayGuide {
           : `<div class="pg-units"><button class="pg-pass" data-end-step="remove">Nothing to remove</button></div>`,
       )}
       ${(() => {
-        const torso = (t: Token) => (t.partStates.torso ?? 'intact') !== 'destroyed';
-        // Either half of Stabilize justifies the action (FAQ J4/J6-J8): a
-        // Token to remove, or a Link short of the pilot's ceiling.
-        const canStabilise = s.tokens.filter((t) => t.kind === 'mech' && alive(t) && torso(t) && (
-          (t.statuses ?? []).some((id) => {
-            const d = STATUSES.find((x) => x.id === id);
-            return d?.shape === 'square' || d?.shape === 'hexagon';
-          }) || (t.link ?? 0) < maxLink(this.data, t) && maxLink(this.data, t) !== 99
-        ));
-        const canReveal = s.tokens.filter((t) => alive(t) && statusCount(t.statuses, 'camouflage') > 0);
-        const hidden = s.tokens.filter((t) => alive(t) && (statusCount(t.statuses, 'camouflage') > 0 || statusCount(t.statuses, 'lowProfile') > 0));
-        const canScan = hidden.length ? s.tokens.filter((t) => t.kind === 'mech' && alive(t) && torso(t) && hidden.some((h) => h.side !== t.side)) : [];
-        const none = !canStabilise.length && !canReveal.length && !canScan.length;
-        return step(
-          'commons',
-          2,
-          'End Phase actions',
-          none
-            ? 'Nobody can Scan, Stabilize System or Reveal this round, so there is nothing to spend an End Phase Action on.'
-            : 'Scan, Stabilize System and Reveal each cost 1 Action Tick and are taken now, before tokens are managed.',
-          none
-            ? '<div class="pg-units"><button class="pg-pass" data-end-step="commons">Nothing to do</button></div>'
-            : `<div class="pg-units">
-                ${canStabilise.map((t) => `<button class="pg-unit" data-stabilise="${t.uid}" data-tip-title="Stabilize System" data-tip-sub="End Phase Common Action" data-tip="Torso Action.|Remove 1 Square or Hexagon Token from this Mech, then restore 1 Link.">Stabilize ${esc(t.label)}</button>`).join('')}
-                ${canReveal.map((t) => `<button class="pg-unit" data-reveal="${t.uid}" data-mech="revealed">Reveal ${esc(t.label)}</button>`).join('')}
-                ${canScan.map((t) => `<button class="pg-unit" data-scan="${t.uid}" data-mech="scanning">Scan with ${esc(t.label)}</button>`).join('')}
-                <button class="pg-pass" data-end-step="commons">Done</button>
-              </div>`,
-        );
-      })()}
-      ${(() => {
         const red = s.tokens.flatMap((t) => (t.expiring ?? []).map((id) => ({ t, id })));
         const yellow = s.tokens.flatMap((t) =>
           (t.statuses ?? [])
@@ -726,7 +696,7 @@ export class PlayGuide {
         ].filter(Boolean);
         return step(
           'tokens',
-          3,
+          2,
           'Token management',
           `Red Square and Hexagon Tokens come off, Yellow ones flip to their red side, and every Command Token is removed.${
             bits.length ? ` Waiting: ${bits.join(' · ')}.` : ' Nothing is waiting.'
@@ -769,7 +739,7 @@ export class PlayGuide {
             : '';
         return step(
           'tasks',
-          4,
+          3,
           'Tasks and victory points',
           `${body}${total}${lines}`,
           preview.s1 || preview.s2
@@ -849,7 +819,7 @@ export class PlayGuide {
         .filter((a) => !this.script(s).acted.includes(a.uid)).length;
       return `${left} Mech${left === 1 ? ' has' : 's have'} not acted. End each activation first`;
     }
-    if (isLoopPhase(phase) && !loopComplete(s, phase)) {
+    if (isLoopPhase(phase) && !loopComplete(s, phase, this.data)) {
       const noun = phase === 'Delay' ? 'projectile' : 'drone';
       return `Activate or pass every ${noun} first`;
     }
@@ -1287,12 +1257,21 @@ export class PlayGuide {
     const bonTip = bon?.ok
       ? `Take ${bonus!.actionPoints} more Action Tick${bonus!.actionPoints === 1 ? '' : 's'} for this Action Opportunity. Ordinary Ticks, so they combine with the base pool to pay for a Medium Action (FAQ K14). Taking them SETS this Mech's Stance for the rest of the Opportunity (4.1).`
       : bon?.why ?? '';
+    // FPA-04-2 Domestic Expert (FAQ L2): Link for an ordinary Action Tick, in
+    // Offensive Stance, once an Opportunity. Same shelf, same class of Tick;
+    // the command holds the rule and this only reports it.
+    const trait = t.kind === 'mech' ? linkTickTraitOn(this.data, t) : null;
+    const lt = trait ? check(this.data, s, { kind: 'linkTick', seat: t.side, uid: t.uid }) : null;
+    const ltTip = lt?.ok
+      ? `Consume 1 Link for 1 Action Tick (${trait!.label}). Up to ${trait!.maxLink} per Action Opportunity, in Offensive Stance, which is then locked (FAQ L2).`
+      : lt?.why ?? '';
     const maneuverRow = shutdown
       ? ''
       : `<div class="pg-units">
         <button class="pg-unit${man.ok ? '' : ' warn'}" data-maneuver="1" data-tip-title="Maneuver" data-tip="${esc(man.ok ? `Move up to ${range} Grid${range === 1 ? '' : 's'}. Maneuver is free once per Action Opportunity.` : man.why ?? '')}">Maneuver ${range}</button>
         ${ovl ? `<button class="pg-unit${ovl.ok ? '' : ' warn'}" data-overload="1" data-tip-title="Overload" data-tip="${esc(ovlTip)}">Overload ${o.overload}/${OVERLOAD_MAX}</button>` : ''}
         ${bon && bonus ? `<button class="pg-unit${bon.ok ? '' : ' warn'}" data-attackmode="1" data-tip-title="${esc(bonus.label)}" data-tip="${esc(bonTip)}">${esc(bonus.label)} ${o.attackMode ? 'taken' : `+${bonus.actionPoints}`}</button>` : ''}
+        ${trait && lt ? `<button class="pg-unit${lt.ok ? '' : ' warn'}" data-linktick="1" data-tip-title="${esc(trait.label)}" data-tip="${esc(ltTip)}">${esc(trait.label.replace(/^Hammerhead /, ''))} ${o.linkTicks ?? 0}/${trait.maxLink}</button>` : ''}
       </div>`;
     const actionRows = shutdown
       ? ''
@@ -1509,6 +1488,29 @@ export class PlayGuide {
     return tokenCards(this.data, t).some(({ card }) => (card.actions ?? []).some((a) => ids.has(a.id)));
   }
 
+  // FPA-04-2 Domestic Expert: 1 Link for 1 Action Tick, in Offensive Stance,
+  // once an Action Opportunity (FAQ L2). The command holds the rule; this only
+  // reports it.
+  private tryLinkTick(): void {
+    const s = this.state;
+    if (!s) return;
+    const o = this.opportunity(s);
+    if (!o) return;
+    const t = s.tokens.find((x) => x.uid === o.uid);
+    if (!t) return;
+    const v = check(this.data, s, { kind: 'linkTick', seat: t.side, uid: t.uid });
+    if (!v.ok) {
+      this.warn = v.why ?? null;
+      this.render();
+      return;
+    }
+    this.warn = null;
+    perform(this.data, s, { kind: 'linkTick', seat: t.side, uid: t.uid });
+    const trait = linkTickTraitOn(this.data, t);
+    this.cb.onNote(t, `${trait?.label ?? 'Pilot trait'}: consumed 1 Link for 1 Action Tick (Link now ${t.link}, ${this.script(s).opp?.linkTicks ?? '?'} of ${trait?.maxLink ?? 1} used; Offensive Stance locked, FAQ L2).`);
+    this.cb.onChanged();
+  }
+
   // Link bought as Ticks is Link the Mech no longer has, and a Mech on 0 Link
   // Shuts Down. The Pack does not exempt it, so the guide spends the Link and
   // reports the Shutdown rather than quietly refusing the last point.
@@ -1692,6 +1694,19 @@ export class PlayGuide {
     const out: { action: CardAction; label: string; tag: string; note: string; blocked?: string }[] = [];
     for (const ga of guidedActions(this.data, t, this.cb.world())) {
       const a = ga.action;
+      // RWS (遥控武器): a Mech designated in the Command Phase fires the
+      // autocannon the Command was sent for, and nothing else (FAQ A20/A22).
+      if (t.kind === 'mech') {
+        if (phase !== 'Command' || !isRwsAction(a)) continue;
+        out.push({
+          action: a,
+          label: a.name.en || a.name.zh || a.id,
+          tag: ga.ammoLeft === undefined ? 'RWS' : `${ga.ammoLeft}/${a.storage ?? 0}`,
+          note: 'RWS: the Command lets this Mech fire this Part now. It is still the Mech firing, so its Firing bonuses apply and its own pilot pays any Focus (FAQ A20/A22).',
+          blocked: ga.available ? undefined : ga.reason,
+        });
+        continue;
+      }
       // In the Delay Phase a Projectile performs whatever action it carries
       // (3.6.2). The card data types these four ways: Delay, Tactic (guided
       // attacks, mortar shells), and Immediate (detonate-on-landing grenades,
@@ -1780,12 +1795,12 @@ export class PlayGuide {
         ? `<p class="pg-tokens">Command tokens: <b class="side-s1">${squadLabel('s1')} ${s.commandTokens.s1}</b> · <b class="side-s2">${squadLabel('s2')} ${s.commandTokens.s2}</b></p>${this.asterHtml(s)}`
         : '';
 
-    if (loopComplete(s, phase)) {
+    if (loopComplete(s, phase, this.data)) {
       return `${fp}${tokens}${phaseDone(`${phase} Phase complete`)}`;
     }
 
-    const turn = canAct(s, phase, sc.turn) ? sc.turn : (nextTurn(s, phase, sc.turn) ?? sc.turn);
-    const units = eligibleUnits(s, phase, turn);
+    const turn = canAct(s, phase, sc.turn, this.data) ? sc.turn : (nextTurn(s, phase, sc.turn, this.data) ?? sc.turn);
+    const units = eligibleUnits(s, phase, turn, this.data);
     if (this.notMySeat(turn)) {
       const noun = phase === 'Delay' ? 'projectile' : 'drone';
       return `${fp}${tokens}${this.waitingOn(turn, `${phase === 'Command' ? 'command' : 'activate'} a ${noun} or pass`)}`;
@@ -1793,7 +1808,9 @@ export class PlayGuide {
 
     const chosen = this.picked !== null ? units.find((t) => t.uid === this.picked) : undefined;
     if (chosen) {
-      const what = phase === 'Command' ? 'It may move, or take one Command action.' : 'Resolve its action, then mark it done.';
+      const what = chosen.kind === 'mech'
+        ? 'RWS: the Command fires its autocannon, and nothing else (遥控武器).'
+        : phase === 'Command' ? 'It may move, or take one Command action.' : 'Resolve its action, then mark it done.';
       const own = this.phaseActions(chosen, phase);
       // A Drone's attack is usually an Automatic Action, so it is absent here by
       // design. Say where it went rather than leaving an empty list.
@@ -1823,14 +1840,14 @@ export class PlayGuide {
         ${list}
         ${
           elsewhere && phase === 'Command'
-            ? `<p class="pg-intercept-note">This Drone has no Command Action. Its actions are marked <b>!</b> on the card, meaning Automatic: they fire by themselves in the Automatic Phase. A Command can only move it, and a Drone that acts on a Command does not act again that round, so commanding it here costs that attack.</p>`
+            ? `<p class="pg-intercept-note">This Drone has no Command Action. Its actions are marked <b>!</b> on the card, meaning Automatic: they fire by themselves in the Automatic Phase. A Command can only move it (3.2.2), and it still fires in the Automatic Phase afterwards (3.5).</p>`
             : elsewhere
               ? `<p class="pg-intercept-note">Nothing to choose in this phase. This unit's actions are ${esc(elsewhere)} Actions, offered in the ${esc(elsewhere)} Phase.</p>`
               : ''
         }
         <div class="pg-units">
           ${
-            phase === 'Command'
+            phase === 'Command' && chosen.kind !== 'mech'
               ? `<button class="pg-unit" data-move="${chosen.uid}">Move</button>`
               : ''
           }
@@ -1918,7 +1935,7 @@ export class PlayGuide {
     if (!isLoopPhase(phase)) return;
     // The pass belongs to whoever's turn it actually is, so a stale turn
     // pointer is normalised before the command is issued.
-    const turn = canAct(s, phase, sc.turn) ? sc.turn : (nextTurn(s, phase, sc.turn) ?? sc.turn);
+    const turn = canAct(s, phase, sc.turn, this.data) ? sc.turn : (nextTurn(s, phase, sc.turn, this.data) ?? sc.turn);
     perform(this.data, s, { kind: 'passTurn', seat: turn });
     this.cb.onChanged();
   }
