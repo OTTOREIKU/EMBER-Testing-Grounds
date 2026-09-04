@@ -9,7 +9,7 @@ import { setLocalSeat } from './loop';
 import { resolveLayer, tableDeployFor, tableZonesFor } from './mapeditor';
 import { cardName, FACTION_LABEL, dataUrl, loadData, missionImageUrl, parseGridRef, setSquadNames, squadLabel, type GameData } from './data';
 import { tacticSpec } from './tactics';
-import { flushBoxDrops, queueBoxDrop, objectiveCells } from './matchhud';
+import { flushBoxDrops, queueBoxDrop, objectiveCells, resetHudTools, startActionFromCard } from './matchhud';
 import { printedDeployment } from './overlays';
 import { ignoresProtectionOnHighlight, kcArmorReady, knockbackOf, migrateState, multiTargetLimit, providesUnitProtectionToAllies, squadAllegiance, tokenCards, unfoldsOwed, type AttackReaction } from './units';
 import { countHits, normaliseSetup } from './setup';
@@ -27,7 +27,7 @@ import { losNote, protectionFor, spotsInGrid } from './rules';
 import { SquadTracker } from './squads';
 import { Panel } from './panel';
 import type { CardAction, CombatView, DiceData, DieColor, GameState, Side, Token } from './types';
-import { grantAdjusted, SLOT_LABEL, stationaryAdjusted } from './units';
+import { grantAdjusted, SLOT_LABEL, stationaryAdjusted, twoHandedUse } from './units';
 import { gridsOf, PHASES, statusCount } from './types';
 // FIRST, before anything else in this module runs. A net that is installed
 // after the thing it is meant to catch is not a net.
@@ -249,9 +249,19 @@ function resyncSoon(): void {
   relay.requestResync();
 }
 
+// The board each command was performed on, hashed just before apply() by the
+// onBeforeApply hook below. Keyed by the command object itself, because the
+// stamp is read in publish() after apply() and by then the live board is the
+// one the command produced. A WeakMap so the entries die with the commands.
+const preHash = new WeakMap<object, string>();
+// Set when a checkpoint arrives that this build cannot read. Applying the tail
+// on top of the OLD board would double every command in it, so the page stops
+// playing instead and says why.
+let boardBroken = false;
+
 const relay = new Relay(api.base, {
   onCommand(cmd) {
-    if (!data) return;
+    if (!data || boardBroken) return;
     // Where the unit stood before their command lands, so the board can walk
     // it across rather than teleport it once the move has been applied.
     // crushSwap moves the crushed Units too; only the crusher is walked across,
@@ -306,7 +316,15 @@ const relay = new Relay(api.base, {
   onCheckpoint(raw) {
     if (!data) return;
     const s = migrateState(raw, data);
-    if (s) state = s;
+    if (!s) {
+      boardBroken = true;
+      lobbyNote = 'The table sent a board this version cannot read. Reload the page to rejoin.';
+      render();
+      return;
+    }
+    state = s;
+    // Every tool on this page was drawn against the board that just went away.
+    resetHudTools();
     // A checkpoint REPLACES the board — note `state = s`, a new reference —
     // either because we joined late or because we drifted. Every snapshot taken
     // before it describes a game this client can no longer vouch for, and a
@@ -337,6 +355,7 @@ const relay = new Relay(api.base, {
   onCatchUp(active) {
     catchingUp = active;
     if (active) return;
+    resetHudTools();
     // The board is whole again: draw it, and answer anything the replay
     // walked past — a commitment made while we were away may be waiting on
     // this client's reveal, and a reloaded page holds its half of the dial
@@ -397,8 +416,21 @@ const relay = new Relay(api.base, {
     }
     if (!catchingUp) render();
   },
-  snapshot: () => JSON.parse(JSON.stringify(state)) as unknown,
+  // Nothing unrevealed goes over the wire. A checkpoint is the whole board,
+  // so any dial belonging to a squad that has not revealed is stripped out of
+  // the copy that leaves this client - the same strip the board page makes.
+  // Without it this seat's secret Timing Dials sat in the server's checkpoint
+  // and in the opponent's state throughout the Planning Phase.
+  snapshot: () => {
+    const copy = JSON.parse(JSON.stringify(state)) as GameState;
+    const revealed = state.script?.revealed ?? [];
+    for (const t of copy.tokens) {
+      if (t.kind === 'mech' && !revealed.includes(t.side)) t.timing = undefined;
+    }
+    return copy as unknown;
+  },
   fingerprint: () => boardFingerprint(state),
+  stampFor: (cmd) => preHash.get(cmd) ?? null,
 });
 
 // Everything performed on this page mirrors, same as on the board — and a
@@ -415,6 +447,7 @@ let asked: { round: number; phase: number; seq?: number } | null = null;
 let ledgerNames: LedgerNames | undefined;
 onBeforeApply((s, cmd) => {
   noteCommand(cmd.kind);
+  preHash.set(cmd, boardFingerprint(s));
   if (cmd.kind === 'rollbackAnswer' && cmd.accept) {
     const r = s.script?.rollback;
     // The seq rides along when the ask named a UNIT (U4). Captured here, one
@@ -481,6 +514,13 @@ function send(cmd: Command): CheckResult {
   // on both sides of the wire rather than trusted to one.
   if (relay.state.room && !relay.state.seat) {
     return { ok: false, why: 'You are watching this table, so you cannot change the board.' };
+  }
+  if (boardBroken) return { ok: false, why: 'This page could not read the table. Reload to rejoin.' };
+  // A command performed while the socket is down would be applied here and
+  // never sent: net.ts drops it, and the next `room` clears the queue. Refuse
+  // it instead, so the player retries once the relay is back.
+  if (relay.state.room && !relay.connected) {
+    return { ok: false, why: 'Reconnecting to the table. Try again in a moment.' };
   }
   const p = paused();
   if (p) return { ok: false, why: `Paused. Waiting for ${squadLabel(p.side)}'s player.` };
@@ -605,6 +645,7 @@ function rewindIfAgreed(cmd: Command): void {
     // and onCheckpoint would drop them anyway. Cleared early so nothing can be
     // undone into the gap while the rewind is in the air.
     clearHistory();
+    resetHudTools();
     lobbyNote = 'Rolling back…';
     render();
     return;
@@ -828,7 +869,7 @@ function settleDefense(cmd: Command): void {
 // that mirrors it. Two lookups would be two answers to "which card is this",
 // and the whole point of the single renderer is that both screens are reading
 // the same card.
-function attackActionOf(t: Token | undefined, actionId: string): CardAction | undefined {
+function attackActionOf(t: Token | undefined, actionId: string, twoHandedDeclined = false): CardAction | undefined {
   if (!data || !t) return undefined;
   const printed = tokenCards(data, t)
     .flatMap(({ card }) => card.actions ?? [])
@@ -838,14 +879,21 @@ function attackActionOf(t: Token | undefined, actionId: string): CardAction | un
   // AttackHelper's ctx.action carries a granted keyword (Stationary Snipe,
   // stance-granted Shock) the same way it carries a printed one.
   const opp = oppNow?.uid === t.uid ? oppNow : null;
-  return printed ? grantAdjusted(stationaryAdjusted(printed, opp), t, opp) : printed;
+  if (!printed) return printed;
+  const granted = grantAdjusted(stationaryAdjusted(printed, opp), t, opp);
+  // [Two-Handed] LAST, as on every other site (twohanded.test.mjs). This page
+  // used to stop at the grants, so the Match Centre rolled a Two-Handed weapon
+  // without its rider while the turn panel had promised it. FAQ A16: the
+  // player may decline, and the declined copy is marked so the window says so.
+  if (twoHandedDeclined) return twoHandedUse(data, t, granted) ? { ...granted, twoHandedDeclined: true } : granted;
+  return twoHandedUse(data, t, granted)?.action ?? granted;
 }
 
-function startAttack(uid: number, actionId: string, targetUid: number, mode: 'attack' | 'intercept' | 'explosion' = 'attack'): void {
+function startAttack(uid: number, actionId: string, targetUid: number, mode: 'attack' | 'intercept' | 'explosion' = 'attack', opts: { twoHandedDeclined?: boolean } = {}): void {
   if (!data || !attackHelper) return;
   const attacker = state.tokens.find((t) => t.uid === uid);
   const defender = state.tokens.find((t) => t.uid === targetUid);
-  const action = attackActionOf(attacker, actionId);
+  const action = attackActionOf(attacker, actionId, !!opts.twoHandedDeclined);
   if (!attacker || !defender || !action) return;
   const terrain = terrainNow();
   const smoke = state.smoke ?? [];
@@ -939,6 +987,15 @@ function mountSide(): void {
     // The card names the Action; the turn panel asks which enemy, reading the
     // range, arc and line of sight off the board for each one.
     onStartAttack: (t, actionId) => {
+      // Through the turn panel's own door when this unit holds the Opportunity,
+      // so the Ticks are paid and Shock is asked; the bare picker only remains
+      // for the sandbox, where nothing is being paid for.
+      if (startActionFromCard(t.uid, actionId)) { render(); return; }
+      if (relay.state.room) {
+        lobbyNote = `${t.label} does not hold the Action Opportunity, so it cannot attack now (3.4).`;
+        render();
+        return;
+      }
       startAttackPick(t.uid, actionId);
       render();
     },
@@ -2264,7 +2321,7 @@ function syncCombatMirror(): boolean {
   }
   const at = state.tokens.find((t) => t.uid === view.attackerUid);
   const df = state.tokens.find((t) => t.uid === view.targetUid);
-  const action = attackActionOf(at, view.actionId);
+  const action = attackActionOf(at, view.actionId, !!view.twoHandedDeclined);
   // A view naming a unit or a card this client cannot resolve draws nothing
   // rather than half a window. It is reachable: a rollback can take the
   // attacker off the board while their view is still on the wire.

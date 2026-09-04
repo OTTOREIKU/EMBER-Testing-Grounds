@@ -67,6 +67,12 @@ export interface NetHooks {
   // Timing Dial before its reveal — has to be left out, or every Planning
   // Phase reads as a desync.
   fingerprint?(): string | null;
+  // The board a command was performed ON, for the stamp that rides with it.
+  // fingerprint() reads the live board, and publish() runs AFTER apply(), so
+  // stamping from it described the board the command produced - which the
+  // receiver, comparing before its own apply, never matched. Every opponent
+  // command read as drift. This returns the hash captured just before apply.
+  stampFor?(cmd: Command): string | null;
 }
 
 function relayUrl(apiBase: string): string {
@@ -213,12 +219,18 @@ export class Relay {
     if (Number.isSafeInteger(n) && n > this.branch) this.branch = n;
   }
 
+  // This connection's id, from the server's `room`. Two devices on one account
+  // share a seat, and a command echo carries the sender's connection so the
+  // other device applies it rather than mistaking it for its own. Absent on an
+  // older server, and then the seat decides as before.
+  private conn: string | null = null;
+
   // `<rev>:<branch>:<hash>` — the board this client had applied, how far it had
   // got, and which branch of history it was on. Null when the app offers no
   // fingerprint, which is how the board page opts out without a second code
   // path.
-  private stamp(): string | null {
-    const fp = this.hooks.fingerprint?.();
+  private stamp(cmd?: Command): string | null {
+    const fp = cmd !== undefined && this.hooks.stampFor ? this.hooks.stampFor(cmd) : this.hooks.fingerprint?.();
     return fp === undefined || fp === null ? null : `${this.lastRev}:${this.branch}:${fp}`;
   }
 
@@ -392,11 +404,12 @@ export class Relay {
     this.seq += 1;
     const entry = { seq: this.seq, cmd };
     this.pending.push(entry);
-    // The board as it stood before this command. The revision rides inside the
+    // The board as it stood before this command - stampFor, captured before
+    // apply(), because this runs after it. The revision rides inside the
     // string rather than as a second field, so the server forwards one opaque
     // value and never has to know what it means — and the receiver can tell
     // whether it is even comparable.
-    this.send({ t: 'cmd', ...entry, fp: this.stamp() });
+    this.send({ t: 'cmd', ...entry, fp: this.stamp(cmd) });
   }
 
   // Asks the server to roll. The faces come back from there rather than from
@@ -521,7 +534,8 @@ export class Relay {
 
       case 'room': {
         const room = msg.room as NetRoom;
-        const you = msg.you as { seat: Side | null; host: boolean };
+        const you = msg.you as { seat: Side | null; host: boolean; conn?: string };
+        this.conn = typeof you.conn === 'string' ? you.conn : null;
         // A rejoin under a new room means our old sequence numbers mean
         // nothing to the server, so both counters restart together.
         this.seq = 0;
@@ -601,12 +615,17 @@ export class Relay {
         // where everyone else is before either check below means anything.
         this.learnBranch(msg.fp);
         const stale = this.staleBranch(msg.fp);
-        if (!stale && !this.replaying && seat !== this.view.seat && this.driftedFrom(msg.fp) && !this.view.desynced) {
+        // Ours if it came from THIS connection. The seat compare is the
+        // fallback for a server that does not stamp connections and for a
+        // replayed tail, which carries no connection at all.
+        const mine = typeof msg.conn === 'string' && this.conn !== null
+          ? msg.conn === this.conn
+          : seat === this.view.seat;
+        if (!stale && !this.replaying && !mine && this.driftedFrom(msg.fp) && !this.view.desynced) {
           this.set({ desynced: true, error: 'The two boards disagree. Catching up…' });
           this.send({ t: 'resync' });
         }
         this.lastRev = rev;
-        const mine = seat === this.view.seat;
         if (mine) {
           // Our own command coming back is the server acknowledging it.
           // Anything at or below that sequence number has landed and no longer
@@ -629,7 +648,22 @@ export class Relay {
         // check below still has to run or a tail ending on a stale command
         // leaves the board in catch-up for the rest of the game.
         if (stale) this.stale += 1;
-        else if (!mine || this.replaying) this.hooks.onCommand(msg.cmd as Command, seat);
+        else if (!mine || this.replaying) {
+          // A malformed payload can make check() throw. Uncaught, the throw
+          // escaped receive() after lastRev had already moved, so the command
+          // was silently skipped - and inside a replay it also skipped
+          // endReplay, freezing the board until the guard timer. Treated as a
+          // refusal instead: note it, and ask for the board once.
+          try {
+            this.hooks.onCommand(msg.cmd as Command, seat);
+          } catch (e) {
+            this.note('apply threw', e instanceof Error ? e.message : String(e));
+            if (!this.replaying && !this.view.desynced) {
+              this.set({ desynced: true, error: 'A move could not be applied. Catching up…' });
+              this.send({ t: 'resync' });
+            }
+          }
+        }
         if (this.replaying && rev >= this.replayTo) this.endReplay();
         return;
       }
