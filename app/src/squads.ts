@@ -23,6 +23,7 @@ import type { GameState, PartSlot, PartState, Side, Stance, Timing, TimingDef, T
 import { SCALES, SHAPE_NOTE, statusCount, statusesFor, statusStacks, STATUSES, TIMINGS } from './types';
 import { normaliseTasks } from './tasks';
 import { normaliseSetup } from './setup';
+import { tacticSpec } from './tactics';
 import { perform } from './commands';
 import { dialHidden, getLocalSeat } from './loop';
 import { defaultUnitLabel, emptyCarriers, factionProblems, initiativeFor, pilotCard, squadAllegiance, SLOT_LABEL, structureOf, tidyUnitLabel, tokenCards, tokenFactions } from './units';
@@ -352,7 +353,9 @@ export class SquadTracker {
       name.textContent = `${cardName(card)}${n > 1 ? ` ×${n}` : ''}`;
       const timing = document.createElement('span');
       timing.className = 'sq-tac-when';
-      timing.textContent = card.actions?.[0]?.name?.en ?? '';
+      // Off the spec: the six cards carry no actions in the data, so this read
+      // an empty string for every one of them.
+      timing.textContent = tacticSpec(id)?.timing ?? '';
       const play = document.createElement('button');
       play.className = 'sq-tac-play';
       play.textContent = used ? 'Played' : 'Play';
@@ -363,8 +366,8 @@ export class SquadTracker {
       play.addEventListener('click', () => this.playTactic(side, id));
       inspectOnHover(row, {
         title: cardName(card),
-        sub: card.actions?.[0]?.name?.en,
-        lines: [card.actions?.[0]?.description?.en ?? '', 'Only 1 Tactics Card may be played per round (rulebook 5.4.2).'],
+        sub: tacticSpec(id)?.timing,
+        lines: [tacticSpec(id)?.text ?? '', 'Only 1 Tactics Card may be played per round (rulebook 5.4.2).'],
       });
       row.append(name, timing, play);
       box.appendChild(row);

@@ -1,4 +1,4 @@
-import { ApiError, EmberApi, type Account, type AdminInvite, type AdminUser, type CardStat, type FactionStat, type LeaderPlayer, type LeaderSquad, type MyRecord, type SquadEntry, type StatsSummary } from './api';
+import { ApiError, EmberApi, type Account, type AdminInvite, type RegistrationInfo, type AdminUser, type CardStat, type FactionStat, type LeaderPlayer, type LeaderSquad, type MyRecord, type SquadEntry, type StatsSummary } from './api';
 import { Relay, type RolledDie, type RollKind } from './net';
 import { applyRemote, check, onBeforeApply, onPerformed, onRefused, perform, type Command, type CheckResult } from './commands';
 import { installDiagnostics, noteCommand, noteRefusal } from './diagnostics';
@@ -21,7 +21,7 @@ import { warmAllImagesWhenIdle } from './images';
 import { runFirstVisitPreload } from './preload';
 import { importSquadFile } from './importer';
 import { boardFingerprint, dialsOf, hashDials, newSalt, type DialEntry } from './secrecy';
-import { animateRemoteMove, clearRangeOverlayFor, ensureHud, glueAfter, showRangeOverlay, showSideTab, startAttackPick, startBoxDrop, startDetonation, startElectronicPick, startInterceptPick, startLaunchPlan, startShove, startSmokePlan, type DiceLine, type HudCtx } from './matchhud';
+import { animateRemoteMove, clearRangeOverlayFor, ensureHud, glueAfter, showRangeOverlay, showSideTab, startAttackPick, startBoxDrop, startDetonation, startElectronicPick, startInterceptPick, startTacticPick, startLaunchPlan, startShove, startSmokePlan, type DiceLine, type HudCtx } from './matchhud';
 import { AttackHelper, combatRoleFor, type MirrorAct } from './combat';
 import { losNote, protectionFor, spotsInGrid } from './rules';
 import { SquadTracker } from './squads';
@@ -166,6 +166,10 @@ function recoverDialSecret(): void {
 let acctOpen = false;
 let pickerOpen = false;
 let loginErr: string | null = null;
+// The server's registration mode, read once at startup. The sign-in copy and
+// the admin page word themselves off it, so opening registration for testing
+// does not leave two screens insisting accounts are invite-only.
+let reg: RegistrationInfo | null = null;
 let doorErr: string | null = null;
 let lobbyNote: string | null = null;
 
@@ -943,7 +947,7 @@ function mountSide(): void {
     },
     onEditMech: () => {},
     onPlayTactic: (side, id) => {
-      send({ kind: 'playTactic', seat: side, uid: state.tokens.find((t) => t.side === side)?.uid ?? 0, cardId: id });
+      startTacticPick(side, id);
       render();
     },
     scenarioName: () => null,
@@ -1461,7 +1465,11 @@ function loginHtml(): string {
       <input class="f" id="mc-pass" type="password" autocomplete="current-password" />
       ${loginErr ? `<div class="mc-err">${esc(loginErr)}</div>` : ''}
       <button class="btn wide" id="mc-login"${busy ? ' disabled' : ''}>Sign in</button>
-      <p class="quiet">Accounts are invite-only. Register from the board's Multiplayer popup with the code you were given.</p>
+      <p class="quiet">${reg?.mode === 'closed'
+        ? 'New accounts are closed at the moment.'
+        : reg && !reg.inviteRequired
+          ? "No account yet? Create one from the board's Multiplayer popup or on the pad."
+          : "Accounts are invite-only. Register from the board's Multiplayer popup with the code you were given."}</p>
     </div>
   </div>`;
 }
@@ -1790,7 +1798,9 @@ function adminHtml(): string {
     <div class="mc-row fill">
       <div class="panel pane">
         <h3>Invite codes</h3>
-        <p class="hint">Registration is invite-only. A code works once, and can be pulled back at any point before it is claimed.</p>
+        <p class="hint">${reg && !reg.inviteRequired
+          ? `Registration is ${reg.mode === 'closed' ? 'closed' : 'open'} right now, so no code is needed to create an account. Codes still work once each if the door is closed again.`
+          : 'Registration is invite-only. A code works once, and can be pulled back at any point before it is claimed.'}</p>
         <div class="mintrow">
           <span class="grow"><label class="f" for="mc-mint-label">Label</label>
             <input class="f" id="mc-mint-label" maxlength="60" placeholder="Who it is for" /></span>
@@ -3136,14 +3146,16 @@ root.addEventListener('mc-lockdials', () => {
 
 render();
 void (async () => {
-  const [d, user, dice] = await Promise.all([
+  const [d, user, dice, mode] = await Promise.all([
     loadData(),
     api.refresh(),
     fetch(dataUrl('dice.json')).then((r) => r.json() as Promise<DiceData>).catch(() => null),
+    api.registration().catch(() => null),
   ]);
   data = d;
   account = user;
   diceData = dice;
+  reg = mode;
   // The squad list and the card panel already tag their rows with
   // `data-tip-card`; this is the delegated listener that turns those into the
   // hover previews the freeplay board has. Nothing else was missing.

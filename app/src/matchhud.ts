@@ -4977,6 +4977,15 @@ function tacticCtxOf(ctx: HudCtx): TacticCtx {
   return { maxLink: (t: Token) => tokenCards(ctx.data, t).find((c) => c.slot === 'pilot')?.card.LV ?? 0 };
 }
 
+// The squad panel's Play button, for match.ts: the same two questions the strip
+// asks. It used to send the command bare - first token, no pick - which the
+// engine refused for every card that needs a target or a choice.
+export function startTacticPick(side: Side, cardId: string): void {
+  if (!hudRef) return;
+  startTactic(hudRef, side, cardId);
+  hudRef.refresh();
+}
+
 function startTactic(ctx: HudCtx, side: Side, cardId: string): void {
   const spec = tacticSpec(cardId);
   if (!spec) return;

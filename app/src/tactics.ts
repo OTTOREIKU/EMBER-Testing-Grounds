@@ -21,6 +21,9 @@ export interface TacticSpec {
   targets: 'mech' | 'drone' | 'unit';
   prompt: string;
   none: string;
+  // The effect in a sentence. The six cards carry NO description in the card
+  // data, so this is the only text either page can show for them.
+  text: string;
   // What follows the card's effect: a free Maneuver (276) or a Command Action
   // that costs no token (274). Static per card, so the UI can read them without
   // running apply.
@@ -51,8 +54,11 @@ function removable(t: Token): TacticPick[] {
   return out;
 }
 
+// The three Stances a player may choose (4.1). Shutdown is never chosen - it is
+// what Link 0 does to a Mech - so no card offers it, and a Mech leaving Shutdown
+// simply picks from the three.
 function stancePicks(t: Token): TacticPick[] {
-  const all: Stance[] = ['offensive', 'defensive', 'mobility', 'shutdown'];
+  const all: Stance[] = ['offensive', 'defensive', 'mobility'];
   return all
     .filter((st) => st !== t.stance)
     .map((st) => ({ id: st, label: st.charAt(0).toUpperCase() + st.slice(1) }));
@@ -76,6 +82,7 @@ export const TACTIC_SPECS: Record<string, TacticSpec> = {
     targets: 'drone',
     prompt: 'Which Drone gets the extra Command Action?',
     none: 'You have no Drones on the board to command.',
+    text: "One Ally Drone may take 1 more Command Action this Command Phase without a Command Token being spent on it.",
     freeCommand: true,
     eligible: (t, _s, _c) => t.kind === 'drone' && alive(t),
     apply: (t) => `Additional Instructions: ${t.label} may take 1 more Command Action this phase without spending a Command Token.`,
@@ -88,6 +95,7 @@ export const TACTIC_SPECS: Record<string, TacticSpec> = {
     targets: 'mech',
     prompt: 'Which Mech recovers 1 Link?',
     none: 'No Mech of yours is both out of Shutdown and short of a Link.',
+    text: "In the End Phase, one Ally Mech that is not in Shutdown Stance restores 1 Link.",
     eligible: (t, _s, ctx) => {
       if (t.stance === 'shutdown') return false;
       const max = ctx.maxLink(t);
@@ -103,6 +111,7 @@ export const TACTIC_SPECS: Record<string, TacticSpec> = {
     targets: 'mech',
     prompt: 'Which Mech Maneuvers?',
     none: 'You have no Mech on the board to Maneuver.',
+    text: "As one Ally Mech's Action Opportunity ends, it may make a Maneuver.",
     maneuver: true,
     eligible: (t) => t.stance !== 'shutdown',
     apply: (t) => `Hit and Run: ${t.label} Maneuvers as its Action Opportunity ends.`,
@@ -115,6 +124,7 @@ export const TACTIC_SPECS: Record<string, TacticSpec> = {
     targets: 'unit',
     prompt: 'Which Unit is repaired?',
     none: 'None of your Units is carrying a Square or Hexagon Token.',
+    text: "During an Action Opportunity, remove 1 Square or Hexagon Token from one Ally Unit.",
     eligible: (t) => removable(t).length > 0,
     choices: (t) => removable(t),
     choiceTitle: 'Remove which token?',
@@ -135,6 +145,7 @@ export const TACTIC_SPECS: Record<string, TacticSpec> = {
     targets: 'mech',
     prompt: 'Which Mech changes Stance?',
     none: 'Every Mech of yours is in Shutdown Stance, and this card cannot touch those.',
+    text: "During an Action Opportunity, one Ally Mech that is not in Shutdown Stance changes to another Stance.",
     eligible: (t) => t.stance !== 'shutdown',
     choices: (t) => stancePicks(t),
     choiceTitle: 'Change to which Stance?',
@@ -152,6 +163,7 @@ export const TACTIC_SPECS: Record<string, TacticSpec> = {
     targets: 'mech',
     prompt: 'Which Shutdown Mech restarts?',
     none: 'None of your Mechs is in Shutdown Stance.',
+    text: "In the End Phase, one Ally Mech in Shutdown Stance changes to a Stance of its choice and restores 1 Link, as a Reboot would (4.1.1).",
     eligible: (t) => t.stance === 'shutdown',
     choices: (t) => stancePicks(t),
     choiceTitle: 'Restart into which Stance?',
