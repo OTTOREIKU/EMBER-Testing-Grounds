@@ -678,12 +678,25 @@ export class DiceSpinner {
         const d = roll[i];
         if (!d) continue;
         const sides = this.dice.dice[d.color]?.sides ?? 6;
-        dice[i].innerHTML = faceHtml(this.dice, d.color, done ? d.face : Math.floor(Math.random() * sides));
+        dice[i].innerHTML = faceHtml(this.dice, d.color, done ? d.face : shakeFace(sides));
       }
       if (!done) return;
       this.stop();
     }, 55);
   }
+}
+
+// The faces a die shows WHILE it shakes come from their own generator, never
+// Math.random. The game's random stream is what a seeded test relies on (and
+// what a seeded replay would), and the shake used to draw from it once per
+// animation tick per die - a count that depends on wall-clock time, so two
+// identical walks of the attack window rolled different defence dice
+// (combatrole.test.mjs failed about one run in six for exactly this). Nothing
+// rules-bearing reads these faces; the landed face is decided before the shake.
+let shakeSeed = 0x2f6e2b1;
+function shakeFace(sides: number): number {
+  shakeSeed = (shakeSeed * 1103515245 + 12345) % 2147483648;
+  return Math.floor((shakeSeed / 2147483648) * sides);
 }
 
 // One die face as markup. Module level so the spinner and both helpers draw a
@@ -3467,7 +3480,7 @@ export class AttackHelper {
     let ticks = 0;
     this.blackTimer = window.setInterval(() => {
       ticks++;
-      showFace(ticks >= 8 ? landed : Math.floor(Math.random() * 6));
+      showFace(ticks >= 8 ? landed : shakeFace(6));
       if (ticks < 8) return;
       window.clearInterval(this.blackTimer);
       this.blackTimer = undefined;

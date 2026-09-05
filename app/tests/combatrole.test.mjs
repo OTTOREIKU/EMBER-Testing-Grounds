@@ -187,6 +187,12 @@ check('and a spectator finds them all', asSpectator.missed, []);
 // last attribute. A regression here means the single-player board changed.
 check('the renderer defaults to the attacker, which is the freeplay board',
   JSON.stringify(freeplay) === JSON.stringify(asAttacker), true);
+// What made the line above flaky: the shake drew a Math.random face per tick
+// per die, so how much of the seeded stream the DEFENSE roll saw depended on
+// how many 55ms ticks the wall clock had allowed. The shake has its own
+// generator now; the game's dice are the only thing reading Math.random.
+check("the shake never reads the game's random stream",
+  /done \? d\.face : shakeFace\(sides\)/.test(src) && /ticks >= 8 \? landed : shakeFace\(6\)/.test(src), true);
 check('and the freeplay board reaches the resolution', freeplay.at(-1).name, 'resolution');
 check('with nothing anywhere in it disabled',
   freeplay.flatMap((f) => f.buttons).filter((b) => b.dis).map((b) => b.label), []);
