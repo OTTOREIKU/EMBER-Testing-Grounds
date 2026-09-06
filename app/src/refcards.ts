@@ -14,11 +14,11 @@
 // are synchronous string builders called during a render; a module-level await
 // here would make every importer async. Each page calls useCardData() once,
 // after its own loadData() resolves and before it draws anything.
-import { FACTION_LABEL, actionIconUrl, cardName, statIconIsPlated, statIconUrl, traitName, zeroCostReason, type BoxDef, type GameData, type KeywordDef } from './data';
+import { FACTION_LABEL, actionIconUrl, cardName, mechPartUrl, portraitUrl, statIconIsPlated, statIconUrl, tabImageUrl, traitName, zeroCostReason, type BoxDef, type GameData, type KeywordDef } from './data';
 import { LENGTH_NAME, TICK_COST, costLabel, lengthOf, timingOf } from './ticks';
 import { diceRow, maskGlyphs, tickCapsule } from './glyphs';
 import { linkIcon } from './icons';
-import { type Card } from './types';
+import { type Card, type CardAction } from './types';
 
 let data: GameData;
 
@@ -38,6 +38,7 @@ export function useCardData(d: GameData, opts?: { boxRow?: (b: BoxDef) => string
   linkPatterns = null;
   deployIndex = null;
   mechSeen = null;
+  xref = null;
 }
 
 export const SLOT_LABEL: Record<string, string> = {
@@ -429,6 +430,125 @@ function officialLink(c: Card): string {
   return `<p class="ref-official"><a href="${url}" target="_blank" rel="noopener noreferrer">Official card page ↗</a></p>`;
 }
 
+// ONE Action, drawn the way the card prints it. Split out of cardDetail so the
+// pad can open a Part's actions inside its own row on the sheet with the same
+// markup the reference draws - one renderer, two pages. Everything in here is
+// exactly what the card detail's action loop did.
+export function actionBlock(c: Card, a: CardAction): string {
+  const len = lengthOf(a);
+  const cost = len ? `${LENGTH_NAME[len]} (${costLabel(TICK_COST[len])})` : '';
+  const en = englishOnly(a.description?.en);
+  const tr = data.actionTranslation(a.id);
+  let text = '';
+  if (en) text = linkKeywords(en);
+  else if (tr?.english) {
+    // THE NOTE KEYS ON PROVENANCE, which the data has recorded all along
+    // and this ignored. `action_translations.json` marks every entry with a
+    // `confidence`, and 55 of the 61 actions that were printing "translated
+    // from the Chinese card text" are marked `printed`: they were read off
+    // the English card, so the note was not merely noise, it was false. The
+    // file is named for the machine-translated entries it started as, and
+    // the printed ones were filed into it later as corrections.
+    //
+    //   printed            the English card says this. No note.
+    //   printed-truncated  the English card says this but overflows its box,
+    //                      so the tail is completed from the Chinese. Worth
+    //                      a note, but not THAT note.
+    //   anything else      genuinely our translation. 6 actions.
+    const conf = String(tr.confidence ?? '');
+    // The entry's own note explains the individual case; it is too long for
+    // the line but exactly right as a tooltip.
+    const why = tr.note ? ` title="${esc(tr.note)}"` : '';
+    const flag =
+      conf === 'printed'
+        ? ''
+        : conf.startsWith('printed')
+          ? `<em class="ref-note"${why}> (the printed English runs off the card; the end is completed from the Chinese)</em>`
+          : `<em class="ref-note"${why}> (translated from the Chinese card text)</em>`;
+    text = `${linkKeywords(tr.english)}${flag}`;
+  }
+  else text = '<em class="ref-note">No rules text on this card.</em>';
+  // The Chinese DESCRIPTION has to be fed in as well as the Chinese name.
+  // Several mechanics can only be matched on it - Loads is `负载`, Mines is
+  // `地雷`, the Pholcus is `自行地雷` - because the English prints those as
+  // ordinary words that fire inside "payload" and "determined". Passing only
+  // the name meant those three entries were written, shipped, and never once
+  // displayed on the card that needed them.
+  const mechHtml = mechBlocks(a.name.en, a.name.zh, en, a.description?.zh, tr?.english ?? undefined);
+  const icon = actionIconUrl(a.type);
+  // THE PRINTED TICK CAPSULE. It counts TOTAL Ticks the way the card draws
+  // them: Short 1, Medium 2, Long 3. The card's three slots are identical,
+  // so the Maneuver Tick a Long action also costs is named in the title
+  // rather than shown in a second colour, which would be our invention
+  // painted onto a mark players already know from the table.
+  const ticks = len ? TICK_COST[len].maneuver + TICK_COST[len].action : 0;
+  // THE ROW, laid out the way the card prints it: the type icon on a light
+  // plate, then the tick capsule, then the name on a bar in the TIMING
+  // colour, then the rules text underneath. Timings the dial can be set to
+  // get their tint; a Passive, Immediate, Delay or Detonation is not a
+  // timing at all and takes the neutral bar the cards give it.
+  // A Command or Automatic action is NOT taken on the Timing Dial, and the
+  // printed card says so by giving it a BLACK bar instead of a timing
+  // colour (ZHDR-201's |TEAR| and |MISSILE| are both black). Following that
+  // also removes a collision our own tints created: the Command mark's blue
+  // sat on the blue Movement bar and vanished into it.
+  const dialless = a.speed === 'auto' || a.speed === 'command';
+  const timing = dialless ? undefined : timingOf(a);
+  // The meta line drops the length, which the capsule beside the name now
+  // says better than the words did. What is left is the numbers, and the
+  // Range is SPELLED OUT: "R 6" reads as a die code beside "3R", and the
+  // two mean entirely different things.
+  const numbers = [
+    a.range === 0 ? esc('Range --') : a.range ? esc(`Range ${a.range}`) : '',
+    // The pool in the FACTION'S printed order: GoF leads with red, RDL
+    // and UN with yellow. diceRow carries the evidence.
+    diceRow(a.yellowDice, a.redDice, data.factionOf(c)),
+    a.storage ? esc(`Ammo ${a.storage}`) : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  return `<div class="ref-action${timing ? ` t-${timing}` : dialless ? ' t-dialless' : ''}">
+    <div class="ra-h">
+      ${icon ? `<span class="ra-type"><img src="${icon}" alt="" title="${esc(a.type ?? '')}"></span>` : ''}
+      ${tickCapsule(ticks, cost)}
+      <span class="ra-name">${
+        SPEED_MARK[a.speed ?? ''] ? `<span class="act-speed sp-${esc(a.speed!)}" title="${esc(SPEED_MARK[a.speed!].title)}">${SPEED_MARK[a.speed!].glyph}</span>` : ''
+      }<span class="ra-t">${esc(a.name.en || a.name.zh || a.id)}</span>${
+        a.type ? `<em>${esc(a.type)}</em>` : ''
+      }</span>
+    </div>
+    <div class="ra-b">
+      ${a.speed && SPEED_MARK[a.speed]
+        ? `<p class="ref-speed"><a class="kw-link" data-kw="${esc(SPEED_MARK[a.speed].label)}">${esc(SPEED_MARK[a.speed].label)}</a></p>`
+        : ''}
+      ${numbers ? `<p class="ref-meta">${numbers}</p>` : ''}
+      <p>${text.replace(/\n/g, '<br>')}</p>
+      ${mechHtml}
+    </div>
+  </div>`;
+}
+
+// The Pilot Trait panel, split out for the same reason as actionBlock: the pad
+// shows a pilot's trait under the pilot row of the sheet.
+export function traitBlock(c: Card): string {
+  const traitZh = c.trait?.trim();
+  const traitShown = traitZh ? esc(traitName(c)) : '';
+  const traitText = c.traitDescription?.en || c.traitDescription?.zh || '';
+  // A trait may name a rule rather than a keyword. Onyx says its Mech "may Crush
+  // large units", and Crush is a mechanic, so the keyword pass alone left the
+  // one word a reader needs unexplained. Actions already spell these out.
+  const traitMechs = mechBlocks(traitText, c.traitDescription?.zh, traitZh);
+  const trait =
+    traitZh || traitText
+      ? `<div class="ref-trait${traitZh ? '' : ' ref-flavour'}"><b>${
+          traitZh ? `Pilot Trait <i>${traitShown}</i>` : 'No trait ability'
+        }</b><p>${linkKeywords(traitText).replace(/\n/g, '<br>')}</p>${
+          traitZh ? traitMechs : '<p class="ref-note">This pilot has no trait ability. The line above is card flavour text.</p>'
+        }</div>`
+      : '';
+  return trait;
+}
+
 export function cardDetail(c: Card): string {
   // Link is the one stat the printed card colours, tinting its mark to the
   // pilot's faction, so it is drawn through the mask rather than as one more
@@ -489,121 +609,13 @@ export function cardDetail(c: Card): string {
   // card detail rather than left standing, or the second card opened would
   // silently lose every definition the first one used.
   mechSeen = new Set<string>();
-  const actions = (c.actions ?? [])
-    .map((a) => {
-      const len = lengthOf(a);
-      const cost = len ? `${LENGTH_NAME[len]} (${costLabel(TICK_COST[len])})` : '';
-      const en = englishOnly(a.description?.en);
-      const tr = data.actionTranslation(a.id);
-      let text = '';
-      if (en) text = linkKeywords(en);
-      else if (tr?.english) {
-        // THE NOTE KEYS ON PROVENANCE, which the data has recorded all along
-        // and this ignored. `action_translations.json` marks every entry with a
-        // `confidence`, and 55 of the 61 actions that were printing "translated
-        // from the Chinese card text" are marked `printed`: they were read off
-        // the English card, so the note was not merely noise, it was false. The
-        // file is named for the machine-translated entries it started as, and
-        // the printed ones were filed into it later as corrections.
-        //
-        //   printed            the English card says this. No note.
-        //   printed-truncated  the English card says this but overflows its box,
-        //                      so the tail is completed from the Chinese. Worth
-        //                      a note, but not THAT note.
-        //   anything else      genuinely our translation. 6 actions.
-        const conf = String(tr.confidence ?? '');
-        // The entry's own note explains the individual case; it is too long for
-        // the line but exactly right as a tooltip.
-        const why = tr.note ? ` title="${esc(tr.note)}"` : '';
-        const flag =
-          conf === 'printed'
-            ? ''
-            : conf.startsWith('printed')
-              ? `<em class="ref-note"${why}> (the printed English runs off the card; the end is completed from the Chinese)</em>`
-              : `<em class="ref-note"${why}> (translated from the Chinese card text)</em>`;
-        text = `${linkKeywords(tr.english)}${flag}`;
-      }
-      else text = '<em class="ref-note">No rules text on this card.</em>';
-      // The Chinese DESCRIPTION has to be fed in as well as the Chinese name.
-      // Several mechanics can only be matched on it - Loads is `负载`, Mines is
-      // `地雷`, the Pholcus is `自行地雷` - because the English prints those as
-      // ordinary words that fire inside "payload" and "determined". Passing only
-      // the name meant those three entries were written, shipped, and never once
-      // displayed on the card that needed them.
-      const mechHtml = mechBlocks(a.name.en, a.name.zh, en, a.description?.zh, tr?.english ?? undefined);
-      const icon = actionIconUrl(a.type);
-      // THE PRINTED TICK CAPSULE. It counts TOTAL Ticks the way the card draws
-      // them: Short 1, Medium 2, Long 3. The card's three slots are identical,
-      // so the Maneuver Tick a Long action also costs is named in the title
-      // rather than shown in a second colour, which would be our invention
-      // painted onto a mark players already know from the table.
-      const ticks = len ? TICK_COST[len].maneuver + TICK_COST[len].action : 0;
-      // THE ROW, laid out the way the card prints it: the type icon on a light
-      // plate, then the tick capsule, then the name on a bar in the TIMING
-      // colour, then the rules text underneath. Timings the dial can be set to
-      // get their tint; a Passive, Immediate, Delay or Detonation is not a
-      // timing at all and takes the neutral bar the cards give it.
-      // A Command or Automatic action is NOT taken on the Timing Dial, and the
-      // printed card says so by giving it a BLACK bar instead of a timing
-      // colour (ZHDR-201's |TEAR| and |MISSILE| are both black). Following that
-      // also removes a collision our own tints created: the Command mark's blue
-      // sat on the blue Movement bar and vanished into it.
-      const dialless = a.speed === 'auto' || a.speed === 'command';
-      const timing = dialless ? undefined : timingOf(a);
-      // The meta line drops the length, which the capsule beside the name now
-      // says better than the words did. What is left is the numbers, and the
-      // Range is SPELLED OUT: "R 6" reads as a die code beside "3R", and the
-      // two mean entirely different things.
-      const numbers = [
-        a.range === 0 ? esc('Range --') : a.range ? esc(`Range ${a.range}`) : '',
-        // The pool in the FACTION'S printed order: GoF leads with red, RDL
-        // and UN with yellow. diceRow carries the evidence.
-        diceRow(a.yellowDice, a.redDice, data.factionOf(c)),
-        a.storage ? esc(`Ammo ${a.storage}`) : '',
-      ]
-        .filter(Boolean)
-        .join(' · ');
-      return `<div class="ref-action${timing ? ` t-${timing}` : dialless ? ' t-dialless' : ''}">
-        <div class="ra-h">
-          ${icon ? `<span class="ra-type"><img src="${icon}" alt="" title="${esc(a.type ?? '')}"></span>` : ''}
-          ${tickCapsule(ticks, cost)}
-          <span class="ra-name">${
-            SPEED_MARK[a.speed ?? ''] ? `<span class="act-speed sp-${esc(a.speed!)}" title="${esc(SPEED_MARK[a.speed!].title)}">${SPEED_MARK[a.speed!].glyph}</span>` : ''
-          }<span class="ra-t">${esc(a.name.en || a.name.zh || a.id)}</span>${
-            a.type ? `<em>${esc(a.type)}</em>` : ''
-          }</span>
-        </div>
-        <div class="ra-b">
-          ${a.speed && SPEED_MARK[a.speed]
-            ? `<p class="ref-speed"><a class="kw-link" data-kw="${esc(SPEED_MARK[a.speed].label)}">${esc(SPEED_MARK[a.speed].label)}</a></p>`
-            : ''}
-          ${numbers ? `<p class="ref-meta">${numbers}</p>` : ''}
-          <p>${text.replace(/\n/g, '<br>')}</p>
-          ${mechHtml}
-        </div>
-      </div>`;
-    })
-    .join('');
+  const actions = (c.actions ?? []).map((a) => actionBlock(c, a)).join('');
   // TWO names, and the split is the point. `traitZh` is the card's own Chinese
   // and is what decides whether there IS a trait and what the mechanics matcher
   // is fed; `traitShown` is what a reader sees. Merging them would either print
   // 功率隐匿 in an English detail view or hand "Stealth" to a matcher whose
   // patterns are Chinese — see Card.traitNameEn.
-  const traitZh = c.trait?.trim();
-  const traitShown = traitZh ? esc(traitName(c)) : '';
-  const traitText = c.traitDescription?.en || c.traitDescription?.zh || '';
-  // A trait may name a rule rather than a keyword. Onyx says its Mech "may Crush
-  // large units", and Crush is a mechanic, so the keyword pass alone left the
-  // one word a reader needs unexplained. Actions already spell these out.
-  const traitMechs = mechBlocks(traitText, c.traitDescription?.zh, traitZh);
-  const trait =
-    traitZh || traitText
-      ? `<div class="ref-trait${traitZh ? '' : ' ref-flavour'}"><b>${
-          traitZh ? `Pilot Trait <i>${traitShown}</i>` : 'No trait ability'
-        }</b><p>${linkKeywords(traitText).replace(/\n/g, '<br>')}</p>${
-          traitZh ? traitMechs : '<p class="ref-note">This pilot has no trait ability. The line above is card flavour text.</p>'
-        }</div>`
-      : '';
+  const trait = traitBlock(c);
   const inBoxes = (c.containedIn ?? [])
     .map((e) => ({ def: data.boxes.find((x) => x.key === e.box), n: e.quantityPerBox }))
     .filter((x) => x.def);
@@ -747,4 +759,118 @@ export function cardDetail(c: Card): string {
           : ''
       }
     </div>`;
+}
+
+// ---------- portraits and part art, filled after a paint ----------
+//
+// Moved in from reference.ts: both pages draw the same tiles and the same
+// detail, so both need the same filler for the [data-portrait] and
+// [data-partart] slots those renderers leave.
+export function fillPortraits(root: HTMLElement, lazy: boolean): void {
+  root.querySelectorAll<HTMLElement>('[data-portrait]').forEach((slot) => {
+    if (slot.childElementCount) return;
+    const img = document.createElement('img');
+    img.src = portraitUrl(slot.dataset.portrait!);
+    img.alt = '';
+    if (lazy) img.loading = 'lazy';
+    img.addEventListener('error', () => slot.classList.add('portrait-missing'), { once: true });
+    slot.appendChild(img);
+  });
+  root.querySelectorAll<HTMLElement>('[data-partart]').forEach((slot) => {
+    if (slot.childElementCount) return;
+    const id = slot.dataset.partart!;
+    const img = document.createElement('img');
+    img.alt = '';
+    img.loading = 'lazy';
+    const sources = [mechPartUrl(id), tabImageUrl(id)];
+    let next = 0;
+    const advance = (): void => {
+      if (next < sources.length) img.src = sources[next++];
+      else slot.remove();
+    };
+    img.addEventListener('error', advance);
+    advance();
+    slot.appendChild(img);
+  });
+}
+
+// WHICH KEYWORDS AND CARDS NAME EACH KEYWORD, built once for the whole
+// glossary rather than per sheet: it is one pass over every keyword's text and
+// every card's rule text, and reading one keyword should not pay for it again.
+// Dropped by useCardData, which is the only place the database can change.
+let xref: { kw: Map<string, string[]>; cards: Map<string, string[]> } | null = null;
+
+export function crossRefs(): { kw: Map<string, string[]>; cards: Map<string, string[]> } {
+  if (xref) return xref;
+  const kw = new Map<string, string[]>();
+  const cards = new Map<string, string[]>();
+  const push = (m: Map<string, string[]>, key: string, v: string) => {
+    const at = m.get(key);
+    if (at) { if (!at.includes(v)) at.push(v); } else m.set(key, [v]);
+  };
+  // A keyword naming ITSELF is not a cross-reference, and several do: the
+  // glossary entry for Throw opens by saying "Throw".
+  for (const k of data.keywords) {
+    for (const named of linksIn(k.en?.value ?? '').keywords) {
+      const hit = data.keyword(named);
+      if (hit && hit.key !== k.key) push(kw, hit.key, k.key);
+    }
+  }
+  for (const c of data.cards) {
+    // The chips this card already prints. A card in the "Appears on" list is
+    // not news in the "named in the text of" one.
+    const printed = new Set<string>();
+    for (const k of [...(c.keywords ?? []), ...((c.actions ?? []).flatMap((a) => a.keywords ?? []))]) {
+      const hit = data.keyword(k.key || k.inline || k.en || '');
+      if (hit) printed.add(hit.key);
+    }
+    const text = [
+      c.description?.en ?? '',
+      ...(c.actions ?? []).map((a) => a.description?.en ?? ''),
+    ].filter(Boolean).join(' \u00b7 ');
+    if (!text) continue;
+    for (const named of linksIn(text).keywords) {
+      const hit = data.keyword(named);
+      if (hit && !printed.has(hit.key)) push(cards, hit.key, c.id);
+    }
+  }
+  xref = { kw, cards };
+  return xref;
+}
+
+// The keyword SHEET: the glossary text, the keywords it names and every card
+// it appears on. The reference's detail panel and the pad's draw the same one.
+export function keywordDetail(name: string): string | null {
+  const def = data.keyword(name);
+  if (!def) return null;
+  const label = def.en?.name?.replace(/^[•·\s]+/, '') || def.key;
+  const refs = crossRefs();
+  const related = (refs.kw.get(def.key) ?? [])
+    .map((k) => data.keyword(k))
+    .filter((k): k is NonNullable<typeof k> => !!k);
+  // ONE list. A card that prints the chip and a card whose rules text merely
+  // says the word are both "cards this keyword is on" to a reader, and two
+  // headings made them look like different kinds of answer. The printed ones
+  // lead because that is the stronger claim, but nothing labels them apart.
+  const prints = data.cards.filter((c) =>
+    [...(c.keywords ?? []), ...((c.actions ?? []).flatMap((a) => a.keywords ?? []))].some(
+      (k) => data.keyword(k.key || k.inline || k.en || '')?.key === def.key,
+    ));
+  const says = (refs.cards.get(def.key) ?? [])
+    .map((id) => data.byId.get(id))
+    .filter((c): c is NonNullable<typeof c> => !!c);
+  const users = [...prints, ...says];
+  const shown = users.slice(0, 40);
+  const cardLink = (c: { id: string }) =>
+    `<a class="ref-userlink" data-card="${esc(c.id)}">${esc(cardName(data.byId.get(c.id)))}</a>`;
+  const kwName = (k: KeywordDef) => k.en?.name?.replace(/^[•·\s]+/, '') || k.key;
+  return `<h2>${esc(label)}</h2>
+    <p class="ref-meta">Keyword: rulebook glossary</p>
+    <p>${def.en?.value ? linkKeywords(def.en.value) : '<em>No English glossary text.</em>'}</p>
+    ${related.length ? `<h3 class="ref-sub">Related keywords</h3>
+      <div class="ref-userlist">${related
+        .map((k) => `<a class="ref-userlink kw" data-kw="${esc(kwName(k))}">${esc(kwName(k))}</a>`)
+        .join('')}</div>` : ''}
+    ${users.length ? `<h3 class="ref-sub">Appears on ${users.length} card(s)</h3>
+      <div class="ref-userlist">${shown.map(cardLink).join('')}</div>` : ''}`;
 }

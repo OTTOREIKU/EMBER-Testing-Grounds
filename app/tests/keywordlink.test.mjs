@@ -201,7 +201,12 @@ check('and barely any card prints Fragile itself', printsFragile.length <= 1, tr
 // a reader can see the link in its text and click it. A mirror could drift,
 // and the drift would show as an index naming a keyword whose text has no link.
 const refcards = readFileSync(new URL('../src/refcards.ts', import.meta.url), 'utf8');
-const ref = readFileSync(new URL('../src/reference.ts', import.meta.url), 'utf8');
+// The index and the keyword sheet moved into refcards.ts with the renderers,
+// so the pad draws the same keyword sheet; the pins below read the pair.
+const ref = readFileSync(new URL('../src/reference.ts', import.meta.url), 'utf8') + '\n' + refcards;
+// The ranker moved to refsearch.ts, shared with the pad's Find for the same
+// reason: one rank() or two pages disagree about what comes first.
+const search = readFileSync(new URL('../src/refsearch.ts', import.meta.url), 'utf8').replace(/\bexport /g, '');
 check('the hit finder is shared, not duplicated', /function linkHits\(src: string\)/.test(refcards), true);
 check('linkKeywords paints those hits', /const hits = linkHits\(src\);/.test(refcards), true);
 check('and linksIn reports the same ones', /export function linksIn\(text: string\)/.test(refcards), true);
@@ -236,8 +241,8 @@ check('a related keyword reads apart from a card link', /\.ref-userlink\.kw \{/.
 // that TALK about Projectiles above Projectile itself.
 console.log('\nwhat a search puts first');
 
-const rankSrc = ref.slice(ref.indexOf('function rank(name: string, q: string)'), ref.indexOf('function found<T>'));
-if (!rankSrc) throw new Error('could not locate rank() in reference.ts');
+const rankSrc = search.slice(search.indexOf('function rank(name: string, q: string)'), search.indexOf('function found<T>'));
+if (!rankSrc) throw new Error('could not locate rank() in refsearch.ts');
 const rankFn = new Function('norm', `${rankSrc.replace(/: string|: number/g, '')} return rank;`)((s) => s.toLowerCase());
 
 check('an exact name is first', rankFn('Projectile', 'projectile'), 0);
@@ -253,8 +258,8 @@ check('so Projectile outranks everything that mentions it', order, [1, 4, 4, 4])
 // because a ranker that nothing sorts by is precisely the bug: every pool was
 // already matching Projectile, and every pool still listed it fourth. Pinning
 // rank() alone passed happily with the sort removed.
-const foundSrc = ref.slice(ref.indexOf('function found<T>'), ref.indexOf('// The name each pool'));
-if (!foundSrc) throw new Error('could not locate found() in reference.ts');
+const foundSrc = search.slice(search.indexOf('function found<T>'), search.indexOf('// The name each pool'));
+if (!foundSrc) throw new Error('could not locate found() in refsearch.ts');
 const foundFn = new Function('norm', 'rank',
   `${foundSrc.replace(/function found<T>\([\s\S]*?\): T\[\] \{/, 'function found(list, q, match, nameOf, cmp) {')} return found;`,
 )((s) => s.toLowerCase(), rankFn);

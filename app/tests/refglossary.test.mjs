@@ -35,6 +35,9 @@ console.log('Reference readability: folded definitions, English only\n');
 const ref = [
   readFileSync(new URL('../src/reference.ts', import.meta.url), 'utf8'),
   readFileSync(new URL('../src/refcards.ts', import.meta.url), 'utf8'),
+  // ...and the search predicates, which moved to refsearch.ts so the pad's
+  // Find ranks the same way. The nameKo pins below count across the set.
+  readFileSync(new URL('../src/refsearch.ts', import.meta.url), 'utf8'),
 ].join('\n');
 const main = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
 const css = readFileSync(new URL('../src/reference.css', import.meta.url), 'utf8');
@@ -89,7 +92,7 @@ check('and there are some to check', secCards.some((s) => s.nameKo), true);
 // added later fails this rather than slipping through a regex written for the
 // old ones.
 const drawn = (src) => (src.match(/nameKo/g) ?? []).length;
-// reference.ts keeps exactly two: both are search haystacks.
+// The reference's search keeps exactly two: both are haystacks.
 const refUses = ref.match(/^.*nameKo.*$/gm) ?? [];
 check('the reference reads nameKo only twice', refUses.length, 2);
 check('and both are the SEARCH haystack, never markup',

@@ -9,7 +9,8 @@ import { costLabel, LENGTH_NAME, lengthOf, TICK_COST, timingOf } from './ticks';
 import { diceRow, maskGlyphs, tickCapsule } from './glyphs';
 import { iconSvg } from './dice';
 import { linkIcon } from './icons';
-import { cardDetail, cardRow, esc, keywordCard, kwLabel, linkKeywords, linksIn, mechBlocks, SLOT_LABEL, SPEED_MARK, useCardData } from './refcards';
+import { cardDetail, cardRow, esc, fillPortraits, keywordCard, keywordDetail, kwLabel, linkKeywords, mechBlocks, SLOT_LABEL, SPEED_MARK, useCardData } from './refcards';
+import { found, matchCard, matchKeyword, matchMechanic, matchMission, matchPhase, matchSecondary, matchStance, matchStatus, matchTiming, nmCard, nmKeyword, nmMechanic, nmMission, nmPlay, nmSecondary, nmStatus, norm } from './refsearch';
 import { installDiagnostics } from './diagnostics';
 import type { ReportCategory } from './report';
 import { openReferenceReport } from './reportui';
@@ -76,7 +77,6 @@ let rulesSection: string | undefined;
 
 const body = () => document.getElementById('ref-body')!;
 
-const norm = (s: string) => s.toLowerCase();
 
 // ---------- boxes ----------
 
@@ -298,56 +298,13 @@ function boxRow(b: BoxDef): string {
 
 // WHERE A QUERY LANDED DECIDES THE ORDER.
 //
-// Every predicate below tests one haystack of name PLUS body text, and every
-// list came out in data order -- so typing "Proje" listed the six keywords that
-// talk about Projectiles above Projectile itself. The thing whose NAME matches
-// is what the reader typed; everything else is context and belongs under it.
-function rank(name: string, q: string): number {
-  const n = norm(name.replace(/^[•·\s]+/, '').trim());
-  if (n === q) return 0;
-  if (n.startsWith(q)) return 1;
-  // A word inside the name: "Smoke Grenade" for "grenade". Below a prefix of
-  // the whole name, above a match buried mid-word.
-  if (n.split(/[^a-z0-9]+/).some((w) => w.startsWith(q))) return 2;
-  if (n.includes(q)) return 3;
-  return 4;
-}
-
-// Filter and rank together, so no pool can be filtered without being ordered.
-// `cmp` is the resting order a tab wants when nothing is typed (alphabetical,
-// or by box number); with a query it becomes the tiebreak inside a rank, which
-// is what keeps equally-relevant rows in a sensible order rather than whatever
-// the data file happened to hold.
-function found<T>(
-  list: readonly T[],
-  q: string,
-  match: (x: T, q: string) => boolean,
-  nameOf: (x: T) => string,
-  cmp?: (a: T, b: T) => number,
-): T[] {
-  const hits = list.filter((x) => match(x, q));
-  const base = cmp ? [...hits].sort(cmp) : hits;
-  if (!q) return base;
-  return base
-    .map((x, i) => ({ x, i, r: rank(nameOf(x), q) }))
-    .sort((a, b) => a.r - b.r || a.i - b.i)
-    .map((e) => e.x);
-}
-
 // The name each pool is known by, which is the half of the haystack that ranks.
-const nmKeyword = (k: KeywordDef) => k.en?.name ?? k.key;
-const nmCard = (c: Card) => cardName(c);
-const nmMission = (m: (typeof data.missions.cards)[number]) => m.name;
 const nmFamily = (f: (typeof data.missions.families)[number]) => f.name;
-const nmSecondary = (s: (typeof data.secondary)[number]) => s.name;
 const nmMap = (m: TerrainMap) => m.name.en || m.id;
 const nmEnv = (e: EnvironmentCard) => e.name;
 const nmFaction = (f: (typeof data.factions)[number]) => f.name;
 const nmBox = (b: (typeof data.boxes)[number]) => b.name.en || b.name.zh || b.key;
-const nmMechanic = (m: (typeof data.mechanics)[number]) => m.name;
 const nmDie = (d: DieEntry) => `${d.colour} die`;
-const nmPlay = (x: { name: string }) => x.name;
-const nmStatus = (d: (typeof STATUSES)[number]) => d.label;
 
 // ---------- the dice (rulebook 2.4, and the offset rules with them) ----------
 //
@@ -419,26 +376,14 @@ function dieTally(die: DieEntry): string {
 // come from the SAME test, or a badge promises matches the tab fails to
 // produce. So every filter that used to live inline in render() lives here
 // once, and both callers read it.
-const matchKeyword = (k: KeywordDef, q: string): boolean =>
-  !q || norm(`${k.en?.name ?? ''} ${k.en?.value ?? ''} ${k.key} ${k.zh?.name ?? ''}`).includes(q);
-const matchMission = (m: (typeof data.missions.cards)[number], q: string): boolean =>
-  !q || norm(`${m.name} ${m.nameKo ?? ''} ${m.setup} ${m.scoring} ${(m.zones ?? []).join(' ')}`).includes(q);
 const matchFamily = (f: (typeof data.missions.families)[number], q: string): boolean =>
   !q || norm(`${f.name} ${f.text} ${(f.faq ?? []).map((x) => x.q + x.a).join(' ')}`).includes(q);
-const matchSecondary = (s: (typeof data.secondary)[number], q: string): boolean =>
-  !q || norm(`${s.name} ${s.nameKo ?? ''} ${s.setup} ${s.scoring} ${s.token ?? ''}`).includes(q);
 const matchFaction = (f: (typeof data.factions)[number], q: string): boolean =>
   !f.hidden && (!q || norm(`${f.name} ${f.short} ${f.key} ${f.supplier ?? ''} ${f.hook ?? ''} ${f.text}`).includes(q));
 const matchBox = (b: (typeof data.boxes)[number], q: string): boolean => {
   if (!q) return true;
   const contents = boxContents(b.key).map((i) => cardName(i.card)).join(' ');
   return norm(`${b.name.en ?? ''} ${b.name.zh ?? ''} ${b.key} ${contents}`).includes(q);
-};
-const matchCard = (c: Card, q: string): boolean => {
-  if (!q) return true;
-  const kw = (c.keywords ?? []).map((k) => k.en || k.inline || k.key).join(' ');
-  const acts = (c.actions ?? []).map((a) => `${a.name.en ?? ''} ${a.description?.en ?? ''}`).join(' ');
-  return norm(`${cardName(c)} ${c.id} ${c.type ?? ''} ${kw} ${acts}`).includes(q);
 };
 // Everything a reader might type at a die: its colour, what it is for, and
 // every symbol on it including the hollow ones. "dice" is in the haystack by
@@ -447,16 +392,6 @@ const matchCard = (c: Card, q: string): boolean => {
 const matchDie = (die: DieEntry, q: string): boolean =>
   !q || norm(`${die.colour} die dice ${die.role} ${die.faces.map(faceLabel).join(' ')} ${
     die.faces.flat().map((i) => `${i.part ?? ''} ${i.type}`).join(' ')}`).includes(q);
-const matchMechanic = (m: (typeof data.mechanics)[number], q: string): boolean =>
-  !q || norm(`${m.name} ${m.text} ${m.ref ?? ''}`).includes(q);
-const matchPhase = (x: (typeof data.play.phases)[number], q: string): boolean =>
-  !q || norm(`${x.name} ${x.who ?? ''} ${x.can.join(' ')} ${x.cannot.join(' ')}`).includes(q);
-const matchTiming = (x: (typeof data.play.timings)[number], q: string): boolean =>
-  !q || norm(`${x.name} timing ${x.text}`).includes(q);
-const matchStance = (x: (typeof data.play.stances)[number], q: string): boolean =>
-  !q || norm(`${x.name} ${x.short} stance ${x.effect} ${x.good} ${x.cost}`).includes(q);
-const matchStatus = (d: (typeof STATUSES)[number], q: string): boolean =>
-  !q || norm(`${d.label} ${d.icon} ${d.shape} ${d.note} ${d.decay ?? ''} token`).includes(q);
 
 const wantFor = (t: Tab): ((c: Card) => boolean) =>
   t === 'parts'
@@ -1215,34 +1150,6 @@ function render(): void {
   fillPortraits(el, true);
 }
 
-function fillPortraits(root: HTMLElement, lazy: boolean): void {
-  root.querySelectorAll<HTMLElement>('[data-portrait]').forEach((slot) => {
-    if (slot.childElementCount) return;
-    const img = document.createElement('img');
-    img.src = portraitUrl(slot.dataset.portrait!);
-    img.alt = '';
-    if (lazy) img.loading = 'lazy';
-    img.addEventListener('error', () => slot.classList.add('portrait-missing'), { once: true });
-    slot.appendChild(img);
-  });
-  root.querySelectorAll<HTMLElement>('[data-partart]').forEach((slot) => {
-    if (slot.childElementCount) return;
-    const id = slot.dataset.partart!;
-    const img = document.createElement('img');
-    img.alt = '';
-    img.loading = 'lazy';
-    const sources = [mechPartUrl(id), tabImageUrl(id)];
-    let next = 0;
-    const advance = (): void => {
-      if (next < sources.length) img.src = sources[next++];
-      else slot.remove();
-    };
-    img.addEventListener('error', advance);
-    advance();
-    slot.appendChild(img);
-  });
-}
-
 // The same pinning the report dialog uses, and here for the same reason: this
 // page is the one that scrolls, `overflow: hidden` alone does not hold it on
 // iOS, and a sheet opened from halfway down must come back to halfway down.
@@ -1523,86 +1430,6 @@ function showCardImage(src: string, label: string): void {
   document.addEventListener('keydown', onKey, true);
   document.body.appendChild(box);
   lockRefPage();
-}
-
-// WHICH KEYWORDS AND CARDS NAME EACH KEYWORD, built once for the whole
-// glossary rather than per sheet: it is one pass over every keyword's text and
-// every card's rule text, and reading one keyword should not pay for it again.
-// Never invalidated, and deliberately so: `data` is assigned exactly once, in
-// init(), so there is no reload for this to go stale against.
-let xref: { kw: Map<string, string[]>; cards: Map<string, string[]> } | null = null;
-
-function crossRefs(): { kw: Map<string, string[]>; cards: Map<string, string[]> } {
-  if (xref) return xref;
-  const kw = new Map<string, string[]>();
-  const cards = new Map<string, string[]>();
-  const push = (m: Map<string, string[]>, key: string, v: string) => {
-    const at = m.get(key);
-    if (at) { if (!at.includes(v)) at.push(v); } else m.set(key, [v]);
-  };
-  // A keyword naming ITSELF is not a cross-reference, and several do: the
-  // glossary entry for Throw opens by saying "Throw".
-  for (const k of data.keywords) {
-    for (const named of linksIn(k.en?.value ?? '').keywords) {
-      const hit = data.keyword(named);
-      if (hit && hit.key !== k.key) push(kw, hit.key, k.key);
-    }
-  }
-  for (const c of data.cards) {
-    // The chips this card already prints. A card in the "Appears on" list is
-    // not news in the "named in the text of" one.
-    const printed = new Set<string>();
-    for (const k of [...(c.keywords ?? []), ...((c.actions ?? []).flatMap((a) => a.keywords ?? []))]) {
-      const hit = data.keyword(k.key || k.inline || k.en || '');
-      if (hit) printed.add(hit.key);
-    }
-    const text = [
-      c.description?.en ?? '',
-      ...(c.actions ?? []).map((a) => a.description?.en ?? ''),
-    ].filter(Boolean).join(' \u00b7 ');
-    if (!text) continue;
-    for (const named of linksIn(text).keywords) {
-      const hit = data.keyword(named);
-      if (hit && !printed.has(hit.key)) push(cards, hit.key, c.id);
-    }
-  }
-  xref = { kw, cards };
-  return xref;
-}
-
-function keywordDetail(name: string): string | null {
-  const def = data.keyword(name);
-  if (!def) return null;
-  const label = def.en?.name?.replace(/^[•·\s]+/, '') || def.key;
-  const refs = crossRefs();
-  const related = (refs.kw.get(def.key) ?? [])
-    .map((k) => data.keyword(k))
-    .filter((k): k is NonNullable<typeof k> => !!k);
-  // ONE list. A card that prints the chip and a card whose rules text merely
-  // says the word are both "cards this keyword is on" to a reader, and two
-  // headings made them look like different kinds of answer. The printed ones
-  // lead because that is the stronger claim, but nothing labels them apart.
-  const prints = data.cards.filter((c) =>
-    [...(c.keywords ?? []), ...((c.actions ?? []).flatMap((a) => a.keywords ?? []))].some(
-      (k) => data.keyword(k.key || k.inline || k.en || '')?.key === def.key,
-    ));
-  const says = (refs.cards.get(def.key) ?? [])
-    .map((id) => data.byId.get(id))
-    .filter((c): c is NonNullable<typeof c> => !!c);
-  const users = [...prints, ...says];
-  const shown = users.slice(0, 40);
-  const cardLink = (c: { id: string }) =>
-    `<a class="ref-userlink" data-card="${esc(c.id)}">${esc(cardName(data.byId.get(c.id)))}</a>`;
-  const kwName = (k: KeywordDef) => k.en?.name?.replace(/^[•·\s]+/, '') || k.key;
-  return `<h2>${esc(label)}</h2>
-    <p class="ref-meta">Keyword: rulebook glossary</p>
-    <p>${def.en?.value ? linkKeywords(def.en.value) : '<em>No English glossary text.</em>'}</p>
-    ${related.length ? `<h3 class="ref-sub">Related keywords</h3>
-      <div class="ref-userlist">${related
-        .map((k) => `<a class="ref-userlink kw" data-kw="${esc(kwName(k))}">${esc(kwName(k))}</a>`)
-        .join('')}</div>` : ''}
-    ${users.length ? `<h3 class="ref-sub">Appears on ${users.length} card(s)</h3>
-      <div class="ref-userlist">${shown.map(cardLink).join('')}</div>` : ''}`;
 }
 
 async function init(): Promise<void> {
