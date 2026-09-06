@@ -126,6 +126,9 @@ export default defineConfig({
         main: path.resolve(here, 'index.html'),
         reference: path.resolve(here, 'reference.html'),
         match: path.resolve(here, 'match.html'),
+        // The pad lives in a FOLDER so its address stays short (/pad); see
+        // the base note in pad/index.html.
+        pad: path.resolve(here, 'pad/index.html'),
       },
     },
   },
