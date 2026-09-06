@@ -53,7 +53,9 @@
      a thumb hits reliably, and this is a sheet people tap while holding dice in
      the other hand. */
   --tap: 44px;
-  /* The fixed chrome: the bar above the sheet and the dock below it. */
+  /* The chrome's MINIMUM heights. Both grow with the safe-area insets on a
+     phone, so nothing may be positioned from these numbers; the panel and the
+     toasts live inside .pad-mid, the box between the two. */
   --bar-h: 48px;
   --dock-h: 56px;
 
@@ -383,6 +385,16 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
 .pad-tab-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--side); flex: 0 0 auto; }
 .pad-tab.on { background: color-mix(in srgb, var(--side) 16%, transparent); color: var(--side); }
 .pad-tab.dead { text-decoration: line-through; color: var(--text3); }
+
+/* ---------- the middle: strip, sheet, and whatever covers them ---------- */
+
+.pad-mid {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
 
 /* ---------- the sheet ---------- */
 
@@ -730,21 +742,17 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
 
 /* ---------- the panels over the sheet ---------- */
 
-/* Sits over the strip and sheet, under the dock, and scrolls on its own. */
+/* Covers the strip and the sheet exactly - it fills .pad-mid, which ends where
+   the dock begins - and scrolls on its own. */
 .pad-panel {
   position: absolute;
-  left: 0;
-  right: 0;
-  top: var(--bar-h);
-  bottom: var(--dock-h);
+  inset: 0;
   z-index: 20;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
   background: var(--bg);
 }
-
-#pad-root.table { position: relative; }
 
 .pad-panel-in {
   padding: 10px max(12px, env(safe-area-inset-right)) 24px max(12px, env(safe-area-inset-left));
@@ -756,8 +764,11 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
 .pad-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
 .pad-panel-head .pad-h { margin: 0; }
 /* The close is the app's one close control, but it sits in the flow of the
-   head rather than over a corner: a panel has no corner to hang it off. */
-.pad-panel-x { position: static; box-shadow: none; }
+   head rather than over a corner: a panel has no corner to hang it off. Two
+   classes deep because ui.css (imported after this file through
+   partpicker.css) positions .dlg-close absolutely at -6px, which put the
+   circle half outside the panel's scroll box and clipped it. */
+.pad-panel .dlg-close.pad-panel-x { position: static; flex: 0 0 auto; box-shadow: none; }
 .pad-panel .pad-foot { margin-top: 24px; }
 
 .pad-hist { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
@@ -893,7 +904,7 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
   position: absolute;
   left: 10px;
   right: 10px;
-  bottom: calc(var(--dock-h) + 8px);
+  bottom: 8px;
   z-index: 60;
   display: flex;
   flex-direction: column;
@@ -928,15 +939,13 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
 }
 
 @media (min-width: 960px) {
-  #pad-root.table { display: grid; grid-template-columns: 1fr 440px; grid-template-rows: auto auto 1fr auto; }
-  .pad-bar { grid-column: 1 / -1; }
-  .pad-strip { grid-column: 1; }
-  .pad-sheet { grid-column: 1; }
-  .pad-dock { grid-column: 1 / -1; }
+  .pad-mid { display: grid; grid-template-columns: 1fr 440px; grid-template-rows: auto 1fr; }
+  .pad-strip { grid-column: 1; grid-row: 1; }
+  .pad-sheet { grid-column: 1; grid-row: 2; }
   .pad-panel {
     position: static;
     grid-column: 2;
-    grid-row: 2 / 4;
+    grid-row: 1 / 3;
     border-left: 1px solid var(--border);
   }
   .pad-toasts { left: auto; width: 360px; }

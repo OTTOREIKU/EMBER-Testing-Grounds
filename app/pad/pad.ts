@@ -1488,10 +1488,17 @@ function paint(id: string, html: string): boolean {
   return true;
 }
 
+// The strip, the sheet, the panel and the toasts share ONE box between the
+// bar and the dock, so a panel covers exactly that box however tall the bar
+// and dock come out - on a phone both grow with the notch and the home
+// indicator, and a panel sized from fixed heights sat over the dock.
 const SKELETON = `<header class="pad-bar" id="pad-bar"></header>
-  <div class="pad-strip" id="pad-strip"></div>
-  <main class="pad-sheet" id="pad-sheet"></main>
-  <div class="pad-panel" id="pad-panel" hidden></div>
+  <div class="pad-mid" id="pad-mid">
+    <div class="pad-strip" id="pad-strip"></div>
+    <main class="pad-sheet" id="pad-sheet"></main>
+    <div class="pad-panel" id="pad-panel" hidden></div>
+    <div class="pad-toasts" id="pad-toasts"></div>
+  </div>
   <nav class="pad-dock" id="pad-dock"></nav>
   <div id="ref-detail" hidden>
     <div class="ref-detail-inner">
@@ -1506,8 +1513,7 @@ const SKELETON = `<header class="pad-bar" id="pad-bar"></header>
       </div>
       <div id="ref-detail-content"></div>
     </div>
-  </div>
-  <div class="pad-toasts" id="pad-toasts"></div>`;
+  </div>`;
 
 function render(): void {
   // The relay is the authority on where we are once signed in: a reconnect
