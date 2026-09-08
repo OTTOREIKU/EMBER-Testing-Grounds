@@ -49,7 +49,7 @@ const BEGIN = new Set(['performAction', 'deployUnit', 'playTactic', 'launch', 'b
   'switchForm', 'transformPart', 'unfold', 'reveal', 'riposte', 'repairPart', 'takeBlackBox',
   'accessTerminal', 'stabilise', 'reboot', 'setCharge', 'startCounterRoll', 'startMatch']);
 const FOLLOW = new Set(['answerDefense', 'acceptRoll', 'focus', 'focusAnswer', 'focusReroll',
-  'designate', 'designateHit', 'applyPenetration', 'applyStatus', 'removeStatus', 'recordKill',
+  'designate', 'designateHit', 'applyPenetration', 'applyStatus', 'removeStatus', 'ageStatus', 'recordKill',
   'drainLink', 'restoreLink', 'spendAmmo', 'restoreAmmo', 'spendCommand', 'coordinateCommand',
   'kcArmor', 'meleeEvade', 'dodgeEnhance', 'provoke', 'suppress', 'defenseReaction',
   'resolveReaction', 'resolveIntercept', 'spendIntercept', 'restoreIntercept', 'rollCounter',
@@ -225,6 +225,7 @@ export function labelFor(cmd: { kind: string }, state: GameState, names?: Ledger
     case 'restoreLink': label = `${who()} recovers Link`; break;
     case 'applyStatus': label = `${target()} gains ${c.stacks && c.stacks > 1 ? `${c.stacks} ` : 'a '}${c.statusId ?? 'status'} Token${c.stacks && c.stacks > 1 ? 's' : ''}`; break;
     case 'removeStatus': label = `${target()} loses a ${c.statusId ?? 'status'} Token`; break;
+    case 'ageStatus': label = `${target()}'s ${c.statusId ?? 'status'} Token ages`; break;
     case 'setStance': label = `${who()} switches to ${c.stance ?? 'a new'} Stance`; break;
     case 'renameUnit': label = `${who()} is now called ${c.label ?? 'something else'}`; break;
 

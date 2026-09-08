@@ -114,6 +114,11 @@ export type Command =
   // one off by hand has to travel like putting it on does. One at a time,
   // matching the chip: a stacked Square loses its most recent entry.
   | { kind: 'removeStatus'; seat: Side; uid: number; targetUid: number; statusId: string }
+  // One Token, one step along the End Phase's own ladder (2.5.3): a red face
+  // comes off, a coloured face turns red, a Token with no decay comes off.
+  // The pad's tap on a worn Token. It has no script, so markEndStep never
+  // runs there and this is the only sweep its Tokens get.
+  | { kind: 'ageStatus'; seat: Side; uid: number; targetUid: number; statusId: string }
   | { kind: 'focus'; seat: Side; uid: number }
   // ZPA-40 Shrike, 欢愉 Elation: "[Offensive Stance] When this Mech Destroys
   // enemy Parts with Melee Actions, restore 1 Link." Its own command rather
@@ -1936,7 +1941,8 @@ function checkActed(
       if (!STATUSES.some((s) => s.id === cmd.statusId)) return no('That is not a Token or State the game knows.');
       return ok;
     }
-    case 'removeStatus': {
+    case 'removeStatus':
+    case 'ageStatus': {
       const target = state.tokens.find((x) => x.uid === cmd.targetUid);
       if (!target) return no('That target is not on the board.');
       if (!(target.statuses ?? []).includes(cmd.statusId)) return no('That unit is not carrying it.');
@@ -3438,6 +3444,29 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       // A Command placed by hand is a Command the side may spend, so the pool
       // is recomputed from the board rather than nudged.
       if (COMMAND_FACES.has(cmd.statusId)) syncCommandPool(state);
+      return;
+    }
+    case 'ageStatus': {
+      const target = state.tokens.find((x) => x.uid === cmd.targetUid);
+      if (!target) return;
+      const def = STATUSES.find((x) => x.id === cmd.statusId);
+      const red = (target.expiring ?? []).includes(cmd.statusId);
+      if (red || !def?.decay) {
+        // Through removeStatus's own apply, for the same reason shedLowProfile
+        // goes that way: it owns the expiry bookkeeping and the Command pool.
+        applyCommand(data, state, { kind: 'removeStatus', seat: cmd.seat, uid: cmd.uid, targetUid: cmd.targetUid, statusId: cmd.statusId });
+        // ageTokens flips every stacked entry, so `expiring` can hold the id
+        // more than once. Peeling one Square off takes one red marker with it.
+        const left = statusCount(target.statuses, cmd.statusId);
+        const reds = (target.expiring ?? []).filter((x) => x === cmd.statusId).length;
+        if (reds > left) {
+          const at = (target.expiring ?? []).indexOf(cmd.statusId);
+          target.expiring = (target.expiring ?? []).filter((_, i) => i !== at);
+          if (!target.expiring.length) target.expiring = undefined;
+        }
+        return;
+      }
+      target.expiring = [...(target.expiring ?? []), cmd.statusId];
       return;
     }
     case 'removeStatus': {
