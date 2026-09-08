@@ -130,6 +130,7 @@ const relay = new Relay(api.base, {
     if (!active) render();
   },
   onClosed: () => {
+    if (closedRoom) forgetRoom(closedRoom);
     toast('The other player closed the table.');
     render();
   },
@@ -144,6 +145,12 @@ const relay = new Relay(api.base, {
     // then published them. It also seat-stamps attributed commands, which is
     // what stops a guest's table command being silently dropped by the server.
     setLocalSeat(v.room ? v.seat : null);
+    // Every change while seated refreshes the row on the lobby, so the hour
+    // the relay allows is counted from the last time we were actually there.
+    if (v.room) {
+      closedRoom = v.room.id;
+      rememberRoom();
+    }
     // A relay failure that is really an expired session looks EXACTLY like a
     // dropped connection: the upgrade is answered 401, the browser cannot tell
     // the difference, and net.ts retries forever saying "Connection lost". So
@@ -188,6 +195,9 @@ type FindScope = 'all' | 'table' | 'parts' | 'units' | 'pilots' | 'tactics' | 'k
 
 let account: Account | null = null;
 let view: NetView = relay.state;
+// The last room this pad sat in, so a `closed` from the server - which arrives
+// after the view has already lost the room - can name what to forget.
+let closedRoom: string | null = null;
 let screen: Screen = 'signin';
 let busy = false;
 let error: string | null = null;
@@ -232,8 +242,13 @@ let solo = false;
 let squadSide: Side = 's1';
 
 const SOLO_KEY = 'ember.pad.solo';
+const GAMES_KEY = 'ember.pad.games';
+const ROOMS_KEY = 'ember.pad.rooms';
 const NOTES_KEY = 'ember.pad.notes';
 const RECENT_KEY = 'ember.pad.recent';
+// The server reaps an idle room after an hour, so a code older than that is a
+// code for a table that is not there. Same window the Match Centre uses.
+const ROOM_WINDOW_MS = 60 * 60 * 1000;
 
 // localStorage can throw outright in a private window, so every touch of it
 // is guarded, and a phone with site data blocked tracks for this session only.
@@ -254,19 +269,97 @@ function store(key: string, v: string | null): void {
   }
 }
 
-function saveSolo(): void {
-  if (solo) store(SOLO_KEY, JSON.stringify(table));
-}
+// SAVED GAMES. A solo game is a record on this phone that a player can leave
+// and come back to, the way a room is a record on the server: more than one
+// game in a day, each kept until it is deleted. The earlier single slot is
+// carried into the list the first time it is read.
+type SavedGame = { id: string; name: string; at: number; table: GameState };
+let soloId: string | null = null;
 
-function loadSolo(): GameState | null {
+function readJson<T>(key: string): T | null {
   try {
-    const raw = stored(SOLO_KEY);
-    if (!raw) return null;
-    const s = JSON.parse(raw) as unknown;
-    return s && typeof s === 'object' ? (s as GameState) : null;
+    const raw = stored(key);
+    return raw ? (JSON.parse(raw) as T) : null;
   } catch {
     return null;
   }
+}
+
+function savedGames(): SavedGame[] {
+  const list = readJson<unknown>(GAMES_KEY);
+  const games = Array.isArray(list)
+    ? list.filter((g): g is SavedGame => !!g && typeof g.id === 'string' && typeof g.at === 'number' && !!g.table && typeof g.table === 'object')
+    : [];
+  const old = readJson<GameState>(SOLO_KEY);
+  if (old && typeof old === 'object' && !games.length) {
+    games.push({ id: `g${Date.now().toString(36)}`, name: 'Tracked game', at: Date.now(), table: old });
+    store(GAMES_KEY, JSON.stringify(games));
+    store(SOLO_KEY, null);
+  }
+  return games;
+}
+
+function writeGames(games: SavedGame[]): void {
+  store(GAMES_KEY, JSON.stringify(games.slice(0, 30)));
+}
+
+// What a saved game is called in the list: the two squads, or the round it
+// reached, or simply that it is empty. Recomputed on every save so a squad
+// added later names the game.
+function gameName(): string {
+  const me = mySeat();
+  const mine = unitsOf(me).map((t) => t.label);
+  const theirs = unitsOf(otherSeat()).map((t) => t.label);
+  if (!mine.length && !theirs.length) return 'Empty table';
+  const side = (u: string[]) => (u.length ? (u.length > 2 ? `${u[0]} +${u.length - 1}` : u.join(', ')) : 'nobody');
+  return `${side(mine)} vs ${side(theirs)}`;
+}
+
+function saveSolo(): void {
+  if (!solo || !soloId) return;
+  const games = savedGames().filter((g) => g.id !== soloId);
+  games.unshift({ id: soloId, name: gameName(), at: Date.now(), table });
+  writeGames(games);
+}
+
+function deleteGame(id: string): void {
+  writeGames(savedGames().filter((g) => g.id !== id));
+}
+
+// THE TABLES RECENTLY SAT AT. The relay keeps a room open for an hour after
+// its last activity and lets a player back in by code, so leaving a table is
+// not closing it: the code is kept here and offered on the lobby until the
+// hour is up, unless the host closes the table or the row is dismissed.
+type RecentRoom = { id: string; at: number; host: boolean; with: string | null };
+
+function recentRooms(): RecentRoom[] {
+  const list = readJson<unknown>(ROOMS_KEY);
+  const rooms = Array.isArray(list)
+    ? list.filter((r): r is RecentRoom => !!r && typeof r.id === 'string' && typeof r.at === 'number')
+    : [];
+  return rooms.filter((r) => Date.now() - r.at < ROOM_WINDOW_MS);
+}
+
+function rememberRoom(): void {
+  const room = view.room;
+  if (!room) return;
+  const other = room.seats[otherSeat()];
+  const rooms = recentRooms().filter((r) => r.id !== room.id);
+  rooms.unshift({ id: room.id, at: Date.now(), host: view.host, with: other ?? null });
+  store(ROOMS_KEY, JSON.stringify(rooms.slice(0, 10)));
+}
+
+function forgetRoom(id: string): void {
+  store(ROOMS_KEY, JSON.stringify(recentRooms().filter((r) => r.id !== id)));
+}
+
+function ago(at: number): string {
+  const m = Math.max(0, Math.round((Date.now() - at) / 60000));
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m} min ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h} h ago`;
+  return new Date(at).toLocaleDateString();
 }
 
 // THE ONE THING ON THIS PAGE THAT NEVER TRAVELS. A scratch list per player. It
@@ -396,11 +489,38 @@ function lobbyHtml(): string {
       ${connecting ? '<p class="pad-status">Connecting…</p>' : ''}
 
       <div class="pad-or">or on your own</div>
-      <button class="pad-btn" data-act="solo">Track solo</button>
-      ${loadSolo() ? '<p class="pad-note">A tracked game is saved on this phone.</p>' : ''}
+      <button class="pad-btn" data-act="solo">Track a new game</button>
     </div>
+    ${lobbyLists()}
     <div class="pad-foot">
       <button class="pad-link" data-act="signout">Sign out</button>
+    </div>`;
+}
+
+// The tables to go back to: rooms the relay still holds, and games kept on
+// this phone. A row opens it; the small cross forgets it - a room is only
+// forgotten here, a game is deleted, and the confirm says which.
+function lobbyLists(): string {
+  const rooms = recentRooms();
+  const games = savedGames();
+  if (!rooms.length && !games.length) return '';
+  const roomRows = rooms.map((r) => `<div class="pad-seat pad-resume">
+      <button class="pad-resume-b" data-act="rejoin" data-id="${esc(r.id)}">
+        <span class="pad-seat-name mono">${esc(r.id)}</span>
+        <span class="pad-seat-sub">${r.with ? `with ${esc(r.with)}` : 'waiting for a player'} · ${r.host ? 'yours' : 'joined'} · ${ago(r.at)}</span>
+      </button>
+      <button class="ui-x" data-act="room-x" data-id="${esc(r.id)}" aria-label="Forget this table">✕</button>
+    </div>`).join('');
+  const gameRows = games.map((g) => `<div class="pad-seat pad-resume">
+      <button class="pad-resume-b" data-act="resume" data-id="${esc(g.id)}">
+        <span class="pad-seat-name">${esc(g.name)}</span>
+        <span class="pad-seat-sub">Round ${g.table.round?.n ?? 1} · ${ago(g.at)}</span>
+      </button>
+      <button class="ui-x" data-act="game-x" data-id="${esc(g.id)}" aria-label="Delete this game">✕</button>
+    </div>`).join('');
+  return `<div class="pad-card">
+      ${rooms.length ? `<p class="pad-label pad-sec" style="margin-top:0">Recent tables</p>${roomRows}` : ''}
+      ${games.length ? `<p class="pad-label pad-sec"${rooms.length ? '' : ' style="margin-top:0"'}>Saved games</p>${gameRows}` : ''}
     </div>`;
 }
 
@@ -820,7 +940,7 @@ function tokenRow(t: Token): string {
   const expiring = new Set(t.expiring ?? []);
   const chips = worn.map(({ def, n }) => {
     const art = tokenArt(def.id, expiring.has(def.id));
-    return `<button class="pad-tok${tokManage === def.id ? ' on' : ''}" data-act="tok" data-tok="${esc(def.id)}" title="${esc(def.label)}">
+    return `<button class="pad-tok${tokManage === def.id ? ' on' : ''}${expiring.has(def.id) ? ' red' : ''}" data-act="tok" data-tok="${esc(def.id)}" title="${esc(def.label)}: tap to age it, hold to read it">
       ${art ? `<img src="${esc(art)}" alt="${esc(def.label)}" />` : `<span class="pad-tok-txt">${esc(def.icon)}</span>`}
       ${n > 1 ? `<span class="pad-tok-n">${n}</span>` : ''}
     </button>`;
@@ -843,6 +963,9 @@ function tokenRow(t: Token): string {
         <button class="pad-chip" data-act="tok-drop" data-tok="${esc(managed.id)}">Remove</button>
       </div>
       <p class="pad-tokinfo-rule">${linkKeywords(managed.rule)}</p>
+      <p class="pad-note" style="margin-top:4px">${managed.decay
+        ? `A ${managed.decay} Token: a tap turns it red, and a tap on a red one takes it off (2.5.3). The pad does not sweep Tokens when the round turns; this is the sweep.`
+        : 'No decay printed on it: a tap takes it off.'}</p>
     </div>` : ''}
     ${tokPick ? `<div class="pad-tokpop">${add}</div>` : ''}`;
 }
@@ -1044,7 +1167,13 @@ function morePanel(): string {
     </div>
 
     <div class="pad-foot">
-      ${room ? '<button class="pad-btn" data-act="leave">Leave the table</button>' : '<button class="pad-btn" data-act="solo-end">Finish and clear</button>'}
+      ${room
+        ? `<button class="pad-btn" data-act="leave">Leave the table</button>
+           <p class="pad-note">The table stays open for an hour after the last move, and its code stays on your lobby to come back to.</p>
+           ${view.host ? '<button class="pad-link" data-act="close-room">Close the table for everyone</button>' : ''}`
+        : `<button class="pad-btn" data-act="solo-leave">Leave the game</button>
+           <p class="pad-note">Saved on this phone. Pick it up again from the lobby.</p>
+           <button class="pad-link" data-act="solo-end">Delete this game</button>`}
       <button class="pad-link" data-act="signout">Sign out</button>
       <p class="pad-note">Signed in as ${esc(account?.username ?? '')}${room ? ` · seat ${me === 's1' ? '1' : '2'}` : ''}</p>
     </div>
@@ -1446,6 +1575,9 @@ function showImage(src: string, label: string): void {
 
 let toasts: { id: number; text: string; undo: boolean }[] = [];
 let toastSeq = 0;
+// Set by a long press on a worn Token, and consumed by the click the browser
+// fires when the finger lifts, so the hold does not also age the Token.
+let heldTok = false;
 
 function toast(text: string, undo = false): void {
   const id = ++toastSeq;
@@ -1667,34 +1799,83 @@ function act(el: HTMLElement, ev: Event): void {
     case 'solo': {
       resetTable();
       solo = true;
-      // A tracked game picks up where it was left, MIGRATED rather than cast so
-      // a game tracked on last month's build reloads with this month's fields.
-      const saved = loadSolo();
-      if (saved) {
-        table = (data ? migrateState(saved, data) : null) ?? saved;
-        toast('Picked up where you left off.');
-      }
+      soloId = `g${Date.now().toString(36)}`;
       error = null;
+      saveSolo();
       render();
       return;
     }
+    case 'resume': {
+      const g = savedGames().find((x) => x.id === el.dataset.id);
+      if (!g) return;
+      resetTable();
+      solo = true;
+      soloId = g.id;
+      // MIGRATED rather than cast, so a game tracked on last month's build
+      // reloads with this month's fields.
+      table = (data ? migrateState(g.table, data) : null) ?? g.table;
+      error = null;
+      toast(`Picked up ${g.name}.`);
+      render();
+      return;
+    }
+    case 'solo-leave':
+      saveSolo();
+      solo = false;
+      soloId = null;
+      resetTable();
+      screen = 'lobby';
+      render();
+      return;
+    case 'game-x':
     case 'solo-end':
       void (async () => {
+        const id = a === 'game-x' ? el.dataset.id! : soloId;
+        if (!id) return;
+        const g = savedGames().find((x) => x.id === id);
         const sure = await confirmDialog({
-          title: 'Finish and clear?',
-          body: 'The tracked game is cleared from this phone.',
-          confirmLabel: 'Clear it',
+          title: `Delete ${g?.name ?? 'this game'}?`,
+          body: 'It is removed from this phone. Nothing else keeps a copy.',
+          confirmLabel: 'Delete it',
           danger: true,
         });
         if (!sure) return;
-        solo = false;
-        store(SOLO_KEY, null);
+        deleteGame(id);
+        if (id === soloId) {
+          solo = false;
+          soloId = null;
+          resetTable();
+          screen = 'lobby';
+        }
+        render();
+      })();
+      return;
+    case 'rejoin':
+      error = null;
+      resetTable();
+      relay.join(el.dataset.id!);
+      render();
+      return;
+    case 'room-x': forgetRoom(el.dataset.id!); render(); return;
+    case 'leave': relay.leave(); resetTable(); screen = 'lobby'; render(); return;
+    case 'close-room':
+      void (async () => {
+        const id = view.room?.id;
+        const sure = await confirmDialog({
+          title: 'Close the table for everyone?',
+          body: 'The room is ended on the server. The other player is put out, and the code stops working.',
+          confirmLabel: 'Close it',
+          danger: true,
+        });
+        if (!sure) return;
+        relay.closeRoom();
+        if (id) forgetRoom(id);
+        relay.leave();
         resetTable();
         screen = 'lobby';
         render();
       })();
       return;
-    case 'leave': relay.leave(); resetTable(); screen = 'lobby'; render(); return;
 
     // ----- the dock and the bar -----
     case 'dock': {
@@ -1771,7 +1952,22 @@ function act(el: HTMLElement, ev: Event): void {
     case 'ammo-up': if (t) send({ kind: 'restoreAmmo', seat: t.side, uid: t.uid, actionId: el.dataset.id!, amount: 1 }); return;
     case 'charge': if (t) send({ kind: 'setCharge', seat: t.side, uid: t.uid, slot: el.dataset.slot!, on: el.dataset.on === '1' }); return;
     case 'tok-open': tokPick = !tokPick; tokManage = null; render(); return;
-    case 'tok': tokManage = tokManage === el.dataset.tok ? null : el.dataset.tok!; tokPick = false; render(); return;
+    case 'tok': {
+      // A TAP AGES THE TOKEN, one step down the End Phase's ladder; a hold
+      // opens its rule (the pointer handlers below set tokManage and swallow
+      // the click that follows the hold).
+      if (heldTok) { heldTok = false; return; }
+      if (!t) return;
+      const id = el.dataset.tok!;
+      const def = STATUS_BY_ID.get(id);
+      const red = (t.expiring ?? []).includes(id);
+      const gone = red || !def?.decay;
+      tokManage = null;
+      if (send({ kind: 'ageStatus', ...sourceFor(t), targetUid: t.uid, statusId: id })) {
+        toast(gone ? `${def?.label ?? id} comes off.` : `${def?.label ?? id} turns red: it comes off next.`, true);
+      }
+      return;
+    }
     case 'tok-add':
       if (!t) return;
       tokPick = false;
@@ -1930,6 +2126,30 @@ function installEvents(): void {
     if (ev.key === 'Enter' && (ev.target as HTMLElement).id === 'pad-join-code') {
       (root.querySelector('[data-act="join"]') as HTMLButtonElement | null)?.click();
     }
+  });
+
+  // A HOLD on a worn Token opens its rule. Timed from pointerdown and cancelled
+  // by a lift or a move, so a scroll that starts on a Token is still a scroll.
+  let holdTimer: number | undefined;
+  root.addEventListener('pointerdown', (ev) => {
+    const tok = (ev.target as HTMLElement).closest<HTMLElement>('.pad-tok[data-tok]');
+    window.clearTimeout(holdTimer);
+    if (!tok) return;
+    holdTimer = window.setTimeout(() => {
+      heldTok = true;
+      tokManage = tok.dataset.tok!;
+      tokPick = false;
+      render();
+    }, 450);
+  });
+  for (const ev of ['pointerup', 'pointercancel', 'pointermove'] as const) {
+    root.addEventListener(ev, (e) => {
+      if (ev === 'pointermove' && (e as PointerEvent).buttons === 0) return;
+      window.clearTimeout(holdTimer);
+    });
+  }
+  root.addEventListener('contextmenu', (ev) => {
+    if ((ev.target as HTMLElement).closest('.pad-tok')) ev.preventDefault();
   });
 
   document.addEventListener('keydown', (ev) => {
