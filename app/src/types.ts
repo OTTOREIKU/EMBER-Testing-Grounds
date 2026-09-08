@@ -173,6 +173,10 @@ export type Stance = 'offensive' | 'defensive' | 'mobility' | 'shutdown';
 export type PartState = 'intact' | 'damaged' | 'destroyed';
 
 export type PartSlot = 'torso' | 'chasis' | 'leftHand' | 'rightHand' | 'backpack';
+// The order a Mech's Parts stack into one picture, back to front: the chassis
+// and the backpack behind the torso, the arms in front of it. The board, the
+// squad panel and the pad all draw the same stack.
+export const MECH_LAYER_ORDER = ['chasis', 'backpack', 'torso', 'leftHand', 'rightHand'] as const;
 
 export interface MechLoadout {
   torso?: string;

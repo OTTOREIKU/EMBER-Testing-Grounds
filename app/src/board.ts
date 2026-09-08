@@ -8,7 +8,10 @@ import {
 } from './boards';
 import type { InspectInfo } from './inspector';
 
-export const MECH_LAYER_ORDER = ['chasis', 'backpack', 'torso', 'leftHand', 'rightHand'] as const;
+// Lives in types.ts now, so a page with no board (the pad) can stack a Mech's
+// Parts without importing this module. Re-exported for the callers that had it.
+import { MECH_LAYER_ORDER } from './types';
+export { MECH_LAYER_ORDER };
 
 export const CELL = 30;
 // Subcells per side for a board of `grids` Large Grids. This REPLACED the old

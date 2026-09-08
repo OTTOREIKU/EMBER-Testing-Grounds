@@ -428,10 +428,20 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
   contain-intrinsic-size: auto;
 }
 
-.pad-uhead .ref-art { right: 60px; bottom: -20px; width: 110px; height: 110px; opacity: 0.14; }
+/* The whole Mech, its Parts stacked in the board's order into one picture. */
+.pad-mech-art {
+  position: relative;
+  flex: 0 0 64px;
+  width: 64px;
+  height: 64px;
+}
+
+.pad-mech-art img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+
 .pad-uhead-t { position: relative; flex: 1; min-width: 0; }
 .pad-uhead-t .pad-h { font-size: 20px; margin-bottom: 2px; }
 .pad-uhead-t .pad-lead { margin: 0; font-size: 12.5px; }
+.pad-rename { margin-top: 6px; min-height: 28px; padding: 4px 10px; font-size: 11px; }
 
 /* The pilot's portrait, the reference's own tile thumb, as a button. */
 .pad-uhead-pilot {
@@ -610,14 +620,18 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
 
 /* ---------- stances, wearing their printed token ---------- */
 
-.pad-stances { display: flex; flex-wrap: wrap; gap: 6px; }
+/* The printed Stance token fills the button and its name sits under it: the
+   dial on the base is read by its picture, and the picture is the control. */
+.pad-stances { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; flex: 1 0 100%; }
 
 .pad-stance {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 7px;
-  min-height: var(--tap);
-  padding: 6px 12px 6px 6px;
+  justify-content: center;
+  gap: 5px;
+  min-height: 84px;
+  padding: 8px 4px 7px;
   border: none;
   border-radius: var(--radius);
   background: var(--surface2);
@@ -630,7 +644,8 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
   transition: background 0.12s, color 0.12s;
 }
 
-.pad-stance img { width: 26px; height: 26px; object-fit: contain; opacity: 0.75; }
+.pad-stance img { width: 46px; height: 46px; object-fit: contain; opacity: 0.75; }
+.pad-stance span { font-size: 11px; }
 .pad-stance:hover { background: var(--surface3); color: var(--text); }
 .pad-stance.on { background: var(--accent-lt); color: var(--accent); }
 .pad-stance.on img { opacity: 1; }

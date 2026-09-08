@@ -36,7 +36,7 @@ import { applyRemote, check, onBeforeApply, onPerformed, onRefused, perform, typ
 import { clearHistory, historyDepth, historyEntries, undoLast, recordSnapshot } from '../src/history';
 import { labelFor, namesFrom, type LedgerNames } from '../src/ledger';
 import { setLocalSeat } from '../src/loop';
-import { cardName, loadData, mechPartUrl, missionImageUrl, secondaryImageUrl, stancePrintUrl, tokenFace, tokenPrintUrl, traitName, type GameData } from '../src/data';
+import { cardName, loadData, mechPartUrl, missionImageUrl, secondaryImageUrl, stancePrintUrl, tabImageUrl, tokenFace, tokenPrintUrl, traitName, type GameData } from '../src/data';
 import { importSquadFile } from '../src/importer';
 import { loadMechPresets, type MechPreset } from '../src/presets';
 import { actionBlock, cardDetail, cardRow, fillPortraits, keywordCard, keywordDetail, kwLabel, linkKeywords, traitBlock, useCardData } from '../src/refcards';
@@ -44,10 +44,10 @@ import { found, matchCard, matchKeyword, matchMechanic, matchMission, matchPhase
 import { mountCardImage, mountCardImageCopy } from '../src/images';
 import { squadColour } from '../src/icons';
 import { groupByFaction, openPartPicker } from '../src/partpicker';
-import { confirmDialog } from '../src/dialog';
+import { confirmDialog, promptDialog } from '../src/dialog';
 import { normaliseTasks } from '../src/tasks';
-import { chargeableSlots, maxLink, migrateState, pilotCard, structureOf, tokenCards } from '../src/units';
-import { PHASES, statusesFor, statusStacks, STATUSES } from '../src/types';
+import { chargeableSlots, maxLink, migrateState, pilotCard, structureOf, tidyUnitLabel, tokenCards } from '../src/units';
+import { MECH_LAYER_ORDER, PHASES, statusesFor, statusStacks, STATUSES } from '../src/types';
 import type { Card, GameState, ImportedSquad, MechLoadout, PartSlot, PartState, Side, Stance, Token } from '../src/types';
 
 const root = document.getElementById('pad-root')!;
@@ -701,8 +701,25 @@ function sheetHtml(): string {
   </div>`;
 }
 
-// The unit's name over its core Part's art, tinted by the Part's faction the
-// way the reference tints a tile, with the pilot's portrait beside it.
+// The unit as it LOOKS: its Parts stacked into one picture, in the order the
+// board and the squad panel stack them, with the pilot's portrait beside it
+// and the name between. A destroyed arm or backpack drops out of the picture,
+// as it does on the board; the core stays, wrecked or not.
+function unitArt(t: Token): string {
+  const layers: string[] = [];
+  if (t.kind === 'mech' && t.mech) {
+    for (const slot of MECH_LAYER_ORDER) {
+      const id = t.mech[slot];
+      if (!id) continue;
+      if (t.partStates[slot] === 'destroyed' && slot !== 'torso' && slot !== 'chasis') continue;
+      layers.push(mechPartUrl(id));
+    }
+  }
+  if (!layers.length && t.cardId) layers.push(tabImageUrl(t.cardId));
+  if (!layers.length) return '';
+  return `<span class="pad-mech-art" aria-hidden="true">${layers.map((h) => `<img src="${esc(h)}" alt="" />`).join('')}</span>`;
+}
+
 function unitHead(t: Token, yours: boolean): string {
   const cards = tokenCards(data!, t);
   const core = cards.find((c) => c.slot === 'torso' || c.slot === 'main')?.card;
@@ -710,10 +727,11 @@ function unitHead(t: Token, yours: boolean): string {
   const pilot = t.kind === 'mech' ? pilotCard(data!, t) : undefined;
   const line = [yours ? 'Yours' : 'Theirs', KIND_LABEL[t.kind], t.kind === 'mech' ? STANCE_LABEL[t.stance] ?? t.stance : ''].filter(Boolean).join(' · ');
   return `<div class="pad-uhead card-framed"${fac ? ` data-fac="${esc(fac)}"` : ''}>
-    ${core ? `<span class="ref-art"><img src="${esc(mechPartUrl(core.id))}" alt="" /></span>` : ''}
+    ${unitArt(t)}
     <div class="pad-uhead-t">
       <h1 class="pad-h">${esc(t.label)}</h1>
       <p class="pad-lead">${esc(line)}</p>
+      ${canCommand(t) ? '<button class="pad-chip pad-rename" data-act="rename">Rename</button>' : ''}
     </div>
     ${pilot ? `<button class="pilot-thumb pad-uhead-pilot" data-act="card" data-id="${esc(pilot.id)}" data-portrait="${esc(pilot.id)}" aria-label="Read ${esc(cardName(pilot))}"></button>` : ''}
   </div>`;
@@ -749,7 +767,7 @@ function partRow(t: Token, slot: PartSlot | 'main', card: Card): string {
   return `<div class="pad-prow${open ? ' open' : ''}">
     <div class="pad-part-row">
       <button class="pad-part card-framed pt-${st}"${fac ? ` data-fac="${esc(fac)}"` : ''} data-act="open" data-slot="${slot}" aria-expanded="${open}">
-        <span class="ref-art"><img src="${esc(mechPartUrl(card.id))}" alt="" loading="lazy" /></span>
+        <span class="ref-art" data-partart="${esc(card.id)}" aria-hidden="true"></span>
         <span class="pad-part-slot">${SLOT_LABEL[slot]}</span>
         <span class="pad-part-name">${esc(cardName(card))}</span>
         ${stats.length ? `<span class="pad-part-stats mono">${stats.join(' ')}</span>` : ''}
@@ -1108,7 +1126,7 @@ function buildPanel(): string {
       <button class="pad-part card-framed"${f ? ` data-fac="${esc(f)}"` : ''} data-act="build-slot" data-slot="${s.key}">
         ${card ? (s.key === 'pilot'
           ? `<span class="pilot-thumb pad-pilot-thumb" data-portrait="${esc(card.id)}"></span>`
-          : `<span class="ref-art"><img src="${esc(mechPartUrl(card.id))}" alt="" loading="lazy" /></span>`) : ''}
+          : `<span class="ref-art" data-partart="${esc(card.id)}" aria-hidden="true"></span>`) : ''}
         <span class="pad-part-slot">${s.label}</span>
         <span class="pad-part-name">${card ? esc(cardName(card)) : 'empty'}</span>
         <span class="pad-part-stats mono">${card?.score ? `${card.score}p` : ''}</span>
@@ -1540,7 +1558,12 @@ function render(): void {
   paint('pad-strip', stripHtml());
   if (paint('pad-sheet', sheetHtml())) {
     const sheet = document.getElementById('pad-sheet');
-    if (sheet) fillPortraits(sheet, true);
+    if (sheet) {
+      fillPortraits(sheet, true);
+      for (const img of sheet.querySelectorAll<HTMLImageElement>('.pad-mech-art img')) {
+        img.addEventListener('error', () => img.remove(), { once: true });
+      }
+    }
   }
   paint('pad-dock', dockHtml());
   const p = document.getElementById('pad-panel')!;
@@ -1713,6 +1736,20 @@ function act(el: HTMLElement, ev: Event): void {
       return;
     case 'card':
       openLook('card', el.dataset.id!);
+      return;
+    case 'rename':
+      if (!t) return;
+      void (async () => {
+        const next = await promptDialog({
+          title: `Rename ${t.label}`,
+          body: 'A callsign, so two of the same build can be told apart.',
+          value: t.label,
+          confirmLabel: 'Rename',
+        });
+        if (next === null) return;
+        const label = tidyUnitLabel(next.trim());
+        if (label && label !== t.label) send({ kind: 'renameUnit', seat: t.side, uid: t.uid, label });
+      })();
       return;
     case 'hit': {
       if (!t) return;
