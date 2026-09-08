@@ -169,6 +169,7 @@ type AnyCmd = {
   stacks?: number;
   mode?: string;
   stance?: string;
+  label?: string;
   to?: { col: number; row: number };
   at?: { col: number; row: number };
   free?: boolean;
@@ -225,6 +226,7 @@ export function labelFor(cmd: { kind: string }, state: GameState, names?: Ledger
     case 'applyStatus': label = `${target()} gains ${c.stacks && c.stacks > 1 ? `${c.stacks} ` : 'a '}${c.statusId ?? 'status'} Token${c.stacks && c.stacks > 1 ? 's' : ''}`; break;
     case 'removeStatus': label = `${target()} loses a ${c.statusId ?? 'status'} Token`; break;
     case 'setStance': label = `${who()} switches to ${c.stance ?? 'a new'} Stance`; break;
+    case 'renameUnit': label = `${who()} is now called ${c.label ?? 'something else'}`; break;
 
     // ---------- the board and the missions ----------
     case 'takeBlackBox': label = `${who()} picks up a Black Box`; break;

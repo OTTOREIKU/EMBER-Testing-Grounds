@@ -39,6 +39,11 @@ export type Command =
   // shifting to the edge it actually touches.
   | { kind: 'placeInGrid'; seat: Side; uid: number; to: { col: number; row: number } }
   | { kind: 'setStance'; seat: Side; uid: number; stance: Stance }
+  // A callsign for a unit, so two identical builds can be told apart on a
+  // sheet. Bookkeeping, not a rule: the label is not rules-bearing and the
+  // fingerprint does not carry it. An empty label is refused rather than
+  // defaulted, because the caller knows the fallback and the engine does not.
+  | { kind: 'renameUnit'; seat: Side; uid: number; label: string }
   | { kind: 'reboot'; seat: Side; uid: number; stance: Stance }
   // `free` is a Movement Action moving the unit on the Action Tick it has
   // already paid for, so it must not also spend the Maneuver Tick. Everything
@@ -1374,6 +1379,12 @@ function checkActed(
       const spot = spotsInGrid(t, terrain, state.tokens).find((s) => s.col === col && s.row === row);
       if (!spot) return no('That is not a spot in this Grid.');
       if (!spot.ok) return no('Something is already standing there.');
+      return ok;
+    }
+    case 'renameUnit': {
+      const label = typeof cmd.label === 'string' ? cmd.label.trim() : '';
+      if (!label) return no('A unit needs a name.');
+      if (label.length > 40) return no('That name is too long to fit on a sheet (40 characters).');
       return ok;
     }
     case 'setStance': {
@@ -3107,6 +3118,10 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       t.col = cmd.to.col;
       t.row = cmd.to.row;
       return;
+    case 'renameUnit': {
+      t.label = cmd.label.trim();
+      return;
+    }
     case 'setStance': {
       // Choosing does NOT lock: cycling the dial to compare Stances is free
       // right up until the Mech acts. lockStance() below is what closes it.
