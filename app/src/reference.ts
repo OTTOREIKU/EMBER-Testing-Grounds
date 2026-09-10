@@ -12,6 +12,7 @@ import { linkIcon } from './icons';
 import { cardDetail, cardRow, esc, fillPortraits, keywordCard, keywordDetail, kwLabel, linkKeywords, mechBlocks, SLOT_LABEL, SPEED_MARK, useCardData } from './refcards';
 import { found, matchCard, matchKeyword, matchMechanic, matchMission, matchPhase, matchSecondary, matchStance, matchStatus, matchTiming, nmCard, nmKeyword, nmMechanic, nmMission, nmPlay, nmSecondary, nmStatus, norm } from './refsearch';
 import { installDiagnostics } from './diagnostics';
+import { boxPicker, compareGrid, exclusiveToggle, isExclusiveTo, sharedCount } from './boxcompare';
 import type { ReportCategory } from './report';
 import { openReferenceReport } from './reportui';
 // FIRST, before anything else in this module runs. A net that is installed
@@ -74,6 +75,12 @@ let allMode = true;
 const facetChoice: Partial<Record<Tab, string>> = {};
 const factionChoice: Partial<Record<Tab, string>> = {};
 let rulesSection: string | undefined;
+// The Boxes tab's two doors, asked for at the table. `boxExclusive` is the
+// inventory's own "Exclusive cards" tick: on a box's sheet it keeps only the
+// cards no other listed box ships, and on the comparison it does the same to
+// both columns. `cmpPair` is which two boxes are being compared.
+let boxExclusive = false;
+const cmpPair: [string, string] = ['', ''];
 
 const body = () => document.getElementById('ref-body')!;
 
@@ -111,7 +118,10 @@ function boxCardCount(key: string): { cards: number; pieces: number } {
 function boxDetail(key: string): string | null {
   const box = data.boxes.find((b) => b.key === key);
   if (!box) return null;
-  const items = boxContents(key);
+  const listed = data.boxes.filter(isListedBox);
+  const all = boxContents(key);
+  const exclusive = all.filter((i) => isExclusiveTo(data.cards, listed, i.card.id, key));
+  const items = boxExclusive ? exclusive : all;
   const { cards, pieces } = boxCardCount(key);
   const used = new Set<string>();
   const groups = BOX_GROUPS.map((g) => {
@@ -208,7 +218,31 @@ function boxDetail(key: string): string | null {
         : ''
     }
     ${box.hasImage ? `<div class="box-cover"><img src="${boxCoverUrl(box.id)}" alt="" loading="lazy" onerror="this.closest('.box-cover').remove()"></div>` : ''}
-    ${list || '<p class="ref-note">No cards in the data list this box.</p>'}`;
+    <div class="ref-box-tools">
+      ${exclusiveToggle('ref-box-excl', boxExclusive)}<span class="fc-n">${exclusive.length} of ${all.length}</span>
+      ${isListedBox(box) ? `<button class="inv-cmp-btn" data-compare="${esc(box.key)}">Compare with another box</button>` : ''}
+    </div>
+    ${list || (boxExclusive ? '<p class="ref-note">Every card in this box also ships in another box.</p>' : '<p class="ref-note">No cards in the data list this box.</p>')}`;
+}
+
+// Two boxes against each other, on a sheet of its own: the inventory's
+// comparison, drawn by the same code, with each row opening the card.
+function compareDetail(key: string): string | null {
+  const pool = data.boxes.filter(isListedBox).sort((a, b) => a.id - b.id);
+  if (pool.length < 2) return null;
+  const [a, b] = key.split('|');
+  cmpPair[0] = pool.some((x) => x.key === a) ? a : pool[0].key;
+  cmpPair[1] = pool.some((x) => x.key === b) && b !== cmpPair[0] ? b : (pool.find((x) => x.key !== cmpPair[0])?.key ?? '');
+  const shared = sharedCount(data.cards, pool, cmpPair[0], cmpPair[1]);
+  return `<div class="ref-compare">
+    <h2>Compare boxes</h2>
+    <p class="ref-meta">${shared} card${shared === 1 ? '' : 's'} in both</p>
+    ${exclusiveToggle('ref-cmp-excl', boxExclusive, 'inv-cmp-filter')}
+    ${compareGrid(data.cards, pool, cmpPair, boxExclusive, {
+      picker: (side) => boxPicker(pool, side, cmpPair[side]),
+      rowAttr: (id) => `data-card="${esc(id)}"`,
+    })}
+  </div>`;
 }
 
 // Laid out like a box: art bleeding behind a scrim, name and hook on top. The
@@ -1078,6 +1112,7 @@ function render(): void {
             }>${esc(FACTION_LABEL[f] ?? f)} <span class="fc-n">${n}</span></button>`;
           })
           .join('')}
+        <button class="inv-cmp-btn" data-compare="">Compare boxes</button>
       </div>` +
       (list.length
         ? `<p class="ref-count">${list.length} box${list.length === 1 ? '' : 'es'} · tap one to list what is inside</p>${list.map(boxRow).join('')}`
@@ -1173,7 +1208,7 @@ function unlockRefPage(): void {
 }
 
 interface DetailView {
-  kind: 'card' | 'keyword' | 'box' | 'faction';
+  kind: 'card' | 'keyword' | 'box' | 'faction' | 'compare';
   key: string;
   scroll?: number;
 }
@@ -1190,7 +1225,17 @@ function viewHtml(v: DetailView): string | null {
   }
   if (v.kind === 'box') return boxDetail(v.key);
   if (v.kind === 'faction') return factionDetail(v.key);
+  if (v.kind === 'compare') return compareDetail(v.key);
   return keywordDetail(v.key);
+}
+
+// Redraws whatever sheet is open, in place: the exclusive tick and the compare
+// pickers change what the same sheet shows, and are not a navigation.
+function repaintDetail(): void {
+  const top = navStack[navStack.length - 1];
+  if (!top || sheet().hidden) return;
+  const html = viewHtml(top);
+  if (html !== null) paintDetail(html, sheetScroller().scrollTop);
 }
 
 // The scalar fields exactly as we hold them, so a "this is wrong" report can be
@@ -1220,6 +1265,7 @@ function shownFor(v: DetailView | undefined): Record<string, string> {
   if (v.kind === 'card') return flatten(data.byId.get(v.key));
   if (v.kind === 'keyword') return flatten(data.keyword(v.key));
   if (v.kind === 'box') return flatten(data.boxes.find((b) => b.key === v.key));
+  if (v.kind === 'compare') return {};
   return flatten(data.factions.find((f) => f.key === v.key));
 }
 
@@ -1238,6 +1284,7 @@ function viewLabel(v: DetailView): string {
     return b ? b.name.en || b.name.zh || b.key : v.key;
   }
   if (v.kind === 'faction') return data.factions.find((x) => x.key === v.key)?.name ?? v.key;
+  if (v.kind === 'compare') return 'Compare boxes';
   const def = data.keyword(v.key);
   return def?.en?.name?.replace(/^[•·\s]+/, '') || v.key;
 }
@@ -1516,6 +1563,16 @@ async function init(): Promise<void> {
       navigateDetail('faction', fac.dataset.factionitem!);
       return;
     }
+    const cmp = t.closest<HTMLElement>('[data-compare]');
+    if (cmp) {
+      ev.preventDefault();
+      // From a box's own sheet that box takes the left side; from the tab the
+      // last pair (or the first two boxes) comes back.
+      const left = cmp.dataset.compare || cmpPair[0];
+      const right = cmpPair[1] !== left ? cmpPair[1] : cmpPair[0];
+      navigateDetail('compare', `${left}|${right}`);
+      return;
+    }
     const box = t.closest<HTMLElement>('[data-box]');
     if (box) {
       ev.preventDefault();
@@ -1538,6 +1595,26 @@ async function init(): Promise<void> {
     content.style.removeProperty('--dpanel-h');
     delete content.dataset.panelMax;
     holdDetailHeight(content);
+  });
+  // The exclusive tick and the compare pickers live inside the sheet's
+  // markup, which paintDetail rewrites, so they are answered here once.
+  document.addEventListener('change', (ev) => {
+    const el = ev.target as HTMLElement;
+    if (!el.closest('#ref-detail')) return;
+    if (el.id === 'ref-box-excl' || el.id === 'ref-cmp-excl') {
+      boxExclusive = (el as HTMLInputElement).checked;
+      repaintDetail();
+      return;
+    }
+    if (el.classList.contains('inv-cmp-pick')) {
+      const sel = el as HTMLSelectElement;
+      cmpPair[Number(sel.dataset.side) as 0 | 1] = sel.value;
+      const top = navStack[navStack.length - 1];
+      if (top?.kind === 'compare') {
+        top.key = cmpPair.join('|');
+        repaintDetail();
+      }
+    }
   });
   document.getElementById('ref-detail-back')!.addEventListener('click', backDetail);
   document.getElementById('ref-detail-close')!.addEventListener('click', closeDetail);

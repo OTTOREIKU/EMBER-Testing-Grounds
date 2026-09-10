@@ -1,65 +1,15 @@
-import type { Card, LangText } from './types';
-import { assetUrl, isListedBox, traitName } from './data';
-import { expandGlyphs } from './glyphs';
+import type { Card } from './types';
+import { boxCoverUrl, isListedBox } from './data';
+// The rows, the exclusivity rule and the two-column comparison live in
+// boxcompare.ts, shared with the reference's Boxes tab. This class keeps what
+// is the inventory's own: the owned counts, the flyouts, the box grid.
+import { boxItems, boxPicker, boxesOf, compareGrid, esc, exclusiveToggle, FACTION_SHORT, sharedCount, type BoxInfo } from './boxcompare';
+
+export type { BoxInfo };
 
 const KEY = 'ember-inventory-v1';
 
 const PEEK_MS = 1500;
-
-const FACTION_SHORT: Record<string, string> = {
-  RDL: 'RDL',
-  UN: 'UN',
-  GOF: 'GoF',
-  PD: 'PD',
-  COLLABORATION: 'Collab',
-};
-
-const SLOT_SHORT: Record<string, string> = {
-  torso: 'Torso',
-  chasis: 'Chassis',
-  leftHand: 'L.Arm',
-  rightHand: 'R.Arm',
-  backpack: 'Pack',
-  small: 'Drone',
-  medium: 'Drone',
-  large: 'Drone',
-};
-
-const CATEGORY_SHORT: Record<string, string> = {
-  pilot: 'Pilot',
-  drone: 'Drone',
-  projectile: 'Proj',
-  tactics_or_upgrade: 'Tactic',
-  mech_part: 'Part',
-};
-
-const SLOT_ORDER = ['Torso', 'Chassis', 'L.Arm', 'R.Arm', 'Pack', 'Drone', 'Proj', 'Pilot', 'Tactic', 'Part'];
-
-export interface BoxInfo {
-  key: string;
-  id: number;
-  name: LangText;
-  faction?: string[];
-  hasImage?: boolean;
-  released?: boolean;
-  product?: string;
-  // Declared so isListedBox can actually read it here. The objects handed in are
-  // data.boxes itself, so the flag is present at runtime either way, but leaving
-  // it off the interface hides that from the compiler.
-  hidden?: boolean;
-}
-
-// Two box names carry double quotes - LAB-"Vigilant" Autocannon & MG type and
-// its Bombing sibling - and several carry an ampersand. Interpolated raw, the
-// quote closed the attribute early and left those two rows' number inputs with
-// no accessible name at all. Everything from the data is escaped now, and the
-// quote has to be escaped too, not just the three characters text needs.
-const esc = (s: string): string =>
-  s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
-
-function boxCoverUrl(id: number): string {
-  return assetUrl(`box_cover/${id}.webp`);
-}
 
 export class Inventory {
   private owned: Record<string, number> = {};
@@ -135,60 +85,12 @@ export class Inventory {
     return this.facChoice ? all.filter((b) => (b.faction ?? []).includes(this.facChoice)) : all;
   }
 
-  private boxContents(key: string): { id: string; slot: string; name: string; n: number; trait?: string; traitName?: string }[] {
-    const out: { id: string; slot: string; name: string; n: number; trait?: string; traitName?: string }[] = [];
-    for (const c of this.cards) {
-      const entry = (c.containedIn ?? []).find((e) => e.box === key);
-      if (!entry) continue;
-      // Only pilots, and the NAME now leads the line: it used to be text only,
-      // because the trait name in the card data was Chinese and printing it
-      // would have put 功率加大 in an English list. The publisher's English is
-      // merged in at load time now, so the short label a player actually
-      // compares by is available and traitName() supplies it.
-      // The leading bullet is the card's own typography, not part of the rule.
-      //
-      // A pilot with no trait NAME still carries a traitDescription, but it is
-      // flavour - "A new Scout from Test and Evaluation Squadron 066" - and the
-      // generic Scouts and Shock Troops all have one. Printing that as a trait
-      // would fill the comparison with lines that are not rules at all, so the
-      // name is what decides, exactly as the reference's detail view does.
-      const named = c.category === 'pilot' && (c.trait ?? '').trim();
-      const trait = named ? (c.traitDescription?.en ?? '').trim().replace(/^[•·]\s*/, '') : '';
-      out.push({
-        id: c.id,
-        slot: SLOT_SHORT[c.type ?? ''] ?? CATEGORY_SHORT[c.category] ?? '',
-        name: c.name.en || c.name.zh || c.id,
-        n: entry.quantityPerBox,
-        trait: trait || undefined,
-        traitName: named ? traitName(c) || undefined : undefined,
-      });
-    }
-    const rank = (s: string) => {
-      const i = SLOT_ORDER.indexOf(s);
-      return i < 0 ? SLOT_ORDER.length : i;
-    };
-    return out.sort((a, b) => rank(a.slot) - rank(b.slot) || a.name.localeCompare(b.name));
+  private boxContents(key: string) {
+    return boxItems(this.cards, key);
   }
 
-  // Every box a card ships in, so a row can say whether it is unique to the box
-  // being looked at or turns up elsewhere too. Cards with no box data at all are
-  // excluded from both sides rather than guessed at. Unlisted boxes drop out
-  // too: "exclusive" has to mean among boxes somebody can actually buy, or a
-  // card whose only other home is the Kickstarter pack reads as shared when in
-  // practice this box is the only way to get it.
   private boxesOf(id: string): string[] {
-    const c = this.cards.find((x) => x.id === id);
-    const listed = new Set(this.sellableBoxes().map((b) => b.key));
-    return (c?.containedIn ?? []).map((e) => e.box).filter((b) => listed.has(b));
-  }
-
-  private compareRows(key: string, other: string, exclusiveOnly: boolean) {
-    return this.boxContents(key)
-      .map((i) => {
-        const all = this.boxesOf(i.id);
-        return { ...i, elsewhere: all.filter((b) => b !== key), inOther: all.includes(other) };
-      })
-      .filter((i) => !exclusiveOnly || i.elsewhere.length === 0);
+    return boxesOf(this.cards, this.sellableBoxes(), id);
   }
 
   private showContents(dlg: HTMLElement, key: string): void {
@@ -262,60 +164,17 @@ export class Inventory {
     const panel = document.createElement('div');
     panel.className = 'inv-compare';
 
-    const picker = (side: 0 | 1) =>
-      `<select class="inv-cmp-pick" data-side="${side}" aria-label="Box ${side + 1}">${pool
-        .map((b) => `<option value="${b.key}"${this.cmp[side] === b.key ? ' selected' : ''}>${esc(b.name.en || b.name.zh || b.key)}</option>`)
-        .join('')}</select>`;
-
-    const column = (side: 0 | 1) => {
-      const key = this.cmp[side];
-      const box = pool.find((b) => b.key === key);
-      const rows = this.compareRows(key, this.cmp[side ? 0 : 1], exclusiveOnly);
-      const all = this.boxContents(key);
-      const uniq = all.filter((i) => this.boxesOf(i.id).length === 1).length;
-      const sold = box?.released === false ? '<span class="inv-cmp-tag">not currently sold</span>' : '';
-      return `<div class="inv-cmp-col">
-        <div class="inv-cmp-head">${picker(side)}${sold}</div>
-        ${box?.hasImage ? `<div class="inv-cmp-cover"><img src="${boxCoverUrl(box.id)}" alt="" loading="lazy" onerror="this.closest('.inv-cmp-cover').remove()"></div>` : ''}
-        <div class="inv-cmp-tally">${all.length} card${all.length === 1 ? '' : 's'} · ${all.reduce((s, i) => s + i.n, 0)} pieces · ${uniq} in no other box · you own ${this.owned[key] ?? 0}</div>
-        <ul class="inv-parts inv-cmp-list">${
-          rows.length
-            ? rows
-                .map(
-                  (i) =>
-                    `<li data-tip-card="${i.id}"${i.inOther ? ' class="shared"' : ''}><span class="ip-slot">${i.slot}</span><span class="ip-name">${esc(i.name)}</span>${
-                      // HOW MANY COPIES, same rule as the contents panel beside
-                      // it. Without this a box holding four Mire Cores read as
-                      // holding one, and the two panels disagreed about the
-                      // same box - which is how OTTO found it.
-                      i.n > 1 ? `<span class="ip-n">×${i.n}</span>` : ''
-                    }${
-                      i.inOther ? '<span class="ip-both">both</span>' : i.elsewhere.length ? `<span class="ip-else">+${i.elsewhere.length}</span>` : ''
-                    }${
-                      // A pilot is chosen for its trait, so comparing two boxes'
-                      // pilots means comparing traits. Printed under the name in
-                      // both columns rather than in the hover preview, which
-                      // only ever shows one at a time. The publisher's trait
-                      // NAME leads it, because that is the handle two columns
-                      // are actually scanned by; the rule follows.
-                      i.trait || i.traitName
-                        ? `<span class="ip-trait">${i.traitName ? `<b>${esc(i.traitName)}</b>${i.trait ? ' ' : ''}` : ''}${expandGlyphs(esc(i.trait ?? ''))}</span>`
-                        : ''
-                    }</li>`,
-                )
-                .join('')
-            : '<li class="dim">Nothing to show with this filter.</li>'
-        }</ul>
-      </div>`;
-    };
-
-    const shared = this.boxContents(this.cmp[0]).filter((i) => this.boxesOf(i.id).includes(this.cmp[1])).length;
+    const shared = sharedCount(this.cards, pool, this.cmp[0], this.cmp[1]);
     panel.innerHTML = `
       <button class="dlg-close inv-compare-close" title="Close">✕</button>
       <div class="inv-contents-head"><b>Compare boxes</b>
         <span class="inv-contents-sub">${shared} card${shared === 1 ? '' : 's'} in both</span></div>
-      <label class="inv-filter inv-cmp-filter"><input type="checkbox" id="inv-cmp-excl"${exclusiveOnly ? ' checked' : ''}><span class="inv-tick"></span> Exclusive cards</label>
-      <div class="inv-cmp-grid">${column(0)}${column(1)}</div>`;
+      ${exclusiveToggle('inv-cmp-excl', exclusiveOnly, 'inv-cmp-filter')}
+      ${compareGrid(this.cards, pool, this.cmp, exclusiveOnly, {
+        picker: (side) => boxPicker(pool, side, this.cmp[side]),
+        rowAttr: (id) => `data-tip-card="${id}"`,
+        owned: (key) => this.owned[key] ?? 0,
+      })}`;
 
     panel.querySelector('.inv-compare-close')!.addEventListener('click', () => {
       panel.remove();

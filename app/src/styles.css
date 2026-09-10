@@ -1,5 +1,6 @@
 @import './partpicker.css';
 @import './colourpicker.css';
+@import './inventory.css';
 :root {
   --bg: #0f1216;
   --surface: #171b21;
@@ -266,26 +267,6 @@ main { display: flex; flex: 1; min-height: 0; }
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
 }
 .inv-head { display: flex; align-items: center; gap: 12px; font-size: 14px; font-weight: 600; padding-right: 26px; margin-bottom: 4px; }
-.inv-filter {
-  margin-left: auto; font-size: 12px; color: var(--text2);
-  display: flex; gap: 7px; align-items: center; cursor: pointer; user-select: none;
-}
-.inv-filter input { position: absolute; opacity: 0; width: 0; height: 0; }
-.inv-tick {
-  width: 16px; height: 16px; flex-shrink: 0; border-radius: var(--radius-sm);
-  border: 1px solid var(--border); background: var(--surface2);
-  display: inline-grid; place-items: center;
-  transition: background 0.12s, border-color 0.12s;
-}
-.inv-tick::after {
-  content: ''; width: 9px; height: 5px; margin-top: -2px;
-  border-left: 2px solid var(--on-accent); border-bottom: 2px solid var(--on-accent);
-  transform: rotate(-45deg) scale(0.6); opacity: 0; transition: opacity 0.12s, transform 0.12s;
-}
-.inv-filter:hover .inv-tick { border-color: var(--text3); }
-.inv-filter input:checked + .inv-tick { background: var(--accent); border-color: var(--accent); }
-.inv-filter input:checked + .inv-tick::after { opacity: 1; transform: rotate(-45deg) scale(1); }
-.inv-filter input:focus-visible + .inv-tick { outline: 2px solid var(--accent); outline-offset: 2px; }
 #inv-filter { accent-color: var(--accent); cursor: pointer; }
 
 .inv-panel .dim { font-size: 11.5px; margin: 8px 0 14px; }
@@ -299,35 +280,13 @@ main { display: flex; flex: 1; min-height: 0; }
   padding: 18px; box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
 }
 #inv-dialog.with-contents .inv-panel { border-radius: 0 var(--radius-lg) var(--radius-lg) 0; }
-.inv-contents-head { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 12px; padding-right: 26px; }
 .inv-contents-head b { font-size: 13.5px; display: block; }
-.inv-contents-sub { display: block; margin-top: 2px; font-size: 11px; color: var(--text3); font-family: var(--mono); }
-.inv-parts { list-style: none; margin: 0; padding: 0; overflow-y: auto; }
-.inv-parts li {
-  display: flex; align-items: baseline; gap: 8px;
-  padding: 5px 2px; border-top: 1px solid var(--border); font-size: 12px;
-}
-.inv-parts li:first-child { border-top: none; }
-.inv-parts li[data-tip-card] { cursor: help; border-radius: var(--radius-sm); transition: background 0.12s; }
-.inv-parts li[data-tip-card]:hover { background: var(--surface3); }
-.ip-slot {
-  flex-shrink: 0; width: 48px; font-size: 9.5px; font-weight: 700; letter-spacing: 0.4px;
-  text-transform: uppercase; color: var(--text3);
-}
-.ip-name { flex: 1; min-width: 0; color: var(--text); line-height: 1.35; }
-.ip-n { flex-shrink: 0; font-family: var(--mono); font-size: 11px; color: var(--accent); }
 #inv-dialog.with-contents .inv-panel { max-width: calc(94vw - 320px); }
 
 /* ---------- box comparison ----------
    Shares the flyout shell with the contents panel, just wider: two columns of
    cards with a cover at the top of each. It reports and does not advise, so
    there is no styling for a verdict - only counts, tags and list rows. */
-.inv-cmp-btn {
-  margin-left: auto; background: var(--surface3); color: var(--text2); border: none;
-  border-radius: var(--radius); padding: 6px 11px; font-size: 11.5px; font-weight: 600;
-  font-family: var(--font); cursor: pointer; transition: background 0.12s, color 0.12s;
-}
-.inv-cmp-btn:hover { background: var(--accent); color: #0f1216; }
 .inv-compare {
   position: relative; flex: 0 0 min(640px, 62vw);
   height: min(820px, 88vh); display: flex; flex-direction: column;
@@ -336,42 +295,6 @@ main { display: flex; flex: 1; min-height: 0; }
   padding: 18px; box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
 }
 #inv-dialog:has(.inv-compare) .inv-panel { max-width: calc(94vw - min(640px, 62vw)); }
-.inv-cmp-filter { margin: 0 0 12px; }
-.inv-cmp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; min-height: 0; flex: 1; }
-.inv-cmp-col { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
-.inv-cmp-head { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
-.inv-cmp-pick {
-  flex: 1; min-width: 0; font-size: 12px; font-family: var(--font);
-  background: var(--surface3); color: var(--text); border: 1px solid var(--border);
-  border-radius: var(--radius); padding: 6px 8px;
-}
-.inv-cmp-tag {
-  flex-shrink: 0; font-size: 9.5px; font-weight: 700; text-transform: uppercase;
-  letter-spacing: 0.4px; color: var(--text3); background: var(--surface3);
-  border-radius: var(--radius-sm); padding: 3px 6px;
-}
-.inv-cmp-cover { border-radius: var(--radius); overflow: hidden; background: var(--surface3); margin-bottom: 8px; }
-.inv-cmp-cover img { display: block; width: 100%; height: 96px; object-fit: cover; }
-.inv-cmp-tally { font-size: 10.5px; color: var(--text3); font-family: var(--mono); margin-bottom: 6px; }
-.inv-cmp-list { flex: 1; min-height: 0; }
-.inv-cmp-list li.shared .ip-name { color: var(--text2); }
-/* A pilot's trait, printed under its name so two boxes' pilots can be read
-   against each other. The row is a flex line, so the trait has to claim a whole
-   basis of its own to land underneath rather than squeeze the name; it lines up
-   with the name by matching .ip-slot's width plus the row gap. */
-.inv-cmp-list li { flex-wrap: wrap; }
-.ip-trait {
-  /* The indent has to come out of the basis: a full 100% plus a 56px margin is
-     wider than the row, which set the whole column scrolling sideways. */
-  flex: 0 0 calc(100% - 56px); margin: 3px 0 1px 56px; font-size: 11px; line-height: 1.4;
-  color: var(--text2);
-}
-.ip-both, .ip-else {
-  flex-shrink: 0; font-size: 9.5px; font-weight: 700; letter-spacing: 0.3px;
-  text-transform: uppercase; border-radius: var(--radius-sm); padding: 2px 5px;
-}
-.ip-both { color: var(--blue); background: var(--blue-lt); }
-.ip-else { color: var(--text3); background: var(--surface3); font-family: var(--mono); }
 @media (max-width: 900px) {
   .inv-compare { flex: 0 0 92vw; }
   #inv-dialog:has(.inv-compare) .inv-panel { display: none; }

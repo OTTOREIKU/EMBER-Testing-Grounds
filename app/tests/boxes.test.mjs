@@ -122,7 +122,10 @@ for (const [key, def] of Object.entries(patched)) {
 // Cores therefore read as holding one, and the two panels quietly disagreed
 // about the same box. OTTO found it by comparing two boxes and counting.
 {
-  const inv = readFileSync(new URL('../src/inventory.ts', import.meta.url), 'utf8');
+  // The compare column moved to boxcompare.ts, shared with the reference's
+  // Boxes tab; the contents panel stayed. The pair is one body of source here.
+  const inv = readFileSync(new URL('../src/inventory.ts', import.meta.url), 'utf8')
+    + '\n' + readFileSync(new URL('../src/boxcompare.ts', import.meta.url), 'utf8');
   check('both panels print the copy count, by the same rule',
     (inv.match(/i\.n > 1 \?/g) ?? []).length, 2);
   // A tally that counts rows but not copies says "30 cards" for a box holding
