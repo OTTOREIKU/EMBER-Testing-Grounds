@@ -111,7 +111,10 @@ declare global {
   // eslint-disable-next-line no-var
   var __EMBER_BASE__: string | undefined;
 }
-const BASE = globalThis.__EMBER_BASE__ ?? import.meta.env.BASE_URL;
+// Exported for the one reader that wants the site ROOT rather than a folder
+// under it: updates.ts fetches version.json from there, and a page served
+// from a folder (the pad) would otherwise look for it beside itself.
+export const BASE = globalThis.__EMBER_BASE__ ?? import.meta.env.BASE_URL;
 
 export function assetUrl(path: string): string {
   return `${BASE}assets/${path}`;

@@ -45,6 +45,7 @@ import { mountCardImage, mountCardImageCopy } from '../src/images';
 import { squadColour } from '../src/icons';
 import { groupByFaction, openPartPicker } from '../src/partpicker';
 import { confirmDialog, promptDialog } from '../src/dialog';
+import { checkForUpdates, watchForUpdates } from '../src/updates';
 import { normaliseTasks } from '../src/tasks';
 import { chargeableSlots, maxLink, migrateState, pilotCard, structureOf, tidyUnitLabel, tokenCards } from '../src/units';
 import { MECH_LAYER_ORDER, PHASES, statusesFor, statusStacks, STATUSES } from '../src/types';
@@ -1592,7 +1593,7 @@ function toast(text: string, undo = false): void {
   window.setTimeout(() => {
     toasts = toasts.filter((t) => t.id !== id);
     paint('pad-toasts', toastsHtml());
-  }, undo ? 7000 : 4500);
+  }, undo ? 4500 : 2600);
 }
 
 function toastsHtml(): string {
@@ -1682,6 +1683,9 @@ function render(): void {
   else if (screen === 'table' || (screen === 'lobby' && !account)) screen = account ? 'lobby' : 'signin';
 
   if (screen !== 'table') {
+    // Back on the door screens, so a new build published mid-game is offered
+    // now rather than mid-sheet; the watcher itself is gated the same way.
+    if (root.className === 'table') void checkForUpdates();
     root.className = '';
     painted.clear();
     looks = [];
@@ -2223,6 +2227,10 @@ void (async () => {
   reg = mode;
   screen = account ? 'lobby' : 'signin';
   render();
+  // The "new version" notice, only on the door screens: a sheet mid-game is
+  // not the place to be asked to reload, and the check runs again on the way
+  // back out of a game.
+  watchForUpdates({ when: () => screen !== 'table' });
 
   // The card database loads AFTER the first paint, deliberately. Signing in and
   // opening a table need none of it, and a phone on venue signal should not

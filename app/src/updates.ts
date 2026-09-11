@@ -1,12 +1,15 @@
 import './updates.css';
+import { BASE } from './data';
 
 declare const __BUILD_ID__: string;
 
 const POLL_MS = 5 * 60 * 1000;
 const DISMISS_KEY = 'ember-update-dismissed';
 
+// From the site root, not beside the page: the pad lives in /pad/ and has no
+// version.json of its own.
 function versionUrl(): string {
-  return new URL('version.json', document.baseURI).href;
+  return new URL(`${BASE}version.json`, document.baseURI).href;
 }
 
 async function liveBuild(): Promise<string | null> {
@@ -77,13 +80,25 @@ function show(build: string): void {
   }
 }
 
-export function watchForUpdates(): void {
+let gate: (() => boolean) | null = null;
+
+// One check, now. The pad calls it on the way out of a game, so a build that
+// landed mid-game is offered the moment the sheet is put down.
+export async function checkForUpdates(): Promise<void> {
   const mine = typeof __BUILD_ID__ === 'string' ? __BUILD_ID__ : null;
   if (!mine) return;
-  const check = async () => {
-    const live = await liveBuild();
-    if (live && live !== mine) show(live);
-  };
+  const live = await liveBuild();
+  if (live && live !== mine && (gate?.() ?? true)) show(live);
+}
+
+// `when` says whether the notice may be shown right now; the pad keeps it off
+// a sheet mid-game. Without it the notice shows whenever a newer build is
+// live, which is what the board and the reference want.
+export function watchForUpdates(opts?: { when?: () => boolean }): void {
+  const mine = typeof __BUILD_ID__ === 'string' ? __BUILD_ID__ : null;
+  if (!mine) return;
+  gate = opts?.when ?? null;
+  const check = () => checkForUpdates();
   window.setTimeout(() => void check(), 30_000);
   window.setInterval(() => void check(), POLL_MS);
   document.addEventListener('visibilitychange', () => {
