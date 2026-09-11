@@ -438,8 +438,7 @@ function signinHtml(): string {
       <button class="pad-btn primary" data-act="signin"${busy ? ' disabled' : ''}>${busy ? 'Signing in…' : 'Sign in'}</button>
       <button class="pad-link" data-act="to-register">I need an account</button>
       <div class="pad-or">or without an account</div>
-      <button class="pad-btn" data-act="solo">Track a game on this phone</button>
-      <p class="pad-note">Solo tracking never leaves the phone, so it needs no account. A table shared with another player does.</p>
+      <button class="pad-btn" data-act="solo">Offline Game</button>
     </div>
     ${lobbyLists()}`;
 }
