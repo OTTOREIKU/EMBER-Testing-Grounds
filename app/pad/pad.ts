@@ -437,7 +437,11 @@ function signinHtml(): string {
       </label>
       <button class="pad-btn primary" data-act="signin"${busy ? ' disabled' : ''}>${busy ? 'Signing in…' : 'Sign in'}</button>
       <button class="pad-link" data-act="to-register">I need an account</button>
-    </div>`;
+      <div class="pad-or">or without an account</div>
+      <button class="pad-btn" data-act="solo">Track a game on this phone</button>
+      <p class="pad-note">Solo tracking never leaves the phone, so it needs no account. A table shared with another player does.</p>
+    </div>
+    ${lobbyLists()}`;
 }
 
 function registerHtml(): string {
@@ -501,7 +505,7 @@ function lobbyHtml(): string {
 // this phone. A row opens it; the small cross forgets it - a room is only
 // forgotten here, a game is deleted, and the confirm says which.
 function lobbyLists(): string {
-  const rooms = recentRooms();
+  const rooms = account ? recentRooms() : [];
   const games = savedGames();
   if (!rooms.length && !games.length) return '';
   const roomRows = rooms.map((r) => `<div class="pad-seat pad-resume">
@@ -1174,8 +1178,11 @@ function morePanel(): string {
         : `<button class="pad-btn" data-act="solo-leave">Leave the game</button>
            <p class="pad-note">Saved on this phone. Pick it up again from the lobby.</p>
            <button class="pad-link" data-act="solo-end">Delete this game</button>`}
-      <button class="pad-link" data-act="signout">Sign out</button>
-      <p class="pad-note">Signed in as ${esc(account?.username ?? '')}${room ? ` · seat ${me === 's1' ? '1' : '2'}` : ''}</p>
+      ${account
+        ? `<button class="pad-link" data-act="signout">Sign out</button>
+           <p class="pad-note">Signed in as ${esc(account.username)}${room ? ` · seat ${me === 's1' ? '1' : '2'}` : ''}</p>`
+        : `<button class="pad-link" data-act="solo-to-signin">Sign in</button>
+           <p class="pad-note">Not signed in. This game is kept on the phone; a table shared with another player needs an account.</p>`}
     </div>
   </div>`;
 }
@@ -1668,9 +1675,12 @@ const SKELETON = `<header class="pad-bar" id="pad-bar"></header>
 function render(): void {
   // The relay is the authority on where we are once signed in: a reconnect
   // that lands us back in a room must not leave the lobby showing.
+  // Solo stands on its own: it never touches the server, so it needs no
+  // account, and a signed-out phone lands back on the sign-in screen when
+  // the game is left.
   const atTable = !!view.room || solo;
-  if (account && atTable) screen = 'table';
-  else if (account && screen === 'table') screen = 'lobby';
+  if (atTable && (account || solo)) screen = 'table';
+  else if (screen === 'table' || (screen === 'lobby' && !account)) screen = account ? 'lobby' : 'signin';
 
   if (screen !== 'table') {
     root.className = '';
@@ -1820,11 +1830,13 @@ function act(el: HTMLElement, ev: Event): void {
       return;
     }
     case 'solo-leave':
+    case 'solo-to-signin':
       saveSolo();
       solo = false;
       soloId = null;
       resetTable();
-      screen = 'lobby';
+      screen = account ? 'lobby' : 'signin';
+      error = null;
       render();
       return;
     case 'game-x':
