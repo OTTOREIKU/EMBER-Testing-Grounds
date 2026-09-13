@@ -349,8 +349,14 @@ body.ref-locked { position: fixed; left: 0; right: 0; width: 100%; overflow: hid
   display: flex; align-items: flex-end; justify-content: center;
 }
 #ref-detail[hidden] { display: none; }
+/* 92dvh, not 92vh. On a phone `vh` is the LARGE viewport - the screen with
+   the browser's bar hidden - so a full sheet stood taller than the visible
+   area and, bottom-aligned, pushed its own top (and the Back/Close circles
+   pinned to it) up behind the URL bar. Switching to the shorter Photo tab was
+   the only way a playtester could reach the close. The dynamic unit follows
+   the bar; the plain one stays as the fallback for browsers without it. */
 .ref-detail-inner {
-  position: relative; width: 100%; max-width: 720px; max-height: 92vh; overflow-y: auto;
+  position: relative; width: 100%; max-width: 720px; max-height: 92vh; max-height: 92dvh; overflow-y: auto;
   background: var(--surface); border-radius: 14px 14px 0 0;
   padding: 18px 16px calc(30px + env(safe-area-inset-bottom, 0px));
   animation: ref-fade 0.16s ease;
@@ -598,7 +604,7 @@ body.ref-locked { position: fixed; left: 0; right: 0; width: 100%; overflow: hid
   .ref-group { grid-column: 1 / -1; }
   .card { margin-bottom: 0; }
   #ref-detail { align-items: center; padding: 24px; }
-  .ref-detail-inner { border-radius: 12px; max-height: 86vh; }
+  .ref-detail-inner { border-radius: 12px; max-height: 86vh; max-height: 86dvh; }
 }
 
 .mis-faq {
