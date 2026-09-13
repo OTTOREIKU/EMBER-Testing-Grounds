@@ -158,7 +158,10 @@ export type Command =
   // attacker, for attribution only: it may be a Projectile that is already
   // spent by the time the Grid is chosen, so this one is actor-optional.
   | { kind: 'dropBlackBox'; seat: Side; uid: number; itemId: string; to: { col: number; row: number } }
-  | { kind: 'advancePhase'; seat: Side }
+  // `sweep`: turn the End Phase's Token Management (3.7.2) with the round, for
+  // a table with no script to run markEndStep - the pad. Ignored when a script
+  // is present, because there the End Phase checklist already did it.
+  | { kind: 'advancePhase'; seat: Side; sweep?: boolean }
   | { kind: 'setPhase'; seat: Side; phase: number }
   | { kind: 'resetRounds'; seat: Side }
   | { kind: 'adjustCommandTokens'; seat: Side; pool: Side; delta: number }
@@ -2514,6 +2517,10 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
     if (r.phase < PHASES.length - 1) {
       r.phase++;
     } else {
+      if (cmd.sweep && !state.script) {
+        for (const x of state.tokens) ageTokens(x);
+        clearCommandTokens(state);
+      }
       r.phase = 0;
       r.n++;
       r.firstPlayer = r.firstPlayer === 's1' ? 's2' : 's1';
