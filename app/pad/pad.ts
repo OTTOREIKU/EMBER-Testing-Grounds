@@ -47,7 +47,7 @@ import { groupByFaction, openPartPicker } from '../src/partpicker';
 import { confirmDialog, promptDialog } from '../src/dialog';
 import { checkForUpdates, watchForUpdates } from '../src/updates';
 import { normaliseTasks } from '../src/tasks';
-import { chargeableSlots, maxLink, migrateState, pilotCard, structureOf, tidyUnitLabel, tokenCards } from '../src/units';
+import { chargeableSlots, maxLink, migrateState, pilotCard, structureOf, tokenCards } from '../src/units';
 import { MECH_LAYER_ORDER, newScriptState, PHASES, statusesFor, statusStacks, STATUSES } from '../src/types';
 import type { Card, GameState, ImportedSquad, MechLoadout, PartSlot, PartState, Side, Stance, Token } from '../src/types';
 
@@ -2016,7 +2016,10 @@ function act(el: HTMLElement, ev: Event): void {
           confirmLabel: 'Rename',
         });
         if (next === null) return;
-        const label = tidyUnitLabel(next.trim());
+        // NOT tidyUnitLabel: that strips the colour a squad file prefixes its
+        // units with, and a callsign a player typed is theirs as typed - a
+        // playtest's "Blue Two" came back as "Two". Whitespace only.
+        const label = next.replace(/\s+/g, ' ').trim().slice(0, 40);
         if (label && label !== t.label) send({ kind: 'renameUnit', seat: t.side, uid: t.uid, label });
       })();
       return;

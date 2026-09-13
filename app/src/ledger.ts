@@ -152,6 +152,13 @@ function unit(state: GameState, uid: number | undefined): string {
 // "adjustCommandTokens" -> "Adjust command tokens". The fallback that makes
 // "every kind has a label" true without a 103-entry table nobody would keep
 // current.
+const SLOT_WORD: Record<string, string> = {
+  torso: 'Torso', chasis: 'Chassis', leftHand: 'Left hand', rightHand: 'Right hand', backpack: 'Backpack', main: 'core',
+};
+function slotName(slot: string | undefined): string {
+  return (slot && SLOT_WORD[slot]) ?? slot ?? 'Part';
+}
+
 function humanise(kind: string): string {
   const words = kind.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase();
   return words.charAt(0).toUpperCase() + words.slice(1);
@@ -170,6 +177,12 @@ type AnyCmd = {
   mode?: string;
   stance?: string;
   label?: string;
+  state?: string;
+  name?: string;
+  mission?: string | null;
+  vp?: { s1?: number; s2?: number };
+  ready?: boolean;
+  phase?: number;
   to?: { col: number; row: number };
   at?: { col: number; row: number };
   free?: boolean;
@@ -228,6 +241,21 @@ export function labelFor(cmd: { kind: string }, state: GameState, names?: Ledger
     case 'ageStatus': label = `${target()}'s ${c.statusId ?? 'status'} Token ages`; break;
     case 'setStance': label = `${who()} switches to ${c.stance ?? 'a new'} Stance`; break;
     case 'renameUnit': label = `${who()} is now called ${c.label ?? 'something else'}`; break;
+    // The pad's bookkeeping, which used to fall through to the humanised kind
+    // ("Set part state") in the other player's toast.
+    case 'setPartState': label = `${who()}'s ${slotName(c.slot)} is ${c.state ?? 'changed'}`; break;
+    case 'importSquad': label = `${c.name ? c.name : 'A squad'} joins the table`; break;
+    case 'award': {
+      const s1 = c.vp?.s1 ?? 0, s2 = c.vp?.s2 ?? 0;
+      const part = (n: number, side: string) => (n ? `${side} ${n > 0 ? '+' : ''}${n} VP` : '');
+      label = [part(s1, 'Squad 1'), part(s2, 'Squad 2')].filter(Boolean).join(', ') || 'Score adjusted'; break;
+    }
+    case 'configureTable': label = c.mission === undefined ? 'Table settings changed' : c.mission ? 'Main Task chosen' : 'Main Task cleared'; break;
+    case 'pickSecondary': label = `Squad ${c.seat === 's2' ? 2 : 1} picks a Secondary Task`; break;
+    case 'advancePhase': label = 'The phase turns'; break;
+    case 'setPhase': label = 'The phase is set back'; break;
+    case 'resetRounds': label = 'The rounds start over'; break;
+    case 'setReady': label = `Squad ${c.seat === 's2' ? 2 : 1} is ${c.ready === false ? 'not ready' : 'ready'} to continue`; break;
 
     // ---------- the board and the missions ----------
     case 'takeBlackBox': label = `${who()} picks up a Black Box`; break;
