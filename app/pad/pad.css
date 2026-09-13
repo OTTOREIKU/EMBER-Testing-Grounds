@@ -356,6 +356,13 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
 .pad-bar-round:hover, .pad-bar-vp:hover { background: var(--surface3); }
 .pad-bar-round b { font-family: var(--mono); font-size: 14px; font-weight: 700; color: var(--accent); }
 .pad-bar-round small { font-size: 11px; color: var(--text2); }
+/* The agreement's state, in a room: Continue at rest, waiting once this player
+   has pressed, and lit when the other player already has. */
+.pad-bar-round em { font-style: normal; font-size: 10.5px; color: var(--text3); white-space: nowrap; }
+.pad-bar-round.wait { background: var(--surface3); }
+.pad-bar-round.wait em { color: var(--text2); }
+.pad-bar-round.go { background: var(--accent-lt); }
+.pad-bar-round.go em { color: var(--accent); font-weight: 600; }
 .pad-bar-vp b { font-family: var(--mono); font-size: 16px; font-weight: 700; min-width: 1.2em; text-align: center; font-variant-numeric: tabular-nums; }
 .pad-bar-vp span { color: var(--text3); font-size: 13px; }
 

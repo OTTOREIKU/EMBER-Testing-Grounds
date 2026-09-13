@@ -48,7 +48,7 @@ import { confirmDialog, promptDialog } from '../src/dialog';
 import { checkForUpdates, watchForUpdates } from '../src/updates';
 import { normaliseTasks } from '../src/tasks';
 import { chargeableSlots, maxLink, migrateState, pilotCard, structureOf, tidyUnitLabel, tokenCards } from '../src/units';
-import { MECH_LAYER_ORDER, PHASES, statusesFor, statusStacks, STATUSES } from '../src/types';
+import { MECH_LAYER_ORDER, newScriptState, PHASES, statusesFor, statusStacks, STATUSES } from '../src/types';
 import type { Card, GameState, ImportedSquad, MechLoadout, PartSlot, PartState, Side, Stance, Token } from '../src/types';
 
 const root = document.getElementById('pad-root')!;
@@ -104,6 +104,28 @@ function resetTable(): void {
 let data: GameData | null = null;
 let dataError: string | null = null;
 
+// A snapshot read back in, MIGRATED the way the Match Centre migrates its
+// checkpoints, so a table saved on last month's build reloads with this
+// month's fields - with one correction. migrateState always normalises a
+// `script`, and a script is the GUIDED game: with one present, advancePhase
+// demands the designation loop be finished and both players ready, which a
+// record sheet with no board can never satisfy. That is exactly what stopped
+// two playtesters at "Both players press Continue". A table that arrived
+// without a script stays without one; a table opened from the board keeps its.
+function migrated(raw: unknown): GameState | null {
+  const m = data ? migrateState(raw, data) : null;
+  if (!m) return null;
+  const had = !!raw && typeof raw === 'object' && !!(raw as { script?: unknown }).script;
+  if (!had) m.script = undefined;
+  // A checkpoint written by an earlier pad build can carry a script that was
+  // never anything but the normaliser's blank: nobody designated, nobody
+  // passed, no round was ever scripted. That blank is the fabricated one, so
+  // it goes too - which is what lets a table already open when this shipped
+  // turn its phase without reloading.
+  else if (m.script && JSON.stringify(m.script) === JSON.stringify(newScriptState(m.round.firstPlayer))) m.script = undefined;
+  return m;
+}
+
 const relay = new Relay(api.base, {
   onRolled: () => {},
   // The other phone's commands land on the shared table. applyRemote is the
@@ -113,7 +135,11 @@ const relay = new Relay(api.base, {
   onCommand: (cmd) => {
     if (!data) return;
     applyRemote(data, table, cmd as Command);
-    if (!catchingUp) toastRemote(cmd as Command);
+    if (!catchingUp) {
+      toastRemote(cmd as Command);
+      // The other player's Continue may have completed the pair.
+      if ((cmd as Command).kind === 'setReady') maybeAdvance();
+    }
     render();
   },
   // A late joiner is handed the whole table. It arrives as `unknown` because
@@ -121,9 +147,7 @@ const relay = new Relay(api.base, {
   // Match Centre migrates its checkpoints: a raw cast silently drops any field
   // migrateState knows about that the sender's build did not.
   onCheckpoint: (s) => {
-    const m = data ? migrateState(s, data) : null;
-    if (m) table = m;
-    else if (s && typeof s === 'object') table = s as GameState;
+    table = migrated(s) ?? ((s && typeof s === 'object') ? (s as GameState) : table);
     render();
   },
   onCatchUp: (active) => {
@@ -733,6 +757,46 @@ function tokenArt(id: string, expiring: boolean): string {
 
 // ---------- the table bar ----------
 
+// WHO HAS PRESSED CONTINUE. The Match Centre's phase turn is a two-player
+// agreement, and OTTO wants the pad's to be one too: one player reading a
+// card is not a player who agreed to move on. The engine's own agreement
+// lives inside the guided script, which a record sheet has no way to satisfy
+// (it would also wait for a designation loop nobody runs here), so the pad
+// runs the same agreement itself on `state.ready`, which setReady writes and
+// advancePhase clears. Solo has nobody to agree with and turns the phase.
+function readiness(): { me: boolean; them: boolean } {
+  const r = table.ready ?? {};
+  return { me: !!r[mySeat()], them: !!r[otherSeat()] };
+}
+
+// Turns the phase once BOTH are ready - from ONE seat only. Both pads see the
+// pair complete, one on its own press and one on the other's arriving, and
+// two advancePhase commands would turn the phase twice. Seat 1 is the one
+// that sends; seat 2's press is a setReady that seat 1 answers.
+function maybeAdvance(): void {
+  if (!view.room) return;
+  const rd = readiness();
+  if (!rd.me || !rd.them || mySeat() !== 's1') return;
+  if (send({ kind: 'advancePhase', seat: 's1' })) toast(`${PHASES[table.round.phase]} Phase, round ${table.round.n}.`);
+}
+
+function pressContinue(): void {
+  if (!view.room) {
+    if (send({ kind: 'advancePhase', seat: mySeat() })) toast(`${PHASES[table.round.phase]} Phase, round ${table.round.n}.`);
+    return;
+  }
+  const me = mySeat();
+  if (readiness().me) {
+    // A second tap takes the readiness back, for the player who pressed
+    // early and then found a Token to place.
+    if (send({ kind: 'setReady', seat: me, ready: false })) toast('Not ready yet.');
+    return;
+  }
+  if (!send({ kind: 'setReady', seat: me, ready: true })) return;
+  if (!readiness().them) toast(`Waiting for ${sideName(otherSeat())} to continue.`);
+  maybeAdvance();
+}
+
 function barHtml(): string {
   const room = view.room;
   const me = mySeat();
@@ -747,9 +811,17 @@ function barHtml(): string {
       name ? esc(name) : `<span class="pad-bar-dim">${esc(room.id)}</span>`}</span>`;
   } else who = '<span class="pad-bar-name pad-bar-dim">Solo</span>';
   const r = table.round;
+  const rd = readiness();
+  const roundLabel = `<b>R${r.n}</b><small>${esc(PHASES[r.phase] ?? '')}</small>`;
+  // In a room the chip is the Continue of a two-player agreement, and says
+  // where the agreement stands; solo it simply turns the phase.
+  const state = !room ? '' : rd.me && !rd.them ? ' wait' : rd.them && !rd.me ? ' go' : '';
+  const hint = !room ? '' : rd.me && !rd.them
+    ? `<em>waiting for ${esc(sideName(them))}</em>`
+    : rd.them && !rd.me ? `<em>${esc(sideName(them))} is ready</em>` : '<em>Continue</em>';
   return `<div class="pad-bar-l" data-act="dock" data-dock="more" role="button">${who}</div>
-    <button class="pad-bar-round" data-act="phase" title="Next phase">
-      <b>R${r.n}</b><small>${esc(PHASES[r.phase] ?? '')}</small>
+    <button class="pad-bar-round${state}" data-act="phase" title="${room ? (rd.me ? 'Waiting for the other player. Tap again to take it back.' : 'Ready to move on') : 'Next phase'}">
+      ${roundLabel}${hint}
     </button>
     <button class="pad-bar-vp" data-act="dock" data-dock="tasks" title="Tasks and score">
       <b style="color:${sideColour(me)}">${vp[me]}</b><span>:</span><b style="color:${sideColour(them)}">${vp[them]}</b>
@@ -1143,7 +1215,7 @@ function morePanel(): string {
       <span class="pad-num">R${r.n}<span class="pad-of"> · ${esc(PHASES[r.phase] ?? '')}</span></span>
       <div class="pad-chips">
         <button class="pad-chip" data-act="phase-back">Back a phase</button>
-        <button class="pad-chip on" data-act="phase">Next phase</button>
+        <button class="pad-chip on" data-act="phase">${room ? (readiness().me ? 'Waiting…' : 'Continue') : 'Next phase'}</button>
       </div>
     </div>
     <button class="pad-link" data-act="rounds-reset">Start the rounds over</button>
@@ -1607,6 +1679,11 @@ function toastsHtml(): string {
 function toastRemote(cmd: Command): void {
   const c = cmd as Command & { uid?: number; targetUid?: number };
   const tableWide = new Set(['award', 'pickSecondary', 'configureTable', 'advancePhase', 'setPhase', 'resetRounds', 'importSquad']);
+  if (cmd.kind === 'setReady') {
+    const ready = (cmd as { ready?: boolean }).ready;
+    toast(ready ? `${sideName(otherSeat())} is ready to move on.` : `${sideName(otherSeat())} is not ready yet.`);
+    return;
+  }
   const target = table.tokens.find((x) => x.uid === (c.targetUid ?? c.uid));
   if (!tableWide.has(cmd.kind) && !(target && target.side === mySeat())) return;
   toast(labelFor(cmd, table, names()).label, true);
@@ -1824,9 +1901,7 @@ function act(el: HTMLElement, ev: Event): void {
       resetTable();
       solo = true;
       soloId = g.id;
-      // MIGRATED rather than cast, so a game tracked on last month's build
-      // reloads with this month's fields.
-      table = (data ? migrateState(g.table, data) : null) ?? g.table;
+      table = migrated(g.table) ?? g.table;
       error = null;
       toast(`Picked up ${g.name}.`);
       render();
@@ -1901,9 +1976,7 @@ function act(el: HTMLElement, ev: Event): void {
       return;
     }
     case 'close-panel': panel = null; picking = null; error = null; render(); return;
-    case 'phase':
-      if (send({ kind: 'advancePhase', seat: mySeat() })) toast(`${PHASES[table.round.phase]} Phase, round ${table.round.n}.`);
-      return;
+    case 'phase': pressContinue(); return;
     case 'phase-back': {
       const r = table.round;
       if (r.phase > 0) send({ kind: 'setPhase', seat: mySeat(), phase: r.phase - 1 });
