@@ -48,7 +48,7 @@ import { confirmDialog, promptDialog } from '../src/dialog';
 import { checkForUpdates, watchForUpdates } from '../src/updates';
 import { normaliseTasks } from '../src/tasks';
 import { chargeableSlots, maxLink, migrateState, pilotCard, structureOf, tokenCards } from '../src/units';
-import { MECH_LAYER_ORDER, newScriptState, PHASES, statusesFor, statusStacks, STATUSES } from '../src/types';
+import { MECH_LAYER_ORDER, newScriptState, PHASES, SCALES, statusesFor, statusStacks, STATUSES } from '../src/types';
 import type { Card, GameState, ImportedSquad, MechLoadout, PartSlot, PartState, Side, Stance, Token } from '../src/types';
 
 const root = document.getElementById('pad-root')!;
@@ -175,6 +175,10 @@ const relay = new Relay(api.base, {
     if (v.room) {
       closedRoom = v.room.id;
       rememberRoom();
+      if (setupPending && v.host) {
+        setupPending = false;
+        panel = 'setup';
+      }
     }
     // A relay failure that is really an expired session looks EXACTLY like a
     // dropped connection: the upgrade is answered 401, the browser cannot tell
@@ -215,7 +219,7 @@ onRefused((why) => {
 
 type Screen = 'signin' | 'register' | 'lobby' | 'table';
 // The panels that slide over the sheet. Null is the resting state: the sheet.
-type Panel = 'tasks' | 'find' | 'more' | 'build' | null;
+type Panel = 'tasks' | 'find' | 'more' | 'build' | 'setup' | null;
 type FindScope = 'all' | 'table' | 'parts' | 'units' | 'pilots' | 'tactics' | 'keywords' | 'tasks' | 'rules';
 
 let account: Account | null = null;
@@ -240,6 +244,8 @@ let sheetUid: number | null = null;
 // sheet is a list, and two open rows push the tokens off the screen.
 let openSlot: string | null = null;
 let panel: Panel = null;
+// The host is shown the table setup once, when the room comes up.
+let setupPending = false;
 // Which picker the Tasks panel has open, if any.
 let picking: 'main' | 'secondary' | null = null;
 // Whose Secondary the picker is choosing. Only ever the other squad's solo,
@@ -764,6 +770,30 @@ function tokenArt(id: string, expiring: boolean): string {
 // (it would also wait for a designation loop nobody runs here), so the pad
 // runs the same agreement itself on `state.ready`, which setReady writes and
 // advancePhase clears. Solo has nobody to agree with and turns the phase.
+function roundLimit(): number {
+  return table.roundLimit ?? 5;
+}
+
+// Past the last round's End Phase the game is over: the round counter stands
+// one past the limit, which travels with the table, so both phones agree.
+function gameOver(): boolean {
+  return table.round.n > roundLimit();
+}
+
+function scaleOf(): { name: string; points: number } {
+  const s = SCALES.find((x) => x.id === (table.scale ?? 'standard')) ?? SCALES[1];
+  return { name: s.name, points: s.points };
+}
+
+// The phase turn. Leaving the End Phase sweeps the Tokens (3.7.2) with it.
+function advanceCmd(seat: Side): Command {
+  return { kind: 'advancePhase', seat, sweep: table.round.phase === PHASES.length - 1 };
+}
+
+function afterAdvance(): void {
+  toast(gameOver() ? 'Game over.' : `${PHASES[table.round.phase]} Phase, round ${table.round.n}.`);
+}
+
 function readiness(): { me: boolean; them: boolean } {
   const r = table.ready ?? {};
   return { me: !!r[mySeat()], them: !!r[otherSeat()] };
@@ -777,12 +807,13 @@ function maybeAdvance(): void {
   if (!view.room) return;
   const rd = readiness();
   if (!rd.me || !rd.them || mySeat() !== 's1') return;
-  if (send({ kind: 'advancePhase', seat: 's1' })) toast(`${PHASES[table.round.phase]} Phase, round ${table.round.n}.`);
+  if (send(advanceCmd('s1'))) afterAdvance();
 }
 
 function pressContinue(): void {
+  if (gameOver()) return;
   if (!view.room) {
-    if (send({ kind: 'advancePhase', seat: mySeat() })) toast(`${PHASES[table.round.phase]} Phase, round ${table.round.n}.`);
+    if (send(advanceCmd(mySeat()))) afterAdvance();
     return;
   }
   const me = mySeat();
@@ -812,7 +843,14 @@ function barHtml(): string {
   } else who = '<span class="pad-bar-name pad-bar-dim">Solo</span>';
   const r = table.round;
   const rd = readiness();
-  const roundLabel = `<b>R${r.n}</b><small>${esc(PHASES[r.phase] ?? '')}</small>`;
+  if (gameOver()) {
+    return `<div class="pad-bar-l" data-act="dock" data-dock="more" role="button">${who}</div>
+    <button class="pad-bar-round over" data-act="dock" data-dock="tasks"><b>Game over</b><small>${roundLimit()} rounds</small></button>
+    <button class="pad-bar-vp" data-act="dock" data-dock="tasks" title="Tasks and score">
+      <b style="color:${sideColour(me)}">${vp[me]}</b><span>:</span><b style="color:${sideColour(them)}">${vp[them]}</b>
+    </button>`;
+  }
+  const roundLabel = `<b>R${r.n}<i>/${roundLimit()}</i></b><small>${esc(PHASES[r.phase] ?? '')}</small>`;
   // In a room the chip is the Continue of a two-player agreement, and says
   // where the agreement stands; solo it simply turns the phase.
   const state = !room ? '' : rd.me && !rd.them ? ' wait' : rd.them && !rd.me ? ' go' : '';
@@ -1087,6 +1125,7 @@ function dockHtml(): string {
 
 function panelHtml(): string {
   if (!data) return `<div class="pad-panel-in"><p class="pad-status">Loading the card database…</p></div>`;
+  if (panel === 'setup') return setupPanel();
   if (panel === 'tasks') return tasksPanel();
   if (panel === 'find') return findPanel();
   if (panel === 'build') return buildPanel();
@@ -1097,6 +1136,26 @@ function panelHead(title: string): string {
   return `<div class="pad-panel-head">
     <h2 class="pad-h">${esc(title)}</h2>
     <button class="dlg-close pad-panel-x" data-act="close-panel" aria-label="Close">✕</button>
+  </div>`;
+}
+
+// ---------- table setup ----------
+//
+// Rounds and battle scale, both configureTable fields the table already
+// carries, so a guest sees the host's choice and either may change it.
+
+function setupPanel(): string {
+  const limit = roundLimit();
+  const rounds = [...new Set([3, 4, 5, 6, limit])].sort((a, b) => a - b);
+  return `<div class="pad-panel-in">${panelHead(view.room ? 'Table' : 'Game')}
+    ${errHtml()}
+    <p class="pad-label pad-sec" style="margin-top:0">Rounds</p>
+    <div class="pad-chips">${rounds.map((n) => `<button class="pad-chip${n === limit ? ' on' : ''}" data-act="set-rounds" data-n="${n}">${n}</button>`).join('')}</div>
+    <p class="pad-label pad-sec">Points</p>
+    <div class="pad-chips">${SCALES.map((s) => `<button class="pad-chip${(table.scale ?? 'standard') === s.id ? ' on' : ''}" data-act="set-scale" data-id="${s.id}">${s.points}<span class="fc-n">${esc(s.name)}</span></button>`).join('')}</div>
+    <div class="pad-foot">
+      <button class="pad-btn primary" data-act="close-panel">Start</button>
+    </div>
   </div>`;
 }
 
@@ -1207,14 +1266,18 @@ function morePanel(): string {
   return `<div class="pad-panel-in">${panelHead(room ? 'Table' : 'Tracking solo')}
     ${errHtml()}
     ${room ? `<div class="pad-room">${esc(room.id)}</div>
-      ${seats}` : '<p class="pad-lead">One phone keeps both squads. Everything here stays on this phone.</p>'}
+      ${seats}` : ''}
 
     <p class="pad-label pad-sec">Round</p>
     <div class="pad-row">
-      <span class="pad-num">R${r.n}<span class="pad-of"> · ${esc(PHASES[r.phase] ?? '')}</span></span>
+      <span class="pad-label">${roundLimit()} rounds · ${scaleOf().points} points</span>
+      <button class="pad-chip" data-act="open-setup">Change</button>
+    </div>
+    <div class="pad-row">
+      <span class="pad-num">${gameOver() ? 'Over' : `R${r.n}`}<span class="pad-of"> · ${gameOver() ? 'final' : esc(PHASES[r.phase] ?? '')}</span></span>
       <div class="pad-chips">
         <button class="pad-chip" data-act="phase-back">Back a phase</button>
-        <button class="pad-chip on" data-act="phase">${room ? (readiness().me ? 'Waiting…' : 'Continue') : 'Next phase'}</button>
+        ${gameOver() ? '' : `<button class="pad-chip on" data-act="phase">${room ? (readiness().me ? 'Waiting…' : 'Continue') : 'Next phase'}</button>`}
       </div>
     </div>
     <button class="pad-link" data-act="rounds-reset">Start the rounds over</button>
@@ -1869,7 +1932,7 @@ function act(el: HTMLElement, ev: Event): void {
         screen = 'signin';
       });
       return;
-    case 'host': error = null; resetTable(); relay.host(); render(); return;
+    case 'host': error = null; resetTable(); setupPending = true; relay.host(); render(); return;
     case 'join': {
       const code = form.join.trim().toUpperCase();
       if (!code) {
@@ -1888,6 +1951,7 @@ function act(el: HTMLElement, ev: Event): void {
       solo = true;
       soloId = `g${Date.now().toString(36)}`;
       error = null;
+      panel = 'setup';
       saveSolo();
       render();
       return;
@@ -1971,6 +2035,9 @@ function act(el: HTMLElement, ev: Event): void {
       return;
     }
     case 'close-panel': panel = null; picking = null; error = null; render(); return;
+    case 'open-setup': panel = 'setup'; render(); return;
+    case 'set-rounds': send({ kind: 'configureTable', seat: mySeat(), roundLimit: Number(el.dataset.n) }); return;
+    case 'set-scale': send({ kind: 'configureTable', seat: mySeat(), scale: el.dataset.id as GameState['scale'] }); return;
     case 'phase': pressContinue(); return;
     case 'phase-back': {
       const r = table.round;
