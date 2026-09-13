@@ -866,7 +866,11 @@ function sheetHtml(): string {
   const mine = canCommand(t);
   const yours = t.side === mySeat();
   const link = t.link ?? 0;
-  const isMech = t.kind === 'mech';
+  // A Mech whose Torso is destroyed is out of the game (4.4.4): no Link to
+  // spend, no Stance to hold, no Ammo or Charge to track. The Parts stay, for
+  // the record, and the damage marks still work.
+  const wrecked = (t.partStates[t.kind === 'mech' ? 'torso' : 'main'] ?? 'intact') === 'destroyed';
+  const isMech = t.kind === 'mech' && !wrecked;
   return `<div class="pad-sheet-in">${top}
     ${unitHead(t, yours)}
     ${isMech ? `<div class="pad-row">
@@ -889,8 +893,8 @@ function sheetHtml(): string {
     <p class="pad-label pad-sec">Parts</p>
     ${partRows(t)}
 
-    ${mine && ammoRows(t) ? `<p class="pad-label pad-sec">Ammo</p>${ammoRows(t)}` : ''}
-    ${mine && chargeRow(t) ? `<p class="pad-label pad-sec">Charge</p>${chargeRow(t)}` : ''}
+    ${mine && !wrecked && ammoRows(t) ? `<p class="pad-label pad-sec">Ammo</p>${ammoRows(t)}` : ''}
+    ${mine && !wrecked && chargeRow(t) ? `<p class="pad-label pad-sec">Charge</p>${chargeRow(t)}` : ''}
 
     <p class="pad-label pad-sec">Tokens</p>
     ${tokenRow(t)}
@@ -983,8 +987,7 @@ function partOpen(card: Card, st: PartState): string {
     .map((label) => `<a class="kw-link" data-kw="${esc(label)}">${esc(label)}</a>`)
     .join('');
   const text = card.description?.en?.trim() && !/[぀-ヿ一-鿿]/.test(card.description.en) ? card.description.en : '';
-  return `${st === 'destroyed' ? '<p class="ref-note pad-dead-note">Destroyed: its Actions cannot be used (4.4.4).</p>' : ''}
-    ${acts || '<p class="ref-note">No Actions on this Part.</p>'}
+  return `${acts || '<p class="ref-note">No Actions on this Part.</p>'}
     ${text ? `<div class="ref-cardtext"><p>${linkKeywords(text).replace(/\n/g, '<br>')}</p></div>` : ''}
     ${kws ? `<div class="ref-kwlinks">${kws}</div>` : ''}`;
 }
@@ -1016,7 +1019,7 @@ function tokenRow(t: Token): string {
   const expiring = new Set(t.expiring ?? []);
   const chips = worn.map(({ def, n }) => {
     const art = tokenArt(def.id, expiring.has(def.id));
-    return `<button class="pad-tok${tokManage === def.id ? ' on' : ''}${expiring.has(def.id) ? ' red' : ''}" data-act="tok" data-tok="${esc(def.id)}" title="${esc(def.label)}: tap to age it, hold to read it">
+    return `<button class="pad-tok${tokManage === def.id ? ' on' : ''}${expiring.has(def.id) ? ' red' : ''}" data-act="tok" data-tok="${esc(def.id)}" title="${esc(def.label)}">
       ${art ? `<img src="${esc(art)}" alt="${esc(def.label)}" />` : `<span class="pad-tok-txt">${esc(def.icon)}</span>`}
       ${n > 1 ? `<span class="pad-tok-n">${n}</span>` : ''}
     </button>`;
@@ -1039,9 +1042,6 @@ function tokenRow(t: Token): string {
         <button class="pad-chip" data-act="tok-drop" data-tok="${esc(managed.id)}">Remove</button>
       </div>
       <p class="pad-tokinfo-rule">${linkKeywords(managed.rule)}</p>
-      <p class="pad-note" style="margin-top:4px">${managed.decay
-        ? `A ${managed.decay} Token: a tap turns it red, and a tap on a red one takes it off (2.5.3). The pad does not sweep Tokens when the round turns; this is the sweep.`
-        : 'No decay printed on it: a tap takes it off.'}</p>
     </div>` : ''}
     ${tokPick ? `<div class="pad-tokpop">${add}</div>` : ''}`;
 }
@@ -1178,7 +1178,7 @@ function tasksPanel(): string {
     ${slot('Your Secondary', secondaryOf(me), secondaryImageUrl, secondaryOf(me) ? `data-secondary="${esc(secondaryOf(me)!.id)}"` : '', 'pick-sec')}
     ${slot('Their Secondary', secondaryOf(them), secondaryImageUrl, secondaryOf(them) ? `data-secondary="${esc(secondaryOf(them)!.id)}"` : '', solo ? 'pick-sec-them' : null)}
     <p class="pad-label pad-sec">Notes</p>
-    <textarea class="pad-input" id="pad-notes" rows="3" placeholder="Your own notes. They stay on this phone."></textarea>
+    <textarea class="pad-input" id="pad-notes" rows="3" placeholder="Notes"></textarea>
   </div>`;
 }
 
@@ -1207,7 +1207,6 @@ function morePanel(): string {
   return `<div class="pad-panel-in">${panelHead(room ? 'Table' : 'Tracking solo')}
     ${errHtml()}
     ${room ? `<div class="pad-room">${esc(room.id)}</div>
-      <p class="pad-note" style="text-align:center;margin:0 0 10px">Read the code out for the other player to join.</p>
       ${seats}` : '<p class="pad-lead">One phone keeps both squads. Everything here stays on this phone.</p>'}
 
     <p class="pad-label pad-sec">Round</p>
@@ -1245,16 +1244,14 @@ function morePanel(): string {
     <div class="pad-foot">
       ${room
         ? `<button class="pad-btn" data-act="leave">Leave the table</button>
-           <p class="pad-note">The table stays open for an hour after the last move, and its code stays on your lobby to come back to.</p>
            ${view.host ? '<button class="pad-link" data-act="close-room">Close the table for everyone</button>' : ''}`
         : `<button class="pad-btn" data-act="solo-leave">Leave the game</button>
-           <p class="pad-note">Saved on this phone. Pick it up again from the lobby.</p>
            <button class="pad-link" data-act="solo-end">Delete this game</button>`}
       ${account
         ? `<button class="pad-link" data-act="signout">Sign out</button>
            <p class="pad-note">Signed in as ${esc(account.username)}${room ? ` · seat ${me === 's1' ? '1' : '2'}` : ''}</p>`
         : `<button class="pad-link" data-act="solo-to-signin">Sign in</button>
-           <p class="pad-note">Not signed in. This game is kept on the phone; a table shared with another player needs an account.</p>`}
+           <p class="pad-note">Not signed in</p>`}
     </div>
   </div>`;
 }
@@ -1925,7 +1922,6 @@ function act(el: HTMLElement, ev: Event): void {
         const g = savedGames().find((x) => x.id === id);
         const sure = await confirmDialog({
           title: `Delete ${g?.name ?? 'this game'}?`,
-          body: 'It is removed from this phone. Nothing else keeps a copy.',
           confirmLabel: 'Delete it',
           danger: true,
         });
@@ -1953,7 +1949,6 @@ function act(el: HTMLElement, ev: Event): void {
         const id = view.room?.id;
         const sure = await confirmDialog({
           title: 'Close the table for everyone?',
-          body: 'The room is ended on the server. The other player is put out, and the code stops working.',
           confirmLabel: 'Close it',
           danger: true,
         });
@@ -1985,7 +1980,7 @@ function act(el: HTMLElement, ev: Event): void {
     }
     case 'rounds-reset':
       void (async () => {
-        const sure = await confirmDialog({ title: 'Start the rounds over?', body: 'Round 1, Command Phase. Units and scores stay as they are.', confirmLabel: 'Start over' });
+        const sure = await confirmDialog({ title: 'Start the rounds over?', body: 'Round 1, Command Phase.', confirmLabel: 'Start over' });
         if (sure) send({ kind: 'resetRounds', seat: mySeat() });
       })();
       return;
@@ -2011,7 +2006,6 @@ function act(el: HTMLElement, ev: Event): void {
       void (async () => {
         const next = await promptDialog({
           title: `Rename ${t.label}`,
-          body: 'A callsign, so two of the same build can be told apart.',
           value: t.label,
           confirmLabel: 'Rename',
         });
@@ -2055,7 +2049,7 @@ function act(el: HTMLElement, ev: Event): void {
       const gone = red || !def?.decay;
       tokManage = null;
       if (send({ kind: 'ageStatus', ...sourceFor(t), targetUid: t.uid, statusId: id })) {
-        toast(gone ? `${def?.label ?? id} comes off.` : `${def?.label ?? id} turns red: it comes off next.`, true);
+        toast(gone ? `${def?.label ?? id} comes off.` : `${def?.label ?? id} turns red.`, true);
       }
       return;
     }
