@@ -3546,7 +3546,7 @@ export class AttackHelper {
     const offer = document.createElement('span');
     offer.className = 'rerolls';
     const go = document.createElement('button');
-    go.textContent = free ? 'Focus: reroll the Black Die (free, Will to Survive)' : 'Focus: reroll the Black Die (1 Link)';
+    go.innerHTML = free ? 'Focus: reroll the Black Die<small>free, Will to Survive</small>' : 'Focus: reroll the Black Die<small>1 Link</small>';
     go.title = 'The Part Die is a roll like any other, so Focus may reroll it (4.10). Once, and the new result stands.';
     go.addEventListener('click', () => {
       offer.remove();
@@ -5449,7 +5449,7 @@ export class ElectronicHelper {
       if (!spent && canAffordFocus(this.data, t)) {
         const rr = document.createElement('button');
         rr.className = 'ah-cancel';
-        rr.textContent = freeFocus ? 'Focus reroll (free, Will to Survive)' : 'Focus reroll (1 Link)';
+        rr.innerHTML = freeFocus ? 'Focus reroll<small>free, Will to Survive</small>' : 'Focus reroll<small>1 Link</small>';
         // Built for both players so each can see the other's offer standing,
         // live only for the one whose Link pays for it.
         rr.disabled = !this.mayPress(who);

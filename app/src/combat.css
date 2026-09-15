@@ -1,3 +1,18 @@
+/* ---------- the tokens the window draws with, on any host ----------
+   The board's stylesheet defines these too (styles.css, same values); the pad
+   does not load that sheet, and a die with no --die-* fill drew as an empty
+   box with icons in it. Declared here so the window carries its own colours. */
+:root {
+  --die-red: #d33a3a;
+  --die-yellow: #e6a817;
+  --die-white: #ececec;
+  --die-blue: #3a7bd3;
+  --die-black: #26262a;
+  --blue: #65a2d8;
+  --blue-lt: rgba(101, 162, 216, 0.14);
+  --green-lt: rgba(61, 220, 132, 0.13);
+}
+
 /* The ATTACK WINDOW and the dice it rolls - the shared AttackHelper (combat.ts),
  * the dice tray and results, the dice duel, and the pickable chips. Moved out
  * of styles.css whole rather than copied, the way partpicker.css and
@@ -131,6 +146,11 @@
 /* And they wrap: two or three offers in a 300px column cannot share one line
    without being crushed, so each takes what it needs and the next follows. */
 .rerolls { flex-wrap: wrap; }
+/* The cost sits on its own line under the offer, so a phone never cuts
+   "(1 Link)" off the end. */
+.rerolls button small { display: block; font-size: 10.5px; font-weight: 500; opacity: 0.8; text-transform: none; margin-top: 2px; }
+/* The reroll offers sit UNDER the dice, never beside them. */
+.ah-roll .rerolls, .ah-roll + .rerolls { flex: 1 1 100%; width: 100%; margin-top: 8px; }
 /* THESE READ AS BUTTONS, ALWAYS. OTTO: "I sometimes don't see them after I am
    doing a focus reroll because they are just tiny text under the dice." They
    were --surface2 on --surface, which is barely a step, and the Focus reroll is

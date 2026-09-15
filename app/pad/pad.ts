@@ -33,7 +33,7 @@ import '../src/partpicker.css';
 // The attack window's own stylesheet, shared with the board and the Match
 // Centre: the pad draws the same window.
 import '../src/combat.css';
-import { EmberApi, ApiError, type Account, type RegistrationInfo } from '../src/api';
+import { EmberApi, ApiError, type Account, type RegistrationInfo, type SquadEntry } from '../src/api';
 import { Relay, type NetView } from '../src/net';
 import { applyRemote, check, onBeforeApply, onPerformed, onRefused, perform, type Command } from '../src/commands';
 import { glueAfter } from '../src/glue';
@@ -56,6 +56,9 @@ import { groupByFaction, openPartPicker } from '../src/partpicker';
 import { choiceDialog, confirmDialog, promptDialog } from '../src/dialog';
 import { checkForUpdates, watchForUpdates } from '../src/updates';
 import { normaliseTasks } from '../src/tasks';
+import { tacticFitsPhase, tacticSpec, tacticTargets, type TacticCtx } from '../src/tactics';
+import { explosionScope, smokePlacement, squadAllegiance } from '../src/units';
+import { gameResult } from '../src/tasks';
 import { canBeLoad, chargeableSlots, electronicDash, electronicValue, guidedActions, initiativeFor, interceptCapacity, isCarrier, isDeployable, isElectronicAttack, maneuverRange, maxLink, migrateState, parryParts, pilotCard, structureOf, tokenCards, volleyOf } from '../src/units';
 import { lengthOf, LENGTH_NAME, timingOf } from '../src/ticks';
 import { MECH_LAYER_ORDER, newScriptState, PHASES, SCALES, statusesFor, statusStacks, STATUSES, TIMINGS } from '../src/types';
@@ -742,6 +745,13 @@ async function importFromFile(file: File): Promise<void> {
     squad.drones,
   );
   if (!ok) return;
+  // The hand comes with the squad, merged into whatever the side already
+  // holds; a duplicate would be refused whole (FAQ P2).
+  if (squad.tactics?.length) {
+    const seat = solo ? squadSide : mySeat();
+    const merged = [...new Set([...(table.tactics?.[seat] ?? []), ...squad.tactics])];
+    send({ kind: 'setTactics', seat, cards: merged });
+  }
   // NEVER swallow unknownIds. A squad built in the community builder can name a
   // Part we do not ship; dropping those in silence hands a player a squad
   // quietly missing a weapon.
@@ -851,6 +861,14 @@ const guide: GuideApi = {
   pressContinue: () => pressContinue(),
   readiness: () => readiness(),
   check: (cmd) => check(data!, table, cmd),
+  endGame: () => { void endGame(); },
+  detonate: (uid, actionId) => { const t = unitOf(uid); if (t) void detonate(t, actionId); },
+  tactics: (side) => ({
+    playable: guidedOn(table) && !playedThisRound(side)
+      ? handOf(side).filter((id) => tacticFitsPhase(id, PHASES[table.round.phase] ?? '')).map((id) => ({ id, name: data ? cardName(data.byId.get(id)!) : id }))
+      : [],
+    play: (id) => { void playTactic(side, id); },
+  }),
   attack: (uid, actionId, opts) => {
     const t = unitOf(uid);
     if (!t) return;
@@ -885,7 +903,10 @@ initAttack({
   toast: (text) => toast(text),
   render: () => render(),
   openCombat: () => { if (panel !== 'combat') { panel = 'combat'; render(); } },
-  closeCombat: () => { if (panel === 'combat') { panel = null; render(); } },
+  closeCombat: () => {
+    if (panel === 'combat') { panel = null; render(); }
+    if (detonating) void continueDetonation();
+  },
   rollDice: async (pool, label) => {
     const rolled = await relay.rollDice(pool, label, 'pool');
     send({ kind: 'noteRoll', seat: mySeat(), what: label ?? 'dice' });
@@ -1261,7 +1282,7 @@ function sheetHtml(s: Side = shownSide()): string {
     </div>` : ''}
     ${mine && isMech && t.stance !== 'shutdown' && !guidedOn(table) ? `<div class="pad-row wrap">
       <span class="pad-label">Timing · this phone</span>
-      <div class="pad-chips">${TIMINGS.map((tm) => {
+      <div class="pad-chips pad-dials">${TIMINGS.map((tm) => {
         const init = initiativeFor(data, t, tm.id);
         // setTiming is a SECRET command (never published): on a free table the
         // dial is this phone's own note, set in the Planning Phase (3.3). The
@@ -1359,7 +1380,9 @@ function actionList(t: Token, mine: boolean): string {
     ].filter(Boolean).join(' · ');
     const perform = guidedOn(table)
       ? performButton(guide, t, g.action, g.partKey)
-      : (mine && g.available && isAttackAction(g.action)
+      : (mine && g.available && t.kind === 'projectile' && g.action.type !== 'Passive'
+        ? `<button class="pad-chip on pad-perform" data-act="detonate" data-id="${esc(g.action.id)}">Detonate</button>`
+        : mine && g.available && isAttackAction(g.action)
         ? `<button class="pad-chip on pad-perform" data-act="attack" data-uid="${t.uid}" data-id="${esc(g.action.id)}">Attack</button>`
         : mine && g.available && isElectronicAttack(g.action)
           ? `<button class="pad-chip on pad-perform" data-act="attack" data-mode="electronic" data-uid="${t.uid}" data-id="${esc(g.action.id)}">Electronic</button>`
@@ -1721,8 +1744,17 @@ function tasksPanel(): string {
       <span class="pad-label">${esc(label)}</span>
     </div>`;
 
+  const result = finished() ? gameResult(tasks, table.tokens) : null;
+  const recordHtml = !result ? '' : `<p class="pad-label pad-sec">Game over</p>
+    <p class="pad-lead">${result.winner ? `${esc(sideName(result.winner))} wins: ${esc(result.why)}.` : `A draw: ${esc(result.why)}.`}</p>
+    ${recordedFor === recordKey()
+      ? '<p class="pad-note">Recorded to Stats.</p>'
+      : account
+        ? '<button class="pad-btn primary" data-act="record">Record this match</button>'
+        : '<p class="pad-note">Sign in to record it to Stats.</p>'}`;
   return `<div class="pad-panel-in">${panelHead('Tasks')}
     ${errHtml()}
+    ${recordHtml}
     <div class="pad-vp">${vpSide(me, 'Yours')}${vpSide(them, 'Theirs')}</div>
     ${layoutHtml}
     ${drawHtml || (mission
@@ -1786,6 +1818,8 @@ function morePanel(): string {
     <button class="pad-btn" data-act="build">Build a Mech</button>
     <button class="pad-btn" data-act="drone">Add a Drone</button>
     <button class="pad-btn" data-act="projectile">Add a Projectile</button>
+    <p class="pad-label pad-sec">Tactics Cards</p>
+    ${tacticsHtml(solo ? squadSide : mySeat())}
     ${presets.length ? `<p class="pad-label" style="margin-top:10px">Saved builds</p>${presets.map((m) => `<button class="pad-seat" data-act="preset" data-id="${esc(m.id)}">
         <span class="pad-seat-name">${esc(m.name)}</span>
         <span class="pad-seat-tag">${m.saved ? 'saved' : 'built in'}</span>
@@ -1879,6 +1913,276 @@ function openBuildSlot(slot: typeof BUILD_SLOTS[number]): void {
       },
     }],
   });
+}
+
+// ---------- Detonation (4.7.5, 4.7.6) ----------
+//
+// A Projectile's Delayed Action, the Match Centre's detonation resolver with
+// the table naming who is within range. Damage goes through the attack window
+// as Explosion damage, one target after another; an effect card applies its
+// Token; a smoke card is placed on the table. The Projectile is destroyed at
+// the end (4.7.5).
+let detonating: { uid: number; actionId: string; single?: boolean; fired?: boolean } | null = null;
+
+function detonationText(a: CardAction): string {
+  const en = a.description?.en?.trim();
+  if (en && !/[぀-ヿ一-鿿]/.test(en)) return en;
+  return data?.actionTranslation(a.id)?.english?.trim() || a.description?.zh?.trim() || '';
+}
+
+async function detonate(proj: Token, actionId: string): Promise<void> {
+  if (!data) return;
+  const a = tokenCards(data, proj).flatMap((c) => c.card.actions ?? []).find((x) => x.id === actionId);
+  if (!a) return;
+  const name = a.name.en || actionId;
+  const smoke = smokePlacement(a);
+  if (smoke) {
+    toast(`${proj.label}: ${smoke.count} Smoke Screen${smoke.count === 1 ? '' : 's'} on the table.`);
+    send({ kind: 'despawn', seat: proj.side, uid: proj.uid, targetUid: proj.uid });
+    return;
+  }
+  detonating = { uid: proj.uid, actionId };
+  await continueDetonation();
+}
+
+// Asks for the next unit the blast reaches; the window's close brings the
+// question back until Done, which destroys the Projectile.
+async function continueDetonation(): Promise<void> {
+  const d = detonating;
+  if (!d || !data) return;
+  const proj = unitOf(d.uid);
+  const a = proj ? tokenCards(data, proj).flatMap((c) => c.card.actions ?? []).find((x) => x.id === d.actionId) : undefined;
+  if (!proj || !a) { detonating = null; return; }
+  // A single-target card is done once its one attack has closed.
+  if (d.single && d.fired) {
+    detonating = null;
+    send({ kind: 'despawn', seat: proj.side, uid: proj.uid, targetUid: proj.uid });
+    toast(`${proj.label} detonated and is destroyed (4.7.5).`);
+    return;
+  }
+  const name = a.name.en || d.actionId;
+  const damaging = !!((a.yellowDice ?? 0) || (a.redDice ?? 0));
+  const scope = explosionScope(a, data.actionTranslation(a.id)?.english ?? undefined);
+  const effectStatus = damaging ? null : (/interfer|jam|stun/i.test(`${name} ${detonationText(a)}`) ? 'fci' : null);
+  const units = table.tokens.filter((x) => x.uid !== proj.uid && x.deployed !== false && !isDead(x));
+  const pick = await choiceDialog({
+    title: `${name} · ${proj.label}`,
+    body: damaging
+      ? scope === 'all' ? `Every unit within Range ${a.range ?? 0}, allies too, takes a separate attack (4.7.6). Name each one.` : `One target within Range ${a.range ?? 0}.`
+      : effectStatus ? `Each unit within Range ${a.range ?? 0} the card affects gains the Token.` : `${detonationText(a) || 'See the card.'} Apply it on the table.`,
+    choices: [
+      ...units.map((x) => ({ id: String(x.uid), label: `${x.side === proj.side ? 'Ally' : 'Enemy'} · ${x.label}` })),
+      { id: '__done', label: 'Done, the Projectile is destroyed', primary: true },
+      { id: '__keep', label: 'Cancel', cancel: true },
+    ],
+    stacked: true,
+  });
+  if (pick === null || pick === '__keep') { detonating = null; return; }
+  if (pick === '__done') {
+    detonating = null;
+    send({ kind: 'despawn', seat: proj.side, uid: proj.uid, targetUid: proj.uid });
+    toast(`${proj.label} detonated and is destroyed (4.7.5).`);
+    return;
+  }
+  const hit = unitOf(Number(pick));
+  if (!hit) { void continueDetonation(); return; }
+  if (damaging) {
+    detonating = { ...d, single: scope !== 'all', fired: true };
+    panel = 'combat';
+    render();
+    if (!beginAttack(proj, d.actionId, hit, { protection: 0, backAttack: false, explosion: true })) { panel = null; detonating = null; render(); }
+    return;
+  }
+  if (effectStatus) send({ kind: 'applyStatus', seat: proj.side, uid: proj.uid, targetUid: hit.uid, statusId: effectStatus });
+  else toast(`${hit.label}: ${name}, applied on the table.`);
+  void continueDetonation();
+}
+
+// ---------- the record (Stats) ----------
+//
+// The finished game, kept under the account the way the Match Centre keeps
+// one: the squads as BROUGHT (the fielded roster, or the table when nothing
+// was recorded), the hand, the mission, the rounds and the result. Once per
+// table on this phone.
+let recordedFor: string | null = null;
+
+function recordKey(): string {
+  return view.room?.id ?? soloId ?? 'table';
+}
+
+// A game is finished when the rounds have run out (Freeform turns the round
+// past the limit) or, in a Guided game, when the last round's End steps are
+// all done - endMatch then wipes the tasks and the score, so the record is
+// offered before it.
+function finished(): boolean {
+  if (gameOver()) return true;
+  if (!guidedOn(table) || table.round.n < roundLimit()) return false;
+  const done = table.script?.endDone ?? [];
+  return ['remove', 'tokens', 'tasks'].every((id) => done.includes(`${table.round.n}:end:${id}`));
+}
+
+// Guided's "End the game": the record first, when there is an account and
+// it has not been kept yet, then the engine's endMatch.
+async function endGame(): Promise<void> {
+  const me = mySeat();
+  if (account && recordedFor !== recordKey()) {
+    const pick = await choiceDialog({
+      title: 'End the game',
+      body: 'Ending it clears the score. Record it to Stats first?',
+      choices: [
+        { id: 'record', label: 'Record and end', primary: true },
+        { id: 'end', label: 'End without recording' },
+        { id: 'cancel', label: 'Cancel', cancel: true },
+      ],
+      stacked: true,
+    });
+    if (pick === null || pick === 'cancel') return;
+    if (pick === 'record') {
+      const why = await recordMatch();
+      if (why) { toast(why); return; }
+      toast('Recorded to Stats.');
+    }
+  }
+  send({ kind: 'endMatch', seat: me });
+}
+
+async function recordMatch(): Promise<string | null> {
+  if (!data) return 'Still loading.';
+  if (!account) return 'Sign in to keep a record.';
+  const tasks = normaliseTasks(table.tasks);
+  const winner = gameResult(tasks, table.tokens).winner;
+  const entries = (side: Side): SquadEntry[] => {
+    const out: SquadEntry[] = [];
+    const push = (id: string): void => {
+      const card = data!.byId.get(id);
+      if (card) out.push({ id, cat: (card.category ?? 'mech_part') as SquadEntry['cat'] });
+    };
+    const roster = table.fielded?.[side];
+    if (roster && Object.keys(roster).length) {
+      for (const ids of Object.values(roster)) for (const id of ids) push(id);
+    } else {
+      for (const t of table.tokens) {
+        if (t.side !== side || t.kind === 'projectile') continue;
+        for (const { card } of tokenCards(data!, t)) push(card.id);
+      }
+    }
+    for (const id of table.tactics?.[side] ?? []) if (data!.byId.get(id)) out.push({ id, cat: 'tactics_or_upgrade' });
+    return out.slice(0, 80);
+  };
+  try {
+    await api.recordGame({
+      mode: view.room ? 'online' : 'hotseat',
+      mission: table.mission ?? null,
+      scale: table.scale ?? null,
+      rounds: Math.max(1, Math.min(20, Math.min(table.round.n, roundLimit()))),
+      winnerSeat: winner,
+      mySeat: view.room ? mySeat() : null,
+      players: (['s1', 's2'] as Side[]).map((side) => ({
+        seat: side,
+        faction: squadAllegiance(data!, table.tokens.filter((t) => t.side === side)).faction,
+        vp: Math.max(0, tasks.vp[side]),
+        squad: entries(side),
+      })),
+    });
+    recordedFor = recordKey();
+    return null;
+  } catch (err) {
+    return `${(err as ApiError).message} The game itself is unaffected.`;
+  }
+}
+
+// ---------- Tactics Cards (5.4) ----------
+//
+// The hand is table state (`tactics` per side), set at any time from More; a
+// card is played from More or, in a Guided game, from the turn strip when its
+// phase is on. One per squad per round; the engine holds the rule.
+
+function tacticCtx(): TacticCtx {
+  return { maxLink: (t) => (data ? pilotCard(data, t)?.LV ?? 0 : 0) };
+}
+
+function handOf(side: Side): string[] {
+  return table.tactics?.[side] ?? [];
+}
+
+function playedThisRound(side: Side): boolean {
+  return (table.tacticsPlayed?.[side] ?? []).some((e) => e.startsWith(`${table.round.n}:`));
+}
+
+function openTacticPicker(side: Side): void {
+  const d = data;
+  if (!d) return;
+  const held = new Set(handOf(side));
+  const pool = d.cards
+    .filter((c) => c.category === 'tactics_or_upgrade' && !isDiscardCard(c) && !held.has(c.id))
+    .sort((a, b) => cardName(a).localeCompare(cardName(b)));
+  openPartPicker({
+    data: d,
+    slotLabel: 'Tactics Card',
+    groups: groupByFaction(d, pool),
+    lockedFaction: null,
+    badge: (c) => tacticSpec(c.id)?.timing ?? '',
+    actions: [{ label: 'Add to hand', run: (card) => { send({ kind: 'setTactics', seat: side, cards: [...handOf(side), card.id] }); render(); } }],
+  });
+}
+
+function tacticsHtml(side: Side): string {
+  const d = data;
+  if (!d) return '';
+  const held = handOf(side);
+  const played = playedThisRound(side);
+  const phase = PHASES[table.round.phase] ?? '';
+  const rows = held.map((id) => {
+    const card = d.byId.get(id);
+    const spec = tacticSpec(id);
+    if (!card) return '';
+    const fits = !guidedOn(table) || tacticFitsPhase(id, phase);
+    const thisOne = (table.tacticsPlayed?.[side] ?? []).includes(`${table.round.n}:${id}`);
+    return `<div class="pad-row">
+      <span class="pad-part-name">${esc(cardName(card))}<small class="pad-of"> · ${esc(spec?.timing ?? '')}</small></span>
+      <div class="pad-chips">
+        ${spec ? `<button class="pad-chip${played || !fits ? '' : ' on'}" data-act="tactic-play" data-side="${side}" data-id="${esc(id)}"${played || !fits ? ' disabled' : ''}>${thisOne ? 'Played' : 'Play'}</button>` : ''}
+        <button class="pad-chip" data-act="tactic-drop" data-side="${side}" data-id="${esc(id)}">✕</button>
+      </div>
+    </div>`;
+  }).join('');
+  return `${rows}<button class="pad-btn" data-act="tactic-add" data-side="${side}">Add a Tactics Card</button>`;
+}
+
+// The card's questions, as dialogs: which unit when several qualify, which
+// option when the card offers a choice. The free Maneuver a card grants is
+// made on the table.
+async function playTactic(side: Side, cardId: string): Promise<void> {
+  const spec = tacticSpec(cardId);
+  if (!data || !spec) return;
+  const ctx = tacticCtx();
+  const targets = tacticTargets(spec, table, side, ctx);
+  if (!targets.length) { toast(`${spec.name}: ${spec.none}`); return; }
+  let t = targets[0];
+  if (targets.length > 1) {
+    const pick = await choiceDialog({ title: spec.name, body: spec.prompt, choices: targets.map((x) => ({ id: String(x.uid), label: x.label })), stacked: true });
+    if (pick === null) return;
+    t = targets.find((x) => String(x.uid) === pick) ?? t;
+  }
+  let choice: string | undefined;
+  if (spec.choices) {
+    const opts = spec.choices(t, table, ctx);
+    if (!opts.length) { toast(`${spec.name}: ${spec.none}`); return; }
+    if (opts.length === 1) choice = opts[0].id;
+    else {
+      const pick = await choiceDialog({ title: spec.choiceTitle ?? spec.name, body: t.label, choices: opts.map((o) => ({ id: o.id, label: o.note ? `${o.label} · ${o.note}` : o.label })), stacked: true });
+      if (pick === null) return;
+      choice = pick;
+    }
+  }
+  if (!send({ kind: 'playTactic', seat: side, uid: t.uid, cardId, pick: choice })) return;
+  toast(t.log?.at(-1)?.text ?? `${sideName(side)} plays ${spec.name}.`);
+  if (spec.maneuver) {
+    // The granted Maneuver is recorded (facing and the Opportunity's books)
+    // and made on the table.
+    if (guidedOn(table)) send({ kind: 'maneuver', seat: side, uid: t.uid, to: { col: 0, row: 0 }, facing: t.facing, granted: true });
+    toast(`${t.label}: Maneuver on the table.`);
+  }
 }
 
 // The Parts a carrier may carry, as a picker; `run` gets the chosen one.
@@ -2940,6 +3244,17 @@ function act(el: HTMLElement, ev: Event): void {
     case 'build': error = null; build = {}; panel = 'build'; render(); return;
     case 'drone': error = null; openDronePicker('drone'); return;
     case 'projectile': error = null; openDronePicker('projectile'); return;
+    case 'tactic-add': error = null; openTacticPicker(el.dataset.side as Side); return;
+    case 'record':
+      void recordMatch().then((why) => { toast(why ?? 'Recorded to Stats.'); render(); });
+      return;
+    case 'tactic-drop': {
+      const side = el.dataset.side as Side;
+      send({ kind: 'setTactics', seat: side, cards: handOf(side).filter((id) => id !== el.dataset.id) });
+      return;
+    }
+    case 'tactic-play': void playTactic(el.dataset.side as Side, el.dataset.id!); return;
+    case 'detonate': if (t) void detonate(t, el.dataset.id!); return;
     case 'launch': {
       if (!t) return;
       // Not data-card: that attribute is the sheet's card-look hook.
@@ -3067,10 +3382,12 @@ function installEvents(): void {
   // A HOLD on a worn Token opens its rule. Timed from pointerdown and cancelled
   // by a lift or a move, so a scroll that starts on a Token is still a scroll.
   let holdTimer: number | undefined;
+  let holdAt: { x: number; y: number } | null = null;
   root.addEventListener('pointerdown', (ev) => {
     const tok = (ev.target as HTMLElement).closest<HTMLElement>('.pad-tok[data-tok]');
     window.clearTimeout(holdTimer);
     if (!tok) return;
+    holdAt = { x: ev.clientX, y: ev.clientY };
     holdTimer = window.setTimeout(() => {
       heldTok = true;
       tokManage = tok.dataset.tok!;
@@ -3080,7 +3397,12 @@ function installEvents(): void {
   });
   for (const ev of ['pointerup', 'pointercancel', 'pointermove'] as const) {
     root.addEventListener(ev, (e) => {
-      if (ev === 'pointermove' && (e as PointerEvent).buttons === 0) return;
+      if (ev === 'pointermove') {
+        const pe = e as PointerEvent;
+        if (pe.buttons === 0) return;
+        // A finger drifts a few pixels while holding; only a real move cancels.
+        if (holdAt && Math.hypot(pe.clientX - holdAt.x, pe.clientY - holdAt.y) < 10) return;
+      }
       window.clearTimeout(holdTimer);
     });
   }

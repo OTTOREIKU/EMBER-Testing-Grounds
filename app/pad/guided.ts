@@ -17,7 +17,7 @@ import { canAct, dialHidden, eligibleUnits, isLoopPhase, loopComplete, nextTurn,
 import { deployTurn, deployable, deploymentComplete, firstPlayerFrom, normaliseSetup, rollTotal } from '../src/setup';
 import { ensureScript } from '../src/glue';
 import { canActivate, canAttackMode, canOverload, canPerform, costOf, extrasLeft, lengthOf, OVERLOAD_MAX, type TickVerdict } from '../src/ticks';
-import { chargeableSlots, coordinationFor, coordinationOnOpportunityEnd, electronicValue, extraActivationOf, formSwitch, guidedActions, initiativeFor, isChargeAction, isElectronicAttack, linkTickTraitOn, loanedParts, opportunityBonusOn, pilotCard, repairSpec, selfGrantWhy, selfStatusGrant, SLOT_LABEL, tokenCards, transformOffer, unfoldsOwed } from '../src/units';
+import { chargeableSlots, coordinationFor, coordinationOnOpportunityEnd, electronicValue, extraActivationOf, formSwitch, guidedActions, initiativeFor, isChargeAction, isElectronicAttack, linkTickTraitOn, loanedParts, opportunityBonusOn, pilotCard, repairSpec, resupplyOf, selfGrantWhy, selfStatusGrant, SLOT_LABEL, tokenCards, transformOffer, unfoldsOwed } from '../src/units';
 import { normaliseTasks } from '../src/tasks';
 import { dialsOf, hashDials, newSalt, type DialEntry } from '../src/secrecy';
 import { PHASES, TIMINGS, type CardAction, type GameState, type PartSlot, type Side, type Timing, type Token } from '../src/types';
@@ -46,6 +46,14 @@ export interface GuideApi {
   attack?(uid: number, actionId: string, opts?: { electronic?: boolean; granted?: boolean }): void;
   // The engine's verdict without performing, for a chip that shows why not.
   check(cmd: Command): CheckResult;
+  // The Tactics Cards this side could play in the phase that is on, and the
+  // play itself (pad.ts asks the card's questions).
+  tactics(side: Side): { playable: { id: string; name: string }[]; play(id: string): void };
+  // Guided's End the game: pad.ts offers the record before the engine's endMatch.
+  endGame(): void;
+  // A Projectile's Delayed Action (pad.ts): the table names the units in the
+  // blast; damage through the window as Explosion damage.
+  detonate(uid: number, actionId: string): void;
   // Launches the projectiles an Action fires (pad.ts): pays the Action, then
   // one `launch` per projectile in the volley.
   launch?(uid: number, actionId: string, cardId: string): void;
@@ -165,11 +173,19 @@ export function turnHtml(api: GuideApi): string {
   const phase = PHASES[s.round.phase];
   // A reaction owed to one of this phone's units comes before the phase.
   const owed = reactionsOwed(api);
-  const react = owed.length ? reactionHtml(api, owed[0]) : '';
+  const react = (owed.length ? reactionHtml(api, owed[0]) : '') + tacticsStrip(api);
   if (isLoopPhase(phase)) return react + loopHtml(api, phase);
   if (s.round.phase === 1) return react + planningHtml(api);
   if (s.round.phase === 2) return react + actionHtml(api);
   return react + endHtml(api);
+}
+
+// A Tactics Card whose phase is on, for each side this phone holds. One per
+// round; the engine refuses a second.
+function tacticsStrip(api: GuideApi): string {
+  const sides: Side[] = api.solo ? ['s1', 's2'] : [api.me()];
+  const chips = sides.flatMap((side) => api.tactics(side).playable.map((c) => btn(api, 'g-tactic', `${api.solo ? `${api.sideName(side)} · ` : ''}${c.name}`, `data-side="${side}" data-id="${api.esc(c.id)}"`)));
+  return chips.length ? `<div class="pad-turn-react"><p class="pad-turn-name">Tactics Card</p><div class="pad-chips">${chips.join('')}</div></div>` : '';
 }
 
 // ---------- reactions (the Match Centre's reaction panel, on the strip) ----------
@@ -350,7 +366,7 @@ function planningHtml(api: GuideApi): string {
         return `<button class="pad-chip pad-dial${t.timing === tm.id ? ' on' : ''}" data-act="g-timing" data-uid="${t.uid}" data-timing="${tm.id}"${locked ? ' disabled' : ''}>${ic ? `<img src="${ic}" alt="">` : ''}${api.esc(`${tm.short}${init !== undefined ? ` ${init}` : ''}`)}</button>`;
       }).join('');
       return `<div class="pad-turn-unit"><span class="pad-turn-name">${api.esc(t.label)}${api.solo ? ` · ${api.esc(api.sideName(side))}` : ''}</span>
-        ${hidden ? '<span class="pad-turn-val">hidden</span>' : `<div class="pad-chips">${chips}</div>`}</div>`;
+        ${hidden ? '<span class="pad-turn-val">hidden</span>' : `<div class="pad-chips pad-dials">${chips}</div>`}</div>`;
     }));
   const unset = sides.reduce((n, side) => n + s.tokens.filter((t) => t.side === side && t.kind === 'mech' && (t.partStates.torso ?? 'intact') !== 'destroyed' && t.stance !== 'shutdown' && !t.timing).length, 0);
   let foot: string;
@@ -465,6 +481,25 @@ async function performRouted(api: GuideApi, t: Token, a: CardAction): Promise<vo
     const [mode, slot] = pick.split(':');
     repair = { mode: mode as 'repaired' | 'mend', slot };
   }
+  let resupply: { to: Token; actionId: string; amount: number } | null = null;
+  const rule = resupplyOf(a);
+  if (rule) {
+    // This Mech, or an Ally the card reaches (the table judges the range),
+    // that has spent the Ammo this Action restores.
+    const s = api.state();
+    const holders = s.tokens.filter((o) => {
+      if (o.deployed === false) return false;
+      if (o.uid !== t.uid && (!rule.allies || o.side !== t.side)) return false;
+      const max = tokenCards(d, o).flatMap(({ card }) => card.actions ?? []).find((x) => x.id === rule.actionId)?.storage;
+      if (!max) return false;
+      return (o.ammo?.[rule.actionId] ?? max) < max;
+    });
+    if (!holders.length) { api.toast('Nothing in reach has spent any of that Ammo.'); return; }
+    const pick = holders.length === 1 ? String(holders[0].uid) : await choiceDialog({ title: a.name.en, body: rule.range ? `This Mech, or an Ally within Range ${rule.range}.` : 'Only this Mech is in reach.', choices: holders.map((o) => ({ id: String(o.uid), label: `${o.label}${o.uid === t.uid ? ' (this Mech)' : ''}` })), stacked: true });
+    if (pick === null) return;
+    const to = holders.find((o) => String(o.uid) === pick)!;
+    resupply = { to, actionId: rule.actionId, amount: rule.amount };
+  }
   let chargeSlot: string | null = null;
   if (isChargeAction(a)) {
     const slots = chargeableSlots(d, t).filter((x) => !x.charged);
@@ -483,6 +518,7 @@ async function performRouted(api: GuideApi, t: Token, a: CardAction): Promise<vo
   if (mode) api.send({ kind: 'transformPart', seat, uid, slot: mode.slot, cardId: mode.into.id });
   if (unfoldsOwed(d, [t]).some((x) => x.actionId === a.id)) api.send({ kind: 'unfold', seat, uid });
   if (chargeSlot) api.send({ kind: 'setCharge', seat, uid, slot: chargeSlot as PartSlot, on: true });
+  if (resupply) api.send({ kind: 'restoreAmmo', seat: resupply.to.side, uid: resupply.to.uid, actionId: resupply.actionId, amount: resupply.amount });
   // Command Coordination off the back of the Action (the table judges the
   // Drone's range), then an Extra Action Opportunity the Action grants.
   const upTo = t.kind === 'mech' ? coordinationFor(d, t, a) : 0;
@@ -646,6 +682,11 @@ export function guideAct(api: GuideApi, a: string, el: HTMLElement): boolean {
         api.attack(t.uid, a.action.id, { electronic: true });
         return true;
       }
+      // A Projectile's Delayed Action: paid, then the detonation resolver.
+      if (a && t.kind === 'projectile' && a.action.type !== 'Passive') {
+        if (api.send({ kind: 'performAction', seat: t.side, uid: t.uid, actionId: a.action.id })) api.detonate(t.uid, a.action.id);
+        return true;
+      }
       // An Action that fires projectiles launches them; a card that names
       // more than one asks which.
       if (a && a.projectiles.length && api.launch) {
@@ -685,6 +726,7 @@ export function guideAct(api: GuideApi, a: string, el: HTMLElement): boolean {
       void runAster(api.data, s, t.uid, (targetUid) => { api.send({ kind: 'asterRestore', seat: t.side, uid: t.uid, targetUid }); }, (_to, text) => api.toast(text));
       return true;
     }
+    case 'g-tactic': api.tactics(el.dataset.side as Side).play(el.dataset.id!); return true;
     case 'g-react-go': answerReaction(api, Number(el.dataset.uid), el.dataset.id!, true); return true;
     case 'g-react-skip': answerReaction(api, Number(el.dataset.uid), el.dataset.id!, false); return true;
     case 'g-riposte': {
@@ -722,7 +764,7 @@ export function guideAct(api: GuideApi, a: string, el: HTMLElement): boolean {
       return true;
     }
     case 'g-endstep': api.send({ kind: 'markEndStep', seat: me, step: el.dataset.step! }); return true;
-    case 'g-endmatch': api.send({ kind: 'endMatch', seat: me }); return true;
+    case 'g-endmatch': api.endGame(); return true;
     case 'g-designate-task': {
       const owed = taskDesignations(api.data, s)[Number(el.dataset.i)];
       if (!owed) return true;

@@ -37,6 +37,9 @@ export interface TableVerdict {
   backAttack: boolean;
   // An Interception (4.9): line of sight is given, no arc, no Protection.
   intercept?: boolean;
+  // Explosion damage from a detonating Projectile (4.7.6): no sight, no
+  // facing, no Protection; only the defender may Focus.
+  explosion?: boolean;
 }
 
 let api: AttackApi | null = null;
@@ -196,6 +199,14 @@ export function beginAttack(attacker: Token, actionId: string, defender: Token, 
   if (!action) return false;
   h.roller = a.inRoom() ? (pool, tag) => a.rollDice(pool, tag) : null;
   h.backAttack = verdict.backAttack;
+  if (verdict.explosion) {
+    h.start(
+      attacker, action, defender,
+      'Explosion damage: line of sight and facing do not apply, and the defender claims no Terrain or Unit Protection (4.7.6).',
+      0, '', true, false, false,
+    );
+    return true;
+  }
   if (verdict.intercept) {
     h.start(
       attacker, action, defender,
@@ -205,7 +216,7 @@ export function beginAttack(attacker: Token, actionId: string, defender: Token, 
     return true;
   }
   const losNote = 'Range and line of sight as judged on the table.';
-  const protectionNote = verdict.protection ? 'Protection, as judged on the table (+2 White).' : '';
+  const protectionNote = verdict.protection ? 'Protection, as judged on the table (+2 White)' : '';
   // A Multi-Target Action opens the split screen; the table's answers cover
   // the primary and the other targets are picked there.
   const multi = multiTargetLimit(action);
