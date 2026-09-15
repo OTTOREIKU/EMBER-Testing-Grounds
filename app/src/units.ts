@@ -3365,6 +3365,9 @@ export interface EnvEvent {
 // with an owner, and only the driver that forced the move knows who.
 export function settleEnvironments(data: GameData, state: GameState): EnvEvent[] {
   const events: EnvEvent[] = [];
+  // No board: one High Temperature card would stamp every unit at once from
+  // the placeholder cells. The table's to settle by hand.
+  if (state.noBoard) return events;
   const placed = state.environments ?? [];
   if (!placed.length) {
     // No cards, no marks: a stale marker would eat the first entry after the
@@ -3655,6 +3658,20 @@ export function autoDetonationsOwed(
   return out;
 }
 
+// The label of a Drone or Projectile joining a side that already fields the
+// same card: numbered, so a volley of three Missiles reads 1, 2, 3 on a sheet.
+// The first of its kind is renamed to "... 1" the moment a second arrives, if
+// nobody had renamed it by hand. Deterministic from the state, so both seats
+// mint the same names.
+function numberedLabel(state: GameState, card: Card, side: Side): string {
+  const base = shortName(card);
+  const siblings = state.tokens.filter((x) => x.side === side && x.cardId === card.id && x.kind !== 'mech');
+  if (!siblings.length) return base;
+  const first = siblings.find((x) => x.label === base);
+  if (first && siblings.length === 1) first.label = `${base} 1`;
+  return `${base} ${siblings.length + 1}`;
+}
+
 export function makeDroneToken(state: GameState, data: GameData, card: Card, side: Side, backpack?: string): Omit<Token, 'col' | 'row' | 'facing'> {
   const cards = [card, backpack ? data.byId.get(backpack) : undefined].filter((x): x is Card => !!x);
   return {
@@ -3663,7 +3680,7 @@ export function makeDroneToken(state: GameState, data: GameData, card: Card, sid
     kind: card.category === 'projectile' ? 'projectile' : 'drone',
     cardId: card.id,
     droneBackpack: backpack,
-    label: shortName(card),
+    label: numberedLabel(state, card, side),
     size: unitSize(card),
     aerial: isAerial(card),
     barricade: isBarricade(card) || undefined,
@@ -4857,6 +4874,9 @@ export function cutTethersOn(data: GameData, state: GameState, t: Token, role: T
 // teleport, a Crush displacement or a unit destroyed mid-attack cannot leave a
 // leash tied to something that is no longer there.
 export function settleTethers(data: GameData, state: GameState): void {
+  // A table with no board has every unit on a placeholder cell: measured from
+  // there a Tether would never part. The table settles it by hand.
+  if (state.noBoard) return;
   // Genuinely nothing to do on a board with no chips on it, which is almost
   // every board — this runs after every command, so it earns its early out.
   if (!state.tokens.some((x) => (x.tether ?? []).length)) return;
@@ -4971,6 +4991,7 @@ export function migrateState(rawIn: unknown, data: GameData): GameState | null {
     })(),
     removedTerrain: (s as { removedTerrain?: string[] }).removedTerrain ?? [],
     scale: (s as { scale?: GameState['scale'] }).scale ?? 'standard',
+    ...((s as { noBoard?: boolean }).noBoard ? { noBoard: true } : {}),
     roundLimit: (s as { roundLimit?: number }).roundLimit ?? 5,
     sideNames: (s as { sideNames?: GameState['sideNames'] }).sideNames ?? {},
     ready: (s as { ready?: GameState['ready'] }).ready ?? {},

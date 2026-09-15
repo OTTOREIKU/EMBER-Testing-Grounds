@@ -49,6 +49,11 @@ export interface TaskState {
   paidTestKills: { s1: number; s2: number };
   partsLost: PartLoss[];
   scored: string[];
+  // The Main Task draw (3.1.3): three cards dealt, each squad discards one,
+  // the card left is played. Cleared when the Task is set. Rides the table so
+  // both phones see the same three and each other's discard.
+  draw?: string[];
+  drawDiscards?: { s1?: string; s2?: string };
 }
 
 export function newKills(): Kills {
@@ -257,6 +262,15 @@ export function normaliseTasks(raw: unknown): TaskState {
           .map((p) => ({ side: side(p.side) ?? 's1', uid: p.uid, slot: p.slot, cardId: p.cardId }))
       : [],
     scored: Array.isArray(t.scored) ? t.scored.filter((x): x is string => typeof x === 'string') : [],
+    ...(Array.isArray(t.draw) && t.draw.length
+      ? {
+          draw: t.draw.filter((x): x is string => typeof x === 'string'),
+          drawDiscards: {
+            ...(typeof t.drawDiscards?.s1 === 'string' ? { s1: t.drawDiscards.s1 } : {}),
+            ...(typeof t.drawDiscards?.s2 === 'string' ? { s2: t.drawDiscards.s2 } : {}),
+          },
+        }
+      : {}),
   };
 
   function kills(raw: unknown): Kills {

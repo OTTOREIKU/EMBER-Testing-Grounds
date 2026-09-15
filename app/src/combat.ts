@@ -922,6 +922,17 @@ export class AttackHelper {
   // never sets this and comes out exactly as it did before roles existed. A
   // page serving other viewers sets it per attack, never per seat.
   role: CombatRole = 'attacker';
+  // A host with no board answers the two things the window used to read off
+  // unit positions: whether the attack comes from the rear arc (null = read
+  // it from the board as before), and that there is no board at all, which
+  // offers every enemy as a Multi-Target or Cleaving candidate for the player
+  // to pick from and leaves Forced Movement's direction to the table.
+  backAttack: boolean | null = null;
+  noBoard = false;
+  // The table's reading of the PRIMARY target on a boardless host, handed in
+  // before startMulti: the split's first sequence uses it, the others say
+  // "as judged on the table".
+  tableRead: { losNote: string; protection: number; protectionNote: string } | null = null;
   // Whether this defender's Focus decisions belong to a player at another
   // screen. Wired by the Match Centre; null in freeplay, where one player
   // presses both sides' buttons in the printed order.
@@ -1016,6 +1027,10 @@ export class AttackHelper {
   // lives now. An idle helper just takes the element; the page paints its own
   // empty state.
   remount(root: HTMLElement): void {
+    // The same root is a no-op, as on the Electronic helper: a host that
+    // remounts on every redraw would otherwise re-render here, publish, and be
+    // redrawn by its own publish without end.
+    if (this.root === root) return;
     this.root = root;
     if (this.ctx) this.render();
   }
@@ -1076,7 +1091,8 @@ export class AttackHelper {
       // Explosion damage allows no Protection at all (4.7.6), the same
       // exclusion start() makes on the attacking client.
       protection: explosion ? 0 : board.protection,
-      protectionNote: explosion ? '' : board.protectionNote,
+      // No board to read: the note travels in the view instead.
+      protectionNote: explosion ? '' : (this.noBoard ? (view.protectionNote ?? '') : board.protectionNote),
       // An unknown step falls back to the defence step, which draws the rolls
       // and asks nothing. So does a SPLIT with no split in it: stepSplit reads
       // `this.multi` without a guard because a live window cannot reach that
@@ -1255,6 +1271,8 @@ export class AttackHelper {
   private shieldSwap(
     attacker: Token, defender: Token, action: CardAction,
   ): { shield: Token; declared: Token; others: Token[] } | null {
+    // No board: the table has already named the target, so no shield moves it.
+    if (this.noBoard) return null;
     const found = automaticShieldFor(this.data, this.tokens ? this.tokens() : [], attacker, defender, action);
     return found ? { shield: found.shield, declared: defender, others: found.others } : null;
   }
@@ -1266,6 +1284,9 @@ export class AttackHelper {
   private readBoard(
     attacker: Token, defender: Token, action: CardAction,
   ): { losNote: string; protection: number; protectionNote: string } {
+    // A host with no board (the pad) has nothing to read: the table judged
+    // the shot, and the pools travel in the view.
+    if (this.noBoard) return { losNote: 'Range and line of sight as judged on the table.', protection: 0, protectionNote: '' };
     const board = this.tokens ? this.tokens() : [];
     const terrain = this.terrain ? this.terrain() : [];
     const smoke = this.smoke ? this.smoke() : [];
@@ -1475,6 +1496,11 @@ export class AttackHelper {
     const prot = protectionFor(m.attacker, defender, m.action, terrain, board, smoke,
       ignoresProtectionOnHighlight(this.data, m.attacker) && statusCount(defender.statuses, 'highlight') > 0,
       (t) => providesUnitProtectionToAllies(this.data, t));
+    // A boardless host reads nothing: the primary carries the table's answers,
+    // every later target the generic line.
+    const read = this.noBoard
+      ? (m.targets[0]?.defender.uid === defender.uid && this.tableRead ? this.tableRead : this.readBoard(m.attacker, defender, m.action))
+      : null;
     // A Multi-Target opens one sequence per target and each waits on its own
     // defence roll, so a roll answered late lands on the sequence that asked
     // for it or on nothing at all.
@@ -1494,9 +1520,9 @@ export class AttackHelper {
       defender,
       intercept: false,
       action: m.action,
-      losNote: losNote(m.attacker, defender, m.action, terrain, board, smoke),
-      protection: prot.white,
-      protectionNote: prot.note,
+      losNote: read ? read.losNote : losNote(m.attacker, defender, m.action, terrain, board, smoke),
+      protection: read ? read.protection : prot.white,
+      protectionNote: read ? read.protectionNote : prot.note,
       step,
       targetPart: defender.kind === 'mech' ? null : 'main',
       designateFrom: null,
@@ -1540,6 +1566,7 @@ export class AttackHelper {
       if (u.side === m.attacker.side || chosen.has(u.uid) || u.deployed === false) return false;
       if ((u.partStates[u.kind === 'mech' ? 'torso' : 'main'] ?? 'intact') === 'destroyed') return false;
       if (m.action.type === 'Melee' && u.aerial) return false;
+      if (this.noBoard) return true;
       return rangeBetween(m.attacker, u).range <= (m.action.range ?? 1);
     });
   }
@@ -2590,6 +2617,7 @@ export class AttackHelper {
         mode: c.explosion ? 'explosion' : c.intercept ? 'intercept' : 'attack',
         step: c.step,
         targetPart: c.targetPart ?? null,
+        protectionNote: c.protectionNote || undefined,
         attack: c.attackRoll?.map((d) => ({ color: d.color, face: d.face })) ?? null,
         defense: c.defenseRoll?.map((d) => ({ color: d.color, face: d.face })) ?? null,
         // THE WHOLE LOG. It used to be the last five lines, so a watcher read
@@ -3261,6 +3289,7 @@ export class AttackHelper {
       if (u.side === c.attacker.side || u.uid === c.defender.uid || u.deployed === false) return false;
       if ((u.partStates[u.kind === 'mech' ? 'torso' : 'main'] ?? 'intact') === 'destroyed') return false;
       if (c.action.type === 'Melee' && u.aerial) return false;
+      if (this.noBoard) return true;
       return rangeBetween(c.attacker, u).range <= (c.action.range ?? 1);
     });
   }
@@ -3403,7 +3432,7 @@ export class AttackHelper {
     // 533 Front toward Enemy: "cannot be Back-attacked in Melee" removes the
     // attacker's designation too, not only the bar on the Parry (FAQ A14).
     // Snipe, above, still designates.
-    return inArc(c.defender, c.attacker, 'rear')
+    return (this.backAttack ?? inArc(c.defender, c.attacker, 'rear'))
       && !(c.action.type === 'Melee' && noMeleeBackAttack(this.data, c.defender));
   }
 
@@ -3630,7 +3659,7 @@ export class AttackHelper {
       melee: c.action.type === 'Melee',
       // 533 Front toward Enemy does not change the arc -- it removes what a
       // rear arc COSTS in Melee, which here is the bar on Parrying.
-      backAttack: inArc(c.defender, c.attacker, 'rear')
+      backAttack: (this.backAttack ?? inArc(c.defender, c.attacker, 'rear'))
         && !(c.action.type === 'Melee' && noMeleeBackAttack(this.data, c.defender)),
     });
     for (const x of parries) {
@@ -4814,7 +4843,7 @@ export class AttackHelper {
       // It travels as a forceMove to the target's OWN square — a facing-only
       // Forced Movement, which is also why an Immobilized target still turns:
       // being displaced by somebody else is not its own Movement.
-      if (faceAwayOnHit(c.action)) {
+      if (faceAwayOnHit(c.action) && !this.noBoard) {
         const ga = largeGridOf(c.attacker);
         const gd = largeGridOf(c.defender);
         const dx = gd.c - ga.c;
@@ -4845,7 +4874,7 @@ export class AttackHelper {
       // landing spot is found with `aerial` true - the pull crosses whatever is
       // between them. Two picks, grid then facing, built by DOM append because
       // the terminal screen never re-renders.
-      if (dragPrinted(c.action)) {
+      if (dragPrinted(c.action) && !this.noBoard) {
         const ag = largeGridOf(c.attacker);
         const terrain = this.terrain ? this.terrain() : [];
         const world = this.tokens ? this.tokens() : [];
@@ -5132,6 +5161,13 @@ export class ElectronicHelper {
       initiatorWins: done && a && b ? resolveCounterRoll(a, b).initiatorWins : null,
       provoked: c.provoke ?? null,
     };
+  }
+
+  // Draws the record it was last shown. showContest only stores it: the
+  // Match Centre hands this window a fresh element every refresh and remount
+  // draws, but a host that keeps one root (the pad) has to ask.
+  redraw(): void {
+    if (this.ctx) this.render();
   }
 
   // Re-points the window at a new element. The Match Centre rebuilds its whole

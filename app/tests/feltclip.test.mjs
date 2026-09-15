@@ -32,6 +32,8 @@
 // every pane down to 400px after). This file guards the declarations that made
 // it true, because the node harness has no layout engine and cannot re-measure.
 import { readFileSync } from 'node:fs';
+// The attack window's rules moved to combat.css (shared with the pad); the
+// board sheet imports it, so the pins read the pair.
 
 let pass = 0, fail = 0;
 const check = (name, got, want) => {
@@ -42,7 +44,7 @@ const check = (name, got, want) => {
 
 console.log('The felt: the controls under your own dice stay reachable\n');
 
-const styles = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
+const styles = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8') + '\n' + readFileSync(new URL('../src/combat.css', import.meta.url), 'utf8');
 const match = readFileSync(new URL('../src/match.css', import.meta.url), 'utf8');
 
 // The body of one rule, found by its selector and read to the closing brace.

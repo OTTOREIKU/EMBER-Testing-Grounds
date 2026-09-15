@@ -173,6 +173,7 @@ type AnyCmd = {
   cardId?: string;
   slot?: string;
   statusId?: string;
+  what?: string;
   stacks?: number;
   mode?: string;
   stance?: string;
@@ -183,6 +184,7 @@ type AnyCmd = {
   vp?: { s1?: number; s2?: number };
   ready?: boolean;
   phase?: number;
+  step?: string;
   to?: { col: number; row: number };
   at?: { col: number; row: number };
   free?: boolean;
@@ -241,6 +243,7 @@ export function labelFor(cmd: { kind: string }, state: GameState, names?: Ledger
     case 'ageStatus': label = `${target()}'s ${c.statusId ?? 'status'} Token ages`; break;
     case 'setStance': label = `${who()} switches to ${c.stance ?? 'a new'} Stance`; break;
     case 'renameUnit': label = `${who()} is now called ${c.label ?? 'something else'}`; break;
+    case 'setLoad': label = c.cardId ? `${who()} takes a Load` : `${who()}: Load taken off`; break;
     // The pad's bookkeeping, which used to fall through to the humanised kind
     // ("Set part state") in the other player's toast.
     case 'setPartState': label = `${who()}'s ${slotName(c.slot)} is ${c.state ?? 'changed'}`; break;
@@ -256,6 +259,9 @@ export function labelFor(cmd: { kind: string }, state: GameState, names?: Ledger
     case 'setPhase': label = 'The phase is set back'; break;
     case 'resetRounds': label = 'The rounds start over'; break;
     case 'setReady': label = `Squad ${c.seat === 's2' ? 2 : 1} is ${c.ready === false ? 'not ready' : 'ready'} to continue`; break;
+    case 'markEndStep': label = `End Phase: ${({ remove: 'Remove Units', tokens: 'Token Management', smoke: 'Smoke', tasks: 'Check Tasks' } as Record<string, string>)[c.step ?? ''] ?? 'step'}`; break;
+    case 'startMatch': label = 'The game begins'; break;
+    case 'endMatch': label = 'The game ends'; break;
 
     // ---------- the board and the missions ----------
     case 'takeBlackBox': label = `${who()} picks up a Black Box`; break;
@@ -285,7 +291,7 @@ export function labelFor(cmd: { kind: string }, state: GameState, names?: Ledger
     case 'noteRoll': label = 'Dice hit the table'; break;
     case 'rollSetup': label = 'First Player roll'; break;
     case 'applyPenetration': label = `${target()}: Penetration`; break;
-    case 'recordKill': label = `${target()} is destroyed`; break;
+    case 'recordKill': label = c.what === 'part' ? `${target()}: Part destroyed` : `${target()} is destroyed`; break;
     case 'resolveIntercept': label = 'Interception resolved'; break;
 
     default: label = humanise(c.kind);

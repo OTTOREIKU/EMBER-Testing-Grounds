@@ -1,0 +1,819 @@
+/* The ATTACK WINDOW and the dice it rolls - the shared AttackHelper (combat.ts),
+ * the dice tray and results, the dice duel, and the pickable chips. Moved out
+ * of styles.css whole rather than copied, the way partpicker.css and
+ * inventory.css were: styles.css imports this so the board and the Match
+ * Centre are unchanged, and the pad imports it so a phone with no board draws
+ * the SAME window. The board-only rules that sat between these blocks - the
+ * inspector box, the sidebar's status chips - stayed where they were. */
+
+/* ---------- dice tray ---------- */
+/* The tray takes exactly what its dice need and never gives that space back, so
+   the inspect box below can claim whatever is left rather than a fixed clamp.
+   The cap keeps a very tall tray from squeezing the inspect box out entirely. */
+#dice-tray {
+  background: var(--surface); padding: 10px; overflow-y: auto;
+  flex: 0 0 auto; min-height: 0; max-height: calc(100% - var(--chrome-h) - 92px);
+  display: flex; flex-direction: column; gap: 8px;
+}
+.tray-pool { display: flex; flex-direction: column; gap: 4px; }
+.pool-die {
+  display: flex; align-items: center; gap: 4px; border-radius: var(--radius); padding: 5px 7px;
+  border: none; background: var(--surface2); font-size: 13px;
+}
+.pool-die.die-red { background: var(--die-red); }
+.pool-die.die-yellow { background: var(--die-yellow); }
+.pool-die.die-white { background: var(--die-white); }
+.pool-die.die-blue { background: var(--die-blue); }
+.pool-die.die-black { background: var(--die-black); }
+.pool-die, .pool-die .pool-name, .pool-die b, .pool-die button { color: var(--on-accent); }
+.pool-die.die-red, .pool-die.die-red .pool-name,
+.pool-die.die-red b, .pool-die.die-red button { color: #fff; }
+.pool-die.die-yellow, .pool-die.die-yellow .pool-name,
+.pool-die.die-yellow b, .pool-die.die-yellow button { color: #3d2d00; }
+.pool-die.die-white, .pool-die.die-white .pool-name,
+.pool-die.die-white b, .pool-die.die-white button { color: #333; }
+.pool-die.die-blue, .pool-die.die-blue .pool-name,
+.pool-die.die-blue b, .pool-die.die-blue button { color: #fff; }
+.pool-die .pool-name {
+  flex: 1; font-size: 11px; font-weight: 600; text-align: left;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pool-die b { min-width: 16px; text-align: center; font-variant-numeric: tabular-nums; font-size: 14px; font-family: var(--mono); }
+.pool-die button {
+  width: 20px; height: 20px; border-radius: var(--radius-sm); border: none; cursor: pointer;
+  background: #0000001f; font-size: 13px; line-height: 1; font-weight: 700;
+}
+.pool-die button:hover { background: #00000038; }
+.pool-die.die-black, .pool-die.die-black .pool-name,
+.pool-die.die-black b, .pool-die.die-black button { color: #f0f0f0; }
+.pool-die.die-black button { background: #ffffff26; }
+.pool-die.die-black button:hover { background: #ffffff3d; }
+.tray-actions { display: flex; gap: 6px; }
+.tray-actions #dice-roll { flex: 1; }
+.tray-empty { color: var(--text2); font-size: 11.5px; }
+.tray-hint { font-size: 10.5px; color: var(--text2); margin: 0; }
+
+/* Sized by its own content, capped only by the room the tray leaves. Rolling one
+   pool no longer clamps it to a fixed height while space sits unused below. */
+
+/* ---------- dice results ---------- */
+.total-chip {
+  display: inline-block; background: var(--surface2); border: none;
+  border-radius: var(--radius-sm); padding: 3px 8px; font-size: 11.5px; margin: 0 3px 3px 0;
+  font-family: var(--mono);
+}
+#dice-roll {
+  background: var(--accent); color: var(--on-accent); border: none; font-weight: 700;
+  padding: 6px 18px; border-radius: var(--radius); cursor: pointer; font-size: 12.5px;
+  transition: filter 0.12s;
+}
+#dice-roll:hover:not(:disabled) { filter: brightness(1.08); }
+#dice-roll:disabled { opacity: 0.35; cursor: default; }
+#dice-clear {
+  background: var(--surface2); border: none; color: var(--text2); border-radius: var(--radius);
+  padding: 5px 10px; cursor: pointer; transition: background 0.12s, color 0.12s;
+}
+#dice-clear:hover { background: var(--surface3); color: var(--text); }
+
+.tray-results {
+  display: flex; gap: 5px; flex-wrap: wrap; min-height: 44px; align-content: flex-start;
+  padding: 6px; border-radius: var(--radius); background: var(--bg); border: none;
+}
+.die {
+  width: 40px; height: 40px; border-radius: 8px; border: 2px solid transparent; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; gap: 1px;
+  transition: transform 0.05s;
+}
+/* Two forms, and the difference matters. The ROW form shakes every die inside
+   it and is what the Black Die stage uses. The DIE form shakes one die on its
+   own, which is what a reroll needs: only the dice actually thrown again may
+   move, or the kept ones look like they were rerolled too. */
+.rolling .die, .die.rolling { animation: die-shake 0.11s infinite; }
+@keyframes die-shake {
+  0% { transform: rotate(-6deg); }
+  50% { transform: rotate(6deg); }
+  100% { transform: rotate(-6deg); }
+}
+/* The Black Die rolled inside the attack helper to choose the target Part. The
+   shake comes from `.rolling .die` above, which matches any die inside an
+   element carrying the class, so neither this nor .ah-roll restates it.
+   The row WRAPS: on a phone the caption sat between the die and the Focus
+   offer and was squeezed to one word a line. The caption takes the rest of
+   the die's line and the offer drops to a line of its own. */
+.ah-blackroll { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-top: 8px; min-height: 44px; }
+.ah-blackroll .die { cursor: default; flex-shrink: 0; }
+.ah-blackcap { font-size: 12px; font-weight: 600; color: var(--accent); flex: 1 1 140px; min-width: 0; }
+.ah-blackroll .rerolls { flex: 1 1 100%; margin-top: 0; }
+
+.die.sel { outline: 2.5px solid var(--accent); outline-offset: 1px; }
+.die .blank { color: #00000055; font-size: 18px; }
+.die .part-icon { width: 26px; height: 26px; object-fit: contain; }
+.die-red { background: var(--die-red); color: #fff; }
+.die-yellow { background: var(--die-yellow); color: #3d2d00; }
+.die-white { background: var(--die-white); color: #333; }
+.die-blue { background: var(--die-blue); color: #fff; }
+.die-black { background: var(--die-black); color: #eee; border-color: #4a4a52; }
+
+.totals { color: var(--text); font-size: 12px; }
+.tray-versus { display: flex; flex-direction: column; gap: 4px; }
+.tray-group-head {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.7px; text-transform: uppercase;
+  color: var(--text3); margin-bottom: 3px;
+}
+.tray-versus .die { cursor: default; width: 34px; height: 34px; }
+.tray-versus .tray-results { min-height: 0; padding: 5px; }
+.tray-versus .totals { margin-top: 4px; }
+.tray-vs {
+  align-self: center; font-family: var(--mono); font-size: 10px; font-weight: 700;
+  color: var(--accent); letter-spacing: 1px; margin: 1px 0;
+}
+.rerolls { display: flex; gap: 6px; margin-top: 6px; }
+/* And they wrap: two or three offers in a 300px column cannot share one line
+   without being crushed, so each takes what it needs and the next follows. */
+.rerolls { flex-wrap: wrap; }
+/* THESE READ AS BUTTONS, ALWAYS. OTTO: "I sometimes don't see them after I am
+   doing a focus reroll because they are just tiny text under the dice." They
+   were --surface2 on --surface, which is barely a step, and the Focus reroll is
+   a decision the attack STOPS for: the other player is parked until it is
+   pressed. A border and a background that carries its own weight, so the thing
+   the game is waiting on cannot be mistaken for a caption. */
+.rerolls button {
+  flex: 1; border-radius: var(--radius); border: 1px solid var(--accent);
+  background: var(--accent-lt); color: var(--accent); font-weight: 600;
+  font-size: 11.5px; padding: 6px; cursor: pointer;
+  white-space: normal; text-transform: capitalize; min-width: 0;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+/* The OUTLINE is what does the work. A fill alone measured 1.26:1 against the
+   felt it sits on, which is why these read as a caption: --surface3 on
+   --surface is not a step a player's eye takes. */
+.rerolls button:hover:not(:disabled) { background: var(--accent); color: var(--on-accent); }
+/* Still visible when it is not yours to press. It says "not now", not "nothing
+   here" -- both players can see the offer exists, which is the same reason the
+   Focus reroll is drawn on every screen rather than only the one that owns it. */
+.rerolls button:disabled { opacity: 0.45; cursor: default; }
+/* The squad reroll pots keep their own colour and take the same outline, so the
+   whole family reads as one control rather than two designs. */
+#rr-blue { background: var(--blue-lt); color: var(--blue); border-color: var(--blue); }
+#rr-blue:hover:not(:disabled) { background: var(--blue); color: var(--on-accent); }
+#rr-red { background: var(--red-lt); color: var(--red); border-color: var(--red); }
+#rr-red:hover:not(:disabled) { background: var(--red); color: var(--on-accent); }
+
+
+/* ---------- attack helper ---------- */
+.attack-helper { display: flex; flex-direction: column; gap: 8px; }
+.attack-helper {
+  background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 9px 10px 10px;
+}
+.ah-head {
+  display: flex; align-items: center; gap: 6px; font-size: 13px; flex-wrap: wrap;
+  padding-bottom: 8px; margin-bottom: 8px; border-bottom: 1px solid var(--border);
+}
+.ah-head .dim { font-size: 11.5px; }
+/* The launch head carries a volley counter, so the name takes a line of its own
+   and the counter shares the next one with the stop button pushed right. */
+.ah-head-stack > b { flex: 0 0 100%; }
+.ah-head-stack .dim { flex: 1 1 auto; min-width: 0; }
+.ah-cancel {
+  margin-left: auto; border: none; background: var(--surface3); color: var(--text2);
+  border-radius: var(--radius); cursor: pointer; padding: 5px 10px; font-family: var(--font);
+  transition: background 0.12s, color 0.12s;
+}
+.ah-cancel:hover { background: var(--border); color: var(--text); }
+/* Sits immediately left of Stop here, so margin-left:auto stays on the cancel. */
+.ah-undo {
+  border: none; background: var(--surface3); color: var(--text2); border-radius: var(--radius);
+  cursor: pointer; padding: 5px 9px; font-size: 14px; line-height: 1; font-family: var(--font);
+  margin-left: auto; transition: background 0.12s, color 0.12s;
+}
+.ah-undo + .ah-cancel { margin-left: 0; }
+.ah-undo:hover { background: var(--accent-lt); color: var(--accent); }
+.ah-los { font-size: 11.5px; color: var(--accent); background: var(--accent-lt); border-radius: var(--radius); padding: 6px 9px; margin: 0; }
+.ah-step h4 {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.7px; color: var(--text2);
+  font-weight: 700; margin: 12px 0 6px;
+}
+.ah-step h4 .ah-n {
+  display: inline-block; min-width: 16px; padding: 1px 0; margin-right: 5px;
+  border-radius: var(--radius-sm); background: var(--accent-lt); color: var(--accent);
+  font-family: var(--mono); font-size: 10px; text-align: center;
+}
+.ah-step .dim { font-size: 11.5px; margin: 4px 0; line-height: 1.5; }
+.ah-primary {
+  display: block; width: 100%; margin: 8px 0; padding: 7px 0;
+  background: var(--accent); color: var(--on-accent); font-weight: 700; font-size: 12.5px;
+  border: none; border-radius: var(--radius); cursor: pointer; font-family: var(--font);
+  transition: filter 0.12s;
+}
+.ah-primary:hover { filter: brightness(1.08); }
+/* WAS an emoji muted with `filter: grayscale(1)`, which is what a desaturated
+   emoji looks like: muddy, differently shaped on every platform, and unable to
+   take an accent colour. The icons are inline SVG on currentColor now, so the
+   filter is gone and only the sizing is left. Kept as a class because the
+   combat window still wraps a couple of icons in it. */
+
+
+/* The swept icons sit inline in a sentence or a button label, so they align to
+   the text rather than to the line box. */
+.ah-los > svg, .ah-protect > svg, .ah-fragile > svg {
+  width: 13px; height: 13px; vertical-align: -2px; margin-right: 3px;
+}
+/* SCOPED to the buttons that carry an icon beside a label. This was `button >
+   svg` for a day, and that also reached every icon-ONLY button that sizes its
+   svg but never pins its margin (.pp-cmp, .slot-pop, #btn-builder) - 5px of
+   right margin on a lone centred icon is the icon sitting visibly off. */
+.ah-primary > svg, .ah-alt > svg, .bigbtn > svg, .detonate-btn > svg {
+  width: 14px; height: 14px; vertical-align: -2px; margin-right: 5px;
+}
+/* The counter-roll's versus mark, which is the same bolt electronic warfare
+   uses. Gold, because it separates two squad names rather than labelling one. */
+.vs-bolt { display: inline-flex; align-items: center; color: var(--accent); margin: 0 4px; }
+.vs-bolt svg { width: 13px; height: 13px; }
+.ah-pool { display: flex; gap: 8px; margin: 6px 0; flex-wrap: wrap; }
+.ah-pool small { color: var(--text2); }
+.ah-roll { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; margin: 6px 0; }
+.ah-sum { font-size: 12.5px; margin: 4px 0; }
+.ah-protect {
+  font-size: 12px; margin: 6px 0; padding: 7px 9px; border-radius: var(--radius);
+  background: var(--blue-lt); color: #cfe3f7;
+}
+.ah-protect b { color: #fff; }
+.ah-fragile {
+  font-size: 12px; margin: 6px 0; padding: 7px 9px; border-radius: var(--radius);
+  background: rgba(240, 145, 107, 0.14); color: #f6cdb9;
+}
+.ah-fragile b { color: #fff; }
+
+/* ---------- TWO COLUMNS, so nothing important scrolls away ----------
+   OTTO: the single column got tall enough that the dice and the log were
+   both below the fold, and the two things you most want during a fight were
+   the two you had to scroll for.
+
+   The steps, the current controls and the log keep the main column; the felt
+   moves to a narrow one on the right and STICKS, so both hands stay on
+   screen however far the left side runs on.
+
+   A CONTAINER query, not a media query or a page-specific rule: the same
+   panel is a floating window in the Match Centre and a narrow sidebar tab in
+   freeplay, so the layout has to answer to the space it is actually given
+   rather than to the size of the screen. Below the threshold it collapses
+   back to one column with no special case.
+
+   No DOM change: the felt is placed explicitly and everything else auto
+   flows into column one, so render() builds the same tree either way. */
+#combat-body { container-type: inline-size; }
+/* The two content columns, built by render() so the grid keeps exactly two
+   rows. In one-column mode both are ordinary flex columns and nothing in the
+   container query applies, so the same tree serves both layouts. */
+.ah-main, .ah-side { display: flex; flex-direction: column; gap: 8px; min-width: 0; min-height: 0; }
+
+/* THE FELT NEVER GIVES UP HEIGHT, AND THE TRACE ALWAYS DOES.
+   .ah-felt clips its own content -- `overflow: hidden` is what rounds its
+   corners -- so a felt squeezed by a short panel does not scroll, it cuts the
+   bottom off a hand. And the bottom of a hand is exactly where that hand's
+   reroll controls live.
+   Because felt() puts the VIEWER'S OWN dice last, the half that gets cut is
+   always the one whose buttons that viewer is the only person who can press,
+   while the other player -- who has the same hand at the TOP of their own felt
+   -- keeps seeing them. That asymmetry is what made this read as the two
+   clients disagreeing rather than as a layout fault. */
+.ah-side > .ah-log { flex: 0 1 auto; }
+.ah-side > .ah-felt { flex: none; }
+
+/* ---------- THE ASK BAND ----------
+   ONE place a demand appears, so it is unmissable by construction rather than
+   by shouting. It is never empty: when the demand is not yours it names whose
+   it is, which is what lets you see that your opponent is deciding rather than
+   idle. */
+.attack-helper > .ah-ask {
+  display: flex; align-items: baseline; gap: 9px;
+  padding: 7px 11px; border-radius: var(--radius);
+  background: var(--surface2);
+  font-size: 11.5px; line-height: 1.45;
+  /* NO LEFT-EDGE BORDER, in any state. The active card in the stack is lifted
+     rather than ruled, and the band follows the same rule so the two agree. */
+  border: 1px solid transparent;
+}
+.attack-helper > .ah-ask .ah-ask-w {
+  font-size: 9.5px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase;
+  color: var(--text3); white-space: nowrap; flex: none;
+}
+.attack-helper > .ah-ask .ah-ask-t { color: var(--text2); min-width: 0; }
+/* WAITING ON SOMEBODY ELSE is the resting state, and it stays quiet. */
+.attack-helper > .ah-ask.mine {
+  background: var(--accent-lt); border-color: rgba(240, 180, 41, 0.34);
+}
+.attack-helper > .ah-ask.mine .ah-ask-w { color: var(--accent); }
+.attack-helper > .ah-ask.mine .ah-ask-t { color: var(--text); font-weight: 600; }
+/* The motion, and it is deliberately small: OTTO asked to start light because
+   this is both the strongest anti-miss tool available and the easiest to make
+   annoying. It plays ONCE, and only when the ask itself changes -- `fresh` is
+   added by the renderer only when the ask key differs from the one last drawn,
+   so a repaint (a log line, an arriving frame) does not replay it. */
+@keyframes ah-ask-in {
+  from { transform: translateY(-3px); opacity: 0.35; }
+  to { transform: none; opacity: 1; }
+}
+.attack-helper > .ah-ask.fresh { animation: ah-ask-in 220ms ease-out 1; }
+/* Only a BLOCKING demand of your own earns the second beat. An offer you may
+   decline, and anything you are merely watching, does not. */
+@keyframes ah-ask-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(240, 180, 41, 0); }
+  45% { box-shadow: 0 0 0 3px rgba(240, 180, 41, 0.22); }
+}
+.attack-helper > .ah-ask.mine.blocking.fresh {
+  animation: ah-ask-in 220ms ease-out 1, ah-ask-pulse 900ms ease-out 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .attack-helper > .ah-ask.fresh,
+  .attack-helper > .ah-ask.mine.blocking.fresh { animation: none; }
+}
+
+/* ---------- THE TRACE'S STEP GROUPS ----------
+   One row per step with the rules that fired indented under it, so "a roll
+   happened" and "a rule explains why it counted" differ structurally instead of
+   by careful reading. The current step and the last two are open by default. */
+.attack-helper .ah-log .ah-tg + .ah-tg { margin-top: 4px; }
+.attack-helper .ah-log .ah-tg-h {
+  display: flex; align-items: center; gap: 6px; cursor: pointer;
+  font-size: 10px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--text3); padding: 2px 0;
+}
+.attack-helper .ah-log .ah-tg-h:hover { color: var(--text2); }
+.attack-helper .ah-log .ah-tg-h .t { flex: 1; min-width: 0; }
+.attack-helper .ah-log .ah-tg-h .n {
+  font-family: var(--mono); font-size: 9.5px; font-weight: 600;
+  background: var(--surface3); color: var(--text3);
+  border-radius: 999px; padding: 0 5px; flex: none;
+}
+.attack-helper .ah-log .ah-tg.open > .ah-tg-h { color: var(--text2); }
+/* The indent is the whole point: these sit UNDER the step they explain. */
+.attack-helper .ah-log .ah-tg-b {
+  padding-left: 8px; margin-left: 2px;
+  border-left: 1px solid var(--surface3);
+}
+
+/* THE TRACE, capped. It grows without bound over a long fight, and in the
+   reading column it pushed the dice off the bottom of the panel. Eight lines
+   at 11.5px/1.5 plus their margins, then it scrolls: enough to follow what just
+   happened without the panel growing to fit a whole battle. */
+.attack-helper .ah-log {
+  max-height: 164px; overflow-y: auto;
+  background: rgba(0, 0, 0, 0.16); border-radius: var(--radius);
+  padding: 8px 10px; margin: 0;
+}
+
+@container (min-width: 560px) {
+  .attack-helper {
+    display: grid;
+    /* The side column carries the trace AND both hands, so it takes the extra
+       width and the reading column gives it up: the steps and their controls are
+       short lines and were the half with room to spare. */
+    grid-template-columns: minmax(0, 1fr) 262px;
+    /* THREE rows now, and they are named here on purpose. The head and the ask
+       band take what they need and the columns take the REST, which is what
+       lets the columns scroll rather than the window growing. Leaving this at
+       two rows while a third child existed would auto-flow the band into the
+       track meant for the reading column, which is the same class of fault as
+       the ninety-nine implicit rows described below. */
+    grid-template-rows: auto auto minmax(0, 1fr);
+    column-gap: 12px;
+    row-gap: 8px;
+    align-content: start;
+  }
+  /* The matchup names the whole fight, so it spans. */
+  .attack-helper > .ah-head { grid-column: 1 / -1; grid-row: 1; }
+  /* So does the ask: ONE place a demand appears, which only works if it is the
+     same place at every width. */
+  .attack-helper > .ah-ask { grid-column: 1 / -1; grid-row: 2; }
+  /* BOTH columns scroll. The reading column grows without bound with the step
+     stack, and the side column grows with the dice: a wide pool wraps to three
+     or four rows in a 262px column, and there are two hands of it.
+     This used to say the side column "is already capped by the log's own
+     height", which was simply wrong -- the log is capped, the FELT under it is
+     not -- and it was `align-self: start` with no overflow, so the column was
+     sized to its content and the surplus ran straight out of the bottom of the
+     window. #combat-body clips with `overflow: hidden`, so what ran out was
+     unreachable rather than merely off screen: no scrollbar appears on a hidden
+     overflow. See the felt/log flex rules above for which part yields. */
+  .attack-helper > .ah-main { grid-column: 1; grid-row: 3; min-width: 0; min-height: 0; overflow-y: auto; }
+  .attack-helper > .ah-side {
+    grid-column: 2; grid-row: 3;
+    min-height: 0;
+    overflow-y: auto;
+  }
+  .attack-helper > .ah-side .ah-felt { margin: 0; }
+  /* A narrower column wraps the dice sooner, which is fine, but the header
+     should not fight them for width. */
+  .attack-helper > .ah-side .ah-half-h { flex-wrap: wrap; row-gap: 2px; }
+  /* The Electronic Counter-roll's window is a single column BY DESIGN: it
+     builds no .ah-main/.ah-side pair, so the grid above would auto-flow its
+     children into tracks meant for the attack window. It keeps the flex
+     column at every width, and scrolls itself because #combat-body clips
+     with overflow: hidden -- anything past the bottom edge of that box is
+     not off screen, it is unreachable (see the felt rules above). */
+  .attack-helper.ew-contest { display: flex; flex-direction: column; overflow-y: auto; min-height: 0; }
+}
+
+/* ---------- The felt ----------
+   Both hands on screen at once, in halves that never swap: the viewer's own
+   dice BELOW, the other side's ABOVE. This is the shared table made literal,
+   and it is also the density fix: the dice used to be sandwiched between
+   paragraphs inside whichever step was open, appearing and vanishing as the
+   attack moved on. */
+.ah-felt {
+  margin: 10px 0 8px; border-radius: var(--radius); overflow: hidden;
+  background: var(--surface); box-shadow: inset 0 0 0 1px var(--border);
+}
+.ah-half { padding: 9px 11px 11px; }
+/* A hairline between the hands rather than a heavy rule: the two halves are
+   one table, not two panels. This is also where the resolution animation
+   will sit once it moves in, which is why the gap is kept clear. */
+.ah-half + .ah-half { border-top: 1px solid var(--border); }
+/* Each side tinted toward its own colour, strongest at its own edge, so the
+   halves are told apart by more than position. */
+.ah-half-theirs { background: linear-gradient(180deg, rgba(234, 109, 118, 0.08), transparent 84%); }
+.ah-half-mine { background: linear-gradient(0deg, rgba(101, 162, 216, 0.08), transparent 84%); }
+.ah-half-h { display: flex; align-items: center; gap: 7px; margin-bottom: 7px; }
+.ah-half-h .eyebrow { font-size: 9.5px; letter-spacing: 0.9px; text-transform: uppercase; color: var(--text3); font-weight: 700; }
+.ah-half-h .nm { font-size: 11.5px; font-weight: 600; }
+.ah-half-h .nm.s1 { color: var(--s1); }
+.ah-half-h .nm.s2 { color: var(--s2); }
+/* What the dice are DOING, which is the number wanted mid-combat. */
+.ah-half-h .tot { margin-left: auto; font-family: var(--mono); font-size: 14px; font-weight: 700; color: var(--text); }
+.ah-half-h .tot small { font-family: var(--font); font-size: 9.5px; font-weight: 400; color: var(--text3); margin-left: 4px; }
+.ah-half .ah-roll { margin: 0; }
+
+/* ---------- The step stack ----------
+   Every step of the attack is a card. Finished ones collapse to one line
+   carrying their result, so the whole attack traces at a glance instead of
+   being reconstructed from the log.
+
+   NO LEFT-EDGE BORDERS, in any state. The active card is signalled by being
+   LIFTED: a lighter surface, a deeper shadow, an amber step number. Finished
+   cards recede by dropping their background rather than gaining a rule. */
+.ah-stack { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; }
+.ah-card { background: var(--surface2); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
+.ah-card.done { background: rgba(30, 36, 44, 0.55); }
+.ah-card-h { display: flex; align-items: center; gap: 9px; padding: 7px 10px; }
+.ah-card-h .n {
+  width: 19px; height: 19px; flex: none; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 9.5px; font-weight: 700;
+  background: var(--surface3); color: var(--text3);
+}
+.ah-card.done .ah-card-h .n { background: var(--green-lt); color: var(--green); }
+.ah-card-h .t { font-size: 11.5px; font-weight: 600; flex: 1; min-width: 0; color: var(--text2); }
+.ah-card-h .r { font-family: var(--mono); font-size: 10.5px; color: var(--text2); white-space: nowrap; }
+/* The open card, lifted rather than outlined. */
+.ah-card.now { background: var(--surface3); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.42); }
+.ah-card.now .ah-card-h .n { background: var(--accent); color: var(--on-accent); box-shadow: 0 0 0 3px var(--accent-lt); }
+.ah-card.now .ah-card-h .t { color: var(--text); }
+.ah-card.now .ah-card-h .r { color: var(--accent); font-weight: 700; }
+.ah-card-b { padding: 0 10px 10px; }
+/* A finished card that has lines to show says so, and opens on click. The
+   chevron turns rather than the row changing colour, so a card that can be
+   opened is not confusable with the one that is active. */
+.ah-card.can-open .ah-card-h { cursor: pointer; }
+.ah-card.can-open .ah-card-h:hover { background: rgba(255, 255, 255, 0.03); }
+.ah-card.can-open .ah-card-h::after {
+  content: '›'; margin-left: 2px; color: var(--text3); font-size: 13px;
+  transition: transform 0.14s; display: inline-block;
+}
+.ah-card.can-open.open .ah-card-h::after { transform: rotate(90deg); }
+/* The past lines read as a trace, not as live content. */
+.ah-card-past { font-size: 11px; line-height: 1.5; color: var(--text3); }
+.ah-card-past div { margin-bottom: 3px; }
+
+/* The step's own content already carries its heading, and inside a card
+   that heading is the card's title said twice. */
+.ah-card-b .ah-step h4 { display: none; }
+.ah-card-b .ah-step { margin: 0; }
+/* An extra beat this weapon caused, not a normal step: tinted and named. */
+.ah-card.extra .ah-card-h .n { background: var(--red-lt); color: var(--red); }
+.ah-card.extra .ah-card-h .t em {
+  font-style: normal; color: var(--red); font-size: 9.5px;
+  letter-spacing: 0.6px; text-transform: uppercase; margin-left: 6px;
+}
+
+/* THE LIVE DIE. A die whose face is actually doing something to this action
+   wears a GREEN ring; blanks and icons nothing reads stay plain.
+
+   Green rather than the usual accent amber, and the reason is not taste: the
+   yellow attack die is itself #f0b429, so an amber ring on a yellow die was
+   very nearly invisible and gave no answer on exactly the dice a player most
+   wants read. Green is the one semantic colour already in the palette that no
+   die uses, and it means the same thing here as everywhere else in the app.
+
+   Drawn as a box-shadow rather than a border so the die does not change size
+   when it lights up, which would jostle the whole row on every reroll.
+   Scoped to .attack-helper so the board's own dice are untouched. */
+.attack-helper .die.live {
+  box-shadow: 0 0 0 2px var(--green), 0 0 0 5px var(--green-lt);
+}
+/* A selected die already carries its own outline, so the two are stacked
+   rather than fighting: selection reads outside the live ring. */
+.attack-helper .die.live.sel {
+  box-shadow: 0 0 0 2px var(--green), 0 0 0 5px var(--green-lt), 0 0 0 7px var(--text);
+}
+
+/* ---------- Combat panel redesign, pass 2: one ladder, and room to read ----------
+   SEVENTEEN rendered sizes collapse to SIX, and five of the six are numbers the
+   Match Centre turn panel already uses, so the box moves onto the scale OTTO
+   named as the success rather than onto a new one:
+
+     15px/600   title      the matchup line              (= .tp-title)
+     14px/700   number     the figure being looked for   (= .pool-die b)
+     12px/400   body       the ONE sentence size
+     11.5px     row        pressable labels, and the log trace (= .dialrow .nm)
+     10.5px/400 caption    standing explanation          (= .tp-dim)
+     9.5px/700  eyebrow    uppercase step markers        (= .tp-eyebrow)
+
+   THE DENSITY FIX IS NOT SMALLER TEXT, IT IS FEWER THINGS AT BODY RANK. A step
+   carries two kinds of prose: the RULE that is always true there, and the ASK
+   being made of you right now. They were both 11.5px and indistinguishable, so
+   the question got lost among the footnotes. Standing explanation drops to
+   caption, the ask stays at body, and the gap between them is what makes the
+   question findable without shouting.
+
+   Values only. No class is renamed and no TypeScript is touched, so nothing can
+   half-apply. ---------- */
+
+/* Titles. .ah-head carried the matchup at 13px, a whisker above body, so the
+   thing naming the whole fight read like another sentence. */
+.ah-head { font-size: 15px; font-weight: 600; line-height: 1.25; color: var(--text); }
+.ah-head .dim { font-size: 11.5px; font-weight: 400; color: var(--text2); }
+
+/* Step markers become eyebrows: navigational, not content. They were 11px and
+   competing with the rules text under them. */
+.ah-step h4 { font-size: 9.5px; letter-spacing: 0.9px; color: var(--text3); margin: 16px 0 6px; }
+.ah-step h4 .ah-n { font-size: 9.5px; min-width: 15px; }
+
+/* STANDING EXPLANATION, the rule that is true here whatever you do. Quietest
+   readable rank, because it is reference rather than instruction. */
+.ah-step .dim { font-size: 10.5px; line-height: 1.45; color: var(--text3); margin: 4px 0; }
+
+/* THE ASK, and the line-of-sight strip that qualifies the shot. Body rank, so
+   the two of them are the only prose at full weight in the step. */
+.ah-los { font-size: 12px; line-height: 1.5; padding: 7px 9px; margin: 2px 0; }
+.ah-note { font-size: 12px; }
+
+/* Results and warnings sit at body too: they are consequences, not footnotes. */
+.ah-sum { font-size: 12px; margin: 6px 0; color: var(--text); }
+.ah-sum b { font-size: 14px; font-family: var(--mono); font-weight: 700; }
+.ah-protect, .ah-fragile { font-size: 12px; line-height: 1.5; }
+.ah-blackcap { font-size: 11.5px; }
+
+/* The log is a trace, so it reads below the live step. Scoped to the helper
+   deliberately: the bare `.ah-log` rules sit LOWER in this file and would
+   otherwise win on order, leaving these dead and this comment lying about
+   what actually renders. Specificity beats position and keeps them together. */
+.attack-helper .ah-log { font-size: 11.5px; line-height: 1.5; }
+.attack-helper .ah-log div { margin-bottom: 3px; }
+
+/* ROOM TO READ. OTTO: "so much text on the screen and its all stacked closely
+   on top, inbetween, or bottom of the dice". The dice are the thing being
+   looked at, so they get the whitespace and the prose stops crowding them. */
+.ah-roll { margin: 10px 0; gap: 6px; }
+.ah-pool { margin: 10px 0; }
+.ah-partpick { margin-top: 10px; }
+.attack-helper > * + * { margin-top: 2px; }
+
+/* ---------- Combat panel redesign, pass 1: adopt the sidebar's vocabulary ----------
+   These five classes are used at 24 call sites in combat.ts and match.ts and had
+   NO CSS at all. `.ah-alt` is the class of every defender choice, so the
+   defending player's whole agency was rendering as raw browser furniture next to
+   fully branded accent buttons.
+   styles.css is loaded by index.html AND match.html, so this covers the freeplay
+   board and the Match Centre together. Deliberately NOT referencing `.rowbtn` or
+   the `.tp-*` classes: those live in match.css and do not exist on the freeplay
+   page, so the values are copied instead and the two pages still agree. */
+
+/* The root cause of "sometimes small, sometimes larger". Nothing here declared a
+   font-size, so every unstyled child fell back to the browser's 16px and became
+   the BIGGEST thing in a box whose real content sits at 10 to 13px. The
+   hierarchy was inverted rather than merely absent. One declaration removes the
+   whole class of problem: anything wanting another size now has to say so. */
+.attack-helper { font-size: 12px; line-height: 1.5; color: var(--text2); }
+
+/* The defender's choices: KC Armor, Designate-keep, Melee Evasion, Dodge
+   Enhancement, Focus pass and keep. These are full sentences that must wrap, not
+   short labels, so this is a ROW rather than a chip. Values copied from
+   match.css .rowbtn so these and the Match Centre's own controls read as one
+   family. They are among the strongest defensive effects in the game and they
+   expire silently when the attacker presses Resolve, so they get a real
+   affordance rather than looking like page scaffolding. */
+.ah-alt {
+  display: block; width: 100%; text-align: left; margin: 5px 0;
+  border: none; border-radius: var(--radius-sm); background: var(--surface3);
+  color: var(--text); font-family: var(--font); font-size: 11.5px; font-weight: 600;
+  line-height: 1.4; padding: 8px 10px; cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.ah-alt:hover { background: #2c3542; }
+.ah-alt:disabled { background: var(--surface2); color: var(--text3); cursor: default; }
+
+/* One rank quieter: "Drop X", "+ Add target". Housekeeping rather than a rules
+   decision, so it recedes instead of competing with the choices above. */
+.ah-ghost {
+  border: none; border-radius: var(--radius-sm); background: transparent;
+  color: var(--text2); font-family: var(--font); font-size: 10.5px; font-weight: 600;
+  padding: 5px 9px; margin: 2px 4px 2px 0; cursor: pointer;
+  box-shadow: inset 0 0 0 1px var(--border);
+  transition: background 0.12s, color 0.12s;
+}
+.ah-ghost:hover { background: var(--surface3); color: var(--text); }
+
+/* The sentence that sets up a choice, for example "The hit landed on X". It
+   explains the buttons under it, so it stays at body rank and the left rule ties
+   it to what it introduces. */
+.ah-note {
+  font-size: 12px; line-height: 1.5; color: var(--text2);
+  margin: 8px 0 4px; padding: 0 0 0 9px;
+  border-left: 2px solid var(--border);
+}
+
+/* Groups the Focus controls so the reroll offer reads as one unit rather than a
+   loose button beside a loose sentence. */
+.ah-focus { margin: 6px 0; }
+
+/* One target inside a Multi-Target split. Without a container these ran together
+   and it was not obvious which pool editor belonged to which target. */
+.ah-mt-row {
+  background: var(--surface); border-radius: var(--radius-sm);
+  padding: 8px 9px; margin: 6px 0;
+}
+
+/* ---------- the role gate, made visible ----------
+   A control the viewer may not press is DISABLED, never removed, so the same
+   box serves the attacker, the defender and a spectator alike (the ratified
+   "ONE renderer with a ROLE"). Without these rules an inert control still looks
+   pressable, which is a worse lie than hiding it was. `.ah-alt:disabled` is
+   already covered above; this is the rest of what the gate can reach. */
+.attack-helper button:disabled { cursor: default; }
+.ah-primary:disabled, .ah-primary:disabled:hover {
+  background: var(--surface3); color: var(--text3); filter: none;
+}
+.ah-ghost:disabled, .ah-ghost:disabled:hover { background: transparent; color: var(--text3); }
+.attack-helper .chip:disabled, .attack-helper .die:disabled { opacity: 0.55; }
+.pool-die button:disabled { opacity: 0.5; }
+.pool-die button:disabled:hover { background: transparent; }
+.range-ring { fill: var(--accent); stroke: #f0b429; stroke-width: 0.75; }
+.range-ring-self { fill: #fff; stroke: #fff; }
+.range-ring-dist { font-size: 10px; fill: #f0b429; font-weight: 700; pointer-events: none; }
+
+
+/* ---------- per-unit combat log (bottom of the Combat tab) ---------- */
+.combat-idle { padding: 10px 12px; margin: 0; font-size: 12px; line-height: 1.5; }
+.combat-idle b { color: var(--accent); font-weight: 600; }
+#combat-body { padding: 10px 12px 0; }
+#unit-log { padding: 10px 12px 16px; }
+.ul-head {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.7px; color: var(--text2);
+  font-weight: 700; margin: 14px 0 7px; padding-top: 12px; border-top: 1px solid var(--border);
+}
+.ul-who { text-transform: none; letter-spacing: 0; color: var(--accent); font-weight: 600; }
+#ul-clear {
+  margin-left: auto; border: none; background: var(--surface2); color: var(--text2);
+  border-radius: var(--radius-sm); font-size: 10px; padding: 3px 8px; cursor: pointer;
+  font-family: var(--font); text-transform: none; letter-spacing: 0;
+  transition: background 0.12s, color 0.12s;
+}
+#ul-clear:hover { background: var(--surface3); color: var(--text); }
+.ul-list { display: flex; flex-direction: column; gap: 3px; max-height: 260px; overflow-y: auto; }
+.ul-row {
+  display: flex; gap: 7px; font-size: 11.5px; line-height: 1.45; color: var(--text2);
+  background: var(--surface2); border-radius: var(--radius-sm); padding: 5px 8px;
+}
+.ul-round { flex-shrink: 0; font-family: var(--mono); font-size: 10px; color: var(--accent); padding-top: 1px; }
+
+/* ---------- dice duel (resolution) ---------- */
+.duel {
+  background: var(--bg); border-radius: var(--radius); padding: 10px; margin: 8px 0;
+}
+.duel-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.duel-side { font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text2); font-weight: 700; }
+.duel-vs { font-size: 10px; color: var(--text3); font-family: var(--mono); }
+.duel-replay {
+  margin-left: auto; border: none; background: var(--surface2); color: var(--text2);
+  border-radius: var(--radius-sm); font-size: 10.5px; padding: 4px 9px; cursor: pointer;
+  font-family: var(--font); transition: background 0.12s, color 0.12s;
+}
+.duel-replay:hover { background: var(--surface3); color: var(--text); }
+.duel-grid { display: flex; flex-wrap: wrap; gap: 6px; }
+.duel-col {
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  background: var(--surface); border-radius: var(--radius); padding: 7px 6px 5px; min-width: 52px;
+  opacity: 0; transform: translateY(6px);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+.duel-col.shown { opacity: 1; transform: none; }
+
+.duel-icon { display: inline-flex; line-height: 0; }
+.duel-icon.k-heavyHit { color: #ff8b6b; }
+.duel-icon.k-lightHit { color: #ffd166; }
+.duel-icon.k-dodge { color: var(--green); }
+.duel-icon.k-defense { color: var(--blue); }
+.duel-icon.k-lightning { color: #c9a6ff; }
+.duel-icon.k-eye { color: var(--text2); }
+
+.duel-col > .duel-icon { position: relative; transition: opacity 0.2s; }
+.duel-col[data-offset="dodge"].resolved > .duel-icon,
+.duel-col[data-offset="defense"].resolved > .duel-icon { opacity: 0.32; }
+.duel-col[data-offset="dodge"].resolved::after,
+.duel-col[data-offset="defense"].resolved::after {
+  content: ''; position: absolute; top: 16px; left: 8px; right: 8px; height: 2px;
+  background: currentColor; border-radius: 2px; transform: rotate(-14deg);
+}
+.duel-col[data-offset="dodge"] { color: var(--green); }
+.duel-col[data-offset="defense"] { color: var(--blue); }
+.duel-col[data-offset="none"] { color: #ff8b6b; }
+.duel-col { position: relative; }
+
+.duel-link { width: 1px; height: 8px; background: var(--border); opacity: 0; transition: opacity 0.2s; }
+.duel-col.resolved .duel-link { opacity: 1; }
+.duel-block { min-height: 18px; display: flex; align-items: center; }
+.duel-block .duel-icon { opacity: 0; transform: translateY(7px); transition: opacity 0.22s ease, transform 0.22s ease; }
+.duel-col.resolved .duel-block .duel-icon { opacity: 1; transform: none; }
+
+.duel-v {
+  font-size: 8.5px; text-transform: uppercase; letter-spacing: 0.4px; font-weight: 700;
+  opacity: 0; transition: opacity 0.2s; text-align: center; line-height: 1.25;
+}
+.duel-col.resolved .duel-v { opacity: 1; }
+.duel-v small { display: block; font-size: 7.5px; font-weight: 600; opacity: 0.75; letter-spacing: 0; }
+.duel-v.dodged { color: var(--green); }
+.duel-v.blocked { color: var(--blue); }
+.duel-v.through { color: #ff8b6b; }
+.duel-col[data-offset="none"].resolved { background: rgba(255, 139, 107, 0.12); }
+.duel-col[data-offset="none"].resolved > .duel-icon { animation: duel-pulse 1.5s ease-in-out infinite; }
+@keyframes duel-pulse { 50% { transform: scale(1.16); } }
+
+.duel-spare, .duel-trig {
+  display: flex; align-items: center; gap: 5px; flex-wrap: wrap;
+  margin-top: 9px; padding-top: 8px; border-top: 1px solid var(--border);
+}
+.duel-spare small, .duel-trig small { color: var(--text2); font-size: 10px; }
+.duel-spare .duel-icon { opacity: 0; transition: opacity 0.2s; }
+.duel-spare .duel-icon.shown { opacity: 1; }
+.duel-icon.unused { filter: grayscale(0.7); opacity: 0.5; }
+
+@media (prefers-reduced-motion: reduce) {
+  .duel-col, .duel-block .duel-icon, .duel-v, .duel-link, .duel-spare .duel-icon {
+    opacity: 1 !important; transform: none !important; transition: none !important;
+  }
+  .duel-col[data-offset="none"].resolved > .duel-icon { animation: none; }
+}
+
+/* ---------- chips: pickable buttons in the attack helper and target lists ---------- */
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; text-align: left;
+  background: var(--surface3); color: var(--text); border: 1px solid transparent;
+  border-radius: var(--radius-sm); padding: 5px 8px; font-size: 11.5px;
+  font-family: var(--font); cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.chip:hover { background: var(--border); border-color: var(--accent); }
+.chip b {
+  flex-shrink: 0; font-size: 9.5px; font-weight: 700; letter-spacing: 0.4px;
+  text-transform: uppercase; color: var(--text2);
+}
+.chip:hover b { color: var(--accent); }
+.chip-damaged b { color: var(--accent); }
+.chip-destroyed { opacity: 0.5; }
+.chip-destroyed b { color: var(--red); }
+.chip-def { color: var(--text2); font-variant-numeric: tabular-nums; font-family: var(--mono); }
+.chip-intact .chip-def { color: var(--green); }
+.chip-damaged .chip-def { color: var(--accent); }
+
+.ew-side {
+  margin: 8px 0; padding: 7px 9px; border-radius: var(--radius);
+  background: var(--surface); border: 1px solid var(--border);
+}
+.ew-side h5 {
+  margin: 0 0 5px; font-size: 10.5px; font-weight: 700; letter-spacing: 0.4px;
+  text-transform: uppercase; color: var(--text2);
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+}
+.ew-ev {
+  font-family: var(--mono); font-size: 10px; padding: 1px 5px; border-radius: var(--radius-sm);
+  background: var(--accent-lt); color: var(--accent); letter-spacing: 0;
+}
+.ew-off {
+  font-size: 9px; padding: 1px 5px; border-radius: var(--radius-sm); letter-spacing: 0.3px;
+  background: rgba(255, 157, 157, 0.16); color: #ff9d9d;
+}
+.ew-side .ah-roll { margin: 4px 0; }
+.ew-side .ah-sum { margin: 2px 0 0; }
+.ew-side .ah-sum b { color: var(--accent); font-family: var(--mono); }
+
+.ah-partpick { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+.ah-partpick .chip { width: 100%; }
+.ah-log {
+  background: var(--bg); border: none; border-radius: var(--radius);
+  font-size: 11.5px; padding: 7px 9px; color: var(--text2); max-height: 180px; overflow-y: auto;
+}
+.ah-log div { margin-bottom: 2px; }
+

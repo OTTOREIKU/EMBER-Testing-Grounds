@@ -12,6 +12,7 @@ import { inContact, canStandIn, attackDirection, crushExchange, crushExchangeSpo
 import { breakAwayCost, breakAwayNote, canBeForceMoved, tetherCap, tetherNote } from './melee';
 import { factionColour, ICON_DICE, linkIcon, squadColour } from './icons';
 import { iconSvg } from './dice';
+import { ensureScript, enterPhase, glueAfter as glueCore, makeInit, opportunity } from './glue';
 import type { PartSlot, CardAction, CounterRoll, DiceData, DieColor, Facing, GameState, RollbackPoint, Side, Stance, TerrainPiece, Timing, Token, ExtraTick, Opportunity } from './types';
 import { statusCount, gridsOf, newOpportunity, newScriptState, PHASES, STATUSES, TIMINGS, zonesOf } from './types';
 import { deployable, deployTurn, deploymentComplete, firstPlayerFrom, normaliseSetup, rollTotal, type SetupState } from './setup';
@@ -102,70 +103,22 @@ function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-// ---------- the guide glue, mirrored from playguide.ts ----------
-// Both clients run this same deterministic bookkeeping between commands; the
-// Match Centre is a full peer, so it runs it too.
+// ---------- the guide glue ----------
+// The deterministic turn bookkeeping lives in glue.ts, shared with the pad's
+// guided mode. This page adds the one piece a board needs on top: the smoke
+// dissipation queue, which is geometry the pad never has.
 
-const PKEY: Record<Timing, 'swift' | 'melee' | 'projectile' | 'firing' | 'moving' | 'tactic'> = {
-  swift: 'swift', melee: 'melee', projectile: 'projectile', firing: 'firing', movement: 'moving', tactical: 'tactic',
-};
-
-export function makeInit(data: GameData): InitLookup {
-  return (t, timing) => {
-    const p = t.mech?.pilot ? data.byId.get(t.mech.pilot) : undefined;
-    const v = p?.[PKEY[timing]];
-    return typeof v === 'number' ? v : undefined;
-  };
-}
-
-export function ensureScript(state: GameState): NonNullable<GameState['script']> {
-  if (!state.script) state.script = { ...newScriptState(state.round.firstPlayer), strict: true };
-  return state.script;
-}
-
-export function enterPhase(data: GameData, s: GameState): void {
-  const sc = ensureScript(s);
-  if (s.round.phase === 0) {
-    seedCommandTokens(data, s);
-    sc.commanded = [];
-    sc.freeCommand = [];
-  } else if (sc.stage.split(':')[1] === '0') {
-    // 3.2.3, on the way out of the Command Phase - and ONLY then: the Drones'
-    // Command Tokens come off, the Mechs' reserved ones do not. sc.stage still
-    // names the phase being left at this point, and the leaving check matters:
-    // a token a Drone is handed later through Command Coordination stays on its
-    // card until the End Phase sweep (4.15.4), so stripping Drones on every
-    // phase entry would delete it one phase early.
-    clearDroneCommands(s);
-  }
-  if (s.round.phase === 0 || s.round.phase === 2) sc.acted = [];
-  sc.endDone = sc.endDone.filter((k) => k.startsWith(`${s.round.n}:`));
-    // Once-per-round abilities are keyed by round for the same reason, so the
-    // ledger is pruned the same way rather than growing all game.
-    sc.oncePerRound = (sc.oncePerRound ?? []).filter((k) => k.startsWith(`${s.round.n}:`));
-  sc.opp = null;
-  sc.passed = [];
-  sc.turn = s.round.firstPlayer;
-  sc.stage = `${s.round.n}:${s.round.phase}`;
-}
+export { ensureScript, enterPhase, makeInit } from './glue';
 
 // Runs after any command lands, ours or theirs, so both clients derive the
 // same turn bookkeeping without it ever crossing the wire.
 export function glueAfter(data: GameData, state: GameState, cmd: Command): void {
+  glueCore(data, state, cmd);
   if (!normaliseSetup(state.setup) && cmd.kind !== 'startMatch') return;
-  if (cmd.kind === 'startMatch' || cmd.kind === 'advancePhase' || cmd.kind === 'setPhase' || cmd.kind === 'finishDeployment') {
-    enterPhase(data, state);
-  } else if (cmd.kind === 'designate') {
-    const sc = ensureScript(state);
-    const t = state.tokens.find((x) => x.uid === cmd.uid);
-    const opp = newOpportunity(cmd.uid, undefined);
-    opp.extras = t ? extrasFor(data, t) : [];
-    sc.opp = opp;
-  }
   // Smoke dissipation takes the isolated screens off both sides in one
   // judgement and then owes one removal per Connected group, chosen by its
   // owner (4.16). The queue is snapshotted here rather than re-derived, because
-  // a removal that splits a group owes nothing further this round — and it is
+  // a removal that splits a group owes nothing further this round - and it is
   // built from the command itself so both seats hold the identical list.
   if (cmd.kind === 'dissipateSmoke') {
     const order: Side[] = state.round.firstPlayer === 's1' ? ['s1', 's2'] : ['s2', 's1'];
@@ -181,37 +134,6 @@ export function glueAfter(data: GameData, state: GameState, cmd: Command): void 
   // Leaving the End Phase abandons anything still owed; next round judges the
   // board afresh.
   if (cmd.kind === 'advancePhase' || cmd.kind === 'setPhase' || cmd.kind === 'startMatch' || cmd.kind === 'endMatch') smokeOwed = null;
-  // Whose Action Opportunity it is, derived HERE — off the command, the way
-  // every other piece of turn bookkeeping is.
-  //
-  // It used to be minted inside actionPanel(), which meant it only refreshed on
-  // a client that happened to be *drawing* that panel, and eighteen other
-  // panels return before it. A player with the combat window, an owed
-  // Interception or a Tactics Card open therefore held a stale `opp`, and every
-  // command the other player sent for the active unit was refused with "it is
-  // not this Mech's Action Opportunity" — twice inside six seconds and the
-  // table announced it would not settle. The same render-time derivation is
-  // what made the board fingerprint cry wolf the day before.
-  //
-  // Both clients run this after every command, ours and theirs, so both reach
-  // the same answer without it ever crossing the wire.
-  if (state.round.phase === 2) opportunity(data, state);
-}
-
-function opportunity(data: GameData, s: GameState): Opportunity | null {
-  const sc = ensureScript(s);
-  // A nested Extra Action Opportunity (FAQ K21) belongs to whoever was just
-  // granted it, NOT to whoever the activation order says is next - the
-  // re-derivation below would clobber it on the very next command.
-  if (sc.opp?.extra) return sc.opp;
-  const next = nextActivation(s, makeInit(data));
-  if (!next) return null;
-  if (sc.opp && sc.opp.uid === next.uid) return sc.opp;
-  const t = s.tokens.find((x) => x.uid === next.uid);
-  const fresh = newOpportunity(next.uid, next.timing);
-  fresh.extras = t ? extrasFor(data, t) : [];
-  sc.opp = fresh;
-  return fresh;
 }
 
 // The terrain on the table. A SHIPPED AUTHORED map (E4) brings its own pieces;

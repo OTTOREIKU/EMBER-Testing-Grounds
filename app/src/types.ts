@@ -840,6 +840,9 @@ export interface CombatView {
   // through combat.ts's resolutionHtml, so they cannot disagree about which
   // icon was dodged.
   resolution?: { duel: Duel; text: string[] } | null;
+  // What the attacker's window says about Protection. A host with a board
+  // reads its own; a host without one (the pad) has only this to show.
+  protectionNote?: string;
 }
 
 // A boundary a rollback can return to. `available` false means a die roll has
@@ -1112,6 +1115,7 @@ function normaliseCombatView(raw: unknown): CombatView | null {
       };
     })(),
     resolution: normaliseDuel(v.resolution),
+    protectionNote: typeof v.protectionNote === 'string' && v.protectionNote ? v.protectionNote.slice(0, 200) : undefined,
   };
 }
 
@@ -1311,6 +1315,13 @@ export interface GameState {
   removedTerrain?: string[];
   scale?: BattleScale;
   roundLimit?: number;
+  // A table with NO BOARD - the pad, a record sheet beside a physical game.
+  // Units carry placeholder cells, so every rule that reads where things
+  // stand is either left to the table (movement, range, control of a zone)
+  // or would misfire on the placeholders (the environment and tether sweeps,
+  // the Maneuver's distance arithmetic). Set by configureTable; absent means
+  // a board is there.
+  noBoard?: boolean;
   sideNames?: Partial<Record<Side, string>>;
   // Lobby only: a seat saying it has finished reading and is happy to start.
   ready?: Partial<Record<Side, boolean>>;

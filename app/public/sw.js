@@ -24,7 +24,7 @@ async function dropReplaced() {
   );
 }
 
-const SHELL_PAGES = ['index.html', 'reference.html'];
+const SHELL_PAGES = ['index.html', 'reference.html', 'pad/index.html'];
 
 async function precacheShell() {
   const cache = await caches.open(RUNTIME_CACHE);

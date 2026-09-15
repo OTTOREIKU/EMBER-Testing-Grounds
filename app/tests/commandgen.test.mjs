@@ -270,8 +270,11 @@ check('readyCommands counts only the face-up side', ready.includes("'commandUsed
 // matchhud's glue ran the sweep on entering EVERY non-Command phase, which
 // deleted a Coordination token one phase early — so both drivers' guards are
 // pinned at the source level, leaving-check and sweep together.
+// The glue moved to glue.ts (shared with the pad's guided mode); matchhud.ts
+// re-exports it, so the pin reads the one copy.
 const hudSrc = readFileSync(new URL('../src/matchhud.ts', import.meta.url), 'utf8');
-const hudEnter = hudSrc.slice(hudSrc.indexOf('export function enterPhase'), hudSrc.indexOf('export function glueAfter'));
+const glueSrc = readFileSync(new URL('../src/glue.ts', import.meta.url), 'utf8');
+const hudEnter = glueSrc.slice(glueSrc.indexOf('export function enterPhase'), glueSrc.indexOf('export function glueAfter'));
 check('matchhud strips Drones only when LEAVING phase 0', /else if \(sc\.stage\.split\(':'\)\[1\] === '0'\) \{[\s\S]*?clearDroneCommands/.test(hudEnter), true);
 const pgSrc = readFileSync(new URL('../src/playguide.ts', import.meta.url), 'utf8');
 check('the guide keys the same sweep on the phase being left', /if \(leaving === '0'\) clearDroneCommands/.test(pgSrc), true);

@@ -128,7 +128,7 @@ export function boardFingerprint(state: GameState): string {
     .map((i) => keyed(i as unknown as Record<string, unknown>));
   return fold(JSON.stringify([
     s.round?.n, s.round?.phase, s.round?.firstPlayer,
-    s.map, s.mission ?? null, s.scale ?? null, s.roundLimit ?? null,
+    s.map, s.mission ?? null, s.scale ?? null, s.roundLimit ?? null, s.noBoard ?? null,
     keyed(s.commandTokens as unknown as Record<string, unknown>),
     tokens,
     [...(s.removedTerrain ?? [])].sort(),

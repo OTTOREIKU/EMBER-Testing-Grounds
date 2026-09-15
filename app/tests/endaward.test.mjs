@@ -24,6 +24,8 @@ const loopSrc = readFileSync(new URL('../src/loop.ts', import.meta.url), 'utf8')
 const unitsSrc = readFileSync(new URL('../src/units.ts', import.meta.url), 'utf8');
 const rules = readFileSync(new URL('../src/rules.ts', import.meta.url), 'utf8');
 const hud = readFileSync(new URL('../src/matchhud.ts', import.meta.url), 'utf8');
+// ensureScript lives in glue.ts now, shared with the pad's guided mode.
+const glue = readFileSync(new URL('../src/glue.ts', import.meta.url), 'utf8');
 const guide = readFileSync(new URL('../src/playguide.ts', import.meta.url), 'utf8');
 
 const cut = (s, a, b, what) => {
@@ -51,7 +53,7 @@ const commandGen = cut(unitsSrc, '// ---------- Commands (rulebook 3.2.1) ------
 const pilotTraits = cut(unitsSrc, '// ---------- Pilot traits (phase 7) ----------', '// A Mech Maneuvers at the Maneuver Value', 'the phase-7 pilot predicates');
 // Two cuts out of matchhud.ts, also disjoint: ensureScript 124-129 and
 // settleEndStep, which sits immediately above the wiring section at the bottom.
-const ensureScript = cut(hud, 'export function ensureScript', 'export function enterPhase', 'ensureScript');
+const ensureScript = cut(glue, 'export function ensureScript', 'export function enterPhase', 'ensureScript');
 const settleStep = cut(hud, 'export function settleEndStep', '// ---------- wiring ----------', 'settleEndStep');
 
 // tokenCards and the token factories are mirrored rather than sliced: units.ts

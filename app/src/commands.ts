@@ -2,7 +2,7 @@ import type { BoardGrids, CombatView, Facing, GameState, MechLoadout, Opportunit
 import { addStatus, ageTokens, cellsOf, gridsOf, newOpportunity, PHASES, statusCount, STATUSES, TIMINGS } from './types';
 import type { GameData } from './data';
 import { cardName, transformFaces, unfoldsInto, discardFaceOf, environmentAllowance } from './data';
-import { covertCarryLock, ammoDeliveryPool, opportunityBonusOn, ripostePart, defenseReactionOn, targetTracingOn, riderOnDrone, hasFlexibleTiming, commandGeneration, blinkTargets, isPositionSwap, electronicOrigins, isSilentAction, maneuverIsSilent, loanedParts, unfoldToken, formSwitch, switchFormTo, extrasFor, consumesCharge, cutTethersOn, electronicDash, electronicValue, immobilizedStop, isScanAction, scannable, manifestationRange, nonHumanoidCost, nonHumanoidStop, envHotEntries, settleEnvironments, freehandSlots, interceptCapacity, anyStartTiming, focusIsFree, keepsLinkOnPartLoss, makeDroneToken, structureOf, makeMechToken, maneuverRange, maxLink, partsLeft, pilotCard, pilotIs, projectileDelivery, provokeWhy, settleTethers, SLOT_LABEL, tetherTo, tokenCards, transformPartOn, actionRange, isRwsAction, rwsCommandKey, rwsFiredKey, selfStatusGrant, selfGrantWhy, straightLineBonus, linkTickTraitOn } from './units';
+import { covertCarryLock, ammoDeliveryPool, opportunityBonusOn, ripostePart, defenseReactionOn, targetTracingOn, riderOnDrone, hasFlexibleTiming, commandGeneration, blinkTargets, isPositionSwap, electronicOrigins, isSilentAction, maneuverIsSilent, loanedParts, unfoldToken, formSwitch, switchFormTo, extrasFor, consumesCharge, cutTethersOn, electronicDash, electronicValue, immobilizedStop, isScanAction, scannable, manifestationRange, nonHumanoidCost, nonHumanoidStop, envHotEntries, settleEnvironments, freehandSlots, interceptCapacity, anyStartTiming, focusIsFree, keepsLinkOnPartLoss, makeDroneToken, structureOf, makeMechToken, maneuverRange, maxLink, partsLeft, pilotCard, pilotIs, projectileDelivery, provokeWhy, settleTethers, SLOT_LABEL, tetherTo, tokenCards, transformPartOn, actionRange, isRwsAction, rwsCommandKey, rwsFiredKey, selfStatusGrant, selfGrantWhy, straightLineBonus, linkTickTraitOn, isCarrier, canBeLoad } from './units';
 import { tetherCap } from './melee';
 import { canActivate, canAttackMode, canManeuver, canOverload, canPerform, spendAction, spendActivation, spendAttackMode, spendManeuver, spendOverload } from './ticks';
 import { tacticSpec, tacticTargets, type TacticCtx } from './tactics';
@@ -44,6 +44,9 @@ export type Command =
   // fingerprint does not carry it. An empty label is refused rather than
   // defaulted, because the caller knows the fallback and the engine does not.
   | { kind: 'renameUnit'; seat: Side; uid: number; label: string }
+  // A carrier Drone's Load, set or taken off on an existing token. The token
+  // is rebuilt the way the board rebuilds it, so Ammo and Intercept follow.
+  | { kind: 'setLoad'; seat: Side; uid: number; cardId?: string }
   | { kind: 'reboot'; seat: Side; uid: number; stance: Stance }
   // `free` is a Movement Action moving the unit on the Action Tick it has
   // already paid for, so it must not also spend the Maneuver Tick. Everything
@@ -184,7 +187,9 @@ export type Command =
   | { kind: 'grantExtra'; seat: Side; uid: number; linkCost: number }
   | { kind: 'markEndStep'; seat: Side; step: string }
   | { kind: 'award'; seat: Side; vp: { s1: number; s2: number }; keys: string[] }
-  | { kind: 'stabilise'; seat: Side; uid: number; keepTokens?: boolean }
+  // `statusId` names WHICH Square or Hexagon Token comes off (6.1 leaves the
+  // choice to the player); without it the first removable one goes.
+  | { kind: 'stabilise'; seat: Side; uid: number; keepTokens?: boolean; statusId?: string }
   | { kind: 'repairPart'; seat: Side; uid: number; slot: string; mode: 'repaired' | 'mend' }
   | { kind: 'breakRepaired'; seat: Side; uid: number; targetUid: number; slot: string }
   // `to` is Manifestation Movement, which 4.12.2 makes part of the same event
@@ -306,7 +311,7 @@ export type Command =
   // The table itself: map, zones, mission and scale used to be local
   // mutations, which is why a host's picks never reached the guest. Tasks
   // ride in the command pre-derived, like dials ride in a reveal.
-  | { kind: 'configureTable'; seat: Side; map?: string; grids?: BoardGrids; zones?: GameState['zones'] | null; deployZones?: GameState['deployZones'] | null; zoneSet?: string; mission?: string | null; tasks?: GameState['tasks']; scale?: GameState['scale']; roundLimit?: number }
+  | { kind: 'configureTable'; seat: Side; map?: string; grids?: BoardGrids; zones?: GameState['zones'] | null; deployZones?: GameState['deployZones'] | null; zoneSet?: string; mission?: string | null; tasks?: GameState['tasks']; scale?: GameState['scale']; roundLimit?: number; noBoard?: boolean }
   | { kind: 'startMatch'; seat: Side }
   | { kind: 'endMatch'; seat: Side }
   // A squad's open-information Secondary Task pick (3.1.3). The seat is the
@@ -626,7 +631,7 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
     case 'configureTable': {
       if (cmd.map === undefined && cmd.grids === undefined && cmd.zones === undefined && cmd.deployZones === undefined
         && cmd.zoneSet === undefined && cmd.mission === undefined && cmd.tasks === undefined && cmd.scale === undefined
-        && cmd.roundLimit === undefined) {
+        && cmd.roundLimit === undefined && cmd.noBoard === undefined) {
         return no('Nothing to configure.');
       }
       // The board size rides with the map it was authored at, so both seats
@@ -1370,6 +1375,7 @@ function checkActed(
       return ok;
     }
     case 'placeInGrid': {
+      if (state.noBoard) return no('This table has no board to place a unit in.');
       const { col, row } = cmd.to;
       if (!Number.isInteger(col) || !Number.isInteger(row) || col < 0 || row < 0 || col >= cellsOf(state) || row >= cellsOf(state)) {
         return no('That is not a place on the board.');
@@ -1393,6 +1399,18 @@ function checkActed(
       const label = typeof cmd.label === 'string' ? cmd.label.trim() : '';
       if (!label) return no('A unit needs a name.');
       if (label.length > 40) return no('That name is too long to fit on a sheet (40 characters).');
+      return ok;
+    }
+    case 'setLoad': {
+      if (t.kind !== 'drone') return no('Only a Drone carries a Load.');
+      const own = data.byId.get(t.cardId);
+      if (!own || !isCarrier(own)) return no(`${t.label} cannot carry a Load.`);
+      // A scripted game fixes the squad at setup; a free table swaps at will.
+      if (normaliseSetup(state.setup)) return no('A Load is part of the squad and is fixed once a game is set up.');
+      if (cmd.cardId !== undefined) {
+        const load = data.byId.get(cmd.cardId);
+        if (!load || load.category !== 'mech_part' || !canBeLoad(load)) return no('That card cannot be carried as a Load.');
+      }
       return ok;
     }
     case 'setStance': {
@@ -1525,7 +1543,7 @@ function checkActed(
       // condition (PDLH-202), never an illegal move — and only a voluntary
       // Movement is judged, which is exactly what this command is: Forced
       // Movement travels as forceMove.
-      const leash = tetherCap(t, state.tokens);
+      const leash = state.noBoard ? null : tetherCap(t, state.tokens);
       if (leash && !leash(Math.floor(col / 3), Math.floor(row / 3))) {
         const x = (t.tether ?? []).filter((l) => l.role === 'tethered')[0]?.range ?? 0;
         return no(`${t.label} is Tethered and cannot voluntarily move beyond ${x} Grids of the unit holding it (PDLH-202).`);
@@ -1553,6 +1571,7 @@ function checkActed(
       return fromVerdict(canManeuver(o));
     }
     case 'crushSwap': {
+      if (state.noBoard) return no('This table has no board: settle the Crush on the table and record its Penetrations.');
       // 4.3.6: the crushed Unit with nowhere to go exchanges positions with the
       // Crushing Unit. The geometry stays with the caller — rules.ts
       // crushExchange is the one place it is worked out, and both pages call it
@@ -2068,7 +2087,7 @@ function checkActed(
       // own Range is measured from there (FAQ O19). Derived rather than sent,
       // so both seats judge the same shot.
       const origins = electronicOrigins(data, state.tokens, t);
-      if (!cmd.reaction && !origins.some((from) => gridRange(from, target) <= reach)) {
+      if (!cmd.reaction && !origins.some((from) => gridRange(from, target) <= reach) && !state.noBoard) {
         return no(`${target.label} is beyond Range ${reach}${origins.length > 1 ? ', even through the Repeater' : ''}.`);
       }
       // EV 0 cannot Initiate; EV "-" cannot Respond (4.11.2).
@@ -2246,6 +2265,11 @@ function checkActed(
       const pilot = pilotCard(data, t);
       const canLink = !!pilot && (t.link ?? 0) < (pilot.LV ?? 0);
       if (!shed && !canLink) return no('Nothing to stabilize: no Square or Hexagon Token to remove and no Link missing. An action that cannot produce any change cannot be performed (6.1).');
+      if (cmd.statusId !== undefined) {
+        const d = STATUSES.find((x) => x.id === cmd.statusId);
+        if (!(t.statuses ?? []).includes(cmd.statusId)) return no('That Mech is not carrying that Token.');
+        if (d?.shape !== 'square' && d?.shape !== 'hexagon') return no('Stabilize System removes a Square or Hexagon Token (6.1).');
+      }
       return ok;
     }
     case 'reveal': {
@@ -2619,7 +2643,7 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       }
       state.tokens = state.tokens.filter((x) => !dying.includes(x));
     }
-    if (cmd.step === 'tasks') {
+    if (cmd.step === 'tasks' && !state.noBoard) {
       const tasks = normaliseTasks(state.tasks);
       settleControl(tasks, zoneCells(data, state), state.tokens, (x) => lowValueUnit(data, x));
       state.tasks = tasks;
@@ -2631,8 +2655,9 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
   if (cmd.kind === 'award') {
     const tasks = normaliseTasks(state.tasks);
     // The Award judges control as part of the same reading of the board that
-    // it scores (5.3.2), so the settlement happens here too.
-    settleControl(tasks, zoneCells(data, state), state.tokens, (x) => lowValueUnit(data, x));
+    // it scores (5.3.2), so the settlement happens here too. With no board the
+    // claims stand as the table set them (claimItem).
+    if (!state.noBoard) settleControl(tasks, zoneCells(data, state), state.tokens, (x) => lowValueUnit(data, x));
     // The ONE place a Victory Point total is floored. A printed rider can send
     // a delta negative (300, 500), and 5.2.4 knows no score below zero — but
     // the clamp belongs on the running TOTAL, never on the delta: a side on 6
@@ -2689,6 +2714,7 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
   }
   if (cmd.kind === 'configureTable') {
     // A new battlefield starts whole: the rubble belonged to the old one.
+    if (cmd.noBoard !== undefined) state.noBoard = cmd.noBoard ? true : undefined;
     if (cmd.map !== undefined) {
       state.map = cmd.map;
       state.removedTerrain = [];
@@ -3045,8 +3071,10 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
         target.statuses = addStatus(target.statuses, 'fragile');
       }
     }
-    target.col = cmd.to.col;
-    target.row = cmd.to.row;
+    if (!state.noBoard) {
+      target.col = cmd.to.col;
+      target.row = cmd.to.row;
+    }
     // The player causing a Forced Movement decides the victim's facing (3.4.4),
     // and may also turn a victim that could not be moved at all.
     if (cmd.facing !== undefined) target.facing = cmd.facing;
@@ -3135,6 +3163,19 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       t.label = cmd.label.trim();
       return;
     }
+    case 'setLoad': {
+      const card = data.byId.get(t.cardId);
+      if (!card) return;
+      const fresh = makeDroneToken(state, data, card, t.side, cmd.cardId);
+      // Rebuilt so the pools follow the Load; what the unit has been through
+      // (its cell, name, damage, tokens, log) stays.
+      Object.assign(t, fresh, {
+        uid: t.uid, col: t.col, row: t.row, facing: t.facing, deployed: t.deployed, label: t.label,
+        statuses: t.statuses, log: t.log,
+        partStates: { ...fresh.partStates, main: t.partStates.main ?? 'intact' },
+      });
+      return;
+    }
     case 'setStance': {
       // Choosing does NOT lock: cycling the dial to compare Stances is free
       // right up until the Mech acts. lockStance() below is what closes it.
@@ -3197,17 +3238,29 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       return;
     }
     case 'maneuver': {
-      const from = cmd.from ?? { col: t.col, row: t.row };
-      t.col = cmd.to.col;
-      t.row = cmd.to.row;
-      if (cmd.facing !== undefined) t.facing = cmd.facing;
       // NON-HUMANOID X: the Link is spent for PERFORMING the Action, so it is
       // paid on the Movement Action itself and never on a bare Maneuver. check()
       // has already refused a unit that cannot afford it; the clamp is here
       // because apply() is also the rollback replayer's road and must not push a
-      // Link negative if it ever arrives without its check.
+      // Link negative if it ever arrives without its check. Paid before the
+      // branch below: a board and a table charge it in this one place.
       const cost = nonHumanoidCost(cmd.actionId ? findAction(data, state, cmd.uid, cmd.actionId) : null);
       if (cost > 0) t.link = Math.max(0, (t.link ?? 0) - cost);
+      if (state.noBoard) {
+        // The table moved the piece. Nothing here can measure how far, so the
+        // Maneuver Tick is spent outright - the M2 Data Link's free pre-move
+        // depends on a distance, and a distance of nothing would hand it out
+        // every time. The Low Profile consequence (4.12.3) still applies.
+        if (cmd.facing !== undefined) t.facing = cmd.facing;
+        if (!maneuverIsSilent(data, state.tokens, t, t)) shedLowProfile(data, state, t);
+        const o0 = oppOf(state, cmd.uid);
+        if (o0 && sc && !cmd.free && !cmd.granted) sc.opp = lockStance(t, spendManeuver(o0));
+        return;
+      }
+      const from = cmd.from ?? { col: t.col, row: t.row };
+      t.col = cmd.to.col;
+      t.row = cmd.to.row;
+      if (cmd.facing !== undefined) t.facing = cmd.facing;
       // 4.12.3: "Maneuver does not benefit from Silence unless otherwise
       // specified" — Maneuvering, INCLUDING changing facing without Movement,
       // removes the Low Profile Token. This one command carries both cases: a
@@ -3780,7 +3833,7 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       // this Mech, then restores 1 Link. Both halves are optional in effect:
       // the player may keep the Tokens and take only the Link (FAQ J4), and a
       // token-less Mech may still recover the Link alone (J6).
-      const shed = cmd.keepTokens ? undefined : (t.statuses ?? []).find((id) => {
+      const shed = cmd.keepTokens ? undefined : cmd.statusId ?? (t.statuses ?? []).find((id) => {
         const d = STATUSES.find((x) => x.id === id);
         return d?.shape === 'square' || d?.shape === 'hexagon';
       });
