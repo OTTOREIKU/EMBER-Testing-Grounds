@@ -368,6 +368,36 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
 .pad-bar-vp b { font-family: var(--mono); font-size: 16px; font-weight: 700; min-width: 1.2em; text-align: center; font-variant-numeric: tabular-nums; }
 .pad-bar-vp span { color: var(--text3); font-size: 13px; }
 
+/* ---------- the turn strip: guided play ----------
+   One block under the bar that says whose move it is and what the step asks.
+   Yours is lit; the other player's is quiet. */
+
+.pad-turn {
+  flex: 0 0 auto;
+  padding: 8px max(10px, env(safe-area-inset-right)) 4px max(10px, env(safe-area-inset-left));
+  background: var(--surface);
+}
+
+.pad-turn-h { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.pad-turn-h b { font-size: 14px; font-weight: 700; color: var(--text2); }
+.pad-turn-h.mine b { color: var(--accent); }
+.pad-turn-h span { font-size: 11.5px; color: var(--text3); }
+.pad-turn-row { display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 2px 0; }
+.pad-turn-name { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pad-turn-val { font-size: 12px; color: var(--text3); font-variant-numeric: tabular-nums; }
+.pad-turn-wait { margin: 2px 0 6px; font-size: 12.5px; color: var(--text3); }
+.pad-turn-note { margin: 6px 0 4px; font-size: 12px; color: var(--text2); }
+.pad-turn .pad-chips { margin: 4px 0 6px; }
+.pad-turn-unit { padding: 4px 0 6px; }
+.pad-turn-unit .pad-turn-name { display: block; margin-bottom: 4px; }
+.pad-bar-round.off { opacity: 0.45; }
+
+/* The Perform button on an action row, and the engine's reason when there is
+   none to press. */
+.pad-act-go { display: block; margin-top: 6px; }
+.pad-perform { min-height: 32px; }
+.pad-perform-no { font-size: 11px; color: var(--text3); }
+
 /* ---------- the unit strip ---------- */
 
 /* One row of units, scrolled sideways rather than wrapped: a squad is small,
@@ -411,6 +441,20 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
 .pad-tab-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--side); flex: 0 0 auto; }
 .pad-tab.on { background: color-mix(in srgb, var(--side) 16%, transparent); color: var(--side); }
 .pad-tab.dead { text-decoration: line-through; color: var(--text3); }
+/* A Timing Dial chip carries the timing's printed icon. */
+.pad-dial { display: inline-flex; align-items: center; gap: 5px; }
+.pad-dial img { width: 16px; height: 16px; object-fit: contain; }
+/* A folded group of one card, and its members once opened. */
+.pad-tab.group b { font-weight: 700; margin-left: 2px; }
+.pad-tab.group i { font-style: normal; font-size: 10px; opacity: 0.7; margin-left: 2px; }
+.pad-tab.group.open { background: var(--surface3); color: var(--text); }
+.pad-tab.sub { padding: 6px 10px; font-size: 12px; margin-left: -4px; }
+/* A folded list under More (the destroyed). */
+.pad-fold > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 6px; }
+.pad-fold > summary::-webkit-details-marker { display: none; }
+.pad-fold > summary::after { content: '▾'; font-size: 10px; opacity: 0.7; }
+.pad-fold[open] > summary::after { content: '▴'; }
+.pad-fold > summary b { font-weight: 700; color: var(--text2); }
 
 /* ---------- the middle: strip, sheet, and whatever covers them ---------- */
 
@@ -468,6 +512,7 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
 .pad-uhead-t .pad-h { font-size: 20px; margin-bottom: 2px; }
 .pad-uhead-t .pad-lead { margin: 0; font-size: 12.5px; }
 .pad-rename { margin-top: 6px; min-height: 28px; padding: 4px 10px; font-size: 11px; }
+.pad-rename + .pad-rename { margin-left: 6px; }
 
 /* The pilot's portrait, the reference's own tile thumb, as a button. */
 .pad-uhead-pilot {
@@ -512,6 +557,32 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
 }
 
 .pad-of { color: var(--text3); font-size: 14px; }
+
+/* ---------- the unit's numbers, in the reference's stat strip ---------- */
+
+.pad-stats { margin: 0 0 4px; }
+.pad-stats .ds { flex: 1 1 0; justify-content: center; padding: 7px 6px; }
+
+/* ---------- every action, folded ----------
+   The reference's action block, with the rules text folded away until the row
+   is tapped. The header bar it prints - icon, tick capsule, name in the
+   timing colour - IS the list row. */
+
+.pad-acts { margin-bottom: 4px; }
+.pad-act-group { margin-top: 12px; }
+.pad-act { cursor: pointer; margin-bottom: 6px; }
+.pad-act .ref-action { margin-bottom: 0; }
+.pad-act:not(.open) .ra-b { display: none; }
+.pad-act.open .ref-action { border-radius: var(--radius) var(--radius) 0 0; }
+.pad-act-meta {
+  padding: 4px 12px 5px;
+  background: var(--surface);
+  border-radius: 0 0 var(--radius) var(--radius);
+  font-size: 11px;
+  color: var(--text3);
+}
+.pad-act-meta em { font-style: normal; color: var(--red); }
+.pad-act.off .ref-action { opacity: 0.45; }
 
 /* ---------- parts, as the reference draws a card ---------- */
 
@@ -866,6 +937,8 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
 }
 
 .pad-task:hover, .pad-task:active { background: var(--surface3); }
+.pad-task.discarded { opacity: 0.45; }
+.pad-task.discarded .pad-task-art { filter: grayscale(1); }
 
 /* Mission art is 3:2 and Secondary art is 3:4, so the thumb fixes the HEIGHT
    and lets the width follow. */
@@ -941,6 +1014,21 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
   text-underline-offset: 2px;
 }
 
+/* ---------- the attack window's panel ----------
+   The window is the shared AttackHelper under combat.css; this is only the
+   room it sits in. combat.css keys its container query on #combat-body. */
+
+.pad-combat { padding: 6px 8px 24px; }
+.pad-combat #combat-body, .pad-combat #ew-body { width: 100%; }
+/* The counter-roll's own root, a container of its own for combat.css's query. */
+#ew-body { container-type: inline-size; }
+#ew-body:empty { display: none; }
+/* A reaction owed, at the top of the turn strip. */
+.pad-turn-react { padding: 8px 10px; border-bottom: 1px solid var(--border); }
+.pad-turn-react .pad-turn-name { display: block; margin: 0 0 4px; }
+/* The helper's markup leans on the board's .dim, which pad.css has to carry. */
+.dim { color: var(--text2); font-size: 13px; }
+
 /* ---------- toasts ---------- */
 
 .pad-toasts {
@@ -981,18 +1069,35 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
   #pad-root.table { max-width: 1100px; margin: 0 auto; }
 }
 
+/* The second column exists only on a wide screen. */
+.pad-strip-2, .pad-sheet-2 { display: none; }
+
+/* Two sheets side by side, yours left and theirs right, each with its own
+   strip; the panel lies over the right sheet until there is room for it. */
 @media (min-width: 960px) {
-  .pad-mid { display: grid; grid-template-columns: 1fr 440px; grid-template-rows: auto 1fr; }
-  .pad-strip { grid-column: 1; grid-row: 1; }
-  .pad-sheet { grid-column: 1; grid-row: 2; }
-  .pad-panel {
-    position: static;
-    grid-column: 2;
-    grid-row: 1 / 3;
-    border-left: 1px solid var(--border);
-  }
+  .pad-mid { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: auto auto 1fr; }
+  .pad-turn { grid-column: 1 / 3; grid-row: 1; }
+  .pad-strip { grid-column: 1; grid-row: 2; display: flex; }
+  .pad-strip-2 { grid-column: 2; grid-row: 2; display: flex; border-left: 1px solid var(--border); }
+  .pad-sheet { grid-column: 1; grid-row: 3; display: block; }
+  .pad-sheet-2 { grid-column: 2; grid-row: 3; display: block; border-left: 1px solid var(--border); }
+  .pad-panel { left: auto; width: 440px; border-left: 1px solid var(--border); }
   .pad-toasts { left: auto; width: 360px; }
 }
+
+@media (min-width: 1400px) {
+  .pad-mid { grid-template-columns: 1fr 1fr 440px; }
+  .pad-panel { position: static; grid-column: 3; grid-row: 1 / 4; width: auto; }
+}
+
+/* A Find tile's pin. */
+.pad-find-pin { position: relative; }
+.pad-pin {
+  position: absolute; top: 6px; right: 6px; z-index: 2;
+  padding: 3px 8px; border-radius: var(--radius); border: 1px solid var(--border);
+  background: var(--surface2); color: var(--text3); font: inherit; font-size: 11px; font-weight: 600; cursor: pointer;
+}
+.pad-pin.on { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); border-color: var(--accent); }
 
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
