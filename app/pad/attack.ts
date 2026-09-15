@@ -146,6 +146,7 @@ export function mountAttack(into: HTMLElement): AttackHelper | null {
   // No terrain and no smoke: every position-aware bonus that reads them is
   // null-guarded in the helper and stays off.
   h.noBoard = true;
+  h.terse = true;
   h.publishView = (view) => {
     if (!mirrored()) return;
     const key = JSON.stringify(view);

@@ -929,6 +929,10 @@ export class AttackHelper {
   // to pick from and leaves Forced Movement's direction to the table.
   backAttack: boolean | null = null;
   noBoard = false;
+  // No commentary: the pad's players are experienced, and on a phone the
+  // Ask band and the line-of-sight strip pushed the dice off the screen. The
+  // steps, the pools, the offers and the log stay.
+  terse = false;
   // The table's reading of the PRIMARY target on a boardless host, handed in
   // before startMulti: the split's first sequence uses it, the others say
   // "as judged on the table".
@@ -1897,7 +1901,10 @@ export class AttackHelper {
       // Will to Survive), so the BUTTON must agree — an unconditional "spend 1
       // Link" on a reroll the engine no longer charges reads as a bug at the
       // table. match.ts's mirror button already branched; this one did not.
-      use.textContent = focusIsFree(this.data, t) ? 'Focus: free' : 'Focus: spend 1 Link';
+      // Named for the side, so two Focus offers on one screen (freeplay, solo)
+      // cannot be mistaken for each other.
+      const who = side === 'attacker' ? 'Attacker' : 'Defender';
+      use.textContent = focusIsFree(this.data, t) ? `Focus: free (${who})` : `Focus: spend 1 Link (${who})`;
       use.disabled = !mine;
       // On a mirror only the DEFENDER's half is ever answerable, and it travels
       // as focusAnswer: the Link is spent by this client's own command and the
@@ -2852,7 +2859,7 @@ export class AttackHelper {
       // the one player who could not see why the shot was clear.
       this.role === 'attacker' ? '' : `<p class="ah-los dim">${esc(c.attacker.label)}'s player is resolving this attack. You are watching their combat window.</p>`
     }
-    <p class="ah-los">${c.losNote}</p>${
+    ${this.terse || !c.losNote ? '' : `<p class="ah-los">${c.losNote}</p>`}${
       // The designation is applied before the Action reaches here, so this
       // reports what the spare hand bought rather than asking about it.
       (() => {
@@ -2870,7 +2877,7 @@ export class AttackHelper {
 
     // THE ASK BAND, directly under the matchup and above both columns, so it is
     // the first thing under the header on every screen and at every step.
-    el.appendChild(this.askBand(c));
+    if (!this.terse) el.appendChild(this.askBand(c));
 
     // The current step's own content, built once and then placed INSIDE its
     // card below, so the open card and the step it belongs to are one thing
@@ -3474,6 +3481,14 @@ export class AttackHelper {
     });
     wrap.appendChild(rollBtn);
     wrap.appendChild(stage);
+    // ANY has been rolled and kept: the die stays on ANY, the roll button goes,
+    // and the chips below are the next step. It used to redraw as a fresh roll.
+    if (c.blackResult === 'any' && !c.targetPart) {
+      const anyFace = this.dice.dice.black.faces.findIndex((f) => (f[0]?.part ?? 'any') === 'any');
+      if (anyFace >= 0) showFace(anyFace);
+      caption.textContent = 'ANY. Pick the Part below.';
+      rollBtn.hidden = true;
+    }
 
     const pickWrap = document.createElement('div');
     pickWrap.className = 'ah-partpick';
@@ -3820,6 +3835,9 @@ export class AttackHelper {
       this.spinFor = null;
       this.spinOnly = null;
       window.setTimeout(() => this.spinner.spin(div, roll, only), 0);
+      // One column: the dice land below the fold on a phone, so the hand
+      // that just rolled is brought into view.
+      if (this.root.clientWidth < 560) window.setTimeout(() => div.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 60);
     }
     const rr = document.createElement('span');
     rr.className = 'rerolls';
