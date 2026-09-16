@@ -1,6 +1,12 @@
 {
   "_comment": "Corrections to the box membership recorded in cards.json, keyed by box key. Each entry is authoritative for that box: on load the box is stripped from every card's containedIn, then re-added from the list here. Card ids map to quantityPerBox. Use this when the community data groups a set wrongly, rather than editing cards.json, which is regenerated from the builder bundle.",
   "boxes": {
+    "GAME_PACK": {
+      "_note": "OTTO 2026-09-16, from the publisher's store listing on the day it went on sale: one of each of its 7 cards. The community data had 2 copies of five of them.",
+      "cards": {
+        "037": 1, "299": 1, "027": 1, "028": 1, "300": 1, "093": 1, "095": 1
+      }
+    },
     "LAB_PD_REAPER_TYPE_1": {
       "_note": "The community data put four Reaper variants in this one box at 1 each. The product listing sells each Reaper alone, 2 copies per box, matching how Type E was already recorded.",
       "cards": {
