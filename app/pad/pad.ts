@@ -307,6 +307,9 @@ const ROOMS_KEY = 'ember.pad.rooms';
 const NOTES_KEY = 'ember.pad.notes';
 const RECENT_KEY = 'ember.pad.recent';
 const PINS_KEY = 'ember.pad.pins';
+const ACTS_KEY = 'ember.pad.acts';
+// The sheet's Actions fold, remembered on this phone; open until closed.
+let actsOpen = stored(ACTS_KEY) !== 'closed';
 // The server reaps an idle room after an hour, so a code older than that is a
 // code for a table that is not there. Same window the Match Centre uses.
 const ROOM_WINDOW_MS = 60 * 60 * 1000;
@@ -1293,7 +1296,7 @@ function sheetHtml(s: Side = shownSide()): string {
     </div>` : ''}
 
     ${statStrip(t)}
-    ${actionList(t, mine && !wrecked)}
+    ${(() => { const list = actionList(t, mine && !wrecked); return list ? `<details class="pad-fold pad-acts-fold"${actsOpen ? ' open' : ''}><summary class="pad-label pad-sec">Actions</summary>${list}</details>` : ''; })()}
 
     <p class="pad-label pad-sec">Parts</p>
     ${partRows(t)}
@@ -1536,7 +1539,8 @@ function tokenRow(t: Token): string {
     ${managed ? `<div class="pad-tokpop pad-tokinfo">
       <div class="pad-tokinfo-head">
         <b>${esc(managed.label)}</b>
-        <button class="pad-chip" data-act="tok-drop" data-tok="${esc(managed.id)}">Remove</button>
+        <button class="pad-chip" data-act="tok-drop" data-tok="${esc(managed.id)}">Take the Token off</button>
+        <button class="pad-chip" data-act="tok-close">Close</button>
       </div>
       <p class="pad-tokinfo-rule">${linkKeywords(managed.rule)}</p>
     </div>` : ''}
@@ -2244,16 +2248,21 @@ function openDronePicker(kind: 'drone' | 'projectile'): void {
     groups: groupByFaction(d, pool),
     lockedFaction: sideFaction(seat),
     badge: (c) => (kind === 'projectile' ? (isMine(c) ? 'Mine' : isDeployable(c) ? 'Deployable' : '') : isCarrier(c) ? 'Carrier' : ''),
-    actions: [
-      { label: 'Add to squad', run: (card) => add(card) },
-      {
-        label: 'Add with a Load',
-        run: (card) => {
-          if (!isCarrier(card)) { add(card); return; }
-          openLoadPicker(card, seat, (load) => add(card, load.id));
-        },
+    actions: [{
+      label: 'Add to squad',
+      run: (card) => {
+        if (!isCarrier(card)) { add(card); return; }
+        // A carrier may take its Load on the way in.
+        void choiceDialog({
+          title: cardName(card),
+          choices: [{ id: 'load', label: 'Add with a Load', primary: true }, { id: 'bare', label: 'Add without a Load' }, { id: 'no', label: 'Cancel', cancel: true }],
+          stacked: true,
+        }).then((pick) => {
+          if (pick === 'bare') add(card);
+          else if (pick === 'load') openLoadPicker(card, seat, (load) => add(card, load.id));
+        });
       },
-    ],
+    }],
   });
 }
 
@@ -3149,6 +3158,7 @@ function act(el: HTMLElement, ev: Event): void {
     }
     case 'charge': if (t) send({ kind: 'setCharge', seat: t.side, uid: t.uid, slot: el.dataset.slot!, on: el.dataset.on === '1' }); return;
     case 'tok-open': tokPick = !tokPick; tokManage = null; render(); return;
+    case 'tok-close': tokManage = null; render(); return;
     case 'tok': {
       // A TAP AGES THE TOKEN, one step down the End Phase's ladder; a hold
       // opens its rule (the pointer handlers below set tokManage and swallow
@@ -3352,6 +3362,13 @@ function installEvents(): void {
     const card = target.closest<HTMLElement>('[data-card]');
     if (card?.dataset.card) { ev.preventDefault(); openLook('card', card.dataset.card); return; }
     const el = target.closest<HTMLElement>('[data-act]');
+    // A Token's box closes on any tap outside it and its strip.
+    if (tokManage && !target.closest('.pad-tokinfo, .pad-toks')) { tokManage = null; render(); }
+    // The Actions fold remembers its state on this phone.
+    if (target.closest('.pad-acts-fold > summary')) {
+      const d = target.closest<HTMLDetailsElement>('.pad-acts-fold')!;
+      window.setTimeout(() => { actsOpen = d.open; store(ACTS_KEY, actsOpen ? 'open' : 'closed'); }, 0);
+    }
     if (el && !(el as HTMLButtonElement).disabled) act(el, ev);
     // Tapping the dark around the detail closes it, as on the reference.
     else if (target.id === 'ref-detail') closeLook();
@@ -3390,7 +3407,8 @@ function installEvents(): void {
     holdAt = { x: ev.clientX, y: ev.clientY };
     holdTimer = window.setTimeout(() => {
       heldTok = true;
-      tokManage = tok.dataset.tok!;
+      // A second hold on the same Token puts its box away.
+      tokManage = tokManage === tok.dataset.tok ? null : tok.dataset.tok!;
       tokPick = false;
       render();
     }, 450);

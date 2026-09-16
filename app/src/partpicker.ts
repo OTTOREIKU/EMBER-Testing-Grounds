@@ -296,7 +296,11 @@ export function openPartPicker(o: PartPickerOpts): void {
     paintPreview();
   });
 
-  const single = o.actions.length === 1;
+  // One action makes a row click commit - on a pointer that hovers, because
+  // the preview has already shown the card. A phone has no hover, so a tap
+  // would add a card nobody has read: there the row holds it and the button
+  // in the preview commits, the same as a multi-action picker.
+  const single = o.actions.length === 1 && !window.matchMedia('(hover: none)').matches;
 
   const run = (id: string, act: PickAction): void => {
     const card = byId.get(id);
