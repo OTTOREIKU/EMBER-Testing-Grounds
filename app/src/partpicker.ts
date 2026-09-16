@@ -283,7 +283,10 @@ export function openPartPicker(o: PartPickerOpts): void {
     paintRows();
   });
 
+  // A phone's taps come with synthetic mouse events: the leave would blank the
+  // preview under the finger on its way to the button. The tap sets the card.
   rows.addEventListener('mouseover', (ev) => {
+    if (touch) return;
     const item = (ev.target as Element).closest<HTMLElement>('.pp-item');
     const id = item?.dataset.id ?? null;
     if (id === hoverId) return;
@@ -291,7 +294,7 @@ export function openPartPicker(o: PartPickerOpts): void {
     paintPreview();
   });
   rows.addEventListener('mouseleave', () => {
-    if (hoverId === null) return;
+    if (touch || hoverId === null) return;
     hoverId = null;
     paintPreview();
   });
@@ -300,7 +303,8 @@ export function openPartPicker(o: PartPickerOpts): void {
   // the preview has already shown the card. A phone has no hover, so a tap
   // would add a card nobody has read: there the row holds it and the button
   // in the preview commits, the same as a multi-action picker.
-  const single = o.actions.length === 1 && !window.matchMedia('(hover: none)').matches;
+  const touch = window.matchMedia('(hover: none)').matches;
+  const single = o.actions.length === 1 && !touch;
 
   const run = (id: string, act: PickAction): void => {
     const card = byId.get(id);
@@ -319,7 +323,10 @@ export function openPartPicker(o: PartPickerOpts): void {
     if (!row) return;
     // With one action the row IS the action, which is what a slot picker wants.
     // With several the click would not say which, so it holds the card instead.
+    // A phone has no hover: a tap SHOWS the card, as hovering would, and the
+    // preview's button commits; only the compare button pins.
     if (single) run(row.dataset.pick!, o.actions[0]);
+    else if (touch) { hoverId = row.dataset.pick!; paintRows(); paintPreview(); }
     else togglePin(row.dataset.pick!);
   });
 
