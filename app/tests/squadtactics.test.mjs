@@ -14,8 +14,11 @@ globalThis.localStorage = {
 
 const storeSrc = readFileSync(new URL('../src/squadstore.ts', import.meta.url), 'utf8');
 const storeTmp = new URL('./_squadstore.slice.ts', import.meta.url);
+// Every import goes: the store now also reaches for builtins.ts (the put-away
+// starters), which this slice stubs as "nothing hidden".
 writeFileSync(storeTmp, 'type MechLoadout = Record<string, string | undefined>;\n'
-  + storeSrc.replace(/^import[^\n]*\n/m, ''));
+  + 'const hiddenBuiltIns = (): string[] => [];\nconst hideBuiltIn = (_id: string): void => {};\n'
+  + storeSrc.replace(/^import[^\n]*\n/gm, ''));
 const { saveSquad, loadSquads } = await import(storeTmp.href);
 
 const impSrc = readFileSync(new URL('../src/importer.ts', import.meta.url), 'utf8');

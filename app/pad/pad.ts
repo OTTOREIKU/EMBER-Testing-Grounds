@@ -45,14 +45,18 @@ import { beginElectronic, ewActive, ewWatching, initEw, mountEw, syncContest } f
 import { clearHistory, historyDepth, historyEntries, undoLast, recordSnapshot } from '../src/history';
 import { labelFor, namesFrom, type LedgerNames } from '../src/ledger';
 import { setLocalSeat } from '../src/loop';
-import { actionIconUrl, battlefieldCardUrl, cardName, isDiscardCard, isMine, loadData, mechPartUrl, missionImageUrl, secondaryImageUrl, stancePrintUrl, statIconIsPlated, statIconUrl, tabImageUrl, tokenFace, tokenPrintUrl, traitName, type GameData } from '../src/data';
+import { actionIconUrl, BASE_FACTIONS, battlefieldCardUrl, cardName, FACTION_LABEL, isDiscardCard, isListedBox, isMine, loadData, mechPartUrl, missionImageUrl, secondaryImageUrl, stancePrintUrl, statIconIsPlated, statIconUrl, tabImageUrl, tokenFace, tokenPrintUrl, traitName, type GameData } from '../src/data';
 import { importSquadFile } from '../src/importer';
-import { loadMechPresets, type MechPreset } from '../src/presets';
+import { deleteMechPreset, isBuiltInPreset, loadMechPresets, saveMechPreset, type MechPreset } from '../src/presets';
+import { deleteSquad, isBuiltInSquad, loadSquads, saveSquad } from '../src/squadstore';
+import { bindLibrary, onLibrary } from '../src/library';
+import { hiddenBuiltIns, restoreBuiltIns } from '../src/builtins';
 import { actionBlock, cardDetail, cardRow, fillPortraits, keywordCard, keywordDetail, kwLabel, linkKeywords, traitBlock, useCardData } from '../src/refcards';
 import { found, matchCard, matchKeyword, matchMechanic, matchMission, matchPhase, matchSecondary, matchStance, matchStatus, matchTiming, nmCard, nmKeyword, nmMechanic, nmMission, nmPlay, nmSecondary, nmStatus, norm } from '../src/refsearch';
 import { mountCardImage, mountCardImageCopy } from '../src/images';
 import { squadColour } from '../src/icons';
 import { groupByFaction, openPartPicker } from '../src/partpicker';
+import { bindCollection, collectionOn, copiesOf, hasAny, loadCollection, onCollection, remaining, saveCollection, setCollectionOn, shortfalls, type Collection } from '../src/collection';
 import { choiceDialog, confirmDialog, promptDialog } from '../src/dialog';
 import { checkForUpdates, watchForUpdates } from '../src/updates';
 import { normaliseTasks } from '../src/tasks';
@@ -244,7 +248,7 @@ onRefused((why) => {
 
 type Screen = 'signin' | 'register' | 'lobby' | 'table';
 // The panels that slide over the sheet. Null is the resting state: the sheet.
-type Panel = 'tasks' | 'find' | 'more' | 'build' | 'setup' | 'target' | 'combat' | null;
+type Panel = 'tasks' | 'find' | 'more' | 'build' | 'setup' | 'target' | 'combat' | 'inventory' | null;
 type FindScope = 'all' | 'table' | 'parts' | 'units' | 'pilots' | 'tactics' | 'keywords' | 'tasks' | 'rules';
 
 let account: Account | null = null;
@@ -289,6 +293,8 @@ let tokManage: string | null = null;
 // The search. `q` lives here and not in the input, so a redraw mid-word keeps
 // what was typed; the input is only ever written back from it.
 const find: { q: string; scope: FindScope } = { q: '', scope: 'all' };
+// The Collection panel's search for a loose card.
+let invSearch = '';
 
 // SOLO. A player at a table on their own, or one keeping the sheet for both
 // squads because only one of them has a phone out. Same screen, with the two
@@ -308,6 +314,11 @@ const NOTES_KEY = 'ember.pad.notes';
 const RECENT_KEY = 'ember.pad.recent';
 const PINS_KEY = 'ember.pad.pins';
 const ACTS_KEY = 'ember.pad.acts';
+const FOLDS_KEY = 'ember.pad.folds';
+// The More panel's folds (saved units, saved squads), closed until opened and
+// remembered on this phone.
+let folds: Record<string, boolean> = (() => { try { return JSON.parse(stored(FOLDS_KEY) ?? '{}') as Record<string, boolean>; } catch { return {}; } })();
+function foldOpen(key: string): boolean { return !!folds[key]; }
 // The sheet's Actions fold, remembered on this phone; open until closed.
 let actsOpen = stored(ACTS_KEY) !== 'closed';
 // The server reaps an idle room after an hour, so a code older than that is a
@@ -560,7 +571,7 @@ function lobbyHtml(): string {
     </div>
     ${lobbyLists()}
     <div class="pad-foot">
-      <button class="pad-link" data-act="signout">Sign out</button>
+      <button class="pad-btn" data-act="signout">Sign out</button>
     </div>`;
 }
 
@@ -716,6 +727,7 @@ function sendSquad(name: string, mechs: { name?: string; loadout: MechLoadout }[
   if (!data) return false;
   const seat = solo ? squadSide : mySeat();
   const cmd: Command = { kind: 'importSquad', seat, name, mechs, drones };
+  const firstUid = table.nextUid;
   // No relay.publish here: onPerformed above sends it, and only once it has
   // actually applied.
   const verdict = perform(data, table, cmd);
@@ -725,6 +737,13 @@ function sendSquad(name: string, mechs: { name?: string; loadout: MechLoadout }[
     return false;
   }
   saveSolo();
+  // A file or a saved build arrives whole, past the pickers' filter: what the
+  // shelf in use does not hold is named, and the squad joins all the same.
+  const shelf = shelfFor();
+  if (shelf) {
+    const short = shortfalls(data, shelf, shelfTokens(), table.tokens.filter((t) => t.uid >= firstUid));
+    if (short.length) toast(`Not in the collection: ${short.map((s) => `${cardName(s.card)} (${s.short} short)`).join(', ')}.`);
+  }
   // The squad that just joined is the one to look at.
   side = seat;
   picks.s1 = null;
@@ -1431,7 +1450,7 @@ function unitHead(t: Token, yours: boolean): string {
     <div class="pad-uhead-t">
       <h1 class="pad-h">${esc(t.label)}</h1>
       <p class="pad-lead">${esc(line)}</p>
-      ${canCommand(t) ? '<button class="pad-chip pad-rename" data-act="rename">Rename</button><button class="pad-chip pad-rename" data-act="remove">Remove</button>' : ''}
+      ${canCommand(t) ? `<button class="pad-chip pad-rename" data-act="rename">Rename</button>${t.kind === 'mech' ? '<button class="pad-chip pad-rename" data-act="save-build">Save build</button>' : ''}<button class="pad-chip pad-rename" data-act="remove">Remove</button>` : ''}
     </div>
     ${pilot ? `<button class="pilot-thumb pad-uhead-pilot" data-act="card" data-id="${esc(pilot.id)}" data-portrait="${esc(pilot.id)}" aria-label="Read ${esc(cardName(pilot))}"></button>` : ''}
   </div>`;
@@ -1613,6 +1632,7 @@ function panelHtml(): string {
   if (panel === 'tasks') return tasksPanel();
   if (panel === 'find') return findPanel();
   if (panel === 'build') return buildPanel();
+  if (panel === 'inventory') return inventoryPanel();
   return morePanel();
 }
 
@@ -1777,7 +1797,6 @@ function tasksPanel(): string {
 function morePanel(): string {
   const room = view.room;
   const me = mySeat();
-  const presets = loadMechPresets();
   const hist = historyEntries().slice(-5).reverse();
   const seats = room ? (['s1', 's2'] as const).map((s) => {
     const name = room.seats[s];
@@ -1811,7 +1830,7 @@ function morePanel(): string {
         ${gameOver() ? '' : `<button class="pad-chip on" data-act="phase">${room ? (readiness().me ? 'Waiting…' : 'Continue') : 'Next phase'}</button>`}
       </div>
     </div>
-    <button class="pad-link" data-act="rounds-reset">Start the rounds over</button>
+    <button class="pad-btn" data-act="rounds-reset" style="margin-top:8px">Start the rounds over</button>
 
     <p class="pad-label pad-sec">Squads</p>
     ${solo ? `<div class="pad-chips" style="margin-bottom:8px">
@@ -1822,12 +1841,10 @@ function morePanel(): string {
     <button class="pad-btn" data-act="build">Build a Mech</button>
     <button class="pad-btn" data-act="drone">Add a Drone</button>
     <button class="pad-btn" data-act="projectile">Add a Projectile</button>
+    ${collectionRows()}
     <p class="pad-label pad-sec">Tactics Cards</p>
     ${tacticsHtml(solo ? squadSide : mySeat())}
-    ${presets.length ? `<p class="pad-label" style="margin-top:10px">Saved builds</p>${presets.map((m) => `<button class="pad-seat" data-act="preset" data-id="${esc(m.id)}">
-        <span class="pad-seat-name">${esc(m.name)}</span>
-        <span class="pad-seat-tag">${m.saved ? 'saved' : 'built in'}</span>
-      </button>`).join('')}` : ''}
+    ${savedHtml()}
 
     ${attackActive() || attackWatching() || ewActive() || ewWatching() ? `<p class="pad-label pad-sec">Attack</p><button class="pad-btn" data-act="dock" data-dock="combat">Open the attack window</button>` : ''}
     ${destroyedList()}
@@ -1844,13 +1861,13 @@ function morePanel(): string {
     <div class="pad-foot">
       ${room
         ? `<button class="pad-btn" data-act="leave">Leave the table</button>
-           ${view.host ? '<button class="pad-link" data-act="close-room">Close the table for everyone</button>' : ''}`
+           ${view.host ? '<button class="pad-btn danger" data-act="close-room">Close the table for everyone</button>' : ''}`
         : `<button class="pad-btn" data-act="solo-leave">Leave the game</button>
-           <button class="pad-link" data-act="solo-end">Delete this game</button>`}
+           <button class="pad-btn danger" data-act="solo-end">Delete this game</button>`}
       ${account
-        ? `<button class="pad-link" data-act="signout">Sign out</button>
+        ? `<button class="pad-btn" data-act="signout">Sign out</button>
            <p class="pad-note">Signed in as ${esc(account.username)}${room ? ` · seat ${me === 's1' ? '1' : '2'}` : ''}</p>`
-        : `<button class="pad-link" data-act="solo-to-signin">Sign in</button>
+        : `<button class="pad-btn" data-act="solo-to-signin">Sign in</button>
            <p class="pad-note">Not signed in</p>`}
     </div>
   </div>`;
@@ -1909,6 +1926,14 @@ function openBuildSlot(slot: typeof BUILD_SLOTS[number]): void {
     groups: groupByFaction(d, pool),
     chosen: build[slot.key],
     lockedFaction: slot.key === 'pilot' ? null : buildFaction(),
+    // What the other slots of this build already took comes off the shelf too;
+    // the slot being filled does not, so a card can be re-picked.
+    remaining: (c) => {
+      const left = leftOf(c);
+      if (left === null) return null;
+      const taken = BUILD_SLOTS.filter((s) => s.key !== slot.key && build[s.key] === c.id).length;
+      return Math.max(0, left - taken);
+    },
     actions: [{
       label: `Set ${slot.label}`,
       run: (card) => {
@@ -2126,6 +2151,13 @@ function openTacticPicker(side: Side): void {
     groups: groupByFaction(d, pool),
     lockedFaction: null,
     badge: (c) => tacticSpec(c.id)?.timing ?? '',
+    // A hand is not on the table, so the copies both hands hold come off by hand.
+    remaining: (c) => {
+      const shelf = shelfFor();
+      if (!shelf || !hasShelfData(c)) return null;
+      const held = (['s1', 's2'] as const).reduce((n, s) => n + handOf(s).filter((id) => id === c.id).length, 0);
+      return Math.max(0, copiesOf(d, shelf, c) - held);
+    },
     actions: [{ label: 'Add to hand', run: (card) => { send({ kind: 'setTactics', seat: side, cards: [...handOf(side), card.id] }); render(); } }],
   });
 }
@@ -2201,6 +2233,7 @@ function openLoadPicker(carrier: Card, seat: Side, run: (load: Card) => void): v
     slotLabel: `Load for ${cardName(carrier)}`,
     groups: groupByFaction(d, parts),
     lockedFaction: d.factionOf(carrier) ?? sideFaction(seat),
+    remaining: leftOf,
     actions: [{ label: 'Carry this', run }],
   });
 }
@@ -2220,6 +2253,189 @@ function loadRow(t: Token): string {
       ${held ? '<button class="pad-chip" data-act="load-off">Take off</button>' : ''}
       <button class="pad-chip" data-act="load-pick">${held ? 'Change' : 'Add a Load'}</button>
     </div>
+  </div>`;
+}
+
+// ---------- saved units and squads ----------
+//
+// The same two libraries the board keeps (presets.ts, squadstore.ts): the
+// shipped starters and what the player saved, on this device and on the
+// account. A saved entry can be removed here; the shipped ones cannot.
+
+function savedHtml(): string {
+  const units = loadMechPresets();
+  const squads = loadSquads();
+  const row = (act: string, del: string, id: string, name: string, tag: string) => `<div class="pad-saved">
+      <button class="pad-seat" data-act="${act}" data-id="${esc(id)}">
+        <span class="pad-seat-name">${esc(name)}</span>
+        <span class="pad-seat-tag">${tag}</span>
+      </button>
+      <button class="pad-chip pad-saved-x" data-act="${del}" data-id="${esc(id)}" aria-label="Remove ${esc(name)}">✕</button>
+    </div>`;
+  // Two folds, closed until opened and remembered: a long library must not
+  // stretch the panel, and a nested scroll on a phone is worse than a fold.
+  const fold = (key: string, title: string, n: number, body: string) => `<details class="pad-fold pad-lib-fold" data-fold="${key}"${foldOpen(key) ? ' open' : ''}>
+      <summary><span class="pad-label pad-sec">${title}</span><b>${n}</b></summary>
+      ${body}
+    </details>`;
+  const seat = solo ? squadSide : mySeat();
+  const anyUnits = table.tokens.some((x) => x.side === seat && x.kind !== 'projectile' && x.parentUid === undefined);
+  const hidden = hiddenBuiltIns().length;
+  return `${fold('units', 'Saved units', units.length,
+      units.length ? units.map((m) => row('preset', 'preset-del', m.id, m.name, m.saved ? 'saved' : 'built in')).join('') : '<p class="pad-label">None yet. Save a Mech from its sheet.</p>')}
+    ${fold('squads', 'Saved squads', squads.length,
+      (squads.length ? squads.map((s) => row('squad', 'squad-del', s.id, s.name, `${s.mechs.length}M ${s.drones.length}D${s.tactics?.length ? ` ${s.tactics.length}T` : ''}${s.saved ? '' : ' · built in'}`)).join('') : '<p class="pad-label">None yet.</p>')
+      + (anyUnits ? '<button class="pad-btn" data-act="save-squad" style="margin-top:8px">Save this squad</button>' : ''))}
+    ${hidden ? `<button class="pad-link" data-act="restore-builtins">Show the built-in starters again (${hidden})</button>` : ''}`;
+}
+
+// ---------- the collection ----------
+//
+// Off by default: every picker lists every card, as it always has. Switched
+// on, the pickers hide what this phone's collection has none of. In a room a
+// seat may open its shelf to the table; the other player then builds from it
+// when they have not switched on a collection of their own.
+
+// The shelf a picker on this phone draws from, or null for no limit.
+function shelfFor(): Collection | null {
+  const mine = loadCollection();
+  if (collectionOn() && hasAny(mine)) return mine;
+  const theirs = view.room ? table.inventory?.[otherSeat()] : undefined;
+  if (theirs) return { boxes: theirs.boxes, cards: theirs.cards, updatedAt: 0 };
+  return null;
+}
+
+// Whether the shelf in use is this phone's own, unshared, in a room: then only
+// this seat's units come off it, since the other squad was built elsewhere.
+// A shared shelf, or solo tracking, feeds both squads and counts both.
+function shelfTokens(): Token[] {
+  const mine = loadCollection();
+  const own = collectionOn() && hasAny(mine);
+  if (view.room && own && !table.inventory?.[mySeat()]) return table.tokens.filter((t) => t.side === mySeat());
+  return table.tokens;
+}
+
+function hasShelfData(c: Card): boolean {
+  const shelf = shelfFor();
+  return !!shelf && ((c.containedIn ?? []).length > 0 || (shelf.cards[c.id] ?? 0) > 0);
+}
+
+function leftOf(c: Card): number | null {
+  const shelf = shelfFor();
+  if (!shelf || !data) return null;
+  return remaining(data, shelf, shelfTokens(), c);
+}
+
+// A shelf already open to the table follows its edits.
+function reshare(col: Collection): void {
+  if (!view.room || !table.inventory?.[mySeat()]) return;
+  send({ kind: 'setInventory', seat: mySeat(), shared: true, boxes: col.boxes, cards: col.cards });
+}
+
+function collectionSummary(col: Collection): string {
+  const boxes = Object.values(col.boxes).reduce((a, b) => a + b, 0);
+  const singles = Object.values(col.cards).reduce((a, b) => a + b, 0);
+  if (!boxes && !singles) return 'Nothing recorded yet';
+  const parts = [];
+  if (boxes) parts.push(`${boxes} box${boxes === 1 ? '' : 'es'}`);
+  if (singles) parts.push(`${singles} loose card${singles === 1 ? '' : 's'}`);
+  return parts.join(' · ');
+}
+
+// The More panel's Collection rows.
+function collectionRows(): string {
+  const col = loadCollection();
+  const on = collectionOn();
+  const room = view.room;
+  const shared = !!table.inventory?.[mySeat()];
+  const theirs = room ? table.inventory?.[otherSeat()] : undefined;
+  return `<p class="pad-label pad-sec">Collection</p>
+    <div class="pad-row">
+      <span class="pad-label">${esc(collectionSummary(col))}</span>
+      <button class="pad-chip" data-act="inventory">Edit</button>
+    </div>
+    <div class="pad-chips">
+      <button class="pad-chip${on ? ' on' : ''}" data-act="inv-toggle" aria-pressed="${on}">Build from my collection</button>
+      ${room ? `<button class="pad-chip${shared ? ' on' : ''}" data-act="inv-share" aria-pressed="${shared}"${hasAny(col) || shared ? '' : ' disabled'}>Open it to the table</button>` : ''}
+    </div>
+    ${on && !hasAny(col) ? '<p class="pad-label">Nothing is recorded, so every card still shows.</p>' : ''}
+    ${theirs && !(on && hasAny(col)) ? `<p class="pad-label">${esc(sideName(otherSeat()))} has opened their collection to you; the pickers draw from it.</p>` : ''}`;
+}
+
+function invFoundHtml(): string {
+  const d = data;
+  if (!d) return '';
+  const q = invSearch.trim().toLowerCase();
+  if (!q) return '';
+  const order = [...BASE_FACTIONS, 'PD', 'COLLABORATION'];
+  const rank = (c: Card) => { const i = order.indexOf(d.factionOf(c) ?? ''); return i < 0 ? order.length : i; };
+  const found = d.cards
+    .filter((c) => !isDiscardCard(c) && (cardName(c).toLowerCase().includes(q) || c.id.includes(q)))
+    .sort((a, b) => rank(a) - rank(b) || cardName(a).localeCompare(cardName(b)))
+    .slice(0, 8);
+  if (!found.length) return '<p class="pad-label">No card by that name.</p>';
+  return found.map((c) => `<div class="pad-row">
+      <span class="pad-part-name" data-card="${esc(c.id)}">${esc(cardName(c))}<span class="pad-inv-tag">${esc(FACTION_LABEL[d.factionOf(c) ?? ''] ?? '')}</span></span>
+      <div class="pad-chips"><button class="pad-chip" data-act="inv-card" data-id="${esc(c.id)}" data-d="1">Add one</button></div>
+    </div>`).join('');
+}
+
+function inventoryPanel(): string {
+  const d = data!;
+  const col = loadCollection();
+  const on = collectionOn();
+  const boxes = d.boxes.filter(isListedBox).sort((a, b) => (a.name.en || a.key).localeCompare(b.name.en || b.key));
+  // By faction, the mercenaries after the three armies, then anything the data
+  // has not placed; within a faction what is owned comes first.
+  const order = [...BASE_FACTIONS, 'PD', 'COLLABORATION'];
+  const rank = (f: string) => { const i = order.indexOf(f); return i < 0 ? (f ? order.length : order.length + 1) : i; };
+  const facOf = (b: typeof boxes[number]) => (b.faction ?? [])[0] ?? '';
+  const facLabel = (f: string) => (f ? (FACTION_LABEL[f] ?? f) : 'Faction not recorded');
+  const grouped = <T,>(items: T[], fac: (x: T) => string, first: (x: T) => boolean, draw: (x: T) => string): string => {
+    const facs = [...new Set(items.map(fac))].sort((a, b) => rank(a) - rank(b));
+    return facs.map((f) => {
+      const members = items.filter((x) => fac(x) === f).sort((a, b) => Number(first(b)) - Number(first(a)));
+      return `<p class="pad-label pad-inv-fac">${esc(facLabel(f))}</p>${members.map(draw).join('')}`;
+    }).join('');
+  };
+  const boxRow = (b: typeof boxes[number]) => {
+    const n = col.boxes[b.key] ?? 0;
+    return `<div class="pad-row pad-inv-row${n ? ' owned' : ''}">
+      <span class="pad-part-name">${esc(b.name.en || b.name.zh || b.key)}</span>
+      <div class="pad-chips pad-inv-count">
+        <button class="pad-chip" data-act="inv-box" data-key="${esc(b.key)}" data-d="-1" aria-label="One fewer"${n ? '' : ' disabled'}>−</button>
+        <span class="pad-inv-n">${n}</span>
+        <button class="pad-chip" data-act="inv-box" data-key="${esc(b.key)}" data-d="1" aria-label="One more">+</button>
+      </div>
+    </div>`;
+  };
+  const singles = Object.entries(col.cards)
+    .map(([id, n]) => ({ card: d.byId.get(id), id, n }))
+    .filter((e) => e.card)
+    .sort((a, b) => cardName(a.card).localeCompare(cardName(b.card)));
+  return `<div class="pad-panel-in">${panelHead('Collection')}
+    ${errHtml()}
+    <p class="pad-label" style="margin-top:0">${esc(collectionSummary(col))}${account ? ' · saved to your account' : ''}</p>
+    <div class="pad-chips" style="margin-bottom:8px">
+      <button class="pad-chip${on ? ' on' : ''}" data-act="inv-toggle" aria-pressed="${on}">Build from my collection</button>
+    </div>
+
+    <p class="pad-label pad-sec">Loose cards</p>
+    <input class="pad-input" id="pad-inv-q" type="search" placeholder="Add a card by name…" value="${esc(invSearch)}" autocomplete="off">
+    <div id="pad-inv-found">${invFoundHtml()}</div>
+    ${singles.length ? grouped(singles, (e) => d.factionOf(e.card!) ?? '', () => true, (e) => `<div class="pad-row pad-inv-row owned">
+      <span class="pad-part-name" data-card="${esc(e.id)}">${esc(cardName(e.card))}</span>
+      <div class="pad-chips pad-inv-count">
+        <button class="pad-chip" data-act="inv-card" data-id="${esc(e.id)}" data-d="-1" aria-label="One fewer">−</button>
+        <span class="pad-inv-n">${e.n}</span>
+        <button class="pad-chip" data-act="inv-card" data-id="${esc(e.id)}" data-d="1" aria-label="One more">+</button>
+      </div>
+    </div>`) : '<p class="pad-label">None recorded. Search above to add a card you own outside a box.</p>'}
+
+    <p class="pad-label pad-sec">Boxes</p>
+    ${grouped(boxes, facOf, (b) => (col.boxes[b.key] ?? 0) > 0, boxRow)}
+    ${hasAny(col) ? '<button class="pad-btn danger" data-act="inv-clear" style="margin-top:12px">Clear the collection</button>' : ''}
+    <button class="pad-btn" data-act="inv-back" style="margin-top:8px">Back</button>
   </div>`;
 }
 
@@ -2248,6 +2464,7 @@ function openDronePicker(kind: 'drone' | 'projectile'): void {
     groups: groupByFaction(d, pool),
     lockedFaction: sideFaction(seat),
     badge: (c) => (kind === 'projectile' ? (isMine(c) ? 'Mine' : isDeployable(c) ? 'Deployable' : '') : isCarrier(c) ? 'Carrier' : ''),
+    remaining: leftOf,
     actions: [{
       label: 'Add to squad',
       run: (card) => {
@@ -3252,6 +3469,52 @@ function act(el: HTMLElement, ev: Event): void {
       return;
     }
     case 'build': error = null; build = {}; panel = 'build'; render(); return;
+    case 'inventory': error = null; invSearch = ''; panel = 'inventory'; render(); return;
+    case 'inv-back': error = null; panel = 'more'; render(); return;
+    case 'inv-clear':
+      void confirmDialog({
+        title: 'Clear the collection?',
+        body: 'Every box count and loose card is removed, here and on your account.',
+        confirmLabel: 'Clear it',
+        cancelLabel: 'Keep it',
+      }).then((go) => {
+        if (!go) return;
+        const empty: Collection = { boxes: {}, cards: {}, updatedAt: 0 };
+        saveCollection(empty);
+        reshare(empty);
+        render();
+      });
+      return;
+    case 'inv-toggle': setCollectionOn(!collectionOn()); render(); return;
+    case 'inv-share': {
+      const shared = !!table.inventory?.[mySeat()];
+      const col = loadCollection();
+      send(shared
+        ? { kind: 'setInventory', seat: mySeat(), shared: false }
+        : { kind: 'setInventory', seat: mySeat(), shared: true, boxes: col.boxes, cards: col.cards });
+      return;
+    }
+    case 'inv-box': {
+      const col = loadCollection();
+      const key = el.dataset.key!;
+      const n = Math.max(0, Math.min(9, (col.boxes[key] ?? 0) + Number(el.dataset.d)));
+      if (n) col.boxes[key] = n; else delete col.boxes[key];
+      saveCollection(col);
+      reshare(col);
+      render();
+      return;
+    }
+    case 'inv-card': {
+      const col = loadCollection();
+      const id = el.dataset.id!;
+      const n = Math.max(0, Math.min(99, (col.cards[id] ?? 0) + Number(el.dataset.d)));
+      if (n) col.cards[id] = n; else delete col.cards[id];
+      saveCollection(col);
+      reshare(col);
+      if (Number(el.dataset.d) > 0 && el.closest('#pad-inv-found')) invSearch = '';
+      render();
+      return;
+    }
     case 'drone': error = null; openDronePicker('drone'); return;
     case 'projectile': error = null; openDronePicker('projectile'); return;
     case 'tactic-add': error = null; openTacticPicker(el.dataset.side as Side); return;
@@ -3298,6 +3561,84 @@ function act(el: HTMLElement, ev: Event): void {
         toast(`${preset.name} added.`);
       }
       render();
+      return;
+    }
+    case 'squad': {
+      const sq = loadSquads().find((s) => s.id === el.dataset.id);
+      if (!sq || !data) return;
+      if (sendSquad(sq.name, sq.mechs, sq.drones)) {
+        // The hand comes with the squad (5.4), merged the way a file import is.
+        if (sq.tactics?.length) {
+          const seat = solo ? squadSide : mySeat();
+          const merged = [...new Set([...(table.tactics?.[seat] ?? []), ...sq.tactics.filter((id) => data!.byId.get(id))])];
+          send({ kind: 'setTactics', seat, cards: merged });
+        }
+        error = null;
+        panel = null;
+        toast(`${sq.name} added.`);
+      }
+      render();
+      return;
+    }
+    case 'preset-del':
+    case 'squad-del': {
+      const id = el.dataset.id!;
+      const isSquad = a === 'squad-del';
+      const name = isSquad ? loadSquads().find((s) => s.id === id)?.name : loadMechPresets().find((m) => m.id === id)?.name;
+      if (!name) return;
+      const builtIn = isSquad ? isBuiltInSquad(id) : isBuiltInPreset(id);
+      void confirmDialog({
+        title: `Remove "${name}"?`,
+        body: builtIn
+          ? 'The built-in starter is put away, here and on your account. A link under the lists brings the starters back.'
+          : isSquad ? 'The saved squad is removed from this device and your account.' : 'The saved build is removed from this device and your account.',
+        confirmLabel: 'Remove',
+        cancelLabel: 'Keep',
+      }).then((go) => {
+        if (!go) return;
+        if (isSquad) deleteSquad(id); else deleteMechPreset(id);
+        render();
+      });
+      return;
+    }
+    case 'restore-builtins': restoreBuiltIns(); render(); return;
+    case 'save-squad': {
+      if (!data) return;
+      const seat = solo ? squadSide : mySeat();
+      const units = table.tokens.filter((x) => x.side === seat && x.kind !== 'projectile' && x.parentUid === undefined);
+      const mechs = units.filter((x) => x.kind === 'mech' && (x.mech?.torso || x.mech?.chasis)).map((x) => ({ name: x.label, loadout: { ...x.mech } }));
+      const drones = units.filter((x) => x.kind === 'drone').map((x) => ({ cardId: x.cardId, backpack: x.droneBackpack }));
+      if (!mechs.length && !drones.length) { error = 'Nothing on this side to save yet.'; render(); return; }
+      // The hand is part of the squad (5.4): saved with it, or it reloads cheaper.
+      const tactics = (table.tactics?.[seat] ?? []).filter((id) => !!data!.byId.get(id));
+      void promptDialog({
+        title: 'Save this squad',
+        body: `${mechs.length} mech${mechs.length === 1 ? '' : 's'}, ${drones.length} drone${drones.length === 1 ? '' : 's'}${tactics.length ? ` and ${tactics.length} Tactics Card${tactics.length === 1 ? '' : 's'}` : ''}. Reusing a name overwrites it.`,
+        value: sideName(seat) === 'Yours' || sideName(seat) === 'Theirs' ? '' : sideName(seat),
+        placeholder: 'Squad name',
+        confirmLabel: 'Save',
+      }).then((name) => {
+        if (!name) return;
+        saveSquad(name, mechs, drones, Date.now(), tactics);
+        toast(`Squad "${name.trim()}" saved.`);
+        render();
+      });
+      return;
+    }
+    case 'save-build': {
+      if (!t || t.kind !== 'mech') return;
+      void promptDialog({
+        title: 'Save this build',
+        body: 'The Mech\'s Parts and Pilot, as a saved unit. Reusing a name overwrites it.',
+        value: t.label,
+        placeholder: 'Build name',
+        confirmLabel: 'Save',
+      }).then((name) => {
+        if (!name) return;
+        saveMechPreset(name, t.mech ?? {}, Date.now());
+        toast(`Build "${name.trim()}" saved.`);
+        render();
+      });
       return;
     }
     case 'undo': undo(); return;
@@ -3369,6 +3710,10 @@ function installEvents(): void {
       const d = target.closest<HTMLDetailsElement>('.pad-acts-fold')!;
       window.setTimeout(() => { actsOpen = d.open; store(ACTS_KEY, actsOpen ? 'open' : 'closed'); }, 0);
     }
+    if (target.closest('.pad-fold[data-fold] > summary')) {
+      const d = target.closest<HTMLDetailsElement>('.pad-fold[data-fold]')!;
+      window.setTimeout(() => { folds = { ...folds, [d.dataset.fold!]: d.open }; store(FOLDS_KEY, JSON.stringify(folds)); }, 0);
+    }
     if (el && !(el as HTMLButtonElement).disabled) act(el, ev);
     // Tapping the dark around the detail closes it, as on the reference.
     else if (target.id === 'ref-detail') closeLook();
@@ -3384,6 +3729,7 @@ function installEvents(): void {
       case 'pad-code': form.code = el.value; return;
       case 'pad-join-code': form.join = el.value; return;
       case 'pad-find-q': find.q = el.value; paintFind(); return;
+      case 'pad-inv-q': invSearch = el.value; paint('pad-inv-found', invFoundHtml()); return;
       // Written straight through without a redraw: this is a textarea someone
       // is typing into, and re-rendering would move the caret to the end.
       case 'pad-notes': notes = el.value; store(NOTES_KEY, notes); return;
@@ -3480,6 +3826,13 @@ async function run(fn: () => Promise<void>): Promise<void> {
 
 void (async () => {
   installEvents();
+  // The collection follows the account: pulled when one appears, pushed after
+  // every change. The panel and the pickers redraw when it moves.
+  bindCollection(api);
+  onCollection(() => { if (screen === 'table') render(); });
+  // The saved units and squads follow the account the same way.
+  bindLibrary(api);
+  onLibrary(() => { if (screen === 'table') render(); });
   // refresh() never throws: an unreachable server reads as signed out, which is
   // the right first screen either way. The registration mode rides beside the
   // session check: the register screen needs the answer before it draws.

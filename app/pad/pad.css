@@ -181,6 +181,8 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
 .pad-btn:hover, .pad-btn:active { background: var(--surface3); color: var(--text); }
 .pad-btn.primary { background: var(--accent-lt); color: var(--accent); }
 .pad-btn.primary:hover, .pad-btn.primary:active { background: var(--accent); color: var(--on-accent); }
+.pad-btn.danger { background: var(--red-lt); color: var(--red); }
+.pad-btn.danger:hover, .pad-btn.danger:active { background: var(--red); color: var(--on-accent); }
 .pad-btn:disabled { opacity: 0.5; cursor: default; }
 .pad-btn + .pad-btn { margin-top: 8px; }
 
@@ -456,7 +458,8 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
 /* A folded list under More (the destroyed). */
 .pad-fold > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 6px; }
 .pad-fold > summary::-webkit-details-marker { display: none; }
-.pad-fold > summary::after { content: '▾'; font-size: 10px; opacity: 0.7; }
+/* The arrow at the text's own height: a phone thumb has to find it. */
+.pad-fold > summary::after { content: '▾'; font-size: 18px; line-height: 1; opacity: 0.85; margin-left: 4px; }
 .pad-fold[open] > summary::after { content: '▴'; }
 .pad-fold > summary b { font-weight: 700; color: var(--text2); }
 
@@ -1113,3 +1116,26 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
 }
+
+/* ---------- the Collection panel ---------- */
+.pad-inv-row .pad-part-name { color: var(--text2); }
+.pad-inv-row.owned .pad-part-name { color: var(--text); }
+.pad-inv-count { align-items: center; flex-wrap: nowrap; }
+.pad-inv-count .pad-chip { min-width: var(--tap); padding-left: 0; padding-right: 0; font-size: 18px; line-height: 1; }
+.pad-inv-n {
+  font-family: var(--mono); font-size: 16px; min-width: 1.6em; text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+#pad-inv-found { margin-top: 6px; }
+
+/* ---------- saved units and squads ---------- */
+.pad-saved { display: flex; align-items: center; gap: 8px; }
+.pad-saved + .pad-saved { margin-top: 8px; }
+.pad-saved .pad-seat { flex: 1; min-width: 0; }
+.pad-saved-x { min-width: var(--tap); padding-left: 0; padding-right: 0; flex-shrink: 0; }
+
+.pad-lib-fold > summary { margin-top: 14px; }
+.pad-lib-fold > summary .pad-sec { margin: 0; }
+.pad-lib-fold > .pad-saved:first-of-type, .pad-lib-fold > .pad-label { margin-top: 8px; }
+.pad-inv-fac { margin: 10px 0 4px; color: var(--text3); font-size: 11px; letter-spacing: 0.4px; }
+.pad-inv-tag { margin-left: 6px; font-weight: 400; color: var(--text3); font-size: 11px; }

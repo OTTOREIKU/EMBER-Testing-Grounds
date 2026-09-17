@@ -102,3 +102,18 @@
 @media (max-width: 719px) {
   .inv-cmp-grid { grid-template-columns: 1fr; gap: 18px; }
 }
+
+/* ---------- loose cards ----------
+   The singles under the box grid: a search that adds, and the recorded list
+   with the same steppers the boxes use. */
+.inv-singles { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+.inv-single-search {
+  width: 100%; margin: 8px 0 6px; padding: 8px 10px;
+  background: var(--surface3); border: none; border-radius: var(--radius-sm);
+  color: var(--text); font: inherit; font-size: 13px; outline: none;
+}
+.inv-single-search:focus-visible { outline: 2px solid var(--glow); outline-offset: 1px; }
+.inv-single-search::placeholder { color: var(--text3); }
+.inv-singles .inv-parts li { display: flex; align-items: center; gap: 6px; }
+.inv-singles .inv-parts .ip-name { flex: 1; min-width: 0; }
+.inv-singles .inv-found { margin-bottom: 8px; }

@@ -5009,6 +5009,24 @@ export function migrateState(rawIn: unknown, data: GameData): GameState | null {
     alwaysGrid: !!(s as { alwaysGrid?: boolean }).alwaysGrid,
     tactics: normaliseTactics((s as { tactics?: unknown }).tactics),
     tacticsPlayed: normaliseTactics((s as { tacticsPlayed?: unknown }).tacticsPlayed),
+    // A shared collection, on the whitelist rule: absent stays absent.
+    ...(() => {
+      const raw = (s as { inventory?: unknown }).inventory;
+      if (!raw || typeof raw !== 'object') return {};
+      const counts = (v: unknown): Record<string, number> => {
+        const out: Record<string, number> = {};
+        if (v && typeof v === 'object') {
+          for (const [k, n] of Object.entries(v as Record<string, unknown>)) if (typeof n === 'number' && n > 0) out[k] = n;
+        }
+        return out;
+      };
+      const inv: GameState['inventory'] = {};
+      for (const side of ['s1', 's2'] as const) {
+        const sh = (raw as Record<string, unknown>)[side] as { boxes?: unknown; cards?: unknown } | undefined;
+        if (sh && typeof sh === 'object') inv[side] = { boxes: counts(sh.boxes), cards: counts(sh.cards) };
+      }
+      return Object.keys(inv).length ? { inventory: inv } : {};
+    })(),
   };
   for (const rawTok of s.tokens) {
     const t = rawTok as Partial<Token>;

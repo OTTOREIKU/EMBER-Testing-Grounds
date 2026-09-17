@@ -52,6 +52,11 @@ export interface PartPickerOpts {
   // instead of the row.
   lockedFaction?: string | null;
   badge?(card: Card): string;
+  // How many copies of this card the collection still has to put down, or
+  // null for no limit (the collection is off, or the data cannot place the
+  // card). A card with none left is hidden until the list is asked to show
+  // everything, and then drawn dimmed with its count.
+  remaining?(card: Card): number | null;
   // One action makes a row click perform it, which is what a single-slot picker
   // wants. More than one leaves the row as a preview and makes the buttons the
   // only way to commit, since a click would not say which one you meant.
@@ -80,6 +85,8 @@ export function openPartPicker(o: PartPickerOpts): void {
   const pinned: string[] = [];
   let hoverId: string | null = null;
   let search = '';
+  // Whether cards the collection has none of are listed (see `remaining`).
+  let showAll = false;
 
   const back = document.createElement('div');
   back.className = 'dlg-back pp-back';
@@ -230,10 +237,15 @@ export function openPartPicker(o: PartPickerOpts): void {
     const q = search.trim().toLowerCase();
     rows.replaceChildren();
     let shown = 0;
+    let hidden = 0;
     for (const g of o.groups) {
       const members = g.cards.filter(
         (c) => !q || cardName(c).toLowerCase().includes(q) || c.id.toLowerCase().includes(q),
-      );
+      ).filter((c) => {
+        if (showAll || !o.remaining) return true;
+        if (o.remaining(c) === 0) { hidden++; return false; }
+        return true;
+      });
       if (!members.length) continue;
       const head = document.createElement('div');
       head.className = 'pp-group';
@@ -247,10 +259,11 @@ export function openPartPicker(o: PartPickerOpts): void {
         const item = document.createElement('div');
         item.className = `pp-item${pinned.includes(c.id) ? ' pinned' : ''}`;
         item.dataset.id = c.id;
-        const badge = o.badge?.(c) ?? '';
+        const left = o.remaining?.(c) ?? null;
+        const badge = [o.badge?.(c) ?? '', left === null ? '' : left === 0 ? 'none left' : `×${left} left`].filter(Boolean).join(' · ');
         item.innerHTML = `<button class="pp-row${off ? ' off-faction' : ''}${
           c.id === o.chosen ? ' sel' : ''
-        }" data-pick="${esc(c.id)}"${
+        }${left === 0 ? ' out' : ''}" data-pick="${esc(c.id)}"${
           off ? ` title="${esc(`${g.faction} card. This mech is locked to ${o.lockedFaction} by what you have already picked.`)}"` : ''
         }>
           <span class="pp-nm"></span>${badge ? '<span class="pp-bg"></span>' : ''}<span class="pp-pt">${
@@ -266,8 +279,16 @@ export function openPartPicker(o: PartPickerOpts): void {
     if (!shown) {
       const none = document.createElement('p');
       none.className = 'pp-none';
-      none.textContent = 'Nothing matches that search.';
+      none.textContent = hidden ? 'Nothing you have left matches that search.' : 'Nothing matches that search.';
       rows.appendChild(none);
+    }
+    // The shelf's own switch: the cards not in the collection, on request.
+    if (o.remaining && (hidden || showAll)) {
+      const all = document.createElement('button');
+      all.className = 'pp-all';
+      all.dataset.all = '1';
+      all.textContent = showAll ? 'Hide the cards you have none of' : `Show ${hidden} card${hidden === 1 ? '' : 's'} you have none of`;
+      rows.appendChild(all);
     }
   }
 
@@ -314,6 +335,11 @@ export function openPartPicker(o: PartPickerOpts): void {
   };
 
   rows.addEventListener('click', (ev) => {
+    if ((ev.target as Element).closest('[data-all]')) {
+      showAll = !showAll;
+      paintRows();
+      return;
+    }
     const cmp = (ev.target as Element).closest<HTMLElement>('[data-cmp]');
     if (cmp) {
       togglePin(cmp.dataset.cmp!);

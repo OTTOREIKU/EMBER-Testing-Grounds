@@ -14,6 +14,8 @@ import { getLocalSeat, setLocalSeat } from './loop';
 import { ApiError, EmberApi, type SquadEntry } from './api';
 import { MultiplayerDialog } from './multiplayer';
 import { Inventory } from './inventory';
+import { bindCollection, collectionOn, hasAny, inUse, loadCollection, shortfalls } from './collection';
+import { bindLibrary } from './library';
 import {
   boardTheme, clampBoardArt, clampGridColour, DEFAULT_GRID_COLOUR, themeHasArt, themesFor,
 } from './boards';
@@ -165,7 +167,7 @@ async function init() {
   void runFirstVisitPreload().then(() => warmAllImagesWhenIdle());
   registerOffline();
   watchForUpdates();
-  const inventory = new Inventory(data.boxes, () => roster.render(), data.cards);
+  const inventory = new Inventory(data.boxes, () => roster.render(), data);
 
   const tray = new DiceTray(dice, document.getElementById('dice-tray')!);
 
@@ -1814,7 +1816,7 @@ async function init() {
     if (!(card.containedIn ?? []).length) return null;
     const owned = inventory.ownedCount(card);
     if (!owned) return 0;
-    return Math.max(0, owned - (deployedCardCounts(state.tokens).get(card.id) ?? 0));
+    return Math.max(0, owned - inUse(data, state.tokens, card));
   }
 
   const roster = new Roster(data, {
@@ -7411,6 +7413,9 @@ async function init() {
     // A session ending takes any networked game with it.
     if (!account) relay.leave();
   });
+  // The collection follows the account: pulled on sign-in, pushed on change.
+  bindCollection(emberApi);
+  bindLibrary(emberApi);
   void emberApi.refresh();
 
   document.getElementById('btn-clear')!.addEventListener('click', async () => {
@@ -7543,10 +7548,27 @@ async function init() {
     drones: { cardId: string; backpack?: string }[],
     tactics?: string[],
   ): boolean {
+    const firstUid = state.nextUid;
     const verdict = perform(data, state, { kind: 'importSquad', seat: side, name, mechs, drones });
     if (!verdict.ok) {
       void alertDialog({ title: 'The squad could not join', body: verdict.why });
       return false;
+    }
+    // A squad by file or from the library arrives whole, past the pickers'
+    // filter. When the table is building from a collection, what it does not
+    // hold is named - and the squad still joins, as the app warns and never
+    // blocks.
+    const col = loadCollection();
+    if (collectionOn() && hasAny(col)) {
+      const short = shortfalls(data, col, state.tokens, state.tokens.filter((t) => t.uid >= firstUid));
+      if (short.length) {
+        void alertDialog({
+          title: 'Not all of that is in your collection',
+          body: `"${name}" joined, but your collection is short of these cards:`,
+          list: short.map((s) => `${cardName(s.card)} - ${s.short} more than you own`),
+          closeLabel: 'Continue',
+        });
+      }
     }
     // The hand comes with the squad. Merged through a Set because topping up
     // with a second list that carries a card already held would otherwise be a

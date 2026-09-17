@@ -69,7 +69,7 @@ const QUIET = new Set(['setCombatView', 'setRollbackCatalog', 'rollbackRequest',
   'rollbackAnswer', 'callDefense', 'clearDefense', 'clearCounterRoll', 'clearIntercepts',
   // noteRoll: quiet so it rides the open attack (sealing it) and a lone one
   // never becomes a row — but the FLOOR reads raw kinds, so it seals either way.
-  'queueReactions', 'queueIntercepts', 'setTiming', 'adjustCommandTokens', 'noteRoll']);
+  'queueReactions', 'queueIntercepts', 'setTiming', 'adjustCommandTokens', 'noteRoll', 'setInventory']);
 
 function roleFor(c: AnyCmd): LedgerRole {
   // The context-sensitive case first: a free or granted move rides the Action
@@ -171,6 +171,7 @@ type AnyCmd = {
   targetUid?: number;
   actionId?: string;
   cardId?: string;
+  shared?: boolean;
   slot?: string;
   statusId?: string;
   what?: string;
@@ -244,6 +245,7 @@ export function labelFor(cmd: { kind: string }, state: GameState, names?: Ledger
     case 'setStance': label = `${who()} switches to ${c.stance ?? 'a new'} Stance`; break;
     case 'renameUnit': label = `${who()} is now called ${c.label ?? 'something else'}`; break;
     case 'setLoad': label = c.cardId ? `${who()} takes a Load` : `${who()}: Load taken off`; break;
+    case 'setInventory': label = c.shared ? `${who()} opens their collection to the table` : `${who()} closes their collection`; break;
     // The pad's bookkeeping, which used to fall through to the humanised kind
     // ("Set part state") in the other player's toast.
     case 'setPartState': label = `${who()}'s ${slotName(c.slot)} is ${c.state ?? 'changed'}`; break;

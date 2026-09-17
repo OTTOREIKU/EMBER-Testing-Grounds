@@ -188,3 +188,12 @@
   .pp-body { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1.6fr) minmax(0, 1fr); }
 }
 
+
+/* A card the collection has none of, listed on request: dimmed, still usable. */
+.pp-row.out { opacity: 0.55; }
+.pp-all {
+  display: block; width: 100%; margin: 8px 0 2px; padding: 8px 10px;
+  border: none; border-radius: var(--radius-sm); background: var(--surface2);
+  color: var(--text2); font: inherit; font-size: 12px; cursor: pointer; text-align: left;
+}
+.pp-all:hover { background: var(--surface3); color: var(--text); }

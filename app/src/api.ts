@@ -1,3 +1,5 @@
+import type { MechPreset } from './presets';
+import type { SavedSquad } from './squadstore';
 // Client for ember-api: accounts today, lobbies and the relay later.
 //
 // Everything here degrades quietly. The tool is a local-first tabletop and has
@@ -238,6 +240,24 @@ export class EmberApi {
 
   async recordGame(report: GameReport): Promise<{ id: number }> {
     return this.call<{ id: number }>('/games', { method: 'POST', body: report });
+  }
+
+  // The player's collection on the account; collection.ts owns the store.
+  async getInventory(): Promise<{ boxes: Record<string, number>; cards: Record<string, number>; updatedAt: number }> {
+    return this.call('/inventory/me');
+  }
+
+  async putInventory(boxes: Record<string, number>, cards: Record<string, number>): Promise<{ updatedAt: number }> {
+    return this.call('/inventory/me', { method: 'PUT', body: { boxes, cards } });
+  }
+
+  // The player's saved units and squads on the account; library.ts owns the sync.
+  async getLibrary(): Promise<{ units: MechPreset[]; squads: SavedSquad[]; hidden: string[]; updatedAt: number }> {
+    return this.call('/library/me');
+  }
+
+  async putLibrary(units: MechPreset[], squads: SavedSquad[], hidden: string[]): Promise<{ updatedAt: number }> {
+    return this.call('/library/me', { method: 'PUT', body: { units, squads, hidden } });
   }
 
   async myRecord(): Promise<MyRecord> {

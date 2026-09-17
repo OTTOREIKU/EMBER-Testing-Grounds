@@ -323,6 +323,9 @@ export type Command =
   // otherwise never have seen — and because a hand set locally is a hand the
   // other player cannot see the cost of.
   | { kind: 'setTactics'; seat: Side; cards: string[] }
+  // A seat opening its collection to the table, or closing it again. Carries
+  // the whole shelf, so a repeat cannot double it; `shared` false takes it back.
+  | { kind: 'setInventory'; seat: Side; shared: boolean; boxes?: Record<string, number>; cards?: Record<string, number> }
   // Naming the Mech or the Tactical Zone a Task is about. `seat` is whoever
   // makes the choice, which is not always whose Task it is — Behead has the
   // opponent name one of their own — so `for` carries the squad that scores it.
@@ -508,7 +511,7 @@ type TableKind =
   | 'queueReactions'
   | 'clearCounterRoll'
   | 'setMode' | 'handOver' | 'setStrict' | 'commitTimings' | 'revealTimings' | 'importSquad'
-  | 'configureTable' | 'startMatch' | 'endMatch' | 'pickSecondary' | 'setTactics' | 'setReady' | 'designateTask'
+  | 'configureTable' | 'startMatch' | 'endMatch' | 'pickSecondary' | 'setTactics' | 'setInventory' | 'setReady' | 'designateTask'
   | 'callDefense' | 'answerDefense' | 'clearDefense' | 'setCombatView' | 'focusAnswer' | 'focusReroll' | 'kcArmor' | 'designateHit' | 'meleeEvade' | 'dodgeEnhance' | 'riposte'
   | 'setRollbackCatalog' | 'rollbackRequest' | 'rollbackAnswer'
   | 'claimItem' | 'setPartState';
@@ -520,7 +523,7 @@ const TABLE_KINDS = new Set<Command['kind']>([
   'queueReactions',
   'clearCounterRoll',
   'setMode', 'handOver', 'setStrict', 'commitTimings', 'revealTimings', 'importSquad',
-  'configureTable', 'startMatch', 'endMatch', 'pickSecondary', 'setTactics', 'setReady', 'designateTask',
+  'configureTable', 'startMatch', 'endMatch', 'pickSecondary', 'setTactics', 'setInventory', 'setReady', 'designateTask',
   'callDefense', 'answerDefense', 'clearDefense', 'setCombatView', 'focusAnswer', 'focusReroll', 'kcArmor', 'designateHit', 'meleeEvade', 'dodgeEnhance', 'riposte',
   'setRollbackCatalog', 'rollbackRequest', 'rollbackAnswer',
   'claimItem', 'setPartState',
@@ -692,6 +695,17 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       // 5.4 has you holding them from the off, not drawing mid-match.
       const su = normaliseSetup(state.setup);
       if (su && su.stage === 'done') return no('The hand is set before the game begins.');
+      return ok;
+    }
+    case 'setInventory': {
+      const counts = (r: unknown): boolean => {
+        if (r === undefined) return true;
+        if (!r || typeof r !== 'object' || Array.isArray(r)) return false;
+        const entries = Object.entries(r as Record<string, unknown>);
+        if (entries.length > 400) return false;
+        return entries.every(([k, v]) => k.length <= 64 && typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 99);
+      };
+      if (!counts(cmd.boxes) || !counts(cmd.cards)) return no('That is not a collection.');
       return ok;
     }
     case 'designateTask': {
@@ -2869,6 +2883,14 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
     // Replaces rather than appends: the command carries the whole hand, so a
     // repeat of one that was already applied cannot double it.
     state.tactics = { ...state.tactics, [cmd.seat]: [...cmd.cards] };
+    return;
+  }
+  if (cmd.kind === 'setInventory') {
+    const inv = { ...(state.inventory ?? {}) };
+    if (cmd.shared) inv[cmd.seat] = { boxes: { ...(cmd.boxes ?? {}) }, cards: { ...(cmd.cards ?? {}) } };
+    else delete inv[cmd.seat];
+    if (Object.keys(inv).length) state.inventory = inv;
+    else delete state.inventory;
     return;
   }
   if (cmd.kind === 'designateTask') {

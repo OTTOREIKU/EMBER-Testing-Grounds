@@ -1285,6 +1285,11 @@ export function zonesOf<T extends { id: string; name: string; cells: string[] }>
   return own && own.length ? own : shipped;
 }
 
+export interface SharedInventory {
+  boxes: Record<string, number>;
+  cards: Record<string, number>;
+}
+
 export interface GameState {
   v: 3;
   map: string;
@@ -1343,6 +1348,10 @@ export interface GameState {
   alwaysGrid?: boolean;
   tactics?: Record<Side, string[]>;
   tacticsPlayed?: Record<Side, string[]>;
+  // A seat's collection, opened to the table so the other player may build
+  // from it: the boxes owned by count and the loose singles. Absent for a
+  // seat that has not shared. Nothing in the rules reads it; the pickers do.
+  inventory?: Partial<Record<Side, SharedInventory>>;
   // Every unit each side has fielded, uid -> its card ids, kept even after the
   // unit leaves the board. Only the game record reads it; nothing in the rules
   // does. See rememberFielded in commands.ts for why it has to exist.

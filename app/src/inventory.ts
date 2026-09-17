@@ -1,5 +1,7 @@
 import type { Card } from './types';
-import { boxCoverUrl, isListedBox } from './data';
+import { boxCoverUrl, cardName, isListedBox } from './data';
+import { confirmDialog } from './dialog';
+import { collectionOn, copiesOf, hasAny, loadCollection, onCollection, saveCollection, setCollectionOn, type CardIndex, type Collection } from './collection';
 // The rows, the exclusivity rule and the two-column comparison live in
 // boxcompare.ts, shared with the reference's Boxes tab. This class keeps what
 // is the inventory's own: the owned counts, the flyouts, the box grid.
@@ -7,49 +9,88 @@ import { boxItems, boxPicker, boxesOf, compareGrid, esc, exclusiveToggle, FACTIO
 
 export type { BoxInfo };
 
-const KEY = 'ember-inventory-v1';
-
 const PEEK_MS = 1500;
 
 export class Inventory {
-  private owned: Record<string, number> = {};
-  filterEnabled = false;
   private boxes: BoxInfo[];
   private onChange: () => void;
+  private data: CardIndex;
   private cards: Card[];
   private facChoice = '';
+  private singleSearch = '';
   // Which two boxes the compare panel is showing. Kept on the instance so
   // reopening the dialog does not lose the pair.
   private cmp: [string, string] = ['', ''];
 
-  constructor(boxes: BoxInfo[], onChange: () => void, cards: Card[] = []) {
+  constructor(boxes: BoxInfo[], onChange: () => void, data: CardIndex | Card[]) {
     this.boxes = boxes;
     this.onChange = onChange;
-    this.cards = cards;
-    try {
-      const raw = JSON.parse(localStorage.getItem(KEY) ?? '{}');
-      this.owned = raw.owned ?? {};
-      this.filterEnabled = !!raw.filterEnabled;
-    } catch {
-    }
+    // A bare card list still works, for the tests that hand one in.
+    this.data = Array.isArray(data) ? { cards: data, byId: new Map(data.map((c) => [c.id, c])) } : data;
+    this.cards = this.data.cards;
+    // The store changes under this page too: the pad on the same account, or
+    // the sync after signing in. The roster repaints either way.
+    onCollection(() => this.onChange());
   }
 
-  private save(): void {
-    localStorage.setItem(KEY, JSON.stringify({ owned: this.owned, filterEnabled: this.filterEnabled }));
+  // The collection store is the one copy (collection.ts). These are the
+  // board's old names over it, so the roster and the filter read as before.
+  private col(): Collection {
+    return loadCollection();
+  }
+
+  get filterEnabled(): boolean {
+    return collectionOn();
+  }
+
+  set filterEnabled(on: boolean) {
+    setCollectionOn(on);
   }
 
   hasAny(): boolean {
-    return Object.values(this.owned).some((n) => n > 0);
+    return hasAny(this.col());
   }
 
   ownedCount(card: Card): number {
-    let n = 0;
-    // quantityPerBox 0 means the card ships with its parent rather than as a
-    // counted copy: Discard Cards sit under their Part Card (4.17), and alternate
-    // modes are the same physical card. You still get one with the box, so a 0
-    // must not read as "you do not own this".
-    for (const c of card.containedIn ?? []) n += (this.owned[c.box] ?? 0) * Math.max(1, c.quantityPerBox);
-    return n;
+    return copiesOf(this.data, this.col(), card);
+  }
+
+  private setBox(key: string, n: number): void {
+    const col = this.col();
+    if (n <= 0) delete col.boxes[key];
+    else col.boxes[key] = n;
+    saveCollection(col);
+    this.onChange();
+  }
+
+  private setSingle(id: string, n: number): void {
+    const col = this.col();
+    if (n <= 0) delete col.cards[id];
+    else col.cards[id] = Math.min(99, n);
+    saveCollection(col);
+    this.onChange();
+  }
+
+  // The loose cards: what was recorded one at a time rather than by the box.
+  private singlesHtml(): string {
+    const col = this.col();
+    const held = Object.entries(col.cards)
+      .map(([id, n]) => ({ card: this.data.byId.get(id), id, n }))
+      .filter((e) => e.card)
+      .sort((a, b) => cardName(a.card).localeCompare(cardName(b.card)));
+    const q = this.singleSearch.trim().toLowerCase();
+    const found = q
+      ? this.cards.filter((c) => cardName(c).toLowerCase().includes(q) || c.id.includes(q)).slice(0, 8)
+      : [];
+    return `<div class="inv-singles">
+      <div class="inv-contents-head"><b>Loose cards</b>
+        <span class="inv-contents-sub">${held.length ? `${held.reduce((s, e) => s + e.n, 0)} card${held.length === 1 && held[0]!.n === 1 ? '' : 's'}` : 'none recorded'}</span></div>
+      <input type="search" class="inv-single-search" placeholder="Add a card by name…" value="${esc(this.singleSearch)}">
+      ${found.length ? `<ul class="inv-parts inv-found">${found.map((c) => `<li data-tip-card="${c.id}"><span class="ip-name">${esc(cardName(c))}</span><button class="inv-step" data-single-add="${c.id}" title="One more">+</button></li>`).join('')}</ul>` : ''}
+      ${held.length ? `<ul class="inv-parts">${held.map((e) => `<li data-tip-card="${e.id}"><span class="ip-name">${esc(cardName(e.card))}</span><span class="ip-n">×${e.n}</span>
+        <button class="inv-step" data-single-step="-1" data-single="${e.id}" title="One fewer">−</button>
+        <button class="inv-step" data-single-step="1" data-single="${e.id}" title="One more">+</button></li>`).join('')}</ul>` : ''}
+    </div>`;
   }
 
   passes(card: Card): boolean {
@@ -173,7 +214,7 @@ export class Inventory {
       ${compareGrid(this.cards, pool, this.cmp, exclusiveOnly, {
         picker: (side) => boxPicker(pool, side, this.cmp[side]),
         rowAttr: (id) => `data-tip-card="${id}"`,
-        owned: (key) => this.owned[key] ?? 0,
+        owned: (key) => this.col().boxes[key] ?? 0,
       })}`;
 
     panel.querySelector('.inv-compare-close')!.addEventListener('click', () => {
@@ -195,13 +236,15 @@ export class Inventory {
     document.getElementById('inv-dialog')?.remove();
     const dlg = document.createElement('div');
     dlg.id = 'inv-dialog';
+    const owned = this.col().boxes;
     dlg.innerHTML = `<div class="inv-panel">
       <button id="inv-close" class="dlg-close" title="Close">✕</button>
       <div class="inv-head">
         <b>My inventory</b>
         <button id="inv-compare-open" class="inv-cmp-btn">Compare boxes</button>
+        ${this.hasAny() ? '<button id="inv-clear" class="inv-cmp-btn">Clear</button>' : ''}
       </div>
-      <p class="dim">Set how many copies of each box you own. Card lists then show your available copy counts.</p>
+      <p class="dim">Set how many copies of each box you own, and add any loose cards. Card lists then show your available copy counts. Signed in, the collection follows your account to the pad.</p>
       <div class="inv-facets">
         ${this.factionFacets()
           .map(
@@ -214,7 +257,7 @@ export class Inventory {
       <div class="inv-list">
         ${this.visibleBoxes()
           .map((b) => {
-            const n = this.owned[b.key] ?? 0;
+            const n = owned[b.key] ?? 0;
             const fac = (b.faction ?? [])[0] ?? '';
             return `<div class="inv-box${n > 0 ? ' owned' : ''}"${fac ? ` data-fac="${fac}"` : ''}>
               ${b.hasImage ? `<div class="inv-cover" aria-hidden="true"><img src="${boxCoverUrl(b.id)}" alt="" loading="lazy" onerror="this.closest('.inv-cover').remove()"><span class="inv-scrim"></span></div>` : ''}
@@ -238,26 +281,61 @@ export class Inventory {
           })
           .join('')}
       </div>
+      ${this.singlesHtml()}
     </div>`;
     dlg.addEventListener('click', (ev) => {
       if (ev.target === dlg) dlg.remove();
     });
     dlg.querySelector('#inv-close')!.addEventListener('click', () => dlg.remove());
     dlg.querySelector('#inv-compare-open')!.addEventListener('click', () => this.showCompare(dlg));
+    dlg.querySelector('#inv-clear')?.addEventListener('click', () => {
+      void confirmDialog({
+        title: 'Clear the collection?',
+        body: 'Every box count and loose card is removed, here and on your account.',
+        confirmLabel: 'Clear it',
+        cancelLabel: 'Keep it',
+      }).then((go) => {
+        if (!go) return;
+        saveCollection({ boxes: {}, cards: {}, updatedAt: 0 });
+        this.onChange();
+        this.openDialog();
+      });
+    });
     dlg.querySelector<HTMLInputElement>('#inv-filter')!.addEventListener('change', (ev) => {
       this.filterEnabled = (ev.target as HTMLInputElement).checked;
-      this.save();
       this.onChange();
     });
     const setCount = (inp: HTMLInputElement, next: number): void => {
       const n = Math.min(9, Math.max(0, next));
       inp.value = String(n);
-      if (n === 0) delete this.owned[inp.dataset.box!];
-      else this.owned[inp.dataset.box!] = n;
       inp.closest('.inv-box')?.classList.toggle('owned', n > 0);
-      this.save();
-      this.onChange();
+      this.setBox(inp.dataset.box!, n);
     };
+    // The loose cards: search adds, the steppers adjust. Both redraw the
+    // dialog, which is what keeps the list and the counts honest.
+    const singles = dlg.querySelector<HTMLElement>('.inv-singles')!;
+    const search = singles.querySelector<HTMLInputElement>('.inv-single-search')!;
+    search.addEventListener('input', () => {
+      this.singleSearch = search.value;
+      const at = search.selectionStart;
+      this.openDialog();
+      const again = document.querySelector<HTMLInputElement>('#inv-dialog .inv-single-search');
+      if (again) { again.focus(); if (at !== null) again.setSelectionRange(at, at); }
+    });
+    singles.querySelectorAll<HTMLButtonElement>('[data-single-add]').forEach((btn) =>
+      btn.addEventListener('click', () => {
+        this.setSingle(btn.dataset.singleAdd!, (this.col().cards[btn.dataset.singleAdd!] ?? 0) + 1);
+        this.singleSearch = '';
+        this.openDialog();
+      }),
+    );
+    singles.querySelectorAll<HTMLButtonElement>('[data-single-step]').forEach((btn) =>
+      btn.addEventListener('click', () => {
+        const id = btn.dataset.single!;
+        this.setSingle(id, (this.col().cards[id] ?? 0) + Number(btn.dataset.singleStep));
+        this.openDialog();
+      }),
+    );
     dlg.querySelectorAll<HTMLInputElement>('input[data-box]').forEach((inp) =>
       inp.addEventListener('change', () => setCount(inp, Number(inp.value) || 0)),
     );

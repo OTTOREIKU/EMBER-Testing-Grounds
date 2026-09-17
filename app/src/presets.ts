@@ -1,4 +1,5 @@
 import type { MechLoadout } from './types';
+import { hiddenBuiltIns, hideBuiltIn } from './builtins';
 
 // Saved mech builds, kept in local storage next to the custom maps rather than in
 // the board state, because a preset outlives any one game.
@@ -84,12 +85,31 @@ export function loadMechPresets(): MechPreset[] {
   // A build saved under a built-in's name replaces it, so the shipped ones can
   // be reworked rather than sitting there uneditable next to a near-duplicate.
   const taken = new Set(saved.map((p) => p.name.toLowerCase()));
-  const shipped = BUILT_IN.filter((p) => !taken.has(p.name.toLowerCase()));
+  const hidden = new Set(hiddenBuiltIns());
+  const shipped = BUILT_IN.filter((p) => !taken.has(p.name.toLowerCase()) && !hidden.has(p.id));
   return [...shipped, ...saved].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+const writers = new Set<() => void>();
+
+// library.ts listens here: every write on this device is a change to push.
+export function onMechPresetsWrite(fn: () => void): void {
+  writers.add(fn);
 }
 
 function write(list: MechPreset[]): void {
   localStorage.setItem(KEY, JSON.stringify(list));
+  for (const fn of writers) fn();
+}
+
+// Only what this device saved, without the shipped builds - what travels.
+export function savedMechPresets(): MechPreset[] {
+  return loadMechPresets().filter((p) => !isBuiltInPreset(p.id));
+}
+
+// The account's copy replacing this device's, cleaned the same way a load is.
+export function replaceMechPresets(list: unknown[]): void {
+  write(list.map(clean).filter((x): x is MechPreset => !!x && !isBuiltInPreset(x.id)));
 }
 
 // Saving under a name that already exists overwrites it, so a build can be
@@ -115,7 +135,8 @@ export function deleteMechPreset(id: string): MechPreset[] {
   // Only what this device saved is stored, so writing the merged list back would
   // bake the shipped builds into local storage and a later change to them would
   // never reach anyone who had opened the builder once.
-  if (isBuiltInPreset(id)) return loadMechPresets();
+  // A shipped build is put away rather than deleted (builtins.ts).
+  if (isBuiltInPreset(id)) { hideBuiltIn(id); return loadMechPresets(); }
   const saved = loadMechPresets().filter((p) => !isBuiltInPreset(p.id) && p.id !== id);
   write(saved);
   return loadMechPresets();

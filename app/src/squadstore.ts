@@ -1,4 +1,5 @@
 import type { MechLoadout } from './types';
+import { hiddenBuiltIns, hideBuiltIn } from './builtins';
 
 // Whole squads remembered across games, kept in local storage next to the mech
 // presets rather than in the board state, because a squad outlives any one
@@ -114,12 +115,31 @@ export function loadSquads(): SavedSquad[] {
   // A squad saved under a shipped name replaces it, so these can be reworked
   // rather than sitting there uneditable beside a near-duplicate.
   const taken = new Set(saved.map((s) => s.name.toLowerCase()));
-  const shipped = BUILT_IN.filter((s) => !taken.has(s.name.toLowerCase()));
+  const hidden = new Set(hiddenBuiltIns());
+  const shipped = BUILT_IN.filter((s) => !taken.has(s.name.toLowerCase()) && !hidden.has(s.id));
   return [...shipped, ...saved].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+const writers = new Set<() => void>();
+
+// library.ts listens here: every write on this device is a change to push.
+export function onSquadsWrite(fn: () => void): void {
+  writers.add(fn);
 }
 
 function write(list: SavedSquad[]): void {
   localStorage.setItem(KEY, JSON.stringify(list));
+  for (const fn of writers) fn();
+}
+
+// Only what this device saved, without the shipped squads - what travels.
+export function savedSquads(): SavedSquad[] {
+  return loadSquads().filter((s) => !isBuiltInSquad(s.id));
+}
+
+// The account's copy replacing this device's, cleaned the same way a load is.
+export function replaceSquads(list: unknown[]): void {
+  write(list.map(clean).filter((x): x is SavedSquad => !!x && !isBuiltInSquad(x.id)));
 }
 
 // Saving under a name that already exists overwrites it, so re-importing a
@@ -153,7 +173,8 @@ export function deleteSquad(id: string): SavedSquad[] {
   // Writing the merged list back would bake the shipped squads into local
   // storage, and a later change to them would never reach anyone who had opened
   // the tab once.
-  if (isBuiltInSquad(id)) return loadSquads();
+  // A shipped squad is put away rather than deleted (builtins.ts).
+  if (isBuiltInSquad(id)) { hideBuiltIn(id); return loadSquads(); }
   const saved = loadSquads().filter((s) => !isBuiltInSquad(s.id) && s.id !== id);
   write(saved);
   return loadSquads();
