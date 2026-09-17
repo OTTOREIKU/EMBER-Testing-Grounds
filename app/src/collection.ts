@@ -6,7 +6,13 @@ export type CardIndex = Pick<GameData, 'cards' | 'byId'>;
 import { deployedCardCounts } from './units';
 import type { EmberApi } from './api';
 
-// A player's collection: the boxes they own by count, and the loose singles.
+// A player's collection: the boxes they own by count, and the BUILT PIECES -
+// the models actually assembled from those boxes, by card. A box holds three
+// backpack cards; the sprues build one backpack at a time, and a variant Part
+// shares pieces with its sibling, so what the table can field is what was
+// built. Where a card has a built-pieces entry, that count is the truth for
+// the card and the boxes stop counting it; a card bought outside any box fits
+// the same field.
 // One copy on this device, one on the account when signed in - the pad, the
 // freeplay board and the Match Centre all read this store, so a box ticked on
 // the board and a single added on the pad land in the same place.
@@ -19,6 +25,10 @@ export interface Collection {
   cards: Record<string, number>;
   // When this copy last changed. The newer of the two copies wins a sync.
   updatedAt: number;
+  // Only the built pieces count: the boxes are ignored and a card with no
+  // built entry has none. For a table where what matters is the models that
+  // exist, not the cards that were bought. Travels with a shared shelf.
+  builtOnly?: boolean;
 }
 
 // Its OWN key, on purpose. The board kept box counts under 'ember-inventory-v1'
@@ -32,6 +42,7 @@ interface Stored {
   owned?: Record<string, number>;
   cards?: Record<string, number>;
   filterEnabled?: boolean;
+  builtOnly?: boolean;
   updatedAt?: number;
   // The account this copy belongs to. A different account signing in on the
   // same device takes its own shelf from the server rather than inheriting
@@ -69,7 +80,7 @@ function clean(r: Record<string, number> | undefined): Record<string, number> {
 
 export function loadCollection(): Collection {
   const s = read();
-  return { boxes: clean(s.owned), cards: clean(s.cards), updatedAt: s.updatedAt ?? 0 };
+  return { boxes: clean(s.owned), cards: clean(s.cards), updatedAt: s.updatedAt ?? 0, builtOnly: !!s.builtOnly };
 }
 
 // Whether pickers should be limited to the collection. Shared with the board's
@@ -80,6 +91,16 @@ export function collectionOn(): boolean {
 
 export function setCollectionOn(on: boolean): void {
   write({ ...read(), filterEnabled: on });
+  announce();
+}
+
+// A device setting like the switch above: not synced, not stamped.
+export function builtOnlyOn(): boolean {
+  return !!read().builtOnly;
+}
+
+export function setBuiltOnly(on: boolean): void {
+  write({ ...read(), builtOnly: on });
   announce();
 }
 
@@ -180,8 +201,9 @@ function kindHasBoxData(data: CardIndex, category: string): boolean {
   return v;
 }
 
-// How many copies the collection holds: boxes times what each box ships, plus
-// the singles, counted over both faces of the card.
+// How many copies the collection holds. A built-pieces entry on either face
+// answers outright: it is what stands on the shelf, whatever the boxes hold.
+// Without one, boxes times what each box ships, over both faces of the card.
 //
 // quantityPerBox 0 means the card ships with its parent rather than as a
 // counted copy: Discard Cards sit under their Part Card (4.17), and alternate
@@ -189,13 +211,18 @@ function kindHasBoxData(data: CardIndex, category: string): boolean {
 // must not read as "you do not own this" - but nor may it double a Part that
 // lists both its faces, so each box is charged once per pair.
 export function copiesOf(data: CardIndex, col: Collection, card: Card): number {
+  const all = faces(data, card);
+  // Both faces are one physical piece, so an entry on each is the same models
+  // counted twice: the larger entry stands, never the sum.
+  const built = all.map((c) => col.cards[c.id]).filter((v): v is number => v !== undefined);
+  if (built.length) return Math.max(...built);
+  if (col.builtOnly) return 0;
   let n = 0;
   const perBox = new Map<string, number>();
-  for (const c of faces(data, card)) {
+  for (const c of all) {
     for (const ci of c.containedIn ?? []) {
       perBox.set(ci.box, Math.max(perBox.get(ci.box) ?? 0, Math.max(1, ci.quantityPerBox)));
     }
-    n += col.cards[c.id] ?? 0;
   }
   for (const [box, qty] of perBox) n += (col.boxes[box] ?? 0) * qty;
   return n;

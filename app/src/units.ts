@@ -5023,7 +5023,7 @@ export function migrateState(rawIn: unknown, data: GameData): GameState | null {
       const inv: GameState['inventory'] = {};
       for (const side of ['s1', 's2'] as const) {
         const sh = (raw as Record<string, unknown>)[side] as { boxes?: unknown; cards?: unknown } | undefined;
-        if (sh && typeof sh === 'object') inv[side] = { boxes: counts(sh.boxes), cards: counts(sh.cards) };
+        if (sh && typeof sh === 'object') inv[side] = { boxes: counts(sh.boxes), cards: counts(sh.cards), ...((sh as { builtOnly?: unknown }).builtOnly === true ? { builtOnly: true } : {}) };
       }
       return Object.keys(inv).length ? { inventory: inv } : {};
     })(),

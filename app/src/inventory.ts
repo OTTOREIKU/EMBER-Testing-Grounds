@@ -71,7 +71,8 @@ export class Inventory {
     this.onChange();
   }
 
-  // The loose cards: what was recorded one at a time rather than by the box.
+  // The built pieces: the models assembled from the boxes, by card. An entry
+  // overrides the box count for that card (collection.ts).
   private singlesHtml(): string {
     const col = this.col();
     const held = Object.entries(col.cards)
@@ -83,9 +84,9 @@ export class Inventory {
       ? this.cards.filter((c) => cardName(c).toLowerCase().includes(q) || c.id.includes(q)).slice(0, 8)
       : [];
     return `<div class="inv-singles">
-      <div class="inv-contents-head"><b>Loose cards</b>
-        <span class="inv-contents-sub">${held.length ? `${held.reduce((s, e) => s + e.n, 0)} card${held.length === 1 && held[0]!.n === 1 ? '' : 's'}` : 'none recorded'}</span></div>
-      <input type="search" class="inv-single-search" placeholder="Add a card by name…" value="${esc(this.singleSearch)}">
+      <div class="inv-contents-head"><b>Built pieces</b>
+        <span class="inv-contents-sub">${held.length ? `${held.reduce((s, e) => s + e.n, 0)} piece${held.reduce((s, e) => s + e.n, 0) === 1 ? '' : 's'}` : 'none recorded'}</span></div>
+      <input type="search" class="inv-single-search" placeholder="Find a card to record…" value="${esc(this.singleSearch)}">
       ${found.length ? `<ul class="inv-parts inv-found">${found.map((c) => `<li data-tip-card="${c.id}"><span class="ip-name">${esc(cardName(c))}</span><button class="inv-step" data-single-add="${c.id}" title="One more">+</button></li>`).join('')}</ul>` : ''}
       ${held.length ? `<ul class="inv-parts">${held.map((e) => `<li data-tip-card="${e.id}"><span class="ip-name">${esc(cardName(e.card))}</span><span class="ip-n">×${e.n}</span>
         <button class="inv-step" data-single-step="-1" data-single="${e.id}" title="One fewer">−</button>
@@ -244,7 +245,7 @@ export class Inventory {
         <button id="inv-compare-open" class="inv-cmp-btn">Compare boxes</button>
         ${this.hasAny() ? '<button id="inv-clear" class="inv-cmp-btn">Clear</button>' : ''}
       </div>
-      <p class="dim">Set how many copies of each box you own, and add any loose cards. Card lists then show your available copy counts. Signed in, the collection follows your account to the pad.</p>
+      <p class="dim">Set how many copies of each box you own, and record the pieces you have built. Card lists then show your available copy counts. Signed in, the collection follows your account to the pad.</p>
       <div class="inv-facets">
         ${this.factionFacets()
           .map(
@@ -291,7 +292,7 @@ export class Inventory {
     dlg.querySelector('#inv-clear')?.addEventListener('click', () => {
       void confirmDialog({
         title: 'Clear the collection?',
-        body: 'Every box count and loose card is removed, here and on your account.',
+        body: 'Every box count and built piece is removed, here and on your account.',
         confirmLabel: 'Clear it',
         cancelLabel: 'Keep it',
       }).then((go) => {
@@ -311,7 +312,7 @@ export class Inventory {
       inp.closest('.inv-box')?.classList.toggle('owned', n > 0);
       this.setBox(inp.dataset.box!, n);
     };
-    // The loose cards: search adds, the steppers adjust. Both redraw the
+    // The built pieces: search adds, the steppers adjust. Both redraw the
     // dialog, which is what keeps the list and the counts honest.
     const singles = dlg.querySelector<HTMLElement>('.inv-singles')!;
     const search = singles.querySelector<HTMLInputElement>('.inv-single-search')!;

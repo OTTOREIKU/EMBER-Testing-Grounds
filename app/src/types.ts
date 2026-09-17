@@ -1288,6 +1288,8 @@ export function zonesOf<T extends { id: string; name: string; cells: string[] }>
 export interface SharedInventory {
   boxes: Record<string, number>;
   cards: Record<string, number>;
+  // Only the built pieces count (collection.ts).
+  builtOnly?: boolean;
 }
 
 export interface GameState {

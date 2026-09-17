@@ -325,7 +325,7 @@ export type Command =
   | { kind: 'setTactics'; seat: Side; cards: string[] }
   // A seat opening its collection to the table, or closing it again. Carries
   // the whole shelf, so a repeat cannot double it; `shared` false takes it back.
-  | { kind: 'setInventory'; seat: Side; shared: boolean; boxes?: Record<string, number>; cards?: Record<string, number> }
+  | { kind: 'setInventory'; seat: Side; shared: boolean; boxes?: Record<string, number>; cards?: Record<string, number>; builtOnly?: boolean }
   // Naming the Mech or the Tactical Zone a Task is about. `seat` is whoever
   // makes the choice, which is not always whose Task it is — Behead has the
   // opponent name one of their own — so `for` carries the squad that scores it.
@@ -2887,7 +2887,7 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
   }
   if (cmd.kind === 'setInventory') {
     const inv = { ...(state.inventory ?? {}) };
-    if (cmd.shared) inv[cmd.seat] = { boxes: { ...(cmd.boxes ?? {}) }, cards: { ...(cmd.cards ?? {}) } };
+    if (cmd.shared) inv[cmd.seat] = { boxes: { ...(cmd.boxes ?? {}) }, cards: { ...(cmd.cards ?? {}) }, ...(cmd.builtOnly ? { builtOnly: true } : {}) };
     else delete inv[cmd.seat];
     if (Object.keys(inv).length) state.inventory = inv;
     else delete state.inventory;

@@ -1142,3 +1142,8 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
 .pad-lib-fold > .pad-saved:first-of-type, .pad-lib-fold > .pad-label { margin-top: 8px; }
 .pad-inv-fac { margin: 10px 0 4px; color: var(--text3); font-size: 11px; letter-spacing: 0.4px; }
 .pad-inv-tag { margin-left: 6px; font-weight: 400; color: var(--text3); font-size: 11px; }
+
+/* An Environment Card on the Tasks panel: the card, its Grid, and its lift. */
+.pad-chip.pad-env { display: inline-flex; align-items: center; gap: 6px; cursor: default; }
+.pad-chip.pad-env .ui-x { width: 22px; height: 22px; font-size: 12px; }
+.pad-sec b { margin-left: 6px; font-weight: 700; color: var(--text2); }

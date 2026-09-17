@@ -45,7 +45,7 @@ import { beginElectronic, ewActive, ewWatching, initEw, mountEw, syncContest } f
 import { clearHistory, historyDepth, historyEntries, undoLast, recordSnapshot } from '../src/history';
 import { labelFor, namesFrom, type LedgerNames } from '../src/ledger';
 import { setLocalSeat } from '../src/loop';
-import { actionIconUrl, BASE_FACTIONS, battlefieldCardUrl, cardName, FACTION_LABEL, isDiscardCard, isListedBox, isMine, loadData, mechPartUrl, missionImageUrl, secondaryImageUrl, stancePrintUrl, statIconIsPlated, statIconUrl, tabImageUrl, tokenFace, tokenPrintUrl, traitName, type GameData } from '../src/data';
+import { actionIconUrl, BASE_FACTIONS, battlefieldCardUrl, cardName, environmentAllowance, environmentImageUrl, FACTION_LABEL, parseGridRef, isDiscardCard, isListedBox, isMine, loadData, mechPartUrl, missionImageUrl, secondaryImageUrl, stancePrintUrl, statIconIsPlated, statIconUrl, tabImageUrl, tokenFace, tokenPrintUrl, traitName, type GameData } from '../src/data';
 import { importSquadFile } from '../src/importer';
 import { deleteMechPreset, isBuiltInPreset, loadMechPresets, saveMechPreset, type MechPreset } from '../src/presets';
 import { deleteSquad, isBuiltInSquad, loadSquads, saveSquad } from '../src/squadstore';
@@ -56,7 +56,7 @@ import { found, matchCard, matchKeyword, matchMechanic, matchMission, matchPhase
 import { mountCardImage, mountCardImageCopy } from '../src/images';
 import { squadColour } from '../src/icons';
 import { groupByFaction, openPartPicker } from '../src/partpicker';
-import { bindCollection, collectionOn, copiesOf, hasAny, loadCollection, onCollection, remaining, saveCollection, setCollectionOn, shortfalls, type Collection } from '../src/collection';
+import { bindCollection, builtOnlyOn, collectionOn, copiesOf, hasAny, loadCollection, onCollection, remaining, saveCollection, setBuiltOnly, setCollectionOn, shortfalls, type Collection } from '../src/collection';
 import { choiceDialog, confirmDialog, promptDialog } from '../src/dialog';
 import { checkForUpdates, watchForUpdates } from '../src/updates';
 import { normaliseTasks } from '../src/tasks';
@@ -283,7 +283,7 @@ let panel: Panel = null;
 // The host is shown the table setup once, when the room comes up.
 let setupPending = false;
 // Which picker the Tasks panel has open, if any.
-let picking: 'main' | 'secondary' | null = null;
+let picking: 'main' | 'secondary' | 'environment' | null = null;
 // Whose Secondary the picker is choosing. Only ever the other squad's solo,
 // where one phone keeps both.
 let pickFor: Side = 's1';
@@ -296,7 +296,7 @@ let tokManage: string | null = null;
 // The search. `q` lives here and not in the input, so a redraw mid-word keeps
 // what was typed; the input is only ever written back from it.
 const find: { q: string; scope: FindScope } = { q: '', scope: 'all' };
-// The Collection panel's search for a loose card.
+// The Collection panel's search for a card to record built pieces of.
 let invSearch = '';
 
 // SOLO. A player at a table on their own, or one keeping the sheet for both
@@ -1725,6 +1725,13 @@ function tasksPanel(): string {
       <button class="pad-btn" data-act="pick-cancel">Cancel</button>
     </div>`;
   }
+  if (picking === 'environment') {
+    return `<div class="pad-panel-in">${panelHead('Environment Card')}
+      <div class="pad-tasklist">${data!.environments.cards.map((c) =>
+        taskCard(`data-act="pick-task" data-kind="environment" data-id="${esc(c.id)}"`, environmentImageUrl(c.id), c.name, c.text, '')).join('')}</div>
+      <button class="pad-btn" data-act="pick-cancel">Cancel</button>
+    </div>`;
+  }
   if (picking === 'secondary') {
     return `<div class="pad-panel-in">${panelHead('Secondary Task')}
       <p class="pad-lead">${pickFor === me ? 'Yours.' : `${esc(sideName(pickFor))}.`}</p>
@@ -1759,6 +1766,16 @@ function tasksPanel(): string {
           <span class="pad-task-row"><span class="pad-task-name">${esc(layout.name.en || layout.id)}</span><button class="pad-chip" data-act="open-setup">change</button></span>
         </div>`
       : '<button class="pad-btn" data-act="open-setup">Choose</button>'}`;
+
+  // Environment Cards (5.4.1): placed on Grids while the battlefield is set
+  // up, no more than the layout allows. The pad records which card covers
+  // which Grid; the table places them.
+  const placed = table.environments ?? [];
+  const cap = environmentAllowance(data!, table);
+  const envName = (id: string) => data!.environments.cards.find((c) => c.id === id)?.name ?? id;
+  const envHtml = `<p class="pad-label pad-sec">Environment Cards <b>${placed.length}/${cap}</b></p>
+    ${placed.length ? `<div class="pad-chips" style="margin-bottom:8px">${placed.map((e) => `<span class="pad-chip pad-env">${esc(envName(e.card))} · ${String.fromCharCode(65 + e.col)}${e.row + 1}<button class="ui-x" data-act="env-lift" data-at="${e.col},${e.row}" aria-label="Take ${esc(envName(e.card))} off">✕</button></span>`).join('')}</div>` : ''}
+    ${placed.length < cap ? '<button class="pad-btn" data-act="pick-env">Place a card</button>' : ''}`;
 
   const slot = (label: string, card: { id: string; name: string } | undefined,
                 art: (id: string) => string, imgAttr: string, act: string | null) => `
@@ -1795,6 +1812,7 @@ function tasksPanel(): string {
     ${recordHtml}
     <div class="pad-vp">${vpSide(me, 'Yours')}${vpSide(them, 'Theirs')}</div>
     ${layoutHtml}
+    ${envHtml}
     ${drawHtml || (mission
       ? slot('Main Task', mission, missionImageUrl, `data-mission="${esc(mission.id)}"`, 'pick-main')
       : `<p class="pad-label pad-sec">Main Task</p>
@@ -2315,7 +2333,7 @@ function shelfFor(): Collection | null {
   const mine = loadCollection();
   if (collectionOn() && hasAny(mine)) return mine;
   const theirs = view.room ? table.inventory?.[otherSeat()] : undefined;
-  if (theirs) return { boxes: theirs.boxes, cards: theirs.cards, updatedAt: 0 };
+  if (theirs) return { boxes: theirs.boxes, cards: theirs.cards, updatedAt: 0, builtOnly: !!theirs.builtOnly };
   return null;
 }
 
@@ -2343,7 +2361,16 @@ function leftOf(c: Card): number | null {
 // A shelf already open to the table follows its edits.
 function reshare(col: Collection): void {
   if (!view.room || !table.inventory?.[mySeat()]) return;
-  send({ kind: 'setInventory', seat: mySeat(), shared: true, boxes: col.boxes, cards: col.cards });
+  send({ kind: 'setInventory', seat: mySeat(), shared: true, boxes: col.boxes, cards: col.cards, builtOnly: !!col.builtOnly });
+}
+
+// The two switches, side by side wherever the collection is offered.
+// "Only built pieces" implies building from the collection, so turning it on
+// turns that on too.
+function collectionChips(on: boolean): string {
+  const built = builtOnlyOn();
+  return `<button class="pad-chip${on ? ' on' : ''}" data-act="inv-toggle" aria-pressed="${on}">Build from collection</button>
+      <button class="pad-chip${on && built ? ' on' : ''}" data-act="inv-built-only" aria-pressed="${on && built}">Only built pieces</button>`;
 }
 
 function collectionSummary(col: Collection): string {
@@ -2352,7 +2379,7 @@ function collectionSummary(col: Collection): string {
   if (!boxes && !singles) return 'Nothing recorded yet';
   const parts = [];
   if (boxes) parts.push(`${boxes} box${boxes === 1 ? '' : 'es'}`);
-  if (singles) parts.push(`${singles} loose card${singles === 1 ? '' : 's'}`);
+  if (singles) parts.push(`${singles} built piece${singles === 1 ? '' : 's'}`);
   return parts.join(' · ');
 }
 
@@ -2369,7 +2396,7 @@ function collectionRows(): string {
       <button class="pad-chip" data-act="inventory">Edit</button>
     </div>
     <div class="pad-chips">
-      <button class="pad-chip${on ? ' on' : ''}" data-act="inv-toggle" aria-pressed="${on}">Build from my collection</button>
+      ${collectionChips(on)}
       ${room ? `<button class="pad-chip${shared ? ' on' : ''}" data-act="inv-share" aria-pressed="${shared}"${hasAny(col) || shared ? '' : ' disabled'}>Open it to the table</button>` : ''}
     </div>
     ${on && !hasAny(col) ? '<p class="pad-label">Nothing is recorded, so every card still shows.</p>' : ''}
@@ -2431,11 +2458,11 @@ function inventoryPanel(): string {
     ${errHtml()}
     <p class="pad-label" style="margin-top:0">${esc(collectionSummary(col))}${account ? ' · saved to your account' : ''}</p>
     <div class="pad-chips" style="margin-bottom:8px">
-      <button class="pad-chip${on ? ' on' : ''}" data-act="inv-toggle" aria-pressed="${on}">Build from my collection</button>
+      ${collectionChips(on)}
     </div>
 
-    <p class="pad-label pad-sec">Loose cards</p>
-    <input class="pad-input" id="pad-inv-q" type="search" placeholder="Add a card by name…" value="${esc(invSearch)}" autocomplete="off">
+    <p class="pad-label pad-sec">Built pieces</p>
+    <input class="pad-input" id="pad-inv-q" type="search" placeholder="Find a card to record…" value="${esc(invSearch)}" autocomplete="off">
     <div id="pad-inv-found">${invFoundHtml()}</div>
     ${singles.length ? grouped(singles, (e) => d.factionOf(e.card!) ?? '', () => true, (e) => `<div class="pad-row pad-inv-row owned">
       <span class="pad-part-name" data-card="${esc(e.id)}">${esc(cardName(e.card))}</span>
@@ -2444,7 +2471,7 @@ function inventoryPanel(): string {
         <span class="pad-inv-n">${e.n}</span>
         <button class="pad-chip" data-act="inv-card" data-id="${esc(e.id)}" data-d="1" aria-label="One more">+</button>
       </div>
-    </div>`) : '<p class="pad-label">None recorded. Search above to add a card you own outside a box.</p>'}
+    </div>`) : '<p class="pad-label">None recorded. Boxes count in full until a card gets a built count.</p>'}
 
     <p class="pad-label pad-sec">Boxes</p>
     ${grouped(boxes, facOf, (b) => (col.boxes[b.key] ?? 0) > 0, boxRow)}
@@ -2929,6 +2956,13 @@ function paint(id: string, html: string): boolean {
   if (painted.get(id) === html) return false;
   el.innerHTML = html;
   painted.set(id, html);
+  // Rewriting a container replaces every region inside it with a fresh,
+  // empty element, so what the cache remembers for those ids is stale: the
+  // Find panel's scope bar came back blank whenever it was reopened with the
+  // same scope, because its html "had not changed".
+  for (const k of [...painted.keys()]) {
+    if (k !== id && el.querySelector(`#${k}`)) painted.delete(k);
+  }
   return true;
 }
 
@@ -3461,11 +3495,32 @@ function act(el: HTMLElement, ev: Event): void {
     case 'pick-sec': picking = 'secondary'; pickFor = mySeat(); render(); return;
     case 'pick-sec-them': picking = 'secondary'; pickFor = otherSeat(); render(); return;
     case 'pick-cancel': picking = null; render(); return;
+    case 'pick-env': error = null; picking = 'environment'; render(); return;
+    case 'env-lift': {
+      const [col, row] = el.dataset.at!.split(',').map(Number);
+      send({ kind: 'setEnvironment', seat: mySeat(), at: { col, row }, card: null });
+      return;
+    }
     case 'pick-task': {
       const id = el.dataset.id!;
       picking = null;
-      if (el.dataset.kind === 'mission') send({ kind: 'configureTable', seat: mySeat(), mission: id });
-      else send({ kind: 'pickSecondary', seat: pickFor, cardId: id });
+      if (el.dataset.kind === 'mission') { send({ kind: 'configureTable', seat: mySeat(), mission: id }); return; }
+      if (el.dataset.kind === 'environment') {
+        // The Grid it covers, as the table reads it: a letter and a number.
+        void promptDialog({
+          title: data!.environments.cards.find((c) => c.id === id)?.name ?? 'Environment Card',
+          body: 'Which Grid does it cover?',
+          placeholder: 'C7',
+          confirmLabel: 'Place',
+        }).then((ref) => {
+          if (ref === null) { render(); return; }
+          const at = parseGridRef(ref);
+          if (!at) { error = 'That is not a Grid. Type a letter and a number, such as C7.'; render(); return; }
+          send({ kind: 'setEnvironment', seat: mySeat(), at, card: id });
+        });
+        return;
+      }
+      send({ kind: 'pickSecondary', seat: pickFor, cardId: id });
       return;
     }
 
@@ -3498,7 +3553,7 @@ function act(el: HTMLElement, ev: Event): void {
     case 'inv-clear':
       void confirmDialog({
         title: 'Clear the collection?',
-        body: 'Every box count and loose card is removed, here and on your account.',
+        body: 'Every box count and built piece is removed, here and on your account.',
         confirmLabel: 'Clear it',
         cancelLabel: 'Keep it',
       }).then((go) => {
@@ -3510,12 +3565,21 @@ function act(el: HTMLElement, ev: Event): void {
       });
       return;
     case 'inv-toggle': setCollectionOn(!collectionOn()); render(); return;
+    case 'inv-built-only': {
+      const next = !(collectionOn() && builtOnlyOn());
+      setBuiltOnly(next);
+      if (next && !collectionOn()) setCollectionOn(true);
+      // A shelf already open to the table follows the switch.
+      reshare(loadCollection());
+      render();
+      return;
+    }
     case 'inv-share': {
       const shared = !!table.inventory?.[mySeat()];
       const col = loadCollection();
       send(shared
         ? { kind: 'setInventory', seat: mySeat(), shared: false }
-        : { kind: 'setInventory', seat: mySeat(), shared: true, boxes: col.boxes, cards: col.cards });
+        : { kind: 'setInventory', seat: mySeat(), shared: true, boxes: col.boxes, cards: col.cards, builtOnly: !!col.builtOnly });
       return;
     }
     case 'inv-box': {
