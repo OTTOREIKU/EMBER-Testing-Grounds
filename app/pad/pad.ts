@@ -315,7 +315,6 @@ const GAMES_KEY = 'ember.pad.games';
 const ROOMS_KEY = 'ember.pad.rooms';
 const NOTES_KEY = 'ember.pad.notes';
 const RECENT_KEY = 'ember.pad.recent';
-const PINS_KEY = 'ember.pad.pins';
 const ACTS_KEY = 'ember.pad.acts';
 const FOLDS_KEY = 'ember.pad.folds';
 // The More panel's folds (saved units, saved squads), closed until opened and
@@ -2595,47 +2594,12 @@ function findPanel(): string {
 
 type FindGroup = { id: FindScope; label: string; total: number; tiles: string[] };
 
-// Pinned cards and keywords lead every search: what a player keeps coming
-// back to during a game, kept on this phone.
-type Pin = { kind: 'card' | 'keyword'; key: string };
-let pins: Pin[] = (() => {
-  try {
-    const raw = stored(PINS_KEY);
-    const v = raw ? (JSON.parse(raw) as Pin[]) : [];
-    return Array.isArray(v) ? v.filter((p) => p && (p.kind === 'card' || p.kind === 'keyword') && typeof p.key === 'string') : [];
-  } catch { return []; }
-})();
-
-function pinned(kind: Pin['kind'], key: string): boolean {
-  return pins.some((p) => p.kind === kind && p.key === key);
-}
-
-function togglePin(kind: Pin['kind'], key: string): void {
-  pins = pinned(kind, key) ? pins.filter((p) => !(p.kind === kind && p.key === key)) : [...pins, { kind, key }];
-  store(PINS_KEY, JSON.stringify(pins));
-}
-
-// A Find tile with its pin control.
-function withPin(html: string, kind: Pin['kind'], key: string): string {
-  const on = pinned(kind, key);
-  return `<div class="pad-find-pin${on ? ' on' : ''}">${html}<button class="pad-pin${on ? ' on' : ''}" data-act="pin" data-kind="${kind}" data-key="${esc(key)}">${on ? 'Pinned' : 'Pin'}</button></div>`;
-}
-
 function findGroups(q: string, scope: FindScope): FindGroup[] {
   const d = data!;
   const groups: FindGroup[] = [];
   const cap = scope === 'all' ? 6 : 400;
   const want = (id: FindScope) => scope === 'all' || scope === id;
   const alpha = (a: Card, b: Card) => cardName(a).localeCompare(cardName(b));
-
-  if (!q && scope === 'all' && pins.length) {
-    const tiles = pins.map((p) => {
-      if (p.kind === 'card') { const c = d.byId.get(p.key); return c ? withPin(cardRow(c), 'card', c.id) : ''; }
-      const k = d.keyword(p.key);
-      return k ? withPin(keywordCard(k), 'keyword', p.key) : '';
-    }).filter(Boolean);
-    if (tiles.length) groups.push({ id: 'all', label: 'Pinned', total: tiles.length, tiles });
-  }
 
   // Recents lead an empty search: what was just read is what is wanted again.
   if (!q && scope === 'all' && recents.length) {
@@ -2663,7 +2627,7 @@ function findGroups(q: string, scope: FindScope): FindGroup[] {
 
   if (want('keywords') && (q || scope === 'keywords')) {
     const kws = found(d.keywords, q, matchKeyword, nmKeyword);
-    if (kws.length) groups.push({ id: 'keywords', label: 'Keywords', total: kws.length, tiles: kws.slice(0, cap).map((k) => withPin(keywordCard(k), 'keyword', k.key)) });
+    if (kws.length) groups.push({ id: 'keywords', label: 'Keywords', total: kws.length, tiles: kws.slice(0, cap).map((k) => keywordCard(k)) });
   }
 
   const pools: [FindScope, string, (c: Card) => boolean][] = [
@@ -2675,7 +2639,7 @@ function findGroups(q: string, scope: FindScope): FindGroup[] {
   for (const [id, label, pick] of pools) {
     if (!want(id) || (!q && scope !== id)) continue;
     const pool = found(d.cards.filter(pick), q, matchCard, nmCard, alpha);
-    if (pool.length) groups.push({ id, label, total: pool.length, tiles: pool.slice(0, cap).map((c) => withPin(cardRow(c), 'card', c.id)) });
+    if (pool.length) groups.push({ id, label, total: pool.length, tiles: pool.slice(0, cap).map((c) => cardRow(c)) });
   }
 
   if (want('tasks') && (q || scope === 'tasks')) {
@@ -3736,7 +3700,6 @@ function act(el: HTMLElement, ev: Event): void {
       return;
 
     // ----- find -----
-    case 'pin': togglePin(el.dataset.kind as Pin['kind'], el.dataset.key!); paintFind(); return;
     case 'find-scope':
       find.scope = el.dataset.scope as FindScope;
       if (panel !== 'find') {
