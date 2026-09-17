@@ -3604,7 +3604,18 @@ function act(el: HTMLElement, ev: Event): void {
         render();
       });
       return;
-    case 'inv-toggle': setCollectionOn(!collectionOn()); render(); return;
+    case 'inv-toggle': {
+      // Three states, in order: nothing, the collection, the collection's
+      // built pieces only. Switching the collection off drops the third too,
+      // so the next switch-on is the plain collection - the remembered
+      // "built only" used to come back with it.
+      const next = !collectionOn();
+      setCollectionOn(next);
+      if (!next && builtOnlyOn()) setBuiltOnly(false);
+      reshare(loadCollection());
+      render();
+      return;
+    }
     case 'inv-built-only': {
       const next = !(collectionOn() && builtOnlyOn());
       setBuiltOnly(next);
