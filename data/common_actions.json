@@ -5,92 +5,137 @@
   "actions": [
     {
       "id": "COMMON_CHARGE",
-      "name": { "en": "Charge" },
+      "name": {
+        "en": "Charge"
+      },
       "type": "Tactic",
       "size": "s",
-      "slots": ["torso", "chasis", "backpack", "leftHand", "rightHand"],
+      "slots": [
+        "torso",
+        "chasis",
+        "backpack",
+        "leftHand",
+        "rightHand"
+      ],
       "silence": true,
       "requires": "a Part whose Action carries the Charge icon",
       "description": {
-        "en": "· Silence: this does not remove Optical Camouflage or Low Profile.\n· Charge an Action that carries the Charge icon. That Action becomes Charged and takes a face-up Charge Token, to be consumed later."
+        "en": "· Silence.\n· Performed by one or more Parts with an Action that has the Charge Icon: that Action becomes Charged."
       }
     },
     {
       "id": "COMMON_DISCARD",
-      "name": { "en": "Discard" },
+      "name": {
+        "en": "Discard"
+      },
       "type": "Tactic",
       "size": "s",
-      "slots": ["leftHand", "rightHand"],
+      "slots": [
+        "leftHand",
+        "rightHand"
+      ],
       "silence": true,
       "requires": "a Part with the Handheld entry",
       "description": {
-        "en": "· Silence: this does not remove Optical Camouflage or Low Profile.\n· Switch one or more Handheld Parts to the Discard State."
+        "en": "· Silence.\n· Performed by one or more Parts with the Handheld entry: the Part switches to the Discard State."
       }
     },
     {
       "id": "COMMON_PUNCH_MELEE",
-      "name": { "en": "Punch / Kick (melee)" },
+      "name": {
+        "en": "Punch / Kick (melee)"
+      },
       "type": "Melee",
       "size": "m",
-      "slots": ["chasis", "leftHand", "rightHand"],
+      "slots": [
+        "chasis",
+        "leftHand",
+        "rightHand"
+      ],
       "redDice": 2,
       "description": {
-        "en": "· Melee Attack at base contact, rolling 2 red melee dice.\n· Because every Mech has this, almost every Mech can create a Melee Lock."
+        "en": "· Melee Attack: 2 red dice.\n· Performed with Chassis, Left Arm or Right Arm.\n· A Melee Action, so it gives Melee Lock (4.3.5)."
       }
     },
     {
       "id": "COMMON_PUNCH_MOVE",
-      "name": { "en": "Punch / Kick (movement)" },
+      "name": {
+        "en": "Punch / Kick (movement)"
+      },
       "type": "Moving",
       "size": "m",
       "range": 1,
-      "slots": ["chasis", "leftHand", "rightHand"],
+      "slots": [
+        "chasis",
+        "leftHand",
+        "rightHand"
+      ],
       "description": {
-        "en": "· Shove a target 1 Grid.\n· This cannot be used to Break Away."
+        "en": "· Range 1. Performed with Chassis, Left Arm or Right Arm.\n· Shove the target 1 Grid.\n· Cannot be used to Break Away."
       }
     },
     {
       "id": "COMMON_REVEAL",
-      "name": { "en": "Reveal" },
+      "name": {
+        "en": "Reveal"
+      },
       "type": "Tactic",
       "size": "s",
-      "slots": ["torso", "chasis", "backpack", "leftHand", "rightHand"],
+      "slots": [
+        "torso",
+        "chasis",
+        "backpack",
+        "leftHand",
+        "rightHand"
+      ],
       "description": {
-        "en": "· Tactical Short Action (6.1).\n· Become Revealed and perform Manifestation Movement."
+        "en": "· The unit becomes Revealed and performs Manifestation Movement."
       }
     },
     {
       "id": "COMMON_STABILIZE",
-      "name": { "en": "Stabilize System" },
+      "name": {
+        "en": "Stabilize System"
+      },
       "type": "Tactic",
       "size": "s",
-      "slots": ["torso"],
+      "slots": [
+        "torso"
+      ],
       "silence": true,
       "description": {
-        "en": "· Tactical Short Action (6.1). Silence.\n· Remove 1 Square Token or 1 Hexagon Token from this Unit, then Restore 1 Link."
+        "en": "· Silence.\n· Performed with Torso: remove 1 Square Token or 1 Hexagon Token from this Unit, then Restore 1 Link."
       }
     },
     {
       "id": "COMMON_REMOTE_ACCESS",
-      "name": { "en": "Remote Access" },
+      "name": {
+        "en": "Remote Access"
+      },
       "type": "Tactic",
       "size": "s",
       "range": 4,
-      "slots": ["torso"],
+      "slots": [
+        "torso"
+      ],
       "description": {
-        "en": "· Perform an Electronic Counter-roll against the Terminal. If successful, the player successfully Accesses this Terminal.\n· The Terminal's Electronic Value is 3, and each Terminal may only be accessed once per round."
+        "en": "· Range 4. Performed with Torso.\n· Electronic Counter-roll against the Terminal (Electronic Value 3). If successful, the Terminal is Accessed.\n· Each Terminal may be accessed once per round."
       }
     },
     {
       "id": "COMMON_SCAN",
-      "name": { "en": "Scan" },
+      "name": {
+        "en": "Scan"
+      },
       "type": "Tactic",
       "size": "s",
       "range": 6,
-      "slots": ["torso"],
+      "slots": [
+        "torso"
+      ],
       "silence": true,
       "description": {
-        "en": "· Tactical Short Action (6.1).\n· Target an enemy in the Optical Camouflage State or bearing a Low Profile Token, then make an Electronic-counter Roll.\n· On a success, a camouflaged target is Revealed and a Low Profile Token is removed.\n· Silent, so a camouflaged scanner is not Revealed by using it (FAQ I18)."
+        "en": "· Silence. Range 6. Performed with Torso.\n· Designate an enemy Unit in the Optical Camouflage State or bearing a Low Profile Token.\n· Electronic Counter-roll against the target. If successful: a target in the Optical Camouflage State is Revealed; a target bearing Low Profile Tokens removes them."
       }
     }
   ],
@@ -119,5 +164,6 @@
       "card": "090",
       "label": "Overload"
     }
-  ]
+  ],
+  "_text": "Descriptions are the printed rule and nothing else: no designer notes, no FAQ commentary (OTTO, 2026-09-17). The English book prints no effect line for the movement Punch/Kick beyond R 1 and the Break Away bar; the 1-Grid shove is the Movement-icon reading the engine has always used (knockbackOf reads 'Shove ... 1 Grid'), kept until the publisher prints otherwise."
 }

@@ -45,7 +45,7 @@ import { beginElectronic, ewActive, ewWatching, initEw, mountEw, syncContest } f
 import { clearHistory, historyDepth, historyEntries, undoLast, recordSnapshot } from '../src/history';
 import { labelFor, namesFrom, type LedgerNames } from '../src/ledger';
 import { setLocalSeat } from '../src/loop';
-import { actionIconUrl, BASE_FACTIONS, battlefieldCardUrl, cardName, environmentAllowance, environmentImageUrl, FACTION_LABEL, parseGridRef, isDiscardCard, isListedBox, isMine, loadData, mechPartUrl, missionImageUrl, secondaryImageUrl, stancePrintUrl, statIconIsPlated, statIconUrl, tabImageUrl, tokenFace, tokenPrintUrl, traitName, type GameData } from '../src/data';
+import { actionIconUrl, BASE_FACTIONS, battlefieldCardUrl, cardName, discardFaceOf, environmentAllowance, environmentImageUrl, FACTION_LABEL, parseGridRef, isDiscardCard, isListedBox, isMine, loadData, mechPartUrl, missionImageUrl, secondaryImageUrl, stancePrintUrl, statIconIsPlated, statIconUrl, tabImageUrl, tokenFace, tokenPrintUrl, traitName, type GameData } from '../src/data';
 import { importSquadFile } from '../src/importer';
 import { deleteMechPreset, isBuiltInPreset, loadMechPresets, saveMechPreset, type MechPreset } from '../src/presets';
 import { deleteSquad, isBuiltInSquad, loadSquads, saveSquad } from '../src/squadstore';
@@ -684,6 +684,28 @@ function groupKey(u: Token): string | null {
   return u.kind === 'mech' ? null : `${u.side}:${u.cardId}`;
 }
 
+// Stabilize System (6.1): the Link, and a Token if the player chooses. One
+// kind worn, or none: no question. Two or more: ask, with keeping them all
+// as a choice (J4).
+function stabilise(t: Token): void {
+  const worn = statusStacks(t.statuses).filter(({ def }) => def.shape === 'square' || def.shape === 'hexagon');
+  if (worn.length < 2) { send({ kind: 'stabilise', seat: t.side, uid: t.uid }); return; }
+  void (async () => {
+    const pick = await choiceDialog({
+      title: 'Stabilize System',
+      choices: [
+        ...worn.map(({ def, n }) => ({ id: def.id, label: n > 1 ? `${def.label} ×${n}` : def.label })),
+        { id: '__keep', label: 'Keep the Tokens', cancel: true },
+      ],
+      stacked: true,
+    });
+    if (pick === null) return;
+    send(pick === '__keep'
+      ? { kind: 'stabilise', seat: t.side, uid: t.uid, keepTokens: true }
+      : { kind: 'stabilise', seat: t.side, uid: t.uid, statusId: pick });
+  })();
+}
+
 function unitOf(uid: number | null): Token | null {
   return table.tokens.find((x) => x.uid === uid) ?? null;
 }
@@ -904,6 +926,7 @@ const guide: GuideApi = {
   check: (cmd) => check(data!, table, cmd),
   endGame: () => { void endGame(); },
   detonate: (uid, actionId) => { const t = unitOf(uid); if (t) void detonate(t, actionId); },
+  stabilise: (uid) => { const t = unitOf(uid); if (t) stabilise(t); },
   tactics: (side) => ({
     playable: guidedOn(table) && !playedThisRound(side)
       ? handOf(side).filter((id) => tacticFitsPhase(id, PHASES[table.round.phase] ?? '')).map((id) => ({ id, name: data ? cardName(data.byId.get(id)!) : id }))
@@ -1435,8 +1458,67 @@ function actionList(t: Token, mine: boolean): string {
       <div class="pad-act-meta">${esc(meta)}${!g.available && g.reason ? ` · <em>${esc(g.reason)}</em>` : ''}${perform ? `<span class="pad-act-go">${perform}</span>` : ''}</div>
     </div>`);
   }
-  void mine;
+  rows.push(...commonRows(t, mine));
   return `<div class="pad-acts">${rows.join('')}</div>`;
+}
+
+// The Common Actions (6.1) plus Remote Access (5.3.3): every Mech has them
+// beside what its Parts print, folded under their own heading, closed until
+// opened. Only what this Mech can ever use is listed: Charge needs a Part
+// with a Charge Icon, Discard a Handheld Part, Reveal the Optical Camouflage
+// State, Remote Access a Terminal on the table - a Mech without them never
+// sees the row. A destroyed Part dims a row rather than hiding it. The pad
+// does not pay Ticks on a free table, so there a row only offers what has a
+// tool - the attack window for the Punch, the counter-roll for the Scan, the
+// Link for Stabilize, the reveal for Reveal.
+function commonRows(t: Token, mine: boolean): string[] {
+  const d = data!;
+  if (t.kind !== 'mech' || !t.mech) return [];
+  if ((t.partStates.torso ?? 'intact') === 'destroyed') return [];
+  const intact = (s: string) => !!t.mech?.[s as PartSlot] && (t.partStates[s as PartSlot] ?? 'intact') !== 'destroyed';
+  const torso = d.byId.get(t.mech.torso ?? '');
+  const rows: string[] = [];
+  const relevant = (a: CardAction): boolean => {
+    if (a.id === 'COMMON_CHARGE') return chargeableSlots(d, t).length > 0;
+    if (a.id === 'COMMON_DISCARD') return tokenCards(d, t).some(({ slot, card }) => slot !== 'pilot' && !!discardFaceOf(d, card));
+    if (a.id === 'COMMON_REVEAL') return (t.statuses ?? []).includes('camouflage');
+    if (a.id === 'COMMON_REMOTE_ACCESS') return missionOf()?.family === 'terminal';
+    return true;
+  };
+  const acts = d.commonActions.filter((a) => a.type !== 'Passive' && relevant(a));
+  if (!acts.length) return [];
+  for (const a of acts) {
+    const slots = (a as { slots?: string[] }).slots ?? [];
+    const reason = slots.length && !slots.some(intact) ? 'No intact Part can perform this.' : undefined;
+    const available = !reason;
+    const open = openAction === a.id;
+    const len = lengthOf(a);
+    const tm = timingOf(a);
+    const meta = [
+      slots.map((s) => SLOT_LABEL[s] ?? s).join(' / '),
+      tm ? (TIMINGS.find((x) => x.id === tm)?.name ?? tm) : '',
+      len ? LENGTH_NAME[len] : '',
+    ].filter(Boolean).join(' · ');
+    const perform = guidedOn(table)
+      ? performButton(guide, t, a, a.id)
+      : (mine && available && a.type === 'Melee'
+        ? `<button class="pad-chip on pad-perform" data-act="attack" data-uid="${t.uid}" data-id="${esc(a.id)}">Attack</button>`
+        : mine && available && a.id === 'COMMON_SCAN'
+          ? `<button class="pad-chip on pad-perform" data-act="attack" data-mode="electronic" data-uid="${t.uid}" data-id="${esc(a.id)}">Electronic</button>`
+          : mine && available && a.id === 'COMMON_STABILIZE'
+            ? `<button class="pad-chip on pad-perform" data-act="stabilise">Stabilize</button>`
+            : mine && available && a.id === 'COMMON_REVEAL'
+              ? `<button class="pad-chip on pad-perform" data-act="reveal">Reveal</button>`
+              : '');
+    rows.push(`<div class="pad-act${open ? ' open' : ''}${available ? '' : ' off'}" data-act="open-action" data-id="${esc(a.id)}" role="button" aria-expanded="${open}">
+      ${torso ? actionBlock(torso, a) : ''}
+      <div class="pad-act-meta">${esc(meta)}${reason ? ` · <em>${esc(reason)}</em>` : ''}${perform ? `<span class="pad-act-go">${perform}</span>` : ''}</div>
+    </div>`);
+  }
+  return [`<details class="pad-fold pad-common-fold" data-fold="common"${foldOpen('common') ? ' open' : ''}>
+      <summary><span class="pad-label pad-sec pad-act-group">Common Actions</span><b>${acts.length}</b></summary>
+      ${rows.join('')}
+    </details>`];
 }
 
 // The unit as it LOOKS: its Parts stacked into one picture, in the order the
@@ -3347,28 +3429,8 @@ function act(el: HTMLElement, ev: Event): void {
     case 'reboot': if (t) send({ kind: 'reboot', seat: t.side, uid: t.uid, stance: el.dataset.stance as Stance }); return;
     // NOT restoreLink: that command is ZPA-40 Elation's own ability. Stabilize
     // System (6.1) is how a Mech actually takes a Link back.
-    case 'stabilise': {
-      if (!t) return;
-      // 6.1 leaves the Token to the player. One kind worn, or none: no
-      // question. Two or more: ask, with keeping them all as a choice (J4).
-      const worn = statusStacks(t.statuses).filter(({ def }) => def.shape === 'square' || def.shape === 'hexagon');
-      if (worn.length < 2) { send({ kind: 'stabilise', seat: t.side, uid: t.uid }); return; }
-      void (async () => {
-        const pick = await choiceDialog({
-          title: 'Stabilize System',
-          choices: [
-            ...worn.map(({ def, n }) => ({ id: def.id, label: n > 1 ? `${def.label} ×${n}` : def.label })),
-            { id: '__keep', label: 'Keep the Tokens', cancel: true },
-          ],
-          stacked: true,
-        });
-        if (pick === null) return;
-        send(pick === '__keep'
-          ? { kind: 'stabilise', seat: t.side, uid: t.uid, keepTokens: true }
-          : { kind: 'stabilise', seat: t.side, uid: t.uid, statusId: pick });
-      })();
-      return;
-    }
+    case 'stabilise': if (t) stabilise(t); return;
+    case 'reveal': if (t) send({ kind: 'reveal', seat: t.side, uid: t.uid }); return;
     case 'link-down': if (t) send({ kind: 'drainLink', seat: t.side, uid: t.uid, targetUid: t.uid, n: 1 }); return;
     case 'ammo-down': if (t) send({ kind: 'spendAmmo', seat: t.side, uid: t.uid, actionId: el.dataset.id! }); return;
     case 'ammo-up': if (t) send({ kind: 'restoreAmmo', seat: t.side, uid: t.uid, actionId: el.dataset.id!, amount: 1 }); return;

@@ -54,6 +54,8 @@ export interface GuideApi {
   // A Projectile's Delayed Action (pad.ts): the table names the units in the
   // blast; damage through the window as Explosion damage.
   detonate(uid: number, actionId: string): void;
+  // Stabilize System's Token question and Link, after the Tick is paid.
+  stabilise?(uid: number): void;
   // Launches the projectiles an Action fires (pad.ts): pays the Action, then
   // one `launch` per projectile in the volley.
   launch?(uid: number, actionId: string, cardId: string): void;
@@ -699,7 +701,26 @@ export function guideAct(api: GuideApi, a: string, el: HTMLElement): boolean {
         }).then((pick) => { if (pick !== null) launch(t.uid, a.action.id, pick); });
         return true;
       }
-      if (a) void performRouted(api, t, a.action);
+      if (a) { void performRouted(api, t, a.action); return true; }
+      // A Common Action (6.1) is not among the Parts' Actions: paid the same
+      // way, then its own tool. The Punch is a Melee Attack and Scan an
+      // Electronic Counter-roll, so both go through the attack window, which
+      // pays once the table has judged the shot. Stabilize and Reveal do more
+      // than spend a Tick, so each pays and then sends its own command.
+      const c = t.kind === 'mech' ? api.data.commonActions.find((x) => x.id === el.dataset.id) : undefined;
+      if (c) {
+        if (c.type === 'Melee' && api.attack) { api.attack(t.uid, c.id); return true; }
+        if (isElectronicAttack(c) && api.attack) { api.attack(t.uid, c.id, { electronic: true }); return true; }
+        if (c.id === 'COMMON_STABILIZE') {
+          if (api.send({ kind: 'performAction', seat: t.side, uid: t.uid, actionId: c.id })) api.stabilise?.(t.uid);
+          return true;
+        }
+        if (c.id === 'COMMON_REVEAL') {
+          if (api.send({ kind: 'performAction', seat: t.side, uid: t.uid, actionId: c.id })) api.send({ kind: 'reveal', seat: t.side, uid: t.uid });
+          return true;
+        }
+        void performRouted(api, t, c);
+      }
       return true;
     }
     case 'g-overload': {
