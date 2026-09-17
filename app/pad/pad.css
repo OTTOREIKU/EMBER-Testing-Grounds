@@ -896,7 +896,10 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
    classes deep because ui.css (imported after this file through
    partpicker.css) positions .dlg-close absolutely at -6px, which put the
    circle half outside the panel's scroll box and clipped it. */
-.pad-panel .dlg-close.pad-panel-x { position: static; flex: 0 0 auto; box-shadow: none; }
+.pad-panel .dlg-close.pad-panel-x, .pad-card-panel .dlg-close.pad-panel-x { position: static; flex: 0 0 auto; box-shadow: none; }
+/* The lobby's collection page: the card supplies the padding the panel would. */
+.pad-card-panel { padding: 6px 4px 8px; }
+.pad-card-panel .pad-panel-in { min-height: 0; }
 .pad-panel .pad-foot { margin-top: 24px; }
 
 .pad-hist { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }

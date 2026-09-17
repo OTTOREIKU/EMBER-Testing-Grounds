@@ -246,7 +246,10 @@ onRefused((why) => {
   render();
 });
 
-type Screen = 'signin' | 'register' | 'lobby' | 'table';
+// 'collection' is the lobby's own page for the player's collection, the same
+// panel the table's More opens, reachable before any game so a shelf can be
+// set up ahead of sitting down with someone.
+type Screen = 'signin' | 'register' | 'lobby' | 'collection' | 'table';
 // The panels that slide over the sheet. Null is the resting state: the sheet.
 type Panel = 'tasks' | 'find' | 'more' | 'build' | 'setup' | 'target' | 'combat' | 'inventory' | null;
 type FindScope = 'all' | 'table' | 'parts' | 'units' | 'pilots' | 'tactics' | 'keywords' | 'tasks' | 'rules';
@@ -550,6 +553,14 @@ function registerHtml(): string {
     </div>`;
 }
 
+// The collection as a door screen: the table's panel inside a lobby card.
+function collectionHtml(): string {
+  return `${head()}
+    <div class="pad-card pad-card-panel">
+      ${data ? inventoryPanel() : `<div class="pad-panel-in">${panelHead('Collection')}<p class="pad-status">Loading the card database…</p></div>`}
+    </div>`;
+}
+
 function lobbyHtml(): string {
   const connecting = view.status === 'connecting';
   return `${head()}
@@ -568,6 +579,9 @@ function lobbyHtml(): string {
 
       <div class="pad-or">or on your own</div>
       <button class="pad-btn" data-act="solo">Track a new game</button>
+
+      <div class="pad-or">before you play</div>
+      <button class="pad-btn" data-act="inventory">My collection</button>
     </div>
     ${lobbyLists()}
     <div class="pad-foot">
@@ -2957,7 +2971,7 @@ function render(): void {
   // the game is left.
   const atTable = !!view.room || solo;
   if (atTable && (account || solo)) screen = 'table';
-  else if (screen === 'table' || (screen === 'lobby' && !account)) screen = account ? 'lobby' : 'signin';
+  else if (screen === 'table' || ((screen === 'lobby' || screen === 'collection') && !account)) screen = account ? 'lobby' : 'signin';
 
   if (screen !== 'table') {
     // Back on the door screens, so a new build published mid-game is offered
@@ -2966,7 +2980,7 @@ function render(): void {
     root.className = '';
     painted.clear();
     looks = [];
-    root.innerHTML = screen === 'signin' ? signinHtml() : screen === 'register' ? registerHtml() : lobbyHtml();
+    root.innerHTML = screen === 'signin' ? signinHtml() : screen === 'register' ? registerHtml() : screen === 'collection' ? collectionHtml() : lobbyHtml();
     return;
   }
 
@@ -3207,7 +3221,9 @@ function act(el: HTMLElement, ev: Event): void {
       else openPanel(which as Panel);
       return;
     }
-    case 'close-panel': panel = null; picking = null; error = null; render(); return;
+    case 'close-panel':
+      if (screen === 'collection') { screen = 'lobby'; error = null; render(); return; }
+      panel = null; picking = null; error = null; render(); return;
     case 'open-setup': panel = 'setup'; render(); return;
     case 'set-mode': wantGuided = el.dataset.mode === 'guided'; render(); return;
     case 'attack': {
@@ -3469,8 +3485,16 @@ function act(el: HTMLElement, ev: Event): void {
       return;
     }
     case 'build': error = null; build = {}; panel = 'build'; render(); return;
-    case 'inventory': error = null; invSearch = ''; panel = 'inventory'; render(); return;
-    case 'inv-back': error = null; panel = 'more'; render(); return;
+    case 'inventory':
+      error = null; invSearch = '';
+      if (screen === 'lobby') screen = 'collection'; else panel = 'inventory';
+      render();
+      return;
+    case 'inv-back':
+      error = null;
+      if (screen === 'collection') screen = 'lobby'; else panel = 'more';
+      render();
+      return;
     case 'inv-clear':
       void confirmDialog({
         title: 'Clear the collection?',
@@ -3829,7 +3853,7 @@ void (async () => {
   // The collection follows the account: pulled when one appears, pushed after
   // every change. The panel and the pickers redraw when it moves.
   bindCollection(api);
-  onCollection(() => { if (screen === 'table') render(); });
+  onCollection(() => { if (screen === 'table' || screen === 'collection') render(); });
   // The saved units and squads follow the account the same way.
   bindLibrary(api);
   onLibrary(() => { if (screen === 'table') render(); });
