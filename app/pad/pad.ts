@@ -671,8 +671,14 @@ function stripUnits(s: Side): Token[] {
   return unitsOf(s).filter((u) => !swept(u));
 }
 
-// Same card, same side: a volley reads as one chip until it is opened.
+// Same card, same side: a volley reads as one chip until it is opened. A
+// group holding the unit on the sheet opens by itself - and stays open
+// against the head, which is what made a launched volley look stuck: every
+// tap toggled openGroup while the member on the sheet forced it open again.
+// closedGroup is the player's "no": it beats the member rule until the next
+// selection.
 let openGroup: string | null = null;
+let closedGroup: string | null = null;
 
 function groupKey(u: Token): string | null {
   return u.kind === 'mech' ? null : `${u.side}:${u.cardId}`;
@@ -1255,7 +1261,7 @@ function stripHtml(s: Side = shownSide()): string {
     if (!k || g.length < 2) return chip(u);
     if (drawn.has(k)) return '';
     drawn.add(k);
-    const open = openGroup === k || g.some((m) => m.uid === t?.uid);
+    const open = openGroup === k || (closedGroup !== k && g.some((m) => m.uid === t?.uid));
     const alive = g.filter((m) => !isDead(m)).length;
     const card = data?.byId.get(u.cardId);
     const head = `<button class="pad-tab group${open ? ' open' : ''}${!alive ? ' dead' : ''}" style="--side:${colour}" data-act="group" data-key="${esc(k)}" aria-expanded="${open}">
@@ -3281,10 +3287,18 @@ function act(el: HTMLElement, ev: Event): void {
       return;
 
     // ----- the strip and the sheet -----
-    case 'group': openGroup = openGroup === el.dataset.key ? null : el.dataset.key ?? null; render(); return;
+    case 'group': {
+      const k = el.dataset.key ?? null;
+      const wasOpen = el.getAttribute('aria-expanded') === 'true';
+      openGroup = wasOpen ? null : k;
+      closedGroup = wasOpen ? k : null;
+      render();
+      return;
+    }
     case 'unit':
       // From the destroyed list the unit may sit on the other side.
       { const u = unitOf(Number(el.dataset.uid)); if (u) { picks[u.side] = u.uid; side = u.side; } }
+      closedGroup = null;
       error = null;
       openSlot = null;
       openAction = null;
