@@ -33,7 +33,8 @@ export interface AttackApi {
 
 // The table's answers to what the board used to read.
 export interface TableVerdict {
-  protection: 0 | 2;
+  // Terrain and Unit Protection stack (4.4.2): 0, one of them, or both.
+  protection: 0 | 2 | 4;
   backAttack: boolean;
   // An Interception (4.9): line of sight is given, no arc, no Protection.
   intercept?: boolean;
@@ -217,7 +218,7 @@ export function beginAttack(attacker: Token, actionId: string, defender: Token, 
     return true;
   }
   const losNote = 'Range and line of sight as judged on the table.';
-  const protectionNote = verdict.protection ? 'Protection, as judged on the table (+2 White)' : '';
+  const protectionNote = verdict.protection ? `Protection, as judged on the table (+${verdict.protection} White)` : '';
   // A Multi-Target Action opens the split screen; the table's answers cover
   // the primary and the other targets are picked there.
   const multi = multiTargetLimit(action);

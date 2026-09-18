@@ -1026,20 +1026,30 @@ async function askTableAndElectronic(attacker: Token, actionId: string, defender
 
 // The table is asked what the board used to read, then the window opens.
 async function askTableAndAttack(attacker: Token, actionId: string, defender: Token, granted = false): Promise<void> {
-  const clear = await choiceDialog({
+  const a = tokenCards(data!, attacker).flatMap((c) => c.card.actions ?? []).find((x) => x.id === actionId)
+    ?? data!.commonActions.find((x) => x.id === actionId);
+  // One question: the shot as the table sees it. A line of sight may exist
+  // and still pass a Terrain Object or a Unit, and each gives the defender
+  // +2 White; both together give +4 (4.4.2). Melee claims no Protection and
+  // its range is base contact whatever number the data carries.
+  const melee = a?.type === 'Melee';
+  const range = melee ? 'Base contact' : a?.range !== undefined ? `Range ${a.range}` : 'Range as printed';
+  const seen = await choiceDialog({
     title: `${attacker.label} attacks ${defender.label}`,
-    body: 'Range and line of sight, on the table.',
-    choices: [{ id: 'yes', label: 'In range, clear line of sight', primary: true }, { id: 'no', label: 'Not this target', cancel: true }],
+    body: `${range} · judged on the table.`,
+    choices: melee
+      ? [{ id: '0', label: 'In reach', primary: true }, { id: 'no', label: 'Not this target', cancel: true }]
+      : [
+        { id: '0', label: 'In range, line of sight clear', primary: true },
+        { id: '2t', label: 'In range, past terrain (+2 White)' },
+        { id: '2u', label: 'In range, past a unit (+2 White)' },
+        { id: '4', label: 'In range, past terrain and a unit (+4 White)' },
+        { id: 'no', label: 'Not this target', cancel: true },
+      ],
     stacked: true,
   });
-  if (clear !== 'yes') return;
-  const prot = await choiceDialog({
-    title: 'Protection',
-    body: 'Terrain or an allied unit between them (4.4.2).',
-    choices: [{ id: '0', label: 'None', primary: true }, { id: '2', label: '+2 White', }],
-    stacked: true,
-  });
-  if (prot === null) return;
+  if (seen === null || seen === 'no') return;
+  const prot = seen === '4' ? '4' : seen.startsWith('2') ? '2' : '0';
   const rear = await choiceDialog({
     title: 'Arc',
     body: `Is ${attacker.label} in ${defender.label}'s rear arc?`,
@@ -1047,7 +1057,7 @@ async function askTableAndAttack(attacker: Token, actionId: string, defender: To
     stacked: true,
   });
   if (rear === null) return;
-  const verdict: TableVerdict = { protection: prot === '2' ? 2 : 0, backAttack: rear === 'yes' };
+  const verdict: TableVerdict = { protection: prot === '4' ? 4 : prot === '2' ? 2 : 0, backAttack: rear === 'yes' };
   // In a guided game the Action is paid for first; a refusal is the engine's
   // answer and the window stays shut. Freeform opens the window outright.
   if (guidedOn(table) && !send({ kind: 'performAction', seat: attacker.side, uid: attacker.uid, actionId, ...(granted ? { granted: true } : {}) })) return;
@@ -2638,11 +2648,49 @@ function buildPanel(): string {
       <span class="pad-num">${pts}<span class="pad-of">p</span></span>
     </div>
     ${rows}
+    <div class="pad-melon">
+      <a class="pad-btn pad-melon-link" href="https://watermelon02.github.io/builder-web/" target="_blank" rel="noopener">${MELON_ICON}Squad Builder</a>
+      <button class="pad-btn" data-act="build-import">Import a build</button>
+    </div>
     <div class="pad-foot">
       <button class="pad-btn primary" data-act="build-add"${build.torso ? '' : ' disabled'}>Add to squad</button>
       <button class="pad-btn" data-act="build-back">Back</button>
     </div>
   </div>`;
+}
+
+// The builder site's mark, the same one the board's Squad Builder link wears.
+const MELON_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M2,6A10,10 0 0,0 22,6Z M3.5,6A8.5,8.5 0 0,0 20.5,6Z"/><path fill-rule="evenodd" d="M4.4,6A7.6,7.6 0 0,0 19.6,6Z"/></svg>';
+
+// One Mech out of a builder export (.json or the squad .png) into the six
+// slots, to edit, save or add. A file holding several asks which.
+async function importBuild(file: File): Promise<void> {
+  if (!data) return;
+  let squad: ImportedSquad;
+  try {
+    squad = await importSquadFile(file, data.byId);
+  } catch (err) {
+    error = (err as Error).message || 'That file could not be read.';
+    render();
+    return;
+  }
+  if (!squad.mechs.length) { error = 'That file holds no Mech.'; render(); return; }
+  let at = 0;
+  if (squad.mechs.length > 1) {
+    const pick = await choiceDialog({
+      title: squad.name,
+      choices: squad.mechs.map((m, i) => {
+        const torso = m.loadout.torso ? data!.byId.get(m.loadout.torso) : undefined;
+        return { id: String(i), label: m.name || (torso ? cardName(torso) : `Mech ${i + 1}`) };
+      }),
+      stacked: true,
+    });
+    if (pick === null) return;
+    at = Number(pick);
+  }
+  build = { ...squad.mechs[at].loadout };
+  error = squad.unknownIds.length ? `Left out, not in the card data: ${squad.unknownIds.join(', ')}.` : null;
+  render();
 }
 
 // ---------- find ----------
@@ -3580,6 +3628,19 @@ function act(el: HTMLElement, ev: Event): void {
       return;
     }
     case 'build': error = null; build = {}; panel = 'build'; render(); return;
+    case 'build-import': {
+      // Built on demand, like the squad file's: the panel repaints on relay
+      // changes, which would orphan an input living in the template.
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.json,.png,application/json,image/png';
+      input.addEventListener('change', () => {
+        const f = input.files?.[0];
+        if (f) void importBuild(f);
+      });
+      input.click();
+      return;
+    }
     case 'inventory':
       error = null; invSearch = '';
       if (screen === 'lobby') screen = 'collection'; else panel = 'inventory';

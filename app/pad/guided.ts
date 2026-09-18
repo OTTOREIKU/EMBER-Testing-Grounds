@@ -313,7 +313,9 @@ function setupHtml(api: GuideApi, stage: string): string {
       ${mine(api, side) && (api.solo || turn === side) ? btn(api, 'g-deploy', 'On the table', `data-uid="${t.uid}"`) : ''}</div>`));
   const rd = api.readiness();
   return head(api, 'Deploy', turn ? `${api.sideName(turn)} places next (3.1.4)` : 'Everything is placed', !!turn && mine(api, turn))
-    + rows
+    // Joined by hand: an array added to a string joins itself with commas,
+    // and each one drew as a line of its own between the units.
+    + rows.join('')
     + (complete
       ? (api.solo
         ? btn(api, 'g-deployed', 'Begin Round 1', '', 'pad-chip on')
@@ -577,7 +579,13 @@ export function performButton(api: GuideApi, t: Token, a: CardAction, partKey: s
   const g = guidedActions(api.data, t).find((x) => x.action.id === a.id);
   if (g && !g.available) return '';
   const len = lengthOf(a);
-  const v: TickVerdict = t.kind !== 'mech' ? canActivate(opp) : len ? canPerform(opp, a, partKey) : { ok: true };
+  // The engine's own answer: Ticks or the activation, and every rule that
+  // sits on top of them - the icon lock, RWS, Shutdown. A length-less Mech
+  // Action is not a choice an Opportunity pays for, so it gets no button.
+  if (t.kind === 'mech' && !len) return '';
+  const chk = api.check({ kind: 'performAction', seat: t.side, uid: t.uid, actionId: a.id, partKey });
+  const v: TickVerdict = chk.ok ? { ok: true } : { ok: false, why: chk.why ?? 'Not now' };
+  void opp;
   const cost = costOf(a);
   const price = cost ? `${cost.maneuver ? 'M' : ''}${'●'.repeat(cost.action)}` : '';
   return v.ok

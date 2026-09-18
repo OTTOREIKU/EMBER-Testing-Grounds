@@ -46,7 +46,18 @@ export function parseSquadJson(raw: unknown, byId: Map<string, Card>): ImportedS
 
   // Only real Tactics Cards survive: setTactics refuses anything else, and a
   // file is the one source a player cannot easily inspect before it applies.
-  const tactics = (Array.isArray(team.tactics) ? team.tactics : [])
+  // The builder site writes the hand as `tacticCards`; our own exports write
+  // `tactics`. Read from the live bundle 2026-09-18: the site has never used
+  // the second name, so a builder squad arrived with no hand at all.
+  const hand = Array.isArray(team.tactics) ? team.tactics : Array.isArray(team.tacticCards) ? team.tacticCards : [];
+  const handIds = hand.map((t) => refId(t)).filter((id): id is string => !!id);
+  // The builder can export with the hand MASKED: every card replaced by the
+  // same placeholder so an opponent cannot read it off the image. A hand may
+  // hold one copy of a card (FAQ P2), so a repeat can only be that mask - and
+  // importing it would seat a card the player never chose. The hand is left
+  // empty instead, for the player to set.
+  const masked = new Set(handIds).size !== handIds.length;
+  const tactics = (masked ? [] : hand)
     .map((t) => check(refId(t)))
     .filter((id): id is string => !!id && byId.get(id)?.category === 'tactics_or_upgrade');
 

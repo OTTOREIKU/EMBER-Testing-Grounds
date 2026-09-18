@@ -378,11 +378,23 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
    One block under the bar that says whose move it is and what the step asks.
    Yours is lit; the other player's is quiet. */
 
+/* Capped and scrolling inside itself: a Deploy list of a whole squad or the
+   Planning dials for every Mech used to grow the strip past the screen, the
+   Continue at its foot went with it, and the overflow showed under whatever
+   panel came next. The head stays pinned so the instruction is always read. */
 .pad-turn {
   flex: 0 0 auto;
-  padding: 8px max(10px, env(safe-area-inset-right)) 4px max(10px, env(safe-area-inset-left));
+  max-height: 52%;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding: 0 max(10px, env(safe-area-inset-right)) 4px max(10px, env(safe-area-inset-left));
   background: var(--surface);
 }
+.pad-turn > .pad-turn-h:first-child, .pad-turn > .pad-turn-react + .pad-turn-h {
+  position: sticky; top: 0; z-index: 1; padding-top: 8px; background: var(--surface);
+}
+.pad-turn > :first-child:not(.pad-turn-h) { padding-top: 8px; }
 
 .pad-turn-h { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
 .pad-turn-h b { font-size: 14px; font-weight: 700; color: var(--text2); }
@@ -471,6 +483,7 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
   min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 /* ---------- the sheet ---------- */
@@ -1142,3 +1155,10 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
 /* The Common Actions fold inside a Mech's Actions. */
 .pad-common-fold > summary { margin-top: 10px; }
 .pad-common-fold > summary .pad-act-group { margin: 0; }
+
+/* The builder site's link and the import beside it, as on the board. */
+.pad-melon { display: flex; gap: 8px; margin-top: 12px; }
+.pad-melon .pad-btn { flex: 1 1 0; margin-top: 0; display: inline-flex; align-items: center; justify-content: center; gap: 6px; text-decoration: none; }
+.pad-melon-link svg { width: 16px; height: 16px; fill: #d94f5c; transition: fill 0.12s; }
+.pad-melon-link:hover, .pad-melon-link:active { background: #d94f5c; color: var(--on-accent); }
+.pad-melon-link:hover svg, .pad-melon-link:active svg { fill: var(--on-accent); }

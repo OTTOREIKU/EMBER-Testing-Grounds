@@ -85,5 +85,12 @@ check('a file without one reads back empty',
 check('a non-Tactics id in the list is dropped',
   parseSquadJson({ name: 'x', mechs: [], drones: [], tactics: ['274', '032', 'nope'] }, byId).tactics, ['274']);
 
+// The builder site's own field name, as card objects rather than bare ids.
+check('the builder site\'s tacticCards is read as the hand',
+  parseSquadJson({ name: 'x', mechs: [], drones: [], tacticCards: [{ id: '274' }, { id: '276' }] }, byId).tactics, ['274', '276']);
+// A masked export repeats one placeholder card; a real hand never repeats.
+check('a masked hand is left empty rather than imported as a fake card',
+  parseSquadJson({ name: 'x', mechs: [], drones: [], tacticCards: [{ id: '274' }, { id: '274' }] }, byId).tactics, []);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

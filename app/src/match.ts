@@ -1,4 +1,6 @@
 import { ApiError, EmberApi, type Account, type AdminInvite, type RegistrationInfo, type AdminUser, type CardStat, type FactionStat, type LeaderPlayer, type LeaderSquad, type MyRecord, type SquadEntry, type StatsSummary } from './api';
+import { bindCollection } from './collection';
+import { bindLibrary, onLibrary } from './library';
 import { Relay, type RolledDie, type RollKind } from './net';
 import { applyRemote, check, onBeforeApply, onPerformed, onRefused, perform, type Command, type CheckResult } from './commands';
 import { installDiagnostics, noteCommand, noteRefusal } from './diagnostics';
@@ -71,6 +73,14 @@ function freshBoard(): GameState {
 
 const root = document.getElementById('mc')!;
 const api = new EmberApi();
+// The collection and the saved units and squads follow the account here as
+// they do on the board and the pad. Without this a player signing in on a
+// fresh device met an empty "Bring a squad" list until one of the other two
+// pages had been opened first.
+bindCollection(api);
+bindLibrary(api);
+// The account's copy can land while the list is already open.
+onLibrary(() => { if (pickerOpen) render(); });
 
 let data: GameData | null = null;
 let account: Account | null = null;
