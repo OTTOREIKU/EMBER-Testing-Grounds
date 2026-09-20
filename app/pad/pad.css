@@ -1162,3 +1162,61 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
 .pad-melon-link svg { width: 16px; height: 16px; fill: #d94f5c; transition: fill 0.12s; }
 .pad-melon-link:hover, .pad-melon-link:active { background: #d94f5c; color: var(--on-accent); }
 .pad-melon-link:hover svg, .pad-melon-link:active svg { fill: var(--on-accent); }
+
+/* ---------- dice rolled at the table: the face entry ---------- */
+.td-panel { width: min(440px, 94vw); max-height: 88vh; display: flex; flex-direction: column; }
+.td-pool { margin: 0 0 10px; font-size: 13px; color: var(--text2); font-variant-numeric: tabular-nums; }
+.td-dice { overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+.td-die { display: flex; align-items: center; gap: 8px; }
+.td-n { flex: 0 0 1.4em; font-family: var(--mono); font-size: 12px; color: var(--text3); text-align: right; }
+.td-faces { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; flex: 1; }
+.td-face {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  min-height: var(--tap, 44px); padding: 4px 2px; border: 2px solid transparent; border-radius: var(--radius);
+  cursor: pointer; font: inherit; opacity: 0.62; transition: opacity 0.1s, border-color 0.1s;
+}
+.td-face:hover { opacity: 0.85; }
+.td-face.on { opacity: 1; border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent); }
+.td-ic { display: flex; align-items: center; justify-content: center; gap: 1px; min-height: 22px; }
+.td-ic svg { width: 18px; height: 18px; }
+.td-part { font-size: 10px; font-weight: 600; line-height: 1.1; text-align: center; }
+.td-face.die-black { background: #222; color: #fff; }
+
+.td-head { margin: 6px 0 0; font-size: 12px; font-weight: 700; color: var(--text2); }
+.td-head:first-child { margin-top: 0; }
+
+/* Table rolls, hands-off: what to pick up, what to watch for. */
+.td-counts { display: flex; flex-wrap: wrap; gap: 8px; margin: 2px 0 12px; }
+/* ONE block, whatever it counts: the card's dice, an addition, a removal and
+   the total are all the same height, radius, padding and type, so a row reads
+   as a sum of like things. Centred on the box rather than the baseline, which
+   is what let a big number and a small label sit at different heights. */
+.td-count {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  box-sizing: border-box; height: 40px; min-width: 40px; padding: 0 12px;
+  border-radius: var(--radius); font-size: 13px; font-weight: 600; line-height: 1; white-space: nowrap;
+}
+.td-count b { font-family: var(--mono); font-size: 18px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+.td-watch { margin: 0 0 4px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.td-watch li { font-size: 12.5px; color: var(--text2); padding: 6px 10px; background: var(--surface2); border-radius: var(--radius-sm); }
+/* The Black Die as the target's own Parts. */
+.td-parts { display: flex; flex-direction: column; gap: 6px; }
+.td-partrow {
+  display: flex; align-items: baseline; gap: 8px; width: 100%; min-height: var(--tap, 44px); padding: 8px 12px;
+  border: none; border-radius: var(--radius); background: var(--surface2); color: var(--text); font: inherit; text-align: left; cursor: pointer;
+}
+.td-partrow:hover { background: var(--surface3); }
+.td-partrow b { flex: 0 0 6.2em; font-size: 12.5px; font-weight: 700; }
+.td-partrow span { flex: 1; min-width: 0; font-size: 12.5px; color: var(--text2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.td-partrow em { font-style: normal; font-size: 11px; color: var(--red); text-transform: capitalize; }
+.td-partrow.gone b, .td-partrow.gone span { opacity: 0.55; }
+
+/* The counts as blocks that add up: 4 + 2 terrain = 6. */
+.td-counts.rows { flex-direction: column; gap: 8px; }
+.td-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 6px; }
+.td-op { flex: 0 0 auto; width: 12px; text-align: center; font-family: var(--mono); font-size: 16px; line-height: 1; color: var(--text3); }
+/* The Actions list at the top of a sheet: the rulebook notes stay with the
+   Part below, where they open; up here the row itself takes the tap. */
+.pad-acts .ref-mech { display: none; }
+
+.td-term { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }

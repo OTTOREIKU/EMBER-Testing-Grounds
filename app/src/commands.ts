@@ -311,7 +311,7 @@ export type Command =
   // The table itself: map, zones, mission and scale used to be local
   // mutations, which is why a host's picks never reached the guest. Tasks
   // ride in the command pre-derived, like dials ride in a reveal.
-  | { kind: 'configureTable'; seat: Side; map?: string; grids?: BoardGrids; zones?: GameState['zones'] | null; deployZones?: GameState['deployZones'] | null; zoneSet?: string; mission?: string | null; tasks?: GameState['tasks']; scale?: GameState['scale']; roundLimit?: number; noBoard?: boolean }
+  | { kind: 'configureTable'; seat: Side; map?: string; grids?: BoardGrids; zones?: GameState['zones'] | null; deployZones?: GameState['deployZones'] | null; zoneSet?: string; mission?: string | null; tasks?: GameState['tasks']; scale?: GameState['scale']; tableDice?: boolean; roundLimit?: number; noBoard?: boolean }
   | { kind: 'startMatch'; seat: Side }
   | { kind: 'endMatch'; seat: Side }
   // A squad's open-information Secondary Task pick (3.1.3). The seat is the
@@ -634,7 +634,7 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
     case 'configureTable': {
       if (cmd.map === undefined && cmd.grids === undefined && cmd.zones === undefined && cmd.deployZones === undefined
         && cmd.zoneSet === undefined && cmd.mission === undefined && cmd.tasks === undefined && cmd.scale === undefined
-        && cmd.roundLimit === undefined && cmd.noBoard === undefined) {
+        && cmd.roundLimit === undefined && cmd.noBoard === undefined && cmd.tableDice === undefined) {
         return no('Nothing to configure.');
       }
       // The board size rides with the map it was authored at, so both seats
@@ -2729,6 +2729,7 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
   if (cmd.kind === 'configureTable') {
     // A new battlefield starts whole: the rubble belonged to the old one.
     if (cmd.noBoard !== undefined) state.noBoard = cmd.noBoard ? true : undefined;
+    if (cmd.tableDice !== undefined) state.tableDice = cmd.tableDice ? true : undefined;
     if (cmd.map !== undefined) {
       state.map = cmd.map;
       state.removedTerrain = [];

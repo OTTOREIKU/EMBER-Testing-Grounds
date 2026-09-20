@@ -14,7 +14,12 @@ import type { Command } from './commands';
 // Where dice results come from. Absent in a local game, which rolls its own;
 // set in a networked one, where the server rolls so neither client can pick
 // its own numbers.
-export type DiceRoller = (pool: Record<string, number>, label?: string) => Promise<{ color: string; face: number }[]>;
+// `groups` names whose dice are whose when one request rolls for more than
+// one unit (the Electronic Counter-roll asks for both sides at once, so that
+// in a room neither player sees the other's dice first). A roller that
+// generates faces ignores it; one that asks a player to READ faces needs it.
+export interface RollGroup { label: string; n: number }
+export type DiceRoller = (pool: Record<string, number>, label?: string, groups?: RollGroup[]) => Promise<{ color: string; face: number }[]>;
 
 type Step = 'split' | 'part' | 'designate' | 'attack' | 'defense' | 'resolve' | 'surplus';
 
@@ -877,6 +882,20 @@ export class AttackHelper {
   private onCommand: (cmd: Command) => void;
   // Set by the app while a networked game is running; cleared otherwise.
   roller: DiceRoller | null = null;
+  // The Black Die read off the table rather than thrown here (the pad's
+  // table dice). It never went through `roller`, so it has its own door. It
+  // is handed the target, because the table is asked which of THAT unit's
+  // Parts the die named.
+  blackRoller: ((defender: Token) => Promise<number>) | null = null;
+  // HANDS-OFF (the pad's table dice): the players rolled and resolved the
+  // attack themselves, so no faces came back. The window then asks nothing
+  // about Focus - that was settled across the table - and the resolution is
+  // TOLD to it (tableOutcome) instead of worked out from dice. Everything
+  // downstream is untouched: the damage ladder, a destroyed Part, and every
+  // on-hit rider in finish() run off hits and Penetration as they always do.
+  // Set by the roller that was told "rolled"; cleared at each start().
+  handsOff = false;
+  private tableOutcome: 'none' | 'hit' | 'pen' | null = null;
   // The defender's own dice. When set — the Match Centre, with the defending
   // player at another screen — the defence roll is ASKED FOR rather than made:
   // the hook records what is owed, the DEFENDER presses their own roll button,
@@ -1384,6 +1403,8 @@ export class AttackHelper {
     // mirror of their OWN attack with every control dead, and publishView was
     // never called again. HEAD recovered because `active` was just `!!ctx`.
     this.mirroring = null;
+    this.handsOff = false;
+    this.tableOutcome = null;
     this.ctx = {
       attacker,
       defender,
@@ -1731,6 +1752,8 @@ export class AttackHelper {
   private beginFocus(): void {
     const c = this.ctx!;
     if (c.focus) return;
+    // Hands-off: any Focus was declared, paid and rerolled across the table.
+    if (this.handsOff) { c.focus = { stage: 'done', attackerUse: false, defenderUse: false }; return; }
     c.focus = { stage: 'declareA', attackerUse: false, defenderUse: false };
     this.skipFocusStages();
   }
@@ -2310,6 +2333,20 @@ export class AttackHelper {
 
   private resolve(): { hits: number; penetrating: number; unoffset: { heavy: number; light: number }; text: string[]; duel: Duel } {
     const c = this.ctx!;
+    // Hands-off: the table's answer stands in for the dice. One Hit and one
+    // Penetration are all the rest of the window reads - the ladder moves a
+    // Part one step per Penetration whatever the count - and no Surplus is
+    // claimed, because Surplus is counted icons the pad never saw.
+    if (this.handsOff) {
+      const o = this.tableOutcome;
+      return {
+        hits: o === 'hit' || o === 'pen' ? 1 : 0,
+        penetrating: o === 'pen' ? 1 : 0,
+        unoffset: { heavy: 0, light: 0 },
+        text: [o === 'pen' ? 'Resolved at the table: Penetration.' : o === 'hit' ? 'Resolved at the table: a Hit, no Penetration.' : 'Resolved at the table: no damage.'],
+        duel: { icons: [], triggers: [], spareDodge: 0, idleDefense: 0, carried: false },
+      };
+    }
     const atk = this.attackIcons(c);
     const def = this.countIcons(c.defenseRoll ?? [], c.defender.stance === 'defensive');
     // White Dwarf Thruster (292) FIRST, because it is not a choice: the card
@@ -3518,6 +3555,11 @@ export class AttackHelper {
   // The Black Die's spin, extracted so the roll and a Focus reroll share one
   // implementation of the shake.
   private spinBlack(stage: HTMLElement, caption: HTMLElement, showFace: (i: number) => void, done: (landed: number) => void): void {
+    if (this.blackRoller) {
+      caption.textContent = '';
+      void this.blackRoller(this.ctx!.defender).then((face) => { showFace(face); done(face); });
+      return;
+    }
     const landed = Math.floor(Math.random() * 6);
     stage.classList.add('rolling');
     caption.textContent = '';
@@ -4354,6 +4396,19 @@ export class AttackHelper {
     const c = this.ctx!;
     const wrap = document.createElement('div');
     wrap.className = 'ah-step';
+    // Hands-off: the one thing the pad needs back from the table.
+    if (this.handsOff && !this.mirroring && this.tableOutcome === null) {
+      const asks: ['none' | 'hit' | 'pen', string][] = [['pen', 'Penetration'], ['hit', 'Hit, no Penetration'], ['none', 'No damage']];
+      for (const [id, label] of asks) {
+        const b = document.createElement('button');
+        b.className = id === 'pen' ? 'ah-primary' : 'ah-alt';
+        b.textContent = label;
+        b.disabled = !this.mayDrive('attacker');
+        b.addEventListener('click', () => { this.tableOutcome = id; this.render(); });
+        wrap.appendChild(b);
+      }
+      return wrap;
+    }
     // A MIRROR never re-derives this. resolve() reads Chef's exchanges, the
     // declared Parry, the carried Surplus and half a dozen board auras, none of
     // which travel, so a second derivation here is exactly how one screen ends
@@ -4373,13 +4428,19 @@ export class AttackHelper {
     // too because a MIRROR derives this count from the strip's icons and
     // would otherwise draw a disabled Apply button for a Penetration that
     // can never happen.
+    // Resolved at the table: there are no dice to lay out, and the offsetting
+    // strip would print "no damage icons" beside a Penetration the players
+    // reported. Read off the published text so a MIRROR draws it the same way.
+    const atTable = !!res && res.duel.icons.length === 0 && (res.text[0] ?? '').startsWith('Resolved at the table');
     const penetrating = preventsDamage(c.action) ? 0
-      : settled ? settled.penetrating : (res?.duel.icons ?? []).filter((i) => !i.offset).length;
+      : settled ? settled.penetrating
+      : atTable ? (res!.text[0].includes('Penetration.') && !res!.text[0].includes('no Penetration') ? 1 : 0)
+      : (res?.duel.icons ?? []).filter((i) => !i.offset).length;
     wrap.innerHTML = `<h4><span class="ah-n">4</span><span data-mech="penetration">Resolution</span>${
       c.surplusRound
         ? ` (<span data-mech="surplus_damage">${c.surplusKeyword?.name ?? 'Surplus'} Damage, no Attack Roll</span>)`
         : ''
-    }</h4>${res ? resolutionHtml(res) : '<p class="dim">Waiting for the attacking player to settle the damage.</p>'}`;
+    }</h4>${res ? (atTable ? `<p class="ah-sum">${res.text[0]}</p>` : resolutionHtml(res)) : '<p class="dim">Waiting for the attacking player to settle the damage.</p>'}`;
     linkMechanics(wrap, this.data.mechanics);
     // The timeout is not decoration: requestAnimationFrame does not fire while
     // the page is not compositing, so the strip is driven by timers and kicked
@@ -5270,11 +5331,11 @@ export class ElectronicHelper {
   }
 
   // Same rule as the attack wizard: the server rolls when there is one.
-  private async rollYellow(n: number, label: string): Promise<Rolled[]> {
+  private async rollYellow(n: number, label: string, groups?: RollGroup[]): Promise<Rolled[]> {
     const source = this.roller;
     if (source) {
       try {
-        const dice = await source({ yellow: n }, label);
+        const dice = await source({ yellow: n }, label, groups);
         return dice.map((d) => ({ color: 'yellow' as DieColor, face: d.face, selected: false }));
       } catch (err) {
         this.note(`The roll could not be made: ${(err as Error).message}`);
@@ -5554,7 +5615,8 @@ export class ElectronicHelper {
         void (async () => {
           // Both sides of the counter-roll come from one request, so neither
           // player can see the other's dice before their own are fixed.
-          const both = await this.rollYellow(c.initEv + c.respEv, 'Electronic counter-roll');
+          const both = await this.rollYellow(c.initEv + c.respEv, 'Electronic counter-roll',
+            [{ label: c.initiator.label, n: c.initEv }, { label: c.responder.label, n: c.respEv }]);
           c.initRoll = both.slice(0, c.initEv);
           c.respRoll = both.slice(c.initEv);
           // Both hands are new, so both shake in full.

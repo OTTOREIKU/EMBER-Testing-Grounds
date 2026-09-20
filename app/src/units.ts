@@ -4992,6 +4992,7 @@ export function migrateState(rawIn: unknown, data: GameData): GameState | null {
     removedTerrain: (s as { removedTerrain?: string[] }).removedTerrain ?? [],
     scale: (s as { scale?: GameState['scale'] }).scale ?? 'standard',
     ...((s as { noBoard?: boolean }).noBoard ? { noBoard: true } : {}),
+    ...((s as { tableDice?: boolean }).tableDice ? { tableDice: true } : {}),
     roundLimit: (s as { roundLimit?: number }).roundLimit ?? 5,
     sideNames: (s as { sideNames?: GameState['sideNames'] }).sideNames ?? {},
     ready: (s as { ready?: GameState['ready'] }).ready ?? {},

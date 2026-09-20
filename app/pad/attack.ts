@@ -11,8 +11,9 @@
 import type { GameData } from '../src/data';
 import type { Command, CheckResult } from '../src/commands';
 import { AttackHelper, combatRoleFor, type MirrorAct } from '../src/combat';
-import { grantAdjusted, kcArmorReady, multiTargetLimit, stationaryAdjusted, tokenCards, twoHandedUse } from '../src/units';
-import type { CardAction, DiceData, DieColor, GameState, Side, Token } from '../src/types';
+import { armorPiercing, coolingBonus, grantAdjusted, isCharged, kcArmorReady, multiTargetLimit, pilotDiceBonus, stationaryAdjusted, structureOf, tokenCards, twoHandedUse } from '../src/units';
+import { statusCount } from '../src/types';
+import type { CardAction, DiceData, DieColor, GameState, PartSlot, Side, Token } from '../src/types';
 import type { RolledDie } from '../src/net';
 
 export interface AttackApi {
@@ -28,13 +29,98 @@ export interface AttackApi {
   // The window's panel: shown while an attack is live here or mirrored here.
   openCombat(): void;
   closeCombat(): void;
-  rollDice(pool: Record<string, number>, label?: string): Promise<RolledDie[]>;
+  // One door for every roll: the table's own dice, the server's in a room,
+  // the pad's otherwise. `watch` is what the table should keep in mind while
+  // it rolls; the answer says whether the dice were left to the table.
+  rollDice(pool: Record<string, number>, label?: string, brief?: RollBrief): Promise<{ dice: RolledDie[]; handsOff: boolean }>;
+  // The Black Die read off the table, or null when the pad throws it.
+  blackDie(): ((defender: Token) => Promise<number>) | null;
+}
+
+// What the table is told before it rolls: what to keep in mind, and where
+// each colour's count came from. Absent on a reroll, which is only ever made
+// by a player already entering their dice.
+export interface RollBrief {
+  watch: string[];
+  blocks: { color: string; parts: { n: number; why?: string }[] }[];
+}
+
+// The attack the window is running. `printed` is the Action as the card has
+// it, before Stationary and Two-Handed changed its dice.
+let current: { attacker: Token; action: CardAction; printed: CardAction; defender: Token; verdict: TableVerdict } | null = null;
+// The Part the window settled on, read off its published view.
+let targetSlot: string | null = null;
+
+// WHICH ROLL A KEYWORD BELONGS TO (OTTO, 2026-09-18: a popup shows only what
+// bears on the roll in hand). Attack: what the attacker reads off their own
+// dice or acts on afterwards. Defence: what changes the defender's pool or
+// state. Permissions (Melee Firing, Omni-direction Firing, Silence, RWS,
+// Coordinate Command) bear on neither roll and are named on neither.
+const ATTACK_KW = ['pulse weapon', 'ion weapon', 'lon weapon', 'concussion', 'wrecking', 'laser weapon', 'mutilation', 'cleaving', 'scatter-shot', 'knockback', 'multi-target'];
+const DEFENSE_KW = ['suppression'];
+const kwSide = (name: string): 'attack' | 'defense' | null => {
+  const n = name.toLowerCase().replace(/^[^a-z]+/, '');
+  if (ATTACK_KW.some((k) => n.startsWith(k))) return 'attack';
+  if (DEFENSE_KW.some((k) => n.startsWith(k))) return 'defense';
+  return null;
+};
+
+function englishOf(a: CardAction): string {
+  return (a.description?.en || api!.data.actionTranslation(a.id)?.english || '').trim();
+}
+
+// The slot of the Part that prints this Action, for its Charge Token.
+function slotOfAction(t: Token, id: string): string | null {
+  for (const { slot, card } of tokenCards(api!.data, t)) if ((card.actions ?? []).some((x) => x.id === id)) return String(slot);
+  return null;
+}
+
+// What the table should keep in mind for a roll: the Action's own keywords by
+// their printed names, and the Stance lines that change what a die is worth.
+// Names and numbers only - the cards and the book carry the rules.
+function watchFor(side: 'attack' | 'defense'): string[] {
+  if (!current) return [];
+  const { attacker, action, defender } = current;
+  const out: string[] = [];
+  const line = (key: string, note = ''): void => {
+    const def = api!.data.keyword(key);
+    const name = (def?.en?.name || key).trim();
+    if (kwSide(name) !== side) return;
+    const rule = (def?.en?.value ?? '').replace(/\s+/g, ' ').trim();
+    out.push(`${name}${note}${rule ? `: ${rule}` : ''}`);
+  };
+  // By the keyword's English name and printed rule, through the glossary: a
+  // card's own entry often carries only the Chinese key.
+  // Only the Action in hand: `action` is the one weapon being used, with its
+  // Stance and Stationary grants already applied, so another Part's keywords
+  // never reach here. A keyword the card gives only while CHARGED is read off
+  // the text and named only when that Part's Charge Token is face up.
+  const charged = /\[Charged\]\s*gains\s+([^.·]+)/i.exec(englishOf(action))?.[1]?.trim();
+  const chargedOn = !!charged && (() => { const s = slotOfAction(attacker, action.id); return !!s && isCharged(attacker, s); })();
+  for (const k of action.keywords ?? []) {
+    const key = k.key || k.inline || k.en || '';
+    if (!key) continue;
+    const name = (api!.data.keyword(key)?.en?.name || k.en || '').trim();
+    if (charged && name.toLowerCase() === charged.toLowerCase()) continue;
+    line(key);
+  }
+  if (charged && chargedOn) line(charged, ' (Charged)');
+  if (side === 'attack') {
+    if (attacker.kind === 'mech' && attacker.stance === 'offensive') out.push('Offensive Stance: hollow Hits count');
+  } else {
+    if (defender.kind === 'mech' && defender.stance === 'defensive') out.push('Defensive Stance: hollow Defense counts');
+    if (defender.kind === 'mech' && defender.stance === 'mobility') out.push('Mobility Stance: Blue dice are Dodge');
+    if (defender.kind === 'mech' && defender.stance === 'shutdown') out.push('Shutdown: the attacker designates the Part, no Parry');
+  }
+  return out;
 }
 
 // The table's answers to what the board used to read.
 export interface TableVerdict {
   // Terrain and Unit Protection stack (4.4.2): 0, one of them, or both.
   protection: 0 | 2 | 4;
+  // Which of the two it was, so the defence popup can say where dice came from.
+  protectionFrom?: 'terrain' | 'unit' | 'both';
   backAttack: boolean;
   // An Interception (4.9): line of sight is given, no arc, no Protection.
   intercept?: boolean;
@@ -76,6 +162,65 @@ export function attackWatching(): boolean {
 
 // The action as the window should see it: the stationary bonus, then the
 // [condition] grants, then Two-Handed - the same order every other site uses.
+function printedActionOf(t: Token, actionId: string): CardAction | undefined {
+  const a = api!;
+  return tokenCards(a.data, t).flatMap(({ card }) => card.actions ?? []).find((x) => x.id === actionId)
+    ?? a.data.commonActions.find((x) => x.id === actionId);
+}
+
+// Where each colour's count came from, as the window's own sums run: the
+// card's dice, then what was added or taken. The TOTAL is the window's pool
+// and is never recomputed here - whatever these parts do not account for (an
+// aura, a declared Parry, a nudge in the pool editor) is shown as its own
+// part, so the blocks always add up to what is rolled.
+function blocksFor(side: 'attack' | 'defense', pool: Record<string, number>): RollBrief['blocks'] {
+  if (!current) return [];
+  const a = api!;
+  const { attacker, action, printed, defender, verdict } = current;
+  const out: RollBrief['blocks'] = [];
+  const close = (color: string, parts: { n: number; why?: string }[]): void => {
+    const total = pool[color] ?? 0;
+    const rest = total - parts.reduce((s, p) => s + p.n, 0);
+    if (rest) parts.push({ n: rest, why: 'Other' });
+    if (total > 0 || parts.length > 1) out.push({ color, parts: parts.filter((p, i) => i === 0 || p.n !== 0) });
+  };
+  if (side === 'attack') {
+    const base = { red: printed.redDice ?? 0, yellow: printed.yellowDice ?? 0 };
+    const adjusted = { red: action.redDice ?? 0, yellow: action.yellowDice ?? 0 };
+    const cool = coolingBonus(a.data, attacker, action, adjusted);
+    const pilot = pilotDiceBonus(a.data, attacker, defender, action);
+    for (const c of ['red', 'yellow'] as const) {
+      close(c, [
+        { n: base[c] },
+        { n: adjusted[c] - base[c], why: 'Stationary' },
+        { n: cool[c], why: 'Cooler' },
+        { n: pilot[c], why: 'Pilot' },
+      ]);
+    }
+    return out;
+  }
+  const slot = (targetSlot ?? 'main') as PartSlot | 'main';
+  const state = defender.partStates[slot] ?? 'intact';
+  const card = tokenCards(a.data, defender).find((x) => String(x.slot) === slot)?.card;
+  const armor = Math.max(1, state === 'damaged' ? structureOf(a.data, defender, slot) : card?.armor ?? 0);
+  const parts: { n: number; why?: string }[] = [{ n: armor, why: state === 'damaged' ? 'Structure' : 'Armor' }];
+  let run = armor;
+  const from = verdict.protectionFrom ?? (verdict.protection === 4 ? 'both' : 'terrain');
+  if (verdict.protection && (from === 'terrain' || from === 'both')) { parts.push({ n: 2, why: 'Terrain' }); run += 2; }
+  if (verdict.protection && (from === 'unit' || from === 'both')) { parts.push({ n: 2, why: 'Unit' }); run += 2; }
+  const fragile = Math.min(run, statusCount(defender.statuses, 'fragile'));
+  if (fragile) { parts.push({ n: -fragile, why: 'Fragile' }); run -= fragile; }
+  const ap = Math.min(run, armorPiercing(a.data, attacker, action).total);
+  if (ap) { parts.push({ n: -ap, why: 'Armor Piercing' }); run -= ap; }
+  close('white', parts);
+  if (pool.blue) close('blue', [{ n: pool.blue, why: 'Dodge' }]);
+  return out;
+}
+
+function brief(side: 'attack' | 'defense', pool: Record<string, number>): RollBrief {
+  return { watch: watchFor(side), blocks: blocksFor(side, pool) };
+}
+
 function attackActionOf(t: Token, actionId: string): CardAction | undefined {
   const a = api!;
   const printed = tokenCards(a.data, t).flatMap(({ card }) => card.actions ?? []).find((x) => x.id === actionId)
@@ -97,14 +242,9 @@ async function rollDefensePool(white: number, blue: number): Promise<{ color: Di
   const pool: Record<string, number> = {};
   if (white) pool.white = white;
   if (blue) pool.blue = blue;
-  if (a.inRoom()) {
-    const rolled = await a.rollDice(pool, 'Defence');
-    return rolled.map((d) => ({ color: d.color as DieColor, face: d.face, selected: false }));
-  }
-  const dice = a.data.dice;
-  return Object.entries(pool).flatMap(([c, n]) =>
-    Array.from({ length: n }, () => ({ color: c as DieColor, face: Math.floor(Math.random() * (dice?.dice[c]?.sides ?? 6)), selected: false })),
-  );
+  const rolled = await a.rollDice(pool, 'Defense roll', brief('defense', pool));
+  if (rolled.handsOff && helper) helper.handsOff = true;
+  return rolled.dice.map((d) => ({ color: d.color as DieColor, face: d.face, selected: false }));
 }
 
 // Builds the helper once and keeps it: an attack in progress lives in this
@@ -149,6 +289,7 @@ export function mountAttack(into: HTMLElement): AttackHelper | null {
   h.noBoard = true;
   h.terse = true;
   h.publishView = (view) => {
+    targetSlot = view.targetPart ?? targetSlot;
     if (!mirrored()) return;
     const key = JSON.stringify(view);
     if (key === publishedKey) return;
@@ -199,7 +340,17 @@ export function beginAttack(attacker: Token, actionId: string, defender: Token, 
   if (!h) { a.toast('No dice data loaded.'); return false; }
   const action = attackActionOf(attacker, actionId);
   if (!action) return false;
-  h.roller = a.inRoom() ? (pool, tag) => a.rollDice(pool, tag) : null;
+  current = { attacker, action, printed: printedActionOf(attacker, actionId) ?? action, defender, verdict };
+  targetSlot = defender.kind === 'mech' ? null : 'main';
+  h.roller = async (pool, tag) => {
+    const side = pool.white || pool.blue ? 'defense' : 'attack';
+    // The two opening rolls are briefed; anything else is a reroll.
+    const opening = tag === 'Attack' || tag === 'Defence';
+    const rolled = await a.rollDice(pool, tag, opening ? brief(side, pool) : undefined);
+    if (rolled.handsOff) h.handsOff = true;
+    return rolled.dice;
+  };
+  h.blackRoller = a.blackDie();
   h.backAttack = verdict.backAttack;
   if (verdict.explosion) {
     h.start(

@@ -1,4 +1,5 @@
 // THE ELECTRONIC COUNTER-ROLL on the pad: the shared ElectronicHelper
+import type { RollGroup } from '../src/combat';
 // (combat.ts), mounted beside the attack window, driven the way the Match
 // Centre drives it. A Guided game holds the exchange on `script.counter`, so
 // both phones draw the one record and each presses only its own hand; a
@@ -21,8 +22,11 @@ export interface EwApi {
   render(): void;
   openCombat(): void;
   closeCombat(): void;
-  // Yellow dice by the count, as face indices: the server's in a room.
-  rollHits(n: number, label: string): Promise<number[]>;
+  // Yellow dice as FACE indices - the table's, the server's or the pad's.
+  // This used to borrow the first-player roll's helper, which answers in HIT
+  // COUNTS, and sent those on as faces: a blank die (0 hits) became face 0,
+  // the double Light Hit, so every Counter-roll on two phones read too strong.
+  rollFaces(n: number, label: string, groups?: RollGroup[]): Promise<number[]>;
 }
 
 let api: EwApi | null = null;
@@ -87,9 +91,7 @@ export function beginElectronic(attacker: Token, actionId: string, defender: Tok
   if (!h) { a.toast('No dice data loaded.'); return false; }
   const action = actionOf(attacker, actionId);
   if (!action) return false;
-  h.roller = a.inRoom()
-    ? async (pool, label) => (await a.rollHits(pool.yellow ?? 0, label ?? 'Electronic Counter-roll')).map((face) => ({ color: 'yellow', face }))
-    : null;
+  h.roller = async (pool, label, groups) => (await a.rollFaces(pool.yellow ?? 0, label ?? 'Electronic Counter-roll', groups)).map((face) => ({ color: 'yellow', face }));
   h.start(attacker, action, defender);
   a.openCombat();
   return true;
@@ -130,7 +132,7 @@ function contestAct(act: EwAct, arg?: { uid?: number; indices?: number[] }): voi
   const unit = arg?.uid !== undefined ? s.tokens.find((x) => x.uid === arg.uid) : undefined;
   if (act === 'roll' && unit) {
     const ev = electronicStrength(a.data, s.tokens, unit, unit.uid === init.uid ? 'initiator' : 'responder');
-    void a.rollHits(ev, `rolls ${ev} for the Electronic Counter-roll`).then((faces) => {
+    void a.rollFaces(ev, `${unit.label}: Electronic Counter-roll`).then((faces) => {
       if (faces.length !== ev) return;
       a.send({ kind: 'rollCounter', seat: unit.side, uid: unit.uid, faces });
       a.render();
@@ -142,7 +144,7 @@ function contestAct(act: EwAct, arg?: { uid?: number; indices?: number[] }): voi
     const idx = (arg?.indices ?? []).filter((i) => had && i >= 0 && i < had.length);
     if (!had || !idx.length) return;
     if (!a.send({ kind: 'focus', seat: unit.side, uid: unit.uid })) { a.render(); return; }
-    void a.rollHits(idx.length, 'Focuses the Counter-roll').then((rolled) => {
+    void a.rollFaces(idx.length, `${unit.label}: Focus reroll`).then((rolled) => {
       if (rolled.length !== idx.length) return;
       const faces = had.slice();
       idx.forEach((at, k) => { faces[at] = rolled[k]; });

@@ -41,6 +41,8 @@ import { activeOpp, continueAllowed, finishIfBothReady, guideAct, guideOnRemote,
 import { countHits } from '../src/setup';
 import { attackActive, attackOnCommand, attackWatching, beginAttack, initAttack, isAttackAction, mountAttack, sweepView, syncMirror, type TableVerdict } from './attack';
 import { registerOffline } from '../src/offline';
+import { askTablePool, askTableRoll, askTargetPart } from './tabledice';
+import type { RollGroup } from '../src/combat';
 import { beginElectronic, ewActive, ewWatching, initEw, mountEw, syncContest } from './ew';
 import { clearHistory, historyDepth, historyEntries, undoLast, recordSnapshot } from '../src/history';
 import { labelFor, namesFrom, type LedgerNames } from '../src/ledger';
@@ -971,11 +973,36 @@ initAttack({
     if (panel === 'combat') { panel = null; render(); }
     if (detonating) void continueDetonation();
   },
-  rollDice: async (pool, label) => {
-    const rolled = await relay.rollDice(pool, label, 'pool');
-    send({ kind: 'noteRoll', seat: mySeat(), what: label ?? 'dice' });
-    return rolled;
+  rollDice: async (pool, label, brief) => {
+    const dice = data?.dice;
+    // Table rolls: the pad says what to pick up and what to watch for, and
+    // the table rolls. Entering the faces is there for help with the sums.
+    if (table.tableDice && dice) {
+      // A reroll carries no brief: it is only ever made by a player who is
+      // already entering their dice, so it goes straight to the faces.
+      if (!brief) {
+        let faces = await askTableRoll(dice, pool, label);
+        while (faces === null) faces = await askTableRoll(dice, pool, label);
+        if (view.room && view.seat) send({ kind: 'noteRoll', seat: mySeat(), what: label ?? 'dice' });
+        return { dice: faces, handsOff: false };
+      }
+      const answer = await askTablePool(dice, pool, label, brief.watch, brief.blocks);
+      if (view.room && view.seat) send({ kind: 'noteRoll', seat: mySeat(), what: label ?? 'dice' });
+      return answer === 'rolled' ? { dice: [], handsOff: true } : { dice: answer, handsOff: false };
+    }
+    return { dice: await rollDice(pool, label, 'pool'), handsOff: false };
   },
+  // The Black Die at the table: which of the target's Parts did it name?
+  blackDie: () => (table.tableDice && data?.dice ? (defender) => {
+    const d = data!;
+    const parts = tokenCards(d, defender).filter(({ slot }) => slot !== 'pilot').map(({ slot, card }) => ({
+      slot: String(slot),
+      label: SLOT_LABEL[slot] ?? String(slot),
+      name: cardName(card),
+      state: defender.partStates[slot as PartSlot | 'main'] ?? 'intact',
+    }));
+    return askTargetPart(d.dice!, defender.label, parts);
+  } : null),
 });
 
 initEw({
@@ -989,7 +1016,7 @@ initEw({
   render: () => render(),
   openCombat: () => { if (panel !== 'combat') { panel = 'combat'; render(); } },
   closeCombat: () => { if (panel === 'combat') { panel = null; render(); } },
-  rollHits: (n, label) => rollHits(n, label),
+  rollFaces: (n, label, groups) => rollFaces(n, label, groups),
 });
 
 // An Interception: the table judges Range to the projectile, the Token is
@@ -1041,9 +1068,9 @@ async function askTableAndAttack(attacker: Token, actionId: string, defender: To
       ? [{ id: '0', label: 'In reach', primary: true }, { id: 'no', label: 'Not this target', cancel: true }]
       : [
         { id: '0', label: 'In range, line of sight clear', primary: true },
-        { id: '2t', label: 'In range, past terrain (+2 White)' },
-        { id: '2u', label: 'In range, past a unit (+2 White)' },
-        { id: '4', label: 'In range, past terrain and a unit (+4 White)' },
+        { id: '2t', label: 'In range, behind terrain (+2 White)' },
+        { id: '2u', label: 'In range, behind a unit (+2 White)' },
+        { id: '4', label: 'In range, behind terrain and a unit (+4 White)' },
         { id: 'no', label: 'Not this target', cancel: true },
       ],
     stacked: true,
@@ -1057,7 +1084,11 @@ async function askTableAndAttack(attacker: Token, actionId: string, defender: To
     stacked: true,
   });
   if (rear === null) return;
-  const verdict: TableVerdict = { protection: prot === '4' ? 4 : prot === '2' ? 2 : 0, backAttack: rear === 'yes' };
+  const verdict: TableVerdict = {
+    protection: prot === '4' ? 4 : prot === '2' ? 2 : 0,
+    protectionFrom: seen === '4' ? 'both' : seen === '2u' ? 'unit' : seen === '2t' ? 'terrain' : undefined,
+    backAttack: rear === 'yes',
+  };
   // In a guided game the Action is paid for first; a refusal is the engine's
   // answer and the window stays shut. Freeform opens the window outright.
   if (guidedOn(table) && !send({ kind: 'performAction', seat: attacker.side, uid: attacker.uid, actionId, ...(granted ? { granted: true } : {}) })) return;
@@ -1125,23 +1156,48 @@ function combatPanel(): string {
 
 // n Yellow dice: the server's in a room, so both phones watch the same faces
 // land; this phone's own solo. The Hits per die come from the printed faces.
-async function rollHits(n: number, label: string): Promise<number[]> {
-  const faces = data?.dice?.dice.yellow;
-  let idx: number[];
-  if (view.room && view.seat) {
-    try {
-      const rolled = await relay.rollDice({ yellow: n }, label, 'hits');
-      idx = rolled.map((d) => d.face);
-      send({ kind: 'noteRoll', seat: mySeat(), what: label });
-    } catch {
-      toast('The server did not answer the roll.');
-      return [];
-    }
-  } else {
-    idx = Array.from({ length: n }, () => Math.floor(Math.random() * (faces?.sides ?? 6)));
+// Every roll the pad makes comes through here, as die FACES. Three sources:
+// the table's own dice read off and entered (the Dice setting), the server's
+// in a room - a client that generates its own faces could simply choose them -
+// and the pad's otherwise. A room still notes the roll when the dice were the
+// table's, so Undo is sealed the same way whoever threw them.
+async function rollDice(pool: Record<string, number>, label: string | undefined, kind: 'pool' | 'hits', groups?: RollGroup[]): Promise<RolledDie[]> {
+  const dice = data?.dice;
+  // The first-player roll and the Electronic Counter-roll come through here,
+  // and the pad needs their numbers to go on - who plays first, who won the
+  // contest - so at the table these are entered rather than left hands-off.
+  // Backing out asks again: the roll cannot be skipped.
+  if (table.tableDice && dice) {
+    let entered = await askTableRoll(dice, pool, label, groups);
+    while (entered === null) entered = await askTableRoll(dice, pool, label, groups);
+    if (view.room && view.seat) send({ kind: 'noteRoll', seat: mySeat(), what: label ?? 'dice' });
+    return entered;
   }
-  if (!faces) return idx.map(() => 1);
-  return idx.map((i) => countHits([faces.faces[i] ?? []]));
+  if (view.room && view.seat) {
+    const rolled = await relay.rollDice(pool, label, kind);
+    send({ kind: 'noteRoll', seat: mySeat(), what: label ?? 'dice' });
+    return rolled;
+  }
+  return Object.entries(pool).flatMap(([color, n]) =>
+    Array.from({ length: n ?? 0 }, () => ({ color, face: Math.floor(Math.random() * (dice?.dice[color as DieColor]?.sides ?? 6)) })));
+}
+
+// Yellow dice, as face indices.
+async function rollFaces(n: number, label: string, groups?: RollGroup[]): Promise<number[]> {
+  try {
+    return (await rollDice({ yellow: n }, label, 'hits', groups)).map((d) => d.face);
+  } catch {
+    toast('The server did not answer the roll.');
+    return [];
+  }
+}
+
+// Yellow dice, as the Hits each one shows: the first-player roll.
+async function rollHits(n: number, label: string): Promise<number[]> {
+  const yellow = data?.dice?.dice.yellow;
+  const idx = await rollFaces(n, label);
+  if (!yellow) return idx.map(() => 1);
+  return idx.map((i) => countHits([yellow.faces[i] ?? []]));
 }
 
 // The damage ladder, freeplay's rule exactly: a Part with no Structure has no
@@ -1772,6 +1828,11 @@ function setupPanel(): string {
     <div class="pad-chips">
       <button class="pad-chip${wantGuided || guidedOn(table) ? '' : ' on'}" data-act="set-mode" data-mode="free"${guidedOn(table) ? ' disabled' : ''}>Freeform</button>
       <button class="pad-chip${wantGuided || guidedOn(table) ? ' on' : ''}" data-act="set-mode" data-mode="guided"${guidedOn(table) ? ' disabled' : ''}>Guided</button>
+    </div>
+    <p class="pad-label pad-sec">Dice</p>
+    <div class="pad-chips">
+      <button class="pad-chip${table.tableDice ? ' on' : ''}" data-act="set-dice" data-dice="table" aria-pressed="${!!table.tableDice}">Table rolls</button>
+      <button class="pad-chip${table.tableDice ? '' : ' on'}" data-act="set-dice" data-dice="pad" aria-pressed="${!table.tableDice}">Pad rolls</button>
     </div>
     <p class="pad-label pad-sec">Layout</p>
     <div class="pad-chips">${data!.terrain.maps.map((m) => `<button class="pad-chip${table.map === m.id ? ' on' : ''}" data-act="set-layout" data-id="${esc(m.id)}">${esc(m.name.en || m.id)}</button>`).join('')}<button class="pad-chip${table.map ? '' : ' on'}" data-act="set-layout" data-id="">None</button></div>
@@ -3360,6 +3421,7 @@ function act(el: HTMLElement, ev: Event): void {
       panel = null; picking = null; error = null; render(); return;
     case 'open-setup': panel = 'setup'; render(); return;
     case 'set-mode': wantGuided = el.dataset.mode === 'guided'; render(); return;
+    case 'set-dice': send({ kind: 'configureTable', seat: mySeat(), tableDice: el.dataset.dice === 'table' }); return;
     case 'attack': {
       const t = unitOf(Number(el.dataset.uid));
       if (!t) return;

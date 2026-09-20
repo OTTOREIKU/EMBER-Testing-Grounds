@@ -1329,6 +1329,10 @@ export interface GameState {
   // the Maneuver's distance arithmetic). Set by configureTable; absent means
   // a board is there.
   noBoard?: boolean;
+  // The dice are rolled at the table and their faces entered, rather than
+  // rolled by the app. A setting of the table, so both phones agree on where
+  // a roll comes from. The pad reads it; nothing in the rules does.
+  tableDice?: boolean;
   sideNames?: Partial<Record<Side, string>>;
   // Lobby only: a seat saying it has finished reading and is happy to start.
   ready?: Partial<Record<Side, boolean>>;
