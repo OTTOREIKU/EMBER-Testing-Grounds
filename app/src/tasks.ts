@@ -473,6 +473,11 @@ function heldBoxes(
     const bearer = byUid.get(i.bearerUid);
     if (!bearer || bearer.side !== side) return false;
     if (!wants) return true;
+    // A table with no board cannot read where the bearer stands, so the
+    // players say so: claimItem writes `accessed` on a Box, and nothing else
+    // ever does (a board reads the Grid instead). A claim is for the bearer's
+    // own side, which is the only side it could pay.
+    if (i.accessed === side) return true;
     return !!cells?.length && inZone(bearer, cells);
   });
 }

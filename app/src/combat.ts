@@ -6,7 +6,7 @@ import { linkMechanics } from './inspector';
 import { SQUAD_ORDER, squadLabel } from './data';
 import type { Card, CardAction, CombatView, CounterRoll, DiceData, DiceIcon, DieColor, Duel, DuelIcon, GameRuleEffect, PartSlot, Side, SmokeScreen, TerrainPiece, Token, Facing } from './types';
 import { statusCount, STATUSES } from './types';
-import { aaRadarCovers, armorPiercing, armorPiercingNote, attackReactionsOf, auraEffectsOn, aurasOn, auraValueOn, automaticShieldFor, blueLightningDodges, earlyWarningCover, coolingBonus, denseArmorByText, eyeLightExchangeOf, eyesAreHeavyHits, pilotDiceBonus, ignoresLowProfile, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, noMeleeBackAttack, onHitRiders, STATUS_BY_ZH, missileGuidance, multiTargetLimit, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, snipeOn, isScanAction, scanStrips, suppressionOn, disarmOn, dragPrinted, denseArmorOn, designationsOn, electronicStrength, followUpAfterKill, kcArmorReady, lightningExchangeOf, lightningLinkDrain, canAffordFocus, focusIsFree, hiddenByAlliedAura, keepsLinkOnPartLoss, maxLink, provokeWhy, preventsDamage, immobilizeChoiceOn, faceAwayOnHit, pursuesFragile, structureOf, trackingCover, TRACKING_SPOTTERS_NEEDED, pilotCard, pilotIs, repeatersFor, SLOT_LABEL, tetherStrike, treatedAsOffensive, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
+import { aaRadarCovers, armorPiercing, armorPiercingNote, attackReactionsOf, auraEffectsOn, aurasOn, auraValueOn, automaticShieldFor, blueLightningDodges, earlyWarningCover, coolingBonus, denseArmorByText, eyeLightExchangeOf, eyesAreHeavyHits, pilotDiceBonus, ignoresLowProfile, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, noMeleeBackAttack, onHitRiders, STATUS_BY_ZH, missileGuidance, multiTargetLimit, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, snipeOn, isScanAction, scanStrips, suppressionOn, disarmOn, dragPrinted, denseArmorOn, designationsOn, electronicStrength, followUpAfterKill, eyeRerollName, kcArmorReady, lightningExchangeOf, lightningLinkDrain, canAffordFocus, focusIsFree, hiddenByAlliedAura, keepsLinkOnPartLoss, maxLink, provokeWhy, preventsDamage, immobilizeChoiceOn, faceAwayOnHit, pursuesFragile, structureOf, trackingCover, TRACKING_SPOTTERS_NEEDED, pilotCard, pilotIs, repeatersFor, SLOT_LABEL, tetherStrike, treatedAsOffensive, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
 import { timingOf } from './ticks';
 import { inArc, largeGridOf, losNote, protectionFor, rangeBetween, standingSpot } from './rules';
 import type { Command } from './commands';
@@ -791,6 +791,16 @@ interface Ctx {
   // on the last resolution (FAQ D2). Read by sendLightningDrain, so a
   // dodged Lightning strips no Link.
   lightningThrough?: number;
+  // Why a side's Focus declare was walked past, so the step can SAY so. The
+  // skips are right - a Drone has no Link, a Mech may not spend its last one
+  // (4.10), an empty pool has nothing to reroll - but a silent skip read as
+  // the window forgetting to ask.
+  focusSkipped?: string[];
+  // Dodges the defender holds back for the attack's Lightning instead of its
+  // Hits (4.4.1: a Dodge offsets ANY one icon, and an Eye or Lightning that is
+  // Dodged does not fire). Zero is the old behaviour: Hits first, Lightning
+  // only with what is left.
+  dodgeOnLightning?: number;
   // FPA-04 Hammerhead: how many {Eye} 猛攻 Fierce Assault turned into Light
   // Hits on the last derivation. Same reason as lightningSwapped — derived, not
   // stored as a decision, so a re-roll cannot leave a stale count behind.
@@ -881,6 +891,15 @@ export class AttackHelper {
   private onPenetrated: (victim: Token, attacker: Token) => void;
   private onCommand: (cmd: Command) => void;
   // Set by the app while a networked game is running; cleared otherwise.
+  // How many Dodges the defender COULD hold back for Lightning in the roll
+  // just resolved; 0 when the choice would change nothing. Set by resolve().
+  private lightningChoice = 0;
+  // The Black Die has landed this attack (see spinBlack).
+  private blackLanded = false;
+  // Asked before a live attack is closed; false keeps the window open. The
+  // page decides what closing costs and says so (the pad: the Action stays
+  // spent, or the whole attack is undone).
+  confirmCancel: (() => Promise<boolean>) | null = null;
   roller: DiceRoller | null = null;
   // The Black Die read off the table rather than thrown here (the pad's
   // table dice). It never went through `roller`, so it has its own door. It
@@ -1405,6 +1424,7 @@ export class AttackHelper {
     this.mirroring = null;
     this.handsOff = false;
     this.tableOutcome = null;
+    this.blackLanded = false;
     this.ctx = {
       attacker,
       defender,
@@ -1760,9 +1780,27 @@ export class AttackHelper {
 
   // Walks past the declares that have no one eligible to answer them.
   private skipFocusStages(): void {
-    const f = this.ctx!.focus!;
-    if (f.stage === 'declareA' && !this.canFocus('attacker')) f.stage = 'declareD';
-    if (f.stage === 'declareD' && !this.canFocus('defender')) f.stage = f.attackerUse ? 'rerollA' : 'done';
+    const c = this.ctx!;
+    const f = c.focus!;
+    const skip = (side: 'attacker' | 'defender'): void => {
+      const why = this.focusWhyNot(side);
+      if (why && !(c.focusSkipped ??= []).includes(why)) c.focusSkipped.push(why);
+    };
+    if (f.stage === 'declareA' && !this.canFocus('attacker')) { skip('attacker'); f.stage = 'declareD'; }
+    if (f.stage === 'declareD' && !this.canFocus('defender')) { skip('defender'); f.stage = f.attackerUse ? 'rerollA' : 'done'; }
+  }
+
+  // The reason canFocus said no, in the order it asks. Empty where there is
+  // nothing worth saying (a Surplus round makes no Attack Roll at all).
+  private focusWhyNot(side: 'attacker' | 'defender'): string {
+    const c = this.ctx!;
+    const t = side === 'attacker' ? c.attacker : c.defender;
+    const roll = side === 'attacker' ? c.attackRoll : c.defenseRoll;
+    if (side === 'attacker' && c.surplusRound > 0) return '';
+    if (side === 'attacker' && c.guidanceUsed) return `${t.label} cannot Focus: its one reroll went on a lent {Eye} reroll (FAQ A6).`;
+    if (t.kind !== 'mech') return `${t.label} cannot Focus: only a Mech has Link to spend (4.10).`;
+    if (!roll || !roll.length) return `${t.label} has no dice to reroll.`;
+    return `${t.label} cannot Focus: a Mech may not spend its last Link (4.10).`;
   }
 
   // A declare answered on THIS screen — the attacker always, and the defender
@@ -2480,7 +2518,10 @@ export class AttackHelper {
       }
     }
     if (dense && heavy) text.push('Dense Armor: [Defense] may offset [Heavy Hit] here (4.10)');
-    const offsets = offsetIcons(heavy, light, dodge, defense, dense, c.dodgeDieUsed ? this.attackIconsPerDie(c) : undefined);
+    // The defender's choice (4.4.1): Dodges held back for the Lightning come
+    // off the top, before any Hit is offset.
+    const held = drainKind ? Math.max(0, Math.min(c.dodgeOnLightning ?? 0, dodge, drained)) : 0;
+    const offsets = offsetIcons(heavy, light, dodge - held, defense, dense, c.dodgeDieUsed ? this.attackIconsPerDie(c) : undefined);
     const { icons, idleDefense, dodged, blocked, unoffset } = offsets;
     // Concussion / Wrecking: a {Dodge} left over after the damage icons may
     // cancel a Lightning (FAQ D2; 4.4.2's example fires Concussion on the
@@ -2488,14 +2529,21 @@ export class AttackHelper {
     // sendLightningDrain reads it - and for Wrecking is a Hit and a
     // Penetration as well, kept out of `unoffset` so a Surplus keyword never
     // carries it (D3).
-    const lightningCancelled = drainKind ? Math.min(drained, offsets.spareDodge) : 0;
+    const lightningCancelled = drainKind ? held + Math.min(drained - held, offsets.spareDodge) : 0;
     const lightningThrough = drainKind ? drained - lightningCancelled : 0;
     c.lightningThrough = lightningThrough;
     const wreckHits = drainKind === 'wrecking' ? lightningThrough : 0;
-    const spareDodge = offsets.spareDodge - lightningCancelled;
+    const spareDodge = offsets.spareDodge - (lightningCancelled - held);
+    // Worth asking only when the Dodges cannot cover everything: then, and
+    // only then, where they go changes what happens.
+    this.lightningChoice = drainKind && drained > 0 && dodge > 0 && dodge < heavy + light + drained && (heavy + light) > 0
+      ? Math.min(dodge, drained) : 0;
+    if (held) text.push(`${held} Dodge${held === 1 ? '' : 's'} held for the [Lightning] before any Hit (4.4.1)`);
     const hits = offsets.hits + wreckHits;
     const penetrating = offsets.penetrating + wreckHits;
-    if (lightningCancelled) text.push(`${lightningCancelled} [Lightning] cancelled by spare Dodge (FAQ D2)`);
+    // Only the Dodges LEFT OVER are "spare"; one held for the Lightning is
+    // said on its own line above.
+    if (lightningCancelled - held > 0) text.push(`${lightningCancelled - held} [Lightning] cancelled by spare Dodge (FAQ D2)`);
     const triggers: DuelIcon[] = [];
     if (c.surplusRound === 0) {
       for (let i = 0; i < (atk.lightning ?? 0); i++) triggers.push({ kind: 'lightning', offset: null });
@@ -2764,12 +2812,22 @@ export class AttackHelper {
       result: c.penetrated ? 'applied' : '',
     });
     // The extra beat, and it is the reason this list cannot be a constant.
-    const sur = surplusEffects(c.action)[0];
+    // Every Surplus keyword the Action carries, not the first in a fixed
+    // order: a Scatter-shot weapon that only GAINS Mutilation while Charged
+    // read "Mutilation" here. One the card gives conditionally is marked.
+    const surAll = surplusEffects(c.action);
+    const sur = surAll[0];
     if (sur) {
+      const zh = c.action.description?.zh ?? '';
+      const conditional = (key: string): boolean => new RegExp(`获得[^。·；;]*?${key}`).test(zh);
+      const label = c.surplusRound > 0 && c.surplusKeyword
+        ? c.surplusKeyword.name
+        : [...surAll.filter((e) => !conditional(e.key)), ...surAll.filter((e) => conditional(e.key))]
+          .map((e) => (conditional(e.key) ? `${e.name} if granted` : e.name)).join(' / ');
       out.push({
         key: 'surplus',
         title: 'Surplus round',
-        extra: sur.name,
+        extra: label,
         result: c.surplusRound > 0 ? 'resolving' : 'if it penetrates',
       });
     }
@@ -3053,7 +3111,16 @@ export class AttackHelper {
     // Standing the drawing down before the render is what makes the close real;
     // the sequence itself keeps running on the client that owns it.
     cancel.addEventListener('click', () => {
-      if (!watching) { this.cancel(); return; }
+      if (!watching) {
+        const c = this.ctx;
+        // LIVE once anything has happened that cannot be unsaid here: a Part
+        // named, a die on the table. Before that, closing is just changing
+        // your mind and needs no question.
+        const live = !!c && !c.penetrated && (this.blackLanded || !!c.blackResult || !!c.attackRoll || (c.defender.kind === 'mech' && !!c.targetPart));
+        if (live && this.confirmCancel) { void this.confirmCancel().then((go) => { if (go) this.cancel(); }); return; }
+        this.cancel();
+        return;
+      }
       this.dismissMirror();
       this.onClose();
     });
@@ -3506,8 +3573,22 @@ export class AttackHelper {
     showFace(0);
     stage.append(die, caption);
 
+    // The attacker simply DESIGNATES on a Back Attack, against a Shutdown
+    // target, or with Snipe (4.4.1 step 2): no roll is owed. The chips were
+    // already unlocked for it, but the step still led with the roll, and a
+    // player read that as the only way on. Said plainly, and the roll stands
+    // down to the second button for a table that wants the die anyway.
+    const mayDesignate = !c.explosion && !c.blackResult && c.surplusRound === 0 && this.mayPickPart();
+    if (mayDesignate) {
+      const why = c.defender.stance === 'shutdown' ? 'The target is Shutdown'
+        : snipeOn(c.action) ? 'Snipe' : 'Back Attack';
+      const note = document.createElement('p');
+      note.className = 'ah-note';
+      note.textContent = `${why}: choose the target Part below. No roll is needed (4.4.1).`;
+      wrap.appendChild(note);
+    }
     const rollBtn = document.createElement('button');
-    rollBtn.className = 'ah-primary';
+    rollBtn.className = mayDesignate ? 'ah-alt' : 'ah-primary';
     rollBtn.innerHTML = `${ICON_DICE} Roll Black Die`;
     rollBtn.disabled = !this.mayDrive('attacker');
     rollBtn.addEventListener('click', () => {
@@ -3554,7 +3635,10 @@ export class AttackHelper {
 
   // The Black Die's spin, extracted so the roll and a Focus reroll share one
   // implementation of the shake.
-  private spinBlack(stage: HTMLElement, caption: HTMLElement, showFace: (i: number) => void, done: (landed: number) => void): void {
+  private spinBlack(stage: HTMLElement, caption: HTMLElement, showFace: (i: number) => void, settle: (landed: number) => void): void {
+    // The die is on the table from here, even while its Focus is still being
+    // offered and no Part is recorded yet: the close question counts it.
+    const done = (face: number): void => { this.blackLanded = true; settle(face); };
     if (this.blackRoller) {
       caption.textContent = '';
       void this.blackRoller(this.ctx!.defender).then((face) => { showFace(face); done(face); });
@@ -3935,8 +4019,11 @@ export class AttackHelper {
         .filter(({ d }) => this.dice.dice[d.color].faces[d.face].some((ic) => ic.type === 'eye'));
       if (beacons.length && eyes.length) {
         const g = document.createElement('button');
-        g.textContent = `Guidance Support: reroll ${eyes.length} [Eye]`;
-        g.title = `${beacons[0].label} covers ${c.defender.label}, so this Missile may reroll every {Eye} it rolled (PDAM-006). It costs nothing and may be taken once.`;
+        // Named after the ability that lends it: the Rumba's Guidance Support
+        // or a Battle Core's Coordinated Observation.
+        const lent = eyeRerollName(this.data, beacons[0]);
+        g.textContent = `${lent.name}: reroll ${eyes.length} [Eye]`;
+        g.title = `${beacons[0].label} covers ${c.defender.label}, so this attack may reroll every {Eye} it rolled (${lent.name}, ${lent.cardId}). It costs nothing and may be taken once.`;
         g.disabled = !this.mayDrive('attacker');
         g.addEventListener('click', () => {
           c.guidanceUsed = true;
@@ -3945,10 +4032,10 @@ export class AttackHelper {
           // Focus is put back, so the two reroll sources cannot blur together.
           for (const d of roll) d.selected = false;
           for (const { d } of eyes) d.selected = true;
-          this.note(`${c.attacker.label} rerolls ${eyes.length} [Eye] under ${beacons[0].label}'s Guidance Support (PDAM-006).`, [c.attacker]);
+          this.note(`${c.attacker.label} rerolls ${eyes.length} [Eye] under ${beacons[0].label}'s ${lent.name} (${lent.cardId}).`, [c.attacker]);
           void (async () => {
             this.spinFor = which;
-            await this.reroll(roll, 'Guidance Support');
+            await this.reroll(roll, lent.name);
             this.render();
           })();
         });
@@ -4329,9 +4416,33 @@ export class AttackHelper {
       // the attack and travels on the view, and a second beginFocus here would
       // invent a declare the attacking client is not waiting for.
       if (!c.focus && !this.mirroring) this.beginFocus();
+      for (const why of c.focusSkipped ?? []) {
+        const p = document.createElement('p');
+        p.className = 'ah-note';
+        p.textContent = why;
+        wrap.appendChild(p);
+      }
       const focusUi = this.focusBlock();
       if (focusUi) wrap.appendChild(focusUi);
       else {
+        // BACK, where nothing was spent: both sides passed, so no Link moved
+        // and no die was rerolled, and a Pass pressed by mistake can be taken
+        // back. Only while the whole question is answerable on this screen.
+        //
+        // DISABLED, NOT ABSENT (combatrole.test pins it): built for every
+        // viewer so the window is the same box on both phones, and pressable
+        // only where the whole question can be re-asked - not on a mirror,
+        // and not when the defender answers from another client.
+        const f = c.focus;
+        if (f && f.stage === 'done' && !f.attackerUse && !f.defenderUse && !this.handsOff
+          && !c.penetrated && (this.canFocus('attacker') || this.canFocus('defender'))) {
+          const back = document.createElement('button');
+          back.className = 'ah-alt';
+          back.textContent = 'Back to Focus';
+          back.disabled = !!this.mirroring || !this.mayDrive('attacker') || !!(this.focusRemote && this.focusRemote(c.defender));
+          back.addEventListener('click', () => { c.focus = null; c.focusSkipped = []; this.render(); });
+          wrap.appendChild(back);
+        }
         // 4.4.1 step 6: the Exchange runs here, after both rolls and the Focus
         // rerolls and before any offsetting, and "Each Dice may only be
         // Exchanged once". When a free heavy source and card 027's Single Shot
@@ -4442,6 +4553,35 @@ export class AttackHelper {
         : ''
     }</h4>${res ? (atTable ? `<p class="ah-sum">${res.text[0]}</p>` : resolutionHtml(res)) : '<p class="dim">Waiting for the attacking player to settle the damage.</p>'}`;
     linkMechanics(wrap, this.data.mechanics);
+    if (!this.mirroring && !c.penetrated && this.mayDrive('attacker')) {
+      // A table result entered by mistake, before anything was applied.
+      if (this.handsOff && this.tableOutcome !== null) {
+        const redo = document.createElement('button');
+        redo.className = 'ah-alt';
+        redo.textContent = 'Change the result';
+        redo.addEventListener('click', () => { this.tableOutcome = null; this.render(); });
+        wrap.appendChild(redo);
+      }
+      // The defender's Dodges: Hits first by default, or held for Lightning.
+      if (!this.handsOff && this.lightningChoice > 0) {
+        const row = document.createElement('div');
+        row.className = 'ah-dodgepick';
+        const n = Math.min(c.dodgeOnLightning ?? 0, this.lightningChoice);
+        row.innerHTML = `<span>${c.defender.label}: Dodges held for [Lightning]</span>`;
+        const mk = (label: string, to: number, off: boolean): HTMLButtonElement => {
+          const b = document.createElement('button');
+          b.className = 'ah-alt';
+          b.textContent = label;
+          b.disabled = off;
+          b.addEventListener('click', () => { c.dodgeOnLightning = to; this.render(); });
+          return b;
+        };
+        const count = document.createElement('b');
+        count.textContent = String(n);
+        row.append(mk('−', n - 1, n <= 0), count, mk('+', n + 1, n >= this.lightningChoice));
+        wrap.appendChild(row);
+      }
+    }
     // The timeout is not decoration: requestAnimationFrame does not fire while
     // the page is not compositing, so the strip is driven by timers and kicked
     // off outside the render that made its markup.
@@ -4605,6 +4745,8 @@ export class AttackHelper {
           // Surplus round makes no Attack Roll, so the attacker's half of
           // step 5 has nothing to act on and skips itself.
           c.focus = null;
+          c.focusSkipped = [];
+          c.dodgeOnLightning = 0;
           // ... and Scatter-shot's Part Die is a NEW roll of the Black Die,
           // so it carries a fresh Focus of its own (4.10 is per roll).
           c.blackFocusUsed = false;

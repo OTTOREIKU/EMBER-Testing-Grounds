@@ -605,6 +605,38 @@ export function covertCarryLock(a: CardAction): boolean {
 
 // The launch list a lock_one Action may still offer. Before it commits, every
 // printed option; after, only the one it took.
+// 4.7.4, the Immediate type: "Undergo Detonation immediately" (立即引爆). The
+// Projectile detonates the moment it lands, with no Delay Phase to wait for.
+// Read off the card: the type where the sheet sets it, the wording where it
+// does not (the Sardina prints it on a Tactic). The Zealot's 立刻引爆 is a
+// different rule - on being destroyed - and its wording does not match.
+export function immediateDetonation(card: Card): CardAction | null {
+  for (const a of card.actions ?? []) {
+    const text = `${a.description?.zh ?? ''} ${a.description?.en ?? ''}`;
+    if (a.type === 'Immediate' || /立即引爆|Undergo Detonation immediately/i.test(text)) return a;
+  }
+  return null;
+}
+
+// A card's `projectile` list is per CARD, but two cards print two Projectile
+// Actions that each launch ONE of the listed cards: the Vigilant's |Cluster
+// Grenade| and |Beacon| (PRDR-204), and the Exocet pack's |Missile| and
+// |Grenade| (PDBP-203). Offering the whole list under each let a Beacon be
+// launched with the Cluster Grenade Action. The data has no per-Action id, so
+// the Action's printed name is matched against the projectile's: every such
+// Action is named for what it throws. A single-Action card (the Mortar, the
+// Beacon Backpack) keeps its whole list, because there the choice IS the point,
+// and no match at all falls back to the list rather than to nothing.
+export function projectilesOfAction(card: Card, a: CardAction, all: Card[]): Card[] {
+  if (all.length < 2) return all;
+  const launchers = (card.actions ?? []).filter((x) => x.type === 'Projectile');
+  if (launchers.length < 2) return all;
+  const want = (a.name?.en ?? '').trim().toLowerCase();
+  if (!want) return all;
+  const named = all.filter((p) => (p.name?.en ?? '').toLowerCase().includes(want));
+  return named.length ? named : all;
+}
+
 function lockedDown(t: Token, a: CardAction, all: Card[]): Card[] {
   if (!covertCarryLock(a)) return all;
   const picked = t.lockedProjectile?.[a.id];
@@ -1383,6 +1415,23 @@ export function selfStatusGrant(a: CardAction): { statusId: string; stacks: numb
   return null;
 }
 
+// The same effect aimed at a chosen TARGET rather than the performer: the
+// LD-5M Vigilant's |Target Tag| ("choose one target in range with line of
+// sight; it gains a Highlight Token"). Only a Tactic carries it this way - an
+// attack's Tokens are on-hit riders and ride the window.
+export function targetStatusGrant(a: CardAction): { statusId: string; stacks: number; side: 'any' | 'enemy' | 'ally' } | null {
+  if (a.type !== 'Tactic') return null;
+  for (const g of a.gameRules ?? []) {
+    for (const e of g.effects ?? []) {
+      const eff = e as { type?: string; status?: string; stacks?: number; target?: string; targetSide?: string };
+      if (eff.type !== 'apply_status' || eff.target !== 'target' || !eff.status) continue;
+      const statusId = SELF_STATUS_IDS[eff.status] ?? STATUS_BY_ZH[eff.status];
+      if (statusId) return { statusId, stacks: eff.stacks ?? 1, side: eff.targetSide === 'enemy' ? 'enemy' : eff.targetSide === 'ally' ? 'ally' : 'any' };
+    }
+  }
+  return null;
+}
+
 // Why the grant may not be taken, or null. FAQ J1: Octopus and Viper cannot
 // Ambush again while already bearing a Low Profile Token - and the reading
 // generalises through 6.1, because a Hexagon Token a unit already wears is a
@@ -1579,7 +1628,9 @@ export function twoHandedUse(
   const support = freehandSupport(data, t, best.slot, a);
   const gains: string[] = [];
   if (rider.range) gains.push(`+${rider.range} Range`);
-  for (const k of rider.keywords) gains.push(k);
+  // By the printed English name where the glossary has one: the rider is read
+  // off the Chinese line, and the raw key reached the player as 毁伤.
+  for (const k of rider.keywords) gains.push(data.keyword?.(k)?.en?.name?.trim() || k);
   if (rider.medium) gains.push('counts as a Medium Action');
   if (support?.red) gains.push(`+${support.red}R from ${best.label}`);
   if (support?.yellow) gains.push(`+${support.yellow}Y from ${best.label}`);
@@ -1739,6 +1790,21 @@ export function missileGuidance(
     }
   }
   return out;
+}
+
+// The printed name of the {Eye} reroll a unit lends (Guidance Support on the
+// Rumba beacon, Coordinated Observation on the Caracal and the Wild Cat), so
+// the offer is labelled with the ability the player can find on the card. The
+// button once said "Guidance Support" for all three, which read as a Missile
+// rule firing on a rifle and as Coordinated Observation never being offered.
+export function eyeRerollName(data: GameData, source: Token): { name: string; cardId: string } {
+  const card = source.cardId ? data.byId.get(source.cardId) : undefined;
+  for (const a of card?.actions ?? []) {
+    const has = (a.gameRules ?? []).some((g) => (g.effects ?? [])
+      .some((e) => (e as { type?: string }).type === 'reroll_attack_dice'));
+    if (has) return { name: a.name?.en || a.name?.zh || 'Guidance Support', cardId: String(card!.id) };
+  }
+  return { name: 'Guidance Support', cardId: String(card?.id ?? '') };
 }
 
 // ---------- One-off riders read off printed text ----------
@@ -3158,15 +3224,24 @@ export function followUpAfterKill(
   t: Token,
   action: CardAction,
 ): { card: Card; action: CardAction } | null {
+  // THE STRUCTURED RULE FIRST. The pipes are a convention of the RAW sheet:
+  // loadData() tidies every description and strips them, so on a live page the
+  // text below never matched and the offer was never made (the test read the
+  // raw file and stayed green). The bundle's own follow_up_attack rule names
+  // the granted action by id and survives the tidy.
+  const rules = (action as { gameRules?: { effects?: { type?: string; trigger?: string; actionId?: string }[] }[] }).gameRules ?? [];
+  const ruled = rules.flatMap((r) => r.effects ?? [])
+    .find((e) => e.type === 'follow_up_attack' && e.trigger === 'part_destroyed' && e.actionId)?.actionId;
   const text = `${action.description?.en ?? ''} ${action.description?.zh ?? ''}`;
   const named = /\|([^|]+)\|/.exec(text);
-  if (!named) return null;
-  const want = named[1].trim().toLowerCase();
-  if (!want) return null;
+  if (!ruled && !named) return null;
+  const want = named ? named[1].trim().toLowerCase() : '';
+  if (!ruled && !want) return null;
   for (const { card } of tokenCards(data, t)) {
     if (!(card.actions ?? []).some((a) => a.id === action.id)) continue;
-    const hit = (card.actions ?? []).find((a) =>
-      (a.name?.en ?? '').trim().toLowerCase() === want || (a.name?.zh ?? '').trim() === named[1].trim());
+    const hit = (card.actions ?? []).find((a) => (ruled
+      ? a.id === ruled
+      : (a.name?.en ?? '').trim().toLowerCase() === want || (a.name?.zh ?? '').trim() === named![1].trim()));
     return hit ? { card, action: hit } : null;
   }
   return null;
@@ -4697,7 +4772,7 @@ export function guidedActions(data: GameData, t: Token, world?: ActionWorld): Gu
         // A lock_one Action that has already committed offers ONLY what it
         // committed to. Filtered here so both pages inherit it: neither launch
         // picker computes this list, they both read it.
-        projectiles: a.type === 'Projectile' ? lockedDown(t, a, projectiles) : [],
+        projectiles: a.type === 'Projectile' ? lockedDown(t, a, projectilesOfAction(card, a, projectiles)) : [],
         lentBy: loan?.from,
         partKey: loan ? `${a.id}@${loan.from.uid}` : a.id,
       });

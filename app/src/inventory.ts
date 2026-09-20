@@ -80,8 +80,10 @@ export class Inventory {
       .filter((e) => e.card)
       .sort((a, b) => cardName(a.card).localeCompare(cardName(b.card)));
     const q = this.singleSearch.trim().toLowerCase();
+    // A card already recorded has its own row with steppers just below, so the
+    // search offers only what is not in the list yet.
     const found = q
-      ? this.cards.filter((c) => cardName(c).toLowerCase().includes(q) || c.id.includes(q)).slice(0, 8)
+      ? this.cards.filter((c) => !(col.cards[c.id] > 0) && (cardName(c).toLowerCase().includes(q) || c.id.includes(q))).slice(0, 8)
       : [];
     return `<div class="inv-singles">
       <div class="inv-contents-head"><b>Built pieces</b>
@@ -154,6 +156,7 @@ export class Inventory {
           <b>${esc(box?.name.en || box?.name.zh || key)}</b>
           <span class="inv-contents-sub">${items.length} card${items.length === 1 ? '' : 's'} · ${total} piece${total === 1 ? '' : 's'}</span>
         </div>
+        ${items.length ? '<button class="inv-cmp-btn inv-add-all">Add all as built</button>' : ''}
       </div>
       ${
         items.length
@@ -165,6 +168,19 @@ export class Inventory {
               .join('')}</ul>`
           : '<p class="dim">No cards in the data are listed as coming from this box.</p>'
       }`;
+    // Every card the box ships, as built pieces, times the boxes owned: the
+    // starting point for a player who built the lot, trimmed from there.
+    panel.querySelector('.inv-add-all')?.addEventListener('click', () => {
+      const col = this.col();
+      const boxes = Math.max(1, col.boxes[key] ?? 0);
+      for (const i of items) {
+        const n = Math.max(1, i.n) * boxes;
+        if ((col.cards[i.id] ?? 0) < n) col.cards[i.id] = Math.min(99, n);
+      }
+      saveCollection(col);
+      this.onChange();
+      this.openDialog();
+    });
     panel.querySelector('.inv-contents-close')!.addEventListener('click', () => {
       panel.remove();
       dlg.classList.remove('with-contents');
@@ -326,8 +342,10 @@ export class Inventory {
     singles.querySelectorAll<HTMLButtonElement>('[data-single-add]').forEach((btn) =>
       btn.addEventListener('click', () => {
         this.setSingle(btn.dataset.singleAdd!, (this.col().cards[btn.dataset.singleAdd!] ?? 0) + 1);
-        this.singleSearch = '';
+        // The search stays open, so several can be added in a row.
         this.openDialog();
+        const again = document.querySelector<HTMLInputElement>('#inv-dialog .inv-single-search');
+        if (again) { again.focus(); again.setSelectionRange(again.value.length, again.value.length); }
       }),
     );
     singles.querySelectorAll<HTMLButtonElement>('[data-single-step]').forEach((btn) =>

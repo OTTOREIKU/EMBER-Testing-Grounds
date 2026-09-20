@@ -588,7 +588,7 @@ console.log('\nPilot traits, against the shipped cards and dice\n');
   check('reader 3 — the freeplay guide passes it, in both of its call sites',
     (guide.match(/anyTiming: anyStartTiming\(this\.data, t\)/g) ?? []).length, 2);
   check('and the SPEND agrees with the check that allowed it',
-    /spendAction\(o, a, cmd\.partKey \|\| a\.id, \{ flexible:[^}]*anyTiming: anyStartTiming\(data, t\) \}\)/.test(cmds), true);
+    /spendAction\(o, paidAs, cmd\.partKey \|\| a\.id, \{ flexible:[^}]*anyTiming: anyStartTiming\(data, t\) \}\)/.test(cmds), true);
 
   // The trait must NOT be folded into hasFlexibleTiming: that boolean means
   // "adjacent on the dial", and widening it would hand every aura source and

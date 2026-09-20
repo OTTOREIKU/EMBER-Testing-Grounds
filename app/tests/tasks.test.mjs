@@ -115,6 +115,17 @@ check('boxes held outside it pay nothing', [outside.s1, outside.s2], [0, 0]);
 // wrong in the holder's favour.
 const noLookup = T.scoreMain(ASSET, boxes, [unit(1, 's1', 5, 5), unit(2, 's2', 5, 5)], 5, true);
 check('no zone lookup pays nobody', [noLookup.s1, noLookup.s2], [0, 0]);
+// A table with no board says where a Box is instead (claimItem writes
+// `accessed`), and only a claim for the BEARER'S side can pay.
+const said = state({
+  items: [
+    { id: 'bb1', kind: 'blackbox', zone: 'bravo', bearerUid: 1, accessed: 's1' },
+    { id: 'bb2', kind: 'blackbox', zone: 'echo', bearerUid: 1 },
+    { id: 'bb3', kind: 'blackbox', zone: 'golf', bearerUid: 2, accessed: 's1' },
+  ],
+});
+const handSet = T.scoreMain(ASSET, said, [unit(1, 's1', 0, 0), unit(2, 's2', 0, 0)], 5, true, () => []);
+check('a Box said to be in the zone pays with no board to read', [handSet.s1, handSet.s2], [4, 0]);
 // A mission with no scoringZone is unaffected by the lookup being there.
 const plain = T.scoreMain(BB, boxes, [unit(1, 's1', 0, 0), unit(2, 's2', 5, 5)], 5, true, echoCells);
 check('a mission with no scoring zone pays as before', [plain.s1, plain.s2], [4, 2]);

@@ -4143,7 +4143,9 @@ export function startActionFromCard(uid: number, actionId: string): boolean {
     .find((g) => g.action.id === actionId);
   if (!act) return false;
   if (t.kind !== 'mech' || lengthOf(act.action)) {
-    const cmd: Command = { kind: 'performAction', seat: t.side, uid: t.uid, actionId, partKey: act.partKey };
+    // [Two-Handed] is taken unless the picker's switch declines it, and it can
+    // change the length paid (card 129), so the check asks about that length.
+    const cmd: Command = { kind: 'performAction', seat: t.side, uid: t.uid, actionId, partKey: act.partKey, ...(twoHandedUse(ctx.data, t, act.action) ? { twoHanded: true } : {}) };
     const v = ctx.check(cmd);
     if (!v.ok) {
       if (v.why) ctx.noteNow(v.why);
@@ -5695,6 +5697,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     }
     attackPick = null;
     if (m) {
+      if (m.twoHanded === 'declined' && pendingAction?.kind === 'performAction') pendingAction = { ...pendingAction, twoHanded: false };
       commitAction(ctx);
       ctx.startAttack(m.uid, m.actionId, Number(el.dataset.attacktarget), 'attack', { twoHandedDeclined: m.twoHanded === 'declined' });
     }

@@ -45,7 +45,7 @@ const settleBlock = cut(mainSrc,
   "      // An enemy AERIAL unit's Movement triggers Interception",
   'the settle() Low Profile block');
 const doneBlock = cut(mainSrc,
-  '    const done = (performed: boolean): void => {',
+  '    const done = (performed: boolean, opts?: { twoHanded?: boolean }): void => {',
   '    if (!t || !action) return done(false);',
   'the performGuided done wrapper');
 

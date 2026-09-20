@@ -22,6 +22,7 @@ writeFileSync(
     + 'const PART_SLOTS = ["torso","chasis","leftHand","rightHand","backpack"];\n'
     + cut('export function tokenCards', '// ---------- Tarantula Loads', 'tokenCards')
     + cut('// A bonus attack a card grants', '// The Interception attempts', 'followUpAfterKill')
+    + cut('// 4.7.4, the Immediate type', 'function lockedDown', 'the projectile readers')
     + 'function largeGridOf(t: any): any { return { c: Math.floor(t.col / 3), r: Math.floor(t.row / 3) }; }\n'
     + 'function rangeBetween(a: any, b: any): any { const p = largeGridOf(a), q = largeGridOf(b);\n'
     + '  return { range: Math.abs(p.c - q.c) + Math.abs(p.r - q.r) }; }\n'
@@ -36,7 +37,7 @@ writeFileSync(
     + cut('// A Mine\'s trigger asks for a GROUND Unit', 'export function minesOwed', 'isGroundUnit')
     + cut('// Which Moving Actions are a position SWAP', '// ---------- The Hyena', 'blinkTargets'),
 );
-const { followUpAfterKill, blinkTargets, isPositionSwap } = await import(tmp.href);
+const { followUpAfterKill, blinkTargets, isPositionSwap, projectilesOfAction, immediateDetonation } = await import(tmp.href);
 
 const raw = JSON.parse(readFileSync(new URL('../../data/cards.json', import.meta.url), 'utf8'));
 const cards = Array.isArray(raw) ? raw : raw.cards ?? [];
@@ -67,6 +68,38 @@ const mech = (over = {}) => ({
 check('Chop offers the Slash printed on the same Part',
   (() => { const f = followUpAfterKill(data, mech(), chop); return f && [f.card.id, f.action.name?.en]; })(),
   ['145', 'Slash']);
+// loadData() strips the pipes from every description, so a LIVE page never has
+// them. The offer must survive that, which it does through the card's own
+// follow_up_attack rule.
+const tidy = (a) => ({ ...a, description: Object.fromEntries(Object.entries(a.description ?? {}).map(([k, v]) => [k, String(v).replace(/\|/g, '')])) });
+check('Chop still offers the Slash once the loader has stripped the pipes',
+  (() => { const f = followUpAfterKill(data, mech(), tidy(chop)); return f && [f.card.id, f.action.id]; })(),
+  ['145', '145_B']);
+// ---------- one Projectile per Projectile Action ----------
+//
+// Two cards print TWO launching Actions over ONE projectile list. Each Action
+// throws the card it is named for, not the whole list.
+{
+  const list = (c) => c.projectile.map((id) => byId.get(id)).filter(Boolean);
+  const offered = (id, actionName) => {
+    const c = byId.get(id);
+    const a = c.actions.find((x) => x.name?.en === actionName);
+    return projectilesOfAction(c, a, list(c)).map((p) => p.id);
+  };
+  check('the Vigilant\'s Cluster Grenade launches the grenade only', offered('PRDR-204', 'Cluster Grenade'), ['PDAM-005']);
+  check('and its Beacon launches the beacon only', offered('PRDR-204', 'Beacon'), ['PDAM-006']);
+  check('the Exocet pack\'s Missile launches the missile', offered('PDBP-203', 'Missile'), ['PDAM-002']);
+  check('and its Grenade the grenade', offered('PDBP-203', 'Grenade'), ['PDAM-007']);
+  // One launching Action over several cards is a real CHOICE and stays one.
+  check('the Mortar still offers both shells', offered('ZHLA-201', 'Mortar').length, 2);
+  check('the Beacon Backpack still offers all three beacons', offered('008', 'Beacon').length, 3);
+  // 4.7.4 Immediate: detonates as it lands.
+  check('an HE Grenade detonates immediately', immediateDetonation(byId.get('PDAM-007'))?.id, 'PDAM-007_A');
+  check('so does the Sardina, which prints it on a Tactic', immediateDetonation(byId.get('PDAM-005'))?.id, 'PDAM-005_A');
+  check('a guided Missile does not', immediateDetonation(byId.get('PDAM-002')), null);
+  check('nor the Zealot, whose 立刻引爆 is on being destroyed', immediateDetonation(byId.get('ZHDR-302')), null);
+}
+
 // The bonus does not chain: Slash's own text names nothing, so a kill with the
 // bonus attack grants no further attack.
 check('the Slash itself grants nothing, so it cannot chain',

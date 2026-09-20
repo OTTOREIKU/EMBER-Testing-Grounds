@@ -72,7 +72,7 @@ export interface GuideCallbacks {
   // `maneuver` marks the Mech's own Maneuver rather than a Movement Action, so
   // the driver knows whether an Ojs200's optional Flying Movement is on offer.
   onMoveUnit(uid: number, opts: { range?: number; label: string; maneuver?: boolean }, done: (moved: boolean) => void): void;
-  onPerformAction(uid: number, actionId: string, done: (performed: boolean) => void): void;
+  onPerformAction(uid: number, actionId: string, done: (performed: boolean, opts?: { twoHanded?: boolean }) => void): void;
   onSetStance(uid: number, stance: Stance): void;
   onIntercept(uid: number, actionId: string, targetUid: number): void;
   onRollFirstPlayer(side: Side): void;
@@ -1589,12 +1589,12 @@ export class PlayGuide {
     // The Tick is only spent if the action actually goes through, so backing out
     // of a target pick or a move costs nothing.
     // The driver is handed the real Action id, never the part key.
-    this.cb.onPerformAction(o.uid, row.action.id, (performed) => {
+    this.cb.onPerformAction(o.uid, row.action.id, (performed, opts) => {
       if (!performed) {
         this.render();
         return;
       }
-      perform(this.data, s, { kind: 'performAction', seat: t.side, uid: t.uid, actionId: row.action.id, partKey: row.partKey });
+      perform(this.data, s, { kind: 'performAction', seat: t.side, uid: t.uid, actionId: row.action.id, partKey: row.partKey, ...(opts?.twoHanded ? { twoHanded: true } : {}) });
       // A non-Silence action ends Optical Camouflage (4.12.2, FAQ I5). The
       // strict tracker reveals outright; teaching asks, in the house style.
       if (statusCount(t.statuses, 'camouflage') > 0 && !isSilentAction(this.data, s.tokens, t, row.action)) {

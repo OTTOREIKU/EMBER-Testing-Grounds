@@ -847,3 +847,10 @@
   .ah-side > .ah-felt { order: 1; }
   .ah-side > .ah-log { order: 2; }
 }
+
+/* The defender's Dodges, held for Lightning or spent on Hits. */
+.ah-dodgepick { display: flex; align-items: center; gap: 8px; margin: 8px 0; font-size: 12.5px; color: var(--text2); }
+.ah-dodgepick span { flex: 1; min-width: 0; }
+.ah-dodgepick b { font-family: var(--mono); min-width: 1.4em; text-align: center; color: var(--text); }
+.ah-dodgepick button { min-width: 34px; }
+

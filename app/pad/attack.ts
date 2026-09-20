@@ -11,7 +11,7 @@
 import type { GameData } from '../src/data';
 import type { Command, CheckResult } from '../src/commands';
 import { AttackHelper, combatRoleFor, type MirrorAct } from '../src/combat';
-import { armorPiercing, coolingBonus, grantAdjusted, isCharged, kcArmorReady, multiTargetLimit, pilotDiceBonus, stationaryAdjusted, structureOf, tokenCards, twoHandedUse } from '../src/units';
+import { eyeRerollName, missileGuidance, armorPiercing, coolingBonus, grantAdjusted, kcArmorReady, multiTargetLimit, pilotDiceBonus, stationaryAdjusted, structureOf, tokenCards, twoHandedUse } from '../src/units';
 import { statusCount } from '../src/types';
 import type { CardAction, DiceData, DieColor, GameState, PartSlot, Side, Token } from '../src/types';
 import type { RolledDie } from '../src/net';
@@ -35,6 +35,8 @@ export interface AttackApi {
   rollDice(pool: Record<string, number>, label?: string, brief?: RollBrief): Promise<{ dice: RolledDie[]; handsOff: boolean }>;
   // The Black Die read off the table, or null when the pad throws it.
   blackDie(): ((defender: Token) => Promise<number>) | null;
+  // Asked before a live attack is closed; false keeps the window open.
+  confirmCancel(): Promise<boolean>;
 }
 
 // What the table is told before it rolls: what to keep in mind, and where
@@ -96,7 +98,9 @@ function watchFor(side: 'attack' | 'defense'): string[] {
   // never reach here. A keyword the card gives only while CHARGED is read off
   // the text and named only when that Part's Charge Token is face up.
   const charged = /\[Charged\]\s*gains\s+([^.·]+)/i.exec(englishOf(action))?.[1]?.trim();
-  const chargedOn = !!charged && (() => { const s = slotOfAction(attacker, action.id); return !!s && isCharged(attacker, s); })();
+  // Named only when the Charge was CONSUMED for this attack (4.14): a face-up
+  // Token the player chose to keep gives the Action nothing.
+  const chargedOn = !!charged && !!current.verdict.chargeSpent;
   for (const k of action.keywords ?? []) {
     const key = k.key || k.inline || k.en || '';
     if (!key) continue;
@@ -107,6 +111,12 @@ function watchFor(side: 'attack' | 'defense'): string[] {
   if (charged && chargedOn) line(charged, ' (Charged)');
   if (side === 'attack') {
     if (attacker.kind === 'mech' && attacker.stance === 'offensive') out.push('Offensive Stance: hollow Hits count');
+    // An {Eye} reroll a unit on the table lends (Guidance Support, Coordinated
+    // Observation). The pad cannot see Range or sight, so it names the ability
+    // and whose it is, and the table decides whether it applies.
+    for (const b of missileGuidance(api!.data, api!.state().tokens, attacker, defender, action, { terrain: [] })) {
+      out.push(`${eyeRerollName(api!.data, b).name} (${b.label}): may reroll {Eye}`);
+    }
   } else {
     if (defender.kind === 'mech' && defender.stance === 'defensive') out.push('Defensive Stance: hollow Defense counts');
     if (defender.kind === 'mech' && defender.stance === 'mobility') out.push('Mobility Stance: Blue dice are Dodge');
@@ -117,6 +127,8 @@ function watchFor(side: 'attack' | 'defense'): string[] {
 
 // The table's answers to what the board used to read.
 export interface TableVerdict {
+  // The attacker consumed its Part's Charge Token for this Action (4.14).
+  chargeSpent?: boolean;
   // Terrain and Unit Protection stack (4.4.2): 0, one of them, or both.
   protection: 0 | 2 | 4;
   // Which of the two it was, so the defence popup can say where dice came from.
@@ -182,7 +194,9 @@ function blocksFor(side: 'attack' | 'defense', pool: Record<string, number>): Ro
     const total = pool[color] ?? 0;
     const rest = total - parts.reduce((s, p) => s + p.n, 0);
     if (rest) parts.push({ n: rest, why: 'Other' });
-    if (total > 0 || parts.length > 1) out.push({ color, parts: parts.filter((p, i) => i === 0 || p.n !== 0) });
+    // A colour the roll does not use is not shown at all (no "0 Red").
+    const kept = parts.filter((p, i) => i === 0 || p.n !== 0);
+    if (total > 0 || kept.some((p) => p.n !== 0)) out.push({ color, parts: kept });
   };
   if (side === 'attack') {
     const base = { red: printed.redDice ?? 0, yellow: printed.yellowDice ?? 0 };
@@ -219,6 +233,24 @@ function blocksFor(side: 'attack' | 'defense', pool: Record<string, number>): Ro
 
 function brief(side: 'attack' | 'defense', pool: Record<string, number>): RollBrief {
   return { watch: watchFor(side), blocks: blocksFor(side, pool) };
+}
+
+// 4.14: an effect conditional on being Charged applies only when the Charge
+// Token is consumed for THIS Action, and consuming it is the player's choice.
+// The window reads Surplus keywords off the Action's text, so a kept Charge
+// takes the [Charged] line out, and a consumed one turns a plain "gains X"
+// into a keyword the Action simply has. An either/or line (R7MG: Multi-target
+// 3 or Suppression) is left as printed for the table to settle.
+function chargeAdjusted(a: CardAction, spent: boolean): CardAction {
+  const zh = a.description?.zh ?? '';
+  if (!/\[充能\]/.test(zh)) return a;
+  const lines = zh.split('\n');
+  const gate = lines.find((l) => /\[充能\]/.test(l)) ?? '';
+  const rest = lines.filter((l) => !/\[充能\]/.test(l)).join('\n');
+  if (!spent) return { ...a, description: { ...a.description, zh: rest } };
+  const gain = /\[充能\]\s*获得\s*([^.。·;；或]+?)\s*[.。]?\s*$/.exec(gate.trim());
+  if (!gain || /或/.test(gate)) return a;
+  return { ...a, description: { ...a.description, zh: rest }, keywords: [...(a.keywords ?? []), { inline: gain[1].trim() }] };
 }
 
 function attackActionOf(t: Token, actionId: string): CardAction | undefined {
@@ -288,8 +320,9 @@ export function mountAttack(into: HTMLElement): AttackHelper | null {
   // null-guarded in the helper and stays off.
   h.noBoard = true;
   h.terse = true;
+  h.confirmCancel = () => a.confirmCancel();
   h.publishView = (view) => {
-    targetSlot = view.targetPart ?? targetSlot;
+    targetSlot = view?.targetPart ?? targetSlot;
     if (!mirrored()) return;
     const key = JSON.stringify(view);
     if (key === publishedKey) return;
@@ -338,8 +371,9 @@ export function beginAttack(attacker: Token, actionId: string, defender: Token, 
   if (!root) return false;
   const h = mountAttack(root);
   if (!h) { a.toast('No dice data loaded.'); return false; }
-  const action = attackActionOf(attacker, actionId);
-  if (!action) return false;
+  const adjusted = attackActionOf(attacker, actionId);
+  if (!adjusted) return false;
+  const action = chargeAdjusted(adjusted, !!verdict.chargeSpent);
   current = { attacker, action, printed: printedActionOf(attacker, actionId) ?? action, defender, verdict };
   targetSlot = defender.kind === 'mech' ? null : 'main';
   h.roller = async (pool, tag) => {

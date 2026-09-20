@@ -1220,3 +1220,15 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
 .pad-acts .ref-mech { display: none; }
 
 .td-term { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+
+/* A target's state under its name in the picker. */
+.pad-seat-toks { display: block; margin-top: 2px; font-size: 11.5px; font-weight: 400; color: var(--text3); white-space: normal; }
+.pad-designated { margin: 6px 0 0; line-height: 1.5; }
+.pad-inv-all { display: block; margin: 0 0 10px auto; min-height: 32px; font-size: 12px; }
+
+/* The score sheet on Tasks: one row per Task Item, then what the round pays. */
+.pad-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.pad-item-name { display: flex; flex-direction: column; min-width: 0; font-size: 14px; color: var(--text); }
+.pad-item-name small { font-size: 12px; color: var(--text2); }
+.pad-score-line { display: flex; align-items: baseline; gap: 10px; padding: 6px 0; font-size: 13.5px; color: var(--text2); }
+.pad-score-line b { font-family: var(--mono); min-width: 2.2em; text-align: right; font-size: 15px; }

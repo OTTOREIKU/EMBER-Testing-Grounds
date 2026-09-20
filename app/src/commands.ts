@@ -2,7 +2,7 @@ import type { BoardGrids, CombatView, Facing, GameState, MechLoadout, Opportunit
 import { addStatus, ageTokens, cellsOf, gridsOf, newOpportunity, PHASES, statusCount, STATUSES, TIMINGS } from './types';
 import type { GameData } from './data';
 import { cardName, transformFaces, unfoldsInto, discardFaceOf, environmentAllowance } from './data';
-import { covertCarryLock, ammoDeliveryPool, opportunityBonusOn, ripostePart, defenseReactionOn, targetTracingOn, riderOnDrone, hasFlexibleTiming, commandGeneration, blinkTargets, isPositionSwap, electronicOrigins, isSilentAction, maneuverIsSilent, loanedParts, unfoldToken, formSwitch, switchFormTo, extrasFor, consumesCharge, cutTethersOn, electronicDash, electronicValue, immobilizedStop, isScanAction, scannable, manifestationRange, nonHumanoidCost, nonHumanoidStop, envHotEntries, settleEnvironments, freehandSlots, interceptCapacity, anyStartTiming, focusIsFree, keepsLinkOnPartLoss, makeDroneToken, structureOf, makeMechToken, maneuverRange, maxLink, partsLeft, pilotCard, pilotIs, projectileDelivery, provokeWhy, settleTethers, SLOT_LABEL, tetherTo, tokenCards, transformPartOn, actionRange, isRwsAction, rwsCommandKey, rwsFiredKey, selfStatusGrant, selfGrantWhy, straightLineBonus, linkTickTraitOn, isCarrier, canBeLoad } from './units';
+import { covertCarryLock, ammoDeliveryPool, opportunityBonusOn, ripostePart, defenseReactionOn, targetTracingOn, riderOnDrone, hasFlexibleTiming, commandGeneration, blinkTargets, isPositionSwap, electronicOrigins, isSilentAction, maneuverIsSilent, loanedParts, unfoldToken, formSwitch, switchFormTo, extrasFor, consumesCharge, cutTethersOn, electronicDash, electronicValue, immobilizedStop, isScanAction, scannable, manifestationRange, nonHumanoidCost, nonHumanoidStop, envHotEntries, settleEnvironments, freehandSlots, twoHandedUse, interceptCapacity, anyStartTiming, focusIsFree, keepsLinkOnPartLoss, makeDroneToken, structureOf, makeMechToken, maneuverRange, maxLink, partsLeft, pilotCard, pilotIs, projectileDelivery, provokeWhy, settleTethers, SLOT_LABEL, tetherTo, tokenCards, transformPartOn, actionRange, isRwsAction, rwsCommandKey, rwsFiredKey, selfStatusGrant, selfGrantWhy, straightLineBonus, linkTickTraitOn, isCarrier, canBeLoad } from './units';
 import { tetherCap } from './melee';
 import { canActivate, canAttackMode, canManeuver, canOverload, canPerform, spendAction, spendActivation, spendAttackMode, spendManeuver, spendOverload } from './ticks';
 import { tacticSpec, tacticTargets, type TacticCtx } from './tactics';
@@ -96,7 +96,11 @@ export type Command =
   // Opportunity paid for -- Riposte's immediate Melee. It is never
   // self-authorising: check() looks for the matching debt in shared state, so a
   // client cannot act out of turn by asserting the flag.
-  | { kind: 'performAction'; seat: Side; uid: number; actionId: string; partKey?: string; granted?: boolean }
+  // twoHanded: the Action is performed with a designated Freehand, which on
+  // some cards changes what it COSTS ("[Two-Handed] this action is considered
+  // as Medium Action", card 129). The designation is the player's choice (FAQ
+  // A16), so the command says which way it went and the engine pays that length.
+  | { kind: 'performAction'; seat: Side; uid: number; actionId: string; partKey?: string; granted?: boolean; twoHanded?: boolean }
   | { kind: 'overload'; seat: Side; uid: number }
   // A pilot trait trading Link for an ordinary Action Tick (FPA-04-2 Domestic
   // Expert, FAQ L2). Same class of spend as overload, gated by the trait.
@@ -1859,7 +1863,9 @@ function checkActed(
       }
       // partKey names which Part the Action came from, so the same Action
       // borrowed from two Tarantulas is two Parts, not one repeated (FAQ O7).
-      return fromVerdict(canPerform(o, a, cmd.partKey || a.id, {
+      const use = cmd.twoHanded ? twoHandedUse(data, t, a) : null;
+      if (cmd.twoHanded && !use) return no('[Two-Handed] needs a free hand to designate, and this unit has none for that Action.');
+      return fromVerdict(canPerform(o, use?.action ?? a, cmd.partKey || a.id, {
         flexible: hasFlexibleTiming(data, state.tokens, t, a),
         anyTiming: anyStartTiming(data, t),
       }));
@@ -3389,11 +3395,14 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
         return;
       }
       if (a && o && sc) {
+        // The length PAID: a designated Freehand can shorten it (card 129), and
+        // the check above let the Action through on that same reading.
+        const paidAs = (cmd.twoHanded ? twoHandedUse(data, t, a)?.action : null) ?? a;
         sc.opp = t.kind === 'mech'
           // anyTiming rides along with flexible so the SPEND agrees with the
           // check that let the Action through -- miss it and a Starting Action
           // FPA-01 allowed is re-read as needing an Extra Tick it never used.
-          ? lockStance(t, spendAction(o, a, cmd.partKey || a.id, { flexible: hasFlexibleTiming(data, state.tokens, t, a), anyTiming: anyStartTiming(data, t) }))
+          ? lockStance(t, spendAction(o, paidAs, cmd.partKey || a.id, { flexible: hasFlexibleTiming(data, state.tokens, t, a), anyTiming: anyStartTiming(data, t) }))
           : spendActivation(o, a);
       }
       return;
@@ -3527,6 +3536,15 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       // A Command placed by hand is a Command the side may spend, so the pool
       // is recomputed from the board rather than nudged.
       if (COMMAND_FACES.has(cmd.statusId)) syncCommandPool(state);
+      // 6.3.2 / FAQ J5: "Projectiles with an Electronic Value are destroyed
+      // immediately if they obtain a Fire Control Interference Token." The EW
+      // window has always SAID so and nothing ever did it, on any page. Here,
+      // because every road to the Token - the window, a flash grenade, a hand
+      // placing it - ends in this command. It leaves the board like any other
+      // destroyed Unit (4.4.4); it is a Low Value Unit and scores nothing.
+      if (cmd.statusId === 'fci' && target.kind === 'projectile' && electronicValue(data, target) > 0) {
+        state.tokens = state.tokens.filter((x) => x.uid !== target.uid);
+      }
       return;
     }
     case 'ageStatus': {

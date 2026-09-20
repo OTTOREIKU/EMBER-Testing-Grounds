@@ -17,7 +17,7 @@ import { canAct, dialHidden, eligibleUnits, isLoopPhase, loopComplete, nextTurn,
 import { deployTurn, deployable, deploymentComplete, firstPlayerFrom, normaliseSetup, rollTotal } from '../src/setup';
 import { ensureScript } from '../src/glue';
 import { canActivate, canAttackMode, canOverload, canPerform, costOf, extrasLeft, lengthOf, OVERLOAD_MAX, type TickVerdict } from '../src/ticks';
-import { chargeableSlots, coordinationFor, coordinationOnOpportunityEnd, electronicValue, extraActivationOf, formSwitch, guidedActions, initiativeFor, isChargeAction, isElectronicAttack, linkTickTraitOn, loanedParts, opportunityBonusOn, pilotCard, repairSpec, resupplyOf, selfGrantWhy, selfStatusGrant, SLOT_LABEL, tokenCards, transformOffer, unfoldsOwed } from '../src/units';
+import { targetStatusGrant, twoHandedUse, chargeableSlots, coordinationFor, coordinationOnOpportunityEnd, electronicValue, extraActivationOf, formSwitch, guidedActions, initiativeFor, isChargeAction, isElectronicAttack, linkTickTraitOn, loanedParts, opportunityBonusOn, pilotCard, repairSpec, resupplyOf, selfGrantWhy, selfStatusGrant, SLOT_LABEL, tokenCards, transformOffer, unfoldsOwed } from '../src/units';
 import { normaliseTasks } from '../src/tasks';
 import { dialsOf, hashDials, newSalt, type DialEntry } from '../src/secrecy';
 import { PHASES, TIMINGS, type CardAction, type GameState, type PartSlot, type Side, type Timing, type Token } from '../src/types';
@@ -37,6 +37,9 @@ export interface GuideApi {
   render(): void;
   selectUnit(uid: number): void;
   sideName(s: Side): string;
+  // A side as the SUBJECT of a sentence ("X places next"). sideName's solo
+  // labels are Yours/Theirs, which are right on a tag and wrong before a verb.
+  actorName(s: Side): string;
   esc(s: string): string;
   // The Continue agreement the pad already runs on the bar.
   pressContinue(): void;
@@ -147,7 +150,7 @@ export function guideOnRemote(api: GuideApi, cmd: Command): void {
     const promised = api.state().script?.commits[cmd.seat];
     if (promised) {
       void hashDials(cmd.salt, cmd.dials).then((actual) => {
-        if (actual !== promised) api.toast(`${api.sideName(cmd.seat)}'s revealed dials do not match their commitment.`);
+        if (actual !== promised) api.toast(`${api.actorName(cmd.seat)}'s revealed dials do not match their commitment.`);
       });
     }
   }
@@ -279,7 +282,7 @@ function setupHtml(api: GuideApi, stage: string): string {
     }).join('');
     return head(api, 'Roll for First Player', '3.1.2', true) + rows
       + (tie ? '<p class="pad-turn-note">Tie: both roll again.</p>' : '')
-      + (winner ? `<p class="pad-turn-note">${api.esc(api.sideName(winner))} goes first.</p>${btn(api, 'g-accept', 'Continue', '', 'pad-chip on')}` : '');
+      + (winner ? `<p class="pad-turn-note">${api.esc(api.actorName(winner))} goes first.</p>${btn(api, 'g-accept', 'Continue', '', 'pad-chip on')}` : '');
   }
   if (stage === 'tasks') {
     const fp = s.round.firstPlayer;
@@ -293,14 +296,14 @@ function setupHtml(api: GuideApi, stage: string): string {
         ${mine(api, side) ? btn(api, 'g-secondary', card ? 'Change' : 'Choose', `data-side="${side}"`) : ''}</div>`;
     }).join('');
     const desig = owed.map((d, i) => `<div class="pad-turn-row"><span class="pad-turn-name">${api.esc(d.label)}</span>
-        ${mine(api, d.by) ? btn(api, 'g-designate-task', 'Choose', `data-i="${i}"`) : `<span class="pad-turn-val">${api.esc(api.sideName(d.by))} chooses</span>`}</div>`).join('');
+        ${mine(api, d.by) ? btn(api, 'g-designate-task', 'Choose', `data-i="${i}"`) : `<span class="pad-turn-val">${api.esc(api.actorName(d.by))} chooses</span>`}</div>`).join('');
     const done = !!tasks.secondary.s1 && !!tasks.secondary.s2 && !owed.length;
-    return head(api, 'Secondary Tasks', `${api.sideName(fp)} first (FAQ P1)`, true) + rows + desig
+    return head(api, 'Secondary Tasks', `${api.actorName(fp)} first (FAQ P1)`, true) + rows + desig
       + (done ? btn(api, 'g-tasks-done', 'Continue', '', 'pad-chip on') : '');
   }
   if (stage === 'side') {
     const fp = s.round.firstPlayer;
-    return head(api, `${api.sideName(fp)} picks a table edge`, '3.1.2', mine(api, fp))
+    return head(api, `${api.actorName(fp)} picks a table edge`, '3.1.2', mine(api, fp))
       + (mine(api, fp)
         ? `<div class="pad-chips">${btn(api, 'g-edge', 'White edge', 'data-edge="white"')}${btn(api, 'g-edge', 'Black edge', 'data-edge="black"')}</div>`
         : waiting(api, fp, 'picking an edge'));
@@ -312,14 +315,14 @@ function setupHtml(api: GuideApi, stage: string): string {
       <span class="pad-turn-name">${api.esc(t.label)}</span><span class="pad-turn-val">${api.esc(api.sideName(side))}</span>
       ${mine(api, side) && (api.solo || turn === side) ? btn(api, 'g-deploy', 'On the table', `data-uid="${t.uid}"`) : ''}</div>`));
   const rd = api.readiness();
-  return head(api, 'Deploy', turn ? `${api.sideName(turn)} places next (3.1.4)` : 'Everything is placed', !!turn && mine(api, turn))
+  return head(api, 'Deploy', turn ? `${api.actorName(turn)} places next (3.1.4)` : 'Everything is placed', !!turn && mine(api, turn))
     // Joined by hand: an array added to a string joins itself with commas,
     // and each one drew as a line of its own between the units.
     + rows.join('')
     + (complete
       ? (api.solo
         ? btn(api, 'g-deployed', 'Begin Round 1', '', 'pad-chip on')
-        : rd.me ? `<p class="pad-turn-note">Waiting for ${api.esc(api.sideName(other(api.me())))}.</p>` : btn(api, 'g-deployed', 'Begin Round 1', '', 'pad-chip on'))
+        : rd.me ? `<p class="pad-turn-note">Waiting for ${api.esc(api.actorName(other(api.me())))}.</p>` : btn(api, 'g-deployed', 'Begin Round 1', '', 'pad-chip on'))
       : '');
 }
 
@@ -331,12 +334,16 @@ function loopHtml(api: GuideApi, phase: LoopPhase): string {
     const t = s.tokens.find((x) => x.uid === opp.uid);
     if (t) {
       const owner = mine(api, t.side);
+      // "Moved" is offered only while the engine would take it: a Drone moves
+      // INSTEAD of acting, never after, and not at all in the Automatic Phase.
+      const mayMove = t.kind !== 'mech'
+        && api.check({ kind: 'maneuver', seat: t.side, uid: t.uid, to: { col: 0, row: 0 } }).ok;
       const what = phase === 'Command'
-        ? t.kind === 'mech' ? 'Fire the commanded Part (RWS), then end.' : 'One Command Action, or moved.'
-        : phase === 'Automatic' ? 'One Automatic Action, or moved.' : 'Its Delay Action, then end.';
+        ? t.kind === 'mech' ? 'Fire the commanded Part (RWS), then end.' : mayMove ? 'One Command Action, or moved.' : 'One Command Action, then end.'
+        : phase === 'Automatic' ? 'One Automatic Action, then end.' : 'Its Delay Action, then end.';
       return head(api, t.label, what, owner)
         + (owner
-          ? `<div class="pad-chips">${t.kind !== 'mech' ? btn(api, 'g-moved', 'Moved') : ''}${btn(api, 'g-end', 'End activation', '', 'pad-chip on')}</div>`
+          ? `<div class="pad-chips">${mayMove ? btn(api, 'g-moved', 'Moved') : ''}${btn(api, 'g-end', 'End activation', '', 'pad-chip on')}</div>`
           : waiting(api, t.side, 'acting'));
     }
   }
@@ -345,7 +352,7 @@ function loopHtml(api: GuideApi, phase: LoopPhase): string {
     return head(api, `${phase} Phase over`, '', true) + `<p class="pad-turn-note">Continue when both are ready.</p>`;
   }
   const noun = phase === 'Command' ? 'a Drone' : phase === 'Automatic' ? 'a Drone' : 'a Projectile';
-  if (!mine(api, turn)) return head(api, `${api.sideName(turn)} designates`, `${phase} Phase`, false) + waiting(api, turn, `picking ${noun} or passing`);
+  if (!mine(api, turn)) return head(api, `${api.actorName(turn)} designates`, `${phase} Phase`, false) + waiting(api, turn, `picking ${noun} or passing`);
   const units = eligibleUnits(s, phase, turn, api.data);
   const tokens = phase === 'Command' ? `<span class="pad-turn-val">Command Tokens · ${s.commandTokens?.[turn] ?? 0}</span>` : '';
   const rows = units.map((u) => btn(api, 'g-designate', u.label, `data-uid="${u.uid}" data-side="${turn}"`)).join('');
@@ -386,7 +393,7 @@ function planningHtml(api: GuideApi): string {
     foot = revealed
       ? '<p class="pad-turn-note">Both revealed. Continue when ready.</p>'
       : committed
-        ? `<p class="pad-turn-note">Committed. ${both ? 'Revealing…' : `Waiting for ${api.esc(api.sideName(other(me)))} to lock in.`}</p>`
+        ? `<p class="pad-turn-note">Committed. ${both ? 'Revealing…' : `Waiting for ${api.esc(api.actorName(other(me)))} to lock in.`}</p>`
         : btn(api, 'g-lock', unset ? `Lock in (${unset} left)` : 'Lock in', unset ? 'disabled' : '', 'pad-chip on');
   }
   return head(api, 'Set the Timing Dials', 'Planning Phase · hidden until both lock in', true) + rows.join('') + foot;
@@ -466,7 +473,7 @@ async function performRouted(api: GuideApi, t: Token, a: CardAction): Promise<vo
   if (forms) {
     const opts = forms.filter((id) => id !== t.cardId && d.byId.get(id));
     if (!opts.length) { api.toast('No other form of this unit is in the card data.'); return; }
-    form = opts.length === 1 ? opts[0] : await choiceDialog({ title: a.name.en, choices: opts.map((id) => ({ id, label: cardName(d.byId.get(id)!) })), stacked: true });
+    form = opts.length === 1 ? opts[0] : await choiceDialog({ title: a.name.en ?? a.id, choices: opts.map((id) => ({ id, label: cardName(d.byId.get(id)!) })), stacked: true });
     if (form === null) return;
   }
   let repair: { mode: 'repaired' | 'mend'; slot: string } | null = null;
@@ -480,7 +487,7 @@ async function performRouted(api: GuideApi, t: Token, a: CardAction): Promise<vo
       if (rep.mend && st === 'damaged') rows.push({ id: `mend:${slot}`, label: `Mend ${SLOT_LABEL[slot] ?? slot} · ${cardName(card)}` });
     }
     if (!rows.length) { api.toast(`${t.label} has nothing this can repair.`); return; }
-    const pick = await choiceDialog({ title: a.name.en, choices: rows, stacked: true });
+    const pick = await choiceDialog({ title: a.name.en ?? a.id, choices: rows, stacked: true });
     if (pick === null) return;
     const [mode, slot] = pick.split(':');
     repair = { mode: mode as 'repaired' | 'mend', slot };
@@ -499,19 +506,37 @@ async function performRouted(api: GuideApi, t: Token, a: CardAction): Promise<vo
       return (o.ammo?.[rule.actionId] ?? max) < max;
     });
     if (!holders.length) { api.toast('Nothing in reach has spent any of that Ammo.'); return; }
-    const pick = holders.length === 1 ? String(holders[0].uid) : await choiceDialog({ title: a.name.en, body: rule.range ? `This Mech, or an Ally within Range ${rule.range}.` : 'Only this Mech is in reach.', choices: holders.map((o) => ({ id: String(o.uid), label: `${o.label}${o.uid === t.uid ? ' (this Mech)' : ''}` })), stacked: true });
+    const pick = holders.length === 1 ? String(holders[0].uid) : await choiceDialog({ title: a.name.en ?? a.id, body: rule.range ? `This Mech, or an Ally within Range ${rule.range}.` : 'Only this Mech is in reach.', choices: holders.map((o) => ({ id: String(o.uid), label: `${o.label}${o.uid === t.uid ? ' (this Mech)' : ''}` })), stacked: true });
     if (pick === null) return;
     const to = holders.find((o) => String(o.uid) === pick)!;
     resupply = { to, actionId: rule.actionId, amount: rule.amount };
+  }
+  // A Token the Action puts on a chosen target (Target Tag's Highlight). The
+  // table judges range and sight; the pad asks who, before anything is paid.
+  let tagged: { uid: number; statusId: string; stacks: number } | null = null;
+  const tag = targetStatusGrant(a);
+  if (tag) {
+    const units = api.state().tokens.filter((x) => x.uid !== t.uid && x.deployed !== false
+      && (x.partStates[x.kind === 'mech' ? 'torso' : 'main'] ?? 'intact') !== 'destroyed'
+      && (tag.side === 'any' || (tag.side === 'enemy') === (x.side !== t.side)));
+    if (!units.length) { api.toast(`${a.name.en}: there is no unit to target.`); return; }
+    const pick = await choiceDialog({
+      title: a.name.en ?? a.id,
+      body: a.range ? `One target within Range ${a.range}, in line of sight.` : 'One target.',
+      choices: units.map((x) => ({ id: String(x.uid), label: `${x.side === t.side ? 'Ally' : 'Enemy'} · ${x.label}` })),
+      stacked: true,
+    });
+    if (pick === null) return;
+    tagged = { uid: Number(pick), statusId: tag.statusId, stacks: tag.stacks };
   }
   let chargeSlot: string | null = null;
   if (isChargeAction(a)) {
     const slots = chargeableSlots(d, t).filter((x) => !x.charged);
     if (!slots.length) { api.toast(`${t.label} has no Chargeable Part whose token is still face-down (4.14).`); return; }
-    chargeSlot = slots.length === 1 ? String(slots[0].slot) : await choiceDialog({ title: a.name.en, choices: slots.map((x) => ({ id: String(x.slot), label: x.label })), stacked: true });
+    chargeSlot = slots.length === 1 ? String(slots[0].slot) : await choiceDialog({ title: a.name.en ?? a.id, choices: slots.map((x) => ({ id: String(x.slot), label: x.label })), stacked: true });
     if (chargeSlot === null) return;
   }
-  if (!api.send({ kind: 'performAction', seat: t.side, uid: t.uid, actionId: a.id })) return;
+  if (!api.send({ kind: 'performAction', seat: t.side, uid: t.uid, actionId: a.id, ...(twoHandedUse(d, t, a) ? { twoHanded: true } : {}) })) return;
   api.toast(`${t.label}: ${a.name.en}.`);
   const seat = t.side;
   const uid = t.uid;
@@ -522,6 +547,7 @@ async function performRouted(api: GuideApi, t: Token, a: CardAction): Promise<vo
   if (mode) api.send({ kind: 'transformPart', seat, uid, slot: mode.slot, cardId: mode.into.id });
   if (unfoldsOwed(d, [t]).some((x) => x.actionId === a.id)) api.send({ kind: 'unfold', seat, uid });
   if (chargeSlot) api.send({ kind: 'setCharge', seat, uid, slot: chargeSlot as PartSlot, on: true });
+  if (tagged) api.send({ kind: 'applyStatus', seat, uid, targetUid: tagged.uid, statusId: tagged.statusId, stacks: tagged.stacks });
   if (resupply) api.send({ kind: 'restoreAmmo', seat: resupply.to.side, uid: resupply.to.uid, actionId: resupply.actionId, amount: resupply.amount });
   // Command Coordination off the back of the Action (the table judges the
   // Drone's range), then an Extra Action Opportunity the Action grants.
@@ -558,7 +584,11 @@ function endHtml(api: GuideApi): string {
   ];
   const done = (id: string) => sc.endDone.includes(`${s.round.n}:end:${id}`);
   const rows = steps.map((st) => `<div class="pad-turn-row"><span class="pad-turn-name">${api.esc(st.label)}</span>
-      ${done(st.id) ? '<span class="pad-turn-val">✓</span>' : (api.solo || api.me() === s.round.firstPlayer ? btn(api, 'g-endstep', 'Done', `data-step="${st.id}"`) : '<span class="pad-turn-val">…</span>')}</div>`).join('');
+      ${done(st.id) ? '<span class="pad-turn-val">✓</span>' : (api.solo || api.me() === s.round.firstPlayer
+        // Check Tasks opens the score sheet, whose Award settles the step; Done
+        // stays for a round that pays nothing.
+        ? `${st.id === 'tasks' ? btn(api, 'dock', 'Score', 'data-dock="tasks"', 'pad-chip on') : ''}${btn(api, 'g-endstep', 'Done', `data-step="${st.id}"`)}`
+        : '<span class="pad-turn-val">…</span>')}</div>`).join('');
   const all = steps.every((st) => done(st.id));
   const last = s.round.n >= (s.roundLimit ?? 5);
   return head(api, 'End Phase', `Round ${s.round.n}`, true) + rows
@@ -578,15 +608,19 @@ export function performButton(api: GuideApi, t: Token, a: CardAction, partKey: s
   if (a.type === 'Passive' || a.speed === 'passive') return '';
   const g = guidedActions(api.data, t).find((x) => x.action.id === a.id);
   if (g && !g.available) return '';
-  const len = lengthOf(a);
+  // The pad takes a free hand whenever there is one, and that can change the
+  // length paid (card 129: Long performed as Medium).
+  const hands = twoHandedUse(api.data, t, a);
+  const paidAs = hands?.action ?? a;
+  const len = lengthOf(paidAs);
   // The engine's own answer: Ticks or the activation, and every rule that
   // sits on top of them - the icon lock, RWS, Shutdown. A length-less Mech
   // Action is not a choice an Opportunity pays for, so it gets no button.
   if (t.kind === 'mech' && !len) return '';
-  const chk = api.check({ kind: 'performAction', seat: t.side, uid: t.uid, actionId: a.id, partKey });
+  const chk = api.check({ kind: 'performAction', seat: t.side, uid: t.uid, actionId: a.id, partKey, ...(hands ? { twoHanded: true } : {}) });
   const v: TickVerdict = chk.ok ? { ok: true } : { ok: false, why: chk.why ?? 'Not now' };
   void opp;
-  const cost = costOf(a);
+  const cost = costOf(paidAs);
   const price = cost ? `${cost.maneuver ? 'M' : ''}${'●'.repeat(cost.action)}` : '';
   return v.ok
     ? `<button class="pad-chip on pad-perform" data-act="g-perform" data-uid="${t.uid}" data-id="${api.esc(a.id)}">Perform${price ? ` ${price}` : ''}</button>`
@@ -703,7 +737,7 @@ export function guideAct(api: GuideApi, a: string, el: HTMLElement): boolean {
         const launch = api.launch;
         if (a.projectiles.length === 1) { launch(t.uid, a.action.id, a.projectiles[0].id); return true; }
         void choiceDialog({
-          title: a.action.name.en,
+          title: a.action.name.en ?? a.action.id,
           choices: a.projectiles.map((p) => ({ id: p.id, label: cardName(p) })),
           stacked: true,
         }).then((pick) => { if (pick !== null) launch(t.uid, a.action.id, pick); });
@@ -771,7 +805,7 @@ export function guideAct(api: GuideApi, a: string, el: HTMLElement): boolean {
       void (async () => {
         const pick = melees.length === 1 ? melees[0].id : await choiceDialog({
           title: 'Riposte',
-          choices: melees.map((a) => ({ id: a.id, label: a.name.en })),
+          choices: melees.map((a) => ({ id: a.id, label: a.name.en ?? a.id })),
           stacked: true,
         });
         if (pick === null) return;

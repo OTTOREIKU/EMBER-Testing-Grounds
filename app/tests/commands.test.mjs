@@ -453,7 +453,8 @@ const fireM = { id: 'A2', type: 'Firing', size: 'm', name: { en: 'Barrage' } };
 const ovlAct = { id: '090_A', type: 'Passive', size: 'm', name: { en: 'Overload' } };
 const data = {
   byId: new Map([
-    ['T1', { id: 'T1', actions: [fire, fireM] }],
+    ['T1', { id: 'T1', actions: [fire, fireM, { id: 'A3', type: 'Firing', size: 'l', name: { en: 'Missile' }, description: { zh: '· [双手]视为中动作.' } }] }],
+    ['H1', { id: 'H1', keywords: [{ en: 'Freehand' }], actions: [] }],
     ['T2', { id: 'T2', actions: [ovlAct] }],
     ['T3', { id: 'T3', structure: 2, actions: [] }],
     ['T4', { id: 'T4', actions: [{ id: 'L1', type: 'Projectile', size: 'm', name: { en: 'Launcher' }, storage: 3 }] }],
@@ -599,6 +600,21 @@ C.apply(data, wp, pa());
 check('apply spends one tick for a short', wp.script.opp.action, 1);
 C.apply(data, wp, pa({ actionId: 'A2' }));
 check('a medium after a short cannot pay', C.check(data, wp, pa({ actionId: 'A2' })).ok, false);
+// [Two-Handed] "is considered as Medium Action" (card 129): a Long costs the
+// Maneuver Tick, the same Action with both hands does not.
+// The REAL twoHandedUse reads this, so the Mech needs a real free hand.
+const handed = () => mech(1, 's1', { mech: { torso: 'T1', leftHand: 'H1', pilot: 'P1' }, partStates: { torso: 'intact', leftHand: 'intact' } });
+const moved = () => world([handed()], 2, opp(1, { maneuver: 0, maneuvered: true, moved: true }));
+check('a Long cannot be paid once the Maneuver Tick is gone', C.check(data, moved(), pa({ actionId: 'A3' })).ok, false);
+check('with both hands it is paid as a Medium', C.check(data, moved(), pa({ actionId: 'A3', twoHanded: true })).ok, true);
+const wth = world([handed()], 2, opp(1));
+C.apply(data, wth, pa({ actionId: 'A3', twoHanded: true }));
+check('and the SPEND is the Medium: the Maneuver Tick survives', [wth.script.opp.maneuver, wth.script.opp.action], [1, 0]);
+const wlong = world([handed()], 2, opp(1));
+C.apply(data, wlong, pa({ actionId: 'A3' }));
+check('one-handed it still costs the Long', [wlong.script.opp.maneuver, wlong.script.opp.action], [0, 0]);
+check('claiming both hands on an Action with no rider is refused', C.check(data, world([handed()], 2, opp(1)), pa({ twoHanded: true })).ok, false);
+check('and so is claiming them with no free hand', C.check(data, wm(), pa({ actionId: 'A3', twoHanded: true })).ok, false);
 // The dial gate lives in the same check the engine uses.
 const wwrong = world([mech(1, 's1')], 2, opp(1, { timing: 'melee' }));
 check('the starting action must match the dial', C.check(data, wwrong, pa()).ok, false);
@@ -713,6 +729,15 @@ check('a made-up status is refused', C.check(data, duel(), st2({ statusId: 'conf
 const wst = duel();
 C.apply(data, wst, st2({ stacks: 2 }));
 check('apply stacks the token', wst.tokens[1].statuses, ['fci', 'fci']);
+// 6.3.2 / FAQ J5: a Projectile WITH an Electronic Value is destroyed the
+// moment it gains the Token; one without is merely jammed.
+const jamData = { ...data, byId: new Map([...data.byId, ['PJ1', { id: 'PJ1', electronic: 2, actions: [] }], ['PJ0', { id: 'PJ0', actions: [] }]]) };
+const shell = (uid, cardId) => ({ uid, side: 's2', kind: 'projectile', label: `P${uid}`, col: 6, row: 6, facing: 0, cardId, partStates: { main: 'intact' }, statuses: [] });
+const wjam = world([mech(1, 's1'), shell(2, 'PJ1'), shell(3, 'PJ0')]);
+C.apply(jamData, wjam, st2());
+check('a jammed Projectile with an Electronic Value leaves the board', wjam.tokens.map((x) => x.uid), [1, 3]);
+C.apply(jamData, wjam, st2({ targetUid: 3 }));
+check('one with no Electronic Value only wears the Token', [wjam.tokens.map((x) => x.uid), wjam.tokens[1].statuses], [[1, 3], ['fci']]);
 
 // ---------- focus ----------
 

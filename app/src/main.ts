@@ -957,7 +957,7 @@ async function init() {
   // The guide is meant to play the turn, not just tally it, so each Action Type
   // opens the tool that actually resolves it. The Tick is only spent if the
   // action goes through, so backing out costs nothing.
-  function performGuided(uid: number, actionId: string, report: (performed: boolean) => void): void {
+  function performGuided(uid: number, actionId: string, report: (performed: boolean, opts?: { twoHanded?: boolean }) => void): void {
     const t = state.tokens.find((x) => x.uid === uid);
     const action = t && findAction(t, actionId);
     // 4.12.3: any Action without the Silence Keyword removes the Low Profile
@@ -978,7 +978,7 @@ async function init() {
     // Passive is carved out for the same reason it is in the command (4.12.3
     // exempts it by name); Interception never arrives here, it has its own
     // spendIntercept path.
-    const done = (performed: boolean): void => {
+    const done = (performed: boolean, opts?: { twoHanded?: boolean }): void => {
       const passive = action?.type === 'Passive' || action?.speed === 'passive';
       if (performed && t && action && !passive
         && statusCount(t.statuses, 'lowProfile') > 0
@@ -986,7 +986,7 @@ async function init() {
         perform(data, state, { kind: 'removeStatus', seat: t.side, uid: t.uid, targetUid: t.uid, statusId: 'lowProfile' });
         logTo(t, `${action.name.en || action.name.zh || action.id} is not Silent, so ${t.label} loses its Low Profile Token (4.12.3).`);
       }
-      report(performed);
+      report(performed, opts);
     };
     if (!t || !action) return done(false);
     selectToken(uid);
@@ -1080,9 +1080,13 @@ async function init() {
       // [Two-Handed]: OFFERED (FAQ A16), through the one question both doors
       // on this page ask; the Match Centre asks it as a switch on its picker.
       void askTwoHanded(t, granted).then((adjusted) => {
+      // The designation can change the LENGTH paid (card 129), so the payment
+      // at the end is told which way the question went.
+      const both = adjusted !== granted && !adjusted.twoHandedDeclined;
+      const paid = both ? (performed: boolean): void => done(performed, { twoHanded: true }) : done;
       const proceed = (): void => {
         void offerChargeSpend(t, actionId);
-        pendingAttack = { attackerUid: uid, actionId, mode: electronic ? 'electronic' : 'attack', action: adjusted, done };
+        pendingAttack = { attackerUid: uid, actionId, mode: electronic ? 'electronic' : 'attack', action: adjusted, done: paid };
         document.body.classList.add('targeting');
         if (adjusted.range) board.showRangeRings(t, adjusted.range);
         const reach = adjusted.range ? ` Range ${adjusted.range} is shown.${adjusted !== action ? ' Stationary applies.' : ''}` : '';
