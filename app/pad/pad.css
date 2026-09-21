@@ -231,6 +231,9 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
 
 .pad-chip:hover { background: var(--surface3); color: var(--text); }
 .pad-chip.on { background: var(--accent-lt); color: var(--accent); }
+/* A chip that cannot be pressed now says so: faded, no hover, no pointer. */
+.pad-chip:disabled { opacity: 0.4; cursor: default; }
+.pad-chip:disabled:hover { background: var(--surface2); color: var(--text2); }
 .pad-chip .fc-n { font-family: var(--mono); font-size: 10.5px; opacity: 0.75; margin-left: 5px; font-variant-numeric: tabular-nums; }
 
 /* ---------- lobby ---------- */

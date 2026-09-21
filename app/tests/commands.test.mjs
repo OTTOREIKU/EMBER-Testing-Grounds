@@ -1897,6 +1897,34 @@ C.apply(data, depLobby, { kind: 'setReady', seat: 's1', ready: true });
 C.apply(data, depLobby, { kind: 'finishDeployment', seat: 's1' });
 check('finishing deployment consumes the ready flags', JSON.stringify(depLobby.ready), '{}');
 
+// ---------- the host's override of a running Guided game ----------
+{
+  const running = () => ({ ...openTable(), mission: 'control-flank-attack', tokens: [{ ...mech(1, 's1'), deployed: true }, { ...mech(2, 's2'), deployed: false }],
+    script: { strict: true, opp: null }, setup: { ...C.newSetup(), stage: 'done' }, guidedPlay: true, tasks: { ...C.newSetupTasks?.() } });
+  const w = running();
+  const newTask = { kind: 'configureTable', seat: 's1', mission: 'terminal-data-extraction' };
+  check('a running game will not change its Main Task', C.check(data, w, newTask).ok, false);
+  check('only the host may unlock it', C.check(data, w, { kind: 'configureTable', seat: 's2', unlocked: true }).ok, false);
+  check('the host may', C.check(data, w, { kind: 'configureTable', seat: 's1', unlocked: true }).ok, true);
+  C.apply(data, w, { kind: 'configureTable', seat: 's1', unlocked: true });
+  check('unlocked, the Main Task can be corrected', C.check(data, w, newTask).ok, true);
+  check('and a squad can still join', C.check(data, w, { kind: 'importSquad', seat: 's2', name: 'late', mechs: [], drones: [{ cardId: 'D1' }] }).ok, true);
+  C.apply(data, w, { kind: 'configureTable', seat: 's1', unlocked: false });
+  check('locked again, a late squad is refused', C.check(data, w, { kind: 'importSquad', seat: 's2', name: 'late', mechs: [], drones: [{ cardId: 'D1' }] }).ok, false);
+  check('locked again, the rules are back', C.check(data, w, newTask).ok, false);
+  // Guided to Freeform: the game stays, what made it Guided goes.
+  w.tasks = { ...(w.tasks ?? {}), vp: { s1: 4, s2: 2 } };
+  check('only the host may leave Guided', C.check(data, w, { kind: 'leaveGuided', seat: 's2' }).ok, false);
+  const mid = running(); mid.script.opp = { uid: 1 };
+  check('not with an Opportunity open', C.check(data, mid, { kind: 'leaveGuided', seat: 's1' }).ok, false);
+  check('otherwise the host may', C.check(data, w, { kind: 'leaveGuided', seat: 's1' }).ok, true);
+  C.apply(data, w, { kind: 'leaveGuided', seat: 's1' });
+  check('the script and the setup are gone', [w.setup, w.script, w.guidedPlay], [null, undefined, undefined]);
+  check('the score and the Main Task stay', [w.tasks.vp, w.mission], [{ s1: 4, s2: 2 }, 'control-flank-attack']);
+  check('and nothing is left waiting to deploy', w.tokens.map((t) => t.deployed), [undefined, undefined]);
+  check('it cannot be left twice', C.check(data, w, { kind: 'leaveGuided', seat: 's1' }).ok, false);
+}
+
 // Neither of those agreements is only a drawn button: across a table the rule
 // is checked here, so one player cannot start the game or end deployment on
 // the other's behalf however the click was made.

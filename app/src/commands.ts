@@ -277,6 +277,10 @@ export type Command =
   // A hold-zone Task settled BY HAND, the claimItem of a Secondary: `side` is
   // whose Task it is, `seat` only who recorded it.
   | { kind: 'claimZone'; seat: Side; side: Side; held: boolean }
+  // A running Guided game becomes a Freeform one: the script and the setup go,
+  // everything ON the table stays (units, damage, Tokens, Tasks, score, round).
+  // One way only, and the host's call.
+  | { kind: 'leaveGuided'; seat: Side }
   // A Part's damage state set OUTRIGHT, the way freeplay's inspector lets a
   // player cycle it by hand. applyPenetration is the RULE - it walks the ladder,
   // drops a Link, stamps who dealt it - and stays the only thing an attack
@@ -320,7 +324,7 @@ export type Command =
   // The table itself: map, zones, mission and scale used to be local
   // mutations, which is why a host's picks never reached the guest. Tasks
   // ride in the command pre-derived, like dials ride in a reveal.
-  | { kind: 'configureTable'; seat: Side; map?: string; grids?: BoardGrids; zones?: GameState['zones'] | null; deployZones?: GameState['deployZones'] | null; zoneSet?: string; mission?: string | null; tasks?: GameState['tasks']; scale?: GameState['scale']; tableDice?: boolean; guidedPlay?: boolean; roundLimit?: number; noBoard?: boolean }
+  | { kind: 'configureTable'; seat: Side; map?: string; grids?: BoardGrids; zones?: GameState['zones'] | null; deployZones?: GameState['deployZones'] | null; zoneSet?: string; mission?: string | null; tasks?: GameState['tasks']; scale?: GameState['scale']; tableDice?: boolean; guidedPlay?: boolean; unlocked?: boolean; roundLimit?: number; noBoard?: boolean }
   | { kind: 'startMatch'; seat: Side }
   | { kind: 'endMatch'; seat: Side }
   // A squad's open-information Secondary Task pick (3.1.3). The seat is the
@@ -523,7 +527,7 @@ type TableKind =
   | 'configureTable' | 'startMatch' | 'endMatch' | 'pickSecondary' | 'setTactics' | 'setInventory' | 'setReady' | 'designateTask'
   | 'callDefense' | 'answerDefense' | 'clearDefense' | 'setCombatView' | 'focusAnswer' | 'focusReroll' | 'kcArmor' | 'designateHit' | 'meleeEvade' | 'dodgeEnhance' | 'riposte'
   | 'setRollbackCatalog' | 'rollbackRequest' | 'rollbackAnswer'
-  | 'claimItem' | 'claimZone' | 'setPartState';
+  | 'claimItem' | 'claimZone' | 'leaveGuided' | 'setPartState';
 const TABLE_KINDS = new Set<Command['kind']>([
   'advancePhase', 'setPhase', 'resetRounds', 'adjustCommandTokens', 'passTurn', 'markEndStep', 'award',
   'lockMap', 'rollSetup', 'acceptRoll', 'noteRoll', 'finishTasks', 'pickEdge', 'lockDials', 'finishDeployment',
@@ -535,7 +539,7 @@ const TABLE_KINDS = new Set<Command['kind']>([
   'configureTable', 'startMatch', 'endMatch', 'pickSecondary', 'setTactics', 'setInventory', 'setReady', 'designateTask',
   'callDefense', 'answerDefense', 'clearDefense', 'setCombatView', 'focusAnswer', 'focusReroll', 'kcArmor', 'designateHit', 'meleeEvade', 'dodgeEnhance', 'riposte',
   'setRollbackCatalog', 'rollbackRequest', 'rollbackAnswer',
-  'claimItem', 'claimZone', 'setPartState',
+  'claimItem', 'claimZone', 'leaveGuided', 'setPartState',
 ]);
 
 // Table commands whose seat is attribution rather than a choice one squad
@@ -555,7 +559,7 @@ const ATTRIBUTED = new Set<Command['kind']>([
   // seat is pure attribution and gets stamped like any other table command.
   'queueReactions',
   'setMode', 'setStrict', 'adjustCommandTokens', 'designateTask', 'clearCounterRoll',
-  'configureTable', 'startMatch', 'endMatch',
+  'configureTable', 'startMatch', 'endMatch', 'leaveGuided',
   // The seat on a hand-made claim is WHO RECORDED IT, never whose Item it is -
   // that rides in `side`. Stamped like any other table command so either player
   // may keep the sheet without the server refusing it as the other squad's.
@@ -630,6 +634,15 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       }
       return ok;
     }
+    case 'leaveGuided': {
+      if (cmd.seat !== 's1') return no('Only the host may take the game out of Guided play.');
+      if (!normaliseSetup(state.setup)) return no('This is not a Guided game.');
+      // Mid-attack or mid-Opportunity there is a half-paid Action on the table;
+      // dropping the script under it would strand it.
+      if (state.script?.combat) return no('Finish the attack first.');
+      if (state.script?.opp) return no('End the open Action Opportunity first.');
+      return ok;
+    }
     case 'claimZone': {
       if (cmd.side !== 's1' && cmd.side !== 's2') return no('That is not a squad.');
       if (!normaliseTasks(state.tasks).zone[cmd.side]) return no('That squad has not designated a Tactical Zone.');
@@ -648,7 +661,7 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
     case 'configureTable': {
       if (cmd.map === undefined && cmd.grids === undefined && cmd.zones === undefined && cmd.deployZones === undefined
         && cmd.zoneSet === undefined && cmd.mission === undefined && cmd.tasks === undefined && cmd.scale === undefined
-        && cmd.roundLimit === undefined && cmd.noBoard === undefined && cmd.tableDice === undefined && cmd.guidedPlay === undefined) {
+        && cmd.roundLimit === undefined && cmd.noBoard === undefined && cmd.tableDice === undefined && cmd.guidedPlay === undefined && cmd.unlocked === undefined) {
         return no('Nothing to configure.');
       }
       // The board size rides with the map it was authored at, so both seats
@@ -666,6 +679,11 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       // made the guide's own "Change the Main Task" button refuse in silence:
       // the button exists precisely in the window this used to close.
       const setup = normaliseSetup(state.setup);
+      // The unlock is the HOST's alone (seat 1 opens every room; the seat on a
+      // table command is the sender's own, so this holds on every client).
+      if (cmd.unlocked !== undefined && cmd.seat !== 's1') return no('Only the host may unlock or lock the game.');
+      // Unlocked, the two setup locks below stand aside: that is its whole job.
+      if (state.unlocked) return ok;
       if (cmd.map !== undefined && battlefieldLocked(setup)) {
         return no('The battlefield is locked once the game starts (3.1.2). End the game to change it.');
       }
@@ -942,7 +960,7 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       // End game clears the setup but leaves the script standing, so the
       // script alone must not lock a table that has gone back to free play.
       const su = normaliseSetup(state.setup);
-      if (su && su.stage === 'done') {
+      if (su && su.stage === 'done' && !state.unlocked) {
         return no('Squads join before deployment is finished (3.1.4). End the game to change the table freely.');
       }
       return ok;
@@ -2757,6 +2775,7 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
     if (cmd.noBoard !== undefined) state.noBoard = cmd.noBoard ? true : undefined;
     if (cmd.tableDice !== undefined) state.tableDice = cmd.tableDice ? true : undefined;
     if (cmd.guidedPlay !== undefined) state.guidedPlay = cmd.guidedPlay ? true : undefined;
+    if (cmd.unlocked !== undefined) state.unlocked = cmd.unlocked ? true : undefined;
     if (cmd.map !== undefined) {
       state.map = cmd.map;
       state.removedTerrain = [];
@@ -3196,6 +3215,18 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
   if (cmd.kind === 'setPartState') {
     const target = state.tokens.find((x) => x.uid === cmd.uid);
     if (target) target.partStates[cmd.slot] = cmd.state;
+    return;
+  }
+  if (cmd.kind === 'leaveGuided') {
+    // What the game WAS stays; what made it Guided goes. Not endMatch: that one
+    // wipes the Tasks and the score, which is exactly what must survive here.
+    state.setup = null;
+    delete state.script;
+    state.guidedPlay = undefined;
+    state.unlocked = undefined;
+    state.ready = undefined;
+    // Every unit is simply on the table now; nothing is waiting to deploy.
+    for (const t of state.tokens) t.deployed = undefined;
     return;
   }
   if (cmd.kind === 'claimZone') {

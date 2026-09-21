@@ -1336,6 +1336,11 @@ export interface GameState {
   // The pad's Freeform / Guided choice, on the TABLE so the player who joins
   // a room sees what the host picked instead of their own phone's default.
   guidedPlay?: boolean;
+  // The HOST has lifted the setup locks of a running Guided game (the Main Task
+  // and battlefield after the edges, squads after deployment), to correct
+  // something entered wrong without abandoning the game. On the table, so both
+  // phones agree about what may be changed.
+  unlocked?: boolean;
   sideNames?: Partial<Record<Side, string>>;
   // Lobby only: a seat saying it has finished reading and is happy to start.
   ready?: Partial<Record<Side, boolean>>;

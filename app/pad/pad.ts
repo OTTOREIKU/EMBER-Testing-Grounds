@@ -38,7 +38,7 @@ import { Relay, type NetView, type RolledDie } from '../src/net';
 import { applyRemote, check, onBeforeApply, onPerformed, onRefused, perform, taskDesignations, type Command } from '../src/commands';
 import { glueAfter } from '../src/glue';
 import { askDesignation, designationsFor, activeOpp, continueAllowed, finishIfBothReady, guideAct, guideOnRemote, guidedOn, performButton, startGuided, startIfBothReady, turnHtml, type GuideApi } from './guided';
-import { countHits, normaliseSetup } from '../src/setup';
+import { countHits, normaliseSetup, tasksLocked } from '../src/setup';
 import { attackActive, attackOnCommand, attackWatching, beginAttack, initAttack, isAttackAction, mountAttack, sweepView, syncMirror, type TableVerdict } from './attack';
 import { registerOffline } from '../src/offline';
 import { askTablePool, askTableRoll, askTargetPart } from './tabledice';
@@ -2081,7 +2081,22 @@ function setupPanel(): string {
       <button class="pad-btn primary" data-act="${wantsGuided() && !guidedOn(table) ? 'g-start' : 'close-panel'}">${
         wantsGuided() && !guidedOn(table) ? (view.room && readiness().me ? 'Waiting for the other player…' : 'Start the guided game') : 'Start'}</button>
     </div>
+    ${overrideHtml()}
   </div>`;
+}
+
+// A running Guided game, corrected or left behind. Both are the HOST's: a
+// correction changes what both players agreed to, and leaving Guided cannot be
+// taken back. The other player is only told the state.
+function overrideHtml(): string {
+  if (!guidedOn(table)) return '';
+  const host = solo || view.host;
+  const on = !!table.unlocked;
+  if (!host) return on ? '<p class="pad-note">The host has unlocked the game: the Tasks, the layout and the squads can be changed.</p>' : '';
+  return `<p class="pad-label pad-sec">Override</p>
+    <button class="pad-btn${on ? ' primary' : ''}" data-act="unlock" data-on="${on ? '0' : '1'}" aria-pressed="${on}">${on ? 'Unlocked · tap to lock' : 'Unlock'}</button>
+    ${on ? '<p class="pad-note">The Main Task, the layout and the squads can now be changed, though Guided play normally settles them. Lock it again when the correction is made.</p>' : ''}
+    <button class="pad-btn" data-act="leave-guided">Switch to Freeform</button>`;
 }
 
 // ---------- tasks ----------
@@ -2113,6 +2128,20 @@ function taskCard(attr: string, art: string, name: string, text: string, tag: st
 // What a side's Tasks were pointed at when they were designated: the enemy
 // Mech a Bounty names, a Leader, a Tactical Zone. Chosen once in setup and
 // not shown again anywhere, so a player could not check it mid-game.
+// Three Main Task cards dealt; each squad discards one on Tasks (3.1.3).
+function drawThree(): void {
+  if (!data) return;
+  const pool = [...data.missions.cards.map((c) => c.id)];
+  const three: string[] = [];
+  while (three.length < 3 && pool.length) three.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+  send({ kind: 'configureTable', seat: mySeat(), tasks: { ...normaliseTasks(table.tasks), draw: three, drawDiscards: {} } });
+}
+
+// The engine freezes the Main Task once the table edges are picked (FAQ P1).
+function mainTaskLocked(): boolean {
+  return tasksLocked(normaliseSetup(table.setup)) && !table.unlocked;
+}
+
 // Whatever a side's Task still needs named, asked one after another. Each
 // answer takes one off the list; backing out of a question stops the asking
 // and leaves the Choose button on the Tasks card.
@@ -2289,7 +2318,9 @@ function tasksPanel(): string {
         <span class="pad-task-body"><span class="pad-task-name">${esc(c.name)}</span>${by ? `<span class="pad-task-text">discarded by ${esc(sideName(by))}</span>` : ''}</span>
         ${canDiscard ? `<button class="pad-chip" data-act="discard-task" data-id="${esc(c.id)}">Discard${solo && disc.s1 ? ` (${esc(sideName('s2'))})` : ''}</button>` : ''}
       </div>`;
-    }).join('')}</div>` : '';
+    }).join('')}</div>
+    ${mainTaskLocked() ? '<p class="pad-note">The Main Task is settled once the table edges are picked (FAQ P1), so this draw cannot finish.</p>' : ''}
+    <button class="pad-btn" data-act="draw-cancel">Cancel the draw</button>` : '';
 
   const layout = data!.terrain.maps.find((m) => m.id === table.map);
   const layoutHtml = `<p class="pad-label pad-sec">Layout</p>
@@ -2349,9 +2380,13 @@ function tasksPanel(): string {
     ${layoutHtml}
     ${envHtml}
     ${drawHtml || (mission
-      ? slot('Main Task', mission, missionImageUrl, `data-mission="${esc(mission.id)}"`, 'pick-main', mainDesignated())
+      ? slot('Main Task', mission, missionImageUrl, `data-mission="${esc(mission.id)}"`, mainTaskLocked() ? null : 'pick-main', mainDesignated())
       : `<p class="pad-label pad-sec">Main Task</p>
-         <div class="pad-chips"><button class="pad-chip on" data-act="draw-tasks">Draw 3</button><button class="pad-chip" data-act="pick-main">Choose</button></div>`)}
+         ${mainTaskLocked()
+           // Offering a draw the engine will refuse to finish is how a table got
+           // stuck on "discard" with no way to a Main Task.
+           ? '<p class="pad-note">Not chosen. The Main Task is settled once the table edges are picked (FAQ P1).</p>'
+           : '<div class="pad-chips"><button class="pad-chip on" data-act="draw-tasks">Draw 3</button><button class="pad-chip" data-act="pick-main">Choose</button></div>'}`)}
     ${slot(`${sideName(me)} · Secondary`, secondaryOf(me), secondaryImageUrl, secondaryOf(me) ? `data-secondary="${esc(secondaryOf(me)!.id)}"` : '', 'pick-sec', designated(me))}
     ${slot(`${sideName(them)} · Secondary`, secondaryOf(them), secondaryImageUrl, secondaryOf(them) ? `data-secondary="${esc(secondaryOf(them)!.id)}"` : '', solo ? 'pick-sec-them' : null, designated(them))}
     <p class="pad-label pad-sec">Notes</p>
@@ -2364,7 +2399,7 @@ function tasksPanel(): string {
 // A running game whose deployment has closed takes no more units (the rule
 // lives in importSquad's check; this only reads the same setup stage).
 function squadsClosed(): boolean {
-  return normaliseSetup(table.setup)?.stage === 'done';
+  return normaliseSetup(table.setup)?.stage === 'done' && !table.unlocked;
 }
 
 function morePanel(): string {
@@ -3883,6 +3918,15 @@ function act(el: HTMLElement, ev: Event): void {
       panel = null;
       render();
       return;
+    case 'g-main':
+      // From the Guided strip: draw three (the discards are made on Tasks), or
+      // pick one outright and come straight back.
+      panel = 'tasks';
+      if (el.dataset.how === 'draw') { pickFromGuide = false; drawThree(); return; }
+      pickFromGuide = true;
+      picking = 'main';
+      render();
+      return;
     case 'g-secondary':
       pickFromGuide = true;
       picking = 'secondary';
@@ -4094,12 +4138,11 @@ function act(el: HTMLElement, ev: Event): void {
       return;
     }
     case 'pick-main': picking = 'main'; render(); return;
-    case 'draw-tasks': {
-      if (!data) return;
-      const pool = [...data.missions.cards.map((c) => c.id)];
-      const three: string[] = [];
-      while (three.length < 3 && pool.length) three.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
-      send({ kind: 'configureTable', seat: mySeat(), tasks: { ...normaliseTasks(table.tasks), draw: three, drawDiscards: {} } });
+    case 'draw-tasks': drawThree(); return;
+    case 'draw-cancel': {
+      // Out of a draw that cannot finish (or is simply not wanted).
+      const { draw: _d, drawDiscards: _dd, ...rest } = normaliseTasks(table.tasks);
+      send({ kind: 'configureTable', seat: mySeat(), tasks: rest });
       return;
     }
     case 'discard-task': {
@@ -4121,6 +4164,14 @@ function act(el: HTMLElement, ev: Event): void {
     }
     case 'set-layout': send({ kind: 'configureTable', seat: mySeat(), map: el.dataset.id ?? '' }); return;
     case 'designate': void askOwed(el.dataset.side as Side); return;
+    case 'unlock': send({ kind: 'configureTable', seat: mySeat(), unlocked: el.dataset.on === '1' }); return;
+    case 'leave-guided':
+      void confirmDialog({
+        title: 'Switch to Freeform?',
+        body: 'The turn strip and its rules go. The units, damage, Tokens, Tasks, score and round stay as they are. This cannot be switched back.',
+        confirmLabel: 'Switch to Freeform',
+      }).then((go) => { if (go && send({ kind: 'leaveGuided', seat: mySeat() })) { panel = null; render(); } });
+      return;
     case 'designate-leader': {
       const i = data ? taskDesignations(data, table).findIndex((d) => d.what === 'leader' && d.side === el.dataset.side) : -1;
       if (i >= 0) void askDesignation(guide, i);
@@ -4152,6 +4203,7 @@ function act(el: HTMLElement, ev: Event): void {
       picking = null;
       if (el.dataset.kind === 'mission') {
         if (!send({ kind: 'configureTable', seat: mySeat(), mission: id })) return;
+        if (pickFromGuide) { pickFromGuide = false; panel = null; render(); }
         // VIP: Assassination needs each squad's Commander named; asked at once,
         // like a Secondary's target, for whichever this phone may answer.
         void (async () => {

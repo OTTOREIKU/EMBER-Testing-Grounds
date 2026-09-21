@@ -307,8 +307,20 @@ function setupHtml(api: GuideApi, stage: string): string {
     }).join('');
     const desig = owed.map((d, i) => `<div class="pad-turn-row"><span class="pad-turn-name">${api.esc(d.label)}</span>
         ${mine(api, d.by) ? btn(api, 'g-designate-task', 'Choose', `data-i="${i}"`) : `<span class="pad-turn-val">${api.esc(api.actorName(d.by))} chooses</span>`}</div>`).join('');
+    // FAQ P1: the Main Task is determined (step 3) BEFORE the Secondaries
+    // (steps 4-5). It also has to be settled here, because the engine freezes
+    // it once the table edges are picked - a draw left half-done past this
+    // point could never finish.
+    const main = s.mission ? api.data.missions.cards.find((c) => c.id === s.mission) : undefined;
+    const drawing = (tasks.draw ?? []).length > 0;
+    const mainRow = `<div class="pad-turn-row"><span class="pad-turn-name">Main Task</span>
+        <span class="pad-turn-val">${main ? api.esc(main.name) : drawing ? 'Discarding…' : '—'}</span>
+        ${drawing ? btn(api, 'dock', 'Discard', 'data-dock="tasks"', 'pad-chip on')
+          : main ? btn(api, 'g-main', 'Change', 'data-how="pick"')
+            : `${btn(api, 'g-main', 'Draw 3', 'data-how="draw"', 'pad-chip on')}${btn(api, 'g-main', 'Choose', 'data-how="pick"')}`}</div>`;
+    if (!main) return head(api, 'Main Task', 'FAQ P1', true) + mainRow;
     const done = !!tasks.secondary.s1 && !!tasks.secondary.s2 && !owed.length;
-    return head(api, 'Secondary Tasks', `${api.actorName(fp)} first (FAQ P1)`, true) + rows + desig
+    return head(api, 'Secondary Tasks', `${api.actorName(fp)} first (FAQ P1)`, true) + mainRow + rows + desig
       + (done ? btn(api, 'g-tasks-done', 'Continue', '', 'pad-chip on') : '');
   }
   if (stage === 'side') {
@@ -323,7 +335,10 @@ function setupHtml(api: GuideApi, stage: string): string {
   const complete = deploymentComplete(s);
   const rows = (['s1', 's2'] as Side[]).flatMap((side) => deployable(s, side).map((t) => `<div class="pad-turn-row">
       <span class="pad-turn-name">${api.esc(t.label)}</span><span class="pad-turn-val">${api.esc(api.sideName(side))}</span>
-      ${mine(api, side) && (api.solo || turn === side) ? btn(api, 'g-deploy', 'On the table', `data-uid="${t.uid}"`) : ''}</div>`));
+      ${mine(api, side) && (api.solo || turn === side)
+        // Tracking solo both squads' units are listed, so the ones whose turn it
+        // is NOT are greyed out rather than left looking pressable.
+        ? btn(api, 'g-deploy', 'On the table', `data-uid="${t.uid}"${turn === side ? '' : ' disabled'}`) : ''}</div>`));
   const rd = api.readiness();
   return head(api, 'Deploy', turn ? `${api.actorName(turn)} places next (3.1.4)` : 'Everything is placed', !!turn && mine(api, turn))
     // Joined by hand: an array added to a string joins itself with commas,
@@ -883,6 +898,7 @@ export function guideAct(api: GuideApi, a: string, el: HTMLElement): boolean {
       return true;
     }
     case 'g-secondary': return false; // the pad's own Tasks panel picks it
+    case 'g-main': return false; // and the Main Task too
   }
   return false;
 }
