@@ -767,10 +767,24 @@ function pendingGuidedHtml(): string {
     </div>`;
 }
 
+// A seat by number. "Yours" and "Theirs" read wrong the moment one phone
+// tracks both squads, or a sentence needed a subject (OTTO, 2026-09-21).
+function seatTag(s: Side): string {
+  return s === 's1' ? 'P1' : 'P2';
+}
+
+// The player's name at a table, Player 1 / Player 2 otherwise.
 function sideName(s: Side): string {
   const room = view.room;
   if (room?.seats[s]) return room.seats[s]!;
-  return s === mySeat() ? 'Yours' : 'Theirs';
+  return s === 's1' ? 'Player 1' : 'Player 2';
+}
+
+// For a chip or a label with no room to spare: the name while it is short,
+// the seat tag otherwise.
+function shortSide(s: Side): string {
+  const name = view.room?.seats[s];
+  return name && name.length <= 8 ? name : seatTag(s);
 }
 
 // A side as the SUBJECT of a sentence. In a room that is the player's name.
@@ -783,7 +797,7 @@ function actorName(s: Side): string {
   const mine = table.sideNames?.[s]?.trim();
   const other = table.sideNames?.[s === 's1' ? 's2' : 's1']?.trim();
   if (mine && mine.toLowerCase() !== (other ?? '').toLowerCase()) return mine;
-  return s === mySeat() ? 'Your squad' : 'The other squad';
+  return s === 's1' ? 'Player 1' : 'Player 2';
 }
 
 // ---------- squads ----------
@@ -1782,7 +1796,7 @@ function unitHead(t: Token, yours: boolean): string {
   const core = cards.find((c) => c.slot === 'torso' || c.slot === 'main')?.card;
   const fac = core ? data!.factionOf(core) : null;
   const pilot = t.kind === 'mech' ? pilotCard(data!, t) : undefined;
-  const line = [yours ? 'Yours' : 'Theirs', KIND_LABEL[t.kind], t.kind === 'mech' ? STANCE_LABEL[t.stance] ?? t.stance : ''].filter(Boolean).join(' · ');
+  const line = [sideName(t.side), KIND_LABEL[t.kind], t.kind === 'mech' ? STANCE_LABEL[t.stance] ?? t.stance : ''].filter(Boolean).join(' · ');
   return `<div class="pad-uhead card-framed"${fac ? ` data-fac="${esc(fac)}"` : ''}>
     ${unitArt(t)}
     <div class="pad-uhead-t">
@@ -1953,8 +1967,8 @@ function dockHtml(): string {
   const item = (id: string, label: string, extra = '') =>
     `<button class="pad-dock-b${lit === id ? ' on' : ''}" data-act="dock" data-dock="${id}" aria-pressed="${lit === id}">${extra}<span>${label}</span></button>`;
   const dot = (s: Side) => `<span class="pad-dock-dot" style="background:${sideColour(s)}"></span>`;
-  return item('yours', 'Yours', dot(me))
-    + item('theirs', 'Theirs', dot(them))
+  return item('yours', seatTag(me), dot(me))
+    + item('theirs', seatTag(them), dot(them))
     + item('tasks', 'Tasks')
     + item('find', 'Find')
     + item('more', 'More');
@@ -2068,8 +2082,8 @@ function scoreSheet(tasks: TaskState): string {
   const wantsZone = (m as { scoringZone?: string }).scoringZone;
   const claimChips = (itemId: string, held: Side | null | undefined) => `<span class="pad-chips">
       <button class="pad-chip${!held ? ' on' : ''}" data-act="claim" data-item="${esc(itemId)}" data-side="">None</button>
-      <button class="pad-chip${held === me ? ' on' : ''}" data-act="claim" data-item="${esc(itemId)}" data-side="${me}">Yours</button>
-      <button class="pad-chip${held === them ? ' on' : ''}" data-act="claim" data-item="${esc(itemId)}" data-side="${them}">Theirs</button>
+      <button class="pad-chip${held === me ? ' on' : ''}" data-act="claim" data-item="${esc(itemId)}" data-side="${me}">${esc(shortSide(me))}</button>
+      <button class="pad-chip${held === them ? ' on' : ''}" data-act="claim" data-item="${esc(itemId)}" data-side="${them}">${esc(shortSide(them))}</button>
     </span>`;
   const rows = tasks.items.map((i) => {
     if (i.kind !== 'blackbox') {
@@ -2138,7 +2152,7 @@ function tasksPanel(): string {
   }
   if (picking === 'secondary') {
     return `<div class="pad-panel-in">${panelHead('Secondary Task')}
-      <p class="pad-lead">${pickFor === me ? 'Yours.' : `${esc(sideName(pickFor))}.`}</p>
+      <p class="pad-lead">${esc(sideName(pickFor))}.</p>
       <div class="pad-tasklist">${data!.secondary.map((c) =>
         taskCard(`data-act="pick-task" data-kind="secondary" data-id="${esc(c.id)}"`, secondaryImageUrl(c.id), c.name, c.scoring ?? '', `${c.vp ?? 0} VP`)).join('')}</div>
       <button class="pad-btn" data-act="pick-cancel">Cancel</button>
@@ -2214,7 +2228,7 @@ function tasksPanel(): string {
   return `<div class="pad-panel-in">${panelHead('Tasks')}
     ${errHtml()}
     ${recordHtml}
-    <div class="pad-vp">${vpSide(me, 'Yours')}${vpSide(them, 'Theirs')}</div>
+    <div class="pad-vp">${vpSide(me, shortSide(me))}${vpSide(them, shortSide(them))}</div>
     ${scoreSheet(tasks)}
     ${layoutHtml}
     ${envHtml}
@@ -2222,9 +2236,9 @@ function tasksPanel(): string {
       ? slot('Main Task', mission, missionImageUrl, `data-mission="${esc(mission.id)}"`, 'pick-main')
       : `<p class="pad-label pad-sec">Main Task</p>
          <div class="pad-chips"><button class="pad-chip on" data-act="draw-tasks">Draw 3</button><button class="pad-chip" data-act="pick-main">Choose</button></div>`)}
-    ${slot('Your Secondary', secondaryOf(me), secondaryImageUrl, secondaryOf(me) ? `data-secondary="${esc(secondaryOf(me)!.id)}"` : '', 'pick-sec')}
+    ${slot(`${sideName(me)} · Secondary`, secondaryOf(me), secondaryImageUrl, secondaryOf(me) ? `data-secondary="${esc(secondaryOf(me)!.id)}"` : '', 'pick-sec')}
     ${designated(me)}
-    ${slot('Their Secondary', secondaryOf(them), secondaryImageUrl, secondaryOf(them) ? `data-secondary="${esc(secondaryOf(them)!.id)}"` : '', solo ? 'pick-sec-them' : null)}
+    ${slot(`${sideName(them)} · Secondary`, secondaryOf(them), secondaryImageUrl, secondaryOf(them) ? `data-secondary="${esc(secondaryOf(them)!.id)}"` : '', solo ? 'pick-sec-them' : null)}
     ${designated(them)}
     <p class="pad-label pad-sec">Notes</p>
     <textarea class="pad-input" id="pad-notes" rows="3" placeholder="Notes"></textarea>
@@ -2273,8 +2287,8 @@ function morePanel(): string {
 
     <p class="pad-label pad-sec">Squads</p>
     ${solo ? `<div class="pad-chips" style="margin-bottom:8px">
-      <button class="pad-chip${squadSide === 's1' ? ' on' : ''}" data-act="squad-side" data-side="s1">Yours</button>
-      <button class="pad-chip${squadSide === 's2' ? ' on' : ''}" data-act="squad-side" data-side="s2">Theirs</button>
+      <button class="pad-chip${squadSide === 's1' ? ' on' : ''}" data-act="squad-side" data-side="s1">P1</button>
+      <button class="pad-chip${squadSide === 's2' ? ' on' : ''}" data-act="squad-side" data-side="s2">P2</button>
     </div>` : ''}
     <button class="pad-btn primary" data-act="file">Squad file…</button>
     <button class="pad-btn" data-act="build">Build a Mech</button>
@@ -2854,7 +2868,7 @@ function inventoryPanel(): string {
     const facs = [...new Set(items.map(fac))].sort((a, b) => rank(a) - rank(b));
     return facs.map((f) => {
       const members = items.filter((x) => fac(x) === f).sort((a, b) => Number(first(b)) - Number(first(a)));
-      return `<p class="pad-label pad-inv-fac">${esc(facLabel(f))}</p>${members.map(draw).join('')}`;
+      return `<p class="pad-label pad-inv-fac">${esc(facLabel(f))}</p><div class="pad-inv-group">${members.map(draw).join('')}</div>`;
     }).join('');
   };
   const boxRow = (b: typeof boxes[number]) => {
@@ -2862,11 +2876,12 @@ function inventoryPanel(): string {
     return `<div class="pad-row pad-inv-row${n ? ' owned' : ''}">
       <span class="pad-part-name">${esc(b.name.en || b.name.zh || b.key)}</span>
       <div class="pad-chips pad-inv-count">
+        ${n ? `<button class="pad-chip pad-inv-all" data-act="inv-box-all" data-key="${esc(b.key)}" title="Add everything in this box as built pieces">Build all</button>` : ''}
         <button class="pad-chip" data-act="inv-box" data-key="${esc(b.key)}" data-d="-1" aria-label="One fewer"${n ? '' : ' disabled'}>−</button>
         <span class="pad-inv-n">${n}</span>
         <button class="pad-chip" data-act="inv-box" data-key="${esc(b.key)}" data-d="1" aria-label="One more">+</button>
       </div>
-    </div>${n ? `<button class="pad-chip pad-inv-all" data-act="inv-box-all" data-key="${esc(b.key)}">Add all as built</button>` : ''}`;
+    </div>`;
   };
   const singles = Object.entries(col.cards)
     .map(([id, n]) => ({ card: d.byId.get(id), id, n }))
@@ -4192,7 +4207,7 @@ function act(el: HTMLElement, ev: Event): void {
       void promptDialog({
         title: 'Save this squad',
         body: `${mechs.length} mech${mechs.length === 1 ? '' : 's'}, ${drones.length} drone${drones.length === 1 ? '' : 's'}${tactics.length ? ` and ${tactics.length} Tactics Card${tactics.length === 1 ? '' : 's'}` : ''}. Reusing a name overwrites it.`,
-        value: sideName(seat) === 'Yours' || sideName(seat) === 'Theirs' ? '' : sideName(seat),
+        value: /^Player [12]$/.test(sideName(seat)) ? '' : sideName(seat),
         placeholder: 'Squad name',
         confirmLabel: 'Save',
       }).then((name) => {
