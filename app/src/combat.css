@@ -230,6 +230,17 @@
   transition: filter 0.12s;
 }
 .ah-primary:hover { filter: brightness(1.08); }
+/* "Pass" on a Focus offer: the same size and shape as the Focus button under
+   it, in a neutral fill with an edge, so it is plainly a button without
+   competing with the accent of the choice that costs a Link. */
+.ah-pass {
+  display: block; width: 100%; margin: 8px 0; padding: 7px 0;
+  background: var(--surface3); color: var(--text); font-weight: 700; font-size: 12.5px;
+  border: none; box-shadow: inset 0 0 0 1px var(--border); border-radius: var(--radius);
+  cursor: pointer; font-family: var(--font); transition: background 0.12s;
+}
+.ah-pass:hover:not(:disabled) { background: #2c3542; }
+.ah-pass:disabled { background: var(--surface2); color: var(--text3); cursor: default; }
 /* WAS an emoji muted with `filter: grayscale(1)`, which is what a desaturated
    emoji looks like: muddy, differently shaped on every platform, and unable to
    take an accent colour. The icons are inline SVG on currentColor now, so the
@@ -834,6 +845,7 @@
 
 .ah-partpick { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
 .ah-partpick .chip { width: 100%; }
+.ah-partpick .chip.on { outline: 2px solid var(--accent); outline-offset: -2px; }
 .ah-log {
   background: var(--bg); border: none; border-radius: var(--radius);
   font-size: 11.5px; padding: 7px 9px; color: var(--text2); max-height: 180px; overflow-y: auto;

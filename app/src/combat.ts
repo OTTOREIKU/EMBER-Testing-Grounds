@@ -894,6 +894,8 @@ export class AttackHelper {
   // How many Dodges the defender COULD hold back for Lightning in the roll
   // just resolved; 0 when the choice would change nothing. Set by resolve().
   private lightningChoice = 0;
+  // The Part tapped on the designation chips and not yet confirmed.
+  private pendingPart: string | null = null;
   // The Black Die has landed this attack (see spinBlack).
   private blackLanded = false;
   // Asked before a live attack is closed; false keeps the window open. The
@@ -1424,6 +1426,7 @@ export class AttackHelper {
     this.mirroring = null;
     this.handsOff = false;
     this.tableOutcome = null;
+    this.pendingPart = null;
     this.blackLanded = false;
     this.ctx = {
       attacker,
@@ -1988,12 +1991,15 @@ export class AttackHelper {
       use.disabled = use.disabled || sent;
       use.addEventListener('click', () => declared(true));
       const pass = document.createElement('button');
-      pass.className = 'ah-alt';
+      pass.className = 'ah-pass';
       pass.textContent = 'Pass';
       pass.disabled = !mine || sent;
       pass.addEventListener('click', () => declared(false));
-      wrap.appendChild(use);
+      // PASS FIRST. It is what a player presses most of the time, and with
+      // Focus on top a hurried thumb spent a Link it did not mean to (OTTO,
+      // 2026-09-21). It also reads as a button now, not as a line of text.
       wrap.appendChild(pass);
+      wrap.appendChild(use);
     };
     if (f.stage === 'declareA') declare('attacker');
     // One call for both, because declare() now carries the waiting sentence
@@ -3623,13 +3629,29 @@ export class AttackHelper {
       // Disabled rather than hidden, so the reader still sees WHICH Parts are
       // on the target and that the die is what picks between them.
       b.disabled = !this.mayDrive('attacker') || !this.mayPickPart();
-      b.addEventListener('click', () => {
-        this.note(`Target Part chosen: ${SLOT_LABEL[slot]}.`);
-        this.pickPart(slot);
-      });
+      // A DESIGNATED Part is chosen, then confirmed. One tap used to commit it
+      // and move on to the rolls, so a slip of the thumb on a Back Attack could
+      // not be taken back (OTTO, 2026-09-21). Tapping another chip moves the
+      // choice; only Confirm advances.
+      if (this.pendingPart === slot && !b.disabled) b.classList.add('on');
+      b.setAttribute('aria-pressed', String(this.pendingPart === slot));
+      b.addEventListener('click', () => { this.pendingPart = slot; this.render(); });
       pickWrap.appendChild(b);
     }
     wrap.appendChild(pickWrap);
+    const chosen = this.pendingPart;
+    if (chosen && this.mayDrive('attacker') && this.mayPickPart()
+      && !(c.surplusRound > 0 && chosen === c.surplusOriginalPart)) {
+      const ok = document.createElement('button');
+      ok.className = 'ah-primary';
+      ok.textContent = `Confirm ${SLOT_LABEL[chosen as PartSlot | 'main'] ?? chosen}`;
+      ok.addEventListener('click', () => {
+        this.pendingPart = null;
+        this.note(`Target Part chosen: ${SLOT_LABEL[chosen as PartSlot | 'main'] ?? chosen}.`);
+        this.pickPart(chosen);
+      });
+      wrap.appendChild(ok);
+    }
     return wrap;
   }
 
@@ -3707,7 +3729,8 @@ export class AttackHelper {
       offer.remove();
       this.settleBlack(landed, caption);
     });
-    offer.append(go, keep);
+    // Keep first, for the same reason Pass is: it is the usual answer.
+    offer.append(keep, go);
     stage.appendChild(offer);
   }
 

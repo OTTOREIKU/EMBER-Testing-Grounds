@@ -38,7 +38,7 @@ import { Relay, type NetView, type RolledDie } from '../src/net';
 import { applyRemote, check, onBeforeApply, onPerformed, onRefused, perform, type Command } from '../src/commands';
 import { glueAfter } from '../src/glue';
 import { activeOpp, continueAllowed, finishIfBothReady, guideAct, guideOnRemote, guidedOn, performButton, startGuided, startIfBothReady, turnHtml, type GuideApi } from './guided';
-import { countHits } from '../src/setup';
+import { countHits, normaliseSetup } from '../src/setup';
 import { attackActive, attackOnCommand, attackWatching, beginAttack, initAttack, isAttackAction, mountAttack, sweepView, syncMirror, type TableVerdict } from './attack';
 import { registerOffline } from '../src/offline';
 import { askTablePool, askTableRoll, askTargetPart } from './tabledice';
@@ -64,7 +64,7 @@ import { checkForUpdates, watchForUpdates } from '../src/updates';
 import { normaliseTasks, taskItemsFor, type TaskState } from '../src/tasks';
 import { previewScore } from '../src/scoring';
 import { tacticFitsPhase, tacticSpec, tacticTargets, type TacticCtx } from '../src/tactics';
-import { explosionScope, freehandSlots, immediateDetonation, smokePlacement, squadAllegiance, twoHandedUse } from '../src/units';
+import { explosionScope, freehandSlots, targetStatusGrant, immediateDetonation, smokePlacement, squadAllegiance, twoHandedUse } from '../src/units';
 import { gameResult } from '../src/tasks';
 import { canBeLoad, chargeableSlots, electronicDash, electronicValue, guidedActions, initiativeFor, interceptCapacity, isCarrier, isDeployable, isElectronicAttack, maneuverRange, maxLink, migrateState, parryParts, pilotCard, structureOf, tokenCards, volleyOf } from '../src/units';
 import { lengthOf, LENGTH_NAME, timingOf } from '../src/ticks';
@@ -117,7 +117,7 @@ function resetTable(): void {
   table = freshTable();
   picks.s1 = null;
   picks.s2 = null;
-  openSlot = null;
+  resetSheetViews();
   side = null;
   panel = null;
   looks = [];
@@ -279,9 +279,14 @@ let side: Side | null = null;
 const picks: Record<Side, number | null> = { s1: null, s2: null };
 // Which Part row is open on the sheet, showing its Actions. One at a time: the
 // sheet is a list, and two open rows push the tokens off the screen.
-let openSlot: string | null = null;
+// WHAT IS OPEN ON A SHEET BELONGS TO THAT SHEET. These were single values, so
+// folding the Actions on P1 folded them on P2, and on a wide screen opening one
+// player's Torso opened the other's (OTTO, 2026-09-21). One record per side:
+// `drawSide` is the sheet being drawn, `actSide` the sheet a tap came from.
+interface SheetView { slot: string | null; action: string | null; tokPick: boolean; tokManage: string | null; acts: boolean }
+let drawSide: Side = 's1';
+let actSide: Side = 's1';
 // Which action in the unit's action list is open, by action id.
-let openAction: string | null = null;
 let panel: Panel = null;
 // The host is shown the table setup once, when the room comes up.
 let setupPending = false;
@@ -292,10 +297,8 @@ let picking: 'main' | 'secondary' | 'environment' | null = null;
 let pickFor: Side = 's1';
 // Whether the token picker is open. A flag rather than a <details>: the sheet
 // redraws on every relay change, and an open <details> would snap shut.
-let tokPick = false;
 // The worn token being inspected, if any. Tapping a worn token opens the
 // token's own rule text with the Remove a deliberate second tap.
-let tokManage: string | null = null;
 // The search. `q` lives here and not in the input, so a redraw mid-word keeps
 // what was typed; the input is only ever written back from it.
 const find: { q: string; scope: FindScope } = { q: '', scope: 'all' };
@@ -325,7 +328,19 @@ const FOLDS_KEY = 'ember.pad.folds';
 let folds: Record<string, boolean> = (() => { try { return JSON.parse(stored(FOLDS_KEY) ?? '{}') as Record<string, boolean>; } catch { return {}; } })();
 function foldOpen(key: string): boolean { return !!folds[key]; }
 // The sheet's Actions fold, remembered on this phone; open until closed.
-let actsOpen = stored(ACTS_KEY) !== 'closed';
+// The Actions fold, per side. The old single 'open' / 'closed' still reads, as
+// both sides' starting state.
+const sheetView: Record<Side, SheetView> = (() => {
+  const raw = stored(ACTS_KEY);
+  let acts: Partial<Record<Side, boolean>> = {};
+  if (raw === 'closed') acts = { s1: false, s2: false };
+  else if (raw && raw !== 'open') { try { acts = JSON.parse(raw) as Partial<Record<Side, boolean>>; } catch { acts = {}; } }
+  const mk = (side: Side): SheetView => ({ slot: null, action: null, tokPick: false, tokManage: null, acts: acts[side] !== false });
+  return { s1: mk('s1'), s2: mk('s2') };
+})();
+function resetSheetViews(): void {
+  for (const v of [sheetView.s1, sheetView.s2]) { v.slot = null; v.action = null; v.tokPick = false; v.tokManage = null; }
+}
 // The server reaps an idle room after an hour, so a code older than that is a
 // code for a table that is not there. Same window the Match Centre uses.
 const ROOM_WINDOW_MS = 60 * 60 * 1000;
@@ -993,6 +1008,7 @@ const guide: GuideApi = {
   endGame: () => { void endGame(); },
   detonate: (uid, actionId) => { const t = unitOf(uid); if (t) void detonate(t, actionId); },
   stabilise: (uid) => { const t = unitOf(uid); if (t) stabilise(t); },
+  pickDiscard: async (uid) => { const t = unitOf(uid); return t ? pickDiscard(t) : null; },
   tactics: (side) => ({
     playable: guidedOn(table) && !playedThisRound(side)
       ? handOf(side).filter((id) => tacticFitsPhase(id, PHASES[table.round.phase] ?? '')).map((id) => ({ id, name: data ? cardName(data.byId.get(id)!) : id }))
@@ -1543,6 +1559,7 @@ function chipName(u: Token): string {
 // ---------- the sheet ----------
 
 function sheetHtml(s: Side = shownSide()): string {
+  drawSide = s;
   if (!data) {
     return `<div class="pad-sheet-in"><p class="pad-status">${dataError ? esc(dataError) : 'Loading the card database…'}</p></div>`;
   }
@@ -1596,7 +1613,7 @@ function sheetHtml(s: Side = shownSide()): string {
     </div>` : ''}
 
     ${statStrip(t)}
-    ${(() => { const list = actionList(t, mine && !wrecked); return list ? `<details class="pad-fold pad-acts-fold"${actsOpen ? ' open' : ''}><summary class="pad-label pad-sec">Actions</summary>${list}</details>` : ''; })()}
+    ${(() => { const list = actionList(t, mine && !wrecked); return list ? `<details class="pad-fold pad-acts-fold"${sheetView[drawSide].acts ? ' open' : ''}><summary class="pad-label pad-sec">Actions</summary>${list}</details>` : ''; })()}
 
     <p class="pad-label pad-sec">Parts</p>
     ${partRows(t)}
@@ -1681,7 +1698,7 @@ function actionList(t: Token, mine: boolean): string {
       rows.push(`<p class="pad-label pad-sec pad-act-group">${esc(group)}</p>`);
       lastGroup = group;
     }
-    const open = openAction === g.action.id;
+    const open = sheetView[drawSide].action === g.action.id;
     const len = lengthOf(twoHandedUse(d, t, g.action)?.action ?? g.action);
     // The Part by NAME as well as slot: two arms can print the same "Single
     // Shot", and the Laser and the Ion one are told apart by the weapon.
@@ -1701,6 +1718,10 @@ function actionList(t: Token, mine: boolean): string {
         ? `<button class="pad-chip on pad-perform" data-act="attack" data-uid="${t.uid}" data-id="${esc(g.action.id)}">Attack</button>`
         : mine && g.available && isElectronicAttack(g.action)
           ? `<button class="pad-chip on pad-perform" data-act="attack" data-mode="electronic" data-uid="${t.uid}" data-id="${esc(g.action.id)}">Electronic</button>`
+          : mine && g.available && targetStatusGrant(g.action)
+            // Target Tag and its like: a Tactic that puts a Token on a chosen
+            // unit. Freeform pays no Ticks, so the button only asks who.
+            ? `<button class="pad-chip on pad-perform" data-act="tag" data-uid="${t.uid}" data-id="${esc(g.action.id)}">Use</button>`
           : mine && g.available && g.projectiles.length
             ? g.projectiles.map((p) => `<button class="pad-chip on pad-perform" data-act="launch" data-id="${esc(g.action.id)}" data-projectile="${esc(p.id)}">Launch${g.projectiles.length > 1 ? ` ${esc(cardName(p))}` : ''}</button>`).join('')
             : '');
@@ -1722,6 +1743,32 @@ function actionList(t: Token, mine: boolean): string {
 // does not pay Ticks on a free table, so there a row only offers what has a
 // tool - the attack window for the Punch, the counter-roll for the Scan, the
 // Link for Stabilize, the reveal for Reveal.
+// The card in a slot, by name, for a question that lists Parts.
+function partName(t: Token, slot: string): string {
+  const id = t.mech?.[slot as PartSlot];
+  const card = id ? data?.byId.get(id) : undefined;
+  return card ? cardName(card) : slot;
+}
+
+// |Discard| (6.1, 4.17): a Handheld Part goes to its Discard Card. The flip is
+// the engine's `disarm`, aimed at the Mech's own Part - the same procedure the
+// book gives a forced Disarm.
+async function pickDiscard(t: Token): Promise<string | null> {
+  if (!data) return null;
+  const held = tokenCards(data, t).filter(({ slot, card }) => slot !== 'pilot'
+    && (t.partStates[slot as PartSlot] ?? 'intact') !== 'destroyed' && !!discardFaceOf(data!, card));
+  if (!held.length) { toast(`${t.label} holds nothing it can Discard.`); return null; }
+  // Always asked, even with one Part to name: a Discard is not taken back by
+  // tapping again, the way a Charge Token is.
+  return choiceDialog({ title: 'Discard', choices: [...held.map((x) => ({ id: String(x.slot), label: `${SLOT_LABEL[x.slot] ?? x.slot} · ${cardName(x.card)}` })), { id: '__no', label: 'Cancel', cancel: true }], stacked: true })
+    .then((pick) => (pick === '__no' ? null : pick));
+}
+
+async function discardPart(t: Token): Promise<void> {
+  const slot = await pickDiscard(t);
+  if (slot !== null) send({ kind: 'disarm', seat: t.side, uid: t.uid, targetUid: t.uid, slot });
+}
+
 function commonRows(t: Token, mine: boolean): string[] {
   const d = data!;
   if (t.kind !== 'mech' || !t.mech) return [];
@@ -1742,7 +1789,7 @@ function commonRows(t: Token, mine: boolean): string[] {
     const slots = (a as { slots?: string[] }).slots ?? [];
     const reason = slots.length && !slots.some(intact) ? 'No intact Part can perform this.' : undefined;
     const available = !reason;
-    const open = openAction === a.id;
+    const open = sheetView[drawSide].action === a.id;
     const len = lengthOf(a);
     const tm = timingOf(a);
     const meta = [
@@ -1760,13 +1807,22 @@ function commonRows(t: Token, mine: boolean): string[] {
             ? `<button class="pad-chip on pad-perform" data-act="stabilise">Stabilize</button>`
             : mine && available && a.id === 'COMMON_REVEAL'
               ? `<button class="pad-chip on pad-perform" data-act="reveal">Reveal</button>`
-              : '');
+              // Charge and Discard act on a PART, so the row asks which one. The
+              // Charge strip lower on the sheet still flips a token by hand, but
+              // nothing tied it to this Action and the row looked inert.
+              : mine && available && a.id === 'COMMON_CHARGE'
+                ? (chargeableSlots(d, t).some((x) => !x.charged)
+                  ? `<button class="pad-chip on pad-perform" data-act="charge-pick">Charge</button>`
+                  : '<span class="pad-perform-no">Every Part is Charged</span>')
+                : mine && available && a.id === 'COMMON_DISCARD'
+                  ? `<button class="pad-chip on pad-perform" data-act="discard-pick">Discard</button>`
+                  : '');
     rows.push(`<div class="pad-act${open ? ' open' : ''}${available ? '' : ' off'}" data-act="open-action" data-id="${esc(a.id)}" role="button" aria-expanded="${open}">
       ${torso ? actionBlock(torso, a) : ''}
       <div class="pad-act-meta">${esc(meta)}${reason ? ` · <em>${esc(reason)}</em>` : ''}${perform ? `<span class="pad-act-go">${perform}</span>` : ''}</div>
     </div>`);
   }
-  return [`<details class="pad-fold pad-common-fold" data-fold="common"${foldOpen('common') ? ' open' : ''}>
+  return [`<details class="pad-fold pad-common-fold" data-fold="common-${drawSide}"${foldOpen(`common-${drawSide}`) ? ' open' : ''}>
       <summary><span class="pad-label pad-sec pad-act-group">Common Actions</span><b>${acts.length}</b></summary>
       ${rows.join('')}
     </details>`];
@@ -1830,7 +1886,7 @@ function partRows(t: Token): string {
 function partRow(t: Token, slot: PartSlot | 'main', card: Card): string {
   const st = t.partStates[slot] ?? 'intact';
   const fac = data!.factionOf(card);
-  const open = openSlot === slot;
+  const open = sheetView[drawSide].slot === slot;
   const stats: string[] = [];
   if (card.armor) stats.push(`A${card.armor}`);
   if (card.structure) stats.push(`S${card.structure}`);
@@ -1866,7 +1922,7 @@ function partOpen(card: Card, st: PartState): string {
 // The pilot, as a row with the portrait the reference's tiles carry. Opens to
 // the Pilot Trait, through the reference's own block.
 function pilotRow(pilot: Card): string {
-  const open = openSlot === 'pilot';
+  const open = sheetView[drawSide].slot === 'pilot';
   const fac = data!.factionOf(pilot);
   return `<div class="pad-prow${open ? ' open' : ''}">
     <div class="pad-part-row">
@@ -1890,11 +1946,13 @@ function tokenRow(t: Token): string {
   const expiring = new Set(t.expiring ?? []);
   const chips = worn.map(({ def, n }) => {
     const art = tokenArt(def.id, expiring.has(def.id));
-    return `<button class="pad-tok${tokManage === def.id ? ' on' : ''}${expiring.has(def.id) ? ' red' : ''}" data-act="tok" data-tok="${esc(def.id)}" title="${esc(def.label)}">
+    return `<button class="pad-tok${sheetView[drawSide].tokManage === def.id ? ' on' : ''}${expiring.has(def.id) ? ' red' : ''}" data-act="tok" data-tok="${esc(def.id)}" title="${esc(def.label)}">
       ${art ? `<img src="${esc(art)}" alt="${esc(def.label)}" />` : `<span class="pad-tok-txt">${esc(def.icon)}</span>`}
       ${n > 1 ? `<span class="pad-tok-n">${n}</span>` : ''}
     </button>`;
   }).join('');
+  const tokPick = sheetView[drawSide].tokPick;
+  const tokManage = sheetView[drawSide].tokManage;
   const managed = tokManage ? worn.find((w) => w.def.id === tokManage)?.def : null;
   const add = statusesFor(t.kind).map((d) => {
     const art = tokenArt(d.id, false);
@@ -2247,6 +2305,12 @@ function tasksPanel(): string {
 
 // ---------- more ----------
 
+// A running game whose deployment has closed takes no more units (the rule
+// lives in importSquad's check; this only reads the same setup stage).
+function squadsClosed(): boolean {
+  return normaliseSetup(table.setup)?.stage === 'done';
+}
+
 function morePanel(): string {
   const room = view.room;
   const me = mySeat();
@@ -2290,9 +2354,14 @@ function morePanel(): string {
       <button class="pad-chip${squadSide === 's1' ? ' on' : ''}" data-act="squad-side" data-side="s1">P1</button>
       <button class="pad-chip${squadSide === 's2' ? ' on' : ''}" data-act="squad-side" data-side="s2">P2</button>
     </div>` : ''}
-    <button class="pad-btn primary" data-act="file">Squad file…</button>
+    ${squadsClosed()
+      // 3.1.4: a squad joins before deployment is finished. The engine refused
+      // the add and said so in an error line that was easy to miss, while the
+      // buttons went on looking usable.
+      ? '<p class="pad-note">The squads are set: deployment is finished (3.1.4). End the game to change them.</p>'
+      : `<button class="pad-btn primary" data-act="file">Squad file…</button>
     <button class="pad-btn" data-act="build">Build a Mech</button>
-    <button class="pad-btn" data-act="drone">Add a Drone</button>
+    <button class="pad-btn" data-act="drone">Add a Drone</button>`}
     <button class="pad-btn" data-act="projectile">Add a Projectile</button>
     ${collectionRows()}
     <p class="pad-label pad-sec">Tactics Cards</p>
@@ -3466,7 +3535,7 @@ function render(): void {
   if (act && act.mine && act.uid !== shownOpp) {
     shownOpp = act.uid;
     const u = unitOf(act.uid);
-    if (u) { picks[u.side] = u.uid; side = u.side; openAction = null; }
+    if (u) { picks[u.side] = u.uid; side = u.side; sheetView[u.side].action = null; }
   } else if (!act) shownOpp = null;
   paint('pad-bar', barHtml());
   const turn = document.getElementById('pad-turn');
@@ -3545,9 +3614,8 @@ function openPanel(which: Panel): void {
 function selectSide(s: Side): void {
   side = s;
   panel = null;
-  openSlot = null;
-  tokPick = false;
-  tokManage = null;
+  // Nothing is closed: each side keeps what it had open, so flicking between
+  // P1 and P2 comes back to the sheet as it was left.
   render();
 }
 
@@ -3558,14 +3626,15 @@ function moveUnit(by: number): void {
   const i = units.findIndex((u) => u.uid === t.uid);
   const next = units[(i + by + units.length) % units.length];
   picks[next.side] = next.uid;
-  openSlot = null;
-  tokPick = false;
-  tokManage = null;
+  // A different unit: only ITS side's sheet starts afresh.
+  { const w = sheetView[next.side]; w.slot = null; w.action = null; w.tokPick = false; w.tokManage = null; }
   render();
 }
 
 function act(el: HTMLElement, ev: Event): void {
   const a = el.dataset.act!;
+  if (screen === 'table') actSide = columnSide(el);
+  const v = sheetView[actSide];
   const t = screen === 'table' ? unitFor(columnSide(el)) : null;
   switch (a) {
     // ----- before a table -----
@@ -3791,21 +3860,20 @@ function act(el: HTMLElement, ev: Event): void {
     }
     case 'unit':
       // From the destroyed list the unit may sit on the other side.
-      { const u = unitOf(Number(el.dataset.uid)); if (u) { picks[u.side] = u.uid; side = u.side; } }
+      // Only the sheet the unit belongs to starts afresh; the other keeps
+      // whatever it had open.
+      { const u = unitOf(Number(el.dataset.uid)); if (u) { picks[u.side] = u.uid; side = u.side; }
+        const w = sheetView[u?.side ?? actSide]; w.slot = null; w.action = null; w.tokPick = false; w.tokManage = null; }
       closedGroup = null;
       error = null;
-      openSlot = null;
-      openAction = null;
-      tokPick = false;
-      tokManage = null;
       render();
       return;
     case 'open':
-      openSlot = openSlot === el.dataset.slot ? null : el.dataset.slot!;
+      v.slot = v.slot === el.dataset.slot ? null : el.dataset.slot!;
       render();
       return;
     case 'open-action':
-      openAction = openAction === el.dataset.id ? null : el.dataset.id!;
+      v.action = v.action === el.dataset.id ? null : el.dataset.id!;
       render();
       return;
     case 'card':
@@ -3875,9 +3943,60 @@ function act(el: HTMLElement, ev: Event): void {
       openLoadPicker(own, t.side, (load) => { send({ kind: 'setLoad', seat: t.side, uid: t.uid, cardId: load.id }); render(); });
       return;
     }
+    case 'tag': {
+      const by = unitOf(Number(el.dataset.uid));
+      const a = by && data ? tokenCards(data, by).flatMap((c) => c.card.actions ?? []).find((x) => x.id === el.dataset.id) : undefined;
+      const grant = a ? targetStatusGrant(a) : null;
+      if (!by || !a || !grant) return;
+      void (async () => {
+        const units = table.tokens.filter((x) => x.uid !== by.uid && x.deployed !== false && !isDead(x)
+          && (grant.side === 'any' || (grant.side === 'enemy') === (x.side !== by.side)));
+        if (!units.length) { toast(`${a.name.en ?? 'This Action'}: there is no unit to target.`); return; }
+        const pick = await choiceDialog({
+          title: a.name.en ?? 'Target',
+          body: a.range ? `One target within Range ${a.range}, in line of sight.` : 'One target.',
+          choices: units.map((x) => ({ id: String(x.uid), label: `${x.side === by.side ? 'Ally' : 'Enemy'} · ${x.label}` })),
+          stacked: true,
+        });
+        if (pick !== null) send({ kind: 'applyStatus', seat: by.side, uid: by.uid, targetUid: Number(pick), statusId: grant.statusId, stacks: grant.stacks });
+      })();
+      return;
+    }
+    case 'charge-pick': {
+      if (!t || !data) return;
+      const open = chargeableSlots(data, t).filter((x) => !x.charged);
+      if (!open.length) return;
+      void (async () => {
+        const slot = open.length === 1 ? String(open[0].slot)
+          : await choiceDialog({ title: 'Charge', choices: open.map((x) => ({ id: String(x.slot), label: `${x.label} · ${partName(t, String(x.slot))}` })), stacked: true });
+        if (slot !== null) send({ kind: 'setCharge', seat: t.side, uid: t.uid, slot, on: true });
+      })();
+      return;
+    }
+    case 'discard-pick': {
+      if (!t || !data) return;
+      void discardPart(t);
+      return;
+    }
     case 'charge': if (t) send({ kind: 'setCharge', seat: t.side, uid: t.uid, slot: el.dataset.slot!, on: el.dataset.on === '1' }); return;
-    case 'tok-open': tokPick = !tokPick; tokManage = null; render(); return;
-    case 'tok-close': tokManage = null; render(); return;
+    case 'tok-open':
+      v.tokPick = !v.tokPick; v.tokManage = null; render();
+      // The list opens under the Tokens row, usually below the fold: bring it
+      // into view rather than leaving the player to go and find it.
+      // render() is synchronous, so the list is already in the page here.
+      if (v.tokPick) {
+        document.querySelector('.pad-tokpop')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        // A smooth scroll is only a request: where the browser does not animate
+        // (reduced motion, a background tab) it can simply not happen, so the
+        // list is put in view outright if it still is not.
+        window.setTimeout(() => {
+          const pop = document.querySelector('.pad-tokpop');
+          const r = pop?.getBoundingClientRect();
+          if (pop && r && (r.bottom > window.innerHeight || r.top < 0)) pop.scrollIntoView({ block: 'nearest' });
+        }, 450);
+      }
+      return;
+    case 'tok-close': v.tokManage = null; render(); return;
     case 'tok': {
       // A TAP AGES THE TOKEN, one step down the End Phase's ladder; a hold
       // opens its rule (the pointer handlers below set tokManage and swallow
@@ -3888,7 +4007,7 @@ function act(el: HTMLElement, ev: Event): void {
       const def = STATUS_BY_ID.get(id);
       const red = (t.expiring ?? []).includes(id);
       const gone = red || !def?.decay;
-      tokManage = null;
+      v.tokManage = null;
       if (send({ kind: 'ageStatus', ...sourceFor(t), targetUid: t.uid, statusId: id })) {
         toast(gone ? `${def?.label ?? id} comes off.` : `${def?.label ?? id} turns red.`, true);
       }
@@ -3896,12 +4015,12 @@ function act(el: HTMLElement, ev: Event): void {
     }
     case 'tok-add':
       if (!t) return;
-      tokPick = false;
+      v.tokPick = false;
       send({ kind: 'applyStatus', ...sourceFor(t), targetUid: t.uid, statusId: el.dataset.tok! });
       return;
     case 'tok-drop':
       if (!t) return;
-      tokManage = null;
+      v.tokManage = null;
       send({ kind: 'removeStatus', ...sourceFor(t), targetUid: t.uid, statusId: el.dataset.tok! });
       return;
     case 'add-squad':
@@ -4296,11 +4415,12 @@ function installEvents(): void {
     if (card?.dataset.card) { ev.preventDefault(); openLook('card', card.dataset.card); return; }
     const el = target.closest<HTMLElement>('[data-act]');
     // A Token's box closes on any tap outside it and its strip.
-    if (tokManage && !target.closest('.pad-tokinfo, .pad-toks')) { tokManage = null; render(); }
+    // Whichever sheet has a Token's box open: a tap outside it closes it.
+    if ((sheetView.s1.tokManage || sheetView.s2.tokManage) && !target.closest('.pad-tokinfo, .pad-toks')) { sheetView.s1.tokManage = sheetView.s2.tokManage = null; render(); }
     // The Actions fold remembers its state on this phone.
     if (target.closest('.pad-acts-fold > summary')) {
       const d = target.closest<HTMLDetailsElement>('.pad-acts-fold')!;
-      window.setTimeout(() => { actsOpen = d.open; store(ACTS_KEY, actsOpen ? 'open' : 'closed'); }, 0);
+      window.setTimeout(() => { sheetView[columnSide(d)].acts = d.open; store(ACTS_KEY, JSON.stringify({ s1: sheetView.s1.acts, s2: sheetView.s2.acts })); }, 0);
     }
     if (target.closest('.pad-fold[data-fold] > summary')) {
       const d = target.closest<HTMLDetailsElement>('.pad-fold[data-fold]')!;
@@ -4346,8 +4466,8 @@ function installEvents(): void {
     holdTimer = window.setTimeout(() => {
       heldTok = true;
       // A second hold on the same Token puts its box away.
-      tokManage = tokManage === tok.dataset.tok ? null : tok.dataset.tok!;
-      tokPick = false;
+      { const w = sheetView[columnSide(tok)]; w.tokManage = w.tokManage === tok.dataset.tok ? null : tok.dataset.tok!; w.tokPick = false; }
+      
       render();
     }, 450);
   });

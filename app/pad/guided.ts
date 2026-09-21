@@ -59,6 +59,8 @@ export interface GuideApi {
   detonate(uid: number, actionId: string): void;
   // Stabilize System's Token question and Link, after the Tick is paid.
   stabilise?(uid: number): void;
+  // Which Handheld Part goes to its Discard Card; null when the player backs out.
+  pickDiscard?(uid: number): Promise<string | null>;
   // Launches the projectiles an Action fires (pad.ts): pays the Action, then
   // one `launch` per projectile in the volley.
   launch?(uid: number, actionId: string, cardId: string): void;
@@ -755,6 +757,17 @@ export function guideAct(api: GuideApi, a: string, el: HTMLElement): boolean {
         if (isElectronicAttack(c) && api.attack) { api.attack(t.uid, c.id, { electronic: true }); return true; }
         if (c.id === 'COMMON_STABILIZE') {
           if (api.send({ kind: 'performAction', seat: t.side, uid: t.uid, actionId: c.id })) api.stabilise?.(t.uid);
+          return true;
+        }
+        // |Discard| names its Part BEFORE the Ticks are paid, so backing out of
+        // the question costs nothing; then the flip is the engine's `disarm`.
+        if (c.id === 'COMMON_DISCARD' && api.pickDiscard) {
+          void api.pickDiscard(t.uid).then((slot) => {
+            if (slot === null) return;
+            if (api.send({ kind: 'performAction', seat: t.side, uid: t.uid, actionId: c.id })) {
+              api.send({ kind: 'disarm', seat: t.side, uid: t.uid, targetUid: t.uid, slot });
+            }
+          });
           return true;
         }
         if (c.id === 'COMMON_REVEAL') {

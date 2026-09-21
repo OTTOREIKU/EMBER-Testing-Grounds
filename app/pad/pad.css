@@ -1050,6 +1050,12 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
 
 .pad-combat { padding: 6px 8px 24px; }
 .pad-combat #combat-body, .pad-combat #ew-body { width: 100%; }
+/* The window's buttons were sized for a mouse (30px). On the pad every one a
+   player answers with is a full thumb target. */
+.pad-combat .ah-primary, .pad-combat .ah-pass, .pad-combat .ah-alt, .pad-combat .rerolls button {
+  min-height: var(--tap); font-size: 14px;
+}
+.pad-combat .ah-partpick .chip { min-height: var(--tap); }
 /* The counter-roll's own root, a container of its own for combat.css's query. */
 #ew-body { container-type: inline-size; }
 #ew-body:empty { display: none; }
@@ -1229,6 +1235,15 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
 .pad-inv-group { margin-bottom: 6px; }
 .pad-inv-group .pad-inv-row { margin: 0; padding: 6px 8px; border-radius: 8px; }
 .pad-inv-group .pad-inv-row:nth-child(odd) { background: var(--surface); }
+/* Before a game the list sits on a card that is ALREADY --surface, so the same
+   stripe vanished into it. One step lighter there. */
+.pad-card .pad-inv-group .pad-inv-row:nth-child(odd) { background: var(--surface2); }
+/* The stripes do the separating now, so the steppers drop their grey fill: on
+   a striped row it sat as a second block of colour, on a plain row as the only
+   one. A hairline keeps them reading as buttons on either. */
+.pad-inv-group .pad-inv-count .pad-chip { background: transparent; box-shadow: inset 0 0 0 1px var(--border); }
+.pad-inv-group .pad-inv-count .pad-chip:active { background: var(--surface3); }
+.pad-inv-group .pad-inv-count .pad-chip:disabled { box-shadow: inset 0 0 0 1px var(--surface2); }
 .pad-inv-row .pad-part-name { min-width: 0; flex: 1; white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.25; }
 
 /* The score sheet on Tasks: one row per Task Item, then what the round pays. */
