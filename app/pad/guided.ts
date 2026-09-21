@@ -272,6 +272,14 @@ function setupHtml(api: GuideApi, stage: string): string {
   const su = normaliseSetup(s.setup)!;
   if (stage === 'map') return head(api, 'Setup', 'Preparing the table', true);
   if (stage === 'roll') {
+    // Table rolls: the dice are on the table, so the pad is only told who won.
+    // Entering two dice's faces per player to arrive at the same answer was
+    // busywork (OTTO, 2026-09-21). Either phone may say it.
+    if (s.tableDice) {
+      return head(api, 'First Player', '3.1.2', true)
+        + `<div class="pad-chips">${(['s1', 's2'] as Side[]).map((side) =>
+          btn(api, 'g-first', api.sideName(side), `data-side="${side}"`, 'pad-chip on')).join('')}</div>`;
+    }
     const winner = firstPlayerFrom(su);
     const both = !!su.rolls.s1.length && !!su.rolls.s2.length;
     const tie = both && !winner;
@@ -597,6 +605,34 @@ function endHtml(api: GuideApi): string {
     + (all ? (last ? btn(api, 'g-endmatch', 'End the game', '', 'pad-chip on') : `<p class="pad-turn-note">Continue to start Round ${s.round.n + 1}.</p>`) : '');
 }
 
+// One designation a Task still owes (a Bounty's Mech, a Leader, a Zone), asked
+// as a list. Shared by the strip's Choose button and by the pad, which asks it
+// the moment the Task that owes it is picked.
+export async function askDesignation(api: GuideApi, index: number): Promise<void> {
+  const s = api.state();
+  const owed = taskDesignations(api.data, s)[index];
+  if (!owed) return;
+  if (owed.what === 'zone') {
+    const zones = missionZones(api.data, s);
+    const pick = await choiceDialog({ title: owed.label, choices: zones.map((z) => ({ id: z.id, label: z.name })), stacked: true });
+    if (pick !== null) api.send({ kind: 'designateTask', seat: owed.by, what: 'zone', for: owed.side, zone: pick });
+    return;
+  }
+  const pool = s.tokens.filter((x) => x.kind === 'mech' && (owed.owner ? x.side === owed.owner : true));
+  // Two Commanders are asked back to back, so the question says whose.
+  const title = owed.what === 'leader' ? `${api.sideName(owed.side)} · ${owed.label}` : owed.label;
+  const pick = await choiceDialog({ title, choices: pool.map((m) => ({ id: String(m.uid), label: `${m.label} · ${api.sideName(m.side)}` })), stacked: true });
+  if (pick !== null) api.send({ kind: 'designateTask', seat: owed.by, what: owed.what, for: owed.side, uid: Number(pick) });
+}
+
+// The designations this phone may answer for a side's Task, by index.
+export function designationsFor(api: GuideApi, side: Side): number[] {
+  return taskDesignations(api.data, api.state())
+    .map((d, i) => ({ d, i }))
+    .filter(({ d }) => d.side === side && (api.solo || d.by === api.me()))
+    .map(({ i }) => i);
+}
+
 // ---------- the action rows: what the sheet's list may perform ----------
 
 // The button a row in the unit's action list carries while that unit's
@@ -644,6 +680,7 @@ export function guideAct(api: GuideApi, a: string, el: HTMLElement): boolean {
       })();
       return true;
     }
+    case 'g-first': api.send({ kind: 'acceptRoll', seat: me, first: el.dataset.side as Side }); return true;
     case 'g-accept': api.send({ kind: 'acceptRoll', seat: me }); return true;
     case 'g-tasks-done': api.send({ kind: 'finishTasks', seat: me }); return true;
     case 'g-edge': api.send({ kind: 'pickEdge', seat: s.round.firstPlayer, edge: el.dataset.edge as 'black' | 'white' }); return true;
@@ -842,19 +879,7 @@ export function guideAct(api: GuideApi, a: string, el: HTMLElement): boolean {
     case 'g-endstep': api.send({ kind: 'markEndStep', seat: me, step: el.dataset.step! }); return true;
     case 'g-endmatch': api.endGame(); return true;
     case 'g-designate-task': {
-      const owed = taskDesignations(api.data, s)[Number(el.dataset.i)];
-      if (!owed) return true;
-      void (async () => {
-        if (owed.what === 'zone') {
-          const zones = missionZones(api.data, s);
-          const pick = await choiceDialog({ title: owed.label, choices: zones.map((z) => ({ id: z.id, label: z.name })), stacked: true });
-          if (pick !== null) api.send({ kind: 'designateTask', seat: owed.by, what: 'zone', for: owed.side, zone: pick });
-          return;
-        }
-        const pool = s.tokens.filter((x) => x.kind === 'mech' && (owed.owner ? x.side === owed.owner : true));
-        const pick = await choiceDialog({ title: owed.label, choices: pool.map((m) => ({ id: String(m.uid), label: `${m.label} · ${api.sideName(m.side)}` })), stacked: true });
-        if (pick !== null) api.send({ kind: 'designateTask', seat: owed.by, what: owed.what, for: owed.side, uid: Number(pick) });
-      })();
+      void askDesignation(api, Number(el.dataset.i));
       return true;
     }
     case 'g-secondary': return false; // the pad's own Tasks panel picks it

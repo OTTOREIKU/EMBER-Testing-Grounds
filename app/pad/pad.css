@@ -1229,7 +1229,18 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
 
 /* A target's state under its name in the picker. */
 .pad-seat-toks { display: block; margin-top: 2px; font-size: 11.5px; font-weight: 400; color: var(--text3); white-space: normal; }
-.pad-designated { margin: 6px 0 0; line-height: 1.5; }
+/* What a Task was pointed at: the label in the accent, small and capped like
+   the pad's other labels; the name in the sheet's own text. The tint carries
+   the attention, the type stays in the family. */
+.pad-desig {
+  display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+  border-radius: var(--radius); background: var(--accent-lt);
+}
+.pad-desig-k { flex: 0 0 auto; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); }
+.pad-desig-v { flex: 1; min-width: 0; font-size: 14px; font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
+.pad-desig .pad-chip { min-height: 30px; padding: 4px 12px; }
+.pad-task.chosen { padding: 12px; }
+.pad-task.chosen .pad-task-name { font-size: 15px; }
 .pad-inv-count .pad-chip.pad-inv-all { min-width: 0; padding: 0 10px; font-size: 12px; line-height: 1.2; margin-right: 4px; white-space: nowrap; }
 /* Long lists read as a table: every other row a shade lighter. */
 .pad-inv-group { margin-bottom: 6px; }

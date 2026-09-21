@@ -35,9 +35,9 @@ import '../src/partpicker.css';
 import '../src/combat.css';
 import { EmberApi, ApiError, type Account, type RegistrationInfo, type SquadEntry } from '../src/api';
 import { Relay, type NetView, type RolledDie } from '../src/net';
-import { applyRemote, check, onBeforeApply, onPerformed, onRefused, perform, type Command } from '../src/commands';
+import { applyRemote, check, onBeforeApply, onPerformed, onRefused, perform, taskDesignations, type Command } from '../src/commands';
 import { glueAfter } from '../src/glue';
-import { activeOpp, continueAllowed, finishIfBothReady, guideAct, guideOnRemote, guidedOn, performButton, startGuided, startIfBothReady, turnHtml, type GuideApi } from './guided';
+import { askDesignation, designationsFor, activeOpp, continueAllowed, finishIfBothReady, guideAct, guideOnRemote, guidedOn, performButton, startGuided, startIfBothReady, turnHtml, type GuideApi } from './guided';
 import { countHits, normaliseSetup } from '../src/setup';
 import { attackActive, attackOnCommand, attackWatching, beginAttack, initAttack, isAttackAction, mountAttack, sweepView, syncMirror, type TableVerdict } from './attack';
 import { registerOffline } from '../src/offline';
@@ -295,6 +295,9 @@ let picking: 'main' | 'secondary' | 'environment' | null = null;
 // Whose Secondary the picker is choosing. Only ever the other squad's solo,
 // where one phone keeps both.
 let pickFor: Side = 's1';
+// The Secondary picker was opened from the Guided strip, so a pick goes back
+// to the game instead of staying on Tasks.
+let pickFromGuide = false;
 // Whether the token picker is open. A flag rather than a <details>: the sheet
 // redraws on every relay change, and an open <details> would snap shut.
 // The worn token being inspected, if any. Tapping a worn token opens the
@@ -802,17 +805,12 @@ function shortSide(s: Side): string {
   return name && name.length <= 8 ? name : seatTag(s);
 }
 
-// A side as the SUBJECT of a sentence. In a room that is the player's name.
-// Tracking solo, "Yours places next" is not English: the squad's own name
-// reads right ("RAID-RDL-Starter places next"), unless both squads carry the
-// same one - a mirror match - or none, where it falls back to plain words.
+// A side as the SUBJECT of a sentence: the player's name in a room, Player 1
+// or Player 2 otherwise. It used the squad's own name when tracking solo
+// ("RAID-RDL-Starter goes first"), which read as a unit rather than a
+// player (OTTO, 2026-09-21).
 function actorName(s: Side): string {
-  const room = view.room;
-  if (room?.seats[s]) return room.seats[s]!;
-  const mine = table.sideNames?.[s]?.trim();
-  const other = table.sideNames?.[s === 's1' ? 's2' : 's1']?.trim();
-  if (mine && mine.toLowerCase() !== (other ?? '').toLowerCase()) return mine;
-  return s === 's1' ? 'Player 1' : 'Player 2';
+  return sideName(s);
 }
 
 // ---------- squads ----------
@@ -2115,16 +2113,73 @@ function taskCard(attr: string, art: string, name: string, text: string, tag: st
 // What a side's Tasks were pointed at when they were designated: the enemy
 // Mech a Bounty names, a Leader, a Tactical Zone. Chosen once in setup and
 // not shown again anywhere, so a player could not check it mid-game.
+// Whatever a side's Task still needs named, asked one after another. Each
+// answer takes one off the list; backing out of a question stops the asking
+// and leaves the Choose button on the Tasks card.
+async function askOwed(forSide: Side): Promise<void> {
+  let left = designationsFor(guide, forSide);
+  while (left.length) {
+    await askDesignation(guide, left[0]);
+    const now = designationsFor(guide, forSide);
+    if (now.length >= left.length) break;
+    left = now;
+  }
+}
+
 function designated(s: Side): string {
   const tasks = normaliseTasks(table.tasks);
-  const rows: string[] = [];
-  const unit = (uid: number | undefined) => (uid === undefined ? undefined : unitOf(uid)?.label);
-  const target = unit(tasks.secTarget[s]);
-  const leader = unit(tasks.leader[s]);
-  if (target) rows.push(`Target · ${target}`);
-  if (leader) rows.push(`Leader · ${leader}`);
-  if (tasks.zone[s]) rows.push(`Zone · ${tasks.zone[s]}`);
-  return rows.length ? `<p class="pad-note pad-designated">${rows.map(esc).join('<br>')}</p>` : '';
+  // One row per thing the Task was pointed at: a small label, the name, and
+  // for a unit a View button that goes to its sheet.
+  const row = (label: string, value: string, tail = '') =>
+    `<div class="pad-desig"><span class="pad-desig-k">${esc(label)}:</span><span class="pad-desig-v">${esc(value)}</span>${tail}</div>`;
+  const unitRow = (label: string, uid: number | undefined): string => {
+    const u = uid === undefined ? undefined : unitOf(uid);
+    return u ? row(label, u.label, `<button class="pad-chip" data-act="view-unit" data-uid="${u.uid}">View</button>`) : '';
+  };
+  // The Commanders are the MAIN Task's (VIP: Assassination), so they sit on
+  // its card, not here.
+  const rows: string[] = [unitRow('Target', tasks.secTarget[s])];
+  const zoneId = tasks.zone[s];
+  if (zoneId) {
+    // By the zone's printed name, not its id.
+    const zone = (table.zones?.length ? table.zones : data?.zoneData.zones ?? []).find((z) => z.id === zoneId)?.name ?? zoneId;
+    // A hold-zone Task pays on who stands in the zone at the end. The pad has
+    // no board to read that from, so it is SAID, like a Black Box's zone.
+    const card = secondaryOf(s);
+    const held = !!tasks.zoneHeld?.[s];
+    rows.push(row('Zone', zone, card?.kind === 'hold-zone'
+      ? `<button class="pad-chip${held ? ' on' : ''}" data-act="zone-held" data-side="${s}" data-held="${held ? '0' : '1'}" aria-pressed="${held}">Held</button>`
+      : ''));
+  }
+  // Still to be named, and by whom. The button is there for whoever may answer
+  // on this phone; across a table the other player's choice is only reported.
+  const owed = data ? taskDesignations(data, table).filter((d) => d.side === s && d.what !== 'leader') : [];
+  const mineToName = owed.some((d) => solo || d.by === mySeat());
+  const ask = !owed.length ? ''
+    : mineToName
+      ? `<button class="pad-chip on" data-act="designate" data-side="${s}">Choose: ${esc(owed.map((d) => d.label).join(', '))}</button>`
+      : `<p class="pad-note">${esc(sideName(owed[0].by))} chooses: ${esc(owed.map((d) => d.label).join(', '))}</p>`;
+  return `${rows.join('')}${ask}`;
+}
+
+// What the MAIN Task was pointed at: each squad's Commander under VIP:
+// Assassination, always in seat order so the two never swap places.
+function mainDesignated(): string {
+  if (!data || missionOf()?.family !== 'vip') return '';
+  const tasks = normaliseTasks(table.tasks);
+  const owed = taskDesignations(data, table).filter((d) => d.what === 'leader');
+  return (['s1', 's2'] as Side[]).map((s) => {
+    const u = tasks.leader[s] === undefined ? undefined : unitOf(tasks.leader[s]!);
+    const label = `${shortSide(s)} Commander`;
+    if (u) {
+      return `<div class="pad-desig"><span class="pad-desig-k">${esc(label)}:</span><span class="pad-desig-v">${esc(u.label)}</span><button class="pad-chip" data-act="view-unit" data-uid="${u.uid}">View</button></div>`;
+    }
+    const mine = owed.find((d) => d.side === s);
+    if (!mine) return '';
+    return solo || mine.by === mySeat()
+      ? `<button class="pad-chip on" data-act="designate-leader" data-side="${s}">Choose: ${esc(label)}</button>`
+      : `<p class="pad-note">${esc(sideName(mine.by))} chooses: ${esc(label)}</p>`;
+  }).join('');
 }
 
 // The Task Items as the table has them, and what this round would pay. The
@@ -2133,11 +2188,13 @@ function designated(s: Side): string {
 // resolve. The arithmetic is scoring.ts, the same one every page uses.
 function scoreSheet(tasks: TaskState): string {
   const m = missionOf();
-  if (!data || !m) return '';
+  // No Main Task is no reason to hide the sheet: the Secondaries and the kills
+  // score without one.
+  if (!data) return '';
   const me = mySeat();
   const them = otherSeat();
   const zoneName = (id: string) => data!.zoneData.zones.find((z) => z.id === id)?.name ?? id;
-  const wantsZone = (m as { scoringZone?: string }).scoringZone;
+  const wantsZone = (m as { scoringZone?: string } | undefined)?.scoringZone;
   const claimChips = (itemId: string, held: Side | null | undefined) => `<span class="pad-chips">
       <button class="pad-chip${!held ? ' on' : ''}" data-act="claim" data-item="${esc(itemId)}" data-side="">None</button>
       <button class="pad-chip${held === me ? ' on' : ''}" data-act="claim" data-item="${esc(itemId)}" data-side="${me}">${esc(shortSide(me))}</button>
@@ -2254,15 +2311,16 @@ function tasksPanel(): string {
     ${placed.length < cap ? '<button class="pad-btn" data-act="pick-env">Place a card</button>' : ''}`;
 
   const slot = (label: string, card: { id: string; name: string } | undefined,
-                art: (id: string) => string, imgAttr: string, act: string | null) => `
+                art: (id: string) => string, imgAttr: string, act: string | null, pointed = '') => `
     <p class="pad-label pad-sec">${label}</p>
     ${card
       ? `<div class="pad-task chosen">
-          <img class="pad-task-card" src="${esc(art(card.id))}" alt="${esc(card.name)}" ${imgAttr} />
           <span class="pad-task-row">
             <span class="pad-task-name">${esc(card.name)}</span>
             ${act ? `<button class="pad-chip" data-act="${act}">change</button>` : ''}
           </span>
+          ${pointed}
+          <img class="pad-task-card" src="${esc(art(card.id))}" alt="${esc(card.name)}" ${imgAttr} />
         </div>`
       : act
         ? `<button class="pad-btn" data-act="${act}">Choose</button>`
@@ -2291,13 +2349,11 @@ function tasksPanel(): string {
     ${layoutHtml}
     ${envHtml}
     ${drawHtml || (mission
-      ? slot('Main Task', mission, missionImageUrl, `data-mission="${esc(mission.id)}"`, 'pick-main')
+      ? slot('Main Task', mission, missionImageUrl, `data-mission="${esc(mission.id)}"`, 'pick-main', mainDesignated())
       : `<p class="pad-label pad-sec">Main Task</p>
          <div class="pad-chips"><button class="pad-chip on" data-act="draw-tasks">Draw 3</button><button class="pad-chip" data-act="pick-main">Choose</button></div>`)}
-    ${slot(`${sideName(me)} · Secondary`, secondaryOf(me), secondaryImageUrl, secondaryOf(me) ? `data-secondary="${esc(secondaryOf(me)!.id)}"` : '', 'pick-sec')}
-    ${designated(me)}
-    ${slot(`${sideName(them)} · Secondary`, secondaryOf(them), secondaryImageUrl, secondaryOf(them) ? `data-secondary="${esc(secondaryOf(them)!.id)}"` : '', solo ? 'pick-sec-them' : null)}
-    ${designated(them)}
+    ${slot(`${sideName(me)} · Secondary`, secondaryOf(me), secondaryImageUrl, secondaryOf(me) ? `data-secondary="${esc(secondaryOf(me)!.id)}"` : '', 'pick-sec', designated(me))}
+    ${slot(`${sideName(them)} · Secondary`, secondaryOf(them), secondaryImageUrl, secondaryOf(them) ? `data-secondary="${esc(secondaryOf(them)!.id)}"` : '', solo ? 'pick-sec-them' : null, designated(them))}
     <p class="pad-label pad-sec">Notes</p>
     <textarea class="pad-input" id="pad-notes" rows="3" placeholder="Notes"></textarea>
   </div>`;
@@ -3828,6 +3884,7 @@ function act(el: HTMLElement, ev: Event): void {
       render();
       return;
     case 'g-secondary':
+      pickFromGuide = true;
       picking = 'secondary';
       pickFor = (el.dataset.side as Side) ?? mySeat();
       panel = 'tasks';
@@ -4063,8 +4120,26 @@ function act(el: HTMLElement, ev: Event): void {
       return;
     }
     case 'set-layout': send({ kind: 'configureTable', seat: mySeat(), map: el.dataset.id ?? '' }); return;
-    case 'pick-sec': picking = 'secondary'; pickFor = mySeat(); render(); return;
-    case 'pick-sec-them': picking = 'secondary'; pickFor = otherSeat(); render(); return;
+    case 'designate': void askOwed(el.dataset.side as Side); return;
+    case 'designate-leader': {
+      const i = data ? taskDesignations(data, table).findIndex((d) => d.what === 'leader' && d.side === el.dataset.side) : -1;
+      if (i >= 0) void askDesignation(guide, i);
+      return;
+    }
+    case 'zone-held': send({ kind: 'claimZone', seat: mySeat(), side: el.dataset.side as Side, held: el.dataset.held === '1' }); return;
+    case 'view-unit': {
+      // To the unit's own sheet, on whichever side it stands.
+      const u = unitOf(Number(el.dataset.uid));
+      if (!u) return;
+      picks[u.side] = u.uid;
+      side = u.side;
+      panel = null;
+      picking = null;
+      render();
+      return;
+    }
+    case 'pick-sec': pickFromGuide = false; picking = 'secondary'; pickFor = mySeat(); render(); return;
+    case 'pick-sec-them': pickFromGuide = false; picking = 'secondary'; pickFor = otherSeat(); render(); return;
     case 'pick-cancel': picking = null; render(); return;
     case 'pick-env': error = null; picking = 'environment'; render(); return;
     case 'env-lift': {
@@ -4075,7 +4150,23 @@ function act(el: HTMLElement, ev: Event): void {
     case 'pick-task': {
       const id = el.dataset.id!;
       picking = null;
-      if (el.dataset.kind === 'mission') { send({ kind: 'configureTable', seat: mySeat(), mission: id }); return; }
+      if (el.dataset.kind === 'mission') {
+        if (!send({ kind: 'configureTable', seat: mySeat(), mission: id })) return;
+        // VIP: Assassination needs each squad's Commander named; asked at once,
+        // like a Secondary's target, for whichever this phone may answer.
+        void (async () => {
+          const mine = () => (data ? taskDesignations(data, table) : []).map((d, i) => ({ d, i }))
+            .filter(({ d }) => d.what === 'leader' && (solo || d.by === mySeat()));
+          let left = mine();
+          while (left.length) {
+            await askDesignation(guide, left[0].i);
+            const now = mine();
+            if (now.length >= left.length) break;
+            left = now;
+          }
+        })();
+        return;
+      }
       if (el.dataset.kind === 'environment') {
         // The Grid it covers, as the table reads it: a letter and a number.
         void promptDialog({
@@ -4091,7 +4182,18 @@ function act(el: HTMLElement, ev: Event): void {
         });
         return;
       }
-      send({ kind: 'pickSecondary', seat: pickFor, cardId: id });
+      if (!send({ kind: 'pickSecondary', seat: pickFor, cardId: id })) return;
+      // Picked from the turn strip: back to the game, and whatever the Task
+      // needs named (a Bounty's Mech, a Leader, a Zone) is asked at once rather
+      // than left behind a second Choose button.
+      if (pickFromGuide) {
+        pickFromGuide = false;
+        panel = null;
+        render();
+      }
+      // Freeform too: a Task that names a Mech or a Zone had nowhere to name
+      // it outside a Guided game, so Behead could be chosen and never aimed.
+      void askOwed(pickFor);
       return;
     }
 

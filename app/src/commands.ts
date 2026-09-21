@@ -203,7 +203,9 @@ export type Command =
   | { kind: 'lockMap'; seat: Side }
   | { kind: 'finishTasks'; seat: Side }
   | { kind: 'rollSetup'; seat: Side; hits: number[] }
-  | { kind: 'acceptRoll'; seat: Side }
+  // `first`: the table rolled its own dice and says who won (the pad's Table
+  // rolls). Without it the winner is read off the recorded Hits, as ever.
+  | { kind: 'acceptRoll'; seat: Side; first?: Side }
   // A die landed on the shared table (U7 finding, 2026-08-25): the room's dice
   // server rolled and both players watched. State-wise a no-op — its whole job
   // is to sit in the snapshot ring as a SEALED kind, because applyPenetration
@@ -272,6 +274,9 @@ export type Command =
   // from direct access; the companion app has neither, so the players tell it
   // what the physical table shows. `side: null` gives the Item back to nobody.
   | { kind: 'claimItem'; seat: Side; itemId: string; side: Side | null }
+  // A hold-zone Task settled BY HAND, the claimItem of a Secondary: `side` is
+  // whose Task it is, `seat` only who recorded it.
+  | { kind: 'claimZone'; seat: Side; side: Side; held: boolean }
   // A Part's damage state set OUTRIGHT, the way freeplay's inspector lets a
   // player cycle it by hand. applyPenetration is the RULE - it walks the ladder,
   // drops a Link, stamps who dealt it - and stays the only thing an attack
@@ -518,7 +523,7 @@ type TableKind =
   | 'configureTable' | 'startMatch' | 'endMatch' | 'pickSecondary' | 'setTactics' | 'setInventory' | 'setReady' | 'designateTask'
   | 'callDefense' | 'answerDefense' | 'clearDefense' | 'setCombatView' | 'focusAnswer' | 'focusReroll' | 'kcArmor' | 'designateHit' | 'meleeEvade' | 'dodgeEnhance' | 'riposte'
   | 'setRollbackCatalog' | 'rollbackRequest' | 'rollbackAnswer'
-  | 'claimItem' | 'setPartState';
+  | 'claimItem' | 'claimZone' | 'setPartState';
 const TABLE_KINDS = new Set<Command['kind']>([
   'advancePhase', 'setPhase', 'resetRounds', 'adjustCommandTokens', 'passTurn', 'markEndStep', 'award',
   'lockMap', 'rollSetup', 'acceptRoll', 'noteRoll', 'finishTasks', 'pickEdge', 'lockDials', 'finishDeployment',
@@ -530,7 +535,7 @@ const TABLE_KINDS = new Set<Command['kind']>([
   'configureTable', 'startMatch', 'endMatch', 'pickSecondary', 'setTactics', 'setInventory', 'setReady', 'designateTask',
   'callDefense', 'answerDefense', 'clearDefense', 'setCombatView', 'focusAnswer', 'focusReroll', 'kcArmor', 'designateHit', 'meleeEvade', 'dodgeEnhance', 'riposte',
   'setRollbackCatalog', 'rollbackRequest', 'rollbackAnswer',
-  'claimItem', 'setPartState',
+  'claimItem', 'claimZone', 'setPartState',
 ]);
 
 // Table commands whose seat is attribution rather than a choice one squad
@@ -554,7 +559,7 @@ const ATTRIBUTED = new Set<Command['kind']>([
   // The seat on a hand-made claim is WHO RECORDED IT, never whose Item it is -
   // that rides in `side`. Stamped like any other table command so either player
   // may keep the sheet without the server refusing it as the other squad's.
-  'claimItem',
+  'claimItem', 'claimZone',
   // Same reasoning: a damage state written down off the physical table is
   // BOOKKEEPING, and either player may keep the book. Routed as a unit command
   // it carried the unit's own side as its seat, and the relay refuses any
@@ -623,6 +628,11 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       if (cmd.state === 'damaged' && structureOf(data, target, cmd.slot) <= 0) {
         return no('That Part has no Structure, so it is either intact or destroyed.');
       }
+      return ok;
+    }
+    case 'claimZone': {
+      if (cmd.side !== 's1' && cmd.side !== 's2') return no('That is not a squad.');
+      if (!normaliseTasks(state.tasks).zone[cmd.side]) return no('That squad has not designated a Tactical Zone.');
       return ok;
     }
     case 'claimItem': {
@@ -1022,6 +1032,11 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
     }
     case 'acceptRoll': {
       const su = normaliseSetup(state.setup);
+      if (cmd.first !== undefined) {
+        if (cmd.first !== 's1' && cmd.first !== 's2') return no('That is not a squad.');
+        if (!su || su.stage !== 'roll') return no('The First Player is settled once, after the battlefield is locked (3.1.2).');
+        return ok;
+      }
       if (!su || !firstPlayerFrom(su)) return no('The roll is tied, so it must be made again (3.1.2).');
       return ok;
     }
@@ -1175,8 +1190,13 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
 // The Tactical Zones this battlefield actually has: the Main Task places them,
 // so anything else would be naming a place neither player can see.
 export function missionZones(data: GameData, state: GameState): { id: string; name: string }[] {
-  const mission = state.mission ? data.missions.cards.find((m) => m.id === state.mission) : undefined;
-  const placed = new Set(mission?.zones ?? []);
+  // EVERY Tactical Zone on the battlefield, not only the ones the Main Task
+  // uses. The board prints all nine (Alpha to India, 5.2) whatever the Main
+  // Task, and Excavation Claim reads "you designate one Tactical Zone". This
+  // used to be filtered to the Main Task's own zones, so with no Main Task yet,
+  // or with VIP: Assassination (which places none), the list came up EMPTY and
+  // the Task could not be aimed at all.
+  //
   // The TABLE's zones, exactly as zoneCells reads them a few lines above: an
   // authored map's zones carry its own ids, and offering the shipped ones here
   // made a designation name a zone that neither scoring nor the board can find.
@@ -1184,7 +1204,7 @@ export function missionZones(data: GameData, state: GameState): { id: string; na
   // ~25 test slices compile this module standalone and strip its imports.
   const own = state.zones;
   const list = own && own.length ? own : (data.zoneData?.zones ?? []);
-  return list.filter((z) => placed.has(z.name) || placed.has(z.id));
+  return list.map((z) => ({ id: z.id, name: z.name }));
 }
 
 // Everything Task Setup is still waiting to have named, and who names it.
@@ -2771,7 +2791,19 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       else delete state.deployZones;
     }
     if (cmd.zoneSet !== undefined) state.zoneSet = cmd.zoneSet;
-    if (cmd.mission !== undefined) state.mission = cmd.mission;
+    if (cmd.mission !== undefined) {
+      // A DIFFERENT Main Task drops what the old one had named. The Commanders
+      // belong to VIP: Assassination alone, and they went on showing - and would
+      // have gone on scoring - after the table changed to another Task. Done
+      // here because a caller that sends only `mission` (the pad) keeps the rest
+      // of the TaskState; one that sends `tasks` replaces it just below anyway.
+      if (cmd.mission !== state.mission && state.tasks) {
+        const kept = normaliseTasks(state.tasks);
+        kept.leader = {};
+        state.tasks = kept;
+      }
+      state.mission = cmd.mission;
+    }
     if (cmd.tasks !== undefined) state.tasks = cmd.tasks === null ? null : normaliseTasks(cmd.tasks);
     if (cmd.scale !== undefined) state.scale = cmd.scale;
     if (cmd.roundLimit !== undefined) state.roundLimit = cmd.roundLimit;
@@ -2883,6 +2915,7 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
     // carries a target chosen for a different card.
     tasks.secTarget[cmd.seat] = undefined;
     tasks.zone[cmd.seat] = undefined;
+    if (tasks.zoneHeld) tasks.zoneHeld = { ...tasks.zoneHeld, [cmd.seat]: undefined };
     state.tasks = tasks;
     return;
   }
@@ -2945,7 +2978,7 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
   if (cmd.kind === 'noteRoll') return;
   if (cmd.kind === 'acceptRoll') {
     const su = normaliseSetup(state.setup) ?? newSetup();
-    const winner = firstPlayerFrom(su);
+    const winner = cmd.first ?? firstPlayerFrom(su);
     if (!winner) return;
     state.round.firstPlayer = winner;
     // The Tasks come next, not the edges: the roll decides who reveals their
@@ -3163,6 +3196,12 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
   if (cmd.kind === 'setPartState') {
     const target = state.tokens.find((x) => x.uid === cmd.uid);
     if (target) target.partStates[cmd.slot] = cmd.state;
+    return;
+  }
+  if (cmd.kind === 'claimZone') {
+    const tasks = normaliseTasks(state.tasks);
+    tasks.zoneHeld = { ...(tasks.zoneHeld ?? {}), [cmd.side]: cmd.held ? true : undefined };
+    state.tasks = tasks;
     return;
   }
   if (cmd.kind === 'claimItem') {

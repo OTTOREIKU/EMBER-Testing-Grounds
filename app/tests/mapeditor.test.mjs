@@ -377,7 +377,10 @@ ok('and editorDoc only stashes when asked', /function editorDoc\(stash = true\)/
 
 // The command layer offers the TABLE's zones for a designation, not the
 // shipped nine, or an authored map's zone can be named but never scored.
-ok('missionZones reads the table zones', /const own = state\.zones;[\s\S]{0,200}placed\.has/.test(commands));
+ok('missionZones reads the table zones', /const own = state\.zones;[\s\S]{0,120}own\.length \? own : \(data\.zoneData/.test(commands));
+// And ALL of them: filtering to the Main Task's zones left the list empty with
+// no Main Task chosen, or under VIP: Assassination, which places none.
+ok('and offers every zone on the battlefield', !/placed\.has/.test(commands.slice(commands.indexOf('export function missionZones'), commands.indexOf('export function taskDesignations'))));
 
 // ---------- the final sweep's findings, pinned ----------
 //

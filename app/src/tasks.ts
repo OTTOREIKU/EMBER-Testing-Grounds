@@ -43,6 +43,10 @@ export interface TaskState {
   leader: { s1?: number; s2?: number };
   secTarget: { s1?: number; s2?: number };
   zone: { s1?: string; s2?: string };
+  // A hold-zone Task (Excavation Claim) SAID to be held, for a table with no
+  // board to read the units' positions from. Written only by claimZone; a
+  // board never sets it and goes on reading the Grids.
+  zoneHeld?: { s1?: boolean; s2?: boolean };
   kills: { s1: Kills; s2: Kills };
   testKills: { s1: number; s2: number };
   paidKills: { s1: Kills; s2: Kills };
@@ -245,6 +249,7 @@ export function normaliseTasks(raw: unknown): TaskState {
       s1: typeof t.zone?.s1 === 'string' ? t.zone.s1 : undefined,
       s2: typeof t.zone?.s2 === 'string' ? t.zone.s2 : undefined,
     },
+    zoneHeld: { s1: t.zoneHeld?.s1 === true ? true : undefined, s2: t.zoneHeld?.s2 === true ? true : undefined },
     secTarget: {
       s1: typeof t.secTarget?.s1 === 'number' ? t.secTarget.s1 : undefined,
       s2: typeof t.secTarget?.s2 === 'number' ? t.secTarget.s2 : undefined,
@@ -554,7 +559,10 @@ export function scoreSecondary(
 
   if (card.kind === 'hold-zone' && finalRound) {
     const zone = st.zone[side];
-    if (zone) {
+    if (zone && st.zoneHeld?.[side]) {
+      // Said by the players (claimZone): the pad has no Grids to read.
+      push(card.vp, `${card.name}: only your units are in the Excavation Site`, `sec:${side}:${card.id}`);
+    } else if (zone) {
       const cells = zoneCells(zone);
       const inside = tokens.filter((t) => t.deployed !== false && !isLowValue(t, lowValue) && inZone(t, cells));
       if (inside.length && inside.every((t) => t.side === side)) {

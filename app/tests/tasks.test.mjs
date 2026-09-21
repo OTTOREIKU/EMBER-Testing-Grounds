@@ -273,6 +273,13 @@ check('an enemy in the site stops it', T.scoreSecondary(sec('hold-zone', 2), 's1
 check('an enemy projectile is ignored', T.scoreSecondary(sec('hold-zone', 2), 's1', site, [...mine, unit(3, 's2', 5, 5, { kind: 'projectile' })], zcells, true).s1, 2);
 check('an empty site pays nothing', T.scoreSecondary(sec('hold-zone', 2), 's1', site, [], zcells, true).s1, 0);
 check('and it only settles at the end', T.scoreSecondary(sec('hold-zone', 2), 's1', site, mine, zcells, false).s1, 0);
+// A table with no board SAYS the site is held (claimZone writes zoneHeld):
+// it pays with nobody's position to read, still only at the end, and only for
+// the side that was claimed.
+const saidHeld = { ...site, zoneHeld: { s1: true } };
+check('a site said to be held pays with no units to read', T.scoreSecondary(sec('hold-zone', 2), 's1', saidHeld, [], () => [], true).s1, 2);
+check('but not before the end', T.scoreSecondary(sec('hold-zone', 2), 's1', saidHeld, [], () => [], false).s1, 0);
+check('and the claim survives a rehydrate', T.normaliseTasks(JSON.parse(JSON.stringify(saidHeld))).zoneHeld, { s1: true });
 
 // The kill ledger survives a reload.
 check('a fresh ledger is empty', T.newKills(), { mechs: 0, drones: 0, partsAndDrones: 0 });

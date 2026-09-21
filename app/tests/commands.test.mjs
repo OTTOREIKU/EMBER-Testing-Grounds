@@ -1184,6 +1184,12 @@ check('the edge pick splits the table', [wmap.setup.stage, wmap.setup.edge], ['d
 const wtie = world([]);
 wtie.setup = { stage: 'roll', rolls: { s1: [1], s2: [1] }, edge: { s1: 'white', s2: 'black' }, placed: { s1: 0, s2: 0 } };
 check('a tied roll cannot be accepted', C.check(data, wtie, { kind: 'acceptRoll', seat: 's1' }).ok, false);
+// Table rolls: the dice were thrown on the table, so the winner is SAID. It
+// needs no recorded Hits and either seat may say it.
+check('a tie can still be settled by naming the winner', C.check(data, wtie, { kind: 'acceptRoll', seat: 's1', first: 's2' }).ok, true);
+check('but not by naming nobody', C.check(data, wtie, { kind: 'acceptRoll', seat: 's1', first: 's9' }).ok, false);
+{ const w = JSON.parse(JSON.stringify(wtie)); C.apply(data, w, { kind: 'acceptRoll', seat: 's1', first: 's2' });
+  check('the named squad goes first and setup moves on to the Tasks', [w.round.firstPlayer, w.setup.stage], ['s2', 'tasks']); }
 check('deployment cannot finish early', C.check(data, world([mech(1, 's1', { deployed: false })]), { kind: 'finishDeployment', seat: 's1' }).ok, false);
 const wfd = world([mech(1, 's1')]);
 wfd.script.stage = '1:0';
@@ -1942,6 +1948,19 @@ check('after which nothing is outstanding', C.taskDesignations(data, desig).leng
 // Changing the card must not keep a target chosen for the old one.
 C.apply(data, desig, { kind: 'pickSecondary', seat: 's1', cardId: 'annihilation' });
 check('changing the Task drops the name it carried', desig.tasks.secTarget.s1, undefined);
+// The same for a hand-claimed Excavation Site, and for the Commanders when the
+// MAIN Task changes: they belong to VIP: Assassination alone.
+desig.tasks.zone.s1 = 'echo'; desig.tasks.zoneHeld = { s1: true };
+C.apply(data, desig, { kind: 'pickSecondary', seat: 's1', cardId: 'decapitation' });
+check('and a held-zone claim goes with it', [desig.tasks.zone.s1, desig.tasks.zoneHeld?.s1], [undefined, undefined]);
+{ const w = { ...openTable(), tokens: [mech(1, 's1'), mech(2, 's2')], mission: 'vip-commander-assassination' };
+  w.tasks = { ...C.normaliseTasksForTest?.(w.tasks) ?? w.tasks, leader: { s1: 1, s2: 2 }, vp: { s1: 3, s2: 1 } };
+  C.apply(data, w, { kind: 'configureTable', seat: 's1', mission: 'control-flank-attack' });
+  check('a different Main Task drops the Commanders', w.tasks.leader, {});
+  check('and keeps the score', w.tasks.vp, { s1: 3, s2: 1 });
+  w.tasks.leader = { s1: 1 };
+  C.apply(data, w, { kind: 'configureTable', seat: 's1', mission: 'control-flank-attack' });
+  check('re-sending the SAME Main Task touches nothing', w.tasks.leader, { s1: 1 }); }
 
 // Bounty Hunt names an enemy Mech, but the choice is the scorer's.
 const bounty = { ...openTable(), tokens: [mech(1, 's1'), mech(2, 's2')] };
