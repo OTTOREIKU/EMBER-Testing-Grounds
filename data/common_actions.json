@@ -43,7 +43,7 @@
     {
       "id": "COMMON_PUNCH_MELEE",
       "name": {
-        "en": "Punch / Kick (melee)"
+        "en": "Punch / Kick"
       },
       "type": "Melee",
       "size": "m",
@@ -58,9 +58,9 @@
       }
     },
     {
-      "id": "COMMON_PUNCH_MOVE",
+      "id": "COMMON_CRAWL",
       "name": {
-        "en": "Punch / Kick (movement)"
+        "en": "Crawl"
       },
       "type": "Moving",
       "size": "m",
@@ -71,7 +71,7 @@
         "rightHand"
       ],
       "description": {
-        "en": "· Range 1. Performed with Chassis, Left Arm or Right Arm.\n· Shove the target 1 Grid.\n· Cannot be used to Break Away."
+        "en": "· Performed with Chassis, Left Arm or Right Arm.\n· Cannot be used to Break Away."
       }
     },
     {
@@ -165,5 +165,5 @@
       "label": "Overload"
     }
   ],
-  "_text": "Descriptions are the printed rule and nothing else: no designer notes, no FAQ commentary (OTTO, 2026-09-17). The English book prints no effect line for the movement Punch/Kick beyond R 1 and the Break Away bar; the 1-Grid shove is the Movement-icon reading the engine has always used (knockbackOf reads 'Shove ... 1 Grid'), kept until the publisher prints otherwise."
+  "_text": "Descriptions are the printed rule and nothing else: no designer notes, no FAQ commentary (OTTO, 2026-09-17). The fifth Common Action is |Crawl| (Moving, Medium, R 1; Chassis, Left Arm or Right Arm; cannot be used to Break Away), checked against the printed book by OTTO on 2026-09-21. It was carried for months as 'Punch / Kick (movement)' with an invented 1-Grid shove; the book prints neither the name nor any shove. Range 1 rides in the `range` field. The Break Away bar needs no code: leaving a Melee Lock costs at least +1 Movement Range and Crawl has 1."
 }

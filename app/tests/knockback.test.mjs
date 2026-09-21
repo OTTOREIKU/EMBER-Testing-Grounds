@@ -113,8 +113,10 @@ check('ambiguous english knock back is not a push', knockbackOf(act('', 'On Hit,
 check('but the explicit english word push is', knockbackOf(act('', 'Push 2')), { grids: 2, push: true, onHit: false });
 // A separately supplied translation counts as English and outranks the Chinese.
 check('a supplied translation outranks the chinese', knockbackOf(act('推动3'), 'Knock Back 3'), { grids: 3, push: false, onHit: false });
-// Punch/Kick puts the distance after the noun instead of after the keyword.
-check('punch and kick shove is read', knockbackOf(act('', '· Shove a target 1 Grid.')), { grids: 1, push: false, onHit: false });
+// The "Shove ... N Grid" wording puts the distance after the noun. No Common
+// Action prints it any more (the old movement Punch/Kick was really |Crawl|,
+// which shoves nothing); the reader stays for a card that does.
+check('a shove worded noun-first is read', knockbackOf(act('', '· Shove a target 1 Grid.')), { grids: 1, push: false, onHit: false });
 // A translation supplied separately is searched as well.
 check('a separate translation is searched', knockbackOf(act(''), 'Knockback 4'), { grids: 4, push: false, onHit: false });
 // Anything without the keyword is left alone.
