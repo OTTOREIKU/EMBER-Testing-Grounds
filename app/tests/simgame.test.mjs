@@ -72,6 +72,9 @@ if (!silence || !auras || !immob) throw new Error('could not locate the Silence 
 const timings = types.slice(types.indexOf('export const PHASES'), types.indexOf('export type TokenShape'));
 const statuses = types.slice(types.indexOf('export function hexagonIds'), types.indexOf('export interface RoundState'));
 const tmp = new URL('./_simgame.slice.ts', import.meta.url);
+// Missile Group X: the real reader, sliced so launch mints what the card says.
+const groupParser = unitsSrc.slice(unitsSrc.indexOf('// MISSILE GROUP X'), unitsSrc.indexOf('export function volleyOf'));
+if (!groupParser) throw new Error('could not locate missileGroupOf in units.ts');
 const stubs = `
 // Flexible Timing reaches a Mech from an ally's AURA, which needs the whole
 // board. These fixtures have no aura sources, so the honest stub is "never" —
@@ -210,6 +213,7 @@ let sliceSrc =
   + loopSrc.replace(/^import[^\n]*\n/gm, '')
   + smokeRules
   + ticks.replace(/^import[^\n]*\n/gm, '')
+  + groupParser
   + stubs
   + pilotTraits
   + commandGen

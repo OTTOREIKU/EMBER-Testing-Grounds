@@ -2,7 +2,7 @@ import type { BoardGrids, CombatView, Facing, GameState, MechLoadout, Opportunit
 import { addStatus, ageTokens, cellsOf, gridsOf, newOpportunity, PHASES, statusCount, STATUSES, TIMINGS } from './types';
 import type { GameData } from './data';
 import { cardName, transformFaces, unfoldsInto, discardFaceOf, environmentAllowance } from './data';
-import { covertCarryLock, ammoDeliveryPool, opportunityBonusOn, ripostePart, defenseReactionOn, targetTracingOn, riderOnDrone, hasFlexibleTiming, commandGeneration, blinkTargets, isPositionSwap, electronicOrigins, isSilentAction, maneuverIsSilent, loanedParts, unfoldToken, formSwitch, switchFormTo, extrasFor, consumesCharge, cutTethersOn, electronicDash, electronicValue, immobilizedStop, isScanAction, scannable, manifestationRange, nonHumanoidCost, nonHumanoidStop, envHotEntries, settleEnvironments, freehandSlots, twoHandedUse, interceptCapacity, anyStartTiming, focusIsFree, keepsLinkOnPartLoss, makeDroneToken, structureOf, makeMechToken, maneuverRange, maxLink, partsLeft, pilotCard, pilotIs, projectileDelivery, provokeWhy, settleTethers, SLOT_LABEL, tetherTo, tokenCards, transformPartOn, actionRange, isRwsAction, rwsCommandKey, rwsFiredKey, selfStatusGrant, selfGrantWhy, straightLineBonus, linkTickTraitOn, isCarrier, canBeLoad } from './units';
+import { covertCarryLock, ammoDeliveryPool, opportunityBonusOn, ripostePart, defenseReactionOn, targetTracingOn, riderOnDrone, hasFlexibleTiming, commandGeneration, blinkTargets, isPositionSwap, electronicOrigins, isSilentAction, maneuverIsSilent, loanedParts, unfoldToken, formSwitch, switchFormTo, extrasFor, consumesCharge, cutTethersOn, electronicDash, electronicValue, immobilizedStop, isScanAction, scannable, manifestationRange, nonHumanoidCost, nonHumanoidStop, envHotEntries, settleEnvironments, freehandSlots, twoHandedUse, missileGroupOf, interceptCapacity, anyStartTiming, focusIsFree, keepsLinkOnPartLoss, makeDroneToken, structureOf, makeMechToken, maneuverRange, maxLink, partsLeft, pilotCard, pilotIs, projectileDelivery, provokeWhy, settleTethers, SLOT_LABEL, tetherTo, tokenCards, transformPartOn, actionRange, isRwsAction, rwsCommandKey, rwsFiredKey, selfStatusGrant, selfGrantWhy, straightLineBonus, linkTickTraitOn, isCarrier, canBeLoad } from './units';
 import { tetherCap } from './melee';
 import { canActivate, canAttackMode, canManeuver, canOverload, canPerform, spendAction, spendActivation, spendAttackMode, spendManeuver, spendOverload } from './ticks';
 import { tacticSpec, tacticTargets, type TacticCtx } from './tactics';
@@ -315,7 +315,7 @@ export type Command =
   // The table itself: map, zones, mission and scale used to be local
   // mutations, which is why a host's picks never reached the guest. Tasks
   // ride in the command pre-derived, like dials ride in a reveal.
-  | { kind: 'configureTable'; seat: Side; map?: string; grids?: BoardGrids; zones?: GameState['zones'] | null; deployZones?: GameState['deployZones'] | null; zoneSet?: string; mission?: string | null; tasks?: GameState['tasks']; scale?: GameState['scale']; tableDice?: boolean; roundLimit?: number; noBoard?: boolean }
+  | { kind: 'configureTable'; seat: Side; map?: string; grids?: BoardGrids; zones?: GameState['zones'] | null; deployZones?: GameState['deployZones'] | null; zoneSet?: string; mission?: string | null; tasks?: GameState['tasks']; scale?: GameState['scale']; tableDice?: boolean; guidedPlay?: boolean; roundLimit?: number; noBoard?: boolean }
   | { kind: 'startMatch'; seat: Side }
   | { kind: 'endMatch'; seat: Side }
   // A squad's open-information Secondary Task pick (3.1.3). The seat is the
@@ -638,7 +638,7 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
     case 'configureTable': {
       if (cmd.map === undefined && cmd.grids === undefined && cmd.zones === undefined && cmd.deployZones === undefined
         && cmd.zoneSet === undefined && cmd.mission === undefined && cmd.tasks === undefined && cmd.scale === undefined
-        && cmd.roundLimit === undefined && cmd.noBoard === undefined && cmd.tableDice === undefined) {
+        && cmd.roundLimit === undefined && cmd.noBoard === undefined && cmd.tableDice === undefined && cmd.guidedPlay === undefined) {
         return no('Nothing to configure.');
       }
       // The board size rides with the map it was authored at, so both seats
@@ -2736,6 +2736,7 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
     // A new battlefield starts whole: the rubble belonged to the old one.
     if (cmd.noBoard !== undefined) state.noBoard = cmd.noBoard ? true : undefined;
     if (cmd.tableDice !== undefined) state.tableDice = cmd.tableDice ? true : undefined;
+    if (cmd.guidedPlay !== undefined) state.guidedPlay = cmd.guidedPlay ? true : undefined;
     if (cmd.map !== undefined) {
       state.map = cmd.map;
       state.removedTerrain = [];
@@ -3935,8 +3936,16 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       // restoreAmmo already debit, so a launch and its undo cannot land on two
       // different Drones.
       const mag = ammoHolder(data, state, t, cmd.actionId);
-      const tok = makeDroneToken(state, data, card, t.side);
-      state.tokens.push({ ...tok, parentUid: t.uid, col: cmd.to.col, row: cmd.to.row, facing: cmd.facing });
+      // MISSILE GROUP X (6.2; the RKG70 Missile Group, card 157): "Each Missile
+      // Group contains X Units... Resolve Interception and Explosion damage for
+      // each Unit separately." One launch, ONE Ammo, X Units on the board. It
+      // was one token for months, so a single hit removed the whole group and
+      // it detonated once where the book resolves up to three. Minted one at a
+      // time so each takes the next uid and the next numbered label.
+      for (let i = 0; i < missileGroupOf(card); i++) {
+        const tok = makeDroneToken(state, data, card, t.side);
+        state.tokens.push({ ...tok, parentUid: t.uid, col: cmd.to.col, row: cmd.to.row, facing: cmd.facing });
+      }
       if (mag.ammo[cmd.actionId] !== undefined) mag.ammo[cmd.actionId] = Math.max(0, mag.ammo[cmd.actionId] - 1);
       // A lock_one Action commits to what it first launched and is held to it
       // for the rest of the game (008_A, PRDR-105_B). Recorded here rather than

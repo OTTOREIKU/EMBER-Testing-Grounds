@@ -1333,6 +1333,9 @@ export interface GameState {
   // rolled by the app. A setting of the table, so both phones agree on where
   // a roll comes from. The pad reads it; nothing in the rules does.
   tableDice?: boolean;
+  // The pad's Freeform / Guided choice, on the TABLE so the player who joins
+  // a room sees what the host picked instead of their own phone's default.
+  guidedPlay?: boolean;
   sideNames?: Partial<Record<Side, string>>;
   // Lobby only: a seat saying it has finished reading and is happy to start.
   ready?: Partial<Record<Side, boolean>>;

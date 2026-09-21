@@ -1581,6 +1581,7 @@ async function init() {
     placed: number;
     // Every projectile put down this volley, so the last one can be taken back.
     placedUids: number[];
+    placedSizes: number[];
     done: (performed: boolean) => void;
   } | null = null;
 
@@ -1696,7 +1697,10 @@ async function init() {
     perform(data, state, { kind: 'launch', seat: t.side, uid: t.uid, actionId: id, cardId: m.card.id, to: { col: spot.col, row: spot.row }, facing: t.facing });
     if (state.tokens.length === before) return;
     const placed = state.tokens[state.tokens.length - 1];
-    m.placedUids.push(placed.uid);
+    // A Missile Group lands as several Units off one launch (6.2); all of them
+    // are this placement, so taking it back takes them all.
+    m.placedUids.push(...state.tokens.slice(before).map((x) => x.uid));
+    m.placedSizes.push(state.tokens.length - before);
     m.placed++;
     m.left--;
     // The same magazine the command just debited, so the count in the log is
@@ -1716,14 +1720,16 @@ async function init() {
   function undoLaunched(): void {
     const m = launching;
     if (!m || !m.placedUids.length) return;
-    const uid = m.placedUids.pop()!;
+    const size = m.placedSizes.pop() ?? 1;
+    const gone = m.placedUids.splice(-size, size);
+    const uid = gone[gone.length - 1];
     const t = state.tokens.find((x) => x.uid === m.uid);
     const id = m.action.id;
     if (t) {
-      perform(data, state, { kind: 'despawn', seat: t.side, uid: t.uid, targetUid: uid });
+      for (const g of gone) perform(data, state, { kind: 'despawn', seat: t.side, uid: t.uid, targetUid: g });
       perform(data, state, { kind: 'restoreAmmo', seat: t.side, uid: t.uid, actionId: id });
     } else {
-      state.tokens = state.tokens.filter((x) => x.uid !== uid);
+      state.tokens = state.tokens.filter((x) => !gone.includes(x.uid));
     }
     m.placed--;
     m.left++;
@@ -1784,7 +1790,7 @@ async function init() {
       });
       return done(false);
     }
-    launching = { uid: t.uid, action, card, left: shots, placed: 0, placedUids: [], done };
+    launching = { uid: t.uid, action, card, left: shots, placed: 0, placedUids: [], placedSizes: [], done };
     selectToken(t.uid);
     // renderLaunchStep owns the hint, so the text always matches the state.
     renderLaunchStep();

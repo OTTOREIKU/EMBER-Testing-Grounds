@@ -42,6 +42,21 @@ export function syncMagazines(data: GameData, t: Token): void {
   t.intercept = { ...initIntercept(cards), ...(t.intercept ?? {}) };
 }
 
+// MISSILE GROUP X 导弹组X (6.2): how many Units one launched card stands for.
+// 1 for everything that is not a group. Printed on the Projectile's own card -
+// among its keywords or as a line of its Action - never on the launcher.
+export function missileGroupOf(card: Card): number {
+  const hay = [
+    ...(card.keywords ?? []).map((k) => `${k.inline ?? ''} ${k.key ?? ''} ${k.en ?? ''}`),
+    ...(card.actions ?? []).flatMap((a) => [
+      a.description?.zh ?? '', a.description?.en ?? '',
+      ...(a.keywords ?? []).map((k) => `${k.inline ?? ''} ${k.key ?? ''} ${k.en ?? ''}`),
+    ]),
+  ].join(' ');
+  const m = /(?:导弹组|Missile\s*Group)\s*(\d+)/i.exec(hay);
+  return m ? Math.max(1, Number(m[1])) : 1;
+}
+
 export function volleyOf(a: CardAction): number {
   const hay = [
     a.description?.zh ?? '',
@@ -1069,7 +1084,10 @@ export function explosionScope(a: CardAction, english?: string): 'single' | 'all
   // "all GROUND units" counts as all: the GM-35 Mine prints that, and FAQ M22
   // widens it past ground anyway - a Mine catches the Flying and Aerial units
   // sharing its Grid too.
-  if (/all\s+(?:\w+\s+)?units|所有[^。]{0,4}单位|每个单位/i.test(hay)) return 'all';
+  // The PD sheet writes it three ways: "all units", "all unit" (FG33, FG12)
+  // and "all targets" (the Explosive Wall). All three are area blasts; the
+  // singular read as one target and the grenades asked for a single victim.
+  if (/all\s+(?:\w+\s+)?(?:units?|targets?)|所有[^。.]{0,4}(?:单位|目标)|每个单位/i.test(hay)) return 'all';
   return 'single';
 }
 
@@ -5068,6 +5086,7 @@ export function migrateState(rawIn: unknown, data: GameData): GameState | null {
     scale: (s as { scale?: GameState['scale'] }).scale ?? 'standard',
     ...((s as { noBoard?: boolean }).noBoard ? { noBoard: true } : {}),
     ...((s as { tableDice?: boolean }).tableDice ? { tableDice: true } : {}),
+    ...((s as { guidedPlay?: boolean }).guidedPlay ? { guidedPlay: true } : {}),
     roundLimit: (s as { roundLimit?: number }).roundLimit ?? 5,
     sideNames: (s as { sideNames?: GameState['sideNames'] }).sideNames ?? {},
     ready: (s as { ready?: GameState['ready'] }).ready ?? {},

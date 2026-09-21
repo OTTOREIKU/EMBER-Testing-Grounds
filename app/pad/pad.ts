@@ -167,7 +167,7 @@ const relay = new Relay(api.base, {
       // The other player's Continue may have completed the pair - for the
       // phase turn, for starting a guided game, or for ending deployment.
       if ((cmd as Command).kind === 'setReady') {
-        if (wantGuided && !guidedOn(table)) startIfBothReady(guide);
+        if (wantsGuided() && !guidedOn(table)) startIfBothReady(guide);
         else if (guidedOn(table)) { finishIfBothReady(guide); maybeAdvance(); }
         else maybeAdvance();
       }
@@ -923,7 +923,6 @@ function send(cmd: Command): boolean {
   perform(data, table, cmd);
   glueAfter(data, table, cmd);
   seedTaskItems();
-  if (cmd.kind === 'startMatch') wantGuided = false;
   saveSolo();
   render();
   return true;
@@ -950,7 +949,12 @@ function seedTaskItems(): void {
 //
 // The scripted game, on this phone. guided.ts draws the turn strip and sends
 // the step's commands; this is what it borrows from the pad.
-let wantGuided = false;
+// Freeform or Guided is the TABLE'S setting (guidedPlay), not this phone's:
+// the player who joined used to see Freeform while the host sat ready for a
+// Guided game, and had to guess to pick it themselves.
+function wantsGuided(): boolean {
+  return !!table.guidedPlay;
+}
 // The Opportunity the sheet was last brought to, so a player who looks at
 // another unit mid-Opportunity is not dragged back on every render.
 let shownOpp: number | null = null;
@@ -1267,7 +1271,9 @@ async function launchFrom(t: Token, actionId: string, cardId: string): Promise<v
     if (!send({ kind: 'launch', seat: t.side, uid: t.uid, actionId, cardId, to: { col: 0, row: 0 }, facing: t.facing })) break;
     n++;
   }
-  if (n) toast(`${t.label}: ${card ? cardName(card) : 'projectile'}${n > 1 ? ` ×${n}` : ''} launched.`);
+  // Counted off the table: a Missile Group lands as several Units (6.2).
+  const units = table.tokens.filter((x) => !before.has(x.uid)).length;
+  if (n) toast(`${t.label}: ${card ? cardName(card) : 'projectile'}${units > 1 ? ` ×${units}` : ''} launched.`);
   // 4.7.4: an Immediate Projectile detonates as it lands, so its Detonation
   // opens here, one landed Projectile after another.
   const now = card ? immediateDetonation(card) : null;
@@ -1416,7 +1422,7 @@ function readiness(): { me: boolean; them: boolean } {
 // that sends; seat 2's press is a setReady that seat 1 answers.
 function maybeAdvance(): void {
   if (!view.room) return;
-  if (wantGuided && !guidedOn(table)) return;
+  if (wantsGuided() && !guidedOn(table)) return;
   if (guidedOn(table) && !continueAllowed(guide)) return;
   const rd = readiness();
   if (!rd.me || !rd.them || mySeat() !== 's1') return;
@@ -1991,8 +1997,8 @@ function setupPanel(): string {
     <div class="pad-chips">${SCALES.map((s) => `<button class="pad-chip${(table.scale ?? 'standard') === s.id ? ' on' : ''}" data-act="set-scale" data-id="${s.id}">${s.points}<span class="fc-n">${esc(s.name)}</span></button>`).join('')}</div>
     <p class="pad-label pad-sec">Play</p>
     <div class="pad-chips">
-      <button class="pad-chip${wantGuided || guidedOn(table) ? '' : ' on'}" data-act="set-mode" data-mode="free"${guidedOn(table) ? ' disabled' : ''}>Freeform</button>
-      <button class="pad-chip${wantGuided || guidedOn(table) ? ' on' : ''}" data-act="set-mode" data-mode="guided"${guidedOn(table) ? ' disabled' : ''}>Guided</button>
+      <button class="pad-chip${wantsGuided() || guidedOn(table) ? '' : ' on'}" data-act="set-mode" data-mode="free"${guidedOn(table) ? ' disabled' : ''}>Freeform</button>
+      <button class="pad-chip${wantsGuided() || guidedOn(table) ? ' on' : ''}" data-act="set-mode" data-mode="guided"${guidedOn(table) ? ' disabled' : ''}>Guided</button>
     </div>
     <p class="pad-label pad-sec">Dice</p>
     <div class="pad-chips">
@@ -2002,8 +2008,8 @@ function setupPanel(): string {
     <p class="pad-label pad-sec">Layout</p>
     <div class="pad-chips">${data!.terrain.maps.map((m) => `<button class="pad-chip${table.map === m.id ? ' on' : ''}" data-act="set-layout" data-id="${esc(m.id)}">${esc(m.name.en || m.id)}</button>`).join('')}<button class="pad-chip${table.map ? '' : ' on'}" data-act="set-layout" data-id="">None</button></div>
     <div class="pad-foot">
-      <button class="pad-btn primary" data-act="${wantGuided && !guidedOn(table) ? 'g-start' : 'close-panel'}">${
-        wantGuided && !guidedOn(table) ? (view.room && readiness().me ? 'Waiting for the other player…' : 'Start the guided game') : 'Start'}</button>
+      <button class="pad-btn primary" data-act="${wantsGuided() && !guidedOn(table) ? 'g-start' : 'close-panel'}">${
+        wantsGuided() && !guidedOn(table) ? (view.room && readiness().me ? 'Waiting for the other player…' : 'Start the guided game') : 'Start'}</button>
     </div>
   </div>`;
 }
@@ -2430,12 +2436,14 @@ async function continueDetonation(): Promise<void> {
   const damaging = !!((a.yellowDice ?? 0) || (a.redDice ?? 0));
   const scope = explosionScope(a, data.actionTranslation(a.id)?.english ?? undefined);
   const effectStatus = damaging ? null : (/interfer|jam|stun/i.test(`${name} ${detonationText(a)}`) ? 'fci' : null);
+  // Range 0 is the Projectile's own Grid, and reads better said that way.
+  const reach = a.range ? `within Range ${a.range}` : 'in its Grid';
   const units = table.tokens.filter((x) => x.uid !== proj.uid && x.deployed !== false && !isDead(x) && !(d.hit ?? []).includes(x.uid));
   const pick = await choiceDialog({
     title: `${name} · ${proj.label}`,
     body: damaging
-      ? scope === 'all' ? `Every unit within Range ${a.range ?? 0}, allies too, takes a separate attack (4.7.6). Name each one.` : `One target within Range ${a.range ?? 0}.`
-      : effectStatus ? `Each unit within Range ${a.range ?? 0} the card affects gains the Token.` : `${detonationText(a) || 'See the card.'} Apply it on the table.`,
+      ? scope === 'all' ? `Every unit ${reach}, allies too, takes a separate attack (4.7.6). Name each one.` : `One target ${reach}.`
+      : effectStatus ? `Each unit ${reach} the card affects gains the Token.` : `${detonationText(a) || 'See the card.'} Apply it on the table.`,
     choices: [
       ...units.map((x) => ({ id: String(x.uid), label: `${x.side === proj.side ? 'Ally' : 'Enemy'} · ${x.label}` })),
       { id: '__done', label: 'Done, the Projectile is destroyed', primary: true },
@@ -3451,7 +3459,7 @@ function render(): void {
     // Guided was chosen but not started: squads and cards are still being
     // added from More, and the Start button used to live only in the Setup
     // panel, two taps away each time. The strip keeps it in reach.
-    const pending = !!data && wantGuided && !guidedOn(table);
+    const pending = !!data && wantsGuided() && !guidedOn(table);
     const on = (!!data && guidedOn(table)) || pending;
     turn.hidden = !on;
     if (pending) paint('pad-turn', pendingGuidedHtml());
@@ -3699,7 +3707,7 @@ function act(el: HTMLElement, ev: Event): void {
       if (screen === 'collection') { screen = 'lobby'; error = null; render(); return; }
       panel = null; picking = null; error = null; render(); return;
     case 'open-setup': panel = 'setup'; render(); return;
-    case 'set-mode': wantGuided = el.dataset.mode === 'guided'; render(); return;
+    case 'set-mode': send({ kind: 'configureTable', seat: mySeat(), guidedPlay: el.dataset.mode === 'guided' }); return;
     case 'set-dice': send({ kind: 'configureTable', seat: mySeat(), tableDice: el.dataset.dice === 'table' }); return;
     case 'attack': {
       const t = unitOf(Number(el.dataset.uid));

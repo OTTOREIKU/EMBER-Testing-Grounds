@@ -29,6 +29,12 @@ const chargeParser = unitsSrc.slice(
   unitsSrc.indexOf('export function isChargeAction'),
 );
 if (!chargeParser) throw new Error('could not locate consumesCharge in units.ts');
+// Missile Group X: the real reader, so the count comes off the card's wording.
+const groupParser = unitsSrc.slice(
+  unitsSrc.indexOf('// MISSILE GROUP X'),
+  unitsSrc.indexOf('export function volleyOf'),
+);
+if (!groupParser) throw new Error('could not locate missileGroupOf in units.ts');
 // electronicValue reads the stubbed tokenCards, so slicing it in keeps the
 // Electronic Value rule (Parts only, destroyed Parts excluded) in one place.
 // electronicDash rides along with it: 4.11.2's dash is the SAME reading of the
@@ -391,6 +397,7 @@ writeFileSync(
     + ticks.replace(/^import[^\n]*\n/gm, '')
     + interceptParser
     + chargeParser
+    + groupParser
     + evReader
     + immobReader
     + scanReaders
@@ -1318,6 +1325,14 @@ const born = wl.tokens[1];
 check('a launch spawns the projectile where it landed', [born.uid, born.parentUid, born.col, born.row, born.facing], [50, 1, 9, 9, 2]);
 check('and spends the Ammo with it', wl.tokens[0].ammo.L1, 1);
 check('and the uid counter advanced', wl.nextUid, 51);
+// Missile Group 3 (6.2, card 157): one launch and ONE Ammo put three Units on
+// the board, each its own target for Interception and its own Detonation.
+const groupData = { ...data, byId: new Map([...data.byId, ['MG3', { id: 'MG3', name: { en: 'Missile Group' }, actions: [{ id: 'MG3_A', description: { zh: '· 导弹组3' } }] }]]) };
+const wg = world([mech(1, 's1', { mech: { torso: 'T4', pilot: 'P1' }, ammo: { L1: 2 } })], 2);
+wg.nextUid = 50;
+C.apply(groupData, wg, { kind: 'launch', seat: 's1', uid: 1, actionId: 'L1', cardId: 'MG3', to: { col: 9, row: 9 }, facing: 0 });
+check('a Missile Group 3 lands as three Units', wg.tokens.slice(1).map((x) => [x.uid, x.parentUid, x.col]), [[50, 1, 9], [51, 1, 9], [52, 1, 9]]);
+check('for a single Ammo', wg.tokens[0].ammo.L1, 1);
 check('launching a made-up card is refused', C.check(data, wl, { kind: 'launch', seat: 's1', uid: 1, actionId: 'L1', cardId: 'NOPE', to: { col: 9, row: 9 }, facing: 0 }).ok, false);
 C.apply(data, wl, { kind: 'despawn', seat: 's1', uid: 1, targetUid: 50 });
 check('a despawn takes it back off', wl.tokens.length, 1);

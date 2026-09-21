@@ -2145,6 +2145,7 @@ let launchPlan: {
   left: number;
   placed: number;
   placedUids: number[];
+  placedSizes: number[];
 } | null = null;
 
 export function startLaunchPlan(uid: number, actionId: string, cardId: string, label: string): void {
@@ -2166,7 +2167,7 @@ export function startLaunchPlan(uid: number, actionId: string, cardId: string, l
     ctx.refresh();
     return;
   }
-  launchPlan = { uid, actionId, cardId, label, left: shots, placed: 0, placedUids: [] };
+  launchPlan = { uid, actionId, cardId, label, left: shots, placed: 0, placedUids: [], placedSizes: [] };
   ctx.refresh();
 }
 
@@ -2229,9 +2230,13 @@ function placeLaunched(ctx: HudCtx, c: number, r: number): void {
   // the rest of a Volley ride on the same Ticks and commitAction is a no-op.
   if (!ctx.check(shot).ok) { ctx.send(shot); ctx.refresh(); return; }
   commitAction(ctx);
+  const before = ctx.state.tokens.length;
   const v = ctx.send(shot);
   if (!v.ok) { ctx.refresh(); return; }
-  m.placedUids.push(ctx.state.tokens[ctx.state.tokens.length - 1].uid);
+  // A Missile Group lands as several Units off one launch (6.2): each is owed
+  // its own Interception, and taking the placement back takes them all.
+  m.placedUids.push(...ctx.state.tokens.slice(before).map((x) => x.uid));
+  m.placedSizes.push(Math.max(1, ctx.state.tokens.length - before));
   m.placed++;
   m.left--;
   // A single shot closes on its own; a volley stays open once it is spent so
@@ -2247,10 +2252,11 @@ function placeLaunched(ctx: HudCtx, c: number, r: number): void {
 function undoLaunched(ctx: HudCtx): void {
   const m = launchPlan;
   if (!m || !m.placedUids.length) return;
-  const uid = m.placedUids.pop()!;
+  const size = m.placedSizes.pop() ?? 1;
+  const gone = m.placedUids.splice(-size, size);
   const t = ctx.state.tokens.find((x) => x.uid === m.uid);
   if (t) {
-    ctx.send({ kind: 'despawn', seat: t.side, uid: t.uid, targetUid: uid });
+    for (const uid of gone) ctx.send({ kind: 'despawn', seat: t.side, uid: t.uid, targetUid: uid });
     ctx.send({ kind: 'restoreAmmo', seat: t.side, uid: t.uid, actionId: m.actionId });
   }
   m.placed--;

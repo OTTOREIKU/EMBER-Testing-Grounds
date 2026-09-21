@@ -4314,7 +4314,11 @@ export class AttackHelper {
       // published. The attacker then parks on pendingDefense for ever, which is
       // the deadlock shape task #5 already cost us once.
       const mine = this.mayPress('defender') && !(!this.mirroring && this.defenseRoller && c.defenseCalled);
-      if (!mine) {
+      // Said only when somebody ELSE really rolls it. The pad wires a
+      // defenseRoller that answers on this same phone in a solo or Freeform
+      // game, and the sentence sat above the very dialog asking for the dice.
+      const elsewhere = this.mirroring || !this.focusRemote || this.focusRemote(c.defender);
+      if (!mine && elsewhere) {
         const wait = document.createElement('p');
         wait.className = 'ah-note';
         wait.textContent = `Waiting for ${c.defender.label}'s player to roll their defence: ${c.defensePool.white} White${c.defensePool.blue ? ` + ${c.defensePool.blue} Blue` : ''}.`;
