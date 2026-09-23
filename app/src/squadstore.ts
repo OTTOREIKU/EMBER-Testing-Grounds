@@ -32,7 +32,7 @@ const SLOTS: (keyof MechLoadout)[] = ['torso', 'chasis', 'leftHand', 'rightHand'
 // card, and no squad here uses both faces of any of them.
 const BUILT_IN: SavedSquad[] = [
   {
-    id: 'builtin:raid-rdl',
+    id: 'builtin:squad-raid-rdl',
     name: 'RAID-RDL-Starter',
     saved: 0,
     // 197 + 186 = 383.
@@ -49,7 +49,7 @@ const BUILT_IN: SavedSquad[] = [
     drones: [],
   },
   {
-    id: 'builtin:raid-un',
+    id: 'builtin:squad-raid-un',
     name: 'RAID-UN-Starter',
     saved: 0,
     // 295 for the mech plus 87 of drones: Porcupine CIWS 51 and Raven

@@ -36,6 +36,11 @@ export function hideBuiltIn(id: string): void {
   write([...hiddenBuiltIns(), id]);
 }
 
+// The built-in SQUADS used to share ids with the built-in units ('builtin:
+// raid-un' was both), so putting the UN starter unit away put the UN starter
+// squad away with it. The squads now carry 'builtin:squad-' ids; a hidden list
+// written before that is read as having meant the unit only.
+
 export function restoreBuiltIns(): void {
   write([]);
 }

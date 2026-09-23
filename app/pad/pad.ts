@@ -50,7 +50,7 @@ import { setLocalSeat } from '../src/loop';
 import { actionIconUrl, BASE_FACTIONS, battlefieldCardUrl, cardName, discardFaceOf, environmentAllowance, environmentImageUrl, FACTION_LABEL, parseGridRef, isDiscardCard, isListedBox, isMine, loadData, mechPartUrl, missionImageUrl, secondaryImageUrl, stancePrintUrl, statIconIsPlated, statIconUrl, tabImageUrl, tokenFace, tokenPrintUrl, traitName, type GameData } from '../src/data';
 import { importSquadFile } from '../src/importer';
 import { deleteMechPreset, isBuiltInPreset, loadMechPresets, saveMechPreset, type MechPreset } from '../src/presets';
-import { deleteSquad, isBuiltInSquad, loadSquads, saveSquad } from '../src/squadstore';
+import { deleteSquad, isBuiltInSquad, loadSquads, saveSquad, type SavedSquad } from '../src/squadstore';
 import { bindLibrary, onLibrary } from '../src/library';
 import { hiddenBuiltIns, restoreBuiltIns } from '../src/builtins';
 import { actionBlock, cardDetail, cardRow, fillPortraits, keywordCard, keywordDetail, kwLabel, linkKeywords, traitBlock, useCardData } from '../src/refcards';
@@ -2441,10 +2441,11 @@ function morePanel(): string {
     <button class="pad-btn" data-act="rounds-reset" style="margin-top:8px">Start the rounds over</button>
 
     <p class="pad-label pad-sec">Squads</p>
-    ${solo ? `<div class="pad-chips" style="margin-bottom:8px">
+    ${solo ? `<div class="pad-chips pad-squad-pick" style="margin-bottom:8px">
       <button class="pad-chip${squadSide === 's1' ? ' on' : ''}" data-act="squad-side" data-side="s1">P1</button>
       <button class="pad-chip${squadSide === 's2' ? ' on' : ''}" data-act="squad-side" data-side="s2">P2</button>
-    </div>` : ''}
+      <span class="pad-squad-pts">${sidePoints(squadSide)} pts</span>
+    </div>` : `<p class="pad-label" style="margin-bottom:8px">${sidePoints(mySeat())} pts on the table</p>`}
     ${squadsClosed()
       // 3.1.4: a squad joins before deployment is finished. The engine refused
       // the add and said so in an error line that was easy to miss, while the
@@ -2883,13 +2884,41 @@ function loadRow(t: Token): string {
 // shipped starters and what the player saved, on this device and on the
 // account. A saved entry can be removed here; the shipped ones cannot.
 
+// A saved build's points and faction, read the way the sheet reads a Mech's:
+// every Part plus the pilot, and the Torso's faction for the tint.
+function loadoutPoints(m: MechLoadout): number {
+  return Object.values(m).reduce((n, id) => n + (id ? data?.byId.get(id)?.score ?? 0 : 0), 0);
+}
+function loadoutFaction(m: MechLoadout): string | null {
+  const core = m.torso ? data?.byId.get(m.torso) : undefined;
+  return core && data ? data.factionOf(core) : null;
+}
+function savedSquadPoints(sq: SavedSquad): number {
+  const drones = sq.drones.reduce((n, d) => n + (data?.byId.get(d.cardId)?.score ?? 0) + (d.backpack ? data?.byId.get(d.backpack)?.score ?? 0 : 0), 0);
+  const tactics = (sq.tactics ?? []).reduce((n, id) => n + (data?.byId.get(id)?.score ?? 0), 0);
+  return sq.mechs.reduce((n, m) => n + loadoutPoints(m.loadout), 0) + drones + tactics;
+}
+
+// What a side has brought: every unit's Parts and pilot, plus its hand.
+function sidePoints(s: Side): number {
+  if (!data) return 0;
+  const d = data;
+  const units = table.tokens.filter((x) => x.side === s && x.kind !== 'projectile' && x.parentUid === undefined)
+    .reduce((n, t) => n + tokenCards(d, t).reduce((m, c) => m + (c.card.score ?? 0), 0) + (t.kind === 'mech' ? (pilotCard(d, t)?.score ?? 0) : 0), 0);
+  const hand = (table.tactics?.[s] ?? []).reduce((n, id) => n + (d.byId.get(id)?.score ?? 0), 0);
+  return units + hand;
+}
+
 function savedHtml(): string {
   const units = loadMechPresets();
   const squads = loadSquads();
-  const row = (act: string, del: string, id: string, name: string, tag: string) => `<div class="pad-saved">
-      <button class="pad-seat" data-act="${act}" data-id="${esc(id)}">
+  // Tinted with the faction, the way the strip tints a squad; points on the
+  // right, so a build can be weighed before it is added.
+  const row = (act: string, del: string, id: string, name: string, tag: string, points: number, faction: string | null) => `<div class="pad-saved">
+      <button class="pad-seat pad-saved-row" data-act="${act}" data-id="${esc(id)}" style="--fac:${squadColour(faction)}">
         <span class="pad-seat-name">${esc(name)}</span>
         <span class="pad-seat-tag">${tag}</span>
+        <span class="pad-saved-pts">${points}</span>
       </button>
       <button class="pad-chip pad-saved-x" data-act="${del}" data-id="${esc(id)}" aria-label="Remove ${esc(name)}">✕</button>
     </div>`;
@@ -2903,9 +2932,9 @@ function savedHtml(): string {
   const anyUnits = table.tokens.some((x) => x.side === seat && x.kind !== 'projectile' && x.parentUid === undefined);
   const hidden = hiddenBuiltIns().length;
   return `${fold('units', 'Saved units', units.length,
-      units.length ? units.map((m) => row('preset', 'preset-del', m.id, m.name, m.saved ? 'saved' : 'built in')).join('') : '<p class="pad-label">None yet. Save a Mech from its sheet.</p>')}
+      units.length ? units.map((m) => row('preset', 'preset-del', m.id, m.name, m.saved ? 'saved' : 'default', loadoutPoints(m.mech), loadoutFaction(m.mech))).join('') : '<p class="pad-label">None yet. Save a Mech from its sheet.</p>')}
     ${fold('squads', 'Saved squads', squads.length,
-      (squads.length ? squads.map((s) => row('squad', 'squad-del', s.id, s.name, `${s.mechs.length}M ${s.drones.length}D${s.tactics?.length ? ` ${s.tactics.length}T` : ''}${s.saved ? '' : ' · built in'}`)).join('') : '<p class="pad-label">None yet.</p>')
+      (squads.length ? squads.map((s) => row('squad', 'squad-del', s.id, s.name, `${s.mechs.length}M ${s.drones.length}D${s.tactics?.length ? ` ${s.tactics.length}T` : ''}${s.saved ? '' : ' · default'}`, savedSquadPoints(s), s.mechs[0] ? loadoutFaction(s.mechs[0].loadout) : null)).join('') : '<p class="pad-label">None yet.</p>')
       + (anyUnits ? '<button class="pad-btn" data-act="save-squad" style="margin-top:8px">Save this squad</button>' : ''))}
     ${hidden ? `<button class="pad-link" data-act="restore-builtins">Show the built-in starters again (${hidden})</button>` : ''}`;
 }
@@ -3137,10 +3166,15 @@ function buildPanel(): string {
       ${card ? `<button class="pad-part-info" data-act="card" data-id="${esc(card.id)}" aria-label="Read ${esc(cardName(card))}">i</button>` : ''}
     </div>`;
   }).join('');
-  return `<div class="pad-panel-in">${panelHead('Build a Mech')}
+  const torsoName = build.torso ? cardName(d.byId.get(build.torso)!) : '';
+  return `<div class="pad-panel-in">${panelHead(editing ? 'Edit a saved unit' : 'Build a Mech')}
     ${errHtml()}
     <div class="pad-row">
-      <span class="pad-label">${fac ? esc(fac) : 'any faction'}${solo ? ` · for ${squadSide === 's1' ? 'yours' : 'theirs'}` : ''}</span>
+      <span class="pad-seat-name">${esc(buildName.trim() || torsoName || 'Unnamed')}</span>
+      <button class="pad-chip" data-act="build-rename">Rename</button>
+    </div>
+    <div class="pad-row">
+      <span class="pad-label">${fac ? esc(fac) : 'any faction'}${solo ? ` · for ${squadSide === 's1' ? 'P1' : 'P2'}` : ''}</span>
       <span class="pad-num">${pts}<span class="pad-of">p</span></span>
     </div>
     ${rows}
@@ -3150,6 +3184,7 @@ function buildPanel(): string {
     </div>
     <div class="pad-foot">
       <button class="pad-btn primary" data-act="build-add"${build.torso ? '' : ' disabled'}>Add to squad</button>
+      ${editing ? `<button class="pad-btn" data-act="build-overwrite"${buildChanged() && build.torso ? '' : ' disabled'}>Overwrite</button>` : ''}
       <button class="pad-btn" data-act="build-back">Back</button>
     </div>
   </div>`;
@@ -3490,6 +3525,18 @@ let toastSeq = 0;
 // Set by a long press on a worn Token, and consumed by the click the browser
 // fires when the finger lifts, so the hold does not also age the Token.
 let heldTok = false;
+// A saved unit opened in the builder by a HOLD on its row: the preset, and its
+// loadout as it was opened, so Overwrite lights only once something changed.
+let editing: { id: string; name: string; was: MechLoadout } | null = null;
+let heldSaved = false;
+// The name the build carries: a saved unit's when editing, else what Rename
+// set, else the Torso's card name when it is added.
+let buildName = '';
+function buildChanged(): boolean {
+  if (!editing) return false;
+  // Parts and pilot only: a rename saves itself the moment it is set.
+  return BUILD_SLOTS.some((s) => (build[s.key] ?? '') !== (editing!.was[s.key] ?? ''));
+}
 
 function toast(text: string, undo = false): void {
   const id = ++toastSeq;
@@ -4264,7 +4311,46 @@ function act(el: HTMLElement, ev: Event): void {
       input.click();
       return;
     }
-    case 'build': error = null; build = {}; panel = 'build'; render(); return;
+    case 'build': error = null; build = {}; editing = null; buildName = ''; panel = 'build'; render(); return;
+    case 'build-rename':
+      void promptDialog({
+        title: 'Name',
+        ...(editing ? {} : { body: 'The name the Mech takes when it is added.' }),
+        value: buildName.trim() || (build.torso && data ? cardName(data.byId.get(build.torso)!) : ''),
+        placeholder: 'Name',
+        confirmLabel: 'Set',
+      }).then((name) => {
+        if (name === null) return;
+        buildName = name;
+        // Editing a saved unit: the new name is saved on the spot, with the
+        // Parts AS SAVED (not the ones on screen). A rename alone was easy to
+        // make and then walk away from without pressing Overwrite.
+        const trimmed = name.trim();
+        if (editing && trimmed && trimmed.toLowerCase() !== editing.name.toLowerCase()) {
+          saveMechPreset(trimmed, editing.was, Date.now());
+          deleteMechPreset(editing.id);
+          const renamed = loadMechPresets().find((m: MechPreset) => m.name.toLowerCase() === trimmed.toLowerCase());
+          editing = { id: renamed?.id ?? editing.id, name: trimmed, was: { ...editing.was } };
+          toast(`Renamed to ${trimmed}.`);
+        }
+        render();
+      });
+      return;
+    case 'build-overwrite': {
+      if (!editing || !buildChanged() || !build.torso) return;
+      // The saved unit takes the new Parts under its own name; a DEFAULT one
+      // is shadowed by a saved copy of the same name, which is how the store
+      // reworks a shipped build.
+      // The name was settled by Rename; Overwrite carries the Parts and pilot.
+      saveMechPreset(editing.name, build, Date.now());
+      toast(`${editing.name} saved.`);
+      editing = null;
+      build = {};
+      buildName = '';
+      panel = 'more';
+      render();
+      return;
+    }
     case 'build-import': {
       // Built on demand, like the squad file's: the panel repaints on relay
       // changes, which would orphan an input living in the template.
@@ -4400,7 +4486,7 @@ function act(el: HTMLElement, ev: Event): void {
       void launchFrom(t, el.dataset.id!, el.dataset.projectile!);
       return;
     }
-    case 'build-back': error = null; panel = 'more'; render(); return;
+    case 'build-back': editing = null; buildName = ''; error = null; panel = 'more'; render(); return;
     case 'build-slot': {
       const s = BUILD_SLOTS.find((x) => x.key === el.dataset.slot);
       if (s) openBuildSlot(s);
@@ -4409,8 +4495,11 @@ function act(el: HTMLElement, ev: Event): void {
     case 'build-add': {
       if (!data) return;
       const torso = build.torso ? data.byId.get(build.torso) : undefined;
-      if (sendSquad(torso ? cardName(torso) : 'Mech', [{ loadout: build }], [])) {
+      const label = buildName.trim();
+      if (sendSquad(label || (torso ? cardName(torso) : 'Mech'), [{ ...(label ? { name: label } : {}), loadout: build }], [])) {
         build = {};
+        buildName = '';
+        editing = null;
         error = null;
         panel = null;
         toast('Mech added.');
@@ -4419,6 +4508,7 @@ function act(el: HTMLElement, ev: Event): void {
       return;
     }
     case 'preset': {
+      if (heldSaved) { heldSaved = false; return; }
       const preset = loadMechPresets().find((m: MechPreset) => m.id === el.dataset.id);
       if (!preset) return;
       if (sendSquad(preset.name, [{ name: preset.name, loadout: preset.mech }], [])) {
@@ -4614,7 +4704,24 @@ function installEvents(): void {
   let holdAt: { x: number; y: number } | null = null;
   root.addEventListener('pointerdown', (ev) => {
     const tok = (ev.target as HTMLElement).closest<HTMLElement>('.pad-tok[data-tok]');
+    // A hold on a saved unit opens it in the builder (a tap adds it).
+    const saved = (ev.target as HTMLElement).closest<HTMLElement>('.pad-saved-row[data-act="preset"]');
     window.clearTimeout(holdTimer);
+    if (saved) {
+      holdAt = { x: ev.clientX, y: ev.clientY };
+      holdTimer = window.setTimeout(() => {
+        heldSaved = true;
+        const preset = loadMechPresets().find((m: MechPreset) => m.id === saved.dataset.id);
+        if (!preset) return;
+        editing = { id: preset.id, name: preset.name, was: { ...preset.mech } };
+        build = { ...preset.mech };
+        buildName = preset.name;
+        error = null;
+        panel = 'build';
+        render();
+      }, 450);
+      return;
+    }
     if (!tok) return;
     holdAt = { x: ev.clientX, y: ev.clientY };
     holdTimer = window.setTimeout(() => {
@@ -4637,7 +4744,7 @@ function installEvents(): void {
     });
   }
   root.addEventListener('contextmenu', (ev) => {
-    if ((ev.target as HTMLElement).closest('.pad-tok')) ev.preventDefault();
+    if ((ev.target as HTMLElement).closest('.pad-tok, .pad-saved-row')) ev.preventDefault();
   });
 
   document.addEventListener('keydown', (ev) => {

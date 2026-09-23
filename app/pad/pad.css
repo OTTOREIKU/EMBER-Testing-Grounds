@@ -1149,6 +1149,17 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
 .pad-saved + .pad-saved { margin-top: 8px; }
 .pad-saved .pad-seat { flex: 1; min-width: 0; }
 .pad-saved-x { min-width: var(--tap); padding-left: 0; padding-right: 0; flex-shrink: 0; }
+/* A saved build wears its faction the way the strip does: the panel colour
+   shifts towards the squad's, no border, and the points sit on the right. */
+.pad-saved-row { background: color-mix(in srgb, var(--fac, var(--neutral)) 14%, var(--surface2)); }
+.pad-saved-row:hover { background: color-mix(in srgb, var(--fac, var(--neutral)) 22%, var(--surface2)); }
+/* Three columns that line up down the list: the name takes the slack, the
+   tag is right-aligned against a fixed points column. */
+.pad-saved-row .pad-seat-name { flex: 1; min-width: 0; }
+.pad-saved-row .pad-seat-tag { margin-left: 0; flex: 0 0 auto; text-align: right; white-space: nowrap; }
+.pad-saved-pts { flex: 0 0 3.2em; text-align: right; font-family: var(--mono); font-size: 13px; color: var(--text2); }
+.pad-squad-pick { align-items: center; }
+.pad-squad-pts { margin-left: 6px; font-family: var(--mono); font-size: 13px; color: var(--text2); }
 
 .pad-lib-fold > summary { margin-top: 14px; }
 .pad-lib-fold > summary .pad-sec { margin: 0; }
