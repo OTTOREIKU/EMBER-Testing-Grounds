@@ -1714,7 +1714,15 @@ function actionList(t: Token, mine: boolean): string {
       g.intercept ? `Intercept ${g.intercept.left}` : '',
       g.charge ? (g.charge.charged ? 'Charged' : 'No Charge') : '',
     ].filter(Boolean).join(' · ');
-    const perform = guidedOn(table)
+    // A blast a Passive fires off the table (a Mine's Trigger, the Explosive
+    // Wall's Self-Destruct) is not an Action of anyone's Opportunity, so it has
+    // the same Trigger button in a Guided game as in Freeform. A Mine added
+    // during setup is never 'deployed' (Mines are laid, not deployed), so that
+    // flag is not consulted: whether it sits on the table is the table's call.
+    const blast = mine && g.available && t.kind === 'projectile' && g.action.type === 'Passive' && blastsOnItsOwn(g.action);
+    const perform = blast
+      ? `<button class="pad-chip on pad-perform" data-act="detonate" data-id="${esc(g.action.id)}">Trigger</button>`
+      : guidedOn(table)
       ? performButton(guide, t, g.action, g.partKey)
       // A Projectile's Detonation, and a Passive that IS a blast: a Mine's
       // Trigger and the Explosive Wall's Self-Destruct print dice or an
