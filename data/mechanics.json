@@ -85,7 +85,7 @@
     "armour piercing",
     "穿甲1"
    ],
-   "text": "The target removes X White dice from its Defense Roll before rolling. A removal rather than a penalty to the result, so it works exactly the way a Fragile Token does and stacks with one; the pool is never taken below zero, and a Part left with none simply makes no Defense Roll. It comes off the Armor or Structure the Part rolls and off any Terrain or Unit Protection added to it. The value is printed on the Action's own line even though the keyword prints a bare X, so a weapon listing Armor Piercing X pierces whatever number that Action states. FPA-02 Spike's Eagle Eye grants Armor Piercing 1 on any Firing Action, and that grant adds to a value already printed on the weapon."
+   "text": "The target removes X White dice from its Defense Roll before rolling. The dice are removed rather than the result reduced, so the effect stacks with a Fragile Token; the pool is never taken below zero, and a Part left with no dice makes no Defense Roll. The removal applies to the whole pool: the Armor or Structure the Part rolls and any Terrain or Unit Protection added to it. The X is the number printed on the Action's own line. FPA-02 Spike's trait grants Armor Piercing 1 on every Firing Action, and that adds to any value the weapon prints."
   },
   {
    "id": "focus",
@@ -95,7 +95,7 @@
     "focus",
     "专注"
    ],
-   "text": "Spend 1 Link to reroll dice on any roll, including the Black part-locator die. You may not voluntarily spend down to 0 Link (you need the cost plus one), but damage-driven loss can reach 0, which immediately forces Shutdown stance."
+   "text": "Spend 1 Link to reroll any dice of one roll, including the Black Die that locates the Part (4.10). Focus may not be paid with a Mech's last Link (FAQ L1). Link lost to damage or effects can reach 0, at which point the Mech enters Shutdown Stance."
   },
   {
    "id": "crush",
@@ -115,7 +115,7 @@
     "penetrat",
     "穿透"
    ],
-   "text": "The damage step every attack builds toward. After Damage Resolution, any Heavy Hit or Light Hit left unoffset causes Penetration on the target Unit or Part. With no Structure Value it is Destroyed at once. With a Structure Value it takes a Damaged Token, or is Destroyed instead if it already had one, so health runs Intact to Damaged to Destroyed and the amount of leftover damage never changes that step. While Damaged, a Part rolls its Structure Value rather than its Armor Value for White Dice in Defense. Hit and Penetration are separate: damage offset by Defense counts as a Hit with no Penetration, so On-Hit riders such as Concussion and Knockback still fire, while damage offset by Dodge counts as neither."
+   "text": "After Damage Resolution, any Heavy Hit or Light Hit left unoffset causes Penetration on the target Unit or Part. A Part with no Structure Value is Destroyed at once. A Part with a Structure Value takes a Damaged Token, or is Destroyed if it already had one: Intact to Damaged to Destroyed, one step per Penetration whatever the amount of damage. While Damaged, a Part rolls its Structure Value instead of its Armor Value for Defense dice. A Hit and a Penetration are separate: damage offset by Defense is a Hit with no Penetration, so [On Hit] effects such as Concussion and Knockback still apply, while damage offset by Dodge is neither."
   },
   {
    "id": "surplus_damage",
@@ -130,7 +130,7 @@
     "顺劈",
     "霰射"
    ],
-   "text": "Once a Penetration has happened, every Heavy Hit and Light Hit still unoffset is Surplus Damage. On its own it does nothing: it matters only when the Action carries a Surplus Damage keyword such as Mutilation, Cleaving or Scatter-shot, which spend it per Section 4.8. Those keywords are why an attack can roll far past what it needed and turn the excess into a second determined Part rather than wasting it."
+   "text": "Once a Penetration has occurred, every Heavy Hit and Light Hit still unoffset is Surplus Damage. On its own it does nothing. It is resolved only when the Action carries a Surplus Damage keyword (Mutilation, Cleaving or Scatter-shot), per Section 4.8; with several such keywords the Attacker chooses one."
   },
   {
    "id": "integrity_loss",
@@ -150,7 +150,7 @@
     "melee lock",
     "近战锁定"
    ],
-   "text": "The movement tax for leaving a Melee Lock. A unit is Melee Locked when an adjacent enemy with a Melee Action has Line of Sight to it, which means almost any Mech outside Shutdown Stance, since all Mechs have Punch/Kick. A locked unit cannot perform Firing Actions at all. When it makes Basic Movement it pays 1 extra Movement Range each time it exits a grid while locked, and 1 extra for every unit locking it at that moment, so leaving two lockers costs 2 extra. Flying Movement ignores Melee Lock completely and Forced Movement ignores the extra cost. Aerial units and units in Optical Camouflage cannot be Melee Locked."
+   "text": "A Unit is Melee Locked by an enemy that has a Melee Action, is Adjacent to it and has Line of Sight to it; a Flying Unit, a Unit making Flying Movement and a Unit in Optical Camouflage cannot be Melee Locked (4.3.5). A Melee Locked Unit cannot perform Firing Actions. Break Away: when a Locked Unit makes Basic Movement, each time it exits a Grid while Locked it pays 1 additional Movement Range for every Unit locking it at that moment. Flying Movement ignores Melee Lock; Forced Movement ignores the extra cost."
   },
   {
    "id": "ammo_and_charge",
@@ -174,7 +174,7 @@
     "screech",
     "尖啸"
    ],
-   "text": "An Electronic Attack that costs the target Link. Like all Electronic Warfare it ignores Terrain and Line of Sight and needs only Range, and it resolves as an Electronic Counter-roll with the attacker as Initiator. It is one of the four things that take Link away, alongside Focus, Part Destruction and Concussion, and it is one of the three that can drive Link all the way to 0, which immediately forces the target into Shutdown Stance. Focus can never do that, because a voluntary reroll cannot spend your last point."
+   "text": "An Electronic Attack that reduces the target's Link. Like all Electronic Warfare it ignores Terrain and Line of Sight and is limited only by Range, and it resolves as an Electronic Counter-roll with the attacker as Initiator. Link lost this way can reach 0, which puts the Mech into Shutdown Stance."
   },
   {
    "id": "remote_access",
@@ -183,7 +183,7 @@
    "match": [
     "remote access"
    ],
-   "text": "The second way to take a Terminal, and a Universal Action every Mech has in the Terminals missions. Perform it in the End Phase with the Torso at Range 4 for 1 action point, then make an Electronic Counter-roll against the Terminal, whose Electronic Value is 3. Success counts as accessing it. The alternative is Direct Access: at the End Phase you hold a Terminal if one of your Mechs outside Shutdown Stance or one of your Drones is inside its Tactical Zone and no enemy unit is. Either way a Terminal can only be accessed once per Round, its token flips face-down when taken, and every Terminal token flips back face-up at the End Phase."
+   "text": "A Universal Action every Mech has in the Terminals missions (5.3.3). Performed in the End Phase with the Torso, Range 4, as a Short Tactic: make an Electronic Counter-roll against the Terminal, whose Electronic Value is 3; success accesses it. Direct Access is the other way: at the End Phase a Terminal is accessed by a side with a Mech outside Shutdown Stance or a Drone inside its Tactical Zone and no enemy Unit there. A Terminal can be accessed once per Round; its token is flipped face-down when taken and every Terminal token is flipped back face-up at the End Phase."
   },
   {
    "id": "detonation",
@@ -214,14 +214,14 @@
    "name": "Secondary Task Cards",
    "ref": "Rulebook 5.2.3",
    "match": [],
-   "text": "Each player also picks 1 Secondary Task during setup, starting with the First Player, and scores it privately alongside the shared Main Task. The core box has 8. Three ask you to designate one of your own mechs: Escort scores 3 VP if it survives, Weapons Test scores 1 VP each time it destroys a Part or a Drone, and Disposal Procedure scores 2 VP when it dies. Two target the enemy: Decapitation is worth 5 VP but your opponent picks which of their mechs is the target, while Bounty Hunt is worth 4 VP and you pick. Annihilation scores 2 VP per enemy mech and 1 VP per drone, Mercy scores 2 VP for destroying no enemy mech at all, and Potential Excavation Area scores 2 VP for holding a Tactical Zone you nominate. The card text is our English rendering of the printed Korean, so the physical card wins."
+   "text": "Starting with the First Player, each player picks 1 Secondary Task during setup and shows it to the other player (5.2.1). The core box has 8. Three designate one of your own Mechs: Escort scores 3 VP if it survives, Weapons Test scores 1 VP each time it destroys a Part or a Drone, and Disposal Procedure scores 2 VP when it is destroyed. Two target the enemy: Behead is worth 5 VP and your opponent names which of their Mechs is the target; Bounty Hunt is worth 4 VP and you name it. Annihilation scores 2 VP per enemy Mech and 1 VP per Drone destroyed, Mercy scores 2 VP for destroying no enemy Mech, and Excavation Claim scores 2 VP if only your Units stand in a Tactical Zone you designate at the end of the game (Low Value Units do not count). The English text is a translation of the printed cards."
   },
   {
    "id": "tactics_cards",
    "name": "Tactics Cards",
    "ref": "Rulebook 5.4.2",
    "match": [],
-   "text": "Six Tactics Cards come in the core box, each costing 30 points against your squad total: Additional Instructions and Battlefield Recovery (GOF), Hit and Run and Tactical Disposition (UN), System Repair and Remote Restart (RDL). To use one you add it to your squad during list building. The rulebook sets no limit on how many you may take, but it does limit how many you may play: each player may only use 1 Tactics Card per round. Taking more than the game has rounds is legal and simply wasted points. Each card carries a faction emblem, but it is not a restriction: 5.1 limits Units to one faction and 5.4.2 calls Tactics Cards actions the commander takes rather than Units, and the rulebook's own anatomy of a Tactics Card lists a name, QR code, description and Points Value with no faction field. So a Tactics Card is the one thing in your squad that need not match your faction. This is a reading rather than a published ruling, so agree it with your opponent if it matters."
+   "text": "Six Tactics Cards come in the core box, each costing 30 points against the squad total: Additional Instructions and Battlefield Recovery (GoF), Hit and Run and Tactical Disposition (UN), System Repair and Remote Restart (RDL). They are bought during list building, one copy of each at most (FAQ P2). Each player may play only 1 Tactics Card per round, and a card once used is discarded for the rest of the game. A Tactics Card is an action the commander takes rather than a Unit (5.4.2), so it is not bound by the faction rule that applies to Units and Parts."
   },
   {
    "id": "ticks",
@@ -243,7 +243,7 @@
     "extra firing tick",
     "额外指示物"
    ],
-   "text": "An Extra Tick is not a spare Action Tick. It pays for one Short Action on its own, and two of them never combine into a Medium: that is the difference between an Extra Tick and an Action Tick bought some other way. It may only be used once every base Tick is spent or forfeited, it may repeat an Action already performed this Opportunity, and where the grant names an Action Type it pays only for that type. A grant usually carries a condition, and the condition is read at the moment the Tick is spent rather than when the Opportunity opens: the Tempest core grants its Tick only while the Mech is Stationary, so a Mech that has already moved has lost it, while the Glacier core grants its Tick only while the dial is set to Firing."
+   "text": "An Extra Tick pays for one Short Action on its own. Two Extra Ticks never combine to pay for a Medium Action, and an Extra Tick never combines with a base Tick (3.4.5). It may only be used after the Maneuver Tick and both Action Ticks are spent or forfeited, it may repeat an Action already performed this Opportunity, and where the grant names an Action Type it pays only for that type. A grant's condition is read when the Tick is spent: the Tempest core grants its Firing Tick only while the Mech is Stationary, the Glacier core only while the Mech acts in Firing Timing."
   },
   {
    "id": "overload",
@@ -263,7 +263,7 @@
     "extra action opportunity",
     "额外行动机会"
    ],
-   "text": "A whole second Action Opportunity, not an extra Tick: the Mech receiving it gets a fresh Maneuver Tick, two fresh Action Ticks, and any Extra Tick its Parts grant, so a Tempest core can grant its Firing Tick again inside it. The Echoes Support Backpack's Coordinate Action gives one to a chosen Ally Mech within Range 4, and that Mech pays the Link rather than the one Coordinating. The target must hold at least 2 Link to be chosen, so it can never be spent down to a Shutdown, and an Extra Opportunity may not itself grant another, so two Coordinating Mechs cannot trade Opportunities all round. It happens IMMEDIATELY, inside the Opportunity that granted it: the echoed Mech takes a complete Opportunity there and then, and the granter picks up where it left off afterwards (K21). Two grants nest two deep and unwind in reverse. A Mech echoed before its own turn in the order still gets that turn (K19), so being coordinated early costs it nothing."
+   "text": "A complete second Action Opportunity, not an extra Tick: the Mech gets a fresh Maneuver Tick, two fresh Action Ticks, and any Extra Tick its Parts grant (FAQ K7). The Echoes Support Backpack's Coordinate Action grants one to a chosen Ally Mech within Range 4, and that Mech loses 1 Link; it must hold at least 2 Link to be chosen. A Mech acting in an Echoes Opportunity cannot use Echoes on another Mech during it (FAQ K3). It happens immediately, inside the granting Mech's Opportunity: the echoed Mech acts, then the granting Mech continues (FAQ K21). The echoed Mech's Starting Action must match its own Timing (FAQ K7). A Mech echoed before its own activation still takes that activation (FAQ K19). A Mech may gain several Extra Opportunities from several Echoes Packs while it has the Link (FAQ K8)."
   },
   {
    "id": "on_hit",
@@ -274,7 +274,7 @@
     "命中时",
     "命中時"
    ],
-   "text": "A Hit and a Penetration are not the same thing, and an effect marked [On Hit] keys off the weaker of the two. A Hit is any damage the defender did not offset with Dodge. A Penetration is damage left unoffset by anything at all. Defense dice offset Light Hits only, so damage stopped by Defense still counts as a Hit even though nothing got through: the Action's [On Hit] rider still fires while the target takes no damage. Dodge is what prevents a Hit outright, which is why Mobility Stance turns off these riders and Defense Stance does not."
+   "text": "[On Hit] effects apply when the attack Hits, which is a lower bar than Penetration. A Hit is any damage the defender did not offset with a Dodge. Defense dice offset Light Hits only, so damage stopped by Defense still counts as a Hit and the [On Hit] effect applies even though nothing got through. Damage offset by a Dodge is not a Hit."
   },
   {
    "id": "stance_condition",
@@ -297,7 +297,7 @@
     "low value",
     "低价值"
    ],
-   "text": "A Low Value Unit may never interact with a Task Item, cannot be placed during Deployment, and is worth no Victory Points when destroyed, whatever a Task pays for kills (5.1). Projectiles are Low Value by default, and so is any Drone printed at 0 points. The consequence people miss is that the restriction is one-directional. Taking a Control Zone or reaching a Terminal is interacting, so a Low Value Unit cannot do either, however long it stands there. Denying one is not interacting: the rule for blocking says only that there must be no enemy Units present, with no exclusion, so a lone Projectile or a 0 point Drone contests ground it could never claim. The Excavation Claim card has to print its own exclusion for Low Value Units, which would be redundant if presence alone were already ruled out."
+   "text": "A Low Value Unit may not interact with a Task Item, cannot be placed during Deployment, and is worth no Victory Points when destroyed (p.82, 5.1). Projectiles are Low Value by default, and so is any Drone printed at 0 points. Taking a Control Zone or accessing a Terminal is interacting with a Task Item, so a Low Value Unit cannot do either. Blocking is not: a Zone is held only if no enemy Units are present, with no exclusion, so a Low Value Unit still denies it. The Excavation Claim card prints its own exclusion for Low Value Units."
   },
   {
    "id": "drone_action_speed",
@@ -323,7 +323,7 @@
     "指令生成",
     "指令协调"
    ],
-   "text": "The Command Token is a two-faced coin of the Drone economy. At the start of the Command Phase every Mech generates 1 face-up token on its Torso card, or X if the Torso prints Command Generation X. Issuing a Command takes a token from a Mech of your choice and lays it FACE-DOWN on an Ally Drone, which immediately moves or performs one Command Action; a Drone can hold only one, and the Drones’ tokens come off when the Command Phase ends. A Mech’s unspent tokens stay: they can be held back for an Action with Command Coordination X, which hands up to X of them to X different Drones later in the round (a Drone that already acted in the Command Phase may take one, because its first token is long gone), or consumed by an Action that asks for one, which flips the token face-down where it stays, spent, until the End Phase removes every Command Token wherever it lies."
+   "text": "At the start of the Command Phase every Mech generates 1 face-up Command Token on its Torso card, or X if the Torso prints Command Generation X (3.2.1). Issuing a Command takes a token from a Mech of your choice and lays it face-down on an Ally Drone, which immediately moves or performs one Command Action; a Drone holds only one, and the Drones' tokens are removed when the Command Phase ends. A Mech's unspent tokens stay on it: an Action with Command Coordination X hands up to X of them to X different Drones later in the round (a Drone that already acted in the Command Phase may take one), and an Action that consumes a Command Token flips it face-down. The End Phase removes every Command Token wherever it lies (4.15)."
   },
   {
    "id": "activation_order",
@@ -345,7 +345,7 @@
     "yellow token",
     "red token"
    ],
-   "text": "The background colour printed on a Square or Hexagon Token says how long it lasts. Green stays in effect indefinitely until an Action or effect removes it. Yellow is flipped to its reverse side at the end of the round, and that reverse is usually red. Red is about to expire and is removed at the end of the round. So a yellow token lasts two rounds: it flips at the first End Phase and comes off at the second. Low Recognition is the green one, printed green on its face and red on its reverse. Fragile, Fire Control Jamming, Immobilized and Highlight Target are yellow, each printed yellow on its face and red on its reverse."
+   "text": "The background colour of a Square or Hexagon Token says how long it lasts (2.5.3). Green stays until an Action or effect removes it. Yellow is flipped to its reverse at the end of the round; the reverse is usually red. Red is removed at the end of the round. So a yellow token lasts two rounds: it flips at the first End Phase and comes off at the second. The Low Profile Token is green on its face and red on its reverse. Fragile, Fire Control Interference, Immobilized and Highlight are yellow on their face and red on their reverse."
   },
   {
    "id": "deployment",
@@ -356,7 +356,7 @@
     "deployment phase",
     "first player token"
    ],
-   "text": "Before the first round both players roll 2 dice and the side with more Hits becomes First Player and chooses which board edge to play from. The book gives no tie procedure, so a tie is normally re-rolled. The First Player then deploys a single Unit wholly within an unoccupied Grid of their own Deployment Zone, after which the players alternate one Unit at a time until one side has placed everything, at which point the other places all of its remaining Units. A Mech chooses its Stance as it is deployed and counts as Offensive if none is set, and a Unit able to activate Optical Camouflage may be deployed directly into it."
+   "text": "Before the first round both players roll 2 dice; the side with more Hits is the First Player and chooses which board edge to play from (3.1.2). A tie is rolled again. The First Player deploys one Unit wholly within an unoccupied Grid of its Deployment Zone, then the players alternate one Unit at a time; once one side has placed everything, the other places all its remaining Units (3.1.4). A Mech chooses its Stance as it is deployed and is Offensive if none is set. A Unit able to activate Optical Camouflage may be deployed directly into it."
   },
   {
    "id": "interception",
@@ -387,7 +387,7 @@
     "single faction",
     "mercenary"
    ],
-   "text": "Agree a points limit first: 600 for a skirmish, 900 for a standard game, 1200 or more for a large one. Every card you take costs its Points Value against that total. Each Mech must be assigned a Pilot, and Pilots with the same ID cannot appear in the same squad, so one pilot card seats one Mech. Then the faction rule, which works at two levels. A single Mech must be built entirely from one faction's Parts (5.1), and in practice the Pilot counts as one of those Parts too, so an RDL pilot does not sit in a UN mech - the rulebook words rule 2 around Parts only, but tournaments enforce the pilot as well. Across the squad, RDL, UN and GoF cannot mix with each other. Planetring Dynamics and the White Dwarf collaboration are the exception: they are mercenaries, so their whole units may join an RDL, UN or GoF squad. That does not loosen the mech-level rule - a mercenary joins as a complete unit, never as an arm bolted onto someone else's mech. Tactics Cards are the one thing not faction-locked. About 30 Parts have no faction recorded anywhere, so an unflagged squad is not proof of legality."
+   "text": "Agree a points limit: 600 for a skirmish, 900 for a standard game, 1200 or more for a large one (5.1). Every card taken costs its Points Value against that total. Each Mech is assigned a Pilot, and two Pilots with the same ID cannot be in one squad. A Mech is built entirely from one faction's Parts, and its Pilot is of that faction too. Across the squad RDL, UN and GoF do not mix. Planetring Dynamics and the White Dwarf collaboration are mercenaries: their Units may join an RDL, UN or GoF squad as complete Units, never as a Part on another faction's Mech. Tactics Cards are not bound by the faction rule (5.4.2)."
   },
   {
    "id": "mines",
@@ -396,7 +396,7 @@
    "match": [
     "地雷"
    ],
-   "text": "A Mine sits in a Grid and fires when a Ground Unit is in that Grid, no matter how the unit arrived - walking in, being knocked back, or being shoved there by a Crush. M7 is explicit that one Movement may Crush a Drone onto a Mine and set it off. A Mine is treated as Aerial, which has two consequences people trip over: a Ground Unit entering its Grid sets it off rather than Crushing it, and a Flying Unit may land on one safely (E10, M24). Only the Mine's owner resolves the blast."
+   "text": "A Mine sits in a Grid and detonates when a Ground Unit is in that Grid, however the Unit arrived: by moving in, by Knockback, or by being displaced there by a Crush (FAQ M3, M6, M7). A Mine is treated as an Aerial Unit: a Ground Unit entering its Grid sets it off rather than Crushing it, and a Flying Unit may land on it without triggering it (FAQ E10, M24). The Mine's owner resolves the blast (FAQ M19, M22)."
   },
   {
    "id": "pholcus",
@@ -406,7 +406,7 @@
     "自行地雷",
     "pholcus"
    ],
-   "text": "The SGM-2 Pholcus is a Mine that moves. It is laid folded and unfolds into its deployed form, at which point it behaves as a Mine. Unfolding into a Grid that already holds a unit detonates it immediately (M18.4) - the moment it shares a Grid is the trigger, since anything arriving later would have Crushed it instead. The folded and unfolded forms are printed as separate cards with the same stats."
+   "text": "The SGM-2 Pholcus is a Mine that moves. It is laid folded and unfolds into its deployed form, at which point it is a Mine. Unfolding into a Grid that already holds a Unit detonates it immediately (FAQ M18). The folded and unfolded forms are printed as separate cards with the same stats (FAQ M8, M28)."
   },
   {
    "id": "loads",
@@ -426,18 +426,18 @@
     "auto action",
     "自动攻击"
    ],
-   "text": "An Automatic Action does not get to pick a favourite. It takes the NEAREST enemy in range, and if any enemy in range carries a Highlight Token it must take the nearest HIGHLIGHTED one instead (O21) - only a tie leaves the choice to you. Range here is counted the board's way, across large Grids and not diagonally, so a unit one Grid across and one down is 2 away, not 1. If NO enemy is in range at all, the Action may fall back on a Neutral target, and again only the nearest: that means the 1-inch Breakable Terrain containers. BUILDINGS AND BOTH DEFENSE WALLS ARE NEVER VALID TARGETS for a Drone's attack (O10), so an Automatic Action facing nothing but a wall simply has nothing to shoot. Beacons and Mines are the pair that catch people out: there is no such thing as a neutral one, so every Beacon and Mine on the board counts as an enemy Unit and therefore OUTRANKS Breakable Terrain in the queue."
+   "text": "An Automatic Action targets the nearest enemy Unit in Range (3.5.2). If any enemy in Range bears a Highlight Token, it must target the nearest Highlighted one instead (FAQ O21); a tie is the controller's choice. Range is counted across Large Grids, not diagonally. If no enemy is in Range, the Action may instead target the nearest Neutral Unit, which means the 1-inch Breakable Terrain containers; Buildings and Defense Walls are never valid targets (FAQ O9, O10). Beacons and Mines are enemy Units, never Neutral, so they are targeted before Breakable Terrain."
   },
   {
    "id": "smoke_screen",
    "name": "Smoke Screens",
-   "ref": "Rulebook 4.16",
+   "ref": "Rulebook 4.16; FAQ F1-F4",
    "match": [
     "smoke screen",
     "smoke grenade",
     "烟幕"
    ],
-   "text": "Made by detonating a Smoke Grenade, and placed as cards rather than tokens. They sit inside a Grid, never across two, and may share a Grid with units or terrain. When an Action places several at once its text usually requires them Connected, meaning each one touches another placed by that Action. Each card has a black and a white side showing who made it: your own may not overlap each other, but yours and your opponent's may share a Grid. What they do is block LINE OF SIGHT FOR FIRING ACTIONS ONLY, in both directions and for both players regardless of who placed them, including for Aerial units - a unit standing in smoke can neither shoot out nor be shot at. Melee and Projectile Actions are unaffected, which is the part people forget. They thin out in the End Phase: remove every isolated Smoke Screen, plus one from each of your Connected groups, players alternating. If placement merges two groups they count as one and lose only one card; if a removal splits a group in two, the halves owe nothing more this round but one each next round."
+   "text": "Smoke Screens are created when a Smoke Grenade detonates and are represented by Smoke Screen Cards. A Smoke Screen is placed within a Grid, never across Large Grids, and may share a Grid with Units or Terrain. When an Action places several at once, its text may require them to be Connected: each one must be in contact with at least one other placed by that Action. The card's Black or White side shows which player placed it. Smoke Screens placed by the same player cannot overlap in one Grid; those placed by different players can. Line of sight cannot be established through a Smoke Screen for a Firing Action. If the Attacker can draw a line of sight that does not pass through the Smoke, it may attack as normal. This affects both players equally, whoever placed the Smoke. A Unit in the same Grid as a Smoke Screen cannot establish line of sight to or from anything for Firing Actions, and Aerial Units are affected the same way (FAQ F1, F2). Interception is blocked the same way (FAQ F3). Smoke does not give Terrain Protection (FAQ F4). Actions other than Firing Actions, such as Melee Actions and Projectile Actions, are not affected. Dissipation: in the End Phase of each round, each player removes all of their Smoke Screens that are not Connected, and one Smoke Screen from each of their Connected groups, the players alternating. Connected here means the same player's Smoke Screens in contact. If a placement joins two groups into one, only one card is removed from the merged group. If a removal splits a group in two, the two groups owe no further removal that round; in the following round's End Phase one is removed from each."
   },
   {
    "id": "black_box",
@@ -447,7 +447,7 @@
     "black box",
     "黑匣"
    ],
-   "text": "A Task Item worth Victory Points in the missions built around it. On the board it counts as 1 small Grid, may overlap units, and blocks neither Line of Sight nor Movement. You pick one up either by moving through its position or by ending an Action Opportunity in its Grid - but only with a unit carrying the Freehand tag, and once carried that Freehand is spent, because the hand is full. Put the token on the Part or Unit Card that holds it; that card is the bearer. Lose a Black Box by being Penetrated: it goes back on the board in a spot the ATTACKER chooses, which must touch the bearer's base. Scoring is per mission and usually wants the box held in a particular zone at a particular time rather than merely carried, so read the Main Task card rather than assuming possession is enough."
+   "text": "A Task Item worth Victory Points in the missions built around it (5.3.1). On the board it occupies 1 small Grid, may overlap Units, and blocks neither Line of Sight nor Movement. A Unit picks one up by moving through its position or by ending an Action Opportunity in its Grid, using a Part with the Freehand tag; that Freehand then counts as occupied. The token is placed on the Part or Unit Card that holds it. A bearer that is Penetrated drops the Black Box: the Attacker places it in contact with the bearer's base. Scoring is per Main Task card, which may require the box to be held in a named zone at a named time."
   },
   {
    "id": "overwatch",
@@ -457,7 +457,7 @@
     "overwatch",
     "监视"
    ],
-   "text": "A shot held back and taken later. Both printings belong to one system, the TM39D Cobra tactical core and the KK9 Snake Eye micro scout it launches. OVERWATCH FIRE TOKEN, on the Cobra itself: at the END of the Delay Phase remove the token and this unit may perform 1 Firing Action - which is how a Mech that spent its Opportunity moving or ambushing still threatens the ground it crossed. OVERWATCH STRIKE, on the Snake Eye, which our translation of the card labels Surveillance Strike: designate 1 enemy unit within range, 1 ALLY Mech immediately performs 1 Firing Action against it, then the drone is removed - so the scout spends itself to hand its firing solution to someone with a gun, and the shooter need not be the drone's launcher. K15 settles what both raise: the Firing Action may be of any length, Short, Medium or Long, but it is ONE action, so a longer choice never buys a second shot."
+   "text": "A Firing Action held back and taken later; both printings belong to the TM39D Cobra tactical core and the KK9 Snake Eye micro scout it launches. Overwatch Fire Token, on the Cobra: at the end of the Delay Phase, remove the token and the Mech may perform 1 Firing Action. Overwatch Strike, on the Snake Eye (labelled Surveillance Strike in our translation): designate 1 enemy Unit within Range; 1 Ally Mech immediately performs 1 Firing Action against it, then the drone is removed. The shooter need not be the drone's launcher. The Firing Action may be Short, Medium or Long, but it is one Action (FAQ K15)."
   },
   {
    "id": "repeaters_radar",
@@ -466,7 +466,7 @@
    "match": [
     "repeater"
    ],
-   "text": "A Repeater extends where a Mech's electronic reach starts from: an Electronic Attack or Electronic Support may measure its range from the Repeater rather than from the Mech, which is what lets a Mech act on something it could never reach itself. Anti-air radar works the other way round, covering an area against Aerial targets so a shot at one of them is taken as though the radar unit were the one seeing it."
+   "text": "A Repeater lets an Electronic Attack or Electronic Support measure its Range from the Repeater instead of from the Mech performing it (FAQ O12, O13). Anti-air radar covers an area against Aerial targets: a shot at one of them is resolved as though the radar Unit were the one with the line of sight (FAQ O19, O20)."
   },
   {
    "id": "contact",
@@ -476,7 +476,7 @@
     "contact",
     "接触"
    ],
-   "text": "Two Units or Terrain Objects are in Contact when at least one edge of the Small Grids they occupy overlaps. It is measured on the footprints, not on the Large Grid, so a 3x3 Mech is in Contact along its whole face. Contact is NOT the same as Adjacent, and the difference decides real rules: a corner-to-corner touch is Adjacent but not Contact, because meeting at a point is not an edge overlapping, and two Units sharing one Large Grid are Adjacent automatically but only in Contact if their footprints actually touch. Standing in the same Grid counts, which is how a landed Mine or a Flying Unit above a ground one is in Contact with it. Contact is what an enemy needs to break Optical Camouflage, and what a Carrier Tarantula needs before it will lend its Load."
+   "text": "Two Units or Terrain Objects are in Contact when at least one edge of the Small Grids they occupy overlaps (4.2.3). It is measured on the footprints, not the Large Grid. Contact differs from Adjacent: a corner-to-corner touch is Adjacent but not Contact, and two Units sharing a Large Grid are Adjacent but in Contact only if their footprints touch. Standing in the same Grid counts as Contact, so a Mine or a Flying Unit above a ground Unit is in Contact with it. Contact is what an enemy needs to Reveal a Unit in Optical Camouflage, and what a Carrier Tarantula needs before it lends its Load."
   },
   {
    "id": "adjacent",
@@ -499,7 +499,7 @@
     "tether",
     "牵引"
    ],
-   "text": "Tether X binds two Units: a Tether X Token on the unit that landed it, a Tethered X Token on the target. The leash is one-directional, which is the part most often misread. Only the tethered end is restrained, and only against its own Movement: it cannot voluntarily move further than X grids from the initiating unit. The initiating unit is free to move wherever it likes. The Tether is not a cost and never blocks an Action outright; it narrows which destinations the tethered unit may choose. Three things remove both Tokens: the initiating unit voluntarily moving beyond X grids, the initiating unit being Penetrated, or either unit being forcibly moved so the distance ends up greater than X. That last one matters, because Forced Movement is not the moved unit's own Movement, so a Knockback or a Drag can break a Tether that the tethered unit could not have walked out of. Distance is rechecked after anything that moves either unit, not only on the tethered unit's turn. A Tether also changes what the initiating card can do: the Ols1B \"Harpoon\" swaps to its Tether Mode face while the Tether holds and swaps back when it drops, and the Ot130L's Link Shock can only be used on a unit this Mech has Tethered, ignoring distance and Line of Sight, with the target unable to Parry, unable to choose the hit location, and unable to roll Blue Dice."
+   "text": "Tether X binds two Units: a Tether X Token on the Unit that landed it, a Tethered X Token on the target. Only the tethered Unit is restrained, and only in its own Movement: it cannot voluntarily move further than X grids from the initiating Unit. The initiating Unit may move freely. The Tether is not a cost and never prevents an Action; it limits which destinations the tethered Unit may choose. Both Tokens are removed when any of these happens: the initiating Unit voluntarily moves beyond X grids; the initiating Unit is Penetrated; or either Unit is forcibly moved so the distance ends up greater than X. Distance is checked after anything that moves either Unit. The Ols1B Harpoon swaps to its Tether Mode face while the Tether holds and back when it ends; the Ot130L's Link Shock may only target a Unit this Mech has Tethered, ignoring distance and Line of Sight, and the target cannot Parry, choose the hit location or roll Blue Dice. (Card text: PDLH-202 and PDRH-202; the keyword has no rulebook appendix entry.)"
   }
  ]
 }

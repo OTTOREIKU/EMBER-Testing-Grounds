@@ -83,8 +83,10 @@ check('no token rule or note describes the UI', tokenBad, []);
 // The opposite failure: stripping so hard that a reader can no longer tell
 // which lines are the publisher's and which are ours.
 const allMech = mechanics.map((e) => e.text).join(' ');
-check('translation provenance is still stated', /our English rendering/.test(allMech), true);
-check('unofficial readings are still flagged', /a reading rather than a published ruling/.test(allMech), true);
+check('translation provenance is still stated', /translation of the printed cards/.test(allMech), true);
+// The Tactics Card faction reading was ratified (memory: ember-faction-legality)
+// and is now stated as the rule, so no entry flags a house reading any more.
+check('no entry hedges a rule as a house reading', /a reading rather than a published ruling|agree it with your opponent/.test(allMech), false);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exitCode = fail ? 1 : 0;
