@@ -916,7 +916,7 @@ export class AttackHelper {
   // on-hit rider in finish() run off hits and Penetration as they always do.
   // Set by the roller that was told "rolled"; cleared at each start().
   handsOff = false;
-  private tableOutcome: 'none' | 'hit' | 'pen' | null = null;
+  private tableOutcome: 'none' | 'hit' | 'pen' | 'surplus' | null = null;
   // The defender's own dice. When set — the Match Centre, with the defending
   // player at another screen — the defence roll is ASKED FOR rather than made:
   // the hook records what is owed, the DEFENDER presses their own roll button,
@@ -2383,11 +2383,14 @@ export class AttackHelper {
     // claimed, because Surplus is counted icons the pad never saw.
     if (this.handsOff) {
       const o = this.tableOutcome;
+      // 'surplus': the table says damage was left over after the Penetration.
+      // One carried icon is all the Surplus round reads - it moves the second
+      // Part one step - so the count is not asked.
       return {
-        hits: o === 'hit' || o === 'pen' ? 1 : 0,
-        penetrating: o === 'pen' ? 1 : 0,
-        unoffset: { heavy: 0, light: 0 },
-        text: [o === 'pen' ? 'Resolved at the table: Penetration.' : o === 'hit' ? 'Resolved at the table: a Hit, no Penetration.' : 'Resolved at the table: no damage.'],
+        hits: o === 'hit' || o === 'pen' || o === 'surplus' ? 1 : 0,
+        penetrating: o === 'pen' || o === 'surplus' ? 1 : 0,
+        unoffset: { heavy: o === 'surplus' ? 1 : 0, light: 0 },
+        text: [o === 'surplus' ? 'Resolved at the table: Penetration, with Surplus Damage left over.' : o === 'pen' ? 'Resolved at the table: Penetration.' : o === 'hit' ? 'Resolved at the table: a Hit, no Penetration.' : 'Resolved at the table: no damage.'],
         duel: { icons: [], triggers: [], spareDodge: 0, idleDefense: 0, carried: false },
       };
     }
@@ -4536,7 +4539,16 @@ export class AttackHelper {
     wrap.className = 'ah-step';
     // Hands-off: the one thing the pad needs back from the table.
     if (this.handsOff && !this.mirroring && this.tableOutcome === null) {
-      const asks: ['none' | 'hit' | 'pen', string][] = [['pen', 'Penetration'], ['hit', 'Hit, no Penetration'], ['none', 'No damage']];
+      // Surplus is offered only where the Action could spend it (Mutilation,
+      // Cleaving, Scatter-shot) and only on the first round: a Surplus round
+      // never chains (4.4.5). The Surplus round itself asks Penetration or not.
+      const canSurplus = c.surplusRound === 0 && surplusEffects(c.action).length > 0;
+      const asks: ['none' | 'hit' | 'pen' | 'surplus', string][] = [
+        ...(canSurplus ? [['surplus', 'Penetration, with Surplus Damage'] as ['surplus', string]] : []),
+        ['pen', 'Penetration'],
+        ...(c.surplusRound > 0 ? [] : [['hit', 'Hit, no Penetration'] as ['hit', string]]),
+        ['none', 'No damage'],
+      ];
       for (const [id, label] of asks) {
         const b = document.createElement('button');
         b.className = id === 'pen' ? 'ah-primary' : 'ah-alt';
@@ -4752,6 +4764,8 @@ export class AttackHelper {
         });
         if (surplus > 0 && candidates.length && c.surplusRound === 0 && alive) {
           c.surplusRound = 1;
+          // The Surplus round is resolved at the table too, and asked afresh.
+          this.tableOutcome = null;
           c.carried = carried;
           c.surplusOriginalPart = original;
           c.targetPart = null;

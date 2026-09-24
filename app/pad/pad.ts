@@ -1269,6 +1269,12 @@ function targetPanel(): string {
   </div>`;
 }
 
+// A Passive that detonates on a trigger the table judges: it rolls dice or
+// says Explosion / Detonation in its text.
+function blastsOnItsOwn(a: CardAction): boolean {
+  return !!((a.yellowDice ?? 0) || (a.redDice ?? 0)) || /detonat|explosion|引爆|爆炸/i.test(`${a.description?.en ?? ''} ${a.description?.zh ?? ''}`);
+}
+
 // A launch: the Action is paid in a Guided game, then one `launch` per
 // projectile in the volley (4.7.1), each spending its Ammo Token (4.13). The
 // projectiles land on the placeholder cell; the table places them.
@@ -1710,8 +1716,12 @@ function actionList(t: Token, mine: boolean): string {
     ].filter(Boolean).join(' · ');
     const perform = guidedOn(table)
       ? performButton(guide, t, g.action, g.partKey)
-      : (mine && g.available && t.kind === 'projectile' && g.action.type !== 'Passive'
-        ? `<button class="pad-chip on pad-perform" data-act="detonate" data-id="${esc(g.action.id)}">Detonate</button>`
+      // A Projectile's Detonation, and a Passive that IS a blast: a Mine's
+      // Trigger and the Explosive Wall's Self-Destruct print dice or an
+      // Explosion and fire off the table (a Ground Unit entering the Grid, the
+      // Wall being destroyed). The table says when; the pad resolves it.
+      : (mine && g.available && t.kind === 'projectile' && (g.action.type !== 'Passive' || blastsOnItsOwn(g.action))
+        ? `<button class="pad-chip on pad-perform" data-act="detonate" data-id="${esc(g.action.id)}">${g.action.type === 'Passive' ? 'Trigger' : 'Detonate'}</button>`
         : mine && g.available && isAttackAction(g.action)
         ? `<button class="pad-chip on pad-perform" data-act="attack" data-uid="${t.uid}" data-id="${esc(g.action.id)}">Attack</button>`
         : mine && g.available && isElectronicAttack(g.action)
