@@ -1,7 +1,7 @@
 import type { CardAction, ExtraTick, GameState, Opportunity, ScriptState, Side, Stance, Timing, Token } from './types';
 import { newOpportunity, normaliseScript, statusCount, STATUSES, TIMINGS, zonesOf } from './types';
 import type { GameData, MissionCard } from './data';
-import { cardName, squadLabel } from './data';
+import { BASE, cardName, squadLabel } from './data';
 import { bindTips, linkMechanics } from './inspector';
 import { choiceDialog } from './dialog';
 import { PHASES, PHASE_INFO } from './tracker';
@@ -198,7 +198,7 @@ export class PlayGuide {
           <ul class="pg-steps">
             <li>Move units, roll dice and run attacks by hand from the Details panel.</li>
             <li>Step the round bar through the phases yourself.</li>
-            <li>Browse cards, missions and the <a href="reference/" target="_blank" rel="noopener">Reference</a> at any time.</li>
+            <li>Browse cards, missions and the <a href="${BASE}reference/" target="_blank" rel="noopener">Reference</a> at any time.</li>
           </ul>
         </details>
       </div>`;
