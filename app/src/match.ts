@@ -1653,6 +1653,13 @@ function playerRows(rows: LeaderPlayer[]): string {
   }).join('')}</div>`;
 }
 
+// STATS IS PARKED (OTTO, 2026-09-25): the tab shows only "Coming Soon" until
+// the stats area is reworked, since there are few live stats to show yet. The
+// old view below is kept for that rework and is no longer rendered or fetched.
+function soonHtml(): string {
+  return '<div class="mc-col mc-soon"><p>Coming Soon</p></div>';
+}
+
 function statsHtml(): string {
   const r = record?.record;
   const recent = record?.recent ?? [];
@@ -1914,8 +1921,8 @@ function adminHtml(): string {
 }
 
 function doorHtml(): string {
-  if (door === 'stats') return statsHtml();
-  if (door === 'admin') return account?.role === 'admin' ? adminHtml() : statsHtml();
+  if (door === 'stats') return soonHtml();
+  if (door === 'admin') return account?.role === 'admin' ? adminHtml() : soonHtml();
   return `<div class="mc-col">
     <h1 class="mc-h">Start a match</h1>
     <div class="mc-row">
@@ -2684,7 +2691,8 @@ function render(): void {
   // inside their panels instead.
   // In a room too: the lobby rail pins Launch to its own bottom, so the lobby
   // must never be taller than the window either.
-  const capped = !hud && !!data && !!account && (relay.state.room ? true : door !== 'play');
+  // Stats is parked as "Coming Soon", so only Admin is a reading view today.
+  const capped = !hud && !!data && !!account && (relay.state.room ? true : door === 'admin' && account.role === 'admin');
   // Three fixed hosts, so the stateful board survives every re-render: the
   // bar and veils redraw freely, the body only redraws outside HUD mode.
   if (!document.getElementById('mc-barhost')) {
@@ -2875,10 +2883,6 @@ function wire(): void {
   root.querySelectorAll<HTMLButtonElement>('[data-door]').forEach((b) =>
     b.addEventListener('click', () => {
       door = b.dataset.door as Door;
-      if (door === 'stats') {
-        loadTableStats();
-        if (!record) void api.myRecord().then((r) => { record = r; render(); }).catch(() => {});
-      }
       if (door === 'admin') loadAdmin();
       render();
     }),
