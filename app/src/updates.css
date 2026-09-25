@@ -1,26 +1,80 @@
-/* ---------- update notice ---------- */
-#update-toast {
-  flex-shrink: 0; margin: 8px; z-index: 40;
-  display: flex; overflow: hidden;
-  background: var(--surface2); border-radius: var(--radius);
-  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.55);
-  animation: ut-in 0.22s ease;
+/* ---------- the "new version" notice (src/updates.ts) ----------
+ * One look on every page, in the site's style: a mono amber label, one line,
+ * a solid amber Reload and a quiet Later. Where it sits is each page's call.
+ * Tokens fall back, because the landing page carries fewer of them. */
+
+.upd {
+  z-index: 50;
+  padding: 12px 14px;
+  border-radius: var(--radius-lg, 10px);
+  background: var(--surface2, #1e242c);
+  color: var(--text, #e9eaec);
+  font-family: var(--font);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  /* Fades in; chrome does not slide (ui.css rule 4). */
+  animation: upd-in 0.2s ease;
 }
-#update-toast.ut-floating {
-  position: fixed; left: 12px; bottom: 12px; max-width: 300px; margin: 0;
+@keyframes upd-in { from { opacity: 0; } to { opacity: 1; } }
+
+.upd-k {
+  margin-bottom: 6px;
+  font: 600 10px var(--mono);
+  letter-spacing: 0.24em;
+  color: var(--accent, #f0b429);
 }
-@keyframes ut-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
-#update-toast .ut-bar { display: none; }
-#update-toast .ut-body { padding: 9px 11px; }
-#update-toast b { display: block; font-size: 12px; color: var(--accent); margin-bottom: 3px; }
-#update-toast p { margin: 0 0 8px; font-size: 11px; line-height: 1.45; color: var(--text2); }
-#update-toast .ut-actions { display: flex; gap: 6px; }
-#update-toast button {
-  border: none; border-radius: var(--radius-sm); cursor: pointer;
-  font-family: var(--font); font-size: 11px; font-weight: 600; padding: 5px 10px;
-  transition: background 0.12s, color 0.12s;
+.upd p { margin: 0 0 10px; font-size: 12.5px; line-height: 1.45; color: var(--text2, #a6b0bd); }
+.upd-actions { display: flex; gap: 6px; }
+.upd button {
+  min-height: 34px;
+  padding: 0 14px;
+  border: none;
+  border-radius: var(--radius-sm, 6px);
+  font: 700 12.5px var(--font);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, filter 0.12s;
 }
-#update-toast .ut-reload { background: var(--accent); color: var(--on-accent); }
-#update-toast .ut-reload:hover { filter: brightness(1.08); }
-#update-toast .ut-later { background: var(--surface3); color: var(--text2); }
-#update-toast .ut-later:hover { color: var(--text); }
+.upd .upd-go { background: var(--accent, #f0b429); color: var(--on-accent, #0f1216); }
+.upd .upd-go:hover { filter: brightness(1.08); }
+.upd .upd-later { background: var(--surface3, #262e38); color: var(--text2, #a6b0bd); font-weight: 600; }
+.upd .upd-later:hover { color: var(--text, #e9eaec); }
+
+/* Floating (the Reference): the bottom-left corner on a wide screen, across
+   the whole bottom on a phone, where a 300px scrap would sit on a card. */
+.upd.float { position: fixed; left: 16px; bottom: 16px; width: 300px; }
+@media (max-width: 599px) {
+  .upd.float { left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); width: auto; }
+}
+
+/* In the page's own flow (the pad's column, the board's rail, the lobby). */
+.upd.inline { box-shadow: none; flex-shrink: 0; }
+.upd.upd-rail { margin: 8px; }
+.upd.upd-col { margin-bottom: 14px; }
+
+/* The landing page's status line: its right end, in the line's own voice,
+   with the landing's round chevron. */
+.upd-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent, #f0b429);
+  font: 11px var(--mono);
+  letter-spacing: 0.12em;
+  cursor: pointer;
+}
+.upd-status i {
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--accent, #f0b429);
+  color: var(--bg, #0f1216);
+  font-style: normal;
+  font-size: 12px;
+  transition: filter 0.12s;
+}
+.upd-status:hover i { filter: brightness(1.1); }
+.upd-status:focus-visible { outline: 2px solid var(--accent, #f0b429); outline-offset: 3px; }

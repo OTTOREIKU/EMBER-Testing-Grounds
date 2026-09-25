@@ -63,7 +63,7 @@ import { BUILD_SLOTS, buildDefaultName, confirmLegalBuild, mechBuilderHtml, open
 import { groupByFaction, openPartPicker } from '../src/partpicker';
 import { bindCollection, builtOnlyOn, collectionOn, copiesOf, hasAny, loadCollection, onCollection, remaining, saveCollection, setBuiltOnly, setCollectionOn, shortfalls, type Collection } from '../src/collection';
 import { choiceDialog, confirmDialog, promptDialog } from '../src/dialog';
-import { checkForUpdates, watchForUpdates } from '../src/updates';
+import { checkForUpdates, syncUpdateNotice, watchForUpdates } from '../src/updates';
 import { normaliseTasks, taskItemsFor, type TaskState } from '../src/tasks';
 import { previewScore } from '../src/scoring';
 import { tacticFitsPhase, tacticSpec, tacticTargets, type TacticCtx } from '../src/tactics';
@@ -3671,6 +3671,9 @@ const SKELETON = `<header class="pad-bar" id="pad-bar"></header>
   </div>`;
 
 function render(): void {
+  // The update notice follows the screen: re-placed after a door screen is
+  // redrawn, taken away when a table opens (src/updates.ts).
+  queueMicrotask(syncUpdateNotice);
   if (data) noteDead();
   // The relay is the authority on where we are once signed in: a reconnect
   // that lands us back in a room must not leave the lobby showing.
@@ -4838,7 +4841,13 @@ void (async () => {
   // not the place to be asked to reload, and the check runs again on the way
   // back out of a game.
 registerOffline();
-  watchForUpdates({ when: () => screen !== 'table' });
+  // Before a table only, as a card in the column under EMBER PAD. The door
+  // screens are redrawn whole, so render() re-places it after every paint and
+  // takes it away the moment a table opens.
+  watchForUpdates({
+    when: () => screen !== 'table',
+    place: (notice) => document.querySelector('#pad-root:not(.table) .pad-head')?.after(notice),
+  });
 
   // The card database loads AFTER the first paint, deliberately. Signing in and
   // opening a table need none of it, and a phone on venue signal should not

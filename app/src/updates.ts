@@ -6,6 +6,36 @@ declare const __BUILD_ID__: string;
 const POLL_MS = 5 * 60 * 1000;
 const DISMISS_KEY = 'ember-update-dismissed';
 
+// THE "NEW VERSION" NOTICE, one component for every page (redone 2026-09-24
+// after an audit: the landing and the Match Centre never showed it, the board
+// showed it mid-multiplayer-game, and the pad's survived into a table). Each
+// page says only WHERE it sits and WHEN it may show; this file finds the newer
+// build, draws the notice, and keeps it placed. Placements, as OTTO chose them:
+//   landing       the status line's right end becomes NEW VERSION · RELOAD
+//   reference     bottom-left card; full width across the bottom on a phone
+//   pad           a card in the column under EMBER PAD, screens before a table
+//   tabletop      above the left rail's inspector, never in a multiplayer room
+//   match centre  top of the lobby column, never once a room is joined
+export interface UpdateOptions {
+  // May the notice show right now. Checked on every sync, so a notice already
+  // up is taken away the moment this turns false (a table opens, a room joins).
+  when?: () => boolean;
+  // Put the notice where it belongs. Absent: a floating card. If it leaves the
+  // notice outside the document (the spot does not exist on this screen), the
+  // notice simply is not shown until a later sync finds the spot.
+  place?: (notice: HTMLElement) => void;
+  // The one-line status-line form (the landing page): no text, no Later.
+  compact?: boolean;
+  // A class for the page's own spacing around an in-flow notice.
+  className?: string;
+  // One more sentence after the message ("Your board is saved.").
+  note?: string;
+}
+
+let options: UpdateOptions = {};
+// The newer build found and not yet dismissed.
+let pending: string | null = null;
+
 // From the site root, not beside the page: the pad lives in /pad/ and has no
 // version.json of its own.
 function versionUrl(): string {
@@ -21,6 +51,10 @@ async function liveBuild(): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+function dismissed(build: string): boolean {
+  try { return localStorage.getItem(DISMISS_KEY) === build; } catch { return false; }
 }
 
 // A plain location.reload() is enough for code and data, which the Service
@@ -48,39 +82,53 @@ async function hardReload(): Promise<void> {
   location.reload();
 }
 
-function show(build: string): void {
-  if (document.getElementById('update-toast')) return;
-  if (localStorage.getItem(DISMISS_KEY) === build) return;
-
-  const infoBox = document.getElementById('inspect-box');
+function buildNotice(): HTMLElement {
+  if (options.compact) {
+    const b = document.createElement('button');
+    b.id = 'update-notice';
+    b.className = 'upd-status';
+    b.type = 'button';
+    b.innerHTML = 'NEW VERSION · RELOAD <i aria-hidden="true">›</i>';
+    b.addEventListener('click', () => void hardReload());
+    return b;
+  }
   const box = document.createElement('div');
-  box.id = 'update-toast';
+  box.id = 'update-notice';
+  box.className = `upd ${options.place ? 'inline' : 'float'}${options.className ? ` ${options.className}` : ''}`;
   box.setAttribute('role', 'status');
   box.innerHTML = `
-    <div class="ut-bar"></div>
-    <div class="ut-body">
-      <b>New version available</b>
-      <p>The tool has been updated since you opened this page. Reload to pick up the changes.${infoBox ? ' Your board is saved, so nothing is lost.' : ''}</p>
-      <div class="ut-actions">
-        <button class="ut-reload">Reload now</button>
-        <button class="ut-later">Later</button>
-      </div>
+    <div class="upd-k">NEW VERSION</div>
+    <p>The site was updated since this page opened.${options.note ? ` ${options.note}` : ''}</p>
+    <div class="upd-actions">
+      <button type="button" class="upd-go">Reload</button>
+      <button type="button" class="upd-later">Later</button>
     </div>`;
-  box.querySelector('.ut-reload')!.addEventListener('click', () => void hardReload());
-  box.querySelector('.ut-later')!.addEventListener('click', () => {
-    localStorage.setItem(DISMISS_KEY, build);
-    box.remove();
+  box.querySelector('.upd-go')!.addEventListener('click', () => void hardReload());
+  box.querySelector('.upd-later')!.addEventListener('click', () => {
+    if (pending) {
+      try { localStorage.setItem(DISMISS_KEY, pending); } catch { /* the notice still goes */ }
+    }
+    pending = null;
+    syncUpdateNotice();
   });
-
-  if (infoBox?.parentElement) {
-    infoBox.parentElement.insertBefore(box, infoBox);
-  } else {
-    box.classList.add('ut-floating');
-    document.body.appendChild(box);
-  }
+  return box;
 }
 
-let gate: (() => boolean) | null = null;
+// Show, place, or take away the notice to match the moment. Pages that redraw
+// their screen wholesale (the pad, the Match Centre) or change what is allowed
+// (a room joined) call this after they do; it is cheap when nothing changed.
+export function syncUpdateNotice(): void {
+  const current = document.getElementById('update-notice');
+  const allowed = !!pending && (options.when?.() ?? true);
+  if (!allowed) {
+    current?.remove();
+    return;
+  }
+  if (current) return;
+  const notice = buildNotice();
+  if (options.place) options.place(notice);
+  else document.body.appendChild(notice);
+}
 
 // One check, now. The pad calls it on the way out of a game, so a build that
 // landed mid-game is offered the moment the sheet is put down.
@@ -88,16 +136,14 @@ export async function checkForUpdates(): Promise<void> {
   const mine = typeof __BUILD_ID__ === 'string' ? __BUILD_ID__ : null;
   if (!mine) return;
   const live = await liveBuild();
-  if (live && live !== mine && (gate?.() ?? true)) show(live);
+  if (live && live !== mine && !dismissed(live)) pending = live;
+  syncUpdateNotice();
 }
 
-// `when` says whether the notice may be shown right now; the pad keeps it off
-// a sheet mid-game. Without it the notice shows whenever a newer build is
-// live, which is what the board and the reference want.
-export function watchForUpdates(opts?: { when?: () => boolean }): void {
+export function watchForUpdates(opts: UpdateOptions = {}): void {
   const mine = typeof __BUILD_ID__ === 'string' ? __BUILD_ID__ : null;
   if (!mine) return;
-  gate = opts?.when ?? null;
+  options = opts;
   const check = () => checkForUpdates();
   window.setTimeout(() => void check(), 30_000);
   window.setInterval(() => void check(), POLL_MS);

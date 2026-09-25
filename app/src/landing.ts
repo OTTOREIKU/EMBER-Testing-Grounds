@@ -2,6 +2,7 @@ import { registerOffline } from './offline';
 import { warmAllImages, warmDecision } from './images';
 import { mechArtLayers } from './data';
 import { barcodeSvg } from './barcode';
+import { watchForUpdates } from './updates';
 
 // The Mechs behind the wordmark, built by the same function as every other
 // tool (data.ts mechArtLayers), so they stack exactly as they do on the board.
@@ -65,3 +66,10 @@ for (const a of document.querySelectorAll<HTMLAnchorElement>('.land-row:not(.off
 }
 
 registerOffline();
+
+// A newer build turns the status line's right end (LINK OK) into NEW VERSION ·
+// RELOAD. Nothing on this page can be lost, so there is no Later.
+watchForUpdates({
+  compact: true,
+  place: (notice) => document.querySelector('.land-status span:last-child')?.replaceWith(notice),
+});

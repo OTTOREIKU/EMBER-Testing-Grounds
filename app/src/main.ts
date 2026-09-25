@@ -52,7 +52,7 @@ import { loadReplays, ReplayPlayer, type ReplayScript, type ReplayStep, type Rep
 import { SquadTracker } from './squads';
 import { warmAllImagesWhenIdle } from './images';
 import { runFirstVisitPreload } from './preload';
-import { watchForUpdates } from './updates';
+import { syncUpdateNotice, watchForUpdates } from './updates';
 import { installTooltip, preloadCards } from './tooltip';
 import { PHASES, RoundTracker } from './tracker';
 import { clearHistory, historyList, recordSnapshot, undoLast } from './history';
@@ -166,7 +166,18 @@ async function init() {
   // the board is live underneath and Skip costs nothing.
   void runFirstVisitPreload().then(() => warmAllImagesWhenIdle());
   registerOffline();
-  watchForUpdates();
+  // Above the left rail's inspector, and never while the board is in a
+  // multiplayer room: a reload there drops a player out of a live game. The
+  // relay's onChange syncs it, so one already up goes on joining.
+  watchForUpdates({
+    when: () => !relay.state.room,
+    place: (notice) => {
+      const info = document.getElementById('inspect-box');
+      info?.parentElement?.insertBefore(notice, info);
+    },
+    className: 'upd-rail',
+    note: 'Your board is saved.',
+  });
   const inventory = new Inventory(data.boxes, () => roster.render(), data);
 
   const tray = new DiceTray(dice, document.getElementById('dice-tray')!);
@@ -7298,6 +7309,8 @@ async function init() {
       setHint(`${squadLabel(seat)} rolled${label ? ` · ${label}` : ''}`);
     },
     onChange(view) {
+      // Joining a room takes the update notice away (and leaving brings it back).
+      syncUpdateNotice();
       // Drives the dial filter: with a seat set, the other squad's dials are
       // masked until they reveal.
       setLocalSeat(view.room ? view.seat : null);

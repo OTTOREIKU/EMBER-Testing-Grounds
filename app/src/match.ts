@@ -21,6 +21,7 @@ import { loadMechPresets } from './presets';
 import { hideTooltip, installTooltip, preloadCards } from './tooltip';
 import { warmAllImagesWhenIdle } from './images';
 import { runFirstVisitPreload } from './preload';
+import { syncUpdateNotice, watchForUpdates } from './updates';
 import { importSquadFile } from './importer';
 import { boardFingerprint, dialsOf, hashDials, newSalt, type DialEntry } from './secrecy';
 import { animateRemoteMove, clearRangeOverlayFor, ensureHud, glueAfter, showRangeOverlay, showSideTab, startAttackPick, startBoxDrop, startDetonation, startElectronicPick, startInterceptPick, startTacticPick, startLaunchPlan, startShove, startSmokePlan, type DiceLine, type HudCtx } from './matchhud';
@@ -2638,6 +2639,9 @@ function bringSquad(name: string, mechs: SavedSquad['mechs'], drones: SavedSquad
 // ---------- render ----------
 
 function render(): void {
+  // The update notice follows the screen: re-placed in the lobby after every
+  // paint, and gone once a room is joined (src/updates.ts).
+  queueMicrotask(syncUpdateNotice);
   // A closed combat window takes the published mirror down with it, whatever
   // way it closed — the sweep sees the helper idle and sends the null.
   sweepCombatView();
@@ -3153,6 +3157,14 @@ root.addEventListener('mc-lockdials', () => {
 });
 
 // ---------- boot ----------
+
+// In the lobby only, at the top of its column; never once a room is joined,
+// because a reload mid-match drops the player out of a live game.
+watchForUpdates({
+  when: () => !relay.state.room,
+  place: (notice) => document.querySelector('.mc-col')?.prepend(notice),
+  className: 'upd-col',
+});
 
 render();
 void (async () => {
