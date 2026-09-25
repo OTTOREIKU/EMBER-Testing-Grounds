@@ -427,6 +427,11 @@ async function init() {
       // [Two-Handed] is OFFERED (FAQ A16), the same question performGuided asks.
       void (granted ? askTwoHanded(t, granted) : Promise.resolve(undefined)).then((adjusted) => {
       const proceed = (): void => {
+        // The [Charged] question, as the guide door asks it. Without it this
+        // door never set the refund, so chargeAdjusted always read the Charge
+        // as kept and a Charged Ion shot could never Mutilate (audit Phase 2,
+        // a side effect of Phase 1 taking grant lines out of surplusEffects).
+        void offerChargeSpend(t, actionId);
         pendingAttack = { attackerUid: t.uid, actionId, mode: 'attack', action: adjusted };
         document.body.classList.add('targeting');
         // The O9 Neutral fallback has to be said here too, or it only reaches

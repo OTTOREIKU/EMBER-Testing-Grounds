@@ -356,5 +356,20 @@ check('A17 the mass-production HALO needs no Command Token',
   check('A16 a refused Focus leaves the declare open, nothing paid or rerolled', [h.ctx.focus?.stage, h.ctx.focus?.attackerUse], ['declareA', false]);
 }
 
+// ---------- After the push: two leaks the build left behind ----------
+// The tabletop card door lost its [Charged] question when grant lines left
+// surplusEffects, so a Charged Ion shot there could never Mutilate. Both doors
+// on the page must ask it, the same way.
+check('both freeplay attack doors ask whether to consume the Charge',
+  (readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8').match(/void offerChargeSpend\(t, actionId\);/g) ?? []).length, 2);
+// Read through the LOADED data, where 。 is already a full stop: auras.test.mjs
+// drives the same parser on the raw file and never saw the "狙击." it left.
+{
+  const named = [...data.byId.values()].flatMap((c) => c.actions ?? [])
+    .flatMap((x) => (M.twoHandedRider(x)?.keywords ?? []).filter((k) => !data.keyword?.(k)?.en?.name).map((k) => `${x.id} ${k}`));
+  check('every [Two-Handed] keyword in the loaded text has an English name', named, []);
+  check('and 122_A grants plain Snipe, once', M.twoHandedRider(act('122', '122_A')).keywords, ['狙击']);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exitCode = fail ? 1 : 0;

@@ -1704,10 +1704,12 @@ export function twoHandedRider(a: CardAction): TwoHanded | null {
     if (/视为中动作/.test(line)) out.medium = true;
     // 获得A，B lists more than one on a single line (ZHRA-303 prints
     // "获得压制，毁伤"), so every term after the verb is taken.
-    const g = /获得([^。\n]*)/.exec(line);
+    // The ASCII full stop too: cleanRulesText turns 。 into . on load, so the
+    // key kept it ("狙击.") and the glossary could not name it for the player.
+    const g = /获得([^。.\n]*)/.exec(line);
     if (g) {
       for (const part of g[1].split(/[，,、和或]/)) {
-        const k = part.trim().replace(/[。\s]/g, '');
+        const k = part.trim().replace(/[。.\s]/g, '');
         if (k) out.keywords.push(k);
       }
     }
