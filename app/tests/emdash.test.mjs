@@ -162,7 +162,7 @@ check('and the table placeholders are still exactly the known set', placeholders
 // The pages themselves. Every dash in the markup is on screen.
 console.log('\nand none in the markup');
 
-for (const page of ['index.html', 'reference.html', 'match.html']) {
+for (const page of ['index.html', 'table/index.html', 'reference/index.html', 'table/match/index.html']) {
   const t = readFileSync(new URL(`../${page}`, dir), 'utf8');
   check(`${page} has none`, t.includes(DASH), false);
 }

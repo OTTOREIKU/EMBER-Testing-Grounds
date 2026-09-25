@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EMBER Testing Grounds</title>
+</head>
+<body>
+  <div id="app">
+    <!-- The bar keeps only what is NOT about this board: the collection, the
+         account and the companion page. Everything that describes the
+         battlefield moved into the left rail's Setup tab, which had a tab strip
+         holding one dead tab and nothing to put in it. -->
+    <header id="toolbar">
+      <span id="logo">EMBER <em>Testing Grounds</em></span>
+      <div id="tb-controls">
+      <button id="btn-inventory" data-tip-title="Inventory" data-tip="Set which boxes you own.|Card lists can then filter down to just your collection.">Inventory</button>
+      <button id="btn-multiplayer" data-tip-title="Multiplayer" data-tip="Sign in to your account on embertg.online.|Accounts are invite only while online play is being built.">Multiplayer</button>
+      <a id="btn-reference" href="../reference/" target="_blank" rel="noopener"
+         data-tip-title="Reference" data-tip="Glossary and card lookup.|Opens a phone-friendly companion page in a new tab.">Reference ↗</a>
+      </div>
+      <input type="file" id="import-file" accept=".json" hidden />
+      <input type="file" id="import-squad-file" accept=".json,.png" hidden />
+    </header>
+    <main>
+      <aside id="left-panel">
+        <!-- Setup and Play rather than one tab per panel: the dice tray and the
+             inspect box have to be visible AT THE SAME TIME during combat, so
+             they share the Play tab exactly as they shared the rail before. -->
+        <div id="left-tabs">
+          <button data-ltab="setup">Setup</button>
+          <button data-ltab="dice" class="active">Dice</button>
+        </div>
+        <section id="ltab-setup" class="left-tab">
+          <div id="setup-brief" class="brief"></div>
+          <!-- The two map TOOLS sit with the map picker they act on: building a
+               map and pruning the list are both about what that dropdown holds.
+               Battlefield is then only the two things that dress the board. -->
+          <div class="field">
+            <label for="map-select">Map</label>
+            <select id="map-select">
+              <option value="">Empty board</option>
+            </select>
+          </div>
+          <button class="setup-row" id="btn-mapedit" data-tip-title="Map editor" data-tip="Builds a custom map from the official terrain pieces.|Paint zones and deployment strips onto it too.">Map editor<span class="ct">build a map</span></button>
+          <button class="setup-row" id="btn-mapmanage" data-tip-title="Manage maps" data-tip="Delete saved and scenario maps you no longer want in the list.">Manage maps<span class="ct">saved &amp; scenario</span></button>
+
+          <div class="field">
+            <label for="zone-select">Zones</label>
+            <select id="zone-select" data-tip-title="Zones" data-tip="Chooses which objective and deployment zones are drawn on the board.|Picking a Mission also sets up its Task Items.">
+              <option value="">No zones</option>
+            </select>
+          </div>
+          <p class="setup-eyebrow">Battlefield</p>
+          <button class="setup-row" id="btn-missions" data-tip-title="Missions" data-tip="Reads a Main Task card and puts its zones on the board.|Locked once the battlefield is set, because Tasks are chosen before the roll (3.1.1).">Missions<span class="ct">Main Task</span></button>
+          <button class="setup-row" id="btn-environments" data-tip-title="Environment Cards" data-tip="Lays an Environment Card on a Grid, giving it a special effect.|How many you may place is printed on the Battlefield Card (5.4.1).">Environments<span class="ct">Grid effects</span></button>
+          <button class="setup-row" id="btn-scenarios" data-tip-title="Scenarios" data-tip="Loads a demo scenario complete with squads, terrain and objectives.|Good for trying a mechanic without building a list first.">Scenarios<span class="ct">demo boards</span></button>
+
+          <p class="setup-eyebrow">Board</p>
+          <div class="setup-btnrow">
+            <button id="btn-undo" title="Undo the last thing that changed the board (Ctrl+Z)">↶ Undo</button>
+            <button id="btn-clear" title="Take units, objectives, terrain or zones off the board">Clear</button>
+          </div>
+          <div class="setup-btnrow">
+            <button id="btn-export" title="Download the board state as a JSON file">Save</button>
+            <button id="btn-import" title="Load a saved board state">Load</button>
+          </div>
+
+          <p class="setup-eyebrow">Help</p>
+          <button class="setup-row" id="btn-report" data-tip-title="Report a problem" data-tip="Saves a file holding the board, your recent moves and anything the app got wrong.|Nothing is uploaded. You send the file yourself.">Report a problem</button>
+        </section>
+        <section id="ltab-dice" class="left-tab active">
+          <div id="dice-tray"></div>
+        </section>
+        <!-- Outside the tabs on purpose. It is a readout, not a mode: hovering a
+             phase, a unit or a squad entry should answer you whichever tab is
+             open, and leaving it in the Dice tab made Setup a dead end for it. -->
+        <div id="inspect-box"><p class="inspect-idle">Hover a phase, a unit on the map, or a squad entry for details.</p></div>
+        <!-- The map editor takes the whole rail while it is open, rather than a
+             bar across the top of the board: it is a mode with a lot of tools,
+             and the board wants its height back. -->
+        <div id="editor-bar" hidden></div>
+      </aside>
+      <div id="board-col">
+        <div id="round-tracker"></div>
+        <div id="smoke-prompt" hidden></div>
+        <div id="replay-bar" hidden></div>
+        <div id="board-wrap">
+          <div class="zone-ctrl">
+            <button id="btn-zones" data-tip-title="Zone overlay" data-tip="Shows or hides the tactical zone and deployment overlay drawn on the board." aria-pressed="false">Zones</button>
+          </div>
+          <div id="move-ctrl" hidden>
+            <span id="move-info"></span>
+            <button id="move-back" title="Drop the last waypoint (right-click the board, or Backspace)">◀ Back</button>
+            <button id="move-confirm">Confirm move</button>
+            <button id="move-cancel">Cancel</button>
+          </div>
+          <!-- Keyboard help sat in the top bar holding a fixed 200px of the most
+               valuable strip on the page. It belongs to the board, so it sits on
+               the board's own bottom line, centred between the Zones toggle on
+               the left and the zoom controls on the right. #hint keeps its id so
+               setHint still drives it; the keys hide while a guided instruction
+               is showing. -->
+          <!-- Guided instructions used to share the bottom bar with the
+               shortcut keys and kept shouldering them aside. The bar is the
+               keys and nothing else now; anything the app has to say floats
+               at the TOP of the board, next to the click it is asking for. -->
+          <p id="hint"></p>
+          <div id="hintbar">
+            <div id="hint-keys">
+              <span><b>drag</b> move</span>
+              <span><b>Q</b>/<b>E</b> rotate</span>
+              <span><b>M</b> move-range</span>
+              <span><b>A</b> arcs</span>
+              <span><b>Del</b> remove</span>
+              <span><b>hover</b> range &amp; LOS</span>
+              <button id="hint-hide" title="Hide the shortcuts" aria-label="Hide the shortcuts">✕</button>
+            </div>
+            <!-- Left behind when the keys are hidden: faint until the pointer is
+                 near it, so it reads as a handle rather than another control. -->
+            <button id="hint-show" title="Show the keyboard shortcuts">⌨</button>
+          </div>
+        </div>
+      </div>
+      <aside id="sidebar">
+        <div id="side-tabs">
+          <button data-tab="squad" class="active">Squads</button>
+          <button data-tab="add">Add</button>
+          <button data-tab="details">Details</button>
+          <button data-tab="combat" id="tab-btn-combat">Combat</button>
+        </div>
+        <section id="tab-squad" class="side-tab active"><div id="squad-body"></div></section>
+        <section id="tab-add" class="side-tab">
+          <div id="add-tabs">
+            <button data-tab="drones" class="active">Drones</button>
+            <button data-tab="mech">Mech</button>
+            <button data-tab="projectiles">Projectiles</button>
+            <button data-tab="tactics">Tactics</button>
+          </div>
+          <div id="add-body"></div>
+        </section>
+        <section id="tab-details" class="side-tab"><div id="details-body"></div></section>
+        <section id="tab-combat" class="side-tab">
+          <div id="combat-body"></div>
+          <div id="unit-log"></div>
+        </section>
+      </aside>
+    </main>
+  </div>
+  <!-- Served from a FOLDER (/table), like /pad and /reference: /data and
+       /assets are one level up. Declared before any module loads; see the
+       note over BASE in src/data.ts. -->
+  <script>window.__EMBER_BASE__ = "../";</script>
+  <script type="module" src="../src/main.ts"></script>
+</body>
+</html>

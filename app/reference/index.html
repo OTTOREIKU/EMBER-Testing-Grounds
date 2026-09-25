@@ -57,6 +57,10 @@
       <div id="ref-detail-content"></div>
     </div>
   </div>
-  <script type="module" src="/src/reference.ts"></script>
+  <!-- Served from a FOLDER (/reference) so the address stays short, like /pad:
+       /data and /assets are one level up. Declared before any module loads;
+       see the note over BASE in src/data.ts. -->
+  <script>window.__EMBER_BASE__ = "../";</script>
+  <script type="module" src="../src/reference.ts"></script>
 </body>
 </html>

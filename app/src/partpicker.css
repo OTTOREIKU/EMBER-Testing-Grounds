@@ -56,6 +56,25 @@
 .dlg-actions.dlg-stacked { flex-direction: column; align-items: stretch; gap: 7px; }
 .dlg-actions.dlg-stacked button { width: 100%; text-align: left; padding: 10px 14px; }
 
+/* A choice dialog opened with `sheet: true`: docked to the bottom, full width
+   on a phone and capped on a wide screen, with the object's name as a mono
+   label and big centred buttons near the thumb. Same fade-in as any dialog;
+   chrome does not slide (ui.css rule 4). */
+.dlg-back.dlg-sheet { align-items: flex-end; padding: 0; }
+.dlg-sheet .dlg-panel {
+  position: relative; width: 100%; max-width: 560px; max-height: 70vh;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  padding: 18px 16px calc(16px + env(safe-area-inset-bottom));
+}
+.dlg-sheet .dlg-title {
+  margin: 4px 48px 14px 0;
+  font: 600 10.5px var(--mono); letter-spacing: 0.26em; text-transform: uppercase; color: var(--accent);
+}
+.dlg-sheet .dlg-actions { margin-top: 0; }
+.dlg-sheet .dlg-actions.dlg-stacked { gap: 8px; }
+.dlg-sheet .dlg-actions.dlg-stacked button { min-height: 44px; text-align: center; font-size: 14px; }
+.dlg-sheet .dlg-close { top: 10px; right: 10px; }
+
 /* ---------- mech part browser (the slot popout) ---------- */
 .pp-panel {
   position: relative; display: flex; flex-direction: column;

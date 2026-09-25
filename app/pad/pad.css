@@ -42,6 +42,13 @@
   --collab: #eef1f5;
   --neutral: #b9c3cf;
 
+  /* The four stances, sampled from the printed stance tokens and pitched for
+     dark text on top (Shutdown's token is black, so it is the exception). */
+  --st-offensive: #e25a50;
+  --st-defensive: #d9d8d2;
+  --st-mobility: #5a9ad6;
+  --st-shutdown: #07080a;
+
   --radius: 8px;
   --radius-sm: 6px;
   --radius-lg: 12px;
@@ -63,6 +70,18 @@
   --chrome-h: 0px;
   --dock-h: 56px;
 
+  /* THE DRESSING, carried over from the landing page (src/landing.css) as a
+     first test of its look on the pad: an amber glow and a faint grid that
+     fades out away from it. Written as background STACKS rather than a masked
+     layer, so any opaque surface can repeat the same stack and read as the
+     same backdrop - the panels cover the sheet exactly and must not show a
+     seam when they open. Layers top to bottom: glow, fade, grid. */
+  --dress-glow: radial-gradient(90% 50% at 100% 0%, rgba(240, 180, 41, 0.08), transparent 70%);
+  --dress-fade: radial-gradient(90% 65% at 75% 10%, transparent, var(--bg) 75%);
+  --dress-grid: linear-gradient(rgba(255, 255, 255, 0.028) 1px, transparent 1px) 0 0 / 26px 26px,
+                linear-gradient(90deg, rgba(255, 255, 255, 0.028) 1px, transparent 1px) 0 0 / 26px 26px;
+  --dress: var(--dress-glow), var(--dress-fade), var(--dress-grid), var(--bg);
+
   font-family: var(--font);
   color-scheme: dark;
 }
@@ -82,7 +101,13 @@ html, body {
   touch-action: manipulation;
 }
 
+/* The page carries the landing's backdrop, so the screens before a table sit
+   on it; the table screen covers it edge to edge and draws its own. body is
+   cleared so it does not paint a flat colour over the page's. */
+html { background: var(--dress); }
+
 body {
+  background: none;
   min-height: 100dvh;
   font-size: 15px;
   line-height: 1.45;
@@ -102,9 +127,61 @@ body {
   gap: 14px;
 }
 
+/* Before a table the pad is a front door, so it gets the landing page's
+   dressing: the backdrop (on the page itself, see html below), the subtitle as
+   a watermark and the amber corner brackets.
+
+   The watermark is IN FLOW on a phone, the last thing on the screen: the cards
+   fill the width, and a fixed one showed through the gaps between them. On a
+   wide screen there is empty space either side of the column, so it goes back
+   to the landing's vertical strip down the left edge. */
+#pad-root:not(.table) {
+  isolation: isolate;
+  /* Clear of the brackets, which sit 14px in from each edge. */
+  padding: max(40px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right))
+           max(40px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left));
+}
+#pad-root:not(.table)::before {
+  content: "黑曜协议";
+  content: "黑曜协议" / "";
+  order: 99;
+  margin-top: auto;
+  font: 700 44px/1 "Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif;
+  letter-spacing: 0.3em;
+  color: rgba(255, 255, 255, 0.045);
+  pointer-events: none;
+  user-select: none;
+}
+/* A screen with its own footer pushes that to the bottom instead. */
+#pad-root:not(.table):has(> .pad-foot)::before { margin-top: 0; }
+/* Four corners from one bordered box: the mask keeps only an 18px square at
+   each corner, the same bracket the landing draws with four elements. */
+#pad-root:not(.table)::after {
+  --s: 18px;
+  content: "";
+  position: fixed;
+  z-index: -1;
+  pointer-events: none;
+  inset: max(14px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right))
+         max(14px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
+  border: 2px solid var(--accent);
+  opacity: 0.6;
+  -webkit-mask: conic-gradient(at var(--s) var(--s), transparent 75%, #000 0) 0 0 / calc(100% - var(--s)) calc(100% - var(--s));
+  mask: conic-gradient(at var(--s) var(--s), transparent 75%, #000 0) 0 0 / calc(100% - var(--s)) calc(100% - var(--s));
+}
+
 /* ---------- chrome shared by every screen ---------- */
 
 .pad-head { display: flex; align-items: baseline; gap: 8px; }
+
+/* The landing page's status line, between the two top brackets before a
+   table. Pulled up into the padding that clears the brackets. */
+.pad-sysline {
+  display: flex; justify-content: space-between; gap: 12px;
+  margin: -16px 0 2px;
+  font: 10.5px var(--mono); letter-spacing: 0.14em; color: var(--text3);
+}
+.pad-sysline b { color: var(--green); font-weight: 600; }
 
 .pad-mark {
   font-family: var(--mono);
@@ -129,7 +206,12 @@ body {
 
 /* A section label on the sheet or in a panel. */
 .pad-label { display: block; margin-bottom: 5px; font-size: 12px; color: var(--text2); }
-.pad-sec { margin-top: 16px; text-transform: uppercase; letter-spacing: 0.06em; font-size: 10.5px; color: var(--text3); font-weight: 700; }
+/* A section label is the landing page's kicker: mono, amber, wide tracking.
+   A plain one runs a rule out to the edge; one inside a fold's summary keeps
+   the fold's own arrow instead. */
+.pad-sec { margin-top: 16px; text-transform: uppercase; letter-spacing: 0.26em; font: 600 10.5px var(--mono); color: var(--accent); }
+p.pad-sec { display: flex; align-items: center; gap: 10px; }
+p.pad-sec::after { content: ""; flex: 1; height: 1px; background: var(--border); }
 
 /* ---------- form ---------- */
 
@@ -341,7 +423,9 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
 }
 
 .pad-bar-l:hover { background: var(--surface2); }
-.pad-bar-name { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The bar reads as a status line, the landing page's `SYS // TG-01`: mono
+   capitals for who, and `// PHASE` after the round. */
+.pad-bar-name { font: 600 11px var(--mono); letter-spacing: 0.16em; text-transform: uppercase; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pad-bar-dim { color: var(--text3); font-weight: 500; }
 .pad-bar-warn { color: var(--red); font-size: 12.5px; font-weight: 600; }
 
@@ -366,7 +450,7 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
 .pad-bar-round b { font-family: var(--mono); font-size: 14px; font-weight: 700; color: var(--accent); }
 .pad-bar-round b i { font-style: normal; font-size: 10.5px; color: var(--text3); font-weight: 600; }
 .pad-bar-round.over b { color: var(--text2); font-family: var(--font); font-size: 12.5px; }
-.pad-bar-round small { font-size: 11px; color: var(--text2); }
+.pad-bar-round small { font: 10.5px var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--text2); }
 /* The agreement's state, in a room: Continue at rest, waiting once this player
    has pressed, and lit when the other player already has. */
 .pad-bar-round em { font-style: normal; font-size: 10.5px; color: var(--text3); white-space: nowrap; }
@@ -430,7 +514,6 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
   overflow-x: auto;
   scrollbar-width: none;
   padding: 8px max(10px, env(safe-area-inset-right)) 8px max(10px, env(safe-area-inset-left));
-  background: var(--bg);
 }
 
 .pad-strip::-webkit-scrollbar { display: none; }
@@ -487,6 +570,7 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  background: var(--dress);
 }
 
 /* ---------- the sheet ---------- */
@@ -531,11 +615,36 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
 
 .pad-mech-art img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
 
+/* A Mech's picture is the landing page's: drawn the full height of the
+   header, grey and faint, behind the name. Only a Mech - a Drone's picture is
+   its card art, which would read as a grey slab. */
+.pad-uhead.mech { overflow: hidden; min-height: 100px; }
+.pad-uhead.mech .pad-mech-art {
+  position: absolute; right: 70px; top: 2px; bottom: 2px;
+  width: auto; height: auto; aspect-ratio: 1;
+  opacity: 0.3; filter: grayscale(1) brightness(1.3) contrast(1.1);
+  pointer-events: none;
+}
+.pad-uhead.mech .pad-uhead-t, .pad-uhead.mech .pad-uhead-pilot { z-index: 1; }
+
+/* The unit's own barcode under its name (src/barcode.ts, seeded by the name),
+   with the gear at the end of the line: the unit's Rename / Save / Remove,
+   opened as a sheet from the bottom (dialog.ts `sheet`). A flat 30px circle,
+   quiet until touched, like the barcode it sits beside. */
+.pad-codeline { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+.pad-code { display: block; width: 128px; height: 9px; color: var(--text2); opacity: 0.5; }
+.pad-gear {
+  width: 30px; height: 30px; flex: 0 0 30px; padding: 0; border: none; border-radius: 50%;
+  display: inline-grid; place-items: center; cursor: pointer;
+  background: var(--surface2); color: var(--text2);
+  transition: background 0.12s, color 0.12s;
+}
+.pad-gear svg { width: 17px; height: 17px; }
+.pad-gear:hover { background: var(--surface3); color: var(--text); }
+
 .pad-uhead-t { position: relative; flex: 1; min-width: 0; }
 .pad-uhead-t .pad-h { font-size: 20px; margin-bottom: 2px; }
 .pad-uhead-t .pad-lead { margin: 0; font-size: 12.5px; }
-.pad-rename { margin-top: 6px; min-height: 28px; padding: 4px 10px; font-size: 11px; }
-.pad-rename + .pad-rename { margin-left: 6px; }
 
 /* The pilot's portrait, the reference's own tile thumb, as a button. */
 .pad-uhead-pilot {
@@ -553,6 +662,9 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
 .pad-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
 .pad-row.wrap { flex-wrap: wrap; align-items: flex-start; }
 .pad-row .pad-label { margin-bottom: 0; }
+/* The sheet's own row labels (Link, Stance, Timing) read as a spec plate.
+   Only the sheet: a panel's row labels are sentences, and capitals shout. */
+.pad-sheet-in > .pad-row > .pad-label { font: 10.5px var(--mono); letter-spacing: 0.16em; text-transform: uppercase; color: var(--text3); }
 .pad-count { display: flex; align-items: center; gap: 10px; }
 
 .pad-step {
@@ -580,6 +692,7 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
 }
 
 .pad-of { color: var(--text3); font-size: 14px; }
+.pad-phase { font: 12px var(--mono); letter-spacing: 0.14em; text-transform: uppercase; }
 
 /* ---------- the unit's numbers, in the reference's stat strip ---------- */
 
@@ -590,7 +703,17 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
 /* The six Timing Dials, three to a line; the chosen one fills yellow. */
 .pad-dials { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; width: 100%; }
 .pad-dials .pad-dial { justify-content: center; }
-.pad-dial.on { background: var(--accent); color: var(--on-accent); font-weight: 700; }
+/* A chosen Timing Dial is filled solid with ITS timing's colour - the tints
+   sampled from the dial icons (--t-* in reference.css) - so which timing is
+   set reads at a glance. Dark text and a darkened icon on every one of them. */
+.pad-dial { --dial: var(--accent); }
+.pad-dial[data-timing="swift"] { --dial: var(--t-swift); }
+.pad-dial[data-timing="melee"] { --dial: var(--t-melee); }
+.pad-dial[data-timing="projectile"] { --dial: var(--t-projectile); }
+.pad-dial[data-timing="firing"] { --dial: var(--t-firing); }
+.pad-dial[data-timing="movement"] { --dial: var(--t-movement); }
+.pad-dial[data-timing="tactical"] { --dial: var(--t-tactical); }
+.pad-dial.on, .pad-dial.on:disabled:hover { background: var(--dial); color: var(--on-accent); font-weight: 700; }
 .pad-dial.on img { filter: brightness(0.2); }
 
 /* ---------- every action, folded ----------
@@ -599,7 +722,9 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
    timing colour - IS the list row. */
 
 .pad-acts { margin-bottom: 4px; }
-.pad-act-group { margin-top: 12px; }
+/* A group inside the Actions list is one level under a section: the same
+   mono label, grey rather than amber. */
+.pad-act-group { margin-top: 12px; color: var(--text2); }
 .pad-act { cursor: pointer; margin-bottom: 6px; }
 .pad-act .ref-action { margin-bottom: 0; }
 .pad-act:not(.open) .ra-b { display: none; }
@@ -664,12 +789,13 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
 
 .pad-part-slot {
   position: relative;
-  /* Wide enough for RIGHT HAND on one line. */
-  flex: 0 0 5.9em;
+  /* Wide enough for RIGHT HAND on one line, in mono, and no wider: every
+     pixel here comes out of the Part's name. */
+  flex: 0 0 6.9em;
   white-space: nowrap;
-  font-size: 10.5px;
+  font: 9.5px var(--mono);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   color: var(--text3);
 }
 
@@ -690,7 +816,7 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
    classes deep on purpose: reference.css sizes .pilot-thumb at 64px for its
    tiles and is imported after this file, so a one-class rule here loses. */
 .pad-part .pilot-thumb.pad-pilot-thumb { position: relative; flex: 0 0 28px; width: 28px; height: 28px; border-radius: var(--radius-sm); }
-.pad-part-pilot .pad-part-slot { flex: 0 0 3.2em; }
+.pad-part-pilot .pad-part-slot { flex: 0 0 3.9em; }
 
 /* The board's own three marks, and the board's own three colours, as a
    44px button of its own so a tap to mark damage cannot open the row. */
@@ -774,7 +900,16 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
 .pad-stance img { width: 46px; height: 46px; object-fit: contain; opacity: 0.75; }
 .pad-stance span { font-size: 11px; }
 .pad-stance:hover { background: var(--surface3); color: var(--text); }
-.pad-stance.on { background: var(--accent-lt); color: var(--accent); }
+/* The chosen stance is filled with ITS token's colour (--st-* above):
+   Offensive red, Defensive silver, Mobility blue, Shutdown black. Dark text,
+   as on the Timing Dial; Shutdown's token IS black, so it goes darker than
+   the sheet with light text. */
+.pad-stance { --stance: var(--accent); --on-stance: var(--on-accent); }
+.pad-stance[data-stance="offensive"] { --stance: var(--st-offensive); }
+.pad-stance[data-stance="defensive"] { --stance: var(--st-defensive); }
+.pad-stance[data-stance="mobility"] { --stance: var(--st-mobility); }
+.pad-stance[data-stance="shutdown"] { --stance: var(--st-shutdown); --on-stance: var(--text); }
+.pad-stance.on { background: var(--stance); color: var(--on-stance); font-weight: 700; }
 .pad-stance.on img { opacity: 1; }
 
 /* ---------- tokens, as printed ---------- */
@@ -895,7 +1030,7 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
-  background: var(--bg);
+  background: var(--dress);
 }
 
 .pad-panel-in {
@@ -1011,9 +1146,16 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
 
 .pad-find-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .pad-find-head .pad-input { flex: 1; }
+/* No ring on the search: it takes focus every time Find opens, so the amber
+   ring was on permanently. Focus lifts the field a step instead, the way
+   .dlg-input does. */
+.pad-find-head .pad-input:focus-visible { outline: none; background: var(--surface3); }
 .pad-find-scopes { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; margin-bottom: 10px; }
 .pad-find-scopes::-webkit-scrollbar { display: none; }
 .pad-find-scopes .pad-chip { flex: 0 0 auto; }
+/* The chosen filter is filled solid, the Timing Dial's look. Only here: every
+   other .pad-chip.on keeps the quiet tint (see rule 2 in src/ui.css). */
+.pad-find-scopes .pad-chip.on { background: var(--accent); color: var(--on-accent); font-weight: 700; }
 
 /* The tiles are the reference's; the pad only stacks them. */
 .pad-find-tiles { display: flex; flex-direction: column; gap: 0; }
@@ -1108,6 +1250,15 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
   #pad-root.table { max-width: 1100px; margin: 0 auto; }
 }
 
+/* Wide enough that the 560px column leaves a margin the watermark fits in
+   (below this, a tablet's column would cover it). */
+@media (min-width: 900px) {
+  #pad-root:not(.table)::before {
+    position: fixed; left: 40px; top: 18vh; z-index: -1;
+    writing-mode: vertical-rl; font-size: 96px; letter-spacing: 0.1em;
+  }
+}
+
 /* The second column exists only on a wide screen. */
 .pad-strip-2, .pad-sheet-2 { display: none; }
 
@@ -1157,6 +1308,12 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
    tag is right-aligned against a fixed points column. */
 .pad-saved-row .pad-seat-name { flex: 1; min-width: 0; }
 .pad-saved-row .pad-seat-tag { margin-left: 0; flex: 0 0 auto; text-align: right; white-space: nowrap; }
+/* In a saved row the chevron is the 22px size of the row's other controls,
+   and the gaps close up a little: the name is what must fit on one line. */
+.pad-saved-row { gap: 8px; }
+.pad-saved-row .ui-go { width: 22px; height: 22px; flex-basis: 22px; font-size: 13px; }
+.pad-resume .ui-go { margin-right: 6px; }
+.pad-saved-row:hover .ui-go, .pad-resume-b:hover + .ui-go { background: var(--accent); color: var(--on-accent); }
 .pad-saved-pts { flex: 0 0 3.2em; text-align: right; font-family: var(--mono); font-size: 13px; color: var(--text2); }
 .pad-squad-pick { align-items: center; }
 .pad-squad-pts { margin-left: 6px; font-family: var(--mono); font-size: 13px; color: var(--text2); }

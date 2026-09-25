@@ -5,14 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark" />
     <title>Match Centre · EMBER Testing Grounds</title>
-    <link rel="icon" href="./favicon.svg" />
+    <link rel="icon" href="../../favicon.svg" />
     <!-- The board renderer's styles first, so the match page draws the same
          battlefield as freeplay; match.css then owns the page chrome. -->
-    <link rel="stylesheet" href="./src/styles.css" />
-    <link rel="stylesheet" href="./src/match.css" />
+    <link rel="stylesheet" href="../../src/styles.css" />
+    <link rel="stylesheet" href="../../src/match.css" />
   </head>
   <body>
     <div id="mc" class="mc"></div>
-    <script type="module" src="./src/match.ts"></script>
+    <!-- Served from /table/match, so /data and /assets are two levels up. -->
+    <script>window.__EMBER_BASE__ = "../../";</script>
+    <script type="module" src="../../src/match.ts"></script>
   </body>
 </html>

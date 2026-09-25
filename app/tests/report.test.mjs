@@ -256,8 +256,8 @@ ok('a reference report is refused with its own words, not "not a board file"',
 
 console.log('\nwhere the buttons are');
 
-const index = src('../index.html');
-const refhtml = src('../reference.html');
+const index = src('../table/index.html');
+const refhtml = src('../reference/index.html');
 ok('freeplay has one in the setup rail', /id="btn-report"/.test(index));
 ok('the reference has one in its header', /id="ref-report"/.test(refhtml));
 ok('the match centre has one in its bar', /id="mc-report"/.test(src('match.ts')));

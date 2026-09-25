@@ -198,7 +198,7 @@ export class PlayGuide {
           <ul class="pg-steps">
             <li>Move units, roll dice and run attacks by hand from the Details panel.</li>
             <li>Step the round bar through the phases yourself.</li>
-            <li>Browse cards, missions and the <a href="reference.html" target="_blank" rel="noopener">Reference</a> at any time.</li>
+            <li>Browse cards, missions and the <a href="reference/" target="_blank" rel="noopener">Reference</a> at any time.</li>
           </ul>
         </details>
       </div>`;

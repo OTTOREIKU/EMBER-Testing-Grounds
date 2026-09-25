@@ -1453,13 +1453,13 @@ function barHtml(): string {
       ? `<span class="pill quiet" id="mc-health" title="Click to copy a connection report">⌁</span>`
       : '';
   return `<div class="mc-bar">
-    <a class="mc-logo" href="./index.html">EMBER <em>Testing Grounds</em><small>Match Centre</small></a>
+    <a class="mc-logo" href="../../">EMBER <em>Testing Grounds</em><small>Match Centre</small></a>
     ${v.room ? `<span class="pill code" id="mc-code" title="Copy the room code">${esc(v.room.id)}${copied ? ' ✓' : ''}</span>` : ''}
     ${conn}${link}
     <span class="spacer"></span>
     <button class="mc-backbtn ghostbtn" id="mc-report" title="Report a problem with this game">Report</button>
     <button class="mc-account" id="mc-acct">${account ? esc(account.username) : 'Sign in'}</button>
-    <a class="mc-backbtn" href="./index.html">Back to Board</a>
+    <a class="mc-backbtn" href="../">Back to Board</a>
     ${v.room ? '<button class="mc-backbtn ghostbtn" id="mc-door" title="Leave this table and go back to the Match Centre">Match Centre</button>' : ''}
   </div>`;
 }

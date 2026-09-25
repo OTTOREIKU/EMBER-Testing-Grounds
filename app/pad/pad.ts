@@ -49,14 +49,16 @@ import { labelFor, namesFrom, type LedgerNames } from '../src/ledger';
 import { setLocalSeat } from '../src/loop';
 import { actionIconUrl, BASE_FACTIONS, battlefieldCardUrl, cardName, discardFaceOf, environmentAllowance, environmentImageUrl, FACTION_LABEL, parseGridRef, isDiscardCard, isListedBox, isMine, loadData, mechPartUrl, missionImageUrl, secondaryImageUrl, stancePrintUrl, statIconIsPlated, statIconUrl, tabImageUrl, tokenFace, tokenPrintUrl, traitName, type GameData } from '../src/data';
 import { importSquadFile } from '../src/importer';
+import { barcodeSvg } from '../src/barcode';
 import { deleteMechPreset, isBuiltInPreset, loadMechPresets, saveMechPreset, type MechPreset } from '../src/presets';
 import { deleteSquad, isBuiltInSquad, loadSquads, saveSquad, type SavedSquad } from '../src/squadstore';
 import { bindLibrary, onLibrary } from '../src/library';
 import { hiddenBuiltIns, restoreBuiltIns } from '../src/builtins';
 import { actionBlock, cardDetail, cardRow, fillPortraits, keywordCard, keywordDetail, kwLabel, linkKeywords, traitBlock, useCardData } from '../src/refcards';
 import { found, matchCard, matchKeyword, matchMechanic, matchMission, matchPhase, matchSecondary, matchStance, matchStatus, matchTiming, nmCard, nmKeyword, nmMechanic, nmMission, nmPlay, nmSecondary, nmStatus, norm } from '../src/refsearch';
-import { mountCardImage, mountCardImageCopy } from '../src/images';
-import { squadColour } from '../src/icons';
+import { mountCardImage, mountCardImageCopy, warmAllImagesWhenIdle } from '../src/images';
+import { runFirstVisitPreload } from '../src/preload';
+import { ICON_GEAR, squadColour } from '../src/icons';
 import { groupByFaction, openPartPicker } from '../src/partpicker';
 import { bindCollection, builtOnlyOn, collectionOn, copiesOf, hasAny, loadCollection, onCollection, remaining, saveCollection, setBuiltOnly, setCollectionOn, shortfalls, type Collection } from '../src/collection';
 import { choiceDialog, confirmDialog, promptDialog } from '../src/dialog';
@@ -509,10 +511,15 @@ function esc(s: string): string {
 
 // ---------- the screens before a table ----------
 
+// The landing page's status line sits between the top brackets; the right end
+// says whether this phone is talking to the server. The wordmark carries the
+// username once signed in, and nothing else.
 function head(): string {
-  return `<div class="pad-head">
+  const link = !navigator.onLine ? 'OFFLINE' : account ? 'LINK <b>OK</b>' : 'LOCAL';
+  return `<div class="pad-sysline" aria-hidden="true"><span>PAD // TG-02</span><span>${link}</span></div>
+  <div class="pad-head">
     <span class="pad-mark">Ember Pad</span>
-    <span class="pad-sub">${account ? esc(account.username) : 'record sheet'}</span>
+    ${account ? `<span class="pad-sub">${esc(account.username)}</span>` : ''}
   </div>`;
 }
 
@@ -621,6 +628,7 @@ function lobbyLists(): string {
         <span class="pad-seat-name mono">${esc(r.id)}</span>
         <span class="pad-seat-sub">${r.with ? `with ${esc(r.with)}` : 'waiting for a player'} · ${r.host ? 'yours' : 'joined'} · ${ago(r.at)}</span>
       </button>
+      <span class="ui-go" aria-hidden="true">›</span>
       <button class="ui-x" data-act="room-x" data-id="${esc(r.id)}" aria-label="Forget this table">✕</button>
     </div>`).join('');
   const gameRows = games.map((g) => `<div class="pad-seat pad-resume">
@@ -628,6 +636,7 @@ function lobbyLists(): string {
         <span class="pad-seat-name">${esc(g.name)}</span>
         <span class="pad-seat-sub">Round ${g.table.round?.n ?? 1} · ${ago(g.at)}</span>
       </button>
+      <span class="ui-go" aria-hidden="true">›</span>
       <button class="ui-x" data-act="game-x" data-id="${esc(g.id)}" aria-label="Delete this game">✕</button>
     </div>`).join('');
   return `<div class="pad-card">
@@ -703,6 +712,53 @@ let closedGroup: string | null = null;
 
 function groupKey(u: Token): string | null {
   return u.kind === 'mech' ? null : `${u.side}:${u.cardId}`;
+}
+
+// The unit header's three options, opened from its gear (the 'unit-menu' act).
+
+function renameUnit(t: Token): void {
+  void (async () => {
+    const next = await promptDialog({
+      title: `Rename ${t.label}`,
+      value: t.label,
+      confirmLabel: 'Rename',
+    });
+    if (next === null) return;
+    // NOT tidyUnitLabel: that strips the colour a squad file prefixes its
+    // units with, and a callsign a player typed is theirs as typed - a
+    // playtest's "Blue Two" came back as "Two". Whitespace only.
+    const label = next.replace(/\s+/g, ' ').trim().slice(0, 40);
+    if (label && label !== t.label) send({ kind: 'renameUnit', seat: t.side, uid: t.uid, label });
+  })();
+}
+
+function saveBuild(t: Token): void {
+  if (t.kind !== 'mech') return;
+  void promptDialog({
+    title: 'Save this build',
+    body: 'The Mech\'s Parts and Pilot, as a saved unit. Reusing a name overwrites it.',
+    value: t.label,
+    placeholder: 'Build name',
+    confirmLabel: 'Save',
+  }).then((name) => {
+    if (!name) return;
+    saveMechPreset(name, t.mech ?? {}, Date.now());
+    toast(`Build "${name.trim()}" saved.`);
+    render();
+  });
+}
+
+function removeUnit(t: Token): void {
+  void (async () => {
+    const ok = await choiceDialog({
+      title: `Remove ${t.label}?`,
+      body: 'It leaves the table and its records with it.',
+      choices: [{ id: 'yes', label: 'Remove', primary: true }, { id: 'no', label: 'Keep it', cancel: true }],
+      stacked: true,
+    });
+    if (ok !== 'yes') return;
+    if (send({ kind: 'despawn', seat: t.side, uid: t.uid, targetUid: t.uid })) { picks[t.side] = null; render(); }
+  })();
 }
 
 // Stabilize System (6.1): the Link, and a Token if the player chooses. One
@@ -1494,7 +1550,7 @@ function barHtml(): string {
     const name = room.seats[them];
     who = `<span class="pad-dot${room.online[them] ? ' on' : ''}"></span><span class="pad-bar-name">${
       name ? esc(name) : `<span class="pad-bar-dim">${esc(room.id)}</span>`}</span>`;
-  } else who = '<span class="pad-bar-name pad-bar-dim">Solo</span>';
+  } else who = '<span class="pad-bar-name pad-bar-dim">Solo // Table</span>';
   const r = table.round;
   const rd = readiness();
   if (gameOver()) {
@@ -1504,7 +1560,7 @@ function barHtml(): string {
       <b style="color:${sideColour(me)}">${vp[me]}</b><span>:</span><b style="color:${sideColour(them)}">${vp[them]}</b>
     </button>`;
   }
-  const roundLabel = `<b>R${r.n}<i>/${roundLimit()}</i></b><small>${esc(PHASES[r.phase] ?? '')}</small>`;
+  const roundLabel = `<b>R${r.n}<i>/${roundLimit()}</i></b><small>// ${esc(PHASES[r.phase] ?? '')}</small>`;
   // In a room the chip is the Continue of a two-player agreement, and says
   // where the agreement stands; solo it simply turns the phase.
   const stalled = guidedOn(table) && !continueAllowed(guide);
@@ -1869,12 +1925,12 @@ function unitHead(t: Token, yours: boolean): string {
   const fac = core ? data!.factionOf(core) : null;
   const pilot = t.kind === 'mech' ? pilotCard(data!, t) : undefined;
   const line = [sideName(t.side), KIND_LABEL[t.kind], t.kind === 'mech' ? STANCE_LABEL[t.stance] ?? t.stance : ''].filter(Boolean).join(' · ');
-  return `<div class="pad-uhead card-framed"${fac ? ` data-fac="${esc(fac)}"` : ''}>
+  return `<div class="pad-uhead card-framed${t.kind === 'mech' ? ' mech' : ''}"${fac ? ` data-fac="${esc(fac)}"` : ''}>
     ${unitArt(t)}
     <div class="pad-uhead-t">
       <h1 class="pad-h">${esc(t.label)}</h1>
       <p class="pad-lead">${esc(line)}</p>
-      ${canCommand(t) ? `<button class="pad-chip pad-rename" data-act="rename">Rename</button>${t.kind === 'mech' ? '<button class="pad-chip pad-rename" data-act="save-build">Save build</button>' : ''}<button class="pad-chip pad-rename" data-act="remove">Remove</button>` : ''}
+      <div class="pad-codeline">${barcodeSvg(t.label, 'pad-code')}${canCommand(t) ? `<button class="pad-gear" data-act="unit-menu" aria-label="Rename, save or remove">${ICON_GEAR}</button>` : ''}</div>
     </div>
     ${pilot ? `<button class="pilot-thumb pad-uhead-pilot" data-act="card" data-id="${esc(pilot.id)}" data-portrait="${esc(pilot.id)}" aria-label="Read ${esc(cardName(pilot))}"></button>` : ''}
   </div>`;
@@ -2450,7 +2506,7 @@ function morePanel(): string {
       <button class="pad-chip" data-act="open-setup">Change</button>
     </div>
     <div class="pad-row">
-      <span class="pad-num">${gameOver() ? 'Over' : `R${r.n}`}<span class="pad-of"> · ${gameOver() ? 'final' : esc(PHASES[r.phase] ?? '')}</span></span>
+      <span class="pad-num">${gameOver() ? 'Over' : `R${r.n}`}<span class="pad-of pad-phase"> // ${gameOver() ? 'final' : esc(PHASES[r.phase] ?? '')}</span></span>
       <div class="pad-chips">
         <button class="pad-chip" data-act="phase-back">Back a phase</button>
         ${gameOver() ? '' : `<button class="pad-chip on" data-act="phase">${room ? (readiness().me ? 'Waiting…' : 'Continue') : 'Next phase'}</button>`}
@@ -2937,6 +2993,7 @@ function savedHtml(): string {
         <span class="pad-seat-name">${esc(name)}</span>
         <span class="pad-seat-tag">${tag}</span>
         <span class="pad-saved-pts">${points}</span>
+        <span class="ui-go" aria-hidden="true">›</span>
       </button>
       <button class="pad-chip pad-saved-x" data-act="${del}" data-id="${esc(id)}" aria-label="Remove ${esc(name)}">✕</button>
     </div>`;
@@ -4045,22 +4102,27 @@ function act(el: HTMLElement, ev: Event): void {
     case 'card':
       openLook('card', el.dataset.id!);
       return;
-    case 'rename':
+    // The unit header's gear: its three options in a sheet from the bottom.
+    // Save is a Mech's only - a build is a Mech's Parts and Pilot.
+    case 'unit-menu': {
       if (!t) return;
-      void (async () => {
-        const next = await promptDialog({
-          title: `Rename ${t.label}`,
-          value: t.label,
-          confirmLabel: 'Rename',
-        });
-        if (next === null) return;
-        // NOT tidyUnitLabel: that strips the colour a squad file prefixes its
-        // units with, and a callsign a player typed is theirs as typed - a
-        // playtest's "Blue Two" came back as "Two". Whitespace only.
-        const label = next.replace(/\s+/g, ' ').trim().slice(0, 40);
-        if (label && label !== t.label) send({ kind: 'renameUnit', seat: t.side, uid: t.uid, label });
-      })();
+      const unit = t;
+      void choiceDialog({
+        title: unit.label,
+        sheet: true,
+        stacked: true,
+        choices: [
+          { id: 'rename', label: 'Rename' },
+          ...(unit.kind === 'mech' ? [{ id: 'save', label: 'Save' }] : []),
+          { id: 'remove', label: 'Remove', danger: true },
+        ],
+      }).then((pick) => {
+        if (pick === 'rename') renameUnit(unit);
+        else if (pick === 'save') saveBuild(unit);
+        else if (pick === 'remove') removeUnit(unit);
+      });
       return;
+    }
     case 'hit': {
       if (!t) return;
       // A TAP CYCLES, as freeplay's inspector does. The hit was resolved on the
@@ -4082,20 +4144,6 @@ function act(el: HTMLElement, ev: Event): void {
     case 'ammo-up': if (t) send({ kind: 'restoreAmmo', seat: t.side, uid: t.uid, actionId: el.dataset.id!, amount: 1 }); return;
     case 'intercept-down': if (t) send({ kind: 'spendIntercept', seat: t.side, uid: t.uid, actionId: el.dataset.id! }); return;
     case 'intercept-up': if (t) send({ kind: 'restoreIntercept', seat: t.side, uid: t.uid, actionId: el.dataset.id! }); return;
-    case 'remove': {
-      if (!t) return;
-      void (async () => {
-        const ok = await choiceDialog({
-          title: `Remove ${t.label}?`,
-          body: 'It leaves the table and its records with it.',
-          choices: [{ id: 'yes', label: 'Remove', primary: true }, { id: 'no', label: 'Keep it', cancel: true }],
-          stacked: true,
-        });
-        if (ok !== 'yes') return;
-        if (send({ kind: 'despawn', seat: t.side, uid: t.uid, targetUid: t.uid })) { picks[t.side] = null; render(); }
-      })();
-      return;
-    }
     case 'load-off': if (t) send({ kind: 'setLoad', seat: t.side, uid: t.uid }); return;
     case 'timing': {
       if (!t) return;
@@ -4599,22 +4647,6 @@ function act(el: HTMLElement, ev: Event): void {
       });
       return;
     }
-    case 'save-build': {
-      if (!t || t.kind !== 'mech') return;
-      void promptDialog({
-        title: 'Save this build',
-        body: 'The Mech\'s Parts and Pilot, as a saved unit. Reusing a name overwrites it.',
-        value: t.label,
-        placeholder: 'Build name',
-        confirmLabel: 'Save',
-      }).then((name) => {
-        if (!name) return;
-        saveMechPreset(name, t.mech ?? {}, Date.now());
-        toast(`Build "${name.trim()}" saved.`);
-        render();
-      });
-      return;
-    }
     case 'undo': undo(); return;
     case 'toast-x':
       toasts = toasts.filter((x) => String(x.id) !== el.dataset.id);
@@ -4850,4 +4882,10 @@ registerOffline();
     dataError = 'The card database could not be loaded. Check the signal and reload.';
   }
   render();
+  // The same first-visit download the tabletop and the reference run: every
+  // card image once, behind a progress bar with Skip, then the idle warm tops
+  // up on later visits. Recorded once per browser, so a phone that already saw
+  // it on another page is not asked again. After the catalogue, so the door
+  // screens are usable while it runs.
+  void runFirstVisitPreload().then(() => warmAllImagesWhenIdle());
 })();

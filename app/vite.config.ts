@@ -123,9 +123,12 @@ export default defineConfig({
     assetsDir: 'build',
     rollupOptions: {
       input: {
-        main: path.resolve(here, 'index.html'),
-        reference: path.resolve(here, 'reference.html'),
-        match: path.resolve(here, 'match.html'),
+        // The root is the landing page; the tabletop and its Match Centre
+        // live in /table, the reference in /reference, the pad in /pad.
+        landing: path.resolve(here, 'index.html'),
+        main: path.resolve(here, 'table/index.html'),
+        reference: path.resolve(here, 'reference/index.html'),
+        match: path.resolve(here, 'table/match/index.html'),
         // The pad lives in a FOLDER so its address stays short (/pad); see
         // the base note in pad/index.html.
         pad: path.resolve(here, 'pad/index.html'),

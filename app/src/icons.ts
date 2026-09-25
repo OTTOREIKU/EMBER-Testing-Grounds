@@ -83,6 +83,16 @@ export const ICON_COMPARE = '<svg viewBox="0 0 24 24" fill="none" stroke="curren
   + ' stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
   + '<rect x="3" y="5" width="7.5" height="14" rx="1.4"/><rect x="13.5" y="5" width="7.5" height="14" rx="1.4"/></svg>';
 
+// A unit's options (rename, save, remove) on the pad's unit header: eight
+// teeth round a hub, outline only, so it sits as quietly as the barcode
+// beside it.
+export const ICON_GEAR = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"'
+  + ' stroke-linejoin="round" aria-hidden="true">'
+  + '<polygon points="12,2 13.95,2.19 14.91,4.98 16.22,5.68 19.07,4.93 20.31,6.44 19.02,9.09 19.45,10.52'
+  + ' 22,12 21.81,13.95 19.02,14.91 18.32,16.22 19.07,19.07 17.56,20.31 14.91,19.02 13.48,19.45 12,22'
+  + ' 10.05,21.81 9.09,19.02 7.78,18.32 4.93,19.07 3.69,17.56 4.98,14.91 4.55,13.48 2,12 2.19,10.05'
+  + ' 4.98,9.09 5.68,7.78 4.93,4.93 6.44,3.69 9.09,4.98 10.52,4.55"/><circle cx="12" cy="12" r="3.2"/></svg>';
+
 // The printed pilot cards tint the Link mark to the pilot's faction, so the
 // readout follows suit. Electronic warfare keeps the gold accent instead.
 const FACTION_VAR: Record<string, string> = {

@@ -21,6 +21,10 @@ interface BaseOpts {
 interface ChoiceOpts extends BaseOpts {
   choices: DialogChoice[];
   stacked?: boolean;
+  // Docked to the bottom of the screen, the phone's own pattern for a short
+  // list of things to do to ONE object (the pad's unit gear). The title is
+  // that object's name, and it closes with the house close control.
+  sheet?: boolean;
 }
 
 interface PromptOpts extends BaseOpts {
@@ -49,9 +53,9 @@ function bodyHtml(o: BaseOpts): string {
 // Prototype Blink target list and the Taurus teleported into whichever unit
 // happened to sort last. A dialog with nothing marked closes and resolves null,
 // which every caller already treats as "no choice made".
-function open(inner: string, wire: (panel: HTMLElement, close: () => void) => void, bail?: () => void): void {
+function open(inner: string, wire: (panel: HTMLElement, close: () => void) => void, bail?: () => void, cls = ''): void {
   const back = document.createElement('div');
-  back.className = 'dlg-back';
+  back.className = `dlg-back${cls ? ` ${cls}` : ''}`;
   back.innerHTML = `<div class="dlg-panel" role="dialog" aria-modal="true">${inner}</div>`;
   const panel = back.querySelector<HTMLElement>('.dlg-panel')!;
   const close = () => {
@@ -73,6 +77,7 @@ function open(inner: string, wire: (panel: HTMLElement, close: () => void) => vo
   back.addEventListener('pointerdown', (ev) => {
     if (ev.target === back) dismiss();
   });
+  panel.querySelector<HTMLButtonElement>('[data-close]')?.addEventListener('click', dismiss);
   document.addEventListener('keydown', onKey, true);
   document.body.appendChild(back);
   wire(panel, close);
@@ -96,8 +101,11 @@ export function choiceDialog(o: ChoiceOpts): Promise<string | null> {
       )
       .join('');
     let settled = false;
+    // The sheet's close sits LAST in the markup so focus lands on the first
+    // choice; CSS puts it in the corner.
+    const shut = o.sheet ? '<button class="dlg-close" data-close aria-label="Close">✕</button>' : '';
     open(
-      `<h3 class="dlg-title">${esc(o.title)}</h3>${bodyHtml(o)}<div class="dlg-actions${o.stacked ? ' dlg-stacked' : ''}">${buttons}</div>`,
+      `<h3 class="dlg-title">${esc(o.title)}</h3>${bodyHtml(o)}<div class="dlg-actions${o.stacked ? ' dlg-stacked' : ''}">${buttons}</div>${shut}`,
       (panel, close) => {
         panel.querySelectorAll<HTMLButtonElement>('.dlg-actions button').forEach((b) =>
           b.addEventListener('click', () => {
@@ -113,6 +121,7 @@ export function choiceDialog(o: ChoiceOpts): Promise<string | null> {
         settled = true;
         resolve(null);
       },
+      o.sheet ? 'dlg-sheet' : '',
     );
   });
 }

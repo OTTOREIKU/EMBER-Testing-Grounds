@@ -320,9 +320,9 @@ const TOKEN_B = { title: 'D7 Tarantula', sub: 'UN · Carrier Drone', lines: ['Ca
 // grows one.
 {
   const html = (f) => readFileSync(new URL(`../${f}`, import.meta.url), 'utf8');
-  check('index.html carries the docked box', /id="inspect-box"/.test(html('index.html')), true);
+  check('index.html carries the docked box', /id="inspect-box"/.test(html('table/index.html')), true);
   check('match.html does not, which is what puts it on the floating popout',
-    /id="inspect-box"/.test(html('match.html')), false);
+    /id="inspect-box"/.test(html('table/match/index.html')), false);
 }
 
 // ---------- the measuring line, now on both boards ----------

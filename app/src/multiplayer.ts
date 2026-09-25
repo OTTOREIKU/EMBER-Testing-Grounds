@@ -103,7 +103,7 @@ export class MultiplayerDialog {
       return `<div class="mp-section">
         <h4>Play online</h4>
         ${v.error ? `<p class="mp-notice error">${esc(v.error)}</p>` : ''}
-        <a class="mp-btn big" href="match.html">Match Centre</a>
+        <a class="mp-btn big" href="match/">Match Centre</a>
       </div>`;
     }
 
