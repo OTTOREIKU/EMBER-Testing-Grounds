@@ -157,7 +157,9 @@ for (const f of files) {
     if ((/['"`]/.test(before ?? '') && /['"`]/.test(after ?? '')) || (before === '>' && after === '<')) placeholders++;
   }
 }
-check('and the table placeholders are still exactly the known set', placeholders, 14);
+// 13 since 2026-09-24: the tabletop's Mech builder lost its six dropdowns and
+// their "—" empty option to the shared builder, whose empty rows say "empty".
+check('and the table placeholders are still exactly the known set', placeholders, 13);
 
 // The pages themselves. Every dash in the markup is on screen.
 console.log('\nand none in the markup');

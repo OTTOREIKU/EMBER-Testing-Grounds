@@ -1891,8 +1891,10 @@ async function init() {
       const tok = makeDroneToken(state, data, card, side, load);
       placeNew(tok, side);
     },
-    onAddMech(loadout: MechLoadout, side) {
+    onAddMech(loadout: MechLoadout, side, name) {
       const tok = makeMechToken(state, data, loadout, side);
+      // A name set in the builder's Rename; otherwise the default label.
+      if (name) tok.label = name;
       placeNew(tok, side);
     },
     onSaveSquad: () => saveSquadFlow(),
@@ -1904,7 +1906,7 @@ async function init() {
     // stance, Link, tokens and log. Only a slot whose Part actually changed is
     // reset, because that is a different Part now and its damage went with the
     // old one. A default label is recomputed so a renamed unit keeps its name.
-    onSaveMech(uid, loadout) {
+    onSaveMech(uid, loadout, label) {
       const t = state.tokens.find((x) => x.uid === uid);
       if (!t || t.kind !== 'mech') return;
       const before = t.mech ?? {};
@@ -1921,7 +1923,8 @@ async function init() {
       // A Part swapped in brings its own magazine, and nothing else would seed
       // it until the next load.
       syncMagazines(data, t);
-      if (!named) t.label = defaultUnitLabel(data, t);
+      if (label) t.label = label;
+      else if (!named) t.label = defaultUnitLabel(data, t);
       selectToken(t.uid);
       onChanged();
       panel.showToken(t);

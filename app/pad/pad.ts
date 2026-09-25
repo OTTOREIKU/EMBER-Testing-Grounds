@@ -59,6 +59,7 @@ import { found, matchCard, matchKeyword, matchMechanic, matchMission, matchPhase
 import { mountCardImage, mountCardImageCopy, warmAllImagesWhenIdle } from '../src/images';
 import { runFirstVisitPreload } from '../src/preload';
 import { ICON_GEAR, squadColour } from '../src/icons';
+import { BUILD_SLOTS, buildDefaultName, confirmLegalBuild, mechBuilderHtml, openMechSlot, slotPool, type BuildSlot } from '../src/mechbuilder';
 import { groupByFaction, openPartPicker } from '../src/partpicker';
 import { bindCollection, builtOnlyOn, collectionOn, copiesOf, hasAny, loadCollection, onCollection, remaining, saveCollection, setBuiltOnly, setCollectionOn, shortfalls, type Collection } from '../src/collection';
 import { choiceDialog, confirmDialog, promptDialog } from '../src/dialog';
@@ -2576,52 +2577,19 @@ function morePanel(): string {
 // when a Part would break a Mech's single-faction rule (5.1). What the pad
 // supplies is the slot list around it.
 
-const BUILD_SLOTS: { key: keyof MechLoadout; label: string; type: string }[] = [
-  { key: 'torso', label: 'Torso', type: 'torso' },
-  { key: 'chasis', label: 'Chassis', type: 'chasis' },
-  { key: 'leftHand', label: 'Left arm', type: 'leftHand' },
-  { key: 'rightHand', label: 'Right arm', type: 'rightHand' },
-  { key: 'backpack', label: 'Backpack', type: 'backpack' },
-  { key: 'pilot', label: 'Pilot', type: 'pilot' },
-];
-
+// The slot list, the points, the faction rule and the rows are the SHARED
+// builder's (src/mechbuilder.ts), the same one the tabletop's Add tab mounts.
+// What the pad supplies is its shelf and what Add does.
 let build: MechLoadout = {};
 
-// The faction the build has already committed to, or null while it is still
-// open. A Mech may only use Parts from one faction (5.1).
-function buildFaction(): string | null {
-  if (!data) return null;
-  for (const s of BUILD_SLOTS) {
-    if (s.key === 'pilot') continue;
-    const id = build[s.key];
-    const card = id ? data.byId.get(id) : undefined;
-    const f = card ? data.factionOf(card) : null;
-    if (f) return f;
-  }
-  return null;
-}
-
-function buildPoints(): number {
-  const d = data;
-  if (!d) return 0;
-  return BUILD_SLOTS.reduce((n, s) => {
-    const id = build[s.key];
-    return n + (id ? (d.byId.get(id)?.score ?? 0) : 0);
-  }, 0);
-}
-
-function openBuildSlot(slot: typeof BUILD_SLOTS[number]): void {
+function openBuildSlot(slot: BuildSlot): void {
   const d = data;
   if (!d) return;
-  const pool = d.cards
-    .filter((c) => (slot.key === 'pilot' ? c.category === 'pilot' : c.category === 'mech_part' && c.type === slot.type))
-    .sort((a, b) => cardName(a).localeCompare(cardName(b)));
-  openPartPicker({
+  openMechSlot({
     data: d,
-    slotLabel: slot.label,
-    groups: groupByFaction(d, pool),
-    chosen: build[slot.key],
-    lockedFaction: slot.key === 'pilot' ? null : buildFaction(),
+    loadout: build,
+    slot,
+    cards: slotPool(d, slot, build[slot.key]),
     // What the other slots of this build already took comes off the shelf too;
     // the slot being filled does not, so a card can be re-picked.
     remaining: (c) => {
@@ -2630,13 +2598,10 @@ function openBuildSlot(slot: typeof BUILD_SLOTS[number]): void {
       const taken = BUILD_SLOTS.filter((s) => s.key !== slot.key && build[s.key] === c.id).length;
       return Math.max(0, left - taken);
     },
-    actions: [{
-      label: `Set ${slot.label}`,
-      run: (card) => {
-        build = { ...build, [slot.key]: card.id };
-        render();
-      },
-    }],
+    onPick: (card) => {
+      build = { ...build, [slot.key]: card.id };
+      render();
+    },
   });
 }
 
@@ -3233,36 +3198,12 @@ function openDronePicker(kind: 'drone' | 'projectile'): void {
 
 function buildPanel(): string {
   const d = data!;
-  const pts = buildPoints();
-  const fac = buildFaction();
-  const rows = BUILD_SLOTS.map((s) => {
-    const id = build[s.key];
-    const card = id ? d.byId.get(id) : undefined;
-    const f = card ? d.factionOf(card) : null;
-    return `<div class="pad-part-row">
-      <button class="pad-part card-framed"${f ? ` data-fac="${esc(f)}"` : ''} data-act="build-slot" data-slot="${s.key}">
-        ${card ? (s.key === 'pilot'
-          ? `<span class="pilot-thumb pad-pilot-thumb" data-portrait="${esc(card.id)}"></span>`
-          : `<span class="ref-art" data-partart="${esc(card.id)}" aria-hidden="true"></span>`) : ''}
-        <span class="pad-part-slot">${s.label}</span>
-        <span class="pad-part-name">${card ? esc(cardName(card)) : 'empty'}</span>
-        <span class="pad-part-stats mono">${card?.score ? `${card.score}p` : ''}</span>
-      </button>
-      ${card ? `<button class="pad-part-info" data-act="card" data-id="${esc(card.id)}" aria-label="Read ${esc(cardName(card))}">i</button>` : ''}
-    </div>`;
-  }).join('');
-  const torsoName = build.torso ? cardName(d.byId.get(build.torso)!) : '';
   return `<div class="pad-panel-in">${panelHead(editing ? 'Edit a saved unit' : 'Build a Mech')}
     ${errHtml()}
-    <div class="pad-row">
-      <span class="pad-seat-name">${esc(buildName.trim() || torsoName || 'Unnamed')}</span>
-      <button class="pad-chip" data-act="build-rename">Rename</button>
-    </div>
-    <div class="pad-row">
-      <span class="pad-label">${fac ? esc(fac) : 'any faction'}${solo ? ` · for ${squadSide === 's1' ? 'P1' : 'P2'}` : ''}</span>
-      <span class="pad-num">${pts}<span class="pad-of">p</span></span>
-    </div>
-    ${rows}
+    ${mechBuilderHtml(d, build, {
+      name: buildName.trim() || buildDefaultName(d, build) || 'Unnamed',
+      ...(solo ? { note: `for ${squadSide === 's1' ? 'P1' : 'P2'}` } : {}),
+    })}
     <div class="pad-melon">
       <a class="pad-btn pad-melon-link" href="https://watermelon02.github.io/builder-web/" target="_blank" rel="noopener">${MELON_ICON}Squad Builder</a>
       <button class="pad-btn" data-act="build-import">Import a build</button>
@@ -4573,19 +4514,33 @@ function act(el: HTMLElement, ev: Event): void {
       if (s) openBuildSlot(s);
       return;
     }
-    case 'build-add': {
-      if (!data) return;
-      const torso = build.torso ? data.byId.get(build.torso) : undefined;
-      const label = buildName.trim();
-      if (sendSquad(label || (torso ? cardName(torso) : 'Mech'), [{ ...(label ? { name: label } : {}), loadout: build }], [])) {
-        build = {};
-        buildName = '';
-        editing = null;
-        error = null;
-        panel = null;
-        toast('Mech added.');
-      }
+    case 'build-clear': {
+      const key = el.dataset.slot as keyof MechLoadout;
+      if (!BUILD_SLOTS.some((x) => x.key === key)) return;
+      build = { ...build };
+      delete build[key];
       render();
+      return;
+    }
+    case 'build-add': {
+      const d = data;
+      if (!d) return;
+      // The shared build rules (mechbuilder.ts): a missing Torso, Chassis or
+      // Arm is refused, a mixed faction is warned - as the tabletop does.
+      void confirmLegalBuild(d, build, 'Add it anyway').then((ok) => {
+        if (!ok) return;
+        const torso = build.torso ? d.byId.get(build.torso) : undefined;
+        const label = buildName.trim();
+        if (sendSquad(label || (torso ? cardName(torso) : 'Mech'), [{ ...(label ? { name: label } : {}), loadout: build }], [])) {
+          build = {};
+          buildName = '';
+          editing = null;
+          error = null;
+          panel = null;
+          toast('Mech added.');
+        }
+        render();
+      });
       return;
     }
     case 'preset': {

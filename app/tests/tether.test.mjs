@@ -335,7 +335,9 @@ check('migrateState rebuilds the Tether chips', /tether: tether\.length \? tethe
 check('and boardFingerprint hashes them', /t\.tether \?\? \[\]\)\.map\(\(x\) => `\$\{x\.uid\}:\$\{x\.range\}:\$\{x\.role\}`\)/.test(secrecySrc), true);
 
 // BUG-8: a squad must not be able to START in Tether Mode, with no tether.
-check('the build picker refuses a derived Mode face', /!isModeFace\(c\) \|\| this\.mech\[slot\.key\] === c\.id/.test(src('roster.ts')), true);
+// The rule moved to the shared builder's slotPool (mechbuilder.ts), which the
+// tabletop and the pad both draw their slot lists from (2026-09-24).
+check('the build picker refuses a derived Mode face', /!isModeFace\(c\) \|\| c\.id === chosen/.test(src('mechbuilder.ts')), true);
 
 // A MUTUAL harpoon: both Mechs fire one at the other. Each then holds TWO
 // chips naming the same partner, one per role. De-duping on uid alone silently

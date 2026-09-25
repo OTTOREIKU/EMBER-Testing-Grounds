@@ -1,0 +1,116 @@
+/* THE MECH BUILDER (src/mechbuilder.ts), shared by the tabletop's Add > Mech
+ * tab and the pad's Build a Mech panel. Imported by partpicker.css, so both
+ * pages get it from the line they already have.
+ *
+ * Self-contained on purpose: the board does not load reference.css, so the
+ * frame the pad's rows used to borrow from .card-framed - the faction glow,
+ * the faint grid, the clipped corner, the ghosted Part art - is written here
+ * once for both. Tokens fall back so a page missing one still draws. */
+
+.mb { display: flex; flex-direction: column; gap: 6px; }
+
+.mb-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.mb-name {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 13.5px; font-weight: 600; color: var(--text);
+}
+.mb-chip {
+  flex: 0 0 auto; min-height: 32px; padding: 6px 12px; border: none;
+  border-radius: var(--radius-sm, 6px); background: var(--surface2); color: var(--text2);
+  font: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.mb-chip:hover { background: var(--surface3, var(--surface2)); color: var(--text); }
+
+.mb-line {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  margin-bottom: 4px; font-size: 12px; color: var(--text2);
+}
+.mb-line.bad > span:first-child { color: var(--red, #ea6d76); font-weight: 600; }
+.mb-pts { font: 700 18px var(--mono); color: var(--text); font-variant-numeric: tabular-nums; }
+.mb-pts i { margin-left: 1px; font-style: normal; font-size: 12px; color: var(--text3); }
+
+.mb-rowwrap { display: flex; align-items: stretch; gap: 6px; }
+
+/* A slot, drawn as the reference draws a card: the faction's glow in the
+   corner, a faint grid, the Part's art ghosted in, the bottom-right corner
+   clipped. The raised edge is the browser's own OUTSET border in the frame
+   colour - never chosen on the pad, but it is the look OTTO liked there, so
+   it is written down here rather than left to a default. */
+.mb-row {
+  --fac-glow: var(--accent);
+  position: relative; overflow: hidden;
+  flex: 1; min-width: 0; min-height: var(--tap, 44px);
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 12px;
+  border: 2px outset var(--border);
+  border-radius: var(--radius, 6px);
+  color: var(--text); font: inherit; text-align: left; cursor: pointer;
+  background:
+    radial-gradient(115% 85% at 0% 0%, color-mix(in srgb, var(--fac-glow) 13%, transparent), transparent 60%),
+    linear-gradient(160deg, #20252c, var(--surface) 68%);
+}
+.mb-row[data-fac="RDL"] { --fac-glow: var(--rdl); }
+.mb-row[data-fac="UN"] { --fac-glow: var(--un); }
+.mb-row[data-fac="GOF"] { --fac-glow: var(--gof); }
+.mb-row[data-fac="PD"] { --fac-glow: var(--pd); }
+.mb-row[data-fac="COLLABORATION"] { --fac-glow: var(--collab); }
+.mb-row::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background-image:
+    linear-gradient(#ffffff08 1px, transparent 1px),
+    linear-gradient(90deg, #ffffff08 1px, transparent 1px);
+  background-size: 26px 26px;
+  mask-image: linear-gradient(115deg, #000 0%, transparent 55%);
+}
+.mb-row::after {
+  content: ''; position: absolute; right: -1px; bottom: -1px; width: 16px; height: 16px;
+  background: var(--bg); clip-path: polygon(100% 0, 100% 100%, 0 100%); pointer-events: none;
+}
+.mb-row:hover {
+  border-color: color-mix(in srgb, var(--fac-glow) 45%, var(--border));
+  background:
+    radial-gradient(115% 85% at 0% 0%, color-mix(in srgb, var(--fac-glow) 20%, transparent), transparent 60%),
+    linear-gradient(160deg, #242a33, var(--surface2) 68%);
+}
+
+/* The Part's own art, ghosted into the corner of its row. */
+.mb-art {
+  position: absolute; right: -6px; bottom: -18px; width: 68px; height: 68px;
+  opacity: 0.12; filter: grayscale(1) brightness(2.4); pointer-events: none;
+  transition: opacity 0.14s;
+}
+.mb-art img { width: 100%; height: 100%; object-fit: contain; }
+.mb-row:hover .mb-art { opacity: 0.19; }
+
+/* The pilot's row carries the portrait where the others ghost their art. */
+.mb-thumb {
+  position: relative; flex: 0 0 28px; width: 28px; height: 28px;
+  border-radius: var(--radius-sm, 6px); overflow: hidden; background: var(--surface2);
+}
+.mb-thumb img { width: 100%; height: 100%; object-fit: cover; object-position: top center; display: block; }
+
+.mb-slot {
+  position: relative; flex: 0 0 6.9em; white-space: nowrap;
+  font: 9.5px var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--text3);
+}
+.mb-pilot .mb-slot { flex-basis: 3.9em; }
+.mb-part {
+  position: relative; flex: 1; min-width: 0;
+  font-size: 13px; font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.mb-part.mb-empty { color: var(--text3); font-weight: 500; }
+.mb-cost { position: relative; flex: 0 0 auto; font: 11px var(--mono); color: var(--text3); white-space: nowrap; }
+
+.mb-info {
+  flex: 0 0 auto; align-self: stretch; width: var(--tap, 44px);
+  border: none; border-radius: var(--radius, 6px);
+  background: var(--surface2); color: var(--text2);
+  font: 700 15px var(--mono); cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.mb-info:hover { background: var(--accent-lt); color: var(--accent); }
+/* The ✕ that empties a slot is the house row-remover (ui.css .ui-x), set in
+   the middle of the row's height. */
+.mb-clear { align-self: center; flex: 0 0 auto; }

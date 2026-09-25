@@ -763,36 +763,10 @@ export function cardDetail(c: Card): string {
 
 // ---------- portraits and part art, filled after a paint ----------
 //
-// Moved in from reference.ts: both pages draw the same tiles and the same
-// detail, so both need the same filler for the [data-portrait] and
-// [data-partart] slots those renderers leave.
-export function fillPortraits(root: HTMLElement, lazy: boolean): void {
-  root.querySelectorAll<HTMLElement>('[data-portrait]').forEach((slot) => {
-    if (slot.childElementCount) return;
-    const img = document.createElement('img');
-    img.src = portraitUrl(slot.dataset.portrait!);
-    img.alt = '';
-    if (lazy) img.loading = 'lazy';
-    img.addEventListener('error', () => slot.classList.add('portrait-missing'), { once: true });
-    slot.appendChild(img);
-  });
-  root.querySelectorAll<HTMLElement>('[data-partart]').forEach((slot) => {
-    if (slot.childElementCount) return;
-    const id = slot.dataset.partart!;
-    const img = document.createElement('img');
-    img.alt = '';
-    img.loading = 'lazy';
-    const sources = [mechPartUrl(id), tabImageUrl(id)];
-    let next = 0;
-    const advance = (): void => {
-      if (next < sources.length) img.src = sources[next++];
-      else slot.remove();
-    };
-    img.addEventListener('error', advance);
-    advance();
-    slot.appendChild(img);
-  });
-}
+// Moved to its own file (cardart.ts) so the tabletop's Mech builder can have
+// it without this whole renderer; re-exported so every page that imports it
+// from here still does.
+export { fillPortraits } from './cardart';
 
 // WHICH KEYWORDS AND CARDS NAME EACH KEYWORD, built once for the whole
 // glossary rather than per sheet: it is one pass over every keyword's text and

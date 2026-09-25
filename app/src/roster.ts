@@ -7,6 +7,8 @@ import { deleteSquad, isBuiltInSquad, loadSquads } from './squadstore';
 import { canBeLoad, cardFitsSquad, isCarrier, type SquadAllegiance } from './units';
 import { ICON_EXPAND, squadColour } from './icons';
 import { groupByFaction, openPartPicker } from './partpicker';
+import { BUILD_SLOTS, buildDefaultName, buildFactions, confirmLegalBuild, mechBuilderHtml, openMechSlot, slotPool, type BuildSlot } from './mechbuilder';
+import { fillPortraits } from './cardart';
 
 const escAttr = (v: string): string => v.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 
@@ -37,8 +39,10 @@ export interface RosterCallbacks {
   // a Carrier ever passes one, and it may be left off - a Tarantula is allowed
   // to stand there with nothing on its back (O8).
   onAddUnit(card: Card, side: Side, load?: string): void;
-  onAddMech(loadout: MechLoadout, side: Side): void;
-  onSaveMech(uid: number, loadout: MechLoadout): void;
+  // `name` is what the builder's Rename set; absent, the Mech takes its
+  // default label as it always has.
+  onAddMech(loadout: MechLoadout, side: Side, name?: string): void;
+  onSaveMech(uid: number, loadout: MechLoadout, label?: string): void;
   onPreview(card: Card, opts?: { focus?: boolean }): void;
   cardFilter?(card: Card): boolean;
   cardBadge?(card: Card): string;
@@ -60,15 +64,6 @@ const MELON_FLESH = 'M4.4,6A7.6,7.6 0 0,0 19.6,6Z'
   + [[7.8,8.5],[10.4,8.1],[13.2,8.3],[15.9,8.6],[9.1,10.5],[11.9,10.7],[14.7,10.4],[7.2,10.0],[16.9,9.9],[10.5,12.5],[13.4,12.4],[12.0,9.3]]
     .map(([cx, cy]) => `M${cx - 0.5},${cy}a0.5,0.78 0 1,0 1,0a0.5,0.78 0 1,0 -1,0Z`).join('');
 
-const SLOTS: { key: keyof MechLoadout; label: string; type: string }[] = [
-  { key: 'torso', label: 'Torso', type: 'torso' },
-  { key: 'chasis', label: 'Chassis', type: 'chasis' },
-  { key: 'leftHand', label: 'Left arm', type: 'leftHand' },
-  { key: 'rightHand', label: 'Right arm', type: 'rightHand' },
-  { key: 'backpack', label: 'Backpack', type: 'backpack' },
-  { key: 'pilot', label: 'Pilot', type: 'pilot' },
-];
-
 export class Roster {
   private data: GameData;
   private cb: RosterCallbacks;
@@ -76,6 +71,9 @@ export class Roster {
   private tab: 'drones' | 'mech' | 'projectiles' | 'tactics' = 'drones';
   private search = '';
   private mech: MechLoadout = {};
+  // The name the build carries, set by the builder's Rename; empty means the
+  // Torso's card name, as the pad does.
+  private name = '';
   // What each Carrier drone will be sent onto the board carrying, keyed by the
   // drone's card id. Held here rather than on the row so it survives the
   // re-render that picking a Load causes, and so adding the same Carrier to both
@@ -87,36 +85,15 @@ export class Roster {
 
   // The build rules are the same whether a mech is being added or edited, so
   // both paths run this and only the confirm wording changes.
-  private async legalBuild(confirmLabel: string): Promise<boolean> {
-    const missing = [
-      this.mech.torso ? '' : 'a Torso',
-      this.mech.chasis ? '' : 'a Chassis',
-      this.mech.leftHand || this.mech.rightHand ? '' : 'at least one Arm',
-    ].filter(Boolean);
-    if (missing.length) {
-      await alertDialog({
-        title: 'That mech is not legal yet',
-        body: `A mech needs a Torso, a Chassis and at least one Arm (rulebook 2.2.2). Still to pick: ${missing.join(', ')}.`,
-      });
-      return false;
-    }
-    const { factions } = this.mechFactions();
-    if (factions.length > 1) {
-      return confirmDialog({
-        title: 'That mech mixes factions',
-        body: `It uses ${factions.join(' and ')} parts. Rulebook 5.1 says a Mech can only be composed of Parts from a single faction, so this build is not legal.`,
-        confirmLabel,
-        cancelLabel: 'Let me fix it',
-        danger: true,
-      });
-    }
-    return true;
+  private legalBuild(confirmLabel: string): Promise<boolean> {
+    return confirmLegalBuild(this.data, this.mech, confirmLabel);
   }
 
   // Pulls an existing mech off the board and back onto the bench.
   editMech(uid: number, side: Side, label: string, loadout: MechLoadout): void {
     this.editing = { uid, side, label };
     this.mech = { ...loadout };
+    this.name = label;
     this.tab = 'mech';
     for (const b of document.querySelectorAll<HTMLButtonElement>('#add-tabs button')) {
       b.classList.toggle('active', b.dataset.tab === 'mech');
@@ -383,22 +360,11 @@ export class Roster {
   // The one place that decides what may go in a slot. Both the dropdown and the
   // popout picker read it, so a card can never be offered by one and withheld by
   // the other.
-  private slotCards(slot: { key: keyof MechLoadout; type: string }): Card[] {
-    return this.data.cards
-      .filter((c) => (slot.key === 'pilot' ? c.category === 'pilot' : c.category === 'mech_part' && c.type === slot.type))
-      // A Discard Card is the flipped face of a Part you already own, not a
-      // Part you can equip, so it has no business in a build picker. Kept if
-      // somehow already selected, so an old save still shows what it holds.
-      //
-      // A zero-cost Mode face is the same story with a different trigger: a
-      // squad cannot begin in Tether Mode, because Tether Mode is a state a
-      // Harpoon shot puts you in and there would be no tether to be in. The two
-      // White Dwarf Modes are NOT caught — both are printed at 72 points, so
-      // either is a real build choice (isModeFace reads the price, not the name).
-      .filter((c) => !isDiscardCard(c) || this.mech[slot.key] === c.id)
-      .filter((c) => !isModeFace(c) || this.mech[slot.key] === c.id)
-      .filter((c) => (this.cb.cardFilter?.(c) ?? true) || this.mech[slot.key] === c.id)
-      .sort((a, b) => cardName(a).localeCompare(cardName(b)));
+  private slotCards(slot: BuildSlot): Card[] {
+    // The shared pool (mechbuilder.ts slotPool: no Discard Cards, no zero-cost
+    // Mode faces), narrowed to the collection; a card already chosen stays.
+    return slotPool(this.data, slot, this.mech[slot.key])
+      .filter((c) => (this.cb.cardFilter?.(c) ?? true) || this.mech[slot.key] === c.id);
   }
 
   // Grouped by faction in a fixed order so the list does not reshuffle as parts
@@ -411,25 +377,55 @@ export class Roster {
   // Picking here lands in exactly the same place a dropdown change does: the
   // slot is set, the card opens in the Details panel, and the builder redraws so
   // the points, the faction line and the off-faction dimming all catch up.
-  private openSlotPicker(slot: { key: keyof MechLoadout; label: string; type: string }): void {
-    openPartPicker({
+  private openSlotPicker(slot: BuildSlot): void {
+    openMechSlot({
       data: this.data,
-      slotLabel: slot.label,
-      groups: this.byFaction(this.slotCards(slot)),
-      chosen: this.mech[slot.key],
-      lockedFaction: this.lockedFaction(),
+      loadout: this.mech,
+      slot,
+      cards: this.slotCards(slot),
       badge: (c) => this.cb.cardBadge?.(c) ?? '',
-      actions: [
-        {
-          label: 'Use this',
-          run: (card) => {
-            this.mech[slot.key] = card.id;
-            this.cb.onPreview(card, { focus: false });
-            this.render();
-          },
-        },
-      ],
+      actionLabel: 'Use this',
+      onPick: (card) => {
+        this.mech[slot.key] = card.id;
+        this.cb.onPreview(card, { focus: false });
+        this.render();
+      },
     });
+  }
+
+  // The shared builder's clicks (mechbuilder.ts names the acts).
+  private onBench(ev: Event): void {
+    const el = (ev.target as HTMLElement).closest<HTMLElement>('[data-act]');
+    if (!el) return;
+    const slot = BUILD_SLOTS.find((s) => s.key === el.dataset.slot);
+    switch (el.dataset.act) {
+      case 'build-slot':
+        if (slot) this.openSlotPicker(slot);
+        return;
+      case 'build-clear':
+        if (!slot) return;
+        delete this.mech[slot.key];
+        this.render();
+        return;
+      case 'build-rename':
+        void promptDialog({
+          title: 'Name',
+          body: this.editing ? 'The unit takes the new name when you save.' : 'The name the Mech takes when it is added.',
+          value: this.name.trim() || buildDefaultName(this.data, this.mech),
+          placeholder: 'Name',
+          confirmLabel: 'Set',
+        }).then((name) => {
+          if (name === null) return;
+          this.name = name;
+          this.render();
+        });
+        return;
+      case 'card': {
+        const card = el.dataset.id ? this.data.byId.get(el.dataset.id) : undefined;
+        if (card) this.cb.onPreview(card);
+        return;
+      }
+    }
   }
 
   // The drone list has no single slot to fill, so the two squad buttons come
@@ -458,54 +454,7 @@ export class Roster {
   }
 
   private mechFactions(): { factions: string[]; unknown: number } {
-    const seen = new Set<string>();
-    let unknown = 0;
-    for (const key of ['torso', 'chasis', 'leftHand', 'rightHand', 'backpack', 'pilot'] as const) {
-      const id = this.mech[key];
-      if (!id) continue;
-      const card = this.data.byId.get(id);
-      if (!card) continue;
-      const f = this.data.factionOf(card);
-      if (f) seen.add(f);
-      else unknown++;
-    }
-    return { factions: [...seen], unknown };
-  }
-
-  private paintFaction(el: HTMLElement): void {
-    const { factions, unknown } = this.mechFactions();
-    el.classList.toggle('bad', factions.length > 1);
-    if (!factions.length) {
-      el.textContent = unknown ? 'Faction unknown for the parts picked so far.' : '';
-      return;
-    }
-    if (factions.length === 1) {
-      el.textContent = `${factions[0]} mech${
-        unknown ? `, plus ${unknown} part${unknown === 1 ? '' : 's'} of unknown faction` : ''
-      }. Parts and pilots from other factions are dimmed in the lists.`;
-      return;
-    }
-    el.textContent = `Illegal: this mixes ${factions.join(' and ')}. A mech may only use parts from one faction.`;
-  }
-
-  private lockedFaction(): string | null {
-    const { factions } = this.mechFactions();
-    return factions.length === 1 ? factions[0] : null;
-  }
-
-  private paintFactionLock(selects: HTMLSelectElement[]): void {
-    const locked = this.lockedFaction();
-    for (const sel of selects) {
-      for (const o of Array.from(sel.options)) {
-        if (!o.value) continue;
-        const card = this.data.byId.get(o.value);
-        const f = card ? this.data.factionOf(card) : null;
-        const off = !!locked && !!f && f !== locked;
-        o.classList.toggle('off-faction', off);
-        o.title = off ? `${f} card. This mech is locked to ${locked} by what you have already picked.` : '';
-      }
-      sel.classList.toggle('faction-locked', !!locked);
-    }
+    return buildFactions(this.data, this.mech);
   }
 
   private renderMechBuilder(): void {
@@ -517,97 +466,24 @@ export class Roster {
       flag.textContent = `Editing ${this.editing.label}. Damage on any part you change is cleared; everything else about the unit stays as it is.`;
       wrap.appendChild(flag);
     }
-    const selects: HTMLSelectElement[] = [];
-    for (const slot of SLOTS) {
-      const label = document.createElement('label');
-      label.textContent = slot.label;
-      const sel = document.createElement('select');
-      const empty = document.createElement('option');
-      empty.value = '';
-      empty.textContent = '—';
-      sel.appendChild(empty);
-      const grouped = this.byFaction(this.slotCards(slot));
-      for (const { faction, cards: members } of grouped) {
-        const group = document.createElement('optgroup');
-        group.label = `${faction ? (FACTION_LABEL[faction] ?? faction) : 'Faction not recorded'} · ${members.length}`;
-        for (const c of members) {
-          const o = document.createElement('option');
-          o.value = c.id;
-          o.textContent = `${cardName(c)}${c.score ? ` (${c.score}p)` : ''}${this.cb.cardBadge?.(c) ?? ''}`;
-          if (this.mech[slot.key] === c.id) o.selected = true;
-          group.appendChild(o);
-        }
-        sel.appendChild(group);
-      }
-      sel.addEventListener('change', () => {
-        this.mech[slot.key] = sel.value || undefined;
-        const card = sel.value ? this.data.byId.get(sel.value) : undefined;
-        if (card) this.cb.onPreview(card, { focus: false });
-        pts.textContent = this.pointsText();
-        this.paintFaction(fac);
-        this.paintFactionLock(selects);
-      });
-      selects.push(sel);
-      label.appendChild(sel);
-      // A dropdown can only ever show one card at a time and cannot show the art
-      // at all, so the slot also opens a browser where the scans can be read and
-      // two candidates put side by side.
-      const pop = document.createElement('button');
-      pop.type = 'button';
-      pop.className = 'slot-pop';
-      pop.innerHTML = ICON_EXPAND;
-      pop.title = `Browse and compare ${slot.label} cards`;
-      pop.addEventListener('click', (ev) => {
-        ev.preventDefault();
-        ev.stopPropagation();
-        this.openSlotPicker(slot);
-      });
-      label.appendChild(pop);
-      // A native <option> cannot be hovered reliably, so the chosen card gets a
-      // thumbnail beside the picker that shows the full card the usual way.
-      const peek = document.createElement('span');
-      peek.className = 'slot-peek';
-      const paintPeek = (): void => {
-        const card = this.mech[slot.key] ? this.data.byId.get(this.mech[slot.key]!) : undefined;
-        peek.replaceChildren();
-        if (!card) {
-          delete peek.dataset.tipCard;
-          peek.classList.add('empty');
-          peek.textContent = '?';
-          return;
-        }
-        peek.classList.remove('empty');
-        peek.dataset.tipCard = card.id;
-        const img = document.createElement('img');
-        const sources = [mechPartUrl(card.id), tabImageUrl(card.id)];
-        let next = 0;
-        const advance = (): void => {
-          if (next < sources.length) img.src = sources[next++];
-          else img.remove();
-        };
-        img.addEventListener('error', advance);
-        advance();
-        peek.appendChild(img);
-      };
-      paintPeek();
-      peek.addEventListener('click', () => {
-        const card = this.mech[slot.key] ? this.data.byId.get(this.mech[slot.key]!) : undefined;
-        if (card) this.cb.onPreview(card);
-      });
-      sel.addEventListener('change', paintPeek);
-      label.appendChild(peek);
-      wrap.appendChild(label);
-    }
+    // THE SHARED BUILDER (mechbuilder.ts), the pad's rows: the name, the
+    // faction and points, one card row per slot. It replaced six dropdowns
+    // that could not show the art (OTTO, 2026-09-24).
+    const bench = document.createElement('div');
+    bench.className = 'mech-bench';
+    bench.innerHTML = mechBuilderHtml(this.data, this.mech, {
+      name: this.name.trim() || buildDefaultName(this.data, this.mech) || 'Unnamed',
+    });
+    fillPortraits(bench, true);
+    bench.addEventListener('click', (ev) => this.onBench(ev));
+    wrap.appendChild(bench);
+
+    // The squads' totals and the battle size under the build; the build's
+    // own points are in the builder's header.
     const pts = document.createElement('p');
     pts.className = 'points';
     pts.textContent = this.pointsText();
     wrap.appendChild(pts);
-
-    const fac = document.createElement('p');
-    fac.className = 'mech-faction';
-    wrap.appendChild(fac);
-    this.paintFaction(fac);
-    this.paintFactionLock(selects);
 
     // Presets sit directly above the add buttons, so a build can be stored and
     // recalled without rebuilding it slot by slot every game.
@@ -640,11 +516,12 @@ export class Roster {
         const found = loadMechPresets().find((p) => p.id === pick.value);
         if (!found) return this.render();
         this.mech = { ...found.mech };
+        this.name = found.name;
         this.render();
       });
       presets.querySelector('.preset-save')!.addEventListener('click', () => {
         void (async () => {
-          const suggested = this.mech.torso ? cardName(this.data.byId.get(this.mech.torso)!) : 'My mech';
+          const suggested = this.name.trim() || buildDefaultName(this.data, this.mech) || 'My mech';
           const name = await promptDialog({
             title: 'Save this mech',
             body: 'Saved builds are kept on this device and can be dropped onto the board in any later game. Reusing a name overwrites that preset.',
@@ -697,9 +574,11 @@ export class Roster {
       save.addEventListener('click', () => {
         void (async () => {
           if (!(await this.legalBuild('Save it anyway'))) return;
-          this.cb.onSaveMech(ed.uid, { ...this.mech });
+          const label = this.name.trim();
+          this.cb.onSaveMech(ed.uid, { ...this.mech }, label && label !== ed.label ? label : undefined);
           this.editing = null;
           this.mech = {};
+          this.name = '';
           this.render();
         })();
       });
@@ -709,6 +588,7 @@ export class Roster {
       cancel.addEventListener('click', () => {
         this.editing = null;
         this.mech = {};
+        this.name = '';
         this.render();
       });
       btns.append(save, cancel);
@@ -723,9 +603,10 @@ export class Roster {
         b.addEventListener('click', () => {
           void (async () => {
             if (!(await this.legalBuild('Add it anyway'))) return;
-            this.cb.onAddMech({ ...this.mech }, side);
+            this.cb.onAddMech({ ...this.mech }, side, this.name.trim() || undefined);
             // Those Parts are on the board now, so start the next build empty.
             this.mech = {};
+            this.name = '';
             this.render();
           })();
         });
@@ -819,13 +700,11 @@ export class Roster {
   }
 
   private pointsText(): string {
-    let total = 0;
-    for (const slot of SLOTS) {
+    const total = BUILD_SLOTS.reduce((n, slot) => {
       const id = this.mech[slot.key];
-      const c = id ? this.data.byId.get(id) : undefined;
-      if (c?.score) total += c.score;
-    }
-    const lines = [`Current build: ${total} points`];
+      return n + (id ? (this.data.byId.get(id)?.score ?? 0) : 0);
+    }, 0);
+    const lines: string[] = [];
     const squads = this.cb.squadPoints?.();
     if (squads) lines.push(`Squad points: UN ${squads.s1} / RDL ${squads.s2}`);
     const cap = this.cb.pointsCap?.();
