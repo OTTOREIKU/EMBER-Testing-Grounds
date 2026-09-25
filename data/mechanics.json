@@ -59,12 +59,12 @@
   {
    "id": "reboot",
    "name": "Reboot",
-   "ref": "Rulebook 4.1.1",
+   "ref": "Rulebook 4.1.1; FAQ K17, L3, L8",
    "match": [
     "reboot",
     "重启"
    ],
-   "text": "The only action a Shutdown mech may take. It restores 1 Link and lets you change stance, but leaves the mech with just 1 Action Tick of the chosen Timing."
+   "text": "The only Action a Shutdown Mech may take, and it must take it: a Mech in Shutdown Stance Reboots the next time it gains an Action Opportunity (FAQ K17). So it still sets a Timing Dial each round, and the dial decides when that is. A Mech shut down part-way through its own Opportunity Reboots at the start of its next one. The Reboot restores 1 Link and changes the Stance to Defensive, Mobility or Offensive, never Shutdown. What is left of that Opportunity is 1 Action Tick, for one Action of the Timing on the dial: no Maneuver, no Extra Ticks, and no Starting Action exception such as Flexible Timing, CQC or Feint (4.1.1, FAQ L8). Link restored to a Shutdown Mech by an ally, such as an Aurora's Strengthen Link, does not Reboot it (FAQ L3). An Extra Action Opportunity from Echoes is an Action Opportunity, so a Shutdown Mech with the Link to be chosen can Reboot in it (FAQ L8)."
   },
   {
    "id": "parry",
@@ -155,7 +155,7 @@
   {
    "id": "ammo_and_charge",
    "name": "Ammo and Charge",
-   "ref": "Rulebook 4.13 and 4.14",
+   "ref": "Rulebook 4.7, 4.12.2, 4.13, 4.14, 4.17, 6.1; FAQ D11, H1 to H9, J15",
    "match": [
     "ammo",
     "charged",
@@ -164,7 +164,7 @@
     "弹药",
     "充能"
    ],
-   "text": "Two separate token economies printed as icons on an Action. Ammo caps how many times an Action can be used: place one face-up Ammo Token per Ammo Icon at deployment, flip one face-down per use, and once they are all spent the Action cannot be performed. Volley X spends one Ammo Token per Projectile launched. Some Actions replenish Ammo by naming a Unit or Part and flipping consumed tokens back face-up, never above the starting number. Charge is a one-shot state instead: the token starts face-down, the Charge Action flips one named Part's token face-up, only one Part per Charge Action, and it cannot be Charged again until spent. An Action with a Charge-conditional effect may consume it by flipping the token back down."
+   "text": "Two separate token economies printed as icons on an Action. Ammo caps how many times an Action can be used: place one face-up Ammo Token per Ammo Icon at deployment, flip one face-down per use, and once they are all spent the Action cannot be performed (4.13). A Projectile Action consumes its Ammo as each Projectile is placed, one per Projectile, so Volley X can spend X (4.7). An attack that fails, such as one on a camouflaged unit whose Scan fails, still consumes its Ammo and Charge (4.12.2). Some Actions replenish Ammo by naming a Unit or Part and flipping consumed tokens back face-up, never above the starting number, and repairing a Part does not restore its Ammo (FAQ J15). Charge is a one-shot state instead. The token starts face-down, and the Charge Action, a Tactical Short Action with Silence (6.1), flips one named Part's token face-up: one Part per Charge Action, and a Part already Charged cannot be Charged again until it is spent (4.14, FAQ H1, H3). A Mech with two Parts that can be Charged may perform two Charge Actions in one Opportunity, one for each Part (FAQ H6, H7), and one with nothing left to Charge cannot perform it at all (FAQ H2). An Action with a Charge-conditional effect may consume the token by flipping it back down, and never has to, even as an Automatic Action (FAQ H4, H8). KC Armor needs a consumed Charge, is declared after the unit is targeted and before the Hit Location Die (FAQ H5, H9), and holds through Surplus Damage (FAQ D11). When a Part is Discarded or Disarmed, its Ammo and Charge carry to the Discard Card only for an Action there that uses them, and are otherwise removed (4.17)."
   },
   {
    "id": "screeching",
@@ -226,44 +226,44 @@
   {
    "id": "ticks",
    "name": "Ticks and the Action Opportunity",
-   "ref": "Rulebook 3.4.5",
+   "ref": "Rulebook 3.4.3, 3.4.4, 3.4.5, 4.1.1; FAQ K14",
    "match": [
     "action opportunity",
     "maneuver tick",
     "action tick"
    ],
-   "text": "Every time a Mech receives an Action Opportunity it generates 1 Maneuver Tick and 2 Action Ticks. A Maneuver costs the Maneuver Tick, a Short Action costs 1 Action Tick, a Medium costs 2, and a Long costs the Maneuver Tick plus both Action Ticks, which is why a Long Action rules out Maneuvering. Ticks are spent in order: once any Action Tick has gone the Maneuver Tick can no longer be used, so a Maneuver has to come first. The first Action of the Opportunity is the Starting Action and its Action Type must match the Timing on the dial; later Actions in the same Opportunity have no type restriction. Each Action on a Part may only be performed once per Opportunity. Extra Ticks are separate: they may only be used after every base Tick is spent, never combine with a base Tick to pay for one Action, only pay for their own Action Type when one is named, and may repeat an Action already performed."
+   "text": "Every time a Mech receives an Action Opportunity it generates 1 Maneuver Tick and 2 Action Ticks. A Maneuver costs the Maneuver Tick, a Short Action costs 1 Action Tick, a Medium costs 2, and a Long costs the Maneuver Tick plus both Action Ticks, which is why a Long Action rules out Maneuvering. An Action that needs more Ticks than remain when it is declared cannot be performed. Ticks are consumed in order: once any Action Tick has gone the Maneuver Tick can no longer be used, so a Maneuver has to come first. The first Action of the Opportunity is the Starting Action and its Action Type must match the Timing on the dial, unless Flexible Timing, CQC or Feint says otherwise; later Actions in the same Opportunity have no type restriction. With no valid Starting Action declared, no other Short Action may be performed in that Opportunity either (3.4.3, Note 2). Each Action on a Part may only be performed once per Opportunity. The Opportunity ends when its Ticks are consumed or forfeited (3.4.4). After a Reboot a Mech has only 1 Action Tick (4.1.1). Overload, Attack Mode and Hammerhead Domestic Expert add ordinary Action Ticks to the pool, which combine freely but never let an Action repeat (FAQ K14). Extra Ticks are separate: they may only be used after every base Tick is consumed, never combine with a base Tick to pay for one Action, only pay for their own Action Type when one is named, and may repeat an Action already performed."
   },
   {
    "id": "extra_tick",
    "name": "Extra Ticks",
-   "ref": "Rulebook 3.4.5",
+   "ref": "Rulebook 3.4.5; FAQ K4, K6, K13, K14, K24, L8",
    "match": [
     "extra tick",
     "extra firing tick",
     "额外指示物"
    ],
-   "text": "An Extra Tick pays for one Short Action on its own. Two Extra Ticks never combine to pay for a Medium Action, and an Extra Tick never combines with a base Tick (3.4.5). It may only be used after the Maneuver Tick and both Action Ticks are spent or forfeited, it may repeat an Action already performed this Opportunity, and where the grant names an Action Type it pays only for that type. A grant's condition is read when the Tick is spent: the Tempest core grants its Firing Tick only while the Mech is Stationary, the Glacier core only while the Mech acts in Firing Timing."
+   "text": "An Extra Tick pays for one Short Action on its own, and never combines with a base Tick to pay for one Action (3.4.5). Two Extra Ticks never combine to pay for a Medium Action either (FAQ K14). It may only be used after the Maneuver Tick and both Action Ticks are consumed (3.4.5), at the end of the Opportunity, and it may repeat an Action already performed in it (FAQ K6); where the grant names an Action Type it pays only for that type. A grant's condition is read when the Tick is spent. The Tempest core grants its Firing Tick only while the Mech is Stationary, and Stationary covers the whole Opportunity, so a Mech that moved at any point in it has lost the Tick (FAQ K24). The Glacier core grants its Tick when the Timing Dial is set to Firing, whatever the Starting Action (FAQ K13), and that holds in an Extra Action Opportunity too, because the dial is still set (FAQ K4). A Mech that Reboots has none: the Reboot leaves 1 Action Tick and nothing more (FAQ L8)."
   },
   {
    "id": "overload",
    "name": "Overload",
-   "ref": "OCSP Overloading Pack, card 090",
+   "ref": "OCSP Overloading Pack, card 090; FAQ K10, K11, K14, K20, L1",
    "_match_note": "Deliberately English-only. The Chinese 超载 also appears in XTC's 超载注入, an unrelated Electronic Attack, and the Pack's own Action carries the English name so nothing is lost.",
    "match": [
     "overload"
    ],
-   "text": "The OCSP Overloading Pack lets a Mech consume up to 2 Link during its Action Opportunity, gaining 1 Action Tick for each point spent. These are ordinary Action Ticks rather than Extra Ticks: two of them pay for one Medium Action, which no pair of Extra Ticks can do, and they are spent before any Extra Tick in the usual order. The Link is spent whether or not the Ticks are used, and a Mech reduced to 0 Link Shuts Down. This Part cannot be used as a Load."
+   "text": "The OCSP Overloading Pack lets a Mech consume up to 2 Link at the start of its Action Opportunity, gaining 1 Action Tick for each point spent. It is declared at the beginning, before any Maneuver or Action, never part-way through (FAQ K10). These are ordinary Action Ticks rather than Extra Ticks: they may be split between Actions as the Mech likes (FAQ K11), two of them pay for one Medium Action, which no pair of Extra Ticks can do, and they never let an Action repeat, so an Overloaded Mech may perform a Short, a Medium and a different Short Action (FAQ K14). Ticks are still consumed in order, so a Maneuver must come before the first Action Tick is spent (FAQ K20). The Link is spent whether or not the Ticks are used, but never the last one, which cannot be spent voluntarily (4.10, FAQ L1): 2 Link buys one Tick and 3 buys two. The Pack must be intact to Overload through, since a destroyed Part's Action cannot be performed (3.4.3); a Repaired one still can. This Part cannot be used as a Load."
   },
   {
    "id": "extra_action_opportunity",
    "name": "Extra Action Opportunity",
-   "ref": "Echoes Support Backpack, card 009",
+   "ref": "Echoes Support Backpack, card 009; FAQ K1, K3, K4, K7, K8, K19, K21, L8",
    "match": [
     "extra action opportunity",
     "额外行动机会"
    ],
-   "text": "A complete second Action Opportunity, not an extra Tick: the Mech gets a fresh Maneuver Tick, two fresh Action Ticks, and any Extra Tick its Parts grant (FAQ K7). The Echoes Support Backpack's Coordinate Action grants one to a chosen Ally Mech within Range 4, and that Mech loses 1 Link; it must hold at least 2 Link to be chosen. A Mech acting in an Echoes Opportunity cannot use Echoes on another Mech during it (FAQ K3). It happens immediately, inside the granting Mech's Opportunity: the echoed Mech acts, then the granting Mech continues (FAQ K21). The echoed Mech's Starting Action must match its own Timing (FAQ K7). A Mech echoed before its own activation still takes that activation (FAQ K19). A Mech may gain several Extra Opportunities from several Echoes Packs while it has the Link (FAQ K8)."
+   "text": "A complete Action Opportunity, not an extra Tick: the Mech gets a fresh Maneuver Tick, two fresh Action Ticks, any Extra Tick its Parts grant (FAQ K4), and the chance to change Stance (FAQ K1). The Echoes Support Backpack's Coordinate, a Tactical Medium Action of the granting Mech, grants one to a chosen Ally Mech other than itself within Range 4, and that Mech loses 1 Link; it must hold at least 2 Link to be chosen. A Mech acting in an Echoes Opportunity cannot use Echoes on another Mech during it (FAQ K3). It happens immediately, inside the granting Mech's Opportunity: the echoed Mech acts, then the granting Mech continues (FAQ K21). The echoed Mech's Starting Action must match its own Timing, not the granter's (FAQ K7). A Mech echoed before its own activation still takes that activation (FAQ K19). A Mech may gain several Extra Opportunities from several Echoes Packs while it has the Link (FAQ K8). A Shutdown Mech given one Reboots in it, because it is an Action Opportunity (FAQ L8)."
   },
   {
    "id": "on_hit",
@@ -279,15 +279,18 @@
   {
    "id": "stance_condition",
    "name": "Stance as a condition",
-   "ref": "Rulebook 4.1",
+   "ref": "Rulebook 3.4.2, 4.1; FAQ L3, L5, O2",
    "match": [
     "offensive stance",
     "defensive stance",
     "mobility stance",
     "攻击态势",
-    "防御态势"
+    "防御态势",
+    "攻击姿态",
+    "防御姿态",
+    "机动姿态"
    ],
-   "text": "An Action that names a Stance in brackets only applies that part of its text while the Mech is in that Stance, checked as the Action is performed. A Mech chooses its Stance each time it receives an Action Opportunity, before it Maneuvers (4.1), and it lasts until changed: Offensive converts hollow attack icons to solid, Defensive converts hollow defence icons to solid, Mobility adds Dodge dice and doubles the Maneuver, and Shutdown is the state a Mech falls into at 0 Link, where it may do nothing but Reboot, gains no benefit when rolling and activates no Passive effects. An Action's Stance change, such as Suppression, happens before the Attack Roll."
+   "text": "An Action that names a Stance in brackets only applies that part of its text while the Mech is in that Stance, checked as the Action is performed. A Mech chooses its Stance at the start of each of its own Action Opportunities, before it Maneuvers or acts (4.1), and only Defensive, Mobility or Offensive may be chosen (3.4.2). The Stance lasts until changed: Offensive converts hollow attack icons to solid, Defensive converts hollow defence icons to solid, and Mobility adds Dodge dice and doubles the Maneuver. Shutdown is never chosen. A Mech falls into it at 0 Link, or when an effect forces it, as the Lightning of the Valkyrie and the Harpy can, and only a Reboot takes it out again. A Shutdown Mech may do nothing but Reboot and gains no benefit when rolling. When it is the target of an Action the attacker designates the Part, and no Part ability such as Parry defends it. It triggers nothing of its own, Passive effects and pilot skills included (4.1, FAQ L3); Anser alone is the exception (FAQ L5). A Drone keeps the Stance printed on its card and cannot be switched out of it (FAQ O2). An Action's Stance change, such as Suppression, happens before the Attack Roll."
   },
   {
    "id": "low_value_unit",
@@ -328,13 +331,13 @@
   {
    "id": "activation_order",
    "name": "Activation order in the Action Phase",
-   "ref": "Rulebook 3.4.1",
+   "ref": "Rulebook 3.4.1; FAQ K17, K21",
    "match": [
     "activation order",
     "timing dial",
     "initiative value"
    ],
-   "text": "Mechs act one at a time in Timing order, which never changes: Swift, Melee, Projectile, Firing, Movement, Tactical. Within one Timing the Pilot with the LOWEST Initiative Value at that Timing acts first, that number being the one printed under the Timing icon on the dial. If two Mechs share both the Timing and the Initiative Value, the First Player's Mech goes first and the sides then alternate until every Mech at that value has acted. A Mech with no Timing set never activates at all."
+   "text": "Mechs act one at a time in Timing order, which never changes: Swift, Melee, Projectile, Firing, Movement, Tactical. Within one Timing the Pilot with the LOWEST Initiative Value at that Timing acts first, that number being the one printed under the Timing icon on the dial. If two Mechs share both the Timing and the Initiative Value, the First Player's Mech goes first and the sides then alternate until every Mech at that value has acted. Which of one squad's tied Mechs takes each of its turns is that squad's choice, as in the Automatic and Delay Phases; the rulebook orders only the squads, so this is a reading rather than a printed rule. Every Mech sets a dial, a Shutdown one included, because it Reboots when its Timing comes round (FAQ K17). An Extra Action Opportunity is taken at once, inside the granting Mech's own, and the granter then continues (FAQ K21)."
   },
   {
    "id": "token_duration",
