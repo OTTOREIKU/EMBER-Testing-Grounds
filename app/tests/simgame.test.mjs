@@ -69,11 +69,38 @@ const immob = unitsSrc.slice(
   unitsSrc.indexOf('// ---------- ON-HIT RIDERS'),
 );
 if (!silence || !auras || !immob) throw new Error('could not locate the Silence readers in units.ts');
+// The Mechanics Audit Phase 2 readers commands.ts imports (actionPartWhy,
+// startOpts, overloadPackOn, cruising...): one block, the last in units.ts, so
+// it overlaps no range above. SLOT_LABEL rides along because actionPartWhy
+// names the destroyed Part, and simulated attacks destroy plenty of them.
+const phase2At = unitsSrc.indexOf('// ---------- Mechanics audit Phase 2 readers ----------');
+if (phase2At < 0) throw new Error('could not locate the Phase 2 readers in units.ts');
+const phase2 = unitsSrc.slice(phase2At);
+const slotLabels = unitsSrc.slice(unitsSrc.indexOf('export const SLOT_LABEL'), unitsSrc.indexOf('let uidSource'));
+if (!slotLabels) throw new Error('could not locate SLOT_LABEL in units.ts');
+// extraActivationOf: performAction records the grant a Coordinate makes (FAQ
+// K3). No other cut here touches this range.
+const grants = unitsSrc.slice(unitsSrc.indexOf('export interface ExtraActivation'), unitsSrc.indexOf('export function freehandSlots'));
+if (!grants) throw new Error('could not locate extraActivationOf in units.ts');
+// consumesCharge: the Charge Action's Part check (FAQ H2) asks it, and a
+// random game performs Charge Actions. The same pure range commands.test.mjs
+// takes, starting at the module-level regex it reads.
+const chargeParser = unitsSrc.slice(unitsSrc.indexOf('const CHARGE_KEYWORD'), unitsSrc.indexOf('export function isChargeAction'));
+if (!chargeParser) throw new Error('could not locate consumesCharge in units.ts');
+// The [condition] grant block: performAction prices a Stance-gated length off
+// stanceShaped (ZHRA-102_A; audit Phase 2, D2). Checked against every range
+// taken here: it overlaps none (tests/_p2v_slices.mjs), and no stub shares a name.
+const grantBlock = unitsSrc.slice(
+  unitsSrc.indexOf('// ---------- [condition] 获得X: keywords GRANTED by a printed condition ----------'),
+  unitsSrc.indexOf('// Pulse Weapon: "May exchange'),
+);
+if (!grantBlock) throw new Error('could not locate the grant block in units.ts');
 const timings = types.slice(types.indexOf('export const PHASES'), types.indexOf('export type TokenShape'));
 const statuses = types.slice(types.indexOf('export function hexagonIds'), types.indexOf('export interface RoundState'));
 const tmp = new URL('./_simgame.slice.ts', import.meta.url);
 // Missile Group X: the real reader, sliced so launch mints what the card says.
-const groupParser = unitsSrc.slice(unitsSrc.indexOf('// MISSILE GROUP X'), unitsSrc.indexOf('export function volleyOf'));
+// Through volleyOf too, which launch() now caps a performance with (C12).
+const groupParser = unitsSrc.slice(unitsSrc.indexOf('// MISSILE GROUP X'), unitsSrc.indexOf('// ---------- SNIPE 狙击 (keywords.json) ----------'));
 if (!groupParser) throw new Error('could not locate missileGroupOf in units.ts');
 const stubs = `
 // Flexible Timing reaches a Mech from an ally's AURA, which needs the whole
@@ -109,6 +136,13 @@ export function tetherTo(_a: any, _b: any, _range: number): void {}
 export function transformPartOn(_data: any, _t: any, _slot: any, _cardId: string): void {}
 export function transformFaces(_data: any, _c: any): string[] { return []; }
 export function hasFlexibleTiming(_data: any, _tokens: any, _t: any): boolean {
+  return false;
+}
+// CQC is its own Starting Action option now (startOpts). A random squad may
+// field card 017, and this stub answers "never" as the one above does, so the
+// sim plays the stricter Starting Action rule: it refuses a Chop a real game
+// would allow, never the reverse. mechanics2.test.mjs pins the real any-timing arm.
+export function cqcFlexible(_data: any, _t: any, _a?: any): boolean {
   return false;
 }
 export function tokenCards(data: any, t: any): any[] {
@@ -223,6 +257,12 @@ let sliceSrc =
   + auras
   + immob
   + silence
+  + slotLabels
+  // After the stubs: it reads the stubbed tokenCards, and a function hoists.
+  + phase2
+  + grants
+  + chargeParser
+  + grantBlock
   + commands.replace(/^import[^\n]*\n/gm, '');
 // The driver builds real script states and opportunities, which live outside
 // the ranges above; pull them (and asSide, which normaliseScript leans on) in

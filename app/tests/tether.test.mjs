@@ -54,6 +54,11 @@ export function syncMagazines(_data: any, t: any): void { synced.push(t.uid); }
   + cut(dataSrc, 'export function isModeFace', 'export function zeroCostReason', 'the face index')
   + cut(unitsSrc, 'export const PART_SLOTS', 'export const SLOT_LABEL', 'PART_SLOTS')
   + cut(unitsSrc, '// ---------- runtime Part faces and Tether X', 'function legacyZoneSet', 'the Tether block')
+  // transformPartOn carries Round Tokens across by Action name (4.17) and puts
+  // a Mech entering Cruise Mode in Mobility, both from the Phase 2 block at the
+  // end of units.ts; interceptCapacity is the pure reader the carry asks.
+  + cut(unitsSrc, 'export function interceptCapacity', '// Every card id currently on the board', 'interceptCapacity')
+  + cut(unitsSrc, '// ---------- Mechanics audit Phase 2 readers ----------', null, 'the Phase 2 readers')
   + cut(meleeSrc, '// ---------- Tether X', null, 'tetherCap'));
 const T = await import(tmp.href);
 

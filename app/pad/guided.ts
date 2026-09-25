@@ -11,16 +11,16 @@
 // No teaching voice: a prompt names the step and, at most, the rule's number.
 import type { GameData } from '../src/data';
 import { actionIconUrl, cardName } from '../src/data';
-import { readyCommands, taskDesignations, missionZones, type CheckResult, type Command } from '../src/commands';
+import { readyCommands, rebootOwed, taskDesignations, missionZones, type CheckResult, type Command } from '../src/commands';
 import { asterBlockers, offerCoordination, runAster } from '../src/commandpick';
-import { canAct, dialHidden, eligibleUnits, isLoopPhase, loopComplete, nextTurn, type LoopPhase } from '../src/loop';
+import { canAct, dialHidden, eligibleUnits, isLoopPhase, loopComplete, nextTurn, tiedChoices, type LoopPhase } from '../src/loop';
 import { deployTurn, deployable, deploymentComplete, firstPlayerFrom, normaliseSetup, rollTotal } from '../src/setup';
 import { ensureScript } from '../src/glue';
 import { canActivate, canAttackMode, canOverload, canPerform, costOf, extrasLeft, lengthOf, OVERLOAD_MAX, type TickVerdict } from '../src/ticks';
-import { actionRange, knockbackOf, linkSupportOf, maxLink, tokenCleanupOf, type LinkSupport, type TokenCleanup, targetStatusGrant, twoHandedUse, chargeableSlots, coordinationFor, coordinationOnOpportunityEnd, electronicValue, extraActivationOf, formSwitch, guidedActions, initiativeFor, isChargeAction, isElectronicAttack, linkTickTraitOn, loanedParts, opportunityBonusOn, pilotCard, repairSpec, resupplyOf, selfGrantWhy, selfStatusGrant, SLOT_LABEL, tokenCards, transformOffer, unfoldsOwed } from '../src/units';
+import { actionRange, overloadPackOn, stanceFeedbackOf, stanceFeedbackTargets, stanceShaped, knockbackOf, linkSupportOf, maxLink, tokenCleanupOf, type LinkSupport, type TokenCleanup, targetStatusGrant, twoHandedUse, chargeableSlots, coordinationFor, coordinationOnOpportunityEnd, electronicValue, extraActivationOf, formSwitch, guidedActions, initiativeFor, isChargeAction, isElectronicAttack, linkTickTraitOn, loanedParts, opportunityBonusOn, pilotCard, repairSpec, resupplyOf, selfGrantWhy, selfStatusGrant, SLOT_LABEL, tokenCards, transformOffer, unfoldsOwed } from '../src/units';
 import { normaliseTasks } from '../src/tasks';
 import { dialsOf, hashDials, newSalt, type DialEntry } from '../src/secrecy';
-import { PHASES, removableTokens, TIMINGS, type CardAction, type GameState, type PartSlot, type Side, type Timing, type Token, type TokenPick } from '../src/types';
+import { PHASES, removableTokens, TIMINGS, type CardAction, type GameState, type PartSlot, type Side, type Stance, type Timing, type Token, type TokenPick } from '../src/types';
 import { choiceDialog, pickManyDialog } from '../src/dialog';
 
 // What the pad lends the guide. Kept as functions where the value moves.
@@ -398,7 +398,7 @@ function planningHtml(api: GuideApi): string {
   // room after its commit.
   const locked = api.solo ? sc.stage === `${s.round.n}:1:locked` : !!sc.commits[api.me()];
   const rows = sides.flatMap((side) => s.tokens
-    .filter((t) => t.side === side && t.kind === 'mech' && (t.partStates.torso ?? 'intact') !== 'destroyed' && t.stance !== 'shutdown')
+    .filter((t) => t.side === side && t.kind === 'mech' && (t.partStates.torso ?? 'intact') !== 'destroyed')
     .map((t) => {
       const hidden = dialHidden(s, t);
       const chips = TIMINGS.map((tm) => {
@@ -409,7 +409,7 @@ function planningHtml(api: GuideApi): string {
       return `<div class="pad-turn-unit"><span class="pad-turn-name">${api.esc(t.label)}${api.solo ? ` · ${api.esc(api.sideName(side))}` : ''}</span>
         ${hidden ? '<span class="pad-turn-val">hidden</span>' : `<div class="pad-chips pad-dials">${chips}</div>`}</div>`;
     }));
-  const unset = sides.reduce((n, side) => n + s.tokens.filter((t) => t.side === side && t.kind === 'mech' && (t.partStates.torso ?? 'intact') !== 'destroyed' && t.stance !== 'shutdown' && !t.timing).length, 0);
+  const unset = sides.reduce((n, side) => n + s.tokens.filter((t) => t.side === side && t.kind === 'mech' && (t.partStates.torso ?? 'intact') !== 'destroyed' && !t.timing).length, 0);
   let foot: string;
   if (api.solo) {
     foot = sc.stage === `${s.round.n}:1:locked`
@@ -440,12 +440,32 @@ function actionHtml(api: GuideApi): string {
   const extras = extrasLeft(opp).length;
   const ticks = `${opp.maneuver ? 'M ' : ''}${'●'.repeat(opp.action)}${extras ? ` +${extras}` : ''}`.trim() || 'no Ticks left';
   const tm = opp.timing ? TIMINGS.find((x) => x.id === opp.timing)?.name ?? opp.timing : '';
+  // A Shutdown Mech whose Opportunity has come Reboots, and that is all it may
+  // do (4.1.1, FAQ K17): no Maneuver, nothing to end.
+  if (owner && rebootOwed(s, t)) {
+    return head(api, t.label, `${tm ? `${tm} · ` : ''}Shutdown`, owner)
+      + tieHtml(api)
+      + `<p class="pad-turn-note">Shutdown: its Action Opportunity has come, so it Reboots now and restores 1 Link. It then has 1 Action Tick, for an Action of its dial's Timing (4.1.1).</p>
+         <div class="pad-chips">${(['defensive', 'mobility', 'offensive'] as const)
+           .map((x) => btn(api, 'g-reboot', `Reboot to ${x[0].toUpperCase()}${x.slice(1)}`, `data-uid="${t.uid}" data-stance="${x}"`)).join('')}</div>`;
+  }
   return head(api, t.label, `${tm ? `${tm} · ` : ''}${ticks}`, owner)
     + (owner
-      ? `<div class="pad-chips">${!opp.maneuvered && opp.maneuver > 0 ? btn(api, 'g-moved', 'Moved (M)') : ''}${btn(api, 'g-end', 'End Opportunity', '', 'pad-chip on')}</div>
+      ? `${tieHtml(api)}<div class="pad-chips">${!opp.maneuvered && opp.maneuver > 0 && t.stance !== 'shutdown' ? btn(api, 'g-moved', 'Moved (M)') : ''}${btn(api, 'g-end', 'End Opportunity', '', 'pad-chip on')}</div>
          ${extrasHtml(api, t, opp)}
          <p class="pad-turn-note">Actions are performed from the list below.</p>`
       : waiting(api, t.side, 'taking its Action Opportunity'));
+}
+
+// Tied on Timing and Initiative with more of this squad's Mechs: the owner
+// picks which takes the turn, while the one holding it has done nothing (audit
+// Phase 2, E6). The engine's own list, so every chip drawn is taken.
+function tieHtml(api: GuideApi): string {
+  const tied = tiedChoices(api.state(), (x, tm) => initiativeFor(api.data, x, tm));
+  return tied.length
+    ? `<p class="pad-turn-note">Tied on Timing and Initiative: this squad picks which of its tied Mechs goes first (3.4.1).</p>
+       <div class="pad-chips">${tied.map((x) => btn(api, 'g-tie', `${x.label} goes first`, `data-uid="${x.uid}"`)).join('')}</div>`
+    : '';
 }
 
 // Link traded for Ticks at the start of the Opportunity: Overload (FAQ K10),
@@ -455,8 +475,7 @@ function actionHtml(api: GuideApi): string {
 function extrasHtml(api: GuideApi, t: Token, opp: NonNullable<GameState['script']>['opp'] & object): string {
   if (t.kind !== 'mech') return '';
   const chips: string[] = [];
-  const overloadIds = new Set(api.data.overload.map((g) => g.actionId));
-  if (tokenCards(api.data, t).some(({ card }) => (card.actions ?? []).some((a) => overloadIds.has(a.id)))) {
+  if (overloadPackOn(api.data, t)) {
     const v = canOverload(opp, t.link ?? 0);
     chips.push(btn(api, 'g-overload', `Overload ${opp.overload}/${OVERLOAD_MAX}`, `${v.ok ? '' : ' disabled'} title="${api.esc(v.ok ? 'Consume 1 Link for 1 Action Tick.' : v.why ?? '')}"`));
   }
@@ -659,6 +678,19 @@ async function performRouted(api: GuideApi, t: Token, a: CardAction): Promise<vo
     cleaned = await askTokenCleanup(api, t, a, cleanRule);
     if (!cleaned) return;
   }
+  // ZHDR-206_B Stance feedback: which Ally Mech and which Stance, asked before
+  // anything is paid (audit Phase 2, D1). The table judges the Range.
+  let feedback: { to: Token; stance: Stance } | null = null;
+  if (stanceFeedbackOf(a)) {
+    const targets = stanceFeedbackTargets(d, api.state().tokens, t, a, true);
+    if (!targets.length) { api.toast(`${a.name.en}: no Ally Mech out of Shutdown Stance to switch (FAQ H2).`); return; }
+    const id = targets.length === 1 ? String(targets[0].uid) : await choiceDialog({ title: `${a.name.en}: which Ally Mech?`, choices: targets.map((x) => ({ id: String(x.uid), label: `${x.label} · ${x.stance}` })), stacked: true });
+    const to = targets.find((x) => String(x.uid) === id);
+    if (!to) return;
+    const stance = await choiceDialog({ title: `${to.label}: which Stance?`, choices: (['defensive', 'mobility', 'offensive'] as const).filter((x) => x !== to.stance).map((x) => ({ id: x, label: `${x[0].toUpperCase()}${x.slice(1)}` })), stacked: true });
+    if (stance !== 'defensive' && stance !== 'mobility' && stance !== 'offensive') return;
+    feedback = { to, stance };
+  }
   let chargeSlot: string | null = null;
   if (isChargeAction(a)) {
     const slots = chargeableSlots(d, t).filter((x) => !x.charged);
@@ -666,7 +698,9 @@ async function performRouted(api: GuideApi, t: Token, a: CardAction): Promise<vo
     chargeSlot = slots.length === 1 ? String(slots[0].slot) : await choiceDialog({ title: a.name.en ?? a.id, choices: slots.map((x) => ({ id: String(x.slot), label: x.label })), stacked: true });
     if (chargeSlot === null) return;
   }
-  if (!api.send({ kind: 'performAction', seat: t.side, uid: t.uid, actionId: a.id, ...(twoHandedUse(d, t, a) ? { twoHanded: true } : {}) })) return;
+  // The shared Charge Action is that Part's Action (FAQ H6/H7; audit Phase 2, E7).
+  const partKey = a.id === 'COMMON_CHARGE' && chargeSlot ? `COMMON_CHARGE@${chargeSlot}` : undefined;
+  if (!api.send({ kind: 'performAction', seat: t.side, uid: t.uid, actionId: a.id, ...(partKey ? { partKey } : {}), ...(twoHandedUse(d, t, a) ? { twoHanded: true } : {}) })) return;
   // A Moving Action that shoves - 181 Centaur's Push 1 onto an enemy Ground
   // unit in the grid in front. The pad has no board to find the victim on, so
   // it says what the table owes; it said nothing (audit 2026-09-25).
@@ -698,6 +732,10 @@ async function performRouted(api: GuideApi, t: Token, a: CardAction): Promise<vo
   if (cleaned) {
     api.send({ kind: 'removeStatus', seat, uid, targetUid: cleaned.unit.uid, statusId: cleaned.pick.statusId, ...(cleaned.pick.face ? { face: cleaned.pick.face } : {}), chain });
     api.toast(`${a.name.en}: ${cleaned.pick.label} removed from ${cleaned.unit.label}.`);
+  }
+  if (feedback) {
+    api.send({ kind: 'stanceFeedback', seat, uid, actionId: a.id, targetUid: feedback.to.uid, stance: feedback.stance, chain });
+    api.toast(`${a.name.en}: ${feedback.to.label} switches to ${feedback.stance} Stance.`);
   }
   // Command Coordination off the back of the Action (the table judges the
   // Drone's range), then an Extra Action Opportunity the Action grants.
@@ -787,9 +825,11 @@ export function performButton(api: GuideApi, t: Token, a: CardAction, partKey: s
   const g = guidedActions(api.data, t).find((x) => x.action.id === a.id);
   if (g && !g.available) return '';
   // The pad takes a free hand whenever there is one, and that can change the
-  // length paid (card 129: Long performed as Medium).
-  const hands = twoHandedUse(api.data, t, a);
-  const paidAs = hands?.action ?? a;
+  // length paid (card 129: Long performed as Medium), after the Stance has
+  // (ZHRA-102_A is Short in Offensive; audit Phase 2, D2).
+  const priced = t.kind === 'mech' ? stanceShaped(a, t.stance) : a;
+  const hands = twoHandedUse(api.data, t, priced);
+  const paidAs = hands?.action ?? priced;
   const len = lengthOf(paidAs);
   // The engine's own answer: Ticks or the activation, and every rule that
   // sits on top of them - the icon lock, RWS, Shutdown. A length-less Mech
@@ -818,6 +858,18 @@ export function guideAct(api: GuideApi, a: string, el: HTMLElement): boolean {
         const hits = await api.rollHits(2, 'First Player');
         api.send({ kind: 'rollSetup', seat: side, hits });
       })();
+      return true;
+    }
+    // The Reboot a Shutdown Mech owes when its Opportunity comes (FAQ K17),
+    // offered on the turn panel since it is the whole of that Opportunity.
+    case 'g-reboot': {
+      const t = s.tokens.find((x) => x.uid === Number(el.dataset.uid));
+      if (t) api.send({ kind: 'reboot', seat: t.side, uid: t.uid, stance: el.dataset.stance as Stance });
+      return true;
+    }
+    case 'g-tie': {
+      const t = s.tokens.find((x) => x.uid === Number(el.dataset.uid));
+      if (t) api.send({ kind: 'chooseTied', seat: t.side, uid: t.uid });
       return true;
     }
     case 'g-first': api.send({ kind: 'acceptRoll', seat: me, first: el.dataset.side as Side }); return true;
@@ -952,7 +1004,8 @@ export function guideAct(api: GuideApi, a: string, el: HTMLElement): boolean {
         if (c.id === 'COMMON_DISCARD' && api.pickDiscard) {
           void api.pickDiscard(t.uid).then((slot) => {
             if (slot === null) return;
-            if (api.send({ kind: 'performAction', seat: t.side, uid: t.uid, actionId: c.id })) {
+            // Keyed to the hand discarded, so the other hand may Discard too (E7).
+            if (api.send({ kind: 'performAction', seat: t.side, uid: t.uid, actionId: c.id, partKey: `COMMON_DISCARD@${slot}` })) {
               api.send({ kind: 'disarm', seat: t.side, uid: t.uid, targetUid: t.uid, slot, chain: 'join' });
             }
           });

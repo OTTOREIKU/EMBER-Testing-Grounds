@@ -11,6 +11,10 @@ export interface TacticPick {
 
 export interface TacticCtx {
   maxLink(t: Token): number;
+  // White Dwarf Cruise Mode, which no Stance-changing effect touches but a
+  // system failure (Ace Strategy additional rules; audit Phase 2, D3).
+  // Optional so a context built for the other cards need not supply it.
+  cruising?(t: Token): boolean;
 }
 
 export interface TacticSpec {
@@ -142,7 +146,7 @@ export const TACTIC_SPECS: Record<string, TacticSpec> = {
     prompt: 'Which Mech changes Stance?',
     none: 'Every Mech of yours is in Shutdown Stance, and this card cannot touch those.',
     text: "During an Action Opportunity, one Ally Mech that is not in Shutdown Stance changes to another Stance.",
-    eligible: (t) => t.stance !== 'shutdown',
+    eligible: (t, _s, ctx) => t.stance !== 'shutdown' && !ctx.cruising?.(t),
     choices: (t) => stancePicks(t),
     choiceTitle: 'Change to which Stance?',
     apply: (t, _s, _c, pick) => {

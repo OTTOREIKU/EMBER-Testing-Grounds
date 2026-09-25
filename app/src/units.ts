@@ -1,5 +1,5 @@
 import { clampBoardArt, clampGridColour, DEFAULT_BOARD } from './boards';
-import type { GameData } from './data';
+import type { CommonAction, GameData } from './data';
 import { cardName, faceOf, isAerial, isBarricade, isFlyingBase, isMine, isTetherFace, isUnfolded, transformFaces, unfoldsInto, unitSize } from './data';
 import type { ExtraTick, Card, CardAction, CounterRoll, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, TableZone, TerrainPiece, TetherLink, Timing, Token, TokenPick } from './types';
 import { addStatus, DEFAULT_GRIDS, gridsOf, LEGACY_SIDE, normaliseScript, removableTokens, statusCount, TIMINGS } from './types';
@@ -8,7 +8,7 @@ import { isMeleeFiring, lockersOf } from './melee';
 import { boardGrids, inContact, largeGridOf, lineCrossesUnit, losBetween, rangeBetween, smokeBlocks, standingSpot } from './rules';
 import { normaliseTasks, type VpRider } from './tasks';
 // ticks.ts imports only from types.ts, so this direction carries no cycle.
-import { timingOf } from './ticks';
+import { timingOf, type StartOpts } from './ticks';
 
 export const PART_SLOTS: PartSlot[] = ['torso', 'chasis', 'leftHand', 'rightHand', 'backpack'];
 export const SLOT_LABEL: Record<PartSlot | 'pilot' | 'main', string> = {
@@ -140,9 +140,13 @@ export function faceAwayOnHit(a: CardAction): boolean {
 // The two PILOT abilities keyed on Offensive Stance (FPA-04 Fierce Assault,
 // ZPA-40 Elation) are untouched on purpose: both are mech-gated, and a Drone
 // has no pilot for the treatment to reach.
-export function treatedAsOffensive(attacker: Token, defender: Token | null | undefined): boolean {
+// With the board, a Drone in an ally's ECP10 Charge Order aura counts too
+// (chargeOrderOn; audit Phase 2, D4). A caller without the board gets the two
+// readings it always had.
+export function treatedAsOffensive(attacker: Token, defender: Token | null | undefined, data?: GameData, tokens?: Token[]): boolean {
   if (attacker.stance === 'offensive') return true;
-  return attacker.kind === 'drone' && !!defender && statusCount(defender.statuses ?? [], 'targetTracer') > 0;
+  if (attacker.kind === 'drone' && !!defender && statusCount(defender.statuses ?? [], 'targetTracer') > 0) return true;
+  return !!data && !!tokens && attacker.kind === 'drone' && !!chargeOrderOn(data, tokens, attacker);
 }
 
 // ---------- DISARM 缴械 (glossary, 06_missions_and_appendix.md:343) ----------
@@ -486,8 +490,9 @@ export function grantAdjusted(
   t: { stance?: string } | null | undefined,
   opp: { maneuvered?: boolean; moved?: boolean } | null | undefined,
 ): CardAction {
-  const grants = conditionalGrants(a);
-  if (!grants.length) return a;
+  const shaped = stanceShaped(a, t?.stance);
+  const grants = conditionalGrants(shaped);
+  if (!grants.length) return shaped;
   const held: string[] = [];
   for (const g of grants) {
     const ok = g.when === 'stationary'
@@ -495,8 +500,33 @@ export function grantAdjusted(
       : t?.stance === g.when;
     if (ok) held.push(...g.keywords);
   }
-  if (!held.length) return a;
-  return { ...a, keywords: [...(a.keywords ?? []), ...held.map((k) => ({ inline: k }))] };
+  if (!held.length) return shaped;
+  return { ...shaped, keywords: [...(shaped.keywords ?? []), ...held.map((k) => ({ inline: k }))] };
+}
+
+// The two Stance lines that change a NUMBER rather than grant a keyword, which
+// conditionalGrants (only "[X] gains Y") never read (audit Phase 2, D2):
+//   ZHRA-201_B "[Offensive Stance]+{1R}": one more Red die. The bundle carries
+//     it as a stance-conditioned modify_dice rule.
+//   ZHRA-102_A "[Offensive Stance] This action is considered a Short Action":
+//     it costs a Short Action's Tick. Read off the print, which is all it has.
+export function stanceShaped(a: CardAction, stance: string | undefined): CardAction {
+  if (!stance) return a;
+  let red = a.redDice;
+  let yellow = a.yellowDice;
+  for (const g of a.gameRules ?? []) {
+    const cond = (g.conditions ?? []).find((c) => c.type === 'stance') as { stance?: string } | undefined;
+    if (!cond || cond.stance !== stance) continue;
+    for (const e of (g.effects ?? []) as { type?: string; color?: string; delta?: number }[]) {
+      if (e.type !== 'modify_dice' || typeof e.delta !== 'number') continue;
+      if (e.color === 'red') red = (red ?? 0) + e.delta;
+      if (e.color === 'yellow') yellow = (yellow ?? 0) + e.delta;
+    }
+  }
+  const short = stance === 'offensive'
+    && /[[【]攻击姿态[\]】]\s*本动作视为短动作|\[Offensive Stance\][^\n]*considere?d a Short Action/i.test(`${a.description?.zh ?? ''}\n${a.description?.en ?? ''}`);
+  if (red === a.redDice && yellow === a.yellowDice && !short) return a;
+  return { ...a, redDice: red, yellowDice: yellow, ...(short ? { size: 's' as const } : {}) };
 }
 
 // 4.14: an effect conditional on being Charged applies only when the Charge
@@ -508,16 +538,56 @@ export function grantAdjusted(
 // Moved here from the pad (2026-09-25) so the tabletop and the Match Centre
 // apply it too: surplusEffects no longer reads a [Charged] line at all, so a
 // page that did not fold it in would lose a consumed Charge's Mutilation.
-export function chargeAdjusted(a: CardAction, spent: boolean): CardAction {
+//
+// The EITHER/OR line (R7MG 556_A: "[Charged] gains Multi-target 3 or
+// Suppression") takes the player's `choice`, one of chargeChoices(a). It used
+// to be returned untouched, so Multi-target 3 applied whether the Charge was
+// spent or not and Suppression never could (audit Phase 2, C3; ruled E9).
+// Every language's [Charged] line comes out, not only the Chinese:
+// multiTargetLimit falls back to reading the prose, and the English line alone
+// re-armed the Multi-Target the Charge had not paid for.
+const CHARGED_LINE = /\[充能\]|【充能】|\[Charged\]|\[チャージ\]/i;
+export function chargeAdjusted(a: CardAction, spent: boolean, choice?: string): CardAction {
   const zh = a.description?.zh ?? '';
-  if (!/\[充能\]/.test(zh)) return a;
-  const lines = zh.split('\n');
-  const gate = lines.find((l) => /\[充能\]/.test(l)) ?? '';
-  const rest = lines.filter((l) => !/\[充能\]/.test(l)).join('\n');
-  if (!spent) return { ...a, description: { ...a.description, zh: rest } };
-  const gain = /\[充能\]\s*获得\s*([^.。·;；或]+?)\s*[.。]?\s*$/.exec(gate.trim());
-  if (!gain || /或/.test(gate)) return a;
-  return { ...a, description: { ...a.description, zh: rest }, keywords: [...(a.keywords ?? []), { inline: gain[1].trim() }] };
+  if (!/\[充能\]|【充能】/.test(zh)) return a;
+  const strip = (s: string | undefined): string | undefined => (s === undefined ? s : s.split(/\r?\n/).filter((l) => !CHARGED_LINE.test(l)).join('\n'));
+  const description = { ...a.description, zh: strip(a.description?.zh), en: strip(a.description?.en), jp: strip(a.description?.jp) };
+  // The Charge's own rules go with its line; a picked arm keeps its effect
+  // and loses the condition it has now met.
+  const charged = (g: { consumesCharge?: boolean; conditions?: { type?: string }[] }): boolean =>
+    g.consumesCharge === true || (g.conditions ?? []).some((c) => c.type === 'charge_available');
+  const others = (a.gameRules ?? []).filter((g) => !charged(g));
+  if (!spent) return { ...a, description, gameRules: others };
+  const gate = zh.split(/\r?\n/).find((l) => /\[充能\]|【充能】/.test(l)) ?? '';
+  if (/或/.test(gate)) {
+    const pick = (a.gameRules ?? []).find((g) => charged(g) && (g as { choiceId?: string }).choiceId === choice);
+    if (!pick) return a;
+    const kept = { ...pick, conditions: (pick.conditions ?? []).filter((c) => c.type !== 'charge_available') };
+    const gains = (pick.effects ?? []).map((e) => e as { type?: string; keyword?: string })
+      .filter((e) => e.type === 'gain_keyword' && e.keyword).map((e) => ({ inline: e.keyword! }));
+    return { ...a, description, gameRules: [...others, kept], keywords: [...(a.keywords ?? []), ...gains], chargeSpent: true, chargeChoice: choice };
+  }
+  const gain = /[[【]充能[\]】]\s*获得\s*([^.。·;；或]+?)\s*[.。]?\s*$/.exec(gate.trim());
+  if (!gain) return a;
+  return { ...a, description, gameRules: others, keywords: [...(a.keywords ?? []), { inline: gain[1].trim() }], chargeSpent: true };
+}
+
+// The arms of an either/or [Charged] line, for the question that consumes the
+// Charge (R7MG 556_A: Multi-target 3 or Suppression). Empty for an ordinary
+// [Charged] line, which is a yes/no.
+const CHARGE_KEY_EN: Record<string, string> = { 压制: 'Suppression', 毁伤: 'Mutilation' };
+export function chargeChoices(a: CardAction): { id: string; label: string }[] {
+  const out: { id: string; label: string }[] = [];
+  for (const g of a.gameRules ?? []) {
+    const r = g as { choiceGroup?: string; choiceId?: string; consumesCharge?: boolean; effects?: { type?: string; limit?: number; keyword?: string }[] };
+    if (r.choiceGroup !== 'charge_effect' || !r.choiceId) continue;
+    const e = (r.effects ?? [])[0] ?? {};
+    const label = e.type === 'set_multi_target_limit' ? `Multi-target ${e.limit ?? ''}`.trim()
+      : e.type === 'gain_keyword' ? (CHARGE_KEY_EN[e.keyword ?? ''] ?? e.keyword ?? r.choiceId)
+        : r.choiceId;
+    out.push({ id: r.choiceId, label });
+  }
+  return out;
 }
 
 // ---------- Shock Attack X (冲锋X) ----------
@@ -1015,7 +1085,7 @@ const COMMAND_GEN_EN = /Command\s+Generation\s*(\d+)/i;
 export function commandGeneration(data: GameData, t: Token): number {
   if (t.kind !== 'mech') return 0;
   // Command Generation X is a Passive on the Torso, and a Shutdown Mech
-  // "cannot activate any Passive effects" (4.1, FAQ L4). It still generates
+  // "cannot activate any Passive effects" (4.1, FAQ L3). It still generates
   // the default 1 of 3.2.1, which is the rule and not a Part.
   if (t.stance === 'shutdown') return 1;
   for (const { slot, card } of tokenCards(data, t)) {
@@ -1082,6 +1152,9 @@ export function commandCoordination(a: CardAction): number {
 // is the Opportunity, not the Action.
 export function coordinationOnOpportunityEnd(data: GameData, t: Token): number {
   if (t.kind !== 'mech') return 0;
+  // A Passive, so a Mech ending its Opportunity still in Shutdown triggers
+  // nothing (4.1, FAQ L3; audit Phase 2, A5).
+  if (t.stance === 'shutdown') return 0;
   let n = 0;
   for (const { slot, card } of tokenCards(data, t)) {
     if ((t.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
@@ -1181,6 +1254,9 @@ export function whistleFunders(data: GameData, tokens: Token[], roller: Token): 
   if (roller.kind !== 'drone' || roller.deployed === false) return [];
   return tokens.filter((m) => {
     if (m.side !== roller.side || m.kind !== 'mech' || m.deployed === false) return false;
+    // The Whistle is the funding Mech's Passive, and a Shutdown Mech triggers
+    // none (4.1, FAQ L3; audit Phase 2, A5).
+    if (m.stance === 'shutdown') return false;
     if (statusCount(m.statuses, 'command') <= 0) return false;
     const carries = tokenCards(data, m).some(
       ({ slot, card }) => card.id === WHISTLE_CARD && (m.partStates[slot as PartSlot | 'main'] ?? 'intact') !== 'destroyed',
@@ -1215,7 +1291,9 @@ export function isCharged(t: Token, slot: string): boolean {
 export function chargeableSlots(data: GameData, t: Token): { slot: PartSlot | 'pilot' | 'main'; label: string; charged: boolean }[] {
   const out: { slot: PartSlot | 'pilot' | 'main'; label: string; charged: boolean }[] = [];
   for (const { slot, card } of tokenCards(data, t)) {
-    if ((t.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
+    // A Repaired Part "can still perform actions" (FAQ J23), so it can be
+    // Charged for them (ruled 2026-09-25, audit Phase 2, E12).
+    if ((t.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed' && !(t.repairedSlots ?? []).includes(slot)) continue;
     if (!(card.actions ?? []).some((a) => consumesCharge(a))) continue;
     out.push({ slot, label: SLOT_LABEL[slot], charged: isCharged(t, slot) });
   }
@@ -1836,8 +1914,10 @@ export interface MultiTarget {
   limit: number;
   // Two of the four printed cards only GAIN Multi-Target under a condition.
   // [Two-Handed] IS tracked now -- pass `designated` and this clears itself.
-  // [Charged] still is not: it costs the Charge Token and is one arm of an
-  // either/or, so it stays named rather than silently applied or dropped.
+  // [Charged] is tracked too since the Phase 2 audit (C3): chargeAdjusted drops
+  // the rule when the Charge is kept, and drops only its condition when the
+  // Multi-target arm is the one consumed. The note is left for an Action no
+  // page has adjusted.
   condition: string | null;
 }
 
@@ -1926,6 +2006,9 @@ export function missileGuidance(
   for (const b of tokens) {
     if (b.deployed === false) continue;
     if ((b.partStates[b.kind === 'mech' ? 'torso' : 'main'] ?? 'intact') === 'destroyed') continue;
+    // A Shutdown Caracal lends nothing: Coordinated Observation is its Passive
+    // (4.1, FAQ L3). 539 is in the Raid starter (audit Phase 2, A5).
+    if (b.kind === 'mech' && b.stance === 'shutdown') continue;
     const card = b.cardId ? data.byId.get(b.cardId) : undefined;
     if (!card) continue;
     for (const a of card.actions ?? []) {
@@ -2476,6 +2559,11 @@ export function ripostePart(data: GameData, t: Token, slot: string): { actionId:
 // changes outside the moment 4.1 normally allows.
 export function defenseReactionOn(data: GameData, t: Token): { actionId: string; name: string } | null {
   if (t.kind !== 'mech') return null;
+  // Its effect is a Stance change, which Cruise Mode passes by (D3).
+  if (cruising(data, t)) return null;
+  // A Shutdown Mech activates no Passive and triggers nothing of its own (4.1,
+  // FAQ L3), so it gets none of this (audit Phase 2, A4/A5).
+  if (t.kind === 'mech' && t.stance === 'shutdown') return null;
   for (const { slot, card } of tokenCards(data, t)) {
     if ((t.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
     for (const a of card.actions ?? []) {
@@ -2501,6 +2589,9 @@ export function defenseReactionOn(data: GameData, t: Token): { actionId: string;
 // authored from the printed text.
 export function targetTracingOn(data: GameData, t: Token): { actionId: string; name: string } | null {
   if (t.kind !== 'mech') return null;
+  // A Shutdown Mech activates no Passive and triggers nothing of its own (4.1,
+  // FAQ L3), so it gets none of this (audit Phase 2, A4/A5).
+  if (t.kind === 'mech' && t.stance === 'shutdown') return null;
   if (!(t.statuses ?? []).includes('command')) return null;
   for (const { slot, card } of tokenCards(data, t)) {
     if ((t.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
@@ -2520,6 +2611,9 @@ export function targetTracingOn(data: GameData, t: Token): { actionId: string; n
 // Part destroyed by the very attack that triggered it is handled by the card's
 // own flag rather than by when the sweep happens to run.
 export function attackReactionsOf(data: GameData, t: Token): AttackReaction[] {
+  // A Shutdown Mech activates no Passive and triggers nothing of its own (4.1,
+  // FAQ L3), so it gets none of this (audit Phase 2, A4/A5).
+  if (t.kind === 'mech' && t.stance === 'shutdown') return [];
   const out: AttackReaction[] = [];
   for (const { slot, card } of tokenCards(data, t)) {
     for (const a of card.actions ?? []) {
@@ -2560,6 +2654,9 @@ export interface Designation {
 // this mech, so it is read off whichever unit is about to roll rather than off
 // the defender alone.
 export function designationsOn(data: GameData, t: Token): Designation[] {
+  // A Shutdown Mech activates no Passive and triggers nothing of its own (4.1,
+  // FAQ L3), so it gets none of this (audit Phase 2, A4/A5).
+  if (t.kind === 'mech' && t.stance === 'shutdown') return [];
   const out: Designation[] = [];
   for (const { slot, card } of tokenCards(data, t)) {
     if ((t.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
@@ -2669,7 +2766,7 @@ export interface AuraSource {
 // FPA-06 KeyHole, 功率加大 Amplify: "Range of Aura, Electronic Attack and
 // Electronic Support of the piloted mech +1 grid." Read off the pilot card's
 // structured effect through tokenCards, and only while the Mech can trigger
-// anything at all: a Shutdown Mech's Passives are off (4.1, FAQ L4). A Beacon
+// anything at all: a Shutdown Mech's Passives are off (4.1, FAQ L3). A Beacon
 // it has deployed is its own unit from that moment (L4), which falls out of
 // asking the SOURCE of each aura rather than the Mech that placed it.
 export function amplifyBonus(data: GameData, t: Token): number {
@@ -2846,6 +2943,8 @@ export function phasesThroughUnits(data: GameData, tokens: Token[], t: Token): b
 // Q3/J2) and it must NOT be added to either page's Scan picker.
 export function hiddenByAlliedAura(data: GameData, tokens: Token[], t: Token): AuraSource | undefined {
   if (!pilotIs(data, t, 'FPA-06-2')) return undefined;
+  // A pilot skill, and a Shutdown Mech triggers none (FAQ L3; audit Phase 2, A5).
+  if (t.kind === 'mech' && t.stance === 'shutdown') return undefined;
   return aurasOn(data, tokens, t).find((src) => src.source.side === t.side);
 }
 
@@ -2902,6 +3001,8 @@ export function dodgeEnhanceReady(data: GameData, t: Token): boolean {
 // so it was offered only with a Command Token face-up, and charged one.
 export function dodgeEnhanceOf(data: GameData, t: Token): { free: boolean } | null {
   if (t.kind !== 'mech') return null;
+  // The defender's own Passive: off in Shutdown (4.1, FAQ L3; audit Phase 2, A5).
+  if (t.stance === 'shutdown') return null;
   const token = (t.statuses ?? []).includes('command');
   for (const { slot, card } of tokenCards(data, t)) {
     if ((t.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
@@ -2935,6 +3036,10 @@ export interface CommandRider {
 export function commandRiderOf(data: GameData, mech: Token | undefined): CommandRider {
   const out: CommandRider = { autoActions: false, preMove: 0 };
   if (!mech || mech.kind !== 'mech') return out;
+  // The A2/M2 Data Link is the issuer's Passive. A Shutdown Mech still issues
+  // its default Command Token (3.2.1, ruled 2026-09-25), but the rider on it
+  // is an effect of its own and does not trigger (4.1, FAQ L3; Phase 2, A5).
+  if (mech.stance === 'shutdown') return out;
   for (const { slot, card } of tokenCards(data, mech)) {
     if ((mech.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
     for (const a of card.actions ?? []) {
@@ -3112,8 +3217,11 @@ export function cqcFlexible(data: GameData, t: Token, a?: CardAction): boolean {
   return false;
 }
 
+// CQC is NOT read here any more. The card says "as Starting Action in ANY
+// timing" (RDL 1.02 FXTR-301), and folding it into this adjacent-only boolean
+// refused a Chop on a Firing, Movement or Tactical dial. It travels as its own
+// option through startOpts (audit Phase 2, B3).
 export function hasFlexibleTiming(data: GameData, tokens: Token[], t: Token, a?: CardAction): boolean {
-  if (cqcFlexible(data, t, a)) return true;
   return aurasOn(data, tokens, t).some((src) => {
     if (!src.kinds.includes('flexible_timing')) return false;
     // RT-12T Oasis grants it to FIRING Actions only; RT-07T Dune and the B3/3
@@ -3564,6 +3672,10 @@ export function interceptsOwed(
     if (x.side === launcher.side || x.deployed === false || interceptLeft(x) <= 0) continue;
     if ((x.partStates[x.kind === 'mech' ? 'torso' : 'main'] ?? 'intact') === 'destroyed') continue;
     if (statusCount(x.statuses, 'fci') > 0) continue;
+    // Interception is a Firing Action or a Passive (4.9), and a Shutdown Mech
+    // performs no Action but Reboot and activates no Passive (4.1). It still
+    // intercepted on every page (audit Phase 2, A3).
+    if (x.kind === 'mech' && x.stance === 'shutdown') continue;
     for (const { card } of tokenCards(data, x)) {
       for (const a of card.actions ?? []) {
         if (interceptCapacity(a) === undefined) continue;
@@ -4191,6 +4303,9 @@ export function warfareNodeBoost(data: GameData, tokens: Token[], t: Token): { e
   for (const src of tokens) {
     if (src.side !== t.side || src.kind !== 'mech' || src.deployed === false) continue;
     if ((src.partStates.torso ?? 'intact') === 'destroyed') continue;
+    // A Passive of the source, which a Shutdown Aurora does not activate
+    // (4.1, FAQ L3; audit Phase 2, A5).
+    if (src.stance === 'shutdown') continue;
     for (const { slot, card } of tokenCards(data, src)) {
       if ((src.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
       for (const a of card.actions ?? []) {
@@ -4440,7 +4555,11 @@ export function partsLeft(t: Token): number {
 // Integrity Loss at <= 2 remaining Parts still removes the Mech in the End
 // Phase, and the other Link drains (Concussion/Wrecking, Target Tracing,
 // Overload, Focus) are untouched. He is not an immortality card.
+//
+// Not in Shutdown: a pilot skill, which a Shutdown unit does not trigger (FAQ
+// L3), and L5 excepts Anser alone. Ruled 2026-09-25 (audit Phase 2, E2).
 export function keepsLinkOnPartLoss(data: GameData, t: Token): boolean {
+  if (t.kind === 'mech' && t.stance === 'shutdown') return false;
   return pilotIs(data, t, 'FPA-03');
 }
 
@@ -4490,8 +4609,13 @@ export function focusIsFree(data: GameData, t: Token): boolean {
 // their own version — `> 0`, `> 1`, `> 1` and no gate at all — so a defender on
 // exactly 1 Link was offered a Focus the command then refused, and on the
 // mirror was refused and rerolled anyway.
-export function canAffordFocus(data: GameData, t: Token): boolean {
-  if (t.kind !== 'mech') return false;
+// `tokens` lets a White Dwarf Bit Focus on Karl Fried's Link (focusPayer;
+// audit Phase 2, D4); a caller without the board gets the old answer.
+export function canAffordFocus(data: GameData, t: Token, tokens?: Token[]): boolean {
+  if (t.kind !== 'mech') {
+    const payer = tokens ? focusPayer(data, tokens, t) : null;
+    return !!payer && (payer.link ?? 0) > 1;
+  }
   return focusIsFree(data, t) || (t.link ?? 0) > 1;
 }
 
@@ -4635,6 +4759,10 @@ export function pursuesFragile(data: GameData, attacker: Token, defender: Token 
 // greyed-out row.
 export function provokeWhy(data: GameData, responder: Token, initiator: Token): string | null {
   if (!pilotIs(data, responder, 'LPA-22')) return `${responder.label} is not piloted by Yoyu.`;
+  // Provoke is Yoyu's pilot skill, and a Shutdown Mech triggers none (FAQ L3).
+  // Only the other half, the Mech being switched, used to be asked (audit
+  // Phase 2, A5).
+  if (responder.kind === 'mech' && responder.stance === 'shutdown') return `${responder.label} is Shut Down, and a Shutdown Mech triggers none of its pilot's skills (FAQ L3).`;
   // 对方机甲 -- the other party's MECH. A Drone plays the Stance printed on its
   // card and has no dial to turn, which is the same line setStance holds.
   if (initiator.kind !== 'mech') return 'Only a Mech has a Stance to switch. A Drone plays the one printed on its card.';
@@ -4644,6 +4772,9 @@ export function provokeWhy(data: GameData, responder: Token, initiator: Token): 
   // buys one. Provoke can push a Mech into Offensive Stance; it cannot wake it.
   if (initiator.stance === 'shutdown') return `${initiator.label} is Shut Down, and leaving Shutdown Stance takes a Reboot (4.1.1).`;
   if (initiator.stance === 'offensive') return `${initiator.label} is already in Offensive Stance.`;
+  // Cruise Mode is "not affected by ... any other effects that change stance"
+  // (Ace Strategy additional rules; audit Phase 2, D3).
+  if (cruising(data, initiator)) return `${initiator.label} is in Cruise Mode, which no Stance-changing effect touches.`;
   return null;
 }
 
@@ -4674,7 +4805,7 @@ export function counterStage(
   if (!c.initRoll || !c.respRoll) return 'roll';
   const may = (uid: number): boolean => {
     const t = tokens.find((x) => x.uid === uid);
-    return !!t && canAffordFocus(data, t);
+    return !!t && canAffordFocus(data, t, tokens);
   };
   const i = c.initDeclare ?? (c.initFocused ? true : may(c.initiatorUid) ? null : false);
   if (i === null) return 'declareI';
@@ -4839,10 +4970,22 @@ export function denseArmorOn(data: GameData, t: Token): boolean {
 // KC装甲: consume a Charge Token to exchange {Lightning} in the Defense Roll
 // for {Defense}. Returns the Part holding a FACE-UP Charge Token, because the
 // consume is a setCharge on that exact slot.
+//
+// ANY KC Part holding one, not the first KC Part found: a TM35B Torso with its
+// token face-down in front of a Charged EBS/X40 Pack gave nothing (audit Phase
+// 2, C4). Which one pays makes no difference - no KC Part in the data spends
+// its Charge on anything but KC Armor (081, 265, 097, 098, 555, 093) - so the
+// first Charged one is consumed, one declaration per attack (ruled E11). A
+// Repaired Part still acts (FAQ J23), so its Charge counts too (E12).
 export function kcArmorReady(data: GameData, t: Token): { slot: string } | null {
-  const kc = partKeyword(data, t, /KC装甲|KC\s*Armor/i);
-  if (!kc) return null;
-  return (t.charge ?? []).includes(kc.slot) ? { slot: kc.slot } : null;
+  for (const { slot, card } of tokenCards(data, t)) {
+    if (slot === 'pilot') continue;
+    const usable = (t.partStates[slot as PartSlot | 'main'] ?? 'intact') !== 'destroyed' || (t.repairedSlots ?? []).includes(slot);
+    if (!usable) continue;
+    if (!(card.keywords ?? []).some((k) => /KC装甲|KC\s*Armor/i.test(`${k.key ?? ''} ${k.en ?? ''}`))) continue;
+    if ((t.charge ?? []).includes(slot)) return { slot };
+  }
+  return null;
 }
 
 // ---------- Flying Movement granted by a Part ----------
@@ -5173,16 +5316,29 @@ export function transformOffer(
 // Modes are one physical card, and turning it over does not repair it.
 export function transformPartOn(data: GameData, t: Token, slot: PartSlot, cardId: string): void {
   if (t.kind !== 'mech' || !t.mech) return;
+  const from = t.mech[slot] ? data.byId.get(t.mech[slot]!) : undefined;
+  const into = data.byId.get(cardId);
   t.mech = { ...t.mech, [slot]: cardId };
   // A Torso IS the token's cardId for a Mech (makeMechToken), so the two must
   // not be allowed to disagree — every reader that takes the short path through
   // t.cardId would keep seeing the old Mode.
   if (slot === 'torso') t.cardId = cardId;
+  if (from && into) carryRoundTokens(t, from, into);
+  // "Upon entering Cruise Mode, the mech automatically switches to the mobility
+  // stance" (Ace Strategy additional rules). A transform is an Action, which a
+  // Shutdown Mech cannot perform, so the guard only keeps a replay honest.
+  if (slot === 'torso' && t.stance !== 'shutdown' && cruising(data, t)) t.stance = 'mobility';
   // The seeder that already exists for exactly this — "needed after a Part is
   // swapped in". It tops up rather than replaces, so the new face's magazines
-  // arrive full while anything already spent stays spent; the two faces print
-  // different Action ids, so a flip cannot launder an empty magazine.
+  // arrive full while anything already spent stays spent.
   syncMagazines(data, t);
+  // A Charge Token is a Round Token on the Part, and it stays only if the new
+  // face has an Action that spends one (4.17). No Discard face in the data
+  // does, so a Charged IGX920 dropped to its (D) card loses the Charge.
+  if (into && (t.charge ?? []).includes(slot) && !(into.actions ?? []).some((a) => consumesCharge(a))) {
+    const left = (t.charge ?? []).filter((s) => s !== slot);
+    t.charge = left.length ? left : undefined;
+  }
 }
 
 // "Tether X" off the Action that places it. Read from the print like
@@ -5527,4 +5683,241 @@ export function migrateState(rawIn: unknown, data: GameData): GameState | null {
     });
   }
   return state;
+}
+
+// ---------- Mechanics audit Phase 2 readers ----------
+//
+// Kept together at the end of the file ON PURPOSE: several tests build commands.ts
+// from text slices of this file (commands, simgame, tether), and a helper dropped
+// inside one of their ranges while calling something outside it fails there as a
+// ReferenceError. The harnesses slice this whole block by its heading.
+
+// An Action that switches its own Mech's Stance as its effect: 045_B Barricade
+// ("Switch this mech to Defensive Stance"), the one card with a change_stance
+// rule on itself.
+export function selfStanceShift(a: CardAction): Stance | null {
+  for (const g of a.gameRules ?? []) {
+    for (const e of g.effects ?? []) {
+      const x = e as { type?: string; stance?: string; target?: string };
+      if (x.type === 'change_stance' && (x.target ?? 'self') === 'self'
+        && (x.stance === 'defensive' || x.stance === 'mobility' || x.stance === 'offensive')) return x.stance;
+    }
+  }
+  return null;
+}
+
+// An Action whose Ammo Token is spent by performing it (4.13: "If all Ammo
+// Tokens are already consumed, the Action cannot be performed"). A Projectile
+// Action pays one per Projectile at the launch instead, and a Passive (546_B
+// Emergency Smoke) pays when its reaction resolves. What is left is the four
+// that launch nothing - Damage Control (001_A), Shrapnel Barrage (015_B), Ammo
+// Supply (086_A) and the M100 Lance's Single Shot (ZHRA-301_B) - which were
+// never spent at all in a guided game (audit Phase 2, C1).
+export function spendsAmmoWhenPerformed(a: CardAction): boolean {
+  return (a.storage ?? 0) > 0 && a.type !== 'Projectile' && a.type !== 'Passive';
+}
+
+// ACE-01 Karl Fried, 联觉: "When a 'White Dwarf' Bit performs a roll, it may
+// consume Link from this Mech to re-roll." Who pays a unit's Focus: a Mech
+// itself; a White Dwarf Bit (293/294/295), the Ally Mech Karl Fried pilots,
+// unless that Mech is Shut Down (a pilot skill, FAQ L3). The pilot card had
+// no reader (audit Phase 2, D4).
+export function focusPayer(data: GameData, tokens: Token[], t: Token): Token | null {
+  if (t.kind === 'mech') return t;
+  if (t.kind !== 'drone') return null;
+  const card = data.byId.get(t.cardId);
+  if (!/White Dwarf/i.test(card?.name?.en ?? '') || !/\bBit\b/i.test(card?.name?.en ?? '')) return null;
+  return tokens.find((m) => m.kind === 'mech' && m.side === t.side && m.deployed !== false
+    && (m.partStates.torso ?? 'intact') !== 'destroyed' && m.stance !== 'shutdown' && pilotIs(data, m, 'ACE-01')) ?? null;
+}
+
+// ZPA-38 Firewatch, 湿件优势: "When performing Electronic Counter Rolls, may
+// consume 1 Link to exchange {Eye} for {Lightning}." A pilot skill, so not in
+// Shutdown (FAQ L3). The pilot card carried no reader (audit Phase 2, D4).
+export function firewatchOn(data: GameData, t: Token): boolean {
+  return t.kind === 'mech' && t.stance !== 'shutdown' && pilotIs(data, t, 'ZPA-38');
+}
+
+// ECP10 "Dog Whistle" Drone Command System, Charge Order: "Aura. Ally Drones
+// within Range may be considered as in Offensive Stance when performing
+// Firing, Melee or Electronic Counter Roll" (GoF 1.021; Range 4). The Mech
+// carrying it, when one is in reach of this Drone: intact, and not Shutdown,
+// whose Passives are off (4.1). The card came in from the 1.021 list with no
+// reader at all (audit Phase 2, D4).
+export function chargeOrderOn(data: GameData, tokens: Token[], drone: Token): Token | null {
+  if (drone.kind !== 'drone') return null;
+  for (const m of tokens) {
+    if (m.kind !== 'mech' || m.side !== drone.side || m.deployed === false || m.stance === 'shutdown') continue;
+    if ((m.partStates.torso ?? 'intact') === 'destroyed') continue;
+    for (const { slot, card } of tokenCards(data, m)) {
+      if ((m.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
+      for (const a of card.actions ?? []) {
+        if (!/considere?d as in Offensive Stance when performing Firing, Melee or El?e?ctronic Counter Roll/i.test(a.description?.en ?? '')) continue;
+        if (rangeBetween(m, drone).range <= (a.range ?? 0)) return m;
+      }
+    }
+  }
+  return null;
+}
+
+// ZHDR-206_B Stance feedback (N307 Eagle III "Patrol Eagle"): "Electronic
+// Support. May make an Ally Mech within range switch its Stance", and the
+// Chinese adds "other than one in Shutdown Stance"
+// (使范围内一台宕机姿态以外的友军机甲切换姿态). The bundle carries no rule for
+// it, so it is read off the print. Nothing read it: the Action paid its
+// activation and changed nothing, and the ally's own setStance is refused
+// outside its Opportunity (audit Phase 2, D1).
+export function stanceFeedbackOf(a: CardAction): boolean {
+  return /友军机甲切换姿态|Ally Mech[^.\n]*switch (?:its |their )?Stance/i.test(`${a.description?.zh ?? ''} ${a.description?.en ?? ''}`);
+}
+
+// The Ally Mechs it can reach: in Range, standing, not Shutdown (the card's
+// own exclusion; only a Reboot leaves Shutdown), and not in Cruise Mode,
+// which no Stance-changing effect touches but a system failure.
+export function stanceFeedbackTargets(data: GameData, tokens: Token[], t: Token, a: CardAction, noBoard = false): Token[] {
+  const reach = actionRange(data, tokens, t, a);
+  return tokens.filter((x) => x.kind === 'mech' && x.side === t.side && x.deployed !== false
+    && (x.partStates.torso ?? 'intact') !== 'destroyed' && x.stance !== 'shutdown' && !cruising(data, x)
+    && (noBoard || rangeBetween(t, x).range <= reach));
+}
+
+// A performed Action that carries a Movement of its own, which the Match
+// Centre sends as a `free` maneuver once the Action is paid: a Moving Action,
+// the "White Dwarf" Bit's Stance Change ("Switch the Stance and perform one
+// movement"), and a Shock Attack's walk (the Lances and Spears print it under
+// [Offensive Stance]). Read loosely - any Shock Attack text - because this
+// only has to stop a Movement that NO Action paid for (audit Phase 2, B8), and
+// self-contained, since several test harnesses take this block whole.
+export function actionMoves(a: CardAction): boolean {
+  if (a.type === 'Moving') return true;
+  for (const g of a.gameRules ?? []) {
+    for (const e of (g.effects ?? []) as { type?: string }[]) {
+      if (e.type === 'switch_linked_drone_form_and_move') return true;
+    }
+  }
+  const hay = [a.description?.en ?? '', a.description?.zh ?? '', ...(a.keywords ?? []).map((k) => k.inline ?? k.key ?? '')].join(' ');
+  return /冲锋\s*\d|Shock\s*Attack\s*\d/i.test(hay);
+}
+
+// A Part that can still initiate an Action: not destroyed, or Repaired, which
+// is broken in every way except that it "can still perform actions" (FAQ J23).
+export function partUsable(t: Token, slot: string): boolean {
+  return (t.partStates[slot as PartSlot | 'main'] ?? 'intact') !== 'destroyed' || (t.repairedSlots ?? []).includes(slot);
+}
+
+// The Parts that may initiate this Common Action now. 3.4.3: "All Actions,
+// including Common Actions, must be initiated through a Part", so a Punch with
+// both arms and the Chassis gone is not there to take. In Cruise Mode only the
+// Torso acts (Ace Strategy additional rules).
+export function commonInitiators(data: GameData, t: Token, c: CommonAction): string[] {
+  const cruise = cruising(data, t);
+  return (c.slots ?? []).filter((s) => partUsable(t, s) && (!cruise || s === 'torso'));
+}
+
+// Why this Action cannot be initiated from its Part right now, or null. ONE
+// reading for check() and the page rows (audit Phase 2, B5): check() used to
+// take 041_A off a destroyed arm and a Punch with every limb gone.
+//   - a Part's own Action: its Part must be usable (3.4.3 Note, J23);
+//   - a Common Action: `partKey` may name the initiating Part as `id@slot`
+//     (FAQ H6/H7), which must be one it lists; with none named, one must be;
+//   - Cruise Mode: a Part other than the Torso acts only through an Action
+//     marked "may be used in Cruise Mode".
+// A borrowed Load (`id@uid`) is on the Carrier, intact by definition.
+export function actionPartWhy(data: GameData, t: Token, a: CardAction, partKey?: string): string | null {
+  if (t.kind !== 'mech') return null;
+  const common = (data.commonActions ?? []).find((c) => c.id === a.id);
+  if (common) {
+    const named = partKey && partKey.startsWith(`${a.id}@`) ? partKey.slice(a.id.length + 1) : null;
+    // The Charge Action is "performed by one or more Parts with an Action that
+    // has the Charge Icon", so only a Part it could Charge initiates it. With
+    // none it could change nothing, and FAQ H2 says it cannot be performed;
+    // the engine left that to the pages (audit Phase 2, C12).
+    const chargesHere = (s: string): boolean => tokenCards(data, t)
+      .some(({ slot, card }) => slot === s && (card.actions ?? []).some((x) => consumesCharge(x)));
+    const can = commonInitiators(data, t, common).filter((s) => a.id !== 'COMMON_CHARGE' || chargesHere(s));
+    if (a.id === 'COMMON_CHARGE' && !can.length) return `${t.label} has no Part it could Charge, so the Charge Action would change nothing (FAQ H2).`;
+    if (named) {
+      if (!common.slots.includes(named)) return `${a.name?.en || a.id} is not performed with the ${SLOT_LABEL[named as PartSlot] ?? named} (3.4.3).`;
+      if (!can.includes(named)) {
+        return cruising(data, t) && named !== 'torso'
+          ? `In Cruise Mode only the Torso acts (Ace Strategy additional rules).`
+          : `The ${SLOT_LABEL[named as PartSlot] ?? named} is destroyed, so it cannot initiate ${a.name?.en || a.id} (3.4.3).`;
+      }
+      return null;
+    }
+    return can.length ? null : `No surviving Part can initiate ${a.name?.en || a.id} (3.4.3).`;
+  }
+  const held = tokenCards(data, t).find(({ card }) => (card.actions ?? []).some((x) => x.id === a.id));
+  if (!held || held.slot === 'pilot') return null;
+  if (!partUsable(t, held.slot)) return `The ${SLOT_LABEL[held.slot]} is destroyed, so its Actions cannot be performed (3.4.3).`;
+  if (held.slot !== 'torso' && cruising(data, t) && !usableInCruise(a)) {
+    return `In Cruise Mode only the Torso acts, unless an Action says it may be used in Cruise Mode (Ace Strategy additional rules).`;
+  }
+  return null;
+}
+
+// Every card that may bend the Starting Action rule for this Action, read in
+// ONE place so check() and the pages that grey rows out cannot disagree: an
+// ally's Flexible Timing aura, Misty's Feint, card 017's CQC. canPerform
+// itself refuses all three for the one Action after a Reboot (FAQ L8).
+export function startOpts(data: GameData, tokens: Token[], t: Token, a: CardAction): StartOpts {
+  return {
+    flexible: hasFlexibleTiming(data, tokens, t, a),
+    anyTiming: anyStartTiming(data, t),
+    cqc: cqcFlexible(data, t, a),
+  };
+}
+
+// The OCSP Overloading Pack (card 090) this Mech can still Overload through.
+// 3.4.3 Note: "If the corresponding Part ... has been Destroyed, the Action
+// cannot be performed", so a wrecked Pack buys nothing; a Repaired one still
+// acts (FAQ J23). The engine and the three pages each read tokenCards raw,
+// which lists wrecks, and all four offered and accepted it (audit Phase 2, B4).
+export function overloadPackOn(data: GameData, t: Token): boolean {
+  if (t.kind !== 'mech') return false;
+  const ids = new Set(data.overload.map((g) => g.actionId));
+  return tokenCards(data, t).some(({ slot, card }) => slot !== 'pilot' && partUsable(t, slot)
+    && (card.actions ?? []).some((a) => ids.has(a.id)));
+}
+
+// 4.17: "Round Tokens are transferred only if Actions using these Tokens are
+// present on the Discard Card, otherwise they will be removed." The Collab
+// Transformation rule says the same for a Mode change ("if the transformed form
+// shares the same action, the round token will remain and move"). The faces
+// print different Action ids for the same Action, so "the same Action" is the
+// same printed name. Before this, syncMagazines filled the new face from
+// scratch: a spent 107_A came back as a full 108_A, an Interception at 0 as 1
+// (audit Phase 2, C2). Every counted Action on a Discard face in the data has a
+// same-named twin on the original, so nothing new arrives full by accident.
+function carryRoundTokens(t: Token, from: Card, into: Card): void {
+  const named = (a: CardAction): string => (a.name?.en || a.name?.zh || '').trim().toLowerCase();
+  for (const b of into.actions ?? []) {
+    const a = (from.actions ?? []).find((x) => named(x) && named(x) === named(b));
+    if (!a) continue;
+    if ((b.storage ?? 0) > 0 && (a.storage ?? 0) > 0) {
+      t.ammo = { ...(t.ammo ?? {}), [b.id]: Math.min(b.storage!, t.ammo?.[a.id] ?? a.storage!) };
+    }
+    const capB = interceptCapacity(b);
+    const capA = interceptCapacity(a);
+    if (capB !== undefined && capA !== undefined) {
+      t.intercept = { ...(t.intercept ?? {}), [b.id]: Math.min(capB, t.intercept?.[a.id] ?? capA) };
+    }
+  }
+}
+
+// White Dwarf Cruise Mode (Collab "Ace Strategy" additional rules): the Torso
+// turned onto its Cruise face, which prints "· Cruise Mode" as its own line
+// (288). While it holds, the Mech is in Mobility and no other Stance may be
+// selected, Suppression and every other Stance change pass it by except a
+// system failure, an attack always hits the Torso, and a Part other than the
+// Torso acts only through an Action marked "may be used in Cruise Mode".
+export function cruising(data: GameData, t: Token): boolean {
+  if (t.kind !== 'mech' || !t.mech?.torso) return false;
+  const torso = data.byId.get(t.mech.torso);
+  const hay = `${torso?.description?.en ?? ''}\n${torso?.description?.zh ?? ''}`;
+  return /^\s*·?\s*(?:Cruise Mode|巡航模式)\s*$/im.test(hay);
+}
+
+export function usableInCruise(a: CardAction): boolean {
+  return /may be used in Cruise Mode|可在巡航模式下使用/i.test(`${a.description?.en ?? ''} ${a.description?.zh ?? ''}`);
 }

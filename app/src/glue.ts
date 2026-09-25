@@ -11,7 +11,7 @@
 import type { GameData } from './data';
 import type { Command } from './commands';
 import { clearDroneCommands, seedCommandTokens } from './commands';
-import { type InitLookup, nextActivation } from './loop';
+import { alive, type InitLookup, nextActivation } from './loop';
 import { normaliseSetup } from './setup';
 import { extrasFor } from './units';
 import { newOpportunity, newScriptState, type GameState, type Opportunity, type Timing } from './types';
@@ -48,7 +48,10 @@ export function enterPhase(data: GameData, s: GameState): void {
     // phase entry would delete it one phase early.
     clearDroneCommands(s);
   }
-  if (s.round.phase === 0 || s.round.phase === 2) sc.acted = [];
+  if (s.round.phase === 0 || s.round.phase === 2) {
+    sc.acted = [];
+    sc.tieFirst = [];
+  }
   sc.endDone = sc.endDone.filter((k) => k.startsWith(`${s.round.n}:`));
   // Once-per-round abilities are keyed by round for the same reason, so the
   // ledger is pruned the same way rather than growing all game.
@@ -85,8 +88,24 @@ export function glueAfter(data: GameData, state: GameState, cmd: Command): void 
   if (state.round.phase === 2) opportunity(data, state);
 }
 
+// An echoed Mech destroyed inside its Extra Action Opportunity - shot down by
+// an Interception, killed by a reaction - can never end it: endOpportunity
+// refuses a unit no longer on the board, and the granter waiting underneath
+// never resumed, so the Action Phase stalled (audit Phase 2, B6). K21: the
+// granting Mech continues. Popped here, the same way ending it would pop it,
+// by every client deriving the same bookkeeping.
+export function popDeadExtras(s: GameState): void {
+  const sc = s.script;
+  while (sc?.opp?.extra) {
+    const u = s.tokens.find((x) => x.uid === sc.opp!.uid);
+    if (u && alive(u)) return;
+    sc.opp = sc.oppStack.pop() ?? null;
+  }
+}
+
 export function opportunity(data: GameData, s: GameState): Opportunity | null {
   const sc = ensureScript(s);
+  popDeadExtras(s);
   // A nested Extra Action Opportunity (FAQ K21) belongs to whoever was just
   // granted it, NOT to whoever the activation order says is next - the
   // re-derivation below would clobber it on the very next command.

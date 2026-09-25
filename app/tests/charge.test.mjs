@@ -160,13 +160,15 @@ check('PRDR-105 offers two walls', byId.get('PRDR-105').projectile.length, 2);
   // The signature grew a shockAsked flag when Shock Attack joined the door
   // (shockattack.test.mjs); the refund parameter is the part this pins.
   check('the targeting can be opened with a Charge to refund',
-    /function openAttackPick\(t: Token, a: CardAction, refund\?: \{ uid: number; slot: string \}, shockAsked = false\)/.test(hud), true);
+    // The refund carries the arm taken of an either/or [Charged] line since the
+    // Phase 2 audit (R7MG 556_A; C3/E9).
+    /function openAttackPick\(t: Token, a: CardAction, refund\?: \{ uid: number; slot: string; choice\?: string \}, shockAsked = false\)/.test(hud), true);
   check('and both kinds of targeting carry it',
     (hud.match(/(attackPick|ewPick) = \{ uid: t\.uid, actionId: a\.id, refund \}/g) ?? []).length, 2);
   // Only a SPEND is refundable. Charging a Part face-up is an Action in its own
   // right, and handing that back on a cancel would be inventing a token.
   check('only a spend is recorded as refundable',
-    /openAttackPick\(t, next, m\.on \? undefined : \{ uid: t\.uid, slot \}\)/.test(hud), true);
+    /openAttackPick\(t, next, m\.on \? undefined : \{ uid: t\.uid, slot, \.\.\.\(choice \? \{ choice \} : \{\}\) \}\)/.test(hud), true);
   const cancels = hud.match(/refundCharge\(ctx, (attackPick|ewPick)\?\.refund\)/g) ?? [];
   check('and both cancels give it back', cancels.length, 2);
   check('the refund puts the token FACE-UP again',
@@ -180,7 +182,7 @@ check('PRDR-105 offers two walls', byId.get('PRDR-105').projectile.length, 2);
 
   // --- freeplay ---
   check('freeplay records the spend on the targeting it paid for',
-    /pendingAttack\.refund = \{ slot: found\.slot \}/.test(app), true);
+    /pendingAttack\.refund = \{ slot: found\.slot, \.\.\.\(choice \? \{ choice \} : \{\}\) \}/.test(app), true);
   // The offer is fire-and-forget, so by the time it answers the player may have
   // moved on to a different Action entirely.
   check('and only when the targeting is still the one that asked',

@@ -66,7 +66,11 @@ export function isElectronicAttack(_a: any): boolean { return false; }
   // header at the top of this list demands: the nearest one ends at
   // autoDetonationsOwed (2459) and the nearest below starts nowhere — this is
   // the last cut in the file — so nothing here is declared twice.
-  + cut(units, 'export function electronicValue', 'export function defaultUnitLabel', 'electronicValue and electronicStrength');
+  + cut(units, 'export function electronicValue', 'export function defaultUnitLabel', 'electronicValue and electronicStrength')
+  // The Mechanics Audit Phase 2 readers (Cruise Mode, the Part and Starting
+  // Action rules...), which defenseReactionOn and provokeWhy now ask: one block,
+  // the last in units.ts, so it overlaps none of the cuts above.
+  + units.slice(units.indexOf('// ---------- Mechanics audit Phase 2 readers ----------'));
 
 const tmp = new URL('./_auras.slice.ts', import.meta.url);
 writeFileSync(tmp, body);
@@ -658,11 +662,12 @@ check('with no Action to judge it answers no, rather than over-granting',
 check('a Mech without it is never freed', A.cqcFlexible(data, cqcMech('002'), mShort), false);
 check('a destroyed Part frees nothing', A.cqcFlexible(data, cqcMech('017', { torso: 'destroyed' }), mShort), false);
 check('a Drone never gets it', A.cqcFlexible(data, { ...cqcMech('017'), kind: 'drone' }, mShort), false);
-// It reaches the same gate the auras do, so no caller needed changing.
-check('and it reaches the shared Flexible Timing gate',
-  A.hasFlexibleTiming(data, [cqcMech('017')], cqcMech('017'), mShort), true);
-check('which still says no for the Action it does not cover',
-  A.hasFlexibleTiming(data, [cqcMech('017')], cqcMech('017'), mLong), false);
+// NOT through the adjacent-only Flexible Timing gate any more: the card says
+// "in ANY timing" (RDL 1.02), and adjacency refused a Chop on a Firing,
+// Movement or Tactical dial. It rides startOpts as `cqc`, and canPerform's
+// any-timing arm is pinned in mechanics2.test.mjs (audit Phase 2, B3).
+check('CQC is its own option, not the adjacent-only Flexible Timing gate',
+  A.hasFlexibleTiming(data, [cqcMech('017')], cqcMech('017'), mShort), false);
 
 // ---------- The one-off riders (094, 095, 503, ZHDR-301, 533) ----------
 //

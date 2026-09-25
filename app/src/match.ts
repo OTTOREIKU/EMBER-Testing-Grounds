@@ -885,7 +885,14 @@ function settleDefense(cmd: Command): void {
 // that mirrors it. Two lookups would be two answers to "which card is this",
 // and the whole point of the single renderer is that both screens are reading
 // the same card.
-function attackActionOf(t: Token | undefined, actionId: string, twoHandedDeclined = false): CardAction | undefined {
+function attackActionOf(t: Token | undefined, actionId: string, twoHandedDeclined = false, charge?: { spent?: boolean; choice?: string }): CardAction | undefined {
+  const built = attackActionBuilt(t, actionId, twoHandedDeclined);
+  // The Charge last, as the attacker's own door applies it (audit Phase 2,
+  // C13): the mirror used to leave a consumed Mutilation out of its Surplus.
+  return built && charge?.spent ? chargeAdjusted(built, true, charge.choice) : built;
+}
+
+function attackActionBuilt(t: Token | undefined, actionId: string, twoHandedDeclined = false): CardAction | undefined {
   if (!data || !t) return undefined;
   const printed = tokenCards(data, t)
     .flatMap(({ card }) => card.actions ?? [])
@@ -905,14 +912,14 @@ function attackActionOf(t: Token | undefined, actionId: string, twoHandedDecline
   return twoHandedUse(data, t, granted)?.action ?? granted;
 }
 
-function startAttack(uid: number, actionId: string, targetUid: number, mode: 'attack' | 'intercept' | 'explosion' = 'attack', opts: { twoHandedDeclined?: boolean; charged?: boolean } = {}): void {
+function startAttack(uid: number, actionId: string, targetUid: number, mode: 'attack' | 'intercept' | 'explosion' = 'attack', opts: { twoHandedDeclined?: boolean; charged?: boolean; chargeChoice?: string } = {}): void {
   if (!data || !attackHelper) return;
   const attacker = state.tokens.find((t) => t.uid === uid);
   const defender = state.tokens.find((t) => t.uid === targetUid);
   const adjusted = attackActionOf(attacker, actionId, !!opts.twoHandedDeclined);
   // [Charged] (4.14): folded in only when the Charge Token was consumed for
   // this attack, the same fold the pad and freeplay make.
-  const action = adjusted ? chargeAdjusted(adjusted, !!opts.charged) : adjusted;
+  const action = adjusted ? chargeAdjusted(adjusted, !!opts.charged, opts.chargeChoice) : adjusted;
   if (!attacker || !defender || !action) return;
   const terrain = terrainNow();
   const smoke = state.smoke ?? [];
@@ -978,12 +985,28 @@ function mountSide(): void {
     // The ones that need a board flow of their own — launching, shoving,
     // detonating and starting an Interception — hand off to the turn panel,
     // which is where this HUD asks every question.
+    // In a room the card's Use IS the Action: it goes through the turn panel,
+    // which pays the Tick and whose performAction spends the Ammo (4.13).
+    // A bare spendAmmo there would be a manual Ammo control in a strict game,
+    // which the Phase 2 audit ruled off (E8). The sandbox keeps the raw spend.
     onSpendAmmo: (t, actionId) => {
+      if (startActionFromCard(t.uid, actionId)) { render(); return; }
+      if (relay.state.room) {
+        lobbyNote = `${t.label} does not hold the Action Opportunity, so it cannot perform that now (3.4).`;
+        render();
+        return;
+      }
       send({ kind: 'spendAmmo', seat: t.side, uid: t.uid, actionId });
       render();
       syncSide(t.uid);
     },
+    // Ammo comes back through a Resupply or Undo in a room (E8), never a pip.
     onRestoreAmmo: (t, actionId) => {
+      if (relay.state.room) {
+        lobbyNote = 'In a match, Ammo comes back through a Resupply Action, or Undo if a spend was a mistake.';
+        render();
+        return;
+      }
       send({ kind: 'restoreAmmo', seat: t.side, uid: t.uid, actionId });
       render();
       syncSide(t.uid);
@@ -1066,7 +1089,15 @@ function mountSide(): void {
     // The card's own pip, flipping one Part's token directly (4.14). The
     // guided moments — a Charge Action, and an Action marked [Charged] — ask
     // in the turn panel instead.
+    // Not in a room: a match is strict, and there a Charge comes only from the
+    // Charge Action and goes only when a [Charged] Action consumes it. A pip
+    // flipped by hand was a Charge nobody paid a Tick for (audit Phase 2, E8).
     onCharge: (t, slot, on) => {
+      if (relay.state.room) {
+        lobbyNote = 'In a match a Charge Token is flipped by the Charge Action, and spent when a [Charged] Action consumes it. Use Undo if one was flipped by mistake.';
+        render();
+        return;
+      }
       send({ kind: 'setCharge', seat: t.side, uid: t.uid, slot, on });
       render();
       syncSide(t.uid);
@@ -2399,7 +2430,7 @@ function syncCombatMirror(): boolean {
   }
   const at = state.tokens.find((t) => t.uid === view.attackerUid);
   const df = state.tokens.find((t) => t.uid === view.targetUid);
-  const action = attackActionOf(at, view.actionId, !!view.twoHandedDeclined);
+  const action = attackActionOf(at, view.actionId, !!view.twoHandedDeclined, { spent: view.chargeSpent, choice: view.chargeChoice });
   // A view naming a unit or a card this client cannot resolve draws nothing
   // rather than half a window. It is reachable: a rollback can take the
   // attacker off the board while their view is still on the wire.

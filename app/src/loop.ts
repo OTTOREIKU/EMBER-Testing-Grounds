@@ -2,6 +2,7 @@ import type { GameData } from './data';
 import type { GameState, Side, Timing, Token } from './types';
 import { TIMINGS } from './types';
 import { commandGeneration, rwsCommandsLeft } from './units';
+import { untouched } from './ticks';
 
 // The pure turn-order rules of the guided game, shared by the play guide and
 // the command layer. Nothing here touches the DOM or mutates state.
@@ -15,9 +16,14 @@ export function isLoopPhase(phase: string): phase is LoopPhase {
   return (LOOP_PHASES as readonly string[]).includes(phase);
 }
 
+// A Mech is destroyed when its Torso is (4.4.4), whatever else still stands.
+// This used to ask whether ANY Part survived, so on the pad a Torso tapped to
+// Destroyed left the Mech in the activation order, and it took its next
+// Opportunity (audit Phase 2, B7). The board pages remove the token on a kill,
+// which is why only the pad ever showed it.
 export function alive(t: Token): boolean {
   if (t.kind !== 'mech') return (t.partStates.main ?? 'intact') !== 'destroyed';
-  return Object.values(t.partStates).filter((p) => p !== 'destroyed').length > 0;
+  return (t.partStates.torso ?? 'intact') !== 'destroyed';
 }
 
 // What this side's Mechs are about to generate. 3.2.1: 1 each by default, or
@@ -139,9 +145,16 @@ export type InitLookup = (t: Token, timing: Timing) => number | undefined;
 
 // Timing order never changes, and within one Timing the lowest Pilot Initiative
 // goes first. Mechs tied on both belong to no natural order, so the First
-// Player's Mech goes first and the sides alternate from there.
+// Player's Mech goes first and the sides alternate from there. WHICH of one
+// squad's tied Mechs fills its turn is its owner's pick (tieFirst, the latest
+// first; audit Phase 2, E6), and with no pick, token order.
 export function activationOrder(state: GameState, init: InitLookup): Activation[] {
   const mechs = state.tokens.filter((t) => t.kind === 'mech' && alive(t) && t.timing);
+  const picks = state.script?.tieFirst ?? [];
+  const rank = (uid: number): number => {
+    const i = picks.indexOf(uid);
+    return i < 0 ? picks.length : i;
+  };
   const out: Activation[] = [];
   for (const def of TIMINGS) {
     const group = mechs
@@ -152,7 +165,8 @@ export function activationOrder(state: GameState, init: InitLookup): Activation[
       (a, b) => (a ?? Infinity) - (b ?? Infinity),
     );
     for (const v of values) {
-      const tied = group.filter((g) => g.init === v);
+      // Array sort is stable, so Mechs nobody picked keep token order.
+      const tied = group.filter((g) => g.init === v).sort((a, b) => rank(a.t.uid) - rank(b.t.uid));
       const mine = tied.filter((g) => g.t.side === state.round.firstPlayer);
       const theirs = tied.filter((g) => g.t.side !== state.round.firstPlayer);
       let turn = mine;
@@ -181,6 +195,40 @@ export function nextActivation(state: GameState, init: InitLookup): Activation |
     if (found) return found;
   }
   return null;
+}
+
+// ---------- the owner's pick among tied Mechs (audit Phase 2, E6) ----------
+//
+// 3.4.1 p.29 settles a tie on Timing and Initiative between the squads, the
+// First Player's Mech first and then alternating, and says nothing about WHICH
+// of one squad's tied Mechs takes its turn. The owner chooses, as it does in
+// the Automatic and Delay loops (ruled 2026-09-25). The choice is made as the
+// turn comes up, while the Mech holding it has done nothing, not even a
+// start-of-Opportunity trade that spends its own Link.
+export function tiedChoiceWhy(state: GameState, init: InitLookup, t: Token): string | null {
+  const sc = state.script;
+  const o = sc?.opp;
+  if (!sc || state.round.phase !== 2 || !o) return 'A tied Mech is chosen as its squad\'s turn comes up in the Action Phase.';
+  if (o.extra) return 'An Extra Action Opportunity belongs to the Mech it was granted to (FAQ K21).';
+  const cur = state.tokens.find((x) => x.uid === o.uid);
+  if (!cur || cur.kind !== 'mech' || !o.timing) return 'Only a Mech\'s Action Opportunity can go to a tied Mech.';
+  if (t.uid === cur.uid) return `${t.label} already holds the Action Opportunity.`;
+  if (t.side !== cur.side) return 'Each squad picks among its own tied Mechs.';
+  if (!untouched(o) || o.overload > 0 || o.attackMode || (o.linkTicks ?? 0) > 0) {
+    return `${cur.label} has begun its Action Opportunity, so this turn is its.`;
+  }
+  if (t.kind !== 'mech' || !alive(t) || t.deployed === false) return `${t.label} is not a Mech on the board.`;
+  if (sc.acted.includes(t.uid)) return `${t.label} has already had its Action Opportunity this round.`;
+  // The same reading activationOrder groups by, a missing value included.
+  if (t.timing !== o.timing || init(t, o.timing) !== init(cur, o.timing)) {
+    return `${t.label} is not tied with ${cur.label}: a tie is the same Timing and the same Initiative Value (3.4.1).`;
+  }
+  return null;
+}
+
+// The Mechs the squad holding the Opportunity may send in its place.
+export function tiedChoices(state: GameState, init: InitLookup): Token[] {
+  return state.tokens.filter((t) => t.kind === 'mech' && tiedChoiceWhy(state, init, t) === null);
 }
 
 // An Extra Action Opportunity is a fresh one for a Mech that has already acted,

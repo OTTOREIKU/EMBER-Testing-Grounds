@@ -112,7 +112,9 @@ check('the Mode-change branch pays before it returns',
 // Twenty-three since 2026-09-25: Stabilize asks its Token question BEFORE it
 // pays, so routeAction's no-question branch and the panel's answer each pay,
 // and the Link support and Token cleanup panels each pay on confirm.
-check('every tool has a commitAction', [...hud.matchAll(/commitAction\(ctx\)/g)].length, 23);
+// Twenty-four since the Phase 2 audit (D1): ZHDR-206_B Stance feedback asks
+// which Ally Mech and which Stance, then pays.
+check('every tool has a commitAction', [...hud.matchAll(/commitAction\(ctx\)/g)].length, 24);
 
 // ---------- The ATTRIBUTED seat stamp ----------
 //
@@ -267,11 +269,13 @@ for (const [name, src] of [['main.ts', main], ['matchhud.ts', hud]]) {
 const startLaunch = main.slice(main.indexOf('function startLaunch(t: Token'), main.indexOf('function endTargeting'));
 check('freeplay startLaunch was located', startLaunch.includes('volleyOf'), true);
 check('and sizes the volley off the magazine that pays',
-  startLaunch.includes('ammoHolder(data, state, t, action.id).ammo[action.id]'), true);
+  // ammoAvailable reads that holder AND the Ammunition Pack 086_B lends an
+  // empty Pod (audit Phase 2, C6), the same pools launch() itself pays from.
+  startLaunch.includes('ammoAvailable(data, state, t, action.id)'), true);
 const startPlan = hud.slice(hud.indexOf('export function startLaunchPlan'), hud.indexOf('// A Landing Point is a Grid'));
 check('the Match Centre launch plan was located', startPlan.includes('volleyOf'), true);
 check('and sizes its volley off the same one',
-  startPlan.includes('ammoHolder(ctx.data, ctx.state, t, actionId)'), true);
+  startPlan.includes('ammoAvailable(ctx.data, ctx.state, t, actionId)'), true);
 
 // ---------- Class 4: a Movement has two endings, and both owe the same riders ----------
 //

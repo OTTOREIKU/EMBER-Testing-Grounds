@@ -43,7 +43,8 @@ check('a declined designation is a marked one-handed copy on every page',
 check('and the combat window reports the decline instead of re-deriving the bonus',
   /if \(c\.action\.twoHandedDeclined\) return/.test(combat), true);
 check('and the mirror rebuilds the same one-handed Action',
-  /attackActionOf\(at, view\.actionId, !!view\.twoHandedDeclined\)/.test(match), true);
+  // With the Charge the attacker consumed too since the Phase 2 audit (C13).
+  /attackActionOf\(at, view\.actionId, !!view\.twoHandedDeclined, \{ spent: view\.chargeSpent, choice: view\.chargeChoice \}\)/.test(match), true);
 check('which travels on the published view',
   /twoHandedDeclined: c\.action\.twoHandedDeclined \|\| undefined/.test(combat), true);
 check('and the Part picked is one that gives something back, when there is one',
@@ -69,8 +70,10 @@ check('multiTargetLimit takes the designation',
   /export function multiTargetLimit\(a: CardAction, designated = false\)/.test(units), true);
 check('and clears only the Freehand condition, never the Charge one',
   /const met = designated && cond === 'freehand_designated';/.test(units), true);
-check('the Charged condition is still named as untracked',
-  /\[Charged\] still is not/.test(units), true);
+// Tracked since the Phase 2 audit (C3): chargeAdjusted takes the arm chosen
+// and settles the condition, so the note survives only on an unadjusted Action.
+check('the Charged condition is settled by chargeAdjusted',
+  /\[Charged\] is tracked too since the Phase 2 audit \(C3\): chargeAdjusted drops/.test(units), true);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

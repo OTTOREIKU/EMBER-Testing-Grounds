@@ -76,6 +76,13 @@ check(
   order([mech(1, 's1', 'firing', 4), mech(2, 's1', 'firing', 4), mech(3, 's1', 'firing', 4), mech(4, 's2', 'firing', 4)], 's1'),
   [1, 4, 2, 3],
 );
+// WHICH of one squad's tied Mechs fills its turn is the owner's pick (audit
+// Phase 2, E6), the latest pick first; the alternation between squads stands.
+const picked = (tokens, fp, tieFirst, acted = []) => activationOrder({ ...world(tokens, fp, acted), script: { acted, extraOpps: [], tieFirst } }, lookup).map((a) => a.uid);
+check('an owner\'s pick takes its squad\'s next tied turn', picked(tie(), 's1', [2]), [2, 3, 1, 4]);
+check('and the other squad\'s turns do not move', picked(tie(), 's1', [4]), [1, 4, 2, 3]);
+check('the list is read front first, where the latest pick sits', picked(tie(), 's1', [2, 1]), [2, 3, 1, 4]);
+check('a pick outside any tie changes nothing', picked([a, b, c], 's1', [103]), [102, 101, 103]);
 // Ties are broken per initiative value, not across the whole timing.
 check(
   'each initiative value gets its own tie-break',

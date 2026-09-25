@@ -5,12 +5,13 @@ import { BASE, cardName, squadLabel } from './data';
 import { bindTips, linkMechanics } from './inspector';
 import { choiceDialog } from './dialog';
 import { PHASES, PHASE_INFO } from './tracker';
-import { linkTickTraitOn, isRwsAction, vpRiderFor, anyStartTiming, opportunityBonusOn, hasFlexibleTiming, pilotCard, coordinationFor, coordinationOnOpportunityEnd, extrasFor, actionSilenceDenier, isSilentAction, type ActionWorld, canActivateCamo, manifestationRange, type ExtraActivation, extraActivationOf, guidedActions, initiativeFor, maneuverRange, maxLink, SLOT_LABEL, tokenCards, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL } from './units';
-import { canAttackMode, canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed } from './ticks';
-import { asterKey, check, clearDroneCommands, perform, readyCommands, seedCommandTokens } from './commands';
+import { linkTickTraitOn, startOpts, stanceShaped, overloadPackOn, isRwsAction, vpRiderFor, opportunityBonusOn, pilotCard, coordinationFor, coordinationOnOpportunityEnd, extrasFor, actionSilenceDenier, isSilentAction, type ActionWorld, canActivateCamo, manifestationRange, type ExtraActivation, extraActivationOf, guidedActions, initiativeFor, maneuverRange, maxLink, SLOT_LABEL, tokenCards, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL } from './units';
+import { actionPipCount, canAttackMode, canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed } from './ticks';
+import { asterKey, check, rebootWhy, clearDroneCommands, perform, readyCommands, seedCommandTokens } from './commands';
+import { popDeadExtras } from './glue';
 import { askIssuer, asterBlockers, offerCoordination, runAster } from './commandpick';
 import { tacticFitsPhase, tacticSpec } from './tactics';
-import { alive, canAct, getLocalSeat, isLoopPhase, nextTurn, onExtraOpportunity, type LoopPhase, nextActivation, activationOrder, actionPhaseComplete, loopComplete, eligibleUnits, type InitLookup, type Activation } from './loop';
+import { alive, canAct, getLocalSeat, isLoopPhase, nextTurn, onExtraOpportunity, type LoopPhase, nextActivation, activationOrder, actionPhaseComplete, loopComplete, eligibleUnits, tiedChoices, type InitLookup, type Activation } from './loop';
 import { deployable, deploymentComplete, deployTurn, firstPlayerFrom, newSetup, normaliseSetup, rollTotal, type SetupState } from './setup';
 import { normaliseTasks, settleControl, type ScoreResult, type TaskState } from './tasks';
 import { previewScore } from './scoring';
@@ -72,7 +73,9 @@ export interface GuideCallbacks {
   // `maneuver` marks the Mech's own Maneuver rather than a Movement Action, so
   // the driver knows whether an Ojs200's optional Flying Movement is on offer.
   onMoveUnit(uid: number, opts: { range?: number; label: string; maneuver?: boolean }, done: (moved: boolean) => void): void;
-  onPerformAction(uid: number, actionId: string, done: (performed: boolean, opts?: { twoHanded?: boolean }) => void): void;
+  // `partKey` names the Part a Common Action was initiated through, when the
+  // flow chose one (COMMON_CHARGE@rightHand; FAQ H6/H7, audit Phase 2, E7).
+  onPerformAction(uid: number, actionId: string, done: (performed: boolean, opts?: { twoHanded?: boolean; partKey?: string }) => void): void;
   onSetStance(uid: number, stance: Stance): void;
   onIntercept(uid: number, actionId: string, targetUid: number): void;
   onRollFirstPlayer(side: Side): void;
@@ -158,7 +161,10 @@ export class PlayGuide {
       sc.commanded = [];
       sc.freeCommand = [];
     }
-    if (s.round.phase === 0 || s.round.phase === 2) sc.acted = [];
+    if (s.round.phase === 0 || s.round.phase === 2) {
+      sc.acted = [];
+      sc.tieFirst = [];
+    }
     // End Phase ticks are keyed by round, so drop the ones that can never match
     // again rather than letting the list grow for the length of the game.
     sc.endDone = sc.endDone.filter((k) => k.startsWith(`${s.round.n}:`));
@@ -368,6 +374,9 @@ export class PlayGuide {
     );
     this.root.querySelectorAll<HTMLButtonElement>('[data-reboot]').forEach((b) =>
       b.addEventListener('click', () => this.reboot(b.dataset.reboot as Stance)),
+    );
+    this.root.querySelectorAll<HTMLButtonElement>('[data-tiepick]').forEach((b) =>
+      b.addEventListener('click', () => this.chooseTied(Number(b.dataset.tiepick))),
     );
     this.root.querySelector('[data-finish-tasks]')?.addEventListener('click', () => {
       const s = this.state;
@@ -1116,11 +1125,9 @@ export class PlayGuide {
   // ---------- action phase (rulebook 3.4) ----------
 
 
-  // The board decides this, not the card: Flexible Timing reaches this Mech
-  // from an ally's aura, so it has to be re-read wherever the Tick verdict is.
-  private flexTiming(t: Token, a: CardAction): boolean {
-    return hasFlexibleTiming(this.data, this.state?.tokens ?? [], t, a);
-  }
+  // The board decides Flexible Timing, not the card (it reaches this Mech from
+  // an ally's aura), so every Tick verdict here reads units.ts startOpts with
+  // the live tokens - the same reading check() makes.
 
   private tickActions(t: Token): { action: CardAction; label: string; partKey: string; note?: string; blocked?: string }[] {
     const out: { action: CardAction; label: string; partKey: string; note?: string; blocked?: string }[] = [];
@@ -1166,6 +1173,9 @@ export class PlayGuide {
 
   private opportunity(s: GameState): Opportunity | null {
     const sc = this.script(s);
+    // An echoed Mech killed inside its Extra Opportunity hands it back to the
+    // granter (FAQ K21), the same glue the other pages run.
+    popDeadExtras(s);
     // A nested Extra Action Opportunity (FAQ K21) belongs to whoever was just
     // granted it, NOT to whoever the activation order says is next - the
     // re-derivation below would clobber it on the very next render.
@@ -1209,9 +1219,12 @@ export class PlayGuide {
       if (o.spentExtras.includes(x.id)) return pip(false);
       return grantHolds(o, x) ? `<i class="pip" title="${esc(x.label)}"></i>` : `<i class="pip off lapsed" title="${esc(whyGrantLapsed(x))}"></i>`;
     };
+    // One pip per Action Tick: Overload, Attack Mode and the Link trade can
+    // make the pool 3 or 4, which drew as 2 (audit Phase 2, B9).
+    const actPips = Array.from({ length: actionPipCount(o) }, (_, i) => pip(i < o.action)).join('');
     const pool = `<div class="pg-ticks">
       <span class="pips pips-man${o.maneuver ? '' : ' spent'}"><b class="pip-label">MAN</b>${pip(o.maneuver > 0)}</span>
-      <span class="pips pips-act${o.action ? '' : ' spent'}"><b class="pip-label">ACT</b>${pip(o.action > 0)}${pip(o.action > 1)}</span>
+      <span class="pips pips-act${o.action ? '' : ' spent'}"><b class="pip-label">ACT</b>${actPips}</span>
       ${o.extras.length ? `<span class="pips pips-extra${live.length ? '' : ' spent'}"><b class="pip-label">XTR</b>${o.extras.map(extraPip).join('')}</span>` : ''}
     </div>`;
 
@@ -1222,21 +1235,38 @@ export class PlayGuide {
             .map((x) => `<button class="pg-stance${t.stance === x ? ' sel' : ''}" data-stance="${x}">${x[0].toUpperCase()}${x.slice(1)}</button>`)
             .join('')}</div>`
         : '';
-    const rebootRow = shutdown
-      ? `<p class="pg-warn">${esc(t.label)} is in Shutdown Stance, so Reboot is the only thing it may do. It cannot Maneuver and no other Action is legal (4.1.1).</p>
+    // Offered only where the engine takes it: at the start of the Mech's own
+    // Opportunity (FAQ K17). A Mech shut down part-way through this one ends
+    // it and Reboots at the start of its next.
+    const rebootNow = shutdown && rebootWhy(s, t) === null;
+    const rebootRow = !shutdown
+      ? ''
+      : rebootNow
+        ? `<p class="pg-warn">${esc(t.label)} is in Shutdown Stance, so it Reboots now: it cannot Maneuver and no other Action is legal (4.1.1, FAQ K17). Choose the Stance it Reboots into.</p>
          <div class="pg-stances">${(['defensive', 'mobility', 'offensive'] as const)
             .map((x) => `<button class="pg-stance" data-reboot="${x}" data-mech="reboot">Reboot to ${x[0].toUpperCase()}${x.slice(1)}</button>`)
             .join('')}</div>`
+        : `<p class="pg-warn">${esc(rebootWhy(s, t) ?? '')} It can do nothing more this Action Opportunity, so end it.</p>`;
+
+    // Tied on Timing and Initiative with more of this squad's Mechs: the owner
+    // picks which takes the turn, while this one has done nothing (audit
+    // Phase 2, E6). The engine's own list, so every button drawn is taken.
+    const tied = tiedChoices(s, this.init);
+    const tieRow = tied.length
+      ? `<p class="pg-next-up">Tied on ${timing?.name ?? 'this Timing'}, Initiative ${init ?? '?'}: ${squadLabel(t.side)} picks which of its tied Mechs goes first (3.4.1).</p>
+        <div class="pg-units">${tied.map((x) => `<button class="pg-unit" data-tiepick="${x.uid}">${esc(x.label)} goes first</button>`).join('')}</div>`
       : '';
 
     const man = canManeuver(o);
     const range = maneuverRange(this.data, t);
     const rows = this.tickActions(t)
       .map((r) => {
-        const v = canPerform(o, r.action, r.partKey, { flexible: this.flexTiming(t, r.action), anyTiming: anyStartTiming(this.data, t) });
+        // Priced in this Stance: ZHRA-102_A is Short in Offensive (Phase 2, D2).
+        const priced = stanceShaped(r.action, t.stance);
+        const v = canPerform(o, priced, r.partKey, startOpts(this.data, s.tokens, t, r.action));
         const why = r.blocked ?? (v.ok ? undefined : v.why);
-        const cost = costOf(r.action)!;
-        const len = LENGTH_NAME[lengthOf(r.action)!];
+        const cost = costOf(priced)!;
+        const len = LENGTH_NAME[lengthOf(priced)!];
         return `<button class="pg-act${why ? ' warn' : ''}" data-act="${r.partKey}" title="${esc(why ?? `${r.note ? `${r.note} - ` : ''}${len}: ${costLabel(cost)}`)}">
           <span class="pg-act-name">${esc(r.label)}</span>
           <span class="pg-act-cost">${v.extra ? 'XTR' : `${cost.maneuver ? 'M' : ''}${'●'.repeat(cost.action)}`}</span>
@@ -1282,13 +1312,14 @@ export class PlayGuide {
         <small>${esc(t.label)} · ${timing?.name ?? 'no dial'}${init === undefined ? '' : ` · Initiative ${init}`} · ${onExtra ? 'Extra Action Opportunity' : `${at + 1} of ${order.length}`}</small></p>
       ${pool}
       ${this.warn ? `<p class="pg-warn">${esc(this.warn)}</p>` : ''}
+      ${tieRow}
       ${stanceRow}
       ${rebootRow}
       ${maneuverRow}
       ${actionRows}
-      <div class="pg-units">
+      ${rebootNow ? '' : `<div class="pg-units">
         <button class="pg-pass" data-end="1">End activation</button>
-      </div>
+      </div>`}
       ${upNext ? `<p class="pg-next-up">Up next: ${esc(s.tokens.find((x) => x.uid === upNext.uid)?.label ?? '?')} <small>${TIMINGS.find((x) => x.id === upNext.timing)?.name}</small></p>` : ''}`;
   }
 
@@ -1414,6 +1445,22 @@ export class PlayGuide {
     this.cb.onChanged();
   }
 
+  private chooseTied(uid: number): void {
+    const s = this.state;
+    const t = s?.tokens.find((x) => x.uid === uid);
+    if (!s || !t) return;
+    const v = check(this.data, s, { kind: 'chooseTied', seat: t.side, uid });
+    if (!v.ok) {
+      this.warn = v.why ?? null;
+      this.render();
+      return;
+    }
+    this.warn = null;
+    perform(this.data, s, { kind: 'chooseTied', seat: t.side, uid });
+    this.cb.onNote(t, `${t.label} takes the turn: Mechs tied on Timing and Initiative go in the order their squad picks.`);
+    this.cb.onChanged();
+  }
+
   private tryManeuver(): void {
     const s = this.state;
     if (!s) return;
@@ -1484,8 +1531,7 @@ export class PlayGuide {
   }
 
   private hasOverload(t: Token): boolean {
-    const ids = new Set(this.data.overload.map((g) => g.actionId));
-    return tokenCards(this.data, t).some(({ card }) => (card.actions ?? []).some((a) => ids.has(a.id)));
+    return overloadPackOn(this.data, t);
   }
 
   // FPA-04-2 Domestic Expert: 1 Link for 1 Action Tick, in Offensive Stance,
@@ -1578,8 +1624,10 @@ export class PlayGuide {
     // Tarantula is lending the Part (FAQ O7).
     const row = this.tickActions(t).find((r) => r.partKey === actionId) ?? this.tickActions(t).find((r) => r.action.id === actionId);
     if (!row) return;
-    const tickOpts = { flexible: this.flexTiming(t, row.action), anyTiming: anyStartTiming(this.data, t) };
-    const why = row.blocked ?? (canPerform(o, row.action, row.partKey, tickOpts).ok ? undefined : canPerform(o, row.action, row.partKey, tickOpts).why);
+    const tickOpts = startOpts(this.data, s.tokens, t, row.action);
+    const priced = stanceShaped(row.action, t.stance);
+    const verdict = canPerform(o, priced, row.partKey, tickOpts);
+    const why = row.blocked ?? (verdict.ok ? undefined : verdict.why);
     if (why && this.warn !== why) {
       this.warn = why;
       this.render();
@@ -1594,7 +1642,7 @@ export class PlayGuide {
         this.render();
         return;
       }
-      perform(this.data, s, { kind: 'performAction', seat: t.side, uid: t.uid, actionId: row.action.id, partKey: row.partKey, ...(opts?.twoHanded ? { twoHanded: true } : {}) });
+      perform(this.data, s, { kind: 'performAction', seat: t.side, uid: t.uid, actionId: row.action.id, partKey: opts?.partKey ?? row.partKey, ...(opts?.twoHanded ? { twoHanded: true } : {}) });
       // A non-Silence action ends Optical Camouflage (4.12.2, FAQ I5). The
       // strict tracker reveals outright; teaching asks, in the house style.
       if (statusCount(t.statuses, 'camouflage') > 0 && !isSilentAction(this.data, s.tokens, t, row.action)) {

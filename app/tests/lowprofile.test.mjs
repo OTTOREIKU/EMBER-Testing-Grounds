@@ -26,7 +26,9 @@
 // asserted structurally, and labelled as such where it happens.
 import { readFileSync, writeFileSync } from 'node:fs';
 
-const mainSrc = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
+// As LF whatever the checkout wrote, so the performGuided cut below ends at the
+// next function on an LF working copy too (it ran to the end of the file there).
+const mainSrc = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 const units = readFileSync(new URL('../src/units.ts', import.meta.url), 'utf8');
 const rules = readFileSync(new URL('../src/rules.ts', import.meta.url), 'utf8');
 const types = readFileSync(new URL('../src/types.ts', import.meta.url), 'utf8');
@@ -44,8 +46,9 @@ const settleBlock = cut(mainSrc,
   "      // 4.12.3's OTHER consequence",
   "      // An enemy AERIAL unit's Movement triggers Interception",
   'the settle() Low Profile block');
+// The opts carry the Common Action's Part too since the Phase 2 audit (E7).
 const doneBlock = cut(mainSrc,
-  '    const done = (performed: boolean, opts?: { twoHanded?: boolean }): void => {',
+  '    const done = (performed: boolean, opts?: { twoHanded?: boolean; partKey?: string }): void => {',
   '    if (!t || !action) return done(false);',
   'the performGuided done wrapper');
 
@@ -239,7 +242,7 @@ const act = (id) => data.byId.get('LPT').actions.find((a) => a.id === id);
 // appears anywhere else in the body, some branch is bypassing the rule.
 {
   const at = mainSrc.indexOf('function performGuided(uid: number, actionId: string, report:');
-  const end = mainSrc.indexOf('\r\n  function ', at);
+  const end = mainSrc.indexOf('\n  function ', at);
   check('performGuided takes the caller callback as `report`, not `done`', at >= 0, true);
   const bodyText = mainSrc.slice(at, end);
   check('and `report(` is called exactly once — only the wrapper reaches it',

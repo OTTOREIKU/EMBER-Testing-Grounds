@@ -158,7 +158,7 @@ export class SquadTracker {
           <span class="ao-n">${n}</span>
           <span class="ao-name">${esc(g.t.label)}</span>
           <span class="ao-init">${g.init ?? '?'}</span>
-          ${tie ? '<span class="ao-tie" title="Tied initiative: the First Player picks the order">tie</span>' : ''}
+          ${tie ? '<span class="ao-tie" title="Tied initiative: the First Player\'s Mech goes first, then the squads alternate, and each squad picks which of its own goes">tie</span>' : ''}
         </div>`);
       }
     }
@@ -695,7 +695,10 @@ export class SquadTracker {
     } else if (t.kind === 'mech') {
       const stance = document.createElement('select');
       stance.className = `stance stance-${t.stance}`;
+      // Shutdown is where a Mech falls at 0 Link, never a Stance picked here
+      // (3.4.2), so it is listed only while the Mech is in it (audit Phase 2, A6).
       for (const s of STANCES) {
+        if (s === 'shutdown' && t.stance !== 'shutdown') continue;
         const o = document.createElement('option');
         o.value = s;
         o.textContent = STANCE_SHORT[s];
@@ -704,7 +707,12 @@ export class SquadTracker {
       }
       inspectOnHover(stance, this.stanceInfo(t));
       stance.addEventListener('change', () => {
-        perform(this.data, this.state!, { kind: 'setStance', seat: t.side, uid: t.uid, stance: stance.value as Stance });
+        const next = stance.value as Stance;
+        // Leaving Shutdown IS a Reboot, and a Reboot restores 1 Link (4.1.1).
+        // The select used to set the Stance and skip the Link (audit Phase 2, A7).
+        perform(this.data, this.state!, t.stance === 'shutdown' && next !== 'shutdown'
+          ? { kind: 'reboot', seat: t.side, uid: t.uid, stance: next }
+          : { kind: 'setStance', seat: t.side, uid: t.uid, stance: next });
         this.cb.onChanged();
       });
       meta.appendChild(stance);

@@ -130,9 +130,42 @@ function extraFor(o: Opportunity, a: CardAction): ExtraTick | undefined {
 
 // A performed entry is the Action id, or `id@uid` when the Action came from a
 // Tarantula's Load. Anything that looks the Action back up has to strip that.
+// A Common Action keyed to the Part that initiated it is `id@slot` (FAQ H6/H7:
+// two Charge Actions are two Parts' Actions), stripped the same way.
 export function actionIdOf(performedKey: string): string {
   const at = performedKey.indexOf('@');
   return at < 0 ? performedKey : performedKey.slice(0, at);
+}
+
+// What may bend the Starting Action rule for one Action (3.4.3). Built by
+// units.ts startOpts, the one place that reads the cards for it.
+export interface StartOpts {
+  flexible?: boolean;
+  anyTiming?: boolean;
+  cqc?: boolean;
+}
+
+// The Reboot is recorded on the Opportunity under this id, so "has this Mech
+// Rebooted in this Opportunity" is a lookup rather than a flag of its own.
+export const REBOOT_ID = 'COMMON_REBOOT';
+
+export function rebooted(o: Opportunity): boolean {
+  return o.performed.includes(REBOOT_ID);
+}
+
+// How many Action Tick pips a page draws: every Tick still in the pool, and
+// never fewer than the base two (one after a Reboot, 4.1.1), so spent ones
+// still show as spent.
+export function actionPipCount(o: Opportunity): number {
+  return Math.max(o.action, rebooted(o) ? 1 : 2);
+}
+
+// Nothing done yet: no Maneuver, no Action, nothing claimed. A Shutdown Mech
+// Reboots "the next time it gains an Action Opportunity" (FAQ K17), so the
+// Reboot is the first thing in it; a Mech shut down part-way through its own
+// Opportunity has touched that one and Reboots at the start of its next.
+export function untouched(o: Opportunity): boolean {
+  return !o.started && !o.maneuvered && !o.performed.length;
 }
 
 // `key` names the PART the Action is being taken from, defaulting to the Action
@@ -154,7 +187,11 @@ export function canPerform(
   // full dial. The "in Tactical Timing" half is tested HERE and not in the
   // reader: `o.timing` lives on the Opportunity, and units.ts is never handed
   // one.
-  opts: { flexible?: boolean; anyTiming?: boolean } = {},
+  //
+  // `cqc` is card 017's CQC: "may use Melee Short Action as Starting Action in
+  // any timing" (RDL 1.02). Its own option for the same reason, and the reader
+  // (units.ts cqcFlexible) already answers only for a Melee Short Action.
+  opts: StartOpts = {},
 ): TickVerdict {
   const len = lengthOf(a);
   if (!len) return { ok: false, why: 'This is not an Action a Mech performs with Ticks.' };
@@ -180,8 +217,19 @@ export function canPerform(
   // The first Action of an Opportunity is the Starting Action, and its Action
   // Type must match the Timing on the dial (3.4.3).
   if (!o.started && o.timing && timing !== o.timing) {
+    // After a Reboot the one Action "must be of the selected Action Timing"
+    // (4.1.1), and FAQ L8 says the Reboot Opportunity "may only perform the
+    // action corresponding to the selection on the Dial". Flexible Timing, CQC
+    // and the Feint are each an exception to the STARTING Action, and here the
+    // Reboot was that, so none of them reaches this Action. OTTO ruled it on
+    // L8's wording, 2026-09-25 (MECHANICS-AUDIT.md Phase 2, E5).
+    if (rebooted(o)) {
+      return { ok: false, why: `After a Reboot the one Action must be of the Timing on the dial (4.1.1, FAQ L8). This Mech is set to ${o.timing}, and this is a ${timing ?? 'typeless'} Action; Flexible Timing, CQC and Feint do not apply.` };
+    }
     const feint = !!opts.anyTiming && o.timing === 'tactical' && !!timing;
-    const flexed = feint || (opts.flexible && !!timing && timingsAdjacent(timing, o.timing));
+    const flexed = feint
+      || (!!opts.cqc && !!timing)
+      || (opts.flexible && !!timing && timingsAdjacent(timing, o.timing));
     if (!flexed) {
       return {
         ok: false,
@@ -195,10 +243,12 @@ export function canPerform(
       };
     }
   }
-  // The shared Charge Action is the one exception to once-only: each use
-  // Charges a different Part, so they count as separate Actions (FAQ H6/H7).
-  // A card-printed Charge has its own id per Part and never collides.
-  if (o.performed.includes(key) && a.id !== 'COMMON_CHARGE') {
+  // Once per Part: a Common Action keyed to the Part that initiates it
+  // (`COMMON_CHARGE@rightHand`) is that Part's Action, so two Charges on two
+  // Parts are two Actions and a second on the same Part is a repeat (FAQ
+  // H6/H7). A bare COMMON_CHARGE, from a sender that does not name the Part,
+  // keeps the old exemption rather than refusing a legal second Charge.
+  if (o.performed.includes(key) && !(a.id === 'COMMON_CHARGE' && key === a.id)) {
     return { ok: false, why: 'Each Action of a Part can only be performed once per Action Opportunity. Only an Extra Tick may repeat one.' };
   }
   if (len === 'long' && (o.maneuvered || o.maneuver < 1 || o.started)) {
@@ -318,7 +368,7 @@ export function spendAction(
   // Threaded through so the spend agrees with the check that allowed it: an
   // Action let through by Flexible Timing — or by FPA-01's Feint — must not
   // then be read as needing an Extra Tick it never used.
-  opts: { flexible?: boolean; anyTiming?: boolean } = {},
+  opts: StartOpts = {},
 ): Opportunity {
   const len = lengthOf(a);
   if (!len) return o;

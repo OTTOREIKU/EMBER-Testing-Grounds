@@ -371,6 +371,19 @@ function applyActionFixes(cards: Card[], patch: ActionOverrides): void {
       }
     }
   }
+  // An Action the bundle never had: an entry whose id no card carries, with
+  // `_addTo` naming the card, is appended to it. PRDR-103 and PRDR-104 print
+  // Emergency Smoke as their Action D on the PD 1.02 list (FAQ D10), and the
+  // bundle stops at _C (audit Phase 2, C11).
+  for (const [id, fix] of Object.entries(byId)) {
+    const to = (fix as { _addTo?: string })._addTo;
+    if (!to || fix.remove === true) continue;
+    const card = cards.find((c) => c.id === to);
+    if (!card || (card.actions ?? []).some((a) => a.id === id)) continue;
+    const fresh: Record<string, unknown> = { id };
+    for (const [k, v] of Object.entries(fix)) if (!k.startsWith('_')) fresh[k] = v;
+    card.actions = [...(card.actions ?? []), fresh as unknown as CardAction];
+  }
 }
 
 interface StatOverrides {

@@ -6,7 +6,7 @@ import { linkMechanics } from './inspector';
 import { SQUAD_ORDER, squadLabel } from './data';
 import type { Card, CardAction, CombatView, CounterRoll, DiceData, DiceIcon, DieColor, Duel, DuelIcon, GameRuleEffect, PartSlot, Side, SmokeScreen, TerrainPiece, Token, Facing } from './types';
 import { statusCount, STATUSES } from './types';
-import { counterStage, type CounterStage, aaRadarCovers, armorPiercing, armorPiercingNote, attackReactionsOf, auraEffectsOn, aurasOn, auraValueOn, automaticShieldFor, blueLightningDodges, earlyWarningCover, coolingBonus, denseArmorSlot, eyeLightExchangeOf, eyesAreHeavyHits, pilotDiceBonus, ignoresLowProfile, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, noMeleeBackAttack, onHitRiders, STATUS_BY_ZH, missileGuidance, multiTargetLimit, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, snipeOn, isScanAction, scanStrips, suppressionOn, disarmOn, dragPrinted, designationsOn, dodgeEnhanceOf, linkShockOf, lightningRiderOf, electronicStrength, followUpAfterKill, eyeRerollName, kcArmorReady, lightningExchangeOf, lightningLinkDrain, canAffordFocus, focusIsFree, hiddenByAlliedAura, keepsLinkOnPartLoss, maxLink, provokeWhy, preventsDamage, autoParryValue, immobilizeChoiceOn, faceAwayOnHit, pursuesFragile, structureOf, trackingCover, TRACKING_SPOTTERS_NEEDED, pilotCard, pilotIs, repeatersFor, SLOT_LABEL, tetherStrike, treatedAsOffensive, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
+import { chargeOrderOn, counterStage, cruising, firewatchOn, type CounterStage, aaRadarCovers, armorPiercing, armorPiercingNote, attackReactionsOf, auraEffectsOn, aurasOn, auraValueOn, automaticShieldFor, blueLightningDodges, earlyWarningCover, coolingBonus, denseArmorSlot, eyeLightExchangeOf, eyesAreHeavyHits, pilotDiceBonus, ignoresLowProfile, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, noMeleeBackAttack, onHitRiders, STATUS_BY_ZH, missileGuidance, multiTargetLimit, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, snipeOn, isScanAction, scanStrips, suppressionOn, disarmOn, dragPrinted, designationsOn, dodgeEnhanceOf, linkShockOf, lightningRiderOf, electronicStrength, followUpAfterKill, eyeRerollName, kcArmorReady, lightningExchangeOf, lightningLinkDrain, canAffordFocus, focusIsFree, hiddenByAlliedAura, keepsLinkOnPartLoss, maxLink, provokeWhy, preventsDamage, autoParryValue, immobilizeChoiceOn, faceAwayOnHit, pursuesFragile, structureOf, trackingCover, TRACKING_SPOTTERS_NEEDED, pilotCard, pilotIs, repeatersFor, SLOT_LABEL, tetherStrike, treatedAsOffensive, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
 import { timingOf } from './ticks';
 import { inArc, largeGridOf, losNote, protectionFor, rangeBetween, standingSpot } from './rules';
 import type { Command } from './commands';
@@ -800,7 +800,7 @@ interface Ctx {
     attackerHow?: 'focus' | 'lent' | 'whistle';
     defenderHow?: 'focus' | 'whistle';
   } | null;
-  // KC Armor (4.10): the defender consumed a Charge Token, so the Defense
+  // KC Armor (a 6.2 keyword; FAQ H5/H9): the defender consumed a Charge Token, so the Defense
   // Roll's Lightning counts as Defense. Derived into the tally by resolve().
   kcUsed?: boolean;
   // Melee Evasion (ZYBP-302) declared this attack: +1 {Dodge} for a Command Token.
@@ -1431,6 +1431,8 @@ export class AttackHelper {
     if (!suppressionOn(c.action)) return;
     if (target.kind !== 'mech' || target.uid === c.attacker.uid) return;
     if (target.stance === 'shutdown' || target.stance === 'defensive') return;
+    // Cruise Mode is not affected by Suppression (Ace Strategy rules; D3).
+    if (cruising(this.data, target)) return;
     this.onCommand({ kind: 'suppress', seat: c.attacker.side, uid: c.attacker.uid, targetUid: target.uid });
     this.note(`Suppression: ${target.label} is declared a target, so it immediately switches to Defensive Stance (Shutdown alone is immune).`, [target]);
     this.onChanged();
@@ -1893,7 +1895,7 @@ export class AttackHelper {
     // FAQ A6: "after completing one reroll, another reroll effect cannot be
     // chosen" - a Guidance Support reroll uses up the attacker's Focus.
     if (side === 'attacker' && c.guidanceUsed) return false;
-    return canAffordFocus(this.data, t) && !!roll && roll.length > 0;
+    return canAffordFocus(this.data, t, this.tokens?.() ?? undefined) && !!roll && roll.length > 0;
   }
 
   private beginFocus(): void {
@@ -2413,7 +2415,7 @@ export class AttackHelper {
   // spent. (Moot in the shipped box -- Chef is Melee-only and 027_A is a Firing
   // Action -- but the clamp costs nothing and states the intent.)
   private eyeContest(c: Ctx): { claim: number; contested: number; toLight: number; rate: number } {
-    const counts = this.countIcons(c.attackRoll ?? [], treatedAsOffensive(c.attacker, c.defender));
+    const counts = this.countIcons(c.attackRoll ?? [], treatedAsOffensive(c.attacker, c.defender, this.data, this.tokens?.()));
     const eyes = counts.eye ?? 0;
     const free = eyesAreHeavyHits(this.data, c.attacker) || pursuesFragile(this.data, c.attacker, c.defender)
       ? eyes
@@ -2429,7 +2431,7 @@ export class AttackHelper {
   }
 
   private attackIconsPerDie(c: Ctx): { heavy: number; light: number }[] {
-    const upgrade = treatedAsOffensive(c.attacker, c.defender);
+    const upgrade = treatedAsOffensive(c.attacker, c.defender, this.data, this.tokens?.());
     const swapLightning = !!this.lightningSwap(c);
     // The heavy budget is Math.max(paid, free) exactly as attackIcons computes
     // it. Reading only c.eyeSwaps here was a live gap: card 503 Close Assault
@@ -2480,7 +2482,7 @@ export class AttackHelper {
   }
 
   private attackIcons(c: Ctx): Record<string, number> {
-    let counts = this.countIcons(c.attackRoll ?? [], treatedAsOffensive(c.attacker, c.defender));
+    let counts = this.countIcons(c.attackRoll ?? [], treatedAsOffensive(c.attacker, c.defender, this.data, this.tokens?.()));
     // 503 Close Assault trades every {Eye} for a {Heavy Hit} for nothing, so it
     // is applied rather than offered -- the same trade Chef buys with a Command
     // Token, riding the same counter so the two cannot double-count one icon.
@@ -2662,7 +2664,7 @@ export class AttackHelper {
       def.dodge = (def.dodge ?? 0) + dwarf;
       def.lightning = Math.max(0, (def.lightning ?? 0) - dwarf);
     }
-    // KC Armor (4.10): the consumed Charge Token turns every {Lightning} in
+    // KC Armor (a 6.2 keyword; FAQ H5/H9): the consumed Charge Token turns every {Lightning} in
     // the Defense Roll into {Defense}. Derived here so the tally and the
     // resolution can never disagree about the trade.
     const kcSwapped = c.kcUsed ? def.lightning ?? 0 : 0;
@@ -2986,6 +2988,8 @@ export class AttackHelper {
         // So the mirror rebuilds the same one-handed Action (FAQ A16) rather
         // than applying the designation this attacker turned down.
         twoHandedDeclined: c.action.twoHandedDeclined || undefined,
+        chargeSpent: c.action.chargeSpent || undefined,
+        chargeChoice: c.action.chargeChoice || undefined,
         mode: c.explosion ? 'explosion' : c.intercept ? 'intercept' : 'attack',
         step: c.step,
         targetPart: c.targetPart ?? null,
@@ -3468,7 +3472,7 @@ export class AttackHelper {
     const left = { red: m.total.red - spent.red, yellow: m.total.yellow - spent.yellow };
     wrap.innerHTML = `<h4><span class="ah-n">1</span>Multi-Target ${m.cap.limit}</h4>
       <p class="dim">Up to ${m.cap.limit} targets at once. Settle the <b>total</b> pool first: every effect that adds dice applies to it now, once. Then split those dice between the targets however you like. Each target then gets its own full attack sequence, and a Mech may Focus on each one separately.</p>
-      ${m.cap.condition ? `<p class="ah-protect">This Part only <b>gains</b> Multi-Target under a condition the app does not track: <b>${m.cap.condition}</b>. Check it holds before splitting.</p>` : ''}
+      ${m.cap.condition ? `<p class="ah-protect">This Part only <b>gains</b> Multi-Target when: <b>${m.cap.condition}</b>. Check it holds before splitting.</p>` : ''}
       <p class="ah-protect">All the attacks count as resolved <b>at the same time</b> (FAQ B7), so anything a target sets off by being shot at, Emergency Smoke for one, is placed only after the last sequence and cannot shield the targets still to come.</p>`;
     const totalLabel = document.createElement('p');
     totalLabel.className = 'dim';
@@ -3609,6 +3613,11 @@ export class AttackHelper {
     action: CardAction, defender: Token, attacker: Token | null,
     penetrated = false, parried: string | null = null,
   ): AttackReaction[] {
+    // A Shutdown defender takes no reaction: each one is a Passive or an
+    // Action, and it has neither (4.1, FAQ L3). The readers below each say so
+    // too; this is the one place that owes the window's whole list (audit
+    // Phase 2, A4).
+    if (defender.kind === 'mech' && defender.stance === 'shutdown') return [];
     const out: AttackReaction[] = [];
     // Riposte answers a Parry that HELD, and only on the Part that made it.
     if (parried) {
@@ -3720,6 +3729,9 @@ export class AttackHelper {
   // it to the Torso), and none at all on a target that is gone.
   private otherPartFor(original: string | null): boolean {
     const c = this.ctx!;
+    // In Cruise Mode every hit is the Torso's, so there is no other Part for
+    // a Surplus to find, and the die would reroll for ever (D3).
+    if (c.defender.kind === 'mech' && cruising(this.data, c.defender)) return false;
     return c.defender.kind === 'mech' && this.aliveNow(c.defender)
       && Object.entries(c.defender.partStates).some(([s, st]) => s !== original && st !== 'destroyed');
   }
@@ -3895,6 +3907,14 @@ export class AttackHelper {
     const c = this.ctx!;
     c.step = 'part';
     if (c.defender.kind !== 'mech' || c.surplusRound > 0 || c.declareDone || this.mirroring) return;
+    // Cruise Mode: "no specific hit location is determined; the torso is
+    // always considered the point of impact" (Ace Strategy additional rules;
+    // audit Phase 2, D3). No declaration and no Part Die.
+    if (cruising(this.data, c.defender)) {
+      this.note(`${c.defender.label} is in Cruise Mode: no hit location is determined, and the Torso takes the hit.`, [c.defender]);
+      this.pickPart('torso');
+      return;
+    }
     // Not in Shutdown, which activates no Passive effects (4.1).
     const kc = !c.kcUsed && c.defender.stance !== 'shutdown' && !!kcArmorReady(this.data, c.defender);
     if (!this.designateOffers(ROLL).length && !kc) return;
@@ -4110,6 +4130,12 @@ export class AttackHelper {
   // player see the settled die before the panel changes under them.
   private settleBlack(face: number, caption: HTMLElement): void {
     const c = this.ctx!;
+    // Cruise Mode, if a die is thrown at all: the Torso (D3).
+    if (c.defender.kind === 'mech' && cruising(this.data, c.defender)) {
+      caption.textContent = 'Cruise Mode: the Torso takes the hit.';
+      window.setTimeout(() => { if (this.ctx === c) this.pickPart('torso'); }, 700);
+      return;
+    }
     const part = this.dice.dice.black.faces[face][0]?.part ?? 'any';
     c.blackResult = part;
     if (part === 'any') {
@@ -4595,7 +4621,11 @@ export class AttackHelper {
     wrap.className = 'ah-step';
     const partCard = c.targetPart ? this.defenderPartCard(c.targetPart) : undefined;
     wrap.innerHTML = `<h4><span class="ah-n">2</span>Attack Roll ${c.targetPart ? `vs <b>${SLOT_LABEL[c.targetPart as PartSlot | 'main']}</b> (${partCard ? cardName(partCard) : ''})` : ''}</h4>
-      ${treatedAsOffensive(c.attacker, c.defender) ? `<p class="dim">${c.attacker.stance === 'offensive' ? 'OFF stance: hollow attack icons count as solid.' : `Target Tracer on ${c.defender.label}: this Drone attacks as if in Offensive Stance, so hollow icons count (glossary).`}</p>` : ''}`;
+      ${treatedAsOffensive(c.attacker, c.defender, this.data, this.tokens?.()) ? `<p class="dim">${c.attacker.stance === 'offensive'
+        ? 'OFF stance: hollow attack icons count as solid.'
+        : statusCount(c.defender.statuses ?? [], 'targetTracer') > 0
+          ? `Target Tracer on ${c.defender.label}: this Drone attacks as if in Offensive Stance, so hollow icons count (glossary).`
+          : `Charge Order from ${chargeOrderOn(this.data, this.tokens?.() ?? [], c.attacker)?.label ?? 'an ally'}: this Drone attacks as if in Offensive Stance, so hollow icons count (ECP10).`}</p>` : ''}`;
     wrap.appendChild(
       this.poolEditor(
         [['Red', 'red'], ['Yellow', 'yellow']],
@@ -5853,17 +5883,22 @@ export class AttackHelper {
 // solid for a unit in Offensive Stance (4.11.3), so validity is per-roller and
 // the two sides can read the same dice differently. Shared, because the whole
 // rule turns on this count agreeing across both clients.
+// `eyeAsLightning`: ZPA-38 Firewatch, "When performing Electronic Counter
+// Rolls, may consume 1 Link to exchange {Eye} for {Lightning}" (audit Phase 2,
+// D4). Set on the side whose pilot paid for it, read here so the verdict and
+// both screens agree.
 export function tallyCounter(
   dice: DiceData,
   faces: number[],
   offensive: boolean,
+  eyeAsLightning = false,
 ): { lightning: number; light: number } {
   let lightning = 0;
   let light = 0;
   for (const f of faces) {
     for (const icon of dice.dice.yellow.faces[f] ?? []) {
       if (icon.hollow && !offensive) continue;
-      if (icon.type === 'lightning') lightning++;
+      if (icon.type === 'lightning' || (eyeAsLightning && icon.type === 'eye')) lightning++;
       else if (icon.type === 'lightHit') light++;
     }
   }
@@ -5892,7 +5927,7 @@ export function resolveCounterRoll(
 // Every press a SHARED Counter-roll window can make. Each is a question one of
 // the two seats owns, so the answer travels as a command and this window never
 // edits the record itself.
-export type EwAct = 'roll' | 'declare' | 'focus' | 'apply' | 'provoke' | 'provokepass' | 'close';
+export type EwAct = 'roll' | 'declare' | 'focus' | 'firewatch' | 'apply' | 'provoke' | 'provokepass' | 'close';
 
 interface EwCtx {
   initiator: Token;
@@ -5927,6 +5962,8 @@ interface EwCtx {
   // to watch the question close. The command it sends is the same one, and
   // check() in commands.ts is the same gate on both.
   provoked: 'taken' | 'passed' | null;
+  // ZPA-38 Firewatch, taken by that side: its {Eye} count as {Lightning}.
+  firewatch: { init: boolean; resp: boolean };
 }
 
 export class ElectronicHelper {
@@ -6034,8 +6071,8 @@ export class ElectronicHelper {
     // used to be drawn the moment both hands were in, with each side's Focus
     // still to come.
     const done = !!c.initRoll && !!c.respRoll && counterStage(this.data, [init, resp], c) === 'done';
-    const a = initRoll ? this.tally(initRoll, treatedAsOffensive(init, resp)) : null;
-    const b = respRoll ? this.tally(respRoll, resp.stance === 'offensive') : null;
+    const a = initRoll ? this.tally(initRoll, treatedAsOffensive(init, resp, this.data, this.tokens?.()), !!c.initFirewatch) : null;
+    const b = respRoll ? this.tally(respRoll, resp.stance === 'offensive', !!c.respFirewatch) : null;
     this.ctx = {
       initiator: init,
       responder: resp,
@@ -6051,6 +6088,7 @@ export class ElectronicHelper {
       done,
       initiatorWins: done && a && b ? resolveCounterRoll(a, b).initiatorWins : null,
       provoked: c.provoke ?? null,
+      firewatch: { init: !!c.initFirewatch, resp: !!c.respFirewatch },
     };
   }
 
@@ -6117,6 +6155,7 @@ export class ElectronicHelper {
       done: false,
       initiatorWins: null,
       provoked: null,
+      firewatch: { init: false, resp: false },
     };
     const what = action.name.en || action.name.zh || action.id;
     this.note(`${initiator.label} opens ${what} against ${responder.label}.`, [initiator, responder]);
@@ -6161,8 +6200,8 @@ export class ElectronicHelper {
     return out;
   }
 
-  private tally(roll: Rolled[], offensive: boolean): { lightning: number; light: number } {
-    return tallyCounter(this.dice, roll.map((d) => d.face), offensive);
+  private tally(roll: Rolled[], offensive: boolean, eyeAsLightning = false): { lightning: number; light: number } {
+    return tallyCounter(this.dice, roll.map((d) => d.face), offensive, eyeAsLightning);
   }
 
   private applyEffects(): string[] {
@@ -6302,7 +6341,7 @@ export class ElectronicHelper {
     const wrap = document.createElement('div');
     wrap.className = 'ew-side';
     wrap.innerHTML = `<h5>${who === 'init' ? 'Initiator' : 'Responder'} · ${t.label}
-      <span class="ew-ev">EV ${ev}</span>${(who === 'init' ? treatedAsOffensive(t, c.responder) : t.stance === 'offensive') ? '<span class="ew-off">OFF: hollow counts</span>' : ''}</h5>`;
+      <span class="ew-ev">EV ${ev}</span>${(who === 'init' ? treatedAsOffensive(t, c.responder, this.data, this.tokens?.()) : t.stance === 'offensive') ? '<span class="ew-off">OFF: hollow counts</span>' : ''}</h5>`;
     if (roll) {
       const row = document.createElement('div');
       row.className = 'ah-roll';
@@ -6330,7 +6369,7 @@ export class ElectronicHelper {
         delete this.pending[who];
         window.setTimeout(() => this.spins[who].spin(row, roll, only), 0);
       }
-      const n = this.tally(roll, who === 'init' ? treatedAsOffensive(t, c.responder) : t.stance === 'offensive');
+      const n = this.tally(roll, who === 'init' ? treatedAsOffensive(t, c.responder, this.data, this.tokens?.()) : t.stance === 'offensive', c.firewatch[who]);
       const sum = document.createElement('p');
       sum.className = 'ah-sum';
       sum.innerHTML = `Lightning <b>${n.lightning}</b> · Light Hit <b>${n.light}</b>`;
@@ -6407,6 +6446,35 @@ export class ElectronicHelper {
           this.render();
         });
         wrap.append(keep, rr);
+      }
+      // ZPA-38 Firewatch (audit Phase 2, D4): once the Focus order has run out -
+      // an Exchange comes after the rerolls (4.4.1 step 6) - and before the
+      // verdict is applied, 1 Link turns this side's [Eye] into [Lightning].
+      const eyes = roll.some((d) => (this.dice.dice.yellow.faces[d.face] ?? []).some((i) => i.type === 'eye'));
+      const open = this.shared || c.initiatorWins === null;
+      if (c.firewatch[who]) {
+        const p = document.createElement('p');
+        p.className = 'ah-note';
+        p.textContent = `Firewatch: ${t.label}'s [Eye] count as [Lightning].`;
+        wrap.appendChild(p);
+      } else if (stage === 'done' && open && eyes && firewatchOn(this.data, t) && (t.link ?? 0) >= 2) {
+        const fw = document.createElement('button');
+        fw.className = 'ah-alt';
+        fw.textContent = `Firewatch: spend 1 Link so every [Eye] counts as [Lightning] (${t.link ?? 0} Link)`;
+        fw.disabled = !this.mayPress(who);
+        fw.addEventListener('click', () => {
+          if (this.sendAct('firewatch', { uid: t.uid })) return;
+          if (!accepted(this.onCommand({ kind: 'firewatch', seat: t.side, uid: t.uid }))) {
+            this.note(`${t.label}'s Firewatch was refused, so no Link is spent.`);
+            this.render();
+            return;
+          }
+          c.firewatch[who] = true;
+          this.note(`${t.label}: Firewatch, 1 Link, so its [Eye] count as [Lightning].`);
+          this.onChanged();
+          this.render();
+        });
+        wrap.appendChild(fw);
       }
     }
     return wrap;
@@ -6538,8 +6606,8 @@ export class ElectronicHelper {
       resolve.className = 'ah-primary';
       resolve.textContent = 'Resolve ▸';
       resolve.addEventListener('click', () => {
-        const a = this.tally(c.initRoll!, treatedAsOffensive(c.initiator, c.responder));
-        const b = this.tally(c.respRoll!, c.responder.stance === 'offensive');
+        const a = this.tally(c.initRoll!, treatedAsOffensive(c.initiator, c.responder, this.data, this.tokens?.()), c.firewatch.init);
+        const b = this.tally(c.respRoll!, c.responder.stance === 'offensive', c.firewatch.resp);
         const { initiatorWins: win, why } = resolveCounterRoll(a, b);
         c.done = true;
         c.initiatorWins = win;
@@ -6570,8 +6638,8 @@ export class ElectronicHelper {
     // restarting it mid-flight would resolve the same icons twice. Same rule
     // stepResolve follows for the attack.
     {
-      const a = this.tally(c.initRoll!, treatedAsOffensive(c.initiator, c.responder));
-      const b = this.tally(c.respRoll!, c.responder.stance === 'offensive');
+      const a = this.tally(c.initRoll!, treatedAsOffensive(c.initiator, c.responder, this.data, this.tokens?.()), c.firewatch.init);
+      const b = this.tally(c.respRoll!, c.responder.stance === 'offensive', c.firewatch.resp);
       const strip = document.createElement('div');
       strip.innerHTML = contestHtml({
         initLabel: c.initiator.label,

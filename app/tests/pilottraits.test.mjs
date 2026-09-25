@@ -90,6 +90,10 @@ export function tokenCards(data: any, t: any): any[] {
   // pilotCard, maxLink and the whole phase-7 predicate block, sliced rather
   // than mirrored: WHICH pilot a rule answers to is the rule.
   + cut(units, 'export function pilotCard', '// A Mech Maneuvers at the Maneuver Value', 'the pilot readers')
+  // The Mechanics Audit Phase 2 readers (Cruise Mode, the Part and Starting
+  // Action rules...), which defenseReactionOn and provokeWhy now ask: one block,
+  // the last in units.ts, so it overlaps none of the cuts above.
+  + units.slice(units.indexOf('// ---------- Mechanics audit Phase 2 readers ----------'))
   + `
 export class Helper {
   data: any;
@@ -430,11 +434,11 @@ console.log('\nPilot traits, against the shipped cards and dice\n');
   check('ZPA-39 is the Will to Survive card', cadaver.trait, '求生意志');
 
   check('surface 1 — the attack window asks the shared reader',
-    /canAffordFocus\(this\.data, t\) && !!roll/.test(combat), true);
+    /canAffordFocus\(this\.data, t, this\.tokens\?\.\(\) \?\? undefined\) && !!roll/.test(combat), true);
   // Since 2026-09-25 the Counter-roll asks it inside counterStage (units.ts),
   // which decides whose Focus turn it is on both surfaces (FAQ G4).
   check('surface 2 — the freeplay counter-roll asks it too',
-    /return !!t && canAffordFocus\(data, t\);/.test(units) && /counterStage\(this\.data/.test(combat), true);
+    /return !!t && canAffordFocus\(data, t, tokens\);/.test(units) && /counterStage\(this\.data/.test(combat), true);
   // Surface 3 was the Match Centre's own counter-roll rows. Those are GONE the
   // same way surface 4 went: Electronic Warfare is resolved in the combat
   // window now, so the networked player presses SURFACE 2, the same reader the
@@ -469,7 +473,8 @@ console.log('\nPilot traits, against the shipped cards and dice\n');
     + (hud.match(/kind: 'focus'/g) ?? []).length
     + (mirror.match(/kind: 'focus'/g) ?? []).length, 4);
   check('and the Counter-roll declare pays through the same debit',
-    /case 'declareCounterFocus': \{[\s\S]{0,400}?payFocus\(data, t\)/.test(src('commands.ts')), true);
+    // With the board since the Phase 2 audit (D4): Karl Fried pays a Bit's.
+    /case 'declareCounterFocus': \{[\s\S]{0,400}?payFocus\(data, t, state\.tokens\)/.test(src('commands.ts')), true);
   check('and nothing outside the command decides what a Focus costs',
     /focusIsFree\(data, t\)/.test(src('commands.ts')), true);
 }
@@ -592,13 +597,21 @@ console.log('\nPilot traits, against the shipped cards and dice\n');
     kind: 'mech', mech: { pilot: 'FPA-05' }, partStates: { torso: 'intact' },
   }), false);
 
+  // Since the Phase 2 audit every reader takes its options from ONE builder,
+  // units.ts startOpts, which added CQC beside the Feint; the three-reader
+  // rule is now "all three and the spend call startOpts".
   const cmds = src('commands.ts'), hud = src('matchhud.ts'), guide = src('playguide.ts');
-  check('reader 1 — the authoritative check passes it', /anyTiming: anyStartTiming\(data, t\)/.test(cmds), true);
-  check('reader 2 — the Match Centre panel passes it', /anyTiming: anyStartTiming\(ctx\.data, t\)/.test(hud), true);
+  const builder = units.slice(units.indexOf('export function startOpts'), units.indexOf('export function overloadPackOn'));
+  check('the one builder passes it', /anyTiming: anyStartTiming\(data, t\)/.test(builder), true);
+  check('reader 1 — the authoritative check passes it',
+    /canPerform\(o, use\?\.action \?\? shaped, cmd\.partKey \|\| a\.id, startOpts\(data, state\.tokens, t, a\)\)/.test(cmds), true);
+  // The Action priced in its Stance goes to canPerform since the Phase 2 audit
+// (D2: ZHRA-102_A is Short in Offensive); the options are read off the printed one.
+check('reader 2 — the Match Centre panel passes it', /canPerform\(o, priced, key, startOpts\(ctx\.data, ctx\.state\.tokens, t, a\)\)/.test(hud), true);
   check('reader 3 — the freeplay guide passes it, in both of its call sites',
-    (guide.match(/anyTiming: anyStartTiming\(this\.data, t\)/g) ?? []).length, 2);
+    (guide.match(/startOpts\(this\.data, s\.tokens, t, /g) ?? []).length, 2);
   check('and the SPEND agrees with the check that allowed it',
-    /spendAction\(o, paidAs, cmd\.partKey \|\| a\.id, \{ flexible:[^}]*anyTiming: anyStartTiming\(data, t\) \}\)/.test(cmds), true);
+    /spendAction\(o, paidAs, cmd\.partKey \|\| a\.id, startOpts\(data, state\.tokens, t, a\)\)/.test(cmds), true);
 
   // The trait must NOT be folded into hasFlexibleTiming: that boolean means
   // "adjacent on the dial", and widening it would hand every aura source and

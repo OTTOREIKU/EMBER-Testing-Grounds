@@ -30,9 +30,11 @@ const chargeParser = unitsSrc.slice(
 );
 if (!chargeParser) throw new Error('could not locate consumesCharge in units.ts');
 // Missile Group X: the real reader, so the count comes off the card's wording.
+// Volley X rides along since launch() caps a performance at it (audit Phase
+// 2, C12): the range now ends at the Snipe section instead of before volleyOf.
 const groupParser = unitsSrc.slice(
   unitsSrc.indexOf('// MISSILE GROUP X'),
-  unitsSrc.indexOf('export function volleyOf'),
+  unitsSrc.indexOf('// ---------- SNIPE 狙击 (keywords.json) ----------'),
 );
 if (!groupParser) throw new Error('could not locate missileGroupOf in units.ts');
 // electronicValue reads the stubbed tokenCards, so slicing it in keeps the
@@ -224,6 +226,25 @@ const pilotTraits = unitsSrc.slice(
   unitsSrc.indexOf('// A Mech Maneuvers at the Maneuver Value'),
 );
 if (!pilotTraits) throw new Error('could not locate the phase-7 pilot predicates in units.ts');
+// The Mechanics Audit Phase 2 readers: one block, the last in units.ts, so it
+// overlaps no range above.
+const phase2At = unitsSrc.indexOf('// ---------- Mechanics audit Phase 2 readers ----------');
+if (phase2At < 0) throw new Error('could not locate the Phase 2 readers in units.ts');
+const phase2 = unitsSrc.slice(phase2At);
+// extraActivationOf: performAction now records the grant a Coordinate makes and
+// grantExtra consumes it (FAQ K3). The range sits exactly between the Attack
+// Mode cut (which ENDS at this interface) and the Freehand cut (which STARTS at
+// freehandSlots), so nothing is declared twice.
+const grants = unitsSrc.slice(unitsSrc.indexOf('export interface ExtraActivation'), unitsSrc.indexOf('export function freehandSlots'));
+if (!grants) throw new Error('could not locate extraActivationOf in units.ts');
+// The [condition] grant block: performAction prices a Stance-gated length off
+// stanceShaped (ZHRA-102_A; audit Phase 2, D2). Checked against every range
+// taken here: it overlaps none (tests/_p2v_slices.mjs), and no stub shares a name.
+const grantBlock = unitsSrc.slice(
+  unitsSrc.indexOf('// ---------- [condition] 获得X: keywords GRANTED by a printed condition ----------'),
+  unitsSrc.indexOf('// Pulse Weapon: "May exchange'),
+);
+if (!grantBlock) throw new Error('could not locate the grant block in units.ts');
 // The Maneuver Value, and the Part bonuses that raise it (3.4.3, 4.1, FAQ
 // E21/E23). Sliced rather than stubbed for the reason every other cut here is:
 // HOW FAR a Unit can move is the rule the crushSwap reach bound is measured
@@ -286,6 +307,12 @@ const stubs = `
 // board. These fixtures have no aura sources, so the honest stub is "never" —
 // the adjacency rule itself is covered properly in ticks.test.mjs.
 export function hasFlexibleTiming(_data: any, _tokens: any, _t: any): boolean {
+  return false;
+}
+// CQC (card 017) is its own Starting Action option now (startOpts). No fixture
+// here fields a card 017; auras.test.mjs drives the real reader and
+// mechanics2.test.mjs the any-timing rule.
+export function cqcFlexible(_data: any, _t: any, _a?: any): boolean {
   return false;
 }
 // startCounterRoll judges the EFFECTIVE reach (FPA-06 Amplify adds a Grid to an
@@ -431,6 +458,13 @@ writeFileSync(
     + tethering
     + leash
     + allowanceReader
+    // The Phase 2 audit readers commands.ts now imports (actionPartWhy,
+    // startOpts, overloadPackOn, cruising...), kept in one block at the end of
+    // units.ts so this file can take them whole. After the stubs for the same
+    // hoisting reason as the Tether block.
+    + phase2
+    + grants
+    + grantBlock
     + commands.replace(/^import[^\n]*\n/gm, ''),
 );
 const C = await import(tmp.href);
@@ -550,7 +584,9 @@ check('a legal stance change passes', C.check(data, s0, sc()).ok, true);
 check('a drone has no stance choice', C.check(data, world([{ uid: 1, side: 's1', kind: 'drone', stance: 'defensive', label: 'D', partStates: {} }]), sc()).ok, false);
 const shut = () => world([mech(1, 's1', { stance: 'shutdown' })]);
 check('leaving shutdown needs a reboot', C.check(data, shut(), sc()).ok, false);
-check('entering shutdown voluntarily is allowed', C.check(data, s0, sc({ stance: 'shutdown' })).ok, true);
+// 3.4.2 names only Defensive, Mobility and Offensive as choices; Shutdown is
+// where a Mech falls at 0 Link (audit Phase 2, A6). This pinned the opposite.
+check('entering shutdown voluntarily is refused (3.4.2)', C.check(data, s0, sc({ stance: 'shutdown' })).ok, false);
 const shut2 = shut();
 const v2 = C.perform(data, shut2, sc({ stance: 'mobility' }));
 check('perform overrules the shutdown rule and says why', [shut2.tokens[0].stance, v2.ok], ['mobility', false]);
@@ -559,7 +595,17 @@ check('perform overrules the shutdown rule and says why', [shut2.tokens[0].stanc
 
 const rb = (over = {}) => ({ kind: 'reboot', seat: 's1', uid: 1, stance: 'defensive', ...over });
 check('an active mech cannot reboot', C.check(data, s0, rb()).ok, false);
-check('a shutdown mech can', C.check(data, shut(), rb()).ok, true);
+// FAQ K17: in a guided game it Reboots at the start of its own Action Phase
+// Opportunity, and nowhere else (audit Phase 2, A1). A guided game is the
+// SETUP, not the script: every loaded state carries a script, the sandbox and a
+// Freeform pad table included, and a free table records the Reboot whenever.
+const guided = (w) => ({ ...w, setup: { ...C.newSetup(), stage: 'done' } });
+check('a shutdown mech with no Opportunity of its own may not reboot', C.check(data, guided(shut()), rb()).ok, false);
+check('a shutdown mech can, at the start of its own Action Phase Opportunity',
+  C.check(data, guided(world([mech(1, 's1', { stance: 'shutdown' })], 2, opp(1))), rb()).ok, true);
+check('and on a free table it may whenever the table says',
+  C.check(data, { ...shut(), script: null }, rb()).ok, true);
+check('a script with no setup is a free table too', C.check(data, shut(), rb()).ok, true);
 check('rebooting into shutdown is refused', C.check(data, shut(), rb({ stance: 'shutdown' })).ok, false);
 const wr = world([mech(1, 's1', { stance: 'shutdown', link: 0 })], 2, opp(1));
 C.apply(data, wr, rb());
@@ -1310,12 +1356,18 @@ check('and clearing closes it', wew.script.counter, null);
 const wmv = (over = {}) => world([mech(1, 's1')], 2, opp(1, over));
 const freeMove = { kind: 'maneuver', seat: 's1', uid: 1, to: { col: 9, row: 9 }, free: true };
 check('a free move needs an Action behind it', C.check(data, wmv(), freeMove).ok, false);
-check('and passes once one is performed', C.check(data, wmv({ performed: ['A1'] }), freeMove).ok, true);
-const wSpentMan = wmv({ performed: ['A1'], maneuver: 0, maneuvered: true });
+// The Movement it makes is the one that Action paid for (Opportunity.moveOwed,
+// set by performAction for a Moving Action, a Stance Change or a Shock Attack),
+// and a Shot pays for none - it used to ride on ANY Action (audit Phase 2, B8).
+check('and not on an Action that carries no Movement', C.check(data, wmv({ performed: ['A1'] }), freeMove).ok, false);
+check('but passes once a Movement is owed', C.check(data, wmv({ performed: ['A1'], moveOwed: true }), freeMove).ok, true);
+const wSpentMan = wmv({ performed: ['A1'], moveOwed: true, maneuver: 0, maneuvered: true });
 check('even with the Maneuver Tick already gone', C.check(data, wSpentMan, freeMove).ok, true);
 C.apply(data, wSpentMan, freeMove);
 check('it moves the unit', [wSpentMan.tokens[0].col, wSpentMan.tokens[0].row], [9, 9]);
-const wnorm = wmv({ performed: ['A1'] });
+check('and takes the Movement it was owed, so a second is refused',
+  [wSpentMan.script.opp.moveOwed ?? false, C.check(data, wSpentMan, freeMove).ok], [false, false]);
+const wnorm = wmv({ performed: ['A1'], moveOwed: true });
 C.apply(data, wnorm, freeMove);
 check('and leaves the Maneuver Tick alone', [wnorm.script.opp.maneuver, wnorm.script.opp.maneuvered], [1, false]);
 const wman = wmv();
@@ -1325,9 +1377,14 @@ check('while an ordinary Maneuver still spends it', [wman.script.opp.maneuver, w
 // A Movement a card handed out belongs to the card. Hit and Run moves a Mech as
 // its Opportunity *ends*, when there is none left to check against or charge.
 const granted = { kind: 'maneuver', seat: 's1', uid: 1, to: { col: 9, row: 9 }, granted: true };
-check('a granted Movement needs no Opportunity', C.check(data, world([mech(1, 's1')], 2), granted).ok, true);
-const wgr = wmv({ performed: ['A1'], maneuver: 1 });
+// It has to have been handed out, though: playTactic leaves the grant in the
+// once-per-round ledger and the move takes it (audit Phase 2, B8).
+const withGrant = (w, uid = 1) => { w.script.oncePerRound = [...(w.script.oncePerRound ?? []), `${w.round.n}:grantedMove:${uid}`]; return w; };
+check('a granted Movement nobody handed out is refused', C.check(data, guided(world([mech(1, 's1')], 2)), granted).ok, false);
+check('a granted Movement needs no Opportunity', C.check(data, guided(withGrant(world([mech(1, 's1')], 2))), granted).ok, true);
+const wgr = withGrant(wmv({ performed: ['A1'], maneuver: 1 }));
 C.apply(data, wgr, granted);
+check('and it takes the grant', wgr.script.oncePerRound.some((k) => k.includes('grantedMove')), false);
 check('and spends no Maneuver Tick', [wgr.script.opp.maneuver, wgr.script.opp.maneuvered], [1, false]);
 check('but still moves the unit', [wgr.tokens[0].col, wgr.tokens[0].row], [9, 9]);
 check('an ungranted move with no Opportunity is still refused', C.check(data, world([mech(1, 's1')], 2), mv()).ok, false);
@@ -2606,10 +2663,12 @@ check('and it is not offered after the Drone has acted', wM2Acted.script.opp.pre
   // lower down: Hit and Run (276) moves a Mech as its Opportunity ENDS, so the
   // maneuver case returns ok before it ever reaches the Opportunity gates, and
   // finishCrush passes the plan's own `granted` straight through.
+  // Both GIVEN the grant a Hit and Run leaves (audit Phase 2, B8), or the
+  // spoof would now be refused for having no grant rather than by this guard.
   check('and a GRANTED Movement carrying the same spoof is refused too',
-    C.check(data, m2World('M2T'), { ...spoof(), granted: true }).ok, false);
+    C.check(data, withGrant(m2World('M2T'), 2), { ...spoof(), granted: true }).ok, false);
   check('while the same granted Movement without `from` is accepted',
-    C.check(data, m2World('M2T'), { ...walk(), granted: true }).ok, true);
+    C.check(data, withGrant(m2World('M2T'), 2), { ...walk(), granted: true }).ok, true);
 }
 
 // THE HONEST FOLLOW-UP, driven through the real crushSwap rather than staged.
@@ -2904,6 +2963,9 @@ check('apply writes a mirrored pair', [wTether.tokens[0].tether, wTether.tokens[
 // is capped on the DESTINATION, which needs no pathfinder — so unlike Break
 // Away this one rule does belong in check().
 const leashMove = (uid, col) => ({ kind: 'maneuver', seat: uid === 1 ? 's1' : 's2', uid, to: { col, row: 3 }, granted: true });
+// `granted` only to step past the Opportunity gates, so both ends are handed
+// the grant a Hit and Run leaves (audit Phase 2, B8); the leash is what is tested.
+withGrant(withGrant(wTether, 1), 2);
 check('the tethered unit is refused a move past the leash', C.check(data, wTether, leashMove(2, 33)).ok, false);
 check('and allowed one inside it', C.check(data, wTether, leashMove(2, 15)).ok, true);
 check('while the INITIATOR may walk out — that is a removal, not an illegal move',

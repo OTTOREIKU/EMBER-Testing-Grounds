@@ -28,7 +28,9 @@
 // the real crushPanel string, against the real rules.ts geometry.
 import { readFileSync, writeFileSync } from 'node:fs';
 
-const src = (f) => readFileSync(new URL(`../src/${f}`, import.meta.url), 'utf8');
+// Read as LF whatever the checkout wrote: the gridRef cut below ends on a blank
+// line, and a working copy saved with LF endings failed it with CRLF in the marker.
+const src = (f) => readFileSync(new URL(`../src/${f}`, import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 const rules = src('rules.ts'), mainSrc = src('main.ts'), hudSrc = src('matchhud.ts');
 
 const cut = (s, a, b, what) => {
@@ -122,7 +124,7 @@ const board: any = {
 async function choiceDialog(o: any): Promise<string> { rec.dialogs.push(o.title + ' :: ' + o.body); return ''; }
 `
   + geometry
-  + cut(mainSrc, '  function gridRef(c: number, r: number): string {', '\r\n\r\n', 'gridRef')
+  + cut(mainSrc, '  function gridRef(c: number, r: number): string {', '\n\n', 'gridRef')
   + cut(mainSrc, '  function resolveCrush(t: Token, goal: LargeGrid', '  function cancelMove(): void {', 'resolveCrush')
   + '\nexport { resolveCrush, askCrushFacing };\n');
 const F = await import(mainTmp.href);

@@ -240,7 +240,9 @@ check('a damaged one still does', U.manifestationRange(data, mech({ torso: 'OCTO
   //    matchhud - whose fallback grants FCI. Without its own branch there, a
   //    successful online Scan handed the target Fire Control Interference.
   check('the Match Centre apply branch handles a Scan before the FCI fallback',
-    /act === 'apply'\) \{[\s\S]{0,1400}?isScanAction\(a\)[\s\S]{0,1600}?targetTracingOn/.test(hud), true);
+    // 2400: the scanAttack debt grew the declaration's answers in the Phase 2
+    // audit (C7), which pushed the fallback further down the same branch.
+    /act === 'apply'\) \{[\s\S]{0,1400}?isScanAction\(a\)[\s\S]{0,2400}?targetTracingOn/.test(hud), true);
   check('stripping the Tokens there too', /isScanAction\(a\)[\s\S]{0,600}?statusId: 'lowProfile'/.test(hud), true);
   check('and queueing the manifest debt for the target player',
     /isScanAction\(a\)[\s\S]{0,900}?kind: 'manifest', fromUid: init\.uid/.test(hud), true);

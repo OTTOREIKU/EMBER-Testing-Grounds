@@ -144,6 +144,12 @@ function contestAct(act: EwAct, arg?: { uid?: number; indices?: number[]; use?: 
     });
     return;
   }
+  // ZPA-38 Firewatch, as the Match Centre sends it (audit Phase 2, D4).
+  if (act === 'firewatch' && unit) {
+    a.send({ kind: 'firewatch', seat: unit.side, uid: unit.uid });
+    a.render();
+    return;
+  }
   if (act === 'declare' && unit) {
     // FAQ G4: the declare pays the Link on arrival (declareCounterFocus), so
     // the reroll after it costs nothing more, even asked for twice.

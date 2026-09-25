@@ -40,8 +40,10 @@ check('the End Phase task step does not settle control without a board', /cmd\.s
 check('nor does the Award', /if \(!state\.noBoard\) settleControl\(tasks, zoneCells\(data, state\)/.test(cmds), true);
 // The Maneuver cannot measure a distance, so the Tick is spent and no free
 // pre-move is handed out.
+// takeMoveGrant rides between them since the Phase 2 audit (B8): a `free` or
+// `granted` boardless move still takes the grant that authorised it.
 check('a boardless Maneuver spends the Tick outright',
-  /case 'maneuver': \{[\s\S]{0,900}?if \(state\.noBoard\) \{[\s\S]*?sc\.opp = lockStance\(t, spendManeuver\(o0\)\);\s*\n\s*return;/.test(cmds), true);
+  /case 'maneuver': \{[\s\S]{0,900}?if \(state\.noBoard\) \{[\s\S]*?sc\.opp = lockStance\(t, spendManeuver\(o0\)\);\s*\n\s*takeMoveGrant\(state, cmd\);\s*\n\s*return;/.test(cmds), true);
 // One Non-Humanoid charge, paid before the branch (nonhumanoid.test counts it).
 check('and the Link is paid once, above the branch',
   /const cost = nonHumanoidCost\([^\n]*\n\s*if \(cost > 0\)[^\n]*\n\s*if \(state\.noBoard\) \{/.test(cmds), true);

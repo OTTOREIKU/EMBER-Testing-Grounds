@@ -37,11 +37,13 @@ check('the attacker\'s owed reaction is a kind the record keeps',
 // ---------- the command layer ----------
 const cmds = readFileSync(new URL('../src/commands.ts', import.meta.url), 'utf8');
 const scan = cmds.slice(cmds.indexOf("case 'startCounterRoll': {"), cmds.indexOf("case 'startCounterRoll': {") + 4200);
-check('startCounterRoll carries the attack', /thenAttack\?: \{ actionId: string \};/.test(cmds), true);
+// With the declaration's answers since the Phase 2 audit (C7): a Charge spent
+// for it, the arm of an either/or [Charged] line, a declined [Two-Handed].
+check('startCounterRoll carries the attack', /thenAttack\?: \{ actionId: string; charged\?: boolean; chargeChoice\?: string; twoHandedDeclined\?: boolean \};/.test(cmds), true);
 check('only a Scan may carry one', /if \(cmd\.thenAttack\) \{\s*\n\s*if \(!isScanAction\(a\)\) return no/.test(scan), true);
 check('only against a camouflaged target', /statusCount\(target\.statuses, 'camouflage'\) === 0\) return no\(`\$\{target\.label\} is not in the Optical Camouflage State/.test(scan), true);
 check('and only ahead of a Firing or Melee Action the unit has', /atk\.type !== 'Firing' && atk\.type !== 'Melee'\)\) return no/.test(scan), true);
-check('the apply writes it into the record', /thenAttack: cmd\.thenAttack \? \{ actionId: cmd\.thenAttack\.actionId \} : null,/.test(cmds), true);
+check('the apply writes it into the record', /thenAttack: cmd\.thenAttack \? \{\s*actionId: cmd\.thenAttack\.actionId,\s*\.\.\.\(cmd\.thenAttack\.charged \? \{ charged: true \} : \{\}\),/.test(cmds), true);
 check('the Scan is judged at its effective reach', /const reach = actionRange\(data, state\.tokens, t, a\);/.test(scan), true);
 
 // ---------- the Match Centre ----------
@@ -51,14 +53,14 @@ check('that says what will happen', /one free Scan first; the attack follows if 
 const press = hud.slice(hud.indexOf("on('[data-attacktarget]'"), hud.indexOf("on('[data-attacktarget]'") + 4200);
 check('the press asks the command before paying', /const can = ctx\.check\(scan\);\s*\n\s*if \(!can\.ok\)/.test(press), true);
 check('then pays the Tick - the attack is declared (3.4.5)', /const paid = commitAction\(ctx\);[\s\S]{0,200}?ctx\.send\(scan\);/.test(press), true);
-check('and the Scan carries the attack', /actionId: 'COMMON_SCAN', targetUid: t\.uid, thenAttack: \{ actionId: m\.actionId \}/.test(press), true);
+check('and the Scan carries the attack', /actionId: 'COMMON_SCAN', targetUid: t\.uid,\s*thenAttack: \{\s*actionId: m\.actionId,\s*\.\.\.\(m\.refund \? \{ charged: true \} : \{\}\),/.test(press), true);
 const apply = hud.slice(hud.indexOf("if (act === 'apply') {"), hud.indexOf("if (act === 'apply') {") + 3000);
 check('a successful Scan queues the attack behind the Reveal', /kind: 'scanAttack' as const, fromUid: resp\.uid/.test(apply), true);
-check('to the ATTACKER\'s seat', /\.\.\.\(c\.thenAttack \? \[\{ uid: init\.uid, actionId: c\.thenAttack\.actionId/.test(apply), true);
+check('to the ATTACKER\'s seat', /\.\.\.\(c\.thenAttack \? \[\{\s*uid: init\.uid, actionId: c\.thenAttack\.actionId/.test(apply), true);
 check('a Scan closed without applying ends the attack (I11)', /c\.thenAttack && !\(ensureScript\(s\)\.reactions \?\? \[\]\)\.some\(\(r\) => r\.kind === 'scanAttack'/.test(hud) && /any remaining Ticks may still be used \(FAQ I11\)/.test(hud), true);
 check('the reaction panel waits while the target Reveals', /r\.kind === 'scanAttack'\) \{[\s\S]{0,600}?const hidden = !!target && statusCount\(target\.statuses, 'camouflage'\) > 0;/.test(hud), true);
 check('judges the attack from where it appeared', /r\.kind === 'scanAttack'\) \{[\s\S]{0,900}?losNote\(t, target, \{ \.\.\.act, range: actionRange\(ctx\.data, ctx\.state\.tokens, t, act\) \}/.test(hud), true);
-check('and resumes through the ordinary front door', /r\.kind === 'scanAttack'\) \{\s*\n\s*if \(!place\) \{[\s\S]{0,300}?ctx\.startAttack\(uid, actionId, r\.fromUid\);/.test(hud), true);
+check('and resumes through the ordinary front door, as it was declared', /r\.kind === 'scanAttack'\) \{\s*\n\s*if \(!place\) \{[\s\S]{0,300}?ctx\.startAttack\(uid, actionId, r\.fromUid, 'attack', \{ charged: !!r\.charged, chargeChoice: r\.chargeChoice, twoHandedDeclined: !!r\.twoHandedDeclined \}\);/.test(hud), true);
 
 // ---------- freeplay ----------
 const main = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');

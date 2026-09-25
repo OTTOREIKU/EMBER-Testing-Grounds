@@ -6,7 +6,7 @@ import { gameResult, isLowValue, newTaskState, normaliseTasks, taskItemsFor, zon
 import { DiceTray } from './dice';
 import { importSquadFile } from './importer';
 import { factionColour, ICON_BURST, squadColour } from './icons';
-import { ammoHolder, applyRemote, check, onPerformed, onRefused, perform, type Command, onBeforeApply } from './commands';
+import { ammoAvailable, ammoHolder, ammoPay, applyRemote, check, onPerformed, onRefused, perform, type Command, onBeforeApply } from './commands';
 import { installDiagnostics, noteCommand, noteRefusal } from './diagnostics';
 import { openBoardReport } from './reportui';
 import { Relay } from './net';
@@ -62,7 +62,7 @@ import { PlayGuide } from './playguide';
 import type { BoardGrids, Card, CardAction, DiceData, DieColor, Facing, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, StatusDef, TerrainPiece, Timing, Token } from './types';
 import { addStatus, cellsOf, DEFAULT_GRIDS, gridsOf, normaliseScript, removableTokens, SCALES, statusCount, statusesFor, STATUSES, zonesOf } from './types';
 import { actionIdOf } from './ticks';
-import { actionRange, chargeAdjusted, linkShockOf, tetheredBy, linkSupportOf, linkSupportTargets, maxLink, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, tokenCleanupOf, tokenCleanupTargets, type LinkSupport, type TokenCleanup, straightLineBonus, selfStatusGrant, selfGrantWhy, transformOffer, automaticShieldFor, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, twoHandedUse, electronicValue, martyrdomOwed, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, loanedParts, phasesThroughUnits, minesLayable, minesOwed, multiTargetLimit, unfoldsOwed, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, immobilizedStop, activatesCamo, isScanAction, scannable, formSwitch, grantAdjusted, shockAttackOf, shockMoveAllowed, stealthValue, manifestationRange, manifestTargets, nonHumanoidCost, nonHumanoidStop, maneuverIsSilent, maneuverSilenceDenier, envCardAt, envFlightFrom, envForcedStop, envHotEntries, envMoveRules, isGroundUnit, settleEnvironments, chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, projectileReach, type Resupply, resupplyOf, SLOT_LABEL, stationaryAdjusted, interceptLeft, interceptsOwed, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf, type AttackReaction } from './units';
+import { actionRange, chargeAdjusted, chargeChoices, cruising, stanceFeedbackOf, stanceFeedbackTargets, spendsAmmoWhenPerformed, linkShockOf, tetheredBy, linkSupportOf, linkSupportTargets, maxLink, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, tokenCleanupOf, tokenCleanupTargets, type LinkSupport, type TokenCleanup, straightLineBonus, selfStatusGrant, selfGrantWhy, transformOffer, automaticShieldFor, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, twoHandedUse, electronicValue, martyrdomOwed, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, loanedParts, phasesThroughUnits, minesLayable, minesOwed, multiTargetLimit, unfoldsOwed, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, immobilizedStop, activatesCamo, isScanAction, scannable, formSwitch, grantAdjusted, shockAttackOf, shockMoveAllowed, stealthValue, manifestationRange, manifestTargets, nonHumanoidCost, nonHumanoidStop, maneuverIsSilent, maneuverSilenceDenier, envCardAt, envFlightFrom, envForcedStop, envHotEntries, envMoveRules, isGroundUnit, settleEnvironments, chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, projectileReach, type Resupply, resupplyOf, SLOT_LABEL, stationaryAdjusted, interceptLeft, interceptsOwed, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf, type AttackReaction } from './units';
 import { registerOffline } from './offline';
 import { battlefieldLocked, countHits, firstPlayerFrom, newSetup, normaliseSetup, tasksLocked, type SetupState } from './setup';
 import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
@@ -98,7 +98,9 @@ async function init() {
     // put it back. Filled in by offerChargeSpend AFTER its dialog answers,
     // which is later than this object is built: the offer is fire-and-forget
     // so the targeting can open while the question is still on screen.
-    refund?: { slot: string };
+    // `choice` is the arm taken of an either/or [Charged] line (R7MG 556_A:
+    // Multi-target 3 or Suppression), which chargeAdjusted applies.
+    refund?: { slot: string; choice?: string };
   } | null = null;
   const editor: {
     active: boolean;
@@ -388,7 +390,13 @@ async function init() {
       onChanged();
       if (!combatBusy()) panel.showToken(t);
     },
+    // Ammo comes back through a Resupply Action, or Undo, under strict
+    // tracking (audit Phase 2, E8); the sandbox and Teaching keep the pip.
     onRestoreAmmo(t, actionId) {
+      if (state.script?.strict) {
+        setHint('Strict tracking: Ammo comes back through a Resupply Action. Undo reverses a mistaken spend.');
+        return;
+      }
       perform(data, state, { kind: 'restoreAmmo', seat: t.side, uid: t.uid, actionId });
       onChanged();
       if (!combatBusy()) panel.showToken(t);
@@ -520,7 +528,14 @@ async function init() {
       onChanged();
       panel.showToken(t);
     },
+    // The strict tracker keeps the Charge to its Actions (audit Phase 2, E8):
+    // flipped up by the Charge Action, down by a [Charged] Action consuming
+    // it. The sandbox and the Teaching guide keep the pip as a free record.
     onCharge(t, slot, on) {
+      if (state.script?.strict) {
+        setHint('Strict tracking: a Charge Token is flipped by the Charge Action and spent by a [Charged] Action. Undo reverses a mistake.');
+        return;
+      }
       setCharge(t, slot, on);
       onChanged();
       panel.showToken(t);
@@ -593,9 +608,33 @@ async function init() {
         // as the refund) turns the Action's [Charged] line into a keyword it
         // simply has, and a kept one takes the line out (chargeAdjusted, 4.14).
         const found = pendingAttack.action ?? (attacker && findAction(attacker, pendingAttack.actionId));
-        const action = found ? chargeAdjusted(found, !!pendingAttack.refund) : found;
+        const action = found ? chargeAdjusted(found, !!pendingAttack.refund, pendingAttack.refund?.choice) : found;
         const mode = pendingAttack.mode;
-        const done = pendingAttack.done;
+        const guideDone = pendingAttack.done;
+        const refund = pendingAttack.refund;
+        // The guide door's done(true) sends the performAction that spends the
+        // Ammo (4.13). The card's own Attack door pays no Tick, so it spends
+        // the Ammo itself, here, where the attack is declared - it used to be
+        // spent at the button's click and never came back on a cancel (audit
+        // Phase 2, C1). A failed free Scan still arrives as done(true): the
+        // attack was declared, and p.71 spends the Ammo anyway.
+        //
+        // done(false) is every road back out of the pick AFTER targeting has
+        // ended - an Automatic Action at the wrong target, Link Shock without a
+        // Tether, Melee at an Aerial unit, an ally, a Scan with nothing to
+        // strip - and on each the Charge spent for it comes back, as Esc's
+        // endTargeting(true) already gave it back (audit Phase 2, C8).
+        const done = (performed: boolean): void => {
+          if (!performed && refund && attacker) {
+            setCharge(attacker, refund.slot, true);
+            logTo(attacker, `The attack was not made, so the Charge on ${SLOT_LABEL[refund.slot as PartSlot | 'main']} goes back face-up.`);
+            onChanged();
+          }
+          if (guideDone) { guideDone(performed); return; }
+          if (performed && attacker && found && spendsAmmoWhenPerformed(found)) {
+            perform(data, state, { kind: 'spendAmmo', seat: attacker.side, uid: attacker.uid, actionId: found.id });
+          }
+        };
         const intercepting = pendingIntercept;
         if (intercepting && defender && !defender.aerial) {
           void alertDialog({
@@ -1046,7 +1085,7 @@ async function init() {
   // The guide is meant to play the turn, not just tally it, so each Action Type
   // opens the tool that actually resolves it. The Tick is only spent if the
   // action goes through, so backing out costs nothing.
-  function performGuided(uid: number, actionId: string, report: (performed: boolean, opts?: { twoHanded?: boolean }) => void): void {
+  function performGuided(uid: number, actionId: string, report: (performed: boolean, opts?: { twoHanded?: boolean; partKey?: string }) => void): void {
     const t = state.tokens.find((x) => x.uid === uid);
     const action = t && findAction(t, actionId);
     // 4.12.3: any Action without the Silence Keyword removes the Low Profile
@@ -1067,7 +1106,7 @@ async function init() {
     // Passive is carved out for the same reason it is in the command (4.12.3
     // exempts it by name); Interception never arrives here, it has its own
     // spendIntercept path.
-    const done = (performed: boolean, opts?: { twoHanded?: boolean }): void => {
+    const done = (performed: boolean, opts?: { twoHanded?: boolean; partKey?: string }): void => {
       const passive = action?.type === 'Passive' || action?.speed === 'passive';
       if (performed && t && action && !passive
         && statusCount(t.statuses, 'lowProfile') > 0
@@ -1122,6 +1161,12 @@ async function init() {
     const link = linkSupportOf(action);
     if (link) {
       void performLinkSupport(t, action, link, done);
+      return;
+    }
+    // ZHDR-206_B Stance feedback: an Ally Mech in reach switches Stance
+    // (audit Phase 2, D1).
+    if (stanceFeedbackOf(action)) {
+      void performStanceFeedback(t, action, done);
       return;
     }
     const clean = tokenCleanupOf(action);
@@ -1685,6 +1730,9 @@ async function init() {
     // Every projectile put down this volley, so the last one can be taken back.
     placedUids: number[];
     placedSizes: number[];
+    // Which magazine paid each placement, so a take-back refunds that one:
+    // the Pod's own, or the Ammunition Pack's under 086_B Ammo Delivery.
+    paidPools: string[];
     done: (performed: boolean) => void;
   } | null = null;
 
@@ -1797,8 +1845,10 @@ async function init() {
     // undo - while the sandbox applies even a failing command, so the verdict
     // alone cannot say whether anything landed. The board growing can.
     const before = state.tokens.length;
+    const pool = ammoPay(data, state, t, id).poolId;
     perform(data, state, { kind: 'launch', seat: t.side, uid: t.uid, actionId: id, cardId: m.card.id, to: { col: spot.col, row: spot.row }, facing: t.facing });
     if (state.tokens.length === before) return;
+    m.paidPools.push(pool);
     const placed = state.tokens[state.tokens.length - 1];
     // A Missile Group lands as several Units off one launch (6.2); all of them
     // are this placement, so taking it back takes them all.
@@ -1808,7 +1858,7 @@ async function init() {
     m.left--;
     // The same magazine the command just debited, so the count in the log is
     // the Tarantula's when the launcher was borrowed from one (FAQ O3/O16).
-    const mag = ammoHolder(data, state, t, id).ammo[id];
+    const mag = ammoAvailable(data, state, t, id);
     logTo(t, `Launched ${cardName(m.card)} to ${gridRef(c, r)}${mag !== undefined ? ` (Ammo ${mag} left)` : ''}.`);
     onChanged();
     // A single shot closes on its own, but a Volley stays open once it is spent
@@ -1830,14 +1880,14 @@ async function init() {
     const id = m.action.id;
     if (t) {
       for (const g of gone) perform(data, state, { kind: 'despawn', seat: t.side, uid: t.uid, targetUid: g });
-      perform(data, state, { kind: 'restoreAmmo', seat: t.side, uid: t.uid, actionId: id });
+      perform(data, state, { kind: 'restoreAmmo', seat: t.side, uid: t.uid, actionId: m.paidPools.pop() ?? id });
     } else {
       state.tokens = state.tokens.filter((x) => !gone.includes(x.uid));
     }
     m.placed--;
     m.left++;
     if (t) {
-      const back = ammoHolder(data, state, t, id).ammo[id];
+      const back = ammoAvailable(data, state, t, id);
       logTo(t, `Took back a ${cardName(m.card)}${back !== undefined ? ` (Ammo ${back} left)` : ''}.`);
     }
     if (selectedUid === uid) selectToken(m.uid);
@@ -1884,7 +1934,9 @@ async function init() {
     // keeps its magazine on the Drone (FAQ O3/O16), and sizing the volley off
     // the Mech found undefined and offered the full Volley X out of a magazine
     // that was not there.
-    const ammo = ammoHolder(data, state, t, action.id).ammo[action.id];
+    // And ammoAvailable, not one magazine: an empty Pod still fires out of an
+    // Ammunition Pack carrying 086_B (audit Phase 2, C6).
+    const ammo = ammoAvailable(data, state, t, action.id);
     const shots = Math.min(volleyOf(action), ammo === undefined ? volleyOf(action) : ammo);
     if (shots <= 0) {
       void alertDialog({
@@ -1893,7 +1945,7 @@ async function init() {
       });
       return done(false);
     }
-    launching = { uid: t.uid, action, card, left: shots, placed: 0, placedUids: [], placedSizes: [], done };
+    launching = { uid: t.uid, action, card, left: shots, placed: 0, placedUids: [], placedSizes: [], paidPools: [], done };
     selectToken(t.uid);
     // renderLaunchStep owns the hint, so the text always matches the state.
     renderLaunchStep();
@@ -2802,6 +2854,39 @@ async function init() {
   // a Mech in Shutdown takes the Link and stays down until it Reboots (FAQ L3).
   // An 'all' effect lands on every Ally Mech in reach that is short of Link;
   // a 'chosen' one asks which.
+  // ZHDR-206_B Stance feedback: which Ally Mech in reach, and into which
+  // Stance. Nothing in reach means nothing can change, so no Action (FAQ H2).
+  async function performStanceFeedback(t: Token, action: CardAction, done: (ok: boolean) => void): Promise<void> {
+    const what = action.name.en || action.name.zh || action.id;
+    const targets = stanceFeedbackTargets(data, state.tokens, t, action);
+    if (!targets.length) {
+      await alertDialog({
+        title: 'Nobody to switch',
+        body: `${what} switches the Stance of an Ally Mech within Range ${actionRange(data, state.tokens, t, action)} that is not in Shutdown Stance, and none is in reach (FAQ H2: an Action that changes nothing cannot be performed).`,
+      });
+      return done(false);
+    }
+    const id = targets.length === 1 ? String(targets[0].uid) : await choiceDialog({
+      title: `${what}: which Ally Mech?`,
+      body: 'It switches Stance now, outside its own Action Opportunity.',
+      choices: [...targets.map((x) => ({ id: String(x.uid), label: `${x.label} · ${x.stance}` })), { id: '__cancel', label: 'Cancel', cancel: true }],
+      stacked: true,
+    });
+    const to = targets.find((x) => String(x.uid) === id);
+    if (!to) return done(false);
+    const stance = await choiceDialog({
+      title: `${to.label}: which Stance?`,
+      body: `${to.label} is in ${to.stance} Stance.`,
+      choices: [...(['defensive', 'mobility', 'offensive'] as const).filter((x) => x !== to.stance).map((x) => ({ id: x, label: `${x[0].toUpperCase()}${x.slice(1)}` })), { id: '__cancel', label: 'Cancel', cancel: true }],
+    });
+    if (stance !== 'defensive' && stance !== 'mobility' && stance !== 'offensive') return done(false);
+    const v = perform(data, state, { kind: 'stanceFeedback', seat: t.side, uid: t.uid, actionId: action.id, targetUid: to.uid, stance });
+    if (!v.ok && state.script?.strict) return done(false);
+    logTo(to, `${what} from ${t.label}: ${to.label} switches to ${stance} Stance.`);
+    onChanged();
+    done(true);
+  }
+
   async function performLinkSupport(t: Token, action: CardAction, rule: LinkSupport, done: (ok: boolean) => void): Promise<void> {
     const what = action.name.en || action.name.zh || action.id;
     const reach = actionRange(data, state.tokens, t, action);
@@ -2954,7 +3039,7 @@ async function init() {
     perform(data, state, { kind: 'setCharge', seat: t.side, uid: t.uid, slot, on });
   }
 
-  async function performCharge(t: Token, action: CardAction, done: (ok: boolean) => void): Promise<void> {
+  async function performCharge(t: Token, action: CardAction, done: (ok: boolean, opts?: { partKey?: string }) => void): Promise<void> {
     const slots = chargeableSlots(data, t);
     const open = slots.filter((s) => !s.charged);
     const what = action.name.en || action.name.zh || action.id;
@@ -2985,7 +3070,9 @@ async function init() {
     setCharge(t, slot, true);
     logTo(t, `Charged ${SLOT_LABEL[slot as PartSlot | 'main']}: its Charge Token is now face-up.`);
     onChanged();
-    done(true);
+    // The shared Charge Action is that Part's Action (FAQ H6/H7): a second
+    // Charge on another Part is a second Action, on the same Part a repeat.
+    done(true, action.id === 'COMMON_CHARGE' ? { partKey: `COMMON_CHARGE@${slot}` } : undefined);
   }
 
   // Offered when a [Charged] Action is performed while its Part holds a face-up
@@ -2995,20 +3082,38 @@ async function init() {
       .find((g) => g.action.id === actionId);
     if (!found?.charge?.charged) return;
     const what = found.action.name.en || found.action.name.zh || found.action.id;
-    const spend = await confirmDialog({
-      title: `Consume the Charge on ${what}?`,
-      body: `${SLOT_LABEL[found.slot]} holds a face-up Charge Token. Flipping it back down now applies the effect this Action marks as [Charged]. You may also keep it for a later use.`,
-      confirmLabel: 'Consume it',
-      cancelLabel: 'Keep it',
-    });
-    if (!spend) return;
-    setCharge(t, found.slot, false);
+    // An either/or [Charged] line is a choice of arms, not a yes/no (R7MG
+    // 556_A: Multi-target 3 or Suppression; audit Phase 2, C3/E9).
+    const arms = chargeChoices(found.action);
+    let choice: string | undefined;
+    if (arms.length) {
+      const id = await choiceDialog({
+        title: `Consume the Charge on ${what}?`,
+        body: `${SLOT_LABEL[found.slot]} holds a face-up Charge Token. Consuming it gives this Action ONE of its [Charged] effects. You may also keep it for a later use.`,
+        choices: [...arms.map((x) => ({ id: x.id, label: `Consume it: ${x.label}` })), { id: 'keep', label: 'Keep it' }],
+      });
+      if (!id || id === 'keep') return;
+      choice = id;
+    } else {
+      const spend = await confirmDialog({
+        title: `Consume the Charge on ${what}?`,
+        body: `${SLOT_LABEL[found.slot]} holds a face-up Charge Token. Flipping it back down now applies the effect this Action marks as [Charged]. You may also keep it for a later use.`,
+        confirmLabel: 'Consume it',
+        cancelLabel: 'Keep it',
+      });
+      if (!spend) return;
+    }
+    // Only a spend that landed buys the effect. Under the strict tracker a
+    // refused setCharge flips nothing, and recording the refund anyway handed
+    // out the Mutilation with the token still face-up (audit Phase 2, C9).
+    const flipped = perform(data, state, { kind: 'setCharge', seat: t.side, uid: t.uid, slot: found.slot, on: false });
+    if (!flipped.ok && state.script?.strict) return;
     logTo(t, `Consumed the Charge on ${SLOT_LABEL[found.slot]} for ${what}.`);
     // Recorded on the targeting this paid for, so cancelling refunds it. The
     // guard matters: this dialog is not awaited, so by the time it answers the
     // player may already have moved on to a different Action entirely.
     if (pendingAttack?.attackerUid === t.uid && pendingAttack.actionId === actionId) {
-      pendingAttack.refund = { slot: found.slot };
+      pendingAttack.refund = { slot: found.slot, ...(choice ? { choice } : {}) };
     }
     onChanged();
   }
@@ -5375,6 +5480,7 @@ async function init() {
     if (!spec) return;
     const ctx = {
       maxLink: (t: Token) => tokenCards(data, t).find((c) => c.slot === 'pilot')?.card.LV ?? 0,
+      cruising: (t: Token) => cruising(data, t),
     };
     const targets = tacticTargets(spec, state, side, ctx);
     if (!targets.length) {

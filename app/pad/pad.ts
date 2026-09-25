@@ -35,7 +35,7 @@ import '../src/partpicker.css';
 import '../src/combat.css';
 import { EmberApi, ApiError, type Account, type RegistrationInfo, type SquadEntry } from '../src/api';
 import { Relay, type NetView, type RolledDie } from '../src/net';
-import { applyRemote, check, onBeforeApply, onPerformed, onRefused, perform, taskDesignations, type Command } from '../src/commands';
+import { ammoAvailable, applyRemote, check, rebootWhy, onBeforeApply, onPerformed, onRefused, perform, taskDesignations, type Command } from '../src/commands';
 import { glueAfter } from '../src/glue';
 import { askDesignation, askLinkSupport, askTokenCleanup, designationsFor, activeOpp, continueAllowed, finishIfBothReady, guideAct, guideOnRemote, guidedOn, performButton, startGuided, startIfBothReady, turnHtml, type GuideApi } from './guided';
 import { countHits, normaliseSetup, tasksLocked } from '../src/setup';
@@ -69,7 +69,7 @@ import { previewScore } from '../src/scoring';
 import { tacticFitsPhase, tacticSpec, tacticTargets, type TacticCtx } from '../src/tactics';
 import { conditionalGrants, stationaryBonus, explosionScope, linkShockOf, tetheredBy, freehandSlots, linkSupportOf, roundEndLinkAuras, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, targetStatusGrant, tokenCleanupOf, immediateDetonation, smokePlacement, squadAllegiance, twoHandedUse } from '../src/units';
 import { gameResult } from '../src/tasks';
-import { autoParryValue, canBeLoad, chargeableSlots, electronicDash, electronicValue, guidedActions, initiativeFor, interceptCapacity, isCarrier, isDeployable, isElectronicAttack, maneuverRange, maxLink, migrateState, parryParts, pilotCard, structureOf, tokenCards, volleyOf } from '../src/units';
+import { actionPartWhy, autoParryValue, cruising, canBeLoad, chargeChoices, chargeableSlots, electronicDash, electronicValue, guidedActions, initiativeFor, interceptCapacity, isCarrier, isDeployable, isElectronicAttack, maneuverRange, maxLink, migrateState, parryParts, pilotCard, structureOf, tokenCards, volleyOf } from '../src/units';
 import { lengthOf, LENGTH_NAME, timingOf } from '../src/ticks';
 import { newScriptState, PHASES, SCALES, statusesFor, statusStacks, STATUSES, TIMINGS } from '../src/types';
 import type { Card, CardAction, DieColor, GameState, ImportedSquad, MechLoadout, PartSlot, PartState, Side, Stance, Token } from '../src/types';
@@ -1390,18 +1390,26 @@ async function askTableAndAttack(attacker: Token, actionId: string, defender: To
       && tokenCards(data!, attacker).some((c) => String(c.slot) === String(x.slot) && (c.card.actions ?? []).some((y) => y.id === actionId)))
     : undefined;
   let chargeSpent = false;
+  let chargeChoice: string | undefined;
   if (chargeSlot) {
+    // An either/or [Charged] line is spent on ONE arm (R7MG 556_A:
+    // Multi-target 3 or Suppression; audit Phase 2, C3/E9).
+    const arms = chargeChoices(a!);
     const spend = await choiceDialog({
       title: `${a!.name.en}: Charge`,
       body: `${chargeSlot.label} is Charged (4.14).`,
-      choices: [{ id: 'yes', label: 'Consume the Charge', primary: true }, { id: 'no', label: 'Keep it' }],
+      choices: arms.length
+        ? [...arms.map((x, i) => ({ id: `arm:${x.id}`, label: `Consume it: ${x.label}`, primary: i === 0 })), { id: 'no', label: 'Keep it' }]
+        : [{ id: 'yes', label: 'Consume the Charge', primary: true }, { id: 'no', label: 'Keep it' }],
       stacked: true,
     });
     if (spend === null) return;
-    chargeSpent = spend === 'yes';
+    chargeSpent = spend === 'yes' || spend.startsWith('arm:');
+    if (spend.startsWith('arm:')) chargeChoice = spend.slice(4);
   }
   const verdict: TableVerdict = {
     chargeSpent,
+    ...(chargeChoice ? { chargeChoice } : {}),
     protection: prot === '4' ? 4 : prot === '2' ? 2 : 0,
     protectionFrom: seen === '4' ? 'both' : seen === '2u' ? 'unit' : seen === '2t' ? 'terrain' : undefined,
     backAttack: rear === 'yes',
@@ -1474,7 +1482,9 @@ async function launchFrom(t: Token, actionId: string, cardId: string): Promise<v
   // Volley X: the repeats are optional (4.7.3 step 3), so a volley may be
   // smaller than printed. Asked BEFORE the Action is paid, so backing out is
   // free, and never for more than the Ammo left.
-  const ammo = guidedActions(data, t).find((g) => g.action.id === actionId)?.ammoLeft;
+  // Every magazine that can pay, the Pod's and then an Ammunition Pack's under
+  // 086_B, the same count launch() itself works to (audit Phase 2, C6).
+  const ammo = ammoAvailable(data, table, t, actionId);
   const most = Math.min(volleyOf(action), ammo ?? Infinity);
   let count = Math.max(1, most);
   if (most > 1) {
@@ -1792,13 +1802,13 @@ function sheetHtml(s: Side = shownSide()): string {
         ${mine ? '<button class="pad-step" data-act="link-up" aria-label="Recover 1 Link">+</button>' : ''}
       </div>
     </div>` : ''}
-    ${mine && isMech && t.stance === 'shutdown' ? `<div class="pad-row wrap">
+    ${mine && isMech && t.stance === 'shutdown' ? (rebootWhy(table, t) === null ? `<div class="pad-row wrap">
       <span class="pad-label">Reboot to</span>
       <div class="pad-stances">${STANCES.filter((x) => x !== 'shutdown').map((x) => stanceBtn(x, false, `data-act="reboot" data-stance="${x}"`)).join('')}</div>
-    </div>` : ''}
+    </div>` : `<p class="pad-note">${esc(rebootWhy(table, t) ?? '')}</p>`) : ''}
     ${mine && isMech && t.stance !== 'shutdown' ? `<div class="pad-row wrap">
       <span class="pad-label">Stance</span>
-      <div class="pad-stances">${STANCES.map((x) => stanceBtn(x, t.stance === x, `data-act="stance" data-stance="${x}"`)).join('')}</div>
+      <div class="pad-stances">${STANCES.filter((x) => x !== 'shutdown').map((x) => stanceBtn(x, t.stance === x, `data-act="stance" data-stance="${x}"`)).join('')}</div>
     </div>` : ''}
     ${mine && isMech && t.stance !== 'shutdown' && !guidedOn(table) ? `<div class="pad-row wrap">
       <span class="pad-label">Timing · this phone</span>
@@ -1995,7 +2005,6 @@ function commonRows(t: Token, mine: boolean): string[] {
   const d = data!;
   if (t.kind !== 'mech' || !t.mech) return [];
   if ((t.partStates.torso ?? 'intact') === 'destroyed') return [];
-  const intact = (s: string) => !!t.mech?.[s as PartSlot] && (t.partStates[s as PartSlot] ?? 'intact') !== 'destroyed';
   const torso = d.byId.get(t.mech.torso ?? '');
   const rows: string[] = [];
   const relevant = (a: CardAction): boolean => {
@@ -2009,7 +2018,10 @@ function commonRows(t: Token, mine: boolean): string[] {
   if (!acts.length) return [];
   for (const a of acts) {
     const slots = (a as { slots?: string[] }).slots ?? [];
-    const reason = slots.length && !slots.some(intact) ? 'No intact Part can perform this.' : undefined;
+    // The engine's own reading (units.ts actionPartWhy): a Repaired Part still
+    // acts (FAQ J23) and in Cruise Mode only the Torso does, neither of which
+    // the old "any listed slot intact" test knew.
+    const reason = actionPartWhy(d, t, a) ?? undefined;
     const available = !reason;
     const open = sheetView[drawSide].action === a.id;
     const len = lengthOf(a);
@@ -2200,13 +2212,18 @@ function tokenRow(t: Token): string {
 
 // Ammo is keyed by the Action that spends it, and only the pools a unit
 // actually tracks are listed.
+// In Guided play the count is a record, not a control: performing the Action
+// spends it (4.13), a Resupply or Undo gives it back, and a hand-tapped − after
+// the Action had already spent it was a double spend (audit Phase 2, E8).
+// Freeform, which has no script to spend anything, keeps the steppers.
 function ammoRows(t: Token): string {
+  const record = guidedOn(table);
   return Object.entries(t.ammo ?? {}).map(([id, n]) => `<div class="pad-row">
       <span class="pad-part-name">${esc(names()?.action?.(t.uid, id) ?? id)}</span>
       <div class="pad-count">
-        <button class="pad-step" data-act="ammo-down" data-id="${esc(id)}">−</button>
+        ${record ? '' : `<button class="pad-step" data-act="ammo-down" data-id="${esc(id)}">−</button>`}
         <span class="pad-num">${n}</span>
-        <button class="pad-step" data-act="ammo-up" data-id="${esc(id)}">+</button>
+        ${record ? '' : `<button class="pad-step" data-act="ammo-up" data-id="${esc(id)}">+</button>`}
       </div>
     </div>`).join('');
 }
@@ -2224,18 +2241,22 @@ function interceptRows(t: Token): string {
         <button class="pad-step" data-act="intercept-down" data-id="${esc(id)}"${n > 0 ? '' : ' disabled'}>−</button>
         <span class="pad-num">${n}${cap !== undefined ? `<span class="pad-of"> / ${cap}</span>` : ''}</span>
         <button class="pad-step" data-act="intercept-up" data-id="${esc(id)}"${cap !== undefined && n >= cap ? ' disabled' : ''}>+</button>
-        <button class="pad-chip on pad-perform" data-act="intercept" data-id="${esc(id)}"${n > 0 ? '' : ' disabled'}>Intercept</button>
+        <button class="pad-chip on pad-perform" data-act="intercept" data-id="${esc(id)}"${n > 0 && t.stance !== 'shutdown' ? '' : ' disabled'}${t.stance === 'shutdown' ? ' title="A Shutdown Mech cannot Intercept (4.1, 4.9)"' : ''}>Intercept</button>
       </div>
     </div>`;
   }).join('');
 }
 
 // Only the Parts that have an Action spending a Charge Token (4.14).
+// Guided play charges a Part through the Charge Action and spends it through a
+// [Charged] Action, so the chips only show which Parts hold one (audit Phase
+// 2, E8). Freeform flips them by hand.
 function chargeRow(t: Token): string {
   const slots = chargeableSlots(data!, t);
   if (!slots.length) return '';
+  const record = guidedOn(table);
   return `<div class="pad-chips">${slots.map((s) => `<button class="pad-chip${s.charged ? ' on' : ''}"
-    data-act="charge" data-slot="${esc(s.slot)}" data-on="${s.charged ? '0' : '1'}">${esc(s.label)}</button>`).join('')}</div>`;
+    data-act="charge" data-slot="${esc(s.slot)}" data-on="${s.charged ? '0' : '1'}"${record ? ' disabled title="Charged by the Charge Action, spent by a [Charged] Action"' : ''}>${esc(s.label)}</button>`).join('')}</div>`;
 }
 
 // ---------- the dock ----------
@@ -2939,7 +2960,7 @@ async function recordMatch(): Promise<string | null> {
 // phase is on. One per squad per round; the engine holds the rule.
 
 function tacticCtx(): TacticCtx {
-  return { maxLink: (t) => (data ? pilotCard(data, t)?.LV ?? 0 : 0) };
+  return { maxLink: (t) => (data ? pilotCard(data, t)?.LV ?? 0 : 0), cruising: (t) => (data ? cruising(data, t) : false) };
 }
 
 function handOf(side: Side): string[] {

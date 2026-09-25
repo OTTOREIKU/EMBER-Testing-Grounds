@@ -1,11 +1,12 @@
-import { ammoHolder, clearDroneCommands, missionZones, readyCommands, seedCommandTokens, taskDesignations, type Command, type CheckResult } from './commands';
+import { ammoAvailable, ammoHolder, ammoPay, rebootOwed, rebootWhy, clearDroneCommands, missionZones, readyCommands, seedCommandTokens, taskDesignations, type Command, type CheckResult } from './commands';
+import { choiceDialog } from './dialog';
 import { askIssuer, asterBlockers, offerCoordination, offerHarpyDrag, runAster } from './commandpick';
 import type { GameData } from './data';
 import { actionIconUrl, cardName, isAerial, parseGridRef, secondaryImageUrl, squadLabel, unitSize, environmentLookup, environmentAllowance } from './data';
 import { showInspect } from './inspector';
 import { Board, footprint, snapPlacement, type BoardCallbacks } from './board';
 import { printedDeployment, resolveZoneSetData } from './overlays';
-import { actionRange, transformOffer, anyStartTiming, opportunityBonusOn, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, ripostePart, martyrdomOwed, targetTracingOn, riderOnDrone, hasFlexibleTiming, immobilizedStop, activatesCamo, isScanAction, scanStrips, formSwitch, envCardAt, envFlightFrom, envForcedStop, envMoveRules, isGroundUnit, stealthValue, manifestationRange, manifestTargets, nonHumanoidStop, coordinationFor, coordinationOnOpportunityEnd, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, electronicOrigins, loanedParts, phasesThroughUnits, minesLayable, minesOwed, pilotCard, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, maneuverIsSilent, maneuverSilenceDenier, type AuraSource, canActivateCamo, chargeableSlots, electronicDash, electronicStrength, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, projectileReach, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
+import { actionRange, chargeChoices, stanceFeedbackOf, stanceFeedbackTargets, stanceShaped, overloadPackOn, actionPartWhy, cruising, startOpts, transformOffer, opportunityBonusOn, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, ripostePart, martyrdomOwed, targetTracingOn, riderOnDrone, immobilizedStop, activatesCamo, isScanAction, scanStrips, formSwitch, envCardAt, envFlightFrom, envForcedStop, envMoveRules, isGroundUnit, stealthValue, manifestationRange, manifestTargets, nonHumanoidStop, coordinationFor, coordinationOnOpportunityEnd, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, electronicOrigins, loanedParts, phasesThroughUnits, minesLayable, minesOwed, pilotCard, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, maneuverIsSilent, maneuverSilenceDenier, type AuraSource, canActivateCamo, chargeableSlots, electronicDash, electronicStrength, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, projectileReach, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
 import { ElectronicHelper, type EwAct } from './combat';
 import { tacticFitsPhase, tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { inContact, canStandIn, attackDirection, crushExchange, crushExchangeSpots, crushTargets, dissipationFor, extendPath, knockbackPath, largeGridOf, boardGrids, setBoardGrids, losBetween, losNote, smokeBlocks, pathCost, protectionFor, rangeBetween, reachableGrids, standingSpot, type LargeGrid } from './rules';
@@ -16,8 +17,8 @@ import { ensureScript, enterPhase, glueAfter as glueCore, makeInit, opportunity 
 import type { PartSlot, CardAction, CounterRoll, DiceData, DieColor, Facing, GameState, RollbackPoint, Side, Stance, TerrainPiece, Timing, Token, ExtraTick, Opportunity } from './types';
 import { statusCount, gridsOf, newOpportunity, newScriptState, PHASES, removableTokens, STATUSES, TIMINGS, zonesOf } from './types';
 import { deployable, deployTurn, deploymentComplete, firstPlayerFrom, normaliseSetup, rollTotal, type SetupState } from './setup';
-import { actionPhaseComplete, activationOrder, alive, canAct, droneActionWhy, droneMoveWhy, eligibleUnits, isLoopPhase, loopComplete, nextActivation, nextTurn, onExtraOpportunity, type InitLookup, type LoopPhase } from './loop';
-import { actionIdOf, canActivate, canAttackMode, canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed, type TickVerdict } from './ticks';
+import { actionPhaseComplete, activationOrder, alive, canAct, droneActionWhy, droneMoveWhy, eligibleUnits, isLoopPhase, loopComplete, nextActivation, nextTurn, onExtraOpportunity, tiedChoices, type InitLookup, type LoopPhase } from './loop';
+import { actionIdOf, actionPipCount, canActivate, canAttackMode, canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed, type TickVerdict } from './ticks';
 import { gameResult, normaliseTasks, wipedOut, zoneCentreGrid, type Designation, type ScoreResult } from './tasks';
 import { previewScore } from './scoring';
 import { linkShockOf, tetheredBy, armorPiercing, armorPiercingNote, automaticShieldFor, canAffordFocus, focusIsFree, grantAdjusted, shockAttackOf, shockMoveAllowed, stationaryAdjusted, twoHandedUse, tokenCards, vpRiderFor, straightLineBonus, selfStatusGrant, selfGrantWhy, isRwsAction, linkTickTraitOn, isElectronicSupport, linkSupportOf, linkSupportTargets, maxLink, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, tokenCleanupOf, tokenCleanupTargets, type LinkSupport, type TokenCleanup } from './units';
@@ -88,7 +89,7 @@ export interface HudCtx {
   // decides what the defender may claim: an ordinary attack reads Terrain and
   // Unit Protection off the board, an Interception grants none and needs no
   // arc or sight (4.9), and an Explosion grants none and ignores facing (4.7.6).
-  startAttack(uid: number, actionId: string, targetUid: number, mode?: 'attack' | 'intercept' | 'explosion', opts?: { twoHandedDeclined?: boolean; charged?: boolean }): void;
+  startAttack(uid: number, actionId: string, targetUid: number, mode?: 'attack' | 'intercept' | 'explosion', opts?: { twoHandedDeclined?: boolean; charged?: boolean; chargeChoice?: string }): void;
   // Brings a side tab forward by name.
   showTab(name: 'squad' | 'details'): void;
   // The printed faces, for drawing the dice a roll landed on.
@@ -274,7 +275,7 @@ let movePlan: {
   // Shock Attack: the walk happens BEFORE the strike, so once this move lands
   // the attack targeting for the named Action reopens. Rides the plan the way
   // shoveActionId does, and through a Crush the same way.
-  attackAfter?: { actionId: string; refund?: { uid: number; slot: string } };
+  attackAfter?: { actionId: string; refund?: { uid: number; slot: string; choice?: string } };
   // The Movement Action this plan is spending, carried so the `maneuver` it
   // sends can name it and the command layer can judge Unstoppable itself.
   actionId?: string;
@@ -348,10 +349,11 @@ function orderFloatHtml(ctx: HudCtx): string {
   const order = activationOrder(s, makeInit(ctx.data));
   if (!order.length) return '';
   const cur = s.round.phase === 2 ? nextActivation(s, makeInit(ctx.data)) : null;
-  // Two Mechs in the same Timing on the same initiative: 3.4.1 leaves that
-  // order to the First Player. Counted here rather than read off
-  // activationOrder, which has ALREADY broken the tie by alternating sides and
-  // so no longer shows that there was one to break.
+  // Two Mechs in the same Timing on the same initiative: 3.4.1 puts the First
+  // Player's first and alternates the squads, and each squad picks which of
+  // its own tied Mechs goes (audit Phase 2, E6). Counted here rather than read
+  // off activationOrder, which has ALREADY broken the tie by alternating sides
+  // and so no longer shows that there was one to break.
   const tally = new Map<string, number>();
   for (const a of order) {
     if (a.init === undefined) continue;
@@ -370,7 +372,7 @@ function orderFloatHtml(ctx: HudCtx): string {
       return `<button class="ord ${t.side}${cls}" data-orderchip="${t.uid}" title="${esc(t.label)}: ${short}, initiative ${a.init ?? '?'}">
         <span class="sw"></span><span class="ord-nm">${esc(t.label)}</span>
         <span class="ord-t">${short}</span><span class="ord-i">${a.init ?? '?'}</span>
-        ${tie ? '<span class="ord-tie" title="Tied initiative: the First Player picks the order">tie</span>' : ''}
+        ${tie ? '<span class="ord-tie" title="Tied initiative: the First Player\'s Mech goes first, then the squads alternate, and each squad picks which of its own goes">tie</span>' : ''}
       </button>`;
     })
     .join('');
@@ -456,7 +458,7 @@ function moveOptsFor(ctx: HudCtx, t: Token, flying: boolean, actionId?: string) 
 // A Maneuver by default. A Movement Action passes its own Range instead: the
 // chassis `move` is the Maneuver Value (1–2 Grids) and has nothing to do with a
 // Sprint-style Action's printed range, which is usually 4.
-function startMovePlan(ctx: HudCtx, t: Token, opts: { range?: number; label?: string; shoveActionId?: string; attackAfter?: { actionId: string; refund?: { uid: number; slot: string } }; actionId?: string; free?: boolean; granted?: boolean; maneuver?: boolean; airborne?: boolean } = {}): void {
+function startMovePlan(ctx: HudCtx, t: Token, opts: { range?: number; label?: string; shoveActionId?: string; attackAfter?: { actionId: string; refund?: { uid: number; slot: string; choice?: string } }; actionId?: string; free?: boolean; granted?: boolean; maneuver?: boolean; airborne?: boolean } = {}): void {
   // IMMOBILIZED (6.3.2), asked before the planner opens. This board had NO
   // enforcement of the movement ban at all - the token simply moved - so this
   // and the command gate behind it are the whole of the rule online.
@@ -1303,7 +1305,10 @@ function planningPanel(ctx: HudCtx): string {
       return `${trig}<div class="dialstack">${opts}</div>`;
     })
     .join('');
-  const myMechs = me ? s.tokens.filter((t) => t.side === me && t.kind === 'mech' && alive(t) && t.partStates.torso !== 'destroyed') : [];
+  // With no seat (solo, the dev harness) both squads' dials are this screen's
+  // to set, and all of them count: this used to count none there, so the
+  // phase turned with every dial blank and nobody activated (audit Phase 2, A2).
+  const myMechs = s.tokens.filter((t) => (!me || t.side === me) && t.kind === 'mech' && alive(t) && t.partStates.torso !== 'destroyed');
   const left = myMechs.filter((t) => !t.timing).length;
   const committed = me ? !!sc.commits[me] : false;
   const bothRevealed = sc.revealed.includes('s1') && sc.revealed.includes('s2');
@@ -1344,7 +1349,7 @@ function tickPool(o: Opportunity): string {
   };
   return `<div class="hudticks">
     <span class="pips${manUsable ? '' : ' spent'}"><b class="pip-label">MAN</b>${pip(o.maneuver > 0 && manUsable)}</span>
-    <span class="pips${o.action ? '' : ' spent'}"><b class="pip-label">ACT</b>${pip(o.action > 0)}${pip(o.action > 1)}</span>
+    <span class="pips${o.action ? '' : ' spent'}"><b class="pip-label">ACT</b>${Array.from({ length: actionPipCount(o) }, (_, i) => pip(i < o.action)).join('')}</span>
     ${o.extras.length ? `<span class="pips${live.length ? '' : ' spent'}"><b class="pip-label">XTR</b>${o.extras.map(extraPip).join('')}</span>` : ''}
   </div>`;
 }
@@ -1363,9 +1368,8 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
   // So the dial stays live and the first Move or Action closes it, in
   // commands.ts lockStance(). The panel only has to say which state it is in.
   const stanceSet = t.kind === 'mech' && !!o.stanceLocked;
-  // Read once for the whole panel rather than per row: the aura is a property
-  // of where this Mech stands, not of the Action being listed.
-  const flexTiming = (a: CardAction): boolean => hasFlexibleTiming(ctx.data, ctx.state.tokens, t, a);
+  // What may bend the Starting Action rule, read the way check() reads it
+  // (units.ts startOpts): an ally's Flexible Timing aura, Misty's Feint, CQC.
   // Keyed by PART, not by Action: two Carrier Tarantulas lending the same
   // Backpack lend two distinct Parts, and each may be used once (FAQ O7).
   const blockedBy = new Map<string, string | undefined>();
@@ -1395,7 +1399,9 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
     .filter(({ a }) => !rwsOnly || isRwsAction(a))
     .filter(({ key }) => (seen.has(key) ? false : (seen.add(key), true)))
     .map(({ a, key, slot, cardId }) => {
-      const len = lengthOf(a);
+      // Priced in this Stance: ZHRA-102_A is Short in Offensive (Phase 2, D2).
+      const priced = t.kind === 'mech' ? stanceShaped(a, t.stance) : a;
+      const len = lengthOf(priced);
       // Ticks are a Mech's economy. A Drone's Action costs its activation
       // instead — one Action or one Movement, never both — and asking
       // canPerform about one only ever came back "this is not an Action a Mech
@@ -1404,7 +1410,7 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
       // unit rather than the Action.
       const ticks: TickVerdict = t.kind !== 'mech' || rwsOnly
         ? canActivate(o)
-        : len ? canPerform(o, a, key, { flexible: flexTiming(a), anyTiming: anyStartTiming(ctx.data, t) }) : { ok: true };
+        : len ? canPerform(o, priced, key, startOpts(ctx.data, ctx.state.tokens, t, a)) : { ok: true };
       // The board's reason comes first: being out of ammo is a truer answer
       // than "not enough Ticks" when both are true.
       const stopped = blockedBy.get(key);
@@ -1420,8 +1426,13 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
       const phased = t.kind === 'drone' && isLoopPhase(loopPh)
         ? droneActionWhy(loopPh, a, { autoActions: riderOnDrone(ctx.data, ctx.state.tokens, t).autoActions })
         : null;
-      const v: TickVerdict = chained ? { ok: false, why: chained } : stopped ? { ok: false, why: stopped } : phased ? { ok: false, why: phased } : ticks;
-      const cost = costOf(a);
+      // A Part that can initiate it (3.4.3): a Common Action with every Part it
+      // lists destroyed, or any Part but the Torso in Cruise Mode, was offered
+      // here with no gate at all (audit Phase 2, B5).
+      const partWhy = t.kind === 'mech' ? actionPartWhy(ctx.data, t, a) : null;
+      const v: TickVerdict = chained ? { ok: false, why: chained } : stopped ? { ok: false, why: stopped }
+        : partWhy ? { ok: false, why: partWhy } : phased ? { ok: false, why: phased } : ticks;
+      const cost = costOf(priced);
       const kind = (a.type ?? '').toLowerCase();
       const pool = `${a.yellowDice ?? 0},${a.redDice ?? 0}`;
       // What it costs, in the Ticks it actually spends, the way the guide
@@ -1531,9 +1542,7 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
   // The Overloading Pack buys Action Ticks with Link, two at most an
   // Opportunity. They are ordinary Action Ticks, so a pair pays for a Medium
   // Action — which no pair of Extra Ticks can do.
-  const overloadIds = new Set(ctx.data.overload.map((g) => g.actionId));
-  const hasOverload = tokenCards(ctx.data, t).some(({ card }) => (card.actions ?? []).some((a) => overloadIds.has(a.id)));
-  const ovl = hasOverload ? canOverload(o, t.link ?? 0) : null;
+  const ovl = overloadPackOn(ctx.data, t) ? canOverload(o, t.link ?? 0) : null;
   const ovlRow = ovl
     ? `<button class="actrow k-tactic${ovl.ok ? '' : ' warn'}"${ovl.ok ? '' : ` data-why="${esc(ovl.why ?? '')}"`} data-act="overload" title="${esc(ovl.ok ? `Consume 1 Link for 1 Action Tick, up to ${OVERLOAD_MAX} an Action Opportunity.` : ovl.why ?? '')}">
         <span class="dotk"></span><span class="an">Overload</span><span class="ac">${o.overload}/${OVERLOAD_MAX} · Link ${t.link ?? 0}</span></button>`
@@ -1569,22 +1578,32 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
   // Its own block with a heading, because a player has to notice it before
   // reaching for an Action: the dial and the Action list used to run together
   // as one undifferentiated column of buttons.
-  const stanceRow = !shutdown && t.kind === 'mech'
+  // Not during an RWS activation: that is a Command Phase Opportunity, not an
+  // Action one, and the Stance is chosen in the Mech's own Action Opportunity
+  // (3.4.2). The row used to draw there and never lock (audit Phase 2, A7).
+  // In Cruise Mode Mobility is the only Stance (Ace Strategy additional rules).
+  const cruise = cruising(ctx.data, t);
+  const stanceRow = !shutdown && t.kind === 'mech' && !rwsOnly
     ? `<div class="tp-group stancegroup">
-        <div class="tp-label">Stance${stanceSet ? ' <em>· set for this Opportunity</em>' : ''}</div>
+        <div class="tp-label">Stance${stanceSet ? ' <em>· set for this Opportunity</em>' : cruise ? ' <em>· Cruise Mode: Mobility only</em>' : ''}</div>
         <div class="stancerow">${active
           .map((x) => `<button class="stancebtn${t.stance === x ? ' sel' : ''}"${
-            stanceSet && t.stance !== x ? ' disabled' : ''
+            (stanceSet || cruise) && t.stance !== x ? ' disabled' : ''
           } data-stance="${x}">${x[0].toUpperCase()}${x.slice(1)}</button>`)
           .join('')}</div>
       </div>`
     : '';
-  const rebootRow = shutdown && t.kind === 'mech'
-    ? `<p class="tp-note">${esc(t.label)} is in Shutdown Stance, so Reboot is the only thing it may do (4.1.1).</p>
+  // Only where the engine takes it: the start of the Mech's own Opportunity
+  // (FAQ K17). One shut down part-way through ends this one instead.
+  const rebootNow = shutdown && t.kind === 'mech' && rebootWhy(ctx.state, t) === null;
+  const rebootRow = !(shutdown && t.kind === 'mech')
+    ? ''
+    : rebootNow
+      ? `<p class="tp-note">${esc(t.label)} is in Shutdown Stance, so it Reboots now: no Maneuver and no other Action (4.1.1, FAQ K17).</p>
        <div class="stancerow">${active
         .map((x) => `<button class="stancebtn" data-reboot="${x}">Reboot to ${x[0].toUpperCase()}${x.slice(1)}</button>`)
         .join('')}</div>`
-    : '';
+      : `<p class="tp-note">${esc(rebootWhy(ctx.state, t) ?? '')} It can do nothing more this Action Opportunity.</p>`;
   // Only a Mech has both a Maneuver and Movement Actions to tell apart. A Drone
   // just moves, so calling its one option a Maneuver invented a distinction the
   // card never makes.
@@ -1678,6 +1697,18 @@ function loopPanel(ctx: HudCtx, phase: LoopPhase): string {
       <div class="tp-foot"><button class="bigbtn ghost2" data-act="pass">Pass</button></div>`;
 }
 
+// Tied on Timing and Initiative with more of this squad's Mechs: the owner
+// picks which takes the turn, while the one holding it has done nothing (audit
+// Phase 2, E6). The engine's own list, so every row drawn is taken.
+function tieRow(ctx: HudCtx): string {
+  const tied = tiedChoices(ctx.state, makeInit(ctx.data));
+  if (!tied.length) return '';
+  return `<div class="tp-group">
+      <div class="tp-label">Tied turn <em>· your squad picks which goes (3.4.1)</em></div>
+      ${tied.map((x) => `<button class="rowwide" data-tiepick="${x.uid}">${esc(x.label)} goes first<span class="ct">tied</span></button>`).join('')}
+    </div>`;
+}
+
 function actionPanel(ctx: HudCtx): string {
   const s = ctx.state;
   const o = opportunity(ctx.data, s);
@@ -1692,9 +1723,12 @@ function actionPanel(ctx: HudCtx): string {
     return head('Waiting', `${squadLabel(t.side)} is acting`, `${esc(t.label)} · ${esc(timing)}.`, false)
       + `<div class="tp-body">${waiting(t.side, 'taking its Action Opportunity')}</div><div class="tp-foot"></div>`;
   }
-  return head('Your move', `${esc(t.label)} · ${esc(timing)}`, '1 Maneuver, 2 Action ticks.', true)
-    + `<div class="tp-body">${actionButtons(ctx, t, o)}</div>
-      <div class="tp-foot"><button class="bigbtn" data-act="endopp">End this Opportunity</button></div>`;
+  // A Shutdown Mech whose Opportunity has come must Reboot (FAQ K17), so the
+  // Reboot row is its whole panel and there is nothing to end.
+  const owed = rebootOwed(s, t);
+  return head('Your move', `${esc(t.label)} · ${esc(timing)}`, owed ? 'Shutdown: Reboot now.' : '1 Maneuver, 2 Action ticks.', true)
+    + `<div class="tp-body">${tieRow(ctx)}${actionButtons(ctx, t, o)}</div>
+      <div class="tp-foot">${owed ? '' : '<button class="bigbtn" data-act="endopp">End this Opportunity</button>'}</div>`;
 }
 
 function endPanel(ctx: HudCtx): string {
@@ -2148,6 +2182,9 @@ let launchPlan: {
   placed: number;
   placedUids: number[];
   placedSizes: number[];
+  // Which magazine paid each placement (the Pod's, or the Ammunition Pack's
+  // under 086_B), so a take-back refunds that one.
+  paidPools: string[];
 } | null = null;
 
 export function startLaunchPlan(uid: number, actionId: string, cardId: string, label: string): void {
@@ -2160,7 +2197,9 @@ export function startLaunchPlan(uid: number, actionId: string, cardId: string, l
   // the real cap is whichever runs out first. Off ammoHolder, not off `t`: a
   // launcher lent by a Carrier Tarantula keeps its magazine on the Drone (FAQ
   // O3/O16), and reading the Mech found undefined and offered the full Volley.
-  const ammo = ammoHolder(ctx.data, ctx.state, t, actionId).ammo?.[actionId];
+  // And ammoAvailable, not one magazine: an empty Pod still fires out of an
+  // Ammunition Pack carrying 086_B (audit Phase 2, C6).
+  const ammo = ammoAvailable(ctx.data, ctx.state, t, actionId);
   const shots = Math.min(volleyOf(a), ammo === undefined ? volleyOf(a) : ammo);
   if (shots <= 0) {
     ctx.noteNow(`${a.name?.en || actionId} has no Ammo Tokens left, so it cannot be performed (4.13).`);
@@ -2169,7 +2208,7 @@ export function startLaunchPlan(uid: number, actionId: string, cardId: string, l
     ctx.refresh();
     return;
   }
-  launchPlan = { uid, actionId, cardId, label, left: shots, placed: 0, placedUids: [], placedSizes: [] };
+  launchPlan = { uid, actionId, cardId, label, left: shots, placed: 0, placedUids: [], placedSizes: [], paidPools: [] };
   ctx.refresh();
 }
 
@@ -2233,8 +2272,10 @@ function placeLaunched(ctx: HudCtx, c: number, r: number): void {
   if (!ctx.check(shot).ok) { ctx.send(shot); ctx.refresh(); return; }
   commitAction(ctx);
   const before = ctx.state.tokens.length;
+  const pool = ammoPay(ctx.data, ctx.state, t, m.actionId).poolId;
   const v = ctx.send(shot);
   if (!v.ok) { ctx.refresh(); return; }
+  m.paidPools.push(pool);
   // A Missile Group lands as several Units off one launch (6.2): each is owed
   // its own Interception, and taking the placement back takes them all.
   m.placedUids.push(...ctx.state.tokens.slice(before).map((x) => x.uid));
@@ -2243,7 +2284,7 @@ function placeLaunched(ctx: HudCtx, c: number, r: number): void {
   m.left--;
   // A single shot closes on its own; a volley stays open once it is spent so
   // the last Projectile can still be taken back before it counts.
-  const ammoLeft = t.ammo?.[m.actionId];
+  const ammoLeft = ammoAvailable(ctx.data, ctx.state, t, m.actionId);
   const spent = m.left <= 0 || (ammoLeft !== undefined && ammoLeft <= 0);
   if (spent && m.placed + m.left <= 1) finishLaunchPlan(ctx);
   else ctx.refresh();
@@ -2259,7 +2300,7 @@ function undoLaunched(ctx: HudCtx): void {
   const t = ctx.state.tokens.find((x) => x.uid === m.uid);
   if (t) {
     for (const uid of gone) ctx.send({ kind: 'despawn', seat: t.side, uid: t.uid, targetUid: uid });
-    ctx.send({ kind: 'restoreAmmo', seat: t.side, uid: t.uid, actionId: m.actionId });
+    ctx.send({ kind: 'restoreAmmo', seat: t.side, uid: t.uid, actionId: m.paidPools.pop() ?? m.actionId });
   }
   m.placed--;
   m.left++;
@@ -2581,7 +2622,7 @@ function answerReaction(ctx: HudCtx, key: string, place: boolean): void {
     if (!place) {
       ctx.noteNow(`${t.label} calls off the attack. The Action Tick was spent at the designation (FAQ I11).`);
     } else if (r.fromUid !== undefined) {
-      ctx.startAttack(uid, actionId, r.fromUid);
+      ctx.startAttack(uid, actionId, r.fromUid, 'attack', { charged: !!r.charged, chargeChoice: r.chargeChoice, twoHandedDeclined: !!r.twoHandedDeclined });
     }
     ctx.refresh();
     return;
@@ -2774,7 +2815,7 @@ function interceptPanel(ctx: HudCtx): string {
 // the only reach test — Electronic Warfare ignores Terrain and line of sight
 // outright (4.11.1) — so the target list deliberately says nothing about arcs.
 
-let ewPick: { uid: number; actionId: string; refund?: { uid: number; slot: string } } | null = null;
+let ewPick: { uid: number; actionId: string; refund?: { uid: number; slot: string; choice?: string } } | null = null;
 
 export function startElectronicPick(uid: number, actionId: string): void {
   ewPick = { uid, actionId };
@@ -2884,6 +2925,14 @@ function contestAct(ctx: HudCtx, act: EwAct, arg?: { uid?: number; indices?: num
     });
     return;
   }
+  // ZPA-38 Firewatch: the Link and the [Eye]-as-[Lightning] ride one command,
+  // so both seats tally the same hand (audit Phase 2, D4).
+  if (act === 'firewatch' && unit) {
+    const v = ctx.send({ kind: 'firewatch', seat: unit.side, uid: unit.uid });
+    if (!v.ok && v.why) ctx.noteNow(v.why);
+    ctx.refresh();
+    return;
+  }
   if (act === 'declare' && unit) {
     // FAQ G4: the declare travels on its own and pays the Link on arrival, so
     // the reroll after it - and any retry of that reroll - costs nothing more.
@@ -2953,7 +3002,12 @@ function contestAct(ctx: HudCtx, act: EwAct, arg?: { uid?: number; indices?: num
             { uid: resp.uid, actionId: a.id, count: 1, range: 0, kind: 'manifest', fromUid: init.uid },
             // The free Scan on designation (FAQ I12): the attack that earned it
             // waits for the Reveal, then resumes from the attacker's own seat.
-            ...(c.thenAttack ? [{ uid: init.uid, actionId: c.thenAttack.actionId, count: 1, range: 0, kind: 'scanAttack' as const, fromUid: resp.uid }] : []),
+            ...(c.thenAttack ? [{
+              uid: init.uid, actionId: c.thenAttack.actionId, count: 1, range: 0, kind: 'scanAttack' as const, fromUid: resp.uid,
+              ...(c.thenAttack.charged ? { charged: true } : {}),
+              ...(c.thenAttack.chargeChoice ? { chargeChoice: c.thenAttack.chargeChoice } : {}),
+              ...(c.thenAttack.twoHandedDeclined ? { twoHandedDeclined: true } : {}),
+            }] : []),
           ],
         });
         ctx.noteNow(`${init.label} Scans ${resp.label}: it is Revealed, and its own player now makes its Manifestation Movement (4.12.4).${c.thenAttack ? ' The attack resumes once it has appeared (FAQ I12).' : ''}`);
@@ -3262,7 +3316,7 @@ let crushPlan: {
   free?: boolean;
   granted?: boolean;
   shoveActionId?: string;
-  attackAfter?: { actionId: string; refund?: { uid: number; slot: string } };
+  attackAfter?: { actionId: string; refund?: { uid: number; slot: string; choice?: string } };
   facing?: Facing;
   // The route, kept so the Boxes it walked over are still offered once the
   // crush has been worked through — and with it the budget it was drawn
@@ -3627,7 +3681,7 @@ function formPanel(ctx: HudCtx): string {
        <div class="tp-foot"><button class="bigbtn ghost2" data-act="formcancel">${rows ? 'Cancel' : 'Close'}</button></div>`;
 }
 
-let shockPick: { uid: number; actionId: string; x: number; refund?: { uid: number; slot: string } } | null = null;
+let shockPick: { uid: number; actionId: string; x: number; refund?: { uid: number; slot: string; choice?: string } } | null = null;
 
 function shockPanel(ctx: HudCtx): string {
   const m = shockPick!;
@@ -3646,7 +3700,7 @@ function shockPanel(ctx: HudCtx): string {
 
 // After the Shock walk lands - or is backed out of - the attack it belongs to
 // reopens. shockAsked=true, or the door would put the same question again.
-function resumeShockAttack(ctx: HudCtx, uid: number, after: { actionId: string; refund?: { uid: number; slot: string } }): void {
+function resumeShockAttack(ctx: HudCtx, uid: number, after: { actionId: string; refund?: { uid: number; slot: string; choice?: string } }): void {
   const t = ctx.state.tokens.find((x) => x.uid === uid);
   if (!t) return;
   const a = actionOn(ctx, t, after.actionId);
@@ -3862,9 +3916,22 @@ function chargePanel(ctx: HudCtx): string {
   const t = s.tokens.find((x) => x.uid === m.uid);
   if (!t) return head('Charge', 'That unit is gone', '', true)
     + '<div class="tp-body"></div><div class="tp-foot"><button class="bigbtn ghost2" data-act="chargecancel">Close</button></div>';
-  const slots = chargeableSlots(ctx.data, t).filter((x) => x.charged !== m.on);
+  // A spend pays with the Charge on the Action's OWN Part: [Charged] applies
+  // "if the Part has a face-up Charge Token". Every Charged Part used to be
+  // offered, so a Torso's KC Charge bought an Ion gun its Mutilation and the
+  // gun kept its own token (audit Phase 2, C5).
+  const own = !m.on && m.actionId
+    ? guidedActions(ctx.data, t, { tokens: s.tokens, terrain: terrainOf(ctx) }).find((g) => g.action.id === m.actionId)?.slot
+    : undefined;
+  const slots = chargeableSlots(ctx.data, t).filter((x) => x.charged !== m.on && (!own || x.slot === own));
+  // An either/or [Charged] line is spent on ONE of its arms (R7MG 556_A:
+  // Multi-target 3 or Suppression), so each arm is its own button (E9).
+  const act = !m.on && m.actionId ? actionOn(ctx, t, m.actionId) : undefined;
+  const arms = act ? chargeChoices(act) : [];
   const rows = slots
-    .map((x) => `<button class="rowwide" data-chargeslot="${esc(String(x.slot))}">${esc(x.label)}<span class="ct">${m.on ? 'turn face-up' : 'spend it'}</span></button>`)
+    .map((x) => arms.length && !m.on
+      ? arms.map((arm) => `<button class="rowwide" data-chargeslot="${esc(String(x.slot))}" data-choice="${esc(arm.id)}">${esc(x.label)}<span class="ct">spend it: ${esc(arm.label)}</span></button>`).join('')
+      : `<button class="rowwide" data-chargeslot="${esc(String(x.slot))}">${esc(x.label)}<span class="ct">${m.on ? 'turn face-up' : 'spend it'}</span></button>`)
     .join('');
   const why = m.on
     ? 'Only one Part may be Charged per Charge Action, and only one whose token is still face-down.'
@@ -3993,7 +4060,7 @@ export function resetHudTools(): void {
 // attack that never happened. The spend has to land before the targeting (the
 // Charge is what the Action is being performed WITH, and the panel offers it
 // first), so the only honest fix is to undo it when the attack is abandoned.
-function openAttackPick(t: Token, a: CardAction, refund?: { uid: number; slot: string }, shockAsked = false): void {
+function openAttackPick(t: Token, a: CardAction, refund?: { uid: number; slot: string; choice?: string }, shockAsked = false): void {
   if (isElectronicAttack(a)) { ewPick = { uid: t.uid, actionId: a.id, refund }; return; }
   // Shock Attack X (冲锋X): "Before performing this Action, may move X grids."
   // Asked HERE because every attack door funnels through this function - the
@@ -4016,7 +4083,7 @@ function openAttackPick(t: Token, a: CardAction, refund?: { uid: number; slot: s
 
 // Put a spent Charge Token back, face-up, and say so. Called from every path
 // that abandons an attack the token was spent for.
-function refundCharge(ctx: HudCtx, refund?: { uid: number; slot: string } | null): void {
+function refundCharge(ctx: HudCtx, refund?: { uid: number; slot: string; choice?: string } | null): void {
   if (!refund) return;
   const t = ctx.state.tokens.find((x) => x.uid === refund.uid);
   if (!t) return;
@@ -4071,6 +4138,37 @@ function routeAction(ctx: HudCtx, t: Token, a: CardAction, ga?: ReturnType<typeo
   const link = linkSupportOf(a);
   if (link) {
     linkPick = { uid: t.uid, actionId: a.id, rule: link };
+    return true;
+  }
+  // ZHDR-206_B Stance feedback: which Ally Mech, then which Stance, and the
+  // Action is paid once both are answered (audit Phase 2, D1).
+  if (stanceFeedbackOf(a)) {
+    void (async () => {
+      const what = a.name?.en || a.id;
+      const targets = stanceFeedbackTargets(ctx.data, ctx.state.tokens, t, a, !!ctx.state.noBoard);
+      const stop = (note?: string): void => { if (note) ctx.noteNow(note); dropAction(); ctx.refresh(); };
+      if (!targets.length) return stop(`${what}: no Ally Mech within Range, out of Shutdown Stance, to switch (FAQ H2).`);
+      const id = targets.length === 1 ? String(targets[0].uid) : await choiceDialog({
+        title: `${what}: which Ally Mech?`,
+        body: 'It switches Stance now, outside its own Action Opportunity.',
+        choices: [...targets.map((x) => ({ id: String(x.uid), label: `${x.label} · ${x.stance}` })), { id: '__cancel', label: 'Cancel', cancel: true }],
+        stacked: true,
+      });
+      const to = targets.find((x) => String(x.uid) === id);
+      if (!to) return stop();
+      const stance = await choiceDialog({
+        title: `${to.label}: which Stance?`,
+        body: `${to.label} is in ${to.stance} Stance.`,
+        choices: [...(['defensive', 'mobility', 'offensive'] as const).filter((x) => x !== to.stance).map((x) => ({ id: x, label: `${x[0].toUpperCase()}${x.slice(1)}` })), { id: '__cancel', label: 'Cancel', cancel: true }],
+      });
+      if (stance !== 'defensive' && stance !== 'mobility' && stance !== 'offensive') return stop();
+      const paid = commitAction(ctx);
+      if (!paid.ok) return stop(paid.why);
+      if (ctx.send({ kind: 'stanceFeedback', seat: t.side, uid: t.uid, actionId: a.id, targetUid: to.uid, stance }).ok) {
+        ctx.noteNow(`${what}: ${to.label} switches to ${stance} Stance.`);
+      }
+      ctx.refresh();
+    })();
     return true;
   }
   const clean = tokenCleanupOf(a);
@@ -4256,7 +4354,7 @@ function launchPickPanel(ctx: HudCtx): string {
 
 // `only`: the one legal target when the rules name it - a Riposte answers the
 // Mech it parried and no one else (FAQ C1).
-let attackPick: { uid: number; actionId: string; refund?: { uid: number; slot: string }; twoHanded?: 'declined'; only?: number } | null = null;
+let attackPick: { uid: number; actionId: string; refund?: { uid: number; slot: string; choice?: string }; twoHanded?: 'declined'; only?: number } | null = null;
 
 // The [Two-Handed] question, answered the same way for the panel and the press
 // (FAQ A16): the designation unless the player has declined it, and a marked
@@ -5058,7 +5156,7 @@ function secondaryRows(ctx: HudCtx, fpFirst?: Side): string {
 let tacticPlan: { side: Side; cardId: string; uid?: number } | null = null;
 
 function tacticCtxOf(ctx: HudCtx): TacticCtx {
-  return { maxLink: (t: Token) => tokenCards(ctx.data, t).find((c) => c.slot === 'pilot')?.card.LV ?? 0 };
+  return { maxLink: (t: Token) => tokenCards(ctx.data, t).find((c) => c.slot === 'pilot')?.card.LV ?? 0, cruising: (t: Token) => cruising(ctx.data, t) };
 }
 
 // The squad panel's Play button, for match.ts: the same two questions the strip
@@ -5880,7 +5978,17 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
       // ends the attack (I11). Asked of the command before paying, so a Mech
       // that cannot Scan (Electronic Value 0) keeps its Tick and is told why.
       if (by && t && statusCount(t.statuses, 'camouflage') > 0) {
-        const scan: Command = { kind: 'startCounterRoll', seat: by.side, uid: by.uid, actionId: 'COMMON_SCAN', targetUid: t.uid, thenAttack: { actionId: m.actionId } };
+        // The declaration's answers ride along, or the resumed attack loses a
+        // Charge already spent for it and a declined [Two-Handed] (Phase 2, C7).
+        const scan: Command = {
+          kind: 'startCounterRoll', seat: by.side, uid: by.uid, actionId: 'COMMON_SCAN', targetUid: t.uid,
+          thenAttack: {
+            actionId: m.actionId,
+            ...(m.refund ? { charged: true } : {}),
+            ...(m.refund?.choice ? { chargeChoice: m.refund.choice } : {}),
+            ...(m.twoHanded === 'declined' ? { twoHandedDeclined: true } : {}),
+          },
+        };
         const can = ctx.check(scan);
         if (!can.ok) {
           ctx.noteNow(`${by.label} cannot Scan ${t.label}, so it cannot attack it while it is in Optical Camouflage (4.12.2). ${can.why ?? ''}`);
@@ -5928,7 +6036,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
       commitAction(ctx);
       // A Charge spent for this attack is its refund: the window folds the
       // [Charged] line in only when it was (chargeAdjusted).
-      ctx.startAttack(m.uid, m.actionId, Number(el.dataset.attacktarget), 'attack', { twoHandedDeclined: m.twoHanded === 'declined', charged: !!m.refund });
+      ctx.startAttack(m.uid, m.actionId, Number(el.dataset.attacktarget), 'attack', { twoHandedDeclined: m.twoHanded === 'declined', charged: !!m.refund, chargeChoice: m.refund?.choice });
     }
     ctx.refresh();
   });
@@ -5995,7 +6103,11 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     if (m && t) {
       const slot = el.dataset.chargeslot!;
       // Charging is the whole Action; spending is the run-up to an attack, and
-      // that attack is the tool the Ticks are waiting on.
+      // that attack is the tool the Ticks are waiting on. The shared Charge
+      // Action is keyed to the Part charged (FAQ H6/H7; audit Phase 2, E7).
+      if (m.on && pendingAction?.kind === 'performAction' && pendingAction.actionId === 'COMMON_CHARGE') {
+        pendingAction = { ...pendingAction, partKey: `COMMON_CHARGE@${slot}` };
+      }
       if (m.on) commitAction(ctx);
       if (ctx.send({ kind: 'setCharge', seat: t.side, uid: t.uid, slot, on: m.on }).ok) {
         ctx.noteNow(m.on
@@ -6004,8 +6116,10 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
       }
       const next = m.actionId ? actionOn(ctx, t, m.actionId) : undefined;
       // A SPEND (`!m.on`) is refundable if the attack it paid for is abandoned;
-      // charging a Part face-up is an Action in its own right and is not.
-      if (next) openAttackPick(t, next, m.on ? undefined : { uid: t.uid, slot });
+      // charging a Part face-up is an Action in its own right and is not. The
+      // arm of an either/or line rides the refund to chargeAdjusted (E9).
+      const choice = el.dataset.choice || undefined;
+      if (next) openAttackPick(t, next, m.on ? undefined : { uid: t.uid, slot, ...(choice ? { choice } : {}) });
     }
     ctx.refresh();
   });
@@ -6383,6 +6497,13 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     const sc = ensureScript(s);
     const t = sc.opp ? s.tokens.find((x) => x.uid === sc.opp!.uid) : undefined;
     if (t) ctx.send({ kind: 'reboot', seat: t.side, uid: t.uid, stance: el.dataset.reboot as Stance });
+    ctx.refresh();
+  });
+  on('[data-tiepick]', (el) => {
+    const t = s.tokens.find((x) => x.uid === Number(el.dataset.tiepick));
+    if (t && ctx.send({ kind: 'chooseTied', seat: t.side, uid: t.uid }).ok) {
+      ctx.noteNow(`${t.label} takes the turn: Mechs tied on Timing and Initiative go in the order their squad picks.`);
+    }
     ctx.refresh();
   });
   on('[data-act="linktick"]', (el) => {

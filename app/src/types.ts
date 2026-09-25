@@ -46,6 +46,11 @@ export interface CardAction {
   // carries the mark so the combat window reports the choice instead of
   // re-deriving a designation the player turned down.
   twoHandedDeclined?: boolean;
+  // The Charge consumed for this attack, and the arm taken of an either/or
+  // [Charged] line: stamped by chargeAdjusted so the defender's mirror can
+  // rebuild the same Action (audit Phase 2, C3/C13).
+  chargeSpent?: boolean;
+  chargeChoice?: string;
 }
 
 export interface Card {
@@ -712,6 +717,22 @@ export interface Opportunity {
   // FAQ L2): how many this Opportunity, capped by the trait. Same class of
   // Tick as Overload, so it joins the base pool rather than the Extras.
   linkTicks?: number;
+  // The Action id of an Extra Action Opportunity grant (Coordinate, the Echo
+  // Pack) this Mech has performed and not yet handed to an ally. grantExtra
+  // must consume it: before, the command stood on its own and was taken with
+  // no grant performed, during the enemy's turn, at any Link cost, and from
+  // inside an Echo Opportunity (FAQ K3; audit Phase 2, B1).
+  grantOwed?: string;
+  // A Movement an Action performed this Opportunity paid for - a Moving
+  // Action, the Bit's Stance Change, a Shock Attack's walk - and not yet made.
+  // A `free` maneuver consumes it: the flag used to ride on ANY performed
+  // Action, any number of times (audit Phase 2, B8).
+  moveOwed?: boolean;
+  // Each launch this Opportunity and the Units it put down, so launch() can
+  // hold one performance to its Volley X (audit Phase 2, C12). A launch whose
+  // Units have all been taken back no longer counts, which is what lets a
+  // take-back free its shot without a command of its own.
+  launched?: { actionId: string; uids: number[] }[];
   performed: string[];
   spentExtras: string[];
 }
@@ -764,6 +785,14 @@ export function normaliseOpportunity(raw: unknown): Opportunity | null {
     // And the Link-for-Tick trade, for the same reason: dropped here it would
     // be re-takeable after every rejoin, replay and rollback.
     linkTicks: typeof o.linkTicks === 'number' && o.linkTicks > 0 ? o.linkTicks : undefined,
+    // The grant debt, for the same reason: dropped here, a rejoin between the
+    // Coordinate Action and the pick would refuse the pick it paid for.
+    grantOwed: typeof o.grantOwed === 'string' && o.grantOwed ? o.grantOwed : undefined,
+    moveOwed: o.moveOwed === true ? true : undefined,
+    launched: Array.isArray(o.launched)
+      ? o.launched.filter((x) => x && typeof x.actionId === 'string' && Array.isArray(x.uids))
+        .map((x) => ({ actionId: x.actionId, uids: x.uids.filter((u) => typeof u === 'number') }))
+      : undefined,
     // Both halves or neither: half a coordinate would put the mover in a Grid
     // it never stood in, which is worse than having no start at all.
     movedFrom: typeof o.movedFrom?.col === 'number' && typeof o.movedFrom?.row === 'number'
@@ -779,6 +808,10 @@ export interface ScriptState {
   turn: Side;
   acted: number[];
   extraOpps: number[];
+  // Mechs tied on Timing and Initiative inside one squad go in the order their
+  // owner picks (3.4.1 orders only the squads; ruled 2026-09-25, audit Phase 2,
+  // E6): the uids it sent forward, the latest first. Emptied with `acted`.
+  tieFirst: number[];
   commanded: number[];
   freeCommand: number[];
   passed: Side[];
@@ -810,7 +843,9 @@ export interface ScriptState {
   // A debt the DEFENDER owes itself after being attacked. `kind` absent means
   // Emergency Smoke -- every debt written before Target Tracing existed, and
   // every one on a saved board.
-  reactions: { uid: number; actionId: string; count: number; range: number; kind?: 'smoke' | 'trace' | 'stance' | 'riposte' | 'manifest' | 'scanAttack'; fromUid?: number }[];
+  // `charged`/`twoHandedDeclined` ride a scanAttack debt: the attack a free
+  // Scan interrupted resumes as it was declared (audit Phase 2, C7).
+  reactions: { uid: number; actionId: string; count: number; range: number; kind?: 'smoke' | 'trace' | 'stance' | 'riposte' | 'manifest' | 'scanAttack'; fromUid?: number; charged?: boolean; chargeChoice?: string; twoHandedDeclined?: boolean }[];
   // An Electronic Counter-roll in progress (4.11.2). It lives in shared state
   // rather than on one client because BOTH sides roll and either may spend Link
   // to Focus, and a player may only ever send commands for their own units.
@@ -906,6 +941,10 @@ export interface CombatView {
   // [Two-Handed] declined by the attacker (FAQ A16), so the mirror rebuilds
   // the same one-handed Action rather than applying the designation itself.
   twoHandedDeclined?: boolean;
+  // And the Charge the attacker consumed for it, with the arm chosen, so the
+  // mirror's Surplus and Multi-Target read the Action that is being rolled.
+  chargeSpent?: boolean;
+  chargeChoice?: string;
   attack: { color: string; face: number }[] | null;
   defense: { color: string; face: number }[] | null;
   log: string[];
@@ -1022,6 +1061,10 @@ export interface CounterRoll {
   // in units.ts reads these with the rolls to say whose turn it is.
   initDeclare?: boolean | null;
   respDeclare?: boolean | null;
+  // ZPA-38 Firewatch taken by that side (the `firewatch` command paid its
+  // Link): its {Eye} count as {Lightning} in tallyCounter (audit Phase 2, D4).
+  initFirewatch?: boolean;
+  respFirewatch?: boolean;
   // LPA-22 Yoyu's 挑衅 Provoke, and the ONLY answer this exchange holds that is
   // not a die: null while the offer is still open, then how it was answered.
   // The printed "may" is a real decision here — forcing an enemy into Offensive
@@ -1044,7 +1087,8 @@ export interface CounterRoll {
   // (4.12.2, FAQ I12): the attack waiting behind this Counter-roll. On a
   // success the attacker is owed a `scanAttack` reaction once the target has
   // Revealed; on a failure the attack ends (I11) and this is simply dropped.
-  thenAttack?: { actionId: string } | null;
+  // With the declaration's answers, so the resumed attack is the one declared.
+  thenAttack?: { actionId: string; charged?: boolean; chargeChoice?: string; twoHandedDeclined?: boolean } | null;
 }
 
 export function newScriptState(firstPlayer: Side): ScriptState {
@@ -1052,6 +1096,7 @@ export function newScriptState(firstPlayer: Side): ScriptState {
     turn: firstPlayer,
     acted: [],
     extraOpps: [],
+    tieFirst: [],
     commanded: [],
     freeCommand: [],
     passed: [],
@@ -1159,6 +1204,8 @@ function normaliseCombatView(raw: unknown): CombatView | null {
     step: v.step,
     targetPart: typeof v.targetPart === 'string' ? v.targetPart : null,
     twoHandedDeclined: v.twoHandedDeclined === true ? true : undefined,
+    chargeSpent: v.chargeSpent === true ? true : undefined,
+    chargeChoice: typeof v.chargeChoice === 'string' ? v.chargeChoice : undefined,
     attack: faces(v.attack),
     defense: faces(v.defense),
     // THE WHOLE LOG, not a tail. It used to be capped at 6 here and at 5 on the
@@ -1282,6 +1329,8 @@ function normaliseCounter(raw: unknown): CounterRoll | null {
     // tells five times over: a rebuilt record would ask a side to declare again.
     initDeclare: typeof c.initDeclare === 'boolean' ? c.initDeclare : null,
     respDeclare: typeof c.respDeclare === 'boolean' ? c.respDeclare : null,
+    initFirewatch: c.initFirewatch === true ? true : undefined,
+    respFirewatch: c.respFirewatch === true ? true : undefined,
     // The FIFTH field of its class, and the fifth whitelist to be taught the
     // lesson: TOKEN -> migrateState, OPPORTUNITY -> normaliseOpportunity,
     // COMBAT VIEW -> normaliseCombatView, the defender's own questions inside
@@ -1291,7 +1340,12 @@ function normaliseCounter(raw: unknown): CounterRoll | null {
     // unanswered and the offer would reappear on a Counter-roll that had
     // already settled. Anything but the two written answers reads as open.
     provoke: c.provoke === 'taken' || c.provoke === 'passed' ? c.provoke : null,
-    thenAttack: c.thenAttack && typeof c.thenAttack.actionId === 'string' ? { actionId: c.thenAttack.actionId } : null,
+    thenAttack: c.thenAttack && typeof c.thenAttack.actionId === 'string' ? {
+      actionId: c.thenAttack.actionId,
+      ...(c.thenAttack.charged === true ? { charged: true } : {}),
+      ...(typeof c.thenAttack.chargeChoice === 'string' ? { chargeChoice: c.thenAttack.chargeChoice } : {}),
+      ...(c.thenAttack.twoHandedDeclined === true ? { twoHandedDeclined: true } : {}),
+    } : null,
   };
 }
 
@@ -1303,6 +1357,7 @@ export function normaliseScript(raw: unknown, firstPlayer: Side): ScriptState {
     turn: asSide(s.turn, base.turn),
     acted: list(s.acted, base.acted),
     extraOpps: list(s.extraOpps, base.extraOpps),
+    tieFirst: list(s.tieFirst, base.tieFirst),
     commanded: list(s.commanded, base.commanded),
     freeCommand: list(s.freeCommand, base.freeCommand),
     passed: Array.isArray(s.passed) ? s.passed : base.passed,

@@ -539,10 +539,12 @@ export class Panel {
           'The wizard walks the rulebook 4.4 sequence: range and arc, line of sight, protection, then the roll.',
         ],
       });
-      atk.addEventListener('click', () => {
-        this.cb.onStartAttack(t, a.id);
-        if (ammoLeft !== undefined) this.cb.onSpendAmmo(t, a.id);
-      });
+      // The Ammo is NOT spent here. A click is not yet an Action: the host
+      // spends it where the attack is declared (the tabletop's target click;
+      // the Match Centre's performAction), so a cancelled pick costs nothing,
+      // and the Match Centre, whose card door also pays through performAction,
+      // no longer pays it twice (audit Phase 2, C1).
+      atk.addEventListener('click', () => this.cb.onStartAttack(t, a.id));
       btns.appendChild(atk);
     }
     if (available && isElectronicAttack(a)) {
@@ -557,10 +559,9 @@ export class Panel {
           'Electronic Warfare ignores terrain and line of sight. Range is the only restriction.',
         ],
       });
-      ew.addEventListener('click', () => {
-        this.cb.onStartElectronic(t, a.id);
-        if (ammoLeft !== undefined) this.cb.onSpendAmmo(t, a.id);
-      });
+      // No Ammo at the click either, for the same reason (no Electronic Attack
+      // in the data carries Ammo today).
+      ew.addEventListener('click', () => this.cb.onStartElectronic(t, a.id));
       btns.appendChild(ew);
     }
     if (intercept?.can) {

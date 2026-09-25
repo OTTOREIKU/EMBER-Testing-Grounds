@@ -59,7 +59,7 @@ const FOLLOW = new Set(['answerDefense', 'acceptRoll', 'focus', 'focusAnswer', '
   'resolveReaction', 'resolveIntercept', 'spendIntercept', 'restoreIntercept', 'rollCounter', 'declareCounterFocus', 'forceShutdown', 'onBehalf',
   'crushSwap', 'forceMove', 'tether', 'disarm', 'destroyTerrain', 'placeSmoke', 'removeSmoke',
   'dissipateSmoke', 'despawn', 'dropBlackBox', 'breakRepaired', 'asterRestore', 'overload',
-  'grantExtra', 'layMine', 'attackMode', 'setStance', 'handOver', 'placeInGrid']);
+  'grantExtra', 'layMine', 'attackMode', 'setStance', 'stanceFeedback', 'firewatch', 'handOver', 'placeInGrid']);
 // endOpportunity and passTurn are NOT here although they close units all the
 // same (solo closes too): they are a player's own deliberate acts, and "I
 // ended my activation too early" is a target the catalog should keep offering
@@ -235,6 +235,7 @@ export function labelFor(cmd: { kind: string }, state: GameState, names?: Ledger
     case 'layMine': label = `${who()} lays a Mine`; break;
     case 'repairPart': label = c.mode === 'mend' ? `${who()}: Part mended` : `${who()}: Part repaired`; break;
     case 'endOpportunity': label = `${who()} ends its activation`; break;
+    case 'chooseTied': label = `${who()} takes its squad's tied turn`; break;
     case 'passTurn': label = 'Turn passed'; break;
 
     // ---------- spends and tokens ----------
@@ -251,6 +252,8 @@ export function labelFor(cmd: { kind: string }, state: GameState, names?: Ledger
     case 'removeStatus': label = `${target()} loses a ${c.statusId ?? 'status'} Token`; break;
     case 'ageStatus': label = `${target()}'s ${c.statusId ?? 'status'} Token ages`; break;
     case 'setStance': label = `${who()} switches to ${c.stance ?? 'a new'} Stance`; break;
+    case 'firewatch': label = `${who()}: Firewatch, {Eye} count as {Lightning}`; break;
+    case 'stanceFeedback': label = `${who()}: Stance feedback, ${target()} to ${c.stance ?? 'a new'} Stance`; break;
     case 'renameUnit': label = `${who()} is now called ${c.label ?? 'something else'}`; break;
     case 'setLoad': label = c.cardId ? `${who()} takes a Load` : `${who()}: Load taken off`; break;
     case 'setInventory': label = c.shared ? `${who()} opens their collection to the table` : `${who()} closes their collection`; break;

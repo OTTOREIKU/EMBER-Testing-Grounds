@@ -53,8 +53,10 @@ check('a Surplus round refuses the attacker — the Mutilation case',
 // each keeping its own answer (they used to disagree: > 0 here, > 1 in two
 // places and no gate at all on the mirror). Both refusals still hold; this
 // follows them to their new home rather than pinning the old wording.
+// With the board since the Phase 2 audit (D4): a White Dwarf Bit Focuses on
+// Karl Fried's Link, and only the board can find his Mech.
 check('canFocus asks the one shared affordability reader',
-  /canAffordFocus\(this\.data, t\)/.test(canFocus), true);
+  /canAffordFocus\(this\.data, t, this\.tokens\?\.\(\) \?\? undefined\)/.test(canFocus), true);
 const units = readFileSync(new URL('../src/units.ts', import.meta.url), 'utf8');
 const afford = units.slice(units.indexOf('export function canAffordFocus'), units.indexOf('// LPA-23-2 Onyx Mellow Chord'));
 check('a non-Mech attacker is refused — the Drone case', /t\.kind !== 'mech'/.test(afford), true);

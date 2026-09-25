@@ -2,13 +2,13 @@ import type { BoardGrids, CombatView, Facing, GameState, MechLoadout, Opportunit
 import { addStatus, ageTokens, cellsOf, gridsOf, newOpportunity, PHASES, shedToken, statusCount, STATUSES, TIMINGS, tokenFaces } from './types';
 import type { GameData } from './data';
 import { cardName, transformFaces, unfoldsInto, discardFaceOf, environmentAllowance } from './data';
-import { counterStage, covertCarryLock, ammoDeliveryPool, opportunityBonusOn, ripostePart, defenseReactionOn, targetTracingOn, riderOnDrone, hasFlexibleTiming, commandGeneration, blinkTargets, isPositionSwap, electronicOrigins, isSilentAction, maneuverIsSilent, loanedParts, unfoldToken, formSwitch, switchFormTo, extrasFor, consumesCharge, cutTethersOn, electronicDash, electronicValue, immobilizedStop, isScanAction, scannable, manifestationRange, nonHumanoidCost, nonHumanoidStop, envHotEntries, settleEnvironments, freehandSlots, twoHandedUse, missileGroupOf, interceptCapacity, anyStartTiming, focusIsFree, keepsLinkOnPartLoss, makeDroneToken, structureOf, makeMechToken, maneuverRange, maxLink, partsLeft, pilotCard, pilotIs, projectileDelivery, provokeWhy, settleTethers, SLOT_LABEL, tetherTo, tokenCards, transformPartOn, actionRange, isRwsAction, rwsCommandKey, rwsFiredKey, selfStatusGrant, selfGrantWhy, straightLineBonus, linkTickTraitOn, isCarrier, canBeLoad, roundEndLinkSources } from './units';
+import { initiativeFor, actionMoves, firewatchOn, focusPayer, stanceFeedbackOf, stanceFeedbackTargets, stanceShaped, actionPartWhy, extraActivationOf, overloadPackOn, cruising, selfStanceShift, spendsAmmoWhenPerformed, startOpts, counterStage, covertCarryLock, ammoDeliveryPool, opportunityBonusOn, ripostePart, defenseReactionOn, targetTracingOn, riderOnDrone, commandGeneration, blinkTargets, isPositionSwap, electronicOrigins, isSilentAction, maneuverIsSilent, loanedParts, unfoldToken, formSwitch, switchFormTo, extrasFor, consumesCharge, cutTethersOn, electronicDash, electronicValue, immobilizedStop, isScanAction, scannable, manifestationRange, nonHumanoidCost, nonHumanoidStop, envHotEntries, settleEnvironments, freehandSlots, twoHandedUse, missileGroupOf, volleyOf, interceptCapacity, focusIsFree, keepsLinkOnPartLoss, makeDroneToken, structureOf, makeMechToken, maneuverRange, maxLink, partsLeft, pilotCard, pilotIs, projectileDelivery, provokeWhy, settleTethers, SLOT_LABEL, tetherTo, tokenCards, transformPartOn, actionRange, isRwsAction, rwsCommandKey, rwsFiredKey, selfStatusGrant, selfGrantWhy, straightLineBonus, linkTickTraitOn, isCarrier, canBeLoad, roundEndLinkSources } from './units';
 import { tetherCap } from './melee';
-import { canActivate, canAttackMode, canManeuver, canOverload, canPerform, spendAction, spendActivation, spendAttackMode, spendManeuver, spendOverload } from './ticks';
+import { canActivate, canAttackMode, canManeuver, canOverload, canPerform, rebooted, REBOOT_ID, spendAction, spendActivation, spendAttackMode, spendManeuver, spendOverload, untouched } from './ticks';
 import { tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { battlefieldLocked, deploymentComplete, deployTurn, firstPlayerFrom, newSetup, normaliseSetup, tasksLocked } from './setup';
 import { applyKill, normaliseTasks, pendingDesignations, recordPartLoss, recordUnitLoss, settleControl, type Designation, retractKill, unrecordPartLoss } from './tasks';
-import { alive, canAct, dialHidden, droneActionWhy, droneMoveWhy, eligibleUnits, getLocalSeat, isLoopPhase, loopComplete, nextTurn, onExtraOpportunity } from './loop';
+import { alive, canAct, dialHidden, droneActionWhy, droneMoveWhy, eligibleUnits, getLocalSeat, isLoopPhase, loopComplete, nextTurn, onExtraOpportunity, tiedChoiceWhy } from './loop';
 import { dissipationFor, rangeBetween, spotsInGrid } from './rules';
 
 // ---------- the command layer (multiplayer phase 1) ----------
@@ -50,6 +50,13 @@ export type Command = (
   // shifting to the edge it actually touches.
   | { kind: 'placeInGrid'; seat: Side; uid: number; to: { col: number; row: number } }
   | { kind: 'setStance'; seat: Side; uid: number; stance: Stance }
+  // ZHDR-206_B Stance feedback: the Drone (`uid`) switches an Ally Mech's
+  // Stance. Its own command because the ally is outside its own Opportunity,
+  // where setStance rightly refuses it (audit Phase 2, D1).
+  | { kind: 'stanceFeedback'; seat: Side; uid: number; actionId: string; targetUid: number; stance: Stance }
+  // ZPA-38 Firewatch on this unit's side of an Electronic Counter Roll: 1 Link,
+  // and its {Eye} count as {Lightning} (audit Phase 2, D4).
+  | { kind: 'firewatch'; seat: Side; uid: number }
   // A callsign for a unit, so two identical builds can be told apart on a
   // sheet. Bookkeeping, not a rule: the label is not rules-bearing and the
   // fingerprint does not carry it. An empty label is refused rather than
@@ -195,6 +202,9 @@ export type Command = (
   | { kind: 'resetRounds'; seat: Side }
   | { kind: 'adjustCommandTokens'; seat: Side; pool: Side; delta: number }
   | { kind: 'endOpportunity'; seat: Side; uid: number }
+  // The squad whose tied Mech holds the Opportunity sends `uid`, another of its
+  // Mechs on the same Timing and Initiative, in its place (audit Phase 2, E6).
+  | { kind: 'chooseTied'; seat: Side; uid: number }
   | { kind: 'designate'; seat: Side; uid: number; fromUid?: number }
   // Command Coordination (4.15.3): a Mech hands a reserved token to a Drone
   // outside the Command Phase. `uid` is the issuing Mech, `targetUid` the
@@ -248,8 +258,11 @@ export type Command = (
       // reach the attack had is the reach this answers at (174).
       reaction?: boolean;
       // The free Scan a Firing or Melee designation of a camouflaged unit earns
-      // (4.12.2, FAQ I12): the attack that waits behind this Counter-roll.
-      thenAttack?: { actionId: string };
+      // (4.12.2, FAQ I12): the attack that waits behind this Counter-roll. It
+      // carries the declaration's two answers, a Charge spent for it and a
+      // declined [Two-Handed], which the resumed attack used to lose (audit
+      // Phase 2, C7).
+      thenAttack?: { actionId: string; charged?: boolean; chargeChoice?: string; twoHandedDeclined?: boolean };
     }
   | { kind: 'rollCounter'; seat: Side; uid: number; faces: number[]; focused?: boolean }
   // A side's Focus declare in a shared Counter-roll (FAQ G4). It pays the Link
@@ -445,7 +458,7 @@ const ok: CheckResult = { ok: true };
 const no = (why: string): CheckResult => ({ ok: false, why });
 const fromVerdict = (v: { ok: boolean; why?: string }): CheckResult => (v.ok ? ok : no(v.why ?? 'Not allowed.'));
 
-const tacticCtx = (data: GameData): TacticCtx => ({ maxLink: (x) => maxLink(data, x) });
+const tacticCtx = (data: GameData): TacticCtx => ({ maxLink: (x) => maxLink(data, x), cruising: (x) => cruising(data, x) });
 
 // A Low Value Unit has no Point Value (book p.82), which is how the card data
 // marks them: the carried and generated Drones all cost 0.
@@ -471,10 +484,11 @@ function gridRange(a: Token, b: Token): number {
 }
 
 // A Part may hold a Charge Token only if one of its own Actions spends one.
+// A Repaired Part still acts (FAQ J23), so it may still be Charged (E12).
 function chargeable(data: GameData, t: Token, slot: string): boolean {
   return tokenCards(data, t).some(
     ({ slot: s, card }) => s === slot
-      && (t.partStates[s as PartSlot | 'main'] ?? 'intact') !== 'destroyed'
+      && ((t.partStates[s as PartSlot | 'main'] ?? 'intact') !== 'destroyed' || (t.repairedSlots ?? []).includes(s))
       && (card.actions ?? []).some((a) => consumesCharge(a)),
   );
 }
@@ -516,6 +530,18 @@ export function ammoPay(
   return lent ? { from: t, poolId: lent } : { from: own, poolId: actionId };
 }
 
+// How many shots the magazines behind one Action can pay for in all: its own,
+// then the Ammunition Pack's that 086_B lends an empty Pod. A Volley and a
+// launch tool size themselves off this, so a page never offers a shot launch
+// refuses, nor refuses one it would take (audit Phase 2, C6). undefined when
+// the Action tracks no Ammo at all.
+export function ammoAvailable(data: GameData, state: GameState, t: Token, actionId: string): number | undefined {
+  const own = ammoHolder(data, state, t, actionId).ammo?.[actionId];
+  if (own === undefined) return undefined;
+  const lent = ammoDeliveryPool(data, t, actionId);
+  return own + (lent ? (t.ammo?.[lent] ?? 0) : 0);
+}
+
 function findAction(data: GameData, state: GameState, uid: number, actionId: string) {
   const t = state.tokens.find((x) => x.uid === uid);
   if (!t) return undefined;
@@ -537,6 +563,64 @@ function findAction(data: GameData, state: GameState, uid: number, actionId: str
 function oppOf(state: GameState, uid: number) {
   const o = state.script?.opp;
   return o && o.uid === uid ? o : undefined;
+}
+
+// A Movement a Tactics Card handed a unit (Hit and Run), owed until made.
+// Kept in the once-per-round ledger, which is normalised and pruned by round
+// already, so the grant cannot outlive the round it was played in.
+function grantedMoveKey(state: GameState, uid: number): string {
+  return `${state.round.n}:grantedMove:${uid}`;
+}
+
+// A maneuver takes whichever debt authorised it: a `free` one the Movement its
+// Action paid for (Opportunity.moveOwed), a `granted` one the card's grant.
+function takeMoveGrant(state: GameState, cmd: Extract<Command, { kind: 'maneuver' }>): void {
+  const sc = state.script;
+  if (!sc) return;
+  if (cmd.free && sc.opp?.uid === cmd.uid && sc.opp.moveOwed) sc.opp = { ...sc.opp, moveOwed: undefined };
+  if (cmd.granted) {
+    const key = grantedMoveKey(state, cmd.uid);
+    sc.oncePerRound = (sc.oncePerRound ?? []).filter((k) => k !== key);
+  }
+}
+
+// Whether this Mech may Reboot now, and if not, why. One reading for check()
+// and for the three pages that offer the row. A Shutdown Mech Reboots "the next
+// time it gains an Action Opportunity" (FAQ K17; 4.1.1), so in a guided game
+// that is its own Action Phase Opportunity - an Echo's included (FAQ L8) - and
+// before it has done anything in it: one shut down part-way through its own
+// turn Reboots at the start of its next. It used to be accepted at any time,
+// during the enemy's turn and in the very Opportunity it shut down in, which
+// handed it a fresh Tick (audit Phase 2, A1). A free table has no Opportunities
+// and records the Reboot whenever the table says it happened.
+export function rebootWhy(state: GameState, t: Token): string | null {
+  if (t.kind !== 'mech') return 'Only a Mech Reboots.';
+  if (t.stance !== 'shutdown') return 'Only a Mech in Shutdown Stance may Reboot (4.1.1).';
+  if (!guidedGame(state)) return null;
+  const o = oppOf(state, t.uid);
+  if (!o || PHASES[state.round.phase] !== 'Action') {
+    return `${t.label} Reboots when its own Action Opportunity comes, which its Timing Dial decides (4.1.1, FAQ K17).`;
+  }
+  if (!untouched(o)) return `${t.label} shut down during this Action Opportunity, so it Reboots at the start of its next one (FAQ K17).`;
+  return null;
+}
+
+// A Shutdown Mech whose own Action Opportunity has just come round has one thing
+// to do, and it must (FAQ K17: it "reboots the next time it gains an Action
+// Opportunity"). Passing it by would keep the Mech Shutdown a whole round the
+// rules never gave it. Ruled 2026-09-25 (audit Phase 2, E3).
+export function rebootOwed(state: GameState, t: Token): boolean {
+  return t.kind === 'mech' && t.stance === 'shutdown' && t.partStates.torso !== 'destroyed'
+    && guidedGame(state) && rebootWhy(state, t) === null;
+}
+
+// A game being walked through Opportunity by Opportunity. NOT `state.script`
+// alone: migrateState gives every loaded state a script, the sandbox and a
+// Freeform pad table included, so the setup is what says a game is Guided
+// (the pad's guidedOn reads the same). The Phase 2 gates first read the
+// script, which refused a Freeform table its Reboot.
+function guidedGame(state: GameState): boolean {
+  return !!state.script && !!normaliseSetup(state.setup);
 }
 
 // Forced Movement, kill tallies, terrain destruction and the intercept queue
@@ -1018,6 +1102,17 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
     case 'advancePhase': {
       const su = normaliseSetup(state.setup);
       if (su && su.stage !== 'done') return no('Finish the pre-game roll and deployment first (3.1).');
+      // Out of the Planning Phase only with every dial set, a Shutdown Mech's
+      // included (FAQ K17): the rule lockDials holds, for the pages that turn
+      // the phase without a lock (a solo Match Centre, the guide). A Mech with
+      // no dial never activated, so it never got the Opportunity it Reboots in
+      // (audit Phase 2, A2).
+      if (su && state.script && state.round.phase === 1) {
+        const unset = state.tokens.filter((x) => x.kind === 'mech' && x.deployed !== false && alive(x) && !x.timing);
+        if (unset.length) {
+          return no(`${unset.map((x) => x.label).join(', ')} ${unset.length === 1 ? 'has' : 'have'} no Timing Dial set. Every Mech sets one before the Action Phase, a Shutdown Mech included (3.3, FAQ K17).`);
+        }
+      }
       // A designation loop ends when neither squad can or will go on (3.2.3).
       // The rule used to live only in which panel drew a Continue button, and a
       // stale or racing press skipped a live Command Phase for both players —
@@ -1129,6 +1224,16 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
     case 'lockDials': {
       if (!state.script) return no('There is no guided game running.');
       if (state.round.phase !== 1) return no('Dials lock at the end of the Planning Phase (3.3).');
+      // Every Mech sets a dial, a Shutdown one included: it Reboots when its
+      // Timing comes round (FAQ K17: "the reboot timing is determined by the
+      // pilot"). A Mech locked in with no dial never activates, so a Shutdown
+      // Mech the pad left off its dial list stayed Shutdown for good (audit
+      // Phase 2, A2). The Teaching guide still warns and lets a second press
+      // through; strict play refuses here.
+      const unset = state.tokens.filter((x) => x.kind === 'mech' && x.deployed !== false && alive(x) && !x.timing);
+      if (unset.length) {
+        return no(`${unset.map((x) => x.label).join(', ')} ${unset.length === 1 ? 'has' : 'have'} no Timing Dial set. Every Mech sets one, a Shutdown Mech included: it Reboots when its Timing comes (3.3, FAQ K17).`);
+      }
       return ok;
     }
     case 'finishDeployment': {
@@ -1196,7 +1301,11 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
     case 'queueReactions': {
       if (!state.script) return no('There is no guided game running.');
       for (const it of cmd.items) {
-        if (!state.tokens.some((x) => x.uid === it.uid)) return no('That unit is not on the board.');
+        const who = state.tokens.find((x) => x.uid === it.uid);
+        if (!who) return no('That unit is not on the board.');
+        // A Shutdown defender owes no reaction: each is its own Passive or
+        // Action (4.1, FAQ L3; audit Phase 2, A4).
+        if (who.kind === 'mech' && who.stance === 'shutdown') return no(`${who.label} is in Shutdown Stance, so it takes no reaction (4.1).`);
         // A Target Tracing debt has to name the attacker: the Counter-roll it
         // opens is against them and nobody else.
         if (it.kind === 'trace' && !state.tokens.some((x) => x.uid === it.fromUid)) return no('That attacker is not on the board.');
@@ -1526,6 +1635,18 @@ function checkActed(
       if (t.stance === 'shutdown' && cmd.stance !== 'shutdown') {
         return no('Leaving Shutdown Stance takes a Reboot, which costs the Action Opportunity (4.1.1).');
       }
+      // Nor can it be chosen: "you may change its Stance to Defensive Stance,
+      // Mobility Stance or Offensive Stance" (3.4.2). A Mech reaches Shutdown
+      // at 0 Link or by a card that forces it, and those carry their own
+      // commands (drainLink, forceShutdown).
+      if (cmd.stance === 'shutdown' && t.stance !== 'shutdown') {
+        return no('Shutdown is not a Stance a Mech chooses. It falls into it at 0 Link (3.4.2, 4.1).');
+      }
+      // Cruise Mode: "no other stance may be selected" (Collab additional
+      // rules). The transform itself puts the Mech in Mobility.
+      if (cruising(data, t) && cmd.stance !== 'mobility' && cmd.stance !== t.stance) {
+        return no(`${t.label} is in Cruise Mode, where no Stance but Mobility may be selected (Ace Strategy additional rules).`);
+      }
       // 4.1: the Stance is chosen at the START of the Action Opportunity, so it
       // may be cycled freely until the Mech does something — reading which
       // Actions each Stance opens up is how the choice gets made. The moment it
@@ -1535,14 +1656,44 @@ function checkActed(
       if (so?.stanceLocked && cmd.stance !== t.stance) {
         return no('This Mech has already acted this Action Opportunity, so its Stance is set (4.1).');
       }
-      // Online, a Mech that does not hold the open Opportunity has no Stance
-      // choice to make once the game is running (4.1): deployment sets it
-      // through deployUnit, and Suppression, Provoke and the Tactics Cards
-      // carry their own commands. The squad panel is read-only online, so
-      // this is the gate for a stale or modified client.
-      if (getLocalSeat() && state.script && normaliseSetup(state.setup)?.stage === 'done' && !so && cmd.stance !== t.stance) {
-        return no('A Mech chooses its Stance at the start of its own Action Opportunity (4.1).');
+      // Once a guided game is running, a Mech that does not hold the open
+      // Action Phase Opportunity has no Stance choice to make (3.4.2, 4.1):
+      // deployment sets it through deployUnit, and Suppression, Provoke, the
+      // Tactics Cards, Barricade and Stance feedback carry their own commands.
+      // This used to hold online only, so one-device guided play let a Stance
+      // change at any time, and the RWS activation a Command buys in the
+      // Command Phase (an Opportunity, but not an Action Opportunity) drew a
+      // Stance row that never locked (audit Phase 2, A6/A7).
+      if (state.script && normaliseSetup(state.setup)?.stage === 'done' && cmd.stance !== t.stance
+        && (!so || PHASES[state.round.phase] !== 'Action')) {
+        return no('A Mech chooses its Stance at the start of its own Action Opportunity (3.4.2, 4.1).');
       }
+      return ok;
+    }
+    case 'firewatch': {
+      if (!firewatchOn(data, t)) return no(`${t.label}'s pilot has no Firewatch, or the Mech is Shut Down and triggers no pilot skill (FAQ L3).`);
+      const c = state.script?.counter;
+      if (c) {
+        const side = c.initiatorUid === t.uid ? 'init' : c.responderUid === t.uid ? 'resp' : null;
+        if (!side) return no('Firewatch works on this Mech\'s own Electronic Counter Roll.');
+        if (side === 'init' ? c.initFirewatch : c.respFirewatch) return no('Firewatch has already been used on this Counter-roll.');
+        if (!(side === 'init' ? c.initRoll : c.respRoll)) return no('Roll first: Firewatch exchanges the {Eye} a roll shows.');
+      }
+      if ((t.link ?? 0) < 2) return no('Firewatch consumes Link, and the last Link can never be spent voluntarily (4.10).');
+      return ok;
+    }
+    case 'stanceFeedback': {
+      const a = findAction(data, state, cmd.uid, cmd.actionId);
+      if (!a || !stanceFeedbackOf(a)) return no('That Action does not switch an ally\'s Stance.');
+      // Performed in the Drone's own activation, when a game is running.
+      if (guidedGame(state) && !oppOf(state, cmd.uid)) return no('It is not this unit\'s activation.');
+      const target = state.tokens.find((x) => x.uid === cmd.targetUid);
+      if (!target) return no('That target is not on the board.');
+      if (!STANCES.includes(cmd.stance) || cmd.stance === 'shutdown') return no('Stance feedback switches to Defensive, Mobility or Offensive Stance.');
+      if (!stanceFeedbackTargets(data, state.tokens, t, a, !!state.noBoard).some((x) => x.uid === target.uid)) {
+        return no(`${target.label} is not an Ally Mech within Range that Stance feedback can reach: it must be standing, not in Shutdown Stance, and not in Cruise Mode.`);
+      }
+      if (target.stance === cmd.stance) return no(`${target.label} is already in that Stance.`);
       return ok;
     }
     case 'defenseReaction': {
@@ -1554,11 +1705,13 @@ function checkActed(
       return ok;
     }
     case 'reboot': {
-      if (t.kind !== 'mech') return no('Only a Mech Reboots.');
       if (t.partStates.torso === 'destroyed') return no('A destroyed Mech cannot Reboot.');
-      if (t.stance !== 'shutdown') return no('Only a Mech in Shutdown Stance may Reboot (4.1.1).');
       if (!STANCES.includes(cmd.stance) || cmd.stance === 'shutdown') return no('A Reboot ends in one of the three active Stances.');
-      return ok;
+      // A Shutdown is Cruise Mode's one exception ("system failures"), and in
+      // Cruise Mode only Mobility may be selected, so it Reboots into it (D3).
+      if (cruising(data, t) && cmd.stance !== 'mobility') return no(`${t.label} is in Cruise Mode, so it Reboots into Mobility Stance, the only one it may select.`);
+      const why = rebootWhy(state, t);
+      return why ? no(why) : ok;
     }
     case 'maneuver': {
       // SHUTDOWN (4.1.1): "it cannot Maneuver or perform any Actions other than
@@ -1656,8 +1809,16 @@ function checkActed(
       }
       // A Movement a card handed out belongs to the card, not to an Action
       // Opportunity: Hit and Run moves a Mech as its Opportunity ends, when
-      // there is no longer one to check against or to charge.
-      if (cmd.granted) return ok;
+      // there is no longer one to check against or to charge. It has to have
+      // been handed out, though: playTactic leaves the grant for this unit, and
+      // the move takes it. The flag used to authorise itself - during the
+      // enemy's turn, in the Command Phase (audit Phase 2, B8).
+      if (cmd.granted) {
+        if (guidedGame(state) && !(state.script?.oncePerRound ?? []).includes(grantedMoveKey(state, cmd.uid))) {
+          return no('Nothing has granted this unit a Movement: a card such as Hit and Run hands one out, and it is made then.');
+        }
+        return ok;
+      }
       const o = oppOf(state, cmd.uid);
       if (!o) return no('It is not this Mech\'s Action Opportunity.');
       // 3.2.2 ②: a Drone's Movement is the Command Phase's choice. Its
@@ -1669,10 +1830,12 @@ function checkActed(
         const why = isLoopPhase(ph) ? droneMoveWhy(ph) : null;
         if (why) return no(why);
       }
-      // A free move rides on an Action that has already been performed; without
-      // one there is nothing that could have moved the unit.
+      // A free move rides on an Action already performed that carries a
+      // Movement, and takes it: one Movement per such Action. It used to ride
+      // on ANY performed Action, any number of times (audit Phase 2, B8).
       if (cmd.free) {
-        return o.performed.length ? ok : no('No Action has been performed this Opportunity, so there is nothing to move with.');
+        if (!o.performed.length) return no('No Action has been performed this Opportunity, so there is nothing to move with.');
+        return o.moveOwed ? ok : no('The Action performed this Opportunity has no Movement left to make: a Moving Action, a Shock Attack or a Stance Change moves once.');
       }
       return fromVerdict(canManeuver(o));
     }
@@ -1901,6 +2064,17 @@ function checkActed(
       const a = findAction(data, state, cmd.uid, cmd.actionId);
       if (!a) return no('This unit has no such Action.');
       if (t.kind === 'mech' && t.stance === 'shutdown') return no('A Mech in Shutdown Stance cannot Maneuver or perform any Action other than Reboot (4.1.1).');
+      // Initiated through a Part that can still act (3.4.3), the Common Actions
+      // included, and only the Torso in Cruise Mode.
+      const partWhy = actionPartWhy(data, t, a, cmd.partKey);
+      if (partWhy) return no(partWhy);
+      // 4.13: an Action whose Ammo Tokens are all spent cannot be performed.
+      // ammoPay, so an empty Pod may still draw on an Ammunition Pack (086_B).
+      if (spendsAmmoWhenPerformed(a)) {
+        const { from, poolId } = ammoPay(data, state, t, a.id);
+        const held = from.ammo?.[poolId];
+        if (held !== undefined && held < 1) return no(`No Ammo Tokens left for ${a.name?.en || a.id}, so it cannot be performed (4.13).`);
+      }
       // A self-applied Token (Ambush, Amplify Profile) the unit already wears
       // is a change the Action cannot make (6.1; FAQ J1 for a second Ambush).
       const selfGrant = selfStatusGrant(a);
@@ -1951,18 +2125,24 @@ function checkActed(
       }
       // partKey names which Part the Action came from, so the same Action
       // borrowed from two Tarantulas is two Parts, not one repeated (FAQ O7).
-      const use = cmd.twoHanded ? twoHandedUse(data, t, a) : null;
+      // The length PAID can depend on the Stance (ZHRA-102_A "[Offensive
+      // Stance] This action is considered a Short Action"; audit Phase 2, D2)
+      // and on a designated Freehand (card 129), in that order.
+      const shaped = stanceShaped(a, t.stance);
+      const use = cmd.twoHanded ? twoHandedUse(data, t, shaped) : null;
       if (cmd.twoHanded && !use) return no('[Two-Handed] needs a free hand to designate, and this unit has none for that Action.');
-      return fromVerdict(canPerform(o, use?.action ?? a, cmd.partKey || a.id, {
-        flexible: hasFlexibleTiming(data, state.tokens, t, a),
-        anyTiming: anyStartTiming(data, t),
-      }));
+      // FAQ K3: "A Mech affected by Echoes cannot use Echoes again on another
+      // Mech during the Action Opportunity gained from Echoes." The guide
+      // warned and let a second press through; the pad offered it (audit
+      // Phase 2, B1).
+      if (o.extra && extraActivationOf(a)) {
+        return no(`${t.label} is taking an Extra Action Opportunity, and cannot grant another one inside it (FAQ K3). It may on its own Action Opportunity.`);
+      }
+      return fromVerdict(canPerform(o, use?.action ?? shaped, cmd.partKey || a.id, startOpts(data, state.tokens, t, a)));
     }
     case 'overload': {
       if (t.kind === 'mech' && t.stance === 'shutdown') return no('A Mech in Shutdown Stance cannot Maneuver or perform any Action other than Reboot (4.1.1).');
-      const ids = new Set(data.overload.map((g) => g.actionId));
-      const has = tokenCards(data, t).some(({ card }) => (card.actions ?? []).some((a) => ids.has(a.id)));
-      if (!has) return no('This Mech has no Overloading Pack.');
+      if (!overloadPackOn(data, t)) return no('This Mech has no Overloading Pack it can still use: the Pack is missing or destroyed (3.4.3).');
       const o = oppOf(state, cmd.uid);
       if (!o) return no('It is not this Mech\'s Action Opportunity.');
       return fromVerdict(canOverload(o, t.link ?? 0));
@@ -1979,6 +2159,11 @@ function checkActed(
         return no(`${trait.label} works in ${trait.stance.charAt(0).toUpperCase()}${trait.stance.slice(1)} Stance: switch Stance first, then declare it (FAQ L2).`);
       }
       if ((o.linkTicks ?? 0) >= trait.maxLink) return no(`${trait.label} trades at most ${trait.maxLink} Link per Action Opportunity, and it has been spent.`);
+      // Any point in the Opportunity, as the publisher's English prints it
+      // ("During piloted Mech's Action Opportunity", RDL 1.02) - but never
+      // after a Reboot, which leaves "only 1 Action Tick" (4.1.1, FAQ L8). It
+      // bought a second one there (audit Phase 2, B2).
+      if (rebooted(o)) return no(`After a Reboot ${t.label} has only 1 Action Tick this Action Opportunity (4.1.1, FAQ L8), so ${trait.label} cannot add one.`);
       // A voluntary spend, so the last Link stays (4.10, FAQ L1).
       if ((t.link ?? 0) < 2) return no('This consumes Link, and the last Link can never be spent voluntarily (4.10).');
       return ok;
@@ -2043,6 +2228,9 @@ function checkActed(
         return no('That is not a place on the board.');
       }
       if (cmd.stance !== undefined && !STANCES.includes(cmd.stance)) return no('That is not a Stance.');
+      // Shutdown is where a Mech falls at 0 Link, never a Stance it is given
+      // (3.4.2 lists only Defensive, Mobility and Offensive).
+      if (cmd.stance === 'shutdown' && t.kind === 'mech') return no('A Mech deploys in Defensive, Mobility or Offensive Stance. Shutdown is only ever reached at 0 Link (3.4.2).');
       return ok;
     }
     case 'applyPenetration': {
@@ -2087,8 +2275,12 @@ function checkActed(
       // skill triggers there (FAQ L3), so focusIsFree is off and the floor
       // bites. This used to say a Shutdown Cadaver could still Focus at 0.
       if (focusIsFree(data, t)) return ok;
+      // A Drone has no Link of its own; a White Dwarf Bit may spend Karl
+      // Fried's (ACE-01; audit Phase 2, D4).
+      const payer = t.kind === 'mech' ? t : focusPayer(data, state.tokens, t);
+      if (!payer) return no(`${t.label} has no Link to Focus with.`);
       // The last Link can never be spent voluntarily (4.10, FAQ L1).
-      if ((t.link ?? 0) < 2) return no('Focus spends 1 Link, and the last Link can never be spent voluntarily (4.10).');
+      if ((payer.link ?? 0) < 2) return no('Focus spends 1 Link, and the last Link can never be spent voluntarily (4.10).');
       return ok;
     }
     case 'restoreLink': {
@@ -2119,7 +2311,7 @@ function checkActed(
       const { from, poolId } = ammoPay(data, state, t, cmd.actionId);
       const held = from.ammo[poolId];
       if (held === undefined) return no('That Action does not track Ammo.');
-      if (held < 1) return no('No Ammo left for that Action (4.12).');
+      if (held < 1) return no('No Ammo left for that Action (4.13).');
       return ok;
     }
     case 'restoreAmmo': {
@@ -2154,6 +2346,9 @@ function checkActed(
       return ok;
     }
     case 'spendIntercept': {
+      // 4.9 Interception is a Firing Action or a Passive; a Shutdown Mech has
+      // neither (4.1).
+      if (t.kind === 'mech' && t.stance === 'shutdown') return no(`${t.label} is in Shutdown Stance, so it cannot Intercept: no Action but Reboot and no Passive (4.1, 4.9).`);
       const held = t.intercept?.[cmd.actionId];
       if (held === undefined) return no('That Action carries no Interception Tokens.');
       if (held < 1) return no('Every Interception Token on that Part is spent, and they are never restored (4.9).');
@@ -2167,6 +2362,10 @@ function checkActed(
       return ok;
     }
     case 'startCounterRoll': {
+      // Whether an Electronic Attack or a reaction, the Initiator is acting,
+      // and a Shutdown Mech performs no Action but Reboot and triggers nothing
+      // of its own (4.1, FAQ L3). Target Tracing still opened one (Phase 2, A4).
+      if (t.kind === 'mech' && t.stance === 'shutdown') return no(`${t.label} is in Shutdown Stance, so it cannot open an Electronic Counter-roll (4.1).`);
       const target = state.tokens.find((x) => x.uid === cmd.targetUid);
       if (!target) return no('That target is not on the board.');
       if (target.side === t.side) return no('An Electronic Attack is made against an enemy Unit (4.11.1).');
@@ -2254,8 +2453,11 @@ function checkActed(
       if (counterStage(data, state.tokens, c) !== (cmd.uid === c.initiatorUid ? 'declareI' : 'declareR')) {
         return no('It is not that side\'s turn to declare a Focus: once both hands are in, the Initiator declares first, then the Responder (FAQ G4).');
       }
-      if (cmd.use && !focusIsFree(data, t) && (t.link ?? 0) < 2) {
-        return no('Focus spends 1 Link, and the last Link can never be spent voluntarily (4.10).');
+      if (cmd.use && !focusIsFree(data, t)) {
+        // The payer: the Mech, or Karl Fried's for a White Dwarf Bit (D4).
+        const payer = t.kind === 'mech' ? t : focusPayer(data, state.tokens, t);
+        if (!payer) return no(`${t.label} has no Link to Focus with.`);
+        if ((payer.link ?? 0) < 2) return no('Focus spends 1 Link, and the last Link can never be spent voluntarily (4.10).');
       }
       return ok;
     }
@@ -2279,6 +2481,9 @@ function checkActed(
       if (!target) return no('That target is not on the board.');
       if (target.kind !== 'mech') return no('Suppression only moves a Mech: other units have no Stance dial to switch.');
       if (target.stance === 'shutdown') return no('A Shutdown Mech is immune to Suppression (glossary).');
+      // Cruise Mode: "not affected by suppression or any other effects that
+      // change stance" (Ace Strategy additional rules; audit Phase 2, D3).
+      if (cruising(data, target)) return no(`${target.label} is in Cruise Mode, which Suppression does not affect.`);
       return ok;
     }
     case 'provoke': {
@@ -2320,7 +2525,12 @@ function checkActed(
     }
     case 'endOpportunity': {
       if (!oppOf(state, cmd.uid)) return no('It is not this unit\'s Action Opportunity.');
+      if (rebootOwed(state, t)) return no(`${t.label} is in Shutdown Stance and its Action Opportunity has come, so it Reboots now: choose the Stance it Reboots into (FAQ K17).`);
       return ok;
+    }
+    case 'chooseTied': {
+      const why = tiedChoiceWhy(state, (x, tm) => initiativeFor(data, x, tm), t);
+      return why ? no(why) : ok;
     }
     case 'asterRestore': {
       const sc = state.script;
@@ -2342,6 +2552,11 @@ function checkActed(
       // Action that consumes one, which is the whole reason reserving tokens is
       // a decision rather than a leftover.
       if (t.kind !== 'mech') return no('Only a Mech bears Command Tokens.');
+      // What spends one here is always an Action or a Passive of this Mech
+      // (Target Tracing, HALO, the Whistle, Chef, a drag), and a Shutdown Mech
+      // has neither (4.1, FAQ L3). Issuing its token to a Drone is `designate`,
+      // which it still may (3.2.1; audit Phase 2, A4 and E13).
+      if (t.stance === 'shutdown') return no(`${t.label} is in Shutdown Stance: nothing it does can consume a Command Token (4.1, 4.15.4).`);
       if (readyCommands(t) <= 0) return no(`${t.label} has no face-up Command Token to spend (4.15.4).`);
       return ok;
     }
@@ -2400,6 +2615,24 @@ function checkActed(
     }
     case 'grantExtra': {
       if (t.kind !== 'mech') return no('Only a Mech takes an Extra Action Opportunity.');
+      // In a guided game the grant has to come from somewhere: the granting
+      // Mech performed Coordinate (or the Echo Pack) in its own Opportunity,
+      // which left the debt this consumes. The command used to stand on its
+      // own, and was taken during the enemy's turn, in the Command Phase, at
+      // 0 Link and from inside an Echo Opportunity (FAQ K3; audit Phase 2, B1).
+      // A free table records whatever the table did.
+      const gop = state.script?.opp;
+      if (guidedGame(state)) {
+        const owed = gop?.grantOwed ? findAction(data, state, gop.uid, gop.grantOwed) : undefined;
+        const g = owed ? extraActivationOf(owed) : undefined;
+        const from = gop ? state.tokens.find((x) => x.uid === gop.uid) : undefined;
+        if (!gop || !g || !from) return no('Nothing has granted an Extra Action Opportunity: the granting Mech performs Coordinate first, in its own Action Opportunity.');
+        if (from.side !== t.side) return no('An Extra Action Opportunity goes to an Ally Mech.');
+        if (g.excludeSelf && from.uid === t.uid) return no(`${from.label} grants this to an Ally Mech other than itself.`);
+        if (cmd.linkCost !== g.linkCost) return no(`${owed?.name?.en || 'This grant'} costs ${g.linkCost} Link, as printed.`);
+        if ((t.link ?? 0) < g.minimumLink) return no(`${t.label} needs at least ${g.minimumLink} Link to be chosen.`);
+        if (!state.noBoard && gridRange(from, t) > g.range) return no(`${t.label} is beyond Range ${g.range} of ${from.label}.`);
+      }
       // More than the cost, never exactly it: the last Link can never be spent
       // voluntarily (4.10), which is also why every card that grants this sets a
       // minimum above its cost. `<` let a Mech on exactly the cost pay down to 0
@@ -2502,9 +2735,26 @@ function checkActed(
       // (FAQ O3/O16), and the Mech has no entry for the borrowed Action at all.
       // Reading t.ammo raw therefore found undefined, said nothing, and a
       // borrowed Missile Pod fired for free all game.
-      const mag = ammoHolder(data, state, t, cmd.actionId);
-      if (mag.ammo[cmd.actionId] !== undefined && mag.ammo[cmd.actionId] <= 0) {
+      //
+      // And through ammoPay, which pool: an empty Pod may launch out of an
+      // RKG70 Ammunition Pack's magazine (086_B Ammo Delivery). The row offered
+      // it on that basis while this refused it (audit Phase 2, C6).
+      const { from: mag, poolId } = ammoPay(data, state, t, cmd.actionId);
+      if (mag.ammo[poolId] !== undefined && mag.ammo[poolId] <= 0) {
         return no('No Ammo Tokens left for this Action (4.13).');
+      }
+      // Volley X: one performance launches at most X (4.7.3). Counted inside
+      // the Opportunity, launches whose Units are still on the board, so a
+      // take-back frees its shot. The pages capped it; this did not, and four
+      // launches off one Volley 2 Action went through (audit Phase 2, C12). No
+      // Extra Tick in the data pays for a Projectile Action, so one
+      // performance per Opportunity is exact.
+      const lo = oppOf(state, cmd.uid);
+      const act = findAction(data, state, cmd.uid, cmd.actionId);
+      if (lo && act) {
+        const cap = volleyOf(act);
+        const live = (lo.launched ?? []).filter((x) => x.actionId === cmd.actionId && x.uids.some((u) => state.tokens.some((tk) => tk.uid === u))).length;
+        if (live >= cap) return no(`${act.name?.en || 'This Action'} launches ${cap === 1 ? 'once' : `at most ${cap} times`} per performance (Volley ${cap}).`);
       }
       const { col, row } = cmd.to;
       if (!Number.isInteger(col) || !Number.isInteger(row) || col < 0 || row < 0 || col >= cellsOf(state) || row >= cellsOf(state)) {
@@ -2705,10 +2955,14 @@ function removeIntegrityLoss(data: GameData, state: GameState): void {
 // WHAT A FOCUS COSTS, in one place: the `focus` command and a Counter-roll's
 // Focus declare both pay through it, so the two cannot disagree about Cadaver
 // or about the Shutdown at 0.
-function payFocus(data: GameData, t: Token): void {
+// A White Dwarf Bit's Focus is paid by the Mech Karl Fried pilots (ACE-01;
+// audit Phase 2, D4), so the debit lands on the payer.
+function payFocus(data: GameData, t: Token, tokens: Token[] = []): void {
   if (focusIsFree(data, t)) return;
-  t.link = Math.max(0, (t.link ?? 0) - 1);
-  if (t.link === 0 && t.kind === 'mech' && t.stance !== 'shutdown') t.stance = 'shutdown';
+  const payer = t.kind === 'mech' ? t : focusPayer(data, tokens, t);
+  if (!payer) return;
+  payer.link = Math.max(0, (payer.link ?? 0) - 1);
+  if (payer.link === 0 && payer.kind === 'mech' && payer.stance !== 'shutdown') payer.stance = 'shutdown';
 }
 
 // Every command lands through here, so the board's derived relationships are
@@ -3485,6 +3739,18 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       t.stance = cmd.stance;
       return;
     }
+    case 'firewatch': {
+      t.link = Math.max(1, (t.link ?? 0) - 1);
+      const c = sc?.counter;
+      if (c?.initiatorUid === t.uid) c.initFirewatch = true;
+      else if (c?.responderUid === t.uid) c.respFirewatch = true;
+      return;
+    }
+    case 'stanceFeedback': {
+      const target = state.tokens.find((x) => x.uid === cmd.targetUid);
+      if (target && target.kind === 'mech' && target.stance !== 'shutdown') target.stance = cmd.stance;
+      return;
+    }
     case 'defenseReaction': {
       // No Stance lock is consulted: reacting to a Penetration is the exception
       // the card buys, and check() has already confirmed it carries one.
@@ -3503,7 +3769,7 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
         o.maneuvered = true;
         o.action = 1;
         o.started = false;
-        o.performed = [...o.performed, 'COMMON_REBOOT'];
+        o.performed = [...o.performed, REBOOT_ID];
         // A Reboot IS the Stance choice (4.1.1), so the one remaining Action
         // Tick must not be refused by the 4.1 lock gate.
         o.stanceLocked = true;
@@ -3558,6 +3824,7 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
         if (!maneuverIsSilent(data, state.tokens, t, t)) shedLowProfile(data, state, t);
         const o0 = oppOf(state, cmd.uid);
         if (o0 && sc && !cmd.free && !cmd.granted) sc.opp = lockStance(t, spendManeuver(o0));
+        takeMoveGrant(state, cmd);
         return;
       }
       const from = cmd.from ?? { col: t.col, row: t.row };
@@ -3625,6 +3892,7 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
           ? { ...o, moved: true, preMoved: true, movedFrom: from }
           : { ...lockStance(t, spendManeuver(o)), movedFrom: from };
       }
+      takeMoveGrant(state, cmd);
       return;
     }
     case 'performAction': {
@@ -3652,6 +3920,13 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       if (a && !passive && !isSilentAction(data, state.tokens, t, a)) {
         shedLowProfile(data, state, t);
       }
+      // The Ammo Token goes with the Action (4.13), for a granted one too. The
+      // pages no longer spend it at the card button's click, which on the
+      // Match Centre's card door would have paid it twice.
+      if (a && spendsAmmoWhenPerformed(a)) {
+        const { from, poolId } = ammoPay(data, state, t, a.id);
+        if (from.ammo?.[poolId] !== undefined) from.ammo[poolId] = Math.max(0, from.ammo[poolId] - 1);
+      }
       // A granted Action spends its grant HERE, so taking the Action and
       // spending it are one step. Clearing the debt from the panel instead
       // leaves a window in which one Riposte buys several Melee Actions.
@@ -3671,14 +3946,28 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       if (a && o && sc) {
         // The length PAID: a designated Freehand can shorten it (card 129), and
         // the check above let the Action through on that same reading.
-        const paidAs = (cmd.twoHanded ? twoHandedUse(data, t, a)?.action : null) ?? a;
+        const shaped = t.kind === 'mech' ? stanceShaped(a, t.stance) : a;
+        const paidAs = (cmd.twoHanded ? twoHandedUse(data, t, shaped)?.action : null) ?? shaped;
         sc.opp = t.kind === 'mech'
-          // anyTiming rides along with flexible so the SPEND agrees with the
-          // check that let the Action through -- miss it and a Starting Action
-          // FPA-01 allowed is re-read as needing an Extra Tick it never used.
-          ? lockStance(t, spendAction(o, paidAs, cmd.partKey || a.id, { flexible: hasFlexibleTiming(data, state.tokens, t, a), anyTiming: anyStartTiming(data, t) }))
+          // The same startOpts the check read, so the SPEND agrees with the
+          // check that let the Action through -- miss one and a Starting Action
+          // FPA-01 or CQC allowed is re-read as needing an Extra Tick it never
+          // used.
+          ? lockStance(t, spendAction(o, paidAs, cmd.partKey || a.id, startOpts(data, state.tokens, t, a)))
           : spendActivation(o, a);
+        // The grant this Action makes is owed until grantExtra hands it to an
+        // ally, and only then (FAQ K3/K21; audit Phase 2, B1).
+        if (sc.opp && extraActivationOf(a)) sc.opp.grantOwed = a.id;
+        // And the Movement it carries, until a `free` maneuver makes it (B8).
+        if (sc.opp && actionMoves(a)) sc.opp.moveOwed = true;
       }
+      // 045_B Barricade: "Switch this mech to Defensive Stance." An Action that
+      // changes the Stance it is performed in, so it acts after the 4.1 lock the
+      // spend just took, and leaves the lock on. Nothing read its change_stance
+      // rule, and setStance afterwards was refused by that same lock (audit
+      // Phase 2, D1). Cruise Mode passes every Stance change by.
+      const shift = a ? selfStanceShift(a) : null;
+      if (shift && t.kind === 'mech' && t.stance !== 'shutdown' && !cruising(data, t)) t.stance = shift;
       return;
     }
     case 'overload': {
@@ -3725,6 +4014,9 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       }
       if (!state.tacticsPlayed) state.tacticsPlayed = { s1: [], s2: [] };
       state.tacticsPlayed[cmd.seat].push(`${state.round.n}:${cmd.cardId}`);
+      // Hit and Run hands this unit a Maneuver, made by a `granted` maneuver
+      // that takes the grant (audit Phase 2, B8).
+      if (spec.maneuver && sc) sc.oncePerRound = [...(sc.oncePerRound ?? []), grantedMoveKey(state, t.uid)];
       // The card's log line embeds values computed during the effect, so it is
       // written here, where a mirrored seat writes the identical line. The UI
       // reads it back off the token.
@@ -3862,7 +4154,7 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       // either. All four Focus senders keep sending a plain `focus`: the rule
       // lives in the command, which is the single source of truth the four
       // disagreeing UI gates used not to have.
-      payFocus(data, t);
+      payFocus(data, t, state.tokens);
       return;
     }
     case 'restoreLink': {
@@ -3934,7 +4226,12 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
         initDeclare: null,
         respDeclare: null,
         provoke: null,
-        thenAttack: cmd.thenAttack ? { actionId: cmd.thenAttack.actionId } : null,
+        thenAttack: cmd.thenAttack ? {
+          actionId: cmd.thenAttack.actionId,
+          ...(cmd.thenAttack.charged ? { charged: true } : {}),
+          ...(cmd.thenAttack.chargeChoice ? { chargeChoice: cmd.thenAttack.chargeChoice } : {}),
+          ...(cmd.thenAttack.twoHandedDeclined ? { twoHandedDeclined: true } : {}),
+        } : null,
       };
       return;
     }
@@ -3962,7 +4259,7 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       else if (cmd.uid === c.responderUid) c.respDeclare = cmd.use;
       else return;
       // The Link, paid with the declare through the focus command's own debit.
-      if (cmd.use) payFocus(data, t);
+      if (cmd.use) payFocus(data, t, state.tokens);
       return;
     }
     case 'disarm': {
@@ -4057,6 +4354,16 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       sc.opp = null;
       return;
     }
+    case 'chooseTied': {
+      if (!sc?.opp) return;
+      sc.tieFirst = [t.uid, ...(sc.tieFirst ?? []).filter((u) => u !== t.uid)];
+      // The glue derives this same Opportunity from the new order; opening it
+      // here keeps a client that runs no glue on the same Mech.
+      const fresh = newOpportunity(t.uid, sc.opp.timing);
+      fresh.extras = extrasFor(data, t);
+      sc.opp = fresh;
+      return;
+    }
     case 'asterRestore': {
       // One flip and one Link, both here so a half-applied ability cannot exist
       // on one seat: the token is consumed the same way any 4.15.4 Action
@@ -4149,7 +4456,8 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       // it never marks the target as having acted, so a Mech echoed before
       // its own turn still takes that turn later (K19).
       if (sc) {
-        if (sc.opp) sc.oppStack.push(sc.opp);
+        // The debt is paid: the granter resumes with nothing more to hand out.
+        if (sc.opp) sc.oppStack.push({ ...sc.opp, grantOwed: undefined });
         const fresh = newOpportunity(cmd.uid, t.timing);
         fresh.extra = true;
         fresh.extras = extrasFor(data, t);
@@ -4218,18 +4526,25 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       // Carrier Tarantula's tokens (FAQ O3/O16), the same unit spendAmmo and
       // restoreAmmo already debit, so a launch and its undo cannot land on two
       // different Drones.
-      const mag = ammoHolder(data, state, t, cmd.actionId);
+      // ammoPay: the pool check() judged, the Pack's when the Pod is empty (086_B).
+      const { from: mag, poolId } = ammoPay(data, state, t, cmd.actionId);
       // MISSILE GROUP X (6.2; the RKG70 Missile Group, card 157): "Each Missile
       // Group contains X Units... Resolve Interception and Explosion damage for
       // each Unit separately." One launch, ONE Ammo, X Units on the board. It
       // was one token for months, so a single hit removed the whole group and
       // it detonated once where the book resolves up to three. Minted one at a
       // time so each takes the next uid and the next numbered label.
+      const minted: number[] = [];
       for (let i = 0; i < missileGroupOf(card); i++) {
         const tok = makeDroneToken(state, data, card, t.side);
         state.tokens.push({ ...tok, parentUid: t.uid, col: cmd.to.col, row: cmd.to.row, facing: cmd.facing });
+        minted.push(tok.uid);
       }
-      if (mag.ammo[cmd.actionId] !== undefined) mag.ammo[cmd.actionId] = Math.max(0, mag.ammo[cmd.actionId] - 1);
+      // One launch, however many Units a Missile Group puts down, counted
+      // against the Volley (C12).
+      const lo = oppOf(state, cmd.uid);
+      if (lo && sc) sc.opp = { ...lo, launched: [...(lo.launched ?? []), { actionId: cmd.actionId, uids: minted }] };
+      if (mag.ammo[poolId] !== undefined) mag.ammo[poolId] = Math.max(0, mag.ammo[poolId] - 1);
       // A lock_one Action commits to what it first launched and is held to it
       // for the rest of the game (008_A, PRDR-105_B). Recorded here rather than
       // in the picker so both pages commit identically and a replay agrees.

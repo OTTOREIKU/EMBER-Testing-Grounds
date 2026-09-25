@@ -134,6 +134,8 @@ function watchFor(side: 'attack' | 'defense'): string[] {
 export interface TableVerdict {
   // The attacker consumed its Part's Charge Token for this Action (4.14).
   chargeSpent?: boolean;
+  // Which arm an either/or [Charged] line was spent on (R7MG 556_A).
+  chargeChoice?: string;
   // Terrain and Unit Protection stack (4.4.2): 0, one of them, or both.
   protection: 0 | 2 | 4;
   // Which of the two it was, so the defence popup can say where dice came from.
@@ -401,7 +403,7 @@ export function beginAttack(attacker: Token, actionId: string, defender: Token, 
   if (!h) { a.toast('No dice data loaded.'); return false; }
   const adjusted = attackActionOf(attacker, actionId, verdict);
   if (!adjusted) return false;
-  const action = chargeAdjusted(adjusted, !!verdict.chargeSpent);
+  const action = chargeAdjusted(adjusted, !!verdict.chargeSpent, verdict.chargeChoice);
   current = { attacker, action, printed: printedActionOf(attacker, actionId) ?? action, defender, verdict };
   targetSlot = defender.kind === 'mech' ? null : 'main';
   h.roller = async (pool, tag) => {
@@ -466,7 +468,12 @@ export function syncMirror(): void {
   }
   const at = s.tokens.find((t) => t.uid === view.attackerUid);
   const df = s.tokens.find((t) => t.uid === view.targetUid);
-  const action = at ? attackActionOf(at, view.actionId) : undefined;
+  // With the attacker's answers, so this phone rolls against the Action being
+  // rolled: a declined [Two-Handed] (FAQ A16) and a consumed Charge, whose
+  // Mutilation the mirror's Surplus label used to leave out (audit Phase 2, C13).
+  const declined: TableVerdict | undefined = view.twoHandedDeclined ? { protection: 0, backAttack: false, twoHanded: 'declined' } : undefined;
+  const built = at ? attackActionOf(at, view.actionId, declined) : undefined;
+  const action = built && view.chargeSpent ? chargeAdjusted(built, true, view.chargeChoice) : built;
   if (!at || !df || !action) { if (helper?.watching) helper.closeMirror(); return; }
   const role = combatRoleFor(a.me(), { attacker: at, defender: df });
   if (role === 'attacker') return;
