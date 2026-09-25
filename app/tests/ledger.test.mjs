@@ -277,5 +277,56 @@ check('a unit is stamped with its opening role',
 }
 
 
+// ---------- One tap, one Undo: `chain: 'join'` (2026-09-24) ----------
+// A tester launched a smoke, pressed Undo, and the Ammo never came back: the
+// launch is three commands (the Action, the launch that spends the Ammo, the
+// grenade's removal as it turns into Smoke Screens) and Undo stepped back one.
+// The sender now marks every command after a gesture's first, and both the
+// pad's Undo and this grouper honour the mark.
+check('a chained command reads as the join role',
+  L.labelFor({ kind: 'launch', chain: 'join', uid: 1 }, state).role, 'join');
+check('an unchained launch still begins its own unit',
+  L.labelFor({ kind: 'launch', uid: 1 }, state).role, 'begin');
+check('a Guided smoke launch is ONE unit: Action, launch, removal',
+  units([E('performAction', { human: 'Smoke Grenade' }), E('launch', { role: 'join' }), E('despawn', { role: 'join' })]),
+  ['Smoke Grenade[0-2]']);
+check('a volley: the second shot joins the first',
+  units([E('launch', { role: 'begin', human: 'Launch' }), E('launch', { role: 'join' })]),
+  ['Launch[0-1]']);
+check('a Charge Action keeps its Charge Token (setCharge used to split it)',
+  units([E('performAction', { human: 'Charge Up' }), E('setCharge', { role: 'join' })]),
+  ['Charge Up[0-1]']);
+check('Target Tracing: the lone reaction takes its Command Token and counter-roll',
+  units([E('resolveReaction', { human: 'Target Tracing' }), E('spendCommand', { role: 'join' }), E('startCounterRoll', { role: 'join' })]),
+  ['Target Tracing[0-2]']);
+check('a join never crosses into another phase',
+  units([E('performAction', { human: 'A' }), { kind: 'launch', role: 'join', round: 1, phase: 3, human: 'B' }]),
+  ['A[0-0]', 'B[1-1]']);
+
+// The pad's Undo walks the joins through the real ring. The loop below is the
+// one in pad.ts undo(), pinned textually underneath so the two cannot drift.
+{
+  const H = await import('../src/history.ts');
+  H.clearHistory();
+  const board = { tokens: [{ uid: 1, ammo: { smoke: 1 } }], round: { n: 1, phase: 2 } };
+  const run = (kind, role, change) => { H.recordSnapshot(board, kind, { human: kind, role }); change(); };
+  run('setStance', 'solo', () => {});
+  run('performAction', 'begin', () => {});
+  run('launch', 'join', () => { board.tokens[0].ammo.smoke = 0; board.tokens.push({ uid: 2 }); });
+  run('despawn', 'join', () => { board.tokens.pop(); });
+  let undone = null;
+  for (let snap = H.undoLast(board); snap; snap = snap.role === 'join' ? H.undoLast(board) : null) undone = snap;
+  check("one Undo refunds the smoke's Ammo", board.tokens[0].ammo.smoke, 1);
+  check("...stops at the gesture's first command", undone?.label, 'performAction');
+  check('...and leaves the step before it alone', H.historyDepth(), 1);
+  H.clearHistory();
+
+  const pad = readFileSync(new URL('../pad/pad.ts', import.meta.url), 'utf8');
+  check('pad.ts undo() walks the joins with the same loop',
+    pad.includes("for (let snap = undoLast(table); snap; snap = snap.role === 'join' ? undoLast(table) : null) undone = snap;"), true);
+  check("pad.ts marks every launch after the tap's first command",
+    pad.includes("...(paid || i > 0 ? { chain: 'join' as const } : {})"), true);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -56,9 +56,11 @@ export interface GuideApi {
   endGame(): void;
   // A Projectile's Delayed Action (pad.ts): the table names the units in the
   // blast; damage through the window as Explosion damage.
-  detonate(uid: number, actionId: string): void;
+  // `joined`: the tap already sent a command (the paid Action), so the next
+  // one chains to it for Undo (commands.ts CommandChain).
+  detonate(uid: number, actionId: string, joined?: boolean): void;
   // Stabilize System's Token question and Link, after the Tick is paid.
-  stabilise?(uid: number): void;
+  stabilise?(uid: number, joined?: boolean): void;
   // Which Handheld Part goes to its Discard Card; null when the player backs out.
   pickDiscard?(uid: number): Promise<string | null>;
   // Launches the projectiles an Action fires (pad.ts): pays the Action, then
@@ -251,13 +253,14 @@ function answerReaction(api: GuideApi, uid: number, actionId: string, take: bool
   if (!api.send({ kind: 'resolveReaction', seat: t.side, uid, actionId })) return;
   if (!take || r.kind === 'manifest') return;
   if (r.kind === 'scanAttack') { if (r.fromUid !== undefined) api.attack?.(uid, actionId); return; }
-  if (r.kind === 'stance') { api.send({ kind: 'defenseReaction', seat: t.side, uid }); return; }
+  // The reaction's own spends ride its resolveReaction: one tap, one Undo.
+  if (r.kind === 'stance') { api.send({ kind: 'defenseReaction', seat: t.side, uid, chain: 'join' }); return; }
   if (r.kind === 'trace') {
-    if (!api.send({ kind: 'spendCommand', seat: t.side, uid })) return;
+    if (!api.send({ kind: 'spendCommand', seat: t.side, uid, chain: 'join' })) return;
     // The counter-roll back at the attacker: the record in a room, the local
     // exchange solo. Range does not apply to a Target Tracing.
     if (api.solo) api.attack?.(uid, actionId, { electronic: true });
-    else api.send({ kind: 'startCounterRoll', seat: t.side, uid, targetUid: r.fromUid!, actionId, reaction: true });
+    else api.send({ kind: 'startCounterRoll', seat: t.side, uid, targetUid: r.fromUid!, actionId, reaction: true, chain: 'join' });
   }
   // Smoke: placed on the table; the debt is spent.
 }
@@ -565,21 +568,25 @@ async function performRouted(api: GuideApi, t: Token, a: CardAction): Promise<vo
   api.toast(`${t.label}: ${a.name.en}.`);
   const seat = t.side;
   const uid = t.uid;
-  if (grant) api.send({ kind: 'applyStatus', seat, uid, targetUid: uid, statusId: grant.statusId, stacks: grant.stacks });
-  if (repair) api.send({ kind: 'repairPart', seat, uid, slot: repair.slot, mode: repair.mode });
-  if (form) api.send({ kind: 'switchForm', seat, uid, actionId: a.id, cardId: form });
+  // Everything below rides the Action: one tap, one Undo (`chain: 'join'`).
+  // Without it a Charge Action undid only its Charge Token and kept the
+  // Action paid.
+  const chain = 'join' as const;
+  if (grant) api.send({ kind: 'applyStatus', seat, uid, targetUid: uid, statusId: grant.statusId, stacks: grant.stacks, chain });
+  if (repair) api.send({ kind: 'repairPart', seat, uid, slot: repair.slot, mode: repair.mode, chain });
+  if (form) api.send({ kind: 'switchForm', seat, uid, actionId: a.id, cardId: form, chain });
   const mode = transformOffer(d, t, a);
-  if (mode) api.send({ kind: 'transformPart', seat, uid, slot: mode.slot, cardId: mode.into.id });
-  if (unfoldsOwed(d, [t]).some((x) => x.actionId === a.id)) api.send({ kind: 'unfold', seat, uid });
-  if (chargeSlot) api.send({ kind: 'setCharge', seat, uid, slot: chargeSlot as PartSlot, on: true });
-  if (tagged) api.send({ kind: 'applyStatus', seat, uid, targetUid: tagged.uid, statusId: tagged.statusId, stacks: tagged.stacks });
-  if (resupply) api.send({ kind: 'restoreAmmo', seat: resupply.to.side, uid: resupply.to.uid, actionId: resupply.actionId, amount: resupply.amount });
+  if (mode) api.send({ kind: 'transformPart', seat, uid, slot: mode.slot, cardId: mode.into.id, chain });
+  if (unfoldsOwed(d, [t]).some((x) => x.actionId === a.id)) api.send({ kind: 'unfold', seat, uid, chain });
+  if (chargeSlot) api.send({ kind: 'setCharge', seat, uid, slot: chargeSlot as PartSlot, on: true, chain });
+  if (tagged) api.send({ kind: 'applyStatus', seat, uid, targetUid: tagged.uid, statusId: tagged.statusId, stacks: tagged.stacks, chain });
+  if (resupply) api.send({ kind: 'restoreAmmo', seat: resupply.to.side, uid: resupply.to.uid, actionId: resupply.actionId, amount: resupply.amount, chain });
   // Command Coordination off the back of the Action (the table judges the
   // Drone's range), then an Extra Action Opportunity the Action grants.
   const upTo = t.kind === 'mech' ? coordinationFor(d, t, a) : 0;
   if (upTo > 0) {
     await offerCoordination(d, api.state(), t, upTo, (mechUid, targetUid) => {
-      api.send({ kind: 'coordinateCommand', seat, uid: mechUid, targetUid });
+      api.send({ kind: 'coordinateCommand', seat, uid: mechUid, targetUid, chain });
     }, (_drone, text) => api.toast(text));
   }
   const extra = extraActivationOf(a);
@@ -594,7 +601,7 @@ async function performRouted(api: GuideApi, t: Token, a: CardAction): Promise<vo
         choices: [...allies.map((x) => ({ id: String(x.uid), label: x.label })), { id: '__none', label: 'Nobody', cancel: true }],
         stacked: true,
       });
-      if (pick && pick !== '__none') api.send({ kind: 'grantExtra', seat, uid: Number(pick), linkCost: extra.linkCost });
+      if (pick && pick !== '__none') api.send({ kind: 'grantExtra', seat, uid: Number(pick), linkCost: extra.linkCost, chain });
     }
   }
 }
@@ -757,9 +764,12 @@ export function guideAct(api: GuideApi, a: string, el: HTMLElement): boolean {
       // first; the Opportunity ends once that is answered.
       const owed = t.kind === 'mech' ? coordinationOnOpportunityEnd(api.data, t) : 0;
       if (owed > 0 && readyCommands(t) > 0) {
+        // The coordination and the end are one tap: every command after the
+        // first joins it for Undo.
+        let sent = 0;
         void offerCoordination(api.data, s, t, owed, (mechUid, targetUid) => {
-          api.send({ kind: 'coordinateCommand', seat: t.side, uid: mechUid, targetUid });
-        }, (_d, text) => api.toast(text)).then(() => { api.send({ kind: 'endOpportunity', seat: t.side, uid: t.uid }); });
+          if (api.send({ kind: 'coordinateCommand', seat: t.side, uid: mechUid, targetUid, ...(sent ? { chain: 'join' as const } : {}) })) sent++;
+        }, (_d, text) => api.toast(text)).then(() => { api.send({ kind: 'endOpportunity', seat: t.side, uid: t.uid, ...(sent ? { chain: 'join' as const } : {}) }); });
         return true;
       }
       api.send({ kind: 'endOpportunity', seat: t.side, uid: t.uid });
@@ -782,7 +792,7 @@ export function guideAct(api: GuideApi, a: string, el: HTMLElement): boolean {
       }
       // A Projectile's Delayed Action: paid, then the detonation resolver.
       if (a && t.kind === 'projectile' && a.action.type !== 'Passive') {
-        if (api.send({ kind: 'performAction', seat: t.side, uid: t.uid, actionId: a.action.id })) api.detonate(t.uid, a.action.id);
+        if (api.send({ kind: 'performAction', seat: t.side, uid: t.uid, actionId: a.action.id })) api.detonate(t.uid, a.action.id, true);
         return true;
       }
       // An Action that fires projectiles launches them; a card that names
@@ -808,7 +818,7 @@ export function guideAct(api: GuideApi, a: string, el: HTMLElement): boolean {
         if (c.type === 'Melee' && api.attack) { api.attack(t.uid, c.id); return true; }
         if (isElectronicAttack(c) && api.attack) { api.attack(t.uid, c.id, { electronic: true }); return true; }
         if (c.id === 'COMMON_STABILIZE') {
-          if (api.send({ kind: 'performAction', seat: t.side, uid: t.uid, actionId: c.id })) api.stabilise?.(t.uid);
+          if (api.send({ kind: 'performAction', seat: t.side, uid: t.uid, actionId: c.id })) api.stabilise?.(t.uid, true);
           return true;
         }
         // |Discard| names its Part BEFORE the Ticks are paid, so backing out of
@@ -817,13 +827,13 @@ export function guideAct(api: GuideApi, a: string, el: HTMLElement): boolean {
           void api.pickDiscard(t.uid).then((slot) => {
             if (slot === null) return;
             if (api.send({ kind: 'performAction', seat: t.side, uid: t.uid, actionId: c.id })) {
-              api.send({ kind: 'disarm', seat: t.side, uid: t.uid, targetUid: t.uid, slot });
+              api.send({ kind: 'disarm', seat: t.side, uid: t.uid, targetUid: t.uid, slot, chain: 'join' });
             }
           });
           return true;
         }
         if (c.id === 'COMMON_REVEAL') {
-          if (api.send({ kind: 'performAction', seat: t.side, uid: t.uid, actionId: c.id })) api.send({ kind: 'reveal', seat: t.side, uid: t.uid });
+          if (api.send({ kind: 'performAction', seat: t.side, uid: t.uid, actionId: c.id })) api.send({ kind: 'reveal', seat: t.side, uid: t.uid, chain: 'join' });
           return true;
         }
         void performRouted(api, t, c);
@@ -863,10 +873,12 @@ export function guideAct(api: GuideApi, a: string, el: HTMLElement): boolean {
       const r = (ensureScript(s).reactions ?? []).find((x) => x.uid === uid && x.kind === 'riposte');
       if (!t || !r) return true;
       // The Opportunity ends first, if it is still the open one.
-      if (ensureScript(s).opp?.uid === r.fromUid && !api.send({ kind: 'riposte', seat: t.side, uid, fromUid: r.fromUid! })) return true;
-      if (el.dataset.only) { api.send({ kind: 'resolveReaction', seat: t.side, uid, actionId: r.actionId }); return true; }
+      const ended = ensureScript(s).opp?.uid === r.fromUid;
+      if (ended && !api.send({ kind: 'riposte', seat: t.side, uid, fromUid: r.fromUid! })) return true;
+      const rides = ended ? { chain: 'join' as const } : {};
+      if (el.dataset.only) { api.send({ kind: 'resolveReaction', seat: t.side, uid, actionId: r.actionId, ...rides }); return true; }
       const melees = guidedActions(api.data, t).filter((g) => g.action.type === 'Melee').map((g) => g.action);
-      if (!melees.length) { api.send({ kind: 'resolveReaction', seat: t.side, uid, actionId: r.actionId }); return true; }
+      if (!melees.length) { api.send({ kind: 'resolveReaction', seat: t.side, uid, actionId: r.actionId, ...rides }); return true; }
       void (async () => {
         const pick = melees.length === 1 ? melees[0].id : await choiceDialog({
           title: 'Riposte',

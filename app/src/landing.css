@@ -39,11 +39,21 @@ html, body { margin: 0; background: var(--bg); color: var(--text); font-family: 
   background-size: 26px 26px;
   mask-image: radial-gradient(80% 60% at 70% 30%, #000, transparent 75%);
 }
+/* The Mechs are drawn SOLID and darkened by a filter, not faded with opacity:
+   faded, the one behind showed THROUGH the one in front (OTTO, 2026-09-24).
+   Both sit in one layer, so the front Mech covers the back one there, and the
+   layer is laid over the page with `lighten` - only what is lighter than the
+   backdrop shows, so the dark linework drops through to the glow and grid
+   instead of printing a flat grey block. */
+.land-mechs { position: absolute; inset: 0; mix-blend-mode: lighten; }
 .land-mech {
   position: absolute; width: 430px; height: 430px; right: -80px; top: 70px;
-  opacity: 0.10; filter: grayscale(1) brightness(2.4);
+  filter: grayscale(1) brightness(0.2);
 }
 .land-mech img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+/* The UN starter, behind the RDL one and facing the other way. A wide screen
+   only: on a phone the RDL Mech already fills the space it has. */
+.land-mech-un { display: none; }
 .land-zh {
   position: absolute; left: 20px; top: 120px; writing-mode: vertical-rl;
   font: 700 64px var(--zh); letter-spacing: 0.1em; color: #fff; opacity: 0.045;
@@ -105,6 +115,16 @@ html, body { margin: 0; background: var(--bg); color: var(--text); font-family: 
   :root { --edge: 22px; --pad-x: 56px; }
   .land { padding-top: 44px; padding-bottom: 44px; }
   .land-mech { width: min(62vw, 820px); height: min(62vw, 820px); right: -6vw; top: 50%; transform: translateY(-55%); }
+  /* Smaller and darker than the Dune so it reads as further back, set to its
+     left and overlapping it, flipped to face left. Earlier in the markup, so
+     it paints behind - and, being solid, stays hidden where the Dune covers it. */
+  .land-mech-un {
+    display: block;
+    width: min(48vw, 640px); height: min(48vw, 640px);
+    right: calc(min(62vw, 820px) * 0.52 - 6vw); top: 50%;
+    transform: translateY(-50%) scaleX(-1);
+    filter: grayscale(1) brightness(0.155);
+  }
   .land-zh { left: 40px; top: 18vh; font-size: 96px; }
   .land-strip { width: 16px; }
   .land-corner.tl, .land-corner.bl { left: 30px; }

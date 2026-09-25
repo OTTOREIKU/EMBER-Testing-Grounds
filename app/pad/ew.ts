@@ -79,12 +79,14 @@ export function mountEw(into: HTMLElement): ElectronicHelper | null {
 
 // Opens the exchange. Guided: the command, and the record draws it on both
 // phones. Freeform: the helper's own exchange, here.
-export function beginElectronic(attacker: Token, actionId: string, defender: Token): boolean {
+// `joined`: a Guided game paid the Action in the same tap, so the exchange's
+// opening chains to it for Undo.
+export function beginElectronic(attacker: Token, actionId: string, defender: Token, joined = false): boolean {
   const a = api!;
   // Solo holds both hands on one phone, which is the local exchange's whole
   // shape; the shared record is for two phones.
   if (a.state().script && !a.solo) {
-    return a.send({ kind: 'startCounterRoll', seat: attacker.side, uid: attacker.uid, actionId, targetUid: defender.uid });
+    return a.send({ kind: 'startCounterRoll', seat: attacker.side, uid: attacker.uid, actionId, targetUid: defender.uid, ...(joined ? { chain: 'join' as const } : {}) });
   }
   if (!root) return false;
   const h = mountEw(root);
@@ -160,13 +162,18 @@ function contestAct(act: EwAct, arg?: { uid?: number; indices?: number[] }): voi
   }
   if (act === 'apply') {
     const action = actionOf(init, c.actionId);
+    // The result and the close are one tap: every command after the first
+    // joins it for Undo (commands.ts CommandChain).
+    let sent = 0;
+    const join = () => (sent++ ? { chain: 'join' as const } : {});
     if (action && isScanAction(action)) {
       const strip = scanStrips(resp);
       for (let i = 0; i < strip; i++) {
-        a.send({ kind: 'removeStatus', seat: init.side, uid: init.uid, targetUid: resp.uid, statusId: 'lowProfile' });
+        a.send({ kind: 'removeStatus', seat: init.side, uid: init.uid, targetUid: resp.uid, statusId: 'lowProfile', ...join() });
       }
       if (statusCount(resp.statuses, 'camouflage') > 0) {
         a.send({
+          ...join(),
           kind: 'queueReactions', seat: init.side,
           items: [
             { uid: resp.uid, actionId: action.id, count: 1, range: 0, kind: 'manifest', fromUid: init.uid },
@@ -174,19 +181,19 @@ function contestAct(act: EwAct, arg?: { uid?: number; indices?: number[] }): voi
           ],
         });
       }
-      a.send({ kind: 'clearCounterRoll', seat: init.side });
+      a.send({ kind: 'clearCounterRoll', seat: init.side, ...join() });
       a.render();
       return;
     }
     if (targetTracingOn(a.data, init)?.actionId === c.actionId) {
-      a.send({ kind: 'drainLink', seat: init.side, uid: init.uid, targetUid: resp.uid, n: 1 });
+      a.send({ kind: 'drainLink', seat: init.side, uid: init.uid, targetUid: resp.uid, n: 1, ...join() });
     } else {
       const named = (action?.gameRules ?? []).flatMap((g) => g.effects ?? [])
         .find((e) => (e as { type?: string }).type === 'apply_status') as { status?: string; stacks?: number } | undefined;
       const def = STATUSES.find((x) => x.label === named?.status || x.id === named?.status) ?? STATUSES.find((x) => x.id === 'fci')!;
-      a.send({ kind: 'applyStatus', seat: init.side, uid: init.uid, targetUid: resp.uid, statusId: def.id, stacks: named?.stacks ?? 1 });
+      a.send({ kind: 'applyStatus', seat: init.side, uid: init.uid, targetUid: resp.uid, statusId: def.id, stacks: named?.stacks ?? 1, ...join() });
     }
-    a.send({ kind: 'clearCounterRoll', seat: init.side });
+    a.send({ kind: 'clearCounterRoll', seat: init.side, ...join() });
     a.render();
     return;
   }

@@ -1,6 +1,5 @@
 import type { GameData } from './data';
-import { actionIconUrl, cardName, FACTION_LABEL, mechPartUrl, missionImageUrl, secondaryImageUrl, setSquadNames, squadLabel, squadName, stancePrintUrl, tabImageUrl, tokenFace, tokenPrintUrl, traitName } from './data';
-import { MECH_LAYER_ORDER } from './board';
+import { actionIconUrl, cardName, FACTION_LABEL, mechArtLayers, missionImageUrl, secondaryImageUrl, setSquadNames, squadLabel, squadName, stancePrintUrl, tabImageUrl, tokenFace, tokenPrintUrl, traitName } from './data';
 import { canSpendCommand } from './units';
 import { inspectOnHover as inspectBase, linkMechanics as linkBase, type InspectInfo } from './inspector';
 
@@ -486,15 +485,8 @@ export class SquadTracker {
   }
 
   private unitArt(t: Token): HTMLElement | null {
-    const layers: string[] = [];
-    if (t.kind === 'mech' && t.mech) {
-      for (const slot of MECH_LAYER_ORDER) {
-        const id = t.mech[slot];
-        if (!id) continue;
-        if (t.partStates[slot] === 'destroyed' && slot !== 'torso' && slot !== 'chasis') continue;
-        layers.push(mechPartUrl(id));
-      }
-    }
+    // The picture is built in ONE place for every tool (data.ts mechArtLayers).
+    const layers = t.kind === 'mech' && t.mech ? mechArtLayers(t.mech, t.partStates) : [];
     if (!layers.length && t.cardId) layers.push(tabImageUrl(t.cardId));
     if (!layers.length) return null;
     const art = document.createElement('div');

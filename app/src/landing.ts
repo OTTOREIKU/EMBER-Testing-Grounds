@@ -1,16 +1,28 @@
 import { registerOffline } from './offline';
 import { warmAllImages, warmDecision } from './images';
-import { assetUrl } from './data';
+import { mechArtLayers } from './data';
 import { barcodeSvg } from './barcode';
 
-// The Mech behind the wordmark, drawn from its Parts in the board's stacking
-// order (chassis, backpack, torso, left, right): the RDL starter's Dune.
-const MECH = ['534', '532', '014', '535', '025'];
-const mech = document.getElementById('land-mech');
-if (mech) {
-  for (const id of MECH) {
+// The Mechs behind the wordmark, built by the same function as every other
+// tool (data.ts mechArtLayers), so they stack exactly as they do on the board.
+// The BACKPACK is left out of the loadout here: the board and the pad draw it
+// beside the Mech so a player can see which one is fitted, but as a picture it
+// floats loose (OTTO, 2026-09-24).
+// An RDL Dune in front, OTTO's pick (2026-09-24): Dune Tactical Core, RL-08
+// Armored Chassis, Type 77 Bulwark shield, AC-150 HMG. A UN Caracal behind it,
+// also OTTO's pick: TM31R Caracal Battle Core, LM210S Stealth Chassis, S100
+// Shield, IGX350 Ion Shotgun - facing the other way, on a wide screen only
+// (the CSS hides it on a phone).
+const MECHS: [string, { torso: string; chasis: string; leftHand: string; rightHand: string }][] = [
+  ['land-mech', { torso: '014', chasis: '021', leftHand: '034', rightHand: '030' }],
+  ['land-mech-un', { torso: '092', chasis: '100', leftHand: '142', rightHand: '140' }],
+];
+for (const [id, loadout] of MECHS) {
+  const mech = document.getElementById(id);
+  if (!mech) continue;
+  for (const src of mechArtLayers(loadout)) {
     const img = document.createElement('img');
-    img.src = assetUrl(`mech_parts/${id}.webp`);
+    img.src = src;
     img.alt = '';
     img.decoding = 'async';
     img.addEventListener('error', () => img.remove(), { once: true });

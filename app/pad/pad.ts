@@ -44,10 +44,10 @@ import { registerOffline } from '../src/offline';
 import { askTablePool, askTableRoll, askTargetPart } from './tabledice';
 import type { RollGroup } from '../src/combat';
 import { beginElectronic, ewActive, ewWatching, initEw, mountEw, syncContest } from './ew';
-import { clearHistory, historyDepth, historyEntries, undoLast, recordSnapshot } from '../src/history';
+import { clearHistory, historyDepth, historyEntries, undoLast, recordSnapshot, type Snapshot } from '../src/history';
 import { labelFor, namesFrom, type LedgerNames } from '../src/ledger';
 import { setLocalSeat } from '../src/loop';
-import { actionIconUrl, BASE_FACTIONS, battlefieldCardUrl, cardName, discardFaceOf, environmentAllowance, environmentImageUrl, FACTION_LABEL, parseGridRef, isDiscardCard, isListedBox, isMine, loadData, mechPartUrl, missionImageUrl, secondaryImageUrl, stancePrintUrl, statIconIsPlated, statIconUrl, tabImageUrl, tokenFace, tokenPrintUrl, traitName, type GameData } from '../src/data';
+import { actionIconUrl, BASE_FACTIONS, battlefieldCardUrl, cardName, discardFaceOf, environmentAllowance, environmentImageUrl, FACTION_LABEL, parseGridRef, isDiscardCard, isListedBox, isMine, loadData, mechArtLayers, missionImageUrl, secondaryImageUrl, stancePrintUrl, statIconIsPlated, statIconUrl, tabImageUrl, tokenFace, tokenPrintUrl, traitName, type GameData } from '../src/data';
 import { importSquadFile } from '../src/importer';
 import { barcodeSvg } from '../src/barcode';
 import { deleteMechPreset, isBuiltInPreset, loadMechPresets, saveMechPreset, type MechPreset } from '../src/presets';
@@ -70,7 +70,7 @@ import { explosionScope, freehandSlots, targetStatusGrant, immediateDetonation, 
 import { gameResult } from '../src/tasks';
 import { canBeLoad, chargeableSlots, electronicDash, electronicValue, guidedActions, initiativeFor, interceptCapacity, isCarrier, isDeployable, isElectronicAttack, maneuverRange, maxLink, migrateState, parryParts, pilotCard, structureOf, tokenCards, volleyOf } from '../src/units';
 import { lengthOf, LENGTH_NAME, timingOf } from '../src/ticks';
-import { MECH_LAYER_ORDER, newScriptState, PHASES, SCALES, statusesFor, statusStacks, STATUSES, TIMINGS } from '../src/types';
+import { newScriptState, PHASES, SCALES, statusesFor, statusStacks, STATUSES, TIMINGS } from '../src/types';
 import type { Card, CardAction, DieColor, GameState, ImportedSquad, MechLoadout, PartSlot, PartState, Side, Stance, Token } from '../src/types';
 
 const root = document.getElementById('pad-root')!;
@@ -764,9 +764,12 @@ function removeUnit(t: Token): void {
 // Stabilize System (6.1): the Link, and a Token if the player chooses. One
 // kind worn, or none: no question. Two or more: ask, with keeping them all
 // as a choice (J4).
-function stabilise(t: Token): void {
+// `joined`: sent after the Action that paid for it (the Guided Common Action),
+// so it chains to that Action for Undo; the sheet's own + stands alone.
+function stabilise(t: Token, joined = false): void {
+  const chain = joined ? { chain: 'join' as const } : {};
   const worn = statusStacks(t.statuses).filter(({ def }) => def.shape === 'square' || def.shape === 'hexagon');
-  if (worn.length < 2) { send({ kind: 'stabilise', seat: t.side, uid: t.uid }); return; }
+  if (worn.length < 2) { send({ kind: 'stabilise', seat: t.side, uid: t.uid, ...chain }); return; }
   void (async () => {
     const pick = await choiceDialog({
       title: 'Stabilize System',
@@ -778,8 +781,8 @@ function stabilise(t: Token): void {
     });
     if (pick === null) return;
     send(pick === '__keep'
-      ? { kind: 'stabilise', seat: t.side, uid: t.uid, keepTokens: true }
-      : { kind: 'stabilise', seat: t.side, uid: t.uid, statusId: pick });
+      ? { kind: 'stabilise', seat: t.side, uid: t.uid, keepTokens: true, ...chain }
+      : { kind: 'stabilise', seat: t.side, uid: t.uid, statusId: pick, ...chain });
   })();
 }
 
@@ -1060,8 +1063,8 @@ const guide: GuideApi = {
   readiness: () => readiness(),
   check: (cmd) => check(data!, table, cmd),
   endGame: () => { void endGame(); },
-  detonate: (uid, actionId) => { const t = unitOf(uid); if (t) void detonate(t, actionId); },
-  stabilise: (uid) => { const t = unitOf(uid); if (t) stabilise(t); },
+  detonate: (uid, actionId, joined) => { const t = unitOf(uid); if (t) void detonate(t, actionId, joined); },
+  stabilise: (uid, joined) => { const t = unitOf(uid); if (t) stabilise(t, joined); },
   pickDiscard: async (uid) => { const t = unitOf(uid); return t ? pickDiscard(t) : null; },
   tactics: (side) => ({
     playable: guidedOn(table) && !playedThisRound(side)
@@ -1212,7 +1215,7 @@ async function askTableAndElectronic(attacker: Token, actionId: string, defender
   if (guidedOn(table) && !send({ kind: 'performAction', seat: attacker.side, uid: attacker.uid, actionId, ...bothHands(attacker, actionId) })) return;
   panel = 'combat';
   render();
-  if (!beginElectronic(attacker, actionId, defender)) { panel = null; render(); }
+  if (!beginElectronic(attacker, actionId, defender, guidedOn(table))) { panel = null; render(); }
 }
 
 // How deep the undo history stood when the attack in hand began, and where
@@ -1283,7 +1286,7 @@ async function askTableAndAttack(attacker: Token, actionId: string, defender: To
   // In a guided game the Action is paid for first; a refusal is the engine's
   // answer and the window stays shut. Freeform opens the window outright.
   if (guidedOn(table) && !send({ kind: 'performAction', seat: attacker.side, uid: attacker.uid, actionId, ...(granted ? { granted: true } : bothHands(attacker, actionId)) })) return;
-  if (chargeSpent && chargeSlot) send({ kind: 'setCharge', seat: attacker.side, uid: attacker.uid, slot: String(chargeSlot.slot), on: false });
+  if (chargeSpent && chargeSlot) send({ kind: 'setCharge', seat: attacker.side, uid: attacker.uid, slot: String(chargeSlot.slot), on: false, ...(guidedOn(table) ? { chain: 'join' as const } : {}) });
   panel = 'combat';
   render();
   if (!beginAttack(attacker, actionId, defender, verdict)) { panel = null; render(); }
@@ -1357,8 +1360,11 @@ async function launchFrom(t: Token, actionId: string, cardId: string): Promise<v
   const card = data.byId.get(cardId);
   const before = new Set(table.tokens.map((x) => x.uid));
   let n = 0;
+  // Every launch after the first command of the tap joins it: the Action
+  // that paid (Guided), or the volley's first shot (Freeform).
+  const paid = guidedOn(table);
   for (let i = 0; i < count; i++) {
-    if (!send({ kind: 'launch', seat: t.side, uid: t.uid, actionId, cardId, to: { col: 0, row: 0 }, facing: t.facing })) break;
+    if (!send({ kind: 'launch', seat: t.side, uid: t.uid, actionId, cardId, to: { col: 0, row: 0 }, facing: t.facing, ...(paid || i > 0 ? { chain: 'join' as const } : {}) })) break;
     n++;
   }
   // Counted off the table: a Missile Group lands as several Units (6.2).
@@ -1369,19 +1375,21 @@ async function launchFrom(t: Token, actionId: string, cardId: string): Promise<v
   const now = card ? immediateDetonation(card) : null;
   if (now) {
     const landed = table.tokens.filter((x) => !before.has(x.uid) && x.cardId === cardId).map((x) => x.uid);
-    detonateQueue = landed.map((uid) => ({ uid, actionId: now.id }));
+    detonateQueue = landed.map((uid) => ({ uid, actionId: now.id, joined: n > 0 }));
     nextDetonation();
   }
 }
 
 // Immediate Projectiles waiting their turn to detonate (a volley of grenades).
-let detonateQueue: { uid: number; actionId: string }[] = [];
+// `joined`: the detonation is part of the tap that launched it, so its
+// first command chains to the launch for Undo.
+let detonateQueue: { uid: number; actionId: string; joined?: boolean }[] = [];
 function nextDetonation(): void {
   if (detonating) return;
   const next = detonateQueue.shift();
   if (!next) return;
   const proj = unitOf(next.uid);
-  if (proj && !isDead(proj)) void detonate(proj, next.actionId);
+  if (proj && !isDead(proj)) void detonate(proj, next.actionId, next.joined);
   else nextDetonation();
 }
 
@@ -1900,20 +1908,11 @@ function commonRows(t: Token, mine: boolean): string[] {
     </details>`];
 }
 
-// The unit as it LOOKS: its Parts stacked into one picture, in the order the
-// board and the squad panel stack them, with the pilot's portrait beside it
-// and the name between. A destroyed arm or backpack drops out of the picture,
-// as it does on the board; the core stays, wrecked or not.
+// The unit as it LOOKS: its Parts stacked into one picture by the one builder
+// every tool shares (data.ts mechArtLayers), with the pilot's portrait beside
+// it and the name between.
 function unitArt(t: Token): string {
-  const layers: string[] = [];
-  if (t.kind === 'mech' && t.mech) {
-    for (const slot of MECH_LAYER_ORDER) {
-      const id = t.mech[slot];
-      if (!id) continue;
-      if (t.partStates[slot] === 'destroyed' && slot !== 'torso' && slot !== 'chasis') continue;
-      layers.push(mechPartUrl(id));
-    }
-  }
+  const layers = t.kind === 'mech' && t.mech ? mechArtLayers(t.mech, t.partStates) : [];
   if (!layers.length && t.cardId) layers.push(tabImageUrl(t.cardId));
   if (!layers.length) return '';
   return `<span class="pad-mech-art" aria-hidden="true">${layers.map((h) => `<img src="${esc(h)}" alt="" />`).join('')}</span>`;
@@ -2026,11 +2025,17 @@ function tokenRow(t: Token): string {
   const tokPick = sheetView[drawSide].tokPick;
   const tokManage = sheetView[drawSide].tokManage;
   const managed = tokManage ? worn.find((w) => w.def.id === tokManage)?.def : null;
+  // The picker: the stance buttons' look, art over the name, three across,
+  // under a mono header saying what it does and for whom (OTTO chose it from
+  // a gallery, 2026-09-24). A Token with no printed art gets a badge in its
+  // own shape with its code, so every icon in the grid lines up. Its own class,
+  // not .pad-tok: the hold that opens a WORN Token's rule matches
+  // .pad-tok[data-tok], and used to fire on these too.
   const add = statusesFor(t.kind).map((d) => {
     const art = tokenArt(d.id, false);
-    return `<button class="pad-tok pad-tok-pick" data-act="tok-add" data-tok="${esc(d.id)}">
-      ${art ? `<img src="${esc(art)}" alt="" />` : `<span class="pad-tok-txt">${esc(d.icon)}</span>`}
-      <span class="pad-tok-name">${esc(d.label)}</span>
+    return `<button class="pad-toktile" data-act="tok-add" data-tok="${esc(d.id)}">
+      ${art ? `<img src="${esc(art)}" alt="" />` : `<span class="pad-tokbadge" data-shape="${esc(d.shape)}">${esc(d.icon)}</span>`}
+      <span class="pad-toktile-name">${esc(d.label)}</span>
     </button>`;
   }).join('');
   return `<div class="pad-toks">
@@ -2045,7 +2050,10 @@ function tokenRow(t: Token): string {
       </div>
       <p class="pad-tokinfo-rule">${linkKeywords(managed.rule)}</p>
     </div>` : ''}
-    ${tokPick ? `<div class="pad-tokpop">${add}</div>` : ''}`;
+    ${tokPick ? `<div class="pad-tokpop pad-tokpick">
+      <div class="pad-tokpick-head"><span>Place a Token</span><span>${esc(t.label)}</span></div>
+      <div class="pad-tokgrid">${add}</div>
+    </div>` : ''}`;
 }
 
 // Ammo is keyed by the Action that spends it, and only the pools a unit
@@ -2649,7 +2657,9 @@ function detonationText(a: CardAction): string {
   return data?.actionTranslation(a.id)?.english?.trim() || a.description?.zh?.trim() || '';
 }
 
-async function detonate(proj: Token, actionId: string): Promise<void> {
+// `joined`: a command already went out in this tap (the launch, or the paid
+// Delayed Action), so the smoke's removal chains to it for Undo.
+async function detonate(proj: Token, actionId: string, joined = false): Promise<void> {
   if (!data) return;
   const a = tokenCards(data, proj).flatMap((c) => c.card.actions ?? []).find((x) => x.id === actionId);
   if (!a) return;
@@ -2657,7 +2667,7 @@ async function detonate(proj: Token, actionId: string): Promise<void> {
   const smoke = smokePlacement(a);
   if (smoke) {
     toast(`${proj.label}: ${smoke.count} Smoke Screen${smoke.count === 1 ? '' : 's'} on the table.`);
-    send({ kind: 'despawn', seat: proj.side, uid: proj.uid, targetUid: proj.uid });
+    send({ kind: 'despawn', seat: proj.side, uid: proj.uid, targetUid: proj.uid, ...(joined ? { chain: 'join' as const } : {}) });
     nextDetonation();
     return;
   }
@@ -2912,7 +2922,7 @@ async function playTactic(side: Side, cardId: string): Promise<void> {
   if (spec.maneuver) {
     // The granted Maneuver is recorded (facing and the Opportunity's books)
     // and made on the table.
-    if (guidedOn(table)) send({ kind: 'maneuver', seat: side, uid: t.uid, to: { col: 0, row: 0 }, facing: t.facing, granted: true });
+    if (guidedOn(table)) send({ kind: 'maneuver', seat: side, uid: t.uid, to: { col: 0, row: 0 }, facing: t.facing, granted: true, chain: 'join' });
     toast(`${t.label}: Maneuver on the table.`);
   }
 }
@@ -3645,7 +3655,12 @@ function toastRemote(cmd: Command): void {
 }
 
 function undo(): void {
-  const undone = undoLast(table);
+  // One tap, one Undo: steps sent as part of the one before (`chain: 'join'`,
+  // stored as the ledger role 'join') come back together, as far as the
+  // gesture's first command. A smoke launch used to undo only the grenade's
+  // removal and keep its Ammo spent. Everything else is still one step.
+  let undone: Snapshot | null = null;
+  for (let snap = undoLast(table); snap; snap = snap.role === 'join' ? undoLast(table) : null) undone = snap;
   if (!undone) return;
   // THE UNDO HAS TO TRAVEL. The history stack is local, so stepping back here
   // would otherwise leave the other pad holding the version with the mistake
@@ -3989,8 +4004,8 @@ function act(el: HTMLElement, ev: Event): void {
       const bearer = box?.bearerUid !== undefined ? unitOf(box.bearerUid) : null;
       if (!box || !bearer) return;
       // Off the Box first, so a later carrier does not inherit the claim.
-      if (box.accessed) send({ kind: 'claimItem', seat: mySeat(), itemId: box.id, side: null });
-      send({ kind: 'dropBlackBox', seat: bearer.side, uid: bearer.uid, itemId: box.id, to: { col: bearer.col, row: bearer.row } });
+      const unclaimed = !!box.accessed && send({ kind: 'claimItem', seat: mySeat(), itemId: box.id, side: null });
+      send({ kind: 'dropBlackBox', seat: bearer.side, uid: bearer.uid, itemId: box.id, to: { col: bearer.col, row: bearer.row }, ...(unclaimed ? { chain: 'join' as const } : {}) });
       return;
     }
     case 'award': {

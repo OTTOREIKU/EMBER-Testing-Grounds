@@ -31,7 +31,18 @@ import { dissipationFor, rangeBetween, spotsInGrid } from './rules';
 // Path legality stays with the move UI, which only offers reachable grids;
 // check() covers everything that does not need the pathfinder.
 
-export type Command =
+// ONE TAP, ONE UNDO. A command sent as part of the one before it in the same
+// gesture - the launch after the Action that paid for it, the Charge Token a
+// Charge Action flips, the Command Token a Target Tracing spends - carries
+// `chain: 'join'`, and the pad's Undo walks back through joined steps to the
+// gesture's first command. Without it a smoke launch undid only the grenade's
+// removal and left its Ammo spent (OTTO, 2026-09-24). On the WIRE rather than
+// kept locally, so both phones in a room group the same history the same way;
+// the relay stores commands as opaque JSON and needs no change. apply() never
+// reads it. The ledger's groupLedger honours it too (role 'join').
+export type CommandChain = { chain?: 'join' };
+
+export type Command = (
   | { kind: 'setTiming'; seat: Side; uid: number; timing?: Timing }
   // Where inside its own Large Grid a unit stands. Costs no Movement Range and
   // never leaves the Grid, but it decides Contact, which is judged at
@@ -394,7 +405,8 @@ export type Command =
   // hash of its dials first and the dials themselves only once both hashes
   // are in, so neither player can see the other's before fixing their own.
   | { kind: 'commitTimings'; seat: Side; hash: string }
-  | { kind: 'revealTimings'; seat: Side; salt: string; dials: { uid: number; timing?: Timing }[] };
+  | { kind: 'revealTimings'; seat: Side; salt: string; dials: { uid: number; timing?: Timing }[] }
+) & CommandChain;
 
 // `note` is an allowed command that still has something to say — the award of a
 // negative rider is the first of them. Warn, don't block: the rules have an

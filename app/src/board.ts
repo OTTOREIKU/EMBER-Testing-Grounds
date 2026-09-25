@@ -1,7 +1,7 @@
 import type { TaskItem } from './tasks';
 import type { BoardGrids, Facing, GameState, Marker, Side, SmokeScreen, StatusDef, TerrainPiece, Token, TokenShape } from './types';
 import { DEFAULT_GRIDS, INTERCEPT_DEF, SHAPE_NOTE, statusCount, statusStacks } from './types';
-import { mechPartUrl, squadLabel, squadNumber, tabImageUrl, tokenFace, tokenPrintUrl } from './data';
+import { mechArtLayers, squadLabel, squadNumber, tabImageUrl, tokenFace, tokenPrintUrl } from './data';
 import {
   type BoardTheme, BOARD_FADE_BASE, boardArtUrl, boardTheme, clampBoardArt,
   clampGridColour, DEFAULT_BOARD, DEFAULT_GRID_COLOUR, gridPalette,
@@ -833,15 +833,10 @@ export class Board {
       g.appendChild(img);
     };
     if (t.kind === 'mech' && t.mech) {
-      let any = false;
-      for (const slot of MECH_LAYER_ORDER) {
-        const id = t.mech[slot];
-        if (!id) continue;
-        if (t.partStates[slot] === 'destroyed' && slot !== 'torso' && slot !== 'chasis') continue;
-        addLayer(mechPartUrl(id));
-        any = true;
-      }
-      if (!any) addLayer(tabImageUrl(t.cardId));
+      // The picture is built in ONE place for every tool (data.ts mechArtLayers).
+      const layers = mechArtLayers(t.mech, t.partStates);
+      for (const href of layers) addLayer(href);
+      if (!layers.length) addLayer(tabImageUrl(t.cardId));
     } else {
       addLayer(tabImageUrl(t.cardId));
     }

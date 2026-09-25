@@ -43,7 +43,11 @@ export interface LedgerMeta {
 // solo      its own unit, closing whatever was open (the default for any
 //           kind not named - a NEW command lands as its own labelled unit
 //           rather than being silently glued to a neighbour)
-export type LedgerRole = 'begin' | 'follow' | 'boundary' | 'quiet' | 'solo';
+// join      the sender SAID it belongs to the command before it (`chain:
+//           'join'` on the wire, commands.ts): attaches to the latest unit
+//           whatever its kind would say, and leaves it open. Beats every
+//           kind-based guess, because the sender knew it was one gesture.
+export type LedgerRole = 'begin' | 'follow' | 'boundary' | 'quiet' | 'solo' | 'join';
 
 const BEGIN = new Set(['performAction', 'deployUnit', 'playTactic', 'launch', 'blink',
   'switchForm', 'transformPart', 'unfold', 'reveal', 'riposte', 'repairPart', 'takeBlackBox',
@@ -72,7 +76,9 @@ const QUIET = new Set(['setCombatView', 'setRollbackCatalog', 'rollbackRequest',
   'queueReactions', 'queueIntercepts', 'setTiming', 'adjustCommandTokens', 'noteRoll', 'setInventory']);
 
 function roleFor(c: AnyCmd): LedgerRole {
-  // The context-sensitive case first: a free or granted move rides the Action
+  // The sender's own word first: it knew the command was part of one gesture.
+  if (c.chain === 'join') return 'join';
+  // The context-sensitive case next: a free or granted move rides the Action
   // (Shock Attack's walk, the Stance Change's movement, a Tactics Card's
   // grant) - splitting it off would put a rewind target INSIDE an action.
   if (c.kind === 'maneuver') return c.free || c.granted ? 'follow' : 'begin';
@@ -190,6 +196,7 @@ type AnyCmd = {
   at?: { col: number; row: number };
   free?: boolean;
   granted?: boolean;
+  chain?: string;
   camo?: boolean;
   n?: number;
   itemId?: string;
@@ -361,11 +368,22 @@ export function groupLedger(entries: LedgerEntry[]): LedgerUnit[] {
     // anything, so it is VALIDATED rather than trusted. The kind-only fallback
     // is the same table minus the free/granted nuance, which old snapshots
     // cannot express anyway.
-    const role: LedgerRole = e.role === 'begin' || e.role === 'follow' || e.role === 'boundary' || e.role === 'quiet' || e.role === 'solo'
+    const role: LedgerRole = e.role === 'begin' || e.role === 'follow' || e.role === 'boundary' || e.role === 'quiet' || e.role === 'solo' || e.role === 'join'
       ? e.role
       : roleFor({ kind: e.kind });
     const sealed = SEALED_KINDS.has(e.kind);
     if (open && (open.round !== e.round || open.phase !== e.phase)) close();
+    // A join rides the LATEST unit even when it closed (a lone follow such as
+    // resolveReaction is complete on landing, yet the Command Token its
+    // Target Tracing spends is the same tap), and reopens it for followers.
+    const last = out[out.length - 1];
+    if (role === 'join' && last && last.round === e.round && last.phase === e.phase) {
+      last.end = i;
+      last.count++;
+      last.sealed = last.sealed || sealed;
+      open = last;
+      continue;
+    }
     const attach = open !== null && (role === 'follow' || role === 'quiet');
     if (attach && open) {
       open.end = i;

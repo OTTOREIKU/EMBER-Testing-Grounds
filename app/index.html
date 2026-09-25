@@ -10,13 +10,16 @@
 </head>
 <body>
   <main class="land">
-    <!-- The dressing: a whole Mech drawn faint from its Parts, a glow, a grid,
+    <!-- The dressing: two Mechs drawn faint from their Parts, a glow, a grid,
          the subtitle as a vertical watermark and an original barcode strip.
          All decorative, so hidden from assistive tech. -->
     <div class="land-deco" aria-hidden="true">
       <div class="land-glow"></div>
       <div class="land-grid"></div>
-      <div class="land-mech" id="land-mech"></div>
+      <div class="land-mechs">
+        <div class="land-mech land-mech-un" id="land-mech-un"></div>
+        <div class="land-mech" id="land-mech"></div>
+      </div>
       <div class="land-zh">黑曜协议</div>
       <svg class="land-bars land-strip" data-seed="EMBEROBSIDIANPROTOCOLTESTINGGROUNDS" data-vertical="1"></svg>
       <span class="land-corner tl"></span><span class="land-corner tr"></span>

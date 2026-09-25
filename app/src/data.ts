@@ -1,5 +1,6 @@
 import type { CustomMap } from './mapeditor';
-import type { Card, CardAction, ExtraTickCheck, LangText, Side, TerrainData } from './types';
+import type { Card, CardAction, ExtraTickCheck, LangText, MechLoadout, PartState, Side, TerrainData } from './types';
+import { mechLayerOrder } from './types';
 
 // A squad is numbered, not factioned. The internal id stays a colour word so
 // saved games and scenarios keep loading, but nothing displays it: the number
@@ -1048,6 +1049,25 @@ export function tabImageUrl(id: string): string {
 
 export function mechPartUrl(id: string): string {
   return assetUrl(`mech_parts/${id}.webp`);
+}
+
+// THE ONE PLACE A MECH'S PICTURE IS BUILT from its Parts: the image URLs, back
+// to front, in mechLayerOrder (types.ts - the left arm is the far arm and goes
+// behind, bar the front-mounted exceptions). The board (so the tabletop and the
+// Match Centre), the squad panel, the pad and the landing page all draw through
+// this, so a change to how a Mech looks lands everywhere at once (OTTO asked
+// for exactly that, 2026-09-24). A destroyed arm or backpack drops out of the
+// picture, as it does on the table; the core stays, wrecked or not. Empty when
+// no Part is fitted, and the caller falls back to the card's tab image.
+export function mechArtLayers(mech: MechLoadout, partStates: Partial<Record<string, PartState>> = {}): string[] {
+  const out: string[] = [];
+  for (const slot of mechLayerOrder(mech)) {
+    const id = mech[slot];
+    if (!id) continue;
+    if (partStates[slot] === 'destroyed' && slot !== 'torso' && slot !== 'chasis') continue;
+    out.push(mechPartUrl(id));
+  }
+  return out;
 }
 
 export function portraitUrl(id: string): string {
