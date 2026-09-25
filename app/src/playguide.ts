@@ -1,11 +1,11 @@
-import type { CardAction, ExtraTick, GameState, Opportunity, ScriptState, Side, Stance, Timing, Token } from './types';
+import type { CardAction, ExtraTick, GameState, Opportunity, ScriptState, Side, Stance, Timing, Token, TokenPick } from './types';
 import { newOpportunity, normaliseScript, statusCount, STATUSES, TIMINGS, zonesOf } from './types';
 import type { GameData, MissionCard } from './data';
 import { BASE, cardName, squadLabel } from './data';
 import { bindTips, linkMechanics } from './inspector';
 import { choiceDialog } from './dialog';
 import { PHASES, PHASE_INFO } from './tracker';
-import { linkTickTraitOn, isRwsAction, vpRiderFor, anyStartTiming, opportunityBonusOn, hasFlexibleTiming, pilotCard, coordinationFor, coordinationOnOpportunityEnd, extrasFor, actionSilenceDenier, isSilentAction, type ActionWorld, canActivateCamo, manifestationRange, type ExtraActivation, extraActivationOf, guidedActions, initiativeFor, maneuverRange, maxLink, SLOT_LABEL, tokenCards } from './units';
+import { linkTickTraitOn, isRwsAction, vpRiderFor, anyStartTiming, opportunityBonusOn, hasFlexibleTiming, pilotCard, coordinationFor, coordinationOnOpportunityEnd, extrasFor, actionSilenceDenier, isSilentAction, type ActionWorld, canActivateCamo, manifestationRange, type ExtraActivation, extraActivationOf, guidedActions, initiativeFor, maneuverRange, maxLink, SLOT_LABEL, tokenCards, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL } from './units';
 import { canAttackMode, canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed } from './ticks';
 import { asterKey, check, clearDroneCommands, perform, readyCommands, seedCommandTokens } from './commands';
 import { askIssuer, asterBlockers, offerCoordination, runAster } from './commandpick';
@@ -1353,33 +1353,33 @@ export class PlayGuide {
       const s = this.state;
       const t = s?.tokens.find((x) => x.uid === uid);
       if (!s || !t) return;
-      const shed = (t.statuses ?? []).find((id) => {
-        const d = STATUSES.find((x) => x.id === id);
-        return d?.shape === 'square' || d?.shape === 'hexagon';
-      });
-      // Removing a Token is the player's choice, not a tax on the Link: they
-      // may keep their Tokens and take only the Link (FAQ J4).
-      let keepTokens = false;
-      if (shed) {
-        const label = STATUSES.find((x) => x.id === shed)?.label ?? shed;
+      // units.ts stabiliseAsk, the question the tabletop, the Match Centre
+      // and the pad all ask: every Token worn, face included, and keeping
+      // them all only when a Link is missing (FAQ J4, J8). The guide performs
+      // Stabilize through the board's performGuided now; this door has no
+      // button left, and asks the same question in case one returns.
+      const ask = stabiliseAsk(this.data, t);
+      let pick: TokenPick | undefined;
+      if (ask.picks.length) {
         const id = await choiceDialog({
           title: `Stabilize ${t.label}`,
-          body: 'Stabilize System removes 1 Square or Hexagon Token and restores 1 Link. Removing the Token is optional (FAQ J4).',
+          body: ask.body,
           choices: [
-            { id: 'both', label: `Remove ${label} and restore 1 Link`, primary: true },
-            { id: 'link', label: 'Keep the Tokens, restore 1 Link only' },
-            { id: 'cancel', label: 'Cancel', cancel: true },
+            ...ask.picks.map((p) => ({ id: p.id, label: stabiliseRowLabel(p) })),
+            ...(ask.keep ? [{ id: '__keep', label: STABILISE_KEEP_LABEL }] : []),
+            { id: '__cancel', label: 'Cancel', cancel: true },
           ],
           stacked: true,
         });
-        if (id === null || id === 'cancel') return;
-        keepTokens = id === 'link';
+        if (id === null || id === '__cancel') return;
+        pick = ask.picks.find((p) => p.id === id);
       }
-      perform(this.data, s, { kind: 'stabilise', seat: t.side, uid, keepTokens });
-      const label = shed ? STATUSES.find((x) => x.id === shed)?.label ?? shed : null;
-      this.cb.onNote(t, keepTokens || !label
-        ? `Stabilize System: Link restored to ${t.link}.`
-        : `Stabilize System: ${label} removed and Link restored to ${t.link}.`);
+      perform(this.data, s, pick
+        ? { kind: 'stabilise', seat: t.side, uid, statusId: pick.statusId, ...(pick.face ? { face: pick.face } : {}) }
+        : { kind: 'stabilise', seat: t.side, uid, keepTokens: true });
+      this.cb.onNote(t, pick
+        ? `Stabilize System: ${pick.label} removed${ask.keep ? `, and Link restored to ${t.link}` : ''}.`
+        : `Stabilize System: Link restored to ${t.link}.`);
       this.cb.onChanged();
     })();
   }

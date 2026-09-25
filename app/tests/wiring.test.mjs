@@ -80,7 +80,7 @@ check('routeAction was located', route.length > 200, true);
 // Each tool routeAction can hand off to, named either inline or through its
 // opener. A branch that opens something not on this list is a tool nobody has
 // checked pays its Ticks.
-const tools = ['chargePlan', 'resupplyPick', 'repairPick', 'openAttackPick', 'blinkPlan', 'startMovePlan', 'startLaunchPlan', 'terminalPick'];
+const tools = ['chargePlan', 'resupplyPick', 'repairPick', 'openAttackPick', 'blinkPlan', 'startMovePlan', 'startLaunchPlan', 'terminalPick', 'stabilisePick', 'linkPick', 'cleanPick'];
 for (const plan of tools) {
   check(`${plan} is opened by routeAction`, route.includes(plan), true);
 }
@@ -109,7 +109,10 @@ check('the Mode-change branch pays before it returns',
 // of routeAction (Ambush, Amplify Profile) is immediate and pays itself, and
 // the free Scan on a camouflaged target (FAQ I12) pays the attack's Tick at
 // the designation before the Counter-roll opens.
-check('every tool has a commitAction', [...hud.matchAll(/commitAction\(ctx\)/g)].length, 19);
+// Twenty-three since 2026-09-25: Stabilize asks its Token question BEFORE it
+// pays, so routeAction's no-question branch and the panel's answer each pay,
+// and the Link support and Token cleanup panels each pay on confirm.
+check('every tool has a commitAction', [...hud.matchAll(/commitAction\(ctx\)/g)].length, 23);
 
 // ---------- The ATTRIBUTED seat stamp ----------
 //

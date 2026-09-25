@@ -1,8 +1,8 @@
 import type { BoardGrids, CombatView, Facing, GameState, MechLoadout, Opportunity, PartSlot, PartState, RollbackPoint, Side, SmokeScreen, Stance, Timing, Token } from './types';
-import { addStatus, ageTokens, cellsOf, gridsOf, newOpportunity, PHASES, statusCount, STATUSES, TIMINGS } from './types';
+import { addStatus, ageTokens, cellsOf, gridsOf, newOpportunity, PHASES, shedToken, statusCount, STATUSES, TIMINGS, tokenFaces } from './types';
 import type { GameData } from './data';
 import { cardName, transformFaces, unfoldsInto, discardFaceOf, environmentAllowance } from './data';
-import { covertCarryLock, ammoDeliveryPool, opportunityBonusOn, ripostePart, defenseReactionOn, targetTracingOn, riderOnDrone, hasFlexibleTiming, commandGeneration, blinkTargets, isPositionSwap, electronicOrigins, isSilentAction, maneuverIsSilent, loanedParts, unfoldToken, formSwitch, switchFormTo, extrasFor, consumesCharge, cutTethersOn, electronicDash, electronicValue, immobilizedStop, isScanAction, scannable, manifestationRange, nonHumanoidCost, nonHumanoidStop, envHotEntries, settleEnvironments, freehandSlots, twoHandedUse, missileGroupOf, interceptCapacity, anyStartTiming, focusIsFree, keepsLinkOnPartLoss, makeDroneToken, structureOf, makeMechToken, maneuverRange, maxLink, partsLeft, pilotCard, pilotIs, projectileDelivery, provokeWhy, settleTethers, SLOT_LABEL, tetherTo, tokenCards, transformPartOn, actionRange, isRwsAction, rwsCommandKey, rwsFiredKey, selfStatusGrant, selfGrantWhy, straightLineBonus, linkTickTraitOn, isCarrier, canBeLoad } from './units';
+import { covertCarryLock, ammoDeliveryPool, opportunityBonusOn, ripostePart, defenseReactionOn, targetTracingOn, riderOnDrone, hasFlexibleTiming, commandGeneration, blinkTargets, isPositionSwap, electronicOrigins, isSilentAction, maneuverIsSilent, loanedParts, unfoldToken, formSwitch, switchFormTo, extrasFor, consumesCharge, cutTethersOn, electronicDash, electronicValue, immobilizedStop, isScanAction, scannable, manifestationRange, nonHumanoidCost, nonHumanoidStop, envHotEntries, settleEnvironments, freehandSlots, twoHandedUse, missileGroupOf, interceptCapacity, anyStartTiming, focusIsFree, keepsLinkOnPartLoss, makeDroneToken, structureOf, makeMechToken, maneuverRange, maxLink, partsLeft, pilotCard, pilotIs, projectileDelivery, provokeWhy, settleTethers, SLOT_LABEL, tetherTo, tokenCards, transformPartOn, actionRange, isRwsAction, rwsCommandKey, rwsFiredKey, selfStatusGrant, selfGrantWhy, straightLineBonus, linkTickTraitOn, isCarrier, canBeLoad, roundEndLinkSources } from './units';
 import { tetherCap } from './melee';
 import { canActivate, canAttackMode, canManeuver, canOverload, canPerform, spendAction, spendActivation, spendAttackMode, spendManeuver, spendOverload } from './ticks';
 import { tacticSpec, tacticTargets, type TacticCtx } from './tactics';
@@ -131,7 +131,9 @@ export type Command = (
   // Immobilized or Fragile chip changes the defence pool — so a player peeling
   // one off by hand has to travel like putting it on does. One at a time,
   // matching the chip: a stacked Square loses its most recent entry.
-  | { kind: 'removeStatus'; seat: Side; uid: number; targetUid: number; statusId: string }
+  // `face` names which of a stack's faces goes (yellow or red), for a picker
+  // that asked; left out, a yellow one goes first (types.ts shedToken).
+  | { kind: 'removeStatus'; seat: Side; uid: number; targetUid: number; statusId: string; face?: 'yellow' | 'red' }
   // One Token, one step along the End Phase's own ladder (2.5.3): a red face
   // comes off, a coloured face turns red, a Token with no decay comes off.
   // The pad's tap on a worn Token. It has no script, so markEndStep never
@@ -146,6 +148,15 @@ export type Command = (
   // Emitted from combat.ts, where `c.action` and `c.attacker.stance` are both
   // in hand, and gated in check() so a client cannot mint Link with it.
   | { kind: 'restoreLink'; seat: Side; uid: number }
+  // Link recovered from anything that is not the Mech's own Stabilize or
+  // Reboot: an ally's Strengthen Link, a Link Beacon, the Valkyrie's Appease,
+  // or a line the pad writes down off the physical table. Capped at the
+  // pilot's Link Value, and a Shutdown Mech takes it and STAYS Shutdown: Link
+  // may be restored to it by allies or external effects, and it does not
+  // reboot (FAQ L3). Never touches a Token - only Stabilize ties the two
+  // together. `uid` is the unit it came from (the Mech itself for a hand-kept
+  // line) and `actionId` the effect, for the log; `targetUid` gains the Link.
+  | { kind: 'recoverLink'; seat: Side; uid: number; targetUid: number; actionId?: string }
   // `via` is the pushed line as cells, one entry per Grid, for the same
   // reason maneuver carries it plus one of this command's own: a victim
   // knocked THROUGH a High Temperature Grid enters it, and by the time apply()
@@ -203,8 +214,9 @@ export type Command = (
   | { kind: 'markEndStep'; seat: Side; step: string }
   | { kind: 'award'; seat: Side; vp: { s1: number; s2: number }; keys: string[] }
   // `statusId` names WHICH Square or Hexagon Token comes off (6.1 leaves the
-  // choice to the player); without it the first removable one goes.
-  | { kind: 'stabilise'; seat: Side; uid: number; keepTokens?: boolean; statusId?: string }
+  // choice to the player), and `face` which face of a stack; without them the
+  // first removable one goes, a yellow face before a red.
+  | { kind: 'stabilise'; seat: Side; uid: number; keepTokens?: boolean; statusId?: string; face?: 'yellow' | 'red' }
   | { kind: 'repairPart'; seat: Side; uid: number; slot: string; mode: 'repaired' | 'mend' }
   | { kind: 'breakRepaired'; seat: Side; uid: number; targetUid: number; slot: string }
   // `to` is Manifestation Movement, which 4.12.2 makes part of the same event
@@ -2038,6 +2050,9 @@ function checkActed(
       const target = state.tokens.find((x) => x.uid === cmd.targetUid);
       if (!target) return no('That target is not on the board.');
       if (!(target.statuses ?? []).includes(cmd.statusId)) return no('That unit is not carrying it.');
+      if (cmd.kind === 'removeStatus' && cmd.face && !tokenFaces(target, cmd.statusId).some((f) => f.face === cmd.face)) {
+        return no(`None of those Tokens is showing its ${cmd.face} face.`);
+      }
       return ok;
     }
     case 'focus': {
@@ -2056,6 +2071,17 @@ function checkActed(
       if (t.kind !== 'mech') return no('Only a Mech has a Link Value.');
       if (!pilotIs(data, t, 'ZPA-40')) return no('That Mech is not piloted by Shrike.');
       if ((t.link ?? 0) >= maxLink(data, t)) return no(`${t.label} is already at its pilot's Link Value.`);
+      return ok;
+    }
+    case 'recoverLink': {
+      const target = state.tokens.find((x) => x.uid === cmd.targetUid);
+      if (!target || target.deployed === false) return no('That Mech is not on the table.');
+      if (target.kind !== 'mech') return no('Only a Mech has a Link Value.');
+      if ((target.partStates.torso ?? 'intact') === 'destroyed') return no(`${target.label} is destroyed, and has no Link to recover.`);
+      // Link comes back from the Mech itself or from an ally, never from
+      // across the table: every card that restores it names Ally Mechs.
+      if (target.side !== cmd.seat) return no('Link is only ever restored to an Ally Mech.');
+      if ((target.link ?? 0) >= maxLink(data, target)) return no(`${target.label} is already at its pilot's Link Value.`);
       return ok;
     }
     case 'spendAmmo': {
@@ -2248,6 +2274,9 @@ function checkActed(
       if (!sc) return no('There is no guided game running.');
       if (PHASES[state.round.phase] !== 'Command') return no('Aster restores Link during the Command Phase.');
       if (t.kind !== 'mech' || pilotCard(data, t)?.id !== 'ZPA-36') return no('That Mech is not piloted by Aster.');
+      // A pilot skill is the Mech's own effect, and a Shutdown unit triggers
+      // none of those (FAQ L3, which names Quartz for the same reason).
+      if (t.stance === 'shutdown') return no(`${t.label} is in Shutdown Stance, and a Shutdown Mech triggers none of its own skills, so Aster cannot restore Link (FAQ L3).`);
       if (readyCommands(t) <= 0) return no(`${t.label} has no face-up Command Token to consume.`);
       if (sc.oncePerRound.includes(asterKey(state, t.uid))) return no(`${t.label} has already used Aster this round.`);
       const to = state.tokens.find((x) => x.uid === cmd.targetUid);
@@ -2335,10 +2364,14 @@ function checkActed(
       const pilot = pilotCard(data, t);
       const canLink = !!pilot && (t.link ?? 0) < (pilot.LV ?? 0);
       if (!shed && !canLink) return no('Nothing to stabilize: no Square or Hexagon Token to remove and no Link missing. An action that cannot produce any change cannot be performed (6.1).');
+      // Keeping every Token at full Link is the same no-change action by
+      // another road (FAQ J8, H2), so it is refused the same way.
+      if (cmd.keepTokens && !canLink) return no('Link is already full, so keeping every Token would change nothing. An action that cannot produce any change cannot be performed (FAQ J8).');
       if (cmd.statusId !== undefined) {
         const d = STATUSES.find((x) => x.id === cmd.statusId);
         if (!(t.statuses ?? []).includes(cmd.statusId)) return no('That Mech is not carrying that Token.');
         if (d?.shape !== 'square' && d?.shape !== 'hexagon') return no('Stabilize System removes a Square or Hexagon Token (6.1).');
+        if (cmd.face && !tokenFaces(t, cmd.statusId).some((f) => f.face === cmd.face)) return no(`None of those Tokens is showing its ${cmd.face} face.`);
       }
       return ok;
     }
@@ -2639,14 +2672,36 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       // Two consequences worth stating rather than discovering:
       //  - the markEndStep 'remove' sweep has already taken any Mech down to
       //    <= 2 Parts, so a Quartz leaving on Integrity Loss does not recover;
-      //  - a Shutdown Quartz goes 0 -> 1 and STAYS Shutdown. Every other +1
-      //    Link path in the engine leaves Stance alone (stabilise, Aster) and
-      //    only `reboot` clears it (4.1.1), so Composure is not a
-      //    get-out-of-Shutdown card.
+      //  - a Quartz in Shutdown does NOT recover. "A unit in Shutdown cannot
+      //    trigger any effects on its own, including passive skills or pilot
+      //    skills. For example, Quartz cannot restore Link through its own
+      //    skill after entering Shutdown" (FAQ L3). This used to give it the
+      //    Link and leave it Shutdown; the FAQ names this exact card.
       for (const x of state.tokens) {
         if (x.kind !== 'mech' || !pilotIs(data, x, 'LPA-19')) continue;
         if (x.partStates?.torso === 'destroyed') continue;
+        if (x.stance === 'shutdown') continue;
         x.link = Math.min(maxLink(data, x), (x.link ?? 0) + 1);
+      }
+      // ZHDR-303 N503 "Valkyrie", 安抚 Appease: "At the end of each Round, all
+      // Ally Mechs within range recover 1 Link." On the rollover beside
+      // Composure, for the same reason: it is the one moment every page shares.
+      // Read AFTER the Integrity Loss removal, so a Valkyrie that left this End
+      // Phase restores nothing. Each Valkyrie in reach is its own aura, and a
+      // Shutdown Mech takes the Link and stays down (FAQ L3). A table with no
+      // board cannot measure the reach, so the pad asks its player instead.
+      if (!state.noBoard) {
+        const ended = r.n - 1;
+        for (const x of state.tokens) {
+          if (x.kind !== 'mech' || x.deployed === false || x.partStates?.torso === 'destroyed') continue;
+          const from = roundEndLinkSources(data, state.tokens, x);
+          if (!from.length) continue;
+          const was = x.link ?? 0;
+          x.link = Math.min(maxLink(data, x), was + from.length);
+          if (x.link === was) continue;
+          const who = from.map((s) => s.source.label).join(' and ');
+          x.log = [...(x.log ?? []), { round: ended, text: `Appease (${who}): ${x.label} recovers Link at the end of the round, now ${x.link}.` }].slice(-200);
+        }
       }
     }
     return;
@@ -3638,16 +3693,13 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       if (red || !def?.decay) {
         // Through removeStatus's own apply, for the same reason shedLowProfile
         // goes that way: it owns the expiry bookkeeping and the Command pool.
-        applyCommand(data, state, { kind: 'removeStatus', seat: cmd.seat, uid: cmd.uid, targetUid: cmd.targetUid, statusId: cmd.statusId });
-        // ageTokens flips every stacked entry, so `expiring` can hold the id
-        // more than once. Peeling one Square off takes one red marker with it.
-        const left = statusCount(target.statuses, cmd.statusId);
-        const reds = (target.expiring ?? []).filter((x) => x === cmd.statusId).length;
-        if (reds > left) {
-          const at = (target.expiring ?? []).indexOf(cmd.statusId);
-          target.expiring = (target.expiring ?? []).filter((_, i) => i !== at);
-          if (!target.expiring.length) target.expiring = undefined;
-        }
+        // A red step takes a RED face off a stack, and its marker with it
+        // (types.ts shedToken): ageTokens flips every stacked entry, so
+        // `expiring` can hold the id more than once.
+        applyCommand(data, state, {
+          kind: 'removeStatus', seat: cmd.seat, uid: cmd.uid, targetUid: cmd.targetUid, statusId: cmd.statusId,
+          ...(red && def?.decay === 'yellow' ? { face: 'red' as const } : {}),
+        });
         return;
       }
       target.expiring = [...(target.expiring ?? []), cmd.statusId];
@@ -3656,17 +3708,12 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
     case 'removeStatus': {
       const target = state.tokens.find((x) => x.uid === cmd.targetUid);
       if (!target) return;
-      // The LAST entry, so peeling one off a stacked Square leaves the rest —
-      // the same end the freeplay chip reached by hand.
-      const list = [...(target.statuses ?? [])];
-      const at = list.lastIndexOf(cmd.statusId);
-      if (at < 0) return;
-      list.splice(at, 1);
-      target.statuses = list;
-      // A token that is gone has no expiry left to track.
-      if (!list.includes(cmd.statusId)) {
-        target.expiring = (target.expiring ?? []).filter((x) => x !== cmd.statusId);
-      }
+      // ONE entry, so peeling one off a stacked Square leaves the rest - the
+      // same end the freeplay chip reached by hand - of the face named, or a
+      // yellow one first. shedToken keeps one red marker per red face left, so
+      // a Token that is gone has no expiry left to track and a red survivor
+      // stays red.
+      if (!shedToken(target, cmd.statusId, cmd.face)) return;
       // Same on the way out. A Drone's face-down token was paid for when the
       // Command was issued, and the pool only ever counts face-up Mech tokens,
       // so removing one by hand correctly changes nothing.
@@ -3689,6 +3736,13 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       // and Aster's restore all use. Stance is left alone: no +1 Link path in
       // this engine wakes a Shutdown Mech, only `reboot` does (4.1.1).
       t.link = Math.min(maxLink(data, t), (t.link ?? 0) + 1);
+      return;
+    }
+    case 'recoverLink': {
+      // Same ceiling, same Stance rule: a Shutdown Mech regains the Link and
+      // does not reboot (FAQ L3).
+      const target = state.tokens.find((x) => x.uid === cmd.targetUid);
+      if (target) target.link = Math.min(maxLink(data, target), (target.link ?? 0) + 1);
       return;
     }
     case 'spendAmmo': {
@@ -3961,13 +4015,9 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
         const d = STATUSES.find((x) => x.id === id);
         return d?.shape === 'square' || d?.shape === 'hexagon';
       });
-      if (shed) {
-        const list = [...(t.statuses ?? [])];
-        list.splice(list.indexOf(shed), 1);
-        t.statuses = list;
-        t.expiring = (t.expiring ?? []).filter((id) => id !== shed);
-        if (!t.expiring.length) t.expiring = undefined;
-      }
+      // Either face may go, yellow or red (6.1 names no colour), and the other
+      // Tokens of a stack keep theirs (types.ts shedToken).
+      if (shed) shedToken(t, shed, cmd.face);
       t.link = Math.min(maxLink(data, t), (t.link ?? 0) + 1);
       return;
     }

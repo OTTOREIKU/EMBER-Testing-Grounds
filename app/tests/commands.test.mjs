@@ -671,8 +671,11 @@ check('an ineligible target is refused', C.check(data, hand([mech(1, 's1', { sta
 const wpick = hand([mech(1, 's1', { statuses: ['fci', 'fci'] })], 2, ['277']);
 check('a choice card without a pick is refused', C.check(data, wpick, pt({ cardId: '277' })).ok, false);
 check('a made-up pick is refused', C.check(data, wpick, pt({ cardId: '277', pick: 'nope' })).ok, false);
-check('a real pick passes', C.check(data, wpick, pt({ cardId: '277', pick: 'fci' })).ok, true);
-C.apply(data, wpick, pt({ cardId: '277', pick: 'fci' }));
+// A pick names the face as well as the Token since 2026-09-25 (types.ts
+// removableTokens): two yellow Fire Control Interference are 'fci:yellow'.
+check('a real pick passes', C.check(data, wpick, pt({ cardId: '277', pick: 'fci:yellow' })).ok, true);
+check('a pick without its face is not one the card offers', C.check(data, wpick, pt({ cardId: '277', pick: 'fci' })).ok, false);
+C.apply(data, wpick, pt({ cardId: '277', pick: 'fci:yellow' }));
 check('System Repair removes exactly one token', wpick.tokens[0].statuses, ['fci']);
 check('and stamps the round it was played in', wpick.tacticsPlayed.s1, ['1:277']);
 check('and writes the card log into the token', wpick.tokens[0].log?.length, 1);
@@ -3143,12 +3146,14 @@ globalThis.__baseData = data;
     roll(full);
     check('and it cannot climb past the pilot\'s Link Value', full.tokens[0].link, quartz.LV);
 
-    // A Shutdown Quartz comes back to 1 Link and stays Shutdown: only reboot
-    // clears the Stance (4.1.1).
+    // A Shutdown Quartz does NOT recover: "A unit in Shutdown cannot trigger
+    // any effects on its own, including passive skills or pilot skills. For
+    // example, Quartz cannot restore Link through its own skill after entering
+    // Shutdown" (FAQ L3). This pin used to say the opposite.
     const out = atEnd([piloted(4, 'LPA-19', { link: 0, stance: 'shutdown' })]);
     roll(out);
-    check('a Shutdown Quartz gains the Link but stays Shutdown',
-      [out.tokens[0].link, out.tokens[0].stance], [1, 'shutdown']);
+    check('a Shutdown Quartz recovers nothing and stays Shutdown (FAQ L3)',
+      [out.tokens[0].link, out.tokens[0].stance], [0, 'shutdown']);
 
     // Mid-round phase advances must not pay it out — five phases a round would
     // otherwise hand Quartz five Link.
@@ -4153,7 +4158,7 @@ globalThis.__baseData = data;
     (() => {
       const w = world([lp({ expiring: ['lowProfile'] })], 1, null);
       C.apply(data, w, { kind: 'maneuver', seat: 's1', uid: 1, to: { col: 6, row: 3 } });
-      return [w.tokens[0].statuses, w.tokens[0].expiring];
+      return [w.tokens[0].statuses, w.tokens[0].expiring ?? []];
     })(), [[], []]);
 
   // (f) The ordinary board, where none of this should fire. A unit with no
@@ -4167,6 +4172,107 @@ globalThis.__baseData = data;
   // ('hexagon') sit two commands away in the same file.
   check('a Highlight Token survives the same non-Silence Maneuver',
     after([lp({ statuses: ['highlight'] })], { kind: 'maneuver', seat: 's1', uid: 1, to: { col: 6, row: 3 } }), ['highlight']);
+}
+
+// ---------- Link and Tokens (the 2026-09-25 audit) ----------
+// Project-Documents/LINK-AND-TOKENS-AUDIT.md. Every case below was a confirmed
+// bug before it was a pin: a stacked Token's face, the stale red marker, a
+// no-change Stabilize, Quartz and Aster in Shutdown, and the Link the pad
+// could not record without taking a Token with it.
+{
+  const cards = JSON.parse(readFileSync(new URL('../../data/cards.json', import.meta.url), 'utf8'));
+  const pool = Array.isArray(cards) ? cards : cards.cards;
+  data.byId.set('ZPA-36', pool.find((x) => x.id === 'ZPA-36'));
+  const two = (expiring, over = {}) => world([mech(1, 's1', { statuses: ['fci', 'fci'], expiring, link: 2, ...over })]);
+  const toks = (w) => [w.tokens[0].statuses, w.tokens[0].expiring ?? []];
+
+  // Stabilize takes ONE face, and the rest of the stack keeps its own.
+  const w1 = two(['fci', 'fci']);
+  C.apply(data, w1, { kind: 'stabilise', seat: 's1', uid: 1, statusId: 'fci', face: 'red' });
+  check('Stabilizing one of two RED Tokens leaves the other one red', toks(w1), [['fci'], ['fci']]);
+  const w2 = two(['fci']);
+  C.apply(data, w2, { kind: 'stabilise', seat: 's1', uid: 1, statusId: 'fci', face: 'yellow' });
+  check('taking the YELLOW one of a red and a yellow leaves the red one', toks(w2), [['fci'], ['fci']]);
+  const w3 = two(['fci']);
+  C.apply(data, w3, { kind: 'stabilise', seat: 's1', uid: 1, statusId: 'fci', face: 'red' });
+  check('taking the RED one leaves the yellow one', toks(w3), [['fci'], []]);
+  const w4 = two(['fci']);
+  C.apply(data, w4, { kind: 'stabilise', seat: 's1', uid: 1, statusId: 'fci' });
+  check('unnamed, a yellow face goes before a red one', toks(w4), [['fci'], ['fci']]);
+  check('a face the stack is not showing is refused',
+    C.check(data, two([]), { kind: 'stabilise', seat: 's1', uid: 1, statusId: 'fci', face: 'red' }).ok, false);
+
+  // FAQ J7 and J8: a Token alone justifies it at full Link, keeping them all does not.
+  const full = () => world([mech(1, 's1', { statuses: ['fci'], link: 4 })]);
+  check('keeping every Token at full Link is refused (FAQ J8)',
+    C.check(data, full(), { kind: 'stabilise', seat: 's1', uid: 1, keepTokens: true }).ok, false);
+  check('removing the Token at full Link is allowed (FAQ J7)',
+    C.check(data, full(), { kind: 'stabilise', seat: 's1', uid: 1, statusId: 'fci', face: 'yellow' }).ok, true);
+
+  // removeStatus and ageStatus go through the same face-aware removal.
+  const w5 = two(['fci']);
+  C.apply(data, w5, { kind: 'removeStatus', seat: 's1', uid: 1, targetUid: 1, statusId: 'fci', face: 'red' });
+  check('removeStatus can name the red face', toks(w5), [['fci'], []]);
+  const w6 = two(['fci']);
+  C.apply(data, w6, { kind: 'ageStatus', seat: 's1', uid: 1, targetUid: 1, statusId: 'fci' });
+  check('ageing a red and a yellow takes the red one off', toks(w6), [['fci'], []]);
+  // THE STALE MARKER: the last Token of a kind goes and takes its red marker,
+  // so the next one arrives yellow side up (FAQ J11).
+  const w7 = world([mech(1, 's1', { statuses: ['fci'], expiring: ['fci'], link: 4 })]);
+  C.apply(data, w7, { kind: 'stabilise', seat: 's1', uid: 1, statusId: 'fci', face: 'red' });
+  C.apply(data, w7, { kind: 'applyStatus', seat: 's1', uid: 1, targetUid: 1, statusId: 'fci' });
+  check('a Token gained after the last one went arrives yellow (FAQ J11)', toks(w7), [['fci'], []]);
+
+  // recoverLink: +1, capped, Shutdown stays Shutdown (FAQ L3), no Token touched.
+  const rl = (over = {}, cmd = {}) => {
+    const w = world([mech(1, 's1', { link: 1, ...over }), mech(2, 's2', { link: 1 })]);
+    const c = { kind: 'recoverLink', seat: 's1', uid: 1, targetUid: 1, ...cmd };
+    const v = C.check(data, w, c);
+    if (v.ok) C.apply(data, w, c);
+    return [v.ok, w.tokens[0].link, w.tokens[0].stance, w.tokens[0].statuses ?? []];
+  };
+  check('recoverLink adds 1 and touches no Token', rl({ statuses: ['fci'] }), [true, 2, 'offensive', ['fci']]);
+  check('a Shutdown Mech takes it and stays Shutdown (FAQ L3)', rl({ stance: 'shutdown', link: 0 }), [true, 1, 'shutdown', []]);
+  check('never past the pilot\'s Link Value', rl({ link: 4 }), [false, 4, 'offensive', []]);
+  check('never across the table', rl({}, { targetUid: 2 })[0], false);
+  check('never to a destroyed Mech', rl({ partStates: { torso: 'destroyed' } })[0], false);
+
+  // Aster's Adjustment is the pilot's own skill: none of it in Shutdown (FAQ L3).
+  const asterW = (stance) => {
+    const w = world([mech(1, 's1', { mech: { torso: 'T1', pilot: 'ZPA-36' }, stance, link: stance === 'shutdown' ? 0 : 2, statuses: ['command'] }), mech(2, 's1', { link: 1 })], 0);
+    w.script.oncePerRound = [];
+    return C.check(data, w, { kind: 'asterRestore', seat: 's1', uid: 1, targetUid: 2 }).ok;
+  };
+  check('Aster in Shutdown cannot restore Link (FAQ L3)', asterW('shutdown'), false);
+  check('Aster awake still can', asterW('defensive'), true);
+
+  // ZHDR-303 Appease, as the round turns: Ally Mechs within Range 2 of a
+  // standing Valkyrie recover 1 Link each, one per Valkyrie, Shutdown included.
+  data.byId.set('VALK', {
+    id: 'VALK', category: 'drone',
+    actions: [{ id: 'VALK_B', type: 'Passive', range: 2, name: { en: 'Appease' }, gameRules: [{ effects: [{
+      type: 'aura', effectTypes: ['unsupported_stage_triggered'], targetSide: 'ally', targetUnitType: 'mech',
+      value: 1, label: '光环链接恢复', description: '回合结束时范围内友军机甲恢复链接值',
+    }] }] }],
+  });
+  const valk = (uid, col, over = {}) => ({ uid, side: 's1', kind: 'drone', cardId: 'VALK', label: `V${uid}`, stance: 'offensive', col, row: 3, facing: 0, size: 1, partStates: { main: 'intact' }, ...over });
+  const endOf = (tokens, noBoard = false) => {
+    const w = world(tokens, C.PHASES.length - 1);
+    if (noBoard) w.noBoard = true;
+    C.apply(data, w, { kind: 'advancePhase', seat: 's1' });
+    return w;
+  };
+  const near = () => mech(1, 's1', { link: 1, col: 3, row: 3 });
+  check('Appease: an Ally Mech within Range 2 recovers 1 Link', endOf([near(), valk(9, 6)]).tokens[0].link, 2);
+  check('and writes a line in its log', /Appease/.test(endOf([near(), valk(9, 6)]).tokens[0].log?.[0]?.text ?? ''), true);
+  check('out of range, nothing', endOf([mech(1, 's1', { link: 1, col: 30, row: 3 }), valk(9, 6)]).tokens[0].link, 1);
+  check('a Shutdown Mech takes it and stays down (FAQ L3)',
+    (() => { const w = endOf([mech(1, 's1', { link: 0, stance: 'shutdown', col: 3, row: 3 }), valk(9, 6)]); return [w.tokens[0].link, w.tokens[0].stance]; })(), [1, 'shutdown']);
+  check('two Valkyries in reach are two auras', endOf([near(), valk(9, 6), valk(10, 7)]).tokens[0].link, 3);
+  check('never past the pilot\'s Link Value', endOf([mech(1, 's1', { link: 4, col: 3, row: 3 }), valk(9, 6)]).tokens[0].link, 4);
+  check('an enemy Valkyrie restores nothing', endOf([near(), valk(9, 6, { side: 's2' })]).tokens[0].link, 1);
+  check('a destroyed Valkyrie restores nothing', endOf([near(), valk(9, 6, { partStates: { main: 'destroyed' } })]).tokens[0].link, 1);
+  check('a table with no board leaves it to the pad to ask', endOf([near(), valk(9, 6)], true).tokens[0].link, 1);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -37,7 +37,7 @@ import { EmberApi, ApiError, type Account, type RegistrationInfo, type SquadEntr
 import { Relay, type NetView, type RolledDie } from '../src/net';
 import { applyRemote, check, onBeforeApply, onPerformed, onRefused, perform, taskDesignations, type Command } from '../src/commands';
 import { glueAfter } from '../src/glue';
-import { askDesignation, designationsFor, activeOpp, continueAllowed, finishIfBothReady, guideAct, guideOnRemote, guidedOn, performButton, startGuided, startIfBothReady, turnHtml, type GuideApi } from './guided';
+import { askDesignation, askLinkSupport, askTokenCleanup, designationsFor, activeOpp, continueAllowed, finishIfBothReady, guideAct, guideOnRemote, guidedOn, performButton, startGuided, startIfBothReady, turnHtml, type GuideApi } from './guided';
 import { countHits, normaliseSetup, tasksLocked } from '../src/setup';
 import { attackActive, attackOnCommand, attackWatching, beginAttack, initAttack, isAttackAction, mountAttack, sweepView, syncMirror, type TableVerdict } from './attack';
 import { registerOffline } from '../src/offline';
@@ -62,12 +62,12 @@ import { ICON_GEAR, squadColour } from '../src/icons';
 import { BUILD_SLOTS, buildDefaultName, confirmLegalBuild, mechBuilderHtml, openMechSlot, slotPool, type BuildSlot } from '../src/mechbuilder';
 import { groupByFaction, openPartPicker } from '../src/partpicker';
 import { bindCollection, builtOnlyOn, collectionOn, copiesOf, hasAny, loadCollection, onCollection, remaining, saveCollection, setBuiltOnly, setCollectionOn, shortfalls, type Collection } from '../src/collection';
-import { choiceDialog, confirmDialog, promptDialog } from '../src/dialog';
+import { choiceDialog, confirmDialog, pickManyDialog, promptDialog } from '../src/dialog';
 import { checkForUpdates, syncUpdateNotice, watchForUpdates } from '../src/updates';
 import { normaliseTasks, taskItemsFor, type TaskState } from '../src/tasks';
 import { previewScore } from '../src/scoring';
 import { tacticFitsPhase, tacticSpec, tacticTargets, type TacticCtx } from '../src/tactics';
-import { explosionScope, freehandSlots, targetStatusGrant, immediateDetonation, smokePlacement, squadAllegiance, twoHandedUse } from '../src/units';
+import { explosionScope, freehandSlots, linkSupportOf, roundEndLinkAuras, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, targetStatusGrant, tokenCleanupOf, immediateDetonation, smokePlacement, squadAllegiance, twoHandedUse } from '../src/units';
 import { gameResult } from '../src/tasks';
 import { canBeLoad, chargeableSlots, electronicDash, electronicValue, guidedActions, initiativeFor, interceptCapacity, isCarrier, isDeployable, isElectronicAttack, maneuverRange, maxLink, migrateState, parryParts, pilotCard, structureOf, tokenCards, volleyOf } from '../src/units';
 import { lengthOf, LENGTH_NAME, timingOf } from '../src/ticks';
@@ -174,6 +174,9 @@ const relay = new Relay(api.base, {
         else if (guidedOn(table)) { finishIfBothReady(guide); maybeAdvance(); }
         else maybeAdvance();
       }
+      // The other phone turned the round: this phone's Valkyries ask about
+      // Appease, as afterAdvance does for the phone that turned it.
+      if ((cmd as Command).kind === 'advancePhase' && table.round.phase === 0 && !gameOver()) void askAppease();
     }
     render();
   },
@@ -762,29 +765,107 @@ function removeUnit(t: Token): void {
   })();
 }
 
-// Stabilize System (6.1): the Link, and a Token if the player chooses. One
-// kind worn, or none: no question. Two or more: ask, with keeping them all
-// as a choice (J4).
-// `joined`: sent after the Action that paid for it (the Guided Common Action),
-// so it chains to that Action for Undo; the sheet's own + stands alone.
-function stabilise(t: Token, joined = false): void {
-  const chain = joined ? { chain: 'join' as const } : {};
-  const worn = statusStacks(t.statuses).filter(({ def }) => def.shape === 'square' || def.shape === 'hexagon');
-  if (worn.length < 2) { send({ kind: 'stabilise', seat: t.side, uid: t.uid, ...chain }); return; }
+// Stabilize System (6.1), asked the same way on every page (units.ts
+// stabiliseAsk): every Square or Hexagon Token worn, face included, since
+// either face may go; keeping them all when a Link is missing (FAQ J4, J8);
+// and a Cancel that cancels. It used to ask only when two kinds were worn and
+// otherwise take the one Token without a word, it was the sheet's Link +
+// (which is now a plain Recover), and a tap outside the question still
+// Stabilized. `pay`: the Guided Common Action's performAction, sent only once
+// the player has answered; what follows chains to it for Undo.
+function stabilise(t: Token, pay?: () => boolean): void {
+  if (!data) return;
+  const ask = stabiliseAsk(data, t);
   void (async () => {
-    const pick = await choiceDialog({
-      title: 'Stabilize System',
-      choices: [
-        ...worn.map(({ def, n }) => ({ id: def.id, label: n > 1 ? `${def.label} ×${n}` : def.label })),
-        { id: '__keep', label: 'Keep the Tokens', cancel: true },
-      ],
-      stacked: true,
-    });
-    if (pick === null) return;
-    send(pick === '__keep'
-      ? { kind: 'stabilise', seat: t.side, uid: t.uid, keepTokens: true, ...chain }
-      : { kind: 'stabilise', seat: t.side, uid: t.uid, statusId: pick, ...chain });
+    let cmd: Command = { kind: 'stabilise', seat: t.side, uid: t.uid, keepTokens: true };
+    let label: string | null = null;
+    if (ask.picks.length) {
+      const pick = await choiceDialog({
+        title: 'Stabilize System',
+        body: ask.body,
+        choices: [
+          ...ask.picks.map((p) => ({ id: p.id, label: stabiliseRowLabel(p) })),
+          ...(ask.keep ? [{ id: '__keep', label: STABILISE_KEEP_LABEL }] : []),
+          { id: '__cancel', label: 'Cancel', cancel: true },
+        ],
+        stacked: true,
+      });
+      if (pick === null || pick === '__cancel') return;
+      const p = ask.picks.find((x) => x.id === pick);
+      if (p) {
+        cmd = { kind: 'stabilise', seat: t.side, uid: t.uid, statusId: p.statusId, ...(p.face ? { face: p.face } : {}) };
+        label = p.label;
+      }
+    }
+    // Judged before anything is paid, so a refusal costs nothing.
+    const v = check(data!, table, cmd);
+    if (!v.ok) {
+      error = v.why ?? 'That cannot be done.';
+      render();
+      return;
+    }
+    if (pay && !pay()) return;
+    if (send({ ...cmd, ...(pay ? { chain: 'join' as const } : {}) })) {
+      toast(label ? `Stabilize System: ${label} removed${ask.keep ? `, Link ${t.link ?? 0}` : ''}.` : `Stabilize System: Link ${t.link ?? 0}.`);
+    }
   })();
+}
+
+// Strengthen Link, a Link Beacon and System Cleanup on a Freeform table, which
+// pays no Ticks: the same questions the Guided router asks (guided.ts).
+async function linkSupportFrom(by: Token, actionId: string): Promise<void> {
+  const a = data ? tokenCards(data, by).flatMap((c) => c.card.actions ?? []).find((x) => x.id === actionId) : undefined;
+  const rule = a ? linkSupportOf(a) : undefined;
+  if (!a || !rule) return;
+  const to = await askLinkSupport(guide, by, a, rule);
+  if (!to?.length) return;
+  let sent = 0;
+  for (const x of to) {
+    for (let i = 0; i < rule.amount; i++) {
+      if (send({ kind: 'recoverLink', seat: by.side, uid: by.uid, targetUid: x.uid, actionId: a.id, ...(sent ? { chain: 'join' as const } : {}) })) sent++;
+    }
+  }
+  if (sent) toast(`${a.name.en ?? 'Link'}: Link restored to ${to.map((x) => x.label).join(', ')}.`);
+}
+
+async function tokenCleanupFrom(by: Token, actionId: string): Promise<void> {
+  const a = data ? tokenCards(data, by).flatMap((c) => c.card.actions ?? []).find((x) => x.id === actionId) : undefined;
+  const rule = a ? tokenCleanupOf(a) : undefined;
+  if (!a || !rule) return;
+  const got = await askTokenCleanup(guide, by, a, rule);
+  if (!got) return;
+  if (send({ kind: 'removeStatus', seat: by.side, uid: by.uid, targetUid: got.unit.uid, statusId: got.pick.statusId, ...(got.pick.face ? { face: got.pick.face } : {}) })) {
+    toast(`${a.name.en ?? 'Cleanup'}: ${got.pick.label} removed from ${got.unit.label}.`);
+  }
+}
+
+// ZHDR-303 N503 "Valkyrie", 安抚 Appease: "At the end of each Round, all Ally
+// Mechs within range recover 1 Link." A board applies it as the round turns
+// (commands.ts advancePhase); a table with no board cannot measure the reach,
+// so as a round turns the phone holding the Valkyrie asks which Ally Mechs
+// stood within it, each ticked to start. Solo asks for both sides. A Mech in
+// Shutdown takes the Link and stays down until it Reboots (FAQ L3).
+async function askAppease(): Promise<void> {
+  if (!data || !table.noBoard) return;
+  const d = data;
+  const valkyries = table.tokens.filter((x) => (solo || x.side === mySeat()) && roundEndLinkAuras(d, x).length > 0);
+  for (const v of valkyries) {
+    const a = roundEndLinkAuras(d, v)[0];
+    const allies = table.tokens.filter((x) => x.kind === 'mech' && x.side === v.side && x.deployed !== false
+      && !isDead(x) && (x.link ?? 0) < maxLink(d, x));
+    if (!allies.length) continue;
+    const ids = await pickManyDialog({
+      title: `${a.name.en ?? 'Appease'}: ${v.label}`,
+      body: `The round has ended. Every Ally Mech within Range ${a.range ?? 0} of ${v.label} recovers 1 Link, even one in Shutdown (FAQ L3). Untick any that stood out of range.`,
+      rows: allies.map((x) => ({ id: String(x.uid), label: x.label, note: `Link ${x.link ?? 0}/${maxLink(d, x)}${x.stance === 'shutdown' ? ', Shutdown' : ''}`, on: true })),
+      confirmLabel: 'Restore Link',
+      allowNone: true,
+    });
+    if (!ids?.length) continue;
+    ids.forEach((id, i) => {
+      send({ kind: 'recoverLink', seat: v.side, uid: v.uid, targetUid: Number(id), actionId: a.id, ...(i ? { chain: 'join' as const } : {}) });
+    });
+  }
 }
 
 function unitOf(uid: number | null): Token | null {
@@ -1065,7 +1146,7 @@ const guide: GuideApi = {
   check: (cmd) => check(data!, table, cmd),
   endGame: () => { void endGame(); },
   detonate: (uid, actionId, joined) => { const t = unitOf(uid); if (t) void detonate(t, actionId, joined); },
-  stabilise: (uid, joined) => { const t = unitOf(uid); if (t) stabilise(t, joined); },
+  stabilise: (uid, pay) => { const t = unitOf(uid); if (t) stabilise(t, pay); },
   pickDiscard: async (uid) => { const t = unitOf(uid); return t ? pickDiscard(t) : null; },
   tactics: (side) => ({
     playable: guidedOn(table) && !playedThisRound(side)
@@ -1508,6 +1589,8 @@ function advanceCmd(seat: Side): Command {
 
 function afterAdvance(): void {
   toast(gameOver() ? 'Game over.' : `${PHASES[table.round.phase]} Phase, round ${table.round.n}.`);
+  // A round has just ended: the Valkyrie's Appease (askAppease).
+  if (table.round.phase === 0 && !gameOver()) void askAppease();
 }
 
 function readiness(): { me: boolean; them: boolean } {
@@ -1658,7 +1741,7 @@ function sheetHtml(s: Side = shownSide()): string {
       <div class="pad-count">
         ${mine ? '<button class="pad-step" data-act="link-down" aria-label="Spend 1 Link">−</button>' : ''}
         <span class="pad-num">${link}<span class="pad-of"> / ${maxLink(data, t)}</span></span>
-        ${mine ? '<button class="pad-step" data-act="stabilise" aria-label="Stabilize System">+</button>' : ''}
+        ${mine ? '<button class="pad-step" data-act="link-up" aria-label="Recover 1 Link">+</button>' : ''}
       </div>
     </div>` : ''}
     ${mine && isMech && t.stance === 'shutdown' ? `<div class="pad-row wrap">
@@ -1793,7 +1876,10 @@ function actionList(t: Token, mine: boolean): string {
       // Trigger and the Explosive Wall's Self-Destruct print dice or an
       // Explosion and fire off the table (a Ground Unit entering the Grid, the
       // Wall being destroyed). The table says when; the pad resolves it.
-      : (mine && g.available && t.kind === 'projectile' && (g.action.type !== 'Passive' || blastsOnItsOwn(g.action))
+      // A Link Beacon restores Link and stays (4.7.5): never a Detonation.
+      : (mine && g.available && linkSupportOf(g.action)
+        ? `<button class="pad-chip on pad-perform" data-act="link-support" data-uid="${t.uid}" data-id="${esc(g.action.id)}">Restore Link</button>`
+        : mine && g.available && t.kind === 'projectile' && (g.action.type !== 'Passive' || blastsOnItsOwn(g.action))
         ? `<button class="pad-chip on pad-perform" data-act="detonate" data-id="${esc(g.action.id)}">${g.action.type === 'Passive' ? 'Trigger' : 'Detonate'}</button>`
         : mine && g.available && isAttackAction(g.action)
         ? `<button class="pad-chip on pad-perform" data-act="attack" data-uid="${t.uid}" data-id="${esc(g.action.id)}">Attack</button>`
@@ -1803,6 +1889,8 @@ function actionList(t: Token, mine: boolean): string {
             // Target Tag and its like: a Tactic that puts a Token on a chosen
             // unit. Freeform pays no Ticks, so the button only asks who.
             ? `<button class="pad-chip on pad-perform" data-act="tag" data-uid="${t.uid}" data-id="${esc(g.action.id)}">Use</button>`
+          : mine && g.available && tokenCleanupOf(g.action)
+            ? `<button class="pad-chip on pad-perform" data-act="token-cleanup" data-uid="${t.uid}" data-id="${esc(g.action.id)}">Remove a Token</button>`
           : mine && g.available && g.projectiles.length
             ? g.projectiles.map((p) => `<button class="pad-chip on pad-perform" data-act="launch" data-id="${esc(g.action.id)}" data-projectile="${esc(p.id)}">Launch${g.projectiles.length > 1 ? ` ${esc(cardName(p))}` : ''}</button>`).join('')
             : '');
@@ -4094,9 +4182,16 @@ function act(el: HTMLElement, ev: Event): void {
     }
     case 'stance': if (t) send({ kind: 'setStance', seat: t.side, uid: t.uid, stance: el.dataset.stance as Stance }); return;
     case 'reboot': if (t) send({ kind: 'reboot', seat: t.side, uid: t.uid, stance: el.dataset.stance as Stance }); return;
-    // NOT restoreLink: that command is ZPA-40 Elation's own ability. Stabilize
-    // System (6.1) is how a Mech actually takes a Link back.
+    // The Actions list's Stabilize chip: the Action, with its Token question.
     case 'stabilise': if (t) stabilise(t); return;
+    // The Link row's +: a plain Recover, capped at the pilot's Link Value and
+    // taken in Shutdown too (FAQ L3), for a Link the table restored - an
+    // ally's Strengthen Link, a Link Beacon, Appease, Aster in Freeform. It
+    // never touches a Token: it used to be Stabilize System, which is why a
+    // lone Fire Control Interference vanished on a press of +.
+    case 'link-up': if (t) send({ kind: 'recoverLink', seat: t.side, uid: t.uid, targetUid: t.uid }); return;
+    case 'link-support': { const by = unitOf(Number(el.dataset.uid)); if (by) void linkSupportFrom(by, el.dataset.id!); return; }
+    case 'token-cleanup': { const by = unitOf(Number(el.dataset.uid)); if (by) void tokenCleanupFrom(by, el.dataset.id!); return; }
     case 'reveal': if (t) send({ kind: 'reveal', seat: t.side, uid: t.uid }); return;
     case 'link-down': if (t) send({ kind: 'drainLink', seat: t.side, uid: t.uid, targetUid: t.uid, n: 1 }); return;
     case 'ammo-down': if (t) send({ kind: 'spendAmmo', seat: t.side, uid: t.uid, actionId: el.dataset.id! }); return;

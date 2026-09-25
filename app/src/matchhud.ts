@@ -14,13 +14,13 @@ import { factionColour, ICON_DICE, linkIcon, squadColour } from './icons';
 import { iconSvg } from './dice';
 import { ensureScript, enterPhase, glueAfter as glueCore, makeInit, opportunity } from './glue';
 import type { PartSlot, CardAction, CounterRoll, DiceData, DieColor, Facing, GameState, RollbackPoint, Side, Stance, TerrainPiece, Timing, Token, ExtraTick, Opportunity } from './types';
-import { statusCount, gridsOf, newOpportunity, newScriptState, PHASES, STATUSES, TIMINGS, zonesOf } from './types';
+import { statusCount, gridsOf, newOpportunity, newScriptState, PHASES, removableTokens, STATUSES, TIMINGS, zonesOf } from './types';
 import { deployable, deployTurn, deploymentComplete, firstPlayerFrom, normaliseSetup, rollTotal, type SetupState } from './setup';
 import { actionPhaseComplete, activationOrder, alive, canAct, droneActionWhy, droneMoveWhy, eligibleUnits, isLoopPhase, loopComplete, nextActivation, nextTurn, onExtraOpportunity, type InitLookup, type LoopPhase } from './loop';
 import { actionIdOf, canActivate, canAttackMode, canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed, type TickVerdict } from './ticks';
 import { gameResult, normaliseTasks, wipedOut, zoneCentreGrid, type Designation, type ScoreResult } from './tasks';
 import { previewScore } from './scoring';
-import { armorPiercing, armorPiercingNote, automaticShieldFor, canAffordFocus, focusIsFree, grantAdjusted, shockAttackOf, shockMoveAllowed, stationaryAdjusted, twoHandedUse, tokenCards, vpRiderFor, straightLineBonus, selfStatusGrant, selfGrantWhy, isRwsAction, linkTickTraitOn } from './units';
+import { armorPiercing, armorPiercingNote, automaticShieldFor, canAffordFocus, focusIsFree, grantAdjusted, shockAttackOf, shockMoveAllowed, stationaryAdjusted, twoHandedUse, tokenCards, vpRiderFor, straightLineBonus, selfStatusGrant, selfGrantWhy, isRwsAction, linkTickTraitOn, isElectronicSupport, linkSupportOf, linkSupportTargets, maxLink, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, tokenCleanupOf, tokenCleanupTargets, type LinkSupport, type TokenCleanup } from './units';
 
 // The in-match HUD (Match Centre part 3a): one question at a time, per seat.
 // Everything here renders from the shared GameState and issues the same
@@ -1898,6 +1898,8 @@ function panelHtml(ctx: HudCtx): string {
   if (ewPick) return ewPanel(ctx);
   if (crushPlan?.queue.length) return crushPanel(ctx);
   if (resupplyPick) return resupplyPanel(ctx);
+  if (linkPick) return linkPanel(ctx);
+  if (cleanPick) return cleanPanel(ctx);
   if (terminalPick) return terminalPanel(ctx);
   if (manifestPick) return manifestPanel(ctx);
   if (formPick) return formPanel(ctx);
@@ -3736,19 +3738,109 @@ function resupplyPanel(ctx: HudCtx): string {
 // real choice, so both are asked rather than assumed.
 
 let chargePlan: { uid: number; on: boolean; actionId?: string } | null = null;
-// Stabilize System's one question, asked once the Tick is paid: remove a Token
-// and restore the Link, or keep the Tokens and take only the Link (FAQ J4).
-let stabilisePick: { uid: number; shed: string } | null = null;
+// Stabilize System's one question (units.ts stabiliseAsk, shared with the
+// tabletop and the pad): which Square or Hexagon Token comes off, face
+// included, or none of them when a Link is missing (FAQ J4, J8). Asked BEFORE
+// the Tick is paid, so Cancel really cancels - it used to be asked after, with
+// no way out, and it only ever offered the first Token worn.
+let stabilisePick: { uid: number } | null = null;
 
 function stabilisePanel(ctx: HudCtx): string {
   const m = stabilisePick!;
   const t = ctx.state.tokens.find((x) => x.uid === m.uid);
-  const label = STATUSES.find((x) => x.id === m.shed)?.label ?? m.shed;
-  return head('Your move', 'Stabilize System', `${t ? esc(t.label) : 'This Mech'} restores 1 Link. Removing the Token is optional (FAQ J4).`, true)
-    + `<div class="tp-body">
-        <button class="rowwide" data-stab="both">Remove ${esc(label)} and restore 1 Link</button>
-        <button class="rowwide" data-stab="link">Keep the Tokens, restore 1 Link only</button>
-       </div><div class="tp-foot"></div>`;
+  if (!t) return head('Stabilize System', 'That unit is gone', '', true)
+    + '<div class="tp-body"></div><div class="tp-foot"><button class="bigbtn ghost2" data-act="stabcancel">Close</button></div>';
+  const ask = stabiliseAsk(ctx.data, t);
+  const rows = ask.picks.map((p) => `<button class="rowwide" data-stab="${esc(p.id)}">${esc(stabiliseRowLabel(p))}</button>`).join('')
+    + (ask.keep ? `<button class="rowwide" data-stab="__keep">${esc(STABILISE_KEEP_LABEL)}</button>` : '');
+  return head('Your move', 'Stabilize System', esc(ask.body), true)
+    + `<div class="tp-body">${rows}</div>
+       <div class="tp-foot"><button class="bigbtn ghost2" data-act="stabcancel">Cancel</button></div>`;
+}
+
+// Strengthen Link (018_B all, 504_A one), a Link Beacon's Link Support (075_A)
+// and System Cleanup (504_B, TM31RS_B): units.ts linkSupportOf and
+// tokenCleanupOf. Who is in reach is read off the board; the Ticks wait in
+// pendingAction until the player confirms, so backing out costs nothing.
+let linkPick: { uid: number; actionId: string; rule: LinkSupport } | null = null;
+let cleanPick: { uid: number; actionId: string; rule: TokenCleanup; targetUid?: number } | null = null;
+
+function linkPanel(ctx: HudCtx): string {
+  const m = linkPick!;
+  const from = ctx.state.tokens.find((x) => x.uid === m.uid);
+  const a = from ? actionOn(ctx, from, m.actionId) : undefined;
+  if (!from || !a) return head('Restore Link', 'That unit is gone', '', true)
+    + '<div class="tp-body"></div><div class="tp-foot"><button class="bigbtn ghost2" data-act="linkcancel">Close</button></div>';
+  const what = a.name?.en || a.id;
+  const reach = actionRange(ctx.data, ctx.state.tokens, from, a);
+  const targets = linkSupportTargets(ctx.data, ctx.state.tokens, from, a);
+  const es = isElectronicSupport(a) ? ' Terrain and line of sight play no part (4.11.1).' : '';
+  const sub = m.rule.selection === 'all'
+    ? `Every Ally Mech within Range ${reach} recovers ${m.rule.amount} Link, and one in Shutdown takes it and stays down (FAQ L3).${es}`
+    : `One Ally Mech within Range ${reach} recovers ${m.rule.amount} Link, even one in Shutdown (FAQ L3).${es}`;
+  const ct = (x: Token): string => `<span class="ct">Link ${x.link ?? 0}/${maxLink(ctx.data, x)}${x.stance === 'shutdown' ? ' · Shutdown' : ''} · +${m.rule.amount}</span>`;
+  const name = (x: Token): string => `${esc(x.label)}${x.uid === from.uid ? ' (this Mech)' : ''}`;
+  const beacon = from.kind === 'projectile';
+  let body: string;
+  let foot: string;
+  if (!targets.length) {
+    // A Beacon's Delayed Action is its turn and resolves even when it changes
+    // nothing; a Mech's Action that could change nothing cannot be performed
+    // (FAQ H2), so its Tick stays unspent.
+    body = `<p class="tp-note">No Ally Mech within Range ${reach} is short of Link.${beacon ? '' : ' An action that cannot produce any change cannot be performed (FAQ H2).'}</p>`;
+    foot = beacon
+      ? '<button class="bigbtn" data-act="linkgo">Done</button><button class="bigbtn ghost2" data-act="linkcancel">Cancel</button>'
+      : '<button class="bigbtn ghost2" data-act="linkcancel">Close</button>';
+  } else if (m.rule.selection === 'all') {
+    body = targets.map((x) => `<div class="rowwide sel static">${name(x)}${ct(x)}</div>`).join('');
+    foot = '<button class="bigbtn" data-act="linkgo">Restore Link</button><button class="bigbtn ghost2" data-act="linkcancel">Cancel</button>';
+  } else {
+    body = targets.map((x) => `<button class="rowwide" data-linkto="${x.uid}">${name(x)}${ct(x)}</button>`).join('');
+    foot = '<button class="bigbtn ghost2" data-act="linkcancel">Cancel</button>';
+  }
+  return head('Your move', `${esc(what)}: ${m.rule.selection === 'all' ? 'restore Link' : 'which Ally Mech?'}`, sub, true)
+    + `<div class="tp-body">${body}</div><div class="tp-foot">${foot}</div>`;
+}
+
+function cleanPanel(ctx: HudCtx): string {
+  const m = cleanPick!;
+  const from = ctx.state.tokens.find((x) => x.uid === m.uid);
+  const a = from ? actionOn(ctx, from, m.actionId) : undefined;
+  if (!from || !a) return head('Remove a Token', 'That unit is gone', '', true)
+    + '<div class="tp-body"></div><div class="tp-foot"><button class="bigbtn ghost2" data-act="cleancancel">Close</button></div>';
+  const what = a.name?.en || a.id;
+  const reach = actionRange(ctx.data, ctx.state.tokens, from, a);
+  const shape = m.rule.shape === 'square' ? 'Square' : 'Hexagon';
+  const unit = m.targetUid !== undefined ? ctx.state.tokens.find((x) => x.uid === m.targetUid) : undefined;
+  if (unit) {
+    const rows = removableTokens(unit, [m.rule.shape])
+      .map((p) => `<button class="rowwide" data-cleantok="${esc(p.id)}">Remove ${esc(p.label)}</button>`).join('');
+    return head('Your move', `${esc(what)}: which Token comes off ${esc(unit.label)}?`, `One ${shape} Token, either face.`, true)
+      + `<div class="tp-body">${rows}</div><div class="tp-foot"><button class="bigbtn ghost2" data-act="cleancancel">Cancel</button></div>`;
+  }
+  const units = tokenCleanupTargets(ctx.data, ctx.state.tokens, from, a, m.rule);
+  const rows = units
+    .map((x) => `<button class="rowwide" data-cleanunit="${x.uid}">${esc(x.label)}${x.uid === from.uid ? ' (this unit)' : ''}<span class="ct">${esc(removableTokens(x, [m.rule.shape]).map((p) => p.label).join(', '))}</span></button>`)
+    .join('');
+  return head('Your move', `${esc(what)}: which Ally Unit?`, `One ${shape} Token comes off one Ally Unit within Range ${reach}. Terrain and line of sight play no part (4.11.1).`, true)
+    + `<div class="tp-body">${rows || `<p class="tp-note">No Ally Unit within Range ${reach} wears a ${shape} Token. An action that cannot produce any change cannot be performed (FAQ H2).</p>`}</div>
+       <div class="tp-foot"><button class="bigbtn ghost2" data-act="cleancancel">${units.length ? 'Cancel' : 'Close'}</button></div>`;
+}
+
+// The Details card's door to a Link Beacon or a support Action outside an
+// Opportunity (the sandbox, and a Beacon resolved from its card): the same
+// panels, with nothing latched to pay.
+export function startSupportPick(uid: number, actionId: string): boolean {
+  const ctx = hudRef;
+  if (!ctx) return false;
+  const t = ctx.state.tokens.find((x) => x.uid === uid);
+  const a = t ? actionOn(ctx, t, actionId) : undefined;
+  if (!t || !a) return false;
+  const link = linkSupportOf(a);
+  if (link) { linkPick = { uid, actionId: a.id, rule: link }; ctx.refresh(); return true; }
+  const clean = tokenCleanupOf(a);
+  if (clean) { cleanPick = { uid, actionId: a.id, rule: clean }; ctx.refresh(); return true; }
+  return false;
 }
 
 function chargePanel(ctx: HudCtx): string {
@@ -3864,6 +3956,8 @@ export function resetHudTools(): void {
   repairPick = null;
   chargePlan = null;
   stabilisePick = null;
+  linkPick = null;
+  cleanPick = null;
   attackPick = null;
   shovePlan = null;
   detonateNow = null;
@@ -3929,6 +4023,27 @@ function routeAction(ctx: HudCtx, t: Token, a: CardAction, ga?: ReturnType<typeo
     terminalPick = { uid: t.uid, actionId: a.id, reach: a.range ?? 4 };
     return true;
   }
+  // Stabilize System asks before it pays. A Mech wearing no Square or Hexagon
+  // Token has only the Link to take, so there is no question; one at full
+  // Link with none has nothing to do at all (FAQ J8), and backing out of
+  // either costs nothing.
+  if (a.id === 'COMMON_STABILIZE') {
+    if (stabiliseAsk(ctx.data, t).picks.length) {
+      stabilisePick = { uid: t.uid };
+      return true;
+    }
+    const cmd: Command = { kind: 'stabilise', seat: t.side, uid: t.uid, keepTokens: true };
+    const v = ctx.check(cmd);
+    if (!v.ok) {
+      ctx.noteNow(v.why ?? 'Stabilize System was refused.');
+      dropAction();
+      return true;
+    }
+    const paid = commitAction(ctx);
+    if (paid.ok && ctx.send(cmd).ok) ctx.noteNow(`Stabilize System: Link restored to ${t.link}.`);
+    else if (!paid.ok && paid.why) ctx.noteNow(paid.why);
+    return true;
+  }
   if (isChargeAction(a)) {
     chargePlan = { uid: t.uid, on: true };
     return true;
@@ -3936,6 +4051,18 @@ function routeAction(ctx: HudCtx, t: Token, a: CardAction, ga?: ReturnType<typeo
   const supply = resupplyOf(a);
   if (supply) {
     resupplyPick = { uid: t.uid, actionId: a.id, rule: supply };
+    return true;
+  }
+  // Ahead of the Delay Phase's Detonation branch below: a Link Beacon restores
+  // Link and stays on the board (4.7.5), it never Detonates.
+  const link = linkSupportOf(a);
+  if (link) {
+    linkPick = { uid: t.uid, actionId: a.id, rule: link };
+    return true;
+  }
+  const clean = tokenCleanupOf(a);
+  if (clean) {
+    cleanPick = { uid: t.uid, actionId: a.id, rule: clean };
     return true;
   }
   const rep = repairSpec(a);
@@ -4542,6 +4669,11 @@ export function startDetonation(uid: number, actionId: string): void {
   const proj = ctx.state.tokens.find((x) => x.uid === uid);
   const a = proj ? actionOn(ctx, proj, actionId) : undefined;
   if (!proj || !a) return;
+  // A Link Beacon's Delayed Action restores Link and the Beacon stays (4.7.5).
+  if (linkSupportOf(a)) {
+    startSupportPick(uid, actionId);
+    return;
+  }
   // A smoke card never targets anything: it puts screens down from where the
   // Projectile is standing and then the Projectile is spent.
   const smoke = smokePlacement(a);
@@ -5547,15 +5679,86 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     const m = stabilisePick;
     const t = m ? s.tokens.find((x) => x.uid === m.uid) : undefined;
     stabilisePick = null;
-    if (!m || !t) { ctx.refresh(); return; }
-    const keepTokens = el.dataset.stab === 'link';
-    const v = ctx.send({ kind: 'stabilise', seat: t.side, uid: t.uid, keepTokens });
-    const label = STATUSES.find((x) => x.id === m.shed)?.label ?? m.shed;
+    if (!m || !t) { dropAction(); ctx.refresh(); return; }
+    const id = el.dataset.stab ?? '';
+    const ask = stabiliseAsk(ctx.data, t);
+    const p = ask.picks.find((x) => x.id === id);
+    if (id !== '__keep' && !p) { dropAction(); ctx.refresh(); return; }
+    const cmd: Command = p
+      ? { kind: 'stabilise', seat: t.side, uid: t.uid, statusId: p.statusId, ...(p.face ? { face: p.face } : {}) }
+      : { kind: 'stabilise', seat: t.side, uid: t.uid, keepTokens: true };
+    // Judged before the Tick is paid, so a refusal costs nothing.
+    const v0 = ctx.check(cmd);
+    if (!v0.ok) { ctx.noteNow(v0.why ?? 'Stabilize System was refused.'); dropAction(); ctx.refresh(); return; }
+    const paid = commitAction(ctx);
+    if (!paid.ok) { if (paid.why) ctx.noteNow(paid.why); ctx.refresh(); return; }
+    const v = ctx.send(cmd);
     ctx.noteNow(!v.ok ? (v.why ?? 'Stabilize System was refused.')
-      : keepTokens ? `Stabilize System: Link restored to ${t.link}.`
-        : `Stabilize System: ${label} removed and Link restored to ${t.link}.`);
+      : p ? `Stabilize System: ${p.label} removed${ask.keep ? `, and Link restored to ${t.link}` : ''}.`
+        : `Stabilize System: Link restored to ${t.link}.`);
     ctx.refresh();
   });
+  on('[data-act="stabcancel"]', () => { stabilisePick = null; dropAction(); ctx.refresh(); });
+  // Link support: every Ally Mech in reach ('all'), or the one picked.
+  const restoreLinkTo = (targets: Token[]): void => {
+    const m = linkPick;
+    const from = m ? s.tokens.find((x) => x.uid === m.uid) : undefined;
+    const a = m && from ? actionOn(ctx, from, m.actionId) : undefined;
+    linkPick = null;
+    if (!m || !from || !a) { dropAction(); ctx.refresh(); return; }
+    const paid = commitAction(ctx);
+    if (!paid.ok) { if (paid.why) ctx.noteNow(paid.why); ctx.refresh(); return; }
+    const what = a.name?.en || a.id;
+    const done: string[] = [];
+    for (const x of targets) {
+      let n = 0;
+      for (let i = 0; i < m.rule.amount; i++) if (ctx.send({ kind: 'recoverLink', seat: from.side, uid: from.uid, targetUid: x.uid, actionId: a.id }).ok) n++;
+      if (n) done.push(`${x.label} to ${x.link}${x.stance === 'shutdown' ? ' (still Shutdown)' : ''}`);
+    }
+    ctx.noteNow(done.length ? `${what}: Link restored - ${done.join(', ')}.` : `${what}: no Ally Mech in range was short of Link.`);
+    ctx.refresh();
+  };
+  on('[data-act="linkgo"]', () => {
+    const m = linkPick;
+    const from = m ? s.tokens.find((x) => x.uid === m.uid) : undefined;
+    const a = m && from ? actionOn(ctx, from, m.actionId) : undefined;
+    restoreLinkTo(m && from && a ? linkSupportTargets(ctx.data, s.tokens, from, a) : []);
+  });
+  on('[data-linkto]', (el) => {
+    const to = s.tokens.find((x) => x.uid === Number(el.dataset.linkto));
+    restoreLinkTo(to ? [to] : []);
+  });
+  on('[data-act="linkcancel"]', () => { linkPick = null; dropAction(); ctx.refresh(); });
+  // Token cleanup: the unit, then the Token (asked only when there is a choice).
+  on('[data-cleanunit]', (el) => {
+    if (!cleanPick) return;
+    const unit = s.tokens.find((x) => x.uid === Number(el.dataset.cleanunit));
+    if (!unit) { ctx.refresh(); return; }
+    const picks = removableTokens(unit, [cleanPick.rule.shape]);
+    if (picks.length === 1) { cleanTokenOff(unit, picks[0].id); return; }
+    cleanPick = { ...cleanPick, targetUid: unit.uid };
+    ctx.refresh();
+  });
+  on('[data-cleantok]', (el) => {
+    const unit = cleanPick?.targetUid !== undefined ? s.tokens.find((x) => x.uid === cleanPick!.targetUid) : undefined;
+    if (unit) cleanTokenOff(unit, el.dataset.cleantok ?? '');
+  });
+  const cleanTokenOff = (unit: Token, pickId: string): void => {
+    const m = cleanPick;
+    const from = m ? s.tokens.find((x) => x.uid === m.uid) : undefined;
+    const a = m && from ? actionOn(ctx, from, m.actionId) : undefined;
+    cleanPick = null;
+    const p = m ? removableTokens(unit, [m.rule.shape]).find((x) => x.id === pickId) : undefined;
+    if (!m || !from || !a || !p) { dropAction(); ctx.refresh(); return; }
+    const cmd: Command = { kind: 'removeStatus', seat: from.side, uid: from.uid, targetUid: unit.uid, statusId: p.statusId, ...(p.face ? { face: p.face } : {}) };
+    const v0 = ctx.check(cmd);
+    if (!v0.ok) { ctx.noteNow(v0.why ?? 'That Token could not be removed.'); dropAction(); ctx.refresh(); return; }
+    const paid = commitAction(ctx);
+    if (!paid.ok) { if (paid.why) ctx.noteNow(paid.why); ctx.refresh(); return; }
+    if (ctx.send(cmd).ok) ctx.noteNow(`${a.name?.en || a.id}: ${p.label} removed from ${unit.label}.`);
+    ctx.refresh();
+  };
+  on('[data-act="cleancancel"]', () => { cleanPick = null; dropAction(); ctx.refresh(); });
   on('[data-aster]', (el) => {
     const t = s.tokens.find((x) => x.uid === Number(el.dataset.aster));
     if (!t) return;
@@ -5597,25 +5800,10 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
       // No tool to wait on means the Action is already done, so it pays now.
       if (!performed || !routeAction(ctx, t, performed, act)) {
         const paid = commitAction(ctx);
-        // Two Common Actions do more than spend a Tick, and the work lives in
-        // its own command: Stabilize sheds a Status and restores Link, Reveal
-        // leaves the Optical Camouflage State. Performing them without this was
-        // paying the cost and getting nothing.
-        if (paid.ok && el.dataset.doact === 'COMMON_STABILIZE') {
-          const shed = (t.statuses ?? []).find((id) => {
-            const d = STATUSES.find((x) => x.id === id);
-            return d?.shape === 'square' || d?.shape === 'hexagon';
-          });
-          if (shed) {
-            // Removing the Token is the player's choice (FAQ J4), so the panel
-            // asks before anything is sent.
-            stabilisePick = { uid: t.uid, shed };
-          } else {
-            // No Token to shed: the Link alone is the whole action (FAQ J6).
-            const v = ctx.send({ kind: 'stabilise', seat: t.side, uid: t.uid, keepTokens: true });
-            ctx.noteNow(v.ok ? `Stabilize System: Link restored to ${t.link}.` : (v.why ?? 'Stabilize System was refused.'));
-          }
-        }
+        // Reveal does more than spend a Tick, and the work lives in its own
+        // command: it leaves the Optical Camouflage State. Stabilize used to be
+        // handled here too, after the Tick was paid; routeAction asks it first
+        // now, so a Cancel costs nothing.
         if (paid.ok && el.dataset.doact === 'COMMON_REVEAL') {
           // The Reveal itself is only sent once Manifestation is settled: the
           // two are one event under 4.12.2, so the destination rides the same

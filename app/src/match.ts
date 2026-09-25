@@ -11,7 +11,7 @@ import { setLocalSeat } from './loop';
 import { resolveLayer, tableDeployFor, tableZonesFor } from './mapeditor';
 import { cardName, FACTION_LABEL, dataUrl, loadData, missionImageUrl, parseGridRef, setSquadNames, squadLabel, type GameData } from './data';
 import { tacticSpec } from './tactics';
-import { flushBoxDrops, queueBoxDrop, objectiveCells, resetHudTools, startActionFromCard } from './matchhud';
+import { flushBoxDrops, queueBoxDrop, objectiveCells, resetHudTools, startActionFromCard, startSupportPick } from './matchhud';
 import { printedDeployment } from './overlays';
 import { ignoresProtectionOnHighlight, kcArmorReady, knockbackOf, migrateState, multiTargetLimit, providesUnitProtectionToAllies, squadAllegiance, tokenCards, unfoldsOwed, type AttackReaction } from './units';
 import { countHits, normaliseSetup } from './setup';
@@ -1039,6 +1039,19 @@ function mountSide(): void {
         return;
       }
       startDetonation(t.uid, actionId);
+      render();
+    },
+    // Strengthen Link or System Cleanup from the card: through the turn
+    // panel's own door when this unit holds the Opportunity, so the Tick is
+    // paid; the bare picker only remains for the sandbox, as for an attack.
+    onSupport: (t, actionId) => {
+      if (startActionFromCard(t.uid, actionId)) { render(); return; }
+      if (relay.state.room) {
+        lobbyNote = `${t.label} does not hold the Action Opportunity, so it cannot act now (3.4).`;
+        render();
+        return;
+      }
+      startSupportPick(t.uid, actionId);
       render();
     },
     // A shove is a Knockback with no Attack behind it, so the panel asks which

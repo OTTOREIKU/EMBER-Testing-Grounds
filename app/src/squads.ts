@@ -657,8 +657,11 @@ export class SquadTracker {
         perform(this.data, this.state!, { kind: 'focus', seat: t.side, uid: t.uid });
         this.cb.onChanged();
       });
+      // Recovering is the `recoverLink` command, capped at the pilot's Link
+      // Value like every other +1 Link. It used to add 1 by hand with no
+      // ceiling, so a 3-Link pilot could be nudged to 4.
       link.querySelector('.lk-plus')?.addEventListener('click', () => {
-        t.link = (t.link ?? 0) + 1;
+        perform(this.data, this.state!, { kind: 'recoverLink', seat: t.side, uid: t.uid, targetUid: t.uid });
         this.cb.onChanged();
       });
       linkCtrl = link;

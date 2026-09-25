@@ -126,6 +126,62 @@ export function choiceDialog(o: ChoiceOpts): Promise<string | null> {
   });
 }
 
+// A list the player ticks rather than picks one from, for an effect that
+// reaches "every Ally Mech in range" on a table with no board to measure it
+// (the pad): the player says which of them stood in range. A row is a toggle,
+// selected as colour (ui.css rule 2) with `aria-pressed` saying so, and the
+// confirm button names what happens. Cancel, Escape and the backdrop resolve
+// null; confirming with nothing ticked is allowed only when `allowNone` says
+// "nobody was in range" is an answer.
+export interface PickRow {
+  id: string;
+  label: string;
+  note?: string;
+  on?: boolean;
+}
+
+export function pickManyDialog(o: BaseOpts & { rows: PickRow[]; confirmLabel?: string; allowNone?: boolean }): Promise<string[] | null> {
+  return new Promise((resolve) => {
+    const rows = o.rows
+      .map((r) => `<button type="button" class="dlg-pick" data-pick="${esc(r.id)}" aria-pressed="${r.on ? 'true' : 'false'}">
+          <span>${esc(r.label)}</span>${r.note ? `<em>${esc(r.note)}</em>` : ''}</button>`)
+      .join('');
+    let settled = false;
+    open(
+      `<h3 class="dlg-title">${esc(o.title)}</h3>${bodyHtml(o)}<div class="dlg-picks">${rows}</div>
+       <div class="dlg-actions">
+         <button class="dlg-primary" data-ok>${esc(o.confirmLabel ?? 'Confirm')}</button>
+         <button data-cancel>Cancel</button>
+       </div>`,
+      (panel, close) => {
+        const ok = panel.querySelector<HTMLButtonElement>('[data-ok]')!;
+        const picked = (): string[] => [...panel.querySelectorAll<HTMLButtonElement>('.dlg-pick[aria-pressed="true"]')].map((b) => b.dataset.pick!);
+        const sync = (): void => { ok.disabled = !o.allowNone && picked().length === 0; };
+        panel.querySelectorAll<HTMLButtonElement>('.dlg-pick').forEach((b) =>
+          b.addEventListener('click', () => {
+            b.setAttribute('aria-pressed', b.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
+            sync();
+          }),
+        );
+        const done = (val: string[] | null): void => {
+          if (settled) return;
+          settled = true;
+          close();
+          resolve(val);
+        };
+        ok.addEventListener('click', () => done(picked()));
+        panel.querySelector<HTMLButtonElement>('[data-cancel]')!.addEventListener('click', () => done(null));
+        sync();
+      },
+      () => {
+        if (settled) return;
+        settled = true;
+        resolve(null);
+      },
+    );
+  });
+}
+
 export async function confirmDialog(o: BaseOpts & {
   confirmLabel?: string;
   cancelLabel?: string;

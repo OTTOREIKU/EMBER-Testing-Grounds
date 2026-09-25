@@ -4,7 +4,7 @@ import { inspectOnHover, linkMechanics } from './inspector';
 import { ICON_BOLT, ICON_BURST } from './icons';
 import { diceRow, diceText, expandGlyphs } from './glyphs';
 import { groupByFaction, openPartPicker } from './partpicker';
-import { type ActionWorld, canBeLoad, guidedActions, isCarrier, isElectronicAttack, knockbackOf, SLOT_LABEL, tokenCards } from './units';
+import { type ActionWorld, canBeLoad, guidedActions, isCarrier, isElectronicAttack, knockbackOf, linkSupportOf, SLOT_LABEL, tokenCards, tokenCleanupOf } from './units';
 import { costLabel, LENGTH_NAME, lengthOf, TICK_COST } from './ticks';
 
 const ACTION_TINT: Record<string, string> = {
@@ -97,6 +97,8 @@ export interface PanelCallbacks {
   onShowMoveRange(t: Token, steps: number): void;
   onShowActionRange(t: Token, range: number, label: string): void;
   onDetonate(t: Token, actionId: string): void;
+  // A Mech's Link or Token support Action (Strengthen Link, System Cleanup).
+  onSupport(t: Token, actionId: string): void;
   onShove(t: Token, actionId: string): void;
   onCharge(t: Token, slot: string, on: boolean): void;
   // Changing what a Carrier holds. Setup housekeeping rather than a game
@@ -627,13 +629,28 @@ export class Panel {
     }
     if (available && t.kind === 'projectile' && a.type !== 'Passive') {
       const det = document.createElement('button');
-      det.className = 'detonate-btn';
-      det.innerHTML = `${ICON_BURST} Detonate…`;
-      det.title = (a.redDice || a.yellowDice)
-        ? 'Resolve this projectile: pick a unit in range and deal Explosion damage'
-        : 'Resolve this projectile: apply its effect to the units in range';
+      // A Link Beacon's Delayed Action restores Link and the Beacon stays
+      // (4.7.5), so it is not offered as a Detonation.
+      const restores = !!linkSupportOf(a);
+      det.className = restores ? '' : 'detonate-btn';
+      if (restores) det.textContent = 'Restore Link…';
+      else det.innerHTML = `${ICON_BURST} Detonate…`;
+      det.title = restores
+        ? 'Resolve this Beacon: every Ally Mech within its Range recovers 1 Link'
+        : (a.redDice || a.yellowDice)
+          ? 'Resolve this projectile: pick a unit in range and deal Explosion damage'
+          : 'Resolve this projectile: apply its effect to the units in range';
       det.addEventListener('click', () => this.cb.onDetonate(t, a.id));
       btns.appendChild(det);
+    }
+    if (available && t.kind !== 'projectile' && (linkSupportOf(a) || tokenCleanupOf(a))) {
+      const sup = document.createElement('button');
+      sup.textContent = linkSupportOf(a) ? 'Restore Link…' : 'Remove a Token…';
+      sup.title = linkSupportOf(a)
+        ? 'Electronic Support: Ally Mechs within Range recover Link, even in Shutdown'
+        : 'Electronic Support: take a Square Token off an Ally Unit within Range';
+      sup.addEventListener('click', () => this.cb.onSupport(t, a.id));
+      btns.appendChild(sup);
     }
     if (available && (a.redDice || a.yellowDice)) {
       const roll = document.createElement('button');

@@ -80,9 +80,23 @@ check('an unknown card has none', T.tacticSpec('999'), null);
   check('277 targets any unit of yours wearing a Square or Hexagon Token', ids(T.tacticTargets(spec, s, 's1', ctx)), [1, 3]);
   check('a State is not a Token it can remove', ids(T.tacticTargets(spec, s, 's1', ctx)).includes(4), false);
   const picks = spec.choices(tokened, s, ctx);
-  check('the choices are the Tokens worn, counted', picks.map((p) => [p.id, p.label]), [['fragile', 'Fragile ×2'], ['highlight', 'Highlight']]);
-  spec.apply(tokened, s, ctx, 'fragile');
+  check('the choices are the Tokens worn, by face, counted', picks.map((p) => [p.id, p.label]),
+    [['fragile:yellow', 'Fragile, yellow (2 worn)'], ['highlight:yellow', 'Highlight, yellow']]);
+  spec.apply(tokened, s, ctx, 'fragile:yellow');
   check('and removing one takes ONE off', tokened.statuses, ['fragile', 'highlight']);
+  // A stack showing both faces offers each, so the player can take the yellow
+  // one and leave the red one that comes off at this End Phase anyway.
+  const mixed = mech(6, 's1', { statuses: ['fci', 'fci'], expiring: ['fci'] });
+  check('a stack showing both faces offers each face', spec.choices(mixed, s, ctx).map((p) => p.id), ['fci:red', 'fci:yellow']);
+  spec.apply(mixed, s, ctx, 'fci:yellow');
+  check('taking the yellow one leaves the red one red', [mixed.statuses, mixed.expiring], [['fci'], ['fci']]);
+  // THE STALE MARKER (the bug this fixed): removing the last Token of a kind
+  // left its red marker behind, so the next one of that kind arrived red.
+  const lone = mech(7, 's1', { statuses: ['fci'], expiring: ['fci'] });
+  spec.apply(lone, s, ctx, 'fci:red');
+  check('removing the last one takes its red marker too', [lone.statuses, lone.expiring ?? []], [[], []]);
+  // Green Low Profile has one face and no colour to name.
+  check('a green Token is offered bare', spec.choices(dr, s, ctx).map((p) => [p.id, p.label]), [['lowProfile', 'Low Profile']]);
 }
 
 // ---------- 278 Tactical Disposition ----------

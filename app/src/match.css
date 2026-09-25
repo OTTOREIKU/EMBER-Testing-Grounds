@@ -614,6 +614,8 @@ b.s1 { color: var(--s1); } b.s2 { color: var(--s2); }
 .rowwide { width: 100%; display: flex; align-items: center; gap: 9px; border: none; border-radius: var(--radius-sm); background: var(--surface2); box-shadow: var(--shadow); color: var(--text); padding: 10px 11px; cursor: pointer; margin-bottom: 6px; text-align: left; font-size: 12px; transition: background 0.12s; }
 .rowwide:hover { background: var(--surface3); }
 .rowwide.sel { background: var(--accent-lt); }
+/* A row that reports rather than asks: the Ally Mechs an 'all' Link effect reaches. */
+.rowwide.static { cursor: default; }
 .rowwide .ct { margin-left: auto; font-family: var(--mono); font-size: 9.5px; color: var(--text3); }
 .rowwide.donerow { color: var(--text3); background: var(--surface2); cursor: default; }
 

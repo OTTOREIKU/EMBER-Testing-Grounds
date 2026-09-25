@@ -246,6 +246,7 @@ export function labelFor(cmd: { kind: string }, state: GameState, names?: Ledger
     case 'restoreAmmo': label = `${who()}: Ammo restored`; break;
     case 'drainLink': label = `${target()} loses ${c.n ?? 1} Link`; break;
     case 'restoreLink': label = `${who()} recovers Link`; break;
+    case 'recoverLink': label = `${target()} recovers 1 Link`; break;
     case 'applyStatus': label = `${target()} gains ${c.stacks && c.stacks > 1 ? `${c.stacks} ` : 'a '}${c.statusId ?? 'status'} Token${c.stacks && c.stacks > 1 ? 's' : ''}`; break;
     case 'removeStatus': label = `${target()} loses a ${c.statusId ?? 'status'} Token`; break;
     case 'ageStatus': label = `${target()}'s ${c.statusId ?? 'status'} Token ages`; break;

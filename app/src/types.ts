@@ -529,6 +529,102 @@ export const STATUSES: StatusDef[] = [
   },
 ];
 
+// ---------- Taking ONE Token off, by the face it shows (2.5.3) ----------
+//
+// A yellow Square or Hexagon flips to red at the End Phase and the red one
+// comes off at the next (2.5.3, 3.7.2). `expiring` holds ONE ENTRY PER RED
+// FACE, so a stack of two Fire Control Interference with one marker is one red
+// and one yellow (Square Tokens stack, FAQ J16). Every command that takes a
+// Token off comes through shedToken, which keeps that count honest. The code
+// it replaced cleared EVERY red marker of the id (Stabilize: a red survivor
+// went yellow and lived a round longer) or none at all (System Repair: the
+// next Token of that kind arrived already red, against FAQ J11).
+//
+// Self-contained on purpose: tactics.test.mjs slices this file from STATUSES
+// down, so nothing here may lean on a helper declared above it.
+
+export type TokenFace = 'yellow' | 'red' | 'green';
+
+// The faces a unit's stack of one Token currently shows. A Token with no
+// yellow life (green Low Profile) never ages and is 'green'.
+export function tokenFaces(t: Pick<Token, 'statuses' | 'expiring'>, id: string): { face: TokenFace; n: number }[] {
+  const n = (t.statuses ?? []).filter((x) => x === id).length;
+  if (!n) return [];
+  if (STATUSES.find((s) => s.id === id)?.decay !== 'yellow') return [{ face: 'green', n }];
+  const red = Math.min(n, (t.expiring ?? []).filter((x) => x === id).length);
+  const out: { face: TokenFace; n: number }[] = [];
+  if (red) out.push({ face: 'red', n: red });
+  if (n - red) out.push({ face: 'yellow', n: n - red });
+  return out;
+}
+
+// Takes ONE entry of `id` off. `face` names which, where the stack shows both;
+// left out, a yellow one goes first, since a red one leaves at this End Phase
+// anyway. False when the unit carries none, or none showing that face.
+export function shedToken(t: Pick<Token, 'statuses' | 'expiring'>, id: string, face?: 'yellow' | 'red'): boolean {
+  const list = [...(t.statuses ?? [])];
+  const at = list.lastIndexOf(id);
+  if (at < 0) return false;
+  const faces = tokenFaces(t, id);
+  const reds = faces.find((f) => f.face === 'red')?.n ?? 0;
+  const yellows = faces.find((f) => f.face === 'yellow')?.n ?? 0;
+  if ((face === 'red' && !reds) || (face === 'yellow' && !yellows)) return false;
+  const takeRed = face ? face === 'red' : !yellows && reds > 0;
+  list.splice(at, 1);
+  t.statuses = list;
+  // One marker per red face left, and never more markers than entries.
+  const left = list.filter((x) => x === id).length;
+  const keep = Math.min(left, reds - (takeRed ? 1 : 0));
+  const next = [...(t.expiring ?? []).filter((x) => x !== id), ...Array<string>(keep).fill(id)];
+  t.expiring = next.length ? next : undefined;
+  return true;
+}
+
+// One row per Square or Hexagon Token a unit wears, split by face where the
+// face is a choice, for the pickers of Stabilize System (6.1), System Repair
+// (277) and System Cleanup (504_B). `id` is what travels back: the status id,
+// with its face after a colon when it has one (see parseTokenPick).
+export interface TokenPick {
+  id: string;
+  statusId: string;
+  face?: 'yellow' | 'red';
+  // "Fire Control Interference, red (2 worn)": the Token, its face, and how
+  // many of that face the unit wears when it is more than one.
+  label: string;
+  n: number;
+  shape: 'square' | 'hexagon';
+}
+
+export function removableTokens(t: Pick<Token, 'statuses' | 'expiring'>, shapes: ('square' | 'hexagon')[] = ['square', 'hexagon']): TokenPick[] {
+  const out: TokenPick[] = [];
+  const seen: string[] = [];
+  for (const id of t.statuses ?? []) {
+    if (seen.includes(id)) continue;
+    seen.push(id);
+    const def = STATUSES.find((s) => s.id === id);
+    if (!def || (def.shape !== 'square' && def.shape !== 'hexagon') || !shapes.includes(def.shape)) continue;
+    for (const { face, n } of tokenFaces(t, id)) {
+      const two = face !== 'green';
+      out.push({
+        id: two ? `${id}:${face}` : id,
+        statusId: id,
+        face: two ? face : undefined,
+        label: `${def.label}${two ? `, ${face}` : ''}${n > 1 ? ` (${n} worn)` : ''}`,
+        n,
+        shape: def.shape,
+      });
+    }
+  }
+  return out;
+}
+
+// A TokenPick id read back: 'fci:red' is Fire Control Interference on its red
+// face. A bare id (a green Token, or a pick saved before faces existed) has none.
+export function parseTokenPick(id: string): { statusId: string; face?: 'yellow' | 'red' } {
+  const [statusId, face] = id.split(':');
+  return { statusId, face: face === 'red' || face === 'yellow' ? face : undefined };
+}
+
 export interface RoundState {
   n: number;
   phase: number;

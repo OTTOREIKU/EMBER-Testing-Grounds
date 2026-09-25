@@ -1,8 +1,8 @@
 import { clampBoardArt, clampGridColour, DEFAULT_BOARD } from './boards';
 import type { GameData } from './data';
 import { cardName, faceOf, isAerial, isBarricade, isFlyingBase, isMine, isTetherFace, isUnfolded, transformFaces, unfoldsInto, unitSize } from './data';
-import type { ExtraTick, Card, CardAction, CounterRoll, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, TableZone, TerrainPiece, TetherLink, Timing, Token } from './types';
-import { addStatus, DEFAULT_GRIDS, gridsOf, LEGACY_SIDE, normaliseScript, statusCount, TIMINGS } from './types';
+import type { ExtraTick, Card, CardAction, CounterRoll, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, TableZone, TerrainPiece, TetherLink, Timing, Token, TokenPick } from './types';
+import { addStatus, DEFAULT_GRIDS, gridsOf, LEGACY_SIDE, normaliseScript, removableTokens, statusCount, TIMINGS } from './types';
 import { normaliseSetup } from './setup';
 import { isMeleeFiring, lockersOf } from './melee';
 import { boardGrids, inContact, largeGridOf, lineCrossesUnit, losBetween, rangeBetween, smokeBlocks, standingSpot } from './rules';
@@ -595,6 +595,120 @@ export function resupplyOf(a: CardAction): Resupply | undefined {
   return undefined;
 }
 
+// ---------- Link and Token support (Strengthen Link, Link Beacon, System Cleanup) ----------
+//
+// Electronic Support "targets Friendly Units, does not require Electronic
+// counter-rolls, and takes effect automatically" (6.2.1). A unit benefits from
+// its own, Terrain and line of sight play no part (4.11.1), and a Repeater may
+// be the starting point (6.2.1). The cards carry each rule as a structured
+// effect that nothing read until 2026-09-25, so all of these spent their Tick
+// and did nothing on every page:
+//   018_B Strengthen Link (RT-15/EC Aurora)   every Ally Mech in Range 4, +1 Link
+//   504_A Strengthen Link (RT-15/S Nimbus)    one Ally Mech in Range 8, +1 Link
+//   075_A Link Support (B3/1 Link Beacon)     Delay: every Ally Mech in Range 3, +1
+//   504_B System Cleanup, TM31RS_B            one Ally Unit in Range 6, one Square Token off
+// Link restored this way reaches a Mech in Shutdown, which takes it and does
+// not reboot (FAQ L3). The Beacon is not Electronic Support: a Deployable whose
+// Delayed Action needs no Detonation stays on the board and acts again in the
+// Delay Phase of every round (4.7.5).
+export interface LinkSupport {
+  // 'all' reaches every Ally Mech in range; 'chosen' is one the player picks.
+  selection: 'all' | 'chosen';
+  amount: number;
+}
+
+export function linkSupportOf(a: CardAction): LinkSupport | undefined {
+  for (const g of a.gameRules ?? []) {
+    for (const e of g.effects ?? []) {
+      const eff = e as {
+        type?: string; mode?: string; utility?: string;
+        target?: { selection?: string };
+        effects?: { type?: string; delta?: number }[];
+      };
+      if (eff.type === 'detonation' && eff.utility === 'recover_ally_mech_link') {
+        return { selection: eff.target?.selection === 'chosen' ? 'chosen' : 'all', amount: 1 };
+      }
+      if (eff.type !== 'electronic' || eff.mode !== 'support') continue;
+      const link = (eff.effects ?? []).find((x) => x.type === 'modify_link' && (x.delta ?? 0) > 0);
+      if (link) return { selection: eff.target?.selection === 'all' ? 'all' : 'chosen', amount: link.delta ?? 1 };
+    }
+  }
+  return undefined;
+}
+
+export interface TokenCleanup {
+  shape: 'square' | 'hexagon';
+  count: number;
+}
+
+export function tokenCleanupOf(a: CardAction): TokenCleanup | undefined {
+  for (const g of a.gameRules ?? []) {
+    for (const e of g.effects ?? []) {
+      const eff = e as { type?: string; mode?: string; effects?: { type?: string; shape?: string; count?: number }[] };
+      if (eff.type !== 'electronic' || eff.mode !== 'support') continue;
+      const rm = (eff.effects ?? []).find((x) => x.type === 'remove_status_token');
+      if (rm) return { shape: rm.shape === 'hexagon' ? 'hexagon' : 'square', count: Math.max(1, rm.count ?? 1) };
+    }
+  }
+  return undefined;
+}
+
+// Every unit of `src`'s own side a support effect reaches on the board,
+// measured from `src` or, for Electronic Support, from any Repeater covering
+// it. `src` is included: a unit benefits from its own Electronic Support.
+// Needs a board, so a table without one (the pad) asks its player instead.
+export function supportReach(data: GameData, tokens: Token[], src: Token, a: CardAction): Token[] {
+  const reach = actionRange(data, tokens, src, a);
+  const from = isElectronicSupport(a) ? electronicOrigins(data, tokens, src) : [src];
+  return tokens.filter((x) => x.side === src.side && x.deployed !== false
+    && (x.partStates[x.kind === 'mech' ? 'torso' : 'main'] ?? 'intact') !== 'destroyed'
+    && from.some((o) => rangeBetween(o, x).range <= reach));
+}
+
+// The Ally Mechs a Link effect would actually change: in reach and short of
+// their pilot's Link Value, Shutdown or not.
+export function linkSupportTargets(data: GameData, tokens: Token[], src: Token, a: CardAction): Token[] {
+  return supportReach(data, tokens, src, a).filter((x) => x.kind === 'mech' && (x.link ?? 0) < maxLink(data, x));
+}
+
+// The Ally Units a Token cleanup could clean: in reach and wearing a Token of
+// the printed shape.
+export function tokenCleanupTargets(data: GameData, tokens: Token[], src: Token, a: CardAction, rule: TokenCleanup): Token[] {
+  return supportReach(data, tokens, src, a).filter((x) => removableTokens(x, [rule.shape]).length > 0);
+}
+
+// ---------- Stabilize System's one question (6.1, FAQ J4-J8) ----------
+//
+// Shared by the tabletop, the Match Centre and the pad so all three ask it the
+// same way, which they did not: two offered only the FIRST Token worn, and the
+// pad asked only when two kinds were worn and otherwise took the one Token
+// without a word. Removing a Token is always the player's choice (J4), any
+// Square or Hexagon Token on either face may go (6.1 names no colour), and
+// keeping them all is offered only when the Link alone would change something
+// (J8: an action that changes nothing cannot be performed).
+export interface StabiliseAsk {
+  picks: TokenPick[];
+  keep: boolean;
+  body: string;
+}
+
+export function stabiliseAsk(data: GameData, t: Token): StabiliseAsk {
+  const picks = removableTokens(t);
+  const keep = t.kind === 'mech' && (t.link ?? 0) < maxLink(data, t);
+  const red = picks.some((p) => p.face === 'red') ? ' A red Token comes off at this round\'s End Phase anyway.' : '';
+  const body = keep
+    ? `Remove one Square or Hexagon Token and restore 1 Link, or keep every Token and take the Link alone (FAQ J4).${red}`
+    : `Link is already full, so Stabilize System can only remove a Token (FAQ J7).${red}`;
+  return { picks, keep, body };
+}
+
+// The label a removal row wears on every page.
+export function stabiliseRowLabel(p: TokenPick): string {
+  return `Remove ${p.label}`;
+}
+
+export const STABILISE_KEEP_LABEL = 'Keep the Tokens, restore 1 Link only';
+
 // ---------- Covert carry: lock_one (008_A Beacon, PRDR-105_B Wall) ----------
 //
 // "Before the game, this unit secretly carries 1 of the 3 B3 beacons" (008) /
@@ -1157,13 +1271,12 @@ export function silenceDenied(data: GameData, tokens: Token[], t: Token): AuraSo
 // `shape: 'hexagon'` rather than on the name, so Silence does not reach them
 // and must not be added to them.
 //
-// STILL MISSING, and it is the Scan half rather than this one: 4.12.4 says a
-// successful Scan removes a Low Profile Token, and nothing performs that. The
-// Scan Common Action carries the rule in its printed text (data/common_actions
-// .json COMMON_SCAN) and the play guide reads that text out, but no command
-// applies it — the counter-roll resolves and the Token stays. Whoever builds it
-// needs no Silence gate at all: Scan is itself `silence: true`, which is FAQ
-// I18 keeping the SCANNER hidden, and says nothing about its target.
+// The Scan half is BUILT, and needs no Silence gate at all: 4.12.4's successful
+// Scan removes the target's Low Profile Tokens through the Counter-roll's close
+// on every page (scanStrips, read by combat.ts, matchhud.ts and pad/ew.ts).
+// Scan is itself `silence: true`, which is FAQ I18 keeping the SCANNER hidden,
+// and says nothing about its target. (This note said "STILL MISSING" until
+// 2026-09-25, long after it had shipped.)
 
 // Silence as the CARD prints it, before any aura has a say. Split out so a
 // Reveal can name the aura as the REASON: an Action that never carried Silence
@@ -2471,6 +2584,9 @@ export interface AuraSource {
   // read off the printed text the same way repairSpec and isMeleeFiring do.
   firingOnly: boolean;
   label: string;
+  // Which Action projects it, so a reader can ask what else that Action says
+  // (roundEndLinkSources reads the Appease wording through it).
+  actionId: string;
   // The unit projecting it. Carried because a defence pool that changes with no
   // name attached reads as a bug at the table — ZHDR-204 lands on the ATTACKER,
   // so the affected player cannot see which unit did it without being told.
@@ -2534,6 +2650,7 @@ export function aurasOn(data: GameData, tokens: Token[], t: Token): AuraSource[]
               value: eff.value ?? 0,
               firingOnly: /Firing Actions?\b/i.test(a.description?.en ?? ''),
               label: a.name?.en || a.name?.zh || eff.label || a.id,
+              actionId: a.id,
               source: src,
             });
           }
@@ -2552,6 +2669,41 @@ export function auraEffectsOn(data: GameData, tokens: Token[], t: Token): Set<st
   const out = new Set<string>();
   for (const src of aurasOn(data, tokens, t)) for (const k of src.kinds) out.add(k);
   return out;
+}
+
+// ZHDR-303 N503 "Valkyrie", 安抚 Appease: "Aura. At the end of each Round, all
+// Ally Mechs within range recover 1 Link." The data files it as an aura whose
+// only kind is the generator's catch-all `unsupported_stage_triggered` - the
+// one aura in the set with that kind - so it is read by that kind AND by its
+// own Link wording, which keeps a second stage-triggered aura, if one ever
+// arrives, from being taken for it. One source per Valkyrie reaching the Mech:
+// each is its own aura, and nothing printed says two do not stack (FAQ O6 and
+// O17 stack two same-name Parts). A Mech in Shutdown takes it: Link is restored
+// to it by an ally (FAQ L3). aurasOn already asks that the Valkyrie stands.
+function isRoundEndLinkAura(a: CardAction): boolean {
+  return (a.gameRules ?? []).some((g) => (g.effects ?? []).some((e) => {
+    const eff = e as { type?: string; effectTypes?: string[]; label?: string; description?: string };
+    return eff.type === 'aura' && (eff.effectTypes ?? []).includes('unsupported_stage_triggered')
+      && /链接/.test(`${eff.label ?? ''} ${eff.description ?? ''}`);
+  }));
+}
+
+export function roundEndLinkSources(data: GameData, tokens: Token[], t: Token): AuraSource[] {
+  if (t.kind !== 'mech') return [];
+  return aurasOn(data, tokens, t).filter((src) => {
+    if (!src.kinds.includes('unsupported_stage_triggered')) return false;
+    const a = tokenCards(data, src.source).flatMap(({ card }) => card.actions ?? []).find((x) => x.id === src.actionId);
+    return !!a && isRoundEndLinkAura(a);
+  });
+}
+
+// The units carrying an Appease-style aura at all, for a table with no board:
+// the pad cannot measure the reach, so it asks the Valkyrie's player which
+// Ally Mechs stood within it.
+export function roundEndLinkAuras(data: GameData, t: Token): CardAction[] {
+  if (t.deployed === false || (t.partStates[t.kind === 'mech' ? 'torso' : 'main'] ?? 'intact') === 'destroyed') return [];
+  if (t.kind === 'mech' && t.stance === 'shutdown') return [];
+  return tokenCards(data, t).flatMap(({ card }) => card.actions ?? []).filter(isRoundEndLinkAura);
 }
 
 // LPA-21 Firefly, 匿踪 Stealth: "Piloted Mech's movement route may pass through

@@ -1,4 +1,4 @@
-import { STATUSES, type GameState, type Side, type Stance, type Token } from './types';
+import { parseTokenPick, removableTokens, shedToken, STATUSES, type GameState, type Side, type Stance, type Token } from './types';
 import { alive } from './loop';
 
 // ---------- shape ----------
@@ -37,21 +37,16 @@ export interface TacticSpec {
 
 // ---------- helpers ----------
 
+// One pick per Token worn, split by the face it shows where a stack holds
+// both, so the player can take the yellow one and leave the red one that
+// comes off at this End Phase anyway. The id carries the face ('fci:yellow'),
+// read back by parseTokenPick.
 function removable(t: Token): TacticPick[] {
-  const held = t.statuses ?? [];
-  const seen = new Map<string, number>();
-  for (const id of held) seen.set(id, (seen.get(id) ?? 0) + 1);
-  const out: TacticPick[] = [];
-  for (const [id, n] of seen) {
-    const def = STATUSES.find((d) => d.id === id);
-    if (!def || (def.shape !== 'square' && def.shape !== 'hexagon')) continue;
-    out.push({
-      id,
-      label: `${def.label}${n > 1 ? ` ×${n}` : ''}`,
-      note: `${def.shape === 'square' ? 'Square' : 'Hexagon'} Token`,
-    });
-  }
-  return out;
+  return removableTokens(t).map((p) => ({
+    id: p.id,
+    label: p.label,
+    note: `${p.shape === 'square' ? 'Square' : 'Hexagon'} Token`,
+  }));
 }
 
 // The three Stances a player may choose (4.1). Shutdown is never chosen - it is
@@ -129,12 +124,13 @@ export const TACTIC_SPECS: Record<string, TacticSpec> = {
     choices: (t) => removable(t),
     choiceTitle: 'Remove which token?',
     apply: (t, _s, _c, pick) => {
-      const held = [...(t.statuses ?? [])];
-      const at = pick ? held.indexOf(pick) : -1;
-      if (at >= 0) held.splice(at, 1);
-      t.statuses = held;
-      const def = STATUSES.find((d) => d.id === pick);
-      return `System Repair: ${def?.label ?? 'a token'} removed from ${t.label}.`;
+      // Through shedToken, which keeps the red-face markers honest: removing
+      // the last Token of a kind used to leave its red marker behind, and the
+      // next one of that kind then arrived already red.
+      const { statusId, face } = parseTokenPick(pick ?? '');
+      if (statusId) shedToken(t, statusId, face);
+      const def = STATUSES.find((d) => d.id === statusId);
+      return `System Repair: ${def?.label ?? 'a token'}${face ? ` (${face})` : ''} removed from ${t.label}.`;
     },
   },
   '278': {

@@ -57,6 +57,22 @@
 .dlg-actions.dlg-stacked { flex-direction: column; align-items: stretch; gap: 7px; }
 .dlg-actions.dlg-stacked button { width: 100%; text-align: left; padding: 10px 14px; }
 
+/* A list the player ticks (dialog.ts pickManyDialog): each row a toggle,
+   selected as colour rather than an edge (ui.css rule 2), the count on the
+   right in mono. The confirm button waits, dimmed, until something is ticked. */
+.dlg-picks { display: flex; flex-direction: column; gap: 7px; margin-top: 12px; }
+.dlg-pick {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  width: 100%; text-align: left; padding: 10px 14px; border: none; border-radius: var(--radius);
+  background: var(--surface2); color: var(--text2); cursor: pointer;
+  font: 600 12.5px var(--font); transition: background 0.12s, color 0.12s;
+}
+.dlg-pick:hover { background: var(--surface3); color: var(--text); }
+.dlg-pick[aria-pressed="true"] { background: var(--accent-lt); color: var(--accent); }
+.dlg-pick:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.dlg-pick em { font: 11px var(--mono); font-style: normal; opacity: 0.85; white-space: nowrap; }
+.dlg-actions button:disabled, .dlg-actions button:disabled:hover { opacity: 0.45; cursor: default; filter: none; }
+
 /* A choice dialog opened with `sheet: true`: docked to the bottom, full width
    on a phone and capped on a wide screen, with the object's name as a mono
    label and big centred buttons near the thumb. Same fade-in as any dialog;

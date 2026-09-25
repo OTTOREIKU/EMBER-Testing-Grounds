@@ -79,6 +79,9 @@ export async function askIssuer(
 // identically.
 export function asterBlockers(state: GameState, t: Token): string | null {
   const sc = state.script;
+  // A pilot skill is the Mech's own effect, and a Shutdown unit triggers none
+  // of those (FAQ L3). The command refuses it too; this says why on the button.
+  if (t.stance === 'shutdown') return `${t.label} is in Shutdown Stance, so Aster cannot use its skill (FAQ L3).`;
   if (sc?.oncePerRound?.includes(asterKey(state, t.uid))) return 'Aster has already restored Link this round.';
   if (readyCommands(t) <= 0) return `${t.label} has no face-up Command Token to consume.`;
   return null;

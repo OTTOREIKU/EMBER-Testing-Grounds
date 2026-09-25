@@ -60,9 +60,9 @@ import { labelFor, namesFrom } from './ledger';
 import { offerHarpyDrag as sharedHarpyDrag } from './commandpick';
 import { PlayGuide } from './playguide';
 import type { BoardGrids, Card, CardAction, DiceData, DieColor, Facing, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, StatusDef, TerrainPiece, Timing, Token } from './types';
-import { addStatus, cellsOf, DEFAULT_GRIDS, gridsOf, normaliseScript, SCALES, statusCount, statusesFor, STATUSES, zonesOf } from './types';
+import { addStatus, cellsOf, DEFAULT_GRIDS, gridsOf, normaliseScript, removableTokens, SCALES, statusCount, statusesFor, STATUSES, zonesOf } from './types';
 import { actionIdOf } from './ticks';
-import { actionRange, straightLineBonus, selfStatusGrant, selfGrantWhy, transformOffer, automaticShieldFor, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, twoHandedUse, electronicValue, martyrdomOwed, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, loanedParts, phasesThroughUnits, minesLayable, minesOwed, multiTargetLimit, unfoldsOwed, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, immobilizedStop, activatesCamo, isScanAction, scannable, formSwitch, grantAdjusted, shockAttackOf, shockMoveAllowed, stealthValue, manifestationRange, manifestTargets, nonHumanoidCost, nonHumanoidStop, maneuverIsSilent, maneuverSilenceDenier, envCardAt, envFlightFrom, envForcedStop, envHotEntries, envMoveRules, isGroundUnit, settleEnvironments, chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, projectileReach, type Resupply, resupplyOf, SLOT_LABEL, stationaryAdjusted, interceptLeft, interceptsOwed, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf, type AttackReaction } from './units';
+import { actionRange, linkSupportOf, linkSupportTargets, maxLink, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, tokenCleanupOf, tokenCleanupTargets, type LinkSupport, type TokenCleanup, straightLineBonus, selfStatusGrant, selfGrantWhy, transformOffer, automaticShieldFor, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, twoHandedUse, electronicValue, martyrdomOwed, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, loanedParts, phasesThroughUnits, minesLayable, minesOwed, multiTargetLimit, unfoldsOwed, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, immobilizedStop, activatesCamo, isScanAction, scannable, formSwitch, grantAdjusted, shockAttackOf, shockMoveAllowed, stealthValue, manifestationRange, manifestTargets, nonHumanoidCost, nonHumanoidStop, maneuverIsSilent, maneuverSilenceDenier, envCardAt, envFlightFrom, envForcedStop, envHotEntries, envMoveRules, isGroundUnit, settleEnvironments, chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, projectileReach, type Resupply, resupplyOf, SLOT_LABEL, stationaryAdjusted, interceptLeft, interceptsOwed, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf, type AttackReaction } from './units';
 import { registerOffline } from './offline';
 import { battlefieldLocked, countHits, firstPlayerFrom, newSetup, normaliseSetup, tasksLocked, type SetupState } from './setup';
 import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
@@ -480,7 +480,24 @@ async function init() {
         onChanged();
         return;
       }
+      // A Link Beacon does not Detonate: it restores Link and stays (4.7.5).
+      const act = findAction(t, actionId);
+      const link = act ? linkSupportOf(act) : undefined;
+      if (act && link) {
+        void performLinkSupport(t, act, link, () => {});
+        return;
+      }
       startDetonation(t, actionId);
+    },
+    // The Details tab's own door to a Mech's Link or Token support Action,
+    // for the sandbox without the guide - the same tools the guide opens.
+    onSupport(t, actionId) {
+      const act = findAction(t, actionId);
+      if (!act) return;
+      const link = linkSupportOf(act);
+      if (link) { void performLinkSupport(t, act, link, () => {}); return; }
+      const clean = tokenCleanupOf(act);
+      if (clean) void performTokenCleanup(t, act, clean, () => {});
     },
     onShove(t, actionId) {
       const action = findAction(t, actionId);
@@ -1035,6 +1052,20 @@ async function init() {
     const supply = resupplyOf(action);
     if (supply) {
       void performResupply(t, action, supply, done);
+      return;
+    }
+
+    // Strengthen Link, the Link Beacon's Link Support and System Cleanup
+    // (units.ts linkSupportOf / tokenCleanupOf). Ahead of the Delay Phase's
+    // Detonation branch below, which a Link Beacon must never reach.
+    const link = linkSupportOf(action);
+    if (link) {
+      void performLinkSupport(t, action, link, done);
+      return;
+    }
+    const clean = tokenCleanupOf(action);
+    if (clean) {
+      void performTokenCleanup(t, action, clean, done);
       return;
     }
 
@@ -2662,42 +2693,135 @@ async function init() {
   }
 
   // Stabilize System (6.1): Torso removes 1 Square or Hexagon Token, then
-  // restores 1 Link. Removing the Token is the player's choice (FAQ J4), and
-  // the Link alone is enough reason to perform it (J6). Checked before it is
-  // performed, because the sandbox applies a refused command and would then
-  // report a failure the board had already accepted.
+  // restores 1 Link. The question is units.ts stabiliseAsk, shared with the
+  // Match Centre and the pad: every Token worn, face included, because any may
+  // go (6.1 names no colour); keeping them all is the player's choice (FAQ
+  // J4), offered only when a Link is missing (J8). It used to offer only the
+  // FIRST Token worn. Checked before it is performed, because the sandbox
+  // applies a refused command and would then report a failure the board had
+  // already accepted.
   async function performStabilize(t: Token, done: (performed: boolean) => void): Promise<void> {
-    const shed = (t.statuses ?? []).find((id) => {
-      const d = STATUSES.find((x) => x.id === id);
-      return d?.shape === 'square' || d?.shape === 'hexagon';
-    });
-    let keepTokens = false;
-    if (shed) {
-      const label = STATUSES.find((x) => x.id === shed)?.label ?? shed;
+    const ask = stabiliseAsk(data, t);
+    let cmd: Command = { kind: 'stabilise', seat: t.side, uid: t.uid, keepTokens: true };
+    let label: string | null = null;
+    if (ask.picks.length) {
       const id = await choiceDialog({
         title: `Stabilize ${t.label}`,
-        body: 'Stabilize System removes 1 Square or Hexagon Token and restores 1 Link. Removing the Token is optional (FAQ J4).',
+        body: ask.body,
         choices: [
-          { id: 'both', label: `Remove ${label} and restore 1 Link`, primary: true },
-          { id: 'link', label: 'Keep the Tokens, restore 1 Link only' },
-          { id: 'cancel', label: 'Cancel', cancel: true },
+          ...ask.picks.map((p) => ({ id: p.id, label: stabiliseRowLabel(p) })),
+          ...(ask.keep ? [{ id: '__keep', label: STABILISE_KEEP_LABEL }] : []),
+          { id: '__cancel', label: 'Cancel', cancel: true },
         ],
         stacked: true,
       });
-      if (id === null || id === 'cancel') return done(false);
-      keepTokens = id === 'link';
+      if (id === null || id === '__cancel') return done(false);
+      const p = ask.picks.find((x) => x.id === id);
+      if (p) {
+        cmd = { kind: 'stabilise', seat: t.side, uid: t.uid, statusId: p.statusId, ...(p.face ? { face: p.face } : {}) };
+        label = p.label;
+      }
     }
-    const cmd = { kind: 'stabilise' as const, seat: t.side, uid: t.uid, keepTokens };
     const v = check(data, state, cmd);
     if (!v.ok) {
       await alertDialog({ title: 'Cannot Stabilize', body: v.why ?? 'The action was refused.' });
       return done(false);
     }
     perform(data, state, cmd);
-    const label = shed && !keepTokens ? STATUSES.find((x) => x.id === shed)?.label ?? shed : null;
     logTo(t, label
-      ? `Stabilize System: ${label} removed and Link restored to ${t.link}.`
+      ? `Stabilize System: ${label} removed${ask.keep ? `, and Link restored to ${t.link}` : ''}.`
       : `Stabilize System: Link restored to ${t.link}.`);
+    onChanged();
+    done(true);
+  }
+
+  // Strengthen Link (018_B, 504_A) and a Link Beacon's Link Support (075_A):
+  // Ally Mechs in reach recover Link (units.ts linkSupportOf). Electronic
+  // Support needs no roll and ignores Terrain and line of sight (4.11.1), and
+  // a Mech in Shutdown takes the Link and stays down until it Reboots (FAQ L3).
+  // An 'all' effect lands on every Ally Mech in reach that is short of Link;
+  // a 'chosen' one asks which.
+  async function performLinkSupport(t: Token, action: CardAction, rule: LinkSupport, done: (ok: boolean) => void): Promise<void> {
+    const what = action.name.en || action.name.zh || action.id;
+    const reach = actionRange(data, state.tokens, t, action);
+    const targets = linkSupportTargets(data, state.tokens, t, action);
+    if (!targets.length) {
+      // A Beacon's Delayed Action is its turn, so it resolves even when it
+      // changes nothing. A Mech's Action that could change nothing cannot be
+      // performed (FAQ H2), so the Tick stays unspent.
+      if (t.kind === 'projectile') {
+        logTo(t, `${what}: no Ally Mech within Range ${reach} is short of Link.`);
+        onChanged();
+        return done(true);
+      }
+      await alertDialog({
+        title: 'Nothing to restore',
+        body: `${what} restores Link to Ally Mechs within Range ${reach}, and every one in reach is already at its pilot's Link Value. An action that cannot produce any change cannot be performed (FAQ H2).`,
+      });
+      return done(false);
+    }
+    let picked = targets;
+    if (rule.selection === 'chosen') {
+      const id = targets.length === 1 ? String(targets[0].uid) : await choiceDialog({
+        title: `${what}: which Ally Mech?`,
+        body: `One Ally Mech within Range ${reach} recovers ${rule.amount} Link.`,
+        choices: [
+          ...targets.map((x) => ({ id: String(x.uid), label: `${x.label}${x.uid === t.uid ? ' (this Mech)' : ''} · Link ${x.link ?? 0}/${maxLink(data, x)}` })),
+          { id: '__cancel', label: 'Cancel', cancel: true },
+        ],
+        stacked: true,
+      });
+      const one = targets.find((x) => String(x.uid) === id);
+      if (!one) return done(false);
+      picked = [one];
+    }
+    for (const x of picked) {
+      for (let i = 0; i < rule.amount; i++) perform(data, state, { kind: 'recoverLink', seat: t.side, uid: t.uid, targetUid: x.uid, actionId: action.id });
+      logTo(x, `${what} from ${t.label}: Link restored to ${x.link}${x.stance === 'shutdown' ? '. It stays in Shutdown until it Reboots (FAQ L3)' : ''}.`);
+    }
+    onChanged();
+    done(true);
+  }
+
+  // System Cleanup (504_B, TM31RS_B): one Square Token off one Ally Unit in
+  // reach, this unit included. Which Unit and which Token, face and all, are
+  // the player's; a single candidate needs no question.
+  async function performTokenCleanup(t: Token, action: CardAction, rule: TokenCleanup, done: (ok: boolean) => void): Promise<void> {
+    const what = action.name.en || action.name.zh || action.id;
+    const reach = actionRange(data, state.tokens, t, action);
+    const shape = rule.shape === 'square' ? 'Square' : 'Hexagon';
+    const units = tokenCleanupTargets(data, state.tokens, t, action, rule);
+    if (!units.length) {
+      await alertDialog({
+        title: 'Nothing to remove',
+        body: `${what} removes a ${shape} Token from an Ally Unit within Range ${reach}, and none in reach wears one. An action that cannot produce any change cannot be performed (FAQ H2).`,
+      });
+      return done(false);
+    }
+    const uid = units.length === 1 ? String(units[0].uid) : await choiceDialog({
+      title: `${what}: which Ally Unit?`,
+      body: `One ${shape} Token comes off one Ally Unit within Range ${reach}.`,
+      choices: [
+        ...units.map((x) => ({ id: String(x.uid), label: `${x.label}${x.uid === t.uid ? ' (this unit)' : ''} · ${removableTokens(x, [rule.shape]).map((p) => p.label).join(', ')}` })),
+        { id: '__cancel', label: 'Cancel', cancel: true },
+      ],
+      stacked: true,
+    });
+    const unit = units.find((x) => String(x.uid) === uid);
+    if (!unit) return done(false);
+    const picks = removableTokens(unit, [rule.shape]);
+    const pid = picks.length === 1 ? picks[0].id : await choiceDialog({
+      title: `${what}: which Token comes off ${unit.label}?`,
+      choices: [
+        ...picks.map((p) => ({ id: p.id, label: `Remove ${p.label}` })),
+        { id: '__cancel', label: 'Cancel', cancel: true },
+      ],
+      stacked: true,
+    });
+    const pick = picks.find((p) => p.id === pid);
+    if (!pick) return done(false);
+    perform(data, state, { kind: 'removeStatus', seat: t.side, uid: t.uid, targetUid: unit.uid, statusId: pick.statusId, ...(pick.face ? { face: pick.face } : {}) });
+    logTo(unit, `${what} from ${t.label}: ${pick.label} removed.`);
     onChanged();
     done(true);
   }

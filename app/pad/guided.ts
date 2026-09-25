@@ -17,11 +17,11 @@ import { canAct, dialHidden, eligibleUnits, isLoopPhase, loopComplete, nextTurn,
 import { deployTurn, deployable, deploymentComplete, firstPlayerFrom, normaliseSetup, rollTotal } from '../src/setup';
 import { ensureScript } from '../src/glue';
 import { canActivate, canAttackMode, canOverload, canPerform, costOf, extrasLeft, lengthOf, OVERLOAD_MAX, type TickVerdict } from '../src/ticks';
-import { targetStatusGrant, twoHandedUse, chargeableSlots, coordinationFor, coordinationOnOpportunityEnd, electronicValue, extraActivationOf, formSwitch, guidedActions, initiativeFor, isChargeAction, isElectronicAttack, linkTickTraitOn, loanedParts, opportunityBonusOn, pilotCard, repairSpec, resupplyOf, selfGrantWhy, selfStatusGrant, SLOT_LABEL, tokenCards, transformOffer, unfoldsOwed } from '../src/units';
+import { actionRange, linkSupportOf, maxLink, tokenCleanupOf, type LinkSupport, type TokenCleanup, targetStatusGrant, twoHandedUse, chargeableSlots, coordinationFor, coordinationOnOpportunityEnd, electronicValue, extraActivationOf, formSwitch, guidedActions, initiativeFor, isChargeAction, isElectronicAttack, linkTickTraitOn, loanedParts, opportunityBonusOn, pilotCard, repairSpec, resupplyOf, selfGrantWhy, selfStatusGrant, SLOT_LABEL, tokenCards, transformOffer, unfoldsOwed } from '../src/units';
 import { normaliseTasks } from '../src/tasks';
 import { dialsOf, hashDials, newSalt, type DialEntry } from '../src/secrecy';
-import { PHASES, TIMINGS, type CardAction, type GameState, type PartSlot, type Side, type Timing, type Token } from '../src/types';
-import { choiceDialog } from '../src/dialog';
+import { PHASES, removableTokens, TIMINGS, type CardAction, type GameState, type PartSlot, type Side, type Timing, type Token, type TokenPick } from '../src/types';
+import { choiceDialog, pickManyDialog } from '../src/dialog';
 
 // What the pad lends the guide. Kept as functions where the value moves.
 export interface GuideApi {
@@ -59,8 +59,10 @@ export interface GuideApi {
   // `joined`: the tap already sent a command (the paid Action), so the next
   // one chains to it for Undo (commands.ts CommandChain).
   detonate(uid: number, actionId: string, joined?: boolean): void;
-  // Stabilize System's Token question and Link, after the Tick is paid.
-  stabilise?(uid: number, joined?: boolean): void;
+  // Stabilize System's Token question and Link. `pay` is the Guided Common
+  // Action's performAction, sent only once the player has answered, so a
+  // Cancel costs nothing; what follows chains to it for Undo.
+  stabilise?(uid: number, pay?: () => boolean): void;
   // Which Handheld Part goes to its Discard Card; null when the player backs out.
   pickDiscard?(uid: number): Promise<string | null>;
   // Launches the projectiles an Action fires (pad.ts): pays the Action, then
@@ -484,6 +486,92 @@ function asterHtml(api: GuideApi, side: Side): string {
   return rows.length ? `<div class="pad-chips">${rows.join('')}</div>` : '';
 }
 
+// ---------- Link and Token support on a table with no board ----------
+//
+// Strengthen Link (018_B, 504_A), a Link Beacon's Link Support (075_A) and
+// System Cleanup (504_B, TM31RS_B): units.ts linkSupportOf / tokenCleanupOf.
+// The table judged the range, so the pad asks which units stood in it. Shared
+// by the Guided router below and the Freeform chips in pad.ts.
+
+// The Ally Mechs that recover. 'all' is a list to tick, every Mech short of
+// Link ticked to start; 'chosen' picks one. null when the player backs out.
+// A Beacon's Delayed Action is its turn and resolves even when nobody is in
+// range, so it may answer with nobody; a Mech's Action that could change
+// nothing cannot be performed (FAQ H2), so it may not.
+export async function askLinkSupport(api: GuideApi, t: Token, a: CardAction, rule: LinkSupport): Promise<Token[] | null> {
+  const d = api.data;
+  const s = api.state();
+  const what = a.name.en ?? a.id;
+  const reach = actionRange(d, s.tokens, t, a);
+  const beacon = t.kind === 'projectile';
+  const allies = s.tokens.filter((x) => x.kind === 'mech' && x.side === t.side && x.deployed !== false
+    && (x.partStates.torso ?? 'intact') !== 'destroyed' && (x.link ?? 0) < maxLink(d, x));
+  if (!allies.length) {
+    api.toast(`${what}: every Ally Mech is already at its pilot's Link Value.`);
+    return beacon ? [] : null;
+  }
+  const row = (x: Token): string => `${x.label}${x.uid === t.uid ? ' (this Mech)' : ''}`;
+  const link = (x: Token): string => `Link ${x.link ?? 0}/${maxLink(d, x)}${x.stance === 'shutdown' ? ', Shutdown' : ''}`;
+  if (rule.selection === 'chosen') {
+    const pick = await choiceDialog({
+      title: what,
+      body: `One Ally Mech within Range ${reach} recovers ${rule.amount} Link, even one in Shutdown, which stays down until it Reboots (FAQ L3).`,
+      choices: [
+        ...allies.map((x) => ({ id: String(x.uid), label: `${row(x)} · ${link(x)}` })),
+        { id: '__cancel', label: 'Cancel', cancel: true },
+      ],
+      stacked: true,
+    });
+    const one = allies.find((x) => String(x.uid) === pick);
+    return one ? [one] : null;
+  }
+  const ids = await pickManyDialog({
+    title: what,
+    body: `Every Ally Mech within Range ${reach} of ${t.label} recovers ${rule.amount} Link, even one in Shutdown (FAQ L3). Untick any that stood out of range.`,
+    rows: allies.map((x) => ({ id: String(x.uid), label: row(x), note: link(x), on: true })),
+    confirmLabel: 'Restore Link',
+    allowNone: beacon,
+  });
+  if (ids === null) return null;
+  return allies.filter((x) => ids.includes(String(x.uid)));
+}
+
+// The Ally Unit and the Token (face included) a cleanup takes off. A single
+// candidate needs no question. null when the player backs out or there is
+// nothing to take (FAQ H2).
+export async function askTokenCleanup(api: GuideApi, t: Token, a: CardAction, rule: TokenCleanup): Promise<{ unit: Token; pick: TokenPick } | null> {
+  const s = api.state();
+  const what = a.name.en ?? a.id;
+  const reach = actionRange(api.data, s.tokens, t, a);
+  const shape = rule.shape === 'square' ? 'Square' : 'Hexagon';
+  const units = s.tokens.filter((x) => x.side === t.side && x.deployed !== false
+    && (x.partStates[x.kind === 'mech' ? 'torso' : 'main'] ?? 'intact') !== 'destroyed'
+    && removableTokens(x, [rule.shape]).length > 0);
+  if (!units.length) { api.toast(`${what}: no Ally Unit wears a ${shape} Token.`); return null; }
+  const uid = units.length === 1 ? String(units[0].uid) : await choiceDialog({
+    title: what,
+    body: `One ${shape} Token comes off one Ally Unit within Range ${reach}.`,
+    choices: [
+      ...units.map((x) => ({ id: String(x.uid), label: `${x.label}${x.uid === t.uid ? ' (this unit)' : ''} · ${removableTokens(x, [rule.shape]).map((p) => p.label).join(', ')}` })),
+      { id: '__cancel', label: 'Cancel', cancel: true },
+    ],
+    stacked: true,
+  });
+  const unit = units.find((x) => String(x.uid) === uid);
+  if (!unit) return null;
+  const picks = removableTokens(unit, [rule.shape]);
+  const pid = picks.length === 1 ? picks[0].id : await choiceDialog({
+    title: `${what}: which Token comes off ${unit.label}?`,
+    choices: [
+      ...picks.map((p) => ({ id: p.id, label: `Remove ${p.label}` })),
+      { id: '__cancel', label: 'Cancel', cancel: true },
+    ],
+    stacked: true,
+  });
+  const pick = picks.find((p) => p.id === pid);
+  return pick ? { unit, pick } : null;
+}
+
 // Performing an Action that is not an attack: what the Match Centre's
 // routeAction does around performAction, with the picks as dialogs. Repair and
 // Mend name the Part, a Charge Action the Part to charge, a form switch the
@@ -557,6 +645,20 @@ async function performRouted(api: GuideApi, t: Token, a: CardAction): Promise<vo
     if (pick === null) return;
     tagged = { uid: Number(pick), statusId: tag.statusId, stacks: tag.stacks };
   }
+  // Strengthen Link and a Link Beacon: who recovers. System Cleanup: whose
+  // Token, and which. Asked before anything is paid.
+  const linkRule = linkSupportOf(a);
+  let linkTo: Token[] | null = null;
+  if (linkRule) {
+    linkTo = await askLinkSupport(api, t, a, linkRule);
+    if (linkTo === null) return;
+  }
+  const cleanRule = tokenCleanupOf(a);
+  let cleaned: { unit: Token; pick: TokenPick } | null = null;
+  if (cleanRule) {
+    cleaned = await askTokenCleanup(api, t, a, cleanRule);
+    if (!cleaned) return;
+  }
   let chargeSlot: string | null = null;
   if (isChargeAction(a)) {
     const slots = chargeableSlots(d, t).filter((x) => !x.charged);
@@ -581,6 +683,16 @@ async function performRouted(api: GuideApi, t: Token, a: CardAction): Promise<vo
   if (chargeSlot) api.send({ kind: 'setCharge', seat, uid, slot: chargeSlot as PartSlot, on: true, chain });
   if (tagged) api.send({ kind: 'applyStatus', seat, uid, targetUid: tagged.uid, statusId: tagged.statusId, stacks: tagged.stacks, chain });
   if (resupply) api.send({ kind: 'restoreAmmo', seat: resupply.to.side, uid: resupply.to.uid, actionId: resupply.actionId, amount: resupply.amount, chain });
+  if (linkTo && linkRule) {
+    for (const x of linkTo) {
+      for (let i = 0; i < linkRule.amount; i++) api.send({ kind: 'recoverLink', seat, uid, targetUid: x.uid, actionId: a.id, chain });
+    }
+    api.toast(linkTo.length ? `${a.name.en}: Link restored to ${linkTo.map((x) => x.label).join(', ')}.` : `${a.name.en}: nobody in range was short of Link.`);
+  }
+  if (cleaned) {
+    api.send({ kind: 'removeStatus', seat, uid, targetUid: cleaned.unit.uid, statusId: cleaned.pick.statusId, ...(cleaned.pick.face ? { face: cleaned.pick.face } : {}), chain });
+    api.toast(`${a.name.en}: ${cleaned.pick.label} removed from ${cleaned.unit.label}.`);
+  }
   // Command Coordination off the back of the Action (the table judges the
   // Drone's range), then an Extra Action Opportunity the Action grants.
   const upTo = t.kind === 'mech' ? coordinationFor(d, t, a) : 0;
@@ -790,6 +902,12 @@ export function guideAct(api: GuideApi, a: string, el: HTMLElement): boolean {
         api.attack(t.uid, a.action.id, { electronic: true });
         return true;
       }
+      // A Link Beacon's Delayed Action restores Link and the Beacon stays
+      // (4.7.5): it is asked like any other routed Action, never Detonated.
+      if (a && t.kind === 'projectile' && linkSupportOf(a.action)) {
+        void performRouted(api, t, a.action);
+        return true;
+      }
       // A Projectile's Delayed Action: paid, then the detonation resolver.
       if (a && t.kind === 'projectile' && a.action.type !== 'Passive') {
         if (api.send({ kind: 'performAction', seat: t.side, uid: t.uid, actionId: a.action.id })) api.detonate(t.uid, a.action.id, true);
@@ -817,8 +935,10 @@ export function guideAct(api: GuideApi, a: string, el: HTMLElement): boolean {
       if (c) {
         if (c.type === 'Melee' && api.attack) { api.attack(t.uid, c.id); return true; }
         if (isElectronicAttack(c) && api.attack) { api.attack(t.uid, c.id, { electronic: true }); return true; }
+        // Stabilize asks its Token question BEFORE the Tick is paid, so a
+        // Cancel costs nothing; the Action is paid as the answer is sent.
         if (c.id === 'COMMON_STABILIZE') {
-          if (api.send({ kind: 'performAction', seat: t.side, uid: t.uid, actionId: c.id })) api.stabilise?.(t.uid, true);
+          api.stabilise?.(t.uid, () => api.send({ kind: 'performAction', seat: t.side, uid: t.uid, actionId: c.id }));
           return true;
         }
         // |Discard| names its Part BEFORE the Ticks are paid, so backing out of
