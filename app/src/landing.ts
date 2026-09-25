@@ -25,22 +25,30 @@ for (const svg of document.querySelectorAll<SVGSVGElement>('svg.land-bars')) {
 }
 
 // The tabletop was laid out for a desktop: a two-rail board with a hover-driven
-// inspector. On a phone it is greyed rather than removed - the link still works
-// for a tablet held sideways, or for someone who wants it anyway. A touch
-// screen narrower than a small tablet, or anything phone-narrow; width alone
-// would grey it in a small desktop window, which the board copes with.
+// inspector. On a phone it is DISABLED, not just greyed: a row that looked off
+// but still opened read as a bug (OTTO, 2026-09-24). A tap says why instead, in
+// the row's own label. A touch screen narrower than a small tablet, or anything
+// phone-narrow; width alone would disable it in a small desktop window, which
+// the board copes with. A tablet held sideways (1024px+) keeps it.
 const phone = window.matchMedia('(pointer: coarse) and (max-width: 1023px), (max-width: 599px)').matches;
-if (phone) {
-  const row = document.getElementById('land-table');
-  row?.classList.add('off');
-  row?.setAttribute('title', 'Built for a desktop screen');
+const table = document.getElementById('land-table');
+if (phone && table) {
+  table.classList.add('off');
+  table.removeAttribute('href');
+  table.setAttribute('role', 'link');
+  table.setAttribute('aria-disabled', 'true');
+  table.setAttribute('title', 'Built for a desktop screen');
+  table.addEventListener('click', () => {
+    const label = table.querySelector('em');
+    if (label) label.textContent = 'DESKTOP ONLY';
+  });
 }
 
 // A tap on a section starts the image warm-up at once, so the pictures are
 // already arriving while the next page loads. The service worker keeps what
 // lands, and the next page's own preload finds it there. Not on a metered or
 // slow connection - the same test every other page applies.
-for (const a of document.querySelectorAll<HTMLAnchorElement>('.land-row')) {
+for (const a of document.querySelectorAll<HTMLAnchorElement>('.land-row:not(.off)')) {
   a.addEventListener('pointerdown', () => { if (warmDecision().warm) void warmAllImages(); }, { once: true });
 }
 

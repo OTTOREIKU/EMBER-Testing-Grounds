@@ -92,9 +92,13 @@ html, body { margin: 0; background: var(--bg); color: var(--text); font-family: 
 .land-row:hover, .land-row:focus-visible { background: rgba(30, 36, 44, 0.85); outline: none; }
 .land-row:hover .land-go, .land-row:focus-visible .land-go { background: var(--accent); color: var(--bg); }
 .land-row:focus-visible b { text-decoration: underline; text-underline-offset: 3px; }
-/* Greyed on a phone: the board was never laid out for one. Still a link. */
+/* Disabled on a phone: the board was never laid out for one. No href, so a
+   tap goes nowhere; it only swaps the label to say why. A touch leaves :hover
+   stuck on, so the row must not light up either. */
+.land-row.off { cursor: default; }
 .land-row.off b, .land-row.off code, .land-row.off .land-go { color: var(--text3); }
-.land-row.off .land-go { background: var(--surface2); }
+.land-row.off .land-go, .land-row.off:hover .land-go { background: var(--surface2); color: var(--text3); }
+.land-row.off:hover { background: rgba(15, 18, 22, 0.7); }
 
 /* ---------- a wide screen: wordmark left, Mech right, the ways in a row ---------- */
 @media (min-width: 900px) {
