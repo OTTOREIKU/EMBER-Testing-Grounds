@@ -22,6 +22,7 @@ import { hideTooltip, installTooltip, preloadCards } from './tooltip';
 import { warmAllImagesWhenIdle } from './images';
 import { runFirstVisitPreload } from './preload';
 import { syncUpdateNotice, watchForUpdates } from './updates';
+import { choiceDialog } from './dialog';
 import { importSquadFile } from './importer';
 import { boardFingerprint, dialsOf, hashDials, newSalt, type DialEntry } from './secrecy';
 import { animateRemoteMove, clearRangeOverlayFor, ensureHud, glueAfter, showRangeOverlay, showSideTab, startAttackPick, startBoxDrop, startDetonation, startElectronicPick, startInterceptPick, startTacticPick, startLaunchPlan, startShove, startSmokePlan, type DiceLine, type HudCtx } from './matchhud';
@@ -1460,9 +1461,40 @@ function barHtml(): string {
     <span class="spacer"></span>
     <button class="mc-backbtn ghostbtn" id="mc-report" title="Report a problem with this game">Report</button>
     <button class="mc-account" id="mc-acct">${account ? esc(account.username) : 'Sign in'}</button>
+    <button class="mc-account mc-menu" id="mc-menu">Menu</button>
     <a class="mc-backbtn" href="../">Back to Board</a>
     ${v.room ? '<button class="mc-backbtn ghostbtn" id="mc-door" title="Leave this table and go back to the Match Centre">Match Centre</button>' : ''}
   </div>`;
+}
+
+// The front door's status line, the landing page's and the pad's: which tool
+// this is, and whether this page is talking to the server. The update notice
+// takes over its right end when a newer build is live.
+function syslineHtml(): string {
+  const link = !navigator.onLine ? 'OFFLINE' : account ? 'LINK <b>OK</b>' : 'SIGNED OUT';
+  return `<div class="mc-sysline" aria-hidden="true"><span>MC // TG-03</span><span>${link}</span></div>`;
+}
+
+// THE PHONE'S BAR MENU (OTTO's option 3, 2026-09-25): on a phone the bar keeps
+// the logo, the account and this Menu, and the rest open in the site's bottom
+// sheet. Each choice CLICKS the desktop button it stands for - those stay in
+// the bar, hidden by match.css on a phone - so it does exactly what the
+// desktop button does, with no second copy of Report or Leave to drift.
+async function openBarMenu(): Promise<void> {
+  const inRoom = !!relay.state.room;
+  const pick = await choiceDialog({
+    title: 'Match Centre',
+    sheet: true,
+    stacked: true,
+    choices: [
+      { id: 'board', label: 'Back to Board' },
+      ...(inRoom ? [{ id: 'door', label: 'Leave this table' }] : []),
+      { id: 'report', label: 'Report a problem' },
+    ],
+  });
+  if (pick === 'board') document.querySelector<HTMLAnchorElement>('.mc-bar a.mc-backbtn')?.click();
+  else if (pick === 'door') document.getElementById('mc-door')?.click();
+  else if (pick === 'report') document.getElementById('mc-report')?.click();
 }
 
 function loginHtml(): string {
@@ -2664,6 +2696,11 @@ function render(): void {
   // The height chain only clamps in HUD mode; the lobby and door scroll.
   root.classList.toggle('hudmode', hud);
   root.classList.toggle('capped', capped);
+  // THE FRONT DOOR (sign-in and the door's Play / Stats / Admin): the site's
+  // front-door dressing, as the landing page and the pad wear it. Not in a
+  // room and not in a match - those are the game, not the way in.
+  const front = !hud && !relay.state.room && !devSeat;
+  root.classList.toggle('mc-front', front);
   barhost.innerHTML = barHtml();
   const p = hud ? paused() : null;
   const pauseVeil = p
@@ -2697,7 +2734,7 @@ function render(): void {
     const wide = data && account && relay.state.room;
     // `capped` on the stage is the reading views' centred column; the lobby
     // takes the clamp from the root and lays itself out full width.
-    bodyhost.innerHTML = `<div class="mc-stage${wide ? ' wide' : ''}${capped && !wide ? ' capped' : ''}">${inner}</div>`;
+    bodyhost.innerHTML = `<div class="mc-stage${wide ? ' wide' : ''}${capped && !wide ? ' capped' : ''}">${front ? syslineHtml() : ''}${inner}</div>`;
   }
   wire();
   applyListFilters();
@@ -2939,6 +2976,7 @@ function wire(): void {
     step = 'room';
     render();
   });
+  $('mc-menu')?.addEventListener('click', () => void openBarMenu());
   $('mc-join')?.addEventListener('click', () => {
     const code = ($('mc-joincode') as HTMLInputElement | null)?.value.trim() ?? '';
     doorErr = code ? null : 'Enter the room code you were given.';
@@ -3158,12 +3196,13 @@ root.addEventListener('mc-lockdials', () => {
 
 // ---------- boot ----------
 
-// In the lobby only, at the top of its column; never once a room is joined,
-// because a reload mid-match drops the player out of a live game.
+// The front door only, in its status line (the landing page's form); never
+// once a room is joined, because a reload mid-match drops the player out of a
+// live game.
 watchForUpdates({
   when: () => !relay.state.room,
-  place: (notice) => document.querySelector('.mc-col')?.prepend(notice),
-  className: 'upd-col',
+  compact: true,
+  place: (notice) => document.querySelector('.mc-sysline span:last-child')?.replaceWith(notice),
 });
 
 render();

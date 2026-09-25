@@ -89,6 +89,24 @@ button { font-family: inherit; }
 }
 .mc-account:hover { background: var(--accent-lt); color: var(--accent); }
 
+/* THE PHONE BAR (OTTO's option 3, 2026-09-25). Below tablet width the bar
+   keeps the logo (without "Testing Grounds"), the account and a Menu that
+   opens the bottom sheet (match.ts openBarMenu); Report, Back to Board and the
+   in-room Match Centre button stay in the markup for the menu to click, hidden
+   here. A room's code and status take a line of their own under it. */
+.mc-menu { display: none; }
+@media (max-width: 767px) {
+  .mc-bar { flex-wrap: wrap; row-gap: 8px; padding: 9px 12px; gap: 8px; }
+  .mc-logo { white-space: nowrap; }
+  .mc-logo em { display: none; }
+  .mc-logo small { margin-left: 5px; }
+  .mc-bar .mc-backbtn { display: none; }
+  .mc-menu { display: inline-block; }
+  .mc-account { white-space: nowrap; max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+  .mc-bar .pill { order: 10; }
+  .mc-bar:has(.pill)::after { content: ''; order: 9; flex-basis: 100%; }
+}
+
 /* ---------- stage ---------- */
 .mc-stage { flex: 1; display: grid; place-items: center; padding: 30px 20px; }
 .mc-col { width: 100%; max-width: 640px; }
@@ -1003,3 +1021,74 @@ b.s1 { color: var(--s1); } b.s2 { color: var(--s2); }
 .undo-row:disabled { opacity: 0.5; cursor: default; }
 .undo-row .ct { font-size: 10.5px; color: var(--text3); flex: 0 1 auto; text-align: right; }
 .undo-note { margin: 2px 4px 4px; font-size: 10.5px; line-height: 1.45; color: var(--text3); }
+
+/* ---------- the front door (sign-in and the door), a LOCAL TEST ----------
+   The site's front-door dressing, as the landing page (src/landing.css) and the
+   pad's screens before a table (pad/pad.css) wear it: the amber glow and the
+   faded grid, the corner brackets, the watermark and the status line. The
+   stage stretches to the foot of the window so the frame has somewhere to sit;
+   the dressing paints under the columns (`isolation` keeps it off the body). */
+.mc.mc-front > #mc-bodyhost { flex: 1; display: flex; flex-direction: column; }
+.mc.mc-front .mc-stage {
+  position: relative;
+  isolation: isolate;
+  padding-top: 52px;
+  background:
+    radial-gradient(90% 50% at 100% 0%, rgba(240, 180, 41, 0.08), transparent 70%),
+    radial-gradient(90% 65% at 75% 10%, transparent, var(--bg) 75%),
+    linear-gradient(rgba(255, 255, 255, 0.028) 1px, transparent 1px) 0 0 / 26px 26px,
+    linear-gradient(90deg, rgba(255, 255, 255, 0.028) 1px, transparent 1px) 0 0 / 26px 26px,
+    var(--bg);
+}
+/* Four corners from one bordered box, as the pad draws them. */
+.mc.mc-front .mc-stage::after {
+  --s: 18px;
+  content: "";
+  position: absolute;
+  inset: 14px;
+  z-index: -1;
+  pointer-events: none;
+  border: 2px solid var(--accent);
+  opacity: 0.6;
+  -webkit-mask: conic-gradient(at var(--s) var(--s), transparent 75%, #000 0) 0 0 / calc(100% - var(--s)) calc(100% - var(--s));
+  mask: conic-gradient(at var(--s) var(--s), transparent 75%, #000 0) 0 0 / calc(100% - var(--s)) calc(100% - var(--s));
+}
+/* The status line, sitting on the top brackets' row like the landing page's. */
+.mc-sysline {
+  position: absolute;
+  top: 14px;
+  left: 42px;
+  right: 42px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font: 10.5px var(--mono);
+  letter-spacing: 0.14em;
+  color: var(--text3);
+}
+.mc-sysline b { color: var(--green); font-weight: 600; }
+/* The door's section headings as the pad's mono amber labels. */
+.mc.mc-front .panel.door h3 {
+  font: 600 10.5px var(--mono);
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+/* The watermark only where there is a margin for it: a phone's column fills
+   the width, and the pad showed that one behind a column reads as broken. */
+@media (min-width: 900px) {
+  .mc.mc-front .mc-stage::before {
+    content: "黑曜协议";
+    content: "黑曜协议" / "";
+    position: absolute;
+    left: 40px;
+    top: 18vh;
+    z-index: -1;
+    writing-mode: vertical-rl;
+    font: 700 96px "Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif;
+    letter-spacing: 0.1em;
+    color: rgba(255, 255, 255, 0.045);
+    pointer-events: none;
+    user-select: none;
+  }
+}

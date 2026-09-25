@@ -4841,12 +4841,14 @@ void (async () => {
   // not the place to be asked to reload, and the check runs again on the way
   // back out of a game.
 registerOffline();
-  // Before a table only, as a card in the column under EMBER PAD. The door
-  // screens are redrawn whole, so render() re-places it after every paint and
-  // takes it away the moment a table opens.
+  // Before a table only, in the front door's status line where LINK OK / LOCAL
+  // sits - the landing page's form (OTTO, 2026-09-25). Nothing before a table
+  // can be lost, so no Later. The door screens are redrawn whole, so render()
+  // re-places it after every paint and takes it away when a table opens.
   watchForUpdates({
     when: () => screen !== 'table',
-    place: (notice) => document.querySelector('#pad-root:not(.table) .pad-head')?.after(notice),
+    compact: true,
+    place: (notice) => document.querySelector('#pad-root:not(.table) .pad-sysline span:last-child')?.replaceWith(notice),
   });
 
   // The card database loads AFTER the first paint, deliberately. Signing in and
