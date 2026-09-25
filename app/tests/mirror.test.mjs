@@ -34,7 +34,13 @@ installDom();
 const { AttackHelper, data, dice } = await loadCombat('mirror');
 
 const rifle = data.cards.find((c) => c.id === 'ZHRA-201');
-const firing = rifle?.actions?.find((a) => a.id === 'ZHRA-201_B');
+const printedFiring = rifle?.actions?.find((a) => a.id === 'ZHRA-201_B');
+// ZHRA-201_B prints its Mutilation as "[Two-Handed] Gains Mutilation": a grant
+// the pages fold in as an inline keyword once a Freehand is designated
+// (twoHandedAdjusted). surplusEffects stopped reading the grant line itself on
+// 2026-09-25, so the window is handed the adjusted copy, exactly as the pages
+// hand it over, and the fixture is still a Mutilation weapon.
+const firing = printedFiring && { ...printedFiring, keywords: [...(printedFiring.keywords ?? []), { inline: '毁伤' }] };
 const sweeper = data.cards.find((c) => c.id === '038');
 const sweep = sweeper?.actions?.find((a) => a.id === '038_A');
 check('the fixture Action is still on the card', !!firing, true);

@@ -261,6 +261,12 @@
     "name": "Automatic Action:",
     "value": "Printed on a Drone card as {!} beside the action name. The action resolves by itself in the Automatic Phase without being told to, and a Command taken in the Command Phase does not use it up: every Drone still on the board performs its Automatic Actions (3.5)."
    }
+  },
+  "致密装甲": {
+   "en": {
+    "name": "Dense Armor",
+    "value": "When this part is hit, may remove all Attack Dice with {}, {Lightning} and {Eye} before Reroll. (GoF 1.021; the printed card read \"{Defense} may offset {Heavy Hit}\".)"
+   }
   }
  }
 }

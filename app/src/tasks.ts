@@ -722,6 +722,34 @@ export function applyKill(
   }
 }
 
+// applyKill in reverse, for a hand-set Destroyed taken back on the pad (a
+// mis-tap is undone by tapping on, never by an Undo). Clamped at 0, and the
+// same exclusions, so taking back a tally that was never paid changes nothing.
+export function retractKill(
+  st: TaskState,
+  killer: { side: Side; uid: number },
+  victim: { side: Side; kind: Token['kind']; lowValue?: boolean },
+  what: 'part' | 'unit',
+): void {
+  if (killer.side === victim.side) return;
+  if (victim.kind === 'projectile' || victim.lowValue) return;
+  const k = st.kills[killer.side];
+  const down = (n: number) => Math.max(0, n - 1);
+  if (what === 'part' && victim.kind === 'mech') k.partsAndDrones = down(k.partsAndDrones);
+  if (what === 'unit') {
+    if (victim.kind === 'mech') k.mechs = down(k.mechs);
+    if (victim.kind === 'drone') {
+      k.drones = down(k.drones);
+      k.partsAndDrones = down(k.partsAndDrones);
+    }
+  }
+}
+
+// A Part back on the board takes its line out of the loss ledger.
+export function unrecordPartLoss(st: TaskState, t: Token, slot: string): void {
+  st.partsLost = st.partsLost.filter((p) => !(p.uid === t.uid && p.slot === slot));
+}
+
 // One Part leaving the board, entering the loss ledger. Written where
 // lastDamagedBy is written, for the same reason: the board stops being able to
 // answer the question the moment the unit is removed. Idempotent on

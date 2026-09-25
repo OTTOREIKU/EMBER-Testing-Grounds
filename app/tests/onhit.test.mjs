@@ -151,11 +151,12 @@ async function attack(card, action, opts = {}) {
   check('emitted from combat.ts finish(), which both boards pass through',
     /kind: 'applyStatus', seat: c\.attacker\.side/.test(combat), true);
   check('and gated on the HIT, not the Penetration',
-    /if \(c\.hits > 0 && c\.defender\.uid !== c\.attacker\.uid && !\(c\.designatedParry && !c\.penetrated\)\) \{[\s\S]{0,400}?onHitRiders\(/.test(combat), true);
+    /if \(onHit > 0 && struck\.uid !== c\.attacker\.uid\) \{[\s\S]{0,800}?onHitRiders\(/.test(combat), true);
   // FAQ C5 / 4.6.3: a Parry that HELD cancels the attack's On Hit effects; one
   // that was declared and then Penetrated did not hold, and the riders fire.
+  // Since 2026-09-25 the gate is one Hit count every On Hit effect reads.
   check('and a Parry that held cancels them (FAQ C5)',
-    /!\(c\.designatedParry && !c\.penetrated\)/.test(combat), true);
+    /const parried = first\.parry > 0 && !first\.penetrated;\s*const onHit = parried \? 0 : first\.hits;/.test(combat), true);
   // An unknown status is DROPPED. The Pursuit Token (ZHLA-302) is the live case:
   // no `pursuit` StatusDef exists, and silently substituting another token is
   // exactly the bug the Electronic Attack path had.

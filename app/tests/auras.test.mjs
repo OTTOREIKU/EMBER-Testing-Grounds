@@ -346,17 +346,19 @@ const shieldMech = (torso, states = {}) => ({
   mech: { torso }, partStates: { torso: 'intact', ...states }, statuses: [],
 });
 check('the Buckler reacts to a Penetration', A.defenseReactionOn(data, shieldMech('ZHLA-101'))?.name, 'Defense Reaction');
-check('and so does the Heavy Shield', A.defenseReactionOn(data, shieldMech('ZHLA-301'))?.name, 'Defense Reaction');
+// NOT the Heavy Shield any more: GoF 1.021 prints Shield Up and DENSE ARMOR on
+// ZHLA-301, and OTTO ruled the 1.021 Dense Armor list (2026-09-25). Its second
+// Passive was Defense Reaction in the community data.
+check('and the Heavy Shield no longer does (GoF 1.021: Dense Armor)', A.defenseReactionOn(data, shieldMech('ZHLA-301')), null);
 check('it needs no Command Token, unlike the ZYBP-302 pair',
   A.defenseReactionOn(data, { ...shieldMech('ZHLA-101'), statuses: [] })?.actionId, 'ZHLA-101_A');
 check('a destroyed Part offers nothing', A.defenseReactionOn(data, shieldMech('ZHLA-101', { torso: 'destroyed' })), null);
 check('a Mech without the ability is never ready', A.defenseReactionOn(data, shieldMech('002')), null);
 check('a Drone never gets it', A.defenseReactionOn(data, { ...shieldMech('ZHLA-101'), kind: 'drone' }), null);
-// ZHLA-301 carries Shield Up as well, which is a different ability on the same
-// card -- the same confusion Melee Evasion and Dodge Enhancement set up.
-check('and it is Defense Reaction that matched, not Shield Up',
-  A.defenseReactionOn(data, shieldMech('ZHLA-301'))?.actionId,
-  data.byId.get('ZHLA-301').actions.find((x) => /Defense Reaction/.test(x.name?.en ?? '')).id);
+// ZHLA-101 carries its own reaction, and it is that Action that matched.
+check('and it is Defense Reaction that matched',
+  A.defenseReactionOn(data, shieldMech('ZHLA-101'))?.actionId,
+  data.byId.get('ZHLA-101').actions.find((x) => /Defense Reaction/.test(x.name?.en ?? '')).id);
 
 // ---------- Martyrdom (ZHDR-302) ----------
 //
@@ -549,9 +551,17 @@ check('and a projectile without it is not guided',
 const actOf = (cid, aid) => data.byId.get(cid).actions.find((x) => x.id === aid);
 check('+2 Range is read', A.twoHandedRider(actOf('025', '025_A')).range, 2);
 check('Mutilation is read', A.twoHandedRider(actOf('145', '145_B')).keywords, ['毁伤']);
-// ZHRA-303 prints two on one line: "获得压制，毁伤".
+// Two on one line, "获得压制，毁伤", as ZHRA-303 printed it in Chinese.
 check('and a two-item list is not truncated to the first',
-  A.twoHandedRider(actOf('ZHRA-303', 'ZHRA-303_B')).keywords, ['压制', '毁伤']);
+  A.twoHandedRider({ description: { zh: '· [双手] 获得压制，毁伤。' } }).keywords, ['压制', '毁伤']);
+// ZHRA-303_B itself grants Suppression ALONE since 2026-09-25: GoF 1.021 and the
+// English print no Mutilation, and the data now says the same in Chinese.
+check('ZHRA-303_B grants Suppression alone (GoF 1.021)', A.twoHandedRider(actOf('ZHRA-303', 'ZHRA-303_B')).keywords, ['压制']);
+// An English-only grant (MHKX-L/R live in our own data with no Chinese face).
+check('an English-only grant is read through the keyword name',
+  A.twoHandedRider({ description: { en: '· [Two-Handed] Gains Mutilation.' } }).keywords, ['毁伤']);
+check('and a grant printed in both languages is not counted twice',
+  A.twoHandedRider({ description: { zh: '· [双手] 获得毁伤。', en: '· [Two-Handed] Gains Mutilation.' } }).keywords, ['毁伤']);
 check('Sniper is read', A.twoHandedRider(actOf('516', '516_A')).keywords, ['狙击']);
 check('Multi-Target 3 is read', A.twoHandedRider(actOf('038', '038_A')).keywords.includes('多目标3'), true);
 check('and the Medium rider is read', A.twoHandedRider(actOf('129', '129_A')).medium, true);
@@ -667,10 +677,13 @@ check('and a Mech without it does not', A.ignoresLowProfile(data, wearing('002')
 check('095 ignores Protection against a Highlight', A.ignoresProtectionOnHighlight(data, wearing('095')), true);
 check('and 094 is not 095', A.ignoresProtectionOnHighlight(data, wearing('094')), false);
 check('503 turns Eyes into Heavy Hits', A.eyesAreHeavyHits(data, wearing('503')), true);
-check('ZHDR-301 has Dense Armor in prose', A.denseArmorByText(data, wearing('ZHDR-301')), true);
-// The keyword-bearing cards must NOT also match the prose reader, or the two
-// would both claim one card and the reasoning would be muddled.
-check('and the keyword cards are left to denseArmorOn', A.denseArmorByText(data, wearing('002')), false);
+// Dense Armor is the PART's since GoF 1.021 (OTTO's ruling, 2026-09-25): the
+// reader names the slot, and every carrier is found by one signature or other.
+check('ZHDR-301 carries Dense Armor, on the Part it is on', A.denseArmorSlot(data, wearing('ZHDR-301')), 'torso');
+check('and so do the keyword Cores', [A.denseArmorSlot(data, wearing('175')), A.denseArmorSlot(data, wearing('176'))], ['torso', 'torso']);
+check('and the SS30 Heavy Shield, which 1.021 gave it', A.denseArmorSlot(data, wearing('ZHLA-301')), 'torso');
+check('and a Part without it does not', A.denseArmorSlot(data, wearing('002')), null);
+check('and a destroyed one offers nothing', A.denseArmorSlot(data, wearing('175', { torso: 'destroyed' })), null);
 check('533 cannot be Back-attacked in Melee', A.noMeleeBackAttack(data, wearing('533')), true);
 check('a destroyed Part grants none of them',
   [A.ignoresLowProfile(data, wearing('094', { torso: 'destroyed' })),
@@ -1000,8 +1013,9 @@ check('nothing asks aurasOn about the defender for the ZHDR-204 kind',
 // survive the status whose whole job is to delete the pool. The ORDER of the
 // whole trio is pinned: the 164 bonus, then Hindered's per-token subtraction
 // (which has to see the finished pool), then Immobilized deleting everything.
+// 121_A's -2 Blue joined the subtractions between them on 2026-09-25.
 check('the 164 Blue is added BEFORE Hindered subtracts and Immobilized zeroes',
-  /if \(this\.earlyWarning\(\)\) blue \+= 1;[\s\S]{0,500}?blue = Math\.max\(0, blue - statusCount\(d\.statuses, 'hindered'\)\);\s+if \(statusCount\(d\.statuses, 'immobilized'\) > 0\) blue = 0;/.test(combatSrc), true);
+  /if \(this\.earlyWarning\(\)\) blue \+= 1;[\s\S]{0,500}?blue = Math\.max\(0, blue - statusCount\(d\.statuses, 'hindered'\)\);[\s\S]{0,800}?if \(statusCount\(d\.statuses, 'immobilized'\) > 0\) blue = 0;/.test(combatSrc), true);
 
 // The three arguments the four reviewed defects were: a missing one each.
 check('combat.ts feeds earlyWarningCover the smoke as well as the terrain (4.16)',

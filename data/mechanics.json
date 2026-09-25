@@ -74,7 +74,7 @@
     "parry",
     "格挡"
    ],
-   "text": "A melee-only defence. The defender designates a Part with a Parry Value as the target Part and adds that many White dice to the Defense Roll. Not available while in Shutdown or against a Back Attack. If a Black Die still decides the Part, the Parry dice only apply when it matches."
+   "text": "A melee-only defence. The defender designates a Part with a Parry Value as the target Part and adds that many White dice to the Defense Roll. It is declared at the hit-location step, before the Part Die, or not at all (FAQ C6). Not available while in Shutdown or against a Back Attack. If a Black Die still decides the Part - the attacker could designate too, as with Snipe - the Parry dice only apply when it matches (FAQ A14). A Parry that holds, with nothing Penetrating, cancels every [On Hit] effect of the attack (FAQ C5). A Drone with a Parry Value parries automatically in Melee, except against a Back Attack. Surplus Damage never gets Parry dice (4.8)."
   },
   {
    "id": "armor_piercing",
@@ -85,7 +85,7 @@
     "armour piercing",
     "穿甲1"
    ],
-   "text": "The target removes X White dice from its Defense Roll before rolling. The dice are removed rather than the result reduced, so the effect stacks with a Fragile Token; the pool is never taken below zero, and a Part left with no dice makes no Defense Roll. The removal applies to the whole pool: the Armor or Structure the Part rolls and any Terrain or Unit Protection added to it. The X is the number printed on the Action's own line. FPA-02 Spike's trait grants Armor Piercing 1 on every Firing Action, and that adds to any value the weapon prints."
+   "text": "The target removes X White dice from its Defense Roll before rolling. The dice are removed rather than the result reduced, so the effect stacks with a Fragile Token, but the White dice of a Defense Roll can never be reduced below 1 (p.50): a Part left with a single die keeps it and rolls. The removal applies to the whole pool: the Armor or Structure the Part rolls, any Terrain or Unit Protection, and any Parry or aura dice. It does not reach Surplus Damage, which inherits no Action effects (4.8). The X is the number printed on the Action's own line. FPA-02 Spike's trait grants Armor Piercing 1 on every Firing Action, and that adds to any value the weapon prints."
   },
   {
    "id": "focus",
@@ -95,7 +95,7 @@
     "focus",
     "专注"
    ],
-   "text": "Spend 1 Link to reroll any dice of one roll, including the Black Die that locates the Part (4.10). Focus may not be paid with a Mech's last Link (FAQ L1). Link lost to damage or effects can reach 0, at which point the Mech enters Shutdown Stance."
+   "text": "Spend 1 Link to reroll any dice of one roll, including the Black Die that locates the Part (4.10). Focus may not be paid with a Mech's last Link (FAQ L1). Link lost to damage or effects can reach 0, at which point the Mech enters Shutdown Stance. The order is fixed (4.4.1 step 5): the attacker declares, then the defender, then the attacker rerolls, then the defender, and an Electronic Counter-roll keeps the same order (FAQ G4). Each roll takes one reroll effect only (FAQ A6): Focus, a lent {Eye} reroll such as Guidance Support, or the Whistle, chosen at the declare. In an Explosion or a Surplus Damage roll only the defender may Focus. A Mech in Shutdown has no pilot skills, so ZPA-39 Cadaver's free Focus does not apply there (FAQ L3)."
   },
   {
    "id": "crush",
@@ -115,7 +115,7 @@
     "penetrat",
     "穿透"
    ],
-   "text": "After Damage Resolution, any Heavy Hit or Light Hit left unoffset causes Penetration on the target Unit or Part. A Part with no Structure Value is Destroyed at once. A Part with a Structure Value takes a Damaged Token, or is Destroyed if it already had one: Intact to Damaged to Destroyed, one step per Penetration whatever the amount of damage. While Damaged, a Part rolls its Structure Value instead of its Armor Value for Defense dice. A Hit and a Penetration are separate: damage offset by Defense is a Hit with no Penetration, so [On Hit] effects such as Concussion and Knockback still apply, while damage offset by Dodge is neither."
+   "text": "After Damage Resolution, any Heavy Hit or Light Hit left unoffset causes Penetration on the target Unit or Part. A Part with no Structure Value is Destroyed at once. A Part with a Structure Value takes a Damaged Token, or is Destroyed if it already had one: Intact to Damaged to Destroyed, one step per Penetration whatever the amount of damage. While Damaged, a Part rolls its Structure Value instead of its Armor Value for Defense dice. A Hit and a Penetration are separate: damage offset by Defense is a Hit with no Penetration, so [On Hit] effects such as Knockback still apply, while damage offset by Dodge is neither. Concussion is not an [On Hit] effect: like every Lightning effect it fires on each {Lightning} no Dodge cancelled, Penetration or not."
   },
   {
    "id": "surplus_damage",
@@ -130,7 +130,7 @@
     "顺劈",
     "霰射"
    ],
-   "text": "Once a Penetration has occurred, every Heavy Hit and Light Hit still unoffset is Surplus Damage. On its own it does nothing. It is resolved only when the Action carries a Surplus Damage keyword (Mutilation, Cleaving or Scatter-shot), per Section 4.8; with several such keywords the Attacker chooses one."
+   "text": "Once a Penetration has occurred, every Heavy Hit and Light Hit still unoffset is Surplus Damage. On its own it does nothing. It is resolved only when the Action carries a Surplus Damage keyword (Mutilation, Cleaving or Scatter-shot), per Section 4.8; with several such keywords the Attacker chooses one. A keyword granted under a condition, such as [Two-Handed] or [Charged], counts only when the condition holds. The Surplus roll makes no Attack Roll and gets no Terrain, Unit Protection or Parry dice, nor the attacker's Armor Piercing; only the defender may Focus, and the defender cannot choose the hit location (FAQ A27). No Action effect fires from it: the attack's [On Hit] effects come from the first hit alone. A target destroyed by the first hit can still be Cleaved past into another Unit (FAQ D4, D12)."
   },
   {
    "id": "integrity_loss",
@@ -139,7 +139,7 @@
    "match": [
     "integrity"
    ],
-   "text": "A Mech reduced to 2 or fewer remaining Parts suffers Integrity Loss. It still acts as normal for the rest of the Round in which that happened, then is removed during that Round's End Phase, before Token Management and scoring. Destroying the Torso is different and kills the unit outright. Every other Part destroyed flips its card face-down, stops counting toward any Value, and costs 1 Link, and a Mech whose Link reaches 0 drops straight into Shutdown Stance."
+   "text": "A Mech reduced to 2 or fewer remaining Parts suffers Integrity Loss. It still acts as normal for the rest of the Round in which that happened, then is removed during that Round's End Phase, before Token Management and scoring, and the kill is credited to the last unit that reduced its Part count (FAQ P4). Destroying the Torso is different and kills the unit outright. Every other Part destroyed flips its card face-down, stops counting toward any Value, and costs 1 Link, and a Mech whose Link reaches 0 drops straight into Shutdown Stance. A Repaired Part that is hit is removed at once, with no Defense Roll and no second Link loss, and the hit goes to the Torso (FAQ J23)."
   },
   {
    "id": "break_away",
@@ -274,7 +274,7 @@
     "命中时",
     "命中時"
    ],
-   "text": "[On Hit] effects apply when the attack Hits, which is a lower bar than Penetration. A Hit is any damage the defender did not offset with a Dodge. Defense dice offset Light Hits only, so damage stopped by Defense still counts as a Hit and the [On Hit] effect applies even though nothing got through. Damage offset by a Dodge is not a Hit."
+   "text": "[On Hit] effects apply when the attack Hits, which is a lower bar than Penetration. A Hit is any damage the defender did not offset with a Dodge. Defense dice offset Light Hits only, so damage stopped by Defense still counts as a Hit and the [On Hit] effect applies even though nothing got through. Damage offset by a Dodge is not a Hit. A Parry that holds cancels every [On Hit] effect of the attack (FAQ C5, B2). Lightning effects such as Concussion are not [On Hit] effects: they fire on each {Lightning} no Dodge cancelled."
   },
   {
    "id": "stance_condition",
@@ -287,7 +287,7 @@
     "攻击态势",
     "防御态势"
    ],
-   "text": "An Action that names a Stance in brackets only applies that part of its text while the Mech is in that Stance, checked as the Action is performed rather than when the dial was set. The four Stances are set in the Command Phase and last until changed: Offensive converts hollow attack icons to solid, Defensive converts hollow defence icons to solid, Mobility adds Dodge dice and doubles the Maneuver, and Shutdown is the state a Mech falls into at 0 Link, where it may do nothing but Reboot."
+   "text": "An Action that names a Stance in brackets only applies that part of its text while the Mech is in that Stance, checked as the Action is performed. A Mech chooses its Stance each time it receives an Action Opportunity, before it Maneuvers (4.1), and it lasts until changed: Offensive converts hollow attack icons to solid, Defensive converts hollow defence icons to solid, Mobility adds Dodge dice and doubles the Maneuver, and Shutdown is the state a Mech falls into at 0 Link, where it may do nothing but Reboot, gains no benefit when rolling and activates no Passive effects. An Action's Stance change, such as Suppression, happens before the Attack Roll."
   },
   {
    "id": "low_value_unit",

@@ -372,7 +372,7 @@
     },
     "ZHLA-302_A": {
       "range": 4,
-      "_note": "Publisher parts sheet (audit 2026-09-03): range 4. Publisher parts sheet (audit 2026-09-03): keyword line Melee Firing. Publisher parts sheet (audit 2026-09-03): 1.021 prints Command Coordination inside this Action.",
+      "_note": "Publisher parts sheet (audit 2026-09-03): range 4. Publisher parts sheet (audit 2026-09-03): keyword line Melee Firing. Publisher parts sheet (audit 2026-09-03): 1.021 prints Command Coordination inside this Action. Mechanics audit 2026-09-25 (OTTO ruled GoF 1.021): the Chinese line carried Scatter-shot copied from _B; 1.021 prints Melee Firing and the Pursuit Token rider only.",
       "keywords": [
         {
           "inline": "近战射击"
@@ -382,7 +382,7 @@
         }
       ],
       "description": {
-        "zh": "· 霰射 · 近战射击",
+        "zh": "· 近战射击",
         "en": "· Melee Firing\n· [On Hit] The hit part gains 1 Pursuit Token.\n· Command Coordination",
         "jp": "· 近接射撃\n· 【命中】命中パーツは追撃トークンを得る。"
       }
@@ -429,7 +429,7 @@
     },
     "ZHRA-202_A": {
       "range": 8,
-      "_note": "Publisher parts sheet (audit 2026-09-03): range 8. Publisher parts sheet (audit 2026-09-03): 1.021 Short, 0Y. Publisher parts sheet (audit 2026-09-03): Command Coordination chip.",
+      "_note": "Publisher parts sheet (audit 2026-09-03): range 8. Publisher parts sheet (audit 2026-09-03): 1.021 Short, 0Y. Publisher parts sheet (audit 2026-09-03): Command Coordination chip. Mechanics audit 2026-09-25 (OTTO ruled GoF 1.021): 1.021 prints [Two-Handed] Range +2 and an On Hit Target Tracer Token on Single Shot; our data had neither.",
       "size": "s",
       "yellowDice": 0,
       "keywords": [
@@ -439,7 +439,11 @@
         {
           "inline": "指令协调X"
         }
-      ]
+      ],
+      "description": {
+        "zh": "· 穿甲1\n· 静默 · 指令协调\n· [双手] +2射程。\n· 【命中】目标获得1枚追击标记。",
+        "en": "· Armor Piercing 1\n· Silence · Command Coordination\n· [Two-Handed] Range +2.\n· [On hit], target gains 1 Target Tracer Token."
+      }
     },
     "ZHRA-103_A": {
       "range": 2,
@@ -489,7 +493,7 @@
     },
     "ZHRA-303_B": {
       "range": 2,
-      "_note": "Publisher parts sheet (audit 2026-09-03): range 2. Publisher parts sheet (audit 2026-09-03): 1.021 5Y 2R. Publisher parts sheet (audit 2026-09-03): 1.021 prints Command Coordination inside this Action.",
+      "_note": "Publisher parts sheet (audit 2026-09-03): range 2. Publisher parts sheet (audit 2026-09-03): 1.021 5Y 2R. Publisher parts sheet (audit 2026-09-03): 1.021 prints Command Coordination inside this Action. Mechanics audit 2026-09-25 (OTTO ruled GoF 1.021): the Chinese [Two-Handed] line added Mutilation; 1.021 and the English print Suppression alone.",
       "yellowDice": 5,
       "redDice": 2,
       "keywords": [
@@ -498,7 +502,7 @@
         }
       ],
       "description": {
-        "zh": "· [双手] 获得压制，毁伤。",
+        "zh": "· [双手] 获得压制。",
         "en": "· [Two-Handed] Gains Suppression.\n· Command Coordination",
         "jp": "· [両手] 制圧を得る。"
       }
@@ -521,10 +525,10 @@
       "size": "s",
       "redDice": 3,
       "range": 8,
-      "_note": "Publisher parts sheet (audit 2026-09-03): 1.021 Short, 3R, range 8, Snipe + Mutilation + Armor Piercing. Publisher parts sheet (audit 2026-09-03): 1.021 prints Command Coordination inside this Action.",
+      "_note": "Publisher parts sheet (audit 2026-09-03): 1.021 Short, 3R, range 8, Snipe + Mutilation + Armor Piercing. Publisher parts sheet (audit 2026-09-03): 1.021 prints Command Coordination inside this Action. Mechanics audit 2026-09-25 (OTTO ruled GoF 1.021): 1.021 prints Mutilation unconditionally and [Two-Handed] Range +2; the old line made Mutilation the Two-Handed rider.",
       "description": {
-        "zh": "· 穿甲1 · 狙击 · 静默\n· [双手]获得毁伤。",
-        "en": "· Armor Piercing 1 · Snipe\n· [Two-Handed] Gains Mutilation.\n· Command Coordination",
+        "zh": "· 穿甲1 · 狙击 · 静默\n· [双手] +2射程。\n· 毁伤",
+        "en": "· Armor Piercing 1 · Snipe\n· [Two-Handed] Range +2.\n· Mutilation\n· Command Coordination",
         "jp": "· 装甲貫通1 · 狙撃 · サイレンス\n· [両手] 切断を得る。"
       }
     },
@@ -754,7 +758,12 @@
           "inline": "压制"
         }
       ],
-      "_note": "Publisher parts sheet (audit 2026-09-03): keyword line Suppression."
+      "_note": "Publisher parts sheet (audit 2026-09-03): keyword line Suppression. Mechanics audit 2026-09-25 (OTTO ruled GoF 1.021): Suppression only. The printed English and the Chinese add an On Hit Immobilized Token that 1.021 does not print, and both applied.",
+      "description": {
+        "zh": "· 压制",
+        "en": "· Suppression"
+      },
+      "gameRules": []
     },
     "ZHLA-302_B": {
       "keywords": [
@@ -899,6 +908,48 @@
         "jp": "· 衝撃"
       },
       "_note": "Publisher parts sheet (audit 2026-09-03): 1.021 prints Command Coordination inside this Action."
+    },
+    "175_B": {
+      "description": {
+        "zh": "· 本部件受击时，可在重投前移除所有显示{空白}、{闪电}和{眼睛}的攻击骰。",
+        "en": "· When this part is hit, may remove all Attack Dice with {}, {Lightning} and {Eye} before Reroll."
+      },
+      "_note": "Mechanics audit 2026-09-25 (OTTO ruled GoF 1.021): Dense Armor is the 1.021 dice removal, replacing \"{Defense} may offset {Heavy Hit}\" (zh) and \"spend 1 Command Token, gains KC Armor\" (en)."
+    },
+    "176_B": {
+      "description": {
+        "zh": "· 本部件受击时，可在重投前移除所有显示{空白}、{闪电}和{眼睛}的攻击骰。",
+        "en": "· When this part is hit, may remove all Attack Dice with {}, {Lightning} and {Eye} before Reroll."
+      },
+      "_note": "Mechanics audit 2026-09-25 (OTTO ruled GoF 1.021): Dense Armor is the 1.021 dice removal, replacing \"{Defense} may offset {Heavy Hit}\" (zh) and \"spend 1 Command Token, gains KC Armor\" (en)."
+    },
+    "ZHDR-301_B": {
+      "name": {
+        "en": "Dense Armor Shield"
+      },
+      "description": {
+        "zh": "· 本部件受击时，可在重投前移除所有显示{空白}、{闪电}和{眼睛}的攻击骰。\n· 自动盾牌",
+        "en": "· When this part is hit, may remove all Attack Dice with {}, {Lightning} and {Eye} before Reroll.\n· Automatic Shield"
+      },
+      "_note": "Mechanics audit 2026-09-25 (OTTO ruled GoF 1.021): 1.021 names it Dense Armor Shield and prints the dice removal with Automatic Shield."
+    },
+    "ZHLA-301_B": {
+      "name": {
+        "zh": "致密装甲",
+        "en": "Dense Armor",
+        "jp": "高密度アーマー"
+      },
+      "description": {
+        "zh": "· 本部件受击时，可在重投前移除所有显示{空白}、{闪电}和{眼睛}的攻击骰。",
+        "en": "· When this part is hit, may remove all Attack Dice with {}, {Lightning} and {Eye} before Reroll."
+      },
+      "_note": "Mechanics audit 2026-09-25 (OTTO ruled GoF 1.021): 1.021 gives the SS30 Heavy Shield Shield Up and Dense Armor; its second Passive was Defense Reaction in our data."
+    },
+    "ZHDR-303_A": {
+      "description": {
+        "en": "· Omni-direction Firing · Melee Firing · {Lightning} may make Target Mech switch into Shutdown Stance immediately."
+      },
+      "_note": "Mechanics audit 2026-09-25 (OTTO ruled GoF 1.021): the printed English, word for word with 1.021 and with ZHDR-304_A."
     }
   },
   "_notes": {

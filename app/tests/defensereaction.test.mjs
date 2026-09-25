@@ -25,8 +25,10 @@ const match = src('match.ts'), main = src('main.ts'), hud = src('matchhud.ts');
 check('the flag is set where the Penetration lands', /c\.penetrated = true;/.test(combat), true);
 check('and it is the ONLY gate on this reaction, not the Action type',
   /if \(penetrated\) \{[\s\S]{0,120}defenseReactionOn\(this\.data, defender\)/.test(combat), true);
+// The FIRST hit's flag: a Surplus round inherits no Action effects (4.8.1), so
+// finish() reads the hit the Action made, not the round that landed last.
 check('the end of the attack carries it through on the rider',
-  /const rider = \{[\s\S]{0,300}penetrated: !!c\.penetrated,/.test(combat), true);
+  /const rider = \{[\s\S]{0,300}penetrated: first\.penetrated,/.test(combat), true);
 // Under Multi-Target the sequence's ctx is gone by the time debts are written,
 // so the flag is parked on the target entry instead.
 check('a Multi-Target parks the flag on the target that took it',

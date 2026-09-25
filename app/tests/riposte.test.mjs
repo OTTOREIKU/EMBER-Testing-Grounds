@@ -22,7 +22,8 @@ const match = src('match.ts'), main = src('main.ts'), hud = src('matchhud.ts');
 
 // ---------- The trigger: a Parry that HELD, on the Part that made it ----------
 check('a Parry was really declared and nothing got through',
-  /parried: !!c\.designatedParry && !c\.penetrated \? c\.targetPart : null/.test(combat), true);
+  /const parried = first\.parry > 0 && !first\.penetrated;/.test(combat)
+    && /parried: parried && struck\.kind === 'mech' \? first\.part : null/.test(combat), true);
 check('and the reader is asked about that slot, not about the Mech',
   /ripostePart\(this\.data, defender, parried\)/.test(combat), true);
 check('the reader matches the sentence, since the two cards spell the name differently',
@@ -53,7 +54,11 @@ check('the Match Centre offers it', /r\.kind === 'riposte'/.test(hud), true);
 check('and only lists Melee Actions to pick from',
   /data-ripostego[\s\S]{0,60}<\/button>/.test(hud) && /\.filter\(\(a\) => a\.type === 'Melee'\)/.test(hud), true);
 check('the picked Melee rides the ordinary attack pick with the flag set',
-  /pendingAction = \{ kind: 'performAction'[\s\S]{0,80}granted: true \};\s*\n\s*startAttackPick/.test(hud), true);
+  /pendingAction = \{ kind: 'performAction'[\s\S]{0,80}granted: true \};[\s\S]{0,200}?startAttackPick\(/.test(hud), true);
+// FAQ C1: the Riposte's target can only be the attacker. The pick used to list
+// every enemy; since 2026-09-25 it is handed the one target.
+check('and its one target is the attacker (FAQ C1)',
+  /startAttackPick\(uid, actionId, r\.fromUid\)/.test(hud) && /m\.only === undefined \|\| t\.uid === m\.only/.test(hud), true);
 // Pressing it twice must not strand the debt: the first press already ended it.
 check('and re-entering does not re-send the ending',
   /ensureScript\(s\)\.opp\?\.uid === r\.fromUid\) \{/.test(hud), true);

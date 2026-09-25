@@ -312,8 +312,11 @@ export function onHitRiders(a: CardAction, cardKeywords: { key?: string; inline?
     out.push(r);
   };
 
-  // ROUTE A: the printed keyword. Laser Weapon's whole rule is the rider, and
-  // it is carried at CARD level on every one of the 17, never on the action.
+  // ROUTE A: the printed keyword. Laser Weapon's whole rule is the rider. The
+  // card carries it at CARD level on 16 of the 17, and every laser Firing
+  // Action ALSO prints it on itself - which is what the attack window reads
+  // since 2026-09-25 (it passes no card keywords). Reading the card gave the
+  // laser to every other weapon on the same Mech.
   const kw = [...cardKeywords, ...(a.keywords ?? [])]
     .map((k) => k.inline ?? k.key ?? k.en ?? '')
     .join(' ');
@@ -350,8 +353,14 @@ export function onHitRiders(a: CardAction, cardKeywords: { key?: string; inline?
   // and its zh description does not carry the rider at all, so the printed
   // English is the only route. The print says the PART gains it; the
   // glossary's two effects are both unit-level, which is what our token is.
-  const trace = /\[On Hit\][^.]*gains? (\d+) (?:Pursuit|Target Tracer) Token/i.exec(printed);
-  if (trace) add({ kind: 'status', statusId: 'targetTracer', amount: Math.max(1, Number(trace[1])), why: 'the printed [On Hit] rider' });
+  // Since 2026-09-25 the two names are two tokens, as GoF 1.021 prints them:
+  // ZHLA-302 grants a PURSUIT Token, which its own glossary defines as "the
+  // Attacker may be considered as have Snipe keyword" (OTTO's ruling), and
+  // ZHRA-202_A grants a Target Tracer Token in the same list. ZHRA-202_A's
+  // print says "[On hit], target gains", lowercase with a comma, so the bracket
+  // match is loose here too.
+  const trace = /\[On Hit\],?[^.]*gains? (\d+) (Pursuit|Target Tracer) Token/i.exec(printed);
+  if (trace) add({ kind: 'status', statusId: /Pursuit/i.test(trace[2]) ? 'pursuit' : 'targetTracer', amount: Math.max(1, Number(trace[1])), why: 'the printed [On Hit] rider' });
   // ZHDR-103 Claymore (GoF 1.021): '[On hit], target gains 1 Hindered Token.'
   // The list prints the marker lowercase with a trailing comma, so the bracket
   // match is looser than Target Tracer's -- but the Token name is not.
@@ -488,6 +497,27 @@ export function grantAdjusted(
   }
   if (!held.length) return a;
   return { ...a, keywords: [...(a.keywords ?? []), ...held.map((k) => ({ inline: k }))] };
+}
+
+// 4.14: an effect conditional on being Charged applies only when the Charge
+// Token is consumed for THIS Action, and consuming it is the player's choice.
+// The window reads Surplus keywords off the Action's text, so a kept Charge
+// takes the [Charged] line out, and a consumed one turns a plain "gains X"
+// into a keyword the Action simply has. An either/or line (R7MG: Multi-target
+// 3 or Suppression) is left as printed for the table to settle.
+// Moved here from the pad (2026-09-25) so the tabletop and the Match Centre
+// apply it too: surplusEffects no longer reads a [Charged] line at all, so a
+// page that did not fold it in would lose a consumed Charge's Mutilation.
+export function chargeAdjusted(a: CardAction, spent: boolean): CardAction {
+  const zh = a.description?.zh ?? '';
+  if (!/\[充能\]/.test(zh)) return a;
+  const lines = zh.split('\n');
+  const gate = lines.find((l) => /\[充能\]/.test(l)) ?? '';
+  const rest = lines.filter((l) => !/\[充能\]/.test(l)).join('\n');
+  if (!spent) return { ...a, description: { ...a.description, zh: rest } };
+  const gain = /\[充能\]\s*获得\s*([^.。·;；或]+?)\s*[.。]?\s*$/.exec(gate.trim());
+  if (!gain || /或/.test(gate)) return a;
+  return { ...a, description: { ...a.description, zh: rest }, keywords: [...(a.keywords ?? []), { inline: gain[1].trim() }] };
 }
 
 // ---------- Shock Attack X (冲锋X) ----------
@@ -1653,6 +1683,16 @@ export interface TwoHanded {
   medium: boolean;
 }
 
+// The English names a [Two-Handed] line grants, keyed to the zh keyword every
+// reader matches on.
+const TWO_HANDED_EN: Record<string, string> = {
+  mutilation: '毁伤',
+  cleaving: '顺劈',
+  'scatter-shot': '霰射',
+  suppression: '压制',
+  snipe: '狙击',
+};
+
 export function twoHandedRider(a: CardAction): TwoHanded | null {
   const text = `${a.description?.zh ?? ''}\n${a.description?.en ?? ''}`;
   const lines = text.split(/\r?\n/).filter((l) => /【双手】|\[双手\]|\[Two-Hand(?:ed)?\]/i.test(l));
@@ -1671,7 +1711,19 @@ export function twoHandedRider(a: CardAction): TwoHanded | null {
         if (k) out.keywords.push(k);
       }
     }
+    // An English-only grant: MHKX-L/R exist in our own data with no Chinese
+    // face, so "[Two-Handed] Gains Mutilation" never reached the rider and the
+    // Slash was never offered it. Read through the keyword's English name.
+    const ge = /\bGains?\s+([^.\n]+)/i.exec(line);
+    if (ge) {
+      for (const part of ge[1].split(/,|\band\b|\bor\b/i)) {
+        const k = TWO_HANDED_EN[part.trim().toLowerCase()];
+        if (k) out.keywords.push(k);
+      }
+    }
   }
+  // A card printing the grant in both languages names each keyword twice.
+  out.keywords = [...new Set(out.keywords)];
   return out.range || out.keywords.length || out.medium ? out : null;
 }
 
@@ -1862,8 +1914,11 @@ export function missileGuidance(
   defender: Token,
   action: CardAction,
   // Only Coordinated Observation needs this; a caller with no terrain to hand
-  // simply does not get that half, which fails closed.
-  world?: { terrain: TerrainPiece[] },
+  // simply does not get that half, which fails closed. `tableJudges`: a table
+  // with no board (a Freeform pad) measures neither Range nor sight here - its
+  // placeholder cells would answer for a table they know nothing of - and the
+  // offer says the table must agree (audit 2026-09-25).
+  world?: { terrain: TerrainPiece[]; tableJudges?: boolean },
 ): Token[] {
   const out: Token[] = [];
   for (const b of tokens) {
@@ -1907,12 +1962,12 @@ export function missileGuidance(
           if (!eff.attackerKeywords.some((k) => hay.includes(k))) continue;
         }
         // Measured from the beacon to the TARGET, not to the attacker.
-        if (eff.requireTargetWithinSourceRange && rangeBetween(b, defender).range > (a.range ?? 0)) continue;
+        if (!world?.tableJudges && eff.requireTargetWithinSourceRange && rangeBetween(b, defender).range > (a.range ?? 0)) continue;
         // 协同观测 Coordinated Observation (TM31RS, 539) asks for SIGHT rather
         // than Range: "allies firing at a target THIS unit can see". Terrain and
         // the other units both block it, so the caller has to supply them --
         // without a world to look through, the answer is no rather than yes.
-        if (eff.requireSourceLosToTarget) {
+        if (eff.requireSourceLosToTarget && !world?.tableJudges) {
           if (!world) continue;
           if (losBetween(b, defender, world.terrain, tokens) !== 'clear') continue;
         }
@@ -2106,11 +2161,27 @@ export function eyesAreHeavyHits(data: GameData, t: Token): boolean {
   return t.kind === 'mech' && partSays(data, t, /\{?眼睛\}?视为\{?重击\}?|\{?Eye\}?\s*(?:is|are|counts?)\s*(?:as\s*)?\{?Heavy\s*Hit\}?/i);
 }
 
-// ZHDR-301 Dense Armor Hand: "when this Part is hit, {Defense} may offset
-// {Heavy Hit}". Dense Armor by another name -- denseArmorOn reads the KEYWORD
-// 致密装甲, and this card prints the effect in prose instead.
-export function denseArmorByText(data: GameData, t: Token): boolean {
-  return partSays(data, t, /本部件被命中时[^。]*\{?防御\}?可抵消\{?重击\}?/);
+// ZHDR-301 Dense Armor Hand, and every Dense Armor since GoF 1.021 (OTTO's
+// ruling, 2026-09-25): "When this part is hit, may remove all Attack Dice with
+// {}, {Lightning} and {Eye} before Reroll." Carried by 175_B, 176_B, ZHLA-301_B
+// and ZHDR-301_B. Before the ruling this read ZHDR-301's prose, and
+// denseArmorOn the 致密装甲 keyword, for the printed rule "{Defense} may offset
+// {Heavy Hit}" on the WHOLE unit, free where the English asked a Command Token.
+//
+// The PART, because the trigger is that Part being the one hit: this returns
+// its slot ('main' on a Drone) so the attack window can ask whether THIS hit is
+// on it. A card carries it by any of its signatures - the keyword, the 1.021
+// English, or the older Chinese prose ZHDR-301 and the two Cores still print.
+export function denseArmorSlot(data: GameData, t: Token): string | null {
+  for (const { slot, card } of tokenCards(data, t)) {
+    if (slot === 'pilot') continue;
+    if ((t.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
+    const kw = (card.keywords ?? []).some((k: { key?: string; en?: string }) => /致密装甲|Dense\s*Armor/i.test(`${k.key ?? ''} ${k.en ?? ''}`));
+    const says = (card.actions ?? []).some((a: CardAction) => /remove all Attack Dice with/i.test(a.description?.en ?? '')
+      || /本部件(?:被命中|受击)时[^。]*(?:\{?防御\}?可抵消\{?重击\}?|移除)/.test(a.description?.zh ?? ''));
+    if (kw || says) return slot;
+  }
+  return null;
 }
 
 // 533 Front toward Enemy: this Mech cannot be Back-attacked in Melee. The arc
@@ -2820,17 +2891,28 @@ export function meleeEvasionReady(data: GameData, t: Token): boolean {
 // The zh line drops the trigger entirely ({闪避}可抵消1枚攻击骰), so it is
 // matched on the effect, not on a condition it does not print.
 export function dodgeEnhanceReady(data: GameData, t: Token): boolean {
-  if (t.kind !== 'mech') return false;
-  if (!(t.statuses ?? []).includes('command')) return false;
+  return !!dodgeEnhanceOf(data, t);
+}
+
+// The same, and what it costs. ZYBP-302-MP, the mass-production HALO (GoF
+// 1.021), prints the effect with NO Command Token: "When this Mech is hit, may
+// make each {Dodge} offset 1 Attack die." It used to be read as the paid one,
+// so it was offered only with a Command Token face-up, and charged one.
+export function dodgeEnhanceOf(data: GameData, t: Token): { free: boolean } | null {
+  if (t.kind !== 'mech') return null;
+  const token = (t.statuses ?? []).includes('command');
   for (const { slot, card } of tokenCards(data, t)) {
     if ((t.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
     for (const a of card.actions ?? []) {
       const en = a.description?.en ?? '';
       const zh = a.description?.zh ?? '';
-      if (/\{?Dodge\}?\s*offset[s]?\s*1\s*Attack\s*die/i.test(en) || /闪避\}?可抵消1枚攻击骰/.test(zh)) return true;
+      if (!(/\{?Dodge\}?\s*offset[s]?\s*1\s*Attack\s*die/i.test(en) || /闪避\}?可抵消1枚攻击骰/.test(zh))) continue;
+      const free = !!en && !/Command Token/i.test(en);
+      if (free) return { free: true };
+      if (token) return { free: false };
     }
   }
-  return false;
+  return null;
 }
 
 export interface CommandRider {
@@ -2904,6 +2986,52 @@ export function parryParts(data: GameData, t: Token, opts: { melee: boolean; bac
     if (value > 0) out.push({ slot: key, value, label: cardName(card) });
   }
   return out;
+}
+
+// 4.6.3: "Non-Mech Units may also have a Parry Value: when they are the target
+// of Melee Attacks, the Parry Value AUTOMATICALLY takes effect and adds the
+// corresponding number of White Dice to the Defense Roll - except when a Back
+// Attack is triggered." No declaration and no Part to match, so it is a number
+// rather than a list of offers. It was never added: ZHDR-201/202/203/302 rolled
+// their printed Parry short in every Melee (audit 2026-09-25).
+// PDRH-202_B Link Shock: "Can only be used against a target Tethered by this
+// unit. This attack ignores distance and does not require Line of Sight. The
+// target cannot Parry, cannot select the hit location, and cannot make Blue
+// Dice rolls." Read off the print: the card carries only its On Hit rule.
+export function linkShockOf(a: CardAction): boolean {
+  return /Tethered by this unit/i.test(a.description?.en ?? '') || /只能对被本机牵引的目标使用/.test(a.description?.zh ?? '');
+}
+
+// Whether `by` holds the Tether on `target` - the initiator's end of the chip
+// (tetherTo), which is what "Tethered by this unit" asks.
+export function tetheredBy(by: Token, target: Token): boolean {
+  return (by.tether ?? []).some((l) => l.uid === target.uid && l.role === 'initiator');
+}
+
+// LIGHTNING RIDERS, fired for each {Lightning} no {Dodge} cancelled (4.4.1
+// step 6.6; Defense cannot stop one):
+//   ZHDR-303 Valkyrie, ZHDR-304 Harpy (GoF 1.021): "{Lightning} may make
+//     Target Mech switch into Shutdown Stance immediately." A "may", so the
+//     attack window offers it.
+//   161 ADK15/MAS Porcupine Microwave (UN): "For every {Lightning}, target
+//     gains 1 Fire Control Interference Token." Its structured rule was hung
+//     on post-penetration, which the print does not say.
+// Nothing read either before the audit of 2026-09-25.
+export interface LightningRider {
+  kind: 'shutdown' | 'status';
+  statusId?: string;
+}
+export function lightningRiderOf(a: CardAction, english?: string): LightningRider | null {
+  const en = `${a.description?.en ?? ''} ${english ?? ''}`;
+  const zh = a.description?.zh ?? '';
+  if (/Lightning\}?\s*may make Target Mech switch into Shutdown/i.test(en) || /\{?闪电\}?\s*使目标机甲立刻切换为宕机姿态/.test(zh)) return { kind: 'shutdown' };
+  if (/For every \{?Light\w*\}?,?\s*target gains 1 Fire Control Interference/i.test(en) || /\{?闪电\}?\s*使得目标获得1枚火控干扰标记/.test(zh)) return { kind: 'status', statusId: 'fci' };
+  return null;
+}
+
+export function autoParryValue(data: GameData, t: Token, opts: { melee: boolean; backAttack: boolean }): number {
+  if (t.kind === 'mech' || !opts.melee || opts.backAttack) return 0;
+  return data.byId.get(t.cardId)?.parray ?? 0;
 }
 
 export interface SelfHitPart {
@@ -4349,7 +4477,9 @@ export function structureOf(data: GameData, t: Token, slot: PartSlot | 'main'): 
 // correct reading of "has <= 3 Parts". A Repaired Part stays 'destroyed' by
 // design (FAQ J21/J23) and so still counts as gone.
 export function focusIsFree(data: GameData, t: Token): boolean {
-  return t.kind === 'mech' && pilotIs(data, t, 'ZPA-39') && partsLeft(t) <= 3;
+  // Will to Survive is a pilot skill, and a Mech in Shutdown triggers none of
+  // its own (FAQ L3) - the gate Quartz and Aster already carry.
+  return t.kind === 'mech' && t.stance !== 'shutdown' && pilotIs(data, t, 'ZPA-39') && partsLeft(t) <= 3;
 }
 
 // Whether this unit may declare a Focus reroll AT ALL. One predicate for four
@@ -4419,10 +4549,15 @@ export function pilotDiceBonus(
   attacker: Token,
   defender: Token | undefined,
   a: CardAction,
+  // The table's own answer, where there is no board to measure: a Freeform pad
+  // stands every unit on a placeholder cell, and measured from there the bonus
+  // followed nothing on the real table (audit 2026-09-25).
+  inRange?: boolean,
 ): { red: number; yellow: number } {
   const out = { red: 0, yellow: 0 };
   if (attacker.kind !== 'mech' || a.type !== 'Firing' || !defender) return out;
-  if (pilotIs(data, attacker, 'LPA-23-2') && rangeBetween(attacker, defender).range <= GRACE_NOTE_RANGE) out.yellow += 1;
+  const near = inRange ?? rangeBetween(attacker, defender).range <= GRACE_NOTE_RANGE;
+  if (pilotIs(data, attacker, 'LPA-23-2') && near) out.yellow += 1;
   return out;
 }
 
@@ -4520,6 +4655,34 @@ export function provokeWhy(data: GameData, responder: Token, initiator: Token): 
 // already computed for its own panel, which is the same verdict on both because
 // both derive it from tallyCounter and resolveCounterRoll over the faces in
 // this very record.
+// THE COUNTER-ROLL'S FOCUS ORDER, the same as any roll's (FAQ G4, 4.4.1 step
+// 5): once both hands are in, the Initiator declares whether it will Focus,
+// then the Responder, then the Initiator rerolls, then the Responder. One
+// derivation from the record, so both screens of a shared contest agree whose
+// turn it is with no message saying so. A side with no Focus it could pay for
+// has passed. A record from an older build carries no declares, and a side that
+// already Focused on one reads as having declared it.
+export type CounterStage = 'roll' | 'declareI' | 'declareR' | 'rerollI' | 'rerollR' | 'done';
+export function counterStage(
+  data: GameData,
+  tokens: Token[],
+  c: Pick<CounterRoll, 'initiatorUid' | 'responderUid' | 'initRoll' | 'respRoll' | 'initFocused' | 'respFocused'>
+    & { initDeclare?: boolean | null; respDeclare?: boolean | null },
+): CounterStage {
+  if (!c.initRoll || !c.respRoll) return 'roll';
+  const may = (uid: number): boolean => {
+    const t = tokens.find((x) => x.uid === uid);
+    return !!t && canAffordFocus(data, t);
+  };
+  const i = c.initDeclare ?? (c.initFocused ? true : may(c.initiatorUid) ? null : false);
+  if (i === null) return 'declareI';
+  const r = c.respDeclare ?? (c.respFocused ? true : may(c.responderUid) ? null : false);
+  if (r === null) return 'declareR';
+  if (i && !c.initFocused) return 'rerollI';
+  if (r && !c.respFocused) return 'rerollR';
+  return 'done';
+}
+
 export function provokeOffer(
   data: GameData,
   tokens: Token[],
@@ -4529,7 +4692,8 @@ export function provokeOffer(
   // Answered once and once only: `provoke` is what a checkpoint carries back,
   // so a re-offer after a resync would be the same question twice.
   if (c.provoke) return null;
-  if (c.initRoll === null || c.respRoll === null) return null;
+  // Settled means the Focus order has run out as well (FAQ G4).
+  if (counterStage(data, tokens, c) !== 'done') return null;
   // "When Electronic Counter Roll is successful" -- Yoyu's own. The Initiator
   // taking the tie (4.11.2) is a Yoyu LOSS and offers nothing.
   if (initiatorWins) return null;
@@ -4663,9 +4827,11 @@ function partKeyword(data: GameData, t: Token, re: RegExp): { slot: string; card
   return null;
 }
 
-// 致密装甲: {Defense} may offset {Heavy Hit}.
+// 致密装甲 anywhere on the unit. The effect is the PART's since GoF 1.021 (see
+// denseArmorSlot, which this now asks); nothing in the attack reads the old
+// whole-unit "{Defense} may offset {Heavy Hit}" any more.
 export function denseArmorOn(data: GameData, t: Token): boolean {
-  return !!partKeyword(data, t, /致密装甲|Dense\s*Armor/i);
+  return !!denseArmorSlot(data, t);
 }
 
 // KC装甲: consume a Charge Token to exchange {Lightning} in the Defense Roll

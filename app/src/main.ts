@@ -62,7 +62,7 @@ import { PlayGuide } from './playguide';
 import type { BoardGrids, Card, CardAction, DiceData, DieColor, Facing, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, StatusDef, TerrainPiece, Timing, Token } from './types';
 import { addStatus, cellsOf, DEFAULT_GRIDS, gridsOf, normaliseScript, removableTokens, SCALES, statusCount, statusesFor, STATUSES, zonesOf } from './types';
 import { actionIdOf } from './ticks';
-import { actionRange, linkSupportOf, linkSupportTargets, maxLink, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, tokenCleanupOf, tokenCleanupTargets, type LinkSupport, type TokenCleanup, straightLineBonus, selfStatusGrant, selfGrantWhy, transformOffer, automaticShieldFor, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, twoHandedUse, electronicValue, martyrdomOwed, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, loanedParts, phasesThroughUnits, minesLayable, minesOwed, multiTargetLimit, unfoldsOwed, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, immobilizedStop, activatesCamo, isScanAction, scannable, formSwitch, grantAdjusted, shockAttackOf, shockMoveAllowed, stealthValue, manifestationRange, manifestTargets, nonHumanoidCost, nonHumanoidStop, maneuverIsSilent, maneuverSilenceDenier, envCardAt, envFlightFrom, envForcedStop, envHotEntries, envMoveRules, isGroundUnit, settleEnvironments, chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, projectileReach, type Resupply, resupplyOf, SLOT_LABEL, stationaryAdjusted, interceptLeft, interceptsOwed, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf, type AttackReaction } from './units';
+import { actionRange, chargeAdjusted, linkShockOf, tetheredBy, linkSupportOf, linkSupportTargets, maxLink, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, tokenCleanupOf, tokenCleanupTargets, type LinkSupport, type TokenCleanup, straightLineBonus, selfStatusGrant, selfGrantWhy, transformOffer, automaticShieldFor, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, twoHandedUse, electronicValue, martyrdomOwed, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, loanedParts, phasesThroughUnits, minesLayable, minesOwed, multiTargetLimit, unfoldsOwed, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, immobilizedStop, activatesCamo, isScanAction, scannable, formSwitch, grantAdjusted, shockAttackOf, shockMoveAllowed, stealthValue, manifestationRange, manifestTargets, nonHumanoidCost, nonHumanoidStop, maneuverIsSilent, maneuverSilenceDenier, envCardAt, envFlightFrom, envForcedStop, envHotEntries, envMoveRules, isGroundUnit, settleEnvironments, chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, projectileReach, type Resupply, resupplyOf, SLOT_LABEL, stationaryAdjusted, interceptLeft, interceptsOwed, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf, type AttackReaction } from './units';
 import { registerOffline } from './offline';
 import { battlefieldLocked, countHits, firstPlayerFrom, newSetup, normaliseSetup, tasksLocked, type SetupState } from './setup';
 import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
@@ -584,7 +584,11 @@ async function init() {
       if (pendingAttack && uid !== null && uid !== pendingAttack.attackerUid) {
         const attacker = state.tokens.find((x) => x.uid === pendingAttack!.attackerUid);
         const defender = state.tokens.find((x) => x.uid === uid);
-        const action = pendingAttack.action ?? (attacker && findAction(attacker, pendingAttack.actionId));
+        // A Charge Token consumed for this attack (offerChargeSpend records it
+        // as the refund) turns the Action's [Charged] line into a keyword it
+        // simply has, and a kept one takes the line out (chargeAdjusted, 4.14).
+        const found = pendingAttack.action ?? (attacker && findAction(attacker, pendingAttack.actionId));
+        const action = found ? chargeAdjusted(found, !!pendingAttack.refund) : found;
         const mode = pendingAttack.mode;
         const done = pendingAttack.done;
         const intercepting = pendingIntercept;
@@ -648,6 +652,58 @@ async function init() {
               body: `An Automatic Action normally takes the nearest legal target (3.5.2, FAQ O21) - here ${names}. Attack ${defender.label} anyway?`,
               confirmLabel: 'Attack it anyway',
               cancelLabel: 'Pick the nearest',
+              danger: true,
+            }).then((go) => {
+              if (!go) { done?.(false); return; }
+              const prot = protectionFor(attacker, defender, action);
+              attackHelper.start(attacker, action, defender, losNote(attacker, defender, action), prot.white, prot.note);
+              showSideTab('combat');
+              done?.(true);
+            });
+            return;
+          } else if (mode === 'attack' && linkShockOf(action) && !tetheredBy(attacker, defender)) {
+            // PDRH-202_B Link Shock: "Can only be used against a target
+            // Tethered by this unit." Distance and line of sight do not matter
+            // to it, which the board's own reading will not say.
+            if (state.script?.strict) {
+              void alertDialog({
+                title: `${defender.label} is not Tethered`,
+                body: `Link Shock can only be used against a target Tethered by ${attacker.label} (PDRH-202). Pick the Tethered unit, or press Esc.`,
+              });
+              done?.(false);
+              return;
+            }
+            void confirmDialog({
+              title: `${defender.label} is not Tethered`,
+              body: `Link Shock can only be used against a target Tethered by ${attacker.label} (PDRH-202). Attack it anyway?`,
+              confirmLabel: 'Attack it anyway',
+              cancelLabel: 'Pick another target',
+              danger: true,
+            }).then((go) => {
+              if (!go) { done?.(false); return; }
+              const prot = protectionFor(attacker, defender, action);
+              attackHelper.start(attacker, action, defender, losNote(attacker, defender, action), prot.white, prot.note);
+              showSideTab('combat');
+              done?.(true);
+            });
+            return;
+          } else if (action.type === 'Melee' && defender.aerial && mode === 'attack') {
+            // 4.4.1 step 1, Melee requirement 4: the target must not be an
+            // Aerial Unit. The strict tracker refuses; teaching warns and lets a
+            // house rule through, the split every other target rule makes here.
+            if (state.script?.strict) {
+              void alertDialog({
+                title: `${defender.label} is Aerial`,
+                body: 'A Melee Action cannot target an Aerial Unit (4.4.1). Pick another target, or press Esc.',
+              });
+              done?.(false);
+              return;
+            }
+            void confirmDialog({
+              title: `${defender.label} is Aerial`,
+              body: 'A Melee Action cannot normally target an Aerial Unit (4.4.1 step 1). Attack it anyway?',
+              confirmLabel: 'Attack it anyway',
+              cancelLabel: 'Pick another target',
               danger: true,
             }).then((go) => {
               if (!go) { done?.(false); return; }
@@ -3035,7 +3091,7 @@ async function init() {
     if (kb.onHit && hits === 0) {
       await alertDialog({
         title: `${name} does not trigger`,
-        body: `${what} only knocks back On Hit, and this attack scored no Hits, so ${victim.label} stays where it is.`,
+        body: `${what} only knocks back On Hit, and this attack scored no Hits (a Parry that held stops every On Hit effect, FAQ C5), so ${victim.label} stays where it is.`,
       });
       return;
     }
@@ -3451,9 +3507,12 @@ async function init() {
       .find((x) => !!x.t && (!seat || x.t.side === seat));
     if (!owed?.t) return;
     const { r, t: defender } = owed;
-    const card = data.byId.get(defender.cardId ?? '');
-    const act = (card?.actions ?? []).find((a) => a.id === r.actionId);
-    const name = act?.name?.en || act?.name?.zh || 'Emergency Smoke';
+    // The Action may sit on any of the unit's Parts. A Mech has no card of its
+    // own, so looking it up on `cardId` found nothing and every Mech's prompt
+    // was titled "Emergency Smoke" - a Riposte and a Defense Reaction included.
+    const act = tokenCards(data, defender).flatMap(({ card }) => card.actions ?? []).find((a) => a.id === r.actionId);
+    const name = act?.name?.en || act?.name?.zh
+      || (r.kind === 'riposte' ? 'Riposte' : r.kind === 'trace' ? 'Target Tracing' : r.kind === 'stance' ? 'Defense Reaction' : 'Emergency Smoke');
     // Riposte / Reposte (050 / ZHLA-202). The play guide's Action list is built
     // from the current Action Opportunity, and this Melee belongs to no
     // Opportunity at all, so it is opened here rather than offered as a row.
@@ -3465,15 +3524,21 @@ async function init() {
         .filter((x) => x.slot !== 'pilot' && (defender.partStates[x.slot as PartSlot | 'main'] ?? 'intact') !== 'destroyed')
         .flatMap(({ card }) => card.actions ?? [])
         .filter((a) => a.type === 'Melee');
-      const melee = melees[0];
-      void confirmDialog({
+      // EVERY Melee Action the defender still has is offered: the card says "a
+      // Melee Action", and this used to take whichever one it found first. The
+      // target is not a choice - it is the attacker and no one else (FAQ C1).
+      void choiceDialog({
         title: `${defender.label}: ${name}`,
-        body: `${defender.label} parried, so ${from?.label ?? 'the attacker'} must end its Action Opportunity at once - and then ${defender.label} may immediately perform a Melee Action against it. `
-          + `${melee ? `Taking it makes ${melee.name?.en || melee.name?.zh || melee.id}, which costs no Ticks: the Action belongs to the card, not to an Action Opportunity.` : 'No Melee Action is left to make, so only the Opportunity ends.'}`,
-        confirmLabel: 'Riposte',
-        cancelLabel: 'Skip it',
-      }).then((go) => {
-        if (!go) {
+        body: `${defender.label} parried, so ${from?.label ?? 'the attacker'} must end its Action Opportunity at once - and then ${defender.label} may immediately perform a Melee Action against it, and against no one else (FAQ C1). `
+          + `${melees.length ? 'It costs no Ticks: the Action belongs to the card, not to an Action Opportunity.' : 'No Melee Action is left to make, so only the Opportunity ends.'}`,
+        choices: [
+          ...melees.map((a) => ({ id: a.id, label: `Riposte: ${a.name?.en || a.name?.zh || a.id}` })),
+          { id: '__end', label: 'End the Opportunity only' },
+          { id: '', label: 'Skip it', cancel: true },
+        ],
+        stacked: true,
+      }).then((id) => {
+        if (!id) {
           perform(data, state, { kind: 'resolveReaction', seat: defender.side, uid: defender.uid, actionId: r.actionId });
           onChanged();
           renderReactionPrompt();
@@ -3483,6 +3548,7 @@ async function init() {
           perform(data, state, { kind: 'riposte', seat: defender.side, uid: defender.uid, fromUid: r.fromUid! });
           logTo(defender, `${defender.label} parried: the Action Opportunity ends at once (050 / ZHLA-202).`);
         }
+        const melee = melees.find((a) => a.id === id);
         if (!melee || !from) {
           perform(data, state, { kind: 'resolveReaction', seat: defender.side, uid: defender.uid, actionId: r.actionId });
           onChanged();

@@ -68,8 +68,11 @@ check('and a mirror draws only what it was told',
 check('declaring twice is refused', /if \(!c \|\| c\.dodgeDieUsed\) return;/.test(combat), true);
 
 // ---------- The arithmetic is reached ----------
-check('resolve feeds offsetIcons a per-die breakdown only once declared',
-  /c\.dodgeDieUsed \? this\.attackIconsPerDie\(c\) : undefined/.test(combat), true);
+// And never in a Surplus round: its icons are carried over with no dice under
+// them, so the grouping would cancel nothing and waste every Dodge (FAQ D11
+// says HALO still applies there).
+check('resolve feeds offsetIcons a per-die breakdown only once declared, and not in Surplus',
+  /c\.dodgeDieUsed && !c\.surplusRound \? this\.attackIconsPerDie\(c\) : undefined/.test(combat), true);
 check('the breakdown follows the Lightning swap, or a traded Heavy would belong to no die',
   /icon\.type === 'lightning' && swapLightning/.test(combat), true);
 check('and the Eye swaps, which are chosen by the player',

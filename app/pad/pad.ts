@@ -67,9 +67,9 @@ import { checkForUpdates, syncUpdateNotice, watchForUpdates } from '../src/updat
 import { normaliseTasks, taskItemsFor, type TaskState } from '../src/tasks';
 import { previewScore } from '../src/scoring';
 import { tacticFitsPhase, tacticSpec, tacticTargets, type TacticCtx } from '../src/tactics';
-import { explosionScope, freehandSlots, linkSupportOf, roundEndLinkAuras, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, targetStatusGrant, tokenCleanupOf, immediateDetonation, smokePlacement, squadAllegiance, twoHandedUse } from '../src/units';
+import { conditionalGrants, stationaryBonus, explosionScope, linkShockOf, tetheredBy, freehandSlots, linkSupportOf, roundEndLinkAuras, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, targetStatusGrant, tokenCleanupOf, immediateDetonation, smokePlacement, squadAllegiance, twoHandedUse } from '../src/units';
 import { gameResult } from '../src/tasks';
-import { canBeLoad, chargeableSlots, electronicDash, electronicValue, guidedActions, initiativeFor, interceptCapacity, isCarrier, isDeployable, isElectronicAttack, maneuverRange, maxLink, migrateState, parryParts, pilotCard, structureOf, tokenCards, volleyOf } from '../src/units';
+import { autoParryValue, canBeLoad, chargeableSlots, electronicDash, electronicValue, guidedActions, initiativeFor, interceptCapacity, isCarrier, isDeployable, isElectronicAttack, maneuverRange, maxLink, migrateState, parryParts, pilotCard, structureOf, tokenCards, volleyOf } from '../src/units';
 import { lengthOf, LENGTH_NAME, timingOf } from '../src/ticks';
 import { newScriptState, PHASES, SCALES, statusesFor, statusStacks, STATUSES, TIMINGS } from '../src/types';
 import type { Card, CardAction, DieColor, GameState, ImportedSquad, MechLoadout, PartSlot, PartState, Side, Stance, Token } from '../src/types';
@@ -1157,7 +1157,7 @@ const guide: GuideApi = {
   attack: (uid, actionId, opts) => {
     const t = unitOf(uid);
     if (!t) return;
-    targetFor = { uid, actionId, mode: opts?.electronic ? 'electronic' : 'attack', granted: opts?.granted };
+    targetFor = { uid, actionId, mode: opts?.electronic ? 'electronic' : 'attack', granted: opts?.granted, only: opts?.only };
     panel = 'target';
     render();
   },
@@ -1175,7 +1175,8 @@ const guide: GuideApi = {
 // only), or an Electronic Attack (the counter-roll). `granted` marks a
 // Riposte's free Melee.
 type PickMode = 'attack' | 'intercept' | 'electronic';
-let targetFor: { uid: number; actionId: string; mode: PickMode; granted?: boolean } | null = null;
+// `only`: the one target the rules allow (a Riposte answers the attacker, FAQ C1).
+let targetFor: { uid: number; actionId: string; mode: PickMode; granted?: boolean; only?: number } | null = null;
 
 initAttack({
   get data() { return data!; },
@@ -1341,6 +1342,47 @@ async function askTableAndAttack(attacker: Token, actionId: string, defender: To
     stacked: true,
   });
   if (rear === null) return;
+  // WHAT THE BOARD WOULD HAVE MEASURED, asked instead (audit 2026-09-25). The
+  // pad stands every unit on a placeholder cell, so these bonuses used to
+  // follow the placeholders: Grace Note paid out, or did not, for a table the
+  // pad had never seen, and [Stationary] never paid out in Freeform at all,
+  // where no Action Opportunity is tracked. Asked only where the Action can
+  // use the answer.
+  let graceNote: boolean | undefined;
+  if (a?.type === 'Firing' && attacker.kind === 'mech' && pilotCard(data!, attacker)?.id === 'LPA-23-2') {
+    const near = await choiceDialog({
+      title: 'Grace Note',
+      body: `Is ${defender.label} within 3 grids of ${attacker.label}? Onyx Mellow Chord adds 1 Yellow if so.`,
+      choices: [{ id: 'yes', label: 'Yes, within 3', primary: true }, { id: 'no', label: 'No' }],
+      stacked: true,
+    });
+    if (near === null) return;
+    graceNote = near === 'yes';
+  }
+  let stationary: boolean | undefined;
+  if (a && !guidedOn(table) && (stationaryBonus(a) || conditionalGrants(a).some((g) => g.when === 'stationary'))) {
+    const still = await choiceDialog({
+      title: 'Stationary',
+      body: `Has ${attacker.label} moved during this Action Opportunity? [Stationary] pays out only if it has not.`,
+      choices: [{ id: 'still', label: 'No, it has not moved', primary: true }, { id: 'moved', label: 'Yes, it moved' }],
+      stacked: true,
+    });
+    if (still === null) return;
+    stationary = still === 'still';
+  }
+  // FAQ A16: [Two-Handed] may be declined. The pad used to take it every time.
+  let twoHanded: 'declined' | undefined;
+  const hands = a && !granted ? twoHandedUse(data!, attacker, a) : null;
+  if (hands) {
+    const use = await choiceDialog({
+      title: `[Two-Handed]: ${hands.label}`,
+      body: `${hands.note.replace(/^\[Two-Handed\]: /, '')}. The player may decline and perform it one-handed instead (FAQ A16).`,
+      choices: [{ id: 'both', label: 'Use both hands', primary: true }, { id: 'one', label: 'One-handed' }],
+      stacked: true,
+    });
+    if (use === null) return;
+    if (use === 'one') twoHanded = 'declined';
+  }
   // 4.14: a [Charged] effect applies only if the Charge Token is consumed for
   // this Action, and that is the player's choice, so it is asked.
   const chargeSlot = a && !granted && /\[Charged\]|\[充能\]/i.test(`${a.description?.en ?? ''} ${a.description?.zh ?? ''}`)
@@ -1363,11 +1405,14 @@ async function askTableAndAttack(attacker: Token, actionId: string, defender: To
     protection: prot === '4' ? 4 : prot === '2' ? 2 : 0,
     protectionFrom: seen === '4' ? 'both' : seen === '2u' ? 'unit' : seen === '2t' ? 'terrain' : undefined,
     backAttack: rear === 'yes',
+    ...(graceNote !== undefined ? { graceNote } : {}),
+    ...(stationary !== undefined ? { stationary } : {}),
+    ...(twoHanded ? { twoHanded } : {}),
   };
   attackDepth = historyDepth();
   // In a guided game the Action is paid for first; a refusal is the engine's
   // answer and the window stays shut. Freeform opens the window outright.
-  if (guidedOn(table) && !send({ kind: 'performAction', seat: attacker.side, uid: attacker.uid, actionId, ...(granted ? { granted: true } : bothHands(attacker, actionId)) })) return;
+  if (guidedOn(table) && !send({ kind: 'performAction', seat: attacker.side, uid: attacker.uid, actionId, ...(granted ? { granted: true } : twoHanded ? {} : bothHands(attacker, actionId)) })) return;
   if (chargeSpent && chargeSlot) send({ kind: 'setCharge', seat: attacker.side, uid: attacker.uid, slot: String(chargeSlot.slot), on: false, ...(guidedOn(table) ? { chain: 'join' as const } : {}) });
   panel = 'combat';
   render();
@@ -1400,7 +1445,10 @@ function targetPanel(): string {
     // An Interception answers a projectile or a flyer (4.9); an Electronic
     // Value of "-" cannot Respond (4.11.2).
     && !(mode === 'intercept' && !u.aerial)
-    && !(mode === 'electronic' && electronicDash(data!, u)));
+    && !(mode === 'electronic' && electronicDash(data!, u))
+    && (targetFor?.only === undefined || u.uid === targetFor.only)
+    // PDRH-202_B Link Shock: only a unit this one Tethers.
+    && !(mode === 'attack' && a && linkShockOf(a) && !tetheredBy(t, u)));
   return `<div class="pad-panel-in">${panelHead(mode === 'intercept' ? 'Intercept' : a?.name.en ?? 'Attack')}
     <p class="pad-lead">${esc(t.label)} · pick the target.</p>
     ${enemies.length
@@ -1803,7 +1851,12 @@ function statStrip(t: Token): string {
   const points = cards.reduce((n, c) => n + (c.card.score ?? 0), 0) + (t.kind === 'mech' ? (pilotCard(d, t)?.score ?? 0) : 0);
   const structure = live.reduce((n, c) => n + ((t.partStates[c.slot as PartSlot | 'main'] ?? 'intact') === 'intact' ? (c.card.structure ?? 0) : 0), 0);
   const dodge = live.reduce((n, c) => n + (c.card.dodge ?? 0), 0);
-  const parry = parryParts(d, t, { melee: true, backAttack: false }).reduce((n, p) => n + p.value, 0);
+  // A Drone's Parry is automatic in Melee (4.6.3), so it is the card's own
+  // number; parryParts answers for a Mech's Parts only, and read 0 here for
+  // ZHDR-201/202/203/302 (audit 2026-09-25).
+  const parry = t.kind === 'mech'
+    ? parryParts(d, t, { melee: true, backAttack: false }).reduce((n, p) => n + p.value, 0)
+    : autoParryValue(d, t, { melee: true, backAttack: false });
   return `<div class="ref-stats pad-stats">
     ${chip('score', points, 'Points')}
     ${chip('structure', structure, 'Structure')}

@@ -864,6 +864,11 @@ export function losNote(
     bits.push(`${rangeMark} beyond action range (R${action.range})`);
   }
   bits.push(omni ? 'Omni-direction Firing: no arc check ✓' : fwd ? 'in forward arc ✓' : '⚠ NOT in forward arc');
+  // 4.4.1 step 1, Melee requirement 4: "target must NOT be an Aerial Unit". Not
+  // a warning a table can overrule by strictness: the Match Centre disables
+  // the row on it, and freeplay asks before letting a house rule through. The
+  // pad already filtered its list; the two board pages let the swing land.
+  if (action.type === 'Melee' && defender.aerial) bits.push('✕ Melee cannot target an Aerial unit (4.4.1)');
   if (action.type === 'Firing') {
     if (smokeBlocks(attacker, defender, smoke)) bits.push('✕ LOS blocked by a Smoke Screen (4.16)');
     // "may claim", not "does": obstruction is only the trigger. A medium unit

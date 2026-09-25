@@ -31,7 +31,7 @@ import { losNote, protectionFor, spotsInGrid } from './rules';
 import { SquadTracker } from './squads';
 import { Panel } from './panel';
 import type { CardAction, CombatView, DiceData, DieColor, GameState, Side, Token } from './types';
-import { grantAdjusted, SLOT_LABEL, stationaryAdjusted, twoHandedUse } from './units';
+import { chargeAdjusted, dodgeEnhanceOf, grantAdjusted, SLOT_LABEL, stationaryAdjusted, twoHandedUse } from './units';
 import { gridsOf, PHASES, statusCount } from './types';
 // FIRST, before anything else in this module runs. A net that is installed
 // after the thing it is meant to catch is not a net.
@@ -905,11 +905,14 @@ function attackActionOf(t: Token | undefined, actionId: string, twoHandedDecline
   return twoHandedUse(data, t, granted)?.action ?? granted;
 }
 
-function startAttack(uid: number, actionId: string, targetUid: number, mode: 'attack' | 'intercept' | 'explosion' = 'attack', opts: { twoHandedDeclined?: boolean } = {}): void {
+function startAttack(uid: number, actionId: string, targetUid: number, mode: 'attack' | 'intercept' | 'explosion' = 'attack', opts: { twoHandedDeclined?: boolean; charged?: boolean } = {}): void {
   if (!data || !attackHelper) return;
   const attacker = state.tokens.find((t) => t.uid === uid);
   const defender = state.tokens.find((t) => t.uid === targetUid);
-  const action = attackActionOf(attacker, actionId, !!opts.twoHandedDeclined);
+  const adjusted = attackActionOf(attacker, actionId, !!opts.twoHandedDeclined);
+  // [Charged] (4.14): folded in only when the Charge Token was consumed for
+  // this attack, the same fold the pad and freeplay make.
+  const action = adjusted ? chargeAdjusted(adjusted, !!opts.charged) : adjusted;
   if (!attacker || !defender || !action) return;
   const terrain = terrainNow();
   const smoke = state.smoke ?? [];
@@ -1138,7 +1141,9 @@ function mountSide(): void {
         if (box) queueBoxDrop(box.id, victim.uid, attacker.side, attacker.uid);
         render();
       },
-      (cmd) => { send(cmd); },
+      // The verdict goes back to the window, which rerolls nothing on a spend
+      // that was refused (paused, reconnecting).
+      (cmd) => send(cmd),
     );
     attackHelper.tokens = () => state.tokens;
     attackHelper.terrain = () => terrainNow();
@@ -2469,7 +2474,8 @@ function mirrorAct(act: MirrorAct, arg?: string | number[]): boolean {
     return true;
   }
   if (act === 'dodgeenhance') {
-    const paid = send({ kind: 'spendCommand', seat, uid: df.uid });
+    // The mass-production HALO (GoF 1.021) spends nothing.
+    const paid = dodgeEnhanceOf(data!, df)?.free ? { ok: true, why: '' } : send({ kind: 'spendCommand', seat, uid: df.uid });
     if (!paid.ok) { lobbyNote = paid.why; render(); return false; }
     send({ kind: 'dodgeEnhance', seat });
     render();

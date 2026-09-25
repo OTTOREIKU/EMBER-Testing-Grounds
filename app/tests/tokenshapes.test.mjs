@@ -60,14 +60,14 @@ for (const id of ['fci', 'fragile', 'immobilized', 'smoke']) {
 }
 // Projectiles are Low Value Units and can never gain a Hexagon Token
 // (Supplement 1.6 via FAQ J3), so the three hexagons stop at drones.
-for (const id of ['lowProfile', 'highlight', 'targetTracer']) {
+for (const id of ['lowProfile', 'highlight', 'targetTracer', 'pursuit']) {
   check(`${id} stays off projectiles`, ids('projectile').includes(id), false);
   check(`${id} still reaches mechs and drones`, ['mech', 'drone'].filter((k) => !ids(k).includes(id)), []);
 }
 // Named rather than counted: a bare `STATUSES.length - 5` passed for the wrong
 // reason the moment a new mech-only token was added, and said nothing about
 // which one had moved.
-const OFF_PROJECTILES = ['lowProfile', 'highlight', 'targetTracer', 'camouflage', 'repaired', 'command', 'commandUsed'];
+const OFF_PROJECTILES = ['lowProfile', 'highlight', 'targetTracer', 'pursuit', 'camouflage', 'repaired', 'command', 'commandUsed'];
 check(
   'projectiles keep everything except the restricted tokens',
   STATUSES.map((s) => s.id).filter((id) => !ids('projectile').includes(id)).sort(),

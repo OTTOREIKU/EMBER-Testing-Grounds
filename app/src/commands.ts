@@ -2,12 +2,12 @@ import type { BoardGrids, CombatView, Facing, GameState, MechLoadout, Opportunit
 import { addStatus, ageTokens, cellsOf, gridsOf, newOpportunity, PHASES, shedToken, statusCount, STATUSES, TIMINGS, tokenFaces } from './types';
 import type { GameData } from './data';
 import { cardName, transformFaces, unfoldsInto, discardFaceOf, environmentAllowance } from './data';
-import { covertCarryLock, ammoDeliveryPool, opportunityBonusOn, ripostePart, defenseReactionOn, targetTracingOn, riderOnDrone, hasFlexibleTiming, commandGeneration, blinkTargets, isPositionSwap, electronicOrigins, isSilentAction, maneuverIsSilent, loanedParts, unfoldToken, formSwitch, switchFormTo, extrasFor, consumesCharge, cutTethersOn, electronicDash, electronicValue, immobilizedStop, isScanAction, scannable, manifestationRange, nonHumanoidCost, nonHumanoidStop, envHotEntries, settleEnvironments, freehandSlots, twoHandedUse, missileGroupOf, interceptCapacity, anyStartTiming, focusIsFree, keepsLinkOnPartLoss, makeDroneToken, structureOf, makeMechToken, maneuverRange, maxLink, partsLeft, pilotCard, pilotIs, projectileDelivery, provokeWhy, settleTethers, SLOT_LABEL, tetherTo, tokenCards, transformPartOn, actionRange, isRwsAction, rwsCommandKey, rwsFiredKey, selfStatusGrant, selfGrantWhy, straightLineBonus, linkTickTraitOn, isCarrier, canBeLoad, roundEndLinkSources } from './units';
+import { counterStage, covertCarryLock, ammoDeliveryPool, opportunityBonusOn, ripostePart, defenseReactionOn, targetTracingOn, riderOnDrone, hasFlexibleTiming, commandGeneration, blinkTargets, isPositionSwap, electronicOrigins, isSilentAction, maneuverIsSilent, loanedParts, unfoldToken, formSwitch, switchFormTo, extrasFor, consumesCharge, cutTethersOn, electronicDash, electronicValue, immobilizedStop, isScanAction, scannable, manifestationRange, nonHumanoidCost, nonHumanoidStop, envHotEntries, settleEnvironments, freehandSlots, twoHandedUse, missileGroupOf, interceptCapacity, anyStartTiming, focusIsFree, keepsLinkOnPartLoss, makeDroneToken, structureOf, makeMechToken, maneuverRange, maxLink, partsLeft, pilotCard, pilotIs, projectileDelivery, provokeWhy, settleTethers, SLOT_LABEL, tetherTo, tokenCards, transformPartOn, actionRange, isRwsAction, rwsCommandKey, rwsFiredKey, selfStatusGrant, selfGrantWhy, straightLineBonus, linkTickTraitOn, isCarrier, canBeLoad, roundEndLinkSources } from './units';
 import { tetherCap } from './melee';
 import { canActivate, canAttackMode, canManeuver, canOverload, canPerform, spendAction, spendActivation, spendAttackMode, spendManeuver, spendOverload } from './ticks';
 import { tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { battlefieldLocked, deploymentComplete, deployTurn, firstPlayerFrom, newSetup, normaliseSetup, tasksLocked } from './setup';
-import { applyKill, normaliseTasks, pendingDesignations, recordPartLoss, recordUnitLoss, settleControl, type Designation } from './tasks';
+import { applyKill, normaliseTasks, pendingDesignations, recordPartLoss, recordUnitLoss, settleControl, type Designation, retractKill, unrecordPartLoss } from './tasks';
 import { alive, canAct, dialHidden, droneActionWhy, droneMoveWhy, eligibleUnits, getLocalSeat, isLoopPhase, loopComplete, nextTurn, onExtraOpportunity } from './loop';
 import { dissipationFor, rangeBetween, spotsInGrid } from './rules';
 
@@ -252,6 +252,20 @@ export type Command = (
       thenAttack?: { actionId: string };
     }
   | { kind: 'rollCounter'; seat: Side; uid: number; faces: number[]; focused?: boolean }
+  // A side's Focus declare in a shared Counter-roll (FAQ G4). It pays the Link
+  // itself, the way `focus` does, so the reroll that follows cannot pay twice.
+  | { kind: 'declareCounterFocus'; seat: Side; uid: number; use: boolean }
+  // A Lightning rider's Stance switch (ZHDR-303 Valkyrie, ZHDR-304 Harpy):
+  // sent by the ATTACKER, whose Action it is, onto the Mech it hit.
+  | { kind: 'forceShutdown'; seat: Side; uid: number; targetUid: number }
+  // C1 of the 2026-09-25 audit. In a FREEFORM room one phone runs both halves
+  // of an attack, so the defender's paid choices - a Focus, KC Armor's Charge
+  // Token, a HALO Command Token - leave it as the DEFENDER's commands, and the
+  // relay takes only commands sent as the sender's own squad. They applied on
+  // that phone and never reached the other. Carried inside one sent as the
+  // sender's own seat, they travel. Refused wherever there is a script: a
+  // Guided game's two phones answer for their own units through the mirror.
+  | { kind: 'onBehalf'; seat: Side; cmd: Command }
   // LPA-22 Yoyu's 挑衅 Provoke, answered. `uid` is YOYU -- the Responder that
   // won the Counter-roll -- so this rides the actor path and inherits the "your
   // own units only" gate; `targetUid` is the Initiator whose Stance is being
@@ -551,7 +565,7 @@ type TableKind =
   | 'configureTable' | 'startMatch' | 'endMatch' | 'pickSecondary' | 'setTactics' | 'setInventory' | 'setReady' | 'designateTask'
   | 'callDefense' | 'answerDefense' | 'clearDefense' | 'setCombatView' | 'focusAnswer' | 'focusReroll' | 'kcArmor' | 'designateHit' | 'meleeEvade' | 'dodgeEnhance' | 'riposte'
   | 'setRollbackCatalog' | 'rollbackRequest' | 'rollbackAnswer'
-  | 'claimItem' | 'claimZone' | 'leaveGuided' | 'setPartState';
+  | 'claimItem' | 'claimZone' | 'leaveGuided' | 'setPartState' | 'onBehalf';
 const TABLE_KINDS = new Set<Command['kind']>([
   'advancePhase', 'setPhase', 'resetRounds', 'adjustCommandTokens', 'passTurn', 'markEndStep', 'award',
   'lockMap', 'rollSetup', 'acceptRoll', 'noteRoll', 'finishTasks', 'pickEdge', 'lockDials', 'finishDeployment',
@@ -563,8 +577,12 @@ const TABLE_KINDS = new Set<Command['kind']>([
   'configureTable', 'startMatch', 'endMatch', 'pickSecondary', 'setTactics', 'setInventory', 'setReady', 'designateTask',
   'callDefense', 'answerDefense', 'clearDefense', 'setCombatView', 'focusAnswer', 'focusReroll', 'kcArmor', 'designateHit', 'meleeEvade', 'dodgeEnhance', 'riposte',
   'setRollbackCatalog', 'rollbackRequest', 'rollbackAnswer',
-  'claimItem', 'claimZone', 'leaveGuided', 'setPartState',
+  'claimItem', 'claimZone', 'leaveGuided', 'setPartState', 'onBehalf',
 ]);
+
+// What a Freeform phone may carry for the other squad (onBehalf): the spends a
+// defender makes inside an attack or a Counter-roll that phone is running.
+const ON_BEHALF = new Set<Command['kind']>(['focus', 'setCharge', 'spendCommand']);
 
 // Table commands whose seat is attribution rather than a choice one squad
 // owns. Networked, they are stamped with the sender's own seat, because the
@@ -595,6 +613,8 @@ const ATTRIBUTED = new Set<Command['kind']>([
   // locally, was refused by the server, and the two pads drifted apart in
   // silence. The unit it names rides in `uid`; the seat is who recorded it.
   'setPartState',
+  // Who carried it is the sender; whose unit it is rides in the inner command.
+  'onBehalf',
 ]);
 function tableLevel(cmd: Command): cmd is Command & { kind: TableKind } {
   return TABLE_KINDS.has(cmd.kind);
@@ -645,6 +665,12 @@ function freeSpot(state: GameState, size: number, side: Side, aerial: boolean): 
 
 function checkTable(data: GameData, state: GameState, cmd: Command & { kind: TableKind }): CheckResult {
   switch (cmd.kind) {
+    case 'onBehalf': {
+      if (state.script) return no('In a Guided game each squad answers for its own units.');
+      const inner = cmd.cmd as Command | undefined;
+      if (!inner || typeof inner !== 'object' || !ON_BEHALF.has(inner.kind)) return no('That cannot be sent for the other squad.');
+      return check(data, state, inner);
+    }
     case 'setPartState': {
       const target = state.tokens.find((x) => x.uid === cmd.uid);
       if (!target) return no('That unit is not on the board.');
@@ -2057,8 +2083,9 @@ function checkActed(
     }
     case 'focus': {
       // ZPA-39 Cadaver's Focus consumes nothing, so 4.10's floor has no spend
-      // to bite on and a Cadaver may Focus at 1 Link — or at 0, Shutdown, where
-      // it can still defend.
+      // to bite on and a Cadaver may Focus at 1 Link. NOT in Shutdown: no pilot
+      // skill triggers there (FAQ L3), so focusIsFree is off and the floor
+      // bites. This used to say a Shutdown Cadaver could still Focus at 0.
       if (focusIsFree(data, t)) return ok;
       // The last Link can never be spent voluntarily (4.10, FAQ L1).
       if ((t.link ?? 0) < 2) return no('Focus spends 1 Link, and the last Link can never be spent voluntarily (4.10).');
@@ -2204,6 +2231,32 @@ function checkActed(
       // is its own command, so this only guards against a free second roll.
       if (mine && !cmd.focused) return no('That unit has already rolled.');
       if (cmd.focused && (!mine || focused)) return no('Focus rerolls a roll that has been made, and only once here.');
+      // In its turn (FAQ G4): both sides declare first, then the Initiator
+      // rerolls, then the Responder. A reroll out of turn is refused rather
+      // than applied, or a side could reroll after watching the other's.
+      if (cmd.focused && counterStage(data, state.tokens, c) !== (cmd.uid === c.initiatorUid ? 'rerollI' : 'rerollR')) {
+        return no('A Focus reroll waits for both sides to declare, and the Initiator rerolls first (FAQ G4).');
+      }
+      return ok;
+    }
+    case 'forceShutdown': {
+      const target = state.tokens.find((x) => x.uid === cmd.targetUid);
+      if (!target) return no('That target is not on the board.');
+      if (target.kind !== 'mech') return no('Only a Mech has a Stance to switch.');
+      if ((target.partStates.torso ?? 'intact') === 'destroyed') return no(`${target.label} is destroyed.`);
+      if (target.stance === 'shutdown') return no(`${target.label} is already in Shutdown Stance.`);
+      return ok;
+    }
+    case 'declareCounterFocus': {
+      const c = state.script?.counter;
+      if (!c) return no('No Electronic Counter-roll is open.');
+      if (cmd.uid !== c.initiatorUid && cmd.uid !== c.responderUid) return no('That unit is not in this Counter-roll.');
+      if (counterStage(data, state.tokens, c) !== (cmd.uid === c.initiatorUid ? 'declareI' : 'declareR')) {
+        return no('It is not that side\'s turn to declare a Focus: once both hands are in, the Initiator declares first, then the Responder (FAQ G4).');
+      }
+      if (cmd.use && !focusIsFree(data, t) && (t.link ?? 0) < 2) {
+        return no('Focus spends 1 Link, and the last Link can never be spent voluntarily (4.10).');
+      }
       return ok;
     }
     case 'disarm': {
@@ -2248,7 +2301,7 @@ function checkActed(
         // question.
         if (c.responderUid !== cmd.uid) return no(`${t.label} is not the Responder of this Counter-roll.`);
         if (c.initiatorUid !== cmd.targetUid) return no(`${target.label} did not open this Counter-roll.`);
-        if (c.initRoll === null || c.respRoll === null) return no('The Counter-roll is not settled yet.');
+        if (counterStage(data, state.tokens, c) !== 'done') return no('The Counter-roll is not settled yet: both hands, both Focus declares and their rerolls come first (FAQ G4).');
         if (c.provoke) return no('That Counter-roll has already been answered.');
       }
       // No `else` refusal: freeplay's ElectronicHelper runs the whole contest
@@ -2347,7 +2400,11 @@ function checkActed(
     }
     case 'grantExtra': {
       if (t.kind !== 'mech') return no('Only a Mech takes an Extra Action Opportunity.');
-      if ((t.link ?? 0) < cmd.linkCost) return no(`This needs ${cmd.linkCost} Link, and ${t.label} has ${t.link ?? 0}.`);
+      // More than the cost, never exactly it: the last Link can never be spent
+      // voluntarily (4.10), which is also why every card that grants this sets a
+      // minimum above its cost. `<` let a Mech on exactly the cost pay down to 0
+      // and Shut Down, which no menu offered and the command took.
+      if ((t.link ?? 0) <= cmd.linkCost) return no(`This costs ${cmd.linkCost} Link and the last Link can never be spent voluntarily (4.10), so ${t.label} needs more than ${cmd.linkCost}; it has ${t.link ?? 0}.`);
       return ok;
     }
     case 'stabilise': {
@@ -2566,12 +2623,92 @@ function checkActed(
       // The chip is placed on a unit the Harpoon just hit, so it always starts
       // inside its own leash; one placed outside would come straight back off
       // under the same rule that removes it.
-      if (rangeBetween(t, target).range > cmd.range) {
+      // Not measured on a table with no board: every unit stands on a
+      // placeholder cell there (a Freeform pad puts the squads 33 rows apart),
+      // so the Tether was refused on every hit and the arm was left on its
+      // Tether Mode face with no leash. settleTethers skips such a table too.
+      if (!state.noBoard && rangeBetween(t, target).range > cmd.range) {
         return no(`${target.label} is already further than ${cmd.range} Grids away.`);
       }
       return ok;
     }
   }
+}
+
+// C4 of the 2026-09-25 audit. A hand-set Part state is the table's record of
+// damage it resolved itself, so crossing INTO Destroyed carries what a
+// Penetration carries - the Link (4.4.4, Fortitude aside), the lost-Part ledger
+// cards 300 and 500 read, the kill that Annihilation, Weapon Test and Mercy
+// count, and the Integrity-Loss credit (FAQ P4) - and crossing back OUT takes
+// them off again, so a mis-tap costs one more tap and nothing else. It used to
+// record the state and nothing more. The credit goes to the OTHER squad: no
+// one else can have done it, and on a one-phone pad the recorder's own seat
+// says nothing about who fired. The unit id is unknown, so it is 0, which no
+// Weapon Test target ever is.
+function handTapBookkeeping(data: GameData, state: GameState, t: Token, slot: string, was: PartState, now: PartState): void {
+  const into = was !== 'destroyed' && now === 'destroyed';
+  const outOf = was === 'destroyed' && now !== 'destroyed';
+  if (!into && !outOf) return;
+  const killer = { side: (t.side === 's1' ? 's2' : 's1') as Side, uid: 0 };
+  const victim = { side: t.side, kind: t.kind, lowValue: lowValueUnit(data, t) };
+  const whole = slot === (t.kind === 'mech' ? 'torso' : 'main');
+  const tasks = normaliseTasks(state.tasks);
+  if (into) {
+    if (t.kind === 'mech') {
+      if (!keepsLinkOnPartLoss(data, t)) {
+        t.link = Math.max(0, (t.link ?? 0) - 1);
+        if (t.link === 0 && t.stance !== 'shutdown') t.stance = 'shutdown';
+      }
+      t.lastDamagedBy = killer;
+      recordPartLoss(tasks, t, slot);
+      applyKill(tasks, killer, victim, 'part');
+    }
+    if (whole) {
+      applyKill(tasks, killer, victim, 'unit');
+      recordUnitLoss(tasks, t);
+    }
+  } else {
+    if (t.kind === 'mech') {
+      // The Link comes back; the Stance does not - leaving Shutdown takes a
+      // Reboot whatever put the Mech there (4.1.1).
+      if (!keepsLinkOnPartLoss(data, t)) t.link = Math.min(maxLink(data, t), (t.link ?? 0) + 1);
+      unrecordPartLoss(tasks, t, slot);
+      retractKill(tasks, killer, victim, 'part');
+    }
+    if (whole) {
+      retractKill(tasks, killer, victim, 'unit');
+      for (const s of Object.keys(t.partStates)) if (t.partStates[s as PartSlot | 'main'] !== 'destroyed') unrecordPartLoss(tasks, t, s);
+    }
+  }
+  state.tasks = tasks;
+}
+
+// INTEGRITY LOSS (4.4.4, 3.7.1): a Mech down to 2 Parts leaves in the End
+// Phase, the kill credited to the LAST unit that reduced its Part count (FAQ
+// P4). One implementation for the Guided End Phase's Remove step and the
+// scriptless round turn a Freeform pad makes, which never removed one at all.
+function removeIntegrityLoss(data: GameData, state: GameState): void {
+  const dying = state.tokens.filter((x) => x.kind === 'mech' && Object.values(x.partStates).filter((p) => p !== 'destroyed').length <= 2);
+  if (!dying.length) return;
+  const tasks = normaliseTasks(state.tasks);
+  for (const v of dying) {
+    if (v.lastDamagedBy) applyKill(tasks, v.lastDamagedBy, { side: v.side, kind: v.kind, lowValue: lowValueUnit(data, v) }, 'unit');
+    // Everything still bolted to it leaves with it. A Mech can withdraw
+    // on Integrity Loss with a live backpack, and the -1 riders are owed
+    // all the same — nothing on the board records that after this line.
+    recordUnitLoss(tasks, v);
+  }
+  state.tasks = tasks;
+  state.tokens = state.tokens.filter((x) => !dying.includes(x));
+}
+
+// WHAT A FOCUS COSTS, in one place: the `focus` command and a Counter-roll's
+// Focus declare both pay through it, so the two cannot disagree about Cadaver
+// or about the Shutdown at 0.
+function payFocus(data: GameData, t: Token): void {
+  if (focusIsFree(data, t)) return;
+  t.link = Math.max(0, (t.link ?? 0) - 1);
+  if (t.link === 0 && t.kind === 'mech' && t.stance !== 'shutdown') t.stance = 'shutdown';
 }
 
 // Every command lands through here, so the board's derived relationships are
@@ -2645,6 +2782,10 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       r.phase++;
     } else {
       if (cmd.sweep && !state.script) {
+        // The End Phase a scriptless table turns in one go (3.7.1 then 3.7.2):
+        // Integrity Loss first, which a Freeform pad never removed at all, so
+        // a Mech on 2 Parts stayed in play and nobody was credited the kill.
+        removeIntegrityLoss(data, state);
         for (const x of state.tokens) ageTokens(x);
         clearCommandTokens(state);
       }
@@ -2754,19 +2895,7 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       // Integrity Loss (4.4.4): a Mech down to 2 Parts leaves in the End Phase.
       // The kill is credited to the LAST unit that reduced its Part count
       // (FAQ P4), which applyPenetration recorded on the way down.
-      const dying = state.tokens.filter((x) => x.kind === 'mech' && Object.values(x.partStates).filter((p) => p !== 'destroyed').length <= 2);
-      if (dying.length) {
-        const tasks = normaliseTasks(state.tasks);
-        for (const v of dying) {
-          if (v.lastDamagedBy) applyKill(tasks, v.lastDamagedBy, { side: v.side, kind: v.kind, lowValue: lowValueUnit(data, v) }, 'unit');
-          // Everything still bolted to it leaves with it. A Mech can withdraw
-          // on Integrity Loss with a live backpack, and the -1 riders are owed
-          // all the same — nothing on the board records that after this line.
-          recordUnitLoss(tasks, v);
-        }
-        state.tasks = tasks;
-      }
-      state.tokens = state.tokens.filter((x) => !dying.includes(x));
+      removeIntegrityLoss(data, state);
     }
     if (cmd.step === 'tasks' && !state.noBoard) {
       const tasks = normaliseTasks(state.tasks);
@@ -3279,9 +3408,16 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
     return;
   }
 
+  if (cmd.kind === 'onBehalf') {
+    applyCommand(data, state, cmd.cmd);
+    return;
+  }
   if (cmd.kind === 'setPartState') {
     const target = state.tokens.find((x) => x.uid === cmd.uid);
-    if (target) target.partStates[cmd.slot] = cmd.state;
+    if (!target) return;
+    const was = target.partStates[cmd.slot] ?? 'intact';
+    target.partStates[cmd.slot] = cmd.state;
+    handTapBookkeeping(data, state, target, cmd.slot, was, cmd.state);
     return;
   }
   if (cmd.kind === 'leaveGuided') {
@@ -3726,9 +3862,7 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       // either. All four Focus senders keep sending a plain `focus`: the rule
       // lives in the command, which is the single source of truth the four
       // disagreeing UI gates used not to have.
-      if (focusIsFree(data, t)) return;
-      t.link = Math.max(0, (t.link ?? 0) - 1);
-      if (t.link === 0 && t.kind === 'mech' && t.stance !== 'shutdown') t.stance = 'shutdown';
+      payFocus(data, t);
       return;
     }
     case 'restoreLink': {
@@ -3797,6 +3931,8 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
         respRoll: null,
         initFocused: false,
         respFocused: false,
+        initDeclare: null,
+        respDeclare: null,
         provoke: null,
         thenAttack: cmd.thenAttack ? { actionId: cmd.thenAttack.actionId } : null,
       };
@@ -3812,6 +3948,21 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
         c.respRoll = [...cmd.faces];
         if (cmd.focused) c.respFocused = true;
       }
+      return;
+    }
+    case 'forceShutdown': {
+      const target = state.tokens.find((x) => x.uid === cmd.targetUid);
+      if (target && target.kind === 'mech') target.stance = 'shutdown';
+      return;
+    }
+    case 'declareCounterFocus': {
+      const c = sc?.counter;
+      if (!c) return;
+      if (cmd.uid === c.initiatorUid) c.initDeclare = cmd.use;
+      else if (cmd.uid === c.responderUid) c.respDeclare = cmd.use;
+      else return;
+      // The Link, paid with the declare through the focus command's own debit.
+      if (cmd.use) payFocus(data, t);
       return;
     }
     case 'disarm': {

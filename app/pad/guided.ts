@@ -17,7 +17,7 @@ import { canAct, dialHidden, eligibleUnits, isLoopPhase, loopComplete, nextTurn,
 import { deployTurn, deployable, deploymentComplete, firstPlayerFrom, normaliseSetup, rollTotal } from '../src/setup';
 import { ensureScript } from '../src/glue';
 import { canActivate, canAttackMode, canOverload, canPerform, costOf, extrasLeft, lengthOf, OVERLOAD_MAX, type TickVerdict } from '../src/ticks';
-import { actionRange, linkSupportOf, maxLink, tokenCleanupOf, type LinkSupport, type TokenCleanup, targetStatusGrant, twoHandedUse, chargeableSlots, coordinationFor, coordinationOnOpportunityEnd, electronicValue, extraActivationOf, formSwitch, guidedActions, initiativeFor, isChargeAction, isElectronicAttack, linkTickTraitOn, loanedParts, opportunityBonusOn, pilotCard, repairSpec, resupplyOf, selfGrantWhy, selfStatusGrant, SLOT_LABEL, tokenCards, transformOffer, unfoldsOwed } from '../src/units';
+import { actionRange, knockbackOf, linkSupportOf, maxLink, tokenCleanupOf, type LinkSupport, type TokenCleanup, targetStatusGrant, twoHandedUse, chargeableSlots, coordinationFor, coordinationOnOpportunityEnd, electronicValue, extraActivationOf, formSwitch, guidedActions, initiativeFor, isChargeAction, isElectronicAttack, linkTickTraitOn, loanedParts, opportunityBonusOn, pilotCard, repairSpec, resupplyOf, selfGrantWhy, selfStatusGrant, SLOT_LABEL, tokenCards, transformOffer, unfoldsOwed } from '../src/units';
 import { normaliseTasks } from '../src/tasks';
 import { dialsOf, hashDials, newSalt, type DialEntry } from '../src/secrecy';
 import { PHASES, removableTokens, TIMINGS, type CardAction, type GameState, type PartSlot, type Side, type Timing, type Token, type TokenPick } from '../src/types';
@@ -46,7 +46,7 @@ export interface GuideApi {
   readiness(): { me: boolean; them: boolean };
   // Opens the attack window for a Firing or Melee Action (attack.ts); the
   // pad pays the Action once the table has judged the shot.
-  attack?(uid: number, actionId: string, opts?: { electronic?: boolean; granted?: boolean }): void;
+  attack?(uid: number, actionId: string, opts?: { electronic?: boolean; granted?: boolean; only?: number }): void;
   // The engine's verdict without performing, for a chip that shows why not.
   check(cmd: Command): CheckResult;
   // The Tactics Cards this side could play in the phase that is on, and the
@@ -667,7 +667,13 @@ async function performRouted(api: GuideApi, t: Token, a: CardAction): Promise<vo
     if (chargeSlot === null) return;
   }
   if (!api.send({ kind: 'performAction', seat: t.side, uid: t.uid, actionId: a.id, ...(twoHandedUse(d, t, a) ? { twoHanded: true } : {}) })) return;
-  api.toast(`${t.label}: ${a.name.en}.`);
+  // A Moving Action that shoves - 181 Centaur's Push 1 onto an enemy Ground
+  // unit in the grid in front. The pad has no board to find the victim on, so
+  // it says what the table owes; it said nothing (audit 2026-09-25).
+  const shove = a.type === 'Moving' ? knockbackOf(a, d.actionTranslation(a.id)?.english ?? undefined) : undefined;
+  api.toast(shove
+    ? `${t.label}: ${a.name.en}. ${shove.push ? 'Push' : 'Knockback'} ${shove.grids}: an enemy Ground unit in the grid in front may be moved ${shove.grids}, settle it on the table.`
+    : `${t.label}: ${a.name.en}.`);
   const seat = t.side;
   const uid = t.uid;
   // Everything below rides the Action: one tap, one Undo (`chain: 'join'`).
@@ -1006,8 +1012,9 @@ export function guideAct(api: GuideApi, a: string, el: HTMLElement): boolean {
           stacked: true,
         });
         if (pick === null) return;
-        // The granted Melee spends the debt through its own apply.
-        api.attack?.(uid, pick, { granted: true });
+        // The granted Melee spends the debt through its own apply, and its one
+        // target is the attacker (FAQ C1); the pick used to list every enemy.
+        api.attack?.(uid, pick, { granted: true, only: r.fromUid });
       })();
       return true;
     }

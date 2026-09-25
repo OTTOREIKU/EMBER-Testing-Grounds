@@ -10,8 +10,9 @@
 // to read them from.
 import type { GameData } from '../src/data';
 import type { Command, CheckResult } from '../src/commands';
+import { normaliseTasks } from '../src/tasks';
 import { AttackHelper, combatRoleFor, type MirrorAct } from '../src/combat';
-import { eyeRerollName, missileGuidance, armorPiercing, coolingBonus, grantAdjusted, kcArmorReady, multiTargetLimit, pilotDiceBonus, stationaryAdjusted, structureOf, tokenCards, twoHandedUse } from '../src/units';
+import { chargeAdjusted, dodgeEnhanceOf, knockbackOf, eyeRerollName, missileGuidance, armorPiercing, coolingBonus, grantAdjusted, kcArmorReady, multiTargetLimit, pilotDiceBonus, stationaryAdjusted, structureOf, tokenCards, twoHandedUse } from '../src/units';
 import { statusCount } from '../src/types';
 import type { CardAction, DiceData, DieColor, GameState, PartSlot, Side, Token } from '../src/types';
 import type { RolledDie } from '../src/net';
@@ -45,6 +46,10 @@ export interface AttackApi {
 export interface RollBrief {
   watch: string[];
   blocks: { color: string; parts: { n: number; why?: string }[] }[];
+  // The faces must be entered: they travel to the other phone in a Guided
+  // room, and "Rolled" there sent an empty roll, or a Focus reroll of face 0
+  // on every die - Defense or Dodge, the best result (audit 2026-09-25).
+  faces?: boolean;
 }
 
 // The attack the window is running. `printed` is the Action as the card has
@@ -139,6 +144,13 @@ export interface TableVerdict {
   // Explosion damage from a detonating Projectile (4.7.6): no sight, no
   // facing, no Protection; only the defender may Focus.
   explosion?: boolean;
+  // What the board would have measured, asked of the table instead (audit
+  // 2026-09-25). `stationary`: the attacker has not moved this Opportunity,
+  // asked only where no Opportunity is tracked. `graceNote`: LPA-23-2's
+  // target is within 3 grids. `twoHanded`: the designation declined (FAQ A16).
+  stationary?: boolean;
+  graceNote?: boolean;
+  twoHanded?: 'declined';
 }
 
 let api: AttackApi | null = null;
@@ -202,7 +214,7 @@ function blocksFor(side: 'attack' | 'defense', pool: Record<string, number>): Ro
     const base = { red: printed.redDice ?? 0, yellow: printed.yellowDice ?? 0 };
     const adjusted = { red: action.redDice ?? 0, yellow: action.yellowDice ?? 0 };
     const cool = coolingBonus(a.data, attacker, action, adjusted);
-    const pilot = pilotDiceBonus(a.data, attacker, defender, action);
+    const pilot = pilotDiceBonus(a.data, attacker, defender, action, current.verdict.graceNote);
     for (const c of ['red', 'yellow'] as const) {
       close(c, [
         { n: base[c] },
@@ -213,55 +225,55 @@ function blocksFor(side: 'attack' | 'defense', pool: Record<string, number>): Ro
     }
     return out;
   }
-  const slot = (targetSlot ?? 'main') as PartSlot | 'main';
-  const state = defender.partStates[slot] ?? 'intact';
-  const card = tokenCards(a.data, defender).find((x) => String(x.slot) === slot)?.card;
-  const armor = Math.max(1, state === 'damaged' ? structureOf(a.data, defender, slot) : card?.armor ?? 0);
-  const parts: { n: number; why?: string }[] = [{ n: armor, why: state === 'damaged' ? 'Structure' : 'Armor' }];
-  let run = armor;
+  // The window's OWN White sources (AttackHelper.whiteSources), so this
+  // breakdown and the pool it explains are one derivation. It used to redo the
+  // sum here, and so it kept the old zero floor the day the window's was fixed
+  // (p.50: never below 1 White). Protection is split back into Terrain and Unit
+  // from the verdict, which is the one thing the window does not name.
   const from = verdict.protectionFrom ?? (verdict.protection === 4 ? 'both' : 'terrain');
-  if (verdict.protection && (from === 'terrain' || from === 'both')) { parts.push({ n: 2, why: 'Terrain' }); run += 2; }
-  if (verdict.protection && (from === 'unit' || from === 'both')) { parts.push({ n: 2, why: 'Unit' }); run += 2; }
-  const fragile = Math.min(run, statusCount(defender.statuses, 'fragile'));
-  if (fragile) { parts.push({ n: -fragile, why: 'Fragile' }); run -= fragile; }
-  const ap = Math.min(run, armorPiercing(a.data, attacker, action).total);
-  if (ap) { parts.push({ n: -ap, why: 'Armor Piercing' }); run -= ap; }
-  close('white', parts);
+  const parts: { n: number; why?: string }[] = [];
+  for (const src of helper?.whiteSources() ?? []) {
+    if (src.why === 'Protection' && from === 'both' && src.n === 4) parts.push({ n: 2, why: 'Terrain' }, { n: 2, why: 'Unit' });
+    else if (src.why === 'Protection') parts.push({ n: src.n, why: from === 'unit' ? 'Unit' : 'Terrain' });
+    else parts.push({ n: src.n, why: src.why });
+  }
+  close('white', parts.length ? parts : [{ n: pool.white ?? 0 }]);
   if (pool.blue) close('blue', [{ n: pool.blue, why: 'Dodge' }]);
   return out;
 }
 
 function brief(side: 'attack' | 'defense', pool: Record<string, number>): RollBrief {
-  return { watch: watchFor(side), blocks: blocksFor(side, pool) };
+  return { watch: watchFor(side), blocks: blocksFor(side, pool), faces: mirrored() };
 }
 
-// 4.14: an effect conditional on being Charged applies only when the Charge
-// Token is consumed for THIS Action, and consuming it is the player's choice.
-// The window reads Surplus keywords off the Action's text, so a kept Charge
-// takes the [Charged] line out, and a consumed one turns a plain "gains X"
-// into a keyword the Action simply has. An either/or line (R7MG: Multi-target
-// 3 or Suppression) is left as printed for the table to settle.
-function chargeAdjusted(a: CardAction, spent: boolean): CardAction {
-  const zh = a.description?.zh ?? '';
-  if (!/\[充能\]/.test(zh)) return a;
-  const lines = zh.split('\n');
-  const gate = lines.find((l) => /\[充能\]/.test(l)) ?? '';
-  const rest = lines.filter((l) => !/\[充能\]/.test(l)).join('\n');
-  if (!spent) return { ...a, description: { ...a.description, zh: rest } };
-  const gain = /\[充能\]\s*获得\s*([^.。·;；或]+?)\s*[.。]?\s*$/.exec(gate.trim());
-  if (!gain || /或/.test(gate)) return a;
-  return { ...a, description: { ...a.description, zh: rest }, keywords: [...(a.keywords ?? []), { inline: gain[1].trim() }] };
-}
 
-function attackActionOf(t: Token, actionId: string): CardAction | undefined {
+function attackActionOf(t: Token, actionId: string, verdict?: TableVerdict): CardAction | undefined {
   const a = api!;
   const printed = tokenCards(a.data, t).flatMap(({ card }) => card.actions ?? []).find((x) => x.id === actionId)
     ?? a.data.commonActions.find((x) => x.id === actionId);
   if (!printed) return undefined;
   const oppNow = a.state().script?.opp;
-  const opp = oppNow?.uid === t.uid ? oppNow : null;
+  // Freeform tracks no Opportunity, so [Stationary] never paid out there; the
+  // table's answer stands in for it.
+  const opp = oppNow?.uid === t.uid ? oppNow
+    : !a.state().script && verdict?.stationary !== undefined ? { moved: !verdict.stationary } : null;
   const granted = grantAdjusted(stationaryAdjusted(printed, opp), t, opp);
+  // FAQ A16: the designation may be declined, and the declined copy says so.
+  if (verdict?.twoHanded === 'declined') return twoHandedUse(a.data, t, granted) ? { ...granted, twoHandedDeclined: true } : granted;
   return twoHandedUse(a.data, t, granted)?.action ?? granted;
+}
+
+// In a FREEFORM room this phone runs both halves of the attack, so the
+// defender's spends leave it as the other squad's commands, which the relay
+// refuses. Carried inside an onBehalf sent as our own seat, they travel (C1 of
+// the 2026-09-25 audit). Everything else, and every Guided or solo game, is
+// sent as it is.
+export function forSeat(cmd: Command): Command {
+  const a = api!;
+  const me = a.me();
+  if (!a.inRoom() || a.state().script || !me || cmd.seat === me) return cmd;
+  if (cmd.kind !== 'focus' && cmd.kind !== 'setCharge' && cmd.kind !== 'spendCommand') return cmd;
+  return { kind: 'onBehalf', seat: me, cmd };
 }
 
 export function isAttackAction(a: CardAction): boolean {
@@ -305,15 +317,31 @@ export function mountAttack(into: HTMLElement): AttackHelper | null {
       a.render();
     },
     () => {},
-    // Forced Movement is the table's to carry out; the sheet says so.
-    (_attacker, defender, _action, hits) => {
-      if (hits > 0) a.toast(`${defender.label}: Knockback, settle it on the table.`);
+    // Forced Movement is the table's to carry out; the sheet says so. Only for
+    // an Action that shoves: this used to toast "Knockback" after every Hit of
+    // every weapon, and an On Hit shove needs a Hit that stood (a Parry that
+    // held reports none, FAQ C5).
+    (_attacker, defender, action, hits) => {
+      const kb = knockbackOf(action, a.data.actionTranslation(action.id)?.english ?? undefined);
+      if (kb && !(kb.onHit && hits === 0)) a.toast(`${defender.label}: ${kb.push ? 'Push' : 'Knockback'} ${kb.grids}, settle it on the table.`);
     },
     (killer, victim, what) => {
       a.send({ kind: 'recordKill', seat: killer.side, uid: killer.uid, targetUid: victim.uid, what });
     },
-    () => {},
-    (cmd) => { a.send(cmd); },
+    // A Penetrated bearer drops its Black Box, and the ATTACKER says where
+    // (5.3.1). The pad has no board to place it on, so it is recorded dropped
+    // where the bearer stands and the table puts the model in contact with the
+    // base. It never happened here at all (audit 2026-09-25).
+    (victim, attacker) => {
+      const box = normaliseTasks(a.state().tasks).items.find((i) => i.kind === 'blackbox' && i.bearerUid === victim.uid);
+      if (!box) return;
+      if (a.send({ kind: 'dropBlackBox', seat: attacker.side, uid: attacker.uid, itemId: box.id, to: { col: victim.col, row: victim.row } })) {
+        a.toast(`${victim.label} drops its Black Box: ${attacker.label}'s player places it in contact with its base (5.3.1).`);
+      }
+    },
+    // The verdict goes back to the window, which rerolls nothing on a spend
+    // the table refused.
+    (cmd) => a.send(forSeat(cmd)),
   );
   h.tokens = () => a.state().tokens;
   // No terrain and no smoke: every position-aware bonus that reads them is
@@ -371,7 +399,7 @@ export function beginAttack(attacker: Token, actionId: string, defender: Token, 
   if (!root) return false;
   const h = mountAttack(root);
   if (!h) { a.toast('No dice data loaded.'); return false; }
-  const adjusted = attackActionOf(attacker, actionId);
+  const adjusted = attackActionOf(attacker, actionId, verdict);
   if (!adjusted) return false;
   const action = chargeAdjusted(adjusted, !!verdict.chargeSpent);
   current = { attacker, action, printed: printedActionOf(attacker, actionId) ?? action, defender, verdict };
@@ -386,6 +414,7 @@ export function beginAttack(attacker: Token, actionId: string, defender: Token, 
   };
   h.blackRoller = a.blackDie();
   h.backAttack = verdict.backAttack;
+  h.tableGrace = verdict.graceNote ?? null;
   if (verdict.explosion) {
     h.start(
       attacker, action, defender,
@@ -519,7 +548,8 @@ function mirrorAct(act: MirrorAct, arg?: string | number[]): boolean {
       a.send({ kind: 'meleeEvade', seat });
       return true;
     case 'dodgeenhance':
-      if (!pay({ kind: 'spendCommand', seat, uid: df.uid })) return false;
+      // The mass-production HALO (GoF 1.021) spends nothing.
+      if (!dodgeEnhanceOf(a.data, df)?.free && !pay({ kind: 'spendCommand', seat, uid: df.uid })) return false;
       a.send({ kind: 'dodgeEnhance', seat });
       return true;
     case 'designate':

@@ -328,12 +328,14 @@ const mainSrc = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8')
 // rendered total — the attack tally is derived again at the attack step and at
 // resolve, so a total edited in one place would not survive the other.
 check('Chef exchange lives on the combat state', /eyeSwaps: number;/.test(combatSrc), true);
-// FOUR readers now: the attack-step summary, resolve(), the Concussion/Wrecking
-// drain, and the step card that shows the roll's result once the step is behind
-// you. Every one goes through the same tally, which is the point of counting
-// them: a new reader has to come here and say so rather than deriving its own
-// total, because a total derived twice is two totals that can disagree.
-check('every attack reader goes through attackIcons', (combatSrc.match(/this\.attackIcons\(c\)/g) ?? []).length, 4);
+// FIVE readers now: the attack-step summary, resolve(), the Concussion/Wrecking
+// drain, the step card that shows the roll's result once the step is behind
+// you, and Chef's Exchange, which moved to the resolve step on 2026-09-25 (an
+// Exchange is Damage Resolution's, 4.4.1 step 6.1). Every one goes through the
+// same tally, which is the point of counting them: a new reader has to come
+// here and say so rather than deriving its own total, because a total derived
+// twice is two totals that can disagree.
+check('every attack reader goes through attackIcons', (combatSrc.match(/this\.attackIcons\(c\)/g) ?? []).length, 5);
 // attackIcons is the ONLY thing allowed to read the raw attack roll; everything
 // else must come through it, or an exchange shows in one place and not another.
 const attackIconsBody = combatSrc.slice(
@@ -382,10 +384,13 @@ check('a fresh roll clears the exchange', /c\.eyeSwaps = 0;/.test(combatSrc), tr
 check('Chef is gated on a Melee Action', /timingOf\(c\.action\) !== 'melee'/.test(combatSrc), true);
 check('Chef needs a face-up token', /statusCount\(c\.attacker\.statuses, 'command'\)/.test(combatSrc), true);
 
-// Whistle: a SECOND source of rerolls, funded by a nearby Ally Mech's token
-// rather than by Link, so it must not touch the Focus allowance.
+// Whistle: a reroll funded by a nearby Ally Mech's token rather than by Link.
+// It used to stand beside Focus as a SECOND reroll; FAQ A6 allows one reroll
+// effect per roll, so since 2026-09-25 it is chosen at the Focus declare,
+// instead of Focus, and taken or lost with it.
 check('Whistle does not consume the Focus reroll', /Whistle reroll[\s\S]{0,900}?c\.rerolls\[which\]\[side\] = true/.test(combatSrc), false);
-check('Whistle spends the FUNDER’s token, not the roller’s', /kind: 'spendCommand', seat: funders\[0\]\.side, uid: funders\[0\]\.uid/.test(combatSrc), true);
+check('Whistle spends the FUNDER’s token, not the roller’s', /kind: 'spendCommand', seat: funder\.side, uid: funder\.uid/.test(combatSrc), true);
+check('and it is declared in place of Focus (FAQ A6)', /f\.attackerHow = 'whistle'/.test(combatSrc) && /f\.defenderHow = 'whistle'/.test(combatSrc), true);
 const wf = src.slice(src.indexOf('export function whistleFunders'), src.indexOf('// ---------- Charge (rulebook 4.14) ----------'));
 check('Whistle only funds a Drone roll', /roller\.kind !== 'drone'/.test(wf), true);
 check('Whistle checks Range 4', /WHISTLE_RANGE = 4/.test(src) && /rangeBetween\(m, roller\)\.range <= WHISTLE_RANGE/.test(wf), true);

@@ -104,8 +104,14 @@ const mech = (uid, side, col, extra = {}) =>
   // bare keywords - so route C is the one that has to carry it.
   const act = { description: { zh: '· 霰射 · 近战射击', en: '· Melee Firing\n· [On Hit] The hit part gains 1 Pursuit Token.' }, keywords: [] };
   const riders = U.onHitRiders(act, []);
-  check('Marking Shot grants the tracer on a hit',
-    riders.some((r) => r.kind === 'status' && r.statusId === 'targetTracer' && r.amount === 1), true);
+  // A PURSUIT Token since 2026-09-25: GoF 1.021 names and defines it apart
+  // from Target Tracer ("the Attacker may be considered as have Snipe"), and
+  // OTTO ruled that reading. ZHRA-202_A grants the Target Tracer in the same list.
+  check('Marking Shot grants the Pursuit Token on a hit',
+    riders.some((r) => r.kind === 'status' && r.statusId === 'pursuit' && r.amount === 1), true);
+  const railgun = { description: { zh: '', en: '· Armor Piercing 1\n· [On hit], target gains 1 Target Tracer Token.' }, keywords: [] };
+  check('and the MR24 grants the Target Tracer, lowercase marker and all',
+    U.onHitRiders(railgun, []).some((r) => r.kind === 'status' && r.statusId === 'targetTracer' && r.amount === 1), true);
   check('and a plain action grants none',
     U.onHitRiders({ description: { zh: '', en: 'Just a gun.' }, keywords: [] }, []).length, 0);
 }

@@ -7,6 +7,7 @@ import type { RollGroup } from '../src/combat';
 // the attacker's phone, the defender rolling across the table.
 import type { Command } from '../src/commands';
 import { ElectronicHelper, type EwAct } from '../src/combat';
+import { forSeat } from './attack';
 import { electronicStrength, isScanAction, scanStrips, targetTracingOn, tokenCards } from '../src/units';
 import { statusCount, STATUSES, type CardAction, type DiceData, type GameState, type Side, type Token } from '../src/types';
 import type { GameData } from '../src/data';
@@ -68,8 +69,10 @@ export function mountEw(into: HTMLElement): ElectronicHelper | null {
     () => a.render(),
     () => { a.closeCombat(); a.render(); },
     () => {},
-    // The local exchange (Freeform) applies its own effects through here.
-    (cmd) => { a.send(cmd); },
+    // The local exchange (Freeform) applies its own effects through here, and
+    // hears back whether each was taken. The Responder's Focus is the other
+    // squad's command and travels inside an onBehalf (forSeat).
+    (cmd) => a.send(forSeat(cmd)),
   );
   h.tokens = () => a.state().tokens;
   h.contestAct = (act, arg) => contestAct(act, arg);
@@ -123,7 +126,7 @@ export function syncContest(): void {
 }
 
 // Every press the window makes, as commands - the Match Centre's contestAct.
-function contestAct(act: EwAct, arg?: { uid?: number; indices?: number[] }): void {
+function contestAct(act: EwAct, arg?: { uid?: number; indices?: number[]; use?: boolean }): void {
   const a = api!;
   const s = a.state();
   const c = s.script?.counter;
@@ -141,11 +144,23 @@ function contestAct(act: EwAct, arg?: { uid?: number; indices?: number[] }): voi
     });
     return;
   }
+  if (act === 'declare' && unit) {
+    // FAQ G4: the declare pays the Link on arrival (declareCounterFocus), so
+    // the reroll after it costs nothing more, even asked for twice.
+    a.send({ kind: 'declareCounterFocus', seat: unit.side, uid: unit.uid, use: !!arg?.use });
+    a.render();
+    return;
+  }
   if (act === 'focus' && unit) {
     const had = unit.uid === init.uid ? c.initRoll : c.respRoll;
     const idx = (arg?.indices ?? []).filter((i) => had && i >= 0 && i < had.length);
-    if (!had || !idx.length) return;
-    if (!a.send({ kind: 'focus', seat: unit.side, uid: unit.uid })) { a.render(); return; }
+    if (!had) return;
+    // Keeping the roll closes this side's reroll turn with the faces it had.
+    if (!idx.length) {
+      a.send({ kind: 'rollCounter', seat: unit.side, uid: unit.uid, faces: had.slice(), focused: true });
+      a.render();
+      return;
+    }
     void a.rollFaces(idx.length, `${unit.label}: Focus reroll`).then((rolled) => {
       if (rolled.length !== idx.length) return;
       const faces = had.slice();

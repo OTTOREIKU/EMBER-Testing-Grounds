@@ -1270,12 +1270,37 @@ check('a unit outside the Counter-roll may not', C.check(data, wew, { kind: 'rol
 C.apply(data, wew, { kind: 'rollCounter', seat: 's1', uid: 1, faces: [0, 1, 2] });
 check('its faces are recorded', wew.script.counter.initRoll, [0, 1, 2]);
 check('and it cannot simply roll again', C.check(data, wew, { kind: 'rollCounter', seat: 's1', uid: 1, faces: [3] }).ok, false);
-check('but it may Focus once', C.check(data, wew, { kind: 'rollCounter', seat: 's1', uid: 1, faces: [3], focused: true }).ok, true);
-C.apply(data, wew, { kind: 'rollCounter', seat: 's1', uid: 1, faces: [3], focused: true });
-check('the Focus reroll replaces the faces', [wew.script.counter.initRoll, wew.script.counter.initFocused], [[3], true]);
-check('and not twice', C.check(data, wew, { kind: 'rollCounter', seat: 's1', uid: 1, faces: [4], focused: true }).ok, false);
+// FAQ G4: "the resolution order is the same as a normal dice roll". Focus
+// waits for BOTH hands, then the Initiator declares, then the Responder, then
+// each rerolls in that order. Until 2026-09-25 a side could Focus the moment
+// its own hand was down.
+const refocus = (faces) => ({ kind: 'rollCounter', seat: 's1', uid: 1, faces, focused: true });
+wew.tokens[0].link = 3;
+wew.tokens[1].link = 3;
+check('it may not Focus before the other side has rolled (FAQ G4)', C.check(data, wew, refocus([3])).ok, false);
 C.apply(data, wew, { kind: 'rollCounter', seat: 's2', uid: 2, faces: [5, 6] });
 check('the Responder rolls for itself', wew.script.counter.respRoll, [5, 6]);
+check('nor reroll undeclared once both are in', C.check(data, wew, refocus([3])).ok, false);
+check('the Responder may not declare before the Initiator', C.check(data, wew, { kind: 'declareCounterFocus', seat: 's2', uid: 2, use: false }).ok, false);
+check('the Initiator declares first', C.check(data, wew, { kind: 'declareCounterFocus', seat: 's1', uid: 1, use: true }).ok, true);
+C.apply(data, wew, { kind: 'declareCounterFocus', seat: 's1', uid: 1, use: true });
+check('and the declare pays the Link', wew.tokens[0].link, 2);
+check('it may not reroll before the Responder has declared', C.check(data, wew, refocus([3])).ok, false);
+C.apply(data, wew, { kind: 'declareCounterFocus', seat: 's2', uid: 2, use: false });
+check('but it may Focus once both have declared', C.check(data, wew, refocus([3])).ok, true);
+C.apply(data, wew, refocus([3]));
+check('the Focus reroll replaces the faces', [wew.script.counter.initRoll, wew.script.counter.initFocused], [[3], true]);
+check('and costs no second Link, whatever retried it', wew.tokens[0].link, 2);
+check('and not twice', C.check(data, wew, refocus([4])).ok, false);
+check('a side with 1 Link has passed without a word', (() => {
+  const w = ewWorld();
+  C.apply(data, w, startEw());
+  w.tokens[0].link = 1;
+  w.tokens[1].link = 3;
+  C.apply(data, w, { kind: 'rollCounter', seat: 's1', uid: 1, faces: [0] });
+  C.apply(data, w, { kind: 'rollCounter', seat: 's2', uid: 2, faces: [1] });
+  return C.check(data, w, { kind: 'declareCounterFocus', seat: 's2', uid: 2, use: true }).ok;
+})(), true);
 C.apply(data, wew, { kind: 'clearCounterRoll', seat: 's1' });
 check('and clearing closes it', wew.script.counter, null);
 
@@ -2093,13 +2118,23 @@ check('and a state that is not one is refused', C.check(data, psWorld(), ps({ st
 check('the other squad may record it too', C.check(data, psWorld(), ps({ seat: 's2' })).ok, true);
 
 const set = psWorld();
+set.tokens[0].link = 3;
 C.apply(data, set, ps({ state: 'destroyed' }));
 check('the state lands', set.tokens[0].partStates.torso, 'destroyed');
-// Unlike a Penetration this does NOT take a Link: it is bookkeeping, and the
-// Link was already lost at the table when the Part actually went.
-check('and no Link is taken', set.tokens[0].link, psWorld().tokens[0].link);
+// Since 2026-09-25 this DOES take the Link, as a Penetration does (4.4.4). It
+// used not to - "bookkeeping; the Link was already lost at the table" - but the
+// same pad's attack window takes it on a Penetration, and the hand tap was the
+// one road where the owner had to remember a second tap for the same event
+// (C4 of the mechanics audit). Tapping back out of Destroyed returns it, so a
+// mis-tap costs one more tap and nothing else.
+check('and the Link goes with it, as a Penetration takes it (4.4.4)', set.tokens[0].link, 2);
+check('and the other squad is credited the Part and the unit', [set.tasks.kills.s2.partsAndDrones, set.tasks.kills.s2.mechs], [1, 1]);
+check('and the lost Part is on the ledger', set.tasks.partsLost.some((p) => p.uid === 1 && p.slot === 'torso'), true);
 C.apply(data, set, ps({ state: 'intact' }));
 check('and it can be put back', set.tokens[0].partStates.torso, 'intact');
+check('with the Link, the kills and the ledger line taken back',
+  [set.tokens[0].link, set.tasks.kills.s2.partsAndDrones, set.tasks.kills.s2.mechs, set.tasks.partsLost.some((p) => p.uid === 1 && p.slot === 'torso')],
+  [3, 0, 0, false]);
 
 // ---------- claimItem: a Task Item settled BY HAND ----------
 //
@@ -3230,10 +3265,13 @@ globalThis.__baseData = data;
     check('and it neither loses the Link nor Shuts Down',
       [last.tokens[0].link, last.tokens[0].stance], [1, 'offensive']);
 
-    // A Shutdown Cadaver can still DEFEND, so it can still Focus that roll.
+    // A Shutdown Cadaver has NO pilot skill (FAQ L3), so Will to Survive is off
+    // and the Focus costs a Link it does not have. This pinned the opposite
+    // until the 2026-09-25 mechanics audit, which gave Cadaver the gate Quartz
+    // and Aster already carried.
     const out = world([hurt(6, 'ZPA-39', 0, {}), ]);
     out.tokens[0].link = 0; out.tokens[0].stance = 'shutdown';
-    check('and a Shutdown Cadaver may Focus its Defense Roll', C.check(data, out, foc(6)).ok, true);
+    check('and a Shutdown Cadaver may NOT Focus: no pilot skill in Shutdown (FAQ L3)', C.check(data, out, foc(6)).ok, false);
     C.apply(data, out, foc(6));
     check('with the Link still at 0 rather than going negative', out.tokens[0].link, 0);
 

@@ -380,9 +380,12 @@ console.log('\nPilot traits, against the shipped cards and dice\n');
   // (it wants the DOM), so the two pool-construction sites are asserted by
   // source, the way dodgedie.test.mjs pins its own five-file round trip.
   check('the single-target pool calls the reader',
-    /const bonus = coolingBonus\(this\.data, attacker, action, printed\);[\s\S]{0,600}?const pilot = pilotDiceBonus\(this\.data, attacker, defender, action\);[\s\S]{0,200}?printed\.yellow \+ bonus\.yellow \+ pilot\.yellow/.test(combat), true);
+    /const bonus = coolingBonus\(this\.data, attacker, action, printed\);[\s\S]{0,600}?const pilot = pilotDiceBonus\(this\.data, attacker, defender, action[^;]*\);[\s\S]{0,200}?printed\.yellow \+ bonus\.yellow \+ pilot\.yellow/.test(combat), true);
   check('and so does the Multi-Target pool, which is settled once and split',
-    /const cooled = coolingBonus\(this\.data, attacker, action, printed\);[\s\S]{0,700}?const pilot = pilotDiceBonus\(this\.data, attacker, primary, action\);[\s\S]{0,200}?printed\.yellow \+ cooled\.yellow \+ pilot\.yellow/.test(combat), true);
+    /const cooled = coolingBonus\(this\.data, attacker, action, printed\);[\s\S]{0,700}?const pilot = pilotDiceBonus\(this\.data, attacker, primary, action[^;]*\);[\s\S]{0,200}?printed\.yellow \+ cooled\.yellow \+ pilot\.yellow/.test(combat), true);
+  // A boardless table answers the range itself (the pad's Grace Note question).
+  check('and a boardless table hands in its own answer',
+    /pilotDiceBonus\(this\.data, attacker, defender, action, this\.noBoard \? this\.tableGrace \?\? undefined : undefined\)/.test(combat), true);
   check('and both pools are still built in exactly two places',
     (combat.match(/pilotDiceBonus\(this\.data/g) ?? []).length, 2);
 }
@@ -428,8 +431,10 @@ console.log('\nPilot traits, against the shipped cards and dice\n');
 
   check('surface 1 — the attack window asks the shared reader',
     /canAffordFocus\(this\.data, t\) && !!roll/.test(combat), true);
+  // Since 2026-09-25 the Counter-roll asks it inside counterStage (units.ts),
+  // which decides whose Focus turn it is on both surfaces (FAQ G4).
   check('surface 2 — the freeplay counter-roll asks it too',
-    /if \(!spent && canAffordFocus\(this\.data, t\)\)/.test(combat), true);
+    /return !!t && canAffordFocus\(data, t\);/.test(units) && /counterStage\(this\.data/.test(combat), true);
   // Surface 3 was the Match Centre's own counter-roll rows. Those are GONE the
   // same way surface 4 went: Electronic Warfare is resolved in the combat
   // window now, so the networked player presses SURFACE 2, the same reader the
@@ -456,10 +461,15 @@ console.log('\nPilot traits, against the shipped cards and dice\n');
   // The fifth is the Black Die's own Focus (4.10's note: the Part Die can be
   // rerolled too), which OTTO ratified on 2026-08-23 -- a separate roll, so a
   // separate spend through the same command.
+  // FOUR since 2026-09-25: the shared Counter-roll pays at its declare now
+  // (declareCounterFocus, FAQ G4), through payFocus, the same debit `focus`
+  // applies, so the Match Centre's contest no longer sends one of its own.
   check('every surface still sends the same plain focus command',
     (combat.match(/kind: 'focus'/g) ?? []).length
     + (hud.match(/kind: 'focus'/g) ?? []).length
-    + (mirror.match(/kind: 'focus'/g) ?? []).length, 5);
+    + (mirror.match(/kind: 'focus'/g) ?? []).length, 4);
+  check('and the Counter-roll declare pays through the same debit',
+    /case 'declareCounterFocus': \{[\s\S]{0,400}?payFocus\(data, t\)/.test(src('commands.ts')), true);
   check('and nothing outside the command decides what a Focus costs',
     /focusIsFree\(data, t\)/.test(src('commands.ts')), true);
 }

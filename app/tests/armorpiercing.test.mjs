@@ -321,15 +321,17 @@ check('Fragile alone still removes its own die', poolFor(PLAIN_FIRE, { def: frai
 check('Fragile and Armor Piercing STACK', poolFor(AP_FIRE, { def: frail }).white, 3);
 check('Fragile, Armor Piercing and Spike all stack', poolFor(AP_FIRE, { pilot: 'FPA-02', def: frail }).white, 2);
 
-// THE FLOOR. ZHLA-201's Armor is 1, so one Fragile Token empties the pool and
-// Armor Piercing has nothing left to take — it must clamp, not go negative.
+// THE FLOOR (printed p.50): "The number of White Dice in a Defense Roll cannot
+// be reduced below 1." ZHLA-201's Armor is 1, so it already stands on the floor
+// and neither Fragile nor Armor Piercing has a die it may take. These three
+// pinned an EMPTY pool until 2026-09-25, and that was the bug they pinned.
 const bare = defender({ statuses: ['fragile'] });
 check('the low-Armor Part is the 1-Armor one', byId('ZHLA-201').armor, 1);
-check('Armor 1 minus one Fragile is already 0', poolFor(PLAIN_FIRE, { def: bare, slot: 'leftHand' }).white, 0);
-check('and Armor Piercing on top of that clamps at 0 rather than going negative',
-  poolFor(AP_FIRE, { def: bare, slot: 'leftHand' }).white, 0);
-check('a Spike firing an MR14 into it is still 0, not -2',
-  poolFor(AP_FIRE, { pilot: 'FPA-02', def: bare, slot: 'leftHand' }).white, 0);
+check('Armor 1 under one Fragile keeps its 1 White', poolFor(PLAIN_FIRE, { def: bare, slot: 'leftHand' }).white, 1);
+check('and Armor Piercing on top of that cannot take the last die',
+  poolFor(AP_FIRE, { def: bare, slot: 'leftHand' }).white, 1);
+check('a Spike firing an MR14 into it is still 1, never 0',
+  poolFor(AP_FIRE, { pilot: 'FPA-02', def: bare, slot: 'leftHand' }).white, 1);
 
 // ---------- the number that goes on the WIRE ----------
 //

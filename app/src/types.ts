@@ -509,6 +509,24 @@ export const STATUSES: StatusDef[] = [
     note: 'Drones may target this unit even when it is not the closest enemy, and attack it as if in Offensive Stance.',
   },
   {
+    // 追击标记, as GoF 1.021 names and defines it for ZHLA-302's Marking Shot:
+    // "Pursuit Token: When this unit is attacked, the Attacker may be considerd
+    // as have Snipe keyword." The Chinese token is the one the rulebook calls
+    // Target Tracer, but the 1.021 English list names the two apart - ZHRA-202
+    // grants a Target Tracer Token in the same list - and OTTO ruled the Snipe
+    // reading for ZHLA-302 (2026-09-25). It was modelled as Target Tracer.
+    // Same physical token, so the same hexagon and the same printed faces.
+    id: 'pursuit',
+    appliesTo: ['mech', 'drone'],
+    decay: 'yellow',
+    shape: 'hexagon',
+    label: 'Pursuit',
+    icon: 'PUR',
+    tint: '#e0785a',
+    rule: 'An attacker of this unit may be treated as having Snipe, so it may designate the hit Part (GoF 1.021).',
+    note: 'Granted by ZHLA-302 Marking Shot. Whoever attacks this unit may be treated as having the Snipe keyword: the attacker may designate the target Part instead of rolling the Part Die (4.4.1 step 2). Against a defender who designates too - a Shield Up in Defensive Stance - both cancel and the Part Die decides (FAQ A14).',
+  },
+  {
     id: 'repaired',
     shape: 'triangle',
     appliesTo: ['mech'],
@@ -997,6 +1015,13 @@ export interface CounterRoll {
   respRoll: number[] | null;
   initFocused: boolean;
   respFocused: boolean;
+  // The Focus DECLARES (FAQ G4: "the resolution order is the same as a normal
+  // dice roll"): absent or null until that side has declared, then whether it
+  // will Focus. The Link is paid with the declare (declareCounterFocus), so the
+  // reroll that follows, and any retry of it, costs nothing more. counterStage
+  // in units.ts reads these with the rolls to say whose turn it is.
+  initDeclare?: boolean | null;
+  respDeclare?: boolean | null;
   // LPA-22 Yoyu's 挑衅 Provoke, and the ONLY answer this exchange holds that is
   // not a die: null while the offer is still open, then how it was answered.
   // The printed "may" is a real decision here — forcing an enemy into Offensive
@@ -1253,6 +1278,10 @@ function normaliseCounter(raw: unknown): CounterRoll | null {
     respRoll: faces(c.respRoll),
     initFocused: !!c.initFocused,
     respFocused: !!c.respFocused,
+    // Named here or dropped on every checkpoint, the lesson the comment below
+    // tells five times over: a rebuilt record would ask a side to declare again.
+    initDeclare: typeof c.initDeclare === 'boolean' ? c.initDeclare : null,
+    respDeclare: typeof c.respDeclare === 'boolean' ? c.respDeclare : null,
     // The FIFTH field of its class, and the fifth whitelist to be taught the
     // lesson: TOKEN -> migrateState, OPPORTUNITY -> normaliseOpportunity,
     // COMBAT VIEW -> normaliseCombatView, the defender's own questions inside

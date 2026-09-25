@@ -926,6 +926,9 @@ export const TOKEN_PRINT: Record<string, string[]> = {
   highlight: ['highlight-yellow', 'highlight-red'],
   lowProfile: ['lowProfile-green', 'lowProfile-red'],
   targetTracer: ['targetTracer-yellow', 'targetTracer-red'],
+  // The same printed token as Target Tracer (追击标记); GoF 1.021 names it
+  // apart for ZHLA-302 (types.ts, the pursuit StatusDef).
+  pursuit: ['targetTracer-yellow', 'targetTracer-red'],
   repaired: ['repaired'],
   // Round tokens: one printed face each. Ammo and Charge are only ever added
   // and removed here, and a spent Interception is drawn dimmed rather than

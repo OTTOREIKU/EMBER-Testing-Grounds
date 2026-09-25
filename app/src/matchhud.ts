@@ -20,7 +20,7 @@ import { actionPhaseComplete, activationOrder, alive, canAct, droneActionWhy, dr
 import { actionIdOf, canActivate, canAttackMode, canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed, type TickVerdict } from './ticks';
 import { gameResult, normaliseTasks, wipedOut, zoneCentreGrid, type Designation, type ScoreResult } from './tasks';
 import { previewScore } from './scoring';
-import { armorPiercing, armorPiercingNote, automaticShieldFor, canAffordFocus, focusIsFree, grantAdjusted, shockAttackOf, shockMoveAllowed, stationaryAdjusted, twoHandedUse, tokenCards, vpRiderFor, straightLineBonus, selfStatusGrant, selfGrantWhy, isRwsAction, linkTickTraitOn, isElectronicSupport, linkSupportOf, linkSupportTargets, maxLink, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, tokenCleanupOf, tokenCleanupTargets, type LinkSupport, type TokenCleanup } from './units';
+import { linkShockOf, tetheredBy, armorPiercing, armorPiercingNote, automaticShieldFor, canAffordFocus, focusIsFree, grantAdjusted, shockAttackOf, shockMoveAllowed, stationaryAdjusted, twoHandedUse, tokenCards, vpRiderFor, straightLineBonus, selfStatusGrant, selfGrantWhy, isRwsAction, linkTickTraitOn, isElectronicSupport, linkSupportOf, linkSupportTargets, maxLink, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, tokenCleanupOf, tokenCleanupTargets, type LinkSupport, type TokenCleanup } from './units';
 
 // The in-match HUD (Match Centre part 3a): one question at a time, per seat.
 // Everything here renders from the shared GameState and issues the same
@@ -88,7 +88,7 @@ export interface HudCtx {
   // decides what the defender may claim: an ordinary attack reads Terrain and
   // Unit Protection off the board, an Interception grants none and needs no
   // arc or sight (4.9), and an Explosion grants none and ignores facing (4.7.6).
-  startAttack(uid: number, actionId: string, targetUid: number, mode?: 'attack' | 'intercept' | 'explosion', opts?: { twoHandedDeclined?: boolean }): void;
+  startAttack(uid: number, actionId: string, targetUid: number, mode?: 'attack' | 'intercept' | 'explosion', opts?: { twoHandedDeclined?: boolean; charged?: boolean }): void;
   // Brings a side tab forward by name.
   showTab(name: 'squad' | 'details'): void;
   // The printed faces, for drawing the dice a roll landed on.
@@ -2862,7 +2862,7 @@ function seatOf(ctx: HudCtx): Side { return ctx.seat ?? ensureScript(ctx.state).
 
 // Every press the window can make, answered in one place. Each is a question
 // one of the two seats owns, so it travels as a command.
-function contestAct(ctx: HudCtx, act: EwAct, arg?: { uid?: number; indices?: number[] }): void {
+function contestAct(ctx: HudCtx, act: EwAct, arg?: { uid?: number; indices?: number[]; use?: boolean }): void {
   const s = ctx.state;
   const c = ensureScript(s).counter;
   if (!c) return;
@@ -2884,25 +2884,38 @@ function contestAct(ctx: HudCtx, act: EwAct, arg?: { uid?: number; indices?: num
     });
     return;
   }
+  if (act === 'declare' && unit) {
+    // FAQ G4: the declare travels on its own and pays the Link on arrival, so
+    // the reroll after it - and any retry of that reroll - costs nothing more.
+    const v = ctx.send({ kind: 'declareCounterFocus', seat: unit.side, uid: unit.uid, use: !!arg?.use });
+    if (!v.ok && v.why) ctx.noteNow(v.why);
+    ctx.refresh();
+    return;
+  }
   if (act === 'focus' && unit) {
     // THE PLAYER'S CHOICE OF WHICH DICE (4.10: "reroll any Dice in that roll").
     // The old panel rerolled the whole pool, which is a different and more
     // generous rule than the one printed.
     const had = unit.uid === init.uid ? c.initRoll : c.respRoll;
     const idx = (arg?.indices ?? []).filter((i) => had && i >= 0 && i < had.length);
-    if (!had || !idx.length) return;
-    // The Link is spent by the unit's own player, which is the whole reason this
-    // exchange is split across the two seats.
-    if (!ctx.send({ kind: 'focus', seat: unit.side, uid: unit.uid }).ok) { ctx.refresh(); return; }
+    if (!had) return;
+    // Keeping the roll closes this side's reroll turn with the faces it had.
+    if (!idx.length) {
+      ctx.send({ kind: 'rollCounter', seat: unit.side, uid: unit.uid, faces: had.slice(), focused: true });
+      ctx.refresh();
+      return;
+    }
+    // The Link was paid at the declare. It used to be spent HERE, and a retry
+    // after a server that did not answer spent it a second time.
     void ctx.rollHits(idx.length, focusIsFree(ctx.data, unit)
       ? 'Focuses the Counter-roll for free (Will to Survive)'
-      : 'spends 1 Link to Focus the Counter-roll').then((res) => {
+      : 'Focuses the Counter-roll').then((res) => {
       const faces = had.slice();
       idx.forEach((at, k) => { const f = res.dice[k]?.face; if (f !== undefined) faces[at] = f; });
       ctx.send({ kind: 'rollCounter', seat: unit.side, uid: unit.uid, faces, focused: true });
       ctx.refresh();
     }).catch(() => {
-      ctx.noteNow('The server did not answer the Focus reroll. The Link is spent; press it again.');
+      ctx.noteNow('The server did not answer the Focus reroll. Press it again: the Link is already paid, and a retry costs nothing more.');
       ctx.refresh();
     });
     return;
@@ -4241,7 +4254,9 @@ function launchPickPanel(ctx: HudCtx): string {
 // command, so the other seat sees the damage even though the dice tray itself
 // is the attacker's screen.
 
-let attackPick: { uid: number; actionId: string; refund?: { uid: number; slot: string }; twoHanded?: 'declined' } | null = null;
+// `only`: the one legal target when the rules name it - a Riposte answers the
+// Mech it parried and no one else (FAQ C1).
+let attackPick: { uid: number; actionId: string; refund?: { uid: number; slot: string }; twoHanded?: 'declined'; only?: number } | null = null;
 
 // The [Two-Handed] question, answered the same way for the panel and the press
 // (FAQ A16): the designation unless the player has declined it, and a marked
@@ -4253,8 +4268,8 @@ function handsFor(ctx: HudCtx, by: Token, granted: CardAction, choice?: 'decline
   return { action: use.action, use };
 }
 
-export function startAttackPick(uid: number, actionId: string): void {
-  attackPick = { uid, actionId };
+export function startAttackPick(uid: number, actionId: string, only?: number): void {
+  attackPick = { uid, actionId, ...(only !== undefined ? { only } : {}) };
   hudRef?.refresh();
 }
 
@@ -4330,15 +4345,22 @@ function attackPanel(ctx: HudCtx): string {
   // (they take ewPick at the ⌖ press), so the Repeater origins autoTargetsFor
   // has to consider do not arise on this path.
   const reach = actionRange(ctx.data, s.tokens, by, a);
+  // PDRH-202_B Link Shock: only a unit this one Tethers, at any distance and
+  // with no line of sight needed, so the board's reading is not asked at all.
+  const shock = linkShockOf(a);
   const rows = s.tokens
     .filter((t) => t.side !== by.side && t.deployed !== false && alive(t))
     .filter((t) => !autoLegal || !autoLegal.length || autoLegal.some((x) => x.uid === t.uid))
+    .filter((t) => m.only === undefined || t.uid === m.only)
+    .filter((t) => !shock || tetheredBy(by, t))
     .map((t) => {
       // STRICT, so the Range reading comes back as ✕ rather than ⚠ and the row
       // below disables itself on it. OTTO shot a Mech ten Grids away with a
       // Range 6 weapon and the game let him roll: range was a warning nobody
       // was stopped by, on the one page that is supposed to stop them.
-      const note = losNote(by, t, { ...a, range: reach }, terrain, s.tokens, smoke, true);
+      const note = shock
+        ? 'Link Shock: Tethered by this unit, so distance and line of sight do not matter'
+        : losNote(by, t, { ...a, range: reach }, terrain, s.tokens, smoke, true);
       // ⚠ is a warning the player may overrule; ✕ is an attack the rules do not
       // allow at all, and both Range (4.4.1) and blocked line of sight are that.
       // Freeplay warns for both because a table can house-rule; networked play
@@ -5875,14 +5897,25 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
       }
       // Same reading the row was drawn from, strict and through the effective
       // reach, so the re-check cannot disagree with the gate it is backing up.
-      const note = by && t && a
+      // The pick's own rules first: a Riposte's one target (FAQ C1), and a
+      // Link Shock's Tethered one, which also waives the board's reading.
+      if (t && ((m.only !== undefined && t.uid !== m.only) || (a && by && linkShockOf(a) && !tetheredBy(by, t)))) {
+        ctx.noteNow(m.only !== undefined
+          ? 'A Riposte answers the Mech that was parried, and no one else (FAQ C1).'
+          : 'Link Shock can only be used against a target Tethered by this unit (PDRH-202).');
+        ctx.refresh();
+        return;
+      }
+      const note = by && t && a && !linkShockOf(a)
         ? losNote(by, t, { ...a, range: actionRange(ctx.data, s.tokens, by, a) },
             terrainOf(ctx), s.tokens, s.smoke ?? [], true)
         : '';
       if (note.includes('✕')) {
         // Which of the two it was, because "cannot be made" with no reason is
         // the kind of refusal a player argues with.
-        ctx.noteNow(note.includes('range') || note.includes('adjacent')
+        ctx.noteNow(note.includes('Aerial')
+          ? `${t?.label ?? 'That target'} is an Aerial unit, and a Melee Action may not target one (4.4.1).`
+          : note.includes('range') || note.includes('adjacent')
           ? `${t?.label ?? 'That target'} is outside this Action's Range, so the attack cannot be made (4.4.1).`
           : 'Line of sight is blocked, so this attack cannot be made (4.4.1).');
         ctx.refresh();
@@ -5893,7 +5926,9 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     if (m) {
       if (m.twoHanded === 'declined' && pendingAction?.kind === 'performAction') pendingAction = { ...pendingAction, twoHanded: false };
       commitAction(ctx);
-      ctx.startAttack(m.uid, m.actionId, Number(el.dataset.attacktarget), 'attack', { twoHandedDeclined: m.twoHanded === 'declined' });
+      // A Charge spent for this attack is its refund: the window folds the
+      // [Charged] line in only when it was (chargeAdjusted).
+      ctx.startAttack(m.uid, m.actionId, Number(el.dataset.attacktarget), 'attack', { twoHandedDeclined: m.twoHanded === 'declined', charged: !!m.refund });
     }
     ctx.refresh();
   });
@@ -6172,7 +6207,9 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
       return;
     }
     pendingAction = { kind: 'performAction', seat: t.side, uid, actionId, granted: true };
-    startAttackPick(uid, actionId);
+    // The attacker, and only the attacker (FAQ C1). The list used to offer
+    // every enemy on the board.
+    startAttackPick(uid, actionId, r.fromUid);
     ctx.refresh();
   });
   on('[data-minego]', (el) => {

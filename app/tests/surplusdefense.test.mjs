@@ -48,8 +48,14 @@ const def = { ...mech(2, 's2', 'Defender', 3), mech: { torso: '172' } };
 // (Mutilation) — one of the three keywords that resolve Surplus Damage. It also
 // carries Armor Piercing 1, which is why the defender above is armoured.
 const card = data.cards.find((c) => c.id === 'ZHRA-201');
-const action = card?.actions?.find((a) => a.id === 'ZHRA-201_B');
-if (!action) throw new Error('ZHRA-201_B is gone from the card data; pick another Mutilation Action');
+const printed = card?.actions?.find((a) => a.id === 'ZHRA-201_B');
+if (!printed) throw new Error('ZHRA-201_B is gone from the card data; pick another Mutilation Action');
+// ZHRA-201_B prints its Mutilation as "[Two-Handed] Gains Mutilation": a grant
+// the pages fold in as an inline keyword once a Freehand is designated
+// (twoHandedAdjusted). surplusEffects stopped reading the grant line itself on
+// 2026-09-25, so the window is handed the adjusted copy, exactly as the pages
+// hand it over, and the fixture is still a Mutilation weapon.
+const action = { ...printed, keywords: [...(printed.keywords ?? []), { inline: '毁伤' }] };
 
 const root = makeEl('div');
 const helper = new AttackHelper(

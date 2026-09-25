@@ -88,15 +88,19 @@ console.log('\nThe defender declares before the roll (FAQ H9 / A18)');
 {
   const combat = readFileSync(new URL('../src/combat.ts', import.meta.url), 'utf8');
   const step = combat.slice(combat.indexOf('private stepDefense('), combat.indexOf('private stepResolve('));
-  const kc = step.indexOf('KC Armor: consume a Charge Token');
+  const declare = combat.slice(combat.indexOf('private stepDeclare('), combat.indexOf('private declareAnswered('));
   const evade = step.indexOf("'Melee Evasion: spend a Command Token");
   const dodge = step.indexOf("'Dodge Enhancement: spend a Command Token");
   const roll = step.indexOf('Roll defense dice');
-  check('all four are in the defense step', [kc, evade, dodge, roll].every((i) => i >= 0), true);
-  check('KC Armor is offered before the roll button', kc < roll, true);
+  check('the HALO pair and the roll are in the defense step', [evade, dodge, roll].every((i) => i >= 0), true);
+  // FAQ H9: KC Armor is declared after the target is named and BEFORE the
+  // hit-location die. Since 2026-09-25 it lives in the pre-roll declaration,
+  // where the defender has seen neither the Part nor the Attack Roll.
+  check('KC Armor is declared before the Part Die, and no longer at the defense step',
+    [declare.includes('KC Armor: consume a Charge Token'), step.includes('KC Armor: consume a Charge Token')], [true, false]);
   check('Melee Evasion is offered before the roll button', evade < roll, true);
   check('Dodge Enhancement is offered before the roll button', dodge < roll, true);
-  check('and the KC label no longer reads the roll', /defLightning/.test(step), false);
+  check('and the KC label never reads the roll', /defLightning/.test(step + declare), false);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

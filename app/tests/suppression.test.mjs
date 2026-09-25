@@ -97,10 +97,14 @@ function declare(action, defOpts = {}) {
 {
   const combat = readFileSync(new URL('../src/combat.ts', import.meta.url), 'utf8');
   const cmds = readFileSync(new URL('../src/commands.ts', import.meta.url), 'utf8');
-  // All four designation doors, so a Multi-Target's later targets and a
-  // Cleaving's new unit are declared targets too.
+  // Every designation door, so a Multi-Target's later targets are declared
+  // targets too. NOT a Cleave's new unit: Surplus Damage carries damage and
+  // nothing else, "No Action effects are inherited" (4.8). It used to be the
+  // fourth door here, and the audit of 2026-09-25 took it out.
   check('every designation door asks it',
-    (combat.match(/this\.suppressDeclared\(/g) ?? []).length, 4);
+    (combat.match(/this\.suppressDeclared\(/g) ?? []).length, 3);
+  const cleave = combat.slice(combat.indexOf('  private cleaveInto('), combat.indexOf('  private stepSurplus('));
+  check('and a Cleave does not', /suppressDeclared\(/.test(cleave), false);
   // The command layer owns the rule: target must be a Mech, Shutdown immune.
   const chk = cmds.slice(cmds.indexOf("case 'suppress': {"), cmds.indexOf("case 'suppress': {") + 600);
   check('the command refuses a non-Mech', /Suppression only moves a Mech/.test(chk), true);
