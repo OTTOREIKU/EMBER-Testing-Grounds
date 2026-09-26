@@ -1,6 +1,12 @@
 {
   "_comment": "Corrections to the box membership recorded in cards.json, keyed by box key. Each entry is authoritative for that box: on load the box is stripped from every card's containedIn, then re-added from the list here. Card ids map to quantityPerBox. Use this when the community data groups a set wrongly, rather than editing cards.json, which is regenerated from the builder bundle.",
   "boxes": {
+    "SINGLE_UN_TAURUS": {
+      "_note": "OTTO 2026-09-26, from his physical Single Pack Taurus: it also holds a TM35N Alligator Electronic Warfare Core (097), which the community data filed under Doorbreaker alone. Doorbreaker has it too (he checked that box as well), so 097 is now in both. The other seven cards are the community data's list, unchanged.",
+      "cards": {
+        "555": 1, "099": 1, "107": 1, "111": 1, "556": 1, "557": 1, "083": 1, "097": 1
+      }
+    },
     "GAME_PACK": {
       "_note": "OTTO 2026-09-16, from the publisher's store listing on the day it went on sale: one of each of its 7 cards. The community data had 2 copies of five of them.",
       "cards": {
