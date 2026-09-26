@@ -71,8 +71,15 @@ export const matchCard = (c: Card, q: string): boolean => {
   const acts = (c.actions ?? []).map((a) => `${a.name.en ?? ''} ${a.description?.en ?? ''}`).join(' ');
   return norm(`${cardName(c)} ${c.id} ${c.type ?? ''} ${kw} ${acts}`).includes(q);
 };
+// A Mechanics text is written in paragraphs and "- " list lines; search reads
+// it as the one run of prose it was, so a phrase still matches across a break.
+const flatRules = (s: string) => s.replace(/\s*\n+\s*(?:- )?/g, ' ');
 export const matchMechanic = (m: MechanicDef, q: string): boolean =>
-  !q || norm(`${m.name} ${m.text} ${m.ref ?? ''}`).includes(q);
+  !q || norm(`${m.name} ${m.basic ?? ''} ${(m.points ?? []).join(' ')} ${flatRules(m.text)} ${m.ref ?? ''}`).includes(q);
+// Whether a search is answered by the basic view alone. When it is not, the
+// entry opens its Advanced text, so the match the search found is on screen.
+export const matchMechanicBasic = (m: MechanicDef, q: string): boolean =>
+  !q || norm(`${m.name} ${m.basic ?? ''} ${(m.points ?? []).join(' ')}`).includes(q);
 export const matchPhase = (x: PhaseDef, q: string): boolean =>
   !q || norm(`${x.name} ${x.who ?? ''} ${x.can.join(' ')} ${x.cannot.join(' ')}`).includes(q);
 export const matchTiming = (x: TimingDef, q: string): boolean =>

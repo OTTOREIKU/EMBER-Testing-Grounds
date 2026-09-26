@@ -14,10 +14,11 @@
 // are synchronous string builders called during a render; a module-level await
 // here would make every importer async. Each page calls useCardData() once,
 // after its own loadData() resolves and before it draws anything.
-import { FACTION_LABEL, actionIconUrl, cardName, mechPartUrl, portraitUrl, statIconIsPlated, statIconUrl, tabImageUrl, traitName, zeroCostReason, type BoxDef, type GameData, type KeywordDef } from './data';
+import { FACTION_LABEL, actionIconUrl, cardName, mechPartUrl, portraitUrl, statIconIsPlated, statIconUrl, tabImageUrl, traitName, zeroCostReason, type BoxDef, type GameData, type KeywordDef, type MechanicDef } from './data';
 import { LENGTH_NAME, TICK_COST, costLabel, lengthOf, timingOf } from './ticks';
 import { diceRow, maskGlyphs, tickCapsule } from './glyphs';
 import { linkIcon } from './icons';
+import { matchMechanicBasic } from './refsearch';
 import { type Card, type CardAction } from './types';
 
 let data: GameData;
@@ -322,14 +323,64 @@ export function mechBlocks(...text: (string | undefined)[]): string {
     })
     .map(
       (m) => `<details class="ref-mech">`
-        + `<summary><b>${esc(m.name)}</b>${m.ref ? ` <em>(${esc(m.ref)})</em>` : ''}</summary>`
+        // An entry with a basic view keeps its sources behind Advanced, so the
+        // summary names the rule and nothing else.
+        + `<summary><b>${esc(m.name)}</b>${m.ref && !m.basic ? ` <em>(${esc(m.ref)})</em>` : ''}</summary>`
         // linkKeywords runs on the BODY only. In the summary its [data-kw]
         // anchors would sit inside the toggle, so one tap would both open the
         // panel and navigate away from it.
-        + `<div class="ref-mech-b">${linkKeywords(m.text)}</div>`
+        + `<div class="ref-mech-b">${mechanicBody(m)}</div>`
         + `</details>`,
     )
     .join('');
+}
+
+// A Mechanics entry in two layers: the basic view (what it is, then the rules
+// a player needs most) and, behind Advanced, the full breakdown with its FAQ
+// rulings and sources. An entry without a basic view draws its text as before.
+// `q` is the Rules search: when only the Advanced text answers it, Advanced
+// starts open so the match is on screen.
+export function mechanicBody(m: MechanicDef, q = ''): string {
+  if (!m.basic) return ruleBlocks(m.text);
+  const points = (m.points ?? []).map((p) => `<li>${linkKeywords(p)}</li>`).join('');
+  return `<p class="mech-basic">${linkKeywords(m.basic)}</p>`
+    + (points ? `<ul class="mech-points">${points}</ul>` : '')
+    + `<details class="mech-adv"${matchMechanicBasic(m, q) ? '' : ' open'}>`
+    + `<summary>Advanced</summary>`
+    + `<div class="mech-adv-b">${ruleBlocks(m.text)}</div>`
+    + (m.ref ? `<p class="mech-src">${esc(m.ref)}</p>` : '')
+    + `</details>`;
+}
+
+// The full text in readable pieces: a blank line starts a paragraph, and lines
+// that begin "- " are a list, which may follow a lead-in line in the same
+// paragraph. OTTO (2026-09-25): one block of rulings was hard to read even
+// behind Advanced.
+export function ruleBlocks(text: string): string {
+  let html = '';
+  for (const block of text.split(/\n\s*\n/)) {
+    let para: string[] = [];
+    let items: string[] = [];
+    const flush = (): void => {
+      if (para.length) html += `<p>${linkKeywords(para.join(' '))}</p>`;
+      if (items.length) html += `<ul class="mech-list">${items.map((i) => `<li>${linkKeywords(i)}</li>`).join('')}</ul>`;
+      para = [];
+      items = [];
+    };
+    for (const raw of block.split('\n')) {
+      const line = raw.trim();
+      if (!line) continue;
+      if (line.startsWith('- ')) {
+        if (para.length) flush();
+        items.push(line.slice(2));
+      } else {
+        if (items.length) flush();
+        para.push(line);
+      }
+    }
+    flush();
+  }
+  return html;
 }
 
 export function keywordCard(k: KeywordDef): string {
@@ -430,125 +481,125 @@ function officialLink(c: Card): string {
   return `<p class="ref-official"><a href="${url}" target="_blank" rel="noopener noreferrer">Official card page ↗</a></p>`;
 }
 
-// ONE Action, drawn the way the card prints it. Split out of cardDetail so the
-// pad can open a Part's actions inside its own row on the sheet with the same
-// markup the reference draws - one renderer, two pages. Everything in here is
-// exactly what the card detail's action loop did.
-export function actionBlock(c: Card, a: CardAction): string {
-  const len = lengthOf(a);
-  const cost = len ? `${LENGTH_NAME[len]} (${costLabel(TICK_COST[len])})` : '';
-  const en = englishOnly(a.description?.en);
-  const tr = data.actionTranslation(a.id);
-  let text = '';
-  if (en) text = linkKeywords(en);
-  else if (tr?.english) {
-    // THE NOTE KEYS ON PROVENANCE, which the data has recorded all along
-    // and this ignored. `action_translations.json` marks every entry with a
-    // `confidence`, and 55 of the 61 actions that were printing "translated
-    // from the Chinese card text" are marked `printed`: they were read off
-    // the English card, so the note was not merely noise, it was false. The
-    // file is named for the machine-translated entries it started as, and
-    // the printed ones were filed into it later as corrections.
-    //
-    //   printed            the English card says this. No note.
-    //   printed-truncated  the English card says this but overflows its box,
-    //                      so the tail is completed from the Chinese. Worth
-    //                      a note, but not THAT note.
-    //   anything else      genuinely our translation. 6 actions.
-    const conf = String(tr.confidence ?? '');
-    // The entry's own note explains the individual case; it is too long for
-    // the line but exactly right as a tooltip.
-    const why = tr.note ? ` title="${esc(tr.note)}"` : '';
-    const flag =
-      conf === 'printed'
-        ? ''
-        : conf.startsWith('printed')
-          ? `<em class="ref-note"${why}> (the printed English runs off the card; the end is completed from the Chinese)</em>`
-          : `<em class="ref-note"${why}> (translated from the Chinese card text)</em>`;
-    text = `${linkKeywords(tr.english)}${flag}`;
-  }
-  else text = '<em class="ref-note">No rules text on this card.</em>';
-  // The Chinese DESCRIPTION has to be fed in as well as the Chinese name.
-  // Several mechanics can only be matched on it - Loads is `负载`, Mines is
-  // `地雷`, the Pholcus is `自行地雷` - because the English prints those as
-  // ordinary words that fire inside "payload" and "determined". Passing only
-  // the name meant those three entries were written, shipped, and never once
-  // displayed on the card that needed them.
-  const mechHtml = mechBlocks(a.name.en, a.name.zh, en, a.description?.zh, tr?.english ?? undefined);
-  const icon = actionIconUrl(a.type);
-  // THE PRINTED TICK CAPSULE. It counts TOTAL Ticks the way the card draws
-  // them: Short 1, Medium 2, Long 3. The card's three slots are identical,
-  // so the Maneuver Tick a Long action also costs is named in the title
-  // rather than shown in a second colour, which would be our invention
-  // painted onto a mark players already know from the table.
-  const ticks = len ? TICK_COST[len].maneuver + TICK_COST[len].action : 0;
-  // THE ROW, laid out the way the card prints it: the type icon on a light
-  // plate, then the tick capsule, then the name on a bar in the TIMING
-  // colour, then the rules text underneath. Timings the dial can be set to
-  // get their tint; a Passive, Immediate, Delay or Detonation is not a
-  // timing at all and takes the neutral bar the cards give it.
-  // A Command or Automatic action is NOT taken on the Timing Dial, and the
-  // printed card says so by giving it a BLACK bar instead of a timing
-  // colour (ZHDR-201's |TEAR| and |MISSILE| are both black). Following that
-  // also removes a collision our own tints created: the Command mark's blue
-  // sat on the blue Movement bar and vanished into it.
-  const dialless = a.speed === 'auto' || a.speed === 'command';
-  const timing = dialless ? undefined : timingOf(a);
-  // The meta line drops the length, which the capsule beside the name now
-  // says better than the words did. What is left is the numbers, and the
-  // Range is SPELLED OUT: "R 6" reads as a die code beside "3R", and the
-  // two mean entirely different things.
-  const numbers = [
-    a.range === 0 ? esc('Range --') : a.range ? esc(`Range ${a.range}`) : '',
-    // The pool in the FACTION'S printed order: GoF leads with red, RDL
-    // and UN with yellow. diceRow carries the evidence.
-    diceRow(a.yellowDice, a.redDice, data.factionOf(c)),
-    a.storage ? esc(`Ammo ${a.storage}`) : '',
-  ]
-    .filter(Boolean)
-    .join(' · ');
-  return `<div class="ref-action${timing ? ` t-${timing}` : dialless ? ' t-dialless' : ''}">
-    <div class="ra-h">
-      ${icon ? `<span class="ra-type"><img src="${icon}" alt="" title="${esc(a.type ?? '')}"></span>` : ''}
-      ${tickCapsule(ticks, cost)}
-      <span class="ra-name">${
-        SPEED_MARK[a.speed ?? ''] ? `<span class="act-speed sp-${esc(a.speed!)}" title="${esc(SPEED_MARK[a.speed!].title)}">${SPEED_MARK[a.speed!].glyph}</span>` : ''
-      }<span class="ra-t">${esc(a.name.en || a.name.zh || a.id)}</span>${
-        a.type ? `<em>${esc(a.type)}</em>` : ''
-      }</span>
-    </div>
-    <div class="ra-b">
-      ${a.speed && SPEED_MARK[a.speed]
-        ? `<p class="ref-speed"><a class="kw-link" data-kw="${esc(SPEED_MARK[a.speed].label)}">${esc(SPEED_MARK[a.speed].label)}</a></p>`
-        : ''}
-      ${numbers ? `<p class="ref-meta">${numbers}</p>` : ''}
-      <p>${text.replace(/\n/g, '<br>')}</p>
-      ${mechHtml}
-    </div>
-  </div>`;
-}
-
-// The Pilot Trait panel, split out for the same reason as actionBlock: the pad
-// shows a pilot's trait under the pilot row of the sheet.
-export function traitBlock(c: Card): string {
-  const traitZh = c.trait?.trim();
-  const traitShown = traitZh ? esc(traitName(c)) : '';
-  const traitText = c.traitDescription?.en || c.traitDescription?.zh || '';
-  // A trait may name a rule rather than a keyword. Onyx says its Mech "may Crush
-  // large units", and Crush is a mechanic, so the keyword pass alone left the
-  // one word a reader needs unexplained. Actions already spell these out.
-  const traitMechs = mechBlocks(traitText, c.traitDescription?.zh, traitZh);
-  const trait =
-    traitZh || traitText
-      ? `<div class="ref-trait${traitZh ? '' : ' ref-flavour'}"><b>${
-          traitZh ? `Pilot Trait <i>${traitShown}</i>` : 'No trait ability'
-        }</b><p>${linkKeywords(traitText).replace(/\n/g, '<br>')}</p>${
-          traitZh ? traitMechs : '<p class="ref-note">This pilot has no trait ability. The line above is card flavour text.</p>'
-        }</div>`
-      : '';
-  return trait;
-}
-
+// ONE Action, drawn the way the card prints it. Split out of cardDetail so the
+// pad can open a Part's actions inside its own row on the sheet with the same
+// markup the reference draws - one renderer, two pages. Everything in here is
+// exactly what the card detail's action loop did.
+export function actionBlock(c: Card, a: CardAction): string {
+  const len = lengthOf(a);
+  const cost = len ? `${LENGTH_NAME[len]} (${costLabel(TICK_COST[len])})` : '';
+  const en = englishOnly(a.description?.en);
+  const tr = data.actionTranslation(a.id);
+  let text = '';
+  if (en) text = linkKeywords(en);
+  else if (tr?.english) {
+    // THE NOTE KEYS ON PROVENANCE, which the data has recorded all along
+    // and this ignored. `action_translations.json` marks every entry with a
+    // `confidence`, and 55 of the 61 actions that were printing "translated
+    // from the Chinese card text" are marked `printed`: they were read off
+    // the English card, so the note was not merely noise, it was false. The
+    // file is named for the machine-translated entries it started as, and
+    // the printed ones were filed into it later as corrections.
+    //
+    //   printed            the English card says this. No note.
+    //   printed-truncated  the English card says this but overflows its box,
+    //                      so the tail is completed from the Chinese. Worth
+    //                      a note, but not THAT note.
+    //   anything else      genuinely our translation. 6 actions.
+    const conf = String(tr.confidence ?? '');
+    // The entry's own note explains the individual case; it is too long for
+    // the line but exactly right as a tooltip.
+    const why = tr.note ? ` title="${esc(tr.note)}"` : '';
+    const flag =
+      conf === 'printed'
+        ? ''
+        : conf.startsWith('printed')
+          ? `<em class="ref-note"${why}> (the printed English runs off the card; the end is completed from the Chinese)</em>`
+          : `<em class="ref-note"${why}> (translated from the Chinese card text)</em>`;
+    text = `${linkKeywords(tr.english)}${flag}`;
+  }
+  else text = '<em class="ref-note">No rules text on this card.</em>';
+  // The Chinese DESCRIPTION has to be fed in as well as the Chinese name.
+  // Several mechanics can only be matched on it - Loads is `负载`, Mines is
+  // `地雷`, the Pholcus is `自行地雷` - because the English prints those as
+  // ordinary words that fire inside "payload" and "determined". Passing only
+  // the name meant those three entries were written, shipped, and never once
+  // displayed on the card that needed them.
+  const mechHtml = mechBlocks(a.name.en, a.name.zh, en, a.description?.zh, tr?.english ?? undefined);
+  const icon = actionIconUrl(a.type);
+  // THE PRINTED TICK CAPSULE. It counts TOTAL Ticks the way the card draws
+  // them: Short 1, Medium 2, Long 3. The card's three slots are identical,
+  // so the Maneuver Tick a Long action also costs is named in the title
+  // rather than shown in a second colour, which would be our invention
+  // painted onto a mark players already know from the table.
+  const ticks = len ? TICK_COST[len].maneuver + TICK_COST[len].action : 0;
+  // THE ROW, laid out the way the card prints it: the type icon on a light
+  // plate, then the tick capsule, then the name on a bar in the TIMING
+  // colour, then the rules text underneath. Timings the dial can be set to
+  // get their tint; a Passive, Immediate, Delay or Detonation is not a
+  // timing at all and takes the neutral bar the cards give it.
+  // A Command or Automatic action is NOT taken on the Timing Dial, and the
+  // printed card says so by giving it a BLACK bar instead of a timing
+  // colour (ZHDR-201's |TEAR| and |MISSILE| are both black). Following that
+  // also removes a collision our own tints created: the Command mark's blue
+  // sat on the blue Movement bar and vanished into it.
+  const dialless = a.speed === 'auto' || a.speed === 'command';
+  const timing = dialless ? undefined : timingOf(a);
+  // The meta line drops the length, which the capsule beside the name now
+  // says better than the words did. What is left is the numbers, and the
+  // Range is SPELLED OUT: "R 6" reads as a die code beside "3R", and the
+  // two mean entirely different things.
+  const numbers = [
+    a.range === 0 ? esc('Range --') : a.range ? esc(`Range ${a.range}`) : '',
+    // The pool in the FACTION'S printed order: GoF leads with red, RDL
+    // and UN with yellow. diceRow carries the evidence.
+    diceRow(a.yellowDice, a.redDice, data.factionOf(c)),
+    a.storage ? esc(`Ammo ${a.storage}`) : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  return `<div class="ref-action${timing ? ` t-${timing}` : dialless ? ' t-dialless' : ''}">
+    <div class="ra-h">
+      ${icon ? `<span class="ra-type"><img src="${icon}" alt="" title="${esc(a.type ?? '')}"></span>` : ''}
+      ${tickCapsule(ticks, cost)}
+      <span class="ra-name">${
+        SPEED_MARK[a.speed ?? ''] ? `<span class="act-speed sp-${esc(a.speed!)}" title="${esc(SPEED_MARK[a.speed!].title)}">${SPEED_MARK[a.speed!].glyph}</span>` : ''
+      }<span class="ra-t">${esc(a.name.en || a.name.zh || a.id)}</span>${
+        a.type ? `<em>${esc(a.type)}</em>` : ''
+      }</span>
+    </div>
+    <div class="ra-b">
+      ${a.speed && SPEED_MARK[a.speed]
+        ? `<p class="ref-speed"><a class="kw-link" data-kw="${esc(SPEED_MARK[a.speed].label)}">${esc(SPEED_MARK[a.speed].label)}</a></p>`
+        : ''}
+      ${numbers ? `<p class="ref-meta">${numbers}</p>` : ''}
+      <p>${text.replace(/\n/g, '<br>')}</p>
+      ${mechHtml}
+    </div>
+  </div>`;
+}
+
+// The Pilot Trait panel, split out for the same reason as actionBlock: the pad
+// shows a pilot's trait under the pilot row of the sheet.
+export function traitBlock(c: Card): string {
+  const traitZh = c.trait?.trim();
+  const traitShown = traitZh ? esc(traitName(c)) : '';
+  const traitText = c.traitDescription?.en || c.traitDescription?.zh || '';
+  // A trait may name a rule rather than a keyword. Onyx says its Mech "may Crush
+  // large units", and Crush is a mechanic, so the keyword pass alone left the
+  // one word a reader needs unexplained. Actions already spell these out.
+  const traitMechs = mechBlocks(traitText, c.traitDescription?.zh, traitZh);
+  const trait =
+    traitZh || traitText
+      ? `<div class="ref-trait${traitZh ? '' : ' ref-flavour'}"><b>${
+          traitZh ? `Pilot Trait <i>${traitShown}</i>` : 'No trait ability'
+        }</b><p>${linkKeywords(traitText).replace(/\n/g, '<br>')}</p>${
+          traitZh ? traitMechs : '<p class="ref-note">This pilot has no trait ability. The line above is card flavour text.</p>'
+        }</div>`
+      : '';
+  return trait;
+}
+
 export function cardDetail(c: Card): string {
   // Link is the one stat the printed card colours, tinting its mark to the
   // pilot's faction, so it is drawn through the mask rather than as one more

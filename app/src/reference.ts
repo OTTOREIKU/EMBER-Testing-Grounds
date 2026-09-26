@@ -9,7 +9,7 @@ import { costLabel, LENGTH_NAME, lengthOf, TICK_COST, timingOf } from './ticks';
 import { diceRow, maskGlyphs, tickCapsule } from './glyphs';
 import { iconSvg } from './dice';
 import { linkIcon } from './icons';
-import { cardDetail, cardRow, esc, fillPortraits, keywordCard, keywordDetail, kwLabel, linkKeywords, mechBlocks, SLOT_LABEL, SPEED_MARK, useCardData } from './refcards';
+import { cardDetail, cardRow, esc, fillPortraits, keywordCard, keywordDetail, kwLabel, linkKeywords, mechanicBody, mechBlocks, SLOT_LABEL, SPEED_MARK, useCardData } from './refcards';
 import { found, matchCard, matchKeyword, matchMechanic, matchMission, matchPhase, matchSecondary, matchStance, matchStatus, matchTiming, nmCard, nmKeyword, nmMechanic, nmMission, nmPlay, nmSecondary, nmStatus, norm } from './refsearch';
 import { installDiagnostics } from './diagnostics';
 import { boxPicker, compareGrid, exclusiveToggle, isExclusiveTo, sharedCount } from './boxcompare';
@@ -451,11 +451,11 @@ function matchMap(m: TerrainMap, q: string): boolean {
   return norm(`${m.name.en ?? ''} ${m.name.zh ?? ''} ${m.id}`).includes(q);
 }
 
-const LEGEND_LABEL: Record<string, string> = {
-  building: 'Buildings', high_wall: 'High Walls', low_wall: 'Low Walls',
-  large_container: 'Large Containers', small_container: 'Small Containers',
-};
-
+const LEGEND_LABEL: Record<string, string> = {
+  building: 'Buildings', high_wall: 'High Walls', low_wall: 'Low Walls',
+  large_container: 'Large Containers', small_container: 'Small Containers',
+};
+
 // The map as its own Battlefield Card presents it: the printed picture, the
 // terrain it calls for, and the Environment Card allowance that is printed
 // here and in no other place (5.4.1).
@@ -1015,10 +1015,12 @@ function render(): void {
       ? `<p class="ref-count">${filtered.length} mechanic${filtered.length === 1 ? '' : 's'}</p>` +
         filtered
           .map(
+            // With a basic view, the sources move behind Advanced with the full
+            // text, so the foot chip is only for entries still drawn whole.
             (m) => `<article class="card">
               <div class="card-title">${esc(m.name)}</div>
-              <div class="card-body">${linkKeywords(m.text)}</div>
-              ${m.ref ? `<div class="card-foot"><span class="tag mono">${esc(m.ref)}</span></div>` : ''}
+              <div class="card-body">${mechanicBody(m, q)}</div>
+              ${m.ref && !m.basic ? `<div class="card-foot"><span class="tag mono">${esc(m.ref)}</span></div>` : ''}
             </article>`,
           )
           .join('')

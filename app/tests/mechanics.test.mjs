@@ -140,5 +140,47 @@ check('cards whose only card-level rules are Chinese still carry blocks',
   stranded.length > 0 && /\(\s*cardText\s*\|\|\s*cardMechs\s*\)/.test(gate), true);
 check('TM39D is one of them', stranded.some((c) => c.id === 'TM39D'), true);
 
+// ---------- the basic view (OTTO, 2026-09-25)
+//
+// The audited text grew into a page of rulings a new player cannot use. An
+// entry now leads with a short basic view (`basic` plus a few `points`) and
+// keeps the full breakdown, with its FAQ rows and sources, behind Advanced. The
+// basic view stays plain: short, a handful of points, and no rule numbers, FAQ
+// rows or card ids, which are what made the old text read like a ruling.
+const basics = list.filter((m) => m.basic);
+check('every entry has a basic view', list.filter((m) => !m.basic).map((m) => m.id), []);
+check('a basic view has 2 to 5 points',
+  basics.filter((m) => !Array.isArray(m.points) || m.points.length < 2 || m.points.length > 5).map((m) => m.id),
+  []);
+check('a basic view is short',
+  basics.flatMap((m) => [
+    ...(m.basic.length > 200 ? [`${m.id}: basic ${m.basic.length}`] : []),
+    ...m.points.filter((p) => p.length > 140).map((p) => `${m.id}: "${p.slice(0, 40)}..." ${p.length}`),
+  ]),
+  []);
+const CITES = /\bFAQ\b|\b\d+\.\d+(?:\.\d+)?\b|\b[A-Q]\d{1,2}\b|\b[A-Z]{2,5}-\d{2,3}\b|\b\d{3}_[A-Z]\b|\bcard \d{3}\b|\bRulebook\b/;
+check('a basic view cites no rule numbers, FAQ rows or card ids',
+  basics.flatMap((m) => [m.basic, ...m.points].filter((s) => CITES.test(s)).map((s) => `${m.id}: "${s.match(CITES)[0]}"`)),
+  []);
+// The full text is broken up too (OTTO: "one giant text block makes it hard to
+// read"): paragraphs split on a blank line, and "- " lines are a list. A long
+// entry has at least two blocks, and no plain paragraph runs past 520
+// characters, which is about seven lines of the card.
+const blocksOf = (t) => t.split(/\n\s*\n/);
+check('a long full text is broken into paragraphs',
+  list.filter((m) => m.text.length > 400 && blocksOf(m.text).length < 2).map((m) => m.id),
+  []);
+check('no paragraph of the full text is a wall',
+  list.flatMap((m) => blocksOf(m.text).filter((b) => !/(^|\n)- /.test(b) && b.length > 520).map((b) => `${m.id}: ${b.length}`)),
+  []);
+
+// The full text and the sources draw behind Advanced, through the one body
+// renderer that the Rules tab and a card's mechanic panel share.
+check('the full text and sources render behind Advanced',
+  /<details class="mech-adv"[\s\S]*?<summary>Advanced<\/summary>[\s\S]*?ruleBlocks\(m\.text\)[\s\S]*?esc\(m\.ref\)/.test(refSrc), true);
+check('the Rules tab and the card panels share that renderer',
+  [/<div class="card-body">\$\{mechanicBody\(m, q\)\}<\/div>/.test(refSrc), /<div class="ref-mech-b">\$\{mechanicBody\(m\)\}<\/div>/.test(refSrc)],
+  [true, true]);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

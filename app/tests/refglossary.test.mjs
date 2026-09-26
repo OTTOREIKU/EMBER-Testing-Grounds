@@ -52,11 +52,15 @@ check('with a summary', /<summary>/.test(mech), true);
 // CLOSED BY DEFAULT is the whole request. `<details open>` would render the old
 // always-visible block while passing every other assertion here.
 check('and it is CLOSED by default, which is the point', /<details class="ref-mech"[^>]*\bopen\b/.test(mech), false);
-// The name and the rulebook reference stay visible, so a reader can see THAT a
-// rule applies without opening anything.
+// The name stays visible, so a reader can see THAT a rule applies without
+// opening anything. An entry still drawn whole shows its rulebook reference
+// there too; an entry with a basic view keeps its sources behind Advanced
+// (OTTO, 2026-09-25: the citations made a quick reference read like a ruling).
 check('the summary names the rule', /<summary><b>\$\{esc\(m\.name\)\}/.test(mech), true);
-check('and carries the rulebook reference', /<summary>[\s\S]*?esc\(m\.ref\)/.test(mech), true);
-check('the wording lives in the body', /class="ref-mech-b">\$\{linkKeywords\(m\.text\)\}/.test(mech), true);
+check('and carries the rulebook reference for an entry drawn whole', /<summary>[\s\S]*?m\.ref && !m\.basic[\s\S]*?esc\(m\.ref\)/.test(mech), true);
+check('the wording lives in the body', /class="ref-mech-b">\$\{mechanicBody\(m\)\}/.test(mech), true);
+check('and an entry without a basic view draws its text whole, in its paragraphs',
+  /export function mechanicBody[\s\S]*?if \(!m\.basic\) return ruleBlocks\(m\.text\);/.test(ref), true);
 // KEYWORD LINKS MUST NOT SIT IN THE TOGGLE. linkKeywords writes [data-kw]
 // anchors, and the document-level delegation turns those into navigation, so a
 // tap on the summary would open the panel and leave the page at once.

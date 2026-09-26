@@ -36,7 +36,7 @@ const json = (p) => JSON.parse(read(p));
 // ---------- mechanics.json ----------
 const mRaw = json('../../data/mechanics.json');
 const mechanics = Array.isArray(mRaw) ? mRaw : mRaw.mechanics;
-const mechBad = mechanics.flatMap((e) => offenders(e.text || '').map((w) => `${e.id}: "${w}"`));
+const mechBad = mechanics.flatMap((e) => offenders([e.basic ?? '', ...(e.points ?? []), e.text || ''].join(' ')).map((w) => `${e.id}: "${w}"`));
 check('no mechanics entry describes the UI', mechBad, []);
 
 // Every entry is sourced. An entry with no ref is either unsourced prose or a

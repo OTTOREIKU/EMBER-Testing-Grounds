@@ -165,6 +165,11 @@ export interface KeywordDef {
 export interface MechanicDef {
   id: string;
   name: string;
+  // The basic view: what the mechanic is, then the rules a player needs most,
+  // with no rule numbers or FAQ rows. `text` is the full breakdown behind
+  // Advanced (OTTO, 2026-09-25: the audited text was too much for a new player).
+  basic?: string;
+  points?: string[];
   ref?: string;
   match: string[];
   text: string;
