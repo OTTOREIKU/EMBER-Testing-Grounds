@@ -165,21 +165,40 @@
    "text": "Spend 1 Link to reroll any dice of one roll, including the Black Die that locates the Part (4.10). Focus may not be paid with a Mech's last Link (FAQ L1). Link lost to damage or effects can reach 0, at which point the Mech enters Shutdown Stance.\n\nThe order is fixed (4.4.1 step 5): the attacker declares, then the defender, then the attacker rerolls, then the defender, and an Electronic Counter-roll keeps the same order (FAQ G4). Each roll takes one reroll effect only (FAQ A6): Focus, a lent {Eye} reroll such as Guidance Support, or the Whistle, chosen at the declare.\n\nIn an Explosion or a Surplus Damage roll only the defender may Focus. A Mech in Shutdown has no pilot skills, so ZPA-39 Cadaver's free Focus does not apply there (FAQ L3)."
   },
   {
+   "id": "movement",
+   "name": "Movement and the Maneuver",
+   "basic": "A Mech moves with its Maneuver, up to its Maneuver Value in Grids, or with a Movement Action at that Action's Range.",
+   "points": [
+    "Turning on the spot costs no Range, but it is Movement: it spends the Maneuver.",
+    "Any Movement in an Action Opportunity, a turn or a Shock Attack walk included, loses Stationary bonuses.",
+    "A Mech with a destroyed Chassis makes no Movement Action, and its Maneuver may only turn it.",
+    "Push moves the target in any straight line the pusher chooses, and a pushed Mech loses 1 Link.",
+    "Units that cannot move, such as Deployables, cannot be moved by any effect either."
+   ],
+   "ref": "Rulebook 3.4.3, 4.2.1, 4.3, 6.3.2; FAQ E1, E3, E4, E14, E18, K24, L1",
+   "match": [
+    "movement action",
+    "移动动作"
+   ],
+   "text": "Every Action Opportunity brings one Maneuver: the Mech may move up to its Maneuver Value in Grids, printed on its Chassis and doubled in Mobility Stance, and may change its Facing. A Movement Action moves at its own printed Range instead, or at the Maneuver Value where it prints none. Range is counted in orthogonal steps between Large Grids (4.2.1).\n\nFlying Movement passes over terrain and Units and ends only where the Unit fits; a Flying Unit cannot Crush and is never Melee Locked (FAQ E1, E14). An Aerial Unit, such as a Missile, a Projectile or a Mine, is above the board: Units may stand under it, it is never Crushed, and Interception is what stops it. Teleportation, a Blink or a Manifestation, ignores everything between its two Grids.\n\nTurning on the spot costs no Movement Range, but it is still Movement: it is a Maneuver of its own and spends the Maneuver Tick, and a Movement Action may be spent on a turn alone (FAQ E3, E18). [Stationary] asks whether the unit performed any Movement in its Action Opportunity, so a turn, a Shock Attack walk or a free move after an Action loses it (FAQ K24). Being moved by someone else does not (ruled 2026-09-25).\n\nA Mech whose Chassis is destroyed cannot perform Movement Actions, a Jump or a Blink included, and its Maneuver may only change its Facing (4.3.4; FAQ E4). An Immobilized Unit cannot Maneuver or perform Movement Actions at all, turning included, unless the Action is Unstoppable (6.3.2). A Non-humanoid Movement Action costs Link to perform, and never the last Link (FAQ L1).\n\n- Shock Attack X: before performing the Action, the Unit may move up to X Grids.\n- Push X: the pushing player moves the target X Grids in any straight direction they choose, a pushed Mech loses 1 Link, and the pusher does not follow. Otherwise it follows the Knockback X rules.\n- Forced Movement (Knockback, Push, a Drag, a tow or a Crush) is never voluntary: Melee Lock and Break Away do not apply, and a Unit that cannot move, such as a Deployable, cannot be Force-Moved at all (4.3.4)."
+  },
+  {
    "id": "crush",
    "name": "Crush",
-   "basic": "A Large unit can push through a smaller one by moving into its Grid.",
+   "basic": "A Large unit can push through a smaller one by moving into its Grid. Its Movement ends there.",
    "points": [
-    "Only Large (3x3) units Crush, and only units smaller than themselves.",
-    "The victim moves 1 Grid, swaps with the mover if it cannot move, or is destroyed if it cannot be moved at all.",
-    "The mover then enters the Grid, and its Movement ends at once.",
-    "Crushing also destroys breakable terrain."
+    "Only Large units on the ground Crush, and only smaller units, allies included. Flying and camouflaged units cannot.",
+    "The victim moves 1 Grid, into any Grid around it except the one the mover is coming from.",
+    "With nowhere to go it swaps places with the mover. One that can never move, like a Beacon, is destroyed.",
+    "The crushing player chooses where each victim goes and which way it faces.",
+    "The Movement ends there, Straight Line range or not. Aerial units, Mines and Barricades are never Crushed."
    ],
-   "ref": "Rulebook 4.3.6",
+   "ref": "Rulebook 4.3.4, 4.3.6; FAQ E6, E7, E14, E16, E22, I3, I9, I15, L6",
    "match": [
     "crush",
     "碾压"
    ],
-   "text": "Only Large (3x3) units can Crush, and only units smaller than themselves.\n\nMoving into an occupied grid forces a Crush: the victim takes Forced Movement of 1 grid, or swaps places if it cannot move, or is destroyed outright if it cannot be moved at all. The mover then enters the grid and its Movement Action ends immediately. Crushing also destroys destructible terrain."
+   "text": "Only a Large (3x3) Ground Unit can Crush, and only Units smaller than itself, allies included (FAQ E7), unless a trait such as Indomitable says otherwise. Only Basic Movement Crushes: never Flying Movement (FAQ E14), Teleportation or Forced Movement (4.3.4), and never a Unit in Optical Camouflage (FAQ I3, I9). Aerial Units, Mines among them, are passed over: Units may be placed above them. Barricades and walls are never Crushed (FAQ E6).\n\nMoving into an occupied Grid forces a Crush, resolved as the Unit is about to enter it. Each crushed Unit undergoes Forced Movement of 1 Grid, into any of the Grids around it except the one the crushing Unit is entering from, which it is still standing in (p.47). The crushing player chooses the Grid and the Facing (FAQ L6).\n\n- A crushed Unit with none of those Grids open exchanges positions with the crushing Unit instead, taking the Grid it is vacating.\n- A Unit that cannot be moved at all, such as a Deployable like a Beacon, is destroyed outright, and its destruction scores like any other.\n- Destructible Terrain in the Grid is destroyed.\n- The crushing Unit still pays Break Away on the way in (FAQ E22).\n- It then enters the Grid, and its Movement ends there at once, even with Straight Line range left (FAQ E16).\n\nA Firefly in Low Profile or Optical Camouflage may pass through smaller Units and Containers on its way, but a Crush only happens where its Movement ends (FAQ I15; ruled 2026-09-25). A move The Red Shoes controls may end in a Crush, and the controlling player places the victims."
   },
   {
    "id": "penetration",
@@ -241,18 +260,19 @@
    "name": "Break Away",
    "basic": "A unit next to an enemy with a Melee Action is Melee Locked: it cannot fire, and walking away costs extra.",
    "points": [
-    "Any Adjacent enemy with a Melee Action and Line of Sight to it Locks it.",
-    "A Melee Locked unit cannot perform Firing Actions.",
-    "Leaving a Grid while Locked costs 1 extra Movement for each enemy Locking it.",
-    "Flying and camouflaged units cannot be Locked, and Flying or Forced Movement pays no extra."
+    "Any Adjacent enemy with a Melee Action and line of sight to it Locks it. A Repaired Part still counts.",
+    "A Locked unit cannot perform Firing Actions unless they have Melee Firing. It may still Intercept.",
+    "Leaving a Grid while Locked costs 1 extra Movement for each enemy Locking it at that moment.",
+    "A Panzer pilot charges 1 more, which may be paid with 1 Link instead, never the last.",
+    "Flying units cannot be Locked. A camouflaged unit can be, but Locks nobody. Forced Movement pays no extra."
    ],
-   "ref": "Rulebook 4.3.5",
+   "ref": "Rulebook 4.3.5; FAQ E2, E5, E22, I8, J23, L1, N3",
    "match": [
     "break away",
     "melee lock",
     "近战锁定"
    ],
-   "text": "A Unit is Melee Locked by an enemy that has a Melee Action, is Adjacent to it and has Line of Sight to it; a Flying Unit, a Unit making Flying Movement and a Unit in Optical Camouflage cannot be Melee Locked (4.3.5). A Melee Locked Unit cannot perform Firing Actions.\n\nBreak Away: when a Locked Unit makes Basic Movement, each time it exits a Grid while Locked it pays 1 additional Movement Range for every Unit locking it at that moment. Flying Movement ignores Melee Lock; Forced Movement ignores the extra cost."
+   "text": "A Unit is Melee Locked by an enemy that has a Melee Action it could perform, is Adjacent to it and has line of sight to it (4.3.5). Extended Melee does not stretch the Lock past Adjacent. A Repaired Part can still perform Actions, so it locks like any other (FAQ J23). A Mech in Shutdown or in Cruise Mode locks nobody (FAQ N3), and nor does a Unit in Optical Camouflage, though it can be Melee Locked itself (FAQ I8).\n\nA Flying Unit, a Transformable Mech in Cruise Mode among them, and a Unit making Flying Movement cannot be Melee Locked. A Melee Locked Unit cannot perform Firing Actions unless the Action carries Melee Firing. It may still Intercept: 4.3.5 bans Firing Actions, the Fire Control Interference Token names Interception separately, and the figure on p.67 shows a Locked Unit intercepting (ruled 2026-09-25).\n\nBreak Away: when a Locked Unit makes Basic Movement, each time it exits a Grid while Locked it pays 1 additional Movement Range for every Unit locking it at that moment. A Crush pays it too (FAQ E22), a turn on the spot is free (FAQ E5), and a Crawl cannot Break Away at all. Flying Movement ignores Melee Lock, and Forced Movement never triggers it (FAQ E2).\n\nObstruct, the Panzer pilot's trait, makes that 2 for a Grid it locks. The extra 1 may be paid with 1 Link instead, step by step and locker by locker, but a Mech never spends its last Link (FAQ L1; ruled 2026-09-25)."
   },
   {
    "id": "ammo_and_charge",
@@ -610,15 +630,16 @@
    "points": [
     "Intercept X on an Action gives it X Interception Tokens for the whole game.",
     "It triggers when an enemy Aerial unit starts or ends a move within the Action's Range.",
-    "Each try spends 1 token and fires at that unit, with no arc or line of sight needed and no Protection for the target.",
+    "Each try spends 1 token and fires at that unit, with no arc needed and no Protection for the target.",
+    "Terrain never blocks the shot but Smoke does, and a Melee Locked unit may still intercept.",
     "If the target survives, keep intercepting until the tokens run out or it is destroyed."
    ],
-   "ref": "Rulebook 4.9",
+   "ref": "Rulebook 4.9; FAQ F3, M26",
    "match": [
     "interception",
     "intercept"
    ],
-   "text": "Interception is how Aerial Units such as Missiles and Projectiles are shot down. Intercept X on an Action puts X Interception Tokens on that Card at Deployment. Interception triggers the moment an enemy Aerial Unit Moves or is Launched, if either the starting Grid or the ending Grid of that movement is within the Action's Range.\n\nEach attempt spends one Token and attacks as a Firing Attack, except that the target must be the Unit that triggered it, no Forward Arc is required, line of sight always exists, and no Terrain or Unit Protection may be claimed. If the target survives, that unit MUST intercept again until its Tokens run out or the target is destroyed, and several units in range intercept in sequence.\n\nTokens are never restored, so what is spent is gone for the rest of the game. A Passive Action with Intercept can only ever attack through Interception, never as a normal Firing Attack."
+   "text": "Interception is how Aerial Units such as Missiles and Projectiles are shot down. Intercept X on an Action puts X Interception Tokens on that Card at Deployment. Interception triggers the moment an enemy Aerial Unit Moves or is Launched, if either the starting Grid or the ending Grid of that movement is within the Action's Range.\n\nEach attempt spends one Token and attacks as a Firing Attack, except that the target must be the Unit that triggered it, no Forward Arc is required, and no Terrain or Unit Protection may be claimed. Terrain never blocks a line to an Aerial Unit, but a Smoke Screen does: an Interception is a Firing Action (FAQ M26), so it cannot be made from or into Smoke, and a Projectile whose starting or landing Grid is in Smoke cannot be Intercepted at that Grid (FAQ F3).\n\nA Melee Locked Unit may still Intercept (ruled 2026-09-25). If the target survives, that Unit MUST intercept again until its Tokens run out or the target is destroyed, and several Units in range intercept in sequence.\n\nTokens are never restored, so what is spent is gone for the rest of the game. A Passive Action with Intercept can only ever attack through Interception, never as a normal Firing Attack."
   },
   {
    "id": "end_phase",
@@ -707,39 +728,40 @@
   {
    "id": "auto_attack_targets",
    "name": "What an Automatic Attack Must Shoot",
-   "basic": "An Automatic attack always shoots the nearest enemy in Range.",
+   "basic": "An Automatic attack always shoots the nearest enemy it may target: in Range, and in sight for Firing or Melee.",
    "points": [
-    "If an enemy in Range has a Highlight Token, it must shoot the nearest Highlighted one.",
+    "Firing and Melee ones count only enemies in line of sight, and in the Forward Arc unless Omni-directional.",
+    "If one of those has a Highlight Token, it must shoot the nearest Highlighted one.",
     "A tie is the controller's choice.",
     "Range is counted in Large Grids, not diagonally.",
     "With no enemy in Range, it may shoot the nearest Breakable Terrain container instead."
    ],
-   "ref": "Rulebook 3.5.2, and Official FAQ O9/O10/O21",
+   "ref": "Rulebook 3.5.2, 4.2.5; FAQ O9, O10, O21",
    "match": [
     "automatic attack",
     "auto action",
     "自动攻击"
    ],
-   "text": "An Automatic Action targets the nearest enemy Unit in Range (3.5.2). If any enemy in Range bears a Highlight Token, it must target the nearest Highlighted one instead (FAQ O21); a tie is the controller's choice. Range is counted across Large Grids, not diagonally.\n\nIf no enemy is in Range, the Action may instead target the nearest Neutral Unit, which means the 1-inch Breakable Terrain containers; Buildings and Defense Walls are never valid targets (FAQ O9, O10). Beacons and Mines are enemy Units, never Neutral, so they are targeted before Breakable Terrain."
+   "text": "An Automatic Action targets the nearest enemy Unit it may target (3.5.2). For a Firing or Melee Action that means the enemies within the Action's Range and also within line of sight, and only those in its Forward Arc unless the Action is Omni-directional (4.2.5); the nearest is taken among those. If any of them bears a Highlight Token, it must target the nearest Highlighted one instead (FAQ O21); a tie is the controller's choice. Range is counted across Large Grids, not diagonally.\n\nIf no enemy is in Range, the Action may instead target the nearest Neutral Unit, which means the 1-inch Breakable Terrain containers; Buildings and Defense Walls are never valid targets (FAQ O9, O10). Beacons and Mines are enemy Units, never Neutral, so they are targeted before Breakable Terrain."
   },
   {
    "id": "smoke_screen",
    "name": "Smoke Screens",
-   "basic": "Smoke Screens block line of sight for Firing Actions.",
+   "basic": "Smoke Screens block line of sight for Firing Actions, though any clear line around them still works.",
    "points": [
-    "A Firing Action cannot see through Smoke, though a clear line around it still works.",
-    "A unit in a Grid with Smoke cannot fire, or be fired at, with Firing Actions.",
-    "It blocks Interception too, but not Melee or Projectile Actions.",
-    "Smoke gives no Terrain Protection.",
-    "Each End Phase, Smoke thins: lone cards go, and one card from each connected group."
+    "A Firing Action may attack along any line between the bases that crosses no Smoke and no 3-inch terrain.",
+    "A unit in a Grid with Smoke cannot fire, or be fired at, with Firing Actions. Aerial units are no exception.",
+    "Smoke stops Interception too, but not Melee or Projectile Actions, nor effects that only need a unit to be visible.",
+    "Smoke gives no Terrain Protection, and a player may have only one Smoke Screen in a Grid.",
+    "Once each End Phase, Smoke thins: lone cards go, and one card from each connected group."
    ],
-   "ref": "Rulebook 4.16; FAQ F1-F4",
+   "ref": "Rulebook 4.16; FAQ B7, D10, F1-F5, M26",
    "match": [
     "smoke screen",
     "smoke grenade",
     "烟幕"
    ],
-   "text": "Smoke Screens are created when a Smoke Grenade detonates and are represented by Smoke Screen Cards. A Smoke Screen is placed within a Grid, never across Large Grids, and may share a Grid with Units or Terrain.\n\nWhen an Action places several at once, its text may require them to be Connected: each one must be in contact with at least one other placed by that Action. The card's Black or White side shows which player placed it. Smoke Screens placed by the same player cannot overlap in one Grid; those placed by different players can.\n\nLine of sight cannot be established through a Smoke Screen for a Firing Action. If the Attacker can draw a line of sight that does not pass through the Smoke, it may attack as normal. This affects both players equally, whoever placed the Smoke.\n\n- A Unit in the same Grid as a Smoke Screen cannot establish line of sight to or from anything for Firing Actions, and Aerial Units are affected the same way (FAQ F1, F2).\n- Interception is blocked the same way (FAQ F3).\n- Smoke does not give Terrain Protection (FAQ F4).\n- Actions other than Firing Actions, such as Melee Actions and Projectile Actions, are not affected.\n\nDissipation: in the End Phase of each round, each player removes all of their Smoke Screens that are not Connected, and one Smoke Screen from each of their Connected groups, the players alternating. Connected here means the same player's Smoke Screens in contact. If a placement joins two groups into one, only one card is removed from the merged group. If a removal splits a group in two, the two groups owe no further removal that round; in the following round's End Phase one is removed from each."
+   "text": "Smoke Screens are placed when a Smoke Grenade detonates, or by an ability such as Emergency Smoke, and are represented by Smoke Screen Cards. The GS-2 Smoke Grenade has no model and detonates the moment it lands. A Smoke Screen is placed within a Grid, never across Large Grids, and may share a Grid with Units or Terrain.\n\nWhen an Action places several at once, its text may require them to be Connected: each one must share an edge with at least one other placed by that Action, and a corner touch does not connect (4.2.3). The card's Black or White side shows which player placed it. Smoke Screens placed by the same player cannot overlap in one Grid; those placed by different players can.\n\nLine of sight cannot be established through a Smoke Screen for a Firing Action. If the Attacker can draw line of sight along any line between the bases that does not pass through the Smoke, it may attack as normal (4.16, 4.2.4). Smoke and 3-inch terrain are judged on the same lines: a line that crosses either is blocked, and one clear line is enough. This affects both players equally, whoever placed the Smoke.\n\n- A Unit in the same Grid as a Smoke Screen cannot establish line of sight to or from anything for Firing Actions. Aerial Units are no exception, whether in the Smoke or looking through it: Smoke counts as infinitely high (FAQ F1, F2).\n- Interception is a Firing Action (FAQ M26), so Smoke stops it too: a Projectile whose starting or landing Grid is in Smoke cannot be Intercepted there (F3), and neither can an interceptor standing in or looking through Smoke. The Hyena's AA Radar still works (F5).\n- Smoke does not give Terrain Protection (FAQ F4).\n- Actions other than Firing Actions, such as Melee and Projectile Actions, are not affected, a Direct Fire Action's sight of its Landing Point included (FAQ F1). Nor are effects that only ask whether a Unit is visible, such as Early Warning, Tracking and Target Tag (FAQ F5; ruled 2026-09-25).\n\nEmergency Smoke from a Multi-Target Action is placed after the last of its attacks (FAQ B7), and a Unit the attack destroyed places none (FAQ D10).\n\nDissipation happens once in each End Phase: each player removes all of their Smoke Screens that are not Connected, and one Smoke Screen from each of their Connected groups, the players alternating. Connected here means the same player's Smoke Screens sharing an edge. If a placement joins two groups into one, only one card is removed from the merged group. If a removal splits a group in two, the two groups owe no further removal that round; in the following round's End Phase one is removed from each."
   },
   {
    "id": "black_box",
@@ -798,15 +820,16 @@
    "points": [
     "It is measured on the Small Grids they occupy, not the Large Grid.",
     "Touching only corner to corner is Adjacent, but not Contact.",
-    "Sharing a Grid counts as Contact, like a Mine or a Flying unit over a ground unit.",
-    "Contact is what Reveals a camouflaged unit, and what a Tarantula needs to lend its Load."
+    "Overlapping bases count as Contact, like a Mine or an Aerial unit over a ground unit.",
+    "A Movement ending in Contact Reveals a camouflaged unit. Contact never removes a Low Profile Token.",
+    "Terrain in Contact with the attacker gives the target no Protection."
    ],
-   "ref": "Rulebook 4.2.3",
+   "ref": "Rulebook 4.2.3; FAQ A1, I4, I24, J19, L7",
    "match": [
     "contact",
     "接触"
    ],
-   "text": "Two Units or Terrain Objects are in Contact when at least one edge of the Small Grids they occupy overlaps (4.2.3). It is measured on the footprints, not the Large Grid.\n\nContact differs from Adjacent: a corner-to-corner touch is Adjacent but not Contact, and two Units sharing a Large Grid are Adjacent but in Contact only if their footprints touch. Standing in the same Grid counts as Contact, so a Mine or a Flying Unit above a ground Unit is in Contact with it.\n\nContact is what an enemy needs to Reveal a Unit in Optical Camouflage, and what a Carrier Tarantula needs before it lends its Load."
+   "text": "Two Units or Terrain Objects are in Contact when at least one edge of the Small Grids they occupy overlaps (4.2.3). It is measured on the footprints, not the Large Grid.\n\nContact differs from Adjacent: a corner-to-corner touch is Adjacent but not Contact, and two Units sharing a Large Grid are always Adjacent but in Contact only if their footprints touch.\n\nOverlapping bases, a Mine or an Aerial Unit placed above another Unit, count as Contact and as Adjacent. That comes from the Rules Supplement's rule for overlapping, as FAQ I24 and L7 quote it; the rulebook itself does not say it.\n\nContact is what an enemy needs to Reveal a Unit in Optical Camouflage, and only when a Movement ends in it (FAQ I4). It never removes a Low Profile Token (FAQ J19). A Carrier Tarantula needs it before it lends its Load, and Terrain in Contact with the attacker gives the target no Terrain Protection (FAQ A1). A card that says adjacent means Adjacent, not Contact."
   },
   {
    "id": "adjacent",
@@ -814,10 +837,11 @@
    "basic": "A unit in any of the eight Large Grids around another, diagonals included, is Adjacent to it.",
    "points": [
     "Two units sharing a Large Grid are Adjacent too.",
-    "An Action with Range \"--\" can only target Adjacent units.",
+    "An Action with Range \"--\" can only target Adjacent units, and still only in its Forward Arc.",
+    "A card that says adjacent means this, diagonals included: not Contact, and not Range 1.",
     "Adjacent is looser than Contact, which needs the bases themselves to touch."
    ],
-   "ref": "Rulebook 4.2.2",
+   "ref": "Rulebook 4.2.1, 4.2.2; FAQ A9",
    "match": [
     "adjacent grid",
     "adjacent ally",
@@ -825,24 +849,24 @@
     "adjacent enemy",
     "相邻格"
    ],
-   "text": "The eight Large Grids surrounding the one a Unit stands in are its Adjacent Grids, diagonals included, and a Unit standing in any of them is Adjacent to it. Small and Medium Units may share a Large Grid, and two Units sharing one are Adjacent as well. A Range of \"--\" on an Action means it can only target Adjacent Units.\n\nAdjacent is the looser of the game's two proximity terms: it is measured in whole Large Grids and counts diagonals, where Contact is measured on the Small Grid edges and does not."
+   "text": "The eight Large Grids surrounding the one a Unit stands in are its Adjacent Grids, diagonals included, and a Unit standing in any of them is Adjacent to it. Small and Medium Units may share a Large Grid, and two Units sharing one are Adjacent as well. A Range of \"--\" on an Action means it can only target Adjacent Units, and a \"--\" attack still needs its target in the Forward Arc (FAQ A9).\n\nRange counts orthogonal steps between Large Grids (4.2.1), so a diagonal neighbour is Adjacent and at Range 2: a \"--\" Action reaches it, and a Range 1 Action does not. A card printing \"adjacent\" means Adjacent, diagonals included: the Harpy's tow of an adjacent Ally and the RKG70's resupply of an adjacent Ally Unit both reach a diagonal neighbour, and neither needs Contact.\n\nAdjacent is the looser of the game's two proximity terms: it is measured in whole Large Grids and counts diagonals, where Contact is measured on the Small Grid edges and does not."
   },
   {
    "id": "tether",
    "name": "Tether",
    "basic": "A Tether binds a target to the unit that landed it: the tethered unit cannot move more than X Grids from it.",
    "points": [
-    "Only the tethered unit is held, and only in its own moves; the other moves freely.",
-    "It never stops an Action; it only limits where the tethered unit may go.",
-    "It ends if the tethering unit walks beyond X, is Penetrated, or either unit is pushed more than X apart.",
-    "While it holds, Link Shock can hit the tethered unit whatever the distance or line of sight."
+    "Only the tethered unit is held, in every move of its own, a Manifestation or a controlled move included.",
+    "It never stops an Action. The Grids past the leash cannot even be passed through.",
+    "It ends if the tethering unit moves or Blinks beyond X, is Penetrated or destroyed, or either is pushed past X.",
+    "While it holds, Link Shock hits the tethered unit at any distance, but still needs the Forward Arc."
    ],
    "ref": "Card text: PDLH-202 and PDRH-202 (the keyword has no rulebook appendix entry)",
    "match": [
     "tether",
     "牵引"
    ],
-   "text": "Tether X binds two Units: a Tether X Token on the Unit that landed it, a Tethered X Token on the target. Only the tethered Unit is restrained, and only in its own Movement: it cannot voluntarily move further than X grids from the initiating Unit. The initiating Unit may move freely. The Tether is not a cost and never prevents an Action; it limits which destinations the tethered Unit may choose.\n\nBoth Tokens are removed when any of these happens: the initiating Unit voluntarily moves beyond X grids; the initiating Unit is Penetrated; or either Unit is forcibly moved so the distance ends up greater than X. Distance is checked after anything that moves either Unit.\n\nThe Ols1B Harpoon swaps to its Tether Mode face while the Tether holds and back when it ends; the Ot130L's Link Shock may only target a Unit this Mech has Tethered, ignoring distance and Line of Sight, and the target cannot Parry, choose the hit location or roll Blue Dice. (Card text: PDLH-202 and PDRH-202; the keyword has no rulebook appendix entry.)"
+   "text": "Tether X binds two Units: a Tether X Token on the Unit that landed it, a Tethered X Token on the target. The initiating Unit may move freely. The Tether is not a cost and never prevents an Action.\n\nOnly the tethered Unit is restrained: it cannot voluntarily move further than X grids from the initiating Unit, not even in passing, since the Grids beyond are closed to its route. That holds for every Movement of its own, a Manifestation from Optical Camouflage and a move The Red Shoes steers it through included, since neither is Forced Movement (ruled 2026-09-25).\n\nBoth Tokens are removed when any of these happens: the initiating Unit voluntarily moves beyond X grids, a Blink included; the initiating Unit is Penetrated; either Unit is forcibly moved so the distance ends up greater than X; or either Unit is destroyed or leaves the table. Distance is checked after anything that moves either Unit.\n\nThe Ols1B Harpoon swaps to its Tether Mode face while the Tether holds, which offers nothing but Harpoon Retrieve, and back when it ends, including when its Hit destroyed the target and left nothing to hold. Its Range 4 makes it Extended Melee, which needs line of sight (4.6.2).\n\nThe Ot130L's Link Shock may only target a Unit this Mech has Tethered, ignoring distance and line of sight, and the target cannot Parry, choose the hit location or roll Blue Dice. It keeps the Forward Arc and the rule that a Melee Action cannot target an Aerial Unit (ruled 2026-09-25). (Card text: PDLH-202 and PDRH-202; the keyword has no rulebook appendix entry.)"
   }
  ]
 }
