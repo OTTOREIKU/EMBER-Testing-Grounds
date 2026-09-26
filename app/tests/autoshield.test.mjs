@@ -337,8 +337,10 @@ check('the board is re-read only when a swap actually fired',
   /if \(swap\) \{\s*\n\s*defender = swap\.shield;[\s\S]{0,400}?const rb = this\.readBoard\(attacker, defender, action\);/.test(combat), true);
 // RISK 1: two callers hand start() carefully-worded fixed notes, and both are
 // excluded by their own flag rather than by inspection.
+// The note says what an Interception's sight is since audit Phase 4 (G4):
+// terrain never blocks a line to an Aerial Unit, a Smoke Screen still does.
 check('the Interception note is still handed in with the intercept flag set',
-  /Interception: line of sight always exists[\s\S]{0,120}?true,\s*\n\s*\);/.test(src('main.ts')), true);
+  /Interception: no Forward Arc is required, and terrain never blocks a line to an Aerial Unit[\s\S]{0,220}?true,\s*\n\s*\);/.test(src('main.ts')), true);
 check('and the Explosion note with the explosion flag set',
   /'Explosion damage: no line of sight or facing check\.', 0, '', true\)/.test(src('main.ts')), true);
 // RISK 2: the single easiest line in this change to drop in review.

@@ -340,17 +340,20 @@ const TOKEN_B = { title: 'D7 Tarantula', sub: 'UN · Carrier Drone', lines: ['Ca
   check('and draws the same line freeplay draws', /board\.showRange\(sel, hov,/.test(hud), true);
   check('clearing it when there is nothing to measure',
     /if \(!sel \|\| !hov \|\| sel\.uid === hov\.uid\) \{ board\.clearRange\(\); return; \}/.test(hud), true);
-  // Smoke beats the geometry (4.6), so it is asked FIRST on both boards. Asking
-  // losBetween first would report 'clear' through a Screen.
+  // Smoke and terrain are ONE reading now, judged on the same base-to-base
+  // lines (4.2.4, 4.16; audit Phase 4, G1/G3): asked as two, the hover said
+  // 'smoked' off the centre line alone and 'clear' through mixed cover.
   for (const [name, src] of [['freeplay', app], ['the Match Centre', hud]]) {
-    check(`${name} asks smoke before line of sight`,
-      /smokeBlocks\([^)]*\) \? 'smoked' : losBetween\(/.test(src), true);
+    check(`${name} reads smoke and line of sight together`,
+      /const los = firingSight\(sel, hov, /.test(src), true);
   }
   // The reading itself is written once per board but must AGREE, so the same
   // three cases are spelled the same way in both.
   for (const [name, src] of [['freeplay', app], ['the Match Centre', hud]]) {
     check(`${name} names the same three readings`,
-      [/'same grid'/.test(src), /'adjacent \u00b7 R1'/.test(src), /Range \$\{dc \+ dr\}/.test(src)],
+      // A diagonal neighbour is Range 2, so the adjacent line prints its real
+      // Range (4.2.1; audit Phase 4, F2): it said R1 for every neighbour.
+      [/'same grid'/.test(src), /adjacent \u00b7 R\$\{dc \+ dr\}/.test(src), /Range \$\{dc \+ dr\}/.test(src)],
       [true, true, true]);
   }
   // WHICH unit measures FROM. A live targeting is the question being asked, so

@@ -65,9 +65,14 @@ check('labels come through for the picker', U.chargeableSlots(data, mech()).map(
 // ---------- Resupply ----------
 
 const supply = { gameRules: [{ effects: [{ type: 'resupply_action_ammo', actionId: '129_A', amount: 1, targetSide: 'self_or_ally', range: 1 }] }] };
-check('a resupply action is read', U.resupplyOf(supply), { actionId: '129_A', amount: 1, range: 1, allies: true });
+// `adjacent`: the card prints "an adjacent Ally Unit", which is the eight
+// Grids around plus its own (4.2.2), not Range 1 (audit Phase 4, F1). 129_A
+// prints a Range, so it is read as one.
+check('a resupply action is read', U.resupplyOf(supply), { actionId: '129_A', amount: 1, range: 1, allies: true, adjacent: false });
 check('self-only is flagged', U.resupplyOf({ gameRules: [{ effects: [{ type: 'resupply_action_ammo', actionId: 'X', targetSide: 'self' }] }] }),
-  { actionId: 'X', amount: 1, range: 0, allies: false });
+  { actionId: 'X', amount: 1, range: 0, allies: false, adjacent: false });
+check('an adjacent-printed one is read as Adjacent',
+  U.resupplyOf({ description: { en: 'Resupply 1 Ammo Token to an adjacent Ally Unit.' }, gameRules: [{ effects: [{ type: 'resupply_action_ammo', actionId: 'Y' }] }] })?.adjacent, true);
 check('an ordinary action has none', U.resupplyOf({ gameRules: [{ effects: [{ type: 'gain_keyword' }] }] }), undefined);
 check('and an empty one has none', U.resupplyOf({}), undefined);
 check('a rule with no actionId is ignored', U.resupplyOf({ gameRules: [{ effects: [{ type: 'resupply_action_ammo' }] }] }), undefined);

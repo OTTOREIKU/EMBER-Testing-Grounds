@@ -73,6 +73,19 @@ if (!silence || !auras || !immob) throw new Error('could not locate the Silence 
 // startOpts, overloadPackOn, cruising...): one block, the last in units.ts, so
 // it overlaps no range above. SLOT_LABEL rides along because actionPartWhy
 // names the destroyed Part, and simulated attacks destroy plenty of them.
+// The Maneuver Value, which check() now bounds every Movement by (audit Phase
+// 4, E8). SLICED for the reason commands.test.mjs gives: a mirror could allow a
+// walk the app refuses. It begins where the pilotTraits cut ends.
+const maneuvering = unitsSrc.slice(
+  unitsSrc.indexOf('// A Mech Maneuvers at the Maneuver Value'),
+  unitsSrc.indexOf('export function initiativeFor'),
+);
+if (!maneuvering) throw new Error('could not locate maneuverRange in units.ts');
+// canBeForceMoved, the real one: forceMove refuses an immovable unit (4.3.4;
+// audit Phase 4, B2).
+const meleeSrc = readFileSync(new URL('../src/melee.ts', import.meta.url), 'utf8');
+const forceable = meleeSrc.slice(meleeSrc.indexOf('export function canBeForceMoved'), meleeSrc.indexOf('// ---------- Break Away ----------'));
+if (!forceable) throw new Error('could not locate canBeForceMoved in melee.ts');
 const phase2At = unitsSrc.indexOf('// ---------- Mechanics audit Phase 2 readers ----------');
 if (phase2At < 0) throw new Error('could not locate the Phase 2 readers in units.ts');
 const phase2 = unitsSrc.slice(phase2At);
@@ -132,6 +145,13 @@ export function settleTethers(_data: any, _state: any): void {}
 export function settleEnvironments(_data: any, _state: any): any[] { return []; }
 export function cutTethersOn(_data: any, _state: any, _t: any, _role: any): void {}
 export function tetherCap(_t: any, _tokens: any[]): any { return undefined; }
+export function cutTetherBetween(_data: any, _state: any, _t: any, _uid: number): void {}
+// performAction refuses a Firing Action while Melee Locked (audit Phase 4, D6).
+// The lock needs the whole board's line of sight, so the honest stub is
+// "nobody locks"; meleelock.test.mjs and mechanics4.test.mjs drive the real
+// readers. isMeleeFiring is the real one-liner.
+export function isMeleeFiring(a: any): boolean { return (a.keywords ?? []).some((k: any) => (k.inline ?? k.key) === '近战射击'); }
+export function lockersOf(_d: any, _t: any, _tokens: any, _terrain: any, _at?: any): any[] { return []; }
 export function tetherTo(_a: any, _b: any, _range: number): void {}
 export function transformPartOn(_data: any, _t: any, _slot: any, _cardId: string): void {}
 export function transformFaces(_data: any, _c: any): string[] { return []; }
@@ -250,6 +270,9 @@ let sliceSrc =
   + groupParser
   + stubs
   + pilotTraits
+  // After the stubs: maneuverBonus walks the stubbed tokenCards.
+  + maneuvering
+  + forceable
   + commandGen
   // After the stubs: aurasOn reads the stubbed tokenCards and rangeBetween, and
   // a function declaration hoists where a `const` stub does not. Auras first,

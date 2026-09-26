@@ -148,6 +148,10 @@ export function boardFingerprint(state: GameState): string {
     // that stopped being true when the hand went on the wire.)
     keyed(s.tactics as Record<string, unknown> | undefined),
     keyed(s.tacticsPlayed as Record<string, unknown> | undefined),
+    // The round whose End Phase has dissipated the smoke. dissipateSmoke's
+    // check READS it, so a drift has one client refusing a dissipation the
+    // other makes (audit Phase 4, G7).
+    s.smokeRound ?? null,
     // No `script`: see rule 2. Where the units stand and what they have spent
     // is the thing worth agreeing on, and it is all commanded.
   ]));

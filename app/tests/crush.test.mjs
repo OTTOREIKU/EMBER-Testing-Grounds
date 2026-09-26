@@ -303,67 +303,38 @@ const swaps = () => H.rec.sent.filter((c) => c.kind === 'crushSwap');
     maneuvers().map((c) => [gridOf(c.to), gridOf(c.from)]), [[[1, 2], [1, 1]]]);
 }
 
-// R2b, on the shape that actually reaches it. A routed Crush B1 -> B2 -> B3
-// carrying TWO victims: the Drone is shoved into B2 (the only Grid open to it),
-// which leaves the 2x2 Unit behind it with no escape AND no room in B2 either —
-// the Drone is standing in the middle of it. The exchange is impossible before
-// the player is asked anything, so it must not be asked.
+// R2b, on the shape that actually reaches it, and the ruling that changed it
+// (audit Phase 4, C1). A routed Crush B1 -> B2 -> B3 carrying TWO victims, a
+// Drone and a 2x2 Unit, walled in on B3's other three sides. The crusher is
+// standing in B2 as it enters B3 (p.47: the victim goes to "any of the three
+// grids shown", and the crusher's Grid is not one of them), so B2 is NO escape:
+// this pinned the Drone being shoved into it. Neither victim can go anywhere,
+// so both exchange positions with the crusher, and both fit in the Grid it
+// vacates once the larger is placed first.
 {
   const wide = { uid: 7, side: 's2', kind: 'drone', stance: 'offensive', label: 'W7', facing: 0, size: 2,
     aerial: false, cardId: 'D2', partStates: { main: 'intact' }, ammo: {}, log: [], col: 3, row: 6 };
   const tokens = [big(1, 's1', 1, 0), small(2, 's2', 1, 2, { col: 5, row: 8 }), wide, ...walls()];
   const ctx = hudCtx(tokens);
   H.reset();
-  H.setPlan(plan(1, { c: 1, r: 2 }, [2, 7], [{ c: 1, r: 0 }, { c: 1, r: 1 }, { c: 1, r: 2 }]));
+  const route = plan(1, { c: 1, r: 2 }, [2, 7], [{ c: 1, r: 0 }, { c: 1, r: 1 }, { c: 1, r: 2 }]);
+  check('the Drone is offered no Grid: the one the crusher steps out of is not an escape',
+    H.crushEscapes(ctx, tokens[1], route).map((g) => [g.c, g.r]), []);
+  check('nor is the 2x2 Unit', H.crushEscapes(ctx, wide, route).map((g) => [g.c, g.r]), []);
+  H.setPlan(route);
   H.advanceCrush(ctx);
-  check('the Drone has exactly one Grid to be shoved into, B2',
-    H.crushEscapes(ctx, tokens[1], { c: 1, r: 2 }).map((g) => [g.c, g.r]), [[1, 1]]);
-  H.placeCrushed(ctx, 1, 1);
+  check('so the Crush stops on the 4.3.6 exchange', !!H.readPlan()?.pendingSpot?.exchange, true);
   H.confirmCrushed(ctx);
-  check('and it takes the middle of it', gridOf(tokens[1]).concat([tokens[1].col, tokens[1].row]), [1, 1, 4, 4]);
-  // ...which leaves W7 with nowhere to go and nowhere to trade for.
-  check('the second victim is offered no facing question at all', H.readPlan(), null);
-  check('and is told why, naming the Grid with no room',
-    /B2, the Grid M1 is stepping out of, has no room for it either/.test(H.rec.notes[H.rec.notes.length - 2]), true);
-  check('no crushSwap is sent', swaps().length, 0);
-  // The Movement still happened and still pays: it stops short at the last Grid
-  // of the route that had room, which is where freeplay leaves it too.
-  check('the Crush stops short one Grid on', maneuvers().map((c) => gridOf(c.to)), [[1, 1]]);
-  check('and the Unit that could not be moved is still standing in B3', gridOf(wide), [1, 2]);
-  // NO `from` on a Crush that stopped short, and this is the sender half of the
-  // command-layer guard: nothing has placed the crusher, so the Movement starts
-  // where the token stands and the field must be absent. check() refuses a
-  // `from` on any Maneuver whose Unit is not already standing on its landing
-  // spot (commands.ts, the `maneuver` case), so a page that sent one here would
-  // have its own Movement refused across the wire.
-  check('and it carries no `from`, because nothing placed the crusher',
-    maneuvers().map((c) => c.from), [undefined]);
-}
-
-// R5. A crushSwap check() REFUSES ends where a Crush that would not fit ends —
-// at `held`, the last Grid of the route that had room — and offers the route's
-// Mines and Boxes on the way out, which is what freeplay does with the same
-// verdict. It used to return straight after the send: no maneuver, no Mines, no
-// Boxes, and the Maneuver the page had already charged for never recorded.
-{
-  const tokens = [big(1, 's1', 1, 1), small(2, 's2', 1, 2), ...walls()];
-  const ctx = hudCtx(tokens, (cmd) => (cmd.kind === 'crushSwap' ? { ok: false, why: 'the leash says no.' } : { ok: true }));
-  H.reset();
-  H.setPlan(plan(1, { c: 1, r: 2 }, [2], [{ c: 1, r: 1 }, { c: 1, r: 2 }]));
-  H.advanceCrush(ctx);
-  H.confirmCrushed(ctx);
-  check('a refused exchange still records the Movement', maneuvers().map((c) => gridOf(c.to)), [[1, 1]]);
-  check('and reports the refusal as a Crush that stopped short',
-    /could not exchange places with D2: the leash says no\. The Crush stops short of B3/.test(H.rec.notes[H.rec.notes.length - 1]), true);
-  check('and the route\'s Mines and Boxes are still offered', [H.rec.mines, H.rec.boxes], [1, 1]);
-  check('and nothing on the board moved', [gridOf(tokens[0]), gridOf(tokens[1])], [[1, 1], [1, 2]]);
-  // The same sender half again, on the branch where it matters most: the
-  // exchange was REFUSED, so the crusher is still standing where the Movement
-  // began and a `from` would be a placement that never happened. check() would
-  // refuse the Movement outright, and the page would then have charged for a
-  // Maneuver that never recorded.
-  check('and a refused exchange carries no `from` either',
-    maneuvers().map((c) => c.from), [undefined]);
+  if (H.readPlan()?.pendingSpot) H.confirmCrushed(ctx);
+  check('one crushSwap carries both victims', swaps().map((c) => c.swaps.length), [2]);
+  check('both into B2, the Grid the crusher vacates',
+    swaps().flatMap((c) => c.swaps.map((x) => gridOf(x.to))), [[1, 1], [1, 1]]);
+  check('the larger placed first, so the pair fits', swaps()[0]?.swaps.map((x) => x.uid), [7, 2]);
+  check('and the crusher lands in B3', swaps().map((c) => gridOf(c.to)), [[1, 2]]);
+  // The Movement is recorded from where it began, since the exchange has
+  // already placed the crusher (the one honest sender of `from`).
+  check('and the Movement is recorded from where it began',
+    maneuvers().map((c) => [gridOf(c.to), gridOf(c.from)]), [[[1, 2], [1, 0]]]);
 }
 
 // The ordinary shove, unchanged: a victim with somewhere to go is never offered
@@ -375,7 +346,7 @@ const swaps = () => H.rec.sent.filter((c) => c.kind === 'crushSwap');
   H.setPlan(plan(1, { c: 1, r: 2 }, [2], [{ c: 1, r: 1 }, { c: 1, r: 2 }]));
   H.advanceCrush(ctx);
   check('a victim with a free neighbour keeps its escape Grid',
-    H.crushEscapes(ctx, tokens[1], { c: 1, r: 2 }).map((g) => [g.c, g.r]), [[1, 3]]);
+    H.crushEscapes(ctx, tokens[1], H.readPlan()).map((g) => [g.c, g.r]), [[1, 3]]);
   check('and the panel asks where it goes, not which way it faces',
     /Crush: where does D2 go\?/.test(H.crushPanel(ctx)), true);
   check('with no exchange pending', !!H.readPlan()?.pendingSpot, false);

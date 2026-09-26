@@ -27,6 +27,16 @@ const scope = slice(unitsSrc, 'export function explosionScope', 'export function
 const slots = slice(unitsSrc, 'export const PART_SLOTS', 'export const SLOT_LABEL', 'PART_SLOTS in units.ts');
 const delivery = slice(unitsSrc, '// How a Projectile Action delivers.', '// The Interception attempts', 'projectileDelivery in units.ts');
 const cardsOf = slice(unitsSrc, 'export function tokenCards', '// ---------- Tarantula Loads', 'tokenCards in units.ts');
+// isGroundUnit asks it, since a cruising White Dwarf is a Flying Unit at all times (audit Phase 4, A2).
+const cruise = slice(unitsSrc, 'export function cruising', 'export function usableInCruise', 'cruising in units.ts');
+// The sight autoTargetsFor asks of a Firing or Melee Automatic Action when a
+// board is handed in (3.5.2; audit Phase 4, G2), and autoNeutralTargets hands
+// one in. The real readers out of rules.ts, each cut ending on a declaration.
+const rulesSrc = readFileSync(new URL('../src/rules.ts', import.meta.url), 'utf8');
+const sight = slice(rulesSrc, 'export function smokeKey', 'export function smokeAt', 'smokeKey in rules.ts')
+  + slice(rulesSrc, 'function standsInSmoke', 'export interface LargeGrid', 'standsInSmoke in rules.ts')
+  + slice(rulesSrc, 'export function losBetween', '// Does the line between two Bases', 'the line walker in rules.ts')
+  + slice(rulesSrc, 'export function inArc', '// ---------- what a shot has to get through', 'inArc in rules.ts');
 // M18.6's mandatory Detonation picks its targets with the SAME nearest-target
 // reader every other automatic attack uses, so it is sliced rather than faked.
 // autoTargetsFor runs to the AA Radar block, which sweeps in the O9/O10 Neutral
@@ -68,6 +78,8 @@ writeFileSync(
     + auraStub + rangeFn + autoTargets
     + predicates
     + mines
+    + cruise
+    + sight
     + scope,
 );
 const M = await import(tmp.href);
@@ -318,10 +330,16 @@ check('with no enemy in range, the nearest Breakable Terrain is offered',
   M.autoNeutralTargets(data, [drone(1, 4, 4)], [box('t1', 5, 4)], drone(1, 4, 4), autoAct).map((x) => x.id), ['t1']);
 // O9 is a FALLBACK: enemies always outrank Neutrals, so while one is in reach
 // this must stay silent rather than adding to the list.
+// Facing it: an Automatic Firing Action takes only a target it may take, so
+// the Forward Arc counts (3.5.2, 4.2.5; audit Phase 4, G2).
 check('an enemy in range suppresses it entirely', (() => {
-  const me = drone(1, 4, 4);
+  const me = { ...drone(1, 4, 4), facing: 1 };
   return M.autoNeutralTargets(data, [me, foe(2, 5, 4)], [box('t1', 5, 4)], me, autoAct);
 })(), []);
+check('but one behind its Forward Arc is no target, and does not', (() => {
+  const me = { ...drone(1, 4, 4), facing: 3 };
+  return M.autoNeutralTargets(data, [me, foe(2, 5, 4)], [box('t1', 5, 4)], me, autoAct).map((x) => x.id);
+})(), ['t1']);
 // O10, and it needs no list of its own: a building is not fragile.
 check('a building is never offered, however close',
   M.autoNeutralTargets(data, [drone(1, 4, 4)], [wall('w1', 4, 4), wall('w2', 5, 4)], drone(1, 4, 4), autoAct), []);

@@ -13,7 +13,7 @@ import type { GameData } from '../src/data';
 import { actionIconUrl, cardName } from '../src/data';
 import { readyCommands, rebootOwed, taskDesignations, missionZones, type CheckResult, type Command } from '../src/commands';
 import { asterBlockers, offerCoordination, runAster } from '../src/commandpick';
-import { canAct, dialHidden, eligibleUnits, isLoopPhase, loopComplete, nextTurn, tiedChoices, type LoopPhase } from '../src/loop';
+import { alive, canAct, dialHidden, eligibleUnits, isLoopPhase, loopComplete, nextTurn, tiedChoices, type LoopPhase } from '../src/loop';
 import { deployTurn, deployable, deploymentComplete, firstPlayerFrom, normaliseSetup, rollTotal } from '../src/setup';
 import { ensureScript } from '../src/glue';
 import { canActivate, canAttackMode, canOverload, canPerform, costOf, extrasLeft, lengthOf, OVERLOAD_MAX, type TickVerdict } from '../src/ticks';
@@ -298,7 +298,8 @@ function answerReaction(api: GuideApi, uid: number, actionId: string, take: bool
     void steerControlled(api, t, r.fromUid);
     return;
   }
-  if (!api.send({ kind: 'resolveReaction', seat: t.side, uid, actionId })) return;
+  // A declined Emergency Smoke keeps its one use (audit Phase 4, G9).
+  if (!api.send({ kind: 'resolveReaction', seat: t.side, uid, actionId, placed: take })) return;
   // Scanned: the unit leaves the Optical Camouflage State; where it appears
   // is settled on the table. The answer used to clear the debt and nothing
   // else, so the unit stayed camouflaged on every phone (audit Phase 3, A2).
@@ -789,8 +790,25 @@ async function performRouted(api: GuideApi, t: Token, a: CardAction): Promise<vo
   // it says what the table owes; it said nothing (audit 2026-09-25).
   const shove = a.type === 'Moving' ? knockbackOf(a, d.actionTranslation(a.id)?.english ?? undefined) : undefined;
   api.toast(shove
-    ? `${t.label}: ${a.name.en}. ${shove.push ? 'Push' : 'Knockback'} ${shove.grids}: an enemy Ground unit in the grid in front may be moved ${shove.grids}, settle it on the table.`
+    ? `${t.label}: ${a.name.en}. ${shove.push
+      ? `Push ${shove.grids}: an enemy Ground unit in the grid in front may be moved ${shove.grids} in a straight line, any direction you choose; settle it on the table.`
+      : `Knockback ${shove.grids}: an enemy Ground unit in the grid in front may be moved ${shove.grids}, settle it on the table.`}`
     : `${t.label}: ${a.name.en}.`);
+  // Push costs a pushed MECH 1 Link. The pad cannot see who stood in front, so
+  // it asks; the toast said nothing and the Link never came off (audit Phase
+  // 4, B4).
+  if (shove?.push) {
+    const mechs = api.state().tokens.filter((o) => o.side !== t.side && o.kind === 'mech' && o.deployed !== false && alive(o));
+    if (mechs.length) {
+      const id = await choiceDialog({
+        title: `Did the Push move an enemy Mech?`,
+        body: 'A Mech pushed this way loses 1 Link (Push X).',
+        choices: [...mechs.map((o) => ({ id: String(o.uid), label: `${o.label} was pushed` })), { id: '', label: 'No Mech was pushed', cancel: true }],
+      });
+      const hit = mechs.find((o) => String(o.uid) === id);
+      if (hit) api.send({ kind: 'drainLink', seat: t.side, uid: t.uid, targetUid: hit.uid, n: 1, chain: 'join' });
+    }
+  }
   const seat = t.side;
   const uid = t.uid;
   // Everything below rides the Action: one tap, one Undo (`chain: 'join'`).
@@ -865,7 +883,11 @@ function endHtml(api: GuideApi): string {
         : '<span class="pad-turn-val">…</span>')}</div>`).join('');
   const all = steps.every((st) => done(st.id));
   const last = s.round.n >= (s.roundLimit ?? 5);
-  return head(api, 'End Phase', `Round ${s.round.n}`, true) + rows
+  // The table's Smoke Screens dissipate in this phase too, and the pad has no
+  // screens to count, so it says so rather than stay silent (audit Phase 4,
+  // G12). Once per End Phase (4.16).
+  const smoke = '<p class="pad-turn-note">Smoke Screens on the table dissipate now, once: every screen not Connected comes off, and each Connected group loses one, chosen by its owner, First Player first (4.16).</p>';
+  return head(api, 'End Phase', `Round ${s.round.n}`, true) + rows + smoke
     + (all ? (last ? btn(api, 'g-endmatch', 'End the game', '', 'pad-chip on') : `<p class="pad-turn-note">Continue to start Round ${s.round.n + 1}.</p>`) : '');
 }
 

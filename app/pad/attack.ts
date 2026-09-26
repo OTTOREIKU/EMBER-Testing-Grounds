@@ -428,7 +428,7 @@ export function beginAttack(attacker: Token, actionId: string, defender: Token, 
   if (verdict.intercept) {
     h.start(
       attacker, action, defender,
-      'Interception: line of sight always exists and no Forward Arc is required, and the target claims no Terrain or Unit Protection (4.9).',
+      'Interception: no Forward Arc is required, terrain never blocks a line to an Aerial Unit though a Smoke Screen does, and the target claims no Terrain or Unit Protection (4.9, 4.16, FAQ F3).',
       0, '', false, true, false,
     );
     return true;

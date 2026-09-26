@@ -386,7 +386,9 @@ writeFileSync(fxTmp, 'type Token = any;\ntype GameData = any;\ntype GameState = 
   + cut(rulesSrc, 'export function reachableGrids', 'export function losBetween', 'the path readers')
   + 'export ' + cut(unitsSrc, 'function alive(t: Token)', '// ---------- ENVIRONMENT CARDS', 'alive')
   + cut(unitsSrc, '// ---------- ENVIRONMENT CARDS', "// A Mine's trigger asks for a GROUND Unit", 'the env readers')
-  + cut(unitsSrc, 'export function isGroundUnit', 'export function minesOwed', 'isGroundUnit'));
+  + cut(unitsSrc, 'export function isGroundUnit', 'export function minesOwed', 'isGroundUnit')
+  // isGroundUnit asks it, since a cruising White Dwarf is a Flying Unit at all times (audit Phase 4, A2).
+  + cut(unitsSrc, 'export function cruising', 'export function usableInCruise', 'cruising'));
 const FX = await import(fxTmp.href);
 
 // A 12-Grid board with nothing on it, so every refusal below is the card's.
@@ -515,16 +517,20 @@ check('freeplay flies the Anti-Gravity start in all three derivations',
 check('the Match Centre in both of its own',
   (src('matchhud.ts').match(/envFlightFrom\(ctx\.data, ctx\.state, t\)/g) ?? []).length, 2);
 check('both knockback resolvers stop the line on the cards', [
-  /knockbackPath\(victim, dir, kb\.grids, currentTerrain\(\), state\.tokens, envForcedStop\(data, state, victim\)\)/.test(mainSrc2),
+  // `d`, not `dir`: freeplay's Push picks its own direction first (audit
+  // Phase 4, B4), so the line the resolver walks is whichever was chosen.
+  /knockbackPath\(victim, d, kb\.grids, currentTerrain\(\), state\.tokens, envForcedStop\(data, state, victim\)\)/.test(mainSrc2),
   /knockbackPath\(victim, dir, kb\.grids, terrainOf\(ctx\), ctx\.state\.tokens, envForcedStop\(ctx\.data, ctx\.state, victim\)\)/.test(src('matchhud.ts')),
 ], [true, true]);
 check('both resolve the Abyss death with the kill credited', [
   (mainSrc2.match(/envCardAt\(state, end\.c, end\.r\) === 'abyss'/g) ?? []).length,
   (src('matchhud.ts').match(/envCardAt\(ctx\.state, out\.end\.c, out\.end\.r\) === 'abyss'/g) ?? []).length,
 ], [1, 1]);
+// Handed to the one shared crushEscapeGrids as its `barred` test now (audit
+// Phase 4, C1), so the Grid arrives as (c, r).
 check('both crush displacements filter the Abyss out', [
-  /isGroundUnit\(data, v\) && envCardAt\(state, g\.c, g\.r\) === 'abyss'/.test(mainSrc2),
-  /isGroundUnit\(ctx\.data, v\) && envCardAt\(ctx\.state, g\.c, g\.r\) === 'abyss'/.test(src('matchhud.ts')),
+  /isGroundUnit\(data, v\) && envCardAt\(state, c, r\) === 'abyss'/.test(mainSrc2),
+  /isGroundUnit\(ctx\.data, v\) && envCardAt\(ctx\.state, c, r\) === 'abyss'/.test(src('matchhud.ts')),
 ], [true, true]);
 check('both forced-movement senders carry the line for the heat', [
   (mainSrc2.match(/via: path\.map\(\(g\) => \(\{ col: g\.c \* 3 \+ 1, row: g\.r \* 3 \+ 1 \}\)\)/g) ?? []).length,

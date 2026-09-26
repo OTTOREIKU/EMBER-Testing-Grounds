@@ -22,6 +22,11 @@ const start = unitsSrc.indexOf('export function activatesCamo(');
 const end = unitsSrc.indexOf('export function interceptCapacity');
 if (start < 0 || end < 0 || end <= start) throw new Error('could not slice the Stealth readers out of units.ts');
 const tmp = new URL('./_stealth.slice.ts', import.meta.url);
+// The Tether leash, which holds a Manifestation too (ruled 2026-09-25, audit
+// Phase 4, I16). The real reader out of melee.ts, not a restatement of it.
+const meleeSrc = readFileSync(new URL('../src/melee.ts', import.meta.url), 'utf8');
+const meleeLeash = meleeSrc.slice(meleeSrc.indexOf('export function tetherCap'), meleeSrc.indexOf('// The one line a player needs'));
+if (!meleeLeash) throw new Error('could not locate tetherCap in melee.ts');
 writeFileSync(tmp, `type GameData = any;
 type Token = any;
 type CardAction = any;
@@ -48,7 +53,7 @@ const immobilizedStop = (t) => (statusCount(t.statuses, 'immobilized') > 0 ? \`\
 // An Abyss takes a Ground Unit (Environment Cards, 5.4.1; FAQ I17's Flying rule).
 const isGroundUnit = (_data, t) => !t.aerial;
 const envCardAt = (state, c, r) => (state.environments ?? []).find((e) => e.col === c && e.row === r)?.card;
-` + unitsSrc.slice(start, end));
+` + meleeLeash + unitsSrc.slice(start, end));
 const U = await import(tmp.href);
 
 let pass = 0, fail = 0;
@@ -176,7 +181,7 @@ check('a damaged one still does', U.manifestationRange(data, mech({ torso: 'OCTO
   // Manifestation a single event, so a mirror replaying it sees one hop rather
   // than a unit standing revealed on its marker for a frame.
   check('the reveal command can carry a destination', /kind: 'reveal';[^\n]*to\?: \{ col: number; row: number \}/.test(cmds), true);
-  const rev = cmds.slice(cmds.indexOf("case 'reveal': {"), cmds.indexOf("case 'reveal': {") + 2800);
+  const rev = cmds.slice(cmds.indexOf("case 'reveal': {"), cmds.indexOf("case 'reveal': {") + 3800);
   check('and the command judges the distance itself', /manifestationRange\(data, t\)/.test(rev), true);
   check('refusing anything beyond the Stealth value', /if \(away > range\)/.test(rev), true);
   check('and anywhere the unit does not fit', /does not fit there/.test(rev), true);

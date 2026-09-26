@@ -8,7 +8,12 @@ const start = src.indexOf('export function smokeKey');
 const end = src.indexOf('export function canStandIn');
 if (start < 0 || end < 0) throw new Error('could not locate smoke helpers in rules.ts');
 const tmp = new URL('./_smoke.slice.ts', import.meta.url);
-writeFileSync(tmp, 'type Side = any;\ntype SmokeScreen = any;\ntype Token = any;\n' + src.slice(start, end));
+// smokeBlocks walks the same base-to-base lines losBetween does (audit Phase
+// 4, G1), so the walker and its two readers come too. losBetween..'// Does the
+// line between two Bases' sits far below canStandIn, outside the first cut.
+const walker = src.slice(src.indexOf('export function losBetween'), src.indexOf('// Does the line between two Bases'));
+if (!walker) throw new Error('could not locate the line walker in rules.ts');
+writeFileSync(tmp, 'type Side = any;\ntype SmokeScreen = any;\ntype Token = any;\ntype TerrainPiece = any;\n' + src.slice(start, end) + walker);
 const { smokeGroups, dissipationFor, smokeNeighbours, smokeBlocks } = await import(tmp.href);
 
 let pass = 0, fail = 0;

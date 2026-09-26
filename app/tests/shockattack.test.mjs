@@ -137,7 +137,11 @@ check('and the combat window action deriver does', /grantAdjusted\(stationaryAdj
 // Freeplay: the offer, the free walk, then the same targeting either way.
 check('freeplay offers the walk before targeting', /Shock Attack \$\{shock\}[\s\S]{0,600}?startMove\(uid, \{ range: shock/.test(main), true);
 check('declining goes straight to the targeting', /if \(!go\) return proceed\(\)/.test(main), true);
-check('and the walk continues into it', /range: shock[\s\S]{0,80}?\(\) => proceed\(\)/.test(main), true);
+// It continues as the attack of a Mech that has MOVED: the callback reads the
+// walk's `moved`, which re-judges [Stationary] (audit Phase 4, E1), on both
+// of freeplay's doors.
+check('and the walk continues into it, on both doors, knowing it moved',
+  (main.match(/range: shock[\s\S]{0,120}?\(moved\) => \{[\s\S]{0,260}?proceed\(/g) ?? []).length, 2);
 
 // Match Centre: ONE door asks, every route funnels through it.
 check('openAttackPick is the single door', /function openAttackPick\(t: Token, a: CardAction, refund\?[\s\S]{0,1400}?shockPick = \{/.test(hud), true);

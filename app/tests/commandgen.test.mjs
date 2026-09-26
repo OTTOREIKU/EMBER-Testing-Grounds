@@ -417,7 +417,10 @@ check('the Harpy drag is declared before the move',
 check('and the plan and the paint both take that one allowance',
   /steps: range/.test(mainSrc) && /showReachable\([^)]*range/.test(mainSrc), true);
 check('and it needs a Mech holding a face-up token', /readyCommands\(m\) > 0/.test(pickSrc), true);
-check('the dragged unit must be adjacent', /inContact\(t, o\)/.test(pickSrc), true);
+// Adjacent, the eight Grids around plus its own (4.2.2), not Contact, which
+// refused a diagonal ally (audit Phase 4, B3/F1). This pinned inContact.
+check('the dragged unit must be adjacent', /rangeBetween\(t, o\)\.adjacent/.test(pickSrc), true);
+check('and one that can be Force-Moved at all (4.3.4)', /rangeBetween\(t, o\)\.adjacent && canBeForceMoved\(data, o\)/.test(pickSrc), true);
 check('the Match Centre asks the same shared offer', /offerHarpyDrag\(ctx\.data, s, t, maneuverRange\(ctx\.data, t\)\)[\s\S]{0,400}?movePlan\.steps -= 1/.test(hudSrc), true);
 check('and tows into the vacated Grid there too', /drag[\s\S]{0,600}?standingSpot\(prevGrid\.c, prevGrid\.r/.test(hudSrc), true);
 check('no free spot means no token is spent', /could not be dragged[\s\S]{0,80}not consumed/.test(mainSrc) && /could not be dragged[\s\S]{0,80}not consumed/.test(hudSrc), true);

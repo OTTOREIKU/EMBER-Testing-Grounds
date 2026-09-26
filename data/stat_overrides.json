@@ -3,6 +3,12 @@
   "_scope": "Only stats confirmed wrong against a scan are listed. No systematic sweep of every card has been done, so absence from this file does not mean a stat is correct.",
   "_shape": "cards maps a card id to the stat fields to overwrite.",
   "cards": {
+    "ZHDR-204": { "moveAsFlight": true, "flyingOrElevated": "flying" },
+    "ZHDR-205": { "moveAsFlight": true, "flyingOrElevated": "flying" },
+    "ZHDR-206": { "moveAsFlight": true, "flyingOrElevated": "flying" },
+    "ZHDR-303": { "moveAsFlight": true, "flyingOrElevated": "flying" },
+    "ZHDR-304": { "moveAsFlight": true, "flyingOrElevated": "flying" },
+    "ZYDR-108": { "moveAsFlight": true, "flyingOrElevated": "elevated" },
     "ZHDR-101": {
       "score": 42,
       "armor": 1,
@@ -672,7 +678,10 @@
     }
   },
   "_notes": {
-    "ZHDR-101": "N11 Vanguard I \"Scutum\". The 1.021 regunning gave the shield drone a gun the community bundle never had: Action B Single Shot, Firing, Auto, 3Y1R, Range 3, Omni-direction Firing and Melee Firing (list row ZHDR-101). Supplying a NEW action needs this file's wholesale `actions` replacement, so the array carries the final _A too - including its list English, which cannot live in action_overrides because applyStats runs after applyActionFixes and would discard it. The _A content is otherwise the bundle's own, zh and jp included; _B is English-only because no 1.021 Chinese exists to copy.",
+    "ZHDR-204": "N305 Eagle I. The GoF 1.021 list's movement column prints \"Fly 6 | Middle\" and the card shows the plane icon: a square-base Flying Unit. The bundle carried no flight class, so the three Eagles walked, set off Mines and could be Melee Locked. Mechanics audit Phase 4 (OTTO ruled 2026-09-25, I7). Same for ZHDR-205 and ZHDR-206.",
+    "ZHDR-303": "N503 \"Valkyrie\". GoF 1.021 prints \"Fly 5 | Large\": a Flying Unit, so it cannot Crush (FAQ E14) or be Melee Locked (4.3.5). Mechanics audit Phase 4 (I7). Same for ZHDR-304 \"Harpy\".",
+    "ZYDR-108": "SU1 \"Nest Guardian Swarm\". GoF 1.021 prints \"Arial 5 | Small\" and the card \"HIGH ALTITUDE\": a round-base Aerial Unit, as SU2 already was. Mechanics audit Phase 4 (I7).",
+    "ZHDR-101":"N11 Vanguard I \"Scutum\". The 1.021 regunning gave the shield drone a gun the community bundle never had: Action B Single Shot, Firing, Auto, 3Y1R, Range 3, Omni-direction Firing and Melee Firing (list row ZHDR-101). Supplying a NEW action needs this file's wholesale `actions` replacement, so the array carries the final _A too - including its list English, which cannot live in action_overrides because applyStats runs after applyActionFixes and would discard it. The _A content is otherwise the bundle's own, zh and jp included; _B is English-only because no 1.021 Chinese exists to copy.",
     "ZHDR-102": "N12 Vanguard II \"Crossbow\". The 1.021 regunning removed Interception 1 from its action (see action_overrides ZHDR-102_A, which drops the load-bearing inline keyword); this entry removes the CARD-level 拦截X chip that would otherwise keep advertising a rule the drone no longer has. The other two keywords are kept, with the stray bullet the bundle put in front of Omni-direction Firing dropped.",
     "116": "S100 Shield + R6SS SMG (D), the RIGHT-hand discard face. Same gap as 118/120 and found the same way: the UN 1.02 list gives row 116 the Freehand keyword and our card had an empty array, so a Mech that Disarmed this shield offered no free hand. Unlike the Fairy pair this card is RELEASED (UN_CORE). Its action text comes through action_overrides 116_A rather than here, the action already existing.",
     "118": "MDXS \"Fairy\" System + R6 SMG (L) (D). The bundle gave the two Fairy discard faces NO actions and NO keywords at all, where the publisher's Part Data UN 1.02 EN rows 118 and 120 print the Thruster passive and the Freehand keyword on both. That was a LIVE bug, not a display one: disarm rewrites the equipped card id to the discard face, flightGrant() counts Thruster halves off the equipped cards, and the pair needs two - so a Mech whose Fairy arm was Disarmed lost flight the publisher says it keeps. The action text is copied verbatim from the FRONT face 117_B, which the list's own row 118 matches word for word (typo included, \"it's\"), so the zh is the printed sibling text rather than a translation. jp is omitted on purpose: the bundle's 119_B jp fields are corrupted (they hold the gun action's text), so nothing unverified is carried over. These entries are the first use of applyStats supplying `actions` - action_overrides.json cannot do this, being keyed by an action id that must already exist.",

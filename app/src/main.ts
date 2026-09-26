@@ -45,8 +45,8 @@ import {
 import { Panel } from './panel';
 import { tacticSpec, tacticTargets } from './tactics';
 import { Roster } from './roster';
-import { inContact, canStandIn, attackDirection, crushExchange, crushExchangeSpots, crushTargets, type CrushVictims, dissipationFor, extendPath, inArc, knockbackPath, largeGridOf, type LargeGrid, boardGrids, setBoardGrids, losBetween, losNote as losNoteFor, type MoveOpts, pathCost, protectionFor as protectionForShared, rangeBetween, reachableGrids, smokeBlocks, spotsInGrid, standingSpot } from './rules';
-import { breakAwayCost, breakAwayNote, canBeForceMoved, lockersOf, tetherCap, tetherNote } from './melee';
+import { inContact, canStandIn, attackDirection, crushEscapeGrids, crushExchange, crushExchangeSpots, crushTargets, type CrushVictims, dissipationFor, extendPath, inArc, knockbackPath, largeGridOf, type LargeGrid, boardGrids, setBoardGrids, losBetween, firingSight, losNote as losNoteFor, type MoveOpts, pathCost, breakAwayLinkDue, protectionFor as protectionForShared, rangeBetween, reachableGrids, smokeBlocks, spotsInGrid, standingSpot } from './rules';
+import { breakAwayCost, breakAwayLinkBudget, breakAwayNote, canBeForceMoved, lockersOf, obstructSurcharge, tetherCap, tetherNote } from './melee';
 import { instantiateScenario, loadScenarios, type Scenario } from './scenarios';
 import { loadReplays, ReplayPlayer, type ReplayScript, type ReplayStep, type ReplayTally } from './replay';
 import { SquadTracker } from './squads';
@@ -57,12 +57,12 @@ import { installTooltip, preloadCards } from './tooltip';
 import { PHASES, RoundTracker } from './tracker';
 import { clearHistory, historyList, recordSnapshot, undoLast } from './history';
 import { labelFor, namesFrom } from './ledger';
-import { offerHarpyDrag as sharedHarpyDrag } from './commandpick';
+import { askTowFacing, offerHarpyDrag as sharedHarpyDrag } from './commandpick';
 import { PlayGuide } from './playguide';
-import type { BoardGrids, Card, CardAction, DiceData, DieColor, Facing, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, StatusDef, TerrainPiece, Timing, Token } from './types';
+import type { BoardGrids, Card, CardAction, DiceData, DieColor, Facing, GameState, MechLoadout, Opportunity, PartSlot, Side, SmokeScreen, Stance, StatusDef, TerrainPiece, Timing, Token } from './types';
 import { addStatus, cellsOf, DEFAULT_GRIDS, gridsOf, normaliseScript, removableTokens, SCALES, statusCount, statusesFor, STATUSES, zonesOf } from './types';
 import { actionIdOf } from './ticks';
-import { targetStatusGrant, targetStatusTargets, hasHighlight, highlightTargets, controlledMoveActions, electronicAll, electronicAllTargets, contactRevealsOwed, positionsOf, actionRange, chargeAdjusted, chargeChoices, cruising, stanceFeedbackOf, stanceFeedbackTargets, spendsAmmoWhenPerformed, linkShockOf, tetheredBy, linkSupportOf, linkSupportTargets, maxLink, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, tokenCleanupOf, tokenCleanupTargets, type LinkSupport, type TokenCleanup, straightLineBonus, selfStatusGrant, selfGrantWhy, transformOffer, automaticShieldFor, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, twoHandedUse, electronicValue, martyrdomOwed, autoDetonationsOwed, autoNeutralTargets, blinkTargets, flightGrant, isAirborneAction, isPositionSwap, loanedParts, phasesThroughUnits, minesLayable, minesOwed, multiTargetLimit, unfoldsOwed, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, immobilizedStop, activatesCamo, isScanAction, scannable, formSwitch, grantAdjusted, shockAttackOf, shockMoveAllowed, stealthValue, manifestationRange, manifestTargets, nonHumanoidCost, nonHumanoidStop, maneuverIsSilent, envCardAt, envFlightFrom, envForcedStop, envHotEntries, envMoveRules, isGroundUnit, settleEnvironments, chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, projectileReach, type Resupply, resupplyOf, SLOT_LABEL, stationaryAdjusted, interceptLeft, interceptsOwed, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf, type AttackReaction } from './units';
+import { targetStatusGrant, targetStatusTargets, hasHighlight, highlightTargets, controlledMoveActions, electronicAll, electronicAllTargets, contactRevealsOwed, positionsOf, actionRange, chargeAdjusted, chargeChoices, cruising, stanceFeedbackOf, stanceFeedbackTargets, spendsAmmoWhenPerformed, linkShockOf, tetheredBy, linkSupportOf, linkSupportTargets, maxLink, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, tokenCleanupOf, tokenCleanupTargets, type LinkSupport, type TokenCleanup, straightLineBonus, selfStatusGrant, selfGrantWhy, transformOffer, automaticShieldFor, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, twoHandedUse, electronicValue, martyrdomOwed, autoDetonationsOwed, autoNeutralTargets, blinkTargets, flightGrant, isAirborneAction, isPositionSwap, loanedParts, phasesThroughUnits, minesLayable, minesOwed, multiTargetLimit, unfoldsOwed, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, immobilizedStop, activatesCamo, isScanAction, scannable, formSwitch, grantAdjusted, shockAttackOf, shockMoveAllowed, stealthValue, manifestationRange, manifestTargets, nonHumanoidCost, nonHumanoidStop, chassisStop, maneuverIsSilent, envCardAt, envFlightFrom, envForcedStop, envHotEntries, envMoveRules, isGroundUnit, settleEnvironments, settleTethers, chargeableSlots, immediateDetonation, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, projectileReach, type Resupply, resupplyOf, SLOT_LABEL, stationaryAdjusted, interceptLeft, interceptsOwed, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf, type AttackReaction } from './units';
 import { registerOffline } from './offline';
 import { battlefieldLocked, countHits, firstPlayerFrom, newSetup, normaliseSetup, tasksLocked, type SetupState } from './setup';
 import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
@@ -356,6 +356,7 @@ async function init() {
       if (selectedUid !== null && !state.tokens.some((t) => t.uid === selectedUid)) selectToken(null);
       onChanged();
     },
+    onDissipateSmoke: () => resolveDissipation(),
     mapLabel: () => mapSelect.options[mapSelect.selectedIndex]?.textContent ?? state.map ?? 'none',
     zoneLabel: () => zoneSetLabel(state.zoneSet ?? ''),
     onNote: (t, text) => logTo(t, text),
@@ -458,20 +459,23 @@ async function init() {
       const granted = steadied ? grantAdjusted(steadied, t, opp) : undefined;
       // [Two-Handed] is OFFERED (FAQ A16), the same question performGuided asks.
       void (granted ? askTwoHanded(t, granted) : Promise.resolve(undefined)).then((adjusted) => {
-      const proceed = (): void => {
+      const proceed = (walked?: boolean): void => {
         // The [Charged] question, as the guide door asks it. Without it this
         // door never set the refund, so chargeAdjusted always read the Charge
         // as kept and a Charged Ion shot could never Mutilate (audit Phase 2,
         // a side effect of Phase 1 taking grant lines out of surplusEffects).
         void offerChargeSpend(t, actionId);
-        pendingAttack = { attackerUid: t.uid, actionId, mode: 'attack', action: adjusted };
+        const used = walked && act && adjusted && granted
+          ? afterShockWalk(t, act, adjusted, adjusted !== granted && !adjusted.twoHandedDeclined)
+          : adjusted;
+        pendingAttack = { attackerUid: t.uid, actionId, mode: 'attack', action: used };
         document.body.classList.add('targeting');
         // The O9 Neutral fallback has to be said here too, or it only reaches
         // players who are following the guide. Through setHint, not a bare
         // textContent write - that is what hides the shortcut keys while the
         // instruction is up.
         const neutral = act?.speed === 'auto'
-          ? autoNeutralTargets(data, state.tokens, currentTerrain(), t, act)
+          ? autoNeutralTargets(data, state.tokens, currentTerrain(), t, act, state.smoke ?? [])
           : [];
         setHint(neutral.length
           ? `No enemy is in range, so this Automatic Action MAY take the nearest Breakable Terrain instead: ${
@@ -488,7 +492,13 @@ async function init() {
           cancelLabel: 'Straight to the attack',
         }).then((go) => {
           if (!go) return proceed();
-          void startMove(t.uid, { range: shock, label: `Shock Attack ${shock}`, action: act }, () => proceed());
+          const from = { col: t.col, row: t.row };
+          const faced = t.facing;
+          void startMove(t.uid, { range: shock, label: `Shock Attack ${shock}`, action: act }, (moved) => {
+            const walked = moved && (t.col !== from.col || t.row !== from.row || t.facing !== faced);
+            if (walked) recordShockWalk(t, actionId, from);
+            proceed(walked);
+          });
         });
         return;
       }
@@ -667,6 +677,17 @@ async function init() {
           });
           return;
         }
+        // An Interception is a Firing Action (FAQ M26), so a Smoke Screen over
+        // every line to its target takes the shot away (FAQ F3). The card's
+        // door said line of sight always exists; only the owed queue read the
+        // smoke (audit Phase 4, G4).
+        if (intercepting && defender && attacker && smokeBlocks(attacker, defender, state.smoke ?? [])) {
+          void alertDialog({
+            title: 'No line of sight',
+            body: `Every line from ${attacker.label} to ${defender.label} crosses a Smoke Screen, and an Interception is a Firing Action, so it cannot be made at that target (4.16, FAQ F3). Pick another, or press Esc.`,
+          });
+          return;
+        }
         endTargeting();
         pendingIntercept = null;
         if (attacker && defender && action) {
@@ -681,7 +702,7 @@ async function init() {
             // Automatic one takes the nearest (3.5.2). Strict refuses; the
             // teaching tracker warns and lets a house rule through.
             const verdict = check(data, state, { kind: 'startCounterRoll', seat: attacker.side, uid: attacker.uid, actionId: action.id, targetUid: defender.uid });
-            const legal = action.speed === 'auto' && !electronicAll(action) ? autoTargetsFor(data, state.tokens, attacker, action) : [];
+            const legal = action.speed === 'auto' && !electronicAll(action) ? autoTargetsFor(data, state.tokens, attacker, action, { terrain: currentTerrain(), smoke: state.smoke ?? [] }) : [];
             const why = !verdict.ok ? verdict.why
               : legal.length && !legal.some((x) => x.uid === defender.uid)
                 ? `An Automatic Action takes the nearest legal target (3.5.2): here ${legal.map((x) => x.label).join(', ')}.`
@@ -717,7 +738,7 @@ async function init() {
               attacker,
               action,
               defender,
-              'Interception: line of sight always exists and no Forward Arc is required (4.9).',
+              'Interception: no Forward Arc is required, and terrain never blocks a line to an Aerial Unit, though a Smoke Screen does (4.9, 4.16, FAQ F3).',
               0,
               '',
               false,
@@ -725,13 +746,13 @@ async function init() {
             );
             interceptFollowUp = { uid: attacker.uid, actionId: intercepting.actionId, targetUid: defender.uid };
           } else if (action.speed === 'auto' && (() => {
-            const legal = autoTargetsFor(data, state.tokens, attacker, action);
+            const legal = autoTargetsFor(data, state.tokens, attacker, action, { terrain: currentTerrain(), smoke: state.smoke ?? [] });
             return legal.length > 0 && !legal.some((x) => x.uid === defender.uid);
           })()) {
-            // Automatic Actions take the nearest legal target, Highlighted
-            // first (3.5.2, FAQ O21). The strict tracker refuses anything
-            // else; teaching warns and lets a house rule through.
-            const legal = autoTargetsFor(data, state.tokens, attacker, action);
+            // Automatic Actions take the nearest legal target in sight,
+            // Highlighted first (3.5.2, FAQ O21). The strict tracker refuses
+            // anything else; teaching warns and lets a house rule through.
+            const legal = autoTargetsFor(data, state.tokens, attacker, action, { terrain: currentTerrain(), smoke: state.smoke ?? [] });
             const names = legal.map((x) => x.label).join(', ');
             if (state.script?.strict) {
               void alertDialog({
@@ -924,10 +945,36 @@ async function init() {
         });
         return;
       }
+      // The Tether leash binds a voluntary move, and a drag is one: only Shift,
+      // the Forced move, may take a Tethered unit past it, and the sweep below
+      // then cuts the Tether at once rather than at the next command
+      // (PDLH-202; audit Phase 4, H4).
+      const leash = forced ? undefined : tetherCap(t, state.tokens);
+      if (leash && !leash(Math.floor(col / 3), Math.floor(row / 3))) {
+        board.renderTokens(state);
+        board.setSelected(uid);
+        setHint(`${tetherNote(t, state.tokens)} Hold Shift to move it by an effect instead.`);
+        return;
+      }
       const snapped = snapPlacement(col, row, t.size, gridsOf(state));
       if (snapped && isFree(snapped.col, snapped.row, t.size, t.aerial, t.uid)) {
         if (t.size === 3) {
           const crushed = destructibleAt(snapped.col, snapped.row, t.size);
+          // Only a Crush destroys the Container under the drop. A Forced drag
+          // (Shift) is no Crush, and a camouflaged or flying unit cannot make
+          // one (4.3.6, FAQ I3, E14), which the unit branch below already
+          // honoured; this one destroyed the piece anyway (audit Phase 4, B6).
+          // The drop is refused rather than the piece destroyed.
+          const camo = statusCount(t.statuses, 'camouflage') > 0;
+          const canCrush = !forced && !camo && !t.aerial && isGroundUnit(data, t);
+          if (crushed.length && !canCrush) {
+            board.renderTokens(state);
+            board.setSelected(uid);
+            setHint(`${t.label} cannot end there: only a Crush destroys the Container in that Grid, and ${forced
+              ? 'a Forced move is not one'
+              : camo ? 'a camouflaged unit cannot Crush (FAQ I3)' : 'a Flying unit cannot Crush (FAQ E14)'}.`);
+            return;
+          }
           if (crushed.length) {
             perform(data, state, { kind: 'destroyTerrain', seat: t.side, uid: t.uid, pieces: crushed });
             board.renderTerrain(currentTerrain());
@@ -936,8 +983,11 @@ async function init() {
         t.col = snapped.col;
         t.row = snapped.row;
         // A drag is a road that never becomes a command AND never reaches
-        // renderAll, so the Environment settle runs here or not at all.
+        // renderAll, so the Environment settle runs here or not at all. The
+        // Tether sweep likewise: a leash stretched past X, or an initiator
+        // walked away, parts now rather than at the next command.
         settleEnvNow();
+        settleTethers(data, state);
         save();
         board.renderTokens(state);
         board.renderEnvironments(state.environments ?? [], environmentLookup(data));
@@ -999,7 +1049,9 @@ async function init() {
         board.clearRange();
         return;
       }
-      const los = smokeBlocks(sel, hov, state.smoke ?? []) ? 'smoked' : losBetween(sel, hov, currentTerrain(), state.tokens);
+      // Terrain and smoke on the same lines, as a Firing Action is judged (audit
+      // Phase 4, G1/G3).
+      const los = firingSight(sel, hov, currentTerrain(), state.tokens, state.smoke ?? []);
       // 自动盾牌 Automatic Shield: said while the player is still choosing, before
       // the click and before the Tick is spent, which is exactly what a confirm
       // dialog would have bought. Read-only — the redirect is mandatory (FAQ
@@ -1138,7 +1190,10 @@ async function init() {
     // judged on actionRange, so an aura-lengthened shot read as in range on
     // one page and "beyond range" on the other.
     const reach = actionRange(data, state.tokens, attacker, action as CardAction);
-    return losNoteFor(attacker, defender, { ...action, range: reach }, currentTerrain(), state.tokens, state.smoke ?? []);
+    // Link Shock waives distance and line of sight, and only those: it warned
+    // "not adjacent" on a card that ignores distance (audit Phase 4, H5).
+    const anyDistance = linkShockOf(action as CardAction);
+    return losNoteFor(attacker, defender, { ...action, range: reach, anyDistance }, currentTerrain(), state.tokens, state.smoke ?? []);
   }
 
   function protectionFor(attacker: Token, defender: Token, action: { type?: string }): { white: number; note: string } {
@@ -1312,17 +1367,30 @@ async function init() {
       // at the end is told which way the question went.
       const both = adjusted !== granted && !adjusted.twoHandedDeclined;
       const paid = both ? (performed: boolean): void => done(performed, { twoHanded: true }) : done;
-      const proceed = (): void => {
+      const proceed = (walkedFrom?: { col: number; row: number }): void => {
         void offerChargeSpend(t, actionId);
-        pendingAttack = { attackerUid: uid, actionId, mode: electronic ? 'electronic' : 'attack', action: adjusted, done: paid };
+        // After a Shock walk this is the attack of a Mech that has moved, and
+        // the walk is recorded once the Tick is paid (audit Phase 4, E1).
+        const used = walkedFrom ? afterShockWalk(t, action, adjusted, both) : adjusted;
+        const settle = walkedFrom
+          ? (performed: boolean): void => {
+            paid(performed);
+            if (performed) recordShockWalk(t, actionId, walkedFrom);
+          }
+          : paid;
+        pendingAttack = { attackerUid: uid, actionId, mode: electronic ? 'electronic' : 'attack', action: used, done: settle };
         document.body.classList.add('targeting');
-        if (adjusted.range) board.showRangeRings(t, adjusted.range);
-        const reach = adjusted.range ? ` Range ${adjusted.range} is shown.${adjusted !== action ? ' Stationary applies.' : ''}` : '';
+        if (used.range) board.showRangeRings(t, used.range);
+        // Said only when [Stationary] really paid: comparing the copy with the
+        // printed Action also caught every Stance grant, and a walk now takes
+        // the bonus away.
+        const still = !walkedFrom && steadied !== action;
+        const reach = used.range ? ` Range ${used.range} is shown.${still ? ' Stationary applies.' : ''}` : '';
         // FAQ O9: an Auto Action with no enemy in reach MAY take Breakable Terrain
         // instead, and only the nearest. Said here because it is the half a player
         // cannot deduce - destroying the piece itself is already a click away.
         const neutral = action.speed === 'auto'
-          ? autoNeutralTargets(data, state.tokens, currentTerrain(), t, action)
+          ? autoNeutralTargets(data, state.tokens, currentTerrain(), t, action, state.smoke ?? [])
           : [];
         const fallback = neutral.length
           ? ` No enemy is in range, so this MAY instead hit the nearest Breakable Terrain - ${
@@ -1346,7 +1414,11 @@ async function init() {
           cancelLabel: 'Straight to the attack',
         }).then((go) => {
           if (!go) return proceed();
-          void startMove(uid, { range: shock, label: `Shock Attack ${shock}`, action }, () => proceed());
+          const from = { col: t.col, row: t.row };
+          const faced = t.facing;
+          void startMove(uid, { range: shock, label: `Shock Attack ${shock}`, action }, (moved) => {
+            proceed(moved && (t.col !== from.col || t.row !== from.row || t.facing !== faced) ? from : undefined);
+          });
         });
         return;
       }
@@ -1702,8 +1774,9 @@ async function init() {
 
   // Interception is a Firing Attack against the Aerial Unit that triggered it,
   // so it goes through the attack helper rather than merely ticking a counter.
-  // The target must be that unit, there is no Forward Arc test, line of sight
-  // always exists, and no Terrain or Unit Protection may be claimed.
+  // The target must be that unit, there is no Forward Arc test, terrain never
+  // blocks the line to an Aerial Unit, and no Terrain or Unit Protection may be
+  // claimed. A Smoke Screen still takes the line away (4.16, FAQ F3).
   function startIntercept(t: Token, actionId: string): void {
     const left = t.intercept?.[actionId] ?? 0;
     const action = findAction(t, actionId);
@@ -1717,13 +1790,17 @@ async function init() {
       return;
     }
     const reach = action.range ?? 0;
-    const targets = state.tokens.filter(
+    const inReach = state.tokens.filter(
       (x) => x.side !== t.side && x.aerial && rangeBetween(t, x).range <= reach,
     );
+    // Smoke over every line takes the shot away (FAQ F3; audit Phase 4, G4).
+    const targets = inReach.filter((x) => !smokeBlocks(t, x, state.smoke ?? []));
     if (!targets.length) {
       void alertDialog({
         title: 'Nothing to Intercept',
-        body: `Interception only triggers on an enemy Aerial Unit that Moved or was Launched, and there is none within Range ${reach} of ${t.label}. Projectiles and Missiles are the usual targets.`,
+        body: inReach.length
+          ? `Every enemy Aerial Unit within Range ${reach} of ${t.label} is behind a Smoke Screen on every line, and an Interception is a Firing Action (4.16, FAQ F3).`
+          : `Interception only triggers on an enemy Aerial Unit that Moved or was Launched, and there is none within Range ${reach} of ${t.label}. Projectiles and Missiles are the usual targets.`,
       });
       return;
     }
@@ -1732,7 +1809,7 @@ async function init() {
     pendingIntercept = { uid: t.uid, actionId, action };
     if (chosen) {
       spendIntercept(t, actionId, name);
-      attackHelper.start(t, action, chosen, 'Interception: line of sight always exists and no Forward Arc is required (4.9).', 0, '', false, true);
+      attackHelper.start(t, action, chosen, 'Interception: no Forward Arc is required, and terrain never blocks a line to an Aerial Unit, though a Smoke Screen does (4.9, 4.16, FAQ F3).', 0, '', false, true);
       interceptFollowUp = { uid: t.uid, actionId, targetUid: chosen.uid };
       pendingIntercept = null;
       selectToken(t.uid);
@@ -1855,6 +1932,12 @@ async function init() {
 
   // A Landing Point is a Grid within the Action's Range. Direct Fire needs sight
   // of it and cannot pick a Grid that terrain fills; Fire in arc needs neither.
+  // The launcher's own Opportunity, for its [Stationary] reach (audit Phase 4, E6).
+  function launchOpp(uid: number): Opportunity | null {
+    const o = state.script?.opp;
+    return o?.uid === uid ? o : null;
+  }
+
   function landingCandidates(): { c: number; r: number; ok: boolean }[] {
     const m = launching!;
     const t = state.tokens.find((x) => x.uid === m.uid);
@@ -1864,7 +1947,7 @@ async function init() {
     // 2 Grids further. This gate and its mirror in matchhud.ts are near-identical
     // copies, so both are patched or the two pages disagree about where a
     // grenade may land.
-    const range = projectileReach(data, t, m.action);
+    const range = projectileReach(data, t, m.action, launchOpp(t.uid));
     const terrain = currentTerrain();
     const out: { c: number; r: number; ok: boolean }[] = [];
     const from = { c: Math.floor(t.col / 3), r: Math.floor(t.row / 3) };
@@ -1907,7 +1990,7 @@ async function init() {
           ? `<h4>Everything is launched</h4>
         <p class="dim">Take one back with ↺, or stop here to finish the Action.</p>`
           : `<h4>Click a highlighted Grid on the board</h4>
-        <p class="dim">${cands.length} legal ${cands.length === 1 ? 'Grid' : 'Grids'} within Range ${projectileReach(data, state.tokens.find((x) => x.uid === m.uid) ?? ({} as Token), m.action)}.
+        <p class="dim">${cands.length} legal ${cands.length === 1 ? 'Grid' : 'Grids'} within Range ${projectileReach(data, state.tokens.find((x) => x.uid === m.uid) ?? ({} as Token), m.action, launchOpp(m.uid))}.
           ${total > 1 ? `Volley ${total} lets you place up to ${total}, one Ammo Token each, and you may stop early.` : 'One Ammo Token is spent.'}</p>`
       }</div></div>`;
     const head = body.querySelector('.ah-head')!;
@@ -2037,6 +2120,28 @@ async function init() {
     }
     showSideTab('details');
     checkInterceptFollowUp();
+    if (m.placed) detonateOnLanding(m.card, m.placedUids);
+  }
+
+  // 4.7.4, the Immediate type: a Projectile that "Undergoes Detonation
+  // immediately" does so as it lands, with no Delay Phase to wait for. The pad
+  // opened it; neither board did, so a GS-2 sat on the table with no smoke
+  // (audit Phase 4, G8). An Interception owed against it is resolved first
+  // (4.9), and a volley's others go off from their own cards in turn.
+  function detonateOnLanding(card: Card, uids: number[]): void {
+    const now = immediateDetonation(card);
+    if (!now) return;
+    const landed = uids.map((uid) => state.tokens.find((x) => x.uid === uid)).filter((x): x is Token => !!x);
+    if (!landed.length) return;
+    const owed = (state.script?.intercepts ?? []).some((x) => landed.some((p) => p.uid === x.targetUid));
+    if (owed) {
+      logTo(landed[0], `${cardName(card)} detonates as it lands (4.7.4), once the Interception it triggered is resolved: open its Detonation from its card if it survives.`);
+      return;
+    }
+    if (landed.length > 1) logTo(landed[0], `${landed.length} ${cardName(card)} landed: each detonates at once (4.7.4). The first opens now; open the others from their cards in turn.`);
+    selectToken(landed[0].uid);
+    startDetonation(landed[0], now.id);
+    showSideTab('combat');
   }
 
   function noteInterception(launcherUid: number): void {
@@ -2277,6 +2382,10 @@ async function init() {
     // was handed the Action, and reading it off the card there would be
     // guessing which of several Movement Actions the player picked.
     action?: CardAction | null;
+    // The facing the unit had when the plan opened. Q and E turn the unit
+    // inside the plan, so a plan that has only turned is a finished Movement
+    // (FAQ E3, E18), and Cancel turns it back.
+    facing0: Facing;
     done: (moved: boolean) => void;
   } | null = null;
 
@@ -2329,7 +2438,7 @@ async function init() {
 
   // The move bar lives under the board, which a first-time player reading the
   // guide never looks at. Mirror it into the guide for as long as a move is live.
-  function renderGuideMove(label: string, drawn: number, steps: number, locked: boolean): void {
+  function renderGuideMove(label: string, drawn: number, steps: number, locked: boolean, turned = false): void {
     const body = document.querySelector('#play-guide .pg-body');
     document.getElementById('pg-move')?.remove();
     if (!body) return;
@@ -2340,11 +2449,13 @@ async function init() {
     info.className = 'pg-move-info';
     info.textContent = drawn
       ? `${label}: ${drawn} of ${steps} grids${locked ? ' · locked' : ''}`
-      : `${label}: draw a route on the board (up to ${steps})`;
+      : turned
+        ? `${label}: turned on the spot`
+        : `${label}: draw a route on the board (up to ${steps})`;
     const ok = document.createElement('button');
     ok.className = 'pg-move-ok';
-    ok.textContent = 'Confirm move';
-    ok.disabled = drawn === 0;
+    ok.textContent = drawn === 0 && turned ? 'Turn on the spot' : 'Confirm move';
+    ok.disabled = drawn === 0 && !turned;
     ok.addEventListener('click', () => commitMove());
     const no = document.createElement('button');
     no.className = 'pg-move-no';
@@ -2370,15 +2481,24 @@ async function init() {
     // paying for it.
     const n = Math.max(0, m.path.length - 1);
     const p = m.preview ? Math.max(0, m.preview.length - 1) : n;
+    const turned = planTurned(m);
     info.textContent = p !== n
       ? `${n} → ${p} of ${m.steps} grids`
       : n
         ? `${n} of ${m.steps} grids`
-        : `Click a lit grid to move (up to ${m.steps})`;
-    confirm.disabled = n === 0;
+        : turned
+          ? 'Turned on the spot'
+          : `Click a lit grid to move (up to ${m.steps})`;
+    confirm.disabled = n === 0 && !turned;
+    confirm.textContent = n === 0 && turned ? 'Turn on the spot' : 'Confirm move';
     const back = document.getElementById('move-back') as HTMLButtonElement | null;
     if (back) back.disabled = m.marks.length < 2;
-    renderGuideMove(m.label, n, m.steps, m.marks.length > 1);
+    renderGuideMove(m.label, n, m.steps, m.marks.length > 1, turned);
+  }
+
+  function planTurned(m: NonNullable<typeof movePlan>): boolean {
+    const t = state.tokens.find((x) => x.uid === m.uid);
+    return !!t && t.facing !== m.facing0;
   }
 
   // The shared reading, not a local copy of it: Mobility Stance doubles a Mech's
@@ -2434,7 +2554,7 @@ async function init() {
     return sharedHarpyDrag(data, state, t, steps);
   }
 
-  async function startMove(uid: number, opts: { range?: number; label: string; maneuver?: boolean; airborne?: boolean; action?: CardAction | null }, done: (moved: boolean) => void): Promise<void> {
+  async function startMove(uid: number, opts: { range?: number; label: string; maneuver?: boolean; airborne?: boolean; action?: CardAction | null; turn?: 1 | 3 }, done: (moved: boolean) => void): Promise<void> {
     const t = state.tokens.find((x) => x.uid === uid);
     if (!t) return done(false);
     // IMMOBILIZED (6.3.2), asked BEFORE the planner opens. The drag handler has
@@ -2488,8 +2608,15 @@ async function init() {
       preview: null,
       label: opts.label,
       action: opts.action ?? null,
+      facing0: t.facing,
       done,
     };
+    // Q or E pressed on the acting unit opened this Maneuver, and the turn it
+    // asked for is the plan's first step (audit Phase 4, E5).
+    if (opts.turn) {
+      t.facing = ((t.facing + opts.turn) % 4) as Facing;
+      onChanged();
+    }
     selectToken(uid);
     board.showReachable(reachableGrids(t, range, currentTerrain(), state.tokens, flying, moveOpts(t, flying, opts.action)), range);
     board.panEnabled = false;
@@ -2503,9 +2630,40 @@ async function init() {
     const straight = straightBonus
       ? ` [Moving in Straight Line]: a route that runs one way the whole time reaches ${range + straightBonus} Grids (+${straightBonus}); turn a corner and ${range} is the limit.`
       : '';
-    setHint(`${opts.label} for ${t.label}:${straight} click a lit grid to move there. Click again further on to add a waypoint, Backspace steps back, then Confirm. Esc cancels.${breakAway}${leash ? ` ${leash}` : ''}`);
+    setHint(`${opts.label} for ${t.label}:${straight} click a lit grid to move there. Click again further on to add a waypoint, Backspace steps back, then Confirm. Q/E turns it. Esc cancels.${breakAway}${leash ? ` ${leash}` : ''}`);
   }
 
+
+  // A turn on the spot is Movement in its own right and costs no Range (FAQ
+  // E3), so a plan that has only turned is a finished one: the guide's
+  // Maneuver then spends its Tick, and a Move Action that only pivots (E18) is
+  // performed. Neither could be committed, since Q and E turned the unit
+  // outside any plan (audit Phase 4, E5). Nothing was entered, so there is no
+  // heat, drag, Mine or Crush to settle: only the cost and the Silence reading.
+  function commitPivot(t: Token, m: NonNullable<typeof movePlan>): void {
+    movePlan = null;
+    board.panEnabled = true;
+    board.clearHighlights();
+    board.clearMovePath();
+    renderMoveCtrl();
+    logTo(t, `${t.label} turns on the spot to face ${['North', 'East', 'South', 'West'][t.facing]}.`);
+    const linkCost = nonHumanoidCost(m.action ?? null);
+    if (linkCost > 0) {
+      t.link = Math.max(0, (t.link ?? 0) - linkCost);
+      logTo(t, `${t.label} spends ${linkCost} Link to perform this Action (Non-humanoid ${linkCost}), leaving ${t.link}.`);
+    }
+    const silent = m.action ? isSilentAction(data, state.tokens, t, m.action) : maneuverIsSilent(data, t);
+    if (!silent && statusCount(t.statuses, 'lowProfile') > 0) {
+      perform(data, state, { kind: 'removeStatus', seat: t.side, uid: t.uid, targetUid: t.uid, statusId: 'lowProfile' });
+      logTo(t, `${t.label} turns on the spot without Silence, so its Low Profile Token comes off (4.12.3).`);
+    }
+    onChanged();
+    setHint('');
+    if (!silent && statusCount(t.statuses, 'camouflage') > 0) {
+      promptReveal(t, `${t.label} turned on the spot, a Maneuver without Silence (4.12.3).`);
+    }
+    m.done(true);
+  }
 
   function commitMove(): void {
     const m = movePlan;
@@ -2513,7 +2671,10 @@ async function init() {
     const t = state.tokens.find((x) => x.uid === m.uid);
     if (!t) return;
     const path = m.path;
-    if (path.length < 2) return;
+    if (path.length < 2) {
+      if (t.facing !== m.facing0) commitPivot(t, m);
+      return;
+    }
     // Each stop takes the free part of its Grid rather than the middle, so a unit
     // crossing a Grid that holds a low wall walks past it instead of onto it.
     const terrain = currentTerrain();
@@ -2531,6 +2692,9 @@ async function init() {
     if (!last) return;
     const goal = path[path.length - 1];
     const victims = crushTargets(t, goal.c, goal.r, terrain, state.tokens);
+    // What the route owes in Link for an Obstruct surcharge its Range could
+    // not cover, read before anything moves (audit Phase 4, D2).
+    const linkDue = breakAwayLinkDue(path, m.steps, m.flying || !!t.aerial, moveOpts(t, m.flying, m.action));
     movePlan = null;
     board.panEnabled = true;
     board.clearHighlights();
@@ -2550,6 +2714,11 @@ async function init() {
       if (linkCost > 0) {
         t.link = Math.max(0, (t.link ?? 0) - linkCost);
         logTo(t, `${t.label} spends ${linkCost} Link to perform this Action (Non-humanoid ${linkCost}), leaving ${t.link}.`);
+      }
+      // OBSTRUCT, paid the same way: this board sends no command for a move.
+      if (linkDue > 0) {
+        t.link = Math.max(0, (t.link ?? 0) - linkDue);
+        logTo(t, `${t.label} pays ${linkDue} Link instead of Movement Range to Break Away from an Obstruct lock (LPA-20), leaving ${t.link}.`);
       }
       // High Temperature, the pass-through half: every Grid the walk entered
       // short of the landing. The landing is the settle sweep's - renderAll
@@ -2585,6 +2754,11 @@ async function init() {
           perform(data, state, { kind: 'spendCommand', seat: t.side, uid: m.drag.funderUid });
           perform(data, state, { kind: 'forceMove', seat: t.side, uid: t.uid, targetUid: ally.uid, to: spot });
           logTo(ally, `${t.label} drags ${ally.label} along (-1 Movement, 1 Command Token consumed).`);
+          void askTowFacing(ally, t.label).then((f) => {
+            if (f === null) return;
+            perform(data, state, { kind: 'forceMove', seat: t.side, uid: t.uid, targetUid: ally.uid, to: { col: ally.col, row: ally.row }, facing: f });
+            onChanged();
+          });
         } else if (ally) {
           logTo(t, `${ally.label} could not be dragged: nothing free to stand in. The Command Token was not consumed.`);
         }
@@ -2711,7 +2885,9 @@ async function init() {
       if (o.deployed === false) return false;
       if (o.uid !== t.uid && (!rule.allies || o.side !== t.side)) return false;
       const g = largeGridOf(o);
-      if (Math.abs(g.c - from.c) + Math.abs(g.r - from.r) > rule.range) return false;
+      if (o.uid !== t.uid && rule.adjacent) {
+        if (!rangeBetween(t, o).adjacent) return false;
+      } else if (Math.abs(g.c - from.c) + Math.abs(g.r - from.r) > rule.range) return false;
       const max = tokenCards(data, o).flatMap(({ card }) => card.actions ?? []).find((a) => a.id === rule.actionId)?.storage;
       if (!max) return false;
       return (o.ammo[rule.actionId] ?? max) < max;
@@ -2745,6 +2921,13 @@ async function init() {
   // and the Taurus player decides them. No roll, no route, no Break Away.
   async function performBlink(t: Token, action: CardAction, done: (ok: boolean) => void): Promise<void> {
     const what = action.name.en || action.name.zh || action.id;
+    // Blink is a Movement Action, so Immobilized and a destroyed Chassis stop it
+    // before any target is asked for (6.3.2, 4.3.4; audit Phase 4, E7 and I10).
+    const stop = immobilizedStop(t, action) ?? chassisStop(t);
+    if (stop) {
+      await alertDialog({ title: `${what} cannot be performed`, body: stop });
+      return done(false);
+    }
     const targets = blinkTargets(data, state.tokens, t, action);
     if (!targets.length) {
       await alertDialog({
@@ -3249,8 +3432,10 @@ async function init() {
     const fv = [[0, -1], [1, 0], [0, 1], [-1, 0]][t.facing] as [number, number];
     const ahead = { c: g.c + fv[0], r: g.r + fv[1] };
     const what = action.name.en || action.name.zh || action.id;
+    // "an Enemy GROUND Unit": a Flying Raven is not one, though it is not
+    // Aerial either (audit Phase 4, B4).
     const victims = state.tokens.filter((o) => {
-      if (o.side === t.side || o.uid === t.uid || o.aerial || o.deployed === false) return false;
+      if (o.side === t.side || o.uid === t.uid || !isGroundUnit(data, o) || o.deployed === false) return false;
       const og = largeGridOf(o);
       return og.c === ahead.c && og.r === ahead.r;
     });
@@ -3328,11 +3513,32 @@ async function init() {
       });
       return;
     }
-    const dir = attackDirection(attacker, victim);
+    let dir = attackDirection(attacker, victim);
     // The line ends early in an Abyss (the victim falls) or on a Fragile
     // Platform (the floor goes) - entered, then resolved below and by the
     // settle sweep respectively.
-    const path = knockbackPath(victim, dir, kb.grids, currentTerrain(), state.tokens, envForcedStop(data, state, victim));
+    // "Units that cannot move, such as Deployables, … cannot be subject to
+    // Forced Movement" (4.3.4). Only a Barricade was exempt, so a Knockback
+    // shoved a Beacon or a Mine (audit Phase 4, B2).
+    const movable = canBeForceMoved(data, victim);
+    const lineFor = (d: { dc: number; dr: number }) => (movable
+      ? knockbackPath(victim, d, kb.grids, currentTerrain(), state.tokens, envForcedStop(data, state, victim))
+      : []);
+    // Push X goes "in any (straight) direction" the pushing player picks: the
+    // GoF 1.021 list, the Chinese 推动X and the Japanese all say so (ruled
+    // 2026-09-25, audit Phase 4, I9). Knockback keeps the attack direction.
+    if (kb.push && movable) {
+      const ways = ([['0', 'North', 0, -1], ['1', 'East', 1, 0], ['2', 'South', 0, 1], ['3', 'West', -1, 0]] as const)
+        .map(([id, label, dc, dr]) => ({ id, label, d: { dc, dr }, n: lineFor({ dc, dr }).length }));
+      const id = await choiceDialog({
+        title: `${name}: which way?`,
+        body: `Push moves ${victim.label} up to ${kb.grids} Grid${kb.grids === 1 ? '' : 's'} in a straight line, in any direction you choose. It stops early where something is in the way.`,
+        choices: ways.map((w) => ({ id: w.id, label: `${w.label}: ${w.n ? `${w.n} Grid${w.n === 1 ? '' : 's'}` : 'blocked'}` })),
+      });
+      const way = ways.find((w) => w.id === id);
+      if (way) dir = way.d;
+    }
+    const path = lineFor(dir);
     const heading = ['north', 'east', 'south', 'west'][dir.dr < 0 ? 0 : dir.dc > 0 ? 1 : dir.dr > 0 ? 2 : 3];
     // The player causing a Forced Movement picks the victim's facing, and a
     // victim that cannot move may still be turned — or left alone, since the
@@ -3443,28 +3649,21 @@ async function init() {
         return;
       }
       if (!canBeForceMoved(data, v)) {
-        perform(data, state, { kind: 'despawn', seat: t.side, uid: t.uid, targetUid: v.uid });
-        logTo(t, `Crushed ${v.label}, which cannot be Force-Moved, so it is destroyed.`);
+        // A kill, credited to the crusher: `despawn` recorded none, so a
+        // crushed Beacon scored nothing for anyone (audit Phase 4, C6).
+        perform(data, state, { kind: 'recordKill', seat: t.side, uid: t.uid, targetUid: v.uid, what: 'unit' });
+        logTo(t, `Crushed ${v.label}, which cannot be Force-Moved, so it is destroyed (4.3.6).`);
         board.renderTokens(state);
         step();
         return;
       }
-      // `vAt` and NOT `from`: the parameter five lines below is the Grid the
-      // CRUSHER steps out of, and naming this one `from` shadowed it. The
-      // shadow is typed non-nullable, so `if (!from)` below became dead code
-      // that tsc had no complaint about — a drag from across the board asked
-      // the Facing question it exists to skip and then blamed room for what
-      // was really distance.
-      const vAt = largeGridOf(v);
-      const spots = ([[0, -1], [1, 0], [0, 1], [-1, 0]] as const)
-        .map(([dc, dr]) => ({ c: vAt.c + dc, r: vAt.r + dr }))
-        .filter((g) => g.c >= 0 && g.r >= 0 && g.c < boardGrids() && g.r < boardGrids())
-        .filter((g) => !(g.c === goal.c && g.r === goal.r))
-        // Not into an Abyss: whether a Crush may drop a Ground Unit down one
-        // is a ruling we do not have, so the conservative table is the one
-        // where the crusher cannot pick that Grid at all.
-        .filter((g) => !(isGroundUnit(data, v) && envCardAt(state, g.c, g.r) === 'abyss'))
-        .filter((g) => standingSpot(g.c, g.r, v.size, v.aerial, currentTerrain(), state.tokens, v.uid) !== null);
+      // The Grids it may be moved to, measured with the crusher standing in
+      // the Grid it steps out of (`from`), which is never one of them (audit
+      // Phase 4, C1). Not into an Abyss: whether a Crush may drop a Ground Unit
+      // down one is a ruling we do not have, so the conservative table is the
+      // one where the crusher cannot pick that Grid at all.
+      const spots = crushEscapeGrids(v, goal, t, from, currentTerrain(), state.tokens,
+        (c, r) => isGroundUnit(data, v) && envCardAt(state, c, r) === 'abyss');
       if (!spots.length) {
         // No Grid to step out of means no Grid to hand over, so there is no
         // exchange to offer and no Facing worth asking about. Said before the
@@ -3591,6 +3790,12 @@ async function init() {
   function cancelMove(): void {
     const m = movePlan;
     if (!m) return;
+    // A turn made inside the plan was part of the Movement being cancelled.
+    const t = state.tokens.find((x) => x.uid === m.uid);
+    if (t && t.facing !== m.facing0) {
+      t.facing = m.facing0;
+      onChanged();
+    }
     movePlan = null;
     board.panEnabled = true;
     board.clearHighlights();
@@ -3903,13 +4108,13 @@ async function init() {
       title: `${defender.label}: ${name}`,
       body: `${defender.label} was attacked, so it may place ${r.count} Smoke Screen${
         r.count === 1 ? '' : 's'
-      } within Range ${r.range}. The card allows this even if the unit did not survive the attack (FAQ D10). Every attack in that Action has already been resolved, so these Screens cannot shield anyone else it shot at (FAQ B7).`,
+      } within Range ${r.range}. Every attack in that Action has already been resolved, so these Screens cannot shield anyone else it shot at (FAQ B7). Skipping keeps its one use for a later attack.`,
       confirmLabel: 'Place them',
       cancelLabel: 'Skip it',
     }).then((go) => {
-      // Either answer clears the debt, and the same command spends the use, so
-      // the offer cannot come back on the next attack.
-      perform(data, state, { kind: 'resolveReaction', seat: defender.side, uid: defender.uid, actionId: r.actionId });
+      // Either answer clears the debt. Placing spends the use in the same
+      // command; skipping keeps it (audit Phase 4, G9).
+      perform(data, state, { kind: 'resolveReaction', seat: defender.side, uid: defender.uid, actionId: r.actionId, placed: go });
       if (!go) { onChanged(); renderReactionPrompt(); return; }
       startSmokePlacement({
         side: defender.side,
@@ -3932,7 +4137,10 @@ async function init() {
     const smoke = state.smoke ?? [];
     const endPhase = PHASES[state.round.phase] === 'End';
     if (smokeChoices?.length) return;
-    if (!smoke.length || !endPhase || smokePlacing) {
+    // Once per End Phase (4.16): the box offered itself again the moment the
+    // dissipation was done, and a second press thinned every group twice
+    // (audit Phase 4, G7).
+    if (!smoke.length || !endPhase || smokePlacing || state.smokeRound === state.round.n) {
       host.replaceChildren();
       host.hidden = true;
       return;
@@ -3973,7 +4181,18 @@ async function init() {
 
   function resolveDissipation(): void {
     const smoke = state.smoke ?? [];
-    if (!smoke.length) return;
+    // Asked here as well as refused by the command: freeplay is not strict,
+    // and a refused dissipation would still apply.
+    if (state.smokeRound === state.round.n) return;
+    // A guided game's End Phase step is marked by the dissipation itself, from
+    // whichever door it ran, and marked with no smoke too so it does not wait.
+    if (state.script && PHASES[state.round.phase] === 'End') {
+      perform(data, state, { kind: 'markEndStep', seat: state.script.turn, step: 'smoke' });
+    }
+    if (!smoke.length) {
+      onChanged();
+      return;
+    }
     const order: Side[] = state.round.firstPlayer === 's1' ? ['s1', 's2'] : ['s2', 's1'];
     const doomed = new Set<SmokeScreen>();
     const queue: { side: Side; group: SmokeScreen[] }[] = [];
@@ -4019,14 +4238,14 @@ async function init() {
     board.showSmokeTargets(
       next.group.map((s) => ({ c: s.col, r: s.row, ok: true })),
       (c, r) => {
-        perform(data, state, { kind: 'removeSmoke', seat: next.side, at: { col: c, row: r } });
+        perform(data, state, { kind: 'removeSmoke', seat: next.side, side: next.side, at: { col: c, row: r } });
         smokeChoices = smokeChoices!.slice(1);
         onChanged();
         renderSmokeChoice(0);
       },
     );
     host.querySelector('#smoke-auto')!.addEventListener('click', () => {
-      perform(data, state, { kind: 'removeSmoke', seat: next.side, at: { col: next.group[0].col, row: next.group[0].row } });
+      perform(data, state, { kind: 'removeSmoke', seat: next.side, side: next.side, at: { col: next.group[0].col, row: next.group[0].row } });
       smokeChoices = smokeChoices!.slice(1);
       onChanged();
       renderSmokeChoice(0);
@@ -4216,7 +4435,10 @@ async function init() {
     const en = rawEn && !/[぀-ヿ一-鿿]/.test(rawEn) ? rawEn : undefined;
     const tr = data.actionTranslation(action.id);
     const text = en ?? tr?.english ?? action.description?.zh?.trim() ?? 'See the card for what this detonation does.';
-    const guess = /interfer|jam|stun/i.test(`${name} ${text}`) ? 'fci' : 'smoke';
+    // Never "In smoke": on a board that comes from the screens themselves, and
+    // it was the default token for every effect that was not a jam (audit
+    // Phase 4, G12).
+    const guess = 'fci';
     let pick = guess;
     const needsLos = /line of sight|视线/i.test(text);
     const los = new Map<number, string>();
@@ -4227,8 +4449,8 @@ async function init() {
     // grenade over a missile does not advertise Repaired or Optical Camouflage.
     const detStatuses = (): StatusDef[] => {
       const kinds = new Set(targets.map((x) => x.t.kind));
-      if (!kinds.size) return statusesFor('mech');
-      return STATUSES.filter((s) => [...kinds].some((k) => !s.appliesTo || s.appliesTo.includes(k)));
+      if (!kinds.size) return statusesFor('mech').filter((s) => s.id !== 'smoke');
+      return STATUSES.filter((s) => s.id !== 'smoke' && [...kinds].some((k) => !s.appliesTo || s.appliesTo.includes(k)));
     };
 
     const draw = (): void => {
@@ -4359,7 +4581,7 @@ async function init() {
     const dc = Math.abs(ga.c - gb.c);
     const dr = Math.abs(ga.r - gb.r);
     if (dc === 0 && dr === 0) return 'same grid';
-    if (dc <= 1 && dr <= 1) return 'adjacent · R1';
+    if (dc <= 1 && dr <= 1) return `adjacent · R${dc + dr}`;
     return `Range ${dc + dr}`;
   }
 
@@ -4431,6 +4653,10 @@ async function init() {
       // [Moving in Straight Line] +N (直线移动), read off the Movement Action
       // this plan is spending; a bare Maneuver carries none.
       straightBonus: straightLineBonus(action),
+      // Obstruct's "or 1 Link" (LPA-20; audit Phase 4, D2): the Link this
+      // Movement may spend instead of the surcharge, less what the Action
+      // itself already costs in Link.
+      linkPay: away ? { budget: breakAwayLinkBudget(t, nonHumanoidCost(action ?? null)), payable: obstructSurcharge(data, t, state.tokens, terrain) } : undefined,
     };
   }
 
@@ -5899,6 +6125,32 @@ async function init() {
   // [Two-Handed] is a CHOICE (FAQ A16): the player may decline the designation
   // and perform the Action one-handed. Every rider is upside, so the default
   // button takes it; the declined copy is marked so the combat window says so.
+  // A Shock Attack walk is Movement (audit Phase 4, E1), so the attack it
+  // belongs to is judged again as a Mech that has moved: [Stationary] is gone,
+  // and every grant that hangs on it with it. Both doors judged the Action
+  // BEFORE the walk and carried that copy into the targeting, which is how a
+  // Tempest kept its Extra Firing after charging. The Two-Handed answer already
+  // given carries over rather than being asked twice.
+  function afterShockWalk(t: Token, raw: CardAction, asked: CardAction, both: boolean): CardAction {
+    const opp0 = state.script?.opp;
+    const opp = { ...(opp0?.uid === t.uid ? opp0 : {}), moved: true };
+    const granted = grantAdjusted(stationaryAdjusted(raw, opp), t, opp);
+    if (asked.twoHandedDeclined) return { ...granted, twoHandedDeclined: true };
+    return (both ? twoHandedUse(data, t, granted)?.action : undefined) ?? granted;
+  }
+
+  // The walk recorded as the Action's own Movement, once the Action is paid:
+  // the command layer lets a free move ride only an Action already performed
+  // (audit Phase 2, B8), and the guide pays at the END of the attack. `from`
+  // because the token already stands on its landing, which is exactly the case
+  // that field exists for. Checked first, so a card-door attack the guide never
+  // charged records nothing rather than putting a refusal on screen.
+  function recordShockWalk(t: Token, actionId: string, from: { col: number; row: number }): void {
+    if (state.script?.opp?.uid !== t.uid) return;
+    const cmd: Command = { kind: 'maneuver', seat: t.side, uid: t.uid, to: { col: t.col, row: t.row }, from, free: true, actionId };
+    if (check(data, state, cmd).ok) perform(data, state, cmd);
+  }
+
   async function askTwoHanded(t: Token, granted: CardAction): Promise<CardAction> {
     const use = twoHandedUse(data, t, granted);
     if (!use) return granted;
@@ -8439,6 +8691,18 @@ async function init() {
         return;
       }
       const d = k === 'q' ? 3 : 1;
+      // Inside an open plan the turn is part of that Movement: its commit reads
+      // the Silence and pays the costs once, and Cancel turns it back.
+      if (movePlan?.uid === t.uid) {
+        t.facing = ((t.facing + d) % 4) as Facing;
+        onChanged();
+        renderMoveCtrl();
+        return;
+      }
+      // The acting unit of a guided game turns through its Maneuver, which the
+      // guide opens already turned (audit Phase 4, E5). Shift is still the
+      // effect's turn, which is no Maneuver at all.
+      if (!ev.shiftKey && !movePlan && playGuide.turnActing(t.uid, d)) return;
       t.facing = ((t.facing + d) % 4) as Facing;
       // A pivot is a Maneuver, "including changing facing without Movement"
       // (4.12.3), so it takes the Low Profile Token and Reveals a camouflaged

@@ -67,11 +67,12 @@ import { checkForUpdates, syncUpdateNotice, watchForUpdates } from '../src/updat
 import { normaliseTasks, taskItemsFor, type TaskState } from '../src/tasks';
 import { previewScore } from '../src/scoring';
 import { tacticFitsPhase, tacticSpec, tacticTargets, type TacticCtx } from '../src/tactics';
-import { conditionalGrants, stationaryBonus, explosionScope, linkShockOf, tetheredBy, freehandSlots, linkSupportOf, roundEndLinkAuras, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, targetStatusGrant, tokenCleanupOf, immediateDetonation, smokePlacement, squadAllegiance, twoHandedUse } from '../src/units';
+import { conditionalGrants, stationaryBonus, explosionScope, linkShockOf, tetheredBy, freehandSlots, linkSupportOf, roundEndLinkAuras, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, targetStatusGrant, tokenCleanupOf, immediateDetonation, smokePlacement, squadAllegiance, twoHandedUse, grantAdjusted, stationaryAdjusted, shockAttackOf, shockMoveAllowed, immobilizedStop } from '../src/units';
 import { gameResult } from '../src/tasks';
+import { isMeleeFiring } from '../src/melee';
 import { isSilentAction, manifestationRange, targetStatusTargets, activatesCamo, canActivateCamo, hasHighlight, electronicAll, electronicAllTargets, electronicTargetWhy, isScanAction, scannable, actionPartWhy, autoParryValue, cruising, canBeLoad, chargeChoices, chargeableSlots, electronicDash, electronicValue, guidedActions, initiativeFor, interceptCapacity, isCarrier, isDeployable, isElectronicAttack, maneuverRange, maxLink, migrateState, parryParts, pilotCard, structureOf, tokenCards, volleyOf } from '../src/units';
 import { lengthOf, LENGTH_NAME, timingOf } from '../src/ticks';
-import { newScriptState, PHASES, SCALES, statusesFor, statusStacks, STATUSES, TIMINGS } from '../src/types';
+import { newScriptState, PHASES, SCALES, statusCount, statusesFor, statusStacks, STATUSES, TIMINGS } from '../src/types';
 import type { Card, CardAction, DieColor, GameState, ImportedSquad, MechLoadout, PartSlot, PartState, Side, Stance, Token } from '../src/types';
 
 const root = document.getElementById('pad-root')!;
@@ -1287,10 +1288,17 @@ initEw({
 // An Interception: the table judges Range to the projectile, the Token is
 // spent, and the window opens with line of sight given (4.9).
 async function askTableAndIntercept(by: Token, actionId: string, target: Token): Promise<void> {
+  // An Interception is a Firing Action (FAQ M26): terrain never blocks a line to
+  // an Aerial Unit, but a Smoke Screen over every line does (FAQ F3). The
+  // question never said so (audit Phase 4, G4).
+  // The table's "In smoke" record, which the pad keeps: said here, where it
+  // decides the shot (audit Phase 4, G12).
+  const marked = [by, target].filter((u) => statusCount(u.statuses, 'smoke') > 0);
   const clear = await choiceDialog({
     title: `${by.label} intercepts ${target.label}`,
-    body: 'Range to the projectile, at its start or its landing, on the table (4.9).',
-    choices: [{ id: 'yes', label: 'In range', primary: true }, { id: 'no', label: 'Not this target', cancel: true }],
+    body: `Range to the projectile, at its start or its landing, and a line to it that crosses no Smoke Screen, on the table (4.9, 4.16, FAQ F3).${
+      marked.length ? ` ${marked.map((u) => u.label).join(' and ')} ${marked.length === 1 ? 'is' : 'are'} marked In smoke, and a unit in a Smoke Screen can neither be Intercepted nor Intercept.` : ''}`,
+    choices: [{ id: 'yes', label: 'In range, a line clear of smoke', primary: true }, { id: 'no', label: 'Not this target', cancel: true }],
     stacked: true,
   });
   if (clear !== 'yes') return;
@@ -1404,30 +1412,73 @@ async function askTableAndAttack(attacker: Token, actionId: string, defender: To
   // pad opened the attack straight, on a unit its marker only suspected
   // (audit Phase 3, A2). A granted Riposte answers the attacker it can see.
   if (!granted && !resumed && (defender.statuses ?? []).includes('camouflage')) { await scanFirst(attacker, actionId, defender); return; }
+  // Shock Attack X: "Before performing this Action, may move X grids." The
+  // walk is Movement, so it spoils [Stationary] (audit Phase 4, E1), and the
+  // pad never asked: a charge still paid the Stationary bonus. Asked first,
+  // because the range and line of sight below are judged from where it ends.
+  const oppNow = table.script?.opp?.uid === attacker.uid ? table.script.opp : null;
+  const shock = a && !resumed ? shockAttackOf(grantAdjusted(stationaryAdjusted(a, oppNow), attacker, oppNow)) : 0;
+  let shocked = false;
+  if (a && shock > 0 && shockMoveAllowed(attacker) && !immobilizedStop(attacker, null)) {
+    const walk = await choiceDialog({
+      title: `${a.name.en}: Shock Attack ${shock}`,
+      body: `${attacker.label} may move up to ${shock} Grid${shock === 1 ? '' : 's'} before this Action. Move it on the table first, then carry on.`,
+      choices: [{ id: 'moved', label: 'It moved first', primary: true }, { id: 'no', label: 'Straight to the attack' }],
+      stacked: true,
+    });
+    if (walk === null) return;
+    shocked = walk === 'moved';
+  }
   // One question: the shot as the table sees it. A line of sight may exist
   // and still pass a Terrain Object or a Unit, and each gives the defender
-  // +2 White; both together give +4 (4.4.2). Melee claims no Protection and
-  // its range is base contact whatever number the data carries.
+  // +2 White; both together give +4 (4.4.2). Melee claims no Protection.
+  //
+  // A Melee Action's "--" is the Adjacent Grids, and one printing a Range is
+  // Extended Melee, which needs line of sight (4.6.2, p.59). The pad called
+  // every Melee reach "Base contact" (audit Phase 4, D4).
   const melee = a?.type === 'Melee';
+  const extended = melee && (a?.range ?? 0) > 0;
   // 4.5.2: with an Aerial Unit at either end the line of sight cannot be
   // obstructed, so neither Protection can be claimed and neither is offered.
   const open = melee || attacker.aerial || defender.aerial;
-  const range = melee ? 'Base contact' : a?.range !== undefined ? `Range ${a.range}` : 'Range as printed';
+  const range = melee
+    ? (extended ? `Extended Melee, Range ${a!.range}, with line of sight` : 'Adjacent Grids')
+    : a?.range !== undefined ? `Range ${a.range}` : 'Range as printed';
+  // A Firing Action's line of sight is any line between the bases that crosses
+  // neither 3" terrain nor a Smoke Screen (4.2.4, 4.16); the question never
+  // mentioned smoke (audit Phase 4, G1).
+  const firing = a?.type === 'Firing';
+  // MELEE LOCK (4.3.5): a Locked unit performs no Firing Action unless it has
+  // Melee Firing. The pad cannot see who stands next to whom, so the table is
+  // asked, as one row of this question (ruled 2026-09-25, audit Phase 4, I6).
+  const lockRow = firing && a && !isMeleeFiring(a)
+    ? [{ id: 'locked', label: `${attacker.label} is Melee Locked` }]
+    : [];
+  // The table's "In smoke" record, said where it decides the shot (audit
+  // Phase 4, G12): a Firing Action has no line of sight into or out of a Smoke
+  // Screen's Grid, and an Aerial unit is no exception (FAQ F1, F2).
+  const smoked = firing ? [attacker, defender].filter((u) => statusCount(u.statuses, 'smoke') > 0) : [];
   const seen = await choiceDialog({
     title: `${attacker.label} attacks ${defender.label}`,
-    body: `${range} · judged on the table.`,
+    body: `${range} · judged on the table.${firing ? ' Any one line between the bases that crosses neither 3" terrain nor a Smoke Screen is line of sight.' : ''}${
+      smoked.length ? ` ${smoked.map((u) => u.label).join(' and ')} ${smoked.length === 1 ? 'is' : 'are'} marked In smoke, so there is no line of sight for a Firing Action (4.16).` : ''}`,
     choices: open
-      ? [{ id: '0', label: melee ? 'In reach' : 'In range', primary: true }, { id: 'no', label: 'Not this target', cancel: true }]
+      ? [{ id: '0', label: melee ? (extended ? 'In range, line of sight clear' : 'In reach') : 'In range, a line clear of smoke', primary: true }, ...lockRow, { id: 'no', label: 'Not this target', cancel: true }]
       : [
         { id: '0', label: 'In range, line of sight clear', primary: true },
         { id: '2t', label: 'In range, behind terrain (+2 White)' },
         { id: '2u', label: 'In range, behind a unit (+2 White)' },
         { id: '4', label: 'In range, behind terrain and a unit (+4 White)' },
+        ...lockRow,
         { id: 'no', label: 'Not this target', cancel: true },
       ],
     stacked: true,
   });
   if (seen === null || seen === 'no') return;
+  if (seen === 'locked') {
+    toast(`${attacker.label} is Melee Locked, and a Firing Action without [Melee Firing] cannot be performed while it is (4.3.5).`);
+    return;
+  }
   const prot = seen === '4' ? '4' : seen.startsWith('2') ? '2' : '0';
   const rear = await choiceDialog({
     title: 'Arc',
@@ -1455,10 +1506,13 @@ async function askTableAndAttack(attacker: Token, actionId: string, defender: To
   }
   let stationary: boolean | undefined;
   if (a && !guidedOn(table) && (stationaryBonus(a) || conditionalGrants(a).some((g) => g.when === 'stationary'))) {
-    const still = await choiceDialog({
+    // A turn on the spot is Movement too (FAQ E3), so the question names it:
+    // players who had only pivoted were answering "not moved" (audit Phase 4,
+    // E9). A Shock walk just taken has already answered it.
+    const still = shocked ? 'moved' : await choiceDialog({
       title: 'Stationary',
-      body: `Has ${attacker.label} moved during this Action Opportunity? [Stationary] pays out only if it has not.`,
-      choices: [{ id: 'still', label: 'No, it has not moved', primary: true }, { id: 'moved', label: 'Yes, it moved' }],
+      body: `Has ${attacker.label} moved or turned during this Action Opportunity? [Stationary] pays out only if it has done neither: a turn on the spot counts as Movement.`,
+      choices: [{ id: 'still', label: 'No, it has not moved or turned', primary: true }, { id: 'moved', label: 'Yes, it moved or turned' }],
       stacked: true,
     });
     if (still === null) return;
@@ -1515,6 +1569,13 @@ async function askTableAndAttack(attacker: Token, actionId: string, defender: To
   // In a guided game the Action is paid for first; a refusal is the engine's
   // answer and the window stays shut. Freeform opens the window outright.
   if (guidedOn(table) && !resumed && !send({ kind: 'performAction', seat: attacker.side, uid: attacker.uid, actionId, ...(granted ? { granted: true } : twoHanded ? {} : bothHands(attacker, actionId)) })) return;
+  // The walk recorded as this Action's own Movement, now the Action is paid:
+  // a free move rides only an Action already performed. Checked first, so a
+  // granted Riposte, which owes no Movement, records nothing and shows no error.
+  if (shocked && guidedOn(table)) {
+    const walk: Command = { kind: 'maneuver', seat: attacker.side, uid: attacker.uid, to: { col: 0, row: 0 }, free: true, actionId, chain: 'join' };
+    if (check(data!, table, walk).ok) send(walk);
+  }
   if (chargeSpent && chargeSlot) send({ kind: 'setCharge', seat: attacker.side, uid: attacker.uid, slot: String(chargeSlot.slot), on: false, ...(guidedOn(table) ? { chain: 'join' as const } : {}) });
   panel = 'combat';
   render();
@@ -2297,10 +2358,21 @@ function tokenRow(t: Token): string {
       <span class="pad-toktile-name">${esc(d.label)}</span>
     </button>`;
   }).join('');
+  // The Tether chips (PDLH-202), which the pad never showed. The table judges
+  // the distance here, so each carries its own "Tether ends" (audit Phase 4,
+  // H1); a partner gone from the table ends it without being asked.
+  const tethers = (t.tether ?? []).map((l) => {
+    const who = esc(table.tokens.find((x) => x.uid === l.uid)?.label ?? 'a unit no longer on the table');
+    return `<div class="pad-tether">
+      <span>${l.role === 'initiator' ? `Tether ${l.range} · holding ${who}` : `Tethered ${l.range} · held by ${who}`}</span>
+      <button class="pad-chip" data-act="tether-end" data-other="${l.uid}">Tether ends</button>
+    </div>`;
+  }).join('');
   return `<div class="pad-toks">
       ${chips}
       <button class="pad-tok pad-tok-add${tokPick ? ' on' : ''}" data-act="tok-open" aria-label="Place a Token">+</button>
     </div>
+    ${tethers}
     ${managed ? `<div class="pad-tokpop pad-tokinfo">
       <div class="pad-tokinfo-head">
         <b>${esc(managed.label)}</b>
@@ -4471,6 +4543,17 @@ function act(el: HTMLElement, ev: Event): void {
       v.tokManage = null;
       send({ kind: 'removeStatus', ...sourceFor(t), targetUid: t.uid, statusId: el.dataset.tok! });
       return;
+    case 'tether-end': {
+      if (!t) return;
+      // Sent from whichever end is this player's own unit: either player may
+      // say the Tether ended, and a command names the sender's own unit.
+      const other = Number(el.dataset.other);
+      const me = solo ? t.side : mySeat();
+      const mine = t.side === me ? t : table.tokens.find((x) => x.uid === other && x.side === me);
+      if (!mine) return;
+      send({ kind: 'cutTether', seat: mine.side, uid: mine.uid, targetUid: mine.uid === t.uid ? other : t.uid });
+      return;
+    }
     case 'add-squad':
       if (solo) squadSide = (el.dataset.side as Side) ?? squadSide;
       panel = 'more';

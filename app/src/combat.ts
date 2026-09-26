@@ -8,7 +8,8 @@ import type { Card, CardAction, CombatView, CounterRoll, DiceData, DiceIcon, Die
 import { statusCount, STATUSES } from './types';
 import { actionRange, isSilentAction, counterOffensive, ewWinCommands, chargeOrderOn, counterStage, cruising, firewatchOn, type CounterStage, aaRadarCovers, armorPiercing, armorPiercingNote, attackReactionsOf, auraEffectsOn, aurasOn, auraValueOn, automaticShieldFor, blueLightningDodges, earlyWarningCover, coolingBonus, denseArmorSlot, eyeLightExchangeOf, eyesAreHeavyHits, pilotDiceBonus, ignoresLowProfile, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, noMeleeBackAttack, onHitRiders, missileGuidance, multiTargetLimit, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, snipeOn, suppressionOn, disarmOn, dragPrinted, designationsOn, dodgeEnhanceOf, linkShockOf, lightningRiderOf, electronicStrength, followUpAfterKill, eyeRerollName, kcArmorReady, lightningExchangeOf, lightningLinkDrain, canAffordFocus, focusIsFree, hiddenByAlliedAura, keepsLinkOnPartLoss, maxLink, provokeWhy, preventsDamage, autoParryValue, immobilizeChoiceOn, faceAwayOnHit, pursuesFragile, structureOf, trackingCover, TRACKING_SPOTTERS_NEEDED, pilotCard, pilotIs, repeatersFor, SLOT_LABEL, tetherStrike, treatedAsOffensive, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
 import { timingOf } from './ticks';
-import { inArc, largeGridOf, losNote, protectionFor, rangeBetween, standingSpot } from './rules';
+import { inArc, largeGridOf, losBetween, losNote, protectionFor, rangeBetween, standingSpot } from './rules';
+import { canBeForceMoved } from './melee';
 import type { Command } from './commands';
 
 // Where dice results come from. Absent in a local game, which rolls its own;
@@ -1690,13 +1691,24 @@ export class AttackHelper {
     // Automatic Shield in play two designations can collapse onto one shield,
     // and a uid-keyed set would then hide the second designation from the list.
     const chosen = new Set(m.targets.map((t) => (t.declared ?? t.defender).uid));
-    return (this.tokens ? this.tokens() : []).filter((u) => {
+    const board = this.tokens ? this.tokens() : [];
+    const terrain = this.terrain ? this.terrain() : [];
+    const smoke = this.smoke ? this.smoke() : [];
+    const reach = { ...m.action, range: actionRange(this.data, board, m.attacker, m.action) };
+    return board.filter((u) => {
       if (u.side === m.attacker.side || chosen.has(u.uid) || u.deployed === false) return false;
       if ((u.partStates[u.kind === 'mech' ? 'torso' : 'main'] ?? 'intact') === 'destroyed') return false;
       if (m.action.type === 'Melee' && u.aerial) return false;
       if ((statusCount(u.statuses, 'camouflage') > 0) !== hidden) return false;
       if (this.noBoard) return true;
-      return rangeBetween(m.attacker, u).range <= (m.action.range ?? 1);
+      // A camouflaged one is Scanned first and may Manifest anywhere, so Range
+      // is all that is asked of it here; it faces the rest once it joins.
+      if (hidden) return rangeBetween(m.attacker, u).range <= (m.action.range ?? 1);
+      // Every added target is a target of the same Action and needs what the
+      // first one did: Range, the Forward Arc and a line of sight, terrain and
+      // smoke on the same lines (4.4.1, 4.16). The ✕ beside each was only a
+      // note, even on the strict page (audit Phase 4, G5).
+      return !losNote(m.attacker, u, reach, terrain, board, smoke, true).includes('✕');
     });
   }
 
@@ -1718,10 +1730,10 @@ export class AttackHelper {
   // and the line that explains the pool are written in two different places,
   // and a bonus the player cannot see the reason for reads as a bug.
   //
-  // `smoke` is fed here as well as `terrain`, and is not optional: the card
-  // asks whether the ATTACKER is visible to the drone, and a Smoke Screen kills
-  // line of sight outright (4.16). Both pages already keep this field live, so
-  // dropping it was purely a missed argument at this seam.
+  // `smoke` is still fed here beside `terrain`, and earlyWarningCover no
+  // longer reads it: a Smoke Screen takes sight from Firing Actions alone, and
+  // a Drone seeing the attacker is not one (ruled 2026-09-25, audit Phase 4,
+  // I12; FAQ F5 says the same of the AA Radar).
   private earlyWarning(): Token | undefined {
     const c = this.ctx;
     if (!c || !this.tokens) return undefined;
@@ -3551,7 +3563,7 @@ export class AttackHelper {
       add.className = 'dim';
       add.textContent = more.length
         ? `Add another target (${m.cap.limit - m.targets.length} more allowed):`
-        : 'No other enemy is in range to add.';
+        : 'No other enemy is in range and in sight to add.';
       wrap.appendChild(add);
       for (const u of more) {
         // Targets 2..N are designated HERE, so the swap has to run here too —
@@ -5492,20 +5504,29 @@ export class AttackHelper {
       ? tetherStrike(this.data, c.attacker, c.action, this.data.actionTranslation(c.action.id)?.english ?? undefined)
       : null;
     if (tether) {
-      this.onCommand({
+      const placed = accepted(this.onCommand({
         kind: 'tether', seat: c.attacker.side, uid: c.attacker.uid,
         targetUid: struck.uid, range: tether.range,
-      });
-      if (tether.slot && tether.into) {
+      }));
+      // The arm turns over only if the chip is on the board now. A Hit that
+      // destroyed its target leaves nothing to hold the Tether open, and the
+      // sweep after the command has already cut it; the face used to turn
+      // anyway and stay in Tether Mode for the rest of the game (audit Phase
+      // 4, H2). Read off the live board where there is one.
+      const live = this.unitByUid(c.attacker.uid);
+      const held = placed && (!live || (live.tether ?? []).some((x) => x.uid === struck.uid && x.role === 'initiator'));
+      if (held && tether.slot && tether.into) {
         this.onCommand({
           kind: 'transformPart', seat: c.attacker.side, uid: c.attacker.uid,
           slot: tether.slot, cardId: tether.into,
         });
       }
-      this.note(
-        `Tether ${tether.range}: ${struck.label} may not voluntarily move beyond ${tether.range} Grids of ${c.attacker.label} while both chips are on the board (PDLH-202).`,
-        [c.attacker, struck],
-      );
+      if (held) {
+        this.note(
+          `Tether ${tether.range}: ${struck.label} may not voluntarily move beyond ${tether.range} Grids of ${c.attacker.label} while both chips are on the board (PDLH-202).`,
+          [c.attacker, struck],
+        );
+      }
     }
     // ON-HIT RIDERS (4.4.2/4.4.3), beside Tether and for the same reasons: this
     // is the one seam every attack passes through on BOTH pages, and an on-hit
@@ -5735,7 +5756,10 @@ export class AttackHelper {
     // being one - and offered as buttons that survive ctx going null below, so
     // EVERYTHING they need is captured here. One latch across both: the card
     // prints OR, so taking either retires the pair.
-    if (onHit > 0 && struck.kind === 'mech' && struck.uid !== c.attacker.uid
+    // Any target, not only a Mech: the keywords say "the target", and a Hook or
+    // Whip hit on a Drone offered nothing (audit Phase 4, B1). Disarm still
+    // needs a Mech's Part, and skips itself below when the hit was on `main`.
+    if (onHit > 0 && struck.uid !== c.attacker.uid
       && (disarmOn(c.action) || dragPrinted(c.action) || immobilizeChoiceOn(c.action) || faceAwayOnHit(c.action))) {
       const seat = c.attacker.side;
       const atkUid = c.attacker.uid;
@@ -5855,9 +5879,18 @@ export class AttackHelper {
           ['NW', -1, -1], ['N', 0, -1], ['NE', 1, -1], ['W', -1, 0],
           ['E', 1, 0], ['SW', -1, 1], ['S', 0, 1], ['SE', 1, 1],
         ];
-        const spots = dirs
-          .map(([label, dc, dr]) => ({ label, spot: standingSpot(ag.c + dc, ag.r + dr, defSize as 1 | 2 | 3, true, terrain, world, defUid) }))
-          .filter((x): x is { label: string; spot: { col: number; row: number } } => !!x.spot);
+        // Flying Movement passes over anything "as long as the ending Grid can
+        // accommodate the Unit" (4.3.2), so the landing is tested with the
+        // target's REAL footprint; `aerial = true` returned the centre spot
+        // before looking, and dropped a Mech inside a building or on another
+        // unit. FAQ B1: no Drag into a Grid the terrain cuts off from the
+        // attacker's sight. And a unit that cannot move is never dragged
+        // (4.3.4). Audit Phase 4, B1.
+        const draggable = canBeForceMoved(this.data, struck);
+        const spots = (draggable ? dirs : [])
+          .map(([label, dc, dr]) => ({ label, spot: standingSpot(ag.c + dc, ag.r + dr, defSize as 1 | 2 | 3, !!struck.aerial, terrain, world, defUid) }))
+          .filter((x): x is { label: string; spot: { col: number; row: number } } => !!x.spot)
+          .filter((x) => losBetween(c.attacker, { ...struck, col: x.spot.col, row: x.spot.row }, terrain, world.filter((w) => w.uid !== defUid)) !== 'blocked');
         if (spots.length) {
           const row = document.createElement('div');
           row.className = 'ah-partpick';

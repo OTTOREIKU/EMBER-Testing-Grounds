@@ -35,6 +35,8 @@ writeFileSync(
     // and the failure reads as "isFlyingBase is not defined".
     + dataSrc.slice(dataSrc.indexOf('export function isFlyingBase'), dataSrc.indexOf('export function isAerial'))
     + cut('// A Mine\'s trigger asks for a GROUND Unit', 'export function minesOwed', 'isGroundUnit')
+    // isGroundUnit asks it, since a cruising White Dwarf is a Flying Unit at all times (audit Phase 4, A2).
+    + cut('export function cruising', 'export function usableInCruise', 'cruising')
     + cut('// Which Moving Actions are a position SWAP', '// ---------- The Hyena', 'blinkTargets'),
 );
 const { followUpAfterKill, blinkTargets, isPositionSwap, projectilesOfAction, immediateDetonation } = await import(tmp.href);

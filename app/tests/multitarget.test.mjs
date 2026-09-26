@@ -98,12 +98,13 @@ const mech = (torso, over = {}) => ({
 // is what makes B7's question reachable at all in this box.
 check('the H2-A reacts to being shot at with 2 Smoke Screens',
   attackReactionsOf(data, mech('546')).map((r) => [r.name, r.smoke.count, r.smoke.range, r.afterDestroyed]),
-  [['应急烟幕', 2, 1, true]]);
+  [['应急烟幕', 2, 1, false]]);
 // FAQ D10 asks whether a Reaper destroyed outright still gets its Emergency
-// Smoke and answers yes; the card encodes it as usableAfterDestroyed, so a dead
-// Part is no bar HERE and would be on a card without the flag.
-check('and still reacts with the Part destroyed (FAQ D10)',
-  attackReactionsOf(data, mech('546', { partStates: { torso: 'destroyed' } })).length, 1);
+// Smoke and answers NO in all three languages: "its model is removed from the
+// battlefield immediately". This check said yes, after the bundle's
+// usableAfterDestroyed flag; the flag is no longer read (audit Phase 4, G10).
+check('and reacts with nothing once the Part is destroyed (FAQ D10)',
+  attackReactionsOf(data, mech('546', { partStates: { torso: 'destroyed' } })).length, 0);
 check('a Mech with no such card reacts to nothing', attackReactionsOf(data, mech('547')), []);
 // The card prints storage 1, so syncMagazines tracks its uses as Ammo and a
 // spent Emergency Smoke must stop being offered — untracked ammo never gates.

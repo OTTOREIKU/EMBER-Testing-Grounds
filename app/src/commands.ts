@@ -1,9 +1,9 @@
-import type { BoardGrids, CombatView, Facing, GameState, MechLoadout, Opportunity, PartSlot, PartState, RollbackPoint, ScriptState, Side, SmokeScreen, Stance, Timing, Token } from './types';
+import type { BoardGrids, CardAction, CombatView, Facing, GameState, MechLoadout, Opportunity, PartSlot, PartState, RollbackPoint, ScriptState, Side, SmokeScreen, Stance, TerrainPiece, Timing, Token } from './types';
 import { addStatus, ageTokens, cellsOf, gridsOf, newOpportunity, PHASES, shedToken, statusCount, STATUSES, TIMINGS, tokenFaces } from './types';
 import type { GameData } from './data';
 import { cardName, transformFaces, unfoldsInto, discardFaceOf, environmentAllowance } from './data';
-import { camoPartLost, canActivateCamo, electronicAll, electronicAllTargets, whistleFunders, electronicTargetWhy, isElectronicAttack, ownCards, actionSilenceDenier, activatesCamo, contactRevealsOwed, positionsOf, envCardAt, isGroundUnit, initiativeFor, actionMoves, firewatchOn, focusPayer, stanceFeedbackOf, stanceFeedbackTargets, stanceShaped, actionPartWhy, extraActivationOf, overloadPackOn, cruising, selfStanceShift, spendsAmmoWhenPerformed, startOpts, counterStage, covertCarryLock, ammoDeliveryPool, opportunityBonusOn, ripostePart, defenseReactionOn, targetTracingOn, riderOnDrone, commandGeneration, blinkTargets, isPositionSwap, electronicOrigins, isSilentAction, maneuverIsSilent, loanedParts, unfoldToken, formSwitch, switchFormTo, extrasFor, consumesCharge, cutTethersOn, electronicDash, electronicValue, immobilizedStop, isScanAction, scannable, manifestationRange, nonHumanoidCost, nonHumanoidStop, envHotEntries, settleEnvironments, freehandSlots, twoHandedUse, missileGroupOf, volleyOf, interceptCapacity, focusIsFree, keepsLinkOnPartLoss, makeDroneToken, structureOf, makeMechToken, maneuverRange, maxLink, partsLeft, pilotCard, pilotIs, projectileDelivery, provokeWhy, settleTethers, SLOT_LABEL, tetherTo, tokenCards, transformPartOn, actionRange, isRwsAction, rwsCommandKey, rwsFiredKey, selfStatusGrant, selfGrantWhy, straightLineBonus, linkTickTraitOn, isCarrier, canBeLoad, roundEndLinkSources } from './units';
-import { tetherCap } from './melee';
+import { camoPartLost, canActivateCamo, electronicAll, electronicAllTargets, whistleFunders, electronicTargetWhy, isElectronicAttack, ownCards, actionSilenceDenier, activatesCamo, contactRevealsOwed, positionsOf, envCardAt, isGroundUnit, initiativeFor, actionMoves, firewatchOn, focusPayer, stanceFeedbackOf, stanceFeedbackTargets, stanceShaped, actionPartWhy, extraActivationOf, overloadPackOn, cruising, selfStanceShift, spendsAmmoWhenPerformed, startOpts, counterStage, covertCarryLock, ammoDeliveryPool, opportunityBonusOn, ripostePart, defenseReactionOn, targetTracingOn, riderOnDrone, commandGeneration, blinkTargets, isPositionSwap, electronicOrigins, isSilentAction, maneuverIsSilent, loanedParts, unfoldToken, formSwitch, switchFormTo, extrasFor, consumesCharge, cutTethersOn, cutTetherBetween, electronicDash, electronicValue, immobilizedStop, chassisStop, isScanAction, scannable, manifestationRange, nonHumanoidCost, nonHumanoidStop, envHotEntries, settleEnvironments, freehandSlots, twoHandedUse, missileGroupOf, volleyOf, interceptCapacity, focusIsFree, keepsLinkOnPartLoss, makeDroneToken, structureOf, makeMechToken, maneuverRange, maxLink, partsLeft, pilotCard, pilotIs, projectileDelivery, provokeWhy, settleTethers, SLOT_LABEL, tetherTo, tokenCards, transformPartOn, actionRange, isRwsAction, rwsCommandKey, rwsFiredKey, selfStatusGrant, selfGrantWhy, straightLineBonus, grantAdjusted, shockAttackOf, linkTickTraitOn, isCarrier, canBeLoad, roundEndLinkSources } from './units';
+import { canBeForceMoved, isMeleeFiring, lockersOf, tetherCap } from './melee';
 import { canActivate, canAttackMode, canManeuver, canOverload, canPerform, rebooted, REBOOT_ID, spendAction, spendActivation, spendAttackMode, spendManeuver, spendOverload, untouched } from './ticks';
 import { tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { battlefieldLocked, deploymentComplete, deployTurn, firstPlayerFrom, newSetup, normaliseSetup, tasksLocked } from './setup';
@@ -96,7 +96,7 @@ export type Command = (
   // `flying` rides along for the Environment Cards: a flight enters only its
   // landing Grid, so a High Temperature Grid under the route must know whether
   // the unit walked through it or flew over it. Absent means walked.
-  | { kind: 'maneuver'; seat: Side; uid: number; to: { col: number; row: number }; facing?: Facing; free?: boolean; granted?: boolean; via?: { col: number; row: number }[]; from?: { col: number; row: number }; actionId?: string; flying?: boolean }
+  | { kind: 'maneuver'; seat: Side; uid: number; to: { col: number; row: number }; facing?: Facing; free?: boolean; granted?: boolean; via?: { col: number; row: number }[]; from?: { col: number; row: number }; actionId?: string; flying?: boolean; breakAwayLink?: number }
   // A Crush with no escape square (4.3.6, book p.47): "If NONE of the Grids
   // within Range of that Forced Movement can be entered, the crushed Unit
   // instead exchanges positions with the Crushing Unit."
@@ -327,7 +327,9 @@ export type Command = (
       // cannot be typed in one place and not the other.
       items: ScriptState['reactions'];
     }
-  | { kind: 'resolveReaction'; seat: Side; uid: number; actionId: string }
+  // `placed: false` is a declined Emergency Smoke: the debt clears and the one
+  // use is kept (audit Phase 4, G9). Absent means the reaction was taken.
+  | { kind: 'resolveReaction'; seat: Side; uid: number; actionId: string; placed?: boolean }
   // The "White Dwarf" Bit turning its card over (293/294/295). The set is read
   // from the ACTION rather than trusted from the wire, the same single-source
   // rule the Disarm face and the crushSwap step-out grid follow.
@@ -371,6 +373,9 @@ export type Command = (
   // commanded: every one of the printed conditions is derived from the board by
   // settleTethers, or stamped where the Penetration lands.
   | { kind: 'tether'; seat: Side; uid: number; targetUid: number; range: number }
+  // The table ends a Tether it judged (a pad has no distances; audit Phase 4,
+  // H1). Sent by either end's player, naming their own unit.
+  | { kind: 'cutTether'; seat: Side; uid: number; targetUid: number }
   // `for` names the squad the Screen belongs to when it is not the sender's:
   // a defender's Emergency Smoke is driven from the attacking client, whose
   // seat the ATTRIBUTED stamping will overwrite. Ownership decides stacking
@@ -380,7 +385,10 @@ export type Command = (
   // Table-level: the cards belong to the battlefield, not to either squad, and
   // 5.4.1 has the two players placing them alternately as they set it up.
   | { kind: 'setEnvironment'; seat: Side; at: { col: number; row: number }; card: string | null }
-  | { kind: 'removeSmoke'; seat: Side; at: { col: number; row: number } }
+  // `side`: whose screen. The seat is attribution (stamped with the sender's
+  // own when networked), so it cannot say which of two screens sharing a Grid
+  // is meant (audit Phase 4, G6). Absent, the first one there, as before.
+  | { kind: 'removeSmoke'; seat: Side; at: { col: number; row: number }; side?: Side }
   | { kind: 'dissipateSmoke'; seat: Side }
   | { kind: 'setMode'; seat: Side; mode: 'hotseat' | 'hidden' }
   | { kind: 'handOver'; seat: Side }
@@ -581,6 +589,18 @@ function findAction(data: GameData, state: GameState, uid: number, actionId: str
 function oppOf(state: GameState, uid: number) {
   const o = state.script?.opp;
   return o && o.uid === uid ? o : undefined;
+}
+
+// The terrain the engine itself can see: a shipped layout or an authored map,
+// less what has been destroyed. Null for a player's own custom map, which
+// lives in one browser, so a rule that needs terrain leaves that board to its
+// page rather than judging it on an empty table (audit Phase 4, D6).
+function knownTerrain(data: GameData, state: GameState): TerrainPiece[] | null {
+  if (!state.map) return [];
+  const base = data.boardMaps?.find((m) => m.id === state.map)?.pieces ?? data.terrain?.layouts?.[state.map];
+  if (!base) return null;
+  const gone = new Set(state.removedTerrain ?? []);
+  return base.filter((p) => !gone.has(p.id));
 }
 
 // A Movement a Tactics Card handed a unit (Hit and Run), owed until made.
@@ -1283,6 +1303,13 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
     case 'placeSmoke': {
       const { col, row } = cmd.at;
       if (!Number.isInteger(col) || !Number.isInteger(row) || col < 0 || row < 0 || col >= gridsOf(state) || row >= gridsOf(state)) return no('That is not a Grid.');
+      // One screen per squad per Grid: a second one of the same squad's would
+      // be the same screen twice, and dissipation would take them one at a
+      // time (audit Phase 4, G6). Both squads may still share a Grid.
+      const owner = cmd.for ?? cmd.seat;
+      if ((state.smoke ?? []).some((x) => x.col === col && x.row === row && x.side === owner)) {
+        return no('That squad already has a Smoke Screen in that Grid.');
+      }
       return ok;
     }
     case 'setEnvironment': {
@@ -1331,10 +1358,14 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       return ok;
     }
     case 'removeSmoke': {
-      if (!(state.smoke ?? []).some((x) => x.col === cmd.at.col && x.row === cmd.at.row)) return no('There is no Smoke Screen there.');
+      if (!(state.smoke ?? []).some((x) => x.col === cmd.at.col && x.row === cmd.at.row && (cmd.side === undefined || x.side === cmd.side))) {
+        return no(cmd.side === undefined ? 'There is no Smoke Screen there.' : 'That squad has no Smoke Screen there.');
+      }
       return ok;
     }
     case 'dissipateSmoke':
+      // Once per End Phase (4.16, p.77; audit Phase 4, G7).
+      if (state.smokeRound === state.round.n) return no('The Smoke Screens have already dissipated in this End Phase (4.16).');
       return ok;
     case 'setMode': {
       if (cmd.mode !== 'hotseat' && cmd.mode !== 'hidden') return no('That is not a table mode.');
@@ -1512,6 +1543,25 @@ function movementReach(data: GameData, state: GameState, t: Token): number {
   return reach;
 }
 
+// The farthest one recorded Movement may carry a unit, as a CEILING only (ruled
+// 2026-09-25, audit Phase 4, I10 and E8): a 9-Grid Maneuver on a Maneuver Value
+// of 1 passed. The same allowance both planners draw with, and every step of a
+// route is one orthogonal Grid (the crushSwap bound below says why), so no
+// route either page can offer lands further from its start than this.
+//   - A Maneuver, granted or not, moves at the Maneuver Value, which is 0 on a
+//     destroyed Chassis: a turn on the spot is all it can record (FAQ E4).
+//   - A Movement Action at its own Range, or the Maneuver Value when it prints
+//     none (`action.range || maneuverRange`), plus a straight run's bonus.
+//   - Any other Action's Movement, a Shock Attack walk (its X) or a Stance
+//     Change's, at the larger of its X and the Maneuver Value.
+function movementCeiling(data: GameData, state: GameState, t: Token, a: CardAction | null): number {
+  const base = maneuverRange(data, t);
+  if (!a) return base;
+  if (a.type === 'Moving') return (a.range || base) + straightLineBonus(a);
+  const o = oppOf(state, t.uid);
+  return Math.max(base, shockAttackOf(grantAdjusted(a, t, o?.uid === t.uid ? o : null)));
+}
+
 export function check(data: GameData, state: GameState, cmd: Command): CheckResult {
   if (tableLevel(cmd)) return checkTable(data, state, cmd);
   const t = state.tokens.find((x) => x.uid === cmd.uid);
@@ -1545,6 +1595,13 @@ export function check(data: GameData, state: GameState, cmd: Command): CheckResu
       // turn as `facing` with the position left where it stands.
       if (target.barricade && (col !== target.col || row !== target.row)) {
         return no(`${target.label} is a Barricade: it can neither move nor be moved (FAQ E6/M13).`);
+      }
+      // The general rule the Barricade clause is one case of: "Units that
+      // cannot move, such as Deployables, … cannot be subject to Forced
+      // Movement" (4.3.4). Knockback moved Beacons and Mines, and the Harpy's
+      // tow carried a player's own Mine (audit Phase 4, B2).
+      if ((col !== target.col || row !== target.row) && !canBeForceMoved(data, target)) {
+        return no(`${target.label} cannot move, so it cannot be subject to Forced Movement (4.3.4).`);
       }
       return ok;
     }
@@ -1758,6 +1815,17 @@ function checkActed(
       // bare Maneuver carries no Action and can never owe this.
       const shortLink = nonHumanoidStop(t, moveAction);
       if (shortLink) return no(shortLink);
+      // OBSTRUCT's "or 1 Link" (LPA-20): Link the route spent instead of
+      // Range. The route is the sender's to price; what this reader can hold
+      // is the floor, which is the rule's own (never the last Link, 4.10 and
+      // FAQ L1, after whatever the Action itself costs; audit Phase 4, D2).
+      if (cmd.breakAwayLink !== undefined) {
+        const n = cmd.breakAwayLink;
+        if (!Number.isInteger(n) || n < 0) return no('That is not an amount of Link.');
+        if (n > 0 && t.kind !== 'mech') return no(`${t.label} has no Link to pay a Break Away with.`);
+        const spare = (t.link ?? 0) - 1 - nonHumanoidCost(moveAction);
+        if (n > spare) return no(`${t.label} cannot pay ${n} Link to Break Away: a Mech never spends its last Link (4.10, FAQ L1).`);
+      }
       const { col, row } = cmd.to;
       if (!Number.isInteger(col) || !Number.isInteger(row) || col < 0 || row < 0 || col >= cellsOf(state) || row >= cellsOf(state)) {
         return no('That is not a place on the board.');
@@ -1825,6 +1893,27 @@ function checkActed(
         const x = (t.tether ?? []).filter((l) => l.role === 'tethered')[0]?.range ?? 0;
         return no(`${t.label} is Tethered and cannot voluntarily move beyond ${x} Grids of the unit holding it (PDLH-202).`);
       }
+      // A Movement Action is still one after it is paid: a destroyed Chassis
+      // performs none (4.3.4; ruled 2026-09-25, audit Phase 4, I10).
+      if (moveAction?.type === 'Moving') {
+        const chassis = chassisStop(t);
+        if (chassis) return no(chassis);
+      }
+      // HOW FAR, measured from where the unit stands, which is where every
+      // Movement either page sends begins. Not for a table, which has no
+      // distances, nor for the one sender that has already placed the unit
+      // (`from`, the Crush exchange), for the reason given above. Asked last,
+      // after whose turn and which phase it is, so a Movement that may not be
+      // made at all is told why rather than how far.
+      const tooFar = ((): string | null => {
+        if (state.noBoard || cmd.from) return null;
+        const crossed = Math.abs(Math.floor(col / 3) - Math.floor(t.col / 3)) + Math.abs(Math.floor(row / 3) - Math.floor(t.row / 3));
+        const reach = movementCeiling(data, state, t, moveAction ?? null);
+        if (crossed <= reach) return null;
+        return reach > 0
+          ? `${t.label} can move at most ${reach} Grid${reach === 1 ? '' : 's'} with this Movement, and that Grid is ${crossed} away.`
+          : `${t.label} cannot move with this Movement: it may only change its facing (FAQ E4).`;
+      })();
       // A Movement a card handed out belongs to the card, not to an Action
       // Opportunity: Hit and Run moves a Mech as its Opportunity ends, when
       // there is no longer one to check against or to charge. It has to have
@@ -1835,7 +1924,7 @@ function checkActed(
         if (guidedGame(state) && !(state.script?.oncePerRound ?? []).includes(grantedMoveKey(state, cmd.uid))) {
           return no('Nothing has granted this unit a Movement: a card such as Hit and Run hands one out, and it is made then.');
         }
-        return ok;
+        return tooFar ? no(tooFar) : ok;
       }
       const o = oppOf(state, cmd.uid);
       if (!o) return no('It is not this Mech\'s Action Opportunity.');
@@ -1853,9 +1942,12 @@ function checkActed(
       // on ANY performed Action, any number of times (audit Phase 2, B8).
       if (cmd.free) {
         if (!o.performed.length) return no('No Action has been performed this Opportunity, so there is nothing to move with.');
-        return o.moveOwed ? ok : no('The Action performed this Opportunity has no Movement left to make: a Moving Action, a Shock Attack or a Stance Change moves once.');
+        if (!o.moveOwed) return no('The Action performed this Opportunity has no Movement left to make: a Moving Action, a Shock Attack or a Stance Change moves once.');
+        return tooFar ? no(tooFar) : ok;
       }
-      return fromVerdict(canManeuver(o));
+      const tick = canManeuver(o);
+      if (!tick.ok) return fromVerdict(tick);
+      return tooFar ? no(tooFar) : ok;
     }
     case 'crushSwap': {
       if (state.noBoard) return no('This table has no board: settle the Crush on the table and record its Penetrations.');
@@ -1873,11 +1965,16 @@ function checkActed(
       // (4.3.6; LPA-23 Onyx is the trait that lets the two be equal, so this
       // refuses LARGER and not merely equal). Flying cannot Crush at all (FAQ
       // E14) and neither can an Aerial Unit, which passes overhead.
-      if (t.size !== 3 || t.aerial) return no('Only a Large Ground Unit Crushes (4.3.6).');
+      if (t.size !== 3 || !isGroundUnit(data, t)) return no('Only a Large Ground Unit Crushes (4.3.6).');
+      // Nor does a camouflaged one (FAQ I3, I9): crushTargets refused it, this
+      // did not (audit Phase 4, C5).
+      if (statusCount(t.statuses, 'camouflage') > 0) return no(`${t.label} is in Optical Camouflage, and a camouflaged Unit cannot Crush (FAQ I3).`);
       const swapped: Token[] = [];
       for (const s of cmd.swaps) {
         const v = state.tokens.find((x) => x.uid === s.uid);
         if (!v) return no('That target is not on the board.');
+        // An Aerial Unit occupies no Grid, so it is never Crushed (2.2.1).
+        if (v.aerial) return no(`${v.label} is an Aerial Unit, which occupies no Grid, so it cannot be Crushed.`);
         // 4.3.6 is "Units SMALLER than itself", and LPA-23 Onyx's 不屈 is the one
         // printed relaxation of it. rules.ts crushTargets asks exactly this, so
         // asking a looser question here would make the authoritative reader the
@@ -2099,6 +2196,30 @@ function checkActed(
       if (selfGrant) {
         const why = selfGrantWhy(t, selfGrant);
         if (why) return no(why);
+      }
+      // Movement Actions (6.3.2, 4.3.4): Immobilized stops them unless the
+      // Action is Unstoppable, and so does a destroyed Chassis, whichever Part
+      // prints them (ruled 2026-09-25, audit Phase 4, E7 and I10). Only the
+      // pages asked, and the strict guide let an Immobilized Taurus Blink.
+      if (a.type === 'Moving') {
+        const stop = immobilizedStop(t, a) ?? chassisStop(t);
+        if (stop) return no(stop);
+      }
+      // Non-humanoid X: "When performing this Action, -X Link Value", and a
+      // Mech never spends its last Link (4.10, FAQ L1). The same reading the
+      // move doors ask; pad Guided performs the Run with this command alone
+      // (audit Phase 4, E2).
+      const shortLink = t.kind === 'mech' ? nonHumanoidStop(t, a) : null;
+      if (shortLink) return no(shortLink);
+      // Melee Lock bans Firing Actions, Melee Firing excepted (4.3.5). Only the
+      // action lists enforced it (audit Phase 4, D6). Judged on the terrain the
+      // engine knows; a player's own custom map is left to the page.
+      if (a.type === 'Firing' && !isMeleeFiring(a) && !state.noBoard) {
+        const terrain = knownTerrain(data, state);
+        const lockers = terrain ? lockersOf(data, t, state.tokens, terrain) : [];
+        if (lockers.length) {
+          return no(`${t.label} is Melee Locked by ${lockers.map((o) => o.label).join(', ')}, so it cannot perform Firing Actions except those with Melee Firing (4.3.5).`);
+        }
       }
       // RWS (遥控武器, FAQ A20/A22): the only Action a Mech performs in the
       // Command Phase is the autocannon a Command was sent for. It costs the
@@ -2773,6 +2894,14 @@ function checkActed(
         if (away > range) {
           return no(`Manifestation Movement reaches Range ${range}, and that Grid is Range ${away} away.`);
         }
+        // Nor past a Tether: a Manifestation is not Forced Movement, so the
+        // leash holds it like any Movement of its own (ruled 2026-09-25, audit
+        // Phase 4, I16).
+        const leash = tetherCap(t, state.tokens);
+        if (leash && !leash(Math.floor(cmd.to.col / 3), Math.floor(cmd.to.row / 3))) {
+          const x = (t.tether ?? []).filter((l) => l.role === 'tethered')[0]?.range ?? 0;
+          return no(`${t.label} is Tethered and cannot Manifest beyond ${x} Grids of the unit holding it (PDLH-202).`);
+        }
         // It follows Flying Movement rules (FAQ I17), and a flight may not land
         // in an Abyss.
         if (isGroundUnit(data, t) && envCardAt(state, Math.floor(cmd.to.col / 3), Math.floor(cmd.to.row / 3)) === 'abyss') {
@@ -2863,10 +2992,30 @@ function checkActed(
       // Still stopped by Immobilized (6.3.2), whoever is moving it.
       const stop = immobilizedStop(target, act);
       if (stop) return no(stop);
+      // And a Move Action still needs the Chassis (4.3.4, audit Phase 4, I10).
+      if (act) {
+        const chassis = chassisStop(target);
+        if (chassis) return no(chassis);
+      }
       if (!state.noBoard) {
         const { col, row } = cmd.to;
         if (!Number.isInteger(col) || !Number.isInteger(row) || col < 0 || row < 0 || col >= cellsOf(state) || row >= cellsOf(state)) {
           return no('That is not a place on the board.');
+        }
+        // A Tether holds the controlled unit too: the Red Shoes moves it with
+        // its own Movement, which is not Forced Movement (ruled 2026-09-25,
+        // audit Phase 4, I16).
+        const leash = tetherCap(target, state.tokens);
+        if (leash && !leash(Math.floor(col / 3), Math.floor(row / 3))) {
+          const x = (target.tether ?? []).filter((l) => l.role === 'tethered')[0]?.range ?? 0;
+          return no(`${target.label} is Tethered and cannot be moved beyond ${x} Grids of the unit holding it (PDLH-202).`);
+        }
+        // The controlled unit's own Maneuver or Move Action is what moves it,
+        // at that Movement's allowance and no further (audit Phase 4, E8).
+        const crossed = Math.abs(Math.floor(col / 3) - Math.floor(target.col / 3)) + Math.abs(Math.floor(row / 3) - Math.floor(target.row / 3));
+        const reach = movementCeiling(data, state, target, act ?? null);
+        if (crossed > reach) {
+          return no(`The Red Shoes moves ${target.label} with its own Movement, which reaches at most ${reach} Grid${reach === 1 ? '' : 's'}, and that Grid is ${crossed} away.`);
         }
       }
       return ok;
@@ -2886,6 +3035,13 @@ function checkActed(
       // The named Action must really BE a position swap, or any Action with a
       // Range could be sent as a blink and teleport off it.
       if (!isPositionSwap(a)) return no('That Action does not exchange positions.');
+      // A Movement Action like any other (6.3.2, 4.3.4), and in a guided game
+      // it is performed inside this unit's own Opportunity. The swap passed
+      // Immobilized, with no Chassis and with no Opportunity at all (audit
+      // Phase 4, E7). The sandbox has no Opportunities, so that half is guided.
+      const stop = immobilizedStop(t, a) ?? chassisStop(t);
+      if (stop) return no(stop);
+      if (guidedGame(state) && !oppOf(state, cmd.uid)) return no('It is not this unit\'s Action Opportunity.');
       const target = state.tokens.find((x) => x.uid === cmd.targetUid);
       if (!target) return no('That target is not on the board.');
       // The whole legality of the swap is one derivation, so check() asks it
@@ -2983,6 +3139,11 @@ function checkActed(
       if (!state.noBoard && rangeBetween(t, target).range > cmd.range) {
         return no(`${target.label} is already further than ${cmd.range} Grids away.`);
       }
+      return ok;
+    }
+    case 'cutTether': {
+      if (!t) return no('That unit is not on the board.');
+      if (!(t.tether ?? []).some((x) => x.uid === cmd.targetUid)) return no('No Tether joins those two units.');
       return ok;
     }
   }
@@ -3277,8 +3438,10 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
     state.round.phase = 0;
     state.commandTokens = { s1: 0, s2: 0 };
     // Plays are stamped with a round number, so winding the track back to 1
-    // would leave round 1's cards reading as already spent.
+    // would leave round 1's cards reading as already spent. The smoke marker
+    // is a round number too, and would refuse round 1's dissipation.
     state.tacticsPlayed = { s1: [], s2: [] };
+    delete state.smokeRound;
     if (state.script) {
       state.script.commits = {};
       state.script.revealed = [];
@@ -3450,6 +3613,7 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
     state.tokens = state.tokens.filter((t) => t.kind !== 'projectile');
     for (const t of state.tokens) t.deployed = false;
     state.smoke = [];
+    delete state.smokeRound;
     state.round = { n: 1, phase: 0, firstPlayer: 's1' };
     state.commandTokens = { s1: 0, s2: 0 };
     state.setup = newSetup();
@@ -3587,6 +3751,7 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
     state.removedTerrain = [];
     state.tokens = state.tokens.filter((t) => t.kind !== 'projectile');
     state.smoke = [];
+    delete state.smokeRound;
     state.tacticsPlayed = { s1: [], s2: [] };
     return;
   }
@@ -3723,7 +3888,7 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
   }
   if (cmd.kind === 'removeSmoke') {
     const list = [...(state.smoke ?? [])];
-    const at = list.findIndex((x) => x.col === cmd.at.col && x.row === cmd.at.row);
+    const at = list.findIndex((x) => x.col === cmd.at.col && x.row === cmd.at.row && (cmd.side === undefined || x.side === cmd.side));
     if (at >= 0) list.splice(at, 1);
     state.smoke = list;
     return;
@@ -3767,6 +3932,7 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
     const doomed = new Set<SmokeScreen>();
     for (const side of ['s1', 's2'] as Side[]) for (const iso of dissipationFor(smoke, side).isolated) doomed.add(iso);
     state.smoke = smoke.filter((x) => !doomed.has(x));
+    state.smokeRound = state.round.n;
     return;
   }
   if (cmd.kind === 'forceMove') {
@@ -3858,6 +4024,12 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
     const was = target.partStates[cmd.slot] ?? 'intact';
     target.partStates[cmd.slot] = cmd.state;
     handTapBookkeeping(data, state, target, cmd.slot, was, cmd.state);
+    // A worse state tapped by hand is a Penetration recorded by hand, and the
+    // initiator's Tether goes with it as applyPenetration's does (PDLH-202).
+    // The pad records every Penetration this way, so its Tethers never ended
+    // (audit Phase 4, H3).
+    const rank = { intact: 0, damaged: 1, destroyed: 2 } as const;
+    if (rank[cmd.state] > rank[was]) cutTethersOn(data, state, target, 'initiator');
     return;
   }
   if (cmd.kind === 'leaveGuided') {
@@ -4001,6 +4173,9 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       // branch below: a board and a table charge it in this one place.
       const cost = nonHumanoidCost(cmd.actionId ? findAction(data, state, cmd.uid, cmd.actionId) : null);
       if (cost > 0) t.link = Math.max(0, (t.link ?? 0) - cost);
+      // And the Link the route paid an Obstruct lock instead of Range (LPA-20;
+      // audit Phase 4, D2), clamped for the replayer like the line above.
+      if (cmd.breakAwayLink) t.link = Math.max(0, (t.link ?? 0) - cmd.breakAwayLink);
       if (state.noBoard) {
         // The table moved the piece. Nothing here can measure how far, so the
         // Maneuver Tick is spent outright - the M2 Data Link's free pre-move
@@ -4013,10 +4188,15 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
         }
         const o0 = oppOf(state, cmd.uid);
         if (o0 && sc && !cmd.free && !cmd.granted) sc.opp = lockStance(t, spendManeuver(o0));
+        // A free or granted one is sent only once the table says the unit
+        // moved, and it is still Movement for [Stationary] (audit Phase 4, E1),
+        // the same reading the board branch below gives it.
+        else if (o0 && sc) sc.opp = { ...o0, moved: true };
         takeMoveGrant(state, cmd);
         return;
       }
       const from = cmd.from ?? { col: t.col, row: t.row };
+      const faced = t.facing;
       t.col = cmd.to.col;
       t.row = cmd.to.row;
       if (cmd.facing !== undefined) t.facing = cmd.facing;
@@ -4079,6 +4259,13 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
         sc.opp = freeGrid
           ? { ...o, moved: true, preMoved: true, movedFrom: from }
           : { ...lockStance(t, spendManeuver(o)), movedFrom: from };
+      } else if (o && sc && (from.col !== cmd.to.col || from.row !== cmd.to.row || t.facing !== faced)) {
+        // A free or granted Movement costs no Tick but is still Movement, and
+        // [Stationary] asks whether the unit performed ANY Movement in its
+        // Opportunity (p.96, FAQ K24), a turn on the spot included (E3). A
+        // Shock Attack's walk left `moved` false, so the Tempest kept its Extra
+        // Firing Tick and a Railgun its Stationary Range (audit Phase 4, E1).
+        sc.opp = { ...o, moved: true, movedFrom: o.movedFrom ?? from };
       }
       takeMoveGrant(state, cmd);
       return;
@@ -4123,6 +4310,13 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       if (a && spendsAmmoWhenPerformed(a)) {
         const { from, poolId } = ammoPay(data, state, t, a.id);
         if (from.ammo?.[poolId] !== undefined) from.ammo[poolId] = Math.max(0, from.ammo[poolId] - 1);
+      }
+      // NON-HUMANOID X at a table: pad Guided performs the Run with this command
+      // and sends no `maneuver`, so the Link comes off here. On a board the move
+      // pays it, the one road the sandbox also takes (audit Phase 4, E2).
+      if (a && state.noBoard && t.kind === 'mech') {
+        const cost = nonHumanoidCost(a);
+        if (cost > 0) t.link = Math.max(0, (t.link ?? 0) - cost);
       }
       // A granted Action spends its grant HERE, so taking the Action and
       // spending it are one step. Clearing the debt from the panel instead
@@ -4781,12 +4975,15 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       // The use is spent in the SAME command as the debt is cleared, so a
       // dropped connection between the two cannot leave a free Emergency
       // Smoke. The card prints storage 1, which syncMagazines seeded as Ammo.
+      // Declining spends nothing: the card says "may", and 4.13 spends Ammo on
+      // a performance (ruled 2026-09-25, audit Phase 4, G9 and I15). Skip used
+      // to spend the one use as well.
       //
       // `t` and not ammoHolder, deliberately: attackReactionsOf (units.ts) reads
       // tokenCards ALONE and never loanedParts, so a borrowed Part can never owe
       // a reaction and there is no lender's magazine to find. Flagged as a
       // launch path by the phase-6 sweep; it is not one.
-      if (t.ammo?.[cmd.actionId] !== undefined) {
+      if (cmd.placed !== false && t.ammo?.[cmd.actionId] !== undefined) {
         t.ammo[cmd.actionId] = Math.max(0, t.ammo[cmd.actionId] - 1);
       }
       return;
@@ -4863,6 +5060,10 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
     }
     case 'transformPart': {
       transformPartOn(data, t, cmd.slot, cmd.cardId);
+      return;
+    }
+    case 'cutTether': {
+      cutTetherBetween(data, state, t, cmd.targetUid);
       return;
     }
     case 'tether': {

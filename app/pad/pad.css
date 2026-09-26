@@ -915,6 +915,7 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
 /* ---------- tokens, as printed ---------- */
 
 .pad-toks { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.pad-tether { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; font-size: 13px; color: var(--text2); }
 
 .pad-tok {
   position: relative;

@@ -80,30 +80,39 @@ export function dissipationFor(smoke: SmokeScreen[], side: Side): Dissipation {
   };
 }
 
+// Does a Smoke Screen take this line of sight away? 4.16 (p.76, printed): "If
+// the Attacker can establish Line of Sight along lines that do not pass through
+// the Smoke Screen, then it may Attack as normal", and 4.2.4 makes line of
+// sight ANY straight line between the two bases. So this walks the same 81
+// base-to-base lines losBetween does and answers yes only when every one of
+// them crosses smoke (ruled 2026-09-25, audit Phase 4, I11). It sampled the
+// centre line alone until then, and 70% of its refusals had a clear base line
+// (G1). A unit standing IN a Smoke Screen neither sees out nor is seen, which no
+// line can get round, and an Aerial one is no exception: FAQ F2 answers "No,
+// because Smoke is treated as infinitely high", and F3 says the same of a
+// Projectile being Intercepted. The old reading let an Aerial unit stand in
+// smoke untouched.
+//
+// Smoke alone. A Firing Action's sight is smoke AND terrain on the same lines,
+// which is firingSight below; this is for a question with nothing else in it
+// (an Interception at an Aerial Projectile, where terrain never counts).
 export function smokeBlocks(a: Token, b: Token, smoke: SmokeScreen[]): boolean {
   if (!smoke.length) return false;
-  const grids = new Set(smoke.map(smokeKey));
-  const inSmoke = (t: Token): boolean => {
-    if (t.aerial) return false;
-    for (let dc = 0; dc < t.size; dc++) {
-      for (let dr = 0; dr < t.size; dr++) {
-        if (grids.has(`${Math.floor((t.col + dc) / 3)},${Math.floor((t.row + dr) / 3)}`)) return true;
-      }
-    }
-    return false;
-  };
-  if (inSmoke(a) || inSmoke(b)) return true;
+  return firingSight(a, b, [], [], smoke) === 'smoked';
+}
 
-  // Aerial units are not exempt from smoke the way they are from terrain (4.16).
-  const ax = a.col + a.size / 2;
-  const ay = a.row + a.size / 2;
-  const bx = b.col + b.size / 2;
-  const by = b.row + b.size / 2;
-  const steps = Math.max(2, Math.ceil(Math.hypot(bx - ax, by - ay) * 3));
-  for (let i = 1; i < steps; i++) {
-    const x = ax + ((bx - ax) * i) / steps;
-    const y = ay + ((by - ay) * i) / steps;
-    if (grids.has(`${Math.floor(x / 3)},${Math.floor(y / 3)}`)) return true;
+// Does this unit share a Grid with a Smoke Screen? What the boards' "In smoke"
+// badge reads, off the screens themselves rather than a hand-set Token that
+// nothing obeyed (audit Phase 4, G12).
+export function inSmoke(t: Token, smoke: SmokeScreen[]): boolean {
+  return smoke.length > 0 && standsInSmoke(t, new Set(smoke.map(smokeKey)));
+}
+
+function standsInSmoke(t: Token, grids: Set<string>): boolean {
+  for (let dc = 0; dc < t.size; dc++) {
+    for (let dr = 0; dr < t.size; dr++) {
+      if (grids.has(`${Math.floor((t.col + dc) / 3)},${Math.floor((t.row + dr) / 3)}`)) return true;
+    }
   }
   return false;
 }
@@ -234,6 +243,10 @@ interface MoveSearch {
   dist: Map<string, number>;
   parent: Map<string, string>;
   reachable: (LargeGrid & { dist: number })[];
+  // The Grid keys of the route the search chose to each Grid, start first.
+  // What movePath reads: with a Link budget in play the same Grid is reached
+  // in several states, and walking `parent` alone could splice two of them.
+  trace: (key: string) => string[];
 }
 
 export interface MoveOpts {
@@ -269,6 +282,12 @@ export interface MoveOpts {
   // not stepped yet. FAQ E16 needs nothing extra: a Crush still ends the walk.
   straightBonus?: number;
   straightDir?: string;
+  // LPA-20 Panzer, 阻拦 Obstruct: the part of each Grid's exit price that may
+  // be paid in Link instead of Range, one per Obstruct locker, and how much
+  // Link the mover may spend on it (never its last; ruled 2026-09-25, audit
+  // Phase 4, I3 and D2). A second budget, so the search runs over Grid and
+  // Link spent together.
+  linkPay?: { budget: number; payable: (c: number, r: number) => number };
 }
 
 // The one direction a route runs in, '' for a route that has not stepped yet,
@@ -296,25 +315,36 @@ function searchMoves(
   opts?: MoveOpts,
 ): MoveSearch {
   const start = largeGridOf(t);
-  const dist = new Map<string, number>([[`${start.c},${start.r}`, 0]]);
-  const parent = new Map<string, string>();
-  const reachable: (LargeGrid & { dist: number })[] = [];
+  // Each state is a Grid AND the Link spent reaching it. Without a Link budget
+  // every state spends 0, so this is exactly the plain cheapest-first walk it
+  // always was; with one, a Grid reached cheaply in Link and dearly in Range
+  // is a different place to stand than the reverse (audit Phase 4, D2).
+  const pay = !flying && !t.aerial && (opts?.linkPay?.budget ?? 0) > 0 ? opts!.linkPay! : null;
+  const sk = (c: number, r: number, l: number) => `${c},${r}|${l}`;
+  const startKey = sk(start.c, start.r, 0);
+  const sDist = new Map<string, number>([[startKey, 0]]);
+  const sParent = new Map<string, string>();
+  const found: (LargeGrid & { dist: number; link: number })[] = [];
   const crushed = new Set<string>();
-  // Straight-line bookkeeping: the direction each settled Grid was reached
+  // Straight-line bookkeeping: the direction each settled state was reached
   // along, or null once the route has turned. The start carries whatever
   // direction the route already has ('' when it has not stepped yet).
   const bonus = opts?.straightBonus ?? 0;
-  const straight = new Map<string, string | null>([[`${start.c},${start.r}`, opts?.straightDir ?? '']]);
-  const queue: (LargeGrid & { d: number })[] = [{ ...start, d: 0 }];
+  const straight = new Map<string, string | null>([[startKey, opts?.straightDir ?? '']]);
+  const queue: (LargeGrid & { d: number; l: number })[] = [{ ...start, d: 0, l: 0 }];
   while (queue.length) {
     let best = 0;
     for (let i = 1; i < queue.length; i++) if (queue[i].d < queue[best].d) best = i;
     const g = queue.splice(best, 1)[0];
     const key = `${g.c},${g.r}`;
-    if (g.d > (dist.get(key) ?? Infinity)) continue;
+    const state = sk(g.c, g.r, g.l);
+    if (g.d > (sDist.get(state) ?? Infinity)) continue;
     // A Crush ends the Movement Action the moment the Grid is entered.
     if (crushed.has(key)) continue;
     const exit = flying || t.aerial ? 0 : opts?.exitCost?.(g.c, g.r) ?? 0;
+    // How much of this exit Link may pay: never more than the surcharge
+    // itself, nor than the Link still unspent.
+    const payable = pay ? Math.max(0, Math.min(pay.payable(g.c, g.r), exit, pay.budget - g.l)) : 0;
     for (const [dc, dr] of [[0, -1], [1, 0], [0, 1], [-1, 0]] as const) {
       const n = { c: g.c + dc, r: g.r + dr };
       const nk = `${n.c},${n.r}`;
@@ -324,15 +354,19 @@ function searchMoves(
       // over. The unit's OWN Grid is never tested: it is already standing
       // there, and a leash that no longer reaches has already been cut.
       if (opts?.allowed && !opts.allowed(n.c, n.r)) continue;
-      const d = g.d + 1 + exit;
       // A Grid past the printed allowance is only reachable along the one
       // straight run the bonus pays for; anything that has turned is capped at
       // `steps` like every other route.
       const dir = `${dc},${dr}`;
-      const was = straight.get(key) ?? null;
+      const was = straight.get(state) ?? null;
       const still = was === null ? null : (was === '' || was === dir ? dir : null);
       const limit = still !== null && bonus > 0 ? steps + bonus : steps;
-      if (d > limit || d >= (dist.get(nk) ?? Infinity)) continue;
+      // The cheap refusals first, before the footprint test below: nothing
+      // this step can buy is within the allowance, or (with no Link to spend)
+      // the Grid has already been reached for less.
+      const cheapest = g.d + 1 + exit - payable;
+      if (cheapest > limit) continue;
+      if (!pay && cheapest >= (sDist.get(sk(n.c, n.r, 0)) ?? Infinity)) continue;
       const standable = canStandIn(n.c, n.r, t.size, t.aerial, terrain, tokens, t.uid);
       const crush = !standable && !flying && !t.aerial && (opts?.crushable?.(n.c, n.r) ?? false);
       // The empty token list is the whole trick, and the only thing standing
@@ -349,28 +383,69 @@ function searchMoves(
         && canStandIn(n.c, n.r, t.size, t.aerial, terrain.filter((p) => p.type !== 'container'), [], t.uid);
       const passable = flying || t.aerial ? true : standable || crush || phase;
       if (!passable) continue;
-      dist.set(nk, d);
-      parent.set(nk, key);
-      straight.set(nk, still);
-      queue.push({ ...n, d });
-      // A stop Grid rides the crushed set: same rule, different card - the
-      // movement ends the moment the Grid is entered, so it is never expanded.
-      if (crush || (opts?.stop?.(n.c, n.r) ?? false)) crushed.add(nk);
-      if ((standable || crush) && (opts?.landing?.(n.c, n.r) ?? true)) reachable.push({ ...n, dist: d });
+      for (let k = 0; k <= payable; k++) {
+        const d = g.d + 1 + exit - k;
+        const l = g.l + k;
+        const next = sk(n.c, n.r, l);
+        if (d > limit || d >= (sDist.get(next) ?? Infinity)) continue;
+        sDist.set(next, d);
+        sParent.set(next, state);
+        straight.set(next, still);
+        queue.push({ ...n, d, l });
+        // A stop Grid rides the crushed set: same rule, different card - the
+        // movement ends the moment the Grid is entered, so it is never expanded.
+        // A Grid the unit may phase through is NOT a forced stop: the Firefly in
+        // Low Profile or camouflage moves through Containers (FAQ I15) and, as
+        // ruled, smaller units too, where the Crush came first and ended the
+        // route. Ending THERE still Crushes, since the boards resolve a Crush at
+        // the route's last Grid only (ruled 2026-09-25, audit Phase 4, C3).
+        if ((crush && !phase) || (opts?.stop?.(n.c, n.r) ?? false)) crushed.add(nk);
+        if ((standable || crush) && (opts?.landing?.(n.c, n.r) ?? true)) found.push({ ...n, dist: d, link: l });
+      }
     }
   }
+  // One route per Grid: the cheapest in Range and Link together, since the
+  // Link a route costs is only what its Range cannot cover, then the one that
+  // leaves the most Range. With no Link budget there is one state per Grid.
+  const chosen = new Map<string, { state: string; d: number; l: number }>();
+  for (const [state, d] of sDist) {
+    const [gk, ls] = state.split('|');
+    const l = Number(ls);
+    const cur = chosen.get(gk);
+    if (!cur || d + l < cur.d + cur.l || (d + l === cur.d + cur.l && d < cur.d)) chosen.set(gk, { state, d, l });
+  }
+  const dist = new Map<string, number>();
+  const parent = new Map<string, string>();
+  for (const [gk, c] of chosen) {
+    dist.set(gk, c.d);
+    const up = sParent.get(c.state);
+    if (up) parent.set(gk, up.split('|')[0]);
+  }
+  const trace = (gk: string): string[] => {
+    const out: string[] = [];
+    let at: string | undefined = chosen.get(gk)?.state;
+    while (at) {
+      out.unshift(at.split('|')[0]);
+      at = sParent.get(at);
+    }
+    return out;
+  };
   const seen = new Set<string>();
   return {
     dist,
     parent,
-    reachable: reachable
+    trace,
+    reachable: found
       .sort((a, b) => a.dist - b.dist)
       .filter((g) => {
         const k = `${g.c},${g.r}`;
-        if (seen.has(k) || (g.c === start.c && g.r === start.r)) return false;
+        const c = chosen.get(k);
+        if (seen.has(k) || (g.c === start.c && g.r === start.r) || !c) return false;
+        if (g.dist !== c.d || g.link !== c.l) return false;
         seen.add(k);
-        return g.dist === dist.get(k);
-      }),
+        return true;
+      })
+      .map(({ c, r, dist: d }) => ({ c, r, dist: d })),
   };
 }
 
@@ -543,6 +618,41 @@ export function crushTargets(
 // asked this early it always answers null and would call every exchange
 // impossible. This half asks only what is already settled: whether the Grid the
 // crusher steps out of has room for the Units taking its place.
+// Where a crushed Unit may be Force-Moved: the orthogonal neighbours of its own
+// Grid that are on the board, are not the Grid being crushed into, are not
+// barred (an Abyss for a Ground Unit), and have room for it, measured with the
+// CRUSHER standing in `from`, the Grid it steps out of. The Crush happens as it
+// "is about to enter" the Grid (4.3.6), and p.47's example 1 offers "any of the
+// three grids shown", never the crusher's own. Both boards measured the board
+// as it stood before the move, since col/row are written after the Crush: on a
+// longer route the victim was offered the Grid the crusher stands in and
+// refused the one it had left (audit Phase 4, C1). `from` null is a crusher
+// that has not moved, measured where it stands. One copy for both boards.
+export function crushEscapeGrids(
+  victim: Token,
+  goal: LargeGrid,
+  crusher: Token | undefined,
+  from: LargeGrid | null,
+  terrain: TerrainPiece[],
+  tokens: Token[],
+  barred?: (c: number, r: number) => boolean,
+): LargeGrid[] {
+  let world = tokens;
+  if (crusher && from) {
+    const others = tokens.filter((x) => x.uid !== crusher.uid);
+    const at = standingSpot(from.c, from.r, crusher.size, crusher.aerial, terrain, others, crusher.uid)
+      ?? { col: from.c * 3, row: from.r * 3 };
+    world = [...others, { ...crusher, col: at.col, row: at.row }];
+  }
+  const vAt = largeGridOf(victim);
+  return ([[0, -1], [1, 0], [0, 1], [-1, 0]] as const)
+    .map(([dc, dr]) => ({ c: vAt.c + dc, r: vAt.r + dr }))
+    .filter((g) => g.c >= 0 && g.r >= 0 && g.c < boardGrids() && g.r < boardGrids())
+    .filter((g) => !(g.c === goal.c && g.r === goal.r))
+    .filter((g) => !barred?.(g.c, g.r))
+    .filter((g) => standingSpot(g.c, g.r, victim.size, victim.aerial, terrain, world, victim.uid) !== null);
+}
+
 export function crushExchangeSpots(
   crusher: Token,
   victims: Token[],
@@ -560,7 +670,9 @@ export function crushExchangeSpots(
   const placed: { uid: number; to: { col: number; row: number } }[] = [];
   // One at a time, each put down before the next is asked, so two exchanged
   // Units cannot be handed the same cell of the Grid the crusher is vacating.
-  for (const v of victims) {
+  // Largest first: a 1x1 put down centre-first could leave no room for a 2x2
+  // that fits beside it (audit Phase 4, C1).
+  for (const v of [...victims].sort((a, b) => b.size - a.size)) {
     const spot = standingSpot(from.c, from.r, v.size, v.aerial, terrain, standing);
     if (!spot) return null;
     placed.push({ uid: v.uid, to: spot });
@@ -614,20 +726,16 @@ export function movePath(
   flying: boolean,
   opts?: MoveOpts,
 ): LargeGrid[] {
-  const { dist, parent } = searchMoves(t, steps, terrain, tokens, flying, opts);
+  const { dist, trace } = searchMoves(t, steps, terrain, tokens, flying, opts);
   const goal = `${to.c},${to.r}`;
   if (!dist.has(goal)) return [];
   // A landing ban closes the ROUTE'S END, not the route: the grid may sit in
   // `dist` because a flight passed over it, and a path may not finish there.
   if (opts?.landing && !opts.landing(to.c, to.r)) return [];
-  const path: LargeGrid[] = [];
-  let at: string | undefined = goal;
-  while (at) {
-    const [c, r] = at.split(',').map(Number);
-    path.unshift({ c, r });
-    at = parent.get(at);
-  }
-  return path;
+  return trace(goal).map((k) => {
+    const [c, r] = k.split(',').map(Number);
+    return { c, r };
+  });
 }
 
 // One cursor sample against a route being traced by hand. Returns the new route,
@@ -642,6 +750,26 @@ export function pathCost(path: LargeGrid[], flying: boolean, opts?: MoveOpts): n
   let n = path.length - 1;
   if (!flying && opts?.exitCost) for (let i = 0; i < path.length - 1; i++) n += opts.exitCost(path[i].c, path[i].r);
   return n;
+}
+
+// How much of a drawn route's price Link may stand in for: each exit's Obstruct
+// surcharge, capped at the exit price itself (audit Phase 4, D2).
+function pathPayable(path: LargeGrid[], flying: boolean, opts?: MoveOpts): number {
+  if (flying || !opts?.linkPay || path.length < 2) return 0;
+  let n = 0;
+  for (let i = 0; i < path.length - 1; i++) {
+    n += Math.min(opts.linkPay.payable(path[i].c, path[i].r), opts.exitCost?.(path[i].c, path[i].r) ?? 0);
+  }
+  return n;
+}
+
+// The Link a drawn route must pay for its Obstruct surcharges: only what the
+// Range cannot cover, since Link is the dearer of the two (ruled 2026-09-25,
+// audit Phase 4, I3). 0 for every route that fits its Range.
+export function breakAwayLinkDue(path: LargeGrid[], steps: number, flying: boolean, opts?: MoveOpts): number {
+  const over = pathCost(path, flying, opts) - steps;
+  if (over <= 0) return 0;
+  return Math.min(over, pathPayable(path, flying, opts), opts?.linkPay?.budget ?? 0);
 }
 
 export function extendPath(
@@ -663,7 +791,12 @@ export function extendPath(
   const prev = path[path.length - 2];
   if (prev && prev.c === to.c && prev.r === to.r) return path.slice(0, -1);
   if (path.some((g) => g.c === to.c && g.r === to.r)) return null;
-  const cost = pathCost(path, flying || t.aerial, opts);
+  // Link spent on the route already drawn stands in for its Range, and
+  // spending it there is never worse than keeping it: Range pays for any step,
+  // Link only for an Obstruct surcharge (audit Phase 4, D2).
+  const pay = !(flying || t.aerial) && opts?.linkPay ? opts.linkPay : null;
+  const linkUsed = pay ? Math.min(pay.budget, pathPayable(path, false, opts)) : 0;
+  const cost = pathCost(path, flying || t.aerial, opts) - linkUsed;
   const base = steps - cost;
   // [Moving in Straight Line]: a route still running one way may spend the
   // bonus past the printed allowance, and only in that same direction. Once it
@@ -673,9 +806,10 @@ export function extendPath(
   const budget = dir !== null ? steps + bonus - cost : base;
   if (budget <= 0) return null;
   const from = { ...t, col: last.c * 3 + 1, row: last.r * 3 + 1 };
+  const left: MoveOpts | undefined = pay ? { ...opts, linkPay: { ...pay, budget: pay.budget - linkUsed } } : opts;
   const sub: MoveOpts | undefined = bonus > 0
-    ? { ...opts, straightBonus: dir !== null ? budget - Math.max(0, base) : 0, straightDir: dir ?? undefined }
-    : opts;
+    ? { ...left, straightBonus: dir !== null ? budget - Math.max(0, base) : 0, straightDir: dir ?? undefined }
+    : left;
   const run = movePath(from, to, Math.max(0, base), terrain, tokens, flying, sub).slice(1);
   if (!run.length) return null;
   if (run.some((g) => path.some((p) => p.c === g.c && p.r === g.r))) return null;
@@ -688,18 +822,56 @@ export function losBetween(
   terrain: TerrainPiece[],
   tokens: Token[],
 ): 'clear' | 'obstructed' | 'blocked' {
-  if (a.aerial || b.aerial) return 'clear';
+  return walkLines(a, b, terrain, tokens, null) as 'clear' | 'obstructed' | 'blocked';
+}
+
+// A FIRING ACTION'S line of sight: terrain and smoke judged on the SAME lines.
+// Any one of the 81 base-to-base lines that crosses neither 3" terrain nor a
+// Smoke Screen is sight (4.2.4, 4.16; ruled 2026-09-25, audit Phase 4, I11).
+// The two used to be separate tests, smoke on the centre line and terrain on
+// the 81, so a shot with no clear line at all passed whenever the centre line
+// missed the smoke and the terrain only obstructed the rest (G3). 'smoked'
+// when smoke took the last line, 'blocked' when terrain alone did.
+export function firingSight(
+  a: Token,
+  b: Token,
+  terrain: TerrainPiece[],
+  tokens: Token[],
+  smoke: SmokeScreen[],
+): 'clear' | 'obstructed' | 'blocked' | 'smoked' {
+  if (!smoke.length) return walkLines(a, b, terrain, tokens, null);
+  const grids = new Set(smoke.map(smokeKey));
+  if (standsInSmoke(a, grids) || standsInSmoke(b, grids)) return 'smoked';
+  return walkLines(a, b, terrain, tokens, grids);
+}
+
+// The one line-walk behind both readers, so a smoke line and a terrain line are
+// always the same line. With no smoke it is the plain losBetween it always
+// was: an Aerial end sees everything, and one line not blocked is sight.
+function walkLines(
+  a: Token,
+  b: Token,
+  terrain: TerrainPiece[],
+  tokens: Token[],
+  smokeGrids: Set<string> | null,
+): 'clear' | 'obstructed' | 'blocked' | 'smoked' {
+  // 4.2.4: line of sight to or from an Aerial Unit is never Obstructed, and
+  // terrain does not block it. Smoke still does (4.16).
+  const aerial = !!(a.aerial || b.aerial);
+  if (aerial && !smokeGrids) return 'clear';
   const losCells = new Set<string>();
   const obstructCells = new Set<string>();
-  for (const p of terrain) {
-    for (const c of p.subCells) {
-      obstructCells.add(`${c.col},${c.row}`);
-      if (p.blocksLos) losCells.add(`${c.col},${c.row}`);
+  if (!aerial) {
+    for (const p of terrain) {
+      for (const c of p.subCells) {
+        obstructCells.add(`${c.col},${c.row}`);
+        if (p.blocksLos) losCells.add(`${c.col},${c.row}`);
+      }
     }
-  }
-  for (const t of tokens) {
-    if (t.uid === a.uid || t.uid === b.uid || t.aerial) continue;
-    for (let dc = 0; dc < t.size; dc++) for (let dr = 0; dr < t.size; dr++) obstructCells.add(`${t.col + dc},${t.row + dr}`);
+    for (const t of tokens) {
+      if (t.uid === a.uid || t.uid === b.uid || t.aerial) continue;
+      for (let dc = 0; dc < t.size; dc++) for (let dr = 0; dr < t.size; dr++) obstructCells.add(`${t.col + dc},${t.row + dr}`);
+    }
   }
 
   const basePoints = (t: Token): { x: number; y: number }[] => {
@@ -714,7 +886,8 @@ export function losBetween(
 
   const inBase = (x: number, y: number, t: Token) => x >= t.col && x < t.col + t.size && y >= t.row && y < t.row + t.size;
 
-  let allBlocked = true;
+  let anySight = false;
+  let smokeTook = false;
   let anyObstruct = false;
   for (const pa of basePoints(a)) {
     for (const pb of basePoints(b)) {
@@ -722,6 +895,7 @@ export function losBetween(
       const n = Math.max(2, Math.ceil(len * 3));
       let lineBlocked = false;
       let lineObstruct = false;
+      let lineSmoked = false;
       for (let i = 1; i < n; i++) {
         const x = pa.x + ((pb.x - pa.x) * i) / n;
         const y = pa.y + ((pb.y - pa.y) * i) / n;
@@ -729,12 +903,14 @@ export function losBetween(
         const key = `${Math.floor(x)},${Math.floor(y)}`;
         if (losCells.has(key)) lineBlocked = true;
         if (obstructCells.has(key)) lineObstruct = true;
+        if (smokeGrids?.has(`${Math.floor(x / 3)},${Math.floor(y / 3)}`)) lineSmoked = true;
       }
-      if (!lineBlocked) allBlocked = false;
+      if (!lineBlocked && !lineSmoked) anySight = true;
+      if (!lineBlocked && lineSmoked) smokeTook = true;
       if (lineBlocked || lineObstruct) anyObstruct = true;
     }
   }
-  if (allBlocked) return 'blocked';
+  if (!anySight) return smokeTook ? 'smoked' : 'blocked';
   return anyObstruct ? 'obstructed' : 'clear';
 }
 
@@ -838,7 +1014,11 @@ export function inArc(a: Token, b: Token, arc: 'forward' | 'rear'): boolean {
 export function losNote(
   attacker: Token,
   defender: Token,
-  action: { type?: string; range?: number; keywords?: unknown[] },
+  // `anyDistance`: the Action waives distance and line of sight and nothing
+  // else. PDRH-202_B Link Shock is the one (ruled 2026-09-25, audit Phase 4,
+  // I14): it keeps the Forward Arc and the no-Aerial Melee rule. rules.ts has
+  // no card data, so the caller reads the card and says so.
+  action: { type?: string; range?: number; keywords?: unknown[]; anyDistance?: boolean },
   terrain: TerrainPiece[],
   tokens: Token[],
   smoke: SmokeScreen[],
@@ -854,15 +1034,16 @@ export function losNote(
   strict = false,
 ): string {
   const r = rangeBetween(attacker, defender);
-  const los = losBetween(attacker, defender, terrain, tokens);
   const fwd = inArc(attacker, defender, 'forward');
   // Omni-direction Firing waives the Forward Arc requirement outright, so
   // warning about the arc on such an action is wrong guidance.
   const omni = (action.keywords ?? []).some((k) => /全向|omni/i.test(JSON.stringify(k)));
   const bits: string[] = [];
-  bits.push(r.sameGrid ? 'same grid' : r.adjacent ? 'adjacent (R1)' : `Range ${r.range}`);
+  bits.push(r.sameGrid ? 'same grid' : r.adjacent ? `adjacent (R${r.range})` : `Range ${r.range}`);
   const rangeMark = strict ? '✕' : '⚠';
-  if (action.range === 0) {
+  if (action.anyDistance) {
+    bits.push('Link Shock: distance and line of sight do not matter');
+  } else if (action.range === 0) {
     if (!r.adjacent && !r.sameGrid) bits.push(`${rangeMark} target not adjacent (action range is “--”)`);
   } else if (action.range && r.range > action.range) {
     bits.push(`${rangeMark} beyond action range (R${action.range})`);
@@ -878,12 +1059,25 @@ export function losNote(
   // the row on it, and freeplay asks before letting a house rule through. The
   // pad already filtered its list; the two board pages let the swing land.
   if (action.type === 'Melee' && defender.aerial) bits.push('✕ Melee cannot target an Aerial unit (4.4.1)');
-  if (action.type === 'Firing') {
-    if (smokeBlocks(attacker, defender, smoke)) bits.push('✕ LOS blocked by a Smoke Screen (4.16)');
+  if (action.type === 'Firing' && !action.anyDistance) {
+    // Terrain and smoke on the same lines: any one line clear of both is sight
+    // (4.2.4, 4.16; audit Phase 4, G1/G3).
+    const sight = firingSight(attacker, defender, terrain, tokens, smoke);
     // "may claim", not "does": obstruction is only the trigger. A medium unit
     // in the way obstructs and pays nothing (4.5.3), as does terrain under 2"
     // (4.5.2), so the number is protectionFor's to say and not this line's.
-    else bits.push(los === 'clear' ? 'LOS clear ✓' : los === 'obstructed' ? '⚠ obstructed, so the defender may claim +2 White protection' : '✕ LOS blocked (3" terrain)');
+    bits.push(sight === 'smoked'
+      ? '✕ no line of sight clear of the Smoke Screen (4.16)'
+      : sight === 'clear' ? 'LOS clear ✓'
+        : sight === 'obstructed' ? '⚠ obstructed, so the defender may claim +2 White protection'
+          : '✕ LOS blocked (3" terrain)');
+  }
+  // EXTENDED MELEE (a Melee Action with a Range) needs line of sight to the
+  // target, 4.6.2 (p.59). Smoke is Firing's alone (4.16), so this is terrain
+  // only. The Range 4 Harpoon landed through a building (audit Phase 4, H5).
+  if (action.type === 'Melee' && (action.range ?? 0) > 0 && !action.anyDistance
+    && losBetween(attacker, defender, terrain, tokens) === 'blocked') {
+    bits.push('✕ Extended Melee needs line of sight, and 3" terrain blocks it (4.6.2)');
   }
   return bits.join(' · ');
 }
@@ -910,9 +1104,10 @@ export function protectionFor(
   if (ignored) {
     return { white: 0, note: 'Responsive Targetting: the target is Highlighted, so Terrain and Unit Protection are ignored' };
   }
-  // Smoke removes line of sight outright, so there is no protection to add on top.
-  if (smokeBlocks(attacker, defender, smoke)) {
-    return { white: 0, note: 'No line of sight: a Smoke Screen is in the way (4.16)' };
+  // Smoke removes line of sight outright, so there is no protection to add on
+  // top. Judged with the terrain on the same lines (audit Phase 4, G1/G3).
+  if (firingSight(attacker, defender, terrain, tokens, smoke) === 'smoked') {
+    return { white: 0, note: 'No line of sight: every line crosses a Smoke Screen (4.16)' };
   }
   // Terrain in Contact with the attacker's base grants no Terrain Protection
   // (FAQ A1): shooting over the wall you are pressed against costs the

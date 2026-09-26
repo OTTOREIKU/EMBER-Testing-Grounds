@@ -3,7 +3,7 @@ import type { CardAction, PartSlot, TerrainPiece, Token } from './types';
 import { statusCount } from './types';
 import { largeGridOf, losBetween, standingSpot } from './rules';
 import { isDeployed } from './setup';
-import { tokenCards } from './units';
+import { isGroundUnit, partUsable, tokenCards } from './units';
 
 const MELEE_FIRING = '近战射击';
 
@@ -28,7 +28,9 @@ export function meleeCapable(data: GameData, t: Token): boolean {
   // transformed core is the torso printing its own Move value - the same test
   // maneuverRange uses.
   if (t.kind === 'mech' && t.mech?.torso && data.byId?.get(t.mech.torso)?.move) return false;
-  const intact = (slot: PartSlot | 'pilot' | 'main') => (t.partStates[slot as PartSlot | 'main'] ?? 'intact') !== 'destroyed';
+  // A Repaired Part acts (FAQ J23), so it locks: the Punch it can throw is the
+  // same Punch commonInitiators already lets it throw (audit Phase 4, D5).
+  const intact = (slot: PartSlot | 'pilot' | 'main') => partUsable(t, slot);
   if (t.kind === 'mech') {
     const punch = data.commonActions.find((a) => a.id === 'COMMON_PUNCH_MELEE');
     if (punch && (punch.slots ?? []).some((s) => intact(s as PartSlot))) return true;
@@ -36,10 +38,13 @@ export function meleeCapable(data: GameData, t: Token): boolean {
   return tokenCards(data, t).some(({ slot, card }) => intact(slot) && (card.actions ?? []).some((a) => a.type === 'Melee'));
 }
 
-function lockable(t: Token): boolean {
+function lockable(data: GameData, t: Token): boolean {
   // Optical Camouflage does NOT protect from being locked — the exception runs
   // the other way: a camouflaged unit cannot APPLY Melee Lock (FAQ I8).
-  return !t.aerial && isDeployed(t);
+  // A Flying Unit is exempt as well as an Aerial one (4.3.5 condition 4): the
+  // Ravens, the GoF flyers and a cruising White Dwarf. Only `aerial` was read
+  // (audit Phase 4, A3).
+  return isDeployed(t) && isGroundUnit(data, t);
 }
 
 function shifted(t: Token, at: { c: number; r: number }, terrain: TerrainPiece[], tokens: Token[]): Token {
@@ -55,7 +60,7 @@ export function lockersOf(
   terrain: TerrainPiece[],
   at?: { c: number; r: number },
 ): Token[] {
-  if (!lockable(t)) return [];
+  if (!lockable(data, t)) return [];
   const me = at ? shifted(t, at, terrain, tokens) : t;
   const g = largeGridOf(me);
   return tokens.filter((o) => {
@@ -99,18 +104,42 @@ function obstructs(o: Token): boolean {
 // "+1 additional Movement Range for EACH locking Unit", per exiting step; a
 // Panzer charges two.
 //
-// THE "OR 1 LINK" HALF IS NOT PRICED, deliberately, and the disclosure below
-// says so rather than hiding it. Three reasons, in order of weight. (1) It is a
-// genuine open ruling: Break Away is charged PER EXITING STEP, and the card does
-// not say whether the Link substitutes once per Movement, once per step, or
-// whether the mover may re-choose each step. (2) exitCost is a per-Grid PRICE
-// consumed inside searchMoves; a Link payment is a command with a floor
-// (4.10/FAQ L1 bars spending the last Link voluntarily) and would have to be
-// offered at the two commit sites, which is the same line tetherCap's comment
-// draws for the leash. (3) For a large share of movers there is no choice to
-// model at all — every Drone has no Link, and a Mech on 1 Link may not spend it.
+// THE "OR 1 LINK" HALF IS PRICED since the ruling (2026-09-25, audit Phase 4,
+// I3): per exiting step, each Obstruct locker on its own, and never the last
+// Link (4.10, FAQ L1). It is a second budget beside the Range rather than a
+// price on exitCost: obstructSurcharge below says how much of each Grid's exit
+// Link may pay, breakAwayLinkBudget how much Link there is, and the search
+// spends Link only where the Range runs short. Every Drone has no Link, and a
+// Mech on 1 Link has none to spend, so for most movers nothing changes.
 function lockPrice(o: Token): number {
   return obstructs(o) ? 2 : 1;
+}
+
+// The part of leaving Grid (c,r) that Link may pay instead of Range: 1 per
+// Obstruct locker there. Cached per Grid, like breakAwayCost.
+export function obstructSurcharge(
+  data: GameData,
+  t: Token,
+  tokens: Token[],
+  terrain: TerrainPiece[],
+): (c: number, r: number) => number {
+  const cache = new Map<string, number>();
+  return (c, r) => {
+    const key = `${c},${r}`;
+    const hit = cache.get(key);
+    if (hit !== undefined) return hit;
+    const n = lockersOf(data, t, tokens, terrain, { c, r }).filter(obstructs).length;
+    cache.set(key, n);
+    return n;
+  };
+}
+
+// The Link a mover may put toward Obstruct: all of it but the last (4.10, FAQ
+// L1), less whatever the same Action already costs (Non-humanoid X is paid
+// from the same pool). A Drone has no Link to pay with.
+export function breakAwayLinkBudget(t: Token, reserved = 0): number {
+  if (t.kind !== 'mech') return 0;
+  return Math.max(0, (t.link ?? 0) - 1 - reserved);
 }
 
 export function breakAwayCost(
@@ -145,16 +174,17 @@ export function breakAwayNote(
   if (!locked.length) return '';
   const cost = locked.reduce((sum, o) => sum + lockPrice(o), 0);
   const held = locked.filter(obstructs);
-  // Disclosed rather than offered: the alternative is real and the table may
-  // want it, but the app does not know how often it may be paid (see lockPrice).
-  //
   // BOTH numbers come off held.length so they can never disagree. The first
   // draft hard-coded "1 more ... may instead be paid as 1 Link", which quoted a
   // surcharge of 2 beside a Link price of 1 the moment two Panzers held the
   // same unit — the Movement half was right and the sentence under it was not.
+  // The Link half is priced now (see lockPrice), so the sentence says how.
   const surcharge = held.length;
+  const budget = breakAwayLinkBudget(t);
   const obstruct = surcharge
-    ? ` ${held.map((o) => o.label).join(' and ')} ${surcharge === 1 ? 'charges' : 'charge'} ${surcharge} more (Obstruct, LPA-20). That surcharge may instead be paid as ${surcharge} Link${surcharge > 1 ? ', one per Obstruct locker and each choosable on its own' : ''}. This app does not price it, so take it by hand.`
+    ? ` ${held.map((o) => o.label).join(' and ')} ${surcharge === 1 ? 'charges' : 'charge'} ${surcharge} more (Obstruct, LPA-20), which may be paid in Link instead, 1 for 1, never the last Link. ${budget > 0
+      ? 'The lit Grids count the Link it can spare, and a route spends Link only where its Range runs short.'
+      : `${t.label} has no Link to spare for it.`}`
     : '';
   return ` Melee Locked by ${locked.map((o) => o.label).join(', ')}, so leaving a Grid costs ${cost} extra Movement Range (4.3.5).${obstruct}`;
 }

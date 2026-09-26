@@ -72,7 +72,9 @@ export interface GuideCallbacks {
   onShowDial(uid: number): void;
   // `maneuver` marks the Mech's own Maneuver rather than a Movement Action, so
   // the driver knows whether an Ojs200's optional Flying Movement is on offer.
-  onMoveUnit(uid: number, opts: { range?: number; label: string; maneuver?: boolean }, done: (moved: boolean) => void): void;
+  // `turn` is a quarter-turn the plan opens with: Q or E pressed on the acting
+  // unit opens its Maneuver already turned (audit Phase 4, E5).
+  onMoveUnit(uid: number, opts: { range?: number; label: string; maneuver?: boolean; turn?: 1 | 3 }, done: (moved: boolean) => void): void;
   // `partKey` names the Part a Common Action was initiated through, when the
   // flow chose one (COMMON_CHARGE@rightHand; FAQ H6/H7, audit Phase 2, E7).
   onPerformAction(uid: number, actionId: string, done: (performed: boolean, opts?: { twoHanded?: boolean; partKey?: string }) => void): void;
@@ -81,6 +83,11 @@ export interface GuideCallbacks {
   onRollFirstPlayer(side: Side): void;
   onPlaceUnit(uid: number, opts: { stance: Stance; camo: boolean }): void;
   onRemoveSpent(): void;
+  // The board's Smoke dissipation (4.16): the isolated screens off both sides,
+  // then one from each Connected group, chosen by its owner. The guide never
+  // asked for it (audit Phase 4, G7). Optional: a page without smoke tools
+  // marks the step done by hand.
+  onDissipateSmoke?(): void;
   // Returns true when the app has taken responsibility for confirming the
   // dials, which happens only in a networked game.
   onConfirmTimings?(): boolean;
@@ -424,6 +431,9 @@ export class PlayGuide {
       markEnd('remove');
       this.cb.onRemoveSpent();
     });
+    // The board's dissipation marks the step itself when it runs, so the step
+    // cannot read done while the screens are still there.
+    this.root.querySelector('[data-end-smoke]')?.addEventListener('click', () => this.cb.onDissipateSmoke?.());
     this.root.querySelector('[data-end-tokens]')?.addEventListener('click', () => {
       // The aging happens inside the command, so what it will do is read off
       // the tokens first and narrated after.
@@ -729,6 +739,21 @@ export class PlayGuide {
         );
       })()}
       ${(() => {
+        // Smoke is judged with the tokens (4.16), once per End Phase. Only
+        // drawn when there is smoke to judge, or it has just been judged.
+        const smoke = s.smoke ?? [];
+        if (!smoke.length && !done.has(`${s.round.n}:end:smoke`)) return '';
+        return step(
+          'smoke',
+          3,
+          'Smoke dissipation',
+          `Every Smoke Screen that is not Connected comes off, and each Connected group loses one, chosen by its owner, ${squadLabel(s.round.firstPlayer)} first. It happens once this End Phase (4.16). ${smoke.length} screen${smoke.length === 1 ? '' : 's'} on the board.`,
+          this.cb.onDissipateSmoke
+            ? '<div class="pg-units"><button class="pg-unit" data-end-smoke="1">Dissipate the smoke</button></div>'
+            : '<div class="pg-units"><button class="pg-pass" data-end-step="smoke">Done on the table</button></div>',
+        );
+      })()}
+      ${(() => {
         const tasks = normaliseTasks(s.tasks);
         const mission = this.data.missions.cards.find((c) => c.id === s.mission);
         const last = s.round.n >= (s.roundLimit ?? 5);
@@ -756,7 +781,7 @@ export class PlayGuide {
             : '';
         return step(
           'tasks',
-          3,
+          4,
           'Tasks and victory points',
           `${body}${total}${lines}`,
           preview.s1 || preview.s2
@@ -1474,7 +1499,21 @@ export class PlayGuide {
     this.cb.onChanged();
   }
 
-  private tryManeuver(): void {
+  // Q or E on the unit whose Action Opportunity it is. A turn on the spot IS
+  // a Maneuver (FAQ E3), and on this board the keys turned the unit outside
+  // any plan, so the Maneuver Tick stayed unspent and [Stationary] survived
+  // (audit Phase 4, E5). They open the Maneuver instead, already turned, and
+  // the plan's Turn on the spot records it. False when this is not that unit,
+  // so the board turns it as before.
+  turnActing(uid: number, turn: 1 | 3): boolean {
+    const s = this.state;
+    const o = s ? this.opportunity(s) : null;
+    if (!o || o.uid !== uid) return false;
+    this.tryManeuver(turn);
+    return true;
+  }
+
+  private tryManeuver(turn?: 1 | 3): void {
     const s = this.state;
     if (!s) return;
     const o = this.opportunity(s);
@@ -1488,7 +1527,7 @@ export class PlayGuide {
       return;
     }
     this.warn = null;
-    this.cb.onMoveUnit(o.uid, { range: maneuverRange(this.data, t), label: 'Maneuver', maneuver: true }, (moved) => {
+    this.cb.onMoveUnit(o.uid, { range: maneuverRange(this.data, t), label: 'Maneuver', maneuver: true, ...(turn ? { turn } : {}) }, (moved) => {
       if (!moved) return;
       // The interactive move has already landed the token, so the command
       // records where it ended up: a no-op here, the real move on a mirror.

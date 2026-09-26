@@ -26,7 +26,9 @@ type LoanedPart = any;
 const tokenCards = (data, t) => t.kind === 'mech'
   ? Object.entries(t.mech ?? {}).map(([slot, id]) => ({ slot, card: data.byId.get(id) })).filter((x) => x.card)
   : [{ slot: 'main', card: data.byId.get(t.cardId) }].filter((x) => x.card);
-` + src.slice(start, end));
+` + src.slice(start, end)
+  // flightGrant asks it first, since a cruising White Dwarf is a Flying Unit at all times (audit Phase 4, A2).
+  + src.slice(src.indexOf('export function cruising'), src.indexOf('export function usableInCruise')));
 const { flightGrant, isAirborneAction } = await import(tmp.href);
 
 let pass = 0, fail = 0;

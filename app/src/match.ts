@@ -927,7 +927,7 @@ function startAttack(uid: number, actionId: string, targetUid: number, mode: 'at
   // Protection, and neither checks arc or line of sight — so the reading of the
   // board that an ordinary attack needs would be wrong guidance for them.
   const note = mode === 'intercept'
-    ? 'Interception: line of sight always exists and no Forward Arc is required, and the target claims no Terrain or Unit Protection (4.9).'
+    ? 'Interception: no Forward Arc is required, terrain never blocks a line to an Aerial Unit though a Smoke Screen does, and the target claims no Terrain or Unit Protection (4.9, 4.16, FAQ F3).'
     : mode === 'explosion'
       ? 'Explosion damage ignores line of sight and facing, and the defender claims no Terrain or Unit Protection (4.7.6).'
       : losNote(attacker, defender, action, terrain, state.tokens, smoke);

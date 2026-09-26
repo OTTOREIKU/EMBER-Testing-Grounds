@@ -548,10 +548,12 @@ const hudCtx = (action, pilot) => {
   check('...that no printed Armor Piercing card also carries, so the pilot is the only bridge',
     HITS.filter((id) => ['038', '546', '547', '556'].includes(id)), []);
 
+  // Facing East, towards both foes: an added target must be in the Forward Arc
+  // like the first (4.2.5; audit Phase 4, G5), and North put Bravo behind it.
   const multi = (pilot) => {
     const atk = {
       uid: 1, side: 's1', kind: 'mech', cardId: '172', label: 'Attacker', col: 0, row: 0,
-      size: 3, facing: 0, aerial: false, stance: 'offensive', link: 3, deployed: true,
+      size: 3, facing: 1, aerial: false, stance: 'offensive', link: 3, deployed: true,
       mech: { torso: '172', rightHand: '038', ...(pilot ? { pilot } : {}) },
       partStates: { torso: 'intact', rightHand: 'intact' }, ammo: {}, statuses: [], log: [],
     };

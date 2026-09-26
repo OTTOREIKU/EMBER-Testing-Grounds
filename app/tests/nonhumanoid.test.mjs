@@ -64,10 +64,15 @@ const broke = { label: 'Centaur', link: 0, statuses: [] };
 const exact = { label: 'Centaur', link: 1, statuses: [] };
 
 check('a Mech with Link to spare may Run', U.nonHumanoidStop(rich, run), null);
-check('a Mech with exactly enough may Run', U.nonHumanoidStop(exact, run), null);
+// Exactly enough is NOT enough: the Link would be its last, and a Mech never
+// spends its last Link voluntarily (4.10, FAQ L1; audit Phase 4, E2). This
+// pinned the opposite.
+check('a Mech with exactly the cost may not Run: it would be its last Link',
+  typeof U.nonHumanoidStop(exact, run), 'string');
+check('and is told so', /cannot spend its last Link/.test(U.nonHumanoidStop(exact, run)), true);
 check('a Mech with none may not', typeof U.nonHumanoidStop(broke, run), 'string');
 check('and is told the cost and what it has',
-  /needs 1 Link.*has 0/.test(U.nonHumanoidStop(broke, run)), true);
+  /needs 2 Link.*has 0/.test(U.nonHumanoidStop(broke, run)), true);
 check('the free Sprint is unaffected by an empty Link', U.nonHumanoidStop(broke, sprint), null);
 check('a missing link field reads as 0, not as permission',
   typeof U.nonHumanoidStop({ label: 'X', statuses: [] }, run), 'string');
@@ -112,17 +117,27 @@ check('and Immobilized does not care about Link', U.immobilizedStop(broke, run),
   check('freeplay spends it at the commit', /nonHumanoidCost\(m\.action \?\? null\)/.test(main), true);
   check('and the plan carries the Action to get there', /action: opts\.action \?\? null,/.test(main), true);
 
-  // Exactly once per board. Freeplay sends no maneuver command for a move, so
-  // if it ever starts to, this count is the thing that should fail first.
-  const spends = (s) => (s.match(/nonHumanoidCost\(/g) ?? []).length;
-  check('freeplay charges in exactly one place', spends(main), 1);
-  // Two commands, one charge each: the unit's own `maneuver`, and since the
-  // audit's Phase 3 the `controlledMove` The Red Shoes steers it with, where the
-  // steered unit is still the one performing its Move Action.
-  check('the command layer charges once per command that moves', spends(cmds), 2);
+  // Exactly once per Movement. Freeplay sends no maneuver command for a move,
+  // so it charges at its own commits: a route, and since audit Phase 4 (E5) a
+  // pivot-only Move Action (E18). Its third read is Obstruct's Link budget,
+  // which reserves the Action's cost and charges nothing.
+  const charges = (s) => (s.match(/t\.link = Math\.max\(0, \(t\.link \?\? 0\) - linkCost\)/g) ?? []).length;
+  check('freeplay charges at its two commits, a route and a pivot', charges(main), 2);
+  check('and reserves the cost where Obstruct budgets its Link',
+    /breakAwayLinkBudget\(t, nonHumanoidCost\(action \?\? null\)\)/.test(main), true);
+  // The command layer charges in three places: the unit's own `maneuver`,
+  // the `controlledMove` The Red Shoes steers it with (audit Phase 3), and the
+  // pad's `performAction`, which sends no maneuver at all (audit Phase 4, E2).
+  // Its fourth read is the Obstruct floor in the maneuver check.
+  check('the command layer charges once per road',
+    (cmds.match(/const cost = nonHumanoidCost\(/g) ?? []).length, 3);
+  check('and the pad\'s road is the boardless performAction only',
+    /if \(a && state\.noBoard && t\.kind === 'mech'\) \{\s*\n\s*const cost = nonHumanoidCost\(a\);/.test(cmds), true);
   check('and the controlled move charges the unit it steers',
     /case 'controlledMove': \{[\s\S]{0,900}?const cost = nonHumanoidCost\(act\);\s*\n\s*if \(cost > 0\) target\.link/.test(cmds), true);
-  check('and the Match Centre charges nowhere - its command does that', spends(hud), 0);
+  // Its one read is Obstruct's Link budget, as freeplay's.
+  check('and the Match Centre charges nowhere - its command does that',
+    [(hud.match(/nonHumanoidCost\(/g) ?? []).length, /breakAwayLinkBudget\(t, nonHumanoidCost\(/.test(hud), /\.link = /.test(hud)], [1, true, false]);
 
   // But the Match Centre still warns early, like it does for Immobilized.
   check('the Match Centre refuses at its planner too', /nonHumanoidStop\(/.test(hud), true);

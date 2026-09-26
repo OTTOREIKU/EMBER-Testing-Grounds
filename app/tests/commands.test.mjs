@@ -226,6 +226,19 @@ const tethering = unitsSrc.slice(
 );
 const meleeSrc = readFileSync(new URL('../src/melee.ts', import.meta.url), 'utf8');
 const leash = meleeSrc.slice(meleeSrc.indexOf('// ---------- Tether X'));
+// The rest of melee.ts, above the Tether cut: who can lock, the Break Away
+// price and Obstruct's Link, canBeForceMoved. performAction now refuses a
+// Firing Action while Melee Locked (audit Phase 4, D6) and forceMove an
+// immovable unit (B2), so these are command-layer rules too. After the stubs,
+// for the hoisting reason the Tether block gives.
+const meleeHead = meleeSrc.slice(meleeSrc.indexOf("const MELEE_FIRING"), meleeSrc.indexOf('// ---------- Tether X'));
+// The line of sight lockersOf asks, and the smoke half it shares its walker
+// with (audit Phase 4, G1/G3). losBetween..'// Does the line between two Bases'
+// sits below extendPath and above lineCrossesUnit, inside no other cut here;
+// standsInSmoke..LargeGrid sits just below the smokeKey..smokeBlocks cut.
+const sight = rules.slice(rules.indexOf('export function losBetween'), rules.indexOf('// Does the line between two Bases'))
+  + rules.slice(rules.indexOf('function standsInSmoke'), rules.indexOf('export interface LargeGrid'));
+if (!meleeHead || !sight) throw new Error('could not locate the melee head or the sight walker');
 if (!faces || !partSlots || !tethering || !leash) throw new Error('could not locate the Tether machinery');
 // The phase-7 pilot predicates, sliced rather than mirrored: WHICH pilot a rule
 // answers to is the rule, and a mirror here could agree with a reader that
@@ -471,6 +484,8 @@ writeFileSync(
     // syncMagazines, and a function hoists but a `const` stub does not.
     + tethering
     + leash
+    + meleeHead
+    + sight
     + allowanceReader
     // The Phase 2 audit readers commands.ts now imports (actionPartWhy,
     // startOpts, overloadPackOn, cruising...), kept in one block at the end of
@@ -490,9 +505,13 @@ const check = (name, got, want) => {
   else { fail++; console.log(`  FAIL ${name}\n       want ${w}, got ${g}`); }
 };
 
+// A Chassis printing a Maneuver Value, since check() bounds how far a Movement
+// may carry a unit by it (audit Phase 4, E8): with none, every Maneuver here
+// would be a turn on the spot. CH4 carries no Action and no Passive, so it adds
+// a card to tokenCards and nothing else.
 const mech = (uid, side, extra = {}) => ({
   uid, side, kind: 'mech', stance: 'offensive', label: `M${uid}`, col: 3, row: 3, facing: 0, size: 3,
-  mech: { torso: 'T1', pilot: 'P1' }, partStates: { torso: 'intact' }, ...extra,
+  mech: { torso: 'T1', pilot: 'P1', chasis: 'CH4' }, partStates: { torso: 'intact' }, ...extra,
 });
 const opp = (uid, over = {}) => ({
   uid, timing: 'firing', maneuver: 1, action: 2, extras: [], maneuvered: false,
@@ -531,6 +550,10 @@ const data = {
     ['274', { id: '274', category: 'tactics_or_upgrade', score: 30, actions: [] }],
     ['275', { id: '275', category: 'tactics_or_upgrade', score: 30, actions: [] }],
     ['P1', { id: 'P1', LV: 4 }],
+    ['CH4', { id: 'CH4', move: 4, actions: [] }],
+    // A Chassis that carries a unit further than any leash here, for the Tether
+    // block: what is tested there is the leash, not the Maneuver Value.
+    ['CH12', { id: 'CH12', move: 12, actions: [] }],
     // A Harpoon and its Tether Mode face: ONE physical card, so throwIndex
     // names the far side and the price tells a derived face from a build
     // choice. HARP2 fits the same slot and is related to nothing, which is what
@@ -556,7 +579,9 @@ const data = {
       description: { en: '· Command Generation 2 · When recieving Command from this Mech, the Ally Drone may perform Automatic Actions instead of Command Actions.' } }] }],
     ['M2T', { id: 'M2T', category: 'mech_part', actions: [{ id: 'M2T_A', type: 'Passive', speed: 'passive', name: { en: 'M2 Data Link' },
       description: { en: '· Command Generation 2 · When receiving Command from this Mech, the Ally Drone may move 1 grid before performing Actions.' } }] }],
-    ['167', { id: '167', category: 'drone', stance: 'mobility', score: 0, actions: [{ id: '167_A', type: 'Detonation', speed: 'auto', range: 1, yellowDice: 6, name: { en: 'Automatic Attack' } }] }],
+    // Move 4: the M2 block below walks it four Grids (check() bounds a
+    // Movement by the Maneuver Value; audit Phase 4, E8).
+    ['167', { id: '167', category: 'drone', stance: 'mobility', score: 0, move: 4, actions: [{ id: '167_A', type: 'Detonation', speed: 'auto', range: 1, yellowDice: 6, name: { en: 'Automatic Attack' } }] }],
   ]),
   commonActions: [{ id: 'COMMON_CHARGE', type: 'Tactic', size: 's', name: { en: 'Charge' } }],
   overload: [{ actionId: '090_A', card: '090', label: 'Overload' }],
@@ -2280,7 +2305,9 @@ check('a drop survives its attacker leaving the board', C.check(data, gone, drop
 // The attack carries the AUTOMATIC icon, like both starter drones' attacks do,
 // so it is legal in the Automatic Phase fixture below (3.5).
 const dAct = { id: 'DA', type: 'Firing', speed: 'auto', name: { en: 'Full-auto' } }; // no size: no Tick price
-const dData = { ...data, byId: new Map([...data.byId, ['DR1', { id: 'DR1', actions: [dAct] }]]) };
+// A Maneuver Value of 4, so the four-Grid move below is within its reach
+// (check() bounds a Movement by it; audit Phase 4, E8).
+const dData = { ...data, byId: new Map([...data.byId, ['DR1', { id: 'DR1', move: 4, actions: [dAct] }]]) };
 const droneTok = () => ({ uid: 1, side: 's1', kind: 'drone', stance: 'offensive', label: 'D1', col: 3, row: 3, facing: 0, cardId: 'DR1', partStates: { main: 'intact' }, ammo: {} });
 const droneAt = (over = {}) => world([droneTok()], 3, opp(1, over));
 // The same Drone activated by a Command instead (phase 0), where the move is.
@@ -2943,12 +2970,12 @@ check('though claiming it that late is refused', C.check(data, wCrisis({}, opp(1
 
 const tp = (over = {}) => ({ kind: 'transformPart', seat: 's1', uid: 1, slot: 'leftHand', cardId: 'HARP-T', ...over });
 const wTransform = (over = {}) => world([mech(1, 's1', {
-  mech: { torso: 'T1', leftHand: 'HARP', pilot: 'P1' },
+  mech: { torso: 'T1', leftHand: 'HARP', pilot: 'P1', chasis: 'CH12' },
   partStates: { torso: 'intact', leftHand: 'intact' },
   col: 3, row: 3, ...over,
 }), mech(2, 's2', {
   col: 9, row: 3,
-  mech: { torso: 'T1', leftHand: 'T3', pilot: 'P1' },
+  mech: { torso: 'T1', leftHand: 'T3', pilot: 'P1', chasis: 'CH12' },
   partStates: { torso: 'intact', leftHand: 'intact' },
 })]);
 check('a Part turns over to its own far face', C.check(data, wTransform(), tp()).ok, true);
@@ -2961,9 +2988,16 @@ check('nor into one that does not fit the slot',
 check('an empty slot has nothing to turn over', C.check(data, wTransform(), tp({ slot: 'backpack' })).ok, false);
 check('and a destroyed Part has no card left',
   C.check(data, wTransform({ partStates: { torso: 'intact', leftHand: 'destroyed' } }), tp()).ok, false);
+// A Tether Mode face with no chip holding it open turns straight back, whatever
+// turned it: a Harpoon Hit that destroyed its target used to leave the arm in
+// Tether Mode for the rest of the game (audit Phase 4, H2).
 const wTp = wTransform();
 C.apply(data, wTp, tp());
-check('apply rewrites the slot', wTp.tokens[0].mech.leftHand, 'HARP-T');
+check('a Tether Mode face with no Tether to hold it turns straight back', wTp.tokens[0].mech.leftHand, 'HARP');
+const wTpHeld = wTransform();
+C.apply(data, wTpHeld, { kind: 'tether', seat: 's1', uid: 1, targetUid: 2, range: 4 });
+C.apply(data, wTpHeld, tp());
+check('apply rewrites the slot while the Tether holds it', wTpHeld.tokens[0].mech.leftHand, 'HARP-T');
 
 // The chips. Placed on a unit the Harpoon just hit, so they always start inside
 // their own leash.
@@ -3082,11 +3116,17 @@ check('and a Push is refused just the same', C.check(data, wShell(), shove({ pus
 // it would take away a choice the rules give.
 check('but turning it where it stands is still allowed',
   C.check(data, wShell(), shove({ to: { col: 9, row: 9 }, facing: 2 })).ok, true);
-// The control: the identical command against the identical token minus the flag.
+// Nor any Deployable: "Units that cannot move, such as Deployables, ... cannot
+// be subject to Forced Movement" (4.3.4). This pinned the opposite until the
+// ruling (audit Phase 4, B2).
 const wNotShell = world([mech(1, 's1', { ammo: {} }), shellTok({ barricade: undefined })], 2);
-check('an ordinary Deployable in the same spot is shoved normally', C.check(data, wNotShell, shove()).ok, true);
-C.apply(data, wNotShell, shove());
-check('and it really does move', [wNotShell.tokens[1].col, wNotShell.tokens[1].row], [9, 12]);
+check('an ordinary Deployable in the same spot cannot be shoved either (4.3.4)', C.check(data, wNotShell, shove()).ok, false);
+// The control: the identical command against a unit that moves, a Drone
+// printing a Maneuver Value, in the same spot.
+const wMobile = world([mech(1, 's1', { ammo: {} }), shellTok({ barricade: undefined, kind: 'drone', cardId: '167' })], 2);
+check('while a unit that can move is shoved normally', C.check(data, wMobile, shove()).ok, true);
+C.apply(data, wMobile, shove());
+check('and it really does move', [wMobile.tokens[1].col, wMobile.tokens[1].row], [9, 12]);
 
 // The resolution strip crosses the wire and every icon `kind` lands in a class
 // name and a title attribute on the far screen. Bounding only the LIST lengths
@@ -3919,12 +3959,11 @@ globalThis.__baseData = data;
   // refusals above came from the Terrain and not from the map being set.
   check('a piece already destroyed no longer blocks it',
     C.check(terrainData, mapped('LAND', {}, ['w-land']), swapCmd()).ok, true);
-  // Why the test reads `!unit.aerial` and not the piece alone: standingSpot
-  // answers `spots[0]` for an Aerial Unit without consulting Terrain at all, so
-  // a reader here that blocked on the piece would refuse Grids the geometry had
-  // just handed it.
-  check('but an Aerial Unit is exchanged over the Terrain rather than into it',
-    C.check(terrainData, mapped('VAC', { aerial: true }), swapCmd()).ok, true);
+  // An Aerial Unit is never Crushed at all, so it is never exchanged either:
+  // crushTargets passes it over and the check refuses one a stale peer names
+  // (4.3.6; audit Phase 4, C5). This pinned the exchange going through.
+  check('an Aerial Unit is not exchanged, over the Terrain or anywhere',
+    C.check(terrainData, mapped('VAC', { aerial: true }), swapCmd()).ok, false);
 }
 
 // ---------- how far the crusher may have come (4.3.6) ----------

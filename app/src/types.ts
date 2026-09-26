@@ -861,6 +861,12 @@ export interface ScriptState {
   // rather than on one client because BOTH sides roll and either may spend Link
   // to Focus, and a player may only ever send commands for their own units.
   counter: CounterRoll | null;
+  // The Connected Smoke groups still owing one removal this End Phase, each
+  // chosen by its owner, snapshotted when dissipation ran: a removal that
+  // splits a group owes nothing further, so it cannot be re-read off the board
+  // (4.16). Shared state rather than one page's memory, so a reload or a
+  // rejoin halfway through still owes what it owed (audit Phase 4, G7).
+  smokeOwed?: { side: Side; cells: { col: number; row: number }[] }[];
   endDone: string[];
   // Abilities capped at once per round, keyed `${round}:${ability}:${uid}`.
   // Aster's Link restore is the first; anything else printed "once per round"
@@ -1374,6 +1380,17 @@ function normaliseCounter(raw: unknown): CounterRoll | null {
   };
 }
 
+function normaliseSmokeOwed(raw: unknown): ScriptState['smokeOwed'] {
+  if (!Array.isArray(raw)) return undefined;
+  const cell = (c: unknown): c is { col: number; row: number } =>
+    !!c && typeof (c as { col?: unknown }).col === 'number' && typeof (c as { row?: unknown }).row === 'number';
+  const out = raw
+    .filter((g) => g && (g.side === 's1' || g.side === 's2') && Array.isArray(g.cells))
+    .map((g) => ({ side: g.side as Side, cells: (g.cells as unknown[]).filter(cell).map((c) => ({ col: c.col, row: c.row })) }))
+    .filter((g) => g.cells.length);
+  return out.length ? out : undefined;
+}
+
 export function normaliseScript(raw: unknown, firstPlayer: Side): ScriptState {
   const base = newScriptState(firstPlayer);
   const s = (raw ?? {}) as Partial<ScriptState>;
@@ -1415,6 +1432,9 @@ export function normaliseScript(raw: unknown, firstPlayer: Side): ScriptState {
         )
       : base.reactions,
     counter: normaliseCounter(s.counter),
+    // Absent stays absent, so a script with nothing owed has the same keys as
+    // a fresh one.
+    ...(normaliseSmokeOwed(s.smokeOwed) ? { smokeOwed: normaliseSmokeOwed(s.smokeOwed) } : {}),
     endDone: Array.isArray(s.endDone) ? s.endDone.filter((x) => typeof x === 'string') : base.endDone,
     oncePerRound: Array.isArray(s.oncePerRound) ? s.oncePerRound.filter((x) => typeof x === 'string') : base.oncePerRound,
     rollback: normaliseRollback(s.rollback),
@@ -1540,6 +1560,11 @@ export interface GameState {
   commandTokens: Record<Side, number>;
   markers?: Marker[];
   smoke?: SmokeScreen[];
+  // The round whose End Phase has already dissipated the Smoke Screens. It
+  // happens once (4.16, p.77): a second pass would thin every group again and
+  // break the split grace, and freeplay offered the box again the moment it
+  // was done (audit Phase 4, G7).
+  smokeRound?: number;
   script?: ScriptState;
   removedTerrain?: string[];
   scale?: BattleScale;

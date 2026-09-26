@@ -5,8 +5,8 @@ import type { ExtraTick, Card, CardAction, CounterRoll, GameRuleEffect, GameStat
 import type { Command } from './commands';
 import { addStatus, DEFAULT_GRIDS, gridsOf, LEGACY_SIDE, normaliseScript, removableTokens, statusCount, STATUSES, TIMINGS } from './types';
 import { normaliseSetup } from './setup';
-import { isMeleeFiring, lockersOf } from './melee';
-import { boardGrids, inContact, largeGridOf, lineCrossesUnit, losBetween, rangeBetween, smokeBlocks, standingSpot } from './rules';
+import { isMeleeFiring, lockersOf, tetherCap } from './melee';
+import { boardGrids, firingSight, inArc, inContact, largeGridOf, lineCrossesUnit, losBetween, rangeBetween, smokeBlocks, standingSpot } from './rules';
 import { normaliseTasks, type VpRider } from './tasks';
 // ticks.ts imports only from types.ts, so this direction carries no cycle.
 import { timingOf, type StartOpts } from './ticks';
@@ -233,6 +233,17 @@ export function immobilizedStop(t: Token, action?: CardAction | null): string | 
   return `${t.label} bears an Immobilized Token, so it cannot perform Movement Actions or Maneuver, and that includes changing facing on the spot (6.3.2).`;
 }
 
+// 4.3.4 (p.45) lists "having a Destroyed Chassis" beside Immobilized as making a
+// unit "unable to perform Movement Actions", whichever Part prints them: a
+// Jetpack's Jump or the Taurus's Blink as much as the Chassis's own Sprint.
+// FAQ E4 still lets its Maneuver turn it (ruled 2026-09-25, audit Phase 4, I10).
+// A Repaired Chassis acts (FAQ J23). The engine let a Chassis-less Mech Jump.
+export function chassisStop(t: Token): string | null {
+  if (t.kind !== 'mech') return null;
+  if ((t.partStates.chasis ?? 'intact') !== 'destroyed' || (t.repairedSlots ?? []).includes('chasis')) return null;
+  return `${t.label}'s Chassis is destroyed, so it cannot perform Movement Actions (4.3.4). Its Maneuver may still change its facing (FAQ E4).`;
+}
+
 // NON-HUMANOID X 异形X: "When performing this Action, -X Link Value." Printed in
 // English on ZHLT-301 PLK400 "Centaur" High-mobility Chassis (card 181) and on
 // its SK variant, and confirmed by the publisher's own Part Data GoF 1.021 EN
@@ -263,8 +274,11 @@ export function nonHumanoidStop(t: Token, action?: CardAction | null): string | 
   const cost = nonHumanoidCost(action);
   if (cost <= 0) return null;
   const have = t.link ?? 0;
-  if (have >= cost) return null;
-  return `${t.label} needs ${cost} Link to perform this Action (Non-humanoid ${cost}), and has ${have}.`;
+  // One more than the cost: a Mech cannot spend its last Link (4.10, FAQ L1).
+  // "Exactly enough" used to pass and left the Mech on 0 Link, and in
+  // Offensive Stance, not Shutdown (audit Phase 4, E2).
+  if (have >= cost + 1) return null;
+  return `${t.label} needs ${cost + 1} Link to perform this Action, and has ${have}: Non-humanoid ${cost} costs ${cost}, and a Mech cannot spend its last Link (4.10, FAQ L1).`;
 }
 
 // ---------- ON-HIT RIDERS (4.4.2/4.4.3) ----------
@@ -678,6 +692,10 @@ export interface Resupply {
   amount: number;
   range: number;
   allies: boolean;
+  // The card says "adjacent" (086_A: "this Mech or an adjacent Ally Unit"):
+  // the eight Grids around plus its own (4.2.2). The bundle encodes it as
+  // Range 1, which refused a diagonal ally at Range 2 (audit Phase 4, F1).
+  adjacent: boolean;
 }
 
 export function resupplyOf(a: CardAction): Resupply | undefined {
@@ -690,6 +708,7 @@ export function resupplyOf(a: CardAction): Resupply | undefined {
         amount: Math.max(1, eff.amount ?? 1),
         range: eff.range ?? 0,
         allies: eff.targetSide !== 'self',
+        adjacent: /\badjacent\b|相邻/i.test(`${a.description?.en ?? ''} ${a.description?.zh ?? ''}`),
       };
     }
   }
@@ -1507,9 +1526,10 @@ export function maneuverIsSilent(data: GameData, t: Token): boolean {
 // Camouflage". That is where the two exclusions come from.
 //
 // I10 is the trap. A landed Beacon or Mine DOES break camouflage by Contact —
-// but this app models every Deployable as Aerial so units can share its Grid
-// (E10's "units may be placed above them"), so the plain Airborne test throws
-// away exactly the units I10 names. The printed Deployable keyword is what
+// but this app models a Mine as Aerial so units can share its Grid (E10's
+// "units may be placed above them"), so the plain Airborne test throws away a
+// unit I10 names. (Beacons were Aerial too until audit Phase 4, C2; they are
+// ground Deployables now and pass the plain test.) The printed Deployable keyword is what
 // tells a landed Beacon from a Missile in flight, and I10 excludes Missiles by
 // name, so the keyword IS the ruling rather than a proxy for it.
 const DEPLOYABLE_KEYWORD = '设置物';
@@ -1620,6 +1640,10 @@ export function manifestTargets(
   if (immobilizedStop(t)) return [];
   const range = manifestationRange(data, t);
   const ground = !!env?.environments?.length && isGroundUnit(data, t);
+  // A Tether holds a Manifestation, which is not Forced Movement (ruled
+  // 2026-09-25, audit Phase 4, I16): no Grid past the leash is offered, and
+  // the reveal command refuses one.
+  const leash = tetherCap(t, tokens);
   const here = largeGridOf(t);
   const out: { c: number; r: number; col: number; row: number }[] = [];
   for (let c = here.c - range; c <= here.c + range; c++) {
@@ -1630,6 +1654,7 @@ export function manifestTargets(
       if (c < 0 || r < 0 || c >= boardGrids() || r >= boardGrids()) continue;
       if (c === here.c && r === here.r) continue;
       if (Math.abs(c - here.c) + Math.abs(r - here.r) > range) continue;
+      if (leash && !leash(c, r)) continue;
       if (ground && envCardAt(env!, c, r) === 'abyss') continue;
       const spot = standingSpot(c, r, t.size, !!t.aerial, terrain, tokens, t.uid);
       if (spot) out.push({ c, r, col: spot.col, row: spot.row });
@@ -2020,8 +2045,10 @@ export interface AttackReaction {
   trace?: boolean;
   stance?: boolean;
   riposte?: boolean;
-  // The card says it works even once the unit is gone. FAQ D10 asks exactly
-  // that about the Reaper and answers yes, so a destroyed Part is no bar.
+  // Always false now. FAQ D10 asks whether a Reaper destroyed outright still
+  // gets its Emergency Smoke and answers NO, in all three languages: "its model
+  // is removed from the battlefield immediately". This field used to say yes,
+  // and the Phase 2 build copied that onto both Reapers (audit Phase 4, G10).
   afterDestroyed: boolean;
 }
 
@@ -2668,10 +2695,13 @@ export function attackReactionsOf(data: GameData, t: Token): AttackReaction[] {
     for (const a of card.actions ?? []) {
       for (const g of a.gameRules ?? []) {
         for (const e of g.effects ?? []) {
-          const eff = e as { type?: string; count?: number; range?: number; usableAfterDestroyed?: boolean };
+          const eff = e as { type?: string; count?: number; range?: number };
           if (eff.type !== 'post_firing_smoke_reaction') continue;
-          const dead = (t.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed';
-          if (dead && eff.usableAfterDestroyed !== true) continue;
+          // A destroyed Part reacts with nothing. The three cards that carry
+          // this effect are each a whole unit (546's Torso, the two Reapers), so
+          // this is FAQ D10's "No". The bundle's usableAfterDestroyed flag on
+          // 546_B is read by nothing (audit Phase 4, G10).
+          if ((t.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
           // The card prints storage 1, so syncMagazines already tracks its
           // uses as Ammo — a spent Emergency Smoke must stop being offered.
           if (t.ammo?.[a.id] === 0) continue;
@@ -2679,7 +2709,7 @@ export function attackReactionsOf(data: GameData, t: Token): AttackReaction[] {
             actionId: a.id,
             name: a.name?.en || a.name?.zh || a.id,
             smoke: { count: Math.max(1, eff.count ?? 1), range: eff.range ?? 0 },
-            afterDestroyed: eff.usableAfterDestroyed === true,
+            afterDestroyed: false,
           });
         }
       }
@@ -3301,6 +3331,14 @@ export function autoTargetsFor(
   tokens: Token[],
   t: Token,
   a: CardAction,
+  // The board, when there is one to judge sight on. 3.5.2 (p.33, printed): the
+  // enemies "within the range of the Action, and also within line of sight if
+  // the Action Type is Firing or Melee", and only then the nearest; and only a
+  // unit the Action may target at all, so the Forward Arc counts unless it is
+  // Omni-direction (4.2.5). Range alone offered a smoked enemy at Range 2 over
+  // a clear one at Range 3, and then refused the shot (audit Phase 4, G2). A
+  // table with no board judges the sight itself.
+  board?: { terrain: TerrainPiece[]; smoke: SmokeScreen[] },
 ): Token[] {
   // Through actionRange, so a Firing Action lengthened by an ally's aura can
   // actually reach the target the picker offers.
@@ -3312,6 +3350,18 @@ export function autoTargetsFor(
   const origins = isElectronicAttack(a) ? electronicOrigins(data, tokens, t) : [t];
   const reachOf = (o: Token): number => Math.min(...origins.map((from) => rangeBetween(from, o).range));
   const electronic = isElectronicAttack(a) || isScanAction(a);
+  const omni = (a.keywords ?? []).some((k) => /全向|omni/i.test(JSON.stringify(k)));
+  const sees = (o: Token): boolean => {
+    if (!board || electronic || (a.type !== 'Firing' && a.type !== 'Melee')) return true;
+    if (!omni && !inArc(t, o, 'forward')) return false;
+    // A Firing line clear of terrain AND smoke on the same line (4.16); a
+    // Melee one clear of terrain, since smoke is Firing's alone.
+    if (a.type === 'Firing') {
+      const sight = firingSight(t, o, board.terrain, tokens, board.smoke);
+      return sight !== 'blocked' && sight !== 'smoked';
+    }
+    return losBetween(t, o, board.terrain, tokens) !== 'blocked';
+  };
   const candidates = tokens.filter((o) => {
     if (o.side === t.side || o.uid === t.uid || o.deployed === false) return false;
     if ((o.partStates[o.kind === 'mech' ? 'torso' : 'main'] ?? 'intact') === 'destroyed') return false;
@@ -3319,7 +3369,7 @@ export function autoTargetsFor(
     // A Counter-roll's Responder: not a "-" (4.11.2), of a type the card names,
     // and for a Scan one it could change (audit Phase 3, D5).
     if (electronic && (electronicDash(data, o) || electronicTargetWhy(a, o) || (isScanAction(a) && !scannable(o)))) return false;
-    return reachOf(o) <= reach;
+    return reachOf(o) <= reach && sees(o);
   });
   if (!candidates.length) return [];
   // Highlight binds FIRING only (FAQ J18, and M26 for Interception), so an
@@ -3368,9 +3418,11 @@ export function autoNeutralTargets(
   terrain: TerrainPiece[],
   t: Token,
   a: CardAction,
+  smoke: SmokeScreen[] = [],
 ): NeutralTarget[] {
-  // Enemies first, always. While one is in range there is no choice to offer.
-  if (autoTargetsFor(data, tokens, t, a).length) return [];
+  // Enemies first, always. While one is in range, and in sight (3.5.2), there
+  // is no choice to offer.
+  if (autoTargetsFor(data, tokens, t, a, { terrain, smoke }).length) return [];
   const reach = a.range ?? 0;
   const g = largeGridOf(t);
   const near = terrain
@@ -3482,21 +3534,13 @@ export function aaRadarCovers(
 // exposed. And 'obstructed' still counts as visible here, exactly as it does for
 // the Hyena Radar above — obstruction buys White, it does not hide anything.
 //
-// SMOKE IS PART OF THAT SIGHT. This engine's model for Firing line of sight is
-// `!smokeBlocks(...) && losBetween(...) !== 'blocked'` — rules.ts says it twice,
-// in losNote and protectionFor, because "Smoke removes line of sight outright"
-// (rulebook 4.16). The first draft asked losBetween alone, so a Smoke Screen on
-// the scout's own Grid, on the attacker's, or anywhere on the line between them
-// left the drone "seeing" through it and still lending the Blue. Both legs of
-// the model or neither: a card that requires a unit be VISIBLE cannot use a
-// weaker test for visibility than the shot itself does.
-//
-// AND THAT IS THE OPPOSITE OF ITS NEIGHBOUR ABOVE, on purpose. FAQ F5 asks
-// exactly this question of the Hyena AA Radar — inside Smoke, or Smoke on the
-// line — and answers "Yes, it still works", so aaRadarCovers takes no smoke
-// list at all and loads.test.mjs pins that it never grows one. No FAQ grants
-// 164 the same exemption, so it gets the ordinary 4.16 reading. Two cards, one
-// clause, opposite answers: do not "make them consistent" without a ruling.
+// SMOKE IS NOT PART OF THAT SIGHT, by ruling (2026-09-25, audit Phase 4, I12):
+// 4.16 limits the Smoke Screen to Firing Actions, FAQ F1 says the same, and
+// FAQ F5 rules the identical "visible to this drone" wording on the Hyena AA
+// Radar unaffected by smoke. This reader applied 4.16 until then, which made it
+// disagree with the Radar above and with Coordinated Observation (539) about
+// one clause. It is terrain only now, like both of them; the `smoke` parameter
+// stays so no caller has to change.
 //
 // Returns the covering drone rather than a count, because the card prints
 // 此效果不可叠加: a second scout adds nothing, so there is nothing to sum.
@@ -3527,7 +3571,7 @@ export function earlyWarningCover(
       return printed && rangeBetween(r, defender).range <= (a.range ?? 0);
     });
     if (!scout) return false;
-    return !smokeBlocks(r, attacker, smoke) && losBetween(r, attacker, terrain, tokens) !== 'blocked';
+    return losBetween(r, attacker, terrain, tokens) !== 'blocked';
   });
 }
 
@@ -3546,12 +3590,10 @@ export function earlyWarningCover(
 //
 // THREE READINGS TAKEN HERE, all of them arguable, all of them written down:
 //
-//  1. SMOKE COUNTS. 4.16 says a Smoke Screen removes line of sight, and this
-//     card asks for line of sight in as many words. aaRadarCovers is the one
-//     reader that ignores smoke, and only because FAQ F5 exempts it by name; no
-//     FAQ exempts this one. The comment on earlyWarningCover above ends "do not
-//     make them consistent without a ruling" — this is the third card and it
-//     goes with 164, not with the Radar.
+//  1. SMOKE DOES NOT COUNT, by ruling (2026-09-25, audit Phase 4, I12): a
+//     Smoke Screen takes away a Firing Action's line of sight (4.16, FAQ F1),
+//     and this is a Drone seeing a target, the question FAQ F5 answers "still
+//     works" for the Radar. It went with 164 and applied smoke until then.
 //  2. 'obstructed' STILL SEES. Obstruction buys the defender White dice; it
 //     does not hide them. Both neighbours read `!== 'blocked'`; only 539
 //     Coordinated Observation demands 'clear', and that card says so.
@@ -3577,7 +3619,7 @@ export function trackingSpotters(
     if (r.kind !== 'drone' || r.side !== shooter.side || r.deployed === false) return false;
     if (r.uid === target.uid) return false;
     if ((r.partStates?.main ?? 'intact') === 'destroyed') return false;
-    return !smokeBlocks(r, target, smoke) && losBetween(r, target, terrain, tokens) !== 'blocked';
+    return losBetween(r, target, terrain, tokens) !== 'blocked';
   });
 }
 
@@ -3948,7 +3990,9 @@ export function settleEnvironments(data: GameData, state: GameState): EnvEvent[]
 export function isGroundUnit(data: GameData, t: Token): boolean {
   if (t.aerial) return false;
   const card = data.byId.get(t.cardId);
-  return !card || !isFlyingBase(card);
+  if (card && isFlyingBase(card)) return false;
+  // A cruising White Dwarf flies at all times (audit Phase 4, A2).
+  return !cruising(data, t);
 }
 
 // Every Mine standing under something that sets it off.
@@ -4704,8 +4748,17 @@ export function canAffordFocus(data: GameData, t: Token, tokens?: Token[]): bool
 // Action on every render, so a patched copy would not survive. One reader, four
 // raw reads replaced: the two mirrored landingCandidates gates and the two
 // "within Range N" labels beside them.
-export function projectileReach(data: GameData, t: Token, a: CardAction): number {
-  const base = a.range ?? 0;
+//
+// [Stationary] Range +N counts too, off the Opportunity the caller hands over:
+// the GSD7 Mortar (ZHLA-201_A) prints it, and every launch picker read the
+// printed Range (audit Phase 4, E6).
+export function projectileReach(
+  data: GameData,
+  t: Token,
+  a: CardAction,
+  opp?: { maneuvered?: boolean; moved?: boolean } | null,
+): number {
+  const base = stationaryAdjusted(a, opp).range ?? 0;
   if (a.type !== 'Projectile') return base;
   return pilotIs(data, t, 'XPA-62') ? base + 2 : base;
 }
@@ -5097,6 +5150,11 @@ export type FlightGrant = 'none' | 'maneuver' | 'always';
 
 export function flightGrant(data: GameData, t: Token, loans: LoanedPart[] = []): FlightGrant {
   if (t.kind !== 'mech') return 'none';
+  // A White Dwarf in Cruise Mode is a Flying Unit for as long as it cruises:
+  // the Collab 1.02 list treats its Maneuver as flying movement, its core
+  // prints "3 Fly", FAQ M24 has it land on Mines untouched and E20.4 keeps
+  // Blink off it (ruled 2026-09-25, audit Phase 4, A2 and I4).
+  if (cruising(data, t)) return 'always';
   let may = false;
   let pairHalves = 0;
   const read = (card: Card): void => {
@@ -5262,6 +5320,10 @@ export function guidedActions(data: GameData, t: Token, world?: ActionWorld): Gu
     for (const a of card.actions ?? []) {
       let available = true;
       let reason: string | undefined;
+      // Melee Lock bans Firing Actions but not Interception (ruled 2026-09-25,
+      // audit Phase 4, D1 and I2): the owed queue never read the Lock, and this
+      // copied it into `intercept.can`, so the two disagreed.
+      let lockOnly = false;
       if (t.stance === 'shutdown') {
         available = false;
         reason = 'shutdown (Reboot only)';
@@ -5276,9 +5338,16 @@ export function guidedActions(data: GameData, t: Token, world?: ActionWorld): Gu
       } else if (a.type === 'Firing' && lockers.length && !isMeleeFiring(a)) {
         available = false;
         reason = `Melee Locked by ${lockers.map((o) => o.label).join(', ')}`;
-      } else if (a.type === 'Moving' && statusCount(t.statuses, 'immobilized') > 0) {
+        lockOnly = true;
+      } else if (a.type === 'Moving' && immobilizedStop(t, a)) {
+        // Unstoppable Movement Actions are performed while Immobilized (p.95);
+        // this greyed every Moving Action, the Centaur's Run included (audit
+        // Phase 4, E3).
         available = false;
         reason = 'Immobilized blocks Movement';
+      } else if (a.type === 'Moving' && chassisStop(t)) {
+        available = false;
+        reason = 'A destroyed Chassis blocks Movement Actions';
       }
       // A Load's magazine and Interception Tokens stay on the Drone carrying it.
       const holder = loan ? loan.from : t;
@@ -5301,7 +5370,7 @@ export function guidedActions(data: GameData, t: Token, world?: ActionWorld): Gu
         const left = holder.intercept?.[a.id] ?? max;
         let can = true;
         let iReason: string | undefined;
-        if (!available) {
+        if (!available && !lockOnly) {
           can = false;
           iReason = reason;
         } else if (statusCount(t.statuses, 'fci') > 0) {
@@ -5504,6 +5573,13 @@ export function cutTethersOn(data: GameData, state: GameState, t: Token, role: T
   for (const link of (t.tether ?? []).filter((x) => x.role === role)) cutLink(data, state, t, link);
 }
 
+// Every chip joining these two units, whichever end holds which: the table's
+// "the Tether ends" where nothing can measure it (a pad has no board; audit
+// Phase 4, H1).
+export function cutTetherBetween(data: GameData, state: GameState, t: Token, otherUid: number): void {
+  for (const link of (t.tether ?? []).filter((x) => x.uid === otherUid)) cutLink(data, state, t, link);
+}
+
 // The other removal conditions, and they collapse into one test. The card lists
 // three:
 //   - the initiating unit voluntarily moves beyond X;
@@ -5518,25 +5594,33 @@ export function cutTethersOn(data: GameData, state: GameState, t: Token, role: T
 // teleport, a Crush displacement or a unit destroyed mid-attack cannot leave a
 // leash tied to something that is no longer there.
 export function settleTethers(data: GameData, state: GameState): void {
-  // A table with no board has every unit on a placeholder cell: measured from
-  // there a Tether would never part. The table settles it by hand.
-  if (state.noBoard) return;
-  // Genuinely nothing to do on a board with no chips on it, which is almost
-  // every board — this runs after every command, so it earns its early out.
-  if (!state.tokens.some((x) => (x.tether ?? []).length)) return;
-  // Its own standing test rather than the module's `alive`: a chip needs a unit
-  // that is ON the board, so a Mech reduced to two Parts still holds its end
-  // while one whose Torso has gone does not (4.4.4).
-  const standing = (x: Token) => x.deployed !== false
-    && (x.partStates[x.kind === 'mech' ? 'torso' : 'main'] ?? 'intact') !== 'destroyed';
-  const byUid = new Map(state.tokens.map((x) => [x.uid, x]));
-  for (const t of state.tokens) {
-    for (const link of [...(t.tether ?? [])]) {
-      const other = byUid.get(link.uid);
-      if (other && standing(other) && standing(t) && rangeBetween(t, other).range <= link.range) continue;
-      cutLink(data, state, t, link);
+  // Nothing to cut on a board with no chips on it, which is almost every board
+  // - this runs after every command, so the cut earns its early out.
+  if (state.tokens.some((x) => (x.tether ?? []).length)) {
+    // Its own standing test rather than the module's `alive`: a chip needs a
+    // unit that is ON the board, so a Mech reduced to two Parts still holds its
+    // end while one whose Torso has gone does not (4.4.4).
+    const standing = (x: Token) => x.deployed !== false
+      && (x.partStates[x.kind === 'mech' ? 'torso' : 'main'] ?? 'intact') !== 'destroyed';
+    const byUid = new Map(state.tokens.map((x) => [x.uid, x]));
+    for (const t of state.tokens) {
+      for (const link of [...(t.tether ?? [])]) {
+        const other = byUid.get(link.uid);
+        // A table with no board has every unit on a placeholder cell, so the
+        // distance is the table's to judge ("Tether ends" on the pad). A
+        // partner that has left the board ends it there too: the pad's
+        // Tether never ended at all (audit Phase 4, H1).
+        const apart = !state.noBoard && !!other && rangeBetween(t, other).range > link.range;
+        if (other && standing(other) && standing(t) && !apart) continue;
+        cutLink(data, state, t, link);
+      }
     }
   }
+  // A Tether Mode face with no chip holding it open turns back, wherever it
+  // came from: a Harpoon Hit that destroyed its target turned the arm over
+  // AFTER the sweep had nothing left to cut, and it stayed in Tether Mode for
+  // the rest of the game (audit Phase 4, H2).
+  for (const t of state.tokens) revertTetherFaces(data, t);
 }
 
 function legacyZoneSet(s: unknown): string {
@@ -5607,6 +5691,9 @@ export function migrateState(rawIn: unknown, data: GameData): GameState | null {
     commandTokens: s.commandTokens ?? { s1: 0, s2: 0 },
     markers: (s as { markers?: GameState['markers'] }).markers ?? [],
     smoke: (s as { smoke?: GameState['smoke'] }).smoke ?? [],
+    // The round whose smoke has dissipated, on the whitelist rule: absent stays
+    // absent (audit Phase 4, G7).
+    ...(typeof (s as { smokeRound?: unknown }).smokeRound === 'number' ? { smokeRound: (s as { smokeRound: number }).smokeRound } : {}),
     script: normaliseScript((s as { script?: unknown }).script, (s.round ?? { firstPlayer: 's1' }).firstPlayer ?? 's1'),
     // The board size, and it is written ONLY when it is a larger board.
     // migrateState rebuilds the state from a whitelist, so a field missing from
@@ -6347,7 +6434,9 @@ export function camoPartLost(data: GameData, t: Token): boolean {
 // Highlight, a unit in Optical Camouflage (FAQ I1). The engine refuses both;
 // the pad's picker offered them, and the other two pages had no picker at all
 // (audit Phase 3, E2). A board adds Range and line of sight; a table without
-// one judges those itself.
+// one judges those itself. The line of sight is terrain only: Target Tag is a
+// Tactic, and a Smoke Screen takes sight from Firing Actions alone (4.16; ruled
+// 2026-09-25, audit Phase 4, I12).
 export function targetStatusTargets(
   data: GameData,
   tokens: Token[],
@@ -6364,5 +6453,5 @@ export function targetStatusTargets(
     && !(hexagon && lowValue(u))
     && !(grant.statusId === 'highlight' && statusCount(u.statuses, 'camouflage') > 0)
     && (!board || (rangeBetween(t, u).range <= actionRange(data, tokens, t, a)
-      && losBetween(t, u, board.terrain, tokens) !== 'blocked' && !smokeBlocks(t, u, board.smoke))));
+      && losBetween(t, u, board.terrain, tokens) !== 'blocked')));
 }

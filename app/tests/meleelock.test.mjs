@@ -19,6 +19,13 @@ import { largeGridOf, losBetween, standingSpot } from './_meleelock.rules.ts';
 const statusCount = (list: any, id: string) => (list ?? []).filter((x: string) => x === id).length;
 const isDeployed = (t: any) => t.deployed !== false;
 const tokenCards = (data: any, t: any) => data.cardsOf(t);
+// The two readers melee.ts imports from units.ts since audit Phase 4 (A3,
+// D5). A Ground Unit here is anything not Aerial and not on a Flying base;
+// the real reader's Cruise Mode and Part-granted flight are pinned in
+// mechanics4.test.mjs. partUsable is the real one-liner, copied: a
+// Repaired Part still acts (FAQ J23).
+const isGroundUnit = (_data: any, t: any) => !t.aerial && !t.flyingBase;
+const partUsable = (t: any, slot: string) => (t.partStates?.[slot] ?? 'intact') !== 'destroyed' || (t.repairedSlots ?? []).includes(slot);
 ` + body,
 );
 const M = await import(new URL('./_meleelock.slice.ts', import.meta.url).href);
@@ -178,10 +185,11 @@ check('a deployable that cannot move cannot be', M.canBeForceMoved(data, drone(3
   const note = M.breakAwayNote(data, flees, [flees, piloted(2, 2, 3, panzer.id)], []);
   check('the note reports the real cost, not the locker count', /costs 2 extra Movement Range/.test(note), true);
   check('and names the Panzer as the reason', /m2 charges 1 more \(Obstruct, LPA-20\)/.test(note), true);
-  // The "or 1 Link" alternative is a live open ruling, so it is DISCLOSED
-  // rather than priced — warn, do not hide.
-  check('and discloses the Link alternative the app does not price',
-    /may instead be paid as 1 Link/.test(note), true);
+  // The "or 1 Link" alternative is PRICED since the ruling (2026-09-25, audit
+  // Phase 4, I3 and D2): per step, one per Obstruct locker, never the last
+  // Link. It was disclosed and left to the table until then.
+  check('and says the surcharge may be paid in Link instead, 1 for 1',
+    /which may be paid in Link instead, 1 for 1, never the last Link/.test(note), true);
   // TWO Obstruct lockers, which is where the sentence used to part company with
   // its own number: the verb agreed with the locker count while both prices
   // stayed hard-coded at 1, so the note quoted a 2-Range surcharge and then
@@ -190,13 +198,20 @@ check('a deployable that cannot move cannot be', M.canBeForceMoved(data, drone(3
   const twoPanzers = M.breakAwayNote(data, flees, [flees, piloted(2, 2, 3, panzer.id), piloted(3, 3, 3, panzer.id)], []);
   check('two Panzers cost 4 extra Movement Range between them',
     /costs 4 extra Movement Range/.test(twoPanzers), true);
-  check('and the Obstruct sentence quotes the SAME number twice',
-    [/m2 and m3 charge 2 more \(Obstruct, LPA-20\)/.test(twoPanzers), /may instead be paid as 2 Link/.test(twoPanzers)],
+  check('and the Obstruct sentence names the surcharge once, at the 1-for-1 Link rate',
+    [/m2 and m3 charge 2 more \(Obstruct, LPA-20\)/.test(twoPanzers), /1 for 1/.test(twoPanzers)],
     [true, true]);
-  // Two lockers, two separate printed "or 1 Link" offers — the surcharge is not
-  // one lump the mover must buy out in full.
-  check('and says the Link may be taken one locker at a time',
-    /one per Obstruct locker and each choosable on its own/.test(twoPanzers), true);
+  // Whether the lit Grids count any Link is the mover's to spare: all of it but
+  // the last (4.10, FAQ L1).
+  const spare = M.breakAwayNote(data, { ...flees, link: 3 }, [{ ...flees, link: 3 }, piloted(2, 2, 3, panzer.id)], []);
+  check('a mover with Link to spare is told the lit Grids count it',
+    /The lit Grids count the Link it can spare/.test(spare), true);
+  const last = M.breakAwayNote(data, { ...flees, link: 1 }, [{ ...flees, link: 1 }, piloted(2, 2, 3, panzer.id)], []);
+  check('and one on its last Link is told it has none to spare',
+    /has no Link to spare for it/.test(last), true);
+  check('which is what breakAwayLinkBudget says: all but the last',
+    [M.breakAwayLinkBudget({ ...flees, link: 3 }), M.breakAwayLinkBudget({ ...flees, link: 1 }), M.breakAwayLinkBudget({ ...flees, link: 3 }, 1)], [2, 0, 1]);
+  check('and a Drone has no Link to pay with at all', M.breakAwayLinkBudget({ kind: 'drone', link: 3 }), 0);
   const plainNote = M.breakAwayNote(data, flees, [flees, piloted(2, 2, 3, sealock.id)], []);
   check('an ordinary lock says none of that', [/costs 1 extra/.test(plainNote), /Obstruct/.test(plainNote)], [true, false]);
   check('and an unlocked unit gets no note at all', M.breakAwayNote(data, flees, [flees], []), '');

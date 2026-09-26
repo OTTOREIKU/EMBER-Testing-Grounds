@@ -1206,8 +1206,9 @@ export function unitSize(c: Card): 1 | 2 | 3 {
 // move, be moved, nor be Crushed. They no longer GIVE Unit Protection: 4.5.3
 // grants that to Large Units only and unitSize() reads these as size 1. The
 // printed "counts as 3-inch terrain" bullet on the AS3 walls is what ought to
-// pay them, and nothing models it yet — see PHASE6-PLAN D-9. Everything else projectile-shaped
-// really is Aerial (missiles, grenades, beacons, mines).
+// pay them, and nothing models it yet — see PHASE6-PLAN D-9. Beacons are ground
+// Deployables too (isBeacon below). Everything else projectile-shaped is Aerial
+// (missiles, grenades, mines).
 export const BARRICADE_CARDS = new Set(['PDAM-003', 'PDAM-004', '158']);
 
 export function isBarricade(c: Card): boolean {
@@ -1247,6 +1248,21 @@ export function isMine(c: Card): boolean {
   return keywordSet(c).includes(MINE_KEYWORD);
 }
 
+// Beacons (信标: MES, the three B3s, the Rumba) stand on the ground. The book's
+// own Crush example destroys one (p.47 example 3: "a Beacon that cannot perform
+// Movement ... is Destroyed"), the GM-35 card says Ground Units "do not need to
+// Crush" a Mine, which only makes sense if Deployables are normally Crushed,
+// and FAQ M2/M10 leave Beacons out of the Aerial Missiles. Only a Mine keeps the
+// Supplement's "units may be placed above them" (E10). They were modelled as
+// Aerial, so a Mech walked through them (ruled 2026-09-25, audit Phase 4, C2).
+// While LAUNCHED a Beacon still counts as Aerial at both ends for Interception
+// (4.7.2); interceptsOwed reads the launch, not this flag.
+const BEACON_KEYWORD = '信标';
+
+export function isBeacon(c: Card): boolean {
+  return keywordSet(c).includes(BEACON_KEYWORD);
+}
+
 // The folded SGM-2 "Pholcus": a Projectile that becomes a Drone (FAQ M18).
 export function isAutoMine(c: Card): boolean {
   return keywordSet(c).includes(AUTO_MINE_KEYWORD);
@@ -1265,6 +1281,6 @@ export function isFlyingBase(c: Card): boolean {
 // Aerial and may sit on terrain or units. No card carries the literal value
 // 'aerial'; testing for it alone grounded all five elevated drones.
 export function isAerial(c: Card): boolean {
-  if (c.category === 'projectile') return !isBarricade(c);
+  if (c.category === 'projectile') return !isBarricade(c) && !isBeacon(c);
   return c.flyingOrElevated === 'elevated' || c.flyingOrElevated === 'aerial';
 }

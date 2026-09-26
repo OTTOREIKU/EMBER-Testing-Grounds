@@ -27,6 +27,7 @@ import { perform } from './commands';
 import { dialHidden, getLocalSeat } from './loop';
 import { defaultUnitLabel, emptyCarriers, factionProblems, initiativeFor, pilotCard, squadAllegiance, SLOT_LABEL, structureOf, tidyUnitLabel, tokenCards, tokenFactions } from './units';
 import { alertDialog, promptDialog } from './dialog';
+import { inSmoke } from './rules';
 import { factionColour, ICON_EDIT, ICON_LOCK, linkIcon, squadColour } from './icons';
 
 const esc = (s: string): string => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!);
@@ -859,7 +860,24 @@ export class SquadTracker {
       });
       list.appendChild(chip);
     }
-    if (!worn.length) {
+    // IN SMOKE, read off the Smoke Screens on the board rather than a Token a
+    // hand has to remember to set: the hand chip was obeyed by no rule, while
+    // the screens are what every sight reading uses (audit Phase 4, G12).
+    const smoked = inSmoke(t, this.state?.smoke ?? []);
+    if (smoked) {
+      const def = STATUSES.find((x) => x.id === 'smoke');
+      const chip = document.createElement('span');
+      chip.className = 'tok-worn-one no-art';
+      chip.textContent = def?.icon ?? 'SMK';
+      chip.style.setProperty('--chip-tint', def?.tint ?? '#a6b0bd');
+      inspectOnHover(chip, {
+        title: 'In smoke',
+        sub: `on ${t.label} · from the Smoke Screen on its Grid`,
+        lines: [def?.rule ?? 'No line of sight for Firing Actions into or out of this Grid (4.16).', 'It comes off when the screen does.'],
+      });
+      list.appendChild(chip);
+    }
+    if (!worn.length && !smoked) {
       const none = document.createElement('span');
       none.className = 'tok-none';
       none.textContent = 'No tokens';
@@ -888,7 +906,10 @@ export class SquadTracker {
     const pop = document.createElement('div');
     pop.className = 'dial-pop tok-pop';
     const build = (): void => {
+      // No "In smoke" to put on by hand: on a board it comes from the screens
+      // themselves (see tokenHandleRow). One already worn can still come off.
       const rows = statusesFor(t.kind)
+        .filter((s) => s.id !== 'smoke' || statusCount(t.statuses, 'smoke') > 0)
         .map((s) => {
           const n = statusCount(t.statuses, s.id);
           const face = tokenFace(s.id, s.decay, false);
@@ -1060,6 +1081,8 @@ export class SquadTracker {
     wrap.className = 'status-row';
     for (const s of statusesFor(t.kind)) {
       const n = statusCount(t.statuses, s.id);
+      // The board derives "In smoke" from its screens (audit Phase 4, G12).
+      if (s.id === 'smoke' && n === 0) continue;
       const on = n > 0;
       const b = document.createElement('button');
       b.className = `status-chip shape-${s.shape}${on ? ' on' : ''}`;

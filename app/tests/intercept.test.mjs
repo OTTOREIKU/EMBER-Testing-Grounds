@@ -92,6 +92,8 @@ writeFileSync(
     // which is the failure mode the exit-code rule exists for. Every other
     // slice in the suite ends on a declaration; this one now does too.
     + cut(rulesSrc, 'export function smokeBlocks', 'export interface LargeGrid', 'smokeBlocks')
+    // The walker smokeBlocks judges its lines with (audit Phase 4, G1).
+    + cut(rulesSrc, 'export function losBetween', '// Does the line between two Bases', 'the line walker')
     + src.slice(src.indexOf('export function interceptCapacity'), src.indexOf('function initIntercept'))
     + src.slice(src.indexOf('export function interceptsOwed'), src.indexOf('function alive(t: Token)'))
     + src.slice(src.indexOf('export function tokenCards'), src.indexOf('// ---------- Tarantula Loads')),

@@ -74,6 +74,10 @@ export function tokenCards(data: any, t: any): any[] {
   + cut(units, '// A shared helper: does any live Part on this unit print', '// 094 Multispectral Tracking', 'partSays')
   + cut(units, '// 503 Close Assault: firing at a target within range', '// ZHDR-301 Dense Armor Hand', 'eyesAreHeavyHits')
   + cut(units, 'export function lightningExchangeOf', 'export function lightningLinkDrain', 'lightningExchangeOf')
+  // The [Stationary] readers projectileReach asks since the GSD7 Mortar's Range
+  // +1 reaches a launch (audit Phase 4, E6). Their own range, above every cut
+  // taken from units.ts here.
+  + cut(units, '// [Stationary]: "If the Unit has not performed', '// ---------- [condition] 获得X', 'the Stationary readers')
   // ZPA-37's spotter count, with the REAL line-of-sight and the REAL 4.16 smoke
   // test underneath it — the whole rule is "can this drone see that unit", and
   // a stubbed answer would test nothing. losBetween is sliced above; smokeKey
@@ -568,11 +572,14 @@ console.log('\nPilot traits, against the shipped cards and dice\n');
   const wall = { subCells: [{ col: 9, row: 3 }, { col: 9, row: 4 }, { col: 10, row: 3 }], blocksLos: true };
   check('a blocking wall between a Drone and the target removes it',
     A.trackingCover(data, [shot, mark, d1, d2], [wall], [], shot, mark).length < 2, true);
+  // A Smoke Screen does NOT: it takes sight from Firing Actions alone, and a
+  // Drone seeing the target is not one (ruled 2026-09-25, audit Phase 4, I12;
+  // FAQ F5 answers the same wording on the AA Radar). This pinned the opposite.
   // Smoke Screens are placed on LARGE Grids, so the target at cell (24,3) is
   // covered by the screen on Large Grid (8,1).
   const smokeOnTarget = [{ col: 8, row: 1, side: 's2' }];
-  check('and a Smoke Screen on the target hides it from both (4.16)',
-    A.trackingCover(data, [shot, mark, d1, d2], [], smokeOnTarget, shot, mark), []);
+  check('but a Smoke Screen on the target hides it from neither (I12)',
+    A.trackingCover(data, [shot, mark, d1, d2], [], smokeOnTarget, shot, mark).length, 2);
 
   // The wiring: one `&&` in the single Low Profile disjunction, which is the
   // only rules consumer of Low Profile in the app.
@@ -670,16 +677,16 @@ check('reader 2 — the Match Centre panel passes it', /canPerform\(o, priced, k
   // about where a grenade may land.
   const mainSrc = src('main.ts'), hud = src('matchhud.ts');
   check('the freeplay landing gate reads the trait-aware reach',
-    /const range = projectileReach\(data, t, m\.action\);/.test(mainSrc), true);
+    /const range = projectileReach\(data, t, m\.action, launchOpp\(t\.uid\)\);/.test(mainSrc), true);
   check('and so does its mirror in the Match Centre',
-    /const range = projectileReach\(ctx\.data, t, a\);/.test(hud), true);
+    /const range = projectileReach\(ctx\.data, t, a, oppFor\(ctx, t\.uid\)\);/.test(hud), true);
   check('no landing gate still reads a raw a.range',
     [/const range = m\.action\.range \?\? 0;/.test(mainSrc), /const range = a\.range \?\? 0;/.test(hud)], [false, false]);
   // The two "within Range N" labels beside them, which a player reads to decide
   // whether the gate is working.
   check('both "within Range N" labels agree with their gate',
     [/within Range \$\{projectileReach\(data,/.test(mainSrc),
-      /within Range \$\{t && a \? projectileReach\(ctx\.data, t, a\)/.test(hud)], [true, true]);
+      /within Range \$\{t && a \? projectileReach\(ctx\.data, t, a, oppFor\(ctx, t\.uid\)\)/.test(hud)], [true, true]);
 }
 
 // ---------- LPA-21 Firefly — 匿踪 Stealth ----------
@@ -735,8 +742,10 @@ check('reader 2 — the Match Centre panel passes it', /canPerform\(o, priced, k
     (hud.match(/phaseThrough: phasesThroughUnits\(ctx\.data, ctx\.state\.tokens, t\)/g) ?? []).length, 2);
   // Route only: the landing test is untouched, so a phased Grid is crossable
   // but never a place to stop.
+  // `found`, since the search runs over Grid and Link spent together (audit
+  // Phase 4, D2): the landing test is the same line under a new list name.
   check('and the landing test still demands a legal spot',
-    /if \(\(standable \|\| crush\) && \(opts\?\.landing\?\.\(n\.c, n\.r\) \?\? true\)\) reachable\.push/.test(rules), true);
+    /if \(\(standable \|\| crush\) && \(opts\?\.landing\?\.\(n\.c, n\.r\) \?\? true\)\) found\.push/.test(rules), true);
 }
 
 // ZPA-39's free reroll must be said the same way on every screen. combat.ts's

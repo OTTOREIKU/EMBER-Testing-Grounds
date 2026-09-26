@@ -919,26 +919,22 @@ check('and no other card in the set carries the kind, so nothing is swept up wit
 
 // ---------- 164 and the Smoke Screen (rulebook 4.16) ----------
 //
-// The card asks whether the ATTACKER is visible to the drone, and this engine's
-// answer to "visible" for a Firing line is BOTH legs: `!smokeBlocks(...) &&
-// losBetween(...) !== 'blocked'`. rules.ts writes it that way twice — losNote
-// and protectionFor, the latter commented "Smoke removes line of sight
-// outright". The first draft of earlyWarningCover asked losBetween alone, so a
-// Smoke Screen anywhere on the scout's line left it seeing through the cloud
-// and still lending the Blue. smokeBlocks is sliced in from the real rules.ts
-// for these, so what is under test is the shipped model rather than a stub.
+// The card asks whether the ATTACKER is visible to the drone. A Smoke Screen
+// does NOT take that away, by ruling (2026-09-25, audit Phase 4, I12): 4.16
+// limits smoke to Firing Actions, FAQ F1 says the same, and FAQ F5 answers the
+// identical "visible to this drone" wording on the Hyena AA Radar "yes, it
+// still works". These pinned the opposite reading, which applied 4.16 to it.
 //
 // The gunman is at Large Grid (0,3), the Raven at (10,0), the covered Mech at
-// (10,3). smokeBlocks fires on either endpoint's own Grid or on the line, so
-// all three placements are worth one check each.
+// (10,3). All three placements stay covered.
 const puff = (c, r) => ({ col: c, row: r, side: 's2' });
 
-check('a Smoke Screen on the SCOUT\'s Grid blinds it, so the cover is gone',
-  covers(board164, [], guarded, firingAt, [puff(10, 0)]), null);
-check('and one on the ATTACKER\'s Grid does the same',
-  covers(board164, [], guarded, firingAt, [puff(0, 3)]), null);
-check('and one part way along the Scout -> attacker line does too',
-  covers(board164, [], guarded, firingAt, [puff(5, 1)]), null);
+check('a Smoke Screen on the SCOUT\'s Grid does not blind it (I12)',
+  covers(board164, [], guarded, firingAt, [puff(10, 0)]), 72);
+check('nor one on the ATTACKER\'s Grid',
+  covers(board164, [], guarded, firingAt, [puff(0, 3)]), 72);
+check('nor one part way along the Scout -> attacker line',
+  covers(board164, [], guarded, firingAt, [puff(5, 1)]), 72);
 // The whole point of measuring the RIGHT leg: smoke that only sits between the
 // scout and the Mech it is covering is not on the line the card asks about.
 check('while smoke on the Scout -> DEFENDER leg alone changes nothing',

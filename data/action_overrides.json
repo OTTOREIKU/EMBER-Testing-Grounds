@@ -1003,7 +1003,7 @@
     },
     "PRDR-103_D": {
       "_addTo": "PRDR-103",
-      "_note": "Mechanics audit 2026-09-25 (Phase 2, C11): the PD 1.02 list prints Action D Emergency Smoke on this Drone (Passive, Range 1, Ammo 1), as FAQ D10 expects; the community bundle stops at _C. Built the way 546_B is.",
+      "_note": "Mechanics audit 2026-09-25 (Phase 2, C11): the PD 1.02 list prints Action D Emergency Smoke on this Drone (Passive, Range 1, Ammo 1), the Action FAQ D10 asks about; the community bundle stops at _C. Built the way 546_B is. Phase 4 (G10): D10 answers No, a Reaper destroyed outright places none, so this no longer carries usableAfterDestroyed.",
       "name": {
         "zh": "应急烟幕",
         "en": "Emergency Smoke"
@@ -1019,8 +1019,7 @@
             {
               "type": "post_firing_smoke_reaction",
               "count": 2,
-              "range": 1,
-              "usableAfterDestroyed": true
+              "range": 1
             }
           ]
         }
@@ -1035,7 +1034,7 @@
     },
     "PRDR-104_D": {
       "_addTo": "PRDR-104",
-      "_note": "Mechanics audit 2026-09-25 (Phase 2, C11): the PD 1.02 list prints Action D Emergency Smoke on this Drone (Passive, Range 1, Ammo 1), as FAQ D10 expects; the community bundle stops at _C. Built the way 546_B is.",
+      "_note": "Mechanics audit 2026-09-25 (Phase 2, C11): the PD 1.02 list prints Action D Emergency Smoke on this Drone (Passive, Range 1, Ammo 1), the Action FAQ D10 asks about; the community bundle stops at _C. Built the way 546_B is. Phase 4 (G10): D10 answers No, a Reaper destroyed outright places none, so this no longer carries usableAfterDestroyed.",
       "name": {
         "zh": "应急烟幕",
         "en": "Emergency Smoke"
@@ -1051,8 +1050,7 @@
             {
               "type": "post_firing_smoke_reaction",
               "count": 2,
-              "range": 1,
-              "usableAfterDestroyed": true
+              "range": 1
             }
           ]
         }

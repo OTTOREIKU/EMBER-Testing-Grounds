@@ -573,7 +573,7 @@ export class Panel {
         sub: `${intercept.left} of ${intercept.max} left · ${actName}`,
         lines: [
           'Spends 1 Interception Token to attack an enemy Missile or Projectile that moved or launched within Range (rulebook 4.9).',
-          'Pick the target on the board. It attacks as a Firing Attack, except the target must be the unit that triggered it, no Forward Arc is needed, line of sight always exists, and no Terrain or Unit Protection applies.',
+          'Pick the target on the board. It attacks as a Firing Attack, except the target must be the unit that triggered it, no Forward Arc is needed, terrain never blocks the line (a Smoke Screen still does), and no Terrain or Unit Protection applies.',
           'If the target survives, this unit MUST intercept again until its tokens run out or the target is destroyed.',
           'Tokens are never restored, so this Part gets a fixed number of Interceptions for the whole game.',
         ],
@@ -592,9 +592,11 @@ export class Panel {
         title: shove.push ? 'Push' : 'Shove',
         sub: actName,
         lines: [
-          `Forces the enemy Ground Unit in the Grid this Mech faces ${shove.grids} Grid${shove.grids === 1 ? '' : 's'} straight back.`,
-          shove.push ? 'The target also loses 1 Link.' : '',
-          'The target stops early if something blocks the path, and a unit in Melee Lock cannot be forced out of it.',
+          shove.push
+            ? `Forces the enemy Ground Unit in the Grid this Mech faces ${shove.grids} Grid${shove.grids === 1 ? '' : 's'} in a straight line, in any direction you choose.`
+            : `Forces the enemy Ground Unit in the Grid this Mech faces ${shove.grids} Grid${shove.grids === 1 ? '' : 's'} straight back.`,
+          shove.push ? 'A Mech pushed this way also loses 1 Link.' : '',
+          'The target stops early if something blocks the path. Melee Lock does not hold it: Forced Movement ignores the Lock (4.3.4, FAQ E2). A unit that cannot move, such as a Deployable, stays put.',
         ],
       });
       sh.addEventListener('click', () => this.cb.onShove(t, a.id));

@@ -17,9 +17,10 @@ import { cardName } from './data';
 import type { GameData } from './data';
 import { alive } from './loop';
 import { PHASES } from './types';
-import type { GameState, Side, Token } from './types';
+import type { Facing, GameState, Side, Token } from './types';
 import { maxLink, tokenCards } from './units';
-import { inContact } from './rules';
+import { rangeBetween } from './rules';
+import { canBeForceMoved } from './melee';
 
 // The Torso is what actually carries the tokens (3.2.1), and naming it is how a
 // player recognises which Mech generates four - the card is the thing with the
@@ -146,7 +147,6 @@ export async function offerHarpyDrag(
   t: Token,
   steps: number,
 ): Promise<{ allyUid: number; funderUid: number } | null | 'cancelled'> {
-  void data;
   if (t.cardId !== 'ZHDR-304' || steps <= 1) return null;
   // "When performing a COMMAND Movement": in a guided game that is the Command
   // Phase's move — an Automatic Phase move is the Drone acting on its own and
@@ -155,11 +155,15 @@ export async function offerHarpyDrag(
   const funders = state.tokens.filter(
     (m) => m.side === t.side && m.kind === 'mech' && m.deployed !== false && readyCommands(m) > 0,
   );
-  // "1 adjacent Ally Unit" — the list does not narrow it to Mechs and Drones,
-  // so a deployed Projectile or Deployable in Contact can be towed as well.
+  // "1 adjacent Ally Unit": Adjacent, the eight Grids around plus its own
+  // (4.2.2), not Contact, which refused a diagonal ally and one in the next Grid
+  // whose base did not touch. The tow is Forced Movement, so a unit that cannot
+  // move (a Deployable, a Barricade) cannot be towed at all (4.3.4); a
+  // Barricade used to spend the Command Token before being refused (audit
+  // Phase 4, B2, B3 and F1).
   const allies = state.tokens.filter(
     (o) => o.uid !== t.uid && o.side === t.side
-      && o.deployed !== false && inContact(t, o),
+      && o.deployed !== false && rangeBetween(t, o).adjacent && canBeForceMoved(data, o),
   );
   if (!funders.length || !allies.length) return null;
   const picked = await choiceDialog({
@@ -175,6 +179,25 @@ export async function offerHarpyDrag(
   });
   if (picked === null || picked === 'no') return null;
   return { allyUid: Number(picked), funderUid: funders[0].uid };
+}
+
+// The tow is Forced Movement, and the player causing a Forced Movement chooses
+// the moved unit's facing (FAQ B4/B5), which may be left as it was. Nothing
+// asked (audit Phase 4, B3). Asked after the tow lands; the caller sends the
+// answer as a facing-only forceMove at the same spot.
+export async function askTowFacing(ally: Token, byLabel: string): Promise<Facing | null> {
+  const id = await choiceDialog({
+    title: `Which way does ${ally.label} face?`,
+    body: `${byLabel} dragged it, which is Forced Movement, so ${byLabel}'s player chooses (FAQ B4).`,
+    choices: [
+      { id: '0', label: 'North' }, { id: '1', label: 'East' },
+      { id: '2', label: 'South' }, { id: '3', label: 'West' },
+      { id: 'keep', label: 'Leave it as it was', cancel: true },
+    ],
+  });
+  if (id === null || id === 'keep') return null;
+  const f = Number(id) as Facing;
+  return f === ally.facing ? null : f;
 }
 
 // Command Coordination X (4.15.3): after the Action carrying the keyword, this
