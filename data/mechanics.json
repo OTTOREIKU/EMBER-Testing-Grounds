@@ -4,49 +4,48 @@
   {
    "id": "optical_camouflage",
    "name": "Optical Camouflage",
-   "ref": "Rulebook 4.12.2",
+   "ref": "Rulebook 4.12.2; FAQ I1, I3, I6, I8, I9, I11, I12, I13, I14, I18, I21, I24, M16",
    "match": [
     "optical camouflage",
     "光学迷彩"
    ],
-   "text": "A stealth state rather than a token. A unit enters it by performing an Action that activates Optical Camouflage, or by deploying straight into it. On activation, swap the unit for its Optical Camouflage model and remove every Hexagon Token from it. While camouflaged, any Melee, Firing or Explosion Damage attack aimed at it must Scan first: if the Scan fails the attack fails outright, and a failed attack skips every step against the defender while the attacker still pays its own costs such as Ammo, Charge and Detonation. A unit whose Electronic Value is 0 or a dash cannot target it at all, because it cannot start the Scan counter-roll. Attacks that hit every unit in range need no Scan. The camouflage model marks only a suspected position, so the real unit may be elsewhere."
+   "text": "A stealth state rather than a token. A unit enters it by performing an Action that activates Optical Camouflage, or by deploying straight into it (FAQ I6). On activation, swap the unit for its Optical Camouflage model and remove every Hexagon Token from it. While camouflaged it cannot gain a Highlight Token, though it can still gain a Low Profile Token (FAQ I1). Activating it while already in Contact with an enemy does not Reveal it, because activating is not a Movement (FAQ I14). A camouflaged unit cannot Crush and cannot Melee Lock an enemy, but it can be Melee Locked (FAQ I3, I8, I9). Any Melee, Firing or Explosion Damage attack aimed at it must Scan first. Designating it earns one free Scan: no Action Tick, the same procedure as the Common Action Scan, Silent, and at the attack's own range rather than 6 (FAQ I12, I18). If the Scan fails the attack fails outright; the attacker still pays its own costs such as Ammo and Charge, and may use any Action Ticks it has left (FAQ I11). A unit whose Electronic Value is 0 or a dash cannot target it at all, because it cannot start the Scan counter-roll. Attacks that hit every unit in range need no Scan. Nor does an Electronic Attack, which leaves the camouflage on (FAQ I21). A Projectile Action designates a Landing Grid rather than the unit, so it makes no Scan (FAQ M16). A Mine still detonates on a camouflaged unit (FAQ I13). The camouflage model marks only a suspected position, so the real unit may be elsewhere."
   },
   {
    "id": "revealed",
    "name": "Revealed",
-   "ref": "Rulebook 4.12.2",
+   "ref": "Rulebook 4.12.2, 4.12.3; FAQ E12, E13, I2, I4, I10, I16, I19, I20, I22, I23, I24, M19",
    "match": [
     "reveal",
     "现身",
     "顕現"
    ],
-   "text": "Leaving Optical Camouflage. Swap the camouflage model back for the unit model. Four things reveal a unit and then let it make Manifestation Movement: its own Reveal Common Action, performing any Action that lacks the Silence keyword (Maneuvering counts, including a facing change with no movement), an enemy ending a move in contact with its base, and a successful enemy Scan. Passive Actions and Interception do not reveal it. Destroying the Part that performed the activating Action reveals it in place with no Manifestation Movement."
+   "text": "Leaving Optical Camouflage. Swap the camouflage model back for the unit model. Four things reveal a unit and then let it make Manifestation Movement. The first is its own Reveal Common Action. The second is performing any Action that lacks the Silence keyword, the Action that activated the camouflage aside; Maneuvering counts, including a facing change with no movement, unless a Stealth Chassis gives the Maneuver Silence (FAQ I2). The third is any Movement, by either unit, that ends with an enemy in contact with its base (FAQ I4). That includes Forced Movement such as Crush, Drag, Knockback and a Taurus swap (FAQ I16, I23), and a Beacon or Mine launched, deployed or laid into contact (FAQ I10), but not a Missile. A camouflaged unit that moves onto a Mine is not revealed by it; the Mine detonates instead (FAQ I24, M19). The fourth is a successful enemy Scan. Passive Actions and Interception do not reveal it, and neither does Forced Movement, which is Silent (FAQ E12); a Crush takes the Silence of the Movement that caused it (FAQ E13). A Pholcus landing from Flight Mode is a Move and reveals it before its blast (FAQ I19). An Immobilized unit is revealed in place and cannot move (FAQ I20). When a revealing Action grants a follow-up attack, the unit reveals first, and the follow-up is forfeited if it can no longer attack the target (FAQ I22). Destroying the Part that performed the activating Action reveals it in place with no Manifestation Movement."
   },
   {
    "id": "manifestation_movement",
    "name": "Manifestation Movement",
-   "ref": "Rulebook 4.12.2",
+   "ref": "Rulebook 4.12.2, 4.2.1, 4.3.3; FAQ I17, I20, I22",
    "match": [
-    "stealth",
     "manifestation",
     "隐秘"
    ],
-   "text": "The move a unit makes the instant it is Revealed. Because the Optical Camouflage model only marked a suspected position, the unit may appear up to X grids away, where X is the Stealth Value of the Action that activated the camouflage, so Stealth 2 means up to 2 grids and Stealth 0 means it appears where it stood. It is Teleportation Movement, so terrain and units in between are ignored. If the new position still meets the incoming attack's Range and Line of Sight requirements the attack carries on from there; if it does not, the attack fails."
+   "text": "The move a unit makes the instant it is Revealed. Because the Optical Camouflage model only marked a suspected position, the unit may appear anywhere within Range X of it, where X is the Stealth Value of the Action that activated the camouflage. Range is counted in Large Grids along an orthogonal path (4.2.1), so Stealth 2 reaches 12 Grids and not the 24 of a 5 by 5 square; Stealth 0 means it appears where it stood. It is Teleportation Movement following the Flying Movement rules, so terrain and units in between are ignored and it may land behind a high wall (FAQ I17). It must fit where it lands, a Ground Unit cannot land in an Abyss, and its player chooses its facing there. An Immobilized unit makes none (FAQ I20). If the new position still meets every requirement of the incoming attack, its Range, its Forward Arc and its Line of Sight, the attack carries on from there; if it does not, the attack fails (FAQ I22)."
   },
   {
    "id": "scanning",
    "name": "Scanning",
-   "ref": "Rulebook 4.12.4",
+   "ref": "Rulebook 4.12.4, 6.1; FAQ G3, I11, I12, I18, I21, I25, M16, P12, Q3",
    "match": [
     "scan",
     "扫描"
    ],
-   "text": "Reveals enemy units in Optical Camouflage and strips Low Profile Tokens. Designate an enemy that is in Optical Camouflage or bearing a Low Profile Token, then make an Electronic Counter-roll as the Initiator. On success: camouflaged targets are Revealed (they then make Manifestation Movement), and Low Profile Tokens are removed. Only token-based Low Profile can be scanned away; aura-based Low Profile cannot. Every Mech has Scan as a Common Action, and attacking a camouflaged unit forces a Scan first."
+   "text": "Reveals enemy units in Optical Camouflage and strips Low Profile Tokens. Designate an enemy that is in Optical Camouflage or bearing a Low Profile Token, then make an Electronic Counter-roll as the Initiator with the unit's whole Electronic Value, every undestroyed Part counted (FAQ G3). On success, camouflaged targets are Revealed (their own player then makes their Manifestation Movement), and Low Profile Tokens are removed. Only token-based Low Profile can be scanned away; Low Profile from an aura cannot (FAQ Q3). Every Mech has Scan as a Common Action: Tactical, Short, Range 6, performed with the Torso. It is printed without Silence, but FAQ I18 says the Rules Supplement will make it Silent, so it is played as Silent. A Scan never uses a Repeater, which serves Electronic Attack and Electronic Support only. Designating a camouflaged unit with a Firing or Melee Action earns one free Scan at no Action Tick, at the attack's own range, retried with a fresh attack if it fails (FAQ I11, I12, I18). An Electronic Attack needs no Scan (FAQ I21), nor does an attack on every unit in range or a Mine, and a Projectile Action gives none (FAQ M16). A unit with an Electronic Value of 0 or a dash cannot Scan, and Containers cannot be Scanned (FAQ I25). The Hyena's and the Dragonfly's Scan Battlefield Scans every enemy it can change within its Range, one Counter-roll each."
   },
   {
    "id": "electronic_counter_roll",
    "name": "Electronic Counter-roll",
-   "ref": "Rulebook 4.11.2",
+   "ref": "Rulebook 4.11.1, 4.11.2; FAQ G1, G2, G3, G4, G5, I21, I25, L4, O4, O5, O6, O7",
    "match": [
     "counter-roll",
     "electronic",
@@ -54,7 +53,7 @@
     "侦测",
     "电子"
    ],
-   "text": "Both sides roll Yellow Dice equal to their Electronic Value (a Mech's is the sum of all its Parts). The Initiator wins with more Lightning; if Lightning ties, more Light Hit; if both tie, the Initiator still wins. The Initiator must win for the action's effect to apply. Electronic Value 0 cannot initiate; a dash ('-') cannot be targeted. Strength +X adds X dice to the Initiator. Focus (1 Link) can reroll these dice. Electronic Warfare actions ignore Terrain and Line of Sight completely, so only Range matters. In Offensive Stance hollow faces count as valid results on these rolls too."
+   "text": "Both sides roll Yellow Dice equal to their Electronic Value, which for a Mech is the sum of all its undestroyed Parts (FAQ G3). The Initiator wins with more Lightning; if Lightning ties, more Light Hit, a double Light Hit counting two; if both tie, the Initiator still wins. The Initiator must win for the action's effect to apply. Each side reads hollow faces by its own Stance, Offensive making them count, and a Shutdown unit gains none. Electronic Value 0 cannot initiate, and a unit printed with a dash cannot be the Responder (FAQ I25). Focus follows the order of any roll: the Initiator declares, then the Responder, then each rerolls (FAQ G4). A Passive that triggers on a successful Counter-roll fires for its unit in either role. Electronic Support targets allies and needs no roll. An Electronic Attack is not an attack in the attack sequence's sense (FAQ G5), and it needs no Scan against a camouflaged unit (FAQ I21). Modifiers: Strength +X adds X dice to the Initiator; Warfare Node X lets an ally within its range roll the node Mech's Electronic Value plus X; a Strength -1 aura takes a die off an enemy's roll; a Tarantula's Load lends its Electronic Value to the Mech it touches while that Mech performs an Action, never to the Carrier itself (FAQ O4, O5, O6, O7); Firewatch spends 1 Link to count Eyes as Lightning; a Repeater lends its position (FAQ G1, G2). Electronic Warfare ignores Terrain and Line of Sight completely, so only Range matters."
   },
   {
    "id": "reboot",
@@ -168,13 +167,14 @@
   },
   {
    "id": "screeching",
-   "name": "Screeching",
-   "ref": "Rulebook 4.11.3",
+   "name": "Scream",
+   "ref": "Rulebook 4.10, 4.11.2; card ZHDR-205 Roaring Eagle",
    "match": [
+    "scream",
     "screech",
     "尖啸"
    ],
-   "text": "An Electronic Attack that reduces the target's Link. Like all Electronic Warfare it ignores Terrain and Line of Sight and is limited only by Range, and it resolves as an Electronic Counter-roll with the attacker as Initiator. Link lost this way can reach 0, which puts the Mech into Shutdown Stance."
+   "text": "Scream is the Action of the ZHDR-205 Roaring Eagle Drone, not a keyword: Tactical, Automatic, Range 4, an Electronic Attack against every enemy Mech within its Range, one Electronic Counter-roll each, with Strength +1 on the Drone's side. Each success takes 1 Link from that Mech. Like all Electronic Warfare it ignores Terrain and Line of Sight and is limited only by Range. Link lost this way can reach 0, which puts the Mech into Shutdown Stance (4.10)."
   },
   {
    "id": "remote_access",
@@ -465,11 +465,12 @@
   {
    "id": "repeaters_radar",
    "name": "Repeaters and AA radar",
-   "ref": "Official FAQ O12, O13, O19, O20",
+   "ref": "Official FAQ G1, G2, O12, O13, O19, O20, P12, F5; card 165",
    "match": [
-    "repeater"
+    "repeater",
+    "aa radar"
    ],
-   "text": "A Repeater lets an Electronic Attack or Electronic Support measure its Range from the Repeater instead of from the Mech performing it (FAQ O12, O13). Anti-air radar covers an area against Aerial targets: a shot at one of them is resolved as though the radar Unit were the one with the line of sight (FAQ O19, O20)."
+   "text": "A Repeater (the Raven EC's has Range 6) lets an allied unit within that Range measure an Electronic Attack or Electronic Support from the Repeater instead of from itself: the Action's own Range is then counted from the Repeater (FAQ O19). One Repeater per Action (FAQ G1), and Drones may use one too (FAQ G2). An Automatic Electronic Attack sent through one takes the target nearest the Repeater (FAQ O20). A Strength +X bonus does not travel through the Raven EC (card 165), and Remote Access and Scan cannot use a Repeater at all (FAQ P12). The Hyena's AA Radar reads \"When Ally Units Intercept targets that are visible to this drone, they may exchange Eye for Light Hit\". It is always active (FAQ O12), applies to Interception only (FAQ O13), and still works in or through Smoke (FAQ F5)."
   },
   {
    "id": "contact",
