@@ -6,10 +6,10 @@ import type { RollGroup } from '../src/combat';
 // Freeform table has no record and runs the helper's own local exchange on
 // the attacker's phone, the defender rolling across the table.
 import type { Command } from '../src/commands';
-import { ElectronicHelper, type EwAct } from '../src/combat';
+import { ElectronicHelper, type EwAct, type EwArg } from '../src/combat';
 import { forSeat } from './attack';
-import { electronicStrength, isScanAction, scanStrips, targetTracingOn, tokenCards } from '../src/units';
-import { statusCount, STATUSES, type CardAction, type DiceData, type GameState, type Side, type Token } from '../src/types';
+import { electronicStrength, ewWinCommands, tokenCards } from '../src/units';
+import { type CardAction, type DiceData, type GameState, type Side, type Token } from '../src/types';
 import type { GameData } from '../src/data';
 
 export interface EwApi {
@@ -102,6 +102,88 @@ export function beginElectronic(attacker: Token, actionId: string, defender: Tok
   return true;
 }
 
+// An Action on every enemy in Range (Scream, ZHDR-205_A; the Scan Battlefield,
+// 080_A and 522_A): one Counter-roll per target the table judged in Range, in
+// turn. In a room the command carries the rest and the record opens each as
+// the last clears; on one phone the local exchange chains them (audit Phase 3,
+// D2 and A4).
+export function beginElectronicAll(attacker: Token, actionId: string, targets: Token[], joined = false): boolean {
+  const a = api!;
+  if (!targets.length) return false;
+  if (a.state().script && !a.solo) {
+    return a.send({
+      kind: 'startCounterRoll', seat: attacker.side, uid: attacker.uid, actionId,
+      targetUid: targets[0].uid, also: targets.slice(1).map((t) => t.uid), ...(joined ? { chain: 'join' as const } : {}),
+    });
+  }
+  if (!root) return false;
+  const h = mountEw(root);
+  if (!h) { a.toast('No dice data loaded.'); return false; }
+  const action = actionOf(attacker, actionId);
+  if (!action) return false;
+  h.roller = async (pool, label, groups) => (await a.rollFaces(pool.yellow ?? 0, label ?? 'Electronic Counter-roll', groups)).map((face) => ({ color: 'yellow', face }));
+  const run = (i: number): void => {
+    const target = a.state().tokens.find((x) => x.uid === targets[i]?.uid);
+    if (!target) { if (i + 1 < targets.length) run(i + 1); return; }
+    const by = a.state().tokens.find((x) => x.uid === attacker.uid) ?? attacker;
+    a.openCombat();
+    h.start(by, action, target, i + 1 < targets.length ? { after: () => run(i + 1) } : {});
+  };
+  run(0);
+  return true;
+}
+
+// The free Scan on designating a camouflaged unit (FAQ I12). In a room the
+// command carries the attack behind it, and a win queues the Reveal and the
+// resumed attack through the shared reading (ewWinCommands). On one phone the
+// local exchange Scans, and its win queues the same resumed attack here.
+export function beginFreeScan(attacker: Token, attackId: string, defender: Token, joined = false): boolean {
+  const a = api!;
+  if (a.state().script && !a.solo) {
+    return a.send({
+      kind: 'startCounterRoll', seat: attacker.side, uid: attacker.uid, actionId: 'COMMON_SCAN',
+      targetUid: defender.uid, thenAttack: { actionId: attackId }, ...(joined ? { chain: 'join' as const } : {}),
+    });
+  }
+  if (!root) return false;
+  const h = mountEw(root);
+  if (!h) { a.toast('No dice data loaded.'); return false; }
+  const scan = a.data.commonActions.find((x) => x.id === 'COMMON_SCAN') as CardAction | undefined;
+  if (!scan) return false;
+  h.roller = async (pool, label, groups) => (await a.rollFaces(pool.yellow ?? 0, label ?? 'Electronic Counter-roll', groups)).map((face) => ({ color: 'yellow', face }));
+  h.start(attacker, scan, defender, {
+    then: (win) => {
+      if (!win) { a.toast(`The Scan failed, so the attack on ${defender.label} ends. The Action Tick is spent (FAQ I11).`); return; }
+      a.send({ kind: 'queueReactions', seat: attacker.side, items: [{ uid: attacker.uid, actionId: attackId, count: 1, range: 0, kind: 'scanAttack', fromUid: defender.uid }] });
+    },
+  });
+  a.openCombat();
+  return true;
+}
+
+// Target Tracing (174): "may spend 1 Command Token to perform an Electronic
+// Counter Roll against the Attacker. If successful, the Attacker loses 1
+// Link." In a room the command that opens the record spends the Token and
+// marks the reaction; on one phone the local exchange runs it, the Token spent
+// first by its own command and the Link carried on the exchange. Chained to
+// the resolveReaction that cleared the debt, one tap and one Undo.
+export function beginTrace(tracer: Token, actionId: string, attacker: Token): boolean {
+  const a = api!;
+  if (a.state().script && !a.solo) {
+    return a.send({ kind: 'startCounterRoll', seat: tracer.side, uid: tracer.uid, actionId, targetUid: attacker.uid, reaction: true, chain: 'join' });
+  }
+  if (!root) return false;
+  const h = mountEw(root);
+  if (!h) { a.toast('No dice data loaded.'); return false; }
+  const action = actionOf(tracer, actionId);
+  if (!action) return false;
+  if (!a.send({ kind: 'spendCommand', seat: tracer.side, uid: tracer.uid, chain: 'join' })) return false;
+  h.roller = async (pool, label, groups) => (await a.rollFaces(pool.yellow ?? 0, label ?? 'Electronic Counter-roll', groups)).map((face) => ({ color: 'yellow', face }));
+  h.start(tracer, action, attacker, { linkLoss: 1 });
+  a.openCombat();
+  return true;
+}
+
 // The shared record, drawn or torn down. Run on every render.
 export function syncContest(): void {
   const a = api!;
@@ -126,7 +208,7 @@ export function syncContest(): void {
 }
 
 // Every press the window makes, as commands - the Match Centre's contestAct.
-function contestAct(act: EwAct, arg?: { uid?: number; indices?: number[]; use?: boolean }): void {
+function contestAct(act: EwAct, arg?: EwArg): void {
   const a = api!;
   const s = a.state();
   const c = s.script?.counter;
@@ -136,7 +218,11 @@ function contestAct(act: EwAct, arg?: { uid?: number; indices?: number[]; use?: 
   if (!init || !resp) { a.send({ kind: 'clearCounterRoll', seat: a.me() }); a.render(); return; }
   const unit = arg?.uid !== undefined ? s.tokens.find((x) => x.uid === arg.uid) : undefined;
   if (act === 'roll' && unit) {
-    const ev = electronicStrength(a.data, s.tokens, unit, unit.uid === init.uid ? 'initiator' : 'responder');
+    // The Initiator's pool carries its Action's Strength +X (Scream; audit
+    // Phase 3, D2).
+    const ev = unit.uid === init.uid
+      ? electronicStrength(a.data, s.tokens, unit, 'initiator', actionOf(init, c.actionId))
+      : electronicStrength(a.data, s.tokens, unit, 'responder');
     void a.rollFaces(ev, `${unit.label}: Electronic Counter-roll`).then((faces) => {
       if (faces.length !== ev) return;
       a.send({ kind: 'rollCounter', seat: unit.side, uid: unit.uid, faces });
@@ -153,7 +239,11 @@ function contestAct(act: EwAct, arg?: { uid?: number; indices?: number[]; use?: 
   if (act === 'declare' && unit) {
     // FAQ G4: the declare pays the Link on arrival (declareCounterFocus), so
     // the reroll after it costs nothing more, even asked for twice.
-    a.send({ kind: 'declareCounterFocus', seat: unit.side, uid: unit.uid, use: !!arg?.use });
+    // A Drone may pay its reroll with a Whistle's Command Token (ZYBP-202).
+    a.send({
+      kind: 'declareCounterFocus', seat: unit.side, uid: unit.uid, use: !!arg?.use,
+      ...(arg?.whistleUid !== undefined ? { whistleUid: arg.whistleUid } : {}),
+    });
     a.render();
     return;
   }
@@ -177,7 +267,11 @@ function contestAct(act: EwAct, arg?: { uid?: number; indices?: number[]; use?: 
     return;
   }
   if (act === 'provoke' || act === 'provokepass') {
-    a.send({ kind: 'provoke', seat: resp.side, uid: resp.uid, targetUid: init.uid, take: act === 'provoke' });
+    // Yoyu is whichever side the window named: either role (4.11.2; audit
+    // Phase 3, F16). A press naming nobody meant the Responder.
+    const yoyu = arg?.uid === init.uid ? init : resp;
+    const other = yoyu === init ? resp : init;
+    a.send({ kind: 'provoke', seat: yoyu.side, uid: yoyu.uid, targetUid: other.uid, take: act === 'provoke' });
     a.render();
     return;
   }
@@ -187,32 +281,16 @@ function contestAct(act: EwAct, arg?: { uid?: number; indices?: number[]; use?: 
     // joins it for Undo (commands.ts CommandChain).
     let sent = 0;
     const join = () => (sent++ ? { chain: 'join' as const } : {});
-    if (action && isScanAction(action)) {
-      const strip = scanStrips(resp);
-      for (let i = 0; i < strip; i++) {
-        a.send({ kind: 'removeStatus', seat: init.side, uid: init.uid, targetUid: resp.uid, statusId: 'lowProfile', ...join() });
-      }
-      if (statusCount(resp.statuses, 'camouflage') > 0) {
-        a.send({
-          ...join(),
-          kind: 'queueReactions', seat: init.side,
-          items: [
-            { uid: resp.uid, actionId: action.id, count: 1, range: 0, kind: 'manifest', fromUid: init.uid },
-            ...(c.thenAttack ? [{ uid: init.uid, actionId: c.thenAttack.actionId, count: 1, range: 0, kind: 'scanAttack' as const, fromUid: resp.uid }] : []),
-          ],
-        });
-      }
-      a.send({ kind: 'clearCounterRoll', seat: init.side, ...join() });
-      a.render();
-      return;
-    }
-    if (targetTracingOn(a.data, init)?.actionId === c.actionId) {
-      a.send({ kind: 'drainLink', seat: init.side, uid: init.uid, targetUid: resp.uid, n: 1, ...join() });
-    } else {
-      const named = (action?.gameRules ?? []).flatMap((g) => g.effects ?? [])
-        .find((e) => (e as { type?: string }).type === 'apply_status') as { status?: string; stacks?: number } | undefined;
-      const def = STATUSES.find((x) => x.label === named?.status || x.id === named?.status) ?? STATUSES.find((x) => x.id === 'fci')!;
-      a.send({ kind: 'applyStatus', seat: init.side, uid: init.uid, targetUid: resp.uid, statusId: def.id, stacks: named?.stacks ?? 1, ...join() });
+    // The reading every seam shares (ewWinCommands). This copy used to find the
+    // first top-level status and fall back to Fire Control Interference, so
+    // Manipulation Interference gave FCI instead of Immobilized, and Scream,
+    // The Red Shoes and Overload Inject gave FCI too; a free Scan's attack lost
+    // its Charge (audit Phase 3, D1). Target Tracing is the record's own
+    // `reaction`, its Command Token already spent.
+    if (action) {
+      const win = ewWinCommands(a.data, init, resp, action, { reaction: !!c.reaction, thenAttack: c.thenAttack });
+      for (const cmd of win.cmds) a.send({ ...cmd, ...join() } as Command);
+      if (win.lines.length) a.toast(`${init.label} succeeds: ${win.lines.join('; ')}.`);
     }
     a.send({ kind: 'clearCounterRoll', seat: init.side, ...join() });
     a.render();

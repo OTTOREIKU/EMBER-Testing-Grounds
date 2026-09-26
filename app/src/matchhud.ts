@@ -6,22 +6,22 @@ import { actionIconUrl, cardName, isAerial, parseGridRef, secondaryImageUrl, squ
 import { showInspect } from './inspector';
 import { Board, footprint, snapPlacement, type BoardCallbacks } from './board';
 import { printedDeployment, resolveZoneSetData } from './overlays';
-import { actionRange, chargeChoices, stanceFeedbackOf, stanceFeedbackTargets, stanceShaped, overloadPackOn, actionPartWhy, cruising, startOpts, transformOffer, opportunityBonusOn, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, ripostePart, martyrdomOwed, targetTracingOn, riderOnDrone, immobilizedStop, activatesCamo, isScanAction, scanStrips, formSwitch, envCardAt, envFlightFrom, envForcedStop, envMoveRules, isGroundUnit, stealthValue, manifestationRange, manifestTargets, nonHumanoidStop, coordinationFor, coordinationOnOpportunityEnd, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, electronicOrigins, loanedParts, phasesThroughUnits, minesLayable, minesOwed, pilotCard, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, maneuverIsSilent, maneuverSilenceDenier, type AuraSource, canActivateCamo, chargeableSlots, electronicDash, electronicStrength, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, projectileReach, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
-import { ElectronicHelper, type EwAct } from './combat';
+import { ownCards, electronicTargetWhy, scannable, controlledMoveActions, ewWinCommands, electronicAll, electronicAllTargets, actionRange, chargeChoices, stanceFeedbackOf, stanceFeedbackTargets, stanceShaped, overloadPackOn, actionPartWhy, cruising, startOpts, transformOffer, opportunityBonusOn, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, ripostePart, martyrdomOwed, targetTracingOn, riderOnDrone, immobilizedStop, activatesCamo, isScanAction, scanStrips, formSwitch, envCardAt, envFlightFrom, envForcedStop, envMoveRules, isGroundUnit, stealthValue, manifestationRange, manifestTargets, nonHumanoidStop, coordinationFor, coordinationOnOpportunityEnd, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, electronicOrigins, loanedParts, phasesThroughUnits, minesLayable, minesOwed, pilotCard, unfoldsOwed, type MineLaying, type MineTrigger, extrasFor, SLOT_LABEL, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, maneuverIsSilent, type AuraSource, canActivateCamo, chargeableSlots, electronicDash, electronicStrength, electronicValue, explosionScope, extraActivationOf, freehandSlots, guidedActions, initiativeFor, interceptCapacity, interceptLeft, interceptsOwed, projectileDelivery, projectileReach, isChargeAction, isElectronicAttack, knockbackOf, maneuverRange, needsSightToLanding, resupplyOf, smokePlacement, squadAllegiance, volleyOf, type ExtraActivation, type Resupply } from './units';
+import { ElectronicHelper, type EwAct, type EwArg } from './combat';
 import { tacticFitsPhase, tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { inContact, canStandIn, attackDirection, crushExchange, crushExchangeSpots, crushTargets, dissipationFor, extendPath, knockbackPath, largeGridOf, boardGrids, setBoardGrids, losBetween, losNote, smokeBlocks, pathCost, protectionFor, rangeBetween, reachableGrids, standingSpot, type LargeGrid } from './rules';
 import { breakAwayCost, breakAwayNote, canBeForceMoved, tetherCap, tetherNote } from './melee';
 import { factionColour, ICON_DICE, linkIcon, squadColour } from './icons';
 import { iconSvg } from './dice';
 import { ensureScript, enterPhase, glueAfter as glueCore, makeInit, opportunity } from './glue';
-import type { PartSlot, CardAction, CounterRoll, DiceData, DieColor, Facing, GameState, RollbackPoint, Side, Stance, TerrainPiece, Timing, Token, ExtraTick, Opportunity } from './types';
+import type { PartSlot, CardAction, CounterRoll, DiceData, DieColor, Facing, GameState, RollbackPoint, ScriptState, Side, Stance, TerrainPiece, Timing, Token, ExtraTick, Opportunity } from './types';
 import { statusCount, gridsOf, newOpportunity, newScriptState, PHASES, removableTokens, STATUSES, TIMINGS, zonesOf } from './types';
 import { deployable, deployTurn, deploymentComplete, firstPlayerFrom, normaliseSetup, rollTotal, type SetupState } from './setup';
 import { actionPhaseComplete, activationOrder, alive, canAct, droneActionWhy, droneMoveWhy, eligibleUnits, isLoopPhase, loopComplete, nextActivation, nextTurn, onExtraOpportunity, tiedChoices, type InitLookup, type LoopPhase } from './loop';
 import { actionIdOf, actionPipCount, canActivate, canAttackMode, canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed, type TickVerdict } from './ticks';
 import { gameResult, normaliseTasks, wipedOut, zoneCentreGrid, type Designation, type ScoreResult } from './tasks';
 import { previewScore } from './scoring';
-import { linkShockOf, tetheredBy, armorPiercing, armorPiercingNote, automaticShieldFor, canAffordFocus, focusIsFree, grantAdjusted, shockAttackOf, shockMoveAllowed, stationaryAdjusted, twoHandedUse, tokenCards, vpRiderFor, straightLineBonus, selfStatusGrant, selfGrantWhy, isRwsAction, linkTickTraitOn, isElectronicSupport, linkSupportOf, linkSupportTargets, maxLink, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, tokenCleanupOf, tokenCleanupTargets, type LinkSupport, type TokenCleanup } from './units';
+import { highlightTargets, targetStatusGrant, targetStatusTargets, linkShockOf, tetheredBy, armorPiercing, armorPiercingNote, automaticShieldFor, canAffordFocus, focusIsFree, grantAdjusted, shockAttackOf, shockMoveAllowed, stationaryAdjusted, twoHandedUse, tokenCards, vpRiderFor, straightLineBonus, selfStatusGrant, selfGrantWhy, isRwsAction, linkTickTraitOn, isElectronicSupport, linkSupportOf, linkSupportTargets, maxLink, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, tokenCleanupOf, tokenCleanupTargets, type LinkSupport, type TokenCleanup } from './units';
 
 // The in-match HUD (Match Centre part 3a): one question at a time, per seat.
 // Everything here renders from the shared GameState and issues the same
@@ -289,6 +289,10 @@ let movePlan: {
   // steps and a new facing is a legal Maneuver on its own.
   facing: Facing;
   turned: boolean;
+  // The Red Shoes (TM35NA_B): the Mech whose won Counter-roll is steering
+  // this ENEMY unit. The move travels as controlledMove from its seat, spends
+  // no Tick, and ends in no Crush (audit Phase 3, D3).
+  controller?: { uid: number; side: Side };
 } | null = null;
 // Whose card the Details tab is showing, when the player has asked for one
 // rather than taking the active unit's.
@@ -458,7 +462,7 @@ function moveOptsFor(ctx: HudCtx, t: Token, flying: boolean, actionId?: string) 
 // A Maneuver by default. A Movement Action passes its own Range instead: the
 // chassis `move` is the Maneuver Value (1–2 Grids) and has nothing to do with a
 // Sprint-style Action's printed range, which is usually 4.
-function startMovePlan(ctx: HudCtx, t: Token, opts: { range?: number; label?: string; shoveActionId?: string; attackAfter?: { actionId: string; refund?: { uid: number; slot: string; choice?: string } }; actionId?: string; free?: boolean; granted?: boolean; maneuver?: boolean; airborne?: boolean } = {}): void {
+function startMovePlan(ctx: HudCtx, t: Token, opts: { range?: number; label?: string; shoveActionId?: string; attackAfter?: { actionId: string; refund?: { uid: number; slot: string; choice?: string } }; actionId?: string; free?: boolean; granted?: boolean; maneuver?: boolean; airborne?: boolean; controller?: { uid: number; side: Side } } = {}): void {
   // IMMOBILIZED (6.3.2), asked before the planner opens. This board had NO
   // enforcement of the movement ban at all - the token simply moved - so this
   // and the command gate behind it are the whole of the rule online.
@@ -507,6 +511,7 @@ function startMovePlan(ctx: HudCtx, t: Token, opts: { range?: number; label?: st
     granted: opts.granted,
     facing: t.facing,
     turned: false,
+    controller: opts.controller,
   };
 }
 
@@ -628,6 +633,13 @@ function commitMove(ctx: HudCtx): void {
     movePlan = null;
     board.clearMovePath();
     board.clearHighlights();
+    // The Red Shoes may spend its move on a pivot like any Maneuver.
+    if (m.controller) {
+      const v = ctx.send({ kind: 'controlledMove', seat: m.controller.side, uid: m.controller.uid, targetUid: t.uid, to: { col: t.col, row: t.row }, facing: m.facing, actionId: m.actionId });
+      ctx.noteNow(v.ok ? `${t.label} is turned on the spot (The Red Shoes).` : v.why ?? 'The move was refused.');
+      ctx.refresh();
+      return;
+    }
     commitAction(ctx);
     ctx.send({ kind: 'maneuver', seat: t.side, uid: t.uid, to: { col: t.col, row: t.row }, facing: m.facing, free: m.free, granted: m.granted, actionId: m.actionId });
     ctx.noteNow(`${t.label} turns on the spot. A pivot spends no Movement Range, but it is Movement.`);
@@ -654,6 +666,18 @@ function commitMove(ctx: HudCtx): void {
   const facing = m.turned ? m.facing : undefined;
   const goal = m.path[m.path.length - 1];
   const drag = m.drag;
+  // Ending in an occupied Grid is a Crush, and everything in there has to give
+  // way before the crusher lands (4.3.6). The Movement ends there either way.
+  const victims = crushTargets(t, goal.c, goal.r, terrain, ctx.state.tokens);
+  const crushes = !!victims && (victims.units.length > 0 || victims.terrain.length > 0);
+  // A controlled move ends in no Crush: the victims' shuffle is a run of the
+  // crusher's own commands, and this unit is not the sender's. Asked before
+  // the plan is dropped, so the route can be redrawn.
+  if (m.controller && crushes) {
+    ctx.noteNow(`The Red Shoes steers ${t.label} into no Crush here: end the route in an empty Grid.`);
+    ctx.refresh();
+    return;
+  }
   movePlan = null;
   board.clearMovePath();
   board.clearHighlights();
@@ -661,14 +685,30 @@ function commitMove(ctx: HudCtx): void {
     ctx.refresh();
     return;
   }
+  if (m.controller) {
+    const ctl = m.controller;
+    const aerialStart = t.aerial ? { ...t } : null;
+    board.animateMove(t.uid, stops, () => {
+      const v = ctx.send({ kind: 'controlledMove', seat: ctl.side, uid: ctl.uid, targetUid: t.uid, to: last, via: stops, facing, actionId: m.actionId });
+      if (!v.ok) ctx.noteNow(v.why ?? 'The move was refused.');
+      else {
+        ctx.noteNow(`${t.label} moves under The Red Shoes' control.`);
+        // Its own Movement still triggers Interception by the side it is
+        // moving against (4.9).
+        const moved = aerialStart ? ctx.state.tokens.find((x) => x.uid === t.uid) : undefined;
+        const owed = aerialStart && moved ? interceptsOwed(ctx.data, ctx.state.tokens, ctx.state.smoke ?? [], aerialStart, [moved]) : [];
+        if (owed.length) ctx.send({ kind: 'queueIntercepts', seat: ctl.side, items: owed });
+      }
+      ctx.refresh();
+    });
+    return;
+  }
   // The route is committed, so a Movement Action pays here — and it has to pay
   // before the maneuver travels, since a free move is only legal once its Action
   // has been performed this Opportunity.
   commitAction(ctx);
-  // Ending in an occupied Grid is a Crush, and everything in there has to give
-  // way before the crusher lands (4.3.6). The Movement ends there either way.
-  const victims = crushTargets(t, goal.c, goal.r, terrain, ctx.state.tokens);
-  if (victims && (victims.units.length || victims.terrain.length)) {
+  // The Crush found above: the victims give way before the crusher lands.
+  if (victims && crushes) {
     crushPlan = {
       uid: t.uid,
       goal,
@@ -1484,61 +1524,7 @@ function actionButtons(ctx: HudCtx, t: Token, o: Opportunity): string {
   const ticks = t.kind === 'mech' ? tickPool(o) : '';
   // While a route is being drawn the panel becomes the move bar, the same way
   // the freeplay guide takes it over.
-  if (movePlan && movePlan.uid === t.uid) {
-    const drawn = movePlan.path.length - 1;
-    return `${ticks}
-      <div class="moveplan">
-        <p class="tp-dim">${esc(movePlan.label)}</p>
-        <p class="tp-note">${(() => {
-          const p = movePlan!.preview ? Math.max(0, movePlan!.preview.length - 1) : drawn;
-          if (p !== drawn) return `${drawn} → ${p} of ${movePlan!.steps} grids`;
-          return drawn
-            ? `${drawn} of ${movePlan!.steps} grids`
-            : `Click a lit grid to move. Up to ${movePlan!.steps} grid${movePlan!.steps === 1 ? '' : 's'}.`;
-        })()}</p>
-        <p class="tp-dim">Click a lit grid to move there. Click further on to add a waypoint, right-click or Backspace steps back.</p>
-        ${(() => {
-          // The same sentence the freeplay hint uses, from the same helper.
-          const leash = tetherNote(t, ctx.state.tokens);
-          return leash ? `<p class="tp-note">${esc(leash)}</p>` : '';
-        })()}
-        ${(() => {
-          // [Moving in Straight Line] (直线移动): the reach the route has only
-          // while it keeps running one way. Said here because the overlay lights
-          // the extra Grids and nothing else explains why they go dark on a turn.
-          const bonus = straightLineBonus(movePlan!.actionId ? actionOn(ctx, t, movePlan!.actionId) : null);
-          return bonus ? `<p class="tp-note">[Moving in Straight Line] +${bonus}: a route that runs one way the whole time reaches ${movePlan!.steps + bonus} Grids. Turn a corner and ${movePlan!.steps} is the limit.</p>` : '';
-        })()}
-        ${(() => {
-          // Break Away, likewise from the one helper that also prices it. This
-          // board never explained a short overlay from a Melee Lock at all;
-          // LPA-20's Obstruct is the first lock that costs something a player
-          // cannot count off the board, and the "or 1 Link" alternative is only
-          // usable if the app says it exists.
-          const lock = movePlan.flying || t.aerial ? '' : breakAwayNote(ctx.data, t, ctx.state.tokens, terrainOf(ctx));
-          return lock ? `<p class="tp-note">${esc(lock)}</p>` : '';
-        })()}
-        ${
-          // The Ojs200's optional Flying Movement. A toggle rather than a
-          // question up front, because the reachable grids redraw either way
-          // and seeing the difference IS the decision. Flying cannot Crush
-          // (FAQ E14), so the cost is spelled out rather than implied.
-          movePlan.flightOptional
-            ? `<button class="bigbtn ghost2" data-act="flytoggle" style="margin-top:6px">${
-                movePlan.flying ? 'Flying · cannot Crush' : 'Move normally'
-              }</button>
-               <p class="tp-dim">${
-                 movePlan.flying
-                   ? 'Crossing terrain and Melee Locks freely. Tap to walk instead.'
-                   : 'Tap to fly this Maneuver instead.'
-               }</p>`
-            : ''
-        }
-        ${turnRow(FACING_NAME[movePlan.facing], 'A pivot costs no Movement Range, but it is still Movement, so it happens inside this one.')}
-        <button class="bigbtn" data-act="commitmove"${drawn || movePlan.turned ? '' : ' disabled'}>${drawn ? 'Confirm move' : 'Turn on the spot'}</button>
-        <button class="bigbtn ghost2" data-act="cancelmove" style="margin-top:6px">Cancel</button>
-      </div>`;
-  }
+  if (movePlan && movePlan.uid === t.uid) return moveBarHtml(ctx, t, ticks);
   // The Overloading Pack buys Action Ticks with Link, two at most an
   // Opportunity. They are ordinary Action Ticks, so a pair pays for a Medium
   // Action — which no pair of Extra Ticks can do.
@@ -2380,8 +2366,12 @@ export function startInterceptPick(uid: number, actionId: string): void {
 function actionOn(ctx: HudCtx, t: Token, actionId: string): CardAction | undefined {
   // The id may arrive as a part key when a Tarantula is lending the Part.
   const id = actionIdOf(actionId);
-  return tokenCards(ctx.data, t).flatMap(({ card }) => card.actions ?? []).find((a) => a.id === id)
-    ?? loanedParts(ctx.data, ctx.state.tokens, t).flatMap(({ card }) => card.actions ?? []).find((a) => a.id === id);
+  // A Common Action last: every Mech has them and no card prints them. Without
+  // it the Scan could never be found, so no Counter-roll window drew for one
+  // and its win granted Fire Control Interference (audit Phase 3, A1).
+  return ownCards(ctx.data, t).flatMap(({ card }) => card.actions ?? []).find((a) => a.id === id)
+    ?? loanedParts(ctx.data, ctx.state.tokens, t).flatMap(({ card }) => card.actions ?? []).find((a) => a.id === id)
+    ?? (ctx.data.commonActions ?? []).find((a) => a.id === id) as CardAction | undefined;
 }
 
 // Mirrors noteInterception in main.ts, which is the reference implementation.
@@ -2409,10 +2399,9 @@ function queueInterceptsFor(ctx: HudCtx, launcher: Token, born: Token[]): void {
 // must not take the panel over either.
 // ---------- Optical Camouflage reveals (4.12.2, FAQ I4/I5/I7/I10/I14) ----------
 //
-// Derived from the state on every read, the way this page derives everything:
-// an auto-send in the glue would replay on catch-up and double-fire. The owner
-// confirms with a click, and a house-rule dismissal is remembered per debt.
-const revealDismissed = new Set<string>();
+// Read off script.revealDue, which the command that caused each one records, so
+// both seats owe the same Reveal. The owner answers with a click; the online
+// table is strict, so there is no house-rule way out (audit Phase 3, F2).
 
 function mineTriggers(ctx: HudCtx): { trigger: MineTrigger; t: Token }[] {
   return minesOwed(ctx.data, ctx.state.tokens)
@@ -2489,12 +2478,71 @@ function autoBoomPanel(ctx: HudCtx): string {
        <div class="tp-foot"><button class="bigbtn" data-minego="${x.t.uid}" data-mineact="${esc(x.actionId)}">Resolve the Detonation (4.7.6)</button></div>`;
 }
 
+// The move bar, while a route is being drawn: the unit's own Maneuver or
+// Movement Action, or one The Red Shoes steers (the reaction panel draws it then).
+function moveBarHtml(ctx: HudCtx, t: Token, ticks = ''): string {
+  if (!movePlan) return '';
+  const drawn = movePlan.path.length - 1;
+  return `${ticks}
+      <div class="moveplan">
+        <p class="tp-dim">${esc(movePlan.label)}</p>
+        <p class="tp-note">${(() => {
+          const p = movePlan!.preview ? Math.max(0, movePlan!.preview.length - 1) : drawn;
+          if (p !== drawn) return `${drawn} → ${p} of ${movePlan!.steps} grids`;
+          return drawn
+            ? `${drawn} of ${movePlan!.steps} grids`
+            : `Click a lit grid to move. Up to ${movePlan!.steps} grid${movePlan!.steps === 1 ? '' : 's'}.`;
+        })()}</p>
+        <p class="tp-dim">Click a lit grid to move there. Click further on to add a waypoint, right-click or Backspace steps back.</p>
+        ${(() => {
+          // The same sentence the freeplay hint uses, from the same helper.
+          const leash = tetherNote(t, ctx.state.tokens);
+          return leash ? `<p class="tp-note">${esc(leash)}</p>` : '';
+        })()}
+        ${(() => {
+          // [Moving in Straight Line] (直线移动): the reach the route has only
+          // while it keeps running one way. Said here because the overlay lights
+          // the extra Grids and nothing else explains why they go dark on a turn.
+          const bonus = straightLineBonus(movePlan!.actionId ? actionOn(ctx, t, movePlan!.actionId) : null);
+          return bonus ? `<p class="tp-note">[Moving in Straight Line] +${bonus}: a route that runs one way the whole time reaches ${movePlan!.steps + bonus} Grids. Turn a corner and ${movePlan!.steps} is the limit.</p>` : '';
+        })()}
+        ${(() => {
+          // Break Away, likewise from the one helper that also prices it. This
+          // board never explained a short overlay from a Melee Lock at all;
+          // LPA-20's Obstruct is the first lock that costs something a player
+          // cannot count off the board, and the "or 1 Link" alternative is only
+          // usable if the app says it exists.
+          const lock = movePlan.flying || t.aerial ? '' : breakAwayNote(ctx.data, t, ctx.state.tokens, terrainOf(ctx));
+          return lock ? `<p class="tp-note">${esc(lock)}</p>` : '';
+        })()}
+        ${
+          // The Ojs200's optional Flying Movement. A toggle rather than a
+          // question up front, because the reachable grids redraw either way
+          // and seeing the difference IS the decision. Flying cannot Crush
+          // (FAQ E14), so the cost is spelled out rather than implied.
+          movePlan.flightOptional
+            ? `<button class="bigbtn ghost2" data-act="flytoggle" style="margin-top:6px">${
+                movePlan.flying ? 'Flying · cannot Crush' : 'Move normally'
+              }</button>
+               <p class="tp-dim">${
+                 movePlan.flying
+                   ? 'Crossing terrain and Melee Locks freely. Tap to walk instead.'
+                   : 'Tap to fly this Maneuver instead.'
+               }</p>`
+            : ''
+        }
+        ${turnRow(FACING_NAME[movePlan.facing], 'A pivot costs no Movement Range, but it is still Movement, so it happens inside this one.')}
+        <button class="bigbtn" data-act="commitmove"${drawn || movePlan.turned ? '' : ' disabled'}>${drawn ? 'Confirm move' : 'Turn on the spot'}</button>
+        <button class="bigbtn ghost2" data-act="cancelmove" style="margin-top:6px">Cancel</button>
+      </div>`;
+}
+
 // ---------- Owed reactions: Emergency Smoke (FAQ B7/D10) ----------
 //
 // The attacker's client queued these into `script.reactions` when the whole
 // Action finished; only the DEFENDER's client may answer one, because placing
 // the Screens and spending the use are commands on their own unit.
-function reactionsOwed(ctx: HudCtx): { t: Token; r: { uid: number; actionId: string; count: number; range: number; kind?: 'smoke' | 'trace' | 'stance' | 'riposte' | 'manifest' | 'scanAttack'; fromUid?: number } }[] {
+function reactionsOwed(ctx: HudCtx): { t: Token; r: ScriptState['reactions'][number] }[] {
   const owed = ensureScript(ctx.state).reactions ?? [];
   return owed
     .map((r) => ({ t: ctx.state.tokens.find((x) => x.uid === r.uid)!, r }))
@@ -2534,12 +2582,36 @@ function reactionPanel(ctx: HudCtx): string {
          <div class="tp-foot">${target && !hidden && !blocked ? `<button class="bigbtn" data-reactgo="${t.uid}:${esc(r.actionId)}">Attack ${esc(target.label)}</button>` : ''}
          <button class="bigbtn ghost2" data-reactskip="${t.uid}:${esc(r.actionId)}" style="margin-top:6px">${blocked || !target ? 'The attack ends' : 'Call off the attack'}</button></div>`;
   }
+  // The Red Shoes (TM35NA_B). The won Counter-roll hands this player one of
+  // the Responder's own Maneuvers or Move Actions, at no Tick cost, and
+  // Immobilized still stops it (ruled 2026-09-25, audit Phase 3, F19). It did
+  // nothing on any page before.
+  if (r.kind === 'control') {
+    const target = ctx.state.tokens.find((x) => x.uid === r.fromUid);
+    if (target && movePlan?.controller?.uid === t.uid && movePlan.uid === target.uid) {
+      return head('Your move', `The Red Shoes: ${esc(target.label)}`, `${esc(t.label)} is steering ${esc(target.label)}.`, true)
+        + moveBarHtml(ctx, target);
+    }
+    const stop = target ? immobilizedStop(target) : null;
+    const reach = target ? maneuverRange(ctx.data, target) : 0;
+    const moves = target && !stop ? controlledMoveActions(ctx.data, target) : [];
+    return head('Your move', `${esc(t.label)}: The Red Shoes`,
+      target
+        ? `The Electronic Attack succeeded, so you take control of ${esc(target.label)} to perform one of its own Maneuvers or Move Actions. It costs its player no Tick.`
+        : 'The unit has left the board, so there is nothing to steer.', true)
+      + `<div class="tp-body">${stop ? `<p class="tp-note">${esc(stop)}</p>` : ''}${
+        target && !stop
+          ? `${reach > 0 ? `<button class="rowwide" data-controlgo="${t.uid}:${target.uid}:">Maneuver<span class="ct">Move ${reach}</span></button>` : ''}
+             ${moves.map((a) => `<button class="rowwide" data-controlgo="${t.uid}:${target.uid}:${esc(a.id)}">${esc(a.name?.en || a.name?.zh || a.id)}<span class="ct">R${a.range || reach}</span></button>`).join('')}`
+          : ''}</div>
+         <div class="tp-foot"><button class="bigbtn ghost2" data-reactskip="${t.uid}:${esc(r.actionId)}">${target && !stop ? 'Leave it be' : 'Done'}</button></div>`;
+  }
   if (r.kind === 'manifest') {
     const range = manifestationRange(ctx.data, t);
     return head('Your move', `${esc(t.label)} has been Scanned`,
       `An enemy Scan succeeded, so ${esc(t.label)} leaves the Optical Camouflage State (4.12.4).${
         range > 0
-          ? ` Its marker was only a SUSPECTED position: choose where it really is, up to ${range} Grid${range === 1 ? '' : 's'} away (Stealth ${range}).`
+          ? ` Its marker was only a SUSPECTED position: choose where it really is, within Range ${range} counted orthogonally (Stealth ${range}).`
           : ' It has no Stealth value, so it appears where its marker stood.'
       }`, true)
       + `<div class="tp-body"></div>
@@ -2606,7 +2678,7 @@ function answerReaction(ctx: HudCtx, key: string, place: boolean): void {
   if (!t || !r) { ctx.refresh(); return; }
   const trace = r.kind === 'trace';
   const stance = r.kind === 'stance';
-  const what = trace ? 'Target Tracing' : stance ? 'Defense Reaction' : 'Emergency Smoke';
+  const what = trace ? 'Target Tracing' : stance ? 'Defense Reaction' : r.kind === 'control' ? 'control of the unit (The Red Shoes)' : 'Emergency Smoke';
   if (!ctx.send({ kind: 'resolveReaction', seat: t.side, uid, actionId }).ok) { ctx.refresh(); return; }
   // The Scan debt has no decline: 4.12.4 Reveals the target on a success and
   // the only open question is WHERE it appears, which openManifest asks. Its
@@ -2640,10 +2712,12 @@ function answerReaction(ctx: HudCtx, key: string, place: boolean): void {
     return;
   }
   if (trace) {
-    // The Token first, by its own command, so a refused Counter-roll cannot
-    // leave a Mech that paid for nothing.
-    if (!ctx.send({ kind: 'spendCommand', seat: t.side, uid }).ok) { ctx.refresh(); return; }
-    ctx.send({ kind: 'startCounterRoll', seat: t.side, uid, targetUid: r.fromUid!, actionId, reaction: true });
+    // The Command Token is spent by the command that opens the roll, so a
+    // refused Counter-roll cannot leave a Mech that paid for nothing. It used
+    // to be spent first, by its own command, and a Mech with one Token then had
+    // none face-up for the roll to find (audit Phase 3, D8).
+    const v = ctx.send({ kind: 'startCounterRoll', seat: t.side, uid, targetUid: r.fromUid!, actionId, reaction: true });
+    if (!v.ok && v.why) ctx.noteNow(v.why);
     ctx.refresh();
     return;
   }
@@ -2657,55 +2731,31 @@ function answerReaction(ctx: HudCtx, key: string, place: boolean): void {
   ctx.refresh();
 }
 
-function revealsOwed(ctx: HudCtx): { t: Token; key: string; why: string }[] {
+// What a camouflaged unit owes (4.12.2), as the command that caused it
+// recorded it: a non-Silence Action, a non-Silent Maneuver, or a Movement of
+// either unit that ended in Contact with an enemy. This used to be derived here
+// at render time, from the Opportunity and from the board, and it missed Common
+// Actions (Punch/Kick, Crawl), lent Parts, anything outside the unit's own
+// Opportunity and every Contact after the first; it held an Action taken BEFORE
+// the camouflage went on against it; and a "Stay hidden" button stood in for
+// FAQ I14, which the record now derives (audit Phase 3, C4/C5).
+function revealsOwed(ctx: HudCtx): { t: Token; why: string }[] {
   const s = ctx.state;
-  const sc = ensureScript(s);
-  const out: { t: Token; key: string; why: string }[] = [];
-  for (const t of s.tokens) {
-    if (statusCount(t.statuses, 'camouflage') === 0 || t.deployed === false) continue;
-    // A non-Silence action or a non-Silent Maneuver during the CURRENT
-    // Action Opportunity (FAQ I2/I5), read off the opportunity script.
-    if (sc.opp?.uid === t.uid) {
-      // An enemy aura that denies Silence (ZHDR-206) is named in the line, not
-      // just counted: a camouflage that breaks with nothing named reads as a
-      // bug at the table, and the panel below is all the player is shown.
-      let denier: AuraSource | undefined;
-      const acted = (sc.opp.performed ?? []).some((key) => {
-        const id = actionIdOf(key);
-        const a = tokenCards(ctx.data, t).flatMap(({ card }) => card.actions ?? []).find((x) => x.id === id);
-        // The ACTIVATING Action is exempt: 4.12.2's trigger is for Actions
-        // performed while IN the state, and the activation is what put the unit
-        // there. Without this the sweep prompted a Reveal the instant the
-        // camouflage went on, because the activation itself prints no Silence.
-        if (!a || activatesCamo(a) || isSilentAction(ctx.data, s.tokens, t, a)) return false;
-        denier = denier ?? actionSilenceDenier(ctx.data, s.tokens, t, a);
-        return true;
-      });
-      // The Movement is judged at the START and landing grids only (FAQ
-      // O11/O15). This sweep runs at render time, long after the token moved,
-      // so the start comes off the Opportunity — without it a unit that walked
-      // OUT of the aura was judged as though it had never been in it.
-      const from = sc.opp.movedFrom
-        ? { ...t, col: sc.opp.movedFrom.col, row: sc.opp.movedFrom.row }
-        : undefined;
-      const moveDenier = maneuverSilenceDenier(ctx.data, s.tokens, t, from);
-      const named = (why: string, src: AuraSource | undefined): string =>
-        (src ? `${why}, but ${src.source.label} (${src.label}) denies it Silence` : why);
-      if (acted) out.push({ t, key: `${t.uid}:act:${s.round.n}`, why: named('performed a non-Silence action', denier) });
-      else if (sc.opp.maneuvered && !maneuverIsSilent(ctx.data, s.tokens, t, from)) {
-        out.push({ t, key: `${t.uid}:mov:${s.round.n}`, why: named('moved without Silence', moveDenier) });
-      }
-    }
-    // Contact with an enemy that is neither Aerial nor camouflaged (I4/I7),
-    // including a landed enemy Mine or Beacon (I10). If the camouflage was
-    // activated AFTER the contact began, that is not "ending Movement in
-    // Contact" and owes nothing (I14) - the copy says so and Stay hidden is
-    // the answer there. The reading itself lives in units.ts now: this page
-    // matched a card NAME for the I10 case, which freeplay never did at all.
-    const toucher = camoBrokenBy(ctx.data, s.tokens, t);
-    if (toucher) out.push({ t, key: `${t.uid}:touch:${toucher.uid}`, why: `is in Contact with ${toucher.label}` });
+  const out: { t: Token; why: string }[] = [];
+  for (const d of ensureScript(s).revealDue ?? []) {
+    const t = s.tokens.find((x) => x.uid === d.uid);
+    if (!t || statusCount(t.statuses, 'camouflage') === 0 || t.deployed === false) continue;
+    // One Reveal answers every trigger, so the first reason is the one given.
+    if (out.some((x) => x.t.uid === t.uid)) continue;
+    const by = d.byUid !== undefined ? s.tokens.find((x) => x.uid === d.byUid) : undefined;
+    // For an Action, `byUid` names the enemy aura that took its Silence away
+    // (ZHDR-206): a camouflage that breaks with nothing named reads as a bug.
+    const why = d.why === 'touch' ? `ended a Movement in Contact with ${by?.label ?? 'an enemy'}`
+      : d.why === 'move' ? 'moved without Silence'
+        : by ? `performed an Action whose Silence ${by.label} (Dynamic Perception) takes away` : 'performed a non-Silence Action';
+    out.push({ t, why });
   }
-  return out.filter((x) => !revealDismissed.has(x.key));
+  return out;
 }
 
 function revealPanel(ctx: HudCtx): string {
@@ -2713,13 +2763,13 @@ function revealPanel(ctx: HudCtx): string {
   const x = owed[0];
   if (!x) return '';
   const range = manifestationRange(ctx.data, x.t);
+  const stuck = !!immobilizedStop(x.t);
   return head('Your move', `${esc(x.t.label)} breaks camouflage`,
     `It ${esc(x.why)}, so under 4.12.2 the Optical Camouflage ends.${
-      range > 0 ? ` Revealing offers Manifestation Movement up to ${range} Grid${range === 1 ? '' : 's'} (Stealth ${range}).` : ''
-    } If the camouflage was activated after this began (FAQ I14), stay hidden.`, true)
+      stuck ? ' It bears an Immobilized Token, so it Reveals where it stands (FAQ I20).'
+        : range > 0 ? ` Revealing offers Manifestation Movement within Range ${range} (Stealth ${range}).` : ''}`, true)
     + `<div class="tp-body"></div>
-      <div class="tp-foot"><button class="bigbtn" data-revealgo="${x.t.uid}" data-revealkey="${esc(x.key)}">Reveal it (4.12.2)</button>
-      <button class="bigbtn ghost2" data-revealskip="${esc(x.key)}" style="margin-top:6px">Stay hidden (house rule)</button></div>`;
+      <div class="tp-foot"><button class="bigbtn" data-revealgo="${x.t.uid}">Reveal it (4.12.2)</button></div>`;
 }
 
 function owedItems(ctx: HudCtx): { uid: number; actionId: string; targetUid: number }[] {
@@ -2837,16 +2887,34 @@ function ewPanel(ctx: HudCtx): string {
   // numbers on this screen are the pool that will be ROLLED, so they carry the
   // EW Suppression aura too (ZHDR-202_B / PDTR-202_B) - showing the printed
   // stat here and a smaller pool one panel later reads as a bug.
-  const ev = electronicStrength(ctx.data, s.tokens, by, 'initiator');
+  const ev = electronicStrength(ctx.data, s.tokens, by, 'initiator', a);
   const evPrinted = electronicValue(ctx.data, by, loanedParts(ctx.data, s.tokens, by));
+  const scan = isScanAction(a);
+  // An Action on every enemy in Range (Scream, the Scan Battlefield) picks
+  // nobody: one Counter-roll per target, in turn, the engine queueing the rest
+  // (audit Phase 3, D2 and A4). The Match Centre offered only the nearest.
+  if (electronicAll(a)) {
+    const all = electronicAllTargets(ctx.data, s.tokens, by, a);
+    return head('Your move', `${esc(a.name?.en || m.actionId)}: every enemy in Range`,
+      `${esc(by.label)} · Electronic Value ${ev}, Range ${reach}. One Electronic Counter-roll against each, in turn.`, true)
+      + `<div class="tp-body">${all.length
+        ? all.map((t) => `<p class="tp-dim">${esc(t.label)} · Range ${gridsApart(by, t)} · Electronic Value ${electronicStrength(ctx.data, s.tokens, t, 'responder')}</p>`).join('')
+        : `<p class="tp-note">No enemy ${scan ? 'that a Scan could change' : 'it can target'} is within Range ${reach}.</p>`}</div>
+       <div class="tp-foot">${all.length ? `<button class="bigbtn" data-ewtarget="${all[0].uid}">Roll against ${all.length === 1 ? all[0].label : `all ${all.length}`}</button>` : ''}
+       <button class="bigbtn ghost2" data-act="ewcancel" style="margin-top:6px">${all.length ? 'Cancel' : 'Close'}</button></div>`;
+  }
   // An allied Repeater lends its position to the shot (FAQ O19), so the Range
-  // shown is the best of the attacker's own and every Repeater covering it.
-  const origins = electronicOrigins(ctx.data, s.tokens, by);
+  // shown is the best of the attacker's own and every Repeater covering it. An
+  // Electronic Attack's only: a Scan measures from the scanner (A5, F9).
+  const origins = scan ? [by] : electronicOrigins(ctx.data, s.tokens, by);
   const relay = origins.slice(1);
   const enemies = s.tokens
     // Electronic Value "-" cannot be a Responder at all (4.11.2), so those are
-    // not offered rather than offered and then refused at the command.
-    .filter((t) => t.side !== by.side && t.deployed !== false && alive(t) && !electronicDash(ctx.data, t))
+    // not offered rather than offered and then refused at the command. Nor
+    // is a unit the card does not name ("Mech/Drone", "Drone/Projectile"), or
+    // one a Scan could change nothing on (audit Phase 3, D5, A1).
+    .filter((t) => t.side !== by.side && t.deployed !== false && alive(t) && !electronicDash(ctx.data, t)
+      && !electronicTargetWhy(a, t) && (!scan || scannable(t)))
     .map((t) => {
       const own = gridsApart(by, t);
       const best = origins.reduce((n, from) => Math.min(n, gridsApart(from, t)), own);
@@ -2878,7 +2946,7 @@ function ewPanel(ctx: HudCtx): string {
     .join('');
   return head('Your move', `${esc(a.name?.en || m.actionId)}: which enemy?`,
     `${esc(by.label)} · Electronic Value ${ev}${ev < evPrinted ? ` (${evPrinted} − ${evPrinted - ev}, an enemy EW Suppression aura)` : ''}, Range ${reach}.${relay.length ? ` Range may be measured from ${esc(relay.map((r) => r.label).join(' or '))} instead (Repeater, FAQ O19).` : ''}`, true)
-    + `<div class="tp-body">${rows || '<p class="tp-note">No enemy unit is on the board.</p>'}
+    + `<div class="tp-body">${rows || `<p class="tp-note">${scan ? 'No enemy is in the Optical Camouflage State or bearing a Low Profile Token, so a Scan could change nothing (4.12.4).' : 'No enemy unit this Action can target is on the board.'}</p>`}
         <p class="tp-dim">Only Range matters. Terrain and line of sight are ignored (4.11.1).<br>Both units roll Yellow dice equal to their Electronic Value.</p></div>
        <div class="tp-foot"><button class="bigbtn ghost2" data-act="ewcancel">Cancel</button></div>`;
 }
@@ -2903,7 +2971,7 @@ function seatOf(ctx: HudCtx): Side { return ctx.seat ?? ensureScript(ctx.state).
 
 // Every press the window can make, answered in one place. Each is a question
 // one of the two seats owns, so it travels as a command.
-function contestAct(ctx: HudCtx, act: EwAct, arg?: { uid?: number; indices?: number[]; use?: boolean }): void {
+function contestAct(ctx: HudCtx, act: EwAct, arg?: EwArg): void {
   const s = ctx.state;
   const c = ensureScript(s).counter;
   if (!c) return;
@@ -2914,8 +2982,11 @@ function contestAct(ctx: HudCtx, act: EwAct, arg?: { uid?: number; indices?: num
   if (act === 'roll' && unit) {
     // electronicStrength, not electronicValue: the Initiator's Tarantula Loads
     // (FAQ O5) and the EW Suppression aura of ZHDR-202_B / PDTR-202_B both ride
-    // on the pool, and rolling the printed stat drops them.
-    const ev = electronicStrength(ctx.data, s.tokens, unit, unit.uid === init.uid ? 'initiator' : 'responder');
+    // on the pool, and rolling the printed stat drops them. So does the
+    // Action's Strength +X, the Initiator's only (Scream; audit Phase 3, D2).
+    const ev = unit.uid === init.uid
+      ? electronicStrength(ctx.data, s.tokens, unit, 'initiator', actionOn(ctx, init, c.actionId))
+      : electronicStrength(ctx.data, s.tokens, unit, 'responder');
     void ctx.rollHits(ev, `rolls ${ev} for the Electronic Counter-roll`).then((res) => {
       ctx.send({ kind: 'rollCounter', seat: unit.side, uid: unit.uid, faces: res.dice.map((d) => d.face) });
       ctx.refresh();
@@ -2936,7 +3007,10 @@ function contestAct(ctx: HudCtx, act: EwAct, arg?: { uid?: number; indices?: num
   if (act === 'declare' && unit) {
     // FAQ G4: the declare travels on its own and pays the Link on arrival, so
     // the reroll after it - and any retry of that reroll - costs nothing more.
-    const v = ctx.send({ kind: 'declareCounterFocus', seat: unit.side, uid: unit.uid, use: !!arg?.use });
+    const v = ctx.send({
+      kind: 'declareCounterFocus', seat: unit.side, uid: unit.uid, use: !!arg?.use,
+      ...(arg?.whistleUid !== undefined ? { whistleUid: arg.whistleUid } : {}),
+    });
     if (!v.ok && v.why) ctx.noteNow(v.why);
     ctx.refresh();
     return;
@@ -2970,69 +3044,39 @@ function contestAct(ctx: HudCtx, act: EwAct, arg?: { uid?: number; indices?: num
     return;
   }
   if (act === 'provoke' || act === 'provokepass') {
+    // Yoyu is whichever side the window named: it Provokes in either role
+    // (4.11.2; audit Phase 3, F16). An older press names nobody, and meant the
+    // Responder, which was the only role it used to have.
     const take = act === 'provoke';
-    const verdict = ctx.send({ kind: 'provoke', seat: resp.side, uid: resp.uid, targetUid: init.uid, take });
+    const yoyu = arg?.uid === init.uid ? init : resp;
+    const other = yoyu === init ? resp : init;
+    const verdict = ctx.send({ kind: 'provoke', seat: yoyu.side, uid: yoyu.uid, targetUid: other.uid, take });
     ctx.noteNow(verdict.ok
       ? take
-        ? `${resp.label} provokes ${init.label} into Offensive Stance (LPA-22 Yoyu).`
-        : `${resp.label} leaves ${init.label}'s Stance alone.`
-      : `${resp.label} cannot provoke ${init.label}: ${verdict.why}`);
+        ? `${yoyu.label} provokes ${other.label} into Offensive Stance (LPA-22 Yoyu).`
+        : `${yoyu.label} leaves ${other.label}'s Stance alone.`
+      : `${yoyu.label} cannot provoke ${other.label}: ${verdict.why}`);
     ctx.refresh();
     return;
   }
   if (act === 'apply') {
     const a = actionOn(ctx, init, c.actionId);
-    // SCANNING (4.12.4), before everything else: on a shared table the combat
-    // window's applyEffects NEVER RUNS (the verdict is derived, nobody presses
-    // Resolve), so the effects live here, sent by the Initiator's seat like the
-    // rest of this branch. Without this a Scan fell through to the Electronic
-    // Attack default below and granted the target Fire Control Interference.
-    // Low Profile Tokens come off now; a camouflaged target is owed a
-    // `manifest` reaction instead, because the Manifestation is ITS player's
-    // choice - the same split applyEffects makes for freeplay.
-    if (a && isScanAction(a)) {
-      const strip = scanStrips(resp);
-      for (let i = 0; i < strip; i++) {
-        ctx.send({ kind: 'removeStatus', seat: init.side, uid: init.uid, targetUid: resp.uid, statusId: 'lowProfile' });
-      }
-      if (statusCount(resp.statuses, 'camouflage') > 0) {
-        ctx.send({
-          kind: 'queueReactions', seat: init.side,
-          items: [
-            { uid: resp.uid, actionId: a.id, count: 1, range: 0, kind: 'manifest', fromUid: init.uid },
-            // The free Scan on designation (FAQ I12): the attack that earned it
-            // waits for the Reveal, then resumes from the attacker's own seat.
-            ...(c.thenAttack ? [{
-              uid: init.uid, actionId: c.thenAttack.actionId, count: 1, range: 0, kind: 'scanAttack' as const, fromUid: resp.uid,
-              ...(c.thenAttack.charged ? { charged: true } : {}),
-              ...(c.thenAttack.chargeChoice ? { chargeChoice: c.thenAttack.chargeChoice } : {}),
-              ...(c.thenAttack.twoHandedDeclined ? { twoHandedDeclined: true } : {}),
-            }] : []),
-          ],
-        });
-        ctx.noteNow(`${init.label} Scans ${resp.label}: it is Revealed, and its own player now makes its Manifestation Movement (4.12.4).${c.thenAttack ? ' The attack resumes once it has appeared (FAQ I12).' : ''}`);
-      } else if (strip > 0) {
-        ctx.noteNow(`${init.label} Scans ${resp.label}: ${strip} Low Profile Token${strip === 1 ? '' : 's'} removed (4.12.4).`);
-      }
-      ctx.send({ kind: 'clearCounterRoll', seat: init.side });
-      ctx.refresh();
-      return;
-    }
-    // Target Tracing hands out no token at all: the target loses 1 Link (174).
-    // Read off the same helper that let the Counter-roll open, so the two
-    // verdicts cannot drift.
-    if (targetTracingOn(ctx.data, init)?.actionId === c.actionId) {
-      ctx.send({ kind: 'drainLink', seat: init.side, uid: init.uid, targetUid: resp.uid, n: 1 });
-      ctx.noteNow(`${init.label} traces ${resp.label}: it loses 1 Link (now ${resp.link}).`);
-    } else {
-      // Fire Control Interference is what an Electronic Attack hands out unless
-      // the card names another token, which the effect data would carry.
-      const named = (a?.gameRules ?? []).flatMap((g) => g.effects ?? [])
-        .find((e) => (e as { type?: string }).type === 'apply_status') as { status?: string; stacks?: number } | undefined;
-      const def = STATUSES.find((x) => x.label === named?.status || x.id === named?.status) ?? STATUSES.find((x) => x.id === 'fci')!;
-      ctx.send({ kind: 'applyStatus', seat: init.side, uid: init.uid, targetUid: resp.uid, statusId: def.id, stacks: named?.stacks ?? 1 });
-      ctx.noteNow(`${init.label} succeeds: ${resp.label} gains ${def.label} (4.11.3).`);
-    }
+    // On a shared table the combat window's applyEffects NEVER RUNS (the
+    // verdict is derived, nobody presses Resolve), so the Initiator's seat
+    // sends the effects from here, through the reading every seam shares
+    // (ewWinCommands). This copy used to find the first top-level status and
+    // fall back to Fire Control Interference, so Manipulation Interference gave
+    // FCI instead of Immobilized and Scream, The Red Shoes and Overload Inject
+    // gave FCI too (audit Phase 3, D1). A Scan strips Low Profile and owes a
+    // camouflaged target its Manifestation, with the free Scan's attack queued
+    // behind it (FAQ I12); Target Tracing drains 1 Link, and the record says
+    // it was the reaction because its Command Token is already spent.
+    if (!a) { ctx.send({ kind: 'clearCounterRoll', seat: init.side }); ctx.refresh(); return; }
+    const win = ewWinCommands(ctx.data, init, resp, a, { reaction: !!c.reaction, thenAttack: c.thenAttack });
+    for (const cmd of win.cmds) ctx.send(cmd);
+    ctx.noteNow(win.lines.length
+      ? `${init.label} succeeds: ${win.lines.join('; ')}.`
+      : `${init.label} succeeds, and ${a.name?.en || a.id} has nothing this table can apply: follow the card.`);
     ctx.send({ kind: 'clearCounterRoll', seat: init.side });
     ctx.refresh();
     return;
@@ -3623,20 +3667,26 @@ let resupplyPick: { uid: number; actionId: string; rule: Resupply } | null = nul
 // is where the unit really was. Offered as a list of Grids rather than a route
 // because it is Teleportation - there is no path to draw, and every Grid within
 // the Stealth value that the unit fits in is equally reachable.
-let manifestPick: { uid: number; why: string } | null = null;
+// `facing` is the owner's to choose (FAQ I17: the move follows Flying Movement
+// rules, and 4.3.2 lets a Movement set the Facing; ruled 2026-09-25, audit
+// Phase 3, F4). It starts at the unit's own.
+let manifestPick: { uid: number; why: string; facing: Facing } | null = null;
 
 // Opens the Manifestation choice, or sends the plain Reveal when there is no
-// choice to make - a Stealth 0 unit, or one with nowhere in range that fits.
+// choice to make - a Stealth 0 unit, an Immobilized one (FAQ I20), or one with
+// nowhere in Range that fits.
 function openManifest(ctx: HudCtx, t: Token, why: string): void {
   const range = manifestationRange(ctx.data, t);
-  const spots = range > 0 ? manifestTargets(ctx.data, ctx.state.tokens, terrainOf(ctx), t) : [];
+  const spots = range > 0 ? manifestTargets(ctx.data, ctx.state.tokens, terrainOf(ctx), t, ctx.state) : [];
   if (!spots.length) {
     if (ctx.send({ kind: 'reveal', seat: t.side, uid: t.uid }).ok) {
-      ctx.noteNow(`${why} ${t.label} leaves the Optical Camouflage State${range > 0 ? ', with nowhere in range to Manifest into' : ''} (4.12.2).`);
+      const where = immobilizedStop(t) ? ', where it stands: it is Immobilized (FAQ I20)'
+        : range > 0 ? ', with nowhere in Range to Manifest into' : '';
+      ctx.noteNow(`${why} ${t.label} leaves the Optical Camouflage State${where} (4.12.2).`);
     }
     return;
   }
-  manifestPick = { uid: t.uid, why };
+  manifestPick = { uid: t.uid, why, facing: t.facing as Facing };
 }
 
 function manifestPanel(ctx: HudCtx): string {
@@ -3646,14 +3696,17 @@ function manifestPanel(ctx: HudCtx): string {
     + '<div class="tp-body"></div><div class="tp-foot"><button class="bigbtn ghost2" data-act="manifeststay">Close</button></div>';
   const range = manifestationRange(ctx.data, t);
   const here = largeGridOf(t);
-  const spots = manifestTargets(ctx.data, ctx.state.tokens, terrainOf(ctx), t)
+  const spots = manifestTargets(ctx.data, ctx.state.tokens, terrainOf(ctx), t, ctx.state)
     .slice()
     .sort((a, b) => (a.r - b.r) || (a.c - b.c));
+  // Range, counted orthogonally (4.2.1): a diagonal neighbour is Range 2.
   const rows = spots.map((s) =>
-    `<button class="rowwide" data-manifest="${s.col},${s.row}">Appear at ${gridName(s.c, s.r)}<span class="ct">${Math.max(Math.abs(s.c - here.c), Math.abs(s.r - here.r))} Grid away</span></button>`).join('');
+    `<button class="rowwide" data-manifest="${s.col},${s.row}">Appear at ${gridName(s.c, s.r)}<span class="ct">Range ${Math.abs(s.c - here.c) + Math.abs(s.r - here.r)}</span></button>`).join('');
+  const faces = [0, 1, 2, 3].map((f) =>
+    `<button class="rowbtn${m.facing === f ? ' sel' : ''}" data-manifestface="${f}">${FACING_NAME[f]}</button>`).join('');
   return head('Your move', `${esc(t.label)} Manifests`,
-    `${m.why} The camouflage model marked only a SUSPECTED position. This unit may appear within ${range} Grid${range === 1 ? '' : 's'} of ${gridName(here.c, here.r)} (Stealth ${range}) - Teleportation, so terrain and units in between do not matter.`, true)
-    + `<div class="tp-body">${rows || '<p class="tp-note">Nowhere within range has room for it, so it Reveals where it stands.</p>'}</div>
+    `${m.why} The camouflage model marked only a SUSPECTED position. This unit may appear within Range ${range} of ${gridName(here.c, here.r)} (Stealth ${range}) - Teleportation, so terrain and units in between do not matter.`, true)
+    + `<div class="tp-body"><div class="turnrow">Facing: ${faces}</div>${rows || '<p class="tp-note">Nowhere within Range has room for it, so it Reveals where it stands.</p>'}</div>
        <div class="tp-foot"><button class="bigbtn ghost2" data-act="manifeststay">Stay at ${gridName(here.c, here.r)}</button></div>`;
 }
 
@@ -4061,7 +4114,9 @@ export function resetHudTools(): void {
 // Charge is what the Action is being performed WITH, and the panel offers it
 // first), so the only honest fix is to undo it when the attack is abandoned.
 function openAttackPick(t: Token, a: CardAction, refund?: { uid: number; slot: string; choice?: string }, shockAsked = false): void {
-  if (isElectronicAttack(a)) { ewPick = { uid: t.uid, actionId: a.id, refund }; return; }
+  // A Scan opens the same Counter-roll picker: it used to open the Firing and
+  // Melee one (audit Phase 3, A1).
+  if (isElectronicAttack(a) || isScanAction(a)) { ewPick = { uid: t.uid, actionId: a.id, refund }; return; }
   // Shock Attack X (冲锋X): "Before performing this Action, may move X grids."
   // Asked HERE because every attack door funnels through this function - the
   // plain route and the [Charged] question's continuation both - so no door
@@ -4323,6 +4378,39 @@ function routeAction(ctx: HudCtx, t: Token, a: CardAction, ga?: ReturnType<typeo
     }
     return true;
   }
+  // A Token the Action puts on a chosen target: Target Tag's Highlight
+  // (PRDR-202_A). It was left to "follow the card text" here, so it put no
+  // Token on anyone (audit Phase 3, E2). Asked before the Tick is paid; the
+  // picker offers only units in Range and sight that can bear it (not a Low
+  // Value Unit, not a camouflaged one for a Highlight).
+  const tag = targetStatusGrant(a);
+  if (tag) {
+    const units = targetStatusTargets(ctx.data, ctx.state.tokens, t, a, tag, { terrain: terrainOf(ctx), smoke: ctx.state.smoke ?? [] });
+    if (!units.length) {
+      ctx.noteNow(`${a.name?.en || a.id}: no unit in Range and line of sight can gain it.`);
+      dropAction();
+      return true;
+    }
+    void choiceDialog({
+      title: a.name?.en || a.id,
+      body: `One target within Range ${actionRange(ctx.data, ctx.state.tokens, t, a)}, in line of sight.`,
+      choices: [
+        ...units.map((x) => ({ id: String(x.uid), label: `${x.side === t.side ? 'Ally' : 'Enemy'} · ${x.label}` })),
+        { id: '', label: 'Cancel', cancel: true },
+      ],
+      stacked: true,
+    }).then((pick) => {
+      if (!pick) { dropAction(); ctx.refresh(); return; }
+      const paid = commitAction(ctx);
+      if (!paid.ok) { if (paid.why) ctx.noteNow(paid.why); ctx.refresh(); return; }
+      const who = ctx.state.tokens.find((x) => x.uid === Number(pick));
+      const sent = ctx.send({ kind: 'applyStatus', seat: t.side, uid: t.uid, targetUid: Number(pick), statusId: tag.statusId, stacks: tag.stacks });
+      const label = STATUSES.find((x) => x.id === tag.statusId)?.label ?? tag.statusId;
+      ctx.noteNow(sent.ok ? `${t.label}: ${a.name?.en || a.id} - ${who?.label ?? 'the target'} gains a ${label} Token.` : `${label} was refused. ${sent.why ?? ''}`);
+      ctx.refresh();
+    });
+    return true;
+  }
   // Swift and Tactical Actions are card text rather than a board procedure, so
   // the card is put in front of the player to carry out. Nothing to back out of.
   ctx.showTab('details');
@@ -4446,6 +4534,16 @@ function attackPanel(ctx: HudCtx): string {
   // PDRH-202_B Link Shock: only a unit this one Tethers, at any distance and
   // with no line of sight needed, so the board's reading is not asked at all.
   const shock = linkShockOf(a);
+  // HIGHLIGHT (6.2.1): a Firing Action "able to target an Enemy Unit that has
+  // Highlight ... must target that Unit" (FAQ J18: Firing only; F15). Only the
+  // Drones' Automatic Actions were bound, so Amplify Profile and Target Tag did
+  // nothing against a Mech's fire (audit Phase 3, E1). Networked play is
+  // strict, so every other row disables while one of those can be taken.
+  const forced = a.type === 'Firing' && !shock
+    ? highlightTargets(ctx.data, s.tokens, a, s.tokens.filter((t) => t.side !== by.side && t.deployed !== false && alive(t)
+      && statusCount(t.statuses, 'camouflage') === 0
+      && !losNote(by, t, { ...a, range: reach }, terrain, s.tokens, smoke, true).includes('✕')))
+    : [];
   const rows = s.tokens
     .filter((t) => t.side !== by.side && t.deployed !== false && alive(t))
     .filter((t) => !autoLegal || !autoLegal.length || autoLegal.some((x) => x.uid === t.uid))
@@ -4469,9 +4567,11 @@ function attackPanel(ctx: HudCtx): string {
       // not automated yet, so the row says what to do instead of letting the
       // shot through.
       const hidden = statusCount(t.statuses, 'camouflage') > 0;
+      // Not the Highlighted one, while one can be taken.
+      const lit = forced.length > 0 && !forced.some((x) => x.uid === t.uid);
       // A camouflaged unit MAY be designated: its marker is only a suspected
       // position, so range and sight are judged after the Reveal, not now.
-      const blocked = !hidden && note.includes('✕');
+      const blocked = (!hidden && note.includes('✕')) || lit;
       const bad = blocked || hidden || note.includes('⚠');
       const prot = protectionFor(by, t, a, terrain, s.tokens, smoke,
         ignoresProtectionOnHighlight(ctx.data, by) && statusCount(t.statuses, 'highlight') > 0,
@@ -4495,7 +4595,8 @@ function attackPanel(ctx: HudCtx): string {
       // across the rows of one Action, but so is Protection when the board is
       // open, and splitting the two would be the odd choice.
       const ap = armorPiercing(ctx.data, by, a);
-      const bits = (hidden ? ['⚠ in Optical Camouflage: one free Scan first; the attack follows if it is Revealed (4.12.2, FAQ I12)'] : []).concat(note.split(' · '),
+      const bits = (lit ? [`✕ ${forced.map((x) => x.label).join(' or ')} has Highlight, and this Firing Action must target it (6.2.1)`] : [])
+        .concat(hidden ? ['⚠ in Optical Camouflage: one free Scan first; the attack follows if it is Revealed (4.12.2, FAQ I12)'] : [], note.split(' · '),
         prot.white ? [`+${prot.white} White ${prot.white === 1 ? 'die' : 'dice'} of Protection`]
           : prot.note && !blocked ? [prot.note] : [],
         ap.total ? [`Armor Piercing ${ap.total}: −${ap.total} White off their roll${ap.granted ? ' (Spike adds 1)' : ''}`] : [],
@@ -6067,10 +6168,16 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     if (el.dataset.why) { ctx.noteNow(el.dataset.why); ctx.refresh(); return; }
     const m = ewPick;
     const by = m ? s.tokens.find((x) => x.uid === m.uid) : undefined;
-    ewPick = null;
     if (m && by) {
+      // Asked before the Tick is paid, so a refused target costs nothing.
+      const open = { kind: 'startCounterRoll' as const, seat: by.side, uid: by.uid, actionId: m.actionId, targetUid: Number(el.dataset.ewtarget) };
+      const can = ctx.check(open);
+      if (!can.ok) { ctx.noteNow(can.why ?? 'That Counter-roll cannot be opened.'); ctx.refresh(); return; }
+      ewPick = null;
       commitAction(ctx);
-      ctx.send({ kind: 'startCounterRoll', seat: by.side, uid: by.uid, actionId: m.actionId, targetUid: Number(el.dataset.ewtarget) });
+      ctx.send(open);
+    } else {
+      ewPick = null;
     }
     ctx.refresh();
   });
@@ -6263,9 +6370,14 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     if (!m || !t) { ctx.refresh(); return; }
     const [col, row] = (el.dataset.manifest ?? '').split(',').map(Number);
     const g = { c: Math.floor(col / 3), r: Math.floor(row / 3) };
-    if (ctx.send({ kind: 'reveal', seat: t.side, uid: t.uid, to: { col, row } }).ok) {
+    if (ctx.send({ kind: 'reveal', seat: t.side, uid: t.uid, to: { col, row }, facing: m.facing }).ok) {
       ctx.noteNow(`${m.why} ${t.label} leaves the Optical Camouflage State and Manifests to ${gridName(g.c, g.r)} (4.12.2).`);
     }
+    ctx.refresh();
+  });
+  on('[data-manifestface]', (el) => {
+    if (!manifestPick) return;
+    manifestPick = { ...manifestPick, facing: Number(el.dataset.manifestface) as Facing };
     ctx.refresh();
   });
   on('[data-act="manifeststay"]', () => {
@@ -6302,6 +6414,26 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
   // Riposte. The `riposte` command ends the attacker's Opportunity; the Melee
   // then rides the ordinary attack pick with `granted` set, and the debt is
   // spent by that Action's own apply.
+  // The Red Shoes: draw the steered unit's route on the board. The debt is
+  // spent by the controlledMove the route commits, not here, so a cancelled
+  // route leaves the question standing.
+  on('[data-controlgo]', (el) => {
+    const [ctlRaw, targetRaw, actionId] = (el.dataset.controlgo ?? '').split(':');
+    const ctl = s.tokens.find((x) => x.uid === Number(ctlRaw));
+    const target = s.tokens.find((x) => x.uid === Number(targetRaw));
+    if (!ctl || !target) { ctx.refresh(); return; }
+    const a = actionId ? actionOn(ctx, target, actionId) : undefined;
+    startMovePlan(ctx, target, {
+      controller: { uid: ctl.uid, side: ctl.side },
+      ...(a ? {
+        actionId: a.id,
+        range: a.range || undefined,
+        label: `The Red Shoes: ${a.name?.en || a.id} · Range ${a.range || maneuverRange(ctx.data, target)}`,
+        airborne: isAirborneAction(a),
+      } : { label: `The Red Shoes: ${target.label}'s Maneuver`, maneuver: true }),
+    });
+    ctx.refresh();
+  });
   on('[data-ripostego]', (el) => {
     const [uidRaw, actionId] = (el.dataset.ripostego ?? '').split(':');
     const uid = Number(uidRaw);
@@ -6334,15 +6466,7 @@ export function wireHud(root: HTMLElement, ctx: HudCtx): void {
     const uid = Number(el.dataset.revealgo);
     const t = ctx.state.tokens.find((x) => x.uid === uid);
     if (!t) return;
-    // Dismissed up front: openManifest always ends in a reveal (the panel's
-    // only exit is a destination or "stay", both of which send it), so the
-    // prompt must not linger behind the picker.
-    revealDismissed.add(el.dataset.revealkey ?? '');
     openManifest(ctx, t, 'Revealed:');
-    ctx.refresh();
-  });
-  on('[data-revealskip]', (el) => {
-    revealDismissed.add(el.dataset.revealskip ?? '');
     ctx.refresh();
   });
   on('[data-crushface]', (el) => {

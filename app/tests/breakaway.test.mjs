@@ -125,12 +125,25 @@ check('while an open route past it still works', reach(big, 2, crushOpts, [], [b
   // THE TRAP. standingSpot folds terrain and unit footprints into one blocked
   // set, so a naive `passable = true` walks through buildings. The re-check
   // against an EMPTY token list is what keeps them solid.
-  const building = rubble(0, 1, false);
+  // A real building now: this fixture was a 'container', and since the audit's
+  // Phase 3 a Container is a Neutral Unit the Firefly passes like any other
+  // (FAQ I15, Supplement 1.1.3).
+  const building = { ...rubble(0, 1, false), type: 'building', height: 3 };
   check('and a BUILDING is still solid, which is the whole point of the empty-token re-check',
     reach(walker, 2, phase, [building], [walker]).includes('0,2:2'), false);
   // Both at once: a unit standing in a building's Grid is still not passable.
   check('a unit inside terrain does not open it either',
     reach(walker, 2, phase, [building], world).includes('0,2:2'), false);
+  // FAQ I15: "Can Firefly move through Breakable Terrain while under Low Profile
+  // or Optical Camouflage? Yes", the Containers being "Neutral Unit - Deployable
+  // - Barricade". Through, never onto: it still cannot stop in one.
+  const crate = rubble(0, 1, true);
+  check('while a Container is passed through like a unit (FAQ I15)',
+    reach(walker, 2, phase, [crate], [walker]).includes('0,2:2'), true);
+  check('and is still not somewhere to stop',
+    reach(walker, 2, phase, [crate], [walker]).includes('0,1:1'), false);
+  check('and without the phase it blocks as before',
+    reach(walker, 2, undefined, [crate], [walker]).includes('0,2:2'), false);
 
   // Break Away is still charged: this is pass-through, not flight.
   const locked = { ...phase, exitCost: (c, r) => (c === 0 && r === 0 ? 1 : 0) };

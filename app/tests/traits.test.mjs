@@ -203,8 +203,12 @@ const { mergeTraits, traitName, mechanicsFor, cardRow } = await import(nameSlice
   const firefly = after.get('LPA-21');
   check('fed the Chinese, LPA-21 gets Optical Camouflage and nothing else',
     ids(firefly.traitDescription.en, firefly.trait), ['optical_camouflage']);
-  check('fed the English name instead, it gains a rule the card never mentions',
-    ids(firefly.traitDescription.en, traitName(firefly)), ['optical_camouflage', 'manifestation_movement']);
+  // It used to gain Manifestation Movement that way. The audit's Phase 3 (G)
+  // took "stealth" out of that entry's patterns: it caught the Stealth Chassis
+  // and this trait, and the activating Actions are reached through 隐秘 anyway.
+  // The English is still not a drop-in in general; this one pattern is gone.
+  check('fed the English name instead, it no longer gains Manifestation Movement',
+    ids(firefly.traitDescription.en, traitName(firefly)), ['optical_camouflage']);
   // And the reverse risk, measured across the whole set rather than argued: no
   // Chinese trait name matches anything on its own, so the argument is only ever
   // costing us matches if a later mechanics entry adds a Chinese trait name.

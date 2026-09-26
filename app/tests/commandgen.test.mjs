@@ -248,12 +248,16 @@ const cmdFns = cmdSrc.slice(
   cmdSrc.lastIndexOf("    case 'designate': {"),
 );
 if (!cmdFns.includes('syncCommandPool')) throw new Error('sliced the check branches, not the apply ones');
-check('the spendCommand apply branch was located', cmdFns.includes("t.statuses = [...l, 'commandUsed']"), true);
+// Since the audit's Phase 3 the flip is one helper, flipCommand, which the
+// spendCommand apply, Target Tracing's startCounterRoll and the Whistle's
+// declare all call, so the three cannot disagree about what a spend is.
+const flipFn = cmdSrc.slice(cmdSrc.indexOf('function flipCommand('), cmdSrc.indexOf('function payFocus('));
+check('the spendCommand apply branch was located', /case 'spendCommand': \{\s*\n\s*flipCommand\(state, t\);/.test(cmdFns), true);
 check('coordinateCommand lands its token face-down', cmdFns.includes("to.statuses = [...(to.statuses ?? []), 'commandUsed']"), true);
 // 4.15.4 flips, it does not remove: the token stays on the Torso until the End
 // Phase. A removal here would quietly make Command Generation 4 worth 4 fewer
 // tokens at the End Phase sweep than the rules say it holds.
-check('spending flips rather than removes', /l\.splice\(at, 1\);\s*\n\s*t\.statuses = \[\.\.\.l, 'commandUsed'\]/.test(cmdFns), true);
+check('spending flips rather than removes', /l\.splice\(at, 1\);\s*\n\s*m\.statuses = \[\.\.\.l, 'commandUsed'\];\s*\n\s*syncCommandPool\(state\);/.test(flipFn), true);
 
 // The capacity rule reads the board, so a Drone wearing a face-DOWN token is
 // full. Reading only the face-up id would let a Drone take a second Command.

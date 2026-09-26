@@ -116,7 +116,12 @@ check('and Immobilized does not care about Link', U.immobilizedStop(broke, run),
   // if it ever starts to, this count is the thing that should fail first.
   const spends = (s) => (s.match(/nonHumanoidCost\(/g) ?? []).length;
   check('freeplay charges in exactly one place', spends(main), 1);
-  check('the command layer charges in exactly one place', spends(cmds), 1);
+  // Two commands, one charge each: the unit's own `maneuver`, and since the
+  // audit's Phase 3 the `controlledMove` The Red Shoes steers it with, where the
+  // steered unit is still the one performing its Move Action.
+  check('the command layer charges once per command that moves', spends(cmds), 2);
+  check('and the controlled move charges the unit it steers',
+    /case 'controlledMove': \{[\s\S]{0,900}?const cost = nonHumanoidCost\(act\);\s*\n\s*if \(cost > 0\) target\.link/.test(cmds), true);
   check('and the Match Centre charges nowhere - its command does that', spends(hud), 0);
 
   // But the Match Centre still warns early, like it does for Immobilized.

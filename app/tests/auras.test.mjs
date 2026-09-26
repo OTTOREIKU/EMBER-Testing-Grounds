@@ -850,32 +850,42 @@ check('ZHDR-204: aimed at the enemy, at any unit type, at the printed Range 5',
 // Movement, facing change or Scan takes the Token off. types.ts already promises
 // that removal, and whoever implements it is who must gate it on Silence.
 const patrol = drone(90, 's2', 'ZHDR-206', 0);        // Large Grid (0,3)
-// PL29 Stealth Chassis (180) carries 静默 on the CARD, which is the only way a
-// Maneuver is ever Silent — so it is the only fixture that can show the aura
-// taking Silence away rather than the unit never having had it.
+// The LM210S Stealth Chassis (100) is the one card whose Stealth Movement makes
+// a Move Action Silent (its own Sprint, 100_A) and the Maneuver too, so it is
+// the fixture that can show the aura taking Silence away rather than the unit
+// never having had it. It used to be the PL29 (180), which the GoF 1.021 list
+// redesigned without Silence, and whose card-level keyword footer was the
+// wrong thing to read in any case (audit Phase 3, B1).
 const stealth = (uid, side, col) => ({
   uid, side, kind: 'mech', col, row: 9, size: 3, facing: 0,
-  mech: { torso: '002', chasis: '180' }, partStates: { torso: 'intact', chasis: 'intact' },
+  mech: { torso: '002', chasis: '100' }, partStates: { torso: 'intact', chasis: 'intact' },
 });
 const seen = stealth(91, 's1', 9);                    // (3,3): Range 3, the last Grid inside
 const unseen = stealth(92, 's1', 12);                 // (4,3): one Grid clear
 const silentAct = { id: 'X', description: { zh: '静默' } };
+const sprint = data.byId.get('100').actions.find((a) => a.id === '100_A');
 
 check('an enemy inside the Eagle Range loses Silence on a Silent Action',
   A.isSilentAction(data, [patrol, seen], seen, silentAct), false);
 check('and keeps it one Large Grid further out',
   A.isSilentAction(data, [patrol, unseen], unseen, silentAct), true);
-check('a live PL29 Maneuver is Silent outside the aura and not inside it (I2)',
-  [A.maneuverIsSilent(data, [patrol, unseen], unseen), A.maneuverIsSilent(data, [patrol, seen], seen)],
-  [true, false]);
+check('the Stealth Chassis Sprint, a Move Action, loses it inside and keeps it outside',
+  [A.isSilentAction(data, [patrol, seen], seen, sprint), A.isSilentAction(data, [patrol, unseen], unseen, sprint)],
+  [false, true]);
+// Ruled 2026-09-25 (audit Phase 3, F14): Dynamic Perception names "All Actions
+// of Enemy Units", and a Maneuver is not an Action. It used to strip both.
+check('a Stealth Chassis Maneuver stays Silent inside the aura as well as outside it (F14)',
+  [A.maneuverIsSilent(data, unseen), A.maneuverIsSilent(data, seen)], [true, true]);
+check('and the Maneuver reader asks no aura at all: it takes no board',
+  A.maneuverIsSilent.length, 2);
 check('with no Eagle on the board nothing is denied',
-  [A.isSilentAction(data, [seen], seen, silentAct), A.maneuverIsSilent(data, [seen], seen)], [true, true]);
+  [A.isSilentAction(data, [seen], seen, silentAct), A.isSilentAction(data, [seen], seen, sprint)], [true, true]);
 
 // Side, unit type and the source's own survival, one check each.
 const patrolAlly = stealth(93, 's2', 9);
 check('the Eagle never denies its own side',
   [A.isSilentAction(data, [patrol, patrolAlly], patrolAlly, silentAct),
-   A.maneuverIsSilent(data, [patrol, patrolAlly], patrolAlly)], [true, true]);
+   A.isSilentAction(data, [patrol, patrolAlly], patrolAlly, sprint)], [true, true]);
 const foeDrone = drone(94, 's1', '072', 9);
 check('an enemy DRONE is denied too — the aura lands on any unit type',
   A.isSilentAction(data, [patrol, foeDrone], foeDrone, silentAct), false);
@@ -940,12 +950,13 @@ check('smoke somewhere else entirely is not the drone\'s problem',
 check('with no smoke on the table the cover is back',
   covers(board164, [], guarded, firingAt, []), 72);
 
-// ---------- A Maneuver OUT of the Patrol Eagle aura (FAQ O11/O15) ----------
+// ---------- A Move Action OUT of the Patrol Eagle aura (FAQ O11/O15) ----------
 //
 // A Movement "is judged at the start and landing grids only", which is the same
 // reading main.ts gives interceptsOwed six lines from the Silence check. Judged
 // at the landing square alone, a unit that STARTED inside the aura and walked
 // out was treated as though it had never been in it and got its Silence back.
+// A Maneuver used to be judged this way too; since F14 only an Action is.
 //
 // `seen` stands at Large Grid (3,3), the last Grid inside Range 3 of the Eagle
 // at (0,3); `unseen` at (4,3) is one Grid clear of it. The `from` argument is
@@ -953,15 +964,18 @@ check('with no smoke on the table the cover is back',
 const walkedOut = { ...unseen, col: 9 };    // started at (3,3), landed at (4,3)
 const walkedIn = { ...seen, col: 12 };      // started at (4,3), landed at (3,3)
 const stayedOut = { ...unseen, col: 15 };   // (5,3) -> (4,3), clear throughout
-check('a Maneuver that STARTS inside the aura is denied, wherever it lands',
-  A.maneuverIsSilent(data, [patrol, unseen], unseen, walkedOut), false);
+check('a Move Action that STARTS inside the aura is denied, wherever it lands',
+  A.isSilentAction(data, [patrol, unseen], unseen, sprint, undefined, walkedOut), false);
 check('and one that LANDS inside it is denied just as much',
-  A.maneuverIsSilent(data, [patrol, seen], seen, walkedIn), false);
-check('a Maneuver clear of the aura at both ends keeps its Silence',
-  A.maneuverIsSilent(data, [patrol, unseen], unseen, stayedOut), true);
+  A.isSilentAction(data, [patrol, seen], seen, sprint, undefined, walkedIn), false);
+check('a Move Action clear of the aura at both ends keeps its Silence',
+  A.isSilentAction(data, [patrol, unseen], unseen, sprint, undefined, stayedOut), true);
 check('and a caller with no start position still judges the landing grid',
-  [A.maneuverIsSilent(data, [patrol, seen], seen), A.maneuverIsSilent(data, [patrol, unseen], unseen)],
+  [A.isSilentAction(data, [patrol, seen], seen, sprint), A.isSilentAction(data, [patrol, unseen], unseen, sprint)],
   [false, true]);
+// The start is only asked of a Move Action: a Firing Action has no journey.
+check('a start position handed in for a non-Move Action is ignored',
+  A.isSilentAction(data, [patrol, unseen], unseen, silentAct, undefined, walkedOut), true);
 
 // ---------- The denial names its source ----------
 //
@@ -982,12 +996,12 @@ const plainAct = { id: 'P', keywords: [], description: { en: 'Silencer-brand amm
 check('but an Action that never printed Silence blames nobody',
   A.actionSilenceDenier(data, [patrol, seen], seen, plainAct), undefined);
 const noStealth = mech(95, 's1', '002', 9);
-check('and neither does a Maneuver that had no Silence to lose',
-  A.maneuverSilenceDenier(data, [patrol, noStealth], noStealth), undefined);
-check('while the PL29 Maneuver inside the aura names the Eagle',
-  A.maneuverSilenceDenier(data, [patrol, seen], seen)?.source?.uid, 90);
+check('and neither does the Sprint on a Mech with no Stealth Chassis, which had none to lose',
+  A.actionSilenceDenier(data, [patrol, noStealth], noStealth, sprint), undefined);
+check('while the Stealth Chassis Sprint inside the aura names the Eagle',
+  A.actionSilenceDenier(data, [patrol, seen], seen, sprint)?.source?.uid, 90);
 check('including when only the START grid was inside it',
-  A.maneuverSilenceDenier(data, [patrol, unseen], unseen, walkedOut)?.source?.uid, 90);
+  A.actionSilenceDenier(data, [patrol, unseen], unseen, sprint, undefined, walkedOut)?.source?.uid, 90);
 
 // ---------- The call-site seams, read out of the sources ----------
 //
@@ -1025,18 +1039,19 @@ check('the 164 Blue is added BEFORE Hindered subtracts and Immobilized zeroes',
 // The three arguments the four reviewed defects were: a missing one each.
 check('combat.ts feeds earlyWarningCover the smoke as well as the terrain (4.16)',
   /earlyWarningCover\(\s*this\.data,\s*this\.tokens\(\),\s*this\.terrain \? this\.terrain\(\) : \[\],\s*this\.smoke \? this\.smoke\(\) : \[\],/.test(combatSrc), true);
-check('freeplay judges the Maneuver at the START grid as well (FAQ O11/O15)',
-  /maneuverIsSilent\(data, state\.tokens, t, startPos\)/.test(mainSrc), true);
-// The Match Centre sweeps at render time, so it has no start position in scope
-// the way freeplay does. It reads one the maneuver command wrote down; all
-// three links are pinned, because a break in any one of them leaves the rule
-// right on the freeplay page and wrong on this one.
-check('the Match Centre builds the start position from the Opportunity',
-  /const from = sc\.opp\.movedFrom\s*\?\s*\{ \.\.\.t, col: sc\.opp\.movedFrom\.col, row: sc\.opp\.movedFrom\.row \}/.test(hudSrc), true);
-check('and hands it to maneuverIsSilent, having no other copy of where the unit stood',
-  /maneuverIsSilent\(ctx\.data, s\.tokens, t, from\)/.test(hudSrc), true);
-check('and the maneuver command records it, or that sweep reads an empty field forever',
-  (readFileSync(new URL('../src/commands.ts', import.meta.url), 'utf8').match(/movedFrom: from/g) ?? []).length, 2);
+check('freeplay judges a Move Action at the START grid as well (FAQ O11/O15)',
+  /isSilentAction\(data, state\.tokens, t, m\.action, undefined, startPos\)/.test(mainSrc), true);
+// The Match Centre used to sweep at render time from a start position the
+// maneuver command wrote down. Since the audit's Phase 3 the engine records
+// each Reveal as the command that causes it applies (script.revealDue): the
+// start by performAction, the landing by the Move Action's own `maneuver`.
+const cmdSrc = readFileSync(new URL('../src/commands.ts', import.meta.url), 'utf8');
+check('the Match Centre reads the Reveals the engine records',
+  /for \(const d of ensureScript\(s\)\.revealDue \?\? \[\]\)/.test(hudSrc), true);
+check('and the Move Action\'s landing is judged from where it began',
+  /const began = \{ \.\.\.t, col: from\.col, row: from\.row \};[\s\S]{0,200}?isSilentAction\(data, state\.tokens, began, act\)[\s\S]{0,80}?actionSilenceDenier\(data, state\.tokens, t, act\)/.test(cmdSrc), true);
+check('and the maneuver command still records the start on the Opportunity',
+  (cmdSrc.match(/movedFrom: from/g) ?? []).length, 2);
 
 // ---------- ZHDR-101 Mobile Bunker, read off the shipped card ----------
 //

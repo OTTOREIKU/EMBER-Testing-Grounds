@@ -341,8 +341,12 @@ function searchMoves(
       // `passable = true` would open both. Re-asking canStandIn against TERRAIN
       // ONLY answers "is it just units in the way?", which is exactly what the
       // card grants.
+      // The Containers go with the units: the Rules Supplement makes both
+      // "Neutral Unit - Deployable - Barricade", so a Firefly in camouflage or
+      // Low Profile moves through them too (FAQ I15; audit Phase 3, C11). It
+      // never stops on one: `standable` above still reads every piece.
       const phase = !standable && !flying && !t.aerial && !!opts?.phaseThrough
-        && canStandIn(n.c, n.r, t.size, t.aerial, terrain, [], t.uid);
+        && canStandIn(n.c, n.r, t.size, t.aerial, terrain.filter((p) => p.type !== 'container'), [], t.uid);
       const passable = flying || t.aerial ? true : standable || crush || phase;
       if (!passable) continue;
       dist.set(nk, d);
@@ -863,7 +867,12 @@ export function losNote(
   } else if (action.range && r.range > action.range) {
     bits.push(`${rangeMark} beyond action range (R${action.range})`);
   }
-  bits.push(omni ? 'Omni-direction Firing: no arc check ✓' : fwd ? 'in forward arc ✓' : '⚠ NOT in forward arc');
+  // "Unless otherwise specified, only Units in the Forward Arc can be selected
+  // as targets for Melee and Firing Actions" (4.2.5), a requirement of both
+  // execution flows (4.5.1, 4.6.1). Strict refuses it like Range: it was a
+  // warning on every board, so an online attack could take a target behind it
+  // (audit Phase 3, C2).
+  bits.push(omni ? 'Omni-direction Firing: no arc check ✓' : fwd ? 'in forward arc ✓' : `${strict ? '✕' : '⚠'} NOT in forward arc`);
   // 4.4.1 step 1, Melee requirement 4: "target must NOT be an Aerial Unit". Not
   // a warning a table can overrule by strictness: the Match Centre disables
   // the row on it, and freeplay asks before letting a house rule through. The

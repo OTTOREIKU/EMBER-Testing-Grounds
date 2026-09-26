@@ -130,8 +130,54 @@
         "en": "· Airborne Movement\n· Command Coordination",
         "zh": ""
       },
+      "gameRules": [],
+      "_gameRules": "Mechanics audit Phase 3 (2026-09-25): the bundle's rules for this Action are still the superseded Stealth Movement passive, a grant_silent_movement for the Part's Move Actions and Maneuver. The Silence readers read that rule now rather than card keywords, so it is cleared here the same way the zh is.",
       "_source": "GoF v1.021 - the Stealth Movement passive is now a Jump: a Short Movement Action, Range 2, with Airborne Movement",
       "_note": "THE zh IS CLEARED ON PURPOSE, and it is the load-bearing half of this entry. The community bundle's text for this action is the SUPERSEDED Stealth Movement passive, 本部件的移动动作/调整移动，均为静默 - and actionPrintsSilence() in units.ts matches any action whose description.zh contains 静默. So the redesigned Jump was still being treated as a Silence Action: a PL29 that Jumped kept its Optical Camouflage and its Low Profile Token, which is exactly the rule v1.021 took away from this card. Renaming the action to Jump and stripping the card-level keyword did not reach it, because the Silence reader never looks at either. We do not hold the v1.021 Chinese for this action, and inventing one would put made-up text where a reader expects the printed card, so it is empty and the English carries the rule."
+    },
+    "080_A": {
+      "speed": "auto",
+      "description": {
+        "en": "· Scan all Enemy Targets within range."
+      },
+      "_note": "Mechanics audit Phase 3 (2026-09-25): RDL 1.02 prints Scan Battlefield as a Tactical AUTOMATIC Action, Range 6, and the bundle carried neither the speed nor any English. Read as a Scan by isScanAction through its electronic detect rule."
+    },
+    "080_B": {
+      "description": {
+        "en": "· When Ally Units Intercept targets that are visible to this drone, they may exchange {Eye} for {Light Hit}."
+      },
+      "_note": "Mechanics audit Phase 3 (2026-09-25): AA Radar, verbatim from RDL 1.02; the bundle had only the Chinese. Read by aaRadarCovers (Interception only, FAQ O12/O13)."
+    },
+    "522_A": {
+      "speed": "auto",
+      "description": {
+        "en": "· Scan all Enemy Targets within range."
+      },
+      "_note": "Mechanics audit Phase 3 (2026-09-25): as 080_A, Range 4 (RDL 1.02)."
+    },
+    "522_B": {
+      "description": {
+        "en": "· When Ally Units Firing at Targets within the Range, Target -1B."
+      },
+      "_note": "Mechanics audit Phase 3 (2026-09-25): Lock On, verbatim from RDL 1.02; the bundle had only the Chinese."
+    },
+    "ZHDR-205_A": {
+      "description": {
+        "en": "· Electronic Attack\n· Perform Electronic Counter Roll with all Enemy Mechs within range, Strength +1, reduce 1 Link of Target if successful."
+      },
+      "_note": "Mechanics audit Phase 3 (2026-09-25): Scream, the printed English; the bundle had only the Chinese. The GoF 1.021 row omits Strength +1 without marking it as a change, and OTTO kept it (ruling F17)."
+    },
+    "022_A": {
+      "description": {
+        "en": ""
+      },
+      "_note": "Mechanics audit Phase 3 (2026-09-25): the RL-03D Swift Steed's Sprint prints no text on RDL 1.02; the bundle carried the Stealth Chassis's Stealth Movement sentence here by mistake."
+    },
+    "100_B": {
+      "description": {
+        "en": "· All Move Actions and Maneuver of this part have Silence."
+      },
+      "_note": "Mechanics audit Phase 3 (2026-09-25): Stealth Movement, the same line its trial model 250_B carries; the bundle had no English for this one."
     },
     "ZHDR-304_A": {
       "description": {
@@ -440,9 +486,11 @@
           "inline": "指令协调X"
         }
       ],
+      "silence": false,
+      "_silence": "Mechanics audit Phase 3 (OTTO ruled 2026-09-25, F11): the GoF 1.021 English prints no Silence on either MR24 Action; the definition sits only in the sheet's glossary column. The Chinese still prints 静默, so `silence: false` overrides it.",
       "description": {
-        "zh": "· 穿甲1\n· 静默 · 指令协调\n· [双手] +2射程。\n· 【命中】目标获得1枚追击标记。",
-        "en": "· Armor Piercing 1\n· Silence · Command Coordination\n· [Two-Handed] Range +2.\n· [On hit], target gains 1 Target Tracer Token."
+        "zh": "· 穿甲1\n· 指令协调\n· [双手] +2射程。\n· 【命中】目标获得1枚追击标记。",
+        "en": "· Armor Piercing 1\n· Command Coordination\n· [Two-Handed] Range +2.\n· [On hit], target gains 1 Target Tracer Token."
       }
     },
     "ZHRA-103_A": {
@@ -526,10 +574,12 @@
       "redDice": 3,
       "range": 8,
       "_note": "Publisher parts sheet (audit 2026-09-03): 1.021 Short, 3R, range 8, Snipe + Mutilation + Armor Piercing. Publisher parts sheet (audit 2026-09-03): 1.021 prints Command Coordination inside this Action. Mechanics audit 2026-09-25 (OTTO ruled GoF 1.021): 1.021 prints Mutilation unconditionally and [Two-Handed] Range +2; the old line made Mutilation the Two-Handed rider.",
+      "silence": false,
+      "_silence": "Mechanics audit Phase 3 (OTTO ruled 2026-09-25, F11): no Silence in GoF 1.021, as on ZHRA-202_A.",
       "description": {
-        "zh": "· 穿甲1 · 狙击 · 静默\n· [双手] +2射程。\n· 毁伤",
+        "zh": "· 穿甲1 · 狙击\n· [双手] +2射程。\n· 毁伤",
         "en": "· Armor Piercing 1 · Snipe\n· [Two-Handed] Range +2.\n· Mutilation\n· Command Coordination",
-        "jp": "· 装甲貫通1 · 狙撃 · サイレンス\n· [両手] 切断を得る。"
+        "jp": "· 装甲貫通1 · 狙撃\n· [両手] 切断を得る。"
       }
     },
     "ZHLA-202_A": {

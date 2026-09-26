@@ -4,9 +4,9 @@ import { iconSvg } from './dice';
 import { ICON_BLOCKED, ICON_BOLT, ICON_BURST, ICON_DICE, ICON_PIERCE, ICON_SHIELD, ICON_SIGNAL } from './icons';
 import { linkMechanics } from './inspector';
 import { SQUAD_ORDER, squadLabel } from './data';
-import type { Card, CardAction, CombatView, CounterRoll, DiceData, DiceIcon, DieColor, Duel, DuelIcon, GameRuleEffect, PartSlot, Side, SmokeScreen, TerrainPiece, Token, Facing } from './types';
+import type { Card, CardAction, CombatView, CounterRoll, DiceData, DiceIcon, DieColor, Duel, DuelIcon, PartSlot, Side, SmokeScreen, TerrainPiece, Token, Facing } from './types';
 import { statusCount, STATUSES } from './types';
-import { chargeOrderOn, counterStage, cruising, firewatchOn, type CounterStage, aaRadarCovers, armorPiercing, armorPiercingNote, attackReactionsOf, auraEffectsOn, aurasOn, auraValueOn, automaticShieldFor, blueLightningDodges, earlyWarningCover, coolingBonus, denseArmorSlot, eyeLightExchangeOf, eyesAreHeavyHits, pilotDiceBonus, ignoresLowProfile, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, noMeleeBackAttack, onHitRiders, STATUS_BY_ZH, missileGuidance, multiTargetLimit, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, snipeOn, isScanAction, scanStrips, suppressionOn, disarmOn, dragPrinted, designationsOn, dodgeEnhanceOf, linkShockOf, lightningRiderOf, electronicStrength, followUpAfterKill, eyeRerollName, kcArmorReady, lightningExchangeOf, lightningLinkDrain, canAffordFocus, focusIsFree, hiddenByAlliedAura, keepsLinkOnPartLoss, maxLink, provokeWhy, preventsDamage, autoParryValue, immobilizeChoiceOn, faceAwayOnHit, pursuesFragile, structureOf, trackingCover, TRACKING_SPOTTERS_NEEDED, pilotCard, pilotIs, repeatersFor, SLOT_LABEL, tetherStrike, treatedAsOffensive, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
+import { actionRange, isSilentAction, counterOffensive, ewWinCommands, chargeOrderOn, counterStage, cruising, firewatchOn, type CounterStage, aaRadarCovers, armorPiercing, armorPiercingNote, attackReactionsOf, auraEffectsOn, aurasOn, auraValueOn, automaticShieldFor, blueLightningDodges, earlyWarningCover, coolingBonus, denseArmorSlot, eyeLightExchangeOf, eyesAreHeavyHits, pilotDiceBonus, ignoresLowProfile, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, noMeleeBackAttack, onHitRiders, missileGuidance, multiTargetLimit, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, snipeOn, suppressionOn, disarmOn, dragPrinted, designationsOn, dodgeEnhanceOf, linkShockOf, lightningRiderOf, electronicStrength, followUpAfterKill, eyeRerollName, kcArmorReady, lightningExchangeOf, lightningLinkDrain, canAffordFocus, focusIsFree, hiddenByAlliedAura, keepsLinkOnPartLoss, maxLink, provokeWhy, preventsDamage, autoParryValue, immobilizeChoiceOn, faceAwayOnHit, pursuesFragile, structureOf, trackingCover, TRACKING_SPOTTERS_NEEDED, pilotCard, pilotIs, repeatersFor, SLOT_LABEL, tetherStrike, treatedAsOffensive, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
 import { timingOf } from './ticks';
 import { inArc, largeGridOf, losNote, protectionFor, rangeBetween, standingSpot } from './rules';
 import type { Command } from './commands';
@@ -1134,6 +1134,20 @@ export class AttackHelper {
     if (this.ctx) this.render();
   }
 
+  // Draws the attack in hand again, after something else borrowed the panel:
+  // the free Scan of a Multi-Target's camouflaged extra target runs in the
+  // Counter-roll window, which shares the element.
+  redraw(): void {
+    if (this.ctx || this.multi) this.render();
+  }
+
+  // A camouflaged unit is designated only after a Scan (p.71), and each
+  // designation earns its own free one (FAQ I12; ruled 2026-09-25, audit Phase
+  // 3, F3). A page that can run a Counter-roll beside the attack hands this in;
+  // `resume` redraws the split once it is over. Without one, a camouflaged unit
+  // is not offered as an extra target at all.
+  freeScan: ((attacker: Token, target: Token, action: CardAction, resume: () => void) => void) | null = null;
+
   // ---------- the mirror: this attack, as somebody else's client is running it ----------
   //
   // The Match Centre used to draw a SECOND combat window by hand for everyone
@@ -1667,7 +1681,10 @@ export class AttackHelper {
   // Everything the attacker could add to a Multi-Target: enemies in the
   // Action's own Range, minus whoever is already on the list. Same reading as
   // cleaveTargets, because it is the same question — who else is reachable.
-  private multiCandidates(): Token[] {
+  // `hidden`: the ones in the Optical Camouflage State instead, which may only
+  // be added once a Scan has Revealed them (p.71, FAQ I12). They were offered
+  // like anyone else, with no Scan (audit Phase 3, C8).
+  private multiCandidates(hidden = false): Token[] {
     const m = this.multi!;
     // Keyed on what was DESIGNATED, not on who ends up being shot: with
     // Automatic Shield in play two designations can collapse onto one shield,
@@ -1677,6 +1694,7 @@ export class AttackHelper {
       if (u.side === m.attacker.side || chosen.has(u.uid) || u.deployed === false) return false;
       if ((u.partStates[u.kind === 'mech' ? 'torso' : 'main'] ?? 'intact') === 'destroyed') return false;
       if (m.action.type === 'Melee' && u.aerial) return false;
+      if ((statusCount(u.statuses, 'camouflage') > 0) !== hidden) return false;
       if (this.noBoard) return true;
       return rangeBetween(m.attacker, u).range <= (m.action.range ?? 1);
     });
@@ -3551,6 +3569,25 @@ export class AttackHelper {
         });
         wrap.appendChild(b);
       }
+      // A camouflaged enemy in reach: Scanned first, one free Scan each (p.71,
+      // FAQ I12; F3). Once Revealed it joins the list above, from wherever it
+      // Manifested.
+      for (const u of this.multiCandidates(true)) {
+        if (!this.freeScan) {
+          const p = document.createElement('p');
+          p.className = 'ah-note';
+          p.textContent = `${u.label} is in the Optical Camouflage State: it can only be designated once a Scan has Revealed it (p.71).`;
+          wrap.appendChild(p);
+          continue;
+        }
+        const scan = this.freeScan;
+        const b = document.createElement('button');
+        b.className = 'ah-ghost';
+        b.textContent = `Scan ${u.label} first (free, FAQ I12)`;
+        b.disabled = !this.mayDrive('attacker');
+        b.addEventListener('click', () => scan(m.attacker, u, m.action, () => this.redraw()));
+        wrap.appendChild(b);
+      }
     }
     const tally = document.createElement('p');
     tally.className = 'ah-sum';
@@ -3689,6 +3726,9 @@ export class AttackHelper {
       if (u.side === c.attacker.side || u.uid === c.defender.uid || u.deployed === false) return false;
       if ((u.partStates[u.kind === 'mech' ? 'torso' : 'main'] ?? 'intact') === 'destroyed') return false;
       if (c.action.type === 'Melee' && u.aerial) return false;
+      // Never a camouflaged unit: a random Surplus target cannot be Scanned
+      // before it is chosen (ruled 2026-09-25, audit Phase 3, F3; C8).
+      if (statusCount(u.statuses, 'camouflage') > 0) return false;
       if (this.noBoard) return true;
       // Range "--" is stored as 0 and means the Adjacent Grids (4.4.1 step 1,
       // 4.6.2): the eight around the attacker's and its own. Counted as 0 Large
@@ -5642,13 +5682,34 @@ export class AttackHelper {
       go.className = 'ah-primary';
       go.textContent = `Take the bonus ${bonus.action.name?.en ?? 'attack'}`;
       go.disabled = !this.mayDrive('attacker');
+      // FAQ I22: a camouflaged attacker whose Action was not Silent "Reveals
+      // first", and if it then cannot attack the original target the granted
+      // attack "is simply forfeited". The Slash was offered before the Reveal
+      // and never judged again (audit Phase 3, C9).
+      const why = document.createElement('p');
+      why.className = 'ah-note';
       go.addEventListener('click', () => {
+        const board = this.tokens ? this.tokens() : [];
+        const atk = board.find((x) => x.uid === rider.attacker.uid) ?? rider.attacker;
+        const def = board.find((x) => x.uid === rider.defender.uid) ?? rider.defender;
+        if (statusCount(atk.statuses, 'camouflage') > 0 && !isSilentAction(this.data, board, atk, rider.action)) {
+          why.textContent = `${atk.label} Reveals first (FAQ I22): make its Reveal, then take the ${bonus.action.name?.en ?? 'bonus attack'} from where it appears.`;
+          return;
+        }
+        if (board.length) {
+          const reach = { ...bonus.action, range: actionRange(this.data, board, atk, bonus.action) };
+          const note = losNote(atk, def, reach, this.terrain ? this.terrain() : [], board, this.smoke ? this.smoke() : [], true);
+          if (note.includes('✕')) {
+            why.textContent = `From where ${atk.label} now stands the ${bonus.action.name?.en ?? 'bonus attack'} cannot reach ${def.label} (${note.split(' · ').filter((x) => x.includes('✕')).map((x) => x.replace('✕ ', '')).join('; ')}), so it is forfeited (FAQ I22). Decline it.`;
+            return;
+          }
+        }
         settle();
         // Same defender, by construction — the bonus target is not a choice.
         // Which is also why Automatic Shield is switched off for it: this
         // defender has ALREADY been through the swap, and re-running it would
         // chain onto a second shield and make "resolve once" a lie (FAQ A12).
-        this.start(rider.attacker, bonus.action, rider.defender,
+        this.start(atk, bonus.action, def,
           'Bonus attack: it must take the same target as the attack that granted it (FAQ B8).',
           0, '', false, false, false);
       });
@@ -5664,7 +5725,7 @@ export class AttackHelper {
         }
         if (!this.advanceMulti()) this.cancel();
       });
-      el.append(go, decline);
+      el.append(go, decline, why);
       this.root.replaceChildren(el);
       return;
     }
@@ -5928,6 +5989,9 @@ export function resolveCounterRoll(
 // the two seats owns, so the answer travels as a command and this window never
 // edits the record itself.
 export type EwAct = 'roll' | 'declare' | 'focus' | 'firewatch' | 'apply' | 'provoke' | 'provokepass' | 'close';
+// What a press carries: the unit it is for, the dice a Focus rerolls, the
+// declare's answer, and the Whistle Mech paying a Drone's reroll (ZYBP-202).
+export interface EwArg { uid?: number; indices?: number[]; use?: boolean; whistleUid?: number }
 
 interface EwCtx {
   initiator: Token;
@@ -5941,6 +6005,10 @@ interface EwCtx {
   // so the attack behind it can resume or end. Called once, at Resolve, with
   // the verdict; the shared table derives its verdict and never calls it.
   then?: (initiatorWins: boolean) => void;
+  // The next exchange of an Action on every enemy in Range (Scream, the Scan
+  // Battlefield), opened when this one closes. The local exchange's queue; a
+  // shared table's is the record's `rest` (audit Phase 3, D2).
+  after?: () => void;
   initEv: number;
   respEv: number;
   initRoll: Rolled[] | null;
@@ -5991,7 +6059,7 @@ export class ElectronicHelper {
   // Which side of THIS contest the viewer is, asked of the contest and not of
   // the seat, the same way the attack window asks it.
   private role: 'initiator' | 'responder' | 'spectator' = 'spectator';
-  contestAct: ((act: EwAct, arg?: { uid?: number; indices?: number[]; use?: boolean }) => void) | null = null;
+  contestAct: ((act: EwAct, arg?: EwArg) => void) | null = null;
   private root: HTMLElement;
   private onChanged: () => void;
   private onClose: () => void;
@@ -6070,14 +6138,18 @@ export class ElectronicHelper {
     // Settled only once the Focus order has run out too (FAQ G4): the verdict
     // used to be drawn the moment both hands were in, with each side's Focus
     // still to come.
-    const done = !!c.initRoll && !!c.respRoll && counterStage(this.data, [init, resp], c) === 'done';
-    const a = initRoll ? this.tally(initRoll, treatedAsOffensive(init, resp, this.data, this.tokens?.()), !!c.initFirewatch) : null;
-    const b = respRoll ? this.tally(respRoll, resp.stance === 'offensive', !!c.respFirewatch) : null;
+    // The whole board, not the two contestants: a White Dwarf Bit's Focus is
+    // paid by Karl Fried's Mech and a Drone's by a Whistle, neither of which
+    // is in the contest (audit Phase 3, D9).
+    const board = world.length ? world : [init, resp];
+    const done = !!c.initRoll && !!c.respRoll && counterStage(this.data, board, c) === 'done';
+    const a = initRoll ? this.tally(initRoll, counterOffensive(this.data, board, init, resp, 'initiator'), !!c.initFirewatch) : null;
+    const b = respRoll ? this.tally(respRoll, counterOffensive(this.data, board, resp, init, 'responder'), !!c.respFirewatch) : null;
     this.ctx = {
       initiator: init,
       responder: resp,
       action,
-      initEv: electronicStrength(this.data, world, init, 'initiator'),
+      initEv: electronicStrength(this.data, world, init, 'initiator', action),
       respEv: electronicStrength(this.data, world, resp, 'responder'),
       initRoll,
       respRoll,
@@ -6124,19 +6196,20 @@ export class ElectronicHelper {
 
   // A press that TRAVELS. True means it was sent and the caller must not also
   // apply it here, which is the same contract the attack window's sendAct has.
-  private sendAct(act: EwAct, arg?: { uid?: number; indices?: number[]; use?: boolean }): boolean {
+  private sendAct(act: EwAct, arg?: EwArg): boolean {
     if (!this.shared) return false;
     this.contestAct?.(act, arg);
     return true;
   }
 
-  start(initiator: Token, action: CardAction, responder: Token, opts: { linkLoss?: number; then?: (initiatorWins: boolean) => void } = {}): void {
+  start(initiator: Token, action: CardAction, responder: Token, opts: { linkLoss?: number; then?: (initiatorWins: boolean) => void; after?: () => void } = {}): void {
     const world = this.tokens ? this.tokens() : [];
     // Both riders on the rolled pool - the Tarantula Loads only the Initiator
     // counts (FAQ O5) and the EW Suppression aura (ZHDR-202_B / PDTR-202_B) -
     // now live in units.ts, because the Match Centre's counter-roll had grown
-    // its own copy of this arithmetic with only half of it.
-    const initEv = electronicStrength(this.data, world, initiator, 'initiator');
+    // its own copy of this arithmetic with only half of it. The Action's own
+    // Strength +X rides the Initiator's (audit Phase 3, D2).
+    const initEv = electronicStrength(this.data, world, initiator, 'initiator', action);
     const respEv = electronicStrength(this.data, world, responder, 'responder');
     this.ctx = {
       initiator,
@@ -6144,6 +6217,7 @@ export class ElectronicHelper {
       action,
       linkLoss: opts.linkLoss,
       then: opts.then,
+      after: opts.after,
       initEv,
       respEv,
       initRoll: null,
@@ -6163,8 +6237,10 @@ export class ElectronicHelper {
   }
 
   cancel(): void {
+    const next = this.ctx?.after;
     this.ctx = null;
     this.onClose();
+    next?.();
   }
 
   private note(text: string, who: Token[] = []): void {
@@ -6200,84 +6276,40 @@ export class ElectronicHelper {
     return out;
   }
 
+  // The board, or the two contestants when the driver wired none.
+  private board(): Token[] {
+    const c = this.ctx!;
+    const world = this.tokens ? this.tokens() : [];
+    return world.length ? world : [c.initiator, c.responder];
+  }
+
+  // Whether this side's hollow faces count: one reading for the hand, the
+  // header and the verdict, and for both roles (counterOffensive, units.ts).
+  private offensive(who: 'init' | 'resp'): boolean {
+    const c = this.ctx!;
+    return who === 'init'
+      ? counterOffensive(this.data, this.board(), c.initiator, c.responder, 'initiator')
+      : counterOffensive(this.data, this.board(), c.responder, c.initiator, 'responder');
+  }
+
   private tally(roll: Rolled[], offensive: boolean, eyeAsLightning = false): { lightning: number; light: number } {
     return tallyCounter(this.dice, roll.map((d) => d.face), offensive, eyeAsLightning);
   }
 
+  // The local exchange's win, through the one reading every seam shares
+  // (ewWinCommands). It used to be the third copy: it walked the nested effects
+  // the other two missed, but fell back to Fire Control Interference for any
+  // status it could not name, and never drained Scream's Link, destroyed
+  // Overload Inject's target or handed over The Red Shoes (audit Phase 3, D1).
+  //
+  // A Scan is the rulebook's effect, not a card's: Low Profile Tokens come off
+  // now, and a camouflaged target is left camouflaged with a `manifest` debt
+  // queued to its OWN player, who Reveals it and picks where it appears.
   private applyEffects(): string[] {
     const c = this.ctx!;
-    const done: string[] = [];
-    if (c.linkLoss) {
-      this.onCommand({ kind: 'drainLink', seat: c.initiator.side, uid: c.initiator.uid, targetUid: c.responder.uid, n: c.linkLoss });
-      done.push(`${c.responder.label} loses ${c.linkLoss} Link (now ${c.responder.link})`);
-    }
-    const walk = (list: GameRuleEffect[]): void => {
-      for (const e of list) {
-        if (e.type === 'apply_status') {
-          // THROUGH THE SHARED MAP. This read `label === e.status` and fell back
-          // to 'fci', which can never match: the card data names statuses in
-          // CHINESE and StatusDef carries no Chinese field, so every zh-named
-          // status silently became Fire Control Interference. Harmless while
-          // every Electronic Attack in the data really did grant FCI, and a
-          // silent mis-grant the moment one did not.
-          const wanted = STATUS_BY_ZH[e.status ?? ''] ?? e.status;
-          const def = STATUSES.find((s) => s.id === wanted || s.label === wanted) ?? STATUSES.find((s) => s.id === 'fci');
-          if (def) {
-            const n = e.stacks ?? 1;
-            const before = c.responder.statuses ?? [];
-            this.onCommand({ kind: 'applyStatus', seat: c.initiator.side, uid: c.initiator.uid, targetUid: c.responder.uid, statusId: def.id, stacks: n });
-            done.push(`${c.responder.label} gains ${n} ${def.label}`);
-            const lost = before.filter((s) => !c.responder.statuses!.includes(s));
-            for (const id of lost) {
-              const old = STATUSES.find((s) => s.id === id);
-              if (old) done.push(`${old.label} comes off ${c.responder.label}, since a unit may bear only 1 Hexagon Token (2.5.3)`);
-            }
-            if (def.id === 'fci' && c.responder.kind === 'projectile' && c.respEv > 0) {
-              done.push(
-                `${c.responder.label} is a Projectile with an Electronic Value, so it is destroyed outright (rulebook 6.3.2)`,
-              );
-            }
-          }
-        }
-        if (e.effects) walk(e.effects);
-      }
-    };
-    for (const g of c.action.gameRules ?? []) walk(g.effects ?? []);
-
-    // SCANNING (4.12.4). The Scan carries no gameRules -- it is a Common Action
-    // whose effect is the rulebook's, not a card's -- so it lands here beside
-    // the data-driven ones rather than being expressed as data it does not have.
-    //
-    // Two halves, and they are NOT the same kind of thing:
-    //   * Low Profile Tokens come off NOW. There is no choice in it, and only
-    //     TOKENS can be Scanned away -- an aura granting Low Profile is
-    //     untouchable, which our data models by never putting a Token on for it.
-    //   * A camouflaged target is Revealed, and 4.12.2 gives it Manifestation
-    //     Movement -- a choice belonging to its OWNER, not to the scanner whose
-    //     client is running this. So the camouflage is left ON and the debt is
-    //     queued as a reaction, exactly as Emergency Smoke queues the
-    //     defender's answer to an attack. The owner's client offers the Reveal
-    //     and the hop together, as one command, on its own screen.
-    if (isScanAction(c.action)) {
-      const strip = scanStrips(c.responder);
-      for (let i = 0; i < strip; i++) {
-        this.onCommand({
-          kind: 'removeStatus', seat: c.initiator.side, uid: c.initiator.uid,
-          targetUid: c.responder.uid, statusId: 'lowProfile',
-        });
-      }
-      if (strip > 0) {
-        done.push(`${c.responder.label} loses ${strip} Low Profile Token${strip === 1 ? '' : 's'} (4.12.4)`);
-      }
-      if (statusCount(c.responder.statuses, 'camouflage') > 0) {
-        this.onCommand({
-          kind: 'queueReactions', seat: c.initiator.side,
-          items: [{ uid: c.responder.uid, actionId: c.action.id, count: 1, range: 0, kind: 'manifest', fromUid: c.initiator.uid }],
-        });
-        done.push(`${c.responder.label} is Revealed, and its own player now makes its Manifestation Movement (4.12.2)`);
-      }
-    }
-    return done;
+    const win = ewWinCommands(this.data, c.initiator, c.responder, c.action, { reaction: !!c.linkLoss });
+    for (const cmd of win.cmds) this.onCommand(cmd);
+    return win.lines;
   }
 
   // An allied Repeater lends its position to an Electronic Attack, and the
@@ -6341,7 +6373,7 @@ export class ElectronicHelper {
     const wrap = document.createElement('div');
     wrap.className = 'ew-side';
     wrap.innerHTML = `<h5>${who === 'init' ? 'Initiator' : 'Responder'} · ${t.label}
-      <span class="ew-ev">EV ${ev}</span>${(who === 'init' ? treatedAsOffensive(t, c.responder, this.data, this.tokens?.()) : t.stance === 'offensive') ? '<span class="ew-off">OFF: hollow counts</span>' : ''}</h5>`;
+      <span class="ew-ev">EV ${ev}</span>${this.offensive(who) ? '<span class="ew-off">OFF: hollow counts</span>' : ''}</h5>`;
     if (roll) {
       const row = document.createElement('div');
       row.className = 'ah-roll';
@@ -6369,7 +6401,7 @@ export class ElectronicHelper {
         delete this.pending[who];
         window.setTimeout(() => this.spins[who].spin(row, roll, only), 0);
       }
-      const n = this.tally(roll, who === 'init' ? treatedAsOffensive(t, c.responder, this.data, this.tokens?.()) : t.stance === 'offensive', c.firewatch[who]);
+      const n = this.tally(roll, this.offensive(who), c.firewatch[who]);
       const sum = document.createElement('p');
       sum.className = 'ah-sum';
       sum.innerHTML = `Lightning <b>${n.lightning}</b> · Light Hit <b>${n.light}</b>`;
@@ -6387,10 +6419,14 @@ export class ElectronicHelper {
       // reroll costs nothing at all, which is ZPA-39 Cadaver's whole trait.
       const freeFocus = focusIsFree(this.data, t);
       if (stage === `declare${me}`) {
+        // A Drone may reroll on a Whistle's Command Token instead of Link
+        // (ZYBP-202; audit Phase 3, D9), and may have only that.
+        const canFocus = canAffordFocus(this.data, t, this.board());
+        const funder = whistleFunders(this.data, this.board(), t)[0];
         const p = document.createElement('p');
         p.className = 'ah-note';
         p.textContent = this.mayPress(who)
-          ? `Focus (FAQ G4): ${t.label} declares ${who === 'init' ? 'first' : 'second'}, ${freeFocus ? 'free (Will to Survive)' : `1 Link (${t.link ?? 0} left)`}. The dice are picked once both sides have declared.`
+          ? `Focus (FAQ G4): ${t.label} declares ${who === 'init' ? 'first' : 'second'}${canFocus ? `, ${freeFocus ? 'free (Will to Survive)' : `1 Link (${t.link ?? 0} left)`}` : ''}${funder ? `${canFocus ? ', or' : ','} on ${funder.label}'s Whistle` : ''}. The dice are picked once both sides have declared.`
           : `Focus (FAQ G4): waiting for ${t.label}'s player to declare.`;
         wrap.appendChild(p);
         const pass = document.createElement('button');
@@ -6398,12 +6434,23 @@ export class ElectronicHelper {
         pass.textContent = 'Pass';
         pass.disabled = !this.mayPress(who);
         pass.addEventListener('click', () => this.declareCounter(who, false));
-        const use = document.createElement('button');
-        use.className = 'ah-cancel';
-        use.innerHTML = freeFocus ? 'Focus<small>free, Will to Survive</small>' : 'Focus<small>1 Link</small>';
-        use.disabled = !this.mayPress(who);
-        use.addEventListener('click', () => this.declareCounter(who, true));
-        wrap.append(pass, use);
+        wrap.appendChild(pass);
+        if (canFocus) {
+          const use = document.createElement('button');
+          use.className = 'ah-cancel';
+          use.innerHTML = freeFocus ? 'Focus<small>free, Will to Survive</small>' : 'Focus<small>1 Link</small>';
+          use.disabled = !this.mayPress(who);
+          use.addEventListener('click', () => this.declareCounter(who, true));
+          wrap.appendChild(use);
+        }
+        if (funder) {
+          const whistle = document.createElement('button');
+          whistle.className = 'ah-cancel';
+          whistle.innerHTML = `Whistle<small>${funder.label}'s Command Token</small>`;
+          whistle.disabled = !this.mayPress(who);
+          whistle.addEventListener('click', () => this.declareCounter(who, true, funder));
+          wrap.appendChild(whistle);
+        }
       } else if (stage === `reroll${me}`) {
         const p = document.createElement('p');
         p.className = 'ah-note';
@@ -6484,7 +6531,7 @@ export class ElectronicHelper {
   // same way counterStage reads the shared record.
   private focusStage(): CounterStage {
     const c = this.ctx!;
-    return counterStage(this.data, [c.initiator, c.responder], {
+    return counterStage(this.data, this.board(), {
       initiatorUid: c.initiator.uid,
       responderUid: c.responder.uid,
       initRoll: c.initRoll ? c.initRoll.map((d) => d.face) : null,
@@ -6498,11 +6545,19 @@ export class ElectronicHelper {
 
   // A side's Focus declare. The Link is paid here, at the declare, the way an
   // attack's Focus is; on a shared table the command pays it on arrival.
-  private declareCounter(who: 'init' | 'resp', use: boolean): void {
+  private declareCounter(who: 'init' | 'resp', use: boolean, funder?: Token): void {
     const c = this.ctx!;
     const t = who === 'init' ? c.initiator : c.responder;
-    if (this.sendAct('declare', { uid: t.uid, use })) return;
-    if (use) {
+    if (this.sendAct('declare', { uid: t.uid, use, ...(funder ? { whistleUid: funder.uid } : {}) })) return;
+    if (use && funder) {
+      // The Whistle: the Ally Mech's Command Token, not Link (ZYBP-202).
+      if (!accepted(this.onCommand({ kind: 'spendCommand', seat: funder.side, uid: funder.uid }))) {
+        this.note(`${funder.label}'s Command Token could not be spent, so the Whistle reroll was not taken.`);
+        this.render();
+        return;
+      }
+      this.note(`${t.label} takes the Whistle reroll: ${funder.label}'s Command Token turns face-down (4.15.4).`);
+    } else if (use) {
       const wasShut = t.stance === 'shutdown';
       if (!accepted(this.onCommand({ kind: 'focus', seat: t.side, uid: t.uid }))) {
         this.note(`${t.label}'s Focus was refused, so no Link is spent.`);
@@ -6606,8 +6661,8 @@ export class ElectronicHelper {
       resolve.className = 'ah-primary';
       resolve.textContent = 'Resolve ▸';
       resolve.addEventListener('click', () => {
-        const a = this.tally(c.initRoll!, treatedAsOffensive(c.initiator, c.responder, this.data, this.tokens?.()), c.firewatch.init);
-        const b = this.tally(c.respRoll!, c.responder.stance === 'offensive', c.firewatch.resp);
+        const a = this.tally(c.initRoll!, this.offensive('init'), c.firewatch.init);
+        const b = this.tally(c.respRoll!, this.offensive('resp'), c.firewatch.resp);
         const { initiatorWins: win, why } = resolveCounterRoll(a, b);
         c.done = true;
         c.initiatorWins = win;
@@ -6638,8 +6693,8 @@ export class ElectronicHelper {
     // restarting it mid-flight would resolve the same icons twice. Same rule
     // stepResolve follows for the attack.
     {
-      const a = this.tally(c.initRoll!, treatedAsOffensive(c.initiator, c.responder, this.data, this.tokens?.()), c.firewatch.init);
-      const b = this.tally(c.respRoll!, c.responder.stance === 'offensive', c.firewatch.resp);
+      const a = this.tally(c.initRoll!, this.offensive('init'), c.firewatch.init);
+      const b = this.tally(c.respRoll!, this.offensive('resp'), c.firewatch.resp);
       const strip = document.createElement('div');
       strip.innerHTML = contestHtml({
         initLabel: c.initiator.label,
@@ -6662,33 +6717,41 @@ export class ElectronicHelper {
       }
     }
 
-    // LPA-22 Yoyu, 挑衅 Provoke. The Responder's own Counter-roll succeeded, so
-    // Yoyu's player may turn the Mech that opened it into Offensive Stance —
-    // 4.11.2 fires an "on successful Counter-roll" Passive for the Responder
-    // just as readily as for the Initiator.
+    // LPA-22 Yoyu, 挑衅 Provoke. Yoyu's own Counter-roll succeeded, so its
+    // player may turn the other Mech in the contest into Offensive Stance.
+    // 4.11.2 fires an "on successful Counter-roll" Passive "regardless of
+    // whether the Unit was acting as the Initiator or Responder": as Responder
+    // Yoyu succeeds when the Initiator does not (ties go to the Initiator), as
+    // Initiator when it wins. It was offered to the Responder only (ruled
+    // 2026-09-25, audit Phase 3, F16).
     //
     // OFFERED, not applied, and that is the difference from Pulse, Ion and
     // Fierce Assault: Offensive Stance is a trade rather than a penalty, so
     // forcing it on an enemy can HELP them and only their opponent can judge
     // whether it is worth doing. The panel therefore asks, and both answers
     // close the question so the row cannot be pressed twice.
-    if (c.initiatorWins === false && c.provoked === null
-      && provokeWhy(this.data, c.responder, c.initiator) === null) {
+    const yoyuWho: 'init' | 'resp' | null = c.initiatorWins === null || c.provoked !== null ? null
+      : c.initiatorWins
+        ? (provokeWhy(this.data, c.initiator, c.responder) === null ? 'init' : null)
+        : (provokeWhy(this.data, c.responder, c.initiator) === null ? 'resp' : null);
+    if (yoyuWho) {
+      const yoyu = yoyuWho === 'init' ? c.initiator : c.responder;
+      const other = yoyuWho === 'init' ? c.responder : c.initiator;
       const ask = document.createElement('p');
       ask.className = 'ah-sum';
-      ask.innerHTML = `<b>${c.responder.label}</b> held the Counter-roll, so Yoyu may switch <b>${c.initiator.label}</b> to Offensive Stance (LPA-22).`;
+      ask.innerHTML = `<b>${yoyu.label}</b> won the Counter-roll, so Yoyu may switch <b>${other.label}</b> to Offensive Stance (LPA-22).`;
       wrap.appendChild(ask);
       const take = document.createElement('button');
       take.className = 'ah-primary';
-      take.textContent = `Provoke ${c.initiator.label} into Offensive Stance`;
-      // The question belongs to the RESPONDER's seat, and both screens draw it
-      // so the Initiator can see what is being decided about their Mech.
-      take.disabled = !this.mayPress('resp');
+      take.textContent = `Provoke ${other.label} into Offensive Stance`;
+      // The question belongs to YOYU's seat, and both screens draw it so the
+      // other player can see what is being decided about their Mech.
+      take.disabled = !this.mayPress(yoyuWho);
       take.addEventListener('click', () => {
-        if (this.sendAct('provoke')) return;
+        if (this.sendAct('provoke', { uid: yoyu.uid })) return;
         c.provoked = 'taken';
-        this.onCommand({ kind: 'provoke', seat: c.responder.side, uid: c.responder.uid, targetUid: c.initiator.uid, take: true });
-        this.note(`${c.responder.label} provokes ${c.initiator.label} into Offensive Stance (LPA-22 Yoyu).`, [c.initiator, c.responder]);
+        this.onCommand({ kind: 'provoke', seat: yoyu.side, uid: yoyu.uid, targetUid: other.uid, take: true });
+        this.note(`${yoyu.label} provokes ${other.label} into Offensive Stance (LPA-22 Yoyu).`, [c.initiator, c.responder]);
         this.onChanged();
         this.render();
       });
@@ -6696,11 +6759,11 @@ export class ElectronicHelper {
       const leave = document.createElement('button');
       leave.className = 'ah-cancel';
       leave.textContent = 'Leave its Stance alone';
-      leave.disabled = !this.mayPress('resp');
+      leave.disabled = !this.mayPress(yoyuWho);
       leave.addEventListener('click', () => {
-        if (this.sendAct('provokepass')) return;
+        if (this.sendAct('provokepass', { uid: yoyu.uid })) return;
         c.provoked = 'passed';
-        this.note(`${c.responder.label} leaves ${c.initiator.label}'s Stance alone.`);
+        this.note(`${yoyu.label} leaves ${other.label}'s Stance alone.`);
         this.render();
       });
       wrap.appendChild(leave);

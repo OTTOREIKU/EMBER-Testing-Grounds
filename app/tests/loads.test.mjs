@@ -25,9 +25,17 @@ const auto = slice('// Auto-attack target selection', "// ---------- The Hyena's
 const rangeFn = slice("// A Firing Action", "export function hasFlexibleTiming", "actionRange");
 const auraStub = `export function auraValueOn(_d: any, _t: any, _u: any, _k: string): number { return 0; }
 `;
-const ev = slice('export function electronicValue', 'export function defaultUnitLabel', 'electronicValue');
+// From electronicDash, just above: autoTargetsFor refuses a "-" Responder for an
+// Electronic Attack since the audit's Phase 3 (D5), and the Repeater checks
+// below drive one. The SCANNING block comes too, for isScanAction and scannable.
+const ev = slice('export function electronicDash', 'export function defaultUnitLabel', 'electronicDash and electronicValue');
+const scanning = slice('// ---------- SCANNING (4.12.4) ----------', 'export function interceptCapacity', 'the Scan readers');
 const freehand = slice('export function freehandSlots', '// ---------- Charge (rulebook 4.14)', 'freehandSlots');
 const slotLabels = slice('export const SLOT_LABEL', 'let uidSource', 'SLOT_LABEL');
+// ownCards and carriedLoad: a Carrier neither counts nor uses its own Load (FAQ
+// O4; audit Phase 3, D7), and electronicValue now asks them. The last block in
+// units.ts, so it overlaps no cut above; its other readers are never called here.
+const phase3 = slice('// ---------- Mechanics audit Phase 3 readers ----------', null, 'the Phase 3 readers');
 
 const tmp = new URL('./_loads.slice.ts', import.meta.url);
 writeFileSync(
@@ -43,7 +51,9 @@ function tokenCards(data: any, t: any): any[] {
   if (t.kind === 'mech') {
     return Object.entries(t.mech ?? {}).map(([slot, id]) => ({ slot, card: data.byId.get(id) })).filter((x: any) => x.card);
   }
-  return [{ slot: 'main', card: data.byId.get(t.cardId) }].filter((x: any) => x.card);
+  // A Drone's carried Backpack is listed too, as the real reader lists it:
+  // that is exactly what ownCards has to take back out for a Carrier (O4).
+  return [{ slot: 'main', card: data.byId.get(t.cardId) }, { slot: 'backpack', card: t.droneBackpack ? data.byId.get(t.droneBackpack) : undefined }].filter((x: any) => x.card);
 }
 function largeGridOf(t: any): any { return { c: Math.floor(t.col / 3), r: Math.floor(t.row / 3) }; }
 function rangeBetween(a: any, b: any): any {
@@ -64,7 +74,7 @@ function inContact(a: any, b: any): boolean {
 }
 `
     + `function losBetween(a: any, b: any, terrain: any[], tokens: any[]): string { return terrain.length ? String(terrain[0].sight ?? "clear") : "clear"; }\n`
-    + auraStub + rangeFn + slotLabels + loads + relay + radar + auto + ev + freehand,
+    + auraStub + rangeFn + slotLabels + loads + relay + radar + auto + ev + scanning + freehand + phase3,
 );
 const L = await import(tmp.href);
 
@@ -149,6 +159,14 @@ check('and gains the Load while it acts (O5)',
   L.electronicValue(data, evMech, L.loanedParts(data, [evMech, tara(2, 6, 3)], evMech)), 2);
 check('two Pods stack (O6)',
   L.electronicValue(data, evMech, L.loanedParts(data, [evMech, tara(2, 6, 3), tara(3, 1, 3)], evMech)), 3);
+
+// O4: "the Drone itself cannot use that Backpack, and its Electronic Value will
+// not be counted". The Carrier (EV 2) with an EC50 on its back (EV 1) rolled 3
+// until the audit's Phase 3 (D7).
+check('a Carrier counts its own Electronic Value, not its Load\'s (O4)', L.electronicValue(data, tara(2, 6, 3)), 2);
+check('and the Load is not among the cards it acts with', L.ownCards(data, tara(2, 6, 3)).map((x) => x.slot), ['main']);
+check('though the Load is still on its back for the lending half', L.carriedLoad(data, tara(2, 6, 3)), true);
+check('and an empty Carrier carries nothing', L.carriedLoad(data, tara(2, 6, 3, '')), false);
 
 // O16: Freehand comes across too. The MSH2 Stabilizer Arm is the only Backpack
 // that prints it.

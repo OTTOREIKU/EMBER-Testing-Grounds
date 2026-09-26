@@ -43,7 +43,7 @@ import { attackActive, attackOnCommand, attackWatching, beginAttack, initAttack,
 import { registerOffline } from '../src/offline';
 import { askTablePool, askTableRoll, askTargetPart } from './tabledice';
 import type { RollGroup } from '../src/combat';
-import { beginElectronic, ewActive, ewWatching, initEw, mountEw, syncContest } from './ew';
+import { beginElectronic, beginElectronicAll, beginFreeScan, beginTrace, ewActive, ewWatching, initEw, mountEw, syncContest } from './ew';
 import { clearHistory, historyDepth, historyEntries, undoLast, recordSnapshot, type Snapshot } from '../src/history';
 import { labelFor, namesFrom, type LedgerNames } from '../src/ledger';
 import { setLocalSeat } from '../src/loop';
@@ -69,7 +69,7 @@ import { previewScore } from '../src/scoring';
 import { tacticFitsPhase, tacticSpec, tacticTargets, type TacticCtx } from '../src/tactics';
 import { conditionalGrants, stationaryBonus, explosionScope, linkShockOf, tetheredBy, freehandSlots, linkSupportOf, roundEndLinkAuras, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, targetStatusGrant, tokenCleanupOf, immediateDetonation, smokePlacement, squadAllegiance, twoHandedUse } from '../src/units';
 import { gameResult } from '../src/tasks';
-import { actionPartWhy, autoParryValue, cruising, canBeLoad, chargeChoices, chargeableSlots, electronicDash, electronicValue, guidedActions, initiativeFor, interceptCapacity, isCarrier, isDeployable, isElectronicAttack, maneuverRange, maxLink, migrateState, parryParts, pilotCard, structureOf, tokenCards, volleyOf } from '../src/units';
+import { isSilentAction, manifestationRange, targetStatusTargets, activatesCamo, canActivateCamo, hasHighlight, electronicAll, electronicAllTargets, electronicTargetWhy, isScanAction, scannable, actionPartWhy, autoParryValue, cruising, canBeLoad, chargeChoices, chargeableSlots, electronicDash, electronicValue, guidedActions, initiativeFor, interceptCapacity, isCarrier, isDeployable, isElectronicAttack, maneuverRange, maxLink, migrateState, parryParts, pilotCard, structureOf, tokenCards, volleyOf } from '../src/units';
 import { lengthOf, LENGTH_NAME, timingOf } from '../src/ticks';
 import { newScriptState, PHASES, SCALES, statusesFor, statusStacks, STATUSES, TIMINGS } from '../src/types';
 import type { Card, CardAction, DieColor, GameState, ImportedSquad, MechLoadout, PartSlot, PartState, Side, Stance, Token } from '../src/types';
@@ -1154,10 +1154,23 @@ const guide: GuideApi = {
       : [],
     play: (id) => { void playTactic(side, id); },
   }),
+  // The combat panel opens first so the exchange has somewhere to draw, the
+  // way askTableAndElectronic opens it for an Electronic Attack.
+  trace: (uid, actionId, attackerUid) => {
+    const t = unitOf(uid);
+    const from = unitOf(attackerUid);
+    if (!t || !from) return;
+    panel = 'combat';
+    render();
+    if (!beginTrace(t, actionId, from)) { panel = null; render(); }
+  },
   attack: (uid, actionId, opts) => {
     const t = unitOf(uid);
     if (!t) return;
-    targetFor = { uid, actionId, mode: opts?.electronic ? 'electronic' : 'attack', granted: opts?.granted, only: opts?.only };
+    // Every enemy in Range picks nobody: the table says which are in Range.
+    const act = opts?.electronic ? actionOfUnit(t, actionId) : undefined;
+    if (act && electronicAll(act)) { void askTableAndElectronicAll(t, act); return; }
+    targetFor = { uid, actionId, mode: opts?.electronic ? 'electronic' : 'attack', granted: opts?.granted, only: opts?.only, resumed: opts?.resumed };
     panel = 'target';
     render();
   },
@@ -1176,7 +1189,9 @@ const guide: GuideApi = {
 // Riposte's free Melee.
 type PickMode = 'attack' | 'intercept' | 'electronic';
 // `only`: the one target the rules allow (a Riposte answers the attacker, FAQ C1).
-let targetFor: { uid: number; actionId: string; mode: PickMode; granted?: boolean; only?: number } | null = null;
+// `resumed`: the attack behind a won free Scan (FAQ I12), whose Action was
+// paid at the designation, so it is not paid again.
+let targetFor: { uid: number; actionId: string; mode: PickMode; granted?: boolean; only?: number; resumed?: boolean } | null = null;
 
 initAttack({
   get data() { return data!; },
@@ -1287,6 +1302,39 @@ async function askTableAndIntercept(by: Token, actionId: string, target: Token):
 
 // An Electronic Attack: only Range matters (4.11.1), judged on the table; a
 // Guided game pays the Action first.
+// The Action as this unit carries it, or the Common one.
+function actionOfUnit(t: Token, actionId: string): CardAction | undefined {
+  return tokenCards(data!, t).flatMap((c) => c.card.actions ?? []).find((x) => x.id === actionId)
+    ?? data!.commonActions.find((x) => x.id === actionId) as CardAction | undefined;
+}
+
+// Scream and the Scan Battlefield: "all Enemy ... within range". The table
+// judges Range, so it is asked which of the enemies the card can name are in
+// it; then the Action is paid and one Counter-roll per enemy runs in turn
+// (audit Phase 3, D2 and A4).
+async function askTableAndElectronicAll(attacker: Token, a: CardAction): Promise<void> {
+  const pool = electronicAllTargets(data!, table.tokens, attacker, a, true);
+  if (!pool.length) {
+    toast(isScanAction(a)
+      ? 'No enemy is in the Optical Camouflage State or bearing a Low Profile Token, so the Scan finds nothing (4.12.4).'
+      : `No enemy unit ${a.name.en ?? a.id} can target is on the table.`);
+    return;
+  }
+  const picked = await pickManyDialog({
+    title: `${attacker.label}: ${a.name.en ?? a.id}`,
+    body: `Every enemy within Range ${a.range ?? 0}, on the table. Each rolls its own Electronic Counter-roll, in turn.`,
+    rows: pool.map((u) => ({ id: String(u.uid), label: u.label, on: true })),
+    confirmLabel: 'Roll against these',
+  });
+  if (!picked?.length) return;
+  const targets = picked.map((id) => unitOf(Number(id))).filter((u): u is Token => !!u);
+  if (guidedOn(table) && !send({ kind: 'performAction', seat: attacker.side, uid: attacker.uid, actionId: a.id, ...bothHands(attacker, a.id) })) return;
+  panel = 'combat';
+  render();
+  if (!beginElectronicAll(attacker, a.id, targets, guidedOn(table))) { panel = null; render(); return; }
+  freeformSilence(attacker, a);
+}
+
 async function askTableAndElectronic(attacker: Token, actionId: string, defender: Token): Promise<void> {
   const clear = await choiceDialog({
     title: `${attacker.label} targets ${defender.label}`,
@@ -1298,7 +1346,8 @@ async function askTableAndElectronic(attacker: Token, actionId: string, defender
   if (guidedOn(table) && !send({ kind: 'performAction', seat: attacker.side, uid: attacker.uid, actionId, ...bothHands(attacker, actionId) })) return;
   panel = 'combat';
   render();
-  if (!beginElectronic(attacker, actionId, defender, guidedOn(table))) { panel = null; render(); }
+  if (!beginElectronic(attacker, actionId, defender, guidedOn(table))) { panel = null; render(); return; }
+  freeformSilence(attacker, actionOfUnit(attacker, actionId));
 }
 
 // How deep the undo history stood when the attack in hand began, and where
@@ -1306,10 +1355,55 @@ async function askTableAndElectronic(attacker: Token, actionId: string, defender
 let attackDepth: number | null = null;
 let undoAttackTo: number | null = null;
 
+// Freeform keeps no Action Opportunity, so it sends no performAction and the
+// engine never judges Silence there: 4.12.3's two consequences are asked by
+// the door itself. A non-Silent Action takes the Low Profile Token, and a
+// camouflaged unit Reveals, its Manifestation made on the table. Freeform did
+// neither (audit Phase 3, B3, C3); a Guided game's performAction does both.
+function freeformSilence(t: Token, a: CardAction | undefined): void {
+  if (guidedOn(table) || !a || activatesCamo(a) || isSilentAction(data!, table.tokens, t, a)) return;
+  const now = unitOf(t.uid) ?? t;
+  if ((now.statuses ?? []).includes('lowProfile')) {
+    send({ kind: 'removeStatus', seat: now.side, uid: now.uid, targetUid: now.uid, statusId: 'lowProfile' });
+    toast(`${now.label}: ${a.name.en ?? a.id} has no Silence, so its Low Profile Token comes off (4.12.3).`);
+  }
+  if (!(now.statuses ?? []).includes('camouflage')) return;
+  const range = manifestationRange(data!, now);
+  void choiceDialog({
+    title: `${now.label} breaks camouflage`,
+    body: `${a.name.en ?? a.id} has no Silence, so the Optical Camouflage ends (4.12.2)${range > 0 ? `: make its Manifestation Movement on the table, within Range ${range} counted orthogonally, and face it as you choose` : ''}.`,
+    choices: [{ id: 'reveal', label: 'Revealed', primary: true }, { id: 'keep', label: 'Keep it hidden (house rule)', cancel: true }],
+    stacked: true,
+  }).then((id) => { if (id === 'reveal') send({ kind: 'reveal', seat: now.side, uid: now.uid }); });
+}
+
+// The free Scan a camouflaged target earns (4.12.2, FAQ I12; audit Phase 3,
+// A2). The Action is paid at the designation. A won Scan owes the target's
+// player its Reveal and the attacker the attack, which resumes from the strip
+// without paying again; a lost one ends the attack with the Tick spent (I11).
+// The Scan reaches as far as the attack does (I18), judged on the table.
+async function scanFirst(attacker: Token, actionId: string, defender: Token): Promise<void> {
+  const go = await choiceDialog({
+    title: `${defender.label} is in Optical Camouflage`,
+    body: `The attack needs a Scan first (4.12.2): one free Scan, at the attack's own range (FAQ I12, I18). If it succeeds, ${defender.label}'s player Reveals it and the attack resumes; if it fails, the attack ends and the Tick is spent (FAQ I11).`,
+    choices: [{ id: 'scan', label: 'Scan it', primary: true }, { id: 'no', label: 'Not this target', cancel: true }],
+    stacked: true,
+  });
+  if (go !== 'scan') return;
+  if (guidedOn(table) && !send({ kind: 'performAction', seat: attacker.side, uid: attacker.uid, actionId, ...bothHands(attacker, actionId) })) return;
+  panel = 'combat';
+  render();
+  if (!beginFreeScan(attacker, actionId, defender, guidedOn(table))) { panel = null; render(); }
+}
+
 // The table is asked what the board used to read, then the window opens.
-async function askTableAndAttack(attacker: Token, actionId: string, defender: Token, granted = false): Promise<void> {
+async function askTableAndAttack(attacker: Token, actionId: string, defender: Token, granted = false, resumed = false): Promise<void> {
   const a = tokenCards(data!, attacker).flatMap((c) => c.card.actions ?? []).find((x) => x.id === actionId)
     ?? data!.commonActions.find((x) => x.id === actionId);
+  // A camouflaged target is Scanned first: one free Scan (4.12.2, FAQ I12). The
+  // pad opened the attack straight, on a unit its marker only suspected
+  // (audit Phase 3, A2). A granted Riposte answers the attacker it can see.
+  if (!granted && !resumed && (defender.statuses ?? []).includes('camouflage')) { await scanFirst(attacker, actionId, defender); return; }
   // One question: the shot as the table sees it. A line of sight may exist
   // and still pass a Terrain Object or a Unit, and each gives the defender
   // +2 White; both together give +4 (4.4.2). Melee claims no Protection and
@@ -1420,11 +1514,12 @@ async function askTableAndAttack(attacker: Token, actionId: string, defender: To
   attackDepth = historyDepth();
   // In a guided game the Action is paid for first; a refusal is the engine's
   // answer and the window stays shut. Freeform opens the window outright.
-  if (guidedOn(table) && !send({ kind: 'performAction', seat: attacker.side, uid: attacker.uid, actionId, ...(granted ? { granted: true } : twoHanded ? {} : bothHands(attacker, actionId)) })) return;
+  if (guidedOn(table) && !resumed && !send({ kind: 'performAction', seat: attacker.side, uid: attacker.uid, actionId, ...(granted ? { granted: true } : twoHanded ? {} : bothHands(attacker, actionId)) })) return;
   if (chargeSpent && chargeSlot) send({ kind: 'setCharge', seat: attacker.side, uid: attacker.uid, slot: String(chargeSlot.slot), on: false, ...(guidedOn(table) ? { chain: 'join' as const } : {}) });
   panel = 'combat';
   render();
-  if (!beginAttack(attacker, actionId, defender, verdict)) { panel = null; render(); }
+  if (!beginAttack(attacker, actionId, defender, verdict)) { panel = null; render(); return; }
+  freeformSilence(attacker, a);
 }
 
 // A target at a glance, for picking one: its Stance, the Tokens it wears
@@ -1454,11 +1549,21 @@ function targetPanel(): string {
     // Value of "-" cannot Respond (4.11.2).
     && !(mode === 'intercept' && !u.aerial)
     && !(mode === 'electronic' && electronicDash(data!, u))
+    // The unit types the card prints ("Mech/Drone", "Drone/Projectile"), and
+    // for a Scan only a unit it could change: it offered every enemy (audit
+    // Phase 3, D5 and A5).
+    && !(mode === 'electronic' && a && (electronicTargetWhy(a, u) || (isScanAction(a) && !scannable(u))))
     && (targetFor?.only === undefined || u.uid === targetFor.only)
     // PDRH-202_B Link Shock: only a unit this one Tethers.
     && !(mode === 'attack' && a && linkShockOf(a) && !tetheredBy(t, u)));
+  // HIGHLIGHT (6.2.1): a Firing Action that can target a Highlighted enemy must
+  // target it (FAQ J18: Firing only). The table judges who it can target, so
+  // the rule is stated and the Highlighted listed first (audit Phase 3, E1).
+  const lit = mode === 'attack' && a?.type === 'Firing' ? enemies.filter((u) => hasHighlight(data!, table.tokens, u)) : [];
+  if (lit.length) enemies.sort((x, y) => Number(lit.includes(y)) - Number(lit.includes(x)));
   return `<div class="pad-panel-in">${panelHead(mode === 'intercept' ? 'Intercept' : a?.name.en ?? 'Attack')}
     <p class="pad-lead">${esc(t.label)} · pick the target.</p>
+    ${lit.length ? `<p class="pad-note">${esc(lit.map((u) => u.label).join(', '))} ${lit.length === 1 ? 'has' : 'have'} Highlight: if this Firing Action can target ${lit.length === 1 ? 'it' : 'one of them'} on the table, it must (6.2.1).</p>` : ''}
     ${enemies.length
       ? enemies.map((u) => `<button class="pad-seat" data-act="pick-target" data-uid="${u.uid}">
           <span class="pad-seat-name">${esc(u.label)}${targetState(u) ? `<small class="pad-seat-toks">${esc(targetState(u))}</small>` : ''}</span><span class="pad-seat-tag">${esc(KIND_LABEL[u.kind])}</span></button>`).join('')
@@ -4146,13 +4251,13 @@ function act(el: HTMLElement, ev: Event): void {
       const t = targetFor ? unitOf(targetFor.uid) : null;
       const d = unitOf(Number(el.dataset.uid));
       if (!t || !d || !targetFor) return;
-      const { actionId, mode, granted } = targetFor;
+      const { actionId, mode, granted, resumed } = targetFor;
       targetFor = null;
       panel = null;
       render();
       if (mode === 'intercept') void askTableAndIntercept(t, actionId, d);
       else if (mode === 'electronic') void askTableAndElectronic(t, actionId, d);
-      else void askTableAndAttack(t, actionId, d, !!granted);
+      else void askTableAndAttack(t, actionId, d, !!granted, !!resumed);
       return;
     }
     case 'g-start':
@@ -4291,8 +4396,9 @@ function act(el: HTMLElement, ev: Event): void {
       const grant = a ? targetStatusGrant(a) : null;
       if (!by || !a || !grant) return;
       void (async () => {
-        const units = table.tokens.filter((x) => x.uid !== by.uid && x.deployed !== false && !isDead(x)
-          && (grant.side === 'any' || (grant.side === 'enemy') === (x.side !== by.side)));
+        // The shared reader: no Low Value Unit, and no camouflaged unit for a
+        // Highlight (FAQ I1, J3; audit Phase 3, E2). The table judges Range.
+        const units = targetStatusTargets(data!, table.tokens, by, a, grant).filter((x) => !isDead(x));
         if (!units.length) { toast(`${a.name.en ?? 'This Action'}: there is no unit to target.`); return; }
         const pick = await choiceDialog({
           title: a.name.en ?? 'Target',

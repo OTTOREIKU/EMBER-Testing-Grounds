@@ -1,8 +1,9 @@
 import { clampBoardArt, clampGridColour, DEFAULT_BOARD } from './boards';
 import type { CommonAction, GameData } from './data';
 import { cardName, faceOf, isAerial, isBarricade, isFlyingBase, isMine, isTetherFace, isUnfolded, transformFaces, unfoldsInto, unitSize } from './data';
-import type { ExtraTick, Card, CardAction, CounterRoll, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, TableZone, TerrainPiece, TetherLink, Timing, Token, TokenPick } from './types';
-import { addStatus, DEFAULT_GRIDS, gridsOf, LEGACY_SIDE, normaliseScript, removableTokens, statusCount, TIMINGS } from './types';
+import type { ExtraTick, Card, CardAction, CounterRoll, GameRuleEffect, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, TableZone, TerrainPiece, TetherLink, Timing, Token, TokenPick } from './types';
+import type { Command } from './commands';
+import { addStatus, DEFAULT_GRIDS, gridsOf, LEGACY_SIDE, normaliseScript, removableTokens, statusCount, STATUSES, TIMINGS } from './types';
 import { normaliseSetup } from './setup';
 import { isMeleeFiring, lockersOf } from './melee';
 import { boardGrids, inContact, largeGridOf, lineCrossesUnit, losBetween, rangeBetween, smokeBlocks, standingSpot } from './rules';
@@ -1389,16 +1390,71 @@ export function silenceDenied(data: GameData, tokens: Token[], t: Token): AuraSo
 // Silence as the CARD prints it, before any aura has a say. Split out so a
 // Reveal can name the aura as the REASON: an Action that never carried Silence
 // must not blame a bystanding Eagle for taking away what was never there.
+//
+// `silence: false` is an override's way of saying the print carries none: the
+// GoF 1.021 MR24 (ZHRA-202) prints no Silence on either Action, though its
+// Chinese still does (ruled 2026-09-25, audit Phase 3, F11).
 function actionPrintsSilence(a: CardAction): boolean {
-  if ((a as { silence?: boolean }).silence === true) return true;
+  const flag = (a as { silence?: boolean }).silence;
+  if (flag === false) return false;
+  if (flag === true) return true;
   if ((a.keywords ?? []).some(SILENCE_KEYWORD)) return true;
   // 12 actions carry the term only in their Chinese text. A false positive
   // here fails safe: the unit is left hidden rather than nagged to Reveal.
   return (a.description?.zh ?? '').includes('静默');
 }
 
-export function isSilentAction(data: GameData, tokens: Token[], t: Token, a: CardAction): boolean {
-  return actionPrintsSilence(a) && !silenceDenied(data, tokens, t);
+// Stealth Movement (100_B, 250_B): "All Move Actions and Maneuver of this part
+// have Silence." The one text in the game that makes a Maneuver Silent (4.12.3:
+// a Maneuver "does not benefit from Silence unless otherwise specified"), and it
+// reaches only its own Part's Move Actions. Read off its grant_silent_movement
+// rule, on a Part that can still act: FAQ I2 takes it away with a destroyed
+// Stealth Chassis, and a Repaired one still acts (J23).
+//
+// This used to read each Part's card-level keywords, which are the card's
+// glossary footer: 27 cards list Silence there because one of their Actions
+// prints it. So every Maneuver of a Viper or an Octopus was Silent, and the
+// Stealth Chassis's own Sprint was not (audit Phase 3, B1/B2).
+function silentMovementGrants(data: GameData, t: Token): { slot: string; appliesTo: string[] }[] {
+  const out: { slot: string; appliesTo: string[] }[] = [];
+  for (const { slot, card } of tokenCards(data, t)) {
+    if (slot === 'pilot' || !partUsable(t, slot)) continue;
+    for (const a of card.actions ?? []) {
+      for (const g of a.gameRules ?? []) {
+        for (const e of (g.effects ?? []) as { type?: string; appliesTo?: string[] }[]) {
+          if (e.type === 'grant_silent_movement') out.push({ slot, appliesTo: e.appliesTo ?? [] });
+        }
+      }
+    }
+  }
+  return out;
+}
+
+// A Move Action "of this part": the Part's own Moving Actions, and a Crawl made
+// with it (ruled 2026-09-25, audit Phase 3, F14). A Common Action names its Part
+// as `id@slot`; unnamed, a Crawl is the Chassis's while the Chassis stands.
+function movementPrintsSilence(data: GameData, t: Token, a: CardAction, partKey?: string): boolean {
+  if (a.type !== 'Moving') return false;
+  const grants = silentMovementGrants(data, t).filter((g) => g.appliesTo.includes('moving_action'));
+  if (!grants.length) return false;
+  const common = (data.commonActions ?? []).find((c) => c.id === a.id);
+  let slot: string | undefined;
+  if (common) {
+    const named = partKey && partKey.startsWith(`${a.id}@`) ? partKey.slice(a.id.length + 1) : undefined;
+    slot = named ?? (common.slots.includes('chasis') && partUsable(t, 'chasis') ? 'chasis' : undefined);
+  } else {
+    slot = tokenCards(data, t).find(({ card }) => (card.actions ?? []).some((x) => x.id === a.id))?.slot;
+  }
+  return !!slot && grants.some((g) => g.slot === slot);
+}
+
+// `partKey` names the Part a Common Action came from; `from` is the mover as it
+// stood before a Movement Action, because an enemy Patrol Eagle's aura denies
+// it Silence at either end of the move (FAQ O11/O15), the reading
+// interceptsOwed is given.
+export function isSilentAction(data: GameData, tokens: Token[], t: Token, a: CardAction, partKey?: string, from?: Token): boolean {
+  return (actionPrintsSilence(a) || movementPrintsSilence(data, t, a, partKey))
+    && !actionSilenceDenier(data, tokens, t, a, partKey, from);
 }
 
 // The unit whose aura is WHY this Action is not Silent, for the Reveal line.
@@ -1409,55 +1465,30 @@ export function actionSilenceDenier(
   tokens: Token[],
   t: Token,
   a: CardAction,
-): AuraSource | undefined {
-  return actionPrintsSilence(a) ? silenceDenied(data, tokens, t) : undefined;
-}
-
-// A Maneuver is Silent only while a Part granting Silence survives — a Stealth
-// Chassis carries the keyword on the card itself, and FAQ I2 destroys the
-// exemption with the Part: a facing change on a dead Stealth Chassis is a
-// non-Silence action, Reveals, and sheds a Low Profile Token.
-//
-// THE CARD TO REACH FOR IS 100 LM210S, NOT PL29, and this comment used to say
-// PL29 — which was true when it was written and is not now. The publisher's GoF
-// parts list v1.021 REDESIGNED card 180 into the PL29 All-terrain Chassis,
-// "losing Silence and gaining a Jump", and data/stat_overrides.json carries
-// that as `keywords: []`. Since applyStats REPLACES the array, a PL29 Mech
-// prints no Silence in the shipped data at all: it Reveals and sheds like any
-// other. Exactly two Chassis still grant it, 100 and its trial model 250, and
-// tests/lowprofile.test.mjs pins that pair so a data refresh that drops the
-// last one cannot quietly make this whole function unreachable.
-function maneuverPrintsSilence(data: GameData, t: Token): boolean {
-  return tokenCards(data, t).some(({ slot, card }) =>
-    (t.partStates[slot as PartSlot | 'main'] ?? 'intact') !== 'destroyed'
-    && (card.keywords ?? []).some(SILENCE_KEYWORD));
-}
-
-// Standing in an enemy Patrol Eagle's aura destroys that exemption just as
-// thoroughly, which is why the board is a parameter — and it is judged at BOTH
-// ENDS of the Movement. A Movement "is judged at the start and landing grids
-// only" (FAQ O11/O15); that is the same reading interceptsOwed is given at the
-// freeplay call site, which passes the start position for the identical reason.
-// Landing-square-only was the first draft's bug: a unit that began inside the
-// aura and walked out of it was judged as though it had never been in it, and
-// retroactively got its Silence back.
-//
-// `from` is the mover as it STOOD before the Maneuver. A caller sweeping the
-// board after the fact passes the start position the Opportunity recorded; one
-// with nothing recorded passes none and judges the landing grid alone, which is
-// all such a caller can honestly know.
-export function maneuverSilenceDenier(
-  data: GameData,
-  tokens: Token[],
-  t: Token,
+  partKey?: string,
   from?: Token,
 ): AuraSource | undefined {
-  if (!maneuverPrintsSilence(data, t)) return undefined;
-  return silenceDenied(data, tokens, t) ?? (from ? silenceDenied(data, tokens, from) : undefined);
+  if (!actionPrintsSilence(a) && !movementPrintsSilence(data, t, a, partKey)) return undefined;
+  return silenceDenied(data, tokens, t) ?? (from && a.type === 'Moving' ? silenceDenied(data, tokens, from) : undefined);
 }
 
-export function maneuverIsSilent(data: GameData, tokens: Token[], t: Token, from?: Token): boolean {
-  return maneuverPrintsSilence(data, t) && !maneuverSilenceDenier(data, tokens, t, from);
+// A Maneuver is Silent only through Stealth Movement, on a Part that can still
+// act: a facing change on a dead Stealth Chassis is a non-Silence action,
+// Reveals, and sheds a Low Profile Token (FAQ I2). The cards are 100 LM210S and
+// its trial model 250, not 180: the GoF 1.021 list redesigned 180 into the PL29
+// All-terrain Chassis, "losing Silence and gaining a Jump", and
+// action_overrides clears the grant its Jump still carried in the bundle.
+//
+// No aura takes it away. The Patrol Eagle's Dynamic Perception reads "All
+// Actions of Enemy Units within range lose Silence", and a Maneuver is not an
+// Action (ruled 2026-09-25, audit Phase 3, F14). It used to strip the Maneuver
+// as well, judged at both ends of the move.
+function maneuverPrintsSilence(data: GameData, t: Token): boolean {
+  return silentMovementGrants(data, t).some((g) => g.appliesTo.includes('adjust_move'));
+}
+
+export function maneuverIsSilent(data: GameData, t: Token): boolean {
+  return maneuverPrintsSilence(data, t);
 }
 
 // ---------- Who breaks Optical Camouflage by standing next to it ----------
@@ -1565,19 +1596,30 @@ export function manifestationRange(data: GameData, t: Token): number {
   return best;
 }
 
-// Every Large Grid the unit may manifest into: within X of where its marker
-// stands, measured in Large Grids, and somewhere it actually fits. Distance is
-// Chebyshev because a Grid diagonally adjacent is one Grid away, the same
-// measure Adjacent uses -- and nothing between is consulted at all, which IS
-// the teleport.
+// Every Large Grid the unit may manifest into: within Range X of where its
+// marker stands, and somewhere it actually fits. Nothing between is consulted
+// at all, which IS the teleport.
+//
+// RANGE, counted the way 4.2.1 counts it: "the number of large Grids in an
+// orthogonal path", so a diagonal neighbour is 2. p.72 makes the Stealth Value
+// Manifestation's "Movement Range", and Teleportation needs "a target Grid
+// within the specified Range" (4.3.3). The August build counted a square
+// (Chebyshev), which offered 24 Grids at Stealth 2 where 12 are legal (ruled
+// 2026-09-25, audit Phase 3, C1).
+//
+// `env` is the board's Environment Cards: the move follows Flying Movement
+// rules (FAQ I17), so a Ground Unit may not land in an Abyss. An Immobilized
+// unit Reveals where it stands and is offered nothing (FAQ I20).
 export function manifestTargets(
   data: GameData,
   tokens: Token[],
   terrain: TerrainPiece[],
   t: Token,
+  env?: { environments?: { card: string; col: number; row: number }[] },
 ): { c: number; r: number; col: number; row: number }[] {
-  void data;
+  if (immobilizedStop(t)) return [];
   const range = manifestationRange(data, t);
+  const ground = !!env?.environments?.length && isGroundUnit(data, t);
   const here = largeGridOf(t);
   const out: { c: number; r: number; col: number; row: number }[] = [];
   for (let c = here.c - range; c <= here.c + range; c++) {
@@ -1587,6 +1629,8 @@ export function manifestTargets(
       // Grids that actually exist around it.
       if (c < 0 || r < 0 || c >= boardGrids() || r >= boardGrids()) continue;
       if (c === here.c && r === here.r) continue;
+      if (Math.abs(c - here.c) + Math.abs(r - here.r) > range) continue;
+      if (ground && envCardAt(env!, c, r) === 'abyss') continue;
       const spot = standingSpot(c, r, t.size, !!t.aerial, terrain, tokens, t.uid);
       if (spot) out.push({ c, r, col: spot.col, row: spot.row });
     }
@@ -1612,6 +1656,11 @@ export function manifestTargets(
 // Battlefield is the example the rulebook names).
 export function isScanAction(a: CardAction): boolean {
   if (a.id === 'COMMON_SCAN') return true;
+  // Scan Battlefield (080_A the Hyena Radar, 522_A the Dragonfly): "Scan all
+  // Enemy Targets within range" (RDL 1.02), carried as an electronic `detect`
+  // rule. Its Chinese says 侦测, "detect", which the text test below never
+  // matched, so every page read it as card text (audit Phase 3, A4).
+  if ((a.gameRules ?? []).some((g) => (g.effects ?? []).some((e) => e.type === 'electronic' && e.mode === 'detect'))) return true;
   const text = `${a.description?.en ?? ''} ${a.description?.zh ?? ''}`;
   return /\bScan\b[^.]*Optical Camouflage|扫描[^。]*光学迷彩/i.test(text);
 }
@@ -3262,14 +3311,22 @@ export function autoTargetsFor(
   // Grids from the attacker, and it is the one that must be taken.
   const origins = isElectronicAttack(a) ? electronicOrigins(data, tokens, t) : [t];
   const reachOf = (o: Token): number => Math.min(...origins.map((from) => rangeBetween(from, o).range));
+  const electronic = isElectronicAttack(a) || isScanAction(a);
   const candidates = tokens.filter((o) => {
     if (o.side === t.side || o.uid === t.uid || o.deployed === false) return false;
     if ((o.partStates[o.kind === 'mech' ? 'torso' : 'main'] ?? 'intact') === 'destroyed') return false;
     if (a.type === 'Melee' && o.aerial) return false;
+    // A Counter-roll's Responder: not a "-" (4.11.2), of a type the card names,
+    // and for a Scan one it could change (audit Phase 3, D5).
+    if (electronic && (electronicDash(data, o) || electronicTargetWhy(a, o) || (isScanAction(a) && !scannable(o)))) return false;
     return reachOf(o) <= reach;
   });
   if (!candidates.length) return [];
-  const lit = candidates.filter((o) => statusCount(o.statuses, 'highlight') > 0);
+  // Highlight binds FIRING only (FAQ J18, and M26 for Interception), so an
+  // Electronic Attack or a Hound's Melee takes the nearest regardless (ruled
+  // 2026-09-25, audit Phase 3, F15). The Token or a card printing it, and
+  // neither while an aura's Low Profile cancels it (hasHighlight, J12).
+  const lit = a.type === 'Firing' ? candidates.filter((o) => hasHighlight(data, tokens, o)) : [];
   // Target Tracer, effect 1 (glossary): a DRONE's Automatic Action designates
   // a bearer 'even if it is not the closest Enemy Unit' -- the distance rule
   // is waived, so the tracered pool is taken whole and nearest-within-it
@@ -4253,21 +4310,23 @@ export function isElectronicAttack(a: CardAction): boolean {
 // ELECTRONIC VALUE "-" (4.11.2): a Unit printed with a dash rather than a
 // number CANNOT BE THE RESPONDER of an Electronic Counter-roll, which is not the
 // same as an Electronic Value of 0 -- a 0 may still be targeted and simply rolls
-// nothing. The dash is carried in the data as -1, and only two cards have it:
-// 074 GM-35 Anti-Armor Mine and 158 the Turtle Shell mobile cover, both
-// deployables rather than crewed machines, which is exactly the sort of thing
-// with no electronics to attack.
+// nothing. Nine unit cards print it: 074 GM-35 Mine, 158 the Turtle Shell
+// cover, the grenades, rocket and inflatable walls (154, 155, 267, 268,
+// PDAM-003/004/005), none of them with electronics to attack.
 //
-// It was being SUMMED as a number, so instead of being untargetable those two
-// merely rolled one die fewer.
+// It was SUMMED as a number at first, so those two rolled one die fewer; then
+// stat_overrides turned the dash into 0 for the sum, which erased it, and this
+// never fired: a Mine could be the Responder and always lost (audit Phase 3,
+// D4). `electronicDash` now carries the dash beside the 0.
 export function electronicDash(data: GameData, t: Token): boolean {
   return tokenCards(data, t)
     .filter(({ slot }) => slot !== 'pilot')
-    .some(({ card }) => (card.electronic ?? 0) < 0);
+    .some(({ card }) => card.electronicDash === true || (card.electronic ?? 0) < 0);
 }
 
 export function electronicValue(data: GameData, t: Token, loans: LoanedPart[] = []): number {
-  const own = tokenCards(data, t)
+  // ownCards: a Carrier Tarantula's Load is not counted (FAQ O4).
+  const own = ownCards(data, t)
     .filter(({ slot }) => slot !== 'pilot')
     .filter(({ slot }) => (t.partStates[slot as PartSlot | 'main'] ?? 'intact') !== 'destroyed')
     // A dash is not a negative number, so it contributes nothing to the sum.
@@ -4314,7 +4373,10 @@ export function warfareNodeBoost(data: GameData, tokens: Token[], t: Token): { e
           ...(a.keywords ?? []).map((k) => k.inline ?? k.key ?? '')].join(' ');
         const m = /(?:电战节点|Warfare Node)\s*(\d+)/i.exec(hay);
         if (!m) continue;
-        if (rangeBetween(src, t).range > (a.range ?? 0)) continue;
+        // The Node is Electronic Support ("· Electronic Support · Warfare Node
+        // 1"), so FPA-06 Amplify lengthens it like any other: actionRange, not
+        // the printed number (audit Phase 3, D9).
+        if (rangeBetween(src, t).range > actionRange(data, tokens, src, a)) continue;
         const ev = electronicValue(data, src) + Number(m[1]);
         if (!best || ev > best.ev) best = { ev, label: src.label ?? String(src.uid) };
       }
@@ -4339,11 +4401,15 @@ export function warfareNodeBoost(data: GameData, tokens: Token[], t: Token): { e
 // One home for both boards. Freeplay's ElectronicHelper and the Match Centre's
 // counter-roll each did this arithmetic themselves and only freeplay had the
 // aura, so ZHDR-202 and PDTR-202 were dead in every match.
+// `action` is the Initiator's: its Strength +X (4.11.2) "will be added to the
+// Electronic Counter-roll of the Initiator". Scream prints +1 and nothing read
+// it (audit Phase 3, D2). It never reaches the Responder.
 export function electronicStrength(
   data: GameData,
   tokens: Token[],
   t: Token,
   role: 'initiator' | 'responder',
+  action?: CardAction | null,
 ): number {
   const base = electronicValue(data, t, role === 'initiator' ? loanedParts(data, tokens, t) : []);
   // Warfare Node substitutes the BASE, then the Suppression aura lands on
@@ -4351,7 +4417,8 @@ export function electronicStrength(
   // because the aura's text names the roll and not the stat.
   const node = warfareNodeBoost(data, tokens, t);
   const used = node && node.ev > base ? node.ev : base;
-  return Math.max(0, used + auraValueOn(data, tokens, t, 'electronic_contest_strength_penalty'));
+  const strength = role === 'initiator' && action ? strengthOf(action) : 0;
+  return Math.max(0, used + strength + auraValueOn(data, tokens, t, 'electronic_contest_strength_penalty'));
 }
 
 export function defaultUnitLabel(data: GameData, t: Token): string {
@@ -4803,9 +4870,13 @@ export function counterStage(
     & { initDeclare?: boolean | null; respDeclare?: boolean | null },
 ): CounterStage {
   if (!c.initRoll || !c.respRoll) return 'roll';
+  // A Drone may also reroll on the Whistle (ZYBP-202), "when an Ally Drone
+  // within Range performs a roll": a Counter-roll is one, and it was never
+  // offered there (audit Phase 3, D9). `tokens` must be the whole board, or
+  // neither the Whistle Mech nor Karl Fried's is found.
   const may = (uid: number): boolean => {
     const t = tokens.find((x) => x.uid === uid);
-    return !!t && canAffordFocus(data, t, tokens);
+    return !!t && (canAffordFocus(data, t, tokens) || whistleFunders(data, tokens, t).length > 0);
   };
   const i = c.initDeclare ?? (c.initFocused ? true : may(c.initiatorUid) ? null : false);
   if (i === null) return 'declareI';
@@ -4821,19 +4892,22 @@ export function provokeOffer(
   tokens: Token[],
   c: CounterRoll,
   initiatorWins: boolean,
-): Token | null {
+): { yoyu: Token; target: Token } | null {
   // Answered once and once only: `provoke` is what a checkpoint carries back,
   // so a re-offer after a resync would be the same question twice.
   if (c.provoke) return null;
   // Settled means the Focus order has run out as well (FAQ G4).
   if (counterStage(data, tokens, c) !== 'done') return null;
-  // "When Electronic Counter Roll is successful" -- Yoyu's own. The Initiator
-  // taking the tie (4.11.2) is a Yoyu LOSS and offers nothing.
-  if (initiatorWins) return null;
   const responder = tokens.find((x) => x.uid === c.responderUid);
   const initiator = tokens.find((x) => x.uid === c.initiatorUid);
   if (!responder || !initiator) return null;
-  return provokeWhy(data, responder, initiator) === null ? initiator : null;
+  // "When Electronic Counter Roll is successful", in EITHER role: 4.11.2 fires
+  // an on-success Passive "regardless of whether the Unit was acting as the
+  // Initiator or Responder". Yoyu as Responder succeeds when the Initiator
+  // does not (ties go to the Initiator); as Initiator, when it wins. It was
+  // offered to the Responder only (ruled 2026-09-25, audit Phase 3, F16).
+  const [yoyu, target] = initiatorWins ? [initiator, responder] : [responder, initiator];
+  return provokeWhy(data, yoyu, target) === null ? { yoyu, target } : null;
 }
 
 // A Mech Maneuvers at the Maneuver Value printed on its Chassis; a Drone moves at
@@ -5178,8 +5252,9 @@ export function guidedActions(data: GameData, t: Token, world?: ActionWorld): Gu
   // A Load is a Backpack this Mech is holding for as long as it stays in
   // Contact with the Carrier, so it walks the same gauntlet as its own Parts.
   const loans = world ? loanedParts(data, world.tokens, t) : [];
+  // ownCards: a Carrier Tarantula never uses its own Load (FAQ O4).
   const sources: { slot: PartSlot | 'pilot' | 'main'; card: Card; loan?: LoanedPart }[] = [
-    ...tokenCards(data, t),
+    ...ownCards(data, t),
     ...loans.map((loan) => ({ slot: 'backpack' as PartSlot, card: loan.card, loan })),
   ];
   for (const { slot, card, loan } of sources) {
@@ -5920,4 +5995,374 @@ export function cruising(data: GameData, t: Token): boolean {
 
 export function usableInCruise(a: CardAction): boolean {
   return /may be used in Cruise Mode|可在巡航模式下使用/i.test(`${a.description?.en ?? ''} ${a.description?.zh ?? ''}`);
+}
+
+// ---------- Mechanics audit Phase 3 readers ----------
+//
+// Stealth and electronic warfare (Project-Documents/MECHANICS-AUDIT.md, Phase
+// 3). Kept inside the Phase 2 block's reach, at the end of the file, for the
+// same reason: the command-layer harnesses slice from that heading to the end.
+
+// A Carrier Tarantula's Load is lent, never used by the Drone itself: "the
+// Drone itself cannot use that Backpack, and its Electronic Value will not be
+// counted" (FAQ O4). tokenCards lists it as the Drone's backpack, so a Carrier
+// with an EC50 rolled 3 Yellow instead of 2 and could open the Load's Fire
+// Control Interference itself (audit Phase 3, D7). The lending half reads
+// `droneBackpack` directly (loanedParts), so it is untouched.
+export function carriedLoad(data: GameData, t: Token): boolean {
+  if (t.kind !== 'drone' || !t.droneBackpack) return false;
+  const c = data.byId.get(t.cardId);
+  return !!c && isCarrier(c);
+}
+
+// The cards a unit acts and counts with: tokenCards, less a Carrier's Load.
+export function ownCards(data: GameData, t: Token): { slot: PartSlot | 'pilot' | 'main'; card: Card }[] {
+  const all = tokenCards(data, t);
+  return carriedLoad(data, t) ? all.filter(({ slot }) => slot !== 'backpack') : all;
+}
+
+// ---------- what a won Counter-roll does (4.11.2) ----------
+
+export type EwOutcome =
+  | { kind: 'status'; statusId: string; stacks: number }
+  | { kind: 'link'; n: number }
+  | { kind: 'destroy' }
+  | { kind: 'control' };
+
+// ONE reading for every seam a won Electronic Attack lands through: freeplay's
+// applyEffects, and the Match Centre's and the pad's contestAct('apply'). Each
+// Electronic Attack nests its effect inside its `electronic` rule, and the two
+// shared-table seams read only the top level, matched the status by its English
+// label (the data names it in Chinese) and fell back to Fire Control
+// Interference. So online, Manipulation Interference gave FCI instead of
+// Immobilized, and Scream, The Red Shoes and Overload Inject gave FCI too; the
+// tabletop gave them nothing (audit Phase 3, D1-D3). A status this cannot name
+// is left out rather than guessed.
+export function electronicOutcomes(a: CardAction): EwOutcome[] {
+  const out: EwOutcome[] = [];
+  const walk = (list: GameRuleEffect[]): void => {
+    for (const raw of list) {
+      const e = raw as GameRuleEffect & { target?: unknown; delta?: number };
+      if (e.type === 'apply_status' && e.target !== 'self') {
+        const name = e.status ?? '';
+        const id = STATUS_BY_ZH[name] ?? SELF_STATUS_IDS[name] ?? STATUSES.find((s) => s.id === name || s.label === name)?.id;
+        if (id) out.push({ kind: 'status', statusId: id, stacks: e.stacks ?? 1 });
+      } else if (e.type === 'modify_link' && typeof e.delta === 'number' && e.delta < 0) {
+        out.push({ kind: 'link', n: -e.delta });
+      } else if (e.type === 'destroy_target') {
+        out.push({ kind: 'destroy' });
+      } else if (e.type === 'controlled_move') {
+        out.push({ kind: 'control' });
+      }
+      if (e.effects) walk(e.effects);
+    }
+  };
+  for (const g of a.gameRules ?? []) walk(g.effects ?? []);
+  return out;
+}
+
+// Who an Electronic Attack or a Scan names, and how many: "Mech/Drone" (097_B),
+// "Drone/Projectile" (XTC_A), "all Enemy Mechs" (Scream). The data has carried
+// it all along; nothing read it, so each was accepted at any kind of unit
+// (audit Phase 3, D5).
+export function electronicTarget(a: CardAction): { selection: string; unitTypes: string[] } | null {
+  for (const g of a.gameRules ?? []) {
+    for (const raw of g.effects ?? []) {
+      const e = raw as GameRuleEffect & { target?: { selection?: string; unitTypes?: string[] } };
+      if (e.type === 'electronic' && e.target) {
+        return { selection: e.target.selection ?? 'chosen', unitTypes: e.target.unitTypes ?? ['unit'] };
+      }
+    }
+  }
+  return null;
+}
+
+const KIND_WORD: Record<string, string> = { mech: 'Mech', drone: 'Drone', projectile: 'Projectile' };
+
+export function electronicTargetWhy(a: CardAction, target: Token): string | null {
+  const spec = electronicTarget(a);
+  if (!spec || spec.unitTypes.includes('unit') || spec.unitTypes.includes(target.kind)) return null;
+  const names = spec.unitTypes.map((k) => KIND_WORD[k] ?? k).join(' or ');
+  return `${a.name?.en || a.id} targets a ${names}, and ${target.label} is a ${KIND_WORD[target.kind] ?? target.kind}.`;
+}
+
+// Every enemy in Range, one Counter-roll each: Scream (ZHDR-205_A) and the
+// Hyena's and Dragonfly's Scan Battlefield (080_A, 522_A).
+export function electronicAll(a: CardAction): boolean {
+  return electronicTarget(a)?.selection === 'all';
+}
+
+// Strength +X (4.11.2): "X will be added to the Electronic Counter-roll of the
+// Initiator". Scream prints +1 on its card and in its Chinese, and OTTO kept it
+// although the GoF 1.021 row omits it (ruled 2026-09-25, audit Phase 3, F17).
+// Nothing read it.
+export function strengthOf(a: CardAction): number {
+  const hay = `${a.description?.en ?? ''} ${a.description?.zh ?? ''} ${(a.keywords ?? []).map((k) => k.inline ?? k.key ?? '').join(' ')}`;
+  const m = /(?:Strength|强度)\s*\+\s*(\d+)/i.exec(hay);
+  return m ? Number(m[1]) : 0;
+}
+
+// ---------- the Contact Reveal (4.12.2, FAQ I4, I7, I10, I14, I23, I24, M19) ----------
+//
+// "After any Movement that ends with an Enemy Unit in Contact with the Base of
+// the camouflaged Unit." An EVENT, not a state: it fires when a Movement by
+// either unit ends in Contact (I4), forced movement included (I16, I23), and a
+// Contact that merely persists fires nothing. So a camouflage activated while in
+// Contact stays on (I14), a second enemy arriving fires again, and so does a
+// Movement that starts and ends in Contact (ruled 2026-09-25, audit Phase 3, F2).
+// The pages read it as a state before, keyed per unit, and lost every Contact
+// after the first (C5).
+//
+// `before` is where every unit stood before the change being judged; a unit
+// missing from it has just arrived, which is how a Beacon or Mine laid into
+// Contact counts (I10). A camouflaged unit that moves ONTO a Mine is not
+// Revealed by it (I24, M19): the Mine detonates instead.
+export function contactRevealsOwed(
+  data: GameData,
+  tokens: Token[],
+  before: Map<number, { col: number; row: number }>,
+): { t: Token; by: Token }[] {
+  const moved = (u: Token): boolean => {
+    const p = before.get(u.uid);
+    return !p || p.col !== u.col || p.row !== u.row;
+  };
+  const out: { t: Token; by: Token }[] = [];
+  for (const t of tokens) {
+    if (statusCount(t.statuses, 'camouflage') === 0 || t.deployed === false) continue;
+    const self = moved(t);
+    for (const o of tokens) {
+      if (o.uid === t.uid || o.side === t.side || !breaksCamoByContact(data, o) || !inContact(t, o)) continue;
+      const other = moved(o);
+      if (!self && !other) continue;
+      const card = data.byId.get(o.cardId);
+      if (self && !other && card && isMine(card)) continue;
+      out.push({ t, by: o });
+      break;
+    }
+  }
+  return out;
+}
+
+export function positionsOf(tokens: Token[]): Map<number, { col: number; row: number }> {
+  return new Map(tokens.map((x) => [x.uid, { col: x.col, row: x.row }]));
+}
+
+// ---------- Highlight (6.2.1, 6.3.3; FAQ J3, J12, J18, M26, O21) ----------
+//
+// "If a Unit performs an Attack Action that is able to target an Enemy Unit that
+// has Highlight, it must target that Unit and cannot target other Units with the
+// Attack." A Highlight Token gives it, and so does a card that prints it (the
+// B3/2 Decoy Beacon, 076_A "This Beacon has Highlight", FAQ J3). Only the
+// Token was ever read (audit Phase 3, E3).
+const PRINTED_HIGHLIGHT = /has Highlight|具有高亮|拥有高亮/i;
+
+export function hasHighlight(data: GameData, tokens: Token[], t: Token): boolean {
+  const printed = statusCount(t.statuses, 'highlight') > 0
+    || tokenCards(data, t).some(({ slot, card }) => (t.partStates[slot as PartSlot | 'main'] ?? 'intact') !== 'destroyed'
+      && (card.actions ?? []).some((a) => PRINTED_HIGHLIGHT.test(`${a.description?.en ?? ''} ${a.description?.zh ?? ''}`)));
+  if (!printed) return false;
+  // J12: gained at once with an aura's Low Profile, "neither effect takes
+  // effect". A Highlighted unit standing in an ally's MES aura is neither
+  // forced on nor hidden, until the aura is lost.
+  return !auraLowProfile(data, tokens, t);
+}
+
+// The aura half of Low Profile (an MES Beacon, 559 Escarpment's), which never
+// puts a Token on and so cannot be Scanned away (Q3). J12 turns it off while
+// the unit also has Highlight.
+export function auraLowProfile(data: GameData, tokens: Token[], t: Token): boolean {
+  return auraEffectsOn(data, tokens, t).has('low_profile');
+}
+
+// The Highlighted enemies a Firing Action must take, from the targets it could
+// otherwise take: empty when there are none, and the pickers then offer every
+// legal target. Firing only: J18 says "Highlight Target only affects Firing
+// Actions", so Melee, Projectile and Interception (M26) are not bound (ruled
+// 2026-09-25, audit Phase 3, F15). Only the Drones' Automatic Actions were
+// ever bound, through autoTargetsFor (E1).
+export function highlightTargets(data: GameData, tokens: Token[], a: CardAction, legal: Token[]): Token[] {
+  if (a.type !== 'Firing') return [];
+  return legal.filter((o) => hasHighlight(data, tokens, o));
+}
+
+// ---------- one reading of a won Counter-roll (4.11.2, 4.12.4) ----------
+//
+// What a won Counter-roll sends, in order, and the lines that say so, for all
+// three seams it lands through: freeplay's applyEffects (the pad on one phone
+// too), and the Match Centre's and the pad's contestAct('apply'). Each built
+// its own. The two shared-table copies granted Fire Control Interference for
+// anything they could not read, which was every Electronic Attack but the
+// FCI ones, and none of the three drained Scream's Link, destroyed Overload
+// Inject's target or handed over The Red Shoes' move (audit Phase 3, D1-D3).
+// The caller sends these as the Initiator's seat, joined for Undo, and then
+// clears the record.
+//
+// `reaction` is Target Tracing (174): "If successful, the Attacker loses 1
+// Link", the one Counter-roll here with no Electronic Attack behind it.
+// `thenAttack` is the attack a free Scan earned (FAQ I12), owed to the
+// attacker once the target has Revealed.
+export function ewWinCommands(
+  data: GameData,
+  init: Token,
+  resp: Token,
+  a: CardAction,
+  opts: { reaction?: boolean; thenAttack?: CounterRoll['thenAttack'] } = {},
+): { cmds: Command[]; lines: string[] } {
+  const seat = init.side;
+  const uid = init.uid;
+  const cmds: Command[] = [];
+  const lines: string[] = [];
+  if (opts.reaction) {
+    if (resp.kind === 'mech') {
+      cmds.push({ kind: 'drainLink', seat, uid, targetUid: resp.uid, n: 1 });
+      lines.push(`${resp.label} loses 1 Link (Target Tracing)`);
+    }
+    return { cmds, lines };
+  }
+  if (isScanAction(a)) {
+    // Low Profile Tokens come off now; a camouflaged target is owed its
+    // Manifestation, which is its own player's choice (4.12.2).
+    const strip = scanStrips(resp);
+    for (let i = 0; i < strip; i++) cmds.push({ kind: 'removeStatus', seat, uid, targetUid: resp.uid, statusId: 'lowProfile' });
+    if (strip > 0) lines.push(`${resp.label} loses ${strip} Low Profile Token${strip === 1 ? '' : 's'} (4.12.4)`);
+    if (statusCount(resp.statuses, 'camouflage') > 0) {
+      const then = opts.thenAttack;
+      cmds.push({
+        kind: 'queueReactions', seat,
+        items: [
+          { uid: resp.uid, actionId: a.id, count: 1, range: 0, kind: 'manifest', fromUid: uid },
+          ...(then ? [{
+            uid, actionId: then.actionId, count: 1, range: 0, kind: 'scanAttack' as const, fromUid: resp.uid,
+            ...(then.charged ? { charged: true } : {}),
+            ...(then.chargeChoice ? { chargeChoice: then.chargeChoice } : {}),
+            ...(then.twoHandedDeclined ? { twoHandedDeclined: true } : {}),
+          }] : []),
+        ],
+      });
+      lines.push(`${resp.label} is Revealed, and its own player now makes its Manifestation Movement (4.12.2)${then ? '. The attack resumes once it has appeared (FAQ I12)' : ''}`);
+    }
+    return { cmds, lines };
+  }
+  for (const o of electronicOutcomes(a)) {
+    if (o.kind === 'status') {
+      const def = STATUSES.find((s) => s.id === o.statusId);
+      cmds.push({ kind: 'applyStatus', seat, uid, targetUid: resp.uid, statusId: o.statusId, stacks: o.stacks });
+      lines.push(`${resp.label} gains ${o.stacks} ${def?.label ?? o.statusId}`);
+      // A unit bears one Hexagon Token at a time (2.5.3): addStatus replaces.
+      if (def?.shape === 'hexagon') {
+        for (const id of new Set(resp.statuses ?? [])) {
+          const old = STATUSES.find((s) => s.id === id);
+          if (old && old.shape === 'hexagon' && old.id !== def.id) {
+            lines.push(`${old.label} comes off ${resp.label}, since a unit may bear only 1 Hexagon Token (2.5.3)`);
+          }
+        }
+      }
+      if (o.statusId === 'fci' && resp.kind === 'projectile' && electronicValue(data, resp) > 0) {
+        lines.push(`${resp.label} is a Projectile with an Electronic Value, so it is destroyed outright (6.3.2, FAQ J5)`);
+      }
+    } else if (o.kind === 'link') {
+      // Scream: "reduce 1 Link of Target". Only a Mech has Link; 0 Shuts it Down.
+      if (resp.kind === 'mech') {
+        cmds.push({ kind: 'drainLink', seat, uid, targetUid: resp.uid, n: o.n });
+        lines.push(`${resp.label} loses ${o.n} Link${(resp.link ?? 0) - o.n <= 0 ? ', and at 0 it Shuts Down' : ''}`);
+      }
+    } else if (o.kind === 'destroy') {
+      // Overload Inject: "it will be Destroyed immediately". A kill like any
+      // other, so it scores and leaves the board (4.4.4).
+      cmds.push({ kind: 'recordKill', seat, uid, targetUid: resp.uid, what: 'unit' });
+      lines.push(`${resp.label} is destroyed immediately`);
+    } else if (o.kind === 'control') {
+      // The Red Shoes: "take control of it to perform a Maneuver or Move action".
+      // The Initiator's player moves it, once, at no Tick cost, and Immobilized
+      // still stops it (ruled 2026-09-25, audit Phase 3, F19).
+      cmds.push({ kind: 'queueReactions', seat, items: [{ uid, actionId: a.id, count: 1, range: 0, kind: 'control', fromUid: resp.uid }] });
+      lines.push(`${init.label}'s player now performs one of ${resp.label}'s own Maneuvers or Move Actions, at no Tick cost`);
+    }
+  }
+  return { cmds, lines };
+}
+
+// Every enemy an Action that names them all reaches, in the order its
+// Counter-rolls come: nearest first, then by uid, so both seats queue the same
+// list. Scream's "all Enemy Mechs within range" and the Scan Battlefield's "all
+// Enemy Targets within range" (080_A, 522_A). Measured from the unit itself.
+// `anyRange`: a table with no board (the pad) judges Range itself, so every
+// otherwise-eligible enemy is a candidate and the command names the ones in it.
+export function electronicAllTargets(data: GameData, tokens: Token[], t: Token, a: CardAction, anyRange = false): Token[] {
+  const reach = actionRange(data, tokens, t, a);
+  const scan = isScanAction(a);
+  return tokens
+    .filter((o) => o.side !== t.side && o.deployed !== false
+      && (o.partStates[o.kind === 'mech' ? 'torso' : 'main'] ?? 'intact') !== 'destroyed'
+      && !electronicTargetWhy(a, o) && !electronicDash(data, o)
+      && (!scan || scannable(o))
+      && (anyRange || rangeBetween(t, o).range <= reach))
+    .sort((x, y) => rangeBetween(t, x).range - rangeBetween(t, y).range || x.uid - y.uid);
+}
+
+// Whether a side's hollow faces count in a Counter-roll: its own Stance, and
+// what treats it as Offensive. The Initiator is an attacker (the Target Tracer
+// Token and the ECP10 Charge Order aura both reach a Drone); the Responder
+// "performs" the roll too, so the Charge Order reaches a Drone Responder
+// (ruled 2026-09-25, audit Phase 3, F18). The shared window read only the
+// Responder's own Stance.
+export function counterOffensive(data: GameData, tokens: Token[], t: Token, other: Token, role: 'initiator' | 'responder'): boolean {
+  if (role === 'initiator') return treatedAsOffensive(t, other, data, tokens);
+  return t.stance === 'offensive' || (t.kind === 'drone' && !!chargeOrderOn(data, tokens, t));
+}
+
+// What The Red Shoes may make a unit do besides its Maneuver: each Move Action
+// on a Part that can still act, a Crawl included, less a position swap (a
+// Blink has no route to steer) (ruled 2026-09-25, audit Phase 3, F19).
+export function controlledMoveActions(data: GameData, t: Token): CardAction[] {
+  const out: CardAction[] = [];
+  for (const { slot, card } of ownCards(data, t)) {
+    if (slot === 'pilot' || !partUsable(t, slot)) continue;
+    for (const a of card.actions ?? []) if (a.type === 'Moving' && !isPositionSwap(a)) out.push(a);
+  }
+  if (t.kind === 'mech') {
+    for (const c of data.commonActions ?? []) {
+      if (c.type === 'Moving' && commonInitiators(data, t, c).length) out.push(c as unknown as CardAction);
+    }
+  }
+  return out;
+}
+
+// 4.12.2's fifth trigger: "Part Destruction of the Part that was used to
+// perform the Action that Activated Optical Camouflage" Reveals the unit, with
+// no Manifestation. Nothing records which Part that was; a unit carries one
+// Part that prints the Action (096, 247, ZYBP-201 the Cloak), so it is the
+// unit whose every such Part can no longer act. A Repaired one still can (FAQ
+// J23), so re-Activating on it is not undone at once. A camouflage placed with
+// no such Part at all is left alone. It was never read (audit Phase 3, C11).
+export function camoPartLost(data: GameData, t: Token): boolean {
+  if (statusCount(t.statuses, 'camouflage') === 0) return false;
+  const parts = tokenCards(data, t).filter(({ slot, card }) => slot !== 'pilot' && (card.actions ?? []).some(activatesCamo));
+  return parts.length > 0 && parts.every(({ slot }) => !partUsable(t, slot));
+}
+
+// Who a Tactic's target Token may land on (Target Tag's Highlight, PRDR-202_A):
+// standing, of the side the card names, and for a Hexagon Token neither a Low
+// Value Unit (no Point Value, book p.82: Supplement 1.6 via FAQ J3/M23) nor, for
+// Highlight, a unit in Optical Camouflage (FAQ I1). The engine refuses both;
+// the pad's picker offered them, and the other two pages had no picker at all
+// (audit Phase 3, E2). A board adds Range and line of sight; a table without
+// one judges those itself.
+export function targetStatusTargets(
+  data: GameData,
+  tokens: Token[],
+  t: Token,
+  a: CardAction,
+  grant: { statusId: string; side: 'any' | 'enemy' | 'ally' },
+  board?: { terrain: TerrainPiece[]; smoke: SmokeScreen[] },
+): Token[] {
+  const hexagon = STATUSES.find((s) => s.id === grant.statusId)?.shape === 'hexagon';
+  const lowValue = (u: Token): boolean => u.kind === 'projectile' || (u.kind === 'drone' && (data.byId.get(u.cardId ?? '')?.score ?? 0) === 0);
+  return tokens.filter((u) => u.uid !== t.uid && u.deployed !== false
+    && (u.partStates[u.kind === 'mech' ? 'torso' : 'main'] ?? 'intact') !== 'destroyed'
+    && (grant.side === 'any' || (grant.side === 'enemy') === (u.side !== t.side))
+    && !(hexagon && lowValue(u))
+    && !(grant.statusId === 'highlight' && statusCount(u.statuses, 'camouflage') > 0)
+    && (!board || (rangeBetween(t, u).range <= actionRange(data, tokens, t, a)
+      && losBetween(t, u, board.terrain, tokens) !== 'blocked' && !smokeBlocks(t, u, board.smoke))));
 }

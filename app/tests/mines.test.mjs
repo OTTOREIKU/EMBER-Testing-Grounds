@@ -52,6 +52,13 @@ writeFileSync(
     + 'function rangeBetween(a: any, b: any): any { const p = largeGridOf(a), q = largeGridOf(b);\n'
     + '  return { range: Math.abs(p.c - q.c) + Math.abs(p.r - q.r) }; }\n'
     + 'function isElectronicAttack(_a: any): boolean { return false; }\n'
+    // The Counter-roll Responder filters and the Highlight reader autoTargetsFor
+    // asks since the audit's Phase 3: neutral here, since no Mine attacks
+    // electronically; the Token half of Highlight is what a Firing attack reads.
+    // mechanics3.test.mjs drives the real ones.
+    + 'function isScanAction(_a: any): boolean { return false; }\nfunction electronicDash(_d: any, _t: any): boolean { return false; }\n'
+    + 'function electronicTargetWhy(_a: any, _t: any): string | null { return null; }\nfunction scannable(_t: any): boolean { return true; }\n'
+    + "function hasHighlight(_d: any, _ts: any, o: any): boolean { return (o.statuses ?? []).includes('highlight'); }\n"
     // The Amplify half of actionRange, likewise neutral here (amplify.test.mjs).
     + 'function isElectronicSupport(_a: any): boolean { return false; }\nfunction amplifyBonus(_d: any, _t: any): number { return 0; }\n'
     + 'function statusCount(list: any, id: string): number { return (list ?? []).filter((x: any) => x === id).length; }\n'

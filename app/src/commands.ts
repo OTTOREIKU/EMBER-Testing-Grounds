@@ -1,15 +1,15 @@
-import type { BoardGrids, CombatView, Facing, GameState, MechLoadout, Opportunity, PartSlot, PartState, RollbackPoint, Side, SmokeScreen, Stance, Timing, Token } from './types';
+import type { BoardGrids, CombatView, Facing, GameState, MechLoadout, Opportunity, PartSlot, PartState, RollbackPoint, ScriptState, Side, SmokeScreen, Stance, Timing, Token } from './types';
 import { addStatus, ageTokens, cellsOf, gridsOf, newOpportunity, PHASES, shedToken, statusCount, STATUSES, TIMINGS, tokenFaces } from './types';
 import type { GameData } from './data';
 import { cardName, transformFaces, unfoldsInto, discardFaceOf, environmentAllowance } from './data';
-import { initiativeFor, actionMoves, firewatchOn, focusPayer, stanceFeedbackOf, stanceFeedbackTargets, stanceShaped, actionPartWhy, extraActivationOf, overloadPackOn, cruising, selfStanceShift, spendsAmmoWhenPerformed, startOpts, counterStage, covertCarryLock, ammoDeliveryPool, opportunityBonusOn, ripostePart, defenseReactionOn, targetTracingOn, riderOnDrone, commandGeneration, blinkTargets, isPositionSwap, electronicOrigins, isSilentAction, maneuverIsSilent, loanedParts, unfoldToken, formSwitch, switchFormTo, extrasFor, consumesCharge, cutTethersOn, electronicDash, electronicValue, immobilizedStop, isScanAction, scannable, manifestationRange, nonHumanoidCost, nonHumanoidStop, envHotEntries, settleEnvironments, freehandSlots, twoHandedUse, missileGroupOf, volleyOf, interceptCapacity, focusIsFree, keepsLinkOnPartLoss, makeDroneToken, structureOf, makeMechToken, maneuverRange, maxLink, partsLeft, pilotCard, pilotIs, projectileDelivery, provokeWhy, settleTethers, SLOT_LABEL, tetherTo, tokenCards, transformPartOn, actionRange, isRwsAction, rwsCommandKey, rwsFiredKey, selfStatusGrant, selfGrantWhy, straightLineBonus, linkTickTraitOn, isCarrier, canBeLoad, roundEndLinkSources } from './units';
+import { camoPartLost, canActivateCamo, electronicAll, electronicAllTargets, whistleFunders, electronicTargetWhy, isElectronicAttack, ownCards, actionSilenceDenier, activatesCamo, contactRevealsOwed, positionsOf, envCardAt, isGroundUnit, initiativeFor, actionMoves, firewatchOn, focusPayer, stanceFeedbackOf, stanceFeedbackTargets, stanceShaped, actionPartWhy, extraActivationOf, overloadPackOn, cruising, selfStanceShift, spendsAmmoWhenPerformed, startOpts, counterStage, covertCarryLock, ammoDeliveryPool, opportunityBonusOn, ripostePart, defenseReactionOn, targetTracingOn, riderOnDrone, commandGeneration, blinkTargets, isPositionSwap, electronicOrigins, isSilentAction, maneuverIsSilent, loanedParts, unfoldToken, formSwitch, switchFormTo, extrasFor, consumesCharge, cutTethersOn, electronicDash, electronicValue, immobilizedStop, isScanAction, scannable, manifestationRange, nonHumanoidCost, nonHumanoidStop, envHotEntries, settleEnvironments, freehandSlots, twoHandedUse, missileGroupOf, volleyOf, interceptCapacity, focusIsFree, keepsLinkOnPartLoss, makeDroneToken, structureOf, makeMechToken, maneuverRange, maxLink, partsLeft, pilotCard, pilotIs, projectileDelivery, provokeWhy, settleTethers, SLOT_LABEL, tetherTo, tokenCards, transformPartOn, actionRange, isRwsAction, rwsCommandKey, rwsFiredKey, selfStatusGrant, selfGrantWhy, straightLineBonus, linkTickTraitOn, isCarrier, canBeLoad, roundEndLinkSources } from './units';
 import { tetherCap } from './melee';
 import { canActivate, canAttackMode, canManeuver, canOverload, canPerform, rebooted, REBOOT_ID, spendAction, spendActivation, spendAttackMode, spendManeuver, spendOverload, untouched } from './ticks';
 import { tacticSpec, tacticTargets, type TacticCtx } from './tactics';
 import { battlefieldLocked, deploymentComplete, deployTurn, firstPlayerFrom, newSetup, normaliseSetup, tasksLocked } from './setup';
 import { applyKill, normaliseTasks, pendingDesignations, recordPartLoss, recordUnitLoss, settleControl, type Designation, retractKill, unrecordPartLoss } from './tasks';
 import { alive, canAct, dialHidden, droneActionWhy, droneMoveWhy, eligibleUnits, getLocalSeat, isLoopPhase, loopComplete, nextTurn, onExtraOpportunity, tiedChoiceWhy } from './loop';
-import { dissipationFor, rangeBetween, spotsInGrid } from './rules';
+import { dissipationFor, losNote, rangeBetween, spotsInGrid } from './rules';
 
 // ---------- the command layer (multiplayer phase 1) ----------
 
@@ -263,11 +263,26 @@ export type Command = (
       // declined [Two-Handed], which the resumed attack used to lose (audit
       // Phase 2, C7).
       thenAttack?: { actionId: string; charged?: boolean; chargeChoice?: string; twoHandedDeclined?: boolean };
+      // An Action on every enemy in Range, on a table with no board: the other
+      // enemies the table judged in Range, in the order they roll. A board
+      // derives them instead (audit Phase 3, D2 and A4).
+      also?: number[];
     }
   | { kind: 'rollCounter'; seat: Side; uid: number; faces: number[]; focused?: boolean }
   // A side's Focus declare in a shared Counter-roll (FAQ G4). It pays the Link
   // itself, the way `focus` does, so the reroll that follows cannot pay twice.
-  | { kind: 'declareCounterFocus'; seat: Side; uid: number; use: boolean }
+  // `whistleUid`: a Drone's reroll is paid instead with a Command Token off
+  // that Ally Mech's Whistle (ZYBP-202; audit Phase 3, D9).
+  | { kind: 'declareCounterFocus'; seat: Side; uid: number; use: boolean; whistleUid?: number }
+  // The Red Shoes (TM35NA_B): the Initiator's player performs one of the
+  // Responder's own Maneuvers or Move Actions (`actionId`), at no Tick cost,
+  // spending the `control` debt the won Counter-roll queued. `uid` is the
+  // controller, who owns the debt; `targetUid` is the unit that moves (ruled
+  // 2026-09-25, audit Phase 3, F19).
+  | {
+      kind: 'controlledMove'; seat: Side; uid: number; targetUid: number; to: { col: number; row: number };
+      facing?: Facing; via?: { col: number; row: number }[]; actionId?: string;
+    }
   // A Lightning rider's Stance switch (ZHDR-303 Valkyrie, ZHDR-304 Harpy):
   // sent by the ATTACKER, whose Action it is, onto the Mech it hit.
   | { kind: 'forceShutdown'; seat: Side; uid: number; targetUid: number }
@@ -308,7 +323,9 @@ export type Command = (
       kind: 'queueReactions'; seat: Side;
       // `kind` absent means Emergency Smoke, which is every debt written before
       // Target Tracing existed and every one still on a saved board.
-      items: { uid: number; actionId: string; count: number; range: number; kind?: 'smoke' | 'trace' | 'stance' | 'riposte' | 'manifest' | 'scanAttack'; fromUid?: number }[];
+      // The debt as the record keeps it, so a new kind (The Red Shoes' control)
+      // cannot be typed in one place and not the other.
+      items: ScriptState['reactions'];
     }
   | { kind: 'resolveReaction'; seat: Side; uid: number; actionId: string }
   // The "White Dwarf" Bit turning its card over (293/294/295). The set is read
@@ -545,7 +562,8 @@ export function ammoAvailable(data: GameData, state: GameState, t: Token, action
 function findAction(data: GameData, state: GameState, uid: number, actionId: string) {
   const t = state.tokens.find((x) => x.uid === uid);
   if (!t) return undefined;
-  for (const { card } of tokenCards(data, t)) {
+  // ownCards: a Carrier Tarantula never uses its own Load (FAQ O4).
+  for (const { card } of ownCards(data, t)) {
     const a = (card.actions ?? []).find((x) => x.id === actionId);
     if (a) return a;
   }
@@ -2231,6 +2249,9 @@ function checkActed(
       // Shutdown is where a Mech falls at 0 Link, never a Stance it is given
       // (3.4.2 lists only Defensive, Mobility and Offensive).
       if (cmd.stance === 'shutdown' && t.kind === 'mech') return no('A Mech deploys in Defensive, Mobility or Offensive Stance. Shutdown is only ever reached at 0 Link (3.4.2).');
+      // Deploying camouflaged needs a Part that can Activate Optical Camouflage
+      // (4.12.2): the engine took one for any unit (audit Phase 3, C11).
+      if (cmd.camo && !canActivateCamo(data, t)) return no(`${t.label} has no Part that Activates Optical Camouflage, so it cannot deploy in it (4.12.2).`);
       return ok;
     }
     case 'applyPenetration': {
@@ -2257,6 +2278,13 @@ function checkActed(
         }
       }
       if (!STATUSES.some((s) => s.id === cmd.statusId)) return no('That is not a Token or State the game knows.');
+      // Optical Camouflage is Activated by a unit's own Action (4.12.2), so it
+      // goes on one's own unit, and only one with a Part that prints it. The
+      // engine put it on any unit, the enemy's included (audit Phase 3, C11).
+      if (cmd.statusId === 'camouflage') {
+        if (target.side !== cmd.seat) return no('Optical Camouflage is Activated by the unit\'s own Action, never placed on an enemy (4.12.2).');
+        if (!canActivateCamo(data, target)) return no(`${target.label} has no Part that Activates Optical Camouflage (4.12.2).`);
+      }
       return ok;
     }
     case 'removeStatus':
@@ -2377,11 +2405,21 @@ function checkActed(
       if (state.script?.counter) return no('An Electronic Counter-roll is already open.');
       const a = findAction(data, state, cmd.uid, cmd.actionId);
       if (!a) return no('This unit has no such Action.');
+      // Only three things open a Counter-roll: an Electronic Attack, a Scan and
+      // the Target Tracing reaction. The command took any Action at all, a
+      // Firing one included (audit Phase 3, D5).
+      if (!cmd.reaction && !isElectronicAttack(a) && !isScanAction(a)) {
+        return no(`${a.name?.en || a.id} is not an Electronic Attack or a Scan, so it opens no Counter-roll.`);
+      }
+      // The target the card prints: 097_B "Mech/Drone", XTC_A "Drone/Projectile",
+      // Scream "Mechs" (D5).
+      const kindWhy = electronicTargetWhy(a, target);
+      if (kindWhy) return no(kindWhy);
       // Range only: Electronic Warfare ignores Terrain and line of sight
       // entirely (4.11.1), so the arc and sight checks a Firing Action needs
       // have no place here. The effective reach: FPA-06 Amplify adds a Grid to
       // an Electronic Attack, and reading the printed number refused it.
-      const reach = actionRange(data, state.tokens, t, a);
+      let reach = actionRange(data, state.tokens, t, a);
       // A reaction still has to BE one: the Passive has to be live on this Mech
       // with a Command Token to spend. The rule lives here, not in whoever drew
       // the button.
@@ -2404,11 +2442,41 @@ function checkActed(
         if (statusCount(target.statuses, 'camouflage') === 0) return no(`${target.label} is not in the Optical Camouflage State, so no free Scan is owed: attack it directly.`);
         const atk = findAction(data, state, cmd.uid, cmd.thenAttack.actionId);
         if (!atk || (atk.type !== 'Firing' && atk.type !== 'Melee')) return no('The free Scan precedes a Firing or Melee Action that designates the camouflaged unit (FAQ I12).');
+        // The attack designates the marker, so it has to be an attack this unit
+        // could make at the marker: its Range, its arc, its line of sight, not
+        // an Aerial unit for a Melee (ruled 2026-09-25, audit Phase 3, F8). The
+        // Scan it earns is "the Common Action: Scan, aside from its range"
+        // (FAQ I18): the attack's reach, where it used to be the Scan's own 6.
+        reach = actionRange(data, state.tokens, t, atk);
+        if (!state.noBoard) {
+          const gone = new Set(state.removedTerrain ?? []);
+          const terrain = (data.terrain?.layouts?.[state.map] ?? []).filter((p) => !gone.has(p.id));
+          const note = losNote(t, target, { ...atk, range: reach }, terrain, state.tokens, state.smoke ?? [], true);
+          const fail = note.split(' · ').find((x) => x.includes('✕'));
+          if (fail) return no(`${atk.name?.en || atk.id} cannot designate ${target.label}'s marker: ${fail.replace('✕ ', '')}.`);
+        }
+      }
+      // An Action on every enemy in Range (Scream, the Scan Battlefield) opens
+      // one Counter-roll per target, queued as the record clears; the one named
+      // must be among them, and the rest are derived, so both seats queue the
+      // same list (audit Phase 3, D2 and A4).
+      if (electronicAll(a) && !cmd.reaction) {
+        const pool = electronicAllTargets(data, state.tokens, t, a, !!state.noBoard);
+        const outside = [target.uid, ...(state.noBoard ? cmd.also ?? [] : [])].find((u) => !pool.some((x) => x.uid === u));
+        if (outside !== undefined) {
+          const who = state.tokens.find((x) => x.uid === outside);
+          return no(`${who?.label ?? 'That unit'} is not one of the enemies ${a.name?.en || a.id} reaches (Range ${reach}).`);
+        }
+        if (electronicValue(data, t, loanedParts(data, state.tokens, t)) <= 0) return no(`${t.label} has an Electronic Value of 0, so it cannot Initiate a Counter-roll (4.11.2).`);
+        return ok;
       }
       // An allied Repeater lends its position as the origin, and the Action's
       // own Range is measured from there (FAQ O19). Derived rather than sent,
-      // so both seats judge the same shot.
-      const origins = electronicOrigins(data, state.tokens, t);
+      // so both seats judge the same shot. For an Electronic Attack only: the
+      // glossary gives a Repeater to "Electronic Attack or Electronic Support",
+      // and a Scan measured through one was accepted at Range 12 (audit Phase
+      // 3, A5; F9). A free Scan measures from the attacker, at its attack's reach.
+      const origins = isElectronicAttack(a) && !cmd.thenAttack ? electronicOrigins(data, state.tokens, t) : [t];
       if (!cmd.reaction && !origins.some((from) => gridRange(from, target) <= reach) && !state.noBoard) {
         return no(`${target.label} is beyond Range ${reach}${origins.length > 1 ? ', even through the Repeater' : ''}.`);
       }
@@ -2452,6 +2520,14 @@ function checkActed(
       if (cmd.uid !== c.initiatorUid && cmd.uid !== c.responderUid) return no('That unit is not in this Counter-roll.');
       if (counterStage(data, state.tokens, c) !== (cmd.uid === c.initiatorUid ? 'declareI' : 'declareR')) {
         return no('It is not that side\'s turn to declare a Focus: once both hands are in, the Initiator declares first, then the Responder (FAQ G4).');
+      }
+      // The Whistle pays a Drone's reroll with an Ally Mech's Command Token,
+      // not Link (ZYBP-202; audit Phase 3, D9).
+      if (cmd.use && cmd.whistleUid !== undefined) {
+        if (!whistleFunders(data, state.tokens, t).some((m) => m.uid === cmd.whistleUid)) {
+          return no(`No Whistle within Range 4 of ${t.label} has a face-up Command Token to lend (ZYBP-202).`);
+        }
+        return ok;
       }
       if (cmd.use && !focusIsFree(data, t)) {
         // The payer: the Mech, or Karl Fried's for a White Dwarf Bit (D4).
@@ -2501,11 +2577,14 @@ function checkActed(
       // Counter-roll below, and Yoyu's own seat above.
       const c = state.script?.counter;
       if (c) {
-        // Yoyu answers as the RESPONDER (4.11.2, FAQ O5), turning the Mech that
-        // opened the contest. An answer naming any other pair is not this
-        // question.
-        if (c.responderUid !== cmd.uid) return no(`${t.label} is not the Responder of this Counter-roll.`);
-        if (c.initiatorUid !== cmd.targetUid) return no(`${target.label} did not open this Counter-roll.`);
+        // Yoyu answers in EITHER role (4.11.2: an on-success Passive fires
+        // "regardless of whether the Unit was acting as the Initiator or
+        // Responder"), turning the other Mech in the contest. It used to be the
+        // Responder only (ruled 2026-09-25, audit Phase 3, F16). An answer
+        // naming any other pair is not this question.
+        const pair = (c.responderUid === cmd.uid && c.initiatorUid === cmd.targetUid)
+          || (c.initiatorUid === cmd.uid && c.responderUid === cmd.targetUid);
+        if (!pair) return no(`${t.label} and ${target.label} are not the two sides of this Counter-roll.`);
         if (counterStage(data, state.tokens, c) !== 'done') return no('The Counter-roll is not settled yet: both hands, both Focus declares and their rerolls come first (FAQ G4).');
         if (c.provoke) return no('That Counter-roll has already been answered.');
       }
@@ -2686,14 +2765,18 @@ function checkActed(
         // Manifestation Movement is a Movement, and an Immobilized unit makes
         // none: it Reveals where it stands (FAQ I20).
         if (immobilizedStop(t)) return no(`${t.label} bears an Immobilized Token, so it Reveals where it stands rather than Manifesting away (FAQ I20).`);
-        // Chebyshev on Large Grids: a Grid diagonally over is one Grid away,
-        // the same measure Adjacent uses.
-        const away = Math.max(
-          Math.abs(Math.floor(cmd.to.col / 3) - Math.floor(t.col / 3)),
-          Math.abs(Math.floor(cmd.to.row / 3) - Math.floor(t.row / 3)),
-        );
+        // Range, counted in an orthogonal path of Large Grids (4.2.1), so a
+        // diagonal neighbour is Range 2. It was a square until 2026-09-25
+        // (audit Phase 3, C1).
+        const away = Math.abs(Math.floor(cmd.to.col / 3) - Math.floor(t.col / 3))
+          + Math.abs(Math.floor(cmd.to.row / 3) - Math.floor(t.row / 3));
         if (away > range) {
-          return no(`Manifestation Movement reaches ${range} Grid${range === 1 ? '' : 's'}, and that is ${away} away.`);
+          return no(`Manifestation Movement reaches Range ${range}, and that Grid is Range ${away} away.`);
+        }
+        // It follows Flying Movement rules (FAQ I17), and a flight may not land
+        // in an Abyss.
+        if (isGroundUnit(data, t) && envCardAt(state, Math.floor(cmd.to.col / 3), Math.floor(cmd.to.row / 3)) === 'abyss') {
+          return no(`${t.label} cannot Manifest into an Abyss: the move follows Flying Movement rules, which may not land there (FAQ I17).`);
         }
         const gone = new Set(state.removedTerrain ?? []);
         const terrain = (data.terrain?.layouts?.[state.map] ?? []).filter((p) => !gone.has(p.id));
@@ -2766,6 +2849,26 @@ function checkActed(
       if (!t) return no('That unit is not on the board.');
       const owed = (state.script?.reactions ?? []).some((r) => r.uid === cmd.uid && r.actionId === cmd.actionId);
       if (!owed) return no('That unit is owed no reaction.');
+      return ok;
+    }
+    case 'controlledMove': {
+      // The Red Shoes' debt, owed to this unit for this target: the actor gate
+      // above has already made the controller the sender's own unit.
+      const owed = (state.script?.reactions ?? []).some((r) => r.uid === cmd.uid && r.kind === 'control' && r.fromUid === cmd.targetUid);
+      if (!owed) return no(`${t.label} has taken control of nothing (The Red Shoes).`);
+      const target = state.tokens.find((x) => x.uid === cmd.targetUid);
+      if (!target) return no('That unit is not on the board.');
+      const act = cmd.actionId ? findAction(data, state, target.uid, cmd.actionId) : null;
+      if (cmd.actionId && (!act || act.type !== 'Moving')) return no(`${target.label} has no such Move Action.`);
+      // Still stopped by Immobilized (6.3.2), whoever is moving it.
+      const stop = immobilizedStop(target, act);
+      if (stop) return no(stop);
+      if (!state.noBoard) {
+        const { col, row } = cmd.to;
+        if (!Number.isInteger(col) || !Number.isInteger(row) || col < 0 || row < 0 || col >= cellsOf(state) || row >= cellsOf(state)) {
+          return no('That is not a place on the board.');
+        }
+      }
       return ok;
     }
     case 'accessTerminal': {
@@ -2957,6 +3060,41 @@ function removeIntegrityLoss(data: GameData, state: GameState): void {
 // or about the Shutdown at 0.
 // A White Dwarf Bit's Focus is paid by the Mech Karl Fried pilots (ACE-01;
 // audit Phase 2, D4), so the debit lands on the payer.
+// High Temperature, the pass-through half of a walk: a Fragile Token for every
+// hot Grid entered short of the landing (the landing is settleEnvironments').
+function walkHeat(
+  state: GameState,
+  t: Token,
+  from: { col: number; row: number },
+  to: { col: number; row: number },
+  via: { col: number; row: number }[],
+): void {
+  const landing = { c: Math.floor(to.col / 3), r: Math.floor(to.row / 3) };
+  const start = { c: Math.floor(from.col / 3), r: Math.floor(from.row / 3) };
+  const walked: { c: number; r: number }[] = [];
+  for (const p of via) {
+    const g = { c: Math.floor(p.col / 3), r: Math.floor(p.row / 3) };
+    if ((g.c === start.c && g.r === start.r) || (g.c === landing.c && g.r === landing.r)) continue;
+    if (!walked.some((w) => w.c === g.c && w.r === g.r)) walked.push(g);
+  }
+  for (const g of envHotEntries(state, walked)) {
+    void g;
+    t.statuses = addStatus(t.statuses, 'fragile');
+  }
+}
+
+// One face-up Command Token consumed. Flipped, not removed: 4.15.4 says a
+// consumed token stays on the Torso face-down and can no longer be issued or
+// used, and the End Phase collects it with everything else.
+function flipCommand(state: GameState, m: Token): void {
+  const l = [...(m.statuses ?? [])];
+  const at = l.lastIndexOf('command');
+  if (at < 0) return;
+  l.splice(at, 1);
+  m.statuses = [...l, 'commandUsed'];
+  syncCommandPool(state);
+}
+
 function payFocus(data: GameData, t: Token, tokens: Token[] = []): void {
   if (focusIsFree(data, t)) return;
   const payer = t.kind === 'mech' ? t : focusPayer(data, tokens, t);
@@ -2972,6 +3110,9 @@ function payFocus(data: GameData, t: Token, tokens: Token[] = []): void {
 // displacement or a unit being destroyed mid-attack — six paths, one of which
 // would have been missed. The sweep is a no-op on a board with no chips on it.
 export function apply(data: GameData, state: GameState, cmd: Command): void {
+  // Where everything stood, but only while something is camouflaged: the
+  // Contact Reveal is judged against it below.
+  const before = state.tokens.some((x) => statusCount(x.statuses, 'camouflage') > 0) ? positionsOf(state.tokens) : null;
   applyCommand(data, state, cmd);
   settleTethers(data, state);
   // Same shape, next card down: the High Temperature entry token and the
@@ -2981,6 +3122,31 @@ export function apply(data: GameData, state: GameState, cmd: Command): void {
   // the freeplay board narrates from its own call, and the Match Centre lets
   // the board redraw speak.
   settleEnvironments(data, state);
+  // 4.12.2's Contact trigger, the same way: a Movement of either unit that ends
+  // in Contact, whatever command carried it (a Maneuver, a knockback, a Crush
+  // swap, a Blink, a Beacon or Mine laid into Contact), derived here so both
+  // seats owe the same Reveal (audit Phase 3, C5).
+  if (before) {
+    for (const { t, by } of contactRevealsOwed(data, state.tokens, before)) oweReveal(state, t.uid, 'touch', by.uid);
+  }
+  // And its fifth trigger: the Part that Activated the camouflage destroyed,
+  // whatever destroyed it, Reveals the unit where it stands, with no
+  // Manifestation to choose, so there is nothing to owe: it simply happens, on
+  // both seats alike (audit Phase 3, C11).
+  for (const t of state.tokens) {
+    if (!camoPartLost(data, t)) continue;
+    t.statuses = (t.statuses ?? []).filter((id) => id !== 'camouflage');
+    if (state.script) state.script.revealDue = (state.script.revealDue ?? []).filter((x) => x.uid !== t.uid);
+  }
+}
+
+// A Reveal owed by a camouflaged unit, recorded once per cause.
+function oweReveal(state: GameState, uid: number, why: 'act' | 'move' | 'touch', byUid?: number): void {
+  const sc = state.script;
+  if (!sc) return;
+  const list = sc.revealDue ?? [];
+  if (list.some((x) => x.uid === uid && x.why === why && x.byUid === byUid)) return;
+  sc.revealDue = [...list, byUid === undefined ? { uid, why } : { uid, why, byUid }];
 }
 
 // ---------- 4.12.3's second consequence: the Low Profile Token ----------
@@ -3498,7 +3664,27 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
     return;
   }
   if (cmd.kind === 'clearCounterRoll') {
-    if (state.script) state.script.counter = null;
+    const sc = state.script;
+    if (!sc) return;
+    // The next Responder of an Action on every enemy in Range, as a fresh
+    // exchange: its own rolls, its own Focus, its own verdict. One that has
+    // left the board since is passed over.
+    const c = sc.counter;
+    const at = (c?.rest ?? []).findIndex((u) => state.tokens.some((x) => x.uid === u));
+    sc.counter = c && at >= 0 ? {
+      initiatorUid: c.initiatorUid,
+      responderUid: c.rest![at],
+      actionId: c.actionId,
+      initRoll: null,
+      respRoll: null,
+      initFocused: false,
+      respFocused: false,
+      initDeclare: null,
+      respDeclare: null,
+      provoke: null,
+      thenAttack: null,
+      ...(c.rest!.length > at + 1 ? { rest: c.rest!.slice(at + 1) } : {}),
+    } : null;
     return;
   }
   if (cmd.kind === 'placeSmoke') {
@@ -3821,7 +4007,10 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
         // depends on a distance, and a distance of nothing would hand it out
         // every time. The Low Profile consequence (4.12.3) still applies.
         if (cmd.facing !== undefined) t.facing = cmd.facing;
-        if (!maneuverIsSilent(data, state.tokens, t, t)) shedLowProfile(data, state, t);
+        if (!maneuverIsSilent(data, t)) {
+          shedLowProfile(data, state, t);
+          if (!cmd.free && statusCount(t.statuses, 'camouflage') > 0) oweReveal(state, t.uid, 'move');
+        }
         const o0 = oppOf(state, cmd.uid);
         if (o0 && sc && !cmd.free && !cmd.granted) sc.opp = lockStance(t, spendManeuver(o0));
         takeMoveGrant(state, cmd);
@@ -3837,36 +4026,35 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       // pivot arrives with `to` equal to the Grid the unit already stands in,
       // which is exactly how the Match Centre sends a turn on the spot.
       //
-      // Judged at the START and the landing grids, the same reading the Reveal
-      // half is given (FAQ O11/O15): an enemy Patrol Eagle's aura strips the
-      // Silence a Stealth Chassis prints (card 100 LM210S — NOT PL29, which
-      // lost the keyword in the v1.021 redesign; see maneuverPrintsSilence in
-      // units.ts), and a unit that walked out of that aura must not
-      // retroactively get its Silence back. `from` is the
-      // pre-move position captured above, spread over the token so the denier
-      // is asked about the unit as it STOOD.
-      if (!maneuverIsSilent(data, state.tokens, t, { ...t, col: from.col, row: from.row })) {
+      // Silent only through a Stealth Chassis (card 100 LM210S, NOT PL29, which
+      // lost it in the v1.021 redesign; see maneuverPrintsSilence in units.ts).
+      // No aura strips it: the Patrol Eagle takes Silence from Actions, and a
+      // Maneuver is not one (audit Phase 3, F14). A `free` move is the Movement
+      // of an Action already performed, whose own Silence was judged then.
+      if (!maneuverIsSilent(data, t)) {
         shedLowProfile(data, state, t);
+        if (!cmd.free && statusCount(t.statuses, 'camouflage') > 0) oweReveal(state, t.uid, 'move');
+      }
+      // A Move Action's own Silence was judged where it began, by performAction.
+      // Its landing is judged here: an enemy Patrol Eagle it lands beside takes
+      // the Silence away at either end, the reading the freeplay settle gives it.
+      if (cmd.free && cmd.actionId) {
+        const act = findAction(data, state, cmd.uid, cmd.actionId);
+        const began = { ...t, col: from.col, row: from.row };
+        const denier = act?.type === 'Moving' && isSilentAction(data, state.tokens, began, act)
+          ? actionSilenceDenier(data, state.tokens, t, act)
+          : undefined;
+        if (denier) {
+          shedLowProfile(data, state, t);
+          if (statusCount(t.statuses, 'camouflage') > 0) oweReveal(state, t.uid, 'act', denier.source.uid);
+        }
       }
       // High Temperature, the pass-through half: every Grid the walk entered
       // short of the landing. The landing is settleEnvironments' turf - it
       // runs right after this in apply() and owns endpoint entries from every
       // command, so granting it here too would cook the unit twice. A flight
       // enters only its landing Grid, so it leaves nothing for this half.
-      if (!cmd.flying && !t.aerial && cmd.via?.length) {
-        const landing = { c: Math.floor(cmd.to.col / 3), r: Math.floor(cmd.to.row / 3) };
-        const start = { c: Math.floor(from.col / 3), r: Math.floor(from.row / 3) };
-        const walked: { c: number; r: number }[] = [];
-        for (const p of cmd.via) {
-          const g = { c: Math.floor(p.col / 3), r: Math.floor(p.row / 3) };
-          if ((g.c === start.c && g.r === start.r) || (g.c === landing.c && g.r === landing.r)) continue;
-          if (!walked.some((w) => w.c === g.c && w.r === g.r)) walked.push(g);
-        }
-        for (const g of envHotEntries(state, walked)) {
-          void g;
-          t.statuses = addStatus(t.statuses, 'fragile');
-        }
-      }
+      if (!cmd.flying && !t.aerial && cmd.via?.length) walkHeat(state, t, from, cmd.to, cmd.via);
       const o = oppOf(state, cmd.uid);
       // A Movement Action already paid with an Action Tick, and one a card
       // handed out was never charged to the Opportunity at all.
@@ -3917,8 +4105,17 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       // sends nothing at all), but "no caller does that" is a habit, not a
       // rule, and the next caller would break the exemption in silence.
       const passive = a?.type === 'Passive' || a?.speed === 'passive';
-      if (a && !passive && !isSilentAction(data, state.tokens, t, a)) {
+      if (a && !passive && !isSilentAction(data, state.tokens, t, a, cmd.partKey)) {
         shedLowProfile(data, state, t);
+        // The same sentence's first half: the Reveal, recorded for every page to
+        // read (audit Phase 3, C4). The activating Action is exempt, since
+        // 4.12.2's trigger is for Actions performed while IN the state; any
+        // Action before it found no camouflage to break.
+        // An enemy aura that took the Action's Silence away is recorded with
+        // it, so the Reveal can name it.
+        if (statusCount(t.statuses, 'camouflage') > 0 && !activatesCamo(a)) {
+          oweReveal(state, t.uid, 'act', actionSilenceDenier(data, state.tokens, t, a, cmd.partKey)?.source.uid);
+        }
       }
       // The Ammo Token goes with the Action (4.13), for a granted one too. The
       // pages no longer spend it at the card button's click, which on the
@@ -4233,6 +4430,21 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
           ...(cmd.thenAttack.twoHandedDeclined ? { twoHandedDeclined: true } : {}),
         } : null,
       };
+      // Target Tracing's Command Token, spent by the command that opens it. The
+      // pages sent spendCommand first, and a Mech with one token then had none
+      // face-up for this check to find: the roll was refused after the token
+      // was gone (audit Phase 3, D8). The record keeps that it was the reaction.
+      if (cmd.reaction) {
+        flipCommand(state, t);
+        sc.counter.reaction = true;
+      }
+      // The rest of an Action on every enemy in Range, in the order they come.
+      const a = findAction(data, state, cmd.uid, cmd.actionId);
+      if (a && electronicAll(a) && !cmd.reaction) {
+        const rest = (state.noBoard ? [...new Set(cmd.also ?? [])] : electronicAllTargets(data, state.tokens, t, a).map((x) => x.uid))
+          .filter((u) => u !== cmd.targetUid);
+        if (rest.length) sc.counter.rest = rest;
+      }
       return;
     }
     case 'rollCounter': {
@@ -4258,8 +4470,11 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       if (cmd.uid === c.initiatorUid) c.initDeclare = cmd.use;
       else if (cmd.uid === c.responderUid) c.respDeclare = cmd.use;
       else return;
-      // The Link, paid with the declare through the focus command's own debit.
-      if (cmd.use) payFocus(data, t, state.tokens);
+      // The Whistle's Command Token, or else the Link, paid with the declare
+      // through the focus command's own debit.
+      const funder = cmd.use && cmd.whistleUid !== undefined ? state.tokens.find((x) => x.uid === cmd.whistleUid) : undefined;
+      if (funder) flipCommand(state, funder);
+      else if (cmd.use) payFocus(data, t, state.tokens);
       return;
     }
     case 'disarm': {
@@ -4381,15 +4596,7 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       return;
     }
     case 'spendCommand': {
-      // Flipped, not removed: 4.15.4 says a consumed token stays on the Torso
-      // face-down and can no longer be issued or used, and the End Phase
-      // collects it with everything else.
-      const l = [...(t.statuses ?? [])];
-      const at = l.lastIndexOf('command');
-      if (at < 0) return;
-      l.splice(at, 1);
-      t.statuses = [...l, 'commandUsed'];
-      syncCommandPool(state);
+      flipCommand(state, t);
       return;
     }
     case 'coordinateCommand': {
@@ -4505,6 +4712,8 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
     }
     case 'reveal': {
       t.statuses = (t.statuses ?? []).filter((id) => id !== 'camouflage');
+      // Whatever it owed is paid: one Reveal answers every trigger.
+      if (sc) sc.revealDue = (sc.revealDue ?? []).filter((x) => x.uid !== t.uid);
       // Manifestation Movement rides the same command, so the unit never sits
       // revealed at the marker position for a frame - the two halves are one
       // event (4.12.2) and a mirror replaying this sees one hop.
@@ -4580,6 +4789,39 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       if (t.ammo?.[cmd.actionId] !== undefined) {
         t.ammo[cmd.actionId] = Math.max(0, t.ammo[cmd.actionId] - 1);
       }
+      return;
+    }
+    case 'controlledMove': {
+      const sc = state.script;
+      const target = state.tokens.find((x) => x.uid === cmd.targetUid);
+      if (!target) return;
+      // The debt is spent by the move it paid for, in the same command.
+      if (sc) {
+        const at = (sc.reactions ?? []).findIndex((r) => r.uid === cmd.uid && r.kind === 'control' && r.fromUid === cmd.targetUid);
+        if (at >= 0) sc.reactions = [...sc.reactions.slice(0, at), ...sc.reactions.slice(at + 1)];
+      }
+      const act = cmd.actionId ? findAction(data, state, target.uid, cmd.actionId) : null;
+      // NON-HUMANOID X is paid by the unit performing the Action, whoever
+      // steers it; a Maneuver pays nothing.
+      const cost = nonHumanoidCost(act);
+      if (cost > 0) target.link = Math.max(0, (target.link ?? 0) - cost);
+      const from = { col: target.col, row: target.row };
+      if (!state.noBoard) {
+        target.col = cmd.to.col;
+        target.row = cmd.to.row;
+      }
+      if (cmd.facing !== undefined) target.facing = cmd.facing;
+      // It is the target's own Maneuver or Move Action, so 4.12.3 reads the
+      // target's Silence: a Revealing, Token-shedding Movement unless it has it.
+      const began = { ...target, ...from };
+      const silent = act ? isSilentAction(data, state.tokens, target, act, undefined, began) : maneuverIsSilent(data, target);
+      if (!silent) {
+        shedLowProfile(data, state, target);
+        if (statusCount(target.statuses, 'camouflage') > 0) {
+          oweReveal(state, target.uid, act ? 'act' : 'move', act ? actionSilenceDenier(data, state.tokens, target, act, undefined, began)?.source.uid : undefined);
+        }
+      }
+      if (!state.noBoard && !target.aerial && cmd.via?.length) walkHeat(state, target, from, cmd.to, cmd.via);
       return;
     }
     case 'blink': {

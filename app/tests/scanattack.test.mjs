@@ -44,19 +44,34 @@ check('only a Scan may carry one', /if \(cmd\.thenAttack\) \{\s*\n\s*if \(!isSca
 check('only against a camouflaged target', /statusCount\(target\.statuses, 'camouflage'\) === 0\) return no\(`\$\{target\.label\} is not in the Optical Camouflage State/.test(scan), true);
 check('and only ahead of a Firing or Melee Action the unit has', /atk\.type !== 'Firing' && atk\.type !== 'Melee'\)\) return no/.test(scan), true);
 check('the apply writes it into the record', /thenAttack: cmd\.thenAttack \? \{\s*actionId: cmd\.thenAttack\.actionId,\s*\.\.\.\(cmd\.thenAttack\.charged \? \{ charged: true \} : \{\}\),/.test(cmds), true);
-check('the Scan is judged at its effective reach', /const reach = actionRange\(data, state\.tokens, t, a\);/.test(scan), true);
+check('the Scan is judged at its effective reach', /let reach = actionRange\(data, state\.tokens, t, a\);/.test(scan), true);
+// The free Scan is "the Common Action: Scan, aside from its range" (FAQ I18):
+// it reaches as far as the attack it precedes, which has to be an attack this
+// unit could make at the marker (ruled 2026-09-25, audit Phase 3, F8). It was
+// judged at the Common Scan's own Range 6, and nothing checked the attack.
+check('and a free Scan at its attack\'s reach (FAQ I18)', /reach = actionRange\(data, state\.tokens, t, atk\);/.test(cmds), true);
+check('which must designate the marker strictly: Range, arc and sight (F8)',
+  /losNote\(t, target, \{ \.\.\.atk, range: reach \}, terrain, state\.tokens, state\.smoke \?\? \[\], true\)/.test(cmds), true);
+check('and a Scan never measures through a Repeater (A5, F9)',
+  /const origins = isElectronicAttack\(a\) && !cmd\.thenAttack \? electronicOrigins\(data, state\.tokens, t\) : \[t\];/.test(cmds), true);
 
 // ---------- the Match Centre ----------
 const hud = readFileSync(new URL('../src/matchhud.ts', import.meta.url), 'utf8');
-check('a camouflaged target is a pressable row', /const blocked = !hidden && note\.includes\('✕'\);/.test(hud), true);
+check('a camouflaged target is a pressable row', /const blocked = \(!hidden && note\.includes\('✕'\)\) \|\| lit;/.test(hud), true);
 check('that says what will happen', /one free Scan first; the attack follows if it is Revealed \(4\.12\.2, FAQ I12\)/.test(hud), true);
 const press = hud.slice(hud.indexOf("on('[data-attacktarget]'"), hud.indexOf("on('[data-attacktarget]'") + 4200);
 check('the press asks the command before paying', /const can = ctx\.check\(scan\);\s*\n\s*if \(!can\.ok\)/.test(press), true);
 check('then pays the Tick - the attack is declared (3.4.5)', /const paid = commitAction\(ctx\);[\s\S]{0,200}?ctx\.send\(scan\);/.test(press), true);
 check('and the Scan carries the attack', /actionId: 'COMMON_SCAN', targetUid: t\.uid,\s*thenAttack: \{\s*actionId: m\.actionId,\s*\.\.\.\(m\.refund \? \{ charged: true \} : \{\}\),/.test(press), true);
 const apply = hud.slice(hud.indexOf("if (act === 'apply') {"), hud.indexOf("if (act === 'apply') {") + 3000);
-check('a successful Scan queues the attack behind the Reveal', /kind: 'scanAttack' as const, fromUid: resp\.uid/.test(apply), true);
-check('to the ATTACKER\'s seat', /\.\.\.\(c\.thenAttack \? \[\{\s*uid: init\.uid, actionId: c\.thenAttack\.actionId/.test(apply), true);
+// Since the audit's Phase 3 (D1) every seam builds a won Counter-roll through
+// ewWinCommands in units.ts; the Match Centre hands it the record's thenAttack.
+const unitsSrc = readFileSync(new URL('../src/units.ts', import.meta.url), 'utf8');
+const win = unitsSrc.slice(unitsSrc.indexOf('export function ewWinCommands('), unitsSrc.indexOf('export function electronicAllTargets('));
+check('a successful Scan queues the attack behind the Reveal',
+  /kind: 'scanAttack' as const, fromUid: resp\.uid/.test(win) && /ewWinCommands\(ctx\.data, init, resp, a, \{ reaction: !!c\.reaction, thenAttack: c\.thenAttack \}\)/.test(apply), true);
+// `uid` there is the Initiator's own, the attacker's.
+check('to the ATTACKER\'s seat', /const uid = init\.uid;[\s\S]*?\.\.\.\(then \? \[\{\s*uid, actionId: then\.actionId/.test(win), true);
 check('a Scan closed without applying ends the attack (I11)', /c\.thenAttack && !\(ensureScript\(s\)\.reactions \?\? \[\]\)\.some\(\(r\) => r\.kind === 'scanAttack'/.test(hud) && /any remaining Ticks may still be used \(FAQ I11\)/.test(hud), true);
 check('the reaction panel waits while the target Reveals', /r\.kind === 'scanAttack'\) \{[\s\S]{0,600}?const hidden = !!target && statusCount\(target\.statuses, 'camouflage'\) > 0;/.test(hud), true);
 check('judges the attack from where it appeared', /r\.kind === 'scanAttack'\) \{[\s\S]{0,900}?losNote\(t, target, \{ \.\.\.act, range: actionRange\(ctx\.data, ctx\.state\.tokens, t, act\) \}/.test(hud), true);
@@ -70,8 +85,12 @@ check('a Mech that cannot Scan cannot attack it (4.11.2)', /electronicValue\(dat
 check('the window reports the verdict once, at Resolve', /c\.then\?\.\(win\);\s*\n\s*this\.onChanged\(\);/.test(combat), true);
 check('a failed Scan ends the attack with the Tick spent (I11)', /if \(!win\) \{\s*\n\s*logTo\(attacker, `The Scan failed, so the attack on \$\{defender\.label\} ends\. The Action Tick is spent; any remaining Ticks may still be used \(FAQ I11\)\.`\);\s*\n\s*done\?\.\(true\);/.test(main), true);
 check('a success waits for the manifest debt and then resumes', /offerManifestation\(defender, 'Scanned:'\)\.then\(\(\) => \{[\s\S]{0,300}?resumeScanAttack\(\);/.test(main), true);
-check('resuming judges the attack from where it appeared', /function resumeScanAttack\(\)[\s\S]{0,900}?const note = losNote\(attacker, defender, s\.action\);/.test(main), true);
-check('and opens the same window an ordinary attack does', /function resumeScanAttack\(\)[\s\S]{0,1600}?attackHelper\.start\(attacker, s\.action, defender, note, prot\.white, prot\.note\);/.test(main), true);
+// Strictly, at the effective reach: Range and the Forward Arc fail the attack as
+// much as line of sight (p.71, 4.2.5; audit Phase 3, C2). It stopped only on a
+// hard ✕ before.
+check('resuming judges the attack from where it appeared',
+  /function resumeScanAttack\(\)[\s\S]{0,1600}?const reach = \{ \.\.\.s\.action, range: actionRange\(data, state\.tokens, attacker, s\.action\) \};\s*\n\s*const note = losNoteFor\(attacker, defender, reach, currentTerrain\(\), state\.tokens, state\.smoke \?\? \[\], true\);/.test(main), true);
+check('and opens the same window an ordinary attack does', /function resumeScanAttack\(\)[\s\S]{0,2400}?attackHelper\.start\(attacker, s\.action, defender, losNote\(attacker, defender, s\.action\), prot\.white, prot\.note\);/.test(main), true);
 check('the old refusal text is gone from both pages', /cannot be designated as the target of a Firing or Melee Action until it has been Revealed/.test(main) || /Scan it first \(4\.12\.2\)/.test(hud), false);
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -17,7 +17,7 @@ import { canAct, dialHidden, eligibleUnits, isLoopPhase, loopComplete, nextTurn,
 import { deployTurn, deployable, deploymentComplete, firstPlayerFrom, normaliseSetup, rollTotal } from '../src/setup';
 import { ensureScript } from '../src/glue';
 import { canActivate, canAttackMode, canOverload, canPerform, costOf, extrasLeft, lengthOf, OVERLOAD_MAX, type TickVerdict } from '../src/ticks';
-import { actionRange, overloadPackOn, stanceFeedbackOf, stanceFeedbackTargets, stanceShaped, knockbackOf, linkSupportOf, maxLink, tokenCleanupOf, type LinkSupport, type TokenCleanup, targetStatusGrant, twoHandedUse, chargeableSlots, coordinationFor, coordinationOnOpportunityEnd, electronicValue, extraActivationOf, formSwitch, guidedActions, initiativeFor, isChargeAction, isElectronicAttack, linkTickTraitOn, loanedParts, opportunityBonusOn, pilotCard, repairSpec, resupplyOf, selfGrantWhy, selfStatusGrant, SLOT_LABEL, tokenCards, transformOffer, unfoldsOwed } from '../src/units';
+import { canActivateCamo, activatesCamo, controlledMoveActions, immobilizedStop, manifestationRange, targetStatusTargets, actionRange, overloadPackOn, stanceFeedbackOf, stanceFeedbackTargets, stanceShaped, knockbackOf, linkSupportOf, maxLink, tokenCleanupOf, type LinkSupport, type TokenCleanup, targetStatusGrant, twoHandedUse, chargeableSlots, coordinationFor, coordinationOnOpportunityEnd, electronicValue, extraActivationOf, formSwitch, guidedActions, initiativeFor, isChargeAction, isElectronicAttack, isScanAction, linkTickTraitOn, loanedParts, opportunityBonusOn, pilotCard, repairSpec, resupplyOf, selfGrantWhy, selfStatusGrant, SLOT_LABEL, tokenCards, transformOffer, unfoldsOwed } from '../src/units';
 import { normaliseTasks } from '../src/tasks';
 import { dialsOf, hashDials, newSalt, type DialEntry } from '../src/secrecy';
 import { PHASES, removableTokens, TIMINGS, type CardAction, type GameState, type PartSlot, type Side, type Stance, type Timing, type Token, type TokenPick } from '../src/types';
@@ -46,7 +46,11 @@ export interface GuideApi {
   readiness(): { me: boolean; them: boolean };
   // Opens the attack window for a Firing or Melee Action (attack.ts); the
   // pad pays the Action once the table has judged the shot.
-  attack?(uid: number, actionId: string, opts?: { electronic?: boolean; granted?: boolean; only?: number }): void;
+  // `resumed`: the attack a won free Scan owes (FAQ I12), already paid.
+  attack?(uid: number, actionId: string, opts?: { electronic?: boolean; granted?: boolean; only?: number; resumed?: boolean }): void;
+  // Target Tracing's Counter-roll back at the attacker (174): the record in a
+  // room, the local exchange solo, with its Command Token and its 1 Link.
+  trace?(uid: number, actionId: string, attackerUid: number): void;
   // The engine's verdict without performing, for a chip that shows why not.
   check(cmd: Command): CheckResult;
   // The Tactics Cards this side could play in the phase that is on, and the
@@ -182,9 +186,10 @@ export function turnHtml(api: GuideApi): string {
   if (!su) return '';
   if (su.stage !== 'done') return setupHtml(api, su.stage);
   const phase = PHASES[s.round.phase];
-  // A reaction owed to one of this phone's units comes before the phase.
+  // A reaction owed to one of this phone's units comes before the phase, and
+  // so does a Reveal one of them owes.
   const owed = reactionsOwed(api);
-  const react = (owed.length ? reactionHtml(api, owed[0]) : '') + tacticsStrip(api);
+  const react = (owed.length ? reactionHtml(api, owed[0]) : '') + revealHtml(api) + tacticsStrip(api);
   if (isLoopPhase(phase)) return react + loopHtml(api, phase);
   if (s.round.phase === 1) return react + planningHtml(api);
   if (s.round.phase === 2) return react + actionHtml(api);
@@ -197,6 +202,32 @@ function tacticsStrip(api: GuideApi): string {
   const sides: Side[] = api.solo ? ['s1', 's2'] : [api.me()];
   const chips = sides.flatMap((side) => api.tactics(side).playable.map((c) => btn(api, 'g-tactic', `${api.solo ? `${api.sideName(side)} · ` : ''}${c.name}`, `data-side="${side}" data-id="${api.esc(c.id)}"`)));
   return chips.length ? `<div class="pad-turn-react"><p class="pad-turn-name">Tactics Card</p><div class="pad-chips">${chips.join('')}</div></div>` : '';
+}
+
+// ---------- a Reveal owed (4.12.2) ----------
+//
+// The engine records each Reveal as the command that causes it applies: a
+// non-Silent Action, a non-Silent Maneuver, or a Movement ending in Contact
+// (script.revealDue). The pad never Revealed anyone on those (audit Phase 3,
+// C3), and leaves Contact to the table (F7): what it records it shows here.
+function revealHtml(api: GuideApi): string {
+  const s = api.state();
+  const due = (ensureScript(s).revealDue ?? [])
+    .map((d) => ({ d, t: s.tokens.find((x) => x.uid === d.uid) }))
+    .find((x) => !!x.t && (x.t.statuses ?? []).includes('camouflage') && mine(api, x.t.side));
+  if (!due?.t) return '';
+  const t = due.t;
+  const by = due.d.byUid !== undefined ? s.tokens.find((x) => x.uid === due.d.byUid) : undefined;
+  const why = due.d.why === 'touch' ? `ended a Movement in Contact with ${by?.label ?? 'an enemy'}`
+    : due.d.why === 'move' ? 'moved without Silence'
+      : by ? `performed an Action whose Silence ${by.label} takes away` : 'performed a non-Silence Action';
+  const range = manifestationRange(api.data, t);
+  const stuck = !!immobilizedStop(t);
+  return `<div class="pad-turn-react"><p class="pad-turn-name">${api.esc(t.label)} breaks camouflage</p>
+    <p class="pad-turn-note">It ${api.esc(why)}, so the Optical Camouflage ends (4.12.2).${
+      stuck ? ' It bears an Immobilized Token, so it Reveals where it stands (FAQ I20).'
+        : range > 0 ? ` Make its Manifestation Movement on the table, within Range ${range} counted orthogonally, and face it as you choose.` : ''}</p>
+    <div class="pad-chips">${btn(api, 'g-reveal', 'Revealed', `data-uid="${t.uid}"`, 'pad-chip on')}</div></div>`;
 }
 
 // ---------- reactions (the Match Centre's reaction panel, on the strip) ----------
@@ -215,7 +246,7 @@ function reactionHtml(api: GuideApi, owed: { t: Token; r: Owed }): string {
   const s = api.state();
   // The Action may sit on any of the unit's Parts, not only its core card.
   const what = tokenCards(api.data, t).flatMap(({ card }) => card.actions ?? []).find((a) => a.id === r.actionId);
-  const name = what?.name?.en
+  const name = r.kind === 'control' ? 'The Red Shoes' : what?.name?.en
     || (r.kind === 'stance' ? 'Defense Reaction' : r.kind === 'riposte' ? 'Riposte' : r.kind === 'trace' ? 'Target Tracing'
       : r.kind === 'manifest' ? 'Scanned' : r.kind === 'scanAttack' ? 'Attack resumes' : 'Emergency Smoke');
   const key = `data-uid="${t.uid}" data-id="${api.esc(r.actionId)}"`;
@@ -233,9 +264,18 @@ function reactionHtml(api: GuideApi, owed: { t: Token; r: Owed }): string {
     body = `${api.esc(t.label)} may spend 1 Command Token to open an Electronic Counter-roll at ${api.esc(from?.label ?? 'the attacker')} (174).`;
     buttons = from && ev > 0 ? btn(api, 'g-react-go', 'Spend a Command Token and roll', key, 'pad-chip on') : '';
   } else if (r.kind === 'manifest') {
-    body = `${api.esc(t.label)} is Revealed: make its Manifestation Movement on the table (4.12.4).`;
-    buttons = btn(api, 'g-react-go', 'Done', key, 'pad-chip on');
+    const range = manifestationRange(api.data, t);
+    body = `${api.esc(t.label)} is Revealed (4.12.4)${range > 0 ? `: make its Manifestation Movement on the table, within Range ${range} counted orthogonally, and face it as you choose` : ': it appears where its marker stood'}${immobilizedStop(t) ? '. It bears an Immobilized Token, so it Reveals in place (FAQ I20)' : ''}.`;
+    buttons = btn(api, 'g-react-go', 'Revealed', key, 'pad-chip on');
     return `<div class="pad-turn-react"><p class="pad-turn-name">${api.esc(name)}</p><p class="pad-turn-note">${body}</p><div class="pad-chips">${buttons}</div></div>`;
+  } else if (r.kind === 'control') {
+    // The Red Shoes (TM35NA_B): one of the Responder's own Maneuvers or Move
+    // Actions, made on the table by this player at no Tick cost (F19).
+    const stop = from ? immobilizedStop(from) : null;
+    body = !from ? 'The unit has left the table.'
+      : stop ? api.esc(stop)
+        : `Take control of ${api.esc(from.label)}: make one of its own Maneuvers or Move Actions on the table. It costs its player no Tick.`;
+    buttons = from && !stop ? btn(api, 'g-react-go', 'Move it', key, 'pad-chip on') : '';
   } else if (r.kind === 'scanAttack') {
     body = `${api.esc(t.label)}'s attack on ${api.esc(from?.label ?? 'the target')} resumes (FAQ I12).`;
     buttons = btn(api, 'g-react-go', 'Attack', key, 'pad-chip on');
@@ -252,19 +292,56 @@ function answerReaction(api: GuideApi, uid: number, actionId: string, take: bool
   const t = s.tokens.find((x) => x.uid === uid);
   const r = (ensureScript(s).reactions ?? []).find((x) => x.uid === uid && x.actionId === actionId);
   if (!t || !r) return;
+  // The Red Shoes: its controlledMove spends the debt, so a Move made is one
+  // command; declining clears it the ordinary way.
+  if (r.kind === 'control' && take && r.fromUid !== undefined) {
+    void steerControlled(api, t, r.fromUid);
+    return;
+  }
   if (!api.send({ kind: 'resolveReaction', seat: t.side, uid, actionId })) return;
-  if (!take || r.kind === 'manifest') return;
-  if (r.kind === 'scanAttack') { if (r.fromUid !== undefined) api.attack?.(uid, actionId); return; }
+  // Scanned: the unit leaves the Optical Camouflage State; where it appears
+  // is settled on the table. The answer used to clear the debt and nothing
+  // else, so the unit stayed camouflaged on every phone (audit Phase 3, A2).
+  if (r.kind === 'manifest') { api.send({ kind: 'reveal', seat: t.side, uid, chain: 'join' }); return; }
+  if (!take) return;
+  // Against the Revealed unit only, and not paid again: the Tick went at the
+  // designation (FAQ I12). It opened a fresh, paid attack on anyone.
+  if (r.kind === 'scanAttack') { if (r.fromUid !== undefined) api.attack?.(uid, actionId, { only: r.fromUid, resumed: true }); return; }
   // The reaction's own spends ride its resolveReaction: one tap, one Undo.
   if (r.kind === 'stance') { api.send({ kind: 'defenseReaction', seat: t.side, uid, chain: 'join' }); return; }
-  if (r.kind === 'trace') {
-    if (!api.send({ kind: 'spendCommand', seat: t.side, uid, chain: 'join' })) return;
+  if (r.kind === 'trace' && r.fromUid !== undefined) {
     // The counter-roll back at the attacker: the record in a room, the local
-    // exchange solo. Range does not apply to a Target Tracing.
-    if (api.solo) api.attack?.(uid, actionId, { electronic: true });
-    else api.send({ kind: 'startCounterRoll', seat: t.side, uid, targetUid: r.fromUid!, actionId, reaction: true, chain: 'join' });
+    // exchange solo. Range does not apply to a Target Tracing. It used to spend
+    // the Command Token first and then send the Passive through the attack door,
+    // which refused it: a Token gone and no roll (audit Phase 3, D8).
+    api.trace?.(uid, actionId, r.fromUid);
   }
   // Smoke: placed on the table; the debt is spent.
+}
+
+// The Red Shoes on the table: which of the Responder's own Maneuver or Move
+// Actions the controller made. The table moves the model; the pad records it,
+// so the Responder's Silence, Non-humanoid Link and Low Profile are judged by
+// the engine as the controlledMove applies (audit Phase 3, D3).
+async function steerControlled(api: GuideApi, t: Token, targetUid: number): Promise<void> {
+  const target = api.state().tokens.find((x) => x.uid === targetUid);
+  if (!target) return;
+  const moves = controlledMoveActions(api.data, target);
+  const pick = moves.length ? await choiceDialog({
+    title: `The Red Shoes: ${target.label}`,
+    body: `Which of ${target.label}'s own Movements did you make on the table?`,
+    choices: [
+      { id: '__maneuver', label: 'Its Maneuver' },
+      ...moves.map((a) => ({ id: a.id, label: a.name.en || a.name.zh || a.id })),
+      { id: '', label: 'Cancel', cancel: true },
+    ],
+    stacked: true,
+  }) : '__maneuver';
+  if (!pick) return;
+  api.send({
+    kind: 'controlledMove', seat: t.side, uid: t.uid, targetUid,
+    to: { col: target.col, row: target.row }, ...(pick !== '__maneuver' ? { actionId: pick } : {}),
+  });
 }
 
 // One phone may hold a side in a room, or both solo.
@@ -603,6 +680,11 @@ async function performRouted(api: GuideApi, t: Token, a: CardAction): Promise<vo
     const why = selfGrantWhy(t, grant);
     if (why) { api.toast(why); return; }
   }
+  // Activate Optical Camouflage (096_B, 247_B, ZYBP-201_A): the pad performed
+  // the Action and changed nothing (audit Phase 3, C3). The Status goes on
+  // with the Action; the table swaps the model for the camouflage one.
+  const camo = activatesCamo(a);
+  if (camo && (t.statuses ?? []).includes('camouflage')) { api.toast(`${t.label} is already in the Optical Camouflage State.`); return; }
   let form: string | null = null;
   const forms = formSwitch(a);
   if (forms) {
@@ -651,9 +733,10 @@ async function performRouted(api: GuideApi, t: Token, a: CardAction): Promise<vo
   let tagged: { uid: number; statusId: string; stacks: number } | null = null;
   const tag = targetStatusGrant(a);
   if (tag) {
-    const units = api.state().tokens.filter((x) => x.uid !== t.uid && x.deployed !== false
-      && (x.partStates[x.kind === 'mech' ? 'torso' : 'main'] ?? 'intact') !== 'destroyed'
-      && (tag.side === 'any' || (tag.side === 'enemy') === (x.side !== t.side)));
+    // The shared reader: no Low Value Unit and, for a Highlight, no unit in
+    // Optical Camouflage (FAQ I1, J3); both were offered and then refused
+    // (audit Phase 3, E2). The table judges Range and sight.
+    const units = targetStatusTargets(d, api.state().tokens, t, a, tag);
     if (!units.length) { api.toast(`${a.name.en}: there is no unit to target.`); return; }
     const pick = await choiceDialog({
       title: a.name.en ?? a.id,
@@ -715,6 +798,9 @@ async function performRouted(api: GuideApi, t: Token, a: CardAction): Promise<vo
   // Action paid.
   const chain = 'join' as const;
   if (grant) api.send({ kind: 'applyStatus', seat, uid, targetUid: uid, statusId: grant.statusId, stacks: grant.stacks, chain });
+  if (camo && api.send({ kind: 'applyStatus', seat, uid, targetUid: uid, statusId: 'camouflage', chain })) {
+    api.toast(`${t.label}: Optical Camouflage activated (4.12.2). Every Hexagon Token comes off; put the camouflage model on the table.`);
+  }
   if (repair) api.send({ kind: 'repairPart', seat, uid, slot: repair.slot, mode: repair.mode, chain });
   if (form) api.send({ kind: 'switchForm', seat, uid, actionId: a.id, cardId: form, chain });
   const mode = transformOffer(d, t, a);
@@ -881,7 +967,22 @@ export function guideAct(api: GuideApi, a: string, el: HTMLElement): boolean {
       if (!t) return true;
       // The piece stands on the physical table; the sheet only needs to know
       // it is out. The cell is the placeholder every boardless unit carries.
-      api.send({ kind: 'deployUnit', seat: t.side, uid: t.uid, to: { col: 0, row: 0 }, stance: t.kind === 'mech' ? t.stance : undefined, facing: 0 });
+      // A unit with a Part that Activates Optical Camouflage may deploy in it
+      // (FAQ I6), which the pad never offered (audit Phase 3, C3).
+      const place = (camo: boolean): void => {
+        api.send({ kind: 'deployUnit', seat: t.side, uid: t.uid, to: { col: 0, row: 0 }, stance: t.kind === 'mech' ? t.stance : undefined, facing: 0, ...(camo ? { camo: true } : {}) });
+      };
+      if (!canActivateCamo(api.data, t)) { place(false); return true; }
+      void choiceDialog({
+        title: `Deploy ${t.label}`,
+        body: `${t.label} can Activate Optical Camouflage, so it may deploy already in it (FAQ I6): put the camouflage model on the table.`,
+        choices: [
+          { id: 'plain', label: 'Deploy it as it is', primary: true },
+          { id: 'camo', label: 'Deploy in Optical Camouflage' },
+          { id: '', label: 'Cancel', cancel: true },
+        ],
+        stacked: true,
+      }).then((id) => { if (id === 'plain' || id === 'camo') place(id === 'camo'); });
       return true;
     }
     case 'g-deployed': {
@@ -955,8 +1056,10 @@ export function guideAct(api: GuideApi, a: string, el: HTMLElement): boolean {
         api.attack(t.uid, a.action.id);
         return true;
       }
-      // An Electronic Attack opens the counter-roll the same way.
-      if (a && isElectronicAttack(a.action) && api.attack) {
+      // An Electronic Attack opens the counter-roll the same way, and so does a
+      // Scan printed on a card (the Scan Battlefield, 080_A and 522_A), which
+      // went to the plain Action door: a Tick spent and no roll (audit Phase 3, A2).
+      if (a && (isElectronicAttack(a.action) || isScanAction(a.action)) && api.attack) {
         api.attack(t.uid, a.action.id, { electronic: true });
         return true;
       }
@@ -992,7 +1095,9 @@ export function guideAct(api: GuideApi, a: string, el: HTMLElement): boolean {
       const c = t.kind === 'mech' ? api.data.commonActions.find((x) => x.id === el.dataset.id) : undefined;
       if (c) {
         if (c.type === 'Melee' && api.attack) { api.attack(t.uid, c.id); return true; }
-        if (isElectronicAttack(c) && api.attack) { api.attack(t.uid, c.id, { electronic: true }); return true; }
+        // The Common Scan too: isElectronicAttack is false for it, so it paid a
+        // Tick through the plain door and opened nothing (audit Phase 3, A2).
+        if ((isElectronicAttack(c) || isScanAction(c)) && api.attack) { api.attack(t.uid, c.id, { electronic: true }); return true; }
         // Stabilize asks its Token question BEFORE the Tick is paid, so a
         // Cancel costs nothing; the Action is paid as the answer is sent.
         if (c.id === 'COMMON_STABILIZE') {
@@ -1044,6 +1149,11 @@ export function guideAct(api: GuideApi, a: string, el: HTMLElement): boolean {
       return true;
     }
     case 'g-tactic': api.tactics(el.dataset.side as Side).play(el.dataset.id!); return true;
+    case 'g-reveal': {
+      const t = api.state().tokens.find((x) => x.uid === Number(el.dataset.uid));
+      if (t) api.send({ kind: 'reveal', seat: t.side, uid: t.uid });
+      return true;
+    }
     case 'g-react-go': answerReaction(api, Number(el.dataset.uid), el.dataset.id!, true); return true;
     case 'g-react-skip': answerReaction(api, Number(el.dataset.uid), el.dataset.id!, false); return true;
     case 'g-riposte': {

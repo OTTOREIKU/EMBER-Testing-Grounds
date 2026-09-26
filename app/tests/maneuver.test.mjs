@@ -30,7 +30,9 @@ const tokenCards = (data, t) => t.kind === 'mech'
 // cards; this harness has no board at all, so it mirrors an empty projection
 // rather than dragging aurasOn and rangeBetween in behind it.
 const aurasOn = () => [];
-` + src.slice(silStart, silEnd) + src.slice(start, end));
+` + src.slice(silStart, silEnd) + src.slice(start, end)
+  // Stealth Movement is read off a Part that can still act (FAQ I2, J23).
+  + src.slice(src.indexOf('// A Part that can still initiate an Action'), src.indexOf('// The Parts that may initiate this Common Action now')));
 const { maneuverRange, maneuverBonus, isSilentAction, maneuverIsSilent } = await import(tmp.href);
 
 let pass = 0, fail = 0;
@@ -99,9 +101,21 @@ check('a common-action silence flag is silent', isSilentAction(data, [], actor, 
 check('the printed keyword is silent', isSilentAction(data, [], actor, { id: 'X', keywords: [{ key: '静默' }] }), true);
 check('the zh text alone still counts', isSilentAction(data, [], actor, { id: 'X', description: { zh: '静默 action' } }), true);
 check('a plain action is not silent', isSilentAction(data, [], actor, { id: 'X', keywords: [], description: { en: 'Silencer-brand ammo' } }), false);
-const stealthData = { byId: new Map([['ST', { id: 'ST', keywords: [{ key: '静默', en: 'Silence' }] }], ['T1', { id: 'T1' }]]) };
-check('a live Silence part makes the maneuver silent (I2)', maneuverIsSilent(stealthData, [], { kind: 'mech', mech: { chasis: 'ST', torso: 'T1' }, partStates: {} }), true);
-check('a destroyed Silence part does not (I2)', maneuverIsSilent(stealthData, [], { kind: 'mech', mech: { chasis: 'ST', torso: 'T1' }, partStates: { chasis: 'destroyed' } }), false);
+// Stealth Movement (100_B, 250_B) is a grant_silent_movement rule, and that is
+// what a Maneuver's Silence reads. The card-level keyword footer is not: 27
+// Parts list Silence there because an Action of theirs prints it, and every
+// Maneuver of their Mechs used to be Silent (audit Phase 3, B1).
+const stealthData = { byId: new Map([
+  ['ST', { id: 'ST', actions: [{ id: 'ST_B', type: 'Passive', gameRules: [{ effects: [{ type: 'grant_silent_movement', appliesTo: ['moving_action', 'adjust_move'] }] }] }] }],
+  ['KW', { id: 'KW', keywords: [{ key: '静默', en: 'Silence' }], actions: [{ id: 'KW_A', type: 'Firing', keywords: [{ key: '静默', en: 'Silence' }] }] }],
+  ['T1', { id: 'T1' }],
+]) };
+const ghost = (chasis, partStates = {}, over = {}) => ({ kind: 'mech', mech: { chasis, torso: 'T1' }, partStates, ...over });
+check('a live Stealth Movement part makes the maneuver silent (I2)', maneuverIsSilent(stealthData, ghost('ST')), true);
+check('a destroyed one does not (I2)', maneuverIsSilent(stealthData, ghost('ST', { chasis: 'destroyed' })), false);
+check('a Repaired one still does, since it can still act (J23)',
+  maneuverIsSilent(stealthData, ghost('ST', { chasis: 'destroyed' }, { repairedSlots: ['chasis'] })), true);
+check('a Part that only lists Silence in its keyword footer does not (B1)', maneuverIsSilent(stealthData, ghost('KW')), false);
 
 // ---------- E23: a transformed core carries its own Movement ----------
 //

@@ -5,7 +5,7 @@ import { BASE, cardName, squadLabel } from './data';
 import { bindTips, linkMechanics } from './inspector';
 import { choiceDialog } from './dialog';
 import { PHASES, PHASE_INFO } from './tracker';
-import { linkTickTraitOn, startOpts, stanceShaped, overloadPackOn, isRwsAction, vpRiderFor, opportunityBonusOn, pilotCard, coordinationFor, coordinationOnOpportunityEnd, extrasFor, actionSilenceDenier, isSilentAction, type ActionWorld, canActivateCamo, manifestationRange, type ExtraActivation, extraActivationOf, guidedActions, initiativeFor, maneuverRange, maxLink, SLOT_LABEL, tokenCards, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL } from './units';
+import { activatesCamo, linkTickTraitOn, startOpts, stanceShaped, overloadPackOn, isRwsAction, vpRiderFor, opportunityBonusOn, pilotCard, coordinationFor, coordinationOnOpportunityEnd, extrasFor, actionSilenceDenier, isSilentAction, type ActionWorld, canActivateCamo, manifestationRange, type ExtraActivation, extraActivationOf, guidedActions, initiativeFor, maneuverRange, maxLink, SLOT_LABEL, tokenCards, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL } from './units';
 import { actionPipCount, canAttackMode, canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed } from './ticks';
 import { asterKey, check, rebootWhy, clearDroneCommands, perform, readyCommands, seedCommandTokens } from './commands';
 import { popDeadExtras } from './glue';
@@ -91,6 +91,14 @@ export interface GuideCallbacks {
   zoneLabel(): string;
   onNote(t: Token, text: string): void;
   onChanged(): void;
+  // A Reveal with its Manifestation Movement, through the board's own picker
+  // (the Grid and the facing), so every Reveal offers the hop (ruled
+  // 2026-09-25, audit Phase 3, F6). `ask`: a non-Silent Action's Reveal, which
+  // the teaching tracker may wave away; the Common Action Reveal is not asked.
+  // The driver asks once per unit, so a Reveal the board has already offered
+  // for the same Action is not asked twice. Optional: the Match Centre's guide
+  // Reveals through its own panel.
+  onReveal?(t: Token, why: string, ask: boolean): void;
 }
 
 
@@ -1416,14 +1424,19 @@ export class PlayGuide {
   }
 
   // Reveal (6.1): leave the Optical Camouflage State, then make Manifestation
-  // Movement. The guide TEACHES the move rather than offering it - the board
-  // behind it owns unit placement, and this panel has no Grid picker - but it
-  // names the actual number rather than sending the reader to the card, which
-  // is the whole difference between a rule and a reminder.
+  // Movement. The board behind the guide owns unit placement, so when it
+  // offers its picker the hop is made there (onReveal; ruled 2026-09-25, audit
+  // Phase 3, F6). The guide used to TEACH the move instead, Revealing in place
+  // and naming the number, which is what it still does with no picker to hand.
   private revealUnit(uid: number): void {
     const s = this.state;
     const t = s?.tokens.find((x) => x.uid === uid);
     if (!s || !t) return;
+    if (this.cb.onReveal) {
+      this.cb.onSelectUnit(t.uid);
+      this.cb.onReveal(t, 'Reveal:', false);
+      return;
+    }
     const range = manifestationRange(this.data, t);
     perform(this.data, s, { kind: 'reveal', seat: t.side, uid });
     this.cb.onSelectUnit(t.uid);
@@ -1645,7 +1658,9 @@ export class PlayGuide {
       perform(this.data, s, { kind: 'performAction', seat: t.side, uid: t.uid, actionId: row.action.id, partKey: opts?.partKey ?? row.partKey, ...(opts?.twoHanded ? { twoHanded: true } : {}) });
       // A non-Silence action ends Optical Camouflage (4.12.2, FAQ I5). The
       // strict tracker reveals outright; teaching asks, in the house style.
-      if (statusCount(t.statuses, 'camouflage') > 0 && !isSilentAction(this.data, s.tokens, t, row.action)) {
+      // The Action that switched the camouflage on is exempt: 4.12.2's trigger
+      // is an Action performed while IN the state (audit Phase 3, C4).
+      if (statusCount(t.statuses, 'camouflage') > 0 && !activatesCamo(row.action) && !isSilentAction(this.data, s.tokens, t, row.action)) {
         // A printed Silence taken away by an enemy aura (ZHDR-206) is named.
         // This page teaches, so an unexplained Reveal is worse here than
         // anywhere: the learner has just read the keyword on the card.
@@ -1655,9 +1670,15 @@ export class PlayGuide {
           : '';
         const range = manifestationRange(this.data, t);
         const hop = range > 0
-          ? ` It may then Manifest up to ${range} Grid${range === 1 ? '' : 's'} away (Stealth ${range}) - Teleportation, so terrain and units in between do not matter.`
+          ? ` It may then Manifest within Range ${range}, counted orthogonally (Stealth ${range}) - Teleportation, so terrain and units in between do not matter.`
           : '';
-        if (this.script(s).strict) {
+        // Through the board's picker when there is one, which Reveals and hops
+        // as ONE command. The strict tracker Revealed in place first here, so
+        // the Grid then picked on the board was refused, and the teaching path
+        // offered no hop at all (audit Phase 3, C10).
+        if (this.cb.onReveal) {
+          this.cb.onReveal(t, `${row.action.name?.en || row.action.id} is not Silent${because}.`, !this.script(s).strict);
+        } else if (this.script(s).strict) {
           perform(this.data, s, { kind: 'reveal', seat: t.side, uid: t.uid });
           this.cb.onNote(t, `${row.action.name?.en || row.action.id} is not Silent${because}, so the Optical Camouflage ends (4.12.2).${hop}`);
         } else {

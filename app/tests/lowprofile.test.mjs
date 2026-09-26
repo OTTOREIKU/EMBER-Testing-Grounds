@@ -42,10 +42,13 @@ const cut = (s, a, b, what) => {
 // The two blocks under test, lifted verbatim and wrapped in a callable. The
 // wrappers supply exactly the free variables the closure gave them, and nothing
 // else — an extra one here could hide a reference the real site does not have.
+// From the Reveal half down, since both halves read one `moveSilent` worked out
+// above them (a Movement Action asks its own Silence, a bare Maneuver the
+// Maneuver's: audit Phase 3, B2). promptReveal and `m` come in as parameters.
 const settleBlock = cut(mainSrc,
-  "      // 4.12.3's OTHER consequence",
+  '      // Movement is a non-Silence action unless Stealth Movement grants it',
   "      // An enemy AERIAL unit's Movement triggers Interception",
-  'the settle() Low Profile block');
+  'the settle() Silence and Low Profile block');
 // The opts carry the Common Action's Part too since the Phase 2 audit (E7).
 const doneBlock = cut(mainSrc,
   '    const done = (performed: boolean, opts?: { twoHanded?: boolean; partKey?: string }): void => {',
@@ -78,9 +81,11 @@ export function tokenCards(data: any, t: any): any[] {
   // Auras is 1583-1656 in units.ts, Silence 572-700.
   + cut(units, '// ---------- Auras (FAQ Q1-Q4, J2) ----------', '// LPA-21 Firefly', 'the aura walker')
   + cut(units, '// ---------- Silence (rulebook 4.12', '// ---------- Who breaks Optical Camouflage', 'the Silence classifiers')
+  // Stealth Movement is read off a Part that can still act (FAQ I2, J23).
+  + cut(units, '// A Part that can still initiate an Action', '// The Parts that may initiate this Common Action now', 'partUsable')
   + `
 // ---------- the two main.ts blocks, verbatim ----------
-export function settleShed(t: any, startPos: any, data: any, state: any, perform: any, logTo: any): void {
+export function settleShed(t: any, startPos: any, data: any, state: any, perform: any, logTo: any, m: any = {}, promptReveal: any = () => {}): void {
 ${settleBlock}}
 export function makeDone(t: any, action: any, data: any, state: any, perform: any, logTo: any, report: any): any {
 ${doneBlock}  return done;
@@ -110,11 +115,18 @@ const data = { byId: new Map([
     { id: 'LP_HUSH', type: 'Firing', size: 's', range: 4, name: { en: 'Silent Single Shot' }, keywords: [{ key: '静默', en: 'Silence' }] },
     { id: 'LP_PASS', type: 'Passive', speed: 'passive', name: { en: 'Always On' } },
   ] }],
-  // A Stealth Chassis: the Silence keyword sits on the CARD, not on an Action,
-  // which is what maneuverPrintsSilence reads. Shaped after card 100 LM210S —
-  // NOT after PL29, which lost the keyword in the v1.021 redesign (pinned at
-  // the bottom of this file).
-  ['STL', { id: 'STL', type: 'chasis', keywords: [{ key: '静默', en: 'Silence' }], actions: [] }],
+  // A Stealth Chassis, shaped after card 100 LM210S: Stealth Movement is a
+  // grant_silent_movement rule reaching the Maneuver and the Part's own Move
+  // Actions, which is what the Silence readers ask. NOT the card-level keyword,
+  // which is the card's glossary footer (audit Phase 3, B1), and NOT PL29,
+  // which lost Silence in the v1.021 redesign (both pinned at the bottom).
+  ['STL', { id: 'STL', type: 'chasis', actions: [
+    { id: 'STL_A', type: 'Moving', size: 'm', range: 3, name: { en: 'Sprint' } },
+    { id: 'STL_B', type: 'Passive', speed: 'passive', name: { en: 'Stealth Movement' },
+      gameRules: [{ effects: [{ type: 'grant_silent_movement', appliesTo: ['moving_action', 'adjust_move'] }] }] },
+  ] }],
+  // A Move Action on a Backpack, which the Stealth Chassis does not reach.
+  ['JET', { id: 'JET', type: 'backpack', actions: [{ id: 'JET_A', type: 'Moving', size: 'm', range: 3, name: { en: 'Jump' } }] }],
   // ZHDR-206 Patrol Eagle, Dynamic Perception (data/action_overrides.json).
   ['EYE', { id: 'EYE', category: 'drone', actions: [{
     id: 'EYE_A', type: 'Passive', speed: 'passive', range: 3, name: { en: 'Dynamic Perception' },
@@ -171,14 +183,57 @@ const rig = (tokens) => {
   check('a unit with no Token sends nothing at all — no refusal on screen', r.sent, []);
 }
 {
-  // FAQ O11/O15: judged at the START grid as well as the landing. The Eagle sits
-  // beside where the unit STOOD and 10 Grids from where it lands, so a
-  // landing-only reading would hand the Silence back.
+  // The Patrol Eagle takes the Silence of an enemy's ACTIONS, and a Maneuver is
+  // not one (ruled 2026-09-25, audit Phase 3, F14). It used to shed here.
   const mover = stealthy({ col: 33, row: 3 });
   const r = rig([mover, eagle(6, 3)]);
   M.settleShed(mover, { col: 3, row: 3 }, data, r.state, r.perform, r.logTo);
-  check('walking OUT of a Patrol Eagle aura still sheds — the start grid is judged (FAQ O11/O15)',
-    r.sent.length, 1);
+  check('a Stealth Chassis Maneuver out of a Patrol Eagle aura keeps the Token (F14)', r.sent, []);
+}
+const stlSprint = data.byId.get('STL').actions[0];
+const jetJump = data.byId.get('JET').actions[0];
+{
+  // FAQ O11/O15: a Move Action is judged at the START grid as well as the
+  // landing. The Eagle sits beside where the unit STOOD and 10 Grids from where
+  // it lands, so a landing-only reading would hand the Silence back.
+  const mover = stealthy({ col: 33, row: 3 });
+  const r = rig([mover, eagle(6, 3)]);
+  M.settleShed(mover, { col: 3, row: 3 }, data, r.state, r.perform, r.logTo, { action: stlSprint });
+  check('the Chassis Sprint walking OUT of the aura sheds: the start grid is judged (FAQ O11/O15)', r.sent.length, 1);
+  const clear = stealthy({ col: 33, row: 3 });
+  const r2 = rig([clear, eagle(6, 3)]);
+  M.settleShed(clear, { col: 27, row: 3 }, data, r2.state, r2.perform, r2.logTo, { action: stlSprint });
+  check('and clear of it at both ends it keeps the Token', r2.sent, []);
+}
+{
+  // Stealth Movement reaches "this part's" Move Actions: a Backpack's Jump on a
+  // Stealth Chassis Mech is not Silent (audit Phase 3, B2). The board asked the
+  // Maneuver's Silence for both until then.
+  const jumper = stealthy({ mech: { torso: 'LPT', chasis: 'STL', backpack: 'JET' }, partStates: { torso: 'intact', chasis: 'intact', backpack: 'intact' } });
+  const r = rig([jumper]);
+  M.settleShed(jumper, { col: 3, row: 3 }, data, r.state, r.perform, r.logTo, { action: jetJump });
+  check('a Backpack\'s Move Action on a Stealth Chassis sheds the Token (B2)', r.sent.length, 1);
+  const r2 = rig([stealthy()]);
+  M.settleShed(r2.state.tokens[0], { col: 3, row: 3 }, data, r2.state, r2.perform, r2.logTo, { action: stlSprint });
+  check('while the Chassis\'s own Sprint keeps it', r2.sent, []);
+}
+{
+  // The Reveal half reads the same answer, and asks the table (4.12.2).
+  const prompts = [];
+  const ghost = lp({ statuses: ['camouflage'] });
+  const r = rig([ghost]);
+  M.settleShed(ghost, { col: 3, row: 3 }, data, r.state, r.perform, r.logTo, {}, (_t, why) => prompts.push(why));
+  check('a camouflaged unit\'s non-Silence Maneuver prompts the Reveal', prompts, ['Ghost moved without Silence.']);
+  const quiet = [];
+  const hidden = stealthy({ statuses: ['camouflage'] });
+  const r2 = rig([hidden, eagle(6, 3)]);
+  M.settleShed(hidden, { col: 3, row: 3 }, data, r2.state, r2.perform, r2.logTo, {}, (_t, why) => quiet.push(why));
+  check('and a Stealth Chassis Maneuver beside an Eagle prompts nothing (F14)', quiet, []);
+  const named = [];
+  const r3 = rig([hidden, eagle(6, 3)]);
+  M.settleShed(hidden, { col: 3, row: 3 }, data, r3.state, r3.perform, r3.logTo, { action: stlSprint }, (_t, why) => named.push(why));
+  check('while its Sprint beside one names the Eagle as the reason',
+    /Patrol Eagle \(Dynamic Perception\) denies it/.test(named[0] ?? ''), true);
 }
 
 // ---------- performGuided(): the board's Actions ----------
@@ -277,15 +332,31 @@ const act = (id) => data.byId.get('LPT').actions.find((a) => a.id === id);
     [(cards.find((c) => String(c.id) === '180').keywords ?? []).some(silent),
       (merged('180').keywords ?? []).some(silent)],
     [true, false]);
+  // What the readers actually ask since the audit's Phase 3 (B1) is Stealth
+  // Movement's grant_silent_movement rule, not the card-level keyword: that is
+  // the card's glossary footer, and 27 Parts list Silence there because one of
+  // their Actions prints it. The action overrides are applied, as the app does,
+  // since 180_B still carried the grant in the bundle and one of them clears it.
+  const ovActs = JSON.parse(readFileSync(new URL('../../data/action_overrides.json', import.meta.url), 'utf8')).actions ?? {};
+  const grantsOf = (c) => (c.actions ?? []).flatMap((a) => {
+    const rules = ovActs[a.id]?.gameRules ?? a.gameRules ?? [];
+    return rules.flatMap((g) => (g.effects ?? []).filter((e) => e.type === 'grant_silent_movement').map((e) => e.appliesTo ?? []));
+  });
+  check('card 100\'s Stealth Movement grants Silence to its Move Actions and the Maneuver',
+    grantsOf(cards.find((c) => String(c.id) === '100')), [['moving_action', 'adjust_move']]);
+  check('and card 180\'s stale grant is cleared by the override',
+    [(cards.find((c) => String(c.id) === '180').actions ?? []).some((a) => (a.gameRules ?? []).some((g) => (g.effects ?? []).some((e) => e.type === 'grant_silent_movement'))),
+      grantsOf(cards.find((c) => String(c.id) === '180')).length],
+    [true, 0]);
   // What maneuverPrintsSilence can actually find on a Mech today. Pinned as a
   // set so a data refresh that drops the last one is loud rather than silently
   // making the Maneuver carve-out unreachable.
   const silentParts = cards
-    .map((c) => ({ ...c, ...(stat[c.id] ?? {}) }))
-    .filter((c) => c.category === 'mech_part' && (c.keywords ?? []).some(silent))
-    .filter((c) => c.type === 'chasis')
+    .filter((c) => grantsOf(c).some((to) => to.includes('adjust_move')))
     .map((c) => String(c.id)).sort();
   check('exactly two Chassis grant Silence to a Maneuver', silentParts, ['100', '250']);
+  check('while many more Parts list Silence in their keyword footer, which is not read',
+    cards.filter((c) => c.category === 'mech_part' && (merged(String(c.id)).keywords ?? []).some(silent)).length > 10, true);
   const eagleCard = cards.find((c) => String(c.id) === 'ZHDR-206');
   check('and ZHDR-206 Patrol Eagle really has a Passive at Range 3',
     (eagleCard?.actions ?? []).find((a) => a.id === 'ZHDR-206_A')?.range, 3);

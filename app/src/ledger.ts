@@ -221,6 +221,7 @@ export function labelFor(cmd: { kind: string }, state: GameState, names?: Ledger
     case 'launch': label = `${who()} launches ${card()} to ${grid(c.to)}`; break;
     case 'blink': label = `${who()}: Blink`; break;
     case 'forceMove': label = `${target()} is moved to ${grid(c.to)}`; break;
+    case 'controlledMove': label = `${who()} steers ${target()} to ${grid(c.to)} (The Red Shoes)`; break;
     case 'crushSwap': label = `${who()}: Crush exchange`; break;
     case 'switchForm': label = `${who()} changes form`; break;
     case 'transformPart': label = `${who()} transforms a Part`; break;

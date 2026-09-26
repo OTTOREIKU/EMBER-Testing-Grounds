@@ -165,8 +165,10 @@ async function attack(card, action, opts = {}) {
   // The Chinese-name map has to exist at all: StatusDef carries no zh field.
   check('the zh status map is the one place that mapping lives',
     /export const STATUS_BY_ZH/.test(src), true);
+  // Through electronicOutcomes since the audit's Phase 3 (D1), the one reading
+  // every Counter-roll seam shares, and it drops what it cannot name too.
   check('and the Electronic Attack path now uses it too',
-    /STATUS_BY_ZH\[e\.status \?\? ''\]/.test(combat), true);
+    /const id = STATUS_BY_ZH\[name\] \?\? SELF_STATUS_IDS\[name\]/.test(src) && /ewWinCommands\(/.test(combat), true);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -67,6 +67,9 @@ export interface Card {
   parray?: number;
   dodge?: number;
   electronic?: number;
+  // The printed "--" (4.11.2 (3): cannot be the Responder), carried beside an
+  // `electronic` of 0 by data/stat_overrides.json (audit Phase 3, D4).
+  electronicDash?: boolean;
   move?: number;
   stance?: string;
   faction?: string;
@@ -812,6 +815,12 @@ export interface ScriptState {
   // owner picks (3.4.1 orders only the squads; ruled 2026-09-25, audit Phase 2,
   // E6): the uids it sent forward, the latest first. Emptied with `acted`.
   tieFirst: number[];
+  // Camouflaged units owed a Reveal (4.12.2): a non-Silence Action ('act'), a
+  // non-Silent Maneuver ('move'), or a Movement ending in Contact with an enemy
+  // ('touch', `byUid` the enemy). Recorded by the command that caused it, so
+  // every client derives the same list and a page only has to read it; a
+  // `reveal` clears the unit's entries (audit Phase 3, C4/C5).
+  revealDue: { uid: number; why: 'act' | 'move' | 'touch'; byUid?: number }[];
   commanded: number[];
   freeCommand: number[];
   passed: Side[];
@@ -845,7 +854,9 @@ export interface ScriptState {
   // every one on a saved board.
   // `charged`/`twoHandedDeclined` ride a scanAttack debt: the attack a free
   // Scan interrupted resumes as it was declared (audit Phase 2, C7).
-  reactions: { uid: number; actionId: string; count: number; range: number; kind?: 'smoke' | 'trace' | 'stance' | 'riposte' | 'manifest' | 'scanAttack'; fromUid?: number; charged?: boolean; chargeChoice?: string; twoHandedDeclined?: boolean }[];
+  // `control` is The Red Shoes (TM35NA_B): owed to the INITIATOR, whose player
+  // now moves the Responder named by `fromUid` (audit Phase 3, D3).
+  reactions: { uid: number; actionId: string; count: number; range: number; kind?: 'smoke' | 'trace' | 'stance' | 'riposte' | 'manifest' | 'scanAttack' | 'control'; fromUid?: number; charged?: boolean; chargeChoice?: string; twoHandedDeclined?: boolean }[];
   // An Electronic Counter-roll in progress (4.11.2). It lives in shared state
   // rather than on one client because BOTH sides roll and either may spend Link
   // to Focus, and a player may only ever send commands for their own units.
@@ -1089,6 +1100,14 @@ export interface CounterRoll {
   // Revealed; on a failure the attack ends (I11) and this is simply dropped.
   // With the declaration's answers, so the resumed attack is the one declared.
   thenAttack?: { actionId: string; charged?: boolean; chargeChoice?: string; twoHandedDeclined?: boolean } | null;
+  // Target Tracing (174), opened as the reaction. startCounterRoll spent its
+  // Command Token, so a won roll cannot ask targetTracingOn, which wants one
+  // still face-up, whether this was the reaction (audit Phase 3, D8).
+  reaction?: boolean;
+  // The Responders still to come when the Action names every enemy in Range
+  // (Scream, ZHDR-205_A; Scan Battlefield, 080_A and 522_A): one Counter-roll
+  // each, opened in turn as the record clears (audit Phase 3, D2 and A4).
+  rest?: number[];
 }
 
 export function newScriptState(firstPlayer: Side): ScriptState {
@@ -1097,6 +1116,7 @@ export function newScriptState(firstPlayer: Side): ScriptState {
     acted: [],
     extraOpps: [],
     tieFirst: [],
+    revealDue: [],
     commanded: [],
     freeCommand: [],
     passed: [],
@@ -1346,6 +1366,11 @@ function normaliseCounter(raw: unknown): CounterRoll | null {
       ...(typeof c.thenAttack.chargeChoice === 'string' ? { chargeChoice: c.thenAttack.chargeChoice } : {}),
       ...(c.thenAttack.twoHandedDeclined === true ? { twoHandedDeclined: true } : {}),
     } : null,
+    // The sixth: a checkpoint that dropped these would forget the trace's Link
+    // and the rest of a Scream (audit Phase 3).
+    ...(c.reaction === true ? { reaction: true } : {}),
+    ...(Array.isArray(c.rest) && c.rest.some((x) => typeof x === 'number')
+      ? { rest: c.rest.filter((x): x is number => typeof x === 'number') } : {}),
   };
 }
 
@@ -1358,6 +1383,9 @@ export function normaliseScript(raw: unknown, firstPlayer: Side): ScriptState {
     acted: list(s.acted, base.acted),
     extraOpps: list(s.extraOpps, base.extraOpps),
     tieFirst: list(s.tieFirst, base.tieFirst),
+    revealDue: Array.isArray(s.revealDue)
+      ? s.revealDue.filter((x) => x && typeof x.uid === 'number' && (x.why === 'act' || x.why === 'move' || x.why === 'touch'))
+      : base.revealDue,
     commanded: list(s.commanded, base.commanded),
     freeCommand: list(s.freeCommand, base.freeCommand),
     passed: Array.isArray(s.passed) ? s.passed : base.passed,
@@ -1381,8 +1409,9 @@ export function normaliseScript(raw: unknown, firstPlayer: Side): ScriptState {
           (x) => x && typeof x.uid === 'number' && typeof x.actionId === 'string'
             && typeof x.count === 'number' && typeof x.range === 'number'
             // A trace debt with no attacker can never be answered, so it is not
-            // carried across a reload as a row that strands the panel.
-            && (x.kind !== 'trace' || typeof x.fromUid === 'number'),
+            // carried across a reload as a row that strands the panel. Nor a
+            // control debt with no unit to move.
+            && ((x.kind !== 'trace' && x.kind !== 'control') || typeof x.fromUid === 'number'),
         )
       : base.reactions,
     counter: normaliseCounter(s.counter),

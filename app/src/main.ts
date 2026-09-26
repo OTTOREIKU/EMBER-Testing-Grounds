@@ -62,7 +62,7 @@ import { PlayGuide } from './playguide';
 import type { BoardGrids, Card, CardAction, DiceData, DieColor, Facing, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, StatusDef, TerrainPiece, Timing, Token } from './types';
 import { addStatus, cellsOf, DEFAULT_GRIDS, gridsOf, normaliseScript, removableTokens, SCALES, statusCount, statusesFor, STATUSES, zonesOf } from './types';
 import { actionIdOf } from './ticks';
-import { actionRange, chargeAdjusted, chargeChoices, cruising, stanceFeedbackOf, stanceFeedbackTargets, spendsAmmoWhenPerformed, linkShockOf, tetheredBy, linkSupportOf, linkSupportTargets, maxLink, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, tokenCleanupOf, tokenCleanupTargets, type LinkSupport, type TokenCleanup, straightLineBonus, selfStatusGrant, selfGrantWhy, transformOffer, automaticShieldFor, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, twoHandedUse, electronicValue, martyrdomOwed, autoDetonationsOwed, autoNeutralTargets, blinkTargets, camoBrokenBy, flightGrant, isAirborneAction, isPositionSwap, loanedParts, phasesThroughUnits, minesLayable, minesOwed, multiTargetLimit, unfoldsOwed, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, immobilizedStop, activatesCamo, isScanAction, scannable, formSwitch, grantAdjusted, shockAttackOf, shockMoveAllowed, stealthValue, manifestationRange, manifestTargets, nonHumanoidCost, nonHumanoidStop, maneuverIsSilent, maneuverSilenceDenier, envCardAt, envFlightFrom, envForcedStop, envHotEntries, envMoveRules, isGroundUnit, settleEnvironments, chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, projectileReach, type Resupply, resupplyOf, SLOT_LABEL, stationaryAdjusted, interceptLeft, interceptsOwed, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf, type AttackReaction } from './units';
+import { targetStatusGrant, targetStatusTargets, hasHighlight, highlightTargets, controlledMoveActions, electronicAll, electronicAllTargets, contactRevealsOwed, positionsOf, actionRange, chargeAdjusted, chargeChoices, cruising, stanceFeedbackOf, stanceFeedbackTargets, spendsAmmoWhenPerformed, linkShockOf, tetheredBy, linkSupportOf, linkSupportTargets, maxLink, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, tokenCleanupOf, tokenCleanupTargets, type LinkSupport, type TokenCleanup, straightLineBonus, selfStatusGrant, selfGrantWhy, transformOffer, automaticShieldFor, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, twoHandedUse, electronicValue, martyrdomOwed, autoDetonationsOwed, autoNeutralTargets, blinkTargets, flightGrant, isAirborneAction, isPositionSwap, loanedParts, phasesThroughUnits, minesLayable, minesOwed, multiTargetLimit, unfoldsOwed, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, immobilizedStop, activatesCamo, isScanAction, scannable, formSwitch, grantAdjusted, shockAttackOf, shockMoveAllowed, stealthValue, manifestationRange, manifestTargets, nonHumanoidCost, nonHumanoidStop, maneuverIsSilent, envCardAt, envFlightFrom, envForcedStop, envHotEntries, envMoveRules, isGroundUnit, settleEnvironments, chargeableSlots, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, projectileReach, type Resupply, resupplyOf, SLOT_LABEL, stationaryAdjusted, interceptLeft, interceptsOwed, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf, type AttackReaction } from './units';
 import { registerOffline } from './offline';
 import { battlefieldLocked, countHits, firstPlayerFrom, newSetup, normaliseSetup, tasksLocked, type SetupState } from './setup';
 import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
@@ -274,6 +274,23 @@ async function init() {
     (cmd) => perform(data, state, cmd),
   );
   electronicHelper.tokens = () => state.tokens;
+  // A Multi-Target's camouflaged extra target earns its own free Scan (p.71,
+  // FAQ I12; audit Phase 3, F3). It runs in this window, which shares the
+  // panel with the attack; a success queues the Reveal to the target's player
+  // like any other Scan, and the split is drawn again once the window closes,
+  // where the Revealed unit can then be added.
+  attackHelper.freeScan = (attacker, target, _action, resume) => {
+    const scan = data.commonActions.find((a) => a.id === 'COMMON_SCAN');
+    if (!scan) return;
+    logTo(attacker, `${attacker.label} designates ${target.label}, which is in Optical Camouflage: one free Scan first (4.12.2, FAQ I12).`);
+    electronicHelper.start(attacker, scan, target, {
+      then: (win) => {
+        if (!win) logTo(attacker, `The Scan failed, so ${target.label} cannot be designated by this attack (FAQ I11).`);
+        renderReactionPrompt();
+      },
+      after: () => { showSideTab('combat'); resume(); },
+    });
+  };
 
   function combatBusy(): boolean {
     return attackHelper.active || electronicHelper.active;
@@ -307,6 +324,13 @@ async function init() {
     },
     onMoveUnit: (uid, opts, done) => void startMove(uid, opts, done),
     onPerformAction: (uid, actionId, done) => performGuided(uid, actionId, done),
+    // Every Reveal through this board's own picker, the hop and the facing with
+    // it (audit Phase 3, F6). A non-Silent Action's Reveal is the teaching
+    // tracker's to wave away; the Common Action Reveal is not asked.
+    onReveal: (t, why, ask) => {
+      if (ask) promptReveal(t, why);
+      else void offerManifestation(t, why).then(() => onChanged());
+    },
     onSetStance: (uid, stance) => {
       const t = state.tokens.find((x) => x.uid === uid);
       if (!t) return;
@@ -647,20 +671,46 @@ async function init() {
         pendingIntercept = null;
         if (attacker && defender && action) {
           if (mode === 'electronic') {
-            // A Scan designates "an Enemy Unit in the Optical Camouflage State
-            // or bearing a Low Profile Token" (4.12.4). Freeplay opens the
-            // helper directly rather than through startCounterRoll, so the
-            // command-layer gate never runs here and the rule has to be asked
-            // at the click - against anything else the Scan could change
-            // nothing, which 6.1 forbids.
-            if (isScanAction(action) && !scannable(defender)) {
-              void alertDialog({
-                title: 'Nothing to Scan',
-                body: `${defender.label} is neither in the Optical Camouflage State nor bearing a Low Profile Token, so a Scan could not change anything (4.12.4). Pick another target, or Esc to cancel.`,
+            // Freeplay opens the window directly rather than through
+            // startCounterRoll, so that command's check is asked here, as the
+            // one reading of who a Counter-roll may be opened against: an
+            // enemy, not a "-", a unit type the card names, one a Scan could
+            // change, in Range (a Repeater's too), from an Electronic Value
+            // above 0. None of it ran, and Manipulation Interference
+            // Immobilized an ally 40 Grids away (audit Phase 3, D6). And an
+            // Automatic one takes the nearest (3.5.2). Strict refuses; the
+            // teaching tracker warns and lets a house rule through.
+            const verdict = check(data, state, { kind: 'startCounterRoll', seat: attacker.side, uid: attacker.uid, actionId: action.id, targetUid: defender.uid });
+            const legal = action.speed === 'auto' && !electronicAll(action) ? autoTargetsFor(data, state.tokens, attacker, action) : [];
+            const why = !verdict.ok ? verdict.why
+              : legal.length && !legal.some((x) => x.uid === defender.uid)
+                ? `An Automatic Action takes the nearest legal target (3.5.2): here ${legal.map((x) => x.label).join(', ')}.`
+                : null;
+            const open = (): void => {
+              openElectronic(attacker, action, defender);
+              revealForAction(attacker, action);
+              showSideTab('combat');
+            };
+            if (why) {
+              if (state.script?.strict) {
+                void alertDialog({ title: `${defender.label} is not a legal target`, body: `${why} Pick another target, or press Esc.` });
+                done?.(false);
+                return;
+              }
+              void confirmDialog({
+                title: `${defender.label} is not a legal target`,
+                body: `${why} Open the Counter-roll anyway?`,
+                confirmLabel: 'Open it anyway',
+                cancelLabel: 'Pick another target',
+                danger: true,
+              }).then((go) => {
+                if (!go) { done?.(false); return; }
+                open();
+                done?.(true);
               });
               return;
             }
-            electronicHelper.start(attacker, action, defender);
+            open();
           } else if (intercepting) {
             spendIntercept(attacker, intercepting.actionId, action.name.en || action.name.zh || action.id);
             attackHelper.start(
@@ -701,6 +751,40 @@ async function init() {
               if (!go) { done?.(false); return; }
               const prot = protectionFor(attacker, defender, action);
               attackHelper.start(attacker, action, defender, losNote(attacker, defender, action), prot.white, prot.note);
+              revealForAction(attacker, action);
+              showSideTab('combat');
+              done?.(true);
+            });
+            return;
+          } else if (mode === 'attack' && (() => {
+            // HIGHLIGHT (6.2.1): "If a Unit performs an Attack Action that is
+            // able to target an Enemy Unit that has Highlight, it must target
+            // that Unit", Firing only (FAQ J18; F15). Only the Drones'
+            // Automatic Actions were ever bound, so Amplify Profile and Target
+            // Tag did nothing against a Mech's fire (audit Phase 3, E1).
+            const forced = highlightForced(attacker, action);
+            return forced.length > 0 && !forced.some((x) => x.uid === defender.uid);
+          })()) {
+            const names = highlightForced(attacker, action).map((x) => x.label).join(', ');
+            if (state.script?.strict) {
+              void alertDialog({
+                title: 'A Highlighted target',
+                body: `${action.name.en || action.id} can target ${names}, which has Highlight, so it must target it (6.2.1). Pick it, or press Esc.`,
+              });
+              done?.(false);
+              return;
+            }
+            void confirmDialog({
+              title: 'A Highlighted target',
+              body: `${action.name.en || action.id} can target ${names}, which has Highlight, so it normally must target it (6.2.1). Attack ${defender.label} anyway?`,
+              confirmLabel: 'Attack it anyway',
+              cancelLabel: 'Pick the Highlighted one',
+              danger: true,
+            }).then((go) => {
+              if (!go) { done?.(false); return; }
+              const prot = protectionFor(attacker, defender, action);
+              attackHelper.start(attacker, action, defender, losNote(attacker, defender, action), prot.white, prot.note);
+              revealForAction(attacker, action);
               showSideTab('combat');
               done?.(true);
             });
@@ -727,6 +811,7 @@ async function init() {
               if (!go) { done?.(false); return; }
               const prot = protectionFor(attacker, defender, action);
               attackHelper.start(attacker, action, defender, losNote(attacker, defender, action), prot.white, prot.note);
+              revealForAction(attacker, action);
               showSideTab('combat');
               done?.(true);
             });
@@ -753,6 +838,7 @@ async function init() {
               if (!go) { done?.(false); return; }
               const prot = protectionFor(attacker, defender, action);
               attackHelper.start(attacker, action, defender, losNote(attacker, defender, action), prot.white, prot.note);
+              revealForAction(attacker, action);
               showSideTab('combat');
               done?.(true);
             });
@@ -775,6 +861,7 @@ async function init() {
               }
               const prot = protectionFor(attacker, defender, action);
               attackHelper.start(attacker, action, defender, losNote(attacker, defender, action), prot.white, prot.note);
+              revealForAction(attacker, action);
               showSideTab('combat');
               done?.(true);
             });
@@ -804,17 +891,10 @@ async function init() {
               const prot = protectionFor(attacker, defender, action);
               attackHelper.start(attacker, action, defender, losNote(attacker, defender, action), prot.white, prot.note);
             }
-            // Declaring an attack is never Silent, so a camouflaged attacker
-            // Reveals with it (4.12.2, FAQ I5/I22 - the Reveal comes first).
-            // An Action that WAS Silent until an enemy aura took it away names
-            // the aura: the player is otherwise watching a printed keyword fail
-            // with nothing on screen to blame it on.
-            if (statusCount(attacker.statuses, 'camouflage') > 0 && !isSilentAction(data, state.tokens, attacker, action)) {
-              const denier = actionSilenceDenier(data, state.tokens, attacker, action);
-              promptReveal(attacker, denier
-                ? `${attacker.label} attacks from camouflage: its Silence is denied by ${denier.source.label} (${denier.label}).`
-                : `${attacker.label} attacks from camouflage.`);
-            }
+            // An attack without Silence Reveals a camouflaged attacker
+            // (4.12.2, FAQ I5); revealForAction names an aura that took the
+            // Silence away.
+            revealForAction(attacker, action);
           }
           showSideTab('combat');
           // An Action is performed the moment it is declared against a legal
@@ -1349,6 +1429,43 @@ async function init() {
     if (t.kind === 'projectile' && action.type !== 'Passive') {
       startDetonation(t, actionId);
       return done(true);
+    }
+
+    // A Token the Action puts on a chosen target: Target Tag's Highlight
+    // (PRDR-202_A). It was left to "follow the card text" on this board, so it
+    // put no Token on anyone (audit Phase 3, E2). The picker offers only units
+    // in Range and sight that can bear it (not a Low Value Unit, not a
+    // camouflaged one for a Highlight). Mirrors routeAction.
+    const tag = targetStatusGrant(action);
+    if (tag) {
+      const units = targetStatusTargets(data, state.tokens, t, action, tag, { terrain: currentTerrain(), smoke: state.smoke ?? [] });
+      if (!units.length) {
+        void alertDialog({ title: what, body: `No unit in Range ${actionRange(data, state.tokens, t, action)} and line of sight can gain it.` });
+        return done(false);
+      }
+      void choiceDialog({
+        title: what,
+        body: `One target within Range ${actionRange(data, state.tokens, t, action)}, in line of sight.`,
+        choices: [
+          ...units.map((x) => ({ id: String(x.uid), label: `${x.side === t.side ? 'Ally' : 'Enemy'} · ${x.label}` })),
+          { id: '', label: 'Cancel', cancel: true },
+        ],
+        stacked: true,
+      }).then((pick) => {
+        if (!pick) { done(false); return; }
+        const who = state.tokens.find((x) => x.uid === Number(pick));
+        const v = perform(data, state, { kind: 'applyStatus', seat: t.side, uid: t.uid, targetUid: Number(pick), statusId: tag.statusId, stacks: tag.stacks });
+        if (!v.ok && state.script?.strict) {
+          void alertDialog({ title: 'Refused', body: v.why ?? 'The Token was refused.' });
+          done(false);
+          return;
+        }
+        const label = STATUSES.find((x) => x.id === tag.statusId)?.label ?? tag.statusId;
+        if (who) logTo(who, `${what}: ${who.label} gains a ${label} Token from ${t.label}.`);
+        onChanged();
+        done(true);
+      });
+      return;
     }
 
     // A self-applied Token (Ambush: Low Profile; Amplify Profile: Highlight).
@@ -1905,6 +2022,10 @@ async function init() {
     // one arrives quietly (FAQ M20).
     if (m.placed && projectileDelivery(m.action) === 'launch') noteInterception(m.uid);
     m.done(m.placed > 0);
+    // A launch without Silence Reveals a camouflaged launcher (4.12.2), which
+    // this door never asked (audit Phase 3, C10).
+    const launcher = m.placed > 0 ? state.tokens.find((x) => x.uid === m.uid) : undefined;
+    if (launcher) revealForAction(launcher, m.action);
     onChanged();
     // The launch panel has nothing left to say once the volley is over, and
     // leaving it up with live-looking buttons reads as unfinished business.
@@ -2470,16 +2591,22 @@ async function init() {
       }
       onChanged();
       setHint('');
-      // Movement is a non-Silence action unless a surviving Part grants
-      // Silence to it (a Stealth Chassis, card 100 LM210S; FAQ I2/I5), so a camouflaged
+      // Movement is a non-Silence action unless Stealth Movement grants it
+      // Silence (a Stealth Chassis, card 100 LM210S; FAQ I2/I5), so a camouflaged
       // mover Reveals here. The Contact sweep handles the other half.
       //
-      // `startPos` goes in for the same reason interceptsOwed takes it six
-      // lines below: a Movement is judged at the start AND landing grids only
-      // (FAQ O11/O15). Judging the landing alone let a unit walk out of an
-      // enemy Patrol Eagle's aura and retroactively keep its Silence.
-      if (statusCount(t.statuses, 'camouflage') > 0 && !maneuverIsSilent(data, state.tokens, t, startPos)) {
-        const denier = maneuverSilenceDenier(data, state.tokens, t, startPos);
+      // A Movement ACTION asks its own Silence, which the Stealth Chassis grants
+      // only to its own Move Actions; a bare Maneuver asks the Maneuver's. This
+      // used to ask the Maneuver's for both, so a backpack's Move Action on a
+      // Stealth Chassis moved in Silence (audit Phase 3, B2). `startPos` goes in
+      // for the same reason interceptsOwed takes it below: an enemy Patrol
+      // Eagle's aura denies an Action its Silence at either end of the move (FAQ
+      // O11/O15). It does not reach a Maneuver, which is not an Action (F14).
+      const moveSilent = m.action
+        ? isSilentAction(data, state.tokens, t, m.action, undefined, startPos)
+        : maneuverIsSilent(data, t);
+      if (statusCount(t.statuses, 'camouflage') > 0 && !moveSilent) {
+        const denier = m.action ? actionSilenceDenier(data, state.tokens, t, m.action, undefined, startPos) : undefined;
         promptReveal(t, denier
           ? `${t.label} would have moved in Silence, but ${denier.source.label} (${denier.label}) denies it.`
           : `${t.label} moved without Silence.`);
@@ -2503,14 +2630,10 @@ async function init() {
       // never had, and an unguarded send would put that refusal on screen after
       // every ordinary move.
       //
-      // maneuverIsSilent, not isSilentAction, and the split is the engine's:
-      // a Part grants Silence to MANEUVER (FAQ I2), while an Action has to
-      // print its own. A Movement ACTION reaches this same settle(), so a
-      // Stealth Chassis (card 100 LM210S) would be read as silent here — performGuided's wrapper
-      // then asks the Action's own printed Silence and sheds anyway, which is
-      // the right answer. Unreachable today in any case: no action in the card
-      // data is typed Moving AND prints Silence (checked across all 31).
-      if (statusCount(t.statuses, 'lowProfile') > 0 && !maneuverIsSilent(data, state.tokens, t, startPos)) {
+      // The same reading as the Reveal above: a Movement Action asks its own
+      // Silence (the Stealth Chassis's Sprint has it, a backpack's Move Action
+      // does not), a bare Maneuver the Maneuver's.
+      if (statusCount(t.statuses, 'lowProfile') > 0 && !moveSilent) {
         perform(data, state, { kind: 'removeStatus', seat: t.side, uid: t.uid, targetUid: t.uid, statusId: 'lowProfile' });
         logTo(t, `${t.label} Maneuvers without Silence, so its Low Profile Token comes off (4.12.3).`);
       }
@@ -3687,6 +3810,53 @@ async function init() {
         if (go) perform(data, state, { kind: 'defenseReaction', seat: defender.side, uid: defender.uid });
         onChanged();
         renderReactionPrompt();
+      });
+      return;
+    }
+    // The Red Shoes (TM35NA_B): the won Counter-roll hands this player one of
+    // the Responder's own Maneuvers or Move Actions, at no Tick cost, and
+    // Immobilized still stops it (ruled 2026-09-25, audit Phase 3, F19). The
+    // move is drawn on the board like any other; its controlledMove spends the
+    // debt, so backing out of the route leaves the question standing.
+    if (r.kind === 'control') {
+      const target = state.tokens.find((x) => x.uid === r.fromUid);
+      const stop = target ? immobilizedStop(target) : null;
+      const reach = target ? maneuverRange(data, target) : 0;
+      const moves = target && !stop ? controlledMoveActions(data, target) : [];
+      void choiceDialog({
+        title: `${defender.label}: The Red Shoes`,
+        body: !target ? 'The unit has left the board, so there is nothing to steer.'
+          : stop ? stop
+            : `The Electronic Attack succeeded, so you take control of ${target.label} to perform one of its own Maneuvers or Move Actions. It costs its player no Tick.`,
+        stacked: true,
+        choices: [
+          ...(target && !stop && reach > 0 ? [{ id: '__maneuver', label: `Maneuver (Move ${reach})` }] : []),
+          ...moves.map((a) => ({ id: a.id, label: `${a.name?.en || a.name?.zh || a.id} (Range ${a.range || reach})` })),
+          { id: '', label: target && !stop ? 'Leave it be' : 'Done', cancel: true },
+        ],
+      }).then((id) => {
+        if (!id || !target) {
+          perform(data, state, { kind: 'resolveReaction', seat: defender.side, uid: defender.uid, actionId: r.actionId });
+          onChanged();
+          renderReactionPrompt();
+          return;
+        }
+        const a = id === '__maneuver' ? null : moves.find((x) => x.id === id) ?? null;
+        void startMove(target.uid, {
+          range: a ? a.range || reach : undefined,
+          label: `The Red Shoes: ${a ? a.name?.en || a.id : 'Maneuver'}`,
+          maneuver: !a,
+          airborne: a ? isAirborneAction(a) : false,
+          action: a,
+        }, (moved) => {
+          const now = state.tokens.find((x) => x.uid === target.uid);
+          if (moved && now) {
+            perform(data, state, { kind: 'controlledMove', seat: defender.side, uid: defender.uid, targetUid: now.uid, to: { col: now.col, row: now.row }, facing: now.facing, actionId: a?.id });
+            logTo(now, `${defender.label} steers ${now.label} (The Red Shoes).`);
+          }
+          onChanged();
+          renderReactionPrompt();
+        });
       });
       return;
     }
@@ -5583,12 +5753,14 @@ async function init() {
 
   // ---------- Optical Camouflage reveals (4.12.2, FAQ I4/I5/I7/I14/I23) ----------
 
-  // Which camouflaged units have already been asked about their current
-  // Contact, so the sweep asks once per touch rather than every repaint. A
-  // unit that ACTIVATES camo while already touching is seeded silently: that
-  // is not "ending Movement in Contact" and does not Reveal (FAQ I14).
-  const camoContactSeen = new Set<number>();
-  let prevCamo = new Set<number>();
+  // Where every unit stood at the last sweep. The Contact Reveal is an EVENT,
+  // a Movement of either unit that ends in Contact (FAQ I4), so each sweep
+  // judges the board against this and then takes a fresh one. It used to be a
+  // STATE kept per unit, asked once per touch: once the first toucher's Reveal
+  // was dismissed, a second enemy arriving, or the first leaving and coming
+  // back, was never seen (audit Phase 3, C5). Activating camouflage while
+  // touching moves nobody, so it Reveals nothing (FAQ I14).
+  let camoPositions: Map<number, { col: number; row: number }> | null = null;
 
   // The Bit turns its card over, then makes its one Movement. The Stance the
   // player picks IS the choice; the move afterwards is the ordinary planner, so
@@ -5670,16 +5842,25 @@ async function init() {
   // see the unit standing revealed on its marker for a frame.
   async function offerManifestation(t: Token, why: string): Promise<boolean> {
     const range = manifestationRange(data, t);
-    const spots = range > 0 ? manifestTargets(data, state.tokens, currentTerrain(), t) : [];
+    // Range X counted orthogonally (4.2.1), never an Abyss for a Ground Unit,
+    // and nowhere at all while Immobilized: it Reveals in place (FAQ I20). The
+    // picker counted a square, offered the Abyss and moved an Immobilized unit
+    // (audit Phase 3, C1, C6, C11).
+    const stuck = !!immobilizedStop(t);
+    const spots = range > 0 ? manifestTargets(data, state.tokens, currentTerrain(), t, state) : [];
     if (!spots.length) {
       const v = perform(data, state, { kind: 'reveal', seat: t.side, uid: t.uid });
-      if (v.ok) logTo(t, `${why} Optical Camouflage ends (4.12.2).${range > 0 ? ' Manifestation Movement had nowhere to go.' : ''}`);
+      if (v.ok) {
+        logTo(t, `${why} Optical Camouflage ends (4.12.2).${stuck
+          ? ' It bears an Immobilized Token, so it Reveals where it stands (FAQ I20).'
+          : range > 0 ? ' Manifestation Movement had nowhere to go.' : ''}`);
+      }
       return v.ok;
     }
     const here = largeGridOf(t);
     const pick = await choiceDialog({
       title: `${t.label} Manifests`,
-      body: `${why} The camouflage model marked a SUSPECTED position; the unit may now appear within ${range} Grid${range === 1 ? '' : 's'} of ${gridRef(here.c, here.r)} (Stealth ${range}). This is Teleportation, so terrain and units in between do not matter.`,
+      body: `${why} The camouflage model marked a SUSPECTED position; the unit may now appear within Range ${range} of ${gridRef(here.c, here.r)}, counted orthogonally (Stealth ${range}). This is Teleportation, so terrain and units in between do not matter.`,
       stacked: true,
       choices: [
         ...spots
@@ -5690,7 +5871,24 @@ async function init() {
       ],
     });
     const to = pick ? { col: Number(pick.split(',')[0]), row: Number(pick.split(',')[1]) } : undefined;
-    const v = perform(data, state, { kind: 'reveal', seat: t.side, uid: t.uid, to });
+    // Its owner chooses which way it faces where it appears (ruled 2026-09-25,
+    // audit Phase 3, F4; FAQ I17, 4.3.2).
+    let facing: Facing | undefined;
+    if (to) {
+      const id = await choiceDialog({
+        title: `${t.label} faces`,
+        body: 'Which way does it face where it appears? Manifestation is a Movement, so its player chooses (4.3.2).',
+        choices: [
+          ...(['North', 'East', 'South', 'West'] as const).map((label, i) => ({
+            id: String(i),
+            label: i === t.facing ? `${label} (as it stood)` : label,
+          })),
+        ],
+        stacked: true,
+      });
+      facing = id ? (Number(id) as Facing) : undefined;
+    }
+    const v = perform(data, state, { kind: 'reveal', seat: t.side, uid: t.uid, to, facing });
     if (!v.ok) return false;
     logTo(t, to
       ? `${why} Optical Camouflage ends and ${t.label} Manifests to ${gridRef(Math.floor(to.col / 3), Math.floor(to.row / 3))} (4.12.2).`
@@ -5758,70 +5956,135 @@ async function init() {
     scanAttack = null;
     const attacker = state.tokens.find((x) => x.uid === s.attackerUid);
     if (!attacker) { s.done?.(true); return; }
-    const note = losNote(attacker, defender, s.action);
-    if (note.includes('✕')) {
-      logTo(attacker, `${defender.label} appeared where ${s.action.name.en || s.action.id} cannot reach it (${note}), so the attack ends. The Action Tick is spent (FAQ I11).`);
+    // p.71: a Revealed unit "not in a position that meets the requirements of
+    // the Attack" makes the Attack fail. Judged strictly, Range and Forward Arc
+    // (4.2.5) as much as line of sight: this stopped only on a hard ✕, and
+    // Range and the arc were warnings, so an attack whose target had
+    // Manifested out of Range or behind the attacker carried on (audit Phase
+    // 3, C2). The teaching tracker may still let a house rule through.
+    const reach = { ...s.action, range: actionRange(data, state.tokens, attacker, s.action) };
+    const note = losNoteFor(attacker, defender, reach, currentTerrain(), state.tokens, state.smoke ?? [], true);
+    const go = (): void => {
+      const multi = multiTargetLimit(s.action);
+      if (multi) attackHelper.startMulti(attacker, s.action, defender, multi);
+      else {
+        const prot = protectionFor(attacker, defender, s.action);
+        attackHelper.start(attacker, s.action, defender, losNote(attacker, defender, s.action), prot.white, prot.note);
+      }
+      revealForAction(attacker, s.action);
+      showSideTab('combat');
       s.done?.(true);
+    };
+    if (note.includes('✕')) {
+      const fail = note.split(' · ').filter((x) => x.includes('✕')).map((x) => x.replace('✕ ', '')).join('; ');
+      if (state.script?.strict) {
+        logTo(attacker, `${defender.label} appeared where ${s.action.name.en || s.action.id} cannot reach it (${fail}), so the attack fails. The Action Tick is spent (FAQ I11).`);
+        s.done?.(true);
+        return;
+      }
+      void confirmDialog({
+        title: 'The attack fails',
+        body: `${defender.label} appeared where ${s.action.name.en || s.action.id} cannot reach it (${fail}), so the attack fails (p.71). The Action Tick is spent (FAQ I11). Make it anyway?`,
+        confirmLabel: 'Attack anyway (house rule)',
+        cancelLabel: 'The attack fails',
+        danger: true,
+      }).then((ok) => {
+        if (ok) { go(); return; }
+        logTo(attacker, `The attack on ${defender.label} fails: it appeared out of reach. The Action Tick is spent (FAQ I11).`);
+        s.done?.(true);
+      });
       return;
     }
-    const multi = multiTargetLimit(s.action);
-    if (multi) attackHelper.startMulti(attacker, s.action, defender, multi);
-    else {
-      const prot = protectionFor(attacker, defender, s.action);
-      attackHelper.start(attacker, s.action, defender, note, prot.white, prot.note);
-    }
-    showSideTab('combat');
-    s.done?.(true);
+    go();
   }
 
+  // The Highlighted enemies this Firing Action must take (6.2.1, FAQ J18): of
+  // the enemies it could target from here, Range, arc and sight judged
+  // strictly, the ones with Highlight (a Token or a card that prints it, and
+  // not while an aura's Low Profile cancels it, J12). Empty when there are none.
+  function highlightForced(attacker: Token, action: CardAction): Token[] {
+    if (action.type !== 'Firing') return [];
+    const reach = { ...action, range: actionRange(data, state.tokens, attacker, action) };
+    const legal = state.tokens.filter((o) => o.side !== attacker.side && o.deployed !== false
+      && (o.partStates[o.kind === 'mech' ? 'torso' : 'main'] ?? 'intact') !== 'destroyed'
+      && !losNoteFor(attacker, o, reach, currentTerrain(), state.tokens, state.smoke ?? [], true).includes('✕'));
+    return highlightTargets(data, state.tokens, action, legal);
+  }
+
+  // A camouflaged unit that performs an Action without Silence Reveals
+  // (4.12.2). One call for every attack and Electronic path on this board: only
+  // the last branch of the targeting used to ask, so the Electronic and Launch
+  // doors and most attack paths never prompted a Reveal (audit Phase 3, C10).
+  // An Action that WAS Silent until an enemy aura took it away names the aura:
+  // the player is otherwise watching a printed keyword fail with nothing on
+  // screen to blame it on. The Action that switched the camouflage on is exempt.
+  function revealForAction(t: Token, action: CardAction): void {
+    if (statusCount(t.statuses, 'camouflage') === 0 || activatesCamo(action) || isSilentAction(data, state.tokens, t, action)) return;
+    const denier = actionSilenceDenier(data, state.tokens, t, action);
+    promptReveal(t, denier
+      ? `${t.label} acts from camouflage: its Silence is denied by ${denier.source.label} (${denier.label}).`
+      : `${t.label} performs ${action.name?.en || action.name?.zh || action.id}, which has no Silence.`);
+  }
+
+  // One Counter-roll, or one per enemy in Range for an Action that names them
+  // all (Scream, the Scan Battlefield), each opening as the last closes (audit
+  // Phase 3, D2 and A4). The window used to open against the one clicked.
+  function openElectronic(attacker: Token, action: CardAction, first: Token): void {
+    if (!electronicAll(action)) { electronicHelper.start(attacker, action, first); return; }
+    const order = [first, ...electronicAllTargets(data, state.tokens, attacker, action).filter((x) => x.uid !== first.uid)];
+    const run = (i: number): void => {
+      const target = state.tokens.find((x) => x.uid === order[i]?.uid);
+      if (!target) { if (i + 1 < order.length) run(i + 1); return; }
+      const by = state.tokens.find((x) => x.uid === attacker.uid) ?? attacker;
+      showSideTab('combat');
+      electronicHelper.start(by, action, target, i + 1 < order.length ? { after: () => run(i + 1) } : {});
+    };
+    run(0);
+  }
+
+  // A unit whose Reveal is already being asked. The guide and this board both
+  // answer to one non-Silent Action (the guide after it is performed, the board
+  // as the attack is declared), and two pickers at once was how a strict
+  // Reveal landed in place and the Grid picked after it was refused (audit
+  // Phase 3, C10). One question per unit at a time.
+  const revealOpen = new Set<number>();
+
   function promptReveal(t: Token, why: string): void {
-    if (statusCount(t.statuses, 'camouflage') === 0) return;
+    if (statusCount(t.statuses, 'camouflage') === 0 || revealOpen.has(t.uid)) return;
+    revealOpen.add(t.uid);
+    const settled = (): void => { revealOpen.delete(t.uid); onChanged(); };
     if (state.script?.strict) {
-      void offerManifestation(t, why).then(() => onChanged());
+      void offerManifestation(t, why).then(settled, settled);
       return;
     }
     void confirmDialog({
       title: `${t.label} breaks camouflage`,
       body: `${why} Under 4.12.2 the Optical Camouflage ends and the unit Reveals${(() => {
         const r = manifestationRange(data, t);
-        return r > 0 ? `, with Manifestation Movement up to ${r} Grid${r === 1 ? '' : 's'} (Stealth ${r})` : '';
+        return r > 0 ? `, with Manifestation Movement within Range ${r} (Stealth ${r})` : '';
       })()}.`,
       confirmLabel: 'Reveal it (4.12.2)',
       cancelLabel: 'Keep it hidden (house rule)',
     }).then((go) => {
-      if (!go) return;
-      void offerManifestation(t, why).then(() => onChanged());
-    });
+      if (!go) { revealOpen.delete(t.uid); return; }
+      void offerManifestation(t, why).then(settled, settled);
+    }, () => revealOpen.delete(t.uid));
   }
 
   function sweepCamoContacts(): void {
-    const nowCamo = new Set<number>();
-    for (const t of state.tokens) {
-      if (statusCount(t.statuses, 'camouflage') === 0 || t.deployed === false) {
-        camoContactSeen.delete(t.uid);
-        continue;
-      }
-      nowCamo.add(t.uid);
-      // One shared derivation rather than the plain !aerial test this used to
-      // run: that threw away landed Mines and Beacons, which FAQ I10 says DO
-      // break camouflage, and the Match Centre had the rule while this page
-      // did not.
-      const toucher = camoBrokenBy(data, state.tokens, t);
-      if (!toucher) {
-        camoContactSeen.delete(t.uid);
-        continue;
-      }
-      if (camoContactSeen.has(t.uid)) continue;
-      camoContactSeen.add(t.uid);
-      // Freshly camouflaged while already touching: no Reveal (FAQ I14).
-      if (!prevCamo.has(t.uid)) continue;
-      // Forced arrivals Reveal too. I4 counts Crush, Drag and Knockback as
-      // "Movement" for this trigger and I23 spells it out for a Taurus swap,
-      // so the board is the right thing to read and how the unit got here is
-      // deliberately not asked.
-      promptReveal(t, `${t.label} ended a Movement in Contact with ${toucher.label}.`);
+    const before = camoPositions;
+    camoPositions = positionsOf(state.tokens);
+    if (!before) return;
+    // The engine's own derivation, the one every command's apply runs, so the
+    // two cannot drift: who moved since the last sweep and ended touching an
+    // enemy that breaks camouflage (landed Mines and Beacons included, FAQ
+    // I10). Forced arrivals count (I4 names Crush, Drag and Knockback; I23 a
+    // Taurus swap), so how the unit got here is deliberately not asked. A
+    // camouflaged unit stepping onto a Mine is not Revealed by it: the Mine
+    // detonates instead (FAQ I24, M19).
+    for (const { t, by } of contactRevealsOwed(data, state.tokens, before)) {
+      promptReveal(t, `${t.label} ended a Movement in Contact with ${by.label}.`);
     }
-    prevCamo = nowCamo;
   }
 
   // Which Mines have already been offered, so a declined detonation does not
@@ -8177,6 +8440,18 @@ async function init() {
       }
       const d = k === 'q' ? 3 : 1;
       t.facing = ((t.facing + d) % 4) as Facing;
+      // A pivot is a Maneuver, "including changing facing without Movement"
+      // (4.12.3), so it takes the Low Profile Token and Reveals a camouflaged
+      // unit unless a Stealth Chassis makes the Maneuver Silent. Shift turns it
+      // for an effect instead, which is none of this. Q and E did neither
+      // (audit Phase 3, C10).
+      if (!ev.shiftKey && !maneuverIsSilent(data, t)) {
+        if (statusCount(t.statuses, 'lowProfile') > 0) {
+          perform(data, state, { kind: 'removeStatus', seat: t.side, uid: t.uid, targetUid: t.uid, statusId: 'lowProfile' });
+          logTo(t, `${t.label} turns on the spot without Silence, so its Low Profile Token comes off (4.12.3).`);
+        }
+        promptReveal(t, `${t.label} turned on the spot, a Maneuver without Silence (4.12.3).`);
+      }
       onChanged();
       if (!combatBusy()) panel.showToken(t);
     } else if (k === 'm') {

@@ -117,7 +117,9 @@ const cmds = readFileSync(new URL('../src/commands.ts', import.meta.url), 'utf8'
 const hud = readFileSync(new URL('../src/matchhud.ts', import.meta.url), 'utf8');
 const main = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
 check('the aura walker measures the amplified reach', /rangeBetween\(src, t\)\.range > auraReach\(data, src, a\)/.test(units), true);
-check('the Counter-roll command judges the effective reach', /const reach = actionRange\(data, state\.tokens, t, a\);/.test(cmds), true);
+// `let` since the audit's Phase 3: a free Scan is re-aimed at its attack's own
+// reach (FAQ I18), which is the same actionRange of a different Action.
+check('the Counter-roll command judges the effective reach', /(?:const|let) reach = actionRange\(data, state\.tokens, t, a\);/.test(cmds), true);
 check('the Match Centre picker shows it', /const reach = actionRange\(ctx\.data, s\.tokens, by, a\);/.test(hud), true);
 check('and freeplay draws its rings at it', /const ewReach = actionRange\(data, state\.tokens, t, action\);/.test(main), true);
 

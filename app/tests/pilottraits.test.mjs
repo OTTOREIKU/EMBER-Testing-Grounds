@@ -90,6 +90,10 @@ export function tokenCards(data: any, t: any): any[] {
   // pilotCard, maxLink and the whole phase-7 predicate block, sliced rather
   // than mirrored: WHICH pilot a rule answers to is the rule.
   + cut(units, 'export function pilotCard', '// A Mech Maneuvers at the Maneuver Value', 'the pilot readers')
+  // The Whistle, which counterStage now asks too: a Drone may reroll on an
+  // Ally Mech's Command Token (audit Phase 3, D9). Overlap-checked: 64507-65735
+  // today, below every cut above.
+  + cut(units, '// ZYBP-202 "Whistle": Aura, Range 4', '// ---------- Charge (rulebook 4.14) ----------', 'whistleFunders')
   // The Mechanics Audit Phase 2 readers (Cruise Mode, the Part and Starting
   // Action rules...), which defenseReactionOn and provokeWhy now ask: one block,
   // the last in units.ts, so it overlaps none of the cuts above.
@@ -438,7 +442,8 @@ console.log('\nPilot traits, against the shipped cards and dice\n');
   // Since 2026-09-25 the Counter-roll asks it inside counterStage (units.ts),
   // which decides whose Focus turn it is on both surfaces (FAQ G4).
   check('surface 2 — the freeplay counter-roll asks it too',
-    /return !!t && canAffordFocus\(data, t, tokens\);/.test(units) && /counterStage\(this\.data/.test(combat), true);
+    // The Whistle rides the same reading since the audit's Phase 3 (D9).
+    /return !!t && \(canAffordFocus\(data, t, tokens\) \|\| whistleFunders\(data, tokens, t\)\.length > 0\);/.test(units) && /counterStage\(this\.data/.test(combat), true);
   // Surface 3 was the Match Centre's own counter-roll rows. Those are GONE the
   // same way surface 4 went: Electronic Warfare is resolved in the combat
   // window now, so the networked player presses SURFACE 2, the same reader the
@@ -474,7 +479,8 @@ console.log('\nPilot traits, against the shipped cards and dice\n');
     + (mirror.match(/kind: 'focus'/g) ?? []).length, 4);
   check('and the Counter-roll declare pays through the same debit',
     // With the board since the Phase 2 audit (D4): Karl Fried pays a Bit's.
-    /case 'declareCounterFocus': \{[\s\S]{0,400}?payFocus\(data, t, state\.tokens\)/.test(src('commands.ts')), true);
+    // The Whistle's Command Token is the one alternative (audit Phase 3, D9).
+    /case 'declareCounterFocus': \{[\s\S]{0,800}?if \(funder\) flipCommand\(state, funder\);\s*\n\s*else if \(cmd\.use\) payFocus\(data, t, state\.tokens\)/.test(src('commands.ts')), true);
   check('and nothing outside the command decides what a Focus costs',
     /focusIsFree\(data, t\)/.test(src('commands.ts')), true);
 }
@@ -1088,17 +1094,22 @@ check('reader 2 — the Match Centre panel passes it', /canPerform\(o, priced, k
   // the offer stands, and it stands against the INITIATOR.
   const offer = A.provokeOffer(data, world(), roll(), false);
   check('Provoke fires for a Yoyu that WINS as Responder', !!offer, true);
-  check('and it targets the INITIATOR', offer?.uid, 1);
+  check('and it targets the INITIATOR', offer?.target?.uid, 1);
   check('and never Yoyu itself, which is what the printed English reads as',
-    offer?.uid === 2, false);
+    [offer?.yoyu?.uid, offer?.target?.uid === 2], [2, false]);
 
   // THE PILOT. Swap Yoyu for another real pilot and nothing is offered — the
   // assertion a reader keyed on the wrong card would fail.
   check('a Responder with a different pilot is offered nothing',
     A.provokeOffer(data, [mech(1, 's1', 'ZPA-38'), mech(2, 's2', 'FPA-05')], roll(), false), null);
-  // And the trait does not travel with the SEAT: Yoyu sitting in the Initiator's
-  // chair is not what this reading fires on.
-  check('and Yoyu in the Initiator seat is offered nothing either',
+  // EITHER ROLE since 2026-09-25 (audit Phase 3, F16): 4.11.2 fires an
+  // on-success Passive "regardless of whether the Unit was acting as the
+  // Initiator or Responder". Yoyu in the Initiator's chair is offered it when
+  // it WINS, and not when the Responder holds.
+  const asInit = A.provokeOffer(data, [mech(1, 's1', 'LPA-22'), mech(2, 's2', 'FPA-05')], roll(), true);
+  check('Yoyu as the Initiator that WINS is offered it, against the Responder',
+    [asInit?.yoyu?.uid, asInit?.target?.uid], [1, 2]);
+  check('and Yoyu as the Initiator that loses is offered nothing',
     A.provokeOffer(data, [mech(1, 's1', 'LPA-22'), mech(2, 's2', 'FPA-05')], roll(), false), null);
 
   // THE VERDICT. "When Electronic Counter Roll is successful" — Yoyu's own. The
@@ -1170,10 +1181,11 @@ check('reader 2 — the Match Centre panel passes it', /canPerform\(o, priced, k
     (cmds.match(/target\.stance = 'offensive';/g) ?? []).length, 1);
   check('and no page turns it itself',
     /stance = 'offensive'/.test(combatSrc + hudSrc + src('main.ts')), false);
-  // Yoyu answers as the Responder of THIS Counter-roll, and check() says so —
-  // the half a stale networked client could otherwise get wrong.
+  // Yoyu answers as EITHER SIDE of THIS Counter-roll (audit Phase 3, F16), and
+  // check() says so — the half a stale networked client could otherwise get
+  // wrong. It was the Responder only.
   check('check() binds the answer to the Counter-roll it claims',
-    /c\.responderUid !== cmd\.uid/.test(cmds) && /c\.initiatorUid !== cmd\.targetUid/.test(cmds), true);
+    /const pair = \(c\.responderUid === cmd\.uid && c\.initiatorUid === cmd\.targetUid\)\s*\n\s*\|\| \(c\.initiatorUid === cmd\.uid && c\.responderUid === cmd\.targetUid\);/.test(cmds), true);
 
   // The Match Centre no longer reads the offer itself. Electronic Warfare is
   // resolved in the COMBAT WINDOW now, so the one renderer asks the question on
@@ -1182,21 +1194,23 @@ check('reader 2 — the Match Centre panel passes it', /canPerform\(o, priced, k
     /provokeOffer\(/.test(hudSrc), false);
   // Both answers travel, because a decline has to close the question on the far
   // screen too — the offer lives in shared state precisely so both seats agree.
+  // Yoyu is whichever side the window names.
   check('and sends BOTH answers as the same command',
-    /kind: 'provoke', seat: resp\.side, uid: resp\.uid, targetUid: init\.uid, take \}/.test(hudSrc), true);
-  check('and offers it to YOYU\'s seat, not the Initiator\'s',
-    /take\.disabled = !this\.mayPress\('resp'\);/.test(combatSrc), true);
+    /const yoyu = arg\?\.uid === init\.uid \? init : resp;[\s\S]{0,120}?kind: 'provoke', seat: yoyu\.side, uid: yoyu\.uid, targetUid: other\.uid, take \}/.test(hudSrc), true);
+  check('and offers it to YOYU\'s seat, whichever side that is',
+    /take\.disabled = !this\.mayPress\(yoyuWho\);/.test(combatSrc), true);
 
-  check('freeplay\'s ElectronicHelper reads the same rule',
-    /provokeWhy\(this\.data, c\.responder, c\.initiator\) === null/.test(combatSrc), true);
+  check('freeplay\'s ElectronicHelper reads the same rule, in both roles',
+    /provokeWhy\(this\.data, c\.initiator, c\.responder\) === null \? 'init'/.test(combatSrc)
+      && /provokeWhy\(this\.data, c\.responder, c\.initiator\) === null \? 'resp'/.test(combatSrc), true);
   check('and sends the same command',
-    /kind: 'provoke', seat: c\.responder\.side, uid: c\.responder\.uid, targetUid: c\.initiator\.uid, take: true/.test(combatSrc), true);
+    /kind: 'provoke', seat: yoyu\.side, uid: yoyu\.uid, targetUid: other\.uid, take: true/.test(combatSrc), true);
   // The printed "may" is a real decision here, unlike Pulse, Ion, Fierce Assault
   // and Pursuit: Offensive Stance is a trade, so forcing it can HELP the enemy.
   // Both boards therefore ASK, and an applied-not-offered wiring would show up
   // as the second button going missing.
   check('and offers the decline as well as the switch',
-    /Leave its Stance alone/.test(combatSrc) && /leave\.disabled = !this\.mayPress\('resp'\);/.test(combatSrc), true);
+    /Leave its Stance alone/.test(combatSrc) && /leave\.disabled = !this\.mayPress\(yoyuWho\);/.test(combatSrc), true);
 }
 
 // ---------- Low Profile: the note credits the arm that actually fired ----------

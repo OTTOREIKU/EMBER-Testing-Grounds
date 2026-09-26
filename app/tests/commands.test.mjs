@@ -42,11 +42,24 @@ if (!groupParser) throw new Error('could not locate missileGroupOf in units.ts')
 // electronicDash rides along with it: 4.11.2's dash is the SAME reading of the
 // same field, and stubbing one while slicing the other is how the two would
 // come to disagree about what a printed -1 means.
+// Starts at isElectronicAttack, which sits just above with only a comment
+// between: startCounterRoll now refuses a Counter-roll opened by anything but an
+// Electronic Attack, a Scan or Target Tracing (audit Phase 3, D5), so which
+// Action IS one is a rule.
 const evReader = unitsSrc.slice(
-  unitsSrc.indexOf('export function electronicDash'),
+  unitsSrc.indexOf('export function isElectronicAttack'),
   unitsSrc.indexOf('export function defaultUnitLabel'),
 );
 if (!evReader) throw new Error('could not locate electronicValue in units.ts');
+// performAction owes a Reveal for a camouflaged unit's non-Silent Action, save
+// the Action that switched the camouflage on (audit Phase 3, C4), so the reader
+// that says which one that is comes too. Overlap-checked with _p2v_slices.mjs:
+// it sits between the Silence cut and the Scan readers, inside neither.
+const camoOn = unitsSrc.slice(
+  unitsSrc.indexOf('const CAMO_ACTIVATES'),
+  unitsSrc.indexOf('// ---------- STEALTH X and Manifestation Movement'),
+);
+if (!camoOn) throw new Error('could not locate activatesCamo in units.ts');
 // The Immobilized readers, SLICED rather than stubbed: 6.3.2's movement ban is
 // a RULE the command layer now enforces, and a stub would let the test pass
 // against a gate that refuses nothing. Unstoppable rides along because the ban
@@ -453,6 +466,7 @@ writeFileSync(
     // not. Auras first, since silenceDenied reads aurasOn.
     + auras
     + silence
+    + camoOn
     // After the stubs: the Tether block reads the stubbed tokenCards and
     // syncMagazines, and a function hoists but a `const` stub does not.
     + tethering
@@ -527,7 +541,9 @@ const data = {
     // A Carrier Tarantula and the Backpacks it lends (FAQ O3-O8/O16-O18).
     ['CAR', { id: 'CAR', category: 'drone', carrier: true, actions: [] }],
     ['REP', { id: 'REP', category: 'drone', repeater: true, repeaterRange: 6, actions: [] }],
-    ['BP1', { id: 'BP1', category: 'mech_part', type: 'backpack', electronic: 1, actions: [{ id: 'BP1_A', type: 'Firing', size: 's', range: 4, name: { en: 'Lent Gun' }, storage: 2 }] }],
+    // BP1_E is the Electronic Attack a lent Pod brings: only an Electronic
+    // Attack, a Scan or Target Tracing may open a Counter-roll (audit Phase 3, D5).
+    ['BP1', { id: 'BP1', category: 'mech_part', type: 'backpack', electronic: 1, actions: [{ id: 'BP1_A', type: 'Firing', size: 's', range: 4, name: { en: 'Lent Gun' }, storage: 2 }, { id: 'BP1_E', type: 'Tactic', size: 's', range: 4, name: { en: 'Lent Jammer' }, keywords: [{ en: 'Electronic Attack' }] }] }],
     // A second lendable Backpack, this one a LAUNCHER. Separate from BP1 rather
     // than a second Action on it, because BP1 doubles as an inert Torso in two
     // later fixtures and giving it another Action couples them to this one.
@@ -2528,10 +2544,14 @@ check('but the same lender cannot repeat it',
 // Electronic Value, so the only way this passes is the borrowed Pod.
 const wLoanEw = world([mech(1, 's1'), loadCarrier(2), mech(9, 's2', { col: 9 })], 2, opp(1));
 check('a borrowed Pod lets a Mech Initiate a Counter-roll (O5)',
-  C.check(data, wLoanEw, { kind: 'startCounterRoll', seat: 's1', uid: 1, targetUid: 9, actionId: 'BP1_A' }).ok, true);
+  C.check(data, wLoanEw, { kind: 'startCounterRoll', seat: 's1', uid: 1, targetUid: 9, actionId: 'BP1_E' }).ok, true);
 const wLoanNoEw = world([mech(1, 's1'), mech(9, 's2', { col: 9 })], 2, opp(1));
 check('and without one it is refused',
-  C.check(data, wLoanNoEw, { kind: 'startCounterRoll', seat: 's1', uid: 1, targetUid: 9, actionId: 'BP1_A' }).ok, false);
+  C.check(data, wLoanNoEw, { kind: 'startCounterRoll', seat: 's1', uid: 1, targetUid: 9, actionId: 'BP1_E' }).ok, false);
+// The lent Firing Action beside it opens nothing: a gun is not an Electronic
+// Attack, whoever lends it (audit Phase 3, D5).
+check('but the lent gun cannot open a Counter-roll at all',
+  C.check(data, wLoanEw, { kind: 'startCounterRoll', seat: 's1', uid: 1, targetUid: 9, actionId: 'BP1_A' }).ok, false);
 
 // FAQ O19: an allied Repeater lends its position, and the Action's own Range is
 // measured from there rather than from the attacker.
@@ -2539,7 +2559,7 @@ const relayDrone = (uid, col) => ({
   uid, side: 's1', kind: 'drone', cardId: 'REP', label: `R${uid}`, col, row: 3, facing: 0,
   size: 1, aerial: false, stance: 'mobility', partStates: { main: 'intact' }, ammo: {},
 });
-const ewShot = (over = {}) => ({ kind: 'startCounterRoll', seat: 's1', uid: 1, targetUid: 9, actionId: 'BP1_A', ...over });
+const ewShot = (over = {}) => ({ kind: 'startCounterRoll', seat: 's1', uid: 1, targetUid: 9, actionId: 'BP1_E', ...over });
 const wRelayNone = world([mech(1, 's1'), loadCarrier(2), mech(9, 's2', { col: 33 })], 2, opp(1));
 check('a target beyond the Action Range is refused', C.check(data, wRelayNone, ewShot()).ok, false);
 const wRelay = world([mech(1, 's1'), loadCarrier(2), relayDrone(3, 21), mech(9, 's2', { col: 33 })], 2, opp(1));
@@ -3614,8 +3634,18 @@ globalThis.__baseData = data;
   wpair.script.counter = { ...settled };
   const bystander = C.check(data, wpair, answer({ uid: 3 }));
   check('a second Yoyu that was not in the Counter-roll cannot answer it', bystander.ok, false);
-  check('and it is refused for being the wrong Responder, not for being the wrong pilot',
-    /is not the Responder of this Counter-roll/.test(bystander.why ?? ''), true);
+  check('and it is refused for being outside the contest, not for being the wrong pilot',
+    /are not the two sides of this Counter-roll/.test(bystander.why ?? ''), true);
+  // EITHER ROLE since 2026-09-25 (audit Phase 3, F16): 4.11.2 fires an
+  // on-success Passive "regardless of whether the Unit was acting as the
+  // Initiator or Responder". A Yoyu that OPENED the Counter-roll and won it
+  // turns the Responder.
+  const winit = world([pv(1, 's1', 'EW1', 'LPA-22'), pv(2, 's2', 'EW2', 'ZPA-38')], 2, opp(1));
+  winit.script.counter = { ...settled };
+  check('Yoyu as the Initiator may Provoke the Responder (F16)',
+    C.check(data, winit, { kind: 'provoke', seat: 's1', uid: 1, targetUid: 2, take: true }).ok, true);
+  C.apply(data, winit, { kind: 'provoke', seat: 's1', uid: 1, targetUid: 2, take: true });
+  check('and taking it turns the RESPONDER', [winit.tokens[1].stance, winit.tokens[0].stance], ['offensive', 'defensive']);
   // The control that proves the refusal is the binding rather than something
   // in the shared reader: the same board says yes to the Yoyu that DID roll.
   check('while the Yoyu that DID roll still answers on that same board',
@@ -4147,12 +4177,18 @@ globalThis.__baseData = data;
     { id: 'LP_HUSH', type: 'Firing', size: 's', range: 4, name: { en: 'Silent Single Shot' }, keywords: [{ key: '静默', en: 'Silence' }] },
     { id: 'LP_PASS', type: 'Passive', speed: 'passive', name: { en: 'Always On' } },
   ] });
-  // A Stealth Chassis, shaped after card 100 LM210S. The keyword is on the
-  // CARD, which is what maneuverPrintsSilence reads — a Part grants Silence to
-  // MANEUVER, where an Action has to print its own. Deliberately NOT modelled
-  // on PL29: card 180 lost Silence in the publisher's v1.021 redesign, and
-  // tests/lowprofile.test.mjs pins which Chassis still carry it.
-  data.byId.set('STL', { id: 'STL', type: 'chasis', keywords: [{ key: '静默', en: 'Silence' }], actions: [] });
+  // A Stealth Chassis, shaped after card 100 LM210S: its Stealth Movement is a
+  // grant_silent_movement rule reaching the Maneuver and the Part's own Move
+  // Actions (its Sprint), which is what the Silence readers ask. It used to be
+  // a keyword on the CARD, which is the card's glossary footer and made every
+  // Maneuver of 27 Parts' Mechs Silent (audit Phase 3, B1). Deliberately NOT
+  // modelled on PL29: card 180 lost Silence in the publisher's v1.021 redesign,
+  // and tests/lowprofile.test.mjs pins which Chassis still carry it.
+  data.byId.set('STL', { id: 'STL', type: 'chasis', actions: [
+    { id: 'STL_A', type: 'Moving', size: 'm', range: 3, name: { en: 'Sprint' } },
+    { id: 'STL_B', type: 'Passive', speed: 'passive', name: { en: 'Stealth Movement' },
+      gameRules: [{ effects: [{ type: 'grant_silent_movement', appliesTo: ['moving_action', 'adjust_move'] }] }] },
+  ] });
   // ZHDR-206 "Patrol Eagle", Dynamic Perception: every Action of an enemy unit
   // within Range 3 loses Silence. Shaped exactly like the structured aura in
   // data/action_overrides.json, because reading the card's PRINTED text would
@@ -4235,19 +4271,32 @@ globalThis.__baseData = data;
     check('...and the Interception really resolved', [w.tokens[0].intercept.LP_FIRE, w.script.intercepts.length], [1, 0]);
   }
 
-  // (d) THE AURA THAT DENIES SILENCE. ZHDR-206 strips the keyword the Chassis
-  // prints, so the same Maneuver that kept the Token above now loses it.
-  check('an enemy Patrol Eagle in range denies the Silence, so the Token comes off',
-    moved([stealthy(), eagle(6, 3)]), []);
+  // (d) THE AURA THAT DENIES SILENCE. ZHDR-206 strips the Silence of an enemy's
+  // ACTIONS, and a Maneuver is not one (ruled 2026-09-25, audit Phase 3, F14):
+  // it used to take the Chassis's Maneuver Silence as well.
+  check('an enemy Patrol Eagle in range leaves the Maneuver Silent, so the Token stays (F14)',
+    moved([stealthy(), eagle(6, 3)]), ['lowProfile']);
   check('and out of its Range the Chassis keeps the Token',
     moved([stealthy(), eagle(33, 33)]), ['lowProfile']);
-  // Judged at the START grid as well as the landing (FAQ O11/O15) — the same
-  // reading the Reveal half is given. Without `from` a unit could walk out of
-  // the aura and retroactively get its Silence back. The Eagle sits beside the
-  // START square and 10 Grids from the landing one, so the landing test alone
-  // would answer "silent" and keep the Token.
-  check('a Maneuver OUT of the aura is still judged at the grid it left (FAQ O11/O15)',
-    moved([stealthy({ col: 3, row: 3 }), eagle(6, 3)], { to: { col: 33, row: 3 }, from: { col: 3, row: 3 } }), []);
+  // The Chassis's own Sprint is an Action, so the Eagle takes its Silence.
+  check('but the Chassis\'s own Sprint, a Move Action, keeps the Token only out of the aura',
+    [acted([stealthy()], 'STL_A'), acted([stealthy(), eagle(6, 3)], 'STL_A')], [['lowProfile'], []]);
+  // Judged at the landing as well as where it began (the reading freeplay gives
+  // it, FAQ O11/O15's start and landing grids): performAction answers for the
+  // start, and the Move Action's own `maneuver` for the landing. The Sprint
+  // begins 10 Grids from the Eagle and ends beside it.
+  {
+    const w = world([stealthy({ col: 33, row: 3 }), eagle(6, 3)], 1, null);
+    C.apply(data, w, { kind: 'performAction', seat: 's1', uid: 1, actionId: 'STL_A' });
+    const kept = [...w.tokens[0].statuses];
+    C.apply(data, w, { kind: 'maneuver', seat: 's1', uid: 1, to: { col: 9, row: 3 }, free: true, actionId: 'STL_A' });
+    check('a Sprint that LANDS in the aura keeps the Token until it lands, then sheds it',
+      [kept, w.tokens[0].statuses], [['lowProfile'], []]);
+    const clear = world([stealthy({ col: 33, row: 3 }), eagle(6, 3)], 1, null);
+    C.apply(data, clear, { kind: 'performAction', seat: 's1', uid: 1, actionId: 'STL_A' });
+    C.apply(data, clear, { kind: 'maneuver', seat: 's1', uid: 1, to: { col: 27, row: 3 }, free: true, actionId: 'STL_A' });
+    check('and one that stays clear of it keeps the Token throughout', clear.tokens[0].statuses, ['lowProfile']);
+  }
 
   // (e) THE DECAY MARKER. Low Profile decays green, so a Token on its red face
   // is listed in `expiring`. The removal goes through removeStatus's own apply

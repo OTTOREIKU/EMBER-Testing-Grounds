@@ -41,6 +41,13 @@ const standingSpot = (c, r, size, aerial, terrain, tokens, ignoreUid) =>
     ? null : { col: c * 3, row: r * 3 };
 const tokenCards = (data, t) => Object.entries(t.mech ?? {})
   .map(([slot, id]) => ({ slot, card: data.byId.get(id) })).filter((x) => x.card);
+// Immobilized: "Revealed in place, but it cannot move" (FAQ I20). The real
+// reader adds the Unstoppable exception, which no Manifestation has; the rule
+// itself is driven in commands.test.mjs.
+const immobilizedStop = (t) => (statusCount(t.statuses, 'immobilized') > 0 ? \`\${t.label} is Immobilized\` : null);
+// An Abyss takes a Ground Unit (Environment Cards, 5.4.1; FAQ I17's Flying rule).
+const isGroundUnit = (_data, t) => !t.aerial;
+const envCardAt = (state, c, r) => (state.environments ?? []).find((e) => e.col === c && e.row === r)?.card;
 ` + unitsSrc.slice(start, end));
 const U = await import(tmp.href);
 
@@ -92,13 +99,28 @@ check('a destroyed Octopus torso grants nothing',
 check('a damaged one still does', U.manifestationRange(data, mech({ torso: 'OCTO' }, { torso: 'damaged' })), 2);
 
 // ---------- the destinations ----------
+// Manifestation "uses the Stealth Value ... as the Movement Range" and is
+// Teleportation to "a target Grid within the specified Range" (p.72, 4.3.3);
+// Range is "the number of large Grids in an orthogonal path" (4.2.1). It was a
+// square from August until 2026-09-25, so Stealth 2 offered 24 Grids where 12
+// are legal (ruled then, audit Phase 3, C1 and F1).
 {
   const t = mech({ torso: 'OCTO' });                      // Large Grid (5,5)
   const spots = U.manifestTargets(data, [t], [], t);
-  check('a Stealth 2 unit reaches the 5x5 block minus its own Grid', spots.length, 24);
-  const far = spots.map((s) => Math.max(Math.abs(s.c - 5), Math.abs(s.r - 5)));
-  check('nothing further than 2 Grids', Math.max(...far), 2);
+  check('a Stealth 2 unit reaches the Grids within Range 2, counted orthogonally (4.2.1)', spots.length, 12);
+  const far = spots.map((s) => Math.abs(s.c - 5) + Math.abs(s.r - 5));
+  check('nothing further than Range 2', Math.max(...far), 2);
+  check('so a diagonal two Grids out, Range 4, is not offered', spots.some((s) => s.c === 7 && s.r === 7), false);
+  check('while one Grid diagonally, Range 2, is', spots.some((s) => s.c === 6 && s.r === 6), true);
   check('and its own Grid is not on the list', spots.some((s) => s.c === 5 && s.r === 5), false);
+  // FAQ I20: "Revealed in place, but it cannot move".
+  const stuck = mech({ torso: 'OCTO' }, {}, { statuses: ['camouflage', 'immobilized'] });
+  check('an Immobilized unit is offered nowhere: it Reveals in place (I20)', U.manifestTargets(data, [stuck], [], stuck).length, 0);
+  // A Ground Unit cannot land in an Abyss (FAQ I17's Flying rules).
+  const pit = { environments: [{ card: 'abyss', col: 6, row: 5 }] };
+  check('a Ground Unit is not offered an Abyss Grid', U.manifestTargets(data, [t], [], t, pit).some((s) => s.c === 6 && s.r === 5), false);
+  const flier = mech({ torso: 'OCTO' }, {}, { aerial: true });
+  check('an Aerial one is', U.manifestTargets(data, [flier], [], flier, pit).some((s) => s.c === 6 && s.r === 5), true);
   // Occupied Grids drop out: teleportation ignores what is BETWEEN, never what
   // is standing in the destination.
   const blocker = { uid: 2, col: 18, row: 15 };
@@ -110,7 +132,7 @@ check('a damaged one still does', U.manifestationRange(data, mech({ torso: 'OCTO
 // The board edge clips the block rather than wrapping round it.
 {
   const corner = mech({ torso: 'OCTO' }, {}, { col: 0, row: 0 });
-  check('a unit in the corner Grid gets the quarter-block', U.manifestTargets(data, [corner], [], corner).length, 8);
+  check('a unit in the corner Grid gets the quarter of the diamond', U.manifestTargets(data, [corner], [], corner).length, 5);
 }
 
 // ---------- SCANNING (4.12.4) ----------
@@ -190,11 +212,15 @@ check('a damaged one still does', U.manifestationRange(data, mech({ torso: 'OCTO
     /activatesCamo\(a\)\) \{[\s\S]{0,700}?commitAction\(ctx\)[\s\S]{0,400}?statusId: 'camouflage'/.test(hud), true);
   check('and an already-hidden misclick drops the pending Action instead',
     /already in the Optical Camouflage State\.`\);\s+dropAction\(\);/.test(hud), true);
-  // 2. The activation is exempt from the reveal sweep, or the sweep prompted a
-  //    Reveal the instant the camouflage went on -- the activating Action
-  //    prints no Silence and lands in opp.performed like any other.
-  check('the reveal sweep exempts the activating Action',
-    /if \(!a \|\| activatesCamo\(a\) \|\| isSilentAction/.test(hud), true);
+  // 2. The activation is exempt from the Reveal, or one was owed the instant the
+  //    camouflage went on -- the activating Action prints no Silence. The
+  //    Match Centre's render-time sweep carried the exemption until the
+  //    audit's Phase 3 (C4); the engine now records each Reveal as
+  //    performAction applies, and the exemption moved with it.
+  check('the Reveal the engine records exempts the activating Action',
+    /if \(statusCount\(t\.statuses, 'camouflage'\) > 0 && !activatesCamo\(a\)\) \{\s*\n\s*oweReveal\(state, t\.uid, 'act'/.test(cmds), true);
+  check('and the Match Centre reads that record rather than sweeping',
+    /for \(const d of ensureScript\(s\)\.revealDue \?\? \[\]\)/.test(hud), true);
   // 3. The automation path Reveals through the same picker: the owed-reveal
   //    button (non-Silent action, Contact, Maneuver) routes through
   //    openManifest rather than sending a bare reveal.
@@ -207,15 +233,20 @@ check('a damaged one still does', U.manifestationRange(data, mech({ torso: 'OCTO
   const cbt = readFileSync(new URL('../src/combat.ts', import.meta.url), 'utf8');
   // Both land in applyEffects, the ONE seam a successful Counter-roll passes
   // through - the same shape as the on-hit rider seam in finish().
+  // Since the audit's Phase 3 (D1) every seam builds the win through ONE
+  // reader, ewWinCommands in units.ts: applyEffects here, and both shared-table
+  // contestAct('apply') copies below.
   const eff = cbt.slice(cbt.indexOf('private applyEffects()'), cbt.indexOf('private relayNote('));
-  check('the effect seam handles a Scan', /isScanAction\(c\.action\)/.test(eff), true);
-  check('stripping every Low Profile Token', /statusId: 'lowProfile'/.test(eff), true);
+  const unitsSrc = readFileSync(new URL('../src/units.ts', import.meta.url), 'utf8');
+  const win = unitsSrc.slice(unitsSrc.indexOf('export function ewWinCommands('), unitsSrc.indexOf('export function electronicAllTargets('));
+  check('the effect seam handles a Scan', /ewWinCommands\(this\.data, c\.initiator, c\.responder, c\.action/.test(eff) && /if \(isScanAction\(a\)\) \{/.test(win), true);
+  check('stripping every Low Profile Token', /const strip = scanStrips\(resp\);\s*\n\s*for \(let i = 0; i < strip; i\+\+\) cmds\.push\(\{ kind: 'removeStatus'[^\n]*statusId: 'lowProfile' \}\);/.test(win), true);
   // The camouflage half is a REACTION, not something the scanner applies: the
   // Manifestation belongs to the target's own player, so the scanner's client
   // queues the debt and the owner's client answers it.
   check('and queueing the Reveal as the target player\'s own decision',
-    /kind: 'manifest'[\s\S]{0,80}?fromUid: c\.initiator\.uid/.test(eff), true);
-  check('the scanner never reveals the target itself', /kind: 'reveal'/.test(eff), false);
+    /\{ uid: resp\.uid, actionId: a\.id, count: 1, range: 0, kind: 'manifest', fromUid: uid \}/.test(win), true);
+  check('the scanner never reveals the target itself', /kind: 'reveal'/.test(eff + win), false);
 
   // The debt is answerable: a panel for it, and an answer that opens the picker.
   check('the Match Centre draws a panel for the Scan debt', /r\.kind === 'manifest'/.test(hud), true);
@@ -224,7 +255,7 @@ check('a damaged one still does', U.manifestationRange(data, mech({ torso: 'OCTO
 
   // Targeting is a rule, so the COMMAND refuses a pointless Scan rather than
   // the button merely not being drawn.
-  const scanGate = cmds.slice(cmds.indexOf("case 'startCounterRoll': {"), cmds.indexOf("case 'startCounterRoll': {") + 3000);
+  const scanGate = cmds.slice(cmds.indexOf("case 'startCounterRoll': {"), cmds.indexOf("case 'startCounterRoll': {") + 5000);
   check('the counter-roll command refuses a Scan with nothing to do',
     /isScanAction\(a\) && !scannable\(target\)/.test(scanGate), true);
 
@@ -239,13 +270,14 @@ check('a damaged one still does', U.manifestationRange(data, mech({ torso: 'OCTO
   //    one presses Resolve, and the effects go through contestAct('apply') in
   //    matchhud - whose fallback grants FCI. Without its own branch there, a
   //    successful online Scan handed the target Fire Control Interference.
+  // Since the audit's Phase 3 (D1) there is no FCI fallback left to fall
+  // through to: the Match Centre's apply is the shared reader, Scan included.
   check('the Match Centre apply branch handles a Scan before the FCI fallback',
-    // 2400: the scanAttack debt grew the declaration's answers in the Phase 2
-    // audit (C7), which pushed the fallback further down the same branch.
-    /act === 'apply'\) \{[\s\S]{0,1400}?isScanAction\(a\)[\s\S]{0,2400}?targetTracingOn/.test(hud), true);
-  check('stripping the Tokens there too', /isScanAction\(a\)[\s\S]{0,600}?statusId: 'lowProfile'/.test(hud), true);
+    /act === 'apply'\) \{[\s\S]{0,1600}?const win = ewWinCommands\(ctx\.data, init, resp, a,/.test(hud)
+      && !/STATUSES\.find\(\(x\) => x\.id === 'fci'\)/.test(hud), true);
+  check('stripping the Tokens there too', /for \(const cmd of win\.cmds\) ctx\.send\(cmd\);/.test(hud), true);
   check('and queueing the manifest debt for the target player',
-    /isScanAction\(a\)[\s\S]{0,900}?kind: 'manifest', fromUid: init\.uid/.test(hud), true);
+    /kind: 'manifest', fromUid: uid/.test(win) && /ewWinCommands\(/.test(hud), true);
   // 2. Freeplay consumes reactions per-kind and had no manifest branch, so a
   //    Scan debt fell through toward the Emergency Smoke default.
   check('freeplay answers a manifest debt with the picker',
@@ -253,9 +285,12 @@ check('a damaged one still does', U.manifestationRange(data, mech({ torso: 'OCTO
   check('clearing the debt before the picker so it cannot re-fire',
     /r\.kind === 'manifest'\) \{\s*\n\s*perform\(data, state, \{ kind: 'resolveReaction'/.test(main), true);
   // 3. Freeplay opens the helper directly, never sending startCounterRoll, so
-  //    the command-layer target gate cannot fire there - the click asks it.
+  //    the command-layer target gate cannot fire there - the click asks it,
+  //    since the audit's Phase 3 (D6) by asking that command's own check,
+  //    whose Scan clause is `isScanAction(a) && !scannable(target)`.
   check('the freeplay click refuses a pointless Scan',
-    /isScanAction\(action\) && !scannable\(defender\)/.test(main), true);
+    /const verdict = check\(data, state, \{ kind: 'startCounterRoll', seat: attacker\.side, uid: attacker\.uid, actionId: action\.id, targetUid: defender\.uid \}\);/.test(main)
+      && /isScanAction\(a\) && !scannable\(target\)/.test(cmds), true);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

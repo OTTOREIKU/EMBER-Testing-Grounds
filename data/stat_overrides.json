@@ -160,10 +160,33 @@
       "move": 5
     },
     "074": {
-      "electronic": 0
+      "electronic": 0,
+      "electronicDash": true
     },
     "158": {
-      "electronic": 0
+      "electronic": 0,
+      "electronicDash": true
+    },
+    "154": {
+      "electronicDash": true
+    },
+    "155": {
+      "electronicDash": true
+    },
+    "267": {
+      "electronicDash": true
+    },
+    "268": {
+      "electronicDash": true
+    },
+    "PDAM-003": {
+      "electronicDash": true
+    },
+    "PDAM-004": {
+      "electronicDash": true
+    },
+    "PDAM-005": {
+      "electronicDash": true
     },
     "ZHAM-002": {
       "armor": 3,
@@ -657,7 +680,7 @@
     "181": "PLK400 \"Centaur\" High-mobility Chassis. THE PDF SUPERSEDES THE SCAN - OTTO's ruling, 2026-08-24: the card scans in our data are old and the publisher's 1.02x parts lists are the current information, so where they disagree the list wins and a clause the list does not carry does not belong. Our reminder line said Push X moves the target \"in straight line in the direction this unit is facing, then this unit performs the same movement\", and the Chinese agreed (然后本单位执行同样的移动), so the two were consistent with each other and with nothing else: NEITHER the rulebook glossary NOR the publisher's GoF 1.021 Extra Info for this exact row has any follow-up move by the attacker. The engine never implemented one either - offerShove moves only the victim - so the app was already right and the card text was the thing lying. Replaced with the list's block verbatim, which also supplies the Command Coordination reminder we were missing. The Chinese is assembled from our own glossary's zh values for the four keywords, not translated by hand; note that the glossary's 推动X already read 沿任意直线方向 with -1链接值 and no follow-up, agreeing with the list all along.",
     "179": "PL1 Standard Chassis. Description was empty; the list's Extra Info for row 179 is the Command Coordination reminder. Same sourcing as 181.",
     "182": "PL35 Armored Chassis. The card's own reminder line DEFINED THE WRONG KEYWORD: it spelled out Push X, in both languages, on a card whose keyword field is 击退X Knockback X and whose Kick the publisher prints as Knock Back 1. Those are different rules - Push X also takes 1 Link from a target Mech, and a Mech driven to 0 Link Shuts Down - so the page was teaching a cost this card cannot impose. Display-only (knockbackOf reads ACTIONS, never the card body), but it is the half a player actually reads. Replaced with the Extra Info the publisher's GoF 1.021 EN list prints for row 182, which is Knock Back X plus Command Coordination. The Chinese is the glossary's own 击退X value rather than anything invented. Completes the 182_B correction in action_overrides.json.",
-    "180": "PL29 All-terrain Chassis. Stripping `keywords` was not enough: the card's own description was still the SILENCE reminder line, in both languages, so the reference printed \"· Silence: Optical Camouflage and Low Profile will not be removed\" on a card the v1.021 redesign took Silence away from. The keyword chip was gone and the sentence explaining it stayed. Replaced with the Extra Info column the list actually prints for this row, Airborne Movement and Command Coordination. The zh is cleared for the same reason as action 180_B's: the bundle's Chinese is the superseded design, and we do not hold the v1.021 Chinese to put in its place. Display-only, unlike 180_B - maneuverPrintsSilence() reads card.keywords, which the empty array had already fixed.",
+    "180": "PL29 All-terrain Chassis. Stripping `keywords` was not enough: the card's own description was still the SILENCE reminder line, in both languages, so the reference printed \"· Silence: Optical Camouflage and Low Profile will not be removed\" on a card the v1.021 redesign took Silence away from. The keyword chip was gone and the sentence explaining it stayed. Replaced with the Extra Info column the list actually prints for this row, Airborne Movement and Command Coordination. The zh is cleared for the same reason as action 180_B's: the bundle's Chinese is the superseded design, and we do not hold the v1.021 Chinese to put in its place. Display-only, like the empty keywords now: since the mechanics audit Phase 3 (2026-09-25) Silence is read off the Stealth Movement rule (100_B/250_B), never card.keywords, and action_overrides clears the stale grant 180_B still carried.",
     "093": "TM31KC \"Gray Wolf\" KC Experimental Core. These four cards (093, 095, 539, 545) were the last card-level description fields whose `en` held Chinese: each is a keyword reminder line the community bundle never translated. The reference already suppressed them rather than print Chinese (englishOnly in reference.ts), so nothing was visibly broken, but an `en` field holding Chinese is wrong data and the English was sitting in the publisher's lists all along. This one is the Fire in arc reminder, verbatim from Part Data UN 1.02 EN, row 93 / TM31KC.",
     "095": "TM39B \"Viper II\" Low Profile Core. The Silence reminder, verbatim from Part Data UN 1.02 EN, row 95 / TM39B.",
     "539": "TM31Q \"Wild Cat\" Battle Core. The Command Generation X reminder, from Part Data UN 1.02 EN, row 539 / TM31Q. The list prints a full-width colon; written here with an ASCII one, which is what cleanRulesText would produce anyway.",
@@ -667,7 +690,7 @@
     "159": "AMDS210 \"Delphinium\" Automatic Defense System. Database says mobility; the printed strip reads OFF · ✗ in red. Its Move box is printed blank, so the recorded Move 0 is correct and is not patched.",
     "161": "ADK15/MAS \"Porcupine\" Microwave Type. The card database records Move 0, but the scan prints the same ↑5 Move box in the bottom-right as its two siblings ADK15D (160) and ADK15P (543), both of which the database has at 5.",
     "074": "GM-35 Anti-Armor Mine. Recorded as electronic -1; the card prints \"--\" in the Electronic box, meaning no value. Every other card printing \"--\" (154, 155, 267, 268, PDAM-003/004/005) is recorded as 0, so -1 is a misparse of the dash. It matters because electronicValue() sums this field, so -1 actively subtracts 1, and the reference page renders it as \"E-1\".",
-    "158": "DBP \"Turtle Shell\" Barricade. Same \"--\" misparse as 074.",
+    "158": "DBP \"Turtle Shell\" Barricade. Same \"--\" misparse as 074. Mechanics audit Phase 3 (2026-09-25): a \"--\" is not a 0. Rulebook 4.11.2 (3): a Unit whose Electronic Value is \"-\" cannot be the Responder of a Counter-roll, while a 0 can (and always loses). Storing the dash as 0 erased that, so `electronicDash: true` now carries it beside the 0 on every card printing \"--\": 074, 158 and the seven the 074 note names (154, 155, 267, 268, PDAM-003/004/005; PDAM-005's scan shows the dash). ZHAM-004 and PDAM-007 print no Electronic box at all and are left as 0 (ruling F20: every unit card printing \"--\").",
     "ZHAM-002": "M60 \"Boomerang\" Missile. The card prints only two stat boxes, an orange Electronic 1 and a grey Armor 3, with no blue Dodge box at all; the database records armor 0 and dodge 6. Box colours were confirmed by sampling pixels, not by eye: the orange box spans x540-594 and the grey x618-666, and no blue pixels appear anywhere in the stat row. On this same GOF template ZHAM-003 prints orange/blue/grey for electronic/dodge/armor and ZHAM-004 prints blue/grey for dodge/armor, so a lone grey box after the orange one is Armor. Confirmed by a second reader against the card: 1 electronic, 3 grey, no Dodge icon present.",
     "503": "RT-16B \"Avalanche\" Assault Core. We had 48. Both the community parts sheet and the publisher's championship list say 60, and points are never printed on a card, so there was never a scan that could settle it. This closes a long-standing open question. Source: championship-legal EN parts list v1.02 (publisher).",
     "040": "SPHX-3 Supporting Arm. We had Parry 0. The publisher list gives Armor 4 AND Parry 1; our scan shows only the Armor 4 box and is watermarked \"Ver.2019 Crowdfunding\", so it predates the current data. Source: championship-legal EN parts list v1.02 (publisher)."

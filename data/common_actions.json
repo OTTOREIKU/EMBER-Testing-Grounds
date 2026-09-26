@@ -135,7 +135,7 @@
       ],
       "silence": true,
       "description": {
-        "en": "· Silence. Range 6. Performed with Torso.\n· Designate an enemy Unit in the Optical Camouflage State or bearing a Low Profile Token.\n· Electronic Counter-roll against the target. If successful: a target in the Optical Camouflage State is Revealed; a target bearing Low Profile Tokens removes them."
+        "en": "· Range 6. Performed with Torso.\n· Designate an enemy Unit in the Optical Camouflage State or bearing a Low Profile Token.\n· Electronic Counter-roll against the target. If successful: a target in the Optical Camouflage State is Revealed; a target bearing Low Profile Tokens removes them.\n· Silent: the printed Action has no Silence, and FAQ I18 says the Rules Supplement will add it, so a Scan Reveals no one."
       }
     }
   ],

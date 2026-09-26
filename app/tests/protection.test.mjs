@@ -286,10 +286,14 @@ for (const [file, callee] of [['combat.ts', 'protectionFor'], ['main.ts', 'prote
 // disables rows on, so Range was a warning nobody was stopped by on the one page
 // that is supposed to stop them. OTTO reversed that for Range on 2026-08-20.
 //
-// Arc stays a warning on both pages, which is the part of the old ruling that
-// did not change, and freeplay keeps the whole thing overridable.
+// Arc stayed a warning on both pages until 2026-09-25, when the audit's Phase 3
+// (C2) found 4.2.5 makes it a requirement of the attack like Range: strict now
+// refuses it too. Freeplay keeps the whole thing overridable.
 {
-  const shooter = unit(4, 4, { uid: 1 });
+  // Facing 1 is +col, so `away` below is in front. The shooter used to face 0
+  // (-row), which put every target in this block outside the arc: that was a
+  // warning then, and hid it.
+  const shooter = unit(4, 4, { uid: 1, facing: 1 });
   // Twelve small cells is four Large Grids; well outside a Range 2 action and
   // comfortably inside a Range 6 one.
   const away = unit(16, 4, { uid: 2, side: 's2' });
@@ -315,15 +319,21 @@ for (const [file, callee] of [['combat.ts', 'protectionFor'], ['main.ts', 'prote
     [losNote(shooter, away, long, [], [], []), losNote(shooter, away, long, [], [], [], true)]
       .map((n) => n.includes('beyond action range')), [false, false]);
 
-  // THE ARC IS NOT PART OF THIS. It was an overridable warning before the
-  // reversal and stays one, so strict must not quietly promote it: the shooter
-  // faces along +col here, so a target behind them is out of the forward arc and
-  // in range at the same time.
+  // THE ARC, since 2026-09-25. "Unless otherwise specified, only Units in the
+  // Forward Arc can be selected as targets for Melee and Firing Actions"
+  // (4.2.5), a requirement of both execution flows (4.5.1, 4.6.1), so strict
+  // refuses it like Range (audit Phase 3, C2). The shooter faces along +col,
+  // so a target behind them is out of the forward arc and in range at once.
   {
     const behind = unit(1, 4, { uid: 3, side: 's2' });
     const n = losNote(shooter, behind, long, [], [], [], true);
-    check('an out-of-arc target still only warns, even strict', n.includes('⚠ NOT in forward arc'), true);
-    check('and is not refused for it', n.includes('✕'), false);
+    check('an out-of-arc target is refused when strict (4.2.5)', n.includes('✕ NOT in forward arc'), true);
+    const table = losNote(shooter, behind, long, [], [], []);
+    check('while freeplay only warns about it', [table.includes('⚠ NOT in forward arc'), table.includes('✕')], [true, false]);
+    check('and a target in front is refused for neither', losNote(shooter, away, long, [], [], [], true).includes('NOT in forward arc'), false);
+    // Omni-direction Firing waives the requirement outright.
+    check('Omni-direction Firing waives it even strict',
+      losNote(shooter, behind, { ...long, keywords: [{ en: 'Omni-direction Firing' }] }, [], [], [], true).includes('✕'), false);
   }
 
   // RANGE 0 means adjacent-only ("--" on the card), and a non-adjacent target is

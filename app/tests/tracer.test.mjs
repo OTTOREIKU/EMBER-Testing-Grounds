@@ -35,6 +35,14 @@ function rangeBetween(a: any, b: any): any {
 }
 export function actionRange(_d: any, _t: any[], _u: any, a: any): number { return a.range ?? 0; }
 export function isElectronicAttack(_a: any): boolean { return false; }
+// The Counter-roll Responder filters and the Highlight reader autoTargetsFor
+// asks since the audit's Phase 3: neutral here, and the Token half of Highlight
+// is the one these fixtures carry. mechanics3.test.mjs drives the real ones.
+export function isScanAction(_a: any): boolean { return false; }
+export function electronicDash(_d: any, _t: any): boolean { return false; }
+export function electronicTargetWhy(_a: any, _t: any): string | null { return null; }
+export function scannable(_t: any): boolean { return true; }
+export function hasHighlight(_d: any, _ts: any, o: any): boolean { return (o.statuses ?? []).includes('highlight'); }
 export function electronicOrigins(_d: any, _t: any[], u: any): any[] { return [u]; }
 `
   + cut('export function treatedAsOffensive', '// ---------- DISARM', 'treatedAsOffensive')

@@ -114,7 +114,9 @@ check('the Mode-change branch pays before it returns',
 // and the Link support and Token cleanup panels each pay on confirm.
 // Twenty-four since the Phase 2 audit (D1): ZHDR-206_B Stance feedback asks
 // which Ally Mech and which Stance, then pays.
-check('every tool has a commitAction', [...hud.matchAll(/commitAction\(ctx\)/g)].length, 24);
+// Twenty-five since the Phase 3 audit (E2): Target Tag asks for its target,
+// then pays.
+check('every tool has a commitAction', [...hud.matchAll(/commitAction\(ctx\)/g)].length, 25);
 
 // ---------- The ATTRIBUTED seat stamp ----------
 //
@@ -234,8 +236,12 @@ check('and it is the only place the EW Suppression aura is read',
 const combat = read('combat.ts');
 const contestFn = hud.slice(hud.indexOf('function contestAct(ctx: HudCtx'), hud.indexOf('function syncContest('));
 check('contestAct was located', contestFn.includes('rollCounter'), true);
+// Twice since the audit's Phase 3 (D2): the Initiator's pool carries its
+// Action's Strength +X and the Responder's never does, so each role is asked
+// for by name rather than through one expression.
 check('and sizes the roll with electronicStrength',
-  (contestFn.match(/electronicStrength\(/g) ?? []).length, 1);
+  [(contestFn.match(/electronicStrength\(/g) ?? []).length,
+    /electronicStrength\(ctx\.data, s\.tokens, unit, 'initiator', actionOn\(ctx, init, c\.actionId\)\)/.test(contestFn)], [2, true]);
 check('and never rolls the printed value', contestFn.includes('electronicValue('), false);
 // THE FOCUS REROLL IS NOT A POOL. 4.10 is 'reroll any Dice in that roll',
 // player's choice, and the retired panel rerolled the whole hand instead --

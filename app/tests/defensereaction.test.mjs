@@ -37,7 +37,9 @@ check('and reads it back for that same target',
   /this\.reactionsFor\(m\.action, hit, m\.attacker, m\.targets\[m\.index\]\?\.penetrated\)/.test(combat), true);
 
 // ---------- The debt ----------
-check('the queue can carry a stance debt', /'smoke' \| 'trace' \| 'stance'/.test(commands), true);
+// The queue command carries the record's own debt type since the audit's
+// Phase 3, so a new kind is typed once: the next check pins that it holds this one.
+check('the queue can carry a stance debt', /items: ScriptState\['reactions'\];/.test(commands), true);
 check('and so can the saved state', /'smoke' \| 'trace' \| 'stance'/.test(types), true);
 check('both senders tag it',
   /kind: 'stance' as const/.test(match) && /kind: 'stance' as const/.test(main), true);
