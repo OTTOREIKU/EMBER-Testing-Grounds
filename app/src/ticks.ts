@@ -83,9 +83,15 @@ export function baseSpent(o: Opportunity): boolean {
   return o.maneuver === 0 || !canManeuver(o).ok;
 }
 
+// Why an Action does not fit, as a stable name. `why` is the sentence the
+// guided pages show; a page with room for a word or two maps this instead,
+// rather than reading the sentence's wording.
+export type TickRefusal = 'notTick' | 'noTicks' | 'noExtra' | 'lapsed' | 'reboot' | 'dial' | 'repeat' | 'long' | 'cost';
+
 export interface TickVerdict {
   ok: boolean;
   why?: string;
+  code?: TickRefusal;
   extra?: ExtraTick;
 }
 
@@ -194,7 +200,7 @@ export function canPerform(
   opts: StartOpts = {},
 ): TickVerdict {
   const len = lengthOf(a);
-  if (!len) return { ok: false, why: 'This is not an Action a Mech performs with Ticks.' };
+  if (!len) return { ok: false, code: 'notTick', why: 'This is not an Action a Mech performs with Ticks.' };
   const cost = TICK_COST[len];
   const timing = timingOf(a);
 
@@ -206,10 +212,10 @@ export function canPerform(
       const lapsed = o.extras.find(
         (x) => !o.spentExtras.includes(x.id) && (!x.timing || x.timing === timing) && !grantHolds(o, x),
       );
-      if (lapsed && len === 'short') return { ok: false, why: whyGrantLapsed(lapsed) };
+      if (lapsed && len === 'short') return { ok: false, code: 'lapsed', why: whyGrantLapsed(lapsed) };
       return o.extras.length
-        ? { ok: false, why: 'No Extra Tick left that can pay for this Action. Extra Ticks pay for one Short Action each, and a typed one only pays for its own Action Type.' }
-        : { ok: false, why: 'No Ticks left. The Action Opportunity is over.' };
+        ? { ok: false, code: 'noExtra', why: 'No Extra Tick left that can pay for this Action. Extra Ticks pay for one Short Action each, and a typed one only pays for its own Action Type.' }
+        : { ok: false, code: 'noTicks', why: 'No Ticks left. The Action Opportunity is over.' };
     }
     return { ok: true, extra };
   }
@@ -224,7 +230,7 @@ export function canPerform(
     // Reboot was that, so none of them reaches this Action. OTTO ruled it on
     // L8's wording, 2026-09-25 (MECHANICS-AUDIT.md Phase 2, E5).
     if (rebooted(o)) {
-      return { ok: false, why: `After a Reboot the one Action must be of the Timing on the dial (4.1.1, FAQ L8). This Mech is set to ${o.timing}, and this is a ${timing ?? 'typeless'} Action; Flexible Timing, CQC and Feint do not apply.` };
+      return { ok: false, code: 'reboot', why: `After a Reboot the one Action must be of the Timing on the dial (4.1.1, FAQ L8). This Mech is set to ${o.timing}, and this is a ${timing ?? 'typeless'} Action; Flexible Timing, CQC and Feint do not apply.` };
     }
     const feint = !!opts.anyTiming && o.timing === 'tactical' && !!timing;
     const flexed = feint
@@ -233,6 +239,7 @@ export function canPerform(
     if (!flexed) {
       return {
         ok: false,
+        code: 'dial',
         // The refusal has to name the rule that actually failed. `anyTiming`
         // set but the dial NOT on Tactical is a different refusal from a
         // Flexible Timing that could not reach, and blaming the wrong one sends
@@ -249,13 +256,13 @@ export function canPerform(
   // H6/H7). A bare COMMON_CHARGE, from a sender that does not name the Part,
   // keeps the old exemption rather than refusing a legal second Charge.
   if (o.performed.includes(key) && !(a.id === 'COMMON_CHARGE' && key === a.id)) {
-    return { ok: false, why: 'Each Action of a Part can only be performed once per Action Opportunity. Only an Extra Tick may repeat one.' };
+    return { ok: false, code: 'repeat', why: 'Each Action of a Part can only be performed once per Action Opportunity. Only an Extra Tick may repeat one.' };
   }
   if (len === 'long' && (o.maneuvered || o.maneuver < 1 || o.started)) {
-    return { ok: false, why: 'A Long Action costs the Maneuver Tick plus both Action Ticks, so it must be the first and only thing this Opportunity, with no Maneuver.' };
+    return { ok: false, code: 'long', why: 'A Long Action costs the Maneuver Tick plus both Action Ticks, so it must be the first and only thing this Opportunity, with no Maneuver.' };
   }
   if (cost.action > o.action || cost.maneuver > o.maneuver) {
-    return { ok: false, why: `Not enough Ticks left. This Action costs ${costLabel(cost)}.` };
+    return { ok: false, code: 'cost', why: `Not enough Ticks left. This Action costs ${costLabel(cost)}.` };
   }
   return { ok: true };
 }
@@ -401,4 +408,73 @@ export function ticksLeft(o: Opportunity): number {
 
 export function opportunityOver(o: Opportunity): boolean {
   return ticksLeft(o) === 0;
+}
+
+// ---------- the Ticks as the book draws them (3.4.5, p.31) ----------
+//
+// The rulebook draws a Mech Action Opportunity as one capsule: a thick X for
+// the Maneuver Tick, then a square for each Action Tick, spent in that order.
+// This is the state a page draws that picture from. A Maneuver Tick that was
+// never spent but can no longer be used, because an Action Tick went first, is
+// `lost` rather than `spent`: the two read differently at the table, and only
+// one of them was the player's choice.
+export type ManeuverMark = 'free' | 'spent' | 'lost';
+
+export interface TickBarState {
+  maneuver: ManeuverMark;
+  // One entry per Action Tick drawn, true when spent. The spent ones come
+  // first, because Ticks are spent in order.
+  actions: boolean[];
+  extras: { id: string; label: string; timing?: Timing; spent: boolean; lapsed: boolean }[];
+}
+
+export function tickBarState(o: Opportunity): TickBarState {
+  const maneuver: ManeuverMark = o.maneuvered || o.maneuver < 1 ? 'spent' : o.started ? 'lost' : 'free';
+  const total = actionPipCount(o);
+  const spent = Math.max(0, total - o.action);
+  return {
+    maneuver,
+    actions: Array.from({ length: total }, (_, i) => i < spent),
+    extras: o.extras.map((x) => {
+      const used = o.spentExtras.includes(x.id);
+      return { id: x.id, label: x.label, timing: x.timing, spent: used, lapsed: !used && !grantHolds(o, x) };
+    }),
+  };
+}
+
+// ---------- a player's own marks, for a table the engine does not run ----------
+//
+// Freeform plays on the physical table, so the pad cannot see every Tick
+// spent. These are the corrections a tap on the bar makes. Each returns the
+// new Opportunity, or the rule that forbids the mark.
+
+// The X: spend it, or take it back. A Maneuver Tick an Action Tick has already
+// passed is gone, and says so.
+export function markManeuver(o: Opportunity): Opportunity | { why: string } {
+  if (o.maneuvered) return { ...o, maneuvered: false, maneuver: 1, moved: o.started ? o.moved : false };
+  // A Long Action spent the X with its two squares. Tapped, it comes back, and
+  // the bar then reads it as gone if an Action Tick is still marked.
+  if (o.maneuver < 1) return { ...o, maneuver: 1 };
+  if (o.started) return { why: 'The Maneuver Tick is gone: an Action Tick went first, and Ticks go in order.' };
+  return spendManeuver(o);
+}
+
+// A square: tapping a free one spends every square up to it, and tapping a
+// spent one takes it back with every square after it. Taking back the last
+// one says no Action was performed at all, so the once-per-Part list goes too.
+export function markAction(o: Opportunity, index: number): Opportunity {
+  const total = actionPipCount(o);
+  const spent = Math.max(0, total - o.action);
+  const next = Math.max(0, Math.min(total, index < spent ? index : index + 1));
+  return next === 0
+    ? { ...o, action: total, started: false, performed: [] }
+    : { ...o, action: total - next, started: true };
+}
+
+// An Extra Tick: spent or not, one tap each.
+export function markExtra(o: Opportunity, id: string): Opportunity {
+  if (!o.extras.some((x) => x.id === id)) return o;
+  return o.spentExtras.includes(id)
+    ? { ...o, spentExtras: o.spentExtras.filter((x) => x !== id) }
+    : { ...o, spentExtras: [...o.spentExtras, id] };
 }

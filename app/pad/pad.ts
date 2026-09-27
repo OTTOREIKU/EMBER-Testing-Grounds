@@ -71,9 +71,11 @@ import { conditionalGrants, stationaryBonus, explosionScope, linkShockOf, tether
 import { gameResult } from '../src/tasks';
 import { isMeleeFiring } from '../src/melee';
 import { isSilentAction, manifestationRange, targetStatusTargets, activatesCamo, canActivateCamo, hasHighlight, electronicAll, electronicAllTargets, electronicTargetWhy, isScanAction, scannable, actionPartWhy, autoParryValue, cruising, canBeLoad, chargeChoices, chargeableSlots, electronicDash, electronicValue, guidedActions, initiativeFor, interceptCapacity, isCarrier, isDeployable, isElectronicAttack, maneuverRange, maxLink, migrateState, parryParts, pilotCard, structureOf, tokenCards, volleyOf } from '../src/units';
-import { lengthOf, LENGTH_NAME, timingOf } from '../src/ticks';
-import { newScriptState, PHASES, SCALES, statusCount, statusesFor, statusStacks, STATUSES, TIMINGS } from '../src/types';
-import type { Card, CardAction, DieColor, GameState, ImportedSquad, MechLoadout, PartSlot, PartState, Side, Stance, Token } from '../src/types';
+import { canManeuver, canPerform, costOf, lengthOf, LENGTH_NAME, markAction, markExtra, markManeuver, spendAction, spendManeuver, tickBarState, timingOf } from '../src/ticks';
+import { extrasFor, startOpts } from '../src/units';
+import { tickBar, type CapsuleShort } from '../src/glyphs';
+import { newOpportunity, newScriptState, PHASES, SCALES, statusCount, statusesFor, statusStacks, STATUSES, TIMINGS } from '../src/types';
+import type { Card, CardAction, DieColor, GameState, ImportedSquad, MechLoadout, Opportunity, PartSlot, PartState, Side, Stance, Token } from '../src/types';
 
 const root = document.getElementById('pad-root')!;
 const api = new EmberApi();
@@ -835,7 +837,8 @@ async function tokenCleanupFrom(by: Token, actionId: string): Promise<void> {
   if (!a || !rule) return;
   const got = await askTokenCleanup(guide, by, a, rule);
   if (!got) return;
-  if (send({ kind: 'removeStatus', seat: by.side, uid: by.uid, targetUid: got.unit.uid, statusId: got.pick.statusId, ...(got.pick.face ? { face: got.pick.face } : {}) })) {
+  const paid = spendFree(by, actionId);
+  if (send({ kind: 'removeStatus', seat: by.side, uid: by.uid, targetUid: got.unit.uid, statusId: got.pick.statusId, ...(got.pick.face ? { face: got.pick.face } : {}), ...(paid ? { chain: 'join' as const } : {}) })) {
     toast(`${a.name.en ?? 'Cleanup'}: ${got.pick.label} removed from ${got.unit.label}.`);
   }
 }
@@ -1337,6 +1340,7 @@ async function askTableAndElectronicAll(attacker: Token, a: CardAction): Promise
   if (!picked?.length) return;
   const targets = picked.map((id) => unitOf(Number(id))).filter((u): u is Token => !!u);
   if (guidedOn(table) && !send({ kind: 'performAction', seat: attacker.side, uid: attacker.uid, actionId: a.id, ...bothHands(attacker, a.id) })) return;
+  spendFree(attacker, a.id);
   panel = 'combat';
   render();
   if (!beginElectronicAll(attacker, a.id, targets, guidedOn(table))) { panel = null; render(); return; }
@@ -1352,6 +1356,7 @@ async function askTableAndElectronic(attacker: Token, actionId: string, defender
   });
   if (clear !== 'yes') return;
   if (guidedOn(table) && !send({ kind: 'performAction', seat: attacker.side, uid: attacker.uid, actionId, ...bothHands(attacker, actionId) })) return;
+  spendFree(attacker, actionId);
   panel = 'combat';
   render();
   if (!beginElectronic(attacker, actionId, defender, guidedOn(table))) { panel = null; render(); return; }
@@ -1399,6 +1404,7 @@ async function scanFirst(attacker: Token, actionId: string, defender: Token): Pr
   });
   if (go !== 'scan') return;
   if (guidedOn(table) && !send({ kind: 'performAction', seat: attacker.side, uid: attacker.uid, actionId, ...bothHands(attacker, actionId) })) return;
+  spendFree(attacker, actionId);
   panel = 'combat';
   render();
   if (!beginFreeScan(attacker, actionId, defender, guidedOn(table))) { panel = null; render(); }
@@ -1569,6 +1575,9 @@ async function askTableAndAttack(attacker: Token, actionId: string, defender: To
   // In a guided game the Action is paid for first; a refusal is the engine's
   // answer and the window stays shut. Freeform opens the window outright.
   if (guidedOn(table) && !resumed && !send({ kind: 'performAction', seat: attacker.side, uid: attacker.uid, actionId, ...(granted ? { granted: true } : twoHanded ? {} : bothHands(attacker, actionId)) })) return;
+  // Freeform takes the same cost off the bar. A granted attack (a Riposte)
+  // costs no Ticks, and a resumed one was paid before its Scan.
+  if (!granted && !resumed) spendFree(attacker, actionId);
   // The walk recorded as this Action's own Movement, now the Action is paid:
   // a free move rides only an Action already performed. Checked first, so a
   // granted Riposte, which owes no Movement, records nothing and shows no error.
@@ -1667,8 +1676,9 @@ async function launchFrom(t: Token, actionId: string, cardId: string): Promise<v
   const before = new Set(table.tokens.map((x) => x.uid));
   let n = 0;
   // Every launch after the first command of the tap joins it: the Action
-  // that paid (Guided), or the volley's first shot (Freeform).
-  const paid = guidedOn(table);
+  // that paid (Guided), the Ticks it took off the bar (Freeform), or else the
+  // volley's first shot.
+  const paid = guidedOn(table) || spendFree(t, actionId);
   for (let i = 0; i < count; i++) {
     if (!send({ kind: 'launch', seat: t.side, uid: t.uid, actionId, cardId, to: { col: 0, row: 0 }, facing: t.facing, ...(paid || i > 0 ? { chain: 'join' as const } : {}) })) break;
     n++;
@@ -1963,9 +1973,9 @@ function sheetHtml(s: Side = shownSide()): string {
     ${isMech ? `<div class="pad-row">
       <span class="pad-label">Link</span>
       <div class="pad-count">
-        ${mine ? '<button class="pad-step" data-act="link-down" aria-label="Spend 1 Link">−</button>' : ''}
+        ${mine ? `<button class="pad-step" data-act="link-down" aria-label="Spend 1 Link"${can({ kind: 'drainLink', seat: t.side, uid: t.uid, targetUid: t.uid, n: 1 }) ? '' : ' disabled'}>−</button>` : ''}
         <span class="pad-num">${link}<span class="pad-of"> / ${maxLink(data, t)}</span></span>
-        ${mine ? '<button class="pad-step" data-act="link-up" aria-label="Recover 1 Link">+</button>' : ''}
+        ${mine ? `<button class="pad-step" data-act="link-up" aria-label="Recover 1 Link"${can({ kind: 'recoverLink', seat: t.side, uid: t.uid, targetUid: t.uid }) ? '' : ' disabled'}>+</button>` : ''}
       </div>
     </div>` : ''}
     ${mine && isMech && t.stance === 'shutdown' ? (rebootWhy(table, t) === null ? `<div class="pad-row wrap">
@@ -1974,7 +1984,12 @@ function sheetHtml(s: Side = shownSide()): string {
     </div>` : `<p class="pad-note">${esc(rebootWhy(table, t) ?? '')}</p>`) : ''}
     ${mine && isMech && t.stance !== 'shutdown' ? `<div class="pad-row wrap">
       <span class="pad-label">Stance</span>
-      <div class="pad-stances">${STANCES.filter((x) => x !== 'shutdown').map((x) => stanceBtn(x, t.stance === x, `data-act="stance" data-stance="${x}"`)).join('')}</div>
+      <div class="pad-stances">${STANCES.filter((x) => x !== 'shutdown').map((x) => stanceBtn(x, t.stance === x, `data-act="stance" data-stance="${x}"${t.stance !== x && !can({ kind: 'setStance', seat: t.side, uid: t.uid, stance: x }) ? ' disabled' : ''}`)).join('')}${
+        // Shutdown is never chosen (3.4.2): a Mech falls into it at 0 Link or by a
+        // card that forces it. A free table records what happened on the table,
+        // so it can mark one by hand, as the forcing card's own command. A guided
+        // game reaches it only by the rules.
+        guidedOn(table) ? '' : stanceBtn('shutdown', false, `data-act="shutdown" data-stance="shutdown"${can({ kind: 'forceShutdown', seat: t.side, uid: t.uid, targetUid: t.uid }) ? '' : ' disabled'}`)}</div>
     </div>` : ''}
     ${mine && isMech && t.stance !== 'shutdown' && !guidedOn(table) ? `<div class="pad-row wrap">
       <span class="pad-label">Timing · this phone</span>
@@ -1989,6 +2004,7 @@ function sheetHtml(s: Side = shownSide()): string {
     </div>` : ''}
 
     ${statStrip(t)}
+    ${isMech ? ticksRow(t, mine) : ''}
     ${(() => { const list = actionList(t, mine && !wrecked); return list ? `<details class="pad-fold pad-acts-fold"${sheetView[drawSide].acts ? ' open' : ''}><summary class="pad-label pad-sec">Actions</summary>${list}</details>` : ''; })()}
 
     <p class="pad-label pad-sec">Parts</p>
@@ -2058,10 +2074,145 @@ function bothHands(t: Token, actionId: string): { twoHanded?: true } {
   return a && twoHandedUse(data, t, a) ? { twoHanded: true } : {};
 }
 
+// ---------- the Ticks on a free table (3.4.5) ----------
+//
+// Freeform plays on the physical table, so each Mech keeps its own Ticks on
+// the Mech (Token.freeTicks), marked here and nowhere else. The chips that
+// perform an Action spend its cost, Moved spends the X, and a tap on the bar
+// corrects whatever the table did by hand. It WARNS and never blocks, as
+// Freeform does everywhere. A guided game counts the same Ticks on script.opp
+// and refuses what does not fit, so none of this runs there.
+function freeTicksOn(t: Token): boolean {
+  return !!data && t.kind === 'mech' && !guidedOn(table) && (t.partStates.torso ?? 'intact') !== 'destroyed';
+}
+
+// The Mech's Opportunity as the engine's own rules read it: the marks, the
+// Extra Ticks its Parts grant now, and the dial this phone set.
+function freeOpp(t: Token): Opportunity {
+  return { ...newOpportunity(t.uid, t.timing), ...(t.freeTicks ?? {}), extras: data ? extrasFor(data, t) : [] };
+}
+
+function storeTicks(t: Token, o: Opportunity | null): boolean {
+  const ticks = o
+    ? { maneuver: o.maneuver, action: o.action, maneuvered: o.maneuvered, moved: o.moved, started: o.started, performed: o.performed, spentExtras: o.spentExtras }
+    : null;
+  return send({ kind: 'setFreeTicks', seat: t.side, uid: t.uid, ticks });
+}
+
+// Why an Action does not fit the Ticks left, in a word or two, or null. It
+// sits in the row's own meta line, so it reads as a fact about the row. The
+// pad takes a free hand whenever the unit has one, so a Two-Handed card is
+// priced at the length it is performed at, exactly as bothHands pays it in a
+// guided game.
+function fitShort(t: Token, o: Opportunity, a: CardAction, key: string): string | null {
+  if (!data || !costOf(a)) return null;
+  const priced = twoHandedUse(data, t, a)?.action ?? a;
+  const v = canPerform(o, priced, key, startOpts(data, table.tokens, t, priced));
+  if (v.ok) return null;
+  const cost = costOf(priced);
+  switch (v.code) {
+    case 'noTicks': return 'No Ticks left';
+    case 'noExtra': case 'lapsed': return 'No Extra Tick for it';
+    case 'reboot': case 'dial': return 'Not the dial\'s Timing';
+    case 'repeat': return 'Already used';
+    case 'long': return 'Needs the Maneuver Tick';
+    case 'cost': return cost ? `Needs ${cost.action} Action Tick${cost.action === 1 ? '' : 's'}` : 'Not enough Ticks';
+    default: return 'Does not fit';
+  }
+}
+
+// Which of an Action's Ticks this Mech is short of, for its capsule. Only a
+// shortage of Ticks shows there. An Action refused for another reason (the
+// dial, a Part already used) keeps its capsule and only greys its button.
+function capShort(t: Token, o: Opportunity, a: CardAction, key: string): CapsuleShort | undefined {
+  if (!data) return undefined;
+  const priced = twoHandedUse(data, t, a)?.action ?? a;
+  const cost = costOf(priced);
+  if (!cost) return undefined;
+  const v = canPerform(o, priced, key, startOpts(data, table.tokens, t, priced));
+  if (v.ok || !v.code || !['noTicks', 'noExtra', 'lapsed', 'long', 'cost'].includes(v.code)) return undefined;
+  const maneuver = cost.maneuver > 0 && !canManeuver(o).ok;
+  const actions = Math.max(0, cost.action - o.action);
+  return maneuver || actions ? { maneuver, actions } : undefined;
+}
+
+// A row's performer chips when its Action cannot be taken now: greyed and
+// inert, with the reason on hover rather than on the screen. The pad's players
+// know the rules; a greyed button says enough.
+function inert(html: string, why: string): string {
+  return html.replace(/<button class="pad-chip on pad-perform"/g, `<button class="pad-chip on pad-perform" disabled title="${esc(why)}"`);
+}
+
+// Whether the engine would take a command, so a control it would refuse is
+// drawn greyed instead of answering a tap with a refusal.
+function can(cmd: Command): boolean {
+  return !!data && check(data, table, cmd).ok;
+}
+
+// An Action performed from the sheet takes its cost off the bar. One that does
+// not fit marks nothing: its button is greyed, so this is reached only from a
+// flow that began before the Ticks changed. True when a mark was sent, so the
+// Action's own command can join it as one Undo.
+function spendFree(t: Token, actionId: string, key: string = actionId): boolean {
+  if (!freeTicksOn(t)) return false;
+  const a = actionOfUnit(t, actionId);
+  if (!a || !costOf(a)) return false;
+  const o = freeOpp(t);
+  if (fitShort(t, o, a, key)) return false;
+  const priced = twoHandedUse(data!, t, a)?.action ?? a;
+  return storeTicks(t, spendAction(o, priced, key, startOpts(data!, table.tokens, t, priced)));
+}
+
+// For a flow that pays through a `pay` hook (Stabilize): the spend when the
+// Action fits, and nothing when it does not, so the Action's own command never
+// joins an unrelated earlier step.
+function freePay(t: Token, actionId: string, key: string = actionId): (() => boolean) | undefined {
+  if (!freeTicksOn(t)) return undefined;
+  const a = actionOfUnit(t, actionId);
+  if (!a || !costOf(a)) return undefined;
+  if (fitShort(t, freeOpp(t), a, key)) return undefined;
+  return () => spendFree(t, actionId, key);
+}
+
+// The bar, just above the Actions: the book's capsule on its side (p.31), on a
+// line of its own under its label. On a free table Moved and New sit beside it
+// in fixed places, greyed when there is nothing for them to do, so nothing on
+// the line moves as the Ticks are spent. In a guided game the engine's own
+// Opportunity draws it on the acting Mech, and the X is Moved (M).
+function ticksRow(t: Token, mine: boolean): string {
+  if (guidedOn(table)) {
+    const opp = table.script?.opp;
+    if (!opp || opp.uid !== t.uid) return '';
+    const mayMove = mine && canManeuver(opp).ok && t.stance !== 'shutdown';
+    return `<div class="pad-row wrap pad-ticks-row">
+        <span class="pad-label">Ticks</span>
+        <div class="pad-ticks">${tickBar(tickBarState(opp), mayMove ? { maneuverAct: 'g-moved' } : {})}</div>
+      </div>`;
+  }
+  const o = freeOpp(t);
+  const chips = mine
+    ? `<button class="pad-chip" data-act="tick-moved"${canManeuver(o).ok ? '' : ' disabled'}>Moved</button>`
+      + `<button class="pad-chip" data-act="tick-new"${t.freeTicks ? '' : ' disabled'}>New</button>`
+    : '';
+  return `<div class="pad-row wrap pad-ticks-row">
+      <span class="pad-label">Ticks</span>
+      <div class="pad-ticks">${tickBar(tickBarState(o), mine ? { act: 'tick' } : {})}${chips}</div>
+    </div>`;
+}
+
+// A row with a cost and no tool of its own - a Sprint, a Tactical resolved on
+// the table - still has to take its Ticks off the bar.
+function useChip(t: Token, a: CardAction, key: string): string {
+  return `<button class="pad-chip on pad-perform" data-act="use-action" data-uid="${t.uid}" data-id="${esc(a.id)}" data-key="${esc(key)}">${timingOf(a) === 'movement' ? 'Move' : 'Use'}</button>`;
+}
+
 function actionList(t: Token, mine: boolean): string {
   const d = data!;
   const acts = guidedActions(d, t);
   if (!acts.length) return '';
+  // Read once for the whole list: what each row would cost against the Ticks
+  // this Mech has left, on a free table only.
+  const fo = mine && freeTicksOn(t) ? freeOpp(t) : null;
   const order = new Map<string, number>(TIMINGS.map((x, i) => [x.id, i]));
   const rank = (a: (typeof acts)[number]) => {
     const dialless = a.action.speed === 'auto' || a.action.speed === 'command' || a.action.speed === 'passive';
@@ -2122,10 +2273,17 @@ function actionList(t: Token, mine: boolean): string {
             ? `<button class="pad-chip on pad-perform" data-act="token-cleanup" data-uid="${t.uid}" data-id="${esc(g.action.id)}">Remove a Token</button>`
           : mine && g.available && g.projectiles.length
             ? g.projectiles.map((p) => `<button class="pad-chip on pad-perform" data-act="launch" data-id="${esc(g.action.id)}" data-projectile="${esc(p.id)}">Launch${g.projectiles.length > 1 ? ` ${esc(cardName(p))}` : ''}</button>`).join('')
-            : '');
+            : fo && g.available && costOf(g.action)
+              ? useChip(t, g.action, g.partKey ?? g.action.id)
+              : '');
+    // Not on the Ticks left: the button greys out (the reason on hover) and the
+    // capsule shows which of its Ticks are gone. Nothing is added to the text.
+    const key = g.partKey ?? g.action.id;
+    const nofit = fo && g.available ? fitShort(t, fo, g.action, key) : null;
+    const short = nofit && fo ? capShort(t, fo, g.action, key) : undefined;
     rows.push(`<div class="pad-act${open ? ' open' : ''}${g.available ? '' : ' off'}" data-act="open-action" data-id="${esc(g.action.id)}" role="button" aria-expanded="${open}">
-      ${actionBlock(g.card, g.action)}
-      <div class="pad-act-meta">${esc(meta)}${!g.available && g.reason ? ` · <em>${esc(g.reason)}</em>` : ''}${perform ? `<span class="pad-act-go">${perform}</span>` : ''}</div>
+      ${actionBlock(g.card, g.action, short)}
+      <div class="pad-act-meta">${esc(meta)}${!g.available && g.reason ? ` · <em>${esc(g.reason)}</em>` : ''}${perform ? `<span class="pad-act-go">${nofit ? inert(perform, nofit) : perform}</span>` : ''}</div>
     </div>`);
   }
   rows.push(...commonRows(t, mine));
@@ -2164,7 +2322,9 @@ async function pickDiscard(t: Token): Promise<string | null> {
 
 async function discardPart(t: Token): Promise<void> {
   const slot = await pickDiscard(t);
-  if (slot !== null) send({ kind: 'disarm', seat: t.side, uid: t.uid, targetUid: t.uid, slot });
+  if (slot === null) return;
+  const paid = spendFree(t, 'COMMON_DISCARD');
+  send({ kind: 'disarm', seat: t.side, uid: t.uid, targetUid: t.uid, slot, ...(paid ? { chain: 'join' as const } : {}) });
 }
 
 function commonRows(t: Token, mine: boolean): string[] {
@@ -2182,6 +2342,7 @@ function commonRows(t: Token, mine: boolean): string[] {
   };
   const acts = d.commonActions.filter((a) => a.type !== 'Passive' && relevant(a));
   if (!acts.length) return [];
+  const fo = mine && freeTicksOn(t) ? freeOpp(t) : null;
   for (const a of acts) {
     const slots = (a as { slots?: string[] }).slots ?? [];
     // The engine's own reading (units.ts actionPartWhy): a Repaired Part still
@@ -2216,10 +2377,14 @@ function commonRows(t: Token, mine: boolean): string[] {
                   : '<span class="pad-perform-no">Every Part is Charged</span>')
                 : mine && available && a.id === 'COMMON_DISCARD'
                   ? `<button class="pad-chip on pad-perform" data-act="discard-pick">Discard</button>`
-                  : '');
+                  : fo && available && costOf(a)
+                    ? useChip(t, a, a.id)
+                    : '');
+    const nofit = fo && available ? fitShort(t, fo, a, a.id) : null;
+    const short = nofit && fo ? capShort(t, fo, a, a.id) : undefined;
     rows.push(`<div class="pad-act${open ? ' open' : ''}${available ? '' : ' off'}" data-act="open-action" data-id="${esc(a.id)}" role="button" aria-expanded="${open}">
-      ${torso ? actionBlock(torso, a) : ''}
-      <div class="pad-act-meta">${esc(meta)}${reason ? ` · <em>${esc(reason)}</em>` : ''}${perform ? `<span class="pad-act-go">${perform}</span>` : ''}</div>
+      ${torso ? actionBlock(torso, a, short) : ''}
+      <div class="pad-act-meta">${esc(meta)}${reason ? ` · <em>${esc(reason)}</em>` : ''}${perform ? `<span class="pad-act-go">${nofit ? inert(perform, nofit) : perform}</span>` : ''}</div>
     </div>`);
   }
   return [`<details class="pad-fold pad-common-fold" data-fold="common-${drawSide}"${foldOpen(`common-${drawSide}`) ? ' open' : ''}>
@@ -2398,9 +2563,9 @@ function ammoRows(t: Token): string {
   return Object.entries(t.ammo ?? {}).map(([id, n]) => `<div class="pad-row">
       <span class="pad-part-name">${esc(names()?.action?.(t.uid, id) ?? id)}</span>
       <div class="pad-count">
-        ${record ? '' : `<button class="pad-step" data-act="ammo-down" data-id="${esc(id)}">−</button>`}
+        ${record ? '' : `<button class="pad-step" data-act="ammo-down" data-id="${esc(id)}"${can({ kind: 'spendAmmo', seat: t.side, uid: t.uid, actionId: id }) ? '' : ' disabled'}>−</button>`}
         <span class="pad-num">${n}</span>
-        ${record ? '' : `<button class="pad-step" data-act="ammo-up" data-id="${esc(id)}">+</button>`}
+        ${record ? '' : `<button class="pad-step" data-act="ammo-up" data-id="${esc(id)}"${can({ kind: 'restoreAmmo', seat: t.side, uid: t.uid, actionId: id, amount: 1 }) ? '' : ' disabled'}>+</button>`}
       </div>
     </div>`).join('');
 }
@@ -2433,7 +2598,7 @@ function chargeRow(t: Token): string {
   if (!slots.length) return '';
   const record = guidedOn(table);
   return `<div class="pad-chips">${slots.map((s) => `<button class="pad-chip${s.charged ? ' on' : ''}"
-    data-act="charge" data-slot="${esc(s.slot)}" data-on="${s.charged ? '0' : '1'}"${record ? ' disabled title="Charged by the Charge Action, spent by a [Charged] Action"' : ''}>${esc(s.label)}</button>`).join('')}</div>`;
+    data-act="charge" data-slot="${esc(s.slot)}" data-on="${s.charged ? '0' : '1'}"${record ? ' disabled title="Charged by the Charge Action, spent by a [Charged] Action"' : can({ kind: 'setCharge', seat: t.side, uid: t.uid, slot: String(s.slot), on: !s.charged }) ? '' : ' disabled'}>${esc(s.label)}</button>`).join('')}</div>`;
 }
 
 // ---------- the dock ----------
@@ -2856,7 +3021,7 @@ function morePanel(): string {
     <div class="pad-row">
       <span class="pad-num">${gameOver() ? 'Over' : `R${r.n}`}<span class="pad-of pad-phase"> // ${gameOver() ? 'final' : esc(PHASES[r.phase] ?? '')}</span></span>
       <div class="pad-chips">
-        <button class="pad-chip" data-act="phase-back">Back a phase</button>
+        <button class="pad-chip" data-act="phase-back"${r.phase > 0 ? '' : ' disabled'}>Back a phase</button>
         ${gameOver() ? '' : `<button class="pad-chip on" data-act="phase">${room ? (readiness().me ? 'Waiting…' : 'Continue') : 'Next phase'}</button>`}
       </div>
     </div>
@@ -4432,9 +4597,44 @@ function act(el: HTMLElement, ev: Event): void {
       return;
     }
     case 'stance': if (t) send({ kind: 'setStance', seat: t.side, uid: t.uid, stance: el.dataset.stance as Stance }); return;
+    // A free table's Shutdown, marked by hand: the Reboot row replaces the Stances.
+    case 'shutdown': if (t) send({ kind: 'forceShutdown', seat: t.side, uid: t.uid, targetUid: t.uid }); return;
     case 'reboot': if (t) send({ kind: 'reboot', seat: t.side, uid: t.uid, stance: el.dataset.stance as Stance }); return;
+    // The Ticks bar (3.4.5), on a free table: a tap marks one Tick or takes it
+    // back, in the book's order.
+    case 'tick': {
+      if (!t || !freeTicksOn(t)) return;
+      const o = freeOpp(t);
+      const which = el.dataset.tick ?? '';
+      const next = which === 'm' ? markManeuver(o)
+        : which.startsWith('a') ? markAction(o, Number(which.slice(1)))
+          : which.startsWith('x:') ? markExtra(o, which.slice(2))
+            : null;
+      // A gone X is drawn as no button at all, so a refusal here has nothing
+      // to say that the bar does not already show.
+      if (!next || 'why' in next) return;
+      storeTicks(t, next);
+      return;
+    }
+    case 'tick-moved': {
+      if (!t || !freeTicksOn(t)) return;
+      const o = freeOpp(t);
+      // Drawn greyed whenever the X cannot be spent, so this never refuses aloud.
+      if (!canManeuver(o).ok) return;
+      storeTicks(t, spendManeuver(o));
+      return;
+    }
+    case 'tick-new': if (t && freeTicksOn(t)) storeTicks(t, null); return;
+    // A row with a cost and no tool: its Ticks come off the bar, and the table
+    // does the rest.
+    case 'use-action': {
+      // The bar above shows the mark; nothing else needs saying.
+      const by = unitOf(Number(el.dataset.uid));
+      if (by) spendFree(by, el.dataset.id!, el.dataset.key || el.dataset.id!);
+      return;
+    }
     // The Actions list's Stabilize chip: the Action, with its Token question.
-    case 'stabilise': if (t) stabilise(t); return;
+    case 'stabilise': if (t) stabilise(t, freePay(t, 'COMMON_STABILIZE')); return;
     // The Link row's +: a plain Recover, capped at the pilot's Link Value and
     // taken in Shutdown too (FAQ L3), for a Link the table restored - an
     // ally's Strengthen Link, a Link Beacon, Appease, Aster in Freeform. It
@@ -4443,7 +4643,7 @@ function act(el: HTMLElement, ev: Event): void {
     case 'link-up': if (t) send({ kind: 'recoverLink', seat: t.side, uid: t.uid, targetUid: t.uid }); return;
     case 'link-support': { const by = unitOf(Number(el.dataset.uid)); if (by) void linkSupportFrom(by, el.dataset.id!); return; }
     case 'token-cleanup': { const by = unitOf(Number(el.dataset.uid)); if (by) void tokenCleanupFrom(by, el.dataset.id!); return; }
-    case 'reveal': if (t) send({ kind: 'reveal', seat: t.side, uid: t.uid }); return;
+    case 'reveal': if (t) { const paid = spendFree(t, 'COMMON_REVEAL'); send({ kind: 'reveal', seat: t.side, uid: t.uid, ...(paid ? { chain: 'join' as const } : {}) }); } return;
     case 'link-down': if (t) send({ kind: 'drainLink', seat: t.side, uid: t.uid, targetUid: t.uid, n: 1 }); return;
     case 'ammo-down': if (t) send({ kind: 'spendAmmo', seat: t.side, uid: t.uid, actionId: el.dataset.id! }); return;
     case 'ammo-up': if (t) send({ kind: 'restoreAmmo', seat: t.side, uid: t.uid, actionId: el.dataset.id!, amount: 1 }); return;
@@ -4478,7 +4678,9 @@ function act(el: HTMLElement, ev: Event): void {
           choices: units.map((x) => ({ id: String(x.uid), label: `${x.side === by.side ? 'Ally' : 'Enemy'} · ${x.label}` })),
           stacked: true,
         });
-        if (pick !== null) send({ kind: 'applyStatus', seat: by.side, uid: by.uid, targetUid: Number(pick), statusId: grant.statusId, stacks: grant.stacks });
+        if (pick === null) return;
+        const paid = spendFree(by, a.id);
+        send({ kind: 'applyStatus', seat: by.side, uid: by.uid, targetUid: Number(pick), statusId: grant.statusId, stacks: grant.stacks, ...(paid ? { chain: 'join' as const } : {}) });
       })();
       return;
     }
@@ -4489,7 +4691,10 @@ function act(el: HTMLElement, ev: Event): void {
       void (async () => {
         const slot = open.length === 1 ? String(open[0].slot)
           : await choiceDialog({ title: 'Charge', choices: open.map((x) => ({ id: String(x.slot), label: `${x.label} · ${partName(t, String(x.slot))}` })), stacked: true });
-        if (slot !== null) send({ kind: 'setCharge', seat: t.side, uid: t.uid, slot, on: true });
+        if (slot === null) return;
+        // A Charge is its Part's own Action (FAQ H6/H7), keyed by the slot.
+        const paid = spendFree(t, 'COMMON_CHARGE', `COMMON_CHARGE@${slot}`);
+        send({ kind: 'setCharge', seat: t.side, uid: t.uid, slot, on: true, ...(paid ? { chain: 'join' as const } : {}) });
       })();
       return;
     }

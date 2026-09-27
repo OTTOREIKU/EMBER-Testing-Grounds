@@ -200,6 +200,7 @@ type AnyCmd = {
   camo?: boolean;
   n?: number;
   itemId?: string;
+  ticks?: unknown;
 };
 
 export function labelFor(cmd: { kind: string }, state: GameState, names?: LedgerNames): LedgerMeta {
@@ -253,10 +254,12 @@ export function labelFor(cmd: { kind: string }, state: GameState, names?: Ledger
     case 'removeStatus': label = `${target()} loses a ${c.statusId ?? 'status'} Token`; break;
     case 'ageStatus': label = `${target()}'s ${c.statusId ?? 'status'} Token ages`; break;
     case 'setStance': label = `${who()} switches to ${c.stance ?? 'a new'} Stance`; break;
+    case 'forceShutdown': label = `${target()} goes into Shutdown`; break;
     case 'firewatch': label = `${who()}: Firewatch, {Eye} count as {Lightning}`; break;
     case 'stanceFeedback': label = `${who()}: Stance feedback, ${target()} to ${c.stance ?? 'a new'} Stance`; break;
     case 'renameUnit': label = `${who()} is now called ${c.label ?? 'something else'}`; break;
     case 'setLoad': label = c.cardId ? `${who()} takes a Load` : `${who()}: Load taken off`; break;
+    case 'setFreeTicks': label = c.ticks ? `${who()} marks its Ticks` : `${who()}: Ticks refilled`; break;
     case 'setInventory': label = c.shared ? `${who()} opens their collection to the table` : `${who()} closes their collection`; break;
     // The pad's bookkeeping, which used to fall through to the humanised kind
     // ("Set part state") in the other player's toast.

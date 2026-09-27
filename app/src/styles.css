@@ -2485,6 +2485,9 @@ p.points { white-space: pre-line; }
 }
 .tick-cap i { display: block; flex: 1; border-radius: 1px; background: transparent; }
 .tick-cap i.on { background: #39424f; }
+/* A Tick the unit no longer has, on the pad's free table: the slot stays
+   filled, only fainter, so the Action's length still reads at a glance. */
+.tick-cap i.on.short { background: #b4b9c6; }
 /* An action that costs no Ticks (a Passive) shows no capsule at all rather than
    an empty one, which would read as "free" instead of "not a choice". */
 .tick-cap.none { display: none; }

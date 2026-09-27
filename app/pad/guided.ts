@@ -16,7 +16,7 @@ import { asterBlockers, offerCoordination, runAster } from '../src/commandpick';
 import { alive, canAct, dialHidden, eligibleUnits, isLoopPhase, loopComplete, nextTurn, tiedChoices, type LoopPhase } from '../src/loop';
 import { deployTurn, deployable, deploymentComplete, firstPlayerFrom, normaliseSetup, rollTotal } from '../src/setup';
 import { ensureScript } from '../src/glue';
-import { canActivate, canAttackMode, canOverload, canPerform, costOf, extrasLeft, lengthOf, OVERLOAD_MAX, type TickVerdict } from '../src/ticks';
+import { canActivate, canAttackMode, canOverload, canPerform, costOf, lengthOf, OVERLOAD_MAX, type TickVerdict } from '../src/ticks';
 import { canActivateCamo, activatesCamo, controlledMoveActions, immobilizedStop, manifestationRange, targetStatusTargets, actionRange, overloadPackOn, stanceFeedbackOf, stanceFeedbackTargets, stanceShaped, knockbackOf, linkSupportOf, maxLink, tokenCleanupOf, type LinkSupport, type TokenCleanup, targetStatusGrant, twoHandedUse, chargeableSlots, coordinationFor, coordinationOnOpportunityEnd, electronicValue, extraActivationOf, formSwitch, guidedActions, initiativeFor, isChargeAction, isElectronicAttack, isScanAction, linkTickTraitOn, loanedParts, opportunityBonusOn, pilotCard, repairSpec, resupplyOf, selfGrantWhy, selfStatusGrant, SLOT_LABEL, tokenCards, transformOffer, unfoldsOwed } from '../src/units';
 import { normaliseTasks } from '../src/tasks';
 import { dialsOf, hashDials, newSalt, type DialEntry } from '../src/secrecy';
@@ -515,8 +515,6 @@ function actionHtml(api: GuideApi): string {
   const t = s.tokens.find((x) => x.uid === opp.uid);
   if (!t) return '';
   const owner = mine(api, t.side);
-  const extras = extrasLeft(opp).length;
-  const ticks = `${opp.maneuver ? 'M ' : ''}${'●'.repeat(opp.action)}${extras ? ` +${extras}` : ''}`.trim() || 'no Ticks left';
   const tm = opp.timing ? TIMINGS.find((x) => x.id === opp.timing)?.name ?? opp.timing : '';
   // A Shutdown Mech whose Opportunity has come Reboots, and that is all it may
   // do (4.1.1, FAQ K17): no Maneuver, nothing to end.
@@ -527,7 +525,9 @@ function actionHtml(api: GuideApi): string {
          <div class="pad-chips">${(['defensive', 'mobility', 'offensive'] as const)
            .map((x) => btn(api, 'g-reboot', `Reboot to ${x[0].toUpperCase()}${x.slice(1)}`, `data-uid="${t.uid}" data-stance="${x}"`)).join('')}</div>`;
   }
-  return head(api, t.label, `${tm ? `${tm} · ` : ''}${ticks}`, owner)
+  // The Ticks are drawn on the acting Mech's sheet, just above the Actions they
+  // pay for (pad.ts ticksRow), rather than up here.
+  return head(api, t.label, tm || 'Action Phase', owner)
     + (owner
       ? `${tieHtml(api)}<div class="pad-chips">${!opp.maneuvered && opp.maneuver > 0 && t.stance !== 'shutdown' ? btn(api, 'g-moved', 'Moved (M)') : ''}${btn(api, 'g-end', 'End Opportunity', '', 'pad-chip on')}</div>
          ${extrasHtml(api, t, opp)}

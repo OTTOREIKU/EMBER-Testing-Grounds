@@ -3,7 +3,7 @@ import type { CommonAction, GameData } from './data';
 import { cardName, faceOf, isAerial, isBarricade, isFlyingBase, isMine, isTetherFace, isUnfolded, transformFaces, unfoldsInto, unitSize } from './data';
 import type { ExtraTick, Card, CardAction, CounterRoll, GameRuleEffect, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, TableZone, TerrainPiece, TetherLink, Timing, Token, TokenPick } from './types';
 import type { Command } from './commands';
-import { addStatus, DEFAULT_GRIDS, gridsOf, LEGACY_SIDE, normaliseScript, removableTokens, statusCount, STATUSES, TIMINGS } from './types';
+import { addStatus, DEFAULT_GRIDS, gridsOf, LEGACY_SIDE, normaliseFreeTicks, normaliseScript, removableTokens, statusCount, STATUSES, TIMINGS } from './types';
 import { normaliseSetup } from './setup';
 import { isMeleeFiring, lockersOf, tetherCap } from './melee';
 import { boardGrids, firingSight, inArc, inContact, largeGridOf, lineCrossesUnit, losBetween, rangeBetween, smokeBlocks, standingSpot } from './rules';
@@ -5812,6 +5812,8 @@ export function migrateState(rawIn: unknown, data: GameData): GameState | null {
       stance: t.stance ?? ((card?.stance as Stance) || 'offensive'),
       link: t.link ?? (t.kind === 'mech' ? pilot?.LV ?? 3 : undefined),
       timing: t.timing,
+      // A free table's hand-marked Ticks (3.4.5), through their own whitelist.
+      freeTicks: normaliseFreeTicks(t.freeTicks),
       deployed: t.deployed === false ? false : undefined,
       expiring: Array.isArray(t.expiring) ? t.expiring.filter((x) => typeof x === 'string') : undefined,
       partStates: partStates as Token['partStates'],

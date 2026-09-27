@@ -171,10 +171,93 @@ export function diceText(yellow: number | undefined, red: number | undefined, fa
 // worth anything.
 export const TICK_SLOTS = 3;
 
-export function tickCapsule(filled: number, title = ''): string {
+// Which of an Action's Ticks a unit no longer has, for a page that shows it on
+// the capsule: the Maneuver Tick a Long Action needs, and how many of its
+// Action Ticks are beyond the ones left.
+export interface CapsuleShort {
+  maneuver?: boolean;
+  actions?: number;
+}
+
+export function tickCapsule(filled: number, title = '', short: CapsuleShort = {}): string {
   const n = Math.max(0, Math.min(TICK_SLOTS, Math.round(filled)));
   // Rendered top-down so the markup reads in visual order; the empties come
-  // first, which is what puts the filled ones at the bottom.
-  const slots = Array.from({ length: TICK_SLOTS }, (_, i) => (i < TICK_SLOTS - n ? '<i></i>' : '<i class="on"></i>')).join('');
+  // first, which is what puts the filled ones at the bottom. Of the filled
+  // ones, a Long Action's top slot is its Maneuver Tick and the rest are Action
+  // Ticks; the ones the unit is short of are marked from the top down.
+  const lacking = Math.max(0, Math.round(short.actions ?? 0));
+  const slots = Array.from({ length: TICK_SLOTS }, (_, i) => {
+    if (i < TICK_SLOTS - n) return '<i></i>';
+    const isManeuver = n === TICK_SLOTS && i === 0;
+    const action = i - (TICK_SLOTS - n) - (n === TICK_SLOTS ? 1 : 0);
+    const gone = isManeuver ? !!short.maneuver : action < lacking;
+    return gone ? '<i class="on short"></i>' : '<i class="on"></i>';
+  }).join('');
   return `<span class="tick-cap${n ? '' : ' none'}"${title ? ` title="${title}"` : ''} aria-hidden="true">${slots}</span>`;
+}
+
+// ---------- the Opportunity's Ticks, as the book draws them ----------
+//
+// Rulebook p.31 (3.4.5) draws a Mech Action Opportunity as the Action Length
+// capsule drawn full: a thick X for the Maneuver Tick, then a square for each
+// Action Tick. Laid on its side here, one tap target per Tick, in the same
+// pale-and-ink the capsule above uses. Extra Ticks follow a divider, each
+// labelled with the Action Type it pays for, and exist only while a Part
+// grants one.
+//
+// The X is two rounded bars, drawn rather than typed: no font's multiplication
+// sign is as heavy as the printed one.
+export const MANEUVER_X =
+  '<svg viewBox="0 0 24 24" aria-hidden="true"><g fill="currentColor">'
+  + '<rect x="9.5" y="0.6" width="5" height="22.8" rx="1.7" transform="rotate(45 12 12)"/>'
+  + '<rect x="9.5" y="0.6" width="5" height="22.8" rx="1.7" transform="rotate(-45 12 12)"/>'
+  + '</g></svg>';
+
+export interface TickBarOpts {
+  // The data-act a tap on any Tick sends. Without it the bar is a picture.
+  act?: string;
+  // A data-act for the X alone, when only the Maneuver can be tapped.
+  maneuverAct?: string;
+}
+
+const TIMING_SHORT: Record<string, string> = {
+  swift: 'SWF', melee: 'MEL', projectile: 'PRJ', firing: 'FIR', movement: 'MOV', tactical: 'TAC',
+};
+
+function attr(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+export function tickBar(
+  s: {
+    maneuver: 'free' | 'spent' | 'lost';
+    actions: boolean[];
+    extras: { id: string; label: string; timing?: string; spent: boolean; lapsed: boolean }[];
+  },
+  opts: TickBarOpts = {},
+): string {
+  const tile = (act: string | undefined, tick: string, cls: string, label: string, pressed: boolean, body: string): string =>
+    act
+      ? `<button type="button" class="tk ${cls}" data-act="${act}" data-tick="${attr(tick)}" aria-label="${attr(label)}" aria-pressed="${pressed}" title="${attr(label)}">${body}</button>`
+      : `<span class="tk ${cls}" role="img" aria-label="${attr(label)}" title="${attr(label)}">${body}</span>`;
+  const m = s.maneuver;
+  const mLabel = m === 'spent' ? 'Maneuver Tick, spent'
+    : m === 'lost' ? 'Maneuver Tick, gone: an Action Tick was spent first'
+      : 'Maneuver Tick';
+  // A gone X cannot be marked or taken back, so it is never a tap target.
+  const mAct = m === 'lost' ? undefined : opts.maneuverAct ?? opts.act;
+  const tiles = [tile(mAct, 'm', `tk-m ${m}`, mLabel, m !== 'free', MANEUVER_X)];
+  s.actions.forEach((spent, i) => {
+    tiles.push(tile(opts.act, `a${i}`, `tk-a${spent ? ' spent' : ''}`, `Action Tick ${i + 1}${spent ? ', spent' : ''}`, spent, '<i></i>'));
+  });
+  if (s.extras.length) {
+    tiles.push('<i class="tk-div" aria-hidden="true"></i>');
+    for (const x of s.extras) {
+      const short = x.timing ? TIMING_SHORT[x.timing] ?? '' : '';
+      const state = x.spent ? ' spent' : x.lapsed ? ' lapsed' : '';
+      const label = `Extra Tick: ${x.label}${x.spent ? ', spent' : x.lapsed ? ', not granted now' : ''}`;
+      tiles.push(tile(opts.act, `x:${x.id}`, `tk-x${state}`, label, x.spent, `<i></i>${short ? `<b>${short}</b>` : ''}`));
+    }
+  }
+  return `<span class="tick-bar">${tiles.join('')}</span>`;
 }

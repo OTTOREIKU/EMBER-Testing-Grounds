@@ -16,7 +16,7 @@
 // after its own loadData() resolves and before it draws anything.
 import { FACTION_LABEL, actionIconUrl, cardName, mechPartUrl, portraitUrl, statIconIsPlated, statIconUrl, tabImageUrl, traitName, zeroCostReason, type BoxDef, type GameData, type KeywordDef, type MechanicDef } from './data';
 import { LENGTH_NAME, TICK_COST, costLabel, lengthOf, timingOf } from './ticks';
-import { diceRow, maskGlyphs, tickCapsule } from './glyphs';
+import { diceRow, maskGlyphs, tickCapsule, type CapsuleShort } from './glyphs';
 import { linkIcon } from './icons';
 import { matchMechanicBasic } from './refsearch';
 import { type Card, type CardAction } from './types';
@@ -485,7 +485,9 @@ function officialLink(c: Card): string {
 // pad can open a Part's actions inside its own row on the sheet with the same
 // markup the reference draws - one renderer, two pages. Everything in here is
 // exactly what the card detail's action loop did.
-export function actionBlock(c: Card, a: CardAction): string {
+// `short` greys the capsule's Ticks the unit no longer has (the pad's free
+// table, where the sheet knows what is left). Everywhere else it is omitted.
+export function actionBlock(c: Card, a: CardAction, short?: CapsuleShort): string {
   const len = lengthOf(a);
   const cost = len ? `${LENGTH_NAME[len]} (${costLabel(TICK_COST[len])})` : '';
   const en = englishOnly(a.description?.en);
@@ -561,7 +563,7 @@ export function actionBlock(c: Card, a: CardAction): string {
   return `<div class="ref-action${timing ? ` t-${timing}` : dialless ? ' t-dialless' : ''}">
     <div class="ra-h">
       ${icon ? `<span class="ra-type"><img src="${icon}" alt="" title="${esc(a.type ?? '')}"></span>` : ''}
-      ${tickCapsule(ticks, cost)}
+      ${tickCapsule(ticks, cost, short)}
       <span class="ra-name">${
         SPEED_MARK[a.speed ?? ''] ? `<span class="act-speed sp-${esc(a.speed!)}" title="${esc(SPEED_MARK[a.speed!].title)}">${SPEED_MARK[a.speed!].glyph}</span>` : ''
       }<span class="ra-t">${esc(a.name.en || a.name.zh || a.id)}</span>${

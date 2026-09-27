@@ -667,6 +667,62 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
 .pad-sheet-in > .pad-row > .pad-label { font: 10.5px var(--mono); letter-spacing: 0.16em; text-transform: uppercase; color: var(--text3); }
 .pad-count { display: flex; align-items: center; gap: 10px; }
 
+/* ---------- the Ticks (3.4.5), as the book draws them ----------
+   Rulebook p.31's Opportunity capsule on its side, in the capsule's own pale
+   paper and ink (reference.css .tick-cap): a thick X for the Maneuver Tick,
+   then a square for each Action Tick. A spent Tick goes hollow on a greyer
+   ground. A Maneuver Tick an Action Tick has passed is faded right out, because
+   it is gone rather than used. Each Tick is a full tap target.
+   The bar sits on a line of its own under its label, left-aligned, as the
+   Stance tiles do, and Moved and New are always drawn beside it (greyed when
+   idle), so nothing on the line shifts as the Ticks are spent. */
+.pad-ticks-row { margin-top: 12px; }
+.pad-ticks { display: flex; align-items: center; gap: 8px; flex: 1 0 100%; }
+/* The bar is exactly one tap target tall, like Moved and New beside it (and
+   the Link row's steppers): 2px of ink and 2px of paper around 36px Ticks. */
+.tick-bar {
+  display: inline-flex;
+  align-items: stretch;
+  gap: 2px;
+  padding: 2px;
+  background: #eaeaf5;
+  border: 2px solid #14171c;
+  border-radius: 9px;
+  box-sizing: border-box;
+  height: var(--tap);
+}
+.pad-ticks .pad-chip { height: var(--tap); padding: 0 14px; }
+.tick-bar .tk {
+  width: 42px;
+  height: 100%;
+  border: 0;
+  border-radius: 6px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  color: #14171c;
+  font: inherit;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, opacity 0.12s;
+}
+.tick-bar span.tk { cursor: default; }
+.tick-bar .tk svg { width: 22px; height: 22px; }
+.tick-bar .tk i { display: block; width: 18px; height: 18px; border-radius: 3px; background: currentColor; }
+.tick-bar .tk.spent { background: #b9bdca; color: rgba(20, 23, 28, 0.42); }
+.tick-bar .tk.spent i { background: transparent; box-shadow: inset 0 0 0 2.5px currentColor; }
+.tick-bar .tk-m.lost { opacity: 0.3; }
+/* An Extra Tick: a smaller square with the Action Type it pays for under it. */
+.tick-bar .tk-x { grid-template-rows: 1fr auto; padding: 4px 0 2px; }
+.tick-bar .tk-x i { width: 13px; height: 13px; }
+.tick-bar .tk-x b { font: 700 8px var(--mono); letter-spacing: 0.06em; }
+.tick-bar .tk-x.lapsed { opacity: 0.35; }
+.tick-bar .tk-div { width: 2px; margin: 5px 2px; background: #14171c; border-radius: 1px; }
+.tick-bar button.tk:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (hover: hover) {
+  .tick-bar button.tk:hover { background: rgba(20, 23, 28, 0.1); }
+  .tick-bar button.tk.spent:hover { background: #aeb2c0; }
+}
 .pad-step {
   width: var(--tap);
   height: var(--tap);
@@ -682,6 +738,10 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
 }
 
 .pad-step:hover { background: var(--surface3); color: var(--text); }
+/* A step the engine would refuse (Link already full, no Ammo left) is greyed
+   and inert rather than answered with a refusal (OTTO, 2026-09-27). */
+.pad-step:disabled { opacity: 0.35; cursor: default; }
+.pad-step:disabled:hover { background: var(--surface2); color: var(--text2); }
 
 .pad-num {
   font-family: var(--mono);
@@ -876,6 +936,9 @@ textarea.pad-input { resize: vertical; min-height: 72px; line-height: 1.45; }
 /* The printed Stance token fills the button and its name sits under it: the
    dial on the base is read by its picture, and the picture is the control. */
 .pad-stances { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; flex: 1 0 100%; }
+/* A Stance the engine would not take now (a locked Stance in a guided turn). */
+.pad-stance:disabled { opacity: 0.4; cursor: default; }
+.pad-stance:disabled:hover { background: var(--surface2); color: var(--text2); }
 
 .pad-stance {
   display: flex;

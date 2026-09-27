@@ -268,6 +268,11 @@ export interface Token {
   stance: Stance;
   link?: number;
   timing?: Timing;
+  // A free table's record of this Mech's Ticks in its current Action
+  // Opportunity (3.4.5), marked on the pad's sheet. A guided game counts the
+  // same Ticks on script.opp and never writes this. Cleared as the round
+  // enters the Action Phase and as a new round begins.
+  freeTicks?: FreeTicks;
   deployed?: boolean;
   expiring?: string[];
   partStates: Partial<Record<PartSlot | 'main', PartState>>;
@@ -738,6 +743,41 @@ export interface Opportunity {
   launched?: { actionId: string; uids: number[] }[];
   performed: string[];
   spentExtras: string[];
+}
+
+// The Tick half of an Opportunity, as a free table keeps it on each Mech: what
+// has been spent, and the Actions performed for the once-per-Part rule. The
+// Extra Ticks a Mech holds and the dial it plays are read fresh when it is
+// judged (extrasFor, t.timing), never stored, so a Part changing hands or a
+// dial changing can never leave a stale copy behind.
+export interface FreeTicks {
+  maneuver: number;
+  action: number;
+  maneuvered: boolean;
+  moved: boolean;
+  started: boolean;
+  performed: string[];
+  spentExtras: string[];
+}
+
+// A WHITELIST like normaliseOpportunity: anything it does not name is dropped
+// on every rehydrate and network round trip.
+export function normaliseFreeTicks(raw: unknown): FreeTicks | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const o = raw as Partial<FreeTicks>;
+  const n = (v: unknown, hi: number, dflt: number): number =>
+    (typeof v === 'number' && Number.isFinite(v) ? Math.max(0, Math.min(hi, Math.round(v))) : dflt);
+  const list = (v: unknown): string[] =>
+    (Array.isArray(v) ? (v as unknown[]).filter((x): x is string => typeof x === 'string').slice(0, 24) : []);
+  return {
+    maneuver: n(o.maneuver, 1, 1),
+    action: n(o.action, 9, 2),
+    maneuvered: o.maneuvered === true,
+    moved: o.moved === true,
+    started: o.started === true,
+    performed: list(o.performed),
+    spentExtras: list(o.spentExtras),
+  };
 }
 
 export function newOpportunity(uid: number, timing?: Timing): Opportunity {

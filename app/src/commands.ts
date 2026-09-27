@@ -1,5 +1,5 @@
-import type { BoardGrids, CardAction, CombatView, Facing, GameState, MechLoadout, Opportunity, PartSlot, PartState, RollbackPoint, ScriptState, Side, SmokeScreen, Stance, TerrainPiece, Timing, Token } from './types';
-import { addStatus, ageTokens, cellsOf, gridsOf, newOpportunity, PHASES, shedToken, statusCount, STATUSES, TIMINGS, tokenFaces } from './types';
+import type { BoardGrids, CardAction, CombatView, Facing, FreeTicks, GameState, MechLoadout, Opportunity, PartSlot, PartState, RollbackPoint, ScriptState, Side, SmokeScreen, Stance, TerrainPiece, Timing, Token } from './types';
+import { addStatus, ageTokens, cellsOf, gridsOf, newOpportunity, normaliseFreeTicks, PHASES, shedToken, statusCount, STATUSES, TIMINGS, tokenFaces } from './types';
 import type { GameData } from './data';
 import { cardName, transformFaces, unfoldsInto, discardFaceOf, environmentAllowance } from './data';
 import { camoPartLost, canActivateCamo, electronicAll, electronicAllTargets, whistleFunders, electronicTargetWhy, isElectronicAttack, ownCards, actionSilenceDenier, activatesCamo, contactRevealsOwed, positionsOf, envCardAt, isGroundUnit, initiativeFor, actionMoves, firewatchOn, focusPayer, stanceFeedbackOf, stanceFeedbackTargets, stanceShaped, actionPartWhy, extraActivationOf, overloadPackOn, cruising, selfStanceShift, spendsAmmoWhenPerformed, startOpts, counterStage, covertCarryLock, ammoDeliveryPool, opportunityBonusOn, ripostePart, defenseReactionOn, targetTracingOn, riderOnDrone, commandGeneration, blinkTargets, isPositionSwap, electronicOrigins, isSilentAction, maneuverIsSilent, loanedParts, unfoldToken, formSwitch, switchFormTo, extrasFor, consumesCharge, cutTethersOn, cutTetherBetween, electronicDash, electronicValue, immobilizedStop, chassisStop, isScanAction, scannable, manifestationRange, nonHumanoidCost, nonHumanoidStop, envHotEntries, settleEnvironments, freehandSlots, twoHandedUse, missileGroupOf, volleyOf, interceptCapacity, focusIsFree, keepsLinkOnPartLoss, makeDroneToken, structureOf, makeMechToken, maneuverRange, maxLink, partsLeft, pilotCard, pilotIs, projectileDelivery, provokeWhy, settleTethers, SLOT_LABEL, tetherTo, tokenCards, transformPartOn, actionRange, isRwsAction, rwsCommandKey, rwsFiredKey, selfStatusGrant, selfGrantWhy, straightLineBonus, grantAdjusted, shockAttackOf, linkTickTraitOn, isCarrier, canBeLoad, roundEndLinkSources } from './units';
@@ -65,6 +65,8 @@ export type Command = (
   // A carrier Drone's Load, set or taken off on an existing token. The token
   // is rebuilt the way the board rebuilds it, so Ammo and Intercept follow.
   | { kind: 'setLoad'; seat: Side; uid: number; cardId?: string }
+  // The pad's hand record of a free table's Ticks (3.4.5). null refills them.
+  | { kind: 'setFreeTicks'; seat: Side; uid: number; ticks: FreeTicks | null }
   | { kind: 'reboot'; seat: Side; uid: number; stance: Stance }
   // `free` is a Movement Action moving the unit on the Action Tick it has
   // already paid for, so it must not also spend the Maneuver Tick. Everything
@@ -1701,6 +1703,14 @@ function checkActed(
         const load = data.byId.get(cmd.cardId);
         if (!load || load.category !== 'mech_part' || !canBeLoad(load)) return no('That card cannot be carried as a Load.');
       }
+      return ok;
+    }
+    case 'setFreeTicks': {
+      // A guided game counts the same Ticks on script.opp and refuses what does
+      // not fit, so a hand mark there would be a second, disagreeing count.
+      if (guidedGame(state)) return no('In a guided game the Ticks are counted as each Action is performed.');
+      if (t.kind !== 'mech') return no('Only a Mech spends Ticks (3.4.5). A Drone\'s activation is one Action or one Movement.');
+      if (cmd.ticks !== null && !normaliseFreeTicks(cmd.ticks)) return no('That is not a record of Ticks.');
       return ok;
     }
     case 'setStance': {
@@ -3344,6 +3354,13 @@ function shedLowProfile(data: GameData, state: GameState, t: Token): void {
   });
 }
 
+// A free table's hand-marked Ticks (Token.freeTicks) belong to one Action
+// Opportunity. Every path that starts the Opportunities over clears them, so a
+// round, a reset or a new match never opens on last round's marks.
+function clearFreeTicks(state: GameState): void {
+  for (const x of state.tokens) delete x.freeTicks;
+}
+
 function applyCommand(data: GameData, state: GameState, cmd: Command): void {
   if (cmd.kind === 'advancePhase') {
     // No attack survives a phase turn. The defence handshake and the published
@@ -3361,7 +3378,11 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
     const r = state.round;
     if (r.phase < PHASES.length - 1) {
       r.phase++;
+      // Every Mech's Action Opportunity comes in this phase, so a free table's
+      // hand-marked Ticks start over as it opens (3.4.5).
+      if (PHASES[r.phase] === 'Action') clearFreeTicks(state);
     } else {
+      clearFreeTicks(state);
       if (cmd.sweep && !state.script) {
         // The End Phase a scriptless table turns in one go (3.7.1 then 3.7.2):
         // Integrity Loss first, which a Freeform pad never removed at all, so
@@ -3430,6 +3451,10 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
   }
   if (cmd.kind === 'setPhase') {
     state.ready = {};
+    // Forward into the Action Phase opens it, as advancePhase does. Back into
+    // it from a later phase is a correction, and must not wipe the marks the
+    // player went back to fix.
+    if (PHASES[cmd.phase] === 'Action' && state.round.phase < cmd.phase) clearFreeTicks(state);
     state.round.phase = cmd.phase;
     return;
   }
@@ -3437,6 +3462,7 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
     state.round.n = 1;
     state.round.phase = 0;
     state.commandTokens = { s1: 0, s2: 0 };
+    clearFreeTicks(state);
     // Plays are stamped with a round number, so winding the track back to 1
     // would leave round 1's cards reading as already spent. The smoke marker
     // is a round number too, and would refuse round 1's dissipation.
@@ -3612,6 +3638,7 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
     // match. Anything already standing goes back to its squad for deployment.
     state.tokens = state.tokens.filter((t) => t.kind !== 'projectile');
     for (const t of state.tokens) t.deployed = false;
+    clearFreeTicks(state);
     state.smoke = [];
     delete state.smokeRound;
     state.round = { n: 1, phase: 0, firstPlayer: 's1' };
@@ -3746,6 +3773,7 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
     // The state half of "End game"; the result dialog and the recording offer
     // stay with the UI, which runs them before this lands.
     for (const t of state.tokens) t.deployed = undefined;
+    clearFreeTicks(state);
     state.setup = null;
     state.tasks = null;
     state.removedTerrain = [];
@@ -4089,6 +4117,12 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
         statuses: t.statuses, log: t.log,
         partStates: { ...fresh.partStates, main: t.partStates.main ?? 'intact' },
       });
+      return;
+    }
+    case 'setFreeTicks': {
+      const ticks = cmd.ticks ? normaliseFreeTicks(cmd.ticks) : undefined;
+      if (ticks) t.freeTicks = ticks;
+      else delete t.freeTicks;
       return;
     }
     case 'setStance': {
