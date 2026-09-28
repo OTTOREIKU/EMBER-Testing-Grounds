@@ -3727,10 +3727,18 @@ export function overwatchOf(a: CardAction): boolean {
 // are obligatory" (3.5, p.33; ruling I4). The Neutral fallback is a may, and a
 // Drone with no legal target ends freely. Only the Pholcus's was held (audit
 // Phase 5, F3); its Detonation keeps its own reader. Null when none is owed.
+//
+// Only an Action the Drone can perform now is owed. Fire Control
+// Interference, a Melee Lock or an empty magazine greys the row on every page,
+// and an obligation to press a greyed row refused the pass and the end of the
+// activation alike, so a strict table could not leave the phase (audit Phase
+// 6, B1). The list the pages draw is the one this asks.
 export function autoShotOwed(data: GameData, tokens: Token[], t: Token, board: { terrain: TerrainPiece[]; smoke: SmokeScreen[] }): CardAction | null {
   if (t.kind !== 'drone' || t.deployed === false || !alive(t)) return null;
+  const usable = new Set(guidedActions(data, t, { tokens, terrain: board.terrain }).filter((g) => g.available).map((g) => g.action.id));
   for (const a of data.byId.get(t.cardId)?.actions ?? []) {
     if (a.speed !== 'auto' || a.type === 'Passive' || a.type === 'Detonation') continue;
+    if (!usable.has(a.id)) continue;
     if (autoTargetsFor(data, tokens, t, a, board).length) return a;
   }
   return null;

@@ -1492,5 +1492,33 @@ console.log('Phase 5: drones, projectiles and deployables\n');
   check('I24 not when it is targeted passively', blue(foe.uid), base);
 }
 
+// ================= F3 again: only an Action the Drone can perform is owed (audit Phase 6, B1) =================
+{
+  // Under Fire Control Interference, or Melee Locked, a Drone cannot fire, and
+  // every page greys the row. Owing the shot anyway refused the pass and the end
+  // of the activation alike, so a strict table could not leave the phase.
+  const auto = () => {
+    const s = table();
+    s.round.phase = M.PHASES.indexOf('Automatic');
+    s.script.turn = 's1';
+    return s;
+  };
+  const owes = (s, t) => U.autoShotOwed(data, s.tokens, t, { terrain: [], smoke: [] })?.id ?? null;
+  const s = auto();
+  const valk = droneOn(s, 's1', 'ZHDR-303', 5, 5);
+  put(s, 's2', L(), 5, 2);
+  check('F3 the control: the Valkyrie owes its Automatic Firing Action', owes(s, valk), 'ZHDR-303_A');
+  valk.statuses = ['fci'];
+  check('F3 under Fire Control Interference it owes nothing', owes(s, valk), null);
+  check('F3 so its squad may pass', ok(s, { kind: 'passTurn', seat: 's1' }), true);
+  send(s, { kind: 'designate', seat: 's1', uid: valk.uid });
+  check('F3 and its activation may end untouched', ok(s, { kind: 'endOpportunity', seat: 's1', uid: valk.uid }), true);
+  const lock = auto();
+  const reaper = droneOn(lock, 's1', 'PRDR-101', 5, 5);
+  put(lock, 's2', L(), 5, 4);
+  check('F3 a Melee Locked Drone owes no Firing Action', owes(lock, reaper), null);
+  check('F3 so a Melee Locked squad may pass', ok(lock, { kind: 'passTurn', seat: 's1' }), true);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
