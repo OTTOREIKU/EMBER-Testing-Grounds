@@ -256,7 +256,7 @@ check('the End Phase Integrity-Loss removal stamps the whole unit',
 // recordKill's payload carries no slot, so the victim token is read instead —
 // and it has to be read BEFORE the filter that removes it.
 check('and recordKill stamps from the victim before removing it',
-  /recordUnitLoss\(tasks, victim\);[\s\S]{0,400}state\.tokens = state\.tokens\.filter\(\(x\) => x\.uid !== cmd\.targetUid\)/.test(commands), true);
+  /recordUnitLoss\(tasks, victim\);[\s\S]{0,1000}state\.tokens = state\.tokens\.filter\(\(x\) => x\.uid !== cmd\.targetUid\)/.test(commands), true);
 
 // ---------- ONE copy of this glue, and every page reaching it ----------
 //

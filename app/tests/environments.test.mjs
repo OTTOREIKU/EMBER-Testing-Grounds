@@ -349,7 +349,8 @@ check('the control is up while the map is being settled', at('map'), true);
 check('and through the First Player roll', at('roll'), true);
 check('and the Tasks', at('tasks'), true);
 check('and the edge pick', at('side'), true);
-check('and deployment', at('deploy'), true);
+// Not once units are going down (5.4.1; audit Phase 6, A7).
+check('but not deployment', at('deploy'), false);
 check('but it is gone once Round 1 starts', at('done'), false);
 check('and there is none of it before a match exists', envStage({ state: {} }), false);
 

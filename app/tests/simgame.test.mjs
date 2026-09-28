@@ -351,7 +351,15 @@ for (const c of cards) {
   }
 }
 const common = loadJson('data/common_actions.json');
-const data = { byId, commonActions: common.actions ?? [], overload: common.overload ?? [], zoneData: { zones: [] } };
+// The Secondary Task cards and the printed Deployment Zones, so the setup
+// steps are the rules' own: the Tasks step picks real cards, and a unit
+// deploys in its squad's strip (audit Phase 6, A1-A3).
+const zoneFile = JSON.parse(readFileSync(new URL('../../data/zones.json', import.meta.url), 'utf8'));
+const data = {
+  byId, commonActions: common.actions ?? [], overload: common.overload ?? [],
+  secondary: JSON.parse(readFileSync(new URL('../../data/secondary.json', import.meta.url), 'utf8')).cards,
+  zoneData: { zones: [], deployments: zoneFile.deployments, missionDeployment: zoneFile.missionDeployment },
+};
 
 const partsOf = (ty) => cards.filter((c) => c.type === ty && (c.actions ?? []).length >= 0);
 const pilots = cards.filter((c) => c.category === 'pilot' && typeof c.LV === 'number');
@@ -602,13 +610,31 @@ function candidates(s, rng) {
       for (const seat of ['s1', 's2']) out.push({ kind: 'rollSetup', seat, hits: [irnd(rng, 4), irnd(rng, 4)] });
       out.push({ kind: 'acceptRoll', seat: 's1' });
     }
-    if (su.stage === 'tasks') out.push({ kind: 'finishTasks', seat: s.round.firstPlayer });
+    // The edge first, then the Tasks step (ruling I3): the First Player
+    // reveals a Secondary first, the other a different card (I5, I17). Cards
+    // that name no target, so the step closes on the two picks.
     if (su.stage === 'side') out.push({ kind: 'pickEdge', seat: s.round.firstPlayer, edge: rng() < 0.5 ? 'black' : 'white' });
+    if (su.stage === 'tasks') {
+      const fp = s.round.firstPlayer;
+      const other = fp === 's1' ? 's2' : 's1';
+      const sec = C.normaliseTasks(s.tasks).secondary;
+      const plain = (data.secondary ?? []).filter((c) => !c.designate || c.designate === 'none');
+      if (!sec[fp]) out.push({ kind: 'pickSecondary', seat: fp, cardId: pick(rng, plain).id });
+      else if (!sec[other]) out.push({ kind: 'pickSecondary', seat: other, cardId: pick(rng, plain.filter((c) => c.id !== sec[fp])).id });
+      else out.push({ kind: 'finishTasks', seat: fp });
+    }
     if (su.stage === 'deploy') {
       const seat = C.deployTurn(s, su, data);
       if (seat) {
+        // In the squad's own zone, one unit to a Grid (3.1.4; ruling I4).
+        const taken = new Set(s.tokens.filter((x) => x.deployed !== false && x.kind !== 'projectile').map((x) => `${Math.floor(x.col / 3)},${Math.floor(x.row / 3)}`));
+        const zone = C.deployGrids(data.zoneData, s, su.edge[seat]);
+        const all = new Set();
+        for (let c = 0; c < 12; c++) for (let r = 0; r < 12; r++) all.add(`${c},${r}`);
+        const open = [...C.deployOpenGrids(zone ?? all, taken, 12)];
         for (const t of s.tokens.filter((x) => x.side === seat && x.kind !== 'projectile' && x.deployed === false)) {
-          out.push({ kind: 'deployUnit', seat, uid: t.uid, to: { col: irnd(rng, 36), row: irnd(rng, 36) } });
+          const [c, r] = (open.length ? pick(rng, open) : `${irnd(rng, 12)},${irnd(rng, 12)}`).split(',').map(Number);
+          out.push({ kind: 'deployUnit', seat, uid: t.uid, to: { col: c * 3, row: r * 3 } });
         }
       }
       // A late squad joining mid-deployment: it must fold into the same
@@ -617,7 +643,7 @@ function candidates(s, rng) {
         const side = pick(rng, ['s1', 's2']);
         out.push({
           kind: 'importSquad', seat: side, name: 'Reinforcements',
-          mechs: [{ loadout: { torso: pick(rng, partsOf('torso')).id, chasis: pick(rng, partsOf('chasis')).id, pilot: pick(rng, pilots).id } }],
+          mechs: [{ loadout: { torso: pick(rng, partsOf('torso')).id, chasis: pick(rng, partsOf('chasis')).id, leftHand: pick(rng, partsOf('leftHand')).id, pilot: pick(rng, pilots).id } }],
           drones: rng() < 0.5 ? [{ cardId: pick(rng, drones).id }] : [],
         });
       }
@@ -732,8 +758,9 @@ function adversaries(s, rng) {
   out.push({ kind: 'importSquad', seat: 's1', mechs: [{ loadout: { torso: 'no-such-card' } }], drones: [] });
   const su = C.normaliseSetup(s.setup);
   if (su && su.stage === 'done') {
-    // A perfectly well-formed squad is still refused once deployment closed.
-    out.push({ kind: 'importSquad', seat: 's1', mechs: [{ loadout: { torso: partsOf('torso')[0].id } }], drones: [] });
+    // A perfectly well-formed squad is still refused once deployment closed:
+    // whole, so it is refused for the stage and not for a missing Part.
+    out.push({ kind: 'importSquad', seat: 's1', mechs: [{ loadout: { torso: partsOf('torso')[0].id, chasis: partsOf('chasis')[0].id, leftHand: partsOf('leftHand')[0].id, pilot: pilots[0].id } }], drones: [] });
   }
   if (mine) {
     // A card the squad does not hold, and a choice the card does not offer.

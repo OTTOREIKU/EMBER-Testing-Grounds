@@ -26,6 +26,7 @@ interface MissionLike {
   fromRound?: number;
   cadence?: string;
   scoringZone?: string;
+  vpPerPart?: number;
 }
 
 // The Main Task read as scoring terms. One place, because the rider producer
@@ -40,6 +41,7 @@ export function missionScoring(m: MissionLike): MissionScoring {
     fromRound: m.fromRound ?? 1,
     cadence: (m.cadence as MissionScoring['cadence']) ?? 'per-round',
     scoringZone: m.scoringZone,
+    vpPerPart: m.vpPerPart,
   };
 }
 
@@ -49,6 +51,30 @@ export function missionScoring(m: MissionLike): MissionScoring {
 export function lowValueOf(data: GameData): (t: Token) => boolean {
   return (t: Token) => t.kind === 'projectile'
     || (t.kind === 'drone' && (data.byId.get(t.cardId)?.score ?? 0) === 0);
+}
+
+// A VIP Commander destroyed: gone from the board, or dead on the pad, which
+// keeps its dead (audit Phase 6, D4).
+export function vipFallen(data: GameData, state: GameState): boolean {
+  const mission = state.mission ? data.missions.cards.find((c) => c.id === state.mission) : undefined;
+  if (mission?.family !== 'vip') return false;
+  const tasks = normaliseTasks(state.tasks);
+  return (['s1', 's2'] as Side[]).some((side) => {
+    const uid = tasks.leader[side];
+    if (uid === undefined) return false;
+    const t = state.tokens.find((x) => x.uid === uid);
+    return !t || (t.partStates[t.kind === 'mech' ? 'torso' : 'main'] ?? 'intact') === 'destroyed';
+  });
+}
+
+// Whether this round's End Phase ends the game (3.7.3 checks "the Victory
+// Condition at the end of the Round (including Round limit)"; 3.7.4 turns the
+// round only "if no player wins and the game is not forced to end"). The round
+// limit, or VIP: Assassination's fallen Commander, whose game ends at that
+// round's End Phase with every end-of-game Task settled in the same Award
+// (ruling I2; audit Phase 6, B2). Every page reads this for its last round.
+export function gameEndsThisRound(data: GameData, state: GameState): boolean {
+  return state.round.n >= (state.roundLimit ?? 5) || vipFallen(data, state);
 }
 
 // The Grids a zone covers, as the scorers ask for them.

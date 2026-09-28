@@ -103,7 +103,7 @@ check('and every turn derivation in the command layer too',
 check('the one-token cap stays a Drone rule', /phase === 'Command' && t\.kind === 'drone' && !sc\.freeCommand\.includes\(cmd\.uid\) && heldCommands\(t\) > 0/.test(cmds), true);
 check('designating a Mech writes the Command to the ledger, not the commanded list',
   /if \(t\.kind === 'mech'\) sc\.oncePerRound\.push\(rwsCommandKey\(state\.round\.n, t\.uid\)\);\s*\n\s*else if \(free\) \{[\s\S]*?\} else if \(!sc\.commanded\.includes\(cmd\.uid\)\) sc\.commanded\.push\(cmd\.uid\);/.test(cmds), true);
-const perf = cmds.slice(cmds.indexOf("case 'performAction': {"), cmds.indexOf("case 'performAction': {") + 5200);
+const perf = cmds.slice(cmds.indexOf("case 'performAction': {"), cmds.indexOf("case 'performAction': {") + 7000);
 check('a Mech in the Command Phase performs only an RWS Action', /if \(!isRwsAction\(a\)\) return no\(/.test(perf), true);
 check('once per Part per round', /rwsFiredKey\(state\.round\.n, cmd\.uid, a\.id\)\)\)/.test(perf), true);
 check('and it costs the activation the Command bought, not Ticks', /return fromVerdict\(canActivate\(o\)\);\s*\n\s*\}\s*\n\s*\n\s*\/\/ Riposte/.test(perf), true);

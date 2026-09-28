@@ -30,7 +30,7 @@ check('the Match Centre reads it in both places it adjusts an Action',
 check('and freeplay asks it at both of its doors',
   (main.match(/askTwoHanded\(t, granted\)/g) ?? []).length, 2);
 check('and the Match Centre applies it where the attack starts',
-  /twoHandedUse\(data, t, granted, \[\], loans\)\?\.action \?\? granted/.test(match), true);
+  /twoHandedUse\(data, t, granted, boxHands\(state\.tasks, t\.uid\), loans\)\?\.action \?\? granted/.test(match), true);
 check('both sit AFTER the Stationary adjustment, so the riders compound',
   /const steadied = raw \? stationaryAdjusted[\s\S]{0,900}handsFor/.test(hud)
   && /const steadied = stationaryAdjusted[\s\S]{0,900}askTwoHanded/.test(main), true);

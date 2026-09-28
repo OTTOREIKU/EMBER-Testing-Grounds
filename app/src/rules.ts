@@ -227,6 +227,48 @@ export function spotsInGrid(
   return out;
 }
 
+// Where a dropped Black Box may land (5.3.1): a Small Grid in Contact with the
+// bearer's base, edge to edge (4.2.3), so never under it and never at a
+// corner, and on the ground (FAQ P9), not inside a terrain piece. A unit does
+// not block it: a Box may share a Grid with one (P8). Every page offered the
+// bearer's own Grid and the eight around it (ruling I24; audit Phase 6, F6).
+// `cells` is the board's width in Small Grids.
+export function boxDropCells(
+  base: { col: number; row: number; size: number },
+  terrain: TerrainPiece[],
+  cells: number,
+): { col: number; row: number }[] {
+  const blocked = new Set<string>();
+  for (const p of terrain) for (const cell of p.subCells) blocked.add(`${cell.col},${cell.row}`);
+  const out: { col: number; row: number }[] = [];
+  const add = (col: number, row: number): void => {
+    if (col < 0 || row < 0 || col >= cells || row >= cells || blocked.has(`${col},${row}`)) return;
+    out.push({ col, row });
+  };
+  for (let i = 0; i < base.size; i++) {
+    add(base.col + i, base.row - 1);
+    add(base.col + base.size, base.row + i);
+    add(base.col + i, base.row + base.size);
+    add(base.col - 1, base.row + i);
+  }
+  return out;
+}
+
+// The one cell a picker that offers Large Grids puts the Box on: of the legal
+// cells in that Grid, the one nearest its middle, which for a Mech is the
+// middle of the shared edge.
+export function boxDropCellIn(
+  c: number,
+  r: number,
+  legal: { col: number; row: number }[],
+): { col: number; row: number } | null {
+  const inGrid = legal.filter((x) => Math.floor(x.col / 3) === c && Math.floor(x.row / 3) === r);
+  if (!inGrid.length) return null;
+  const mid = { col: c * 3 + 1, row: r * 3 + 1 };
+  return inGrid.reduce((best, x) =>
+    (Math.abs(x.col - mid.col) + Math.abs(x.row - mid.row) < Math.abs(best.col - mid.col) + Math.abs(best.row - mid.row) ? x : best));
+}
+
 export function canStandIn(
   c: number,
   r: number,

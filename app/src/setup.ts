@@ -1,12 +1,15 @@
-import type { GameState, Side, Token } from './types';
+import type { GameState, MechLoadout, Side, Token } from './types';
 import type { GameData } from './data';
 
 // ---------- pre-game setup (rulebook 3.1.2 and 3.1.4) ----------
 
-// The official order (FAQ P1): map, then the First Player roll, then the
-// Tasks — Main first, then Secondaries with the First Player revealing first —
-// then edges and deployment.
-export type SetupStage = 'map' | 'roll' | 'tasks' | 'side' | 'deploy' | 'done';
+// The order (3.1.2, 3.1.3, 5.2.1; ruling I3): the map, the First Player roll,
+// the Main Task and the edge the First Player picks knowing it (`side`), then
+// the Tasks step (`tasks`): the Secondaries with the First Player revealing
+// first, their targets, and the Black Boxes placed alternately. Then
+// deployment. The edge came after the Secondaries, so the First Player picked
+// it knowing both of them and every named target (audit Phase 6, A1).
+export type SetupStage = 'map' | 'roll' | 'side' | 'tasks' | 'deploy' | 'done';
 
 export interface SetupState {
   stage: SetupStage;
@@ -16,6 +19,10 @@ export interface SetupState {
   edge: Record<Side, 'black' | 'white'>;
   // How many units each side has placed, which is what drives the alternation.
   placed: Record<Side, number>;
+  // Who won the First Player roll (3.1.2), kept so starting the rounds over
+  // returns the token to the roll's winner and not to whoever held it last
+  // (audit Phase 6, A8).
+  first?: Side;
 }
 
 // The battlefield is fixed once the game starts, so neither player can swap the
@@ -24,11 +31,12 @@ export function battlefieldLocked(setup: SetupState | null | undefined): boolean
   return !!setup && setup.stage !== 'map';
 }
 
-// The Tasks are chosen AFTER the First Player roll (FAQ P1), so the Missions
-// dialog and the zone overlay stay open through the roll and the tasks stage
-// and freeze once the edges are being picked.
+// The Main Task is chosen AFTER the First Player roll and before the edge
+// (ruling I3), so the Missions dialog and the zone overlay stay open through
+// the roll and the edge pick, and freeze once the edge is picked: the edge
+// was chosen knowing them.
 export function tasksLocked(setup: SetupState | null | undefined): boolean {
-  return !!setup && (setup.stage === 'side' || setup.stage === 'deploy' || setup.stage === 'done');
+  return !!setup && (setup.stage === 'tasks' || setup.stage === 'deploy' || setup.stage === 'done');
 }
 
 export function newSetup(): SetupState {
@@ -44,7 +52,7 @@ export function normaliseSetup(raw: unknown): SetupState | null {
   if (!raw || typeof raw !== 'object') return null;
   const s = raw as Partial<SetupState>;
   const base = newSetup();
-  const stages: SetupStage[] = ['map', 'roll', 'tasks', 'side', 'deploy', 'done'];
+  const stages: SetupStage[] = ['map', 'roll', 'side', 'tasks', 'deploy', 'done'];
   const nums = (v: unknown): number[] => (Array.isArray(v) ? v.filter((x) => typeof x === 'number') : []);
   const edge = (v: unknown, fallback: 'black' | 'white') => (v === 'black' || v === 'white' ? v : fallback);
   const count = (v: unknown) => (typeof v === 'number' && v >= 0 ? v : 0);
@@ -53,6 +61,7 @@ export function normaliseSetup(raw: unknown): SetupState | null {
     rolls: { s1: nums(s.rolls?.s1), s2: nums(s.rolls?.s2) },
     edge: { s1: edge(s.edge?.s1, 'white'), s2: edge(s.edge?.s2, 'black') },
     placed: { s1: count(s.placed?.s1), s2: count(s.placed?.s2) },
+    ...(s.first === 's1' || s.first === 's2' ? { first: s.first } : {}),
   };
 }
 
@@ -87,6 +96,21 @@ export function firstPlayerFrom(s: SetupState): Side | null {
   const red = rollTotal(s.rolls.s2);
   if (blue === red) return null;
   return blue > red ? 's1' : 's2';
+}
+
+// Why a Mech could not be deployed as built, or null: 2.2.2 wants a Torso, a
+// Chassis and a Left or Right Arm, and 5.1 a Pilot (FAQ P14, P16; ruling I32).
+// Only the builder asked, so a file, a saved squad or a preset reached every
+// table short of them (audit Phase 6, G3).
+export function incompleteMechWhy(loadout: MechLoadout | undefined, label = 'This Mech'): string | null {
+  const missing = [
+    !loadout?.torso ? 'a Torso' : '',
+    !loadout?.chasis ? 'a Chassis' : '',
+    !loadout?.leftHand && !loadout?.rightHand ? 'a Left or Right Arm' : '',
+  ].filter(Boolean);
+  if (missing.length) return `${label} has no ${missing.join(', no ')}. A Mech is deployed with at least a Torso, a Chassis and a Left or Right Arm (2.2.2).`;
+  if (!loadout?.pilot) return `${label} has no Pilot. Each Mech in a Squad must be assigned a Pilot (5.1).`;
+  return null;
 }
 
 export function isDeployed(t: Token): boolean {

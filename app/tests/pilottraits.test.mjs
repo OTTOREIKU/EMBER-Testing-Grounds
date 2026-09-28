@@ -939,11 +939,12 @@ check('reader 2 — the Match Centre panel passes it', /canPerform\(o, priced, k
   // slice, so the arm is pinned at the source — a reader test is not a wiring
   // test, and that gap has shipped here before.
   check('resolve() reads the trait as a fourth Low Profile source',
-    /const concealed = this\.tokens \? hiddenByAlliedAura\(this\.data, this\.tokens\(\), c\.defender\) : undefined;/.test(combat), true);
+    // With a board, and not under a Highlight (J12; audit Phase 6, C3).
+    /const concealed = board && !lit \? hiddenByAlliedAura\(this\.data, this\.tokens!\(\), c\.defender\) : undefined;/.test(combat), true);
   check('and ORs it into the one Low Profile disjunction',
     // `\s*` rather than `\n\s*`: this tree is CRLF, and a slice keyed on a bare
     // \n silently matched nothing the last time one was written that way.
-    /\|\| !!concealed\s*\|\| !!mistyEagle\);/.test(combat), true);
+    /\|\| !!concealed\s*\|\| !!eagle\s*\|\| told\);/.test(combat), true);
   // Low Profile is a Firing-only consequence in this engine, and the trait
   // inherits that gate rather than carrying one of its own.
   // Located by SLICING the method rather than by matching the binding's name.
@@ -1251,7 +1252,7 @@ check('reader 2 — the Match Centre panel passes it', /canPerform\(o, priced, k
   // Narrowing the ATTRIBUTION must not narrow the RULE: all four arms still
   // grant Low Profile, whatever the note ends up saying about it.
   check('while the rule itself still reads all four sources',
-    /\(lpToken[\s\S]{0,200}'low_profile'\)[\s\S]{0,40}\|\| !!concealed\s*\|\| !!mistyEagle\);/.test(combat), true);
+    /const aura = [^\n]*'low_profile'\)[\s\S]{0,300}\(lpToken \|\| aura \|\| !!concealed \|\| !!eagle \|\| told\)/.test(combat), true);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

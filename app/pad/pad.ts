@@ -37,7 +37,7 @@ import { EmberApi, ApiError, type Account, type RegistrationInfo, type SquadEntr
 import { Relay, type NetView, type RolledDie } from '../src/net';
 import { ammoAvailable, applyRemote, check, rebootWhy, onBeforeApply, onPerformed, onRefused, perform, taskDesignations, type Command } from '../src/commands';
 import { glueAfter } from '../src/glue';
-import { askDesignation, askLinkSupport, askTokenCleanup, designationsFor, activeOpp, continueAllowed, finishIfBothReady, guideAct, guideOnRemote, guidedOn, performButton, startGuided, startIfBothReady, turnHtml, type GuideApi } from './guided';
+import { askDesignation, askLinkSupport, askRemoteAccess, askTokenCleanup, designationsFor, activeOpp, continueAllowed, finishIfBothReady, guideAct, guideOnRemote, guidedOn, performButton, startGuided, startIfBothReady, turnHtml, type GuideApi } from './guided';
 import { countHits, normaliseSetup, tasksLocked } from '../src/setup';
 import { attackActive, attackOnCommand, attackWatching, beginAttack, initAttack, isAttackAction, mountAttack, sweepView, syncMirror, type TableVerdict } from './attack';
 import { registerOffline } from '../src/offline';
@@ -64,17 +64,17 @@ import { groupByFaction, openPartPicker } from '../src/partpicker';
 import { bindCollection, builtOnlyOn, collectionOn, copiesOf, hasAny, loadCollection, onCollection, remaining, saveCollection, setBuiltOnly, setCollectionOn, shortfalls, type Collection } from '../src/collection';
 import { choiceDialog, confirmDialog, pickManyDialog, promptDialog } from '../src/dialog';
 import { checkForUpdates, syncUpdateNotice, watchForUpdates } from '../src/updates';
-import { normaliseTasks, taskItemsFor, type TaskState } from '../src/tasks';
-import { previewScore } from '../src/scoring';
-import { tacticFitsPhase, tacticSpec, tacticTargets, type TacticCtx } from '../src/tactics';
-import { interceptorsAgainst, projectileDelivery, loanedParts, formSwitch, transformOffer, fliesToTarget, explosionCamo, detonationBar, detonationPriority, keptWithoutTarget, blastScanState, bitPortOf, bitsToRecover, conditionalGrants, stationaryBonus, explosionScope, linkShockOf, tetheredBy, freehandSlots, linkSupportOf, roundEndLinkAuras, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, targetStatusGrant, tokenCleanupOf, immediateDetonation, smokePlacement, squadAllegiance, twoHandedUse, grantAdjusted, stationaryAdjusted, shockAttackOf, shockMoveAllowed, immobilizedStop } from '../src/units';
+import { boxHands, normaliseTasks, taskItemsFor, type TaskState } from '../src/tasks';
+import { gameEndsThisRound, lowValueOf, previewScore, vipFallen } from '../src/scoring';
+import { tacticFitsPhase, tacticSpec, tacticTargets, tacticUsedRound, tacticWindowWhy, type TacticCtx } from '../src/tactics';
+import { martyrdomOwed, repairSpec, effectLowProfileCould, interceptorsAgainst, projectileDelivery, loanedParts, formSwitch, transformOffer, fliesToTarget, explosionCamo, detonationBar, detonationPriority, keptWithoutTarget, blastScanState, bitPortOf, bitsToRecover, conditionalGrants, stationaryBonus, explosionScope, linkShockOf, tetheredBy, freehandSlots, linkSupportOf, roundEndLinkAuras, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, targetStatusGrant, tokenCleanupOf, immediateDetonation, smokePlacement, squadAllegiance, twoHandedUse, grantAdjusted, stationaryAdjusted, shockAttackOf, shockMoveAllowed, immobilizedStop } from '../src/units';
 import { gameResult } from '../src/tasks';
 import { isMeleeFiring } from '../src/melee';
 import { isSilentAction, manifestationRange, targetStatusTargets, activatesCamo, canActivateCamo, hasHighlight, electronicAll, electronicAllTargets, electronicTargetWhy, isScanAction, scannable, actionPartWhy, autoParryValue, cruising, canBeLoad, chargeChoices, chargeableSlots, electronicDash, electronicValue, guidedActions, initiativeFor, interceptCapacity, interceptOwedAt, isCarrier, isDeployable, isElectronicAttack, maneuverRange, maxLink, migrateState, parryParts, ownCards, pilotCard, structureOf, tokenCards, volleyOf } from '../src/units';
 import { canManeuver, canPerform, costOf, lengthOf, LENGTH_NAME, markAction, markExtra, markManeuver, spendAction, spendManeuver, tickBarState, timingOf } from '../src/ticks';
-import { extrasFor, startOpts } from '../src/units';
+import { cardFitsSquad, extrasFor, factionProblems, squadPoints, startOpts } from '../src/units';
 import { tickBar, type CapsuleShort } from '../src/glyphs';
-import { newOpportunity, newScriptState, PHASES, SCALES, statusCount, statusesFor, statusStacks, STATUSES, TIMINGS } from '../src/types';
+import { newOpportunity, newScriptState, PHASES, SCALES, statusCount, statusesFor, statusStacks, STATUSES, TIMINGS, tokenFaces } from '../src/types';
 import type { Card, CardAction, DieColor, GameState, ImportedSquad, MechLoadout, Opportunity, PartSlot, PartState, Side, Stance, Token } from '../src/types';
 
 const root = document.getElementById('pad-root')!;
@@ -182,6 +182,7 @@ const relay = new Relay(api.base, {
       if ((cmd as Command).kind === 'advancePhase' && table.round.phase === 0 && !gameOver()) void askAppease();
     }
     render();
+    queueMartyrs();
   },
   // A late joiner is handed the whole table. It arrives as `unknown` because
   // net.ts refuses to care what a board is - and it is MIGRATED, exactly as the
@@ -1097,7 +1098,26 @@ function send(cmd: Command): boolean {
   seedTaskItems();
   saveSolo();
   render();
+  queueMartyrs();
   return true;
+}
+
+// Martyrdom (ZHDR-302) and the AS3-B's Self-Destruct: a unit that detonates as
+// it is destroyed, whether an attack or a tap destroyed it. The pad had no
+// prompt at all (audit Phase 6, D5). Its owner's phone runs the blast through
+// the detonation window, the table judging the Range; asked once per unit.
+const martyrAsked = new Set<number>();
+function queueMartyrs(): void {
+  if (!data || catchingUp) return;
+  let added = false;
+  for (const m of martyrdomOwed(data, table.tokens)) {
+    const u = unitOf(m.uid);
+    if (!u || martyrAsked.has(m.uid) || (!solo && u.side !== mySeat())) continue;
+    martyrAsked.add(m.uid);
+    detonateQueue.push({ uid: m.uid, actionId: m.actionId, martyr: true });
+    added = true;
+  }
+  if (added) nextDetonation();
 }
 
 // The Main Task's Items (its Zones, Terminals or Black Boxes). A page with a
@@ -1152,9 +1172,10 @@ const guide: GuideApi = {
   detonate: (uid, actionId, joined) => { const t = unitOf(uid); if (t) void detonate(t, actionId, joined); },
   stabilise: (uid, pay) => { const t = unitOf(uid); if (t) stabilise(t, pay); },
   pickDiscard: async (uid) => { const t = unitOf(uid); return t ? pickDiscard(t) : null; },
+  settleTasks: () => awardRound(),
   tactics: (side) => ({
-    playable: guidedOn(table) && !playedThisRound(side)
-      ? handOf(side).filter((id) => tacticFitsPhase(id, PHASES[table.round.phase] ?? '')).map((id) => ({ id, name: data ? cardName(data.byId.get(id)!) : id }))
+    playable: guidedOn(table)
+      ? handOf(side).filter((id) => tacticFitsPhase(id, PHASES[table.round.phase] ?? '')).map((id) => ({ id, name: data ? cardName(data.byId.get(id)!) : id, why: tacticWhy(side, id) }))
       : [],
     play: (id) => { void playTactic(side, id); },
   }),
@@ -1539,9 +1560,22 @@ async function askTableAndAttack(attacker: Token, actionId: string, defender: To
     if (still === null) return;
     stationary = still === 'still';
   }
+  // Low Profile from an effect, which no board can read off positions: asked
+  // only when a source could be in play (J12; audit Phase 6, C4).
+  let effectLowProfile: boolean | undefined;
+  if (a?.type === 'Firing' && effectLowProfileCould(data!, table.tokens, defender)) {
+    const hid = await choiceDialog({
+      title: 'Low Profile',
+      body: `Does ${defender.label} have Low Profile from an effect rather than a Token: an ally's Low Profile aura, KeyHole's concealment, or a Misty Eagle beside ${attacker.label}? A Highlight on it cancels that (FAQ J12).`,
+      choices: [{ id: 'no', label: 'No', primary: true }, { id: 'yes', label: 'Yes' }],
+      stacked: true,
+    });
+    if (hid === null) return;
+    effectLowProfile = hid === 'yes';
+  }
   // FAQ A16: [Two-Handed] may be declined. The pad used to take it every time.
   let twoHanded: 'declined' | undefined;
-  const hands = a && !granted ? twoHandedUse(data!, attacker, a) : null;
+  const hands = a && !granted ? twoHandedUse(data!, attacker, a, boxHands(table.tasks, attacker.uid)) : null;
   if (hands) {
     const use = await choiceDialog({
       title: `[Two-Handed]: ${hands.label}`,
@@ -1585,6 +1619,7 @@ async function askTableAndAttack(attacker: Token, actionId: string, defender: To
     ...(graceNote !== undefined ? { graceNote } : {}),
     ...(stationary !== undefined ? { stationary } : {}),
     ...(twoHanded ? { twoHanded } : {}),
+    ...(effectLowProfile !== undefined ? { effectLowProfile } : {}),
   };
   attackDepth = historyDepth();
   // In a guided game the Action is paid for first; a refusal is the engine's
@@ -1646,7 +1681,9 @@ function targetPanel(): string {
   // HIGHLIGHT (6.2.1): a Firing Action that can target a Highlighted enemy must
   // target it (FAQ J18: Firing only). The table judges who it can target, so
   // the rule is stated and the Highlighted listed first (audit Phase 3, E1).
-  const lit = mode === 'attack' && a?.type === 'Firing' ? enemies.filter((u) => hasHighlight(data!, table.tokens, u)) : [];
+  // No board: an aura's Low Profile is the table's to say, so it is not read
+  // off placeholder cells (audit Phase 6, C4).
+  const lit = mode === 'attack' && a?.type === 'Firing' ? enemies.filter((u) => hasHighlight(data!, table.tokens, u, { shooter: t, noBoard: true })) : [];
   if (lit.length) enemies.sort((x, y) => Number(lit.includes(y)) - Number(lit.includes(x)));
   return `<div class="pad-panel-in">${panelHead(mode === 'intercept' ? 'Intercept' : a?.name.en ?? 'Attack')}
     <p class="pad-lead">${esc(t.label)} · pick the target.</p>
@@ -1744,13 +1781,14 @@ async function launchFrom(t: Token, actionId: string, cardId: string): Promise<v
 // first command chains to the launch for Undo.
 // `ask`: an enemy that could Intercept it was in play, so the table says
 // whether it came through first (4.9; audit Phase 5, B7).
-let detonateQueue: { uid: number; actionId: string; joined?: boolean; ask?: boolean }[] = [];
+// `martyr`: a unit detonating as it is destroyed, which is dead by then.
+let detonateQueue: { uid: number; actionId: string; joined?: boolean; ask?: boolean; martyr?: boolean }[] = [];
 function nextDetonation(): void {
   if (detonating) return;
   const next = detonateQueue.shift();
   if (!next) return;
   const proj = unitOf(next.uid);
-  if (!proj || isDead(proj)) { nextDetonation(); return; }
+  if (!proj || (isDead(proj) && !next.martyr)) { nextDetonation(); return; }
   if (!next.ask) { void detonate(proj, next.actionId, next.joined); return; }
   void choiceDialog({
     title: `${proj.label}: Interception first`,
@@ -1866,8 +1904,58 @@ function roundLimit(): number {
 
 // Past the last round's End Phase the game is over: the round counter stands
 // one past the limit, which travels with the table, so both phones agree.
+// Over: past the last round, a squad conceded (ruling I1), or VIP's fallen
+// Commander once that round is scored (ruling I2; audit Phase 6, B2, B8).
+// A strict guided game runs its phases in order: the engine refuses a jump
+// back or a reset there, so the controls say so in their place (audit Phase
+// 6, B5).
+function strictLock(): string | null {
+  return table.script?.strict && normaliseSetup(table.setup)?.stage === 'done'
+    ? 'A strict game runs its phases in order. Use Undo to take a step back.'
+    : null;
+}
+
+// A squad gives up. FAQ P21 has a game run its rounds even with one side wiped
+// out, so this is the table's one early end (ruling I1; audit Phase 6, B8).
+async function concedeGame(): Promise<void> {
+  const choices = solo
+    ? [
+        { id: 's1', label: `${sideName('s1')} concedes` },
+        { id: 's2', label: `${sideName('s2')} concedes` },
+        { id: '', label: 'Keep playing', cancel: true },
+      ]
+    : [{ id: mySeat(), label: 'Concede', danger: true }, { id: '', label: 'Keep playing', cancel: true }];
+  const pick = await choiceDialog({
+    title: 'Concede the game?',
+    body: 'The squad that gives up loses and the other wins, whatever the score. Losing every unit does not end a game (FAQ P21), so this is the one way to stop early.',
+    choices,
+    stacked: true,
+  });
+  if (pick !== 's1' && pick !== 's2') return;
+  if (send({ kind: 'concede', seat: pick })) toast(`${sideName(pick)} conceded. The game is over.`);
+}
+
 function gameOver(): boolean {
-  return table.round.n > roundLimit();
+  if (table.round.n > roundLimit()) return true;
+  if (normaliseTasks(table.tasks).conceded) return true;
+  return !!data && vipFallen(data, table) && roundScored();
+}
+
+// This round's Tasks settled: the Guided End step, or the Freeform Award's key.
+function roundScored(): boolean {
+  return (table.script?.endDone ?? []).includes(`${table.round.n}:end:tasks`)
+    || normaliseTasks(table.tasks).scored.includes(`pad-round:${table.round.n}`);
+}
+
+// The round's Award, from the Tasks sheet and from the Guided End Phase's
+// Check Tasks, which ticked the step and threw the score away (audit Phase 6,
+// D7). The round limit or a fallen VIP Commander settles the end-of-game
+// Tasks too (ruling I2). True when nothing was owed or it was paid.
+function awardRound(): boolean {
+  if (!data) return false;
+  const got = previewScore(data, table, gameEndsThisRound(data, table), { settle: false, zoneCells: () => [] });
+  if (!got.lines.length) return true;
+  return send({ kind: 'award', seat: mySeat(), vp: { s1: got.s1, s2: got.s2 }, keys: [...got.lines.map((l) => l.key).filter((k): k is string => !!k), `pad-round:${table.round.n}`] });
 }
 
 function scaleOf(): { name: string; points: number } {
@@ -1875,9 +1963,11 @@ function scaleOf(): { name: string; points: number } {
   return { name: s.name, points: s.points };
 }
 
-// The phase turn. Leaving the End Phase sweeps the Tokens (3.7.2) with it.
+// The phase turn. ENTERING the End Phase runs its Remove Units and Token
+// Management (3.7.1, 3.7.2), so the round's Award on the Tasks sheet comes
+// after both, in the book's order (audit Phase 6, B3).
 function advanceCmd(seat: Side): Command {
-  return { kind: 'advancePhase', seat, sweep: table.round.phase === PHASES.length - 1 };
+  return { kind: 'advancePhase', seat, sweep: table.round.phase === PHASES.length - 2 };
 }
 
 function afterAdvance(): void {
@@ -2132,7 +2222,7 @@ function statStrip(t: Token): string {
 function bothHands(t: Token, actionId: string): { twoHanded?: true } {
   if (!data) return {};
   const a = tokenCards(data, t).flatMap((c) => c.card.actions ?? []).find((x) => x.id === actionId);
-  return a && twoHandedUse(data, t, a) ? { twoHanded: true } : {};
+  return a && twoHandedUse(data, t, a, boxHands(table.tasks, t.uid)) ? { twoHanded: true } : {};
 }
 
 // ---------- the Ticks on a free table (3.4.5) ----------
@@ -2167,7 +2257,7 @@ function storeTicks(t: Token, o: Opportunity | null): boolean {
 // guided game.
 function fitShort(t: Token, o: Opportunity, a: CardAction, key: string): string | null {
   if (!data || !costOf(a)) return null;
-  const priced = twoHandedUse(data, t, a)?.action ?? a;
+  const priced = twoHandedUse(data, t, a, boxHands(table.tasks, t.uid))?.action ?? a;
   const v = canPerform(o, priced, key, startOpts(data, table.tokens, t, priced));
   if (v.ok) return null;
   const cost = costOf(priced);
@@ -2187,7 +2277,7 @@ function fitShort(t: Token, o: Opportunity, a: CardAction, key: string): string 
 // dial, a Part already used) keeps its capsule and only greys its button.
 function capShort(t: Token, o: Opportunity, a: CardAction, key: string): CapsuleShort | undefined {
   if (!data) return undefined;
-  const priced = twoHandedUse(data, t, a)?.action ?? a;
+  const priced = twoHandedUse(data, t, a, boxHands(table.tasks, t.uid))?.action ?? a;
   const cost = costOf(priced);
   if (!cost) return undefined;
   const v = canPerform(o, priced, key, startOpts(data, table.tokens, t, priced));
@@ -2220,7 +2310,7 @@ function spendFree(t: Token, actionId: string, key: string = actionId): boolean 
   if (!a || !costOf(a)) return false;
   const o = freeOpp(t);
   if (fitShort(t, o, a, key)) return false;
-  const priced = twoHandedUse(data!, t, a)?.action ?? a;
+  const priced = twoHandedUse(data!, t, a, boxHands(table.tasks, t.uid))?.action ?? a;
   return storeTicks(t, spendAction(o, priced, key, startOpts(data!, table.tokens, t, priced)));
 }
 
@@ -2292,7 +2382,7 @@ function actionList(t: Token, mine: boolean): string {
       lastGroup = group;
     }
     const open = sheetView[drawSide].action === g.action.id;
-    const len = lengthOf(twoHandedUse(d, t, g.action)?.action ?? g.action);
+    const len = lengthOf(twoHandedUse(d, t, g.action, boxHands(table.tasks, t.uid))?.action ?? g.action);
     // The Part by NAME as well as slot: two arms can print the same "Single
     // Shot", and the Laser and the Ion one are told apart by the weapon.
     const meta = [
@@ -2470,6 +2560,10 @@ function commonRows(t: Token, mine: boolean): string[] {
                   : '<span class="pad-perform-no">Every Part is Charged</span>')
                 : mine && available && a.id === 'COMMON_DISCARD'
                   ? `<button class="pad-chip on pad-perform" data-act="discard-pick">Discard</button>`
+                  // Remote Access asks which Terminal and how the roll went,
+                  // then records it (audit Phase 6, E3).
+                  : mine && available && a.id === 'COMMON_REMOTE_ACCESS'
+                    ? `<button class="pad-chip on pad-perform" data-act="remote-access">Access</button>`
                   : fo && available && costOf(a)
                     ? useChip(t, a, a.id)
                     : '');
@@ -2551,8 +2645,24 @@ function partRow(t: Token, slot: PartSlot | 'main', card: Card): string {
       <button class="pad-part-state pt-${st}" data-act="hit" data-slot="${slot}" aria-label="${esc(cardName(card))} is ${STATE_LABEL[st]}. Mark the next state">${STATE_MARK[st]}</button>
       <button class="pad-part-info" data-act="card" data-id="${esc(card.id)}" aria-label="Read ${esc(cardName(card))}">i</button>
     </div>
+    ${repairedRow(t, slot, st)}
     ${open ? `<div class="pad-part-open">${partOpen(card, st)}</div>` : ''}
   </div>`;
+}
+
+// SH-15 Damage Control's Repaired Token, on the Part it goes on (J21, J23).
+// Freeform had no way to record one, and tapping the Part back to intact gave
+// it back its Integrity and a Defense Roll (audit Phase 6, C7). Guided takes it
+// from the Action's own row.
+function repairerOf(t: Token): CardAction | undefined {
+  if (!data || t.kind !== 'mech') return undefined;
+  return tokenCards(data, t).flatMap(({ card }) => card.actions ?? []).find((a) => { const r = repairSpec(a); return !!r?.repair && !r.ally; });
+}
+
+function repairedRow(t: Token, slot: PartSlot | 'main', st: PartState): string {
+  if ((t.repairedSlots ?? []).includes(slot)) return '<p class="pad-note pad-part-rep">Repaired: it acts again, but stays destroyed for Integrity.</p>';
+  if (st !== 'destroyed' || guidedOn(table) || !repairerOf(t)) return '';
+  return `<div class="pad-chips pad-part-rep"><button class="pad-chip" data-act="repair-part" data-slot="${slot}">Repaired</button></div>`;
 }
 
 // What an open Part row shows: its Actions, exactly as the reference prints
@@ -2592,13 +2702,19 @@ function tokenRow(t: Token): string {
   // whose definition does not list this unit's kind. The PICKER keeps the
   // statusesFor filter, because that list is about what may be put ON.
   const worn = statusStacks(t.statuses);
-  const expiring = new Set(t.expiring ?? []);
-  const chips = worn.map(({ def, n }) => {
-    const art = tokenArt(def.id, expiring.has(def.id));
-    return `<button class="pad-tok${sheetView[drawSide].tokManage === def.id ? ' on' : ''}${expiring.has(def.id) ? ' red' : ''}" data-act="tok" data-tok="${esc(def.id)}" title="${esc(def.label)}">
+  // One chip per face shown: a red and a yellow of one Token are two, one of
+  // which survives the End Phase. A mixed stack was painted red whole (audit
+  // Phase 6, C9).
+  const chips = worn.flatMap(({ def, n }) => {
+    const faces = tokenFaces(t, def.id);
+    return (faces.length ? faces : [{ face: 'green' as const, n }]).map((f) => {
+      const red = f.face === 'red';
+      const art = tokenArt(def.id, red);
+      return `<button class="pad-tok${sheetView[drawSide].tokManage === def.id ? ' on' : ''}${red ? ' red' : ''}" data-act="tok" data-tok="${esc(def.id)}" title="${esc(def.label)}">
       ${art ? `<img src="${esc(art)}" alt="${esc(def.label)}" />` : `<span class="pad-tok-txt">${esc(def.icon)}</span>`}
-      ${n > 1 ? `<span class="pad-tok-n">${n}</span>` : ''}
+      ${f.n > 1 ? `<span class="pad-tok-n">${f.n}</span>` : ''}
     </button>`;
+    });
   }).join('');
   const tokPick = sheetView[drawSide].tokPick;
   const tokManage = sheetView[drawSide].tokManage;
@@ -2609,7 +2725,7 @@ function tokenRow(t: Token): string {
   // own shape with its code, so every icon in the grid lines up. Its own class,
   // not .pad-tok: the hold that opens a WORN Token's rule matches
   // .pad-tok[data-tok], and used to fire on these too.
-  const add = statusesFor(t.kind).map((d) => {
+  const add = statusesFor(t.kind).filter((d) => d.handPlaced !== false).map((d) => {
     const art = tokenArt(d.id, false);
     return `<button class="pad-toktile" data-act="tok-add" data-tok="${esc(d.id)}">
       ${art ? `<img src="${esc(art)}" alt="" />` : `<span class="pad-tokbadge" data-shape="${esc(d.shape)}">${esc(d.icon)}</span>`}
@@ -2747,9 +2863,9 @@ function setupPanel(): string {
   return `<div class="pad-panel-in">${panelHead(view.room ? 'Table' : 'Game')}
     ${errHtml()}
     <p class="pad-label pad-sec" style="margin-top:0">Rounds</p>
-    <div class="pad-chips">${rounds.map((n) => `<button class="pad-chip${n === limit ? ' on' : ''}" data-act="set-rounds" data-n="${n}">${n}</button>`).join('')}</div>
+    <div class="pad-chips">${rounds.map((n) => `<button class="pad-chip${n === limit ? ' on' : ''}" data-act="set-rounds" data-n="${n}"${n === limit || can({ kind: 'configureTable', seat: mySeat(), roundLimit: n }) ? '' : ' disabled'}>${n}</button>`).join('')}</div>
     <p class="pad-label pad-sec">Points</p>
-    <div class="pad-chips">${SCALES.map((s) => `<button class="pad-chip${(table.scale ?? 'standard') === s.id ? ' on' : ''}" data-act="set-scale" data-id="${s.id}">${s.points}<span class="fc-n">${esc(s.name)}</span></button>`).join('')}</div>
+    <div class="pad-chips">${SCALES.map((s) => `<button class="pad-chip${(table.scale ?? 'standard') === s.id ? ' on' : ''}" data-act="set-scale" data-id="${s.id}"${(table.scale ?? 'standard') === s.id || can({ kind: 'configureTable', seat: mySeat(), scale: s.id }) ? '' : ' disabled'}>${s.points}<span class="fc-n">${esc(s.name)}</span></button>`).join('')}</div>
     <p class="pad-label pad-sec">Play</p>
     <div class="pad-chips">
       <button class="pad-chip${wantsGuided() || guidedOn(table) ? '' : ' on'}" data-act="set-mode" data-mode="free"${guidedOn(table) ? ' disabled' : ''}>Freeform</button>
@@ -2761,7 +2877,7 @@ function setupPanel(): string {
       <button class="pad-chip${table.tableDice ? '' : ' on'}" data-act="set-dice" data-dice="pad" aria-pressed="${!table.tableDice}">Pad rolls</button>
     </div>
     <p class="pad-label pad-sec">Layout</p>
-    <div class="pad-chips">${data!.terrain.maps.map((m) => `<button class="pad-chip${table.map === m.id ? ' on' : ''}" data-act="set-layout" data-id="${esc(m.id)}">${esc(m.name.en || m.id)}</button>`).join('')}<button class="pad-chip${table.map ? '' : ' on'}" data-act="set-layout" data-id="">None</button></div>
+    <div class="pad-chips">${data!.terrain.maps.map((m) => `<button class="pad-chip${table.map === m.id ? ' on' : ''}" data-act="set-layout" data-id="${esc(m.id)}"${table.map === m.id || can({ kind: 'configureTable', seat: mySeat(), map: m.id }) ? '' : ' disabled'}>${esc(m.name.en || m.id)}</button>`).join('')}<button class="pad-chip${table.map ? '' : ' on'}" data-act="set-layout" data-id=""${!table.map || can({ kind: 'configureTable', seat: mySeat(), map: '' }) ? '' : ' disabled'}>None</button></div>
     <div class="pad-foot">
       <button class="pad-btn primary" data-act="${wantsGuided() && !guidedOn(table) ? 'g-start' : 'close-panel'}">${
         wantsGuided() && !guidedOn(table) ? (view.room && readiness().me ? 'Waiting for the other player…' : 'Start the guided game') : 'Start'}</button>
@@ -2927,13 +3043,15 @@ function scoreSheet(tasks: TaskState): string {
           : `<button class="pad-chip" data-act="box-take" data-item="${esc(i.id)}">Picked up</button>`}
       </span></div>`;
   }).join('');
-  const last = table.round.n >= roundLimit();
+  // The round limit, or a fallen VIP Commander (ruling I2).
+  const last = gameEndsThisRound(data, table);
   const got = previewScore(data, table, last, { settle: false, zoneCells: () => [] });
   // Scored once a round. A Guided game writes the End step; a Freeform one has
   // no script, so the Award carries a key for the round and it is read back
   // off the same `scored` list the scorers use - shared, so both phones agree.
-  const paid = (table.script?.endDone ?? []).includes(`${table.round.n}:end:tasks`)
-    || tasks.scored.includes(`pad-round:${table.round.n}`);
+  // Once the game is over nothing more is scored: the Game over chip opened
+  // this sheet on a "Round 6" that paid Control again (audit Phase 6, B3).
+  const paid = roundScored() || gameOver();
   const lines = got.lines.map((l) => `<div class="pad-score-line"><b style="color:${sideColour(l.side)}">${l.vp > 0 ? '+' : ''}${l.vp}</b><span>${esc(sideName(l.side))} · ${esc(l.why)}</span></div>`).join('');
   return `${rows ? `<p class="pad-label pad-sec">Task Items</p>${rows}` : ''}
     <p class="pad-label pad-sec">Round ${table.round.n}${paid ? ' · scored' : ''}</p>
@@ -2941,12 +3059,56 @@ function scoreSheet(tasks: TaskState): string {
     ${got.lines.length && !paid ? `<button class="pad-btn primary" data-act="award">Award ${got[me]} : ${got[them]}</button>` : ''}`;
 }
 
+// A Part tapped to its next state. Into Destroyed, the table says who did it,
+// so the kill is credited to that unit: it went to the other squad as nobody,
+// so Weapons Test never counted a tapped kill and an own kill broke Mercy
+// (audit Phase 6, D8). A worse Part is a Penetration written down, and a bearer
+// drops its Black Boxes, placed on the table by the attacker (5.3.1, P3; F11).
+async function tapPart(t: Token, slot: PartSlot | 'main'): Promise<void> {
+  const was = t.partStates[slot] ?? 'intact';
+  const next = nextState(t, slot);
+  let by: number | undefined;
+  if (next === 'destroyed' && was !== 'destroyed') {
+    const who = table.tokens.filter((u) => u.uid !== t.uid && u.deployed !== false && !isDead(u));
+    const pick = await choiceDialog({
+      title: 'Destroyed by?',
+      body: `${t.label}'s ${SLOT_LABEL[slot] ?? slot} is destroyed. Which unit did it? The kill is theirs (FAQ P4).`,
+      choices: [
+        ...who.filter((u) => u.side !== t.side).map((u) => ({ id: String(u.uid), label: `${u.label} · ${sideName(u.side)}` })),
+        ...who.filter((u) => u.side === t.side).map((u) => ({ id: String(u.uid), label: `${u.label} · ${sideName(u.side)} (its own squad)` })),
+        { id: 'none', label: 'Not recorded' },
+        { id: '__no', label: 'Cancel', cancel: true },
+      ],
+      stacked: true,
+    });
+    if (pick === null || pick === '__no') return;
+    if (pick !== 'none') by = Number(pick);
+  }
+  if (!send({ kind: 'setPartState', seat: mySeat(), uid: t.uid, slot: slot as PartSlot, state: next, ...(by !== undefined ? { by } : {}) })) return;
+  const rank = { intact: 0, damaged: 1, destroyed: 2 } as const;
+  if (rank[next] > rank[was]) dropBoxesOf(t);
+}
+
+// A Penetrated bearer's Boxes, off it and onto the table, joined to the tap
+// that recorded the Penetration as one Undo. The claim goes first, so a later
+// carrier does not inherit it.
+function dropBoxesOf(t: Token): void {
+  const held = normaliseTasks(table.tasks).items.filter((i) => i.kind === 'blackbox' && i.bearerUid === t.uid);
+  for (const box of held) {
+    if (box.accessed) send({ kind: 'claimItem', seat: mySeat(), itemId: box.id, side: null, chain: 'join' });
+    send({ kind: 'dropBlackBox', seat: mySeat(), uid: t.uid, itemId: box.id, to: { col: t.col, row: t.row }, chain: 'join' });
+  }
+  if (held.length) {
+    toast(`${t.label} was Penetrated carrying ${held.length === 1 ? 'a Black Box, which drops' : `${held.length} Black Boxes, which drop`} in Contact with its base. The attacker places ${held.length === 1 ? 'it' : 'them'} on the table (5.3.1).`);
+  }
+}
+
 // Who carries a Black Box: a unit with a free Freehand Part (5.3.1).
 async function takeBox(itemId: string): Promise<void> {
   if (!data) return;
   const tasks = normaliseTasks(table.tasks);
   const able = table.tokens.filter((u) => u.kind !== 'projectile' && u.deployed !== false && !isDead(u))
-    .map((u) => ({ u, hands: freehandSlots(data!, u, tasks.items.filter((i) => i.bearerUid === u.uid && i.bearerSlot).map((i) => i.bearerSlot!)) }))
+    .map((u) => ({ u, hands: freehandSlots(data!, u, boxHands(tasks, u.uid), [], true) }))
     .filter((x) => x.hands.length);
   if (!able.length) { toast('No unit has a free Freehand Part to carry it (5.3.1).'); return; }
   const who = await choiceDialog({ title: 'Black Box', choices: able.map((x) => ({ id: String(x.u.uid), label: `${x.u.label} · ${sideName(x.u.side)}` })), stacked: true });
@@ -2980,10 +3142,13 @@ function tasksPanel(): string {
     </div>`;
   }
   if (picking === 'secondary') {
+    // The box holds one of each, so the other squad's card is theirs (ruling
+    // I17): shown, and greyed.
+    const theirs = normaliseTasks(table.tasks).secondary[pickFor === 's1' ? 's2' : 's1'];
     return `<div class="pad-panel-in">${panelHead('Secondary Task')}
       <p class="pad-lead">${esc(sideName(pickFor))}.</p>
       <div class="pad-tasklist">${data!.secondary.map((c) =>
-        taskCard(`data-act="pick-task" data-kind="secondary" data-id="${esc(c.id)}"`, secondaryImageUrl(c.id), c.name, c.scoring ?? '', `${c.vp ?? 0} VP`)).join('')}</div>
+        taskCard(`data-act="pick-task" data-kind="secondary" data-id="${esc(c.id)}"${c.id === theirs ? ' disabled' : ''}`, secondaryImageUrl(c.id), c.name, c.scoring ?? '', c.id === theirs ? 'theirs' : `${c.vp ?? 0} VP`)).join('')}</div>
       <button class="pad-btn" data-act="pick-cancel">Cancel</button>
     </div>`;
   }
@@ -3004,7 +3169,7 @@ function tasksPanel(): string {
         ${canDiscard ? `<button class="pad-chip" data-act="discard-task" data-id="${esc(c.id)}">Discard${solo && disc.s1 ? ` (${esc(sideName('s2'))})` : ''}</button>` : ''}
       </div>`;
     }).join('')}</div>
-    ${mainTaskLocked() ? '<p class="pad-note">The Main Task is settled once the table edges are picked (FAQ P1), so this draw cannot finish.</p>' : ''}
+    ${mainTaskLocked() ? '<p class="pad-note">The Main Task is settled once the table edge is picked (3.1.2), so this draw cannot finish.</p>' : ''}
     <button class="pad-btn" data-act="draw-cancel">Cancel the draw</button>` : '';
 
   const layout = data!.terrain.maps.find((m) => m.id === table.map);
@@ -3049,7 +3214,7 @@ function tasksPanel(): string {
       <span class="pad-label">${esc(label)}</span>
     </div>`;
 
-  const result = finished() ? gameResult(tasks, table.tokens) : null;
+  const result = finished() ? gameResult(tasks, table.tokens, data ? lowValueOf(data) : undefined) : null;
   const recordHtml = !result ? '' : `<p class="pad-label pad-sec">Game over</p>
     <p class="pad-lead">${result.winner ? `${esc(sideName(result.winner))} wins: ${esc(result.why)}.` : `A draw: ${esc(result.why)}.`}</p>
     ${recordedFor === recordKey()
@@ -3119,11 +3284,12 @@ function morePanel(): string {
     <div class="pad-row">
       <span class="pad-num">${gameOver() ? 'Over' : `R${r.n}`}<span class="pad-of pad-phase"> // ${gameOver() ? 'final' : esc(PHASES[r.phase] ?? '')}</span></span>
       <div class="pad-chips">
-        <button class="pad-chip" data-act="phase-back"${r.phase > 0 ? '' : ' disabled'}>Back a phase</button>
+        <button class="pad-chip" data-act="phase-back"${r.phase > 0 && !strictLock() ? '' : ` disabled${strictLock() ? ` title="${esc(strictLock()!)}"` : ''}`}>Back a phase</button>
         ${gameOver() ? '' : `<button class="pad-chip on" data-act="phase">${room ? (readiness().me ? 'Waiting…' : 'Continue') : 'Next phase'}</button>`}
       </div>
     </div>
-    <button class="pad-btn" data-act="rounds-reset" style="margin-top:8px">Start the rounds over</button>
+    <button class="pad-btn" data-act="rounds-reset" style="margin-top:8px"${strictLock() ? ` disabled title="${esc(strictLock()!)}"` : ''}>Start the rounds over</button>
+    ${normaliseSetup(table.setup)?.stage === 'done' && !gameOver() ? '<button class="pad-btn" data-act="concede" style="margin-top:8px">Concede the game</button>' : ''}
 
     <p class="pad-label pad-sec">Squads</p>
     ${solo ? `<div class="pad-chips pad-squad-pick" style="margin-bottom:8px">
@@ -3131,6 +3297,7 @@ function morePanel(): string {
       <button class="pad-chip${squadSide === 's2' ? ' on' : ''}" data-act="squad-side" data-side="s2">P2</button>
       <span class="pad-squad-pts">${sidePoints(squadSide)} pts</span>
     </div>` : `<p class="pad-label" style="margin-bottom:8px">${sidePoints(mySeat())} pts on the table</p>`}
+    ${squadProblemsHtml(solo ? squadSide : mySeat())}
     ${squadsClosed()
       // 3.1.4: a squad joins before deployment is finished. The engine refused
       // the add and said so in an error line that was easy to miss, while the
@@ -3378,7 +3545,8 @@ function recordKey(): string {
 // offered before it.
 function finished(): boolean {
   if (gameOver()) return true;
-  if (!guidedOn(table) || table.round.n < roundLimit()) return false;
+  // The last round, or VIP's fallen Commander (ruling I2).
+  if (!guidedOn(table) || !data || !gameEndsThisRound(data, table)) return false;
   const done = table.script?.endDone ?? [];
   return ['remove', 'tokens', 'tasks'].every((id) => done.includes(`${table.round.n}:end:${id}`));
 }
@@ -3412,7 +3580,7 @@ async function recordMatch(): Promise<string | null> {
   if (!data) return 'Still loading.';
   if (!account) return 'Sign in to keep a record.';
   const tasks = normaliseTasks(table.tasks);
-  const winner = gameResult(tasks, table.tokens).winner;
+  const winner = gameResult(tasks, table.tokens, lowValueOf(data)).winner;
   const entries = (side: Side): SquadEntry[] => {
     const out: SquadEntry[] = [];
     const push = (id: string): void => {
@@ -3471,6 +3639,19 @@ function playedThisRound(side: Side): boolean {
   return (table.tacticsPlayed?.[side] ?? []).some((e) => e.startsWith(`${table.round.n}:`));
 }
 
+// Why a card the hand holds cannot be played now, in the words the engine
+// would refuse it with; null when it can (audit Phase 6, H1).
+function tacticWhy(side: Side, id: string): string | null {
+  const usedIn = tacticUsedRound(table, side, id);
+  if (usedIn !== null) return `Used in round ${usedIn}, and discarded for the game (FAQ P2)`;
+  if (playedThisRound(side)) return 'Only 1 Tactics Card per round (5.4.2)';
+  // A Guided game knows its Opportunities, so the moment the card's text names
+  // is judged too (5.4.2; audit Phase 6, H2).
+  const spec = tacticSpec(id);
+  if (guidedOn(table) && spec) return tacticWindowWhy(spec, table, side);
+  return null;
+}
+
 function openTacticPicker(side: Side): void {
   const d = data;
   if (!d) return;
@@ -3499,7 +3680,6 @@ function tacticsHtml(side: Side): string {
   const d = data;
   if (!d) return '';
   const held = handOf(side);
-  const played = playedThisRound(side);
   const phase = PHASES[table.round.phase] ?? '';
   const rows = held.map((id) => {
     const card = d.byId.get(id);
@@ -3507,10 +3687,13 @@ function tacticsHtml(side: Side): string {
     if (!card) return '';
     const fits = !guidedOn(table) || tacticFitsPhase(id, phase);
     const thisOne = (table.tacticsPlayed?.[side] ?? []).includes(`${table.round.n}:${id}`);
+    const usedIn = tacticUsedRound(table, side, id);
+    const why = tacticWhy(side, id);
+    const off = !!why || !fits;
     return `<div class="pad-row">
       <span class="pad-part-name">${esc(cardName(card))}<small class="pad-of"> · ${esc(spec?.timing ?? '')}</small></span>
       <div class="pad-chips">
-        ${spec ? `<button class="pad-chip${played || !fits ? '' : ' on'}" data-act="tactic-play" data-side="${side}" data-id="${esc(id)}"${played || !fits ? ' disabled' : ''}>${thisOne ? 'Played' : 'Play'}</button>` : ''}
+        ${spec ? `<button class="pad-chip${off ? '' : ' on'}" data-act="tactic-play" data-side="${side}" data-id="${esc(id)}"${off ? ` disabled${why ? ` title="${esc(why)}"` : ''}` : ''}>${thisOne ? 'Played' : usedIn !== null ? `Used, round ${usedIn}` : 'Play'}</button>` : ''}
         <button class="pad-chip" data-act="tactic-drop" data-side="${side}" data-id="${esc(id)}">✕</button>
       </div>
     </div>`;
@@ -3611,13 +3794,23 @@ function savedSquadPoints(sq: SavedSquad): number {
 }
 
 // What a side has brought: every unit's Parts and pilot, plus its hand.
+// The shared reader: this copy used to add the Pilot a second time, since
+// tokenCards already lists it (audit Phase 6, G1).
 function sidePoints(s: Side): number {
-  if (!data) return 0;
-  const d = data;
-  const units = table.tokens.filter((x) => x.side === s && x.kind !== 'projectile' && x.parentUid === undefined)
-    .reduce((n, t) => n + tokenCards(d, t).reduce((m, c) => m + (c.card.score ?? 0), 0) + (t.kind === 'mech' ? (pilotCard(d, t)?.score ?? 0) : 0), 0);
-  const hand = (table.tactics?.[s] ?? []).reduce((n, id) => n + (d.byId.get(id)?.score ?? 0), 0);
-  return units + hand;
+  return data ? squadPoints(data, table.tokens, s, table.tactics?.[s] ?? []) : 0;
+}
+
+// What is wrong with a squad, in the squad panel's words: a mixed squad or
+// Mech, one Pilot twice, a Mech that could not be deployed, a Low Value Unit
+// in the list, and a total over the limit. The pad checked none of it, so a
+// file or a saved squad arrived unchecked (audit Phase 6, G5).
+function squadProblemsHtml(side: Side): string {
+  if (!data) return '';
+  const lines = factionProblems(data, table.tokens.filter((t) => t.side === side)).map((p) => p.detail);
+  const pts = sidePoints(side);
+  const cap = scaleOf().points;
+  if (pts > cap) lines.push(`${pts} points is over the ${cap} a ${scaleOf().name} game allows (5.1).`);
+  return lines.map((l) => `<p class="pad-note">${esc(l)}</p>`).join('');
 }
 
 function savedHtml(): string {
@@ -3837,11 +4030,20 @@ function openDronePicker(kind: 'drone' | 'projectile'): void {
     data: d,
     slotLabel: kind === 'drone' ? 'Drone' : 'Projectile',
     groups: groupByFaction(d, pool),
-    lockedFaction: sideFaction(seat),
+    // Each card judged against the squad, the tabletop's own check: locking the
+    // list to the first unit's faction dimmed every mercenary (audit Phase 6,
+    // G5).
+    lockedFaction: null,
     badge: (c) => (kind === 'projectile' ? (isMine(c) ? 'Mine' : isDeployable(c) ? 'Deployable' : '') : isCarrier(c) ? 'Carrier' : ''),
     remaining: leftOf,
     actions: [{
       label: 'Add to squad',
+      check: (card) => {
+        const a = squadAllegiance(d, table.tokens.filter((t) => t.side === seat));
+        return cardFitsSquad(d, a, card)
+          ? { ok: true, why: '' }
+          : { ok: false, why: `This squad is ${a.faction}, and this card is ${d.factionOf(card) ?? 'of no known faction'}.` };
+      },
       run: (card) => {
         if (!isCarrier(card)) { add(card); return; }
         // A carrier may take its Load on the way in.
@@ -4626,13 +4828,9 @@ function act(el: HTMLElement, ev: Event): void {
       send({ kind: 'dropBlackBox', seat: bearer.side, uid: bearer.uid, itemId: box.id, to: { col: bearer.col, row: bearer.row }, ...(unclaimed ? { chain: 'join' as const } : {}) });
       return;
     }
-    case 'award': {
-      if (!data) return;
-      const got = previewScore(data, table, table.round.n >= roundLimit(), { settle: false, zoneCells: () => [] });
-      if (!got.lines.length) return;
-      send({ kind: 'award', seat: mySeat(), vp: { s1: got.s1, s2: got.s2 }, keys: [...got.lines.map((l) => l.key).filter((k): k is string => !!k), `pad-round:${table.round.n}`] });
+    case 'award':
+      awardRound();
       return;
-    }
     case 'close-panel':
       if (screen === 'collection') { screen = 'lobby'; error = null; render(); return; }
       panel = null; picking = null; error = null; render(); return;
@@ -4698,6 +4896,9 @@ function act(el: HTMLElement, ev: Event): void {
       else toast('The round starts here. Use the rounds reset to go back further.');
       return;
     }
+    case 'concede':
+      void concedeGame();
+      return;
     case 'rounds-reset':
       void (async () => {
         const sure = await confirmDialog({ title: 'Start the rounds over?', body: 'Round 1, Command Phase.', confirmLabel: 'Start over' });
@@ -4763,7 +4964,7 @@ function act(el: HTMLElement, ev: Event): void {
       // tap rather than an Undo. The seat is OURS - who recorded it - because
       // setPartState is a table command and the relay refuses any other.
       const slot = el.dataset.slot as PartSlot | 'main';
-      send({ kind: 'setPartState', seat: mySeat(), uid: t.uid, slot: slot as PartSlot, state: nextState(t, slot) });
+      void tapPart(t, slot);
       return;
     }
     case 'stance': if (t) send({ kind: 'setStance', seat: t.side, uid: t.uid, stance: el.dataset.stance as Stance }); return;
@@ -4928,6 +5129,26 @@ function act(el: HTMLElement, ev: Event): void {
       void discardPart(t);
       return;
     }
+    case 'repair-part': {
+      const act = t ? repairerOf(t) : undefined;
+      if (!t || !act) return;
+      const paid = spendFree(t, act.id);
+      send({ kind: 'repairPart', seat: t.side, uid: t.uid, slot: el.dataset.slot!, mode: 'repaired', ...(paid ? { chain: 'join' as const } : {}) });
+      return;
+    }
+    case 'remote-access': {
+      const a = t && data ? actionOfUnit(t, 'COMMON_REMOTE_ACCESS') : undefined;
+      if (!t || !data || !a) return;
+      void askRemoteAccess(data, table, t, a, toast).then((got) => {
+        if (!got) return;
+        const paid = spendFree(t, 'COMMON_REMOTE_ACCESS');
+        if (!got.won) { toast(`Remote Access on the ${got.name} Terminal failed.`); return; }
+        if (send({ kind: 'accessTerminal', seat: t.side, uid: t.uid, itemId: got.itemId, ...(paid ? { chain: 'join' as const } : {}) })) {
+          toast(`Remote Access: the ${got.name} Terminal is face-down for the rest of the round.`);
+        }
+      });
+      return;
+    }
     case 'charge': if (t) send({ kind: 'setCharge', seat: t.side, uid: t.uid, slot: el.dataset.slot!, on: el.dataset.on === '1' }); return;
     case 'tok-open':
       v.tokPick = !v.tokPick; v.tokManage = null; render();
@@ -4956,7 +5177,7 @@ function act(el: HTMLElement, ev: Event): void {
       const id = el.dataset.tok!;
       const def = STATUS_BY_ID.get(id);
       const red = (t.expiring ?? []).includes(id);
-      const gone = red || !def?.decay;
+      const gone = red || def?.decay !== 'yellow';
       v.tokManage = null;
       if (send({ kind: 'ageStatus', ...sourceFor(t), targetUid: t.uid, statusId: id })) {
         toast(gone ? `${def?.label ?? id} comes off.` : `${def?.label ?? id} turns red.`, true);
@@ -4994,7 +5215,9 @@ function act(el: HTMLElement, ev: Event): void {
     case 'vp': {
       const by = Number(el.dataset.by);
       const who = el.dataset.side as Side;
-      send({ kind: 'award', seat: mySeat(), vp: { s1: who === 's1' ? by : 0, s2: who === 's2' ? by : 0 }, keys: [] });
+      // The VP only: as an Award it marked the owed kills paid and, in a
+      // Guided game, the round's Tasks settled (audit Phase 6, D3).
+      send({ kind: 'adjustVp', seat: mySeat(), side: who, by });
       return;
     }
     case 'pick-main': picking = 'main'; render(); return;

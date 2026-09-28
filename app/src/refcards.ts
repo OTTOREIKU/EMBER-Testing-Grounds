@@ -708,7 +708,11 @@ export function cardDetail(c: Card): string {
   // that line, so gating the block on English would hide the one thing a reader
   // who cannot read the card most needs.
   const cardText = englishOnly(c.description?.en) ?? '';
-  const cardMechs = mechBlocks(c.description?.en, c.description?.zh);
+  // A Tactics Card prints no rules line of its own (its text is merged from
+  // tactics.json as a single timing action), so nothing on it could name the
+  // Tactics Cards entry and the entry reached no card at all. Its category
+  // does, so the entry's own match term is handed in for it (audit Phase 6, J).
+  const cardMechs = mechBlocks(c.description?.en, c.description?.zh, c.category === 'tactics_or_upgrade' ? 'tactics card' : undefined);
   // Closed again the moment this card is built. It is module state so that one
   // detail's actions can inform its own card block, and leaving it open would
   // carry that answer into every list and mission rendered afterwards.

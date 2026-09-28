@@ -1290,14 +1290,15 @@ C.apply(data, wmap, { kind: 'rollSetup', seat: 's1', hits: [2, 1] });
 C.apply(data, wmap, { kind: 'rollSetup', seat: 's2', hits: [0, 1] });
 check('the rolls ride as hits', wmap.setup.rolls, { s1: [2, 1], s2: [0, 1] });
 C.apply(data, wmap, { kind: 'acceptRoll', seat: 's1' });
-// The roll hands over to the TASKS step, not the edges (FAQ P1).
-check('accepting crowns the First Player', [wmap.round.firstPlayer, wmap.setup.stage], ['s1', 'tasks']);
-check('edges wait for the tasks step', C.check(data, wmap, { kind: 'pickEdge', seat: 's1', edge: 'black' }).ok, false);
-C.apply(data, wmap, { kind: 'finishTasks', seat: 's1' });
-check('and the tasks step hands over to the edges', wmap.setup.stage, 'side');
+// The roll hands over to the EDGE, picked knowing the Main Task, and the
+// Secondaries come after it (3.1.2, 3.1.3; ruling I3; audit Phase 6, A1).
+check('accepting crowns the First Player', [wmap.round.firstPlayer, wmap.setup.stage], ['s1', 'side']);
+check('the Tasks step waits for the edge', C.check(data, wmap, { kind: 'finishTasks', seat: 's1' }).ok, false);
 check('the other squad cannot pick the edge', C.check(data, wmap, { kind: 'pickEdge', seat: 's2', edge: 'black' }).ok, false);
 C.apply(data, wmap, { kind: 'pickEdge', seat: 's1', edge: 'black' });
-check('the edge pick splits the table', [wmap.setup.stage, wmap.setup.edge], ['deploy', { s1: 'black', s2: 'white' }]);
+check('the edge pick splits the table and opens the Tasks step', [wmap.setup.stage, wmap.setup.edge], ['tasks', { s1: 'black', s2: 'white' }]);
+C.apply(data, wmap, { kind: 'finishTasks', seat: 's1' });
+check('and the Tasks step hands over to deployment', wmap.setup.stage, 'deploy');
 const wtie = world([]);
 wtie.setup = { stage: 'roll', rolls: { s1: [1], s2: [1] }, edge: { s1: 'white', s2: 'black' }, placed: { s1: 0, s2: 0 } };
 check('a tied roll cannot be accepted', C.check(data, wtie, { kind: 'acceptRoll', seat: 's1' }).ok, false);
@@ -1306,7 +1307,7 @@ check('a tied roll cannot be accepted', C.check(data, wtie, { kind: 'acceptRoll'
 check('a tie can still be settled by naming the winner', C.check(data, wtie, { kind: 'acceptRoll', seat: 's1', first: 's2' }).ok, true);
 check('but not by naming nobody', C.check(data, wtie, { kind: 'acceptRoll', seat: 's1', first: 's9' }).ok, false);
 { const w = JSON.parse(JSON.stringify(wtie)); C.apply(data, w, { kind: 'acceptRoll', seat: 's1', first: 's2' });
-  check('the named squad goes first and setup moves on to the Tasks', [w.round.firstPlayer, w.setup.stage], ['s2', 'tasks']); }
+  check('the named squad goes first and setup moves on to the edge', [w.round.firstPlayer, w.setup.stage], ['s2', 'side']); }
 check('deployment cannot finish early', C.check(data, world([mech(1, 's1', { deployed: false })]), { kind: 'finishDeployment', seat: 's1' }).ok, false);
 const wfd = world([mech(1, 's1')]);
 wfd.script.stage = '1:0';
@@ -1743,8 +1744,10 @@ check('and the fallback caps at four', envAt(wn, 5, 0).ok, false);
   check('a running game refuses a new Environment Card', envAt(running, 3, 3).ok, false);
   check('and the refusal teaches the rule', /battlefield is set up/.test(envAt(running, 3, 3).why ?? ''), true);
   check('while clearing a Grid stays legal', envAt(running, 3, 3, null).ok, true);
-  const settingUp = { ...world([]), map: 'alley', setup: { stage: 'deploy', rolls: { s1: [], s2: [] }, edge: { s1: 'black', s2: 'white' }, placed: { s1: 0, s2: 0 } } };
-  check('deployment still accepts one', envAt(settingUp, 3, 3).ok, true);
+  const settingUp = { ...world([]), map: 'alley', setup: { stage: 'tasks', rolls: { s1: [], s2: [] }, edge: { s1: 'black', s2: 'white' }, placed: { s1: 0, s2: 0 } } };
+  check('the Tasks step still accepts one', envAt(settingUp, 3, 3).ok, true);
+  // Not once units are going down (audit Phase 6, A7).
+  check('deployment refuses one', envAt({ ...settingUp, setup: { ...settingUp.setup, stage: 'deploy' } }, 3, 3).ok, false);
 }
 
 // ---------- the effects on the wire ----------
@@ -1975,7 +1978,7 @@ check('teaching performs anyway and says why', [vt.ok, wstrict.tokens[0].stance]
 
 const squadCmd = (over = {}) => ({
   kind: 'importSquad', seat: 's1', name: 'Test',
-  mechs: [{ loadout: { torso: 'T1', pilot: 'P1' } }],
+  mechs: [{ loadout: { torso: 'T1', chasis: 'CH4', rightHand: 'FH1', pilot: 'P1' } }],
   drones: [{ cardId: 'D1' }],
   ...over,
 });
@@ -1992,6 +1995,14 @@ check('a squad may still join during deployment', C.check(data, during, squadCmd
 C.apply(data, during, squadCmd());
 check('during setup the units wait for deployment', during.tokens.map((t) => t.deployed), [false, false]);
 check('the mech carries its loadout and pilot link', [during.tokens[0].kind, during.tokens[0].link], ['mech', 4]);
+
+// A Mech short of a Torso, a Chassis or an Arm, or with no Pilot, cannot be
+// deployed (2.2.2, 5.1; ruling I32): a strict table refuses it, an open one
+// takes it and its squad panel warns (audit Phase 6, G3).
+const armless = squadCmd({ mechs: [{ loadout: { torso: 'T1', chasis: 'CH4', pilot: 'P1' } }] });
+check('a strict table refuses a Mech with no Arm', C.check(data, during, armless).ok, false);
+check('or no Pilot', C.check(data, during, squadCmd({ mechs: [{ loadout: { torso: 'T1', chasis: 'CH4', rightHand: 'FH1' } }] })).ok, false);
+check('an open table takes it', C.check(data, openTable(), armless).ok, true);
 
 const late = { ...openTable(), script: { strict: true }, setup: { ...C.newSetup(), stage: 'done' } };
 check('a game past deployment refuses the squad', C.check(data, late, squadCmd()).ok, false);
@@ -2307,20 +2318,26 @@ check('and the side claimed is the one asked for, not the sender',
   bySecond.tasks.items[0].control, 's1');
 
 // Dropping: the ATTACKER says where, so the seat is deliberately not the
-// bearer's, and the Grid has to touch the bearer's own.
-const drop = (over = {}) => ({ kind: 'dropBlackBox', seat: 's2', uid: 2, itemId: 'bb1', to: { col: 13, row: 13 }, ...over });
+// bearer's, and only a Penetration owes it (audit Phase 6, F6). The Small Grid
+// has to share an edge with the bearer's base: never under it, never at a
+// corner (ruling I24). The size-3 bearer fills cols and rows 12-14.
+const drop = (over = {}) => ({ kind: 'dropBlackBox', seat: 's2', uid: 2, itemId: 'bb1', to: { col: 13, row: 11 }, ...over });
 check('a loose Box cannot be dropped', C.check(data, boxWorld(), drop()).ok, false);
-check('the attacker drops it beside the bearer', C.check(data, held, drop()).ok, true);
-check('and not across the board', C.check(data, held, drop({ to: { col: 33, row: 33 } })).ok, false);
-check('a diagonal Grid is still contact', C.check(data, held, drop({ to: { col: 10, row: 10 } })).ok, true);
-check('off the board is refused', C.check(data, held, drop({ to: { col: -1, row: 4 } })).ok, false);
+check('no Penetration, no drop', C.check(data, held, drop()).ok, false);
+const owesDrop = JSON.parse(JSON.stringify(held));
+owesDrop.tasks.items[0].dropFrom = { col: 12, row: 12, size: 3 };
+check('the attacker drops it beside the bearer', C.check(data, owesDrop, drop()).ok, true);
+check('and not across the board', C.check(data, owesDrop, drop({ to: { col: 33, row: 33 } })).ok, false);
+check('a diagonal is no contact', C.check(data, owesDrop, drop({ to: { col: 11, row: 11 } })).ok, false);
+check('nor under the bearer', C.check(data, owesDrop, drop({ to: { col: 13, row: 13 } })).ok, false);
+check('off the board is refused', C.check(data, owesDrop, drop({ to: { col: -1, row: 4 } })).ok, false);
 
-const dropped = JSON.parse(JSON.stringify(held));
+const dropped = JSON.parse(JSON.stringify(owesDrop));
 C.apply(data, dropped, drop());
-check('the Box lands where the attacker said', [dropped.tasks.items[0].col, dropped.tasks.items[0].row], [13, 13]);
+check('the Box lands where the attacker said', [dropped.tasks.items[0].col, dropped.tasks.items[0].row], [13, 11]);
 check('and nobody is carrying it', dropped.tasks.items[0].bearerUid, undefined);
 // The attacker may be a Projectile that is spent before the Grid is chosen.
-const gone = JSON.parse(JSON.stringify(held));
+const gone = JSON.parse(JSON.stringify(owesDrop));
 gone.tokens = gone.tokens.filter((t) => t.uid !== 2);
 check('a drop survives its attacker leaving the board', C.check(data, gone, drop()).ok, true);
 

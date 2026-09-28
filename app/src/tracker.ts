@@ -2,6 +2,7 @@ import { squadLabel } from './data';
 import { bindTips, inspectOnHover, pinInspect, type InspectInfo } from './inspector';
 import { PHASES, SCALES, type BattleScale, type GameState, type Side } from './types';
 import { normaliseSetup } from './setup';
+import { normaliseTasks } from './tasks';
 import type { Command } from './commands';
 
 export { PHASES };
@@ -103,6 +104,19 @@ export class RoundTracker {
     if (su && su.stage !== 'done') return 'Finish the pre-game roll and deployment first';
     return this.blockedReason?.(s) ?? null;
   }
+
+  // A strict guided game runs its phases in order: the engine refuses a jump
+  // or a reset there, so the controls say so in their place (audit Phase 6,
+  // B5).
+  private strictLock(): string | null {
+    const s = this.state;
+    return s?.script?.strict && normaliseSetup(s.setup)?.stage === 'done'
+      ? 'A strict game runs its phases in order. Use Undo to take a step back.'
+      : null;
+  }
+
+  // Set by main.ts: a squad concedes (ruling I1; audit Phase 6, B8).
+  onConcede: (() => void) | null = null;
   private lastClick: { phase: Phase; at: number } | null = null;
 
   constructor(root: HTMLElement, onChanged: () => void, onCommand: (cmd: Command) => void = () => {}) {
@@ -130,7 +144,13 @@ export class RoundTracker {
   }
 
   advance(): void {
-    this.onCommand({ kind: 'advancePhase', seat: this.seat() });
+    // Into the End Phase with no game running, the table removes its wrecks
+    // and ages its tokens, as a Freeform pad does; the command ignores the
+    // flag in a guided game, whose End Phase has its own steps (audit Phase
+    // 6, B4; ruling I8).
+    const s = this.state;
+    const intoEnd = !!s && s.round.phase === PHASES.length - 2;
+    this.onCommand({ kind: 'advancePhase', seat: this.seat(), ...(intoEnd ? { sweep: true } : {}) });
     this.onChanged();
   }
 
@@ -142,7 +162,7 @@ export class RoundTracker {
       lines: [
         sc.note,
         'Every Part, Pilot and Drone in a squad costs points, and the total is what this caps. Projectiles and Deployables are Low Value Units worth 0 and do not count.',
-        'Tactics Cards count against this total too, at 30 points each.',
+        'Tactics Cards count against this total too, at the points each card lists.',
         'The Squads tab shows each side against this limit and warns you when a side goes over.',
       ],
     };
@@ -158,17 +178,22 @@ export class RoundTracker {
     this.root.innerHTML = `
       <span class="rt-round${over ? ' over' : ''}">R${s.round.n}<small>/${limit}</small></span>
       <div class="rt-controls">
-      <select id="rt-scale" class="rt-scale">
+      <select id="rt-scale" class="rt-scale"${this.strictLock() ? ' disabled title="The game is under way, so its scale is fixed."' : ''}>
         ${SCALES.map((sc) => `<option value="${sc.id}"${sc.id === scale ? ' selected' : ''}>${sc.name} ${sc.points}${sc.openEnded ? '+' : ''}p</option>`).join('')}
       </select>
-      <select id="rt-limit" class="rt-scale" title="Game length in rounds">
+      <select id="rt-limit" class="rt-scale"${this.strictLock() ? ' disabled title="The game is under way, so its length is fixed."' : ' title="Game length in rounds"'}>
         ${ROUND_CHOICES.map((n) => `<option value="${n}"${n === limit ? ' selected' : ''}>${n} rounds</option>`).join('')}
       </select>
       ${
         s.round.n > 1 || s.round.phase > 0
           ? `<button id="rt-reset" class="rt-scale"${
-              this.blocked() ? ` disabled title="${this.blocked()}"` : ' title="Back to Round 1, Command Phase"'
+              this.blocked() || this.strictLock() ? ` disabled title="${this.blocked() ?? this.strictLock()}"` : ' title="Back to Round 1, Command Phase"'
             }>↺</button>`
+          : ''
+      }
+      ${
+        normaliseSetup(s.setup)?.stage === 'done' && !normaliseTasks(s.tasks).conceded
+          ? '<button id="rt-concede" class="rt-scale" title="A squad gives up: the other wins, whatever the score">Concede</button>'
           : ''
       }
       <button id="rt-start" class="rt-start${this.inGame() ? ' ending' : ''}" data-tip-title="${
@@ -182,7 +207,7 @@ export class RoundTracker {
         ${PHASES.map(
           (p, i) =>
             `<button class="rt-phase${i === s.round.phase ? ' active' : ''}"${
-              this.blocked() && i !== s.round.phase ? ` disabled title="${this.blocked()}"` : ''
+              (this.blocked() || this.strictLock()) && i !== s.round.phase ? ` disabled title="${this.blocked() ?? this.strictLock()}"` : ''
             } data-i="${i}">${p}</button>`,
         ).join('')}
       </span>
@@ -199,6 +224,7 @@ export class RoundTracker {
       </div>`;
 
     this.root.querySelector<HTMLButtonElement>('#rt-start')!.addEventListener('click', () => this.onStartGame?.());
+    this.root.querySelector<HTMLButtonElement>('#rt-concede')?.addEventListener('click', () => this.onConcede?.());
     const next = this.root.querySelector<HTMLButtonElement>('#rt-next')!;
     next.addEventListener('click', () => this.advance());
     inspectOnHover(next, phaseInfo(phaseName));

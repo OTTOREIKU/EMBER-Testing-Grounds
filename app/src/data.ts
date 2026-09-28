@@ -996,10 +996,12 @@ export function tokenFace(id: string, decay: string | undefined, expiring: boole
   colour: string;
 } {
   const faces = TOKEN_PRINT[id];
-  const side: 'green' | 'yellow' | 'red' | 'none' = expiring ? 'red' : decay === 'green' ? 'green' : decay ? 'yellow' : 'none';
+  // A green token never turns: p.97 prints Low Profile's green face only, and
+  // FAQ J22 calls it green (audit Phase 6, C5). Its `lowProfile-red` art is a
+  // TTS back that no rule uses.
+  const side: 'green' | 'yellow' | 'red' | 'none' = decay === 'green' ? 'green' : expiring || decay === 'red' ? 'red' : decay ? 'yellow' : 'none';
   if (!faces) return { art: null, colour: TOKEN_DURATION[side] };
-  // `lowProfile-green` flips to `lowProfile-red`; a token with a single face
-  // (Repaired) shows it whatever the state.
+  // A token with a single face (Repaired) shows it whatever the state.
   const want = faces.find((f) => f.endsWith(`-${side}`));
   return { art: want ?? faces[0], colour: TOKEN_DURATION[side] };
 }

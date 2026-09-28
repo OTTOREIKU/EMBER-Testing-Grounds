@@ -9,6 +9,7 @@
 // stays with the physical table; the engine's noBoard flag leaves it alone.
 //
 // No teaching voice: a prompt names the step and, at most, the rule's number.
+import { gameEndsThisRound } from '../src/scoring';
 import type { GameData } from '../src/data';
 import { actionIconUrl, cardName } from '../src/data';
 import { readyCommands, rebootOwed, taskDesignations, missionZones, type CheckResult, type Command } from '../src/commands';
@@ -17,8 +18,8 @@ import { alive, canAct, dialHidden, eligibleUnits, isLoopPhase, loopComplete, ne
 import { deployTurn, deployable, deploymentComplete, firstPlayerFrom, normaliseSetup, rollTotal } from '../src/setup';
 import { ensureScript } from '../src/glue';
 import { canActivate, canAttackMode, canOverload, canPerform, costOf, lengthOf, OVERLOAD_MAX, type TickVerdict } from '../src/ticks';
-import { interceptorsAgainst, bitPortOf, coordinationAfterManeuver, canActivateCamo, activatesCamo, controlledMoveActions, immobilizedStop, manifestationRange, targetStatusTargets, actionRange, overloadPackOn, stanceFeedbackOf, stanceFeedbackTargets, stanceShaped, knockbackOf, linkSupportOf, maxLink, tokenCleanupOf, type LinkSupport, type TokenCleanup, targetStatusGrant, twoHandedUse, chargeableSlots, coordinationFor, coordinationOnOpportunityEnd, electronicValue, extraActivationOf, formSwitch, guidedActions, initiativeFor, isChargeAction, isElectronicAttack, isScanAction, linkTickTraitOn, loanedParts, opportunityBonusOn, pilotCard, repairSpec, resupplyOf, selfGrantWhy, selfStatusGrant, SLOT_LABEL, tokenCards, transformOffer, unfoldsOwed } from '../src/units';
-import { normaliseTasks } from '../src/tasks';
+import { allyRepairTargets, electronicStrength, interceptorsAgainst, bitPortOf, coordinationAfterManeuver, canActivateCamo, activatesCamo, controlledMoveActions, immobilizedStop, manifestationRange, targetStatusTargets, actionRange, overloadPackOn, stanceFeedbackOf, stanceFeedbackTargets, stanceShaped, knockbackOf, linkSupportOf, maxLink, tokenCleanupOf, type LinkSupport, type TokenCleanup, targetStatusGrant, twoHandedUse, chargeableSlots, coordinationFor, coordinationOnOpportunityEnd, electronicValue, extraActivationOf, formSwitch, guidedActions, initiativeFor, isChargeAction, isElectronicAttack, isScanAction, linkTickTraitOn, loanedParts, opportunityBonusOn, pilotCard, repairSpec, resupplyOf, selfGrantWhy, selfStatusGrant, SLOT_LABEL, tokenCards, transformOffer, unfoldsOwed } from '../src/units';
+import { boxHands, normaliseTasks, remoteAccessRollText, remoteAccessWhy, terminalsInReach } from '../src/tasks';
 import { dialsOf, hashDials, newSalt, type DialEntry } from '../src/secrecy';
 import { PHASES, removableTokens, TIMINGS, type CardAction, type GameState, type PartSlot, type Side, type Stance, type Timing, type Token, type TokenPick } from '../src/types';
 import { choiceDialog, pickManyDialog } from '../src/dialog';
@@ -55,7 +56,13 @@ export interface GuideApi {
   check(cmd: Command): CheckResult;
   // The Tactics Cards this side could play in the phase that is on, and the
   // play itself (pad.ts asks the card's questions).
-  tactics(side: Side): { playable: { id: string; name: string }[]; play(id: string): void };
+  // The round's Award (pad.ts awardRound): Check Tasks pays it before the step
+  // is ticked, as the Match Centre's does (audit Phase 6, D7). True when
+  // nothing was owed or it was paid.
+  settleTasks(): boolean;
+  // Every card of the hand whose phase is on. `why` greys one the engine would
+  // refuse (used, one already this round, outside its moment), in its place.
+  tactics(side: Side): { playable: { id: string; name: string; why?: string | null }[]; play(id: string): void };
   // Guided's End the game: pad.ts offers the record before the engine's endMatch.
   endGame(): void;
   // A Projectile's Delayed Action (pad.ts): the table names the units in the
@@ -199,10 +206,11 @@ export function turnHtml(api: GuideApi): string {
 }
 
 // A Tactics Card whose phase is on, for each side this phone holds. One per
-// round; the engine refuses a second.
+// round, and each once in a game; a card the engine would refuse is greyed in
+// its place with the reason (audit Phase 6, H1, H2).
 function tacticsStrip(api: GuideApi): string {
   const sides: Side[] = api.solo ? ['s1', 's2'] : [api.me()];
-  const chips = sides.flatMap((side) => api.tactics(side).playable.map((c) => btn(api, 'g-tactic', `${api.solo ? `${api.sideName(side)} · ` : ''}${c.name}`, `data-side="${side}" data-id="${api.esc(c.id)}"`)));
+  const chips = sides.flatMap((side) => api.tactics(side).playable.map((c) => btn(api, 'g-tactic', `${api.solo ? `${api.sideName(side)} · ` : ''}${c.name}`, `data-side="${side}" data-id="${api.esc(c.id)}"${c.why ? ` disabled title="${api.esc(c.why)}"` : ''}`)));
   return chips.length ? `<div class="pad-turn-react"><p class="pad-turn-name">Tactics Card</p><div class="pad-chips">${chips.join('')}</div></div>` : '';
 }
 
@@ -381,23 +389,14 @@ function setupHtml(api: GuideApi, stage: string): string {
       + (tie ? '<p class="pad-turn-note">Tie: both roll again.</p>' : '')
       + (winner ? `<p class="pad-turn-note">${api.esc(api.actorName(winner))} goes first.</p>${btn(api, 'g-accept', 'Continue', '', 'pad-chip on')}` : '');
   }
-  if (stage === 'tasks') {
+  if (stage === 'side') {
+    // The Main Task, then the edge the First Player picks knowing it (3.1.2;
+    // ruling I3). The engine freezes the Main Task once the edge is picked, so
+    // a draw has to finish here. The Secondaries come after, in the Tasks
+    // step: the edge came after them, so the First Player picked it knowing
+    // both (audit Phase 6, A1).
     const fp = s.round.firstPlayer;
     const tasks = normaliseTasks(s.tasks);
-    const owed = taskDesignations(api.data, s);
-    const rows = [fp, other(fp)].map((side) => {
-      const id = tasks.secondary[side];
-      const card = id ? api.data.secondary.find((c) => c.id === id) : undefined;
-      return `<div class="pad-turn-row"><span class="pad-turn-name">${api.esc(api.sideName(side))}</span>
-        <span class="pad-turn-val">${card ? api.esc(card.name) : '—'}</span>
-        ${mine(api, side) ? btn(api, 'g-secondary', card ? 'Change' : 'Choose', `data-side="${side}"`) : ''}</div>`;
-    }).join('');
-    const desig = owed.map((d, i) => `<div class="pad-turn-row"><span class="pad-turn-name">${api.esc(d.label)}</span>
-        ${mine(api, d.by) ? btn(api, 'g-designate-task', 'Choose', `data-i="${i}"`) : `<span class="pad-turn-val">${api.esc(api.actorName(d.by))} chooses</span>`}</div>`).join('');
-    // FAQ P1: the Main Task is determined (step 3) BEFORE the Secondaries
-    // (steps 4-5). It also has to be settled here, because the engine freezes
-    // it once the table edges are picked - a draw left half-done past this
-    // point could never finish.
     const main = s.mission ? api.data.missions.cards.find((c) => c.id === s.mission) : undefined;
     const drawing = (tasks.draw ?? []).length > 0;
     const mainRow = `<div class="pad-turn-row"><span class="pad-turn-name">Main Task</span>
@@ -405,17 +404,35 @@ function setupHtml(api: GuideApi, stage: string): string {
         ${drawing ? btn(api, 'dock', 'Discard', 'data-dock="tasks"', 'pad-chip on')
           : main ? btn(api, 'g-main', 'Change', 'data-how="pick"')
             : `${btn(api, 'g-main', 'Draw 3', 'data-how="draw"', 'pad-chip on')}${btn(api, 'g-main', 'Choose', 'data-how="pick"')}`}</div>`;
-    if (!main) return head(api, 'Main Task', 'FAQ P1', true) + mainRow;
-    const done = !!tasks.secondary.s1 && !!tasks.secondary.s2 && !owed.length;
-    return head(api, 'Secondary Tasks', `${api.actorName(fp)} first (FAQ P1)`, true) + mainRow + rows + desig
-      + (done ? btn(api, 'g-tasks-done', 'Continue', '', 'pad-chip on') : '');
-  }
-  if (stage === 'side') {
-    const fp = s.round.firstPlayer;
-    return head(api, `${api.actorName(fp)} picks a table edge`, '3.1.2', mine(api, fp))
+    if (!main) return head(api, 'Main Task', '3.1.2', true) + mainRow;
+    return head(api, `${api.actorName(fp)} picks a table edge`, '3.1.2', mine(api, fp)) + mainRow
       + (mine(api, fp)
         ? `<div class="pad-chips">${btn(api, 'g-edge', 'White edge', 'data-edge="white"')}${btn(api, 'g-edge', 'Black edge', 'data-edge="black"')}</div>`
         : waiting(api, fp, 'picking an edge'));
+  }
+  if (stage === 'tasks') {
+    // The First Player reveals first, the other squad after (FAQ P1), and both
+    // are final once revealed (ruling I5); then what each Task names.
+    const fp = s.round.firstPlayer;
+    const tasks = normaliseTasks(s.tasks);
+    const owed = taskDesignations(api.data, s);
+    const both = !!tasks.secondary.s1 && !!tasks.secondary.s2;
+    const rows = [fp, other(fp)].map((side, i) => {
+      const id = tasks.secondary[side];
+      const card = id ? api.data.secondary.find((c) => c.id === id) : undefined;
+      const waits = i === 1 && !tasks.secondary[fp];
+      return `<div class="pad-turn-row"><span class="pad-turn-name">${api.esc(api.sideName(side))}</span>
+        <span class="pad-turn-val">${card ? api.esc(card.name) : waits ? `after ${api.esc(api.actorName(fp))}` : '—'}</span>
+        ${mine(api, side) ? btn(api, 'g-secondary', card ? 'Change' : 'Choose', `data-side="${side}"${waits || both ? ' disabled' : ''}`) : ''}</div>`;
+    }).join('');
+    const desig = owed.map((d, i) => `<div class="pad-turn-row"><span class="pad-turn-name">${api.esc(d.label)}</span>
+        ${mine(api, d.by) ? btn(api, 'g-designate-task', 'Choose', `data-i="${i}"`) : `<span class="pad-turn-val">${api.esc(api.actorName(d.by))} chooses</span>`}</div>`).join('');
+    const main = s.mission ? api.data.missions.cards.find((c) => c.id === s.mission) : undefined;
+    const mainRow = `<div class="pad-turn-row"><span class="pad-turn-name">Main Task</span>
+        <span class="pad-turn-val">${main ? api.esc(main.name) : '—'}</span></div>`;
+    const done = both && !owed.length;
+    return head(api, 'Secondary Tasks', `${api.actorName(fp)} first (FAQ P1)`, true) + mainRow + rows + desig
+      + btn(api, 'g-tasks-done', 'Continue', done ? '' : 'disabled', 'pad-chip on');
   }
   // deploy
   const turn = deployTurn(s, su, api.data);
@@ -673,6 +690,55 @@ export async function askTokenCleanup(api: GuideApi, t: Token, a: CardAction, ru
   return pick ? { unit, pick } : null;
 }
 
+// Remote Access (p.87, 5.3.3). The pad has no board, so the table judges the
+// Range: the pad names the Terminals still face-up and asks how the roll went.
+// It paid the Tick and said "Remote Access." with no Terminal recorded (audit
+// Phase 6, E3). Both questions come before any Tick, so a Cancel costs nothing.
+// Shared by Guided and Freeform; null on a Cancel, or with nothing to access
+// (said in a toast).
+export async function askRemoteAccess(
+  d: GameData,
+  s: GameState,
+  t: Token,
+  a: CardAction,
+  toast: (text: string) => void,
+): Promise<{ itemId: string; name: string; won: boolean } | null> {
+  const reach = a.range ?? 4;
+  const items = normaliseTasks(s.tasks).items;
+  const nothing = remoteAccessWhy(items, t, reach, null);
+  if (nothing) { toast(nothing); return null; }
+  const open = terminalsInReach(items, t, reach, null);
+  const zoneName = (id: string) => d.zoneData.zones.find((z) => z.id === id)?.name ?? id;
+  const id = await choiceDialog({
+    title: 'Remote Access: which Terminal?',
+    body: `One whose Tactical Zone is within Range ${reach} of ${t.label}, to its nearest Grid (FAQ P6).`,
+    choices: [...open.map((i) => ({ id: i.id, label: zoneName(i.zone) })), { id: '__no', label: 'Cancel', cancel: true }],
+    stacked: true,
+  });
+  const pick = open.find((i) => i.id === id);
+  if (!pick) return null;
+  const ev = electronicStrength(d, s.tokens, t, 'initiator', a);
+  const verdict = await choiceDialog({
+    title: `Remote Access on ${zoneName(pick.zone)}`,
+    body: remoteAccessRollText(t.label, ev),
+    choices: [{ id: 'won', label: 'It succeeded' }, { id: 'lost', label: 'It failed' }, { id: '__no', label: 'Cancel', cancel: true }],
+    stacked: true,
+  });
+  if (verdict !== 'won' && verdict !== 'lost') return null;
+  return { itemId: pick.id, name: zoneName(pick.zone), won: verdict === 'won' };
+}
+
+// Guided pays the Action, then accesses the Terminal through the engine.
+async function remoteAccess(api: GuideApi, t: Token, a: CardAction): Promise<void> {
+  const got = await askRemoteAccess(api.data, api.state(), t, a, api.toast);
+  if (!got) return;
+  if (!api.send({ kind: 'performAction', seat: t.side, uid: t.uid, actionId: a.id })) return;
+  if (!got.won) { api.toast(`Remote Access on the ${got.name} Terminal failed.`); return; }
+  if (api.send({ kind: 'accessTerminal', seat: t.side, uid: t.uid, itemId: got.itemId, chain: 'join' })) {
+    api.toast(`Remote Access: the ${got.name} Terminal is face-down for the rest of the round.`);
+  }
+}
+
 // Performing an Action that is not an attack: what the Match Centre's
 // routeAction does around performAction, with the picks as dialogs. Repair and
 // Mend name the Part, a Charge Action the Part to charge, a form switch the
@@ -712,9 +778,18 @@ async function performRouted(api: GuideApi, t: Token, a: CardAction): Promise<vo
     form = opts.length === 1 ? opts[0] : await choiceDialog({ title: a.name.en ?? a.id, choices: opts.map((id) => ({ id, label: cardName(d.byId.get(id)!) })), stacked: true });
     if (form === null) return;
   }
-  let repair: { mode: 'repaired' | 'mend'; slot: string } | null = null;
+  let repair: { mode: 'repaired' | 'mend'; slot: string; targetUid?: number } | null = null;
   const rep = repairSpec(a);
-  if (rep) {
+  // The SU1's Armor Patch mends an ALLY, then leaves; the table judges the
+  // Range (audit Phase 6, C6).
+  if (rep?.ally) {
+    const targets = allyRepairTargets(d, api.state().tokens, t, a, true);
+    if (!targets.length) { api.toast(`No Ally Unit has a Damaged Part for ${a.name.en ?? a.id} to mend.`); return; }
+    const pick = await choiceDialog({ title: a.name.en ?? a.id, choices: [...targets.map((x) => ({ id: `${x.unit.uid}:${x.slot}`, label: `${x.unit.label} · ${SLOT_LABEL[x.slot as PartSlot | 'main'] ?? x.slot}` })), { id: '__no', label: 'Cancel', cancel: true }], stacked: true });
+    const got = targets.find((x) => `${x.unit.uid}:${x.slot}` === pick);
+    if (!got) return;
+    repair = { mode: 'mend', slot: got.slot, targetUid: got.unit.uid };
+  } else if (rep) {
     const rows: { id: string; label: string }[] = [];
     for (const { slot, card } of tokenCards(d, t)) {
       if (slot === 'pilot') continue;
@@ -802,7 +877,7 @@ async function performRouted(api: GuideApi, t: Token, a: CardAction): Promise<vo
   }
   // The shared Charge Action is that Part's Action (FAQ H6/H7; audit Phase 2, E7).
   const partKey = a.id === 'COMMON_CHARGE' && chargeSlot ? `COMMON_CHARGE@${chargeSlot}` : undefined;
-  if (!api.send({ kind: 'performAction', seat: t.side, uid: t.uid, actionId: a.id, ...(partKey ? { partKey } : {}), ...(twoHandedUse(d, t, a) ? { twoHanded: true } : {}) })) return;
+  if (!api.send({ kind: 'performAction', seat: t.side, uid: t.uid, actionId: a.id, ...(partKey ? { partKey } : {}), ...(twoHandedUse(d, t, a, boxHands(api.state().tasks, t.uid)) ? { twoHanded: true } : {}) })) return;
   // A Moving Action that shoves - 181 Centaur's Push 1 onto an enemy Ground
   // unit in the grid in front. The pad has no board to find the victim on, so
   // it says what the table owes; it said nothing (audit 2026-09-25).
@@ -837,7 +912,7 @@ async function performRouted(api: GuideApi, t: Token, a: CardAction): Promise<vo
   if (camo && api.send({ kind: 'applyStatus', seat, uid, targetUid: uid, statusId: 'camouflage', chain })) {
     api.toast(`${t.label}: Optical Camouflage activated (4.12.2). Every Hexagon Token comes off; put the camouflage model on the table.`);
   }
-  if (repair) api.send({ kind: 'repairPart', seat, uid, slot: repair.slot, mode: repair.mode, chain });
+  if (repair) api.send({ kind: 'repairPart', seat, uid, slot: repair.slot, mode: repair.mode, ...(repair.targetUid !== undefined ? { targetUid: repair.targetUid, actionId: a.id } : {}), chain });
   if (form) api.send({ kind: 'switchForm', seat, uid, actionId: a.id, cardId: form, chain });
   const mode = transformOffer(d, t, a);
   if (mode) api.send({ kind: 'transformPart', seat, uid, slot: mode.slot, cardId: mode.into.id, chain });
@@ -896,14 +971,19 @@ function endHtml(api: GuideApi): string {
     { id: 'tasks', label: 'Check Tasks (3.7.3)' },
   ];
   const done = (id: string) => sc.endDone.includes(`${s.round.n}:end:${id}`);
+  // "In the following order" (3.7): a step waits, greyed in its place, for the
+  // ones before it; the engine refuses it out of order (audit Phase 6, B6).
+  const before: Record<string, string[]> = { tokens: ['remove'], tasks: ['remove', 'tokens'] };
+  const waits = (id: string) => (before[id] ?? []).some((x) => !done(x));
+  const wait = ' disabled title="The steps above come first (3.7)"';
   const rows = steps.map((st) => `<div class="pad-turn-row"><span class="pad-turn-name">${api.esc(st.label)}</span>
       ${done(st.id) ? '<span class="pad-turn-val">✓</span>' : (api.solo || api.me() === s.round.firstPlayer
-        // Check Tasks opens the score sheet, whose Award settles the step; Done
-        // stays for a round that pays nothing.
-        ? `${st.id === 'tasks' ? btn(api, 'dock', 'Score', 'data-dock="tasks"', 'pad-chip on') : ''}${btn(api, 'g-endstep', 'Done', `data-step="${st.id}"`)}`
+        // Check Tasks opens the score sheet; its Done pays what is owed first.
+        ? `${st.id === 'tasks' ? btn(api, 'dock', 'Score', `data-dock="tasks"${waits(st.id) ? wait : ''}`, 'pad-chip on') : ''}${btn(api, 'g-endstep', 'Done', `data-step="${st.id}"${waits(st.id) ? wait : ''}`)}`
         : '<span class="pad-turn-val">…</span>')}</div>`).join('');
   const all = steps.every((st) => done(st.id));
-  const last = s.round.n >= (s.roundLimit ?? 5);
+  // The round limit, or VIP's fallen Commander (ruling I2; audit Phase 6, B2).
+  const last = gameEndsThisRound(api.data, s);
   // The table's Smoke Screens dissipate in this phase too, and the pad has no
   // screens to count, so it says so rather than stay silent (audit Phase 4,
   // G12). Once per End Phase (4.16).
@@ -919,17 +999,20 @@ export async function askDesignation(api: GuideApi, index: number): Promise<void
   const s = api.state();
   const owed = taskDesignations(api.data, s)[index];
   if (!owed) return;
+  // A Cancel on both: a list with one Mech in it is otherwise its own
+  // dismissal, so Escape named that Mech instead of backing out.
+  const cancel = { id: '__cancel', label: 'Cancel', cancel: true };
   if (owed.what === 'zone') {
     const zones = missionZones(api.data, s);
-    const pick = await choiceDialog({ title: owed.label, choices: zones.map((z) => ({ id: z.id, label: z.name })), stacked: true });
-    if (pick !== null) api.send({ kind: 'designateTask', seat: owed.by, what: 'zone', for: owed.side, zone: pick });
+    const pick = await choiceDialog({ title: owed.label, choices: [...zones.map((z) => ({ id: z.id, label: z.name })), cancel], stacked: true });
+    if (pick !== null && pick !== '__cancel') api.send({ kind: 'designateTask', seat: owed.by, what: 'zone', for: owed.side, zone: pick });
     return;
   }
   const pool = s.tokens.filter((x) => x.kind === 'mech' && (owed.owner ? x.side === owed.owner : true));
   // Two Commanders are asked back to back, so the question says whose.
   const title = owed.what === 'leader' ? `${api.sideName(owed.side)} · ${owed.label}` : owed.label;
-  const pick = await choiceDialog({ title, choices: pool.map((m) => ({ id: String(m.uid), label: `${m.label} · ${api.sideName(m.side)}` })), stacked: true });
-  if (pick !== null) api.send({ kind: 'designateTask', seat: owed.by, what: owed.what, for: owed.side, uid: Number(pick) });
+  const pick = await choiceDialog({ title, choices: [...pool.map((m) => ({ id: String(m.uid), label: `${m.label} · ${api.sideName(m.side)}` })), cancel], stacked: true });
+  if (pick !== null && pick !== '__cancel') api.send({ kind: 'designateTask', seat: owed.by, what: owed.what, for: owed.side, uid: Number(pick) });
 }
 
 // The designations this phone may answer for a side's Task, by index.
@@ -957,7 +1040,7 @@ export function performButton(api: GuideApi, t: Token, a: CardAction, partKey: s
   // length paid (card 129: Long performed as Medium), after the Stance has
   // (ZHRA-102_A is Short in Offensive; audit Phase 2, D2).
   const priced = t.kind === 'mech' ? stanceShaped(a, t.stance) : a;
-  const hands = twoHandedUse(api.data, t, priced);
+  const hands = twoHandedUse(api.data, t, priced, boxHands(s.tasks, t.uid));
   const paidAs = hands?.action ?? priced;
   const len = lengthOf(paidAs);
   // The engine's own answer: Ticks or the activation, and every rule that
@@ -1192,6 +1275,10 @@ export function guideAct(api: GuideApi, a: string, el: HTMLElement): boolean {
           if (api.send({ kind: 'performAction', seat: t.side, uid: t.uid, actionId: c.id })) api.send({ kind: 'reveal', seat: t.side, uid: t.uid, chain: 'join' });
           return true;
         }
+        if (c.id === 'COMMON_REMOTE_ACCESS') {
+          void remoteAccess(api, t, c);
+          return true;
+        }
         void performRouted(api, t, c);
       }
       return true;
@@ -1265,7 +1352,14 @@ export function guideAct(api: GuideApi, a: string, el: HTMLElement): boolean {
       else lockDialsNetworked(api);
       return true;
     }
-    case 'g-endstep': api.send({ kind: 'markEndStep', seat: me, step: el.dataset.step! }); return true;
+    case 'g-endstep': {
+      const step = el.dataset.step!;
+      // Check Tasks pays the round before it is ticked: Done alone threw the
+      // round's score away (audit Phase 6, D7).
+      if (step === 'tasks' && !api.settleTasks()) return true;
+      api.send({ kind: 'markEndStep', seat: me, step });
+      return true;
+    }
     case 'g-endmatch': api.endGame(); return true;
     case 'g-designate-task': {
       void askDesignation(api, Number(el.dataset.i));

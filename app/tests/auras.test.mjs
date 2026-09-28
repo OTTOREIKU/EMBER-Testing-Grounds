@@ -1022,7 +1022,7 @@ const hudSrc = readFileSync(new URL('../src/matchhud.ts', import.meta.url), 'utf
 check('ZHDR-204 asks aurasOn about the ATTACKER',
   /aurasOn\(this\.data, this\.tokens\(\), c\.attacker\)[\s\S]{0,80}?'target_counts_low_profile'/.test(combatSrc), true);
 check('and the reader on the next line still asks about the DEFENDER, which is the trap',
-  /auraEffectsOn\(this\.data, this\.tokens\(\), c\.defender\)\.has\('low_profile'\)/.test(combatSrc), true);
+  /auraEffectsOn\(this\.data, this\.tokens!?\(\), c\.defender\)\.has\('low_profile'\)/.test(combatSrc), true);
 check('nothing asks aurasOn about the defender for the ZHDR-204 kind',
   /aurasOn\(this\.data, this\.tokens\(\), c\.defender\)[\s\S]{0,80}?'target_counts_low_profile'/.test(combatSrc), false);
 

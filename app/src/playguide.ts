@@ -1,20 +1,20 @@
 import type { CardAction, ExtraTick, GameState, Opportunity, ScriptState, Side, Stance, Timing, Token, TokenPick } from './types';
-import { newOpportunity, normaliseScript, statusCount, STATUSES, TIMINGS, zonesOf } from './types';
+import { newOpportunity, normaliseScript, statusCount, STATUSES, TIMINGS, tokenFaces, zonesOf } from './types';
 import type { GameData, MissionCard } from './data';
 import { BASE, cardName, squadLabel } from './data';
 import { bindTips, linkMechanics } from './inspector';
 import { choiceDialog } from './dialog';
 import { PHASES, PHASE_INFO } from './tracker';
-import { coordinationAfterManeuver, riderOnDrone, autoShotOwed, activatesCamo, linkTickTraitOn, startOpts, stanceShaped, overloadPackOn, isRwsAction, vpRiderFor, opportunityBonusOn, pilotCard, coordinationFor, coordinationOnOpportunityEnd, extrasFor, actionSilenceDenier, isSilentAction, type ActionWorld, canActivateCamo, manifestationRange, type ExtraActivation, extraActivationOf, guidedActions, initiativeFor, maneuverRange, maxLink, SLOT_LABEL, tokenCards, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL } from './units';
+import { actionPartWhy, coordinationAfterManeuver, riderOnDrone, autoShotOwed, activatesCamo, linkTickTraitOn, startOpts, stanceShaped, overloadPackOn, isRwsAction, vpRiderFor, opportunityBonusOn, pilotCard, coordinationFor, coordinationOnOpportunityEnd, extrasFor, actionSilenceDenier, isSilentAction, type ActionWorld, canActivateCamo, manifestationRange, type ExtraActivation, extraActivationOf, guidedActions, initiativeFor, maneuverRange, maxLink, SLOT_LABEL, tokenCards, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL } from './units';
 import { actionPipCount, canAttackMode, canManeuver, canOverload, canPerform, costLabel, costOf, extrasLeft, grantHolds, LENGTH_NAME, lengthOf, OVERLOAD_MAX, whyGrantLapsed } from './ticks';
-import { asterKey, check, rebootWhy, clearDroneCommands, perform, readyCommands, seedCommandTokens } from './commands';
+import { asterKey, check, rebootWhy, clearDroneCommands, perform, readyCommands, seedCommandTokens, taskDesignations } from './commands';
 import { openActivation, popDeadExtras } from './glue';
 import { askIssuer, asterBlockers, offerCoordination, runAster } from './commandpick';
-import { tacticFitsPhase, tacticSpec } from './tactics';
+import { tacticFitsPhase, tacticSpec, tacticUsedRound, tacticWindowWhy } from './tactics';
 import { alive, canAct, getLocalSeat, isLoopPhase, nextTurn, onExtraOpportunity, type LoopPhase, nextActivation, activationOrder, actionPhaseComplete, loopComplete, eligibleUnits, tiedChoices, type InitLookup, type Activation } from './loop';
 import { deployable, deploymentComplete, deployTurn, firstPlayerFrom, newSetup, normaliseSetup, rollTotal, type SetupState } from './setup';
-import { normaliseTasks, settleControl, type ScoreResult, type TaskState } from './tasks';
-import { previewScore } from './scoring';
+import { boxPlaceTurn, normaliseTasks, remoteAccessWhy, settleControl, type ScoreResult, type TaskState } from './tasks';
+import { gameEndsThisRound, previewScore, vipFallen, zoneCellsOf } from './scoring';
 
 function phaseDone(text: string): string {
   return `<p class="pg-complete"><i>✓</i><span>${text}</span></p>`;
@@ -93,6 +93,13 @@ export interface GuideCallbacks {
   // dials, which happens only in a networked game.
   onConfirmTimings?(): boolean;
   onPickSecondary(side: Side): void;
+  // What a Task names (5.2.3), asked of the squad the card says chooses: the
+  // designation at this index of taskDesignations. Behead's Head is named by
+  // the other squad (audit Phase 6, D6).
+  onDesignate?(index: number): void;
+  // A Black Box placed at setup, on the board's own picker (ruling I23; audit
+  // Phase 6, F3).
+  onPlaceBox?(side: Side, itemId: string): void;
   onPlayTactic(side: Side, id: string): void;
   onEndGame(): void;
   mapLabel(): string;
@@ -107,6 +114,11 @@ export interface GuideCallbacks {
   // for the same Action is not asked twice. Optional: the Match Centre's guide
   // Reveals through its own panel.
   onReveal?(t: Token, why: string, ask: boolean): void;
+  // A Black Box in the acting unit's Grid, offered as its Action Opportunity
+  // ends (3.4.4, 5.3.1, FAQ P8), optional (P10; ruling I27). Only a
+  // Movement's route offered one, so P8's own example could not happen (audit
+  // Phase 6, F2). Resolves once the offer is answered, or at once with none.
+  onOpportunityEnding?(uid: number): Promise<void>;
 }
 
 
@@ -391,6 +403,28 @@ export class PlayGuide {
     this.root.querySelectorAll<HTMLButtonElement>('[data-secondary]').forEach((b) =>
       b.addEventListener('click', () => this.cb.onPickSecondary(b.dataset.secondary as Side)),
     );
+    this.root.querySelectorAll<HTMLButtonElement>('[data-designate]').forEach((b) =>
+      b.addEventListener('click', () => this.cb.onDesignate?.(Number(b.dataset.designate))),
+    );
+    this.root.querySelectorAll<HTMLButtonElement>('[data-place-box]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const s = this.state;
+        const turn = s ? boxPlaceTurn(normaliseTasks(s.tasks), s.round.firstPlayer) : null;
+        if (turn) this.cb.onPlaceBox?.(turn, b.dataset.placeBox!);
+      }),
+    );
+    this.root.querySelectorAll<HTMLButtonElement>('[data-keep-box]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const s = this.state;
+        if (!s) return;
+        const item = normaliseTasks(s.tasks).items.find((i) => i.id === b.dataset.keepBox);
+        const turn = boxPlaceTurn(normaliseTasks(s.tasks), s.round.firstPlayer);
+        if (!item || !turn || item.col === undefined || item.row === undefined) return;
+        const v = perform(this.data, s, { kind: 'placeTaskItem', seat: turn, itemId: item.id, to: { col: item.col, row: item.row } });
+        this.warn = v.ok ? null : v.why ?? null;
+        this.cb.onChanged();
+      }),
+    );
     this.root.querySelectorAll<HTMLButtonElement>('[data-stabilise]').forEach((b) =>
       b.addEventListener('click', () => this.stabilise(Number(b.dataset.stabilise))),
     );
@@ -421,8 +455,8 @@ export class PlayGuide {
         this.render();
         return;
       }
-      this.warn = null;
-      perform(this.data, s, { kind: 'finishTasks', seat: s.round.firstPlayer });
+      const v = perform(this.data, s, { kind: 'finishTasks', seat: s.round.firstPlayer });
+      this.warn = v.ok ? null : v.why ?? null;
       this.cb.onChanged();
     });
     this.root.querySelector('[data-maneuver]')?.addEventListener('click', () => this.tryManeuver());
@@ -483,8 +517,8 @@ export class PlayGuide {
     });
     this.root.querySelectorAll<HTMLButtonElement>('[data-edge]').forEach((b) =>
       b.addEventListener('click', () => {
-        // The edge follows the roll directly (3.1.2). Tasks still come before
-        // any unit lands, but that is the deploy stage's gate, not this one's.
+        // The edge follows the roll and the Main Task (3.1.2; ruling I3), and
+        // opens the Tasks step.
         perform(this.data, s, { kind: 'pickEdge', seat: s.round.firstPlayer, edge: b.dataset.edge as 'black' | 'white' });
         this.warn = null;
         this.cb.onChanged();
@@ -639,12 +673,19 @@ export class PlayGuide {
         // prompt could never appear.
         if (!card || !tacticFitsPhase(id, phase)) continue;
         const when = tacticSpec(id)?.timing ?? '';
-        rows.push(`<div class="pg-tac-row${spent.length ? ' spent' : ''}">
+        // Discarded once used, for the game (FAQ P2; audit Phase 6, H1).
+        const usedIn = tacticUsedRound(s, side, id);
+        // And the moment its own text names (5.4.2; audit Phase 6, H2).
+        const spec = tacticSpec(id);
+        const moment = spec ? tacticWindowWhy(spec, s, side) : null;
+        const off = usedIn !== null || spent.length > 0 || !!moment;
+        const why = usedIn !== null ? `Used in round ${usedIn}, and discarded for the game (FAQ P2)` : spent.length ? 'Only 1 Tactics Card per player per round (5.4.2)' : moment ?? '';
+        rows.push(`<div class="pg-tac-row${off ? ' spent' : ''}">
           <span class="side-${side}">${squadLabel(side)}</span>
           <b>${esc(cardName(card))}</b>
           <small>${esc(when)}</small>
-          <button class="pg-tac-play" data-tactic="${side}:${id}"${spent.length ? ' disabled' : ''}>${
-            spent.length ? 'Spent' : 'Play'
+          <button class="pg-tac-play" data-tactic="${side}:${id}"${off ? ` disabled title="${esc(why)}"` : ''}>${
+            usedIn !== null ? `Used, round ${usedIn}` : spent.length ? 'Spent' : 'Play'
           }</button>
         </div>`);
       }
@@ -653,7 +694,7 @@ export class PlayGuide {
     return `<div class="pg-tactics">
       <p class="pg-tac-head">Tactics you could play now</p>
       ${rows.join('')}
-      <p class="pg-tac-note">Only 1 per player per round (5.4.2).</p>
+      <p class="pg-tac-note">Only 1 per player per round (5.4.2), and each is used once in a game.</p>
     </div>`;
   }
 
@@ -703,14 +744,20 @@ export class PlayGuide {
     }));
     const cmd = (s.commandTokens.s1 ?? 0) + (s.commandTokens.s2 ?? 0);
     const done = new Set(sc.endDone);
-    const step = (id: string, n: number, title: string, body: string, action = '') => {
+    // `wait`: the earlier step this one follows. "Performed in the following
+    // order" (3.7): its controls keep their place, disabled, until then (audit
+    // Phase 6, B6).
+    const step = (id: string, n: number, title: string, body: string, action = '', wait = '') => {
       const ok = done.has(`${s.round.n}:end:${id}`);
       return `<div class="pg-endstep${ok ? ' done' : ''}">
         <p class="pg-endhead"><i>${ok ? '✓' : n}</i><b>${title}</b></p>
         <p class="pg-endbody">${body}</p>
-        ${ok ? '' : action}
+        ${ok ? '' : wait
+          ? `<fieldset class="pg-wait" disabled title="${esc(wait)}" style="border:0;padding:0;margin:0;min-width:0">${action}</fieldset><p class="pg-endbody dim">${esc(wait)}</p>`
+          : action}
       </div>`;
     };
+    const after = (ids: string[], label: string) => (ids.every((x) => done.has(`${s.round.n}:end:${x}`)) ? '' : `After ${label} (3.7).`);
 
     // The End Phase gets its own warn line. The header only draws one during
     // Planning and setup, and a refused Award had nowhere to say so — which is
@@ -731,12 +778,12 @@ export class PlayGuide {
           : `<div class="pg-units"><button class="pg-pass" data-end-step="remove">Nothing to remove</button></div>`,
       )}
       ${(() => {
-        const red = s.tokens.flatMap((t) => (t.expiring ?? []).map((id) => ({ t, id })));
-        const yellow = s.tokens.flatMap((t) =>
-          (t.statuses ?? [])
-            .filter((id) => STATUSES.find((d) => d.id === id)?.decay === 'yellow' && !(t.expiring ?? []).includes(id))
-            .map((id) => ({ t, id })),
-        );
+        // Per token, by the face it shows, and only tokens worn: the raw
+        // markers counted a stale one and missed a yellow beside a red of the
+        // same kind (audit Phase 6, C9).
+        const faces = s.tokens.flatMap((t) => [...new Set(t.statuses ?? [])].flatMap((id) => tokenFaces(t, id).map((f) => ({ t, id, ...f }))));
+        const red = faces.filter((f) => f.face === 'red').flatMap((f) => Array.from({ length: f.n }, () => f));
+        const yellow = faces.filter((f) => f.face === 'yellow').flatMap((f) => Array.from({ length: f.n }, () => f));
         const unknown = s.tokens.flatMap((t) =>
           (t.statuses ?? []).filter((id) => {
             const d = STATUSES.find((x) => x.id === id);
@@ -764,6 +811,7 @@ export class PlayGuide {
           }`,
           `<div class="pg-units"><button class="pg-unit" data-end-tokens="1">Age the tokens</button>
             <button class="pg-pass" data-end-step="tokens">Skip</button></div>`,
+          after(['remove'], 'Remove units'),
         );
       })()}
       ${(() => {
@@ -784,7 +832,9 @@ export class PlayGuide {
       ${(() => {
         const tasks = normaliseTasks(s.tasks);
         const mission = this.data.missions.cards.find((c) => c.id === s.mission);
-        const last = s.round.n >= (s.roundLimit ?? 5);
+        // The round limit, or a VIP Commander fallen: either way this Award
+        // settles the end-of-game Tasks (ruling I2; audit Phase 6, B2).
+        const last = gameEndsThisRound(this.data, s);
         const preview = this.previewScore(s, tasks, last);
         const total = `<p class="pg-vp"><b>Victory Points</b>
           <span class="side-s1">${squadLabel('s1')} ${tasks.vp.s1}</span> ·
@@ -816,13 +866,21 @@ export class PlayGuide {
             ? `<div class="pg-units"><button class="pg-unit" data-score="1">Award ${preview.s1 ? `${squadLabel('s1')} +${preview.s1}` : ''}${preview.s1 && preview.s2 ? ' and ' : ''}${preview.s2 ? `${squadLabel('s2')} +${preview.s2}` : ''}</button>
                 <button class="pg-pass" data-end-step="tasks">Skip</button></div>`
             : '<div class="pg-units"><button class="pg-pass" data-end-step="tasks">Nothing to score</button></div>',
+          after(['remove', 'tokens'], 'Remove units and Token management'),
         );
       })()}
       ${(() => {
         // After the last scheduled round the game ends and the totals decide it
         // (3.7.4), so the guide has to say so and offer the exit, not roll on
         // into another Command Phase as if nothing happened.
-        const final = s.round.n >= (s.roundLimit ?? 5);
+        // The round limit, or VIP: Assassination's fallen Commander, which ends
+        // the game at this End Phase (ruling I2; audit Phase 6, B2).
+        const final = gameEndsThisRound(this.data, s);
+        const vip = vipFallen(this.data, s) && s.round.n < (s.roundLimit ?? 5);
+        // The result waits for steps 1 to 4: the book performs them in order
+        // (3.7; audit Phase 6, B5).
+        const endDone = this.script(s).endDone;
+        const stepsDone = ['remove', 'tokens', 'tasks'].every((x) => endDone.includes(`${s.round.n}:end:${x}`));
         const t = normaliseTasks(s.tasks);
         const verdict = t.vp.s1 === t.vp.s2
           ? `${t.vp.s1} Victory Points each, so the tiebreak counts Mech Parts and Drones left on the board (5.2.4).`
@@ -832,11 +890,13 @@ export class PlayGuide {
           5,
           final ? 'End of the game' : 'End of round',
           final
-            ? `This was the last scheduled round, so the game ends and Victory Points are totalled (3.7.4). ${verdict}`
+            ? vip
+              ? `A Commander has fallen, so VIP: Assassination ends the game at this End Phase and Victory Points are totalled. ${verdict}`
+              : `This was the last scheduled round, so the game ends and Victory Points are totalled (3.7.4). ${verdict}`
             : `The First Player Token flips, so ${squadLabel(s.round.firstPlayer === 's1' ? 's2' : 's1')} goes first next round.`,
           final
-            ? `<div class="pg-units"><button class="pg-unit" data-game-over="1">End the game and settle the result</button></div>
-               <p class="pg-intercept-note">Or press ${esc(`Extra round ${s.round.n + 1}`)} below to keep playing past the printed limit.</p>`
+            ? `<div class="pg-units"><button class="pg-unit" data-game-over="1"${stepsDone ? '' : ' disabled title="Finish steps 1 to 4 first (3.7)"'}>End the game and settle the result</button></div>
+               ${vip ? '' : `<p class="pg-intercept-note">Or press ${esc(`Extra round ${s.round.n + 1}`)} below to keep playing past the printed limit.</p>`}`
             : '',
         );
       })()}`;
@@ -893,6 +953,18 @@ export class PlayGuide {
       const noun = phase === 'Delay' ? 'projectile' : 'drone';
       return `Activate or pass every ${noun} first`;
     }
+    // The End Phase's steps "must be performed" (3.7): the round turned with
+    // nothing done, a wrecked Mech playing on and no Task scored (audit Phase
+    // 6, B5). And a fallen VIP Commander ends the game here (ruling I2, B2).
+    if (phase === 'End') {
+      const done = this.script(s).endDone;
+      const at = (x: string) => done.includes(`${s.round.n}:end:${x}`);
+      const name: Record<string, string> = { remove: 'remove units', tokens: 'manage tokens', tasks: 'check the Tasks', smoke: 'dissipate the smoke' };
+      const missing = ['remove', 'tokens', 'tasks'].filter((x) => !at(x));
+      if ((s.smoke ?? []).length && !at('smoke') && s.smokeRound !== s.round.n) missing.push('smoke');
+      if (missing.length) return `First ${missing.map((x) => name[x]).join(', ')}`;
+      if (vipFallen(this.data, s) && s.round.n < (s.roundLimit ?? 5)) return 'A Commander has fallen: the game ends here';
+    }
     return null;
   }
 
@@ -910,33 +982,45 @@ export class PlayGuide {
     return this.deployHtml(s, su);
   }
 
-  // The Tasks come after the roll (FAQ P1): the Main Task first, then each
-  // side's Secondary with the First Player revealing theirs first. The pickers
-  // themselves live in the Missions dialog and the Zones dropdown, so this step
-  // narrates the order and holds the door until the table is ready.
+  // The Tasks step, after the edge (3.1.3, 5.2.1; ruling I3): the First Player
+  // reveals a Secondary Task first, then the other squad; each names what its
+  // card designates, asked of the squad that chooses; then the Black Boxes go
+  // down alternately from the First Player (ruling I23). The edge came after
+  // all of this, so the First Player chose it knowing both Secondaries (audit
+  // Phase 6, A1).
   private tasksSetupHtml(s: GameState): string {
     const fp = s.round.firstPlayer;
     const sp: Side = fp === 's1' ? 's2' : 's1';
     const tasks = normaliseTasks(s.tasks);
     const mission = s.mission ? this.data.missions.cards.find((m) => m.id === s.mission) : undefined;
-    const secName = (side: Side): string => {
-      const id = tasks.secondary[side];
-      const card = id ? this.data.secondary.find((c) => c.id === id) : undefined;
-      return card ? card.name : 'not picked';
-    };
     const row = (label: string, value: string, done: boolean) =>
       `<div class="pg-taskrow"><b>${esc(label)}</b><span class="${done ? '' : 'pg-missing'}">${esc(value)}</span></div>`;
-    return `<p>${squadLabel(fp)} won the roll and goes first. The official order (FAQ P1): pick the
-      Main Task, then ${esc(squadLabel(fp))} picks and reveals their Secondary Task, then
-      ${esc(squadLabel(sp))}. Use the <b>Missions</b> dialog and the <b>Zones</b> list in the toolbar.</p>
-      ${row('Main Task', mission ? mission.name : (s.zoneSet ? 'zones picked' : 'not picked'), !!mission || !!s.zoneSet)}
-      ${row(`${squadLabel(fp)} Secondary`, secName(fp), !!tasks.secondary[fp])}
-      ${row(`${squadLabel(sp)} Secondary`, secName(sp), !!tasks.secondary[sp])}
-      <p class="dim">Task Targets deploy with the zone overlay. Nothing here is blocked, so a
-      casual table may skip any of it.</p>
+    const owed = taskDesignations(this.data, s);
+    const named = owed.map((d, i) => (this.notMySeat(d.by)
+      ? row(d.label, `${squadLabel(d.by)} names it`, false)
+      : `<div class="pg-units"><button class="pg-unit warn" data-designate="${i}">${esc(squadLabel(d.by))}: name the ${esc(d.label)}</button></div>`)).join('');
+    const boxes = s.noBoard ? [] : tasks.items.filter((i) => i.kind === 'blackbox');
+    const turn = boxPlaceTurn(tasks, fp);
+    const zoneName = (id: string) => zonesOf(this.data.zoneData.zones, s).find((z) => z.id === id)?.name ?? id;
+    const placing = boxes.length
+      ? `<p class="pg-active" style="margin-top:12px">Black Boxes
+          <small>${turn ? `${esc(squadLabel(turn))} places the next one, in its named zone (5.2.1)` : 'every one is placed'}</small></p>
+        ${boxes.map((b) => {
+          const can = !!turn && !this.notMySeat(turn) && !b.set;
+          return `${row(zoneName(b.zone), b.set ? `placed by ${squadLabel(b.set)}` : 'on its default spot', !!b.set)}${
+            b.set ? '' : `<div class="pg-units">
+              <button class="pg-unit" data-place-box="${esc(b.id)}"${can ? '' : ' disabled'}>Place it</button>
+              <button class="pg-unit" data-keep-box="${esc(b.id)}"${can ? '' : ' disabled'}>Keep it there</button></div>`}`;
+        }).join('')}`
+      : '';
+    return `<p>${squadLabel(fp)} won the roll and took the ${esc(normaliseSetup(s.setup)?.edge[fp] ?? '')} edge. Now the Tasks (3.1.3):
+      ${esc(squadLabel(fp))} picks and reveals their Secondary Task first, then ${esc(squadLabel(sp))}.</p>
+      ${row('Main Task', mission ? mission.name : (s.zoneSet ? 'zones picked' : 'none'), true)}
+      ${this.secondaryHtml(s)}
+      ${named}
+      ${placing}
       <div class="pg-units">
-        <button class="pg-unit${mission ? '' : ' warn'}" data-pick-mission="1">${mission ? 'Change the Main Task' : 'Choose a Main Task'}</button>
-        <button class="pg-unit" data-finish-tasks="1">Tasks are set, pick edges</button>
+        <button class="pg-unit" data-finish-tasks="1">Tasks are set, deploy</button>
       </div>`;
   }
 
@@ -1020,8 +1104,12 @@ export class PlayGuide {
     return `<p class="pg-intercept-note pg-waiting">Waiting for <b class="side-${side}">${squadLabel(side)}</b> to ${doing}…</p>`;
   }
 
+  // The Main Task, then the edge the First Player picks knowing it (3.1.2;
+  // ruling I3). The Secondary Tasks come after, in the Tasks step.
   private edgeHtml(s: GameState, su: SetupState): string {
+    void su;
     const fp = s.round.firstPlayer;
+    const mission = s.mission ? this.data.missions.cards.find((m) => m.id === s.mission) : undefined;
     const pickRow = this.notMySeat(fp)
       ? this.waitingOn(fp, 'pick a table edge')
       : `<div class="pg-units">
@@ -1029,10 +1117,13 @@ export class PlayGuide {
         <button class="pg-unit" data-edge="black">Take the Black side</button>
       </div>`;
     return `<p class="pg-active">Now: <b class="side-${fp}">${squadLabel(fp)}</b>
-        <small>As First Player, choose which edge of the board to play from.</small></p>
+        <small>As First Player, choose which edge of the board to play from, knowing the Main Task.</small></p>
+      <div class="pg-taskrow"><b>Main Task</b><span class="${mission || s.zoneSet ? '' : 'pg-missing'}">${esc(mission ? mission.name : (s.zoneSet ? 'zones picked' : 'not picked'))}</span></div>
+      <div class="pg-units">
+        <button class="pg-unit${mission ? '' : ' warn'}" data-pick-mission="1">${mission ? 'Change the Main Task' : 'Choose a Main Task'}</button>
+      </div>
       ${pickRow}
-      <p class="pg-intercept-note">The other side takes the opposite edge. Deployment Zones follow the edges, so this decides where each squad starts.</p>
-      ${this.secondaryHtml(s)}`;
+      <p class="pg-intercept-note">The other side takes the opposite edge. Deployment Zones follow the edges, so this decides where each squad starts. The Main Task is fixed once the edge is picked, and the Secondary Tasks come next (3.1.3).</p>`;
   }
 
   // Prepare Tasks (5.1 step 3): starting from the First Player, each side picks
@@ -1040,33 +1131,28 @@ export class PlayGuide {
   private secondaryHtml(s: GameState): string {
     const tasks = normaliseTasks(s.tasks);
     const order: Side[] = s.round.firstPlayer === 's1' ? ['s1', 's2'] : ['s2', 's1'];
-    const row = (side: Side) => {
+    const both = !!tasks.secondary.s1 && !!tasks.secondary.s2;
+    const row = (side: Side, i: number) => {
       const card = tasks.secondary[side] ? this.data.secondary.find((c) => c.id === tasks.secondary[side]) : undefined;
       if (this.notMySeat(side)) {
         return `<span class="pg-roll-res">${squadLabel(side)}: ${card ? esc(card.name) : 'picking a Secondary Task…'}</span>`;
       }
-      return `<button class="pg-unit${card ? '' : ' warn'}" data-secondary="${side}">
-        ${squadLabel(side)}: ${card ? esc(card.name) : 'pick a Secondary Task'}</button>`;
+      // The second squad waits for the First Player's reveal, and both are
+      // final once revealed (FAQ P1; ruling I5).
+      const waits = i === 1 && !tasks.secondary[order[0]];
+      return `<button class="pg-unit${card ? '' : ' warn'}" data-secondary="${side}"${waits || both ? ' disabled' : ''}>
+        ${squadLabel(side)}: ${card ? esc(card.name) : waits ? `waits for ${squadLabel(order[0])}` : 'pick a Secondary Task'}</button>`;
     };
     return `<p class="pg-active" style="margin-top:12px">Secondary Tasks
         <small>One each, open information, ${squadLabel(order[0])} first.</small></p>
-      <div class="pg-units">${row(order[0])}${row(order[1])}</div>`;
+      <div class="pg-units">${row(order[0], 0)}${row(order[1], 1)}</div>`;
   }
 
   private deployHtml(s: GameState, su: SetupState): string {
     const fp = `<p class="pg-turn">First player: <b class="side-${s.round.firstPlayer}">${squadLabel(s.round.firstPlayer)}</b></p>`;
-    const tasks = normaliseTasks(s.tasks);
-    const secRow = !tasks.secondary.s1 || !tasks.secondary.s2 ? this.secondaryHtml(s) : '';
     if (deploymentComplete(s, this.data)) {
       return `${fp}${phaseDone('Everything is deployed')}
         <div class="pg-units"><button class="pg-unit" data-deploy-done="1">Begin round 1</button></div>`;
-    }
-    // Tasks come before deployment (3.1.3 then 3.1.4), so the placement list
-    // holds back until both Secondary Tasks are on the table. This is what
-    // stops the first placement from skipping past the task step entirely.
-    if (secRow) {
-      return `${fp}${secRow}
-        <p class="pg-intercept-note">Both Secondary Tasks are picked before anything deploys, so each side knows what the other is playing for.</p>`;
     }
     const turn = deployTurn(s, su, this.data);
     if (!turn) return `${fp}${phaseDone('Everything is deployed')}`;
@@ -1113,7 +1199,6 @@ export class PlayGuide {
     }
 
     return `${fp}
-      ${secRow}
       <p class="pg-active">Now: <b class="side-${turn}">${squadLabel(turn)}</b>
         <small>place one unit in the ${su.edge[turn]} Deployment Zone · ${waiting.length} left${
           otherLeft ? '' : `, then ${squadLabel(turn)} places the rest`
@@ -1211,22 +1296,25 @@ export class PlayGuide {
           : ga.available ? undefined : ga.reason,
       });
     }
-    const slots = new Set(
-      Object.entries(t.partStates)
-        .filter(([, v]) => v !== 'destroyed')
-        .map(([k]) => k),
-    );
-    const hasTerminals = normaliseTasks(this.state?.tasks).items.some((i) => i.kind === 'terminal');
+    const items = normaliseTasks(this.state?.tasks).items;
+    const hasTerminals = items.some((i) => i.kind === 'terminal');
     for (const c of this.data.commonActions) {
       if (c.phase) continue;
       if (c.id === 'COMMON_REMOTE_ACCESS' && !hasTerminals) continue;
-      const usable = c.slots.some((x) => slots.has(x));
+      // The engine's own reading of which Part may initiate it: a Repaired
+      // Part still acts (FAQ J23), and in Cruise Mode only the Torso does.
+      // Remote Access also says so when nothing is left for it to access
+      // (ruling I26; audit Phase 6, E3).
+      const s = this.state;
+      const nothing = c.id === 'COMMON_REMOTE_ACCESS' && s
+        ? remoteAccessWhy(items, t, c.range ?? 4, s.noBoard ? null : zoneCellsOf(this.data, s))
+        : null;
       out.push({
         action: c,
         label: c.name.en || c.id,
         partKey: c.id,
         note: 'Common',
-        blocked: usable ? undefined : 'no surviving Part can initiate it',
+        blocked: actionPartWhy(this.data, t, c) ?? nothing ?? undefined,
       });
     }
     return out;
@@ -1413,7 +1501,8 @@ export class PlayGuide {
   private awardScore(): void {
     const s = this.state;
     if (!s) return;
-    const last = s.round.n >= (s.roundLimit ?? 5);
+    // A VIP Commander fallen ends the game at this Award too (ruling I2).
+    const last = gameEndsThisRound(this.data, s);
     const got = this.previewScore(s, normaliseTasks(s.tasks), last);
     const paid = perform(this.data, s, {
       kind: 'award',
@@ -1823,11 +1912,16 @@ export class PlayGuide {
     // closed - a Passive is never performed and the per-Action path can never
     // reach it. Asked first, then the Opportunity ends either way.
     const owed = coordinationOnOpportunityEnd(this.data, t);
+    const end = (): void => {
+      const boxes = this.cb.onOpportunityEnding?.(o.uid);
+      if (boxes) void boxes.then(() => this.finishActivation(s, t, o.uid));
+      else this.finishActivation(s, t, o.uid);
+    };
     if (owed > 0 && readyCommands(t) > 0) {
-      void this.offerCoordination(s, t, owed).then(() => this.finishActivation(s, t, o.uid));
+      void this.offerCoordination(s, t, owed).then(end);
       return;
     }
-    this.finishActivation(s, t, o.uid);
+    end();
   }
 
   private finishActivation(s: GameState, t: Token, uid: number): void {

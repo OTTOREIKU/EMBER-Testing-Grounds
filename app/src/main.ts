@@ -2,11 +2,12 @@ import './styles.css';
 import { Board, footprint, snapPlacement, type BoardDeployment, type BoardZone, type DeployShape } from './board';
 import { AttackHelper, ElectronicHelper } from './combat';
 import { alertDialog, choiceDialog, confirmDialog, promptDialog } from './dialog';
-import { gameResult, isLowValue, newTaskState, normaliseTasks, taskItemsFor, zoneCentreGrid, type GameResult, type TaskItem, type TaskState } from './tasks';
+import { lowValueOf } from './scoring';
+import { boxHands, boxPlaceTurn, deployOpenGrids, gameResult, isLowValue, newTaskState, normaliseTasks, remoteAccessRollText, remoteAccessWhy, taskItemsFor, terminalsInReach, zoneCentreGrid, type GameResult, type TaskItem, type TaskState } from './tasks';
 import { DiceTray } from './dice';
 import { importSquadFile } from './importer';
 import { factionColour, ICON_BURST, squadColour } from './icons';
-import { ammoAvailable, ammoHolder, ammoPay, applyRemote, check, onPerformed, onRefused, perform, strictNow, type Command, onBeforeApply } from './commands';
+import { ammoAvailable, ammoHolder, ammoPay, applyRemote, check, missionZones, onPerformed, onRefused, perform, strictNow, taskDesignations, type Command, onBeforeApply } from './commands';
 import { installDiagnostics, noteCommand, noteRefusal } from './diagnostics';
 import { openBoardReport } from './reportui';
 import { Relay } from './net';
@@ -45,7 +46,7 @@ import {
 import { Panel } from './panel';
 import { tacticSpec, tacticTargets } from './tactics';
 import { Roster } from './roster';
-import { inContact, canStandIn, attackDirection, crushEscapeGrids, crushExchange, crushExchangeSpots, crushTargets, type CrushVictims, dissipationFor, extendPath, inArc, knockbackPath, largeGridOf, type LargeGrid, boardGrids, setBoardGrids, losBetween, firingSight, losNote as losNoteFor, type MoveOpts, pathCost, breakAwayLinkDue, protectionFor as protectionForShared, rangeBetween, reachableGrids, smokeBlocks, spotsInGrid, standingSpot } from './rules';
+import { boxDropCellIn, boxDropCells, inContact, canStandIn, attackDirection, crushEscapeGrids, crushExchange, crushExchangeSpots, crushTargets, type CrushVictims, dissipationFor, extendPath, inArc, knockbackPath, largeGridOf, type LargeGrid, boardGrids, setBoardGrids, losBetween, firingSight, losNote as losNoteFor, type MoveOpts, pathCost, breakAwayLinkDue, protectionFor as protectionForShared, rangeBetween, reachableGrids, smokeBlocks, spotsInGrid, standingSpot } from './rules';
 import { breakAwayCost, breakAwayLinkBudget, breakAwayNote, canBeForceMoved, lockersOf, obstructSurcharge, tetherCap, tetherNote } from './melee';
 import { instantiateScenario, loadScenarios, type Scenario } from './scenarios';
 import { loadReplays, ReplayPlayer, type ReplayScript, type ReplayStep, type ReplayTally } from './replay';
@@ -62,7 +63,7 @@ import { PlayGuide } from './playguide';
 import type { BoardGrids, Card, CardAction, DiceData, DieColor, Facing, GameState, MechLoadout, Opportunity, PartSlot, Side, SmokeScreen, Stance, StatusDef, TerrainPiece, Timing, Token } from './types';
 import { addStatus, cellsOf, DEFAULT_GRIDS, gridsOf, normaliseScript, removableTokens, SCALES, statusCount, statusesFor, STATUSES, zonesOf } from './types';
 import { actionIdOf } from './ticks';
-import { overwatchOf, fliesToTarget, missileFlight, explosionCamo, detonationBar, keptWithoutTarget, immediatesOwed, mineStopIndex, bitPortOf, bitsToRecover, targetStatusGrant, targetStatusTargets, hasHighlight, highlightTargets, controlledMoveActions, electronicAll, electronicAllTargets, contactRevealsOwed, positionsOf, actionRange, chargeAdjusted, chargeChoices, cruising, stanceFeedbackOf, stanceFeedbackTargets, spendsAmmoWhenPerformed, linkShockOf, tetheredBy, linkSupportOf, linkSupportTargets, maxLink, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, tokenCleanupOf, tokenCleanupTargets, type LinkSupport, type TokenCleanup, straightLineBonus, selfStatusGrant, selfGrantWhy, transformOffer, automaticShieldFor, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, twoHandedUse, electronicValue, martyrdomOwed, autoDetonationsOwed, autoNeutralTargets, blinkTargets, flightGrant, isAirborneAction, isPositionSwap, loanedParts, phasesThroughUnits, minesLayable, minesOwed, type MineTrigger, multiTargetLimit, unfoldsOwed, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, immobilizedStop, activatesCamo, isScanAction, scannable, formSwitch, grantAdjusted, shockAttackOf, shockMoveAllowed, stealthValue, manifestationRange, manifestTargets, nonHumanoidCost, nonHumanoidStop, chassisStop, maneuverIsSilent, envCardAt, envFlightFrom, envForcedStop, envHotEntries, envMoveRules, isGroundUnit, settleEnvironments, settleMines, settleTethers, chargeableSlots, immediateDetonation, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, projectileReach, type Resupply, resupplyOf, SLOT_LABEL, stationaryAdjusted, interceptLeft, interceptsOwed, interceptOwedAt, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf, type AttackReaction } from './units';
+import { allyRepairTargets, boxNoteText, electronicStrength, overwatchOf, squadPoints, fliesToTarget, missileFlight, explosionCamo, detonationBar, keptWithoutTarget, immediatesOwed, mineStopIndex, bitPortOf, bitsToRecover, targetStatusGrant, targetStatusTargets, hasHighlight, highlightTargets, controlledMoveActions, electronicAll, electronicAllTargets, contactRevealsOwed, positionsOf, actionRange, chargeAdjusted, chargeChoices, cruising, stanceFeedbackOf, stanceFeedbackTargets, spendsAmmoWhenPerformed, linkShockOf, tetheredBy, linkSupportOf, linkSupportTargets, maxLink, stabiliseAsk, stabiliseRowLabel, STABILISE_KEEP_LABEL, tokenCleanupOf, tokenCleanupTargets, type LinkSupport, type TokenCleanup, straightLineBonus, selfStatusGrant, selfGrantWhy, transformOffer, automaticShieldFor, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, twoHandedUse, electronicValue, martyrdomOwed, autoDetonationsOwed, autoNeutralTargets, blinkTargets, flightGrant, isAirborneAction, isPositionSwap, loanedParts, phasesThroughUnits, minesLayable, minesOwed, type MineTrigger, multiTargetLimit, unfoldsOwed, repairSpec, autoTargetsFor, actionSilenceDenier, isSilentAction, immobilizedStop, activatesCamo, isScanAction, scannable, formSwitch, grantAdjusted, shockAttackOf, shockMoveAllowed, stealthValue, manifestationRange, manifestTargets, nonHumanoidCost, nonHumanoidStop, chassisStop, maneuverIsSilent, envCardAt, envFlightFrom, envForcedStop, envHotEntries, envMoveRules, isGroundUnit, settleEnvironments, settleMines, settleTethers, chargeableSlots, immediateDetonation, squadAllegiance, defaultUnitLabel, deployedCardCounts, syncMagazines, explosionScope, factionProblems, freehandSlots, guidedActions, interceptCapacity, isChargeAction, knockbackOf, projectileDelivery, projectileReach, type Resupply, resupplyOf, SLOT_LABEL, stationaryAdjusted, interceptLeft, interceptsOwed, interceptOwedAt, isElectronicAttack, makeDroneToken, makeMechToken, maneuverRange, migrateState, needsSightToLanding, smokePlacement, tokenCards, volleyOf, type AttackReaction } from './units';
 import { registerOffline } from './offline';
 import { battlefieldLocked, countHits, firstPlayerFrom, newSetup, normaliseSetup, tasksLocked, type SetupState } from './setup';
 import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
@@ -241,6 +242,7 @@ async function init() {
   );
 
   attackHelper.tokens = () => state.tokens;
+  attackHelper.boxHands = (uid) => boxHands(state.tasks, uid);
   // Whose Action is running, for a lent Load's Dodge (ruling I24).
   attackHelper.actingUid = () => state.script?.opp?.uid ?? null;
   attackHelper.terrain = () => currentTerrain();
@@ -312,6 +314,7 @@ async function init() {
 
   const roundTracker = new RoundTracker(document.getElementById('round-tracker')!, () => onChanged(), (cmd) => perform(data, state, cmd));
   roundTracker.onStartGame = () => void (normaliseSetup(state.setup) ? endGame() : startGame());
+  roundTracker.onConcede = () => void concedeGame();
 
   const playGuide = new PlayGuide(document.getElementById('board-wrap')!, data, {
     world: () => ({ tokens: state.tokens, terrain: currentTerrain() }),
@@ -345,6 +348,10 @@ async function init() {
       if (ask) promptReveal(t, why);
       else void offerManifestation(t, why).then(() => onChanged());
     },
+    onOpportunityEnding: (uid) => {
+      const t = state.tokens.find((x) => x.uid === uid);
+      return t ? offerBlackBoxes(t, [largeGridOf(t)], false, true) : Promise.resolve();
+    },
     onSetStance: (uid, stance) => {
       const t = state.tokens.find((x) => x.uid === uid);
       if (!t) return;
@@ -361,6 +368,8 @@ async function init() {
     onPlaceUnit: (uid, opts) => startDeployPlacement(uid, opts),
     onPickMission: () => openMissions(),
     onPickSecondary: (side) => void pickSecondary(side),
+    onDesignate: (i) => void designateOwed(i).then(() => onChanged()),
+    onPlaceBox: (side, itemId) => placeBoxAt(side, itemId),
     onPlayTactic: (side, id) => void playTactic(side, id),
     onEndGame: () => void endGame(),
     onConfirmTimings: () => commitTimings(),
@@ -579,6 +588,7 @@ async function init() {
         ? 'Additional Instructions: this Drone has 1 Command Action owed, and taking it spends no Command Token.'
         : null;
     },
+    boxNote: (t) => boxNoteText(boxHands(state.tasks, t.uid)),
     // The sandbox may nudge anything; a linked game gates on the seat.
     spotsInGrid: (t) => spotsInGrid(t, currentTerrain(), state.tokens),
     onPlaceInGrid(t, to) {
@@ -1728,7 +1738,13 @@ async function init() {
     const onBoard = state.tokens.filter((x) => x.deployed !== false);
     // selectToken clears the highlight layer, so the picker is drawn after it.
     selectToken(uid);
-    const free = cells.filter((g) => standingSpot(g.c, g.r, t.size, t.aerial, terrain, onBoard, t.uid));
+    // One unit to a Grid (3.1.4; ruling I4), and once every Grid of the zone
+    // is taken, the Grids next to it, working outward (FAQ P23). Nothing lit
+    // up and Begin round 1 never opened (audit Phase 6, A3, A6).
+    const taken = new Set(onBoard.filter((x) => x.uid !== t.uid && x.kind !== 'projectile').map((x) => `${Math.floor(x.col / 3)},${Math.floor(x.row / 3)}`));
+    const open = deployOpenGrids(new Set(cells.map((g) => `${g.c},${g.r}`)), taken, boardGrids());
+    const free = [...open].map((k) => { const [c, r] = k.split(',').map(Number); return { c, r }; })
+      .filter((g) => standingSpot(g.c, g.r, t.size, t.aerial, terrain, onBoard, t.uid));
     board.showSmokeTargets(
       free.map((g) => ({ ...g, ok: true })),
       (c, r) => {
@@ -1854,6 +1870,39 @@ async function init() {
 
   // Leaves the guided game and hands the board back, keeping everything where it
   // stands so a match can be abandoned without losing the position.
+  // A squad gives up. FAQ P21 has a game run its rounds even with one side
+  // wiped out, so this is the table's one early end (ruling I1; audit Phase 6,
+  // B8). The result is read and offered for the record before the board
+  // unlocks, as End game does.
+  async function concedeGame(): Promise<void> {
+    if (normaliseSetup(state.setup)?.stage !== 'done') return;
+    const mine = getLocalSeat();
+    const pick = await choiceDialog({
+      title: 'Concede the game?',
+      body: `${mine ? 'Your squad gives up' : 'The squad that gives up loses'} and the other squad wins, whatever the score. Losing every unit does not end a game (FAQ P21), so this is the one way to stop early.`,
+      choices: mine
+        ? [{ id: mine, label: 'Concede', danger: true }, { id: '', label: 'Keep playing', cancel: true }]
+        : [
+            { id: 's1', label: `${squadLabel('s1')} concedes` },
+            { id: 's2', label: `${squadLabel('s2')} concedes` },
+            { id: '', label: 'Keep playing', cancel: true },
+          ],
+      stacked: true,
+    });
+    if (pick !== 's1' && pick !== 's2') return;
+    const v = perform(data, state, { kind: 'concede', seat: pick });
+    if (!v.ok) {
+      await alertDialog({ title: 'Not conceded', body: v.why ?? 'The concession was refused.' });
+      return;
+    }
+    const tasks = normaliseTasks(state.tasks);
+    const res = gameResult(tasks, state.tokens, lowValueOf(data));
+    await alertDialog({ title: res.winner ? `${squadLabel(res.winner)} wins` : 'A draw', body: `${res.why}.` });
+    await offerToRecord(res, tasks);
+    perform(data, state, { kind: 'endMatch', seat: 's1' });
+    onChanged();
+  }
+
   async function endGame(): Promise<void> {
     const waiting = state.tokens.filter((t) => t.deployed === false).length;
     const ok = await confirmDialog({
@@ -1870,7 +1919,7 @@ async function init() {
     // the board (5.2.4). Reported before the board unlocks and units move.
     const tasks = normaliseTasks(state.tasks);
     if (state.mission || tasks.vp.s1 || tasks.vp.s2) {
-      const res = gameResult(tasks, state.tokens);
+      const res = gameResult(tasks, state.tokens, lowValueOf(data));
       await alertDialog({
         title: res.winner ? `${squadLabel(res.winner)} wins` : 'A draw',
         body: `${res.why}.`,
@@ -2396,17 +2445,11 @@ async function init() {
       const left = stockLeft(card);
       return left === null || left > 0;
     },
-    squadPoints: () => {
-      const out = { s1: 0, s2: 0 };
-      for (const t of state.tokens) {
-        if (t.kind === 'projectile') continue;
-        out[t.side] += tokenCards(data, t).reduce((n, { card }) => n + (card.score ?? 0), 0);
-      }
-      for (const side of ['s1', 's2'] as const) {
-        for (const id of state.tactics?.[side] ?? []) out[side] += data.byId.get(id)?.score ?? 0;
-      }
-      return out;
-    },
+    // The shared reader (audit Phase 6, G1).
+    squadPoints: () => ({
+      s1: squadPoints(data, state.tokens, 's1', state.tactics?.s1 ?? []),
+      s2: squadPoints(data, state.tokens, 's2', state.tactics?.s2 ?? []),
+    }),
     heldTactics: () => ({ s1: state.tactics?.s1 ?? [], s2: state.tactics?.s2 ?? [] }),
     // Through the command layer rather than by hand: a hand set locally is a
     // hand the other client never sees, and check() for playTactic reads the
@@ -3016,7 +3059,7 @@ async function init() {
       // the last Grid, so a Mine dropped here is already down when the sweep
       // looks at the board.
       void (halt === undefined ? offerMines(t, path, m.steps, m.flying) : Promise.resolve())
-        .then(() => offerBlackBoxes(t, path))
+        .then(() => offerBlackBoxes(t, path, m.flying || !!t.aerial))
         .then(() => m.done(true, halt));
     };
     if (victims) {
@@ -3220,21 +3263,26 @@ async function init() {
     }
   }
 
-  async function offerBlackBoxes(t: Token, path: { c: number; r: number }[]): Promise<void> {
+  // `flight`: a Flying Movement enters only its start and landing Grids
+  // (4.3.2), so a Box it flew over is not offered (ruling I22; audit Phase 6,
+  // F10). `atEnd`: the offer as the unit's Action Opportunity ends in the
+  // Box's Grid (F2), which says nothing when there is no free Freehand.
+  async function offerBlackBoxes(t: Token, path: { c: number; r: number }[], flight = false, atEnd = false): Promise<void> {
+    const grids = flight && path.length > 1 ? [path[0], path[path.length - 1]] : path;
     const loose = normaliseTasks(state.tasks).items
       .filter((i) => i.kind === 'blackbox' && i.bearerUid === undefined
         && i.col !== undefined && i.row !== undefined
-        && path.some((g) => g.c === Math.floor(i.col! / 3) && g.r === Math.floor(i.row! / 3)))
+        && grids.some((g) => g.c === Math.floor(i.col! / 3) && g.r === Math.floor(i.row! / 3)))
       .map((i) => ({ id: i.id, where: gridRef(Math.floor(i.col! / 3), Math.floor(i.row! / 3)) }));
     if (!loose.length) return;
     for (const box of loose) {
       // Re-read every time round: taking one replaces state.tasks wholesale, so
       // a snapshot from before the loop would offer the same Freehand twice.
-      const tasks = normaliseTasks(state.tasks);
-      const taken = tasks.items.filter((i) => i.bearerUid === t.uid && i.bearerSlot).map((i) => i.bearerSlot!);
-      const hands = freehandSlots(data, t, taken);
+      // A Carrier carries one on a Freehand Load (FAQ P11; ruling I19).
+      const hands = freehandSlots(data, t, boxHands(state.tasks, t.uid), [], true);
       const where = box.where;
       if (!hands.length) {
+        if (atEnd) continue;
         await alertDialog({
           title: 'No free Freehand',
           body: `${t.label} passed the Black Box in ${where}, but a Unit needs a Part with the Freehand tag that is not already carrying one. A Part bearing a Black Box has its Freehand treated as invalid (5.3.1).`,
@@ -3243,7 +3291,7 @@ async function init() {
       }
       const take = await confirmDialog({
         title: `Pick up the Black Box in ${where}?`,
-        body: `Picking one up is optional. It goes onto one of this unit's Freehand Parts, and that Part cannot take another while it holds this one.`,
+        body: `${atEnd ? `${t.label} ends its Action Opportunity in the Black Box's Grid (3.4.4). ` : ''}Picking one up is optional. It goes onto one of this unit's Freehand Parts, and that Part cannot take another while it holds this one.`,
         confirmLabel: 'Pick it up',
         cancelLabel: 'Leave it',
       });
@@ -3281,24 +3329,28 @@ async function init() {
   function dropBlackBoxes(victim: Token, attacker: Token): void {
     const held = normaliseTasks(state.tasks).items.filter((i) => i.kind === 'blackbox' && i.bearerUid === victim.uid);
     if (!held.length) { drainBoxDrops(); return; }
-    const g = largeGridOf(victim);
-    const spots: { c: number; r: number; ok: boolean }[] = [];
-    for (const [dc, dr] of [[0, 0], [0, -1], [1, 0], [0, 1], [-1, 0], [1, -1], [1, 1], [-1, 1], [-1, -1]] as const) {
-      const c = g.c + dc;
-      const r = g.r + dr;
-      if (c < 0 || r < 0 || c >= boardGrids() || r >= boardGrids()) continue;
-      // Ground level only (FAQ P9): a Box cannot land on a building. Units do
-      // not block it — a Box may overlap one (P8) — so terrain is the test.
-      if (!canStandIn(c, r, 1, false, currentTerrain(), [], undefined)) continue;
-      spots.push({ c, r, ok: true });
-    }
     const box = held[0];
-    setHint(`${victim.label} was Penetrated and drops a Black Box. As the attacker, click a Grid in contact with it to say where the Box lands (5.3.1).`);
+    // In Contact with the base, edge to edge: never under it, never at a
+    // corner, never on terrain (FAQ P9; ruling I24). Where the bearer stands,
+    // or where the Penetration found it once the attack has taken it off the
+    // board (audit Phase 6, F1, F6). A Box may share a Grid with a unit (P8).
+    const live = state.tokens.find((x) => x.uid === victim.uid);
+    const base = live ? { col: live.col, row: live.row, size: live.size } : box.dropFrom ?? { col: victim.col, row: victim.row, size: victim.size };
+    const legal = boxDropCells(base, currentTerrain(), boardGrids() * 3);
+    const spots: { c: number; r: number; ok: boolean }[] = [];
+    for (const x of legal) {
+      const c = Math.floor(x.col / 3);
+      const r = Math.floor(x.row / 3);
+      if (!spots.some((s) => s.c === c && s.r === r)) spots.push({ c, r, ok: true });
+    }
+    setHint(`${victim.label} was Penetrated and drops a Black Box. As the attacker, click a Grid in contact with its base to say where the Box lands (5.3.1).`);
     board.showSmokeTargets(spots, (c, r) => {
+      const to = boxDropCellIn(c, r, legal);
+      if (!to) return;
       // The attacker's seat, because the attacker is the one choosing.
       perform(data, state, {
         kind: 'dropBlackBox', seat: attacker.side, uid: attacker.uid,
-        itemId: box.id, to: { col: c * 3 + 1, row: r * 3 + 1 },
+        itemId: box.id, to,
       });
       board.clearHighlights();
       logTo(victim, `Penetrated while carrying a Black Box, which drops in ${gridRef(c, r)}.`);
@@ -3476,22 +3528,19 @@ async function init() {
     done(true);
   }
 
-  // Remote Access (5.3.3): an Electronic Counter-roll against a Terminal within
-  // Range 4. A Terminal is only worth accessing once a round, so one already
-  // taken is not offered again.
+  // Remote Access (5.3.3): an Electronic Counter-roll against a Terminal whose
+  // Tactical Zone is within Range 4, measured to its nearest Grid (FAQ P6). A
+  // Terminal is only worth accessing once a round, so one already taken is not
+  // offered again.
   async function performRemoteAccess(t: Token, action: CardAction, done: (ok: boolean) => void): Promise<void> {
     const tasks = normaliseTasks(state.tasks);
-    const from = largeGridOf(t);
     const reach = action.range ?? 4;
-    const open = tasks.items.filter((i) => {
-      if (i.kind !== 'terminal' || i.accessed) return false;
-      const centre = zoneCentre(i.zone);
-      return !!centre && Math.abs(centre.c - from.c) + Math.abs(centre.r - from.r) <= reach;
-    });
+    const cells = (zone: string) => zonesOf(data.zoneData.zones, state).find((z) => z.id === zone)?.cells ?? [];
+    const open = terminalsInReach(tasks.items, t, reach, cells);
     if (!open.length) {
       await alertDialog({
         title: 'No Terminal in reach',
-        body: `Remote Access needs a Terminal within Range ${reach} that has not already been accessed this round. Each Terminal may only be accessed once per round (5.3.3).`,
+        body: `${remoteAccessWhy(tasks.items, t, reach, cells) ?? ''} Remote Access reaches any Grid of a Terminal's Tactical Zone within Range ${reach} (FAQ P6).`,
       });
       return done(false);
     }
@@ -3500,34 +3549,46 @@ async function init() {
     if (open.length > 1) {
       const id = await choiceDialog({
         title: 'Remote Access: which Terminal?',
-        body: `Each is an Electronic Counter-roll against the Terminal, whose Electronic Value is 3.`,
-        choices: open.map((i) => ({ id: i.id, label: zoneName(i.zone) })),
+        body: 'Each is an Electronic Counter-roll against the Terminal, whose Electronic Value is 3.',
+        choices: [...open.map((i) => ({ id: i.id, label: zoneName(i.zone) })), { id: 'cancel', label: 'Cancel', cancel: true }],
       });
       const found = open.find((i) => i.id === id);
       if (!found) return done(false);
       pick = found;
     }
-    const won = await confirmDialog({
+    const ev = electronicStrength(data, state.tokens, t, 'initiator', action);
+    const verdict = await choiceDialog({
       title: `Remote Access on ${zoneName(pick.zone)}`,
-      body: `Make the Electronic Counter-roll now, against the Terminal's Electronic Value of 3. Did it succeed?`,
-      confirmLabel: 'It succeeded',
-      cancelLabel: 'It failed',
+      body: `${remoteAccessRollText(t.label, ev)} How did it go?`,
+      choices: [
+        { id: 'won', label: 'It succeeded' },
+        { id: 'lost', label: 'It failed' },
+        { id: 'cancel', label: 'Cancel', cancel: true },
+      ],
     });
-    if (!won) {
+    if (verdict !== 'won' && verdict !== 'lost') return done(false);
+    // Paid first, as the Match Centre does: the attempt is made either way,
+    // and a refused Action must not leave a Terminal accessed (audit Phase 6,
+    // E2). The access is the Action's success, and the check asks for it.
+    done(true);
+    if (verdict === 'lost') {
       logTo(t, `Remote Access on the ${zoneName(pick.zone)} Terminal failed.`);
       onChanged();
-      return done(true);
+      return;
     }
     // Through the command: a Terminal turned face-down is worth VP at the End
     // Phase, so setting `accessed` in place scored a different board on the
-    // other client.
-    // Same order for the same reason: a refused access must not be applied.
+    // other client. A refused access is not applied.
     const access = { kind: 'accessTerminal' as const, seat: t.side, uid: t.uid, itemId: pick.id };
-    if (!check(data, state, access).ok) return done(false);
+    const v = check(data, state, access);
+    if (!v.ok) {
+      await alertDialog({ title: 'Remote Access', body: v.why ?? 'The access was refused.' });
+      onChanged();
+      return;
+    }
     perform(data, state, access);
     logTo(t, `Remote Access succeeded on the ${zoneName(pick.zone)} Terminal, which is now face-down for the rest of the round.`);
     onChanged();
-    done(true);
   }
 
   // Charge (4.14). The token starts face-down; the Charge Action flips one Part's
@@ -3660,9 +3721,35 @@ async function init() {
   async function performRepair(
     t: Token,
     action: CardAction,
-    rep: { repair: boolean; mend: boolean },
+    rep: { repair: boolean; mend: boolean; ally: boolean; removeSelf: boolean },
     done: (performed: boolean) => void,
   ): Promise<void> {
+    // The SU1's Armor Patch: an ally's Damaged Part, then the SU1 leaves. Paid
+    // first, since the mend takes the SU1 off the board (audit Phase 6, C6).
+    if (rep.ally) {
+      const targets = allyRepairTargets(data, state.tokens, t, action, !!state.noBoard);
+      if (!targets.length) {
+        await alertDialog({
+          title: 'Nothing to mend',
+          body: `${action.name.en || action.id}: no Ally Unit within Range ${action.range ?? 0} has a Damaged Part, and an action that cannot produce any change cannot be performed.`,
+        });
+        return done(false);
+      }
+      const id = await choiceDialog({
+        title: action.name.en || action.id,
+        body: rep.removeSelf ? `One Damaged Part of an Ally Unit is mended, then ${t.label} is removed.` : 'One Damaged Part of an Ally Unit is mended.',
+        choices: [...targets.map((x) => ({ id: `${x.unit.uid}:${x.slot}`, label: `${x.unit.label} · ${SLOT_LABEL[x.slot as PartSlot | 'main'] ?? x.slot}` })), { id: '', label: 'Cancel', cancel: true }],
+        stacked: true,
+      });
+      const pick = targets.find((x) => `${x.unit.uid}:${x.slot}` === id);
+      if (!pick) return done(false);
+      done(true);
+      perform(data, state, { kind: 'repairPart', seat: t.side, uid: t.uid, slot: pick.slot, mode: 'mend', targetUid: pick.unit.uid, actionId: action.id });
+      logTo(pick.unit, `${action.name.en || action.id} from ${t.label}: ${SLOT_LABEL[pick.slot as PartSlot | 'main'] ?? pick.slot} mended to intact${rep.removeSelf ? `, and ${t.label} is removed` : ''}.`);
+      if (rep.removeSelf && selectedUid === t.uid) selectToken(null);
+      onChanged();
+      return;
+    }
     const parts = tokenCards(data, t).filter(({ slot }) => slot !== 'pilot');
     const choices: { id: string; label: string }[] = [];
     for (const { slot, card } of parts) {
@@ -3796,10 +3883,10 @@ async function init() {
     // only this site still knows who that is. A carried Black Box drops where
     // the bearer fell: the falling is nobody's placement choice.
     if (fatal) {
-      for (const box of normaliseTasks(state.tasks).items.filter((i) => i.kind === 'blackbox' && i.bearerUid === victim.uid)) {
-        perform(data, state, { kind: 'dropBlackBox', seat: attacker.side, uid: attacker.uid, itemId: box.id, to: { col: end.c * 3 + 1, row: end.r * 3 + 1 } });
-        logTo(victim, `The Black Box it carried is left in ${gridRef(end.c, end.r)}.`);
-      }
+      // The recordKill below leaves a Box no Penetration owes in this Grid
+      // (ruling I20); one a Penetration owes is the attacker's drop.
+      const left = normaliseTasks(state.tasks).items.filter((i) => i.kind === 'blackbox' && i.bearerUid === victim.uid && !i.dropFrom).length;
+      if (left) logTo(victim, `${left === 1 ? 'The Black Box it carried is' : `The ${left} Black Boxes it carried are`} left in ${gridRef(end.c, end.r)}.`);
       logTo(victim, `${victim.label} is forced into the Abyss Grid ${gridRef(end.c, end.r)} and is immediately Destroyed.`);
       await alertDialog({
         title: `${victim.label} falls into the Abyss`,
@@ -4778,8 +4865,8 @@ async function init() {
     // grenade over a missile does not advertise Repaired or Optical Camouflage.
     const detStatuses = (): StatusDef[] => {
       const kinds = new Set(targets.map((x) => x.t.kind));
-      if (!kinds.size) return statusesFor('mech').filter((s) => s.id !== 'smoke');
-      return STATUSES.filter((s) => s.id !== 'smoke' && [...kinds].some((k) => !s.appliesTo || s.appliesTo.includes(k)));
+      if (!kinds.size) return statusesFor('mech').filter((s) => s.id !== 'smoke' && s.handPlaced !== false);
+      return STATUSES.filter((s) => s.id !== 'smoke' && s.handPlaced !== false && [...kinds].some((k) => !s.appliesTo || s.appliesTo.includes(k)));
     };
 
     const draw = (): void => {
@@ -6264,11 +6351,19 @@ async function init() {
     // command, so a mirrored seat replays it from (card, target, pick) alone.
     // Its log line is written into the token by apply, and read back here.
     const verdict = perform(data, state, { kind: 'playTactic', seat: side, uid: target.uid, cardId: id, pick: pick ?? undefined });
+    // A strict table refuses a card whole: it was never played, so it moves
+    // nothing, and the alert says why rather than repeating the unit's last log
+    // line (audit Phase 6, H4). A Teaching table applies it and says why below.
+    if (!verdict.ok && (state.script?.strict || getLocalSeat())) {
+      await alertDialog({ title: spec.name, body: verdict.why ?? 'The card was refused.' });
+      return;
+    }
     const log = target.log?.at(-1)?.text ?? spec.name;
     renderUnitLog();
     selectToken(target.uid);
     onChanged();
     if (spec.maneuver) {
+      if (!verdict.ok) await alertDialog({ title: spec.name, body: verdict.why ?? spec.name });
       void startMove(target.uid, { range: maneuverRange(data, target), label: 'Maneuver', maneuver: true }, () => onChanged());
       return;
     }
@@ -6290,6 +6385,9 @@ async function init() {
       });
       if (!ok) return;
     }
+    // Through the engine, which leaves its Black Boxes in the Grid it stood
+    // in (ruling I20; audit Phase 6, F9).
+    perform(data, state, { kind: 'despawn', seat: t.side, uid: t.uid, targetUid: uid });
     state.tokens = state.tokens.filter((x) => x.uid !== uid && x.parentUid !== uid);
     if (selectedUid === uid) selectToken(null);
     onChanged();
@@ -6465,7 +6563,7 @@ async function init() {
     const opp = { ...(opp0?.uid === t.uid ? opp0 : {}), moved: true };
     const granted = grantAdjusted(stationaryAdjusted(raw, opp), t, opp);
     if (asked.twoHandedDeclined) return { ...granted, twoHandedDeclined: true };
-    return (both ? twoHandedUse(data, t, granted, [], loanedParts(data, state.tokens, t))?.action : undefined) ?? granted;
+    return (both ? twoHandedUse(data, t, granted, boxHands(state.tasks, t.uid), loanedParts(data, state.tokens, t))?.action : undefined) ?? granted;
   }
 
   // The walk recorded as the Action's own Movement, once the Action is paid:
@@ -6482,7 +6580,7 @@ async function init() {
 
   async function askTwoHanded(t: Token, granted: CardAction): Promise<CardAction> {
     // A Load lent by a Carrier in Contact can be the Freehand (FAQ O16).
-    const use = twoHandedUse(data, t, granted, [], loanedParts(data, state.tokens, t));
+    const use = twoHandedUse(data, t, granted, boxHands(state.tasks, t.uid), loanedParts(data, state.tokens, t));
     if (!use) return granted;
     const go = await confirmDialog({
       title: `[Two-Handed]: ${use.label}`,
@@ -6590,7 +6688,7 @@ async function init() {
     const legal = state.tokens.filter((o) => o.side !== attacker.side && o.deployed !== false
       && (o.partStates[o.kind === 'mech' ? 'torso' : 'main'] ?? 'intact') !== 'destroyed'
       && !losNoteFor(attacker, o, reach, currentTerrain(), state.tokens, state.smoke ?? [], true).includes('✕'));
-    return highlightTargets(data, state.tokens, action, legal);
+    return highlightTargets(data, state.tokens, action, legal, attacker);
   }
 
   // A camouflaged unit that performs an Action without Silence Reveals
@@ -7392,6 +7490,8 @@ async function init() {
     const draw = (): void => {
       const placed = state.environments ?? [];
       const cap = environmentAllowance(data, state);
+      const envStage = normaliseSetup(state.setup)?.stage;
+      const envClosed = envStage === 'deploy' || envStage === 'done';
       const ref = (c: number, r: number) => `${String.fromCharCode(65 + c)}${r + 1}`;
       dlg.classList.toggle('arming', envArmed !== null);
       // The board only reports cell clicks while panning is off, which is how
@@ -7424,9 +7524,10 @@ async function init() {
         <p class="dim">Pick a card, then click the Grid it covers. Right-click a Grid to take its
           card off. The number you may place is printed on the Battlefield Card (5.4.1), and they
           generally do not go on the Tactical Zones.</p>
+        ${envClosed ? '<p class="dim">They are placed while the battlefield is set up, before anything deploys (5.4.1).</p>' : ''}
         <ul class="env-list">${
           data.environments.cards.map((c) => `<li>
-            <button class="env-pick${envArmed === c.id ? ' armed' : ''}" data-env="${escapeHtml(c.id)}">
+            <button class="env-pick${envArmed === c.id ? ' armed' : ''}" data-env="${escapeHtml(c.id)}"${envClosed && strictNow(state) ? ' disabled' : ''}>
               <b>${escapeHtml(c.name)}</b><span>${escapeHtml(c.text)}</span>
             </button></li>`).join('')
         }</ul>
@@ -7732,9 +7833,9 @@ async function init() {
     // replace the whole board are shut for the entire game, because a Mission or
     // Scenario would swap the map and units out from under the lock.
     const locked = battlefieldLocked(setup);
-    // The map is settled first, but the Tasks are chosen AFTER the roll
-    // (FAQ P1), so the Missions dialog and the zone overlay stay open through
-    // the tasks stage and freeze when the edges are picked.
+    // The map is settled first, but the Main Task is chosen AFTER the roll
+    // and before the edge (ruling I3), so the Missions dialog and the zone
+    // overlay stay open through the edge pick and freeze once it is made.
     const tl = tasksLocked(setup);
     const why = 'Locked while a game is running. Press End game to change it.';
     mapSelect.disabled = locked;
@@ -7918,12 +8019,14 @@ async function init() {
   // for it straight away, because the designation is part of Task Setup.
   async function pickSecondary(side: Side): Promise<void> {
     const tasks = normaliseTasks(state.tasks);
-    // Both sides may take the same Secondary, so nothing is removed from the list.
+    // The box holds one of each, so the other squad's card is theirs (ruling
+    // I17): shown, and greyed.
     const open = data.secondary;
-    // A card that designates a Tactical Area needs the board to have some. The
-    // Main Task decides that, and VIP places none at all.
-    const mission = state.mission ? data.missions.cards.find((m) => m.id === state.mission) : undefined;
-    const hasZones = (mission?.zones ?? []).length > 0;
+    const theirs = tasks.secondary[side === 's1' ? 's2' : 's1'];
+    // A card that designates a Tactical Area needs the board to have some: any
+    // of them, whatever the Main Task, VIP included. It read the Main Task's
+    // own zones (audit Phase 6, D9).
+    const hasZones = missionZones(data, state).length > 0;
     const id = await choiceDialog({
       title: `${squadLabel(side)}: choose a Secondary Task`,
       body: 'Both players pick one and show it to the other, so this is open information.',
@@ -7932,78 +8035,102 @@ async function init() {
         id: c.id,
         label: `${c.name} · ${c.vp ?? 0} VP`,
         image: secondaryImageUrl(c.id),
-        disabled: c.designate === 'zone' && !hasZones,
-        note: c.designate === 'zone' && !hasZones ? 'needs a Main Task with Tactical Zones' : undefined,
+        disabled: (c.designate === 'zone' && !hasZones) || c.id === theirs,
+        note: c.id === theirs ? 'the other squad holds it' : c.designate === 'zone' && !hasZones ? 'needs Tactical Zones on the board' : undefined,
       })),
     });
     const card = open.find((c) => c.id === id);
     if (!card) return;
-    if (!perform(data, state, { kind: 'pickSecondary', seat: side, cardId: card.id }).ok) return;
-
+    const v = perform(data, state, { kind: 'pickSecondary', seat: side, cardId: card.id });
+    if (!v.ok) {
+      await alertDialog({ title: card.name, body: v.why ?? 'That pick was refused.' });
+      return;
+    }
     if (card.designate && card.designate !== 'none') {
-      await designateFor(side, card);
+      await designateFor(side);
     }
     onChanged();
   }
 
-  async function designateFor(side: Side, card: SecondaryTask): Promise<void> {
-    const enemy: Side = side === 's1' ? 's2' : 's1';
-    if (card.designate === 'zone') {
-      // Only zones the Main Task actually placed are on the board, so the rest
-      // would be designating somewhere the players cannot see.
-      const mission = state.mission ? data.missions.cards.find((m) => m.id === state.mission) : undefined;
-      const placed = new Set(mission?.zones ?? []);
-      const zones = zonesOf(data.zoneData.zones, state).filter((z) => placed.has(z.name) || placed.has(z.id));
+  // One Task designation (5.2.3), asked of the squad the card says chooses:
+  // Behead's Head is named by the other squad, and designateFor sent it as the
+  // scorer, which a strict table refused in silence (audit Phase 6, D6). In a
+  // linked game only the chooser's own screen asks; the other waits.
+  async function designateOwed(index: number): Promise<void> {
+    const d = taskDesignations(data, state)[index];
+    if (!d) return;
+    const me = getLocalSeat();
+    if (me && me !== d.by) return;
+    const card = data.secondary.find((c) => c.id === normaliseTasks(state.tasks).secondary[d.side]);
+    let cmd: Command | null = null;
+    if (d.what === 'zone') {
+      // Any of the Tactical Areas on the board: the card names one, not one of
+      // the Main Task's (audit Phase 6, D9).
+      const zones = missionZones(data, state);
       const id = await choiceDialog({
-        title: `${card.name}: which Tactical Zone?`,
-        body: card.setup,
+        title: `${squadLabel(d.by)}: ${d.label}, which Tactical Zone?`,
+        body: card?.setup ?? '',
         stacked: true,
-        choices: zones.map((z) => ({ id: z.id, label: z.name })),
+        choices: [...zones.map((z) => ({ id: z.id, label: z.name })), { id: 'cancel', label: 'Cancel', cancel: true }],
       });
-      // Through the command, like the Match Centre: a designation is a shared
-      // fact that scoring reads, and writing state.tasks by hand never reached
-      // the other client in an online freeplay room.
-      if (id) perform(data, state, { kind: 'designateTask', seat: side, what: 'zone', for: side, zone: id });
-      return;
-    }
-    // The Unit is stored against the side that SCORES the card, so two cards can
-    // never fight over one key. Who OWNS the named Mech still differs by card:
-    // enemy-own-mech has the opponent name one of theirs, enemy-mech has you
-    // name one of theirs, own-mech is your own.
-    const owner: Side = card.designate === 'enemy-mech' || card.designate === 'enemy-own-mech' ? enemy : side;
-    const mechs = state.tokens.filter((t) => t.kind === 'mech' && t.side === owner);
-    if (!mechs.length) {
-      await alertDialog({
-        title: 'Nothing to designate',
-        body: `${card.name} needs a Mech named, and ${squadLabel(owner)} has none on the board yet. Add the squads first, then pick the Task again.`,
+      if (id && id !== 'cancel') cmd = { kind: 'designateTask', seat: d.by, what: 'zone', for: d.side, zone: id };
+    } else {
+      const owner = d.owner ?? d.side;
+      const mechs = state.tokens.filter((t) => t.kind === 'mech' && t.side === owner);
+      if (!mechs.length) {
+        await alertDialog({ title: 'Nothing to designate', body: `${d.label} names a Mech, and ${squadLabel(owner)} has none yet. Add the squads first.` });
+        return;
+      }
+      const uid = await choiceDialog({
+        title: d.what === 'leader' ? `${squadLabel(d.by)}: designate your Commander` : `${squadLabel(d.by)}: ${d.label}, which Mech?`,
+        body: d.what === 'leader'
+          ? 'Destroying the enemy Commander scores 10 Victory Points, and the game ends at the end of that round (3.7.3).'
+          : card?.setup ?? '',
+        choices: [...mechs.map((t) => ({ id: String(t.uid), label: t.label })), { id: 'cancel', label: 'Cancel', cancel: true }],
       });
-      return;
+      const pick = mechs.find((t) => String(t.uid) === uid);
+      if (pick) cmd = { kind: 'designateTask', seat: d.by, what: d.what, for: d.side, uid: pick.uid };
     }
-    const uid = await choiceDialog({
-      title: `${card.name}: which Mech?`,
-      body: card.setup,
-      choices: mechs.map((t) => ({ id: String(t.uid), label: t.label })),
+    if (!cmd) return;
+    const v = perform(data, state, cmd);
+    if (!v.ok) await alertDialog({ title: d.label, body: v.why ?? 'That designation was refused.' });
+  }
+
+  // A Black Box placed at setup (5.2.1; ruling I23): a Grid of its own zone
+  // lit on the board, the Box on the centre of the one clicked, or the free
+  // cell nearest it when terrain is there.
+  function placeBoxAt(side: Side, itemId: string): void {
+    const item = normaliseTasks(state.tasks).items.find((i) => i.id === itemId);
+    const zone = item ? zonesOf(data.zoneData.zones, state).find((z) => z.id === item.zone) : undefined;
+    if (!item || !zone) return;
+    const terrain = currentTerrain();
+    const grids = zone.cells.map(parseGridRef).filter((g): g is { col: number; row: number } => !!g)
+      .map((g) => ({ c: g.col, r: g.row, ok: canStandIn(g.col, g.row, 1, false, terrain, [], undefined) }));
+    setHint(`${squadLabel(side)} places the Black Box in ${zone.name}: click a Grid of the zone. Esc stops.`);
+    board.showSmokeTargets(grids, (c, r) => {
+      const spot = standingSpot(c, r, 1, false, terrain, [], undefined);
+      if (!spot) return;
+      const v = perform(data, state, { kind: 'placeTaskItem', seat: side, itemId, to: spot });
+      board.clearHighlights();
+      setHint(v.ok ? '' : v.why ?? '');
+      onChanged();
     });
-    const pick = mechs.find((t) => String(t.uid) === uid);
-    // `for` is the side that SCORES the card, which is not always the side
-    // that owns the named Mech — Behead has the opponent name one of theirs.
-    if (pick) perform(data, state, { kind: 'designateTask', seat: side, what: 'target', for: side, uid: pick.uid });
+  }
+
+  // A Secondary's own designation, straight after the pick, asked of the squad
+  // the card says chooses (designateOwed).
+  async function designateFor(side: Side): Promise<void> {
+    const at = taskDesignations(data, state).findIndex((d) => d.side === side && d.what !== 'leader');
+    if (at >= 0) await designateOwed(at);
   }
 
   // The VIP mission needs both Commanders named, one per side, before there is
   // anything to assassinate (5.2.3). Stored by the side that OWNS the Mech.
   async function designateCommanders(): Promise<void> {
+    // Each side names its own, through the one door every designation uses.
     for (const side of ['s1', 's2'] as Side[]) {
-      const mechs = state.tokens.filter((t) => t.kind === 'mech' && t.side === side);
-      if (!mechs.length) continue;
-      const uid = await choiceDialog({
-        title: `${squadLabel(side)}: designate your Commander`,
-        body: 'Destroying the enemy Commander scores 10 Victory Points and ends the game immediately.',
-        choices: mechs.map((t) => ({ id: String(t.uid), label: t.label })),
-      });
-      const pick = mechs.find((t) => String(t.uid) === uid);
-      // Each side names its own, so seat and `for` are the same here.
-      if (pick) perform(data, state, { kind: 'designateTask', seat: side, what: 'leader', for: side, uid: pick.uid });
+      const at = taskDesignations(data, state).findIndex((d) => d.what === 'leader' && d.side === side);
+      if (at >= 0) await designateOwed(at);
     }
     onChanged();
   }
@@ -8953,9 +9080,9 @@ async function init() {
         });
       }
       const sc = SCALES.find((x) => x.id === (state.scale ?? 'standard'))!;
-      const sidePts = state.tokens
-        .filter((t) => t.side === side)
-        .reduce((sum, t) => sum + tokenCards(data, t).reduce((n, { card }) => n + (card.score ?? 0), 0), 0);
+      // The shared reader, hand included: the Tactics Cards the import has just
+      // set count against the same limit (audit Phase 6, G1, G6).
+      const sidePts = squadPoints(data, state.tokens, side, state.tactics?.[side] ?? []);
       if (!sc.openEnded && sidePts > sc.points) {
         void alertDialog({
           title: 'That squad is over the points limit',

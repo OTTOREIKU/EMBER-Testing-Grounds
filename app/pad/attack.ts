@@ -10,7 +10,7 @@
 // to read them from.
 import type { GameData } from '../src/data';
 import type { Command, CheckResult } from '../src/commands';
-import { normaliseTasks } from '../src/tasks';
+import { boxHands, normaliseTasks } from '../src/tasks';
 import { AttackHelper, combatRoleFor, type MirrorAct } from '../src/combat';
 import { chargeAdjusted, dodgeEnhanceOf, knockbackOf, eyeRerollName, missileGuidance, armorPiercing, coolingBonus, grantAdjusted, kcArmorReady, multiTargetLimit, pilotDiceBonus, stationaryAdjusted, structureOf, tokenCards, twoHandedUse } from '../src/units';
 import { statusCount } from '../src/types';
@@ -153,6 +153,10 @@ export interface TableVerdict {
   stationary?: boolean;
   graceNote?: boolean;
   twoHanded?: 'declined';
+  // The defender has Low Profile from an effect, not a Token: an ally's aura,
+  // KeyHole's concealment or a Misty Eagle beside the shooter (J12; audit
+  // Phase 6, C4).
+  effectLowProfile?: boolean;
 }
 
 let api: AttackApi | null = null;
@@ -263,8 +267,8 @@ function attackActionOf(t: Token, actionId: string, verdict?: TableVerdict): Car
     : !a.state().script && verdict?.stationary !== undefined ? { moved: !verdict.stationary } : null;
   const granted = grantAdjusted(stationaryAdjusted(printed, opp), t, opp);
   // FAQ A16: the designation may be declined, and the declined copy says so.
-  if (verdict?.twoHanded === 'declined') return twoHandedUse(a.data, t, granted) ? { ...granted, twoHandedDeclined: true } : granted;
-  return twoHandedUse(a.data, t, granted)?.action ?? granted;
+  if (verdict?.twoHanded === 'declined') return twoHandedUse(a.data, t, granted, boxHands(a.state().tasks, t.uid)) ? { ...granted, twoHandedDeclined: true } : granted;
+  return twoHandedUse(a.data, t, granted, boxHands(a.state().tasks, t.uid))?.action ?? granted;
 }
 
 // In a FREEFORM room this phone runs both halves of the attack, so the
@@ -348,6 +352,7 @@ export function mountAttack(into: HTMLElement): AttackHelper | null {
     (cmd) => a.send(forSeat(cmd)),
   );
   h.tokens = () => a.state().tokens;
+  h.boxHands = (uid) => boxHands(a.state().tasks, uid);
   // No terrain and no smoke: every position-aware bonus that reads them is
   // null-guarded in the helper and stays off.
   h.noBoard = true;
@@ -419,6 +424,7 @@ export function beginAttack(attacker: Token, actionId: string, defender: Token, 
   h.blackRoller = a.blackDie();
   h.backAttack = verdict.backAttack;
   h.tableGrace = verdict.graceNote ?? null;
+  h.tableLowProfile = verdict.effectLowProfile ?? null;
   if (verdict.explosion) {
     h.start(
       attacker, action, defender,

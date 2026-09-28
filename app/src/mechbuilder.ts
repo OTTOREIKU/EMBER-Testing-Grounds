@@ -104,6 +104,18 @@ export async function confirmLegalBuild(data: GameData, m: MechLoadout, confirmL
       danger: true,
     });
   }
+  // Asked, not refused: a sandbox may want a pilotless Mech, and it played
+  // with an invented Link 3 and no Initiative without a word (audit Phase 6,
+  // G3). A strict table refuses it when the squad joins.
+  if (!m.pilot) {
+    return confirmDialog({
+      title: 'That mech has no Pilot',
+      body: 'Each Mech in a Squad must be assigned a Pilot (5.1). Without one it has no Link Value of its own and no Initiative.',
+      confirmLabel,
+      cancelLabel: 'Let me pick one',
+      danger: true,
+    });
+  }
   return true;
 }
 

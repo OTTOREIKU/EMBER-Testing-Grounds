@@ -107,7 +107,9 @@ const zones = [{ id: 'zb', name: 'Bravo', cells: ['C3'] }, { id: 'zc', name: 'Ch
 const mission = { family: 'blackbox', zones: ['Bravo', 'Charlie'] };
 
 const derived = T.taskItemsFor(zones, mission);
-check('with nothing authored, a Box still lands on the first Grid centre',
+// A one-Grid zone: its only Grid is its default (the rule for a wider zone,
+// the Grid nearest the middle, is pinned in mechanics6).
+check('with nothing authored, a Box lands on its Grid centre',
   { col: derived.items[0].col, row: derived.items[0].row }, { col: 2 * 3 + 1, row: 2 * 3 + 1 });
 
 const authored = T.taskItemsFor(zones, mission, [{ kind: 'blackbox', zone: 'Bravo', col: 10, row: 11 }]);
@@ -311,8 +313,12 @@ ok('and startDeployPlacement gates on that same function', /const shape = overla
 // the Match Centre: deployCellsFor is the gate there.
 const hud3 = readFileSync(new URL('../src/matchhud.ts', import.meta.url), 'utf8');
 const gate = hud3.slice(hud3.indexOf('export function deployCellsFor'), hud3.indexOf('export function deployCellsFor') + 1400);
-ok('the Match Centre gate prefers the authored deployment', /s\.deployZones\?\.\[su\.edge\[side\]\]/.test(gate));
-ok('and still falls back to the printed shape', /missionDeployment\[s\.mission\]/.test(gate));
+// It reads the engine's own zone (tasks.ts deployGrids; audit Phase 6, A3), so
+// that is run here rather than read.
+const zd = { deployments: [{ id: 'strips', black: { from: 'A1', to: 'L2' }, white: { from: 'A11', to: 'L12' } }], missionDeployment: {} };
+ok('the Match Centre gate reads the engine zone',/deployGrids\(data\.zoneData, s, su\.edge\[side\]\)/.test(gate));
+check('the Match Centre gate prefers the authored deployment', [...T.deployGrids(zd, { deployZones: { black: ['A1'], white: ['K15'] } }, 'white')], ['10,14']);
+check('and still falls back to the printed shape', T.deployGrids(zd, {}, 'white').size, 24);
 
 // ---------- EXECUTABLE deployment cover (E6) ----------
 //

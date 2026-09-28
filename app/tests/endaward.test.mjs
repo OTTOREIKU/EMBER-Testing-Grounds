@@ -134,6 +134,10 @@ export function makeMechToken(state: any, data: any, loadout: any, side: any, na
 // outside.
 export const scoreStub: { result: any } = { result: { lines: [], s1: 0, s2: 0 } };
 export function scorePreview(_ctx: any, _finalRound: boolean): any { return scoreStub.result; }
+// No fixture here plays VIP, so this round ends the game only at the round
+// limit: scoring.ts's reading with the VIP half honestly false (audit Phase 6,
+// B2).
+export function gameEndsThisRound(_data: any, s: any): boolean { return s.round.n >= (s.roundLimit ?? 5); }
 // Grace Note measures a distance, so the pilot block wants the Large-Grid sum.
 // Nothing here is about range; the real Manhattan arithmetic is enough.
 export function largeGridOf(t: any): any { return { c: Math.floor(t.col / 3), r: Math.floor(t.row / 3) }; }
@@ -233,6 +237,9 @@ check('and the reason is one a player can read',
   C.check(data, stA, { kind: 'award', seat: 's1', vp: { s1: 1.5, s2: 0 }, keys: [] }).why, 'That is not a score.');
 check('while a negative one is now allowed through',
   C.check(data, stA, { kind: 'award', seat: 's1', vp: { s1: -2, s2: 0 }, keys: [] }).ok, true);
+// At the Tasks step: Remove Units and Token Management come first on a strict
+// table (3.7; audit Phase 6, B6), so the checklist stands where it would.
+stA.script.endDone = ['2:end:remove', '2:end:tokens'];
 check('but the step mark passes regardless of what the round was worth',
   C.check(data, stA, { kind: 'markEndStep', seat: 's1', step: 'tasks' }).ok, true);
 
@@ -299,10 +306,12 @@ check('and the extra press sends only the idempotent mark',
 // A round with nothing to score still closes: no Award is owed, so no Award can
 // be refused, and the step must not be left hanging.
 const stNil = board();
+// Standing at the Tasks step, the steps before it done (3.7; audit Phase 6, B6).
+stNil.script.endDone = ['2:end:remove', '2:end:tokens'];
 const ctxNil = makeCtx(stNil);
 C.scoreStub.result = { lines: [], s1: 0, s2: 0 };
 C.settleEndStep(ctxNil, 's1', 'tasks');
-check('a round that scores nothing still ticks the step', stNil.script.endDone, ['2:end:tasks']);
+check('a round that scores nothing still ticks the step', stNil.script.endDone, ['2:end:remove', '2:end:tokens', '2:end:tasks']);
 check('and sends no Award at all', ctxNil.sent.map((c) => c.kind), ['markEndStep']);
 
 C.setLocalSeat(null);
@@ -315,11 +324,13 @@ C.setLocalSeat(null);
 // too or the same press behaves differently on the two pages.
 check('the HUD button goes through settleEndStep',
   /on\('\[data-endstep\]', \(el\) => settleEndStep\(ctx, me\(\), el\.dataset\.endstep!\)\);/.test(hud), true);
-// Two, and only two: the End Phase step above, and the manual +1 button a local
-// game keeps because there the players are the referee. A third would be a
-// second copy of the sequence, which is how the readers drift apart.
-check('the HUD sends an Award from exactly those two places',
-  hud.split("kind: 'award'").length - 1, 2);
+// One, and only one: the End Phase step above. The manual +1 a local game keeps
+// sends `adjustVp` now, which touches the VP and nothing else (audit Phase 6,
+// D3). A second Award would be a second copy of the sequence, which is how the
+// readers drift apart.
+check('the HUD sends an Award from exactly that one place',
+  hud.split("kind: 'award'").length - 1, 1);
+check('and the manual +1 goes through adjustVp', hud.includes("kind: 'adjustVp'"), true);
 
 const awardFn = cut(guide, 'private awardScore()', '// Stabilize System (6.1)', "the guide's awardScore");
 check('freeplay reads the Award verdict', /const paid = perform\(/.test(awardFn), true);

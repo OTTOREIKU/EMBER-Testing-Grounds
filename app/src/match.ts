@@ -13,9 +13,10 @@ import { cardName, FACTION_LABEL, dataUrl, loadData, missionImageUrl, parseGridR
 import { tacticSpec } from './tactics';
 import { flushBoxDrops, queueBoxDrop, objectiveCells, resetHudTools, startActionFromCard, startSupportPick } from './matchhud';
 import { printedDeployment } from './overlays';
-import { ignoresProtectionOnHighlight, kcArmorReady, knockbackOf, migrateState, multiTargetLimit, providesUnitProtectionToAllies, squadAllegiance, tokenCards, unfoldsOwed, type AttackReaction } from './units';
+import { ignoresProtectionOnHighlight, kcArmorReady, knockbackOf, migrateState, multiTargetLimit, providesUnitProtectionToAllies, squadAllegiance, squadPoints, tokenCards, unfoldsOwed, type AttackReaction } from './units';
 import { countHits, normaliseSetup } from './setup';
-import { gameResult, normaliseTasks, taskItemsFor } from './tasks';
+import { lowValueOf } from './scoring';
+import { boxHands, gameResult, normaliseTasks, taskItemsFor } from './tasks';
 import { loadSquads, saveSquad, type SavedSquad } from './squadstore';
 import { loadMechPresets } from './presets';
 import { hideTooltip, installTooltip, preloadCards } from './tooltip';
@@ -31,8 +32,8 @@ import { losNote, protectionFor, spotsInGrid } from './rules';
 import { SquadTracker } from './squads';
 import { Panel } from './panel';
 import type { CardAction, CombatView, DiceData, DieColor, GameState, Side, Token } from './types';
-import { chargeAdjusted, dodgeEnhanceOf, grantAdjusted, SLOT_LABEL, stationaryAdjusted, twoHandedUse, loanedParts, explosionScope } from './units';
-import { gridsOf, PHASES, statusCount } from './types';
+import { boxNoteText, chargeAdjusted, dodgeEnhanceOf, grantAdjusted, SLOT_LABEL, stationaryAdjusted, twoHandedUse, loanedParts, explosionScope } from './units';
+import { gridsOf, PHASES, SCALES, statusCount } from './types';
 // FIRST, before anything else in this module runs. A net that is installed
 // after the thing it is meant to catch is not a net.
 installDiagnostics(window);
@@ -911,8 +912,8 @@ function attackActionBuilt(t: Token | undefined, actionId: string, twoHandedDecl
   // player may decline, and the declined copy is marked so the window says so.
   // A Load lent by a Carrier in Contact can be the Freehand (FAQ O16).
   const loans = loanedParts(data, state.tokens, t);
-  if (twoHandedDeclined) return twoHandedUse(data, t, granted, [], loans) ? { ...granted, twoHandedDeclined: true } : granted;
-  return twoHandedUse(data, t, granted, [], loans)?.action ?? granted;
+  if (twoHandedDeclined) return twoHandedUse(data, t, granted, boxHands(state.tasks, t.uid), loans) ? { ...granted, twoHandedDeclined: true } : granted;
+  return twoHandedUse(data, t, granted, boxHands(state.tasks, t.uid), loans)?.action ?? granted;
 }
 
 function startAttack(uid: number, actionId: string, targetUid: number, mode: 'attack' | 'intercept' | 'explosion' = 'attack', opts: { twoHandedDeclined?: boolean; charged?: boolean; chargeChoice?: string } = {}): void {
@@ -1129,6 +1130,7 @@ function mountSide(): void {
       syncSide(t.uid);
     },
     tacticNote: () => null,
+    boxNote: (t) => boxNoteText(boxHands(state.tasks, t.uid)),
   });
   // This runs again every time the HUD shell is rebuilt — ensureHud calls it
   // from the one-time block, and the shell is written from scratch whenever the
@@ -1199,6 +1201,7 @@ function mountSide(): void {
       (cmd) => send(cmd),
     );
     attackHelper.tokens = () => state.tokens;
+    attackHelper.boxHands = (uid) => boxHands(state.tasks, uid);
     // Whose Action is running, for a lent Load's Dodge (ruling I24).
     attackHelper.actingUid = () => state.script?.opp?.uid ?? null;
     attackHelper.terrain = () => terrainNow();
@@ -1439,11 +1442,10 @@ function sideSummary(side: Side): { mechs: number; drones: number; points: numbe
       if (t.side !== side || t.kind === 'projectile') continue;
       if (t.kind === 'mech') mechs++;
       else drones++;
-      points += tokenCards(data, t).reduce((n, { card }) => n + (card.score ?? 0), 0);
     }
     // A Tactics Card is never on the board but is paid for out of the same
-    // budget, so leaving it out understated what a squad had spent.
-    for (const id of state.tactics?.[side] ?? []) points += data.byId.get(id)?.score ?? 0;
+    // budget, so the shared reader counts the hand too (audit Phase 6, G1).
+    points = squadPoints(data, state.tokens, side, state.tactics?.[side] ?? []);
   }
   return { mechs, drones, points };
 }
@@ -1532,6 +1534,7 @@ function barHtml(): string {
     ${v.room ? `<span class="pill code" id="mc-code" title="Copy the room code">${esc(v.room.id)}${copied ? ' ✓' : ''}</span>` : ''}
     ${conn}${link}
     <span class="spacer"></span>
+    ${canConcede() ? '<button class="mc-backbtn ghostbtn" id="mc-concede" title="Give up this game: the other squad wins, whatever the score">Concede</button>' : ''}
     <button class="mc-backbtn ghostbtn" id="mc-report" title="Report a problem with this game">Report</button>
     <button class="mc-account" id="mc-acct">${account ? esc(account.username) : 'Sign in'}</button>
     <button class="mc-account mc-menu" id="mc-menu">Menu</button>
@@ -1562,12 +1565,38 @@ async function openBarMenu(): Promise<void> {
     choices: [
       { id: 'board', label: 'Back to Board' },
       ...(inRoom ? [{ id: 'door', label: 'Leave this table' }] : []),
+      ...(canConcede() ? [{ id: 'concede', label: 'Concede the game' }] : []),
       { id: 'report', label: 'Report a problem' },
     ],
   });
   if (pick === 'board') document.querySelector<HTMLAnchorElement>('.mc-bar a.mc-backbtn')?.click();
   else if (pick === 'door') document.getElementById('mc-door')?.click();
+  else if (pick === 'concede') document.getElementById('mc-concede')?.click();
   else if (pick === 'report') document.getElementById('mc-report')?.click();
+}
+
+// A seated player in a game under way may concede it. FAQ P21 has a game run
+// its rounds even with one side wiped out, so this is the table's one early
+// end (ruling I1; audit Phase 6, B8).
+function canConcede(): boolean {
+  return !!relay.state.room && !!relay.state.seat
+    && normaliseSetup(state.setup)?.stage === 'done' && !normaliseTasks(state.tasks).conceded;
+}
+
+async function concedeGame(): Promise<void> {
+  const seat = relay.state.seat;
+  if (!seat) return;
+  const pick = await choiceDialog({
+    title: 'Concede the game?',
+    body: 'Your squad gives up and the other squad wins, whatever the score. Losing every unit does not end a game (FAQ P21), so this is the one way to stop early.',
+    choices: [
+      { id: 'yes', label: 'Concede', danger: true },
+      { id: '', label: 'Keep playing', cancel: true },
+    ],
+  });
+  if (pick !== 'yes') return;
+  const v = send({ kind: 'concede', seat });
+  if (!v.ok && v.why) void choiceDialog({ title: 'Not conceded', body: v.why, choices: [{ id: '', label: 'OK', cancel: true }] });
 }
 
 function loginHtml(): string {
@@ -2295,7 +2324,7 @@ function squadsStep(): string {
       return `<div class="seatcard ${side}">
         <div class="who"><span class="sq">${side === 's1' ? 'SQ1' : 'SQ2'}</span>${who ? esc(who) : '<i>empty seat</i>'}${mine ? ' <i>(you)</i>' : ''}</div>
         <div class="st${has ? ' on' : ''}">${has
-          ? `✓ ${named ? `${esc(named)} · ` : ''}${s.mechs} mech${s.mechs === 1 ? '' : 's'}, ${s.drones} drone${s.drones === 1 ? '' : 's'} · ${s.points} points`
+          ? `✓ ${named ? `${esc(named)} · ` : ''}${s.mechs} mech${s.mechs === 1 ? '' : 's'}, ${s.drones} drone${s.drones === 1 ? '' : 's'} · ${s.points} of ${limitText()} points`
           : mine ? 'no squad yet' : 'no squad yet · waiting on them'}</div>
         ${roster}
         ${mine && !running() ? `<button class="btn${has ? ' ghost' : ''}" id="mc-bring" style="margin-top:9px">${has ? 'Add another unit' : 'Bring a squad'}</button>` : ''}
@@ -2308,6 +2337,13 @@ function squadsStep(): string {
     ${rows}
     <p class="quiet">Add as many as you like, and take any back off with ✕ before the match starts.</p>
   </div>`;
+}
+
+// The squad limit the table's scale sets (5.1), for the lobby's totals: they
+// printed the points with no limit beside them (audit Phase 6, G7).
+function limitText(): string {
+  const sc = SCALES.find((x) => x.id === (state.scale ?? 'standard')) ?? SCALES[1];
+  return `${sc.points}${sc.openEnded ? '+' : ''}`;
 }
 
 function rulesStep(): string {
@@ -2343,7 +2379,7 @@ async function recordMatch(): Promise<string | null> {
   const vp = tasks.vp;
   // The same verdict the panel shows, tiebreak and all (5.2.4). Recording a
   // draw where the board settled it would put the wrong result on both accounts.
-  const winner = gameResult(tasks, state.tokens).winner;
+  const winner = gameResult(tasks, state.tokens, lowValueOf(data)).winner;
   const entries = (side: Side) => {
     const out: SquadEntry[] = [];
     const push = (id: string): void => {
@@ -2918,6 +2954,7 @@ function wire(): void {
   $('mc-code')?.addEventListener('click', copyCode);
   $('mc-code2')?.addEventListener('click', copyCode);
   $('mc-health')?.addEventListener('click', copyDiagnostics);
+  $('mc-concede')?.addEventListener('click', () => void concedeGame());
   $('mc-report')?.addEventListener('click', () => {
     const v = relay.state;
     openBoardReport({

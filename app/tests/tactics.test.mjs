@@ -130,7 +130,8 @@ const match = readFileSync(new URL('../src/match.ts', import.meta.url), 'utf8');
 const hud = readFileSync(new URL('../src/matchhud.ts', import.meta.url), 'utf8');
 const squads = readFileSync(new URL('../src/squads.ts', import.meta.url), 'utf8');
 const main = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
-const chk = cmds.slice(cmds.indexOf("case 'playTactic': {"), cmds.indexOf("case 'playTactic': {") + 1400);
+// Wide enough for the discard check in front (audit Phase 6, H1).
+const chk = cmds.slice(cmds.indexOf("case 'playTactic': {"), cmds.indexOf("case 'playTactic': {") + 2200);
 check('the command reads the sender\'s hand', /is not in this squad's hand/.test(chk), true);
 check('one per squad per round (5.4.2)', /A squad may play only 1 Tactics Card per round \(5\.4\.2\)/.test(chk), true);
 check('in the card\'s own phase once a game is running', /state\.script && PHASES\[state\.round\.phase\] !== spec\.phase/.test(chk), true);

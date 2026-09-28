@@ -1,6 +1,6 @@
 import type { GameData } from './data';
 import { actionIconUrl, cardName, FACTION_LABEL, mechArtLayers, missionImageUrl, secondaryImageUrl, setSquadNames, squadLabel, squadName, stancePrintUrl, tabImageUrl, tokenFace, tokenPrintUrl, traitName } from './data';
-import { canSpendCommand } from './units';
+import { canSpendCommand, squadPoints } from './units';
 import { inspectOnHover as inspectBase, linkMechanics as linkBase, type InspectInfo } from './inspector';
 
 // The Squads tab is a glance, and it already answers a hover with the card
@@ -19,10 +19,10 @@ const linkMechanics = (
   opts?: { pin?: boolean; mark?: boolean },
 ): void => linkBase(root, mechanics, { ...opts, floating: false });
 import type { GameState, PartSlot, PartState, Side, Stance, Timing, TimingDef, Token } from './types';
-import { SCALES, SHAPE_NOTE, statusCount, statusesFor, statusStacks, STATUSES, TIMINGS } from './types';
+import { PHASES, SCALES, SHAPE_NOTE, statusCount, statusesFor, statusStacks, STATUSES, TIMINGS, tokenFaces } from './types';
 import { normaliseTasks } from './tasks';
 import { normaliseSetup } from './setup';
-import { tacticSpec } from './tactics';
+import { tacticFitsPhase, tacticSpec, tacticUsedRound, tacticWindowWhy } from './tactics';
 import { perform } from './commands';
 import { dialHidden, getLocalSeat } from './loop';
 import { defaultUnitLabel, emptyCarriers, factionProblems, initiativeFor, pilotCard, squadAllegiance, SLOT_LABEL, structureOf, tidyUnitLabel, tokenCards, tokenFactions } from './units';
@@ -73,6 +73,14 @@ export interface SquadCallbacks {
   onPlayTactic(side: Side, id: string): void;
   scenarioName(id: string): string | null;
   onShowScenario(): void;
+}
+
+// Whether every one of this Token the unit wears shows its red face (2.5.3):
+// the panel drew the yellow or green face whatever the stack showed (audit
+// Phase 6, C9).
+function allRed(t: Token, id: string): boolean {
+  const faces = tokenFaces(t, id);
+  return faces.length > 0 && faces.every((f) => f.face === 'red');
 }
 
 export class SquadTracker {
@@ -189,7 +197,7 @@ export class SquadTracker {
       // A Tactics Card is added to the Squad and counts against its point limit
       // (5.4.2), so the header has to reach past the board for them: they are
       // held in hand and never appear as a token.
-      const pts = tokens.reduce((sum, t) => sum + this.tokenPoints(t), 0) + this.tacticPoints(side);
+      const pts = squadPoints(this.data, this.state.tokens, side, this.state.tactics?.[side] ?? []);
       const activeScale = this.state.scale ?? 'standard';
       const sc = SCALES.find((x) => x.id === activeScale)!;
       const over = !sc.openEnded && pts > sc.points;
@@ -341,10 +349,28 @@ export class SquadTracker {
     box.appendChild(head);
     const counts = new Map<string, number>();
     for (const id of held) counts.set(id, (counts.get(id) ?? 0) + 1);
+    const running = !!this.state && !!normaliseSetup(this.state.setup);
+    // In a room only the local seat plays its own hand: the other squad's
+    // rows keep their place, disabled (audit Phase 6, H5).
+    const seat = getLocalSeat();
+    const notMine = !!seat && seat !== side;
     for (const [id, n] of counts) {
       const card = this.data.byId.get(id);
       if (!card) continue;
       const used = spent.filter((e) => e === `${this.state?.round.n ?? 1}:${id}`).length;
+      // A card played in any round is discarded for the game (FAQ P2; audit
+      // Phase 6, H1). Free play keeps no rounds worth policing.
+      const usedIn = running && this.state ? tacticUsedRound(this.state, side, id) : null;
+      // In a game under way: its own phase and the moment its text names
+      // (5.4.2; audit Phase 6, H2), greyed in place with the reason.
+      const st = this.state;
+      const underWay = !!st && normaliseSetup(st.setup)?.stage === 'done';
+      const spec = tacticSpec(id);
+      const when = underWay && st && spec
+        ? !tacticFitsPhase(id, PHASES[st.round.phase])
+          ? `${spec.name} is played in the ${spec.phase} Phase`
+          : tacticWindowWhy(spec, st, side)
+        : null;
       const row = document.createElement('div');
       row.className = 'sq-tac-row';
       row.dataset.tipCard = id;
@@ -358,16 +384,20 @@ export class SquadTracker {
       timing.textContent = tacticSpec(id)?.timing ?? '';
       const play = document.createElement('button');
       play.className = 'sq-tac-play';
-      play.textContent = used ? 'Played' : 'Play';
-      play.disabled = spent.length > 0 || used >= n;
-      play.title = spent.length
-        ? 'Only 1 Tactics Card may be played per round (5.4.2)'
-        : `Play ${cardName(card)}`;
+      play.textContent = usedIn !== null ? `Used, round ${usedIn}` : used ? 'Played' : 'Play';
+      play.disabled = usedIn !== null || notMine || spent.length > 0 || used >= n || !!when;
+      play.title = usedIn !== null
+        ? `${cardName(card)} was used in round ${usedIn} and is discarded for the rest of the game (FAQ P2)`
+        : notMine
+          ? 'The other squad plays its own Tactics Cards'
+          : spent.length
+            ? 'Only 1 Tactics Card may be played per round (5.4.2)'
+            : when ?? `Play ${cardName(card)}`;
       play.addEventListener('click', () => this.playTactic(side, id));
       inspectOnHover(row, {
         title: cardName(card),
         sub: tacticSpec(id)?.timing,
-        lines: [tacticSpec(id)?.text ?? '', 'Only 1 Tactics Card may be played per round (rulebook 5.4.2).'],
+        lines: [tacticSpec(id)?.text ?? '', 'Only 1 Tactics Card may be played per round, and once used it is discarded for the game (rulebook 5.4.2, FAQ P2).'],
       });
       row.append(name, timing, play);
       box.appendChild(row);
@@ -809,7 +839,8 @@ export class SquadTracker {
     const list = document.createElement('div');
     list.className = 'tok-worn';
     for (const { s, n } of worn) {
-      const face = tokenFace(s.id, s.decay, false);
+      // Red when every one worn shows red (audit Phase 6, C9).
+      const face = tokenFace(s.id, s.decay, allRed(t, s.id));
       const chip = document.createElement('span');
       chip.className = `tok-worn-one${face.art ? '' : ' no-art'}`;
       if (face.art) {
@@ -909,10 +940,11 @@ export class SquadTracker {
       // No "In smoke" to put on by hand: on a board it comes from the screens
       // themselves (see tokenHandleRow). One already worn can still come off.
       const rows = statusesFor(t.kind)
-        .filter((s) => s.id !== 'smoke' || statusCount(t.statuses, 'smoke') > 0)
+        .filter((s) => (s.id !== 'smoke' && s.handPlaced !== false) || statusCount(t.statuses, s.id) > 0)
         .map((s) => {
           const n = statusCount(t.statuses, s.id);
-          const face = tokenFace(s.id, s.decay, false);
+          // Red when every one worn shows red (audit Phase 6, C9).
+          const face = tokenFace(s.id, s.decay, allRed(t, s.id));
           const art = face.art
             ? `<img src="${tokenPrintUrl(face.art)}" alt="">`
             : `<span class="tok-po-noart" style="--chip-tint:${face.colour}">${esc(s.icon)}</span>`;
@@ -1081,8 +1113,9 @@ export class SquadTracker {
     wrap.className = 'status-row';
     for (const s of statusesFor(t.kind)) {
       const n = statusCount(t.statuses, s.id);
-      // The board derives "In smoke" from its screens (audit Phase 4, G12).
-      if (s.id === 'smoke' && n === 0) continue;
+      // The board derives "In smoke" from its screens (audit Phase 4, G12),
+      // and a Repaired Token comes from its Action (C7).
+      if ((s.id === 'smoke' || s.handPlaced === false) && n === 0) continue;
       const on = n > 0;
       const b = document.createElement('button');
       b.className = `status-chip shape-${s.shape}${on ? ' on' : ''}`;
@@ -1091,7 +1124,8 @@ export class SquadTracker {
       // token's DURATION side, not an identity tint: on the table, colour says
       // when it comes off, and two tokens sharing one are telling you they
       // expire together.
-      const face = tokenFace(s.id, s.decay, false);
+      // Red when every one worn shows red (audit Phase 6, C9).
+      const face = tokenFace(s.id, s.decay, allRed(t, s.id));
       b.style.setProperty('--chip-tint', face.colour);
       if (face.art) {
         b.classList.add('has-art');

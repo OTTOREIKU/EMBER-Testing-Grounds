@@ -112,7 +112,11 @@ export const TACTIC_SPECS: Record<string, TacticSpec> = {
     none: 'You have no Mech on the board to Maneuver.',
     text: "As one Ally Mech's Action Opportunity ends, it may make a Maneuver.",
     maneuver: true,
-    eligible: (t) => t.stance !== 'shutdown',
+    // A Mech that cannot Maneuver gains nothing from it, so the play is
+    // refused rather than spent (ruling I34; audit Phase 6, H5). Immobilized
+    // is the one Token that stops a Maneuver (6.3.2); no Maneuver is
+    // Unstoppable, since only a Movement Action can be.
+    eligible: (t) => t.stance !== 'shutdown' && !(t.statuses ?? []).includes('immobilized'),
     apply: (t) => `Hit and Run: ${t.label} Maneuvers as its Action Opportunity ends.`,
   },
   '277': {
@@ -165,7 +169,9 @@ export const TACTIC_SPECS: Record<string, TacticSpec> = {
     none: 'None of your Mechs is in Shutdown Stance.',
     text: "In the End Phase, one Ally Mech in Shutdown Stance changes to a Stance of its choice and restores 1 Link, as a Reboot would (4.1.1).",
     eligible: (t) => t.stance === 'shutdown',
-    choices: (t) => stancePicks(t),
+    // A White Dwarf in Cruise Mode "may select only Mobility Stance", as its
+    // Reboot does (ruling I33, audit Phase 2 D3; audit Phase 6, H3).
+    choices: (t, _s, ctx) => (ctx.cruising?.(t) ? [{ id: 'mobility', label: 'Mobility' }] : stancePicks(t)),
     choiceTitle: 'Restart into which Stance?',
     apply: (t, _s, ctx, pick) => {
       if (pick) t.stance = pick as Stance;
@@ -179,13 +185,65 @@ export function tacticSpec(id: string): TacticSpec | null {
 }
 
 export function tacticTargets(spec: TacticSpec, s: GameState, side: Side, ctx: TacticCtx): Token[] {
+  // Hit and Run Maneuvers the Mech whose Action Opportunity just ended, and no
+  // other (ruling I28; audit Phase 6, H2). A table that records no ending (a
+  // free one) offers every Mech, as before.
+  const last = spec.maneuver ? s.script?.lastEnded : undefined;
+  const ended = last && last.round === s.round.n ? last.uid : undefined;
   return s.tokens.filter(
     (t) =>
       t.side === side
       && alive(t)
+      // On the board: a Low Value Drone waiting in a squad list is no target
+      // (audit Phase 6, H6).
+      && t.deployed !== false
+      && (ended === undefined || t.uid === ended)
       && (spec.targets === 'unit' ? t.kind !== 'projectile' : t.kind === spec.targets)
       && spec.eligible(t, s, ctx),
   );
+}
+
+// The moment a card's own text names (5.4.2: "at the appropriate time
+// according to the description on the Card"), in a guided game; null when it
+// is now. The phase alone was checked, so these three were accepted at any
+// moment of the Action Phase, the enemy's turn included (audit Phase 6, H2):
+// - System Repair and Tactical Disposition, "during the Action Opportunity of
+//   an Ally Mech": one held by a Mech of this squad, an Extra one included,
+//   never a Drone's activation (ruling I29);
+// - Hit and Run, "when the Action Opportunity of an Ally Mech ends": right
+//   after it ends, until the next unit starts acting, on that Mech (I28).
+// One reader for the command and every door.
+export function tacticWindowWhy(spec: TacticSpec, s: GameState, side: Side): string | null {
+  const sc = s.script;
+  if (spec.id === '277' || spec.id === '278') {
+    const o = sc?.opp;
+    const holder = o ? s.tokens.find((t) => t.uid === o.uid) : undefined;
+    if (!holder || holder.kind !== 'mech' || holder.side !== side) {
+      return `${spec.name} is played during the Action Opportunity of one of your Mechs.`;
+    }
+    return null;
+  }
+  if (spec.maneuver) {
+    const last = sc?.lastEnded;
+    const who = last ? s.tokens.find((t) => t.uid === last.uid) : undefined;
+    const next = sc?.opp;
+    if (!last || last.round !== s.round.n || !who || who.side !== side || who.kind !== 'mech' || (next && next.started && next.uid !== last.uid)) {
+      return `${spec.name} is played as one of your Mechs' Action Opportunity ends, on that Mech.`;
+    }
+    return null;
+  }
+  return null;
+}
+
+// A Tactics Card, once used, is discarded for the rest of the game (FAQ P2;
+// audit Phase 6, H1). The round it was played in, or null if it never was: the
+// check refuses it, and every door shows it "Used" rather than hiding it.
+export function tacticUsedRound(s: GameState, side: Side, id: string): number | null {
+  for (const e of s.tacticsPlayed?.[side] ?? []) {
+    const at = e.indexOf(':');
+    if (at > 0 && e.slice(at + 1) === id) return Number(e.slice(0, at));
+  }
+  return null;
 }
 
 // When a Tactics Card may be played. The card data carries NO actions for these

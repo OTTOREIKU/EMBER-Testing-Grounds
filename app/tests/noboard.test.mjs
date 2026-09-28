@@ -62,12 +62,19 @@ check('the electronic Range is the table\'s to judge', /if \(!cmd\.reaction && !
 check('placing in a Grid is refused', /case 'placeInGrid': \{\s*\n\s*if \(state\.noBoard\) return no\(/.test(cmds), true);
 check('so is the Crush exchange', /case 'crushSwap': \{\s*\n\s*if \(state\.noBoard\) return no\(/.test(cmds), true);
 
-// performAction's check reads the board in ONE place: the Melee Lock's
-// Firing ban (4.3.5; audit Phase 4, D6), which needs where the units stand and
-// so is gated off a table that has none. The pad asks the table instead (D3).
-check('performAction reads the board only for the Melee Lock, and gates it',
-  (cmds.slice(cmds.indexOf("case 'performAction': {"), cmds.indexOf("case 'performAction': {") + 3000).match(/noBoard/g) ?? []).length === 1
-    && /if \(a\.type === 'Firing' && !isMeleeFiring\(a\) && !state\.noBoard\)/.test(cmds), true);
+// performAction's check reads the board in THREE places, each gated off a
+// table that has none: a Carrier's loan judges Contact anywhere (FAQ O3; audit
+// Phase 5, G5), Remote Access judges no reach to a Terminal's zone (audit
+// Phase 6, E3), and the Melee Lock's Firing ban (4.3.5; audit Phase 4, D6)
+// needs where the units stand. The pad asks the table instead (D3). Counted
+// over the whole case, since a fixed window drifted past the Melee Lock.
+const perfAt = cmds.indexOf("case 'performAction': {");
+const perfCheck = cmds.slice(perfAt, cmds.indexOf("\n    case '", perfAt + 10));
+check('performAction reads the board in three places, and gates each',
+  (perfCheck.match(/noBoard/g) ?? []).length === 3
+    && /loanedParts\(data, state\.tokens, t, \{ anywhere: !!state\.noBoard \}\)/.test(perfCheck)
+    && /remoteAccessWhy\(normaliseTasks\(state\.tasks\)\.items, t, a\.range \?\? 4, state\.noBoard \? null : zoneCells\(data, state\)\)/.test(perfCheck)
+    && /if \(a\.type === 'Firing' && !isMeleeFiring\(a\) && !state\.noBoard\)/.test(perfCheck), true);
 check('applyPenetration stays ungated', /noBoard/.test(cmds.slice(cmds.indexOf("case 'applyPenetration': {"), cmds.indexOf("case 'applyPenetration': {") + 1200)), false);
 
 check('the pad\'s tables are born without a board', /noBoard: true,\s*\n\s*\};\s*\n\}\s*\n\s*\nlet table: GameState = freshTable\(\);/.test(pad), true);

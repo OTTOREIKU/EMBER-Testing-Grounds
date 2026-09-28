@@ -1,6 +1,6 @@
 import type { TaskItem } from './tasks';
 import type { BoardGrids, Facing, GameState, Marker, Side, SmokeScreen, StatusDef, TerrainPiece, Token, TokenShape } from './types';
-import { DEFAULT_GRIDS, INTERCEPT_DEF, SHAPE_NOTE, statusCount, statusStacks } from './types';
+import { DEFAULT_GRIDS, INTERCEPT_DEF, SHAPE_NOTE, statusCount, statusStacks, tokenFaces } from './types';
 import { mechArtLayers, squadLabel, squadNumber, tabImageUrl, tokenFace, tokenPrintUrl } from './data';
 import {
   type BoardTheme, BOARD_FADE_BASE, boardArtUrl, boardTheme, clampBoardArt,
@@ -192,6 +192,9 @@ export class Board {
   // Everything currently standing, staged by renderTokens so a unit's token
   // strip can pick a side that is not already somebody else's base.
   private onBoard: Token[] = [];
+  // How many Black Boxes each unit carries, staged by renderTokens so the
+  // token shows them (audit Phase 6, F12).
+  private carried = new Map<number, number>();
   private gOverlay: SVGGElement;
   private gHighlight: SVGGElement;
   private gMarkers!: SVGGElement;
@@ -731,6 +734,8 @@ export class Board {
   renderTaskItems(items: TaskItem[], centre: (zone: string) => { c: number; r: number } | null): void {
     this.gTaskItems.replaceChildren();
     for (const it of items) {
+      // A carried Box is drawn on its bearer's token instead.
+      if (it.kind === 'blackbox' && it.bearerUid !== undefined) continue;
       let cx: number;
       let cy: number;
       // An EXPLICIT spot wins for any kind, not just a Black Box. Only Boxes
@@ -747,9 +752,8 @@ export class Board {
         cy = g.r * 3 * CELL + 1.5 * CELL;
       }
       const side = it.kind === 'control' ? it.control : it.kind === 'terminal' ? it.accessed : null;
-      const held = it.kind === 'blackbox' && it.bearerUid !== undefined;
       const g = el('g', {
-        class: `task-item task-${it.kind}${side ? ` side-${side}` : ''}${held ? ' carried' : ''}`,
+        class: `task-item task-${it.kind}${side ? ` side-${side}` : ''}`,
         'data-task-item': it.id,
       });
       g.appendChild(el('circle', { cx, cy, r: it.kind === 'blackbox' ? 9 : 13 }));
@@ -771,6 +775,10 @@ export class Board {
     // The token strip has to know what is beside each unit before it picks a
     // side to hang off, so the neighbours are staged here for buildToken.
     this.onBoard = state.tokens.filter((x) => x.deployed !== false);
+    this.carried = new Map();
+    for (const i of (state.tasks as { items?: TaskItem[] } | undefined)?.items ?? []) {
+      if (i.kind === 'blackbox' && typeof i.bearerUid === 'number') this.carried.set(i.bearerUid, (this.carried.get(i.bearerUid) ?? 0) + 1);
+    }
     for (const t of state.tokens) {
       const pv = preview && preview.uid === t.uid ? preview : null;
       // A unit awaiting deployment is in the squad but not on the board yet.
@@ -871,6 +879,25 @@ export class Board {
     num.textContent = String(squadNumber(t.side));
     g.appendChild(num);
 
+    // A carried Black Box, on its bearer: bottom-right, opposite the squad
+    // number. It was drawn faded in the zone it started in, and nothing said
+    // who bore it (audit Phase 6, F12).
+    const boxes = this.carried.get(t.uid) ?? 0;
+    if (boxes) {
+      const bx = cx + half - badgeR - 2.5;
+      const mark = el('g', { class: 'token-box' });
+      mark.appendChild(el('circle', { cx: bx, cy: badgeY, r: badgeR, class: 'token-box-dot' }));
+      const txt = el('text', { x: bx, y: badgeY + 3.2, 'text-anchor': 'middle', class: 'token-box-n' });
+      txt.textContent = boxes > 1 ? String(boxes) : '◆';
+      mark.appendChild(txt);
+      this.attachInspect(mark as SVGGElement, {
+        title: boxes > 1 ? `Black Box ×${boxes}` : 'Black Box',
+        sub: `carried by ${t.label}`,
+        lines: ['A Penetration makes the bearer drop it: the attacker places it in Contact with the base (5.3.1).'],
+      });
+      g.appendChild(mark);
+    }
+
     if (wrecked || shutdown) {
       const tag = el('text', { x: cx, y: cy + 4, 'text-anchor': 'middle', class: `token-status ${wrecked ? 'is-wrecked' : 'is-shutdown'}` });
       tag.textContent = wrecked ? 'DESTROYED' : 'SHUTDOWN';
@@ -882,20 +909,25 @@ export class Board {
     g.appendChild(label);
 
     // A token flipped to its red side is drawn red, the way it looks on the table
-    // once it is one round from expiring (2.5.3).
-    const expiring = new Set(t.expiring ?? []);
-    const active: { def: StatusDef; n: number; counted: boolean; spent: boolean; hint: string }[] = statusStacks(t.statuses).map(
-      ({ def, n }) => ({
-        def: expiring.has(def.id) ? { ...def, tint: '#e05c5c' } : def,
-        n,
-        counted: !!def.stacking && n > 1,
-        spent: false,
-        // Only the expiring line survives, because it is a RULE — a red face
-        // means this comes off in the End Phase. "Toggle it from the Squads
-        // tab" was advice, not a rule, and it went stale the moment that row
-        // became a handle.
-        hint: expiring.has(def.id) ? 'Showing its red side, so it comes off at the end of this round.' : '',
-      }),
+    // once it is one round from expiring (2.5.3). One stack per face shown: a
+    // red Fire Control Interference beside a yellow one is two, one of which
+    // survives the End Phase. A mixed stack was painted red whole (audit Phase
+    // 6, C9).
+    const active: { def: StatusDef; n: number; counted: boolean; spent: boolean; hint: string }[] = statusStacks(t.statuses).flatMap(
+      ({ def, n }) => {
+        const faces = tokenFaces(t, def.id);
+        return (faces.length ? faces : [{ face: 'green' as const, n }]).map((f) => ({
+          def: f.face === 'red' ? { ...def, tint: '#e05c5c' } : def,
+          n: f.n,
+          counted: !!def.stacking && f.n > 1,
+          spent: false,
+          // Only the expiring line survives, because it is a RULE — a red face
+          // means this comes off in the End Phase. "Toggle it from the Squads
+          // tab" was advice, not a rule, and it went stale the moment that row
+          // became a handle.
+          hint: f.face === 'red' ? 'Showing its red side, so it comes off at the end of this round.' : '',
+        }));
+      },
     );
     const slots = Object.keys(t.intercept ?? {}).length;
     if (slots > 0) {

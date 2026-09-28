@@ -9,7 +9,8 @@ if (start < 0 || end < 0) throw new Error('could not locate factionProblems in u
 const tmp = new URL('./_faction.slice.ts', import.meta.url);
 writeFileSync(
   tmp,
-  `type GameData = any;\ntype Token = any;\ntype Card = any;\ntype FactionProblem = any;
+  `import { incompleteMechWhy } from '../src/setup.ts';
+type GameData = any;\ntype Token = any;\ntype Card = any;\ntype FactionProblem = any;
 const cardName = (c) => c.name;
 const tokenCards = (data, t) => t.cards;
 const tokenFactions = (data, t) => ({ factions: [...new Set(t.cards.map((c) => c.card.faction).filter(Boolean))] });
@@ -26,10 +27,13 @@ const check = (name, got, want) => {
 
 const data = { factionOf: (c) => c.faction };
 // A unit built from parts of the listed factions.
+// A Mech is built whole, with a Pilot of its own, so only the rule under test
+// fires (the incomplete and pilotless checks have their own block below).
 const unit = (label, factions, kind = 'mech') => ({
   label,
   kind,
   cards: factions.map((f, i) => ({ slot: `s${i}`, card: { name: `${label}-${i}`, faction: f } })),
+  ...(kind === 'mech' ? { mech: { torso: 'T', chasis: 'C', rightHand: 'R', pilot: `P-${label}` } } : {}),
 });
 const kinds = (tokens) => factionProblems(data, tokens).map((p) => p.kind);
 
@@ -76,17 +80,33 @@ check('unknown factions are ignored', kinds([unit('a', ['RDL', null]), unit('b',
 
 // ---------- 5.1's third rule: the same Pilot cannot be seated twice ----------
 //
-// The ID is the pilot CARD, so two Mechs carrying the same t.mech.pilot are
-// the case. Read off the token's live pilot field, the same key pilotCard uses.
+// The printed ID, read off the token's live pilot field, the same key
+// pilotCard uses. Two versions of one Pilot print the same ID (ruling I30):
+// FPA-04 and FPA-04-2 are both "ID 04", and p.81's own example is FPA-06 with
+// FPA-06-2 (audit Phase 6, G2).
 console.log('\nPilot IDs');
-const piloted = (label, pilot) => ({ ...unit(label, ['RDL']), mech: { pilot } });
+const piloted = (label, pilot) => ({ ...unit(label, ['RDL']), mech: { torso: 'T', chasis: 'C', rightHand: 'R', pilot } });
 check('two different pilots are legal', kinds([piloted('a', 'FPA-05'), piloted('b', 'FPA-04')]), []);
 check('the same pilot twice is illegal', kinds([piloted('a', 'FPA-05'), piloted('b', 'FPA-05')]), ['duplicate-pilot']);
 check('and the report names both Mechs',
   factionProblems(data, [piloted('a', 'FPA-05'), piloted('b', 'FPA-05')])[0].detail.includes('a and b'), true);
-check('a pilotless sandbox Mech collides with nobody', kinds([piloted('a', ''), piloted('b', ''), unit('c', ['RDL'])]), []);
+check('two versions of one Pilot share its printed ID', kinds([piloted('a', 'FPA-04'), piloted('b', 'FPA-04-2')]), ['duplicate-pilot']);
+check('the rulebook\'s own example is caught', kinds([piloted('a', 'FPA-06-2'), piloted('b', 'FPA-06')]), ['duplicate-pilot']);
+check('the control: another number is another Pilot', kinds([piloted('a', 'LPA-23-2'), piloted('b', 'LPA-24')]), []);
+// A pilotless Mech is flagged for its missing Pilot (5.1; ruling I32), and
+// still collides with nobody.
+check('a pilotless Mech is flagged, and collides with nobody', kinds([piloted('a', ''), piloted('b', ''), unit('c', ['RDL'])]), ['no-pilot', 'no-pilot']);
 check('three seats of one pilot are still one problem', kinds([piloted('a', 'X'), piloted('b', 'X'), piloted('c', 'X')]), ['duplicate-pilot']);
 check('a drone does not seat a pilot', kinds([piloted('a', 'X'), { ...unit('d', ['RDL'], 'drone'), mech: { pilot: 'X' } }]), []);
+
+// ---------- a Mech that could not be deployed (2.2.2; ruling I32) ----------
+console.log('\nWhole Mechs');
+const built = (label, mech) => ({ ...unit(label, ['RDL']), mech });
+check('a Torso, a Chassis, an Arm and a Pilot are enough', kinds([built('a', { torso: 'T', chasis: 'C', leftHand: 'L', pilot: 'P' })]), []);
+check('a Mech with no Arm is flagged', kinds([built('a', { torso: 'T', chasis: 'C', pilot: 'P' })]), ['incomplete-mech']);
+check('so is one with no Chassis', kinds([built('a', { torso: 'T', rightHand: 'R', pilot: 'P' })]), ['incomplete-mech']);
+check('and the detail names what is missing',
+  factionProblems(data, [built('a', { torso: 'T', pilot: 'P' })])[0].detail.includes('no a Chassis, no a Left or Right Arm'), true);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

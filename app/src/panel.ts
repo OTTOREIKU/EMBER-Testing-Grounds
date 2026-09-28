@@ -111,6 +111,8 @@ export interface PanelCallbacks {
   onPlaceInGrid?(t: Token, to: { col: number; row: number }): void;
   spotsInGrid?(t: Token): { col: number; row: number; ok: boolean; here: boolean }[];
   tacticNote(t: Token): string | null;
+  // The Black Boxes this unit carries (5.3.1; audit Phase 6, F12).
+  boxNote?(t: Token): string | null;
 }
 
 export class Panel {
@@ -240,6 +242,13 @@ export class Panel {
       flag.className = 'tok-tactic';
       flag.textContent = owed;
       this.body.appendChild(flag);
+    }
+    const boxes = this.cb.boxNote?.(t);
+    if (boxes) {
+      const line = document.createElement('p');
+      line.className = 'tok-box-note';
+      line.textContent = boxes;
+      this.body.appendChild(line);
     }
 
     // Where it stands INSIDE its Grid. A Small or Medium unit has room to

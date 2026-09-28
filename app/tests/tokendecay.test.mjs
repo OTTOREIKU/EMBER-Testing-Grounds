@@ -39,10 +39,11 @@ check('Target Tracer is yellow', decayOf('targetTracer'), 'yellow');
 // Every Square and Hexagon Token now has a colour, so nothing is left to guess.
 const shaped = T.STATUSES.filter((d) => d.shape === 'square' || d.shape === 'hexagon');
 check('every square and hexagon token has a colour', shaped.filter((d) => !d.decay).map((d) => d.id), []);
-// Eight since 2026-09-25: the Pursuit Token (GoF 1.021, ZHLA-302), a yellow
-// hexagon on the same printed faces as Target Tracer.
+// Eight since 2026-09-25: the Pursuit Token (GoF 1.021, ZHLA-302), a hexagon
+// on the same printed piece as Target Tracer, red on both faces as the GoF
+// glossary prints it (audit Phase 6, ruling I9).
 check('and there are eight of them', shaped.length, 8);
-check('Pursuit is yellow, as Target Tracer is', decayOf('pursuit'), 'yellow');
+check('Pursuit is red on both faces (ruling I9)', decayOf('pursuit'), 'red');
 check('Hindered is yellow, the ordinary round token', decayOf('hindered'), 'yellow');
 
 // A yellow token flips on its first End Phase and leaves on the second.

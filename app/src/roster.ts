@@ -295,10 +295,14 @@ export class Roster {
       .filter((c) => this.cb.cardFilter?.(c) ?? true)
       .sort((a, b) => cardName(a).localeCompare(cardName(b)));
 
+    // What each costs, read off the cards: the points are kept online (p.82),
+    // so a figure written here would go stale.
+    const costs = [...new Set(cards.map((c) => c.score ?? 0))];
+    const cost = costs.length === 1 ? `${costs[0]} points` : 'its own points';
     const note = document.createElement('p');
     note.className = 'tac-note';
     note.innerHTML =
-      'Tactics Cards are held in hand rather than placed on the board, so there is nothing to deploy. Each costs 30 points against your squad total, and only one copy of each may be included (FAQ P2). Tap one to read it.' +
+      `Tactics Cards are held in hand rather than placed on the board, so there is nothing to deploy. Each costs ${cost} against your squad total, and only one copy of each may be included (FAQ P2). Tap one to read it.` +
       '<br><b>You may only play 1 Tactics Card per round.</b>';
     this.body.appendChild(note);
 
@@ -706,7 +710,7 @@ export class Roster {
     }, 0);
     const lines: string[] = [];
     const squads = this.cb.squadPoints?.();
-    if (squads) lines.push(`Squad points: UN ${squads.s1} / RDL ${squads.s2}`);
+    if (squads) lines.push(`Squad points: ${squadLabel('s1')} ${squads.s1} / ${squadLabel('s2')} ${squads.s2}`);
     const cap = this.cb.pointsCap?.();
     if (cap) {
       const limit = `${cap.points}${cap.openEnded ? '+' : ''}`;

@@ -994,7 +994,9 @@ console.log('Phase 5: drones, projectiles and deployables\n');
   s.setup.stage = 'deploy';
   const bit = droneOn(s, 's1', '293', 5, 5, { deployed: false });
   const hound = droneOn(s, 's1', 'ZHDR-201', 5, 6, { deployed: false });
-  const place = (t) => ({ kind: 'deployUnit', seat: 's1', uid: t.uid, to: G(1, 1) });
+  // In s1's White strip, A11-L12: the engine now judges the Deployment Zone
+  // (audit Phase 6, A3).
+  const place = (t) => ({ kind: 'deployUnit', seat: 's1', uid: t.uid, to: G(1, 10) });
   check('E2 a Low Value Drone is never deployed', ok(s, place(bit)), false);
   check('E2 an ordinary Drone is', ok(s, place(hound)), true);
   check('E2 and the Bit is not waited on', M.Su.deployable(s, 's1', data).map((x) => x.uid), [hound.uid]);
@@ -1188,12 +1190,12 @@ console.log('Phase 5: drones, projectiles and deployables\n');
   const d = table();
   d.setup.stage = 'deploy';
   const wd = put(d, 's1', L({ torso: '288' }), 1, 1, { deployed: false, stance: 'offensive' });
-  send(d, { kind: 'deployUnit', seat: 's1', uid: wd.uid, to: G(1, 1), stance: 'offensive' });
+  send(d, { kind: 'deployUnit', seat: 's1', uid: wd.uid, to: G(1, 10), stance: 'offensive' });
   check('H3 a White Dwarf deployed in Cruise Mode is in Mobility', wd.stance, 'mobility');
   const other = put(d, 's2', L(), 8, 8, { deployed: false });
   d.setup.placed = { s1: 1, s2: 0 };
-  send(d, { kind: 'deployUnit', seat: 's2', uid: other.uid, to: G(8, 8), stance: 'offensive' });
-  check('H3 the control: any other Mech lands in the Stance picked', other.stance, 'offensive');
+  send(d, { kind: 'deployUnit', seat: 's2', uid: other.uid, to: G(8, 1), stance: 'defensive' });
+  check('H3 the control: any other Mech lands in the Stance picked', other.stance, 'defensive');
 
   // H2: a Surplus reaches another Part of a cruising White Dwarf (FAQ N7).
   const h = new M.AttackHelper(data, dice, makeEl('div'), () => {}, () => {}, () => {}, () => {}, () => {}, () => {}, () => {});

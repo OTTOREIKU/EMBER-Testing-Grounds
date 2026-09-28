@@ -15,14 +15,19 @@ const check = (name, got, want) => {
 console.log('Self-applied Tokens: Ambush and Amplify Profile\n');
 
 const units = readFileSync(new URL('../src/units.ts', import.meta.url), 'utf8');
+// The real STATUSES: a red Highlight is refreshed and a green Low Profile never
+// is, which the decay colour decides (FAQ J22; audit Phase 6, C1).
+const types = readFileSync(new URL('../src/types.ts', import.meta.url), 'utf8');
+const statuses = types.slice(types.indexOf('export const STATUSES'), types.indexOf('export interface RoundState'));
+if (!statuses) throw new Error('could not locate STATUSES in types.ts');
 const from = units.indexOf('// ---------- Self-applied Tokens');
 const to = units.indexOf('export function interceptCapacity(');
 if (from < 0 || to <= from) throw new Error('could not locate the self-status readers in units.ts');
 const tmp = new URL('./_selfgrant.slice.ts', import.meta.url);
-writeFileSync(tmp, `type CardAction = any; type GameData = any; type Token = any; type PartSlot = any; type GameState = any;
+writeFileSync(tmp, `type CardAction = any; type GameData = any; type Token = any; type PartSlot = any; type GameState = any; type StatusDef = any; type Side = any;
 function statusCount(list: any, id: string): number { return (list ?? []).filter((x: any) => x === id).length; }
 function tokenCards(_data: any, _t: any): any[] { return []; }
-` + units.slice(from, to));
+` + statuses + units.slice(from, to));
 const { selfStatusGrant, selfGrantWhy } = await import(tmp.href);
 
 const raw = JSON.parse(readFileSync(new URL('../../data/cards.json', import.meta.url), 'utf8'));

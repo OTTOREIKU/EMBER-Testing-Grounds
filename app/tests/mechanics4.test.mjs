@@ -311,6 +311,9 @@ console.log('Phase 4: movement and position\n');
   check('G7 the first dissipation goes', send(e, { kind: 'dissipateSmoke', seat: 's1' }).ok, true);
   check('G7 and records the round', e.smokeRound, 1);
   check('G7 a second in the same End Phase is refused', ok(e, { kind: 'dissipateSmoke', seat: 's1' }), false);
+  // A strict guided game refuses the reset (audit Phase 6, B5); it is a
+  // correction tool for a Teaching or free table.
+  e.script.strict = false;
   send(e, { kind: 'resetRounds', seat: 's1' });
   check('G7 winding the rounds back clears it', e.smokeRound, undefined);
 }

@@ -334,7 +334,10 @@ export type TokenShape = 'square' | 'hexagon' | 'triangle' | 'round' | 'state';
 
 export interface StatusDef {
   id: string;
-  decay?: 'green' | 'yellow';
+  // green: stays until removed. yellow: turns red at the End Phase, then leaves
+  // at the next. red: red on both faces, so it is gained with its marker and
+  // leaves at the End Phase of the round it came (audit Phase 6, ruling I9).
+  decay?: 'green' | 'yellow' | 'red';
   label: string;
   icon: string;
   tint: string;
@@ -349,6 +352,10 @@ export interface StatusDef {
   stacking?: boolean;
   clearsHexagons?: boolean;
   appliesTo?: Token['kind'][];
+  // Put on only by its Action, never by hand: the Repaired chip belongs to a
+  // Part (repairPart), and one placed on the unit set no Part at all (audit
+  // Phase 6, C7). A worn one may still come off by hand.
+  handPlaced?: false;
 }
 
 export function statusesFor(kind: Token['kind']): StatusDef[] {
@@ -395,6 +402,9 @@ export function ageTokens(t: Token): { removed: string[]; flipped: string[] } {
   const statuses = [...(t.statuses ?? [])];
   const removed: string[] = [];
   for (const id of t.expiring ?? []) {
+    // A green token never turns, so a red marker on one is stale (an older
+    // pad tap wrote them) and it stays (FAQ J22; audit Phase 6, C5).
+    if (STATUSES.find((d) => d.id === id)?.decay === 'green') continue;
     const at = statuses.indexOf(id);
     if (at >= 0) {
       statuses.splice(at, 1);
@@ -515,7 +525,7 @@ export const STATUSES: StatusDef[] = [
     icon: 'LP',
     tint: '#9ad9b5',
     rule: 'Against Firing Attacks, every [Eye] in its Defense Roll counts as a [Dodge] (6.3.3).',
-    note: 'Against Firing Attacks this unit counts every [Eye] in its Defense Roll as a [Dodge] (rulebook 6.3.3). Performing any Action that does not have the Silence keyword removes the token, and so does Maneuvering, including a facing-only change (4.12.3), so the Firing Attack this protects against is usually the thing that ends it. Passive Actions and Interception do not remove it. A successful Scan strips it too (4.12.4).',
+    note: 'Against Firing Attacks this unit counts every [Eye] in its Defense Roll as a [Dodge] (rulebook 6.3.3). Performing any Action that does not have the Silence keyword removes the token, and so does Maneuvering, including a facing-only change (4.12.3), so the Firing Attack this protects against is usually the thing that ends it. Passive Actions and Interception do not remove it. A successful Scan strips it too (4.12.4). It is green, so it never turns red at the End Phase and cannot be refreshed (FAQ J22).',
   },
   {
     id: 'highlight',
@@ -525,8 +535,8 @@ export const STATUSES: StatusDef[] = [
     label: 'Highlight',
     icon: 'HL',
     tint: '#ffd166',
-    rule: 'Any enemy Attack able to target this unit must target it (6.3.3).',
-    note: 'This unit counts as having the Highlight keyword (rulebook 6.3.3). Any enemy performing an Attack Action that is able to target it must target it, and cannot pick a different unit with that Attack. Hexagon token, so taking a different one replaces this.',
+    rule: 'Any enemy Firing Action able to target this unit must target it; other Attacks and Interception are not bound (6.3.3; FAQ J18, M26).',
+    note: 'This unit counts as having the Highlight keyword (rulebook 6.3.3). Any enemy performing a Firing Action that is able to target it must target it, and cannot pick a different unit with that Attack. Melee, Projectile and Electronic Attacks are not bound, and neither is Interception (FAQ J18, M26). Hexagon token, so taking a different one replaces this, and gaining another while it shows red turns it back to yellow (FAQ J22). A unit in Optical Camouflage cannot gain one (FAQ I1), and a Highlight and a Low Profile that an effect gives cancel out until the effect is lost (FAQ J12).',
   },
   {
     id: 'targetTracer',
@@ -536,8 +546,10 @@ export const STATUSES: StatusDef[] = [
     label: 'Target Tracer',
     icon: 'TT',
     tint: '#ff8b6b',
-    rule: 'Drones may target this unit even when it is not the closest enemy, and attack it as if in Offensive Stance.',
-    note: 'Drones may target this unit even when it is not the closest enemy, and attack it as if in Offensive Stance.',
+    // "Must", as p.97 prints it and the engine applies it (ruling I10; audit
+    // Phase 6, I10): the texts said "may".
+    rule: "A Drone's Automatic Action must target this unit even when it is not the closest enemy, and a Drone attacks it as if in Offensive Stance.",
+    note: 'A Drone performing an Automatic Action must designate this unit as its target even when it is not the closest enemy (p.97). A Highlighted enemy still comes first for a Firing Action. Any Drone attacking this unit, an Electronic Attack included, does so as if in Offensive Stance.',
   },
   {
     // 追击标记, as GoF 1.021 names and defines it for ZHLA-302's Marking Shot:
@@ -546,21 +558,25 @@ export const STATUSES: StatusDef[] = [
     // Target Tracer, but the 1.021 English list names the two apart - ZHRA-202
     // grants a Target Tracer Token in the same list - and OTTO ruled the Snipe
     // reading for ZHLA-302 (2026-09-25). It was modelled as Target Tracer.
-    // Same physical token, so the same hexagon and the same printed faces.
+    // Same physical token, so the same hexagon. The GoF glossary prints it
+    // "追击标记（双面红色）", red on both faces, so it leaves at the End Phase
+    // of the round it is gained (FAQ J11's "unless otherwise specified";
+    // audit Phase 6, ruling I9).
     id: 'pursuit',
     appliesTo: ['mech', 'drone'],
-    decay: 'yellow',
+    decay: 'red',
     shape: 'hexagon',
     label: 'Pursuit',
     icon: 'PUR',
     tint: '#e0785a',
-    rule: 'An attacker of this unit may be treated as having Snipe, so it may designate the hit Part (GoF 1.021).',
-    note: 'Granted by ZHLA-302 Marking Shot. Whoever attacks this unit may be treated as having the Snipe keyword: the attacker may designate the target Part instead of rolling the Part Die (4.4.1 step 2). Against a defender who designates too - a Shield Up in Defensive Stance - both cancel and the Part Die decides (FAQ A14).',
+    rule: 'An attacker of this unit may be treated as having Snipe, so it may designate the hit Part (GoF 1.021). Red on both faces: it comes off at the end of the round it was gained.',
+    note: 'Granted by ZHLA-302 Marking Shot. Whoever attacks this unit may be treated as having the Snipe keyword: the attacker may designate the target Part instead of rolling the Part Die (4.4.1 step 2). Against a defender who designates too - a Shield Up in Defensive Stance - both cancel and the Part Die decides (FAQ A14). The GoF glossary prints the token red on both faces, so it lasts only until the End Phase of the round it arrives in.',
   },
   {
     id: 'repaired',
     shape: 'triangle',
     appliesTo: ['mech'],
+    handPlaced: false,
     label: 'Repaired',
     icon: 'REP',
     tint: '#3ddc84',
@@ -599,7 +615,10 @@ export type TokenFace = 'yellow' | 'red' | 'green';
 export function tokenFaces(t: Pick<Token, 'statuses' | 'expiring'>, id: string): { face: TokenFace; n: number }[] {
   const n = (t.statuses ?? []).filter((x) => x === id).length;
   if (!n) return [];
-  if (STATUSES.find((s) => s.id === id)?.decay !== 'yellow') return [{ face: 'green', n }];
+  const decay = STATUSES.find((s) => s.id === id)?.decay;
+  // Red on both faces: every entry shows red (ruling I9).
+  if (decay === 'red') return [{ face: 'red', n }];
+  if (decay !== 'yellow') return [{ face: 'green', n }];
   const red = Math.min(n, (t.expiring ?? []).filter((x) => x === id).length);
   const out: { face: TokenFace; n: number }[] = [];
   if (red) out.push({ face: 'red', n: red });
@@ -771,6 +790,11 @@ export interface Opportunity {
   // Units have all been taken back no longer counts, which is what lets a
   // take-back free its shot without a command of its own.
   launched?: { actionId: string; uids: number[] }[];
+  // The Large Grids ("c,r") this unit's Movements have entered in this
+  // Opportunity, the start included: a flight only its start and landing
+  // (4.3.2; ruling I22). A Black Box on any of them may be picked up, and
+  // takeBlackBox reads it on a guided board (audit Phase 6, F5, F10).
+  route?: string[];
   performed: string[];
   spentExtras: string[];
 }
@@ -874,6 +898,7 @@ export function normaliseOpportunity(raw: unknown): Opportunity | null {
       ? { col: o.movedFrom.col, row: o.movedFrom.row }
       : undefined,
     mineHalt: typeof o.mineHalt === 'number' && o.mineHalt > 0 ? Math.round(o.mineHalt) : undefined,
+    route: Array.isArray(o.route) ? o.route.filter((x) => typeof x === 'string' && /^\d+,\d+$/.test(x)).slice(0, 64) : undefined,
     overload: typeof o.overload === 'number' ? Math.max(0, Math.round(o.overload)) : base.overload,
     performed: list(o.performed),
     spentExtras: list(o.spentExtras),
@@ -941,6 +966,10 @@ export interface ScriptState {
   // rejoin halfway through still owes what it owed (audit Phase 4, G7).
   smokeOwed?: { side: Side; cells: { col: number; row: number }[] }[];
   endDone: string[];
+  // The Mech whose Action Opportunity ended last, and in which round: Hit and
+  // Run is played "when the Action Opportunity of an Ally Mech ends", on that
+  // Mech, until the next unit starts acting (ruling I28; audit Phase 6, H2).
+  lastEnded?: { uid: number; round: number };
   // Abilities capped at once per round, keyed `${round}:${ability}:${uid}`.
   // Aster's Link restore is the first; anything else printed "once per round"
   // belongs here rather than in a flag of its own. Pruned each round the way
@@ -1509,6 +1538,9 @@ export function normaliseScript(raw: unknown, firstPlayer: Side): ScriptState {
     // a fresh one.
     ...(normaliseSmokeOwed(s.smokeOwed) ? { smokeOwed: normaliseSmokeOwed(s.smokeOwed) } : {}),
     endDone: Array.isArray(s.endDone) ? s.endDone.filter((x) => typeof x === 'string') : base.endDone,
+    ...(s.lastEnded && typeof s.lastEnded.uid === 'number' && typeof s.lastEnded.round === 'number'
+      ? { lastEnded: { uid: s.lastEnded.uid, round: s.lastEnded.round } }
+      : {}),
     oncePerRound: Array.isArray(s.oncePerRound) ? s.oncePerRound.filter((x) => typeof x === 'string') : base.oncePerRound,
     rollback: normaliseRollback(s.rollback),
     // Never allowed to go backwards by a bad save: a branch count that shrinks
@@ -1533,7 +1565,7 @@ export interface ScaleDef {
 export const SCALES: ScaleDef[] = [
   { id: 'skirmish', name: 'Skirmish', points: 600, openEnded: false, note: 'A small game. Squad total may not exceed 600 points.' },
   { id: 'standard', name: 'Standard', points: 900, openEnded: false, note: 'The usual size. Squad total may not exceed 900 points.' },
-  { id: 'large', name: 'Large', points: 1200, openEnded: true, note: 'A big game. Squads start at 1200 points and there is no printed ceiling, so agree one with your opponent.' },
+  { id: 'large', name: 'Large', points: 1200, openEnded: true, note: 'A big game. The limit starts at 1200 points and has no printed ceiling, so agree one with your opponent.' },
 ];
 
 // ---------- board size (E1) ----------

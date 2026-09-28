@@ -183,22 +183,23 @@ const evenBoard = [unit(1, 's1', 0, 0), unit(2, 's2', 5, 5), drone(3, 's2', 5, 5
 check('drones count toward the tie-break', T.gameResult(state({ vp: { s1: 2, s2: 2 } }), evenBoard).winner, 's2');
 check('level on both is a draw', T.gameResult(state({ vp: { s1: 2, s2: 2 } }), [unit(1, 's1', 0, 0), unit(2, 's2', 5, 5)]).winner, null);
 
-// ---------- a wiped-out Squad ends the game there and then ----------
-// OTTO: "I just tested a game where I eventually killed the last remaining mech
-// on the field. However the game didn't end, it then walked every phase to the
-// end of the round and then it started up the next round."
-//
-// Losing every Mech is not a scoreline, so it is judged BEFORE the Victory
-// Points: a Squad that cannot field a Mech has lost whatever the tasks paid.
+// ---------- a wiped-out Squad plays on, and the Victory Points decide ----------
+// OTTO once reported the game walking on after he destroyed the last Mech, and
+// a wipe-out was made to end it with the survivor the winner. FAQ P21 answers
+// the question directly: "Does eliminating all of your opponent's units
+// immediately win the game? No." The game runs its five rounds, the survivor
+// plays on alone to score, and the VP decide (ruling I1, audit Phase 6, B8).
+// A concession is the one early end.
 const dead = (uid, side) => unit(uid, side, 5, 5, {
   partStates: { torso: 'destroyed', chasis: 'destroyed', leftHand: 'destroyed', rightHand: 'destroyed' },
 });
 check('a Squad with every Mech destroyed is wiped out', T.wipedOut([unit(1, 's1', 0, 0), dead(2, 's2')]), 's2');
-check('and the survivor wins it',
-  T.gameResult(state({ vp: { s1: 0, s2: 9 } }), [unit(1, 's1', 0, 0), dead(2, 's2')]).winner, 's1');
-check('even though they were losing on points',
-  T.gameResult(state({ vp: { s1: 0, s2: 9 } }), [unit(1, 's1', 0, 0), dead(2, 's2')]).why
-    .includes('every Mech in the opposing Squad has been destroyed'), true);
+check('but the survivor does not win on it: the Victory Points decide',
+  T.gameResult(state({ vp: { s1: 0, s2: 9 } }), [unit(1, 's1', 0, 0), dead(2, 's2')]).winner, 's2');
+check('and the result says so',
+  T.gameResult(state({ vp: { s1: 0, s2: 9 } }), [unit(1, 's1', 0, 0), dead(2, 's2')]).why, '0 Victory Points to 9');
+check('a concession decides the game, whatever the score',
+  T.gameResult(state({ vp: { s1: 0, s2: 9 }, conceded: 's2' }), [unit(1, 's1', 0, 0), unit(2, 's2', 5, 5)]).winner, 's1');
 // A Mech with ONE Part left is still a Mech, which is the same test the
 // activation order uses to decide whether it can still be given an Opportunity.
 check('a Mech with a single Part left is not wiped out',
@@ -211,19 +212,21 @@ check('and a board with both Squads standing is nobody', T.wipedOut([unit(1, 's1
 check('a Squad left with only Drones is still wiped out',
   T.wipedOut([unit(1, 's1', 0, 0), dead(2, 's2'), drone(3, 's2', 5, 5)]), 's2');
 
-// The Match Centre has to STOP on it, and where it sits in the panel order is
-// the whole of whether the Black Box a dying Mech drops still gets asked for
-// (5.3.1) -- that question is raised mid-attack, by the attack that killed it.
+// The Match Centre STOPS on a concession, and where that sits in the panel
+// order is the whole of whether the Black Box a dying Mech drops still gets
+// asked for (5.3.1) -- that question is raised mid-attack. A wipe-out no longer
+// stops it (FAQ P21).
 {
   const hud = readFileSync(new URL('../src/matchhud.ts', import.meta.url), 'utf8');
-  check('the turn panel ends the game on a wipeout',
-    /if \(wipedOut\(s\.tokens\)\) return resultPanel\(/.test(hud), true);
+  const stop = 'if (normaliseTasks(s.tasks).conceded) return resultPanel(';
+  check('the turn panel ends the game on a concession', hud.includes(stop), true);
+  check('and no longer on a wipeout', /if \(wipedOut\(s\.tokens\)\)/.test(hud), false);
   check('after the Black Box question',
-    hud.indexOf('if (boxDrop) return boxDropPanel(ctx);') < hud.indexOf('if (wipedOut(s.tokens))'), true);
+    hud.indexOf('if (boxDrop) return boxDropPanel(ctx);') < hud.indexOf(stop), true);
   check('and after the combat window has finished with the dice',
-    hud.indexOf('if (ctx.combatBusy()) {') < hud.indexOf('if (wipedOut(s.tokens))'), true);
+    hud.indexOf('if (ctx.combatBusy()) {') < hud.indexOf(stop), true);
   check('but before the phase would roll on',
-    hud.indexOf('if (wipedOut(s.tokens))') < hud.indexOf('if (blinkPlan) return blinkPanel(ctx);'), true);
+    hud.indexOf(stop) < hud.indexOf('if (blinkPlan) return blinkPanel(ctx);'), true);
 }
 
 // ---------- saved state ----------
@@ -282,8 +285,10 @@ check('but not before the end', T.scoreSecondary(sec('hold-zone', 2), 's1', said
 check('and the claim survives a rehydrate', T.normaliseTasks(JSON.parse(JSON.stringify(saidHeld))).zoneHeld, { s1: true });
 
 // The kill ledger survives a reload.
-check('a fresh ledger is empty', T.newKills(), { mechs: 0, drones: 0, partsAndDrones: 0 });
-check('kills round-trip', T.normaliseTasks(withKills('s1', { mechs: 2, partsAndDrones: 5 })).kills.s1, { mechs: 2, drones: 0, partsAndDrones: 5 });
+// `integrity` counts the Mechs removed for Integrity Loss, which Mercy leaves
+// out (audit Phase 6, D2).
+check('a fresh ledger is empty', T.newKills(), { mechs: 0, drones: 0, partsAndDrones: 0, integrity: 0 });
+check('kills round-trip', T.normaliseTasks(withKills('s1', { mechs: 2, partsAndDrones: 5 })).kills.s1, { mechs: 2, drones: 0, partsAndDrones: 5, integrity: 0 });
 check('junk kills read as zero', T.normaliseTasks({ kills: { s1: { mechs: 'lots' } } }).kills.s1.mechs, 0);
 check('a designated zone round-trips', T.normaliseTasks({ zone: { s1: 'echo' } }).zone.s1, 'echo');
 

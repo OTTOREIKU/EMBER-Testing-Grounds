@@ -748,7 +748,7 @@ function render(): void {
         )
         .join('') +
       (secs.length
-        ? `<p class="ref-count">${secs.length} secondary task${secs.length === 1 ? '' : 's'} · you pick 1, scored privately</p>` +
+        ? `<p class="ref-count">${secs.length} secondary task${secs.length === 1 ? '' : 's'} · each player picks 1 and reveals it</p>` +
           secs
             .map(
               (s) => `<article class="card">
@@ -895,8 +895,9 @@ function render(): void {
       green: { label: 'Green', text: 'Stays in effect until an Action or effect removes it.' },
       yellow: {
         label: 'Yellow',
-        text: 'Flipped to its red reverse at the end of the round, then removed at the end of the next one, so it lasts two rounds.',
+        text: 'Flipped to its red reverse at the end of the round, then removed at the end of the next one, so it lasts the rest of the round it arrives in and all of the next.',
       },
+      red: { label: 'Red', text: 'Red on both faces, so it is removed at the end of the round it arrives in.' },
     };
     const tokenSvg = (def: StatusDef, red = false): string => {
       const tint = red ? '#e05c5c' : def.tint;
@@ -975,7 +976,8 @@ function render(): void {
             // made-up icon next to the real one and taught the wrong shape.
             // Camouflage and In smoke keep the badge, and should — they are
             // States (2.5.4), not tokens, and there is no printed piece to show.
-            const print = TOKEN_PRINT[d.id] ?? [];
+            // A token red on both faces shows only its red face (ruling I9).
+            const print = (TOKEN_PRINT[d.id] ?? []).filter((n) => d.decay !== 'red' || n.endsWith('-red'));
             return `<article class="card tok-card">
               <div class="card-title">
                 <span class="tok-art">${

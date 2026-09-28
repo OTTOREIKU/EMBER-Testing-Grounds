@@ -104,7 +104,10 @@ writeFileSync(
     // interceptsOwed walks ownCards, which leaves a Carrier's Load out (audit
     // Phase 5, G3): the real readers, down to the keyword isCarrier matches.
     + cut(src, 'const LOAD_KEYWORD', '// What a Carrier may have on its back', 'isCarrier')
-    + cut(src, 'export function carriedLoad', '// ---------- what a won Counter-roll does', 'ownCards'),
+    + cut(src, 'export function carriedLoad', '// ---------- what a won Counter-roll does', 'ownCards')
+    // A Repaired Part still intercepts (FAQ J23; audit Phase 6, C8): the real
+    // reader the queue now asks.
+    + cut(src, 'export function partUsable', '// The Parts that may initiate this Common Action now', 'partUsable'),
 );
 const O = await import(tmp2.href);
 

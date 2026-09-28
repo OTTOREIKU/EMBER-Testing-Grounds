@@ -360,6 +360,66 @@
    "faction": "PD",
    "was": null,
    "why": "Unboxed. Card front reads grey, matching the PD sample average, and the PDAM- id prefix marks it as PD ordnance."
+  },
+  "TM39D": {
+   "faction": "UN",
+   "was": "PD",
+   "why": "The publisher UN 1.02 list prints it as UN (UN Torso EN row 11). It ships in UNSALE, which our boxes.json tagged PD wholesale, but \"Unsale Content\" is a release-status label rather than a faction (audit Phase 6, G4; ruling I31)."
+  },
+  "TM31RS": {
+   "faction": "UN",
+   "was": "PD",
+   "why": "The publisher UN 1.02 list prints it as UN (UN Torso EN row 13). It ships in UNSALE, which our boxes.json tagged PD wholesale, but \"Unsale Content\" is a release-status label rather than a faction (audit Phase 6, G4; ruling I31)."
+  },
+  "TM35NA": {
+   "faction": "UN",
+   "was": "PD",
+   "why": "The publisher UN 1.02 list prints it as UN (UN Torso EN row 14). It ships in UNSALE, which our boxes.json tagged PD wholesale, but \"Unsale Content\" is a release-status label rather than a faction (audit Phase 6, G4; ruling I31)."
+  },
+  "K21": {
+   "faction": "UN",
+   "was": "PD",
+   "why": "The publisher UN 1.02 list prints it as UN (UN Armaments EN row 55). It ships in UNSALE, which our boxes.json tagged PD wholesale, but \"Unsale Content\" is a release-status label rather than a faction (audit Phase 6, G4; ruling I31)."
+  },
+  "K21-T": {
+   "faction": "UN",
+   "was": "PD",
+   "why": "Discard card of K21; the publisher UN 1.02 list prints it as UN (UN Armaments EN row 56). It ships in UNSALE, which our boxes.json tagged PD wholesale, but \"Unsale Content\" is a release-status label rather than a faction (audit Phase 6, G4; ruling I31)."
+  },
+  "XTC": {
+   "faction": "UN",
+   "was": "PD",
+   "why": "The publisher UN 1.02 list prints it as UN (UN Armaments EN row 57). It ships in UNSALE, which our boxes.json tagged PD wholesale, but \"Unsale Content\" is a release-status label rather than a faction (audit Phase 6, G4; ruling I31)."
+  },
+  "R33S": {
+   "faction": "UN",
+   "was": "PD",
+   "why": "The publisher UN 1.02 list prints it as UN (UN Armaments EN row 58). It ships in UNSALE, which our boxes.json tagged PD wholesale, but \"Unsale Content\" is a release-status label rather than a faction (audit Phase 6, G4; ruling I31)."
+  },
+  "S100+R6SS-L": {
+   "faction": "UN",
+   "was": "PD",
+   "why": "The publisher UN 1.02 list prints it as UN (UN Armaments EN row 59). It ships in UNSALE, which our boxes.json tagged PD wholesale, but \"Unsale Content\" is a release-status label rather than a faction (audit Phase 6, G4; ruling I31)."
+  },
+  "S100+R6SS-L-T": {
+   "faction": "UN",
+   "was": "PD",
+   "why": "Discard card of S100+R6SS-L; the publisher UN 1.02 list prints it as UN (UN Armaments EN row 60). It ships in UNSALE, which our boxes.json tagged PD wholesale, but \"Unsale Content\" is a release-status label rather than a faction (audit Phase 6, G4; ruling I31)."
+  },
+  "LHDR-KK9": {
+   "faction": "UN",
+   "was": null,
+   "why": "The publisher UN 1.02 list prints it as UN (UN Drones EN row 16). It ships in no released box, so the box index could not decide it (audit Phase 6, G4; ruling I31)."
+  },
+  "PRDR-102": {
+   "faction": "PD",
+   "was": null,
+   "why": "The publisher PD 1.02 list prints the MD-4C \"Reaper\" Type III as PD (PD Drones row 3). It ships in no released box, so the box index could not decide it (audit Phase 6, G4; ruling I31)."
+  },
+  "PRDR-103": {
+   "faction": "PD",
+   "was": null,
+   "why": "The publisher PD 1.02 list prints the MD-4D \"Reaper\" Type IV as PD (PD Drones row 4). It ships in no released box, so the box index could not decide it (audit Phase 6, G4; ruling I31)."
   }
  },
  "_corrections": "UNSALE is \"Unsale Content\", a release-status label covering unreleased cards from several factions, not a PD-only box. Our boxes.json tagged it PD, which stamped PD on all 37 of its cards. 14 of them read RDL on the card front and are corrected here. 23 have no card scan at all, so they cannot be checked the same way and keep the box default; see the note below."

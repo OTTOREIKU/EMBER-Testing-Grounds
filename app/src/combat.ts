@@ -6,7 +6,7 @@ import { linkMechanics } from './inspector';
 import { SQUAD_ORDER, squadLabel } from './data';
 import type { Card, CardAction, CombatView, CounterRoll, DiceData, DiceIcon, DieColor, Duel, DuelIcon, PartSlot, Side, SmokeScreen, TerrainPiece, Token, Facing } from './types';
 import { statusCount, STATUSES } from './types';
-import { actionRange, asInterception, isSilentAction, counterOffensive, ewWinCommands, chargeOrderOn, counterStage, cruising, firewatchOn, type CounterStage, aaRadarCovers, armorPiercing, armorPiercingNote, attackReactionsOf, auraEffectsOn, aurasOn, auraValueOn, automaticShieldFor, blueLightningDodges, earlyWarningCover, coolingBonus, denseArmorSlot, eyeLightExchangeOf, eyesAreHeavyHits, pilotDiceBonus, ignoresLowProfile, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, noMeleeBackAttack, onHitRiders, missileGuidance, multiTargetLimit, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, snipeOn, suppressionOn, disarmOn, dragPrinted, designationsOn, dodgeEnhanceOf, linkShockOf, lightningRiderOf, electronicStrength, followUpAfterKill, eyeRerollName, kcArmorReady, lightningExchangeOf, lightningLinkDrain, canAffordFocus, focusIsFree, hiddenByAlliedAura, keepsLinkOnPartLoss, maxLink, provokeWhy, preventsDamage, autoParryValue, immobilizeChoiceOn, faceAwayOnHit, pursuesFragile, structureOf, trackingCover, TRACKING_SPOTTERS_NEEDED, pilotCard, pilotIs, repeatersFor, SLOT_LABEL, tetherStrike, treatedAsOffensive, ownCards, loanedParts, type LoanedPart, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
+import { highlightOn, actionRange, asInterception, isSilentAction, counterOffensive, ewWinCommands, chargeOrderOn, counterStage, cruising, firewatchOn, type CounterStage, aaRadarCovers, armorPiercing, armorPiercingNote, attackReactionsOf, auraEffectsOn, aurasOn, auraValueOn, automaticShieldFor, blueLightningDodges, earlyWarningCover, coolingBonus, denseArmorSlot, eyeLightExchangeOf, eyesAreHeavyHits, pilotDiceBonus, ignoresLowProfile, ignoresProtectionOnHighlight, providesUnitProtectionToAllies, noMeleeBackAttack, onHitRiders, missileGuidance, multiTargetLimit, twoHandedUse, freehandSupportNote, defenseReactionOn, dodgeEnhanceReady, meleeEvasionReady, parryParts, ripostePart, targetTracingOn, selfHitParts, snipeOn, suppressionOn, disarmOn, dragPrinted, designationsOn, dodgeEnhanceOf, linkShockOf, lightningRiderOf, electronicStrength, followUpAfterKill, eyeRerollName, kcArmorReady, lightningExchangeOf, lightningLinkDrain, canAffordFocus, focusIsFree, hiddenByAlliedAura, keepsLinkOnPartLoss, maxLink, provokeWhy, preventsDamage, autoParryValue, immobilizeChoiceOn, faceAwayOnHit, pursuesFragile, structureOf, trackingCover, TRACKING_SPOTTERS_NEEDED, pilotCard, pilotIs, repeatersFor, SLOT_LABEL, tetherStrike, treatedAsOffensive, ownCards, loanedParts, type LoanedPart, tokenCards, whistleFunders, type AttackReaction, type MultiTarget } from './units';
 import { timingOf } from './ticks';
 import { inArc, largeGridOf, losBetween, losNote, protectionFor, rangeBetween, standingSpot } from './rules';
 import { canBeForceMoved } from './melee';
@@ -1044,6 +1044,13 @@ export class AttackHelper {
   focusRemote: ((defender: Token) => boolean) | null = null;
   // The whole board, for aura reads (FAQ Q1: judged when the roll happens).
   tokens: (() => Token[]) | null = null;
+  // The Parts of a unit carrying a Black Box, whose Freehand is invalid while
+  // they do (5.3.1), so they serve no [Two-Handed] (audit Phase 6, F7).
+  boxHands: ((uid: number) => string[]) | null = null;
+  // A table with no board says whether the defender has Low Profile from an
+  // effect (an ally's aura, KeyHole, a Misty Eagle): positions cannot be read
+  // there (audit Phase 6, C4). Null asks nothing, and reads none.
+  tableLowProfile: boolean | null = null;
   // Terrain, for the Hyena Radar's line of sight to the intercepted target.
   terrain: (() => TerrainPiece[]) | null = null;
   // Smoke, so a Multi-Target can read each target's own line of sight without
@@ -1917,7 +1924,7 @@ export class AttackHelper {
     // the Two-Handed note printed it; nothing took the dice off. It is the
     // attacker's, so a Surplus roll does not carry it (4.8).
     if (!this.ctx!.surplusRound && !this.ctx!.action.twoHandedDeclined) {
-      blue = Math.max(0, blue - (twoHandedUse(this.data, this.ctx!.attacker, this.ctx!.action, [], this.loansFor(this.ctx!.attacker))?.support?.targetBlue ?? 0));
+      blue = Math.max(0, blue - (twoHandedUse(this.data, this.ctx!.attacker, this.ctx!.action, this.boxHands?.(this.ctx!.attacker.uid) ?? [], this.loansFor(this.ctx!.attacker))?.support?.targetBlue ?? 0));
     }
     if (statusCount(d.statuses, 'immobilized') > 0) blue = 0;
     // PDRH-202_B Link Shock: the target "cannot make Blue Dice rolls".
@@ -2634,16 +2641,22 @@ export class AttackHelper {
     const tracking = c.action.type === 'Firing' && this.tokens
       ? trackingCover(this.data, this.tokens(), this.terrain ? this.terrain() : [], this.smoke ? this.smoke() : [], c.attacker, c.defender)
       : [];
-    const concealed = this.tokens ? hiddenByAlliedAura(this.data, this.tokens(), c.defender) : undefined;
+    const board = !this.noBoard && !!this.tokens;
+    // J12: Low Profile from an effect and a Highlight, both gained, cancel:
+    // "neither effect takes effect" (ruling I12). A Token's Low Profile stands
+    // (audit Phase 6, C3).
+    const lit = highlightOn(this.data, c.defender);
+    const concealed = board && !lit ? hiddenByAlliedAura(this.data, this.tokens!(), c.defender) : undefined;
+    const eagle = board && !lit ? mistyEagle : undefined;
     const lpToken = statusCount(c.defender.statuses, 'lowProfile') > 0;
+    const aura = board && !lit && auraEffectsOn(this.data, this.tokens!(), c.defender).has('low_profile');
+    // With no board the table said it (C4).
+    const told = !board && !lit && !!this.tableLowProfile;
     const on = c.action.type === 'Firing'
       && !ignoresLowProfile(this.data, c.attacker)
       && !tracking.length
-      && (lpToken
-        || (this.tokens ? auraEffectsOn(this.data, this.tokens(), c.defender).has('low_profile') : false)
-        || !!concealed
-        || !!mistyEagle);
-    return { on, lpToken, tracking, concealed, mistyEagle };
+      && (lpToken || aura || !!concealed || !!eagle || told);
+    return { on, lpToken, tracking, concealed, mistyEagle: eagle };
   }
 
   // WHICH DEFENCE DICE ARE DOING SOMETHING, one entry per die. The attack half
@@ -3299,7 +3312,7 @@ export class AttackHelper {
         // one-handed one, and re-deriving the designation here would report a
         // bonus the dice are not getting.
         if (c.action.twoHandedDeclined) return `<p class="ah-los">${ICON_BLOCKED} [Two-Handed] declined: performed one-handed, with none of the rider (FAQ A16).</p>`;
-        const use = twoHandedUse(this.data, c.attacker, c.action, [], this.loansFor(c.attacker));
+        const use = twoHandedUse(this.data, c.attacker, c.action, this.boxHands?.(c.attacker.uid) ?? [], this.loansFor(c.attacker));
         if (use) return `<p class="ah-los">${ICON_BLOCKED} ${use.note}.</p>`;
         // Only when the Action wants a hand and there is none to give.
         const sup = freehandSupportNote(this.data, c.attacker, c.action);

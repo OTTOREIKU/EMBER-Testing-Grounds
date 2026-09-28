@@ -225,7 +225,10 @@ const marks = { maneuver: 0, action: 1, maneuvered: true, moved: true, started: 
     const gt = mech(g);
     gt.freeTicks = { ...marks };
     const v = send(g, { kind, seat: 's1' });
-    check(`${kind} refills them`, [v.ok, 'freeTicks' in gt], [true, false]);
+    // Read back by uid: startMatch rebuilds each unit from its loadout (audit
+    // Phase 6, A4), so the object held here is not the one on the table.
+    const now = g.tokens.find((x) => x.uid === gt.uid);
+    check(`${kind} refills them`, [v.ok, 'freeTicks' in now], [true, false]);
   }
 }
 {

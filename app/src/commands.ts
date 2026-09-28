@@ -2,14 +2,14 @@ import type { BoardGrids, CardAction, CombatView, Facing, FreeTicks, GameState, 
 import { addStatus, ageTokens, cellsOf, gridsOf, newOpportunity, normaliseFreeTicks, PHASES, shedToken, statusCount, STATUSES, TIMINGS, tokenFaces } from './types';
 import type { GameData } from './data';
 import { cardName, isUnfolded, transformFaces, unfoldsInto, discardFaceOf, environmentAllowance } from './data';
-import { fliesToTarget, flightLanding, projectileReach, launchableCards, autoShotOwed, overwatchOf, settleMines, forgetMineSpares, unfoldsOwed, unfoldOccupants, coordinationFor, coordinatesAfterManeuver, coordinationOnOpportunityEnd, bitPortOf, bitsToRecover, camoPartLost, canActivateCamo, electronicAll, electronicAllTargets, whistleFunders, electronicTargetWhy, isElectronicAttack, ownCards, actionSilenceDenier, activatesCamo, contactRevealsOwed, positionsOf, envCardAt, isGroundUnit, initiativeFor, actionMoves, firewatchOn, focusPayer, stanceFeedbackOf, stanceFeedbackTargets, stanceShaped, actionPartWhy, extraActivationOf, overloadPackOn, cruising, selfStanceShift, spendsAmmoWhenPerformed, startOpts, counterStage, covertCarryLock, ammoDeliveryPool, opportunityBonusOn, ripostePart, defenseReactionOn, targetTracingOn, riderOnDrone, commandGeneration, swarmTacticsOn, isGofMediumDrone, blinkTargets, isPositionSwap, electronicOrigins, isSilentAction, maneuverIsSilent, loanedParts, unfoldToken, formSwitch, switchFormTo, extrasFor, consumesCharge, cutTethersOn, cutTetherBetween, electronicDash, electronicValue, immobilizedStop, chassisStop, isScanAction, scannable, manifestationRange, nonHumanoidCost, nonHumanoidStop, envHotEntries, settleEnvironments, freehandSlots, twoHandedUse, missileGroupOf, volleyOf, interceptCapacity, focusIsFree, keepsLinkOnPartLoss, makeDroneToken, structureOf, makeMechToken, maneuverRange, maxLink, partsLeft, pilotCard, pilotIs, projectileDelivery, provokeWhy, settleTethers, SLOT_LABEL, tetherTo, tokenCards, transformPartOn, actionRange, isRwsAction, rwsCommandKey, rwsFiredKey, selfStatusGrant, selfGrantWhy, straightLineBonus, grantAdjusted, shockAttackOf, linkTickTraitOn, isCarrier, canBeLoad, roundEndLinkSources } from './units';
+import { repairSpec, fliesToTarget, flightLanding, projectileReach, launchableCards, autoShotOwed, overwatchOf, settleMines, forgetMineSpares, unfoldsOwed, unfoldOccupants, coordinationFor, coordinatesAfterManeuver, coordinationOnOpportunityEnd, bitPortOf, bitsToRecover, camoPartLost, canActivateCamo, electronicAll, electronicAllTargets, whistleFunders, electronicTargetWhy, isElectronicAttack, ownCards, actionSilenceDenier, activatesCamo, contactRevealsOwed, positionsOf, envCardAt, isGroundUnit, initiativeFor, actionMoves, firewatchOn, focusPayer, stanceFeedbackOf, stanceFeedbackTargets, stanceShaped, actionPartWhy, extraActivationOf, overloadPackOn, cruising, selfStanceShift, spendsAmmoWhenPerformed, startOpts, counterStage, covertCarryLock, ammoDeliveryPool, opportunityBonusOn, ripostePart, defenseReactionOn, targetTracingOn, riderOnDrone, commandGeneration, swarmTacticsOn, isGofMediumDrone, blinkTargets, isPositionSwap, electronicOrigins, isSilentAction, maneuverIsSilent, loanedParts, unfoldToken, formSwitch, switchFormTo, extrasFor, consumesCharge, cutTethersOn, cutTetherBetween, electronicDash, electronicValue, immobilizedStop, chassisStop, isScanAction, scannable, manifestationRange, nonHumanoidCost, nonHumanoidStop, envHotEntries, settleEnvironments, freehandSlots, twoHandedUse, missileGroupOf, volleyOf, interceptCapacity, focusIsFree, keepsLinkOnPartLoss, makeDroneToken, structureOf, makeMechToken, maneuverRange, maxLink, partsLeft, pilotCard, pilotIs, projectileDelivery, provokeWhy, settleTethers, SLOT_LABEL, tetherTo, tokenCards, transformPartOn, actionRange, isRwsAction, rwsCommandKey, rwsFiredKey, selfStatusGrant, selfGrantWhy, straightLineBonus, grantAdjusted, shockAttackOf, linkTickTraitOn, isCarrier, canBeLoad, roundEndLinkSources } from './units';
 import { canBeForceMoved, isMeleeFiring, lockersOf, tetherCap } from './melee';
 import { actionIdOf, canActivate, canAttackMode, canManeuver, canOverload, canPerform, rebooted, REBOOT_ID, spendAction, spendActivation, spendAttackMode, spendManeuver, spendOverload, untouched } from './ticks';
-import { tacticSpec, tacticTargets, type TacticCtx } from './tactics';
-import { battlefieldLocked, deploymentComplete, deployTurn, firstPlayerFrom, newSetup, normaliseSetup, tasksLocked } from './setup';
-import { applyKill, normaliseTasks, pendingDesignations, recordPartLoss, recordUnitLoss, settleControl, type Designation, retractKill, unrecordPartLoss } from './tasks';
+import { tacticSpec, tacticTargets, tacticUsedRound, tacticWindowWhy, type TacticCtx } from './tactics';
+import { battlefieldLocked, deploymentComplete, deployTurn, firstPlayerFrom, incompleteMechWhy, newSetup, normaliseSetup, tasksLocked } from './setup';
+import { applyKill, boxHands, boxPlaceTurn, cellToGrid, deployGrids, deployOpenGrids, leaveBoxes, newTaskState, normaliseTasks, taskItemsFor, type TaskItem, type TaskState, pendingDesignations, rangeToZone, recordPartLoss, recordUnitLoss, remoteAccessWhy, settleControl, type Designation, retractKill, unrecordPartLoss } from './tasks';
 import { alive, canAct, dialHidden, droneActionWhy, droneLockPhase, droneMoveWhy, eligibleUnits, getLocalSeat, isLoopPhase, loopComplete, nextTurn, onExtraOpportunity, tiedChoiceWhy } from './loop';
-import { dissipationFor, losNote, rangeBetween, spotsInGrid } from './rules';
+import { boxDropCells, dissipationFor, losNote, rangeBetween, spotsInGrid } from './rules';
 
 // ---------- the command layer (multiplayer phase 1) ----------
 
@@ -148,7 +148,8 @@ export type Command = (
   // that asked; left out, a yellow one goes first (types.ts shedToken).
   | { kind: 'removeStatus'; seat: Side; uid: number; targetUid: number; statusId: string; face?: 'yellow' | 'red' }
   // One Token, one step along the End Phase's own ladder (2.5.3): a red face
-  // comes off, a coloured face turns red, a Token with no decay comes off.
+  // comes off, a yellow face turns red, and a green Token or one with no decay
+  // comes off.
   // The pad's tap on a worn Token. It has no script, so markEndStep never
   // runs there and this is the only sweep its Tokens get.
   | { kind: 'ageStatus'; seat: Side; uid: number; targetUid: number; statusId: string }
@@ -190,19 +191,23 @@ export type Command = (
   // Mech's Link, sent once by the attacking client as the resolution applies.
   | { kind: 'drainLink'; seat: Side; uid: number; targetUid: number; n: number }
   | { kind: 'destroyTerrain'; seat: Side; uid: number; pieces: string[] }
-  // A Black Box changing hands (5.3.1). Picking one up is optional and happens
-  // as a unit's Movement passes through its Grid; the route itself stays with
-  // the move UI, the way it does for `maneuver`. `slot` is the Freehand Part
-  // that carries it, and that Part's Freehand counts as spent while it does.
+  // A Black Box changing hands (5.3.1). Picking one up is optional (FAQ P10)
+  // and happens as a unit's Movement passes through its Grid, or as its own
+  // Action Opportunity ends in it (3.4.4, FAQ P8); a flight takes one only at
+  // its start and landing Grids (ruling I22). On a strict board table the check
+  // reads the route the maneuver recorded on the Opportunity (audit Phase 6,
+  // F5). `slot` is the Freehand Part that carries it, and that Part's Freehand
+  // counts as spent while it does.
   | { kind: 'takeBlackBox'; seat: Side; uid: number; itemId: string; slot: string }
   // Dropped when the bearer is Penetrated, and it is the ATTACKER who says
   // where it lands — hence a seat that is not the bearer's. `uid` is the
   // attacker, for attribution only: it may be a Projectile that is already
   // spent by the time the Grid is chosen, so this one is actor-optional.
   | { kind: 'dropBlackBox'; seat: Side; uid: number; itemId: string; to: { col: number; row: number } }
-  // `sweep`: turn the End Phase's Token Management (3.7.2) with the round, for
-  // a table with no script to run markEndStep - the pad. Ignored when a script
-  // is present, because there the End Phase checklist already did it.
+  // `sweep`: run the End Phase's Remove Units and Token Management (3.7.1,
+  // 3.7.2) as the phase OPENS, for a table with no guided game to run
+  // markEndStep: a Freeform pad, or the tabletop sandbox. Ignored in a guided
+  // game, whose End Phase checklist does it (audit Phase 6, B3, B4).
   | { kind: 'advancePhase'; seat: Side; sweep?: boolean }
   | { kind: 'setPhase'; seat: Side; phase: number }
   | { kind: 'resetRounds'; seat: Side }
@@ -229,11 +234,23 @@ export type Command = (
   | { kind: 'grantExtra'; seat: Side; uid: number; linkCost: number }
   | { kind: 'markEndStep'; seat: Side; step: string }
   | { kind: 'award'; seat: Side; vp: { s1: number; s2: number }; keys: string[] }
+  // Victory Points written by hand, off the physical table: they touch the VP
+  // and nothing else. Sent as an Award they marked every owed kill paid and,
+  // on a scripted table, the round's Tasks settled (audit Phase 6, D3). The
+  // seat is who wrote it; `side` whose VP they are.
+  | { kind: 'adjustVp'; seat: Side; side: Side; by: number }
+  // A squad gives up. FAQ P21 has the game run its rounds and the Victory
+  // Points decide, so this is the one early end a table chooses (ruling I1;
+  // audit Phase 6, B8). The seat is the side conceding.
+  | { kind: 'concede'; seat: Side }
   // `statusId` names WHICH Square or Hexagon Token comes off (6.1 leaves the
   // choice to the player), and `face` which face of a stack; without them the
   // first removable one goes, a yellow face before a red.
   | { kind: 'stabilise'; seat: Side; uid: number; keepTokens?: boolean; statusId?: string; face?: 'yellow' | 'red' }
-  | { kind: 'repairPart'; seat: Side; uid: number; slot: string; mode: 'repaired' | 'mend' }
+  | { kind: 'repairPart'; seat: Side; uid: number; slot: string; mode: 'repaired' | 'mend'
+    // An ally's Part, mended by the Action named (the SU1's Armor Patch,
+    // ZYDR-108_B; audit Phase 6, C6).
+    targetUid?: number; actionId?: string }
   | { kind: 'breakRepaired'; seat: Side; uid: number; targetUid: number; slot: string }
   // `to` is Manifestation Movement, which 4.12.2 makes part of the same event
   // as the Reveal rather than a move that follows it - so it rides here rather
@@ -361,7 +378,11 @@ export type Command = (
   // drops a Link, stamps who dealt it - and stays the only thing an attack
   // emits. This is the record-keeping edit beside it: a player fixing the sheet
   // to match a table that has already resolved the hit.
-  | { kind: 'setPartState'; seat: Side; uid: number; slot: PartSlot | 'main'; state: PartState }
+  | { kind: 'setPartState'; seat: Side; uid: number; slot: PartSlot | 'main'; state: PartState
+    // Who destroyed it, when a tap records a Part going into Destroyed: the
+    // kill was the other squad's, uid 0, so Weapons Test never counted it and
+    // an own kill broke Mercy (audit Phase 6, D8).
+    by?: number }
   | { kind: 'launch'; seat: Side; uid: number; actionId: string; cardId: string; to: { col: number; row: number }; facing: Facing }
   | { kind: 'layMine'; seat: Side; uid: number; actionId: string; cardId: string; to: { col: number; row: number } }
   | { kind: 'blink'; seat: Side; uid: number; actionId: string; targetUid: number; facing: Facing; targetFacing: Facing }
@@ -421,6 +442,10 @@ export type Command = (
   // A squad's open-information Secondary Task pick (3.1.3). The seat is the
   // side choosing, so a player can only ever pick their own.
   | { kind: 'pickSecondary'; seat: Side; cardId: string }
+  // A Black Box placed at setup, in its named zone, alternately from the First
+  // Player (5.2.1 step 3; ruling I23). `to` is a Small Grid; the Box's own
+  // spot, sent back, keeps its default.
+  | { kind: 'placeTaskItem'; seat: Side; itemId: string; to: { col: number; row: number } }
   // A squad's hand of Tactics Cards, chosen with the squad and held rather
   // than played onto the board (5.4). It travels because `check()` for
   // playTactic reads the *sender's* hand, which the receiving client would
@@ -611,6 +636,13 @@ export function strictNow(state: GameState): boolean {
   return !!state.script?.strict || !!getLocalSeat();
 }
 
+// A strict guided game under way: the script's own Strict flag (the Match
+// Centre's and pad Guided's scripts are born strict) and a finished setup. A
+// sandbox or a Freeform pad keeps its correction tools (audit Phase 6, B5).
+function strictGuided(state: GameState): boolean {
+  return !!state.script?.strict && normaliseSetup(state.setup)?.stage === 'done';
+}
+
 // The owed Interception attempts that can still be made: a unit on the board
 // with a Token left on that Part, not in Shutdown and not under Fire Control
 // Interference, at a target still standing. Interception "must be performed"
@@ -632,6 +664,64 @@ export function liveIntercepts(state: GameState): { uid: number; actionId: strin
 function oppOf(state: GameState, uid: number) {
   const o = state.script?.opp;
   return o && o.uid === uid ? o : undefined;
+}
+
+// A Penetrated bearer owes its Boxes to the attacker's drop (5.3.1, P3). Its
+// base is stamped on each, so the drop can still be judged when the same
+// attack takes the bearer off the board: the Box was lost that way, keeping a
+// bearer nobody could see (audit Phase 6, F1).
+// A unit that detonates as it is destroyed: the Zealot's Martyrdom (ZHDR-302)
+// and the AS3-B's Self-Destruct, a Detonation `on_destroyed`.
+function blowsWhenDestroyed(data: GameData, t: Token): boolean {
+  return tokenCards(data, t).some(({ slot, card }) => slot !== 'pilot' && (card.actions ?? []).some((a) =>
+    (a.gameRules ?? []).some((g) => (g.effects ?? []).some((e) => {
+      const eff = e as { type?: string; trigger?: string };
+      return eff.type === 'detonation' && eff.trigger === 'on_destroyed';
+    }))));
+}
+
+// A unit as it comes out of its squad for a new game, keeping who it is: its
+// uid, side and label, and its place in the log.
+function freshUnit(data: GameData, state: GameState, t: Token): Token {
+  const scratch = { ...state, tokens: [] as Token[], nextUid: state.nextUid };
+  const card = data.byId.get(t.cardId);
+  const made = t.kind === 'mech' && t.mech
+    ? makeMechToken(scratch, data, t.mech, t.side, t.label)
+    : card ? makeDroneToken(scratch, data, card, t.side, t.droneBackpack) : null;
+  if (!made) return t;
+  return { ...made, uid: t.uid, label: t.label, col: t.col, row: t.row, facing: t.facing, ...(t.log ? { log: t.log } : {}) };
+}
+
+// The Tasks for a new game: the Main Task and its Items stay, as the lobby may
+// have set them, with nobody holding one and every Black Box back on its
+// default spot; the score, the kills, the Secondaries and their targets go.
+function freshTasks(data: GameData, state: GameState): TaskState | null {
+  const was = normaliseTasks(state.tasks);
+  const mission = state.mission ? data.missions.cards.find((m) => m.id === state.mission) : undefined;
+  const own = state.zones && state.zones.length ? state.zones : data.zoneData.zones;
+  const seeded = mission ? taskItemsFor(own, mission).items : [];
+  const next = newTaskState();
+  next.main = was.main;
+  next.items = was.items.map((i) => {
+    const base = { id: i.id, kind: i.kind, zone: i.zone, control: null, accessed: null } as TaskItem;
+    if (i.kind !== 'blackbox') return { ...base, ...(i.col !== undefined ? { col: i.col, row: i.row } : {}) };
+    const home = seeded.find((s) => s.id === i.id);
+    return { ...base, col: home?.col ?? i.col, row: home?.row ?? i.row };
+  });
+  return next;
+}
+
+// `moved`: the attack's Forced Movement has moved the bearer, so a drop it
+// already owes is judged at the new position (FAQ E19), an Abyss included.
+function stampBoxDrops(state: GameState, t: Token, moved = false): void {
+  const tasks = normaliseTasks(state.tasks);
+  let owed = false;
+  for (const i of tasks.items) {
+    if (i.kind !== 'blackbox' || i.bearerUid !== t.uid || (moved && !i.dropFrom)) continue;
+    i.dropFrom = { col: t.col, row: t.row, size: t.size };
+    owed = true;
+  }
+  if (owed) state.tasks = tasks;
 }
 
 // The terrain the engine itself can see: a shipped layout or an authored map,
@@ -718,7 +808,7 @@ function actorOptional(cmd: Command): cmd is Command & { kind: 'forceMove' | 're
 // designation loop's pass and the End Phase checklist belong to the table, not
 // to a unit, so these carry a seat and nothing else.
 type TableKind =
-  | 'advancePhase' | 'setPhase' | 'resetRounds' | 'adjustCommandTokens' | 'passTurn' | 'markEndStep' | 'award'
+  | 'advancePhase' | 'setPhase' | 'resetRounds' | 'adjustCommandTokens' | 'passTurn' | 'markEndStep' | 'award' | 'adjustVp' | 'concede'
   | 'lockMap' | 'rollSetup' | 'acceptRoll' | 'noteRoll' | 'finishTasks' | 'pickEdge' | 'lockDials' | 'finishDeployment'
   | 'queueIntercepts' | 'clearIntercepts' | 'placeSmoke' | 'removeSmoke' | 'dissipateSmoke'
   | 'setEnvironment'
@@ -727,19 +817,19 @@ type TableKind =
   | 'queueReactions'
   | 'clearCounterRoll'
   | 'setMode' | 'handOver' | 'setStrict' | 'commitTimings' | 'revealTimings' | 'importSquad'
-  | 'configureTable' | 'startMatch' | 'endMatch' | 'pickSecondary' | 'setTactics' | 'setInventory' | 'setReady' | 'designateTask'
+  | 'configureTable' | 'startMatch' | 'endMatch' | 'pickSecondary' | 'placeTaskItem' | 'setTactics' | 'setInventory' | 'setReady' | 'designateTask'
   | 'callDefense' | 'answerDefense' | 'clearDefense' | 'setCombatView' | 'focusAnswer' | 'focusReroll' | 'kcArmor' | 'designateHit' | 'meleeEvade' | 'dodgeEnhance' | 'riposte'
   | 'setRollbackCatalog' | 'rollbackRequest' | 'rollbackAnswer'
   | 'claimItem' | 'claimZone' | 'leaveGuided' | 'setPartState' | 'onBehalf';
 const TABLE_KINDS = new Set<Command['kind']>([
-  'advancePhase', 'setPhase', 'resetRounds', 'adjustCommandTokens', 'passTurn', 'markEndStep', 'award',
+  'advancePhase', 'setPhase', 'resetRounds', 'adjustCommandTokens', 'passTurn', 'markEndStep', 'award', 'adjustVp', 'concede',
   'lockMap', 'rollSetup', 'acceptRoll', 'noteRoll', 'finishTasks', 'pickEdge', 'lockDials', 'finishDeployment',
   'queueIntercepts', 'clearIntercepts', 'placeSmoke', 'removeSmoke', 'dissipateSmoke',
   'setEnvironment',
   'queueReactions',
   'clearCounterRoll',
   'setMode', 'handOver', 'setStrict', 'commitTimings', 'revealTimings', 'importSquad',
-  'configureTable', 'startMatch', 'endMatch', 'pickSecondary', 'setTactics', 'setInventory', 'setReady', 'designateTask',
+  'configureTable', 'startMatch', 'endMatch', 'pickSecondary', 'placeTaskItem', 'setTactics', 'setInventory', 'setReady', 'designateTask',
   'callDefense', 'answerDefense', 'clearDefense', 'setCombatView', 'focusAnswer', 'focusReroll', 'kcArmor', 'designateHit', 'meleeEvade', 'dodgeEnhance', 'riposte',
   'setRollbackCatalog', 'rollbackRequest', 'rollbackAnswer',
   'claimItem', 'claimZone', 'leaveGuided', 'setPartState', 'onBehalf',
@@ -754,7 +844,7 @@ const ON_BEHALF = new Set<Command['kind']>(['focus', 'setCharge', 'spendCommand'
 // relay refuses anything sent as the other player — a guest advancing the
 // phase with a hard-coded 's1' would apply locally and silently never travel.
 const ATTRIBUTED = new Set<Command['kind']>([
-  'advancePhase', 'setPhase', 'resetRounds', 'markEndStep', 'award',
+  'advancePhase', 'setPhase', 'resetRounds', 'markEndStep', 'award', 'adjustVp',
   // Who asked and who answered is the whole record of a rollback, so both are
   // stamped with the sender's own seat like every other attributed command.
   'callDefense', 'answerDefense', 'clearDefense', 'setCombatView', 'focusAnswer', 'focusReroll', 'kcArmor', 'designateHit', 'meleeEvade', 'dodgeEnhance', 'riposte',
@@ -847,6 +937,7 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       if (cmd.state === 'damaged' && structureOf(data, target, cmd.slot) <= 0) {
         return no('That Part has no Structure, so it is either intact or destroyed.');
       }
+      if (cmd.by !== undefined && !state.tokens.some((x) => x.uid === cmd.by)) return no('The unit named as the attacker is not on the table.');
       return ok;
     }
     case 'leaveGuided': {
@@ -869,8 +960,16 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       // A Black Box is CARRIED, not claimed: it has a bearer and a slot, and
       // takeBlackBox is the command that says so. Letting this set one would
       // score a Box nobody is holding.
-      if (item.kind === 'blackbox') return no('A Black Box is picked up, not claimed.');
       if (cmd.side !== null && cmd.side !== 's1' && cmd.side !== 's2') return no('That is not a squad.');
+      // With no board the table says where a carried Box is: Asset
+      // Preservation's "In Echo" is a claim for the bearer's squad on a Box it
+      // carries, and the only road a Box has to a score on the pad. Every Box
+      // was refused, so it could never score there (audit Phase 6, F4).
+      if (item.kind === 'blackbox') {
+        const bearer = item.bearerUid !== undefined ? state.tokens.find((x) => x.uid === item.bearerUid) : undefined;
+        if (!state.noBoard || !bearer) return no('A Black Box is picked up, not claimed.');
+        if (cmd.side !== null && cmd.side !== bearer.side) return no(`${bearer.label} carries that Black Box, so only its own squad holds it.`);
+      }
       return ok;
     }
     case 'configureTable': {
@@ -899,12 +998,20 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       if (cmd.unlocked !== undefined && cmd.seat !== 's1') return no('Only the host may unlock or lock the game.');
       // Unlocked, the two setup locks below stand aside: that is its whole job.
       if (state.unlocked) return ok;
-      if (cmd.map !== undefined && battlefieldLocked(setup)) {
+      // The board size goes with the map; the zones, the Deployment Zones and
+      // the Task Items go with the Main Task. A whole TaskState, VP included,
+      // was accepted from the guest in round 3 (audit Phase 6, A5).
+      if ((cmd.map !== undefined || cmd.grids !== undefined) && battlefieldLocked(setup)) {
         return no('The battlefield is locked once the game starts (3.1.2). End the game to change it.');
       }
-      if ((cmd.zoneSet !== undefined || cmd.mission !== undefined) && tasksLocked(setup)) {
-        return no('The Tasks are settled once edges are picked (FAQ P1). End the game to change them.');
+      if ((cmd.zoneSet !== undefined || cmd.mission !== undefined || cmd.zones !== undefined || cmd.deployZones !== undefined || cmd.tasks !== undefined) && tasksLocked(setup)) {
+        return no('The Tasks are settled once the edges are picked (3.1.2). End the game to change them.');
       }
+      // The game's length, its scale and how it is played are the host's, and
+      // are fixed once it is under way.
+      const house = cmd.roundLimit !== undefined || cmd.scale !== undefined || cmd.noBoard !== undefined || cmd.guidedPlay !== undefined;
+      if (house && getLocalSeat() && cmd.seat !== 's1') return no('Only the host sets the game length, the scale and the way it is played.');
+      if (house && setup?.stage === 'done') return no('The game is under way, so its length, scale and way of play are fixed. End the game to change them.');
       return ok;
     }
     case 'startMatch': {
@@ -919,11 +1026,62 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       return ok;
     }
     case 'endMatch': {
-      if (!normaliseSetup(state.setup)) return no('No game is running.');
+      const su = normaliseSetup(state.setup);
+      if (!su) return no('No game is running.');
+      // Across a table, a game under way is ended by the host, or by both
+      // players agreeing, or once it is over. Either seat could wipe the
+      // Tasks and the score for both, at any time (audit Phase 6, A5).
+      if (getLocalSeat() && su.stage !== 'map' && cmd.seat !== 's1') {
+        const tasks = normaliseTasks(state.tasks);
+        const limit = state.roundLimit ?? 5;
+        const over = !!tasks.conceded || state.round.n > limit
+          || (state.round.n >= limit && !!state.script?.endDone.includes(`${state.round.n}:end:tasks`));
+        if (!over && !state.ready?.s1) return no('Only the host ends a game under way. Concede it, or ask the host to end it.');
+      }
       return ok;
     }
     case 'pickSecondary': {
       if (!(data.secondary ?? []).some((c) => c.id === cmd.cardId)) return no('That is not a Secondary Task card.');
+      // In a game: chosen in the Tasks step, after the edges (3.1.3; ruling
+      // I3), the First Player first (FAQ P1), final once both are revealed
+      // (ruling I5), and never the card the other squad holds (the box has
+      // one of each; ruling I17). Any seat picked at any stage, the second
+      // player first, and a pick changed in round 3 (audit Phase 6, A2, A5).
+      const su = normaliseSetup(state.setup);
+      if (su) {
+        if (su.stage !== 'tasks') return no('Secondary Tasks are chosen in the Tasks step of setup, after the edges are picked (3.1.3).');
+        const tasks = normaliseTasks(state.tasks);
+        const other: Side = cmd.seat === 's1' ? 's2' : 's1';
+        const fp = state.round.firstPlayer;
+        if (cmd.seat !== fp && !tasks.secondary[fp]) return no('The First Player chooses and reveals their Secondary Task first (FAQ P1).');
+        if (tasks.secondary[cmd.seat] && tasks.secondary[other]) return no('Both Secondary Tasks are revealed, so they are final.');
+        if (tasks.secondary[other] === cmd.cardId) return no('The other squad holds that Secondary Task, and the box has one of each.');
+      }
+      return ok;
+    }
+    case 'placeTaskItem': {
+      const su = normaliseSetup(state.setup);
+      if (!su || su.stage !== 'tasks') return no('Task Items are placed in the Tasks step of setup (5.2.1).');
+      const tasks = normaliseTasks(state.tasks);
+      const item = tasks.items.find((i) => i.id === cmd.itemId);
+      if (!item || item.kind !== 'blackbox') return no('That is not a Black Box.');
+      if (item.set) return no('That Black Box is already placed.');
+      const turn = boxPlaceTurn(tasks, state.round.firstPlayer);
+      if (turn !== cmd.seat) return no('The Black Boxes are placed alternately, starting from the First Player (5.2.1), and it is the other squad\'s turn.');
+      const { col, row } = cmd.to;
+      if (!Number.isInteger(col) || !Number.isInteger(row) || col < 0 || row < 0 || col >= cellsOf(state) || row >= cellsOf(state)) {
+        return no('That is not a place on the board.');
+      }
+      // A table with no board places the model itself.
+      if (!state.noBoard) {
+        const cells = zoneCells(data, state)(item.zone);
+        if (!cells.some((ref) => { const g = cellToGrid(ref); return !!g && g.c === Math.floor(col / 3) && g.r === Math.floor(row / 3); })) {
+          return no('Each Black Box goes in the Tactical Zone its Main Task names.');
+        }
+        // At ground level, never on terrain (FAQ P9).
+        const terrain = knownTerrain(data, state) ?? [];
+        if (terrain.some((p) => p.subCells.some((s) => s.col === col && s.row === row))) return no('A Black Box stands on the ground, never on terrain (FAQ P9).');
+      }
       return ok;
     }
     case 'setTactics': {
@@ -956,6 +1114,10 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       return ok;
     }
     case 'designateTask': {
+      // Named in the Tasks step, before anything deploys (5.2.3): a fresh
+      // designation was accepted in round 3 (audit Phase 6, A5).
+      const suNow = normaliseSetup(state.setup);
+      if (suNow && (suNow.stage === 'deploy' || suNow.stage === 'done')) return no('Every Task names its Mech or Zone in the Tasks step, before anything deploys (5.2.3).');
       const owed = taskDesignations(data, state);
       const forSide: Side = cmd.for ?? cmd.seat;
       const want = owed.find((d) => d.side === forSide && d.what === cmd.what);
@@ -994,6 +1156,12 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       if (!state.tokens.some((x) => x.uid === cmd.targetUid)) return no('That target is not on the board.');
       if (!Number.isInteger(cmd.white) || !Number.isInteger(cmd.blue) || cmd.white < 0 || cmd.blue < 0 || cmd.white + cmd.blue > 40) {
         return no('That is not a defence pool.');
+      }
+      // The attack a Fire Control Interference Token forbids never reaches a
+      // defence roll either (6.3.2, FAQ J5; audit Phase 6, C2).
+      const shot = findAction(data, state, cmd.uid, cmd.actionId);
+      if (shot?.type === 'Firing' && statusCount(at.statuses, 'fci') > 0) {
+        return no(`${at.label} bears a Fire Control Interference Token, so it cannot perform Firing Actions (6.3.2, FAQ J5).`);
       }
       return ok;
     }
@@ -1162,6 +1330,13 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       if (!mechs.length && !drones.length) return no('The squad is empty.');
       for (const m of mechs) {
         if (!m.loadout?.torso && !m.loadout?.chasis) return no('A Mech needs at least a Torso or a Chassis.');
+        // Short of a Torso, a Chassis or an Arm, or with no Pilot, a Mech
+        // cannot be deployed (2.2.2, 5.1; ruling I32). A strict table
+        // refuses it; elsewhere the squad panel warns (audit Phase 6, G3).
+        if (strictNow(state)) {
+          const why = incompleteMechWhy(m.loadout, m.name || 'A Mech');
+          if (why) return no(why);
+        }
         for (const id of Object.values(m.loadout ?? {})) {
           if (id && !data.byId.get(id)) return no(`The database has no card "${id}", so this squad cannot be built.`);
         }
@@ -1183,6 +1358,18 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
     case 'advancePhase': {
       const su = normaliseSetup(state.setup);
       if (su && su.stage !== 'done') return no('Finish the pre-game roll and deployment first (3.1).');
+      // The End Phase's steps "must be performed" (3.7): a strict table leaves
+      // it only once they are done, the Smoke's with Smoke on the board. The
+      // guide's End round left it with nothing done (audit Phase 6, B5).
+      if (strictNow(state) && state.script && su?.stage === 'done' && state.round.phase === PHASES.length - 1) {
+        const done = state.script.endDone;
+        const missing = ['remove', 'tokens', 'tasks'].filter((x) => !done.includes(`${state.round.n}:end:${x}`));
+        if ((state.smoke ?? []).length && state.smokeRound !== state.round.n) missing.push('smoke');
+        if (missing.length) {
+          const name: Record<string, string> = { remove: 'Remove Units', tokens: 'Token Management', tasks: 'Check Tasks', smoke: 'Smoke dissipation' };
+          return no(`The End Phase is not done: ${missing.map((x) => name[x]).join(', ')} (3.7).`);
+        }
+      }
       // An owed Interception is resolved before play moves on (M5; B10).
       if (strictNow(state) && liveIntercepts(state).length) return no('An Interception is still owed, and it must be made while it can be (M5).');
       // And a folded Pholcus Unfolds before the Delay Phase ends (M18.3; D3).
@@ -1223,9 +1410,13 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
     }
     case 'setPhase': {
       if (!Number.isInteger(cmd.phase) || cmd.phase < 0 || cmd.phase >= PHASES.length) return no('That is not a phase.');
+      // A strict guided game runs its phases in order: a jump skipped the End
+      // Phase and replayed a round with no round turn (audit Phase 6, B5).
+      if (strictGuided(state)) return no('A strict game runs its phases in order. Use Undo to take a step back.');
       return ok;
     }
     case 'resetRounds':
+      if (strictGuided(state)) return no('A strict game runs its rounds in order. Use Undo to take a step back.');
       return ok;
     case 'adjustCommandTokens': {
       if (!Number.isInteger(cmd.delta) || cmd.delta === 0) return no('Nothing to adjust.');
@@ -1257,6 +1448,31 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
     case 'markEndStep': {
       if (!state.script) return no('The End Phase checklist belongs to a guided game.');
       if (state.round.phase !== PHASES.length - 1) return no('These steps belong to the End Phase (3.7).');
+      // "Performed in the following order": Remove Units, Token Management,
+      // then the Tasks. A strict table holds the order, and runs Remove and
+      // Tokens once: a second Token step aged everything twice and took a
+      // yellow token gained this round (3.7; audit Phase 6, B6, B7). Marking
+      // the Tasks again stays harmless, since the Award already marks it.
+      if (strictNow(state)) {
+        const done = state.script.endDone;
+        const at = (step: string) => done.includes(`${state.round.n}:end:${step}`);
+        if ((cmd.step === 'remove' || cmd.step === 'tokens') && at(cmd.step)) return no('That End Phase step is already done this round (3.7).');
+        const before = cmd.step === 'tokens' ? ['remove'] : cmd.step === 'tasks' ? ['remove', 'tokens'] : [];
+        const missing = before.filter((x) => !at(x));
+        if (missing.length) {
+          return no(`The End Phase goes in order: ${missing.map((x) => (x === 'remove' ? 'Remove Units' : 'Token Management')).join(' and ')} first (3.7).`);
+        }
+      }
+      return ok;
+    }
+    case 'adjustVp': {
+      if (cmd.side !== 's1' && cmd.side !== 's2') return no('That is not a squad.');
+      if (!Number.isInteger(cmd.by) || cmd.by === 0 || Math.abs(cmd.by) > 60) return no('That is not a change of score.');
+      return ok;
+    }
+    case 'concede': {
+      if (normaliseSetup(state.setup)?.stage !== 'done') return no('There is no game running to concede.');
+      if (normaliseTasks(state.tasks).conceded) return no('A squad has already conceded this game.');
       return ok;
     }
     case 'award': {
@@ -1273,6 +1489,16 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       if (!Number.isInteger(cmd.vp.s1) || !Number.isInteger(cmd.vp.s2)) return no('That is not a score.');
       const wild = (n: number): boolean => n < -10 || n > 60;
       if (wild(cmd.vp.s1) || wild(cmd.vp.s2)) return no('That is not a score.');
+      if (normaliseTasks(state.tasks).conceded) return no('A squad has conceded, so the game is over.');
+      // A strict End Phase scores its Tasks once, and after Remove Units and
+      // Token Management (3.7, "in the following order"; audit Phase 6, B6,
+      // B7). A second Award for the round paid its unkeyed lines again.
+      if (strictNow(state) && state.script && normaliseSetup(state.setup)?.stage === 'done' && state.round.phase === PHASES.length - 1) {
+        const done = state.script.endDone;
+        const at = (step: string) => done.includes(`${state.round.n}:end:${step}`);
+        if (at('tasks')) return no(`Round ${state.round.n}'s Tasks are already scored (3.7.3).`);
+        if (!at('remove') || !at('tokens')) return no('The Tasks are scored after Remove Units and Token Management (3.7).');
+      }
       // Warn, do not block: the award still lands, floored at zero (5.2.4).
       const banked = normaliseTasks(state.tasks).vp;
       if (banked.s1 + cmd.vp.s1 < 0 || banked.s2 + cmd.vp.s2 < 0) {
@@ -1294,6 +1520,10 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       const su = normaliseSetup(state.setup);
       if (!su || su.stage !== 'roll') return no('The table-edge roll comes after the battlefield is locked (3.1.2).');
       if (!Array.isArray(cmd.hits) || !cmd.hits.length || cmd.hits.some((h) => !Number.isInteger(h) || h < 0)) return no('That is not a roll.');
+      // Once each, and again only on a tie: the loser of the roll could roll
+      // again and take First Player (audit Phase 6, A5).
+      const tied = !!su.rolls.s1.length && !!su.rolls.s2.length && !firstPlayerFrom(su);
+      if (su.rolls[cmd.seat].length && !tied) return no('That squad has rolled, and only a tie is rolled again (3.1.2).');
       return ok;
     }
     case 'acceptRoll': {
@@ -1315,6 +1545,15 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
     case 'finishTasks': {
       const su = normaliseSetup(state.setup);
       if (!su || su.stage !== 'tasks') return no('The Tasks step is not open.');
+      // Across a table or on a strict one the step is a rule, not a drawn
+      // panel: both Secondaries revealed, every target named, and on a board
+      // every Black Box placed (3.1.3, 5.2.1).
+      if (strictNow(state)) {
+        const tasks = normaliseTasks(state.tasks);
+        if (!tasks.secondary.s1 || !tasks.secondary.s2) return no('Both squads choose a Secondary Task first (3.1.3).');
+        if (taskDesignations(data, state).length) return no('Every Task names its Mech or Zone first (5.2.3).');
+        if (!state.noBoard && tasks.items.some((i) => i.kind === 'blackbox' && !i.set)) return no('Every Black Box is placed first, alternately from the First Player (5.2.1).');
+      }
       return ok;
     }
     case 'pickEdge': {
@@ -1390,9 +1629,11 @@ function checkTable(data: GameData, state: GameState, cmd: Command & { kind: Tab
       // past its setup refuses new cards. Clearing stays legal at any time:
       // the Fragile Platform takes itself off mid-game, and a table mirroring
       // that by hand must not be told no.
+      // Before deployment: a card could go down under units already placed
+      // (audit Phase 6, A7).
       const su = normaliseSetup(state.setup);
-      if (cmd.card !== null && su && su.stage === 'done') {
-        return no('Environment Cards are placed while the battlefield is set up (5.4.1), and this game is already running.');
+      if (cmd.card !== null && su && (su.stage === 'deploy' || su.stage === 'done')) {
+        return no('Environment Cards are placed while the battlefield is set up (5.4.1), before anything deploys.');
       }
       // NO PER-CARD LIMIT. A "one of each" refusal used to live here and it was
       // INVENTED: nothing in 5.4.1, on the cards, or in the component lists says
@@ -1702,15 +1943,28 @@ export function check(data: GameData, state: GameState, cmd: Command): CheckResu
       if (!box || box.kind !== 'blackbox') return no('That is not a Black Box.');
       if (box.bearerUid === undefined) return no('That Black Box is already on the board.');
       const bearer = state.tokens.find((x) => x.uid === box.bearerUid);
-      if (!bearer) return no('Whatever was carrying that Black Box has left the board.');
+      // Where the bearer stands, after any Forced Movement of the attack (FAQ
+      // E19), or its base as the Penetration found it once the same attack
+      // has taken it off the board (audit Phase 6, F1).
+      const base = bearer ? { col: bearer.col, row: bearer.row, size: bearer.size } : box.dropFrom;
+      if (!base) return no('Whatever was carrying that Black Box has left the board.');
       const { col, row } = cmd.to;
       if (!Number.isInteger(col) || !Number.isInteger(row) || col < 0 || row < 0 || col >= cellsOf(state) || row >= cellsOf(state)) {
         return no('That is not a place on the board.');
       }
-      // "In contact with the bearer's base" is the Grid it stands in or one
-      // touching it, diagonals included (5.3.1).
-      const near = Math.max(Math.abs(Math.floor(col / 3) - Math.floor(bearer.col / 3)), Math.abs(Math.floor(row / 3) - Math.floor(bearer.row / 3)));
-      if (near > 1) return no(`A dropped Black Box lands in contact with ${bearer.label}'s base (5.3.1).`);
+      // A table with no board places the model itself.
+      if (!state.noBoard) {
+        // Only a drop a Penetration owes (5.3.1, P3). Nothing else puts a
+        // carried Box down, and a bearer's own player could drop one beside
+        // it at any time (audit Phase 6, F6).
+        if (!box.dropFrom) return no('A carried Black Box is dropped when its bearer is Penetrated (5.3.1), and no Penetration owes this one.');
+        // In Contact with the base, edge to edge, never under it and never on
+        // terrain (4.2.3, FAQ P9; ruling I24). The bearer's own Grid and all
+        // eight around it were accepted, diagonals and buildings included.
+        if (!boxDropCells(base, knownTerrain(data, state) ?? [], cellsOf(state)).some((x) => x.col === col && x.row === row)) {
+          return no(`A dropped Black Box lands in a Small Grid in Contact with ${bearer?.label ?? 'the bearer'}'s base, edge to edge, and not on terrain (5.3.1, FAQ P9).`);
+        }
+      }
       return ok;
     }
   }
@@ -2316,6 +2570,13 @@ function checkActed(
         const why = selfGrantWhy(t, selfGrant);
         if (why) return no(why);
       }
+      // So is a Remote Access with nothing it could access: no Terminal on the
+      // table, or none in reach still face-up (J8's principle; ruling I26;
+      // audit Phase 6, E3).
+      if (a.id === 'COMMON_REMOTE_ACCESS') {
+        const why = remoteAccessWhy(normaliseTasks(state.tasks).items, t, a.range ?? 4, state.noBoard ? null : zoneCells(data, state));
+        if (why) return no(why);
+      }
       // Movement Actions (6.3.2, 4.3.4): Immobilized stops them unless the
       // Action is Unstoppable, and so does a destroyed Chassis, whichever Part
       // prints them (ruled 2026-09-25, audit Phase 4, E7 and I10). Only the
@@ -2339,6 +2600,13 @@ function checkActed(
         if (lockers.length) {
           return no(`${t.label} is Melee Locked by ${lockers.map((o) => o.label).join(', ')}, so it cannot perform Firing Actions except those with Melee Firing (4.3.5).`);
         }
+      }
+      // Fire Control Interference: "cannot perform Firing Actions or
+      // Interception" (6.3.2, FAQ J5). Only the lists refused it, and the
+      // granted and RWS doors below return before any later gate (audit
+      // Phase 6, C2).
+      if (a.type === 'Firing' && statusCount(t.statuses, 'fci') > 0) {
+        return no(`${t.label} bears a Fire Control Interference Token, so it cannot perform Firing Actions (6.3.2, FAQ J5).`);
       }
       // RWS (遥控武器, FAQ A20/A22): the only Action a Mech performs in the
       // Command Phase is the autocannon a Command was sent for. It costs the
@@ -2397,7 +2665,7 @@ function checkActed(
       // and on a designated Freehand (card 129), in that order.
       const shaped = stanceShaped(a, t.stance);
       // A Load lent by a Carrier in Contact can be the Freehand (FAQ O16).
-      const use = cmd.twoHanded ? twoHandedUse(data, t, shaped, [], loanedParts(data, state.tokens, t)) : null;
+      const use = cmd.twoHanded ? twoHandedUse(data, t, shaped, boxHands(state.tasks, t.uid), loanedParts(data, state.tokens, t)) : null;
       if (cmd.twoHanded && !use) return no('[Two-Handed] needs a free hand to designate, and this unit has none for that Action.');
       // FAQ K3: "A Mech affected by Echoes cannot use Echoes again on another
       // Mech during the Action Opportunity gained from Echoes." The guide
@@ -2453,11 +2721,21 @@ function checkActed(
       const spec = tacticSpec(cmd.cardId);
       if (!spec) return no('That card is not a Tactics Card the guide can resolve.');
       if (!(state.tactics?.[cmd.seat] ?? []).includes(cmd.cardId)) return no(`${spec.name} is not in this squad's hand.`);
+      // Once used, discarded for the game (FAQ P2; audit Phase 6, H1). The
+      // card stays in the hand, since its points were paid for the squad.
+      const usedIn = tacticUsedRound(state, cmd.seat, cmd.cardId);
+      if (usedIn !== null) return no(`${spec.name} was used in round ${usedIn} and is discarded: a Tactics Card is used once in a game (FAQ P2).`);
       if ((state.tacticsPlayed?.[cmd.seat] ?? []).some((e) => e.startsWith(`${state.round.n}:`))) {
         return no('A squad may play only 1 Tactics Card per round (5.4.2).');
       }
       if (state.script && PHASES[state.round.phase] !== spec.phase) {
         return no(`${spec.name} is played in the ${spec.phase} Phase (${spec.timing.toLowerCase()}), and it is the ${PHASES[state.round.phase]} Phase.`);
+      }
+      // And at the moment its own text names, in a guided game (5.4.2; audit
+      // Phase 6, H2). A free table keeps no Opportunities to judge it by.
+      if (state.script && normaliseSetup(state.setup)?.stage === 'done') {
+        const w = tacticWindowWhy(spec, state, cmd.seat);
+        if (w) return no(w);
       }
       // Additional Instructions comes too late once the squad has passed the
       // Command Phase (FAQ A21; ruling I7; audit Phase 5, F9).
@@ -2501,6 +2779,33 @@ function checkActed(
       const { col, row } = cmd.to;
       if (!Number.isInteger(col) || !Number.isInteger(row) || col < 0 || row < 0 || col >= cellsOf(state) || row >= cellsOf(state)) {
         return no('That is not a place on the board.');
+      }
+      // Wholly within an unoccupied Grid of the squad's Deployment Zone
+      // (3.1.4; ruling I4): one unit to a Large Grid, the base clear of
+      // terrain, and once every zone Grid is taken the Grids next to it,
+      // working outward (FAQ P23). The zone and the spot were the UI's, and the
+      // Match Centre landed a unit on another or on terrain (audit Phase 6,
+      // A3, A6). A table with no board has no Grids to judge: the pad sends
+      // every unit to the same placeholder cell, and the table places them.
+      if (!state.noBoard) {
+        const at = `${Math.floor(col / 3)},${Math.floor(row / 3)}`;
+        const taken = new Set(state.tokens
+          .filter((x) => x.uid !== t.uid && x.deployed !== false && x.kind !== 'projectile')
+          .map((x) => `${Math.floor(x.col / 3)},${Math.floor(x.row / 3)}`));
+        if (taken.has(at)) return no('A unit deploys wholly within an unoccupied Grid (3.1.4), and that one already holds a unit.');
+        const zone = deployGrids(data.zoneData, state, su.edge[t.side]);
+        if (zone && !deployOpenGrids(zone, taken, gridsOf(state)).has(at)) {
+          return no('A unit deploys in its squad\'s Deployment Zone (3.1.4), or, once every Grid of it is taken, in the Grids next to it (FAQ P23).');
+        }
+        const terrain = t.aerial ? null : knownTerrain(data, state);
+        if (terrain) {
+          const solid = new Set(terrain.flatMap((p) => p.subCells.map((s) => `${s.col},${s.row}`)));
+          for (let dc = 0; dc < t.size; dc++) {
+            for (let dr = 0; dr < t.size; dr++) {
+              if (solid.has(`${col + dc},${row + dr}`)) return no('The base cannot overlap terrain (p.6), so it does not fit there.');
+            }
+          }
+        }
       }
       if (cmd.stance !== undefined && !STANCES.includes(cmd.stance)) return no('That is not a Stance.');
       // Shutdown is where a Mech falls at 0 Link, never a Stance it is given
@@ -2620,10 +2925,23 @@ function checkActed(
           : no('Another unit is already carrying that Black Box.');
       }
       if (box.col === undefined || box.row === undefined) return no('That Black Box is not on the board.');
+      // Picked up as a Movement passes its Grid, or as the unit's own Action
+      // Opportunity ends in it (5.3.1, 3.4.4, FAQ P8). A guided board judges
+      // both: this unit's own Opportunity, and a Grid its Movements entered or
+      // the one it stands in. A Mech 11 Grids away was accepted, in any phase
+      // (audit Phase 6, F5).
+      if (state.script && normaliseSetup(state.setup)?.stage === 'done' && !state.noBoard) {
+        const o = state.script.opp;
+        if (!o || o.uid !== t.uid) return no(`${t.label} picks up a Black Box in its own Action Opportunity (5.3.1).`);
+        const at = `${Math.floor(box.col / 3)},${Math.floor(box.row / 3)}`;
+        if (at !== `${Math.floor(t.col / 3)},${Math.floor(t.row / 3)}` && !(o.route ?? []).includes(at)) {
+          return no(`${t.label} has not moved through that Black Box's Grid in this Action Opportunity, and it is not in it (5.3.1).`);
+        }
+      }
       // A Part already bearing one has its Freehand treated as invalid (5.3.1),
-      // so a Part can only ever hold a single Box.
-      const taken = tasks.items.filter((i) => i.bearerUid === t.uid && i.bearerSlot).map((i) => i.bearerSlot!);
-      const hands = freehandSlots(data, t, taken);
+      // so a Part can only ever hold a single Box. A Carrier carries one on a
+      // Freehand Load (FAQ P11; ruling I19).
+      const hands = freehandSlots(data, t, boxHands(state.tasks, t.uid), [], true);
       if (!hands.length) {
         return no(`${t.label} has no free Freehand Part. Carrying a Black Box needs one, and a Part already holding one does not count (5.3.1).`);
       }
@@ -2642,7 +2960,12 @@ function checkActed(
       // (audit Phase 5, B9).
       if (statusCount(t.statuses, 'fci') > 0) return no(`${t.label} bears Fire Control Interference, so it cannot Intercept.`);
       const slot = tokenCards(data, t).find(({ card }) => (card.actions ?? []).some((a) => a.id === cmd.actionId))?.slot;
-      if (slot && (t.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') return no('That Part is destroyed, so it cannot Intercept (3.4.3).');
+      // A Repaired Part is "broken in every way except that it can still
+      // perform actions" (FAQ J23), Interception included (ruling I11; audit
+      // Phase 6, C8): units.ts partUsable's reading, kept inline here.
+      if (slot && (t.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed' && !(t.repairedSlots ?? []).includes(slot)) {
+        return no('That Part is destroyed, so it cannot Intercept (3.4.3).');
+      }
       // A strict table makes only an owed attempt (ruling I11): a Launch or an
       // Aerial unit's Movement is what owes one (4.9). A table with no board
       // owes nothing the engine can see, so it judges for itself.
@@ -3095,6 +3418,20 @@ function checkActed(
       return ok;
     }
     case 'repairPart': {
+      // An ALLY's Damaged Part, mended by the Action named: the SU1's Armor
+      // Patch, within its Range on a board (audit Phase 6, C6).
+      if (cmd.targetUid !== undefined) {
+        const a = cmd.actionId ? findAction(data, state, cmd.uid, cmd.actionId) : undefined;
+        const spec = a ? repairSpec(a) : undefined;
+        if (!a || !spec?.ally) return no('That Action mends no ally.');
+        if (cmd.mode !== 'mend') return no(`${a.name?.en || a.id} removes a Damaged Token; it gives no Repaired one.`);
+        const target = state.tokens.find((x) => x.uid === cmd.targetUid);
+        if (!target || target.deployed === false) return no('That unit is not on the board.');
+        if (target.side !== t.side || target.uid === t.uid) return no(`${a.name?.en || a.id} mends an Ally Unit.`);
+        if (!state.noBoard && rangeBetween(t, target).range > (a.range ?? 0)) return no(`${target.label} is beyond Range ${a.range ?? 0}.`);
+        if ((target.partStates[cmd.slot as PartSlot | 'main'] ?? 'intact') !== 'damaged') return no('Only a Damaged Part can be mended.');
+        return ok;
+      }
       // SH-15 Damage Control: a destroyed Part of THIS mech gains a Repaired
       // Token, or a Damaged Part is mended. The Part stays destroyed for
       // Integrity and Link (FAQ J21/J23).
@@ -3238,6 +3575,31 @@ function checkActed(
       if (!item || item.kind !== 'terminal') return no('That is not a Terminal.');
       // Once per round each, and the End Phase flips them all back (5.3.3).
       if (item.accessed) return no('That Terminal has already been accessed this round (5.3.3).');
+      // The success of a Remote Access: a Mech's Common Action, performed with
+      // the Torso at Range 4, in its own Opportunity (p.87). Only the two lines
+      // above were asked, so a Drone, a Shutdown Mech, a Mech 10 Grids away and
+      // an access in the End Phase with nothing performed were all accepted
+      // (audit Phase 6, E2).
+      if (t.kind !== 'mech') return no(`${t.label} is not a Mech: Remote Access is a Mech's Common Action (p.87).`);
+      if (t.stance === 'shutdown') return no('A Mech in Shutdown Stance cannot Maneuver or perform any Action other than Reboot (4.1.1).');
+      const ra = findAction(data, state, cmd.uid, 'COMMON_REMOTE_ACCESS');
+      if (!ra) return no(`${t.label} has no Remote Access.`);
+      const partWhy = actionPartWhy(data, t, ra);
+      if (partWhy) return no(partWhy);
+      // To the NEAREST Grid of the zone (FAQ P6). The printed Range: neither a
+      // Repeater nor KeyHole reaches it (FAQ P12).
+      if (!state.noBoard) {
+        const reach = ra.range ?? 4;
+        const d = rangeToZone(t, zoneCells(data, state)(item.zone));
+        if (d === null || d > reach) return no(`That Terminal's Tactical Zone is ${d ?? '?'} Grids from ${t.label}, and Remote Access reaches Range ${reach} (p.87).`);
+      }
+      if (state.script && normaliseSetup(state.setup)?.stage === 'done') {
+        const o = state.script.opp;
+        if (!o || o.uid !== t.uid) return no(`Remote Access is performed in ${t.label}'s own Action Opportunity (p.87).`);
+        if (!o.performed.some((k) => actionIdOf(k) === 'COMMON_REMOTE_ACCESS')) {
+          return no('Perform the Remote Access Action first: the Terminal is accessed when its Counter-roll succeeds (p.87).');
+        }
+      }
       return ok;
     }
     case 'blink': {
@@ -3428,11 +3790,16 @@ function checkActed(
 // one else can have done it, and on a one-phone pad the recorder's own seat
 // says nothing about who fired. The unit id is unknown, so it is 0, which no
 // Weapon Test target ever is.
-function handTapBookkeeping(data: GameData, state: GameState, t: Token, slot: string, was: PartState, now: PartState): void {
+function handTapBookkeeping(data: GameData, state: GameState, t: Token, slot: string, was: PartState, now: PartState, by?: number): void {
   const into = was !== 'destroyed' && now === 'destroyed';
   const outOf = was === 'destroyed' && now !== 'destroyed';
   if (!into && !outOf) return;
-  const killer = { side: (t.side === 's1' ? 's2' : 's1') as Side, uid: 0 };
+  // The unit the tap names, or the other squad when it names none (D8). A tap
+  // back out retracts what the tap in credited.
+  const named = by !== undefined ? state.tokens.find((x) => x.uid === by) : undefined;
+  const killer = named
+    ? { side: named.side, uid: named.uid }
+    : outOf && t.lastDamagedBy ? t.lastDamagedBy : { side: (t.side === 's1' ? 's2' : 's1') as Side, uid: 0 };
   const victim = { side: t.side, kind: t.kind, lowValue: lowValueUnit(data, t) };
   const whole = slot === (t.kind === 'mech' ? 'torso' : 'main');
   const tasks = normaliseTasks(state.tasks);
@@ -3471,15 +3838,23 @@ function handTapBookkeeping(data: GameData, state: GameState, t: Token, slot: st
 // P4). One implementation for the Guided End Phase's Remove step and the
 // scriptless round turn a Freeform pad makes, which never removed one at all.
 function removeIntegrityLoss(data: GameData, state: GameState): void {
-  const dying = state.tokens.filter((x) => x.kind === 'mech' && Object.values(x.partStates).filter((p) => p !== 'destroyed').length <= 2);
+  // A Mech whose Torso is already destroyed was credited when it died: the pad
+  // keeps it in its tokens for its destroyed list, and counting it here again
+  // paid Annihilation twice (audit Phase 6, D4).
+  const dying = state.tokens.filter((x) => x.kind === 'mech'
+    && (x.partStates.torso ?? 'intact') !== 'destroyed'
+    && Object.values(x.partStates).filter((p) => p !== 'destroyed').length <= 2);
   if (!dying.length) return;
   const tasks = normaliseTasks(state.tasks);
   for (const v of dying) {
-    if (v.lastDamagedBy) applyKill(tasks, v.lastDamagedBy, { side: v.side, kind: v.kind, lowValue: lowValueUnit(data, v) }, 'unit');
+    if (v.lastDamagedBy) applyKill(tasks, v.lastDamagedBy, { side: v.side, kind: v.kind, lowValue: lowValueUnit(data, v) }, 'unit', 'integrity');
     // Everything still bolted to it leaves with it. A Mech can withdraw
     // on Integrity Loss with a live backpack, and the -1 riders are owed
     // all the same — nothing on the board records that after this line.
     recordUnitLoss(tasks, v);
+    // Its Black Boxes do not: they stay in the Grid it stood in (ruling I20).
+    // They vanished with it (audit Phase 6, F9).
+    leaveBoxes(tasks, v, true);
   }
   state.tasks = tasks;
   state.tokens = state.tokens.filter((x) => !dying.includes(x));
@@ -3604,9 +3979,11 @@ function oweReveal(state: GameState, uid: number, why: 'act' | 'move' | 'touch',
 // copy rather than three.
 //
 // THE REMOVAL GOES THROUGH removeStatus's OWN apply rather than filtering
-// `statuses` here. That block also drops the token's `expiring` entry, and a
-// Low Profile Token decays (green, types.ts), so a hand-rolled filter would
-// leave a stale red-face marker behind on a unit no longer carrying the Token.
+// `statuses` here. That block also drops the token's `expiring` entry, so a
+// hand-rolled filter would be a second copy of the rule that keeps a unit's
+// faces in step with what it carries. Low Profile is green and never turns red
+// (p.97, FAQ J22; audit Phase 6, C5), so today there is no red face to leave
+// behind; the one path is what keeps it that way.
 // One call is enough: Low Profile is a Hexagon Token and a unit may bear only
 // one (2.5.3), which addStatus enforces on the way in.
 function shedLowProfile(data: GameData, state: GameState, t: Token): void {
@@ -3643,16 +4020,20 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       // Every Mech's Action Opportunity comes in this phase, so a free table's
       // hand-marked Ticks start over as it opens (3.4.5).
       if (PHASES[r.phase] === 'Action') clearFreeTicks(state);
-    } else {
-      clearFreeTicks(state);
-      if (cmd.sweep && !state.script) {
-        // The End Phase a scriptless table turns in one go (3.7.1 then 3.7.2):
-        // Integrity Loss first, which a Freeform pad never removed at all, so
-        // a Mech on 2 Parts stayed in play and nobody was credited the kill.
+      // The End Phase a table with no guided game turns in one go, AS IT OPENS
+      // (3.7.1 then 3.7.2): Integrity Loss first, which a Freeform pad never
+      // removed at all, then the tokens. At the phase's end the table's Award
+      // came before the removal and missed its kill; now it scores after both
+      // (audit Phase 6, B3). No guided game: no setup, as the tabletop sandbox
+      // (whose guide gives it a script anyway, B4), or no script, as a
+      // Freeform pad.
+      if (PHASES[r.phase] === 'End' && cmd.sweep && (!state.script || !normaliseSetup(state.setup))) {
         removeIntegrityLoss(data, state);
         for (const x of state.tokens) ageTokens(x);
         clearCommandTokens(state);
       }
+    } else {
+      clearFreeTicks(state);
       r.phase = 0;
       r.n++;
       r.firstPlayer = r.firstPlayer === 's1' ? 's2' : 's1';
@@ -3733,6 +4114,22 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
     if (state.script) {
       state.script.commits = {};
       state.script.revealed = [];
+      // The End Phase checklist and the once-a-round ledger are stamped with a
+      // round number, so round 1 again would read as already done.
+      state.script.endDone = [];
+      state.script.oncePerRound = [];
+    }
+    // The First Player Token goes back to the roll's winner, not to whoever
+    // held it at the reset (3.1.2; audit Phase 6, A8).
+    const su = normaliseSetup(state.setup);
+    const first = su?.first ?? (su ? firstPlayerFrom(su) : null);
+    if (first) state.round.firstPlayer = first;
+    // And the round-stamped score keys, which would stop the replayed rounds
+    // from paying. One-off lines (a Secondary, the VIP) stay paid with the VP.
+    if (state.tasks) {
+      const tasks = normaliseTasks(state.tasks);
+      tasks.scored = tasks.scored.filter((k) => !/^pad-round:\d+$/.test(k) && !/^main:s[12]:r\d+$/.test(k));
+      state.tasks = tasks;
     }
     return;
   }
@@ -3775,6 +4172,20 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
     }
     const key = `${state.round.n}:end:${cmd.step}`;
     if (!sc.endDone.includes(key)) sc.endDone.push(key);
+    return;
+  }
+  if (cmd.kind === 'adjustVp') {
+    // The VP and nothing else: no kill marked paid, no step ticked (audit
+    // Phase 6, D3). Floored at zero like the Award (5.2.4).
+    const tasks = normaliseTasks(state.tasks);
+    tasks.vp[cmd.side] = Math.max(0, tasks.vp[cmd.side] + cmd.by);
+    state.tasks = tasks;
+    return;
+  }
+  if (cmd.kind === 'concede') {
+    const tasks = normaliseTasks(state.tasks);
+    tasks.conceded = cmd.seat;
+    state.tasks = tasks;
     return;
   }
   if (cmd.kind === 'award') {
@@ -3897,9 +4308,18 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
   }
   if (cmd.kind === 'startMatch') {
     // The state half of "Start game": both ends of a wire begin the identical
-    // match. Anything already standing goes back to its squad for deployment.
-    state.tokens = state.tokens.filter((t) => t.kind !== 'projectile');
+    // match. Anything already standing goes back to its squad for deployment,
+    // rebuilt from its loadout: every Part intact, Link full, no Tokens, Ammo
+    // and Interception refilled. A launched unit is not part of the squad. A
+    // rematch started damaged, on the old score, with its Tactics Cards spent
+    // (audit Phase 6, A4).
+    state.tokens = state.tokens
+      .filter((t) => t.kind !== 'projectile' && t.parentUid === undefined)
+      .map((t) => freshUnit(data, state, t));
     for (const t of state.tokens) t.deployed = false;
+    state.tasks = freshTasks(data, state);
+    state.tacticsPlayed = { s1: [], s2: [] };
+    state.removedTerrain = [];
     clearFreeTicks(state);
     state.smoke = [];
     delete state.smokeRound;
@@ -3996,6 +4416,16 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
     state.ready = { ...(state.ready ?? {}), [cmd.seat]: cmd.ready };
     return;
   }
+  if (cmd.kind === 'placeTaskItem') {
+    const tasks = normaliseTasks(state.tasks);
+    const item = tasks.items.find((i) => i.id === cmd.itemId);
+    if (!item) return;
+    item.col = cmd.to.col;
+    item.row = cmd.to.row;
+    item.set = cmd.seat;
+    state.tasks = tasks;
+    return;
+  }
   if (cmd.kind === 'pickSecondary') {
     const tasks = normaliseTasks(state.tasks);
     tasks.secondary[cmd.seat] = cmd.cardId;
@@ -4071,22 +4501,23 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
     const winner = cmd.first ?? firstPlayerFrom(su);
     if (!winner) return;
     state.round.firstPlayer = winner;
-    // The Tasks come next, not the edges: the roll decides who reveals their
-    // Secondary Task first (FAQ P1 steps 3-5).
-    state.setup = { ...su, stage: 'tasks' };
+    // The edge comes next, picked by the winner knowing the Main Task, and
+    // the Secondaries after it (ruling I3; audit Phase 6, A1). The winner is
+    // kept for resetRounds (A8).
+    state.setup = { ...su, stage: 'side', first: winner };
     return;
   }
   if (cmd.kind === 'finishTasks') {
     const su = normaliseSetup(state.setup) ?? newSetup();
     if (su.stage !== 'tasks') return;
-    state.setup = { ...su, stage: 'side' };
+    state.setup = { ...su, stage: 'deploy' };
     return;
   }
   if (cmd.kind === 'pickEdge') {
     const su = normaliseSetup(state.setup) ?? newSetup();
     const fp = state.round.firstPlayer;
     const other: Side = fp === 's1' ? 's2' : 's1';
-    state.setup = { ...su, stage: 'deploy', edge: { ...su.edge, [fp]: cmd.edge, [other]: cmd.edge === 'black' ? 'white' : 'black' } };
+    state.setup = { ...su, stage: 'tasks', edge: { ...su.edge, [fp]: cmd.edge, [other]: cmd.edge === 'black' ? 'white' : 'black' } };
     return;
   }
   if (cmd.kind === 'lockDials') {
@@ -4248,6 +4679,7 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
     if (!state.noBoard) {
       target.col = cmd.to.col;
       target.row = cmd.to.row;
+      stampBoxDrops(state, target, true);
     }
     // The player causing a Forced Movement decides the victim's facing (3.4.4),
     // and may also turn a victim that could not be moved at all.
@@ -4270,10 +4702,16 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
     // victim while it is still in hand. The per-Part case is stamped in
     // applyPenetration instead.
     if (cmd.what === 'unit') recordUnitLoss(tasks, victim);
+    // Into the Abyss, say: a Box no Penetration owes stays where it fell
+    // (ruling I20; audit Phase 6, F9).
+    if (cmd.what === 'unit') leaveBoxes(tasks, victim);
     state.tasks = tasks;
     // A destroyed Unit leaves the board (4.4.4); the tally above is all that
-    // is left of it.
-    if (cmd.what === 'unit') state.tokens = state.tokens.filter((x) => x.uid !== cmd.targetUid);
+    // is left of it. One that detonates as it is destroyed stays as a wreck
+    // until its blast is resolved, whose own despawn removes it: taken off
+    // here, the Martyrdom and the Self-Destruct were never owed (audit Phase
+    // 6, D5).
+    if (cmd.what === 'unit' && !blowsWhenDestroyed(data, victim)) state.tokens = state.tokens.filter((x) => x.uid !== cmd.targetUid);
     return;
   }
   if (cmd.kind === 'destroyTerrain') {
@@ -4298,6 +4736,7 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
     if (!box) return;
     box.bearerUid = undefined;
     box.bearerSlot = undefined;
+    delete box.dropFrom;
     box.col = cmd.to.col;
     box.row = cmd.to.row;
     state.tasks = tasks;
@@ -4313,13 +4752,16 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
     if (!target) return;
     const was = target.partStates[cmd.slot] ?? 'intact';
     target.partStates[cmd.slot] = cmd.state;
-    handTapBookkeeping(data, state, target, cmd.slot, was, cmd.state);
+    handTapBookkeeping(data, state, target, cmd.slot, was, cmd.state, cmd.by);
     // A worse state tapped by hand is a Penetration recorded by hand, and the
     // initiator's Tether goes with it as applyPenetration's does (PDLH-202).
     // The pad records every Penetration this way, so its Tethers never ended
     // (audit Phase 4, H3).
     const rank = { intact: 0, damaged: 1, destroyed: 2 } as const;
-    if (rank[cmd.state] > rank[was]) cutTethersOn(data, state, target, 'initiator');
+    if (rank[cmd.state] > rank[was]) {
+      cutTethersOn(data, state, target, 'initiator');
+      stampBoxDrops(state, target);
+    }
     return;
   }
   if (cmd.kind === 'leaveGuided') {
@@ -4573,6 +5015,14 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       if (sc?.opp && sc.opp.uid === t.uid && (cmd.halt !== undefined || cmd.resume)) {
         sc.opp = { ...sc.opp, mineHalt: cmd.halt && cmd.halt > 0 ? cmd.halt : undefined };
       }
+      // The Grids this Movement entered, where a Black Box may be picked up: a
+      // flight only its start and landing (4.3.2; ruling I22; audit Phase 6,
+      // F5, F10).
+      if (sc?.opp && sc.opp.uid === t.uid) {
+        const key = (p: { col: number; row: number }): string => `${Math.floor(p.col / 3)},${Math.floor(p.row / 3)}`;
+        const walked = [key(from), ...(cmd.flying || t.aerial ? [] : (cmd.via ?? []).map(key)), key(cmd.to)];
+        sc.opp = { ...sc.opp, route: [...new Set([...(sc.opp.route ?? []), ...walked])].slice(-64) };
+      }
       takeMoveGrant(state, cmd);
       return;
     }
@@ -4645,7 +5095,7 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
         // The length PAID: a designated Freehand can shorten it (card 129), and
         // the check above let the Action through on that same reading.
         const shaped = t.kind === 'mech' ? stanceShaped(a, t.stance) : a;
-        const paidAs = (cmd.twoHanded ? twoHandedUse(data, t, shaped, [], loanedParts(data, state.tokens, t))?.action : null) ?? shaped;
+        const paidAs = (cmd.twoHanded ? twoHandedUse(data, t, shaped, boxHands(state.tasks, t.uid), loanedParts(data, state.tokens, t))?.action : null) ?? shaped;
         sc.opp = t.kind === 'mech'
           // The same startOpts the check read, so the SPEND agrees with the
           // check that let the Action through -- miss one and a Starting Action
@@ -4766,6 +5216,7 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       // on both boards and in a replay, and those callbacks are per-page copies
       // that would drift the moment one of them was edited alone.
       cutTethersOn(data, state, target, 'initiator');
+      stampBoxDrops(state, target);
       if (target.partStates[cmd.slot] === 'destroyed' && target.kind === 'mech') {
         // FPA-03 Wu keeps his Link when a Part goes. The lastDamagedBy stamp
         // below is NOT inside the guard: the Integrity-Loss kill (FAQ P4) is
@@ -4799,10 +5250,20 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       // the stale red marker would otherwise remove the fresh token a round
       // early. Squares keep theirs — each stacked entry ages on its own.
       const def = STATUSES.find((x) => x.id === cmd.statusId);
-      if (def?.shape === 'hexagon') {
+      // Camouflage strips the Hexagons too, and their red markers with them
+      // (FAQ J14; audit Phase 6, C9).
+      if (def?.shape === 'hexagon' || def?.clearsHexagons) {
         const hexes = new Set(STATUSES.filter((x) => x.shape === 'hexagon').map((x) => x.id));
         target.expiring = (target.expiring ?? []).filter((x) => !hexes.has(x));
       }
+      // Red on both faces: it arrives showing red, one marker per entry, and
+      // leaves at this round's End Phase (ruling I9). After the clean-up
+      // above, which would otherwise take the marker straight off.
+      if (def?.decay === 'red') {
+        const n = statusCount(target.statuses, cmd.statusId);
+        target.expiring = [...(target.expiring ?? []).filter((x) => x !== cmd.statusId), ...Array<string>(n).fill(cmd.statusId)];
+      }
+      if (target.expiring && !target.expiring.length) target.expiring = undefined;
       // A Command placed by hand is a Command the side may spend, so the pool
       // is recomputed from the board rather than nudged.
       if (COMMAND_FACES.has(cmd.statusId)) syncCommandPool(state);
@@ -4822,7 +5283,10 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       if (!target) return;
       const def = STATUSES.find((x) => x.id === cmd.statusId);
       const red = (target.expiring ?? []).includes(cmd.statusId);
-      if (red || !def?.decay) {
+      // Only a yellow token has a red side to turn to. A green one (Low
+      // Profile) stays until it is removed, so a step takes it off (2.5.3, FAQ
+      // J22; audit Phase 6, C5).
+      if (red || def?.decay !== 'yellow') {
         // Through removeStatus's own apply, for the same reason shedLowProfile
         // goes that way: it owns the expiry bookkeeping and the Command pool.
         // A red step takes a RED face off a stack, and its marker with it
@@ -5066,6 +5530,9 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
     }
     case 'endOpportunity': {
       if (!sc) return;
+      // Hit and Run's moment: this Mech's Action Opportunity ending, an Extra
+      // one included (ruling I28; audit Phase 6, H2).
+      if (t.kind === 'mech' && PHASES[state.round.phase] === 'Action') sc.lastEnded = { uid: cmd.uid, round: state.round.n };
       // A nested Extra Opportunity resumes whoever it interrupted (FAQ K21)
       // and never marks the echoed Mech as having acted (K19).
       if (sc.opp?.uid === cmd.uid && sc.opp.extra) {
@@ -5221,6 +5688,14 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
       return;
     }
     case 'repairPart': {
+      if (cmd.targetUid !== undefined) {
+        const target = state.tokens.find((x) => x.uid === cmd.targetUid);
+        if (target) target.partStates[cmd.slot as PartSlot | 'main'] = 'intact';
+        // "then remove this Unit" (ZYDR-108_B).
+        const a = cmd.actionId ? findAction(data, state, cmd.uid, cmd.actionId) : undefined;
+        if (a && repairSpec(a)?.removeSelf) state.tokens = state.tokens.filter((x) => x.uid !== t.uid);
+        return;
+      }
       if (cmd.mode === 'mend') {
         t.partStates[cmd.slot as PartSlot | 'main'] = 'intact';
         return;
@@ -5462,6 +5937,15 @@ function applyCommand(data: GameData, state: GameState, cmd: Command): void {
     }
     case 'despawn': {
       const gone = state.tokens.find((x) => x.uid === cmd.targetUid);
+      // A unit taken off the board leaves its Black Boxes in the Grid it stood
+      // in (ruling I20): they vanished with it (audit Phase 6, F9).
+      if (gone) {
+        const tasks = normaliseTasks(state.tasks);
+        if (tasks.items.some((i) => i.bearerUid === gone.uid)) {
+          leaveBoxes(tasks, gone, true);
+          state.tasks = tasks;
+        }
+      }
       state.tokens = state.tokens.filter((x) => x.uid !== cmd.targetUid);
       // A side emptied of units keeps no squad name, so the next list brought
       // in gets to name it. Only ever true in the lobby.

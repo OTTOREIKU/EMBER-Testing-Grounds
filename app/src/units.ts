@@ -4,7 +4,7 @@ import { cardName, faceOf, isAerial, isBarricade, isFlyingBase, isMine, isTether
 import type { ExtraTick, Card, CardAction, CounterRoll, GameRuleEffect, GameState, MechLoadout, PartSlot, Side, SmokeScreen, Stance, TableZone, TerrainPiece, TetherLink, Timing, Token, TokenPick } from './types';
 import type { Command } from './commands';
 import { addStatus, DEFAULT_GRIDS, gridsOf, LEGACY_SIDE, normaliseFreeTicks, normaliseScript, removableTokens, statusCount, STATUSES, TIMINGS } from './types';
-import { normaliseSetup } from './setup';
+import { incompleteMechWhy, normaliseSetup } from './setup';
 import { isMeleeFiring, lockersOf, tetherCap } from './melee';
 import { boardGrids, firingSight, inArc, inContact, largeGridOf, lineCrossesUnit, losBetween, rangeBetween, smokeBlocks, standingSpot } from './rules';
 import { normaliseTasks, type VpRider } from './tasks';
@@ -1115,13 +1115,15 @@ export function extraActivationOf(a: CardAction): ExtraActivation | undefined {
   return undefined;
 }
 
-export function freehandSlots(data: GameData, t: Token, taken: string[] = [], loans: LoanedPart[] = []): { slot: PartSlot | 'pilot' | 'main'; label: string }[] {
+export function freehandSlots(data: GameData, t: Token, taken: string[] = [], loans: LoanedPart[] = [], forBox = false): { slot: PartSlot | 'pilot' | 'main'; label: string }[] {
   const out: { slot: PartSlot | 'pilot' | 'main'; label: string }[] = [];
   const hasFreehand = (card: Card): boolean =>
     (card.keywords ?? []).some((k) => k.en === 'Freehand' || k.key === '空手');
   // ownCards, not tokenCards: a Carrier Tarantula gains none of its Load's
   // attributes (O4; p.94). For every other unit the two are the same list.
-  for (const { slot, card } of ownCards(data, t)) {
+  // The one exception is a Black Box: a Carrier with a Freehand Load carries
+  // one on it (FAQ P11; ruling I19; audit Phase 6, F8), in the backpack slot.
+  for (const { slot, card } of forBox ? tokenCards(data, t) : ownCards(data, t)) {
     if ((t.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
     if (taken.includes(slot)) continue;
     if (!hasFreehand(card)) continue;
@@ -1133,6 +1135,15 @@ export function freehandSlots(data: GameData, t: Token, taken: string[] = [], lo
     out.push({ slot: slot as PartSlot, label: `${cardName(card)} (${from.label})` });
   }
   return out;
+}
+
+// The unit panel's line for the Black Boxes a unit carries, and on which
+// Parts (5.3.1). Nothing on a token or a panel said who bore one (audit Phase
+// 6, F12). Null when it carries none.
+export function boxNoteText(slots: string[]): string | null {
+  if (!slots.length) return null;
+  const parts = slots.map((s) => SLOT_LABEL[s as PartSlot | 'pilot' | 'main'] ?? s).join(' and ');
+  return `Carrying ${slots.length === 1 ? 'a Black Box' : `${slots.length} Black Boxes`} on its ${parts}. A Penetration makes it drop (5.3.1).`;
 }
 
 // ---------- Commands (rulebook 3.2.1) ----------
@@ -2027,6 +2038,12 @@ export function targetStatusGrant(a: CardAction): { statusId: string; stacks: nu
 // change the Action cannot make. J19 is the other half and needs no code:
 // Contact never removes a Low Profile Token, so Ambush in Contact is legal.
 export function selfGrantWhy(t: Token, grant: { statusId: string; stacks: number }): string | null {
+  // A red Highlight gained again turns back to yellow and restarts, so the
+  // Action changes something (FAQ J22; ruling I13; audit Phase 6, C1). A
+  // yellow one, and any Low Profile, which is green and never refreshed, stay
+  // refused.
+  const def = STATUSES.find((d) => d.id === grant.statusId);
+  if (def?.decay === 'yellow' && (t.expiring ?? []).includes(grant.statusId)) return null;
   if (statusCount(t.statuses, grant.statusId) > 0) {
     const what = grant.statusId === 'lowProfile' ? 'a Low Profile Token' : grant.statusId === 'highlight' ? 'a Highlight Token' : 'that Token';
     return `${t.label} already bears ${what}, so this Action could change nothing and cannot be performed (6.1${grant.statusId === 'lowProfile' ? ', FAQ J1' : ''}).`;
@@ -3632,11 +3649,31 @@ export function hasFlexibleTiming(data: GameData, tokens: Token[], t: Token, a?:
 // An action that hands out Repaired Tokens or mends Damage, read off the
 // printed text (SH-15 Damage Control: "give one destroyed Part of this mech a
 // Repaired marker, or remove one Damaged marker from a Part").
-export function repairSpec(a: CardAction): { repair: boolean; mend: boolean } | undefined {
+// The SU1's Armor Patch (ZYDR-108_B) mends an ALLY and then leaves: "Remove 1
+// Damaged Token from Ally Unit, then remove this Unit". It was read as mending
+// its own Parts, and the SU1 has Structure 0, so it never did anything (audit
+// Phase 6, C6).
+export function repairSpec(a: CardAction): { repair: boolean; mend: boolean; ally: boolean; removeSelf: boolean } | undefined {
   const hay = (a.description?.zh ?? '') + (a.description?.en ?? '');
   const repair = hay.includes('修补标记') || /Repaired (Token|marker)/i.test(hay);
   const mend = hay.includes('破损标记') || /remove.{0,20}Damaged/i.test(hay);
-  return repair || mend ? { repair, mend } : undefined;
+  const ally = hay.includes('友军单位') || /Ally Unit/i.test(hay);
+  const removeSelf = hay.includes('然后移除本单位') || /then remove this Unit/i.test(hay);
+  return repair || mend ? { repair, mend, ally, removeSelf } : undefined;
+}
+
+// The allies such an Action can mend: a Damaged Part, within its Range on a
+// board; a table with no board judges the Range itself.
+export function allyRepairTargets(data: GameData, tokens: Token[], t: Token, a: CardAction, noBoard: boolean): { unit: Token; slot: string }[] {
+  const out: { unit: Token; slot: string }[] = [];
+  for (const o of tokens) {
+    if (o.side !== t.side || o.uid === t.uid || o.deployed === false || !alive(o)) continue;
+    if (!noBoard && rangeBetween(t, o).range > (a.range ?? 0)) continue;
+    for (const { slot } of tokenCards(data, o)) {
+      if (slot !== 'pilot' && (o.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'damaged') out.push({ unit: o, slot });
+    }
+  }
+  return out;
 }
 
 // Auto-attack target selection (3.5.2, FAQ O9/O10/O21). Among enemies in
@@ -3702,7 +3739,7 @@ export function autoTargetsFor(
   // Electronic Attack or a Hound's Melee takes the nearest regardless (ruled
   // 2026-09-25, audit Phase 3, F15). The Token or a card printing it, and
   // neither while an aura's Low Profile cancels it (hasHighlight, J12).
-  const lit = a.type === 'Firing' ? candidates.filter((o) => hasHighlight(data, tokens, o)) : [];
+  const lit = a.type === 'Firing' ? candidates.filter((o) => hasHighlight(data, tokens, o, { shooter: t })) : [];
   // Target Tracer, effect 1 (glossary): a DRONE's Automatic Action designates
   // a bearer 'even if it is not the closest Enemy Unit' -- the distance rule
   // is waived, so the tracered pool is taken whole and nearest-within-it
@@ -3754,7 +3791,8 @@ export function interceptorsAgainst(data: GameData, tokens: Token[], side: Side)
     && Object.entries(u.intercept ?? {}).some(([id, n]) => {
       if (n <= 0) return false;
       const slot = tokenCards(data, u).find(({ card }) => (card.actions ?? []).some((a) => a.id === id))?.slot;
-      return !slot || (u.partStates[slot as PartSlot | 'main'] ?? 'intact') !== 'destroyed';
+      // A Repaired Part intercepts (FAQ J23; ruling I11; audit Phase 6, C8).
+      return !slot || partUsable(u, slot);
     }));
 }
 
@@ -4176,9 +4214,10 @@ export function interceptsOwed(
     if (x.kind === 'mech' && x.stance === 'shutdown') continue;
     // Its own Parts only: a Carrier never intercepts with its Load (O4), and a
     // destroyed Part performs no Action (3.4.3), which the card door already
-    // knew and this queue did not (audit Phase 5, G3 and B6).
+    // knew and this queue did not (audit Phase 5, G3 and B6). A Repaired Part
+    // still performs its Actions, Interception included (FAQ J23; ruling I11).
     for (const { slot, card } of ownCards(data, x)) {
-      if ((x.partStates[slot as PartSlot | 'main'] ?? 'intact') === 'destroyed') continue;
+      if (!partUsable(x, slot)) continue;
       for (const a of card.actions ?? []) {
         if (interceptCapacity(a) === undefined) continue;
         if ((x.intercept?.[a.id] ?? 0) <= 0) continue;
@@ -5045,7 +5084,7 @@ export function mechCards(data: GameData, loadout: MechLoadout): Card[] {
 // ---------- faction legality ----------
 
 export interface FactionProblem {
-  kind: 'mixed-mech' | 'mixed-squad' | 'duplicate-pilot' | 'launched-only' | 'mixed-load';
+  kind: 'mixed-mech' | 'mixed-squad' | 'duplicate-pilot' | 'launched-only' | 'mixed-load' | 'incomplete-mech' | 'no-pilot';
   label: string;
   detail: string;
 }
@@ -5113,6 +5152,14 @@ export function emptyCarriers(data: GameData, tokens: Token[]): Token[] {
   });
 }
 
+// A Pilot's printed ID (5.1: "Pilots with the same ID cannot appear in the
+// same Squad"). Two versions of one Pilot print the same ID: FPA-04 and
+// FPA-04-2 are both "ID 04", and p.81's own example is our FPA-06 with FPA-06-2
+// (ruling I30; audit Phase 6, G2). A version carries its base's ID.
+export function pilotIdOf(cardId: string): string {
+  return /^([A-Z]+-\d+)-\d+$/.exec(cardId)?.[1] ?? cardId;
+}
+
 export function factionProblems(data: GameData, tokens: Token[]): FactionProblem[] {
   const out: FactionProblem[] = [];
   const squad = new Set<string>();
@@ -5144,12 +5191,31 @@ export function factionProblems(data: GameData, tokens: Token[]): FactionProblem
   // (ruling I23; audit Phase 5, H1).
   const launchedOnly = new Set((data.cards ?? []).flatMap((c) => (c.actions ?? []).flatMap((a) => bitPortOf(a)?.formIds ?? [])));
   for (const t of tokens) {
-    if (t.kind !== 'drone' || t.parentUid !== undefined || !launchedOnly.has(t.cardId)) continue;
-    out.push({
-      kind: 'launched-only',
-      label: t.label,
-      detail: 'A "White Dwarf" Bit is launched from the Bit Port, never fielded: it is not part of a Squad and is not deployed at setup (p.82).',
-    });
+    if (t.kind !== 'drone' || t.parentUid !== undefined) continue;
+    const card = data.byId?.get(t.cardId);
+    if (launchedOnly.has(t.cardId)) {
+      out.push({
+        kind: 'launched-only',
+        label: t.label,
+        detail: 'A "White Dwarf" Bit is launched from the Bit Port, never fielded: it is not part of a Squad and is not deployed at setup (p.82).',
+      });
+    } else if (card && (card.score ?? 0) === 0) {
+      // Every other Low Value Drone too, printed at 0 points: the Dragonfly,
+      // the Delphinium, SU1, SU2, KK9 and the Unfolded Pholcus joined a list
+      // with no word and then waited all game (audit Phase 6, G6).
+      out.push({
+        kind: 'launched-only',
+        label: t.label,
+        detail: `${cardName(card)} is a Low Value Unit (0 points): it is not part of a Squad and is not deployed at setup. A card puts it on the table (p.82).`,
+      });
+    }
+  }
+  // Short of a Torso, a Chassis or an Arm, or with no Pilot (2.2.2, 5.1).
+  for (const t of tokens) {
+    if (t.kind !== 'mech') continue;
+    const why = incompleteMechWhy(t.mech, t.label);
+    const short = !t.mech?.torso || !t.mech?.chasis || (!t.mech?.leftHand && !t.mech?.rightHand);
+    if (why) out.push({ kind: short ? 'incomplete-mech' : 'no-pilot', label: t.label, detail: why });
   }
   // A Load is a Part, and a unit's Parts are its own faction (5.1, FAQ N6):
   // an RDL or GoF Load on a UN Carrier raised a mixed squad, while a PD Load or
@@ -5168,22 +5234,25 @@ export function factionProblems(data: GameData, tokens: Token[]): FactionProblem
     });
   }
   // 5.1's third rule: "Pilots with the same ID cannot appear in the same
-  // Squad." The ID is the pilot card, so two Mechs seated with the same card
-  // are the case. A pilotless sandbox Mech seats nobody and cannot collide.
-  const seated = new Map<string, string[]>();
+  // Squad." The printed ID, which two versions of one Pilot share (ruling
+  // I30): keyed on the card, FPA-04 with FPA-04-2 passed. A pilotless sandbox
+  // Mech seats nobody and cannot collide.
+  const seated = new Map<string, { labels: string[]; cards: string[] }>();
   for (const t of tokens) {
     const pid = t.kind === 'mech' ? t.mech?.pilot : undefined;
     if (!pid) continue;
-    seated.set(pid, [...(seated.get(pid) ?? []), t.label]);
+    const key = pilotIdOf(pid);
+    const was = seated.get(key) ?? { labels: [], cards: [] };
+    seated.set(key, { labels: [...was.labels, t.label], cards: [...was.cards, pid] });
   }
-  for (const [pid, labels] of seated) {
+  for (const [, { labels, cards }] of seated) {
     if (labels.length < 2) continue;
-    const card = data.byId?.get(pid);
-    const name = card ? cardName(card) : pid;
+    const names = [...new Set(cards)].map((id) => { const card = data.byId?.get(id); return card ? cardName(card) : id; });
+    const name = names.join(' and ');
     out.push({
       kind: 'duplicate-pilot',
       label: name,
-      detail: `${name} is piloting ${labels.join(' and ')}. Pilots with the same ID cannot appear in the same squad (5.1).`,
+      detail: `${name} ${names.length > 1 ? 'print the same Pilot ID and are' : 'is'} piloting ${labels.join(' and ')}. Pilots with the same ID cannot appear in the same squad (5.1).`,
     });
   }
   return out;
@@ -5639,6 +5708,21 @@ export function tokenCards(data: GameData, t: Token): { slot: PartSlot | 'pilot'
   const bp = t.droneBackpack ? data.byId.get(t.droneBackpack) : undefined;
   if (bp) out.push({ slot: 'backpack', card: bp });
   return out as { slot: PartSlot | 'main'; card: Card }[];
+}
+
+// A squad's points (p.82): every Part and the Pilot of each Mech, each Drone
+// with the Load it carries, and each Tactics Card in hand (5.4.2). Projectiles
+// are left out, and Low Value units cost 0 by their own data. The ONE reader
+// for every page: the pad's own copy counted each Pilot twice (audit Phase 6,
+// G1).
+export function squadPoints(data: GameData, tokens: Token[], side: Side, hand: string[] = []): number {
+  let n = 0;
+  for (const t of tokens) {
+    if (t.side !== side || t.kind === 'projectile') continue;
+    for (const { card } of tokenCards(data, t)) n += card.score ?? 0;
+  }
+  for (const id of hand) n += data.byId.get(id)?.score ?? 0;
+  return n;
 }
 
 // ---------- defender-side dice keywords (4.10) ----------
@@ -6852,15 +6936,45 @@ export function positionsOf(tokens: Token[]): Map<number, { col: number; row: nu
 // Token was ever read (audit Phase 3, E3).
 const PRINTED_HIGHLIGHT = /has Highlight|具有高亮|拥有高亮/i;
 
-export function hasHighlight(data: GameData, tokens: Token[], t: Token): boolean {
-  const printed = statusCount(t.statuses, 'highlight') > 0
+// The Highlight a unit has, a Token or a card that prints it, before J12 is
+// asked.
+export function highlightOn(data: GameData, t: Token): boolean {
+  return statusCount(t.statuses, 'highlight') > 0
     || tokenCards(data, t).some(({ slot, card }) => (t.partStates[slot as PartSlot | 'main'] ?? 'intact') !== 'destroyed'
       && (card.actions ?? []).some((a) => PRINTED_HIGHLIGHT.test(`${a.description?.en ?? ''} ${a.description?.zh ?? ''}`)));
-  if (!printed) return false;
-  // J12: gained at once with an aura's Low Profile, "neither effect takes
-  // effect". A Highlighted unit standing in an ally's MES aura is neither
-  // forced on nor hidden, until the aura is lost.
-  return !auraLowProfile(data, tokens, t);
+}
+
+// Low Profile from an effect rather than a Token, which J12 sets against a
+// Highlight: an ally's MES-type aura, KeyHole's concealment (FPA-06-2), and a
+// Misty Eagle beside the shooter, judged per shooter (ruling I12). "Neither
+// effect takes effect" while both are gained. Only the aura was read, and only
+// by the Highlight half: the attack window still turned Eyes into Dodges (audit
+// Phase 6, C3). A table with no board cannot read positions, so it says (C4).
+export function effectLowProfile(data: GameData, tokens: Token[], t: Token, opts: { shooter?: Token; noBoard?: boolean } = {}): boolean {
+  if (opts.noBoard) return false;
+  return auraLowProfile(data, tokens, t)
+    || !!hiddenByAlliedAura(data, tokens, t)
+    || (!!opts.shooter && aurasOn(data, tokens, opts.shooter).some((s) => s.kinds.includes('target_counts_low_profile')));
+}
+
+// Whether such a Low Profile could be in play at all, so a table with no board
+// is asked only when it could: a KeyHole defender, or a unit that projects a
+// Low Profile aura or the Misty Eagle's.
+export function effectLowProfileCould(data: GameData, tokens: Token[], defender: Token): boolean {
+  if (pilotIs(data, defender, 'FPA-06-2')) return true;
+  return tokens.some((src) => src.deployed !== false && tokenCards(data, src).some(({ card }) => (card.actions ?? []).some((a) =>
+    (a.gameRules ?? []).some((g) => (g.effects ?? []).some((e) => {
+      const kinds = (e as { type?: string; effectTypes?: string[] }).type === 'aura' ? (e as { effectTypes?: string[] }).effectTypes ?? [] : [];
+      return (kinds.includes('low_profile') && src.side === defender.side) || kinds.includes('target_counts_low_profile');
+    })))));
+}
+
+export function hasHighlight(data: GameData, tokens: Token[], t: Token, opts: { shooter?: Token; noBoard?: boolean } = {}): boolean {
+  if (!highlightOn(data, t)) return false;
+  // J12: gained at once with an effect's Low Profile, "neither effect takes
+  // effect". A Highlighted unit in an ally's MES aura is neither forced on nor
+  // hidden, until the aura is lost.
+  return !effectLowProfile(data, tokens, t, opts);
 }
 
 // The aura half of Low Profile (an MES Beacon, 559 Escarpment's), which never
@@ -6876,9 +6990,9 @@ export function auraLowProfile(data: GameData, tokens: Token[], t: Token): boole
 // Actions", so Melee, Projectile and Interception (M26) are not bound (ruled
 // 2026-09-25, audit Phase 3, F15). Only the Drones' Automatic Actions were
 // ever bound, through autoTargetsFor (E1).
-export function highlightTargets(data: GameData, tokens: Token[], a: CardAction, legal: Token[]): Token[] {
+export function highlightTargets(data: GameData, tokens: Token[], a: CardAction, legal: Token[], shooter?: Token): Token[] {
   if (a.type !== 'Firing') return [];
-  return legal.filter((o) => hasHighlight(data, tokens, o));
+  return legal.filter((o) => hasHighlight(data, tokens, o, { shooter }));
 }
 
 // ---------- one reading of a won Counter-roll (4.11.2, 4.12.4) ----------
